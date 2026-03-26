@@ -124,6 +124,7 @@ async function main(): Promise<void> {
 		{
 			threatsDir: join(pluginRoot, "threats"),
 			allowlistsDir: join(pluginRoot, "allowlists"),
+			agentRuntime: "claude-code",
 			logger,
 		},
 	);

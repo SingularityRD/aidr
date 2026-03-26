@@ -30,9 +30,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/identity.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/identity.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/identity.js"(exports2) {
     "use strict";
     var ALIAS = Symbol.for("yaml.alias");
     var DOC = Symbol.for("yaml.document");
@@ -87,9 +87,9 @@ var require_identity = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/visit.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/visit.js
 var require_visit = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/visit.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/visit.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var BREAK = Symbol("break visit");
@@ -245,9 +245,9 @@ var require_visit = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/directives.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/directives.js
 var require_directives = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/directives.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/directives.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var visit = require_visit();
@@ -416,9 +416,9 @@ var require_directives = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/anchors.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/anchors.js
 var require_anchors = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/anchors.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/anchors.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var visit = require_visit();
@@ -486,9 +486,9 @@ var require_anchors = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/applyReviver.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/applyReviver.js
 var require_applyReviver = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/applyReviver.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/applyReviver.js"(exports2) {
     "use strict";
     function applyReviver(reviver, obj, key, val) {
       if (val && typeof val === "object") {
@@ -536,9 +536,9 @@ var require_applyReviver = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/toJS.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/toJS.js
 var require_toJS = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/toJS.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/toJS.js"(exports2) {
     "use strict";
     var identity = require_identity();
     function toJS(value, arg, ctx) {
@@ -566,9 +566,9 @@ var require_toJS = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Node.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Node.js
 var require_Node = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Node.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Node.js"(exports2) {
     "use strict";
     var applyReviver = require_applyReviver();
     var identity = require_identity();
@@ -607,9 +607,9 @@ var require_Node = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Alias.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Alias.js
 var require_Alias = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Alias.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Alias.js"(exports2) {
     "use strict";
     var anchors = require_anchors();
     var visit = require_visit();
@@ -721,9 +721,9 @@ var require_Alias = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Scalar.js
 var require_Scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Scalar.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Node = require_Node();
@@ -751,9 +751,9 @@ var require_Scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/createNode.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/createNode.js
 var require_createNode = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/createNode.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/createNode.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var identity = require_identity();
@@ -826,9 +826,9 @@ var require_createNode = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Collection.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Collection.js
 var require_Collection = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Collection.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Collection.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var identity = require_identity();
@@ -969,9 +969,9 @@ var require_Collection = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyComment.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyComment.js
 var require_stringifyComment = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyComment.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyComment.js"(exports2) {
     "use strict";
     var stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, "#");
     function indentComment(comment, indent) {
@@ -986,9 +986,9 @@ var require_stringifyComment = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/foldFlowLines.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/foldFlowLines.js
 var require_foldFlowLines = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/foldFlowLines.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/foldFlowLines.js"(exports2) {
     "use strict";
     var FOLD_FLOW = "flow";
     var FOLD_BLOCK = "block";
@@ -1122,9 +1122,9 @@ ${indent}${text.slice(fold + 1, end2)}`;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyString.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyString.js
 var require_stringifyString = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyString.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyString.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var foldFlowLines = require_foldFlowLines();
@@ -1405,9 +1405,9 @@ ${indent}`);
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringify.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringify.js
 var require_stringify = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringify.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringify.js"(exports2) {
     "use strict";
     var anchors = require_anchors();
     var identity = require_identity();
@@ -1528,9 +1528,9 @@ ${ctx.indent}${str}`;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyPair.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyPair.js
 var require_stringifyPair = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyPair.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyPair.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -1661,9 +1661,9 @@ ${ctx.indent}`;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/log.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/log.js
 var require_log = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/log.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/log.js"(exports2) {
     "use strict";
     var node_process = require("process");
     function debug(logLevel, ...messages) {
@@ -1683,9 +1683,9 @@ var require_log = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/merge.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/merge.js
 var require_merge = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/merge.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/merge.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -1740,9 +1740,9 @@ var require_merge = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/addPairToJSMap.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/addPairToJSMap.js
 var require_addPairToJSMap = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/addPairToJSMap.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/addPairToJSMap.js"(exports2) {
     "use strict";
     var log = require_log();
     var merge = require_merge();
@@ -1804,9 +1804,9 @@ var require_addPairToJSMap = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Pair.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Pair.js
 var require_Pair = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Pair.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Pair.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var stringifyPair = require_stringifyPair();
@@ -1844,9 +1844,9 @@ var require_Pair = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyCollection.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyCollection.js
 var require_stringifyCollection = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyCollection.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyCollection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var stringify = require_stringify();
@@ -1988,9 +1988,9 @@ ${indent}${end}`;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLMap.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLMap.js
 var require_YAMLMap = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLMap.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLMap.js"(exports2) {
     "use strict";
     var stringifyCollection = require_stringifyCollection();
     var addPairToJSMap = require_addPairToJSMap();
@@ -2132,9 +2132,9 @@ var require_YAMLMap = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/map.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/map.js
 var require_map = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/map.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/map.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var YAMLMap = require_YAMLMap();
@@ -2154,9 +2154,9 @@ var require_map = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLSeq.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLSeq.js
 var require_YAMLSeq = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLSeq.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLSeq.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var stringifyCollection = require_stringifyCollection();
@@ -2270,9 +2270,9 @@ var require_YAMLSeq = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/seq.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/seq.js
 var require_seq = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/seq.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/seq.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var YAMLSeq = require_YAMLSeq();
@@ -2292,9 +2292,9 @@ var require_seq = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/string.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/string.js
 var require_string = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/string.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/string.js"(exports2) {
     "use strict";
     var stringifyString = require_stringifyString();
     var string = {
@@ -2311,9 +2311,9 @@ var require_string = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/null.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/null.js
 var require_null = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/null.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/null.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var nullTag = {
@@ -2329,9 +2329,9 @@ var require_null = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/bool.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/bool.js
 var require_bool = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/bool.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/bool.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var boolTag = {
@@ -2353,9 +2353,9 @@ var require_bool = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyNumber.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyNumber.js
 var require_stringifyNumber = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyNumber.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyNumber.js"(exports2) {
     "use strict";
     function stringifyNumber({ format, minFractionDigits, tag, value }) {
       if (typeof value === "bigint")
@@ -2380,9 +2380,9 @@ var require_stringifyNumber = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/float.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/float.js
 var require_float = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/float.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/float.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var stringifyNumber = require_stringifyNumber();
@@ -2426,9 +2426,9 @@ var require_float = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/int.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/int.js
 var require_int = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/int.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/int.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -2471,9 +2471,9 @@ var require_int = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/schema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/schema.js
 var require_schema = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/schema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/schema.js"(exports2) {
     "use strict";
     var map = require_map();
     var _null = require_null();
@@ -2499,9 +2499,9 @@ var require_schema = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/json/schema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/json/schema.js
 var require_schema2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/json/schema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/json/schema.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var map = require_map();
@@ -2566,9 +2566,9 @@ var require_schema2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/binary.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/binary.js
 var require_binary = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/binary.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/binary.js"(exports2) {
     "use strict";
     var node_buffer = require("buffer");
     var Scalar = require_Scalar();
@@ -2632,9 +2632,9 @@ var require_binary = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/pairs.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/pairs.js
 var require_pairs = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/pairs.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/pairs.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -2710,9 +2710,9 @@ ${cn.comment}` : item.comment;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/omap.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/omap.js
 var require_omap = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/omap.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/omap.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var toJS = require_toJS();
@@ -2788,9 +2788,9 @@ var require_omap = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/bool.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/bool.js
 var require_bool2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/bool.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/bool.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     function boolStringify({ value, source }, ctx) {
@@ -2820,9 +2820,9 @@ var require_bool2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/float.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/float.js
 var require_float2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/float.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/float.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var stringifyNumber = require_stringifyNumber();
@@ -2869,9 +2869,9 @@ var require_float2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/int.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/int.js
 var require_int2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/int.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/int.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -2948,9 +2948,9 @@ var require_int2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/set.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/set.js
 var require_set = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/set.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/set.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -3037,9 +3037,9 @@ var require_set = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
 var require_timestamp = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     function parseSexagesimal(str, asBigInt) {
@@ -3125,9 +3125,9 @@ var require_timestamp = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/schema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/schema.js
 var require_schema3 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/schema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/schema.js"(exports2) {
     "use strict";
     var map = require_map();
     var _null = require_null();
@@ -3169,9 +3169,9 @@ var require_schema3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/tags.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/tags.js
 var require_tags = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/tags.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/tags.js"(exports2) {
     "use strict";
     var map = require_map();
     var _null = require_null();
@@ -3263,9 +3263,9 @@ var require_tags = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/Schema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/Schema.js
 var require_Schema = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/Schema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/Schema.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var map = require_map();
@@ -3295,9 +3295,9 @@ var require_Schema = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyDocument.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyDocument.js
 var require_stringifyDocument = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyDocument.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyDocument.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var stringify = require_stringify();
@@ -3375,9 +3375,9 @@ var require_stringifyDocument = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/Document.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/Document.js
 var require_Document = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/Document.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/Document.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var Collection = require_Collection();
@@ -3684,9 +3684,9 @@ var require_Document = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/errors.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/errors.js
 var require_errors = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/errors.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/errors.js"(exports2) {
     "use strict";
     var YAMLError = class extends Error {
       constructor(name, pos, code, message) {
@@ -3749,9 +3749,9 @@ ${pointer}
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-props.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-props.js
 var require_resolve_props = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-props.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-props.js"(exports2) {
     "use strict";
     function resolveProps(tokens, { flow, indicator, next, offset, onError, parentIndent, startOnNewline }) {
       let spaceBefore = false;
@@ -3883,9 +3883,9 @@ var require_resolve_props = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-contains-newline.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-contains-newline.js
 var require_util_contains_newline = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-contains-newline.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-contains-newline.js"(exports2) {
     "use strict";
     function containsNewline(key) {
       if (!key)
@@ -3925,9 +3925,9 @@ var require_util_contains_newline = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-flow-indent-check.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-flow-indent-check.js
 var require_util_flow_indent_check = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-flow-indent-check.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-flow-indent-check.js"(exports2) {
     "use strict";
     var utilContainsNewline = require_util_contains_newline();
     function flowIndentCheck(indent, fc, onError) {
@@ -3943,9 +3943,9 @@ var require_util_flow_indent_check = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-map-includes.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-map-includes.js
 var require_util_map_includes = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-map-includes.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-map-includes.js"(exports2) {
     "use strict";
     var identity = require_identity();
     function mapIncludes(ctx, items, search) {
@@ -3959,9 +3959,9 @@ var require_util_map_includes = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-map.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-map.js
 var require_resolve_block_map = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-map.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-map.js"(exports2) {
     "use strict";
     var Pair = require_Pair();
     var YAMLMap = require_YAMLMap();
@@ -4067,9 +4067,9 @@ var require_resolve_block_map = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-seq.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-seq.js
 var require_resolve_block_seq = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-seq.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-seq.js"(exports2) {
     "use strict";
     var YAMLSeq = require_YAMLSeq();
     var resolveProps = require_resolve_props();
@@ -4118,9 +4118,9 @@ var require_resolve_block_seq = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-end.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-end.js
 var require_resolve_end = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-end.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-end.js"(exports2) {
     "use strict";
     function resolveEnd(end, offset, reqSpace, onError) {
       let comment = "";
@@ -4161,9 +4161,9 @@ var require_resolve_end = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-collection.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-collection.js
 var require_resolve_flow_collection = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-collection.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-collection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -4355,9 +4355,9 @@ var require_resolve_flow_collection = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-collection.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-collection.js
 var require_compose_collection = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-collection.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-collection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -4420,9 +4420,9 @@ var require_compose_collection = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-scalar.js
 var require_resolve_block_scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-scalar.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     function resolveBlockScalar(ctx, scalar, onError) {
@@ -4603,9 +4603,9 @@ var require_resolve_block_scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-scalar.js
 var require_resolve_flow_scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-scalar.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var resolveEnd = require_resolve_end();
@@ -4822,9 +4822,9 @@ var require_resolve_flow_scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-scalar.js
 var require_compose_scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-scalar.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -4903,9 +4903,9 @@ var require_compose_scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-empty-scalar-position.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-empty-scalar-position.js
 var require_util_empty_scalar_position = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-empty-scalar-position.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-empty-scalar-position.js"(exports2) {
     "use strict";
     function emptyScalarPosition(offset, before, pos) {
       if (before) {
@@ -4933,9 +4933,9 @@ var require_util_empty_scalar_position = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-node.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-node.js
 var require_compose_node = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-node.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-node.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var identity = require_identity();
@@ -5034,9 +5034,9 @@ var require_compose_node = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-doc.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-doc.js
 var require_compose_doc = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-doc.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-doc.js"(exports2) {
     "use strict";
     var Document = require_Document();
     var composeNode = require_compose_node();
@@ -5077,9 +5077,9 @@ var require_compose_doc = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/composer.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/composer.js
 var require_composer = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/composer.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/composer.js"(exports2) {
     "use strict";
     var node_process = require("process");
     var directives = require_directives();
@@ -5283,9 +5283,9 @@ ${end.comment}` : end.comment;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-scalar.js
 var require_cst_scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-scalar.js"(exports2) {
     "use strict";
     var resolveBlockScalar = require_resolve_block_scalar();
     var resolveFlowScalar = require_resolve_flow_scalar();
@@ -5468,9 +5468,9 @@ var require_cst_scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-stringify.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-stringify.js
 var require_cst_stringify = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-stringify.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-stringify.js"(exports2) {
     "use strict";
     var stringify = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
@@ -5529,9 +5529,9 @@ var require_cst_stringify = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-visit.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-visit.js
 var require_cst_visit = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-visit.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-visit.js"(exports2) {
     "use strict";
     var BREAK = Symbol("break visit");
     var SKIP = Symbol("skip children");
@@ -5591,9 +5591,9 @@ var require_cst_visit = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst.js
 var require_cst = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst.js"(exports2) {
     "use strict";
     var cstScalar = require_cst_scalar();
     var cstStringify = require_cst_stringify();
@@ -5693,9 +5693,9 @@ var require_cst = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/lexer.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/lexer.js
 var require_lexer = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/lexer.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/lexer.js"(exports2) {
     "use strict";
     var cst = require_cst();
     function isEmpty(ch) {
@@ -6272,9 +6272,9 @@ var require_lexer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/line-counter.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/line-counter.js
 var require_line_counter = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/line-counter.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/line-counter.js"(exports2) {
     "use strict";
     var LineCounter = class {
       constructor() {
@@ -6303,9 +6303,9 @@ var require_line_counter = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/parser.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/parser.js
 var require_parser = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/parser.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/parser.js"(exports2) {
     "use strict";
     var node_process = require("process");
     var cst = require_cst();
@@ -7170,9 +7170,9 @@ var require_parser = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/public-api.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/public-api.js
 var require_public_api = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/public-api.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/public-api.js"(exports2) {
     "use strict";
     var composer = require_composer();
     var Document = require_Document();
@@ -7267,9 +7267,9 @@ var require_public_api = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/index.js
 var require_dist = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/index.js"(exports2) {
     "use strict";
     var composer = require_composer();
     var Document = require_Document();
@@ -7319,9 +7319,9 @@ var require_dist = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js
 var require_err_helpers = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js"(exports2, module2) {
     "use strict";
     var isErrorLike = (err) => {
       return err && typeof err.message === "string";
@@ -7376,9 +7376,9 @@ var require_err_helpers = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-proto.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-proto.js
 var require_err_proto = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-proto.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-proto.js"(exports2, module2) {
     "use strict";
     var seen = Symbol("circular-ref-tag");
     var rawSymbol = Symbol("pino-raw-err-ref");
@@ -7427,9 +7427,9 @@ var require_err_proto = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err.js
 var require_err = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err.js"(exports2, module2) {
     "use strict";
     module2.exports = errSerializer;
     var { messageWithCauses, stackWithCauses, isErrorLike } = require_err_helpers();
@@ -7467,9 +7467,9 @@ var require_err = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-with-cause.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-with-cause.js
 var require_err_with_cause = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-with-cause.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-with-cause.js"(exports2, module2) {
     "use strict";
     module2.exports = errWithCauseSerializer;
     var { isErrorLike } = require_err_helpers();
@@ -7510,9 +7510,9 @@ var require_err_with_cause = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/req.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/req.js
 var require_req = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/req.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/req.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       mapHttpRequest,
@@ -7605,9 +7605,9 @@ var require_req = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/res.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/res.js
 var require_res = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/res.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/res.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       mapHttpResponse,
@@ -7654,9 +7654,9 @@ var require_res = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/index.js
 var require_pino_std_serializers = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/index.js"(exports2, module2) {
     "use strict";
     var errSerializer = require_err();
     var errWithCauseSerializer = require_err_with_cause();
@@ -7691,9 +7691,9 @@ var require_pino_std_serializers = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/caller.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/caller.js
 var require_caller = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/caller.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/caller.js"(exports2, module2) {
     "use strict";
     function noOpPrepareStackTrace(_, stack) {
       return stack;
@@ -7719,9 +7719,9 @@ var require_caller = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/@pinojs+redact@0.4.0/node_modules/@pinojs/redact/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@pinojs+redact@0.4.0/node_modules/@pinojs/redact/index.js
 var require_redact = __commonJS({
-  "../../node_modules/.pnpm/@pinojs+redact@0.4.0/node_modules/@pinojs/redact/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/@pinojs+redact@0.4.0/node_modules/@pinojs/redact/index.js"(exports2, module2) {
     "use strict";
     function deepClone(obj) {
       if (obj === null || typeof obj !== "object") {
@@ -8152,9 +8152,9 @@ var require_redact = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/symbols.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/symbols.js
 var require_symbols = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/symbols.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/symbols.js"(exports2, module2) {
     "use strict";
     var setLevelSym = Symbol("pino.setLevel");
     var getLevelSym = Symbol("pino.getLevel");
@@ -8223,9 +8223,9 @@ var require_symbols = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/redaction.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/redaction.js
 var require_redaction = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/redaction.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/redaction.js"(exports2, module2) {
     "use strict";
     var Redact = require_redact();
     var { redactFmtSym, wildcardFirstSym } = require_symbols();
@@ -8305,9 +8305,9 @@ var require_redaction = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/time.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/time.js
 var require_time = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/time.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/time.js"(exports2, module2) {
     "use strict";
     var nullTime = () => "";
     var epochTime = () => `,"time":${Date.now()}`;
@@ -8336,9 +8336,9 @@ var require_time = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/quick-format-unescaped@4.0.4/node_modules/quick-format-unescaped/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/quick-format-unescaped@4.0.4/node_modules/quick-format-unescaped/index.js
 var require_quick_format_unescaped = __commonJS({
-  "../../node_modules/.pnpm/quick-format-unescaped@4.0.4/node_modules/quick-format-unescaped/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/quick-format-unescaped@4.0.4/node_modules/quick-format-unescaped/index.js"(exports2, module2) {
     "use strict";
     function tryStringify(o) {
       try {
@@ -8455,9 +8455,9 @@ var require_quick_format_unescaped = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js
 var require_atomic_sleep = __commonJS({
-  "../../node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js"(exports2, module2) {
     "use strict";
     if (typeof SharedArrayBuffer !== "undefined" && typeof Atomics !== "undefined") {
       let sleep = function(ms) {
@@ -8490,9 +8490,9 @@ var require_atomic_sleep = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js
 var require_sonic_boom = __commonJS({
-  "../../node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js"(exports2, module2) {
     "use strict";
     var fs = require("fs");
     var EventEmitter = require("events");
@@ -8571,7 +8571,7 @@ var require_sonic_boom = __commonJS({
       if (!(this instanceof SonicBoom)) {
         return new SonicBoom(opts);
       }
-      let { fd, dest, minLength, maxLength, maxWrite, periodicFlush, sync, append = true, mkdir: mkdir3, retryEAGAIN, fsync, contentMode, mode } = opts || {};
+      let { fd, dest, minLength, maxLength, maxWrite, periodicFlush, sync, append = true, mkdir: mkdir4, retryEAGAIN, fsync, contentMode, mode } = opts || {};
       fd = fd || dest;
       this._len = 0;
       this.fd = -1;
@@ -8596,7 +8596,7 @@ var require_sonic_boom = __commonJS({
       this.append = append || false;
       this.mode = mode;
       this.retryEAGAIN = retryEAGAIN || (() => true);
-      this.mkdir = mkdir3 || false;
+      this.mkdir = mkdir4 || false;
       let fsWriteSync;
       let fsWrite;
       if (contentMode === kContentModeBuffer) {
@@ -9077,9 +9077,9 @@ var require_sonic_boom = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/on-exit-leak-free@2.1.2/node_modules/on-exit-leak-free/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/on-exit-leak-free@2.1.2/node_modules/on-exit-leak-free/index.js
 var require_on_exit_leak_free = __commonJS({
-  "../../node_modules/.pnpm/on-exit-leak-free@2.1.2/node_modules/on-exit-leak-free/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/on-exit-leak-free@2.1.2/node_modules/on-exit-leak-free/index.js"(exports2, module2) {
     "use strict";
     var refs = {
       exit: [],
@@ -9171,9 +9171,9 @@ var require_on_exit_leak_free = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/package.json
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/package.json
 var require_package = __commonJS({
-  "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/package.json"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/package.json"(exports2, module2) {
     module2.exports = {
       name: "thread-stream",
       version: "3.1.0",
@@ -9234,9 +9234,9 @@ var require_package = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/wait.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/wait.js
 var require_wait = __commonJS({
-  "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/wait.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/wait.js"(exports2, module2) {
     "use strict";
     var MAX_TIMEOUT = 1e3;
     function wait(state, index, expected, timeout, done) {
@@ -9292,9 +9292,9 @@ var require_wait = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/indexes.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/indexes.js
 var require_indexes = __commonJS({
-  "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/indexes.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/indexes.js"(exports2, module2) {
     "use strict";
     var WRITE_INDEX = 4;
     var READ_INDEX = 8;
@@ -9305,14 +9305,14 @@ var require_indexes = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/index.js
 var require_thread_stream = __commonJS({
-  "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/index.js"(exports2, module2) {
     "use strict";
     var { version } = require_package();
     var { EventEmitter } = require("events");
     var { Worker } = require("worker_threads");
-    var { join: join10 } = require("path");
+    var { join: join11 } = require("path");
     var { pathToFileURL } = require("url");
     var { wait } = require_wait();
     var {
@@ -9348,7 +9348,7 @@ var require_thread_stream = __commonJS({
     function createWorker(stream, opts) {
       const { filename, workerData } = opts;
       const bundlerOverrides = "__bundlerPathsOverrides" in globalThis ? globalThis.__bundlerPathsOverrides : {};
-      const toExecute = bundlerOverrides["thread-stream-worker"] || join10(__dirname, "lib", "worker.js");
+      const toExecute = bundlerOverrides["thread-stream-worker"] || join11(__dirname, "lib", "worker.js");
       const worker = new Worker(toExecute, {
         ...opts.workerOpts,
         trackUnmanagedFds: false,
@@ -9728,13 +9728,13 @@ var require_thread_stream = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/transport.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/transport.js
 var require_transport = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/transport.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/transport.js"(exports2, module2) {
     "use strict";
     var { createRequire } = require("module");
     var getCallers = require_caller();
-    var { join: join10, isAbsolute: isAbsolute2, sep: sep2 } = require("node:path");
+    var { join: join11, isAbsolute: isAbsolute2, sep: sep2 } = require("node:path");
     var sleep = require_atomic_sleep();
     var onExit = require_on_exit_leak_free();
     var ThreadStream = require_thread_stream();
@@ -9797,7 +9797,7 @@ var require_transport = __commonJS({
         throw new Error("only one of target or targets can be specified");
       }
       if (targets) {
-        target = bundlerOverrides["pino-worker"] || join10(__dirname, "worker.js");
+        target = bundlerOverrides["pino-worker"] || join11(__dirname, "worker.js");
         options.targets = targets.filter((dest) => dest.target).map((dest) => {
           return {
             ...dest,
@@ -9815,7 +9815,7 @@ var require_transport = __commonJS({
           });
         });
       } else if (pipeline) {
-        target = bundlerOverrides["pino-worker"] || join10(__dirname, "worker.js");
+        target = bundlerOverrides["pino-worker"] || join11(__dirname, "worker.js");
         options.pipelines = [pipeline.map((dest) => {
           return {
             ...dest,
@@ -9837,7 +9837,7 @@ var require_transport = __commonJS({
           return origin;
         }
         if (origin === "pino/file") {
-          return join10(__dirname, "..", "file.js");
+          return join11(__dirname, "..", "file.js");
         }
         let fixTarget2;
         for (const filePath of callers) {
@@ -9859,9 +9859,9 @@ var require_transport = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/tools.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/tools.js
 var require_tools = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/tools.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/tools.js"(exports2, module2) {
     "use strict";
     var diagChan = require("node:diagnostics_channel");
     var format = require_quick_format_unescaped();
@@ -10196,9 +10196,9 @@ var require_tools = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/constants.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/constants.js
 var require_constants = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/constants.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/constants.js"(exports2, module2) {
     var DEFAULT_LEVELS = {
       trace: 10,
       debug: 20,
@@ -10218,9 +10218,9 @@ var require_constants = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/levels.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/levels.js
 var require_levels = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/levels.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/levels.js"(exports2, module2) {
     "use strict";
     var {
       lsCacheSym,
@@ -10411,17 +10411,17 @@ var require_levels = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/meta.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/meta.js
 var require_meta = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/meta.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/meta.js"(exports2, module2) {
     "use strict";
     module2.exports = { version: "9.14.0" };
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/proto.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/proto.js
 var require_proto = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/proto.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/proto.js"(exports2, module2) {
     "use strict";
     var { EventEmitter } = require("node:events");
     var {
@@ -10650,9 +10650,9 @@ var require_proto = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/safe-stable-stringify@2.5.0/node_modules/safe-stable-stringify/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/safe-stable-stringify@2.5.0/node_modules/safe-stable-stringify/index.js
 var require_safe_stable_stringify = __commonJS({
-  "../../node_modules/.pnpm/safe-stable-stringify@2.5.0/node_modules/safe-stable-stringify/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/safe-stable-stringify@2.5.0/node_modules/safe-stable-stringify/index.js"(exports2, module2) {
     "use strict";
     var { hasOwnProperty } = Object.prototype;
     var stringify = configure();
@@ -10826,7 +10826,7 @@ var require_safe_stable_stringify = __commonJS({
               return circularValue;
             }
             let res = "";
-            let join10 = ",";
+            let join11 = ",";
             const originalIndentation = indentation;
             if (Array.isArray(value)) {
               if (value.length === 0) {
@@ -10840,7 +10840,7 @@ var require_safe_stable_stringify = __commonJS({
                 indentation += spacer;
                 res += `
 ${indentation}`;
-                join10 = `,
+                join11 = `,
 ${indentation}`;
               }
               const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
@@ -10848,13 +10848,13 @@ ${indentation}`;
               for (; i < maximumValuesToStringify - 1; i++) {
                 const tmp2 = stringifyFnReplacer(String(i), value, stack, replacer, spacer, indentation);
                 res += tmp2 !== void 0 ? tmp2 : "null";
-                res += join10;
+                res += join11;
               }
               const tmp = stringifyFnReplacer(String(i), value, stack, replacer, spacer, indentation);
               res += tmp !== void 0 ? tmp : "null";
               if (value.length - 1 > maximumBreadth) {
                 const removedKeys = value.length - maximumBreadth - 1;
-                res += `${join10}"... ${getItemCount(removedKeys)} not stringified"`;
+                res += `${join11}"... ${getItemCount(removedKeys)} not stringified"`;
               }
               if (spacer !== "") {
                 res += `
@@ -10875,7 +10875,7 @@ ${originalIndentation}`;
             let separator = "";
             if (spacer !== "") {
               indentation += spacer;
-              join10 = `,
+              join11 = `,
 ${indentation}`;
               whitespace = " ";
             }
@@ -10889,13 +10889,13 @@ ${indentation}`;
               const tmp = stringifyFnReplacer(key2, value, stack, replacer, spacer, indentation);
               if (tmp !== void 0) {
                 res += `${separator}${strEscape(key2)}:${whitespace}${tmp}`;
-                separator = join10;
+                separator = join11;
               }
             }
             if (keyLength > maximumBreadth) {
               const removedKeys = keyLength - maximumBreadth;
               res += `${separator}"...":${whitespace}"${getItemCount(removedKeys)} not stringified"`;
-              separator = join10;
+              separator = join11;
             }
             if (spacer !== "" && separator.length > 1) {
               res = `
@@ -10936,7 +10936,7 @@ ${originalIndentation}`;
             }
             const originalIndentation = indentation;
             let res = "";
-            let join10 = ",";
+            let join11 = ",";
             if (Array.isArray(value)) {
               if (value.length === 0) {
                 return "[]";
@@ -10949,7 +10949,7 @@ ${originalIndentation}`;
                 indentation += spacer;
                 res += `
 ${indentation}`;
-                join10 = `,
+                join11 = `,
 ${indentation}`;
               }
               const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
@@ -10957,13 +10957,13 @@ ${indentation}`;
               for (; i < maximumValuesToStringify - 1; i++) {
                 const tmp2 = stringifyArrayReplacer(String(i), value[i], stack, replacer, spacer, indentation);
                 res += tmp2 !== void 0 ? tmp2 : "null";
-                res += join10;
+                res += join11;
               }
               const tmp = stringifyArrayReplacer(String(i), value[i], stack, replacer, spacer, indentation);
               res += tmp !== void 0 ? tmp : "null";
               if (value.length - 1 > maximumBreadth) {
                 const removedKeys = value.length - maximumBreadth - 1;
-                res += `${join10}"... ${getItemCount(removedKeys)} not stringified"`;
+                res += `${join11}"... ${getItemCount(removedKeys)} not stringified"`;
               }
               if (spacer !== "") {
                 res += `
@@ -10976,7 +10976,7 @@ ${originalIndentation}`;
             let whitespace = "";
             if (spacer !== "") {
               indentation += spacer;
-              join10 = `,
+              join11 = `,
 ${indentation}`;
               whitespace = " ";
             }
@@ -10985,7 +10985,7 @@ ${indentation}`;
               const tmp = stringifyArrayReplacer(key2, value[key2], stack, replacer, spacer, indentation);
               if (tmp !== void 0) {
                 res += `${separator}${strEscape(key2)}:${whitespace}${tmp}`;
-                separator = join10;
+                separator = join11;
               }
             }
             if (spacer !== "" && separator.length > 1) {
@@ -11043,20 +11043,20 @@ ${originalIndentation}`;
               indentation += spacer;
               let res2 = `
 ${indentation}`;
-              const join11 = `,
+              const join12 = `,
 ${indentation}`;
               const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
               let i = 0;
               for (; i < maximumValuesToStringify - 1; i++) {
                 const tmp2 = stringifyIndent(String(i), value[i], stack, spacer, indentation);
                 res2 += tmp2 !== void 0 ? tmp2 : "null";
-                res2 += join11;
+                res2 += join12;
               }
               const tmp = stringifyIndent(String(i), value[i], stack, spacer, indentation);
               res2 += tmp !== void 0 ? tmp : "null";
               if (value.length - 1 > maximumBreadth) {
                 const removedKeys = value.length - maximumBreadth - 1;
-                res2 += `${join11}"... ${getItemCount(removedKeys)} not stringified"`;
+                res2 += `${join12}"... ${getItemCount(removedKeys)} not stringified"`;
               }
               res2 += `
 ${originalIndentation}`;
@@ -11072,16 +11072,16 @@ ${originalIndentation}`;
               return '"[Object]"';
             }
             indentation += spacer;
-            const join10 = `,
+            const join11 = `,
 ${indentation}`;
             let res = "";
             let separator = "";
             let maximumPropertiesToStringify = Math.min(keyLength, maximumBreadth);
             if (isTypedArrayWithEntries(value)) {
-              res += stringifyTypedArray(value, join10, maximumBreadth);
+              res += stringifyTypedArray(value, join11, maximumBreadth);
               keys = keys.slice(value.length);
               maximumPropertiesToStringify -= value.length;
-              separator = join10;
+              separator = join11;
             }
             if (deterministic) {
               keys = sort(keys, comparator);
@@ -11092,13 +11092,13 @@ ${indentation}`;
               const tmp = stringifyIndent(key2, value[key2], stack, spacer, indentation);
               if (tmp !== void 0) {
                 res += `${separator}${strEscape(key2)}: ${tmp}`;
-                separator = join10;
+                separator = join11;
               }
             }
             if (keyLength > maximumBreadth) {
               const removedKeys = keyLength - maximumBreadth;
               res += `${separator}"...": "${getItemCount(removedKeys)} not stringified"`;
-              separator = join10;
+              separator = join11;
             }
             if (separator !== "") {
               res = `
@@ -11246,9 +11246,9 @@ ${originalIndentation}`;
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/multistream.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/multistream.js
 var require_multistream = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/multistream.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/multistream.js"(exports2, module2) {
     "use strict";
     var metadata = Symbol.for("pino.metadata");
     var { DEFAULT_LEVELS } = require_constants();
@@ -11414,9 +11414,9 @@ var require_multistream = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js
 var require_pino = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js"(exports2, module2) {
     "use strict";
     var os = require("node:os");
     var stdSerializers = require_pino_std_serializers();
@@ -11626,13 +11626,13 @@ var require_pino = __commonJS({
 
 // src/pre-tool-use.ts
 var import_node_fs2 = require("node:fs");
-var import_node_path11 = require("node:path");
+var import_node_path12 = require("node:path");
 
-// ../core/dist/config.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/config.js
 var import_node_os = require("node:os");
 var import_node_path2 = require("node:path");
 
-// ../core/dist/file-utils.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/file-utils.js
 var import_node_crypto = require("node:crypto");
 var fsPromises = __toESM(require("node:fs/promises"), 1);
 var import_node_path = require("node:path");
@@ -11657,7 +11657,7 @@ async function atomicWriteJson(path, data) {
   }
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
   BRAND: () => BRAND,
@@ -11769,7 +11769,7 @@ __export(external_exports, {
   void: () => voidType
 });
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/util.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -11903,7 +11903,7 @@ var getParsedType = (data) => {
   }
 };
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/ZodError.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -12021,7 +12021,7 @@ ZodError.create = (issues) => {
   return error;
 };
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/locales/en.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -12124,7 +12124,7 @@ var errorMap = (issue, _ctx) => {
 };
 var en_default = errorMap;
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/errors.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function setErrorMap(map) {
   overrideErrorMap = map;
@@ -12133,7 +12133,7 @@ function getErrorMap() {
   return overrideErrorMap;
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/parseUtil.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -12243,14 +12243,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/errorUtil.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -15698,7 +15698,7 @@ var coerce = {
 };
 var NEVER = INVALID;
 
-// ../core/dist/types.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/types.js
 var nullLogger = {
   debug() {
   },
@@ -15732,6 +15732,31 @@ var ThreatSchema = external_exports.object({
 var DecisionSchema = external_exports.enum(["allow", "deny", "ask"]);
 var VerdictSeveritySchema = external_exports.enum(["info", "warning", "critical"]);
 var SensitivitySchema = external_exports.enum(["paranoid", "balanced", "relaxed"]);
+var AuthConfigSchema = external_exports.object({
+  /**
+   * API key used to authenticate to Singularity AIDR cloud services (control plane, reputation APIs).
+   * Optional: local-only mode works without it.
+   */
+  api_key: external_exports.string().optional()
+});
+var ControlPlaneConfigSchema = external_exports.object({
+  /**
+   * Enables cloud control plane features (dashboard telemetry, agent seat enforcement).
+   * Fail-open: if cloud calls fail, local detection still runs.
+   */
+  enabled: external_exports.boolean().default(false),
+  /**
+   * Base URL for the control plane ingest API (no trailing slash).
+   * Example: "https://aidr.example.com"
+   */
+  endpoint: external_exports.string().default("https://aidr-control.svc.singularityrd.com"),
+  /** Request timeout for control-plane calls. */
+  timeout_seconds: external_exports.number().default(0.5),
+  /** Send runtime verdict events to the control plane for the dashboard. */
+  send_audit_logs: external_exports.boolean().default(false),
+  /** Also send clean (allow) verdicts. */
+  send_clean_verdicts: external_exports.boolean().default(false)
+});
 var UrlCheckConfigSchema = external_exports.object({
   endpoint: external_exports.string().optional(),
   timeout_seconds: external_exports.number().default(5),
@@ -15768,6 +15793,8 @@ var AmsiCheckConfigSchema = external_exports.object({
   enabled: external_exports.boolean().default(true)
 });
 var ConfigSchema = external_exports.object({
+  auth: AuthConfigSchema.default({}),
+  control_plane: ControlPlaneConfigSchema.default({}),
   url_check: UrlCheckConfigSchema.default({}),
   file_check: FileCheckConfigSchema.default({}),
   package_check: PackageCheckConfigSchema.default({}),
@@ -15780,7 +15807,7 @@ var ConfigSchema = external_exports.object({
   disabled_threats: external_exports.array(external_exports.string()).default([])
 });
 
-// ../core/dist/config.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/config.js
 var AIDR_DIR = "~/.singularity-aidr";
 function resolvedAidrDir() {
   return resolvePath(AIDR_DIR);
@@ -15888,7 +15915,7 @@ async function loadConfig(configPath, logger2 = nullLogger) {
   }
 }
 
-// ../core/dist/url-utils.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/url-utils.js
 var import_node_crypto2 = require("node:crypto");
 var import_node_os2 = require("node:os");
 var import_node_path3 = require("node:path");
@@ -15910,7 +15937,7 @@ function normalizeFilePath(raw) {
   return (0, import_node_path3.normalize)(expanded);
 }
 
-// ../core/dist/allowlist.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/allowlist.js
 function emptyAllowlist() {
   return { urls: {}, commands: {}, filePaths: {} };
 }
@@ -15990,11 +16017,11 @@ function isAllowlisted(allowlist, artifacts) {
   return false;
 }
 
-// ../core/dist/approval-store.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/approval-store.js
 var PENDING_STALE_MS = 60 * 60 * 1e3;
 var APPROVED_TTL_MS = 10 * 60 * 1e3;
 
-// ../core/dist/audit-log.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/audit-log.js
 var import_promises = require("node:fs/promises");
 var import_node_path4 = require("node:path");
 var MAX_SUMMARY_LEN = 200;
@@ -16009,6 +16036,21 @@ function toolInputSummary(toolName, toolInput) {
     return String(toolInput.file_path ?? "").slice(0, MAX_SUMMARY_LEN);
   }
   return JSON.stringify(toolInput).slice(0, MAX_SUMMARY_LEN);
+}
+function buildRuntimeVerdictEntry(sessionId, toolName, toolInput, verdict, userOverride = false) {
+  return {
+    type: "runtime_verdict",
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    session_id: sessionId,
+    tool_name: toolName,
+    tool_input_summary: toolInputSummary(toolName, toolInput),
+    artifacts: verdict.artifacts,
+    verdict: verdict.decision,
+    severity: verdict.severity,
+    reasons: verdict.reasons,
+    source: verdict.source,
+    user_override: userOverride
+  };
 }
 async function rotateIfNeeded(filePath, maxBytes, maxFiles) {
   if (maxBytes <= 0 || maxFiles <= 0)
@@ -16049,26 +16091,14 @@ async function logVerdict(config, sessionId, toolName, toolInput, verdict, userO
     return;
   if (verdict.decision === "allow" && !config.log_clean && !userOverride)
     return;
-  const entry = {
-    type: "runtime_verdict",
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    session_id: sessionId,
-    tool_name: toolName,
-    tool_input_summary: toolInputSummary(toolName, toolInput),
-    artifacts: verdict.artifacts,
-    verdict: verdict.decision,
-    severity: verdict.severity,
-    reasons: verdict.reasons,
-    source: verdict.source,
-    user_override: userOverride
-  };
+  const entry = buildRuntimeVerdictEntry(sessionId, toolName, toolInput, verdict, userOverride);
   try {
     await appendEntry(config, entry);
   } catch {
   }
 }
 
-// ../core/dist/cache.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/cache.js
 var ONE_HOUR = 3600;
 var TWENTY_FOUR_HOURS = 86400;
 var FAR_FUTURE = "9999-12-31T23:59:59+00:00";
@@ -16221,7 +16251,7 @@ var VerdictCache = class {
   }
 };
 
-// ../core/dist/clients/amsi-spawn.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/clients/amsi-spawn.js
 var chldproc1 = "node:child_";
 var chldproc2 = "process";
 var chldproc = require(chldproc1 + chldproc2);
@@ -16229,7 +16259,7 @@ function spawn(command, args, options) {
   return chldproc.spawn(command, args, options);
 }
 
-// ../core/dist/clients/amsi.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/clients/amsi.js
 var AMSI_RESULT_DETECTED = 32768;
 var AMSI_RESULT_BLOCKED_BY_ADMIN_START = 16384;
 var MAX_SCAN_LENGTH = 1048576;
@@ -16703,7 +16733,7 @@ var AmsiClient = class {
   }
 };
 
-// ../core/dist/version.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/version.js
 var import_node_fs = require("node:fs");
 var import_node_path5 = require("node:path");
 var import_node_url = require("node:url");
@@ -16722,7 +16752,49 @@ function resolveVersion() {
 }
 var VERSION = resolveVersion();
 
-// ../core/dist/clients/file-check.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/clients/control-plane.js
+var ControlPlaneClient = class {
+  baseUrl;
+  timeoutMs;
+  apiKey;
+  logger;
+  constructor(config, apiKey, logger2 = nullLogger) {
+    this.baseUrl = (config.endpoint ?? "").replace(/\/+$/, "");
+    this.timeoutMs = (config.timeout_seconds ?? 0.5) * 1e3;
+    this.apiKey = apiKey;
+    this.logger = logger2;
+  }
+  async ingest(payload) {
+    if (!this.baseUrl)
+      return false;
+    try {
+      const response = await fetch(`${this.baseUrl}/v1/ingest`, {
+        method: "POST",
+        signal: AbortSignal.timeout(this.timeoutMs),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+          "User-Agent": "aidr"
+        },
+        body: JSON.stringify({
+          ...payload,
+          aidr_version: VERSION
+        })
+      });
+      if (!response.ok) {
+        this.logger.debug(`Control plane ingest HTTP ${response.status}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      this.logger.debug("Control plane ingest failed", { error: String(e) });
+      return false;
+    }
+  }
+};
+
+// ../../../../../../Desktop/sage-main/packages/core/dist/clients/file-check.js
 var DEFAULT_TIMEOUT = 5;
 var SERVICE_NAME = "aidr";
 var MAX_HASHES_PER_REQUEST = 50;
@@ -16740,10 +16812,12 @@ function getProviderName() {
 var FileCheckClient = class {
   endpoint;
   timeoutMs;
+  apiKey;
   logger;
-  constructor(config, logger2 = nullLogger) {
+  constructor(config, logger2 = nullLogger, apiKey) {
     this.endpoint = config?.endpoint ?? this.resolveEndpoint();
     this.timeoutMs = (config?.timeout_seconds ?? DEFAULT_TIMEOUT) * 1e3;
+    this.apiKey = apiKey;
     this.logger = logger2;
   }
   buildPath() {
@@ -16751,9 +16825,14 @@ var FileCheckClient = class {
   }
   async checkHash(hash) {
     try {
+      const headers = Object.fromEntries(REQUEST_HEADERS.map((h) => [h.name, h.value]));
+      const apiKey = this.apiKey?.trim();
+      if (apiKey) {
+        headers.Authorization = `Bearer ${apiKey}`;
+      }
       const response = await fetch(this.endpoint, {
         method: "POST",
-        headers: Object.fromEntries(REQUEST_HEADERS.map((h) => [h.name, h.value])),
+        headers,
         body: JSON.stringify({
           requests: [{ key: { sha256: hash } }],
           client_info: {
@@ -16808,9 +16887,14 @@ var FileCheckClient = class {
   }
   async checkHashBatch(hashes) {
     try {
+      const headers = Object.fromEntries(REQUEST_HEADERS.map((h) => [h.name, h.value]));
+      const apiKey = this.apiKey?.trim();
+      if (apiKey) {
+        headers.Authorization = `Bearer ${apiKey}`;
+      }
       const response = await fetch(this.endpoint, {
         method: "POST",
-        headers: Object.fromEntries(REQUEST_HEADERS.map((h) => [h.name, h.value])),
+        headers,
         body: JSON.stringify({
           requests: hashes.map((h) => ({ key: { sha256: h } })),
           client_info: {
@@ -16855,7 +16939,7 @@ var FileCheckClient = class {
   }
 };
 
-// ../core/dist/clients/package-registry.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/clients/package-registry.js
 var NPM_REGISTRY = "https://registry.npmjs.org";
 var PYPI_REGISTRY = "https://pypi.org/pypi";
 var DEFAULT_TIMEOUT2 = 5;
@@ -17006,7 +17090,7 @@ var RegistryClient = class {
   }
 };
 
-// ../core/dist/clients/url-check.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/clients/url-check.js
 var DEFAULT_TIMEOUT3 = 5;
 var MAX_URLS_PER_REQUEST = 50;
 var SERVICE_NAME2 = "aidr";
@@ -17034,10 +17118,12 @@ function resolveEndpoint(path) {
 var UrlCheckClient = class {
   endpoint;
   timeoutMs;
+  apiKey;
   logger;
-  constructor(config, logger2 = nullLogger) {
+  constructor(config, logger2 = nullLogger, apiKey) {
     this.endpoint = config?.endpoint ?? resolveEndpoint("/url-check");
     this.timeoutMs = (config?.timeout_seconds ?? DEFAULT_TIMEOUT3) * 1e3;
+    this.apiKey = apiKey;
     this.logger = logger2;
   }
   async checkUrls(urls) {
@@ -17060,9 +17146,14 @@ var UrlCheckClient = class {
       }
     };
     try {
+      const headers = Object.fromEntries(REQUEST_HEADERS2.map((h) => [h.name, h.value]));
+      const apiKey = this.apiKey?.trim();
+      if (apiKey) {
+        headers.Authorization = `Bearer ${apiKey}`;
+      }
       const response = await fetch(this.endpoint, {
         method: "POST",
-        headers: Object.fromEntries(REQUEST_HEADERS2.map((h) => [h.name, h.value])),
+        headers,
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(this.timeoutMs)
       });
@@ -17111,7 +17202,7 @@ var UrlCheckClient = class {
   }
 };
 
-// ../core/dist/engine.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/engine.js
 var CONFIDENCE_THRESHOLD = 0.85;
 var SENSITIVITY_THRESHOLDS = {
   paranoid: 0.7,
@@ -17310,7 +17401,7 @@ var DecisionEngine = class {
   }
 };
 
-// ../core/dist/extractors.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/extractors.js
 var URL_PATTERN = /https?:\/\/[^\s"')<>[\]{}]+/g;
 var TRAILING_PUNCT = /[.,;:!?]+$/;
 var MAX_CONTENT_SIZE = 64 * 1024;
@@ -17399,7 +17490,7 @@ function extractFromRead(toolInput) {
   return extractFileArtifacts(toolInput, "file_path", "content", "read", "from_read_content");
 }
 
-// ../core/dist/trusted-domains.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/trusted-domains.js
 var import_promises2 = require("node:fs/promises");
 var import_node_path6 = require("node:path");
 var import_yaml = __toESM(require_dist(), 1);
@@ -17473,7 +17564,7 @@ function isTrustedDomain(domain, trusted) {
   return false;
 }
 
-// ../core/dist/heuristics.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/heuristics.js
 var TRUSTED_DOMAIN_SUPPRESSIBLE = /* @__PURE__ */ new Set([
   "CLT-CMD-001",
   "CLT-CMD-002",
@@ -17536,7 +17627,41 @@ var HeuristicsEngine = class {
   }
 };
 
-// ../core/dist/package-checker.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/installation-id.js
+var import_node_crypto3 = require("node:crypto");
+var import_promises3 = require("node:fs/promises");
+var import_node_path7 = require("node:path");
+async function getInstallationId(aidrDirPath) {
+  const aidrDir = aidrDirPath ?? resolvePath("~/.singularity-aidr");
+  const idPath = (0, import_node_path7.join)(aidrDir, "installation-id");
+  let fileExists = false;
+  try {
+    const existing = await getFileContent(idPath, "utf-8");
+    const trimmed = existing.trim();
+    if (trimmed.length > 0)
+      return trimmed;
+    fileExists = true;
+  } catch {
+  }
+  try {
+    const id = (0, import_node_crypto3.randomUUID)();
+    await (0, import_promises3.mkdir)(aidrDir, { recursive: true, mode: 448 });
+    await (0, import_promises3.writeFile)(idPath, id, { encoding: "utf-8", mode: 384, flag: fileExists ? "w" : "wx" });
+    return id;
+  } catch (err) {
+    if (err.code === "EEXIST") {
+      try {
+        const existing = await getFileContent(idPath, "utf-8");
+        return existing.trim() || void 0;
+      } catch {
+        return void 0;
+      }
+    }
+    return void 0;
+  }
+}
+
+// ../../../../../../Desktop/sage-main/packages/core/dist/package-checker.js
 var SUSPICIOUS_AGE_DAYS = 7;
 var MAX_CONCURRENT = 10;
 var PackageChecker = class {
@@ -17549,7 +17674,7 @@ var PackageChecker = class {
     this.fileCheckClient = config.fileCheckEnabled !== false ? new FileCheckClient({
       endpoint: config.fileCheckEndpoint,
       timeout_seconds: config.fileCheckTimeoutSeconds
-    }, logger2) : null;
+    }, logger2, config.apiKey) : null;
   }
   async checkPackages(packages) {
     const toCheck = [];
@@ -17668,7 +17793,7 @@ var PackageChecker = class {
   }
 };
 
-// ../core/dist/package-extractor.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/package-extractor.js
 function extractPackagesFromCommand(command) {
   const packages = [];
   const normalized = command.replace(/^(\s*(sudo|env\s+\S+=\S+)\s+)+/g, "").trim();
@@ -17989,9 +18114,9 @@ function extractFromRequirementsTxt(content) {
   return packages;
 }
 
-// ../core/dist/threat-loader.js
-var import_promises3 = require("node:fs/promises");
-var import_node_path7 = require("node:path");
+// ../../../../../../Desktop/sage-main/packages/core/dist/threat-loader.js
+var import_promises4 = require("node:fs/promises");
+var import_node_path8 = require("node:path");
 var import_yaml2 = __toESM(require_dist(), 1);
 var REQUIRED_FIELDS = /* @__PURE__ */ new Set([
   "id",
@@ -18023,13 +18148,13 @@ async function loadThreats(threatDir, logger2 = nullLogger) {
   const threats = [];
   let files;
   try {
-    files = (await (0, import_promises3.readdir)(threatDir)).filter((f) => f.endsWith(".yaml")).sort();
+    files = (await (0, import_promises4.readdir)(threatDir)).filter((f) => f.endsWith(".yaml")).sort();
   } catch {
     logger2.warn("Threat directory does not exist or is unreadable", { path: threatDir });
     return threats;
   }
   for (const filename of files) {
-    const filePath = (0, import_node_path7.join)(threatDir, filename);
+    const filePath = (0, import_node_path8.join)(threatDir, filename);
     let content;
     try {
       content = await getFileContent(filePath);
@@ -18095,7 +18220,7 @@ async function loadThreats(threatDir, logger2 = nullLogger) {
   return threats;
 }
 
-// ../core/dist/evaluator.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/evaluator.js
 function allowVerdict(source = "none") {
   return {
     decision: "allow",
@@ -18147,7 +18272,7 @@ async function evaluateToolCall(request, context) {
   const urlsToCheck = cache ? uncachedUrls : urls;
   if (urlsToCheck.length > 0 && config.url_check.enabled) {
     try {
-      const client = new UrlCheckClient(config.url_check, logger2);
+      const client = new UrlCheckClient(config.url_check, logger2, config.auth.api_key);
       urlCheckResults = await client.checkUrls(urlsToCheck);
     } catch {
     }
@@ -18221,7 +18346,36 @@ async function evaluateToolCall(request, context) {
     await logVerdict(config.logging, request.sessionId, request.toolName, request.toolInput, verdict);
   } catch {
   }
+  await ingestToControlPlaneIfEnabled(request, context, config, verdict, logger2);
   return verdict;
+}
+async function ingestToControlPlaneIfEnabled(request, context, config, verdict, logger2) {
+  if (!config.control_plane.enabled)
+    return;
+  if (!config.control_plane.send_audit_logs)
+    return;
+  const apiKey = config.auth.api_key?.trim();
+  if (!apiKey)
+    return;
+  if (verdict.decision === "allow" && !config.control_plane.send_clean_verdicts)
+    return;
+  let iid;
+  try {
+    iid = await getInstallationId();
+  } catch {
+    iid = void 0;
+  }
+  const entry = buildRuntimeVerdictEntry(request.sessionId, request.toolName, request.toolInput, verdict, false);
+  try {
+    const client = new ControlPlaneClient(config.control_plane, apiKey, logger2);
+    await client.ingest({
+      iid,
+      agent_runtime: context.agentRuntime,
+      agent_runtime_version: context.agentRuntimeVersion,
+      events: [entry]
+    });
+  } catch {
+  }
 }
 function partitionUrlsByCache(urls, cache) {
   const cachedUrlVerdicts = /* @__PURE__ */ new Map();
@@ -18315,7 +18469,8 @@ async function checkPackages(request, config, cache, logger2) {
         registryTimeoutSeconds: config.package_check.timeout_seconds,
         fileCheckEndpoint: config.file_check.endpoint,
         fileCheckTimeoutSeconds: config.file_check.timeout_seconds,
-        fileCheckEnabled: config.file_check.enabled
+        fileCheckEnabled: config.file_check.enabled,
+        apiKey: config.auth.api_key
       }, logger2);
       const checked = await checker.checkPackages(uncached);
       results.push(...checked);
@@ -18338,7 +18493,7 @@ async function checkPackages(request, config, cache, logger2) {
   return results;
 }
 
-// ../core/dist/format.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/format.js
 var PAD = 12;
 var SEPARATOR_WIDTH = 48;
 function severityEmoji(severity) {
@@ -18356,14 +18511,14 @@ function separatorLine(headerLength) {
   return "\u2501".repeat(headerLength);
 }
 
-// ../core/dist/plugin-scan-cache.js
-var import_node_path8 = require("node:path");
-var DEFAULT_CACHE_PATH = (0, import_node_path8.join)(resolvePath(AIDR_DIR), "plugin_scan_cache.json");
-
-// ../core/dist/plugin-scanner.js
-var import_node_os3 = require("node:os");
+// ../../../../../../Desktop/sage-main/packages/core/dist/plugin-scan-cache.js
 var import_node_path9 = require("node:path");
-var DEFAULT_PLUGINS_REGISTRY = (0, import_node_path9.join)((0, import_node_os3.homedir)(), ".claude", "plugins", "installed_plugins.json");
+var DEFAULT_CACHE_PATH = (0, import_node_path9.join)(resolvePath(AIDR_DIR), "plugin_scan_cache.json");
+
+// ../../../../../../Desktop/sage-main/packages/core/dist/plugin-scanner.js
+var import_node_os3 = require("node:os");
+var import_node_path10 = require("node:path");
+var DEFAULT_PLUGINS_REGISTRY = (0, import_node_path10.join)((0, import_node_os3.homedir)(), ".claude", "plugins", "installed_plugins.json");
 var MAX_FILE_SIZE = 512 * 1024;
 var STR_ARG = `(?:"((?:[^"\\\\]|\\\\.)*)"|'((?:[^'\\\\]|\\\\.)*)'|\`([^\`]*)\`)`;
 var JS_EXEC_RE = new RegExp(`\\bexec(?:File)?(?:Sync)?\\s*\\(\\s*${STR_ARG}`, "g");
@@ -18375,8 +18530,8 @@ var JS_BUN_SHELL_RE = new RegExp(`\\bBun\\.shell\\s*\\(\\s*${STR_ARG}`, "g");
 var import_pino = __toESM(require_pino(), 1);
 
 // src/approval-tracker.ts
-var import_promises4 = require("node:fs/promises");
-var import_node_path10 = require("node:path");
+var import_promises5 = require("node:fs/promises");
+var import_node_path11 = require("node:path");
 var PENDING_STALE_MS2 = 60 * 60 * 1e3;
 var CONSUMED_TTL_MS = 10 * 60 * 1e3;
 var STALE_FILE_MS = 2 * 60 * 60 * 1e3;
@@ -18387,7 +18542,7 @@ function resolvedAidrDir2() {
   return resolvePath(AIDR_DIR);
 }
 function pendingPath(sessionId) {
-  return (0, import_node_path10.join)(resolvedAidrDir2(), `pending-approvals-${sanitizeSessionId(sessionId)}.json`);
+  return (0, import_node_path11.join)(resolvedAidrDir2(), `pending-approvals-${sanitizeSessionId(sessionId)}.json`);
 }
 async function loadJson(path) {
   try {
@@ -18401,7 +18556,7 @@ async function saveOrDelete(path, data) {
   const resolved = resolvePath(path);
   if (Object.keys(data).length === 0) {
     try {
-      await (0, import_promises4.unlink)(resolved);
+      await (0, import_promises5.unlink)(resolved);
     } catch {
     }
   } else {
@@ -18485,7 +18640,7 @@ function makeResponse(verdict) {
   };
 }
 function getPluginRoot() {
-  return (0, import_node_path11.resolve)(__dirname, "..", "..", "..");
+  return (0, import_node_path12.resolve)(__dirname, "..", "..", "..");
 }
 async function main() {
   let rawInput;
@@ -18546,8 +18701,9 @@ async function main() {
   const verdict = await evaluateToolCall(
     { sessionId, toolName, toolInput, artifacts },
     {
-      threatsDir: (0, import_node_path11.join)(pluginRoot, "threats"),
-      allowlistsDir: (0, import_node_path11.join)(pluginRoot, "allowlists"),
+      threatsDir: (0, import_node_path12.join)(pluginRoot, "threats"),
+      allowlistsDir: (0, import_node_path12.join)(pluginRoot, "allowlists"),
+      agentRuntime: "claude-code",
       logger
     }
   );

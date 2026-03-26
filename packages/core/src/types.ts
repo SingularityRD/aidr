@@ -165,6 +165,33 @@ export interface CacheStore {
 
 export const SensitivitySchema = z.enum(["paranoid", "balanced", "relaxed"]);
 
+export const AuthConfigSchema = z.object({
+	/**
+	 * API key used to authenticate to Singularity AIDR cloud services (control plane, reputation APIs).
+	 * Optional: local-only mode works without it.
+	 */
+	api_key: z.string().optional(),
+});
+
+export const ControlPlaneConfigSchema = z.object({
+	/**
+	 * Enables cloud control plane features (dashboard telemetry, agent seat enforcement).
+	 * Fail-open: if cloud calls fail, local detection still runs.
+	 */
+	enabled: z.boolean().default(false),
+	/**
+	 * Base URL for the control plane ingest API (no trailing slash).
+	 * Example: "https://aidr.example.com"
+	 */
+	endpoint: z.string().default("https://aidr-control.svc.singularityrd.com"),
+	/** Request timeout for control-plane calls. */
+	timeout_seconds: z.number().default(0.5),
+	/** Send runtime verdict events to the control plane for the dashboard. */
+	send_audit_logs: z.boolean().default(false),
+	/** Also send clean (allow) verdicts. */
+	send_clean_verdicts: z.boolean().default(false),
+});
+
 export const UrlCheckConfigSchema = z.object({
 	endpoint: z.string().optional(),
 	timeout_seconds: z.number().default(5.0),
@@ -213,6 +240,8 @@ export const AmsiCheckConfigSchema = z.object({
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
 
 export const ConfigSchema = z.object({
+	auth: AuthConfigSchema.default({}),
+	control_plane: ControlPlaneConfigSchema.default({}),
 	url_check: UrlCheckConfigSchema.default({}),
 	file_check: FileCheckConfigSchema.default({}),
 	package_check: PackageCheckConfigSchema.default({}),
@@ -225,6 +254,8 @@ export const ConfigSchema = z.object({
 	disabled_threats: z.array(z.string()).default([]),
 });
 
+export type AuthConfig = z.infer<typeof AuthConfigSchema>;
+export type ControlPlaneConfig = z.infer<typeof ControlPlaneConfigSchema>;
 export type UrlCheckConfig = z.infer<typeof UrlCheckConfigSchema>;
 export type FileCheckConfig = z.infer<typeof FileCheckConfigSchema>;
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;

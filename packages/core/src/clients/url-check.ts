@@ -45,11 +45,13 @@ export function resolveEndpoint(path: string): string {
 export class UrlCheckClient {
 	private readonly endpoint: string;
 	private readonly timeoutMs: number;
+	private readonly apiKey?: string;
 	private readonly logger: Logger;
 
-	constructor(config?: Partial<UrlCheckConfig>, logger: Logger = nullLogger) {
+	constructor(config?: Partial<UrlCheckConfig>, logger: Logger = nullLogger, apiKey?: string) {
 		this.endpoint = config?.endpoint ?? resolveEndpoint("/url-check");
 		this.timeoutMs = (config?.timeout_seconds ?? DEFAULT_TIMEOUT) * 1000;
+		this.apiKey = apiKey;
 		this.logger = logger;
 	}
 
@@ -76,9 +78,16 @@ export class UrlCheckClient {
 		};
 
 		try {
+			const headers: Record<string, string> = Object.fromEntries(
+				REQUEST_HEADERS.map((h) => [h.name, h.value]),
+			);
+			const apiKey = this.apiKey?.trim();
+			if (apiKey) {
+				headers.Authorization = `Bearer ${apiKey}`;
+			}
 			const response = await fetch(this.endpoint, {
 				method: "POST",
-				headers: Object.fromEntries(REQUEST_HEADERS.map((h) => [h.name, h.value])),
+				headers,
 				body: JSON.stringify(payload),
 				signal: AbortSignal.timeout(this.timeoutMs),
 			});

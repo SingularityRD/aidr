@@ -38,14 +38,17 @@ function getProviderName(): string {
 export class FileCheckClient {
 	private readonly endpoint: string;
 	private readonly timeoutMs: number;
+	private readonly apiKey?: string;
 	private readonly logger: Logger;
 
 	constructor(
 		config?: { endpoint?: string; timeout_seconds?: number },
 		logger: Logger = nullLogger,
+		apiKey?: string,
 	) {
 		this.endpoint = config?.endpoint ?? this.resolveEndpoint();
 		this.timeoutMs = (config?.timeout_seconds ?? DEFAULT_TIMEOUT) * 1000;
+		this.apiKey = apiKey;
 		this.logger = logger;
 	}
 
@@ -55,9 +58,16 @@ export class FileCheckClient {
 
 	async checkHash(hash: string): Promise<FileCheckResult | null> {
 		try {
+			const headers: Record<string, string> = Object.fromEntries(
+				REQUEST_HEADERS.map((h) => [h.name, h.value]),
+			);
+			const apiKey = this.apiKey?.trim();
+			if (apiKey) {
+				headers.Authorization = `Bearer ${apiKey}`;
+			}
 			const response = await fetch(this.endpoint, {
 				method: "POST",
-				headers: Object.fromEntries(REQUEST_HEADERS.map((h) => [h.name, h.value])),
+				headers,
 				body: JSON.stringify({
 					requests: [{ key: { sha256: hash } }],
 					client_info: {
@@ -123,9 +133,16 @@ export class FileCheckClient {
 
 	private async checkHashBatch(hashes: string[]): Promise<FileCheckBatchResult[]> {
 		try {
+			const headers: Record<string, string> = Object.fromEntries(
+				REQUEST_HEADERS.map((h) => [h.name, h.value]),
+			);
+			const apiKey = this.apiKey?.trim();
+			if (apiKey) {
+				headers.Authorization = `Bearer ${apiKey}`;
+			}
 			const response = await fetch(this.endpoint, {
 				method: "POST",
-				headers: Object.fromEntries(REQUEST_HEADERS.map((h) => [h.name, h.value])),
+				headers,
 				body: JSON.stringify({
 					requests: hashes.map((h) => ({ key: { sha256: h } })),
 					client_info: {

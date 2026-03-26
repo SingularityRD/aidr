@@ -24,6 +24,28 @@ function toolInputSummary(toolName: string, toolInput: Record<string, unknown>):
 	return JSON.stringify(toolInput).slice(0, MAX_SUMMARY_LEN);
 }
 
+export function buildRuntimeVerdictEntry(
+	sessionId: string,
+	toolName: string,
+	toolInput: Record<string, unknown>,
+	verdict: Verdict,
+	userOverride = false,
+): Record<string, unknown> {
+	return {
+		type: "runtime_verdict",
+		timestamp: new Date().toISOString(),
+		session_id: sessionId,
+		tool_name: toolName,
+		tool_input_summary: toolInputSummary(toolName, toolInput),
+		artifacts: verdict.artifacts,
+		verdict: verdict.decision,
+		severity: verdict.severity,
+		reasons: verdict.reasons,
+		source: verdict.source,
+		user_override: userOverride,
+	};
+}
+
 /**
  * Classic logrotate: shift numbered backups and rename active file to .1.
  * All renames wrapped in try/catch ignoring ENOENT for race safety.
@@ -85,19 +107,7 @@ export async function logVerdict(
 	// Skip clean verdicts unless log_clean is on or this is a user override
 	if (verdict.decision === "allow" && !config.log_clean && !userOverride) return;
 
-	const entry = {
-		type: "runtime_verdict",
-		timestamp: new Date().toISOString(),
-		session_id: sessionId,
-		tool_name: toolName,
-		tool_input_summary: toolInputSummary(toolName, toolInput),
-		artifacts: verdict.artifacts,
-		verdict: verdict.decision,
-		severity: verdict.severity,
-		reasons: verdict.reasons,
-		source: verdict.source,
-		user_override: userOverride,
-	};
+	const entry = buildRuntimeVerdictEntry(sessionId, toolName, toolInput, verdict, userOverride);
 
 	try {
 		await appendEntry(config, entry);

@@ -3,12 +3,12 @@
  * Combines plugin scanning, version check, and temp cleanup into a single call.
  */
 
-import { resolvePath } from "./config.js";
+import { loadConfig, resolvePath } from "./config.js";
 import { pruneOrphanedTmpFiles } from "./file-utils.js";
 import { getInstallationId } from "./installation-id.js";
 import { runSessionStartScan } from "./session-start-scan.js";
 import type { AgentRuntime, Logger, PluginInfo, PluginScanResult } from "./types.js";
-import { nullLogger } from "./types.js";
+import { ConfigSchema, nullLogger } from "./types.js";
 import { checkForUpdate, type VersionCheckResult } from "./version-check.js";
 
 export interface SessionStartContext {
@@ -34,6 +34,7 @@ export interface SessionStartResult {
 export async function runSessionStart(ctx: SessionStartContext): Promise<SessionStartResult> {
 	const logger = ctx.logger ?? nullLogger;
 	const aidrDirPath = resolvePath(ctx.aidrDirPath ?? "~/.singularity-aidr");
+	const config = await loadConfig(ctx.configPath, logger).catch(() => ConfigSchema.parse({}));
 
 	// Fire-and-forget temp cleanup
 	pruneOrphanedTmpFiles(aidrDirPath).catch(() => {});
@@ -56,11 +57,17 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 		}),
 		iidPromise
 			.then((iid) =>
-				checkForUpdate(ctx.version, logger, undefined, {
-					agentRuntime: ctx.agentRuntime,
-					agentRuntimeVersion: ctx.agentRuntimeVersion,
-					iid,
-				}),
+				checkForUpdate(
+					ctx.version,
+					logger,
+					undefined,
+					{
+						agentRuntime: ctx.agentRuntime,
+						agentRuntimeVersion: ctx.agentRuntimeVersion,
+						iid,
+					},
+					config.auth.api_key,
+				),
 			)
 			.catch(() => null),
 	]);

@@ -22,6 +22,7 @@ export interface PackageCheckerConfig {
 	fileCheckEndpoint?: string;
 	fileCheckTimeoutSeconds?: number;
 	fileCheckEnabled?: boolean;
+	apiKey?: string;
 }
 
 export class PackageChecker {
@@ -43,6 +44,7 @@ export class PackageChecker {
 							timeout_seconds: config.fileCheckTimeoutSeconds,
 						},
 						logger,
+						config.apiKey,
 					)
 				: null;
 	}

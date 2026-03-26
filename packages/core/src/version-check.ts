@@ -57,6 +57,7 @@ export async function checkForUpdate(
 	logger: Logger = nullLogger,
 	timeoutMs: number = DEFAULT_TIMEOUT_MS,
 	context?: VersionCheckContext,
+	apiKey?: string,
 ): Promise<VersionCheckResult | null> {
 	if (currentVersion === "dev") {
 		logger.debug("Skipping version check for dev build");
@@ -64,13 +65,18 @@ export async function checkForUpdate(
 	}
 
 	try {
+		const headers: Record<string, string> = {
+			Accept: "application/json",
+			"Content-Type": "application/json",
+		};
+		const token = apiKey?.trim();
+		if (token) {
+			headers.Authorization = `Bearer ${token}`;
+		}
 		const response = await fetch(resolveEndpoint("/v1/version-check"), {
 			method: "POST",
 			signal: AbortSignal.timeout(timeoutMs),
-			headers: {
-				Accept: "application/json",
-				"Content-Type": "application/json",
-			},
+			headers,
 			body: JSON.stringify({
 				aidr_version: currentVersion,
 				agent_runtime: context?.agentRuntime,

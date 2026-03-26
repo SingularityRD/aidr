@@ -6,6 +6,16 @@ Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All
 
 ```json
 {
+  "auth": {
+    "api_key": "aidr_live_..."
+  },
+  "control_plane": {
+    "enabled": false,
+    "endpoint": "https://aidr-control.svc.singularityrd.com",
+    "timeout_seconds": 0.5,
+    "send_audit_logs": false,
+    "send_clean_verdicts": false
+  },
   "url_check": {
     "timeout_seconds": 5,
     "enabled": true
@@ -42,6 +52,22 @@ Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All
 ```
 
 ## Options
+
+### `auth`
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `api_key` | (none) | API key for Singularity AIDR cloud services (control plane + reputation APIs). Local-only mode works without it. |
+
+### `control_plane`
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Enable control plane integration (telemetry + licensing) |
+| `endpoint` | (built-in) | Base URL for control plane API (self-host override) |
+| `timeout_seconds` | `0.5` | Request timeout for control plane calls |
+| `send_audit_logs` | `false` | Send runtime verdict events for the dashboard |
+| `send_clean_verdicts` | `false` | Also send `allow` events (higher volume) |
 
 ### `url_check`
 
