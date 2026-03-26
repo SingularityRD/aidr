@@ -1,0 +1,113 @@
+{
+  "name": "aidr-cursor",
+  "displayName": "Singularity AIDR",
+  "description": "Singularity AIDR — protects AI agent tool calls against dangerous commands, malicious URLs, and harmful file writes.",
+  "version": "0.6.0",
+  "private": true,
+  "publisher": "SingularityRD",
+  "icon": "aidr-icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/singularityrd/aidr.git"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.97.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:aidr.enableProtection",
+    "onCommand:aidr.disableProtection",
+    "onCommand:aidr.openConfig",
+    "onCommand:aidr.openAuditLog",
+    "onCommand:aidr.showHookHealth"
+  ],
+  "files": [
+    "dist/cursor_extension.js",
+    "dist/cursor_extension.js.map",
+    "dist/aidr-hook.cjs",
+    "dist/aidr-hook.cjs.map",
+    "resources/**",
+    "aidr-icon.png",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/cursor_extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aidr.enableProtection",
+        "title": "Singularity AIDR: Enable protection"
+      },
+      {
+        "command": "aidr.disableProtection",
+        "title": "Singularity AIDR: Disable protection"
+      },
+      {
+        "command": "aidr.openConfig",
+        "title": "Singularity AIDR: Open config"
+      },
+      {
+        "command": "aidr.openAuditLog",
+        "title": "Singularity AIDR: Open audit log"
+      },
+      {
+        "command": "aidr.showHookHealth",
+        "title": "Singularity AIDR: Show hook health"
+      }
+    ],
+    "configuration": {
+      "title": "Singularity AIDR",
+      "properties": {
+        "aidr.cursor.scope": {
+          "type": "string",
+          "default": "user",
+          "enum": [
+            "workspace",
+            "user"
+          ],
+          "description": "Where Singularity AIDR installs Cursor hooks."
+        },
+        "aidr.vscode.scope": {
+          "type": "string",
+          "default": "user",
+          "enum": [
+            "workspace",
+            "user"
+          ],
+          "description": "Where Singularity AIDR installs VS Code hooks."
+        },
+        "aidr.hookRunnerPath": {
+          "type": "string",
+          "scope": "application",
+          "default": "",
+          "description": "Optional absolute path to an aidr-hook runner script."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "pnpm -C ../core build && npm run clean && npm run sync:assets && node esbuild.config.cjs",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true});require('node:fs').rmSync('resources',{recursive:true,force:true});require('node:fs').rmSync('.vsce',{recursive:true,force:true})\"",
+    "sync:assets": "node scripts/sync-assets.mjs",
+    "pretest": "pnpm -C ../core build && npm run sync:assets && node esbuild.config.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "package:cursor:vsix": "npm run build && pnpm dlx @vscode/vsce package -o ../../aidr-cursor.vsix --no-dependencies --allow-package-secrets github --allow-package-secrets slack",
+    "package:vscode:vsix": "npm run build && node scripts/package-vscode-vsix.mjs",
+    "package:vsix": "npm run package:cursor:vsix && npm run package:vscode:vsix"
+  },
+  "devDependencies": {
+    "@singularityrd/aidr-core": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.97.0",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}
+

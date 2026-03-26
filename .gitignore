@@ -1,0 +1,47 @@
+# Node.js
+node_modules/
+dist/
+!packages/claude-code/dist/
+packages/claude-code/dist/*
+!packages/claude-code/dist/pre-tool-use.cjs
+!packages/claude-code/dist/post-tool-use.cjs
+!packages/claude-code/dist/session-start.cjs
+!packages/claude-code/dist/mcp-server.cjs
+packages/extension/resources/
+packages/extension/.vsce/
+*.vsix
+*.tsbuildinfo
+*.blob
+bin/
+packages/openclaw/resources/
+packages/opencode/resources/
+
+# Environments
+.env
+.envrc
+
+# Logs
+*.log
+
+# Test artifacts
+.e2e-artifacts/
+
+# IDE / Editor
+.claude
+.cursor
+.vscode
+.vscode-test/
+*/**/CLAUDE.md
+.cursorignore
+.cursorindexingignore
+
+# OS
+.DS_Store
+
+# Gitleaks config (contains internal infrastructure names)
+.gitleaks.toml
+
+.pnpm-store
+
+# Dummy canary e2e threat rules
+threats/dummy.yaml

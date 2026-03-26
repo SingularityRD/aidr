@@ -1,0 +1,27 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "aidr",
+  "description": "Singularity AIDR for Claude Code",
+  "version": "0.6.0",
+  "owner": {
+    "name": "SingularityRD"
+  },
+  "plugins": [
+    {
+      "name": "aidr",
+      "description": "AI Agent Detection & Response for Claude Code — guards commands, files, and web requests",
+      "version": "0.6.0",
+      "author": {
+        "name": "SingularityRD"
+      },
+      "source": "./",
+      "category": "security",
+      "tags": [
+        "security",
+        "malware",
+        "protection",
+        "url-reputation"
+      ]
+    }
+  ]
+}

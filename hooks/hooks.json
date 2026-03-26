@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|WebFetch|Write|Edit|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/claude-code/dist/pre-tool-use.cjs\"",
+            "timeout": 15,
+            "statusMessage": "Singularity AIDR: Checking for threats..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|WebFetch|Write|Edit|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/claude-code/dist/post-tool-use.cjs\"",
+            "timeout": 5,
+            "statusMessage": "Singularity AIDR: Recording approval..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/claude-code/dist/session-start.cjs\"",
+            "timeout": 30,
+            "statusMessage": "Singularity AIDR: Scanning installed plugins..."
+          }
+        ]
+      }
+    ]
+  }
+}

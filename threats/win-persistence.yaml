@@ -1,0 +1,101 @@
+# Windows persistence mechanism threat patterns for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+# Covers: Registry Run keys, Services, Task Scheduler, Startup folder
+
+# Registry Run key via reg add
+- id: "CLT-WIN-PERSIST-001"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b[Rr][Ee][Gg]\\b\\s+[Aa][Dd][Dd].*\\\\(Run|RunOnce)\\\\"
+  match_on: command
+  title: "Registry Run key persistence via reg add"
+  expires_at: null
+  revoked: false
+
+# sc create/config service
+- id: "CLT-WIN-PERSIST-002"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b[Ss][Cc]\\b\\s+(create|config).*binpath"
+  match_on: command
+  title: "Windows service creation/modification via sc"
+  expires_at: null
+  revoked: false
+
+# schtasks /create
+- id: "CLT-WIN-PERSIST-003"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b[Ss][Cc][Hh][Tt][Aa][Ss][Kk][Ss]\\b.*/[Cc]reate"
+  match_on: command
+  title: "Scheduled task creation via schtasks"
+  expires_at: null
+  revoked: false
+
+# PowerShell New-ScheduledTask
+- id: "CLT-WIN-PERSIST-004"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "[Nn]ew-[Ss]cheduled[Tt]ask"
+  match_on: command
+  title: "PowerShell scheduled task creation"
+  expires_at: null
+  revoked: false
+
+# PowerShell Set-ItemProperty Run key
+- id: "CLT-WIN-PERSIST-005"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "[Ss]et-[Ii]tem[Pp]roperty.*\\\\(Run|RunOnce)\\\\"
+  match_on: command
+  title: "PowerShell Registry Run key persistence"
+  expires_at: null
+  revoked: false
+
+# PowerShell New-Service
+- id: "CLT-WIN-PERSIST-006"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b[Nn]ew-[Ss]ervice\\b"
+  match_on: command
+  title: "PowerShell Windows service creation"
+  expires_at: null
+  revoked: false
+
+# Startup folder path
+- id: "CLT-WIN-PERSIST-007"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\\\(Startup|Start Menu\\\\Programs\\\\Startup)\\\\"
+  match_on: command
+  title: "Startup folder drop (persistence)"
+  expires_at: null
+  revoked: false
+
+# WMI event subscription persistence
+- id: "CLT-WIN-PERSIST-008"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b(CommandLineEventConsumer|ActiveScriptEventConsumer)\\b"
+  match_on: command
+  title: "WMI event subscription persistence"
+  expires_at: null
+  revoked: false
+

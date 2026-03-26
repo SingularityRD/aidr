@@ -1,0 +1,16 @@
+# Windows supply chain threat patterns for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+
+# Install-Module without -RequiredVersion
+- id: "CLT-WIN-SUPPLY-001"
+  category: supply_chain
+  severity: medium
+  confidence: 0.65
+  action: require_approval
+  pattern: "[Ii]nstall-[Mm]odule\\s+(?!.*-[Rr]equired[Vv]ersion)"
+  match_on: command
+  title: "PowerShell Install-Module without -RequiredVersion"
+  expires_at: null
+  revoked: false
+

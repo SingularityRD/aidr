@@ -1,0 +1,33 @@
+Singularity AIDR
+Copyright 2026 SingularityRD.
+
+This product includes software developed by SingularityRD.
+
+---
+
+Licensing:
+
+This project uses a dual-license structure:
+
+- Source code: Apache License 2.0 (see LICENSE)
+- Threat detection rules (threats/): Detection Rule License 1.1 (see threats/LICENSE)
+
+The DRL 1.1 requires that detection output based on rule matches must retain
+author attribution. The default author for all rules is SingularityRD.
+
+---
+
+Cloud Services Notice:
+
+SingularityRD cloud services are provided exclusively for use with authorized
+Singularity AIDR distributions. Unauthorized access to these services is prohibited.
+Use of these services is governed by the applicable service terms, not by the
+Apache 2.0 license of this source code.
+
+---
+
+Third-party dependencies:
+
+- yaml (ISC License) - https://github.com/eemeli/yaml
+- zod (MIT License) - https://github.com/colinhacks/zod
+- pino (MIT License) - https://github.com/pinojs/pino

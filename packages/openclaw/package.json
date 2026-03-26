@@ -1,0 +1,55 @@
+{
+  "name": "@singularityrd/aidr-openclaw",
+  "license": "Apache-2.0",
+  "version": "0.6.0",
+  "type": "module",
+  "description": "Singularity AIDR — Agent Detection & Response layer for OpenClaw",
+  "main": "./dist/index.cjs",
+  "files": [
+    "dist/**",
+    "resources/**",
+    "openclaw.plugin.json",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "pnpm -C ../core build && pnpm run clean && pnpm run sync:assets && node esbuild.config.js",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true});require('node:fs').rmSync('resources',{recursive:true,force:true})\"",
+    "prepack": "node ../../scripts/check-workspace-refs.mjs",
+    "sync:assets": "node scripts/sync-assets.mjs",
+    "test": "vitest run"
+  },
+  "optionalDependencies": {
+    "koffi": "^2.9.0"
+  },
+  "devDependencies": {
+    "@singularityrd/aidr-core": "workspace:*",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.cjs"
+    ]
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "security",
+    "adr",
+    "agent-security",
+    "safety",
+    "malware-detection",
+    "skill",
+    "ai-safety"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

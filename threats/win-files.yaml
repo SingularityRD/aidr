@@ -1,0 +1,125 @@
+# Windows sensitive file path threat patterns for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+# Detects Read/Write/Edit/Delete operations targeting Windows security-sensitive files
+
+# SAM/SECURITY/SYSTEM hive
+- id: "CLT-WIN-FILE-001"
+  category: secrets
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "(\\\\|/)Windows(\\\\|/)System32(\\\\|/)config(\\\\|/)(SAM|SECURITY|SYSTEM)"
+  match_on: file_path
+  title: "Access SAM/SECURITY/SYSTEM registry hive"
+  expires_at: null
+  revoked: false
+
+# NTDS.dit (Active Directory database)
+- id: "CLT-WIN-FILE-002"
+  category: secrets
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "[Nn][Tt][Dd][Ss]\\.[Dd][Ii][Tt]"
+  match_on: file_path
+  title: "Access NTDS.dit (Active Directory database)"
+  expires_at: null
+  revoked: false
+
+# Windows hosts file
+- id: "CLT-WIN-FILE-003"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(\\\\|/)Windows(\\\\|/)System32(\\\\|/)drivers(\\\\|/)etc(\\\\|/)hosts"
+  match_on: file_path
+  title: "Access Windows hosts file"
+  expires_at: null
+  revoked: false
+
+# Startup folder
+- id: "CLT-WIN-FILE-004"
+  category: tool
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "(\\\\|/)(Startup|Start Menu(\\\\|/)Programs(\\\\|/)Startup)(\\\\|/)"
+  match_on: file_path
+  title: "Access Windows Startup folder"
+  expires_at: null
+  revoked: false
+
+# Executable script in System32/SysWOW64
+- id: "CLT-WIN-FILE-005"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(\\\\|/)Windows(\\\\|/)(System32|SysWOW64)(\\\\|/).*\\.(bat|cmd|ps1|vbs|wsf)$"
+  match_on: file_path
+  title: "Access executable script in System32/SysWOW64"
+  expires_at: null
+  revoked: false
+
+# Driver file in System32/drivers
+- id: "CLT-WIN-FILE-006"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(\\\\|/)Windows(\\\\|/)System32(\\\\|/)drivers(\\\\|/).*\\.sys$"
+  match_on: file_path
+  title: "Access driver file in System32/drivers"
+  expires_at: null
+  revoked: false
+
+# Task Scheduler directory
+- id: "CLT-WIN-FILE-007"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(Windows|WINDOWS)[/\\\\]System32[/\\\\]Tasks[/\\\\]"
+  match_on: file_path
+  title: "Access Windows Task Scheduler directory"
+  expires_at: null
+  revoked: false
+
+# SSH key or config file (Windows path)
+- id: "CLT-WIN-FILE-008"
+  category: secrets
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "\\.ssh[\\\\](id_rsa|id_ed25519|id_ecdsa|id_dsa|config|authorized_keys)$"
+  match_on: file_path
+  title: "Access SSH key or config file (Windows path)"
+  expires_at: null
+  revoked: false
+
+# AWS credentials file (Windows path)
+- id: "CLT-WIN-FILE-009"
+  category: secrets
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\.aws[\\\\]credentials$"
+  match_on: file_path
+  title: "Access AWS credentials file (Windows path)"
+  expires_at: null
+  revoked: false
+
+# Browser credential stores
+- id: "CLT-WIN-FILE-010"
+  category: secrets
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(Google[/\\\\]Chrome|Mozilla[/\\\\]Firefox|Microsoft[/\\\\]Edge)[/\\\\].*[/\\\\](Login Data|logins\\.json|Cookies)$"
+  match_on: file_path
+  title: "Access browser credential store"
+  expires_at: null
+  revoked: false
+

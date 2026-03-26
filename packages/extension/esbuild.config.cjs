@@ -1,0 +1,46 @@
+const esbuild = require("esbuild");
+const { readFileSync } = require("node:fs");
+
+const pkg = JSON.parse(readFileSync("../core/package.json", "utf-8"));
+
+const shared = {
+	bundle: true,
+	platform: "node",
+	target: "node18",
+	format: "cjs",
+	sourcemap: true,
+	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
+};
+
+async function build() {
+	await esbuild.build({
+		...shared,
+		entryPoints: ["src/cursor_extension.ts"],
+		outfile: "dist/cursor_extension.js",
+		external: ["vscode", "koffi"],
+	});
+
+	await esbuild.build({
+		...shared,
+		entryPoints: ["src/vscode_extension.ts"],
+		outfile: "dist/vscode_extension.js",
+		external: ["vscode", "koffi"],
+	});
+
+	await esbuild.build({
+		...shared,
+		entryPoints: ["src/aidr-hook.ts"],
+		outfile: "dist/aidr-hook.cjs",
+		external: ["koffi"],
+	});
+}
+
+build().then(
+	() => {
+		console.log("Build complete.");
+	},
+	(error) => {
+		console.error(error);
+		process.exitCode = 1;
+	},
+);

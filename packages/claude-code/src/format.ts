@@ -1,0 +1,56 @@
+/**
+ * Formatting for Singularity AIDR Claude Code alerts.
+ * Shared formatting (severityEmoji, formatThreatBanner, etc.) lives in @singularityrd/aidr-core.
+ * This file keeps Claude Code-specific verdict formatting.
+ */
+
+import type { Verdict } from "@singularityrd/aidr-core";
+import { kv, PAD, SEPARATOR_WIDTH, separatorLine, severityEmoji } from "@singularityrd/aidr-core";
+
+export function artifactTypeLabel(type: string): string {
+	if (type === "url") return "URL";
+	if (type === "command") return "command";
+	if (type === "file_path") return "file path";
+	return type;
+}
+
+/** Append category and artifact details to lines array. */
+function appendVerdictDetails(lines: string[], verdict: Verdict): void {
+	lines.push(kv("Severity", verdict.severity.toUpperCase()));
+	if (verdict.artifacts.length > 0) {
+		// biome-ignore lint/style/noNonNullAssertion: length check above guarantees index 0 exists
+		lines.push(kv("Artifact", verdict.artifacts[0]!));
+		for (const a of verdict.artifacts.slice(1)) {
+			lines.push(kv("", a));
+		}
+	}
+	if (verdict.source && verdict.source !== "none") {
+		lines.push(kv("Source", verdict.source));
+	}
+}
+
+/**
+ * Format block/ask reason for PreToolUse verdicts.
+ * For deny: details-only block (branding goes in permissionDecisionReason, this goes in systemMessage).
+ * For ask: full branded banner with separator (shown once in confirmation dialog).
+ */
+export function formatBlockReason(verdict: Verdict): string {
+	const isDeny = verdict.decision === "deny";
+	const emoji = severityEmoji(verdict.severity);
+	const reasonText = verdict.reasons.length > 0 ? verdict.reasons[0] : verdict.category;
+
+	if (isDeny) {
+		const lines: string[] = [" "];
+		lines.push(`${emoji} ${"Threat".padEnd(PAD)}${reasonText}`);
+		appendVerdictDetails(lines, verdict);
+		lines.push(kv("Action", "Blocked"));
+		return lines.join("\n");
+	}
+
+	const header = `🛡️ Singularity AIDR: Suspicious Activity Detected`;
+	const lines: string[] = [header, separatorLine(SEPARATOR_WIDTH)];
+	lines.push(`${emoji} ${"Threat".padEnd(PAD)}${reasonText}`);
+	appendVerdictDetails(lines, verdict);
+	lines.push(kv("Action", "Requires confirmation"));
+	return lines.join("\n");
+}

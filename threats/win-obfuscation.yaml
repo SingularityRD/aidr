@@ -1,0 +1,206 @@
+# Windows obfuscation threat patterns for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+
+# PowerShell -EncodedCommand
+- id: "CLT-WIN-OBFUS-001"
+  category: tool
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "-[Ee]nc(oded[Cc]ommand)?\\s+[A-Za-z0-9+/=]{20,}"
+  match_on: command
+  title: "PowerShell -EncodedCommand with base64 payload"
+  expires_at: null
+  revoked: false
+
+# certutil -decode
+- id: "CLT-WIN-OBFUS-002"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "[Cc][Ee][Rr][Tt][Uu][Tt][Ii][Ll]\\s.*-decode"
+  match_on: command
+  title: "certutil base64 decode (obfuscation)"
+  expires_at: null
+  revoked: false
+
+# Hidden PowerShell window
+- id: "CLT-WIN-OBFUS-003"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "-[Ww]indow[Ss]tyle\\s+[Hh]idden"
+  match_on: command
+  title: "Hidden PowerShell window"
+  expires_at: null
+  revoked: false
+
+# Bypass + NoProfile combo
+- id: "CLT-WIN-OBFUS-004"
+  category: tool
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "-[Ee]xecution[Pp]olicy\\s+[Bb]ypass.*-[Nn]o[Pp]rofile"
+  match_on: command
+  title: "PowerShell -ExecutionPolicy Bypass -NoProfile (malware pattern)"
+  expires_at: null
+  revoked: false
+
+# [char] code obfuscation
+- id: "CLT-WIN-OBFUS-005"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "\\[char\\]\\s*\\d+.*-[Jj]oin"
+  match_on: [command, content]
+  title: "PowerShell [char] code obfuscation with -join"
+  expires_at: null
+  revoked: false
+
+# Security provider DLL injection via registry
+- id: "CLT-WIN-OBFUS-006"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\bSYSTEM\\\\CurrentControlSet\\\\Control\\\\SecurityProviders\\b"
+  match_on: command
+  title: "Security provider DLL injection via registry"
+  expires_at: null
+  revoked: false
+
+# mshta VBScript execution (Execute, CreateObject, close patterns)
+- id: "CLT-WIN-OBFUS-007"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\bmshta\\b.*\\bvbscript:(Execute|CreateObject|close\\s*\\()"
+  case_insensitive: true
+  match_on: command
+  title: "mshta VBScript execution (Execute/CreateObject obfuscation)"
+  expires_at: null
+  revoked: false
+
+# mshta javascript: eval execution
+- id: "CLT-WIN-OBFUS-008"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\bmshta\\b.*\\bjavascript:"
+  case_insensitive: true
+  match_on: command
+  title: "mshta JavaScript execution (LOLBin obfuscation)"
+  expires_at: null
+  revoked: false
+
+# wscript/cscript //E: engine override on non-script files
+- id: "CLT-WIN-OBFUS-009"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(wscript|cscript)(\\.exe)?\\b.*//[Ee]:([Vv][Bb][Ss]cript|[Jj][Ss]cript)"
+  case_insensitive: true
+  match_on: command
+  title: "wscript/cscript script engine override (//E:VBScript evasion)"
+  expires_at: null
+  revoked: false
+
+# NTFS $INDEX_ALLOCATION folder creation (ex CLT-TECH-001)
+- id: "CLT-WIN-OBFUS-010"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "echo [\\S\\s]+> [a-zA-Z0-9.]+::\\$INDEX_ALLOCATION"
+  case_insensitive: true
+  match_on: command
+  title: "NTFS $INDEX_ALLOCATION folder creation without permissions"
+  expires_at: null
+  revoked: false
+
+# ADS bypass via type redirect or wmic process create (ex CLT-TECH-002)
+- id: "CLT-WIN-OBFUS-011"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "(type [a-zA-Z+0-9.\\\\:]+ > [a-zA-Z+0-9.\\\\:]+:[0-9a-zA-Z+.]+|wmic process call create [a-zA-Z+0-9.\\\\:]+:[a-z0-9A-Z.]+)"
+  case_insensitive: true
+  match_on: command
+  title: "Alternate Data Streams bypass"
+  expires_at: null
+  revoked: false
+
+# Dotdotdot hidden folder (ex CLT-TECH-003)
+- id: "CLT-WIN-OBFUS-012"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "(mkdir\\s+\\.{3,}|[a-zA-Z]+\\s+[a-z0-9]+\\s+>\\s+\\.{3,})"
+  case_insensitive: true
+  match_on: command
+  title: "Hidden file/folder via ... directory trick"
+  expires_at: null
+  revoked: false
+
+# cmd caret obfuscation (ex CLT-TECH-014)
+- id: "CLT-WIN-OBFUS-013"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "cmd.*([^\\^]\\^[a-z].*){5}"
+  case_insensitive: true
+  match_on: command
+  title: "cmd caret (^) obfuscation"
+  expires_at: null
+  revoked: false
+
+# cmd substring concatenation obfuscation (ex CLT-TECH-015)
+- id: "CLT-WIN-OBFUS-014"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "cmd.*(%[^%]+:~[^%]*%[a-z]*){2}"
+  case_insensitive: true
+  match_on: command
+  title: "cmd substring concatenation obfuscation"
+  expires_at: null
+  revoked: false
+
+# PowerShell backtick obfuscation (ex CLT-TECH-021)
+- id: "CLT-WIN-OBFUS-015"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "powershell.*(`[a-z].*){4}"
+  case_insensitive: true
+  match_on: command
+  title: "PowerShell backtick obfuscation"
+  expires_at: null
+  revoked: false
+
+# PowerShell XOR decryption (ex CLT-TECH-026)
+- id: "CLT-WIN-OBFUS-016"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "powershell.+-bxor\\s*['\"]"
+  case_insensitive: true
+  match_on: command
+  title: "PowerShell XOR decryption"
+  expires_at: null
+  revoked: false
+

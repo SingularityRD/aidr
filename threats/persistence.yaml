@@ -1,0 +1,88 @@
+# Persistence mechanism threat patterns for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+
+# --- Shell RC file modification ---
+- id: "CLT-PERSIST-001"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(>>|>)\\s*~?/?(\\$HOME/)?\\.?(bashrc|zshrc|profile|bash_profile|zprofile|zshenv)"
+  match_on: command
+  title: "Write/append to shell RC file (persistence mechanism)"
+  expires_at: null
+  revoked: false
+
+# --- Crontab manipulation ---
+- id: "CLT-PERSIST-002"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "\\bcrontab\\s+(-[er]|[^-])"
+  match_on: command
+  title: "Crontab manipulation (list, edit, or remove scheduled tasks)"
+  expires_at: null
+  revoked: false
+
+# --- Cron directory writes ---
+- id: "CLT-PERSIST-003"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "/etc/cron\\.(d|daily|hourly|weekly|monthly)/"
+  match_on: command
+  title: "Write to system cron directory"
+  expires_at: null
+  revoked: false
+
+# --- systemd service manipulation ---
+- id: "CLT-PERSIST-005"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bsystemctl\\s+(enable|start)\\b|/etc/systemd/system/"
+  match_on: command
+  title: "systemd service enable/start or unit file write"
+  expires_at: null
+  revoked: false
+
+# --- SSH authorized_keys modification ---
+- id: "CLT-PERSIST-006"
+  category: tool
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: ">>\\s*(~|\\/(root|home\\/[a-zA-Z0-9._-]{1,32}))?/?\\.ssh/authorized_keys"
+  match_on: command
+  title: "Append to SSH authorized_keys (unauthorized access persistence)"
+  expires_at: null
+  revoked: false
+
+# --- Echo/printf append to shell RC files ---
+- id: "CLT-PERSIST-007"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(echo|printf)\\s+.*>>\\s*~?/?(\\$HOME/)?\\.?(bashrc|zshrc|profile|bash_profile)"
+  match_on: command
+  title: "Echo/printf append to shell RC file (code injection persistence)"
+  expires_at: null
+  revoked: false
+
+# --- at job scheduling ---
+- id: "CLT-PERSIST-008"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "\\bat\\b\\s+(-f\\s+|now|midnight|noon|teatime)"
+  match_on: command
+  title: "At-job scheduling (persistence)"
+  expires_at: null
+  revoked: false
+

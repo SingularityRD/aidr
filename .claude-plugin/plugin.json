@@ -1,0 +1,25 @@
+{
+  "name": "aidr",
+  "version": "0.6.0",
+  "description": "Singularity AIDR - AI Agent Detection & Response for Claude Code",
+  "author": {
+    "name": "SingularityRD"
+  },
+  "license": "Apache-2.0",
+  "repository": "https://github.com/singularityrd/aidr",
+  "keywords": [
+    "security",
+    "malware",
+    "protection",
+    "url-reputation"
+  ],
+  "skills": "./skills/",
+  "mcpServers": {
+    "aidr": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/packages/claude-code/dist/mcp-server.cjs"
+      ]
+    }
+  }
+}
