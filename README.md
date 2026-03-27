@@ -85,8 +85,8 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 
 ## Current Limitations
 
-- MCP tool call interception (`mcp__*`) is not yet implemented
-- Custom user threat definitions (`~/.singularity-aidr/threats/`) are not yet implemented
+- MCP tool call interception (`mcp__*`) is best-effort via generic input scanning (tool-specific semantics are not modeled yet)
+- Custom user threat definitions are supported via `~/.singularity-aidr/threats/*.yaml` (override by `id`)
 
 ## Privacy
 

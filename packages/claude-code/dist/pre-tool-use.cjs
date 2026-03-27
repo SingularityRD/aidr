@@ -9936,7 +9936,7 @@ var require_tools = __commonJS({
         }
       }
     }
-    function asString(str) {
+    function asString2(str) {
       let result = "";
       let last = 0;
       let found = false;
@@ -10007,13 +10007,13 @@ var require_tools = __commonJS({
               if (stringifier) value = stringifier(value);
               break;
             case "string":
-              value = (stringifier || asString)(value);
+              value = (stringifier || asString2)(value);
               break;
             default:
               value = (stringifier || stringify2)(value, stringifySafe);
           }
           if (value === void 0) continue;
-          const strKey = asString(key);
+          const strKey = asString2(key);
           propStr += "," + strKey + ":" + value;
         }
       }
@@ -10034,7 +10034,7 @@ var require_tools = __commonJS({
             msgStr = ',"' + messageKey + '":' + value;
             break;
           case "string":
-            value = (stringifier || asString)(value);
+            value = (stringifier || asString2)(value);
             msgStr = ',"' + messageKey + '":' + value;
             break;
           default:
@@ -17405,6 +17405,9 @@ var DecisionEngine = class {
 var URL_PATTERN = /https?:\/\/[^\s"')<>[\]{}]+/g;
 var TRAILING_PUNCT = /[.,;:!?]+$/;
 var MAX_CONTENT_SIZE = 64 * 1024;
+var MAX_GENERIC_STRINGS = 200;
+var MAX_GENERIC_DEPTH = 4;
+var MAX_GENERIC_ARTIFACTS = 250;
 var BASE64_DECODE_EXEC = /\b(echo|printf|cat)\b[^|]*\|\s*base64\s+(-d|--decode)[^|]*\|\s*(bash|sh|zsh|ksh|dash|python|perl|ruby|node)\b/;
 var PRINTF_ENCODE_EXEC = /\bprintf\b\s+['"](\\x[0-9a-fA-F]{2}|\\[0-7]{3})[^|]*\|\s*(bash|sh|zsh|ksh|dash)\b/;
 var VAR_INTERPOLATION_URL = /\b(curl|wget|fetch)\b[^|;]*(\$\{?\w+\}?\.\$\{?\w+\}?|\$\{?\w+\}?:\/\/)/;
@@ -17488,6 +17491,130 @@ function extractFromEdit(toolInput) {
 }
 function extractFromRead(toolInput) {
   return extractFileArtifacts(toolInput, "file_path", "content", "read", "from_read_content");
+}
+function extractFromDelete(toolInput) {
+  const filePath = toolInput.file_path;
+  if (filePath && typeof filePath === "string") {
+    return [{ type: "file_path", value: filePath, context: "delete" }];
+  }
+  return [];
+}
+function asString(value) {
+  return typeof value === "string" ? value : null;
+}
+function looksLikePath(value) {
+  if (!value)
+    return false;
+  if (value.startsWith("/") || value.startsWith("./") || value.startsWith("../"))
+    return true;
+  if (/^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\"))
+    return true;
+  if (value.startsWith("~/") || value.startsWith("$HOME/"))
+    return true;
+  return false;
+}
+function fieldTypeForKey(key) {
+  const k = key.toLowerCase();
+  if (k === "url" || k.endsWith("_url"))
+    return "url";
+  if (k === "command" || k === "cmd" || k.endsWith("_command") || k.endsWith("_cmd"))
+    return "command";
+  if (k === "file_path" || k === "filepath" || k === "file" || k === "path" || k.endsWith("_path") || k.endsWith("_file") || k.endsWith("_filename") || k === "filename" || k === "target_file")
+    return "file_path";
+  if (k === "content" || k.endsWith("_content") || k === "patch" || k === "diff" || k === "text")
+    return "content";
+  return null;
+}
+function collectStringFields(value, path, depth, out) {
+  if (out.length >= MAX_GENERIC_STRINGS)
+    return;
+  if (depth > MAX_GENERIC_DEPTH)
+    return;
+  if (typeof value === "string") {
+    out.push({ path, key: path.split(".").slice(-1)[0] ?? "", value: value.slice(0, MAX_CONTENT_SIZE) });
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      collectStringFields(value[i], `${path}[${i}]`, depth + 1, out);
+      if (out.length >= MAX_GENERIC_STRINGS)
+        return;
+    }
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      collectStringFields(v, path ? `${path}.${k}` : k, depth + 1, out);
+      if (out.length >= MAX_GENERIC_STRINGS)
+        return;
+    }
+  }
+}
+function extractFromUnknownTool(toolName, toolInput) {
+  const artifacts = [];
+  const fields = [];
+  collectStringFields(toolInput, "", 0, fields);
+  for (const field of fields) {
+    const raw = field.value;
+    const trimmed = raw.trim();
+    if (!trimmed)
+      continue;
+    const keyType = fieldTypeForKey(field.key);
+    const context = `tool:${toolName}:${field.path || field.key || "value"}`;
+    if (keyType === "url") {
+      artifacts.push({ type: "url", value: trimmed, context });
+    } else if (keyType === "command") {
+      artifacts.push({ type: "command", value: trimmed, context });
+    } else if (keyType === "file_path") {
+      artifacts.push({ type: "file_path", value: trimmed, context });
+    } else if (keyType === "content") {
+      artifacts.push({ type: "content", value: trimmed.slice(0, MAX_CONTENT_SIZE), context });
+    } else {
+      if (looksLikePath(trimmed)) {
+        artifacts.push({ type: "file_path", value: trimmed, context });
+      } else {
+        artifacts.push({ type: "content", value: trimmed.slice(0, MAX_CONTENT_SIZE), context });
+      }
+    }
+    for (const url of extractUrls(trimmed)) {
+      artifacts.push({ type: "url", value: url, context: `${context}:embedded_url` });
+    }
+    if (artifacts.length >= MAX_GENERIC_ARTIFACTS)
+      break;
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const deduped = [];
+  for (const a of artifacts) {
+    const key = `${a.type}:${a.value}`;
+    if (seen.has(key))
+      continue;
+    seen.add(key);
+    deduped.push(a);
+    if (deduped.length >= MAX_GENERIC_ARTIFACTS)
+      break;
+  }
+  return deduped;
+}
+function extractFromToolCall(toolName, toolInput) {
+  switch (toolName) {
+    case "Bash":
+    case "Shell": {
+      const command = asString(toolInput.command) ?? "";
+      return command ? extractFromBash(command) : [];
+    }
+    case "WebFetch":
+      return extractFromWebFetch(toolInput);
+    case "Write":
+      return extractFromWrite(toolInput);
+    case "Edit":
+      return extractFromEdit(toolInput);
+    case "Read":
+      return extractFromRead(toolInput);
+    case "Delete":
+      return extractFromDelete(toolInput);
+    default:
+      return extractFromUnknownTool(toolName || "Unknown", toolInput);
+  }
 }
 
 // ../../../../../../Desktop/sage-main/packages/core/dist/trusted-domains.js
@@ -18219,6 +18346,18 @@ async function loadThreats(threatDir, logger2 = nullLogger) {
   logger2.debug(`Loaded ${threats.length} threats from ${threatDir}`);
   return threats;
 }
+async function loadThreatsFromDirs(threatDirs, logger2 = nullLogger) {
+  const merged = /* @__PURE__ */ new Map();
+  for (const dir of threatDirs) {
+    if (!dir)
+      continue;
+    const threats = await loadThreats(dir, logger2);
+    for (const threat of threats) {
+      merged.set(threat.id, threat);
+    }
+  }
+  return [...merged.values()];
+}
 
 // ../../../../../../Desktop/sage-main/packages/core/dist/evaluator.js
 function allowVerdict(source = "none") {
@@ -18259,7 +18398,8 @@ async function evaluateToolCall(request, context) {
   const { cachedUrlVerdicts, uncachedUrls } = partitionUrlsByCache(urls, cache);
   let heuristicMatches = [];
   if (config.heuristics_enabled) {
-    let threats = await loadThreats(context.threatsDir, logger2);
+    const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
+    let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger2);
     if (config.disabled_threats.length > 0) {
       const disabledSet = new Set(config.disabled_threats);
       threats = threats.filter((t) => !disabledSet.has(t.id));
@@ -18665,35 +18805,7 @@ async function main() {
   const sessionId = toolCall.session_id ?? "unknown";
   const toolUseId = toolCall.tool_use_id ?? "";
   const pluginRoot = getPluginRoot();
-  let artifacts;
-  switch (toolName) {
-    case "Bash": {
-      const command = toolInput.command ?? "";
-      if (!command) {
-        process.stdout.write("{}\n");
-        return;
-      }
-      artifacts = extractFromBash(command);
-      break;
-    }
-    case "WebFetch":
-      artifacts = extractFromWebFetch(toolInput);
-      break;
-    case "Write":
-      artifacts = extractFromWrite(toolInput);
-      break;
-    case "Edit":
-      artifacts = extractFromEdit(toolInput);
-      break;
-    case "Read":
-      artifacts = extractFromRead(toolInput);
-      break;
-    // No Delete case — Claude Code does not expose a Delete tool.
-    // Delete is handled only in VS Code and Cursor connectors.
-    default:
-      process.stdout.write("{}\n");
-      return;
-  }
+  const artifacts = extractFromToolCall(toolName, toolInput);
   if (artifacts.length === 0) {
     process.stdout.write("{}\n");
     return;

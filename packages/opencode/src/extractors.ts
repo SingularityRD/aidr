@@ -6,6 +6,7 @@ import {
 	type Artifact,
 	extractFromBash,
 	extractFromEdit,
+	extractFromUnknownTool,
 	extractFromWebFetch,
 	extractFromWrite,
 } from "@singularityrd/aidr-core";
@@ -110,6 +111,6 @@ export function extractFromOpenCodeTool(
 			];
 		}
 		default:
-			return null;
+			return extractFromUnknownTool(`opencode:${toolName || "unknown"}`, args);
 	}
 }

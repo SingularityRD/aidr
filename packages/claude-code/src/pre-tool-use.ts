@@ -11,11 +11,7 @@ import {
 	type Artifact,
 	allowVerdict,
 	evaluateToolCall,
-	extractFromBash,
-	extractFromEdit,
-	extractFromRead,
-	extractFromWebFetch,
-	extractFromWrite,
+	extractFromToolCall,
 	type Logger,
 	type Verdict,
 } from "@singularityrd/aidr-core";
@@ -84,36 +80,8 @@ async function main(): Promise<void> {
 	const toolUseId = (toolCall.tool_use_id ?? "") as string;
 	const pluginRoot = getPluginRoot();
 
-	// Extract artifacts based on tool type
-	let artifacts: Artifact[];
-	switch (toolName) {
-		case "Bash": {
-			const command = (toolInput.command ?? "") as string;
-			if (!command) {
-				process.stdout.write("{}\n");
-				return;
-			}
-			artifacts = extractFromBash(command);
-			break;
-		}
-		case "WebFetch":
-			artifacts = extractFromWebFetch(toolInput);
-			break;
-		case "Write":
-			artifacts = extractFromWrite(toolInput);
-			break;
-		case "Edit":
-			artifacts = extractFromEdit(toolInput);
-			break;
-		case "Read":
-			artifacts = extractFromRead(toolInput);
-			break;
-		// No Delete case — Claude Code does not expose a Delete tool.
-		// Delete is handled only in VS Code and Cursor connectors.
-		default:
-			process.stdout.write("{}\n");
-			return;
-	}
+	// Extract artifacts based on tool type (with MCP/unknown fallback)
+	const artifacts: Artifact[] = extractFromToolCall(toolName, toolInput);
 
 	if (artifacts.length === 0) {
 		process.stdout.write("{}\n");

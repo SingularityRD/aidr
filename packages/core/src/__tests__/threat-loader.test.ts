@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadThreats } from "../threat-loader.js";
+import { loadThreats, loadThreatsFromDirs } from "../threat-loader.js";
 import { makeTmpDir } from "./test-utils.js";
 
 async function writeYaml(dir: string, filename: string, content: string): Promise<void> {
@@ -161,6 +161,48 @@ describe("loadThreats", () => {
 		const ids = new Set(threats.map((t) => t.id));
 		expect(ids.has("CLT-CMD-001")).toBe(true);
 		expect(ids.has("CLT-URL-001")).toBe(true);
+	});
+
+	it("merges threats from multiple directories with override semantics", async () => {
+		const baseDir = await makeTmpDir();
+		const userDir = await makeTmpDir();
+
+		await writeYaml(
+			baseDir,
+			"commands.yaml",
+			`
+- id: "CLT-OVERRIDE-001"
+  category: tool
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "curl.*bash"
+  match_on: command
+  title: "Base rule"
+`,
+		);
+
+		await writeYaml(
+			userDir,
+			"user.yaml",
+			`
+- id: "CLT-OVERRIDE-001"
+  category: tool
+  severity: critical
+  confidence: 0.99
+  action: block
+  pattern: "curl.*bash"
+  match_on: command
+  title: "User override"
+`,
+		);
+
+		const merged = await loadThreatsFromDirs([baseDir, userDir]);
+		expect(merged).toHaveLength(1);
+		expect(merged[0]?.id).toBe("CLT-OVERRIDE-001");
+		expect(merged[0]?.action).toBe("block");
+		expect(merged[0]?.severity).toBe("critical");
+		expect(merged[0]?.title).toBe("User override");
 	});
 
 	it("compiles case-insensitive regex when case_insensitive is true", async () => {

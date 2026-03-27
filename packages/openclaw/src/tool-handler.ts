@@ -8,6 +8,7 @@ import {
 	type Artifact,
 	extractFromBash,
 	extractFromEdit,
+	extractFromUnknownTool,
 	extractFromWebFetch,
 	extractFromWrite,
 	formatAskMessage,
@@ -63,7 +64,7 @@ function mapToolToArtifacts(toolName: string, params: Record<string, unknown>): 
 			return patch ? extractFilePaths(patch) : null;
 		}
 		default:
-			return null;
+			return extractFromUnknownTool(`openclaw:${toolName || "unknown"}`, params);
 	}
 }
 

@@ -49,6 +49,8 @@ export {
 	extractFromDelete,
 	extractFromEdit,
 	extractFromRead,
+	extractFromToolCall,
+	extractFromUnknownTool,
 	extractFromWebFetch,
 	extractFromWrite,
 	extractUrls,
@@ -122,7 +124,7 @@ export {
 	toFindingData,
 } from "./session-start-scan.js";
 // Threat loader
-export { loadThreats } from "./threat-loader.js";
+export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
 // Trusted domains
 export {
 	extractDomain,

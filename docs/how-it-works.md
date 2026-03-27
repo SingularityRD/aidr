@@ -18,6 +18,8 @@ Singularity AIDR intercepts tool calls made by AI agents, extracts security-rele
 | VS Code | `PreToolUse` on `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete` |
 | OpenClaw | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` |
 
+For tool calls outside these known shapes (including `mcp__*`), Singularity AIDR falls back to a generic string-scan extractor and still applies heuristics + URL checks.
+
 ## Data Flow
 
 ```

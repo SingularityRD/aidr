@@ -13,6 +13,10 @@ const TRAILING_PUNCT = /[.,;:!?]+$/;
 /** Maximum content size to scan (64KB). */
 const MAX_CONTENT_SIZE = 64 * 1024;
 
+const MAX_GENERIC_STRINGS = 200;
+const MAX_GENERIC_DEPTH = 4;
+const MAX_GENERIC_ARTIFACTS = 250;
+
 /** Detect base64-decode piped to execution: echo "..." | base64 -d | bash */
 const BASE64_DECODE_EXEC =
 	/\b(echo|printf|cat)\b[^|]*\|\s*base64\s+(-d|--decode)[^|]*\|\s*(bash|sh|zsh|ksh|dash|python|perl|ruby|node)\b/;
@@ -151,4 +155,151 @@ export function extractFromDelete(toolInput: Record<string, unknown>): Artifact[
 		return [{ type: "file_path", value: filePath, context: "delete" }];
 	}
 	return [];
+}
+
+function asString(value: unknown): string | null {
+	return typeof value === "string" ? value : null;
+}
+
+function looksLikePath(value: string): boolean {
+	if (!value) return false;
+	if (value.startsWith("/") || value.startsWith("./") || value.startsWith("../")) return true;
+	// Windows absolute paths, UNC paths
+	if (/^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\")) return true;
+	// Home-relative or env var-ish
+	if (value.startsWith("~/") || value.startsWith("$HOME/")) return true;
+	return false;
+}
+
+function fieldTypeForKey(key: string): Artifact["type"] | null {
+	const k = key.toLowerCase();
+	if (k === "url" || k.endsWith("_url")) return "url";
+	if (k === "command" || k === "cmd" || k.endsWith("_command") || k.endsWith("_cmd")) return "command";
+	if (
+		k === "file_path" ||
+		k === "filepath" ||
+		k === "file" ||
+		k === "path" ||
+		k.endsWith("_path") ||
+		k.endsWith("_file") ||
+		k.endsWith("_filename") ||
+		k === "filename" ||
+		k === "target_file"
+	)
+		return "file_path";
+	if (k === "content" || k.endsWith("_content") || k === "patch" || k === "diff" || k === "text")
+		return "content";
+	return null;
+}
+
+function collectStringFields(
+	value: unknown,
+	path: string,
+	depth: number,
+	out: Array<{ path: string; key: string; value: string }>,
+): void {
+	if (out.length >= MAX_GENERIC_STRINGS) return;
+	if (depth > MAX_GENERIC_DEPTH) return;
+
+	if (typeof value === "string") {
+		out.push({ path, key: path.split(".").slice(-1)[0] ?? "", value: value.slice(0, MAX_CONTENT_SIZE) });
+		return;
+	}
+
+	if (Array.isArray(value)) {
+		for (let i = 0; i < value.length; i++) {
+			collectStringFields(value[i], `${path}[${i}]`, depth + 1, out);
+			if (out.length >= MAX_GENERIC_STRINGS) return;
+		}
+		return;
+	}
+
+	if (value && typeof value === "object") {
+		for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+			collectStringFields(v, path ? `${path}.${k}` : k, depth + 1, out);
+			if (out.length >= MAX_GENERIC_STRINGS) return;
+		}
+	}
+}
+
+/**
+ * Best-effort extraction for unknown / MCP tool calls.
+ * Recursively scans the tool input for string fields, extracting:
+ * - explicit URLs / commands / file paths based on common key names
+ * - URLs found inside any collected strings
+ * - generic content strings for heuristic matching (capped)
+ */
+export function extractFromUnknownTool(toolName: string, toolInput: Record<string, unknown>): Artifact[] {
+	const artifacts: Artifact[] = [];
+	const fields: Array<{ path: string; key: string; value: string }> = [];
+	collectStringFields(toolInput, "", 0, fields);
+
+	for (const field of fields) {
+		const raw = field.value;
+		const trimmed = raw.trim();
+		if (!trimmed) continue;
+
+		const keyType = fieldTypeForKey(field.key);
+		const context = `tool:${toolName}:${field.path || field.key || "value"}`;
+
+		if (keyType === "url") {
+			artifacts.push({ type: "url", value: trimmed, context });
+		} else if (keyType === "command") {
+			artifacts.push({ type: "command", value: trimmed, context });
+		} else if (keyType === "file_path") {
+			artifacts.push({ type: "file_path", value: trimmed, context });
+		} else if (keyType === "content") {
+			artifacts.push({ type: "content", value: trimmed.slice(0, MAX_CONTENT_SIZE), context });
+		} else {
+			// Heuristic: promote obvious paths to file_path
+			if (looksLikePath(trimmed)) {
+				artifacts.push({ type: "file_path", value: trimmed, context });
+			} else {
+				artifacts.push({ type: "content", value: trimmed.slice(0, MAX_CONTENT_SIZE), context });
+			}
+		}
+
+		for (const url of extractUrls(trimmed)) {
+			artifacts.push({ type: "url", value: url, context: `${context}:embedded_url` });
+		}
+
+		if (artifacts.length >= MAX_GENERIC_ARTIFACTS) break;
+	}
+
+	const seen = new Set<string>();
+	const deduped: Artifact[] = [];
+	for (const a of artifacts) {
+		const key = `${a.type}:${a.value}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		deduped.push(a);
+		if (deduped.length >= MAX_GENERIC_ARTIFACTS) break;
+	}
+	return deduped;
+}
+
+/**
+ * Normalize extraction across connectors: handles known tool shapes and
+ * falls back to extractFromUnknownTool for MCP/unknown tools.
+ */
+export function extractFromToolCall(toolName: string, toolInput: Record<string, unknown>): Artifact[] {
+	switch (toolName) {
+		case "Bash":
+		case "Shell": {
+			const command = asString(toolInput.command) ?? "";
+			return command ? extractFromBash(command) : [];
+		}
+		case "WebFetch":
+			return extractFromWebFetch(toolInput);
+		case "Write":
+			return extractFromWrite(toolInput);
+		case "Edit":
+			return extractFromEdit(toolInput);
+		case "Read":
+			return extractFromRead(toolInput);
+		case "Delete":
+			return extractFromDelete(toolInput);
+		default:
+			return extractFromUnknownTool(toolName || "Unknown", toolInput);
+	}
 }

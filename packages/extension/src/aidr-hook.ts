@@ -8,9 +8,9 @@ import {
 	extractFromDelete,
 	extractFromEdit,
 	extractFromRead,
+	extractFromToolCall,
 	extractFromWebFetch,
 	extractFromWrite,
-	extractUrls,
 	type Verdict,
 } from "@singularityrd/aidr-core";
 
@@ -27,8 +27,6 @@ interface NormalizedHookCall {
 	toolInput: Record<string, unknown>;
 	artifacts: Artifact[];
 }
-
-const MAX_CONTENT_SIZE = 64 * 1024;
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
 	const mode = argv[0] as HookMode | undefined;
@@ -187,7 +185,7 @@ function normalizeCursorCall(
 			sessionId,
 			toolName: "MCP",
 			toolInput,
-			artifacts: extractFromMcp(toolInput),
+			artifacts: extractFromToolCall("MCP", toolInput),
 		};
 	}
 
@@ -245,7 +243,7 @@ function extractFromVsCodeTool(toolName: string, toolInput: Record<string, unkno
 		case "Delete":
 			return extractFromDelete(toolInput);
 		default:
-			return [];
+			return extractFromToolCall(toolName, toolInput);
 	}
 }
 
@@ -272,10 +270,8 @@ function extractFromCursorTool(toolName: string, toolInput: Record<string, unkno
 			return extractFromRead(toolInput);
 		case "Delete":
 			return extractFromDelete(toolInput);
-		case "MCP":
-			return extractFromMcp(toolInput);
 		default:
-			return [];
+			return extractFromToolCall(mapCursorToolToClaudeTool(toolName), toolInput);
 	}
 }
 
@@ -313,69 +309,6 @@ function normalizeFileToolInput(
 		return { ...toolInput, file_path: readFilePath(toolInput) ?? "" };
 	}
 	return toolInput;
-}
-
-function extractFromMcp(toolInput: Record<string, unknown>): Artifact[] {
-	const artifacts: Artifact[] = [];
-
-	const mcpPayload = parseUnknownObject(toolInput.tool_input ?? toolInput.toolInput);
-	const mergedInput: Record<string, unknown> = {
-		...mcpPayload,
-		...toolInput,
-	};
-
-	const directUrl = asString(mergedInput.url);
-	if (directUrl) {
-		artifacts.push({ type: "url", value: directUrl, context: "mcp" });
-	}
-
-	const directCommand = asString(mergedInput.command) ?? asString(mergedInput.cmd);
-	if (directCommand) {
-		artifacts.push({ type: "command", value: directCommand, context: "mcp" });
-	}
-
-	const directPath = readFilePath(mergedInput);
-	if (directPath) {
-		artifacts.push({ type: "file_path", value: directPath, context: "mcp" });
-	}
-
-	for (const value of collectStrings(mergedInput, 0)) {
-		for (const url of extractUrls(value)) {
-			artifacts.push({ type: "url", value: url, context: "mcp" });
-		}
-	}
-
-	return dedupeArtifacts(artifacts);
-}
-
-function collectStrings(value: unknown, depth: number): string[] {
-	if (depth > 4) {
-		return [];
-	}
-	if (typeof value === "string") {
-		return [value.slice(0, MAX_CONTENT_SIZE)];
-	}
-	if (Array.isArray(value)) {
-		return value.flatMap((entry) => collectStrings(entry, depth + 1));
-	}
-	if (value && typeof value === "object") {
-		return Object.values(value).flatMap((entry) => collectStrings(entry, depth + 1));
-	}
-	return [];
-}
-
-function dedupeArtifacts(artifacts: Artifact[]): Artifact[] {
-	const seen = new Set<string>();
-	const output: Artifact[] = [];
-	for (const artifact of artifacts) {
-		const key = `${artifact.type}:${artifact.value}`;
-		if (seen.has(key)) {
-			continue;
-		}
-		seen.add(key);
-		output.push(artifact);
-	}
-	return output;
 }
 
 function readFilePath(toolInput: Record<string, unknown>): string | undefined {

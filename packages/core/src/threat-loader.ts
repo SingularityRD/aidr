@@ -126,3 +126,22 @@ export async function loadThreats(
 	logger.debug(`Loaded ${threats.length} threats from ${threatDir}`);
 	return threats;
 }
+
+/**
+ * Load threats from multiple directories and merge them by threat ID.
+ * Later directories win on ID collisions (override semantics).
+ */
+export async function loadThreatsFromDirs(
+	threatDirs: string[],
+	logger: Logger = nullLogger,
+): Promise<Threat[]> {
+	const merged = new Map<string, Threat>();
+	for (const dir of threatDirs) {
+		if (!dir) continue;
+		const threats = await loadThreats(dir, logger);
+		for (const threat of threats) {
+			merged.set(threat.id, threat);
+		}
+	}
+	return [...merged.values()];
+}

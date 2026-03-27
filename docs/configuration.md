@@ -77,6 +77,16 @@ Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All
 | `endpoint` | (built-in) | Optional override for the URL reputation endpoint (use this for self-hosted deployments) |
 | `timeout_seconds` | `5` | Request timeout |
 
+Example (Supabase Edge Function):
+
+```json
+{
+  "url_check": {
+    "endpoint": "https://YOUR_PROJECT.supabase.co/functions/v1/url-check"
+  }
+}
+```
+
 ### `file_check`
 
 | Field | Default | Description |
@@ -84,6 +94,16 @@ Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All
 | `enabled` | `true` | Enable file reputation checks for packages |
 | `endpoint` | (built-in) | Optional override for the file reputation endpoint (use this for self-hosted deployments) |
 | `timeout_seconds` | `5` | Request timeout |
+
+Example (Supabase Edge Function):
+
+```json
+{
+  "file_check": {
+    "endpoint": "https://YOUR_PROJECT.supabase.co/functions/v1/file-check"
+  }
+}
+```
 
 ### `package_check`
 
@@ -154,6 +174,7 @@ Use this to permanently suppress specific rules that don't apply to your workflo
 | Path | Purpose |
 |------|---------|
 | `~/.singularity-aidr/config.json` | Configuration |
+| `~/.singularity-aidr/threats/` | Custom threat rules (YAML, optional) |
 | `~/.singularity-aidr/cache.json` | Verdict cache |
 | `~/.singularity-aidr/allowlist.json` | User allowlist |
 | `~/.singularity-aidr/audit.jsonl` | Audit log |

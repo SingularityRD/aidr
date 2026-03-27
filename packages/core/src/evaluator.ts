@@ -9,7 +9,7 @@ import { VerdictCache } from "./cache.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, resolvePath } from "./config.js";
 import { DecisionEngine } from "./engine.js";
 import { HeuristicsEngine } from "./heuristics.js";
 import { getInstallationId } from "./installation-id.js";
@@ -19,7 +19,7 @@ import {
 	extractPackagesFromManifest,
 	type ParsedPackage,
 } from "./package-extractor.js";
-import { loadThreats } from "./threat-loader.js";
+import { loadThreatsFromDirs } from "./threat-loader.js";
 import { loadTrustedDomains } from "./trusted-domains.js";
 import type {
 	AmsiCheckResult,
@@ -46,6 +46,7 @@ export interface ToolEvaluationContext {
 	threatsDir: string;
 	allowlistsDir: string;
 	configPath?: string;
+	userThreatsDir?: string;
 	agentRuntime?: AgentRuntime;
 	agentRuntimeVersion?: string;
 	logger?: Logger;
@@ -108,7 +109,8 @@ export async function evaluateToolCall(
 
 	let heuristicMatches: ReturnType<HeuristicsEngine["match"]> = [];
 	if (config.heuristics_enabled) {
-		let threats = await loadThreats(context.threatsDir, logger);
+		const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
+		let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
 		if (config.disabled_threats.length > 0) {
 			const disabledSet = new Set(config.disabled_threats);
 			threats = threats.filter((t) => !disabledSet.has(t.id));

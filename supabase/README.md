@@ -6,6 +6,7 @@ This folder contains a reference **Supabase** schema + edge function for running
 - API key table (hash-only)
 - Agent inventory (per installation id `iid`)
 - Event ingestion endpoint (`ingest` edge function)
+- Optional reputation endpoints (`url-check`, `file-check` edge functions)
 - Row-Level Security policies for a multi-tenant dashboard
 
 ## What you get
@@ -18,6 +19,7 @@ This folder contains a reference **Supabase** schema + edge function for running
 1. Create a Supabase project.
 2. Apply migrations in `supabase/migrations/`.
 3. Deploy the edge function in `supabase/functions/ingest`.
+   - Optional: also deploy `supabase/functions/url-check` and `supabase/functions/file-check` if you want self-hosted reputation.
 4. Set `control_plane.endpoint` to `https://YOUR_PROJECT.supabase.co/functions` and set `auth.api_key` in the agent config.
 
 The edge function requires:

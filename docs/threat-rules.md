@@ -106,3 +106,15 @@ Domains are matched by suffix with dot boundary (e.g. `bun.sh` matches `cdn.bun.
 
 Threat rules are licensed under the [Detection Rule License 1.1](../threats/LICENSE), separate from the Apache 2.0 source code license. See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines.
 
+## Custom (User) Threats
+
+You can add local, custom threat rules without modifying the repo by placing YAML files under:
+
+- `~/.singularity-aidr/threats/*.yaml`
+
+Behavior:
+
+- Files are loaded on every evaluation (best-effort).
+- If a custom rule uses the same `id` as a built-in rule, the custom rule **overrides** the built-in definition.
+- You can still suppress rules globally via `disabled_threats` in `~/.singularity-aidr/config.json`.
+
