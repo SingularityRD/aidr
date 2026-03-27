@@ -75,6 +75,9 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 | [AMSI Scanning](docs/amsi-scanning.md)           | Windows antimalware scanning via AMSI          |
 | [Architecture](docs/architecture.md)             | Monorepo structure, packages, design decisions |
 | [Development](docs/development.md)               | Building, testing, tooling, conventions        |
+| [Control Plane](docs/control-plane.md)           | Auth, dashboard, and licensing (optional)      |
+| [Billing](docs/billing.md)                       | Agent-seat enforcement + billing notes         |
+| [Pricing](docs/pricing.md)                       | Proposed pricing model                         |
 | [FAQ](docs/faq.md)                               | Common questions                               |
 | [Privacy](docs/privacy.md)                       | What data is sent, what stays local            |
 

@@ -4,13 +4,15 @@
  */
 
 import { isAllowlisted, loadAllowlist } from "./allowlist.js";
-import { logVerdict } from "./audit-log.js";
+import { buildRuntimeVerdictEntry, logVerdict } from "./audit-log.js";
 import { VerdictCache } from "./cache.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
+import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
 import { loadConfig } from "./config.js";
 import { DecisionEngine } from "./engine.js";
 import { HeuristicsEngine } from "./heuristics.js";
+import { getInstallationId } from "./installation-id.js";
 import { PackageChecker } from "./package-checker.js";
 import {
 	extractPackagesFromCommand,
@@ -21,6 +23,7 @@ import { loadThreats } from "./threat-loader.js";
 import { loadTrustedDomains } from "./trusted-domains.js";
 import type {
 	AmsiCheckResult,
+	AgentRuntime,
 	Artifact,
 	CachedVerdict,
 	Config,
@@ -43,6 +46,8 @@ export interface ToolEvaluationContext {
 	threatsDir: string;
 	allowlistsDir: string;
 	configPath?: string;
+	agentRuntime?: AgentRuntime;
+	agentRuntimeVersion?: string;
 	logger?: Logger;
 }
 
@@ -117,7 +122,7 @@ export async function evaluateToolCall(
 	const urlsToCheck = cache ? uncachedUrls : urls;
 	if (urlsToCheck.length > 0 && config.url_check.enabled) {
 		try {
-			const client = new UrlCheckClient(config.url_check, logger);
+			const client = new UrlCheckClient(config.url_check, logger, config.auth.api_key);
 			urlCheckResults = await client.checkUrls(urlsToCheck);
 		} catch {
 			// Fail open.
@@ -210,7 +215,53 @@ export async function evaluateToolCall(
 		// Fail open.
 	}
 
+	// Best-effort control plane telemetry (for dashboard/licensing). Never blocks verdict.
+	await ingestToControlPlaneIfEnabled(request, context, config, verdict, logger);
+
 	return verdict;
+}
+
+async function ingestToControlPlaneIfEnabled(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+	verdict: Verdict,
+	logger: Logger,
+): Promise<void> {
+	if (!config.control_plane.enabled) return;
+	if (!config.control_plane.send_audit_logs) return;
+
+	const apiKey = config.auth.api_key?.trim();
+	if (!apiKey) return;
+
+	if (verdict.decision === "allow" && !config.control_plane.send_clean_verdicts) return;
+
+	let iid: string | undefined;
+	try {
+		iid = await getInstallationId();
+	} catch {
+		iid = undefined;
+	}
+
+	const entry = buildRuntimeVerdictEntry(
+		request.sessionId,
+		request.toolName,
+		request.toolInput,
+		verdict,
+		false,
+	);
+
+	try {
+		const client = new ControlPlaneClient(config.control_plane, apiKey, logger);
+		await client.ingest({
+			iid,
+			agent_runtime: context.agentRuntime,
+			agent_runtime_version: context.agentRuntimeVersion,
+			events: [entry],
+		});
+	} catch {
+		// Fail open
+	}
 }
 
 function partitionUrlsByCache(
@@ -326,6 +377,7 @@ async function checkPackages(
 					fileCheckEndpoint: config.file_check.endpoint,
 					fileCheckTimeoutSeconds: config.file_check.timeout_seconds,
 					fileCheckEnabled: config.file_check.enabled,
+					apiKey: config.auth.api_key,
 				},
 				logger,
 			);

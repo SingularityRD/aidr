@@ -63,7 +63,7 @@ async function handleCursor(payload: unknown): Promise<void> {
 	}
 
 	try {
-		const verdict = await evaluateNormalizedCall(normalized);
+		const verdict = await evaluateNormalizedCall(normalized, "cursor");
 		writeJson(toCursorResponse(verdict));
 	} catch {
 		writeJson(
@@ -83,14 +83,14 @@ async function handleVsCode(payload: unknown): Promise<void> {
 	}
 
 	try {
-		const verdict = await evaluateNormalizedCall(normalized);
+		const verdict = await evaluateNormalizedCall(normalized, "vscode");
 		writeJson(toVsCodeResponse(verdict));
 	} catch {
 		writeJson({});
 	}
 }
 
-async function evaluateNormalizedCall(call: NormalizedHookCall): Promise<Verdict> {
+async function evaluateNormalizedCall(call: NormalizedHookCall, mode: HookMode): Promise<Verdict> {
 	const { threatsDir, allowlistsDir } = getBundledDataDirs();
 	return evaluateToolCall(
 		{
@@ -99,7 +99,7 @@ async function evaluateNormalizedCall(call: NormalizedHookCall): Promise<Verdict
 			toolInput: call.toolInput,
 			artifacts: call.artifacts,
 		},
-		{ threatsDir, allowlistsDir },
+		{ threatsDir, allowlistsDir, agentRuntime: mode },
 	);
 }
 

@@ -39,6 +39,7 @@ export function createToolHandlers(
 					threatsDir,
 					allowlistsDir,
 					logger,
+					agentRuntime: "opencode",
 				},
 				approvalStore,
 			);

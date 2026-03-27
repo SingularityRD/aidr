@@ -30,9 +30,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/code.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/code.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/code.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.regexpCode = exports2.getEsmExportName = exports2.getProperty = exports2.safeStringify = exports2.stringify = exports2.strConcat = exports2.addCodeArg = exports2.str = exports2._ = exports2.nil = exports2._Code = exports2.Name = exports2.IDENTIFIER = exports2._CodeOrName = void 0;
@@ -184,9 +184,9 @@ var require_code = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/scope.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/scope.js
 var require_scope = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/scope.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/scope.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ValueScope = exports2.ValueScopeName = exports2.Scope = exports2.varKinds = exports2.UsedValueState = void 0;
@@ -329,9 +329,9 @@ var require_scope = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/index.js
 var require_codegen = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/codegen/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.or = exports2.and = exports2.not = exports2.CodeGen = exports2.operators = exports2.varKinds = exports2.ValueScopeName = exports2.ValueScope = exports2.Scope = exports2.Name = exports2.regexpCode = exports2.stringify = exports2.getProperty = exports2.nil = exports2.strConcat = exports2.str = exports2._ = void 0;
@@ -1049,9 +1049,9 @@ var require_codegen = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/util.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/util.js
 var require_util = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/util.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/util.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.checkStrictMode = exports2.getErrorPath = exports2.Type = exports2.useFunc = exports2.setEvaluated = exports2.evaluatedPropsToName = exports2.mergeEvaluated = exports2.eachItem = exports2.unescapeJsonPointer = exports2.escapeJsonPointer = exports2.escapeFragment = exports2.unescapeFragment = exports2.schemaRefOrVal = exports2.schemaHasRulesButRef = exports2.schemaHasRules = exports2.checkUnknownRules = exports2.alwaysValidSchema = exports2.toHash = void 0;
@@ -1216,9 +1216,9 @@ var require_util = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/names.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/names.js
 var require_names = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/names.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/names.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -1255,9 +1255,9 @@ var require_names = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/errors.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/errors.js
 var require_errors = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/errors.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/errors.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.extendErrors = exports2.resetErrorsCount = exports2.reportExtraError = exports2.reportError = exports2.keyword$DataError = exports2.keywordError = void 0;
@@ -1377,9 +1377,9 @@ var require_errors = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/boolSchema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/boolSchema.js
 var require_boolSchema = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/boolSchema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/boolSchema.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.boolOrEmptySchema = exports2.topBoolOrEmptySchema = void 0;
@@ -1428,9 +1428,9 @@ var require_boolSchema = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/rules.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/rules.js
 var require_rules = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/rules.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/rules.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getRules = exports2.isJSONType = void 0;
@@ -1459,9 +1459,9 @@ var require_rules = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/applicability.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/applicability.js
 var require_applicability = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/applicability.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/applicability.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.shouldUseRule = exports2.shouldUseGroup = exports2.schemaHasRulesForType = void 0;
@@ -1482,9 +1482,9 @@ var require_applicability = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/dataType.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/dataType.js
 var require_dataType = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/dataType.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/dataType.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.reportTypeError = exports2.checkDataTypes = exports2.checkDataType = exports2.coerceAndCheckDataType = exports2.getJSONTypes = exports2.getSchemaTypes = exports2.DataType = void 0;
@@ -1666,9 +1666,9 @@ var require_dataType = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/defaults.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/defaults.js
 var require_defaults = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/defaults.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/defaults.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.assignDefaults = void 0;
@@ -1703,9 +1703,9 @@ var require_defaults = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/code.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/code.js
 var require_code2 = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/code.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/code.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateUnion = exports2.validateArray = exports2.usePattern = exports2.callValidateCode = exports2.schemaProperties = exports2.allSchemaProperties = exports2.noPropertyInData = exports2.propertyInData = exports2.isOwnProperty = exports2.hasPropFunc = exports2.reportMissingProp = exports2.checkMissingProp = exports2.checkReportMissingProp = void 0;
@@ -1836,9 +1836,9 @@ var require_code2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/keyword.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/keyword.js
 var require_keyword = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/keyword.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/keyword.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateKeywordUsage = exports2.validSchemaType = exports2.funcKeywordCode = exports2.macroKeywordCode = void 0;
@@ -1954,9 +1954,9 @@ var require_keyword = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/subschema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/subschema.js
 var require_subschema = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/subschema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/subschema.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.extendSubschemaMode = exports2.extendSubschemaData = exports2.getSubschema = void 0;
@@ -2037,9 +2037,9 @@ var require_subschema = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/fast-deep-equal@3.1.3/node_modules/fast-deep-equal/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/fast-deep-equal@3.1.3/node_modules/fast-deep-equal/index.js
 var require_fast_deep_equal = __commonJS({
-  "../../node_modules/.pnpm/fast-deep-equal@3.1.3/node_modules/fast-deep-equal/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/fast-deep-equal@3.1.3/node_modules/fast-deep-equal/index.js"(exports2, module2) {
     "use strict";
     module2.exports = function equal(a, b) {
       if (a === b) return true;
@@ -2072,9 +2072,9 @@ var require_fast_deep_equal = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/json-schema-traverse@1.0.0/node_modules/json-schema-traverse/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/json-schema-traverse@1.0.0/node_modules/json-schema-traverse/index.js
 var require_json_schema_traverse = __commonJS({
-  "../../node_modules/.pnpm/json-schema-traverse@1.0.0/node_modules/json-schema-traverse/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/json-schema-traverse@1.0.0/node_modules/json-schema-traverse/index.js"(exports2, module2) {
     "use strict";
     var traverse = module2.exports = function(schema, opts, cb) {
       if (typeof opts == "function") {
@@ -2160,9 +2160,9 @@ var require_json_schema_traverse = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/resolve.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/resolve.js
 var require_resolve = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/resolve.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/resolve.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getSchemaRefs = exports2.resolveUrl = exports2.normalizeId = exports2._getFullPath = exports2.getFullPath = exports2.inlineRef = void 0;
@@ -2316,9 +2316,9 @@ var require_resolve = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/index.js
 var require_validate = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/validate/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getData = exports2.KeywordCxt = exports2.validateFunctionCode = void 0;
@@ -2824,9 +2824,9 @@ var require_validate = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/validation_error.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/validation_error.js
 var require_validation_error = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/validation_error.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/validation_error.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var ValidationError = class extends Error {
@@ -2840,9 +2840,9 @@ var require_validation_error = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/ref_error.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/ref_error.js
 var require_ref_error = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/ref_error.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/ref_error.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var resolve_1 = require_resolve();
@@ -2857,9 +2857,9 @@ var require_ref_error = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/index.js
 var require_compile = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/compile/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.resolveSchema = exports2.getCompilingSchema = exports2.resolveRef = exports2.compileSchema = exports2.SchemaEnv = void 0;
@@ -3081,9 +3081,9 @@ var require_compile = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/refs/data.json
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/refs/data.json
 var require_data = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/refs/data.json"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/refs/data.json"(exports2, module2) {
     module2.exports = {
       $id: "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#",
       description: "Meta-schema for $data reference (JSON AnySchema extension proposal)",
@@ -3100,9 +3100,9 @@ var require_data = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/lib/utils.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/lib/utils.js
 var require_utils = __commonJS({
-  "../../node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/lib/utils.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/lib/utils.js"(exports2, module2) {
     "use strict";
     var isUUID = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu);
     var isIPv4 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
@@ -3357,9 +3357,9 @@ var require_utils = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/lib/schemes.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/lib/schemes.js
 var require_schemes = __commonJS({
-  "../../node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/lib/schemes.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/lib/schemes.js"(exports2, module2) {
     "use strict";
     var { isUUID } = require_utils();
     var URN_REG = /([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-.:;=@]|%[\da-f]{2})+)/iu;
@@ -3567,9 +3567,9 @@ var require_schemes = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/index.js
 var require_fast_uri = __commonJS({
-  "../../node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/fast-uri@3.1.0/node_modules/fast-uri/index.js"(exports2, module2) {
     "use strict";
     var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizeComponentEncoding, isIPv4, nonSimpleDomain } = require_utils();
     var { SCHEMES, getSchemeHandler } = require_schemes();
@@ -3822,9 +3822,9 @@ var require_fast_uri = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/uri.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/uri.js
 var require_uri = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/uri.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/uri.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var uri = require_fast_uri();
@@ -3833,9 +3833,9 @@ var require_uri = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/core.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/core.js
 var require_core = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/core.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/core.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.CodeGen = exports2.Name = exports2.nil = exports2.stringify = exports2.str = exports2._ = exports2.KeywordCxt = void 0;
@@ -4444,9 +4444,9 @@ var require_core = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/id.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/id.js
 var require_id = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/id.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/id.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var def = {
@@ -4459,9 +4459,9 @@ var require_id = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/ref.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/ref.js
 var require_ref = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/ref.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/ref.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.callRef = exports2.getValidate = void 0;
@@ -4581,9 +4581,9 @@ var require_ref = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/index.js
 var require_core2 = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/core/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var id_1 = require_id();
@@ -4602,9 +4602,9 @@ var require_core2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitNumber.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitNumber.js
 var require_limitNumber = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -4634,9 +4634,9 @@ var require_limitNumber = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/multipleOf.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/multipleOf.js
 var require_multipleOf = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -4662,9 +4662,9 @@ var require_multipleOf = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/ucs2length.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/ucs2length.js
 var require_ucs2length = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/ucs2length.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/ucs2length.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     function ucs2length(str) {
@@ -4688,9 +4688,9 @@ var require_ucs2length = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitLength.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitLength.js
 var require_limitLength = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -4720,9 +4720,9 @@ var require_limitLength = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/pattern.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/pattern.js
 var require_pattern = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -4757,9 +4757,9 @@ var require_pattern = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitProperties.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitProperties.js
 var require_limitProperties = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -4786,9 +4786,9 @@ var require_limitProperties = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/required.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/required.js
 var require_required = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/required.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/required.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -4868,9 +4868,9 @@ var require_required = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitItems.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitItems.js
 var require_limitItems = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -4897,9 +4897,9 @@ var require_limitItems = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/equal.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/equal.js
 var require_equal = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/equal.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/runtime/equal.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var equal = require_fast_deep_equal();
@@ -4908,9 +4908,9 @@ var require_equal = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
 var require_uniqueItems = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var dataType_1 = require_dataType();
@@ -4975,9 +4975,9 @@ var require_uniqueItems = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/const.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/const.js
 var require_const = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/const.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/const.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -5004,9 +5004,9 @@ var require_const = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/enum.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/enum.js
 var require_enum = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/enum.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/enum.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -5053,9 +5053,9 @@ var require_enum = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/index.js
 var require_validation = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/validation/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var limitNumber_1 = require_limitNumber();
@@ -5091,9 +5091,9 @@ var require_validation = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
 var require_additionalItems = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateAdditionalItems = void 0;
@@ -5144,9 +5144,9 @@ var require_additionalItems = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/items.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/items.js
 var require_items = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/items.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/items.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateTuple = void 0;
@@ -5201,9 +5201,9 @@ var require_items = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
 var require_prefixItems = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var items_1 = require_items();
@@ -5218,9 +5218,9 @@ var require_prefixItems = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/items2020.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/items2020.js
 var require_items2020 = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -5253,9 +5253,9 @@ var require_items2020 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/contains.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/contains.js
 var require_contains = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -5347,9 +5347,9 @@ var require_contains = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/dependencies.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/dependencies.js
 var require_dependencies = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateSchemaDeps = exports2.validatePropertyDeps = exports2.error = void 0;
@@ -5441,9 +5441,9 @@ var require_dependencies = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
 var require_propertyNames = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -5484,9 +5484,9 @@ var require_propertyNames = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
 var require_additionalProperties = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -5590,9 +5590,9 @@ var require_additionalProperties = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/properties.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/properties.js
 var require_properties = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var validate_1 = require_validate();
@@ -5648,9 +5648,9 @@ var require_properties = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
 var require_patternProperties = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -5722,9 +5722,9 @@ var require_patternProperties = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/not.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/not.js
 var require_not = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/not.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/not.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util();
@@ -5753,9 +5753,9 @@ var require_not = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/anyOf.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/anyOf.js
 var require_anyOf = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -5770,9 +5770,9 @@ var require_anyOf = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/oneOf.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/oneOf.js
 var require_oneOf = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -5828,9 +5828,9 @@ var require_oneOf = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/allOf.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/allOf.js
 var require_allOf = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util();
@@ -5855,9 +5855,9 @@ var require_allOf = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/if.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/if.js
 var require_if = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/if.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/if.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -5924,9 +5924,9 @@ var require_if = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/thenElse.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/thenElse.js
 var require_thenElse = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util();
@@ -5942,9 +5942,9 @@ var require_thenElse = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/index.js
 var require_applicator = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/applicator/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var additionalItems_1 = require_additionalItems();
@@ -5990,9 +5990,9 @@ var require_applicator = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/format/format.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/format/format.js
 var require_format = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/format/format.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/format/format.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -6080,9 +6080,9 @@ var require_format = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/format/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/format/index.js
 var require_format2 = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/format/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/format/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var format_1 = require_format();
@@ -6091,9 +6091,9 @@ var require_format2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/metadata.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/metadata.js
 var require_metadata = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/metadata.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/metadata.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.contentVocabulary = exports2.metadataVocabulary = void 0;
@@ -6114,9 +6114,9 @@ var require_metadata = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/draft7.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/draft7.js
 var require_draft7 = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/draft7.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/draft7.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var core_1 = require_core2();
@@ -6136,9 +6136,9 @@ var require_draft7 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/discriminator/types.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/discriminator/types.js
 var require_types = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.DiscrError = void 0;
@@ -6150,9 +6150,9 @@ var require_types = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/discriminator/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/discriminator/index.js
 var require_discriminator = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -6255,9 +6255,9 @@ var require_discriminator = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/refs/json-schema-draft-07.json
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/refs/json-schema-draft-07.json
 var require_json_schema_draft_07 = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/refs/json-schema-draft-07.json"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/refs/json-schema-draft-07.json"(exports2, module2) {
     module2.exports = {
       $schema: "http://json-schema.org/draft-07/schema#",
       $id: "http://json-schema.org/draft-07/schema#",
@@ -6412,9 +6412,9 @@ var require_json_schema_draft_07 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/ajv.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/ajv.js
 var require_ajv = __commonJS({
-  "../../node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/ajv.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv@8.18.0/node_modules/ajv/dist/ajv.js"(exports2, module2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.MissingRefError = exports2.ValidationError = exports2.CodeGen = exports2.Name = exports2.nil = exports2.stringify = exports2.str = exports2._ = exports2.KeywordCxt = exports2.Ajv = void 0;
@@ -6482,9 +6482,9 @@ var require_ajv = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/formats.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/formats.js
 var require_formats = __commonJS({
-  "../../node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/formats.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/formats.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.formatNames = exports2.fastFormats = exports2.fullFormats = void 0;
@@ -6685,9 +6685,9 @@ var require_formats = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/limit.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/limit.js
 var require_limit = __commonJS({
-  "../../node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/limit.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/limit.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.formatLimitDefinition = void 0;
@@ -6757,9 +6757,9 @@ var require_limit = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/index.js
 var require_dist = __commonJS({
-  "../../node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.18.0/node_modules/ajv-formats/dist/index.js"(exports2, module2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var formats_1 = require_formats();
@@ -6799,9 +6799,9 @@ var require_dist = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/identity.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/identity.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/identity.js"(exports2) {
     "use strict";
     var ALIAS = Symbol.for("yaml.alias");
     var DOC = Symbol.for("yaml.document");
@@ -6856,9 +6856,9 @@ var require_identity = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/visit.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/visit.js
 var require_visit = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/visit.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/visit.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var BREAK = Symbol("break visit");
@@ -7014,9 +7014,9 @@ var require_visit = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/directives.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/directives.js
 var require_directives = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/directives.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/directives.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var visit = require_visit();
@@ -7185,9 +7185,9 @@ var require_directives = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/anchors.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/anchors.js
 var require_anchors = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/anchors.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/anchors.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var visit = require_visit();
@@ -7255,9 +7255,9 @@ var require_anchors = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/applyReviver.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/applyReviver.js
 var require_applyReviver = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/applyReviver.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/applyReviver.js"(exports2) {
     "use strict";
     function applyReviver(reviver, obj, key, val) {
       if (val && typeof val === "object") {
@@ -7305,9 +7305,9 @@ var require_applyReviver = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/toJS.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/toJS.js
 var require_toJS = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/toJS.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/toJS.js"(exports2) {
     "use strict";
     var identity = require_identity();
     function toJS(value, arg, ctx) {
@@ -7335,9 +7335,9 @@ var require_toJS = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Node.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Node.js
 var require_Node = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Node.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Node.js"(exports2) {
     "use strict";
     var applyReviver = require_applyReviver();
     var identity = require_identity();
@@ -7376,9 +7376,9 @@ var require_Node = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Alias.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Alias.js
 var require_Alias = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Alias.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Alias.js"(exports2) {
     "use strict";
     var anchors = require_anchors();
     var visit = require_visit();
@@ -7490,9 +7490,9 @@ var require_Alias = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Scalar.js
 var require_Scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Scalar.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Node = require_Node();
@@ -7520,9 +7520,9 @@ var require_Scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/createNode.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/createNode.js
 var require_createNode = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/createNode.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/createNode.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var identity = require_identity();
@@ -7595,9 +7595,9 @@ var require_createNode = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Collection.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Collection.js
 var require_Collection = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Collection.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Collection.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var identity = require_identity();
@@ -7738,9 +7738,9 @@ var require_Collection = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyComment.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyComment.js
 var require_stringifyComment = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyComment.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyComment.js"(exports2) {
     "use strict";
     var stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, "#");
     function indentComment(comment, indent) {
@@ -7755,9 +7755,9 @@ var require_stringifyComment = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/foldFlowLines.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/foldFlowLines.js
 var require_foldFlowLines = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/foldFlowLines.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/foldFlowLines.js"(exports2) {
     "use strict";
     var FOLD_FLOW = "flow";
     var FOLD_BLOCK = "block";
@@ -7891,9 +7891,9 @@ ${indent}${text.slice(fold + 1, end2)}`;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyString.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyString.js
 var require_stringifyString = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyString.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyString.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var foldFlowLines = require_foldFlowLines();
@@ -8174,9 +8174,9 @@ ${indent}`);
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringify.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringify.js
 var require_stringify = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringify.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringify.js"(exports2) {
     "use strict";
     var anchors = require_anchors();
     var identity = require_identity();
@@ -8297,9 +8297,9 @@ ${ctx.indent}${str}`;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyPair.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyPair.js
 var require_stringifyPair = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyPair.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyPair.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -8430,9 +8430,9 @@ ${ctx.indent}`;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/log.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/log.js
 var require_log = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/log.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/log.js"(exports2) {
     "use strict";
     var node_process = require("process");
     function debug(logLevel, ...messages) {
@@ -8452,9 +8452,9 @@ var require_log = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/merge.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/merge.js
 var require_merge = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/merge.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/merge.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -8509,9 +8509,9 @@ var require_merge = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/addPairToJSMap.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/addPairToJSMap.js
 var require_addPairToJSMap = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/addPairToJSMap.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/addPairToJSMap.js"(exports2) {
     "use strict";
     var log = require_log();
     var merge2 = require_merge();
@@ -8573,9 +8573,9 @@ var require_addPairToJSMap = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Pair.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Pair.js
 var require_Pair = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Pair.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/Pair.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var stringifyPair = require_stringifyPair();
@@ -8613,9 +8613,9 @@ var require_Pair = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyCollection.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyCollection.js
 var require_stringifyCollection = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyCollection.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyCollection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var stringify = require_stringify();
@@ -8757,9 +8757,9 @@ ${indent}${end}`;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLMap.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLMap.js
 var require_YAMLMap = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLMap.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLMap.js"(exports2) {
     "use strict";
     var stringifyCollection = require_stringifyCollection();
     var addPairToJSMap = require_addPairToJSMap();
@@ -8901,9 +8901,9 @@ var require_YAMLMap = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/map.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/map.js
 var require_map = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/map.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/map.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var YAMLMap = require_YAMLMap();
@@ -8923,9 +8923,9 @@ var require_map = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLSeq.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLSeq.js
 var require_YAMLSeq = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLSeq.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/nodes/YAMLSeq.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var stringifyCollection = require_stringifyCollection();
@@ -9039,9 +9039,9 @@ var require_YAMLSeq = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/seq.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/seq.js
 var require_seq = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/seq.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/seq.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var YAMLSeq = require_YAMLSeq();
@@ -9061,9 +9061,9 @@ var require_seq = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/string.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/string.js
 var require_string = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/string.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/string.js"(exports2) {
     "use strict";
     var stringifyString = require_stringifyString();
     var string3 = {
@@ -9080,9 +9080,9 @@ var require_string = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/null.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/null.js
 var require_null = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/null.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/common/null.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var nullTag = {
@@ -9098,9 +9098,9 @@ var require_null = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/bool.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/bool.js
 var require_bool = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/bool.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/bool.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var boolTag = {
@@ -9122,9 +9122,9 @@ var require_bool = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyNumber.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyNumber.js
 var require_stringifyNumber = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyNumber.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyNumber.js"(exports2) {
     "use strict";
     function stringifyNumber({ format, minFractionDigits, tag, value }) {
       if (typeof value === "bigint")
@@ -9149,9 +9149,9 @@ var require_stringifyNumber = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/float.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/float.js
 var require_float = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/float.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/float.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var stringifyNumber = require_stringifyNumber();
@@ -9195,9 +9195,9 @@ var require_float = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/int.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/int.js
 var require_int = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/int.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/int.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -9240,9 +9240,9 @@ var require_int = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/schema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/schema.js
 var require_schema = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/schema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/core/schema.js"(exports2) {
     "use strict";
     var map = require_map();
     var _null4 = require_null();
@@ -9268,9 +9268,9 @@ var require_schema = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/json/schema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/json/schema.js
 var require_schema2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/json/schema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/json/schema.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var map = require_map();
@@ -9335,9 +9335,9 @@ var require_schema2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/binary.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/binary.js
 var require_binary = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/binary.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/binary.js"(exports2) {
     "use strict";
     var node_buffer = require("buffer");
     var Scalar = require_Scalar();
@@ -9401,9 +9401,9 @@ var require_binary = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/pairs.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/pairs.js
 var require_pairs = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/pairs.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/pairs.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -9479,9 +9479,9 @@ ${cn.comment}` : item.comment;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/omap.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/omap.js
 var require_omap = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/omap.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/omap.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var toJS = require_toJS();
@@ -9557,9 +9557,9 @@ var require_omap = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/bool.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/bool.js
 var require_bool2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/bool.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/bool.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     function boolStringify({ value, source }, ctx) {
@@ -9589,9 +9589,9 @@ var require_bool2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/float.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/float.js
 var require_float2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/float.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/float.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var stringifyNumber = require_stringifyNumber();
@@ -9638,9 +9638,9 @@ var require_float2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/int.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/int.js
 var require_int2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/int.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/int.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -9717,9 +9717,9 @@ var require_int2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/set.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/set.js
 var require_set = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/set.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/set.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -9806,9 +9806,9 @@ var require_set = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
 var require_timestamp = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     function parseSexagesimal(str, asBigInt) {
@@ -9894,9 +9894,9 @@ var require_timestamp = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/schema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/schema.js
 var require_schema3 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/schema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/yaml-1.1/schema.js"(exports2) {
     "use strict";
     var map = require_map();
     var _null4 = require_null();
@@ -9938,9 +9938,9 @@ var require_schema3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/tags.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/tags.js
 var require_tags = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/tags.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/tags.js"(exports2) {
     "use strict";
     var map = require_map();
     var _null4 = require_null();
@@ -10032,9 +10032,9 @@ var require_tags = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/Schema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/Schema.js
 var require_Schema = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/Schema.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/schema/Schema.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var map = require_map();
@@ -10064,9 +10064,9 @@ var require_Schema = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyDocument.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyDocument.js
 var require_stringifyDocument = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyDocument.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/stringify/stringifyDocument.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var stringify = require_stringify();
@@ -10144,9 +10144,9 @@ var require_stringifyDocument = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/Document.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/Document.js
 var require_Document = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/Document.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/doc/Document.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var Collection = require_Collection();
@@ -10453,9 +10453,9 @@ var require_Document = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/errors.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/errors.js
 var require_errors2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/errors.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/errors.js"(exports2) {
     "use strict";
     var YAMLError = class extends Error {
       constructor(name, pos, code, message) {
@@ -10518,9 +10518,9 @@ ${pointer}
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-props.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-props.js
 var require_resolve_props = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-props.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-props.js"(exports2) {
     "use strict";
     function resolveProps(tokens, { flow, indicator, next, offset, onError, parentIndent, startOnNewline }) {
       let spaceBefore = false;
@@ -10652,9 +10652,9 @@ var require_resolve_props = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-contains-newline.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-contains-newline.js
 var require_util_contains_newline = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-contains-newline.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-contains-newline.js"(exports2) {
     "use strict";
     function containsNewline(key) {
       if (!key)
@@ -10694,9 +10694,9 @@ var require_util_contains_newline = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-flow-indent-check.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-flow-indent-check.js
 var require_util_flow_indent_check = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-flow-indent-check.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-flow-indent-check.js"(exports2) {
     "use strict";
     var utilContainsNewline = require_util_contains_newline();
     function flowIndentCheck(indent, fc, onError) {
@@ -10712,9 +10712,9 @@ var require_util_flow_indent_check = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-map-includes.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-map-includes.js
 var require_util_map_includes = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-map-includes.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-map-includes.js"(exports2) {
     "use strict";
     var identity = require_identity();
     function mapIncludes(ctx, items, search) {
@@ -10728,9 +10728,9 @@ var require_util_map_includes = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-map.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-map.js
 var require_resolve_block_map = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-map.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-map.js"(exports2) {
     "use strict";
     var Pair = require_Pair();
     var YAMLMap = require_YAMLMap();
@@ -10836,9 +10836,9 @@ var require_resolve_block_map = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-seq.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-seq.js
 var require_resolve_block_seq = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-seq.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-seq.js"(exports2) {
     "use strict";
     var YAMLSeq = require_YAMLSeq();
     var resolveProps = require_resolve_props();
@@ -10887,9 +10887,9 @@ var require_resolve_block_seq = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-end.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-end.js
 var require_resolve_end = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-end.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-end.js"(exports2) {
     "use strict";
     function resolveEnd(end, offset, reqSpace, onError) {
       let comment = "";
@@ -10930,9 +10930,9 @@ var require_resolve_end = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-collection.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-collection.js
 var require_resolve_flow_collection = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-collection.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-collection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -11124,9 +11124,9 @@ var require_resolve_flow_collection = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-collection.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-collection.js
 var require_compose_collection = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-collection.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-collection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -11189,9 +11189,9 @@ var require_compose_collection = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-scalar.js
 var require_resolve_block_scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-block-scalar.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     function resolveBlockScalar(ctx, scalar, onError) {
@@ -11372,9 +11372,9 @@ var require_resolve_block_scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-scalar.js
 var require_resolve_flow_scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/resolve-flow-scalar.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var resolveEnd = require_resolve_end();
@@ -11591,9 +11591,9 @@ var require_resolve_flow_scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-scalar.js
 var require_compose_scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-scalar.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -11672,9 +11672,9 @@ var require_compose_scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-empty-scalar-position.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-empty-scalar-position.js
 var require_util_empty_scalar_position = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-empty-scalar-position.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/util-empty-scalar-position.js"(exports2) {
     "use strict";
     function emptyScalarPosition(offset, before, pos) {
       if (before) {
@@ -11702,9 +11702,9 @@ var require_util_empty_scalar_position = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-node.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-node.js
 var require_compose_node = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-node.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-node.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var identity = require_identity();
@@ -11803,9 +11803,9 @@ var require_compose_node = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-doc.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-doc.js
 var require_compose_doc = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-doc.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/compose-doc.js"(exports2) {
     "use strict";
     var Document = require_Document();
     var composeNode = require_compose_node();
@@ -11846,9 +11846,9 @@ var require_compose_doc = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/composer.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/composer.js
 var require_composer = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/composer.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/compose/composer.js"(exports2) {
     "use strict";
     var node_process = require("process");
     var directives = require_directives();
@@ -12052,9 +12052,9 @@ ${end.comment}` : end.comment;
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-scalar.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-scalar.js
 var require_cst_scalar = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-scalar.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-scalar.js"(exports2) {
     "use strict";
     var resolveBlockScalar = require_resolve_block_scalar();
     var resolveFlowScalar = require_resolve_flow_scalar();
@@ -12237,9 +12237,9 @@ var require_cst_scalar = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-stringify.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-stringify.js
 var require_cst_stringify = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-stringify.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-stringify.js"(exports2) {
     "use strict";
     var stringify = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
@@ -12298,9 +12298,9 @@ var require_cst_stringify = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-visit.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-visit.js
 var require_cst_visit = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-visit.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst-visit.js"(exports2) {
     "use strict";
     var BREAK = Symbol("break visit");
     var SKIP = Symbol("skip children");
@@ -12360,9 +12360,9 @@ var require_cst_visit = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst.js
 var require_cst = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/cst.js"(exports2) {
     "use strict";
     var cstScalar = require_cst_scalar();
     var cstStringify = require_cst_stringify();
@@ -12462,9 +12462,9 @@ var require_cst = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/lexer.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/lexer.js
 var require_lexer = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/lexer.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/lexer.js"(exports2) {
     "use strict";
     var cst = require_cst();
     function isEmpty(ch) {
@@ -13041,9 +13041,9 @@ var require_lexer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/line-counter.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/line-counter.js
 var require_line_counter = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/line-counter.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/line-counter.js"(exports2) {
     "use strict";
     var LineCounter = class {
       constructor() {
@@ -13072,9 +13072,9 @@ var require_line_counter = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/parser.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/parser.js
 var require_parser = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/parser.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/parse/parser.js"(exports2) {
     "use strict";
     var node_process = require("process");
     var cst = require_cst();
@@ -13939,9 +13939,9 @@ var require_parser = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/public-api.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/public-api.js
 var require_public_api = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/public-api.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/public-api.js"(exports2) {
     "use strict";
     var composer = require_composer();
     var Document = require_Document();
@@ -14036,9 +14036,9 @@ var require_public_api = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/index.js
 var require_dist2 = __commonJS({
-  "../../node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/index.js"(exports2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/yaml@2.8.2/node_modules/yaml/dist/index.js"(exports2) {
     "use strict";
     var composer = require_composer();
     var Document = require_Document();
@@ -14088,9 +14088,9 @@ var require_dist2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js
 var require_err_helpers = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js"(exports2, module2) {
     "use strict";
     var isErrorLike = (err) => {
       return err && typeof err.message === "string";
@@ -14145,9 +14145,9 @@ var require_err_helpers = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-proto.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-proto.js
 var require_err_proto = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-proto.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-proto.js"(exports2, module2) {
     "use strict";
     var seen = Symbol("circular-ref-tag");
     var rawSymbol = Symbol("pino-raw-err-ref");
@@ -14196,9 +14196,9 @@ var require_err_proto = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err.js
 var require_err = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err.js"(exports2, module2) {
     "use strict";
     module2.exports = errSerializer;
     var { messageWithCauses, stackWithCauses, isErrorLike } = require_err_helpers();
@@ -14236,9 +14236,9 @@ var require_err = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-with-cause.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-with-cause.js
 var require_err_with_cause = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-with-cause.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-with-cause.js"(exports2, module2) {
     "use strict";
     module2.exports = errWithCauseSerializer;
     var { isErrorLike } = require_err_helpers();
@@ -14279,9 +14279,9 @@ var require_err_with_cause = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/req.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/req.js
 var require_req = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/req.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/req.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       mapHttpRequest,
@@ -14374,9 +14374,9 @@ var require_req = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/res.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/res.js
 var require_res = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/res.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/res.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       mapHttpResponse,
@@ -14423,9 +14423,9 @@ var require_res = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/index.js
 var require_pino_std_serializers = __commonJS({
-  "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/index.js"(exports2, module2) {
     "use strict";
     var errSerializer = require_err();
     var errWithCauseSerializer = require_err_with_cause();
@@ -14460,9 +14460,9 @@ var require_pino_std_serializers = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/caller.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/caller.js
 var require_caller = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/caller.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/caller.js"(exports2, module2) {
     "use strict";
     function noOpPrepareStackTrace(_, stack) {
       return stack;
@@ -14488,9 +14488,9 @@ var require_caller = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/@pinojs+redact@0.4.0/node_modules/@pinojs/redact/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@pinojs+redact@0.4.0/node_modules/@pinojs/redact/index.js
 var require_redact = __commonJS({
-  "../../node_modules/.pnpm/@pinojs+redact@0.4.0/node_modules/@pinojs/redact/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/@pinojs+redact@0.4.0/node_modules/@pinojs/redact/index.js"(exports2, module2) {
     "use strict";
     function deepClone(obj) {
       if (obj === null || typeof obj !== "object") {
@@ -14921,9 +14921,9 @@ var require_redact = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/symbols.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/symbols.js
 var require_symbols = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/symbols.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/symbols.js"(exports2, module2) {
     "use strict";
     var setLevelSym = Symbol("pino.setLevel");
     var getLevelSym = Symbol("pino.getLevel");
@@ -14992,9 +14992,9 @@ var require_symbols = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/redaction.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/redaction.js
 var require_redaction = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/redaction.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/redaction.js"(exports2, module2) {
     "use strict";
     var Redact = require_redact();
     var { redactFmtSym, wildcardFirstSym } = require_symbols();
@@ -15074,9 +15074,9 @@ var require_redaction = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/time.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/time.js
 var require_time = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/time.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/time.js"(exports2, module2) {
     "use strict";
     var nullTime = () => "";
     var epochTime = () => `,"time":${Date.now()}`;
@@ -15105,9 +15105,9 @@ var require_time = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/quick-format-unescaped@4.0.4/node_modules/quick-format-unescaped/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/quick-format-unescaped@4.0.4/node_modules/quick-format-unescaped/index.js
 var require_quick_format_unescaped = __commonJS({
-  "../../node_modules/.pnpm/quick-format-unescaped@4.0.4/node_modules/quick-format-unescaped/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/quick-format-unescaped@4.0.4/node_modules/quick-format-unescaped/index.js"(exports2, module2) {
     "use strict";
     function tryStringify(o) {
       try {
@@ -15224,9 +15224,9 @@ var require_quick_format_unescaped = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js
 var require_atomic_sleep = __commonJS({
-  "../../node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js"(exports2, module2) {
     "use strict";
     if (typeof SharedArrayBuffer !== "undefined" && typeof Atomics !== "undefined") {
       let sleep = function(ms) {
@@ -15259,9 +15259,9 @@ var require_atomic_sleep = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js
 var require_sonic_boom = __commonJS({
-  "../../node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js"(exports2, module2) {
     "use strict";
     var fs = require("fs");
     var EventEmitter = require("events");
@@ -15846,9 +15846,9 @@ var require_sonic_boom = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/on-exit-leak-free@2.1.2/node_modules/on-exit-leak-free/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/on-exit-leak-free@2.1.2/node_modules/on-exit-leak-free/index.js
 var require_on_exit_leak_free = __commonJS({
-  "../../node_modules/.pnpm/on-exit-leak-free@2.1.2/node_modules/on-exit-leak-free/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/on-exit-leak-free@2.1.2/node_modules/on-exit-leak-free/index.js"(exports2, module2) {
     "use strict";
     var refs = {
       exit: [],
@@ -15940,9 +15940,9 @@ var require_on_exit_leak_free = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/package.json
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/package.json
 var require_package = __commonJS({
-  "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/package.json"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/package.json"(exports2, module2) {
     module2.exports = {
       name: "thread-stream",
       version: "3.1.0",
@@ -16003,9 +16003,9 @@ var require_package = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/wait.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/wait.js
 var require_wait = __commonJS({
-  "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/wait.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/wait.js"(exports2, module2) {
     "use strict";
     var MAX_TIMEOUT = 1e3;
     function wait(state, index, expected, timeout, done) {
@@ -16061,9 +16061,9 @@ var require_wait = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/indexes.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/indexes.js
 var require_indexes = __commonJS({
-  "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/indexes.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/indexes.js"(exports2, module2) {
     "use strict";
     var WRITE_INDEX = 4;
     var READ_INDEX = 8;
@@ -16074,9 +16074,9 @@ var require_indexes = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/index.js
 var require_thread_stream = __commonJS({
-  "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/index.js"(exports2, module2) {
     "use strict";
     var { version: version2 } = require_package();
     var { EventEmitter } = require("events");
@@ -16497,9 +16497,9 @@ var require_thread_stream = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/transport.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/transport.js
 var require_transport = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/transport.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/transport.js"(exports2, module2) {
     "use strict";
     var { createRequire } = require("module");
     var getCallers = require_caller();
@@ -16628,9 +16628,9 @@ var require_transport = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/tools.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/tools.js
 var require_tools = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/tools.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/tools.js"(exports2, module2) {
     "use strict";
     var diagChan = require("node:diagnostics_channel");
     var format = require_quick_format_unescaped();
@@ -16965,9 +16965,9 @@ var require_tools = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/constants.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/constants.js
 var require_constants = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/constants.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/constants.js"(exports2, module2) {
     var DEFAULT_LEVELS = {
       trace: 10,
       debug: 20,
@@ -16987,9 +16987,9 @@ var require_constants = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/levels.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/levels.js
 var require_levels = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/levels.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/levels.js"(exports2, module2) {
     "use strict";
     var {
       lsCacheSym,
@@ -17180,17 +17180,17 @@ var require_levels = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/meta.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/meta.js
 var require_meta = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/meta.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/meta.js"(exports2, module2) {
     "use strict";
     module2.exports = { version: "9.14.0" };
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/proto.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/proto.js
 var require_proto = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/proto.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/proto.js"(exports2, module2) {
     "use strict";
     var { EventEmitter } = require("node:events");
     var {
@@ -17419,9 +17419,9 @@ var require_proto = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/safe-stable-stringify@2.5.0/node_modules/safe-stable-stringify/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/safe-stable-stringify@2.5.0/node_modules/safe-stable-stringify/index.js
 var require_safe_stable_stringify = __commonJS({
-  "../../node_modules/.pnpm/safe-stable-stringify@2.5.0/node_modules/safe-stable-stringify/index.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/safe-stable-stringify@2.5.0/node_modules/safe-stable-stringify/index.js"(exports2, module2) {
     "use strict";
     var { hasOwnProperty } = Object.prototype;
     var stringify = configure();
@@ -18015,9 +18015,9 @@ ${originalIndentation}`;
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/multistream.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/multistream.js
 var require_multistream = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/multistream.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/multistream.js"(exports2, module2) {
     "use strict";
     var metadata = Symbol.for("pino.metadata");
     var { DEFAULT_LEVELS } = require_constants();
@@ -18183,9 +18183,9 @@ var require_multistream = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js
 var require_pino = __commonJS({
-  "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js"(exports2, module2) {
+  "../../../../../../Desktop/sage-main/node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js"(exports2, module2) {
     "use strict";
     var os = require("node:os");
     var stdSerializers = require_pino_std_serializers();
@@ -18393,7 +18393,7 @@ var require_pino = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
   BRAND: () => BRAND,
@@ -18505,7 +18505,7 @@ __export(external_exports, {
   void: () => voidType
 });
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/util.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -18639,7 +18639,7 @@ var getParsedType = (data) => {
   }
 };
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/ZodError.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -18757,7 +18757,7 @@ ZodError.create = (issues) => {
   return error2;
 };
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/locales/en.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/locales/en.js
 var errorMap = (issue2, _ctx) => {
   let message;
   switch (issue2.code) {
@@ -18860,7 +18860,7 @@ var errorMap = (issue2, _ctx) => {
 };
 var en_default = errorMap;
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/errors.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function setErrorMap(map) {
   overrideErrorMap = map;
@@ -18869,7 +18869,7 @@ function getErrorMap() {
   return overrideErrorMap;
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/parseUtil.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -18979,14 +18979,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/errorUtil.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -22434,7 +22434,7 @@ var coerce = {
 };
 var NEVER = INVALID;
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/core.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/core.js
 var NEVER2 = Object.freeze({
   status: "aborted"
 });
@@ -22494,7 +22494,7 @@ function config(newConfig) {
   return globalConfig;
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/util.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/util.js
 var util_exports = {};
 __export(util_exports, {
   BIGINT_FORMAT_RANGES: () => BIGINT_FORMAT_RANGES,
@@ -23015,7 +23015,7 @@ var Class = class {
   }
 };
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/errors.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/errors.js
 var initializer = (inst, def) => {
   inst.name = "$ZodError";
   Object.defineProperty(inst, "_zod", {
@@ -23090,7 +23090,7 @@ function formatError(error2, _mapper) {
   return fieldErrors;
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/parse.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/parse.js
 var _parse = (_Err) => (schema, value, _ctx, _params) => {
   const ctx = _ctx ? Object.assign(_ctx, { async: false }) : { async: false };
   const result = schema._zod.run({ value, issues: [] }, ctx);
@@ -23142,7 +23142,7 @@ var _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
 };
 var safeParseAsync = /* @__PURE__ */ _safeParseAsync($ZodRealError);
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/regexes.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/regexes.js
 var cuid = /^[cC][^\s-]{8,}$/;
 var cuid2 = /^[0-9a-z]+$/;
 var ulid = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/;
@@ -23200,7 +23200,7 @@ var _null = /null/i;
 var lowercase = /^[^A-Z]*$/;
 var uppercase = /^[^a-z]*$/;
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/checks.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/checks.js
 var $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
   var _a;
   inst._zod ?? (inst._zod = {});
@@ -23585,7 +23585,7 @@ var $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (ins
   };
 });
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/doc.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/doc.js
 var Doc = class {
   constructor(args = []) {
     this.content = [];
@@ -23621,14 +23621,14 @@ var Doc = class {
   }
 };
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/versions.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/versions.js
 var version = {
   major: 4,
   minor: 0,
   patch: 0
 };
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/schemas.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/schemas.js
 var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a;
   inst ?? (inst = {});
@@ -24866,7 +24866,7 @@ function handleRefineResult(result, payload, input, inst) {
   }
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/locales/en.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/locales/en.js
 var parsedType = (data) => {
   const t = typeof data;
   switch (t) {
@@ -24984,7 +24984,7 @@ function en_default2() {
   };
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/registries.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/registries.js
 var $output = Symbol("ZodOutput");
 var $input = Symbol("ZodInput");
 var $ZodRegistry = class {
@@ -25034,7 +25034,7 @@ function registry() {
 }
 var globalRegistry = /* @__PURE__ */ registry();
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/api.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/api.js
 function _string(Class2, params) {
   return new Class2({
     type: "string",
@@ -25473,7 +25473,7 @@ function _refine(Class2, fn, _params) {
   return schema;
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/to-json-schema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/core/to-json-schema.js
 var JSONSchemaGenerator = class {
   constructor(params) {
     this.counter = 0;
@@ -26240,7 +26240,7 @@ function isTransforming(_schema, _ctx) {
   throw new Error(`Unknown schema type: ${def.type}`);
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/mini/schemas.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/mini/schemas.js
 var ZodMiniType = /* @__PURE__ */ $constructor("ZodMiniType", (inst, def) => {
   if (!inst._zod)
     throw new Error("Uninitialized schema in ZodMiniType.");
@@ -26286,7 +26286,7 @@ function object(shape, params) {
   return new ZodMiniObject(def);
 }
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
 function isZ4Schema(s) {
   const schema = s;
   return !!schema._zod;
@@ -26430,7 +26430,7 @@ function getLiteralValue(schema) {
   return void 0;
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/iso.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/iso.js
 var iso_exports2 = {};
 __export(iso_exports2, {
   ZodISODate: () => ZodISODate,
@@ -26471,7 +26471,7 @@ function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/errors.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/errors.js
 var initializer2 = (inst, issues) => {
   $ZodError.init(inst, issues);
   inst.name = "ZodError";
@@ -26505,13 +26505,13 @@ var ZodRealError = $constructor("ZodError", initializer2, {
   Parent: Error
 });
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/parse.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/parse.js
 var parse2 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
 var safeParse3 = /* @__PURE__ */ _safeParse(ZodRealError);
 var safeParseAsync3 = /* @__PURE__ */ _safeParseAsync(ZodRealError);
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/schemas.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/schemas.js
 var ZodType2 = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
   $ZodType.init(inst, def);
   inst.def = def;
@@ -27122,10 +27122,10 @@ function preprocess(fn, schema) {
   return pipe(transform(fn), schema);
 }
 
-// ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/external.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/external.js
 config(en_default2());
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
 var LATEST_PROTOCOL_VERSION = "2025-11-25";
 var SUPPORTED_PROTOCOL_VERSIONS = [LATEST_PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"];
 var RELATED_TASK_META_KEY = "io.modelcontextprotocol/related-task";
@@ -28643,12 +28643,12 @@ var UrlElicitationRequiredError = class extends McpError {
   }
 };
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
 function isTerminal(status) {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/Options.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/Options.js
 var ignoreOverride = Symbol("Let zodToJsonSchema decide on which parser to use");
 var defaultOptions = {
   name: void 0,
@@ -28682,7 +28682,7 @@ var getDefaultOptions = (options) => typeof options === "string" ? {
   ...options
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/Refs.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/Refs.js
 var getRefs = (options) => {
   const _options = getDefaultOptions(options);
   const currentPath = _options.name !== void 0 ? [..._options.basePath, _options.definitionPath, _options.name] : _options.basePath;
@@ -28703,7 +28703,7 @@ var getRefs = (options) => {
   };
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/errorMessages.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/errorMessages.js
 function addErrorMessage(res, key, errorMessage, refs) {
   if (!refs?.errorMessages)
     return;
@@ -28719,7 +28719,7 @@ function setResponseValueAndErrors(res, key, value, errorMessage, refs) {
   addErrorMessage(res, key, errorMessage, refs);
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
 var getRelativePath = (pathA, pathB) => {
   let i = 0;
   for (; i < pathA.length && i < pathB.length; i++) {
@@ -28729,7 +28729,7 @@ var getRelativePath = (pathA, pathB) => {
   return [(pathA.length - i).toString(), ...pathB.slice(i)].join("/");
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/any.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/any.js
 function parseAnyDef(refs) {
   if (refs.target !== "openAi") {
     return {};
@@ -28745,7 +28745,7 @@ function parseAnyDef(refs) {
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/array.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/array.js
 function parseArrayDef(def, refs) {
   const res = {
     type: "array"
@@ -28769,7 +28769,7 @@ function parseArrayDef(def, refs) {
   return res;
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/bigint.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/bigint.js
 function parseBigintDef(def, refs) {
   const res = {
     type: "integer",
@@ -28815,24 +28815,24 @@ function parseBigintDef(def, refs) {
   return res;
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/boolean.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/boolean.js
 function parseBooleanDef() {
   return {
     type: "boolean"
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/branded.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/branded.js
 function parseBrandedDef(_def, refs) {
   return parseDef(_def.type._def, refs);
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/catch.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/catch.js
 var parseCatchDef = (def, refs) => {
   return parseDef(def.innerType._def, refs);
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/date.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/date.js
 function parseDateDef(def, refs, overrideDateStrategy) {
   const strategy = overrideDateStrategy ?? refs.dateStrategy;
   if (Array.isArray(strategy)) {
@@ -28891,7 +28891,7 @@ var integerDateParser = (def, refs) => {
   return res;
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/default.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/default.js
 function parseDefaultDef(_def, refs) {
   return {
     ...parseDef(_def.innerType._def, refs),
@@ -28899,12 +28899,12 @@ function parseDefaultDef(_def, refs) {
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/effects.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/effects.js
 function parseEffectsDef(_def, refs) {
   return refs.effectStrategy === "input" ? parseDef(_def.schema._def, refs) : parseAnyDef(refs);
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/enum.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/enum.js
 function parseEnumDef(def) {
   return {
     type: "string",
@@ -28912,7 +28912,7 @@ function parseEnumDef(def) {
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/intersection.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/intersection.js
 var isJsonSchema7AllOfType = (type) => {
   if ("type" in type && type.type === "string")
     return false;
@@ -28954,7 +28954,7 @@ function parseIntersectionDef(def, refs) {
   } : void 0;
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/literal.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/literal.js
 function parseLiteralDef(def, refs) {
   const parsedType2 = typeof def.value;
   if (parsedType2 !== "bigint" && parsedType2 !== "number" && parsedType2 !== "boolean" && parsedType2 !== "string") {
@@ -28974,7 +28974,7 @@ function parseLiteralDef(def, refs) {
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/string.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/string.js
 var emojiRegex2 = void 0;
 var zodPatterns = {
   /**
@@ -29299,7 +29299,7 @@ function stringifyRegExpWithFlags(regex, refs) {
   return pattern;
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/record.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/record.js
 function parseRecordDef(def, refs) {
   if (refs.target === "openAi") {
     console.warn("Warning: OpenAI may not support records in schemas! Try an array of key-value pairs instead.");
@@ -29351,7 +29351,7 @@ function parseRecordDef(def, refs) {
   return schema;
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/map.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/map.js
 function parseMapDef(def, refs) {
   if (refs.mapStrategy === "record") {
     return parseRecordDef(def, refs);
@@ -29376,7 +29376,7 @@ function parseMapDef(def, refs) {
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/nativeEnum.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/nativeEnum.js
 function parseNativeEnumDef(def) {
   const object3 = def.values;
   const actualKeys = Object.keys(def.values).filter((key) => {
@@ -29390,7 +29390,7 @@ function parseNativeEnumDef(def) {
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/never.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/never.js
 function parseNeverDef(refs) {
   return refs.target === "openAi" ? void 0 : {
     not: parseAnyDef({
@@ -29400,7 +29400,7 @@ function parseNeverDef(refs) {
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/null.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/null.js
 function parseNullDef(refs) {
   return refs.target === "openApi3" ? {
     enum: ["null"],
@@ -29410,7 +29410,7 @@ function parseNullDef(refs) {
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/union.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/union.js
 var primitiveMappings = {
   ZodString: "string",
   ZodNumber: "number",
@@ -29478,7 +29478,7 @@ var asAnyOf = (def, refs) => {
   return anyOf.length ? { anyOf } : void 0;
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/nullable.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/nullable.js
 function parseNullableDef(def, refs) {
   if (["ZodString", "ZodNumber", "ZodBigInt", "ZodBoolean", "ZodNull"].includes(def.innerType._def.typeName) && (!def.innerType._def.checks || !def.innerType._def.checks.length)) {
     if (refs.target === "openApi3") {
@@ -29510,7 +29510,7 @@ function parseNullableDef(def, refs) {
   return base && { anyOf: [base, { type: "null" }] };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/number.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/number.js
 function parseNumberDef(def, refs) {
   const res = {
     type: "number"
@@ -29559,7 +29559,7 @@ function parseNumberDef(def, refs) {
   return res;
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/object.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/object.js
 function parseObjectDef(def, refs) {
   const forceOptionalIntoNullable = refs.target === "openAi";
   const result = {
@@ -29629,7 +29629,7 @@ function safeIsOptional(schema) {
   }
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/optional.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/optional.js
 var parseOptionalDef = (def, refs) => {
   if (refs.currentPath.toString() === refs.propertyPath?.toString()) {
     return parseDef(def.innerType._def, refs);
@@ -29648,7 +29648,7 @@ var parseOptionalDef = (def, refs) => {
   } : parseAnyDef(refs);
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/pipeline.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/pipeline.js
 var parsePipelineDef = (def, refs) => {
   if (refs.pipeStrategy === "input") {
     return parseDef(def.in._def, refs);
@@ -29668,12 +29668,12 @@ var parsePipelineDef = (def, refs) => {
   };
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/promise.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/promise.js
 function parsePromiseDef(def, refs) {
   return parseDef(def.type._def, refs);
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/set.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/set.js
 function parseSetDef(def, refs) {
   const items = parseDef(def.valueType._def, {
     ...refs,
@@ -29693,7 +29693,7 @@ function parseSetDef(def, refs) {
   return schema;
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/tuple.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/tuple.js
 function parseTupleDef(def, refs) {
   if (def.rest) {
     return {
@@ -29721,24 +29721,24 @@ function parseTupleDef(def, refs) {
   }
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/undefined.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/undefined.js
 function parseUndefinedDef(refs) {
   return {
     not: parseAnyDef(refs)
   };
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/unknown.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/unknown.js
 function parseUnknownDef(refs) {
   return parseAnyDef(refs);
 }
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/readonly.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parsers/readonly.js
 var parseReadonlyDef = (def, refs) => {
   return parseDef(def.innerType._def, refs);
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/selectParser.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/selectParser.js
 var selectParser = (def, typeName, refs) => {
   switch (typeName) {
     case ZodFirstPartyTypeKind.ZodString:
@@ -29814,7 +29814,7 @@ var selectParser = (def, typeName, refs) => {
   }
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parseDef.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/parseDef.js
 function parseDef(def, refs, forceResolution = false) {
   const seenItem = refs.seen.get(def);
   if (refs.override) {
@@ -29870,7 +29870,7 @@ var addMeta = (def, refs, jsonSchema) => {
   return jsonSchema;
 };
 
-// ../../node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/zodToJsonSchema.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/zod-to-json-schema@3.25.1_zod@3.25.76/node_modules/zod-to-json-schema/dist/esm/zodToJsonSchema.js
 var zodToJsonSchema = (schema, options) => {
   const refs = getRefs(options);
   let definitions = typeof options === "object" && options.definitions ? Object.entries(options.definitions).reduce((acc, [name3, schema2]) => ({
@@ -29932,7 +29932,7 @@ var zodToJsonSchema = (schema, options) => {
   return combined;
 };
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
 function mapMiniTarget(t) {
   if (!t)
     return "draft-7";
@@ -29974,7 +29974,7 @@ function parseWithCompat(schema, data) {
   return result.data;
 }
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
 var DEFAULT_REQUEST_TIMEOUT_MSEC = 6e4;
 var Protocol = class {
   constructor(_options) {
@@ -30922,7 +30922,7 @@ function mergeCapabilities(base, additional) {
   return result;
 }
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
 var import_ajv = __toESM(require_ajv(), 1);
 var import_ajv_formats = __toESM(require_dist(), 1);
 function createDefaultAjvInstance() {
@@ -30990,7 +30990,7 @@ var AjvJsonSchemaValidator = class {
   }
 };
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
 var ExperimentalServerTasks = class {
   constructor(_server) {
     this._server = _server;
@@ -31062,7 +31062,7 @@ var ExperimentalServerTasks = class {
   }
 };
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
 function assertToolsCallTaskCapability(requests, method, entityName) {
   if (!requests) {
     throw new Error(`${entityName} does not support task creation (required for ${method})`);
@@ -31097,7 +31097,7 @@ function assertClientRequestTaskCapability(requests, method, entityName) {
   }
 }
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
 var Server = class extends Protocol {
   /**
    * Initializes this server with the given name and version information.
@@ -31477,7 +31477,7 @@ var Server = class extends Protocol {
   }
 };
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/completable.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/completable.js
 var COMPLETABLE_SYMBOL = Symbol.for("mcp.completable");
 function isCompletable(schema) {
   return !!schema && typeof schema === "object" && COMPLETABLE_SYMBOL in schema;
@@ -31491,7 +31491,7 @@ var McpZodTypeKind;
   McpZodTypeKind2["Completable"] = "McpCompletable";
 })(McpZodTypeKind || (McpZodTypeKind = {}));
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/toolNameValidation.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/toolNameValidation.js
 var TOOL_NAME_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
 function validateToolName(name) {
   const warnings = [];
@@ -31549,7 +31549,7 @@ function validateAndWarnToolName(name) {
   return result.isValid;
 }
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/mcp-server.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/mcp-server.js
 var ExperimentalMcpServerTasks = class {
   constructor(_mcpServer) {
     this._mcpServer = _mcpServer;
@@ -31564,7 +31564,7 @@ var ExperimentalMcpServerTasks = class {
   }
 };
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js
 var McpServer = class {
   constructor(serverInfo, options) {
     this._registeredResources = {};
@@ -32350,10 +32350,10 @@ var EMPTY_COMPLETION_RESULT = {
   }
 };
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 var import_node_process = __toESM(require("node:process"), 1);
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
 var ReadBuffer = class {
   append(chunk) {
     this._buffer = this._buffer ? Buffer.concat([this._buffer, chunk]) : chunk;
@@ -32381,7 +32381,7 @@ function serializeMessage(message) {
   return JSON.stringify(message) + "\n";
 }
 
-// ../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
+// ../../../../../../Desktop/sage-main/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 var StdioServerTransport = class {
   constructor(_stdin = import_node_process.default.stdin, _stdout = import_node_process.default.stdout) {
     this._stdin = _stdin;
@@ -32442,11 +32442,11 @@ var StdioServerTransport = class {
   }
 };
 
-// ../core/dist/config.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/config.js
 var import_node_os = require("node:os");
 var import_node_path2 = require("node:path");
 
-// ../core/dist/file-utils.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/file-utils.js
 var import_node_crypto = require("node:crypto");
 var fsPromises = __toESM(require("node:fs/promises"), 1);
 var import_node_path = require("node:path");
@@ -32471,7 +32471,7 @@ async function atomicWriteJson(path, data) {
   }
 }
 
-// ../core/dist/types.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/types.js
 var nullLogger = {
   debug() {
   },
@@ -32505,6 +32505,31 @@ var ThreatSchema = external_exports.object({
 var DecisionSchema = external_exports.enum(["allow", "deny", "ask"]);
 var VerdictSeveritySchema = external_exports.enum(["info", "warning", "critical"]);
 var SensitivitySchema = external_exports.enum(["paranoid", "balanced", "relaxed"]);
+var AuthConfigSchema = external_exports.object({
+  /**
+   * API key used to authenticate to Singularity AIDR cloud services (control plane, reputation APIs).
+   * Optional: local-only mode works without it.
+   */
+  api_key: external_exports.string().optional()
+});
+var ControlPlaneConfigSchema = external_exports.object({
+  /**
+   * Enables cloud control plane features (dashboard telemetry, agent seat enforcement).
+   * Fail-open: if cloud calls fail, local detection still runs.
+   */
+  enabled: external_exports.boolean().default(false),
+  /**
+   * Base URL for the control plane ingest API (no trailing slash).
+   * Example: "https://aidr.example.com"
+   */
+  endpoint: external_exports.string().default("https://aidr-control.svc.singularityrd.com"),
+  /** Request timeout for control-plane calls. */
+  timeout_seconds: external_exports.number().default(0.5),
+  /** Send runtime verdict events to the control plane for the dashboard. */
+  send_audit_logs: external_exports.boolean().default(false),
+  /** Also send clean (allow) verdicts. */
+  send_clean_verdicts: external_exports.boolean().default(false)
+});
 var UrlCheckConfigSchema = external_exports.object({
   endpoint: external_exports.string().optional(),
   timeout_seconds: external_exports.number().default(5),
@@ -32541,6 +32566,8 @@ var AmsiCheckConfigSchema = external_exports.object({
   enabled: external_exports.boolean().default(true)
 });
 var ConfigSchema = external_exports.object({
+  auth: AuthConfigSchema.default({}),
+  control_plane: ControlPlaneConfigSchema.default({}),
   url_check: UrlCheckConfigSchema.default({}),
   file_check: FileCheckConfigSchema.default({}),
   package_check: PackageCheckConfigSchema.default({}),
@@ -32553,7 +32580,7 @@ var ConfigSchema = external_exports.object({
   disabled_threats: external_exports.array(external_exports.string()).default([])
 });
 
-// ../core/dist/config.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/config.js
 var AIDR_DIR = "~/.singularity-aidr";
 function resolvedAidrDir() {
   return resolvePath(AIDR_DIR);
@@ -32661,7 +32688,7 @@ async function loadConfig(configPath, logger2 = nullLogger) {
   }
 }
 
-// ../core/dist/url-utils.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/url-utils.js
 var import_node_crypto2 = require("node:crypto");
 var import_node_os2 = require("node:os");
 var import_node_path3 = require("node:path");
@@ -32683,7 +32710,7 @@ function normalizeFilePath(raw) {
   return (0, import_node_path3.normalize)(expanded);
 }
 
-// ../core/dist/allowlist.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/allowlist.js
 function emptyAllowlist() {
   return { urls: {}, commands: {}, filePaths: {} };
 }
@@ -32791,16 +32818,16 @@ function removeCommand(allowlist, commandHash) {
   return removeEntry(allowlist.commands, commandHash);
 }
 
-// ../core/dist/approval-store.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/approval-store.js
 var PENDING_STALE_MS = 60 * 60 * 1e3;
 var APPROVED_TTL_MS = 10 * 60 * 1e3;
 
-// ../core/dist/clients/amsi-spawn.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/clients/amsi-spawn.js
 var chldproc1 = "node:child_";
 var chldproc2 = "process";
 var chldproc = require(chldproc1 + chldproc2);
 
-// ../core/dist/clients/amsi.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/clients/amsi.js
 var AMSI_CSHARP_TYPE = `
 using System;
 using System.Runtime.InteropServices;
@@ -32920,7 +32947,7 @@ ${AMSI_CSHARP_TYPE}
 }
 `;
 
-// ../core/dist/version.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/version.js
 var import_node_fs = require("node:fs");
 var import_node_path4 = require("node:path");
 var import_node_url = require("node:url");
@@ -32939,20 +32966,20 @@ function resolveVersion() {
 }
 var VERSION = resolveVersion();
 
-// ../core/dist/extractors.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/extractors.js
 var MAX_CONTENT_SIZE = 64 * 1024;
 
-// ../core/dist/trusted-domains.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/trusted-domains.js
 var import_yaml = __toESM(require_dist2(), 1);
 
-// ../core/dist/threat-loader.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/threat-loader.js
 var import_yaml2 = __toESM(require_dist2(), 1);
 
-// ../core/dist/plugin-scan-cache.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/plugin-scan-cache.js
 var import_node_path5 = require("node:path");
 var DEFAULT_CACHE_PATH = (0, import_node_path5.join)(resolvePath(AIDR_DIR), "plugin_scan_cache.json");
 
-// ../core/dist/plugin-scanner.js
+// ../../../../../../Desktop/sage-main/packages/core/dist/plugin-scanner.js
 var import_node_os3 = require("node:os");
 var import_node_path6 = require("node:path");
 var DEFAULT_PLUGINS_REGISTRY = (0, import_node_path6.join)((0, import_node_os3.homedir)(), ".claude", "plugins", "installed_plugins.json");

@@ -17,11 +17,13 @@ export type { ApprovedEntry, PendingEntry } from "./approval-store.js";
 // Approval store
 export { ApprovalStore } from "./approval-store.js";
 // Audit log
-export { getRecentEntries, logPluginScan, logVerdict } from "./audit-log.js";
+export { buildRuntimeVerdictEntry, getRecentEntries, logPluginScan, logVerdict } from "./audit-log.js";
 // Cache
 export { VerdictCache } from "./cache.js";
 // AMSI client
 export { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
+// Control plane client (optional telemetry/licensing)
+export { ControlPlaneClient } from "./clients/control-plane.js";
 export type { FileCheckBatchResult, FileCheckResult } from "./clients/file-check.js";
 // File-check client
 export { FileCheckClient } from "./clients/file-check.js";
@@ -141,7 +143,9 @@ export type {
 	CachedVerdict,
 	CacheStore,
 	Config,
+	ControlPlaneConfig,
 	Decision,
+	AuthConfig,
 	FileCheckConfig,
 	HeuristicMatch,
 	Logger,
@@ -169,8 +173,10 @@ export {
 	AllowlistConfigSchema,
 	ArtifactSchema,
 	ArtifactTypeSchema,
+	AuthConfigSchema,
 	CacheConfigSchema,
 	ConfigSchema,
+	ControlPlaneConfigSchema,
 	DecisionSchema,
 	FileCheckConfigSchema,
 	LoggingConfigSchema,
