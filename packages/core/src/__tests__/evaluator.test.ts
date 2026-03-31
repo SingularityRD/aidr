@@ -14,6 +14,13 @@ async function writeConfig(dir: string, allowlistPath: string): Promise<string> 
 		configPath,
 		`${JSON.stringify(
 			{
+				// Unit tests exercise the local engine. Commercial v1 is managed-only/auth-first,
+				// so we provide a dummy api_key and explicitly disable entitlement enforcement.
+				auth: { api_key: "aidr_test_key" },
+				// Leave control plane enabled so missing entitlements don't disable enforcement,
+				// but point it to a dead endpoint for fast, deterministic failure.
+				control_plane: { enabled: true, endpoint: "http://127.0.0.1:1", timeout_seconds: 0.01 },
+				licensing: { require_signed_entitlements: false },
 				heuristics_enabled: true,
 				url_check: { enabled: false },
 				package_check: { enabled: false },
@@ -38,6 +45,9 @@ async function writeConfigWithCache(
 		configPath,
 		`${JSON.stringify(
 			{
+				auth: { api_key: "aidr_test_key" },
+				control_plane: { enabled: true, endpoint: "http://127.0.0.1:1", timeout_seconds: 0.01 },
+				licensing: { require_signed_entitlements: false },
 				heuristics_enabled: true,
 				url_check: { enabled: true },
 				package_check: { enabled: false },

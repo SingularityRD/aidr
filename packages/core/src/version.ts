@@ -19,3 +19,7 @@ function resolveVersion(): string {
 }
 
 export const VERSION: string = resolveVersion();
+
+export function getVersion(): string {
+	return VERSION;
+}

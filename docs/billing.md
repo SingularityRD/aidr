@@ -1,6 +1,6 @@
 # Billing (Implementation Notes)
 
-This repo includes **agent-seat enforcement hooks** (1 free agent by default) but does not ship a full Stripe integration yet.
+This repo includes **agent-seat enforcement hooks** (1 free agent by default) and a minimal billing sync model intended for Paddle (Merchant of Record).
 
 ## What’s implemented
 
@@ -19,9 +19,14 @@ where user_id = '<auth.users.id>';
 
 This is enough for a first internal beta.
 
-## Stripe (recommended next)
+## Paddle (recommended)
 
 - Sell “extra agents” as a quantity-based subscription.
-- Stripe checkout/session creates/updates a subscription record keyed by `user_id`.
-- Stripe webhook updates `entitlements.extra_agents` on invoice paid / subscription updated / canceled.
+- Paddle checkout is managed externally; webhooks reconcile `subscriptions` and update `entitlements.extra_agents`.
+- Seat enforcement remains server-side via `ingest` (`402 agent_limit_exceeded`).
+
+## Pricing model (proposed)
+
+- **1 free agent**
+- **$2 / month per additional agent**
 

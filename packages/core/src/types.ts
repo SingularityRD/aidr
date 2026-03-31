@@ -22,6 +22,36 @@ export const nullLogger: Logger = {
 	error() {},
 };
 
+/** Get a logger instance (currently returns nullLogger). */
+export function getLogger(): Logger {
+	return nullLogger;
+}
+
+/** Get a logger instance (currently returns nullLogger). */
+export function getLogger(): Logger {
+	return nullLogger;
+}
+
+/** Get a logger instance (currently returns nullLogger). */
+export function getLogger(): Logger {
+	return nullLogger;
+}
+
+/** Get a logger instance (currently returns nullLogger). */
+export function getLogger(): Logger {
+	return nullLogger;
+}
+
+/** Get a logger instance (currently returns nullLogger). */
+export function getLogger(): Logger {
+	return nullLogger;
+}
+
+/** Get a logger instance (currently returns nullLogger). */
+export function getLogger(): Logger {
+	return nullLogger;
+}
+
 // ── Artifact ────────────────────────────────────────────────────────
 
 export const ArtifactTypeSchema = z.enum(["url", "command", "file_path", "content"]);
@@ -133,8 +163,19 @@ export interface AmsiCheckResult {
 	isBlockedByAdmin: boolean;
 }
 
+export interface PolicyMatch {
+	policyId: string;
+	title: string;
+	category: string;
+	action: "block" | "require_approval" | "log";
+	severity: "critical" | "high" | "medium" | "low";
+	confidence: number;
+	artifact: string;
+}
+
 export interface SignalSources {
 	heuristicMatches: HeuristicMatch[];
+	policyMatches?: PolicyMatch[];
 	urlCheckResults: UrlCheckResult[];
 	packageCheckResults?: PackageCheckResult[];
 	amsiCheckResults?: AmsiCheckResult[];
@@ -165,20 +206,25 @@ export interface CacheStore {
 
 export const SensitivitySchema = z.enum(["paranoid", "balanced", "relaxed"]);
 
+export const OperatingModeSchema = z.enum(["local", "managed"]);
+
 export const AuthConfigSchema = z.object({
 	/**
-	 * API key used to authenticate to Singularity AIDR cloud services (control plane, reputation APIs).
-	 * Optional: local-only mode works without it.
+	 * API key used to authenticate to Singularity AIDR managed services (control plane, premium packs).
 	 */
 	api_key: z.string().optional(),
+	/**
+	 * Optional one-time enrollment token used to bootstrap managed mode (exchanged for an API key).
+	 */
+	enrollment_token: z.string().optional(),
 });
 
 export const ControlPlaneConfigSchema = z.object({
 	/**
-	 * Enables cloud control plane features (dashboard telemetry, agent seat enforcement).
-	 * Fail-open: if cloud calls fail, local detection still runs.
+	 * Enables managed control plane features (dashboard telemetry, agent seat enforcement).
+	 * Fail-open: if cloud calls fail, protection can continue offline within grace.
 	 */
-	enabled: z.boolean().default(false),
+	enabled: z.boolean().default(true),
 	/**
 	 * Base URL for the control plane ingest API (no trailing slash).
 	 * Example: "https://aidr.example.com"
@@ -187,9 +233,137 @@ export const ControlPlaneConfigSchema = z.object({
 	/** Request timeout for control-plane calls. */
 	timeout_seconds: z.number().default(0.5),
 	/** Send runtime verdict events to the control plane for the dashboard. */
-	send_audit_logs: z.boolean().default(false),
+	send_audit_logs: z.boolean().default(true),
 	/** Also send clean (allow) verdicts. */
 	send_clean_verdicts: z.boolean().default(false),
+	/** Also send incident events (if the runtime emits them). */
+	sync_incidents: z.boolean().default(false),
+	/**
+	 * Grace period for managed mode when the control plane is unreachable.
+	 * Used to avoid flapping between "online" and "offline" states.
+	 */
+	grace_period_hours: z.number().default(72),
+	/**
+	 * Remote telemetry redaction mode.
+	 * - none: send raw artifacts/summaries (least private)
+	 * - hash: replace sensitive fields with sha256 digests (default)
+	 * - full: omit sensitive fields entirely (most private)
+	 */
+	redact_mode: z.enum(["none", "hash", "full"]).default("hash"),
+});
+
+export const PolicyFilesystemSchema = z.object({
+	enabled: z.boolean().default(false),
+	allowed_write_roots: z.array(z.string()).default([]),
+	deny_write_patterns: z.array(z.string()).default([]),
+	outside_root_action: z.enum(["block", "require_approval"]).default("require_approval"),
+});
+
+export const PolicyNetworkSchema = z.object({
+	enabled: z.boolean().default(false),
+	allow_domains: z.array(z.string()).default([]),
+	deny_domains: z.array(z.string()).default([]),
+	deny_private_ips: z.boolean().default(true),
+	deny_action: z.enum(["block", "require_approval"]).default("block"),
+	outside_allow_action: z.enum(["block", "require_approval"]).default("require_approval"),
+});
+
+export const PolicyShellSchema = z.object({
+	enabled: z.boolean().default(false),
+	deny_patterns: z.array(z.string()).default([]),
+	deny_action: z.enum(["block", "require_approval"]).default("block"),
+});
+
+export const PolicyConfigSchema = z.object({
+	enabled: z.boolean().default(false),
+	filesystem: PolicyFilesystemSchema.default({}),
+	network: PolicyNetworkSchema.default({}),
+	shell: PolicyShellSchema.default({}),
+});
+
+export const IntelConfigSchema = z.object({
+	enabled: z.boolean().default(false),
+	url_denylist_path: z.string().default("~/.singularity-aidr/intel/url_denylist.txt"),
+});
+
+export const IntegrityConfigSchema = z.object({
+	enabled: z.boolean().default(false),
+	/**
+	 * Optional public keys (PEM) used to verify signed manifests and intel packs.
+	 * If empty, integrity verification is skipped (fail-open).
+	 */
+	public_keys_pem: z.array(z.string()).default([]),
+	/**
+	 * When true, connectors may verify their on-disk assets at session start.
+	 * This should be enabled in commercial builds.
+	 */
+	verify_on_start: z.boolean().default(true),
+});
+
+export const IntelPacksConfigSchema = z.object({
+	enabled: z.boolean().default(false),
+	/**
+	 * Root directory containing signed intel packs.
+	 * Default keeps all intel under the AIDR directory.
+	 */
+	packs_dir: z.string().default("~/.singularity-aidr/intel/packs"),
+	/**
+	 * Trusted public keys file (JSON: { key_id: public_key_pem }).
+	 * Used to verify intel pack signatures.
+	 */
+	trusted_keys_path: z.string().default("~/.singularity-aidr/intel/trusted-keys.json"),
+	/**
+	 * Enforce signature verification for packs when keys are configured.
+	 * Fail-open if keys are missing.
+	 */
+	verify_signatures: z.boolean().default(true),
+	/** Cache TTL for reloading packs from disk. */
+	cache_ttl_seconds: z.number().default(60),
+	/**
+	 * Allow using an expired but correctly signed pack within this grace window.
+	 * Set to 0 for strict expiry.
+	 */
+	expired_grace_hours: z.number().default(72),
+});
+
+export const LicensingConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	/**
+	 * Public keys (PEM or base64 SPKI) used to verify signed entitlement snapshots and revocation feeds.
+	 * If empty, commercial licensing verification is skipped (development mode).
+	 */
+	public_keys_pem: z.array(z.string()).default([]),
+	/**
+	 * When true in managed mode, an invalid or missing signature will lock premium features.
+	 * Core local protections continue regardless (fail-open).
+	 */
+	require_signed_entitlements: z.boolean().default(true),
+	/**
+	 * Enable best-effort revocation feed consumption.
+	 * Revocations can disable premium packs and invalidate cached entitlements.
+	 */
+	revocations_enabled: z.boolean().default(true),
+	revocations_cache_path: z.string().default("~/.singularity-aidr/revocations.json"),
+	revocations_refresh_seconds: z.number().default(3600),
+});
+
+export const IncidentConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	/**
+	 * Local store mode.
+	 * - jsonl: append-only log in ~/.singularity-aidr/audit.jsonl (default)
+	 * - sqlite: future; requires a sqlite backend
+	 */
+	store: z.enum(["jsonl", "sqlite"]).default("jsonl"),
+	/**
+	 * If true, correlate repeated suspicious events into a single incident record.
+	 * This is lightweight and local-first.
+	 */
+	correlation_enabled: z.boolean().default(true),
+});
+
+export const ResponseConfigSchema = z.object({
+	emit_incidents: z.boolean().default(true),
 });
 
 export const UrlCheckConfigSchema = z.object({
@@ -240,8 +414,16 @@ export const AmsiCheckConfigSchema = z.object({
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
 
 export const ConfigSchema = z.object({
+	mode: OperatingModeSchema.default("managed"),
 	auth: AuthConfigSchema.default({}),
 	control_plane: ControlPlaneConfigSchema.default({}),
+	policy: PolicyConfigSchema.default({}),
+	intel: IntelConfigSchema.default({}),
+	intel_packs: IntelPacksConfigSchema.default({}),
+	integrity: IntegrityConfigSchema.default({}),
+	licensing: LicensingConfigSchema.default({}),
+	incident: IncidentConfigSchema.default({}),
+	response: ResponseConfigSchema.default({}),
 	url_check: UrlCheckConfigSchema.default({}),
 	file_check: FileCheckConfigSchema.default({}),
 	package_check: PackageCheckConfigSchema.default({}),
@@ -256,6 +438,13 @@ export const ConfigSchema = z.object({
 
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type ControlPlaneConfig = z.infer<typeof ControlPlaneConfigSchema>;
+export type PolicyConfig = z.infer<typeof PolicyConfigSchema>;
+export type IntelConfig = z.infer<typeof IntelConfigSchema>;
+export type IntelPacksConfig = z.infer<typeof IntelPacksConfigSchema>;
+export type IntegrityConfig = z.infer<typeof IntegrityConfigSchema>;
+export type LicensingConfig = z.infer<typeof LicensingConfigSchema>;
+export type IncidentConfig = z.infer<typeof IncidentConfigSchema>;
+export type ResponseConfig = z.infer<typeof ResponseConfigSchema>;
 export type UrlCheckConfig = z.infer<typeof UrlCheckConfigSchema>;
 export type FileCheckConfig = z.infer<typeof FileCheckConfigSchema>;
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;

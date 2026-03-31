@@ -1,0 +1,165 @@
+{
+  "features": [
+    {
+      "id": "fix-opentelemetry-tracing",
+      "description": "Fix OpenTelemetry API imports and type errors in packages/core/src/tracing.ts. Correct propagation and createTraceState imports (from @opentelemetry/api, not @opentelemetry/core). Fix TimeInput type mismatch for span end time. Update any related test mocks.",
+      "skillName": "typescript-fix-worker",
+      "milestone": "phase-1-typescript-fixes",
+      "preconditions": [],
+      "expectedBehavior": [
+        "propagation and createTraceState imported from correct package",
+        "Span end time uses correct TimeInput type",
+        "pnpm check shows zero errors in tracing.ts",
+        "Any related tests pass"
+      ],
+      "verificationSteps": [
+        "pnpm check shows no errors in tracing.ts",
+        "pnpm test -- packages/core/src/__tests__/ (related tests pass)"
+      ],
+      "fulfills": ["VAL-TS-001"],
+      "status": "pending"
+    },
+    {
+      "id": "fix-ml-modules",
+      "description": "Fix TypeScript strict null check errors in ML modules: packages/core/src/ml/embedder.ts (9 errors), packages/core/src/ml/similarity.ts (6 errors), and packages/core/src/ml-model.ts (2 errors). Add proper null-safety for Float32Array access and vector operations.",
+      "skillName": "typescript-fix-worker",
+      "milestone": "phase-1-typescript-fixes",
+      "preconditions": [],
+      "expectedBehavior": [
+        "All Float32Array accesses have null-safety checks",
+        "Vector similarity calculations handle undefined vectors",
+        "pnpm check shows zero errors in ml/ directory and ml-model.ts"
+      ],
+      "verificationSteps": [
+        "pnpm check shows no errors in ml/embedder.ts",
+        "pnpm check shows no errors in ml/similarity.ts",
+        "pnpm check shows no errors in ml-model.ts"
+      ],
+      "fulfills": ["VAL-TS-003", "VAL-TS-008"],
+      "status": "pending"
+    },
+    {
+      "id": "fix-behavioral-analysis",
+      "description": "Fix TypeScript strict null check errors in behavioral analysis: packages/core/src/novelty-detection.ts (7 errors) and packages/core/src/behavioral/pattern-matcher.ts (1 error). Fix Map iteration and string|undefined type issues.",
+      "skillName": "typescript-fix-worker",
+      "milestone": "phase-1-typescript-fixes",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Map entries properly typed for iteration",
+        "String parameters handle undefined with proper defaults",
+        "pnpm check shows zero errors in novelty-detection.ts and pattern-matcher.ts"
+      ],
+      "verificationSteps": [
+        "pnpm check shows no errors in novelty-detection.ts",
+        "pnpm check shows no errors in behavioral/pattern-matcher.ts"
+      ],
+      "fulfills": ["VAL-TS-002", "VAL-TS-009"],
+      "status": "pending"
+    },
+    {
+      "id": "fix-core-modules",
+      "description": "Fix remaining TypeScript errors in core modules: packages/core/src/audit.ts (3 errors), packages/core/src/health.ts (1 error), packages/core/src/metrics.ts (3 errors). Handle string|undefined mismatches and constructor argument issues.",
+      "skillName": "typescript-fix-worker",
+      "milestone": "phase-1-typescript-fixes",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Audit.ts string parameters properly typed",
+        "Health.ts VerdictCache constructor fixed",
+        "Metrics.ts label access has null-safety",
+        "pnpm check shows zero errors in these modules"
+      ],
+      "verificationSteps": [
+        "pnpm check shows no errors in audit.ts",
+        "pnpm check shows no errors in health.ts",
+        "pnpm check shows no errors in metrics.ts"
+      ],
+      "fulfills": ["VAL-TS-005", "VAL-TS-006", "VAL-TS-007"],
+      "status": "pending"
+    },
+    {
+      "id": "complete-rule-sync",
+      "description": "Complete the RealTimeRuleSync implementation in packages/core/src/rule-sync.ts. Implement the missing downloadRule() method to fetch single rules by ID from CDN. Fix SyncStats type conversion. Add comprehensive tests.",
+      "skillName": "typescript-fix-worker",
+      "milestone": "phase-2-modules",
+      "preconditions": [],
+      "expectedBehavior": [
+        "downloadRule(ruleId: string) method implemented",
+        "Fetches single rule from CDN with proper error handling",
+        "SyncStats type conversion fixed",
+        "Tests cover downloadRule success and error cases"
+      ],
+      "verificationSteps": [
+        "pnpm check shows zero errors in rule-sync.ts",
+        "pnpm test -- packages/core/src/__tests__/rule-sync.test.ts passes",
+        "Method handles 404 errors gracefully"
+      ],
+      "fulfills": ["VAL-TS-010", "VAL-MOD-001"],
+      "status": "pending"
+    },
+    {
+      "id": "fix-sentry-integration",
+      "description": "Fix Sentry integration TypeScript errors in packages/core/src/sentry.ts (3 errors). Fix Hub type assignment and Promise vs string|number type mismatches.",
+      "skillName": "typescript-fix-worker",
+      "milestone": "phase-1-typescript-fixes",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Hub type correctly assigned",
+        "Promise return types match expected signatures",
+        "pnpm check shows zero errors in sentry.ts"
+      ],
+      "verificationSteps": [
+        "pnpm check shows no errors in sentry.ts",
+        "Sentry tests pass"
+      ],
+      "fulfills": ["VAL-TS-004"],
+      "status": "pending"
+    },
+    {
+      "id": "finalize-ci-cd",
+      "description": "Finalize CI/CD infrastructure. Ensure .github/workflows/ci.yml has proper quality gates. Verify .github/workflows/release.yml exists with changesets integration. Confirm .pre-commit-config.yaml has typecheck and test hooks at correct stages.",
+      "skillName": "ci-cd-worker",
+      "milestone": "phase-2-modules",
+      "preconditions": [],
+      "expectedBehavior": [
+        "ci.yml runs lint, typecheck, test, coverage, build on PR/push",
+        "release.yml automates npm publish with changesets",
+        "pre-commit hooks have correct stages (pre-commit vs pre-push)",
+        "Workflows reference correct pnpm commands"
+      ],
+      "verificationSteps": [
+        "Review .github/workflows/ci.yml structure",
+        "Review .github/workflows/release.yml structure",
+        "Review .pre-commit-config.yaml hook stages",
+        "pnpm lint passes (validates YAML)"
+      ],
+      "fulfills": ["VAL-CICD-001", "VAL-CICD-002", "VAL-CICD-003"],
+      "status": "pending"
+    },
+    {
+      "id": "build-verification",
+      "description": "Execute complete build verification and quality gate validation. Run full pipeline: lint, typecheck, test, coverage, build:release. Verify all artifacts generated, coverage thresholds met, bundle sizes acceptable. This is the final validation feature.",
+      "skillName": "build-verification-worker",
+      "milestone": "phase-3-verification",
+      "preconditions": [
+        "All TypeScript fixes complete",
+        "All module completion done",
+        "CI/CD workflows configured"
+      ],
+      "expectedBehavior": [
+        "pnpm lint: zero errors/warnings",
+        "pnpm check: zero TypeScript errors",
+        "pnpm test: all tests passing",
+        "pnpm test:coverage: coverage >70% thresholds",
+        "pnpm build:release: successful with all artifacts",
+        "Bundle sizes within constraints"
+      ],
+      "verificationSteps": [
+        "pnpm quality:gate passes completely",
+        "Verify dist/ directories exist for all packages",
+        "Coverage report shows all thresholds met"
+      ],
+      "fulfills": ["VAL-QG-001", "VAL-QG-002", "VAL-QG-003", "VAL-QG-004", "VAL-QG-005", "VAL-QG-006", "VAL-CROSS-001", "VAL-CROSS-002"],
+      "status": "pending"
+    }
+  ]
+}

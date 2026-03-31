@@ -19,6 +19,7 @@ Requires Node.js >= 18 and pnpm >= 9.
 | Command | Description |
 |---------|-------------|
 | `pnpm build` | Build all packages (tsc + esbuild) |
+| `pnpm build:release` | Release build (no sourcemaps in `dist/`) |
 | `pnpm test` | Run unit + integration tests (builds automatically) |
 | `pnpm test -- --reporter=verbose` | Verbose test output |
 | `pnpm test -- <file>` | Run a single test file |
@@ -33,6 +34,7 @@ Requires Node.js >= 18 and pnpm >= 9.
 | `pnpm lint` | Lint with Biome |
 | `pnpm lint:fix` | Lint + auto-fix |
 | `pnpm check` | Type check all packages |
+| `node scripts/check-no-sourcemaps.mjs` | Verify built `dist/` artifacts contain no sourcemaps |
 | `pnpm changeset` | Create a changeset for your changes |
 | `pnpm run version` | Apply changesets: bump versions, generate changelogs, sync manifests |
 

@@ -174,7 +174,8 @@ function looksLikePath(value: string): boolean {
 function fieldTypeForKey(key: string): Artifact["type"] | null {
 	const k = key.toLowerCase();
 	if (k === "url" || k.endsWith("_url")) return "url";
-	if (k === "command" || k === "cmd" || k.endsWith("_command") || k.endsWith("_cmd")) return "command";
+	if (k === "command" || k === "cmd" || k.endsWith("_command") || k.endsWith("_cmd"))
+		return "command";
 	if (
 		k === "file_path" ||
 		k === "filepath" ||
@@ -202,7 +203,11 @@ function collectStringFields(
 	if (depth > MAX_GENERIC_DEPTH) return;
 
 	if (typeof value === "string") {
-		out.push({ path, key: path.split(".").slice(-1)[0] ?? "", value: value.slice(0, MAX_CONTENT_SIZE) });
+		out.push({
+			path,
+			key: path.split(".").slice(-1)[0] ?? "",
+			value: value.slice(0, MAX_CONTENT_SIZE),
+		});
 		return;
 	}
 
@@ -229,7 +234,10 @@ function collectStringFields(
  * - URLs found inside any collected strings
  * - generic content strings for heuristic matching (capped)
  */
-export function extractFromUnknownTool(toolName: string, toolInput: Record<string, unknown>): Artifact[] {
+export function extractFromUnknownTool(
+	toolName: string,
+	toolInput: Record<string, unknown>,
+): Artifact[] {
 	const artifacts: Artifact[] = [];
 	const fields: Array<{ path: string; key: string; value: string }> = [];
 	collectStringFields(toolInput, "", 0, fields);
@@ -282,7 +290,10 @@ export function extractFromUnknownTool(toolName: string, toolInput: Record<strin
  * Normalize extraction across connectors: handles known tool shapes and
  * falls back to extractFromUnknownTool for MCP/unknown tools.
  */
-export function extractFromToolCall(toolName: string, toolInput: Record<string, unknown>): Artifact[] {
+export function extractFromToolCall(
+	toolName: string,
+	toolInput: Record<string, unknown>,
+): Artifact[] {
 	switch (toolName) {
 		case "Bash":
 		case "Shell": {

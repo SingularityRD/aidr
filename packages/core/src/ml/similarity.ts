@@ -51,7 +51,12 @@ export function euclideanDistance(a: Float32Array, b: Float32Array): number {
 
 	let sumSquares = 0;
 	for (let i = 0; i < a.length; i++) {
-		const diff = a[i]! - b[i]!;
+		const ai = a[i] as number | undefined;
+		const bi = b[i] as number | undefined;
+		if (ai === undefined || bi === undefined) {
+			throw new Error(`Vector contains undefined at index ${i}`);
+		}
+		const diff = ai - bi;
 		sumSquares += diff * diff;
 	}
 
@@ -69,7 +74,12 @@ export function manhattanDistance(a: Float32Array, b: Float32Array): number {
 
 	let sum = 0;
 	for (let i = 0; i < a.length; i++) {
-		sum += Math.abs(a[i]! - b[i]!);
+		const ai = a[i] as number | undefined;
+		const bi = b[i] as number | undefined;
+		if (ai === undefined || bi === undefined) {
+			throw new Error(`Vector contains undefined at index ${i}`);
+		}
+		sum += Math.abs(ai - bi);
 	}
 
 	return sum;
@@ -82,7 +92,7 @@ export function manhattanDistance(a: Float32Array, b: Float32Array): number {
 export function findTopKSimilar(
 	query: Float32Array,
 	candidates: Float32Array[],
-	k: number
+	k: number,
 ): Array<{ index: number; similarity: number }> {
 	const similarities: Array<{ index: number; similarity: number }> = [];
 
@@ -108,7 +118,7 @@ export function findTopKSimilar(
 export function findSimilarAboveThreshold(
 	query: Float32Array,
 	candidates: Float32Array[],
-	threshold: number
+	threshold: number,
 ): Array<{ index: number; similarity: number }> {
 	const results: Array<{ index: number; similarity: number }> = [];
 
@@ -163,13 +173,10 @@ export function maxSimilarity(query: Float32Array, references: Float32Array[]): 
  * Calculate similarity percentile (how unique is this vector).
  * Higher percentile = more unique (less similar to references).
  */
-export function similarityPercentile(
-	query: Float32Array,
-	references: Float32Array[]
-): number {
+export function similarityPercentile(query: Float32Array, references: Float32Array[]): number {
 	if (references.length === 0) return 1;
 
-	const sims = references.map(ref => cosineSimilarity(query, ref));
+	const sims = references.map((ref) => cosineSimilarity(query, ref));
 	sims.sort((a, b) => a - b);
 
 	// Find where query would rank
@@ -184,7 +191,7 @@ export function similarityPercentile(
  */
 export function batchCosineSimilarity(
 	queries: Float32Array[],
-	references: Float32Array[]
+	references: Float32Array[],
 ): number[][] {
 	const matrix: number[][] = [];
 
@@ -214,24 +221,29 @@ export function similarityToProbability(similarity: number, steepness: number = 
 export function softMaxSimilarity(
 	query: Float32Array,
 	references: Float32Array[],
-	temperature: number = 0.1
+	temperature: number = 0.1,
 ): number {
 	if (references.length === 0) return 0;
 
-	const sims = references.map(ref => cosineSimilarity(query, ref));
-	const scaledSims = sims.map(s => s / temperature);
+	const sims = references.map((ref) => cosineSimilarity(query, ref));
+	const scaledSims = sims.map((s) => s / temperature);
 	const maxScaled = Math.max(...scaledSims);
-	
+
 	// Numerically stable softmax
-	const expSims = scaledSims.map(s => Math.exp(s - maxScaled));
+	const expSims = scaledSims.map((s) => Math.exp(s - maxScaled));
 	const sumExp = expSims.reduce((a, b) => a + b, 0);
-	
+
 	// Weighted average
 	let weightedSum = 0;
 	for (let i = 0; i < sims.length; i++) {
-		weightedSum += sims[i] * (expSims[i] / sumExp);
+		const sim = sims[i] as number | undefined;
+		const expSim = expSims[i] as number | undefined;
+		if (sim === undefined || expSim === undefined) {
+			continue;
+		}
+		weightedSum += sim * (expSim / sumExp);
 	}
-	
+
 	return weightedSum;
 }
 
@@ -242,13 +254,13 @@ export function softMaxSimilarity(
 export function embeddingsEqual(
 	a: Float32Array,
 	b: Float32Array,
-	tolerance: number = 1e-5
+	tolerance: number = 1e-5,
 ): boolean {
 	if (a.length !== b.length) return false;
 
 	for (let i = 0; i < a.length; i++) {
-		const ai = a[i];
-		const bi = b[i];
+		const ai = a[i] as number | undefined;
+		const bi = b[i] as number | undefined;
 		if (ai === undefined || bi === undefined) {
 			return false;
 		}
@@ -273,16 +285,18 @@ export const SIMILARITY_THRESHOLDS = {
 	/** Low confidence - suspicious */
 	LOW: 0.65,
 	/** Ignore anything below this */
-	NOISE: 0.50,
+	NOISE: 0.5,
 } as const;
 
 /**
  * Convert similarity to risk level string.
  */
-export function similarityToRiskLevel(similarity: number): 'critical' | 'high' | 'medium' | 'low' | 'none' {
-	if (similarity >= SIMILARITY_THRESHOLDS.CRITICAL) return 'critical';
-	if (similarity >= SIMILARITY_THRESHOLDS.HIGH) return 'high';
-	if (similarity >= SIMILARITY_THRESHOLDS.MEDIUM) return 'medium';
-	if (similarity >= SIMILARITY_THRESHOLDS.LOW) return 'low';
-	return 'none';
+export function similarityToRiskLevel(
+	similarity: number,
+): "critical" | "high" | "medium" | "low" | "none" {
+	if (similarity >= SIMILARITY_THRESHOLDS.CRITICAL) return "critical";
+	if (similarity >= SIMILARITY_THRESHOLDS.HIGH) return "high";
+	if (similarity >= SIMILARITY_THRESHOLDS.MEDIUM) return "medium";
+	if (similarity >= SIMILARITY_THRESHOLDS.LOW) return "low";
+	return "none";
 }

@@ -1,0 +1,63 @@
+{
+  "name": "@singularityrd/aidr-sdk",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "version": "1.0.0",
+  "description": "Singularity AIDR — Universal SDK for AI agent security integration",
+  "type": "module",
+  "bin": {
+    "aidr": "./dist/cli.cjs"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "pnpm run clean && node esbuild.config.js",
+    "build:release": "pnpm run clean && node esbuild.config.js --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-sdk && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "clean": "node ../../scripts/rmrf.mjs dist",
+    "prepack": "node ../../scripts/check-workspace-refs.mjs"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.0",
+    "@singularityrd/aidr-core": "workspace:*",
+    "commander": "^12.0.0",
+    "pino": "^9.6.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "aidr",
+    "security",
+    "ai-agent",
+    "agent-security",
+    "middleware",
+    "sdk",
+    "ai-safety",
+    "malware-detection"
+  ]
+}

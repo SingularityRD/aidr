@@ -2,7 +2,7 @@
 
 ## What Data Is Sent
 
-Singularity AIDR may use SingularityRD cloud services for three purposes:
+Singularity AIDR may use first-party cloud services for three purposes:
 
 1. **URL reputation** — URLs extracted from tool calls are sent to a reputation API for malware/phishing/scam classification.
 2. **File reputation** — Package hashes (SHA-256) from npm/PyPI registries are checked against a file reputation service.

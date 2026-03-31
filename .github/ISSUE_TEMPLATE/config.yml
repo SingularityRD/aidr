@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/SingularityRD/aidr/tree/master/docs
+    about: Check the documentation before opening an issue
+  - name: Security Vulnerability
+    url: https://github.com/SingularityRD/aidr/security/advisories/new
+    about: Please report security vulnerabilities privately
+  - name: Contributing Guide
+    url: https://github.com/SingularityRD/aidr/blob/master/CONTRIBUTING.md
+    about: Review our contributing guidelines
+  - name: Discussions
+    url: https://github.com/SingularityRD/aidr/discussions
+    about: Ask questions and share ideas in Discussions

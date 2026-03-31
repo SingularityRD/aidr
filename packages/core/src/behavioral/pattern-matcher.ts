@@ -79,7 +79,10 @@ export class PatternMatcher {
 	/**
 	 * Match a command sequence against known patterns
 	 */
-	matchSequence(commands: string[], context: { directory: string; tool: string }): PatternMatch | null {
+	matchSequence(
+		commands: string[],
+		context: { directory: string; tool: string },
+	): PatternMatch | null {
 		let bestMatch: PatternMatch | null = null;
 
 		for (const pattern of this.patterns.values()) {
@@ -159,7 +162,13 @@ export class PatternMatcher {
 	 * Build behavior fingerprint from history
 	 */
 	buildFingerprint(
-		history: { commands: string[]; directory: string; tool: string; hour: number; timestamp: number }[],
+		history: {
+			commands: string[];
+			directory: string;
+			tool: string;
+			hour: number;
+			timestamp: number;
+		}[],
 	): BehaviorFingerprint {
 		// Hourly distribution
 		const hourlyDistribution = new Array(24).fill(0);
@@ -178,7 +187,7 @@ export class PatternMatcher {
 		}
 
 		// Tool chain patterns
-		const chains = this.extractCommandChains(history.map((h) => h.commands).flat());
+		const chains = this.extractCommandChains(history.flatMap((h) => h.commands));
 
 		// Sequence entropy (measure of randomness)
 		const entropy = this.calculateEntropy(history.map((h) => h.tool));
@@ -311,7 +320,10 @@ export class PatternMatcher {
 		return false;
 	}
 
-	private calculateDirectoryTypicality(directory: string, history: { directory: string }[]): number {
+	private calculateDirectoryTypicality(
+		directory: string,
+		history: { directory: string }[],
+	): number {
 		if (history.length === 0) return 0.5;
 
 		const dirCounts: Record<string, number> = {};
@@ -397,10 +409,7 @@ export class PatternMatcher {
 					const prevDiagonal = prevRow[j - 1] ?? 0;
 					const prevLeft = matrix[i]?.[j - 1] ?? 0;
 					const prevUp = prevRow[j] ?? 0;
-					matrix[i]![j] = Math.min(
-						prevDiagonal + 1,
-						Math.min(prevLeft + 1, prevUp + 1),
-					);
+					matrix[i]![j] = Math.min(prevDiagonal + 1, Math.min(prevLeft + 1, prevUp + 1));
 				}
 			}
 		}
@@ -442,8 +451,15 @@ export class PatternMatcher {
 	private extractSequences(
 		history: { commands: string[]; directory: string; tool: string }[],
 		len: number,
-	): Array<{ commands: string[]; contexts: Array<{ directory: string; tool: string }>; count: number }> {
-		const sequences = new Map<string, { commands: string[]; contexts: Array<{ directory: string; tool: string }>; count: number }>();
+	): Array<{
+		commands: string[];
+		contexts: Array<{ directory: string; tool: string }>;
+		count: number;
+	}> {
+		const sequences = new Map<
+			string,
+			{ commands: string[]; contexts: Array<{ directory: string; tool: string }>; count: number }
+		>();
 
 		for (const h of history) {
 			if (h.commands.length < len) continue;
@@ -470,9 +486,17 @@ export class PatternMatcher {
 	}
 
 	private findFrequentSequences(
-		sequences: Array<{ commands: string[]; contexts: Array<{ directory: string; tool: string }>; count: number }>,
+		sequences: Array<{
+			commands: string[];
+			contexts: Array<{ directory: string; tool: string }>;
+			count: number;
+		}>,
 		minCount: number,
-	): Array<{ commands: string[]; contexts: Array<{ directory: string; tool: string }>; count: number }> {
+	): Array<{
+		commands: string[];
+		contexts: Array<{ directory: string; tool: string }>;
+		count: number;
+	}> {
 		return sequences.filter((s) => s.count >= minCount).sort((a, b) => b.count - a.count);
 	}
 

@@ -14,6 +14,8 @@ import {
 	type Verdict,
 } from "@singularityrd/aidr-core";
 
+declare const __dirname: string;
+
 type CursorEventName =
 	| "preToolUse"
 	| "beforeShellExecution"
@@ -28,8 +30,28 @@ interface NormalizedHookCall {
 	artifacts: Artifact[];
 }
 
+let integrityChecked = false;
+async function maybeVerifyIntegrity(artifactId: string): Promise<void> {
+	if (integrityChecked) return;
+	integrityChecked = true;
+
+	try {
+		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
+		const core = (await import("@singularityrd/aidr-core")) as any;
+		const fn = core?.verifyArtifactIntegrityAndLog as
+			| ((args: { artifactDir: string; artifactId: string }) => Promise<unknown>)
+			| undefined;
+		if (typeof fn === "function") {
+			await fn({ artifactDir: __dirname, artifactId });
+		}
+	} catch {
+		// Fail open
+	}
+}
+
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
 	const mode = argv[0] as HookMode | undefined;
+	await maybeVerifyIntegrity("extension/dist");
 	const payload = await readStdinJson();
 
 	if (mode === "cursor") {

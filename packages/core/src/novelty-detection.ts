@@ -19,8 +19,12 @@ export interface AnomalyEvent {
 	id: string;
 	timestamp: Date;
 	userId: string;
-	anomalyType: 'novel_command_sequence' | 'unusual_timing' | 'unusual_tool_usage' | 'unusual_path_access';
-	severity: 'low' | 'medium' | 'high' | 'critical';
+	anomalyType:
+		| "novel_command_sequence"
+		| "unusual_timing"
+		| "unusual_tool_usage"
+		| "unusual_path_access";
+	severity: "low" | "medium" | "high" | "critical";
 	score: number; // 0-100, higher = more anomalous
 	details: {
 		expected?: string;
@@ -50,13 +54,13 @@ export class NoveltyDetector {
 		escalationThreshold: number;
 	};
 
-	constructor(config: Partial<NoveltyDetector['config']> = {}) {
+	constructor(config: Partial<NoveltyDetector["config"]> = {}) {
 		this.config = {
 			windowSizeDays: 30,
 			anomalyThreshold: 2.5, // 2.5 sigma
 			minBaselineSamples: 10,
 			escalationThreshold: 80, // score out of 100
-			...config
+			...config,
 		};
 	}
 
@@ -72,7 +76,7 @@ export class NoveltyDetector {
 			tool?: string;
 			duration?: number;
 			hour?: number;
-		}
+		},
 	): Promise<void> {
 		let profile = this.profiles.get(userId);
 
@@ -84,7 +88,7 @@ export class NoveltyDetector {
 				tools: new Map(),
 				sessionDurations: [],
 				activityHours: new Map(),
-				sampleCount: 0
+				sampleCount: 0,
 			};
 			this.profiles.set(userId, profile);
 		}
@@ -141,7 +145,7 @@ export class NoveltyDetector {
 			timestamp: Date;
 			duration?: number;
 			hour?: number;
-		}
+		},
 	): Promise<AnomalyEvent | null> {
 		const profile = this.profiles.get(userId);
 
@@ -150,7 +154,11 @@ export class NoveltyDetector {
 			return null;
 		}
 
-		const anomalyScores: { type: AnomalyEvent['anomalyType']; score: number; details: AnomalyEvent['details'] }[] = [];
+		const anomalyScores: {
+			type: AnomalyEvent["anomalyType"];
+			score: number;
+			details: AnomalyEvent["details"];
+		}[] = [];
 
 		// Check command anomaly
 		if (event.command) {
@@ -166,13 +174,13 @@ export class NoveltyDetector {
 				const zScore = stdDev > 0 ? this.calculateZScore(cmdFreq, mean, stdDev) : 3;
 
 				anomalyScores.push({
-					type: 'novel_command_sequence',
+					type: "novel_command_sequence",
 					score: Math.min(100, Math.abs(zScore) * 20 + 50),
 					details: {
-						expected: `Common commands: ${this.getTopKeys(profile.commands, 3).join(', ')}`,
+						expected: `Common commands: ${this.getTopKeys(profile.commands, 3).join(", ")}`,
 						actual: event.command,
-						similarPastEvents: cmdFreq
-					}
+						similarPastEvents: cmdFreq,
+					},
 				});
 			}
 		}
@@ -185,13 +193,13 @@ export class NoveltyDetector {
 
 			if (pathRate < 0.03) {
 				anomalyScores.push({
-					type: 'unusual_path_access',
+					type: "unusual_path_access",
 					score: Math.min(100, 70 + (1 - pathRate) * 30),
 					details: {
-						expected: `Common paths: ${this.getTopKeys(profile.paths, 3).join(', ')}`,
+						expected: `Common paths: ${this.getTopKeys(profile.paths, 3).join(", ")}`,
 						actual: event.path,
-						similarPastEvents: pathFreq
-					}
+						similarPastEvents: pathFreq,
+					},
 				});
 			}
 		}
@@ -204,13 +212,13 @@ export class NoveltyDetector {
 
 			if (toolRate < 0.1) {
 				anomalyScores.push({
-					type: 'unusual_tool_usage',
+					type: "unusual_tool_usage",
 					score: Math.min(100, 60 + (1 - toolRate) * 40),
 					details: {
-						expected: `Common tools: ${this.getTopKeys(profile.tools, 3).join(', ')}`,
+						expected: `Common tools: ${this.getTopKeys(profile.tools, 3).join(", ")}`,
 						actual: event.tool,
-						similarPastEvents: toolFreq
-					}
+						similarPastEvents: toolFreq,
+					},
 				});
 			}
 		}
@@ -230,13 +238,13 @@ export class NoveltyDetector {
 
 				if (Math.abs(zScore) > this.config.anomalyThreshold) {
 					anomalyScores.push({
-						type: 'unusual_timing',
+						type: "unusual_timing",
 						score: Math.min(100, Math.abs(zScore) * 15 + 40),
 						details: {
-							expected: `Peak hours: ${this.getPeakHours(profile.activityHours, 3).join(', ')}`,
+							expected: `Peak hours: ${this.getPeakHours(profile.activityHours, 3).join(", ")}`,
 							actual: `${event.hour}:00`,
-							similarPastEvents: hourFreq
-						}
+							similarPastEvents: hourFreq,
+						},
 					});
 				}
 			}
@@ -249,15 +257,15 @@ export class NoveltyDetector {
 
 		// Pick the highest scoring anomaly
 		const highestAnomaly = anomalyScores.reduce((max, current) =>
-			current.score > max.score ? current : max
+			current.score > max.score ? current : max,
 		);
 
 		// Determine severity based on score
-		let severity: AnomalyEvent['severity'];
-		if (highestAnomaly.score >= 90) severity = 'critical';
-		else if (highestAnomaly.score >= 70) severity = 'high';
-		else if (highestAnomaly.score >= 50) severity = 'medium';
-		else severity = 'low';
+		let severity: AnomalyEvent["severity"];
+		if (highestAnomaly.score >= 90) severity = "critical";
+		else if (highestAnomaly.score >= 70) severity = "high";
+		else if (highestAnomaly.score >= 50) severity = "medium";
+		else severity = "low";
 
 		const anomaly: AnomalyEvent = {
 			id: this.generateId(),
@@ -267,7 +275,7 @@ export class NoveltyDetector {
 			severity,
 			score: Math.round(highestAnomaly.score),
 			details: highestAnomaly.details,
-			escalated: highestAnomaly.score >= this.config.escalationThreshold
+			escalated: highestAnomaly.score >= this.config.escalationThreshold,
 		};
 
 		// Store anomaly
@@ -276,7 +284,7 @@ export class NoveltyDetector {
 		// Prune old anomalies
 		const cutoffDate = new Date(event.timestamp);
 		cutoffDate.setDate(cutoffDate.getDate() - this.config.windowSizeDays);
-		this.anomalies = this.anomalies.filter(a => a.timestamp > cutoffDate);
+		this.anomalies = this.anomalies.filter((a) => a.timestamp > cutoffDate);
 
 		return anomaly;
 	}
@@ -291,11 +299,12 @@ export class NoveltyDetector {
 		}
 
 		// Check for repeated similar anomalies
-		const recentSimilar = this.anomalies.filter(a =>
-			a.userId === anomaly.userId &&
-			a.anomalyType === anomaly.anomalyType &&
-			a.id !== anomaly.id &&
-			Math.abs(a.score - anomaly.score) < 15 // Similar score range
+		const recentSimilar = this.anomalies.filter(
+			(a) =>
+				a.userId === anomaly.userId &&
+				a.anomalyType === anomaly.anomalyType &&
+				a.id !== anomaly.id &&
+				Math.abs(a.score - anomaly.score) < 15, // Similar score range
 		);
 
 		// Escalate if multiple similar anomalies in recent history
@@ -304,7 +313,7 @@ export class NoveltyDetector {
 		}
 
 		// Always escalate critical severity
-		if (anomaly.severity === 'critical') {
+		if (anomaly.severity === "critical") {
 			return true;
 		}
 
@@ -314,23 +323,19 @@ export class NoveltyDetector {
 	/**
 	 * Get anomalies with optional filtering
 	 */
-	async getAnomalies(
-		userId?: string,
-		from?: Date,
-		to?: Date
-	): Promise<AnomalyEvent[]> {
+	async getAnomalies(userId?: string, from?: Date, to?: Date): Promise<AnomalyEvent[]> {
 		let filtered = [...this.anomalies];
 
 		if (userId) {
-			filtered = filtered.filter(a => a.userId === userId);
+			filtered = filtered.filter((a) => a.userId === userId);
 		}
 
 		if (from) {
-			filtered = filtered.filter(a => a.timestamp >= from);
+			filtered = filtered.filter((a) => a.timestamp >= from);
 		}
 
 		if (to) {
-			filtered = filtered.filter(a => a.timestamp <= to);
+			filtered = filtered.filter((a) => a.timestamp <= to);
 		}
 
 		return filtered.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
@@ -345,27 +350,23 @@ export class NoveltyDetector {
 
 		return {
 			userId,
-			installationId: '', // Would be populated from actual data
+			installationId: "", // Would be populated from actual data
 			baseline: {
 				commonCommands: new Map(profile.commands),
 				commonPaths: new Map(profile.paths),
 				commonUrls: new Map(profile.urls),
 				avgSessionDuration: this.calculateMean(profile.sessionDurations),
 				peakActivityHours: this.getPeakHours(profile.activityHours, 5),
-				toolFrequency: new Map(profile.tools)
+				toolFrequency: new Map(profile.tools),
 			},
-			updatedAt: new Date()
+			updatedAt: new Date(),
 		};
 	}
 
 	/**
 	 * Calculate z-score for statistical anomalies
 	 */
-	private calculateZScore(
-		value: number,
-		mean: number,
-		stdDev: number
-	): number {
+	private calculateZScore(value: number, mean: number, stdDev: number): number {
 		if (stdDev === 0) return 0;
 		return (value - mean) / stdDev;
 	}
@@ -376,7 +377,7 @@ export class NoveltyDetector {
 	 */
 	cosineSimilarity(a: number[], b: number[]): number {
 		if (a.length !== b.length) {
-			throw new Error('Vectors must have same length');
+			throw new Error("Vectors must have same length");
 		}
 
 		let dotProduct = 0;
@@ -407,7 +408,7 @@ export class NoveltyDetector {
 	 */
 	private calculateStdDev(values: number[], mean: number): number {
 		if (values.length === 0) return 0;
-		const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+		const variance = values.reduce((sum, val) => sum + (val - mean) ** 2, 0) / values.length;
 		return Math.sqrt(variance);
 	}
 
@@ -448,10 +449,10 @@ export class NoveltyDetector {
 }
 
 /**
-	 * Factory function to create a NoveltyDetector instance
-	 */
+ * Factory function to create a NoveltyDetector instance
+ */
 export function createNoveltyDetector(
-	config?: Partial<NoveltyDetector['config']>
+	config?: Partial<NoveltyDetector["config"]>,
 ): NoveltyDetector {
 	return new NoveltyDetector(config);
 }

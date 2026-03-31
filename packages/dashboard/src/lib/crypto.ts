@@ -19,4 +19,3 @@ export async function sha256Hex(input: string): Promise<string> {
 		.map((b) => b.toString(16).padStart(2, "0"))
 		.join("");
 }
-

@@ -16,7 +16,7 @@ const MAX_TOKENS = 128;
 const NGRAM_SIZE = 3;
 
 /** Hash seed for deterministic embeddings */
-let HASH_SEED = 0x9e3779b9;
+const HASH_SEED = 0x9e3779b9;
 
 /**
  * Simple 32-bit FNV-1a hash for strings.
@@ -37,11 +37,11 @@ export function fnv1aHash(str: string, seed: number = HASH_SEED): number {
  */
 function extractNgrams(text: string, n: number = NGRAM_SIZE): string[] {
 	// Normalize: lowercase, remove extra spaces
-	const normalized = text.toLowerCase().trim().replace(/\s+/g, ' ');
-	
+	const normalized = text.toLowerCase().trim().replace(/\s+/g, " ");
+
 	// For very short text, use character-level features
 	if (normalized.length <= n) {
-		return [normalized.padEnd(n, '_')];
+		return [normalized.padEnd(n, "_")];
 	}
 
 	const ngrams: string[] = [];
@@ -49,11 +49,11 @@ function extractNgrams(text: string, n: number = NGRAM_SIZE): string[] {
 	for (let i = 0; i <= normalized.length - n; i++) {
 		ngrams.push(normalized.slice(i, i + n));
 	}
-	
+
 	// Add special boundary markers
 	ngrams.push(`^${normalized.slice(0, n - 1)}`);
 	ngrams.push(`${normalized.slice(-n + 1)}$`);
-	
+
 	return ngrams;
 }
 
@@ -65,17 +65,17 @@ function tokenize(text: string): string[] {
 	const normalized = text
 		.toLowerCase()
 		// Preserve URL structure
-		.replace(/https?:\/\//g, 'http_')
-		.replace(/www\./g, 'www_')
+		.replace(/https?:\/\//g, "http_")
+		.replace(/www\./g, "www_")
 		// Preserve command separators
-		.replace(/[|;&&||]/g, ' SEP ')
+		.replace(/[|;&&||]/g, " SEP ")
 		// Handle path separators
-		.replace(/\\/g, '/')
+		.replace(/\\/g, "/")
 		// Extract meaningful tokens
-		.replace(/[^a-z0-9_\/.@$-]/g, ' ')
+		.replace(/[^a-z0-9_/.@$-]/g, " ")
 		.trim();
 
-	const tokens = normalized.split(/\s+/).filter(t => t.length > 0);
+	const tokens = normalized.split(/\s+/).filter((t) => t.length > 0);
 	return tokens.slice(0, MAX_TOKENS);
 }
 
@@ -87,16 +87,16 @@ export function generateEmbedding(text: string, dim: number = EMBEDDING_DIM): Fl
 	const embedding = new Float32Array(dim);
 	const ngrams = extractNgrams(text);
 	const tokens = tokenize(text);
-	
+
 	// Combine n-gram and token features
 	const features: Map<string, number> = new Map();
-	
+
 	// Weight n-grams by position (earlier = more important)
 	ngrams.forEach((ngram, idx) => {
 		const weight = 1.0 - (idx / (ngrams.length + 1)) * 0.3;
 		features.set(ngram, (features.get(ngram) || 0) + weight);
 	});
-	
+
 	// Add token features with TF-like weighting
 	tokens.forEach((token, idx) => {
 		const weight = 1.0 + (tokens.length - idx) / tokens.length;
@@ -109,19 +109,19 @@ export function generateEmbedding(text: string, dim: number = EMBEDDING_DIM): Fl
 		// Use multiple hash seeds for better distribution
 		const h1 = fnv1aHash(feature, HASH_SEED);
 		const h2 = fnv1aHash(feature, HASH_SEED ^ 0x5f3759df);
-		const h3 = fnv1aHash([...feature].reverse().join(''), HASH_SEED ^ 0x6a09e667);
-		
+		const h3 = fnv1aHash([...feature].reverse().join(""), HASH_SEED ^ 0x6a09e667);
+
 		// Distribute across dimensions using multiple hashes
 		const idx1 = h1 % dim;
 		const idx2 = h2 % dim;
 		const idx3 = h3 % dim;
-		
+
 		// Use hash as value with weight
 		const value = ((h1 / 0xffffffff) * 2 - 1) * weight;
 		embedding[idx1]! += value;
 		embedding[idx2]! += value * 0.7; // Secondary index with decay
 		embedding[idx3]! += value * 0.5; // Tertiary index
-		
+
 		featureCount++;
 		if (featureCount > 256) break; // Limit features for speed
 	}
@@ -131,7 +131,7 @@ export function generateEmbedding(text: string, dim: number = EMBEDDING_DIM): Fl
 	for (let i = 0; i < dim; i++) {
 		sumSquares += embedding[i]! * embedding[i]!;
 	}
-	
+
 	if (sumSquares > 0) {
 		const norm = Math.sqrt(sumSquares);
 		for (let i = 0; i < dim; i++) {
@@ -149,51 +149,51 @@ export function generateEmbedding(text: string, dim: number = EMBEDDING_DIM): Fl
 export function generateDomainEmbedding(domain: string, dim: number = EMBEDDING_DIM): Float32Array {
 	// Normalize domain: lowercase, remove www, split components
 	const normalized = domain.toLowerCase().trim();
-	
+
 	// Extract domain components
-	const parts = normalized.split('.');
+	const parts = normalized.split(".");
 	const features: string[] = [];
-	
+
 	// Add full domain
 	features.push(normalized);
-	
+
 	// Add components
 	for (let i = 0; i < parts.length; i++) {
-		features.push(parts.slice(i).join('.'));
-		features.push(parts.slice(i, i + 2).join('.'));
+		features.push(parts.slice(i).join("."));
+		features.push(parts.slice(i, i + 2).join("."));
 	}
-	
+
 	// Add reversed domain for suffix matching
-	features.push(parts.reverse().join('.'));
-	
+	features.push(parts.reverse().join("."));
+
 	// Add character bigrams for typosquatting detection
 	for (let i = 0; i < normalized.length - 1; i++) {
 		features.push(normalized.slice(i, i + 2));
 	}
-	
+
 	// Generate embedding from features
 	const embedding = new Float32Array(dim);
-	
+
 	for (const feature of features) {
 		const h = fnv1aHash(feature);
 		const idx = h % dim;
 		const value = (h / 0xffffffff) * 2 - 1;
 		embedding[idx]! += value;
 	}
-	
+
 	// L2 normalize
 	let sumSquares = 0;
 	for (let i = 0; i < dim; i++) {
 		sumSquares += embedding[i]! * embedding[i]!;
 	}
-	
+
 	if (sumSquares > 0) {
 		const norm = Math.sqrt(sumSquares);
 		for (let i = 0; i < dim; i++) {
 			embedding[i]! /= norm;
 		}
 	}
-	
+
 	return embedding;
 }
 
@@ -201,8 +201,11 @@ export function generateDomainEmbedding(domain: string, dim: number = EMBEDDING_
  * Batch generate embeddings for multiple texts.
  * More efficient than sequential calls for large batches.
  */
-export function generateEmbeddingsBatch(texts: string[], dim: number = EMBEDDING_DIM): Float32Array[] {
-	return texts.map(text => generateEmbedding(text, dim));
+export function generateEmbeddingsBatch(
+	texts: string[],
+	dim: number = EMBEDDING_DIM,
+): Float32Array[] {
+	return texts.map((text) => generateEmbedding(text, dim));
 }
 
 /**
@@ -217,13 +220,13 @@ export function getEmbeddingSizeBytes(dim: number = EMBEDDING_DIM): number {
  */
 export function embeddingToBase64(embedding: Float32Array): string {
 	const buffer = Buffer.from(embedding.buffer);
-	return buffer.toString('base64url');
+	return buffer.toString("base64url");
 }
 
 /**
  * Deserialize embedding from base64 string.
  */
 export function base64ToEmbedding(base64: string, dim: number = EMBEDDING_DIM): Float32Array {
-	const buffer = Buffer.from(base64, 'base64url');
+	const buffer = Buffer.from(base64, "base64url");
 	return new Float32Array(buffer.buffer, buffer.byteOffset, dim);
 }

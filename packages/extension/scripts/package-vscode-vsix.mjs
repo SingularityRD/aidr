@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +25,8 @@ await cp(join(extensionRoot, "LICENSE"), join(stageDir, "LICENSE"), { force: tru
 await cp(join(extensionRoot, "aidr-icon.png"), join(stageDir, "aidr-icon.png"), { force: true });
 await writeFile(join(stageDir, "package.json"), `${JSON.stringify(vscodeManifest, null, 2)}\n`, "utf8");
 
+await assertNoSourceMaps(join(stageDir, "dist"));
+
 await runVscePackage(stageDir, outputVsix);
 
 function buildVsCodeManifest(base) {
@@ -36,9 +38,7 @@ function buildVsCodeManifest(base) {
 	manifest.main = "./dist/vscode_extension.js";
 	manifest.files = [
 		"dist/vscode_extension.js",
-		"dist/vscode_extension.js.map",
 		"dist/aidr-hook.cjs",
-		"dist/aidr-hook.cjs.map",
 		"resources/**",
 		"aidr-icon.png",
 		"package.json",
@@ -99,4 +99,43 @@ function runVscePackage(workingDirectory, outputPath) {
 			rejectRun(new Error(`vsce exited with code ${code ?? "unknown"}`));
 		});
 	});
+}
+
+async function assertNoSourceMaps(distDir) {
+	const sourceMappingDirectiveRe = /^[ \t]*(?:\/\/#|\/\*#)\s*sourceMappingURL\s*[:=]/m;
+	const offenders = [];
+	const stack = [distDir];
+	while (stack.length) {
+		const dir = stack.pop();
+		let entries;
+		try {
+			entries = await readdir(dir, { withFileTypes: true });
+		} catch {
+			continue;
+		}
+		for (const entry of entries) {
+			const full = join(dir, entry.name);
+			if (entry.isDirectory()) {
+				stack.push(full);
+				continue;
+			}
+			if (!entry.isFile()) continue;
+			if (entry.name.endsWith(".map")) {
+				offenders.push(`${full} (.map)`);
+				continue;
+			}
+			if (entry.name.endsWith(".js") || entry.name.endsWith(".cjs") || entry.name.endsWith(".mjs")) {
+				const raw = await readFile(full, "utf8");
+				if (sourceMappingDirectiveRe.test(raw)) {
+					offenders.push(`${full} (sourceMappingURL=)`);
+				}
+			}
+		}
+	}
+
+	if (offenders.length) {
+		throw new Error(
+			`Refusing to package VSIX with sourcemap artifacts:\n${offenders.map((o) => `- ${o}`).join("\n")}`,
+		);
+	}
 }

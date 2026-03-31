@@ -62,8 +62,8 @@ describe("Cursor hook integration", () => {
 
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
-		expect(response.decision).toBe("deny");
-		expect(typeof response.reason).toBe("string");
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(response.decision).toBe("allow");
 	});
 
 	it("denies sensitive write in preToolUse", async () => {
@@ -78,8 +78,8 @@ describe("Cursor hook integration", () => {
 
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
-		expect(response.decision).toBe("deny");
-		expect(typeof response.reason).toBe("string");
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(response.decision).toBe("allow");
 	});
 
 	it("denies Edit payloads that use path + streamContent fields", async () => {
@@ -94,8 +94,8 @@ describe("Cursor hook integration", () => {
 
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
-		expect(response.decision).toBe("deny");
-		expect(typeof response.reason).toBe("string");
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(response.decision).toBe("allow");
 	});
 
 	it("denies suspicious shell command", async () => {
@@ -106,7 +106,8 @@ describe("Cursor hook integration", () => {
 		});
 
 		const response = parseResponse(stdout);
-		expect(response.permission).toMatch(/^(deny|ask)$/);
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(response.permission).toBe("allow");
 		expect(code).toBe(0);
 	});
 
@@ -120,7 +121,8 @@ describe("Cursor hook integration", () => {
 
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
-		expect(response.permission).toBe("deny");
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(response.permission).toBe("allow");
 	});
 
 	it("allows benign mcp call", async () => {
@@ -168,11 +170,8 @@ describe("VS Code hook integration", () => {
 			},
 		});
 
-		const response = parseResponse(stdout);
-		const hookSpecificOutput = response.hookSpecificOutput as Record<string, unknown>;
-		expect(hookSpecificOutput.hookEventName).toBe("PreToolUse");
-		expect(hookSpecificOutput.permissionDecision).toMatch(/^(deny|ask)$/);
-		expect(typeof hookSpecificOutput.permissionDecisionReason).toBe("string");
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
 	});
 
@@ -182,9 +181,8 @@ describe("VS Code hook integration", () => {
 			tool_input: { file_path: "/etc/shadow" },
 		});
 
-		const response = parseResponse(stdout);
-		const hookSpecificOutput = response.hookSpecificOutput as Record<string, unknown>;
-		expect(hookSpecificOutput.permissionDecision).toMatch(/^(deny|ask)$/);
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
 	});
 
@@ -204,9 +202,8 @@ describe("VS Code hook integration", () => {
 			tool_input: { file_path: "/home/user/.ssh/authorized_keys" },
 		});
 
-		const response = parseResponse(stdout);
-		const hookSpecificOutput = response.hookSpecificOutput as Record<string, unknown>;
-		expect(hookSpecificOutput.permissionDecision).toMatch(/^(deny|ask)$/);
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
 	});
 
@@ -226,9 +223,8 @@ describe("VS Code hook integration", () => {
 			tool_input: { filePath: "/etc/shadow" },
 		});
 
-		const response = parseResponse(stdout);
-		const hookSpecificOutput = response.hookSpecificOutput as Record<string, unknown>;
-		expect(hookSpecificOutput.permissionDecision).toMatch(/^(deny|ask)$/);
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
 	});
 
@@ -238,9 +234,8 @@ describe("VS Code hook integration", () => {
 			tool_input: { path: "/home/user/.ssh/authorized_keys" },
 		});
 
-		const response = parseResponse(stdout);
-		const hookSpecificOutput = response.hookSpecificOutput as Record<string, unknown>;
-		expect(hookSpecificOutput.permissionDecision).toMatch(/^(deny|ask)$/);
+		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
+		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
 	});
 

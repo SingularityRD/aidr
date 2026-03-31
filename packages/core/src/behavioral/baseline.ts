@@ -5,7 +5,7 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { resolvePath, AIDR_DIR } from "../config.js";
+import { AIDR_DIR, resolvePath } from "../config.js";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 
@@ -55,7 +55,10 @@ export class BaselineStore {
 	private logger: Logger;
 	private db: {
 		exec: (sql: string) => void;
-		prepare: (sql: string) => { run: (...args: unknown[]) => void; all: (...args: unknown[]) => unknown[] };
+		prepare: (sql: string) => {
+			run: (...args: unknown[]) => void;
+			all: (...args: unknown[]) => unknown[];
+		};
 		close: () => void;
 	} | null = null;
 	private writeQueue: Array<() => Promise<void>> = [];
@@ -71,9 +74,14 @@ export class BaselineStore {
 
 		// Dynamic import of node:sqlite (optional dependency)
 		const sqlite = (await import("node:sqlite")) as unknown as {
-			DatabaseSync: new (path: string) => {
+			DatabaseSync: new (
+				path: string,
+			) => {
 				exec: (sql: string) => void;
-				prepare: (sql: string) => { run: (...args: unknown[]) => void; all: (...args: unknown[]) => unknown[] };
+				prepare: (sql: string) => {
+					run: (...args: unknown[]) => void;
+					all: (...args: unknown[]) => unknown[];
+				};
 				close: () => void;
 			};
 		};
@@ -108,8 +116,12 @@ export class BaselineStore {
 		`);
 
 		// Indexes for performance
-		this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cmd_history_user_time ON command_history(user_id, timestamp);`);
-		this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cmd_history_hash ON command_history(command_hash);`);
+		this.db.exec(
+			`CREATE INDEX IF NOT EXISTS idx_cmd_history_user_time ON command_history(user_id, timestamp);`,
+		);
+		this.db.exec(
+			`CREATE INDEX IF NOT EXISTS idx_cmd_history_hash ON command_history(command_hash);`,
+		);
 
 		// 10MB retention: keep ~7 days of data (prune older entries)
 		this.pruneOldHistory();
@@ -152,7 +164,9 @@ export class BaselineStore {
 		this.queueWrite(async () => {
 			if (!this.db) return;
 			this.db
-				.prepare("INSERT INTO command_history (user_id, command_hash, timestamp, context) VALUES (?, ?, ?, ?)")
+				.prepare(
+					"INSERT INTO command_history (user_id, command_hash, timestamp, context) VALUES (?, ?, ?, ?)",
+				)
 				.run(userId, commandHash, timestamp, context);
 		});
 	}
@@ -162,7 +176,9 @@ export class BaselineStore {
 
 		const since = Date.now() - hours * 60 * 60 * 1000;
 		const rows = this.db
-			.prepare("SELECT * FROM command_history WHERE user_id = ? AND timestamp > ? ORDER BY timestamp DESC")
+			.prepare(
+				"SELECT * FROM command_history WHERE user_id = ? AND timestamp > ? ORDER BY timestamp DESC",
+			)
 			.all(userId, since) as Array<{
 			id: number;
 			user_id: string;
@@ -287,7 +303,8 @@ export class BaselineStore {
 		const totalHours = hours;
 		const avgCommandsPerHour = rows.length / totalHours;
 		const peakHourCommands = Math.max(...hourlyCounts);
-		const offHoursCommands = hourlyCounts.slice(0, 6).reduce((a, b) => a + b, 0) +
+		const offHoursCommands =
+			hourlyCounts.slice(0, 6).reduce((a, b) => a + b, 0) +
 			hourlyCounts.slice(23, 24).reduce((a, b) => a + b, 0);
 
 		// Get typical hours (hours with above-average activity)

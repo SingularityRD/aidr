@@ -4,7 +4,15 @@
  */
 
 import { logPluginScan } from "./audit-log.js";
-import { loadConfig } from "./config.js";
+import { isCommercialBuild } from "./build-flavor.js";
+import { loadConfig, resolvePath } from "./config.js";
+import { loadMergedIntelFromDisk } from "./intel/loader.js";
+import {
+	isPremiumModuleEnabled,
+	loadManagedState,
+	loadRevocationsCache,
+	managedStatePath,
+} from "./managed.js";
 import {
 	computeConfigHash,
 	getCached,
@@ -22,7 +30,7 @@ import type {
 	PluginInfo,
 	PluginScanResult,
 } from "./types.js";
-import { nullLogger } from "./types.js";
+import { ConfigSchema, nullLogger } from "./types.js";
 
 export interface SessionStartScanContext {
 	plugins: PluginInfo[];
@@ -69,16 +77,58 @@ export async function runSessionStartScan(
 	context: SessionStartScanContext,
 ): Promise<PluginScanResult[]> {
 	const logger = context.logger ?? nullLogger;
+	const config = await loadConfig(context.configPath, logger).catch(() => ConfigSchema.parse({}));
 
 	const threats = await loadThreats(context.threatsDir, logger);
 	const trustedDomains = await loadTrustedDomains(context.allowlistsDir, logger);
-	if (threats.length === 0) {
-		return [];
-	}
 
 	const plugins = context.plugins;
-	if (plugins.length === 0) {
-		return [];
+	let intelMerged: Awaited<ReturnType<typeof loadMergedIntelFromDisk>> | null = null;
+	try {
+		const packsEnabled = config.intel_packs?.enabled === true || config.intel?.enabled === true;
+		if (packsEnabled) {
+			const enforcePremium = isCommercialBuild() || config.mode === "managed";
+			if (enforcePremium) {
+				// Premium gating + revocation application (best-effort) for intel packs.
+				const managed = await loadManagedState(managedStatePath(), {
+					publicKeysPem: config.licensing.public_keys_pem,
+					onSecurityEvent: (event) =>
+						logger.warn(
+							"Managed state verification failure during session scan",
+							event as unknown as Record<string, unknown>,
+						),
+				});
+				if (!isPremiumModuleEnabled(managed, "intel_packs")) {
+					intelMerged = null;
+					// Continue scanning without premium intel packs.
+					// (Threat YAML heuristics still apply.)
+				}
+			}
+
+			const signedRev =
+				config.licensing.revocations_enabled && config.licensing.public_keys_pem.length > 0
+					? await loadRevocationsCache(
+							resolvePath(config.licensing.revocations_cache_path),
+							config.licensing.public_keys_pem,
+						)
+					: null;
+			const rev = signedRev?.payload?.revocations
+				? {
+						pack_ids: signedRev.payload.revocations.pack_ids,
+						key_ids: signedRev.payload.revocations.key_ids,
+					}
+				: null;
+
+			intelMerged = await loadMergedIntelFromDisk({
+				packsDir: config.intel_packs?.packs_dir,
+				trustedKeysPath: config.intel_packs?.trusted_keys_path,
+				verificationMode: "grace",
+				graceHours: config.intel_packs?.expired_grace_hours ?? 72,
+				revocations: rev,
+			});
+		}
+	} catch {
+		intelMerged = null;
 	}
 
 	const configHash = await computeConfigHash(
@@ -87,6 +137,10 @@ export async function runSessionStartScan(
 		context.allowlistsDir,
 	);
 	const cache = await loadScanCache(configHash, context.scanCachePath, logger);
+	if (plugins.length === 0) {
+		await saveScanCache(cache, context.scanCachePath, logger);
+		return [];
+	}
 	const resultsWithFindings: PluginScanResult[] = [];
 	let cacheModified = false;
 
@@ -108,6 +162,7 @@ export async function runSessionStartScan(
 			checkUrls: context.checkUrls ?? true,
 			checkFileHashes: context.checkFileHashes ?? true,
 			trustedDomains,
+			intelMerged,
 			logger,
 		});
 

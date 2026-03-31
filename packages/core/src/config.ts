@@ -5,6 +5,7 @@
 
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isCommercialBuild } from "./build-flavor.js";
 import { getFileContent } from "./file-utils.js";
 import type { Config, Logger } from "./types.js";
 import { ConfigSchema, nullLogger } from "./types.js";
@@ -88,7 +89,7 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 	const cachePath = defaultCachePath();
 	const allowlistPath = defaultAllowlistPath();
 	const auditPath = defaultAuditPath();
-	return {
+	let next: Config = {
 		...config,
 		cache: {
 			...config.cache,
@@ -103,6 +104,24 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 			path: normalizeStateFilePath(config.logging.path, auditPath, "logging", logger),
 		},
 	};
+
+	// Commercial builds are managed-only and should not accept local-mode configs.
+	if (isCommercialBuild()) {
+		if (next.mode !== "managed") {
+			logger.warn("Commercial build: forcing mode=managed (local mode is disabled).", {
+				configuredMode: next.mode,
+			});
+			next = { ...next, mode: "managed" };
+		}
+		if (!next.licensing.require_signed_entitlements) {
+			next = {
+				...next,
+				licensing: { ...next.licensing, require_signed_entitlements: true },
+			};
+		}
+	}
+
+	return next;
 }
 
 export async function loadConfig(

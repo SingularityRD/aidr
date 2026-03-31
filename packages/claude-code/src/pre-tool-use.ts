@@ -12,6 +12,7 @@ import {
 	allowVerdict,
 	evaluateToolCall,
 	extractFromToolCall,
+	initSentry,
 	type Logger,
 	type Verdict,
 } from "@singularityrd/aidr-core";
@@ -19,7 +20,25 @@ import pino from "pino";
 import { addPendingApproval } from "./approval-tracker.js";
 import { formatBlockReason } from "./format.js";
 
+// Initialize Sentry
+initSentry({ name: "aidr-claude-code-pre-tool-use" });
+
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
+
+async function maybeVerifyIntegrity(): Promise<void> {
+	try {
+		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
+		const core = (await import("@singularityrd/aidr-core")) as any;
+		const fn = core?.verifyArtifactIntegrityAndLog as
+			| ((args: { artifactDir: string; artifactId: string; logger?: unknown }) => Promise<unknown>)
+			| undefined;
+		if (typeof fn === "function") {
+			await fn({ artifactDir: __dirname, artifactId: "claude-code/dist", logger });
+		}
+	} catch {
+		// Fail open
+	}
+}
 
 function makeResponse(verdict: Verdict): Record<string, unknown> {
 	if (verdict.decision === "allow") return {};
@@ -56,6 +75,8 @@ function getPluginRoot(): string {
 }
 
 async function main(): Promise<void> {
+	await maybeVerifyIntegrity();
+
 	let rawInput: string;
 	try {
 		rawInput = readFileSync(0, "utf-8");

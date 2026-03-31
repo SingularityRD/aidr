@@ -26,9 +26,7 @@
   ],
   "files": [
     "dist/cursor_extension.js",
-    "dist/cursor_extension.js.map",
     "dist/aidr-hook.cjs",
-    "dist/aidr-hook.cjs.map",
     "resources/**",
     "aidr-icon.png",
     "package.json",
@@ -91,13 +89,14 @@
   },
   "scripts": {
     "build": "pnpm -C ../core build && npm run clean && npm run sync:assets && node esbuild.config.cjs",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true});require('node:fs').rmSync('resources',{recursive:true,force:true});require('node:fs').rmSync('.vsce',{recursive:true,force:true})\"",
+    "build:release": "npm run clean && npm run sync:assets && node esbuild.config.cjs --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id aidr-cursor && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "clean": "node ../../scripts/rmrf.mjs dist resources .vsce",
     "sync:assets": "node scripts/sync-assets.mjs",
     "pretest": "pnpm -C ../core build && npm run sync:assets && node esbuild.config.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "package:cursor:vsix": "npm run build && pnpm dlx @vscode/vsce package -o ../../aidr-cursor.vsix --no-dependencies --allow-package-secrets github --allow-package-secrets slack",
-    "package:vscode:vsix": "npm run build && node scripts/package-vscode-vsix.mjs",
+    "package:cursor:vsix": "npm run build:release && pnpm dlx @vscode/vsce package -o ../../aidr-cursor.vsix --no-dependencies --allow-package-secrets github --allow-package-secrets slack",
+    "package:vscode:vsix": "npm run build:release && node scripts/package-vscode-vsix.mjs",
     "package:vsix": "npm run package:cursor:vsix && npm run package:vscode:vsix"
   },
   "devDependencies": {
@@ -107,7 +106,8 @@
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.25.0",
     "typescript": "^5.9.0",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.2",
+    "pino": "^9.6.0",
+    "@sentry/node": "^9.0.0"
   }
 }
-

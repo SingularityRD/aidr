@@ -3,15 +3,8 @@
  * Uses the TinyHash embedding engine from ml/embedder.ts for local inference.
  */
 
-import {
-	EMBEDDING_DIM,
-	generateEmbedding,
-} from "./ml/embedder.js";
-import {
-	cosineSimilarity,
-	findTopKSimilar,
-	SIMILARITY_THRESHOLDS,
-} from "./ml/similarity.js";
+import { EMBEDDING_DIM, generateEmbedding } from "./ml/embedder.js";
+import { cosineSimilarity, findTopKSimilar, SIMILARITY_THRESHOLDS } from "./ml/similarity.js";
 
 export interface EmbeddingModelConfig {
 	modelPath: string;
@@ -107,9 +100,7 @@ export class LocalEmbeddingModel {
 	 */
 	async addThreat(threat: ThreatEmbedding): Promise<void> {
 		// Check if threat already exists
-		const existingIndex = this.threats.findIndex(
-			(t) => t.threatId === threat.threatId,
-		);
+		const existingIndex = this.threats.findIndex((t) => t.threatId === threat.threatId);
 
 		if (existingIndex >= 0) {
 			// Update existing threat
@@ -149,10 +140,7 @@ export class LocalEmbeddingModel {
 	/**
 	 * Check if a text matches any known threat above threshold.
 	 */
-	async hasThreatMatch(
-		text: string,
-		threshold = SIMILARITY_THRESHOLDS.MEDIUM,
-	): Promise<boolean> {
+	async hasThreatMatch(text: string, threshold = SIMILARITY_THRESHOLDS.MEDIUM): Promise<boolean> {
 		const matches = await this.findSimilarThreats(text, 1);
 		if (matches.length === 0) {
 			return false;
@@ -171,8 +159,7 @@ export class LocalEmbeddingModel {
 		modelSizeBytes: number;
 	}> {
 		// Approximate size: each embedding is vectorSize * 4 bytes (Float32)
-		const modelSizeBytes =
-			this.threats.length * this.config.vectorSize * 4 + 1024; // +1KB for overhead
+		const modelSizeBytes = this.threats.length * this.config.vectorSize * 4 + 1024; // +1KB for overhead
 
 		return {
 			isLoaded: this.isLoaded,

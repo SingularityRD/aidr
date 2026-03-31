@@ -7,6 +7,7 @@ import type {
 	Decision,
 	HeuristicMatch,
 	PackageCheckResult,
+	PolicyMatch,
 	SignalSources,
 	UrlCheckResult,
 	Verdict,
@@ -66,6 +67,7 @@ export class DecisionEngine {
 	async decide(sources: SignalSources): Promise<Verdict> {
 		const signals = this.collectSignals(
 			sources.heuristicMatches,
+			sources.policyMatches,
 			sources.urlCheckResults,
 			sources.packageCheckResults,
 			sources.amsiCheckResults,
@@ -106,6 +108,7 @@ export class DecisionEngine {
 
 	private collectSignals(
 		heuristicMatches: HeuristicMatch[],
+		policyMatches: PolicyMatch[] | undefined,
 		urlCheckResults: UrlCheckResult[],
 		packageCheckResults?: PackageCheckResult[],
 		amsiCheckResults?: AmsiCheckResult[],
@@ -123,6 +126,26 @@ export class DecisionEngine {
 				reason: match.threat.title,
 				artifact: match.artifact,
 			});
+		}
+
+		if (policyMatches) {
+			for (const match of policyMatches) {
+				signals.push({
+					decision:
+						match.action === "block"
+							? "deny"
+							: match.action === "require_approval"
+								? "ask"
+								: "allow",
+					category: match.category,
+					confidence: match.confidence,
+					severity: SEVERITY_MAP[match.severity] ?? "warning",
+					source: "policy",
+					threatId: match.policyId,
+					reason: match.title,
+					artifact: match.artifact,
+				});
+			}
 		}
 
 		for (const result of urlCheckResults) {

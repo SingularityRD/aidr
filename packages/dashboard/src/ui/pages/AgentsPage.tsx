@@ -28,9 +28,7 @@ export function AgentsPage() {
 			const [agentsRes, entRes] = await Promise.all([
 				supabase
 					.from("agents")
-					.select(
-						"id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen",
-					)
+					.select("id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen")
 					.order("last_seen", { ascending: false }),
 				supabase.from("entitlements").select("included_agents,extra_agents").maybeSingle(),
 			]);
@@ -52,8 +50,9 @@ export function AgentsPage() {
 		};
 	}, []);
 
-	const allowed =
-		entitlements ? Number(entitlements.included_agents ?? 1) + Number(entitlements.extra_agents ?? 0) : 1;
+	const allowed = entitlements
+		? Number(entitlements.included_agents ?? 1) + Number(entitlements.extra_agents ?? 0)
+		: 1;
 
 	return (
 		<div className="stack">
@@ -100,7 +99,8 @@ export function AgentsPage() {
 						{agents.length === 0 ? (
 							<tr>
 								<td colSpan={4} className="muted">
-									No agents yet. Create an API key and set <code>auth.api_key</code> in your agent.
+									No agents yet. Go to <Link to="/onboarding">Onboarding</Link> to connect your
+									first agent.
 								</td>
 							</tr>
 						) : null}
@@ -110,4 +110,3 @@ export function AgentsPage() {
 		</div>
 	);
 }
-

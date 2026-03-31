@@ -17,23 +17,37 @@ export type { ApprovedEntry, PendingEntry } from "./approval-store.js";
 // Approval store
 export { ApprovalStore } from "./approval-store.js";
 // Audit log
-export { buildRuntimeVerdictEntry, getRecentEntries, logPluginScan, logVerdict } from "./audit-log.js";
+export {
+	buildRuntimeVerdictEntry,
+	getRecentEntries,
+	logPluginScan,
+	logVerdict,
+} from "./audit-log.js";
+// Build flavor
+export { isCommercialBuild } from "./build-flavor.js";
 // Cache
 export { VerdictCache } from "./cache.js";
-// AMSI client
+// Clients
 export { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 // Control plane client (optional telemetry/licensing)
 export { ControlPlaneClient } from "./clients/control-plane.js";
 export type { FileCheckBatchResult, FileCheckResult } from "./clients/file-check.js";
-// File-check client
 export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
-// Registry client
 export { RegistryClient } from "./clients/package-registry.js";
-// URL check client
 export { UrlCheckClient } from "./clients/url-check.js";
+export type {
+	CommunityRule,
+	CommunityRuleRegistryConfig,
+	RuleContributor,
+} from "./community-rules.js";
+// Community Rules
+export { CommunityRuleRegistry } from "./community-rules.js";
 // Config
 export { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
+export type { ContainConfig } from "./contain.js";
+// Auto-Contain
+export { AutoContain, createDefaultContainConfig } from "./contain.js";
 // Decision engine
 export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
 // Runtime evaluator
@@ -55,6 +69,12 @@ export {
 	extractFromWrite,
 	extractUrls,
 } from "./extractors.js";
+export type {
+	AnonymizedThreatPattern,
+	FederatedConfig,
+} from "./federated.js";
+// Federated Learning (privacy-preserving threat sharing)
+export { FederatedLearning } from "./federated.js";
 // File utilities
 export {
 	atomicWriteJson,
@@ -85,10 +105,63 @@ export {
 	removeFromAllowlist,
 	summarizeArtifacts,
 } from "./guard.js";
+// Health checks
+export {
+	formatHealthStatus,
+	getHealthStatus,
+	type HealthCheck,
+	type HealthResult,
+	type HealthStatus,
+	type HealthStatusValue,
+	isHealthy,
+	runExtendedHealthChecks,
+	runHealthChecks,
+	toHealthResult,
+} from "./health.js";
 // Heuristics
 export { HeuristicsEngine } from "./heuristics.js";
+// Incidents (normalized signals + correlation engine)
+export {
+	type CorrelateOptions,
+	correlateIncidents,
+	type Incident,
+	type IncidentSeverity,
+	type NormalizedSignal,
+	normalizeAuditEntriesToSignals,
+	normalizeAuditEntryToSignals,
+	type SignalType,
+} from "./incidents/index.js";
 // Installation ID
 export { getInstallationId } from "./installation-id.js";
+// Integrity (signed artifact manifest verification)
+export {
+	type ArtifactManifestV1,
+	ArtifactManifestV1Schema,
+	type IntegrityCheckResult,
+	type IntegrityMismatch,
+	type IntegrityStatus,
+	verifyArtifactIntegrity,
+	verifyArtifactIntegrityAndLog,
+} from "./integrity/index.js";
+// Intel packs (signed offline intelligence)
+export { loadMergedIntelFromDisk } from "./intel/loader.js";
+export type {
+	IntelReputationProvider,
+	ReputationResult,
+	ReputationVerdict,
+} from "./intel/provider.js";
+export { createIntelReputationProvider } from "./intel/provider.js";
+export type { DomainRiskEntry, IntelMerged } from "./intel/types.js";
+// Metrics
+export { getMetricsCollector, MetricsCollector } from "./metrics.js";
+export type {
+	EmbeddingModelConfig,
+	ThreatEmbedding,
+} from "./ml-model.js";
+// ML Model (local 300KB embedding model)
+export { LocalEmbeddingModel } from "./ml-model.js";
+export type { AnomalyEvent, BehaviorProfile } from "./novelty-detection.js";
+export { createNoveltyDetector, NoveltyDetector } from "./novelty-detection.js";
 export type { PackageCheckerConfig, PackageCheckInput } from "./package-checker.js";
 // Package checker
 export { PackageChecker } from "./package-checker.js";
@@ -107,8 +180,37 @@ export {
 } from "./plugin-scan-cache.js";
 // Plugin scanner
 export { discoverPlugins, scanPlugin } from "./plugin-scanner.js";
+// Quarantine
+export {
+	AutoQuarantine,
+	getDefaultQuarantineConfig,
+	type NotifyChannel,
+	type QuarantineConfig,
+	type QuarantinedItem,
+} from "./quarantine.js";
+export type { ResponseAuditEntry, ResponseAuditorOptions } from "./response-audit.js";
+// Response Audit
+export { createResponseAuditor, ResponseAuditor } from "./response-audit.js";
+// Response config
+export {
+	getDefaultResponseConfig,
+	getDefaultResponseRules,
+	type ResponseConfigFile,
+	ResponseConfigurator,
+	type ResponseMode,
+	type ResponseRule,
+	type ResponseSeverity,
+} from "./response-config.js";
+export type { Snapshot } from "./rollback.js";
+// Auto-Rollback
+export { AutoRollback, createAutoRollback } from "./rollback.js";
+export type { RuleSyncConfig } from "./rule-sync.js";
+// Real-Time Rule Sync
+export { RealTimeRuleSync } from "./rule-sync.js";
 // Scan handler
 export { createScanHandler, runPluginScan, type ScanHandlerOptions } from "./scan-handler.js";
+// Sentry
+export { initSentry } from "./sentry.js";
 // Session start orchestrator
 export {
 	runSessionStart,
@@ -125,6 +227,31 @@ export {
 } from "./session-start-scan.js";
 // Threat loader
 export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
+export type {
+	DetectionPhaseAttributes,
+	SecurityDecisionAttributes,
+	SpanContext,
+	TracingConfig,
+} from "./tracing.js";
+// Tracing
+export {
+	addSpanEvent,
+	endSpan,
+	getCurrentSpan,
+	getSpanContext,
+	getTracer,
+	initTracing,
+	isTracingEnabled,
+	loadTracingConfig,
+	recordDetectionPhase,
+	recordException,
+	setSecurityDecisionAttributes,
+	setSpanAttribute,
+	setSpanAttributes,
+	shutdownTracing,
+	startActiveSpan,
+	startSpan,
+} from "./tracing.js";
 // Trusted domains
 export {
 	extractDomain,
@@ -139,6 +266,7 @@ export type {
 	AmsiCheckConfig,
 	AmsiCheckResult,
 	Artifact,
+	AuthConfig,
 	CacheConfig,
 	CachedEntry,
 	CachedPluginScanResult,
@@ -147,9 +275,12 @@ export type {
 	Config,
 	ControlPlaneConfig,
 	Decision,
-	AuthConfig,
 	FileCheckConfig,
 	HeuristicMatch,
+	IncidentConfig,
+	IntegrityConfig,
+	IntelConfig,
+	IntelPacksConfig,
 	Logger,
 	LoggingConfig,
 	PackageCheckConfig,
@@ -181,6 +312,10 @@ export {
 	ControlPlaneConfigSchema,
 	DecisionSchema,
 	FileCheckConfigSchema,
+	IncidentConfigSchema,
+	IntegrityConfigSchema,
+	IntelConfigSchema,
+	IntelPacksConfigSchema,
 	LoggingConfigSchema,
 	nullLogger,
 	PackageCheckConfigSchema,

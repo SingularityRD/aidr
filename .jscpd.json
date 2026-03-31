@@ -1,0 +1,20 @@
+{
+	"threshold": 10,
+	"reporters": ["console", "html"],
+	"ignore": [
+		"**/node_modules/**",
+		"**/dist/**",
+		"**/coverage/**",
+		"**/.git/**",
+		"**/*.d.ts",
+		"**/resources/**",
+		"**/__tests__/**",
+		"**/*.test.ts",
+		"**/*.e2e.test.ts"
+	],
+	"absolute": false,
+	"gitignore": true,
+	"minLines": 5,
+	"minTokens": 50,
+	"languages": ["typescript", "javascript", "yaml", "json"]
+}

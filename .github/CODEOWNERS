@@ -1,0 +1,34 @@
+# Global default
+* @SingularityRD
+
+# Core detection engine - platform-agnostic
+/packages/core/ @SingularityRD
+
+# Platform connectors
+/packages/claude-code/ @SingularityRD
+/packages/openclaw/ @SingularityRD
+/packages/opencode/ @SingularityRD
+/packages/extension/ @SingularityRD
+
+# Dashboard and UI
+/packages/dashboard/ @SingularityRD
+/landing/ @SingularityRD
+
+# Threat definitions and security rules
+/threats/ @SingularityRD
+/allowlists/ @SingularityRD
+
+# Documentation
+docs/ @SingularityRD
+*.md @SingularityRD
+
+# Configuration files
+/.github/ @SingularityRD
+package.json @SingularityRD
+pnpm-workspace.yaml @SingularityRD
+biome.json @SingularityRD
+tsconfig.base.json @SingularityRD
+
+# Build and CI scripts
+/scripts/ @SingularityRD
+/.github/workflows/ @SingularityRD

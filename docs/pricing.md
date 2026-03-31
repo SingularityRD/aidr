@@ -13,27 +13,22 @@ Goal: make Singularity AIDR easy to adopt (1 agent free) while aligning revenue 
 
 - **$0**
 - **1 agent included**
-- Dashboard + telemetry for that 1 agent (optional opt-in)
+- Dashboard access for that 1 agent (when control plane is enabled)
 - Local detection features always available
 
-### Pro (per agent)
+### Pro (additional agents)
 
-- **$19 / agent / month**
-- Includes all cloud features (telemetry dashboards, longer retention, policy distribution)
-- Volume discounts (applied automatically):
-  - 10–49 agents: **$15 / agent / month**
-  - 50–199 agents: **$12 / agent / month**
-  - 200+ agents: contact sales
+- **$2 / additional agent / month**
+- Metered by unique installation id (`iid`) connected under a customer account
 
 ### Enterprise (custom)
 
 - Everything in Pro
-- SSO/SAML, SCIM, org-wide policies, audit exports, on-prem / VPC deployment options
+- Org-wide policy distribution, audit exports, and larger fleets
 - Dedicated support + SLAs
 
 ## Rationale (cost + value alignment)
 
-- Cost drivers scale with event volume and storage, but agent count is the simplest, most predictable proxy.
-- Per-agent pricing maps to security outcomes: each additional agent increases attack surface and protection value.
+- Agent count is the simplest proxy for fleet risk and management value.
 - 1 free agent removes friction and enables individual developers to validate value before expanding.
 

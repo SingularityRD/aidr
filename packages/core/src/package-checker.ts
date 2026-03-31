@@ -23,12 +23,20 @@ export interface PackageCheckerConfig {
 	fileCheckTimeoutSeconds?: number;
 	fileCheckEnabled?: boolean;
 	apiKey?: string;
+	/**
+	 * Optional offline intel packs (owned reputation substrate).
+	 * If provided, these are checked before any network calls.
+	 */
+	intelPackageNameDeny?: Set<string>;
+	intelPackageHashDeny?: Set<string>;
 }
 
 export class PackageChecker {
 	private readonly registryClient: RegistryClient;
 	private readonly fileCheckClient: FileCheckClient | null;
 	private readonly logger: Logger;
+	private readonly intelPackageNameDeny: Set<string> | null;
+	private readonly intelPackageHashDeny: Set<string> | null;
 
 	constructor(config: PackageCheckerConfig = {}, logger: Logger = nullLogger) {
 		this.logger = logger;
@@ -47,6 +55,9 @@ export class PackageChecker {
 						config.apiKey,
 					)
 				: null;
+
+		this.intelPackageNameDeny = config.intelPackageNameDeny ?? null;
+		this.intelPackageHashDeny = config.intelPackageHashDeny ?? null;
 	}
 
 	async checkPackages(packages: PackageCheckInput[]): Promise<PackageCheckResult[]> {
@@ -57,6 +68,18 @@ export class PackageChecker {
 		const results: PackageCheckResult[] = [];
 
 		for (const pkg of packages) {
+			// Offline intel: denylist by name (works for scoped packages too).
+			if (this.intelPackageNameDeny?.has(pkg.name)) {
+				results.push({
+					packageName: pkg.name,
+					registry: pkg.registry,
+					verdict: "malicious",
+					confidence: 1.0,
+					details: `Package '${pkg.name}' is denied by offline intel packs`,
+				});
+				continue;
+			}
+
 			if (pkg.name.startsWith("@")) {
 				results.push({
 					packageName: pkg.name,
@@ -118,6 +141,17 @@ export class PackageChecker {
 		}
 
 		// Step 2b: File reputation check (sha256 only — file-check API requires sha256)
+		if (metadata.latestHash && this.intelPackageHashDeny?.has(metadata.latestHash.toLowerCase())) {
+			return {
+				packageName: pkg.name,
+				registry: pkg.registry,
+				verdict: "malicious",
+				confidence: 1.0,
+				details: `Package '${pkg.name}' matches offline malicious hash intel`,
+				fileCheckSeverity: "SEVERITY_MALWARE",
+			};
+		}
+
 		if (metadata.latestHash && this.fileCheckClient && metadata.hashAlgorithm === "sha256") {
 			try {
 				const fileResult = await this.fileCheckClient.checkHash(metadata.latestHash);

@@ -1,5 +1,9 @@
 # FAQ
 
+## What is the fastest way to set it up?
+
+Install the connector and run your agent once. If you are not enrolled yet, Singularity AIDR will show a browser verification URL and a short code. Approve in the browser, then restart the agent. See [Device Auth](device-auth.md).
+
 ## Is Singularity AIDR always running?
 
 On Claude Code, yes - it loads automatically via hooks on every session. On Cursor/VS Code, you need to explicitly enable protection via the command palette. On OpenClaw, it runs once installed as a plugin.
@@ -48,7 +52,7 @@ Set `"sensitivity": "paranoid"` in `~/.singularity-aidr/config.json` to promote 
 
 ## Why does OpenClaw flag Singularity AIDR as "potential-exfiltration"?
 
-This is a false positive. OpenClaw's `code_safety` audit fires when `readFile` and `fetch` coexist in the same bundle. Singularity AIDR reads local files (config, cache, YAML) and separately sends URL hashes to a reputation API. No file content crosses the network.
+This is a false positive. OpenClaw's `code_safety` audit fires when `readFile` and `fetch` coexist in the same bundle. Singularity AIDR reads local files (config, cache, YAML) and may also make network calls for first-party reputation checks or managed sync. No file contents cross the network.
 
 
 

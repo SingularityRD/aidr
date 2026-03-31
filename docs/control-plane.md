@@ -1,31 +1,34 @@
 # Control Plane (Auth, Dashboard, Licensing)
 
-Singularity AIDR can run **fully local** (no account) or connect to an optional **control plane** for:
+The control plane is the managed layer for:
 
 - User authentication (dashboard login)
 - Centralized agent inventory (installations)
 - Telemetry-backed dashboards (verdict/event timeline)
+- Incidents view derived from telemetry events (see `docs/incidents.md`)
 - Agent-seat licensing (1 free agent, paid per additional agent)
 
-## How a user connects an agent
+For commercial builds, Singularity AIDR is **managed-first**: enrollment is required before protection is activated.
 
-1. Create an account in the dashboard (Supabase Auth).
-2. Generate an API key.
-3. Set `auth.api_key` in `~/.singularity-aidr/config.json`.
-4. Enable control plane telemetry (optional):
+## Enrollment (recommended)
 
-```json
-{
-  "auth": { "api_key": "aidr_live_..." },
-  "control_plane": {
-    "enabled": true,
-    "send_audit_logs": true,
-    "endpoint": "https://YOUR_PROJECT.supabase.co/functions"
-  }
-}
-```
+The primary onboarding flow is **device authorization**:
 
-When enabled, Singularity AIDR will send best-effort runtime verdict events to the control plane (`POST /v1/ingest`). Local detection is unaffected if the control plane is down (fail-open).
+1. Install the connector (Claude Code / Cursor / VS Code / OpenClaw / OpenCode).
+2. Start the agent once.
+3. Singularity AIDR prints a short verification code and a verification URL.
+4. Open the URL, sign in, and approve.
+5. Restart the agent (or rerun the enable-protection command).
+
+See [Device Auth](device-auth.md).
+
+## API keys (fallback)
+
+For advanced or support scenarios, you can still use API keys:
+
+1. Sign in to the dashboard.
+2. Create an API key.
+3. Set `auth.api_key` in `~/.singularity-aidr/config.json` and enable `control_plane.enabled`.
 
 ## Licensing model (recommended)
 

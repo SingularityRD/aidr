@@ -42,7 +42,72 @@ export function buildRuntimeVerdictEntry(
 		severity: verdict.severity,
 		reasons: verdict.reasons,
 		source: verdict.source,
+		matched_threat_id: verdict.matchedThreatId,
 		user_override: userOverride,
+	};
+}
+
+export function buildIncidentEntry(
+	params:
+		| {
+				incidentId: string;
+				sessionId: string;
+				toolName: string;
+				toolInput: Record<string, unknown>;
+				verdict: Verdict;
+				recommendedActions: string[];
+		  }
+		| string,
+	toolName?: string,
+	verdict?: Verdict,
+): Record<string, unknown> {
+	// Back-compat: older call sites used (sessionId, toolName, verdict) without toolInput.
+	if (typeof params === "string") {
+		const sessionId = params;
+		const safeToolName = toolName ?? "unknown";
+		const safeVerdict = verdict ?? {
+			decision: "ask",
+			category: "unknown",
+			confidence: 0.0,
+			severity: "warning",
+			source: "unknown",
+			artifacts: [],
+			matchedThreatId: null,
+			reasons: [],
+		};
+		return {
+			type: "incident",
+			timestamp: new Date().toISOString(),
+			incident_id: `inc_${sessionId}_${Date.now()}`,
+			status: "open",
+			session_id: sessionId,
+			tool_name: safeToolName,
+			tool_input_summary: "",
+			artifacts: safeVerdict.artifacts,
+			decision: safeVerdict.decision,
+			severity: safeVerdict.severity,
+			reasons: safeVerdict.reasons,
+			source: safeVerdict.source,
+			matched_threat_id: safeVerdict.matchedThreatId,
+			recommended_actions: ["review"],
+		};
+	}
+
+	return {
+		type: "incident",
+		timestamp: new Date().toISOString(),
+		incident_id: params.incidentId,
+		status: "open",
+		session_id: params.sessionId,
+		tool_name: params.toolName,
+		tool_input_summary: toolInputSummary(params.toolName, params.toolInput),
+		artifacts: params.verdict.artifacts,
+		decision: params.verdict.decision,
+		severity: params.verdict.severity,
+		reasons: params.verdict.reasons,
+		source: params.verdict.source,
+		matched_threat_id: params.verdict.matchedThreatId,
+		recommended_actions: params.recommendedActions,
 	};
 }
 
@@ -132,6 +197,19 @@ export async function logPluginScan(
 		findings_count: findings.length,
 		findings,
 	};
+
+	try {
+		await appendEntry(config, entry);
+	} catch {
+		// Fail-open
+	}
+}
+
+export async function logIncident(
+	config: LoggingConfig,
+	entry: Record<string, unknown>,
+): Promise<void> {
+	if (!config.enabled) return;
 
 	try {
 		await appendEntry(config, entry);

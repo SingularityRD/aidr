@@ -5,12 +5,18 @@ This is a minimal multi-tenant dashboard for:
 - User login (Supabase Auth)
 - API key generation (hash-only storage)
 - Agent inventory (per `iid`)
-- Recent event timeline (from control plane ingest)
+- Incidents view (derived from `events` telemetry)
+- Billing / seat usage (1 agent free, $2 per extra agent / month)
 
 ## Setup
 
 1. Create a Supabase project and apply the schema in `supabase/migrations/`.
-2. Configure Supabase Auth (email magic link is enough).
+2. Configure Supabase Auth:
+
+   - Email magic link works out of the box.
+   - Optional: enable Google provider and add a redirect URL for the SPA callback:
+     - Local dev: `http://localhost:5173/auth/callback`
+     - Production: `https://YOUR_DOMAIN/auth/callback`
 3. Create `packages/dashboard/.env.local`:
 
 ```bash

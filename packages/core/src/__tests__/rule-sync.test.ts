@@ -1,8 +1,8 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { RealTimeRuleSync, type RuleSyncConfig } from "../rule-sync.js";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RealTimeRuleSync, type RuleSyncConfig } from "../rule-sync.js";
 import type { Logger } from "../types.js";
 
 const mockLogger: Logger = {
@@ -37,16 +37,16 @@ describe("RealTimeRuleSync", () => {
 
 	describe("start", () => {
 		it("initializes and starts polling", async () => {
-			const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(
-				new Response(JSON.stringify([]), { status: 200 })
-			);
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
 
 			await sync.start();
 
 			expect(sync.getLastSync()).toBeInstanceOf(Date);
 			expect(mockLogger.info).toHaveBeenCalledWith(
 				"Real-time rule sync started",
-				expect.any(Object)
+				expect.any(Object),
 			);
 			fetchSpy.mockRestore();
 		});
@@ -54,9 +54,9 @@ describe("RealTimeRuleSync", () => {
 
 	describe("stop", () => {
 		it("stops the polling loop", async () => {
-			const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-				new Response(JSON.stringify([]), { status: 200 })
-			);
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
 
 			await sync.start();
 			sync.stop();
@@ -82,9 +82,9 @@ describe("RealTimeRuleSync", () => {
 				},
 			];
 
-			const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-				new Response(JSON.stringify(remoteRules), { status: 200 })
-			);
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValue(new Response(JSON.stringify(remoteRules), { status: 200 }));
 
 			const stats = await sync.sync();
 
@@ -98,25 +98,20 @@ describe("RealTimeRuleSync", () => {
 					updated: 0,
 					removed: 0,
 					unchanged: 0,
-				})
+				}),
 			);
 			fetchSpy.mockRestore();
 		});
 
 		it("handles sync failures gracefully", async () => {
-			const fetchSpy = vi
-				.spyOn(global, "fetch")
-				.mockRejectedValue(new Error("Network error"));
+			const fetchSpy = vi.spyOn(global, "fetch").mockRejectedValue(new Error("Network error"));
 
 			const stats = await sync.sync();
 
 			expect(stats.added).toBe(0);
 			expect(stats.updated).toBe(0);
 			expect(stats.removed).toBe(0);
-			expect(mockLogger.error).toHaveBeenCalledWith(
-				"Rule sync failed",
-				expect.any(Object)
-			);
+			expect(mockLogger.error).toHaveBeenCalledWith("Rule sync failed", expect.any(Object));
 			fetchSpy.mockRestore();
 		});
 	});
@@ -135,9 +130,9 @@ describe("RealTimeRuleSync", () => {
 				hash: "def456",
 			};
 
-			const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-				new Response(JSON.stringify(rule), { status: 200 })
-			);
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValue(new Response(JSON.stringify(rule), { status: 200 }));
 
 			const result = await sync.downloadRule("test-rule-123");
 
@@ -146,27 +141,25 @@ describe("RealTimeRuleSync", () => {
 				"https://cdn.example.com/rules/test-rule-123",
 				expect.objectContaining({
 					headers: { Accept: "application/json" },
-				})
+				}),
 			);
-			expect(mockLogger.info).toHaveBeenCalledWith(
-				"Rule downloaded successfully",
-				{ ruleId: "test-rule-123" }
-			);
+			expect(mockLogger.info).toHaveBeenCalledWith("Rule downloaded successfully", {
+				ruleId: "test-rule-123",
+			});
 			fetchSpy.mockRestore();
 		});
 
 		it("returns null for 404 responses", async () => {
-			const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-				new Response("Not found", { status: 404, statusText: "Not Found" })
-			);
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValue(new Response("Not found", { status: 404, statusText: "Not Found" }));
 
 			const result = await sync.downloadRule("nonexistent-rule");
 
 			expect(result).toBeNull();
-			expect(mockLogger.warn).toHaveBeenCalledWith(
-				"Rule not found on CDN",
-				{ ruleId: "nonexistent-rule" }
-			);
+			expect(mockLogger.warn).toHaveBeenCalledWith("Rule not found on CDN", {
+				ruleId: "nonexistent-rule",
+			});
 			fetchSpy.mockRestore();
 		});
 
@@ -175,19 +168,17 @@ describe("RealTimeRuleSync", () => {
 				new Response("Server Error", {
 					status: 500,
 					statusText: "Internal Server Error",
-				})
+				}),
 			);
 
 			await expect(sync.downloadRule("any-rule")).rejects.toThrow(
-				"Failed to fetch rule any-rule: 500 Internal Server Error"
+				"Failed to fetch rule any-rule: 500 Internal Server Error",
 			);
 			fetchSpy.mockRestore();
 		});
 
 		it("throws on network errors", async () => {
-			const fetchSpy = vi
-				.spyOn(global, "fetch")
-				.mockRejectedValue(new Error("Network failure"));
+			const fetchSpy = vi.spyOn(global, "fetch").mockRejectedValue(new Error("Network failure"));
 
 			await expect(sync.downloadRule("any-rule")).rejects.toThrow("Network failure");
 			expect(mockLogger.error).toHaveBeenCalledWith(
@@ -195,21 +186,23 @@ describe("RealTimeRuleSync", () => {
 				expect.objectContaining({
 					ruleId: "any-rule",
 					error: "Network failure",
-				})
+				}),
 			);
 			fetchSpy.mockRestore();
 		});
 
 		it("properly URL-encodes rule IDs with special characters", async () => {
-			const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-				new Response(JSON.stringify({ id: "rule/with/slashes" }), { status: 200 })
-			);
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValue(
+					new Response(JSON.stringify({ id: "rule/with/slashes" }), { status: 200 }),
+				);
 
 			await sync.downloadRule("rule/with/slashes");
 
 			expect(fetchSpy).toHaveBeenCalledWith(
 				expect.stringContaining("rules%2Fwith%2Fslashes"),
-				expect.any(Object)
+				expect.any(Object),
 			);
 			fetchSpy.mockRestore();
 		});
@@ -229,17 +222,14 @@ describe("RealTimeRuleSync", () => {
 				hash: "emergency-hash",
 			};
 
-			const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-				new Response(JSON.stringify(rule), { status: 200 })
-			);
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValue(new Response(JSON.stringify(rule), { status: 200 }));
 
 			await sync.emergencyPush(["emergency-1"]);
 
 			expect(sync.isInEmergencyMode()).toBe(true);
-			expect(mockLogger.warn).toHaveBeenCalledWith(
-				"Emergency push triggered",
-				expect.any(Object)
-			);
+			expect(mockLogger.warn).toHaveBeenCalledWith("Emergency push triggered", expect.any(Object));
 			fetchSpy.mockRestore();
 		});
 	});
@@ -271,9 +261,9 @@ describe("RealTimeRuleSync", () => {
 				},
 			];
 
-			const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(
-				new Response(JSON.stringify(rules), { status: 200 })
-			);
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValueOnce(new Response(JSON.stringify(rules), { status: 200 }));
 
 			await sync.sync();
 			const currentRules = await sync.getCurrentRules();
@@ -306,9 +296,9 @@ describe("RealTimeRuleSync", () => {
 				},
 			];
 
-			const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(
-				new Response(JSON.stringify(rules), { status: 200 })
-			);
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValueOnce(new Response(JSON.stringify(rules), { status: 200 }));
 
 			await testSync.sync();
 

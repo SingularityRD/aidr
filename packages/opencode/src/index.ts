@@ -3,12 +3,16 @@
  * Intercepts tool calls and uses @singularityrd/aidr-core to enforce security verdicts.
  */
 
+import { join } from "node:path";
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 import {
 	ApprovalStore,
 	addToAllowlist,
 	approveAction,
+	createChildLogger,
+	getLogger,
+	initSentry,
 	removeFromAllowlist,
 } from "@singularityrd/aidr-core";
 import { getBundledDataDirs } from "./bundled-dirs.js";
@@ -18,8 +22,36 @@ import { createToolHandlers } from "./tool-handler.js";
 
 const APPROVAL_STORE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
+async function maybeVerifyIntegrity(directory: string): Promise<void> {
+	try {
+		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
+		const core = (await import("@singularityrd/aidr-core")) as any;
+		const fn = core?.verifyArtifactIntegrityAndLog as
+			| ((args: { artifactDir: string; artifactId: string }) => Promise<unknown>)
+			| undefined;
+		if (typeof fn !== "function") return;
+
+		// Prefer dist/ for packaged installs, fall back to plugin root.
+		const candidates = [join(directory, "dist"), directory];
+		for (const artifactDir of candidates) {
+			try {
+				await fn({ artifactDir, artifactId: "opencode/dist" });
+				break;
+			} catch {
+				// ignore and try next
+			}
+		}
+	} catch {
+		// Fail open
+	}
+}
+
 export const AidrPlugin: Plugin = async ({ client, directory }) => {
-	const logger = new OpencodeLogger(client);
+	// Initialize Sentry
+	initSentry({ name: "aidr-opencode" });
+
+	const logger = createChildLogger(getLogger(), "opencode");
+	void maybeVerifyIntegrity(directory);
 	const { threatsDir, allowlistsDir } = getBundledDataDirs();
 	const approvalStore = new ApprovalStore();
 
@@ -35,6 +67,7 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 	const ARTIFACT_TYPE = tool.schema.enum(["url", "command", "file_path"]);
 
 	const toolHandlers = createToolHandlers(logger, approvalStore, threatsDir, allowlistsDir);
+	await createSessionScanHandler(logger, undefined)();
 
 	return {
 		"tool.execute.before": toolHandlers["tool.execute.before"],
@@ -88,7 +121,7 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 				try {
 					logger.debug("Singularity AIDR: starting session scan", { sessionID });
 
-					await createSessionScanHandler(logger, directory, (msg) => {
+					await createSessionScanHandler(logger, undefined, (msg) => {
 						pendingFindingsBySession.set(sessionID, msg);
 					})();
 				} catch (error) {

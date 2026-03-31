@@ -16,6 +16,13 @@
 				"noUnusedVariables": "error",
 				"noUnusedImports": "error"
 			},
+			"complexity": {
+				"noExcessiveCognitiveComplexity": "error",
+				"noForEach": "off",
+				"noUselessSwitchCase": "error",
+				"noStaticOnlyClass": "error",
+				"noThisInStatic": "error"
+			},
 			"style": {
 				"noNonNullAssertion": "warn"
 			}

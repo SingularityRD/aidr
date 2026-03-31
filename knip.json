@@ -1,0 +1,59 @@
+{
+	"$schema": "https://unpkg.com/knip@5/schema.json",
+	"workspaces": {
+		"packages/core": {
+			"entry": ["src/index.ts"],
+			"project": ["src/**/*.ts"],
+			"ignore": ["src/__tests__/**"]
+		},
+		"packages/claude-code": {
+			"entry": ["src/*.ts"],
+			"project": ["src/**/*.ts"],
+			"ignore": ["src/__tests__/**", "dist/**"]
+		},
+		"packages/openclaw": {
+			"entry": ["src/index.ts"],
+			"project": ["src/**/*.ts"],
+			"ignore": ["src/__tests__/**", "dist/**", "resources/**"]
+		},
+		"packages/opencode": {
+			"entry": ["src/index.ts"],
+			"project": ["src/**/*.ts"],
+			"ignore": ["src/__tests__/**", "dist/**", "resources/**"]
+		},
+		"packages/extension": {
+			"entry": ["src/cursor_extension.ts", "src/aidr-hook.ts"],
+			"project": ["src/**/*.ts"],
+			"ignore": ["src/__tests__/**", "dist/**", "resources/**"]
+		},
+		"packages/dashboard": {
+			"entry": ["src/main.tsx"],
+			"project": ["src/**/*.{ts,tsx}"],
+			"ignore": ["dist/**", ".vite/**"]
+		},
+		"landing": {
+			"entry": ["app/layout.tsx", "app/page.tsx"],
+			"project": ["app/**/*.{ts,tsx}"],
+			"ignore": [".next/**", "out/**"]
+		}
+	},
+	"ignoreDependencies": [
+		"@changesets/cli",
+		"@vitest/coverage-v8",
+		"vitest-teamcity-reporter",
+		"typescript",
+		"esbuild",
+		"@biomejs/biome"
+	],
+	"ignoreBinaries": [
+		"bash",
+		"gh",
+		"go",
+		"docker",
+		"wrangler"
+	],
+	"rules": {
+		"types": "off",
+		"enumMembers": "off"
+	}
+}

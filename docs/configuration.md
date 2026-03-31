@@ -2,19 +2,54 @@
 
 Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All fields are optional - defaults are applied automatically.
 
+Commercial builds are **managed-first** and require enrollment before protection is activated. In these builds, local-only mode is disabled.
+
 ## Full Config
 
 ```json
 {
+  "mode": "managed",
   "auth": {
     "api_key": "aidr_live_..."
   },
   "control_plane": {
-    "enabled": false,
+    "enabled": true,
     "endpoint": "https://aidr-control.svc.singularityrd.com",
     "timeout_seconds": 0.5,
     "send_audit_logs": false,
-    "send_clean_verdicts": false
+    "send_clean_verdicts": false,
+    "sync_incidents": false,
+    "grace_period_hours": 72,
+    "redact_mode": "hash"
+  },
+  "policy": {
+    "enabled": false,
+    "filesystem": {
+      "enabled": false,
+      "allowed_write_roots": [],
+      "deny_write_patterns": [],
+      "outside_root_action": "require_approval"
+    },
+    "network": {
+      "enabled": false,
+      "allow_domains": [],
+      "deny_domains": [],
+      "deny_private_ips": true,
+      "deny_action": "block",
+      "outside_allow_action": "require_approval"
+    },
+    "shell": {
+      "enabled": false,
+      "deny_patterns": [],
+      "deny_action": "block"
+    }
+  },
+  "intel": {
+    "enabled": false,
+    "url_denylist_path": "~/.singularity-aidr/intel/url_denylist.txt"
+  },
+  "response": {
+    "emit_incidents": true
   },
   "url_check": {
     "timeout_seconds": 5,
@@ -44,7 +79,9 @@ Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All
   "logging": {
     "enabled": true,
     "log_clean": false,
-    "path": "~/.singularity-aidr/audit.jsonl"
+    "path": "~/.singularity-aidr/audit.jsonl",
+    "max_bytes": 5242880,
+    "max_files": 3
   },
   "sensitivity": "balanced",
   "disabled_threats": []
@@ -53,11 +90,19 @@ Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All
 
 ## Options
 
+### `mode`
+
+One of `"local"` or `"managed"`. Default: `"managed"`.
+
+- `managed`: enables licensing + dashboard telemetry when combined with `control_plane.enabled` and auth.
+- `local`: developer/reference mode only. Commercial builds disable local mode.
+
 ### `auth`
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `api_key` | (none) | API key for Singularity AIDR cloud services (control plane + reputation APIs). Local-only mode works without it. |
+| `api_key` | (none) | API key for managed control plane services (telemetry + licensing). |
+| `enrollment_token` | (none) | Optional one-time token for bootstrapping managed mode (support/fallback path). |
 
 ### `control_plane`
 
@@ -68,6 +113,32 @@ Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All
 | `timeout_seconds` | `0.5` | Request timeout for control plane calls |
 | `send_audit_logs` | `false` | Send runtime verdict events for the dashboard |
 | `send_clean_verdicts` | `false` | Also send `allow` events (higher volume) |
+| `sync_incidents` | `false` | Also send incident events (when emitted) |
+| `grace_period_hours` | `72` | Offline grace window for managed mode |
+| `redact_mode` | `"hash"` | Remote redaction: `"none"`, `"hash"`, or `"full"` |
+
+### `policy`
+
+Local policy engine to enforce workspace boundaries and basic egress/command restrictions.
+
+- Filesystem policy: allow write roots, deny write regexes, and outside-root action.
+- Network policy: allow/deny domains, private IP blocking, and outside-allow action.
+- Shell policy: deny regexes for commands (tool: `Bash`).
+
+### `intel`
+
+Offline intel packs used by the policy layer.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Enable local intel packs |
+| `url_denylist_path` | `~/.singularity-aidr/intel/url_denylist.txt` | Plaintext denylist (one URL or domain per line, `#` comments allowed) |
+
+### `response`
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `emit_incidents` | `true` | Emit incident entries (used by managed dashboards) |
 
 ### `url_check`
 
@@ -148,6 +219,8 @@ The allowlist stores user overrides for false positives. When Singularity AIDR r
 | `enabled` | `true` | Enable JSONL audit logging |
 | `log_clean` | `false` | Also log `allow` verdicts |
 | `path` | `~/.singularity-aidr/audit.jsonl` | Log file location (must remain under `~/.singularity-aidr`) |
+| `max_bytes` | `5242880` | Rotate log when it exceeds this size |
+| `max_files` | `3` | Number of rotated backups to keep |
 
 Relative `path` values are resolved under `~/.singularity-aidr`. Paths that escape that directory (or resolve to the `~/.singularity-aidr` directory itself) are ignored and fall back to defaults.
 
@@ -179,7 +252,9 @@ Use this to permanently suppress specific rules that don't apply to your workflo
 | `~/.singularity-aidr/allowlist.json` | User allowlist |
 | `~/.singularity-aidr/audit.jsonl` | Audit log |
 | `~/.singularity-aidr/installation-id` | Random UUID identifying this installation |
+| `~/.singularity-aidr/managed.json` | Managed-mode state (seat status, backoff windows) |
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |
 | `~/.singularity-aidr/consumed-approvals.json` | Consumed approvals for MCP allowlist flow (10-min TTL entries) |
+| `~/.singularity-aidr/intel/` | Optional offline intel packs |
 
 

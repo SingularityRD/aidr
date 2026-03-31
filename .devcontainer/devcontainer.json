@@ -1,0 +1,51 @@
+{
+	"name": "Singularity AIDR Dev Container",
+	"image": "mcr.microsoft.com/devcontainers/typescript-node:18",
+	"features": {
+		"ghcr.io/devcontainers/features/git:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+		"ghcr.io/devcontainers/features/go:1": {
+			"version": "1.22"
+		}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"biomejs.biome",
+				"bradlc.vscode-tailwindcss",
+				"esbenp.prettier-vscode",
+				"github.vscode-github-actions",
+				"ms-vscode.vscode-typescript-next",
+				"redhat.vscode-yaml",
+				"vitest.explorer"
+			],
+			"settings": {
+				"typescript.tsdk": "node_modules/typescript/lib",
+				"typescript.enablePromptUseWorkspaceTsdk": true,
+				"editor.defaultFormatter": "biomejs.biome",
+				"editor.formatOnSave": true,
+				"editor.codeActionsOnSave": {
+					"source.organizeImports.biome": "explicit"
+				}
+			}
+		}
+	},
+	"postCreateCommand": "pnpm install && pnpm build",
+	"postStartCommand": "git config --global --add safe.directory /workspaces/aidr",
+	"remoteUser": "node",
+	"workspaceFolder": "/workspaces/aidr",
+	"mounts": [
+		"source=${localWorkspaceFolder},target=/workspaces/aidr,type=bind,consistency=cached"
+	],
+	"forwardPorts": [6767, 5173, 3000],
+	"portsAttributes": {
+		"6767": {
+			"label": "Landing Page",
+			"onAutoForward": "notify"
+		},
+		"5173": {
+			"label": "Dashboard Dev Server",
+			"onAutoForward": "notify"
+		}
+	}
+}

@@ -4,6 +4,7 @@ import path from "node:path";
 import {
 	type AgentRuntime,
 	ConfigSchema,
+	ControlPlaneClient,
 	checkForUpdate,
 	getInstallationId,
 	getRecentEntries,
@@ -68,8 +69,45 @@ export function activateManagedHooksExtension(
 			await withErrorBoundary(async () => {
 				const scope = getScope(target.scopeSettingKey);
 				const health = await target.installer.installManagedHooks({ context, scope });
-				vscode.window.showInformationMessage(
-					`Singularity AIDR enabled for ${target.hostName}. Managed hooks configured at ${health.configPath}.`,
+
+				const cfg = await loadConfig();
+				const hasToken = Boolean(cfg.auth.api_key?.trim() || cfg.auth.enrollment_token?.trim());
+
+				if (hasToken) {
+					void vscode.window.showInformationMessage(
+						`Singularity AIDR enabled for ${target.hostName}. Managed hooks configured at ${health.configPath}.`,
+					);
+					return;
+				}
+
+				// Zero-friction onboarding: start device-code flow and show the user a URL + short code.
+				const agentRuntime: AgentRuntime = target.hostName === "Cursor" ? "cursor" : "vscode";
+				const aidrDirPath = resolvePath("~/.singularity-aidr");
+				const iid = await getInstallationId(aidrDirPath).catch(() => undefined);
+				const client = new ControlPlaneClient(cfg.control_plane, "");
+				const res = await client.deviceStart({
+					iid,
+					agent_runtime: agentRuntime,
+					agent_runtime_version: vscode.version,
+				});
+				const body = res.body ?? {};
+				const verifyUrl = typeof body.verification_url === "string" ? body.verification_url : "";
+				const userCode = typeof body.user_code === "string" ? body.user_code : "";
+
+				if (res.ok && verifyUrl && userCode) {
+					const choice = await vscode.window.showInformationMessage(
+						`Singularity AIDR installed. To activate, open ${verifyUrl} and enter code ${userCode}.`,
+						{ modal: true },
+						"Open browser",
+					);
+					if (choice === "Open browser") {
+						void vscode.env.openExternal(vscode.Uri.parse(verifyUrl));
+					}
+					return;
+				}
+
+				void vscode.window.showInformationMessage(
+					`Singularity AIDR enabled for ${target.hostName}. Managed hooks configured at ${health.configPath}. Sign in on the dashboard to activate managed protection.`,
 				);
 			});
 		}),

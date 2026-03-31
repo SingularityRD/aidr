@@ -13,7 +13,24 @@ import { artifactTypeLabel } from "./format.js";
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
 
+async function maybeVerifyIntegrity(): Promise<void> {
+	try {
+		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
+		const core = (await import("@singularityrd/aidr-core")) as any;
+		const fn = core?.verifyArtifactIntegrityAndLog as
+			| ((args: { artifactDir: string; artifactId: string; logger?: unknown }) => Promise<unknown>)
+			| undefined;
+		if (typeof fn === "function") {
+			await fn({ artifactDir: __dirname, artifactId: "claude-code/dist", logger });
+		}
+	} catch {
+		// Fail open
+	}
+}
+
 async function main(): Promise<void> {
+	await maybeVerifyIntegrity();
+
 	let rawInput: string;
 	try {
 		rawInput = readFileSync(0, "utf-8");

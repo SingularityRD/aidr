@@ -8,12 +8,21 @@
 
 Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [Cursor / VS Code](docs/platform-guides/cursor.md), [OpenClaw](docs/platform-guides/openclaw.md), and [OpenCode](docs/platform-guides/opencode.md), and checks them against:
 
-- **URL reputation** - cloud-based malware, phishing, and scam detection
+- **Reputation checks** - first-party URL/domain and package hash lookups (optional, privacy-preserving)
 - **Local heuristics** - YAML-based threat definitions for dangerous patterns
 - **Package supply-chain checks** - registry existence, file reputation, and age analysis for npm/PyPI packages
 - **Plugin scanning** - scans other installed plugins for threats at session start
 
 ## Quick Start
+
+Singularity AIDR is designed to be set up with minimal friction:
+
+1. Install the connector for your runtime.
+2. On first run, you will see a short **verification code** and a **verification URL**.
+3. Open the URL, sign in, and approve the device.
+4. Your agent is enrolled and protected.
+
+See [Device Auth](docs/device-auth.md) for the exact flow.
 
 ### Claude Code
 
@@ -67,6 +76,8 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 | Document                                         | Description                                    |
 | ------------------------------------------------ | ---------------------------------------------- |
 | [Getting Started](docs/getting-started.md)       | Installation for all platforms                 |
+| [Device Auth](docs/device-auth.md)               | Browser-based device authorization (v1)        |
+| [Pilot Program](docs/pilot-program.md)           | Waitlist, approval, and pilot expectations     |
 | [How It Works](docs/how-it-works.md)             | Detection layers, data flow, verdicts          |
 | [Configuration](docs/configuration.md)           | All config options and file paths              |
 | [Threat Rules](docs/threat-rules.md)             | YAML rule format and what gets checked         |
@@ -75,7 +86,7 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 | [AMSI Scanning](docs/amsi-scanning.md)           | Windows antimalware scanning via AMSI          |
 | [Architecture](docs/architecture.md)             | Monorepo structure, packages, design decisions |
 | [Development](docs/development.md)               | Building, testing, tooling, conventions        |
-| [Control Plane](docs/control-plane.md)           | Auth, dashboard, and licensing (optional)      |
+| [Control Plane](docs/control-plane.md)           | Auth, dashboard, and licensing                 |
 | [Billing](docs/billing.md)                       | Agent-seat enforcement + billing notes         |
 | [Pricing](docs/pricing.md)                       | Proposed pricing model                         |
 | [FAQ](docs/faq.md)                               | Common questions                               |
@@ -90,11 +101,15 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 
 ## Privacy
 
-Singularity AIDR sends URL hashes and package hashes to SingularityRD reputation APIs. File content, commands, and source code stay local. Both services can be disabled for fully offline operation. See [Privacy](docs/privacy.md) for details.
+Singularity AIDR does not send your source code or file contents. Depending on configuration, it may send privacy-preserving indicators (for example URL hashes and package hashes) to first-party reputation endpoints. See [Privacy](docs/privacy.md) for details.
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and the threat rule contribution process.
+
+## Closed-Source / Commercial Builds
+
+For commercial/closed-source distribution, use `pnpm build:release`. Release builds intentionally **omit sourcemaps** (`.map`) and `sourceMappingURL` references to reduce source leakage.
 
 ## License
 

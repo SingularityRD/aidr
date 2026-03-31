@@ -197,8 +197,7 @@ export class RealTimeRuleSync {
 
 			// Check cache age
 			const cacheAge =
-				(new Date().getTime() - new Date(cached.lastSync).getTime()) /
-				(1000 * 60 * 60); // hours
+				(new Date().getTime() - new Date(cached.lastSync).getTime()) / (1000 * 60 * 60); // hours
 
 			if (cacheAge > this.config.maxCacheAgeHours) {
 				this.logger.warn("Cached rules expired, will fetch fresh", {
@@ -351,7 +350,9 @@ export class RealTimeRuleSync {
 			}
 
 			if (!response.ok) {
-				throw new Error(`Failed to fetch rule ${ruleId}: ${response.status} ${response.statusText}`);
+				throw new Error(
+					`Failed to fetch rule ${ruleId}: ${response.status} ${response.statusText}`,
+				);
 			}
 
 			const rule = (await response.json()) as RemoteRule;

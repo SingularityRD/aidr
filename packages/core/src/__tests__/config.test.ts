@@ -35,6 +35,7 @@ describe("resolvePath", () => {
 describe("loadConfig", () => {
 	it("returns defaults for missing file", async () => {
 		const config = await loadConfig("/nonexistent/config.json");
+		expect(config.mode).toBe("managed");
 		expect(config.sensitivity).toBe("balanced");
 		expect(config.heuristics_enabled).toBe(true);
 		expect(config.url_check.enabled).toBe(true);
@@ -42,6 +43,8 @@ describe("loadConfig", () => {
 		expect(config.cache.enabled).toBe(true);
 		expect(config.cache.ttl_malicious_seconds).toBe(3600);
 		expect(config.cache.ttl_clean_seconds).toBe(86400);
+		expect(config.control_plane.grace_period_hours).toBe(72);
+		expect(config.control_plane.redact_mode).toBe("hash");
 	});
 
 	it("loads valid config", async () => {

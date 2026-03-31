@@ -11,6 +11,7 @@ import { UrlCheckClient } from "./clients/url-check.js";
 import { extractUrls } from "./extractors.js";
 import { getFileContent, getFileContentRaw } from "./file-utils.js";
 import { HeuristicsEngine } from "./heuristics.js";
+import type { IntelMerged } from "./intel/types.js";
 import type {
 	Artifact,
 	Logger,
@@ -322,10 +323,17 @@ export async function scanPlugin(
 		checkUrls?: boolean;
 		checkFileHashes?: boolean;
 		trustedDomains?: TrustedDomain[];
+		intelMerged?: IntelMerged | null;
 		logger?: Logger;
 	} = {},
 ): Promise<PluginScanResult> {
-	const { checkUrls = true, checkFileHashes = true, trustedDomains, logger = nullLogger } = options;
+	const {
+		checkUrls = true,
+		checkFileHashes = true,
+		trustedDomains,
+		intelMerged,
+		logger = nullLogger,
+	} = options;
 	const result: PluginScanResult = { plugin, findings: [] };
 
 	const files = await walkPluginFiles(plugin.installPath, logger);
@@ -378,6 +386,25 @@ export async function scanPlugin(
 				existing.push(filePath);
 			} else {
 				hashToFiles.set(sha256, [filePath]);
+			}
+		}
+	}
+
+	// Offline intel: plugin signature denylist (sha256 of suspicious files).
+	if (intelMerged && intelMerged.pluginSignatureDeny.size > 0 && hashToFiles.size > 0) {
+		for (const sha256 of hashToFiles.keys()) {
+			if (!intelMerged.pluginSignatureDeny.has(sha256.toLowerCase())) continue;
+			const filePaths = hashToFiles.get(sha256) ?? [];
+			for (const filePath of filePaths) {
+				result.findings.push({
+					threatId: "INTEL-PLUGIN-SIGNATURE-001",
+					title: "Plugin file hash is denied by offline intel packs",
+					severity: "critical",
+					confidence: 1.0,
+					action: "block",
+					artifact: sha256,
+					sourceFile: relative(plugin.installPath, filePath),
+				});
 			}
 		}
 	}

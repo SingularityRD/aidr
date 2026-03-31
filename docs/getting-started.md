@@ -2,6 +2,18 @@
 
 Singularity AIDR supports four platforms: Claude Code, Cursor/VS Code, OpenClaw, and OpenCode. Pick the one you use.
 
+## Fastest path (recommended)
+
+Singularity AIDR is designed to be installed with minimal effort:
+
+1. Install the connector for your runtime (below).
+2. Start your agent once.
+3. If you are not enrolled yet, Singularity AIDR will show a **verification URL** and a short **verification code**.
+4. Open the URL in your browser, sign in, and approve.
+5. Restart the agent (or re-run the enable protection command) to activate protection.
+
+See [Device Auth](device-auth.md) for the end-to-end flow.
+
 ## Prerequisites
 
 - **Node.js >= 18** (for Claude Code and OpenClaw; not required for Cursor/VS Code)
@@ -58,7 +70,7 @@ openclaw plugins install ./aidr
 
 The `build` script copies threat definitions and allowlists into `resources/` automatically.
 
-> **Note:** OpenClaw's `plugins.code_safety` audit will flag Singularity AIDR with a `potential-exfiltration` warning. This is a false positive - Singularity AIDR reads local files (config, cache, YAML threats) and separately sends URL hashes to a reputation API. No file content is sent over the network.
+> **Note:** OpenClaw's `plugins.code_safety` audit may flag Singularity AIDR with a `potential-exfiltration` warning. This is a false positive: Singularity AIDR reads local files (config, cache, threat YAML) and may also make network calls for first-party reputation checks or managed control plane sync. No file contents are sent over the network.
 
 ## OpenCode
 

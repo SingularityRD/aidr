@@ -3,9 +3,27 @@
  * Combines plugin scanning, version check, and temp cleanup into a single call.
  */
 
+import { isCommercialBuild } from "./build-flavor.js";
+import { ControlPlaneClient } from "./clients/control-plane.js";
 import { loadConfig, resolvePath } from "./config.js";
 import { pruneOrphanedTmpFiles } from "./file-utils.js";
 import { getInstallationId } from "./installation-id.js";
+import { getDegradedSafeModeReason, isDegradedSafeMode } from "./integrity/index.js";
+import {
+	applyIngestResult,
+	applyRevocationsToManagedState,
+	getAuthToken,
+	isEntitlementActive,
+	isSyncDisabled,
+	loadManagedState,
+	loadRevocationsCache,
+	managedStatePath,
+	parseSignedRevocationsFromControlPlaneBody,
+	saveEntitlementKeyringFromState,
+	saveManagedState,
+	saveRevocationsCache,
+	verifyEd25519SignedRevocationList,
+} from "./managed.js";
 import { runSessionStartScan } from "./session-start-scan.js";
 import type { AgentRuntime, Logger, PluginInfo, PluginScanResult } from "./types.js";
 import { ConfigSchema, nullLogger } from "./types.js";
@@ -27,6 +45,13 @@ export interface SessionStartContext {
 }
 
 export interface SessionStartResult {
+	enabled: boolean;
+	disabled_reason?: string;
+	bootstrap?: {
+		verification_url: string;
+		user_code: string;
+		expires_at?: string;
+	};
 	scanResults: PluginScanResult[];
 	versionCheck: VersionCheckResult | null;
 }
@@ -35,6 +60,25 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 	const logger = ctx.logger ?? nullLogger;
 	const aidrDirPath = resolvePath(ctx.aidrDirPath ?? "~/.singularity-aidr");
 	const config = await loadConfig(ctx.configPath, logger).catch(() => ConfigSchema.parse({}));
+	const commercial = isCommercialBuild();
+
+	if (commercial && config.mode !== "managed") {
+		return {
+			enabled: false,
+			disabled_reason: "commercial_build_requires_managed_mode",
+			scanResults: [],
+			versionCheck: null,
+		};
+	}
+
+	if (commercial && isDegradedSafeMode()) {
+		return {
+			enabled: false,
+			disabled_reason: `degraded_safe_mode:${getDegradedSafeModeReason() ?? "integrity"}`,
+			scanResults: [],
+			versionCheck: null,
+		};
+	}
 
 	// Fire-and-forget temp cleanup
 	pruneOrphanedTmpFiles(aidrDirPath).catch(() => {});
@@ -42,7 +86,362 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 	// Start installation ID read early so it runs concurrently with the scan
 	const iidPromise = getInstallationId(aidrDirPath).catch(() => undefined);
 
-	// Parallel: scan + (iid read → version check)
+	let token = getAuthToken(config.auth);
+	const managedPath = managedStatePath();
+
+	// Allow managed state to persist an issued API key (from /v1/enroll).
+	let managedState = await loadManagedState(managedPath, {
+		authToken: token,
+		publicKeysPem: config.licensing.public_keys_pem,
+		onSecurityEvent: (event) =>
+			logger.warn(
+				"Managed state verification failure",
+				event as unknown as Record<string, unknown>,
+			),
+	});
+	const cachedApiKey = typeof managedState.api_key === "string" ? managedState.api_key.trim() : "";
+	if (!token && cachedApiKey) token = cachedApiKey;
+
+	// Managed-only: if there's no auth token, start (or reuse) a device-code bootstrap session.
+	// This must not block: create (or reuse) a short code + URL so the user can authorize in a browser.
+	if (!token) {
+		let bootstrap:
+			| {
+					device_code: string;
+					user_code: string;
+					verification_url: string;
+					expires_at?: string;
+			  }
+			| undefined;
+
+		const expMs =
+			typeof managedState.device_expires_at === "string"
+				? Date.parse(managedState.device_expires_at)
+				: Number.NaN;
+		const stillValid = Number.isFinite(expMs) && Date.now() < expMs - 5000;
+		if (
+			stillValid &&
+			typeof managedState.device_code === "string" &&
+			typeof managedState.user_code === "string" &&
+			typeof managedState.verification_url === "string"
+		) {
+			bootstrap = {
+				device_code: managedState.device_code,
+				user_code: managedState.user_code,
+				verification_url: managedState.verification_url,
+				expires_at: managedState.device_expires_at,
+			};
+		} else {
+			try {
+				const client = new ControlPlaneClient(config.control_plane, "", logger);
+				const iid = await iidPromise;
+				const res = await client.deviceStart({
+					iid,
+					agent_runtime: ctx.agentRuntime,
+					agent_runtime_version: ctx.agentRuntimeVersion,
+				});
+				const body = res.body ?? {};
+				const deviceCode =
+					typeof body.device_code === "string" ? (body.device_code as string).trim() : "";
+				const userCode =
+					typeof body.user_code === "string" ? (body.user_code as string).trim() : "";
+				const verifyUrl =
+					typeof body.verification_url === "string" ? (body.verification_url as string).trim() : "";
+				const expiresAt =
+					typeof body.expires_at === "string" ? (body.expires_at as string).trim() : "";
+
+				if (res.ok && deviceCode && userCode && verifyUrl) {
+					bootstrap = {
+						device_code: deviceCode,
+						user_code: userCode,
+						verification_url: verifyUrl,
+						expires_at: expiresAt || undefined,
+					};
+					managedState = {
+						...managedState,
+						device_code: deviceCode,
+						user_code: userCode,
+						verification_url: verifyUrl,
+						device_expires_at: expiresAt || undefined,
+						device_started_at: new Date().toISOString(),
+					};
+					await saveManagedState(managedPath, managedState);
+				}
+			} catch {
+				// Ignore.
+			}
+		}
+
+		// Best-effort: one-shot poll. If the user already authorized, we can enroll immediately.
+		if (bootstrap) {
+			try {
+				const client = new ControlPlaneClient(config.control_plane, "", logger);
+				const poll = await client.devicePoll({ device_code: bootstrap.device_code });
+				const enrollToken =
+					typeof poll.body?.enrollment_token === "string"
+						? (poll.body.enrollment_token as string).trim()
+						: "";
+				if (poll.ok && enrollToken) {
+					const iid = await iidPromise;
+					if (iid) {
+						const enrollClient = new ControlPlaneClient(config.control_plane, enrollToken, logger);
+						const res = await enrollClient.enroll({
+							iid,
+							agent_runtime: ctx.agentRuntime,
+							agent_runtime_version: ctx.agentRuntimeVersion,
+						});
+						const issued =
+							typeof res.body?.api_key === "string" ? (res.body.api_key as string).trim() : "";
+						if (res.ok && issued) {
+							managedState = applyIngestResult(
+								managedState,
+								{ ok: true, status: res.status, body: res.body },
+								config.control_plane.grace_period_hours,
+								{ authToken: issued, publicKeysPem: config.licensing.public_keys_pem },
+							);
+							managedState.api_key = issued;
+							managedState.device_code = undefined;
+							managedState.user_code = undefined;
+							managedState.verification_url = undefined;
+							managedState.device_expires_at = undefined;
+							managedState.device_started_at = undefined;
+							await saveManagedState(managedPath, managedState);
+							await saveEntitlementKeyringFromState(managedState);
+							token = issued;
+						}
+					}
+				}
+			} catch {
+				// Ignore.
+			}
+		}
+
+		// If we still don't have a token, return a bootstrap hint and keep protections disabled.
+		if (!token) {
+			return {
+				enabled: false,
+				disabled_reason: "auth_required",
+				bootstrap: bootstrap
+					? {
+							verification_url: bootstrap.verification_url,
+							user_code: bootstrap.user_code,
+							expires_at: bootstrap.expires_at,
+						}
+					: undefined,
+				scanResults: [],
+				versionCheck: null,
+			};
+		}
+	}
+
+	// One-time enrollment exchange (best-effort).
+	if (!config.auth.api_key?.trim() && config.auth.enrollment_token?.trim() && !cachedApiKey) {
+		try {
+			const iid = await iidPromise;
+			if (iid) {
+				const client = new ControlPlaneClient(
+					config.control_plane,
+					config.auth.enrollment_token.trim(),
+					logger,
+				);
+				const res = await client.enroll({
+					iid,
+					agent_runtime: ctx.agentRuntime,
+					agent_runtime_version: ctx.agentRuntimeVersion,
+				});
+				const issued =
+					typeof res.body?.api_key === "string" ? (res.body.api_key as string).trim() : "";
+				if (res.ok && issued) {
+					managedState = applyIngestResult(
+						managedState,
+						{ ok: true, status: res.status, body: res.body },
+						config.control_plane.grace_period_hours,
+						{ authToken: issued, publicKeysPem: config.licensing.public_keys_pem },
+					);
+					managedState.api_key = issued;
+					await saveManagedState(managedPath, managedState);
+					await saveEntitlementKeyringFromState(managedState);
+					token = issued;
+				}
+			}
+		} catch {
+			// Fail open.
+		}
+	}
+
+	// Ensure we have a valid entitlement before doing any protection-related startup work.
+	if (
+		config.control_plane.enabled &&
+		(!isEntitlementActive(managedState) ||
+			(config.licensing.require_signed_entitlements && managedState.entitlement_alg !== "ed25519"))
+	) {
+		try {
+			const iid = await iidPromise;
+			if (iid) {
+				const client = new ControlPlaneClient(config.control_plane, token, logger);
+				const result = await client.ingest({
+					iid,
+					agent_runtime: ctx.agentRuntime,
+					agent_runtime_version: ctx.agentRuntimeVersion,
+					events: [],
+				});
+				const next = applyIngestResult(
+					managedState,
+					result,
+					config.control_plane.grace_period_hours,
+					{ authToken: token, publicKeysPem: config.licensing.public_keys_pem },
+				);
+				if (next !== managedState) {
+					managedState = next;
+					await saveManagedState(managedPath, managedState);
+					await saveEntitlementKeyringFromState(managedState);
+				}
+			}
+		} catch {
+			// Ignore.
+		}
+	}
+
+	if (config.licensing.require_signed_entitlements && config.licensing.public_keys_pem.length > 0) {
+		if (managedState.entitlement_alg !== "ed25519" || !isEntitlementActive(managedState)) {
+			return {
+				enabled: false,
+				disabled_reason: "missing_or_invalid_signed_entitlement",
+				scanResults: [],
+				versionCheck: null,
+			};
+		}
+	}
+
+	const managedHeartbeat =
+		config.mode === "managed" && config.control_plane.enabled && token
+			? async () => {
+					const iid = await iidPromise;
+					if (!iid) return;
+
+					try {
+						const client = new ControlPlaneClient(config.control_plane, token, logger);
+
+						// Revocation feed (best-effort): cached, verified, and applied to local premium unlock.
+						let signedRev =
+							config.licensing.revocations_enabled && config.licensing.public_keys_pem.length > 0
+								? await loadRevocationsCache(
+										resolvePath(config.licensing.revocations_cache_path),
+										config.licensing.public_keys_pem,
+									)
+								: null;
+						const refreshMs =
+							Math.max(0, config.licensing.revocations_refresh_seconds ?? 3600) * 1000;
+						const shouldRefresh =
+							!signedRev ||
+							!Number.isFinite(Date.parse(signedRev.payload.issued_at)) ||
+							Date.now() - Date.parse(signedRev.payload.issued_at) > refreshMs;
+						if (
+							shouldRefresh &&
+							config.licensing.revocations_enabled &&
+							config.licensing.public_keys_pem.length > 0
+						) {
+							const res = await client.fetchRevocations();
+							if (res.ok) {
+								const parsed = parseSignedRevocationsFromControlPlaneBody(res.body);
+								if (
+									parsed &&
+									verifyEd25519SignedRevocationList({
+										list: parsed.payload,
+										sig_b64: parsed.sig_b64,
+										public_keys_pem: config.licensing.public_keys_pem,
+									})
+								) {
+									await saveRevocationsCache(
+										resolvePath(config.licensing.revocations_cache_path),
+										parsed,
+									);
+									signedRev = parsed;
+								}
+							}
+						}
+
+						const revokedState = applyRevocationsToManagedState({
+							state: managedState,
+							iid,
+							revocations: signedRev?.payload ?? null,
+						});
+						if (revokedState !== managedState) {
+							managedState = revokedState;
+							await saveManagedState(managedPath, managedState);
+						}
+
+						if (isSyncDisabled(managedState)) return;
+
+						const result = await client.ingest({
+							iid,
+							agent_runtime: ctx.agentRuntime,
+							agent_runtime_version: ctx.agentRuntimeVersion,
+							events: [],
+						});
+						const next = applyIngestResult(
+							managedState,
+							result,
+							config.control_plane.grace_period_hours,
+							{ authToken: token, publicKeysPem: config.licensing.public_keys_pem },
+						);
+						const nextWithRevocations = signedRev?.payload
+							? applyRevocationsToManagedState({
+									state: next,
+									iid,
+									revocations: signedRev.payload,
+								})
+							: next;
+						if (nextWithRevocations !== managedState) {
+							await saveManagedState(managedPath, nextWithRevocations);
+							await saveEntitlementKeyringFromState(nextWithRevocations);
+						}
+					} catch {
+						// Fail open
+					}
+				}
+			: async () => {};
+
+	const heartbeatPromise = managedHeartbeat();
+
+	const versionCheckPromise = iidPromise
+		.then((iid) =>
+			checkForUpdate(
+				ctx.version,
+				logger,
+				undefined,
+				{
+					agentRuntime: ctx.agentRuntime,
+					agentRuntimeVersion: ctx.agentRuntimeVersion,
+					iid,
+				},
+				token,
+			),
+		)
+		.catch(() => null);
+
+	// Commercial build: enforce strict startup order by waiting for managed heartbeat
+	// (revocations + entitlement refresh) before scanning or loading packs.
+	if (commercial) {
+		await heartbeatPromise;
+		const [scanResults, versionCheck] = await Promise.all([
+			runSessionStartScan({
+				plugins: ctx.plugins,
+				threatsDir: ctx.threatsDir,
+				allowlistsDir: ctx.allowlistsDir,
+				aidrVersion: ctx.version,
+				logger,
+				configPath: ctx.configPath,
+				scanCachePath: ctx.scanCachePath,
+				checkUrls: ctx.checkUrls,
+				checkFileHashes: ctx.checkFileHashes,
+			}),
+			versionCheckPromise,
+		]);
+		return { enabled: true, scanResults, versionCheck };
+	}
+
+	// Parallel: scan + version check + managed heartbeat
 	const [scanResults, versionCheck] = await Promise.all([
 		runSessionStartScan({
 			plugins: ctx.plugins,
@@ -55,22 +454,9 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 			checkUrls: ctx.checkUrls,
 			checkFileHashes: ctx.checkFileHashes,
 		}),
-		iidPromise
-			.then((iid) =>
-				checkForUpdate(
-					ctx.version,
-					logger,
-					undefined,
-					{
-						agentRuntime: ctx.agentRuntime,
-						agentRuntimeVersion: ctx.agentRuntimeVersion,
-						iid,
-					},
-					config.auth.api_key,
-				),
-			)
-			.catch(() => null),
+		versionCheckPromise,
+		heartbeatPromise,
 	]);
 
-	return { scanResults, versionCheck };
+	return { enabled: true, scanResults, versionCheck };
 }

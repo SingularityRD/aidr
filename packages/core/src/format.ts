@@ -40,6 +40,10 @@ export function formatStartupClean(
 	return base;
 }
 
+export function formatStartupDisabled(version: string, reason: string): string {
+	return `Singularity AIDR v${version} - Disabled (${reason})`;
+}
+
 export function formatThreatBanner(
 	version: string,
 	results: PluginScanResult[],
@@ -89,6 +93,19 @@ export function formatThreatBanner(
 }
 
 export function formatSessionStartMessage(version: string, result: SessionStartResult): string {
+	if (result.enabled === false) {
+		const base = formatStartupDisabled(version, result.disabled_reason ?? "disabled");
+		if (!result.bootstrap) return base;
+
+		const lines: string[] = [base, ""];
+		lines.push("To activate Singularity AIDR:");
+		lines.push(kv("Open", result.bootstrap.verification_url));
+		lines.push(kv("Code", result.bootstrap.user_code));
+		if (result.bootstrap.expires_at) {
+			lines.push(kv("Expires", result.bootstrap.expires_at));
+		}
+		return lines.join("\n");
+	}
 	if (result.scanResults.length > 0) {
 		return formatThreatBanner(version, result.scanResults, result.versionCheck);
 	}

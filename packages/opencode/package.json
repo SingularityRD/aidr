@@ -23,19 +23,22 @@
   ],
   "scripts": {
     "build": "pnpm -C ../core build && pnpm run clean && pnpm run sync:assets && tsc",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true});require('node:fs').rmSync('resources',{recursive:true,force:true});require('node:fs').rmSync('tsconfig.tsbuildinfo',{force:true})\"",
+    "build:release": "pnpm run clean && pnpm run sync:assets && tsc -p tsconfig.release.json && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-opencode && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "clean": "node ../../scripts/rmrf.mjs dist resources tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo",
     "prepack": "node ../../scripts/check-workspace-refs.mjs",
     "sync:assets": "node scripts/sync-assets.mjs",
     "test": "vitest run"
   },
   "dependencies": {
-    "@singularityrd/aidr-core": "workspace:*"
+    "@singularityrd/aidr-core": "workspace:*",
+    "pino": "^9.6.0",
+    "@sentry/node": "^9.0.0"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.2.10",
     "@types/node": "^22.0.0",
     "typescript": "^5.9.0",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.2"
   },
   "engines": {
     "node": ">=18"

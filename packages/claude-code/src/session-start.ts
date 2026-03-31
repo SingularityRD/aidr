@@ -7,11 +7,20 @@
 
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { discoverPlugins, type Logger, runPluginScan } from "@singularityrd/aidr-core";
-import pino from "pino";
+import {
+	discoverPlugins,
+	getLogger,
+	initSentry,
+	type Logger,
+	metrics,
+	runPluginScan,
+} from "@singularityrd/aidr-core";
 import { pruneStaleSessionFiles } from "./approval-tracker.js";
 
-const logger: Logger = pino({ level: "warn" }, pino.destination(2));
+// Initialize Sentry
+initSentry({ name: "aidr-claude-code-session-start" });
+
+const logger: Logger = getLogger();
 
 function getPluginRoot(): string {
 	// When bundled by esbuild into CJS, __dirname points to packages/claude-code/dist/
@@ -34,6 +43,22 @@ function getPluginManifest(pluginRoot: string): { name: string | null; version: 
 
 async function main(): Promise<void> {
 	await pruneStaleSessionFiles(logger);
+	try {
+		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
+		const core = (await import("@singularityrd/aidr-core")) as any;
+		const fn = core?.verifyArtifactIntegrityAndLog as
+			| ((args: { artifactDir: string; artifactId: string; logger?: unknown }) => Promise<unknown>)
+			| undefined;
+		if (typeof fn === "function") {
+			await fn({
+				artifactDir: __dirname,
+				artifactId: "claude-code/dist",
+				logger,
+			});
+		}
+	} catch {
+		// Fail open
+	}
 
 	const pluginRoot = getPluginRoot();
 	const threatsDir = join(pluginRoot, "threats");

@@ -4,7 +4,7 @@
  * startup/session scan hooks, and before_agent_start handler.
  */
 
-import { ApprovalStore } from "@singularityrd/aidr-core";
+import { ApprovalStore, initSentry } from "@singularityrd/aidr-core";
 import { createAllowlistAddTool, createAllowlistRemoveTool } from "./allowlist-tools.js";
 import { getBundledDataDirs } from "./bundled-dirs.js";
 import { createAidrApproveTool } from "./gate-tool.js";
@@ -23,6 +23,24 @@ interface PluginApi {
 	registerTool(tool: Record<string, unknown>): void;
 }
 
+declare const __dirname: string;
+
+async function maybeVerifyIntegrity(): Promise<void> {
+	try {
+		// Dynamic import to avoid hard-coupling to core's public exports during transition.
+		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
+		const core = (await import("@singularityrd/aidr-core")) as any;
+		const fn = core?.verifyArtifactIntegrityAndLog as
+			| ((args: { artifactDir: string; artifactId: string }) => Promise<unknown>)
+			| undefined;
+		if (typeof fn === "function") {
+			await fn({ artifactDir: __dirname, artifactId: "openclaw/dist" });
+		}
+	} catch {
+		// Fail open
+	}
+}
+
 export default {
 	id: "aidr-openclaw",
 	name: "Singularity AIDR",
@@ -32,7 +50,11 @@ export default {
 		jsonSchema: { type: "object", additionalProperties: false, properties: {} },
 	},
 	register(api: PluginApi) {
+		// Initialize Sentry
+		initSentry({ name: "aidr-openclaw" });
+
 		const logger = createLogger(api.logger);
+		void maybeVerifyIntegrity();
 		const approvalStore = new ApprovalStore();
 		const { threatsDir, allowlistsDir } = getBundledDataDirs();
 

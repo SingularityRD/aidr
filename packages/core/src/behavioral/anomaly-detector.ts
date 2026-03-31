@@ -144,7 +144,9 @@ export class AnomalyDetector {
 
 		// Check if accessing sensitive/unusual directory
 		const isSensitive = sensitivePaths.some((p) => currentDirectory.startsWith(p));
-		const isCommon = commonDirs.some((d) => currentDirectory.startsWith(d) || d.startsWith(currentDirectory));
+		const isCommon = commonDirs.some(
+			(d) => currentDirectory.startsWith(d) || d.startsWith(currentDirectory),
+		);
 
 		if (!isSensitive && isCommon) {
 			return null;
@@ -255,7 +257,15 @@ export class AnomalyDetector {
 		}
 
 		// Check for dangerous patterns (piping to shell, etc.)
-		const dangerousPatterns = ["| bash", "| sh", "| python", "> /etc", "chmod +x", "curl.*|", "wget.*|"];
+		const dangerousPatterns = [
+			"| bash",
+			"| sh",
+			"| python",
+			"> /etc",
+			"chmod +x",
+			"curl.*|",
+			"wget.*|",
+		];
 		const isDangerous = dangerousPatterns.some((p) => new RegExp(p, "i").test(currentPattern));
 
 		const score = isDangerous ? 0.85 : 0.5;
@@ -314,7 +324,10 @@ export class AnomalyDetector {
 	/**
 	 * Calculate aggregate anomaly score from multiple results
 	 */
-	calculateAggregateScore(anomalies: AnomalyResult[]): { score: number; primaryType: AnomalyType | null } {
+	calculateAggregateScore(anomalies: AnomalyResult[]): {
+		score: number;
+		primaryType: AnomalyType | null;
+	} {
 		if (anomalies.length === 0) {
 			return { score: 0, primaryType: null };
 		}

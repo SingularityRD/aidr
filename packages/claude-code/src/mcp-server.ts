@@ -14,6 +14,7 @@ import {
 	addFilePath,
 	addUrl,
 	hashCommand,
+	initSentry,
 	type Logger,
 	loadAllowlist,
 	loadConfig,
@@ -34,7 +35,27 @@ import { artifactTypeLabel } from "./format.js";
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
 
+// Initialize Sentry
+initSentry({ name: "aidr-claude-code-mcp" });
+
 declare const __AIDR_VERSION__: string;
+
+async function maybeVerifyIntegrity(): Promise<void> {
+	try {
+		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
+		const core = (await import("@singularityrd/aidr-core")) as any;
+		const fn = core?.verifyArtifactIntegrityAndLog as
+			| ((args: { artifactDir: string; artifactId: string; logger?: unknown }) => Promise<unknown>)
+			| undefined;
+		if (typeof fn === "function") {
+			await fn({ artifactDir: __dirname, artifactId: "claude-code/dist", logger });
+		}
+	} catch {
+		// Fail open
+	}
+}
+
+void maybeVerifyIntegrity();
 
 const server = new McpServer({
 	name: "aidr",
