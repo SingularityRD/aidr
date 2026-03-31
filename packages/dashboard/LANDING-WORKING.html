@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIDR - AI Agent Detection & Response</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f1f5f9;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --border-color: #e2e8f0;
+            --accent: #3862e8;
+            --accent-strong: #2448bb;
+            --panel-bg: rgba(239, 239, 239, 0.45);
+            --panel-border: rgba(0, 0, 0, 0.15);
+            --shadow-color: rgba(0, 0, 0, 0.07);
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        .nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 40px;
+            background: rgba(239, 239, 239, 0.6);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .nav-brand {
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-left: 24px;
+            font-size: 14px;
+        }
+
+        .nav-links a:hover { color: var(--text-primary); }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--accent);
+            background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+            color: #ffffff;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.12s, box-shadow 0.14s;
+            box-shadow: 0 10px 24px rgba(30, 67, 178, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 30px rgba(30, 67, 178, 0.34);
+        }
+
+        .btn-secondary {
+            border-color: var(--panel-border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            box-shadow: 0 8px 20px var(--shadow-color);
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .hero {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 24px var(--shadow-color);
+            backdrop-filter: blur(10px);
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: rgba(0, 0, 0, 0.04);
+            border: 1px solid var(--panel-border);
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-weight: 500;
+            margin-bottom: 16px;
+        }
+
+        h1 {
+            font-size: clamp(32px, 5vw, 56px);
+            line-height: 1.05;
+            letter-spacing: -0.02em;
+            margin-bottom: 16px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 16px;
+            max-width: 700px;
+            line-height: 1.6;
+        }
+
+        .cta-box {
+            background: var(--bg-secondary);
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 24px var(--shadow-color);
+            transition: transform 0.12s, box-shadow 0.14s;
+            text-decoration: none;
+            color: var(--text-primary);
+            display: block;
+        }
+
+        .cta-box:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--shadow-color);
+        }
+
+        .cta-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .cta-desc {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .feature-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 24px var(--shadow-color);
+        }
+
+        .feature-card h3 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .bullet-list {
+            margin-top: 16px;
+        }
+
+        .bullet-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+
+        .bullet-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+            flex-shrink: 0;
+        }
+
+        .features-grid {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 24px var(--shadow-color);
+        }
+
+        .features-grid h2 {
+            font-size: 24px;
+            margin-bottom: 24px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+        }
+
+        .grid-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .grid-item h4 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .grid-item p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .final-cta {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 10px 24px var(--shadow-color);
+        }
+
+        .final-cta h2 {
+            font-size: 28px;
+            margin-bottom: 12px;
+        }
+
+        .final-cta p {
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            .nav { padding: 16px 20px; flex-direction: column; gap: 16px; }
+            .container { padding: 20px 16px; }
+            .hero { padding: 24px; }
+            h1 { font-size: 32px; }
+            .features { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <a href="#" class="nav-brand">🛡️ Singularity AIDR</a>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#" class="btn btn-secondary" style="margin-left: 16px;">Sign in</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="hero">
+            <div class="pill">Edge-first AI Agent Detection & Response</div>
+            <h1>Launch-ready security layer for AI agents.</h1>
+            <p class="subtitle">
+                Singularity AIDR protects runtime actions, surfaces incidents, and gives managed
+                visibility without forcing cloud-only enforcement. Install by prompt, authorize in
+                browser, and go live in minutes.
+            </p>
+        </div>
+
+        <a href="#" class="cta-box">
+            <div class="cta-title">Get Started</div>
+            <div class="cta-desc">Managed control plane for AI agent security</div>
+        </a>
+
+        <div class="features">
+            <div class="feature-card">
+                <h3>Security controls your agent can feel.</h3>
+                <p>
+                    We keep the runtime lightweight, but the policy surface is deep. 
+                    Singularity AIDR turns a single prompt into a protected agent.
+                </p>
+                <div class="bullet-list">
+                    <div class="bullet-item">
+                        <span class="bullet-dot"></span>
+                        <span>Prompt install in one shot, no manual key copying</span>
+                    </div>
+                    <div class="bullet-item">
+                        <span class="bullet-dot"></span>
+                        <span>Local enforcement with dashboard-backed visibility</span>
+                    </div>
+                    <div class="bullet-item">
+                        <span class="bullet-dot"></span>
+                        <span>Package, plugin, and prompt abuse detection</span>
+                    </div>
+                    <div class="bullet-item">
+                        <span class="bullet-dot"></span>
+                        <span>Seat-aware onboarding for expansion</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: center;">
+                <svg width="200" height="200" viewBox="0 0 120 120" style="opacity: 0.8;">
+                    <rect x="20" y="40" width="40" height="40" rx="8" fill="rgba(56, 98, 232, 0.1)" stroke="var(--panel-border)" stroke-width="1"/>
+                    <rect x="45" y="25" width="40" height="40" rx="8" fill="rgba(56, 98, 232, 0.2)" stroke="#3862e8" stroke-width="2"/>
+                    <rect x="60" y="55" width="40" height="40" rx="8" fill="rgba(56, 98, 232, 0.1)" stroke="var(--panel-border)" stroke-width="1"/>
+                    <path d="M45 65L25 85" stroke="#3862e8" stroke-width="2" stroke-dasharray="4 2"/>
+                    <path d="M85 65L65 45" stroke="#3862e8" stroke-width="2" stroke-dasharray="4 2"/>
+                </svg>
+            </div>
+        </div>
+
+        <div class="features-grid" id="features">
+            <h2>Core Features</h2>
+            <div class="grid">
+                <div class="grid-item">
+                    <h4>Prompt-first setup</h4>
+                    <p>Install by prompt, then finish auth in the browser with zero key copying.</p>
+                </div>
+                <div class="grid-item">
+                    <h4>Device authorization</h4>
+                    <p>Short-lived codes bootstrap enrollment and unlock managed protection safely.</p>
+                </div>
+                <div class="grid-item">
+                    <h4>Incident correlation</h4>
+                    <p>Repeated denials, suspicious retries, and abuse patterns roll into one case.</p>
+                </div>
+                <div class="grid-item">
+                    <h4>Package & plugin guard</h4>
+                    <p>Catch typosquats, lifecycle risk, integrity drift, and command surface exposure.</p>
+                </div>
+                <div class="grid-item">
+                    <h4>Dashboard sync</h4>
+                    <p>Every protected agent reports health, incidents, and entitlement state centrally.</p>
+                </div>
+                <div class="grid-item">
+                    <h4>Offline grace</h4>
+                    <p>Enrolled agents keep working when the network drops, within the signed cache window.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="final-cta">
+            <h2>Ready to protect your AI agents?</h2>
+            <p>Get started and secure your first agent in minutes.</p>
+            <a href="#" class="btn" style="font-size: 16px; padding: 14px 28px;">Get Started</a>
+        </div>
+    </div>
+
+    <footer>
+        © 2026 Singularity AIDR. Local-first AI agent detection and response.
+    </footer>
+</body>
+</html>

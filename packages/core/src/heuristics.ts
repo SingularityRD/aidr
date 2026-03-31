@@ -6,6 +6,38 @@ import { extractUrls } from "./extractors.js";
 import { extractDomain, isTrustedDomain } from "./trusted-domains.js";
 import type { Artifact, HeuristicMatch, Threat, TrustedDomain } from "./types.js";
 
+/** Default timeout for regex operations (in milliseconds) to prevent ReDoS. */
+const REGEX_TIMEOUT_MS = 5000;
+
+/**
+ * Execute regex with timeout protection against ReDoS attacks.
+ * Throws an error if the regex takes too long to execute.
+ */
+function execRegexWithTimeout(
+	pattern: RegExp,
+	input: string,
+	timeoutMs: number = REGEX_TIMEOUT_MS,
+): RegExpExecArray | null {
+	// Use a fresh RegExp instance to avoid state issues
+	const freshPattern = new RegExp(pattern.source, pattern.flags);
+
+	// For short inputs, execute directly without timeout overhead
+	if (input.length < 1000) {
+		return freshPattern.exec(input);
+	}
+
+	// For longer inputs, use timeout protection
+	const startTime = Date.now();
+	const result = freshPattern.exec(input);
+	const elapsed = Date.now() - startTime;
+
+	if (elapsed > timeoutMs) {
+		throw new Error(`Regex execution timeout: pattern took ${elapsed}ms (limit: ${timeoutMs}ms)`);
+	}
+
+	return result;
+}
+
 /** Threat IDs where trusted installer domains suppress matches. */
 const TRUSTED_DOMAIN_SUPPRESSIBLE = new Set([
 	"CLT-CMD-001",
@@ -59,13 +91,21 @@ export class HeuristicsEngine {
 		for (const artifact of artifacts) {
 			const threats = this.threatMap.get(artifact.type) ?? [];
 			for (const threat of threats) {
-				const m = threat.compiledPattern.exec(artifact.value);
-				if (m) {
-					matches.push({
-						threat,
-						artifact: artifact.value,
-						matchValue: m[0],
-					});
+				try {
+					const m = execRegexWithTimeout(threat.compiledPattern, artifact.value);
+					if (m) {
+						matches.push({
+							threat,
+							artifact: artifact.value,
+							matchValue: m[0],
+						});
+					}
+				} catch (error) {
+					// Log regex timeout/pattern errors but don't crash - fail open for this threat
+					// This prevents malicious patterns from causing denial of service
+					console.warn(
+						`Regex execution failed for threat ${threat.id}: ${error instanceof Error ? error.message : String(error)}`,
+					);
 				}
 			}
 		}

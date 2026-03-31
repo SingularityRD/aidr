@@ -27,31 +27,6 @@ export function getLogger(): Logger {
 	return nullLogger;
 }
 
-/** Get a logger instance (currently returns nullLogger). */
-export function getLogger(): Logger {
-	return nullLogger;
-}
-
-/** Get a logger instance (currently returns nullLogger). */
-export function getLogger(): Logger {
-	return nullLogger;
-}
-
-/** Get a logger instance (currently returns nullLogger). */
-export function getLogger(): Logger {
-	return nullLogger;
-}
-
-/** Get a logger instance (currently returns nullLogger). */
-export function getLogger(): Logger {
-	return nullLogger;
-}
-
-/** Get a logger instance (currently returns nullLogger). */
-export function getLogger(): Logger {
-	return nullLogger;
-}
-
 // ── Artifact ────────────────────────────────────────────────────────
 
 export const ArtifactTypeSchema = z.enum(["url", "command", "file_path", "content"]);
@@ -73,7 +48,7 @@ export const ThreatSchema = z.object({
 	id: z.string(),
 	category: z.string(),
 	severity: SeveritySchema,
-	confidence: z.number(),
+	confidence: z.number().min(0).max(1, "Confidence must be between 0 and 1"),
 	action: ActionSchema,
 	pattern: z.string(),
 	match_on: z.union([z.string(), z.array(z.string())]),
@@ -404,14 +379,39 @@ export const FileCheckConfigSchema = z.object({
 export const PackageCheckConfigSchema = z.object({
 	enabled: z.boolean().default(true),
 	timeout_seconds: z.number().default(5.0),
-	// v1: all scoped packages (@scope/pkg) are skipped automatically.
-	// Future: add private_scopes / public_scopes config for fine-grained control.
 });
 
 export const AmsiCheckConfigSchema = z.object({
 	enabled: z.boolean().default(true),
 });
-export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
+
+export const NvdConfigSchema = z.object({
+	api_key: z.string().optional(),
+	timeout_seconds: z.number().default(30),
+	cache_path: z.string().default("~/.singularity-aidr/nvd-cache.json"),
+	cache_ttl_hours: z.number().default(6),
+	enabled: z.boolean().default(true),
+	keywords: z
+		.array(z.string())
+		.default([
+			"AI",
+			"artificial intelligence",
+			"machine learning",
+			"LLM",
+			"large language model",
+			"agent",
+			"chatbot",
+			"OpenClaw",
+			"Claude",
+			"Claude Code",
+			"Cursor",
+			"code assistant",
+			"AI agent",
+			"autonomous agent",
+			"MCP",
+			"Model Context Protocol",
+		]),
+});
 
 export const ConfigSchema = z.object({
 	mode: OperatingModeSchema.default("managed"),
@@ -428,6 +428,7 @@ export const ConfigSchema = z.object({
 	file_check: FileCheckConfigSchema.default({}),
 	package_check: PackageCheckConfigSchema.default({}),
 	amsi_check: AmsiCheckConfigSchema.default({}),
+	nvd_check: NvdConfigSchema.default({}),
 	heuristics_enabled: z.boolean().default(true),
 	cache: CacheConfigSchema.default({}),
 	allowlist: AllowlistConfigSchema.default({}),
@@ -448,6 +449,8 @@ export type ResponseConfig = z.infer<typeof ResponseConfigSchema>;
 export type UrlCheckConfig = z.infer<typeof UrlCheckConfigSchema>;
 export type FileCheckConfig = z.infer<typeof FileCheckConfigSchema>;
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
+export type NvdConfig = z.infer<typeof NvdConfigSchema>;
+export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
 export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type AllowlistConfig = z.infer<typeof AllowlistConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;

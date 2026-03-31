@@ -54,7 +54,6 @@ function ProviderCard({ provider, isSelected, onClick }: ProviderCardProps) {
 			onKeyDown={(e) => e.key === "Enter" && onClick()}
 		>
 			{provider.recommended && <span className="badge recommended">Recommended</span>}
-			{provider.id === "crypto" && <span className="badge privacy">Privacy</span>}
 
 			<img src={provider.icon} alt={provider.name} className="provider-icon" />
 
@@ -93,50 +92,26 @@ export function ProviderCards({
 }
 
 /**
- * Build provider list based on user location
+ * Build provider list - now LemonSqueezy only
+ * Removed: iyzico, stripe, crypto providers (user requested only LemonSqueezy)
  */
-export function buildProviderList(userLocation: string): ProviderOption[] {
-	const providers: ProviderOption[] = [];
-
-	if (userLocation === "TR") {
-		providers.push({
-			id: "iyzico",
-			name: "Kredi/Banka Kartı (Türkiye)",
-			icon: "/iyzico-logo.svg",
-			features: ["TL Fatura", "3D Secure", "Taksit", "%20 KDV"],
+export function buildProviderList(_userLocation: string): ProviderOption[] {
+	return [
+		{
+			id: "lemon-squeezy",
+			name: "LemonSqueezy (Global)",
+			icon: "/lemonsqueezy-logo.svg",
+			features: ["USD/EUR/GBP", "Subscription", "Checkout", "Customer Portal"],
 			recommended: true,
-		});
-	}
-
-	providers.push(
-		{
-			id: "stripe",
-			name: "Credit Card (Global)",
-			icon: "/stripe-logo.svg",
-			features: ["USD/EUR/GBP", "Subscription", "Invoice"],
 		},
-		{
-			id: "crypto",
-			name: "Crypto (BTC/ETH/USDC)",
-			icon: "/bitcoin-logo.svg",
-			features: ["Anonymous", "Privacy", "No KYC"],
-		},
-	);
-
-	return providers;
+	];
 }
 
 /**
- * Get payment button text based on provider and location
+ * Get payment button text - now always returns LemonSqueezy text
  */
-export function getPaymentButtonText(provider: ProviderType, userLocation: string): string {
-	if (provider === "iyzico" && userLocation === "TR") {
-		return "Ödeme Yap (3D Secure)";
-	}
-	if (provider === "crypto") {
-		return "Pay with Crypto";
-	}
-	return "Subscribe Now";
+export function getPaymentButtonText(_provider: ProviderType, _userLocation: string): string {
+	return "Subscribe with LemonSqueezy";
 }
 
 /**

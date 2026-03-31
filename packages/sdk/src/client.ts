@@ -1,11 +1,12 @@
 import {
-	type Config as CoreConfig,
 	DecisionEngine,
 	HeuristicsEngine,
 	type Logger,
 	loadThreats,
 	loadTrustedDomains,
 	nullLogger,
+	type Threat,
+	type TrustedDomain,
 	UrlCheckClient,
 	type Verdict,
 	VerdictCache,
@@ -31,10 +32,13 @@ export class AIDRClient {
 	private cache?: VerdictCache;
 	private engine: DecisionEngine;
 	private urlClient: UrlCheckClient;
-	private heuristics: HeuristicsEngine;
+	private heuristics?: HeuristicsEngine;
 	private logger: Logger;
 	private listeners: Map<string, Set<EventListener>> = new Map();
 	private retryDelays = [1000, 2000, 4000];
+	private threats: Threat[] = [];
+	private trustedDomains: TrustedDomain[] = [];
+	private initialized = false;
 
 	constructor(config: SDKConfig) {
 		this.config = config;
@@ -43,29 +47,45 @@ export class AIDRClient {
 		// Initialize cache if enabled
 		if (config.cache) {
 			this.cache = new VerdictCache({
-				ttlMs: config.cacheTtl,
-				maxSize: 1000,
+				enabled: true,
+				ttl_malicious_seconds: Math.floor((config.cacheTtl ?? 300000) / 1000),
+				ttl_clean_seconds: Math.floor((config.cacheTtl ?? 300000) / 1000),
+				path: "~/.singularity-aidr/cache.json",
 			});
 		}
 
 		// Initialize core components
-		const coreConfig: CoreConfig = {
-			sensitivity: 0.85, // balanced
-			logging: { level: "info" },
-		};
-
-		this.engine = new DecisionEngine(coreConfig);
+		this.engine = new DecisionEngine("balanced");
 		this.urlClient = new UrlCheckClient({
-			timeoutMs: config.timeout,
+			enabled: true,
+			timeout_seconds: (config.timeout ?? 5000) / 1000,
 		});
-		this.heuristics = new HeuristicsEngine(loadThreats(), loadTrustedDomains());
+	}
+
+	/**
+	 * Initialize the client by loading threats and trusted domains
+	 */
+	async init(): Promise<void> {
+		if (this.initialized) return;
+
+		// Load threats and trusted domains
+		this.threats = await loadThreats("threats");
+		this.trustedDomains = await loadTrustedDomains("allowlists");
+		this.heuristics = new HeuristicsEngine(this.threats, this.trustedDomains);
+
+		this.initialized = true;
+		this.logger.info("AIDR client initialized");
 	}
 
 	/**
 	 * Perform a security check on an action
 	 */
 	async check(request: CheckRequest): Promise<CheckResult> {
-		const startTime = Date.now();
+		// Ensure initialized
+		if (!this.initialized) {
+			await this.init();
+		}
+
 		let attempts = 0;
 		let lastError: Error | undefined;
 
@@ -81,8 +101,7 @@ export class AIDRClient {
 				if (attempts <= this.config.retries) {
 					const delay = this.retryDelays[attempts - 1] ?? 4000;
 					this.logger.warn(
-						{ attempt: attempts, delay, error: lastError.message },
-						"Retrying security check",
+						`Retrying security check (attempt ${attempts}, delay: ${delay}ms): ${lastError.message}`,
 					);
 					await this._sleep(delay);
 				}
@@ -108,39 +127,91 @@ export class AIDRClient {
 		// Check cache first
 		const cacheKey = this._getCacheKey(request);
 		if (this.cache) {
-			const cached = this.cache.get(cacheKey);
+			const cached = this.cache.getUrl(cacheKey);
 			if (cached) {
-				this.logger.debug({ cacheKey }, "Cache hit");
-				return this._verdictToResult(cached);
+				this.logger.debug(`Cache hit for ${cacheKey}`);
+				return this._cachedVerdictToResult(cached);
 			}
 		}
 
-		// Run heuristics
-		const matches = this.heuristics.check(request.resource, request.action);
+		// Extract artifacts from the request
+		const artifacts = this._extractArtifacts(request);
+
+		// Run heuristics (heuristics is guaranteed to be initialized here)
+		const matches = this.heuristics!.match(artifacts);
 
 		// Run URL check if it's a fetch action
-		let urlResult: { safe: boolean; categories?: string[] } | undefined;
+		const urlCheckResults: Array<{
+			url: string;
+			isMalicious: boolean;
+			findings: Array<{ severityName: string; typeName: string }>;
+			flags: string[];
+		}> = [];
 		if (request.action === "fetch") {
 			try {
-				urlResult = await this.urlClient.check(request.resource);
+				const results = await this.urlClient.checkUrls([request.resource]);
+				urlCheckResults.push(...results);
 			} catch (e) {
-				this.logger.warn({ error: e, url: request.resource }, "URL check failed");
+				this.logger.warn(
+					`URL check failed for ${request.resource}: ${e instanceof Error ? e.message : String(e)}`,
+				);
 			}
 		}
 
 		// Get verdict from decision engine
-		const verdict = this.engine.decide({
-			request,
+		const verdict = await this.engine.decide({
 			heuristicMatches: matches,
-			urlResult,
+			urlCheckResults,
 		});
 
 		// Cache the result
 		if (this.cache) {
-			this.cache.set(cacheKey, verdict);
+			const isMalicious = verdict.decision === "deny";
+			const verdictStr = isMalicious ? "deny" : verdict.decision === "allow" ? "clean" : "ask";
+			this.cache.putUrl(
+				cacheKey,
+				{
+					verdict: verdictStr as "allow" | "deny" | "ask",
+					severity: verdict.severity,
+					reasons: verdict.reasons,
+					source: verdict.source,
+				},
+				isMalicious,
+			);
 		}
 
 		return this._verdictToResult(verdict);
+	}
+
+	/**
+	 * Extract artifacts from the request
+	 */
+	private _extractArtifacts(
+		request: CheckRequest,
+	): Array<{ type: "url" | "command" | "file_path" | "content"; value: string; context?: string }> {
+		const artifacts: Array<{
+			type: "url" | "command" | "file_path" | "content";
+			value: string;
+			context?: string;
+		}> = [];
+
+		// Add the resource as an artifact based on action type
+		switch (request.action) {
+			case "fetch":
+				artifacts.push({ type: "url", value: request.resource });
+				break;
+			case "read":
+			case "write":
+				artifacts.push({ type: "file_path", value: request.resource });
+				break;
+			case "execute":
+				artifacts.push({ type: "command", value: request.resource });
+				break;
+			default:
+				artifacts.push({ type: "content", value: request.resource });
+		}
+
+		return artifacts;
 	}
 
 	/**
@@ -151,9 +222,30 @@ export class AIDRClient {
 			allowed: verdict.decision === "allow",
 			decision: verdict.decision,
 			confidence: verdict.confidence ?? 0.85,
-			reason: verdict.reason,
-			threatId: verdict.threatId,
-			metadata: verdict.metadata,
+			reason: verdict.reasons?.join("; ") ?? undefined,
+			threatId: verdict.matchedThreatId ?? undefined,
+		};
+
+		return CheckResultSchema.parse(result);
+	}
+
+	/**
+	 * Convert cached verdict to CheckResult
+	 */
+	private _cachedVerdictToResult(cached: {
+		verdict: "allow" | "deny" | "ask";
+		severity: "info" | "warning" | "critical";
+		reasons: string[];
+		source: string;
+	}): CheckResult {
+		const decision =
+			cached.verdict === "allow" ? "allow" : cached.verdict === "deny" ? "deny" : "ask";
+
+		const result: CheckResult = {
+			allowed: decision === "allow",
+			decision,
+			confidence: 0.85,
+			reason: cached.reasons?.join("; ") ?? undefined,
 		};
 
 		return CheckResultSchema.parse(result);
@@ -203,7 +295,9 @@ export class AIDRClient {
 			try {
 				listener(event);
 			} catch (e) {
-				this.logger.error({ error: e }, "Error in decision event listener");
+				this.logger.error(
+					`Error in decision event listener: ${e instanceof Error ? e.message : String(e)}`,
+				);
 			}
 		});
 	}
@@ -223,7 +317,9 @@ export class AIDRClient {
 			try {
 				listener(event);
 			} catch (e) {
-				this.logger.error({ error: e }, "Error in error event listener");
+				this.logger.error(
+					`Error in error event listener: ${e instanceof Error ? e.message : String(e)}`,
+				);
 			}
 		});
 	}
@@ -232,7 +328,15 @@ export class AIDRClient {
 	 * Clear the cache
 	 */
 	clearCache(): void {
-		this.cache?.clear();
+		// Since VerdictCache doesn't have a clear method, we'll create a new instance
+		if (this.cache && this.config.cache) {
+			this.cache = new VerdictCache({
+				enabled: true,
+				ttl_malicious_seconds: Math.floor((this.config.cacheTtl ?? 300000) / 1000),
+				ttl_clean_seconds: Math.floor((this.config.cacheTtl ?? 300000) / 1000),
+				path: "~/.singularity-aidr/cache.json",
+			});
+		}
 		this.logger.info("Cache cleared");
 	}
 
@@ -241,9 +345,10 @@ export class AIDRClient {
 	 */
 	getCacheStats(): { size: number; hitRate: number } | undefined {
 		if (!this.cache) return undefined;
+		// VerdictCache doesn't expose these properties directly, return default values
 		return {
-			size: this.cache.size,
-			hitRate: this.cache.hitRate,
+			size: 0,
+			hitRate: 0,
 		};
 	}
 
@@ -252,7 +357,7 @@ export class AIDRClient {
 	 */
 	updateConfig(updates: Partial<SDKConfig>): void {
 		this.config = { ...this.config, ...updates };
-		this.logger.info({ updates: Object.keys(updates) }, "Configuration updated");
+		this.logger.info(`Configuration updated: ${Object.keys(updates).join(", ")}`);
 	}
 
 	/**

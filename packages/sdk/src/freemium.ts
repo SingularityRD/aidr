@@ -222,7 +222,7 @@ export class FreemiumManager {
 	 */
 	async trackUsage(userId: string, operation: string): Promise<void> {
 		await this.licenseManager.incrementUsage(userId, operation);
-		this.logger?.info?.({ userId, operation }, "Usage tracked");
+		this.logger?.info?.(`Usage tracked for user ${userId}`, { operation });
 	}
 
 	/**
@@ -257,14 +257,16 @@ export class FreemiumManager {
 			// Store the license
 			await this.licenseManager.setLicense(userId, license);
 
-			this.logger?.info?.({ userId, tier }, "License activated");
+			this.logger?.info?.(`License activated for user ${userId}`, { tier });
 
 			return {
 				success: true,
 				license,
 			};
 		} catch (error) {
-			this.logger?.error?.({ error, userId }, "License activation failed");
+			this.logger?.error?.(
+				`License activation failed for user ${userId}: ${error instanceof Error ? error.message : String(error)}`,
+			);
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : String(error),
@@ -290,7 +292,7 @@ export class FreemiumManager {
 			tier: "free",
 		});
 
-		this.logger?.info?.({ userId }, "License deactivated");
+		this.logger?.info?.(`License deactivated for user ${userId}`);
 		return true;
 	}
 

@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { supabaseEnvError } from "../lib/supabase";
 import { signOut } from "./session";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function AppLayout() {
 	const navigate = useNavigate();
@@ -20,16 +21,19 @@ export function AppLayout() {
 					<NavLink to="/api-keys">API Keys</NavLink>
 					<NavLink to="/billing">Billing</NavLink>
 				</nav>
-				<button
-					className="button button-secondary"
-					type="button"
-					onClick={async () => {
-						await signOut();
-						navigate("/login");
-					}}
-				>
-					Sign out
-				</button>
+				<div className="header-actions">
+					<ThemeToggle />
+					<button
+						className="button button-secondary"
+						type="button"
+						onClick={async () => {
+							await signOut();
+							navigate("/login");
+						}}
+					>
+						Sign out
+					</button>
+				</div>
 			</header>
 			<main className="main">
 				{supabaseEnvError ? (

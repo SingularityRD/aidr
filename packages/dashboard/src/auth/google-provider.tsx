@@ -1,8 +1,9 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
 
 // Types
-interface User {
+export interface User {
 	id: string;
 	email: string;
 	googleId?: string;
@@ -11,7 +12,7 @@ interface User {
 	createdAt: string;
 }
 
-interface GoogleCredential {
+export interface GoogleCredential {
 	id: string;
 	email: string;
 	name?: string;
@@ -20,7 +21,7 @@ interface GoogleCredential {
 	givenName?: string;
 }
 
-interface CredentialShare {
+export interface CredentialShare {
 	id: string;
 	ownerId: string;
 	sharedWithEmail: string;
@@ -28,7 +29,7 @@ interface CredentialShare {
 	createdAt: string;
 }
 
-interface AgentSync {
+export interface AgentSync {
 	agentId: string;
 	userId: string;
 	config: Record<string, unknown>;
@@ -212,11 +213,13 @@ export function GoogleAuthProvider({ children, clientId }: GoogleAuthProviderPro
 		async (email: string) => {
 			if (!user) throw new Error("Must be signed in to share credentials");
 
-			const { error } = await supabase.from("credential_shares").insert({
+			const shareData: Database["public"]["Tables"]["credential_shares"]["Insert"] = {
 				owner_id: user.id,
 				shared_with_email: email,
 				status: "pending",
-			});
+			};
+
+			const { error } = await supabase.from("credential_shares").insert(shareData as never);
 
 			if (error) throw error;
 
@@ -231,17 +234,16 @@ export function GoogleAuthProvider({ children, clientId }: GoogleAuthProviderPro
 		async (agentId: string, config: Record<string, unknown>) => {
 			if (!user) throw new Error("Must be signed in to sync");
 
-			const { error } = await supabase.from("agent_sync").upsert(
-				{
-					agent_id: agentId,
-					user_id: user.id,
-					config,
-					last_synced_at: new Date().toISOString(),
-				},
-				{
-					onConflict: "agent_id,user_id",
-				},
-			);
+			const syncData: Database["public"]["Tables"]["agent_sync"]["Insert"] = {
+				agent_id: agentId,
+				user_id: user.id,
+				config,
+				last_synced_at: new Date().toISOString(),
+			};
+
+			const { error } = await supabase.from("agent_sync").upsert(syncData as never, {
+				onConflict: "agent_id,user_id",
+			});
 
 			if (error) throw error;
 		},
@@ -252,7 +254,11 @@ export function GoogleAuthProvider({ children, clientId }: GoogleAuthProviderPro
 	const getSyncedAgents = useCallback(async (): Promise<AgentSync[]> => {
 		if (!user) return [];
 
-		const { data, error } = await supabase.from("agent_sync").select("*").eq("user_id", user.id);
+		const { data, error } = await supabase
+			.from("agent_sync")
+			.select("*")
+			.eq("user_id", user.id)
+			.returns<Database["public"]["Tables"]["agent_sync"]["Row"][]>();
 
 		if (error) throw error;
 

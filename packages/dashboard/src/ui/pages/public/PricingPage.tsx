@@ -49,8 +49,8 @@ export function PricingPage() {
 					Need larger fleets, org-wide policy distribution, or dedicated support? Let’s talk.
 				</p>
 				<div className="row">
-					<Link className="button button-secondary" to="/demo">
-						Book Demo
+					<Link className="button button-secondary" to="/pilot">
+						Request Access
 					</Link>
 				</div>
 			</div>

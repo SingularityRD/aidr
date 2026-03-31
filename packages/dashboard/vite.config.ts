@@ -3,9 +3,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
 	plugins: [react()],
-	// Leak-hardening for commercial/closed-source releases:
-	// - No sourcemaps
-	// - No bundled license/debug banners
+	base: "./",
 	build: {
 		sourcemap: false,
 	},

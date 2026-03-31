@@ -47,6 +47,12 @@ const DEFAULT_POLICY: PolicyDocument = {
 	],
 };
 
+interface PolicyRow {
+	content: string;
+	updated_at: string;
+	updated_by: string | null;
+}
+
 export function PolicyEditor() {
 	const { currentTeam, canEditPolicy } = useTeam();
 	const [policyYaml, setPolicyYaml] = useState("");
@@ -68,14 +74,16 @@ export function PolicyEditor() {
 			try {
 				const { data, error } = await supabase
 					.from("team_policies")
-					.select("content")
+					.select("content, updated_at, updated_by")
 					.eq("team_id", currentTeam.id)
 					.maybeSingle();
 
 				if (error) throw error;
 
-				if (data?.content) {
-					const yaml = data.content as string;
+				const typedData = data as PolicyRow | null;
+
+				if (typedData?.content) {
+					const yaml = typedData.content;
 					setPolicyYaml(yaml);
 					validateAndParse(yaml);
 				} else {
@@ -169,7 +177,9 @@ export function PolicyEditor() {
 						}
 						const [k, ...vParts] = value.split(": ");
 						const v = vParts.join(": ").trim();
-						currentObject[k] = parseValue(v);
+						if (currentObject && k) {
+							currentObject[k] = parseValue(v);
+						}
 					} else {
 						currentArray.push(parseValue(value));
 						currentObject = null;
@@ -183,9 +193,9 @@ export function PolicyEditor() {
 				const [key, ...valueParts] = trimmed.split(": ");
 				const value = valueParts.join(": ").trim();
 
-				if (indent === 0) {
+				if (indent === 0 && key) {
 					currentKey = key;
-					if (value === "" || value === "") {
+					if (value === "") {
 						// Could be array or nested object
 						result[key] = [];
 						currentArray = result[key] as unknown[];
@@ -196,7 +206,7 @@ export function PolicyEditor() {
 						currentObject = null;
 					}
 					indentLevel = indent;
-				} else if (currentArray && currentObject) {
+				} else if (currentArray && currentObject && key) {
 					// Nested in array object
 					currentObject[key] = parseValue(value);
 				}
@@ -230,15 +240,18 @@ export function PolicyEditor() {
 		setSaveStatus(null);
 
 		try {
-			const { error } = await supabase.from("team_policies").upsert(
-				{
-					team_id: currentTeam.id,
-					content: policyYaml,
-					updated_at: new Date().toISOString(),
-					updated_by: (await supabase.auth.getUser()).data.user?.id,
-				},
-				{ onConflict: "team_id" },
-			);
+			const { data: userData } = await supabase.auth.getUser();
+			const upsertData = {
+				team_id: currentTeam.id,
+				content: policyYaml,
+				updated_at: new Date().toISOString(),
+				updated_by: userData.user?.id ?? null,
+			};
+
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const { error } = await supabase.from("team_policies").upsert(upsertData as any, {
+				onConflict: "team_id",
+			});
 
 			if (error) throw error;
 
@@ -283,10 +296,16 @@ export function PolicyEditor() {
 						</p>
 					</div>
 					<div className="row">
-						<button className="button button-secondary" onClick={handleReset} disabled={isSaving}>
+						<button
+							type="button"
+							className="button button-secondary"
+							onClick={handleReset}
+							disabled={isSaving}
+						>
 							Reset to Default
 						</button>
 						<button
+							type="button"
 							className="button"
 							onClick={() => void handleSave()}
 							disabled={isSaving || !isValid}
@@ -341,9 +360,9 @@ export function PolicyEditor() {
 							<div style={{ marginBottom: "12px" }}>
 								<strong>Rules ({parsedPolicy.rules?.length || 0}):</strong>
 							</div>
-							{parsedPolicy.rules?.map((rule, i) => (
+							{parsedPolicy.rules?.map((rule) => (
 								<div
-									key={i}
+									key={rule.name}
 									style={{
 										padding: "12px",
 										border: "1px solid var(--border)",

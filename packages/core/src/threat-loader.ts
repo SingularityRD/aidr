@@ -41,13 +41,15 @@ export async function loadThreats(
 	logger: Logger = nullLogger,
 ): Promise<Threat[]> {
 	const threats: Threat[] = [];
+	const errors: string[] = [];
 
 	let files: string[];
 	try {
 		files = (await readdir(threatDir)).filter((f) => f.endsWith(".yaml")).sort();
-	} catch {
-		logger.warn("Threat directory does not exist or is unreadable", { path: threatDir });
-		return threats;
+	} catch (error) {
+		const errorMsg = `Threat directory does not exist or is unreadable: ${threatDir}`;
+		logger.error(errorMsg, { path: threatDir, error: String(error) });
+		throw new Error(errorMsg);
 	}
 
 	for (const filename of files) {
@@ -56,7 +58,9 @@ export async function loadThreats(
 		try {
 			content = await getFileContent(filePath);
 		} catch (e) {
-			logger.warn(`Failed to read ${filename}`, { error: String(e) });
+			const errorMsg = `Failed to read ${filename}: ${String(e)}`;
+			errors.push(errorMsg);
+			logger.error(errorMsg, { file: filename, error: String(e) });
 			continue;
 		}
 
@@ -64,12 +68,16 @@ export async function loadThreats(
 		try {
 			data = parseYaml(content);
 		} catch (e) {
-			logger.warn(`Failed to parse ${filename}`, { error: String(e) });
+			const errorMsg = `Failed to parse ${filename}: ${String(e)}`;
+			errors.push(errorMsg);
+			logger.error(errorMsg, { file: filename, error: String(e) });
 			continue;
 		}
 
 		if (!Array.isArray(data)) {
-			logger.warn(`Expected list in ${filename}, got ${typeof data}`);
+			const errorMsg = `Expected list in ${filename}, got ${typeof data}`;
+			errors.push(errorMsg);
+			logger.error(errorMsg, { file: filename });
 			continue;
 		}
 
@@ -83,21 +91,32 @@ export async function loadThreats(
 			const keys = new Set(Object.keys(record));
 			const missing = [...REQUIRED_FIELDS].filter((f) => !keys.has(f));
 			if (missing.length > 0) {
-				logger.warn(`Skipping threat in ${filename}: missing fields ${missing.join(", ")}`);
+				const errorMsg = `Skipping threat in ${filename}: missing fields ${missing.join(", ")}`;
+				errors.push(errorMsg);
+				logger.error(errorMsg, { file: filename, threatId: record.id });
 				continue;
 			}
 
 			if (record.revoked === true) continue;
 			if (isExpired(record)) continue;
 
+			// Validate confidence is within valid range (0-1)
+			const confidenceValue = Number(record.confidence);
+			if (Number.isNaN(confidenceValue) || confidenceValue < 0 || confidenceValue > 1) {
+				const errorMsg = `Skipping threat ${record.id} in ${filename}: confidence must be between 0 and 1, got ${record.confidence}`;
+				errors.push(errorMsg);
+				logger.error(errorMsg, { file: filename, threatId: record.id });
+				continue;
+			}
+
 			let compiledPattern: RegExp;
 			try {
 				const flags = record.case_insensitive === true ? "i" : "";
 				compiledPattern = new RegExp(record.pattern as string, flags);
 			} catch (e) {
-				logger.warn(`Skipping threat ${record.id}: invalid regex pattern`, {
-					error: String(e),
-				});
+				const errorMsg = `Skipping threat ${record.id}: invalid regex pattern - ${String(e)}`;
+				errors.push(errorMsg);
+				logger.error(errorMsg, { file: filename, threatId: record.id, error: String(e) });
 				continue;
 			}
 
@@ -111,7 +130,7 @@ export async function loadThreats(
 				id: record.id as string,
 				category: record.category as string,
 				severity: record.severity as Threat["severity"],
-				confidence: Number(record.confidence),
+				confidence: confidenceValue,
 				action: record.action as Threat["action"],
 				pattern: record.pattern as string,
 				compiledPattern,
@@ -123,7 +142,15 @@ export async function loadThreats(
 		}
 	}
 
-	logger.debug(`Loaded ${threats.length} threats from ${threatDir}`);
+	if (errors.length > 0) {
+		logger.warn(`Loaded ${threats.length} threats from ${threatDir} with ${errors.length} errors`, {
+			path: threatDir,
+			errors,
+		});
+	} else {
+		logger.debug(`Loaded ${threats.length} threats from ${threatDir}`);
+	}
+
 	return threats;
 }
 
@@ -138,9 +165,15 @@ export async function loadThreatsFromDirs(
 	const merged = new Map<string, Threat>();
 	for (const dir of threatDirs) {
 		if (!dir) continue;
-		const threats = await loadThreats(dir, logger);
-		for (const threat of threats) {
-			merged.set(threat.id, threat);
+		try {
+			const threats = await loadThreats(dir, logger);
+			for (const threat of threats) {
+				merged.set(threat.id, threat);
+			}
+		} catch (error) {
+			// Skip directories that don't exist (e.g., optional user threats dir)
+			// Only the first (primary) directory should be mandatory
+			logger.debug(`Skipping threat directory: ${dir}`, { error: String(error) });
 		}
 	}
 	return [...merged.values()];

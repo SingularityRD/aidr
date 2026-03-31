@@ -18,7 +18,9 @@ class MiddlewareChain {
 		const next = async (): Promise<void> => {
 			if (index >= this.middlewares.length) return;
 			const middleware = this.middlewares[index++];
-			await middleware({ request, result, error, next });
+			if (middleware) {
+				await middleware({ request, result, error, next });
+			}
 		};
 
 		await next();

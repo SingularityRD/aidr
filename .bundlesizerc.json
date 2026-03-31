@@ -1,0 +1,34 @@
+{
+  "files": [
+    {
+      "path": "packages/core/dist/index.js",
+      "maxSize": "100kB",
+      "compression": "gzip"
+    },
+    {
+      "path": "packages/claude-code/dist/pre-tool-use.cjs",
+      "maxSize": "150kB",
+      "compression": "gzip"
+    },
+    {
+      "path": "packages/openclaw/dist/index.cjs",
+      "maxSize": "150kB",
+      "compression": "gzip"
+    },
+    {
+      "path": "packages/opencode/dist/index.js",
+      "maxSize": "150kB",
+      "compression": "gzip"
+    },
+    {
+      "path": "packages/sdk/dist/index.mjs",
+      "maxSize": "200kB",
+      "compression": "gzip"
+    },
+    {
+      "path": "packages/extension/dist/cursor_extension.js",
+      "maxSize": "200kB",
+      "compression": "gzip"
+    }
+  ]
+}

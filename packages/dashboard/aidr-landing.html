@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIDR - AI Agent Detection & Response</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f1f5f9;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --border-primary: #e2e8f0;
+            --brand-500: #6366f1;
+            --brand-600: #4f46e5;
+            --brand-700: #4338ca;
+            --accent: #3862e8;
+            --accent-strong: #2448bb;
+            --panel-bg: rgba(239, 239, 239, 0.45);
+            --panel-border: rgba(0, 0, 0, 0.15);
+            --shadow-color: rgba(0, 0, 0, 0.07);
+        }
+        
+        [data-theme="dark"] {
+            color-scheme: dark;
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #141414;
+            --bg-tertiary: #1a1a1a;
+            --text-primary: #f0f0f0;
+            --text-secondary: #a0a0a0;
+            --text-muted: #666666;
+            --border-primary: rgba(255, 255, 255, 0.1);
+            --panel-bg: rgba(10, 10, 10, 0.45);
+            --panel-border: rgba(255, 255, 255, 0.15);
+            --shadow-color: rgba(0, 0, 0, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        .app { min-height: 100vh; display: flex; flex-direction: column; }
+
+        /* Navigation */
+        .nav-bar {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 20px 40px;
+            background: rgba(239, 239, 239, 0.6);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        [data-theme="dark"] .nav-bar {
+            background: rgba(10, 10, 10, 0.6);
+            border-bottom-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .brand { font-size: 18px; font-weight: 500; }
+        .brand-link { color: var(--text-primary); text-decoration: none; }
+
+        .nav { display: flex; gap: 8px; }
+        .nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .nav a:hover {
+            color: var(--text-primary);
+            background: rgba(0, 0, 0, 0.04);
+        }
+        [data-theme="dark"] .nav a:hover { background: rgba(255, 255, 255, 0.08); }
+
+        .row { display: flex; gap: 10px; align-items: center; }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: 1px solid var(--accent);
+            background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+            color: #ffffff;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 14px;
+            transition: transform 120ms, box-shadow 140ms;
+            box-shadow: 0 10px 24px rgba(30, 67, 178, 0.3);
+        }
+        .button:hover { transform: translateY(-1px); box-shadow: 0 14px 30px rgba(30, 67, 178, 0.34); }
+        .button-secondary {
+            border-color: var(--panel-border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            box-shadow: 0 8px 20px var(--shadow-color);
+        }
+        .button-secondary:hover { background: var(--bg-tertiary); }
+
+        /* Main */
+        .main {
+            flex: 1;
+            padding: 30px 20px 80px;
+            max-width: 1100px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* Stack & Cards */
+        .stack { display: flex; flex-direction: column; gap: 16px; }
+        .card {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 24px var(--shadow-color);
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: rgba(0, 0, 0, 0.04);
+            border: 1px solid var(--panel-border);
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-weight: 500;
+        }
+        [data-theme="dark"] .pill { background: rgba(255, 255, 255, 0.08); }
+
+        .muted { color: var(--text-secondary); }
+        .small { font-size: 12px; }
+
+        /* Hero */
+        .hero-title {
+            font-size: clamp(30px, 6vw, 56px);
+            line-height: 1.05;
+            letter-spacing: -0.02em;
+            margin-bottom: 10px;
+        }
+
+        /* Launch Links */
+        .launch-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+        .launch-link {
+            border: 1px solid var(--panel-border);
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 14px;
+            text-decoration: none;
+            color: var(--text-primary);
+            box-shadow: 0 10px 24px var(--shadow-color);
+            transition: transform 120ms, box-shadow 140ms;
+        }
+        .launch-link:hover { transform: translateY(-1px); box-shadow: 0 14px 30px var(--shadow-color); }
+        .launch-link-title { font-size: 16px; font-weight: 500; margin-bottom: 6px; }
+        .launch-link-desc { font-size: 13px; color: var(--text-secondary); }
+
+        /* Security Showcase */
+        .security-showcase {
+            display: grid;
+            grid-template-columns: minmax(300px, 0.84fr) minmax(0, 1.16fr);
+            gap: 22px;
+            align-items: center;
+        }
+        .security-showcase-diagram {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        /* Feature Grid */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+        .feature-card {
+            border: 1px solid var(--panel-border);
+            background: var(--bg-secondary);
+            border-radius: 14px;
+            padding: 18px;
+            min-height: 146px;
+        }
+        .feature-card-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            letter-spacing: -0.02em;
+        }
+        .feature-card-desc { font-size: 14px; line-height: 23px; color: var(--text-secondary); }
+
+        /* Bullet List */
+        .bullet-list { display: grid; gap: 10px; }
+        .bullet-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .bullet-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+            flex-shrink: 0;
+        }
+
+        /* Footer */
+        .footer {
+            padding: 22px 20px 32px;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        /* Dark Mode Toggle */
+        .theme-toggle {
+            background: none;
+            border: none;
+            padding: 8px;
+            cursor: pointer;
+            border-radius: 8px;
+            color: var(--text-primary);
+        }
+        .theme-toggle:hover { background: rgba(0, 0, 0, 0.04); }
+        [data-theme="dark"] .theme-toggle:hover { background: rgba(255, 255, 255, 0.08); }
+
+        /* Responsive */
+        @media (max-width: 920px) {
+            .nav-bar { padding: 12px 20px; flex-wrap: wrap; }
+            .nav { order: 3; width: 100%; justify-content: center; margin-top: 10px; }
+            .main { padding: 20px 16px 40px; }
+            .security-showcase { grid-template-columns: 1fr; }
+            .security-showcase-diagram { justify-content: flex-start; }
+            .feature-grid, .launch-links { grid-template-columns: 1fr; }
+            .card { padding: 16px; }
+        }
+
+        @media (max-width: 768px) {
+            .hero-title { font-size: clamp(26px, 8vw, 40px); }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="nav-bar">
+            <div class="brand">
+                <a href="#" class="brand-link">🛡️ Singularity AIDR</a>
+            </div>
+            <nav class="nav">
+                <a href="#login" onclick="showLogin()">Dashboard</a>
+            </nav>
+            <div class="row">
+                <a href="#login" class="button button-secondary" style="padding: 8px 14px; font-size: 13px;" onclick="showLogin()">Sign in</a>
+                <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <main class="main" id="main-content">
+            <!-- Landing Page -->
+            <div id="landing" class="stack">
+                <section class="card">
+                    <div class="pill" style="margin-bottom: 8px;">Edge-first AI Agent Detection & Response</div>
+                    <h1 class="hero-title">Launch-ready security layer for AI agents.</h1>
+                    <p class="muted" style="max-width: 760; line-height: 28px;">
+                        Singularity AIDR protects runtime actions, surfaces incidents, and gives managed
+                        visibility without forcing cloud-only enforcement. Install by prompt, authorize in
+                        browser, and go live in minutes.
+                    </p>
+                </section>
+
+                <section class="launch-links">
+                    <a href="#login" class="launch-link" onclick="showLogin()">
+                        <div class="launch-link-title">Get Started</div>
+                        <div class="launch-link-desc">Managed control plane.</div>
+                    </a>
+                </section>
+
+                <section class="security-showcase">
+                    <div class="card">
+                        <div class="pill" style="margin-bottom: 8px;">Product Surface</div>
+                        <h2 style="font-size: 30px; line-height: 1.06; letter-spacing: -0.03em; margin-bottom: 10px;">
+                            Security controls your agent can feel.
+                        </h2>
+                        <p class="muted" style="line-height: 26px; margin-bottom: 14px;">
+                            We keep the runtime lightweight, but the policy surface is deep. Singularity AIDR turns
+                            a single prompt into a protected agent, then keeps that agent visible with device auth,
+                            incident correlation, package and plugin guards, and seat-aware control.
+                        </p>
+                        <div class="bullet-list">
+                            <div class="bullet-item">
+                                <span class="bullet-dot"></span>
+                                <span class="muted">Prompt install in one shot, no manual key copying</span>
+                            </div>
+                            <div class="bullet-item">
+                                <span class="bullet-dot"></span>
+                                <span class="muted">Local enforcement with dashboard-backed visibility</span>
+                            </div>
+                            <div class="bullet-item">
+                                <span class="bullet-dot"></span>
+                                <span class="muted">Package, plugin, and prompt abuse detection</span>
+                            </div>
+                            <div class="bullet-item">
+                                <span class="bullet-dot"></span>
+                                <span class="muted">Seat-aware onboarding for pilot and paid expansion</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="security-showcase-diagram">
+                        <div style="width: 280px; height: 200px; background: var(--bg-secondary); border-radius: 16px; border: 1px solid var(--panel-border); display: flex; align-items: center; justify-content: center;">
+                            <svg width="120" height="120" viewBox="0 0 120 120" fill="none" style="opacity: 0.6;">
+                                <rect x="20" y="40" width="40" height="40" rx="8" fill="rgba(0,0,0,0.04)" stroke="var(--panel-border)" stroke-width="1"/>
+                                <rect x="45" y="25" width="40" height="40" rx="8" fill="var(--panel-bg)" stroke="var(--accent)" stroke-width="1.5"/>
+                                <rect x="60" y="55" width="40" height="40" rx="8" fill="rgba(0,0,0,0.04)" stroke="var(--panel-border)" stroke-width="1"/>
+                                <path d="M45 65L25 85" stroke="var(--accent)" stroke-width="2" stroke-dasharray="4 2"/>
+                                <path d="M85 65L65 45" stroke="var(--accent)" stroke-width="2" stroke-dasharray="4 2"/>
+                            </svg>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <div class="pill" style="margin-bottom: 16px;">Core Features</div>
+                    <div class="feature-grid">
+                        <article class="feature-card">
+                            <div class="feature-card-title">Prompt-first setup</div>
+                            <div class="feature-card-desc">Install by prompt, then finish auth in the browser with zero key copying.</div>
+                        </article>
+                        <article class="feature-card">
+                            <div class="feature-card-title">Device authorization</div>
+                            <div class="feature-card-desc">Short-lived codes bootstrap enrollment and unlock managed protection safely.</div>
+                        </article>
+                        <article class="feature-card">
+                            <div class="feature-card-title">Incident correlation</div>
+                            <div class="feature-card-desc">Repeated denials, suspicious retries, and abuse patterns roll into one case.</div>
+                        </article>
+                        <article class="feature-card">
+                            <div class="feature-card-title">Package and plugin guard</div>
+                            <div class="feature-card-desc">Catch typosquats, lifecycle risk, integrity drift, and command surface exposure.</div>
+                        </article>
+                        <article class="feature-card">
+                            <div class="feature-card-title">Dashboard sync</div>
+                            <div class="feature-card-desc">Every protected agent reports health, incidents, and entitlement state centrally.</div>
+                        </article>
+                        <article class="feature-card">
+                            <div class="feature-card-title">Offline grace</div>
+                            <div class="feature-card-desc">Enrolled agents keep working when the network drops, within the signed cache window.</div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="card" style="text-align: center;">
+                    <h2 style="font-size: 24px; margin-bottom: 12px;">Ready to protect your AI agents?</h2>
+                    <p class="muted" style="margin-bottom: 16px;">Get started and secure your first agent in minutes.</p>
+                    <div class="row" style="justify-content: center;">
+                        <a href="#login" class="button" onclick="showLogin()">Get Started</a>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Login Page (Hidden by default) -->
+            <div id="login" style="display: none; max-width: 440px; margin: 0 auto; padding-top: 40px;">
+                <div class="card" style="text-align: center;">
+                    <div style="width: 64px; height: 64px; margin: 0 auto 16px; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 32px;">🛡️</div>
+                    <h1 style="font-size: 28px; font-weight: 700; margin-bottom: 8px;">Welcome to AIDR</h1>
+                    <p class="muted" style="margin-bottom: 24px;">Sign in to protect your AI agents</p>
+
+                    <button class="button" style="width: 100%; background: #ffffff; color: #374151; border: 1px solid #e5e7eb; box-shadow: none; margin-bottom: 16px;">
+                        <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                        Continue with Google
+                    </button>
+
+                    <div style="display: flex; align-items: center; margin: 24px 0; color: var(--text-muted); font-size: 13px;">
+                        <div style="flex: 1; height: 1px; background: var(--border-primary);"></div>
+                        <span style="padding: 0 16px;">or continue with email</span>
+                        <div style="flex: 1; height: 1px; background: var(--border-primary);"></div>
+                    </div>
+
+                    <div style="margin-bottom: 16px; text-align: left;">
+                        <label style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px;">Email address</label>
+                        <input type="email" placeholder="you@company.com" style="width: 100%; padding: 12px 16px; font-size: 15px; border: 1px solid var(--border-primary); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); outline: none;">
+                    </div>
+
+                    <button class="button" style="width: 100%;">Send magic link</button>
+
+                    <a href="#" onclick="showLanding()" style="display: block; margin-top: 24px; font-size: 14px; color: var(--text-secondary); text-decoration: none;">← Back to home</a>
+
+                    <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border-primary); font-size: 13px; color: var(--text-muted);">🔒 Secure authentication powered by Supabase</div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <div class="small">© 2026 Singularity AIDR. Local-first AI agent detection and response.</div>
+        </footer>
+    </div>
+
+    <script>
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.getAttribute('data-theme');
+            html.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+        }
+
+        function showLogin() {
+            document.getElementById('landing').style.display = 'none';
+            document.getElementById('login').style.display = 'block';
+            return false;
+        }
+
+        function showLanding() {
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('landing').style.display = 'flex';
+            return false;
+        }
+
+        // Check for dark mode preference
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+    </script>
+</body>
+</html>

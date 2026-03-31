@@ -124,7 +124,10 @@ export class LemonSqueezyBilling {
 
 			return (await response.json()) as T;
 		} catch (error) {
-			this.logger?.error?.({ error, endpoint }, "Lemon Squeezy API request failed");
+			this.logger?.error?.(
+				`Lemon Squeezy API request failed: ${error instanceof Error ? error.message : String(error)}`,
+				{ endpoint },
+			);
 			throw error;
 		}
 	}
@@ -196,7 +199,7 @@ export class LemonSqueezyBilling {
 			body: JSON.stringify(cleanPayload),
 		});
 
-		this.logger?.info?.({ userId, checkoutId: response.data.id }, "Checkout created");
+		this.logger?.info?.(`Checkout created for user ${userId}`, { checkoutId: response.data.id });
 
 		return response.data.attributes.url;
 	}
@@ -242,10 +245,7 @@ export class LemonSqueezyBilling {
 				};
 			}
 
-			this.logger?.info?.(
-				{ licenseKey: licenseKey.slice(0, 8) + "...", valid: isValid },
-				"License validated",
-			);
+			this.logger?.info?.(`License validated: ${licenseKey.slice(0, 8)}...`, { valid: isValid });
 
 			return {
 				valid: isValid,
@@ -254,8 +254,8 @@ export class LemonSqueezyBilling {
 			};
 		} catch (error) {
 			this.logger?.error?.(
-				{ error, licenseKey: licenseKey.slice(0, 8) + "..." },
-				"License validation failed",
+				`License validation failed: ${error instanceof Error ? error.message : String(error)}`,
+				{ licenseKey: licenseKey.slice(0, 8) + "..." },
 			);
 			throw error;
 		}
@@ -280,18 +280,20 @@ export class LemonSqueezyBilling {
 		}
 
 		const subscription = response.data[0];
-		const attrs = subscription.attributes;
+		if (!subscription) {
+			return null;
+		}
 
 		return {
 			id: subscription.id,
-			status: subscription!.attributes.status,
-			renewsAt: subscription!.attributes.renews_at
-				? new Date(subscription!.attributes.renews_at)
+			status: subscription.attributes.status,
+			renewsAt: subscription.attributes.renews_at
+				? new Date(subscription.attributes.renews_at)
 				: undefined,
-			endsAt: subscription!.attributes.ends_at
-				? new Date(subscription!.attributes.ends_at)
+			endsAt: subscription.attributes.ends_at
+				? new Date(subscription.attributes.ends_at)
 				: undefined,
-			variantId: String(subscription!.attributes.variant_id),
+			variantId: String(subscription.attributes.variant_id),
 		};
 	}
 
@@ -338,7 +340,7 @@ export class LemonSqueezyBilling {
 
 		const eventName = event.meta?.event_name || "unknown";
 
-		this.logger?.info?.({ eventName }, "Processing webhook");
+		this.logger?.info?.(`Processing webhook: ${eventName}`);
 
 		// Handle different event types
 		switch (eventName) {
@@ -364,7 +366,7 @@ export class LemonSqueezyBilling {
 				await this.handleLicenseUpdated(event.data);
 				break;
 			default:
-				this.logger?.warn?.({ eventName }, "Unhandled webhook event type");
+				this.logger?.warn?.(`Unhandled webhook event type: ${eventName}`);
 		}
 
 		return {
@@ -397,7 +399,7 @@ export class LemonSqueezyBilling {
 	 * Handle order_created webhook
 	 */
 	private async handleOrderCreated(data: unknown): Promise<void> {
-		this.logger?.info?.({ data }, "Order created");
+		this.logger?.info?.(`Order created: ${JSON.stringify(data)}`);
 		// SDK users should override this to handle order creation
 	}
 
@@ -405,7 +407,7 @@ export class LemonSqueezyBilling {
 	 * Handle subscription_created webhook
 	 */
 	private async handleSubscriptionCreated(data: unknown): Promise<void> {
-		this.logger?.info?.({ data }, "Subscription created");
+		this.logger?.info?.(`Subscription created: ${JSON.stringify(data)}`);
 		// SDK users should override this to handle subscription creation
 	}
 
@@ -413,7 +415,7 @@ export class LemonSqueezyBilling {
 	 * Handle subscription_updated webhook
 	 */
 	private async handleSubscriptionUpdated(data: unknown): Promise<void> {
-		this.logger?.info?.({ data }, "Subscription updated");
+		this.logger?.info?.(`Subscription updated: ${JSON.stringify(data)}`);
 		// SDK users should override this to handle subscription updates
 	}
 
@@ -421,7 +423,7 @@ export class LemonSqueezyBilling {
 	 * Handle subscription_cancelled webhook
 	 */
 	private async handleSubscriptionCancelled(data: unknown): Promise<void> {
-		this.logger?.info?.({ data }, "Subscription cancelled");
+		this.logger?.info?.(`Subscription cancelled: ${JSON.stringify(data)}`);
 		// SDK users should override this to handle subscription cancellation
 	}
 
@@ -429,7 +431,7 @@ export class LemonSqueezyBilling {
 	 * Handle subscription_expired webhook
 	 */
 	private async handleSubscriptionExpired(data: unknown): Promise<void> {
-		this.logger?.info?.({ data }, "Subscription expired");
+		this.logger?.info?.(`Subscription expired: ${JSON.stringify(data)}`);
 		// SDK users should override this to handle subscription expiration
 	}
 
@@ -437,7 +439,7 @@ export class LemonSqueezyBilling {
 	 * Handle license_key_created webhook
 	 */
 	private async handleLicenseCreated(data: unknown): Promise<void> {
-		this.logger?.info?.({ data }, "License key created");
+		this.logger?.info?.(`License key created: ${JSON.stringify(data)}`);
 		// SDK users should override this to handle license creation
 	}
 
@@ -445,7 +447,7 @@ export class LemonSqueezyBilling {
 	 * Handle license_key_updated webhook
 	 */
 	private async handleLicenseUpdated(data: unknown): Promise<void> {
-		this.logger?.info?.({ data }, "License key updated");
+		this.logger?.info?.(`License key updated: ${JSON.stringify(data)}`);
 		// SDK users should override this to handle license updates
 	}
 }

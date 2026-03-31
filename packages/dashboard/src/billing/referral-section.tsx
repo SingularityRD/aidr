@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
 
 interface ReferralStats {
@@ -33,7 +34,9 @@ export function ReferralSection({ userId }: { userId: string }) {
 				.single();
 
 			if (userError) throw userError;
-			setReferralCode(user?.referral_code || "");
+			setReferralCode(
+				(user as Database["public"]["Tables"]["users"]["Row"] | null)?.referral_code || "",
+			);
 
 			// Get referral statistics
 			const { data: credits, error: creditsError } = await supabase
@@ -43,8 +46,13 @@ export function ReferralSection({ userId }: { userId: string }) {
 
 			if (creditsError) throw creditsError;
 
-			const referralCount = credits?.length || 0;
-			const creditsEarned = credits?.reduce((sum, r) => sum + (r.credit_months || 0), 0) || 0;
+			const referralCount =
+				(credits as Database["public"]["Tables"]["referral_credits"]["Row"][] | null)?.length || 0;
+			const creditsEarned =
+				(credits as Database["public"]["Tables"]["referral_credits"]["Row"][] | null)?.reduce(
+					(sum, r) => sum + (r.credit_months || 0),
+					0,
+				) || 0;
 
 			setStats({
 				referralCount,

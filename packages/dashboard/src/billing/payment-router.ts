@@ -1,17 +1,14 @@
-import { CryptoProvider } from "./providers/crypto-provider";
-import { IyzicoProvider } from "./providers/iyzico-provider";
-import { StripeProvider } from "./providers/stripe-provider";
+// LemonSqueezy-only payment router
+// Removed: stripe, iyzico, crypto providers (user requested only LemonSqueezy)
 
-export type ProviderType = "stripe" | "iyzico" | "crypto" | "paypal";
+import { cancelSubscription } from "./lemon-client";
+
+export type ProviderType = "lemon-squeezy";
 
 export interface PaymentResult {
 	url: string;
 	provider: ProviderType;
-	session_id?: string;
-	token?: string;
-	conversation_id?: string;
-	charge_id?: string;
-	code?: string;
+	checkoutId?: string;
 }
 
 export interface Invoice {
@@ -41,144 +38,66 @@ interface UserLocation {
 
 interface ProviderConfig {
 	primary: ProviderType;
-	fallback?: ProviderType;
 	supportedCurrencies: string[];
 	features: string[];
 }
 
-// Region-based provider configuration
-const REGION_CONFIG: Record<string, ProviderConfig> = {
-	TR: {
-		primary: "iyzico",
-		fallback: "stripe",
-		supportedCurrencies: ["TRY", "USD", "EUR"],
-		features: ["3D Secure", "Taksit", "TL Fatura", "KDV"],
-	},
-	EU: {
-		primary: "stripe",
-		fallback: "paypal",
-		supportedCurrencies: ["EUR", "USD", "GBP"],
-		features: ["SEPA", "VAT Moss"],
-	},
-	US: {
-		primary: "stripe",
-		fallback: "paypal",
-		supportedCurrencies: ["USD", "EUR", "GBP"],
-		features: ["Stripe Tax", "ACH"],
-	},
-	GLOBAL: {
-		primary: "stripe",
-		fallback: "paypal",
-		supportedCurrencies: ["USD", "EUR", "GBP", "JPY", "AUD", "CAD"],
-		features: ["Multi-currency", "Subscription"],
-	},
+// Global LemonSqueezy configuration
+const LEMON_CONFIG: ProviderConfig = {
+	primary: "lemon-squeezy",
+	supportedCurrencies: ["USD", "EUR", "GBP"],
+	features: ["Subscription", "Checkout", "Customer Portal"],
 };
 
-// Privacy/crypto regions or preferences
-const PRIVACY_PREFERRED_REGIONS = ["RU", "BY", "VE", "IR", "KP"];
-
 /**
- * Get payment provider based on user location and preferences
- *
- * Strategy:
- * - Turkey (TR): iyzico primary for local payment methods (3D Secure, taksit)
- * - EU/US: Stripe primary for global coverage
- * - Privacy preference: Crypto for anonymity
- * - Explicit provider preference overrides auto-selection
+ * Get payment provider - now returns LemonSqueezy client
+ * Legacy providers (stripe, iyzico, crypto) removed per user request
  */
-export function getPaymentProvider(
-	userLocation: UserLocation | string,
-	preference?: ProviderType | "privacy",
-): PaymentProvider {
-	const country = typeof userLocation === "string" ? userLocation : userLocation.country;
-
-	// Privacy/crypto preference takes highest priority
-	if (preference === "crypto" || preference === "privacy") {
-		return new CryptoProvider();
-	}
-
-	// Explicit provider preference
-	if (preference === "stripe") {
-		return new StripeProvider();
-	}
-	if (preference === "iyzico") {
-		return new IyzicoProvider();
-	}
-
-	// Auto-select based on country
-	switch (country) {
-		case "TR":
-			return new IyzicoProvider();
-
-		case "US":
-		case "CA":
-		case "GB":
-		case "DE":
-		case "FR":
-		case "AU":
-		case "JP":
-			return new StripeProvider();
-
-		default:
-			// Privacy-preferring regions get crypto option prominently
-			if (PRIVACY_PREFERRED_REGIONS.includes(country)) {
-				// Still default to stripe but crypto should be highlighted in UI
-				return new StripeProvider();
-			}
-			return new StripeProvider();
-	}
+export function getPaymentProvider(): PaymentProvider {
+	return {
+		async createSubscription(
+			userId: string,
+			seats: number,
+			plan: "monthly" | "yearly",
+		): Promise<PaymentResult> {
+			// Note: This requires user email which we don't have here
+			// In real implementation, fetch user email from auth context
+			throw new Error("Use createCheckout from lemon-client directly with user email");
+		},
+		async cancelSubscription(subscriptionId: string): Promise<void> {
+			return cancelSubscription(subscriptionId);
+		},
+		async getInvoices(userId: string): Promise<Invoice[]> {
+			// LemonSqueezy doesn't have direct invoice API, return empty
+			return [];
+		},
+	};
 }
 
 /**
- * Get available providers for a user location
- * Used for UI selector display
+ * Get available providers - now returns only LemonSqueezy
  */
-export function getAvailableProviders(
-	userLocation: UserLocation | string,
-): Array<{ id: ProviderType; name: string; features: string[]; recommended?: boolean }> {
-	const country = typeof userLocation === "string" ? userLocation : userLocation.country;
-	const providers: Array<{
-		id: ProviderType;
-		name: string;
-		features: string[];
-		recommended?: boolean;
-	}> = [];
-
-	if (country === "TR") {
-		providers.push({
-			id: "iyzico",
-			name: "Kredi/Banka Kartı (Türkiye)",
-			features: ["TL Fatura", "3D Secure", "Taksit", "%20 KDV"],
+export function getAvailableProviders(): Array<{
+	id: ProviderType;
+	name: string;
+	features: string[];
+	recommended?: boolean;
+}> {
+	return [
+		{
+			id: "lemon-squeezy",
+			name: "LemonSqueezy (Global)",
+			features: ["USD/EUR/GBP", "Subscription", "Checkout"],
 			recommended: true,
-		});
-	}
-
-	providers.push(
-		{
-			id: "stripe",
-			name: "Credit Card (Global)",
-			features: ["USD/EUR/GBP", "Subscription", "Invoice"],
 		},
-		{
-			id: "crypto",
-			name: "Crypto (BTC/ETH/USDC)",
-			features: ["Anonymous", "Privacy", "No KYC"],
-		},
-	);
-
-	return providers;
+	];
 }
 
 /**
- * Get provider configuration for a region
+ * Get provider configuration
  */
-export function getRegionConfig(country: string): ProviderConfig {
-	if (country === "TR") return REGION_CONFIG.TR;
-	if (["DE", "FR", "IT", "ES", "NL", "BE", "AT", "PL", "SE", "DK"].includes(country)) {
-		return REGION_CONFIG.EU;
-	}
-	if (["US", "CA"].includes(country)) return REGION_CONFIG.US;
-	return REGION_CONFIG.GLOBAL;
+export function getRegionConfig(): ProviderConfig {
+	return LEMON_CONFIG;
 }
 
 /**

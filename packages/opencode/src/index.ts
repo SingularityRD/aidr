@@ -106,9 +106,7 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 			};
 			message.parts.push(textPart);
 
-			logger.info(`Injected aidr plugin scan findings to user message`, {
-				findings,
-			});
+			logger.info({ findings }, "Injected aidr plugin scan findings to user message");
 			pendingFindingsBySession.delete(sessionID);
 		},
 
@@ -119,16 +117,16 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 				const sessionID = (event as any).sessionID ?? (event as any).id ?? "unknown";
 
 				try {
-					logger.debug("Singularity AIDR: starting session scan", { sessionID });
+					logger.debug({ sessionID }, "Singularity AIDR: starting session scan");
 
 					await createSessionScanHandler(logger, undefined, (msg) => {
 						pendingFindingsBySession.set(sessionID, msg);
 					})();
 				} catch (error) {
-					logger.error("Singularity AIDR session scan failed (fail-open)", {
-						sessionID,
-						error: String(error),
-					});
+					logger.error(
+						{ sessionID, error: String(error) },
+						"Singularity AIDR session scan failed (fail-open)",
+					);
 				}
 			}
 		},

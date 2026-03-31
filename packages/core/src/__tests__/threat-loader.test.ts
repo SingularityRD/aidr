@@ -121,9 +121,10 @@ describe("loadThreats", () => {
 		expect(threats).toEqual([]);
 	});
 
-	it("returns empty for nonexistent directory", async () => {
-		const threats = await loadThreats("/nonexistent/dir");
-		expect(threats).toEqual([]);
+	it("throws error for nonexistent directory", async () => {
+		await expect(loadThreats("/nonexistent/dir")).rejects.toThrow(
+			"Threat directory does not exist or is unreadable",
+		);
 	});
 
 	it("loads from multiple files", async () => {

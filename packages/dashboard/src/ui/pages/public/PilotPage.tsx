@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { getSession } from "../../session";
@@ -9,16 +9,26 @@ type PilotStatus =
 	| { status: "approved"; cohort?: string | null }
 	| { status: "denied" };
 
+// Apply for pilot function - calls edge function
+async function applyForPilot(email: string, _org: string, useCase: string): Promise<void> {
+	const res = await supabase.functions.invoke("pilot-apply", {
+		method: "POST",
+		body: { email, org: _org, useCase },
+	});
+	if (res.error) {
+		throw new Error(res.error.message || "Failed to submit application");
+	}
+}
+
 export function PilotPage() {
 	const navigate = useNavigate();
 	const [sessionReady, setSessionReady] = useState(false);
 	const [hasSession, setHasSession] = useState(false);
 	const [status, setStatus] = useState<PilotStatus>({ status: "none" });
 	const [useCase, setUseCase] = useState("");
+	const [email, setEmail] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-
-	const trimmed = useMemo(() => useCase.trim(), [useCase]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -29,18 +39,22 @@ export function PilotPage() {
 			setSessionReady(true);
 			if (!sess) return;
 
+			// Get user email from session
+			const userEmail = sess.user?.email || "";
+			setEmail(userEmail);
+
 			const res = await supabase.functions.invoke("pilot-status", { method: "GET" });
-			if (!res.error) {
-				const data = (res.data ?? {}) as Record<string, unknown>;
-				const st = String(data.status ?? "none");
-				if (st === "pending" || st === "approved" || st === "denied") {
-					setStatus({
-						status: st as "pending" | "approved" | "denied",
-						cohort: typeof data.cohort === "string" ? data.cohort : null,
-					} as PilotStatus);
-				} else {
-					setStatus({ status: "none" });
-				}
+			if (res.error || cancelled) return;
+
+			const data = (res.data ?? {}) as Record<string, unknown>;
+			const st = String(data.status ?? "none");
+			if (st === "pending" || st === "approved" || st === "denied") {
+				setStatus({
+					status: st as "pending" | "approved" | "denied",
+					cohort: typeof data.cohort === "string" ? data.cohort : null,
+				} as PilotStatus);
+			} else {
+				setStatus({ status: "none" });
 			}
 		}
 		load();
@@ -93,7 +107,7 @@ export function PilotPage() {
 			{hasSession ? (
 				<div className="card">
 					<h2>Apply</h2>
-					<p className="muted">Tell us what you’re protecting (runtime, tools, threat model).</p>
+					<p className="muted">Tell us what you're protecting (runtime, tools, threat model).</p>
 					<label className="label">
 						Use case
 						<textarea
@@ -107,22 +121,17 @@ export function PilotPage() {
 
 					<div className="row">
 						<button
+							type="submit"
 							className="button"
-							type="button"
-							disabled={busy || !trimmed}
+							disabled={busy || !useCase.trim()}
 							onClick={async () => {
 								setBusy(true);
 								setError(null);
 								try {
-									const res = await supabase.functions.invoke("pilot-apply", {
-										method: "POST",
-										body: { message: trimmed },
-									});
-									if (res.error) {
-										setError(res.error.message);
-										return;
-									}
+									await applyForPilot(email, "", useCase);
 									setStatus({ status: "pending" });
+								} catch (e) {
+									setError(e instanceof Error ? e.message : "Failed to submit");
 								} finally {
 									setBusy(false);
 								}
@@ -130,9 +139,6 @@ export function PilotPage() {
 						>
 							Submit application
 						</button>
-						<Link className="button button-secondary" to="/waitlist">
-							Join waitlist
-						</Link>
 					</div>
 
 					{error ? <div className="notice notice-danger">{error}</div> : null}

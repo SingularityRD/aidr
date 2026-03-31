@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
 import { createCheckout } from "./lemon-client";
 
@@ -47,7 +48,7 @@ export function SeatManager({ userId }: { userId: string }) {
 				.single();
 
 			if (userError) throw userError;
-			setUserEmail(user?.email || "");
+			setUserEmail((user as Database["public"]["Tables"]["users"]["Row"] | null)?.email || "");
 
 			// Get active subscription
 			const { data: subData, error: subError } = await supabase
@@ -60,14 +61,15 @@ export function SeatManager({ userId }: { userId: string }) {
 				.single();
 
 			if (subData) {
+				const typedSub = subData as Database["public"]["Tables"]["subscriptions"]["Row"];
 				setSubscription({
-					id: subData.id,
-					lemonSubscriptionId: subData.lemon_subscription_id,
-					status: subData.status,
-					planType: subData.plan_type,
-					seats: subData.seats || 1,
-					currentPeriodEnd: subData.current_period_end,
-					provider: subData.provider || "lemon_squeezy",
+					id: typedSub.id,
+					lemonSubscriptionId: typedSub.lemon_subscription_id || "",
+					status: typedSub.status,
+					planType: typedSub.plan_type || "monthly",
+					seats: typedSub.seats || 1,
+					currentPeriodEnd: typedSub.current_period_end || undefined,
+					provider: typedSub.provider || "lemon_squeezy",
 				});
 			}
 
@@ -81,12 +83,12 @@ export function SeatManager({ userId }: { userId: string }) {
 			if (seatsError) throw seatsError;
 
 			setSeats(
-				(seatsData || []).map((s) => ({
+				((seatsData as Database["public"]["Tables"]["agent_seats"]["Row"][]) || []).map((s) => ({
 					id: s.id,
 					agentName: s.agent_name,
 					agentType: s.agent_type,
 					status: s.status,
-					lastSeenAt: s.updated_at,
+					lastSeenAt: undefined,
 					createdAt: s.created_at,
 				})),
 			);
@@ -100,7 +102,11 @@ export function SeatManager({ userId }: { userId: string }) {
 
 			if (creditsError) throw creditsError;
 
-			const totalCredits = creditsData?.reduce((sum, c) => sum + (c.credit_months || 0), 0) || 0;
+			const totalCredits =
+				(creditsData as Database["public"]["Tables"]["referral_credits"]["Row"][] | null)?.reduce(
+					(sum, c) => sum + (c.credit_months || 0),
+					0,
+				) || 0;
 			setCredits(totalCredits);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to load data");
@@ -139,7 +145,7 @@ export function SeatManager({ userId }: { userId: string }) {
 	async function pauseSeat(seatId: string) {
 		const { error } = await supabase
 			.from("agent_seats")
-			.update({ status: "paused" })
+			.update({ status: "paused" } as never)
 			.eq("id", seatId);
 
 		if (error) {
@@ -152,7 +158,7 @@ export function SeatManager({ userId }: { userId: string }) {
 	async function resumeSeat(seatId: string) {
 		const { error } = await supabase
 			.from("agent_seats")
-			.update({ status: "active" })
+			.update({ status: "active" } as never)
 			.eq("id", seatId);
 
 		if (error) {
@@ -167,7 +173,7 @@ export function SeatManager({ userId }: { userId: string }) {
 
 		const { error } = await supabase
 			.from("agent_seats")
-			.update({ status: "deleted" })
+			.update({ status: "deleted" } as never)
 			.eq("id", seatId);
 
 		if (error) {

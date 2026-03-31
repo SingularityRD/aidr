@@ -1,8 +1,9 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
 
 // Types
-interface Invite {
+export interface Invite {
 	id: string;
 	referrerId: string;
 	invitedEmail: string;
@@ -12,7 +13,7 @@ interface Invite {
 	convertedAt?: string;
 }
 
-interface ReferralStats {
+export interface ReferralStats {
 	totalInvites: number;
 	converted: number;
 	pending: number;
@@ -75,7 +76,8 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 				.from("referrals")
 				.select("*")
 				.eq("referrer_id", userId)
-				.order("created_at", { ascending: false });
+				.order("created_at", { ascending: false })
+				.returns<Database["public"]["Tables"]["referrals"]["Row"][]>();
 
 			if (sentError) {
 				console.error("Error loading invites:", sentError);
@@ -91,7 +93,7 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 					status: row.status,
 					creditsEarned: row.credits_earned || 0,
 					createdAt: row.created_at,
-					convertedAt: row.converted_at,
+					convertedAt: row.converted_at ?? undefined,
 				}));
 
 				setInvites(formattedInvites);
@@ -166,7 +168,7 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 				invited_email: email,
 				status: "pending",
 				credits_earned: 0,
-			});
+			} as never);
 
 			if (error) throw error;
 
@@ -191,7 +193,8 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 				.from("users")
 				.select("id")
 				.eq("referral_code", referralCode)
-				.maybeSingle();
+				.maybeSingle()
+				.returns<Database["public"]["Tables"]["users"]["Row"]>();
 
 			if (!referrer) {
 				console.warn("Referrer not found for code:", referralCode);
@@ -205,7 +208,7 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 					status: "converted",
 					credits_earned: CREDITS_PER_INVITE,
 					converted_at: new Date().toISOString(),
-				})
+				} as never)
 				.eq("referrer_id", referrer.id)
 				.eq("invited_email", newUserEmail);
 
@@ -246,7 +249,7 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 		// Reset credits earned in invites
 		await supabase
 			.from("referrals")
-			.update({ credits_earned: 0 })
+			.update({ credits_earned: 0 } as never)
 			.eq("referrer_id", userId)
 			.gt("credits_earned", 0);
 
@@ -262,7 +265,8 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 			.from("referrals")
 			.select("*")
 			.eq("referrer_id", userId)
-			.order("created_at", { ascending: false });
+			.order("created_at", { ascending: false })
+			.returns<Database["public"]["Tables"]["referrals"]["Row"][]>();
 
 		if (error) {
 			console.error("Error refreshing invites:", error);
@@ -276,7 +280,7 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 			status: row.status,
 			creditsEarned: row.credits_earned || 0,
 			createdAt: row.created_at,
-			convertedAt: row.converted_at,
+			convertedAt: row.converted_at ?? undefined,
 		}));
 
 		setInvites(formattedInvites);

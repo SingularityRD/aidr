@@ -11,6 +11,8 @@ export default defineConfig({
 		],
 		exclude: ["**/node_modules/**", "**/*.e2e.test.ts", "**/src/__tests__/e2e.test.ts"],
 		environment: "node",
+		reporters: ["verbose", "json"],
+		outputFile: { json: "./coverage/test-results.json" },
 		coverage: {
 			provider: "v8",
 			reporter: ["text", "lcov"],

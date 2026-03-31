@@ -1,8 +1,9 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
 
 // Types
-interface AgentSeat {
+export interface AgentSeat {
 	id: string;
 	userId: string;
 	agentName: string;
@@ -13,7 +14,7 @@ interface AgentSeat {
 	expiresAt?: string;
 }
 
-interface SeatEntitlements {
+export interface SeatEntitlements {
 	includedAgents: number;
 	extraAgents: number;
 	allowedAgents: number;
@@ -21,7 +22,7 @@ interface SeatEntitlements {
 	isPro: boolean;
 }
 
-interface BillingInfo {
+export interface BillingInfo {
 	provider: string;
 	status: string;
 	extraAgents: number;
@@ -100,7 +101,9 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 
 			// Process seats
 			if (!seatsRes.error && seatsRes.data) {
-				const formattedSeats: AgentSeat[] = seatsRes.data.map((row) => ({
+				const formattedSeats: AgentSeat[] = (
+					seatsRes.data as Database["public"]["Tables"]["agent_seats"]["Row"][]
+				).map((row) => ({
 					id: row.id,
 					userId: row.user_id,
 					agentName: row.agent_name,
@@ -108,14 +111,14 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 					status: row.status,
 					tier: row.tier,
 					createdAt: row.created_at,
-					expiresAt: row.expires_at,
+					expiresAt: row.expires_at ?? undefined,
 				}));
 				setSeats(formattedSeats);
 			}
 
 			// Process entitlements
 			if (!usageRes.error && usageRes.data) {
-				const row = usageRes.data;
+				const row = usageRes.data as Database["public"]["Tables"]["seat_usage"]["Row"];
 				setEntitlements({
 					includedAgents: Number(row.included_agents ?? FREE_TIER_AGENT_LIMIT),
 					extraAgents: Number(row.extra_agents ?? 0),
@@ -137,12 +140,12 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 
 			// Process billing
 			if (!billingRes.error && billingRes.data) {
-				const row = billingRes.data;
+				const row = billingRes.data as Database["public"]["Tables"]["subscriptions"]["Row"];
 				setBilling({
 					provider: row.provider,
 					status: row.status,
-					extraAgents: row.extra_agents,
-					currentPeriodEnd: row.current_period_end,
+					extraAgents: row.seats ?? 0,
+					currentPeriodEnd: row.current_period_end ?? undefined,
 					cancelAtPeriodEnd: row.cancel_at_period_end,
 				});
 			}
@@ -209,21 +212,22 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 					agent_type: type,
 					status: "active",
 					tier: isFreeSeat ? "free" : "pro",
-				})
+				} as never)
 				.select()
 				.single();
 
 			if (error) throw error;
 
+			const dataTyped = data as Database["public"]["Tables"]["agent_seats"]["Row"];
 			const newSeat: AgentSeat = {
-				id: data.id,
-				userId: data.user_id,
-				agentName: data.agent_name,
-				agentType: data.agent_type,
-				status: data.status,
-				tier: data.tier,
-				createdAt: data.created_at,
-				expiresAt: data.expires_at,
+				id: dataTyped.id,
+				userId: dataTyped.user_id,
+				agentName: dataTyped.agent_name,
+				agentType: dataTyped.agent_type,
+				status: dataTyped.status,
+				tier: dataTyped.tier,
+				createdAt: dataTyped.created_at,
+				expiresAt: dataTyped.expires_at ?? undefined,
 			};
 
 			setSeats((prev) => [newSeat, ...prev]);
@@ -234,12 +238,15 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 
 	// Update seat
 	const updateSeat = useCallback(async (id: string, updates: Partial<AgentSeat>) => {
-		const dbUpdates: Record<string, unknown> = {};
+		const dbUpdates: Partial<Database["public"]["Tables"]["agent_seats"]["Update"]> = {};
 		if (updates.agentName) dbUpdates.agent_name = updates.agentName;
 		if (updates.status) dbUpdates.status = updates.status;
 		if (updates.tier) dbUpdates.tier = updates.tier;
 
-		const { error } = await supabase.from("agent_seats").update(dbUpdates).eq("id", id);
+		const { error } = await supabase
+			.from("agent_seats")
+			.update(dbUpdates as never)
+			.eq("id", id);
 
 		if (error) throw error;
 
@@ -248,7 +255,10 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 
 	// Delete seat
 	const deleteSeat = useCallback(async (id: string) => {
-		const { error } = await supabase.from("agent_seats").update({ status: "deleted" }).eq("id", id);
+		const { error } = await supabase
+			.from("agent_seats")
+			.update({ status: "deleted" } as never)
+			.eq("id", id);
 
 		if (error) throw error;
 
@@ -332,7 +342,9 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 		]);
 
 		if (!seatsRes.error && seatsRes.data) {
-			const formattedSeats: AgentSeat[] = seatsRes.data.map((row) => ({
+			const formattedSeats: AgentSeat[] = (
+				seatsRes.data as Database["public"]["Tables"]["agent_seats"]["Row"][]
+			).map((row) => ({
 				id: row.id,
 				userId: row.user_id,
 				agentName: row.agent_name,
@@ -340,13 +352,13 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 				status: row.status,
 				tier: row.tier,
 				createdAt: row.created_at,
-				expiresAt: row.expires_at,
+				expiresAt: row.expires_at ?? undefined,
 			}));
 			setSeats(formattedSeats);
 		}
 
 		if (!usageRes.error && usageRes.data) {
-			const row = usageRes.data;
+			const row = usageRes.data as Database["public"]["Tables"]["seat_usage"]["Row"];
 			setEntitlements({
 				includedAgents: Number(row.included_agents ?? FREE_TIER_AGENT_LIMIT),
 				extraAgents: Number(row.extra_agents ?? 0),

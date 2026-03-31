@@ -1,0 +1,35 @@
+{
+  "$schema": "https://unpkg.com/syncpack@13.0.0/dist/schema.json",
+  "dependencyTypes": ["dev", "prod", "peer"],
+  "filter": "^(?!@singularityrd/).*",
+  "semverGroups": [
+    {
+      "range": "^",
+      "dependencyTypes": ["dev", "prod"],
+      "dependencies": ["**"],
+      "packages": ["**"]
+    }
+  ],
+  "versionGroups": [
+    {
+      "dependencies": ["@types/node"],
+      "packages": ["**"],
+      "policy": "sameRange"
+    },
+    {
+      "dependencies": ["typescript"],
+      "packages": ["**"],
+      "policy": "sameRange"
+    },
+    {
+      "dependencies": ["vitest"],
+      "packages": ["**"],
+      "policy": "sameRange"
+    },
+    {
+      "dependencies": ["@sentry/node", "@sentry/browser"],
+      "packages": ["**"],
+      "policy": "sameRange"
+    }
+  ]
+}

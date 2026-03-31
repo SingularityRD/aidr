@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
 
 export type TeamRole = "admin" | "member" | "viewer";
@@ -38,6 +39,20 @@ export interface TeamAuditLog {
 	};
 	timestamp: number;
 	created_at: string;
+}
+
+interface MembershipWithTeam {
+	team_id: string;
+	role: string;
+	teams: {
+		id: string;
+		name: string;
+		github_org: string | null;
+		gitlab_group: string | null;
+		plan: string;
+		created_at: string;
+		updated_at: string;
+	} | null;
 }
 
 interface TeamContextType {
@@ -81,7 +96,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 				const { data: memberships, error: membershipError } = await supabase
 					.from("team_members")
 					.select(
-						"team_id, role, teams:id(name, github_org, gitlab_group, plan, created_at, updated_at)",
+						"team_id, role, teams!inner(id, name, github_org, gitlab_group, plan, created_at, updated_at)",
 					)
 					.order("joined_at", { ascending: false });
 
@@ -89,20 +104,33 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 					throw membershipError;
 				}
 
-				if (memberships && memberships.length > 0) {
-					const mappedTeams: Team[] = memberships.map((m: Record<string, unknown>) => ({
-						id: m.team_id as string,
-						name: (m.teams as Record<string, unknown>)?.name as string,
-						github_org: (m.teams as Record<string, unknown>)?.github_org as string | undefined,
-						gitlab_group: (m.teams as Record<string, unknown>)?.gitlab_group as string | undefined,
-						plan: ((m.teams as Record<string, unknown>)?.plan as string) || "free",
-						created_at: (m.teams as Record<string, unknown>)?.created_at as string,
-						updated_at: (m.teams as Record<string, unknown>)?.updated_at as string,
-					}));
+				const typedMemberships = memberships as MembershipWithTeam[] | null;
 
-					setTeams(mappedTeams);
-					setCurrentTeam(mappedTeams[0]);
-					setCurrentRole(memberships[0].role as TeamRole);
+				if (typedMemberships && typedMemberships.length > 0) {
+					const mappedTeams: Team[] = [];
+					for (const m of typedMemberships) {
+						if (!m.teams) continue;
+						const planValue = m.teams.plan;
+						const validPlan: Team["plan"] =
+							planValue === "free" || planValue === "pro" || planValue === "enterprise"
+								? planValue
+								: "free";
+						mappedTeams.push({
+							id: m.teams.id,
+							name: m.teams.name,
+							github_org: m.teams.github_org ?? undefined,
+							gitlab_group: m.teams.gitlab_group ?? undefined,
+							plan: validPlan,
+							created_at: m.teams.created_at,
+							updated_at: m.teams.updated_at,
+						});
+					}
+
+					if (mappedTeams.length > 0) {
+						setTeams(mappedTeams);
+						setCurrentTeam(mappedTeams[0] ?? null);
+						setCurrentRole(typedMemberships[0]?.role as TeamRole);
+					}
 				}
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Failed to load teams");
@@ -123,24 +151,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 				const { data, error } = await supabase
 					.from("team_members")
 					.select(
-						"id, user_id, role, invited_by, joined_at, users:user_id(email, raw_user_meta_data)",
+						"id, user_id, role, invited_by, joined_at, users!inner(email, raw_user_meta_data)",
 					)
 					.eq("team_id", currentTeam.id);
 
 				if (error) throw error;
 
 				if (data) {
-					const mappedMembers: TeamMember[] = data.map((m: Record<string, unknown>) => {
-						const userData = m.users as Record<string, unknown> | null;
+					const mappedMembers: TeamMember[] = data.map((m) => {
+						const mData = m as Record<string, unknown>;
+						const userData = mData.users as Record<string, unknown> | null;
 						const metaData = userData?.raw_user_meta_data as Record<string, unknown> | null;
 						return {
-							id: m.id as string,
-							user_id: m.user_id as string,
-							role: m.role as TeamRole,
+							id: mData.id as string,
+							user_id: mData.user_id as string,
+							role: mData.role as TeamRole,
 							email: (userData?.email as string) || "",
 							avatar_url: metaData?.avatar_url as string | undefined,
-							invited_by: m.invited_by as string | undefined,
-							joined_at: m.joined_at as string,
+							invited_by: mData.invited_by as string | undefined,
+							joined_at: mData.joined_at as string,
 						};
 					});
 					setMembers(mappedMembers);
@@ -170,7 +199,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 				.limit(1000);
 
 			if (error) throw error;
-			setAuditLogs(data || []);
+			setAuditLogs((data as TeamAuditLog[]) || []);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to load audit logs");
 		}
@@ -184,25 +213,40 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 			if (!user) throw new Error("Not authenticated");
 
 			// Create team
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const { data: team, error: teamError } = await supabase
 				.from("teams")
-				.insert({ name, plan: "free" })
+				.insert({ name, plan: "free" } as any)
 				.select()
 				.single();
 
 			if (teamError) throw teamError;
+			if (!team) throw new Error("Failed to create team");
+
+			const typedTeam = team as Database["public"]["Tables"]["teams"]["Row"];
 
 			// Add creator as admin
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const { error: memberError } = await supabase.from("team_members").insert({
-				team_id: team.id,
+				team_id: typedTeam.id,
 				user_id: user.id,
 				role: "admin",
-			});
+			} as any);
 
 			if (memberError) throw memberError;
 
-			setTeams((prev) => [team as Team, ...prev]);
-			setCurrentTeam(team as Team);
+			const newTeam: Team = {
+				id: typedTeam.id,
+				name: typedTeam.name,
+				github_org: typedTeam.github_org ?? undefined,
+				gitlab_group: typedTeam.gitlab_group ?? undefined,
+				plan: typedTeam.plan,
+				created_at: typedTeam.created_at,
+				updated_at: typedTeam.updated_at,
+			};
+
+			setTeams((prev) => [newTeam, ...prev]);
+			setCurrentTeam(newTeam);
 			setCurrentRole("admin");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to create team");
@@ -248,8 +292,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 		if (!currentTeam) throw new Error("No team selected");
 
 		try {
-			const { error } = await supabase
-				.from("team_members")
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const query = supabase.from("team_members") as any;
+			const { error } = await query
 				.update({ role })
 				.eq("team_id", currentTeam.id)
 				.eq("user_id", userId);
@@ -273,7 +318,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 				.eq("team_id", teamId)
 				.single()
 				.then(({ data }) => {
-					if (data) setCurrentRole(data.role as TeamRole);
+					if (data) {
+						const roleData = data as { role: string };
+						setCurrentRole(roleData.role as TeamRole);
+					}
 				});
 		}
 	}

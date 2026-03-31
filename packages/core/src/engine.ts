@@ -90,8 +90,18 @@ export class DecisionEngine {
 		const maxConfidence = Math.max(...signals.map((s) => s.confidence));
 
 		let decision = top.decision;
-		if (decision === "deny" && maxConfidence < this.threshold) {
-			decision = "ask";
+		// Apply confidence threshold consistently across all decisions
+		// Low confidence signals should be escalated to "ask" regardless of original decision
+		if (maxConfidence < this.threshold) {
+			// Downgrade deny -> ask for low confidence
+			if (decision === "deny") {
+				decision = "ask";
+			}
+			// Also escalate allow -> ask if there are any signals (even low confidence)
+			// This ensures suspicious activity gets reviewed even when confidence is borderline
+			if (decision === "allow" && signals.length > 0) {
+				decision = "ask";
+			}
 		}
 
 		return {

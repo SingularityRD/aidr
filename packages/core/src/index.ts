@@ -153,7 +153,9 @@ export type {
 export { createIntelReputationProvider } from "./intel/provider.js";
 export type { DomainRiskEntry, IntelMerged } from "./intel/types.js";
 // Metrics
-export { getMetricsCollector, MetricsCollector } from "./metrics.js";
+export { getMetricsCollector, MetricsCollector, metrics } from "./metrics.js";
+// Logger
+export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.js";
 export type {
 	EmbeddingModelConfig,
 	ThreatEmbedding,
@@ -168,6 +170,15 @@ export { PackageChecker } from "./package-checker.js";
 export type { ParsedPackage } from "./package-extractor.js";
 // Package extractor
 export { extractPackagesFromCommand, extractPackagesFromManifest } from "./package-extractor.js";
+// PII Detector (privacy protection)
+export {
+	detectPII,
+	maskPII,
+	redactPII,
+	validateNoPII,
+	type PIIFinding,
+	type PIIReport,
+} from "./pii-detector.js";
 // Plugin scan cache
 export {
 	cacheKey,

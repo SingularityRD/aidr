@@ -1,11 +1,12 @@
-import { createChildLogger, getLogger, initSentry } from "@singularityrd/aidr-core";
+import { createChildLogger, getLogger } from "@singularityrd/aidr-core";
 import type * as vscode from "vscode";
 import * as cursorHookInstaller from "./cursor_hook_installer.js";
 import { activateManagedHooksExtension } from "./shared_extension.js";
+import { initSentry } from "./sentry.js";
 
 export function activate(context: vscode.ExtensionContext): void {
 	// Initialize Sentry
-	initSentry({ name: "aidr-extension-cursor" });
+	initSentry();
 
 	const logger = createChildLogger(getLogger(), "cursor-extension");
 	logger.info("Activating Singularity AIDR Cursor extension");

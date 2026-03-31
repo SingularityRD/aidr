@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+import { initSentry } from "./sentry.js";
+
+// Initialize Sentry at the top of the CLI entry point
+initSentry();
+
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -507,7 +512,9 @@ program
 		// Check 3: Node.js version
 		console.log("\n[3/5] Checking Node.js version...");
 		const nodeVersion = process.version;
-		const majorVersion = parseInt(nodeVersion.slice(1).split(".")[0], 10);
+		const versionParts = nodeVersion.slice(1).split(".");
+		const majorVersionStr = versionParts[0] ?? "0";
+		const majorVersion = parseInt(majorVersionStr, 10);
 		if (majorVersion >= 18) {
 			console.log(`  ✓ Node.js version ${nodeVersion} (>= 18)`);
 		} else {

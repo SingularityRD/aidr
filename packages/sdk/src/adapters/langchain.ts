@@ -5,7 +5,8 @@
  * with security analysis through AIDR's evaluation pipeline.
  */
 
-import { BaseTool } from "@langchain/core/tools";
+import type { RunnableConfig } from "@langchain/core/runnables";
+import { Tool } from "@langchain/core/tools";
 import type { Decision, Verdict } from "@singularityrd/aidr-core";
 
 /**
@@ -79,7 +80,7 @@ export interface AIDRClient {
 }
 
 /**
- * Wrapper class that adds AIDR security analysis to any LangChain BaseTool
+ * Wrapper class that adds AIDR security analysis to any LangChain Tool
  *
  * This class intercepts tool calls, performs security analysis using AIDR's
  * evaluation pipeline, and either allows, denies, or asks for approval based
@@ -92,17 +93,12 @@ export interface AIDRClient {
  * const result = await secureBash.invoke("ls -la");
  * ```
  */
-export class AIDRTool<T extends BaseTool> extends BaseTool {
+export class AIDRTool<T extends Tool> extends Tool {
 	/** Tool name - delegates to inner tool */
 	name: string;
 
 	/** Tool description - delegates to inner tool */
 	description: string;
-
-	/**
-	 * @deprecated Use .invoke() instead. Will be removed in LangChain 0.3.
-	 */
-	lc_namespace: string[] = ["aidr", "tools"];
 
 	constructor(
 		private innerTool: T,
@@ -115,56 +111,12 @@ export class AIDRTool<T extends BaseTool> extends BaseTool {
 	}
 
 	/**
-	 * Primary tool execution method with AIDR security integration.
-	 *
-	 * This method:
-	 * 1. Calls AIDR client to evaluate security
-	 * 2. Handles the verdict (allow/deny/ask)
-	 * 3. Executes the inner tool if allowed
-	 *
-	 * @param args - Tool arguments
-	 * @returns Tool result string
-	 * @throws AIDRSecurityError if verdict is deny and throwOnDeny is true
+	 * Required abstract method from Tool base class.
+	 * Delegates to invoke and returns just the output string.
 	 */
-	async _call(args: unknown): Promise<string> {
-		// Normalize input to object format
-		const normalizedArgs =
-			typeof args === "string" ? { input: args } : (args as Record<string, unknown>);
-
-		// Get verdict from AIDR client
-		const verdict = await this.aidrClient.check({
-			tool: this.innerTool.name,
-			input: normalizedArgs,
-		});
-
-		// Handle deny verdict
-		if (verdict.decision === "deny") {
-			this.options.onDeny?.(verdict, args);
-			const errorMessage = `Security violation: ${verdict.reasons.join("; ")}`;
-
-			if (this.options.throwOnDeny !== false) {
-				throw new AIDRSecurityError(errorMessage, verdict, this.innerTool.name, args);
-			}
-
-			// Return error as string if not throwing
-			return `[BLOCKED] ${errorMessage}`;
-		}
-
-		// Handle ask verdict - prompt user if handler provided
-		if (verdict.decision === "ask") {
-			const approved = await this.options.onAsk?.(verdict, args);
-			if (!approved) {
-				throw new AIDRSecurityError(
-					"AIDR: User denied permission",
-					verdict,
-					this.innerTool.name,
-					args,
-				);
-			}
-		}
-
-		// Execute the wrapped tool
-		return this.innerTool._call(args);
+	async _call(input: string): Promise<string> {
+		const result = await this.invoke(input);
+		return result.output;
 	}
 
 	/**
@@ -173,10 +125,10 @@ export class AIDRTool<T extends BaseTool> extends BaseTool {
 	 * Returns a structured result with both tool output and security metadata.
 	 *
 	 * @param input - Tool input (string for simple tools, object for structured)
-	 * @param options - Optional configuration
+	 * @param config - Optional RunnableConfig
 	 * @returns Promise resolving to AIDRToolResult
 	 */
-	async invoke(input: unknown, options?: Record<string, unknown>): Promise<AIDRToolResult> {
+	async invoke(input: unknown, config?: RunnableConfig): Promise<AIDRToolResult> {
 		// Normalize input to object format
 		const args = typeof input === "string" ? { input } : (input as Record<string, unknown>);
 
@@ -233,7 +185,7 @@ export class AIDRTool<T extends BaseTool> extends BaseTool {
 		}
 
 		// Execute the wrapped tool
-		const result = await this.innerTool.invoke(input, options);
+		const result = await this.innerTool.invoke(input, config);
 
 		// Handle different result types
 		let output: string;
@@ -295,7 +247,7 @@ export class AIDRTool<T extends BaseTool> extends BaseTool {
  * const secureShell = withAIDR(shellTool, aidrClient);
  * ```
  */
-export function withAIDR<T extends BaseTool>(
+export function withAIDR<T extends Tool>(
 	tool: T,
 	client: AIDRClient,
 	options?: AIDRToolOptions,
@@ -318,7 +270,7 @@ export function withAIDR<T extends BaseTool>(
  * const agent = new Agent({ tools: secureTools, llm });
  * ```
  */
-export function wrapToolsWithAIDR<T extends BaseTool>(
+export function wrapToolsWithAIDR<T extends Tool>(
 	tools: T[],
 	client: AIDRClient,
 	options?: AIDRToolOptions,
