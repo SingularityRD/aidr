@@ -126,8 +126,8 @@ importers:
         version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@22.19.11)(vite@7.3.1(@types/node@22.19.11)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.16.9)(yaml@2.8.3))
     optionalDependencies:
       koffi:
-        specifier: ^2.9.0
-        version: 2.15.1
+        specifier: ^2.15.2
+        version: 2.15.2
 
   packages/cli:
     dependencies:
@@ -207,8 +207,8 @@ importers:
         version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@22.19.11)(vite@7.3.1(@types/node@22.19.11)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.16.9)(yaml@2.8.3))
     optionalDependencies:
       koffi:
-        specifier: ^2.9.0
-        version: 2.15.1
+        specifier: ^2.15.2
+        version: 2.15.2
 
   packages/dashboard:
     dependencies:
@@ -312,8 +312,8 @@ importers:
         version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@22.19.11)(vite@7.3.1(@types/node@22.19.11)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.16.9)(yaml@2.8.3))
     optionalDependencies:
       koffi:
-        specifier: ^2.9.0
-        version: 2.15.1
+        specifier: ^2.15.2
+        version: 2.15.2
 
   packages/opencode:
     dependencies:
@@ -4837,8 +4837,8 @@ packages:
       '@types/node': '>=18'
       typescript: '>=5.0.4 <7'
 
-  koffi@2.15.1:
-    resolution: {integrity: sha512-mnc0C0crx/xMSljb5s9QbnLrlFHprioFO1hkXyuSuO/QtbpLDa0l/uM21944UfQunMKmp3/r789DTDxVyyH6aA==}
+  koffi@2.15.2:
+    resolution: {integrity: sha512-r9tjJLVRSOhCRWdVyQlF3/Ugzeg13jlzS4czS82MAgLff4W+BcYOW7g8Y62t9O5JYjYOLAjAovAZDNlDfZNu+g==}
 
   langsmith@0.3.87:
     resolution: {integrity: sha512-XXR1+9INH8YX96FKWc5tie0QixWz6tOqAsAKfcJyPkE0xPep+NDz0IQLR32q4bn10QK3LqD2HN6T3n6z1YLW7Q==}
@@ -11568,7 +11568,7 @@ snapshots:
       - '@emnapi/core'
       - '@emnapi/runtime'
 
-  koffi@2.15.1:
+  koffi@2.15.2:
     optional: true
 
   langsmith@0.3.87(@opentelemetry/api@1.9.1)(@opentelemetry/sdk-trace-base@2.6.1(@opentelemetry/api@1.9.1)):
