@@ -100,7 +100,7 @@
     "package:vsix": "npm run package:cursor:vsix && npm run package:vscode:vsix"
   },
   "devDependencies": {
-    "@sentry/browser": "^9.0.0",
+    "@sentry/browser": "^10.47.0",
     "@singularityrd/aidr-core": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.97.0",

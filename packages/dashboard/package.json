@@ -10,7 +10,7 @@
     "clean": "node ../../scripts/rmrf.mjs dist .vite"
   },
   "dependencies": {
-    "@sentry/browser": "^9.0.0",
+    "@sentry/browser": "^10.47.0",
     "@sentry/react": "^9.0.0",
     "@supabase/supabase-js": "^2.56.0",
     "react": "^19.1.0",
