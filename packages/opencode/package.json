@@ -32,7 +32,7 @@
   "dependencies": {
     "@singularityrd/aidr-core": "workspace:*",
     "pino": "^9.6.0",
-    "@sentry/node": "^9.0.0"
+    "@sentry/node": "^10.47.0"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.2.10",
