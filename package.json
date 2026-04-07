@@ -51,7 +51,7 @@
 		"@changesets/cli": "^2.29.8",
 		"@vitest/coverage-v8": "^4.0.0",
 		"jscpd": "^4.0.5",
-		"knip": "^5.46.0",
+		"knip": "^6.3.0",
 		"typescript": "^5.9.0",
 		"vitest": "^4.1.2",
 		"vitest-teamcity-reporter": "^0.4.1"
