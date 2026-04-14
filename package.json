@@ -47,10 +47,10 @@
 		"duplicates": "jscpd --threshold 10"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.10",
+		"@biomejs/biome": "^2.4.11",
 		"@changesets/cli": "^2.29.8",
 		"@vitest/coverage-v8": "^4.0.0",
-		"jscpd": "^4.0.5",
+		"jscpd": "^4.0.9",
 		"knip": "^5.46.0",
 		"typescript": "^5.9.0",
 		"vitest": "^4.1.2",
