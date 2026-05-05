@@ -22,7 +22,7 @@
     "prepack": "node ../../scripts/check-workspace-refs.mjs"
   },
   "dependencies": {
-    "yaml": "^2.8.3",
+    "yaml": "^2.8.4",
     "zod": "^3.24.0",
     "pino": "^9.6.0",
     "@sentry/node": "^9.0.0",
