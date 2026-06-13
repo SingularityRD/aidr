@@ -130,6 +130,10 @@ export class ResponseConfigurator {
 	 * Parse and validate configuration data.
 	 */
 	private parseConfig(data: ResponseConfigFile): void {
+		// Reset previous state
+		this.rules = [];
+		this.severityOverrides = undefined;
+
 		// Set default mode if provided
 		if (data.defaultMode && this.isValidResponseMode(data.defaultMode)) {
 			this.defaultMode = data.defaultMode;

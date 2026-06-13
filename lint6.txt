@@ -1,0 +1,410 @@
+
+> @ lint C:\Users\an─▒l\Desktop\AIDR PROJECT\aidr
+> biome check .
+
+biome.json:2:13 deserialize ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i The configuration schema version does not match the CLI version 2.4.10
+  
+    1 Ôöé {
+  > 2 Ôöé 	"$schema": "https://biomejs.dev/schemas/2.3.14/schema.json",
+      Ôöé 	           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    3 Ôöé 	"vcs": {
+    4 Ôöé 		"enabled": true,
+  
+  i   Expected:                     2.4.10
+      Found:                        2.3.14
+  
+  
+  i Run the command biome migrate to migrate the configuration file.
+  
+
+packages\cli\src\utils\config-manager.ts:1:68 lint/style/useNodejsImportProtocol  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i A Node.js builtin module should be imported with the node: protocol.
+  
+  > 1 Ôöé import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+      Ôöé                                                                    ^^^^
+    2 Ôöé import { homedir } from "os";
+    3 Ôöé import { join } from "path";
+  
+  i Using the node: protocol is more explicit and signals that the imported module belongs to Node.js.
+  
+  i Unsafe fix: Add the node: protocol.
+  
+     1    Ôöé - import┬À{┬ÀexistsSync,┬ÀmkdirSync,┬ÀreadFileSync,┬ÀwriteFileSync┬À}┬Àfrom┬À"fs";
+        1 Ôöé + import┬À{┬ÀexistsSync,┬ÀmkdirSync,┬ÀreadFileSync,┬ÀwriteFileSync┬À}┬Àfrom┬À"node:fs";
+     2  2 Ôöé   import { homedir } from "os";
+     3  3 Ôöé   import { join } from "path";
+  
+
+packages\cli\src\utils\config-manager.ts:2:25 lint/style/useNodejsImportProtocol  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i A Node.js builtin module should be imported with the node: protocol.
+  
+    1 Ôöé import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+  > 2 Ôöé import { homedir } from "os";
+      Ôöé                         ^^^^
+    3 Ôöé import { join } from "path";
+    4 Ôöé import { generateApiKey } from "./crypto.js";
+  
+  i Using the node: protocol is more explicit and signals that the imported module belongs to Node.js.
+  
+  i Unsafe fix: Add the node: protocol.
+  
+     1  1 Ôöé   import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+     2    Ôöé - import┬À{┬Àhomedir┬À}┬Àfrom┬À"os";
+        2 Ôöé + import┬À{┬Àhomedir┬À}┬Àfrom┬À"node:os";
+     3  3 Ôöé   import { join } from "path";
+     4  4 Ôöé   import { generateApiKey } from "./crypto.js";
+  
+
+packages\cli\src\utils\config-manager.ts:3:22 lint/style/useNodejsImportProtocol  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i A Node.js builtin module should be imported with the node: protocol.
+  
+    1 Ôöé import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+    2 Ôöé import { homedir } from "os";
+  > 3 Ôöé import { join } from "path";
+      Ôöé                      ^^^^^^
+    4 Ôöé import { generateApiKey } from "./crypto.js";
+    5 Ôöé 
+  
+  i Using the node: protocol is more explicit and signals that the imported module belongs to Node.js.
+  
+  i Unsafe fix: Add the node: protocol.
+  
+     1  1 Ôöé   import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+     2  2 Ôöé   import { homedir } from "os";
+     3    Ôöé - import┬À{┬Àjoin┬À}┬Àfrom┬À"path";
+        3 Ôöé + import┬À{┬Àjoin┬À}┬Àfrom┬À"node:path";
+     4  4 Ôöé   import { generateApiKey } from "./crypto.js";
+     5  5 Ôöé   
+  
+
+packages\cli\src\utils\crypto.ts:1:28 lint/style/useNodejsImportProtocol  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i A Node.js builtin module should be imported with the node: protocol.
+  
+  > 1 Ôöé import { createHash } from "crypto";
+      Ôöé                            ^^^^^^^^
+    2 Ôöé 
+    3 Ôöé export function generateApiKey(): string {
+  
+  i Using the node: protocol is more explicit and signals that the imported module belongs to Node.js.
+  
+  i Unsafe fix: Add the node: protocol.
+  
+     1    Ôöé - import┬À{┬ÀcreateHash┬À}┬Àfrom┬À"crypto";
+        1 Ôöé + import┬À{┬ÀcreateHash┬À}┬Àfrom┬À"node:crypto";
+     2  2 Ôöé   
+     3  3 Ôöé   export function generateApiKey(): string {
+  
+
+packages\cli\src\utils\detect-env.ts:1:26 lint/style/useNodejsImportProtocol  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i A Node.js builtin module should be imported with the node: protocol.
+  
+  > 1 Ôöé import { execSync } from "child_process";
+      Ôöé                          ^^^^^^^^^^^^^^^
+    2 Ôöé import { accessSync, constants } from "fs";
+    3 Ôöé import { cwd } from "process";
+  
+  i Using the node: protocol is more explicit and signals that the imported module belongs to Node.js.
+  
+  i Unsafe fix: Add the node: protocol.
+  
+     1    Ôöé - import┬À{┬ÀexecSync┬À}┬Àfrom┬À"child_process";
+        1 Ôöé + import┬À{┬ÀexecSync┬À}┬Àfrom┬À"node:child_process";
+     2  2 Ôöé   import { accessSync, constants } from "fs";
+     3  3 Ôöé   import { cwd } from "process";
+  
+
+packages\cli\src\utils\detect-env.ts:2:39 lint/style/useNodejsImportProtocol  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i A Node.js builtin module should be imported with the node: protocol.
+  
+    1 Ôöé import { execSync } from "child_process";
+  > 2 Ôöé import { accessSync, constants } from "fs";
+      Ôöé                                       ^^^^
+    3 Ôöé import { cwd } from "process";
+    4 Ôöé import type { Environment } from "./config-manager.js";
+  
+  i Using the node: protocol is more explicit and signals that the imported module belongs to Node.js.
+  
+  i Unsafe fix: Add the node: protocol.
+  
+     1  1 Ôöé   import { execSync } from "child_process";
+     2    Ôöé - import┬À{┬ÀaccessSync,┬Àconstants┬À}┬Àfrom┬À"fs";
+        2 Ôöé + import┬À{┬ÀaccessSync,┬Àconstants┬À}┬Àfrom┬À"node:fs";
+     3  3 Ôöé   import { cwd } from "process";
+     4  4 Ôöé   import type { Environment } from "./config-manager.js";
+  
+
+packages\cli\src\utils\detect-env.ts:3:21 lint/style/useNodejsImportProtocol  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i A Node.js builtin module should be imported with the node: protocol.
+  
+    1 Ôöé import { execSync } from "child_process";
+    2 Ôöé import { accessSync, constants } from "fs";
+  > 3 Ôöé import { cwd } from "process";
+      Ôöé                     ^^^^^^^^^
+    4 Ôöé import type { Environment } from "./config-manager.js";
+    5 Ôöé 
+  
+  i Using the node: protocol is more explicit and signals that the imported module belongs to Node.js.
+  
+  i Unsafe fix: Add the node: protocol.
+  
+     1  1 Ôöé   import { execSync } from "child_process";
+     2  2 Ôöé   import { accessSync, constants } from "fs";
+     3    Ôöé - import┬À{┬Àcwd┬À}┬Àfrom┬À"process";
+        3 Ôöé + import┬À{┬Àcwd┬À}┬Àfrom┬À"node:process";
+     4  4 Ôöé   import type { Environment } from "./config-manager.js";
+     5  5 Ôöé   
+  
+
+packages\cli\src\utils\install-hooks.ts:1:68 lint/style/useNodejsImportProtocol  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i A Node.js builtin module should be imported with the node: protocol.
+  
+  > 1 Ôöé import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
+      Ôöé                                                                    ^^^^
+    2 Ôöé import { homedir } from "os";
+    3 Ôöé import { join } from "path";
+  
+  i Using the node: protocol is more explicit and signals that the imported module belongs to Node.js.
+  
+  i Unsafe fix: Add the node: protocol.
+  
+      1     Ôöé - import┬À{┬ÀcopyFileSync,┬ÀexistsSync,┬ÀmkdirSync,┬ÀwriteFileSync┬À}┬Àfrom┬À"fs";
+          1 Ôöé + import┬À{┬ÀcopyFileSync,┬ÀexistsSync,┬ÀmkdirSync,┬ÀwriteFileSync┬À}┬Àfrom┬À"node:fs";
+      2   2 Ôöé   import { homedir } from "os";
+      3   3 Ôöé   import { join } from "path";
+  
+
+packages\cli\src\utils\test-protection.ts:1:23 lint/style/useNodejsImportProtocol  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i A Node.js builtin module should be imported with the node: protocol.
+  
+  > 1 Ôöé import { spawn } from "child_process";
+      Ôöé                       ^^^^^^^^^^^^^^^
+    2 Ôöé import { generateApiKey, hashToolCall } from "./crypto.js";
+    3 Ôöé 
+  
+  i Using the node: protocol is more explicit and signals that the imported module belongs to Node.js.
+  
+  i Unsafe fix: Add the node: protocol.
+  
+     1    Ôöé - import┬À{┬Àspawn┬À}┬Àfrom┬À"child_process";
+        1 Ôöé + import┬À{┬Àspawn┬À}┬Àfrom┬À"node:child_process";
+     2  2 Ôöé   import { generateApiKey, hashToolCall } from "./crypto.js";
+     3  3 Ôöé   
+  
+
+packages\cli\src\utils\test-protection.ts:25:23 lint/correctness/useParseIntRadix  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  i Missing radix parameter
+  
+    24 Ôöé 	const nodeVersion = process.version;
+  > 25 Ôöé 	const majorVersion = parseInt(nodeVersion.slice(1).split(".")[0]);
+       Ôöé 	                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    26 Ôöé 	if (majorVersion < 18) {
+    27 Ôöé 		throw new Error(`Node.js ${nodeVersion} is too old. Need >= 18.0.0`);
+  
+  i Add a non-fractional number between 2 and 36
+  
+  i Unsafe fix: Add a radix of 10
+  
+    25 Ôöé ÔåÆ const┬ÀmajorVersion┬À=┬ÀparseInt(nodeVersion.slice(1).split(".")[0],┬À10);
+       Ôöé                                                                   ++++  
+
+packages\claude-code\src\health.ts:113:42 lint/performance/noAccumulatingSpread ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ! Avoid the use of spread (`...`) syntax on accumulators.
+  
+    111 Ôöé 				timestamp,
+    112 Ôöé 				version,
+  > 113 Ôöé 				checks: checks.reduce((acc, c) => ({ ...acc, [c.name]: c.status }), {}),
+        Ôöé 				                                     ^^^^^^
+    114 Ôöé 				checkDetails: checks.map((c) => ({
+    115 Ôöé 					name: c.name,
+  
+  i Spread syntax should be avoided on accumulators (like those in `.reduce`) because it causes a time complexity of `O(n^2)`.
+  
+  i Consider methods such as .splice or .push instead.
+  
+
+packages\cli\src\commands\config.ts:61:15 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ! Forbidden non-null assertion.
+  
+    59 Ôöé function setNestedValue(obj: Config, path: string, value: string): void {
+    60 Ôöé 	const keys = path.split(".");
+  > 61 Ôöé 	const last = keys.pop()!;
+       Ôöé 	             ^^^^^^^^^^^
+    62 Ôöé 	let current: Record<string, unknown> = obj as unknown as Record<string, unknown>;
+    63 Ôöé 
+  
+
+packages\sdk\src\team-dashboard.ts:61:3 lint/correctness/noUnusedFunctionParameters  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ! This parameter is unused.
+  
+    60 Ôöé 	async inviteMember(
+  > 61 Ôöé 		teamId: string,
+       Ôöé 		^^^^^^
+    62 Ôöé 		email: string,
+    63 Ôöé 		role: "admin" | "member",
+  
+  i Unused parameters might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: If this is intentional, prepend teamId with an underscore.
+  
+     59  59 Ôöé   
+     60  60 Ôöé     async inviteMember(
+     61     Ôöé - ÔåÆ ÔåÆ teamId:┬Àstring,
+         61 Ôöé + ÔåÆ ÔåÆ _teamId:┬Àstring,
+     62  62 Ôöé       email: string,
+     63  63 Ôöé       role: "admin" | "member",
+  
+
+packages\sdk\src\team-dashboard.ts:62:3 lint/correctness/noUnusedFunctionParameters  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ! This parameter is unused.
+  
+    60 Ôöé 	async inviteMember(
+    61 Ôöé 		teamId: string,
+  > 62 Ôöé 		email: string,
+       Ôöé 		^^^^^
+    63 Ôöé 		role: "admin" | "member",
+    64 Ôöé 	): Promise<{ inviteId: string; inviteUrl: string }> {
+  
+  i Unused parameters might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: If this is intentional, prepend email with an underscore.
+  
+     60  60 Ôöé     async inviteMember(
+     61  61 Ôöé       teamId: string,
+     62     Ôöé - ÔåÆ ÔåÆ email:┬Àstring,
+         62 Ôöé + ÔåÆ ÔåÆ _email:┬Àstring,
+     63  63 Ôöé       role: "admin" | "member",
+     64  64 Ôöé     ): Promise<{ inviteId: string; inviteUrl: string }> {
+  
+
+packages\sdk\src\team-dashboard.ts:63:3 lint/correctness/noUnusedFunctionParameters  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ! This parameter is unused.
+  
+    61 Ôöé 		teamId: string,
+    62 Ôöé 		email: string,
+  > 63 Ôöé 		role: "admin" | "member",
+       Ôöé 		^^^^
+    64 Ôöé 	): Promise<{ inviteId: string; inviteUrl: string }> {
+    65 Ôöé 		// Generate unique invite ID
+  
+  i Unused parameters might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: If this is intentional, prepend role with an underscore.
+  
+     61  61 Ôöé       teamId: string,
+     62  62 Ôöé       email: string,
+     63     Ôöé - ÔåÆ ÔåÆ role:┬À"admin"┬À|┬À"member",
+         63 Ôöé + ÔåÆ ÔåÆ _role:┬À"admin"┬À|┬À"member",
+     64  64 Ôöé     ): Promise<{ inviteId: string; inviteUrl: string }> {
+     65  65 Ôöé       // Generate unique invite ID
+  
+
+packages\sdk\src\team-dashboard.ts:93:22 lint/correctness/noUnusedFunctionParameters  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ! This parameter is unused.
+  
+    91 Ôöé 	}
+    92 Ôöé 
+  > 93 Ôöé 	async getUsageStats(teamId: string): Promise<{
+       Ôöé 	                    ^^^^^^
+    94 Ôöé 		checksToday: number;
+    95 Ôöé 		checksThisMonth: number;
+  
+  i Unused parameters might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: If this is intentional, prepend teamId with an underscore.
+  
+     91  91 Ôöé     }
+     92  92 Ôöé   
+     93     Ôöé - ÔåÆ async┬ÀgetUsageStats(teamId:┬Àstring):┬ÀPromise<{
+         93 Ôöé + ÔåÆ async┬ÀgetUsageStats(_teamId:┬Àstring):┬ÀPromise<{
+     94  94 Ôöé       checksToday: number;
+     95  95 Ôöé       checksThisMonth: number;
+  
+
+packages\claude-code\src\health.ts:25:16 lint/complexity/noExcessiveCognitiveComplexity ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ├ù Excessive complexity of 32 detected (max: 15).
+  
+    23 Ôöé const VALID_CHECKS = ["core", "cache", "threat_rules", "api"];
+    24 Ôöé 
+  > 25 Ôöé async function main(): Promise<void> {
+       Ôöé                ^^^^
+    26 Ôöé 	const startTime = Date.now();
+    27 Ôöé 
+  
+  i Please refactor this function to reduce its complexity score from 32 to the max allowed complexity 15.
+  
+
+packages\claude-code\src\health.ts:14:2 lint/correctness/noUnusedImports  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ├ù Several of these imports are unused.
+  
+    12 Ôöé 	type HealthStatus,
+    13 Ôöé 	runHealthChecks,
+  > 14 Ôöé 	toHealthResult,
+       Ôöé 	^^^^^^^^^^^^^^
+    15 Ôöé } from "@singularityrd/aidr-core";
+    16 Ôöé 
+  
+  i Unused imports might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: Remove the unused imports.
+  
+     12  12 Ôöé     type HealthStatus,
+     13  13 Ôöé     runHealthChecks,
+     14     Ôöé - ÔåÆ toHealthResult,
+     15  14 Ôöé   } from "@singularityrd/aidr-core";
+     16  15 Ôöé   
+  
+
+packages\claude-code\src\session-start.ts:15:2 lint/correctness/noUnusedImports  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ├ù Several of these imports are unused.
+  
+    13 Ôöé 	initSentry,
+    14 Ôöé 	type Logger,
+  > 15 Ôöé 	metrics,
+       Ôöé 	^^^^^^^
+    16 Ôöé 	runPluginScan,
+    17 Ôöé } from "@singularityrd/aidr-core";
+  
+  i Unused imports might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: Remove the unused imports.
+  
+    13 13 Ôöé     initSentry,
+    14 14 Ôöé     type Logger,
+    15    Ôöé - ÔåÆ metrics,
+    16 15 Ôöé     runPluginScan,
+    17 16 Ôöé   } from "@singularityrd/aidr-core";
+  
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 338.
+Checked 308 files in 287ms. No fixes applied.
+Found 211 errors.
+Found 121 warnings.
+Found 26 infos.
+check ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ├ù Some errors were emitted while running checks.
+  
+
+ÔÇëELIFECYCLEÔÇë Command failed with exit code 1.

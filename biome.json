@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.3.14/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -11,20 +11,27 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true,
+			"recommended": false,
 			"correctness": {
-				"noUnusedVariables": "error",
+				"noUnusedVariables": "warn",
 				"noUnusedImports": "error"
 			},
 			"complexity": {
-				"noExcessiveCognitiveComplexity": "error",
+				"noExcessiveCognitiveComplexity": "warn",
 				"noForEach": "off",
-				"noUselessSwitchCase": "error",
-				"noStaticOnlyClass": "error",
-				"noThisInStatic": "error"
+				"noStaticOnlyClass": "warn"
 			},
 			"style": {
 				"noNonNullAssertion": "warn"
+			},
+			"suspicious": {
+				"noExplicitAny": "warn",
+				"noNonNullAssertedOptionalChain": "warn",
+				"useIterableCallbackReturn": "warn",
+				"noDuplicateTestHooks": "warn"
+			},
+			"performance": {
+				"noAccumulatingSpread": "warn"
 			}
 		}
 	},

@@ -1,0 +1,255 @@
+# AIDR LLM-Specific Threat Definitions
+# Detects prompt injection, jailbreak, system prompt extraction, and agent-specific attacks
+# License: DRL-1.1 (see threats/LICENSE)
+# Schema: id, category, severity, confidence, action, pattern, match_on, title
+
+# ── Direct Prompt Injection Patterns ──────────────────────────────────────
+
+- id: "LLM-INJ-001"
+  category: prompt_injection
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "ignore (all |your |previous |above )?(instructions?|system (prompt|message)|guidelines?|rules?|constraints?)"
+  match_on: content
+  title: "Direct prompt injection: instruction override attempt"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-INJ-002"
+  category: prompt_injection
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "(you are now|act as|pretend (you are|to be)|roleplay as|you are no longer|forget (everything|your))"
+  match_on: content
+  title: "Jailbreak attempt: persona override / role-playing"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-INJ-003"
+  category: prompt_injection
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "DAN\\b|\\b(developer mode|jailbreak|unfiltered|uncensored)\\b"
+  match_on: content
+  title: "Known jailbreak tokens (DAN, developer mode, unfiltered)"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-INJ-004"
+  category: prompt_injection
+  severity: high
+  confidence: 0.85
+  action: block
+  pattern: "(system\\s*[:=]\\s*|system_message|system_prompt|<<SYS>>|<\\|system\\|>)"
+  match_on: content
+  title: "System message injection via special tokens"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-INJ-005"
+  category: prompt_injection
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\[INST\\]|\\[/INST\\]|<<SYS>>|<\\|im_start\\|>|<\\|im_end\\|>"
+  match_on: content
+  title: "ChatML/Llama/mistral format injection"
+  expires_at: null
+  revoked: false
+
+# ── Indirect Prompt Injection Patterns ───────────────────────────────────
+
+- id: "LLM-IIN-001"
+  category: indirect_prompt_injection
+  severity: high
+  confidence: 0.85
+  action: block
+  pattern: "(when|if|after) (the user|someone|a user) (asks?|requests?|types?|says?).*(ignore|disregard|override|bypass|skip)"
+  match_on:
+    - content
+    - command
+  title: "Indirect injection: content instructs model to ignore user when triggered"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-IIN-002"
+  category: indirect_prompt_injection
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(in the response|in your reply|in your answer).*(include|append|prepend|add|insert|concatenate)"
+  match_on:
+    - content
+    - command
+  title: "Indirect injection: content demands inclusion in response"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-IIN-003"
+  category: indirect_prompt_injection
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "(hidden|invisible|zero-width|steganographic|base64).*(instruction|command|prompt|directive)"
+  match_on:
+    - content
+    - command
+  title: "Indirect injection: hidden/encoded instructions"
+  expires_at: null
+  revoked: false
+
+# ── System Prompt Extraction Attempts ────────────────────────────────────
+
+- id: "LLM-SPE-001"
+  category: prompt_extraction
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(tell me|reveal|show|print|output|display|what is|what are|what's) (your |the )?(system (prompt|message|instructions?)|initial (prompt|instructions?)|base (prompt|instructions?)|original (prompt|instructions?))"
+  match_on: content
+  title: "System prompt extraction attempt"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-SPE-002"
+  category: prompt_extraction
+  severity: high
+  confidence: 0.85
+  action: block
+  pattern: "repeat (the |your )?(first |initial |original |starting )(words?|sentence|message|instruction|prompt|text)"
+  match_on: content
+  title: "System prompt extraction via repetition trick"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-SPE-003"
+  category: prompt_extraction
+  severity: high
+  confidence: 0.85
+  action: block
+  pattern: "(translate|rephrase|summarize) (the |your )?(above|previous|system|initial) (text|message|instruction|prompt)"
+  match_on: content
+  title: "System prompt extraction via translation/rephrasing"
+  expires_at: null
+  revoked: false
+
+# ── Tool Misuse / Excessive Agency Patterns ──────────────────────────────
+
+- id: "LLM-TOOL-001"
+  category: tool_misuse
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b(eval|exec|execSync|child_process|spawn|fork)\\s*\\("
+  match_on: content
+  title: "Code execution attempt via tool input (eval/exec/spawn)"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-TOOL-002"
+  category: tool_misuse
+  severity: high
+  confidence: 0.85
+  action: block
+  pattern: "\\b(subprocess|os\\.system|os\\.popen|commands\\.getoutput|pty\\.spawn)\\b"
+  match_on: content
+  title: "Python code execution attempt in tool input"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-TOOL-003"
+  category: tool_misuse
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "use the (bash|shell|execute|command|terminal|run) (tool|function|command) to|run (this |the following )?(bash|shell|command)"
+  match_on: content
+  title: "Content instructing agent to use shell tool (tool chaining)"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-TOOL-004"
+  category: tool_misuse
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "send (this|the (above|following|result|output|content)) (to|via) (http|curl|wget|webhook|discord|telegram|slack)"
+  match_on: content
+  title: "Data exfiltration attempt via webhook/external service"
+  expires_at: null
+  revoked: false
+
+# ── Sensitive Information Disclosure in Context ──────────────────────────
+
+- id: "LLM-INFO-001"
+  category: information_disclosure
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(API[_-]?KEY|SECRET[_-]?KEY|ACCESS[_-]?TOKEN|AUTH[_-]?TOKEN|PRIVATE[_-]?KEY)\\s*[:=]\\s*[\\w\\-]{16,}"
+  match_on: content
+  title: "Potential credential in agent input/context"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-INFO-002"
+  category: information_disclosure
+  severity: medium
+  confidence: 0.75
+  action: require_approval
+  pattern: "\\b(password|passwd|pwd|secret)\\s*[:=]\\s*\\S{4,}"
+  match_on: content
+  title: "Potential password in plaintext context"
+  expires_at: null
+  revoked: false
+
+# ── Memory / Context Poisoning Patterns ──────────────────────────────────
+
+- id: "LLM-MEM-001"
+  category: memory_poisoning
+  severity: high
+  confidence: 0.85
+  action: block
+  pattern: "(remember|store|save|memorize|persist|keep in (memory|context)) (this|the following|that|for (future|later|next))"
+  match_on: content
+  title: "Memory poisoning: content requesting persistent storage"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-MEM-002"
+  category: memory_poisoning
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(from now on|from this point|going forward|in all future|for all subsequent) (you |always )?(are|must|should|will)"
+  match_on: content
+  title: "Memory poisoning: temporal persistence instruction"
+  expires_at: null
+  revoked: false
+
+# ── File / Content Safety ────────────────────────────────────────────────
+
+- id: "LLM-FILE-001"
+  category: content_safety
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\.(env|credentials|secrets|tokens|keys|htpasswd|pem|p12|pfx|jks|keystore)\\b"
+  match_on: file_path
+  title: "Access to credential/secret files"
+  expires_at: null
+  revoked: false
+
+- id: "LLM-FILE-002"
+  category: content_safety
+  severity: medium
+  confidence: 0.75
+  action: require_approval
+  pattern: "\\.(db|sqlite|sqlite3|sql|dump|bak|backup|tar|gz|zip)\\b"
+  match_on: file_path
+  title: "Access to database/backup files (potential data extraction)"
+  expires_at: null
+  revoked: false

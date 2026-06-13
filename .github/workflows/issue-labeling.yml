@@ -1,0 +1,112 @@
+name: Issue Labeling System
+
+on:
+  issues:
+    types: [opened, edited]
+  workflow_dispatch:
+
+jobs:
+  label-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auto-label Issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== Auto-labeling Issues ==="
+          
+          # Get the issue number that triggered the workflow
+          if [ "${{ github.event_name }}" == "issues" ]; then
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+            ISSUE_TITLE="${{ github.event.issue.title }}"
+            ISSUE_BODY="${{ github.event.issue.body }}"
+            
+            echo "Processing issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}"
+            
+            # Determine labels based on title and body
+            LABELS=""
+            
+            # Type labels
+            if echo "$ISSUE_TITLE" | grep -qiE "bug|error|crash|fix|broken|fail"; then
+              LABELS="bug"
+            elif echo "$ISSUE_TITLE" | grep -qiE "feature|enhancement|add|implement|support"; then
+              LABELS="enhancement"
+            elif echo "$ISSUE_TITLE" | grep -qiE "doc|documentation|readme|guide"; then
+              LABELS="documentation"
+            elif echo "$ISSUE_TITLE" | grep -qiE "security|vulnerability|cve|exploit"; then
+              LABELS="security"
+            elif echo "$ISSUE_TITLE" | grep -qiE "perf|performance|slow|speed|optimize|memory"; then
+              LABELS="performance"
+            elif echo "$ISSUE_TITLE" | grep -qiE "test|testing|coverage|jest|vitest"; then
+              LABELS="testing"
+            elif echo "$ISSUE_TITLE" | grep -qiE "ci|cd|workflow|action|deploy|build"; then
+              LABELS="ci/cd"
+            elif echo "$ISSUE_TITLE" | grep -qiE "deps|dependency|upgrade|bump|update"; then
+              LABELS="dependencies"
+            fi
+            
+            # Priority labels
+            if echo "$ISSUE_TITLE" | grep -qiE "critical|urgent|hotfix|p0|sev1"; then
+              LABELS="${LABELS},priority: critical"
+            elif echo "$ISSUE_TITLE" | grep -qiE "important|high|p1|sev2"; then
+              LABELS="${LABELS},priority: high"
+            elif echo "$ISSUE_TITLE" | grep -qiE "low|minor|nice.to.have|p2|p3"; then
+              LABELS="${LABELS},priority: low"
+            fi
+            
+            # Area labels
+            if echo "$ISSUE_BODY" | grep -qiE "packages/core|core package|detection engine"; then
+              LABELS="${LABELS},area: core"
+            elif echo "$ISSUE_BODY" | grep -qiE "claude-code|claude|pre-tool-use|hook"; then
+              LABELS="${LABELS},area: claude-code"
+            elif echo "$ISSUE_BODY" | grep -qiE "openclaw|openclaw plugin"; then
+              LABELS="${LABELS},area: openclaw"
+            elif echo "$ISSUE_BODY" | grep -qiE "extension|cursor|vscode|vsix"; then
+              LABELS="${LABELS},area: extension"
+            elif echo "$ISSUE_BODY" | grep -qiE "dashboard|ui|react|vite"; then
+              LABELS="${LABELS},area: dashboard"
+            elif echo "$ISSUE_BODY" | grep -qiE "sdk|langchain|integration"; then
+              LABELS="${LABELS},area: sdk"
+            fi
+            
+            # Apply labels if any were determined
+            if [ -n "$LABELS" ]; then
+              echo "Applying labels: $LABELS"
+              gh issue edit "$ISSUE_NUMBER" --add-label "$LABELS" || echo "Some labels may not exist yet"
+            fi
+          fi
+
+      - name: Ensure Required Labels Exist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== Creating Standard Labels ==="
+          
+          # Define standard labels
+          gh label create "bug" --color "d73a4a" --description "Something isn't working" 2>/dev/null || echo "bug label exists"
+          gh label create "enhancement" --color "a2eeef" --description "New feature or request" 2>/dev/null || echo "enhancement label exists"
+          gh label create "documentation" --color "0075ca" --description "Improvements to documentation" 2>/dev/null || echo "documentation label exists"
+          gh label create "security" --color "d93f0b" --description "Security related issues" 2>/dev/null || echo "security label exists"
+          gh label create "performance" --color "f9d0c4" --description "Performance improvements" 2>/dev/null || echo "performance label exists"
+          gh label create "testing" --color "c2e0c6" --description "Testing related" 2>/dev/null || echo "testing label exists"
+          gh label create "ci/cd" --color "0052cc" --description "CI/CD pipeline" 2>/dev/null || echo "ci/cd label exists"
+          gh label create "dependencies" --color "0366d6" --description "Dependency updates" 2>/dev/null || echo "dependencies label exists"
+          
+          # Priority labels
+          gh label create "priority: critical" --color "b60205" --description "Critical priority" 2>/dev/null || echo "critical label exists"
+          gh label create "priority: high" --color "d93f0b" --description "High priority" 2>/dev/null || echo "high label exists"
+          gh label create "priority: medium" --color "fbca04" --description "Medium priority" 2>/dev/null || echo "medium label exists"
+          gh label create "priority: low" --color "0e8a16" --description "Low priority" 2>/dev/null || echo "low label exists"
+          
+          # Area labels
+          gh label create "area: core" --color "c5def5" --description "Core detection engine" 2>/dev/null || echo "area:core label exists"
+          gh label create "area: claude-code" --color "c5def5" --description "Claude Code connector" 2>/dev/null || echo "area:claude-code label exists"
+          gh label create "area: openclaw" --color "c5def5" --description "OpenClaw connector" 2>/dev/null || echo "area:openclaw label exists"
+          gh label create "area: extension" --color "c5def5" --description "VS Code/Cursor extension" 2>/dev/null || echo "area:extension label exists"
+          gh label create "area: dashboard" --color "c5def5" --description "Dashboard UI" 2>/dev/null || echo "area:dashboard label exists"
+          gh label create "area: sdk" --color "c5def5" --description "SDK package" 2>/dev/null || echo "area:sdk label exists"
+          
+          echo "✓ Standard labels ensured"

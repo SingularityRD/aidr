@@ -259,7 +259,7 @@ export class ReferralSystem {
 		let expiredCount = 0;
 
 		const entries = Array.from(this.referrals.entries());
-		for (const [code, referral] of entries) {
+		for (const [_code, referral] of entries) {
 			if (referral.status === "pending") {
 				const ageDays = (now.getTime() - referral.createdAt.getTime()) / (1000 * 60 * 60 * 24);
 				if (ageDays > maxAgeDays) {

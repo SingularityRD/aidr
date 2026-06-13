@@ -24,6 +24,7 @@ import {
 	saveRevocationsCache,
 	verifyEd25519SignedRevocationList,
 } from "./managed.js";
+import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import { runSessionStartScan } from "./session-start-scan.js";
 import type { AgentRuntime, Logger, PluginInfo, PluginScanResult } from "./types.js";
 import { ConfigSchema, nullLogger } from "./types.js";
@@ -373,11 +374,28 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 
 						if (isSyncDisabled(managedState)) return;
 
+						const cacheStatus = await inspectRemoteRuntimePolicyCache(config, token).catch(
+							() => undefined,
+						);
+						const events: Record<string, unknown>[] = [];
+						if (cacheStatus && cacheStatus.present) {
+							events.push({
+								type: "runtime_policy_cache",
+								verdict: "allow",
+								severity: "info",
+								runtime_policy_cache: {
+									source: cacheStatus.source,
+									usable: cacheStatus.usable,
+									policy_version: cacheStatus.policyVersion,
+								},
+							});
+						}
+
 						const result = await client.ingest({
 							iid,
 							agent_runtime: ctx.agentRuntime,
 							agent_runtime_version: ctx.agentRuntimeVersion,
-							events: [],
+							events,
 						});
 						const next = applyIngestResult(
 							managedState,

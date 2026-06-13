@@ -58,9 +58,9 @@ export class TeamDashboard {
 	}
 
 	async inviteMember(
-		teamId: string,
-		email: string,
-		role: "admin" | "member",
+		_teamId: string,
+		_email: string,
+		_role: "admin" | "member",
 	): Promise<{ inviteId: string; inviteUrl: string }> {
 		// Generate unique invite ID
 		const inviteId = crypto.randomUUID();
@@ -90,7 +90,7 @@ export class TeamDashboard {
 		return events;
 	}
 
-	async getUsageStats(teamId: string): Promise<{
+	async getUsageStats(_teamId: string): Promise<{
 		checksToday: number;
 		checksThisMonth: number;
 		threatsBlocked: number;

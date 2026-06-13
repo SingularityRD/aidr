@@ -5,7 +5,6 @@
 
 import {
 	context,
-	createTraceState,
 	DiagConsoleLogger,
 	DiagLogLevel,
 	diag,
@@ -88,10 +87,10 @@ function createSampler(config: TracingConfig) {
 		shouldSample: (
 			ctx: unknown,
 			traceId: string,
-			spanName: string,
-			spanKind: SpanKind,
-			attributes: Record<string, unknown>,
-			links: unknown[],
+			_spanName: string,
+			_spanKind: SpanKind,
+			_attributes: Record<string, unknown>,
+			_links: unknown[],
 		) => {
 			// Always sample if parent is sampled
 			const parentSpan = trace.getSpan(ctx as Parameters<typeof trace.getSpan>[0]);
@@ -255,7 +254,7 @@ export function endSpan(span: Span | null | undefined, endTime?: TimeInput): voi
 export function extractTraceContext(
 	carrier: Record<string, unknown>,
 ): ReturnType<typeof context.active> | undefined {
-	if (!tracingConfig?.propagateW3c) return undefined;
+	if (!tracingConfig?.enabled || !tracingConfig?.propagateW3c) return undefined;
 
 	const getter: TextMapGetter<Record<string, unknown>> = {
 		get: (h, key) => h[key] as string | string[] | undefined,
@@ -268,7 +267,7 @@ export function extractTraceContext(
 }
 
 export function injectTraceContext(carrier: Record<string, string>): void {
-	if (!tracingConfig?.propagateW3c) return;
+	if (!tracingConfig?.enabled || !tracingConfig?.propagateW3c) return;
 
 	const setter: TextMapSetter<Record<string, string>> = {
 		set: (h, key, value) => {

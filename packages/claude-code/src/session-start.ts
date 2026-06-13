@@ -12,7 +12,6 @@ import {
 	getLogger,
 	initSentry,
 	type Logger,
-	metrics,
 	runPluginScan,
 } from "@singularityrd/aidr-core";
 import { pruneStaleSessionFiles } from "./approval-tracker.js";

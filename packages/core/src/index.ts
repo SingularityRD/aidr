@@ -43,11 +43,41 @@ export type {
 } from "./community-rules.js";
 // Community Rules
 export { CommunityRuleRegistry } from "./community-rules.js";
+// Compliance Report (SOC 2 / ISO 27001)
+export {
+	type AuditLogSummary,
+	type AvailabilityMetrics,
+	type ComplianceReport,
+	type ComplianceReportMetadata,
+	type ContinuousMonitoring,
+	type ControlEvidence,
+	exportReport,
+	generateISO27001Report,
+	generateSOC2Report,
+	type IncidentMetrics,
+	type ISO27001Report,
+	type ReportExportFormat,
+	type ReportFramework,
+	type SOC2Report,
+} from "./compliance-report.js";
 // Config
 export { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
 export type { ContainConfig } from "./contain.js";
 // Auto-Contain
 export { AutoContain, createDefaultContainConfig } from "./contain.js";
+// DLP (Data Loss Prevention)
+export type { ContentClassification, ContentClassifierConfig, EntropyMatch } from "./dlp/index.js";
+export { ContentClassifier, EntropyDetector } from "./dlp/index.js";
+// Encryption
+export {
+	decryptBuffer,
+	decryptFile,
+	deriveKey,
+	encryptBuffer,
+	encryptFile,
+	isEncrypted,
+	migrateToEncrypted,
+} from "./encryption.js";
 // Decision engine
 export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
 // Runtime evaluator
@@ -152,10 +182,10 @@ export type {
 } from "./intel/provider.js";
 export { createIntelReputationProvider } from "./intel/provider.js";
 export type { DomainRiskEntry, IntelMerged } from "./intel/types.js";
-// Metrics
-export { getMetricsCollector, MetricsCollector, metrics } from "./metrics.js";
 // Logger
 export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.js";
+// Metrics
+export { getMetricsCollector, MetricsCollector, metrics } from "./metrics.js";
 export type {
 	EmbeddingModelConfig,
 	ThreatEmbedding,
@@ -174,10 +204,10 @@ export { extractPackagesFromCommand, extractPackagesFromManifest } from "./packa
 export {
 	detectPII,
 	maskPII,
-	redactPII,
-	validateNoPII,
 	type PIIFinding,
 	type PIIReport,
+	redactPII,
+	validateNoPII,
 } from "./pii-detector.js";
 // Plugin scan cache
 export {
@@ -236,6 +266,13 @@ export {
 	toAuditFindingData,
 	toFindingData,
 } from "./session-start-scan.js";
+// SIEM export (CEF, LEEF, JSON)
+export {
+	exportToCEF,
+	exportToJSON,
+	exportToLEEF,
+	type SiemExportFilter,
+} from "./siem-export.js";
 // Threat loader
 export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
 export type {

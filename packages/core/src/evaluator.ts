@@ -53,9 +53,9 @@ import {
 	type ParsedPackage,
 } from "./package-extractor.js";
 import { evaluatePolicy } from "./policy.js";
+import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import { loadThreatsFromDirs } from "./threat-loader.js";
 import {
-	addSpanEvent,
 	initTracing,
 	recordDetectionPhase,
 	setSecurityDecisionAttributes,
@@ -211,10 +211,10 @@ export async function evaluateToolCall(
 async function runEvaluationPipeline(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
-	startTime: number,
+	_startTime: number,
 ): Promise<Verdict> {
 	const logger = context.logger ?? nullLogger;
-	const config = await loadConfig(context.configPath, logger).catch(() => ConfigSchema.parse({}));
+	let config = await loadConfig(context.configPath, logger).catch(() => ConfigSchema.parse({}));
 	const commercial = isCommercialBuild();
 
 	// Managed-only commercial behavior: without a valid auth token + signed entitlement (or offline grace),
@@ -422,8 +422,25 @@ async function runEvaluationPipeline(
 		}
 	}
 
+	// Sync remote runtime policy if control plane is enabled and we have a token
+	if (config.control_plane.enabled && token) {
+		try {
+			const merged = await syncRemoteRuntimePolicy(config, token, logger);
+			if (merged !== config) {
+				// Only assign if sync actually modified the config
+				config = { ...config, ...merged };
+			}
+		} catch {
+			// Fail open if remote policy sync fails
+		}
+	}
+
+	// MCP policy can produce verdicts even without artifacts (e.g., denying unknown servers)
 	if (request.artifacts.length === 0) {
-		return allowVerdict("no_artifacts");
+		const isMcpTool = request.toolName.startsWith("mcp__") || request.toolName === "MCP";
+		if (!isMcpTool) {
+			return allowVerdict("no_artifacts");
+		}
 	}
 
 	// Allowlist check phase

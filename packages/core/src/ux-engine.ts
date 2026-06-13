@@ -86,7 +86,7 @@ export class UserExperienceEngine {
 		return ["Manuel review yapın", "Güvenilir kaynak kullanın", "Sandbox ortamında test edin"];
 	}
 
-	private assessImpact(tool: string, input: Record<string, unknown>): string {
+	private assessImpact(_tool: string, input: Record<string, unknown>): string {
 		const path = String(input.file_path || "");
 
 		if (path.includes("/etc/") || path.includes("/system")) {

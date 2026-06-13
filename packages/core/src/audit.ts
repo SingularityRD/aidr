@@ -38,14 +38,24 @@ export const DEFAULT_AUDIT_CONFIG: AuditLogConfig = {
 function sanitizeInput(input: string, maxLength = 500): string {
 	if (!input) return "";
 	let sanitized = input
-		.replace(/[a-zA-Z0-9_-]{20,}/g, "<REDACTED_TOKEN>")
+		.replace(/[Bb]earer\s+\S+/g, "Bearer <REDACTED_TOKEN>")
 		.replace(/password[=:]\s*\S+/gi, "password=<REDACTED>")
 		.replace(/token[=:]\s*\S+/gi, "token=<REDACTED>")
 		.replace(/secret[=:]\s*\S+/gi, "secret=<REDACTED>")
-		.replace(/key[=:]\s*\S+/gi, "key=<REDACTED>");
+		.replace(/key[=:]\s*\S+/gi, "key=<REDACTED>")
+		.replace(/[a-zA-Z0-9_-]{15,}/g, (match) => {
+			const hasUpper = /[A-Z]/.test(match);
+			const hasLower = /[a-z]/.test(match);
+			const hasDigit = /[0-9]/.test(match);
+			const types = [hasUpper, hasLower, hasDigit].filter(Boolean).length;
+			if (types >= 2) return "<REDACTED_TOKEN>";
+			return match;
+		});
 	if (sanitized.length > maxLength) {
-		sanitized = sanitized.slice(0, maxLength) + "...";
+		sanitized = `${sanitized.slice(0, maxLength)}...`;
 	}
+	// Collapse runs of 20+ identical characters (log-flood prevention)
+	sanitized = sanitized.replace(/(.)\1{19,}/g, "$1");
 	return sanitized;
 }
 

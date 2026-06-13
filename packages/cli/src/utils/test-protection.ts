@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 import { generateApiKey, hashToolCall } from "./crypto.js";
 
 export async function testProtection(): Promise<boolean> {
@@ -22,7 +22,7 @@ export async function testProtection(): Promise<boolean> {
 	}
 
 	const nodeVersion = process.version;
-	const majorVersion = parseInt(nodeVersion.slice(1).split(".")[0]);
+	const majorVersion = parseInt(nodeVersion.slice(1).split(".")[0], 10);
 	if (majorVersion < 18) {
 		throw new Error(`Node.js ${nodeVersion} is too old. Need >= 18.0.0`);
 	}

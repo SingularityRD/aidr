@@ -16,6 +16,18 @@ bin/
 packages/openclaw/resources/
 packages/opencode/resources/
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Test artifacts / scratch
+test_output.txt
+session_start_backup.ts
+.tmp-test/
+
 # Environments
 .env
 .envrc

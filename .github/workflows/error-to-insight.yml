@@ -1,0 +1,119 @@
+name: Error to Insight Pipeline
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:
+
+jobs:
+  sentry-issue-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync Sentry Issues to GitHub
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: singularityrd
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== Syncing Sentry Issues to GitHub ==="
+          
+          # Install Sentry CLI
+          curl -sL https://sentry.io/get-cli/ | bash
+          
+          # Get unresolved issues from Sentry
+          sentry-cli issues list --org $SENTRY_ORG --project aidr-core --status unresolved --json > sentry-issues.json || echo "[]" > sentry-issues.json
+          
+          # Process each issue and create GitHub issue if not already exists
+          cat sentry-issues.json | jq -c '.[]' | while read issue; do
+            issue_id=$(echo $issue | jq -r '.id')
+            title=$(echo $issue | jq -r '.title')
+            culprit=$(echo $issue | jq -r '.culprit // "unknown"')
+            count=$(echo $issue | jq -r '.count')
+            
+            # Check if GitHub issue already exists
+            existing_issue=$(gh issue list --repo $GITHUB_REPOSITORY --search "$issue_id" --json number --jq '.[0].number')
+            
+            if [ -z "$existing_issue" ]; then
+              echo "Creating GitHub issue for Sentry issue $issue_id"
+              
+              gh issue create \
+                --repo $GITHUB_REPOSITORY \
+                --title "[Sentry] $title" \
+                --body "## Sentry Issue
+          
+          - **Sentry ID:** $issue_id
+          - **Culprit:** $culprit
+          - **Event Count:** $count
+          - **Sentry URL:** https://sentry.io/organizations/$SENTRY_ORG/issues/$issue_id/
+          
+          ### Investigation Notes
+          
+          - [ ] Review error details in Sentry
+          - [ ] Identify root cause
+          - [ ] Implement fix
+          - [ ] Add regression test
+          - [ ] Mark as resolved in Sentry
+          
+          *This issue was auto-generated from Sentry.*" \
+                --label "bug,sentry"
+            else
+              echo "GitHub issue already exists for Sentry issue $issue_id (#$existing_issue)"
+            fi
+          done
+          
+          echo "=== Sentry-GitHub sync complete ==="
+
+      - name: Create Error Insights Report
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: singularityrd
+        run: |
+          echo "=== Generating Error Insights Report ==="
+          
+          cat > error-insights-report.md << 'EOF'
+          # Error Insights Report
+          
+          Generated: $(date -u +"%Y-%m-%d %H:%M UTC")
+          
+          ## Summary
+          
+          | Metric | Count |
+          |--------|-------|
+          | Total Issues | sentry-issues.json | jq 'length' |
+          | Unresolved | sentry-issues.json | jq '[.[] | select(.status == "unresolved")] | length' |
+          | Resolved Today | sentry-issues.json | jq '[.[] | select(.status == "resolved")] | length' |
+          
+          ## Top Error Categories
+          
+          *Generated from Sentry data*
+          
+          ## Action Items
+          
+          - [ ] Review top 5 errors
+          - [ ] Check for new error patterns
+          - [ ] Verify error rates are within SLA
+          
+          ---
+          *This report is auto-generated every 6 hours*
+          EOF
+          
+          echo "✓ Error insights report generated"
+
+      - name: Upload Insights Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-insights-report
+          path: error-insights-report.md
+          retention-days: 7
+
+      - name: Notify on New Issues
+        if: env.NEW_ISSUES_CREATED == 'true'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#aidr-alerts'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: "🐛 New Sentry issues synced to GitHub"

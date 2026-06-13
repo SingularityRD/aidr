@@ -112,15 +112,15 @@ export function initSentrySync(config?: Partial<SentryConfig>): void {
  * Redact sensitive data from event context
  */
 function redactSensitiveData(obj: Record<string, unknown>): Record<string, unknown> {
-	const sensitiveKeys = [
-		"apiKey",
+	const sensitiveKeyPatterns = [
+		"apikey",
 		"api_key",
 		"token",
 		"password",
 		"secret",
 		"authorization",
 		"x-api-key",
-		"authToken",
+		"authtoken",
 		"dsn",
 		"anthropic_api_key",
 		"openclaw_gateway_token",
@@ -129,7 +129,7 @@ function redactSensitiveData(obj: Record<string, unknown>): Record<string, unkno
 	const redacted: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(obj)) {
 		const lowerKey = key.toLowerCase();
-		if (sensitiveKeys.some((sk) => lowerKey.includes(sk))) {
+		if (sensitiveKeyPatterns.some((pattern) => lowerKey.includes(pattern))) {
 			redacted[key] = "[Redacted]";
 		} else if (typeof value === "object" && value !== null) {
 			redacted[key] = redactSensitiveData(value as Record<string, unknown>);
@@ -150,7 +150,7 @@ export async function captureException(
 	if (!initialized) await initSentry();
 
 	const Sentry = await loadSentry().catch(() => null);
-	if (!Sentry || !Sentry.getClient()) {
+	if (!Sentry?.getClient()) {
 		return "";
 	}
 
@@ -168,7 +168,7 @@ export async function captureMessage(
 	if (!initialized) await initSentry();
 
 	const Sentry = await loadSentry().catch(() => null);
-	if (!Sentry || !Sentry.getClient()) {
+	if (!Sentry?.getClient()) {
 		return "";
 	}
 

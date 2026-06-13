@@ -1,7 +1,7 @@
 /**
  * Tests for Auto-Rollback module.
  */
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRollback, createAutoRollback } from "../rollback.js";
@@ -83,10 +83,10 @@ describe("AutoRollback", () => {
 
 		it("throws on failure and rolls back when onFailure=rollback", async () => {
 			const rollback = createAutoRollback();
-			const operation = vi.fn().mockRejectedValue(new Error("Operation failed"));
-
-			// Modify the file before the failing operation
-			await writeFile(testFile1, "modified content");
+			const operation = vi.fn().mockImplementation(async () => {
+				await writeFile(testFile1, "modified content");
+				throw new Error("Operation failed");
+			});
 
 			await expect(
 				rollback.executeWithRollback(operation, [testFile1], { onFailure: "rollback" }),

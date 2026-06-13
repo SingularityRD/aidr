@@ -1,0 +1,354 @@
+
+> @ lint C:\Users\an─▒l\Desktop\AIDR PROJECT\aidr
+> biome check . "--colors=off"
+
+biome.json:2:13 deserialize ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  i The configuration schema version does not match the CLI version 2.4.10
+  
+    1 Ôöé {
+  > 2 Ôöé 	"$schema": "https://biomejs.dev/schemas/2.3.14/schema.json",
+      Ôöé 	           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    3 Ôöé 	"vcs": {
+    4 Ôöé 		"enabled": true,
+  
+  i   Expected:                     2.4.10
+      Found:                        2.3.14
+  
+  
+  i Run the command biome migrate to migrate the configuration file.
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:384:4 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    383 Ôöé 		for (let j = 0; j <= cols; j++) {
+  > 384 Ôöé 			matrix[0]![j] = j;
+        Ôöé 			^^^^^^^^^^
+    385 Ôöé 		}
+    386 Ôöé 
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:388:16 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    387 Ôöé 		for (let i = 1; i <= rows; i++) {
+  > 388 Ôöé 			const row = matrix[i]!;
+        Ôöé 			            ^^^^^^^^^^
+    389 Ôöé 			row[0] = i;
+    390 Ôöé 			for (let j = 1; j <= cols; j++) {
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:392:15 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    390 Ôöé 			for (let j = 1; j <= cols; j++) {
+    391 Ôöé 				if (b.charAt(i - 1) === a.charAt(j - 1)) {
+  > 392 Ôöé 					row[j] = matrix[i - 1]![j - 1]!;
+        Ôöé 					         ^^^^^^^^^^^^^^^^^^^^^^
+    393 Ôöé 				} else {
+    394 Ôöé 					row[j] = Math.min(matrix[i - 1]![j - 1]! + 1, row[j - 1]! + 1, matrix[i - 1]![j]! + 1);
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:392:15 lint/style/noNonNullAssertion  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    390 Ôöé 			for (let j = 1; j <= cols; j++) {
+    391 Ôöé 				if (b.charAt(i - 1) === a.charAt(j - 1)) {
+  > 392 Ôöé 					row[j] = matrix[i - 1]![j - 1]!;
+        Ôöé 					         ^^^^^^^^^^^^^^
+    393 Ôöé 				} else {
+    394 Ôöé 					row[j] = Math.min(matrix[i - 1]![j - 1]! + 1, row[j - 1]! + 1, matrix[i - 1]![j]! + 1);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    390 390 Ôöé         for (let j = 1; j <= cols; j++) {
+    391 391 Ôöé           if (b.charAt(i - 1) === a.charAt(j - 1)) {
+    392     Ôöé - ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬Àmatrix[i┬À-┬À1]![j┬À-┬À1]!;
+        392 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬Àmatrix[i┬À-┬À1]?.[j┬À-┬À1]!;
+    393 393 Ôöé           } else {
+    394 394 Ôöé             row[j] = Math.min(matrix[i - 1]![j - 1]! + 1, row[j - 1]! + 1, matrix[i - 1]![j]! + 1);
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:394:24 lint/style/noNonNullAssertion  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    392 Ôöé 					row[j] = matrix[i - 1]![j - 1]!;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.min(matrix[i - 1]![j - 1]! + 1, row[j - 1]! + 1, matrix[i - 1]![j]! + 1);
+        Ôöé 					                  ^^^^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    392 392 Ôöé             row[j] = matrix[i - 1]![j - 1]!;
+    393 393 Ôöé           } else {
+    394     Ôöé - ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀMath.min(matrix[i┬À-┬À1]![j┬À-┬À1]!┬À+┬À1,┬Àrow[j┬À-┬À1]!┬À+┬À1,┬Àmatrix[i┬À-┬À1]![j]!┬À+┬À1);
+        394 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀMath.min(matrix[i┬À-┬À1]?.[j┬À-┬À1]!┬À+┬À1,┬Àrow[j┬À-┬À1]!┬À+┬À1,┬Àmatrix[i┬À-┬À1]![j]!┬À+┬À1);
+    395 395 Ôöé           }
+    396 396 Ôöé         }
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:394:24 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    392 Ôöé 					row[j] = matrix[i - 1]![j - 1]!;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.min(matrix[i - 1]![j - 1]! + 1, row[j - 1]! + 1, matrix[i - 1]![j]! + 1);
+        Ôöé 					                  ^^^^^^^^^^^^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:394:52 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    392 Ôöé 					row[j] = matrix[i - 1]![j - 1]!;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.min(matrix[i - 1]![j - 1]! + 1, row[j - 1]! + 1, matrix[i - 1]![j]! + 1);
+        Ôöé 					                                              ^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:394:69 lint/style/noNonNullAssertion  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    392 Ôöé 					row[j] = matrix[i - 1]![j - 1]!;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.min(matrix[i - 1]![j - 1]! + 1, row[j - 1]! + 1, matrix[i - 1]![j]! + 1);
+        Ôöé 					                                                               ^^^^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    392 392 Ôöé             row[j] = matrix[i - 1]![j - 1]!;
+    393 393 Ôöé           } else {
+    394     Ôöé - ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀMath.min(matrix[i┬À-┬À1]![j┬À-┬À1]!┬À+┬À1,┬Àrow[j┬À-┬À1]!┬À+┬À1,┬Àmatrix[i┬À-┬À1]![j]!┬À+┬À1);
+        394 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀMath.min(matrix[i┬À-┬À1]![j┬À-┬À1]!┬À+┬À1,┬Àrow[j┬À-┬À1]!┬À+┬À1,┬Àmatrix[i┬À-┬À1]?.[j]!┬À+┬À1);
+    395 395 Ôöé           }
+    396 396 Ôöé         }
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:394:69 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    392 Ôöé 					row[j] = matrix[i - 1]![j - 1]!;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.min(matrix[i - 1]![j - 1]! + 1, row[j - 1]! + 1, matrix[i - 1]![j]! + 1);
+        Ôöé 					                                                               ^^^^^^^^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:399:10 lint/style/noNonNullAssertion  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    397 Ôöé 		}
+    398 Ôöé 
+  > 399 Ôöé 		return matrix[rows]![cols]!;
+        Ôöé 		       ^^^^^^^^^^^^^
+    400 Ôöé 	}
+    401 Ôöé }
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    397 397 Ôöé       }
+    398 398 Ôöé   
+    399     Ôöé - ÔåÆ ÔåÆ return┬Àmatrix[rows]![cols]!;
+        399 Ôöé + ÔåÆ ÔåÆ return┬Àmatrix[rows]?.[cols]!;
+    400 400 Ôöé     }
+    401 401 Ôöé   }
+  
+System.Management.Automation.RemoteException
+packages\core\src\behavioral\anomaly-detector.ts:399:10 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    397 Ôöé 		}
+    398 Ôöé 
+  > 399 Ôöé 		return matrix[rows]![cols]!;
+        Ôöé 		       ^^^^^^^^^^^^^^^^^^^^
+    400 Ôöé 	}
+    401 Ôöé }
+  
+System.Management.Automation.RemoteException
+packages\dashboard\src\auth\google-provider.tsx:99:13 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+     97 Ôöé 				const userData: User = {
+     98 Ôöé 					id: session.user.id,
+   > 99 Ôöé 					email: session.user.email!,
+        Ôöé 					       ^^^^^^^^^^^^^^^^^^^
+    100 Ôöé 					googleId: session.user.user_metadata?.provider_id,
+    101 Ôöé 					githubId: session.user.user_metadata?.github_id,
+  
+System.Management.Automation.RemoteException
+packages\dashboard\src\auth\google-provider.tsx:121:13 lint/style/noNonNullAssertion ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Forbidden non-null assertion.
+  
+    119 Ôöé 				const userData: User = {
+    120 Ôöé 					id: session.user.id,
+  > 121 Ôöé 					email: session.user.email!,
+        Ôöé 					       ^^^^^^^^^^^^^^^^^^^
+    122 Ôöé 					googleId: session.user.user_metadata?.provider_id,
+    123 Ôöé 					githubId: session.user.user_metadata?.github_id,
+  
+System.Management.Automation.RemoteException
+packages\dashboard\src\billing\seat-manager.tsx:34:2 suppressions/unused ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Suppression comment has no effect. Remove the suppression or make sure you are suppressing the correct rule.
+  
+    32 Ôöé 	const [error, setError] = useState<string | null>(null);
+    33 Ôöé 
+  > 34 Ôöé 	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-step data loading with sequential checks
+       Ôöé 	^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    35 Ôöé 	const loadUserData = useCallback(async () => {
+    36 Ôöé 		setIsLoading(true);
+  
+System.Management.Automation.RemoteException
+packages\dashboard\src\enterprise\team-provider.tsx:221:39 lint/suspicious/noExplicitAny ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Unexpected any. Specify a different type.
+  
+    219 Ôöé 			const { data: team, error: teamError } = await supabase
+    220 Ôöé 				.from("teams")
+  > 221 Ôöé 				.insert({ name, plan: "free" } as any)
+        Ôöé 				                                  ^^^
+    222 Ôöé 				.select()
+    223 Ôöé 				.single();
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+System.Management.Automation.RemoteException
+packages\dashboard\src\enterprise\team-provider.tsx:236:9 lint/suspicious/noExplicitAny ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ! Unexpected any. Specify a different type.
+  
+    234 Ôöé 				user_id: user.id,
+    235 Ôöé 				role: "admin",
+  > 236 Ôöé 			} as any);
+        Ôöé 			     ^^^
+    237 Ôöé 
+    238 Ôöé 			if (memberError) throw memberError;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+System.Management.Automation.RemoteException
+packages\core\src\session-start.ts:6:1 assist/source/organizeImports  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ├ù The imports and exports are not sorted.
+  
+    4 Ôöé  */
+    5 Ôöé 
+  > 6 Ôöé import { isCommercialBuild } from "./build-flavor.js";
+      Ôöé ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    7 Ôöé import { ControlPlaneClient } from "./clients/control-plane.js";
+    8 Ôöé import { loadConfig, resolvePath } from "./config.js";
+  
+  i Safe fix: Organize Imports (Biome)
+  
+     10  10 Ôöé   import { getInstallationId } from "./installation-id.js";
+     11  11 Ôöé   import { getDegradedSafeModeReason, isDegradedSafeMode } from "./integrity/index.js";
+     12     Ôöé - import┬À{
+     13     Ôöé - ÔåÆ applyIngestResult,
+     14     Ôöé - ÔåÆ applyRevocationsToManagedState,
+     15     Ôöé - ÔåÆ getAuthToken,
+     16     Ôöé - ÔåÆ isEntitlementActive,
+     17     Ôöé - ÔåÆ isSyncDisabled,
+     18     Ôöé - ÔåÆ loadManagedState,
+     19     Ôöé - ÔåÆ loadRevocationsCache,
+     20     Ôöé - ÔåÆ managedStatePath,
+     21     Ôöé - ÔåÆ parseSignedRevocationsFromControlPlaneBody,
+     22     Ôöé - ÔåÆ saveEntitlementKeyringFromState,
+     23     Ôöé - ÔåÆ saveManagedState,
+     24     Ôöé - ÔåÆ saveRevocationsCache,
+     25     Ôöé - ÔåÆ verifyEd25519SignedRevocationList,
+     26     Ôöé - }┬Àfrom┬À"./managed.js";
+     27     Ôöé - import┬Àtype┬À{┬ÀManagedState┬À}┬Àfrom┬À"./managed.js";
+         12 Ôöé + import┬Àtype┬À{┬ÀManagedState┬À}┬Àfrom┬À"./managed.js";
+         13 Ôöé + import┬À{
+         14 Ôöé + ÔåÆ applyIngestResult,
+         15 Ôöé + ÔåÆ applyRevocationsToManagedState,
+         16 Ôöé + ÔåÆ getAuthToken,
+         17 Ôöé + ÔåÆ isEntitlementActive,
+         18 Ôöé + ÔåÆ isSyncDisabled,
+         19 Ôöé + ÔåÆ loadManagedState,
+         20 Ôöé + ÔåÆ loadRevocationsCache,
+         21 Ôöé + ÔåÆ managedStatePath,
+         22 Ôöé + ÔåÆ parseSignedRevocationsFromControlPlaneBody,
+         23 Ôöé + ÔåÆ saveEntitlementKeyringFromState,
+         24 Ôöé + ÔåÆ saveManagedState,
+         25 Ôöé + ÔåÆ saveRevocationsCache,
+         26 Ôöé + ÔåÆ verifyEd25519SignedRevocationList,
+         27 Ôöé + }┬Àfrom┬À"./managed.js";
+     28  28 Ôöé   import { runSessionStartScan } from "./session-start-scan.js";
+     29  29 Ôöé   import type {
+  
+System.Management.Automation.RemoteException
+packages\core\src\session-start.ts format ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ├ù Formatter would have printed the following content:
+  
+    381 381 Ôöé             })
+    382 382 Ôöé           ) {
+    383     Ôöé - ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ await┬ÀsaveRevocationsCache(resolvePath(config.licensing.revocations_cache_path┬À??┬À""),┬Àparsed);
+        383 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ await┬ÀsaveRevocationsCache(
+        384 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ resolvePath(config.licensing.revocations_cache_path┬À??┬À""),
+        385 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ parsed,
+        386 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ );
+    384 387 Ôöé             signedRev = parsed;
+    385 388 Ôöé           }
+  
+System.Management.Automation.RemoteException
+packages\dashboard\src\enterprise\audit-view.tsx:281:20 lint/suspicious/noArrayIndexKey ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ├ù Avoid using the index of an array as key property in an element.
+  
+    279 Ôöé 												{log.verdict.threats.map((threat, i) => (
+    280 Ôöé 													<span
+  > 281 Ôöé 														key={i}
+        Ôöé 														     ^
+    282 Ôöé 														className="pill"
+    283 Ôöé 														style={{ fontSize: "10px", padding: "2px 6px" }}
+  
+  i This is the source of the key value.
+  
+    277 Ôöé 										{log.verdict?.threats && log.verdict.threats.length > 0 ? (
+    278 Ôöé 											<div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+  > 279 Ôöé 												{log.verdict.threats.map((threat, i) => (
+        Ôöé 												                                  ^
+    280 Ôöé 													<span
+    281 Ôöé 														key={i}
+  
+  i The order of the items may change, and this also affects performances and component state.
+  
+  i Check the React documentation. 
+  
+System.Management.Automation.RemoteException
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 57.
+Checked 305 files in 282ms. No fixes applied.
+Found 24 errors.
+Found 52 warnings.
+Found 1 info.
+check ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.Automation.RemoteException
+  ├ù Some errors were emitted while running checks.
+  
+System.Management.Automation.RemoteException
+ÔÇëELIFECYCLEÔÇë Command failed with exit code 1.

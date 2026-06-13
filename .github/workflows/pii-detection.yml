@@ -1,0 +1,102 @@
+name: PII Detection
+
+on:
+  pull_request:
+    paths:
+      - 'packages/**/src/**/*.ts'
+      - 'packages/**/src/**/*.tsx'
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  pii-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Presidio
+        run: |
+          pip install presidio-analyzer presidio-anonymizer
+
+      - name: Scan for PII in Code
+        run: |
+          echo "=== Scanning for PII in source code ==="
+          
+          # Create PII scanner script
+          cat > scan_pii.py << 'EOF'
+          import sys
+          import os
+          from presidio_analyzer import AnalyzerEngine
+          from presidio_anonymizer import AnonymizerEngine
+          
+          analyzer = AnalyzerEngine()
+          
+          pii_found = False
+          
+          # Scan TypeScript/JavaScript files
+          for root, dirs, files in os.walk('packages'):
+              for file in files:
+                  if file.endswith(('.ts', '.tsx', '.js', '.jsx')):
+                      filepath = os.path.join(root, file)
+                      try:
+                          with open(filepath, 'r', encoding='utf-8') as f:
+                              content = f.read()
+                              
+                          # Analyze for PII
+                          results = analyzer.analyze(text=content, language='en')
+                          
+                          if results:
+                              print(f"⚠️  Potential PII found in {filepath}:")
+                              for result in results:
+                                  print(f"   - {result.entity_type}: confidence {result.score}")
+                              pii_found = True
+                      except Exception as e:
+                          pass
+          
+          if pii_found:
+              print("\n❌ PII detected in source code!")
+              sys.exit(1)
+          else:
+              print("\n✅ No PII detected in source code")
+              sys.exit(0)
+          EOF
+          
+          python scan_pii.py
+
+      - name: Check Log Redaction
+        run: |
+          echo "=== Checking log redaction configuration ==="
+          
+          # Verify logger.ts has redaction configured
+          if grep -q "redact" packages/core/src/logger.ts; then
+            echo "✓ Log redaction configured in logger.ts"
+          else
+            echo "❌ Log redaction not found in logger.ts"
+            exit 1
+          fi
+          
+          # Verify SENSITIVE_FIELDS is comprehensive
+          if grep -q "SENSITIVE_FIELDS" packages/core/src/logger.ts; then
+            echo "✓ SENSITIVE_FIELDS array found"
+          else
+            echo "❌ SENSITIVE_FIELDS not found"
+            exit 1
+          fi
+
+      - name: Notify on PII Detection
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#aidr-security'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: "🚨 PII detected in code - immediate review required"

@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Environment } from "./config-manager.js";
 import { updateConfig } from "./config-manager.js";
 
@@ -56,7 +56,9 @@ async function installVSCodeHooks(editor: "cursor" | "vscode"): Promise<void> {
 	let settings: Record<string, unknown> = {};
 
 	if (existsSync(settingsFile)) {
-		settings = JSON.parse(await import("fs").then((fs) => fs.readFileSync(settingsFile, "utf-8")));
+		settings = JSON.parse(
+			await import("node:fs").then((fs) => fs.readFileSync(settingsFile, "utf-8")),
+		);
 	}
 
 	settings["aidr.enabled"] = true;
@@ -72,7 +74,9 @@ async function installOpenClawHooks(): Promise<void> {
 		throw new Error("OpenClaw not configured. Please run 'openclaw setup' first.");
 	}
 
-	const config = JSON.parse(await import("fs").then((fs) => fs.readFileSync(configPath, "utf-8")));
+	const config = JSON.parse(
+		await import("node:fs").then((fs) => fs.readFileSync(configPath, "utf-8")),
+	);
 	config.plugins = config.plugins || [];
 
 	if (!config.plugins.includes("@singularityrd/aidr-openclaw")) {

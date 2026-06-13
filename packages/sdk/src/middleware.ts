@@ -13,17 +13,9 @@ class MiddlewareChain {
 	}
 
 	async execute(request: CheckRequest, result?: CheckResult, error?: Error): Promise<void> {
-		let index = 0;
-
-		const next = async (): Promise<void> => {
-			if (index >= this.middlewares.length) return;
-			const middleware = this.middlewares[index++];
-			if (middleware) {
-				await middleware({ request, result, error, next });
-			}
-		};
-
-		await next();
+		for (const middleware of this.middlewares) {
+			await middleware({ request, result, error, next: async () => {} });
+		}
 	}
 }
 
@@ -33,13 +25,13 @@ class MiddlewareChain {
 export function createMiddleware(client: AIDRClient) {
 	const chain = new MiddlewareChain();
 
-	return {
+	const api = {
 		/**
 		 * Add a middleware function
 		 */
 		use: (middleware: MiddlewareFn) => {
 			chain.use(middleware);
-			return createMiddleware(client);
+			return api;
 		},
 
 		/**
@@ -154,4 +146,5 @@ export function createMiddleware(client: AIDRClient) {
 			};
 		},
 	};
+	return api;
 }

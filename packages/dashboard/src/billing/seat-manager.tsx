@@ -33,7 +33,7 @@ export function SeatManager({ userId }: { userId: string }) {
 
 	useEffect(() => {
 		loadUserData();
-	}, [userId]);
+	}, [loadUserData]);
 
 	async function loadUserData() {
 		setIsLoading(true);
@@ -51,7 +51,7 @@ export function SeatManager({ userId }: { userId: string }) {
 			setUserEmail((user as Database["public"]["Tables"]["users"]["Row"] | null)?.email || "");
 
 			// Get active subscription
-			const { data: subData, error: subError } = await supabase
+			const { data: subData } = await supabase
 				.from("subscriptions")
 				.select("*")
 				.eq("user_id", userId)

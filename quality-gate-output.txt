@@ -1,0 +1,45 @@
+
+> @ quality:gate C:\Users\an─▒l\Desktop\AIDR PROJECT\aidr
+> pnpm lint && pnpm check && pnpm test && pnpm test:coverage && pnpm build:release
+
+
+> @ lint C:\Users\an─▒l\Desktop\AIDR PROJECT\aidr
+> biome check .
+
+packages\core\src\policy.ts:24:1 suppressions/unused ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ! Suppression comment has no effect. Remove the suppression or make sure you are suppressing the correct rule.
+  
+    22 Ôöé }
+    23 Ôöé 
+  > 24 Ôöé // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: URL parsing with multiple edge cases
+       Ôöé ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    25 Ôöé function parseUrlHost(raw: string): { host: string; isIp: boolean } | null {
+    26 Ôöé 	try {
+  
+
+packages\core\src\file-utils.ts format ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ├ù Formatter would have printed the following content:
+  
+    11 11 Ôöé   }
+    12 12 Ôöé   
+    13    Ôöé - export┬Àfunction┬ÀgetFileContentSync(
+    14    Ôöé - ÔåÆ path:┬Àfs.PathLike,
+    15    Ôöé - ÔåÆ encoding:┬ÀBufferEncoding┬À=┬À"utf-8",
+    16    Ôöé - ):┬Àstring┬À{
+       13 Ôöé + export┬Àfunction┬ÀgetFileContentSync(path:┬Àfs.PathLike,┬Àencoding:┬ÀBufferEncoding┬À=┬À"utf-8"):┬Àstring┬À{
+    17 14 Ôöé     return fs.readFileSync(path, encoding);
+    18 15 Ôöé   }
+  
+
+Checked 305 files in 286ms. No fixes applied.
+Found 1 error.
+Found 1 warning.
+check ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  ├ù Some errors were emitted while running checks.
+  
+
+ÔÇëELIFECYCLEÔÇë Command failed with exit code 1.
+ÔÇëELIFECYCLEÔÇë Command failed with exit code 1.

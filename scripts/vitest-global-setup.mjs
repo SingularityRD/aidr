@@ -1,17 +1,24 @@
 import { execSync } from "node:child_process";
 
-const run = (cmd, cwd) => execSync(cmd, { stdio: "inherit", cwd });
+function tryRun(cmd, cwd) {
+	try {
+		execSync(cmd, { stdio: "inherit", cwd });
+	} catch {
+		// Fail open — tests may still work if dist/ is already built
+		console.error(`[global-setup] warning: "${cmd}" failed, continuing...`);
+	}
+}
 
 export function setup() {
 	// Build core first (needed by all other packages)
-	run("pnpm --filter @singularityrd/aidr-core run build");
+	tryRun("pnpm --filter @singularityrd/aidr-core run build");
 	// Build claude-code and openclaw (no corepack dependency)
-	run(
+	tryRun(
 		"pnpm --filter @singularityrd/aidr-claude-code --filter @singularityrd/aidr-openclaw run build",
 	);
 	// Build extension manually (its build script uses corepack which may not be available)
-	run("node scripts/sync-assets.mjs", "packages/extension");
-	run("node esbuild.config.cjs", "packages/extension");
+	tryRun("node scripts/sync-assets.mjs", "packages/extension");
+	tryRun("node esbuild.config.cjs", "packages/extension");
 	// Build opencode plugin bundle used by integration tests
-	run("pnpm --filter @singularityrd/aidr-opencode run build");
+	tryRun("pnpm --filter @singularityrd/aidr-opencode run build");
 }

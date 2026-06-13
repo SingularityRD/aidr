@@ -6,8 +6,8 @@
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import { VerdictCache } from "./cache.js";
-import { AIDR_DIR, resolvePath } from "./config.js";
-import { getMetricsCollector, type MetricsSnapshot } from "./metrics.js";
+import { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
+import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import { loadThreats } from "./threat-loader.js";
 import { nullLogger } from "./types.js";
 
@@ -35,12 +35,6 @@ export interface HealthStatus {
 	checks: HealthCheck[];
 }
 
-interface DiskInfo {
-	total: number;
-	free: number;
-	used: number;
-}
-
 /** Get package version */
 function getVersion(): string {
 	// Try to get version from environment or return default
@@ -58,8 +52,8 @@ async function checkCoreHealth(): Promise<HealthCheck> {
 		const { HeuristicsEngine } = await import("./heuristics.js");
 
 		// Quick instantiation test
-		const engine = new DecisionEngine();
-		const heuristics = new HeuristicsEngine([]);
+		const _engine = new DecisionEngine();
+		const _heuristics = new HeuristicsEngine([]);
 
 		const latencyMs = Date.now() - start;
 
@@ -217,7 +211,7 @@ async function checkDiskHealth(): Promise<HealthCheck> {
 	const start = Date.now();
 	try {
 		const aidrPath = resolvePath(AIDR_DIR);
-		const stats = statSync(aidrPath);
+		const _stats = statSync(aidrPath);
 		const latencyMs = Date.now() - start;
 
 		// Estimate available space (rough approximation)
@@ -231,7 +225,7 @@ async function checkDiskHealth(): Promise<HealthCheck> {
 			message: healthy ? undefined : `Low disk space: ~${estimatedFreeMB}MB remaining`,
 			details: { aidrDir: AIDR_DIR, estimatedFreeMB, warningThresholdMB: 100 },
 		};
-	} catch (error) {
+	} catch (_error) {
 		// If directory doesn't exist yet, that's OK (will be created)
 		return {
 			name: "disk_space",
@@ -241,6 +235,39 @@ async function checkDiskHealth(): Promise<HealthCheck> {
 				aidrDir: AIDR_DIR,
 				note: "Directory not yet created - will be created on first use",
 			},
+		};
+	}
+}
+
+/**
+ * Check remote policy cache health
+ */
+async function checkRemotePolicyHealth(): Promise<HealthCheck> {
+	const start = Date.now();
+	try {
+		const config = await loadConfig();
+		const token = (config.auth?.api_key ?? "").trim();
+		const status = await inspectRemoteRuntimePolicyCache(config, token);
+		const latencyMs = Date.now() - start;
+
+		return {
+			name: "remote_policy",
+			status: status.usable ? "healthy" : "degraded",
+			latencyMs,
+			message: status.message,
+			details: {
+				source: status.source,
+				usable: status.usable,
+				keyMatches: status.keyMatches,
+				policyVersion: status.policyVersion,
+			},
+		};
+	} catch (error) {
+		return {
+			name: "remote_policy",
+			status: "unhealthy",
+			latencyMs: Date.now() - start,
+			message: error instanceof Error ? error.message : String(error),
 		};
 	}
 }
@@ -266,6 +293,7 @@ export async function runExtendedHealthChecks(): Promise<HealthCheck[]> {
 		checkCoreHealth(),
 		checkCacheHealth(),
 		checkThreatRulesHealth(),
+		checkRemotePolicyHealth(),
 		checkEndpointHealth(),
 		checkDiskHealth(),
 	]);

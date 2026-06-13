@@ -22,11 +22,7 @@ export function createToolHandlers(
 
 		try {
 			const args = output.args ?? {};
-			const artifacts = extractFromOpenCodeTool(input.tool, args);
-
-			if (!artifacts || artifacts.length === 0) {
-				return;
-			}
+			const artifacts = extractFromOpenCodeTool(input.tool, args) ?? [];
 
 			const { verdict, actionId } = await guardToolCall(
 				{

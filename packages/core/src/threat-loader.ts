@@ -67,11 +67,18 @@ export async function loadThreats(
 		let data: unknown;
 		try {
 			data = parseYaml(content);
-		} catch (e) {
-			const errorMsg = `Failed to parse ${filename}: ${String(e)}`;
-			errors.push(errorMsg);
-			logger.error(errorMsg, { file: filename, error: String(e) });
-			continue;
+		} catch {
+			// Retry: escape backslashes before regex-special chars that
+			// are not valid YAML double-quoted string escape sequences
+			try {
+				const fixed = content.replace(/\\(?=[.*+?^$()\[\]{}|\\])/g, "\\\\");
+				data = parseYaml(fixed);
+			} catch (e2) {
+				const errorMsg = `Failed to parse ${filename}: ${String(e2)}`;
+				errors.push(errorMsg);
+				logger.error(errorMsg, { file: filename, error: String(e2) });
+				continue;
+			}
 		}
 
 		if (!Array.isArray(data)) {

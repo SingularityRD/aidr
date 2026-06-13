@@ -4,17 +4,8 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import {
-	copyFile,
-	mkdir,
-	readdir,
-	readFile,
-	rename,
-	stat,
-	unlink,
-	writeFile,
-} from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { copyFile, mkdir, readFile, stat, unlink } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { logIncident } from "./audit-log.js";
 import { resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
@@ -74,7 +65,7 @@ interface QuarantineManifest {
 
 const MANIFEST_VERSION = 1;
 const MANIFEST_FILENAME = "manifest.json";
-const METADATA_FILENAME = "metadata.json";
+const _METADATA_FILENAME = "metadata.json";
 
 /**
  * Auto-quarantine manager for isolating suspicious files.
@@ -129,7 +120,7 @@ export class AutoQuarantine {
 
 		// Verify file exists and is accessible
 		const fileStats = await stat(resolvedPath).catch(() => null);
-		if (!fileStats || !fileStats.isFile()) {
+		if (!fileStats?.isFile()) {
 			const error = `File not found or not accessible: ${resolvedPath}`;
 
 			// Log failure if auditor and context are available
@@ -313,7 +304,7 @@ export class AutoQuarantine {
 		// Delete quarantined file
 		try {
 			await unlink(item.quarantinePath);
-		} catch (error) {
+		} catch (_error) {
 			// File may not exist, continue
 			this.logger.warn(`Could not delete quarantined file: ${item.quarantinePath}`);
 		}

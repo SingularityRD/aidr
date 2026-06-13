@@ -445,6 +445,11 @@ body {
 	font-size: var(--text-base);
 }
 
+.btn-sm {
+	padding: var(--space-1) var(--space-3);
+	font-size: var(--text-xs);
+}
+
 /* Cards */
 .card {
 	background: var(--bg-elevated);
@@ -775,6 +780,18 @@ body {
 	padding: 6px 10px;
 	border-radius: 999px;
 	font-weight: 500;
+}
+
+.pill-warning {
+	background: var(--warning-50);
+	color: var(--warning-600);
+	border-color: var(--warning-500);
+}
+
+.pill-success {
+	background: var(--success-50);
+	color: var(--success-600);
+	border-color: var(--success-500);
 }
 
 .row {

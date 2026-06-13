@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { AuditLogConfig } from "../audit.js";
 import {
 	cleanupOldLogs,
@@ -252,7 +252,7 @@ describe("getAuditLogStats", () => {
 		expect(stats.fileSize).toBeGreaterThan(0);
 		expect(stats.firstEntry).toBeInstanceOf(Date);
 		expect(stats.lastEntry).toBeInstanceOf(Date);
-		expect(stats.lastEntry?.getTime()).toBeGreaterThanOrEqual(stats.firstEntry!.getTime());
+		expect(stats.lastEntry?.getTime()).toBeGreaterThanOrEqual(stats.firstEntry?.getTime());
 	});
 });
 
@@ -273,7 +273,7 @@ describe("cleanupOldLogs", () => {
 		await writeFile(`${logPath}.2`, "old2");
 
 		// Manually set old mtime for rotated files
-		const oldTime = Date.now() - 31 * 24 * 60 * 60 * 1000;
+		const _oldTime = Date.now() - 31 * 24 * 60 * 60 * 1000;
 		await writeFile(`${logPath}.1`, "old1", { flag: "w" });
 
 		// Cleanup with 30 day retention

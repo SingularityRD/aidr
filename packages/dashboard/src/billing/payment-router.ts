@@ -56,9 +56,9 @@ const LEMON_CONFIG: ProviderConfig = {
 export function getPaymentProvider(): PaymentProvider {
 	return {
 		async createSubscription(
-			userId: string,
-			seats: number,
-			plan: "monthly" | "yearly",
+			_userId: string,
+			_seats: number,
+			_plan: "monthly" | "yearly",
 		): Promise<PaymentResult> {
 			// Note: This requires user email which we don't have here
 			// In real implementation, fetch user email from auth context
@@ -67,7 +67,7 @@ export function getPaymentProvider(): PaymentProvider {
 		async cancelSubscription(subscriptionId: string): Promise<void> {
 			return cancelSubscription(subscriptionId);
 		},
-		async getInvoices(userId: string): Promise<Invoice[]> {
+		async getInvoices(_userId: string): Promise<Invoice[]> {
 			// LemonSqueezy doesn't have direct invoice API, return empty
 			return [];
 		},
@@ -153,7 +153,7 @@ export async function convertCurrency(amount: number, from: string, to: string):
  * Detect user location from various signals
  */
 export function detectUserLocation(
-	ip?: string,
+	_ip?: string,
 	browserLocale?: string,
 	explicitCountry?: string,
 ): UserLocation {

@@ -375,5 +375,270 @@ export async function evaluatePolicy(
 		}
 	}
 
+	// --- Runtime defaults ---
+	const rt = config.policy.runtime_defaults as Record<string, unknown> | undefined;
+	if (rt) {
+		// Package action (takes priority over command action for package-manager commands)
+		const pkgAction = rt.package_action as string | undefined;
+		if (pkgAction && (pkgAction === "block" || pkgAction === "require_approval")) {
+			const hasCommand = artifacts.some((a) => a.type === "command");
+			if (hasCommand) {
+				const cmdArtifact = artifacts.find((a) => a.type === "command");
+				const cmd = cmdArtifact?.value ?? "";
+				const isPkgCmd =
+					/\b(?:npm|yarn|pnpm|pip|pip3|gem|brew|apt|apk|choco|scoop|cargo|go\s+install|nuget)\b/i.test(
+						cmd,
+					);
+				if (isPkgCmd) {
+					const decision = pkgAction === "block" ? "deny" : "ask";
+					const packages = extractPackagesFromCommand(cmd);
+					return makeVerdict({
+						decision,
+						category: "supply_chain",
+						severity: decision === "deny" ? "critical" : "warning",
+						source: "policy",
+						artifact: packages.length > 0 ? packages[0]!.name : cmd,
+						threatId: "POL-DEFAULT-PKG-001",
+						reasons: ["Package install blocked by runtime default"],
+						confidence: 0.9,
+					});
+				}
+			}
+		}
+
+		// Command action
+		const cmdAction = rt.command_action as string | undefined;
+		if (cmdAction && (cmdAction === "block" || cmdAction === "require_approval")) {
+			if (toolName === "Bash" && artifacts.some((a) => a.type === "command")) {
+				const decision = cmdAction === "block" ? "deny" : "ask";
+				return makeVerdict({
+					decision,
+					category: "command_execution",
+					severity: decision === "deny" ? "critical" : "warning",
+					source: "policy",
+					artifact: "...",
+					threatId: "POL-DEFAULT-CMD-001",
+					reasons: ["Command blocked by runtime default"],
+					confidence: 0.9,
+				});
+			}
+		}
+
+		// File action
+		const fileAction = rt.file_action as string | undefined;
+		if (fileAction && (fileAction === "block" || fileAction === "require_approval")) {
+			const isWriteLike = toolName === "Write" || toolName === "Edit";
+			if (isWriteLike && artifacts.some((a) => a.type === "file_path")) {
+				const decision = fileAction === "block" ? "deny" : "ask";
+				const fileArtifact = artifacts.find((a) => a.type === "file_path");
+				return makeVerdict({
+					decision,
+					category: "file_write",
+					severity: decision === "deny" ? "critical" : "warning",
+					source: "policy",
+					artifact: fileArtifact?.value ?? "",
+					threatId: "POL-DEFAULT-FILE-001",
+					reasons: ["File write blocked by runtime default"],
+					confidence: 0.9,
+				});
+			}
+		}
+
+		// URL action
+		const urlAction = rt.url_action as string | undefined;
+		if (urlAction && (urlAction === "block" || urlAction === "require_approval")) {
+			if (artifacts.some((a) => a.type === "url")) {
+				const decision = urlAction === "block" ? "deny" : "ask";
+				const urlArtifact = artifacts.find((a) => a.type === "url");
+				return makeVerdict({
+					decision,
+					category: "network_egress",
+					severity: decision === "deny" ? "critical" : "warning",
+					source: "policy",
+					artifact: urlArtifact?.value ?? "",
+					threatId: "POL-DEFAULT-URL-001",
+					reasons: ["URL blocked by runtime default"],
+					confidence: 0.9,
+				});
+			}
+		}
+
+		// Output action
+		const outAction = rt.output_action as string | undefined;
+		if (outAction && (outAction === "block" || outAction === "require_approval")) {
+			if (
+				toolName === "PostToolUse" &&
+				artifacts.some((a) => a.type === "content" && a.context === "agent_output")
+			) {
+				const decision = outAction === "block" ? "deny" : "ask";
+				const outArtifact = artifacts.find((a) => a.type === "content");
+				return makeVerdict({
+					decision,
+					category: "output_scan",
+					severity: decision === "deny" ? "critical" : "warning",
+					source: "policy",
+					artifact: outArtifact?.value ?? "",
+					threatId: "POL-DEFAULT-OUT-001",
+					reasons: ["Output blocked by runtime default"],
+					confidence: 0.9,
+				});
+			}
+		}
+	}
+
+	// --- MCP policy ---
+	if (config.policy.mcp.enabled) {
+		let mcpServerId: string | undefined;
+		let mcpToolName: string | undefined;
+
+		if (toolName.startsWith("mcp__")) {
+			const parts = toolName.split("__");
+			mcpServerId = parts[1];
+			mcpToolName = parts.slice(2).join("__");
+		} else if (toolName === "MCP" && toolInput?.tool_input) {
+			const ti = toolInput.tool_input as Record<string, unknown>;
+			mcpServerId = typeof ti.server === "string" ? ti.server : undefined;
+			mcpToolName = typeof ti.name === "string" ? ti.name : undefined;
+		}
+
+		if (mcpServerId && mcpToolName) {
+			const fullToolId = `${mcpServerId}.${mcpToolName}`;
+
+			if (config.policy.mcp.deny_tools.includes(fullToolId)) {
+				return makeVerdict({
+					decision: "deny",
+					category: "mcp_tool_call",
+					severity: "critical",
+					source: "policy",
+					artifact: fullToolId,
+					threatId: "POL-MCP-002",
+					reasons: ["MCP tool denied by policy"],
+					confidence: 0.95,
+				});
+			}
+
+			if (config.policy.mcp.require_approval_tools.includes(fullToolId)) {
+				return makeVerdict({
+					decision: "ask",
+					category: "mcp_tool_call",
+					severity: "warning",
+					source: "policy",
+					artifact: fullToolId,
+					threatId: "POL-MCP-003",
+					reasons: ["MCP tool requires approval"],
+					confidence: 0.9,
+				});
+			}
+
+			// If server is explicitly allowed, skip remaining risk checks
+			if (config.policy.mcp.allow_servers.includes(mcpServerId)) {
+				return null;
+			}
+
+			let isInInventory = false;
+			let isRiskyServer = false;
+
+			const inventoryPaths = config.policy.mcp.inventory_paths ?? [];
+			for (const invPath of inventoryPaths) {
+				try {
+					const resolved = resolvePath(invPath);
+					const content = await getFileContent(resolved, "utf-8").catch(() => null);
+					if (!content) continue;
+
+					const parsed = JSON.parse(content) as {
+						mcpServers?: Record<string, { command?: string; args?: string[] }>;
+					};
+					const servers = parsed.mcpServers ?? {};
+					const serverCfg = servers[mcpServerId];
+
+					if (serverCfg) {
+						isInInventory = true;
+						const cmd = (serverCfg.command ?? "").toLowerCase();
+						if (
+							cmd === "bash" ||
+							cmd === "sh" ||
+							cmd === "zsh" ||
+							cmd === "npx" ||
+							cmd === "npx--yes"
+						) {
+							isRiskyServer = true;
+						}
+					}
+				} catch {
+					// Ignore invalid inventory files
+				}
+			}
+
+			if (isRiskyServer) {
+				return makeVerdict({
+					decision: "deny",
+					category: "mcp_tool_call",
+					severity: "critical",
+					source: "policy",
+					artifact: fullToolId,
+					threatId: "POL-MCP-001",
+					reasons: ["MCP server uses shell_wrapper_command"],
+					confidence: 0.95,
+				});
+			}
+
+			if (!isInInventory) {
+				const unknownAction = config.policy.mcp.unknown_server_action ?? "require_approval";
+				if (unknownAction === "block") {
+					return makeVerdict({
+						decision: "deny",
+						category: "mcp_tool_call",
+						severity: "critical",
+						source: "policy",
+						artifact: fullToolId,
+						threatId: "POL-MCP-001",
+						reasons: ["MCP server not in inventory"],
+						confidence: 0.9,
+					});
+				}
+				if (unknownAction === "require_approval") {
+					return makeVerdict({
+						decision: "ask",
+						category: "mcp_tool_call",
+						severity: "warning",
+						source: "policy",
+						artifact: fullToolId,
+						threatId: "POL-MCP-001",
+						reasons: ["MCP server not in inventory"],
+						confidence: 0.9,
+					});
+				}
+				// "allow" — fall through
+			}
+
+			const defaultAction = config.policy.mcp.default_action ?? "require_approval";
+			if (defaultAction === "block") {
+				return makeVerdict({
+					decision: "deny",
+					category: "mcp_tool_call",
+					severity: "critical",
+					source: "policy",
+					artifact: fullToolId,
+					threatId: "POL-MCP-005",
+					reasons: ["MCP tool blocked by default policy"],
+					confidence: 0.9,
+				});
+			}
+			if (defaultAction === "require_approval") {
+				return makeVerdict({
+					decision: "ask",
+					category: "mcp_tool_call",
+					severity: "warning",
+					source: "policy",
+					artifact: fullToolId,
+					threatId: "POL-MCP-005",
+					reasons: ["MCP tool requires approval by default"],
+					confidence: 0.9,
+				});
+			}
+			// "allow" — fall through
+		}
+	}
+
 	return null;
 }

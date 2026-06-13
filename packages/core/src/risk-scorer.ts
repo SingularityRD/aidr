@@ -1,4 +1,4 @@
-import type { HeuristicMatch, PackageCheckResult, UrlCheckResult, Verdict } from "./types.js";
+import type { HeuristicMatch, PackageCheckResult, UrlCheckResult } from "./types.js";
 
 export interface RiskFactor {
 	name: string;
@@ -36,7 +36,7 @@ export class MultiFactorRiskScorer {
 	calculateRisk(
 		heuristicMatches: HeuristicMatch[],
 		urlResults: UrlCheckResult[],
-		packageResults: PackageCheckResult[],
+		_packageResults: PackageCheckResult[],
 		context: RiskContext,
 		behavioralScore: number,
 		commandChainScore: number,
@@ -130,7 +130,7 @@ export class MultiFactorRiskScorer {
 
 	private calculateExploitabilityFactor(
 		heuristicMatches: HeuristicMatch[],
-		urlResults: UrlCheckResult[],
+		_urlResults: UrlCheckResult[],
 	): { score: number; description: string } {
 		let trivialExploitCount = 0;
 		let easyExploitCount = 0;

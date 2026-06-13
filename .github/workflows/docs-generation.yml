@@ -1,0 +1,148 @@
+name: Documentation Generation
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'packages/**/src/**/*.ts'
+      - 'packages/**/src/**/*.tsx'
+  pull_request:
+    paths:
+      - 'packages/**/src/**/*.ts'
+      - 'packages/**/src/**/*.tsx'
+  workflow_dispatch:
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate API Documentation
+        run: |
+          echo "=== Generating API Documentation ==="
+          
+          # Install TypeDoc for API documentation generation
+          pnpm add -D typedoc
+          
+          # Generate docs for core package
+          cd packages/core
+          npx typedoc --out ../../docs/api/core src/index.ts --name "@singularityrd/aidr-core" || echo "TypeDoc generation attempted"
+          cd ../..
+          
+          # Generate docs for SDK
+          cd packages/sdk
+          npx typedoc --out ../../docs/api/sdk src/index.ts --name "@singularityrd/aidr-sdk" || echo "TypeDoc generation attempted"
+          cd ../..
+          
+          echo "=== API Documentation generation complete ==="
+
+      - name: Generate Architecture Diagrams
+        run: |
+          echo "=== Generating Architecture Diagrams ==="
+          
+          # Create diagrams directory
+          mkdir -p docs/diagrams
+          
+          # Generate package dependency graph from pnpm-workspace
+          cat > docs/diagrams/package-structure.mmd << 'EOF'
+          graph TD
+              Core["@singularityrd/aidr-core<br/>Platform Detection Engine"]
+              Claude["@singularityrd/aidr-claude-code<br/>Claude Code Hook"]
+              OpenClaw["@singularityrd/aidr-openclaw<br/>OpenClaw Plugin"]
+              OpenCode["@singularityrd/aidr-opencode<br/>OpenCode Plugin"]
+              Extension["aidr-cursor<br/>VS Code/Cursor Extension"]
+              SDK["@singularityrd/aidr-sdk<br/>Universal SDK"]
+              Dashboard["aidr-dashboard<br/>Control Plane UI"]
+              
+              Core --> Claude
+              Core --> OpenClaw
+              Core --> OpenCode
+              Core --> Extension
+              Core --> SDK
+              Dashboard --> Core
+          EOF
+          
+          echo "✓ Package structure diagram generated"
+
+      - name: Update README with Package Versions
+        run: |
+          echo "=== Updating Documentation ==="
+          
+          # Extract version info and update docs
+          CORE_VERSION=$(cat packages/core/package.json | grep '"version"' | head -1 | cut -d'"' -f4)
+          SDK_VERSION=$(cat packages/sdk/package.json | grep '"version"' | head -1 | cut -d'"' -f4)
+          
+          echo "Core version: $CORE_VERSION"
+          echo "SDK version: $SDK_VERSION"
+          
+          # Create version badge
+          cat > docs/versions.md << EOF
+          # Package Versions
+          
+          | Package | Version |
+          |---------|---------|
+          | @singularityrd/aidr-core | v${CORE_VERSION} |
+          | @singularityrd/aidr-sdk | v${SDK_VERSION} |
+          | @singularityrd/aidr-openclaw | v${OPENCLAW_VERSION:-0.6.0} |
+          | @singularityrd/aidr-opencode | v${OPENCODE_VERSION:-0.6.0} |
+          | aidr-cursor | v${EXTENSION_VERSION:-0.6.0} |
+          
+          *Last updated: $(date -u +"%Y-%m-%d %H:%M UTC")*
+          EOF
+          
+          echo "✓ Version documentation updated"
+
+      - name: Upload Documentation Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-docs
+          path: |
+            docs/api/
+            docs/diagrams/
+            docs/versions.md
+          retention-days: 30
+
+      - name: Commit Documentation Changes
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if there are changes to commit
+          if git diff --quiet docs/; then
+            echo "No documentation changes to commit"
+            exit 0
+          fi
+          
+          git add docs/
+          git commit -m "docs: auto-generated API documentation and diagrams [skip ci]"
+          git push || echo "Push failed - may need manual merge"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Slack
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#aidr-docs'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: "📚 Documentation generation ${{ job.status }}"

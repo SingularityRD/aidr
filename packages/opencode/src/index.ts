@@ -16,7 +16,6 @@ import {
 	removeFromAllowlist,
 } from "@singularityrd/aidr-core";
 import { getBundledDataDirs } from "./bundled-dirs.js";
-import { OpencodeLogger } from "./logger-adaptor.js";
 import { createSessionScanHandler } from "./startup-scan.js";
 import { createToolHandlers } from "./tool-handler.js";
 

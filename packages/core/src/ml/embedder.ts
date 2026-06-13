@@ -4,8 +4,6 @@
  * Total model size < 500KB, inference < 50ms.
  */
 
-import { randomBytes } from "crypto";
-
 /** Default embedding dimension - kept small for speed */
 export const EMBEDDING_DIM = 100;
 

@@ -129,6 +129,7 @@ function runClaude(
 	}
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complexity inherent in tool result parsing
 function findToolResults(messages: Record<string, unknown>[]): ToolResult[] {
 	const results: ToolResult[] = [];
 

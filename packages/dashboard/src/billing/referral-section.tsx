@@ -19,7 +19,7 @@ export function ReferralSection({ userId }: { userId: string }) {
 
 	useEffect(() => {
 		loadReferralData();
-	}, [userId]);
+	}, [loadReferralData]);
 
 	async function loadReferralData() {
 		setIsLoading(true);

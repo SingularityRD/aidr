@@ -11,8 +11,8 @@ export interface EntropyMatch {
 }
 
 export class EntropyDetector {
-	private readonly logger: Logger;
 	private readonly entropyThreshold: number;
+	private readonly logger: Logger;
 
 	constructor(entropyThreshold = 4.5, logger: Logger = nullLogger) {
 		this.entropyThreshold = entropyThreshold;

@@ -180,12 +180,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 		}
 
 		void loadMembers();
-	}, [currentTeam?.id]);
+	}, [currentTeam?.id, currentTeam]);
 
 	// Load audit logs when team changes
 	useEffect(() => {
 		void refreshAuditLogs();
-	}, [currentTeam?.id]);
+	}, [refreshAuditLogs]);
 
 	async function refreshAuditLogs() {
 		if (!currentTeam) return;

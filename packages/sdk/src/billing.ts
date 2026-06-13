@@ -93,7 +93,7 @@ export class LemonSqueezyBilling {
 	private readonly baseUrl = "https://api.lemonsqueezy.com/v1";
 
 	constructor(
-		private config: BillingConfig,
+		config: BillingConfig,
 		private logger?: Logger,
 	) {
 		this.apiKey = config.lemonSqueezyApiKey;
@@ -255,7 +255,7 @@ export class LemonSqueezyBilling {
 		} catch (error) {
 			this.logger?.error?.(
 				`License validation failed: ${error instanceof Error ? error.message : String(error)}`,
-				{ licenseKey: licenseKey.slice(0, 8) + "..." },
+				{ licenseKey: `${licenseKey.slice(0, 8)}...` },
 			);
 			throw error;
 		}
@@ -301,7 +301,7 @@ export class LemonSqueezyBilling {
 	 * Get current usage for a license
 	 * Note: This is a placeholder - actual implementation depends on your usage tracking
 	 */
-	async getUsage(licenseKey: string): Promise<UsageInfo> {
+	async getUsage(_licenseKey: string): Promise<UsageInfo> {
 		// This would typically fetch from your own database
 		// Lemon Squeezy doesn't provide usage tracking out of the box
 		// For now, return placeholder - SDK users should override this

@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserRouter, Navigate, RouterProvider, redirect } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, redirect } from "react-router-dom";
 import { initSentry } from "./sentry";
 import { AppLayout } from "./ui/AppLayout";
 import { PublicLayout } from "./ui/PublicLayout";

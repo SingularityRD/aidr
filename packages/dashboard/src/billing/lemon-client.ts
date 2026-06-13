@@ -2,13 +2,6 @@
 const LEMON_API_KEY = process.env.LEMON_SQUEEZY_API_KEY;
 const LEMON_STORE_ID = process.env.LEMON_SQUEEZY_STORE_ID;
 
-interface LemonProduct {
-	id: string;
-	name: string;
-	price: number;
-	description: string;
-}
-
 // Önceden oluşturulmuş Lemon Squeezy ürünleri
 const PRODUCTS = {
 	"agent-seat-monthly": {
@@ -142,7 +135,7 @@ export async function cancelSubscription(subscriptionId: string) {
 }
 
 // Müşteri portal URL'si oluştur (Lemon Squeezy müşteri portalı)
-export async function createCustomerPortal(customerId: string): Promise<string> {
+export async function createCustomerPortal(_customerId: string): Promise<string> {
 	// Lemon Squeezy'de doğrudan müşteri portalı yok, ancak müşteriler
 	// kendi subscription yönetim URL'lerini email üzerinden alırlar
 	// Alternatif olarak customer'ı yönetmek için API kullanılabilir
@@ -151,9 +144,9 @@ export async function createCustomerPortal(customerId: string): Promise<string> 
 
 // Webhook doğrulama (Lemon Squeezy webhook secret ile)
 export function verifyWebhookSignature(
-	payload: string,
-	signature: string,
-	secret: string,
+	_payload: string,
+	_signature: string,
+	_secret: string,
 ): boolean {
 	// Lemon Squeezy webhook imza doğrulama implementasyonu
 	// Gerçek implementasyonda crypto ile HMAC doğrulaması yapılır

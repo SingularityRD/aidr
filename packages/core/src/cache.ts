@@ -4,6 +4,7 @@
  */
 
 import { resolvePath } from "./config.js";
+import { decryptFile, deriveKey, encryptFile } from "./encryption.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
 import type { CacheConfig, CachedVerdict, CacheStore, Logger } from "./types.js";
 import { nullLogger } from "./types.js";
@@ -19,19 +20,29 @@ export class VerdictCache {
 	private readonly config: CacheConfig;
 	private readonly logger: Logger;
 	private readonly version: string | undefined;
+	private readonly encryptionKey: Buffer | null;
 
-	constructor(config: CacheConfig, logger: Logger = nullLogger, version?: string) {
+	constructor(
+		config: CacheConfig,
+		logger: Logger = nullLogger,
+		version?: string,
+		installationId?: string,
+	) {
 		this.config = config;
 		this.logger = logger;
 		this.path = resolvePath(config.path);
 		this.version = version;
+		this.encryptionKey =
+			installationId && config.encryption?.enabled ? deriveKey(installationId) : null;
 	}
 
 	async load(): Promise<void> {
 		if (!this.config.enabled) return;
 
 		try {
-			const raw = await getFileContent(this.path);
+			const raw = this.encryptionKey
+				? await decryptFile(this.path, this.encryptionKey)
+				: await getFileContent(this.path);
 			const data = JSON.parse(raw) as CacheStore;
 			this.store = {
 				urls: data.urls ?? {},
@@ -152,6 +163,9 @@ export class VerdictCache {
 		try {
 			this.pruneStaleEntries();
 			await atomicWriteJson(this.path, this.store);
+			if (this.encryptionKey) {
+				await encryptFile(this.path, this.encryptionKey);
+			}
 		} catch (e) {
 			this.logger.warn(`Failed to save cache to ${this.path}`, { error: String(e) });
 		}

@@ -6,8 +6,7 @@
 import "@testing-library/jest-dom";
 import type * as SupabaseModule from "@supabase/supabase-js";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import React from "react";
-import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock modules before importing components
@@ -157,7 +156,7 @@ describe("Dashboard Integration", () => {
 
 		it("should show environment error when supabase is not configured", () => {
 			// Temporarily override the mock
-			const originalEnvError = vi.importMock("../lib/supabase");
+			const _originalEnvError = vi.importMock("../lib/supabase");
 			vi.doMock("../lib/supabase", () => ({
 				supabase: {},
 				supabaseEnvError: "Missing environment variables",
@@ -179,7 +178,7 @@ describe("Dashboard Integration", () => {
 
 	describe("Routing", () => {
 		it("should render different pages based on route", () => {
-			const { container } = render(
+			render(
 				<MemoryRouter initialEntries={["/pricing"]}>
 					<Routes>
 						<Route path="/" element={<PublicLayout />}>

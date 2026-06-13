@@ -180,7 +180,7 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 			cancelled = true;
 			supabase.removeChannel(channel);
 		};
-	}, [userId]);
+	}, [userId, seats.length]);
 
 	// Computed values
 	const canAddAgent = useCallback((): boolean => {

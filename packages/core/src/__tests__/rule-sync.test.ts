@@ -201,7 +201,7 @@ describe("RealTimeRuleSync", () => {
 			await sync.downloadRule("rule/with/slashes");
 
 			expect(fetchSpy).toHaveBeenCalledWith(
-				expect.stringContaining("rules%2Fwith%2Fslashes"),
+				expect.stringContaining("rule%2Fwith%2Fslashes"),
 				expect.any(Object),
 			);
 			fetchSpy.mockRestore();

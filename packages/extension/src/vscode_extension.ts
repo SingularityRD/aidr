@@ -1,8 +1,7 @@
 import { createChildLogger, getLogger } from "@singularityrd/aidr-core";
 import type * as vscode from "vscode";
-
-import { activateManagedHooksExtension } from "./shared_extension.js";
 import { initSentry } from "./sentry.js";
+import { activateManagedHooksExtension } from "./shared_extension.js";
 import * as vscodeHookInstaller from "./vscode_hook_installer.js";
 
 export function activate(context: vscode.ExtensionContext): void {

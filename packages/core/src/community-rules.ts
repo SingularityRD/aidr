@@ -239,7 +239,11 @@ export class CommunityRuleRegistry {
 	 */
 	async getLeaderboard(): Promise<RuleContributor[]> {
 		const contributors = Array.from(this.contributors.values());
-		return contributors.sort((a, b) => b.reputation - a.reputation);
+		return contributors.sort((a, b) => {
+			if (b.reputation !== a.reputation) return b.reputation - a.reputation;
+			if (b.rulesPromoted !== a.rulesPromoted) return b.rulesPromoted - a.rulesPromoted;
+			return b.rulesApproved - a.rulesApproved;
+		});
 	}
 
 	/**

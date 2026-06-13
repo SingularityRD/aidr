@@ -1,8 +1,3 @@
-/**
- * Tests for Auto-Contain module.
- */
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoContain, createDefaultContainConfig } from "../contain.js";
 import { makeTmpDir } from "./test-utils.js";
@@ -19,10 +14,10 @@ describe("createDefaultContainConfig", () => {
 });
 
 describe("AutoContain", () => {
-	let tmpDir: string;
+	let _tmpDir: string;
 
 	beforeEach(async () => {
-		tmpDir = await makeTmpDir();
+		_tmpDir = await makeTmpDir();
 	});
 
 	describe("isolate", () => {

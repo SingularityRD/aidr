@@ -119,7 +119,7 @@ export function GoogleAuthProvider({ children, clientId }: GoogleAuthProviderPro
 			cancelled = true;
 			subscription.unsubscribe();
 		};
-	}, []);
+	}, [generateReferralCode, loadSharedCredentials]);
 
 	// Load credential shares
 	async function loadSharedCredentials(userId: string) {
@@ -226,7 +226,7 @@ export function GoogleAuthProvider({ children, clientId }: GoogleAuthProviderPro
 			// Reload shared credentials
 			await loadSharedCredentials(user.id);
 		},
-		[user],
+		[user, loadSharedCredentials],
 	);
 
 	// Sync agent configuration across devices

@@ -9,7 +9,7 @@ export default defineConfig({
 			"packages/**/src/**/__tests__/**/*.test.ts",
 			"supabase/functions/**/__tests__/**/*.test.ts",
 		],
-		exclude: ["**/node_modules/**", "**/*.e2e.test.ts", "**/src/__tests__/e2e.test.ts"],
+		exclude: ["**/node_modules/**", "**/*.e2e.test.ts", "**/*e2e-integration*", "**/src/__tests__/e2e.test.ts"],
 		environment: "node",
 		reporters: ["verbose", "json"],
 		outputFile: { json: "./coverage/test-results.json" },

@@ -1,0 +1,355 @@
+
+> @ lINFO:nt C:\Users\an─▒l\Desktop\AIDR PROJECT\aINFO:dr
+> bINFO:ome check . "--colors=off"
+
+bINFO:ome.json:2:13 deserINFO:alINFO:ze ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  INFO: The confINFO:guratINFO:on schema versINFO:on does not match the CLI versINFO:on 2.4.10
+  
+    1 Ôöé {
+  > 2 Ôöé 	"$schema": "https://bINFO:omejs.dev/schemas/2.3.14/schema.json",
+      Ôöé 	           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    3 Ôöé 	"vcs": {
+    4 Ôöé 		"enabled": true,
+  
+  INFO:   Expected:                     2.4.10
+      Found:                        2.3.14
+  
+  
+  INFO: Run the command bINFO:ome mINFO:grate to mINFO:grate the confINFO:guratINFO:on fINFO:le.
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:384:4 lINFO:nt/style/noNonNullAssertINFO:on ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    383 Ôöé 		for (let j = 0; j <= cols; j++) {
+  > 384 Ôöé 			matrINFO:x[0]WARNING:[j] = j;
+        Ôöé 			^^^^^^^^^^
+    385 Ôöé 		}
+    386 Ôöé 
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:388:16 lINFO:nt/style/noNonNullAssertINFO:on ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    387 Ôöé 		for (let INFO: = 1; INFO: <= rows; INFO:++) {
+  > 388 Ôöé 			const row = matrINFO:x[INFO:]WARNING:;
+        Ôöé 			            ^^^^^^^^^^
+    389 Ôöé 			row[0] = INFO:;
+    390 Ôöé 			for (let j = 1; j <= cols; j++) {
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:392:15 lINFO:nt/style/noNonNullAssertINFO:on ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    390 Ôöé 			for (let j = 1; j <= cols; j++) {
+    391 Ôöé 				INFO:f (b.charAt(INFO: - 1) === a.charAt(j - 1)) {
+  > 392 Ôöé 					row[j] = matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING:;
+        Ôöé 					         ^^^^^^^^^^^^^^^^^^^^^^
+    393 Ôöé 				} else {
+    394 Ôöé 					row[j] = Math.mINFO:n(matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING: + 1, row[j - 1]WARNING: + 1, matrINFO:x[INFO: - 1]WARNING:[j]WARNING: + 1);
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:392:15 lINFO:nt/style/noNonNullAssertINFO:on  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    390 Ôöé 			for (let j = 1; j <= cols; j++) {
+    391 Ôöé 				INFO:f (b.charAt(INFO: - 1) === a.charAt(j - 1)) {
+  > 392 Ôöé 					row[j] = matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING:;
+        Ôöé 					         ^^^^^^^^^^^^^^
+    393 Ôöé 				} else {
+    394 Ôöé 					row[j] = Math.mINFO:n(matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING: + 1, row[j - 1]WARNING: + 1, matrINFO:x[INFO: - 1]WARNING:[j]WARNING: + 1);
+  
+  INFO: Unsafe fINFO:x: Replace wINFO:th optINFO:onal chaINFO:n operator ?. ThINFO:s operator INFO:ncludes runtINFO:me checks, so INFO:t INFO:s safer than the compINFO:le-only non-null assertINFO:on operator
+  
+    390 390 Ôöé         for (let j = 1; j <= cols; j++) {
+    391 391 Ôöé           INFO:f (b.charAt(INFO: - 1) === a.charAt(j - 1)) {
+    392     Ôöé - ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀmatrINFO:x[INFO:┬À-┬À1]WARNING:[j┬À-┬À1]WARNING:;
+        392 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀmatrINFO:x[INFO:┬À-┬À1]?.[j┬À-┬À1]WARNING:;
+    393 393 Ôöé           } else {
+    394 394 Ôöé             row[j] = Math.mINFO:n(matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING: + 1, row[j - 1]WARNING: + 1, matrINFO:x[INFO: - 1]WARNING:[j]WARNING: + 1);
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:394:24 lINFO:nt/style/noNonNullAssertINFO:on  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    392 Ôöé 					row[j] = matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING:;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.mINFO:n(matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING: + 1, row[j - 1]WARNING: + 1, matrINFO:x[INFO: - 1]WARNING:[j]WARNING: + 1);
+        Ôöé 					                  ^^^^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+  INFO: Unsafe fINFO:x: Replace wINFO:th optINFO:onal chaINFO:n operator ?. ThINFO:s operator INFO:ncludes runtINFO:me checks, so INFO:t INFO:s safer than the compINFO:le-only non-null assertINFO:on operator
+  
+    392 392 Ôöé             row[j] = matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING:;
+    393 393 Ôöé           } else {
+    394     Ôöé - ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀMath.mINFO:n(matrINFO:x[INFO:┬À-┬À1]WARNING:[j┬À-┬À1]WARNING:┬À+┬À1,┬Àrow[j┬À-┬À1]WARNING:┬À+┬À1,┬ÀmatrINFO:x[INFO:┬À-┬À1]WARNING:[j]WARNING:┬À+┬À1);
+        394 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀMath.mINFO:n(matrINFO:x[INFO:┬À-┬À1]?.[j┬À-┬À1]WARNING:┬À+┬À1,┬Àrow[j┬À-┬À1]WARNING:┬À+┬À1,┬ÀmatrINFO:x[INFO:┬À-┬À1]WARNING:[j]WARNING:┬À+┬À1);
+    395 395 Ôöé           }
+    396 396 Ôöé         }
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:394:24 lINFO:nt/style/noNonNullAssertINFO:on ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    392 Ôöé 					row[j] = matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING:;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.mINFO:n(matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING: + 1, row[j - 1]WARNING: + 1, matrINFO:x[INFO: - 1]WARNING:[j]WARNING: + 1);
+        Ôöé 					                  ^^^^^^^^^^^^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:394:52 lINFO:nt/style/noNonNullAssertINFO:on ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    392 Ôöé 					row[j] = matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING:;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.mINFO:n(matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING: + 1, row[j - 1]WARNING: + 1, matrINFO:x[INFO: - 1]WARNING:[j]WARNING: + 1);
+        Ôöé 					                                              ^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:394:69 lINFO:nt/style/noNonNullAssertINFO:on  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    392 Ôöé 					row[j] = matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING:;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.mINFO:n(matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING: + 1, row[j - 1]WARNING: + 1, matrINFO:x[INFO: - 1]WARNING:[j]WARNING: + 1);
+        Ôöé 					                                                               ^^^^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+  INFO: Unsafe fINFO:x: Replace wINFO:th optINFO:onal chaINFO:n operator ?. ThINFO:s operator INFO:ncludes runtINFO:me checks, so INFO:t INFO:s safer than the compINFO:le-only non-null assertINFO:on operator
+  
+    392 392 Ôöé             row[j] = matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING:;
+    393 393 Ôöé           } else {
+    394     Ôöé - ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀMath.mINFO:n(matrINFO:x[INFO:┬À-┬À1]WARNING:[j┬À-┬À1]WARNING:┬À+┬À1,┬Àrow[j┬À-┬À1]WARNING:┬À+┬À1,┬ÀmatrINFO:x[INFO:┬À-┬À1]WARNING:[j]WARNING:┬À+┬À1);
+        394 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ row[j]┬À=┬ÀMath.mINFO:n(matrINFO:x[INFO:┬À-┬À1]WARNING:[j┬À-┬À1]WARNING:┬À+┬À1,┬Àrow[j┬À-┬À1]WARNING:┬À+┬À1,┬ÀmatrINFO:x[INFO:┬À-┬À1]?.[j]WARNING:┬À+┬À1);
+    395 395 Ôöé           }
+    396 396 Ôöé         }
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:394:69 lINFO:nt/style/noNonNullAssertINFO:on ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    392 Ôöé 					row[j] = matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING:;
+    393 Ôöé 				} else {
+  > 394 Ôöé 					row[j] = Math.mINFO:n(matrINFO:x[INFO: - 1]WARNING:[j - 1]WARNING: + 1, row[j - 1]WARNING: + 1, matrINFO:x[INFO: - 1]WARNING:[j]WARNING: + 1);
+        Ôöé 					                                                               ^^^^^^^^^^^^^^^^^^
+    395 Ôöé 				}
+    396 Ôöé 			}
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:399:10 lINFO:nt/style/noNonNullAssertINFO:on  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    397 Ôöé 		}
+    398 Ôöé 
+  > 399 Ôöé 		return matrINFO:x[rows]WARNING:[cols]WARNING:;
+        Ôöé 		       ^^^^^^^^^^^^^
+    400 Ôöé 	}
+    401 Ôöé }
+  
+  INFO: Unsafe fINFO:x: Replace wINFO:th optINFO:onal chaINFO:n operator ?. ThINFO:s operator INFO:ncludes runtINFO:me checks, so INFO:t INFO:s safer than the compINFO:le-only non-null assertINFO:on operator
+  
+    397 397 Ôöé       }
+    398 398 Ôöé   
+    399     Ôöé - ÔåÆ ÔåÆ return┬ÀmatrINFO:x[rows]WARNING:[cols]WARNING:;
+        399 Ôöé + ÔåÆ ÔåÆ return┬ÀmatrINFO:x[rows]?.[cols]WARNING:;
+    400 400 Ôöé     }
+    401 401 Ôöé   }
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\behavINFO:oral\anomaly-detector.ts:399:10 lINFO:nt/style/noNonNullAssertINFO:on ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    397 Ôöé 		}
+    398 Ôöé 
+  > 399 Ôöé 		return matrINFO:x[rows]WARNING:[cols]WARNING:;
+        Ôöé 		       ^^^^^^^^^^^^^^^^^^^^
+    400 Ôöé 	}
+    401 Ôöé }
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\dashboard\src\auth\google-provINFO:der.tsx:99:13 lINFO:nt/style/noNonNullAssertINFO:on ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+     97 Ôöé 				const userData: User = {
+     98 Ôöé 					INFO:d: sessINFO:on.user.INFO:d,
+   > 99 Ôöé 					emaINFO:l: sessINFO:on.user.emaINFO:lWARNING:,
+        Ôöé 					       ^^^^^^^^^^^^^^^^^^^
+    100 Ôöé 					googleId: sessINFO:on.user.user_metadata?.provINFO:der_INFO:d,
+    101 Ôöé 					gINFO:thubId: sessINFO:on.user.user_metadata?.gINFO:thub_INFO:d,
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\dashboard\src\auth\google-provINFO:der.tsx:121:13 lINFO:nt/style/noNonNullAssertINFO:on ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: ForbINFO:dden non-null assertINFO:on.
+  
+    119 Ôöé 				const userData: User = {
+    120 Ôöé 					INFO:d: sessINFO:on.user.INFO:d,
+  > 121 Ôöé 					emaINFO:l: sessINFO:on.user.emaINFO:lWARNING:,
+        Ôöé 					       ^^^^^^^^^^^^^^^^^^^
+    122 Ôöé 					googleId: sessINFO:on.user.user_metadata?.provINFO:der_INFO:d,
+    123 Ôöé 					gINFO:thubId: sessINFO:on.user.user_metadata?.gINFO:thub_INFO:d,
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\dashboard\src\bINFO:llINFO:ng\seat-manager.tsx:34:2 suppressINFO:ons/unused ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: SuppressINFO:on comment has no effect. Remove the suppressINFO:on or make sure you are suppressINFO:ng the correct rule.
+  
+    32 Ôöé 	const [error, setError] = useState<strINFO:ng | null>(null);
+    33 Ôöé 
+  > 34 Ôöé 	// bINFO:ome-INFO:gnore lINFO:nt/complexINFO:ty/noExcessINFO:veCognINFO:tINFO:veComplexINFO:ty: multINFO:-step data loadINFO:ng wINFO:th sequentINFO:al checks
+       Ôöé 	^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    35 Ôöé 	const loadUserData = useCallback(async () => {
+    36 Ôöé 		setIsLoadINFO:ng(true);
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\dashboard\src\enterprINFO:se\team-provINFO:der.tsx:221:39 lINFO:nt/suspINFO:cINFO:ous/noExplINFO:cINFO:tAny ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: Unexpected any. SpecINFO:fy a dINFO:fferent type.
+  
+    219 Ôöé 			const { data: team, error: teamError } = awaINFO:t supabase
+    220 Ôöé 				.from("teams")
+  > 221 Ôöé 				.INFO:nsert({ name, plan: "free" } as any)
+        Ôöé 				                                  ^^^
+    222 Ôöé 				.select()
+    223 Ôöé 				.sINFO:ngle();
+  
+  INFO: any dINFO:sables many type checkINFO:ng rules. Its use should be avoINFO:ded.
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\dashboard\src\enterprINFO:se\team-provINFO:der.tsx:236:9 lINFO:nt/suspINFO:cINFO:ous/noExplINFO:cINFO:tAny ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  WARNING: Unexpected any. SpecINFO:fy a dINFO:fferent type.
+  
+    234 Ôöé 				user_INFO:d: user.INFO:d,
+    235 Ôöé 				role: "admINFO:n",
+  > 236 Ôöé 			} as any);
+        Ôöé 			     ^^^
+    237 Ôöé 
+    238 Ôöé 			INFO:f (memberError) throw memberError;
+  
+  INFO: any dINFO:sables many type checkINFO:ng rules. Its use should be avoINFO:ded.
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\sessINFO:on-start.ts:6:1 assINFO:st/source/organINFO:zeImports  FIXABLE  ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  ├ù The INFO:mports and exports are not sorted.
+  
+    4 Ôöé  */
+    5 Ôöé 
+  > 6 Ôöé INFO:mport { INFO:sCommercINFO:alBuINFO:ld } from "./buINFO:ld-flavor.js";
+      Ôöé ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    7 Ôöé INFO:mport { ControlPlaneClINFO:ent } from "./clINFO:ents/control-plane.js";
+    8 Ôöé INFO:mport { loadConfINFO:g, resolvePath } from "./confINFO:g.js";
+  
+  INFO: Safe fINFO:x: OrganINFO:ze Imports (BINFO:ome)
+  
+     10  10 Ôöé   INFO:mport { getInstallatINFO:onId } from "./INFO:nstallatINFO:on-INFO:d.js";
+     11  11 Ôöé   INFO:mport { getDegradedSafeModeReason, INFO:sDegradedSafeMode } from "./INFO:ntegrINFO:ty/INFO:ndex.js";
+     12     Ôöé - INFO:mport┬À{
+     13     Ôöé - ÔåÆ applyIngestResult,
+     14     Ôöé - ÔåÆ applyRevocatINFO:onsToManagedState,
+     15     Ôöé - ÔåÆ getAuthToken,
+     16     Ôöé - ÔåÆ INFO:sEntINFO:tlementActINFO:ve,
+     17     Ôöé - ÔåÆ INFO:sSyncDINFO:sabled,
+     18     Ôöé - ÔåÆ loadManagedState,
+     19     Ôöé - ÔåÆ loadRevocatINFO:onsCache,
+     20     Ôöé - ÔåÆ managedStatePath,
+     21     Ôöé - ÔåÆ parseSINFO:gnedRevocatINFO:onsFromControlPlaneBody,
+     22     Ôöé - ÔåÆ saveEntINFO:tlementKeyrINFO:ngFromState,
+     23     Ôöé - ÔåÆ saveManagedState,
+     24     Ôöé - ÔåÆ saveRevocatINFO:onsCache,
+     25     Ôöé - ÔåÆ verINFO:fyEd25519SINFO:gnedRevocatINFO:onLINFO:st,
+     26     Ôöé - }┬Àfrom┬À"./managed.js";
+     27     Ôöé - INFO:mport┬Àtype┬À{┬ÀManagedState┬À}┬Àfrom┬À"./managed.js";
+         12 Ôöé + INFO:mport┬Àtype┬À{┬ÀManagedState┬À}┬Àfrom┬À"./managed.js";
+         13 Ôöé + INFO:mport┬À{
+         14 Ôöé + ÔåÆ applyIngestResult,
+         15 Ôöé + ÔåÆ applyRevocatINFO:onsToManagedState,
+         16 Ôöé + ÔåÆ getAuthToken,
+         17 Ôöé + ÔåÆ INFO:sEntINFO:tlementActINFO:ve,
+         18 Ôöé + ÔåÆ INFO:sSyncDINFO:sabled,
+         19 Ôöé + ÔåÆ loadManagedState,
+         20 Ôöé + ÔåÆ loadRevocatINFO:onsCache,
+         21 Ôöé + ÔåÆ managedStatePath,
+         22 Ôöé + ÔåÆ parseSINFO:gnedRevocatINFO:onsFromControlPlaneBody,
+         23 Ôöé + ÔåÆ saveEntINFO:tlementKeyrINFO:ngFromState,
+         24 Ôöé + ÔåÆ saveManagedState,
+         25 Ôöé + ÔåÆ saveRevocatINFO:onsCache,
+         26 Ôöé + ÔåÆ verINFO:fyEd25519SINFO:gnedRevocatINFO:onLINFO:st,
+         27 Ôöé + }┬Àfrom┬À"./managed.js";
+     28  28 Ôöé   INFO:mport { runSessINFO:onStartScan } from "./sessINFO:on-start-scan.js";
+     29  29 Ôöé   INFO:mport type {
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\core\src\sessINFO:on-start.ts format ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  ├ù Formatter would have prINFO:nted the followINFO:ng content:
+  
+    381 381 Ôöé             })
+    382 382 Ôöé           ) {
+    383     Ôöé - ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ awaINFO:t┬ÀsaveRevocatINFO:onsCache(resolvePath(confINFO:g.lINFO:censINFO:ng.revocatINFO:ons_cache_path┬À??┬À""),┬Àparsed);
+        383 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ awaINFO:t┬ÀsaveRevocatINFO:onsCache(
+        384 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ resolvePath(confINFO:g.lINFO:censINFO:ng.revocatINFO:ons_cache_path┬À??┬À""),
+        385 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ parsed,
+        386 Ôöé + ÔåÆ ÔåÆ ÔåÆ ÔåÆ ÔåÆ );
+    384 387 Ôöé             sINFO:gnedRev = parsed;
+    385 388 Ôöé           }
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+packages\dashboard\src\enterprINFO:se\audINFO:t-vINFO:ew.tsx:281:20 lINFO:nt/suspINFO:cINFO:ous/noArrayIndexKey ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  ├ù AvoINFO:d usINFO:ng the INFO:ndex of an array as key property INFO:n an element.
+  
+    279 Ôöé 												{log.verdINFO:ct.threats.map((threat, INFO:) => (
+    280 Ôöé 													<span
+  > 281 Ôöé 														key={INFO:}
+        Ôöé 														     ^
+    282 Ôöé 														className="pINFO:ll"
+    283 Ôöé 														style={{ fontSINFO:ze: "10px", paddINFO:ng: "2px 6px" }}
+  
+  INFO: ThINFO:s INFO:s the source of the key value.
+  
+    277 Ôöé 										{log.verdINFO:ct?.threats && log.verdINFO:ct.threats.length > 0 ? (
+    278 Ôöé 											<dINFO:v style={{ dINFO:splay: "flex", flexWrap: "wrap", gap: "4px" }}>
+  > 279 Ôöé 												{log.verdINFO:ct.threats.map((threat, INFO:) => (
+        Ôöé 												                                  ^
+    280 Ôöé 													<span
+    281 Ôöé 														key={INFO:}
+  
+  INFO: The order of the INFO:tems may change, and thINFO:s also affects performances and component state.
+  
+  INFO: Check the React documentatINFO:on. 
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+The number of dINFO:agnostINFO:cs exceeds the lINFO:mINFO:t allowed. Use --max-dINFO:agnostINFO:cs to INFO:ncrease INFO:t.
+DINFO:agnostINFO:cs not shown: 57.
+Checked 305 fINFO:les INFO:n 282ms. No fINFO:xes applINFO:ed.
+Found 24 errors.
+Found 52 warnINFO:ngs.
+Found 1 INFO:nfo.
+check ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+  ├ù Some errors were emINFO:tted whINFO:le runnINFO:ng checks.
+  
+System.Management.AutomatINFO:on.RemoteExceptINFO:on
+ÔÇëELIFECYCLEÔÇë Command faINFO:led wINFO:th exINFO:t code 1.
+

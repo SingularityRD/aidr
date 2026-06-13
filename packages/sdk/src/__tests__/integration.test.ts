@@ -3,15 +3,15 @@
  * Tests: SDK initialization, LangChain middleware, CLI commands
  */
 
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AIDRSecurityError, AIDRTool, withAIDR } from "../adapters/langchain.js";
 import { AIDRClient } from "../client.js";
-import { createMiddleware } from "../middleware.js";
-import { withAIDR, AIDRTool, AIDRSecurityError } from "../adapters/langchain.js";
+import type { CheckRequest, CheckResult, SDKConfig } from "../config.js";
 import { SDKConfigSchema } from "../config.js";
-import type { SDKConfig, CheckRequest, CheckResult } from "../config.js";
+import { createMiddleware } from "../middleware.js";
 
 // Mock AIDR client for LangChain tests
 class MockAIDRClient {
@@ -519,9 +519,11 @@ describe("SDK Integration", () => {
 
 			await writeFile(join(configDir, "config.json"), JSON.stringify(config));
 
-			const loaded = JSON.parse(await import("node:fs/promises").then((fs) =>
-				fs.readFile(join(configDir, "config.json"), "utf-8")
-			));
+			const loaded = JSON.parse(
+				await import("node:fs/promises").then((fs) =>
+					fs.readFile(join(configDir, "config.json"), "utf-8"),
+				),
+			);
 
 			const parsed = SDKConfigSchema.safeParse(loaded);
 			expect(parsed.success).toBe(true);

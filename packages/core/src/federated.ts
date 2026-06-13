@@ -3,7 +3,7 @@
  * Implements differential privacy for secure collaboration across nodes.
  */
 
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 export interface FederatedConfig {
 	nodeId: string;

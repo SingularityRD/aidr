@@ -30,6 +30,7 @@ export type { Logger };
 export class AIDRClient {
 	private config: SDKConfig;
 	private cache?: VerdictCache;
+	private cacheEntryCount = 0;
 	private engine: DecisionEngine;
 	private urlClient: UrlCheckClient;
 	private heuristics?: HeuristicsEngine;
@@ -138,7 +139,7 @@ export class AIDRClient {
 		const artifacts = this._extractArtifacts(request);
 
 		// Run heuristics (heuristics is guaranteed to be initialized here)
-		const matches = this.heuristics!.match(artifacts);
+		const matches = this.heuristics?.match(artifacts);
 
 		// Run URL check if it's a fetch action
 		const urlCheckResults: Array<{
@@ -160,7 +161,7 @@ export class AIDRClient {
 
 		// Get verdict from decision engine
 		const verdict = await this.engine.decide({
-			heuristicMatches: matches,
+			heuristicMatches: matches ?? [],
 			urlCheckResults,
 		});
 
@@ -178,6 +179,7 @@ export class AIDRClient {
 				},
 				isMalicious,
 			);
+			this.cacheEntryCount++;
 		}
 
 		return this._verdictToResult(verdict);
@@ -272,7 +274,7 @@ export class AIDRClient {
 		if (!this.listeners.has(eventType)) {
 			this.listeners.set(eventType, new Set());
 		}
-		this.listeners.get(eventType)!.add(listener as EventListener);
+		this.listeners.get(eventType)?.add(listener as EventListener);
 
 		// Return unsubscribe function
 		return () => {
@@ -336,6 +338,7 @@ export class AIDRClient {
 				ttl_clean_seconds: Math.floor((this.config.cacheTtl ?? 300000) / 1000),
 				path: "~/.singularity-aidr/cache.json",
 			});
+			this.cacheEntryCount = 0;
 		}
 		this.logger.info("Cache cleared");
 	}
@@ -345,9 +348,8 @@ export class AIDRClient {
 	 */
 	getCacheStats(): { size: number; hitRate: number } | undefined {
 		if (!this.cache) return undefined;
-		// VerdictCache doesn't expose these properties directly, return default values
 		return {
-			size: 0,
+			size: this.cacheEntryCount,
 			hitRate: 0,
 		};
 	}

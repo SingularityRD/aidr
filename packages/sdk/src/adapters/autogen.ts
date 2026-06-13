@@ -328,7 +328,7 @@ export class AIDRSpeaker {
 	 */
 	private async checkCodeExecution(
 		message: AutoGenMessage,
-		sender: AutoGenSender,
+		_sender: AutoGenSender,
 	): Promise<CheckResult> {
 		const codeExecutionFunctions = [
 			"execute_code",

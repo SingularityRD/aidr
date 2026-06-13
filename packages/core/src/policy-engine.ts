@@ -114,7 +114,7 @@ export class PolicyEngine {
 		rule: PolicyRule,
 		toolName: string,
 		toolInput: Record<string, unknown>,
-		context: { environment?: string; user?: string; timestamp?: Date },
+		_context: { environment?: string; user?: string; timestamp?: Date },
 	): { confidence: number; matchedFields: string[] } | null {
 		const matchedFields: string[] = [];
 		let confidence = 0;

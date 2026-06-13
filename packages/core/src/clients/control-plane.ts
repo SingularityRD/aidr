@@ -425,4 +425,51 @@ export class ControlPlaneClient {
 			return { ok: false, error: "request_failed" };
 		}
 	}
+
+	/**
+	 * Fetches the runtime policy from the control plane.
+	 * Fail-open: network/parse errors return ok=false and never block local protection.
+	 */
+	async fetchRuntimePolicy(): Promise<ControlPlanePacksManifestResult> {
+		if (!this.baseUrl) return { ok: false, error: "missing_endpoint" };
+		if (!this.apiKey?.trim()) return { ok: false, error: "missing_api_key" };
+		if (isDegradedSafeMode()) return { ok: false, error: "degraded_safe_mode" };
+
+		try {
+			const response = await fetch(`${this.baseUrl}/v1/policy`, {
+				method: "GET",
+				signal: AbortSignal.timeout(this.timeoutMs),
+				headers: {
+					Accept: "application/json",
+					...this.authHeaders(),
+					"User-Agent": "aidr",
+				},
+			});
+
+			let body: Record<string, unknown> | undefined;
+			if (typeof (response as unknown as { json?: unknown }).json === "function") {
+				try {
+					const parsed = await (response as unknown as { json: () => Promise<unknown> }).json();
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+						body = parsed as Record<string, unknown>;
+					}
+				} catch {
+					body = undefined;
+				}
+			}
+
+			if (!response.ok) {
+				return {
+					ok: false,
+					status: response.status,
+					error: typeof body?.error === "string" ? (body.error as string) : "http_error",
+					body,
+				};
+			}
+			return { ok: true, status: response.status, body };
+		} catch (e) {
+			this.logger.debug("Control plane runtime policy fetch failed", { error: String(e) });
+			return { ok: false, error: "request_failed" };
+		}
+	}
 }

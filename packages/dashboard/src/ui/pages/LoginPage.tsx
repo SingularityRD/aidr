@@ -99,7 +99,9 @@ export function LoginPage() {
 							});
 							if (error) {
 								if (error.message.includes("Unsupported provider")) {
-									setStatus("Google OAuth is not enabled in Supabase. Please enable it in Supabase Dashboard → Authentication → Providers → Google.");
+									setStatus(
+										"Google OAuth is not enabled in Supabase. Please enable it in Supabase Dashboard → Authentication → Providers → Google.",
+									);
 								} else {
 									setStatus(error.message);
 								}
@@ -172,7 +174,9 @@ export function LoginPage() {
 							});
 							if (error) {
 								if (error.message.includes("Unsupported provider")) {
-									setStatus("GitHub OAuth is not enabled in Supabase. Please enable it in Supabase Dashboard → Authentication → Providers → GitHub.");
+									setStatus(
+										"GitHub OAuth is not enabled in Supabase. Please enable it in Supabase Dashboard → Authentication → Providers → GitHub.",
+									);
 								} else {
 									setStatus(error.message);
 								}
@@ -309,7 +313,7 @@ export function LoginPage() {
 							if (returnTo) setPostAuthReturnTo(returnTo);
 							const { error } = await supabase.auth.signInWithOtp({
 								email: trimmedEmail,
-								options: { 
+								options: {
 									emailRedirectTo: redirectTo,
 									captchaToken: captchaToken || undefined,
 								},

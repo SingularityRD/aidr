@@ -100,7 +100,7 @@ export function PolicyEditor() {
 		}
 
 		void loadPolicy();
-	}, [currentTeam?.id]);
+	}, [currentTeam?.id, validateAndParse, currentTeam, objectToYaml]);
 
 	function objectToYaml(obj: unknown, indent = 0): string {
 		const spaces = " ".repeat(indent);
@@ -153,7 +153,7 @@ export function PolicyEditor() {
 	function parseYaml(yaml: string): unknown {
 		const lines = yaml.split("\n");
 		const result: Record<string, unknown> = {};
-		let currentKey: string | null = null;
+		let _currentKey: string | null = null;
 		let currentArray: unknown[] | null = null;
 		let currentObject: Record<string, unknown> | null = null;
 		let indentLevel = 0;
@@ -194,7 +194,7 @@ export function PolicyEditor() {
 				const value = valueParts.join(": ").trim();
 
 				if (indent === 0 && key) {
-					currentKey = key;
+					_currentKey = key;
 					if (value === "") {
 						// Could be array or nested object
 						result[key] = [];

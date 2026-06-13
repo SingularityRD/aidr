@@ -149,7 +149,7 @@ program
 
 		// Write config file
 		try {
-			writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+			writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 			console.log(`\n✓ Configuration saved to ${configPath}`);
 		} catch (error) {
 			console.error(`Error: Failed to write config file: ${error}`);
@@ -203,7 +203,7 @@ program
 		};
 
 		try {
-			writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+			writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 			console.log(`\n✓ Billing configuration saved to ${configPath}`);
 		} catch (error) {
 			console.error(`Error: Failed to write config file: ${error}`);
@@ -560,7 +560,7 @@ program
 			console.log("  ⚠ Skipping (no config)");
 		}
 
-		console.log("\n" + (exitCode === 0 ? "✓ All checks passed" : "✗ Some checks failed"));
+		console.log(`\n${exitCode === 0 ? "✓ All checks passed" : "✗ Some checks failed"}`);
 		process.exit(exitCode);
 	});
 

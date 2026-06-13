@@ -1,6 +1,6 @@
-import { execSync } from "child_process";
-import { accessSync, constants } from "fs";
-import { cwd } from "process";
+import { execSync } from "node:child_process";
+import { accessSync, constants } from "node:fs";
+import { cwd } from "node:process";
 import type { Environment } from "./config-manager.js";
 
 export async function detectEnvironment(): Promise<Environment> {

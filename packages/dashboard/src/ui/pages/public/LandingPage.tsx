@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 const launchLinks = [{ name: "Get Started", href: "/login", desc: "Managed control plane." }];
 
-const highlights = [
+const _highlights = [
 	"Tool-call inspection: shell, file, network, MCP/plugin actions",
 	"Local enforcement with managed visibility",
 	"Auth-first model with offline grace after enrollment",

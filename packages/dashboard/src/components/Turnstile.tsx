@@ -79,11 +79,13 @@ export function Turnstile({ onVerify, onError, onExpire }: TurnstileProps) {
 				onError?.();
 			}
 		}
-	}, [siteKey, onVerify, onError, onExpire]);
+	}, [onVerify, onError, onExpire]);
 
 	if (!siteKey) {
 		return (
-			<div style={{ padding: 12, background: "#fef3c7", borderRadius: 8, fontSize: 12, marginTop: 16 }}>
+			<div
+				style={{ padding: 12, background: "#fef3c7", borderRadius: 8, fontSize: 12, marginTop: 16 }}
+			>
 				⚠️ CAPTCHA not configured. Add VITE_TURNSTILE_SITE_KEY to enable bot protection.
 			</div>
 		);
@@ -97,7 +99,15 @@ export function Turnstile({ onVerify, onError, onExpire }: TurnstileProps) {
 				</div>
 			)}
 			{hasError && (
-				<div style={{ padding: 12, background: "rgba(239, 68, 68, 0.1)", borderRadius: 8, fontSize: 13, color: "#dc2626" }}>
+				<div
+					style={{
+						padding: 12,
+						background: "rgba(239, 68, 68, 0.1)",
+						borderRadius: 8,
+						fontSize: 13,
+						color: "#dc2626",
+					}}
+				>
 					Verification failed to load. Please refresh the page.
 				</div>
 			)}

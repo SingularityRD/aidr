@@ -5,9 +5,6 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
 import { resolvePath } from "./config.js";
 import type { ResponseAuditor } from "./response-audit.js";
 import type { Logger, Verdict } from "./types.js";
@@ -30,7 +27,7 @@ interface ContainerResult {
 }
 
 export class AutoContain {
-	private readonly aidrDir: string;
+	private aidrDir: string;
 
 	constructor(
 		private config: ContainConfig,

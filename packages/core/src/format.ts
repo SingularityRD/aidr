@@ -7,6 +7,17 @@ import type { SessionStartResult } from "./session-start.js";
 import type { PluginScanResult } from "./types.js";
 import type { VersionCheckResult } from "./version-check.js";
 
+export interface RemotePolicyCacheInfo {
+	enabled: boolean;
+	path?: string;
+	source?: "valid" | "expired" | "invalid" | "missing";
+	usable?: boolean;
+	present?: boolean;
+	policyVersion?: string;
+	ttlSeconds?: number;
+	ageSeconds?: number;
+}
+
 export const PAD = 12;
 export const SEPARATOR_WIDTH = 48;
 
@@ -29,11 +40,31 @@ export function formatUpdateNotice(result: VersionCheckResult): string {
 	return `⬆️  Update available: v${result.currentVersion} → v${result.latestVersion} (https://github.com/singularityrd/aidr)`;
 }
 
+function formatRemotePolicyLine(cache?: RemotePolicyCacheInfo | null): string {
+	if (!cache?.enabled || !cache?.present) return "";
+	if (cache.source === "valid" && cache.ttlSeconds != null) {
+		return `${cache.policyVersion ?? "policy"} cached, ${cache.ttlSeconds}s left`;
+	}
+	if (cache.source === "expired") {
+		const suffix = cache.ageSeconds != null ? `, ${cache.ageSeconds}s old` : "";
+		return `${cache.policyVersion ?? "policy"} cache expired${suffix}`;
+	}
+	if (cache.source === "invalid") {
+		return "cache invalid";
+	}
+	return "";
+}
+
 export function formatStartupClean(
 	version: string,
 	versionCheck?: VersionCheckResult | null,
+	remotePolicyCache?: RemotePolicyCacheInfo | null,
 ): string {
-	const base = `🛡️ Singularity AIDR v${version} ✅ No threats found`;
+	let base = `🛡️ Singularity AIDR v${version} ✅ No threats found`;
+	const policyLine = formatRemotePolicyLine(remotePolicyCache);
+	if (policyLine) {
+		base = `${base}\n${kv("Policy", policyLine)}`;
+	}
 	if (versionCheck?.updateAvailable) {
 		return `${base}\n${formatUpdateNotice(versionCheck)}`;
 	}
@@ -48,6 +79,7 @@ export function formatThreatBanner(
 	version: string,
 	results: PluginScanResult[],
 	versionCheck?: VersionCheckResult | null,
+	remotePolicyCache?: RemotePolicyCacheInfo | null,
 ): string {
 	const header = `🛡️ Singularity AIDR v${version} — Threat Detected`;
 	const lines: string[] = [" ", header, separatorLine(SEPARATOR_WIDTH)];
@@ -82,6 +114,12 @@ export function formatThreatBanner(
 			lines.push("");
 			lines.push(`   ... and ${overflow} more findings`);
 		}
+	}
+
+	const policyLine = formatRemotePolicyLine(remotePolicyCache);
+	if (policyLine) {
+		lines.push("");
+		lines.push(kv("Policy", policyLine));
 	}
 
 	if (versionCheck?.updateAvailable) {

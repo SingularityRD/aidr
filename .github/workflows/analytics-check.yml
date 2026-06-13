@@ -1,0 +1,137 @@
+name: Product Analytics Instrumentation
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  analytics-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Analytics Instrumentation
+        run: |
+          echo "=== Verifying Product Analytics Instrumentation ==="
+          
+          # Check for PostHog (privacy-focused, open source)
+          if grep -r "posthog" packages/*/package.json; then
+            echo "✓ PostHog SDK found"
+          else
+            echo "⚠️ PostHog SDK not found - adding recommendation"
+          fi
+          
+          # Check for analytics utility
+          if [ -f "packages/core/src/analytics.ts" ]; then
+            echo "✓ Analytics utility exists"
+          else
+            echo "⚠️ Analytics utility not found"
+          fi
+          
+          echo "=== Analytics check complete ==="
+
+      - name: Create Analytics Configuration
+        run: |
+          cat > packages/core/src/analytics.ts << 'EOF'
+          /**
+           * Product Analytics for Singularity AIDR
+           * Privacy-focused analytics using PostHog
+           */
+          
+          import type { Logger } from "./logger.js";
+          
+          export interface AnalyticsConfig {
+            enabled: boolean;
+            posthogKey?: string;
+            posthogHost?: string;
+            anonymize: boolean;
+          }
+          
+          export function loadAnalyticsConfig(): AnalyticsConfig {
+            return {
+              enabled: process.env.AIDR_ANALYTICS_ENABLED === "true",
+              posthogKey: process.env.POSTHOG_PROJECT_API_KEY,
+              posthogHost: process.env.POSTHOG_HOST || "https://app.posthog.com",
+              anonymize: process.env.AIDR_ANALYTICS_ANONYMIZE !== "false",
+            };
+          }
+          
+          export interface SecurityEvent {
+            event: string;
+            properties?: Record<string, unknown>;
+          }
+          
+          export class Analytics {
+            private config: AnalyticsConfig;
+            private logger: Logger;
+          
+            constructor(config: AnalyticsConfig, logger: Logger) {
+              this.config = config;
+              this.logger = logger;
+            }
+          
+            track(event: string, properties?: Record<string, unknown>): void {
+              if (!this.config.enabled) return;
+          
+              const sanitizedProps = this.config.anonymize 
+                ? this.anonymizeProperties(properties)
+                : properties;
+          
+              this.logger.debug("Analytics event", { event, properties: sanitizedProps });
+          
+              // Send to PostHog if configured
+              if (this.config.posthogKey) {
+                this.sendToPostHog(event, sanitizedProps);
+              }
+            }
+          
+            private anonymizeProperties(props?: Record<string, unknown>): Record<string, unknown> | undefined {
+              if (!props) return undefined;
+              
+              // Remove PII
+              const anonymized = { ...props };
+              const piiFields = ["email", "name", "ip", "userId", "sessionId"];
+              
+              for (const field of piiFields) {
+                if (field in anonymized) {
+                  anonymized[field] = "[redacted]";
+                }
+              }
+              
+              return anonymized;
+            }
+          
+            private sendToPostHog(event: string, properties?: Record<string, unknown>): void {
+              // Implementation would use PostHog Node SDK
+              // For now, just log that it would be sent
+              this.logger.debug("Would send to PostHog", { event, properties });
+            }
+          
+            // Security-specific tracking
+            trackVerdict(verdict: string, category: string, confidence: number): void {
+              this.track("security_verdict", {
+                verdict,
+                category,
+                confidence_bucket: confidence > 0.9 ? "high" : confidence > 0.7 ? "medium" : "low",
+              });
+            }
+          
+            trackThreatDetected(threatType: string, severity: string): void {
+              this.track("threat_detected", { threat_type: threatType, severity });
+            }
+          
+            trackPackageCheck(registry: string, safe: boolean): void {
+              this.track("package_check", { registry, result: safe ? "safe" : "unsafe" });
+            }
+          }
+          
+          export function createAnalytics(logger: Logger): Analytics {
+            return new Analytics(loadAnalyticsConfig(), logger);
+          }
+          EOF
+          
+          echo "✓ Analytics configuration created"

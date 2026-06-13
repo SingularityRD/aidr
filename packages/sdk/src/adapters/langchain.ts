@@ -8,6 +8,7 @@
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { Tool } from "@langchain/core/tools";
 import type { Decision, Verdict } from "@singularityrd/aidr-core";
+import type { CheckRequest, CheckResult } from "../config.js";
 
 /**
  * Options for AIDRTool wrapper
@@ -76,7 +77,7 @@ export class AIDRSecurityError extends Error {
  * AIDR client interface for making security checks
  */
 export interface AIDRClient {
-	check(request: { tool: string; input: Record<string, unknown> }): Promise<Verdict>;
+	check(request: CheckRequest): Promise<CheckResult>;
 }
 
 /**
@@ -132,29 +133,39 @@ export class AIDRTool<T extends Tool> extends Tool {
 		// Normalize input to object format
 		const args = typeof input === "string" ? { input } : (input as Record<string, unknown>);
 
-		// Get verdict from AIDR client
-		const verdict = await this.aidrClient.check({
-			tool: this.innerTool.name,
-			input: args,
+		const checkResult = await this.aidrClient.check({
+			action: "execute",
+			resource: typeof input === "string" ? input : JSON.stringify(input),
+			context: { toolName: this.innerTool.name, input: args },
 		});
 
 		const securityMetadata: SecurityMetadata = {
-			decision: verdict.decision,
-			confidence: verdict.confidence,
-			category: verdict.category,
-			severity: verdict.severity,
-			matchedThreatId: verdict.matchedThreatId,
-			reasons: verdict.reasons,
-			artifacts: verdict.artifacts,
+			decision: checkResult.decision,
+			confidence: checkResult.confidence,
+			category: "",
+			severity: "info",
+			matchedThreatId: checkResult.threatId ?? null,
+			reasons: checkResult.reason ? [checkResult.reason] : [],
+			artifacts: [],
 		};
 
 		// Handle deny verdict
-		if (verdict.decision === "deny") {
-			this.options.onDeny?.(verdict, input);
-			const errorMessage = `Security violation: ${verdict.reasons.join("; ")}`;
+		if (checkResult.decision === "deny") {
+			const asVerdict: Verdict = {
+				decision: checkResult.decision,
+				category: "",
+				confidence: checkResult.confidence,
+				severity: "info",
+				source: "sdk",
+				artifacts: [],
+				matchedThreatId: checkResult.threatId ?? null,
+				reasons: checkResult.reason ? [checkResult.reason] : [],
+			};
+			this.options.onDeny?.(asVerdict, input);
+			const errorMessage = `Security violation: ${checkResult.reason || "Unknown threat"}`;
 
 			if (this.options.throwOnDeny !== false) {
-				throw new AIDRSecurityError(errorMessage, verdict, this.innerTool.name, input);
+				throw new AIDRSecurityError(errorMessage, asVerdict, this.innerTool.name, input);
 			}
 
 			return {
@@ -165,13 +176,23 @@ export class AIDRTool<T extends Tool> extends Tool {
 		}
 
 		// Handle ask verdict - prompt user if handler provided
-		if (verdict.decision === "ask") {
-			const approved = await this.options.onAsk?.(verdict, input);
+		if (checkResult.decision === "ask") {
+			const asVerdict: Verdict = {
+				decision: checkResult.decision,
+				category: "",
+				confidence: checkResult.confidence,
+				severity: "info",
+				source: "sdk",
+				artifacts: [],
+				matchedThreatId: checkResult.threatId ?? null,
+				reasons: checkResult.reason ? [checkResult.reason] : [],
+			};
+			const approved = await this.options.onAsk?.(asVerdict, input);
 			if (!approved) {
 				if (this.options.throwOnAsk) {
 					throw new AIDRSecurityError(
 						"AIDR: User denied permission",
-						verdict,
+						asVerdict,
 						this.innerTool.name,
 						input,
 					);
@@ -184,8 +205,7 @@ export class AIDRTool<T extends Tool> extends Tool {
 			}
 		}
 
-		// Execute the wrapped tool
-		const result = await this.innerTool.invoke(input, config);
+		const result = await this.innerTool.invoke(args, config);
 
 		// Handle different result types
 		let output: string;

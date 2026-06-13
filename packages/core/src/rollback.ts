@@ -5,8 +5,7 @@
 
 import { randomBytes } from "node:crypto";
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { resolvePath } from "./config.js";
 import type { ResponseAuditor } from "./response-audit.js";
 import type { Logger, Verdict } from "./types.js";
@@ -253,9 +252,6 @@ export class AutoRollback {
 	}
 
 	async listSnapshots(): Promise<Array<{ id: string; timestamp: Date; fileCount: number }>> {
-		// Load any snapshots from disk that aren't in memory
-		await this.loadAllSnapshots();
-
 		return Array.from(this.snapshots.values()).map((s) => ({
 			id: s.id,
 			timestamp: s.timestamp,

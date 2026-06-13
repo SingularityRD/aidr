@@ -1,59 +1,31 @@
-/**
- * Response audit logging for Singularity AIDR.
- * Provides comprehensive audit logging for all response actions with optional
- * tamper-evident signatures and query capabilities.
- */
-
-import { createHash, createSign, createVerify, generateKeyPairSync, randomUUID } from "node:crypto";
-import { appendFile, mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { createHash, generateKeyPairSync, randomUUID, sign, verify } from "node:crypto";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { resolvePath } from "./config.js";
 import type { ResponseMode } from "./response-config.js";
 import type { Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 
-/**
- * Single response audit entry representing a response action taken.
- */
 export interface ResponseAuditEntry {
-	/** Unique identifier for this audit entry */
 	id: string;
-	/** When the action was taken */
 	timestamp: Date;
-	/** Type of response action taken */
 	action: "contain" | "rollback" | "quarantine" | "block" | "notify";
-	/** Threat ID that triggered this response */
 	threatId: string;
-	/** Tool that was being executed */
 	tool: string;
-	/** Input to the tool */
 	input: string;
-	/** Verdict that triggered the response */
 	verdict: Verdict;
-	/** Response mode that was applied */
 	responseTaken: ResponseMode;
-	/** Additional metadata about the response */
 	metadata: {
-		/** Container ID for containment actions */
 		containerId?: string;
-		/** Snapshot ID for rollback actions */
 		snapshotId?: string;
-		/** Quarantine ID for quarantine actions */
 		quarantineId?: string;
-		/** Whether notification was sent */
 		notificationSent?: boolean;
-		/** Whether user was notified */
 		userNotified?: boolean;
 	};
-	/** Outcome of the action */
 	outcome: "success" | "failure";
-	/** Error message if action failed */
 	error?: string;
 }
 
-/**
- * Serialized format for storage (snake_case for JSONL compatibility).
- */
 interface SerializedAuditEntry {
 	id: string;
 	timestamp: string;
@@ -66,25 +38,17 @@ interface SerializedAuditEntry {
 	metadata: ResponseAuditEntry["metadata"];
 	outcome: "success" | "failure";
 	error?: string;
-	/** Signature for tamper evidence (optional) */
+	_prev_hash?: string;
+	_entry_hash?: string;
 	_signature?: string;
 }
 
-/**
- * Options for the ResponseAuditor.
- */
 export interface ResponseAuditorOptions {
-	/** Whether to cryptographically sign entries for tamper evidence */
 	signEntries?: boolean;
-	/** Number of days to retain audit entries (0 = infinite) */
 	retentionDays?: number;
-	/** Optional logger for operations */
 	logger?: Logger;
 }
 
-/**
- * Manages response audit logging with optional signing and querying capabilities.
- */
 export class ResponseAuditor {
 	private readonly logger: Logger;
 	private readonly signEntries: boolean;
@@ -101,15 +65,14 @@ export class ResponseAuditor {
 		this.signEntries = options.signEntries ?? false;
 		this.retentionDays = options.retentionDays ?? 0;
 		this.keyPath = join(dirname(resolvePath(auditLogPath)), ".response-audit-key");
+	}
 
-		if (this.signEntries) {
-			void this.initializeSigning();
+	private async ensureSigningReady(): Promise<void> {
+		if (this.signEntries && !this.privateKey) {
+			await this.initializeSigning();
 		}
 	}
 
-	/**
-	 * Initialize signing keys for tamper-evident logging.
-	 */
 	private async initializeSigning(): Promise<void> {
 		try {
 			const keyContent = await readFile(this.keyPath, "utf-8");
@@ -118,15 +81,12 @@ export class ResponseAuditor {
 			this.publicKey = keys.publicKey;
 			this.logger.debug("Loaded existing signing keys for response audit");
 		} catch {
-			// Generate new key pair
 			const { privateKey, publicKey } = generateKeyPairSync("ed25519", {
 				privateKeyEncoding: { type: "pkcs8", format: "pem" },
 				publicKeyEncoding: { type: "spki", format: "pem" },
 			});
 			this.privateKey = privateKey;
 			this.publicKey = publicKey;
-
-			// Save keys
 			await mkdir(dirname(this.keyPath), { recursive: true });
 			await writeFile(this.keyPath, JSON.stringify({ privateKey, publicKey }, null, 2), {
 				mode: 0o600,
@@ -135,14 +95,27 @@ export class ResponseAuditor {
 		}
 	}
 
-	/**
-	 * Sign an entry for tamper evidence.
-	 */
+	private computeEntryHash(entry: SerializedAuditEntry): string {
+		const data = JSON.stringify({
+			id: entry.id,
+			timestamp: entry.timestamp,
+			action: entry.action,
+			threat_id: entry.threat_id,
+			tool: entry.tool,
+			input: entry.input,
+			verdict: entry.verdict,
+			response_taken: entry.response_taken,
+			metadata: entry.metadata,
+			outcome: entry.outcome,
+			error: entry.error,
+			_prev_hash: entry._prev_hash,
+		});
+		return createHash("sha256").update(data).digest("hex");
+	}
+
 	private signEntry(entry: SerializedAuditEntry): string | undefined {
 		if (!this.signEntries || !this.privateKey) return undefined;
-
 		try {
-			const sign = createSign("SHA256");
 			const data = JSON.stringify({
 				id: entry.id,
 				timestamp: entry.timestamp,
@@ -154,23 +127,20 @@ export class ResponseAuditor {
 				response_taken: entry.response_taken,
 				metadata: entry.metadata,
 				outcome: entry.outcome,
+				error: entry.error,
+				_prev_hash: entry._prev_hash,
+				_entry_hash: entry._entry_hash,
 			});
-			sign.update(data);
-			return sign.sign(this.privateKey, "base64");
+			return sign(undefined, Buffer.from(data), this.privateKey).toString("base64");
 		} catch (error) {
 			this.logger.warn("Failed to sign audit entry", { error: String(error) });
 			return undefined;
 		}
 	}
 
-	/**
-	 * Verify a signature on an entry.
-	 */
 	private verifySignature(entry: SerializedAuditEntry): boolean {
 		if (!entry._signature || !this.publicKey) return false;
-
 		try {
-			const verify = createVerify("SHA256");
 			const data = JSON.stringify({
 				id: entry.id,
 				timestamp: entry.timestamp,
@@ -182,18 +152,23 @@ export class ResponseAuditor {
 				response_taken: entry.response_taken,
 				metadata: entry.metadata,
 				outcome: entry.outcome,
+				error: entry.error,
+				_prev_hash: entry._prev_hash,
+				_entry_hash: entry._entry_hash,
 			});
-			verify.update(data);
-			return verify.verify(this.publicKey, entry._signature, "base64");
+			return verify(
+				undefined,
+				Buffer.from(data),
+				this.publicKey,
+				Buffer.from(entry._signature, "base64"),
+			);
 		} catch {
 			return false;
 		}
 	}
 
-	/**
-	 * Log a response action to the audit log.
-	 */
 	async log(entry: Omit<ResponseAuditEntry, "id" | "timestamp">): Promise<ResponseAuditEntry> {
+		await this.ensureSigningReady();
 		const id = randomUUID();
 		const timestamp = new Date();
 
@@ -203,7 +178,6 @@ export class ResponseAuditor {
 			timestamp,
 		};
 
-		// Serialize for storage
 		const serialized: SerializedAuditEntry = {
 			id: fullEntry.id,
 			timestamp: fullEntry.timestamp.toISOString(),
@@ -218,19 +192,34 @@ export class ResponseAuditor {
 			error: fullEntry.error,
 		};
 
-		// Sign if enabled
 		if (this.signEntries) {
+			// Load previous entry to get its hash
+			const path = resolvePath(this.auditLogPath);
+			let prevHash = "GENESIS";
+			try {
+				const content = await readFile(path, "utf-8");
+				const lines = content.trim().split("\n").filter(Boolean);
+				if (lines.length > 0) {
+					const lastLine = lines[lines.length - 1]!;
+					const lastEntry = JSON.parse(lastLine) as SerializedAuditEntry;
+					if (lastEntry._entry_hash) {
+						prevHash = lastEntry._entry_hash;
+					}
+				}
+			} catch {
+				// File doesn't exist yet — first entry
+			}
+			serialized._prev_hash = prevHash;
+			serialized._entry_hash = this.computeEntryHash(serialized);
 			serialized._signature = this.signEntry(serialized);
 		}
 
-		// Append to log
 		const path = resolvePath(this.auditLogPath);
 		await mkdir(dirname(path), { recursive: true });
 		await appendFile(path, `${JSON.stringify(serialized)}\n`);
 
-		// Clean up old entries if retention is set
 		if (this.retentionDays > 0) {
-			void this.enforceRetention();
+			await this.enforceRetention();
 		}
 
 		this.logger.debug("Logged response action", {
@@ -243,9 +232,6 @@ export class ResponseAuditor {
 		return fullEntry;
 	}
 
-	/**
-	 * Query audit log entries with filters.
-	 */
 	async query(filters: {
 		action?: ResponseAuditEntry["action"];
 		threatId?: string;
@@ -255,7 +241,6 @@ export class ResponseAuditor {
 		outcome?: "success" | "failure";
 	}): Promise<ResponseAuditEntry[]> {
 		const entries = await this.loadAllEntries();
-
 		return entries.filter((entry) => {
 			if (filters.action && entry.action !== filters.action) return false;
 			if (filters.threatId && entry.threatId !== filters.threatId) return false;
@@ -267,17 +252,12 @@ export class ResponseAuditor {
 		});
 	}
 
-	/**
-	 * Load all entries from the audit log.
-	 */
 	private async loadAllEntries(): Promise<ResponseAuditEntry[]> {
 		const path = resolvePath(this.auditLogPath);
-
 		try {
 			const content = await readFile(path, "utf-8");
 			const lines = content.trim().split("\n").filter(Boolean);
 			const entries: ResponseAuditEntry[] = [];
-
 			for (const line of lines) {
 				try {
 					const serialized = JSON.parse(line) as SerializedAuditEntry;
@@ -298,21 +278,36 @@ export class ResponseAuditor {
 					// Skip invalid lines
 				}
 			}
-
 			return entries;
 		} catch {
-			// File doesn't exist or is empty
 			return [];
 		}
 	}
 
-	/**
-	 * Verify the integrity of signed entries.
-	 */
+	private async loadAllSerialized(): Promise<SerializedAuditEntry[]> {
+		const path = resolvePath(this.auditLogPath);
+		try {
+			const content = await readFile(path, "utf-8");
+			const lines = content.trim().split("\n").filter(Boolean);
+			const entries: SerializedAuditEntry[] = [];
+			for (const line of lines) {
+				try {
+					entries.push(JSON.parse(line) as SerializedAuditEntry);
+				} catch {
+					// Skip invalid lines
+				}
+			}
+			return entries;
+		} catch {
+			return [];
+		}
+	}
+
 	async verifyIntegrity(): Promise<{
 		valid: boolean;
 		tamperedEntries?: string[];
 	}> {
+		await this.ensureSigningReady();
 		if (!this.signEntries) {
 			return { valid: true };
 		}
@@ -323,13 +318,36 @@ export class ResponseAuditor {
 		try {
 			const content = await readFile(path, "utf-8");
 			const lines = content.trim().split("\n").filter(Boolean);
+			let expectedPrevHash = "GENESIS";
 
 			for (const line of lines) {
 				try {
 					const entry = JSON.parse(line) as SerializedAuditEntry;
-					if (entry._signature && !this.verifySignature(entry)) {
+
+					// Check hash chain
+					if (entry._prev_hash !== expectedPrevHash) {
 						tamperedEntries.push(entry.id);
+						continue;
 					}
+
+					// Check entry hash
+					const computedHash = this.computeEntryHash(entry);
+					if (entry._entry_hash !== computedHash) {
+						tamperedEntries.push(entry.id);
+						continue;
+					}
+
+					// Check signature - missing or invalid signature is tampering
+					if (!entry._signature) {
+						tamperedEntries.push(entry.id);
+						continue;
+					}
+					if (!this.verifySignature(entry)) {
+						tamperedEntries.push(entry.id);
+						continue;
+					}
+
+					expectedPrevHash = entry._entry_hash ?? expectedPrevHash;
 				} catch {
 					// Skip invalid lines
 				}
@@ -344,55 +362,52 @@ export class ResponseAuditor {
 		}
 	}
 
-	/**
-	 * Export all entries as a JSON array string.
-	 */
 	async exportToJSON(): Promise<string> {
 		const entries = await this.loadAllEntries();
 		return JSON.stringify(entries, null, 2);
 	}
 
-	/**
-	 * Enforce retention policy by removing old entries.
-	 */
 	private async enforceRetention(): Promise<void> {
+		await this.ensureSigningReady();
 		if (this.retentionDays <= 0) return;
 
 		const cutoff = new Date();
 		cutoff.setDate(cutoff.getDate() - this.retentionDays);
 
-		const entries = await this.loadAllEntries();
-		const filtered = entries.filter((e) => e.timestamp >= cutoff);
+		const serializedEntries = await this.loadAllSerialized();
+		const filtered = serializedEntries.filter((e) => {
+			const ts = new Date(e.timestamp);
+			return ts >= cutoff;
+		});
 
-		if (filtered.length < entries.length) {
+		if (filtered.length < serializedEntries.length) {
 			const path = resolvePath(this.auditLogPath);
-			const serialized = filtered.map((e) => {
-				const entry: SerializedAuditEntry = {
-					id: e.id,
-					timestamp: e.timestamp.toISOString(),
-					action: e.action,
-					threat_id: e.threatId,
-					tool: e.tool,
-					input: e.input,
-					verdict: e.verdict,
-					response_taken: e.responseTaken,
-					metadata: e.metadata,
-					outcome: e.outcome,
-					error: e.error,
-				};
-				return JSON.stringify(entry);
-			});
-			await writeFile(path, serialized.join("\n") + "\n");
+
+			if (this.signEntries && filtered.length > 0) {
+				// Re-chain: first entry gets "GENESIS", subsequent chain correctly
+				let prevHash = "GENESIS";
+				const rechained: SerializedAuditEntry[] = [];
+				for (const entry of filtered) {
+					entry._prev_hash = prevHash;
+					entry._entry_hash = this.computeEntryHash(entry);
+					entry._signature = this.signEntry(entry);
+					prevHash = entry._entry_hash;
+					rechained.push(entry);
+				}
+				const serialized = rechained.map((e) => JSON.stringify(e));
+				await writeFile(path, `${serialized.join("\n")}\n`);
+			} else {
+				const serialized = filtered.map((e) => JSON.stringify(e));
+				await writeFile(path, `${serialized.join("\n")}\n`);
+			}
+
 			this.logger.debug("Enforced retention policy", {
-				removed: entries.length - filtered.length,
+				removed: serializedEntries.length - filtered.length,
 				retentionDays: this.retentionDays,
 			});
 		}
 	}
 
-	/**
-	 * Get statistics about the audit log.
-	 */
 	async getStats(): Promise<{
 		totalEntries: number;
 		actionBreakdown: Record<string, number>;
@@ -401,26 +416,19 @@ export class ResponseAuditor {
 		newestEntry?: Date;
 	}> {
 		const entries = await this.loadAllEntries();
-
 		const actionBreakdown: Record<string, number> = {};
 		let successCount = 0;
 		let failureCount = 0;
-
 		let oldest: Date | undefined;
 		let newest: Date | undefined;
 
 		for (const entry of entries) {
-			// Count actions
 			actionBreakdown[entry.action] = (actionBreakdown[entry.action] ?? 0) + 1;
-
-			// Count outcomes
 			if (entry.outcome === "success") {
 				successCount++;
 			} else {
 				failureCount++;
 			}
-
-			// Track dates
 			if (!oldest || entry.timestamp < oldest) {
 				oldest = entry.timestamp;
 			}
@@ -439,9 +447,6 @@ export class ResponseAuditor {
 	}
 }
 
-/**
- * Factory function to create a ResponseAuditor with default path.
- */
 export function createResponseAuditor(options?: ResponseAuditorOptions): ResponseAuditor {
 	return new ResponseAuditor("~/.singularity-aidr/response-audit.jsonl", options);
 }

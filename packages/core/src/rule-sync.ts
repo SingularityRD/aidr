@@ -16,12 +16,6 @@ export interface RuleSyncConfig {
 	maxCacheAgeHours: number;
 }
 
-interface RuleManifest {
-	version: string;
-	updatedAt: string;
-	rules: RemoteRule[];
-}
-
 interface RemoteRule {
 	id: string;
 	version: string;
@@ -196,8 +190,7 @@ export class RealTimeRuleSync {
 			const cached: CachedRules = JSON.parse(content);
 
 			// Check cache age
-			const cacheAge =
-				(new Date().getTime() - new Date(cached.lastSync).getTime()) / (1000 * 60 * 60); // hours
+			const cacheAge = (Date.now() - new Date(cached.lastSync).getTime()) / (1000 * 60 * 60); // hours
 
 			if (cacheAge > this.config.maxCacheAgeHours) {
 				this.logger.warn("Cached rules expired, will fetch fresh", {
@@ -257,7 +250,7 @@ export class RealTimeRuleSync {
 
 		// Check for removed rules (rules in cache but not in manifest)
 		const remoteIds = new Set(delta.map((r) => r.id));
-		for (const [id, rule] of this.currentRules) {
+		for (const [id, _rule] of this.currentRules) {
 			if (!remoteIds.has(id)) {
 				this.currentRules.delete(id);
 				stats.removed++;
@@ -312,30 +305,11 @@ export class RealTimeRuleSync {
 	}
 
 	/**
-	 * Download active emergency rules from CDN.
-	 */
-	private async downloadEmergencyRules(): Promise<RemoteRule[]> {
-		const url = `${this.config.cdnUrl}/emergency/active`;
-
-		const response = await fetch(url, {
-			headers: {
-				Accept: "application/json",
-			},
-		});
-
-		if (!response.ok) {
-			throw new Error(`Failed to fetch emergency rules: ${response.status} ${response.statusText}`);
-		}
-
-		return (await response.json()) as RemoteRule[];
-	}
-
-	/**
 	 * Download a single rule by ID from CDN.
 	 * Returns the rule if found, null if 404, or throws on other errors.
 	 */
 	async downloadRule(ruleId: string): Promise<RemoteRule | null> {
-		const url = `${this.config.cdnUrl}/rules/${encodeURIComponent(ruleId)}`;
+		const url = `${this.config.cdnUrl}/${encodeURIComponent(ruleId)}`;
 
 		try {
 			const response = await fetch(url, {

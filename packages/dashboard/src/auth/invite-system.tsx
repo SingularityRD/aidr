@@ -228,37 +228,6 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 		[],
 	);
 
-	// Claim accumulated credits (convert to Pro subscription)
-	const claimCredits = useCallback(async (): Promise<number> => {
-		const pendingCredits = invites
-			.filter((i) => i.status === "converted" && i.creditsEarned > 0)
-			.reduce((sum, i) => sum + i.creditsEarned, 0);
-
-		if (pendingCredits === 0) return 0;
-
-		// Call function to apply credits
-		const { error } = await supabase.functions.invoke("claim-referral-credits", {
-			body: {
-				userId,
-				credits: pendingCredits,
-			},
-		});
-
-		if (error) throw error;
-
-		// Reset credits earned in invites
-		await supabase
-			.from("referrals")
-			.update({ credits_earned: 0 } as never)
-			.eq("referrer_id", userId)
-			.gt("credits_earned", 0);
-
-		// Refresh data
-		await refreshInvites();
-
-		return pendingCredits;
-	}, [invites, userId]);
-
 	// Refresh invites data
 	const refreshInvites = useCallback(async () => {
 		const { data, error } = await supabase
@@ -299,6 +268,37 @@ export function InviteSystemProvider({ children, userId, userEmail }: InviteSyst
 			referralLink,
 		});
 	}, [userId, referralLink]);
+
+	// Claim accumulated credits (convert to Pro subscription)
+	const claimCredits = useCallback(async (): Promise<number> => {
+		const pendingCredits = invites
+			.filter((i) => i.status === "converted" && i.creditsEarned > 0)
+			.reduce((sum, i) => sum + i.creditsEarned, 0);
+
+		if (pendingCredits === 0) return 0;
+
+		// Call function to apply credits
+		const { error } = await supabase.functions.invoke("claim-referral-credits", {
+			body: {
+				userId,
+				credits: pendingCredits,
+			},
+		});
+
+		if (error) throw error;
+
+		// Reset credits earned in invites
+		await supabase
+			.from("referrals")
+			.update({ credits_earned: 0 } as never)
+			.eq("referrer_id", userId)
+			.gt("credits_earned", 0);
+
+		// Refresh data
+		await refreshInvites();
+
+		return pendingCredits;
+	}, [invites, userId, refreshInvites]);
 
 	const value: InviteSystemContextType = {
 		invites,

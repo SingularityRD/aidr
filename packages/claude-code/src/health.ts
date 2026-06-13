@@ -11,7 +11,6 @@ import {
 	type HealthCheck,
 	type HealthStatus,
 	runHealthChecks,
-	toHealthResult,
 } from "@singularityrd/aidr-core";
 
 const args = process.argv.slice(2);
@@ -22,6 +21,7 @@ const specificCheck = checkIndex >= 0 && args[checkIndex + 1] ? args[checkIndex 
 
 const VALID_CHECKS = ["core", "cache", "threat_rules", "api"];
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complexity inherent in health check orchestration
 async function main(): Promise<void> {
 	const startTime = Date.now();
 

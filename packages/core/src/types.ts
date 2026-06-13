@@ -225,6 +225,8 @@ export const ControlPlaneConfigSchema = z.object({
 	 * - full: omit sensitive fields entirely (most private)
 	 */
 	redact_mode: z.enum(["none", "hash", "full"]).default("hash"),
+	remote_policy_cache_path: z.string().default("~/.singularity-aidr/remote-policy-cache"),
+	remote_policy_cache_enabled: z.boolean().default(true),
 });
 
 export const PolicyFilesystemSchema = z.object({
@@ -249,11 +251,27 @@ export const PolicyShellSchema = z.object({
 	deny_action: z.enum(["block", "require_approval"]).default("block"),
 });
 
+export const PolicyMcpSchema = z.object({
+	enabled: z.boolean().default(false),
+	default_action: z.enum(["block", "require_approval", "allow"]).default("require_approval"),
+	inventory_paths: z.array(z.string()).default([]),
+	allow_servers: z.array(z.string()).default([]),
+	deny_servers: z.array(z.string()).default([]),
+	require_approval_servers: z.array(z.string()).default([]),
+	risky_server_action: z.enum(["block", "require_approval", "allow"]).optional(),
+	deny_tools: z.array(z.string()).default([]),
+	allow_tools: z.array(z.string()).default([]),
+	require_approval_tools: z.array(z.string()).default([]),
+	unknown_server_action: z.enum(["block", "require_approval", "allow"]).default("require_approval"),
+});
+
 export const PolicyConfigSchema = z.object({
 	enabled: z.boolean().default(false),
 	filesystem: PolicyFilesystemSchema.default({}),
 	network: PolicyNetworkSchema.default({}),
 	shell: PolicyShellSchema.default({}),
+	mcp: PolicyMcpSchema.default({}),
+	runtime_defaults: z.record(z.string(), z.unknown()).default({}),
 });
 
 export const IntelConfigSchema = z.object({
@@ -347,11 +365,17 @@ export const UrlCheckConfigSchema = z.object({
 	enabled: z.boolean().default(true),
 });
 
+export const EncryptionConfigSchema = z.object({
+	/** Enable transparent encryption of cache and audit files. */
+	enabled: z.boolean().default(false),
+});
+
 export const CacheConfigSchema = z.object({
 	enabled: z.boolean().default(true),
 	ttl_malicious_seconds: z.number().default(3600),
 	ttl_clean_seconds: z.number().default(86400),
 	path: z.string().default("~/.singularity-aidr/cache.json"),
+	encryption: EncryptionConfigSchema.default({}).optional(),
 });
 
 export const AllowlistConfigSchema = z.object({
@@ -440,6 +464,7 @@ export const ConfigSchema = z.object({
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type ControlPlaneConfig = z.infer<typeof ControlPlaneConfigSchema>;
 export type PolicyConfig = z.infer<typeof PolicyConfigSchema>;
+export type PolicyMcpConfig = z.infer<typeof PolicyMcpSchema>;
 export type IntelConfig = z.infer<typeof IntelConfigSchema>;
 export type IntelPacksConfig = z.infer<typeof IntelPacksConfigSchema>;
 export type IntegrityConfig = z.infer<typeof IntegrityConfigSchema>;
@@ -451,6 +476,7 @@ export type FileCheckConfig = z.infer<typeof FileCheckConfigSchema>;
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
 export type NvdConfig = z.infer<typeof NvdConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
+export type EncryptionConfig = z.infer<typeof EncryptionConfigSchema>;
 export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type AllowlistConfig = z.infer<typeof AllowlistConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;

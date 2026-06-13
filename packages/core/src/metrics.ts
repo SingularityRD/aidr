@@ -304,7 +304,7 @@ export class MetricsRegistry {
 
 		for (const [name, counters] of counterGroups) {
 			if (counters.length === 0) continue;
-			sections.push(`# HELP ${name} ${counters[0]!.description}`);
+			sections.push(`# HELP ${name} ${counters[0]?.description}`);
 			sections.push(`# TYPE ${name} counter`);
 			for (const counter of counters) {
 				const labelStr = Object.entries(counter.getLabels())
@@ -324,7 +324,7 @@ export class MetricsRegistry {
 
 		for (const [name, histograms] of histogramGroups) {
 			if (histograms.length === 0) continue;
-			sections.push(`# HELP ${name} ${histograms[0]!.description}`);
+			sections.push(`# HELP ${name} ${histograms[0]?.description}`);
 			sections.push(`# TYPE ${name} histogram`);
 
 			for (const histogram of histograms) {
@@ -355,7 +355,7 @@ export class MetricsRegistry {
 
 		for (const [name, gauges] of gaugeGroups) {
 			if (gauges.length === 0) continue;
-			sections.push(`# HELP ${name} ${gauges[0]!.description}`);
+			sections.push(`# HELP ${name} ${gauges[0]?.description}`);
 			sections.push(`# TYPE ${name} gauge`);
 			for (const gauge of gauges) {
 				const labelStr = Object.entries(gauge.labelValues)
@@ -483,7 +483,7 @@ class MetricsCollector {
 	private writeRecord(record: MetricRecord): void {
 		if (!this.enabled) return;
 		try {
-			appendFileSync(this.metricsFilePath, JSON.stringify(record) + "\n");
+			appendFileSync(this.metricsFilePath, `${JSON.stringify(record)}\n`);
 		} catch {
 			// Fail silently
 		}
@@ -567,9 +567,14 @@ class MetricsCollector {
 	}
 
 	getAverageDetectionLatency(): number {
-		const latencies = this.inMemoryHistograms.get("detection_latency_ms");
-		if (!latencies || latencies.length === 0) return 0;
-		return latencies.reduce((a, b) => a + b, 0) / latencies.length;
+		const allValues: number[] = [];
+		for (const [key, values] of this.inMemoryHistograms) {
+			if (key.startsWith("detection_latency_ms")) {
+				allValues.push(...values);
+			}
+		}
+		if (allValues.length === 0) return 0;
+		return allValues.reduce((a, b) => a + b, 0) / allValues.length;
 	}
 
 	getVerdictCount(): number {
