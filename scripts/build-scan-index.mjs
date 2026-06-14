@@ -14,11 +14,10 @@
  *
  * Outputs:
  *   packages/core/src/generated/scan-*.json
+ *   packages/core/dist/generated/scan-*.json
  *
- * Zero external dependencies (uses Node's built-in YAML parser if available,
- * otherwise falls back to a minimal parser for the AIG schema).
- *
- * Closed-source tooling. Part of the AIDR Scan build pipeline.
+ * Uses the `yaml` npm package for robust parsing of the heterogeneous
+ * AIG schema. Closed-source tooling. Part of the AIDR Scan build pipeline.
  */
 
 import {
@@ -31,104 +30,32 @@ import {
 } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const ROOT = join(__dirname, "..");
 const AIG = join(ROOT, "data", "scan");
 const THREATS = join(ROOT, "threats");
 const OUT = join(ROOT, "packages", "core", "src", "generated");
+const DIST = join(ROOT, "packages", "core", "dist", "generated");
 
-// ─── Minimal YAML parser (handles the known AIG schema) ──────────────────
-// AIG YAML uses simple key-value, multi-line strings (|), and lists. We
-// avoid pulling in a full YAML parser to keep this script dependency-free.
-
-function parseYaml(text) {
-	const lines = text.split(/\r?\n/);
-	const root = {};
-	const stack = [{ indent: -1, obj: root, key: null }];
-
-	for (let i = 0; i < lines.length; i++) {
-		const raw = lines[i];
-		if (!raw.trim() || raw.trim().startsWith("#")) continue;
-
-		const indent = raw.match(/^(\s*)/)[1].length;
-		const trimmed = raw.trim();
-
-		// Pop stack until we find the right parent
-		while (stack.length > 1 && indent <= stack[stack.length - 1].indent) {
-			stack.pop();
-		}
-		const parent = stack[stack.length - 1];
-
-		// List item
-		if (trimmed.startsWith("- ")) {
-			const value = trimmed.slice(2).trim();
-			if (!Array.isArray(parent.obj[parent.key])) {
-				parent.obj[parent.key] = [];
-			}
-			const itemKey = value.includes(":") ? value.split(":")[0].trim() : null;
-			const itemVal = itemKey ? value.slice(itemKey.length + 1).trim() : value;
-			if (itemKey) {
-				const newObj = { [itemKey]: parseScalar(itemVal) };
-				parent.obj[parent.key].push(newObj);
-				// Use the LIST ITEM indent (not +2) so that subsequent
-				// sibling fields at the same indent stay attached to the
-				// list item, not get popped back to root.
-				stack.push({ indent, obj: newObj, key: itemKey });
-			} else {
-				parent.obj[parent.key].push(parseScalar(itemVal));
-			}
-			continue;
-		}
-
-		// Key-value
-		const colonIdx = trimmed.indexOf(":");
-		if (colonIdx === -1) continue;
-		const key = trimmed.slice(0, colonIdx).trim();
-		const valuePart = trimmed.slice(colonIdx + 1).trim();
-
-		if (valuePart === "" || valuePart === "|" || valuePart === ">") {
-			// Block scalar or nested object
-			if (valuePart === "|" || valuePart === ">") {
-				// Read until indent returns
-				const blockLines = [];
-				i++;
-				while (i < lines.length) {
-					const nextLine = lines[i];
-					const nextIndent = nextLine.match(/^(\s*)/)[1].length;
-					if (nextIndent <= indent) break;
-					if (nextLine.trim()) blockLines.push(nextLine.slice(indent + 2));
-					i++;
-				}
-				i--;
-				parent.obj[key] = blockLines.join("\n").trim();
-			} else {
-				// Nested object
-				parent.obj[key] = {};
-				stack.push({ indent, obj: parent.obj, key });
-			}
-		} else {
-			parent.obj[key] = parseScalar(valuePart);
-		}
-	}
-
-	return root;
-}
-
-function parseScalar(value) {
-	if (value === "true") return true;
-	if (value === "false") return false;
-	if (value === "null" || value === "~") return null;
-	if (/^-?\d+$/.test(value)) return parseInt(value, 10);
-	if (/^-?\d+\.\d+$/.test(value)) return parseFloat(value);
-	// Strip surrounding quotes
-	if (
-		(value.startsWith('"') && value.endsWith('"')) ||
-		(value.startsWith("'") && value.endsWith("'"))
-	) {
-		return value.slice(1, -1);
-	}
-	return value;
+// yaml is a pnpm-workspace dep; resolve from the script directory
+const require = createRequire(import.meta.url);
+let parseYaml;
+try {
+	({ parse: parseYaml } = require("yaml"));
+} catch {
+	// Fallback: relative path resolution for pnpm
+	const yamlPath = join(
+		ROOT,
+		"node_modules",
+		".pnpm",
+		"yaml@2.8.3",
+		"node_modules",
+		"yaml",
+	);
+	({ parse: parseYaml } = require(yamlPath));
 }
 
 // ─── File walking ────────────────────────────────────────────────────────
@@ -152,7 +79,7 @@ function walkYaml(dir) {
 function loadYaml(path) {
 	try {
 		const text = readFileSync(path, "utf-8");
-		return parseYaml(text);
+		return parseYaml(text) ?? null;
 	} catch (err) {
 		console.warn(`[build-scan-index] skip ${path}: ${err.message}`);
 		return null;
@@ -228,8 +155,8 @@ function buildCveIndex() {
 
 	const outPath = join(OUT, "scan-cve-index.json");
 	writeFileSync(outPath, JSON.stringify(index));
-	const distPath = join(ROOT, "packages", "core", "dist", "generated", "scan-cve-index.json");
-	if (!existsSync(dirname(distPath))) mkdirSync(dirname(distPath), { recursive: true });
+	const distPath = join(DIST, "scan-cve-index.json");
+	if (!existsSync(DIST)) mkdirSync(DIST, { recursive: true });
 	writeFileSync(distPath, JSON.stringify(index));
 	console.log(
 		`[build-scan-index] CVE index: ${deduped.length} entries (${(JSON.stringify(index).length / 1024).toFixed(1)} KB) → ${outPath}`,
@@ -521,8 +448,8 @@ function buildMcpCategoriesIndex() {
 	const index = { version: 1, categories };
 	const outPath = join(OUT, "scan-mcp-categories.json");
 	writeFileSync(outPath, JSON.stringify(index));
-	const distPath = join(ROOT, "packages", "core", "dist", "generated", "scan-mcp-categories.json");
-	if (!existsSync(dirname(distPath))) mkdirSync(dirname(distPath), { recursive: true });
+	const distPath = join(DIST, "scan-mcp-categories.json");
+	if (!existsSync(DIST)) mkdirSync(DIST, { recursive: true });
 	writeFileSync(distPath, JSON.stringify(index));
 	console.log(
 		`[build-scan-index] MCP categories: ${categories.length} (${(JSON.stringify(index).length / 1024).toFixed(1)} KB) → ${outPath}`,
@@ -579,8 +506,8 @@ function buildThreatsIndex() {
 	};
 	const outPath = join(OUT, "scan-threats-index.json");
 	writeFileSync(outPath, JSON.stringify(index));
-	const distPath = join(ROOT, "packages", "core", "dist", "generated", "scan-threats-index.json");
-	if (!existsSync(dirname(distPath))) mkdirSync(dirname(distPath), { recursive: true });
+	const distPath = join(DIST, "scan-threats-index.json");
+	if (!existsSync(DIST)) mkdirSync(DIST, { recursive: true });
 	writeFileSync(distPath, JSON.stringify(index));
 	console.log(
 		`[build-scan-index] Threats index: ${rules.length} rules (${(JSON.stringify(index).length / 1024).toFixed(1)} KB) → ${outPath}`,
@@ -613,8 +540,8 @@ function buildFingerprintsIndex() {
 	const index = { version: 1, generated: new Date().toISOString(), count: fingerprints.length, fingerprints };
 	const outPath = join(OUT, "scan-fingerprints.json");
 	writeFileSync(outPath, JSON.stringify(index));
-	const distPath = join(ROOT, "packages", "core", "dist", "generated", "scan-fingerprints.json");
-	if (!existsSync(dirname(distPath))) mkdirSync(dirname(distPath), { recursive: true });
+	const distPath = join(DIST, "scan-fingerprints.json");
+	if (!existsSync(DIST)) mkdirSync(DIST, { recursive: true });
 	writeFileSync(distPath, JSON.stringify(index));
 	console.log(
 		`[build-scan-index] Fingerprints: ${fingerprints.length} (${(JSON.stringify(index).length / 1024).toFixed(1)} KB) → ${outPath}`,
@@ -626,8 +553,7 @@ function buildFingerprintsIndex() {
 
 function main() {
 	if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
-	if (!existsSync(join(ROOT, "packages", "core", "dist", "generated")))
-		mkdirSync(join(ROOT, "packages", "core", "dist", "generated"), { recursive: true });
+	if (!existsSync(DIST)) mkdirSync(DIST, { recursive: true });
 
 	const start = Date.now();
 	const cve = buildCveIndex();

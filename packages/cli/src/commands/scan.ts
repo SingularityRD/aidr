@@ -84,9 +84,15 @@ async function runCveScanCli(
 	if (!target) {
 		throw new Error("Usage: aidr scan cve <package>[@<version>] [--ecosystem <npm|pypi|...>]");
 	}
+	// Accept both @ (npm) and : (docker) as version separators
 	const atIdx = target.lastIndexOf("@");
-	const packageName = atIdx > 0 ? target.slice(0, atIdx) : target;
-	const version = atIdx > 0 ? target.slice(atIdx + 1) : "*";
+	const colonIdx = target.lastIndexOf(":");
+	let sep = -1;
+	if (atIdx > 0 && colonIdx > 0) sep = Math.max(atIdx, colonIdx);
+	else if (atIdx > 0) sep = atIdx;
+	else if (colonIdx > 0) sep = colonIdx;
+	const packageName = sep > 0 ? target.slice(0, sep) : target;
+	const version = sep > 0 ? target.slice(sep + 1) : "*";
 	const ecosystem = options.ecosystem ?? "npm";
 
 	return await scan({

@@ -34,3 +34,7 @@
 {"timestamp":"2026-06-13T23:58:18.206Z","name":"verdict_count","value":1,"labels":{"decision":"deny","category":"malicious"},"type":"counter"}
 {"timestamp":"2026-06-13T23:58:18.207Z","name":"cache_hit","value":1,"labels":{"result":"hit"},"type":"counter"}
 {"timestamp":"2026-06-13T23:58:18.207Z","name":"cache_hit","value":1,"labels":{"result":"miss"},"type":"counter"}
+{"timestamp":"2026-06-14T00:24:31.487Z","name":"detection_latency_ms","value":100,"labels":{"verdict":"deny"},"type":"histogram"}
+{"timestamp":"2026-06-14T00:24:31.489Z","name":"verdict_count","value":1,"labels":{"decision":"deny","category":"malicious"},"type":"counter"}
+{"timestamp":"2026-06-14T00:24:31.489Z","name":"cache_hit","value":1,"labels":{"result":"hit"},"type":"counter"}
+{"timestamp":"2026-06-14T00:24:31.489Z","name":"cache_hit","value":1,"labels":{"result":"miss"},"type":"counter"}
