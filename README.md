@@ -1,23 +1,52 @@
 # Singularity AIDR
 
-**AI Agent Detection & Response (AIDR)** - a lightweight detection and response layer for AI agents that guards commands, files, and web requests.
+**AI Agent Detection & Response (AIDR) + AIDR Scan** — closed-source, 8 engines, one signed binary.
 
 <p align="center">
   <img src="images/aidr-logo-shaded.png" alt="Singularity AIDR" width="50%">
 </p>
 
-Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [Cursor / VS Code](docs/platform-guides/cursor.md), [OpenClaw](docs/platform-guides/openclaw.md), and [OpenCode](docs/platform-guides/opencode.md), and checks them against:
+AIDR is the world's most complete AI agent security platform. **8 engines in one binary**:
 
-- **Reputation checks** - first-party URL/domain and package hash lookups (optional, privacy-preserving)
-- **Local heuristics** - YAML-based threat definitions for dangerous patterns
-- **Package supply-chain checks** - registry existence, file reputation, and age analysis for npm/PyPI packages
-- **Plugin scanning** - scans other installed plugins for threats at session start
+| # | Engine | Source | Plan |
+|---|---|---|---|
+| 1 | **Edge Guard** — URL reputation, local heuristics, package supply-chain, plugin scanning | AIDR | Free |
+| 2 | **CVE Scanner** — 1,354+ entries, semver-based | AIG → AIDR Scan | Pro |
+| 3 | **MCP 14-Category Risk Scorer** — RCE, shell, file, network, exfil, … | AIG → AIDR Scan | Pro |
+| 4 | **Agent Workflow Scanner** — prompt injection, priv esc, data leak | AIG → AIDR Scan | Pro |
+| 5 | **Jailbreak Eval** — 8 red-team suites (DAN, role-play, prompt leak, token injection) | AIG → AIDR Scan | Pro |
+| 6 | **DLP Engine** — 50+ PII/secret patterns | LLM Guard → AIDR Scan | Pro |
+| 7 | **Policy Engine** — YAML DSL, live preview | NeMo → AIDR Scan | Pro |
+| 8 | **Output Validator** — Zod/JSONSchema | Guardrails AI → AIDR Scan | Pro |
+
+AIDR Scan is derived from Tencent AI-Infra-Guard (Apache 2.0), re-implemented as a native in-process TypeScript engine. Sub-50ms cold scan, ~5MB CLI binary, 165 KB total runtime footprint.
 
 ## Quick Start
 
-Singularity AIDR is designed to be set up with minimal friction:
+```bash
+# Unix / macOS
+curl -fsSL https://aidr.dev/install.sh | sh
 
-1. Install the connector for your runtime.
+# Windows PowerShell
+irm https://aidr.dev/install.ps1 | iex
+```
+
+Or install via npm:
+
+```bash
+npm install -g @singularityrd/aidr-cli
+# or
+pnpm add -g @singularityrd/aidr-cli
+```
+
+Then:
+```bash
+aidr --version
+aidr setup
+aidr scan cve lodash@4.17.20 --ecosystem npm
+aidr scan mcp https://example-mcp.dev/sse
+aidr scan stats
+```
 2. On first run, you will see a short **verification code** and a **verification URL**.
 3. Open the URL, sign in, and approve the device.
 4. Your agent is enrolled and protected.
