@@ -1,0 +1,81 @@
+# AIDR Scan — Self-Host Docker Compose (Enterprise)
+#
+# Self-host deployment for the AIDR Scan engine. This compose file is for
+# on-premises or air-gapped Enterprise customers. For cloud SaaS, see
+# https://app.aidr.dev instead.
+#
+# This is a CLOSED-SOURCE proprietary image distributed under the
+# SingularityRD Commercial License. The image is cosign-signed and a
+# CycloneDX SBOM is available at aidr.dev/trust.
+#
+# Usage:
+#   1. Pull the image:   docker pull ghcr.io/singularityrd/aidr-scan:1.0.0
+#   2. Verify signature: cosign verify ghcr.io/singularityrd/aidr-scan:1.0.0
+#   3. Update LICENSE_KEY and DOMAIN below
+#   4. Run:               docker compose -f docker-compose.scan.yml up -d
+#   5. Open:              https://localhost:8443
+#
+# For Kubernetes, see helm/aidr-scan/ in the customer portal.
+
+version: "3.9"
+
+services:
+  # ── AIDR Scan Engine ───────────────────────────────────────────────────
+  aidr-scan:
+    image: ghcr.io/singularityrd/aidr-scan:1.0.0
+    container_name: aidr-scan
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    environment:
+      - LICENSE_KEY=${AIDR_LICENSE_KEY:?Set AIDR_LICENSE_KEY in .env.scan}
+      - DOMAIN=${AIDR_DOMAIN:-localhost}
+      - TLS_CERT=/etc/aidr/tls/tls.crt
+      - TLS_KEY=/etc/aidr/tls/tls.key
+      - AUDIT_LOG_PATH=/var/lib/aidr/audit.log
+      - SCAN_INDEX_PATH=/var/lib/aidr/scan-index.json
+    volumes:
+      - aidr-data:/var/lib/aidr
+      - aidr-tls:/etc/aidr/tls:ro
+      - /var/log/aidr:/var/log/aidr
+    networks:
+      - aidr-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "https://localhost:8443/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Optional: Threat Intel Feed (offline-capable) ──────────────────────
+  # Enable if you have an air-gapped deployment with a pre-synced feed.
+  # aidr-intel:
+  #   image: ghcr.io/singularityrd/aidr-intel:1.0.0
+  #   container_name: aidr-intel
+  #   restart: unless-stopped
+  #   volumes:
+  #     - aidr-intel:/var/lib/aidr-intel
+  #   networks:
+  #     - aidr-net
+
+volumes:
+  aidr-data:
+    driver: local
+  aidr-tls:
+    driver: local
+
+networks:
+  aidr-net:
+    driver: bridge

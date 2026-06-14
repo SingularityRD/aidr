@@ -1,33 +1,72 @@
-Singularity AIDR
-Copyright 2026 SingularityRD.
+Singularity AIDR + AIDR Scan
+Copyright 2026 SingularityRD
 
-This product includes software developed by SingularityRD.
+This product is proprietary software licensed under the SingularityRD
+Commercial License Agreement v1.0. See LICENSE for full terms.
 
----
+================================================================================
+1. WHAT THIS PRODUCT IS
+================================================================================
 
-Licensing:
+Singularity AIDR is a closed-source AI agent security platform. AIDR Scan
+is a sub-product of AIDR providing deep security scanning (CVE matching,
+MCP risk scoring, agent workflow analysis, jailbreak evaluation).
 
-This project uses a dual-license structure:
+The core engine is distributed as a signed binary. The source code is NOT
+publicly available. Software Bill of Materials (SBOM) is published with
+each release per the SingularityRD trust policy (https://aidr.dev/trust).
 
-- Source code: Apache License 2.0 (see LICENSE)
-- Threat detection rules (threats/): Detection Rule License 1.1 (see threats/LICENSE)
+================================================================================
+2. AI-INFRA-GUARD ATTRIBUTION (Apache 2.0)
+================================================================================
 
-The DRL 1.1 requires that detection output based on rule matches must retain
-author attribution. The default author for all rules is SingularityRD.
+This product includes data and category definitions derived from
+"AI-Infra-Guard" by Tencent Zhuque Lab, used under the Apache License 2.0.
 
----
+  Original project: https://github.com/Tencent/AI-Infra-Guard
+  Copyright:        2024-2026 Tencent Zhuque Lab
+  License:          Apache License 2.0
+  Local copy:       data/scan/LICENSE
 
-Cloud Services Notice:
+Per the Apache 2.0 license Section 4(d), the following attribution is
+provided:
 
-SingularityRD cloud services are provided exclusively for use with authorized
-Singularity AIDR distributions. Unauthorized access to these services is prohibited.
-Use of these services is governed by the applicable service terms, not by the
-Apache 2.0 license of this source code.
+  Based on Tencent Zhuque Lab AI-Infra-Guard (Apache 2.0)
+  https://github.com/Tencent/AI-Infra-Guard
 
----
+The AIDR Scan engine re-implements the original AIG detection logic in
+TypeScript as a native in-process engine. The AIG YAML data files
+(CVE, fingerprint, MCP, agent) are vendored under data/scan/ and
+re-licensed as part of the proprietary AIDR Scan engine.
 
-Third-party dependencies:
+The original NOTICE file from AI-Infra-Guard is preserved at
+data/scan/NOTICE.
 
-- yaml (ISC License) - https://github.com/eemeli/yaml
-- zod (MIT License) - https://github.com/colinhacks/zod
-- pino (MIT License) - https://github.com/pinojs/pino
+================================================================================
+3. DATA SOURCES
+================================================================================
+
+AIDR Scan compiles the following data sources at build time:
+
+  data/scan/vuln_en/        AIG CVE data (English)  - Tencent Zhuque Lab
+  data/scan/vuln/           AIG CVE data (Chinese)  - Tencent Zhuque Lab
+  data/scan/fingerprints/   AIG HTTP fingerprints   - Tencent Zhuque Lab
+  data/scan/mcp/            AIG MCP eval prompts    - Tencent Zhuque Lab
+  threats/                  AIDR rule engine rules  - SingularityRD
+
+================================================================================
+4. TRADEMARKS
+================================================================================
+
+"AIDR", "AIDR Scan", and "SingularityRD" are trademarks of SingularityRD.
+"AI-Infra-Guard" and "Tencent Zhuque Lab" are trademarks of Tencent.
+All other trademarks belong to their respective owners.
+
+================================================================================
+5. CONTACT
+================================================================================
+
+  General:      hello@singularityrd.com
+  Sales:        sales@singularityrd.com
+  Security:     security@singularityrd.com
+  License:      licensing@singularityrd.com

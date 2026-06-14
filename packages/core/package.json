@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./scan": {
+      "types": "./dist/scan/engine.d.ts",
+      "import": "./dist/scan/engine.js"
     }
   },
   "files": [

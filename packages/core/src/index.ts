@@ -378,3 +378,60 @@ export { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 export type { VersionCheckContext, VersionCheckResult } from "./version-check.js";
 // Version check
 export { checkForUpdate, isNewerVersion } from "./version-check.js";
+
+// ── AIDR Scan Engine (Sprint 0) ─────────────────────────────────────────────
+// Closed-source: the AIDR Scan engine re-implements Tencent AI-Infra-Guard
+// detection logic as a native in-process TypeScript engine. See NOTICE for
+// Apache 2.0 attribution.
+export {
+	scan as scanEngine,
+	getEngineStats,
+	SCAN_ENGINE_VERSION,
+	SCAN_ENGINE_GENERATED,
+	checkPackageAgainstCveIndex,
+	checkFrameworkCves,
+	getCveStats,
+	loadScanMcpCategories,
+	classifyMcpTool,
+	scanRiskToPolicyAction,
+	getAllCategories,
+	resetCategoryCache,
+	runMcpScan,
+	scanMcpTools,
+	runAgentScan,
+	runJailbreakEval,
+	getJailbreakTestCatalog,
+	runThreatsScan,
+	resetThreatIndexCache,
+} from "./scan/engine.js";
+
+export type {
+	ScanRequest,
+	ScanResult,
+	ScanType,
+	Finding,
+	Severity,
+	PolicyAction,
+	CveTarget,
+	McpTarget,
+	AgentTarget,
+	JailbreakTarget,
+	ThreatsTarget,
+} from "./scan/types.js";
+
+export type {
+	CveEntry,
+	CveResult,
+	CveStats,
+} from "./scan/cve.js";
+
+export type {
+	McpCategory,
+	RiskLevel,
+} from "./scan/mcp-categories.js";
+
+export type { CategoryBreakdown, McpScanData } from "./scan/mcp.js";
+export type { AgentScanData } from "./scan/agent.js";
+export type { JailbreakScanData } from "./scan/jailbreak.js";
+export type { ThreatRule, ThreatIndex, ThreatsScanData } from "./scan/threats.js";
+export type { EngineStats } from "./scan/engine.js";

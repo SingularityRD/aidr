@@ -3,26 +3,15 @@
 	"license": "Proprietary",
 	"type": "module",
 	"packageManager": "pnpm@10.29.3",
-	"pnpm": {
-		"overrides": {
-			"@hono/node-server": "1.19.10",
-			"express-rate-limit": "8.2.2",
-			"hono": "4.12.7",
-			"path-to-regexp": "8.4.0"
-		},
-		"onlyBuiltDependencies": [
-			"koffi"
-		]
-	},
 	"engines": {
 		"node": ">=18"
 	},
 	"scripts": {
-		"compile:aig": "node scripts/compile-aig-data.mjs",
-		"sync:aig": "node scripts/sync-aig-threats.mjs",
-		"postinstall": "node scripts/compile-aig-data.mjs",
-		"build": "pnpm compile:aig && pnpm -r run build",
-		"build:release": "pnpm -C packages/core run build:release && pnpm -r --filter \"!@singularityrd/aidr-core\" run build:release && node scripts/release-artifact-manifests.mjs && node scripts/check-no-sourcemaps.mjs packages && node scripts/check-no-leaky-paths.mjs packages/core/dist packages/claude-code/dist packages/extension/dist packages/openclaw/dist packages/opencode/dist packages/dashboard/dist",
+		"scan:build": "node scripts/build-scan-index.mjs",
+		"scan:sync": "node scripts/sync-scan-rules.mjs",
+		"postinstall": "node scripts/build-scan-index.mjs",
+		"build": "pnpm scan:build && pnpm -r run build",
+		"build:release": "pnpm scan:build && pnpm -C packages/core run build:release && pnpm -r --filter \"!@singularityrd/aidr-core\" run build:release && node scripts/release-artifact-manifests.mjs && node scripts/check-no-sourcemaps.mjs packages && node scripts/check-no-leaky-paths.mjs packages/core/dist packages/claude-code/dist packages/extension/dist packages/openclaw/dist packages/opencode/dist packages/dashboard/dist",
 		"quality:gate": "pnpm lint && pnpm check && pnpm test && pnpm test:coverage && pnpm build:release",
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",
@@ -44,7 +33,7 @@
 		"changeset": "changeset",
 		"version": "changeset version && node scripts/sync-manifests.mjs",
 		"build:analyze": "pnpm -r run build:analyze",
-    "sentry:upload": "node scripts/upload-sourcemaps.mjs",
+		"sentry:upload": "node scripts/upload-sourcemaps.mjs",
 		"knip": "knip",
 		"knip:fix": "knip --fix",
 		"duplicates": "jscpd --threshold 10"
