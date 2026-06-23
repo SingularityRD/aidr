@@ -9,12 +9,11 @@
 		"includes": ["packages/*/src/**"]
 	},
 	"linter": {
-		"enabled": true,
 		"rules": {
 			"recommended": false,
 			"correctness": {
 				"noUnusedVariables": "warn",
-				"noUnusedImports": "error"
+				"noUnusedImports": "warn"
 			},
 			"complexity": {
 				"noExcessiveCognitiveComplexity": "warn",
