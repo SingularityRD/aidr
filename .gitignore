@@ -59,4 +59,4 @@ session_start_backup.ts
 threats/dummy.yaml
 
 # Coverage reports
-coverage/
+coverage/~/
