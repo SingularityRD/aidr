@@ -5,6 +5,7 @@ on:
     branches: [main, master, dev]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   quality-gate:
@@ -20,3 +21,4 @@ jobs:
           corepack prepare pnpm@10.29.3 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm quality:gate
+
