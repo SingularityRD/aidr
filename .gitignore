@@ -57,3 +57,6 @@ session_start_backup.ts
 
 # Dummy canary e2e threat rules
 threats/dummy.yaml
+
+# Coverage reports
+coverage/
