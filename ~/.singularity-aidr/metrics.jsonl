@@ -302,3 +302,11 @@
 {"timestamp":"2026-06-05T21:44:23.578Z","name":"verdict_count","value":1,"labels":{"decision":"deny","category":"malicious"},"type":"counter"}
 {"timestamp":"2026-06-05T21:44:23.578Z","name":"cache_hit","value":1,"labels":{"result":"hit"},"type":"counter"}
 {"timestamp":"2026-06-05T21:44:23.579Z","name":"cache_hit","value":1,"labels":{"result":"miss"},"type":"counter"}
+{"timestamp":"2026-06-23T12:10:18.922Z","name":"detection_latency_ms","value":100,"labels":{"verdict":"deny"},"type":"histogram"}
+{"timestamp":"2026-06-23T12:10:18.924Z","name":"verdict_count","value":1,"labels":{"decision":"deny","category":"malicious"},"type":"counter"}
+{"timestamp":"2026-06-23T12:10:18.924Z","name":"cache_hit","value":1,"labels":{"result":"hit"},"type":"counter"}
+{"timestamp":"2026-06-23T12:10:18.925Z","name":"cache_hit","value":1,"labels":{"result":"miss"},"type":"counter"}
+{"timestamp":"2026-06-23T12:10:40.832Z","name":"detection_latency_ms","value":100,"labels":{"verdict":"deny"},"type":"histogram"}
+{"timestamp":"2026-06-23T12:10:40.834Z","name":"verdict_count","value":1,"labels":{"decision":"deny","category":"malicious"},"type":"counter"}
+{"timestamp":"2026-06-23T12:10:40.834Z","name":"cache_hit","value":1,"labels":{"result":"hit"},"type":"counter"}
+{"timestamp":"2026-06-23T12:10:40.835Z","name":"cache_hit","value":1,"labels":{"result":"miss"},"type":"counter"}

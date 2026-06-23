@@ -1,1 +1,129 @@
-{"version":1,"generated":"2026-06-05","categories":[{"id":"mcp-01","name":"Token Mismanagement & Secret Exposure","description":"Hardcoded keys, env var leaks, and sensitive credential theft from .cursor/mcp.json and similar configs","risk":"critical","detection_patterns":["api_key","secret","token","password",".env","mcp.json"],"aidr_policy_action":"deny"},{"id":"mcp-02","name":"Privilege Escalation via Scope Creep","description":"Overly broad tool permission definitions allowing agents to gain unnecessary system control or data access","risk":"high","detection_patterns":["full_access","admin","wildcard","root","sudo"],"aidr_policy_action":"restrict"},{"id":"mcp-03","name":"Tool Poisoning","description":"Legitimate MCP tools tampered with or injected with malicious logic returning falsified results to manipulate the model","risk":"critical","detection_patterns":["override","inject","malicious","backdoor","trojan"],"aidr_policy_action":"deny"},{"id":"mcp-04","name":"Software Supply Chain Attacks","description":"Dependency tampering, malicious third-party MCP servers, or backdoors in build scripts","risk":"critical","detection_patterns":["postinstall","preinstall","download","curl","wget","npm install"],"aidr_policy_action":"deny"},{"id":"mcp-05","name":"Command Injection & Execution","description":"Agent constructs and executes system commands, shell scripts, or API calls based on untrusted input","risk":"critical","detection_patterns":["exec","spawn","shell","eval","subprocess","child_process"],"aidr_policy_action":"deny"},{"id":"mcp-06","name":"Prompt Injection via Contextual Payloads","description":"Malicious instructions injected through context (OCR, web content) hijacking model control flow","risk":"high","detection_patterns":["ignore instructions","system prompt","you are now","do not"],"aidr_policy_action":"monitor"},{"id":"mcp-07","name":"Insufficient Auth & Authorization","description":"MCP servers or tools failing to verify identity, leading to cross-agent or cross-user privilege escalation","risk":"high","detection_patterns":["no_auth","skip_auth","public","unauthorized","bypass"],"aidr_policy_action":"deny"},{"id":"mcp-08","name":"Lack of Audit and Telemetry","description":"Missing tamper-proof logging of tool calls and context changes, hindering security forensics","risk":"medium","detection_patterns":["no_log","disable_logging","quiet","silent"],"aidr_policy_action":"monitor"},{"id":"mcp-09","name":"Shadow MCP Servers","description":"Unauthorized MCP instances deployed with default configurations, lacking security compliance","risk":"high","detection_patterns":["default_config","unsecured","shadow","unauthorized"],"aidr_policy_action":"deny"},{"id":"mcp-10","name":"Context Injection & Over-Sharing","description":"Sensitive context shared across sessions or agents, leading to information disclosure or logic interference","risk":"high","detection_patterns":["shared_context","global_state","cross_session","broadcast"],"aidr_policy_action":"restrict"},{"id":"mcp-11","name":"Name Confusion Attack","description":"Malicious tools registered with names similar to legitimate tools to trick agents into calling the wrong one","risk":"high","detection_patterns":["typosquat","lookalike","similar_name","confusion"],"aidr_policy_action":"deny"},{"id":"mcp-12","name":"Rug Pull Attack","description":"Malicious MCP service that suddenly terminates or changes behavior after gaining trust, causing DoS or data loss","risk":"high","detection_patterns":["rate_limit","kill","shutdown","terminate","revoke"],"aidr_policy_action":"deny"},{"id":"mcp-13","name":"Tool Shadowing Attack","description":"Overriding legitimate tool behavior by redefining tools with the same name","risk":"high","detection_patterns":["override","redefine","shadow","duplicate"],"aidr_policy_action":"deny"},{"id":"mcp-14","name":"CORS Misconfiguration","description":"Misconfigured Cross-Origin Resource Sharing policies that could allow unauthorized cross-domain access to MCP servers","risk":"medium","detection_patterns":["Access-Control-Allow-Origin: *","credentials: true","wildcard_origin"],"aidr_policy_action":"restrict"}]}
+{
+	"version": 1,
+	"generated": "2026-06-23",
+	"categories": [
+		{
+			"id": "mcp-01",
+			"name": "Token Mismanagement & Secret Exposure",
+			"description": "Hardcoded keys, env var leaks, and sensitive credential theft from .cursor/mcp.json and similar configs",
+			"risk": "critical",
+			"detection_patterns": ["api_key", "secret", "token", "password", ".env", "mcp.json"],
+			"aidr_policy_action": "deny"
+		},
+		{
+			"id": "mcp-02",
+			"name": "Privilege Escalation via Scope Creep",
+			"description": "Overly broad tool permission definitions allowing agents to gain unnecessary system control or data access",
+			"risk": "high",
+			"detection_patterns": ["full_access", "admin", "wildcard", "root", "sudo"],
+			"aidr_policy_action": "restrict"
+		},
+		{
+			"id": "mcp-03",
+			"name": "Tool Poisoning",
+			"description": "Legitimate MCP tools tampered with or injected with malicious logic returning falsified results to manipulate the model",
+			"risk": "critical",
+			"detection_patterns": ["override", "inject", "malicious", "backdoor", "trojan"],
+			"aidr_policy_action": "deny"
+		},
+		{
+			"id": "mcp-04",
+			"name": "Software Supply Chain Attacks",
+			"description": "Dependency tampering, malicious third-party MCP servers, or backdoors in build scripts",
+			"risk": "critical",
+			"detection_patterns": [
+				"postinstall",
+				"preinstall",
+				"download",
+				"curl",
+				"wget",
+				"npm install"
+			],
+			"aidr_policy_action": "deny"
+		},
+		{
+			"id": "mcp-05",
+			"name": "Command Injection & Execution",
+			"description": "Agent constructs and executes system commands, shell scripts, or API calls based on untrusted input",
+			"risk": "critical",
+			"detection_patterns": ["exec", "spawn", "shell", "eval", "subprocess", "child_process"],
+			"aidr_policy_action": "deny"
+		},
+		{
+			"id": "mcp-06",
+			"name": "Prompt Injection via Contextual Payloads",
+			"description": "Malicious instructions injected through context (OCR, web content) hijacking model control flow",
+			"risk": "high",
+			"detection_patterns": ["ignore instructions", "system prompt", "you are now", "do not"],
+			"aidr_policy_action": "monitor"
+		},
+		{
+			"id": "mcp-07",
+			"name": "Insufficient Auth & Authorization",
+			"description": "MCP servers or tools failing to verify identity, leading to cross-agent or cross-user privilege escalation",
+			"risk": "high",
+			"detection_patterns": ["no_auth", "skip_auth", "public", "unauthorized", "bypass"],
+			"aidr_policy_action": "deny"
+		},
+		{
+			"id": "mcp-08",
+			"name": "Lack of Audit and Telemetry",
+			"description": "Missing tamper-proof logging of tool calls and context changes, hindering security forensics",
+			"risk": "medium",
+			"detection_patterns": ["no_log", "disable_logging", "quiet", "silent"],
+			"aidr_policy_action": "monitor"
+		},
+		{
+			"id": "mcp-09",
+			"name": "Shadow MCP Servers",
+			"description": "Unauthorized MCP instances deployed with default configurations, lacking security compliance",
+			"risk": "high",
+			"detection_patterns": ["default_config", "unsecured", "shadow", "unauthorized"],
+			"aidr_policy_action": "deny"
+		},
+		{
+			"id": "mcp-10",
+			"name": "Context Injection & Over-Sharing",
+			"description": "Sensitive context shared across sessions or agents, leading to information disclosure or logic interference",
+			"risk": "high",
+			"detection_patterns": ["shared_context", "global_state", "cross_session", "broadcast"],
+			"aidr_policy_action": "restrict"
+		},
+		{
+			"id": "mcp-11",
+			"name": "Name Confusion Attack",
+			"description": "Malicious tools registered with names similar to legitimate tools to trick agents into calling the wrong one",
+			"risk": "high",
+			"detection_patterns": ["typosquat", "lookalike", "similar_name", "confusion"],
+			"aidr_policy_action": "deny"
+		},
+		{
+			"id": "mcp-12",
+			"name": "Rug Pull Attack",
+			"description": "Malicious MCP service that suddenly terminates or changes behavior after gaining trust, causing DoS or data loss",
+			"risk": "high",
+			"detection_patterns": ["rate_limit", "kill", "shutdown", "terminate", "revoke"],
+			"aidr_policy_action": "deny"
+		},
+		{
+			"id": "mcp-13",
+			"name": "Tool Shadowing Attack",
+			"description": "Overriding legitimate tool behavior by redefining tools with the same name",
+			"risk": "high",
+			"detection_patterns": ["override", "redefine", "shadow", "duplicate"],
+			"aidr_policy_action": "deny"
+		},
+		{
+			"id": "mcp-14",
+			"name": "CORS Misconfiguration",
+			"description": "Misconfigured Cross-Origin Resource Sharing policies that could allow unauthorized cross-domain access to MCP servers",
+			"risk": "medium",
+			"detection_patterns": [
+				"Access-Control-Allow-Origin: *",
+				"credentials: true",
+				"wildcard_origin"
+			],
+			"aidr_policy_action": "restrict"
+		}
+	]
+}

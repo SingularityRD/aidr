@@ -90921,4 +90921,3 @@ main().catch((e) => {
   process.stdout.write(`${JSON.stringify(makeResponse(allowVerdict(`Internal error: ${e}`)))}
 `);
 });
-//# sourceMappingURL=pre-tool-use.cjs.map

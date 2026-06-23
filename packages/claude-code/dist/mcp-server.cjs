@@ -107876,4 +107876,3 @@ main().catch((e) => {
   logger2.error("MCP server failed", { error: String(e) });
   process.exit(1);
 });
-//# sourceMappingURL=mcp-server.cjs.map
