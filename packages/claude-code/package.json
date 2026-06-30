@@ -16,7 +16,7 @@
     "@modelcontextprotocol/sdk": "^1.28.0",
     "pino": "^9.6.0",
     "zod": "^3.24.0",
-    "@sentry/node": "^9.0.0"
+    "@sentry/node": "^10.62.0"
   },
   "optionalDependencies": {
     "koffi": "^2.15.2"
