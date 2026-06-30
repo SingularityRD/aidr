@@ -38,7 +38,7 @@
     "@opencode-ai/plugin": "^1.2.10",
     "@types/node": "^22.0.0",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.9"
   },
   "engines": {
     "node": ">=18"
