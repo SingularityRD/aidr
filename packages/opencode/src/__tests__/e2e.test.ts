@@ -219,7 +219,8 @@ function hasModelRefusal(text: string): boolean {
 
 /**
  * Assert that either AIDR acted or the model refused.
- * Uses structured tool data when available, falls back to text matching.
+ * Uses structured tool data when available. Developer runs fall back to text
+ * matching; release runs require the structured AIDR hook action.
  */
 function assertAidrOrRefusal(
 	events: OpenCodeEvent[],
@@ -230,6 +231,13 @@ function assertAidrOrRefusal(
 
 	const aidrActed = hasAidrAction(toolUses);
 	const modelRefused = toolUses.length === 0 && hasModelRefusal(allText);
+
+	if (process.env.AIDR_E2E_RELEASE === "1") {
+		expect(aidrActed, "Release malicious-path evidence must contain an AIDR hook verdict").toBe(
+			true,
+		);
+		return;
+	}
 
 	if (!aidrActed && !modelRefused) {
 		ctx.skip("Model did not trigger expected tool");

@@ -58,7 +58,8 @@ function getNestedValue(obj: Config, path: string): unknown {
 
 function setNestedValue(obj: Config, path: string, value: string): void {
 	const keys = path.split(".");
-	const last = keys.pop()!;
+	const last = keys.pop();
+	if (last === undefined) return;
 	let current: Record<string, unknown> = obj as unknown as Record<string, unknown>;
 
 	for (const key of keys) {

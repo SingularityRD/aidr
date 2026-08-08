@@ -1,8 +1,9 @@
 import { createHash, generateKeyPairSync, randomUUID, sign, verify } from "node:crypto";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { resolvePath } from "./config.js";
 import type { ResponseMode } from "./response-config.js";
+import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
 import type { Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -43,9 +44,33 @@ interface SerializedAuditEntry {
 	_signature?: string;
 }
 
+interface AuditHeadCheckpoint {
+	version: 1;
+	entry_id: string;
+	entry_hash: string;
+	updated_at: string;
+}
+
+interface RetentionDeletionRecord {
+	type: "retention_delete";
+	version: 1;
+	deleted_at: string;
+	retention_days: number;
+	entry_ids: string[];
+	entry_hashes: string[];
+	record_hash: string;
+	_signature?: string;
+}
+
 export interface ResponseAuditorOptions {
 	signEntries?: boolean;
 	retentionDays?: number;
+	/**
+	 * Emit a retention manifest before expired signed records are purged. The
+	 * manifest keeps deletion evidence without retaining the original payload.
+	 * Defaults to true for signed logs and false for unsigned compatibility logs.
+	 */
+	retainDeletionEvidence?: boolean;
 	logger?: Logger;
 }
 
@@ -53,9 +78,12 @@ export class ResponseAuditor {
 	private readonly logger: Logger;
 	private readonly signEntries: boolean;
 	private readonly retentionDays: number;
+	private readonly retainDeletionEvidence: boolean;
 	private privateKey?: string;
 	private publicKey?: string;
 	private keyPath: string;
+	private readonly headPath: string;
+	private readonly retentionManifestPath: string;
 
 	constructor(
 		private auditLogPath: string,
@@ -64,7 +92,11 @@ export class ResponseAuditor {
 		this.logger = options.logger ?? nullLogger;
 		this.signEntries = options.signEntries ?? false;
 		this.retentionDays = options.retentionDays ?? 0;
+		this.retainDeletionEvidence = options.retainDeletionEvidence ?? this.signEntries;
 		this.keyPath = join(dirname(resolvePath(auditLogPath)), ".response-audit-key");
+		const resolvedAuditPath = resolvePath(auditLogPath);
+		this.headPath = `${resolvedAuditPath}.head`;
+		this.retentionManifestPath = `${resolvedAuditPath}.retention.jsonl`;
 	}
 
 	private async ensureSigningReady(): Promise<void> {
@@ -167,6 +199,167 @@ export class ResponseAuditor {
 		}
 	}
 
+	private async writeHeadCheckpoint(entryId: string, entryHash: string): Promise<void> {
+		const checkpoint: AuditHeadCheckpoint = {
+			version: 1,
+			entry_id: entryId,
+			entry_hash: entryHash,
+			updated_at: new Date().toISOString(),
+		};
+		const temporaryPath = `${this.headPath}.${randomUUID()}.tmp`;
+		await mkdir(dirname(this.headPath), { recursive: true });
+		await writeFile(temporaryPath, `${JSON.stringify(checkpoint)}\n`, {
+			encoding: "utf8",
+			mode: 0o600,
+		});
+		try {
+			await rename(temporaryPath, this.headPath);
+		} catch {
+			// Windows does not replace an existing destination with rename().
+			await writeFile(this.headPath, `${JSON.stringify(checkpoint)}\n`, {
+				encoding: "utf8",
+				mode: 0o600,
+			});
+			await unlink(temporaryPath).catch(() => undefined);
+		}
+	}
+
+	private async readHeadCheckpoint(): Promise<AuditHeadCheckpoint | null> {
+		try {
+			const parsed = JSON.parse(
+				await readFile(this.headPath, "utf8"),
+			) as Partial<AuditHeadCheckpoint>;
+			if (
+				parsed.version !== 1 ||
+				typeof parsed.entry_id !== "string" ||
+				!parsed.entry_id ||
+				typeof parsed.entry_hash !== "string" ||
+				!/^[0-9a-f]{64}$/.test(parsed.entry_hash)
+			) {
+				return null;
+			}
+			return parsed as AuditHeadCheckpoint;
+		} catch {
+			return null;
+		}
+	}
+
+	private async appendRetentionDeletionRecord(removed: SerializedAuditEntry[]): Promise<void> {
+		if (!this.retainDeletionEvidence || removed.length === 0) return;
+		const base = {
+			type: "retention_delete" as const,
+			version: 1 as const,
+			deleted_at: new Date().toISOString(),
+			retention_days: this.retentionDays,
+			entry_ids: removed.map((entry) => entry.id),
+			entry_hashes: removed
+				.map((entry) => entry._entry_hash)
+				.filter((hash): hash is string => typeof hash === "string" && /^[0-9a-f]{64}$/.test(hash)),
+		};
+		const recordHash = createHash("sha256").update(JSON.stringify(base)).digest("hex");
+		const record: RetentionDeletionRecord = { ...base, record_hash: recordHash };
+		if (this.signEntries && this.privateKey) {
+			record._signature = sign(
+				undefined,
+				Buffer.from(JSON.stringify({ ...base, record_hash: recordHash })),
+				this.privateKey,
+			).toString("base64");
+		}
+		await mkdir(dirname(this.retentionManifestPath), { recursive: true });
+		await appendFile(this.retentionManifestPath, `${JSON.stringify(record)}\n`, "utf8");
+	}
+
+	private verifyRetentionDeletionRecord(record: RetentionDeletionRecord): boolean {
+		const base = {
+			type: record.type,
+			version: record.version,
+			deleted_at: record.deleted_at,
+			retention_days: record.retention_days,
+			entry_ids: record.entry_ids,
+			entry_hashes: record.entry_hashes,
+		};
+		const expectedHash = createHash("sha256").update(JSON.stringify(base)).digest("hex");
+		if (record.record_hash !== expectedHash) return false;
+		if (!this.signEntries) return true;
+		if (!record._signature || !this.publicKey) return false;
+		try {
+			return verify(
+				undefined,
+				Buffer.from(JSON.stringify({ ...base, record_hash: record.record_hash })),
+				this.publicKey,
+				Buffer.from(record._signature, "base64"),
+			);
+		} catch {
+			return false;
+		}
+	}
+
+	private async verifyRetentionManifest(): Promise<string[]> {
+		const tampered: string[] = [];
+		let content: string;
+		try {
+			content = await readFile(this.retentionManifestPath, "utf8");
+		} catch {
+			return tampered;
+		}
+		const lines = content.trim().split("\n").filter(Boolean);
+		for (const [index, line] of lines.entries()) {
+			try {
+				const record = JSON.parse(line) as RetentionDeletionRecord;
+				if (
+					record.type !== "retention_delete" ||
+					record.version !== 1 ||
+					!Array.isArray(record.entry_ids) ||
+					!Array.isArray(record.entry_hashes) ||
+					!this.verifyRetentionDeletionRecord(record)
+				) {
+					tampered.push(`retention-manifest-line-${index + 1}`);
+				}
+			} catch {
+				tampered.push(`retention-manifest-line-${index + 1}`);
+			}
+		}
+		return tampered;
+	}
+
+	private serializeEntry(entry: ResponseAuditEntry): SerializedAuditEntry {
+		return {
+			id: entry.id,
+			timestamp: entry.timestamp.toISOString(),
+			action: entry.action,
+			threat_id: entry.threatId,
+			tool: entry.tool,
+			input: redactTelemetryString(entry.input),
+			verdict: redactTelemetryData(entry.verdict),
+			response_taken: entry.responseTaken,
+			metadata: redactTelemetryData(entry.metadata),
+			outcome: entry.outcome,
+			error: entry.error ? redactTelemetryString(entry.error) : undefined,
+		};
+	}
+
+	private async attachSignature(serialized: SerializedAuditEntry): Promise<void> {
+		const path = resolvePath(this.auditLogPath);
+		let prevHash = "GENESIS";
+		try {
+			const content = await readFile(path, "utf-8");
+			const lines = content.trim().split("\n").filter(Boolean);
+			const lastLine = lines.at(-1);
+			if (lastLine) {
+				const lastEntry = JSON.parse(lastLine) as SerializedAuditEntry;
+				if (lastEntry._entry_hash) prevHash = lastEntry._entry_hash;
+			}
+		} catch {
+			// File does not exist yet; first entry starts at GENESIS.
+		}
+		serialized._prev_hash = prevHash;
+		serialized._entry_hash = this.computeEntryHash(serialized);
+		serialized._signature = this.signEntry(serialized);
+		if (!serialized._signature) {
+			throw new Error("response audit signing failed; refusing unsigned append");
+		}
+	}
+
 	async log(entry: Omit<ResponseAuditEntry, "id" | "timestamp">): Promise<ResponseAuditEntry> {
 		await this.ensureSigningReady();
 		const id = randomUUID();
@@ -178,45 +371,22 @@ export class ResponseAuditor {
 			timestamp,
 		};
 
-		const serialized: SerializedAuditEntry = {
-			id: fullEntry.id,
-			timestamp: fullEntry.timestamp.toISOString(),
-			action: fullEntry.action,
-			threat_id: fullEntry.threatId,
-			tool: fullEntry.tool,
-			input: fullEntry.input,
-			verdict: fullEntry.verdict,
-			response_taken: fullEntry.responseTaken,
-			metadata: fullEntry.metadata,
-			outcome: fullEntry.outcome,
-			error: fullEntry.error,
-		};
+		const serialized = this.serializeEntry(fullEntry);
 
 		if (this.signEntries) {
-			// Load previous entry to get its hash
-			const path = resolvePath(this.auditLogPath);
-			let prevHash = "GENESIS";
-			try {
-				const content = await readFile(path, "utf-8");
-				const lines = content.trim().split("\n").filter(Boolean);
-				if (lines.length > 0) {
-					const lastLine = lines[lines.length - 1]!;
-					const lastEntry = JSON.parse(lastLine) as SerializedAuditEntry;
-					if (lastEntry._entry_hash) {
-						prevHash = lastEntry._entry_hash;
-					}
-				}
-			} catch {
+			await this.attachSignature(serialized);
+			/*
 				// File doesn't exist yet — first entry
 			}
-			serialized._prev_hash = prevHash;
-			serialized._entry_hash = this.computeEntryHash(serialized);
-			serialized._signature = this.signEntry(serialized);
+			*/
 		}
 
 		const path = resolvePath(this.auditLogPath);
 		await mkdir(dirname(path), { recursive: true });
 		await appendFile(path, `${JSON.stringify(serialized)}\n`);
+		if (this.signEntries && serialized._entry_hash) {
+			await this.writeHeadCheckpoint(serialized.id, serialized._entry_hash);
+		}
 
 		if (this.retentionDays > 0) {
 			await this.enforceRetention();
@@ -229,7 +399,15 @@ export class ResponseAuditor {
 			outcome: entry.outcome,
 		});
 
-		return fullEntry;
+		// Return the same privacy-safe representation that was persisted. The
+		// auditor must not hand raw tool input back to a telemetry caller.
+		return {
+			...fullEntry,
+			input: serialized.input,
+			verdict: serialized.verdict,
+			metadata: serialized.metadata,
+			error: serialized.error,
+		};
 	}
 
 	async query(filters: {
@@ -241,15 +419,27 @@ export class ResponseAuditor {
 		outcome?: "success" | "failure";
 	}): Promise<ResponseAuditEntry[]> {
 		const entries = await this.loadAllEntries();
-		return entries.filter((entry) => {
-			if (filters.action && entry.action !== filters.action) return false;
-			if (filters.threatId && entry.threatId !== filters.threatId) return false;
-			if (filters.tool && entry.tool !== filters.tool) return false;
-			if (filters.outcome && entry.outcome !== filters.outcome) return false;
-			if (filters.from && entry.timestamp < filters.from) return false;
-			if (filters.to && entry.timestamp > filters.to) return false;
-			return true;
-		});
+		return entries.filter((entry) => this.matchesQueryFilter(entry, filters));
+	}
+
+	private matchesQueryFilter(
+		entry: ResponseAuditEntry,
+		filters: {
+			action?: ResponseAuditEntry["action"];
+			threatId?: string;
+			tool?: string;
+			from?: Date;
+			to?: Date;
+			outcome?: "success" | "failure";
+		},
+	): boolean {
+		if (filters.action && entry.action !== filters.action) return false;
+		if (filters.threatId && entry.threatId !== filters.threatId) return false;
+		if (filters.tool && entry.tool !== filters.tool) return false;
+		if (filters.outcome && entry.outcome !== filters.outcome) return false;
+		if (filters.from && entry.timestamp < filters.from) return false;
+		if (filters.to && entry.timestamp > filters.to) return false;
+		return true;
 	}
 
 	private async loadAllEntries(): Promise<ResponseAuditEntry[]> {
@@ -319,8 +509,9 @@ export class ResponseAuditor {
 			const content = await readFile(path, "utf-8");
 			const lines = content.trim().split("\n").filter(Boolean);
 			let expectedPrevHash = "GENESIS";
+			let lastVerifiedEntry: SerializedAuditEntry | undefined;
 
-			for (const line of lines) {
+			for (const [lineIndex, line] of lines.entries()) {
 				try {
 					const entry = JSON.parse(line) as SerializedAuditEntry;
 
@@ -348,17 +539,40 @@ export class ResponseAuditor {
 					}
 
 					expectedPrevHash = entry._entry_hash ?? expectedPrevHash;
+					lastVerifiedEntry = entry;
 				} catch {
-					// Skip invalid lines
+					// A malformed line is tampering/corruption, not an ignorable
+					// condition.  Returning valid=true here would make an audit
+					// trail appear immutable while silently dropping evidence.
+					tamperedEntries.push(`invalid-line-${lineIndex + 1}`);
 				}
 			}
+
+			// A hash chain alone cannot detect truncation of its tail. The local
+			// head checkpoint provides a best-effort deletion signal; operators
+			// should additionally export/anchor this checkpoint externally.
+			if (tamperedEntries.length === 0) {
+				const head = await this.readHeadCheckpoint();
+				if (lines.length === 0) {
+					if (head) tamperedEntries.push("audit-log-truncated");
+				} else if (!head) {
+					tamperedEntries.push("head-checkpoint-missing");
+				} else if (
+					!lastVerifiedEntry ||
+					head.entry_id !== lastVerifiedEntry.id ||
+					head.entry_hash !== lastVerifiedEntry._entry_hash
+				) {
+					tamperedEntries.push("audit-log-tail-deleted");
+				}
+			}
+			tamperedEntries.push(...(await this.verifyRetentionManifest()));
 
 			return {
 				valid: tamperedEntries.length === 0,
 				tamperedEntries: tamperedEntries.length > 0 ? tamperedEntries : undefined,
 			};
 		} catch {
-			return { valid: true };
+			return { valid: false, tamperedEntries: ["audit-log-unreadable"] };
 		}
 	}
 
@@ -381,6 +595,10 @@ export class ResponseAuditor {
 		});
 
 		if (filtered.length < serializedEntries.length) {
+			const removed = serializedEntries.filter((entry) => !filtered.includes(entry));
+			// Write deletion evidence before replacing the active file. If this
+			// fails, the old audit log remains intact and no silent purge occurs.
+			await this.appendRetentionDeletionRecord(removed);
 			const path = resolvePath(this.auditLogPath);
 
 			if (this.signEntries && filtered.length > 0) {
@@ -391,14 +609,24 @@ export class ResponseAuditor {
 					entry._prev_hash = prevHash;
 					entry._entry_hash = this.computeEntryHash(entry);
 					entry._signature = this.signEntry(entry);
+					if (!entry._signature) {
+						throw new Error("response audit signing failed during retention rewrite");
+					}
 					prevHash = entry._entry_hash;
 					rechained.push(entry);
 				}
 				const serialized = rechained.map((e) => JSON.stringify(e));
 				await writeFile(path, `${serialized.join("\n")}\n`);
+				const last = rechained[rechained.length - 1];
+				if (last?._entry_hash) {
+					await this.writeHeadCheckpoint(last.id, last._entry_hash);
+				}
 			} else {
 				const serialized = filtered.map((e) => JSON.stringify(e));
 				await writeFile(path, `${serialized.join("\n")}\n`);
+				if (this.signEntries) {
+					await unlink(this.headPath).catch(() => undefined);
+				}
 			}
 
 			this.logger.debug("Enforced retention policy", {

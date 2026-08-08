@@ -6,6 +6,7 @@
 import { appendFile, mkdir, readFile, rename, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
 import type { Decision } from "./types.js";
 
 export interface AuditLogEntry {
@@ -149,7 +150,7 @@ export async function logDecision(
 		user_input: sanitizeInput(userInput),
 		threat_id: threatId,
 		session_id: sessionId,
-		metadata,
+		metadata: metadata === undefined ? undefined : redactTelemetryData(metadata),
 	};
 	try {
 		await appendEntry(config, entry);
@@ -168,7 +169,7 @@ export async function logSessionStart(
 		timestamp: getTimestamp(),
 		event: "session_start",
 		session_id: sessionId,
-		metadata,
+		metadata: metadata === undefined ? undefined : redactTelemetryData(metadata),
 	};
 	try {
 		await appendEntry(config, entry);
@@ -187,7 +188,7 @@ export async function logSessionEnd(
 		timestamp: getTimestamp(),
 		event: "session_end",
 		session_id: sessionId,
-		metadata,
+		metadata: metadata === undefined ? undefined : redactTelemetryData(metadata),
 	};
 	try {
 		await appendEntry(config, entry);
@@ -207,7 +208,10 @@ export async function logError(
 		timestamp: getTimestamp(),
 		event: "error",
 		session_id: sessionId,
-		metadata: { error: error ?? "", context },
+		metadata: {
+			error: redactTelemetryString(error ?? ""),
+			context: context === undefined ? undefined : redactTelemetryData(context),
+		},
 	};
 	try {
 		await appendEntry(config, entry);
@@ -226,7 +230,7 @@ export async function logConfigChange(
 		timestamp: getTimestamp(),
 		event: "config_change",
 		session_id: sessionId,
-		metadata: { changes },
+		metadata: { changes: redactTelemetryData(changes) },
 	};
 	try {
 		await appendEntry(config, entry);

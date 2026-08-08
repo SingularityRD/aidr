@@ -12,18 +12,123 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash, createSign } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 // ─── Paths ───────────────────────────────────────────────────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const AIG = join(ROOT, "vendor", "ai-infra-guard");
 const OUT = join(ROOT, "packages", "core", "src", "generated");
+const AIG_MANIFEST_FILE = "aig-data-manifest.json";
+const DATA_SCHEMA_VERSION = 2;
 
 const CVE_DIRS = [
   join(AIG, "data", "vuln_en"),
   join(AIG, "data", "vuln"),
 ];
 const FP_DIR = join(AIG, "data", "fingerprints");
+
+/** Return a stable source revision.  The compiler is deterministic for a
+ * pinned checkout; wall-clock time must never enter a generated artefact. */
+function sourceRevision() {
+  try {
+    return execFileSync("git", ["-C", AIG, "rev-parse", "HEAD"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return process.env.AIG_SOURCE_COMMIT || "unknown";
+  }
+}
+
+function sourceDate() {
+  const epoch = Number(process.env.SOURCE_DATE_EPOCH || "");
+  if (Number.isFinite(epoch) && epoch > 0) return new Date(epoch * 1000).toISOString();
+  const explicit = process.env.AIG_SOURCE_DATE;
+  if (explicit) {
+    const parsed = new Date(explicit);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  try {
+    return execFileSync("git", ["-C", AIG, "show", "-s", "--format=%cI", "HEAD"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "1970-01-01T00:00:00.000Z";
+  }
+}
+
+const SOURCE_COMMIT = sourceRevision();
+const GENERATED_AT = sourceDate();
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(value);
+}
+
+function sourceTreeDigest() {
+  const files = [
+    ...walkYaml(join(AIG, "data", "vuln")),
+    ...walkYaml(join(AIG, "data", "vuln_en")),
+    ...walkYaml(FP_DIR),
+  ].sort((a, b) => a.path.localeCompare(b.path));
+  const digestInput = files
+    .map(({ path }) => `${path.slice(AIG.length + 1).replaceAll("\\", "/")}\n${sha256(readFileSync(path))}`)
+    .join("\n");
+  return sha256(digestInput);
+}
+
+function signManifest(payload) {
+  const privateKeyPath = process.env.AIG_SIGNING_PRIVATE_KEY_PATH;
+  const privateKey = process.env.AIG_SIGNING_PRIVATE_KEY ||
+    (privateKeyPath && existsSync(privateKeyPath) ? readFileSync(privateKeyPath, "utf8") : "");
+  if (!privateKey) return null;
+  const signer = createSign("RSA-SHA256");
+  signer.update(canonicalJson(payload));
+  signer.end();
+  return {
+    algorithm: "RSA-SHA256",
+    key_id: process.env.AIG_SIGNING_KEY_ID || "unspecified",
+    value: signer.sign(privateKey, "base64"),
+  };
+}
+
+function buildManifest(artifacts) {
+  const artifactHashes = Object.fromEntries(
+    Object.entries(artifacts).map(([name, data]) => [name, {
+      sha256: sha256(data),
+      bytes: Buffer.byteLength(data),
+    }]),
+  );
+  const bundleId = sha256(canonicalJson(artifactHashes));
+  const payload = {
+    schema: "aig-data-manifest/v1",
+    generated: GENERATED_AT,
+    source: {
+      repository: "https://github.com/tencent/AI-Infra-Guard",
+      commit: SOURCE_COMMIT,
+      tree_sha256: sourceTreeDigest(),
+    },
+    bundle_id: bundleId,
+    artifacts: artifactHashes,
+    counts: {
+      cves: JSON.parse(artifacts["aig-cve-index.json"]).cves.length,
+      fingerprints: JSON.parse(artifacts["aig-fingerprints.json"]).fingerprints.length,
+      mcp_categories: JSON.parse(artifacts["aig-mcp-categories.json"]).categories.length,
+    },
+  };
+  return {
+    ...payload,
+    signature: signManifest(payload),
+  };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -127,7 +232,13 @@ function parseSimpleYaml(text) {
           continue;
         }
         if (key === "rule") {
-          val = val.replace(/^["']|["']$/g, "");
+          // Only remove quotes around the complete scalar.  A rule such as
+          // `version < "1.2.3"` starts with the word `version`; stripping its
+          // trailing quote corrupts the source expression and provenance.
+          if ((val.startsWith('"') && val.endsWith('"')) ||
+              (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
           result.rule = val;
           continue;
         }
@@ -244,30 +355,72 @@ function parseCvssScore(cvssStr) {
   return Math.round(score * 10) / 10;
 }
 
-/** Parse rule string like `version < "1.0.0"` or `version <= "1.0.0"`
- *  into a semver-range string. */
+/**
+ * Translate the small version subset of AIG's rule DSL into a semver range.
+ *
+ * The upstream parser also supports non-version predicates (`body=`,
+ * `is_internal==`, regexes, ...).  Those rules are deliberately retained as
+ * opaque source text and marked `unsupported`; an empty semver range is not a
+ * safe fallback because semver treats it as matching every version.
+ */
 function parseRule(ruleStr) {
-  if (!ruleStr || ruleStr.trim() === "") return "";
-  const s = ruleStr.trim();
-
-  // pattern: version < "X.Y.Z"
-  const ltMatch = s.match(/version\s*(<=|<)\s*"?([^"]+)"?/);
-  if (ltMatch) {
-    const op = ltMatch[1];
-    const ver = ltMatch[2].replace(/^v/, ""); // strip leading v
-    return op === "<" ? `<${ver}` : `<=${ver}`;
+  const raw = String(ruleStr || "").trim();
+  if (!raw || raw === "null" || raw === "~") {
+    return { raw, status: "unscoped", semver: null };
   }
 
-  // pattern: version > "X" && version < "Y"
-  const rangeMatch = s.match(/version\s*(>=|>)\s*"?([^"]+)"?\s*&&\s*version\s*(<=|<)\s*"?([^"]+)"?/);
-  if (rangeMatch) {
-    const lo = rangeMatch[2].replace(/^v/, "");
-    const hiOp = rangeMatch[3];
-    const hi = rangeMatch[4].replace(/^v/, "");
-    return `>${lo} ${hiOp}${hi}`;
+  // The YAML source occasionally wraps the entire expression in single
+  // quotes. Strip only that outer pair; quoted versions must remain intact.
+  const unwrapped = raw.replace(/^'(.*)'$/s, "$1").replace(/^"(.*)"$/s, "$1").trim();
+  const withoutComments = unwrapped.replace(/\s+#.*$/, "").trim();
+  const branches = withoutComments.split(/\s*\|\|\s*/).map((branch) => branch.trim());
+  const ranges = [];
+
+  for (const branch of branches) {
+    const expression = branch.replace(/^\(\s*/, "").replace(/\s*\)$/, "").trim();
+    const comparisons = expression.split(/\s*&&\s*/).map((part) => part.trim());
+    const branchRanges = [];
+    for (const comparison of comparisons) {
+      const match = comparison.match(/^version\s*(<=|>=|<|>|==|=)\s*["']?([^"']+?)["']?$/i);
+      if (!match) return { raw, status: "unsupported", semver: null };
+      let [, operator, version] = match;
+      version = version.trim().replace(/^v(?=\d)/i, "");
+      // semver cannot compare date strings, git revisions, package-qualified
+      // versions, or other upstream build identifiers. Keep these opaque.
+      if (!/^\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
+        return { raw, status: "unsupported", semver: null };
+      }
+      if (/^\d+$/.test(version) && version.length > 2) {
+        return { raw, status: "unsupported", semver: null };
+      }
+      if (/^\d+$/.test(version)) version = `${version}.0.0`;
+      else if (/^\d+\.\d+$/.test(version)) version = `${version}.0`;
+      if (operator === "=" || operator === "==") operator = "=";
+      branchRanges.push(`${operator}${version}`);
+    }
+    ranges.push(branchRanges.join(" "));
   }
 
-  return "";
+  if (ranges.length === 0) return { raw, status: "unscoped", semver: null };
+  return { raw, status: "semver", semver: ranges.join(" || ") };
+}
+
+function normalizeProductName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function productAliases(product, framework) {
+  const values = new Set();
+  for (const value of [product, framework]) {
+    const normalized = normalizeProductName(value);
+    if (!normalized) continue;
+    values.add(normalized);
+    values.add(normalized.toLowerCase());
+    values.add(normalized.replace(/[\s_]+/g, "-"));
+    values.add(normalized.toLowerCase().replace(/[\s_]+/g, "-"));
+  }
+  values.delete(normalizeProductName(product));
+  return [...values].sort((a, b) => a.localeCompare(b));
 }
 
 /** Walk directory recursively for *.yaml files, returning {path, relDir} */
@@ -328,7 +481,6 @@ function compileCveIndex() {
   // Collect all entries, keyed by "cveId:framework" to de-duplicate
   const entryMap = new Map();
   const frameworks = {};
-  const ecosystems = {};
 
   // Priority: vuln_en (English) before vuln/ (Chinese)
   const orderedDirs = [
@@ -343,11 +495,12 @@ function compileCveIndex() {
     }
 
     const frameworkDirs = readdirSync(cveDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory());
+      .filter((d) => d.isDirectory())
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     for (const fwDir of frameworkDirs) {
       const fwPath = join(cveDir, fwDir.name);
-      const yamlFiles = walkYaml(fwPath);
+      const yamlFiles = walkYaml(fwPath).sort((a, b) => a.path.localeCompare(b.path));
 
       for (const { path: yamlFile } of yamlFiles) {
         const data = readYaml(yamlFile);
@@ -363,14 +516,25 @@ function compileCveIndex() {
         if (lang === "zh" && entryMap.has(dedupKey)) continue;
 
         const severity = normalizeSeverity(data.severity || "");
-        const ruleStr = data.rule || "";
+        const rule = parseRule(data.rule || "");
         const cvssStr = data.cvss || "";
+        const product = normalizeProductName(data.name || fwDir.name);
 
         const entry = {
           id: cveId,
-          p: data.name || "",
+          // `p` is the canonical product/service identifier from AIG.  AIG's
+          // vulnerability corpus is not an npm/PyPI package database, so `e`
+          // is explicitly `product` and never fabricated as a package
+          // ecosystem.  Consumers that need package ecosystems must provide a
+          // separately signed mapping.
+          p: product,
+          e: "product",
+          k: "product",
+          a: productAliases(product, framework),
           s: severity,
-          r: parseRule(ruleStr),
+          r: rule.semver,
+          u: rule.status,
+          o: rule.raw,
           f: framework,
         };
 
@@ -387,7 +551,9 @@ function compileCveIndex() {
 
   // Convert to array and build indices
   const cves = [];
-  for (const entry of entryMap.values()) {
+  for (const entry of [...entryMap.values()].sort((a, b) =>
+    `${a.p}\u0000${a.id}\u0000${a.f}`.localeCompare(`${b.p}\u0000${b.id}\u0000${b.f}`),
+  )) {
     cves.push(entry);
 
     const { f: framework, id: cveId } = entry;
@@ -397,12 +563,18 @@ function compileCveIndex() {
 
   console.log(`[aig]   Found ${cves.length} CVEs across ${Object.keys(frameworks).length} frameworks`);
 
+  const productNames = [...new Set(cves.map((entry) => entry.p))].sort((a, b) => a.localeCompare(b));
   return {
-    version: 1,
-    generated: new Date().toISOString().slice(0, 10),
+    schema: "aig-cve-index/v2",
+    version: DATA_SCHEMA_VERSION,
+    generated: GENERATED_AT,
+    source_commit: SOURCE_COMMIT,
     cves,
     frameworks,
-    ecosystems,
+    // Retain the field for backwards-compatible status consumers while
+    // making the product-only semantics explicit.
+    ecosystems: { product: productNames },
+    products: productNames,
   };
 }
 
@@ -416,7 +588,7 @@ function compileFingerprintIndex() {
     return { version: 1, generated: new Date().toISOString().slice(0, 10), fingerprints: [] };
   }
 
-  const files = walkYaml(FP_DIR);
+  const files = walkYaml(FP_DIR).sort((a, b) => a.path.localeCompare(b.path));
   const fingerprints = [];
 
   for (const { path: file } of files) {
@@ -435,9 +607,12 @@ function compileFingerprintIndex() {
 
   console.log(`[aig]   Found ${fingerprints.length} fingerprints`);
 
+  fingerprints.sort((a, b) => `${a.n}\u0000${a.a}`.localeCompare(`${b.n}\u0000${b.a}`));
   return {
-    version: 1,
-    generated: new Date().toISOString().slice(0, 10),
+    schema: "aig-fingerprint-index/v2",
+    version: DATA_SCHEMA_VERSION,
+    generated: GENERATED_AT,
+    source_commit: SOURCE_COMMIT,
     fingerprints,
   };
 }
@@ -566,8 +741,10 @@ function compileMcpCategories() {
   console.log(`[aig]   Compiled ${categories.length} MCP risk categories`);
 
   return {
-    version: 1,
-    generated: new Date().toISOString().slice(0, 10),
+    schema: "aig-mcp-categories/v2",
+    version: DATA_SCHEMA_VERSION,
+    generated: GENERATED_AT,
+    source_commit: SOURCE_COMMIT,
     categories,
   };
 }
@@ -587,14 +764,18 @@ function main() {
   const fingerprintIndex = compileFingerprintIndex();
   const mcpCategories = compileMcpCategories();
 
-  // Write output files
-  const cvePath = join(OUT, "aig-cve-index.json");
-  const fpPath = join(OUT, "aig-fingerprints.json");
-  const mcpPath = join(OUT, "aig-mcp-categories.json");
-
-  writeFileSync(cvePath, JSON.stringify(cveIndex));
-  writeFileSync(fpPath, JSON.stringify(fingerprintIndex));
-  writeFileSync(mcpPath, JSON.stringify(mcpCategories));
+  // Write output files. JSON serialization order is intentional and stable;
+  // the manifest hashes these exact bytes for promotion/rollback checks.
+  const artifacts = {
+    "aig-cve-index.json": JSON.stringify(cveIndex),
+    "aig-fingerprints.json": JSON.stringify(fingerprintIndex),
+    "aig-mcp-categories.json": JSON.stringify(mcpCategories),
+  };
+  for (const [name, contents] of Object.entries(artifacts)) {
+    writeFileSync(join(OUT, name), contents);
+  }
+  const manifest = buildManifest(artifacts);
+  writeFileSync(join(OUT, AIG_MANIFEST_FILE), JSON.stringify(manifest));
 
   const elapsed = Date.now() - start;
 
@@ -602,6 +783,7 @@ function main() {
   console.log(`[aig]   aig-cve-index.json       ${(Buffer.byteLength(JSON.stringify(cveIndex)) / 1024).toFixed(1)} KB (${cveIndex.cves.length} CVEs)`);
   console.log(`[aig]   aig-fingerprints.json     ${(Buffer.byteLength(JSON.stringify(fingerprintIndex)) / 1024).toFixed(1)} KB (${fingerprintIndex.fingerprints.length} fingerprints)`);
   console.log(`[aig]   aig-mcp-categories.json   ${(Buffer.byteLength(JSON.stringify(mcpCategories)) / 1024).toFixed(1)} KB (${mcpCategories.categories.length} categories)`);
+  console.log(`[aig]   ${AIG_MANIFEST_FILE}       bundle=${manifest.bundle_id} signed=${Boolean(manifest.signature)}`);
 }
 
 main();

@@ -115,7 +115,7 @@ One of `"local"` or `"managed"`. Default: `"managed"`.
 | `send_clean_verdicts` | `false` | Also send `allow` events (higher volume) |
 | `sync_incidents` | `false` | Also send incident events (when emitted) |
 | `grace_period_hours` | `72` | Offline grace window for managed mode |
-| `redact_mode` | `"hash"` | Remote redaction: `"none"`, `"hash"`, or `"full"` |
+| `redact_mode` | `"hash"` | Remote minimisation: `"hash"` replaces summaries/artifacts with SHA-256 digests; `"full"` omits them; `"none"` is debug-only and still receives mandatory credential/query redaction. |
 
 ### `policy`
 
@@ -224,6 +224,12 @@ The allowlist stores user overrides for false positives. When Singularity AIDR r
 
 Relative `path` values are resolved under `~/.singularity-aidr`. Paths that escape that directory (or resolve to the `~/.singularity-aidr` directory itself) are ignored and fall back to defaults.
 
+Audit entries are scrubbed before they are written. The regular logger rotates
+and expires records according to the values above. For signed/tamper-evident
+response evidence, use `ResponseAuditor` with `{ signEntries: true }`; see
+[`docs/privacy.md`](privacy.md#local-audit-retention-and-deletion-semantics)
+for checkpoint, deletion-manifest and external-archive requirements.
+
 ### `sensitivity`
 
 One of `"paranoid"`, `"balanced"`, or `"relaxed"`. Default: `"balanced"`. See [How It Works](how-it-works.md#sensitivity-presets).
@@ -256,5 +262,4 @@ Use this to permanently suppress specific rules that don't apply to your workflo
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |
 | `~/.singularity-aidr/consumed-approvals.json` | Consumed approvals for MCP allowlist flow (10-min TTL entries) |
 | `~/.singularity-aidr/intel/` | Optional offline intel packs |
-
 

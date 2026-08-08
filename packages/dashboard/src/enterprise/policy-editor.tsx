@@ -243,13 +243,13 @@ export function PolicyEditor() {
 			const { data: userData } = await supabase.auth.getUser();
 			const upsertData = {
 				team_id: currentTeam.id,
+				tenant_id: currentTeam.id,
 				content: policyYaml,
 				updated_at: new Date().toISOString(),
 				updated_by: userData.user?.id ?? null,
 			};
 
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const { error } = await supabase.from("team_policies").upsert(upsertData as any, {
+			const { error } = await supabase.from("team_policies").upsert(upsertData, {
 				onConflict: "team_id",
 			});
 

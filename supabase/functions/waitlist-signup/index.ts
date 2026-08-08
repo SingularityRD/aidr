@@ -6,6 +6,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders, parseAllowedOrigins, resolveAllowedOrigin } from "../_shared/origin.ts";
+import { getRequestId } from "../_shared/response.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -16,7 +17,10 @@ const ALLOWED_ORIGINS = parseAllowedOrigins(Deno.env.get("AIDR_ALLOWED_ORIGINS")
 function json(status: number, body: Record<string, unknown>, req: Request) {
 	return new Response(JSON.stringify(body), {
 		status,
-		headers: buildCorsHeaders(req.headers.get("Origin"), ALLOWED_ORIGINS),
+		headers: {
+			...buildCorsHeaders(req.headers.get("Origin"), ALLOWED_ORIGINS),
+			"X-Request-ID": getRequestId(req),
+		},
 	});
 }
 
@@ -51,13 +55,14 @@ async function rateLimitWaitlist(
 		p_window_start: nowMin,
 		p_delta: 1,
 	});
-	if (error) return true; // fail open
-	const { data } = await supabase
+	if (error) return false;
+	const { data, error: countError } = await supabase
 		.from("rate_limits")
 		.select("count")
 		.eq("key", key)
 		.eq("window_start", nowMin)
 		.maybeSingle();
+	if (countError) return false;
 	const count =
 		data && typeof data === "object" && "count" in data && typeof data.count === "number"
 			? data.count

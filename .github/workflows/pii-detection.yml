@@ -13,19 +13,21 @@ on:
 
 jobs:
   pii-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Checkout (pinned)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          python-version: '3.11'
+          persist-credentials: false
+
+      - name: Setup Python (pinned)
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11.11'
 
       - name: Install Presidio
         run: |
-          pip install presidio-analyzer presidio-anonymizer
+          pip install --disable-pip-version-check presidio-analyzer==2.2.358 presidio-anonymizer==2.2.358
 
       - name: Scan for PII in Code
         run: |
@@ -94,7 +96,7 @@ jobs:
 
       - name: Notify on PII Detection
         if: failure()
-        uses: 8398a7/action-slack@v3
+        uses: 8398a7/action-slack@1750b5085f3ec60384090fb7c52965ef822e869e # v3.18.0
         with:
           status: ${{ job.status }}
           channel: '#aidr-security'

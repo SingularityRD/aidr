@@ -1,22 +1,30 @@
 {
   "name": "@singularityrd/aidr-claude-code",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "Proprietary",
   "version": "0.6.0",
   "type": "module",
+  "files": [
+    "dist/**",
+    "resources/**",
+    "package.json",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
   "bin": {
     "aidr": "dist/health.cjs"
   },
   "scripts": {
-    "build": "pnpm -C ../core build && node ../../scripts/rmrf.mjs dist && node esbuild.config.js",
-    "build:release": "node ../../scripts/rmrf.mjs dist && node esbuild.config.js --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-claude-code && node ../../scripts/check-no-sourcemaps.mjs dist",
-    "clean": "node ../../scripts/rmrf.mjs dist"
+    "build": "pnpm -C ../core build && pnpm run sync:assets && node ../../scripts/rmrf.mjs dist && node esbuild.config.js",
+    "build:release": "pnpm run sync:assets && node ../../scripts/rmrf.mjs dist && node esbuild.config.js --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-claude-code && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "clean": "node ../../scripts/rmrf.mjs dist",
+    "sync:assets": "node scripts/sync-assets.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
     "pino": "^9.6.0",
-    "zod": "^3.24.0",
-    "@sentry/node": "^9.0.0"
+    "zod": "^3.24.0"
   },
   "optionalDependencies": {
     "koffi": "^2.15.2"

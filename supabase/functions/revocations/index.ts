@@ -88,6 +88,7 @@ function addHoursIso(hours: number): string {
 type RevocationRow = {
 	kind: string;
 	value: string;
+	tenant_id?: string | null;
 };
 
 Deno.serve(async (req) => {
@@ -112,16 +113,17 @@ Deno.serve(async (req) => {
 	const keyHash = await sha256Hex(apiKey);
 	const { data: keyRow, error: keyErr } = await supabase
 		.from("api_keys")
-		.select("user_id, revoked")
+		.select("user_id, tenant_id, revoked")
 		.eq("key_hash", keyHash)
 		.maybeSingle();
 	if (keyErr || !keyRow || keyRow.revoked) {
 		return json(401, { error: "invalid_api_key" });
 	}
+	const tenantId = (keyRow.tenant_id as string | null) ?? (keyRow.user_id as string);
 
 	const { data: rows, error: rowsErr } = await supabase
 		.from("revocations")
-		.select("kind,value")
+		.select("kind,value,tenant_id")
 		.order("id", { ascending: false })
 		.limit(5000);
 	if (rowsErr) {
@@ -135,6 +137,7 @@ Deno.serve(async (req) => {
 
 	for (const row of (rows ?? []) as RevocationRow[]) {
 		if (!row || typeof row.kind !== "string" || typeof row.value !== "string") continue;
+		if (row.tenant_id && row.tenant_id !== tenantId) continue;
 		const kind = row.kind.trim();
 		const value = row.value.trim();
 		if (!kind || !value) continue;

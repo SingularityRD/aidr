@@ -8,6 +8,7 @@ packages/claude-code/dist/*
 !packages/claude-code/dist/session-start.cjs
 !packages/claude-code/dist/mcp-server.cjs
 packages/extension/resources/
+packages/claude-code/resources/
 packages/extension/.vsce/
 *.vsix
 *.tsbuildinfo
@@ -60,4 +61,9 @@ threats/dummy.yaml
 
 # Coverage reports
 coverage/
+
+# Local release/Supabase CLI evidence and generated secrets
+.release-evidence/
+supabase/.branches/
+supabase/.temp/
 ~/

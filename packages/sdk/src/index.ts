@@ -7,6 +7,8 @@
  * @module @singularityrd/aidr-sdk
  */
 
+import { VERSION } from "@singularityrd/aidr-core";
+
 // Re-export core types for SDK consumers
 export type {
 	Artifact,
@@ -139,7 +141,7 @@ export { TeamDashboard } from "./team-dashboard.js";
 /**
  * SDK version
  */
-export const SDK_VERSION = "1.0.0";
+export const SDK_VERSION = VERSION;
 
 /**
  * SDK name

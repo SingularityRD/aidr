@@ -9,11 +9,13 @@
       "@singularityrd/aidr-claude-code",
       "@singularityrd/aidr-openclaw",
       "@singularityrd/aidr-opencode",
-      "aidr-cursor"
+      "aidr-cursor",
+      "@singularityrd/aidr-cli",
+      "@singularityrd/aidr-sdk"
     ]
   ],
   "access": "restricted",
-  "baseBranch": "main",
+  "baseBranch": "master",
   "updateInternalDependencies": "patch",
   "ignore": [],
   "privatePackages": { "version": true, "tag": true }

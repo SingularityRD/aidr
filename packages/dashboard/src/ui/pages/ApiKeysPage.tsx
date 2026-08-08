@@ -16,15 +16,28 @@ type EnrollmentTokenRow = {
 	created_at: string;
 };
 
+type InvokeOptions = {
+	method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+};
+
+function maskSecret(secret: string): string {
+	if (secret.length <= 4) return "•".repeat(secret.length);
+	return `${"•".repeat(Math.max(8, secret.length - 4))}${secret.slice(-4)}`;
+}
+
 export function ApiKeysPage() {
 	const [pilotStatus, setPilotStatus] = useState<string>("loading");
 	const [keys, setKeys] = useState<ApiKeyRow[]>([]);
 	const [label, setLabel] = useState("");
 	const [createdKey, setCreatedKey] = useState<string | null>(null);
+	const [showCreatedKey, setShowCreatedKey] = useState(false);
+	const [copiedKey, setCopiedKey] = useState(false);
 
 	const [enrollTokens, setEnrollTokens] = useState<EnrollmentTokenRow[]>([]);
 	const [enrollLabel, setEnrollLabel] = useState("");
 	const [createdEnrollToken, setCreatedEnrollToken] = useState<string | null>(null);
+	const [showCreatedEnrollToken, setShowCreatedEnrollToken] = useState(false);
+	const [copiedEnrollToken, setCopiedEnrollToken] = useState(false);
 
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -34,14 +47,26 @@ export function ApiKeysPage() {
 
 	const load = useCallback(async () => {
 		setError(null);
+		const invoke = async (name: string, options: InvokeOptions) => {
+			try {
+				return await supabase.functions.invoke(name, options);
+			} catch (cause) {
+				return {
+					data: null,
+					error:
+						cause instanceof Error ? cause : new Error("The dashboard service is unavailable."),
+				};
+			}
+		};
 		const [pilotRes, keysRes, enrollRes] = await Promise.all([
-			supabase.functions.invoke("pilot-status", { method: "GET" }),
-			supabase.functions.invoke("api-keys", { method: "GET" }),
-			supabase.functions.invoke("enrollment-tokens", { method: "GET" }),
+			invoke("pilot-status", { method: "GET" }),
+			invoke("api-keys", { method: "GET" }),
+			invoke("enrollment-tokens", { method: "GET" }),
 		]);
 
 		if (pilotRes.error) {
 			setPilotStatus("unknown");
+			setError(pilotRes.error.message);
 		} else {
 			const data = (pilotRes.data ?? {}) as Record<string, unknown>;
 			setPilotStatus(typeof data.status === "string" ? String(data.status) : "unknown");
@@ -113,6 +138,8 @@ export function ApiKeysPage() {
 							setBusy(true);
 							setError(null);
 							setCreatedKey(null);
+							setShowCreatedKey(false);
+							setCopiedKey(false);
 							try {
 								const res = await supabase.functions.invoke("api-keys", {
 									method: "POST",
@@ -130,6 +157,12 @@ export function ApiKeysPage() {
 								setCreatedKey(data.api_key);
 								setLabel("");
 								await load();
+							} catch (cause) {
+								setError(
+									cause instanceof Error
+										? cause.message
+										: "API key creation is unavailable. Please retry.",
+								);
 							} finally {
 								setBusy(false);
 							}
@@ -152,10 +185,56 @@ export function ApiKeysPage() {
 				{createdKey ? (
 					<div className="notice">
 						<div className="muted small">Copy this key now (shown once):</div>
-						<div className="mono">{createdKey}</div>
+						<div className="row" style={{ marginTop: 6 }}>
+							<input
+								className="input mono"
+								style={{ flex: "1 1 260px" }}
+								readOnly
+								type={showCreatedKey ? "text" : "password"}
+								value={showCreatedKey ? createdKey : maskSecret(createdKey)}
+								aria-label="New API key"
+								autoComplete="off"
+							/>
+							<button
+								className="button button-secondary"
+								type="button"
+								onClick={() => setShowCreatedKey((visible) => !visible)}
+							>
+								{showCreatedKey ? "Hide" : "Reveal"}
+							</button>
+							<button
+								className="button button-secondary"
+								type="button"
+								onClick={async () => {
+									try {
+										await navigator.clipboard.writeText(createdKey);
+										setCopiedKey(true);
+									} catch {
+										setError("Clipboard access was blocked. Reveal the key and copy it manually.");
+									}
+								}}
+							>
+								{copiedKey ? "Copied" : "Copy"}
+							</button>
+							<button
+								className="button button-secondary"
+								type="button"
+								onClick={() => {
+									setCreatedKey(null);
+									setShowCreatedKey(false);
+									setCopiedKey(false);
+								}}
+							>
+								Clear
+							</button>
+						</div>
 					</div>
 				) : null}
-				{error ? <div className="notice notice-danger">{error}</div> : null}
+				{error ? (
+					<div className="notice notice-danger" role="alert" aria-live="assertive">
+						{error}
+					</div>
+				) : null}
 			</div>
 
 			<div className="card">
@@ -184,6 +263,8 @@ export function ApiKeysPage() {
 							setBusy(true);
 							setError(null);
 							setCreatedEnrollToken(null);
+							setShowCreatedEnrollToken(false);
+							setCopiedEnrollToken(false);
 							try {
 								const res = await supabase.functions.invoke("enrollment-tokens", {
 									method: "POST",
@@ -202,6 +283,12 @@ export function ApiKeysPage() {
 								setCreatedEnrollToken(data.enrollment_token);
 								setEnrollLabel("");
 								await load();
+							} catch (cause) {
+								setError(
+									cause instanceof Error
+										? cause.message
+										: "Enrollment token creation is unavailable. Please retry.",
+								);
 							} finally {
 								setBusy(false);
 							}
@@ -214,7 +301,51 @@ export function ApiKeysPage() {
 				{createdEnrollToken ? (
 					<div className="notice">
 						<div className="muted small">Copy this token now (shown once):</div>
-						<div className="mono">{createdEnrollToken}</div>
+						<div className="row" style={{ marginTop: 6 }}>
+							<input
+								className="input mono"
+								style={{ flex: "1 1 260px" }}
+								readOnly
+								type={showCreatedEnrollToken ? "text" : "password"}
+								value={showCreatedEnrollToken ? createdEnrollToken : maskSecret(createdEnrollToken)}
+								aria-label="New enrollment token"
+								autoComplete="off"
+							/>
+							<button
+								className="button button-secondary"
+								type="button"
+								onClick={() => setShowCreatedEnrollToken((visible) => !visible)}
+							>
+								{showCreatedEnrollToken ? "Hide" : "Reveal"}
+							</button>
+							<button
+								className="button button-secondary"
+								type="button"
+								onClick={async () => {
+									try {
+										await navigator.clipboard.writeText(createdEnrollToken);
+										setCopiedEnrollToken(true);
+									} catch {
+										setError(
+											"Clipboard access was blocked. Reveal the token and copy it manually.",
+										);
+									}
+								}}
+							>
+								{copiedEnrollToken ? "Copied" : "Copy"}
+							</button>
+							<button
+								className="button button-secondary"
+								type="button"
+								onClick={() => {
+									setCreatedEnrollToken(null);
+									setShowCreatedEnrollToken(false);
+									setCopiedEnrollToken(false);
+								}}
+							>
+								Clear
+							</button>
+						</div>
 					</div>
 				) : null}
 			</div>
@@ -250,6 +381,12 @@ export function ApiKeysPage() {
 												});
 												if (res.error) setError(res.error.message);
 												await load();
+											} catch (cause) {
+												setError(
+													cause instanceof Error
+														? cause.message
+														: "API key revocation is unavailable.",
+												);
 											} finally {
 												setBusy(false);
 											}
@@ -313,6 +450,12 @@ export function ApiKeysPage() {
 												);
 												if (delErr) setError(delErr.message);
 												await load();
+											} catch (cause) {
+												setError(
+													cause instanceof Error
+														? cause.message
+														: "Enrollment token deletion is unavailable.",
+												);
 											} finally {
 												setBusy(false);
 											}

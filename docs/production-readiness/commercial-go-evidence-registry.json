@@ -1,0 +1,450 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "registryKind": "commercial-go-evidence",
+  "decision": "NO-GO",
+  "releaseCandidate": null,
+  "lastReviewed": "2026-08-04",
+  "commercialDecision": {
+    "status": "locked-product-decision-evidence-open",
+    "launchModel": "direct-ga",
+    "connectorScope": "all-connectors",
+    "deploymentModel": "hybrid",
+    "regions": ["EU", "US", "APAC"],
+    "billingModel": "enterprise-invoice",
+    "distribution": "private-registry",
+    "sla": {
+      "target": "99.9% monthly availability",
+      "scope": "managed control plane and dashboard API",
+      "status": "contract-evidence-open",
+      "measurement": "monthly SLI with published exclusions, denominator, maintenance policy, service credits, and incident evidence"
+    },
+    "lockedMeaning": "These are the intended commercial choices. They are not a claim that the implementation, contracts, regions, registry, or SLA evidence is complete."
+  },
+  "templatePaths": [
+    "docs/production-readiness/commercial-release-manifest-template.md",
+    "docs/production-readiness/enterprise-order-entitlement-template.md",
+    "docs/production-readiness/support-sla-template.md",
+    "docs/production-readiness/privacy-legal-review-template.md",
+    "docs/production-readiness/investor-metric-dictionary-template.md"
+  ],
+  "policy": {
+    "hardBlockerMeans": "No sale, production release, or investor claim may rely on an open hard item.",
+    "externalEvidenceCannotBeInferred": true,
+    "nonWaivableClasses": [
+      "critical vulnerability",
+      "tenant isolation failure",
+      "silent mandatory-suite omission",
+      "unknown deployed revision",
+      "unrecoverable customer data",
+      "falsified or placeholder evidence",
+      "unapproved legal, privacy, licensing, or pricing claim"
+    ],
+    "acceptedStatuses": ["open", "in-review", "blocked", "closed", "expired"],
+    "closedRequires": [
+      "named owner",
+      "Release Candidate or effective version",
+      "immutable evidence path and SHA-256",
+      "reviewer or approver",
+      "recorded date"
+    ]
+  },
+  "scanRoots": [
+    "packages/dashboard/dist",
+    "packages/dashboard/aidr-landing.html",
+    ".claude-plugin",
+    "README.md"
+  ],
+  "artifactRoots": [
+    "packages/claude-code/dist",
+    "packages/extension/dist",
+    "packages/openclaw/dist",
+    "packages/opencode/dist",
+    "packages/cli/dist",
+    "packages/sdk/dist",
+    "packages/dashboard/dist"
+  ],
+  "licenseCheck": {
+    "licensePath": "LICENSE",
+    "noticePath": "NOTICE",
+    "rootPackagePath": "package.json",
+    "workspacePackageRoots": ["packages"],
+    "minimumLicenseBytes": 128,
+    "noticeLicenseNames": ["Apache License 2.0", "MIT License", "ISC License", "Proprietary"],
+    "rootNoticeConflictPairs": [
+      { "rootPackageLicense": "Proprietary", "noticeLicense": "Apache License 2.0" },
+      { "rootPackageLicense": "Proprietary", "noticeLicense": "MIT License" },
+      { "rootPackageLicense": "Proprietary", "noticeLicense": "ISC License" }
+    ],
+    "firstPartyLicenseTextPaths": ["README.md", "CONTRIBUTING.md", "packages/openclaw/README.md", ".claude-plugin/plugin.json", "packages/extension/LICENSE", "docs/threat-rules.md", "docs/strategy/closed-source-transition-2026.md"],
+    "forbiddenFirstPartyLicenseText": ["Source code: [Apache License 2.0]", "dual-license structure", "Apache License 2.0 - Copyright 2026 SingularityRD", "\"license\": \"Apache-2.0\"", "Apache 2.0 source code license"],
+    "requiredThirdPartyNoticePaths": ["THIRD_PARTY_NOTICES", "threats/LICENSE", "vendor/ai-infra-guard/LICENSE", "vendor/ai-infra-guard/NOTICE"],
+    "requireNoticeReferenceToLicenseFile": true,
+    "requirePackageLicenseField": true,
+    "legalReviewRequired": true
+  },
+  "claimPatterns": [
+    {
+      "id": "CLM-BANNED-LAUNCH",
+      "pattern": "\\blaunch[- ]ready\\b|\\bgo live in minutes\\b",
+      "reason": "Launch or time-to-value promise requires an approved RC and customer evidence.",
+      "defaultStatus": "blocked"
+    },
+    {
+      "id": "CLM-BANNED-SCOPE",
+      "pattern": "\\ball (?:agents|platforms|connectors)\\b|\\bfully supported\\b|\\bcomprehensive(?: AI)? security platform\\b",
+      "reason": "Universal or comprehensive coverage is not claimable before the supported-platform matrix and independent tests pass.",
+      "defaultStatus": "blocked"
+    },
+    {
+      "id": "CLM-BANNED-REALTIME",
+      "pattern": "\\breal[- ]time\\b",
+      "reason": "Real-time latency requires a measured SLI, workload envelope, sample size, and Release Candidate evidence.",
+      "defaultStatus": "blocked"
+    },
+    {
+      "id": "CLM-BANNED-AUTOMATIC",
+      "pattern": "\\bautomatic(?:ally)?\\s+(?:quarantine|containment|rollback|response|upgrades?)\\b|\\bauto[- ](?:quarantine|containment|rollback|response|upgrades?)\\b",
+      "reason": "Automatic action claims require an enabled, tested, reversible policy and customer-visible limitation.",
+      "defaultStatus": "blocked"
+    },
+    {
+      "id": "CLM-BANNED-COMPLIANCE",
+      "pattern": "\\b(?:SOC ?2|ISO ?27001|HIPAA|GDPR)\\s*(?:Type II|certified|compliant|compliance)\\b",
+      "reason": "Compliance and certification statements require counsel-approved scope and independent attestation; roadmap text is not evidence.",
+      "defaultStatus": "blocked"
+    },
+    {
+      "id": "CLM-BANNED-AIG-DATA",
+      "pattern": "\\b(?:1,?300\\+|1300\\+)\\s*CVE(?:s)?\\b|\\bzero[- ]false[- ]positive(?:s)?\\b",
+      "reason": "Dataset size and quality claims require a signed, non-empty dataset hash and fixture results from the installed consumer.",
+      "defaultStatus": "blocked"
+    },
+    {
+      "id": "CLM-BANNED-PRIVACY",
+      "pattern": "\\blocal[- ]only\\b|\\bdata never leaves (?:the )?(?:premise|device)\\b|\\bno data leaves\\b",
+      "reason": "Privacy claims require field-level payload assertions, outbound-domain inventory, retention, region, and DPA approval.",
+      "defaultStatus": "blocked"
+    },
+    {
+      "id": "CLM-BANNED-READINESS",
+      "pattern": "\\bproduction[- ]ready\\b|\\bsale[- ]ready\\b|\\benterprise[- ]grade\\b",
+      "reason": "Readiness is a signed release decision, not a source or build property.",
+      "defaultStatus": "blocked"
+    }
+  ],
+  "hardGates": [
+    {
+      "id": "COM-001",
+      "domain": "commercial",
+      "requirement": "Commercial Release Manifest fixes SKU, price, metering, currency/tax, deployment, region, retention, SLA, support, licence rights, renewal, cancellation, and offboarding for the same Release Candidate.",
+      "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Commercial/Sales + Finance/Billing",
+      "automatedCheck": "claim-check --mode=gate plus signed-manifest verification",
+      "evidenceRequired": ["approved manifest", "sample quote/order", "quote-to-offboarding rehearsal", "immutable evidence hash"],
+      "waiver": "not-waivable"
+    },
+    {
+      "id": "COM-002",
+      "domain": "licensing-ip",
+      "requirement": "Licences, notices, attribution, third-party source provenance, chain-of-title, and every shipped package license field are complete and counsel-approved; a non-empty LICENSE must reconcile with NOTICE and package metadata.",
+      "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Legal + Engineering",
+      "automatedCheck": "claim-check --mode=gate (license/NOTICE/package metadata check) plus licence inventory",
+      "evidenceRequired": ["counsel approval", "non-empty LICENSE", "NOTICE/licence bundle", "package-license reconciliation", "first-party documentation licence audit", "source and vendor provenance", "exception register with expiry"],
+      "waiver": "not-waivable-for-advertised-rights"
+    },
+    {
+      "id": "COM-003",
+      "domain": "privacy",
+      "requirement": "Actual telemetry, browser tracing, managed events, AIG payloads, retention, deletion, region, subprocessors, and transfer mechanisms match customer-facing notices and DPA/TOM/SCC terms.",
+      "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Privacy/DPO + Legal + Security",
+      "automatedCheck": "privacy-payload-contract and outbound-domain/redaction gates",
+      "evidenceRequired": ["field-level data-flow matrix", "payload assertion report", "DPA/TOM/SCC approval", "subprocessor/region list", "deletion/export receipt"],
+      "waiver": "not-waivable-for-unknown-or-misrepresented-processing"
+    },
+    {
+      "id": "COM-004",
+      "domain": "billing-entitlements",
+      "requirement": "Price and entitlements are enforced by one provider-of-record and survive order, seat change, invoice/reconciliation, cancellation, revocation, export, and deletion.",
+      "decisionProfiles": ["assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Finance/Billing + Product",
+      "automatedCheck": "billing contract suite and quote-to-offboarding rehearsal",
+      "evidenceRequired": ["provider decision", "SKU/entitlement tests", "invoice/reconciliation evidence", "revocation and deletion receipt"],
+      "waiver": "not-waivable-for-invoiced-claims"
+    },
+    {
+      "id": "COM-005",
+      "domain": "support-operations",
+      "requirement": "Customer-visible support, status, security contact, privacy/terms, escalation, severity SLA, diagnostic-consent, and reachable ticket paths operate for the sold scope.",
+      "decisionProfiles": ["evaluation", "assisted-sale", "production-ga"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Support/Customer Success + Operations",
+      "automatedCheck": "deployed route/link crawl; ticket drill is manual evidence",
+      "evidenceRequired": ["published support schedule/SLA", "ticket drill with timestamps", "status/security/privacy links", "on-call escalation record"],
+      "waiver": "not-waivable-for-customer-facing-scope"
+    },
+    {
+      "id": "COM-010",
+      "domain": "ga-connectors",
+      "requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
+      "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Product + QA + Engineering + Support",
+      "automatedCheck": "expected connector manifest, package consumer tests, real-host E2E and claim-check",
+      "evidenceRequired": ["all-connector support matrix", "real-host reports", "private-registry install logs", "rollback/disable drill", "owner and limitations"],
+      "waiver": "not-waivable-for-a-direct-GA-claim"
+    },
+    {
+      "id": "COM-011",
+      "domain": "regions-data-residency",
+      "requirement": "Hybrid deployment supports EU, US, and APAC tenant placement with an approved routing, residency, retention, subprocessors, transfer, backup, and deletion model.",
+      "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Operations + Privacy/DPO + Legal",
+      "automatedCheck": "region manifest, outbound-domain/data-flow assertions and deployment smoke per region",
+      "evidenceRequired": ["region/provider matrix", "tenant placement test", "cross-region negative test", "DPA/SCC/TOM approval", "backup/deletion receipts"],
+      "waiver": "not-waivable-for-a-residency-claim"
+    },
+    {
+      "id": "COM-012",
+      "domain": "invoice-private-registry",
+      "requirement": "Enterprise customers receive invoice-based orders and signed artifacts/connectors through an authenticated private registry; entitlement, revocation, download, audit, and offline/air-gapped procedures are defined.",
+      "decisionProfiles": ["assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Finance/Billing + Release Engineering + Support",
+      "automatedCheck": "private-registry consumer install and entitlement contract suite",
+      "evidenceRequired": ["provider and registry decision", "invoice-to-entitlement test", "signed package install", "revocation/offboarding test", "air-gapped procedure"],
+      "waiver": "not-waivable-for-private-distribution-claims"
+    },
+    {
+      "id": "COM-013",
+      "domain": "sla",
+      "requirement": "The managed control plane and dashboard API target a 99.9% monthly availability SLA with a measured SLI, exclusions, maintenance policy, service-credit terms, support escalation, and incident evidence.",
+      "decisionProfiles": ["assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Operations + Legal + Support + Finance",
+      "automatedCheck": "monthly SLI/error-budget report and SLA manifest check",
+      "evidenceRequired": ["approved SLA/support schedule", "SLI definition and denominator", "observation window", "maintenance/exclusions", "service-credit and incident drill"],
+      "waiver": "not-waivable-for-a-99.9-claim"
+    },
+    {
+      "id": "SEC-EXT-001",
+      "domain": "independent-security",
+      "requirement": "Independent penetration test or equivalent assessment has no unresolved critical/high finding for the sold Release Candidate and scope.",
+      "decisionProfiles": ["assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Security Lead + independent assessor",
+      "automatedCheck": "assessment evidence expiry/RC match check",
+      "evidenceRequired": ["signed report", "scope and dates", "remediation/retest letter", "exception approvals with expiry"],
+      "waiver": "not-waivable-for-critical; high requires documented non-exploitability and named approval"
+    },
+    {
+      "id": "POV-001",
+      "domain": "customer-validation",
+      "requirement": "A named customer or investor evaluator completes the signed Evaluation Charter, independent sandbox/PoV, mandatory scenarios, limitations review, and acceptance/reservations for the same Release Candidate.",
+      "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Customer Success + Product + evaluator",
+      "automatedCheck": "expected-suite manifest and evidence-index completeness; acceptance is manual",
+      "evidenceRequired": ["signed charter", "independent run report", "intervention/deviation log", "customer result/reservations", "immutable evidence index"],
+      "waiver": "not-waivable-for-customer-acceptance"
+    },
+    {
+      "id": "INV-001",
+      "domain": "investor-metrics",
+      "requirement": "Every investor-facing technical, customer, security, compliance, traction, and financial metric has a formula, denominator, source, Release Candidate/environment, observation window, owner, reviewer, and limitation/confidence statement.",
+      "decisionProfiles": ["investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Product + Finance + Legal",
+      "automatedCheck": "metric dictionary/evidence-index completeness",
+      "evidenceRequired": ["approved metric dictionary", "source query or signed source", "period/sample/denominator", "reviewer approval"],
+      "waiver": "not-waivable-for-published-investor-claims"
+    },
+    {
+      "id": "CLM-001",
+      "domain": "claims",
+      "requirement": "All customer, investor, procurement, landing, README, plugin, and sales claims are mapped to the Claim Registry; only approved, unexpired claims appear on release-facing surfaces.",
+      "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
+      "class": "hard",
+      "status": "open",
+      "ownerRole": "Product/Marketing + Commercial + Legal",
+      "automatedCheck": "node docs/scripts/claim-check.mjs --mode=gate",
+      "evidenceRequired": ["registry snapshot", "build-output scan JSON", "claim-to-evidence links", "Sales Approved review"],
+      "waiver": "not-waivable-for-unapproved-claims"
+    }
+  ],
+  "claims": [
+    {
+      "id": "CLAIM-001",
+      "exactText": "Launch-ready security layer for AI agents.",
+      "surfaces": ["packages/dashboard/aidr-landing.html", "packages/dashboard/LANDING-WORKING.html"],
+      "patternIds": ["CLM-BANNED-LAUNCH"],
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["G0 scope freeze", "G2 golden path", "G6 customer PoV", "G8 signed release"],
+      "ownerRole": "Product/Marketing",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-002",
+      "exactText": "Go live in minutes.",
+      "surfaces": ["packages/dashboard/aidr-landing.html", "packages/dashboard/LANDING-WORKING.html"],
+      "patternIds": ["CLM-BANNED-LAUNCH"],
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["measured onboarding denominator", "supported-platform matrix", "independent PoV"],
+      "ownerRole": "Product/Marketing",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-003",
+      "exactText": "The most comprehensive AI agent security platform.",
+      "surfaces": ["docs/architecture/aig-integration.md"],
+      "patternIds": ["CLM-BANNED-SCOPE"],
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["competitive claim review", "supported-platform matrix", "independent validation"],
+      "ownerRole": "Product/Marketing + Legal",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-004",
+      "exactText": "1300+ CVEs from AIG vulnerability database.",
+      "surfaces": ["services/aig-bridge/app/routers/scan.py", "docs/architecture/aig-integration.md"],
+      "patternIds": ["CLM-BANNED-AIG-DATA"],
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["non-empty signed dataset", "exact installed-consumer hash", "known-positive fixture"],
+      "ownerRole": "Engineering/Security",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-005",
+      "exactText": "Real-time agent threat protection.",
+      "surfaces": ["docs/architecture/aig-integration.md", "docs/strategy"],
+      "patternIds": ["CLM-BANNED-REALTIME"],
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["latency SLI definition", "workload and sample window", "deployed-RC measurement"],
+      "ownerRole": "Product/Operations",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-006",
+      "exactText": "SOC 2 / ISO 27001 / HIPAA / GDPR compliant or certified.",
+      "surfaces": ["docs/strategy", "sales/procurement materials"],
+      "patternIds": ["CLM-BANNED-COMPLIANCE"],
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["counsel-approved wording", "independent attestation or explicit roadmap label"],
+      "ownerRole": "Legal + Privacy/DPO",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-007",
+      "exactText": "All agents/platforms are fully supported.",
+      "surfaces": ["sales/investor materials"],
+      "patternIds": ["CLM-BANNED-SCOPE"],
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["supported-platform matrix", "real-host E2E for every advertised connector", "support owner"],
+      "ownerRole": "Product + QA",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-008",
+      "exactText": "Local-only / data never leaves the premise or device.",
+      "surfaces": ["docs/configuration.md", "docs/strategy"],
+      "patternIds": ["CLM-BANNED-PRIVACY"],
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["mode-specific payload map", "outbound allowlist", "retention/region/DPA approval"],
+      "ownerRole": "Privacy/DPO + Security",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-009",
+      "exactText": "Production-ready / sale-ready / enterprise-grade.",
+      "surfaces": ["release notes", "landing", "sales/investor materials"],
+      "patternIds": ["CLM-BANNED-READINESS"],
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["all hard gates green", "same-RC signed release record", "named approver sign-off"],
+      "ownerRole": "Product + Engineering + Legal",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-010",
+      "exactText": "All five connectors are directly GA-supported.",
+      "surfaces": ["Commercial Release Manifest", "Order Form", "investor/customer materials"],
+      "decisionId": "COM-010",
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["all-connector matrix", "real-host E2E", "private-registry install", "rollback and support evidence"],
+      "ownerRole": "Product + QA + Support",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-011",
+      "exactText": "Hybrid deployment with local enforcement and managed control plane.",
+      "surfaces": ["Commercial Release Manifest", "architecture/procurement materials"],
+      "decisionId": "COM-011",
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["deployment matrix", "tenant isolation", "outage behavior", "privacy payload assertions"],
+      "ownerRole": "Engineering + Operations + Security",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-012",
+      "exactText": "EU, US and APAC tenant data residency.",
+      "surfaces": ["Order Form", "DPA", "procurement materials"],
+      "decisionId": "COM-011",
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["regional provider matrix", "placement test", "cross-region negative test", "DPA/SCC/TOM"],
+      "ownerRole": "Privacy/DPO + Legal + Operations",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-013",
+      "exactText": "Enterprise invoice with private-registry distribution.",
+      "surfaces": ["Commercial Release Manifest", "Order Form", "procurement materials"],
+      "decisionId": "COM-012",
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["provider-of-record", "invoice-to-entitlement", "signed private-registry install", "revocation/offboarding"],
+      "ownerRole": "Finance/Billing + Release Engineering",
+      "salesApproved": false
+    },
+    {
+      "id": "CLAIM-014",
+      "exactText": "99.9% monthly availability for the managed control plane and dashboard API.",
+      "surfaces": ["Order Form", "SLA", "investor/customer materials"],
+      "decisionId": "COM-013",
+      "status": "blocked",
+      "maturity": "unapproved",
+      "requiredEvidence": ["approved SLI/SLA", "denominator and exclusions", "observation window", "service-credit schedule", "incident evidence"],
+      "ownerRole": "Operations + Legal + Support + Finance",
+      "salesApproved": false
+    }
+  ]
+}

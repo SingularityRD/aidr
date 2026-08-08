@@ -7,6 +7,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getBearerToken } from "../_shared/auth.ts";
+import { corsJson, handleCors } from "../_shared/cors.ts";
 import { evaluateDeviceVerifyState } from "../_shared/device-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -18,14 +19,8 @@ type DeviceSessionRow = {
 	authorized_at: string | null;
 	expires_at: string;
 	user_id: string | null;
+	tenant_id: string | null;
 };
-
-function json(status: number, body: Record<string, unknown>) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { "Content-Type": "application/json" },
-	});
-}
 
 async function ensurePilotApproved(
 	supabase: ReturnType<typeof createClient>,
@@ -41,18 +36,20 @@ async function ensurePilotApproved(
 }
 
 Deno.serve(async (req) => {
-	if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return json(500, { error: "misconfigured_supabase_env" });
+	const preflight = handleCors(req);
+	if (preflight) return preflight;
+	if (req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
+	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return corsJson(req, 500, { error: "misconfigured_supabase_env" });
 
 	const accessToken = getBearerToken(req.headers.get("Authorization"));
-	if (!accessToken) return json(401, { error: "missing_access_token" });
+	if (!accessToken) return corsJson(req, 401, { error: "missing_access_token" });
 
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
 
 	const { data: userData, error: userErr } = await supabase.auth.getUser(accessToken);
-	if (userErr || !userData?.user?.id) return json(401, { error: "invalid_access_token" });
+	if (userErr || !userData?.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
 	const userId = userData.user.id;
 
 	let body: Record<string, unknown> = {};
@@ -62,17 +59,17 @@ Deno.serve(async (req) => {
 		body = {};
 	}
 	const userCode = typeof body.user_code === "string" ? body.user_code.trim().toUpperCase() : "";
-	if (!userCode) return json(400, { error: "missing_user_code" });
+	if (!userCode) return corsJson(req, 400, { error: "missing_user_code" });
 
 	const approved = await ensurePilotApproved(supabase, userId);
-	if (!approved) return json(403, { error: "pilot_not_approved" });
+	if (!approved) return corsJson(req, 403, { error: "pilot_not_approved" });
 
 	const { data: row, error } = await supabase
 		.from("device_sessions")
-		.select("id,authorized_at,expires_at,user_id")
+		.select("id,authorized_at,expires_at,user_id,tenant_id")
 		.eq("user_code", userCode)
 		.maybeSingle();
-	if (error || !row) return json(404, { error: "device_code_invalid" });
+	if (error || !row) return corsJson(req, 404, { error: "device_code_invalid" });
 	const session = row as DeviceSessionRow;
 	const state = evaluateDeviceVerifyState({
 		nowMs: Date.now(),
@@ -80,26 +77,29 @@ Deno.serve(async (req) => {
 		authorizedAt: session.authorized_at,
 		pilotApproved: approved,
 	});
-	if (state.status !== "ok") return json(state.httpStatus, { error: state.error });
+	if (state.status !== "ok") return corsJson(req, state.httpStatus, { error: state.error });
 
-	const { error: updErr } = await supabase
-		.from("device_sessions")
-		.update({
-			user_id: userId,
-			authorized_at: new Date().toISOString(),
-			status: "authorized",
-		})
-		.eq("id", session.id)
-		.is("authorized_at", null);
+	const { data: authorizedRows, error: authorizeErr } = await supabase.rpc(
+		"authorize_device_session",
+		{
+			p_user_code: userCode,
+			p_user_id: userId,
+			p_tenant_id: session.tenant_id ?? userId,
+		},
+	);
+	if (authorizeErr) return corsJson(req, 500, { error: "device_authorization_unavailable" });
+	if (!Array.isArray(authorizedRows) || authorizedRows.length === 0) {
+		return corsJson(req, 409, { error: "device_code_race" });
+	}
 
-	if (updErr) return json(409, { error: "device_code_race" });
-
-	await supabase.from("admin_audit_logs").insert({
+	const { error: auditError } = await supabase.from("admin_audit_logs").insert({
 		actor_user_id: userId,
+		tenant_id: session.tenant_id ?? userId,
 		action: "device.verify",
 		target_user_id: userId,
 		detail: { user_code: userCode },
 	});
+	if (auditError) return corsJson(req, 500, { error: "device_audit_unavailable" });
 
-	return json(200, { ok: true });
+	return corsJson(req, 200, { ok: true });
 });

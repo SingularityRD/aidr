@@ -1,6 +1,10 @@
 {
   "name": "@singularityrd/aidr-openclaw",
-  "license": "Apache-2.0",
+  "license": "Proprietary",
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
   "version": "0.6.0",
   "type": "module",
   "description": "Singularity AIDR — Agent Detection & Response layer for OpenClaw",
@@ -25,16 +29,13 @@
     "koffi": "^2.15.2"
   },
   "devDependencies": {
-    "@singularityrd/aidr-core": "workspace:*",
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.9.0",
     "vitest": "^4.1.2"
   },
   "dependencies": {
-    "@singularityrd/aidr-core": "workspace:*",
-    "pino": "^9.6.0",
-    "@sentry/node": "^9.0.0"
+    "@singularityrd/aidr-core": "workspace:*"
   },
   "engines": {
     "node": ">=18"
@@ -49,8 +50,5 @@
     "malware-detection",
     "skill",
     "ai-safety"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }

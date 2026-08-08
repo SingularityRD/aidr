@@ -1,0 +1,326 @@
+name: Release Candidate Build
+
+on:
+  push:
+    tags:
+      - "v*.*.*-rc.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing protected vX.Y.Z-rc.N tag to build"
+        required: true
+        type: string
+
+concurrency:
+  group: release-candidate-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+env:
+  NODE_VERSION: 20.19.1
+  PNPM_VERSION: 10.29.3
+  VSCE_VERSION: 3.6.0
+  AIDR_RELEASE_MODE: commercial
+  AIDR_REQUIRE_SIGNING: "1"
+  AIDR_REQUIRE_SBOM: "1"
+  AIDR_SIGNING_KEY_ID: ${{ vars.AIDR_SIGNING_KEY_ID }}
+
+jobs:
+  build-rc:
+    name: Build and attest immutable RC
+    runs-on: ubuntu-22.04
+    environment: release-candidate
+    env:
+      # Used by release-artifact-manifests and the independent verifier; keep
+      # it in the protected environment rather than deriving trust from a
+      # filename or a private key at runtime.
+      AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+    outputs:
+      tag: ${{ steps.rc_meta.outputs.tag }}
+      sha: ${{ steps.rc_meta.outputs.sha }}
+      version: ${{ steps.rc_meta.outputs.version }}
+    steps:
+      - name: Checkout protected tag (pinned)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Resolve and verify immutable RC identity
+        id: rc_meta
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          TAG_PGP_PUBLIC_KEY: ${{ secrets.RELEASE_TAG_PGP_PUBLIC_KEY }}
+          TAG_PGP_FINGERPRINT: ${{ secrets.RELEASE_TAG_PGP_FINGERPRINT }}
+          MANUAL_BUILD_ENABLED: ${{ vars.RELEASE_MANUAL_BUILD_ENABLED }}
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG}"
+          # RC artifacts intentionally carry the stable package version so
+          # promotion can retag the exact signed bytes. NPM cannot publish a
+          # second tarball with that same version, therefore this workflow
+          # supports exactly one RC (rc.0) per base version. A subsequent
+          # candidate must use a new base version and a fresh signed build.
+          [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.0$ ]] || {
+            echo "Only vX.Y.Z-rc.0 is supported; repeated RCs would collide with the stable package version." >&2
+            exit 1
+          }
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            [[ "${GITHUB_REF_PROTECTED}" == "true" ]] || {
+              echo "The RC tag must be protected by a repository ruleset." >&2
+              exit 1
+            }
+            tag_sha="$(git rev-list -n 1 "${tag}^{commit}")"
+            [[ "${tag_sha}" == "${GITHUB_SHA}" ]] || {
+              echo "Tag does not point at the workflow commit (${tag_sha} != ${GITHUB_SHA})." >&2
+              exit 1
+            }
+          else
+            [[ "${MANUAL_BUILD_ENABLED:-false}" == "true" ]] || {
+              echo "Manual RC builds require repository variable RELEASE_MANUAL_BUILD_ENABLED=true." >&2
+              exit 1
+            }
+            tag_sha="$(git rev-list -n 1 "${tag}^{commit}")"
+          fi
+
+          [[ "$(git cat-file -t "${tag}")" == "tag" ]] || {
+            echo "RC tag must be an annotated tag, not a lightweight tag." >&2
+            exit 1
+          }
+          [[ -n "${TAG_PGP_PUBLIC_KEY}" && -n "${TAG_PGP_FINGERPRINT}" ]] || {
+            echo "RELEASE_TAG_PGP_PUBLIC_KEY and RELEASE_TAG_PGP_FINGERPRINT are required." >&2
+            exit 1
+          }
+          printf '%s\n' "${TAG_PGP_PUBLIC_KEY}" | gpg --batch --import
+          git tag -v "${tag}" >/tmp/aidr-tag-verification.txt 2>&1 || {
+            cat /tmp/aidr-tag-verification.txt >&2
+            exit 1
+          }
+          actual_fingerprint="$(gpg --batch --with-colons --fingerprint | awk -F: '$1 == "fpr" {print $10; exit}')"
+          [[ "${actual_fingerprint}" == "${TAG_PGP_FINGERPRINT}" ]] || {
+            echo "RC tag signer fingerprint mismatch." >&2
+            exit 1
+          }
+
+          version="${tag#v}"
+          version="${version%-rc.*}"
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid release version: ${version}" >&2; exit 1; }
+          for package_json in packages/core/package.json packages/claude-code/package.json packages/extension/package.json packages/openclaw/package.json packages/opencode/package.json packages/cli/package.json packages/sdk/package.json packages/dashboard/package.json; do
+            package_version="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version' "${package_json}")"
+            [[ "${package_version}" == "${version}" ]] || {
+              echo "${package_json} must remain at stable base version ${version}; found ${package_version}." >&2
+              exit 1
+            }
+          done
+          source_date_epoch="$(git show -s --format=%ct "${tag_sha}")"
+          {
+            echo "AIDR_RELEASE_TAG=${tag}"
+            echo "AIDR_RELEASE_VERSION=${version}"
+            echo "AIDR_BUILD_ID=${tag_sha}"
+            # Keep the provenance pointer tied to the CI run, while the build
+            # ID remains the immutable commit digest used for artifact bytes.
+            echo "AIDR_CI_RUN_ID=${GITHUB_RUN_ID}"
+            echo "AIDR_WATERMARK_ID=rc-${tag_sha}"
+            echo "SOURCE_DATE_EPOCH=${source_date_epoch}"
+          } >> "${GITHUB_ENV}"
+          {
+            echo "tag=${tag}"
+            echo "sha=${tag_sha}"
+            echo "version=${version}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Prepare release signing keys
+        shell: bash
+        env:
+          SIGNING_PRIVATE_KEY: ${{ secrets.AIDR_SIGNING_PRIVATE_KEY_PEM }}
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PRIVATE_KEY}" && -n "${SIGNING_PUBLIC_KEY}" ]] || {
+            echo "Both private and independently distributed public signing keys are required." >&2
+            exit 1
+          }
+          key_path="${RUNNER_TEMP}/aidr-signing-key.pem"
+          public_path="${RUNNER_TEMP}/aidr-signing-public-key.pem"
+          umask 077
+          printf '%s\n' "${SIGNING_PRIVATE_KEY}" > "${key_path}"
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
+          {
+            echo "AIDR_SIGNING_PRIVATE_KEY_PEM_PATH=${key_path}"
+            echo "AIDR_SIGNING_PUBLIC_KEY_PEM_PATH=${public_path}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Frozen dependency install (no lifecycle mutation)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Setup pinned Python for bridge E2E
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12.8"
+          cache: pip
+          cache-dependency-path: services/aig-bridge/requirements.txt
+
+      - name: Install pinned bridge E2E dependencies
+        working-directory: services/aig-bridge
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --upgrade pip
+          python -m pip install --disable-pip-version-check pytest==8.4.1 pytest-asyncio==1.1.0
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip check
+
+      - name: Assert clean checkout and submodule gitlink
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -z "$(git status --porcelain)" ]] || { git status --short; exit 1; }
+          expected="$(git ls-tree HEAD vendor/ai-infra-guard | awk '{print $3}')"
+          actual="$(git -C vendor/ai-infra-guard rev-parse HEAD)"
+          [[ -n "${expected}" && "${expected}" == "${actual}" ]] || {
+            echo "AIG submodule gitlink mismatch: expected=${expected} actual=${actual}" >&2
+            exit 1
+          }
+
+      - name: Strict AIG source and generated-data gate
+        shell: bash
+        env:
+          AIG_STRICT_CASE: "true"
+        run: |
+          set -euo pipefail
+          pnpm aig:verify
+          pnpm compile:aig
+          git diff --exit-code -- packages/core/src/generated
+
+      - name: Supabase migration and local schema gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm supabase:check
+          pnpm dlx supabase@2.33.9 db lint --local
+          pnpm dlx supabase@2.33.9 db reset --local --no-seed
+
+      - name: Full deterministic quality gate
+        run: pnpm quality:gate
+
+      - name: Dashboard build and static route gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm -C packages/dashboard build
+          pnpm -C packages/dashboard test:route-smoke:static
+
+      - name: Real-host connector E2E gate
+        env:
+          AIDR_E2E_REQUIRE_REAL: "1"
+        run: |
+          set -euo pipefail
+          pnpm test:e2e
+          pnpm test:e2e:negative
+
+      - name: Clean-tree and diff gate after all builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "Builds modified tracked source or generated files:" >&2
+            git status --short >&2
+            exit 1
+          fi
+
+      - name: Assemble exact consumer artifacts
+        env:
+          RELEASE_OUTPUT_DIR: ${{ github.workspace }}/release-output
+          AIDR_RELEASE_TAG: ${{ steps.rc_meta.outputs.tag }}
+          AIDR_RELEASE_VERSION: ${{ steps.rc_meta.outputs.version }}
+          AIDR_BUILD_ID: ${{ steps.rc_meta.outputs.sha }}
+          AIDR_DETERMINISTIC_MANIFEST: "1"
+          VSIX_OUTPUT_DIR: ${{ github.workspace }}/release-output
+        run: |
+          set -euo pipefail
+          node .github/scripts/build-release-bundle.mjs
+          # build-release-bundle owns/clears release-output; package VSIX
+          # afterwards so the extension installers remain in the signed bundle.
+          node .github/scripts/package-vsix.mjs
+          manifest_field() {
+            MANIFEST_FIELD="$1" node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const manifest = JSON.parse(readFileSync("packages/core/dist/aidr-artifact.manifest.json", "utf8"));
+          const value = manifest.provenance?.[process.env.MANIFEST_FIELD];
+          if (typeof value !== "string" || value.length === 0) throw new Error(`core manifest is missing ${process.env.MANIFEST_FIELD}`);
+          process.stdout.write(value);
+          NODE
+          }
+          export AIDR_SOURCE_DIGEST="$(manifest_field source_digest)"
+          export AIDR_DATA_DIGEST="$(manifest_field data_digest)"
+          export AIDR_LOCKFILE_DIGEST="$(manifest_field lockfile_digest)"
+          export AIDR_SBOM_DIGEST="$(manifest_field sbom_digest)"
+          export AIDR_PACKAGE_DIGEST="sha256:$(find release-output -maxdepth 1 -type f \( -name '*.tgz' -o -name '*.tar.gz' -o -name '*.vsix' \) -print0 | sort -z | while IFS= read -r -d '' file; do sha256sum "${file}"; done | sha256sum | awk '{print $1}')"
+          [[ "${AIDR_SOURCE_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid source digest" >&2; exit 1; }
+          [[ "${AIDR_DATA_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid data digest" >&2; exit 1; }
+          [[ "${AIDR_LOCKFILE_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid lockfile digest" >&2; exit 1; }
+          [[ "${AIDR_SBOM_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid SBOM digest" >&2; exit 1; }
+          [[ "${AIDR_PACKAGE_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid package digest" >&2; exit 1; }
+          export AIDR_FINAL_MANIFEST=1
+          node scripts/generate-artifact-manifest.mjs \
+            --dir release-output \
+            --id release/bundle \
+            --version "${AIDR_RELEASE_VERSION}" \
+            --key-id "${AIDR_SIGNING_KEY_ID}" \
+            --watermark-id "${AIDR_WATERMARK_ID}" \
+            --channel commercial \
+            --build-id "${AIDR_BUILD_ID}" \
+            --git-sha "${AIDR_BUILD_ID}" \
+            --source-digest "${AIDR_SOURCE_DIGEST}" \
+            --data-digest "${AIDR_DATA_DIGEST}" \
+            --package-digest "${AIDR_PACKAGE_DIGEST}" \
+            --lockfile-digest "${AIDR_LOCKFILE_DIGEST}" \
+            --sbom-digest "${AIDR_SBOM_DIGEST}" \
+            --ci-provider github_actions \
+            --ci-run-id "${AIDR_CI_RUN_ID}"
+          node scripts/sign-artifact-manifest.mjs --dir release-output --key "${AIDR_SIGNING_PRIVATE_KEY_PEM_PATH}"
+          node scripts/verify-release-evidence.mjs --dirs release-output
+
+      - name: Attest the exact release bundle (pinned)
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        with:
+          subject-path: release-output/*
+
+      - name: Upload immutable RC evidence (pinned)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: aidr-release-${{ steps.rc_meta.outputs.tag }}
+          path: release-output/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish draft prerelease evidence (pinned)
+        uses: softprops/action-gh-release@738f0c76948a84ff818b6e43c8b515cb27dbc559 # v2.2.2
+        with:
+          tag_name: ${{ steps.rc_meta.outputs.tag }}
+          name: AIDR ${{ steps.rc_meta.outputs.tag }}
+          prerelease: true
+          draft: true
+          generate_release_notes: false
+          files: release-output/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

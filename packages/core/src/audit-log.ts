@@ -7,21 +7,28 @@ import { appendFile, mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
+import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
 import type { LoggingConfig, Verdict } from "./types.js";
 
 const MAX_SUMMARY_LEN = 200;
 
 function toolInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
+	let summary: string;
 	if (toolName === "Bash") {
-		return String(toolInput.command ?? "").slice(0, MAX_SUMMARY_LEN);
+		summary = String(toolInput.command ?? "");
+	} else if (toolName === "WebFetch") {
+		summary = String(toolInput.url ?? "");
+	} else if (
+		toolName === "Write" ||
+		toolName === "Edit" ||
+		toolName === "Read" ||
+		toolName === "Delete"
+	) {
+		summary = String(toolInput.file_path ?? "");
+	} else {
+		summary = JSON.stringify(toolInput);
 	}
-	if (toolName === "WebFetch") {
-		return String(toolInput.url ?? "").slice(0, MAX_SUMMARY_LEN);
-	}
-	if (toolName === "Write" || toolName === "Edit" || toolName === "Read" || toolName === "Delete") {
-		return String(toolInput.file_path ?? "").slice(0, MAX_SUMMARY_LEN);
-	}
-	return JSON.stringify(toolInput).slice(0, MAX_SUMMARY_LEN);
+	return redactTelemetryString(summary, MAX_SUMMARY_LEN);
 }
 
 export function buildRuntimeVerdictEntry(
@@ -37,10 +44,10 @@ export function buildRuntimeVerdictEntry(
 		session_id: sessionId,
 		tool_name: toolName,
 		tool_input_summary: toolInputSummary(toolName, toolInput),
-		artifacts: verdict.artifacts,
+		artifacts: redactTelemetryData(verdict.artifacts),
 		verdict: verdict.decision,
 		severity: verdict.severity,
-		reasons: verdict.reasons,
+		reasons: redactTelemetryData(verdict.reasons),
 		source: verdict.source,
 		matched_threat_id: verdict.matchedThreatId,
 		user_override: userOverride,
@@ -83,10 +90,10 @@ export function buildIncidentEntry(
 			session_id: sessionId,
 			tool_name: safeToolName,
 			tool_input_summary: "",
-			artifacts: safeVerdict.artifacts,
+			artifacts: redactTelemetryData(safeVerdict.artifacts),
 			decision: safeVerdict.decision,
 			severity: safeVerdict.severity,
-			reasons: safeVerdict.reasons,
+			reasons: redactTelemetryData(safeVerdict.reasons),
 			source: safeVerdict.source,
 			matched_threat_id: safeVerdict.matchedThreatId,
 			recommended_actions: ["review"],
@@ -101,10 +108,10 @@ export function buildIncidentEntry(
 		session_id: params.sessionId,
 		tool_name: params.toolName,
 		tool_input_summary: toolInputSummary(params.toolName, params.toolInput),
-		artifacts: params.verdict.artifacts,
+		artifacts: redactTelemetryData(params.verdict.artifacts),
 		decision: params.verdict.decision,
 		severity: params.verdict.severity,
-		reasons: params.verdict.reasons,
+		reasons: redactTelemetryData(params.verdict.reasons),
 		source: params.verdict.source,
 		matched_threat_id: params.verdict.matchedThreatId,
 		recommended_actions: params.recommendedActions,
@@ -195,7 +202,7 @@ export async function logPluginScan(
 		plugin_key: pluginKey,
 		plugin_version: pluginVersion,
 		findings_count: findings.length,
-		findings,
+		findings: redactTelemetryData(findings),
 	};
 
 	try {

@@ -17,6 +17,7 @@ type EntitlementsRow = { included_agents: number; extra_agents: number };
 export function AgentsPage() {
 	const [agents, setAgents] = useState<AgentRow[]>([]);
 	const [entitlements, setEntitlements] = useState<EntitlementsRow | null>(null);
+	const [entitlementsError, setEntitlementsError] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -38,8 +39,13 @@ export function AgentsPage() {
 			if (agentsRes.error) setError(agentsRes.error.message);
 			else setAgents((agentsRes.data ?? []) as AgentRow[]);
 
-			if (entRes.error) setEntitlements(null);
-			else setEntitlements((entRes.data ?? null) as EntitlementsRow | null);
+			if (entRes.error) {
+				setEntitlements(null);
+				setEntitlementsError(entRes.error.message);
+			} else {
+				setEntitlementsError(null);
+				setEntitlements((entRes.data ?? null) as EntitlementsRow | null);
+			}
 		}
 
 		load();
@@ -52,17 +58,27 @@ export function AgentsPage() {
 
 	const allowed = entitlements
 		? Number(entitlements.included_agents ?? 1) + Number(entitlements.extra_agents ?? 0)
-		: 1;
+		: null;
 
 	return (
 		<div className="stack">
 			<div className="card">
 				<h1>Agents</h1>
 				<p className="muted">
-					Connected installations (unique <code>iid</code>). Allowed: <b>{allowed}</b>. Current:{" "}
-					<b>{agents.length}</b>.
+					Connected installations (unique <code>iid</code>). Allowed:{" "}
+					<b>{allowed ?? "unavailable"}</b>. Current: <b>{agents.length}</b>.
 				</p>
-				{error ? <div className="notice notice-danger">{error}</div> : null}
+				{error ? (
+					<div className="notice notice-danger" role="alert" aria-live="assertive">
+						{error}
+					</div>
+				) : null}
+				{entitlementsError ? (
+					<div className="notice notice-danger" role="alert" aria-live="polite">
+						Seat entitlement data is unavailable; do not infer the allowed-agent limit.{" "}
+						{entitlementsError}
+					</div>
+				) : null}
 			</div>
 
 			<div className="card">

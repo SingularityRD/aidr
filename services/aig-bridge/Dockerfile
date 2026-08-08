@@ -32,12 +32,13 @@ ENV BRIDGE_HOST="0.0.0.0" \
     BRIDGE_PORT=8099 \
     BRIDGE_LOG_LEVEL=INFO \
     BRIDGE_AIG_URL="http://aig-server:8088" \
-    BRIDGE_API_KEY="" \
+    BRIDGE_VALIDATE_DNS="true" \
+    BRIDGE_SOURCE_ROOT="/app/uploads" \
     PYTHONUNBUFFERED=1
 
 EXPOSE 8099
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -sf http://localhost:8099/api/v1/health || exit 1
+    CMD curl -sf http://localhost:8099/api/v1/readyz || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8099", "--log-level", "info"]

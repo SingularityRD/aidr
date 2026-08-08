@@ -85,14 +85,17 @@ pnpm install --frozen-lockfile
 # 3. Build and verify
 pnpm build:release
 
-# 4. Login to npm (if not already)
-npm login
+# 4. Configure the private GitHub Packages registry (use a protected token)
+export NPM_REGISTRY=https://npm.pkg.github.com
+npm config set @singularityrd:registry "$NPM_REGISTRY"
+npm config set "//npm.pkg.github.com/:_authToken" "$GITHUB_TOKEN"
 
 # 5. Publish packages
-pnpm -C packages/core publish --access public
-pnpm -C packages/sdk publish --access public
-pnpm -C packages/openclaw publish --access public
-pnpm -C packages/opencode publish --access public
+pnpm -C packages/core publish --access restricted --registry "$NPM_REGISTRY"
+pnpm -C packages/sdk publish --access restricted --registry "$NPM_REGISTRY"
+pnpm -C packages/openclaw publish --access restricted --registry "$NPM_REGISTRY"
+pnpm -C packages/opencode publish --access restricted --registry "$NPM_REGISTRY"
+pnpm -C packages/cli publish --access restricted --registry "$NPM_REGISTRY"
 
 # 6. Tag release
 git tag -a v$(node -p "require('./packages/core/package.json').version") -m "Release"
@@ -101,7 +104,7 @@ git push origin --tags
 
 ### Published Packages
 
-| Package | npm Name | Description |
+| Package | Private GitHub Packages name | Description |
 |---------|----------|-------------|
 | Core | `@singularityrd/aidr-core` | Detection engine library |
 | SDK | `@singularityrd/aidr-sdk` | Universal integration SDK |
@@ -192,7 +195,18 @@ Required environment variables in Vercel:
 SENTRY_DSN=<your-sentry-dsn>
 SENTRY_ENABLED=true
 SENTRY_ENVIRONMENT=production
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<public-anon-key>
+VITE_AIDR_COMMERCIAL_MODE=invoice
+VITE_SALES_URL=https://<approved-sales-channel>
 ```
+
+The Supabase Edge Functions called by the browser also require
+`AIDR_ALLOWED_ORIGINS` to contain the exact deployed dashboard origin (for
+example `https://demo.example.com`). The device/pilot/credential endpoints
+fail closed for an unlisted `Origin` and handle `OPTIONS` preflight before
+performing authentication or database work. Keep this value separate from the
+dashboard's public Vite variables and rotate it with the deployment record.
 
 #### Netlify
 
@@ -231,14 +245,18 @@ rsync -avz dist/ user@server:/var/www/aidr-dashboard/
 
 ## Rollback Procedures
 
-### NPM Packages
+### Private GitHub Packages
 
-npm packages **cannot be unpublished** after 24 hours or if dependents exist. Use these strategies:
+Private GitHub Packages releases **cannot be safely unpublished** once consumed. Use these strategies with the scoped registry:
+
+```bash
+REGISTRY=https://npm.pkg.github.com
+```
 
 #### Strategy 1: Deprecate Version (Immediate)
 
 ```bash
-npm deprecate @singularityrd/aidr-core@<bad-version> "Critical issue - use @<good-version> instead"
+npm deprecate @singularityrd/aidr-core@<bad-version> "Critical issue - use @<good-version> instead" --registry "$REGISTRY"
 ```
 
 #### Strategy 2: Publish Patch with Revert
@@ -260,10 +278,10 @@ pnpm run version
 
 ```bash
 # Point "latest" to previous version
-npm dist-tag add @singularityrd/aidr-core@<previous-version> latest
+npm dist-tag add @singularityrd/aidr-core@<previous-version> latest --registry "$REGISTRY"
 
 # Remove bad tag
-npm dist-tag rm @singularityrd/aidr-core@<bad-version> latest
+npm dist-tag rm @singularityrd/aidr-core latest --registry "$REGISTRY"
 ```
 
 ### VS Code/Cursor Extension
@@ -342,7 +360,7 @@ Check these metrics within **1 hour** of deployment:
 
 Ensure these are configured:
 - Sentry → Slack integration (new issues)
-- npm publish webhook → Slack
+- GitHub Packages publish event → Slack
 - Marketplace publish notifications → Email
 
 ---
@@ -351,7 +369,7 @@ Ensure these are configured:
 
 | System | Owner | Escalation Path |
 |--------|-------|-----------------|
-| npm | DevOps | devops@singularityrd.com |
+| GitHub Packages | DevOps | devops@singularityrd.com |
 | VS Code Marketplace | Engineering | eng-leads@singularityrd.com |
 | Sentry | DevOps | On-call rotation |
 | Dashboard Hosting | SRE | sre@singularityrd.com |

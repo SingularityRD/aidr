@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
 	const keyHash = await sha256Hex(apiKey);
 	const { data: keyRow, error: keyErr } = await supabase
 		.from("api_keys")
-		.select("user_id, revoked")
+		.select("user_id, tenant_id, revoked")
 		.eq("key_hash", keyHash)
 		.maybeSingle();
 
@@ -132,6 +132,7 @@ Deno.serve(async (req) => {
 	}
 
 	const userId = keyRow.user_id as string;
+	const tenantId = (keyRow.tenant_id as string | null) ?? userId;
 
 	const domains = urls
 		.map((u) => domainFromUrl(u))
@@ -141,7 +142,7 @@ Deno.serve(async (req) => {
 	const { data: urlRows } = await supabase
 		.from("url_reputation")
 		.select("url,domain,is_malicious,severity_name,type_name,flags")
-		.eq("user_id", userId)
+		.eq("tenant_id", tenantId)
 		.in("url", urls);
 
 	const { data: domainRows } =
@@ -149,7 +150,7 @@ Deno.serve(async (req) => {
 			? await supabase
 					.from("url_reputation")
 					.select("url,domain,is_malicious,severity_name,type_name,flags")
-					.eq("user_id", userId)
+					.eq("tenant_id", tenantId)
 					.in("domain", domainCandidates)
 			: { data: [] as UrlRepRow[] };
 

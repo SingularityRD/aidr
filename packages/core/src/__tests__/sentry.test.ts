@@ -66,6 +66,7 @@ describe("sentry integration", () => {
 		expect(beforeSend).toBeTypeOf("function");
 
 		const event = beforeSend?.({
+			message: "request failed token=live-secret",
 			extra: {
 				apiKey: "sk-live-secret",
 				nested: { authorization: "Bearer token", safe: "kept" },
@@ -73,6 +74,10 @@ describe("sentry integration", () => {
 			contexts: {
 				request: { password: "secret", route: "/health" },
 			},
+			exception: {
+				values: [{ value: "upstream failed token=live-secret" }],
+			},
+			request: { url: "https://example.test/callback?token=live-secret" },
 		});
 
 		expect(event).toMatchObject({
@@ -83,6 +88,11 @@ describe("sentry integration", () => {
 			contexts: {
 				request: { password: "[Redacted]", route: "/health" },
 			},
+			message: "request failed token=[Redacted]",
+			exception: {
+				values: [{ value: "upstream failed token=[Redacted]" }],
+			},
+			request: { url: "https://example.test/callback?token=[Redacted]" },
 		});
 	});
 

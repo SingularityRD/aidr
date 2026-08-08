@@ -247,7 +247,7 @@ export class MitreAttackMapper {
 			for (const tech of mapping.techniques) {
 				tactics.add(tech.tactic);
 				techniques.add(tech.id);
-				tech.platform.forEach((p) => platforms.add(p));
+				for (const platform of tech.platform) platforms.add(platform);
 			}
 		}
 
@@ -291,7 +291,7 @@ export class MitreAttackMapper {
 	private static extractDataComponents(techniques: AttackTechnique[]): string[] {
 		const components = new Set<string>();
 		for (const tech of techniques) {
-			tech.dataSources.forEach((ds) => components.add(ds));
+			for (const dataSource of tech.dataSources) components.add(dataSource);
 		}
 		return [...components];
 	}

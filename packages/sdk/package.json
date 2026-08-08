@@ -1,10 +1,11 @@
 {
   "name": "@singularityrd/aidr-sdk",
-  "license": "Apache-2.0",
+  "license": "Proprietary",
   "publishConfig": {
-    "access": "public"
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
   },
-  "version": "1.0.0",
+  "version": "0.6.0",
   "description": "Singularity AIDR — Universal SDK for AI agent security integration",
   "type": "module",
   "bin": {
@@ -30,15 +31,14 @@
   ],
   "scripts": {
     "build": "pnpm run clean && node esbuild.config.js",
-    "build:release": "pnpm run clean && node esbuild.config.js --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-sdk && node ../../scripts/check-no-sourcemaps.mjs dist",
-    "clean": "node ../../scripts/rmrf.mjs dist",
+    "build:release": "pnpm run clean && node esbuild.config.js --release && tsc -p tsconfig.release.json --emitDeclarationOnly && node ../../scripts/copy-cjs-types.mjs dist/index.d.ts dist/index.d.cts && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-sdk && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "clean": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo",
     "prepack": "node ../../scripts/check-workspace-refs.mjs"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",
     "@singularityrd/aidr-core": "workspace:*",
     "commander": "^12.0.0",
-    "pino": "^9.6.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

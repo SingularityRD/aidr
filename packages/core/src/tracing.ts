@@ -19,7 +19,7 @@ import {
 	trace,
 } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { type IResource, Resource } from "@opentelemetry/resources";
+import { type Resource, resourceFromAttributes } from "@opentelemetry/resources";
 import {
 	BatchSpanProcessor,
 	ConsoleSpanExporter,
@@ -28,6 +28,11 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
+import {
+	redactTelemetryAttributes,
+	redactTelemetryString,
+	sanitizeTelemetryEndpoint,
+} from "./telemetry-redaction.js";
 import { VERSION } from "./version.js";
 
 // ── Configuration ───────────────────────────────────────────────────────
@@ -58,10 +63,14 @@ function getEnvString(name: string, defaultValue?: string): string | undefined {
 }
 
 export function loadTracingConfig(): TracingConfig {
+	const configuredEndpoint = getEnvString("TRACE_OTLP_ENDPOINT");
 	return {
 		enabled: getEnvBoolean("TRACE_ENABLED", false),
 		samplingRate: getEnvNumber("TRACE_SAMPLING", 1.0),
-		otlpEndpoint: getEnvString("TRACE_OTLP_ENDPOINT"),
+		// Query strings and URL credentials are a common way of accidentally
+		// putting collector API keys into process configuration.  The exporter
+		// only needs the origin/path.
+		otlpEndpoint: sanitizeTelemetryEndpoint(configuredEndpoint),
 		consoleExporter: getEnvBoolean("TRACE_CONSOLE_EXPORTER", true),
 		propagateW3c: getEnvBoolean("TRACE_PROPAGATE_W3C", true),
 	};
@@ -73,8 +82,8 @@ let tracerProvider: NodeTracerProvider | null = null;
 let tracer: Tracer | null = null;
 let tracingConfig: TracingConfig | null = null;
 
-function createResource(): IResource {
-	return new Resource({
+function createResource(): Resource {
+	return resourceFromAttributes({
 		[ATTR_SERVICE_NAME]: "aidr",
 		[ATTR_SERVICE_VERSION]: VERSION,
 		"deployment.environment": getEnvString("NODE_ENV", "development"),
@@ -298,14 +307,14 @@ export function getSpanContext(): SpanContext | undefined {
 export function setSpanAttribute(key: string, value: string | number | boolean): void {
 	const span = getCurrentSpan();
 	if (span) {
-		span.setAttribute(key, value);
+		span.setAttribute(key, typeof value === "string" ? redactTelemetryString(value, 500) : value);
 	}
 }
 
 export function setSpanAttributes(attributes: Record<string, string | number | boolean>): void {
 	const span = getCurrentSpan();
 	if (span) {
-		span.setAttributes(attributes);
+		span.setAttributes(redactTelemetryAttributes(attributes));
 	}
 }
 
@@ -315,7 +324,10 @@ export function addSpanEvent(
 ): void {
 	const span = getCurrentSpan();
 	if (span) {
-		span.addEvent(name, attributes);
+		span.addEvent(
+			redactTelemetryString(name, 200),
+			attributes && redactTelemetryAttributes(attributes),
+		);
 	}
 }
 
@@ -327,9 +339,14 @@ export function recordException(
 	if (span) {
 		// Set attributes first, then record the exception
 		if (attributes) {
-			span.setAttributes(attributes);
+			span.setAttributes(redactTelemetryAttributes(attributes));
 		}
-		span.recordException(error);
+		// Do not attach the original stack/error object: it can contain the
+		// command, prompt or URL that caused the failed decision.
+		span.recordException({
+			name: redactTelemetryString(error.name || "Error", 100),
+			message: redactTelemetryString(error.message, 1000),
+		});
 	}
 }
 
@@ -350,20 +367,24 @@ export interface SecurityDecisionAttributes {
 
 export function setSecurityDecisionAttributes(attrs: SecurityDecisionAttributes): void {
 	setSpanAttributes({
-		"aidr.tool_name": attrs.toolName,
-		"aidr.session_id": attrs.sessionId,
-		"aidr.decision": attrs.decision,
-		"aidr.category": attrs.category,
+		"aidr.tool_name": redactTelemetryString(attrs.toolName, 100),
+		"aidr.session_id": redactTelemetryString(attrs.sessionId, 200),
+		"aidr.decision": redactTelemetryString(attrs.decision, 50),
+		"aidr.category": redactTelemetryString(attrs.category, 100),
 		"aidr.confidence": attrs.confidence,
-		"aidr.severity": attrs.severity,
+		"aidr.severity": redactTelemetryString(attrs.severity, 50),
 		"aidr.artifacts_count": attrs.artifactsCount,
-		...(attrs.matchedThreatId ? { "aidr.matched_threat_id": attrs.matchedThreatId } : {}),
+		...(attrs.matchedThreatId
+			? { "aidr.matched_threat_id": redactTelemetryString(attrs.matchedThreatId, 100) }
+			: {}),
 		...(attrs.durationMs ? { "aidr.duration_ms": attrs.durationMs } : {}),
 	});
 
 	if (attrs.reasons && attrs.reasons.length > 0) {
 		addSpanEvent("security_decision_reasons", {
-			"aidr.reasons": attrs.reasons.join("; "),
+			// Keep enough context for grouping, but never attach arbitrary prompt
+			// or command text to a remote span.
+			"aidr.reasons": attrs.reasons.map((reason) => redactTelemetryString(reason, 300)).join("; "),
 		});
 	}
 }

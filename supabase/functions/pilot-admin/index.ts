@@ -18,7 +18,7 @@ function json(status: number, body: Record<string, unknown>) {
 
 function getBearerToken(req: Request): string | null {
 	const header = req.headers.get("Authorization") ?? "";
-	const m = header.match(/^Bearer\\s+(.+)$/i);
+	const m = header.match(/^Bearer\s+(.+)$/i);
 	return m?.[1]?.trim() ? m[1].trim() : null;
 }
 
@@ -78,6 +78,7 @@ Deno.serve(async (req) => {
 	await supabase.from("pilot_applications").upsert(
 		{
 			user_id: targetUserId,
+			tenant_id: targetUserId,
 			status,
 			cohort,
 			notes,
@@ -87,6 +88,7 @@ Deno.serve(async (req) => {
 
 	await supabase.from("admin_audit_logs").insert({
 		actor_user_id: actorId,
+		tenant_id: targetUserId,
 		action: `pilot.${action}`,
 		target_user_id: targetUserId,
 		detail: { cohort, notes },
@@ -94,4 +96,3 @@ Deno.serve(async (req) => {
 
 	return json(200, { ok: true, user_id: targetUserId, status });
 });
-

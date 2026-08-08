@@ -341,7 +341,7 @@ Apache 2.0 lisansı altında yayınlanmış kod **sonsuza kadar fork edilebilir*
 - [ ] **npm deprecate**: Tüm @singularityrd/* paketlerini deprecate et
 - [ ] **VS Code extension kaldır**: Marketplace'ten unpublish
 - [ ] **Yeni private repo kur**: GitHub'da private repo, mevcut develop dallarını taşı
-- [ ] **LICENSE değişiklikleri**: Tüm package.json'lardan Apache 2.0'ı kaldır, "Proprietary" ekle
+- [x] **LICENSE değişiklikleri (mekanik)**: First-party package metadata now declares `Proprietary`; root LICENSE/NOTICE and third-party attribution bundle were updated. Legal review and stale-document reconciliation remain open.
 
 ### Hafta 2
 

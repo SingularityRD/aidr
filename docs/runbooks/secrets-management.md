@@ -21,8 +21,8 @@ Complete guide for managing secrets across local development, CI/CD, and product
 |----------|---------|-------------|-------------------|
 | `SENTRY_DSN` | Error reporting endpoint | All environments | On compromise |
 | `SENTRY_AUTH_TOKEN` | Source map upload | CI/CD only | Quarterly |
-| `NPM_TOKEN` | Package publishing | GitHub Actions | Quarterly |
 | `GITHUB_TOKEN` | Release creation | GitHub Actions | Auto-rotated |
+| `GITHUB_TOKEN` | GitHub Packages publishing and release creation | GitHub Actions | Auto-rotated |
 
 ### E2E Testing Secrets
 
@@ -63,24 +63,25 @@ Complete guide for managing secrets across local development, CI/CD, and product
 
 ## Secret Rotation Procedures
 
-### NPM Token Rotation
+### GitHub Packages Token and Permission Rotation
 
-**When:** Quarterly or when token is exposed
+The release workflow publishes only to the private `npm.pkg.github.com`
+registry using the short-lived Actions `GITHUB_TOKEN`; no npmjs.org token is
+accepted. Keep `packages: write` limited to the protected production/release
+environment and verify the package scope is `@singularityrd`.
 
 ```bash
-# 1. Generate new token on npmjs.com
-# Visit: https://www.npmjs.com/settings/<user>/tokens
-# Create "Automation" token with publish access
+# 1. Confirm the production environment has package-write permission.
+gh api repos/SingularityRD/aidr/actions/permissions/workflow \
+  --jq '.default_workflow_permissions'
 
-# 2. Update GitHub secret
-gh secret set NPM_TOKEN --body "npm_xxxxx" --repo SingularityRD/aidr
+# 2. Verify a dry-run against the private registry (no package mutation).
+gh workflow run "Release Promote, Rollback or Yank" \
+  -f action=dry-run -f tag=vX.Y.Z-rc.0 -f rc_run_id=<successful-run-id>
 
-# 3. Verify in CI
-git commit --allow-empty -m "chore: verify new NPM_TOKEN"
-git push origin main
-# Check: https://github.com/SingularityRD/aidr/actions
-
-# 4. Revoke old token on npmjs.com (after 24h grace period)
+# 3. If a long-lived automation token is ever required, store it as a
+#    protected environment secret and rotate it through the GitHub Packages
+#    token settings; never add it to .npmrc or repository files.
 ```
 
 ### Sentry Auth Token Rotation
@@ -149,7 +150,7 @@ Navigate to: `https://github.com/SingularityRD/aidr/settings/secrets/actions`
 
 | Secret Name | Value Source | Required For |
 |-------------|--------------|--------------|
-| `NPM_TOKEN` | npmjs.com Automation token | Package publishing |
+| `GITHUB_TOKEN` | GitHub Actions token with protected `packages: write` permission | Private GitHub Packages publishing |
 | `SENTRY_AUTH_TOKEN` | sentry.io Auth Token | Source map upload |
 | `ANTHROPIC_API_KEY` | anthropic.com API Keys | E2E tests (optional) |
 | `OPENCLAW_GATEWAY_TOKEN` | Local gateway setup | E2E tests (optional) |
@@ -419,7 +420,7 @@ az keyvault secret show \
 
 | Service | URL | Token Type |
 |---------|-----|------------|
-| npm | https://www.npmjs.com/settings/tokens | Automation |
+| GitHub Packages | https://github.com/SingularityRD/aidr/packages | `GITHUB_TOKEN` with protected `packages: write` |
 | Sentry | https://sentry.io/settings/account/api/auth-tokens/ | Auth Token |
 | Anthropic | https://console.anthropic.com/settings/keys | API Key |
 | Stripe | https://dashboard.stripe.com/apikeys | Secret Key |
@@ -430,7 +431,7 @@ az keyvault secret show \
 
 | Service | Support URL | Phone |
 |---------|-------------|-------|
-| npm | https://www.npmjs.com/support | - |
+| GitHub Packages | https://support.github.com | - |
 | Sentry | https://sentry.io/support | - |
 | Stripe | https://support.stripe.com | +1 888-963-8442 |
 | GitHub | https://support.github.com | - |

@@ -1,3 +1,4 @@
+import { selfServiceCheckoutEnabled } from "./commercial";
 import type { ProviderType } from "./payment-router";
 
 interface ProviderOption {
@@ -96,6 +97,7 @@ export function ProviderCards({
  * Removed: iyzico, stripe, crypto providers (user requested only LemonSqueezy)
  */
 export function buildProviderList(_userLocation: string): ProviderOption[] {
+	if (!selfServiceCheckoutEnabled) return [];
 	return [
 		{
 			id: "lemon-squeezy",
@@ -111,6 +113,7 @@ export function buildProviderList(_userLocation: string): ProviderOption[] {
  * Get payment button text - now always returns LemonSqueezy text
  */
 export function getPaymentButtonText(_provider: ProviderType, _userLocation: string): string {
+	if (!selfServiceCheckoutEnabled) return "Request enterprise invoice";
 	return "Subscribe with LemonSqueezy";
 }
 

@@ -50,7 +50,10 @@ export function createMiddleware(client: AIDRClient) {
 			await chain.execute(request, result, error);
 
 			if (error) throw error;
-			return result!;
+			if (!result) {
+				throw new Error("Security check returned no result");
+			}
+			return result;
 		},
 
 		/**

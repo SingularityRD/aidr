@@ -11,7 +11,7 @@
  */
 
 import { getRecentEntries } from "./audit-log.js";
-import type { Incident, IncidentSeverity } from "./incidents/types.js";
+import type { Incident } from "./incidents/types.js";
 import type { LoggingConfig } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -122,6 +122,18 @@ function extractTimestamp(entry: Record<string, unknown>): string | null {
 	return null;
 }
 
+interface DateRangeState {
+	earliest: string | null;
+	latest: string | null;
+}
+
+function updateDateRange(state: DateRangeState, entry: Record<string, unknown>): void {
+	const timestamp = extractTimestamp(entry);
+	if (timestamp === null) return;
+	if (state.earliest === null || timestamp < state.earliest) state.earliest = timestamp;
+	if (state.latest === null || timestamp > state.latest) state.latest = timestamp;
+}
+
 /**
  * Compute an {@link AuditLogSummary} from an array of raw audit-log entries.
  */
@@ -130,8 +142,7 @@ function computeAuditLogSummary(entries: readonly Record<string, unknown>[]): Au
 	const byDecision: Record<string, number> = {};
 	const bySeverity: Record<string, number> = {};
 
-	let earliest: string | null = null;
-	let latest: string | null = null;
+	const dateRange: DateRangeState = { earliest: null, latest: null };
 
 	for (const entry of entries) {
 		// Count by type
@@ -147,18 +158,14 @@ function computeAuditLogSummary(entries: readonly Record<string, unknown>[]): Au
 		bySeverity[s] = (bySeverity[s] ?? 0) + 1;
 
 		// Track date range
-		const ts = extractTimestamp(entry);
-		if (ts !== null) {
-			if (earliest === null || ts < earliest) earliest = ts;
-			if (latest === null || ts > latest) latest = ts;
-		}
+		updateDateRange(dateRange, entry);
 	}
 
 	return {
 		totalEntries: entries.length,
 		dateRange: {
-			from: earliest ?? new Date().toISOString(),
-			to: latest ?? new Date().toISOString(),
+			from: dateRange.earliest ?? new Date().toISOString(),
+			to: dateRange.latest ?? new Date().toISOString(),
 		},
 		entriesByType: byType,
 		entriesByDecision: byDecision,
@@ -169,19 +176,6 @@ function computeAuditLogSummary(entries: readonly Record<string, unknown>[]): Au
 // ---------------------------------------------------------------------------
 // Internal helpers — incidents
 // ---------------------------------------------------------------------------
-
-type IncidentStatus = Incident["status"];
-
-/**
- * Rank map for {@link IncidentSeverity} used to pick the highest severity
- * across a set of incidents.
- */
-const SEVERITY_RANK: Record<IncidentSeverity, number> = {
-	info: 0,
-	warning: 1,
-	high: 2,
-	critical: 3,
-};
 
 /**
  * Compute {@link IncidentMetrics} from an array of {@link Incident} records.

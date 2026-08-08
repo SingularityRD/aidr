@@ -1,0 +1,154 @@
+{
+	"version": 2,
+	"description": "Release E2E capability inventory. Every entry must be collected, executed and passed before a release is eligible for GO.",
+	"suites": [
+		{
+			"id": "claude",
+			"kind": "vitest",
+			"config": "vitest.e2e.config.ts",
+			"target": "packages/claude-code",
+			"testFile": "packages/claude-code/src/__tests__/e2e.test.ts",
+			"expectedTests": 7,
+			"capabilities": ["claude-plugin-load", "benign-tool-execution", "security-hook-blocking"],
+			"prerequisites": ["claude CLI in PATH", "ANTHROPIC_API_KEY"],
+			"requiredCommands": ["claude"],
+			"requiredEnv": ["ANTHROPIC_API_KEY"],
+			"env": {}
+		},
+		{
+			"id": "openclaw",
+			"kind": "vitest",
+			"config": "vitest.e2e.config.ts",
+			"target": "packages/openclaw",
+			"testFile": "packages/openclaw/src/__tests__/e2e.test.ts",
+			"expectedTests": 5,
+			"capabilities": ["openclaw-gateway", "chat-completions", "security-hook-blocking"],
+			"prerequisites": ["running OpenClaw gateway", "chatCompletions endpoint enabled", "gateway token"],
+			"requiredEnv": ["OPENCLAW_GATEWAY_TOKEN", "OPENCLAW_E2E_HOST"],
+			"homeFiles": {
+				".openclaw/openclaw.json": "{\"gateway\":{\"http\":{\"endpoints\":{\"chatCompletions\":{\"enabled\":true}}}}}\n"
+			},
+			"env": {}
+		},
+		{
+			"id": "opencode",
+			"kind": "vitest",
+			"config": "vitest.e2e.config.ts",
+			"target": "packages/opencode",
+			"testFile": "packages/opencode/src/__tests__/e2e.test.ts",
+			"expectedTests": 13,
+			"capabilities": ["opencode-plugin-load", "plugin-scan", "tool-registration", "security-hook-blocking"],
+			"prerequisites": ["opencode CLI in PATH", "authenticated model provider"],
+			"requiredCommands": ["opencode"],
+			"requiredAnyEnv": ["OPENCODE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
+			"env": {}
+		},
+		{
+			"id": "cursor",
+			"kind": "vitest",
+			"config": "vitest.e2e.config.ts",
+			"target": "packages/extension",
+			"testFile": "packages/extension/src/__tests__/e2e.test.ts",
+			"expectedTests": 9,
+			"capabilities": ["cursor-extension-host", "cursor-hook-lifecycle", "cursor-headless-agent"],
+			"prerequisites": ["Cursor executable", "AIDR_E2E_ENABLE_IDE_HOST=1", "authenticated agent CLI"],
+			"requiredEnv": ["AIDR_E2E_ENABLE_IDE_HOST", "AIDR_CURSOR_PATH", "AIDR_AGENT_PATH"],
+			"env": {"AIDR_E2E_HOST": "cursor"}
+		},
+		{
+			"id": "vscode",
+			"kind": "vitest",
+			"config": "vitest.e2e.config.ts",
+			"target": "packages/extension",
+			"testFile": "packages/extension/src/__tests__/e2e.test.ts",
+			"expectedTests": 8,
+			"capabilities": ["vscode-extension-host", "vscode-hook-lifecycle"],
+			"prerequisites": ["VS Code executable", "AIDR_E2E_ENABLE_IDE_HOST=1"],
+			"requiredEnv": ["AIDR_E2E_ENABLE_IDE_HOST", "AIDR_VSCODE_PATH"],
+			"env": {"AIDR_E2E_HOST": "vscode"}
+		},
+		{
+			"id": "aig-bridge-contract",
+			"kind": "command",
+			"target": "services/aig-bridge/tests",
+			"testFile": "services/aig-bridge/tests",
+			"expectedTests": 31,
+			"capabilities": ["aig-bridge-schema", "aig-ssrf-guard", "aig-task-ownership", "aig-idempotency"],
+			"prerequisites": ["Python with pytest, FastAPI and bridge requirements installed"],
+			"requiredCommands": ["python"],
+			"command": ["python", "-m", "pytest", "services/aig-bridge/tests", "-q", "--junitxml", "{junit}"],
+			"env": {"PYTHONPATH": "services/aig-bridge"}
+		},
+		{
+			"id": "aig-live-control-plane",
+			"kind": "external",
+			"target": "docker-compose.aig.yml",
+			"testFile": "services/aig-bridge/tests/live-control-plane",
+			"expectedTests": 4,
+			"capabilities": ["aig-infra-scan", "aig-mcp-scan", "aig-agent-scan", "aig-jailbreak-evaluation"],
+			"prerequisites": ["pinned AIG server+worker", "signed non-empty dataset", "private bridge URL", "four authorized fixtures"],
+			"requiredEnv": ["AIDR_AIG_E2E_EVIDENCE"],
+			"externalEvidenceEnv": "AIDR_AIG_E2E_EVIDENCE",
+			"env": {}
+		},
+		{
+			"id": "supabase-migrations",
+			"kind": "command",
+			"target": "scripts/check-supabase-migrations.mjs",
+			"testFile": "scripts/check-supabase-migrations.mjs",
+			"expectedTests": 1,
+			"capabilities": ["migration-order", "migration-uniqueness", "base-schema-contract"],
+			"prerequisites": ["clean migration tree"],
+			"requiredCommands": ["node"],
+			"command": ["node", "scripts/check-supabase-migrations.mjs"],
+			"env": {}
+		},
+		{
+			"id": "supabase-control-plane",
+			"kind": "vitest",
+			"config": "vitest.control-plane.config.ts",
+			"target": "supabase/functions/__tests__/security-flow.test.ts",
+			"testFile": "supabase/functions/__tests__/security-flow.test.ts",
+			"expectedTests": 9,
+			"capabilities": ["device-auth-expiry", "waitlist-origin-policy", "bearer-token-contract"],
+			"prerequisites": ["Supabase function contract tests"],
+			"env": {}
+		},
+		{
+			"id": "supabase-live-control-plane",
+			"kind": "external",
+			"target": "deployed Supabase RC",
+			"testFile": "supabase/functions/live-control-plane",
+			"expectedTests": 8,
+			"capabilities": ["tenant-isolation", "RLS", "device-enrollment", "API-key-lifecycle", "incident-export"],
+			"prerequisites": ["isolated Supabase RC", "two disposable tenants", "service-role never exposed to browser"],
+			"requiredEnv": ["AIDR_SUPABASE_E2E_EVIDENCE"],
+			"externalEvidenceEnv": "AIDR_SUPABASE_E2E_EVIDENCE",
+			"env": {}
+		},
+		{
+			"id": "dashboard-route-smoke",
+			"kind": "command",
+			"target": "scripts/dashboard-route-smoke.mjs",
+			"testFile": "scripts/dashboard-route-smoke.mjs",
+			"expectedTests": 1,
+			"capabilities": ["deployed-route-crawl", "SPA-deep-links", "bundle-secret-scan", "security-headers"],
+			"prerequisites": ["deployed dashboard RC or explicit local preview", "Supabase anon configuration"],
+			"requiredEnv": ["DASHBOARD_SMOKE_BASE_URL"],
+			"command": ["node", "scripts/dashboard-route-smoke.mjs"],
+			"env": {}
+		},
+		{
+			"id": "dashboard-browser",
+			"kind": "external",
+			"target": "deployed dashboard RC",
+			"testFile": "browser/managed-demo-kit",
+			"expectedTests": 10,
+			"capabilities": ["browser-auth", "customer-golden-path", "console-clean", "accessibility", "secret-redaction"],
+			"prerequisites": ["pinned browser harness", "clean browser profile", "axe/NVDA or VoiceOver run", "isolated customer tenant"],
+			"requiredEnv": ["AIDR_DASHBOARD_BROWSER_EVIDENCE"],
+			"externalEvidenceEnv": "AIDR_DASHBOARD_BROWSER_EVIDENCE",
+			"env": {}
+		}
+	]
+}

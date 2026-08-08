@@ -19,21 +19,21 @@ on:
 
 jobs:
   validate-agents-md:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout (pinned)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
         with:
           version: 10.29.3
+
+      - name: Setup Node (pinned)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20.19.1
+          cache: pnpm
 
       - name: Verify AGENTS.md Commands
         run: |
@@ -82,7 +82,7 @@ jobs:
           echo "=== Testing Documented Commands ==="
           
           # Install dependencies
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
           
           # Run typecheck
           pnpm check
@@ -137,7 +137,7 @@ jobs:
 
       - name: Notify on Failure
         if: failure()
-        uses: 8398a7/action-slack@v3
+        uses: 8398a7/action-slack@1750b5085f3ec60384090fb7c52965ef822e869e # v3.18.0
         with:
           status: ${{ job.status }}
           channel: '#aidr-alerts'

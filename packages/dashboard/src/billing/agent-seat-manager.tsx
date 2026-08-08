@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
+import { getInvoiceContactHref, selfServiceCheckoutEnabled } from "./commercial";
 
 // Types
 export interface AgentSeat {
@@ -81,7 +82,7 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 		async function loadData() {
 			setIsLoading(true);
 
-			const [seatsRes, usageRes, billingRes, checkoutRes] = await Promise.all([
+			const [seatsRes, usageRes, billingRes] = await Promise.all([
 				supabase
 					.from("agent_seats")
 					.select("*")
@@ -94,8 +95,10 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 					.order("updated_at", { ascending: false })
 					.limit(1)
 					.maybeSingle(),
-				supabase.functions.invoke("billing-checkout", { method: "GET" }),
 			]);
+			const checkoutRes = selfServiceCheckoutEnabled
+				? await supabase.functions.invoke("billing-checkout", { method: "GET" })
+				: null;
 
 			if (cancelled) return;
 
@@ -124,11 +127,13 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 					extraAgents: Number(row.extra_agents ?? 0),
 					allowedAgents: Number(row.allowed_agents ?? FREE_TIER_AGENT_LIMIT),
 					currentAgents: Number(row.current_agents ?? 0),
-					isPro: (row.extra_agents ?? 0) > 0 || row.subscription_status === "active",
+					isPro: (row.extra_agents ?? 0) > 0,
 				});
 			} else {
-				// Fallback: calculate from seats
-				const activeSeats = seats.length;
+				// Fallback: calculate from the fresh query result. Reading the
+				// previous React state here would make the first load stale and
+				// previously forced this effect to depend on seats.length.
+				const activeSeats = Array.isArray(seatsRes.data) ? seatsRes.data.length : 0;
 				setEntitlements({
 					includedAgents: FREE_TIER_AGENT_LIMIT,
 					extraAgents: 0,
@@ -144,16 +149,18 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 				setBilling({
 					provider: row.provider,
 					status: row.status,
-					extraAgents: row.seats ?? 0,
+					extraAgents: row.extra_agents ?? 0,
 					currentPeriodEnd: row.current_period_end ?? undefined,
 					cancelAtPeriodEnd: row.cancel_at_period_end,
 				});
 			}
 
 			// Process checkout URL
-			if (!checkoutRes.error && checkoutRes.data) {
+			if (checkoutRes && !checkoutRes.error && checkoutRes.data) {
 				const data = checkoutRes.data as { checkout_url?: string };
 				setCheckoutUrl(data.checkout_url || null);
+			} else if (!selfServiceCheckoutEnabled) {
+				setCheckoutUrl(null);
 			}
 
 			setIsLoading(false);
@@ -180,7 +187,7 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 			cancelled = true;
 			supabase.removeChannel(channel);
 		};
-	}, [userId, seats.length]);
+	}, [userId]);
 
 	// Computed values
 	const canAddAgent = useCallback((): boolean => {
@@ -283,6 +290,11 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 
 	// Initiate Stripe checkout
 	const initiateCheckout = useCallback(async () => {
+		if (!selfServiceCheckoutEnabled) {
+			throw new Error(
+				"Self-service checkout is disabled for the direct-GA release. Request an enterprise invoice.",
+			);
+		}
 		const { data, error } = await supabase.functions.invoke("billing-checkout", {
 			method: "POST",
 			body: {
@@ -317,6 +329,11 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 
 	// Open Stripe customer portal
 	const openCustomerPortal = useCallback(async () => {
+		if (!selfServiceCheckoutEnabled) {
+			throw new Error(
+				"Self-service billing portal is disabled for the direct-GA release. Request an enterprise invoice.",
+			);
+		}
 		const { data, error } = await supabase.functions.invoke("billing-portal", {
 			method: "POST",
 			body: { userId },
@@ -364,7 +381,7 @@ export function AgentSeatProvider({ children, userId }: AgentSeatProviderProps) 
 				extraAgents: Number(row.extra_agents ?? 0),
 				allowedAgents: Number(row.allowed_agents ?? FREE_TIER_AGENT_LIMIT),
 				currentAgents: Number(row.current_agents ?? 0),
-				isPro: (row.extra_agents ?? 0) > 0 || row.subscription_status === "active",
+				isPro: (row.extra_agents ?? 0) > 0,
 			});
 		}
 	}, [userId]);
@@ -461,14 +478,30 @@ export function SeatUsageCard() {
 			)}
 
 			<div className="row" style={{ marginTop: 16 }}>
-				{entitlements.isPro ? (
+				{selfServiceCheckoutEnabled && entitlements.isPro ? (
 					<button className="button button-secondary" onClick={() => setShowUpgradeModal(true)}>
 						Manage Subscription
 					</button>
-				) : (
+				) : selfServiceCheckoutEnabled ? (
 					<button className="button" onClick={initiateCheckout}>
-						Upgrade to Pro ($2/agent/month)
+						Request approved order
 					</button>
+				) : (
+					<div className="notice">
+						Self-service checkout is disabled. Request an approved enterprise invoice to increase
+						the protected-agent allowance.
+						{getInvoiceContactHref() ? (
+							<a
+								className="button button-secondary"
+								href={getInvoiceContactHref() ?? undefined}
+								target={getInvoiceContactHref()?.startsWith("mailto:") ? undefined : "_blank"}
+								rel={getInvoiceContactHref()?.startsWith("mailto:") ? undefined : "noreferrer"}
+								style={{ marginLeft: 8 }}
+							>
+								Request invoice
+							</a>
+						) : null}
+					</div>
 				)}
 			</div>
 
@@ -485,7 +518,7 @@ function UpgradeModal({ onClose }: { onClose: () => void }) {
 		<div className="modal-overlay" onClick={onClose}>
 			<div className="modal" onClick={(e) => e.stopPropagation()}>
 				<h3>Add More Agents</h3>
-				<p className="muted">Each additional agent is ${USD_PER_EXTRA_AGENT_PER_MONTH}/month</p>
+				<p className="muted">Additional agent quantity and price come from the approved order.</p>
 
 				<div style={{ marginTop: 16 }}>
 					<label className="label">
@@ -502,19 +535,27 @@ function UpgradeModal({ onClose }: { onClose: () => void }) {
 				</div>
 
 				<div style={{ marginTop: 20 }}>
-					<div className="muted small">Aylık Tutar:</div>
+					<div className="muted small">Commercial amount:</div>
 					<div style={{ fontSize: 24, fontWeight: 600 }}>
-						${quantity * USD_PER_EXTRA_AGENT_PER_MONTH}/ay
+						Quoted in approved order ({quantity} agent{quantity === 1 ? "" : "s"})
 					</div>
 				</div>
 
 				<div className="row" style={{ marginTop: 20 }}>
-					<button className="button" onClick={initiateCheckout}>
-						Checkout
-					</button>
-					<button className="button button-secondary" onClick={openCustomerPortal}>
-						Customer Portal
-					</button>
+					{selfServiceCheckoutEnabled ? (
+						<>
+							<button className="button" onClick={initiateCheckout}>
+								Checkout
+							</button>
+							<button className="button button-secondary" onClick={openCustomerPortal}>
+								Customer Portal
+							</button>
+						</>
+					) : (
+						<div className="muted small">
+							Self-service billing is disabled; use the enterprise invoice channel.
+						</div>
+					)}
 					<button className="button button-secondary" onClick={onClose}>
 						İptal
 					</button>
@@ -621,12 +662,12 @@ export function UsageBasedBillingCard() {
 	}
 
 	const billableAgents = Math.max(0, entitlements.currentAgents - entitlements.includedAgents);
-	const monthlyCost = billableAgents * USD_PER_EXTRA_AGENT_PER_MONTH;
+	const additionalAgentCount = billableAgents;
 
 	return (
 		<div className="card">
 			<h3>Usage-Based Billing</h3>
-			<p className="muted">Current month estimate based on active agents</p>
+			<p className="muted">Current usage; commercial amount is quoted in the approved order.</p>
 
 			<div className="grid" style={{ marginTop: 16 }}>
 				<div>
@@ -638,13 +679,13 @@ export function UsageBasedBillingCard() {
 					<div className="mono">{billableAgents}</div>
 				</div>
 				<div>
-					<div className="muted small">Agent Başına</div>
-					<div className="mono">${USD_PER_EXTRA_AGENT_PER_MONTH}/ay</div>
+					<div className="muted small">Commercial unit price</div>
+					<div className="mono">Quoted in approved order</div>
 				</div>
 				<div>
-					<div className="muted small">Tahmini Aylık</div>
+					<div className="muted small">Commercial amount</div>
 					<div className="mono" style={{ fontSize: 20, fontWeight: 600, color: "#3b82f6" }}>
-						${monthlyCost}
+						Quoted in approved order ({additionalAgentCount} additional agent{additionalAgentCount === 1 ? "" : "s"})
 					</div>
 				</div>
 			</div>

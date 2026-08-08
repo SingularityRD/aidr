@@ -30,15 +30,18 @@ export function PricingPage() {
 
 				<div className="card">
 					<h2>Pro (Soon)</h2>
-					<div className="price">$2</div>
-					<div className="muted small">per additional protected agent / month</div>
+					<div className="price">By order</div>
+					<div className="muted small">
+						additional protected agents, subject to an approved order
+					</div>
 					<ul className="list" style={{ marginTop: 10 }}>
 						<li>Extra agents as quantity</li>
 						<li>Premium intel packs</li>
 						<li>Advanced correlation and visibility</li>
 					</ul>
 					<div className="notice">
-						We’re starting with a free pilot to validate the onboarding and reduce false positives.
+						We’re starting with a free pilot. Direct GA uses an enterprise invoice/order workflow;
+						self-service checkout is not offered.
 					</div>
 				</div>
 			</div>

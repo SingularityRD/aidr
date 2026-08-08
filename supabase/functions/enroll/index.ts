@@ -129,15 +129,15 @@ async function rateLimitKey(
 		p_window_start: nowMin,
 		p_delta: 1,
 	});
-	// Fail open if rate limiting infra isn't present.
-	if (updErr) return true;
+	if (updErr) return false;
 
-	const { data: after } = await supabase
+	const { data: after, error: countErr } = await supabase
 		.from("rate_limits")
 		.select("count")
 		.eq("key", key)
 		.eq("window_start", nowMin)
 		.single();
+	if (countErr) return false;
 	const count = Number(after?.count ?? 0);
 	return Number.isFinite(limitPerMinute) && limitPerMinute > 0 ? count <= limitPerMinute : true;
 }
@@ -183,30 +183,27 @@ Deno.serve(async (req) => {
 	const iid = typeof body.iid === "string" ? body.iid.trim() : "";
 	if (!iid) return json(400, { error: "missing_iid" });
 
-	// 1) Validate and consume enrollment token.
-	const { data: tokRow, error: tokErr } = await supabase
-		.from("enrollment_tokens")
-		.select("id,user_id,expires_at,consumed_at")
-		.eq("token_hash", tokenHash)
-		.maybeSingle();
-	if (tokErr || !tokRow) return json(401, { error: "invalid_enrollment_token" });
-	if (tokRow.consumed_at) return json(401, { error: "enrollment_token_consumed" });
-	if (Date.now() > Date.parse(tokRow.expires_at as string)) return json(401, { error: "enrollment_token_expired" });
+	// 1) Validate and consume the enrollment token atomically. The RPC updates
+	// only an unused, unexpired row and returns its owner, so concurrent
+	// exchanges cannot both mint API keys from the same token.
+	const { data: consumedRows, error: consumeErr } = await supabase.rpc("consume_enrollment_token", {
+		p_token_hash: tokenHash,
+	});
+	if (consumeErr) return json(500, { error: "enrollment_token_store_unavailable" });
+	const tokRow = Array.isArray(consumedRows) ? consumedRows[0] : null;
+	if (!tokRow || typeof tokRow.user_id !== "string") {
+		return json(401, { error: "invalid_or_expired_enrollment_token" });
+	}
 
 	const userId = tokRow.user_id as string;
+	const tenantId = (typeof tokRow.tenant_id === "string" ? tokRow.tenant_id : null) ?? userId;
 
-	const { error: consumeErr } = await supabase
-		.from("enrollment_tokens")
-		.update({ consumed_at: new Date().toISOString() })
-		.eq("id", tokRow.id as string)
-		.is("consumed_at", null);
-	if (consumeErr) return json(409, { error: "enrollment_token_race" });
-
-	// 2) Seat enforcement: count existing agents for this user.
+	// 2) Load the tenant entitlement. Agent registration below performs the
+	// actual seat check under a transaction/advisory lock.
 	const { data: entRow, error: entErr } = await supabase
 		.from("entitlements")
 		.select("included_agents,extra_agents,premium_intel,premium_correlation,premium_pkg_plugin,revocation_epoch")
-		.eq("user_id", userId)
+		.eq("tenant_id", tenantId)
 		.maybeSingle();
 	if (entErr || !entRow) return json(500, { error: "missing_entitlements" });
 
@@ -215,18 +212,30 @@ Deno.serve(async (req) => {
 	const allowedAgents = Math.max(0, includedAgents) + Math.max(0, extraAgents);
 	const revocationEpoch = Number(entRow.revocation_epoch ?? 1);
 
-	const { count, error: countErr } = await supabase
-		.from("agents")
-		.select("*", { count: "exact", head: true })
-		.eq("user_id", userId);
-	const current = countErr ? 0 : Number(count ?? 0);
-	if (allowedAgents > 0 && current >= allowedAgents) {
+	const { data: registrationRows, error: registrationErr } = await supabase.rpc(
+		"register_agent_for_ingest",
+		{
+			p_user_id: userId,
+			p_tenant_id: tenantId,
+			p_iid: iid,
+			p_agent_runtime: typeof body.agent_runtime === "string" ? body.agent_runtime : null,
+			p_agent_runtime_version:
+				typeof body.agent_runtime_version === "string" ? body.agent_runtime_version : null,
+		},
+	);
+	if (registrationErr) return json(500, { error: "agent_registration_failed" });
+	const registration = (Array.isArray(registrationRows) ? registrationRows[0] : null) as Record<
+		string,
+		unknown
+	> | null;
+	if (!registration || registration.seat_exceeded === true || typeof registration.agent_id !== "string") {
 		return json(402, {
 			error: "agent_limit_exceeded",
-			allowed_agents: allowedAgents,
-			current_agents: current,
+			allowed_agents: Number(registration?.allowed_agents ?? allowedAgents),
+			current_agents: Number(registration?.current_agents ?? allowedAgents),
 		});
 	}
+	const agentId = registration.agent_id;
 
 	// 3) Issue API key (hash-only at rest).
 	let apiKey = "";
@@ -237,6 +246,7 @@ Deno.serve(async (req) => {
 		keyHash = await sha256Hex(apiKey);
 		const { error } = await supabase.from("api_keys").insert({
 			user_id: userId,
+			tenant_id: tenantId,
 			label: `enroll:${iid}`,
 			key_hash: keyHash,
 		});
@@ -247,27 +257,12 @@ Deno.serve(async (req) => {
 	}
 	if (!inserted) return json(500, { error: "api_key_issue_failed" });
 
-	// 4) Upsert agent (optional: ingest still owns canonical last_seen/events).
-	await supabase
-		.from("agents")
-		.upsert(
-			{
-				user_id: userId,
-				iid,
-				agent_runtime: typeof body.agent_runtime === "string" ? body.agent_runtime : null,
-				agent_runtime_version:
-					typeof body.agent_runtime_version === "string" ? body.agent_runtime_version : null,
-				last_seen: new Date().toISOString(),
-			},
-			{ onConflict: "user_id,iid" },
-		);
-
-	// 5) Return signed entitlement snapshot (same contract as ingest).
+	// 4) Return signed entitlement snapshot (same contract as ingest).
 	const premiumModules = buildPremiumModules(entRow as Record<string, unknown>);
-	const tenantPackKey = premiumModules.includes("premium_intel") ? await deriveTenantPackKeyB64(userId) : null;
+	const tenantPackKey = premiumModules.includes("premium_intel") ? await deriveTenantPackKeyB64(tenantId) : null;
 	const entitlement = {
 		schema_version: 2,
-		tenant_id: userId,
+		tenant_id: tenantId,
 		subscription_tier: extraAgents > 0 ? "pro" : "free",
 		included_agents: includedAgents,
 		extra_agents: extraAgents,
@@ -293,22 +288,15 @@ Deno.serve(async (req) => {
 	const entitlementJson = canonicalJson(entitlement);
 	const sig = await signEd25519Detached(entitlementJson);
 
-	// Best-effort: persist the latest entitlement snapshot per (user_id, iid) for dashboard/debugging.
+	// Best-effort: persist the latest entitlement snapshot per (tenant_id, iid) for dashboard/debugging.
 	try {
-		const { data: agentRow } = await supabase
-			.from("agents")
-			.select("id")
-			.eq("user_id", userId)
-			.eq("iid", iid)
-			.maybeSingle();
-		const agentId = typeof (agentRow as any)?.id === "string" ? String((agentRow as any).id) : null;
-
 		const snapshot = JSON.parse(entitlementJson) as Record<string, unknown>;
 		await supabase
 			.from("entitlement_snapshots")
 			.upsert(
 				{
 					user_id: userId,
+					tenant_id: tenantId,
 					iid,
 					agent_id: agentId,
 					entitlement: snapshot,
@@ -319,15 +307,16 @@ Deno.serve(async (req) => {
 					expires_at: typeof snapshot.expires_at === "string" ? snapshot.expires_at : null,
 					grace_until: typeof snapshot.grace_until === "string" ? snapshot.grace_until : null,
 				},
-				{ onConflict: "user_id,iid" },
+				{ onConflict: "tenant_id,iid" },
 			);
 	} catch {
-		// Fail-open
+		// Snapshot persistence is diagnostic-only; enrollment already succeeded.
 	}
 
 	// Best-effort audit log
 	await supabase.from("admin_audit_logs").insert({
 		actor_user_id: userId,
+		tenant_id: tenantId,
 		action: "enroll.consume_token",
 		target_user_id: userId,
 		detail: { iid },

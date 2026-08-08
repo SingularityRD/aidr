@@ -1,4 +1,6 @@
 // Lemon Squeezy API client
+import { selfServiceCheckoutEnabled } from "./commercial";
+
 const LEMON_API_KEY = process.env.LEMON_SQUEEZY_API_KEY;
 const LEMON_STORE_ID = process.env.LEMON_SQUEEZY_STORE_ID;
 
@@ -28,6 +30,11 @@ export async function createCheckout(
 	plan: "monthly" | "yearly",
 	referralCode?: string,
 ): Promise<CheckoutResult> {
+	if (!selfServiceCheckoutEnabled) {
+		throw new Error(
+			"Self-service checkout is disabled for the direct-GA release. Use the approved enterprise invoice workflow.",
+		);
+	}
 	if (!LEMON_API_KEY) {
 		throw new Error("LEMON_SQUEEZY_API_KEY is not set");
 	}

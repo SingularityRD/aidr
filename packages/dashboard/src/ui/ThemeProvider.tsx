@@ -15,18 +15,29 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 	useEffect(() => {
 		setMounted(true);
-		const stored = localStorage.getItem("theme") as Theme | null;
-		if (stored) {
-			setTheme(stored);
-		} else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-			setTheme("dark");
+		try {
+			const stored = localStorage.getItem("theme") as Theme | null;
+			if (stored === "light" || stored === "dark") {
+				setTheme(stored);
+			} else if (
+				typeof window.matchMedia === "function" &&
+				window.matchMedia("(prefers-color-scheme: dark)").matches
+			) {
+				setTheme("dark");
+			}
+		} catch {
+			// Private browsing/storage-disabled contexts keep the default theme.
 		}
 	}, []);
 
 	useEffect(() => {
 		if (mounted) {
 			document.documentElement.setAttribute("data-theme", theme);
-			localStorage.setItem("theme", theme);
+			try {
+				localStorage.setItem("theme", theme);
+			} catch {
+				// Theme still applies to the current session if storage is unavailable.
+			}
 		}
 	}, [theme, mounted]);
 

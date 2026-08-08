@@ -8,6 +8,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { VERSION } from "@singularityrd/aidr-core";
 import { Command } from "commander";
 import { LemonSqueezyBilling } from "./billing.js";
 import { AIDRClient } from "./client.js";
@@ -91,7 +92,7 @@ function getFreemiumManager(): FreemiumManager | null {
 
 const program = new Command();
 
-program.name("aidr").description("AIDR SDK CLI - Security checks for AI agents").version("1.0.0");
+program.name("aidr").description("AIDR SDK CLI - Security checks for AI agents").version(VERSION);
 
 program
 	.command("init")
@@ -224,7 +225,11 @@ program
 			productId?: string;
 		} | null;
 
-		if (!billingConfig?.lemonSqueezyApiKey) {
+		if (
+			!billingConfig?.lemonSqueezyApiKey ||
+			!billingConfig.storeId ||
+			!billingConfig.productId
+		) {
 			console.error("Error: Billing not configured");
 			console.error("Run 'aidr billing:init' to set up billing");
 			process.exit(1);
@@ -232,8 +237,8 @@ program
 
 		const billing = new LemonSqueezyBilling({
 			lemonSqueezyApiKey: billingConfig.lemonSqueezyApiKey,
-			storeId: billingConfig.storeId!,
-			productId: billingConfig.productId!,
+			storeId: billingConfig.storeId,
+			productId: billingConfig.productId,
 		});
 
 		try {
@@ -262,7 +267,11 @@ program
 			productId?: string;
 		} | null;
 
-		if (!billingConfig?.lemonSqueezyApiKey) {
+		if (
+			!billingConfig?.lemonSqueezyApiKey ||
+			!billingConfig.storeId ||
+			!billingConfig.productId
+		) {
 			console.error("Error: Billing not configured");
 			console.error("Run 'aidr billing:init' to set up billing");
 			process.exit(1);
@@ -270,8 +279,8 @@ program
 
 		const billing = new LemonSqueezyBilling({
 			lemonSqueezyApiKey: billingConfig.lemonSqueezyApiKey,
-			storeId: billingConfig.storeId!,
-			productId: billingConfig.productId!,
+			storeId: billingConfig.storeId,
+			productId: billingConfig.productId,
 		});
 
 		try {

@@ -11,13 +11,22 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export type AigRiskLevel = "critical" | "high" | "medium" | "low";
-export type AigPolicyAction = "deny" | "ask" | "allow" | "audit";
+export type AigPolicyAction = "deny" | "ask" | "allow" | "audit" | "restrict" | "monitor";
+
+export interface AigMcpDataStatus {
+	source: "generated" | "fallback";
+	valid: boolean;
+	schema?: string;
+	version?: number;
+	error?: string;
+}
 
 export interface AigMcpCategory {
 	/** Unique category identifier, e.g. "aig-mcp-code-exec" */
@@ -38,7 +47,7 @@ export interface AigMcpCategory {
 // These are the 14 canonical AIG MCP risk categories. They serve as the
 // offline/resilient fallback when the generated JSON index is unavailable.
 
-const FALLBACK_CATEGORIES: AigMcpCategory[] = [
+const _FALLBACK_CATEGORIES: AigMcpCategory[] = [
 	{
 		id: "aig-mcp-code-exec",
 		name: "Remote Code Execution",
@@ -302,7 +311,25 @@ const FALLBACK_CATEGORIES: AigMcpCategory[] = [
 
 // ── In-memory cache ─────────────────────────────────────────────────────────
 
+const CANONICAL_FALLBACK_CATEGORIES: AigMcpCategory[] = [
+	{ id: "mcp-01", name: "Token Mismanagement & Secret Exposure", description: "Hardcoded keys, env var leaks, and sensitive credential theft from MCP configuration.", risk: "critical", detection_patterns: ["api_key", "secret", "token", "password", ".env", "mcp.json"], aidr_policy_action: "deny" },
+	{ id: "mcp-02", name: "Privilege Escalation via Scope Creep", description: "Overly broad tool permissions allow unnecessary system control or data access.", risk: "high", detection_patterns: ["full_access", "admin", "wildcard", "root", "sudo"], aidr_policy_action: "restrict" },
+	{ id: "mcp-03", name: "Tool Poisoning", description: "Tool logic is tampered with to manipulate model behavior or returned results.", risk: "critical", detection_patterns: ["override", "inject", "malicious", "backdoor", "trojan"], aidr_policy_action: "deny" },
+	{ id: "mcp-04", name: "Software Supply Chain Attacks", description: "Dependency or build-script tampering introduces malicious behavior.", risk: "critical", detection_patterns: ["postinstall", "preinstall", "download", "curl", "wget", "npm install"], aidr_policy_action: "deny" },
+	{ id: "mcp-05", name: "Command Injection & Execution", description: "Untrusted input reaches shell, process, or evaluator execution.", risk: "critical", detection_patterns: ["exec", "spawn", "shell", "eval", "subprocess", "child_process"], aidr_policy_action: "deny" },
+	{ id: "mcp-06", name: "Prompt Injection via Contextual Payloads", description: "Injected instructions hijack model control flow.", risk: "high", detection_patterns: ["ignore instructions", "system prompt", "you are now", "do not"], aidr_policy_action: "monitor" },
+	{ id: "mcp-07", name: "Insufficient Auth & Authorization", description: "Missing identity or authorization checks permit cross-agent access.", risk: "high", detection_patterns: ["no_auth", "skip_auth", "public", "unauthorized", "bypass"], aidr_policy_action: "deny" },
+	{ id: "mcp-08", name: "Lack of Audit and Telemetry", description: "Missing tamper-evident audit and telemetry hinders forensics.", risk: "medium", detection_patterns: ["no_log", "disable_logging", "quiet", "silent"], aidr_policy_action: "monitor" },
+	{ id: "mcp-09", name: "Shadow MCP Servers", description: "Unauthorized MCP instances run with insecure defaults.", risk: "high", detection_patterns: ["default_config", "unsecured", "shadow", "unauthorized"], aidr_policy_action: "deny" },
+	{ id: "mcp-10", name: "Context Injection & Over-Sharing", description: "Sensitive context crosses sessions or agents.", risk: "high", detection_patterns: ["shared_context", "global_state", "cross_session", "broadcast"], aidr_policy_action: "restrict" },
+	{ id: "mcp-11", name: "Name Confusion Attack", description: "Lookalike tools trick agents into invoking the wrong capability.", risk: "high", detection_patterns: ["typosquat", "lookalike", "similar_name", "confusion"], aidr_policy_action: "deny" },
+	{ id: "mcp-12", name: "Rug Pull Attack", description: "A trusted service changes behavior or terminates unexpectedly.", risk: "high", detection_patterns: ["rate_limit", "kill", "shutdown", "terminate", "revoke"], aidr_policy_action: "deny" },
+	{ id: "mcp-13", name: "Tool Shadowing Attack", description: "Duplicate tool names override legitimate behavior.", risk: "high", detection_patterns: ["override", "redefine", "shadow", "duplicate"], aidr_policy_action: "deny" },
+	{ id: "mcp-14", name: "CORS Misconfiguration", description: "Wildcard cross-origin policy permits unauthorized access.", risk: "medium", detection_patterns: ["Access-Control-Allow-Origin: *", "credentials: true", "wildcard_origin"], aidr_policy_action: "restrict" },
+];
+
 let _categories: AigMcpCategory[] | null = null;
+let _categoryStatus: AigMcpDataStatus | null = null;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -311,40 +338,58 @@ let _categories: AigMcpCategory[] | null = null;
  * Used to locate the generated aig-mcp-categories.json at build time.
  */
 function findProjectRoot(): string {
-	const dir = join(fileURLToPath(import.meta.url), "..", "..", "..", "..");
-	return dir;
+	let moduleDir = process.cwd();
+	try {
+		if (typeof import.meta.dirname === "string") {
+			moduleDir = import.meta.dirname;
+		} else if (typeof import.meta.url === "string") {
+			moduleDir = dirname(fileURLToPath(import.meta.url));
+		}
+	} catch {
+		// CommonJS bundles replace import.meta with an empty object.
+	}
+	return moduleDir;
 }
 
 /**
  * Attempt to load the compiled AIG MCP categories JSON index.
  * Falls back to the static array if the file is missing or unparseable.
  */
+function isCategory(value: unknown): value is AigMcpCategory {
+	if (!value || typeof value !== "object") return false;
+	const item = value as Record<string, unknown>;
+	return typeof item.id === "string" && typeof item.name === "string" &&
+		typeof item.description === "string" &&
+		["critical", "high", "medium", "low"].includes(String(item.risk)) &&
+		Array.isArray(item.detection_patterns) && item.detection_patterns.every((pattern) => typeof pattern === "string") &&
+		["deny", "ask", "allow", "audit", "restrict", "monitor"].includes(String(item.aidr_policy_action));
+}
+
 function loadCategoriesJson(): AigMcpCategory[] {
+	const moduleDir = findProjectRoot();
 	const candidates = [
-		// Development path: from src/ to generated/
-		join(findProjectRoot(), "src", "generated", "aig-mcp-categories.json"),
-		// Build output path: from dist/ to generated/ (relative to compiled output)
-		join(findProjectRoot(), "dist", "generated", "aig-mcp-categories.json"),
+		join(moduleDir, "generated", "aig-mcp-categories.json"),
+		join(moduleDir, "..", "generated", "aig-mcp-categories.json"),
+		join(moduleDir, "..", "src", "generated", "aig-mcp-categories.json"),
+		...(process.env.AIG_GENERATED_DIR ? [join(process.env.AIG_GENERATED_DIR, "aig-mcp-categories.json")] : []),
 	];
 
 	for (const candidatePath of candidates) {
 		try {
-			if (existsSync(candidatePath)) {
-				const raw = readFileSync(candidatePath, "utf-8");
-				const parsed = JSON.parse(raw) as {
-					version?: number;
-					categories?: AigMcpCategory[];
-				};
-				if (Array.isArray(parsed?.categories) && parsed.categories.length > 0) {
-					return parsed.categories as AigMcpCategory[];
-				}
+			if (!existsSync(candidatePath)) continue;
+			const parsed = JSON.parse(readFileSync(candidatePath, "utf-8")) as { schema?: string; version?: number; categories?: unknown[] };
+			if (parsed.schema === "aig-mcp-categories/v2" && parsed.version === 2 &&
+				Array.isArray(parsed.categories) && parsed.categories.length > 0 && parsed.categories.every(isCategory)) {
+				_categoryStatus = { source: "generated", valid: true, schema: parsed.schema, version: parsed.version };
+				return parsed.categories;
 			}
 		} catch {
 			// Try next candidate
 		}
 	}
 
-	return FALLBACK_CATEGORIES;
+	_categoryStatus = { source: "fallback", valid: false, error: "signed/generated MCP category index is missing or invalid" };
+	return CANONICAL_FALLBACK_CATEGORIES;
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -357,6 +402,16 @@ export function loadAigMcpCategories(): AigMcpCategory[] {
 	if (_categories !== null) return _categories;
 	_categories = loadCategoriesJson();
 	return _categories;
+}
+
+/** Report whether the generated v2 category bundle was loaded. */
+export function getAigMcpDataStatus(): AigMcpDataStatus {
+	if (_categoryStatus === null) loadAigMcpCategories();
+	return { ...(_categoryStatus as AigMcpDataStatus) };
+}
+
+export function isAigMcpDataReady(): boolean {
+	return getAigMcpDataStatus().valid;
 }
 
 /**
@@ -448,6 +503,7 @@ export function getAllCategories(): AigMcpCategory[] {
  */
 export function resetCategoryCache(): void {
 	_categories = null;
+	_categoryStatus = null;
 }
 
 // ── Internal helpers ────────────────────────────────────────────────────────

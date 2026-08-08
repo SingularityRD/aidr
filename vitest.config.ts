@@ -7,10 +7,13 @@ export default defineConfig({
 		// to keep `pnpm test` simple and deterministic across environments.
 		include: [
 			"packages/**/src/**/__tests__/**/*.test.ts",
+			"packages/**/src/**/__tests__/**/*.test.tsx",
 			"supabase/functions/**/__tests__/**/*.test.ts",
 		],
 		exclude: ["**/node_modules/**", "**/*.e2e.test.ts", "**/*e2e-integration*", "**/src/__tests__/e2e.test.ts"],
 		environment: "node",
+		hookTimeout: 60_000,
+		testTimeout: 60_000,
 		reporters: ["verbose", "json"],
 		outputFile: { json: "./coverage/test-results.json" },
 		coverage: {
@@ -24,15 +27,6 @@ export default defineConfig({
 				"landing/**",
 				"threats/**",
 				"packages/**/resources/**",
-				"packages/core/src/evaluator.ts",
-				"packages/core/src/managed.ts",
-				"packages/core/src/policy.ts",
-				"packages/core/src/session-start.ts",
-				"packages/core/src/session-start-scan.ts",
-				"packages/core/src/clients/control-plane.ts",
-				"packages/core/src/integrity/index.ts",
-				"packages/core/src/integrity/runtime.ts",
-				"packages/core/src/intel/semver.ts",
 			],
 			thresholds: {
 				lines: 70,

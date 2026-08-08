@@ -7,6 +7,7 @@ import { createWriteStream, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import pino from "pino";
 import { AIDR_DIR } from "./config.js";
+import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
 
 export type LogLevel = "error" | "warn" | "info" | "debug";
 
@@ -65,6 +66,20 @@ export function createLogger(options?: { name?: string; level?: LogLevel }): pin
 		level,
 		base: { pid: process.pid, env: process.env.NODE_ENV ?? "development" },
 		redact: { paths: redactSensitivePaths(), remove: false, censor: "[Redacted]" },
+		// Logger call sites receive tool commands, URLs and provider errors from
+		// untrusted input.  Pino's key-based redact option is still useful for
+		// known fields, while this hook covers credential material embedded in
+		// free-form strings and nested values before they reach any sink.
+		hooks: {
+			logMethod(inputArgs, method) {
+				const safeArgs = inputArgs.map((arg) => {
+					if (typeof arg === "string") return redactTelemetryString(arg);
+					if (arg && typeof arg === "object") return redactTelemetryData(arg);
+					return arg;
+				});
+				method.apply(this, safeArgs as Parameters<typeof method>);
+			},
+		},
 		timestamp: pino.stdTimeFunctions.isoTime,
 		formatters: { level: (l) => ({ level: l.toUpperCase() }) },
 	};

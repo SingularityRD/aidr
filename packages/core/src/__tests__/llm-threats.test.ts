@@ -1,9 +1,12 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { HeuristicsEngine } from "../heuristics.js";
 import { loadThreats } from "../threat-loader.js";
 
 describe("LLM threat rules (threats/llm-threats.yaml)", async () => {
-	const threats = await loadThreats("threats");
+	// Vitest runs this package with packages/core as cwd; resolve the checked-in
+	// repository fixture independently of the caller's working directory.
+	const threats = await loadThreats(fileURLToPath(new URL("../../../../threats", import.meta.url)));
 
 	describe("prompt injection detection", () => {
 		const cases = [

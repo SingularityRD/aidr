@@ -397,7 +397,7 @@ export async function evaluatePolicy(
 						category: "supply_chain",
 						severity: decision === "deny" ? "critical" : "warning",
 						source: "policy",
-						artifact: packages.length > 0 ? packages[0]!.name : cmd,
+						artifact: packages[0]?.name ?? cmd,
 						threatId: "POL-DEFAULT-PKG-001",
 						reasons: ["Package install blocked by runtime default"],
 						confidence: 0.9,

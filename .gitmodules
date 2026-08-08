@@ -1,0 +1,3 @@
+[submodule "vendor/ai-infra-guard"]
+	path = vendor/ai-infra-guard
+	url = https://github.com/tencent/AI-Infra-Guard.git

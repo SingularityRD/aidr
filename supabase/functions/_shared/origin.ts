@@ -24,8 +24,11 @@ export function buildCorsHeaders(
 	const allowed = resolveAllowedOrigin(requestOrigin, allowedOrigins);
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
-		"Access-Control-Allow-Methods": "POST,OPTIONS",
-		"Access-Control-Allow-Headers": "Content-Type,Authorization",
+		"Cache-Control": "no-store",
+		"Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+		"Access-Control-Allow-Headers":
+			"Content-Type,Authorization,apikey,x-client-info,x-supabase-api-version,Idempotency-Key,X-Request-ID,X-AIDR-Tenant-ID",
+		"Access-Control-Expose-Headers": "X-Request-ID",
 		Vary: "Origin",
 	};
 	if (allowed) headers["Access-Control-Allow-Origin"] = allowed;

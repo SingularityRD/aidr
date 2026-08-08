@@ -248,10 +248,11 @@ export class MetricsRegistry {
 
 	registerCounter(name: string, description: string, labels: Record<string, string> = {}): Counter {
 		const key = this.makeKey(name, labels);
-		if (!this.counters.has(key)) {
-			this.counters.set(key, new Counter(name, description, labels));
-		}
-		return this.counters.get(key)!;
+		const existing = this.counters.get(key);
+		if (existing) return existing;
+		const counter = new Counter(name, description, labels);
+		this.counters.set(key, counter);
+		return counter;
 	}
 
 	registerHistogram(
@@ -261,18 +262,20 @@ export class MetricsRegistry {
 		labels: Record<string, string> = {},
 	): Histogram {
 		const key = this.makeKey(name, labels);
-		if (!this.histograms.has(key)) {
-			this.histograms.set(key, new Histogram(name, description, buckets, labels));
-		}
-		return this.histograms.get(key)!;
+		const existing = this.histograms.get(key);
+		if (existing) return existing;
+		const histogram = new Histogram(name, description, buckets, labels);
+		this.histograms.set(key, histogram);
+		return histogram;
 	}
 
 	registerGauge(name: string, description: string, labels: Record<string, string> = {}): Gauge {
 		const key = this.makeKey(name, labels);
-		if (!this.gauges.has(key)) {
-			this.gauges.set(key, new Gauge(name, description, labels));
-		}
-		return this.gauges.get(key)!;
+		const existing = this.gauges.get(key);
+		if (existing) return existing;
+		const gauge = new Gauge(name, description, labels);
+		this.gauges.set(key, gauge);
+		return gauge;
 	}
 
 	getCounter(name: string, labels: Record<string, string> = {}): Counter | undefined {

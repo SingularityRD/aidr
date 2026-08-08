@@ -43,9 +43,30 @@ await esbuild.build({
 	sourcesContent: false,
 	sourceRoot: "",
 	legalComments: isRelease ? "none" : "eof",
+	// Keep the ESM entrypoint linked to the core package so consumers can
+	// share one engine instance in a workspace or installation.
 	external: ["@singularityrd/aidr-core", "koffi", "@sentry/node", "pino", "yaml", "zod"],
 	entryPoints: ["src/index.ts"],
 	outfile: "dist/index.mjs",
+	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
+});
+
+// The package exposes a separate executable through `bin.aidr`. Keep it as a
+// standalone CommonJS bundle so `npx aidr` works from a packed tarball.
+await esbuild.build({
+	bundle: true,
+	platform: "node",
+	target: "node18",
+	format: "cjs",
+	sourcemap: isRelease ? false : true,
+	sourcesContent: false,
+	sourceRoot: "",
+	legalComments: isRelease ? "none" : "eof",
+	// The core package is ESM-only. Bundle it into CommonJS outputs so both
+	// `require('@singularityrd/aidr-sdk')` and the executable work from npm.
+	external: ["koffi"],
+	entryPoints: ["src/cli.ts"],
+	outfile: "dist/cli.cjs",
 	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
 });
 
@@ -59,7 +80,7 @@ await esbuild.build({
 	sourcesContent: false,
 	sourceRoot: "",
 	legalComments: isRelease ? "none" : "eof",
-	external: ["@singularityrd/aidr-core", "koffi", "@sentry/node", "pino", "yaml", "zod"],
+	external: ["koffi"],
 	entryPoints: ["src/index.ts"],
 	outfile: "dist/index.cjs",
 	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
@@ -76,6 +97,7 @@ try {
 
 stripSourceMappingUrl("dist/index.mjs");
 stripSourceMappingUrl("dist/index.cjs");
+stripSourceMappingUrl("dist/cli.cjs");
 removeReleaseSourceMaps("dist");
 
 console.log("Build complete.");

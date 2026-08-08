@@ -18,7 +18,7 @@ export interface MiddlewareContext {
 	/** Tool input as a string */
 	input: string;
 	/** Optional metadata for the request */
-	metadata?: Record<string, any>;
+	metadata?: Record<string, unknown>;
 	/** Session ID for tracking */
 	sessionId?: string;
 }
@@ -50,24 +50,33 @@ export interface MiddlewareOptions {
 	/** Callback before security check */
 	beforeCheck?: (ctx: MiddlewareContext) => void | Promise<void>;
 	/** Callback after security check (after tool execution too) */
-	afterCheck?: (ctx: MiddlewareContext, verdict: CheckResult, result?: any) => void | Promise<void>;
+	afterCheck?: (ctx: MiddlewareContext, verdict: CheckResult, result?: unknown) => void | Promise<void>;
 	/** Whether to throw on deny (default: true) */
 	throwOnDeny?: boolean;
 	/** Custom error message formatter */
 	formatErrorMessage?: (ctx: MiddlewareContext, verdict: CheckResult) => string;
 	/** Optional metadata for the request */
-	metadata?: Record<string, any>;
+	metadata?: Record<string, unknown>;
 }
 
 /**
  * Next function in the middleware chain
  */
-export type NextFunction = () => Promise<any>;
+export type NextFunction = () => Promise<unknown>;
 
 /**
  * Middleware function type
  */
-export type MiddlewareFunction = (context: MiddlewareContext, next: NextFunction) => Promise<any>;
+export type MiddlewareFunction = (context: MiddlewareContext, next: NextFunction) => Promise<unknown>;
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"then" in value &&
+		typeof (value as { then?: unknown }).then === "function"
+	);
+}
 
 /**
  * Creates a generic AIDR middleware function.
@@ -101,7 +110,7 @@ export function createMiddleware(
 	aidrClient: AIDRClient,
 	options: MiddlewareOptions = {},
 ): MiddlewareFunction {
-	return async (context: MiddlewareContext, next: NextFunction): Promise<any> => {
+	return async (context: MiddlewareContext, next: NextFunction): Promise<unknown> => {
 		// Call beforeCheck hook
 		if (options.beforeCheck) {
 			await options.beforeCheck(context);
@@ -153,7 +162,7 @@ export function createMiddleware(
 		}
 
 		// Execute the next function (actual tool/operation)
-		let result: any;
+		let result: unknown;
 		try {
 			result = await next();
 		} catch (error) {
@@ -201,13 +210,13 @@ export function createSyncCompatibleMiddleware(
 	options: MiddlewareOptions = {},
 ): {
 	async: MiddlewareFunction;
-	sync: (context: MiddlewareContext, next: () => any) => Promise<any>;
+	sync: (context: MiddlewareContext, next: () => unknown) => Promise<unknown>;
 } {
 	const asyncMiddleware = createMiddleware(aidrClient, options);
 
 	return {
 		async: asyncMiddleware,
-		sync: async (context: MiddlewareContext, next: () => any): Promise<any> => {
+		sync: async (context: MiddlewareContext, next: () => unknown): Promise<unknown> => {
 			// Call beforeCheck hook
 			if (options.beforeCheck) {
 				await options.beforeCheck(context);
@@ -253,13 +262,11 @@ export function createSyncCompatibleMiddleware(
 			}
 
 			// Execute sync next()
-			let result: any;
+			let result: unknown;
 			try {
-				result = next();
+				const candidate = next();
 				// Handle if next() returns a Promise
-				if (result && typeof result.then === "function") {
-					result = await result;
-				}
+				result = isPromiseLike(candidate) ? await candidate : candidate;
 			} catch (error) {
 				if (options.afterCheck) {
 					await options.afterCheck(context, verdict, undefined);
@@ -293,10 +300,10 @@ export function createSyncCompatibleMiddleware(
  * ```
  */
 export function composeMiddleware(middlewares: MiddlewareFunction[]): MiddlewareFunction {
-	return async (context: MiddlewareContext, next: NextFunction): Promise<any> => {
+	return async (context: MiddlewareContext, next: NextFunction): Promise<unknown> => {
 		let index = -1;
 
-		async function dispatch(i: number): Promise<any> {
+		async function dispatch(i: number): Promise<unknown> {
 			if (i <= index) {
 				throw new Error("next() called multiple times in middleware");
 			}
@@ -335,19 +342,22 @@ export function composeMiddleware(middlewares: MiddlewareFunction[]): Middleware
  * ```
  */
 export function wrapToolWithMiddleware(
-	tool: { name: string; run: (...args: any[]) => any },
+	tool: { name: string; run: (...args: unknown[]) => unknown },
 	aidrClient: AIDRClient,
 	options: MiddlewareOptions = {},
-): { name: string; run: (...args: any[]) => Promise<any> } {
+): { name: string; run: (...args: unknown[]) => Promise<unknown> } {
 	const middleware = createMiddleware(aidrClient, options);
 
 	return {
 		name: tool.name,
-		run: async (...args: any[]): Promise<any> => {
+		run: async (...args: unknown[]): Promise<unknown> => {
 			const context: MiddlewareContext = {
 				tool: tool.name,
 				input: JSON.stringify(args),
-				sessionId: options?.metadata?.sessionId,
+				sessionId:
+					typeof options.metadata?.sessionId === "string"
+						? options.metadata.sessionId
+						: undefined,
 				metadata: options.metadata,
 			};
 

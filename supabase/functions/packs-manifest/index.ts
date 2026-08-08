@@ -37,6 +37,7 @@ async function sha256Hex(input: string): Promise<string> {
 type PackVersionRow = {
 	pack_id: string;
 	version: string;
+	tenant_id?: string | null;
 	storage_path: string;
 	manifest_json: unknown;
 	manifest_sig_b64: string;
@@ -61,16 +62,17 @@ Deno.serve(async (req) => {
 	const keyHash = await sha256Hex(apiKey);
 	const { data: keyRow, error: keyErr } = await supabase
 		.from("api_keys")
-		.select("user_id, revoked")
+		.select("user_id, tenant_id, revoked")
 		.eq("key_hash", keyHash)
 		.maybeSingle();
 	if (keyErr || !keyRow || keyRow.revoked) return json(401, { error: "invalid_api_key" });
 
 	const userId = keyRow.user_id as string;
+	const tenantId = (keyRow.tenant_id as string | null) ?? userId;
 	const { data: entRow, error: entErr } = await supabase
 		.from("entitlements")
 		.select("premium_intel,premium_pkg_plugin")
-		.eq("user_id", userId)
+		.eq("tenant_id", tenantId)
 		.maybeSingle();
 	if (entErr || !entRow) return json(500, { error: "missing_entitlements" });
 
@@ -81,13 +83,14 @@ Deno.serve(async (req) => {
 
 	const { data: rows, error: rowsErr } = await supabase
 		.from("pack_versions")
-		.select("pack_id,version,storage_path,manifest_json,manifest_sig_b64,key_id,issued_at,expires_at")
+		.select("pack_id,version,tenant_id,storage_path,manifest_json,manifest_sig_b64,key_id,issued_at,expires_at")
 		.order("issued_at", { ascending: false })
 		.limit(200);
 	if (rowsErr) return json(500, { error: "db_error" });
 
 	const packs: Array<Record<string, unknown>> = [];
 	for (const row of (rows ?? []) as PackVersionRow[]) {
+		if (row.tenant_id && row.tenant_id !== tenantId) continue;
 		if (!row.pack_id || !row.version || !row.storage_path) continue;
 		const { data: signed, error: signErr } = await supabase.storage
 			.from(PACKS_BUCKET)
@@ -108,4 +111,3 @@ Deno.serve(async (req) => {
 
 	return json(200, { ok: true, packs });
 });
-

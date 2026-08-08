@@ -1,5 +1,3 @@
-version: "3.9"
-
 # =============================================================================
 # AIG (AI-Infra-Guard) Sidecar Stack
 # =============================================================================
@@ -19,8 +17,21 @@ services:
       context: ./vendor/ai-infra-guard
       dockerfile: Dockerfile
     container_name: aidr-aig-server
+    # Tencent's v4.5.1 checkout contains a CRLF start.sh and uses a legacy
+    # /ai-infra-guard volume path. Start the binary directly against AIDR's
+    # mounted /app paths so the Windows checkout and Linux image agree.
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        mkdir -p /app/db /app/uploads /app/logs &&
+        touch /app/logs/trpc.log &&
+        exec /app/ai-infra-guard webserver --server 0.0.0.0:8088
     ports:
-      - "${AIG_SERVER_PORT:-8088}:8088"
+      # AIG upstream v4.5.1 has no authentication. Bind the optional demo
+      # UI/API to loopback by default; expose it through an authenticated
+      # private ingress only after an explicit AIG_BIND_ADDRESS override.
+      - "${AIG_BIND_ADDRESS:-127.0.0.1}:${AIG_SERVER_PORT:-8088}:8088"
     environment:
       - APP_ENV=production
       - UPLOAD_DIR=/app/uploads
@@ -34,6 +45,11 @@ services:
     networks:
       - aidr-aig-network
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/"]
       interval: 30s
@@ -55,14 +71,34 @@ services:
     build:
       context: ./vendor/ai-infra-guard
       dockerfile: Dockerfile_Agent
-    container_name: aidr-aig-agent
     environment:
       - TZ=${AIG_TZ:-Asia/Shanghai}
       - AIG_SERVER=aig-server:8088
-    cap_add:
-      - SYS_ADMIN
+      - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:-}
+      - AIG_AGENT_VERSION=${AIG_SOURCE_VERSION:-v4.5.1}
+      # AIG v4.5.1 imports a pre-rename MCP SDK symbol. The tracked shim is
+      # loaded via PYTHONPATH until the upstream import is fixed.
+      - PYTHONPATH=/app/aig-compat
+    volumes:
+      # Source-scan uploads are created by aig-server and consumed by the
+      # worker.  Keep the worker read-only so a scan cannot mutate the upload
+      # store or escape the configured source root.
+      - aig-uploads:/app/uploads:ro
+      # AIG v4.5.1 imports a pre-rename MCP SDK symbol. The tracked shim is
+      # loaded via PYTHONPATH until the upstream import is fixed.
+      - ./services/aig-bridge/aig_compat:/app/aig-compat:ro
+    # The upstream image historically requested SYS_ADMIN/unconfined for its
+    # browser helper.  Those privileges are not acceptable for customer data;
+    # scans must run in a separately attested VM/gVisor/Kata worker if the
+    # restricted profile cannot execute a given capability.
+    read_only: true
+    cap_drop:
+      - ALL
     security_opt:
-      - seccomp:unconfined
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=2g
+      - /run:rw,noexec,nosuid,nodev,size=64m
     shm_size: "2gb"
     networks:
       - aidr-aig-network
@@ -87,14 +123,52 @@ services:
       dockerfile: Dockerfile
     container_name: aidr-aig-bridge
     ports:
-      - "${AIG_BRIDGE_PORT:-8099}:8099"
+      - "${AIG_BIND_ADDRESS:-127.0.0.1}:${AIG_BRIDGE_PORT:-8099}:8099"
     environment:
       - BRIDGE_HOST=0.0.0.0
       - BRIDGE_PORT=8099
       - BRIDGE_LOG_LEVEL=${BRIDGE_LOG_LEVEL:-INFO}
-      - BRIDGE_AIG_URL=http://aig-server:8088
-      - BRIDGE_API_KEY=${BRIDGE_API_KEY:-}
       - TZ=${AIG_TZ:-Asia/Shanghai}
+      - BRIDGE_AIG_URL=http://aig-server:8088
+      - AIG_SOURCE_VERSION=${AIG_SOURCE_VERSION:-v4.5.1}
+      - BRIDGE_API_KEY=${BRIDGE_API_KEY:-}
+      - BRIDGE_AUTH_MODE=${BRIDGE_AUTH_MODE:-broker}
+      - BRIDGE_AUTH_REQUIRED=${BRIDGE_AUTH_REQUIRED:-true}
+      - BRIDGE_JWT_SECRET=${BRIDGE_JWT_SECRET:-}
+      - BRIDGE_JWT_ISSUER=${BRIDGE_JWT_ISSUER:-}
+      - BRIDGE_JWT_AUDIENCE=${BRIDGE_JWT_AUDIENCE:-aidr-aig-bridge}
+      - BRIDGE_JWT_REPLAY_DB=${BRIDGE_JWT_REPLAY_DB:-/app/state/jwt-replay.db}
+      - BRIDGE_TENANT_REQUIRED=${BRIDGE_TENANT_REQUIRED:-true}
+      - BRIDGE_HA_REQUIRED=${BRIDGE_HA_REQUIRED:-true}
+      - BRIDGE_TASK_BACKEND=${BRIDGE_TASK_BACKEND:-sqlite}
+      - BRIDGE_TASK_BACKEND_READY=${BRIDGE_TASK_BACKEND_READY:-false}
+      - BRIDGE_REQUIRE_IDEMPOTENCY=${BRIDGE_REQUIRE_IDEMPOTENCY:-true}
+      - BRIDGE_RUNTIME_EGRESS_REQUIRED=${BRIDGE_RUNTIME_EGRESS_REQUIRED:-true}
+      - BRIDGE_EGRESS_PROXY_URL=${BRIDGE_EGRESS_PROXY_URL:-}
+      - BRIDGE_WORKER_HEALTH_REQUIRED=${BRIDGE_WORKER_HEALTH_REQUIRED:-true}
+      - AIG_WORKER_READY=${AIG_WORKER_READY:-false}
+      - AIG_MIN_WORKERS=${AIG_MIN_WORKERS:-2}
+      - AIG_DATASET_READINESS_REQUIRED=${AIG_DATASET_READINESS_REQUIRED:-true}
+      - AIG_DATASET_MANIFEST_SHA256=${AIG_DATASET_MANIFEST_SHA256:-}
+      - AIG_DATASET_LOADED_SHA256=${AIG_DATASET_LOADED_SHA256:-}
+      - BRIDGE_UPLOAD_ENABLED=${BRIDGE_UPLOAD_ENABLED:-true}
+      - BRIDGE_UPLOAD_ROOT=${BRIDGE_UPLOAD_ROOT:-/app/uploads}
+      - BRIDGE_CORS_ORIGINS=${BRIDGE_CORS_ORIGINS:-}
+      - BRIDGE_ALLOW_PRIVATE_TARGETS=${BRIDGE_ALLOW_PRIVATE_TARGETS:-false}
+      - BRIDGE_VALIDATE_DNS=${BRIDGE_VALIDATE_DNS:-true}
+      - BRIDGE_SOURCE_ROOT=${BRIDGE_SOURCE_ROOT:-/app/uploads}
+      - BRIDGE_TASK_DB=${BRIDGE_TASK_DB:-/app/state/tasks.db}
+    volumes:
+      # The bridge only validates/forwards source paths, but sharing the same
+      # read-only root makes the source-scan contract explicit and lets it
+      # reject symlink escapes against the actual mounted tree.
+      - aig-uploads:/app/uploads:ro
+      - aig-bridge-state:/app/state
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - aidr-aig-network
     restart: unless-stopped
@@ -102,7 +176,7 @@ services:
       aig-server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8099/api/v1/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8099/api/v1/readyz"]
       interval: 15s
       timeout: 5s
       start_period: 10s
@@ -126,6 +200,8 @@ volumes:
     name: aidr-aig-logs
   aig-uploads:
     name: aidr-aig-uploads
+  aig-bridge-state:
+    name: aidr-aig-bridge-state
 
 # ── Network ──────────────────────────────────────────────────────────────────
 networks:

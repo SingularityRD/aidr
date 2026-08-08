@@ -1,4 +1,5 @@
 import type { Incident, IncidentSeverity } from "./incidents/types.js";
+import { VERSION } from "./version.js";
 
 // ---------------------------------------------------------------------------
 // Public filter
@@ -41,7 +42,6 @@ const CEF_SEVERITY: Record<IncidentSeverity, number> = {
  */
 const VENDOR = "Singularity";
 const PRODUCT = "AIDR";
-const VERSION = "0.6.0";
 
 /**
  * Escape a value for use inside a CEF extension block.

@@ -37,11 +37,11 @@ export class AutoContain {
 		this.aidrDir = resolvePath("~/.singularity-aidr");
 	}
 
-	async isolate(
-		operation: () => Promise<any>,
+	async isolate<TResult>(
+		operation: () => Promise<TResult>,
 		context: { tool: string; input: string; verdict?: Verdict; threatId?: string },
 	): Promise<{
-		result: any;
+		result: TResult;
 		isolated: boolean;
 		containerId?: string;
 	}> {
@@ -253,7 +253,10 @@ export class AutoContain {
 		});
 	}
 
-	private async runInContainer(_operation: () => Promise<any>, _containerId: string): Promise<any> {
+	private async runInContainer<TResult>(
+		_operation: () => Promise<TResult>,
+		_containerId: string,
+	): Promise<TResult> {
 		// For general operations, we need to serialize and wrap them
 		// This is a limitation - operations must be designed for containerization
 		throw new Error(

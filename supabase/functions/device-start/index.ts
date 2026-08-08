@@ -5,6 +5,7 @@
 // Creates a short-lived device session. The client polls /v1/device/poll until authorized.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { corsJson, handleCors } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -14,13 +15,6 @@ const DASHBOARD_VERIFY_URL = (Deno.env.get("AIDR_DASHBOARD_VERIFY_URL") ?? "/ver
 const DEVICE_TTL_MINUTES = Number(Deno.env.get("AIDR_DEVICE_TTL_MINUTES") ?? "10");
 const DEVICE_POLL_INTERVAL_SECONDS = Number(Deno.env.get("AIDR_DEVICE_POLL_INTERVAL_SECONDS") ?? "3");
 const DEVICE_START_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_START_RL_PER_MIN") ?? "30");
-
-function json(status: number, body: Record<string, unknown>) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { "Content-Type": "application/json" },
-	});
-}
 
 function getClientIp(req: Request): string {
 	const h =
@@ -86,14 +80,17 @@ async function rateLimitStart(
 		p_window_start: nowMin,
 		p_delta: 1,
 	});
-	// Fail open if rate limiting isn't configured yet.
-	if (error) return true;
-	const { data } = await supabase
+	// Rate limiting is a mandatory abuse control for unauthenticated device
+	// bootstrap. If its storage is unavailable, fail closed instead of minting
+	// unlimited device sessions.
+	if (error) return false;
+	const { data, error: countError } = await supabase
 		.from("rate_limits")
 		.select("count")
 		.eq("key", key)
 		.eq("window_start", nowMin)
 		.maybeSingle();
+	if (countError) return false;
 	const count = Number((data as any)?.count ?? 0);
 	return Number.isFinite(DEVICE_START_RL_PER_MIN) && DEVICE_START_RL_PER_MIN > 0
 		? count <= DEVICE_START_RL_PER_MIN
@@ -101,8 +98,10 @@ async function rateLimitStart(
 }
 
 Deno.serve(async (req) => {
-	if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return json(500, { error: "misconfigured_supabase_env" });
+	const preflight = handleCors(req);
+	if (preflight) return preflight;
+	if (req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
+	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return corsJson(req, 500, { error: "misconfigured_supabase_env" });
 
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
@@ -110,7 +109,7 @@ Deno.serve(async (req) => {
 
 	const ip = getClientIp(req);
 	const ok = await rateLimitStart(supabase, ip);
-	if (!ok) return json(429, { error: "rate_limited" });
+	if (!ok) return corsJson(req, 429, { error: "rate_limited" });
 
 	const expiresAt = addMinutesIso(DEVICE_TTL_MINUTES);
 
@@ -133,14 +132,14 @@ Deno.serve(async (req) => {
 		}
 	}
 
-	if (!inserted) return json(500, { error: "device_session_issue_failed" });
+	if (!inserted) return corsJson(req, 500, { error: "device_session_issue_failed" });
 
 	const verificationUrl =
 		DASHBOARD_VERIFY_URL.includes("?")
 			? `${DASHBOARD_VERIFY_URL}&code=${encodeURIComponent(userCode)}`
 			: `${DASHBOARD_VERIFY_URL}?code=${encodeURIComponent(userCode)}`;
 
-	return json(200, {
+	return corsJson(req, 200, {
 		ok: true,
 		verification_url: verificationUrl,
 		user_code: userCode,
@@ -149,4 +148,3 @@ Deno.serve(async (req) => {
 		interval_seconds: Math.max(1, Math.floor(DEVICE_POLL_INTERVAL_SECONDS || 3)),
 	});
 });
-

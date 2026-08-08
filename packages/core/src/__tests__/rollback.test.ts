@@ -160,7 +160,9 @@ describe("AutoRollback", () => {
 			const snapshot = await rollback.createSnapshot([testFile1], "test-op");
 
 			// Verify snapshot exists
-			const backupPath = snapshot.files.get(testFile1)!;
+			const backupPath = snapshot.files.get(testFile1);
+			expect(backupPath).toBeDefined();
+			if (!backupPath) return;
 			await stat(backupPath); // Should not throw
 
 			// Cleanup
