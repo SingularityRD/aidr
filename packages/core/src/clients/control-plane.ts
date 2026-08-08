@@ -6,6 +6,7 @@
  */
 
 import { isDegradedSafeMode } from "../integrity/degraded-safe-mode.js";
+import { redactTelemetryData, redactTelemetryString } from "../telemetry-redaction.js";
 import type { ControlPlaneConfig, Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { VERSION } from "../version.js";
@@ -118,7 +119,9 @@ export class ControlPlaneClient {
 
 			return { ok: true, status: response.status, body };
 		} catch (e) {
-			this.logger.debug("Control plane device-start failed", { error: String(e) });
+			this.logger.debug("Control plane device-start failed", {
+				error: redactTelemetryString(String(e)),
+			});
 			return { ok: false, error: "request_failed" };
 		}
 	}
@@ -172,7 +175,9 @@ export class ControlPlaneClient {
 
 			return { ok: true, status: response.status, body };
 		} catch (e) {
-			this.logger.debug("Control plane device-poll failed", { error: String(e) });
+			this.logger.debug("Control plane device-poll failed", {
+				error: redactTelemetryString(String(e)),
+			});
 			return { ok: false, error: "request_failed" };
 		}
 	}
@@ -198,6 +203,7 @@ export class ControlPlaneClient {
 				body: JSON.stringify({
 					...payload,
 					aidr_version: VERSION,
+					events: redactTelemetryData(payload.events),
 				} satisfies ControlPlaneIngestPayload),
 			});
 
@@ -226,7 +232,9 @@ export class ControlPlaneClient {
 
 			return { ok: true, status: response.status, body };
 		} catch (e) {
-			this.logger.debug("Control plane ingest failed", { error: String(e) });
+			this.logger.debug("Control plane ingest failed", {
+				error: redactTelemetryString(String(e)),
+			});
 			return { ok: false, error: "request_failed" };
 		}
 	}
@@ -275,7 +283,9 @@ export class ControlPlaneClient {
 
 			return { ok: true, status: response.status, body };
 		} catch (e) {
-			this.logger.debug("Control plane revocations fetch failed", { error: String(e) });
+			this.logger.debug("Control plane revocations fetch failed", {
+				error: redactTelemetryString(String(e)),
+			});
 			return { ok: false, error: "request_failed" };
 		}
 	}
@@ -329,7 +339,9 @@ export class ControlPlaneClient {
 			}
 			return { ok: true, status: response.status, body };
 		} catch (e) {
-			this.logger.debug("Control plane enroll failed", { error: String(e) });
+			this.logger.debug("Control plane enroll failed", {
+				error: redactTelemetryString(String(e)),
+			});
 			return { ok: false, error: "request_failed" };
 		}
 	}
@@ -375,7 +387,9 @@ export class ControlPlaneClient {
 			}
 			return { ok: true, status: response.status, body };
 		} catch (e) {
-			this.logger.debug("Control plane packs manifest fetch failed", { error: String(e) });
+			this.logger.debug("Control plane packs manifest fetch failed", {
+				error: redactTelemetryString(String(e)),
+			});
 			return { ok: false, error: "request_failed" };
 		}
 	}
@@ -421,7 +435,9 @@ export class ControlPlaneClient {
 			}
 			return { ok: true, status: response.status, body };
 		} catch (e) {
-			this.logger.debug("Control plane billing checkout fetch failed", { error: String(e) });
+			this.logger.debug("Control plane billing checkout fetch failed", {
+				error: redactTelemetryString(String(e)),
+			});
 			return { ok: false, error: "request_failed" };
 		}
 	}
@@ -468,7 +484,9 @@ export class ControlPlaneClient {
 			}
 			return { ok: true, status: response.status, body };
 		} catch (e) {
-			this.logger.debug("Control plane runtime policy fetch failed", { error: String(e) });
+			this.logger.debug("Control plane runtime policy fetch failed", {
+				error: redactTelemetryString(String(e)),
+			});
 			return { ok: false, error: "request_failed" };
 		}
 	}

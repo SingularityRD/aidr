@@ -33,28 +33,38 @@ export function PilotPage() {
 	useEffect(() => {
 		let cancelled = false;
 		async function load() {
-			const sess = await getSession();
-			if (cancelled) return;
-			setHasSession(Boolean(sess));
-			setSessionReady(true);
-			if (!sess) return;
+			try {
+				const sess = await getSession();
+				if (cancelled) return;
+				setHasSession(Boolean(sess));
+				setSessionReady(true);
+				if (!sess) return;
 
-			// Get user email from session
-			const userEmail = sess.user?.email || "";
-			setEmail(userEmail);
+				// Get user email from session
+				const userEmail = sess.user?.email || "";
+				setEmail(userEmail);
 
-			const res = await supabase.functions.invoke("pilot-status", { method: "GET" });
-			if (res.error || cancelled) return;
+				const res = await supabase.functions.invoke("pilot-status", { method: "GET" });
+				if (res.error || cancelled) {
+					if (res.error && !cancelled) setError(res.error.message);
+					return;
+				}
 
-			const data = (res.data ?? {}) as Record<string, unknown>;
-			const st = String(data.status ?? "none");
-			if (st === "pending" || st === "approved" || st === "denied") {
-				setStatus({
-					status: st as "pending" | "approved" | "denied",
-					cohort: typeof data.cohort === "string" ? data.cohort : null,
-				} as PilotStatus);
-			} else {
-				setStatus({ status: "none" });
+				const data = (res.data ?? {}) as Record<string, unknown>;
+				const st = String(data.status ?? "none");
+				if (st === "pending" || st === "approved" || st === "denied") {
+					setStatus({
+						status: st as "pending" | "approved" | "denied",
+						cohort: typeof data.cohort === "string" ? data.cohort : null,
+					} as PilotStatus);
+				} else {
+					setStatus({ status: "none" });
+				}
+			} catch (cause) {
+				if (!cancelled) {
+					setError(cause instanceof Error ? cause.message : "Unable to load pilot status.");
+					setSessionReady(true);
+				}
 			}
 		}
 		load();
@@ -141,7 +151,11 @@ export function PilotPage() {
 						</button>
 					</div>
 
-					{error ? <div className="notice notice-danger">{error}</div> : null}
+					{error ? (
+						<div className="notice notice-danger" role="alert">
+							{error}
+						</div>
+					) : null}
 				</div>
 			) : null}
 		</div>

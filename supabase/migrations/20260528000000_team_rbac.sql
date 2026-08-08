@@ -21,21 +21,6 @@ create extension if not exists pgcrypto;
  * Checks whether the calling user is a member of the given team.
  * Returns true for any role (owner, admin, member, viewer).
  */
-create or replace function public.is_team_member(team_id uuid)
-returns boolean
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  select exists (
-    select 1
-    from public.team_members
-    where team_members.team_id = is_team_member.team_id
-      and team_members.user_id = auth.uid()
-  );
-$$;
-
 /**
  * Checks whether the calling user holds at least the specified minimum
  * role in the given team.  Role hierarchy (high → low):
@@ -45,30 +30,6 @@ $$;
  *   is_team_member_with_role(team_id, 'admin')
  * returns true for owner and admin, false for member and viewer.
  */
-create or replace function public.is_team_member_with_role(team_id uuid, min_role text)
-returns boolean
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  select exists (
-    select 1
-    from public.team_members
-    where team_members.team_id = is_team_member_with_role.team_id
-      and team_members.user_id = auth.uid()
-      and team_members.role = any (
-        case is_team_member_with_role.min_role
-          when 'owner'   then array['owner']
-          when 'admin'   then array['owner', 'admin']
-          when 'member'  then array['owner', 'admin', 'member']
-          when 'viewer'  then array['owner', 'admin', 'member', 'viewer']
-          else array[]::text[]
-        end
-      )
-  );
-$$;
-
 -- ── Teams ─────────────────────────────────────────────────────────────
 
 /**
@@ -111,10 +72,6 @@ alter table public.teams enable row level security;
  * Any member (owner, admin, member, viewer) of a team can see that
  * team's row.  Authenticated users see no teams they do not belong to.
  */
-drop policy if exists teams_select_member on public.teams;
-create policy teams_select_member
-  on public.teams for select
-  using (public.is_team_member(id));
 
 /**
  * Policy: teams_insert_authenticated
@@ -122,31 +79,18 @@ create policy teams_select_member
  * Any authenticated user may create a new team.  The creator is
  * automatically added as an admin by the application layer.
  */
-drop policy if exists teams_insert_authenticated on public.teams;
-create policy teams_insert_authenticated
-  on public.teams for insert
-  with check (auth.role() = 'authenticated');
 
 /**
  * Policy: teams_update_admin
  * --------------------------
  * Only admins (or owners) may update team metadata (name, plan, etc.).
  */
-drop policy if exists teams_update_admin on public.teams;
-create policy teams_update_admin
-  on public.teams for update
-  using (public.is_team_member_with_role(id, 'admin'))
-  with check (public.is_team_member_with_role(id, 'admin'));
 
 /**
  * Policy: teams_delete_admin
  * --------------------------
  * Only admins (or owners) may delete a team.
  */
-drop policy if exists teams_delete_admin on public.teams;
-create policy teams_delete_admin
-  on public.teams for delete
-  using (public.is_team_member_with_role(id, 'admin'));
 
 -- ── Team Members ──────────────────────────────────────────────────────
 
@@ -188,6 +132,69 @@ create index if not exists team_members_user_id_idx
   on public.team_members (user_id);
 
 alter table public.team_members enable row level security;
+
+-- Helper functions are defined after team_members exists. They are security
+-- definer functions so RLS policies can query membership without recursion.
+create or replace function public.is_team_member(team_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.team_members
+    where team_members.team_id = is_team_member.team_id
+      and team_members.user_id = auth.uid()
+  );
+$$;
+
+create or replace function public.is_team_member_with_role(team_id uuid, min_role text)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.team_members
+    where team_members.team_id = is_team_member_with_role.team_id
+      and team_members.user_id = auth.uid()
+      and team_members.role = any (
+        case is_team_member_with_role.min_role
+          when 'owner'   then array['owner']
+          when 'admin'   then array['owner', 'admin']
+          when 'member'  then array['owner', 'admin', 'member']
+          when 'viewer'  then array['owner', 'admin', 'member', 'viewer']
+          else array[]::text[]
+        end
+      )
+  );
+$$;
+
+-- Team policies are created only after the membership helper functions exist.
+drop policy if exists teams_select_member on public.teams;
+create policy teams_select_member
+  on public.teams for select
+  using (public.is_team_member(id));
+
+drop policy if exists teams_insert_authenticated on public.teams;
+create policy teams_insert_authenticated
+  on public.teams for insert
+  with check (auth.role() = 'authenticated');
+
+drop policy if exists teams_update_admin on public.teams;
+create policy teams_update_admin
+  on public.teams for update
+  using (public.is_team_member_with_role(id, 'admin'))
+  with check (public.is_team_member_with_role(id, 'admin'));
+
+drop policy if exists teams_delete_admin on public.teams;
+create policy teams_delete_admin
+  on public.teams for delete
+  using (public.is_team_member_with_role(id, 'admin'));
 
 /**
  * Policy: team_members_select_member

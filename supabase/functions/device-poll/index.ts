@@ -7,6 +7,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getBearerToken } from "../_shared/auth.ts";
+import { corsJson, handleCors } from "../_shared/cors.ts";
 import { evaluateDevicePollState } from "../_shared/device-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -19,18 +20,12 @@ type PilotApplicationRow = { status: string | null };
 type DeviceSessionRow = {
 	id: string;
 	user_id: string | null;
+	tenant_id: string | null;
 	authorized_at: string | null;
 	exchanged_at: string | null;
 	expires_at: string;
 	user_code: string | null;
 };
-
-function json(status: number, body: Record<string, unknown>) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { "Content-Type": "application/json" },
-	});
-}
 
 async function sha256Hex(input: string): Promise<string> {
 	const data = new TextEncoder().encode(input);
@@ -49,7 +44,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 function base64Url(bytes: Uint8Array): string {
 	const b64 = bytesToBase64(bytes);
-	return b64.replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+	return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function randomEnrollmentToken(): string {
@@ -77,8 +72,10 @@ async function ensurePilotApproved(
 }
 
 Deno.serve(async (req) => {
-	if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return json(500, { error: "misconfigured_supabase_env" });
+	const preflight = handleCors(req);
+	if (preflight) return preflight;
+	if (req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
+	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return corsJson(req, 500, { error: "misconfigured_supabase_env" });
 
 	let deviceCode = getBearerToken(req.headers.get("Authorization"));
 	if (!deviceCode) {
@@ -90,7 +87,7 @@ Deno.serve(async (req) => {
 		}
 	}
 
-	if (!deviceCode) return json(401, { error: "missing_device_code" });
+	if (!deviceCode) return corsJson(req, 401, { error: "missing_device_code" });
 
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
@@ -99,11 +96,11 @@ Deno.serve(async (req) => {
 	const deviceHash = await sha256Hex(deviceCode);
 	const { data: row, error } = await supabase
 		.from("device_sessions")
-		.select("id,user_id,authorized_at,exchanged_at,expires_at,user_code")
+		.select("id,user_id,tenant_id,authorized_at,exchanged_at,expires_at,user_code")
 		.eq("device_code_hash", deviceHash)
 		.maybeSingle();
 
-	if (error || !row) return json(401, { error: "device_code_invalid" });
+	if (error || !row) return corsJson(req, 401, { error: "device_code_invalid" });
 	const session = row as DeviceSessionRow;
 	const precheck = evaluateDevicePollState({
 		nowMs: Date.now(),
@@ -113,9 +110,9 @@ Deno.serve(async (req) => {
 		pilotApproved: true,
 		exchangedAt: session.exchanged_at,
 	});
-	if (precheck.status === "expired") return json(precheck.httpStatus, { error: precheck.error });
+	if (precheck.status === "expired") return corsJson(req, precheck.httpStatus, { error: precheck.error });
 	if (precheck.status === "pending") {
-		return json(200, {
+		return corsJson(req, 200, {
 			ok: true,
 			status: "pending",
 			error: "authorization_pending",
@@ -125,10 +122,22 @@ Deno.serve(async (req) => {
 
 	const userId = String(session.user_id);
 	const approved = await ensurePilotApproved(supabase, userId);
-	if (!approved) return json(403, { error: "pilot_not_approved" });
+	if (!approved) return corsJson(req, 403, { error: "pilot_not_approved" });
 
 	if (precheck.status === "already_exchanged") {
-		return json(409, { error: "already_exchanged" });
+		return corsJson(req, 409, { error: "already_exchanged" });
+	}
+
+	// Atomically claim the one-time exchange before issuing an enrollment
+	// token. This closes the concurrent-poll race that could mint two tokens.
+	const { data: exchangedRows, error: exchangeErr } = await supabase.rpc(
+		"exchange_device_session",
+		{ p_device_code_hash: deviceHash },
+	);
+	if (exchangeErr) return corsJson(req, 500, { error: "device_exchange_unavailable" });
+	const exchanged = (Array.isArray(exchangedRows) ? exchangedRows[0] : null) as Record<string, unknown> | null;
+	if (!exchanged || typeof exchanged.user_id !== "string") {
+		return corsJson(req, 409, { error: "already_exchanged" });
 	}
 
 	// Issue a one-time enrollment token (hash-only at rest).
@@ -140,6 +149,7 @@ Deno.serve(async (req) => {
 		const tokenHash = await sha256Hex(token);
 		const { error: insErr } = await supabase.from("enrollment_tokens").insert({
 			user_id: userId,
+			tenant_id: typeof exchanged.tenant_id === "string" ? exchanged.tenant_id : userId,
 			label: `device:${String(session.user_code ?? "").slice(0, 16)}`,
 			token_hash: tokenHash,
 			expires_at: expiresAt,
@@ -149,14 +159,9 @@ Deno.serve(async (req) => {
 			break;
 		}
 	}
-	if (!inserted) return json(500, { error: "token_issue_failed" });
+	if (!inserted) return corsJson(req, 500, { error: "token_issue_failed" });
 
-	await supabase
-		.from("device_sessions")
-		.update({ exchanged_at: new Date().toISOString(), status: "exchanged" })
-		.eq("id", session.id);
-
-	return json(200, {
+	return corsJson(req, 200, {
 		ok: true,
 		status: "approved",
 		enrollment_token: token,

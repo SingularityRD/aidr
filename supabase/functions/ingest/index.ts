@@ -170,7 +170,7 @@ Deno.serve(async (req) => {
 	const keyHash = await sha256Hex(apiKey);
 	const { data: keyRow, error: keyErr } = await supabase
 		.from("api_keys")
-		.select("user_id, revoked")
+		.select("user_id, tenant_id, revoked")
 		.eq("key_hash", keyHash)
 		.maybeSingle();
 
@@ -179,6 +179,7 @@ Deno.serve(async (req) => {
 	}
 
 	const userId = keyRow.user_id as string;
+	const tenantId = (keyRow.tenant_id as string | null) ?? userId;
 
 	// 2) load entitlements (default row is created by trigger; still fail-open)
 	const { data: ent, error: entErr } = await supabase
@@ -186,7 +187,7 @@ Deno.serve(async (req) => {
 		.select(
 			"included_agents, extra_agents, premium_intel, premium_correlation, premium_pkg_plugin, revocation_epoch",
 		)
-		.eq("user_id", userId)
+		.eq("tenant_id", tenantId)
 		.maybeSingle();
 
 	const includedAgents = entErr || !ent ? 1 : Number(ent.included_agents ?? 1);
@@ -196,114 +197,87 @@ Deno.serve(async (req) => {
 	const revocationEpoch =
 		entErr || !ent ? 1 : Number((ent as unknown as Record<string, unknown>).revocation_epoch ?? 1);
 
-	// 3) upsert agent with seat enforcement on first-seen
-	const { data: existingAgent, error: existingErr } = await supabase
-		.from("agents")
-		.select("id")
-		.eq("user_id", userId)
-		.eq("iid", iid)
-		.maybeSingle();
-
-	if (existingErr) {
-		return json(500, { error: "db_error", detail: String(existingErr.message ?? existingErr) });
+	// 3) Register/touch the agent and enforce the seat limit atomically. The
+	// database function locks the tenant entitlement and agent namespace so two
+	// first-seen requests cannot oversubscribe the tenant.
+	const { data: registrationRows, error: registrationErr } = await supabase.rpc(
+		"register_agent_for_ingest",
+		{
+			p_user_id: userId,
+			p_tenant_id: tenantId,
+			p_iid: iid,
+			p_agent_runtime: typeof body.agent_runtime === "string" ? body.agent_runtime : null,
+			p_agent_runtime_version:
+				typeof body.agent_runtime_version === "string" ? body.agent_runtime_version : null,
+		},
+	);
+	if (registrationErr) {
+		return json(500, { error: "db_error", detail: String(registrationErr.message ?? registrationErr) });
 	}
-
-	let agentId: string | null = existingAgent?.id ?? null;
-
-	if (!agentId) {
-		const { count, error: countErr } = await supabase
-			.from("agents")
-			.select("*", { count: "exact", head: true })
-			.eq("user_id", userId);
-
-		const current = countErr ? 0 : Number(count ?? 0);
-		if (allowedAgents > 0 && current >= allowedAgents) {
-			const tenantPackKey = premiumModules.includes("premium_intel")
-				? await deriveTenantPackKeyB64(userId)
-				: null;
-
-			const entitlement = {
-				schema_version: 2,
-				tenant_id: userId,
-				subscription_tier: extraAgents > 0 ? "pro" : "free",
-				included_agents: includedAgents,
-				extra_agents: extraAgents,
-				allowed_agents: allowedAgents,
-				premium_modules: premiumModules,
-				pack_keys:
-					tenantPackKey && premiumModules.includes("premium_intel")
-						? [
-								{
-									alg: "aes-256-gcm",
-									key_id: "aidr-pack-v1",
-									key_b64: tenantPackKey,
-									expires_at: addHoursIso(ENTITLEMENT_GRACE_HOURS),
-								},
-							]
-						: [],
-				issued_at: new Date().toISOString(),
-				expires_at: addHoursIso(ENTITLEMENT_TTL_HOURS),
-				grace_until: addHoursIso(ENTITLEMENT_GRACE_HOURS),
-				serial: crypto.randomUUID(),
-				revocation_epoch: revocationEpoch,
-			};
-			const entitlementJson = canonicalJson(entitlement);
-			const sig = await signEd25519Detached(entitlementJson);
-
-			return json(402, {
-				error: "agent_limit_exceeded",
-				allowed_agents: allowedAgents,
-				current_agents: current,
-				entitlement: JSON.parse(entitlementJson),
-				entitlement_signed: sig
-					? {
-							alg: "ed25519",
-							key_id: ENTITLEMENT_SIGNING_KEY_ID,
-							sig_b64: sig,
-							snapshot: JSON.parse(entitlementJson),
-						}
-					: null,
-				entitlement_sig_alg: sig ? "ed25519" : null,
-				entitlement_key_id: sig ? ENTITLEMENT_SIGNING_KEY_ID : null,
-				entitlement_sig: sig,
-			});
-		}
-
-		const { data: inserted, error: insErr } = await supabase
-			.from("agents")
-			.insert({
-				user_id: userId,
-				iid,
-				agent_runtime: typeof body.agent_runtime === "string" ? body.agent_runtime : null,
-				agent_runtime_version:
-					typeof body.agent_runtime_version === "string" ? body.agent_runtime_version : null,
-				last_seen: new Date().toISOString(),
-			})
-			.select("id")
-			.single();
-
-		if (insErr) {
-			return json(500, { error: "db_error", detail: String(insErr.message ?? insErr) });
-		}
-
-		agentId = inserted.id as string;
-	} else {
-		// Touch last_seen and update runtime metadata
-		await supabase
-			.from("agents")
-			.update({
-				agent_runtime: typeof body.agent_runtime === "string" ? body.agent_runtime : undefined,
-				agent_runtime_version:
-					typeof body.agent_runtime_version === "string" ? body.agent_runtime_version : undefined,
-				last_seen: new Date().toISOString(),
-			})
-			.eq("id", agentId);
+	const registration = (Array.isArray(registrationRows) ? registrationRows[0] : null) as Record<
+		string,
+		unknown
+	> | null;
+	const agentId = typeof registration?.agent_id === "string" ? registration.agent_id : null;
+	if (!registration || !agentId) {
+		return json(500, { error: "agent_registration_failed" });
+	}
+	if (registration.seat_exceeded === true) {
+		const current = Number(registration.current_agents ?? 0);
+		const tenantPackKey = premiumModules.includes("premium_intel")
+			? await deriveTenantPackKeyB64(tenantId)
+			: null;
+		const entitlement = {
+			schema_version: 2,
+			tenant_id: tenantId,
+			subscription_tier: extraAgents > 0 ? "pro" : "free",
+			included_agents: includedAgents,
+			extra_agents: extraAgents,
+			allowed_agents: allowedAgents,
+			premium_modules: premiumModules,
+			pack_keys:
+				tenantPackKey && premiumModules.includes("premium_intel")
+					? [
+							{
+								alg: "aes-256-gcm",
+								key_id: "aidr-pack-v1",
+								key_b64: tenantPackKey,
+								expires_at: addHoursIso(ENTITLEMENT_GRACE_HOURS),
+							},
+						]
+					: [],
+			issued_at: new Date().toISOString(),
+			expires_at: addHoursIso(ENTITLEMENT_TTL_HOURS),
+			grace_until: addHoursIso(ENTITLEMENT_GRACE_HOURS),
+			serial: crypto.randomUUID(),
+			revocation_epoch: revocationEpoch,
+		};
+		const entitlementJson = canonicalJson(entitlement);
+		const sig = await signEd25519Detached(entitlementJson);
+		return json(402, {
+			error: "agent_limit_exceeded",
+			allowed_agents: Number(registration.allowed_agents ?? allowedAgents),
+			current_agents: current,
+			entitlement: JSON.parse(entitlementJson),
+			entitlement_signed: sig
+				? {
+						alg: "ed25519",
+						key_id: ENTITLEMENT_SIGNING_KEY_ID,
+						sig_b64: sig,
+						snapshot: JSON.parse(entitlementJson),
+					}
+				: null,
+			entitlement_sig_alg: sig ? "ed25519" : null,
+			entitlement_key_id: sig ? ENTITLEMENT_SIGNING_KEY_ID : null,
+			entitlement_sig: sig,
+		});
 	}
 
 	// 4) Insert events (best-effort)
 	if (events.length > 0 && agentId) {
 		const rows = events.slice(0, 200).map((evt) => ({
 			user_id: userId,
+			tenant_id: tenantId,
 			agent_id: agentId,
 			type: typeof evt.type === "string" ? (evt.type as string) : "runtime_verdict",
 			payload: evt,
@@ -317,12 +291,12 @@ Deno.serve(async (req) => {
 	}
 
 	const tenantPackKey = premiumModules.includes("premium_intel")
-		? await deriveTenantPackKeyB64(userId)
+		? await deriveTenantPackKeyB64(tenantId)
 		: null;
 
 	const entitlement = {
 		schema_version: 2,
-		tenant_id: userId,
+		tenant_id: tenantId,
 		subscription_tier: extraAgents > 0 ? "pro" : "free",
 		included_agents: includedAgents,
 		extra_agents: extraAgents,
@@ -348,7 +322,7 @@ Deno.serve(async (req) => {
 	const entitlementJson = canonicalJson(entitlement);
 	const sig = await signEd25519Detached(entitlementJson);
 
-	// Best-effort: persist the latest entitlement snapshot per (user_id, iid) for dashboard/debugging.
+	// Best-effort: persist the latest entitlement snapshot per (tenant_id, iid) for dashboard/debugging.
 	try {
 		const snapshot = JSON.parse(entitlementJson) as Record<string, unknown>;
 		await supabase
@@ -356,6 +330,7 @@ Deno.serve(async (req) => {
 			.upsert(
 				{
 					user_id: userId,
+					tenant_id: tenantId,
 					iid,
 					agent_id: agentId,
 					entitlement: snapshot,
@@ -366,7 +341,7 @@ Deno.serve(async (req) => {
 					expires_at: typeof snapshot.expires_at === "string" ? snapshot.expires_at : null,
 					grace_until: typeof snapshot.grace_until === "string" ? snapshot.grace_until : null,
 				},
-				{ onConflict: "user_id,iid" },
+				{ onConflict: "tenant_id,iid" },
 			);
 	} catch {
 		// Fail-open: snapshot storage must never block ingest.
@@ -390,4 +365,3 @@ Deno.serve(async (req) => {
 		entitlement_sig: sig,
 	});
 });
-

@@ -5,13 +5,14 @@ on:
     - cron: '0 */6 * * *'  # Every 6 hours
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   sentry-issue-sync:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Sync Sentry Issues to GitHub
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -20,11 +21,11 @@ jobs:
         run: |
           echo "=== Syncing Sentry Issues to GitHub ==="
           
-          # Install Sentry CLI
-          curl -sL https://sentry.io/get-cli/ | bash
+          # Use an exact npm-distributed CLI version; never pipe remote shell code.
+          SENTRY_CLI=(npx --yes @sentry/cli@2.46.0)
           
           # Get unresolved issues from Sentry
-          sentry-cli issues list --org $SENTRY_ORG --project aidr-core --status unresolved --json > sentry-issues.json || echo "[]" > sentry-issues.json
+          "${SENTRY_CLI[@]}" issues list --org "$SENTRY_ORG" --project aidr-core --status unresolved --json > sentry-issues.json || echo "[]" > sentry-issues.json
           
           # Process each issue and create GitHub issue if not already exists
           cat sentry-issues.json | jq -c '.[]' | while read issue; do
@@ -103,7 +104,7 @@ jobs:
           echo "✓ Error insights report generated"
 
       - name: Upload Insights Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: error-insights-report
           path: error-insights-report.md
@@ -111,7 +112,7 @@ jobs:
 
       - name: Notify on New Issues
         if: env.NEW_ISSUES_CREATED == 'true'
-        uses: 8398a7/action-slack@v3
+        uses: 8398a7/action-slack@1750b5085f3ec60384090fb7c52965ef822e869e # v3.18.0
         with:
           status: ${{ job.status }}
           channel: '#aidr-alerts'

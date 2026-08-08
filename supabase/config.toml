@@ -1,0 +1,84 @@
+# Local Supabase configuration for the AIDR control plane.
+#
+# This is intentionally checked in so `supabase start`, `supabase db reset`,
+# and local Edge Function smoke tests use the same ports and JWT policy as the
+# deployment runbook. Replace `project_id` only when linking a real project.
+project_id = "aidr"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:3000", "http://127.0.0.1:5173"]
+enable_signup = true
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+inspector_port = 8083
+
+# Functions which implement their own API-key, device-code, webhook, or
+# public-intake authentication must bypass the Supabase gateway JWT check.
+# Functions accepting Supabase access tokens keep gateway verification enabled.
+[functions.api-keys]
+verify_jwt = true
+[functions.autosecops-runtime]
+verify_jwt = true
+[functions.billing-checkout]
+verify_jwt = true
+[functions.device-poll]
+verify_jwt = false
+[functions.device-start]
+verify_jwt = false
+[functions.device-verify]
+verify_jwt = true
+[functions.enroll]
+verify_jwt = false
+[functions.enrollment-tokens]
+verify_jwt = true
+[functions.file-check]
+verify_jwt = false
+[functions.ingest]
+verify_jwt = false
+[functions.packs-download]
+verify_jwt = false
+[functions.packs-manifest]
+verify_jwt = false
+[functions.paddle-webhook]
+verify_jwt = false
+[functions.pilot-admin]
+verify_jwt = true
+[functions.pilot-apply]
+verify_jwt = true
+[functions.pilot-status]
+verify_jwt = true
+[functions.revocations]
+verify_jwt = false
+[functions.url-check]
+verify_jwt = false
+[functions.waitlist-signup]
+verify_jwt = false

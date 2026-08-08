@@ -22,7 +22,6 @@ const PS_TIMEOUT = 15_000;
 /** Detect whether we're running inside WSL (Windows Subsystem for Linux). */
 function isWSL(): boolean {
 	if (process.platform !== "linux") return false;
-	// biome-ignore lint/complexity/useLiteralKeys: to bypass OpenClaw FP
 	return !!process["env"]["WSL_DISTRO_NAME"];
 }
 

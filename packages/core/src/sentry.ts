@@ -5,6 +5,11 @@
 
 import type { Span } from "@sentry/node";
 import { getInstallationId } from "./installation-id.js";
+import {
+	REDACTED_TELEMETRY_VALUE,
+	redactTelemetryData,
+	redactTelemetryString,
+} from "./telemetry-redaction.js";
 import { getVersion } from "./version.js";
 
 let initialized = false;
@@ -28,13 +33,18 @@ export interface SentryConfig {
 	name?: string;
 }
 
+function boundedSampleRate(value: string | undefined, fallback: number): number {
+	const parsed = Number.parseFloat(value ?? "");
+	return Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : fallback;
+}
+
 function getSentryConfig(): SentryConfig {
 	return {
 		dsn: process.env.SENTRY_DSN,
 		environment: process.env.NODE_ENV || "development",
 		release: process.env.SENTRY_RELEASE || getVersion(),
-		sampleRate: parseFloat(process.env.SENTRY_SAMPLE_RATE || "1.0"),
-		tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || "0.1"),
+		sampleRate: boundedSampleRate(process.env.SENTRY_SAMPLE_RATE, 1),
+		tracesSampleRate: boundedSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1),
 		debug: process.env.SENTRY_DEBUG === "true" || process.env.SENTRY_DEBUG === "1",
 		enabled:
 			process.env.SENTRY_ENABLED !== "false" &&
@@ -50,7 +60,12 @@ function getSentryConfig(): SentryConfig {
 export async function initSentry(config?: Partial<SentryConfig>): Promise<void> {
 	if (initialized) return;
 
-	const cfg = { ...getSentryConfig(), ...config };
+	const configured = { ...getSentryConfig(), ...config };
+	const cfg = {
+		...configured,
+		sampleRate: Math.max(0, Math.min(1, configured.sampleRate ?? 1)),
+		tracesSampleRate: Math.max(0, Math.min(1, configured.tracesSampleRate ?? 0.1)),
+	};
 
 	if (!cfg.enabled || !cfg.dsn) {
 		initialized = true;
@@ -67,6 +82,7 @@ export async function initSentry(config?: Partial<SentryConfig>): Promise<void> 
 			release: cfg.release,
 			sampleRate: cfg.sampleRate,
 			tracesSampleRate: cfg.tracesSampleRate,
+			sendDefaultPii: false,
 			debug: cfg.debug,
 
 			// Set user context with installation ID (anonymous)
@@ -78,19 +94,20 @@ export async function initSentry(config?: Partial<SentryConfig>): Promise<void> 
 				},
 			},
 
-			// Filter sensitive data
+			// Never send raw request URLs, exception messages, breadcrumbs, or
+			// arbitrary context to a third-party telemetry sink.
 			beforeSend(event) {
-				// Redact sensitive fields
-				if (event.extra) {
-					event.extra = redactSensitiveData(event.extra as Record<string, unknown>);
-				}
-				if (event.contexts) {
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-					event.contexts = redactSensitiveData(
-						event.contexts as Record<string, unknown>,
-					) as typeof event.contexts;
-				}
-				return event;
+				return redactSentryEvent(
+					event as unknown as Record<string, unknown>,
+				) as unknown as typeof event;
+			},
+			beforeSendTransaction(event) {
+				return redactSentryEvent(
+					event as unknown as Record<string, unknown>,
+				) as unknown as typeof event;
+			},
+			beforeBreadcrumb(breadcrumb) {
+				return redactTelemetryData(breadcrumb) as typeof breadcrumb;
 			},
 		});
 
@@ -111,33 +128,63 @@ export function initSentrySync(config?: Partial<SentryConfig>): void {
 /**
  * Redact sensitive data from event context
  */
-function redactSensitiveData(obj: Record<string, unknown>): Record<string, unknown> {
-	const sensitiveKeyPatterns = [
-		"apikey",
-		"api_key",
-		"token",
-		"password",
-		"secret",
-		"authorization",
-		"x-api-key",
-		"authtoken",
-		"dsn",
-		"anthropic_api_key",
-		"openclaw_gateway_token",
-	];
+/** Recursively redact arbitrary Sentry context (exported for integration tests). */
+export function redactSensitiveData(obj: Record<string, unknown>): Record<string, unknown> {
+	return redactTelemetryData(obj);
+}
 
-	const redacted: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(obj)) {
-		const lowerKey = key.toLowerCase();
-		if (sensitiveKeyPatterns.some((pattern) => lowerKey.includes(pattern))) {
-			redacted[key] = "[Redacted]";
-		} else if (typeof value === "object" && value !== null) {
-			redacted[key] = redactSensitiveData(value as Record<string, unknown>);
-		} else {
-			redacted[key] = value;
+/**
+ * Sentry's default event serializer includes fields that are outside `extra`
+ * (exception values, request URLs, breadcrumbs and tags).  Redacting only
+ * `extra` is therefore insufficient for a production deployment.
+ */
+function redactSentryException(exception: unknown): unknown {
+	if (!exception || typeof exception !== "object" || Array.isArray(exception)) return exception;
+	const values = (exception as Record<string, unknown>).values;
+	if (!Array.isArray(values)) return exception;
+	for (const value of values) {
+		if (!value || typeof value !== "object") continue;
+		const record = value as Record<string, unknown>;
+		if (typeof record.value === "string") record.value = redactTelemetryString(record.value);
+		// Stack traces may include command-line arguments and query strings.
+		if (record.stacktrace && typeof record.stacktrace === "object") {
+			record.stacktrace = redactTelemetryData(record.stacktrace);
 		}
 	}
-	return redacted;
+	return exception;
+}
+
+function redactSentryRequest(request: unknown): unknown {
+	if (!request || typeof request !== "object" || Array.isArray(request)) return request;
+	const record = request as Record<string, unknown>;
+	if (typeof record.url === "string") record.url = redactTelemetryString(record.url);
+	if (typeof record.query_string === "string") {
+		record.query_string = redactTelemetryString(record.query_string);
+	}
+	return request;
+}
+
+function redactSentryUser(user: unknown): unknown {
+	if (!user || typeof user !== "object" || Array.isArray(user)) return user;
+	const record = user as Record<string, unknown>;
+	// Explicitly replace values rather than dropping fields, keeping Sentry
+	// grouping stable while preventing accidental PII collection.
+	if (typeof record.email === "string") record.email = REDACTED_TELEMETRY_VALUE;
+	if (typeof record.username === "string") record.username = REDACTED_TELEMETRY_VALUE;
+	return user;
+}
+
+export function redactSentryEvent<T extends Record<string, unknown>>(event: T): T {
+	const safe = redactTelemetryData(event) as T;
+	const mutable = safe as Record<string, unknown>;
+	if (typeof mutable.message === "string") mutable.message = redactTelemetryString(mutable.message);
+	if (typeof mutable.transaction === "string") {
+		mutable.transaction = redactTelemetryString(mutable.transaction, 200);
+	}
+	mutable.exception = redactSentryException(mutable.exception);
+	mutable.request = redactSentryRequest(mutable.request);
+	mutable.user = redactSentryUser(mutable.user);
+	return safe;
 }
 
 /**
@@ -154,7 +201,7 @@ export async function captureException(
 		return "";
 	}
 
-	return Sentry.captureException(error, { extra: context });
+	return Sentry.captureException(error, { extra: redactSensitiveData(context ?? {}) });
 }
 
 /**
@@ -172,7 +219,10 @@ export async function captureMessage(
 		return "";
 	}
 
-	return Sentry.captureMessage(message, { level, extra: context });
+	return Sentry.captureMessage(redactTelemetryString(message), {
+		level,
+		extra: redactSensitiveData(context ?? {}),
+	});
 }
 
 /**
@@ -187,7 +237,7 @@ export async function startSpan<T>(name: string, operation: (span: Span) => T): 
 		return operation({} as Span);
 	}
 
-	return Sentry.startSpan({ name, op: "aidr" }, operation);
+	return Sentry.startSpan({ name: redactTelemetryString(name, 200), op: "aidr" }, operation);
 }
 
 /**
@@ -220,7 +270,9 @@ export function withSentry<T extends (...args: unknown[]) => unknown>(
 export async function setUser(user: { id?: string; username?: string }): Promise<void> {
 	const Sentry = await loadSentry().catch(() => null);
 	if (!Sentry) return;
-	Sentry.setUser(user);
+	// Usernames are commonly emails/PII.  The anonymous installation ID is
+	// already attached by initSentry; do not send an additional identifier.
+	Sentry.setUser(user.id ? { id: redactTelemetryString(user.id, 200) } : null);
 }
 
 /**
@@ -229,7 +281,11 @@ export async function setUser(user: { id?: string; username?: string }): Promise
 export async function setTags(tags: Record<string, string>): Promise<void> {
 	const Sentry = await loadSentry().catch(() => null);
 	if (!Sentry) return;
-	Sentry.setTags(tags);
+	const safeTags: Record<string, string> = {};
+	for (const [key, value] of Object.entries(tags)) {
+		safeTags[key] = redactTelemetryString(value, 200);
+	}
+	Sentry.setTags(safeTags);
 }
 
 /**

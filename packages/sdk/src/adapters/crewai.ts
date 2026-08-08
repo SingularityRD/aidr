@@ -15,7 +15,19 @@ import type { CheckRequest, CheckResult } from "../config.js";
 export interface CrewAITool {
 	name: string;
 	description: string;
-	run: (...args: any[]) => Promise<any> | any;
+	run: (...args: unknown[]) => Promise<unknown> | unknown;
+}
+
+interface CrewAgentLike {
+	tools?: CrewAITool[];
+	executeTask?: (...args: unknown[]) => Promise<unknown> | unknown;
+	role?: string;
+	name?: string;
+}
+
+interface CrewLike {
+	agents?: CrewAgentLike[];
+	kickoff?: (...args: unknown[]) => Promise<unknown> | unknown;
 }
 
 /**
@@ -41,7 +53,7 @@ export interface AIDRCrewToolOptions {
 	/** Whether to throw on deny verdict (default: true) */
 	throwOnDeny?: boolean;
 	/** Custom metadata for the security check */
-	metadata?: Record<string, any>;
+	metadata?: Record<string, unknown>;
 }
 
 /**
@@ -87,7 +99,7 @@ export class AIDRCrewTool {
 	 * @returns Tool result
 	 * @throws AIDRCrewSecurityError if verdict is deny and throwOnDeny is true
 	 */
-	async run(...args: any[]): Promise<any> {
+	async run(...args: unknown[]): Promise<unknown> {
 		const toolName = this.innerTool.name || "unknown";
 
 		// Build check request
@@ -214,10 +226,10 @@ export function wrapCrewToolsWithAIDR(
  * ```
  */
 export function wrapCrewAgentWithAIDR(
-	agent: any,
+	agent: CrewAgentLike,
 	client: AIDRClient,
 	options?: AIDRCrewToolOptions,
-): any {
+): CrewAgentLike {
 	// Wrap all tools in the agent
 	if (agent.tools && Array.isArray(agent.tools)) {
 		agent.tools = agent.tools.map((tool: CrewAITool) => new AIDRCrewTool(tool, client, options));
@@ -226,7 +238,7 @@ export function wrapCrewAgentWithAIDR(
 	// Monitor task execution if agent has execute_task method
 	if (agent.executeTask) {
 		const originalExecuteTask = agent.executeTask.bind(agent);
-		agent.executeTask = async (...args: any[]) => {
+		agent.executeTask = async (...args: unknown[]) => {
 			const taskInput = args[0];
 
 			// Check task delegation
@@ -274,14 +286,14 @@ export function wrapCrewAgentWithAIDR(
  * ```
  */
 export function wrapCrewWithAIDR(
-	crew: any,
+	crew: CrewLike,
 	client: AIDRClient,
 	options?: AIDRCrewToolOptions,
-): any {
+	): CrewLike {
 	// Wrap kickoff method to monitor crew execution
 	if (crew.kickoff) {
 		const originalKickoff = crew.kickoff.bind(crew);
-		crew.kickoff = async (...args: any[]) => {
+		crew.kickoff = async (...args: unknown[]) => {
 			// Log crew execution start
 			console.info(
 				`Starting secure crew execution with session ${options?.sessionId || "default"}`,
@@ -289,7 +301,7 @@ export function wrapCrewWithAIDR(
 
 			// Wrap all agent tools in the crew
 			if (crew.agents && Array.isArray(crew.agents)) {
-				crew.agents = crew.agents.map((agent: any) =>
+				crew.agents = crew.agents.map((agent) =>
 					wrapCrewAgentWithAIDR(agent, client, options),
 				);
 			}

@@ -1,8 +1,9 @@
 {
   "name": "@singularityrd/aidr-opencode",
-  "license": "Apache-2.0",
+  "license": "Proprietary",
   "publishConfig": {
-    "access": "public"
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
   },
   "version": "0.6.0",
   "type": "module",
@@ -30,9 +31,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@singularityrd/aidr-core": "workspace:*",
-    "pino": "^9.6.0",
-    "@sentry/node": "^9.0.0"
+    "@singularityrd/aidr-core": "workspace:*"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.2.10",

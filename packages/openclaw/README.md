@@ -39,7 +39,11 @@ Singularity AIDR works out of the box with no configuration. Optional config fil
 
 ## License
 
-Apache License 2.0 - Copyright 2026 SingularityRD.
-
+The first-party OpenClaw integration is proprietary and distributed under the
+commercial terms in the repository [LICENSE](../../LICENSE) and the applicable
+Order Form. Threat resources retain the [Detection Rule License 1.1](resources/threats/LICENSE).
+Third-party components retain their original terms listed in
+[THIRD_PARTY_NOTICES](../../THIRD_PARTY_NOTICES). Legal approval of the
+current Release Candidate remains open.
 
 

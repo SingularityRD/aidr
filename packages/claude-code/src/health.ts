@@ -11,7 +11,9 @@ import {
 	type HealthCheck,
 	type HealthStatus,
 	runHealthChecks,
+	VERSION,
 } from "@singularityrd/aidr-core";
+import { resolveAssetDir } from "./assets.js";
 
 const args = process.argv.slice(2);
 const jsonFlag = args.includes("--json") || args.includes("-j");
@@ -20,6 +22,13 @@ const checkIndex = args.findIndex((arg) => arg === "--check" || arg === "-c");
 const specificCheck = checkIndex >= 0 && args[checkIndex + 1] ? args[checkIndex + 1] : null;
 
 const VALID_CHECKS = ["core", "cache", "threat_rules", "api"];
+
+// Core health checks use AIDR_THREATS_DIR when supplied. Resolve packaged
+// resources before running them so a clean consumer cwd cannot make a valid
+// install look empty/degraded.
+if (!process.env.AIDR_THREATS_DIR) {
+	process.env.AIDR_THREATS_DIR = resolveAssetDir("threats");
+}
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complexity inherent in health check orchestration
 async function main(): Promise<void> {
@@ -102,15 +111,19 @@ Examples:
 
 		const totalLatency = Date.now() - startTime;
 		const timestamp = new Date().toISOString();
-		const version = process.env.AIDR_VERSION || "0.6.0";
+		const version = process.env.AIDR_VERSION || VERSION;
 
 		if (jsonFlag) {
 			// JSON output format
+			const checkStatuses: Record<string, HealthCheck["status"]> = {};
+			for (const check of checks) {
+				checkStatuses[check.name] = check.status;
+			}
 			const result = {
 				status,
 				timestamp,
 				version,
-				checks: checks.reduce((acc, c) => ({ ...acc, [c.name]: c.status }), {}),
+				checks: checkStatuses,
 				checkDetails: checks.map((c) => ({
 					name: c.name,
 					status: c.status,
@@ -142,7 +155,7 @@ Examples:
 					{
 						status: "unhealthy",
 						timestamp: new Date().toISOString(),
-						version: process.env.AIDR_VERSION || "unknown",
+						version: process.env.AIDR_VERSION || VERSION,
 						checks: { error: message },
 					},
 					null,

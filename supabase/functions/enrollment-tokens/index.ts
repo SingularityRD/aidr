@@ -5,6 +5,7 @@
 // Creates/list/deletes enrollment tokens (plaintext shown once; hash-only at rest).
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { corsJson, handleCors } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -12,16 +13,9 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 const CREATE_RL_PER_MIN = Number(Deno.env.get("AIDR_ENROLLTOKEN_CREATE_RL_PER_MIN") ?? "20");
 const DEFAULT_TTL_HOURS = Number(Deno.env.get("AIDR_ENROLLTOKEN_DEFAULT_TTL_HOURS") ?? "24");
 
-function json(status: number, body: Record<string, unknown>) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { "Content-Type": "application/json" },
-	});
-}
-
 function getBearerToken(req: Request): string | null {
 	const header = req.headers.get("Authorization") ?? "";
-	const m = header.match(/^Bearer\\s+(.+)$/i);
+	const m = header.match(/^Bearer\s+(.+)$/i);
 	return m?.[1]?.trim() ? m[1].trim() : null;
 }
 
@@ -42,7 +36,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 function base64Url(bytes: Uint8Array): string {
 	const b64 = bytesToBase64(bytes);
-	return b64.replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+	return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function randomEnrollmentToken(): string {
@@ -56,6 +50,28 @@ function addHoursIso(hours: number): string {
 	return new Date(Date.now() + safe * 60 * 60 * 1000).toISOString();
 }
 
+async function resolveTenantId(
+	supabase: ReturnType<typeof createClient>,
+	userId: string,
+	req: Request,
+): Promise<string | null> {
+	const requested = (req.headers.get("X-AIDR-Tenant-ID") ?? "").trim();
+	if (!requested) return userId;
+	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requested)) {
+		return null;
+	}
+	const { data } = await supabase
+		.from("tenant_members")
+		.select("tenant_id,expires_at,role")
+		.eq("tenant_id", requested)
+		.eq("user_id", userId)
+		.maybeSingle();
+	if (!data?.tenant_id) return null;
+	if (data.expires_at && new Date(String(data.expires_at)).getTime() <= Date.now()) return null;
+	if (!["owner", "admin", "member"].includes(String(data.role))) return null;
+	return String(data.tenant_id);
+}
+
 async function rateLimitCreate(
 	supabase: ReturnType<typeof createClient>,
 	userId: string,
@@ -67,41 +83,45 @@ async function rateLimitCreate(
 		p_window_start: nowMin,
 		p_delta: 1,
 	});
-	// Fail open if rate limiting isn't configured yet.
-	if (error) return true;
-	const { data } = await supabase
+	if (error) return false;
+	const { data, error: countError } = await supabase
 		.from("rate_limits")
 		.select("count")
 		.eq("key", key)
 		.eq("window_start", nowMin)
 		.maybeSingle();
+	if (countError) return false;
 	const count = Number((data as any)?.count ?? 0);
 	return Number.isFinite(CREATE_RL_PER_MIN) && CREATE_RL_PER_MIN > 0 ? count <= CREATE_RL_PER_MIN : true;
 }
 
 Deno.serve(async (req) => {
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return json(500, { error: "misconfigured_supabase_env" });
+	const preflight = handleCors(req);
+	if (preflight) return preflight;
+	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return corsJson(req, 500, { error: "misconfigured_supabase_env" });
 
 	const accessToken = getBearerToken(req);
-	if (!accessToken) return json(401, { error: "missing_access_token" });
+	if (!accessToken) return corsJson(req, 401, { error: "missing_access_token" });
 
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
 
 	const { data: userData, error: userErr } = await supabase.auth.getUser(accessToken);
-	if (userErr || !userData?.user?.id) return json(401, { error: "invalid_access_token" });
+	if (userErr || !userData?.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
 	const userId = userData.user.id;
+	const tenantId = await resolveTenantId(supabase, userId, req);
+	if (!tenantId) return corsJson(req, 403, { error: "tenant_not_authorized" });
 
 	if (req.method === "GET") {
 		const { data, error } = await supabase
 			.from("enrollment_tokens")
 			.select("id,label,expires_at,consumed_at,created_at")
-			.eq("user_id", userId)
+			.eq("tenant_id", tenantId)
 			.order("created_at", { ascending: false })
 			.limit(200);
-		if (error) return json(500, { error: "db_error" });
-		return json(200, { ok: true, tokens: data ?? [] });
+		if (error) return corsJson(req, 500, { error: "db_error" });
+		return corsJson(req, 200, { ok: true, tokens: data ?? [] });
 	}
 
 	if (req.method === "POST") {
@@ -116,25 +136,26 @@ Deno.serve(async (req) => {
 
 		if (action === "delete") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
-			if (!id) return json(400, { error: "missing_id" });
+			if (!id) return corsJson(req, 400, { error: "missing_id" });
 			const { error } = await supabase
 				.from("enrollment_tokens")
 				.delete()
 				.eq("id", id)
-				.eq("user_id", userId);
-			if (error) return json(500, { error: "db_error" });
+				.eq("tenant_id", tenantId);
+			if (error) return corsJson(req, 500, { error: "db_error" });
 			await supabase.from("admin_audit_logs").insert({
 				actor_user_id: userId,
+				tenant_id: tenantId,
 				action: "enrollment_token.delete",
 				target_user_id: userId,
 				detail: { id },
 			});
-			return json(200, { ok: true });
+			return corsJson(req, 200, { ok: true });
 		}
 
 		// create
-		const ok = await rateLimitCreate(supabase, userId);
-		if (!ok) return json(429, { error: "rate_limited" });
+		const ok = await rateLimitCreate(supabase, `${tenantId}:${userId}`);
+		if (!ok) return corsJson(req, 429, { error: "rate_limited" });
 
 		const label = typeof body.label === "string" ? body.label.trim() : null;
 		const ttlHoursRaw = Number(body.ttl_hours ?? DEFAULT_TTL_HOURS);
@@ -148,6 +169,7 @@ Deno.serve(async (req) => {
 			const tokenHash = await sha256Hex(token);
 			const { error } = await supabase.from("enrollment_tokens").insert({
 				user_id: userId,
+				tenant_id: tenantId,
 				label,
 				token_hash: tokenHash,
 				expires_at: expiresAt,
@@ -158,18 +180,18 @@ Deno.serve(async (req) => {
 			}
 		}
 
-		if (!inserted) return json(500, { error: "token_issue_failed" });
+		if (!inserted) return corsJson(req, 500, { error: "token_issue_failed" });
 
 		await supabase.from("admin_audit_logs").insert({
 			actor_user_id: userId,
+			tenant_id: tenantId,
 			action: "enrollment_token.create",
 			target_user_id: userId,
 			detail: { label, ttl_hours: ttlHours },
 		});
 
-		return json(200, { ok: true, enrollment_token: token, expires_at: expiresAt });
+		return corsJson(req, 200, { ok: true, enrollment_token: token, expires_at: expiresAt });
 	}
 
-	return json(405, { error: "method_not_allowed" });
+	return corsJson(req, 405, { error: "method_not_allowed" });
 });
-

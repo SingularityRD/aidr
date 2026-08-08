@@ -1,0 +1,281 @@
+/**
+ * Exercise the release artifacts the same way a consumer would.
+ *
+ * `check-package-contracts.mjs` proves that declared paths exist. This gate
+ * goes one step further and loads/runs the paths that can be exercised in a
+ * Node-only release environment. VS Code extension entry points are parsed
+ * with `node --check` because the real `vscode` host is intentionally not
+ * available in CI or in a plain Node consumer process.
+ *
+ * Usage:
+ *   node scripts/check-package-consumers.mjs [packageDir ...]
+ *
+ * With no arguments all release package artifacts are checked. Passing
+ * package directories is useful when iterating on one package locally.
+ */
+
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import path from "node:path";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const TARGETS = [
+	{ key: "packages/core", check: checkCore },
+	{ key: "packages/claude-code", check: checkClaude },
+	{ key: "packages/extension", check: checkExtension },
+	{ key: "packages/openclaw", check: checkOpenClaw },
+	{ key: "packages/opencode", check: checkOpenCode },
+	{ key: "packages/cli", check: checkCli },
+	{ key: "packages/sdk", check: checkSdk },
+	{ key: "packages/dashboard", check: checkDashboard },
+];
+
+const requested = process.argv.slice(2).map(normalizePackageArg);
+const failures = [];
+
+if (requested.length > 0) {
+	for (const arg of requested) {
+		if (!TARGETS.some((target) => target.key === arg)) {
+			failures.push(`Unknown package directory: ${arg}`);
+		}
+	}
+}
+
+const selected = TARGETS.filter((target) => requested.length === 0 || requested.includes(target.key));
+
+for (const target of selected) {
+	try {
+		await target.check();
+		console.log(`PASS ${target.key} consumer smoke`);
+	} catch (error) {
+		failures.push(`${target.key}: ${formatError(error)}`);
+	}
+}
+
+if (failures.length > 0) {
+	console.error("ERROR: release package consumer checks failed:");
+	for (const failure of failures) console.error(`  - ${failure}`);
+	process.exit(1);
+}
+
+console.log(`Package consumer checks passed for ${selected.length} package(s).`);
+
+async function checkCore() {
+	const entry = artifact("packages/core/dist/index.js");
+	const result = runNodeModule(
+		entry,
+		"const mod = await import(process.argv[1]); if (typeof mod.evaluateToolCall !== 'function') throw new Error('evaluateToolCall export is missing');",
+	);
+	assertSuccess(result, "core ESM import");
+}
+
+async function checkClaude() {
+	const entry = artifact("packages/claude-code/dist/health.cjs");
+	const cleanCwd = mkdtempSync(path.join(tmpdir(), "aidr-claude-consumer-"));
+	let result;
+	try {
+		result = runNode([entry, "--json"], { cwd: cleanCwd });
+	} finally {
+		rmSync(cleanCwd, { recursive: true, force: true });
+	}
+	assertClaudeHealthResult(result, "Claude health --json");
+
+	// Pack and extract the actual package, then run its bin outside the
+	// repository. This catches missing `files` entries and workspace-cwd
+	// assumptions that a direct dist smoke would miss.
+	const packRoot = mkdtempSync(path.join(tmpdir(), "aidr-claude-pack-"));
+	const extractedRoot = mkdtempSync(path.join(tmpdir(), "aidr-claude-extract-"));
+	try {
+		const packageDir = path.join(repoRoot, "packages", "claude-code");
+		const packed = runPnpm(["pack", "--pack-destination", packRoot], packageDir);
+		assertSuccess(packed, "Claude package pack");
+		const tarballs = readdirSync(packRoot).filter((name) => name.endsWith(".tgz"));
+		if (tarballs.length !== 1) {
+			throw new Error(`expected one Claude tarball, found ${tarballs.length}`);
+		}
+		const tarball = path.join(packRoot, tarballs[0]);
+		const extracted = runCommand("tar", ["-xzf", tarball, "-C", extractedRoot], repoRoot);
+		assertSuccess(extracted, "Claude package extraction");
+
+		const unpacked = path.join(extractedRoot, "package");
+		for (const required of [
+			"package.json",
+			"dist/health.cjs",
+			"resources/threats",
+			"resources/allowlists",
+		]) {
+			if (!existsSync(path.join(unpacked, required))) {
+				throw new Error(`Claude tarball is missing ${required}`);
+			}
+		}
+		const unpackedHealth = path.join(unpacked, "dist", "health.cjs");
+		const unpackedCwd = mkdtempSync(path.join(tmpdir(), "aidr-claude-unpacked-cwd-"));
+		try {
+			const unpackedResult = runNode([unpackedHealth, "--json"], { cwd: unpackedCwd });
+			assertClaudeHealthResult(unpackedResult, "unpacked Claude health --json");
+		} finally {
+			rmSync(unpackedCwd, { recursive: true, force: true });
+		}
+	} finally {
+		rmSync(packRoot, { recursive: true, force: true });
+		rmSync(extractedRoot, { recursive: true, force: true });
+	}
+}
+
+function assertClaudeHealthResult(result, label) {
+	assertSuccess(result, label);
+	let payload;
+	try {
+		payload = JSON.parse(result.stdout);
+	} catch (error) {
+		throw new Error(`${label} output is not valid JSON: ${formatError(error)}`);
+	}
+	if (payload?.status !== "healthy") {
+		throw new Error(`${label} status is ${JSON.stringify(payload?.status)} (expected healthy)`);
+	}
+	if (typeof payload?.checks !== "object" || payload.checks === null) {
+		throw new Error(`${label} output is missing checks`);
+	}
+	const threatCheck = payload.checkDetails?.find?.((check) => check?.name === "threat_rules");
+	if (threatCheck?.status !== "healthy" || Number(threatCheck?.details?.rulesCount ?? 0) <= 0) {
+		throw new Error(`${label} packaged threat rules are missing or empty`);
+	}
+	if (!String(threatCheck?.details?.threatsDir ?? "").includes("resources")) {
+		throw new Error(`${label} did not resolve threat rules from packaged resources`);
+	}
+}
+
+async function checkExtension() {
+	for (const rel of [
+		"packages/extension/dist/cursor_extension.js",
+		"packages/extension/dist/vscode_extension.js",
+		"packages/extension/dist/aidr-hook.cjs",
+	]) {
+		const entry = artifact(rel);
+		const result = runNode(["--check", entry]);
+		assertSuccess(result, `${rel} syntax check`);
+	}
+}
+
+async function checkOpenClaw() {
+	const entry = artifact("packages/openclaw/dist/index.cjs");
+	const result = runNode([
+		"-e",
+		"const mod = require(process.argv[1]); const plugin = mod?.default ?? mod; if (typeof plugin?.register !== 'function') throw new Error('default plugin register() is missing');",
+		entry,
+	]);
+	assertSuccess(result, "OpenClaw CommonJS import");
+}
+
+async function checkOpenCode() {
+	const entry = artifact("packages/opencode/dist/index.js");
+	const result = runNodeModule(
+		entry,
+		"const mod = await import(process.argv[1]); const plugin = mod?.AidrPlugin ?? mod?.default; if (typeof plugin !== 'function') throw new Error('AidrPlugin export is missing');",
+	);
+	assertSuccess(result, "OpenCode ESM import");
+}
+
+async function checkCli() {
+	const entry = artifact("packages/cli/dist/index.js");
+	const result = runNode([entry, "--help"]);
+	assertSuccess(result, "AIDR CLI --help");
+	if (!/Usage:\s+aidr\b/i.test(result.stdout)) {
+		throw new Error("CLI help output does not contain the aidr usage header");
+	}
+}
+
+async function checkSdk() {
+	const cjsEntry = artifact("packages/sdk/dist/index.cjs");
+	const esmEntry = artifact("packages/sdk/dist/index.mjs");
+	const cjsResult = runNode([
+		"-e",
+		"const mod = require(process.argv[1]); if (typeof mod.AIDRClient !== 'function') throw new Error('AIDRClient export is missing'); if (typeof mod.SDK_VERSION !== 'string') throw new Error('SDK_VERSION export is missing');",
+		cjsEntry,
+	]);
+	assertSuccess(cjsResult, "SDK CommonJS import");
+	const esmResult = runNodeModule(
+		esmEntry,
+		"const mod = await import(process.argv[1]); if (typeof mod.AIDRClient !== 'function') throw new Error('AIDRClient export is missing'); if (typeof mod.SDK_VERSION !== 'string') throw new Error('SDK_VERSION export is missing');",
+	);
+	assertSuccess(esmResult, "SDK ESM import");
+
+	const cliResult = runNode([artifact("packages/sdk/dist/cli.cjs"), "--help"]);
+	assertSuccess(cliResult, "SDK CLI --help");
+	if (!/Usage:\s+aidr\b/i.test(cliResult.stdout)) {
+		throw new Error("SDK CLI help output does not contain the aidr usage header");
+	}
+}
+
+async function checkDashboard() {
+	const htmlPath = artifact("packages/dashboard/dist/index.html");
+	const html = readFileSync(htmlPath, "utf8");
+	if (!/<div[^>]+id=["']root["']/i.test(html)) {
+		throw new Error("dashboard index.html is missing the root mount element");
+	}
+	if (!/(?:src|href)=["'][^"']*assets\//i.test(html)) {
+		throw new Error("dashboard index.html does not reference a built asset");
+	}
+}
+
+function artifact(relativePath) {
+	const absolute = path.resolve(repoRoot, relativePath);
+	if (!existsSync(absolute)) throw new Error(`missing release artifact ${relativePath}`);
+	return absolute;
+}
+
+function runNode(args, options = {}) {
+	return runCommand(process.execPath, args, options.cwd ?? repoRoot);
+}
+
+function runPnpm(args, cwd) {
+	if (process.platform === "win32") {
+		// Invoke Corepack's JS entry directly so the gate does not need shell
+		// quoting (and does not emit Node's shell-argument warning).
+		const corepackPnpm = path.join(path.dirname(process.execPath), "node_modules", "corepack", "dist", "pnpm.js");
+		if (existsSync(corepackPnpm)) return runCommand(process.execPath, [corepackPnpm, ...args], cwd);
+	}
+	return runCommand(process.platform === "win32" ? "pnpm.cmd" : "pnpm", args, cwd, {
+		shell: process.platform === "win32",
+	});
+}
+
+function runCommand(command, args, cwd, options = {}) {
+	return spawnSync(command, args, {
+		cwd,
+		shell: options.shell ?? false,
+		encoding: "utf8",
+		maxBuffer: 4 * 1024 * 1024,
+		timeout: 30_000,
+		env: {
+			...process.env,
+			NODE_ENV: "test",
+			CI: "1",
+		},
+	});
+}
+
+function runNodeModule(entry, expression) {
+	return runNode(["--input-type=module", "-e", expression, pathToFileURL(entry).href]);
+}
+
+function assertSuccess(result, label) {
+	if (result.error) throw new Error(`${label} could not start: ${formatError(result.error)}`);
+	if (result.status !== 0) {
+		const details = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+		throw new Error(`${label} exited ${String(result.status)}${details ? `: ${details}` : ""}`);
+	}
+}
+
+function normalizePackageArg(value) {
+	const absolute = path.resolve(repoRoot, value);
+	const relative = path.relative(repoRoot, absolute).replaceAll("\\", "/");
+	return relative.replace(/\/$/, "");
+}
+
+function formatError(error) {
+	return error instanceof Error ? error.message : String(error);
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@singularityrd/aidr-codex",
+  "license": "Proprietary",
+  "publishConfig": { "access": "restricted", "registry": "https://npm.pkg.github.com" },
+  "version": "0.6.0",
+  "type": "module",
+  "description": "Singularity AIDR Codex hook and central policy handoff",
+  "main": "./dist/index.js",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "bin": { "aidr-codex-hook": "./dist/cli.js" },
+  "files": ["dist/**", "package.json", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "npm run clean && tsc",
+    "clean": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo",
+    "typecheck": "tsc --noEmit",
+		"test": "vitest run --config ./vitest.config.ts",
+    "prepack": "node ../../scripts/check-workspace-refs.mjs"
+  },
+  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.0", "vitest": "^4.1.2" },
+  "engines": { "node": ">=18" }
+}

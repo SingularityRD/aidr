@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
+import { getInvoiceContactHref, selfServiceCheckoutEnabled } from "./commercial";
 import { createCheckout } from "./lemon-client";
 
 interface Seat {
@@ -33,7 +34,7 @@ export function SeatManager({ userId }: { userId: string }) {
 
 	useEffect(() => {
 		loadUserData();
-	}, [loadUserData]);
+	}, [userId]);
 
 	async function loadUserData() {
 		setIsLoading(true);
@@ -116,6 +117,12 @@ export function SeatManager({ userId }: { userId: string }) {
 	}
 
 	async function addSeat() {
+		if (!selfServiceCheckoutEnabled) {
+			setError(
+				"Self-service checkout is disabled for the direct-GA release. Use the approved enterprise invoice workflow.",
+			);
+			return;
+		}
 		if (!userEmail || !subscription) {
 			setError("Please complete onboarding first");
 			return;
@@ -343,9 +350,24 @@ export function SeatManager({ userId }: { userId: string }) {
 			</div>
 
 			<div className="row" style={{ marginTop: 20 }}>
-				<button className="button" onClick={addSeat} disabled={!canAddMore || isAddingSeat}>
-					{isAddingSeat ? "Loading..." : canAddMore ? "+ Add Seat" : "Seat Limit Reached"}
-				</button>
+				{selfServiceCheckoutEnabled ? (
+					<button className="button" onClick={addSeat} disabled={!canAddMore || isAddingSeat}>
+						{isAddingSeat ? "Loading..." : canAddMore ? "+ Add Seat" : "Seat Limit Reached"}
+					</button>
+				) : getInvoiceContactHref() ? (
+					<a
+						className="button"
+						href={getInvoiceContactHref() ?? undefined}
+						target={getInvoiceContactHref()?.startsWith("mailto:") ? undefined : "_blank"}
+						rel={getInvoiceContactHref()?.startsWith("mailto:") ? undefined : "noreferrer"}
+					>
+						Request enterprise invoice
+					</a>
+				) : (
+					<span className="muted small">
+						Self-service billing is disabled; configure the approved sales channel.
+					</span>
+				)}
 				<button className="button button-secondary" onClick={loadUserData} disabled={isLoading}>
 					Refresh
 				</button>

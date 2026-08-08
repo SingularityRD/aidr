@@ -55,16 +55,17 @@ Deno.serve(async (req) => {
 	const keyHash = await sha256Hex(apiKey);
 	const { data: keyRow, error: keyErr } = await supabase
 		.from("api_keys")
-		.select("user_id, revoked")
+		.select("user_id, tenant_id, revoked")
 		.eq("key_hash", keyHash)
 		.maybeSingle();
 	if (keyErr || !keyRow || keyRow.revoked) return json(401, { error: "invalid_api_key" });
 
 	const userId = keyRow.user_id as string;
+	const tenantId = (keyRow.tenant_id as string | null) ?? userId;
 	const { data: entRow, error: entErr } = await supabase
 		.from("entitlements")
 		.select("premium_intel,premium_pkg_plugin")
-		.eq("user_id", userId)
+		.eq("tenant_id", tenantId)
 		.maybeSingle();
 	if (entErr || !entRow) return json(500, { error: "missing_entitlements" });
 	if (entRow.premium_intel !== true && entRow.premium_pkg_plugin !== true) {
@@ -73,11 +74,12 @@ Deno.serve(async (req) => {
 
 	const { data: row, error: rowErr } = await supabase
 		.from("pack_versions")
-		.select("storage_path")
+		.select("storage_path,tenant_id")
 		.eq("pack_id", packId)
 		.eq("version", version)
 		.maybeSingle();
 	if (rowErr || !row) return json(404, { error: "pack_not_found" });
+	if (row.tenant_id && row.tenant_id !== tenantId) return json(404, { error: "pack_not_found" });
 
 	const { data: signed, error: signErr } = await supabase.storage
 		.from(PACKS_BUCKET)
@@ -86,4 +88,3 @@ Deno.serve(async (req) => {
 
 	return json(200, { ok: true, download_url: signed.signedUrl });
 });
-

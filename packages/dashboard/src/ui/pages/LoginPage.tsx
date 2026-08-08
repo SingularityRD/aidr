@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Turnstile } from "../../components/Turnstile";
 import { supabase } from "../../lib/supabase";
@@ -15,14 +15,33 @@ export function LoginPage() {
 	const [captchaVerified, setCaptchaVerified] = useState(false);
 
 	const trimmedEmail = useMemo(() => email.trim(), [email]);
+	const captchaConfigured = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
+	const captchaReady = !captchaConfigured || captchaVerified;
 	const redirectTo = `${location.origin}/auth/callback`;
 	const returnTo = (searchParams.get("returnTo") ?? "").trim();
+	const handleCaptchaVerify = useCallback((token: string) => {
+		setCaptchaToken(token);
+		setCaptchaVerified(true);
+	}, []);
+	const handleCaptchaError = useCallback(() => {
+		setCaptchaVerified(false);
+		setCaptchaToken(null);
+	}, []);
+	const handleCaptchaExpire = useCallback(() => {
+		setCaptchaVerified(false);
+		setCaptchaToken(null);
+	}, []);
 
 	useEffect(() => {
 		let cancelled = false;
 		async function run() {
-			const session = await getSession();
-			if (!cancelled && session) navigate("/onboarding", { replace: true });
+			try {
+				const session = await getSession();
+				if (!cancelled && session) navigate("/onboarding", { replace: true });
+			} catch (cause) {
+				if (!cancelled)
+					setStatus(cause instanceof Error ? cause.message : "Unable to check your session.");
+			}
 		}
 		run();
 		return () => {
@@ -106,6 +125,8 @@ export function LoginPage() {
 									setStatus(error.message);
 								}
 							}
+						} catch (cause) {
+							setStatus(cause instanceof Error ? cause.message : "Google sign-in is unavailable.");
 						} finally {
 							setBusy(false);
 						}
@@ -181,6 +202,8 @@ export function LoginPage() {
 									setStatus(error.message);
 								}
 							}
+						} catch (cause) {
+							setStatus(cause instanceof Error ? cause.message : "GitHub sign-in is unavailable.");
 						} finally {
 							setBusy(false);
 						}
@@ -250,6 +273,7 @@ export function LoginPage() {
 				{/* Email Input */}
 				<div style={{ marginBottom: "16px" }}>
 					<label
+						htmlFor="login-email"
 						style={{
 							display: "block",
 							fontSize: "14px",
@@ -261,6 +285,7 @@ export function LoginPage() {
 						Email address
 					</label>
 					<input
+						id="login-email"
 						type="email"
 						value={email}
 						onChange={(e) => setEmail(e.target.value)}
@@ -288,24 +313,15 @@ export function LoginPage() {
 
 				{/* CAPTCHA Verification */}
 				<Turnstile
-					onVerify={(token) => {
-						setCaptchaToken(token);
-						setCaptchaVerified(true);
-					}}
-					onError={() => {
-						setCaptchaVerified(false);
-						setCaptchaToken(null);
-					}}
-					onExpire={() => {
-						setCaptchaVerified(false);
-						setCaptchaToken(null);
-					}}
+					onVerify={handleCaptchaVerify}
+					onError={handleCaptchaError}
+					onExpire={handleCaptchaExpire}
 				/>
 
 				{/* Magic Link Button */}
 				<button
 					type="button"
-					disabled={busy || !trimmedEmail || !captchaVerified}
+					disabled={busy || !trimmedEmail || !captchaReady}
 					onClick={async () => {
 						setBusy(true);
 						setStatus(null);
@@ -315,7 +331,7 @@ export function LoginPage() {
 								email: trimmedEmail,
 								options: {
 									emailRedirectTo: redirectTo,
-									captchaToken: captchaToken || undefined,
+									captchaToken: captchaConfigured ? captchaToken || undefined : undefined,
 								},
 							});
 							if (error) {
@@ -323,6 +339,10 @@ export function LoginPage() {
 							} else {
 								setStatus("Magic link sent! Check your inbox.");
 							}
+						} catch (cause) {
+							setStatus(
+								cause instanceof Error ? cause.message : "Magic-link sign-in is unavailable.",
+							);
 						} finally {
 							setBusy(false);
 						}
@@ -336,8 +356,8 @@ export function LoginPage() {
 						fontSize: "15px",
 						fontWeight: 600,
 						color: "#ffffff",
-						cursor: busy || !trimmedEmail || !captchaVerified ? "not-allowed" : "pointer",
-						opacity: busy || !trimmedEmail || !captchaVerified ? 0.6 : 1,
+						cursor: busy || !trimmedEmail || !captchaReady ? "not-allowed" : "pointer",
+						opacity: busy || !trimmedEmail || !captchaReady ? 0.6 : 1,
 						transition: "all 0.2s ease",
 					}}
 					onMouseEnter={(e) => {
@@ -357,6 +377,7 @@ export function LoginPage() {
 				{/* Status Message */}
 				{status && (
 					<div
+						role="alert"
 						style={{
 							marginTop: "16px",
 							padding: "12px 16px",

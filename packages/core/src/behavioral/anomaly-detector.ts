@@ -383,23 +383,26 @@ export class AnomalyDetector {
 		}
 
 		for (let j = 0; j <= a.length; j++) {
-			matrix[0]![j] = j;
+			const firstRow = matrix[0] ?? (matrix[0] = []);
+			firstRow[j] = j;
 		}
 
 		for (let i = 1; i <= b.length; i++) {
+			const currentRow = matrix[i] ?? (matrix[i] = []);
+			const previousRow = matrix[i - 1] ?? [];
 			for (let j = 1; j <= a.length; j++) {
 				if (b.charAt(i - 1) === a.charAt(j - 1)) {
-					matrix[i]![j] = matrix[i - 1]?.[j - 1]!;
+					currentRow[j] = previousRow[j - 1] ?? 0;
 				} else {
-					matrix[i]![j] = Math.min(
-						matrix[i - 1]?.[j - 1]! + 1,
-						Math.min(matrix[i]?.[j - 1]! + 1, matrix[i - 1]?.[j]! + 1),
+					currentRow[j] = Math.min(
+						(previousRow[j - 1] ?? 0) + 1,
+						Math.min((currentRow[j - 1] ?? 0) + 1, (previousRow[j] ?? 0) + 1),
 					);
 				}
 			}
 		}
 
-		return matrix[b.length]?.[a.length]!;
+		return matrix[b.length]?.[a.length] ?? 0;
 	}
 }
 

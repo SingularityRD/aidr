@@ -1,0 +1,83 @@
+Singularity AIDR — Third-Party Notices
+======================================
+
+Copyright 2026 SingularityRD for this inventory document.
+
+The Singularity AIDR first-party product is proprietary under LICENSE. This
+file preserves the notices for third-party components that may be included in
+source, development, packaged, or hosted artifacts. A package's own licence
+file and copyright notice control where they provide more specific terms.
+
+The release evidence process must regenerate the complete transitive notice
+bundle from the locked dependency graph and attach it to the signed SBOM. The
+entries below are the direct dependency baseline declared by the workspace;
+they are not a substitute for that generated release artifact.
+
+Direct runtime dependency baseline
+----------------------------------
+
+| Component family | Declared package/range in workspace | Declared licence | Notice/source |
+|---|---|---|---|
+| YAML parser | `yaml@^2.8.3` | ISC | https://github.com/eemeli/yaml |
+| Schema validation | `zod@^3.24.0` | MIT | https://github.com/colinhacks/zod |
+| Structured logging | `pino@^9.6.0` | MIT | https://github.com/pinojs/pino |
+| Model Context Protocol SDK | `@modelcontextprotocol/sdk@^1.28.0` | MIT | https://github.com/modelcontextprotocol/typescript-sdk |
+| Sentry Node/browser clients | `@sentry/node@^10.69.0`, `@sentry/browser@^10.69.0`, `@sentry/react@^10.69.0` | MIT | https://github.com/getsentry/sentry-javascript |
+| OpenTelemetry APIs/SDK/exporters | `@opentelemetry/*` | Apache-2.0 | https://github.com/open-telemetry/opentelemetry-js |
+| Semantic versioning | `semver@^7.7.4` | ISC | https://github.com/npm/node-semver |
+| CLI interaction | `commander`, `chalk`, `ora`, `inquirer` | MIT | Respective upstream package repositories |
+| Local SQLite binding | `better-sqlite3@^9.4.3` | MIT | https://github.com/WiseLibs/better-sqlite3 |
+| React runtime/router | `react`, `react-dom`, `react-router-dom` | MIT | https://github.com/facebook/react and https://github.com/remix-run/react-router |
+| Supabase client | `@supabase/supabase-js@^2.56.0` | MIT | https://github.com/supabase/supabase-js |
+| LangChain core | `@langchain/core@^0.3.0` | MIT | https://github.com/langchain-ai/langchainjs |
+| OpenCode plugin API | `@opencode-ai/plugin@^1.2.10` | MIT | Upstream package repository and published package metadata |
+
+Existing notices preserved from the project baseline
+-----------------------------------------------------
+
+- `yaml` — ISC License — https://github.com/eemeli/yaml
+- `zod` — MIT License — https://github.com/colinhacks/zod
+- `pino` — MIT License — https://github.com/pinojs/pino
+
+Pinned AIG vendor source
+------------------------
+
+The pinned Tencent AI-Infra-Guard source under `vendor/ai-infra-guard` is
+distributed under its own Apache License 2.0 and NOTICE files. Preserve the
+vendor `LICENSE`, `NOTICE`, subproject licences, copyright statements and
+the required attribution: “Based on Tencent Zhuque Lab AI-Infra-Guard”, with
+the upstream link https://github.com/Tencent/AI-Infra-Guard. AIDR's
+proprietary LICENSE does not relicense this vendor source. The exact pinned
+revision and checksum must be recorded in the Release Candidate SBOM.
+
+Attribution and distribution rules
+-----------------------------------
+
+1. Do not remove or replace a third-party copyright, licence text, NOTICE,
+   source-availability statement, or attribution requirement.
+2. Include this file and the component-specific notices in any customer,
+   private-registry, air-gapped, or hosted artifact where the component is
+   distributed.
+3. Keep proprietary AIDR terms separate from third-party terms. A commercial
+   Order Form does not alter a third-party licence.
+4. The release SBOM and notice bundle must identify the exact resolved version,
+   package hash, licence expression, source URL, and whether the component is
+   shipped, bundled, downloaded at runtime, or development-only.
+5. Any unclassified package, missing notice, incompatible licence, or source
+   obligation is a release hard stop until Legal and Engineering record a
+   reviewed disposition.
+
+Rule-specific notice
+--------------------
+
+Threat definitions under `threats/` are governed by `threats/LICENSE` (DRL
+1.1), not by the proprietary AIDR product notice. Rule authors and any
+additional attribution fields must be retained in derived detection results
+as required by that licence.
+
+Status
+------
+
+This inventory is a release baseline, not evidence of counsel approval. The
+exact transitive notice/SBOM artifact, Legal review, and Release Candidate
+hash remain open in the commercial evidence registry.

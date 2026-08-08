@@ -1,0 +1,46 @@
+{
+	"version": 1,
+	"purpose": "Customer/investor demo release gate. Execute with a real browser runner (Playwright recommended) against a credentialed deployment.",
+	"requiredEnvironment": [
+		"DASHBOARD_SMOKE_BASE_URL",
+		"VITE_SUPABASE_URL",
+		"VITE_SUPABASE_ANON_KEY",
+		"DEMO_USER_EMAIL",
+		"DEMO_USER_PASSWORD"
+	],
+	"routes": {
+		"public": ["/", "/demo", "/pilot", "/pricing", "/verify", "/login", "/support", "/status", "/privacy", "/security", "/terms"],
+		"protected": ["/onboarding", "/agents", "/autosecops", "/incidents", "/api-keys", "/billing"]
+	},
+	"scenarios": [
+		{
+			"id": "public-deep-links",
+			"steps": ["Open every public route directly", "Reload each route", "Confirm HTTP 200 and visible content", "Confirm no uncaught console error"]
+		},
+		{
+			"id": "unauthenticated-guard",
+			"steps": ["Open every protected route without a session", "Confirm redirect to /login", "Confirm a same-origin returnTo is preserved", "Confirm // or backslash returnTo values are rejected"]
+		},
+		{
+			"id": "password-and-oauth-recovery",
+			"steps": ["Submit invalid credentials", "Confirm actionable error with no secret echo", "Exercise OAuth callback timeout/retry", "Confirm callback returnTo is consumed once"]
+		},
+		{
+			"id": "device-enrollment",
+			"steps": ["Create a device code", "Open the verification link", "Authorize the code", "Confirm polling reaches authorized or expired", "Confirm enrollment token is masked and can be cleared"]
+		},
+		{
+			"id": "billing-and-legal",
+			"steps": ["Open billing with a demo account", "Verify direct-GA checkout is absent, invoice/sales links are safe HTTPS or mailto, and the order-reconciliation notice is visible", "Verify absent status/terms configuration shows a visible fail-closed notice"]
+		},
+		{
+			"id": "accessibility",
+			"steps": ["Run axe-core on each route", "Require zero critical/serious violations", "Check keyboard-only navigation and visible focus", "Check dialog/alert names and live-region announcements"]
+		}
+	],
+	"consolePolicy": {
+		"failOn": ["pageerror", "console.error", "unhandledrejection", "failed network request (except documented auth retries)"],
+		"capture": ["url", "route", "timestamp", "message", "stack"]
+	},
+	"evidence": ["route-status.json", "console.json", "axe.json", "screenshots/", "video/", "environment-redacted.json"]
+}

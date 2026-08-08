@@ -140,6 +140,24 @@ describe("createLogger", () => {
 		expect(JSON.stringify(entry)).not.toContain("secret");
 	});
 
+	it("redacts credentials embedded in free-form messages and arbitrary fields", async () => {
+		const { logger, logFile } = await createFileLogger({ name: "free-form-redaction" });
+
+		logger.warn(
+			{
+				command: "curl https://example.test?token=super-secret",
+				details: "ghp_abcdefghijklmnopqrstuvwxyz123456",
+			},
+			"request failed: Authorization: Bearer super-secret",
+		);
+
+		const [entry] = await readLogEntries(logFile);
+		const serialized = JSON.stringify(entry);
+		expect(serialized).not.toContain("super-secret");
+		expect(serialized).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz123456");
+		expect(entry.msg).toContain("[Redacted]");
+	});
+
 	it("adds child logger component and metadata without losing parent fields", async () => {
 		const { logger, logFile } = await createFileLogger({ name: "parent" });
 		const child = createChildLogger(logger, "scanner", { requestId: "req-1" });

@@ -80,24 +80,6 @@ function createMockSession(userOverrides?: Record<string, unknown>) {
 	};
 }
 
-interface SupabaseSession {
-	access_token: string;
-	refresh_token: string;
-	expires_in: number;
-	expires_at?: number;
-	token_type: string;
-	user: {
-		id: string;
-		aud: string;
-		role: string;
-		email: string | null;
-		created_at: string;
-		app_metadata: Record<string, unknown>;
-		user_metadata: Record<string, unknown>;
-		[prop: string]: unknown;
-	};
-}
-
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------

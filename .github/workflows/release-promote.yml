@@ -1,0 +1,418 @@
+name: Release Promote, Rollback or Yank
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Operation to perform"
+        required: true
+        type: choice
+        options: [promote, dry-run, rollback, yank]
+        default: promote
+      tag:
+        description: "Protected RC/GA tag (promote/rollback)"
+        required: false
+        type: string
+      rc_run_id:
+        description: "Successful Release Candidate workflow run ID (promote)"
+        required: false
+        type: string
+      rollback_version:
+        description: "Previously verified package version (rollback)"
+        required: false
+        type: string
+      bad_version:
+        description: "Withdrawn package version (yank)"
+        required: false
+        type: string
+      confirm:
+        description: "Type I_UNDERSTAND for yank"
+        required: false
+        type: string
+
+concurrency:
+  group: release-promotion-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+  packages: read
+
+env:
+  NODE_VERSION: 20.19.1
+  PNPM_VERSION: 10.29.3
+  # Commercial packages are private GitHub Packages artifacts. Keep the
+  # scope mapping explicit; never fall back to public npmjs.org.
+  NPM_REGISTRY: https://npm.pkg.github.com
+  NPM_REGISTRY_HOST: npm.pkg.github.com
+  NPM_SCOPE: "@singularityrd"
+  AIDR_SIGNING_KEY_ID: ${{ vars.AIDR_SIGNING_KEY_ID }}
+
+jobs:
+  promote:
+    name: Promote one tested RC digest
+    if: inputs.action == 'promote'
+    runs-on: ubuntu-22.04
+    environment: production
+    env:
+      AIDR_RELEASE_MODE: commercial
+      AIDR_REQUIRE_SIGNING: "1"
+      AIDR_REQUIRE_SBOM: "1"
+      AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      packages: write
+    steps:
+      - name: Validate promotion inputs
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RC_RUN_ID: ${{ inputs.rc_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.0$ ]] || {
+            echo "Only a protected vX.Y.Z-rc.0 tag can be promoted; repeated RCs collide with the stable package version." >&2
+            exit 1
+          }
+          [[ "${RC_RUN_ID}" =~ ^[0-9]+$ ]] || { echo "A successful RC workflow run ID is required." >&2; exit 1; }
+
+      - name: Checkout the exact RC tag (pinned)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Download the signed RC bundle (pinned)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: aidr-release-${{ inputs.tag }}
+          path: release-output
+          run-id: ${{ inputs.rc_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare public verification key
+        shell: bash
+        env:
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PUBLIC_KEY}" ]] || { echo "AIDR_SIGNING_PUBLIC_KEY_PEM is required." >&2; exit 1; }
+          public_path="${RUNNER_TEMP}/aidr-signing-public-key.pem"
+          umask 077
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
+          echo "AIDR_SIGNING_PUBLIC_KEY_PEM_PATH=${public_path}" >> "${GITHUB_ENV}"
+
+      - name: Frozen verification dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Verify RC identity, manifest, SBOM and signatures
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const metadata = JSON.parse(fs.readFileSync("release-output/release-metadata.json", "utf8"));
+          const tag = process.env.RELEASE_TAG;
+          if (metadata.release_tag !== tag) throw new Error(`bundle tag mismatch: ${metadata.release_tag} != ${tag}`);
+          const expectedVersion = tag.slice(1).replace(/-rc\.0$/, "");
+          if (metadata.release_version !== expectedVersion) throw new Error(`bundle version mismatch: ${metadata.release_version} != ${expectedVersion}`);
+          const expectedSha = require("node:child_process").execFileSync("git", ["rev-list", "-n", "1", `${tag}^{commit}`], { encoding: "utf8" }).trim();
+          if (metadata.git_sha !== expectedSha) throw new Error(`bundle commit mismatch: ${metadata.git_sha} != ${expectedSha}`);
+          NODE
+          version="${RELEASE_TAG#v}"
+          version="${version%-rc.*}"
+          for file in release-output/singularityrd-aidr-core-"${version}".tgz release-output/singularityrd-aidr-openclaw-"${version}".tgz release-output/singularityrd-aidr-opencode-"${version}".tgz release-output/singularityrd-aidr-sdk-"${version}".tgz release-output/singularityrd-aidr-cli-"${version}".tgz; do
+            [[ -f "${file}" ]] || { echo "Missing stable-version package artifact ${file}." >&2; exit 1; }
+            package_version="$(tar -xOzf "${file}" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
+            [[ "${package_version}" == "${version}" ]] || {
+              echo "${file} has package version ${package_version}; expected ${version}." >&2
+              exit 1
+            }
+          done
+          node scripts/verify-release-evidence.mjs --dirs release-output
+
+      - name: Publish npm packages under rc dist-tag with provenance
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ -n "${NODE_AUTH_TOKEN}" ]] || { echo "GitHub Actions token is required for private GitHub Packages publishing." >&2; exit 1; }
+          version="${RELEASE_TAG#v}"
+          version="${version%-rc.*}"
+          npm config set "${NPM_SCOPE}:registry" "${NPM_REGISTRY}"
+          npm config set "//${NPM_REGISTRY_HOST}/:_authToken" "${NODE_AUTH_TOKEN}"
+          declare -a packages=(
+            "@singularityrd/aidr-core:release-output/singularityrd-aidr-core-${version}.tgz"
+            "@singularityrd/aidr-openclaw:release-output/singularityrd-aidr-openclaw-${version}.tgz"
+            "@singularityrd/aidr-opencode:release-output/singularityrd-aidr-opencode-${version}.tgz"
+            "@singularityrd/aidr-sdk:release-output/singularityrd-aidr-sdk-${version}.tgz"
+            "@singularityrd/aidr-cli:release-output/singularityrd-aidr-cli-${version}.tgz"
+          )
+          for item in "${packages[@]}"; do
+            package="${item%%:*}"
+            file="${item#*:}"
+            [[ -f "${file}" ]] || { echo "Missing signed npm tarball ${file}" >&2; exit 1; }
+            npm publish "${file}" --tag rc --access restricted --registry "${NPM_REGISTRY}"
+          done
+
+      - name: Promote the exact dashboard commit and run remote smoke
+        shell: bash
+        env:
+          DEPLOY_HOOK: ${{ secrets.DASHBOARD_DEPLOY_HOOK_URL }}
+          VERSION_URL: ${{ secrets.DASHBOARD_VERSION_URL }}
+          SMOKE_BASE_URL: ${{ secrets.DASHBOARD_SMOKE_BASE_URL }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ -n "${DEPLOY_HOOK}" && -n "${VERSION_URL}" && -n "${SMOKE_BASE_URL}" ]] || {
+            echo "DASHBOARD_DEPLOY_HOOK_URL, DASHBOARD_VERSION_URL and DASHBOARD_SMOKE_BASE_URL are required." >&2
+            exit 1
+          }
+          expected_sha="$(git rev-list -n 1 "${RELEASE_TAG}^{commit}")"
+          curl --fail --silent --show-error --retry 3 --retry-all-errors -X POST "${DEPLOY_HOOK}" >/dev/null
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --retry 2 "${VERSION_URL}" | grep -F -- "${expected_sha}" >/dev/null; then
+              break
+            fi
+            [[ "${attempt}" -eq 30 ]] && { echo "Dashboard version endpoint did not report ${expected_sha}." >&2; exit 1; }
+            sleep 10
+          done
+          DASHBOARD_SMOKE_BASE_URL="${SMOKE_BASE_URL}" pnpm -C packages/dashboard test:route-smoke
+
+      - name: Move npm dist-tags to latest only after deployed smoke
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          version="${version%-rc.*}"
+          npm config set "${NPM_SCOPE}:registry" "${NPM_REGISTRY}"
+          npm config set "//${NPM_REGISTRY_HOST}/:_authToken" "${NODE_AUTH_TOKEN}"
+          for package in @singularityrd/aidr-core @singularityrd/aidr-openclaw @singularityrd/aidr-opencode @singularityrd/aidr-sdk @singularityrd/aidr-cli; do
+            npm dist-tag add "${package}@${version}" latest --registry "${NPM_REGISTRY}"
+          done
+
+      - name: Publish final GitHub release from the same bundle (pinned)
+        uses: softprops/action-gh-release@738f0c76948a84ff818b6e43c8b515cb27dbc559 # v2.2.2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: AIDR ${{ inputs.tag }}
+          prerelease: false
+          draft: false
+          generate_release_notes: false
+          files: release-output/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Archive promotion evidence (pinned)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: aidr-promotion-${{ inputs.tag }}-${{ github.run_id }}
+          path: release-output/
+          retention-days: 365
+
+  dry-run:
+    name: Rehearse private package publication (no mutation)
+    if: inputs.action == 'dry-run'
+    runs-on: ubuntu-22.04
+    environment: release-candidate
+    env:
+      AIDR_RELEASE_MODE: commercial
+      AIDR_REQUIRE_SIGNING: "1"
+      AIDR_REQUIRE_SBOM: "1"
+      AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    steps:
+      - name: Validate dry-run inputs
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RC_RUN_ID: ${{ inputs.rc_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.0$ ]] || { echo "Only a protected vX.Y.Z-rc.0 tag can be rehearsed." >&2; exit 1; }
+          [[ "${RC_RUN_ID}" =~ ^[0-9]+$ ]] || { echo "A successful RC workflow run ID is required." >&2; exit 1; }
+
+      - name: Checkout the exact RC tag (pinned)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download the signed RC bundle (pinned)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: aidr-release-${{ inputs.tag }}
+          path: release-output
+          run-id: ${{ inputs.rc_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Prepare public verification key
+        shell: bash
+        env:
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PUBLIC_KEY}" ]] || { echo "AIDR_SIGNING_PUBLIC_KEY_PEM is required." >&2; exit 1; }
+          public_path="${RUNNER_TEMP}/aidr-signing-public-key.pem"
+          umask 077
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
+          echo "AIDR_SIGNING_PUBLIC_KEY_PEM_PATH=${public_path}" >> "${GITHUB_ENV}"
+
+      - name: Verify signed bundle and rehearse private registry publication
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          node scripts/verify-release-evidence.mjs --dirs release-output
+          version="${RELEASE_TAG#v}"
+          version="${version%-rc.*}"
+          npm config set "${NPM_SCOPE}:registry" "${NPM_REGISTRY}"
+          npm config set "//${NPM_REGISTRY_HOST}/:_authToken" "${NODE_AUTH_TOKEN}"
+          for package in core openclaw opencode sdk cli; do
+            file="release-output/singularityrd-aidr-${package}-${version}.tgz"
+            [[ -f "${file}" ]] || { echo "Missing ${file}" >&2; exit 1; }
+            npm publish "${file}" --dry-run --tag rc --access restricted --registry "${NPM_REGISTRY}"
+          done
+
+  rollback:
+    name: Roll back npm tags and dashboard deployment
+    if: inputs.action == 'rollback'
+    runs-on: ubuntu-22.04
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - name: Validate rollback inputs
+        shell: bash
+        env:
+          VERSION: ${{ inputs.rollback_version }}
+          DEPLOY_HOOK: ${{ secrets.DASHBOARD_ROLLBACK_HOOK_URL }}
+          VERSION_URL: ${{ secrets.DASHBOARD_VERSION_URL }}
+          SMOKE_BASE_URL: ${{ secrets.DASHBOARD_SMOKE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rollback_version must be x.y.z" >&2; exit 1; }
+          [[ -n "${DEPLOY_HOOK}" && -n "${VERSION_URL}" && -n "${SMOKE_BASE_URL}" ]] || {
+            echo "Rollback dashboard hook, version endpoint and smoke URL are required." >&2
+            exit 1
+          }
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Retag verified npm versions and dashboard deployment
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.rollback_version }}
+          DEPLOY_HOOK: ${{ secrets.DASHBOARD_ROLLBACK_HOOK_URL }}
+          VERSION_URL: ${{ secrets.DASHBOARD_VERSION_URL }}
+          SMOKE_BASE_URL: ${{ secrets.DASHBOARD_SMOKE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "${NODE_AUTH_TOKEN}" ]] || { echo "GitHub Actions token is required." >&2; exit 1; }
+          npm config set "${NPM_SCOPE}:registry" "${NPM_REGISTRY}"
+          npm config set "//${NPM_REGISTRY_HOST}/:_authToken" "${NODE_AUTH_TOKEN}"
+          for package in @singularityrd/aidr-core @singularityrd/aidr-openclaw @singularityrd/aidr-opencode @singularityrd/aidr-sdk @singularityrd/aidr-cli; do
+            npm view "${package}@${VERSION}" version --registry "${NPM_REGISTRY}" >/dev/null
+          done
+          curl --fail --silent --show-error --retry 3 --retry-all-errors -X POST \
+            -H 'content-type: application/json' \
+            --data "{\"version\":\"${VERSION}\"}" "${DEPLOY_HOOK}" >/dev/null
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --retry 2 "${VERSION_URL}" | grep -F -- "${VERSION}" >/dev/null; then break; fi
+            [[ "${attempt}" -eq 30 ]] && { echo "Rollback deployment did not report ${VERSION}." >&2; exit 1; }
+            sleep 10
+          done
+          for package in @singularityrd/aidr-core @singularityrd/aidr-openclaw @singularityrd/aidr-opencode @singularityrd/aidr-sdk @singularityrd/aidr-cli; do
+            npm dist-tag add "${package}@${VERSION}" latest --registry "${NPM_REGISTRY}"
+          done
+          for route in / /pilot /pricing /verify /login; do
+            body="$(curl --fail --silent --show-error --retry 2 "${SMOKE_BASE_URL}${route}")"
+            echo "${body}" | grep -F 'id="root"' >/dev/null || {
+              echo "Dashboard rollback smoke failed for ${route}." >&2
+              exit 1
+            }
+          done
+
+  yank:
+    name: Deprecate and withdraw a bad release
+    if: inputs.action == 'yank'
+    runs-on: ubuntu-22.04
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Validate yank confirmation
+        shell: bash
+        env:
+          VERSION: ${{ inputs.bad_version }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad_version must be x.y.z" >&2; exit 1; }
+          [[ "${CONFIRM}" == "I_UNDERSTAND" ]] || { echo "Type I_UNDERSTAND to deprecate a release." >&2; exit 1; }
+
+      - name: Deprecate npm versions without destructive unpublish
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.bad_version }}
+          MARKETPLACE_YANK_HOOK_URL: ${{ secrets.MARKETPLACE_YANK_HOOK_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "${NODE_AUTH_TOKEN}" ]] || { echo "GitHub Actions token is required." >&2; exit 1; }
+          npm config set "${NPM_SCOPE}:registry" "${NPM_REGISTRY}"
+          npm config set "//${NPM_REGISTRY_HOST}/:_authToken" "${NODE_AUTH_TOKEN}"
+          for package in @singularityrd/aidr-core @singularityrd/aidr-openclaw @singularityrd/aidr-opencode @singularityrd/aidr-sdk @singularityrd/aidr-cli; do
+            npm deprecate "${package}@${VERSION}" "Withdrawn AIDR release ${VERSION}; use the next signed release." --registry "${NPM_REGISTRY}"
+            latest="$(npm view "${package}@latest" version --registry "${NPM_REGISTRY}" 2>/dev/null || true)"
+            if [[ "${latest}" == "${VERSION}" ]]; then npm dist-tag rm "${package}" latest --registry "${NPM_REGISTRY}"; fi
+          done
+          if [[ -z "${MARKETPLACE_YANK_HOOK_URL:-}" ]]; then
+            echo "MARKETPLACE_YANK_HOOK_URL is not configured; npm packages were deprecated but private VSIX/Claude assets still require manual withdrawal." >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 3 --retry-all-errors -X POST \
+            -H 'content-type: application/json' \
+            --data "{\"version\":\"${VERSION}\"}" "${MARKETPLACE_YANK_HOOK_URL}" >/dev/null

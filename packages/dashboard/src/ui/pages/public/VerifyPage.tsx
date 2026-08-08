@@ -17,8 +17,15 @@ export function VerifyPage() {
 	useEffect(() => {
 		let cancelled = false;
 		async function load() {
-			const sess = await getSession();
-			if (!cancelled) setHasSession(Boolean(sess));
+			try {
+				const sess = await getSession();
+				if (!cancelled) setHasSession(Boolean(sess));
+			} catch (cause) {
+				if (!cancelled) {
+					setHasSession(false);
+					setError(cause instanceof Error ? cause.message : "Unable to check your session.");
+				}
+			}
 		}
 		load();
 		return () => {
@@ -27,6 +34,7 @@ export function VerifyPage() {
 	}, []);
 
 	const trimmed = useMemo(() => userCode.trim().toUpperCase(), [userCode]);
+	const signInReturnTo = trimmed ? `/verify?code=${encodeURIComponent(trimmed)}` : "/verify";
 
 	return (
 		<div className="stack">
@@ -37,9 +45,10 @@ export function VerifyPage() {
 					your account.
 				</p>
 
-				<label className="label">
+				<label className="label" htmlFor="device-user-code">
 					Code
 					<input
+						id="device-user-code"
 						className="input mono"
 						value={userCode}
 						onChange={(e) => setUserCode(e.target.value)}
@@ -77,6 +86,10 @@ export function VerifyPage() {
 								const data = (res.data ?? {}) as Record<string, unknown>;
 								if (data.ok === true) setOk(true);
 								else setError("Verification failed.");
+							} catch (cause) {
+								setError(
+									cause instanceof Error ? cause.message : "Device authorization is unavailable.",
+								);
 							} finally {
 								setBusy(false);
 							}
@@ -86,7 +99,10 @@ export function VerifyPage() {
 					</button>
 
 					{hasSession ? null : (
-						<Link className="button button-secondary" to="/login?returnTo=/verify">
+						<Link
+							className="button button-secondary"
+							to={`/login?returnTo=${encodeURIComponent(signInReturnTo)}`}
+						>
 							Sign in
 						</Link>
 					)}
@@ -109,7 +125,7 @@ export function VerifyPage() {
 				) : null}
 
 				{error ? (
-					<div className="notice notice-danger">
+					<div className="notice notice-danger" role="alert" aria-live="assertive">
 						<div className="mono">{error}</div>
 						<div className="muted small" style={{ marginTop: 8 }}>
 							Need access? Apply for the pilot.

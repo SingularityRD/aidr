@@ -24,6 +24,14 @@ type EntitlementSnapshotRow = {
 	entitlement: Record<string, unknown>;
 };
 
+function isMissingTableError(error: { code?: string; message?: string }, table: string): boolean {
+	return (
+		error.code === "PGRST205" ||
+		error.code === "42P01" ||
+		new RegExp(`${table}.*(?:not exist|missing)`, "i").test(error.message ?? "")
+	);
+}
+
 export function AgentDetailPage() {
 	const { agentId } = useParams();
 	const [agent, setAgent] = useState<AgentRow | null>(null);
@@ -71,14 +79,15 @@ export function AgentDetailPage() {
 						.eq("iid", a.iid)
 						.maybeSingle();
 					if (snapRes.error) {
-						// Back-compat: ignore if the table isn't deployed yet.
-						if (!String(snapRes.error.message ?? "").includes("entitlement_snapshots")) {
+						// Back-compat: ignore only when the optional table is genuinely absent.
+						if (!isMissingTableError(snapRes.error, "entitlement_snapshots")) {
 							setError(snapRes.error.message);
 						}
 						setEntitlementSnapshot(null);
 					} else {
 						setEntitlementSnapshot((snapRes.data ?? null) as EntitlementSnapshotRow | null);
 					}
+					if (cancelled) return;
 				} else {
 					setEntitlementSnapshot(null);
 				}
@@ -115,7 +124,11 @@ export function AgentDetailPage() {
 					</button>
 				</div>
 
-				{error ? <div className="notice notice-danger">{error}</div> : null}
+				{error ? (
+					<div className="notice notice-danger" role="alert" aria-live="assertive">
+						{error}
+					</div>
+				) : null}
 
 				{agent ? (
 					<>

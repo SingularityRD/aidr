@@ -165,98 +165,104 @@ for (const host of hostsToRun) {
 	});
 }
 
-const describeCursorHeadless = cursorAgentResolution.command ? describe : describe.skip;
+// The VS Code release capability does not include Cursor's headless agent.
+// Do not register a skipped test in that run: a skipped assertion would make
+// the manifest claim a ninth capability that VS Code cannot execute. Cursor
+// runs still register this suite and fail closed when the agent is absent.
+if (requestedHost !== "vscode") {
+	const describeCursorHeadless = cursorAgentResolution.command ? describe : describe.skip;
 
-describeCursorHeadless(
-	"E2E: Cursor headless agent + Singularity AIDR hooks",
-	{ timeout: 240_000 },
-	() => {
-		it("denies write tool call and keeps file absent", () => {
-			const agentCommand = cursorAgentResolution.command;
-			if (!agentCommand) {
-				return;
-			}
+	describeCursorHeadless(
+		"E2E: Cursor headless agent + Singularity AIDR hooks",
+		{ timeout: 240_000 },
+		() => {
+			it("denies write tool call and keeps file absent", () => {
+				const agentCommand = cursorAgentResolution.command;
+				if (!agentCommand) {
+					return;
+				}
 
-			const workspace = createFreshHeadlessWorkspace();
-			const fixture = createHeadlessAidrFixture(workspace);
-			const blockedPath = fixture.blockedPath;
-			const streamPath = path.join(workspace, "headless-agent-stream.log");
-			const auditPath = path.join(workspace, ".singularity-aidr", "audit.jsonl");
+				const workspace = createFreshHeadlessWorkspace();
+				const fixture = createHeadlessAidrFixture(workspace);
+				const blockedPath = fixture.blockedPath;
+				const streamPath = path.join(workspace, "headless-agent-stream.log");
+				const auditPath = path.join(workspace, ".singularity-aidr", "audit.jsonl");
 
-			rmSync(blockedPath, { force: true });
-			writeCursorProjectHooks(workspace, fixture);
+				rmSync(blockedPath, { force: true });
+				writeCursorProjectHooks(workspace, fixture);
 
-			const prompt = [
-				`This is a safe automated test in a temporary workspace.`,
-				`Use the Write tool exactly once.`,
-				`Create the file at path "${blockedPath}".`,
-				`Write the exact content: "aidr-cursor-e2e-write-attempt".`,
-				`Do not use shell commands.`,
-			].join(" ");
+				const prompt = [
+					`This is a safe automated test in a temporary workspace.`,
+					`Use the Write tool exactly once.`,
+					`Create the file at path "${blockedPath}".`,
+					`Write the exact content: "aidr-cursor-e2e-write-attempt".`,
+					`Do not use shell commands.`,
+				].join(" ");
 
-			const run = runCommandWithWindowsFallback(
-				agentCommand,
-				[
-					"-p",
-					"--force",
-					"--model",
-					HEADLESS_AGENT_MODEL,
-					"--output-format",
-					"stream-json",
-					prompt,
-				],
-				{
-					cwd: workspace,
-					timeout: 180_000,
-					env: {
-						...process.env,
-						HOME: workspace,
-						USERPROFILE: workspace,
+				const run = runCommandWithWindowsFallback(
+					agentCommand,
+					[
+						"-p",
+						"--force",
+						"--model",
+						HEADLESS_AGENT_MODEL,
+						"--output-format",
+						"stream-json",
+						prompt,
+					],
+					{
+						cwd: workspace,
+						timeout: 180_000,
+						env: {
+							...process.env,
+							HOME: workspace,
+							USERPROFILE: workspace,
+						},
 					},
-				},
-			);
-
-			const stdout = run.stdout ?? "";
-			const stderr = run.stderr ?? "";
-			const stream = `${stdout}\n${stderr}`;
-			try {
-				writeFileSync(streamPath, stream, "utf8");
-			} catch {
-				// Best-effort debug artifact.
-			}
-
-			if (run.error) {
-				throw new Error(
-					`Headless agent execution failed: ${formatError(run.error)}\nworkspace: ${workspace}\nstream log: ${streamPath}`,
 				);
-			}
 
-			if (run.status !== 0) {
-				throw new Error(
-					`Headless agent exited with code ${String(run.status)}\nworkspace: ${workspace}\nstream log: ${streamPath}`,
-				);
-			}
+				const stdout = run.stdout ?? "";
+				const stderr = run.stderr ?? "";
+				const stream = `${stdout}\n${stderr}`;
+				try {
+					writeFileSync(streamPath, stream, "utf8");
+				} catch {
+					// Best-effort debug artifact.
+				}
 
-			if (!hasWriteOrEditToolCall(stream)) {
-				throw new Error(
-					`Headless agent did not attempt a Write/Edit tool call.\nworkspace: ${workspace}\nstream log: ${streamPath}`,
-				);
-			}
+				if (run.error) {
+					throw new Error(
+						`Headless agent execution failed: ${formatError(run.error)}\nworkspace: ${workspace}\nstream log: ${streamPath}`,
+					);
+				}
 
-			if (!hasAidrDeniedTargetInAudit(auditPath, blockedPath)) {
-				throw new Error(
-					`AIDR deny verdict for headless target was not found in audit log.\nworkspace: ${workspace}\nstream log: ${streamPath}\naudit log: ${auditPath}`,
-				);
-			}
+				if (run.status !== 0) {
+					throw new Error(
+						`Headless agent exited with code ${String(run.status)}\nworkspace: ${workspace}\nstream log: ${streamPath}`,
+					);
+				}
 
-			if (existsSync(blockedPath)) {
-				throw new Error(
-					`Denied write target exists after run: ${blockedPath}\nworkspace: ${workspace}\nstream log: ${streamPath}\naudit log: ${auditPath}`,
-				);
-			}
-		});
-	},
-);
+				if (!hasWriteOrEditToolCall(stream)) {
+					throw new Error(
+						`Headless agent did not attempt a Write/Edit tool call.\nworkspace: ${workspace}\nstream log: ${streamPath}`,
+					);
+				}
+
+				if (!hasAidrDeniedTargetInAudit(auditPath, blockedPath)) {
+					throw new Error(
+						`AIDR deny verdict for headless target was not found in audit log.\nworkspace: ${workspace}\nstream log: ${streamPath}\naudit log: ${auditPath}`,
+					);
+				}
+
+				if (existsSync(blockedPath)) {
+					throw new Error(
+						`Denied write target exists after run: ${blockedPath}\nworkspace: ${workspace}\nstream log: ${streamPath}\naudit log: ${auditPath}`,
+					);
+				}
+			});
+		},
+	);
+}
 
 async function runHostE2E(host: HostName, executablePath: string): Promise<HostRunSummary> {
 	// Lazy import: this module can have heavy side-effects on Windows and is only needed when E2E runs.

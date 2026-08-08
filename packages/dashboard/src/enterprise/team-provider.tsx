@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
 
@@ -151,7 +151,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 				const { data, error } = await supabase
 					.from("team_members")
 					.select(
-						"id, user_id, role, invited_by, joined_at, users!inner(email, raw_user_meta_data)",
+						"id, user_id, role, invited_by, joined_at, users!team_members_user_id_fkey!inner(email, raw_user_meta_data)",
 					)
 					.eq("team_id", currentTeam.id);
 
@@ -183,11 +183,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 	}, [currentTeam?.id, currentTeam]);
 
 	// Load audit logs when team changes
-	useEffect(() => {
-		void refreshAuditLogs();
-	}, [refreshAuditLogs]);
-
-	async function refreshAuditLogs() {
+	const refreshAuditLogs = useCallback(async () => {
 		if (!currentTeam) return;
 
 		try {
@@ -203,7 +199,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to load audit logs");
 		}
-	}
+	}, [currentTeam]);
+
+	useEffect(() => {
+		void refreshAuditLogs();
+	}, [refreshAuditLogs]);
 
 	async function createTeam(name: string) {
 		try {
@@ -212,28 +212,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 			} = await supabase.auth.getUser();
 			if (!user) throw new Error("Not authenticated");
 
-			// Create team
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const { data: team, error: teamError } = await supabase
-				.from("teams")
-				.insert({ name, plan: "free" } as any)
-				.select()
-				.single();
+			// Create the tenant, team, and first membership atomically.  The RPC
+			// derives the creator from auth.uid() and keeps the tenant_id immutable.
+			const { data: team, error: teamError } = await supabase.rpc("create_team_tenant", {
+				p_name: name,
+				p_plan: "free",
+			});
 
 			if (teamError) throw teamError;
 			if (!team) throw new Error("Failed to create team");
 
 			const typedTeam = team as Database["public"]["Tables"]["teams"]["Row"];
-
-			// Add creator as admin
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const { error: memberError } = await supabase.from("team_members").insert({
-				team_id: typedTeam.id,
-				user_id: user.id,
-				role: "admin",
-			} as any);
-
-			if (memberError) throw memberError;
 
 			const newTeam: Team = {
 				id: typedTeam.id,
@@ -292,9 +281,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 		if (!currentTeam) throw new Error("No team selected");
 
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const query = supabase.from("team_members") as any;
-			const { error } = await query
+			const { error } = await supabase
+				.from("team_members")
 				.update({ role })
 				.eq("team_id", currentTeam.id)
 				.eq("user_id", userId);

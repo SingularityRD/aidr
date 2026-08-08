@@ -75,7 +75,7 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 
 | Document                                         | Description                                    |
 | ------------------------------------------------ | ---------------------------------------------- |
-| [Getting Started](docs/getting-started.md)       | Installation for all platforms                 |
+| [Getting Started](docs/getting-started.md)       | Installation for supported runtimes            |
 | [Device Auth](docs/device-auth.md)               | Browser-based device authorization (v1)        |
 | [Pilot Program](docs/pilot-program.md)           | Waitlist, approval, and pilot expectations     |
 | [How It Works](docs/how-it-works.md)             | Detection layers, data flow, verdicts          |
@@ -115,7 +115,6 @@ For commercial/closed-source distribution, use `pnpm build:release`. Release bui
 
 Copyright 2026 SingularityRD.
 
-- Source code: [Apache License 2.0](LICENSE)
+- First-party AIDR source code and release artifacts: proprietary commercial terms in [LICENSE](LICENSE). Legal approval of the current Release Candidate is still required before customer distribution.
 - Threat detection rules (`threats/`): [Detection Rule License 1.1](threats/LICENSE)
-
-
+- Third-party component notices: [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). Those components retain their original licence terms.

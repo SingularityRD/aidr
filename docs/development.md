@@ -25,6 +25,7 @@ Requires Node.js >= 18 and pnpm >= 9.
 | `pnpm test -- <file>` | Run a single test file |
 | `pnpm test -- -t "name"` | Run tests matching name |
 | `pnpm test:e2e` | All E2E tests (Claude Code + OpenClaw + OpenCode + Cursor + VS Code) |
+| `pnpm test:e2e:negative` | Negative credential control: proves missing credentials cannot produce a green E2E run |
 | `pnpm test:e2e:claude` | Claude Code E2E tests only |
 | `pnpm test:e2e:openclaw` | OpenClaw E2E tests only |
 | `pnpm test:e2e:opencode` | OpenCode E2E tests only |
@@ -54,6 +55,18 @@ Requires Node.js >= 18 and pnpm >= 9.
 
 **Claude Code E2E prerequisites:** `claude` CLI in PATH, valid `ANTHROPIC_API_KEY`, and Singularity AIDR must **not** be installed via the Claude Code marketplace (duplicate-plugin conflict with `--plugin-dir`).
 
+### Release E2E gate and evidence
+
+`pnpm test:e2e` is fail-closed. The capability inventory is versioned in [`scripts/e2e-release-manifest.json`](../scripts/e2e-release-manifest.json); it declares each connector, its expected test count, the source test file, capabilities and prerequisites. The runner rejects missing or unexpected test files, test-count mismatches, zero collected tests, skipped/pending/todo assertions, failed assertions, failed Vitest processes, or missing JSON/JUnit evidence.
+
+Every run writes machine-readable evidence to `.e2e-artifacts/release/`:
+
+- `summary.json` — manifest-to-result mapping with collected, executed, passed, failed, pending and todo counts plus failure reasons.
+- `<suite>.json` — Vitest assertion evidence.
+- `<suite>.xml` — JUnit evidence for CI and investor/customer validation packets.
+
+An exit code of `0` means every manifest assertion was collected, executed and passed. A zero exit code from Vitest alone is not sufficient because Vitest considers skipped suites successful. A missing host, binary, gateway or model credential is therefore an intentional release `NO-GO`, never an automatic pass. Run `pnpm test:e2e:negative` to verify the missing-credential control.
+
 ### Cursor / VS Code E2E Setup
 
 The extension E2E tests run inside a real Extension Host process using installed IDE binaries. They do not download IDEs.
@@ -76,8 +89,7 @@ The extension E2E tests run inside a real Extension Host process using installed
 | `AIDR_VSCODE_PATH` | Absolute path to the VS Code executable |
 | `VSCODE_EXECUTABLE_PATH` | Alternate VS Code executable override |
 
-If a requested host executable is unavailable, that host's E2E suite is skipped.
-If `agent` is unavailable or unauthenticated, the Cursor headless agent sub-suite is skipped and remaining Cursor host E2E tests still run.
+For direct developer commands, an unavailable host executable or agent is represented as a skipped suite. The release command (`pnpm test:e2e`) treats that same skip as a hard failure. Cursor's release capability includes the authenticated headless agent; VS Code's capability intentionally excludes it.
 Extension hooks always exit with code `0`; the host reads the JSON response from stdout to determine the verdict.
 
 **Running the tests:**
@@ -91,7 +103,7 @@ AIDR_E2E_ENABLE_IDE_HOST=1 pnpm test:e2e:vscode
 
 The OpenClaw E2E tests connect to a running OpenClaw gateway with Singularity AIDR installed.
 
-**Prerequisites:** The tests read `~/.openclaw/openclaw.json` for the auth token and check that the chat completions endpoint is enabled. Tests skip automatically if either is missing.
+**Prerequisites:** The tests read `~/.openclaw/openclaw.json` for the auth token and check that the chat completions endpoint is enabled. Direct developer runs skip when either is missing; the release runner records that as `NO-GO`.
 
 Enable the endpoint in `~/.openclaw/openclaw.json`:
 
@@ -203,6 +215,3 @@ See [Building the Extension](../doc/build_extension.md) for Cursor/VS Code VSIX 
 ---
 
 **Internal team:** See the private internal repo for leak prevention setup, release sync workflows, and pre-release audit instructions.
-
-
-

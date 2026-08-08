@@ -2,6 +2,7 @@ import { createHash, createHmac, createPublicKey, verify as cryptoVerify } from 
 import type { ControlPlaneIngestResult } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
+import { redactTelemetryData } from "./telemetry-redaction.js";
 import type { AuthConfig } from "./types.js";
 
 export type ManagedSeatStatus = "ok" | "over_limit" | "unknown";
@@ -240,20 +241,29 @@ export function redactRemoteEvent(
 	entry: Record<string, unknown>,
 	mode: "none" | "hash" | "full" | undefined,
 ): Record<string, unknown> {
-	if (mode === "none" || !mode) return entry;
+	// Always scrub credential material at the network boundary, including when
+	// a caller explicitly chooses raw (`none`) mode. Hash/full then provide
+	// stronger minimisation for production telemetry.
+	const safeEntry = redactTelemetryData(entry);
+	if (mode === "none") return safeEntry;
+	const effectiveMode = mode ?? "hash";
 
-	const summary = typeof entry.tool_input_summary === "string" ? entry.tool_input_summary : "";
-	const artifacts = Array.isArray(entry.artifacts) ? (entry.artifacts as unknown[]) : [];
+	const summary =
+		typeof safeEntry.tool_input_summary === "string" ? safeEntry.tool_input_summary : "";
+	const artifacts = Array.isArray(safeEntry.artifacts) ? (safeEntry.artifacts as unknown[]) : [];
 	const artifactStrings = artifacts.map((a) => (typeof a === "string" ? a : JSON.stringify(a)));
 
-	if (mode === "full") {
-		return { ...entry, tool_input_summary: "", artifacts: [] };
+	if (effectiveMode === "full") {
+		return { ...safeEntry, tool_input_summary: "", artifacts: [], reasons: [] };
 	}
 
 	return {
-		...entry,
+		...safeEntry,
 		tool_input_summary: `sha256:${sha256Hex(summary)}`,
 		artifacts: artifactStrings.map((a) => `sha256:${sha256Hex(a)}`),
+		// Reasons may contain package/domain names or prompt snippets. Counts and
+		// threat IDs are sufficient for remote triage without exporting content.
+		reasons: [],
 	};
 }
 

@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { supabaseEnvError } from "../lib/supabase";
 import { useTheme } from "./ThemeProvider";
 
@@ -51,6 +51,9 @@ function DarkModeToggle() {
 }
 
 export function PublicLayout() {
+	const location = useLocation();
+	const showConfigWarning = Boolean(supabaseEnvError) && location.pathname !== "/demo";
+
 	return (
 		<div className="app">
 			<header className="nav-bar">
@@ -60,6 +63,9 @@ export function PublicLayout() {
 					</Link>
 				</div>
 				<nav className="nav">
+					<NavLink to="/demo">Demo</NavLink>
+					<NavLink to="/pricing">Pricing</NavLink>
+					<NavLink to="/pilot">Pilot</NavLink>
 					<NavLink to="/login">Dashboard</NavLink>
 				</nav>
 				<div className="row">
@@ -74,7 +80,7 @@ export function PublicLayout() {
 				</div>
 			</header>
 			<main className="main">
-				{supabaseEnvError ? (
+				{showConfigWarning ? (
 					<div className="notice notice-danger" style={{ marginBottom: 16 }}>
 						<b>Dashboard is running without Supabase credentials.</b>
 						<div className="muted small" style={{ marginTop: 6 }}>
@@ -88,6 +94,13 @@ export function PublicLayout() {
 				<div className="muted small">
 					&copy; {new Date().getFullYear()} Singularity AIDR. Local-first AI agent detection and
 					response.
+				</div>
+				<div className="footer-links" aria-label="Support and legal">
+					<Link to="/support">Support</Link>
+					<Link to="/status">Status</Link>
+					<Link to="/privacy">Privacy</Link>
+					<Link to="/security">Security</Link>
+					<Link to="/terms">Terms</Link>
 				</div>
 			</footer>
 		</div>

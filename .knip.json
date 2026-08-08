@@ -1,0 +1,103 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/**/*.{mjs,js}",
+        "package.json"
+      ],
+      "project": [
+        "scripts/**/*.{mjs,js}"
+      ],
+      "ignore": [
+        "vendor/**",
+        "supabase/functions/**",
+        "docs/scripts/**",
+        "debug-test.mjs"
+      ]
+    },
+    "packages/core": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["src/__tests__/**"]
+    },
+    "packages/claude-code": {
+      "entry": ["src/*.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["src/__tests__/**", "dist/**"]
+    },
+    "packages/openclaw": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["src/__tests__/**", "dist/**", "resources/**"]
+    },
+    "packages/opencode": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["src/__tests__/**", "dist/**", "resources/**"]
+    },
+    "packages/extension": {
+      "entry": ["src/cursor_extension.ts", "src/aidr-hook.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["src/__tests__/**", "dist/**", "resources/**"]
+    },
+    "packages/dashboard": {
+      "entry": ["src/main.tsx"],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignore": ["dist/**", ".vite/**"]
+    },
+    "packages/cli": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["dist/**"]
+    },
+    "packages/sdk": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["src/__tests__/**", "dist/**"]
+    }
+  },
+  "ignoreFiles": [
+    "**/vendor/**",
+    "**/supabase/functions/**",
+    "**/docs/scripts/**",
+    "**/.github/scripts/**",
+    "debug-test.mjs",
+    "scripts/encrypt-intel-pack-file.mjs",
+    "scripts/generate-sbom.mjs",
+    "scripts/sign-artifact-manifest.mjs",
+    "scripts/sign-intel-pack-manifest.mjs",
+    "scripts/solana-hackathon-demo.mjs",
+    "scripts/update-package-scripts.mjs",
+    "scripts/verify-release-evidence.mjs"
+  ],
+  "ignoreDependencies": [
+    "@changesets/cli",
+    "@vitest/coverage-v8",
+    "vitest-teamcity-reporter",
+    "typescript",
+    "esbuild",
+    "@biomejs/biome",
+    ".*typedoc.*"
+  ],
+  "ignoreBinaries": [
+    "bash",
+    "gh",
+    "go",
+    "docker",
+    "wrangler",
+    "typedoc"
+  ],
+  "rules": {
+    "files": "warn",
+    "dependencies": "warn",
+    "devDependencies": "warn",
+    "unlisted": "warn",
+    "binaries": "warn",
+    "exports": "warn",
+    "duplicates": "warn",
+    "types": "off",
+    "enumMembers": "off"
+  },
+  "treatConfigHintsAsErrors": false
+}

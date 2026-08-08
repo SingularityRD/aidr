@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { VERSION } from "@singularityrd/aidr-core";
 import { generateApiKey } from "./crypto.js";
 
 const CONFIG_DIR = join(homedir(), ".singularity-aidr");
@@ -34,7 +35,7 @@ export async function createConfig(env: Environment, force: boolean): Promise<st
 	const config: Config = {
 		apiKey: generateApiKey(),
 		environment: env,
-		version: "1.0.0",
+		version: VERSION,
 		createdAt: new Date().toISOString(),
 		hooksInstalled: false,
 		agentConfigured: false,

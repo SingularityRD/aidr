@@ -17,6 +17,14 @@ type EventRow = {
 	payload: Record<string, unknown>;
 };
 
+function isMissingTableError(error: { code?: string; message?: string }, table: string): boolean {
+	return (
+		error.code === "PGRST205" ||
+		error.code === "42P01" ||
+		new RegExp(`${table}.*(?:not exist|missing)`, "i").test(error.message ?? "")
+	);
+}
+
 function isIncidentLikeEvent(e: EventRow): boolean {
 	if (e.type === "plugin_scan") {
 		const count = Number(e.payload?.findings_count ?? 0);
@@ -87,7 +95,9 @@ export function IncidentsPage() {
 						.limit(500);
 					if (!res.error) return res;
 
-					// Back-compat: if the view hasn't been deployed yet, derive incidents from raw events.
+					// Back-compat only when the derived view is genuinely absent. Keep
+					// network/permission errors visible rather than showing incomplete data.
+					if (!isMissingTableError(res.error, "incident_events")) return res;
 					const fallback = await supabase
 						.from("events")
 						.select("id,type,created_at,agent_id,payload")
@@ -145,7 +155,11 @@ export function IncidentsPage() {
 						Refresh
 					</button>
 				</div>
-				{error ? <div className="notice notice-danger">{error}</div> : null}
+				{error ? (
+					<div className="notice notice-danger" role="alert" aria-live="assertive">
+						{error}
+					</div>
+				) : null}
 			</div>
 
 			<div className="card">

@@ -1,13 +1,13 @@
 # AIG (AI-Infra-Guard) Integration Architecture
 
-> **Status:** Implementing | **Updated:** 2026-05-26
+> **Status:** Implementing — Tencent AIG v4.5.1 runtime verified locally | **Updated:** 2026-08-04
 > **Owners:** AIDR Core Team, AIG Integration Team
 
 ## 1. Overview
 
 This document defines the integration architecture between **Singularity AIDR** (TypeScript monorepo, runtime security layer for AI coding agents) and **Tencent AI-Infra-Guard (AIG)** (Python/Go scanning platform for AI infrastructure).
 
-The combined product is positioned as **"the most comprehensive AI agent security platform"** — AIDR provides real-time agent threat protection across multiple IDE platforms, while AIG contributes deep infrastructure scanning, MCP security analysis, Agent-Scan, and jailbreak evaluation.
+The integration combines AIDR's local agent controls with optional AIG-backed infrastructure, MCP, Agent-Scan, and jailbreak evaluation. Any dataset size, platform coverage, or real-time claim must be tied to a versioned evidence record before it is used in customer or investor material.
 
 ### 1.1 Design Principles
 
@@ -18,6 +18,45 @@ The combined product is positioned as **"the most comprehensive AI agent securit
 | **Loose coupling** | REST API between AIDR and AIG; no shared runtime or process |
 | **Async by default** | Long-running scans return a task ID; results are polled or pushed |
 | **Attribution required** | All integrations must attribute Tencent Zhuque Lab per AIG's NOTICE file |
+
+### 1.3 Verified upstream contract (2026-08-04)
+
+The integration is pinned to the official Tencent repository at tag `v4.5.1`,
+commit `31c72a9799c8b19d89bcb331d4f8038f05462b8f`. The checkout is recorded as
+the `vendor/ai-infra-guard` submodule and is verified by `pnpm aig:verify`.
+The current compiler evidence is 1,925 CVE entries across 108 frameworks, 133
+fingerprints and 14 local MCP categories. The running AIG knowledge API reports
+1,891 vulnerability records and 15 MCP knowledge records; these are upstream
+runtime counts and must not be conflated with the generated consumer index.
+
+Tencent's v4 task API uses `target` (singular), `timeout`, optional `headers`,
+and an optional `model` object. A model is required when the upstream has no
+default model. The bridge translates its public `targets` request into this
+allow-listed payload, normalizes AIG's `doing`/`done` states to
+`running`/`completed`, and exposes non-secret fingerprint evidence in the
+result response. The v4.5.1 server has no authentication layer; it must remain
+on the private Docker network and its optional host bind defaults to loopback.
+
+The four task routes use the following v4.5.1 contracts: infrastructure sends
+`target`, `headers`, `timeout` and `model`; MCP sends the exact URL as
+`prompt`, `thread`, `language`, `headers` and optional `model`; Agent-Scan sends
+`agent_data` as inline provider YAML plus `eval_model`; and jailbreak sends a
+`model` list plus `dataset.dataFile`, `numPrompts`, `randomSeed` and optional
+`eval_model`. The bridge deliberately does not append MCP category names to
+the URL: v4.5.1 has no category-filter field, so the public category list is an
+advisory/operator field. AIG's `status=error` is normalized to a terminal
+`failed` result even when its result endpoint still says “not available yet”.
+
+The v4.5.1 agent image is executed with a small compatibility shim because
+the upstream imports an old MCP SDK symbol, passes `timedelta` to the SDK 2.x
+constructor, and reads `Tool.inputSchema` while SDK 2.x exposes
+`input_schema`. This shim is loaded only in the AIG worker and is covered by
+the MCP bridge contract test.
+
+The upstream data tree contains case-colliding paths (for example `Dify` and
+`dify`, `LiteLLM` and `litellm`). A Linux build worker is required for complete
+case-sensitive source reproducibility; the verification command emits an
+explicit warning when those groups are present.
 
 ### 1.2 Integration Model: Sidecar Service
 
@@ -67,7 +106,7 @@ The **aig-bridge** (Python/FastAPI) exposes the following endpoints consumed by 
 POST /api/v1/scan/infra
 ```
 
-Scans AI infrastructure components for known CVEs (1300+ entries from AIG's vulnerability database).
+Scans AI infrastructure components for known CVEs from the configured AIG vulnerability dataset; the dataset version and count are returned only when the upstream provides verifiable metadata.
 
 **Request:**
 ```json
@@ -75,8 +114,15 @@ Scans AI infrastructure components for known CVEs (1300+ entries from AIG's vuln
   "targets": ["https://my-ml-server.com:8080"],
   "scan_type": "full",
   "options": {
-    "timeout_seconds": 300,
-    "depth": "standard"
+    "timeout": 300,
+    "headers": {
+      "X-Target-Environment": "demo"
+    },
+    "model": {
+      "model": "gpt-4o-mini",
+      "token": "<provided-out-of-band>",
+      "base_url": "https://api.example.com"
+    }
   }
 }
 ```
@@ -113,6 +159,14 @@ Scans AI infrastructure components for known CVEs (1300+ entries from AIG's vuln
       "description": "...",
       "remediation": "Upgrade to 2.32.0+"
     }
+  ],
+  "evidence": [
+    {
+      "target_url": "https://my-ml-server.com:8080",
+      "status_code": 200,
+      "title": "Example service",
+      "fingerprint": "<aig-fingerprint-or-empty>"
+    }
   ]
 }
 ```
@@ -123,7 +177,13 @@ Scans AI infrastructure components for known CVEs (1300+ entries from AIG's vuln
 POST /api/v1/scan/mcp
 ```
 
-Scans MCP servers for security risks across 14 risk categories defined by AIG.
+Scans MCP servers for security risks across the versioned AIG knowledge set
+(15 records reported by v4.5.1; the local policy compiler currently exposes 14
+stable categories).
+
+`categories` is retained for AIDR policy/audit context. It is not interpolated
+into the upstream URL or sent as an unsupported v4 field; the upstream MCP
+worker evaluates its full rule set.
 
 **Request:**
 ```json
@@ -181,13 +241,28 @@ POST /api/v1/scan/agent
 
 Runs Agent-Scan on AI agent workflows to detect injection, privilege escalation, and data leakage.
 
+The inline configuration is serialized as provider YAML. For a generic HTTP
+agent the v4.5.1 shape is `targets: [{id: "http", config: {url, endpoint,
+method, headers, body, transform_response}}]`; the bridge sends this as
+`agent_config`, which the Tencent server converts to the worker's
+`agent_data` field. A pre-saved `agent_id` is mutually exclusive with inline
+configuration.
+
 **Request:**
 ```json
 {
   "agent_config": {
-    "provider": "dify",
-    "base_url": "https://agent.example.com",
-    "api_key": "app-xxx"
+    "targets": [{
+      "id": "http",
+      "config": {
+        "url": "https://agent.example.com",
+        "endpoint": "/chat",
+        "method": "POST",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"message": "{{prompt}}"},
+        "transform_response": "reply"
+      }
+    }]
   },
   "eval_model": {
     "model": "gpt-4",
@@ -234,8 +309,8 @@ Returns the latest threat intelligence and scanning rules for AIDR to sync.
 **Response:**
 ```json
 {
-  "rules_version": "2026-05-26-001",
-  "cve_count": 1342,
+  "rules_version": "v4.5.1",
+  "cve_count": 1891,
   "mcp_risk_categories": [
     {
       "id": "prompt_injection",
@@ -269,11 +344,17 @@ GET /api/v1/health
   "status": "ok",
   "version": "1.0.0",
   "aig_server": "connected",
-  "aig_agent": "connected",
+  "aig_agent": "unknown",
   "scan_ready": true,
-  "cve_count": 1342
+  "cve_count": 1891,
+  "threat_intel_ready": true
 }
 ```
+
+Tencent v4.5.1 exposes no authenticated worker-list/health endpoint, so the
+bridge intentionally reports `aig_agent: "unknown"`; `/api/v1/readyz` proves
+the server/auth boundary only. A capability task must complete before that
+scan type is advertised as ready.
 
 ---
 
@@ -407,7 +488,7 @@ AIG defines 14 MCP risk categories. These map to AIDR's MCP enforcement policy:
 
 ### 4.3 CVE Database → Package Protection
 
-AIG maintains a database of 1300+ CVEs related to AI infrastructure (Triton, Ray, vLLM, Ollama, LangChain, etc.).
+AIG may provide a vulnerability dataset related to AI infrastructure (for example Triton, Ray, vLLM, Ollama, and LangChain). The exact contents and count are deployment evidence, not a static product claim.
 AIDR's `package-checker.ts` consumes this via the bridge's threat sync endpoint:
 
 ```
@@ -452,7 +533,7 @@ Defined in `.env.aig`:
 | `AIG_UPLOAD_DIR` | File upload directory | `/app/uploads` |
 | `AIG_LOG_DIR` | Log directory | `/app/logs` |
 | `AIG_TZ` | Timezone | `Asia/Shanghai` |
-| `AIG_AGENT_COUNT` | Number of agent workers | `2` |
+| `AIG_AGENT_COUNT` | Number of agent workers (v4.5.1 must remain `1` because registration ID is hard-coded) | `1` |
 | `BRIDGE_LOG_LEVEL` | Bridge log level | `INFO` |
 | `BRIDGE_AIG_URL` | AIG server URL for bridge | `http://aig-server:8088` |
 
@@ -528,13 +609,17 @@ aidr/
 ### 7.1 Network Security
 
 - All inter-service communication occurs on an isolated Docker bridge network
-- The bridge service does not expose ports to the host; only AIDR connects via the internal network
-- AIG server port 8088 is exposed only for monitoring/debugging
+- The bridge and AIG server host binds default to `127.0.0.1`; set
+  `AIG_BIND_ADDRESS` only behind an authenticated private ingress
+- The upstream AIG server is unauthenticated, so a public `8088` bind is a
+  release blocker; the AIDR bridge remains the authenticated ingress
 
 ### 7.2 API Authentication
 
-- Bridge-to-AIG calls include an `api_key` header validated by AIG's middleware
-- AIDR-to-bridge calls use a shared secret (`AIG_BRIDGE_API_KEY` env var)
+- Tencent AIG v4.5.1 does not validate an API key. Treat the AIG server and
+  agent network as private infrastructure and never publish its UI/API.
+- AIDR-to-bridge calls use `BRIDGE_API_KEY` plus `X-AIDR-Tenant-ID`; polling is
+  tenant-scoped and `Idempotency-Key` retries are payload-bound.
 - All scan requests carry user context for audit logging
 
 ### 7.3 Data Isolation
@@ -572,14 +657,17 @@ To add a new scan type to the integration:
 ### 9.1 Development
 
 ```bash
-# Clone AIG into vendor directory
-git submodule add https://github.com/Tencent/AI-Infra-Guard vendor/ai-infra-guard
+# Initialize the pinned AIG submodule
+git submodule update --init --recursive
+pnpm compile:aig
+pnpm aig:verify
 
 # Start the AIG sidecar stack
-docker compose -f docker-compose.aig.yml up -d
+$env:BRIDGE_API_KEY='generate-a-long-random-secret'
+docker compose --env-file .env.aig -f docker-compose.aig.yml up -d --build
 
 # Verify connectivity
-curl http://localhost:8099/api/v1/health
+curl -H 'Authorization: Bearer ...' -H 'X-AIDR-Tenant-ID: demo-tenant' http://127.0.0.1:8099/api/v1/health
 
 # AIDR connects automatically via AIG_BRIDGE_URL env
 ```
@@ -587,12 +675,13 @@ curl http://localhost:8099/api/v1/health
 ### 9.2 Production
 
 ```bash
-# Same Docker compose stack, with:
+# Use a reviewed Linux build and immutable image digests, with:
 # - Resource limits set (CPU/memory)
-# - Persistent volumes for CVE database
-# - Monitoring via Prometheus metrics endpoint
-# - Log shipping to centralized logging
-# - Health checks configured for orchestration
+# - Persistent volumes for CVE database and task state
+# - A private authenticated ingress for the bridge only
+# - No public AIG server/UI port (upstream has no auth)
+# - Monitoring, log shipping and health checks configured for orchestration
+# - A durable task/tenant store before scaling the bridge or agent
 ```
 
 ### 9.3 Kubernetes

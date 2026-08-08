@@ -399,17 +399,17 @@ export class PatternMatcher {
 		}
 
 		for (let i = 1; i <= b.length; i++) {
+			const currentRow = matrix[i] ?? (matrix[i] = []);
 			for (let j = 1; j <= a.length; j++) {
-				matrix[i] = matrix[i] ?? [];
 				const prevRow = matrix[i - 1] ?? [];
 				if (b.charAt(i - 1) === a.charAt(j - 1)) {
 					const val = prevRow[j - 1];
-					matrix[i]![j] = val ?? 0;
+					currentRow[j] = val ?? 0;
 				} else {
 					const prevDiagonal = prevRow[j - 1] ?? 0;
-					const prevLeft = matrix[i]?.[j - 1] ?? 0;
+					const prevLeft = currentRow[j - 1] ?? 0;
 					const prevUp = prevRow[j] ?? 0;
-					matrix[i]![j] = Math.min(prevDiagonal + 1, Math.min(prevLeft + 1, prevUp + 1));
+					currentRow[j] = Math.min(prevDiagonal + 1, Math.min(prevLeft + 1, prevUp + 1));
 				}
 			}
 		}

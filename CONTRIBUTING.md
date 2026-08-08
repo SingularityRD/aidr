@@ -27,11 +27,15 @@ Keep PRs focused on a single change. Include tests for new functionality.
 
 ## Licensing of Contributions
 
-This project uses a dual-license structure. By submitting a pull request, you
-agree that your contribution will be licensed under the applicable license:
+This is a commercial/proprietary repository. This contribution policy is a
+draft pending Legal review; submitting a contribution does not itself grant
+customer distribution rights. By submitting a pull request, you confirm that
+you have the right to contribute the material and agree that first-party code
+contributions are governed by the commercial terms in [LICENSE](LICENSE) or a
+separate signed contributor agreement:
 
-- **Source code** (everything except `threats/`): your contribution is licensed
-  under the [Apache License 2.0](LICENSE).
+- **First-party source code** (everything except `threats/`): governed by the
+  proprietary commercial terms in [LICENSE](LICENSE).
 - **Threat detection rules** (`threats/*.yaml`): your contribution is licensed
   under the [Detection Rule License 1.1](threats/LICENSE). Please include an
   `author` field in your rules for proper attribution.
@@ -75,4 +79,3 @@ This separation ensures that code merged from PRs goes through a review and secu
 Use GitHub Issues for bugs and feature requests.
 
 **Security vulnerabilities:** Please report privately via [GitHub Security Advisories](https://github.com/singularityrd/aidr/security/advisories/new). Do not open public issues for security bugs.
-

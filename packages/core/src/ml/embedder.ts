@@ -116,9 +116,9 @@ export function generateEmbedding(text: string, dim: number = EMBEDDING_DIM): Fl
 
 		// Use hash as value with weight
 		const value = ((h1 / 0xffffffff) * 2 - 1) * weight;
-		embedding[idx1]! += value;
-		embedding[idx2]! += value * 0.7; // Secondary index with decay
-		embedding[idx3]! += value * 0.5; // Tertiary index
+		embedding[idx1] = (embedding[idx1] ?? 0) + value;
+		embedding[idx2] = (embedding[idx2] ?? 0) + value * 0.7; // Secondary index with decay
+		embedding[idx3] = (embedding[idx3] ?? 0) + value * 0.5; // Tertiary index
 
 		featureCount++;
 		if (featureCount > 256) break; // Limit features for speed
@@ -127,13 +127,14 @@ export function generateEmbedding(text: string, dim: number = EMBEDDING_DIM): Fl
 	// L2 normalize the embedding
 	let sumSquares = 0;
 	for (let i = 0; i < dim; i++) {
-		sumSquares += embedding[i]! * embedding[i]!;
+		const component = embedding[i] ?? 0;
+		sumSquares += component * component;
 	}
 
 	if (sumSquares > 0) {
 		const norm = Math.sqrt(sumSquares);
 		for (let i = 0; i < dim; i++) {
-			embedding[i]! /= norm;
+			embedding[i] = (embedding[i] ?? 0) / norm;
 		}
 	}
 
@@ -176,19 +177,20 @@ export function generateDomainEmbedding(domain: string, dim: number = EMBEDDING_
 		const h = fnv1aHash(feature);
 		const idx = h % dim;
 		const value = (h / 0xffffffff) * 2 - 1;
-		embedding[idx]! += value;
+		embedding[idx] = (embedding[idx] ?? 0) + value;
 	}
 
 	// L2 normalize
 	let sumSquares = 0;
 	for (let i = 0; i < dim; i++) {
-		sumSquares += embedding[i]! * embedding[i]!;
+		const component = embedding[i] ?? 0;
+		sumSquares += component * component;
 	}
 
 	if (sumSquares > 0) {
 		const norm = Math.sqrt(sumSquares);
 		for (let i = 0; i < dim; i++) {
-			embedding[i]! /= norm;
+			embedding[i] = (embedding[i] ?? 0) / norm;
 		}
 	}
 

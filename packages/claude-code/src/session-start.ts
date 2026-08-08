@@ -6,7 +6,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
 	discoverPlugins,
 	getLogger,
@@ -15,17 +15,12 @@ import {
 	runPluginScan,
 } from "@singularityrd/aidr-core";
 import { pruneStaleSessionFiles } from "./approval-tracker.js";
+import { resolveAssetDir, resolvePluginRoot } from "./assets.js";
 
 // Initialize Sentry
 initSentry({ name: "aidr-claude-code-session-start" });
 
 const logger: Logger = getLogger();
-
-function getPluginRoot(): string {
-	// When bundled by esbuild into CJS, __dirname points to packages/claude-code/dist/
-	// Plugin root is three levels up.
-	return resolve(__dirname, "..", "..", "..");
-}
 
 function getPluginManifest(pluginRoot: string): { name: string | null; version: string } {
 	try {
@@ -59,9 +54,9 @@ async function main(): Promise<void> {
 		// Fail open
 	}
 
-	const pluginRoot = getPluginRoot();
-	const threatsDir = join(pluginRoot, "threats");
-	const allowlistsDir = join(pluginRoot, "allowlists");
+	const pluginRoot = resolvePluginRoot();
+	const threatsDir = resolveAssetDir("threats");
+	const allowlistsDir = resolveAssetDir("allowlists");
 	const manifest = getPluginManifest(pluginRoot);
 
 	// Discover plugins and filter out self

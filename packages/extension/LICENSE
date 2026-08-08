@@ -1,13 +1,14 @@
-Copyright 2026 SingularityRD Inc.
+Singularity AIDR Extension Commercial Notice
+=============================================
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+Copyright (c) 2026 SingularityRD. All rights reserved.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+The first-party extension source and compiled artifact are proprietary and
+are governed by the repository LICENSE and the applicable written commercial
+agreement. No public redistribution licence is granted by this file.
+Third-party components retain their original licences in
+THIRD_PARTY_NOTICES. Threat resources are governed by
+resources/threats/LICENSE (Detection Rule License 1.1).
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+This notice is a draft baseline and does not represent Legal approval of a
+Release Candidate or customer distribution terms.

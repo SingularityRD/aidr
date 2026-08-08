@@ -6,7 +6,6 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
 import {
 	type Artifact,
 	allowVerdict,
@@ -18,6 +17,7 @@ import {
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { addPendingApproval } from "./approval-tracker.js";
+import { resolveAssetDir } from "./assets.js";
 import { formatBlockReason } from "./format.js";
 
 // Initialize Sentry
@@ -68,12 +68,6 @@ function makeResponse(verdict: Verdict): Record<string, unknown> {
 	};
 }
 
-function getPluginRoot(): string {
-	// When bundled by esbuild into CJS, __dirname points to packages/claude-code/dist/
-	// Plugin root is three levels up.
-	return resolve(__dirname, "..", "..", "..");
-}
-
 async function main(): Promise<void> {
 	await maybeVerifyIntegrity();
 
@@ -99,8 +93,6 @@ async function main(): Promise<void> {
 	const toolInput = (toolCall.tool_input ?? {}) as Record<string, unknown>;
 	const sessionId = (toolCall.session_id ?? "unknown") as string;
 	const toolUseId = (toolCall.tool_use_id ?? "") as string;
-	const pluginRoot = getPluginRoot();
-
 	// Extract artifacts based on tool type (with MCP/unknown fallback)
 	const artifacts: Artifact[] = extractFromToolCall(toolName, toolInput);
 
@@ -111,8 +103,8 @@ async function main(): Promise<void> {
 	const verdict = await evaluateToolCall(
 		{ sessionId, toolName, toolInput, artifacts },
 		{
-			threatsDir: join(pluginRoot, "threats"),
-			allowlistsDir: join(pluginRoot, "allowlists"),
+			threatsDir: resolveAssetDir("threats"),
+			allowlistsDir: resolveAssetDir("allowlists"),
 			agentRuntime: "claude-code",
 			logger,
 		},

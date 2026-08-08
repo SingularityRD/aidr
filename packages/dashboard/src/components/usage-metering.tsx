@@ -316,8 +316,8 @@ async function loadTrendData(
 
 	const { data: agents, error: agentsError } = await supabase
 		.from("agents")
-		.select("created_at")
-		.gte("created_at", since.toISOString());
+		.select("first_seen")
+		.gte("first_seen", since.toISOString());
 
 	if (agentsError) {
 		if (!cancelled()) setError(agentsError.message);
@@ -330,10 +330,10 @@ async function loadTrendData(
 
 	const rows = (agents ?? []) as Pick<
 		Database["public"]["Tables"]["agents"]["Row"],
-		"created_at"
+		"first_seen"
 	>[];
 	for (const a of rows) {
-		const key = a.created_at.slice(0, 10);
+		const key = a.first_seen.slice(0, 10);
 		if (buckets.has(key)) {
 			buckets.set(key, (buckets.get(key) ?? 0) + 1);
 		}

@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import {
+	getInvoiceContactHref,
+	safeCommercialLink,
+	selfServiceCheckoutEnabled,
+} from "../../billing/commercial";
 import { supabase } from "../../lib/supabase";
 
 type EntitlementsRow = { included_agents: number; extra_agents: number };
@@ -18,8 +23,6 @@ type SubscriptionRow = {
 	updated_at: string;
 };
 
-const USD_PER_EXTRA_AGENT_PER_MONTH = 2;
-
 export function BillingPage() {
 	const [entitlements, setEntitlements] = useState<EntitlementsRow | null>(null);
 	const [agentCount, setAgentCount] = useState<number>(0);
@@ -33,14 +36,21 @@ export function BillingPage() {
 		async function load() {
 			setError(null);
 
-			const [seatRes, subRes, checkoutRes] = await Promise.all([
+			const [seatRes, subRes] = await Promise.all([
 				(async () => {
 					const res = await supabase
 						.from("seat_usage")
 						.select("included_agents,extra_agents,allowed_agents,current_agents")
 						.maybeSingle();
 					if (!res.error) return res;
-					// Back-compat if the view hasn't been deployed yet.
+					// Back-compat only when the view is genuinely absent. Network,
+					// permission, and data errors must stay visible instead of silently
+					// switching to an untrusted legacy calculation.
+					const legacyViewMissing =
+						res.error.code === "PGRST205" ||
+						res.error.code === "42P01" ||
+						/seat_usage[\s\S]*(?:not exist|missing)/i.test(res.error.message);
+					if (!legacyViewMissing) return res;
 					const [entRes, agentsRes] = await Promise.all([
 						supabase.from("entitlements").select("included_agents,extra_agents").maybeSingle(),
 						supabase.from("agents").select("id", { count: "exact", head: true }),
@@ -67,8 +77,10 @@ export function BillingPage() {
 					.order("updated_at", { ascending: false })
 					.limit(1)
 					.maybeSingle(),
-				supabase.functions.invoke("billing-checkout", { method: "GET" }),
 			]);
+			const checkoutRes = selfServiceCheckoutEnabled
+				? await supabase.functions.invoke("billing-checkout", { method: "GET" })
+				: null;
 
 			if (cancelled) return;
 
@@ -92,9 +104,11 @@ export function BillingPage() {
 			if (subRes.error) setError(subRes.error.message);
 			else setSubscription((subRes.data ?? null) as SubscriptionRow | null);
 
-			if (!checkoutRes.error) {
+			if (checkoutRes && !checkoutRes.error) {
 				const data = (checkoutRes.data ?? {}) as { checkout_url?: string };
 				setCheckoutUrl(typeof data.checkout_url === "string" ? data.checkout_url : null);
+			} else if (!selfServiceCheckoutEnabled) {
+				setCheckoutUrl(null);
 			}
 		}
 
@@ -111,20 +125,22 @@ export function BillingPage() {
 	const allowed = Math.max(0, included + extra);
 	const overLimit = allowed > 0 && agentCount > allowed;
 
-	const monthlyEstimateUsd = useMemo(() => {
-		// Commercial model: first agent is free, each additional is $2/mo.
-		const billable = Math.max(0, agentCount - 1);
-		return billable * USD_PER_EXTRA_AGENT_PER_MONTH;
-	}, [agentCount]);
+	const safeCheckoutUrl = selfServiceCheckoutEnabled ? safeCommercialLink(checkoutUrl) : null;
+	const invoiceUrl = getInvoiceContactHref();
 
 	return (
 		<div className="stack">
 			<div className="card">
 				<h1>Billing</h1>
 				<p className="muted">
-					1 agent is free. Additional agents are <b>${USD_PER_EXTRA_AGENT_PER_MONTH}/month</b> each.
+					Seat allowances and price are fixed by the approved enterprise order; this dashboard does
+					not advertise a self-service price.
 				</p>
-				{error ? <div className="notice notice-danger">{error}</div> : null}
+				{error ? (
+					<div className="notice notice-danger" role="alert" aria-live="assertive">
+						{error}
+					</div>
+				) : null}
 			</div>
 
 			<div className="card">
@@ -165,15 +181,46 @@ export function BillingPage() {
 					</div>
 				)}
 
-				{checkoutUrl ? (
+				{safeCheckoutUrl ? (
 					<div className="row" style={{ marginTop: 12 }}>
-						<a className="button" href={checkoutUrl} target="_blank" rel="noreferrer">
+						<a className="button" href={safeCheckoutUrl} target="_blank" rel="noreferrer">
 							Upgrade seats
 						</a>
 					</div>
-				) : (
+				) : selfServiceCheckoutEnabled ? (
 					<div className="muted small" style={{ marginTop: 12 }}>
 						Checkout is not configured.
+					</div>
+				) : (
+					<div className="notice" style={{ marginTop: 12 }}>
+						Self-service checkout is disabled for the direct-GA release. Seat changes are
+						provisioned only after an approved enterprise order is reconciled.
+					</div>
+				)}
+			</div>
+
+			<div className="card">
+				<h2>Enterprise / manual invoice</h2>
+				<p className="muted">
+					For annual commitments, procurement review, or a manually invoiced deployment, use the
+					configured sales channel. This page does not grant entitlements until an approved order is
+					reconciled.
+				</p>
+				{invoiceUrl ? (
+					<div className="row" style={{ marginTop: 12 }}>
+						<a
+							className="button button-secondary"
+							href={invoiceUrl}
+							target={invoiceUrl.startsWith("mailto:") ? undefined : "_blank"}
+							rel={invoiceUrl.startsWith("mailto:") ? undefined : "noreferrer"}
+						>
+							Request enterprise invoice
+						</a>
+					</div>
+				) : (
+					<div className="notice notice-danger" role="alert">
+						Sales/invoice contact is not configured for this deployment. Do not promise an
+						enterprise invoice workflow until Finance and Sales publish the approved channel.
 					</div>
 				)}
 			</div>
@@ -199,12 +246,12 @@ export function BillingPage() {
 					<div className="muted small">Current connected agents</div>
 					<div className="mono">{agentCount}</div>
 					<div className="muted small" style={{ marginTop: 8 }}>
-						Estimated monthly total (based on connected agents):{" "}
-						<span className="mono">${monthlyEstimateUsd}</span>
+						Commercial amount: <span className="mono">Quoted in approved order</span>
 					</div>
 					{overLimit ? (
 						<div className="notice notice-danger">
-							Over limit: new agents may be rejected by the ingest function until you upgrade seats.
+							Over limit: new agents may be rejected by the ingest function until an approved order
+							is reconciled.
 						</div>
 					) : null}
 				</div>

@@ -1,33 +1,23 @@
 Singularity AIDR
 Copyright 2026 SingularityRD.
 
-This product includes software developed by SingularityRD.
+The Singularity AIDR product, first-party source code, compiled artifacts,
+connectors, SDK, CLI, dashboard, hosted services, documentation, and package
+metadata are proprietary and are governed by LICENSE and the applicable
+written commercial agreement. This notice does not grant a public licence or
+imply Legal approval of a release candidate.
 
----
+Threat detection rules in threats/ are governed by the Detection Rule License
+(DRL) 1.1 in threats/LICENSE. Rule attribution and rule-derived output
+requirements remain applicable when the rules are redistributed or used.
 
-Licensing:
+Third-party copyright, licence and attribution notices are preserved in
+THIRD_PARTY_NOTICES. Third-party components are not relicensed as proprietary
+by this notice. Their original licence terms, source obligations and required
+notices continue to apply to the component and to any artifact that includes
+it.
 
-This project uses a dual-license structure:
-
-- Source code: Apache License 2.0 (see LICENSE)
-- Threat detection rules (threats/): Detection Rule License 1.1 (see threats/LICENSE)
-
-The DRL 1.1 requires that detection output based on rule matches must retain
-author attribution. The default author for all rules is SingularityRD.
-
----
-
-Cloud Services Notice:
-
-SingularityRD cloud services are provided exclusively for use with authorized
-Singularity AIDR distributions. Unauthorized access to these services is prohibited.
-Use of these services is governed by the applicable service terms, not by the
-Apache 2.0 license of this source code.
-
----
-
-Third-party dependencies:
-
-- yaml (ISC License) - https://github.com/eemeli/yaml
-- zod (MIT License) - https://github.com/colinhacks/zod
-- pino (MIT License) - https://github.com/pinojs/pino
+Cloud services and control-plane endpoints are available only to authorized
+customers and evaluators under the applicable written terms. Unauthorized
+access, redistribution, public hosting, or resale is not granted by this
+repository notice.

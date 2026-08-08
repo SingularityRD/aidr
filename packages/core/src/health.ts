@@ -10,6 +10,7 @@ import { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
 import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import { loadThreats } from "./threat-loader.js";
 import { nullLogger } from "./types.js";
+import { VERSION } from "./version.js";
 
 export type HealthStatusValue = "healthy" | "degraded" | "unhealthy";
 
@@ -37,8 +38,9 @@ export interface HealthStatus {
 
 /** Get package version */
 function getVersion(): string {
-	// Try to get version from environment or return default
-	return process.env.AIDR_VERSION || "0.6.0";
+	// AIDR_VERSION is an explicit operator override; normal consumer builds
+	// use the compile-time/package version exported by the core package.
+	return process.env.AIDR_VERSION || VERSION;
 }
 
 /**

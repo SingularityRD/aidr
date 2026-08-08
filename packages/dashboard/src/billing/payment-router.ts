@@ -1,6 +1,8 @@
 // LemonSqueezy-only payment router
 // Removed: stripe, iyzico, crypto providers (user requested only LemonSqueezy)
 
+import { selfServiceCheckoutEnabled } from "./commercial";
+
 import { cancelSubscription } from "./lemon-client";
 
 export type ProviderType = "lemon-squeezy";
@@ -60,6 +62,11 @@ export function getPaymentProvider(): PaymentProvider {
 			_seats: number,
 			_plan: "monthly" | "yearly",
 		): Promise<PaymentResult> {
+			if (!selfServiceCheckoutEnabled) {
+				throw new Error(
+					"Self-service billing is disabled for the direct-GA release. Use the approved enterprise invoice workflow.",
+				);
+			}
 			// Note: This requires user email which we don't have here
 			// In real implementation, fetch user email from auth context
 			throw new Error("Use createCheckout from lemon-client directly with user email");
@@ -83,6 +90,7 @@ export function getAvailableProviders(): Array<{
 	features: string[];
 	recommended?: boolean;
 }> {
+	if (!selfServiceCheckoutEnabled) return [];
 	return [
 		{
 			id: "lemon-squeezy",

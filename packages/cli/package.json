@@ -1,30 +1,33 @@
 {
   "name": "@singularityrd/aidr-cli",
-  "version": "1.0.0",
+  "version": "0.6.0",
   "description": "AIDR CLI - One-command setup for AI Agent security",
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "aidr": "./bin/aidr.js",
-    "aidr-setup": "./bin/aidr.js"
+    "aidr": "./dist/index.js",
+    "aidr-setup": "./dist/index.js"
   },
+	"files": ["dist"],
 	"scripts": {
 		"build": "tsc",
-		"build:release": "node ../../scripts/rmrf.mjs dist && node ../../scripts/rmrf.mjs tsconfig.tsbuildinfo && tsc -p tsconfig.release.json",
+		"build:release": "node ../../scripts/rmrf.mjs dist && node ../../scripts/rmrf.mjs tsconfig.tsbuildinfo && tsc -p tsconfig.release.json && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-cli && node ../../scripts/check-no-sourcemaps.mjs dist",
 		"dev": "tsc --watch",
-		"prepublish": "npm run build"
+		"prepack": "node ../../scripts/check-workspace-refs.mjs",
+		"prepublishOnly": "pnpm run build:release"
 	},
   "dependencies": {
     "commander": "^11.1.0",
     "chalk": "^5.3.0",
     "ora": "^7.0.1",
-    "inquirer": "^9.2.12",
-    "better-sqlite3": "^9.4.3",
     "@singularityrd/aidr-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "@types/inquirer": "^9.0.7",
     "typescript": "^5.3.0"
   },
   "engines": {
@@ -37,6 +40,6 @@
     "cursor",
     "protection"
   ],
-  "license": "MIT",
+  "license": "Proprietary",
   "author": "Singularity R&D"
 }

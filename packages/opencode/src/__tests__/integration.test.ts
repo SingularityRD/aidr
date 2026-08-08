@@ -150,9 +150,9 @@ describe("OpenCode integration: Singularity AIDR plugin pipeline", { timeout: 30
 	});
 
 	it("passes through unmapped tools", async () => {
-		const before = hooks["tool.execute.before"];
+		const beforeHook = hooks["tool.execute.before"];
 		await expect(
-			before?.({ tool: "lsp", sessionID: "s1", callID: "c4" }, { args: { query: "some symbol" } }),
+			beforeHook?.({ tool: "lsp", sessionID: "s1", callID: "c4" }, { args: { query: "some symbol" } }),
 		).resolves.toBeUndefined();
 	});
 

@@ -31,6 +31,69 @@ export { VerdictCache } from "./cache.js";
 export { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 // Control plane client (optional telemetry/licensing)
 export { ControlPlaneClient } from "./clients/control-plane.js";
+// AIG sidecar scan client
+export {
+	AigBridgeError,
+	getAigScanResult,
+	isAigAvailable,
+	triggerAigScan,
+} from "./aig-scan-client.js";
+export type {
+	AigAgentScanOptions,
+	AigFinding,
+	AigInfraScanOptions,
+	AigJailbreakScanOptions,
+	AigMcpScanOptions,
+	AigModelConfig,
+	AigScanOptions,
+	AigScanRequest,
+	AigScanResult,
+	AigScanType,
+	AigTaskStatus,
+} from "./aig-scan-client.js";
+export {
+	applyUpdate as applyAigThreatUpdate,
+	checkForUpdates as checkAigThreatUpdates,
+	downloadUpdate as downloadAigThreatUpdate,
+	fullSyncCycle as fullAigThreatSync,
+	getSyncStatus as getAigSyncStatus,
+} from "./aig-sync.js";
+export type { AigSyncConfig, SyncStatus } from "./aig-sync.js";
+// AIG compiled product/CVE data and MCP risk categories
+export {
+	checkFrameworkCves,
+	checkPackageAgainstCveIndex,
+	checkProductAgainstCveIndex,
+	getAigCveIndexMetadata,
+	getAigCveIndexPath,
+	getAigDataIntegrityStatus,
+	getCveStats,
+	resetCveIndexCache,
+	setTestIndexPath,
+} from "./cve-checker.js";
+export type {
+	AigDataIntegrityStatus,
+	AigTargetKind,
+	CveEntry,
+	CveResult,
+	CveRuleStatus,
+	CveStats,
+} from "./cve-checker.js";
+export {
+	aigRiskToPolicyAction,
+	classifyMcpTool,
+	getAigMcpDataStatus,
+	getAllCategories,
+	isAigMcpDataReady,
+	loadAigMcpCategories,
+	resetCategoryCache,
+} from "./mcp-aig-categories.js";
+export type {
+	AigMcpCategory,
+	AigMcpDataStatus,
+	AigPolicyAction,
+	AigRiskLevel,
+} from "./mcp-aig-categories.js";
 export type { FileCheckBatchResult, FileCheckResult } from "./clients/file-check.js";
 export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
@@ -252,6 +315,13 @@ export { RealTimeRuleSync } from "./rule-sync.js";
 export { createScanHandler, runPluginScan, type ScanHandlerOptions } from "./scan-handler.js";
 // Sentry
 export { initSentry } from "./sentry.js";
+// Telemetry privacy boundary
+export {
+	redactTelemetryAttributes,
+	redactTelemetryData,
+	redactTelemetryString,
+	sanitizeTelemetryEndpoint,
+} from "./telemetry-redaction.js";
 // Session start orchestrator
 export {
 	runSessionStart,
@@ -378,3 +448,5 @@ export { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 export type { VersionCheckContext, VersionCheckResult } from "./version-check.js";
 // Version check
 export { checkForUpdate, isNewerVersion } from "./version-check.js";
+// Build/runtime version used by health, telemetry and consumer CLIs.
+export { VERSION, getVersion } from "./version.js";

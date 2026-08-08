@@ -5,24 +5,25 @@ on:
     types: [opened, edited]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   label-issues:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Auto-label Issues
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
           echo "=== Auto-labeling Issues ==="
           
           # Get the issue number that triggered the workflow
-          if [ "${{ github.event_name }}" == "issues" ]; then
-            ISSUE_NUMBER="${{ github.event.issue.number }}"
-            ISSUE_TITLE="${{ github.event.issue.title }}"
-            ISSUE_BODY="${{ github.event.issue.body }}"
+          if [ "${GITHUB_EVENT_NAME}" == "issues" ]; then
             
             echo "Processing issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}"
             

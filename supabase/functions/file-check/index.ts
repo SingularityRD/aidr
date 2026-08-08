@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
 	const keyHash = await sha256Hex(apiKey);
 	const { data: keyRow, error: keyErr } = await supabase
 		.from("api_keys")
-		.select("user_id, revoked")
+		.select("user_id, tenant_id, revoked")
 		.eq("key_hash", keyHash)
 		.maybeSingle();
 
@@ -104,11 +104,12 @@ Deno.serve(async (req) => {
 	}
 
 	const userId = keyRow.user_id as string;
+	const tenantId = (keyRow.tenant_id as string | null) ?? userId;
 
 	const { data: rows } = await supabase
 		.from("file_reputation")
 		.select("sha256,severity,malware_name")
-		.eq("user_id", userId)
+		.eq("tenant_id", tenantId)
 		.in("sha256", hashes);
 
 	const byHash = new Map<string, FileRepRow>();
@@ -130,4 +131,3 @@ Deno.serve(async (req) => {
 
 	return json(200, { responses });
 });
-

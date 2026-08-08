@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { redactTelemetryAttributes, redactTelemetryString } from "../telemetry-redaction.js";
 import {
 	addSpanEvent,
 	endSpan,
@@ -106,5 +107,22 @@ describe("tracing", () => {
 				durationMs: 12,
 			});
 		}).not.toThrow();
+	});
+
+	it("provides scrubbed values to tracing attributes and event names", () => {
+		expect(
+			redactTelemetryAttributes({
+				authorization: "Bearer live-token",
+				"http.url": "https://example.test/?api_key=secret",
+				"aidr.count": 2,
+			}),
+		).toEqual({
+			authorization: "[Redacted]",
+			"http.url": "https://example.test/?api_key=[Redacted]",
+			"aidr.count": 2,
+		});
+		expect(redactTelemetryString("tool input token=live-secret")).toBe(
+			"tool input token=[Redacted]",
+		);
 	});
 });

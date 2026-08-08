@@ -16,6 +16,8 @@ const PADDLE_WEBHOOK_SECRET = (Deno.env.get("AIDR_PADDLE_WEBHOOK_SECRET") ?? "")
 const PADDLE_SIGNATURE_HEADER = "Paddle-Signature";
 const PADDLE_TOLERANCE_SECONDS = Number(Deno.env.get("AIDR_PADDLE_WEBHOOK_TOLERANCE_SECONDS") ?? "300");
 const EXTRA_AGENT_PRICE_ID = (Deno.env.get("AIDR_PADDLE_EXTRA_AGENT_PRICE_ID") ?? "").trim();
+const LEGACY_SELF_SERVICE_ENABLED =
+	(Deno.env.get("AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING") ?? "").trim().toLowerCase() === "true";
 
 function json(status: number, body: Record<string, unknown>) {
 	return new Response(JSON.stringify(body), {
@@ -145,6 +147,7 @@ function extractExtraAgents(evt: PaddleEvent): number {
 
 Deno.serve(async (req) => {
 	if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
+	if (!LEGACY_SELF_SERVICE_ENABLED) return json(410, { error: "disabled_for_direct_ga" });
 	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return json(500, { error: "misconfigured_supabase_env" });
 	if (!PADDLE_WEBHOOK_SECRET) return json(500, { error: "missing_paddle_webhook_secret" });
 
@@ -178,14 +181,14 @@ Deno.serve(async (req) => {
 
 	const eventId = (evt.event_id ?? "").trim();
 	if (eventId) {
-		const { data: existing } = await supabase
-			.from("billing_webhook_events")
-			.select("event_id")
-			.eq("event_id", eventId)
-			.maybeSingle();
-		if (existing?.event_id) return json(200, { ok: true, dedup: true });
-
-		await supabase.from("billing_webhook_events").insert({ provider: "paddle", event_id: eventId, payload: evt });
+		const { data: recorded, error: recordErr } = await supabase.rpc("record_billing_webhook_event", {
+			p_provider: "paddle",
+			p_event_id: eventId,
+			p_payload: evt,
+			p_tenant_id: null,
+		});
+		if (recordErr) return json(500, { error: "webhook_dedup_unavailable" });
+		if (recorded !== true) return json(200, { ok: true, dedup: true });
 	}
 
 	const eventType = (evt.event_type ?? "").trim();
@@ -207,6 +210,13 @@ Deno.serve(async (req) => {
 		});
 		return json(200, { ok: true, unlinked: true });
 	}
+	const tenantId = userId;
+	if (eventId) {
+		await supabase
+			.from("billing_webhook_events")
+			.update({ tenant_id: tenantId })
+			.eq("event_id", eventId);
+	}
 
 	const subId = extractSubscriptionId(evt);
 	const status = extractStatus(evt);
@@ -218,6 +228,7 @@ Deno.serve(async (req) => {
 		await supabase.from("subscriptions").upsert(
 			{
 				user_id: userId,
+				tenant_id: tenantId,
 				provider: "paddle",
 				provider_subscription_id: subId,
 				status,
@@ -230,10 +241,14 @@ Deno.serve(async (req) => {
 	}
 
 	// Update entitlements as the single source of seat enforcement.
-	await supabase.from("entitlements").update({ extra_agents: extraAgents }).eq("user_id", userId);
+	await supabase
+		.from("entitlements")
+		.update({ extra_agents: extraAgents })
+		.eq("tenant_id", tenantId);
 
 	await supabase.from("admin_audit_logs").insert({
 		actor_user_id: userId,
+		tenant_id: tenantId,
 		action: "paddle.webhook",
 		target_user_id: userId,
 		detail: { event_type: eventType, event_id: eventId, subscription_id: subId, extra_agents: extraAgents },
@@ -241,4 +256,3 @@ Deno.serve(async (req) => {
 
 	return json(200, { ok: true });
 });
-

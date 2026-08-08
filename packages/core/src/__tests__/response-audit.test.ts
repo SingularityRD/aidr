@@ -89,6 +89,26 @@ describe("ResponseAuditor", () => {
 		expect(queried).toEqual([logged]);
 	});
 
+	it("redacts credentials before persisting response evidence", async () => {
+		const dir = await makeTmpDir();
+		const auditPath = join(dir, "response-audit.jsonl");
+		const auditor = new ResponseAuditor(auditPath);
+
+		const logged = await auditor.log(
+			makeEntry({
+				input: "curl -H 'Authorization: Bearer live-secret' https://example.test/?token=secret",
+				error: "upstream failed password=secret",
+			}),
+		);
+
+		const raw = await readFile(auditPath, "utf8");
+		expect(raw).not.toContain("live-secret");
+		expect(raw).not.toContain("token=secret");
+		expect(raw).not.toContain("password=secret");
+		expect(logged.input).not.toContain("live-secret");
+		expect(logged.error).not.toContain("password=secret");
+	});
+
 	it("filters by action, tool, outcome, threat id, and time window", async () => {
 		const dir = await makeTmpDir();
 		const auditor = new ResponseAuditor(join(dir, "response-audit.jsonl"));
@@ -215,6 +235,65 @@ describe("ResponseAuditor", () => {
 		expect(reordered.tamperedEntries).toContain(second.id);
 		expect(reordered.tamperedEntries).toContain(third.id);
 		expect(reordered.tamperedEntries).not.toContain(first.id);
+	});
+
+	it("detects signed audit tail deletion through the head checkpoint", async () => {
+		const dir = await makeTmpDir();
+		const auditPath = join(dir, "response-audit.jsonl");
+		const auditor = new ResponseAuditor(auditPath, { signEntries: true });
+
+		await auditor.log(makeEntry({ threatId: "CLT-TAIL-001" }));
+		const second = await auditor.log(makeEntry({ threatId: "CLT-TAIL-002" }));
+		const lines = await readJsonLines(auditPath);
+		await writeFile(auditPath, `${JSON.stringify(lines[0])}\n`);
+
+		const integrity = await auditor.verifyIntegrity();
+		expect(integrity.valid).toBe(false);
+		expect(integrity.tamperedEntries).toEqual(["audit-log-tail-deleted"]);
+		expect(second.id).toBeTruthy();
+	});
+
+	it("records signed retention deletions in a separate manifest", async () => {
+		const dir = await makeTmpDir();
+		const auditPath = join(dir, "response-audit.jsonl");
+		const oldTimestamp = new Date(Date.now() - 3 * 24 * 60 * 60 * 1_000).toISOString();
+		const auditor = new ResponseAuditor(auditPath, {
+			signEntries: true,
+			retentionDays: 1,
+		});
+
+		// Seed an expired record; it is intentionally not signed and is removed
+		// before the first signed append.
+		await writeFile(
+			auditPath,
+			`${JSON.stringify(serializedEntry({ id: "expired-retention", timestamp: oldTimestamp }))}\n`,
+		);
+		await auditor.log(makeEntry({ threatId: "CLT-RETENTION-001" }));
+
+		const manifest = await readFile(`${auditPath}.retention.jsonl`, "utf8");
+		expect(manifest).toContain('"type":"retention_delete"');
+		expect(manifest).toContain("expired-retention");
+		await expect(auditor.verifyIntegrity()).resolves.toEqual({ valid: true });
+
+		await writeFile(
+			`${auditPath}.retention.jsonl`,
+			`${manifest.replace("expired-retention", "edited")}`,
+		);
+		const integrity = await auditor.verifyIntegrity();
+		expect(integrity.valid).toBe(false);
+		expect(integrity.tamperedEntries).toContain("retention-manifest-line-1");
+	});
+
+	it("fails closed when the signed head checkpoint is removed", async () => {
+		const dir = await makeTmpDir();
+		const auditPath = join(dir, "response-audit.jsonl");
+		const auditor = new ResponseAuditor(auditPath, { signEntries: true });
+		await auditor.log(makeEntry());
+
+		await writeFile(`${auditPath}.head`, "");
+		const integrity = await auditor.verifyIntegrity();
+		expect(integrity.valid).toBe(false);
+		expect(integrity.tamperedEntries).toEqual(["head-checkpoint-missing"]);
 	});
 
 	it("enforces retention when logging new entries", async () => {

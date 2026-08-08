@@ -1,6 +1,11 @@
 import { Link } from "react-router-dom";
 
-const launchLinks = [{ name: "Get Started", href: "/login", desc: "Managed control plane." }];
+const launchLinks = [
+	{ name: "Run Demo", href: "/demo", desc: "Controlled synthetic evaluation." },
+	{ name: "Get Started", href: "/login", desc: "Managed control plane." },
+	{ name: "View Pricing", href: "/pricing", desc: "Pilot, Pro and enterprise paths." },
+	{ name: "Request Pilot", href: "/pilot", desc: "Start with an approval-gated pilot." },
+];
 
 const _highlights = [
 	"Tool-call inspection: shell, file, network, MCP/plugin actions",
@@ -53,12 +58,12 @@ export function LandingPage() {
 						marginBottom: 10,
 					}}
 				>
-					Launch-ready security layer for AI agents.
+					Security layer for AI agents.
 				</h1>
 				<p style={{ color: "var(--text-secondary)", maxWidth: 760, lineHeight: "28px" }}>
 					Singularity AIDR protects runtime actions, surfaces incidents, and gives managed
 					visibility without forcing cloud-only enforcement. Install by prompt, authorize in
-					browser, and go live in minutes.
+					browser, and review the guided setup for your supported runtime.
 				</p>
 			</section>
 

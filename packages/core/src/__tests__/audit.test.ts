@@ -68,6 +68,22 @@ describe("logDecision", () => {
 		expect(entries[0].user_input).toContain("<REDACTED_TOKEN>");
 	});
 
+	it("should redact secrets nested in audit metadata and errors", async () => {
+		const config = makeConfig(dir);
+		await logError(config, "upstream failed token=error-secret", {
+			request: { url: "https://example.test/?api_key=metadata-secret" },
+		});
+		await logSessionStart(config, "session-1", {
+			Authorization: "Bearer session-secret",
+		});
+
+		const entries = await readAuditLog(config);
+		const serialized = JSON.stringify(entries);
+		expect(serialized).not.toContain("error-secret");
+		expect(serialized).not.toContain("metadata-secret");
+		expect(serialized).not.toContain("session-secret");
+	});
+
 	it("should truncate long input", async () => {
 		const config = makeConfig(dir);
 		const longInput = "a".repeat(1000);

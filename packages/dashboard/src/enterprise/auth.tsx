@@ -10,6 +10,7 @@ export function EnterpriseAuth() {
 	const [busy, setBusy] = useState(false);
 
 	const returnTo = (searchParams.get("returnTo") ?? "/onboarding").trim();
+	const inviteToken = (searchParams.get("invite") ?? "").trim();
 
 	async function signInWithProvider(provider: "github" | "gitlab") {
 		setBusy(true);
@@ -99,7 +100,7 @@ export function EnterpriseAuth() {
 			</div>
 
 			{/* Team invite acceptance */}
-			{searchParams.get("invite") && (
+			{inviteToken && (
 				<div
 					style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid var(--border)" }}
 				>
@@ -111,7 +112,7 @@ export function EnterpriseAuth() {
 						className="button"
 						type="button"
 						disabled={busy}
-						onClick={() => void handleTeamInviteAccept(searchParams.get("invite")!)}
+						onClick={() => void handleTeamInviteAccept(inviteToken)}
 					>
 						Accept Invitation
 					</button>

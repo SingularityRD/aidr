@@ -117,7 +117,7 @@ export class AIDRClient {
 			reason: `Check failed after ${attempts} attempts: ${lastError?.message}`,
 		};
 
-		this._emitErrorEvent(lastError!, request);
+		this._emitErrorEvent(lastError ?? new Error("Security check failed"), request);
 		return fallbackResult;
 	}
 

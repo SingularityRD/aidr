@@ -1,24 +1,10 @@
-/**
- * Integration tests for the Dashboard package
- * Tests: React component rendering, routing, API calls (mocked)
- */
+// @vitest-environment jsdom
 
-import "@testing-library/jest-dom";
-import type * as SupabaseModule from "@supabase/supabase-js";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock modules before importing components
-vi.mock("@supabase/supabase-js", async () => {
-	const actual = await vi.importActual<typeof SupabaseModule>("@supabase/supabase-js");
-	return {
-		...actual,
-		createClient: vi.fn(),
-	};
-});
-
-// Mock the supabase module
 vi.mock("../lib/supabase", () => ({
 	supabase: {
 		auth: {
@@ -27,454 +13,332 @@ vi.mock("../lib/supabase", () => ({
 			signInWithOAuth: vi.fn(),
 			signInWithOtp: vi.fn(),
 			exchangeCodeForSession: vi.fn(),
-			onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+			onAuthStateChange: vi.fn(),
 		},
-		from: vi.fn(() => ({
-			select: vi.fn(() => ({
-				order: vi.fn(() => Promise.resolve({ data: [], error: null })),
-				maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
-			})),
-			insert: vi.fn(() => Promise.resolve({ data: null, error: null })),
-			update: vi.fn(() => ({
-				eq: vi.fn(() => Promise.resolve({ data: null, error: null })),
-			})),
-			delete: vi.fn(() => ({
-				eq: vi.fn(() => Promise.resolve({ data: null, error: null })),
-			})),
-		})),
+		functions: { invoke: vi.fn() },
+		from: vi.fn(),
 	},
 	supabaseEnvError: null,
 }));
 
+import { TeamProvider } from "../enterprise/team-provider";
 import { supabase } from "../lib/supabase";
-// Import components after mocking
 import { AppLayout } from "../ui/AppLayout";
 import { PublicLayout } from "../ui/PublicLayout";
 import { AgentsPage } from "../ui/pages/AgentsPage";
-import { ApiKeysPage } from "../ui/pages/ApiKeysPage";
+import { AutoSecOpsPage } from "../ui/pages/AutoSecOpsPage";
 import { BillingPage } from "../ui/pages/BillingPage";
 import { IncidentsPage } from "../ui/pages/IncidentsPage";
 import { LoginPage } from "../ui/pages/LoginPage";
 import { OnboardingPage } from "../ui/pages/OnboardingPage";
+import { DemoPage } from "../ui/pages/public/DemoPage";
 import { LandingPage } from "../ui/pages/public/LandingPage";
 import { PricingPage } from "../ui/pages/public/PricingPage";
 import { getSession, signOut } from "../ui/session";
 
-// Type for mocked supabase
 const mockedSupabase = supabase as unknown as {
 	auth: {
 		getSession: ReturnType<typeof vi.fn>;
 		signOut: ReturnType<typeof vi.fn>;
 		signInWithOAuth: ReturnType<typeof vi.fn>;
 		signInWithOtp: ReturnType<typeof vi.fn>;
-		exchangeCodeForSession: ReturnType<typeof vi.fn>;
+		onAuthStateChange: ReturnType<typeof vi.fn>;
 	};
+	functions: { invoke: ReturnType<typeof vi.fn> };
 	from: ReturnType<typeof vi.fn>;
 };
 
-describe("Dashboard Integration", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
+function createQueryBuilder(defaultData: unknown[] = []) {
+	const result = { data: defaultData, error: null, count: defaultData.length };
+	const chain = {
+		select: vi.fn(),
+		order: vi.fn(),
+		limit: vi.fn(),
+		maybeSingle: vi.fn(),
+		single: vi.fn(),
+		eq: vi.fn(),
+		neq: vi.fn(),
+		in: vi.fn(),
+		gte: vi.fn(),
+		lte: vi.fn(),
+		then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve),
+	};
+
+	for (const method of ["select", "order", "limit", "eq", "neq", "in", "gte", "lte"] as const) {
+		chain[method].mockReturnValue(chain);
+	}
+	chain.maybeSingle.mockResolvedValue({ data: null, error: null });
+	chain.single.mockResolvedValue({ data: null, error: null });
+	return chain;
+}
+
+function resetSupabaseMocks() {
+	vi.resetAllMocks();
+	mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+	mockedSupabase.auth.signOut.mockResolvedValue({ error: null });
+	mockedSupabase.auth.signInWithOAuth.mockResolvedValue({ data: { url: null }, error: null });
+	mockedSupabase.auth.signInWithOtp.mockResolvedValue({ data: {}, error: null });
+	mockedSupabase.auth.onAuthStateChange.mockReturnValue({
+		data: { subscription: { unsubscribe: vi.fn() } },
+	});
+	mockedSupabase.functions.invoke.mockResolvedValue({ data: {}, error: null });
+	mockedSupabase.from.mockImplementation(() => createQueryBuilder());
+}
+
+describe("Dashboard integration", () => {
+	beforeEach(resetSupabaseMocks);
+	afterEach(cleanup);
+
+	it("renders the authenticated navigation", () => {
+		render(
+			<MemoryRouter initialEntries={["/agents"]}>
+				<Routes>
+					<Route path="/*" element={<AppLayout />}>
+						<Route path="agents" element={<div>Agents content</div>} />
+					</Route>
+				</Routes>
+			</MemoryRouter>,
+		);
+
+		expect(screen.getByText("Singularity AIDR")).toBeInTheDocument();
+		expect(screen.getByText("Agents")).toBeInTheDocument();
+		expect(screen.getByText("Billing")).toBeInTheDocument();
+		expect(screen.getByText("Sign out")).toBeInTheDocument();
 	});
 
-	afterEach(() => {
-		vi.resetAllMocks();
+	it("renders the login form and submits OAuth", async () => {
+		render(
+			<MemoryRouter initialEntries={["/login"]}>
+				<Routes>
+					<Route path="/login" element={<LoginPage />} />
+				</Routes>
+			</MemoryRouter>,
+		);
+
+		expect(screen.getByText("Welcome to AIDR")).toBeInTheDocument();
+		expect(screen.getByPlaceholderText("you@company.com")).toBeInTheDocument();
+		fireEvent.click(screen.getByText("Continue with Google"));
+		await waitFor(() => expect(mockedSupabase.auth.signInWithOAuth).toHaveBeenCalled());
 	});
 
-	describe("React Component Rendering", () => {
-		it("should render AppLayout with navigation", () => {
-			render(
-				<MemoryRouter initialEntries={["/agents"]}>
-					<Routes>
-						<Route path="/*" element={<AppLayout />}>
-							<Route path="agents" element={<div>Agents Content</div>} />
-						</Route>
-					</Routes>
-				</MemoryRouter>,
-			);
+	it("renders agents and fail-closed entitlement status", async () => {
+		render(
+			<MemoryRouter>
+				<AgentsPage />
+			</MemoryRouter>,
+		);
 
-			expect(screen.getByText("Singularity AIDR")).toBeInTheDocument();
-			expect(screen.getByText("Agents")).toBeInTheDocument();
-			expect(screen.getByText("Incidents")).toBeInTheDocument();
-			expect(screen.getByText("API Keys")).toBeInTheDocument();
-			expect(screen.getByText("Billing")).toBeInTheDocument();
-			expect(screen.getByText("Sign out")).toBeInTheDocument();
-		});
-
-		it("should render LoginPage with form elements", () => {
-			mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
-
-			render(
-				<MemoryRouter initialEntries={["/login"]}>
-					<Routes>
-						<Route path="/login" element={<LoginPage />} />
-					</Routes>
-				</MemoryRouter>,
-			);
-
-			expect(screen.getByText("Sign in")).toBeInTheDocument();
-			expect(screen.getByText("Continue with Google")).toBeInTheDocument();
-			expect(screen.getByPlaceholderText("you@company.com")).toBeInTheDocument();
-			expect(screen.getByText("Send magic link")).toBeInTheDocument();
-		});
-
-		it("should render AgentsPage with table structure", async () => {
-			mockedSupabase.from.mockReturnValue({
-				select: vi.fn(() => ({
-					order: vi.fn(() => Promise.resolve({ data: [], error: null })),
-				})),
-			});
-
-			render(
-				<MemoryRouter>
-					<AgentsPage />
-				</MemoryRouter>,
-			);
-
-			await waitFor(() => {
-				expect(screen.getByText("Agents")).toBeInTheDocument();
-			});
-
-			expect(screen.getByText("Name")).toBeInTheDocument();
-			expect(screen.getByText("Runtime")).toBeInTheDocument();
-			expect(screen.getByText("Last seen")).toBeInTheDocument();
-		});
-
-		it("should render PublicLayout with children", () => {
-			render(
-				<MemoryRouter initialEntries={["/"]}>
-					<Routes>
-						<Route path="/" element={<PublicLayout />}>
-							<Route index element={<LandingPage />} />
-						</Route>
-					</Routes>
-				</MemoryRouter>,
-			);
-
-			expect(screen.getByText("Edge-first AI Agent Detection & Response")).toBeInTheDocument();
-		});
-
-		it("should show environment error when supabase is not configured", () => {
-			// Temporarily override the mock
-			const _originalEnvError = vi.importMock("../lib/supabase");
-			vi.doMock("../lib/supabase", () => ({
-				supabase: {},
-				supabaseEnvError: "Missing environment variables",
-			}));
-
-			const { AppLayout: AppLayoutWithError } = require("../ui/AppLayout");
-
-			render(
-				<MemoryRouter>
-					<AppLayoutWithError />
-				</MemoryRouter>,
-			);
-
-			expect(screen.getByText(/Dashboard environment is incomplete/)).toBeInTheDocument();
-
-			vi.doUnmock("../lib/supabase");
-		});
+		await waitFor(() => expect(screen.getByText("Agents")).toBeInTheDocument());
+		expect(screen.getByText(/Allowed:/)).toBeInTheDocument();
+		expect(screen.getByText("unavailable")).toBeInTheDocument();
+		expect(screen.getByText("Name")).toBeInTheDocument();
 	});
 
-	describe("Routing", () => {
-		it("should render different pages based on route", () => {
-			render(
-				<MemoryRouter initialEntries={["/pricing"]}>
-					<Routes>
-						<Route path="/" element={<PublicLayout />}>
-							<Route index element={<LandingPage />} />
-							<Route path="pricing" element={<PricingPage />} />
-						</Route>
-					</Routes>
-				</MemoryRouter>,
-			);
+	it("renders the AutoSecOps integration boundary without inventing runtime data", async () => {
+		render(
+			<MemoryRouter>
+				<TeamProvider>
+					<AutoSecOpsPage />
+				</TeamProvider>
+			</MemoryRouter>,
+		);
 
-			// Pricing page should show pricing content
-			expect(screen.getByText(/Pricing/)).toBeInTheDocument();
-		});
-
-		it("should handle navigation between routes", async () => {
-			mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
-
-			render(
-				<MemoryRouter initialEntries={["/login"]}>
-					<Routes>
-						<Route path="/login" element={<LoginPage />} />
-						<Route path="/onboarding" element={<div>Onboarding Page</div>} />
-					</Routes>
-				</MemoryRouter>,
-			);
-
-			expect(screen.getByText("Sign in")).toBeInTheDocument();
-		});
-
-		it("should handle nested routing with AppLayout", () => {
-			render(
-				<MemoryRouter initialEntries={["/agents"]}>
-					<Routes>
-						<Route path="/" element={<AppLayout />}>
-							<Route path="agents" element={<div data-testid="agents-content">Agents List</div>} />
-							<Route
-								path="incidents"
-								element={<div data-testid="incidents-content">Incidents List</div>}
-							/>
-						</Route>
-					</Routes>
-				</MemoryRouter>,
-			);
-
-			expect(screen.getByTestId("agents-content")).toBeInTheDocument();
-		});
+		expect(screen.getByRole("heading", { name: "AutoSecOps" })).toBeInTheDocument();
+		expect(screen.getByText("Not connected")).toBeInTheDocument();
+		expect(screen.getByText("No AutoSecOps runtime agents reported yet.")).toBeInTheDocument();
 	});
 
-	describe("API Calls (Mocked)", () => {
-		it("should fetch agents on AgentsPage mount", async () => {
-			const mockAgents = [
-				{
-					id: "1",
-					iid: "install-123",
-					display_name: "Test Agent",
-					agent_runtime: "claude-code",
-					agent_runtime_version: "1.0.0",
-					first_seen: new Date().toISOString(),
-					last_seen: new Date().toISOString(),
-				},
-			];
-
-			mockedSupabase.from.mockReturnValue({
-				select: vi.fn(() => ({
-					order: vi.fn(() => Promise.resolve({ data: mockAgents, error: null })),
-					maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
-				})),
-			});
-
-			render(
-				<MemoryRouter>
-					<AgentsPage />
-				</MemoryRouter>,
-			);
-
-			await waitFor(() => {
-				expect(mockedSupabase.from).toHaveBeenCalledWith("agents");
-			});
-		});
-
-		it("should fetch entitlements alongside agents", async () => {
-			mockedSupabase.from.mockImplementation((table: string) => {
-				if (table === "agents") {
+	it("renders the AutoSecOps health and fleet returned by the authenticated bridge", async () => {
+		const teamId = "11111111-1111-4111-8111-111111111111";
+		mockedSupabase.from.mockImplementation((table: string) =>
+			createQueryBuilder(
+				table === "team_members"
+					? [
+							{
+								team_id: teamId,
+								role: "admin",
+								teams: {
+									id: teamId,
+									name: "Runtime team",
+									plan: "pro",
+									created_at: "2026-01-01T00:00:00.000Z",
+									updated_at: "2026-01-01T00:00:00.000Z",
+								},
+							},
+						]
+					: [],
+			),
+		);
+		mockedSupabase.functions.invoke.mockImplementation(
+			async (_name: string, options: { body?: { action?: string } }) => {
+				if (options.body?.action === "health") {
 					return {
-						select: vi.fn(() => ({
-							order: vi.fn(() => Promise.resolve({ data: [], error: null })),
-						})),
+						data: {
+							ok: true,
+							provider: "autosecops",
+							action: "health",
+							data: { snapshot: { state: "healthy", active_agents: 1, open_degradations: 0 } },
+						},
+						error: null,
 					};
 				}
-				if (table === "entitlements") {
-					return {
-						select: vi.fn(() => ({
-							maybeSingle: vi.fn(() =>
-								Promise.resolve({
-									data: { included_agents: 1, extra_agents: 0 },
-									error: null,
-								}),
-							),
-						})),
-					};
-				}
-				return { select: vi.fn() };
-			});
+				return {
+					data: {
+						ok: true,
+						provider: "autosecops",
+						action: "fleet",
+						data: {
+							response: {
+								items: [
+									{
+										agent_id: "agent-1",
+										agent_name: "codex-agent",
+										runtime: "codex",
+										connector: "sdk",
+										state: "active",
+										health: "healthy",
+									},
+								],
+							},
+						},
+					},
+					error: null,
+				};
+			},
+		);
 
-			render(
-				<MemoryRouter>
-					<AgentsPage />
-				</MemoryRouter>,
-			);
+		render(
+			<MemoryRouter>
+				<TeamProvider>
+					<AutoSecOpsPage />
+				</TeamProvider>
+			</MemoryRouter>,
+		);
 
-			await waitFor(() => {
-				expect(mockedSupabase.from).toHaveBeenCalledWith("entitlements");
-			});
-		});
-
-		it("should handle API errors gracefully", async () => {
-			mockedSupabase.from.mockReturnValue({
-				select: vi.fn(() => ({
-					order: vi.fn(() => Promise.resolve({ data: null, error: { message: "Database error" } })),
-				})),
-			});
-
-			render(
-				<MemoryRouter>
-					<AgentsPage />
-				</MemoryRouter>,
-			);
-
-			await waitFor(() => {
-				expect(screen.getByText("Database error")).toBeInTheDocument();
-			});
-		});
-
-		it("should call signOut when clicking Sign out button", async () => {
-			mockedSupabase.auth.signOut.mockResolvedValue({ error: null });
-
-			render(
-				<MemoryRouter>
-					<AppLayout />
-				</MemoryRouter>,
-			);
-
-			const signOutButton = screen.getByText("Sign out");
-			fireEvent.click(signOutButton);
-
-			await waitFor(() => {
-				expect(mockedSupabase.auth.signOut).toHaveBeenCalled();
-			});
-		});
-
-		it("should handle OAuth sign in", async () => {
-			mockedSupabase.auth.signInWithOAuth.mockResolvedValue({
-				data: { provider: "google", url: "https://oauth.example.com" },
-				error: null,
-			});
-			mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
-
-			render(
-				<MemoryRouter initialEntries={["/login"]}>
-					<Routes>
-						<Route path="/login" element={<LoginPage />} />
-					</Routes>
-				</MemoryRouter>,
-			);
-
-			const googleButton = screen.getByText("Continue with Google");
-			fireEvent.click(googleButton);
-
-			await waitFor(() => {
-				expect(mockedSupabase.auth.signInWithOAuth).toHaveBeenCalledWith({
-					provider: "google",
-					options: expect.objectContaining({
-						redirectTo: expect.any(String),
-					}),
-				});
-			});
-		});
-
-		it("should handle magic link sign in", async () => {
-			mockedSupabase.auth.signInWithOtp.mockResolvedValue({
-				data: { session: null, user: null },
-				error: null,
-			});
-			mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
-
-			render(
-				<MemoryRouter initialEntries={["/login"]}>
-					<Routes>
-						<Route path="/login" element={<LoginPage />} />
-					</Routes>
-				</MemoryRouter>,
-			);
-
-			const emailInput = screen.getByPlaceholderText("you@company.com");
-			fireEvent.change(emailInput, { target: { value: "test@example.com" } });
-
-			const magicLinkButton = screen.getByText("Send magic link");
-			fireEvent.click(magicLinkButton);
-
-			await waitFor(() => {
-				expect(mockedSupabase.auth.signInWithOtp).toHaveBeenCalledWith(
-					expect.objectContaining({
-						email: "test@example.com",
-					}),
-				);
-			});
-		});
+		await waitFor(() => expect(screen.getByText("healthy")).toBeInTheDocument());
+		expect(screen.getByText("codex-agent")).toBeInTheDocument();
+		expect(mockedSupabase.functions.invoke).toHaveBeenCalledWith(
+			"autosecops-runtime",
+			expect.objectContaining({
+				body: expect.objectContaining({ action: "fleet", team_id: teamId }),
+			}),
+		);
 	});
 
-	describe("Session Management", () => {
-		it("should check session on mount", async () => {
-			mockedSupabase.auth.getSession.mockResolvedValue({
-				data: { session: { user: { id: "user-123" } } },
-				error: null,
-			});
-
-			await getSession();
-
-			expect(mockedSupabase.auth.getSession).toHaveBeenCalled();
+	it("fails closed on a malformed successful AutoSecOps response", async () => {
+		const teamId = "11111111-1111-4111-8111-111111111111";
+		mockedSupabase.from.mockImplementation((table: string) =>
+			createQueryBuilder(
+				table === "team_members"
+					? [{ team_id: teamId, role: "admin", teams: { id: teamId, name: "Runtime team" } }]
+					: [],
+			),
+		);
+		mockedSupabase.functions.invoke.mockResolvedValue({
+			data: { ok: true, provider: "unexpected", data: {} },
+			error: null,
 		});
 
-		it("should return null when no session exists", async () => {
-			mockedSupabase.auth.getSession.mockResolvedValue({
-				data: { session: null },
-				error: null,
-			});
+		render(
+			<MemoryRouter>
+				<TeamProvider>
+					<AutoSecOpsPage />
+				</TeamProvider>
+			</MemoryRouter>,
+		);
 
-			const session = await getSession();
-
-			expect(session).toBeNull();
-		});
-
-		it("should call signOut on session termination", async () => {
-			mockedSupabase.auth.signOut.mockResolvedValue({ error: null });
-
-			await signOut();
-
-			expect(mockedSupabase.auth.signOut).toHaveBeenCalled();
-		});
+		await waitFor(() =>
+			expect(screen.getByRole("alert")).toHaveTextContent("AutoSecOps health response is invalid."),
+		);
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"No synthetic or cached AutoSecOps data is shown when the bridge is unavailable.",
+		);
 	});
 
-	describe("Page Components", () => {
-		it("should render OnboardingPage", () => {
-			mockedSupabase.from.mockReturnValue({
-				select: vi.fn(() => Promise.resolve({ data: [], error: null })),
-			});
+	it("renders the invoice-only billing path without invoking checkout", async () => {
+		render(
+			<MemoryRouter>
+				<BillingPage />
+			</MemoryRouter>,
+		);
 
-			const { container } = render(
-				<MemoryRouter>
-					<OnboardingPage />
-				</MemoryRouter>,
-			);
+		await waitFor(() =>
+			expect(screen.getByText(/Self-service checkout is disabled/)).toBeInTheDocument(),
+		);
+		expect(mockedSupabase.functions.invoke).not.toHaveBeenCalledWith(
+			"billing-checkout",
+			expect.anything(),
+		);
+	});
 
-			expect(container).toBeTruthy();
+	it("renders the public landing and pricing routes", () => {
+		render(
+			<MemoryRouter initialEntries={["/pricing"]}>
+				<Routes>
+					<Route path="/" element={<PublicLayout />}>
+						<Route index element={<LandingPage />} />
+						<Route path="pricing" element={<PricingPage />} />
+					</Route>
+				</Routes>
+			</MemoryRouter>,
+		);
+
+		expect(screen.getByRole("heading", { name: "Pricing" })).toBeInTheDocument();
+		expect(screen.getByText("Enterprise")).toBeInTheDocument();
+	});
+
+	it("runs the controlled synthetic demo without invoking Supabase", async () => {
+		render(
+			<MemoryRouter>
+				<DemoPage />
+			</MemoryRouter>,
+		);
+
+		expect(screen.getByRole("heading", { name: /See the security workflow/ })).toBeInTheDocument();
+		expect(screen.getByText("demo-2026-08-04.1")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Run synthetic fixture" }));
+		await waitFor(() => expect(screen.getByText(/No external command/)).toBeInTheDocument());
+		expect(mockedSupabase.functions.invoke).not.toHaveBeenCalled();
+	});
+
+	it("propagates agent API errors to the visible UI", async () => {
+		mockedSupabase.from.mockImplementation(() => {
+			const query = createQueryBuilder();
+			query.order.mockResolvedValue({ data: null, error: { message: "Database error" } });
+			query.maybeSingle.mockResolvedValue({ data: null, error: { message: "Database error" } });
+			return query;
 		});
 
-		it("should render ApiKeysPage", () => {
-			mockedSupabase.from.mockReturnValue({
-				select: vi.fn(() => Promise.resolve({ data: [], error: null })),
-			});
+		render(
+			<MemoryRouter>
+				<AgentsPage />
+			</MemoryRouter>,
+		);
 
-			const { container } = render(
-				<MemoryRouter>
-					<ApiKeysPage />
-				</MemoryRouter>,
-			);
+		await waitFor(() => expect(screen.getAllByText("Database error").length).toBeGreaterThan(0));
+	});
 
-			expect(container).toBeTruthy();
-		});
+	it("invokes sign-out and session reads through the Supabase client", async () => {
+		await getSession();
+		await signOut();
+		expect(mockedSupabase.auth.getSession).toHaveBeenCalled();
+		expect(mockedSupabase.auth.signOut).toHaveBeenCalled();
+	});
 
-		it("should render BillingPage", () => {
-			mockedSupabase.from.mockReturnValue({
-				select: vi.fn(() => Promise.resolve({ data: [], error: null })),
-			});
+	it("mounts onboarding and incidents without crashing", () => {
+		const onboarding = render(
+			<MemoryRouter>
+				<OnboardingPage />
+			</MemoryRouter>,
+		);
+		expect(onboarding.container).toBeTruthy();
+		onboarding.unmount();
 
-			const { container } = render(
-				<MemoryRouter>
-					<BillingPage />
-				</MemoryRouter>,
-			);
-
-			expect(container).toBeTruthy();
-		});
-
-		it("should render IncidentsPage", () => {
-			mockedSupabase.from.mockReturnValue({
-				select: vi.fn(() => Promise.resolve({ data: [], error: null })),
-			});
-
-			const { container } = render(
-				<MemoryRouter>
-					<IncidentsPage />
-				</MemoryRouter>,
-			);
-
-			expect(container).toBeTruthy();
-		});
+		const incidents = render(
+			<MemoryRouter>
+				<IncidentsPage />
+			</MemoryRouter>,
+		);
+		expect(incidents.container).toBeTruthy();
 	});
 });

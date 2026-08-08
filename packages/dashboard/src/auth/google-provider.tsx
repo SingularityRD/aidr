@@ -79,7 +79,7 @@ export function GoogleAuthProvider({ children, clientId }: GoogleAuthProviderPro
 			if (session?.user && !cancelled) {
 				const userData: User = {
 					id: session.user.id,
-					email: session.user.email!,
+					email: session.user.email ?? "",
 					googleId: session.user.user_metadata?.provider_id,
 					githubId: session.user.user_metadata?.github_id,
 					referralCode: generateReferralCode(session.user.id),
@@ -101,7 +101,7 @@ export function GoogleAuthProvider({ children, clientId }: GoogleAuthProviderPro
 			if (event === "SIGNED_IN" && session?.user) {
 				const userData: User = {
 					id: session.user.id,
-					email: session.user.email!,
+					email: session.user.email ?? "",
 					googleId: session.user.user_metadata?.provider_id,
 					githubId: session.user.user_metadata?.github_id,
 					referralCode: generateReferralCode(session.user.id),
@@ -126,7 +126,15 @@ export function GoogleAuthProvider({ children, clientId }: GoogleAuthProviderPro
 		const { data } = await supabase.from("credential_shares").select("*").eq("owner_id", userId);
 
 		if (data) {
-			setSharedCredentials(data as CredentialShare[]);
+			setSharedCredentials(
+				data.map((share) => ({
+					id: share.id,
+					ownerId: share.owner_id,
+					sharedWithEmail: share.shared_with_email,
+					status: share.status,
+					createdAt: share.created_at,
+				})),
+			);
 		}
 	}
 

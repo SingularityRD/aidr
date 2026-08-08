@@ -1,9 +1,76 @@
 // Database type definitions for Supabase
 // Generated schema types for AIDR Dashboard
 
+type AddRelationships<T extends Record<string, object>> = {
+	[K in keyof T]: T[K] extends { Relationships: unknown }
+		? T[K]
+		: T[K] & { Relationships: [] };
+};
+
 export interface Database {
 	public: {
-		Tables: {
+		Tables: AddRelationships<{
+			tenants: {
+				Row: {
+					id: string;
+					name: string;
+					kind: "personal" | "team" | "enterprise";
+					status: "active" | "suspended" | "closing" | "closed";
+					created_by: string | null;
+					region: string | null;
+					retention_days: number;
+					created_at: string;
+					closed_at: string | null;
+				};
+				Insert: {
+					id?: string;
+					name: string;
+					kind?: "personal" | "team" | "enterprise";
+					status?: "active" | "suspended" | "closing" | "closed";
+					created_by?: string | null;
+					region?: string | null;
+					retention_days?: number;
+					created_at?: string;
+					closed_at?: string | null;
+				};
+				Update: {
+					id?: string;
+					name?: string;
+					kind?: "personal" | "team" | "enterprise";
+					status?: "active" | "suspended" | "closing" | "closed";
+					created_by?: string | null;
+					region?: string | null;
+					retention_days?: number;
+					created_at?: string;
+					closed_at?: string | null;
+				};
+			};
+			tenant_members: {
+				Row: {
+					tenant_id: string;
+					user_id: string;
+					role: "owner" | "admin" | "member" | "viewer" | "support_jit";
+					joined_at: string;
+					expires_at: string | null;
+					created_at: string;
+				};
+				Insert: {
+					tenant_id: string;
+					user_id: string;
+					role?: "owner" | "admin" | "member" | "viewer" | "support_jit";
+					joined_at?: string;
+					expires_at?: string | null;
+					created_at?: string;
+				};
+				Update: {
+					tenant_id?: string;
+					user_id?: string;
+					role?: "owner" | "admin" | "member" | "viewer" | "support_jit";
+					joined_at?: string;
+					expires_at?: string | null;
+					created_at?: string;
+				};
+			};
 			agent_seats: {
 				Row: {
 					id: string;
@@ -40,67 +107,65 @@ export interface Database {
 				Row: {
 					id: string;
 					user_id: string;
-					lemon_subscription_id: string | null;
-					lemon_customer_id: string | null;
-					lemon_order_id: string | null;
-					lemon_product_id: string | null;
-					lemon_variant_id: string | null;
-					status: "active" | "cancelled" | "expired" | "paused" | "past_due";
-					plan_type: "monthly" | "yearly" | null;
-					seats: number;
-					total_seats: number;
+					tenant_id: string;
+					provider: string;
+					provider_subscription_id: string;
+					status: string;
+					extra_agents: number;
 					current_period_start: string | null;
 					current_period_end: string | null;
-					trial_ends_at: string | null;
-					referral_code_used: string | null;
-					provider: "lemon_squeezy" | "stripe" | "iyzico" | "crypto";
 					cancel_at_period_end: boolean;
 					created_at: string;
 					updated_at: string;
-					cancelled_at: string | null;
+					lemon_subscription_id?: string | null;
+					lemon_customer_id?: string | null;
+					lemon_order_id?: string | null;
+					lemon_product_id?: string | null;
+					lemon_variant_id?: string | null;
+					plan_type?: "monthly" | "yearly" | null;
+					seats?: number;
+					total_seats?: number;
+					trial_ends_at?: string | null;
+					referral_code_used?: string | null;
+					cancelled_at?: string | null;
 				};
 				Insert: {
 					id?: string;
 					user_id: string;
-					lemon_subscription_id?: string | null;
-					lemon_customer_id?: string | null;
-					lemon_order_id?: string | null;
-					lemon_product_id?: string | null;
-					lemon_variant_id?: string | null;
-					status?: "active" | "cancelled" | "expired" | "paused" | "past_due";
-					plan_type?: "monthly" | "yearly" | null;
-					seats?: number;
-					total_seats?: number;
+					tenant_id: string;
+					provider: string;
+					provider_subscription_id: string;
+					status: string;
+					extra_agents?: number;
 					current_period_start?: string | null;
 					current_period_end?: string | null;
-					trial_ends_at?: string | null;
-					referral_code_used?: string | null;
-					provider?: "lemon_squeezy" | "stripe" | "iyzico" | "crypto";
 					cancel_at_period_end?: boolean;
 					created_at?: string;
 					updated_at?: string;
-					cancelled_at?: string | null;
 				};
 				Update: {
 					id?: string;
 					user_id?: string;
+					tenant_id?: string;
+					provider?: string;
+					provider_subscription_id?: string;
+					status?: string;
+					extra_agents?: number;
+					current_period_start?: string | null;
+					current_period_end?: string | null;
+					cancel_at_period_end?: boolean;
+					created_at?: string;
+					updated_at?: string;
 					lemon_subscription_id?: string | null;
 					lemon_customer_id?: string | null;
 					lemon_order_id?: string | null;
 					lemon_product_id?: string | null;
 					lemon_variant_id?: string | null;
-					status?: "active" | "cancelled" | "expired" | "paused" | "past_due";
 					plan_type?: "monthly" | "yearly" | null;
 					seats?: number;
 					total_seats?: number;
-					current_period_start?: string | null;
-					current_period_end?: string | null;
 					trial_ends_at?: string | null;
 					referral_code_used?: string | null;
-					provider?: "lemon_squeezy" | "stripe" | "iyzico" | "crypto";
-					cancel_at_period_end?: boolean;
-					created_at?: string;
-					updated_at?: string;
 					cancelled_at?: string | null;
 				};
 			};
@@ -110,7 +175,7 @@ export interface Database {
 					extra_agents: number;
 					allowed_agents: number;
 					current_agents: number;
-					subscription_status: string;
+					tenant_id: string;
 				};
 				Insert: {
 					included_agents?: number;
@@ -252,6 +317,7 @@ export interface Database {
 			entitlements: {
 				Row: {
 					user_id: string;
+					tenant_id: string;
 					included_agents: number;
 					extra_agents: number;
 					plan: "free" | "pro";
@@ -259,6 +325,7 @@ export interface Database {
 				};
 				Insert: {
 					user_id: string;
+					tenant_id: string;
 					included_agents?: number;
 					extra_agents?: number;
 					plan?: "free" | "pro";
@@ -266,6 +333,7 @@ export interface Database {
 				};
 				Update: {
 					user_id?: string;
+					tenant_id?: string;
 					included_agents?: number;
 					extra_agents?: number;
 					plan?: "free" | "pro";
@@ -276,22 +344,145 @@ export interface Database {
 				Row: {
 					id: string;
 					user_id: string;
-					name: string;
-					last_seen_at: string;
-					created_at: string;
+					tenant_id: string;
+					iid: string;
+					agent_runtime: string | null;
+					agent_runtime_version: string | null;
+					display_name: string | null;
+					first_seen: string;
+					last_seen: string;
 				};
 				Insert: {
 					id?: string;
 					user_id: string;
-					name: string;
-					last_seen_at?: string;
-					created_at?: string;
+					tenant_id: string;
+					iid: string;
+					agent_runtime?: string | null;
+					agent_runtime_version?: string | null;
+					display_name?: string | null;
+					first_seen?: string;
+					last_seen?: string;
 				};
 				Update: {
 					id?: string;
 					user_id?: string;
-					name?: string;
-					last_seen_at?: string;
+					tenant_id?: string;
+					iid?: string;
+					agent_runtime?: string | null;
+					agent_runtime_version?: string | null;
+					display_name?: string | null;
+					first_seen?: string;
+					last_seen?: string;
+				};
+			};
+			events: {
+				Row: {
+					id: number;
+					user_id: string;
+					tenant_id: string;
+					agent_id: string;
+					type: string;
+					created_at: string;
+					payload: Record<string, unknown>;
+				};
+				Insert: {
+					id?: number;
+					user_id: string;
+					tenant_id: string;
+					agent_id: string;
+					type: string;
+					created_at?: string;
+					payload: Record<string, unknown>;
+				};
+				Update: {
+					id?: number;
+					user_id?: string;
+					tenant_id?: string;
+					agent_id?: string;
+					type?: string;
+					created_at?: string;
+					payload?: Record<string, unknown>;
+				};
+			};
+			entitlement_snapshots: {
+				Row: {
+					user_id: string;
+					tenant_id: string;
+					iid: string;
+					agent_id: string | null;
+					entitlement: Record<string, unknown>;
+					sig_alg: string | null;
+					sig_key_id: string | null;
+					sig_b64: string | null;
+					issued_at: string | null;
+					expires_at: string | null;
+					grace_until: string | null;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					user_id: string;
+					tenant_id: string;
+					iid: string;
+					agent_id?: string | null;
+					entitlement: Record<string, unknown>;
+					sig_alg?: string | null;
+					sig_key_id?: string | null;
+					sig_b64?: string | null;
+					issued_at?: string | null;
+					expires_at?: string | null;
+					grace_until?: string | null;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Update: {
+					user_id?: string;
+					tenant_id?: string;
+					iid?: string;
+					agent_id?: string | null;
+					entitlement?: Record<string, unknown>;
+					sig_alg?: string | null;
+					sig_key_id?: string | null;
+					sig_b64?: string | null;
+					issued_at?: string | null;
+					expires_at?: string | null;
+					grace_until?: string | null;
+					created_at?: string;
+					updated_at?: string;
+				};
+			};
+			audit_logs: {
+				Row: {
+					id: string;
+					team_id: string;
+					tenant_id: string;
+					user_id: string | null;
+					user_email: string | null;
+					action: string;
+					verdict: Record<string, unknown> | null;
+					timestamp: number;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					team_id: string;
+					tenant_id: string;
+					user_id?: string | null;
+					user_email?: string | null;
+					action: string;
+					verdict?: Record<string, unknown> | null;
+					timestamp?: number;
+					created_at?: string;
+				};
+				Update: {
+					id?: string;
+					team_id?: string;
+					tenant_id?: string;
+					user_id?: string | null;
+					user_email?: string | null;
+					action?: string;
+					verdict?: Record<string, unknown> | null;
+					timestamp?: number;
 					created_at?: string;
 				};
 			};
@@ -344,6 +535,7 @@ export interface Database {
 			teams: {
 				Row: {
 					id: string;
+					tenant_id: string;
 					name: string;
 					github_org: string | null;
 					gitlab_group: string | null;
@@ -353,6 +545,7 @@ export interface Database {
 				};
 				Insert: {
 					id?: string;
+					tenant_id: string;
 					name: string;
 					github_org?: string | null;
 					gitlab_group?: string | null;
@@ -362,6 +555,7 @@ export interface Database {
 				};
 				Update: {
 					id?: string;
+					tenant_id?: string;
 					name?: string;
 					github_org?: string | null;
 					gitlab_group?: string | null;
@@ -374,29 +568,62 @@ export interface Database {
 				Row: {
 					id: string;
 					team_id: string;
+					tenant_id: string;
 					user_id: string;
-					role: "owner" | "admin" | "member";
+					role: "owner" | "admin" | "member" | "viewer";
+					invited_by: string | null;
+					joined_at: string;
 					created_at: string;
 				};
 				Insert: {
 					id?: string;
 					team_id: string;
+					tenant_id: string;
 					user_id: string;
-					role?: "owner" | "admin" | "member";
+					role?: "owner" | "admin" | "member" | "viewer";
+					invited_by?: string | null;
+					joined_at?: string;
 					created_at?: string;
 				};
 				Update: {
 					id?: string;
 					team_id?: string;
+					tenant_id?: string;
 					user_id?: string;
-					role?: "owner" | "admin" | "member";
+					role?: "owner" | "admin" | "member" | "viewer";
+					invited_by?: string | null;
+					joined_at?: string;
 					created_at?: string;
 				};
+				Relationships: [
+					{
+						foreignKeyName: "team_members_team_id_fkey";
+						columns: ["team_id"];
+						isOneToOne: false;
+						referencedRelation: "teams";
+						referencedColumns: ["id"];
+					},
+					{
+						foreignKeyName: "team_members_user_id_fkey";
+						columns: ["user_id"];
+						isOneToOne: false;
+						referencedRelation: "users";
+						referencedColumns: ["id"];
+					},
+					{
+						foreignKeyName: "team_members_invited_by_fkey";
+						columns: ["invited_by"];
+						isOneToOne: false;
+						referencedRelation: "users";
+						referencedColumns: ["id"];
+					},
+				];
 			};
 			team_policies: {
 				Row: {
 					id: string;
 					team_id: string;
+					tenant_id: string;
 					content: string;
 					updated_at: string;
 					updated_by: string | null;
@@ -404,6 +631,7 @@ export interface Database {
 				Insert: {
 					id?: string;
 					team_id: string;
+					tenant_id: string;
 					content: string;
 					updated_at?: string;
 					updated_by?: string | null;
@@ -411,13 +639,14 @@ export interface Database {
 				Update: {
 					id?: string;
 					team_id?: string;
+					tenant_id?: string;
 					content?: string;
 					updated_at?: string;
 					updated_by?: string | null;
 				};
 			};
-		};
-		Views: {
+		}>;
+		Views: AddRelationships<{
 			user_subscription_summary: {
 				Row: {
 					user_id: string;
@@ -437,8 +666,26 @@ export interface Database {
 					free_months_earned: number;
 				};
 			};
-		};
+			incident_events: {
+				Row: {
+					id: number;
+					user_id: string;
+					tenant_id: string;
+					agent_id: string;
+					type: string;
+					created_at: string;
+					payload: Record<string, unknown>;
+				};
+			};
+		}>;
 		Functions: {
+			create_team_tenant: {
+				Args: {
+					p_name: string;
+					p_plan?: string;
+				};
+				Returns: Database["public"]["Tables"]["teams"]["Row"];
+			};
 			billing_checkout: {
 				Args: Record<string, never>;
 				Returns: { url: string };

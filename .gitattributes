@@ -1,3 +1,6 @@
 * text=auto eol=lf
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+# Generated connector bundles can contain intentional whitespace inside
+# embedded third-party documentation strings; source files remain strict.
+packages/claude-code/dist/*.cjs whitespace=-space-before-tab
