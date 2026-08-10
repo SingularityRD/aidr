@@ -41,11 +41,13 @@ async function maybeVerifyIntegrity(artifactId: string): Promise<void> {
 		const fn = core?.verifyArtifactIntegrityAndLog as
 			| ((args: { artifactDir: string; artifactId: string }) => Promise<unknown>)
 			| undefined;
-		if (typeof fn === "function") {
-			await fn({ artifactDir: __dirname, artifactId });
+		if (typeof fn !== "function") {
+			throw new Error("artifact integrity verifier is unavailable");
 		}
-	} catch {
-		// Fail open
+		await fn({ artifactDir: __dirname, artifactId });
+	} catch (error) {
+		integrityChecked = false;
+		throw new Error(`artifact integrity verification failed: ${String(error)}`);
 	}
 }
 
@@ -70,14 +72,14 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
 async function handleCursor(payload: unknown): Promise<void> {
 	const eventName = detectCursorEvent(payload);
 	if (!eventName) {
-		writeJson({});
+		writeJson(internalCursorResponse("deny", "Singularity AIDR could not identify hook event."));
 		return;
 	}
 
 	const normalized = normalizeCursorCall(payload, eventName);
 	if (!normalized) {
 		writeJson(
-			internalCursorResponse("allow", "Singularity AIDR could not normalize hook payload."),
+			internalCursorResponse("deny", "Singularity AIDR could not normalize hook payload."),
 		);
 		return;
 	}
@@ -88,8 +90,8 @@ async function handleCursor(payload: unknown): Promise<void> {
 	} catch {
 		writeJson(
 			internalCursorResponse(
-				"allow",
-				"Singularity AIDR internal error; default allow policy applied.",
+				"deny",
+				"Singularity AIDR internal error; execution was denied.",
 			),
 		);
 	}
@@ -98,7 +100,7 @@ async function handleCursor(payload: unknown): Promise<void> {
 async function handleVsCode(payload: unknown): Promise<void> {
 	const normalized = normalizeVsCodeCall(payload);
 	if (!normalized) {
-		writeJson({});
+		writeJson(internalVsCodeResponse("Singularity AIDR could not normalize hook payload."));
 		return;
 	}
 
@@ -106,7 +108,7 @@ async function handleVsCode(payload: unknown): Promise<void> {
 		const verdict = await evaluateNormalizedCall(normalized, "vscode");
 		writeJson(toVsCodeResponse(verdict));
 	} catch {
-		writeJson({});
+		writeJson(internalVsCodeResponse("Singularity AIDR internal error; execution was denied."));
 	}
 }
 
@@ -388,6 +390,16 @@ function internalCursorResponse(
 	};
 }
 
+function internalVsCodeResponse(reason: string): Record<string, unknown> {
+	return {
+		hookSpecificOutput: {
+			hookEventName: "PreToolUse",
+			permissionDecision: "deny",
+			permissionDecisionReason: reason,
+		},
+	};
+}
+
 function truncateReason(verdict: Verdict): string {
 	if (verdict.reasons.length === 0) {
 		return `Singularity AIDR flagged this action (${verdict.category}).`;
@@ -484,6 +496,10 @@ function writeJson(payload: Record<string, unknown>): void {
 if (require.main === module) {
 	runCli().catch(() => {
 		// Protocol safety: emit valid JSON and never fail with non-JSON output.
-		writeJson({});
+		writeJson(
+			process.argv[2] === "vscode"
+				? internalVsCodeResponse("Singularity AIDR hook failed; execution was denied.")
+				: internalCursorResponse("deny", "Singularity AIDR hook failed; execution was denied."),
+		);
 	});
 }

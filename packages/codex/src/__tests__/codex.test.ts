@@ -85,7 +85,7 @@ describe("Codex central policy handoff", () => {
 		});
 		expect((await instrumentation.preToolUse(input)).decision).toBe("deny");
 	});
-	it("uses the AutoSecOps contract for policy and event handoff", async () => {
+	it("uses the policy contract and refuses the nonexistent bearer event route", async () => {
 		const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
 		const client = new CentralPolicyClient({
 			endpoint: "https://autosecops.example.test/api",
@@ -106,15 +106,14 @@ describe("Codex central policy handoff", () => {
 		const event = normalizeCodexHookInput(input, identity);
 
 		expect((await client.decide(event)).decision).toBe("deny");
-		expect(await client.publish(event)).toEqual({ accepted: true });
+		expect(await client.publish(event)).toEqual({
+			accepted: false,
+			reasonCode: "central_signed_ingress_required",
+		});
 		expect(requests[0].url).toBe("https://autosecops.example.test/api/v1/aidr/policy/decide");
 		const policyEvent = requests[0].body.event as Record<string, unknown>;
-		const runtimeEvent = requests[1].body.event as Record<string, unknown>;
 		expect(policyEvent.eventId).toBe(event.eventId);
 		expect(policyEvent.input).toBeDefined();
-		expect(requests[1].url).toBe("https://autosecops.example.test/api/v1/aidr/runtime/events");
-		expect(runtimeEvent.event_id).toBe(event.eventId);
-		expect(runtimeEvent.input).toBeUndefined();
-		expect(runtimeEvent.observation).toBeUndefined();
+		expect(requests).toHaveLength(1);
 	});
 });
