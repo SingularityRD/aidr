@@ -12,6 +12,8 @@ import { ApiKeysPage } from "./ui/pages/ApiKeysPage";
 import { AuthCallbackPage } from "./ui/pages/AuthCallbackPage";
 import { AutoSecOpsPage } from "./ui/pages/AutoSecOpsPage";
 import { BillingPage } from "./ui/pages/BillingPage";
+import { DashboardPage } from "./ui/pages/DashboardPage";
+import { EventsPage } from "./ui/pages/EventsPage";
 import { IncidentsPage } from "./ui/pages/IncidentsPage";
 import { LoginPage } from "./ui/pages/LoginPage";
 import { OnboardingPage } from "./ui/pages/OnboardingPage";
@@ -21,6 +23,7 @@ import { PilotPage } from "./ui/pages/public/PilotPage";
 import { PricingPage } from "./ui/pages/public/PricingPage";
 import { PublicInfoPage } from "./ui/pages/public/PublicInfoPage";
 import { VerifyPage } from "./ui/pages/public/VerifyPage";
+import { SettingsPage } from "./ui/pages/SettingsPage";
 import { RouteErrorPage } from "./ui/RouteErrorPage";
 import { buildReturnToFromRequest, sanitizeReturnTo, setPostAuthReturnTo } from "./ui/return-to";
 import { getSession } from "./ui/session";
@@ -87,6 +90,27 @@ const router = createBrowserRouter([
 		children: [{ index: true, element: <OnboardingPage /> }],
 	},
 	{
+		path: "/dashboard",
+		element: <AppLayout />,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, element: <DashboardPage /> }],
+	},
+	{
+		path: "/events",
+		element: <AppLayout />,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, element: <EventsPage /> }],
+	},
+	{
+		path: "/settings",
+		element: <AppLayout />,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, element: <SettingsPage /> }],
+	},
+	{
 		path: "/agents",
 		element: <AppLayout />,
 		errorElement: routeErrorElement,
@@ -136,7 +160,13 @@ if (!rootEl) throw new Error("Missing #root element");
 function DashboardConfigurationError() {
 	return (
 		<main className="main">
-			<div className="card" role="alert" aria-live="assertive">
+			<div
+				className="card"
+				role="alert"
+				aria-live="assertive"
+				style={{ maxWidth: 620, margin: "48px auto" }}
+			>
+				<p className="eyebrow">Configuration required</p>
 				<h1>Dashboard configuration is incomplete</h1>
 				<p className="muted">
 					This production deployment is not connected to Supabase. Configure the required public

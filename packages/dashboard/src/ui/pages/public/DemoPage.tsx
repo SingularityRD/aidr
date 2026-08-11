@@ -113,26 +113,22 @@ export function DemoPage() {
 			</div>
 
 			<div className="grid">
-				<div className="card">
-					<div className="muted small">Synthetic agents</div>
-					<div className="mono" style={{ fontSize: 28, marginTop: 6 }}>
-						{agents.length}
-					</div>
-					<div className="muted small">fixture installations only</div>
+				<div className="card stat-card">
+					<div className="stat-label">Synthetic agents</div>
+					<div className="stat-value">{agents.length}</div>
+					<div className="stat-hint">fixture installations only</div>
 				</div>
-				<div className="card">
-					<div className="muted small">Policy events</div>
-					<div className="mono" style={{ fontSize: 28, marginTop: 6 }}>
-						{events.length}
-					</div>
-					<div className="muted small">redacted synthetic evidence</div>
+				<div className="card stat-card">
+					<div className="stat-label">Policy events</div>
+					<div className="stat-value">{events.length}</div>
+					<div className="stat-hint">redacted synthetic evidence</div>
 				</div>
-				<div className="card">
-					<div className="muted small">Commercial path</div>
-					<div className="mono" style={{ fontSize: 20, marginTop: 10 }}>
+				<div className="card stat-card">
+					<div className="stat-label">Commercial path</div>
+					<div className="stat-value" style={{ fontSize: 19 }}>
 						Invoice / order
 					</div>
-					<div className="muted small">no self-service checkout in direct GA</div>
+					<div className="stat-hint">no self-service checkout in direct GA</div>
 				</div>
 			</div>
 

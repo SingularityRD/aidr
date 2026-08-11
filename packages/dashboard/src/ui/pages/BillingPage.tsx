@@ -148,16 +148,26 @@ export function BillingPage() {
 				{subscription ? (
 					<div className="notice">
 						<div className="grid">
-							<div>
-								<div className="muted small">Provider</div>
+							<div className="stat-card">
+								<div className="stat-label">Provider</div>
 								<div className="mono">{subscription.provider}</div>
 							</div>
-							<div>
-								<div className="muted small">Status</div>
-								<div className="mono">{subscription.status}</div>
+							<div className="stat-card">
+								<div className="stat-label">Status</div>
+								<div>
+									<span
+										className={
+											subscription.status === "active"
+												? "badge badge-success"
+												: "badge badge-warning"
+										}
+									>
+										{subscription.status}
+									</span>
+								</div>
 							</div>
-							<div>
-								<div className="muted small">Extra agents</div>
+							<div className="stat-card">
+								<div className="stat-label">Extra agents</div>
 								<div className="mono">{subscription.extra_agents}</div>
 							</div>
 						</div>
@@ -227,29 +237,31 @@ export function BillingPage() {
 
 			<div className="card">
 				<h2>Seats</h2>
-				<div className="grid">
-					<div>
-						<div className="muted small">Included</div>
-						<div className="mono">{included}</div>
+				<div className="grid" style={{ marginTop: 10 }}>
+					<div className="stat-card">
+						<div className="stat-label">Included</div>
+						<div className="stat-value">{included}</div>
 					</div>
-					<div>
-						<div className="muted small">Extra</div>
-						<div className="mono">{extra}</div>
+					<div className="stat-card">
+						<div className="stat-label">Extra</div>
+						<div className="stat-value">{extra}</div>
 					</div>
-					<div>
-						<div className="muted small">Allowed</div>
-						<div className="mono">{allowed}</div>
+					<div className="stat-card">
+						<div className="stat-label">Allowed</div>
+						<div className="stat-value">{allowed}</div>
+					</div>
+					<div className="stat-card">
+						<div className="stat-label">Connected</div>
+						<div className="stat-value">{agentCount}</div>
 					</div>
 				</div>
 
-				<div className="notice">
-					<div className="muted small">Current connected agents</div>
-					<div className="mono">{agentCount}</div>
-					<div className="muted small" style={{ marginTop: 8 }}>
+				<div className="notice" style={{ marginTop: 14 }}>
+					<div className="muted small">
 						Commercial amount: <span className="mono">Quoted in approved order</span>
 					</div>
 					{overLimit ? (
-						<div className="notice notice-danger">
+						<div className="notice notice-danger" style={{ marginTop: 10 }}>
 							Over limit: new agents may be rejected by the ingest function until an approved order
 							is reconciled.
 						</div>

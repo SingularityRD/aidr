@@ -685,7 +685,8 @@ export function UsageBasedBillingCard() {
 				<div>
 					<div className="muted small">Commercial amount</div>
 					<div className="mono" style={{ fontSize: 20, fontWeight: 600, color: "#3b82f6" }}>
-						Quoted in approved order ({additionalAgentCount} additional agent{additionalAgentCount === 1 ? "" : "s"})
+						Quoted in approved order ({additionalAgentCount} additional agent
+						{additionalAgentCount === 1 ? "" : "s"})
 					</div>
 				</div>
 			</div>

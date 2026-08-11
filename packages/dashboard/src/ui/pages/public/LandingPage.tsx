@@ -45,26 +45,33 @@ export function LandingPage() {
 	return (
 		<div className="stack">
 			{/* Hero Section */}
-			<section className="card">
-				<div className="pill" style={{ marginBottom: 8 }}>
-					Edge-first AI Agent Detection & Response
+			<section className="card hero-card">
+				<div className="pill" style={{ marginBottom: 14 }}>
+					Edge-first AI Agent Detection &amp; Response
 				</div>
 				<h1
 					style={{
-						fontSize: "clamp(30px, 6vw, 56px)",
-						lineHeight: 1.05,
-						color: "var(--text-primary)",
-						letterSpacing: "-0.02em",
-						marginBottom: 10,
+						fontSize: "clamp(30px, 6vw, 54px)",
+						lineHeight: 1.04,
+						letterSpacing: "-0.03em",
+						marginBottom: 12,
 					}}
 				>
 					Security layer for AI agents.
 				</h1>
-				<p style={{ color: "var(--text-secondary)", maxWidth: 760, lineHeight: "28px" }}>
+				<p style={{ color: "var(--text-secondary)", maxWidth: 720, lineHeight: "27px" }}>
 					Singularity AIDR protects runtime actions, surfaces incidents, and gives managed
 					visibility without forcing cloud-only enforcement. Install by prompt, authorize in
 					browser, and review the guided setup for your supported runtime.
 				</p>
+				<div className="row" style={{ marginTop: 20 }}>
+					<Link className="button button-lg" to="/login">
+						Get Started
+					</Link>
+					<Link className="button button-secondary button-lg" to="/demo">
+						Run the demo
+					</Link>
+				</div>
 			</section>
 
 			{/* Launch Links */}
@@ -80,21 +87,20 @@ export function LandingPage() {
 			{/* Security Showcase */}
 			<section className="security-showcase">
 				<div className="card">
-					<div className="pill" style={{ marginBottom: 8 }}>
+					<div className="pill" style={{ marginBottom: 12 }}>
 						Product Surface
 					</div>
 					<h2
 						style={{
-							fontSize: 30,
-							lineHeight: 1.06,
+							fontSize: 28,
+							lineHeight: 1.08,
 							letterSpacing: "-0.03em",
-							color: "var(--text-primary)",
 							marginBottom: 10,
 						}}
 					>
 						Security controls your agent can feel.
 					</h2>
-					<p style={{ color: "var(--text-secondary)", lineHeight: "26px", marginBottom: 14 }}>
+					<p style={{ color: "var(--text-secondary)", lineHeight: "26px", marginBottom: 16 }}>
 						We keep the runtime lightweight, but the policy surface is deep. Singularity AIDR turns
 						a single prompt into a protected agent, then keeps that agent visible with device auth,
 						incident correlation, package and plugin guards, and seat-aware control.
@@ -114,62 +120,97 @@ export function LandingPage() {
 					</div>
 				</div>
 				<div className="security-showcase-diagram">
-					{/* Isometric diagram placeholder - matches landing page */}
-					<div
-						style={{
-							width: 280,
-							height: 200,
-							background: "var(--bg-secondary)",
-							borderRadius: 16,
-							border: "1px solid var(--panel-border)",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-							color: "var(--text-secondary)",
-							fontSize: 14,
-						}}
+					{/* Enforcement-path diagram (decorative, token-driven) */}
+					<svg
+						width="340"
+						height="240"
+						viewBox="0 0 340 240"
+						fill="none"
+						role="img"
+						aria-label="Diagram: agent tool calls pass through the AIDR policy layer before reaching commands, files, and the network"
 					>
-						<svg
-							width="120"
-							height="120"
-							viewBox="0 0 120 120"
-							fill="none"
-							style={{ opacity: 0.6 }}
+						<rect
+							x="16"
+							y="26"
+							width="128"
+							height="52"
+							rx="12"
+							fill="var(--surface-soft)"
+							stroke="var(--panel-border)"
+						/>
+						<text
+							x="80"
+							y="49"
+							textAnchor="middle"
+							fontSize="12"
+							fontWeight="600"
+							fill="var(--text-primary)"
 						>
-							<rect
-								x="20"
-								y="40"
-								width="40"
-								height="40"
-								rx="8"
-								fill="var(--surface-soft)"
-								stroke="var(--panel-border)"
-								strokeWidth="1"
-							/>
-							<rect
-								x="45"
-								y="25"
-								width="40"
-								height="40"
-								rx="8"
-								fill="var(--panel-bg)"
-								stroke="var(--accent)"
-								strokeWidth="1.5"
-							/>
-							<rect
-								x="60"
-								y="55"
-								width="40"
-								height="40"
-								rx="8"
-								fill="var(--surface-soft)"
-								stroke="var(--panel-border)"
-								strokeWidth="1"
-							/>
-							<path d="M45 65L25 85" stroke="var(--accent)" strokeWidth="2" strokeDasharray="4 2" />
-							<path d="M85 65L65 45" stroke="var(--accent)" strokeWidth="2" strokeDasharray="4 2" />
-						</svg>
-					</div>
+							AI agent
+						</text>
+						<text x="80" y="66" textAnchor="middle" fontSize="10" fill="var(--text-secondary)">
+							tool calls
+						</text>
+
+						<rect
+							x="106"
+							y="104"
+							width="128"
+							height="56"
+							rx="12"
+							fill="var(--accent-soft)"
+							stroke="var(--accent)"
+							strokeWidth="1.4"
+						/>
+						<text
+							x="170"
+							y="128"
+							textAnchor="middle"
+							fontSize="12"
+							fontWeight="700"
+							fill="var(--accent)"
+						>
+							AIDR policy layer
+						</text>
+						<text x="170" y="145" textAnchor="middle" fontSize="10" fill="var(--text-secondary)">
+							allow · ask · deny
+						</text>
+
+						<rect
+							x="196"
+							y="184"
+							width="128"
+							height="42"
+							rx="12"
+							fill="var(--surface-soft)"
+							stroke="var(--panel-border)"
+						/>
+						<text
+							x="260"
+							y="209"
+							textAnchor="middle"
+							fontSize="11"
+							fontWeight="600"
+							fill="var(--text-primary)"
+						>
+							commands · files · web
+						</text>
+
+						<path
+							d="M96 78 L146 104"
+							stroke="var(--accent)"
+							strokeWidth="1.6"
+							strokeDasharray="5 4"
+						/>
+						<path
+							d="M196 160 L242 184"
+							stroke="var(--accent)"
+							strokeWidth="1.6"
+							strokeDasharray="5 4"
+						/>
+						<circle cx="146" cy="104" r="3" fill="var(--accent)" />
+						<circle cx="242" cy="184" r="3" fill="var(--accent)" />
+					</svg>
 				</div>
 			</section>
 
@@ -189,13 +230,13 @@ export function LandingPage() {
 			</section>
 
 			{/* Install CTA */}
-			<section id="install" className="card" style={{ textAlign: "center" }}>
-				<h2 style={{ fontSize: 24, marginBottom: 12 }}>Ready to protect your AI agents?</h2>
-				<p className="muted" style={{ marginBottom: 16 }}>
+			<section id="install" className="card hero-card" style={{ textAlign: "center" }}>
+				<h2 style={{ fontSize: 24, marginBottom: 10 }}>Ready to protect your AI agents?</h2>
+				<p className="muted" style={{ marginBottom: 18 }}>
 					Get started and secure your first agent in minutes.
 				</p>
 				<div className="row" style={{ justifyContent: "center" }}>
-					<Link className="button" to="/login">
+					<Link className="button button-lg" to="/login">
 						Get Started
 					</Link>
 				</div>

@@ -12,8 +12,11 @@ export function PricingPage() {
 			</div>
 
 			<div className="cols">
-				<div className="card">
-					<h2>Free (Pilot)</h2>
+				<div className="card referral-card">
+					<div className="row space-between">
+						<h2>Free (Pilot)</h2>
+						<span className="badge recommended">Start here</span>
+					</div>
 					<div className="price">$0</div>
 					<ul className="list">
 						<li>1 protected agent included</li>

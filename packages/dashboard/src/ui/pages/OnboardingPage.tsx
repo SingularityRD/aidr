@@ -260,12 +260,14 @@ export function OnboardingPage() {
 					Pick your runtime, paste the prompt into your agent, then authorize once in your browser.
 				</p>
 				{pilotStatus !== "approved" ? (
-					<div className="notice">
+					<div className="notice notice-warning">
 						<div className="muted small">Pilot status</div>
-						<div className="mono">{pilotStatus}</div>
+						<div className="mono" style={{ marginTop: 4 }}>
+							{pilotStatus}
+						</div>
 						{pilotStatus !== "loading" ? (
 							<div className="row" style={{ marginTop: 10 }}>
-								<Link className="button button-secondary" to="/pilot">
+								<Link className="button button-secondary button-sm" to="/pilot">
 									View / request pilot
 								</Link>
 							</div>
@@ -397,7 +399,16 @@ export function OnboardingPage() {
 					{device ? (
 						<div className="notice">
 							<div className="muted small">Your code</div>
-							<div className="mono" style={{ fontSize: 18 }}>
+							<div
+								className="mono"
+								style={{
+									fontSize: 26,
+									fontWeight: 650,
+									letterSpacing: "0.14em",
+									color: "var(--accent)",
+									margin: "4px 0 2px",
+								}}
+							>
 								{device.user_code}
 							</div>
 							<div className="muted small" style={{ marginTop: 8 }}>

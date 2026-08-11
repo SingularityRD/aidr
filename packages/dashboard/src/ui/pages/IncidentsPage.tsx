@@ -136,24 +136,48 @@ export function IncidentsPage() {
 
 	const incidentEvents = useMemo(() => events.filter(isIncidentLikeEvent), [events]);
 
+	const denyCount = useMemo(
+		() =>
+			incidentEvents.filter(
+				(e) => e.type === "runtime_verdict" && String(e.payload?.verdict ?? "") === "deny",
+			).length,
+		[incidentEvents],
+	);
+	const askCount = useMemo(
+		() =>
+			incidentEvents.filter(
+				(e) => e.type === "runtime_verdict" && String(e.payload?.verdict ?? "") === "ask",
+			).length,
+		[incidentEvents],
+	);
+	const scanCount = useMemo(
+		() => incidentEvents.filter((e) => e.type === "plugin_scan").length,
+		[incidentEvents],
+	);
+
 	return (
 		<div className="stack">
 			<div className="card">
-				<div className="row space-between">
+				<div className="row space-between" style={{ alignItems: "flex-start" }}>
 					<div>
 						<h1>Incidents</h1>
 						<p className="muted">
 							Derived from telemetry events (blocked/ask verdicts, plugin scan findings, and
-							explicit incident records when emitted).
+							explicit incident records when emitted). Counts cover the latest 500 events.
 						</p>
 					</div>
 					<button
-						className="button button-secondary"
+						className="button button-secondary button-sm"
 						type="button"
 						onClick={() => location.reload()}
 					>
 						Refresh
 					</button>
+				</div>
+				<div className="row" style={{ marginTop: 14 }}>
+					<span className="badge badge-deny">{denyCount} blocked</span>
+					<span className="badge badge-ask">{askCount} approval required</span>
+					<span className="badge badge-info">{scanCount} scan findings</span>
 				</div>
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
@@ -163,48 +187,52 @@ export function IncidentsPage() {
 			</div>
 
 			<div className="card">
-				<table className="table">
-					<thead>
-						<tr>
-							<th>Time</th>
-							<th>Agent</th>
-							<th>Type</th>
-							<th>Summary</th>
-						</tr>
-					</thead>
-					<tbody>
-						{incidentEvents.map((e) => {
-							const agent = agents.get(e.agent_id);
-							const agentName = agent?.display_name ?? agent?.iid?.slice(0, 12) ?? e.agent_id;
-							return (
-								<tr key={e.id}>
-									<td className="mono">{new Date(e.created_at).toLocaleString()}</td>
-									<td>
-										{agent ? (
-											<Link className="mono" to={`/agents/${agent.id}`}>
-												{agentName}
-											</Link>
-										) : (
-											<span className="mono">{agentName}</span>
-										)}
-										{agent?.agent_runtime ? (
-											<div className="muted small">{agent.agent_runtime}</div>
-										) : null}
-									</td>
-									<td className="mono">{e.type}</td>
-									<td className="mono">{summarize(e)}</td>
-								</tr>
-							);
-						})}
-						{incidentEvents.length === 0 ? (
+				<div className="table-wrap">
+					<table className="table">
+						<thead>
 							<tr>
-								<td colSpan={4} className="muted">
-									No incidents yet.
-								</td>
+								<th>Time</th>
+								<th>Agent</th>
+								<th>Type</th>
+								<th>Summary</th>
 							</tr>
-						) : null}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							{incidentEvents.map((e) => {
+								const agent = agents.get(e.agent_id);
+								const agentName = agent?.display_name ?? agent?.iid?.slice(0, 12) ?? e.agent_id;
+								return (
+									<tr key={e.id}>
+										<td className="mono">{new Date(e.created_at).toLocaleString()}</td>
+										<td>
+											{agent ? (
+												<Link className="mono" to={`/agents/${agent.id}`}>
+													{agentName}
+												</Link>
+											) : (
+												<span className="mono">{agentName}</span>
+											)}
+											{agent?.agent_runtime ? (
+												<div className="muted small">{agent.agent_runtime}</div>
+											) : null}
+										</td>
+										<td>
+											<span className="badge badge-neutral badge-plain mono">{e.type}</span>
+										</td>
+										<td className="mono">{summarize(e)}</td>
+									</tr>
+								);
+							})}
+							{incidentEvents.length === 0 ? (
+								<tr>
+									<td colSpan={4} className="muted">
+										No incidents yet.
+									</td>
+								</tr>
+							) : null}
+						</tbody>
+					</table>
+				</div>
 			</div>
 		</div>
 	);

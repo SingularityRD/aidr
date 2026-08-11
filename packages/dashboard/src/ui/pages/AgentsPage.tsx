@@ -63,11 +63,18 @@ export function AgentsPage() {
 	return (
 		<div className="stack">
 			<div className="card">
-				<h1>Agents</h1>
-				<p className="muted">
-					Connected installations (unique <code>iid</code>). Allowed:{" "}
-					<b>{allowed ?? "unavailable"}</b>. Current: <b>{agents.length}</b>.
-				</p>
+				<div className="row space-between" style={{ alignItems: "flex-start", gap: 16 }}>
+					<div>
+						<h1>Agents</h1>
+						<p className="muted">
+							Connected installations (unique <code>iid</code>). Allowed:{" "}
+							<b>{allowed ?? "unavailable"}</b>. Current: <b>{agents.length}</b>.
+						</p>
+					</div>
+					<span className={agents.length > 0 ? "badge badge-success" : "badge badge-neutral"}>
+						{agents.length > 0 ? "reporting" : "no agents"}
+					</span>
+				</div>
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
 						{error}
@@ -82,46 +89,52 @@ export function AgentsPage() {
 			</div>
 
 			<div className="card">
-				<table className="table">
-					<thead>
-						<tr>
-							<th>Name</th>
-							<th>Runtime</th>
-							<th>Last seen</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-						{agents.map((a) => (
-							<tr key={a.id}>
-								<td>
-									<div className="mono">{a.display_name ?? a.iid.slice(0, 12)}</div>
-									<div className="muted small">iid: {a.iid}</div>
-								</td>
-								<td>
-									{a.agent_runtime ?? "unknown"}
-									{a.agent_runtime_version ? (
-										<span className="muted"> {a.agent_runtime_version}</span>
-									) : null}
-								</td>
-								<td className="mono">{new Date(a.last_seen).toLocaleString()}</td>
-								<td className="right">
-									<Link className="button button-secondary" to={`/agents/${a.id}`}>
-										View
-									</Link>
-								</td>
-							</tr>
-						))}
-						{agents.length === 0 ? (
+				<div className="table-wrap">
+					<table className="table">
+						<thead>
 							<tr>
-								<td colSpan={4} className="muted">
-									No agents yet. Go to <Link to="/onboarding">Onboarding</Link> to connect your
-									first agent.
-								</td>
+								<th>Name</th>
+								<th>Runtime</th>
+								<th>Last seen</th>
+								<th className="right">
+									<span className="sr-only">Actions</span>
+								</th>
 							</tr>
-						) : null}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							{agents.map((a) => (
+								<tr key={a.id}>
+									<td>
+										<div className="mono">{a.display_name ?? a.iid.slice(0, 12)}</div>
+										<div className="muted small">iid: {a.iid}</div>
+									</td>
+									<td>
+										<span className="badge badge-neutral badge-plain">
+											{a.agent_runtime ?? "unknown"}
+										</span>
+										{a.agent_runtime_version ? (
+											<span className="muted small"> {a.agent_runtime_version}</span>
+										) : null}
+									</td>
+									<td className="mono">{new Date(a.last_seen).toLocaleString()}</td>
+									<td className="right">
+										<Link className="button button-secondary button-sm" to={`/agents/${a.id}`}>
+											View
+										</Link>
+									</td>
+								</tr>
+							))}
+							{agents.length === 0 ? (
+								<tr>
+									<td colSpan={4} className="muted">
+										No agents yet. Go to <Link to="/onboarding">Onboarding</Link> to connect your
+										first agent.
+									</td>
+								</tr>
+							) : null}
+						</tbody>
+					</table>
+				</div>
 			</div>
 		</div>
 	);

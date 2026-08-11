@@ -15,9 +15,17 @@ export function RouteErrorPage() {
 	const message = errorMessage(error);
 
 	return (
-		<div className="card" role="alert" aria-live="assertive">
+		<div
+			className="card"
+			role="alert"
+			aria-live="assertive"
+			style={{ maxWidth: 560, margin: "48px auto" }}
+		>
+			<p className="eyebrow">Error</p>
 			<h1>Something went wrong</h1>
-			<p className="muted">{message}</p>
+			<div className="notice notice-danger" style={{ marginTop: 10 }}>
+				{message}
+			</div>
 			<div className="row" style={{ marginTop: 16, flexWrap: "wrap" }}>
 				<button className="button" type="button" onClick={() => window.location.reload()}>
 					Retry

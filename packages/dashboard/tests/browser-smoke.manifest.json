@@ -10,7 +10,7 @@
 	],
 	"routes": {
 		"public": ["/", "/demo", "/pilot", "/pricing", "/verify", "/login", "/support", "/status", "/privacy", "/security", "/terms"],
-		"protected": ["/onboarding", "/agents", "/autosecops", "/incidents", "/api-keys", "/billing"]
+		"protected": ["/onboarding", "/agents", "/autosecops", "/incidents", "/api-keys", "/billing", "/dashboard", "/events", "/settings"]
 	},
 	"scenarios": [
 		{
