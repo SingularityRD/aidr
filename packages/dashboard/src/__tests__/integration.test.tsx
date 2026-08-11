@@ -301,6 +301,69 @@ describe("Dashboard integration", () => {
 		expect(mockedSupabase.functions.invoke).not.toHaveBeenCalled();
 	});
 
+	it("renders blocked and approval-required AIDR events in the incidents dashboard", async () => {
+		const agentId = "agent-demo-001";
+		mockedSupabase.from.mockImplementation((table: string) =>
+			createQueryBuilder(
+				table === "incident_events"
+					? [
+							{
+								id: 101,
+								type: "runtime_verdict",
+								created_at: "2026-08-11T09:30:00.000Z",
+								agent_id: agentId,
+								payload: {
+									tool_name: "bash",
+									verdict: "deny",
+									severity: "critical",
+								},
+							},
+							{
+								id: 102,
+								type: "runtime_verdict",
+								created_at: "2026-08-11T09:31:00.000Z",
+								agent_id: agentId,
+								payload: {
+									tool_name: "write",
+									verdict: "ask",
+									severity: "warning",
+								},
+							},
+							{
+								id: 103,
+								type: "runtime_verdict",
+								created_at: "2026-08-11T09:32:00.000Z",
+								agent_id: agentId,
+								payload: { tool_name: "git", verdict: "allow", severity: "info" },
+							},
+						]
+					: table === "agents"
+						? [
+								{
+									id: agentId,
+									iid: "iid-demo-001",
+									display_name: "Demo OpenCode agent",
+									agent_runtime: "opencode",
+								},
+							]
+						: [],
+			),
+		);
+
+		render(
+			<MemoryRouter>
+				<IncidentsPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() => expect(screen.getByText("bash: deny (critical)")).toBeInTheDocument());
+		expect(screen.getAllByText("Demo OpenCode agent")).toHaveLength(2);
+		expect(screen.getByText("bash: deny (critical)")).toBeInTheDocument();
+		expect(screen.getByText("write: ask (warning)")).toBeInTheDocument();
+		expect(screen.queryByText("git: allow (info)")).not.toBeInTheDocument();
+		expect(mockedSupabase.from).toHaveBeenCalledWith("incident_events");
+	});
+
 	it("propagates agent API errors to the visible UI", async () => {
 		mockedSupabase.from.mockImplementation(() => {
 			const query = createQueryBuilder();

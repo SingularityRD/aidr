@@ -36,6 +36,10 @@
 		{
 			"id": "accessibility",
 			"steps": ["Run axe-core on each route", "Require zero critical/serious violations", "Check keyboard-only navigation and visible focus", "Check dialog/alert names and live-region announcements"]
+		},
+		{
+			"id": "threat-demo-to-dashboard",
+			"steps": ["Run only synthetic hook probes from docs/demo/customer-threat-demo-matrix.md", "Confirm deny/ask verdicts are ingested for the enrolled demo agent", "Open /incidents and confirm the runtime_verdict rows are visible with agent/runtime context", "Confirm allow and PII-gap probes are not presented as blocked incidents"]
 		}
 	],
 	"consolePolicy": {

@@ -10,14 +10,37 @@
  * - Singularity AIDR plugin installed and configured in OpenCode
  */
 
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptions } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-const OPENCODE_BIN = process.env.OPENCODE_E2E_BIN?.trim() || "opencode";
+function resolveOpenCodeBinary(requested: string): string {
+	if (process.platform !== "win32") return requested;
+	if (existsSync(requested)) return requested;
+
+	const lookup = spawnSync("where.exe", [requested], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+		windowsHide: true,
+	});
+	const candidates = String(lookup.stdout ?? "")
+		.split(/\r?\n/)
+		.map((value) => value.trim())
+		.filter(Boolean);
+
+	// Prefer the native executable. If npm only exposes a PowerShell shim,
+	// spawnResolved() below invokes it through powershell.exe.
+	return (
+		candidates.find((value) => /\.exe$/i.test(value) && existsSync(value)) ??
+		candidates.find((value) => /\.(ps1|cmd)$/i.test(value) && existsSync(value)) ??
+		requested
+	);
+}
+
+const OPENCODE_BIN = resolveOpenCodeBinary(process.env.OPENCODE_E2E_BIN?.trim() || "opencode");
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const AIDR_OPENCODE_PLUGIN_PATH = join(TEST_DIR, "..", "..");
 
@@ -37,11 +60,30 @@ const SECURITY_SYSTEM_PROMPT =
  * Helper to run OpenCode CLI with consistent timeout and stdio handling.
  * Uses stdio: ['ignore', 'pipe', 'pipe'] to prevent stdin blocking in vitest.
  */
+function spawnResolved(
+	bin: string,
+	args: string[],
+	options: SpawnSyncOptions = {},
+) {
+	if (process.platform === "win32" && /\.ps1$/i.test(bin)) {
+		return spawnSync(
+			"powershell.exe",
+			["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", bin, ...args],
+			options,
+		);
+	}
+
+	return spawnSync(bin, args, {
+		...options,
+		...(process.platform === "win32" && /\.cmd$/i.test(bin) ? { shell: true } : {}),
+	});
+}
+
 function runOpenCode(
 	args: string[],
 	options: { cwd?: string; env?: NodeJS.ProcessEnv; timeout?: number } = {},
 ) {
-	return spawnSync(OPENCODE_BIN, [...args, "--format", "json", "--agent", "build"], {
+	return spawnResolved(OPENCODE_BIN, [...args, "--format", "json", "--agent", "build"], {
 		encoding: "utf8",
 		timeout: options.timeout ?? 90_000,
 		killSignal: "SIGKILL",
@@ -61,6 +103,9 @@ function runPrompt(
 	const envs = {
 		...process.env,
 		HOME: tmpDir,
+		USERPROFILE: tmpDir,
+		APPDATA: `${tmpDir}/AppData/Roaming`,
+		LOCALAPPDATA: `${tmpDir}/AppData/Local`,
 		XDG_CONFIG_HOME: `${tmpDir}/.config`,
 		XDG_CACHE_HOME: `${tmpDir}/.cache`,
 		XDG_STATE_HOME: `${tmpDir}/.local/state`,
@@ -85,6 +130,11 @@ function writeTestConfigs(homeDir: string): void {
 		join(aidrDir, "config.json"),
 		JSON.stringify(
 			{
+				// The release OpenCode suite is a deterministic connector test. Keep
+				// it in local mode so it exercises bundled threat rules without
+				// requiring a live AIDR enrollment/entitlement service.
+				mode: "local",
+				control_plane: { enabled: false },
 				cache: { path: join(aidrDir, "cache.json") },
 				allowlist: { path: join(aidrDir, "allowlist.json") },
 			},
@@ -259,7 +309,7 @@ function assertSpawnResultOk(result: ReturnType<typeof runOpenCode>, note: strin
 }
 
 function canExecute(bin: string): boolean {
-	const result = spawnSync(bin, ["--version"], {
+	const result = spawnResolved(bin, ["--version"], {
 		encoding: "utf8",
 		timeout: 10_000,
 		killSignal: "SIGKILL",
