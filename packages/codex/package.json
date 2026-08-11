@@ -16,6 +16,6 @@
 		"test": "vitest run --config ./vitest.config.ts",
     "prepack": "node ../../scripts/check-workspace-refs.mjs"
   },
-  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.0", "vitest": "^4.1.2" },
+  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.0", "vitest": "^4.1.10" },
   "engines": { "node": ">=18" }
 }

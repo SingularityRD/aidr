@@ -42,7 +42,7 @@
     "@types/node": "^22.0.0",
     "@types/semver": "^7.7.1",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.10"
   },
   "engines": {
     "node": ">=18"
