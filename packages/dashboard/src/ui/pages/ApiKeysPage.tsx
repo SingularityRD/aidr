@@ -351,130 +351,146 @@ export function ApiKeysPage() {
 			</div>
 
 			<div className="card">
-				<table className="table">
-					<thead>
-						<tr>
-							<th>Label</th>
-							<th>Created</th>
-							<th>Status</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-						{keys.map((k) => (
-							<tr key={k.id}>
-								<td>{k.label ?? <span className="muted">(no label)</span>}</td>
-								<td className="mono">{new Date(k.created_at).toLocaleString()}</td>
-								<td>{k.revoked ? "revoked" : "active"}</td>
-								<td className="right">
-									<button
-										className="button button-secondary"
-										type="button"
-										disabled={k.revoked}
-										onClick={async () => {
-											setBusy(true);
-											setError(null);
-											try {
-												const res = await supabase.functions.invoke("api-keys", {
-													method: "POST",
-													body: { action: "revoke", id: k.id },
-												});
-												if (res.error) setError(res.error.message);
-												await load();
-											} catch (cause) {
-												setError(
-													cause instanceof Error
-														? cause.message
-														: "API key revocation is unavailable.",
-												);
-											} finally {
-												setBusy(false);
-											}
-										}}
-									>
-										Revoke
-									</button>
-								</td>
-							</tr>
-						))}
-						{keys.length === 0 ? (
+				<h2>Issued keys</h2>
+				<div className="table-wrap">
+					<table className="table">
+						<thead>
 							<tr>
-								<td colSpan={4} className="muted">
-									No keys yet.
-								</td>
+								<th>Label</th>
+								<th>Created</th>
+								<th>Status</th>
+								<th className="right">
+									<span className="sr-only">Actions</span>
+								</th>
 							</tr>
-						) : null}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							{keys.map((k) => (
+								<tr key={k.id}>
+									<td>{k.label ?? <span className="muted">(no label)</span>}</td>
+									<td className="mono">{new Date(k.created_at).toLocaleString()}</td>
+									<td>
+										<span className={k.revoked ? "badge badge-error" : "badge badge-success"}>
+											{k.revoked ? "revoked" : "active"}
+										</span>
+									</td>
+									<td className="right">
+										<button
+											className="button button-secondary button-sm"
+											type="button"
+											disabled={k.revoked}
+											onClick={async () => {
+												setBusy(true);
+												setError(null);
+												try {
+													const res = await supabase.functions.invoke("api-keys", {
+														method: "POST",
+														body: { action: "revoke", id: k.id },
+													});
+													if (res.error) setError(res.error.message);
+													await load();
+												} catch (cause) {
+													setError(
+														cause instanceof Error
+															? cause.message
+															: "API key revocation is unavailable.",
+													);
+												} finally {
+													setBusy(false);
+												}
+											}}
+										>
+											Revoke
+										</button>
+									</td>
+								</tr>
+							))}
+							{keys.length === 0 ? (
+								<tr>
+									<td colSpan={4} className="muted">
+										No keys yet.
+									</td>
+								</tr>
+							) : null}
+						</tbody>
+					</table>
+				</div>
 			</div>
 
 			<div className="card">
-				<table className="table">
-					<thead>
-						<tr>
-							<th>Label</th>
-							<th>Created</th>
-							<th>Expires</th>
-							<th>Status</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-						{enrollTokens.map((t) => (
-							<tr key={t.id}>
-								<td>{t.label ?? <span className="muted">(no label)</span>}</td>
-								<td className="mono">{new Date(t.created_at).toLocaleString()}</td>
-								<td className="mono">{new Date(t.expires_at).toLocaleString()}</td>
-								<td>
-									{t.consumed_at
-										? "consumed"
-										: Date.now() > Date.parse(t.expires_at)
-											? "expired"
-											: "active"}
-								</td>
-								<td className="right">
-									<button
-										className="button button-secondary"
-										type="button"
-										disabled={busy}
-										onClick={async () => {
-											setBusy(true);
-											setError(null);
-											try {
-												const { error: delErr } = await supabase.functions.invoke(
-													"enrollment-tokens",
-													{
-														method: "POST",
-														body: { action: "delete", id: t.id },
-													},
-												);
-												if (delErr) setError(delErr.message);
-												await load();
-											} catch (cause) {
-												setError(
-													cause instanceof Error
-														? cause.message
-														: "Enrollment token deletion is unavailable.",
-												);
-											} finally {
-												setBusy(false);
-											}
-										}}
-									>
-										Delete
-									</button>
-								</td>
-							</tr>
-						))}
-						{enrollTokens.length === 0 ? (
+				<h2>Issued enrollment tokens</h2>
+				<div className="table-wrap">
+					<table className="table">
+						<thead>
 							<tr>
-								<td colSpan={5} className="muted">
-									No enrollment tokens yet.
-								</td>
+								<th>Label</th>
+								<th>Created</th>
+								<th>Expires</th>
+								<th>Status</th>
+								<th className="right">
+									<span className="sr-only">Actions</span>
+								</th>
 							</tr>
-						) : null}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							{enrollTokens.map((t) => (
+								<tr key={t.id}>
+									<td>{t.label ?? <span className="muted">(no label)</span>}</td>
+									<td className="mono">{new Date(t.created_at).toLocaleString()}</td>
+									<td className="mono">{new Date(t.expires_at).toLocaleString()}</td>
+									<td>
+										{t.consumed_at ? (
+											<span className="badge badge-neutral">consumed</span>
+										) : Date.now() > Date.parse(t.expires_at) ? (
+											<span className="badge badge-warning">expired</span>
+										) : (
+											<span className="badge badge-success">active</span>
+										)}
+									</td>
+									<td className="right">
+										<button
+											className="button button-secondary button-sm"
+											type="button"
+											disabled={busy}
+											onClick={async () => {
+												setBusy(true);
+												setError(null);
+												try {
+													const { error: delErr } = await supabase.functions.invoke(
+														"enrollment-tokens",
+														{
+															method: "POST",
+															body: { action: "delete", id: t.id },
+														},
+													);
+													if (delErr) setError(delErr.message);
+													await load();
+												} catch (cause) {
+													setError(
+														cause instanceof Error
+															? cause.message
+															: "Enrollment token deletion is unavailable.",
+													);
+												} finally {
+													setBusy(false);
+												}
+											}}
+										>
+											Delete
+										</button>
+									</td>
+								</tr>
+							))}
+							{enrollTokens.length === 0 ? (
+								<tr>
+									<td colSpan={5} className="muted">
+										No enrollment tokens yet.
+									</td>
+								</tr>
+							) : null}
+						</tbody>
+					</table>
+				</div>
 			</div>
 		</div>
 	);

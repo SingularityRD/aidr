@@ -28,13 +28,14 @@
     "clean": "node ../../scripts/rmrf.mjs dist resources tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo",
     "prepack": "node ../../scripts/check-workspace-refs.mjs",
     "sync:assets": "node scripts/sync-assets.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:aidr-contract": "vitest run src/__tests__/aidr-contract.test.ts"
   },
   "dependencies": {
+    "@opencode-ai/plugin": "^1.2.10",
     "@singularityrd/aidr-core": "workspace:*"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.2.10",
     "@types/node": "^22.0.0",
     "typescript": "^5.9.0",
     "vitest": "^4.1.2"

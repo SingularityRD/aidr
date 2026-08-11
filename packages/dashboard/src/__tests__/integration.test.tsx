@@ -28,13 +28,17 @@ import { PublicLayout } from "../ui/PublicLayout";
 import { AgentsPage } from "../ui/pages/AgentsPage";
 import { AutoSecOpsPage } from "../ui/pages/AutoSecOpsPage";
 import { BillingPage } from "../ui/pages/BillingPage";
+import { DashboardPage } from "../ui/pages/DashboardPage";
+import { EventsPage } from "../ui/pages/EventsPage";
 import { IncidentsPage } from "../ui/pages/IncidentsPage";
 import { LoginPage } from "../ui/pages/LoginPage";
 import { OnboardingPage } from "../ui/pages/OnboardingPage";
 import { DemoPage } from "../ui/pages/public/DemoPage";
 import { LandingPage } from "../ui/pages/public/LandingPage";
 import { PricingPage } from "../ui/pages/public/PricingPage";
+import { SettingsPage } from "../ui/pages/SettingsPage";
 import { getSession, signOut } from "../ui/session";
+import { ThemeProvider } from "../ui/ThemeProvider";
 
 const mockedSupabase = supabase as unknown as {
 	auth: {
@@ -301,6 +305,69 @@ describe("Dashboard integration", () => {
 		expect(mockedSupabase.functions.invoke).not.toHaveBeenCalled();
 	});
 
+	it("renders blocked and approval-required AIDR events in the incidents dashboard", async () => {
+		const agentId = "agent-demo-001";
+		mockedSupabase.from.mockImplementation((table: string) =>
+			createQueryBuilder(
+				table === "incident_events"
+					? [
+							{
+								id: 101,
+								type: "runtime_verdict",
+								created_at: "2026-08-11T09:30:00.000Z",
+								agent_id: agentId,
+								payload: {
+									tool_name: "bash",
+									verdict: "deny",
+									severity: "critical",
+								},
+							},
+							{
+								id: 102,
+								type: "runtime_verdict",
+								created_at: "2026-08-11T09:31:00.000Z",
+								agent_id: agentId,
+								payload: {
+									tool_name: "write",
+									verdict: "ask",
+									severity: "warning",
+								},
+							},
+							{
+								id: 103,
+								type: "runtime_verdict",
+								created_at: "2026-08-11T09:32:00.000Z",
+								agent_id: agentId,
+								payload: { tool_name: "git", verdict: "allow", severity: "info" },
+							},
+						]
+					: table === "agents"
+						? [
+								{
+									id: agentId,
+									iid: "iid-demo-001",
+									display_name: "Demo OpenCode agent",
+									agent_runtime: "opencode",
+								},
+							]
+						: [],
+			),
+		);
+
+		render(
+			<MemoryRouter>
+				<IncidentsPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() => expect(screen.getByText("bash: deny (critical)")).toBeInTheDocument());
+		expect(screen.getAllByText("Demo OpenCode agent")).toHaveLength(2);
+		expect(screen.getByText("bash: deny (critical)")).toBeInTheDocument();
+		expect(screen.getByText("write: ask (warning)")).toBeInTheDocument();
+		expect(screen.queryByText("git: allow (info)")).not.toBeInTheDocument();
+		expect(mockedSupabase.from).toHaveBeenCalledWith("incident_events");
+	});
+
 	it("propagates agent API errors to the visible UI", async () => {
 		mockedSupabase.from.mockImplementation(() => {
 			const query = createQueryBuilder();
@@ -323,6 +390,161 @@ describe("Dashboard integration", () => {
 		await signOut();
 		expect(mockedSupabase.auth.getSession).toHaveBeenCalled();
 		expect(mockedSupabase.auth.signOut).toHaveBeenCalled();
+	});
+
+	it("renders the control-plane overview from real fleet queries", async () => {
+		const now = new Date().toISOString();
+		mockedSupabase.from.mockImplementation((table: string) =>
+			createQueryBuilder(
+				table === "agents"
+					? [
+							{
+								id: "agent-1",
+								iid: "iid-overview-1",
+								display_name: "overview-agent",
+								agent_runtime: "claude-code",
+								last_seen: now,
+							},
+						]
+					: table === "events"
+						? [
+								{
+									id: 900,
+									type: "runtime_verdict",
+									created_at: now,
+									agent_id: "agent-1",
+									payload: { tool_name: "bash", verdict: "deny", severity: "critical" },
+								},
+							]
+						: [],
+			),
+		);
+
+		render(
+			<MemoryRouter>
+				<DashboardPage />
+			</MemoryRouter>,
+		);
+
+		expect(
+			screen.getByText("Observe every agent decision from one secure dashboard."),
+		).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByText("overview-agent")).toBeInTheDocument());
+		expect(screen.getByText("Live agents")).toBeInTheDocument();
+		expect(screen.getByText("Recent events")).toBeInTheDocument();
+		expect(screen.getByText("bash: deny")).toBeInTheDocument();
+		expect(screen.getByText("connected")).toBeInTheDocument();
+	});
+
+	it("keeps overview counters fail-closed when fleet queries fail", async () => {
+		mockedSupabase.from.mockImplementation((table: string) => {
+			const query = createQueryBuilder();
+			if (table === "agents") {
+				query.order.mockResolvedValue({ data: null, error: { message: "Agents down" } });
+			} else {
+				query.limit.mockResolvedValue({ data: null, error: { message: "Events down" } });
+			}
+			return query;
+		});
+
+		render(
+			<MemoryRouter>
+				<DashboardPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() =>
+			expect(screen.getByText("Agent data is unavailable right now.")).toBeInTheDocument(),
+		);
+		expect(screen.getByText("Event data is unavailable right now.")).toBeInTheDocument();
+		// Agents / Connected / Events / Deny / Ask all render an honest "—",
+		// never a fabricated zero (Pending resolves to 0 from the mocked invoke).
+		expect(screen.getAllByText("—")).toHaveLength(5);
+		expect(screen.getByText("unavailable")).toBeInTheDocument();
+		expect(screen.getByRole("alert")).toHaveTextContent("Agents down Events down");
+	});
+
+	it("keeps the events feed fail-closed when the events query fails", async () => {
+		mockedSupabase.from.mockImplementation((table: string) => {
+			const query = createQueryBuilder();
+			if (table === "events") {
+				query.limit.mockResolvedValue({ data: null, error: { message: "Events down" } });
+			}
+			return query;
+		});
+
+		render(
+			<MemoryRouter>
+				<EventsPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() =>
+			expect(screen.getByText("Event data is unavailable right now.")).toBeInTheDocument(),
+		);
+		expect(screen.queryByText("0 deny")).not.toBeInTheDocument();
+		expect(screen.getByRole("alert")).toHaveTextContent("Events down");
+	});
+
+	it("renders the raw events feed with verdict badges", async () => {
+		const now = new Date().toISOString();
+		mockedSupabase.from.mockImplementation((table: string) =>
+			createQueryBuilder(
+				table === "events"
+					? [
+							{
+								id: 901,
+								type: "runtime_verdict",
+								created_at: now,
+								agent_id: "agent-1",
+								payload: { tool_name: "fetch", verdict: "deny", severity: "high" },
+							},
+							{
+								id: 902,
+								type: "runtime_verdict",
+								created_at: now,
+								agent_id: "agent-1",
+								payload: { tool_name: "git", verdict: "allow", severity: "info" },
+							},
+						]
+					: table === "agents"
+						? [
+								{
+									id: "agent-1",
+									iid: "iid-events-1",
+									display_name: "events-agent",
+									agent_runtime: "cursor",
+								},
+							]
+						: [],
+			),
+		);
+
+		render(
+			<MemoryRouter>
+				<EventsPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() => expect(screen.getByText("fetch (high)")).toBeInTheDocument());
+		expect(screen.getByText("git (info)")).toBeInTheDocument();
+		expect(screen.getByText("1 deny")).toBeInTheDocument();
+		expect(screen.getByText("1 allow")).toBeInTheDocument();
+		expect(mockedSupabase.from).toHaveBeenCalledWith("events");
+	});
+
+	it("renders settings and signs out through the Supabase client", async () => {
+		render(
+			<MemoryRouter>
+				<ThemeProvider>
+					<SettingsPage />
+				</ThemeProvider>
+			</MemoryRouter>,
+		);
+
+		expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+		fireEvent.click(screen.getByText("Sign out of this session"));
+		await waitFor(() => expect(mockedSupabase.auth.signOut).toHaveBeenCalled());
 	});
 
 	it("mounts onboarding and incidents without crashing", () => {

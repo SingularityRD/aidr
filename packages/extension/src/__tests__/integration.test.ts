@@ -139,11 +139,17 @@ describe("Cursor hook integration", () => {
 		expect(response.permission).toBe("allow");
 	});
 
-	it("fails open on invalid json", async () => {
+	it("fails closed on invalid json", async () => {
 		const { stdout, code } = await runHook("cursor", "not valid json");
 
 		expect(code).toBe(0);
-		expect(parseResponse(stdout)).toEqual({});
+		expect(parseResponse(stdout)).toEqual({
+			decision: "deny",
+			permission: "deny",
+			reason: "Singularity AIDR could not identify hook event.",
+			user_message: "Singularity AIDR could not identify hook event.",
+			agent_message: "Singularity AIDR internal error policy applied.",
+		});
 	});
 });
 
@@ -239,10 +245,16 @@ describe("VS Code hook integration", () => {
 		expect(code).toBe(0);
 	});
 
-	it("fails open on invalid json", async () => {
+	it("fails closed on invalid json", async () => {
 		const { stdout, code } = await runHook("vscode", "not valid json");
 
 		expect(code).toBe(0);
-		expect(parseResponse(stdout)).toEqual({});
+		expect(parseResponse(stdout)).toEqual({
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: "Singularity AIDR could not normalize hook payload.",
+			},
+		});
 	});
 });

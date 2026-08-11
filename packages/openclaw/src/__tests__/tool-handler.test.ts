@@ -107,12 +107,15 @@ describe("createToolCallHandler", () => {
 		expect(result?.blockReason).toContain("actionId");
 	});
 
-	it("error in handler → fail-open (undefined)", async () => {
+	it("error in handler → fail-closed block", async () => {
 		setup();
 		const { guardToolCall } = await import("@singularityrd/aidr-core");
 		(guardToolCall as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"));
 
 		const result = await handler({ toolName: "exec", params: { command: "ls" } });
-		expect(result).toBeUndefined();
+		expect(result).toEqual({
+			block: true,
+			blockReason: "Singularity AIDR could not evaluate this tool call; execution was denied.",
+		});
 	});
 });

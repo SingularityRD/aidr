@@ -188,6 +188,13 @@ function TeamSelector({
 	);
 }
 
+function fleetStateBadge(state: string | undefined): string {
+	if (state === "active") return "badge badge-success";
+	if (state === "idle") return "badge badge-warning";
+	if (!state) return "badge badge-neutral";
+	return "badge badge-neutral";
+}
+
 function RuntimeFleet({ fleet, unavailable }: { fleet: FleetAgent[]; unavailable: boolean }) {
 	return (
 		<div className="card">
@@ -196,46 +203,50 @@ function RuntimeFleet({ fleet, unavailable }: { fleet: FleetAgent[]; unavailable
 				Registered Claude Code, Codex, OpenCode, and other AIDR runtime connectors observed by
 				AutoSecOps.
 			</p>
-			<table className="table">
-				<thead>
-					<tr>
-						<th>Agent</th>
-						<th>Runtime / connector</th>
-						<th>State</th>
-						<th>Last event</th>
-					</tr>
-				</thead>
-				<tbody>
-					{fleet.map((agent) => (
-						<tr key={`${agent.agent_id ?? "agent"}:${agent.instance_id ?? "instance"}`}>
-							<td>
-								<div className="mono">{agent.agent_name ?? agent.agent_id ?? "unknown"}</div>
-								<div className="muted small">{agent.agent_id ?? "unknown id"}</div>
-							</td>
-							<td>
-								<div>{agent.runtime ?? "unknown"}</div>
-								<div className="muted small">
-									{agent.connector ?? "unknown connector"} {agent.connector_version ?? ""}
-								</div>
-							</td>
-							<td>
-								<span className="mono">{agent.state ?? "unknown"}</span>
-								<div className="muted small">health: {agent.health ?? "unknown"}</div>
-							</td>
-							<td className="mono">{formatTime(agent.last_event_at)}</td>
-						</tr>
-					))}
-					{fleet.length === 0 ? (
+			<div className="table-wrap">
+				<table className="table">
+					<thead>
 						<tr>
-							<td colSpan={4} className="muted">
-								{unavailable
-									? "Fleet data is unavailable."
-									: "No AutoSecOps runtime agents reported yet."}
-							</td>
+							<th>Agent</th>
+							<th>Runtime / connector</th>
+							<th>State</th>
+							<th>Last event</th>
 						</tr>
-					) : null}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						{fleet.map((agent) => (
+							<tr key={`${agent.agent_id ?? "agent"}:${agent.instance_id ?? "instance"}`}>
+								<td>
+									<div className="mono">{agent.agent_name ?? agent.agent_id ?? "unknown"}</div>
+									<div className="muted small">{agent.agent_id ?? "unknown id"}</div>
+								</td>
+								<td>
+									<div>{agent.runtime ?? "unknown"}</div>
+									<div className="muted small">
+										{agent.connector ?? "unknown connector"} {agent.connector_version ?? ""}
+									</div>
+								</td>
+								<td>
+									<span className={fleetStateBadge(agent.state)}>{agent.state ?? "unknown"}</span>
+									<div className="muted small" style={{ marginTop: 4 }}>
+										health: {agent.health ?? "unknown"}
+									</div>
+								</td>
+								<td className="mono">{formatTime(agent.last_event_at)}</td>
+							</tr>
+						))}
+						{fleet.length === 0 ? (
+							<tr>
+								<td colSpan={4} className="muted">
+									{unavailable
+										? "Fleet data is unavailable."
+										: "No AutoSecOps runtime agents reported yet."}
+								</td>
+							</tr>
+						) : null}
+					</tbody>
+				</table>
+			</div>
 		</div>
 	);
 }
@@ -336,26 +347,20 @@ export function AutoSecOpsPage() {
 			</div>
 
 			<div className="grid">
-				<div className="card">
-					<div className="muted small">Runtime state</div>
-					<div className="mono" style={{ fontSize: 24, marginTop: 6 }}>
-						{healthState ?? "unknown"}
-					</div>
-					<div className="muted small">AutoSecOps observation</div>
+				<div className="card stat-card">
+					<div className="stat-label">Runtime state</div>
+					<div className="stat-value">{healthState ?? "unknown"}</div>
+					<div className="stat-hint">AutoSecOps observation</div>
 				</div>
-				<div className="card">
-					<div className="muted small">Active agents</div>
-					<div className="mono" style={{ fontSize: 24, marginTop: 6 }}>
-						{health?.active_agents ?? "unknown"}
-					</div>
-					<div className="muted small">tenant-scoped runtime sessions</div>
+				<div className="card stat-card">
+					<div className="stat-label">Active agents</div>
+					<div className="stat-value">{health?.active_agents ?? "unknown"}</div>
+					<div className="stat-hint">tenant-scoped runtime sessions</div>
 				</div>
-				<div className="card">
-					<div className="muted small">Open degradations</div>
-					<div className="mono" style={{ fontSize: 24, marginTop: 6 }}>
-						{health?.open_degradations ?? "unknown"}
-					</div>
-					<div className="muted small">fail-closed health signal</div>
+				<div className="card stat-card">
+					<div className="stat-label">Open degradations</div>
+					<div className="stat-value">{health?.open_degradations ?? "unknown"}</div>
+					<div className="stat-hint">fail-closed health signal</div>
 				</div>
 			</div>
 

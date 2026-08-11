@@ -5,7 +5,6 @@ import {
 	type PolicyBinding,
 	type PolicyHandoff,
 	RUNTIME_SCHEMA_VERSION,
-	sha256,
 } from "./types.js";
 
 export interface CentralPolicyClientOptions {
@@ -15,41 +14,6 @@ export interface CentralPolicyClientOptions {
 	fetchImpl?: typeof fetch;
 }
 const DENY_POLICY: PolicyBinding = { version: "unavailable", hash: "0".repeat(64) };
-const AUTOSECOPS_POLICY_VERSION = "wt08-runtime-policy-v1";
-const AUTOSECOPS_POLICY_HASH = sha256(AUTOSECOPS_POLICY_VERSION);
-
-function toAutoSecOpsRuntimeEvent(event: NormalizedRuntimeEvent) {
-	return {
-		event_id: event.eventId,
-		schema_version: RUNTIME_SCHEMA_VERSION,
-		kind: event.kind,
-		scope: {
-			tenant_id: event.scope.tenantId,
-			team_id: event.scope.teamId,
-			endpoint_id: event.scope.endpointId,
-			agent_id: event.scope.agentId,
-			instance_id: event.scope.instanceId,
-			session_id: event.scope.sessionId,
-		},
-		event_time: event.eventTime,
-		ingest_time: new Date().toISOString(),
-		sequence: event.sequence,
-		idempotency_key: event.idempotencyKey,
-		source: event.connector,
-		connector_version: event.scope.connectorVersion,
-		policy: {
-			version: AUTOSECOPS_POLICY_VERSION,
-			hash: { algorithm: "sha256", value: AUTOSECOPS_POLICY_HASH },
-		},
-		redaction: "redacted",
-		payload_hash: { algorithm: "sha256", value: event.payloadHash },
-		metadata: {
-			tool_name: event.toolName,
-			call_id: event.callId,
-			phase: event.phase,
-		},
-	};
-}
 function failClosed(reasonCode: string): CentralPolicyDecision {
 	return {
 		decision: "deny",
@@ -136,29 +100,11 @@ export class CentralPolicyClient implements PolicyHandoff {
 		}
 	}
 	async publish(
-		event: NormalizedRuntimeEvent,
+		_event: NormalizedRuntimeEvent,
 	): Promise<{ accepted: true } | { accepted: false; reasonCode: string }> {
-		if (!this.endpoint) return { accepted: false, reasonCode: "central_event_endpoint_missing" };
-		const controller = new AbortController();
-		const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-		try {
-			const response = await this.fetchImpl(`${this.endpoint}/v1/aidr/runtime/events`, {
-				method: "POST",
-				signal: controller.signal,
-				headers: {
-					Accept: "application/json",
-					"Content-Type": "application/json",
-					...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
-				},
-				body: JSON.stringify({ event: toAutoSecOpsRuntimeEvent(event) }),
-			});
-			return response.ok
-				? { accepted: true }
-				: { accepted: false, reasonCode: "central_event_http_error" };
-		} catch {
-			return { accepted: false, reasonCode: "central_event_unavailable" };
-		} finally {
-			clearTimeout(timer);
-		}
+		// AutoSecOps intentionally has no bearer-authenticated runtime event route.
+		// Machine events must use SignedIngressClient so caller identity, replay
+		// state, exact body bytes and the resulting receipt are cryptographically bound.
+		return { accepted: false, reasonCode: "central_signed_ingress_required" };
 	}
 }

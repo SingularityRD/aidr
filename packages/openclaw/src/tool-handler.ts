@@ -104,9 +104,12 @@ export function createToolCallHandler(
 				blockReason: formatAskMessage(actionId as string, verdict, artifacts),
 			};
 		} catch (e) {
-			// Fail-open: any unhandled error → pass through
-			logger.error("tool-handler error, failing open", { error: String(e) });
-			return undefined;
+			// Evaluation failures must never authorize execution.
+			logger.error("tool-handler error, failing closed", { error: String(e) });
+			return {
+				block: true,
+				blockReason: "Singularity AIDR could not evaluate this tool call; execution was denied.",
+			};
 		}
 	}
 

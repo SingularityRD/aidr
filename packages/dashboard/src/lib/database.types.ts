@@ -2,9 +2,7 @@
 // Generated schema types for AIDR Dashboard
 
 type AddRelationships<T extends Record<string, object>> = {
-	[K in keyof T]: T[K] extends { Relationships: unknown }
-		? T[K]
-		: T[K] & { Relationships: [] };
+	[K in keyof T]: T[K] extends { Relationships: unknown } ? T[K] : T[K] & { Relationships: [] };
 };
 
 export interface Database {

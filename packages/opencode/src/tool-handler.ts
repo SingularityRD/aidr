@@ -51,12 +51,15 @@ export function createToolHandlers(
 			// ask — actionId is always set for ask verdicts
 			throw new AidrVerdictBlockError(formatAskMessage(actionId as string, verdict, artifacts));
 		} catch (error) {
-			// Verdict errors are expected (blocks and asks); others are logged as fail-open
+			// Verdict errors are expected (blocks and asks); internal errors deny execution.
 			if (error instanceof AidrVerdictError) throw error;
-			logger.error("Singularity AIDR opencode hook failed open", {
+			logger.error("Singularity AIDR opencode hook failed closed", {
 				error: String(error),
 				tool: input.tool,
 			});
+			throw new AidrVerdictBlockError(
+				"Singularity AIDR could not evaluate this tool call; execution was denied.",
+			);
 		}
 	};
 

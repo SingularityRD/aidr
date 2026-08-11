@@ -32,6 +32,13 @@ function isMissingTableError(error: { code?: string; message?: string }, table: 
 	);
 }
 
+function verdictBadgeClass(verdict: string): string {
+	if (verdict === "deny") return "badge badge-deny";
+	if (verdict === "ask") return "badge badge-ask";
+	if (verdict === "allow") return "badge badge-allow";
+	return "badge badge-neutral";
+}
+
 export function AgentDetailPage() {
 	const { agentId } = useParams();
 	const [agent, setAgent] = useState<AgentRow | null>(null);
@@ -108,15 +115,17 @@ export function AgentDetailPage() {
 	return (
 		<div className="stack">
 			<div className="card">
-				<div className="row space-between">
+				<div className="row space-between" style={{ alignItems: "flex-start" }}>
 					<div>
-						<h1>Agent</h1>
-						<p className="muted">
-							<Link to="/agents">← Back</Link>
+						<p className="eyebrow">
+							<Link to="/agents" style={{ textDecoration: "none" }}>
+								← Agents
+							</Link>
 						</p>
+						<h1>Agent</h1>
 					</div>
 					<button
-						className="button button-secondary"
+						className="button button-secondary button-sm"
 						type="button"
 						onClick={() => location.reload()}
 					>
@@ -132,25 +141,32 @@ export function AgentDetailPage() {
 
 				{agent ? (
 					<>
-						<div className="grid">
-							<div>
-								<div className="muted small">Name</div>
-								<div className="mono">{agent.display_name ?? agent.iid}</div>
-							</div>
-							<div>
-								<div className="muted small">Runtime</div>
-								<div className="mono">
-									{agent.agent_runtime ?? "unknown"} {agent.agent_runtime_version ?? ""}
+						<div className="grid" style={{ marginTop: 14 }}>
+							<div className="stat-card">
+								<div className="stat-label">Name</div>
+								<div className="mono" style={{ fontSize: 15 }}>
+									{agent.display_name ?? agent.iid}
 								</div>
 							</div>
-							<div>
-								<div className="muted small">Last seen</div>
-								<div className="mono">{new Date(agent.last_seen).toLocaleString()}</div>
+							<div className="stat-card">
+								<div className="stat-label">Runtime</div>
+								<div>
+									<span className="badge badge-neutral badge-plain">
+										{agent.agent_runtime ?? "unknown"}
+									</span>{" "}
+									<span className="mono muted small">{agent.agent_runtime_version ?? ""}</span>
+								</div>
+							</div>
+							<div className="stat-card">
+								<div className="stat-label">Last seen</div>
+								<div className="mono" style={{ fontSize: 15 }}>
+									{new Date(agent.last_seen).toLocaleString()}
+								</div>
 							</div>
 						</div>
 
 						{entitlementSnapshot ? (
-							<div className="notice">
+							<div className="notice" style={{ marginTop: 14 }}>
 								<div className="muted small">Entitlement snapshot</div>
 								<div className="mono">
 									{typeof entitlementSnapshot.entitlement.subscription_tier === "string"
@@ -173,41 +189,56 @@ export function AgentDetailPage() {
 						)}
 					</>
 				) : (
-					<div className="muted">Loading…</div>
+					<div className="row" style={{ marginTop: 14 }}>
+						<span className="spinner" aria-hidden="true" />
+						<span className="muted">Loading…</span>
+					</div>
 				)}
 			</div>
 
 			<div className="card">
 				<h2>Recent events</h2>
-				<table className="table">
-					<thead>
-						<tr>
-							<th>Time</th>
-							<th>Type</th>
-							<th>Summary</th>
-						</tr>
-					</thead>
-					<tbody>
-						{events.map((e) => (
-							<tr key={e.id}>
-								<td className="mono">{new Date(e.created_at).toLocaleString()}</td>
-								<td className="mono">{e.type}</td>
-								<td className="mono">
-									{typeof e.payload?.tool_name === "string"
-										? `${String(e.payload.tool_name)}: ${String(e.payload.verdict ?? "")}`
-										: JSON.stringify(e.payload).slice(0, 120)}
-								</td>
-							</tr>
-						))}
-						{events.length === 0 ? (
+				<div className="table-wrap">
+					<table className="table">
+						<thead>
 							<tr>
-								<td colSpan={3} className="muted">
-									No events yet.
-								</td>
+								<th>Time</th>
+								<th>Type</th>
+								<th>Summary</th>
 							</tr>
-						) : null}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							{events.map((e) => {
+								const verdict = typeof e.payload?.verdict === "string" ? e.payload.verdict : null;
+								return (
+									<tr key={e.id}>
+										<td className="mono">{new Date(e.created_at).toLocaleString()}</td>
+										<td>
+											<span className="badge badge-neutral badge-plain mono">{e.type}</span>
+										</td>
+										<td className="mono">
+											{verdict ? (
+												<span className={verdictBadgeClass(verdict)} style={{ marginRight: 8 }}>
+													{verdict}
+												</span>
+											) : null}
+											{typeof e.payload?.tool_name === "string"
+												? `${String(e.payload.tool_name)}: ${String(e.payload.verdict ?? "")}`
+												: JSON.stringify(e.payload).slice(0, 120)}
+										</td>
+									</tr>
+								);
+							})}
+							{events.length === 0 ? (
+								<tr>
+									<td colSpan={3} className="muted">
+										No events yet.
+									</td>
+								</tr>
+							) : null}
+						</tbody>
+					</table>
+				</div>
 			</div>
 		</div>
 	);

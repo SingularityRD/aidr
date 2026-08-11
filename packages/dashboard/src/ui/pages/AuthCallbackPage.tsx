@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { ShieldIcon } from "../icons";
 import { sanitizeReturnTo, takePostAuthReturnTo } from "../return-to";
 
 export function AuthCallbackPage() {
@@ -72,17 +73,32 @@ export function AuthCallbackPage() {
 	}, [navigate, attempt]);
 
 	return (
-		<main className="main">
-			<div className="card">
-				<h1>Signing in…</h1>
-				<p className="muted">Completing Supabase authentication.</p>
+		<div className="auth-screen">
+			<div className="auth-card" role="status" aria-live="polite">
+				<div className="auth-brand">
+					<span className="brand-mark">
+						<ShieldIcon size={26} />
+					</span>
+					<div>
+						<h1 className="auth-title">Signing in…</h1>
+						<p className="auth-subtitle">Completing Supabase authentication.</p>
+					</div>
+				</div>
+				{error ? null : (
+					<div className="row" style={{ justifyContent: "center" }}>
+						<span className="spinner" aria-hidden="true" />
+					</div>
+				)}
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
 						{error}
 					</div>
 				) : null}
 				{timedOut ? (
-					<div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
+					<div
+						className="row"
+						style={{ marginTop: 14, flexWrap: "wrap", justifyContent: "center" }}
+					>
 						<button
 							className="button"
 							type="button"
@@ -100,6 +116,6 @@ export function AuthCallbackPage() {
 					</div>
 				) : null}
 			</div>
-		</main>
+		</div>
 	);
 }

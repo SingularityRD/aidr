@@ -1,3 +1,4 @@
+import { MoonIcon, SunIcon } from "./icons";
 import { useTheme } from "./ThemeProvider";
 
 export function ThemeToggle() {
@@ -11,7 +12,7 @@ export function ThemeToggle() {
 			aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
 			title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
 		>
-			{theme === "light" ? "🌙" : "☀️"}
+			{theme === "light" ? <MoonIcon /> : <SunIcon />}
 		</button>
 	);
 }

@@ -38,7 +38,7 @@ const publicRoutes = [
 	"/security",
 	"/terms",
 ];
-const protectedRoutes = ["/onboarding", "/agents", "/autosecops", "/incidents", "/api-keys", "/billing"];
+const protectedRoutes = ["/onboarding", "/agents", "/autosecops", "/incidents", "/api-keys", "/billing", "/dashboard", "/events", "/settings"];
 const routes = [...publicRoutes, ...protectedRoutes];
 
 function fail(message) {
