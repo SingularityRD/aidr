@@ -16,16 +16,16 @@
   "dependencies": {
     "@sentry/browser": "^10.69.0",
     "@supabase/supabase-js": "^2.56.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "react-router-dom": "^7.3.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.4.0",
-    "@testing-library/react": "^16.3.2",
-    "@types/react": "^19.0.12",
-    "@types/react-dom": "^19.0.4",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^4.6.0",
     "jsdom": "^26.1.0",
     "typescript": "^5.9.0",
