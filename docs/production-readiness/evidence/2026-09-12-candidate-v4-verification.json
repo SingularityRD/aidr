@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-09-12T19:05:32.248Z",
+  "decision": "NO-GO",
+  "production_accepted": false,
+  "source_commit": "b4361fa7d565e76f1604997b654a41e54c03db80",
+  "worktree_has_changes": true,
+  "tests": {
+    "files": 202,
+    "passed": 3010,
+    "failed": 0,
+    "skipped": 1,
+    "total": 3011,
+    "windows_workers": 1,
+    "skipped_scope": "Live malicious URL reputation provider scenario is skipped, not counted as passing.",
+    "first_full_attempt": "1 evaluator timeout and 1 Vitest worker startup timeout after 2982 passes; preserved in .aidr-v4-tests.log. Focused retry 33/33 and second full retry 3010/3010 passed with unchanged scenario timeout."
+  },
+  "gates": {
+    "build": "PASS",
+    "release_build": "PASS; nine package contracts and consumers",
+    "typecheck": "PASS",
+    "static": "PASS with 133 lint warnings; knip review debt 207 files, 120 exports, 1 duplicate",
+    "production_dependency_advisories": 0,
+    "edge_functions_config_guarded": 29,
+    "migration_contract": 24,
+    "enforcement_cases": 72,
+    "codex_hook_cases": 11,
+    "installation_tool_cases": 9,
+    "fleet_windows_cases": 17,
+    "fleet_unix_cases": 25,
+    "monitoring_cases": 9,
+    "upgrade_cases": 21,
+    "support_bundle_cases": 13,
+    "load_harness_cases": 6,
+    "release_signing_cases": 9,
+    "offsite_backup_cases": 5,
+    "offboarding_cases": 9,
+    "self_hosted_smoke": 29,
+    "customer_onboarding": 9,
+    "policy_rollout": 11,
+    "enterprise_operations": 8,
+    "fleet_pagination": 4,
+    "doctor": 40,
+    "portable_kit_checks": 7,
+    "reputation_lifecycle": "PASS; active key 200, four suspended or expired membership calls 403",
+    "diff_check": "PASS"
+  },
+  "fresh_rehearsal": {
+    "deployment": ".release-evidence/aidr-install-v4",
+    "mode": "self-hosted isolated loopback development",
+    "services_healthy": 11,
+    "migrations_applied": 24,
+    "cloud": "portable preparation verified without Git or pnpm; no real cloud project provisioned"
+  },
+  "candidate": {
+    "directory": ".release-evidence/aidr-customer-kit-20260912-v4",
+    "archive": ".release-evidence/aidr-customer-kit-20260912-v4.tar.gz",
+    "archive_sha256": "f416da495d2c771d7ceb1102973ce9cac75f4d23b054897e06828b724b57fa0a",
+    "checksum_inventory_sha256": "1a7a9e93000bfbb42c4253191797e04defb8ea2ac71368ee3eba4a273fccd7d7",
+    "files": 278,
+    "release_artifacts": 13,
+    "publisher_signature": "not supplied; release signer/verifier tested locally but official key custody and trust policy not provisioned",
+    "private_credentials_in_plain_or_decompressed_files": false
+  },
+  "feature_status_counts": {
+    "wired": 42,
+    "partial": 25,
+    "missing": 2,
+    "external": 2
+  },
+  "backlog": {
+    "findings": 63,
+    "verified_closed": 50,
+    "remaining": 13
+  },
+  "load_and_availability": {
+    "local_attempt": ".release-evidence/load-dashboard-local-20260912.json",
+    "result": "FAILED at 10 RPS for 30 seconds under concurrent agent load; 144 dropped and 47 transport errors. It is not a capacity or HA acceptance measurement.",
+    "monthly_sla_proven": false
+  },
+  "external_hard_gates": {
+    "registry_total_open": 13,
+    "assisted_sale_and_production_ga_open": 12
+  },
+  "limitations": [
+    "MCP inline gateway remains missing; tool attestation has no host/gateway consumer.",
+    "Behavioral, custom DLP, signed reputation feed and durable SIEM foundation require production consumer integration and provider acceptance.",
+    "Tenant-wide MFA/session barrier is not enforced on every existing service-role Edge endpoint.",
+    "Native host and MDM acceptance, real cloud deployment, publisher signing custody, private registry, independent security assessment, legal/privacy/support ownership and named customer PoV remain open.",
+    "Offsite provider and independent-host disaster recovery/RPO/RTO, alert delivery, failover and monthly SLI are unproven.",
+    "Static preflight has no configured sales URL/email or credentialed browser test account; invoice CTA fails closed."
+  ]
+}

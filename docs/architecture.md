@@ -51,9 +51,13 @@ Registered via `hooks/hooks.json`.
 In-process plugin using `api.on('before_tool_call')`. Includes:
 
 - **`tool-handler.ts`** - Intercepts tool calls, runs detection pipeline
-- **`gate-tool.ts`** - `aidr_approve` tool for interactive approval of flagged actions
-- **`approval-store.ts`** - Tracks per-session approvals
+- **`allowlist-tools.ts`** - `aidr_allowlist_add` / `aidr_allowlist_remove`; adding refuses unless a genuine approval was already recorded
+- **`approval-store.ts`** - Tracks per-session approvals (operator-held; deliberately **not** exposed to the agent as a tool)
 - **`startup-scan.ts`** - Plugin scanning at gateway/session start
+
+> There is deliberately no agent-callable approval tool. The model receives the
+> `actionId` in the block reason, so an approval tool it could call would let a
+> prompt-injected agent approve its own block.
 
 ### Extension (Cursor / VS Code)
 
@@ -82,7 +86,9 @@ before_tool_call event -> extract artifacts -> check approval store
   -> DecisionEngine -> cache result -> audit log -> block/pass
 ```
 
-Blocked actions return an `actionId` that users can approve via the `aidr_approve` gate tool.
+Blocked actions return an `actionId` as an **operator-only reference**. There is no
+agent-callable approval tool: approval is an out-of-band, human-only action taken
+through the operator-held approval store or the on-disk allowlist.
 
 ### Cursor / VS Code
 
@@ -98,11 +104,9 @@ Extension hooks (Cursor / VS Code) always exit with code `0`; the host reads the
 ## Key Design Decisions
 
 - **All patterns are data.** Detection rules live in `threats/*.yaml`, not in code. This makes rules easy to review, contribute, and update independently.
-- **Fail-open.** Every error path returns `allow`. Singularity AIDR should never break the agent.
+- **Failure policy is scoped.** Connector entry points return a deny on their own parse or evaluation failures; mandatory identity, tenant, and rate-limit controls also reject unavailable state. Optional detection legs report unavailability instead of claiming a clean scan. A host that never invokes a hook, kills it before it emits a verdict, or permits a bypass remains outside the connector's enforcement guarantee; Codex has an explicit host-owned fail-open boundary.
 - **Shared core.** All platforms use the same `@singularityrd/aidr-core` library, ensuring consistent detection regardless of connector.
-- **No runtime dependencies beyond Node.js.** The core uses native `fetch`, `yaml` for YAML parsing, and `zod` for validation. Connectors are bundled into single CJS files.
-
-
+- **Packaged runtime dependencies are connector-specific.** The core uses native `fetch`, `yaml` for YAML parsing, and `zod` for validation. JavaScript connector code is bundled; Windows AMSI may also need a packaged native Koffi module or the slower PowerShell fallback. Inspect the exact released artifact and host before claiming a standalone installation.
 
 
 

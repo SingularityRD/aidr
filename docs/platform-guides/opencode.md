@@ -34,10 +34,11 @@ Project config (`.opencode/opencode.json`):
 Singularity AIDR uses OpenCode plugin hooks:
 
 - `tool.execute.before` - extracts artifacts and runs the Singularity AIDR evaluator
-- `tool` - registers Singularity AIDR tools (`aidr_approve`, `aidr_allowlist_add`, `aidr_allowlist_remove`)
+- `tool` - registers the allowlist tools (`aidr_allowlist_add`, `aidr_allowlist_remove`)
 
-For `ask` verdicts, Singularity AIDR blocks the tool call and returns an action ID in the error message.
-The agent should ask the user for explicit confirmation, then call `aidr_approve`.
+For `ask` verdicts, Singularity AIDR blocks the tool call and returns an action ID in
+the error message. The agent is told to report that reference and stop; **it cannot
+approve the action itself**, because approval is an out-of-band, human-only action.
 
 ## Tool Mapping
 
@@ -58,13 +59,26 @@ Unmapped tools pass through unchanged.
 
 - `allow`: tool continues
 - `deny`: blocked immediately with a Singularity AIDR reason
-- `ask`: blocked and requires explicit approval via `aidr_approve`
+- `ask`: blocked, pending out-of-band human approval
 
 ## Singularity AIDR Tools
 
-- `aidr_approve`: approve/reject a blocked action ID for this OpenCode session
-- `aidr_allowlist_add`: permanently allowlist a URL/command/file path (requires recent approval)
+- `aidr_allowlist_add`: permanently allowlist a URL/command/file path. It **refuses**
+  unless a genuine approval was already recorded, so it is not a way to approve a
+  blocked action.
 - `aidr_allowlist_remove`: remove an allowlisted artifact
+
+There is deliberately **no** `aidr_approve` tool. An approval tool the model could
+call would let a prompt-injected agent approve its own block, and the model already
+receives the `actionId` in the block reason. Approvals are made by an operator
+through the out-of-band `ApprovalStore` or by editing the allowlist file.
+
+**Honest limitation:** OpenCode exposes no host-native confirmation API this plugin
+can drive (upstream `anomalyco/opencode#12046` is still open), so there is no
+in-session approval prompt. A blocked action stays blocked for the session; the user
+must allowlist the artifact or take a different action. Blocking is the safe failure
+mode, and a future host primitive should be wired to the operator-held
+`ApprovalStore` without being exposed as a model-callable tool.
 
 ## Verify Installation
 

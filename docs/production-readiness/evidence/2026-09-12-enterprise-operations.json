@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "checked_at": "2026-09-12T15:16:58.547Z",
+  "checks": [
+    "1005 same-timestamp records export over three pages without gaps or duplicates; later writes excluded",
+    "modified, cross-format and unauthorized export cursors rejected",
+    "CSV export and expiring private download work; unsigned object access rejected",
+    "retention dry run preserves files; apply removes expired bytes and ledger only; repeat is idempotent",
+    "team admission enrolls an authorized member without personal pilot approval; viewer cannot authorize",
+    "team keys stay scoped; viewer writes, member revocation of owner keys and direct database mutation rejected",
+    "suspended tenants cannot issue keys or enrollment tokens",
+    "owner revocation takes effect for native policy authentication"
+  ],
+  "scope": "Isolated HTTP/database/storage fixtures; no external acceptance implied."
+}

@@ -2,13 +2,15 @@
 
 Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All fields are optional - defaults are applied automatically.
 
-Commercial builds are **managed-first** and require enrollment before protection is activated. In these builds, local-only mode is disabled.
+Singularity AIDR **enforces locally by default**. With no configuration file at all, a connector evaluates every tool call against the shipped threat rules and can block it. No account, API key, or network access is required for that.
+
+Managed mode is an **opt-in additive layer** (dashboard telemetry, signed intel packs, remote policy, seat enforcement). Enrollment never acts as a precondition for local protection: when a managed installation is not enrolled, the managed-only features are disabled and local detection continues.
 
 ## Full Config
 
 ```json
 {
-  "mode": "managed",
+  "mode": "local",
   "auth": {
     "api_key": "aidr_live_..."
   },
@@ -92,10 +94,25 @@ Commercial builds are **managed-first** and require enrollment before protection
 
 ### `mode`
 
-One of `"local"` or `"managed"`. Default: `"managed"`.
+One of `"local"` or `"managed"`. Default: `"local"`.
 
-- `managed`: enables licensing + dashboard telemetry when combined with `control_plane.enabled` and auth.
-- `local`: developer/reference mode only. Commercial builds disable local mode.
+- `local`: local enforcement only. All detection layers that do not need a server
+  run in-process: heuristics, policy, allowlist, cache, audit log, plugin scan,
+  integrity verification. This is the default and requires no account.
+- `managed`: additionally enables the control plane (dashboard telemetry, agent
+  seat enforcement), signed intel packs, remote policy and server-signed
+  entitlements. Requires `control_plane.enabled` plus an `api_key` or
+  `enrollment_token`, **and a deployed control plane**.
+
+If `mode` is `managed` but the installation is not enrolled (no key/token, or
+enrollment could not reach the control plane), the managed-only features stay
+disabled and **local detection still runs**. The runtime logs a warning that it is
+running in local-only mode rather than silently allowing tool calls.
+
+> **Deployment requirement:** no control plane is currently deployed, so `managed`
+> cannot complete enrollment. Leave `mode` at its `local` default unless your
+> deployment provides the `/v1/device-start`, `/v1/device-poll`, `/v1/enroll`,
+> `/v1/ingest` and `/v1/revocations` endpoints.
 
 ### `auth`
 

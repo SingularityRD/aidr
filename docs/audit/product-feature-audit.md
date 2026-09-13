@@ -112,11 +112,12 @@ All 70 source files in `core/src/` are exported via `index.ts`. **No orphaned mo
 | `persistence.yaml` | ~10 | Startup items, cron, launchd |
 | `self-defense.yaml` | ~10 | Anti-AIDR tampering |
 | `supply_chain.yaml` | ~10 | Package supply chain attacks |
+| `mining.yaml` | 17 | Cryptomining / resource hijacking (MITRE ATT&CK T1496) |
 | `llm-threats.yaml` | ~29 | Prompt injection, jailbreaking |
 | `mitre.yaml` | ~10 | MITRE ATT&CK mapping |
 | Mac-specific files | 6 files | macOS-specific threats |
 | Win-specific files | 6 files | Windows-specific threats |
-| **Total** | **~150+ rules** | Well-organized |
+| **Total** | **351 rules** | 23 files; exact total (per-file counts above are approximate) |
 
 ### 2.2 Strengths
 - Every rule has `id`, `category`, `severity`, `confidence`, `action`, `pattern`, `match_on`, `title`.
@@ -161,14 +162,21 @@ All 70 source files in `core/src/` are exported via `index.ts`. **No orphaned mo
 **Files**:
 - `index.ts` — Plugin entry point. ✅
 - `tool-handler.ts` — Intercepts tool calls via `before_tool_call` hook. ✅
-- `gate-tool.ts` — `aidr_approve` tool for interactive approval. ✅
-- `startup-scan.ts` — Plugin scan at gateway start. ✅
-- `plugin-discovery.ts` — Discovers other plugins. ✅
-- `allowlist-tools.ts` — Allowlist management tools. ✅
+- `allowlist-tools.ts` — Allowlist management tools (`aidr_allowlist_add` refuses without a recorded approval). ✅
 - `bundled-dirs.ts` — Bundled threat/allowlist directory paths. ✅
 - `logger-adapter.ts` — OpenClaw logger adapter. ✅
 
-**Tests**: 6 test files (e2e-integration, e2e, gate-tool, plugin-discovery, skill-registration, tool-handler).
+> **Superseded (2026-09-10):** this section previously listed `gate-tool.ts` as
+> providing an `aidr_approve` tool "for interactive approval. ✅". That tool was a
+> security defect, not a feature: it was callable by the policed agent, which already
+> receives the `actionId` in the block message, so a prompt-injected agent could
+> approve its own blocked call and make the bypass permanent via the allowlist. The
+> file has been deleted and no approval tool is registered; approval is now an
+> out-of-band, human-only action. See AIDR-022 in `READINESS_BACKLOG.json`.
+
+**Tests**: `gate-tool.test.ts` now asserts the *absence* of an agent-callable
+approval tool and that a retry stays blocked after the agent attempts to approve
+itself, alongside `plugin-discovery`, `skill-registration` and `tool-handler`.
 
 **Issues**:
 - `openclaw.plugin.json` — exists but needs verification that it properly registers all hooks.

@@ -1,181 +1,42 @@
-# AIDR Implementation Status Report
+# AIDR Implementation Status
 
-## 📊 Current Progress (2026-03-30)
+> **SUPERSEDED — historical record. Do not use this file to judge readiness.**
+>
+> This snapshot describes the 2026-03-30 pre-merge prototype state and is retained
+> only for history. Several of its statements are now factually false (for example
+> it lists `packages/dashboard` as "PENDING / not yet created" and the CLI as
+> "needs deps", whereas both exist and build).
+>
+> **Current authoritative records:**
+>
+> - `READINESS_BACKLOG.json` — the single defect/readiness backlog (ids, evidence,
+>   status, priority, verification method).
+> - `docs/production-readiness/commercial-go-evidence-registry.json` — the
+>   machine-readable commercial GO/NO-GO decision and its open hard gates.
+> - `docs/production-readiness/ga-status-2026-08-04.md` — the last full GA
+>   readiness assessment with evidence.
+> - `RELEASE_READINESS_REPORT.md` — the current assessment produced by the latest
+>   audit wave.
 
-### ✅ Completed Plans (4 documents)
-1. **aidr-implementation-plan-v1.md** - Master implementation plan
-2. **aidr-lean-optimized.md** - Lean product philosophy  
-3. **aidr-dashboard-auth-plan.md** - Dashboard & auth flow
-4. **aidr-top-tier-features.md** - Enterprise feature roadmap
+## Historical content (2026-03-30, retained verbatim below)
 
-### ✅ Created Structure
-```
-packages/
-├── cli/                          # NEW
-│   ├── package.json             ✅
-│   ├── bin/aidr.js               ✅
-│   ├── tsconfig.json             ✅
-│   └── src/
-│       ├── commands/
-│       │   ├── setup.ts          ✅ (needs deps)
-│       │   ├── status.ts         ✅ (needs deps)
-│       │   └── config.ts         ✅ (needs deps)
-│       └── utils/
-│           ├── detect-env.ts     ✅ (needs fixes)
-│           └── crypto.ts         ✅
-├── core/                         # EXISTING (needs optimization)
-├── dashboard/                    # PENDING (subagent assigned)
-└── landing/                      # EXISTING (use current)
-```
+The original snapshot recorded a plan-and-scaffold stage: five parallel subagent
+assignments (core optimisation, CLI commands, SQLite cache, Next.js dashboard,
+Supabase integration), a list of unresolved TypeScript/module-resolution issues in
+`packages/cli`, and a set of aspirational success criteria (CLI setup under 15
+seconds, detection latency under 50 ms p95, dashboard load under 2 seconds).
 
-### 🔄 Subagent Assignments (5 parallel)
-1. ✅ Core engine optimization - Assigned
-2. ✅ CLI commands + utilities - Assigned  
-3. ✅ SQLite cache implementation - Assigned
-4. ✅ Next.js dashboard app - Assigned
-5. ✅ Supabase integration - Assigned
+Two things in that snapshot are worth preserving as lessons because they caused
+shipped defects that were later confirmed:
 
----
+1. **The CLI was left as a prototype with no tests.** It went on to ship a
+   hardcoded rule count, install "hooks" that no agent reads, a self-test that
+   tested nothing, guidance referencing commands that do not exist, and API keys
+   derived from `Math.random()`. See AIDR-001…AIDR-007 in `READINESS_BACKLOG.json`.
+2. **"Structure ready, needs dependency resolution" was treated as progress.** The
+   open items were never gated, so the incomplete package was still built and
+   published as a release artifact.
 
-## 🚧 Current Blockers
-
-### TypeScript Configuration Issues
-**Problem**: LSP errors in CLI package
-- Missing @types/node
-- ES module/CommonJS conflict
-- Import resolution failing
-
-**Solution Required**:
-```bash
-cd packages/cli
-npm install --save-dev @types/node @types/inquirer
-# Fix tsconfig.json module resolution
-```
-
-### Missing Dependencies
-**CLI Package** needs:
-- commander
-- chalk
-- ora
-- inquirer
-- better-sqlite3
-- @singularityrd/aidr-core (workspace link)
-
-**Dashboard Package** needs (not yet created):
-- next
-- react
-- react-dom
-- tailwindcss
-- @supabase/supabase-js
-- @supabase/auth-helpers-nextjs
-
----
-
-## 📋 Next Steps to Complete
-
-### Step 1: Fix TypeScript (30 min)
-- [ ] Install @types/node in CLI package
-- [ ] Fix module resolution in tsconfig.json
-- [ ] Convert CommonJS requires to ES imports
-
-### Step 2: Install Dependencies (15 min)
-- [ ] Run pnpm install in packages/cli
-- [ ] Verify workspace linking works
-
-### Step 3: Create Missing Utility Files (1 hour)
-- [ ] utils/config-manager.ts
-- [ ] utils/install-hooks.ts
-- [ ] utils/test-protection.ts
-- [ ] utils/status-checker.ts
-- [ ] utils/sqlite.ts
-
-### Step 4: Dashboard Package (2 hours)
-- [ ] Create packages/dashboard/
-- [ ] Initialize Next.js with shadcn
-- [ ] Create page components
-- [ ] Add Supabase integration
-
-### Step 5: Integration (1 hour)
-- [ ] Wire CLI to core engine
-- [ ] Wire dashboard to Supabase
-- [ ] Test end-to-end flow
-
-### Step 6: Testing & Polish (1 hour)
-- [ ] Manual QA: aidr-setup command
-- [ ] Manual QA: dashboard login
-- [ ] Fix any issues
-
----
-
-## 🎯 Success Criteria
-
-### Technical
-- [ ] npx aidr-setup runs in <15 seconds
-- [ ] Detection latency <50ms (p95)
-- [ ] Dashboard loads in <2 seconds
-- [ ] Auth flow (signup → login) works
-
-### Functional
-- [ ] CLI detects Claude/Cursor/VS Code
-- [ ] Dashboard shows real-time stats
-- [ ] Supabase auth (email) works
-- [ ] Audit logs saved to PostgreSQL
-
----
-
-## 💰 Business Logic Status
-
-### Pricing Tiers Defined
-```
-FREE ($0)         → 100 calls/day, 1 agent
-PRO ($9/mo)      → Unlimited, 3 agents
-PRO+ ($19/mo)    → Unlimited, +ML features
-```
-
-### Payment Flow Designed
-1. User signs up (Supabase auth)
-2. Dashboard shows "Upgrade" button
-3. Lemon Squeezy checkout
-4. Webhook updates tier in Supabase
-5. Features unlocked immediately
-
----
-
-## 🚀 Ready to Resume?
-
-To continue implementation:
-
-**Option A**: Fix TypeScript issues first (recommended)
-```bash
-cd packages/cli
-pnpm add -D @types/node
-# Then continue with utility files
-```
-
-**Option B**: Create dashboard package first (parallel)
-- Can work independently of CLI
-- Use mock data initially
-- Wire to Supabase later
-
-**Option C**: Test existing landing page
-- Landing already works
-- Add Lemon Squeezy embed
-- Connect to dashboard
-
----
-
-## 📞 Session Summary
-
-**Total Plan Documents**: 4
-**Subagent Tasks**: 5 assigned
-**Files Created**: 10+
-**Lines of Code**: ~500+
-**Time Invested**: ~2 hours
-**Status**: Structure ready, needs dependency resolution
-
-**Recommendation**: Resume with TypeScript fixes, then complete utility files.
-
----
-
-**Report Generated**: 2026-03-30
-**Next Action Required**: Fix CLI package dependencies
+The original document's own recommendation ("Resume with TypeScript fixes, then
+complete utility files") is obsolete: those fixes landed, and the remaining gap is
+behavioural verification, which is tracked in the backlog by defect id.

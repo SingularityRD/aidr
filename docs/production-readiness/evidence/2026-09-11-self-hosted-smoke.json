@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "passed": true,
+  "checked_at": "2026-09-11T20:15:48.078Z",
+  "deployment_mode": "self-hosted",
+  "checks": [
+    "dashboard root served",
+    "auth health",
+    "create owner fixture",
+    "login owner",
+    "create outsider fixture",
+    "login outsider",
+    "atomic team creation through user RLS",
+    "publish runtime policy",
+    "stale policy publication rejected",
+    "cross-tenant policy rejected",
+    "native API key issuance",
+    "native policy fetch",
+    "published policy enforced by built Claude hook",
+    "create manually shared invitation",
+    "invitation email mismatch rejected",
+    "accept invitation",
+    "invitation replay rejected",
+    "viewer cannot publish policy",
+    "audit export",
+    "audit download contains invitation event",
+    "device bootstrap",
+    "browser JWT does not replace device code",
+    "provision isolated enrollment fixture",
+    "authorize device",
+    "exchange authorized device",
+    "enroll agent with signed entitlement",
+    "entitlement signature matches distributed public key",
+    "enrollment token replay rejected",
+    "invoice deployment rejects disabled self-service"
+  ],
+  "fixture_namespace": "5be60e78ae63",
+  "scope": "isolated loopback; not field acceptance",
+  "migrations": [
+    {
+      "name": "20260327000000_initial.sql",
+      "sha256": "c8b8cf376d37f23f009bbdad5af41ee5e9aefee8068731ce7b00cf79785bed2b"
+    },
+    {
+      "name": "20260327000100_reputation.sql",
+      "sha256": "7f32108783409da0c4a174f4d6d2c499bb8b160161789f5c0f8dcd52d4f0b98d"
+    },
+    {
+      "name": "20260327000200_golive_v1.sql",
+      "sha256": "791a8182554bc93ff4704d9bf2e9b75d4f8324fa089421b7bb8a4d5bb3a4d6f1"
+    },
+    {
+      "name": "20260327000300_device_pilot_waitlist.sql",
+      "sha256": "daf063de7a6233a5c8d6c9c4be53f39fbc7ff70d3ca42ce72a530a1b20ba7928"
+    },
+    {
+      "name": "20260327000400_control_plane_api_v1.sql",
+      "sha256": "3fc126a074d329d96f608f85cccfbafd2820d1bda2b832c6bd23af6984aed8ec"
+    },
+    {
+      "name": "20260327000500_commercial_v1.sql",
+      "sha256": "e234c1b582bab694c86a6a7fbbb7f046e8a03d89b11b94c6d12636218dc508ae"
+    },
+    {
+      "name": "20260528000000_team_rbac.sql",
+      "sha256": "1bddb08ac5609b5ed83e4ea68882f186cb0b4195cab63bdbc112e068af869402"
+    },
+    {
+      "name": "20260804000000_tenant_hardening.sql",
+      "sha256": "392365e72faa018f66f2d0ed49b7c216ed793d13c2fcf49262f0a1d7fa67c56f"
+    },
+    {
+      "name": "20260805000000_hybrid_tenancy.sql",
+      "sha256": "6f80224dd6b28bcc76a370236d734e6767e9cd58fec62894829a796b62d5cc55"
+    },
+    {
+      "name": "20260805000001_team_creation_rpc.sql",
+      "sha256": "d1cd11ab1ca7c589d56fc5d11b781e9b4613ea656259c39d4b506577b6307e06"
+    },
+    {
+      "name": "20260911000000_runtime_policy.sql",
+      "sha256": "9890c28996b8603932c803924b93e4611c1abb92ef8a4cf555797925b3edb9b4"
+    },
+    {
+      "name": "20260911000001_team_invitations.sql",
+      "sha256": "0eab8dfa8f7aa8c81d480deeed4be2790ba4ec90108b9c0f1b19b483d1851b42"
+    },
+    {
+      "name": "20260911000002_policy_conflict_status.sql",
+      "sha256": "383c9702c8131214793f3e483769e0bd4ad5eb4a652782df90f70f04ea23c10b"
+    }
+  ],
+  "hook_sha256": "bea6acc82fd344f34750cd14f25649bc0c25249f91e3caabea1e1b57c7d0a120",
+  "function_sha256": {
+    "policy": "fe328b13511279629ef9c6c0c5600e0fd19e5c2801c6c918bc18e16a7e31a540",
+    "policy-management": "0504e7ef4ebda36aa8dc5678d251646ecb7b963e2efd20fe85fcd0c1cf2eb3a8",
+    "api-keys": "30be38dbca1f870d8596ef18cadf16d582cf36096c1cab050d65b4f36fe2cae7",
+    "team-invite": "2dba752e7ad3b29738c6e8f030814afa6e75e27c6c22f20eefb4ba35c6dcc7da",
+    "oauth-callback": "5f7432dd4aebf5049d5f83b2e30e6509d3566f9c4da5b207ccf7f21830541114",
+    "audit-export": "9f5845ecada8660a65f1198c653e2c00ef1f1fc761501c4cd0231baa458ff232",
+    "device-start": "4c78cce5b11a79de8b38b40ed39ea8e192a20063531db667aa9e0a514f0f9c89",
+    "device-poll": "7ca0609c0dda7d7af772623978ee930dd9e9e8511cb99fcc453ddb3eaf79e500",
+    "device-verify": "e3408bf97b4c8e0098585caa88abd564c784ff5e046b0e9dbf2a2d410bdc4d36",
+    "enroll": "bead20e1781bcf51d9943e875a1b8cda46ed5d5c54f6c11abfd5df8cce378434",
+    "billing-checkout": "ee959a721737ee6e35c4df01ef2ff7774bab8d001afe2193ac11a32a8885cf45"
+  }
+}

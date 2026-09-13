@@ -210,5 +210,5 @@ Final cevapta şu sırayı kullan:
 Başarı ölçütü daha çok dosya değiştirmek değil; satılan davranışın gerçek consumer'da çalışması, hatada güvenli kalması ve her iddianın doğru kanıt sınırıyla raporlanmasıdır.
 `;
 
-writeFileSync(output, `${header}${featureSection}${taskHeader}${taskSection}${backlogHeader}${backlogSection}${externalHeader}${externalSection}${footer}\n`, "utf8");
+writeFileSync(output, `${header}${featureSection}${taskHeader}${taskSection}${backlogHeader}${backlogSection}${externalHeader}${externalSection}${footer}`, "utf8");
 console.log(`Wrote ${output}: ${incompleteFeatures.length} incomplete features, ${gapRegistry.engineering_and_operations.length} technical tasks, ${unresolvedBacklog.length} backlog findings, ${gapRegistry.commercial_and_external.length} external gates.`);

@@ -27,6 +27,7 @@ Direct runtime dependency baseline
 | Semantic versioning | `semver@^7.7.4` | ISC | https://github.com/npm/node-semver |
 | CLI interaction | `commander`, `chalk`, `ora`, `inquirer` | MIT | Respective upstream package repositories |
 | Local SQLite binding | `better-sqlite3@^9.4.3` | MIT | https://github.com/WiseLibs/better-sqlite3 |
+| Windows native AMSI binding | `koffi@^2.15.2` | MIT | Native binary, JavaScript loader and `dist/vendor/koffi/LICENSE.txt` are shipped with the Claude connector |
 | React runtime/router | `react`, `react-dom`, `react-router-dom` | MIT | https://github.com/facebook/react and https://github.com/remix-run/react-router |
 | Supabase client | `@supabase/supabase-js@^2.56.0` | MIT | https://github.com/supabase/supabase-js |
 | LangChain core | `@langchain/core@^0.3.0` | MIT | https://github.com/langchain-ai/langchainjs |

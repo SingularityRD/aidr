@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-09-12T15:20:45.796Z",
+  "decision": "NO-GO",
+  "production_accepted": false,
+  "source_commit": "b4361fa7d565e76f1604997b654a41e54c03db80",
+  "worktree_has_changes": true,
+  "source_snapshot_sha256": "f0835d08f741d454bf4bc816fd868d9fab8dcbe88dfdf39126ca036b20ed4e37",
+  "source_snapshot_scope": "SHA-256 of the sorted per-file checksum inventory for code, tests, scripts, deployment, backend, rules and build configuration; generated dist/resources, vendor and narrative reports excluded.",
+  "tests": {
+    "files": 174,
+    "passed": 2755,
+    "failed": 0,
+    "skipped": 1,
+    "total": 2756,
+    "windows_workers": 1,
+    "scenario_timeouts_unchanged": true,
+    "skipped_scope": "Live malicious URL reputation-provider scenario remains skipped; not counted as passing."
+  },
+  "gates": {
+    "release_packages": 9,
+    "package_consumers": 9,
+    "enforcement": 72,
+    "codex_hook": 11,
+    "installation_tools": 9,
+    "self_hosted_smoke": 29,
+    "customer_onboarding": 9,
+    "policy_rollout": 11,
+    "enterprise_operations": 8,
+    "fleet_pagination": 4,
+    "doctor": 29,
+    "recovery_comparisons": 18,
+    "portable_kit_checks": 7,
+    "migrations": 18,
+    "production_dependency_advisories": 0,
+    "typecheck": "PASS",
+    "static": "PASS with 132 lint warnings and declared unused-code debt",
+    "diff_check": "PASS",
+    "mcp_transport": 14,
+    "export_cursor": 4
+  },
+  "candidate": {
+    "directory": ".release-evidence/aidr-customer-kit-20260912-v3",
+    "archive": ".release-evidence/aidr-customer-kit-20260912-v3.tar.gz",
+    "archive_sha256": "d38bd90d2431561c43aa65a115cd83b8166183cfc5a5d9ab5193a07240a1876c",
+    "checksum_inventory_sha256": "a663a83d8a93b5572db3429aebb156cbe50942a8078ce30e8c7f29789d4a79ad",
+    "files": 198,
+    "release_artifacts": 13,
+    "publisher_signature": "not supplied",
+    "rejected_predecessor": ".release-evidence/aidr-customer-kit-20260912",
+    "rejection_reason": "Generator inherited the upstream example S3 protocol credential; v2 randomizes it and doctor rejects the example."
+  },
+  "historical_failures": [
+    {
+      "stage": "four-worker full suite",
+      "result": "1 OpenCode scenario timeout; serial rerun passed all 2751 tests with unchanged deadlines",
+      "evidence": ".release-evidence/final-four-worker-failure.json"
+    },
+    {
+      "stage": "live-source restore comparison",
+      "result": "One auth.users.updated_at changed after backup while auth was active; repeated with writers quiesced, all 18 comparisons passed without excluding any fields."
+    },
+    {
+      "stage": "v3 full suite before canonical cursor fix",
+      "result": "2753 passed, 1 failed, 1 skipped. Noncanonical Base64URL MAC alias was accepted; canonical decoding and a deterministic three-alias regression added. Final full suite passes 2755 tests with one external-provider skip.",
+      "evidence": ".release-evidence/v3-cursor-noncanonical-failure.json"
+    }
+  ],
+  "limitations": [
+    "Local built-hook evidence is not customer native host acceptance.",
+    "The 501-row pagination fixture is not a 501-agent throughput or HA test.",
+    "Recovery compares an unchanged isolated snapshot; offsite custody, RPO/RTO and customer failover remain open. The later S3 credential rotation is validated by installer/doctor checks.",
+    "Prepared cloud configuration is not a provisioned cloud deployment.",
+    "41 wired, 21 partial, 7 missing, 2 external capabilities. Thirteen registry gates remain open; twelve apply to production-ga and assisted-sale.",
+    "AIDR-060/061/062/063 remain open: connector normalization, swallowed package-inspection errors, incomplete MCP transport security, and reputation API tenant/membership lifecycle. Passing regression suites do not close these findings."
+  ],
+  "source_snapshot_inventory": "docs/production-readiness/evidence/2026-09-12-source-files.sha256",
+  "source_snapshot_files": 677,
+  "evidence_reuse": "Onboarding, policy rollout, doctor, pagination and recovery receipts retain their actual earlier timestamps and scopes. The final delta re-ran the full suite, 72 enforcement, 11 Codex, 9 installer, 8 enterprise operations and 7 portable-kit checks; the reputation lifecycle audit reproduces an open defect.",
+  "detailed_gap_report": "PRODUCTION_SALES_GAPS.md",
+  "static_review_debt": {
+    "lint_warnings": 132,
+    "knip_files": 207,
+    "knip_exports": 91,
+    "knip_duplicates": 1
+  },
+  "static_preflight_limits": [
+    "No sales URL/email was configured for this static check; the invoice CTA fails closed without a target.",
+    "This static preflight did not receive browser base URL or demo credentials. Earlier isolated browser onboarding evidence is separate."
+  ]
+}

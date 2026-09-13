@@ -39,7 +39,10 @@ const allowedExtensions = new Set([
 	".ts",
 	".tsx",
 ]);
-const ignoredDirectoryNames = new Set([".git", ".next", ".turbo", "coverage", "node_modules"]);
+// Build output is scanned through artifactRoots below. Excluding nested dist
+// directories here keeps vendored artifact metadata out of the workspace
+// package-license inventory while preserving release artifact claim scanning.
+const ignoredDirectoryNames = new Set([".git", ".next", ".turbo", "coverage", "dist", "node_modules"]);
 
 function parseArgs(argv) {
 	const args = { mode: "inventory", json: false, registry: defaultRegistry, roots: [] };

@@ -15,6 +15,7 @@ Rules ship in the `threats/` directory at the repository root:
 | `persistence.yaml` | Persistence mechanisms (cron, systemd, shell RC, LaunchAgents) |
 | `obfuscation.yaml` | Encoding and obfuscation techniques |
 | `supply_chain.yaml` | Supply chain risk patterns |
+| `mining.yaml` | Cryptomining / resource hijacking (MITRE ATT&CK T1496): miner binaries, pool connections, miner flags, wallet payout targets, miner package installs |
 | `self-defense.yaml` | Attempts to disable or bypass Singularity AIDR |
 | `mitre.yaml` | MITRE ATT&CK technique mappings |
 | `win-*.yaml` | Windows-specific variants of the above |
@@ -65,6 +66,14 @@ Rules ship in the `threats/` directory at the repository root:
 - Data exfiltration, persistence mechanisms (cron, systemd, shell RC, `at` jobs), credential exposure
 - Obfuscation (base64-decode-exec, hex escapes, eval-decode, Python encoded payloads)
 - Python one-liners with dangerous imports
+- Cryptomining / resource hijacking (T1496): known miner binaries (`xmrig`, `minerd`,
+  `cpuminer`, `ethminer`, `nbminer`, `phoenixminer`, `t-rex`, `lolminer`, `gminer`,
+  `xmr-stak`, …) including `./`-prefixed and path-qualified forms, miner downloads,
+  `stratum+tcp://` / `stratum+ssl://` pool URLs, pool endpoints on `-o`/`--url`/
+  `--pool`/`-P`, miner-only flags (`--donate-level`, `--cpu-priority`, `--coin`,
+  `-a cryptonight`, `--threads` combined with a pool), Monero/Ethereum wallet payout
+  targets, miner-named package installs, install hooks that stage a miner, and
+  miner registration in cron/systemd/launchd
 
 **Bash commands (macOS-specific):**
 - osascript RCE (AppleScript `do shell script`, JXA execution, piped/remote scripts)

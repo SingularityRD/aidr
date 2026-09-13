@@ -15,14 +15,31 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 
 ## Quick Start
 
-Singularity AIDR is designed to be set up with minimal friction:
+For the portable customer candidate, start with the [first customer installation guide](deploy/FIRST_CUSTOMER.md)
+and [v7 candidate status and verification report](docs/production-readiness/2026-09-13-customer-candidate-v7.md).
+Deployment details cover both [self-hosted and cloud preparation](deploy/README.md).
+The current capability inventory is [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md),
+with the machine-readable record in [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json).
+The [detailed production and sales gap audit](PRODUCTION_SALES_GAPS.md) maps every
+capability to remaining implementation, acceptance tests, owners and dependencies.
+Production acceptance and commercial release evidence remain separately gated.
+
+Singularity AIDR evaluates the supported tool calls exposed by each installed
+host hook against shipped local threat rules, with no account or network access
+required. Coverage when a hook is disabled, unavailable or bypassed depends on
+the host and must be checked on the customer's selected runtime and OS.
 
 1. Install the connector for your runtime.
-2. On first run, you will see a short **verification code** and a **verification URL**.
-3. Open the URL, sign in, and approve the device.
-4. Your agent is enrolled and protected.
+2. Local detection is active immediately.
+3. Managed features (dashboard telemetry, signed intel packs, remote policy) are an
+   **opt-in** second step: start the agent once and follow the verification URL it
+   prints, or configure an API key.
 
-See [Device Auth](docs/device-auth.md) for the exact flow.
+> **Managed enrollment requires a deployed control plane.** If your deployment does
+> not have one, the product runs in local mode and the managed features are
+> unavailable — local detection is unaffected. See
+> [Configuration](docs/configuration.md) for the `mode` setting
+> (`local` default, `managed` opt-in).
 
 ### Claude Code
 
@@ -44,7 +61,7 @@ pnpm install && pnpm -C packages/extension run package:cursor:vsix
 ### OpenClaw
 
 ```bash
-# From npm (recommended)
+# From the configured private package registry (requires access)
 openclaw plugins install @singularityrd/aidr-openclaw
 
 # From source
@@ -98,6 +115,16 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 
 - MCP tool call interception (`mcp__*`) is best-effort via generic input scanning (tool-specific semantics are not modeled yet)
 - Custom user threat definitions are supported via `~/.singularity-aidr/threats/*.yaml` (override by `id`)
+- **Remote URL and file reputation checks require configured services and feeds.**
+  The installation candidate includes backend functions; production feed freshness
+  and latency require deployment acceptance. Unavailable checks are not reported
+  as "clean"; see `READINESS_BACKLOG.json` (AIDR-020).
+- **Managed mode (device enrollment, dashboard telemetry, signed intel packs,
+  remote policy) requires a deployed control plane.** It is not reachable in a
+  default install. Local enforcement does not depend on it.
+- The [Codex connector](packages/codex/README.md) is included in package, release
+  and hook verification. Native host acceptance is still required: Codex can fail
+  open when a hook process is unavailable. This is not endpoint isolation.
 
 ## Privacy
 

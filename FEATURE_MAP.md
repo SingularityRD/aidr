@@ -1,21 +1,30 @@
-# AIDR Feature Map (Truth Pass)
+# AIDR Feature Map
 
-**Date:** 2026-04-30  
-**Scope:** hostile verification status after runtime/tests/build checks
+> **SUPERSEDED — historical record (2026-04-30). Do not use this file to judge
+> readiness.**
+>
+> This table was written before the later hardening waves and before the security
+> and integration audits of 2026-09-10. Some rows are now outdated in both
+> directions. Superseded by `READINESS_BACKLOG.json` (per-defect status with
+> evidence) and `RELEASE_READINESS_REPORT.md` (current assessment).
 
-| Feature | Status | Evidence |
-|---|---|---|
-| LLM threat rules (`threats/llm-threats.yaml`) | Implemented + tested | `packages/core/src/__tests__/llm-threats.test.ts` passes (29/29) |
-| Prompt injection detection (direct/indirect/system prompt extraction/tool misuse/memory poisoning) | Implemented + tested | Rule hits validated in `llm-threats.test.ts`; loaded via normal threat loading path used by unit/integration suites |
-| PII/secret detection expansion | Implemented + tested | `packages/core/src/pii-detector.ts` + `pii-enhancement.test.ts` passes (20/20) |
-| Audit redaction | Implemented + tested | `packages/core/src/__tests__/audit-log.test.ts` secret redaction test passes |
-| Dashboard incidents UX improvements | Implemented + build-verified | `pnpm -C packages/dashboard build` passes; page compiles in unit/integration run |
-| Demo seed data | Test fixture implemented | `packages/core/src/__tests__/demo-seed.ts` + `demo-seed.test.ts` pass in unit suite; not yet a product CLI seed command |
-| Output safety scanner | Minimally implemented + partially wired | `packages/core/src/output-scanner.ts`, tests pass; wired in Claude `post-tool-use` hook (`packages/claude-code/src/post-tool-use.ts`) |
-| MCP/tool-server inventory | Minimally implemented + partial | `packages/core/src/mcp-inventory.ts`, tests pass; session-start warns on risky discovered servers |
+## Why this file is retained
 
-## Explicit Non-Claims
+It is the record of an earlier "truth pass" and its explicit non-claims are still
+methodologically correct — they refused to claim complete MCP enforcement, full
+platform-wide output scanning, or a production demo-seed command. That discipline
+is preserved in the current backlog.
 
-- This file does **not** claim complete MCP semantic enforcement. Current support is inventory/risk hints only.
-- This file does **not** claim full platform-wide output scanning. Current wiring is implemented in Claude post-tool-use path.
-- This file does **not** claim demo seed is a production data seeding command; current implementation is test-fixture oriented.
+## Corrections required if you are reading this for status
+
+| Row as written here | Actual verified state (2026-09-10) |
+|---|---|
+| "MCP/tool-server inventory — minimally implemented + partial, session-start warns on risky discovered servers" | `mcp-inventory.ts` has **zero importers**; `session-start.ts` contains no MCP/inventory reference. The claim that it is "wired into the session-start warning path" is false. |
+| "Output safety scanner — minimally implemented + partially wired (Claude post-tool-use)" | `output-scanner.ts` has **zero importers**. The only caller of `pii-detector.detectPII` was that module. |
+| "Demo seed data — test fixture implemented" | Accurate; still a test fixture, not a product command. |
+| "LLM threat rules / PII detection / audit redaction — implemented + tested" | Accurate; these remain among the genuinely working parts. |
+
+For the current, evidence-backed position use `READINESS_BACKLOG.json`. Notably it
+records that the highest-severity defect found in this wave was not in any of the
+rows above: with the default configuration the product enforced nothing at all
+(AIDR-015).

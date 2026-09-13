@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "checked_at": "2026-09-11T21:50:27.709Z",
+  "checks": [
+    "two agents enrolled with individual server-bound keys",
+    "targeted stage reaches only selected agent; baseline stays active for others",
+    "built Claude hook enforces targeted policy and reports its loaded revision",
+    "policy loading receipt requires exact revision hash and assigned version",
+    "fleet view distinguishes reported current policy from missing receipt",
+    "bound key cannot impersonate another agent or change its binding",
+    "unknown or foreign rollout targets refused atomically",
+    "rollback republishes baseline as a newer version and clears targeted assignments",
+    "reviewed staged version can be promoted to all agents",
+    "stale operator restore conflicts instead of overwriting newer publication",
+    "immutable revision history retains baseline and staged policy"
+  ],
+  "scope": "Isolated HTTP/database integration; receipts are agent-reported, not platform attestation."
+}

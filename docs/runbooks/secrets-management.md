@@ -34,13 +34,33 @@ Complete guide for managing secrets across local development, CI/CD, and product
 
 ### Payment Provider Secrets
 
+Stripe is the adopted billing provider; the Lemon Squeezy integration was
+removed (its webhook performed no signature verification) and replaced by
+`supabase/functions/stripe-webhook`. **Status: the Stripe webhook endpoint is
+not deployed and none of the Stripe secrets below are provisioned yet.**
+
 | Variable | Purpose | Required In | Rotation Frequency |
 |----------|---------|-------------|-------------------|
-| `STRIPE_SECRET_KEY` | Payment processing | Production | Quarterly |
-| `STRIPE_WEBHOOK_SECRET` | Webhook validation | Production | On rotation |
+| `STRIPE_SECRET_KEY` | Payment processing / server-side Checkout Sessions | Production (not provisioned) | Quarterly |
+| `STRIPE_WEBHOOK_SECRET` | `Stripe-Signature` verification of webhook deliveries | Production (not provisioned) | On rotation |
+| `AIDR_STRIPE_EXTRA_AGENT_PRICE_ID` | Price id that may grant paid seats (non-secret config) | Production (not configured) | On price-book change |
+| `AIDR_STRIPE_WEBHOOK_TOLERANCE_SECONDS` | Replay-window seconds, default `300` (non-secret config) | Production (optional) | On review |
+| `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING` | Fail-closed gate for Paddle/Stripe self-service endpoints; keep `false` for direct GA | Production | On commercial decision |
 | `IYZICO_SECRET_KEY` | TR payments | Production | Quarterly |
 | `COINBASE_WEBHOOK_SECRET` | Crypto payments | Production | On rotation |
 | `PAYPAL_SECRET` | PayPal payments | Production | Quarterly |
+
+Webhook secrets live in Supabase Edge Function secrets (never in `VITE_*`
+browser variables and never in this repository). Set them with:
+
+```bash
+supabase secrets set STRIPE_WEBHOOK_SECRET=<signing secret from the Stripe webhook endpoint>
+supabase secrets set STRIPE_SECRET_KEY=<restricted or secret key>
+supabase secrets set AIDR_STRIPE_EXTRA_AGENT_PRICE_ID=<price id>
+```
+
+The endpoint returns `400` and writes nothing while `STRIPE_WEBHOOK_SECRET` is
+unset, and refuses to grant seats while the extra-agent price id is unset.
 
 ### Infrastructure Secrets
 
@@ -170,8 +190,8 @@ Set these secrets for `production`:
 | Secret Name | Purpose |
 |-------------|---------|
 | `SENTRY_DSN` | Production error reporting |
-| `STRIPE_SECRET_KEY` | Live payments |
-| `STRIPE_WEBHOOK_SECRET` | Webhook validation |
+| `STRIPE_SECRET_KEY` | Live payments (not provisioned yet) |
+| `STRIPE_WEBHOOK_SECRET` | Webhook validation (not provisioned yet) |
 | `SUPABASE_URL` | Dashboard database |
 | `SUPABASE_ANON_KEY` | Client auth |
 

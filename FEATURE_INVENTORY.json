@@ -1,0 +1,1023 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-09-13",
+  "source_commit": "b4361fa7d565e76f1604997b654a41e54c03db80",
+  "worktree_has_changes": true,
+  "decision": "NO-GO",
+  "methodology": "Reviewed capability/consumer inventory; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
+  "status_counts": {
+    "wired": 41,
+    "partial": 27,
+    "missing": 1,
+    "external": 2
+  },
+  "features": [
+    {
+      "id": "DET-01",
+      "area": "Detection",
+      "name": "Tool artifact extraction",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/extractors.ts"
+      ],
+      "consumer": "Evaluator and connectors",
+      "delivered": "Commands, paths, URLs, package specs, content",
+      "remaining": "Unrecognized or host-hidden actions remain outside visibility",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-02",
+      "area": "Detection",
+      "name": "Threat rules and confidence merge",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/engine.ts",
+        "packages/core/src/heuristics.ts"
+      ],
+      "consumer": "Evaluator",
+      "delivered": "Local YAML rules, severity, confidence, deny/ask decisions",
+      "remaining": "Independent false-positive and evasion measurements remain required",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-03",
+      "area": "Detection",
+      "name": "Obfuscation and command chains",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/command-chain-analyzer.ts",
+        "threats/obfuscation.yaml"
+      ],
+      "consumer": "Evaluator heuristics",
+      "delivered": "Encoded command patterns and multi-step shell analysis",
+      "remaining": "No universal shell-language semantic guarantee",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-04",
+      "area": "Detection",
+      "name": "Credential access and exfiltration",
+      "status": "wired",
+      "source_paths": [
+        "threats/credentials.yaml",
+        "threats/supply_chain.yaml"
+      ],
+      "consumer": "Local threat engine",
+      "delivered": "Credential paths and suspicious transfer patterns",
+      "remaining": "Customer secret types and benign workflow corpus need calibration",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-05",
+      "area": "Detection",
+      "name": "Cross-platform rules and mining",
+      "status": "wired",
+      "source_paths": [
+        "threats/mining.yaml",
+        "threats/win-commands.yaml",
+        "threats/mac-commands.yaml"
+      ],
+      "consumer": "Local threat engine",
+      "delivered": "Windows, macOS, Linux patterns",
+      "remaining": "Native host matrix and mining workload acceptance remain external",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-06",
+      "area": "Detection",
+      "name": "Prompt injection inspection",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/output-scanner.ts",
+        "packages/claude-code/src/output-inspection.ts",
+        "packages/extension/src/output-inspection.ts",
+        "packages/opencode/src/output-handler.ts",
+        "packages/openclaw/src/output-inspection.ts",
+        "packages/sdk/src/output-guard.ts"
+      ],
+      "consumer": "Connector-specific result boundaries",
+      "delivered": "Bounded pre-model tool-result inspection in OpenCode, VS Code and SDK; Claude/Cursor/OpenClaw use host-specific later boundaries",
+      "remaining": "Claude PostToolUse and OpenClaw after_tool_call cannot prove same-turn model blocking; provider streams and native host bypass need acceptance",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-07",
+      "area": "Detection",
+      "name": "Structured DLP and PII",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/dlp/scanner.ts",
+        "packages/core/src/dlp/policy.ts",
+        "packages/claude-code/src/detector-provisioning.ts"
+      ],
+      "consumer": "Core evaluator and provisioned Claude hook",
+      "delivered": "Tenant labels, rules, owner-bound exceptions, redact/ask/block and signed tenant bundle verification",
+      "remaining": "Other connectors, trusted provisioning operations and customer label acceptance remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-08",
+      "area": "Detection",
+      "name": "Behavioral and novelty analysis",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/behavioral-orchestrator.ts",
+        "packages/core/src/behavioral-analyzer.ts",
+        "packages/claude-code/src/detector-provisioning.ts"
+      ],
+      "consumer": "Core evaluator and provisioned Claude hook",
+      "delivered": "Cold start and bounded orchestrator configuration",
+      "remaining": "Claude one-shot hook has no persistent learning baseline; other connector and customer efficacy acceptance remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-09",
+      "area": "Detection",
+      "name": "ML classification and similarity",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/behavioral-orchestrator.ts",
+        "packages/core/src/ml-model.ts",
+        "packages/core/src/ml/similarity.ts"
+      ],
+      "consumer": "Core orchestration API",
+      "delivered": "Versioned local model leg with unavailable state",
+      "remaining": "No independently validated production model efficacy or broad runtime adoption",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-10",
+      "area": "Detection",
+      "name": "URL reputation",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/clients/url-check.ts",
+        "supabase/functions/url-check/index.ts"
+      ],
+      "consumer": "Evaluator to Edge API",
+      "delivered": "Remote verdict lookup and unavailable state",
+      "remaining": "Provider feed, operational freshness and customer latency proof still required",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-11",
+      "area": "Detection",
+      "name": "File reputation and AMSI",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/clients/file-check.ts",
+        "packages/core/src/clients/amsi.ts"
+      ],
+      "consumer": "Evaluator",
+      "delivered": "File hash lookup and Windows antimalware integration",
+      "remaining": "AMSI requires native Windows host acceptance; no clean verdict on unavailable leg",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-12",
+      "area": "Detection",
+      "name": "Package and plugin supply chain",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/package-checker.ts",
+        "packages/core/src/plugin-scanner.ts",
+        "packages/core/src/evaluator.ts",
+        "packages/core/src/tool-normalization.ts"
+      ],
+      "consumer": "Normalized tool evaluation and SessionStart",
+      "delivered": "OpenCode aliases and package-check exceptions now surface ask/unavailable instead of false-clean",
+      "remaining": "Registry/provider provenance and customer dependency corpus still need acceptance",
+      "production_accepted": false
+    },
+    {
+      "id": "MCP-01",
+      "area": "MCP",
+      "name": "Local server discovery",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/mcp-discovery.ts",
+        "packages/cli/src/commands/discover.ts"
+      ],
+      "consumer": "aidr discover and SessionStart",
+      "delivered": "Config sources, redacted origins, configuration fingerprints, risk hints",
+      "remaining": "Local JSON configuration discovery only; not cloud-wide shadow-agent discovery",
+      "production_accepted": false
+    },
+    {
+      "id": "MCP-02",
+      "area": "MCP",
+      "name": "Discovery completeness reporting",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/mcp-inventory.ts"
+      ],
+      "consumer": "Discovery report",
+      "delivered": "Missing, read and invalid configuration sources",
+      "remaining": "JSONC and unlisted runtime-specific locations need adapters",
+      "production_accepted": false
+    },
+    {
+      "id": "MCP-03",
+      "area": "MCP",
+      "name": "Server and tool policy lists",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/policy.ts",
+        "supabase/functions/_shared/runtime-policy.ts"
+      ],
+      "consumer": "Core policy and remote publication",
+      "delivered": "Allow, approval and deny lists; server.tool identifiers",
+      "remaining": "Host must supply normalized server/tool identity",
+      "production_accepted": false
+    },
+    {
+      "id": "MCP-04",
+      "area": "MCP",
+      "name": "Empty-argument tool enforcement",
+      "status": "wired",
+      "source_paths": [
+        "packages/claude-code/src/pre-tool-use.ts",
+        "packages/openclaw/src/tool-handler.ts",
+        "packages/codex/src/enforcement.ts"
+      ],
+      "consumer": "Connector to policy evaluator",
+      "delivered": "Named MCP policy runs even without extractable arguments",
+      "remaining": "Live host event delivery still requires acceptance",
+      "production_accepted": false
+    },
+    {
+      "id": "MCP-05",
+      "area": "MCP",
+      "name": "Tool description attestation and drift",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/mcp-attestation.ts"
+      ],
+      "consumer": "Core attestation and quarantine API",
+      "delivered": "Ed25519 tool manifest, signer allowlist, replay/drift quarantine and out-of-band approval",
+      "remaining": "Host/gateway consumer and trusted publisher provisioning remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "MCP-06",
+      "area": "MCP",
+      "name": "Identity graph and delegated privileges",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/delegated-credential.ts",
+        "supabase/functions/delegated-credentials/index.ts"
+      ],
+      "consumer": "Edge broker and core verifier",
+      "delivered": "Bounded signed lineage, grant, introspection and revocation",
+      "remaining": "Real identity-provider and tool-provider integration remains external",
+      "production_accepted": false
+    },
+    {
+      "id": "MCP-07",
+      "area": "MCP",
+      "name": "MCP gateway response blocking",
+      "status": "partial",
+      "source_paths": [
+        "packages/mcp-gateway/src/gateway.mjs",
+        "packages/mcp-gateway/src/stdio.mjs",
+        "packages/core/src/mcp-transport.ts"
+      ],
+      "consumer": "Opt-in loopback HTTP and stdio JSON-RPC gateway",
+      "delivered": "Signed tool approval, tenant-bound auth, initialized notifications, DNS pinning and bounded inline output inspection",
+      "remaining": "Binary output, server-initiated requests, forced routing of direct upstream access and customer native acceptance remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "INF-01",
+      "area": "AI infrastructure",
+      "name": "Native fingerprint and CVE scanning",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/aig-infra-scan.ts",
+        "packages/cli/src/commands/scan.ts"
+      ],
+      "consumer": "aidr scan",
+      "delivered": "Private targets by default, version applicability, bounded requests and explicit partial errors",
+      "remaining": "Compiled dataset freshness and unsupported fingerprint rules constrain coverage",
+      "production_accepted": false
+    },
+    {
+      "id": "INF-02",
+      "area": "AI infrastructure",
+      "name": "Scan report to runtime policy",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/aig-policy.ts",
+        "packages/core/src/policy.ts"
+      ],
+      "consumer": "Evaluator and SessionStart",
+      "delivered": "Version-confirmed critical CVEs deny; stale/missing evidence requires review for configured origins",
+      "remaining": "Opt-in, scoped origins; report file is a trusted local administrative input",
+      "production_accepted": false
+    },
+    {
+      "id": "INF-03",
+      "area": "AI infrastructure",
+      "name": "Continuous fleet discovery",
+      "status": "partial",
+      "source_paths": [
+        "packages/cli/src/commands/collect.ts",
+        "supabase/functions/discovery/index.ts"
+      ],
+      "consumer": "Local collector and tenant scoped central inventory API",
+      "delivered": "Authenticated operator or collector upload, sequenced cycles, dedup and stale/partial coverage reporting",
+      "remaining": "Cloud/MDM adapters, scheduler, dashboard alerts and customer field acceptance remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "RSP-01",
+      "area": "Response",
+      "name": "Pre-execution block and approval",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/guard.ts",
+        "packages/core/src/evaluator.ts"
+      ],
+      "consumer": "Supported connector boundaries",
+      "delivered": "Deny and operator approval handling",
+      "remaining": "Host bypass, disabled plugins and unavailable hook processes need platform-specific controls",
+      "production_accepted": false
+    },
+    {
+      "id": "RSP-02",
+      "area": "Response",
+      "name": "Quarantine and restore",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/quarantine.ts",
+        "packages/core/src/response-actions.ts"
+      ],
+      "consumer": "Configured guard response actions",
+      "delivered": "Bounded file quarantine lifecycle and audit receipts",
+      "remaining": "Opt-in; does not quarantine a host or cloud account",
+      "production_accepted": false
+    },
+    {
+      "id": "RSP-03",
+      "area": "Response",
+      "name": "File snapshot and rollback",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/rollback.ts",
+        "packages/core/src/guard.ts"
+      ],
+      "consumer": "Configured response path",
+      "delivered": "Pre-operation snapshots and restore",
+      "remaining": "Filesystem scope and restore preconditions; native acceptance still required",
+      "production_accepted": false
+    },
+    {
+      "id": "RSP-04",
+      "area": "Response",
+      "name": "Process containment",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/contain.ts",
+        "packages/core/src/response-actions.ts"
+      ],
+      "consumer": "Configured guard response actions",
+      "delivered": "Targeted process response with platform limits",
+      "remaining": "No enterprise endpoint isolation or universal process authority",
+      "production_accepted": false
+    },
+    {
+      "id": "RSP-05",
+      "area": "Response",
+      "name": "Signed response audit chain",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/response-audit.ts",
+        "packages/core/src/guard.ts"
+      ],
+      "consumer": "Guard response receipts",
+      "delivered": "Tamper-evident local chain and action results",
+      "remaining": "Key custody and independent storage/retention evidence remain external",
+      "production_accepted": false
+    },
+    {
+      "id": "RSP-06",
+      "area": "Response",
+      "name": "Fleet kill switch and credential revoke",
+      "status": "partial",
+      "source_paths": [
+        "supabase/functions/revocations/index.ts",
+        "packages/core/src/response-command-consumer-v6.ts",
+        "packages/core/src/response-command-worker-v6.ts"
+      ],
+      "consumer": "Managed sync and opt-in command API",
+      "delivered": "Signed entitlement, operator-authorized fleet queue, bounded receipt consumer and restart-safe journal worker library",
+      "remaining": "No installed endpoint service, verified OS isolation adapter, device attestation or cross-provider credential revocation",
+      "production_accepted": false
+    },
+    {
+      "id": "RSP-07",
+      "area": "Response",
+      "name": "SOAR playbook orchestration",
+      "status": "partial",
+      "source_paths": [
+        "supabase/functions/autosecops-runtime/index.ts"
+      ],
+      "consumer": "AutoSecOps integration",
+      "delivered": "External runtime bridge",
+      "remaining": "Customer authorization, connector matrix and success receipts need field integration",
+      "production_accepted": false
+    },
+    {
+      "id": "POL-01",
+      "area": "Policy",
+      "name": "Local filesystem/network/tool controls",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/policy.ts",
+        "packages/core/src/types.ts"
+      ],
+      "consumer": "Evaluator",
+      "delivered": "Defaults, scoped rules and MCP decisions",
+      "remaining": "Policy composition and allowlist precedence require scenario-specific acceptance",
+      "production_accepted": false
+    },
+    {
+      "id": "POL-02",
+      "area": "Policy",
+      "name": "Team YAML authoring",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/policy-document.ts",
+        "packages/dashboard/src/enterprise/policy-editor.tsx",
+        "supabase/functions/policy-management/index.ts"
+      ],
+      "consumer": "Dashboard compiler to runtime publication",
+      "delivered": "Strict YAML compile, dry-run, publish and deterministic precedence",
+      "remaining": "Customer native-policy rollout and actor authorization require field acceptance",
+      "production_accepted": false
+    },
+    {
+      "id": "POL-03",
+      "area": "Policy",
+      "name": "Runtime publication and history",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/policy-management/index.ts",
+        "supabase/migrations/20260911000000_runtime_policy.sql"
+      ],
+      "consumer": "Dashboard RuntimePolicyEditor",
+      "delivered": "Admin publication, immutable revisions and atomic optimistic concurrency",
+      "remaining": "Revision review, targeted staging, republish/rollback and transactional publication audit are implemented; native field acceptance remains",
+      "production_accepted": false
+    },
+    {
+      "id": "POL-04",
+      "area": "Policy",
+      "name": "Native policy retrieval and cache",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/policy/index.ts",
+        "packages/core/src/remote-policy.ts"
+      ],
+      "consumer": "Native key to evaluator",
+      "delivered": "Tenant-scoped publication fetch, identity-bound cache and runtime merge",
+      "remaining": "Required policy uses a fixed offline grace and then denies; authorization failure or invalid policy cannot downgrade to local rules. Unenrolled devices retain local detection",
+      "production_accepted": false
+    },
+    {
+      "id": "POL-05",
+      "area": "Policy",
+      "name": "Fleet adoption and rollout controls",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/policy-ack/index.ts",
+        "supabase/functions/policy-management/index.ts",
+        "packages/dashboard/src/enterprise/policy-rollout.tsx"
+      ],
+      "consumer": "Bound agent key to core policy fetch and dashboard",
+      "delivered": "Targeted stages, loading receipts, unknown/stale states, fleet pagination, revision promotion/rollback and optimistic conflicts",
+      "remaining": "Receipts report loaded configuration, not host attestation; legacy unbound keys need reenrollment. Native enforcement acceptance remains",
+      "production_accepted": false
+    },
+    {
+      "id": "CLI-01",
+      "area": "Endpoint",
+      "name": "Setup and measured diagnostics",
+      "status": "wired",
+      "source_paths": [
+        "packages/cli/src/commands/setup.ts",
+        "packages/cli/src/commands/status.ts"
+      ],
+      "consumer": "CLI",
+      "delivered": "Rule self-test, configuration validation, registration evidence and JSON status",
+      "remaining": "Registration is not proof of host execution; setup alone does not install every connector",
+      "production_accepted": false
+    },
+    {
+      "id": "CLI-02",
+      "area": "Endpoint",
+      "name": "Typed and redacted configuration",
+      "status": "wired",
+      "source_paths": [
+        "packages/cli/src/commands/config.ts",
+        "packages/cli/src/utils/config-values.ts"
+      ],
+      "consumer": "CLI config get/set/list",
+      "delivered": "Typed booleans/numbers, schema checks, secret redaction and prototype-key rejection",
+      "remaining": "OS credential vault integration not implemented",
+      "production_accepted": false
+    },
+    {
+      "id": "CLI-03",
+      "area": "Endpoint",
+      "name": "Claude local installer",
+      "status": "wired",
+      "source_paths": [
+        "scripts/endpoint-install.mjs"
+      ],
+      "consumer": "Extracted built package",
+      "delivered": "Digest-addressed copy, settings backup, idempotent hook registration and deny canary",
+      "remaining": "Host restart/acceptance and authenticated signed distribution still required",
+      "production_accepted": false
+    },
+    {
+      "id": "CLI-04",
+      "area": "Endpoint",
+      "name": "Enterprise fleet rollout",
+      "status": "partial",
+      "source_paths": [
+        "deploy/fleet/windows/README.md",
+        "deploy/fleet/linux/README.md",
+        "deploy/fleet/macos/README.md"
+      ],
+      "consumer": "Offline signed fleet scripts and templates",
+      "delivered": "Install, detect, upgrade, rollback, uninstall and health with signed artifact checks",
+      "remaining": "Actual Intune/SCCM/Jamf execution and publisher signing acceptance remain external",
+      "production_accepted": false
+    },
+    {
+      "id": "CON-01",
+      "area": "Connectors",
+      "name": "Claude Code",
+      "status": "wired",
+      "source_paths": [
+        "packages/claude-code/src/pre-tool-use.ts",
+        "hooks/hooks.json"
+      ],
+      "consumer": "Native PreToolUse/PostToolUse/SessionStart",
+      "delivered": "All-tool matcher, local evaluation, output feedback and startup scan",
+      "remaining": "Supported host version and disabled-hook behavior require native acceptance",
+      "production_accepted": false
+    },
+    {
+      "id": "CON-02",
+      "area": "Connectors",
+      "name": "Cursor and VS Code",
+      "status": "wired",
+      "source_paths": [
+        "packages/extension/src/aidr-hook.ts"
+      ],
+      "consumer": "Editor extension and hooks",
+      "delivered": "Shared evaluation and managed hook installation",
+      "remaining": "Editor commands outside hook visibility and native outage behavior remain limits",
+      "production_accepted": false
+    },
+    {
+      "id": "CON-03",
+      "area": "Connectors",
+      "name": "OpenClaw",
+      "status": "wired",
+      "source_paths": [
+        "packages/openclaw/src/tool-handler.ts"
+      ],
+      "consumer": "before_tool_call",
+      "delivered": "Guarded evaluation and response actions",
+      "remaining": "Native version/event coverage acceptance required",
+      "production_accepted": false
+    },
+    {
+      "id": "CON-04",
+      "area": "Connectors",
+      "name": "OpenCode",
+      "status": "wired",
+      "source_paths": [
+        "packages/opencode/src/tool-handler.ts",
+        "packages/opencode/src/output-handler.ts"
+      ],
+      "consumer": "tool.execute.before and tool.execute.after",
+      "delivered": "Guarded input and bounded pre-model tool-result inspection",
+      "remaining": "Native plugin loading and host cancellation acceptance required",
+      "production_accepted": false
+    },
+    {
+      "id": "CON-05",
+      "area": "Connectors",
+      "name": "Codex",
+      "status": "partial",
+      "source_paths": [
+        "packages/codex/src/enforcement.ts",
+        "packages/codex/src/cli.ts"
+      ],
+      "consumer": "PreToolUse connector",
+      "delivered": "Built connector and policy decisions",
+      "remaining": "Host can fail open when hook execution is unavailable; not tamper-resistant isolation",
+      "production_accepted": false
+    },
+    {
+      "id": "CON-06",
+      "area": "Connectors",
+      "name": "SDK and framework adapters",
+      "status": "wired",
+      "source_paths": [
+        "packages/sdk/src/client.ts",
+        "packages/sdk/src/enforcement.ts"
+      ],
+      "consumer": "Generic, LangChain, LlamaIndex, AutoGen, CrewAI",
+      "delivered": "Fail-closed wrappers and middleware",
+      "remaining": "Application must wrap every consequential tool path; package versions need integration matrix",
+      "production_accepted": false
+    },
+    {
+      "id": "TEN-01",
+      "area": "Management",
+      "name": "Tenant isolation and RBAC",
+      "status": "wired",
+      "source_paths": [
+        "supabase/migrations/20260805000000_hybrid_tenancy.sql"
+      ],
+      "consumer": "Database RLS and Edge authorization",
+      "delivered": "Personal/team tenants, roles, membership and ownership safeguards",
+      "remaining": "Independent penetration test and full endpoint negative matrix remain required",
+      "production_accepted": false
+    },
+    {
+      "id": "TEN-02",
+      "area": "Management",
+      "name": "Team creation and member lifecycle",
+      "status": "wired",
+      "source_paths": [
+        "supabase/migrations/20260805000001_team_creation_rpc.sql",
+        "packages/dashboard/src/enterprise/team-provider.tsx"
+      ],
+      "consumer": "Dashboard team route",
+      "delivered": "Atomic team creation, role change and member removal",
+      "remaining": "Field identity-provider lifecycle acceptance remains required",
+      "production_accepted": false
+    },
+    {
+      "id": "TEN-03",
+      "area": "Management",
+      "name": "Invitation issue and acceptance",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/team-invite/index.ts",
+        "supabase/functions/oauth-callback/index.ts"
+      ],
+      "consumer": "Dashboard enterprise route",
+      "delivered": "Manual link sharing, verified email binding, expiry, one-time acceptance and audit",
+      "remaining": "No SMTP invitation delivery; operator explicitly shares link",
+      "production_accepted": false
+    },
+    {
+      "id": "TEN-04",
+      "area": "Management",
+      "name": "SSO and directory group sync",
+      "status": "partial",
+      "source_paths": [
+        "supabase/functions/scim/index.ts",
+        "supabase/migrations/20260912000012_scim_directory.sql",
+        "packages/dashboard/src/enterprise/auth.tsx"
+      ],
+      "consumer": "SCIM v2 backend and SSO login surface",
+      "delivered": "Tenant token rotation, Users/Groups and immutable external-ID role mapping",
+      "remaining": "Real Entra/Okta configuration and tenant-wide MFA enforcement remain external/partial",
+      "production_accepted": false
+    },
+    {
+      "id": "TEN-05",
+      "area": "Management",
+      "name": "Device pairing and enrollment",
+      "status": "partial",
+      "source_paths": [
+        "supabase/functions/device-poll/index.ts",
+        "supabase/functions/enroll/index.ts",
+        "deploy/ingress/device-start.mjs"
+      ],
+      "consumer": "Dashboard verify and signed-ingress native session bootstrap",
+      "delivered": "Atomic single-use exchanges, signed entitlements, active tenant validation and spoof-resistant device-start limiter; isolated loopback HTTP smoke passed",
+      "remaining": "Customer TLS proxy routing and browser-to-host pairing acceptance remain pending; direct unsigned device-start is rejected",
+      "production_accepted": false
+    },
+    {
+      "id": "TEN-06",
+      "area": "Management",
+      "name": "API keys and revocation",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/api-keys/index.ts",
+        "supabase/functions/enrollment-tokens/index.ts"
+      ],
+      "consumer": "Dashboard and native callers",
+      "delivered": "Hash-only storage, selected-team UI, active membership, server-only mutations, member ownership and revocation",
+      "remaining": "Scoped per-tool short-lived credentials are a separate missing capability",
+      "production_accepted": false
+    },
+    {
+      "id": "TEN-07",
+      "area": "Management",
+      "name": "First customer provisioning and login",
+      "status": "wired",
+      "source_paths": [
+        "scripts/deployment-bootstrap.mjs",
+        "supabase/functions/identity-security/index.ts",
+        "packages/dashboard/src/ui/pages/RecoveryPage.tsx"
+      ],
+      "consumer": "Operator CLI, dashboard and recovery API",
+      "delivered": "Bootstrap, recovery, session revoke and break-glass controls",
+      "remaining": "SMTP/IdP delivery and full service-role Edge MFA barriers require customer integration",
+      "production_accepted": false
+    },
+    {
+      "id": "OBS-01",
+      "area": "Operations",
+      "name": "Telemetry ingest and dashboard",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/ingest/index.ts",
+        "supabase/functions/ingest/events.ts",
+        "packages/dashboard/src/ui/pages/EventsPage.tsx"
+      ],
+      "consumer": "Native ingest to event view",
+      "delivered": "Authenticated tenant events, server-side field projection and agent views",
+      "remaining": "Load, retention, delivery SLO, customer packet capture and multi-region tests remain external",
+      "production_accepted": false
+    },
+    {
+      "id": "OBS-02",
+      "area": "Operations",
+      "name": "Incident correlation and investigation",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/incidents/correlate.ts",
+        "packages/core/src/incidents/persist.ts",
+        "packages/dashboard/src/ui/pages/IncidentsPage.tsx"
+      ],
+      "consumer": "Local incidents and dashboard",
+      "delivered": "Persisted endpoint-scoped grouping, duplicate suppression and local integrity verification",
+      "remaining": "No full cross-agent causal graph or independently anchored forensic chain",
+      "production_accepted": false
+    },
+    {
+      "id": "OBS-03",
+      "area": "Operations",
+      "name": "Audit export",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/audit-export/index.ts",
+        "supabase/functions/_shared/audit-export.ts"
+      ],
+      "consumer": "Team audit view",
+      "delivered": "Tenant authorization, private signed download, CSV formula escaping",
+      "remaining": "500-row keyset pages, user/tenant/format-bound signed cursor, bounded snapshot, browser 100000-row/64MB limit, 24-hour temporary object expiry and tested cleanup runner; operator must activate scheduling",
+      "production_accepted": false
+    },
+    {
+      "id": "OBS-04",
+      "area": "Operations",
+      "name": "SIEM export and OpenTelemetry",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/siem-delivery.ts",
+        "packages/core/src/siem-incident-producer.ts",
+        "scripts/siem-delivery-worker.mjs"
+      ],
+      "consumer": "Opt-in incident producer and durable SIEM worker",
+      "delivered": "Splunk, Sentinel, Elastic and HTTPS delivery queue/receipts/retry",
+      "remaining": "Customer SIEM configuration, scheduled worker, native source coverage and delivery receipt remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "OBS-05",
+      "area": "Operations",
+      "name": "Tamper and offline integrity",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/integrity/verify.ts",
+        "packages/core/src/intel/loader.ts"
+      ],
+      "consumer": "Runtime integrity and signed intel loading",
+      "delivered": "Manifest verification, keyring and local intelligence",
+      "remaining": "External signer custody, distribution and adversarial host tests remain required",
+      "production_accepted": false
+    },
+    {
+      "id": "OBS-06",
+      "area": "Operations",
+      "name": "Retention and deletion",
+      "status": "partial",
+      "source_paths": [
+        "supabase/migrations/20260912140000_tenant_offboarding_retention.sql",
+        "scripts/deployment-offboarding.mjs"
+      ],
+      "consumer": "Service-role resumable offboarding",
+      "delivered": "Legal hold, bounded deletion phases and durable receipts across live data",
+      "remaining": "External backups and customer retention/offboarding acceptance remain outside live-data receipts",
+      "production_accepted": false
+    },
+    {
+      "id": "BIL-01",
+      "area": "Commercial",
+      "name": "Invoice-based sales model",
+      "status": "partial",
+      "source_paths": [
+        "packages/dashboard/src/ui/pages/BillingPage.tsx",
+        "supabase/functions/invoice-entitlement/index.ts",
+        "docs/billing.md"
+      ],
+      "consumer": "Default commercial UI and tenant order intake",
+      "delivered": "Idempotent pending Finance request; no payment or entitlement grant",
+      "remaining": "Approved quote, provider receipt, reconciliation and audited paid-to-entitlement lifecycle remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "BIL-02",
+      "area": "Commercial",
+      "name": "Stripe checkout and event processing",
+      "status": "partial",
+      "source_paths": [
+        "supabase/functions/billing-checkout/index.ts",
+        "supabase/functions/stripe-webhook/index.ts"
+      ],
+      "consumer": "Optional legacy self-service flow",
+      "delivered": "Authenticated checkout, trusted pricing, tenant metadata, signed replay-protected webhooks",
+      "remaining": "Live keys/prices/webhook registration, refund/cancel/reconcile and tax acceptance remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "BIL-03",
+      "area": "Commercial",
+      "name": "Subscription self-service portal",
+      "status": "missing",
+      "source_paths": [
+        "packages/dashboard/src/billing/stripe-client.ts"
+      ],
+      "consumer": "Unsupported helpers explicitly fail",
+      "delivered": "Checkout surface only",
+      "remaining": "Implement verified billing portal and invoice lifecycle if offered in sold SKU",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-01",
+      "area": "Deployment",
+      "name": "Self-hosted preparation",
+      "status": "wired",
+      "source_paths": [
+        "scripts/deployment-prepare.mjs",
+        "deploy/dashboard/Dockerfile"
+      ],
+      "consumer": "Pinned Supabase Docker release and dashboard",
+      "delivered": "Random secrets, key pair, loopback bindings, private storage and runtime browser config",
+      "remaining": "Single-host Docker baseline; production TLS, SMTP, backup, sizing and HA acceptance required",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-02",
+      "area": "Deployment",
+      "name": "Cloud preparation",
+      "status": "partial",
+      "source_paths": [
+        "scripts/deployment-prepare.mjs"
+      ],
+      "consumer": "Cloud manifest and dashboard container",
+      "delivered": "Same app/functions/migrations, supplied managed Supabase project",
+      "remaining": "Live project provisioning, per-region deployment, OAuth/SMTP and secrets installation remain external",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-03",
+      "area": "Deployment",
+      "name": "Atomic migration runner",
+      "status": "wired",
+      "source_paths": [
+        "scripts/deployment-migrate.mjs"
+      ],
+      "consumer": "Self-hosted deployment",
+      "delivered": "Checksums, advisory lock, transactional apply and replay-safe ledger",
+      "remaining": "Restore and production upgrade drill required before customer changes",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-04",
+      "area": "Deployment",
+      "name": "Installation smoke evidence",
+      "status": "wired",
+      "source_paths": [
+        "scripts/deployment-smoke.mjs"
+      ],
+      "consumer": "Isolated loopback fixture deployment",
+      "delivered": "Auth, RLS, policy, hook enforcement, invitations, export, pairing and signed enrollment",
+      "remaining": "Development fixture evidence is not production or customer acceptance",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-05",
+      "area": "Deployment",
+      "name": "Authenticated signed release delivery",
+      "status": "partial",
+      "source_paths": [
+        "scripts/release-sign.mjs",
+        "scripts/release-verify.mjs",
+        ".github/scripts/build-release-bundle.mjs"
+      ],
+      "consumer": "Offline signing and verification tooling",
+      "delivered": "Exact artifact Ed25519 signature and anti-rollback state",
+      "remaining": "Approved publisher key custody and private registry publication remain external",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-06",
+      "area": "Deployment",
+      "name": "Backup, restore and disaster recovery",
+      "status": "partial",
+      "source_paths": [
+        "scripts/deployment-backup.mjs",
+        "scripts/deployment-backup-offsite.mjs",
+        "scripts/deployment-restore-drill.mjs"
+      ],
+      "consumer": "Cold backup, offsite transport and isolated recovery tooling",
+      "delivered": "Encrypted backup, remote staged commit, reread, local isolated recovery and content verification; local Windows recovery ACL probe passed",
+      "remaining": "Real offsite provider, independent-host recovery and agreed RPO/RTO evidence remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-07",
+      "area": "Deployment",
+      "name": "Availability and scale",
+      "status": "partial",
+      "source_paths": [
+        "deploy/dashboard/monitoring.mjs",
+        "scripts/load-test.mjs",
+        "deploy/ha/README.md"
+      ],
+      "consumer": "Readiness metrics, alert templates and load harness",
+      "delivered": "Seven fail-closed readiness legs, SLI instrumentation, generator-lag and failure-class diagnostics; v6 loopback /healthz 10 RPS for 30 seconds passed",
+      "remaining": "Authenticated workload, HA, capacity, noisy-neighbor and monthly SLI remain unproved",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-08",
+      "area": "Deployment",
+      "name": "Portable installation candidate and doctor",
+      "status": "wired",
+      "source_paths": [
+        "scripts/customer-kit.mjs",
+        "scripts/deployment-doctor.mjs",
+        "deploy/FIRST_CUSTOMER.md"
+      ],
+      "consumer": "Prepared delivery directory",
+      "delivered": "Bundled reviewed templates and YAML runtime, checksum inventory, cloud/self-hosted generation without Git or package install, operational preflight",
+      "remaining": "Node 24/Docker/tar required; container images need network or a separate air-gap image delivery; publisher signatures remain external",
+      "production_accepted": false
+    },
+    {
+      "id": "EVAL-01",
+      "area": "Assurance",
+      "name": "Independent attack and benign benchmarks",
+      "status": "partial",
+      "source_paths": [
+        "scripts/verify-enforcement.mjs",
+        "scripts/verify-codex-hook.mjs"
+      ],
+      "consumer": "Local built-artifact gates",
+      "delivered": "Known attack/benign and configuration regression scenarios",
+      "remaining": "Blind holdout corpus, customer benign tasks, latency and evasion evaluation remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "EVAL-02",
+      "area": "Assurance",
+      "name": "Legal, privacy, residency and support",
+      "status": "external",
+      "source_paths": [
+        "docs/production-readiness/commercial-go-evidence-registry.json"
+      ],
+      "consumer": "Commercial release gate",
+      "delivered": "Thirteen required evidence gates tracked",
+      "remaining": "Named external approvals and candidate-bound proof cannot be generated from source code",
+      "production_accepted": false
+    },
+    {
+      "id": "EVAL-03",
+      "area": "Assurance",
+      "name": "Customer proof of value",
+      "status": "external",
+      "source_paths": [
+        "docs/production-readiness/commercial-go-evidence-registry.json"
+      ],
+      "consumer": "Customer acceptance gate",
+      "delivered": "Charter and evidence requirements exist",
+      "remaining": "Customer-run host matrix, observations and signed acceptance outstanding",
+      "production_accepted": false
+    }
+  ]
+}

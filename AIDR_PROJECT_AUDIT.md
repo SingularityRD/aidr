@@ -1,36 +1,38 @@
-# AIDR Project Audit (Hostile Verification Snapshot)
+# AIDR Project Audit (historical snapshot)
 
-**Date:** 2026-04-30
+> **SUPERSEDED — historical record (2026-04-30). Do not use this file to judge
+> readiness.**
+>
+> Superseded by `READINESS_BACKLOG.json`, `RELEASE_READINESS_REPORT.md` and
+> `docs/production-readiness/ga-status-2026-08-04.md`. Retained for history.
 
-## Baseline
+## Baseline as recorded at the time
 
-| Area | Status | Evidence |
+| Area | Status then | Evidence then |
 |---|---|---|
-| Working tree cleanliness | Dirty (large pre-existing unrelated churn) | `git status --short`, `git diff --stat` |
+| Working tree cleanliness | Dirty (large unrelated churn) | `git status --short` |
 | Typecheck | Pass | `pnpm check` |
-| Build | Pass | `pnpm build` (after elevated rerun due to sandbox EPERM) |
-| Unit tests | Pass | `pnpm test:unit` => 86 files / 1639 tests |
+| Build | Pass | `pnpm build` |
+| Unit tests | Pass | `pnpm test:unit` — 86 files / 1639 tests |
 
-## Verified Security Claims
+## What that baseline did not cover
 
-| Claim | Result | Evidence |
-|---|---|---|
-| LLM threat rule file exists and is active | Verified | `threats/llm-threats.yaml` + passing LLM rule tests |
-| Prompt injection/system prompt extraction/tool misuse/memory poisoning checks | Verified | `packages/core/src/__tests__/llm-threats.test.ts` |
-| PII detector enhancements | Verified | `packages/core/src/pii-detector.ts` + `pii-enhancement.test.ts` |
-| Audit log redaction | Verified | `audit-log.test.ts` redaction case |
-| Claude integration stability | Verified | `packages/claude-code/src/__tests__/integration.test.ts` pass |
-| Dashboard incident page buildability | Verified | dashboard build passes |
+The snapshot asserted typecheck/build/test passes and treated that as the health
+signal. The 2026-09-10 audit wave showed why that was insufficient:
 
-## Newly Closed/Reduced Gaps
+- A green unit suite coexisted with a product that **enforced nothing by default**
+  (AIDR-015). The tier-2 integration tests had been written to assert the insecure
+  behaviour — they asserted an empty `{}` (allow) response for `curl | bash`,
+  `rm -rf /` and `.ssh/authorized_keys` writes — so the suite could not detect it.
+- "Build passes" was true while `packages/codex` shipped a hook that denies 100% of
+  calls and was absent from every build/release/CI gate (AIDR-017).
+- Several "remaining blockers" listed here were never closed and are now tracked
+  with ids: connector-wide output scanning (the module has no importers),
+  the MCP semantic policy model, and repository hygiene.
 
-- Output safety: **implemented minimally** (`packages/core/src/output-scanner.ts`) and wired into Claude `post-tool-use`.
-- MCP inventory: **implemented minimally** (`packages/core/src/mcp-inventory.ts`) and wired into session-start warning path.
+## Lesson preserved
 
-## Remaining Blockers
-
-| Blocker | Priority | Exact Area | Next Step |
-|---|---|---|---|
-| Full connector-wide output scanning coverage | P1 | non-Claude runtime output paths | add shared output hook integration in other connectors |
-| Full MCP semantic policy model | P2 | policy/evaluator layer | map inventory to enforceable policy intents, not only risk hints |
-| Repo hygiene (large unrelated dirty diff) | P1 | repository root | isolate security hardening changes into clean branch/cherry-pick set |
+Passing tests are only evidence about the behaviour the tests assert. A test that
+asserts a threat is allowed is not a test of detection. The current backlog records
+for each finding the acceptance criteria and the exact verification method, and
+`RELEASE_READINESS_REPORT.md` separates "verified" from "assumed".

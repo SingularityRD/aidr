@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "checked_at": "2026-09-12T13:12:14.112Z",
+  "checks": [
+    "501 synthetic fleet records traverse keyset pages without gaps or duplicate agents",
+    "targeted assignment on the second page is preserved and absent receipt remains unknown",
+    "malformed fleet cursor rejected",
+    "fixture-only rows removed and original policy restored through versioned publication"
+  ],
+  "scope": "501 synthetic DB rows for pagination, not a real 501-agent load or scale acceptance test."
+}

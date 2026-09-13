@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "checked_at": "2026-09-11T20:45:55.480Z",
+  "checks": [
+    "encrypted archive authentication",
+    "independent volume recovery",
+    "PostgreSQL starts from recovered physical backup",
+    "auth users match",
+    "tenants match",
+    "agents match",
+    "enrollment approvals match",
+    "policy content and versions match",
+    "storage metadata matches",
+    "migration ledger matches",
+    "customer agent retained in correct tenant",
+    "all recovered object-file bytes match source SHA-256 inventory",
+    "wrong key refused before output creation",
+    "modified backup manifest rejected",
+    "existing installation cannot be a recovery destination"
+  ],
+  "scope": "Same-machine isolated recovery rehearsal; not offsite RPO/RTO acceptance",
+  "storage_inventory_sha256": "74dd4d9dec78ce39eb27cf0f124586aaecb27bac61fb5c2512484c0d8e7d08f5"
+}

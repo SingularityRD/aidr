@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "checked_at": "2026-09-12T15:19:30.461Z",
+  "checks": [
+    "198 declared files match SHA-256; no extra paths or symlinks",
+    "kit excludes private deployment environment, test credentials and node_modules",
+    "private rehearsal credentials absent from kit files and decompressed release archives",
+    "unsigned candidate provenance remains explicit",
+    "all 13 release artifacts preserve the checked release digests",
+    "self-hosted preparation works with empty PATH: no Git, package manager or build; 18 migrations and required remote policy",
+    "cloud preparation works with empty PATH: no Git, package manager or build; 18 migrations and required remote policy"
+  ],
+  "scope": "Unsigned portable preparation and checksums; not cloud provisioning, image air-gap delivery or production acceptance."
+}

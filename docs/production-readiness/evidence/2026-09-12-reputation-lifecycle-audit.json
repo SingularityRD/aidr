@@ -1,0 +1,43 @@
+{
+  "checked_at": "2026-09-12T15:06:27.371Z",
+  "finding_reproduced": true,
+  "observations": [
+    {
+      "state": "active",
+      "endpoint": "url-check",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "state": "active",
+      "endpoint": "file-check",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "state": "tenant suspended",
+      "endpoint": "url-check",
+      "status": 200,
+      "expected": "401 or 403"
+    },
+    {
+      "state": "tenant suspended",
+      "endpoint": "file-check",
+      "status": 200,
+      "expected": "401 or 403"
+    },
+    {
+      "state": "membership expired",
+      "endpoint": "url-check",
+      "status": 200,
+      "expected": "401 or 403"
+    },
+    {
+      "state": "membership expired",
+      "endpoint": "file-check",
+      "status": 200,
+      "expected": "401 or 403"
+    }
+  ],
+  "scope": "New isolated local fixture only; issued key revoked and fixture tenant closed. No cross-tenant read demonstrated."
+}

@@ -1,5 +1,35 @@
 # AIDR Zero-to-Secure Implementation Summary
 
+> **SUPERSEDED — historical record. Do not use this file to judge readiness.**
+> Superseded by `READINESS_BACKLOG.json` (per-defect record with evidence) and
+> `RELEASE_READINESS_REPORT.md` (current assessment).
+>
+> This document recorded an earlier "zero to secure" journey implementation and is
+> retained only so the history is not lost. Two things make it unsafe to read as
+> current status:
+>
+> 1. **It describes integration with a repository that is not present here.** It
+>    targets `aidr-landing` (a marketing site) plus `aidr/packages/dashboard`.
+>    `aidr-landing` is a **separate repository**; nothing in it can be verified from
+>    this workspace, and later strategy notes record that the dashboard target itself
+>    changed (`docs/strategy/saas-product-focus-2026.md` describes the Vite dashboard
+>    as legacy and names a Next.js `aidr-landing` as the intended target), so the
+>    architecture described below is not the current one.
+> 2. **It predates every hardening wave.** None of the defects recorded in
+>    `READINESS_BACKLOG.json` — including AIDR-015, where a fresh install enforced
+>    nothing by default while reporting success — are reflected here. Its
+>    "Task Completed" framing is not a readiness statement.
+>
+> The user-journey *intent* it captured is still the right shape for onboarding. The
+> parts of that journey which can actually be verified from this repository are
+> recorded with evidence in `RELEASE_READINESS_REPORT.md` §2; the parts that cannot
+> (anything in `aidr-landing`, and anything requiring a deployed control plane) are
+> listed there as unverified or externally blocked.
+>
+> **Original content follows verbatim and unmodified.**
+
+---
+
 ## 🎯 Task Completed
 
 Implemented the complete user journey from "zero knowledge" to "secured AI agent" with proper integration between:

@@ -1,38 +1,11 @@
-# Billing (Implementation Notes)
+# Billing and enterprise orders
 
-This repo includes **agent-seat enforcement hooks** (1 free agent by default) and a billing sync model for the direct-GA enterprise invoice/order workflow.
+The default commercial model is an enterprise quote and invoice. The enterprise invoice/order workflow uses the finance-approved order and payment ledger as its source of truth; the dashboard only accepts tenant-bound requests for additional protected agents. A request is stored as `pending_finance`; it is **not** a paid invoice and does not change the agent entitlement.
 
-## What’s implemented
+The `invoice-entitlement` Edge function and `enterprise_invoice_orders` table accept idempotent requests from an active tenant owner/admin after session and MFA checks. A repeated request ID with changed terms is rejected. Finance has not yet supplied an approved SKU, signed order, provider-of-record ledger, payment receipt or reconciliation. No production flow in this repository may infer payment from a browser request or grant seats from a pending order. Direct SQL changes to `entitlements` are not a supported sales workflow.
 
-- Control plane data model: `entitlements` (`included_agents` + `extra_agents`)
-- Control plane enforcement point: `ingest` edge function rejects new agents over limit (`402 agent_limit_exceeded`)
+Existing signed entitlement snapshots and the ingest agent-seat limit are enforcement components. They are not proof of a sold or paid lifecycle. The missing audited order-to-entitlement transition must bind the approved tenant, term, quantity and payment evidence, and cover renewal, reduction, cancellation, refund and offboarding. It must be tested against both cloud and self-hosted deployments before sale.
 
-## Direct-GA paid flow (manual / enterprise invoice)
+Optional Stripe checkout/webhook code exists behind a default-disabled self-service gate. The webhook has local signature/replay tests, but no live account, approved price, webhook registration, portal, invoice retrieval, refund/cancellation or provider reconciliation acceptance. Paddle helpers are legacy and stay disabled. The dashboard does not show invented prices, exchange rates or an empty invoice ledger as a successful lookup.
 
-To grant additional paid agents for a user, increase `extra_agents`:
-
-```sql
-update public.entitlements
-set extra_agents = 4
-where user_id = '<auth.users.id>';
-```
-
-The signed order, invoice reference and tenant-scoped entitlement record are the
-source of truth. A dashboard checkout link must never grant access by itself.
-
-## Legacy self-service code (disabled)
-
-Legacy Paddle/Lemon checkout and portal helpers remain in the repository only for
-historical compatibility. They are not deployed or advertised for direct GA;
-`VITE_AIDR_COMMERCIAL_MODE=self-service` is an explicit non-default opt-in and
-requires a new commercial decision plus release evidence. The corresponding
-Supabase checkout/webhook endpoints also require
-`AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING=true`; otherwise they return a
-fail-closed `410 disabled_for_direct_ga`. Seat enforcement remains server-side
-via `ingest` (`402 agent_limit_exceeded`).
-
-## Pricing model (proposed)
-
-- **1 free agent**
-- **$2 / month per additional agent** (proposed price; Finance must approve the
-  final price book, tax, currency and minimum term before sale)
+The implementation boundaries and acceptance scenarios are recorded in [billing-v6.md](production-readiness/billing-v6.md) and the [commercial evidence registry](production-readiness/commercial-go-evidence-registry.json). **T33 and commercial billing approval remain open.**

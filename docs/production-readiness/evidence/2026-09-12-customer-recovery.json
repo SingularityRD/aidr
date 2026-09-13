@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "checked_at": "2026-09-12T12:07:16.202Z",
+  "checks": [
+    "auth.users row count and content match",
+    "public.tenants row count and content match",
+    "public.tenant_members row count and content match",
+    "public.agents row count and content match",
+    "public.api_keys row count and content match",
+    "public.entitlements row count and content match",
+    "public.pilot_applications row count and content match",
+    "public.audit_logs row count and content match",
+    "public.admin_audit_logs row count and content match",
+    "public.tenant_runtime_policies row count and content match",
+    "public.runtime_policy_revisions row count and content match",
+    "public.agent_policy_assignments row count and content match",
+    "public.agent_policy_receipts row count and content match",
+    "public.audit_export_objects row count and content match",
+    "storage.objects row count and content match",
+    "public.aidr_schema_migrations row count and content match",
+    "policy tenant, version and contents match",
+    "every object path and file digest matches"
+  ],
+  "scope": "Isolated unchanged development snapshot. Does not prove offsite recovery or customer RPO/RTO."
+}

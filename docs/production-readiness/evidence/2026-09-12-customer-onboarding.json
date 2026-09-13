@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "checked_at": "2026-09-11T21:50:15.834Z",
+  "checks": [
+    "first owner provisioned with a separate enterprise tenant",
+    "resume is idempotent; duplicate and changed configuration refused",
+    "provisioned owner signs in without SMTP or OAuth",
+    "browser onboarding sees the enterprise enrollment approval",
+    "ordinary authenticated session cannot provision or increase seats",
+    "approval and seat allocation bound to enterprise tenant",
+    "device flow enrolls agent in the customer's enterprise tenant",
+    "new customer has a published central policy before its first tool call",
+    "enrolled API key receives the enterprise team's published policy"
+  ],
+  "scope": "Isolated local rehearsal; not customer field acceptance"
+}
