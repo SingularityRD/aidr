@@ -12,12 +12,14 @@ export function corsJson(
 	req: Request,
 	status: number,
 	body: Record<string, unknown>,
+	headers: Record<string, string> = {},
 ): Response {
 	return new Response(JSON.stringify(body), {
 		status,
 		headers: {
 			...buildCorsHeaders(req.headers.get("Origin"), ALLOWED_ORIGINS),
 			"X-Request-ID": getRequestId(req),
+			...headers,
 		},
 	});
 }
@@ -33,4 +35,3 @@ export function handleCors(req: Request): Response | null {
 	if (req.method === "OPTIONS") return corsJson(req, 200, { ok: true });
 	return null;
 }
-

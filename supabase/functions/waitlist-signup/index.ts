@@ -5,11 +5,14 @@
 // Public waitlist intake. Best-effort rate limiting by IP.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { buildCorsHeaders, parseAllowedOrigins, resolveAllowedOrigin } from "../_shared/origin.ts";
 import { getRequestId } from "../_shared/response.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011).
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 const WAITLIST_RL_PER_MIN = Number(Deno.env.get("AIDR_WAITLIST_RL_PER_MIN") ?? "10");
 const ALLOWED_ORIGINS = parseAllowedOrigins(Deno.env.get("AIDR_ALLOWED_ORIGINS"));
@@ -79,8 +82,12 @@ Deno.serve(async (req) => {
 
 	if (req.method === "OPTIONS") return json(200, { ok: true }, req);
 	if (req.method !== "POST") return json(405, { error: "method_not_allowed" }, req);
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY)
-		return json(500, { error: "misconfigured_supabase_env" }, req);
+
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) {
+		return configFailure("waitlist-signup", config.error, (status, body) => json(status, body, req));
+	}
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
 
 	let body: Record<string, unknown> = {};
 	try {

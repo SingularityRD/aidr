@@ -98,13 +98,10 @@ export function DashboardPage() {
 			try {
 				const enrollRes = await supabase.functions.invoke("enrollment-tokens", { method: "GET" });
 				if (cancelled) return;
-				if (enrollRes.error) {
+				if (enrollRes.error || enrollRes.data?.ok !== true || !Array.isArray(enrollRes.data?.tokens)) {
 					setPendingTokens(null);
 				} else {
-					const data = (enrollRes.data ?? {}) as {
-						tokens?: Array<{ consumed_at: string | null; expires_at: string }>;
-					};
-					const tokens = Array.isArray(data.tokens) ? data.tokens : [];
+					const tokens = enrollRes.data.tokens as Array<{ consumed_at: string | null; expires_at: string }>;
 					setPendingTokens(
 						tokens.filter((t) => !t.consumed_at && Date.parse(t.expires_at) > Date.now()).length,
 					);

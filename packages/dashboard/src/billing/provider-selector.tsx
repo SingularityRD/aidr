@@ -93,28 +93,28 @@ export function ProviderCards({
 }
 
 /**
- * Build provider list - now LemonSqueezy only
- * Removed: iyzico, stripe, crypto providers (user requested only LemonSqueezy)
+ * Build provider list - Stripe only.
+ * Lemon Squeezy was removed (unverified webhook); iyzico/crypto were removed earlier.
  */
 export function buildProviderList(_userLocation: string): ProviderOption[] {
 	if (!selfServiceCheckoutEnabled) return [];
 	return [
 		{
-			id: "lemon-squeezy",
-			name: "LemonSqueezy (Global)",
-			icon: "/lemonsqueezy-logo.svg",
-			features: ["USD/EUR/GBP", "Subscription", "Checkout", "Customer Portal"],
+			id: "stripe",
+			name: "Stripe (Global)",
+			icon: "/stripe-logo.svg",
+			features: ["USD/EUR/GBP", "Subscription", "Checkout"],
 			recommended: true,
 		},
 	];
 }
 
 /**
- * Get payment button text - now always returns LemonSqueezy text
+ * Get payment button text - invoice-first unless self-service is explicitly enabled
  */
 export function getPaymentButtonText(_provider: ProviderType, _userLocation: string): string {
 	if (!selfServiceCheckoutEnabled) return "Request enterprise invoice";
-	return "Subscribe with LemonSqueezy";
+	return "Subscribe with Stripe";
 }
 
 /**

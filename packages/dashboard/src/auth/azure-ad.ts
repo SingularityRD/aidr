@@ -2,7 +2,8 @@
  * Azure AD (Microsoft Entra ID) SSO integration for AIDR Dashboard.
  *
  * Provides OAuth 2.0 authentication via Supabase's built-in Azure provider,
- * ID token validation, and group membership sync for enterprise RBAC.
+ * ID token validation. Directory group-to-role provisioning is not available
+ * from the browser; tenant access is granted by server-side membership only.
  *
  * ## Configuration
  *
@@ -14,10 +15,8 @@
  *
  * ## Group Sync
  *
- * For group-based RBAC, the Azure AD app registration must be configured to emit
- * group claims in the ID token (limited to ~200 groups). For larger directories,
- * a Supabase edge function should use the Microsoft Graph API to fetch full
- * group membership.
+ * Group claims in browser session metadata are not authoritative. A verified
+ * server-side directory mapping is required before this can be enabled.
  *
  * @module
  */
@@ -36,7 +35,7 @@ export interface AzureADConfig {
 	tenantId: string;
 	/** URL to redirect to after authentication. Defaults to `${origin}/auth/callback`. */
 	redirectTo: string;
-	/** OAuth scopes to request. Defaults to OpenID, profile, email, and Microsoft Graph scopes. */
+	/** OAuth scopes to request. Defaults to OpenID, profile, and email. */
 	scopes: string[];
 }
 
@@ -62,7 +61,7 @@ export interface AzureADUser {
 	email: string;
 	/** The Azure AD tenant ID the user belongs to. */
 	tenantId: string;
-	/** The Azure AD groups the user is a member of. */
+	/** Verified directory groups. Empty until server-side group sync is enabled. */
 	groups: AzureADGroup[];
 }
 
@@ -106,13 +105,7 @@ export class AzureADError extends Error {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SCOPES: string[] = [
-	"openid",
-	"profile",
-	"email",
-	"https://graph.microsoft.com/User.Read",
-	"https://graph.microsoft.com/Directory.Read.All",
-];
+const DEFAULT_SCOPES: string[] = ["openid", "profile", "email"];
 
 const CALLBACK_PATH = "/auth/callback";
 
@@ -185,32 +178,12 @@ function validateAzureADSession(
 		throw new AzureADError("Azure AD session is missing tenant ID", "MISSING_TENANT_ID");
 	}
 
-	// Extract groups from user_metadata or app_metadata.
-	// These are populated either by the ID token claims (if configured in Azure AD)
-	// or by a Supabase Auth webhook / edge function.
-	const rawGroups: Array<Record<string, unknown>> =
-		(user.user_metadata?.azure_ad_groups as Array<Record<string, unknown>> | undefined) ??
-		(user.app_metadata?.azure_ad_groups as Array<Record<string, unknown>> | undefined) ??
-		[];
-
-	const groups: AzureADGroup[] = rawGroups.map(mapGroup);
-
 	return {
 		id: user.id,
 		email,
 		tenantId,
-		groups,
-	};
-}
-
-/**
- * Maps a raw group object from metadata into a typed `AzureADGroup`.
- */
-function mapGroup(raw: Record<string, unknown>): AzureADGroup {
-	return {
-		id: String(raw.objectId ?? raw.id ?? ""),
-		displayName: String(raw.displayName ?? raw.display_name ?? ""),
-		description: raw.description ? String(raw.description) : undefined,
+		// Never turn client-visible metadata into a trusted directory membership.
+		groups: [],
 	};
 }
 
@@ -309,32 +282,13 @@ export async function handleAzureADCallback(): Promise<AzureADUser> {
 }
 
 /**
- * Fetches the Azure AD groups for the specified user and syncs them into
- * the user's metadata for RBAC purposes.
- *
- * This function first checks if groups are already stored in the user's
- * metadata (populated by the ID token claims or a Supabase Auth webhook).
- * If no groups are found, it attempts to fetch them via a Supabase edge
- * function that calls the Microsoft Graph API.
+ * Reports that trusted Azure AD group synchronization is unavailable.
+ * Browser metadata and group display names cannot authorize tenant access.
  *
  * @param userId - The Supabase user ID to fetch groups for.
  *
- * @returns A `GroupSyncResult` containing the synced groups and metadata.
- *
- * @throws {AzureADError} If the session is not found, metadata fetch fails,
- *                        or the edge function returns an error.
- *
- * @example
- * ```ts
- * import { getAzureADGroups } from "../auth/azure-ad";
- *
- * async function loadGroups(userId: string) {
- *   const result = await getAzureADGroups(userId);
- *   console.log(`Synced ${result.syncedGroups.length} groups`);
- *   // Map groups to roles
- *   const roles = result.syncedGroups.map(g => g.displayName);
- * }
- * ```
+ * @throws {AzureADError} If the session is invalid, or because group sync is
+ *                        unavailable until a server-side implementation exists.
  */
 export async function getAzureADGroups(userId: string): Promise<GroupSyncResult> {
 	// Try to get groups from existing session metadata first.
@@ -361,106 +315,22 @@ export async function getAzureADGroups(userId: string): Promise<GroupSyncResult>
 		);
 	}
 
-	// Attempt to extract cached groups from metadata.
-	const cachedGroups: AzureADGroup[] =
-		extractGroupsFromMetadata(user.user_metadata?.azure_ad_groups) ??
-		extractGroupsFromMetadata(user.app_metadata?.azure_ad_groups) ??
-		[];
-
-	if (cachedGroups.length > 0) {
-		return {
-			syncedGroups: cachedGroups,
-			userId: user.id,
-			syncedAt: new Date().toISOString(),
-		};
-	}
-
-	// No cached groups – attempt to fetch via Supabase edge function.
-	// The edge function should call Microsoft Graph API's /memberOf endpoint.
-	const { data: functionData, error: functionError } = await supabase.functions.invoke<{
-		groups: Array<Record<string, unknown>>;
-	}>("azure-ad-groups", {
-		body: { userId: user.id },
-	});
-
-	if (functionError) {
-		throw new AzureADError(
-			`Failed to fetch Azure AD groups: ${functionError.message}`,
-			"GROUPS_FETCH_FAILED",
-		);
-	}
-
-	const remoteGroups: AzureADGroup[] = (functionData?.groups ?? []).map(mapGroup);
-
-	return {
-		syncedGroups: remoteGroups,
-		userId: user.id,
-		syncedAt: new Date().toISOString(),
-	};
+	throw new AzureADError(
+		"Azure AD group synchronization is unavailable until a verified server-side directory mapping is configured.",
+		"GROUP_SYNC_UNAVAILABLE",
+	);
 }
 
 /**
- * Extracts Azure AD groups from raw metadata value.
- *
- * Accepts metadata that may contain groups as an array of objects with
- * various key formats (Azure AD objectId/displayName or our normalized format).
- *
- * @param raw - The raw metadata value, expected to be an array of group objects.
- * @returns An array of `AzureADGroup` objects, or `null` if the input is invalid.
- */
-function extractGroupsFromMetadata(raw: unknown): AzureADGroup[] | null {
-	if (!Array.isArray(raw)) {
-		return null;
-	}
-
-	if (raw.length === 0) {
-		return [];
-	}
-
-	const groups: AzureADGroup[] = [];
-
-	for (const item of raw) {
-		if (typeof item !== "object" || item === null) {
-			continue;
-		}
-		groups.push(mapGroup(item as Record<string, unknown>));
-	}
-
-	return groups;
-}
-
-/**
- * Maps an Azure AD group display name to an internal team role.
- *
- * This provides a simple RBAC mapping for the existing `TeamRole` type used
- * by the team provider. Customize the mapping logic to match your
- * organization's Azure AD group structure.
+ * Legacy compatibility hook. Group display names are not a valid authority
+ * source, so this never grants a tenant role.
  *
  * @param groupDisplayName - The display name of the Azure AD group.
  * @returns The mapped team role, or `undefined` if no mapping exists.
  *
- * @example
- * ```ts
- * const role = mapGroupToRole("AIDR-Admins"); // "admin"
- * const role = mapGroupToRole("AIDR-Developers"); // "member"
- * ```
  */
 export function mapGroupToRole(
-	groupDisplayName: string,
+	_groupDisplayName: string,
 ): "admin" | "member" | "viewer" | undefined {
-	const normalized = groupDisplayName.toLowerCase();
-
-	if (normalized.includes("admin")) {
-		return "admin";
-	}
-
-	if (normalized.includes("developer") || normalized.includes("engineer")) {
-		return "member";
-	}
-
-	if (normalized.includes("viewer") || normalized.includes("readonly")) {
-		return "viewer";
-	}
-
 	return undefined;
 }

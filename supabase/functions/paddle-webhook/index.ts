@@ -8,11 +8,19 @@
 // This is a minimal v1 implementation intended for self-serve go-live.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011). The signature secret is
+// required whenever the endpoint is enabled at all: without it no delivery can
+// be verified, so the function must refuse rather than process unsigned input.
+const REQUIRED_ENV = [
+	"SUPABASE_URL",
+	"SUPABASE_SERVICE_ROLE_KEY",
+	"AIDR_PADDLE_WEBHOOK_SECRET",
+] as const;
 
-const PADDLE_WEBHOOK_SECRET = (Deno.env.get("AIDR_PADDLE_WEBHOOK_SECRET") ?? "").trim();
 const PADDLE_SIGNATURE_HEADER = "Paddle-Signature";
 const PADDLE_TOLERANCE_SECONDS = Number(Deno.env.get("AIDR_PADDLE_WEBHOOK_TOLERANCE_SECONDS") ?? "300");
 const EXTRA_AGENT_PRICE_ID = (Deno.env.get("AIDR_PADDLE_EXTRA_AGENT_PRICE_ID") ?? "").trim();
@@ -148,8 +156,10 @@ function extractExtraAgents(evt: PaddleEvent): number {
 Deno.serve(async (req) => {
 	if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
 	if (!LEGACY_SELF_SERVICE_ENABLED) return json(410, { error: "disabled_for_direct_ga" });
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return json(500, { error: "misconfigured_supabase_env" });
-	if (!PADDLE_WEBHOOK_SECRET) return json(500, { error: "missing_paddle_webhook_secret" });
+
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) return configFailure("paddle-webhook", config.error, json);
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AIDR_PADDLE_WEBHOOK_SECRET } = config.values;
 
 	const sigHeader = req.headers.get(PADDLE_SIGNATURE_HEADER) ?? "";
 	const sig = parseSignatureHeader(sigHeader);
@@ -163,7 +173,7 @@ Deno.serve(async (req) => {
 		return json(401, { error: "signature_timestamp_out_of_range" });
 	}
 
-	const computed = await hmacSha256Hex(PADDLE_WEBHOOK_SECRET, `${sig.ts}:${rawBody}`);
+	const computed = await hmacSha256Hex(AIDR_PADDLE_WEBHOOK_SECRET, `${sig.ts}:${rawBody}`);
 	const a = new TextEncoder().encode(computed.toLowerCase());
 	const b = new TextEncoder().encode(sig.h1.toLowerCase());
 	if (!timingSafeEqual(a, b)) return json(401, { error: "invalid_signature" });

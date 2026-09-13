@@ -5,10 +5,15 @@
 // Creates/list/deletes enrollment tokens (plaintext shown once; hash-only at rest).
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
+import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { membershipActive } from "../_shared/runtime-policy.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011).
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 const CREATE_RL_PER_MIN = Number(Deno.env.get("AIDR_ENROLLTOKEN_CREATE_RL_PER_MIN") ?? "20");
 const DEFAULT_TTL_HOURS = Number(Deno.env.get("AIDR_ENROLLTOKEN_DEFAULT_TTL_HOURS") ?? "24");
@@ -54,9 +59,8 @@ async function resolveTenantId(
 	supabase: ReturnType<typeof createClient>,
 	userId: string,
 	req: Request,
-): Promise<string | null> {
-	const requested = (req.headers.get("X-AIDR-Tenant-ID") ?? "").trim();
-	if (!requested) return userId;
+): Promise<{ id: string; role: string } | null> {
+	const requested = (req.headers.get("X-AIDR-Tenant-ID") ?? "").trim() || userId;
 	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requested)) {
 		return null;
 	}
@@ -67,9 +71,10 @@ async function resolveTenantId(
 		.eq("user_id", userId)
 		.maybeSingle();
 	if (!data?.tenant_id) return null;
-	if (data.expires_at && new Date(String(data.expires_at)).getTime() <= Date.now()) return null;
-	if (!["owner", "admin", "member"].includes(String(data.role))) return null;
-	return String(data.tenant_id);
+	if (!membershipActive(data)) return null;
+	const state = await supabase.from("tenants").select("status").eq("id", requested).maybeSingle();
+	if (state.error || state.data?.status !== "active") return null;
+	return { id: String(data.tenant_id), role: String(data.role) };
 }
 
 async function rateLimitCreate(
@@ -98,7 +103,14 @@ async function rateLimitCreate(
 Deno.serve(async (req) => {
 	const preflight = handleCors(req);
 	if (preflight) return preflight;
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return corsJson(req, 500, { error: "misconfigured_supabase_env" });
+
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) {
+		return configFailure("enrollment-tokens", config.error, (status, body) =>
+			corsJson(req, status, body),
+		);
+	}
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
 
 	const accessToken = getBearerToken(req);
 	if (!accessToken) return corsJson(req, 401, { error: "missing_access_token" });
@@ -110,8 +122,11 @@ Deno.serve(async (req) => {
 	const { data: userData, error: userErr } = await supabase.auth.getUser(accessToken);
 	if (userErr || !userData?.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
 	const userId = userData.user.id;
-	const tenantId = await resolveTenantId(supabase, userId, req);
-	if (!tenantId) return corsJson(req, 403, { error: "tenant_not_authorized" });
+	const tenant = await resolveTenantId(supabase, userId, req);
+	if (!tenant) return corsJson(req, 403, { error: "tenant_not_authorized" });
+	const tenantId = tenant.id;
+	const identity = await checkIdentityBarrier(supabase, accessToken, userId, tenantId);
+	if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
 
 	if (req.method === "GET") {
 		const { data, error } = await supabase
@@ -125,6 +140,7 @@ Deno.serve(async (req) => {
 	}
 
 	if (req.method === "POST") {
+		if (!["owner", "admin", "member"].includes(tenant.role)) return corsJson(req, 403, { error: "tenant_role_insufficient" });
 		let body: Record<string, unknown> = {};
 		try {
 			body = (await req.json()) as Record<string, unknown>;
@@ -133,16 +149,20 @@ Deno.serve(async (req) => {
 		}
 
 		const action = typeof body.action === "string" ? body.action : "create";
+		if (!["create", "delete"].includes(action)) return corsJson(req, 400, { error: "invalid_action" });
 
 		if (action === "delete") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
 			if (!id) return corsJson(req, 400, { error: "missing_id" });
-			const { error } = await supabase
+			let query = supabase
 				.from("enrollment_tokens")
 				.delete()
 				.eq("id", id)
 				.eq("tenant_id", tenantId);
+			if (tenant.role === "member") query = query.eq("user_id", userId);
+			const { data: changed, error } = await query.select("id");
 			if (error) return corsJson(req, 500, { error: "db_error" });
+			if (!changed?.length) return corsJson(req, 404, { error: "token_not_found_or_not_owned" });
 			await supabase.from("admin_audit_logs").insert({
 				actor_user_id: userId,
 				tenant_id: tenantId,

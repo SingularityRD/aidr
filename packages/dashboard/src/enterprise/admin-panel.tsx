@@ -1,17 +1,41 @@
 import { useState } from "react";
-import { type TeamRole, useTeam } from "./team-provider";
+import { readErrorMessage } from "../lib/errors";
+import { type TeamMember, type TeamRole, useTeam } from "./team-provider";
 
 const ROLE_LABELS: Record<TeamRole, string> = {
+	owner: "Owner",
 	admin: "Administrator",
 	member: "Member",
 	viewer: "Viewer",
 };
 
 const ROLE_DESCRIPTIONS: Record<TeamRole, string> = {
+	owner: "Team owner: full access, including ownership of the team tenant",
 	admin: "Full access: manage team, members, policies, and billing",
 	member: "Standard access: edit policies, view audit logs",
 	viewer: "Read-only: view audit logs and team activity",
 };
+
+// Roles an administrator may hand out. Ownership is deliberately not offered
+// here: promoting a colleague to owner is a tenant-ownership transfer, not a
+// membership edit, and this panel cannot audit or reverse it.
+const ASSIGNABLE_ROLES: TeamRole[] = ["admin", "member", "viewer"];
+const CHANGEABLE_ROLES: TeamRole[] = ["owner", "admin", "member", "viewer"];
+
+/**
+ * Outcome of the last action, kept as a typed value. The previous
+ * implementation decided between success and error styling with
+ * `status.includes("Failed")`, so any error text that did not happen to
+ * contain that word rendered as a neutral, success-looking notice.
+ */
+interface ActionStatus {
+	tone: "success" | "error";
+	message: string;
+}
+
+function memberLabel(member: TeamMember): string {
+	return member.email || `user ${member.user_id}`;
+}
 
 export function AdminPanel() {
 	const {
@@ -19,6 +43,8 @@ export function AdminPanel() {
 		members,
 		isLoading,
 		error,
+		membersError,
+		memberEmailsAvailable,
 		canManageTeam,
 		inviteMember,
 		removeMember,
@@ -31,7 +57,8 @@ export function AdminPanel() {
 	const [newTeamName, setNewTeamName] = useState("");
 	const [showCreateTeam, setShowCreateTeam] = useState(false);
 	const [busy, setBusy] = useState(false);
-	const [status, setStatus] = useState<string | null>(null);
+	const [status, setStatus] = useState<ActionStatus | null>(null);
+	const [inviteLink, setInviteLink] = useState("");
 
 	async function handleInvite(e: React.FormEvent) {
 		e.preventDefault();
@@ -39,13 +66,18 @@ export function AdminPanel() {
 
 		setBusy(true);
 		setStatus(null);
+		setInviteLink("");
 
 		try {
-			await inviteMember(inviteEmail.trim(), inviteRole);
-			setStatus(`Invitation sent to ${inviteEmail}`);
+			const link = await inviteMember(inviteEmail.trim(), inviteRole);
+			setInviteLink(link);
+			setStatus({ tone: "success", message: `Invitation created for ${inviteEmail}. Share the link below; no email was sent.` });
 			setInviteEmail("");
 		} catch (err) {
-			setStatus(err instanceof Error ? err.message : "Failed to send invitation");
+			setStatus({
+				tone: "error",
+				message: readErrorMessage(err, "Failed to send invitation"),
+			});
 		} finally {
 			setBusy(false);
 		}
@@ -60,25 +92,32 @@ export function AdminPanel() {
 
 		try {
 			await createTeam(newTeamName.trim());
-			setStatus(`Team "${newTeamName}" created successfully`);
+			setStatus({ tone: "success", message: `Team "${newTeamName}" created successfully` });
 			setNewTeamName("");
 			setShowCreateTeam(false);
 		} catch (err) {
-			setStatus(err instanceof Error ? err.message : "Failed to create team");
+			setStatus({
+				tone: "error",
+				message: readErrorMessage(err, "Failed to create team"),
+			});
 		} finally {
 			setBusy(false);
 		}
 	}
 
-	async function handleRemoveMember(userId: string, email: string) {
-		if (!confirm(`Remove ${email} from the team?`)) return;
+	async function handleRemoveMember(member: TeamMember) {
+		if (!window.confirm(`Remove ${memberLabel(member)} from the team?`)) return;
 
 		setBusy(true);
+		setStatus(null);
 		try {
-			await removeMember(userId);
-			setStatus(`${email} removed from team`);
+			await removeMember(member.user_id);
+			setStatus({ tone: "success", message: `${memberLabel(member)} removed from team` });
 		} catch (err) {
-			setStatus(err instanceof Error ? err.message : "Failed to remove member");
+			setStatus({
+				tone: "error",
+				message: readErrorMessage(err, "Failed to remove member"),
+			});
 		} finally {
 			setBusy(false);
 		}
@@ -86,11 +125,15 @@ export function AdminPanel() {
 
 	async function handleRoleChange(userId: string, newRole: TeamRole) {
 		setBusy(true);
+		setStatus(null);
 		try {
 			await updateMemberRole(userId, newRole);
-			setStatus("Role updated successfully");
+			setStatus({ tone: "success", message: `Role updated to ${ROLE_LABELS[newRole]}` });
 		} catch (err) {
-			setStatus(err instanceof Error ? err.message : "Failed to update role");
+			setStatus({
+				tone: "error",
+				message: readErrorMessage(err, "Failed to update role"),
+			});
 		} finally {
 			setBusy(false);
 		}
@@ -108,45 +151,65 @@ export function AdminPanel() {
 		return (
 			<div className="card">
 				<h2>Team Management</h2>
-				<p className="muted">You are not part of any team yet.</p>
-
-				{showCreateTeam ? (
-					<form onSubmit={handleCreateTeam}>
-						<label className="label">
-							Team Name
-							<input
-								className="input"
-								type="text"
-								value={newTeamName}
-								onChange={(e) => setNewTeamName(e.target.value)}
-								placeholder="e.g., Acme Security"
-								required
-							/>
-						</label>
-						<div className="row">
-							<button className="button" type="submit" disabled={busy}>
-								Create Team
-							</button>
-							<button
-								className="button button-secondary"
-								type="button"
-								onClick={() => setShowCreateTeam(false)}
-							>
-								Cancel
-							</button>
+				{error ? (
+					<>
+						<div className="notice notice-danger" role="alert" aria-live="assertive">
+							<b>Your team membership could not be loaded.</b>
+							<div className="muted small" style={{ marginTop: 6 }}>
+								{error}
+							</div>
+							<div className="muted small" style={{ marginTop: 6 }}>
+								This is not a confirmed &quot;no team&quot; state, so no team creation is offered
+								until the membership query succeeds.
+							</div>
 						</div>
-					</form>
+					</>
 				) : (
-					<button className="button" onClick={() => setShowCreateTeam(true)}>
-						Create Your First Team
-					</button>
+					<>
+						<p className="muted">You are not part of any team yet.</p>
+
+						{showCreateTeam ? (
+							<form onSubmit={handleCreateTeam}>
+								<label className="label">
+									Team Name
+									<input
+										className="input"
+										type="text"
+										value={newTeamName}
+										onChange={(e) => setNewTeamName(e.target.value)}
+										placeholder="e.g., Acme Security"
+										required
+									/>
+								</label>
+								<div className="row">
+									<button className="button" type="submit" disabled={busy}>
+										Create Team
+									</button>
+									<button
+										className="button button-secondary"
+										type="button"
+										onClick={() => setShowCreateTeam(false)}
+									>
+										Cancel
+									</button>
+								</div>
+							</form>
+						) : (
+							<button className="button" onClick={() => setShowCreateTeam(true)}>
+								Create Your First Team
+							</button>
+						)}
+					</>
 				)}
 
-				{status && (
-					<div className={`notice ${status.includes("Failed") ? "notice-danger" : ""}`}>
-						{status}
+				{status ? (
+					<div
+						className={`notice ${status.tone === "error" ? "notice-danger" : ""}`}
+						role={status.tone === "error" ? "alert" : "status"}
+					>
+						{status.message}
 					</div>
-				)}
+				) : null}
 			</div>
 		);
 	}
@@ -180,6 +243,13 @@ export function AdminPanel() {
 						</button>
 					)}
 				</div>
+
+				{canManageTeam ? null : (
+					<div className="notice" style={{ marginTop: 14 }}>
+						You have read-only access to this team. Only an owner or an administrator can invite,
+						remove, or re-role members.
+					</div>
+				)}
 
 				{showCreateTeam && (
 					<form
@@ -215,7 +285,33 @@ export function AdminPanel() {
 
 			{/* Members List */}
 			<div className="card">
-				<h3>Team Members ({members.length})</h3>
+				<h3>
+					{membersError ? "Team Members" : `Team Members (${members.length})`}
+				</h3>
+
+				{membersError ? (
+					<div className="notice notice-danger" role="alert" aria-live="assertive">
+						<b>Member list unavailable.</b>
+						<div className="muted small" style={{ marginTop: 6 }}>
+							{membersError}
+						</div>
+						<div className="muted small" style={{ marginTop: 6 }}>
+							No member count is shown because the membership rows could not be read.
+						</div>
+					</div>
+				) : null}
+
+				{!membersError && !memberEmailsAvailable ? (
+					<div className="notice notice-warning" style={{ marginBottom: 14 }}>
+						<b>Member email addresses are unavailable in this deployment.</b>
+						<div className="muted small" style={{ marginTop: 6 }}>
+							The dashboard reads public.team_members, whose user reference points at auth.users;
+							no public.users relation is created by the migrations, so the API cannot project
+							emails. Members are identified by user id; role changes and removal still apply to the
+							real rows.
+						</div>
+					</div>
+				) : null}
 
 				{canManageTeam && (
 					<form
@@ -246,9 +342,11 @@ export function AdminPanel() {
 									onChange={(e) => setInviteRole(e.target.value as TeamRole)}
 									style={{ padding: "10px 13px" }}
 								>
-									<option value="admin">Admin</option>
-									<option value="member">Member</option>
-									<option value="viewer">Viewer</option>
+									{ASSIGNABLE_ROLES.map((role) => (
+										<option key={role} value={role}>
+											{ROLE_LABELS[role]}
+										</option>
+									))}
 								</select>
 							</label>
 							<button className="button" type="submit" disabled={busy}>
@@ -256,85 +354,92 @@ export function AdminPanel() {
 							</button>
 						</div>
 						<p className="muted small">{ROLE_DESCRIPTIONS[inviteRole]}</p>
+						{inviteLink && <label>Invitation link<input className="input" readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label>}
 					</form>
 				)}
 
-				<table className="table">
-					<thead>
-						<tr>
-							<th>Member</th>
-							<th>Role</th>
-							{canManageTeam && <th className="right">Actions</th>}
-						</tr>
-					</thead>
-					<tbody>
-						{members.map((member) => (
-							<tr key={member.id}>
-								<td>
-									<div className="row">
-										{member.avatar_url && (
-											<img
-												src={member.avatar_url}
-												alt=""
-												style={{ width: 32, height: 32, borderRadius: "50%" }}
-											/>
-										)}
-										<div>
-											<div>{member.email}</div>
-											{member.invited_by && (
-												<div className="small muted">Invited by team member</div>
-											)}
-										</div>
-									</div>
-								</td>
-								<td>
-									{canManageTeam ? (
-										<select
-											className="input"
-											value={member.role}
-											onChange={(e) =>
-												void handleRoleChange(member.user_id, e.target.value as TeamRole)
-											}
-											style={{ padding: "6px 10px", minWidth: "120px" }}
-											disabled={busy}
-										>
-											<option value="admin">{ROLE_LABELS.admin}</option>
-											<option value="member">{ROLE_LABELS.member}</option>
-											<option value="viewer">{ROLE_LABELS.viewer}</option>
-										</select>
-									) : (
-										<span className="pill">{ROLE_LABELS[member.role]}</span>
-									)}
-								</td>
-								{canManageTeam && (
-									<td className="right">
-										<button
-											className="button button-secondary"
-											style={{ padding: "6px 10px", fontSize: "12px" }}
-											onClick={() => void handleRemoveMember(member.user_id, member.email)}
-											disabled={busy}
-										>
-											Remove
-										</button>
-									</td>
-								)}
+				{members.length > 0 ? (
+					<table className="table">
+						<thead>
+							<tr>
+								<th>Member</th>
+								<th>Role</th>
+								{canManageTeam && <th className="right">Actions</th>}
 							</tr>
-						))}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							{members.map((member) => (
+								<tr key={member.id}>
+									<td>
+										<div className="row">
+											{member.avatar_url && (
+												<img
+													src={member.avatar_url}
+													alt=""
+													style={{ width: 32, height: 32, borderRadius: "50%" }}
+												/>
+											)}
+											<div>
+												<div>{memberLabel(member)}</div>
+												{member.invited_by && (
+													<div className="small muted">Invited by team member</div>
+												)}
+											</div>
+										</div>
+									</td>
+									<td>
+										{canManageTeam ? (
+											<select
+												className="input"
+												value={member.role}
+												onChange={(e) =>
+													void handleRoleChange(member.user_id, e.target.value as TeamRole)
+												}
+												style={{ padding: "6px 10px", minWidth: "120px" }}
+												disabled={busy}
+											>
+												{CHANGEABLE_ROLES.map((role) => (
+													<option key={role} value={role}>
+														{ROLE_LABELS[role]}
+													</option>
+												))}
+											</select>
+										) : (
+											<span className="pill">{ROLE_LABELS[member.role]}</span>
+										)}
+									</td>
+									{canManageTeam && (
+										<td className="right">
+											<button
+												className="button button-secondary"
+												style={{ padding: "6px 10px", fontSize: "12px" }}
+												onClick={() => void handleRemoveMember(member)}
+												disabled={busy}
+											>
+												Remove
+											</button>
+										</td>
+									)}
+								</tr>
+							))}
+						</tbody>
+					</table>
+				) : null}
 			</div>
 
 			{error && (
-				<div className="notice notice-danger">
+				<div className="notice notice-danger" role="alert">
 					<b>Error:</b> {error}
 				</div>
 			)}
 
 			{status && (
 				<div
-					className={`notice ${status.includes("Failed") || status.includes("error") ? "notice-danger" : ""}`}
+					className={`notice ${status.tone === "error" ? "notice-danger" : ""}`}
+					role={status.tone === "error" ? "alert" : "status"}
+					aria-live="assertive"
 				>
-					{status}
+					{status.message}
 				</div>
 			)}
 		</div>

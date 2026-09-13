@@ -1,10 +1,29 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Required configuration (AIDR-011). Validated before the admin client is built
+// and before the Google token exchange, so a missing variable answers with an
+// explicit 500 that names it instead of posting `undefined/auth/v1/callback` to
+// Google or building an admin client with empty credentials.
+const REQUIRED_ENV = [
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+] as const;
+
+function json(status: number, body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
 interface GoogleUserInfo {
   id: string;
@@ -22,6 +41,15 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+  if (!config.ok) return configFailure("auth-callback", config.error, json);
+  const {
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+  } = config.values;
+
   try {
     const { code, state } = await req.json();
     
@@ -34,8 +62,8 @@ serve(async (req) => {
 
     // Create Supabase admin client
     const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
@@ -45,9 +73,9 @@ serve(async (req) => {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         code,
-        client_id: Deno.env.get("GOOGLE_CLIENT_ID") ?? "",
-        client_secret: Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "",
-        redirect_uri: `${Deno.env.get("SUPABASE_URL")}/auth/v1/callback`,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: `${SUPABASE_URL}/auth/v1/callback`,
         grant_type: "authorization_code",
       }),
     });

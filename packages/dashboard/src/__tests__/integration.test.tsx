@@ -9,9 +9,11 @@ vi.mock("../lib/supabase", () => ({
 	supabase: {
 		auth: {
 			getSession: vi.fn(),
+			getUser: vi.fn(),
 			signOut: vi.fn(),
 			signInWithOAuth: vi.fn(),
 			signInWithOtp: vi.fn(),
+			signInWithPassword: vi.fn(),
 			exchangeCodeForSession: vi.fn(),
 			onAuthStateChange: vi.fn(),
 		},
@@ -43,9 +45,11 @@ import { ThemeProvider } from "../ui/ThemeProvider";
 const mockedSupabase = supabase as unknown as {
 	auth: {
 		getSession: ReturnType<typeof vi.fn>;
+		getUser: ReturnType<typeof vi.fn>;
 		signOut: ReturnType<typeof vi.fn>;
 		signInWithOAuth: ReturnType<typeof vi.fn>;
 		signInWithOtp: ReturnType<typeof vi.fn>;
+		signInWithPassword: ReturnType<typeof vi.fn>;
 		onAuthStateChange: ReturnType<typeof vi.fn>;
 	};
 	functions: { invoke: ReturnType<typeof vi.fn> };
@@ -78,7 +82,9 @@ function createQueryBuilder(defaultData: unknown[] = []) {
 
 function resetSupabaseMocks() {
 	vi.resetAllMocks();
+	delete window.__AIDR_CONFIG__;
 	mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+	mockedSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "22222222-2222-4222-8222-222222222222" } }, error: null });
 	mockedSupabase.auth.signOut.mockResolvedValue({ error: null });
 	mockedSupabase.auth.signInWithOAuth.mockResolvedValue({ data: { url: null }, error: null });
 	mockedSupabase.auth.signInWithOtp.mockResolvedValue({ data: {}, error: null });
@@ -125,10 +131,58 @@ describe("Dashboard integration", () => {
 		await waitFor(() => expect(mockedSupabase.auth.signInWithOAuth).toHaveBeenCalled());
 	});
 
+	it("self-hosted login exposes configured password auth and preserves a safe return path", async () => {
+		window.__AIDR_CONFIG__ = { authMethods: ["password"] };
+		mockedSupabase.auth.signInWithPassword.mockResolvedValue({ data: {}, error: null });
+		render(
+			<MemoryRouter initialEntries={["/login?returnTo=%2Fenterprise"]}>
+				<Routes>
+					<Route path="/login" element={<LoginPage />} />
+					<Route path="/enterprise" element={<div>Customer workspace</div>} />
+				</Routes>
+			</MemoryRouter>,
+		);
+		expect(screen.queryByText("Continue with Google")).not.toBeInTheDocument();
+		expect(screen.queryByText("Send magic link")).not.toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText("Email address"), {
+			target: { value: "owner@example.test" },
+		});
+		fireEvent.change(screen.getByLabelText("Password"), {
+			target: { value: "test-only-password-long" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+		await waitFor(() => expect(screen.getByText("Customer workspace")).toBeInTheDocument());
+		expect(mockedSupabase.auth.signInWithPassword).toHaveBeenCalledWith(
+			expect.objectContaining({ email: "owner@example.test", password: "test-only-password-long" }),
+		);
+	});
+
+	it("failed password sign-in clears the password without exposing account details", async () => {
+		window.__AIDR_CONFIG__ = { authMethods: ["password"] };
+		mockedSupabase.auth.signInWithPassword.mockResolvedValue({
+			error: { message: "private backend detail" },
+		});
+		render(
+			<MemoryRouter>
+				<LoginPage />
+			</MemoryRouter>,
+		);
+		fireEvent.change(screen.getByLabelText("Email address"), {
+			target: { value: "owner@example.test" },
+		});
+		fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong-password" } });
+		fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Sign-in failed"));
+		expect(screen.getByLabelText("Password")).toHaveValue("");
+		expect(screen.queryByText("private backend detail")).not.toBeInTheDocument();
+	});
+
 	it("renders agents and fail-closed entitlement status", async () => {
 		render(
 			<MemoryRouter>
-				<AgentsPage />
+				<TeamProvider>
+					<AgentsPage />
+				</TeamProvider>
 			</MemoryRouter>,
 		);
 
@@ -262,7 +316,9 @@ describe("Dashboard integration", () => {
 	it("renders the invoice-only billing path without invoking checkout", async () => {
 		render(
 			<MemoryRouter>
-				<BillingPage />
+				<TeamProvider>
+					<BillingPage />
+				</TeamProvider>
 			</MemoryRouter>,
 		);
 
@@ -369,7 +425,8 @@ describe("Dashboard integration", () => {
 	});
 
 	it("propagates agent API errors to the visible UI", async () => {
-		mockedSupabase.from.mockImplementation(() => {
+		mockedSupabase.from.mockImplementation((table: string) => {
+			if (table === "team_members") return createQueryBuilder([{ team_id: "11111111-1111-4111-8111-111111111111", role: "owner", teams: { id: "11111111-1111-4111-8111-111111111111", name: "Customer", plan: "enterprise" } }]);
 			const query = createQueryBuilder();
 			query.order.mockResolvedValue({ data: null, error: { message: "Database error" } });
 			query.maybeSingle.mockResolvedValue({ data: null, error: { message: "Database error" } });
@@ -378,7 +435,9 @@ describe("Dashboard integration", () => {
 
 		render(
 			<MemoryRouter>
-				<AgentsPage />
+				<TeamProvider>
+					<AgentsPage />
+				</TeamProvider>
 			</MemoryRouter>,
 		);
 
@@ -457,9 +516,9 @@ describe("Dashboard integration", () => {
 			expect(screen.getByText("Agent data is unavailable right now.")).toBeInTheDocument(),
 		);
 		expect(screen.getByText("Event data is unavailable right now.")).toBeInTheDocument();
-		// Agents / Connected / Events / Deny / Ask all render an honest "—",
-		// never a fabricated zero (Pending resolves to 0 from the mocked invoke).
-		expect(screen.getAllByText("—")).toHaveLength(5);
+		// Agents / Connected / Events / Deny / Ask / Pending all render an
+		// honest "—" because the mocked enrollment response has no acknowledgement.
+		expect(screen.getAllByText("—")).toHaveLength(6);
 		expect(screen.getByText("unavailable")).toBeInTheDocument();
 		expect(screen.getByRole("alert")).toHaveTextContent("Agents down Events down");
 	});
@@ -550,7 +609,7 @@ describe("Dashboard integration", () => {
 	it("mounts onboarding and incidents without crashing", () => {
 		const onboarding = render(
 			<MemoryRouter>
-				<OnboardingPage />
+				<TeamProvider><OnboardingPage /></TeamProvider>
 			</MemoryRouter>,
 		);
 		expect(onboarding.container).toBeTruthy();

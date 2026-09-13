@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider, redirect } from "react-router-dom";
+import { EnterpriseAuth } from "./enterprise/auth";
 import { supabaseEnvError } from "./lib/supabase";
 import { initSentry } from "./sentry";
 import { AppLayout } from "./ui/AppLayout";
@@ -17,13 +18,16 @@ import { EventsPage } from "./ui/pages/EventsPage";
 import { IncidentsPage } from "./ui/pages/IncidentsPage";
 import { LoginPage } from "./ui/pages/LoginPage";
 import { OnboardingPage } from "./ui/pages/OnboardingPage";
+import { PolicyPage } from "./ui/pages/PolicyPage";
 import { DemoPage } from "./ui/pages/public/DemoPage";
 import { LandingPage } from "./ui/pages/public/LandingPage";
 import { PilotPage } from "./ui/pages/public/PilotPage";
 import { PricingPage } from "./ui/pages/public/PricingPage";
 import { PublicInfoPage } from "./ui/pages/public/PublicInfoPage";
 import { VerifyPage } from "./ui/pages/public/VerifyPage";
+import { RecoveryPage } from "./ui/pages/RecoveryPage";
 import { SettingsPage } from "./ui/pages/SettingsPage";
+import { TeamPage } from "./ui/pages/TeamPage";
 import { RouteErrorPage } from "./ui/RouteErrorPage";
 import { buildReturnToFromRequest, sanitizeReturnTo, setPostAuthReturnTo } from "./ui/return-to";
 import { getSession } from "./ui/session";
@@ -80,6 +84,20 @@ const router = createBrowserRouter([
 	{
 		path: "/auth/callback",
 		element: <AuthCallbackPage />,
+		errorElement: routeErrorElement,
+	},
+	{
+		path: "/auth/recover",
+		element: <RecoveryPage />,
+		errorElement: routeErrorElement,
+	},
+	{
+		// Invite-acceptance entry point. EnterpriseAuth was implemented with no
+		// route at all, and its success path navigated to "/team", which did not
+		// exist. Both ends are now real: this route renders the invitation panel,
+		// and /team is the rendered team administration page below.
+		path: "/enterprise",
+		element: <EnterpriseAuth />,
 		errorElement: routeErrorElement,
 	},
 	{
@@ -151,6 +169,20 @@ const router = createBrowserRouter([
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
 		children: [{ index: true, element: <BillingPage /> }],
+	},
+	{
+		path: "/team",
+		element: <AppLayout />,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, element: <TeamPage /> }],
+	},
+	{
+		path: "/policies",
+		element: <AppLayout />,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, element: <PolicyPage /> }],
 	},
 ]);
 

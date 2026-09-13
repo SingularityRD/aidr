@@ -13,6 +13,9 @@ export function VerifyPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [ok, setOk] = useState(false);
 	const [hasSession, setHasSession] = useState<boolean | null>(null);
+	const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
+	const [teamId, setTeamId] = useState("");
+	const preferredTeam = params.get("team") ?? "";
 
 	useEffect(() => {
 		let cancelled = false;
@@ -20,6 +23,15 @@ export function VerifyPage() {
 			try {
 				const sess = await getSession();
 				if (!cancelled) setHasSession(Boolean(sess));
+				if (!sess || cancelled) return;
+				const identity = await supabase.auth.getUser();
+				if (identity.error || !identity.data.user) throw new Error("Your session could not be verified.");
+				const result = await supabase.from("team_members").select("role,teams!inner(id,name)").eq("user_id", identity.data.user.id);
+				if (cancelled) return;
+				if (result.error) throw new Error("Your teams could not be loaded. Refresh to retry.");
+				const available = ((result.data ?? []) as unknown as { role: string; teams: { id: string; name: string } | null }[]).filter(row => row.teams && ["owner", "admin", "member"].includes(row.role)).map(row => row.teams!);
+				setTeams(available);
+				setTeamId(available.some(team => team.id === preferredTeam) ? preferredTeam : available.length === 1 ? available[0]?.id ?? "" : "");
 			} catch (cause) {
 				if (!cancelled) {
 					setHasSession(false);
@@ -31,7 +43,7 @@ export function VerifyPage() {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [preferredTeam]);
 
 	const trimmed = useMemo(() => userCode.trim().toUpperCase(), [userCode]);
 	const signInReturnTo = trimmed ? `/verify?code=${encodeURIComponent(trimmed)}` : "/verify";
@@ -57,12 +69,18 @@ export function VerifyPage() {
 						autoCorrect="off"
 					/>
 				</label>
+				{hasSession && <label className="label" htmlFor="enrollment-team">Team receiving this device
+					<select id="enrollment-team" className="input" value={teamId} disabled={busy || ok} onChange={(event) => setTeamId(event.target.value)}>
+						<option value="">Select a team</option>
+						{teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}
+					</select>
+				</label>}
 
 				<div className="row">
 					<button
 						className="button"
 						type="button"
-						disabled={busy || !trimmed}
+						disabled={busy || ok || !trimmed || (hasSession === true && !teamId)}
 						onClick={async () => {
 							setBusy(true);
 							setError(null);
@@ -74,9 +92,11 @@ export function VerifyPage() {
 									navigate(`/login?returnTo=${encodeURIComponent(rt)}`);
 									return;
 								}
+								if (!teamId) throw new Error("Select the team receiving this device.");
 
 								const res = await supabase.functions.invoke("device-verify", {
 									method: "POST",
+									headers: { "X-AIDR-Tenant-ID": teamId },
 									body: { user_code: trimmed },
 								});
 								if (res.error) {
@@ -112,14 +132,6 @@ export function VerifyPage() {
 					<div className="notice">
 						<div>
 							<b>Authorized.</b> Return to your agent. It should complete enrollment automatically.
-						</div>
-						<div className="muted small" style={{ marginTop: 8 }}>
-							If you haven’t been approved for the pilot yet, authorization may be blocked.
-						</div>
-						<div className="row" style={{ marginTop: 12 }}>
-							<Link className="button button-secondary" to="/pilot">
-								View pilot status
-							</Link>
 						</div>
 					</div>
 				) : null}

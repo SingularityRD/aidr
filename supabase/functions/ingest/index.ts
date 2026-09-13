@@ -7,12 +7,23 @@
 // - maps api_key -> user_id (via stored sha256 hash)
 // - upserts agent by (user_id, iid)
 // - enforces agent-seat limit: included_agents + extra_agents
-// - inserts events for dashboard
+// - idempotently inserts stable event identities for the dashboard
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
+import {
+	consumeTenantRateLimit,
+	rateLimitHeaders,
+	readBoundedJson,
+} from "../_shared/request-limits.ts";
+import { normalizeIngestEvents } from "./events.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011).
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 // Commercial v1: signed entitlements (Ed25519).
 // Key material should be provided via environment variables in the Edge Functions runtime.
@@ -25,14 +36,32 @@ const ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64 = (
 // This secret MUST be kept server-side; clients only receive derived, time-bound keys via entitlements.
 const PACK_MASTER_KEY_B64 = (Deno.env.get("AIDR_PACK_MASTER_KEY_B64") ?? "").trim();
 
-// Default: 7d entitlement TTL + 72h offline grace.
-const ENTITLEMENT_TTL_HOURS = Number(Deno.env.get("AIDR_ENTITLEMENT_TTL_HOURS") ?? "168");
-const ENTITLEMENT_GRACE_HOURS = Number(Deno.env.get("AIDR_ENTITLEMENT_GRACE_HOURS") ?? "72");
+// Default: 7d online entitlement TTL, followed by 72h offline grace.
+// Keep these limits aligned with /v1/enroll: malformed settings must not mint
+// snapshots whose lifetime silently collapses or stretches indefinitely.
+const ENTITLEMENT_TTL_HOURS_RAW = Deno.env.get("AIDR_ENTITLEMENT_TTL_HOURS") ?? "168";
+const ENTITLEMENT_GRACE_HOURS_RAW = Deno.env.get("AIDR_ENTITLEMENT_GRACE_HOURS") ?? "72";
 
-function json(status: number, body: Record<string, unknown>) {
+function parseBoundedHours(raw: string, min: number, max: number): number | null {
+	if (!/^\d+$/.test(raw)) return null;
+	const hours = Number(raw);
+	return Number.isSafeInteger(hours) && hours >= min && hours <= max ? hours : null;
+}
+
+function entitlementTiming(): { ttlHours: number; graceHours: number } | null {
+	const ttlHours = parseBoundedHours(ENTITLEMENT_TTL_HOURS_RAW, 1, 720);
+	const graceHours = parseBoundedHours(ENTITLEMENT_GRACE_HOURS_RAW, 0, 168);
+	return ttlHours === null || graceHours === null ? null : { ttlHours, graceHours };
+}
+
+function json(
+	status: number,
+	body: Record<string, unknown>,
+	headers: Record<string, string> = {},
+) {
 	return new Response(JSON.stringify(body), {
 		status,
-		headers: { "Content-Type": "application/json" },
+		headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
 	});
 }
 
@@ -118,9 +147,46 @@ async function signEd25519Detached(payloadJson: string): Promise<string | null> 
 	}
 }
 
-function addHoursIso(hours: number): string {
-	const safe = Number.isFinite(hours) ? Math.max(0, hours) : 0;
-	return new Date(Date.now() + safe * 60 * 60 * 1000).toISOString();
+function buildEntitlementSnapshot(params: {
+	tenantId: string;
+	includedAgents: number;
+	extraAgents: number;
+	allowedAgents: number;
+	premiumModules: string[];
+	tenantPackKey: string | null;
+	revocationEpoch: number;
+	timing: { ttlHours: number; graceHours: number };
+}) {
+	const issuedAt = new Date();
+	const expiresAt = new Date(issuedAt.getTime() + params.timing.ttlHours * 3_600_000);
+	const graceUntil = new Date(expiresAt.getTime() + params.timing.graceHours * 3_600_000);
+	return {
+		schema_version: 2,
+		tenant_id: params.tenantId,
+		subscription_tier: params.extraAgents > 0 ? "pro" : "free",
+		included_agents: params.includedAgents,
+		extra_agents: params.extraAgents,
+		allowed_agents: params.allowedAgents,
+		premium_modules: params.premiumModules,
+		pack_keys:
+			params.tenantPackKey && params.premiumModules.includes("premium_intel")
+				? [
+						{
+							alg: "aes-256-gcm",
+							key_id: "aidr-pack-v1",
+							key_b64: params.tenantPackKey,
+							// A pack key never outlives its signed entitlement. It remains
+							// usable during the explicitly configured offline grace window.
+							expires_at: graceUntil.toISOString(),
+						},
+					]
+				: [],
+		issued_at: issuedAt.toISOString(),
+		expires_at: expiresAt.toISOString(),
+		grace_until: graceUntil.toISOString(),
+		serial: crypto.randomUUID(),
+		revocation_epoch: params.revocationEpoch,
+	};
 }
 
 function buildPremiumModules(entRow: Record<string, unknown> | null): string[] {
@@ -136,50 +202,94 @@ Deno.serve(async (req) => {
 		return json(405, { error: "method_not_allowed" });
 	}
 
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-		return json(500, { error: "misconfigured_supabase_env" });
-	}
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) return configFailure("ingest", config.error, json);
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
+
+	// Signing is optional provisioning, but a HALF-configured key pair is a
+	// misconfiguration: the operator believes entitlements are signed while the
+	// function would silently answer with `entitlement_signed: null`.
+	const signingProblem = partialGroupError({
+		AIDR_ENTITLEMENT_SIGNING_KEY_ID: ENTITLEMENT_SIGNING_KEY_ID,
+		AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64,
+	});
+	if (signingProblem) return configFailure("ingest", signingProblem, json);
+	const timing = entitlementTiming();
+	if (!timing) return json(503, { error: "entitlement_timing_unavailable" });
 
 	const apiKey = getBearerToken(req);
 	if (!apiKey) {
 		return json(401, { error: "missing_api_key" });
 	}
+	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+		auth: { persistSession: false },
+	});
+	const tenantAuth = await authenticateTenantApiKey(supabase, apiKey);
+	if (!tenantAuth.ok) return json(tenantAuth.status, { error: tenantAuth.error });
 
-	let body: IngestBody;
-	try {
-		body = (await req.json()) as IngestBody;
-	} catch {
+	const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+	if (!parsed.ok) return json(parsed.status, { error: parsed.error });
+	if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
 		return json(400, { error: "invalid_json" });
 	}
+	const body = parsed.value as IngestBody;
 
 	const iid = typeof body.iid === "string" ? body.iid.trim() : "";
-	if (!iid) {
+	if (!iid || iid.length > 128) {
 		return json(400, { error: "missing_iid" });
 	}
+	if (
+		[body.agent_runtime, body.agent_runtime_version, body.aidr_version].some(
+			(value) => typeof value === "string" && value.length > 128,
+		)
+	) {
+		return json(400, { error: "invalid_agent_metadata" });
+	}
 
-	const events = Array.isArray(body.events) ? (body.events as Record<string, unknown>[]) : [];
+	const normalizedEvents = normalizeIngestEvents(body.events);
+	if (!normalizedEvents.ok) {
+		return json(normalizedEvents.status, {
+			error: normalizedEvents.error,
+			...(normalizedEvents.detail ? { detail: normalizedEvents.detail } : {}),
+		});
+	}
+	const events = normalizedEvents.events;
 	if (events.length === 0) {
 		// Allow heartbeat-style calls to update last_seen.
 	}
 
-	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-		auth: { persistSession: false },
+	const rate = await consumeTenantRateLimit(supabase, {
+		tenantId: tenantAuth.tenantId,
+		subject: tenantAuth.userId,
+		endpoint: "ingest",
+		perSubject: 1_200,
+		perTenant: 50_000,
+		cost: Math.max(1, events.length),
 	});
+	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
 
 	// 1) api_key -> user_id
 	const keyHash = await sha256Hex(apiKey);
 	const { data: keyRow, error: keyErr } = await supabase
 		.from("api_keys")
-		.select("user_id, tenant_id, revoked")
+		.select("user_id, tenant_id, revoked, agent_id")
 		.eq("key_hash", keyHash)
 		.maybeSingle();
 
-	if (keyErr || !keyRow || keyRow.revoked) {
+	if (keyErr) return json(503, { error: "authorization_unavailable" });
+	if (!keyRow || keyRow.revoked) {
 		return json(401, { error: "invalid_api_key" });
 	}
 
-	const userId = keyRow.user_id as string;
-	const tenantId = (keyRow.tenant_id as string | null) ?? userId;
+	const userId = tenantAuth.userId;
+	const tenantId = tenantAuth.tenantId;
+	if (keyRow.user_id !== userId || keyRow.tenant_id !== tenantId) {
+		return json(503, { error: "authorization_unavailable" });
+	}
+	if (keyRow.agent_id) {
+		const { data: bound, error: boundError } = await supabase.from("agents").select("iid").eq("id", keyRow.agent_id).eq("tenant_id", tenantId).maybeSingle();
+		if (boundError || !bound || bound.iid !== iid) return json(403, { error: "agent_key_mismatch" });
+	}
 
 	// 2) load entitlements (default row is created by trigger; still fail-open)
 	const { data: ent, error: entErr } = await supabase
@@ -227,31 +337,10 @@ Deno.serve(async (req) => {
 		const tenantPackKey = premiumModules.includes("premium_intel")
 			? await deriveTenantPackKeyB64(tenantId)
 			: null;
-		const entitlement = {
-			schema_version: 2,
-			tenant_id: tenantId,
-			subscription_tier: extraAgents > 0 ? "pro" : "free",
-			included_agents: includedAgents,
-			extra_agents: extraAgents,
-			allowed_agents: allowedAgents,
-			premium_modules: premiumModules,
-			pack_keys:
-				tenantPackKey && premiumModules.includes("premium_intel")
-					? [
-							{
-								alg: "aes-256-gcm",
-								key_id: "aidr-pack-v1",
-								key_b64: tenantPackKey,
-								expires_at: addHoursIso(ENTITLEMENT_GRACE_HOURS),
-							},
-						]
-					: [],
-			issued_at: new Date().toISOString(),
-			expires_at: addHoursIso(ENTITLEMENT_TTL_HOURS),
-			grace_until: addHoursIso(ENTITLEMENT_GRACE_HOURS),
-			serial: crypto.randomUUID(),
-			revocation_epoch: revocationEpoch,
-		};
+		const entitlement = buildEntitlementSnapshot({
+			tenantId, includedAgents, extraAgents, allowedAgents, premiumModules,
+			tenantPackKey, revocationEpoch, timing,
+		});
 		const entitlementJson = canonicalJson(entitlement);
 		const sig = await signEd25519Detached(entitlementJson);
 		return json(402, {
@@ -273,20 +362,24 @@ Deno.serve(async (req) => {
 		});
 	}
 
-	// 4) Insert events (best-effort)
+	// 4) Insert events idempotently. A database failure is retryable and must be
+	// visible to the durable client queue; returning ok here would lose events.
 	if (events.length > 0 && agentId) {
-		const rows = events.slice(0, 200).map((evt) => ({
+		const rows = events.map((evt) => ({
 			user_id: userId,
 			tenant_id: tenantId,
 			agent_id: agentId,
+			event_id: evt.event_id,
 			type: typeof evt.type === "string" ? (evt.type as string) : "runtime_verdict",
 			payload: evt,
 		}));
 
-		const { error: evtErr } = await supabase.from("events").insert(rows);
+		const { error: evtErr } = await supabase
+			.from("events")
+			.upsert(rows, { onConflict: "tenant_id,event_id", ignoreDuplicates: true });
 		if (evtErr) {
-			// Fail-open for agent; telemetry failure shouldn't break ingestion heartbeat
-			return json(200, { ok: true, warnings: ["events_insert_failed"] });
+			// Detection stays local/fail-open, while telemetry delivery remains explicitly unavailable.
+			return json(503, { error: "events_insert_failed", retryable: true });
 		}
 	}
 
@@ -294,31 +387,10 @@ Deno.serve(async (req) => {
 		? await deriveTenantPackKeyB64(tenantId)
 		: null;
 
-	const entitlement = {
-		schema_version: 2,
-		tenant_id: tenantId,
-		subscription_tier: extraAgents > 0 ? "pro" : "free",
-		included_agents: includedAgents,
-		extra_agents: extraAgents,
-		allowed_agents: allowedAgents,
-		premium_modules: premiumModules,
-		pack_keys:
-			tenantPackKey && premiumModules.includes("premium_intel")
-				? [
-						{
-							alg: "aes-256-gcm",
-							key_id: "aidr-pack-v1",
-							key_b64: tenantPackKey,
-							expires_at: addHoursIso(ENTITLEMENT_GRACE_HOURS),
-						},
-					]
-				: [],
-		issued_at: new Date().toISOString(),
-		expires_at: addHoursIso(ENTITLEMENT_TTL_HOURS),
-		grace_until: addHoursIso(ENTITLEMENT_GRACE_HOURS),
-		serial: crypto.randomUUID(),
-		revocation_epoch: revocationEpoch,
-	};
+	const entitlement = buildEntitlementSnapshot({
+		tenantId, includedAgents, extraAgents, allowedAgents, premiumModules,
+		tenantPackKey, revocationEpoch, timing,
+	});
 	const entitlementJson = canonicalJson(entitlement);
 	const sig = await signEd25519Detached(entitlementJson);
 
@@ -349,6 +421,7 @@ Deno.serve(async (req) => {
 
 	return json(200, {
 		ok: true,
+		acknowledged_event_ids: events.map((event) => event.event_id),
 		agent_id: agentId,
 		allowed_agents: allowedAgents,
 		entitlement: JSON.parse(entitlementJson),
@@ -363,5 +436,5 @@ Deno.serve(async (req) => {
 		entitlement_sig_alg: sig ? "ed25519" : null,
 		entitlement_key_id: sig ? ENTITLEMENT_SIGNING_KEY_ID : null,
 		entitlement_sig: sig,
-	});
+	}, rateLimitHeaders(rate));
 });

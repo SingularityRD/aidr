@@ -28,7 +28,7 @@ export function buildCorsHeaders(
 		"Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 		"Access-Control-Allow-Headers":
 			"Content-Type,Authorization,apikey,x-client-info,x-supabase-api-version,Idempotency-Key,X-Request-ID,X-AIDR-Tenant-ID",
-		"Access-Control-Expose-Headers": "X-Request-ID",
+		"Access-Control-Expose-Headers": "X-Request-ID,RateLimit-Remaining,Retry-After",
 		Vary: "Origin",
 	};
 	if (allowed) headers["Access-Control-Allow-Origin"] = allowed;

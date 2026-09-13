@@ -15,8 +15,8 @@ async function applyForPilot(email: string, _org: string, useCase: string): Prom
 		method: "POST",
 		body: { email, org: _org, useCase },
 	});
-	if (res.error) {
-		throw new Error(res.error.message || "Failed to submit application");
+	if (res.error || res.data?.ok !== true) {
+		throw new Error(res.error?.message || "The pilot service did not confirm the application.");
 	}
 }
 
@@ -45,8 +45,8 @@ export function PilotPage() {
 				setEmail(userEmail);
 
 				const res = await supabase.functions.invoke("pilot-status", { method: "GET" });
-				if (res.error || cancelled) {
-					if (res.error && !cancelled) setError(res.error.message);
+				if (res.error || res.data?.ok !== true || cancelled) {
+					if (!cancelled) setError(res.error?.message ?? "Pilot status response is invalid.");
 					return;
 				}
 

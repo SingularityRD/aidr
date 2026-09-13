@@ -6,10 +6,15 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getBearerToken } from "../_shared/auth.ts";
+import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
+import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { membershipActive } from "../_shared/runtime-policy.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011).
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 const CREATE_RL_PER_MIN = Number(Deno.env.get("AIDR_APIKEY_CREATE_RL_PER_MIN") ?? "10");
 
@@ -46,8 +51,7 @@ async function resolveTenant(
 	userId: string,
 	req: Request,
 ): Promise<{ id: string; role: string } | null> {
-	const requested = (req.headers.get("X-AIDR-Tenant-ID") ?? "").trim();
-	if (!requested) return { id: userId, role: "owner" };
+	const requested = (req.headers.get("X-AIDR-Tenant-ID") ?? "").trim() || userId;
 	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requested)) return null;
 	const { data } = await supabase
 		.from("tenant_members")
@@ -55,7 +59,9 @@ async function resolveTenant(
 		.eq("tenant_id", requested)
 		.eq("user_id", userId)
 		.maybeSingle();
-	if (!data?.tenant_id || (data.expires_at && new Date(String(data.expires_at)).getTime() <= Date.now())) return null;
+	if (!data?.tenant_id || !membershipActive(data)) return null;
+	const state = await supabase.from("tenants").select("status").eq("id", requested).maybeSingle();
+	if (state.error || state.data?.status !== "active") return null;
 	return { id: String(data.tenant_id), role: String(data.role ?? "viewer") };
 }
 
@@ -86,7 +92,12 @@ async function rateLimitCreate(
 Deno.serve(async (req) => {
 	const preflight = handleCors(req);
 	if (preflight) return preflight;
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return corsJson(req, 500, { error: "misconfigured_supabase_env" });
+
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) {
+		return configFailure("api-keys", config.error, (status, body) => corsJson(req, status, body));
+	}
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
 
 	const accessToken = getBearerToken(req.headers.get("Authorization"));
 	if (!accessToken) return corsJson(req, 401, { error: "missing_access_token" });
@@ -100,6 +111,8 @@ Deno.serve(async (req) => {
 	const userId = userData.user.id;
 	const tenant = await resolveTenant(supabase, userId, req);
 	if (!tenant) return corsJson(req, 403, { error: "tenant_not_authorized" });
+	const identity = await checkIdentityBarrier(supabase, accessToken, userId, tenant.id);
+	if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
 	const canWrite = ["owner", "admin", "member"].includes(tenant.role);
 
 	if (req.method === "GET") {
@@ -122,16 +135,20 @@ Deno.serve(async (req) => {
 			body = {};
 		}
 		const action = typeof body.action === "string" ? body.action : "create";
+		if (!["create", "revoke"].includes(action)) return corsJson(req, 400, { error: "invalid_action" });
 
 		if (action === "revoke") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
 			if (!id) return corsJson(req, 400, { error: "missing_id" });
-			const { error } = await supabase
+			let query = supabase
 				.from("api_keys")
 				.update({ revoked: true })
 				.eq("id", id)
 				.eq("tenant_id", tenant.id);
+			if (tenant.role === "member") query = query.eq("user_id", userId);
+			const { data: changed, error } = await query.select("id");
 			if (error) return corsJson(req, 500, { error: "db_error" });
+			if (!changed?.length) return corsJson(req, 404, { error: "key_not_found_or_not_owned" });
 			await supabase.from("admin_audit_logs").insert({
 				actor_user_id: userId,
 				tenant_id: tenant.id,

@@ -379,6 +379,7 @@ export interface Database {
 					user_id: string;
 					tenant_id: string;
 					agent_id: string;
+					event_id: string;
 					type: string;
 					created_at: string;
 					payload: Record<string, unknown>;
@@ -388,6 +389,7 @@ export interface Database {
 					user_id: string;
 					tenant_id: string;
 					agent_id: string;
+					event_id: string;
 					type: string;
 					created_at?: string;
 					payload: Record<string, unknown>;
@@ -397,6 +399,7 @@ export interface Database {
 					user_id?: string;
 					tenant_id?: string;
 					agent_id?: string;
+					event_id?: string;
 					type?: string;
 					created_at?: string;
 					payload?: Record<string, unknown>;

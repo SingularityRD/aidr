@@ -1,25 +1,46 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { setPostAuthReturnTo } from "../ui/return-to";
 
+/**
+ * Outcome of the last action. Kept as a typed value rather than inferred from
+ * the message text: the previous `status.includes("Failed") || status.includes("error")`
+ * check styled any other failure — including a missing Edge Function — as a
+ * neutral, success-looking notice.
+ */
+interface AuthStatus {
+	tone: "success" | "error";
+	message: string;
+}
+
 export function EnterpriseAuth() {
 	const navigate = useNavigate();
+	const routerLocation = useLocation();
 	const [searchParams] = useSearchParams();
-	const [status, setStatus] = useState<string | null>(null);
+	const [status, setStatus] = useState<AuthStatus | null>(null);
 	const [busy, setBusy] = useState(false);
 
 	const returnTo = (searchParams.get("returnTo") ?? "/onboarding").trim();
 	const inviteToken = (searchParams.get("invite") ?? "").trim();
+
+	// A signed-out invitee has no session yet, so the invitation has to survive
+	// the OAuth round trip. Without this the token was dropped on the way to the
+	// provider and the "Accept Invitation" panel was gone when the user came
+	// back — the invitation could never actually be accepted.
+	const postAuthPath = inviteToken
+		? `${routerLocation.pathname}?invite=${encodeURIComponent(inviteToken)}`
+		: returnTo;
 
 	async function signInWithProvider(provider: "github" | "gitlab") {
 		setBusy(true);
 		setStatus(null);
 
 		try {
-			if (returnTo) setPostAuthReturnTo(returnTo);
+			if (postAuthPath) setPostAuthReturnTo(postAuthPath);
 
-			const redirectTo = `${location.origin}/auth/callback`;
+			const redirectTo = `${window.location.origin}/auth/callback`;
 			const { error } = await supabase.auth.signInWithOAuth({
 				provider,
 				options: {
@@ -29,29 +50,48 @@ export function EnterpriseAuth() {
 			});
 
 			if (error) {
-				setStatus(error.message);
+				setStatus({ tone: "error", message: error.message });
 			}
+		} catch (cause) {
+			setStatus({
+				tone: "error",
+				message: readErrorMessage(cause, "Sign-in could not be started."),
+			});
 		} finally {
 			setBusy(false);
 		}
 	}
 
-	async function handleTeamInviteAccept(inviteToken: string) {
+	async function handleTeamInviteAccept(token: string) {
 		setBusy(true);
 		setStatus(null);
 
 		try {
 			const { data, error } = await supabase.functions.invoke("oauth-callback", {
-				body: { invite_token: inviteToken },
+				body: { invite_token: token },
 			});
 
-			if (error) throw error;
-			if (data?.error) throw new Error(data.error);
+			if (error) {
+				throw new Error(
+					`the "oauth-callback" Edge Function is unavailable (${error.message}). The invitation was not accepted.`,
+				);
+			}
 
-			setStatus("Team invitation accepted! Redirecting...");
+			const response = (data ?? null) as { ok?: unknown; error?: unknown } | null;
+			if (response?.error) throw new Error(String(response.error));
+
+			// Fail closed on an unconfirmed response: an empty 200 must not be
+			// reported as an accepted invitation.
+			if (response?.ok !== true) {
+				throw new Error(
+					'the "oauth-callback" Edge Function did not confirm the invitation (expected {"ok":true}). The invitation was not accepted.',
+				);
+			}
+
+			setStatus({ tone: "success", message: "Team invitation accepted! Redirecting..." });
 			setTimeout(() => navigate("/team"), 1500);
 		} catch (err) {
-			setStatus(err instanceof Error ? err.message : "Failed to accept invitation");
+			setStatus({ tone: "error", message: readErrorMessage(err, "Failed to accept invitation") });
 		} finally {
 			setBusy(false);
 		}
@@ -121,9 +161,12 @@ export function EnterpriseAuth() {
 
 			{status && (
 				<div
-					className={`notice ${status.includes("Failed") || status.includes("error") ? "notice-danger" : ""}`}
+					className={`notice ${status.tone === "error" ? "notice-danger" : ""}`}
+					role={status.tone === "error" ? "alert" : "status"}
+					aria-live="assertive"
+					style={{ marginTop: "16px" }}
 				>
-					{status}
+					{status.message}
 				</div>
 			)}
 

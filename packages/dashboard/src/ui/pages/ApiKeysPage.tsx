@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { useTeam } from "../../enterprise/team-provider";
 
 type ApiKeyRow = {
 	id: string;
@@ -26,6 +27,12 @@ function maskSecret(secret: string): string {
 }
 
 export function ApiKeysPage() {
+	const { currentTeam, currentRole } = useTeam();
+	if (!currentTeam) return <div className="card">Select a team to manage its credentials.</div>;
+	return <TenantApiKeys key={currentTeam.id} tenantId={currentTeam.id} teamName={currentTeam.name} canWrite={currentRole !== null && ["owner", "admin", "member"].includes(currentRole)} />;
+}
+
+function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; teamName: string; canWrite: boolean }) {
 	const [pilotStatus, setPilotStatus] = useState<string>("loading");
 	const [keys, setKeys] = useState<ApiKeyRow[]>([]);
 	const [label, setLabel] = useState("");
@@ -47,9 +54,12 @@ export function ApiKeysPage() {
 
 	const load = useCallback(async () => {
 		setError(null);
-		const invoke = async (name: string, options: InvokeOptions) => {
+		const invoke = async (
+			name: "pilot-status" | "api-keys" | "enrollment-tokens",
+			options: InvokeOptions,
+		) => {
 			try {
-				return await supabase.functions.invoke(name, options);
+				return await supabase.functions.invoke(name, { ...options, headers: { "X-AIDR-Tenant-ID": tenantId } });
 			} catch (cause) {
 				return {
 					data: null,
@@ -64,9 +74,9 @@ export function ApiKeysPage() {
 			invoke("enrollment-tokens", { method: "GET" }),
 		]);
 
-		if (pilotRes.error) {
+		if (pilotRes.error || pilotRes.data?.ok !== true) {
 			setPilotStatus("unknown");
-			setError(pilotRes.error.message);
+			setError(pilotRes.error?.message ?? "Pilot status response is invalid.");
 		} else {
 			const data = (pilotRes.data ?? {}) as Record<string, unknown>;
 			setPilotStatus(typeof data.status === "string" ? String(data.status) : "unknown");
@@ -74,27 +84,28 @@ export function ApiKeysPage() {
 
 		const pilotData = (pilotRes.data ?? {}) as Record<string, unknown>;
 		const approved =
-			!pilotRes.error && typeof pilotData.status === "string" && pilotData.status === "approved";
+			!pilotRes.error && pilotData.ok === true && typeof pilotData.status === "string" && pilotData.status === "approved";
 		if (!approved) {
 			setKeys([]);
 			setEnrollTokens([]);
 			return;
 		}
 
-		if (keysRes.error) {
-			setError(keysRes.error.message);
+		if (keysRes.error || keysRes.data?.ok !== true || !Array.isArray(keysRes.data?.keys)) {
+			setKeys([]);
+			setEnrollTokens([]);
+			setError(keysRes.error?.message ?? "API key list response is invalid.");
 			return;
 		}
-		const keysData = (keysRes.data ?? {}) as { keys?: ApiKeyRow[] };
-		setKeys((keysData.keys ?? []) as ApiKeyRow[]);
+		setKeys(keysRes.data.keys as ApiKeyRow[]);
 
-		if (enrollRes.error) {
-			setError(enrollRes.error.message);
+		if (enrollRes.error || enrollRes.data?.ok !== true || !Array.isArray(enrollRes.data?.tokens)) {
+			setEnrollTokens([]);
+			setError(enrollRes.error?.message ?? "Enrollment token list response is invalid.");
 			return;
 		}
-		const enrollData = (enrollRes.data ?? {}) as { tokens?: EnrollmentTokenRow[] };
-		setEnrollTokens((enrollData.tokens ?? []) as EnrollmentTokenRow[]);
-	}, []);
+		setEnrollTokens(enrollRes.data.tokens as EnrollmentTokenRow[]);
+	}, [tenantId]);
 
 	useEffect(() => {
 		load();
@@ -106,6 +117,7 @@ export function ApiKeysPage() {
 		<div className="stack">
 			<div className="card">
 				<h1>API Keys</h1>
+				<p>Team: {teamName}</p>
 				<p className="muted">Advanced: keys and enrollment tokens for manual setups and support.</p>
 
 				{approved ? null : (
@@ -133,7 +145,7 @@ export function ApiKeysPage() {
 					<button
 						className="button"
 						type="button"
-						disabled={busy || !approved}
+						disabled={busy || !approved || !canWrite}
 						onClick={async () => {
 							setBusy(true);
 							setError(null);
@@ -143,10 +155,11 @@ export function ApiKeysPage() {
 							try {
 								const res = await supabase.functions.invoke("api-keys", {
 									method: "POST",
+									headers: { "X-AIDR-Tenant-ID": tenantId },
 									body: { action: "create", label: trimmedLabel || null },
 								});
-								if (res.error) {
-									setError(res.error.message);
+								if (res.error || res.data?.ok !== true) {
+									setError(res.error?.message ?? "API key creation was not confirmed.");
 									return;
 								}
 								const data = (res.data ?? {}) as { api_key?: string };
@@ -258,7 +271,7 @@ export function ApiKeysPage() {
 					<button
 						className="button"
 						type="button"
-						disabled={busy || !approved}
+						disabled={busy || !approved || !canWrite}
 						onClick={async () => {
 							setBusy(true);
 							setError(null);
@@ -268,10 +281,11 @@ export function ApiKeysPage() {
 							try {
 								const res = await supabase.functions.invoke("enrollment-tokens", {
 									method: "POST",
+									headers: { "X-AIDR-Tenant-ID": tenantId },
 									body: { action: "create", label: trimmedEnrollLabel || null },
 								});
-								if (res.error) {
-									setError(res.error.message);
+								if (res.error || res.data?.ok !== true) {
+									setError(res.error?.message ?? "Enrollment token creation was not confirmed.");
 									return;
 								}
 								const data = (res.data ?? {}) as { enrollment_token?: string };
@@ -378,17 +392,20 @@ export function ApiKeysPage() {
 										<button
 											className="button button-secondary button-sm"
 											type="button"
-											disabled={k.revoked}
+											disabled={k.revoked || busy || !canWrite}
 											onClick={async () => {
 												setBusy(true);
 												setError(null);
 												try {
 													const res = await supabase.functions.invoke("api-keys", {
 														method: "POST",
+														headers: { "X-AIDR-Tenant-ID": tenantId },
 														body: { action: "revoke", id: k.id },
 													});
-													if (res.error) setError(res.error.message);
-													await load();
+												if (res.error || res.data?.ok !== true) {
+													throw new Error(res.error?.message ?? "API key revocation was not confirmed.");
+												}
+												await load();
 												} catch (cause) {
 													setError(
 														cause instanceof Error
@@ -451,20 +468,23 @@ export function ApiKeysPage() {
 										<button
 											className="button button-secondary button-sm"
 											type="button"
-											disabled={busy}
+											disabled={busy || !canWrite}
 											onClick={async () => {
 												setBusy(true);
 												setError(null);
 												try {
-													const { error: delErr } = await supabase.functions.invoke(
+												const { data, error: delErr } = await supabase.functions.invoke(
 														"enrollment-tokens",
 														{
 															method: "POST",
+															headers: { "X-AIDR-Tenant-ID": tenantId },
 															body: { action: "delete", id: t.id },
 														},
 													);
-													if (delErr) setError(delErr.message);
-													await load();
+												if (delErr || data?.ok !== true) {
+													throw new Error(delErr?.message ?? "Enrollment token deletion was not confirmed.");
+												}
+												await load();
 												} catch (cause) {
 													setError(
 														cause instanceof Error

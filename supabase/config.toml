@@ -82,3 +82,40 @@ verify_jwt = false
 verify_jwt = false
 [functions.waitlist-signup]
 verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+[functions.policy]
+verify_jwt = false
+[functions.policy-ack]
+verify_jwt = false
+[functions.policy-management]
+verify_jwt = true
+[functions.team-invite]
+verify_jwt = true
+[functions.oauth-callback]
+verify_jwt = true
+[functions.audit-export]
+verify_jwt = true
+[functions.identity-security]
+# Password-reset and break-glass entry points are public. The function validates
+# access tokens, session barriers, tenant membership and AAL for protected actions.
+verify_jwt = false
+[functions.delegated-credentials]
+# This endpoint accepts both Supabase access tokens and AIDR delegated tokens;
+# each path verifies its own credential before any authorization decision.
+verify_jwt = false
+[functions.scim]
+# SCIM clients use tenant-scoped hash-only bearer tokens which the function
+# validates before resolving any directory object or role mapping.
+verify_jwt = false
+[functions.discovery]
+# The function validates JWTs for operator actions and separately validates
+# tenant/collector-bound machine credentials for ingest. Gateway JWT checking
+# would reject the machine key before the function can apply its own boundary.
+verify_jwt = false
+
+[functions.invoice-entitlement]
+# Enterprise invoice orders require an authenticated operator session; the
+# function repeats identity, MFA and tenant-role checks before any SQL call.
+verify_jwt = true

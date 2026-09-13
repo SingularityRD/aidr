@@ -1,9 +1,32 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { TeamProvider } from "../enterprise/team-provider";
+import { TeamProvider, useTeam } from "../enterprise/team-provider";
 import { supabaseEnvError } from "../lib/supabase";
 import { signOut } from "./session";
 import { ThemeToggle } from "./ThemeToggle";
+
+/**
+ * Team navigation entries.
+ *
+ * "Team" is shown to every authenticated user because every role may read the
+ * membership list ("Team Members" in AdminPanel is read-only for members and
+ * viewers). "Policies" is hidden only once the caller's role is known to lack
+ * policy-edit rights — while the role is still loading the link stays visible,
+ * because hiding a capability on an unresolved role would make a slow or
+ * failed lookup look like a permission decision. The page and row-level
+ * security both re-check the permission, so link visibility is never the
+ * control.
+ */
+function TeamNavLinks() {
+	const { canEditPolicy, roleResolved } = useTeam();
+
+	return (
+		<>
+			<NavLink to="/team">Team</NavLink>
+			{!roleResolved || canEditPolicy ? <NavLink to="/policies">Policies</NavLink> : null}
+		</>
+	);
+}
 
 export function AppLayout() {
 	const navigate = useNavigate();
@@ -40,6 +63,7 @@ export function AppLayout() {
 						<NavLink to="/incidents">Incidents</NavLink>
 						<NavLink to="/autosecops">AutoSecOps</NavLink>
 						<NavLink to="/settings">Settings</NavLink>
+						<TeamNavLinks />
 						<span className="navcard-signout">
 							<button
 								className="button button-secondary button-sm"

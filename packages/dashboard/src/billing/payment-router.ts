@@ -1,11 +1,12 @@
-// LemonSqueezy-only payment router
-// Removed: stripe, iyzico, crypto providers (user requested only LemonSqueezy)
+// Stripe-only payment router
+// Lemon Squeezy was removed (its webhook had no signature verification); the
+// legacy iyzico/crypto providers were removed earlier.
 
 import { selfServiceCheckoutEnabled } from "./commercial";
 
-import { cancelSubscription } from "./lemon-client";
+import { cancelSubscription } from "./stripe-client";
 
-export type ProviderType = "lemon-squeezy";
+export type ProviderType = "stripe";
 
 export interface PaymentResult {
 	url: string;
@@ -44,16 +45,16 @@ interface ProviderConfig {
 	features: string[];
 }
 
-// Global LemonSqueezy configuration
-const LEMON_CONFIG: ProviderConfig = {
-	primary: "lemon-squeezy",
+// Global Stripe configuration
+const STRIPE_CONFIG: ProviderConfig = {
+	primary: "stripe",
 	supportedCurrencies: ["USD", "EUR", "GBP"],
-	features: ["Subscription", "Checkout", "Customer Portal"],
+	features: ["Subscription", "Checkout"],
 };
 
 /**
- * Get payment provider - now returns LemonSqueezy client
- * Legacy providers (stripe, iyzico, crypto) removed per user request
+ * Get payment provider - now returns the Stripe client
+ * Webhook authenticity is verified server-side only.
  */
 export function getPaymentProvider(): PaymentProvider {
 	return {
@@ -69,20 +70,25 @@ export function getPaymentProvider(): PaymentProvider {
 			}
 			// Note: This requires user email which we don't have here
 			// In real implementation, fetch user email from auth context
-			throw new Error("Use createCheckout from lemon-client directly with user email");
+			throw new Error(
+				"Use the authenticated billing-checkout Edge Function: Stripe sessions are created server-side.",
+			);
 		},
 		async cancelSubscription(subscriptionId: string): Promise<void> {
 			return cancelSubscription(subscriptionId);
 		},
 		async getInvoices(_userId: string): Promise<Invoice[]> {
-			// LemonSqueezy doesn't have direct invoice API, return empty
-			return [];
+			// An empty array would be interpreted as a successful reconciliation.
+			// The invoice ledger is not available through this browser API.
+			throw new Error(
+				"Invoice records require the approved server-side finance reconciliation workflow.",
+			);
 		},
 	};
 }
 
 /**
- * Get available providers - now returns only LemonSqueezy
+ * Get available providers - now returns only Stripe
  */
 export function getAvailableProviders(): Array<{
 	id: ProviderType;
@@ -93,8 +99,8 @@ export function getAvailableProviders(): Array<{
 	if (!selfServiceCheckoutEnabled) return [];
 	return [
 		{
-			id: "lemon-squeezy",
-			name: "LemonSqueezy (Global)",
+			id: "stripe",
+			name: "Stripe (Global)",
 			features: ["USD/EUR/GBP", "Subscription", "Checkout"],
 			recommended: true,
 		},
@@ -105,56 +111,16 @@ export function getAvailableProviders(): Array<{
  * Get provider configuration
  */
 export function getRegionConfig(): ProviderConfig {
-	return LEMON_CONFIG;
+	return STRIPE_CONFIG;
 }
-
-/**
- * Currency conversion with caching
- */
-interface ExchangeRates {
-	rates: Record<string, number>;
-	timestamp: number;
-}
-
-let cachedRates: ExchangeRates | null = null;
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 export async function convertCurrency(amount: number, from: string, to: string): Promise<number> {
+	if (!Number.isFinite(amount) || amount < 0) throw new Error("Invalid commercial amount");
+	if (!/^[A-Z]{3}$/.test(from) || !/^[A-Z]{3}$/.test(to)) throw new Error("Invalid currency code");
 	if (from === to) return amount;
-
-	// Check cache
-	if (!cachedRates || Date.now() - cachedRates.timestamp > CACHE_TTL) {
-		try {
-			const response = await fetch(`https://api.exchangerate-api.com/v4/latest/${from}`);
-			const data = await response.json();
-			cachedRates = {
-				rates: data.rates,
-				timestamp: Date.now(),
-			};
-		} catch {
-			// Fallback rates if API fails
-			const fallbackRates: Record<string, number> = {
-				USD: 1,
-				EUR: 0.85,
-				GBP: 0.73,
-				TRY: 35,
-				JPY: 150,
-				CAD: 1.35,
-				AUD: 1.52,
-			};
-			cachedRates = {
-				rates: fallbackRates,
-				timestamp: Date.now(),
-			};
-		}
-	}
-
-	const rate = cachedRates.rates[to];
-	if (!rate) return amount; // Return original if rate not found
-
-	// Round to nearest .99 for psychological pricing
-	const converted = amount * rate;
-	return Math.floor(converted) + 0.99;
+	// Cross-currency terms belong to the Finance-approved order. The browser
+	// cannot quote a converted price or silently invent a fallback exchange rate.
+	throw new Error("Cross-currency amount requires an approved enterprise quote");
 }
 
 /**

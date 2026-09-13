@@ -1,8 +1,15 @@
 ﻿import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+declare global {
+	interface Window {
+		__AIDR_CONFIG__?: { supabaseUrl?: string; supabaseAnonKey?: string; authMethods?: string[] };
+	}
+}
+const runtime = typeof window !== "undefined" ? window.__AIDR_CONFIG__ : undefined;
+const url = runtime?.supabaseUrl ?? (import.meta.env.VITE_SUPABASE_URL as string | undefined);
+const anonKey =
+	runtime?.supabaseAnonKey ?? (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined);
 
 export const supabaseEnvError =
 	!url || !anonKey
@@ -42,6 +49,7 @@ function createUnavailableClient(): SupabaseClient {
 		signOut: authError,
 		signInWithOAuth: authError,
 		signInWithOtp: authError,
+		signInWithPassword: authError,
 		signInWithIdToken: authError,
 		exchangeCodeForSession: authError,
 		onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => undefined } } }),

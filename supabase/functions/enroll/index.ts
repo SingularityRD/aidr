@@ -7,9 +7,14 @@
 // This makes first-time setup easy while keeping API keys hash-only at rest.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
+import { entitlementWindow, validateEnrollmentBody } from "./contract.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011).
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 const ENTITLEMENT_SIGNING_KEY_ID = (Deno.env.get("AIDR_ENTITLEMENT_SIGNING_KEY_ID") ?? "").trim();
 const ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64 = (
@@ -17,8 +22,9 @@ const ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64 = (
 ).trim();
 const PACK_MASTER_KEY_B64 = (Deno.env.get("AIDR_PACK_MASTER_KEY_B64") ?? "").trim();
 
-const ENTITLEMENT_TTL_HOURS = Number(Deno.env.get("AIDR_ENTITLEMENT_TTL_HOURS") ?? "168");
-const ENTITLEMENT_GRACE_HOURS = Number(Deno.env.get("AIDR_ENTITLEMENT_GRACE_HOURS") ?? "72");
+const ENTITLEMENT_TTL_HOURS = Deno.env.get("AIDR_ENTITLEMENT_TTL_HOURS") ?? "168";
+const ENTITLEMENT_GRACE_HOURS = Deno.env.get("AIDR_ENTITLEMENT_GRACE_HOURS") ?? "72";
+const MAX_ENROLL_BODY_BYTES = 8 * 1024;
 
 // Abuse throttling for enrollment token exchange.
 const ENROLL_RATE_LIMIT_PER_MIN = Number(Deno.env.get("AIDR_ENROLL_RL_PER_MIN") ?? "30");
@@ -33,7 +39,8 @@ function json(status: number, body: Record<string, unknown>) {
 function getBearerToken(req: Request): string | null {
 	const header = req.headers.get("Authorization") ?? "";
 	const m = header.match(/^Bearer\s+(.+)$/i);
-	return m?.[1]?.trim() ? m[1].trim() : null;
+	const token = m?.[1]?.trim() ?? "";
+	return token.length > 0 && token.length <= 512 ? token : null;
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -92,11 +99,6 @@ async function signEd25519Detached(payloadJson: string): Promise<string | null> 
 	}
 }
 
-function addHoursIso(hours: number): string {
-	const safe = Number.isFinite(hours) ? Math.max(0, hours) : 0;
-	return new Date(Date.now() + safe * 60 * 60 * 1000).toISOString();
-}
-
 async function deriveTenantPackKeyB64(userId: string): Promise<string | null> {
 	if (!PACK_MASTER_KEY_B64) return null;
 	try {
@@ -142,12 +144,6 @@ async function rateLimitKey(
 	return Number.isFinite(limitPerMinute) && limitPerMinute > 0 ? count <= limitPerMinute : true;
 }
 
-type EnrollBody = {
-	iid?: string;
-	agent_runtime?: string;
-	agent_runtime_version?: string;
-};
-
 function buildPremiumModules(entRow: Record<string, unknown> | null): string[] {
 	const out: string[] = [];
 	if (entRow && entRow.premium_intel === true) out.push("premium_intel");
@@ -158,9 +154,28 @@ function buildPremiumModules(entRow: Record<string, unknown> | null): string[] {
 
 Deno.serve(async (req) => {
 	if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-		return json(500, { error: "misconfigured_supabase_env" });
+
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) return configFailure("enroll", config.error, json);
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
+
+	// Signing is optional provisioning, but a HALF-configured key pair is a
+	// misconfiguration: the operator believes the issued entitlement is signed
+	// while the response would silently carry `entitlement_signed: null`.
+	const signingProblem = partialGroupError({
+		AIDR_ENTITLEMENT_SIGNING_KEY_ID: ENTITLEMENT_SIGNING_KEY_ID,
+		AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64,
+	});
+	if (signingProblem) return configFailure("enroll", signingProblem, json);
+	if (ENTITLEMENT_SIGNING_KEY_ID && !(await signEd25519Detached("aidr-signing-healthcheck"))) {
+		return json(503, { error: "entitlement_signing_unavailable" });
 	}
+	if (!Number.isSafeInteger(ENROLL_RATE_LIMIT_PER_MIN)
+		|| ENROLL_RATE_LIMIT_PER_MIN < 1 || ENROLL_RATE_LIMIT_PER_MIN > 10_000) {
+		return json(503, { error: "enrollment_rate_limit_config_invalid" });
+	}
+	const window = entitlementWindow(new Date(), ENTITLEMENT_TTL_HOURS, ENTITLEMENT_GRACE_HOURS);
+	if (!window) return json(503, { error: "entitlement_timing_unavailable" });
 
 	const enrollToken = getBearerToken(req);
 	if (!enrollToken) return json(401, { error: "missing_enrollment_token" });
@@ -174,91 +189,59 @@ Deno.serve(async (req) => {
 	const ok = await rateLimitKey(supabase, `enroll:${tokenHash.slice(0, 16)}`, ENROLL_RATE_LIMIT_PER_MIN);
 	if (!ok) return json(429, { error: "rate_limited" });
 
-	let body: EnrollBody = {};
-	try {
-		body = (await req.json()) as EnrollBody;
-	} catch {
-		body = {};
-	}
-	const iid = typeof body.iid === "string" ? body.iid.trim() : "";
-	if (!iid) return json(400, { error: "missing_iid" });
+	const parsed = await readBoundedJson(req, MAX_ENROLL_BODY_BYTES);
+	if (!parsed.ok) return json(parsed.status, { error: parsed.error });
+	const body = validateEnrollmentBody(parsed.value);
+	if (!body) return json(400, { error: "invalid_enrollment_body" });
+	const { iid } = body;
 
-	// 1) Validate and consume the enrollment token atomically. The RPC updates
-	// only an unused, unexpired row and returns its owner, so concurrent
-	// exchanges cannot both mint API keys from the same token.
-	const { data: consumedRows, error: consumeErr } = await supabase.rpc("consume_enrollment_token", {
+	// The RPC commits token consumption, tenant admission, seat allocation and
+	// hash-only key insertion as one transaction. An RPC transport error may
+	// hide a committed response, so the outcome is explicitly unknown there.
+	const apiKey = randomApiKey();
+	const keyHash = await sha256Hex(apiKey);
+	const { data: exchangeData, error: exchangeErr } = await supabase.rpc("exchange_enrollment_token", {
 		p_token_hash: tokenHash,
+		p_iid: iid,
+		p_agent_runtime: body.agent_runtime,
+		p_agent_runtime_version: body.agent_runtime_version,
+		p_key_hash: keyHash,
 	});
-	if (consumeErr) return json(500, { error: "enrollment_token_store_unavailable" });
-	const tokRow = Array.isArray(consumedRows) ? consumedRows[0] : null;
-	if (!tokRow || typeof tokRow.user_id !== "string") {
-		return json(401, { error: "invalid_or_expired_enrollment_token" });
-	}
-
-	const userId = tokRow.user_id as string;
-	const tenantId = (typeof tokRow.tenant_id === "string" ? tokRow.tenant_id : null) ?? userId;
-
-	// 2) Load the tenant entitlement. Agent registration below performs the
-	// actual seat check under a transaction/advisory lock.
-	const { data: entRow, error: entErr } = await supabase
-		.from("entitlements")
-		.select("included_agents,extra_agents,premium_intel,premium_correlation,premium_pkg_plugin,revocation_epoch")
-		.eq("tenant_id", tenantId)
-		.maybeSingle();
-	if (entErr || !entRow) return json(500, { error: "missing_entitlements" });
-
-	const includedAgents = Number(entRow.included_agents ?? 1);
-	const extraAgents = Number(entRow.extra_agents ?? 0);
-	const allowedAgents = Math.max(0, includedAgents) + Math.max(0, extraAgents);
-	const revocationEpoch = Number(entRow.revocation_epoch ?? 1);
-
-	const { data: registrationRows, error: registrationErr } = await supabase.rpc(
-		"register_agent_for_ingest",
-		{
-			p_user_id: userId,
-			p_tenant_id: tenantId,
-			p_iid: iid,
-			p_agent_runtime: typeof body.agent_runtime === "string" ? body.agent_runtime : null,
-			p_agent_runtime_version:
-				typeof body.agent_runtime_version === "string" ? body.agent_runtime_version : null,
-		},
-	);
-	if (registrationErr) return json(500, { error: "agent_registration_failed" });
-	const registration = (Array.isArray(registrationRows) ? registrationRows[0] : null) as Record<
-		string,
-		unknown
-	> | null;
-	if (!registration || registration.seat_exceeded === true || typeof registration.agent_id !== "string") {
+	if (exchangeErr) return json(503, { error: "enrollment_exchange_failed", enrollment_outcome: "unknown" });
+	const exchange = exchangeData && typeof exchangeData === "object" && !Array.isArray(exchangeData)
+		? exchangeData as Record<string, unknown> : null;
+	// A consumed token is indistinguishable from an invalid/expired token here.
+	// If the prior HTTP response was lost, the key may already have committed.
+	if (exchange?.status === "invalid_token") return json(401, {
+		error: "invalid_or_expired_enrollment_token",
+		enrollment_outcome: "unknown",
+	});
+	if (exchange?.status === "tenant_not_authorized") return json(403, { error: "tenant_not_authorized" });
+	if (exchange?.status === "missing_entitlements") return json(503, { error: "missing_entitlements" });
+	if (exchange?.status === "seat_exceeded") {
 		return json(402, {
 			error: "agent_limit_exceeded",
-			allowed_agents: Number(registration?.allowed_agents ?? allowedAgents),
-			current_agents: Number(registration?.current_agents ?? allowedAgents),
+			allowed_agents: Number(exchange.allowed_agents ?? 0),
+			current_agents: Number(exchange.current_agents ?? 0),
 		});
 	}
-	const agentId = registration.agent_id;
-
-	// 3) Issue API key (hash-only at rest).
-	let apiKey = "";
-	let keyHash = "";
-	let inserted = false;
-	for (let i = 0; i < 5; i++) {
-		apiKey = randomApiKey();
-		keyHash = await sha256Hex(apiKey);
-		const { error } = await supabase.from("api_keys").insert({
-			user_id: userId,
-			tenant_id: tenantId,
-			label: `enroll:${iid}`,
-			key_hash: keyHash,
-		});
-		if (!error) {
-			inserted = true;
-			break;
-		}
+	if (exchange?.status !== "enrolled" || typeof exchange.user_id !== "string"
+		|| typeof exchange.tenant_id !== "string" || typeof exchange.agent_id !== "string") {
+		return json(503, { error: "enrollment_exchange_result_invalid", enrollment_outcome: "unknown" });
 	}
-	if (!inserted) return json(500, { error: "api_key_issue_failed" });
+	const userId = exchange.user_id;
+	const tenantId = exchange.tenant_id;
+	const agentId = exchange.agent_id;
+	const includedAgents = Number(exchange.included_agents);
+	const extraAgents = Number(exchange.extra_agents);
+	const allowedAgents = Number(exchange.allowed_agents);
+	const revocationEpoch = Number(exchange.revocation_epoch);
+	if (![includedAgents, extraAgents, allowedAgents, revocationEpoch].every(Number.isFinite)) {
+		return json(503, { error: "enrollment_exchange_result_invalid", enrollment_outcome: "committed" });
+	}
 
 	// 4) Return signed entitlement snapshot (same contract as ingest).
-	const premiumModules = buildPremiumModules(entRow as Record<string, unknown>);
+	const premiumModules = buildPremiumModules(exchange);
 	const tenantPackKey = premiumModules.includes("premium_intel") ? await deriveTenantPackKeyB64(tenantId) : null;
 	const entitlement = {
 		schema_version: 2,
@@ -275,18 +258,22 @@ Deno.serve(async (req) => {
 							alg: "aes-256-gcm",
 							key_id: "aidr-pack-v1",
 							key_b64: tenantPackKey,
-							expires_at: addHoursIso(ENTITLEMENT_GRACE_HOURS),
+							expires_at: window.graceUntil,
 						},
 					]
 				: [],
-		issued_at: new Date().toISOString(),
-		expires_at: addHoursIso(ENTITLEMENT_TTL_HOURS),
-		grace_until: addHoursIso(ENTITLEMENT_GRACE_HOURS),
+		issued_at: window.issuedAt,
+		expires_at: window.expiresAt,
+		grace_until: window.graceUntil,
 		serial: crypto.randomUUID(),
 		revocation_epoch: Number.isFinite(revocationEpoch) ? Math.max(1, Math.floor(revocationEpoch)) : 1,
 	};
 	const entitlementJson = canonicalJson(entitlement);
 	const sig = await signEd25519Detached(entitlementJson);
+	if (ENTITLEMENT_SIGNING_KEY_ID && !sig) return json(503, {
+		error: "enrollment_committed_entitlement_signing_failed",
+		enrollment_outcome: "committed",
+	});
 
 	// Best-effort: persist the latest entitlement snapshot per (tenant_id, iid) for dashboard/debugging.
 	try {
@@ -314,13 +301,17 @@ Deno.serve(async (req) => {
 	}
 
 	// Best-effort audit log
-	await supabase.from("admin_audit_logs").insert({
-		actor_user_id: userId,
-		tenant_id: tenantId,
-		action: "enroll.consume_token",
-		target_user_id: userId,
-		detail: { iid },
-	});
+	try {
+		await supabase.from("admin_audit_logs").insert({
+			actor_user_id: userId,
+			tenant_id: tenantId,
+			action: "enroll.consume_token",
+			target_user_id: userId,
+			detail: { iid },
+		});
+	} catch {
+		// Post-commit audit transport failure must not hide the plaintext key.
+	}
 
 	return json(200, {
 		ok: true,

@@ -5,9 +5,13 @@
 // Admin-only pilot approvals. The caller must be listed in public.pilot_admins.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
+import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011).
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 function json(status: number, body: Record<string, unknown>) {
 	return new Response(JSON.stringify(body), {
@@ -30,7 +34,10 @@ function isUuid(s: string): boolean {
 
 Deno.serve(async (req) => {
 	if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return json(500, { error: "misconfigured_supabase_env" });
+
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) return configFailure("pilot-admin", config.error, json);
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
 
 	const accessToken = getBearerToken(req);
 	if (!accessToken) return json(401, { error: "missing_access_token" });
@@ -41,6 +48,8 @@ Deno.serve(async (req) => {
 	const { data: userData, error: userErr } = await supabase.auth.getUser(accessToken);
 	if (userErr || !userData?.user?.id) return json(401, { error: "invalid_access_token" });
 	const actorId = userData.user.id;
+	const identity = await checkIdentityBarrier(supabase, accessToken, actorId);
+	if (!identity.ok) return json(identity.status, { error: identity.error });
 
 	const { data: adminRow } = await supabase
 		.from("pilot_admins")

@@ -1,0 +1,141 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { parseDocument } from "npm:yaml@2.8.3";
+import { getBearerToken } from "../_shared/auth.ts";
+import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
+import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { corsJson, handleCors } from "../_shared/cors.ts";
+import { compileRuntimePolicyDocument, simulateCompiledRuntimePolicy, type RuntimePolicyDocumentCompilation } from "../_shared/policy-document.ts";
+import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
+import { membershipActive, validateRuntimePolicy } from "../_shared/runtime-policy.ts";
+
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+
+function parseStoredDocument(source: string): unknown {
+	if (!source || source.length > 65_536) throw new Error(source ? "policy_document_too_large" : "policy_document_empty");
+	const document = parseDocument(source, { schema: "core", uniqueKeys: true, prettyErrors: false });
+	if (document.errors.length > 0) throw new Error(`invalid_policy_yaml:${document.errors[0]?.message ?? "parse_error"}`);
+	try {
+		return document.toJS({ maxAliasCount: 0 });
+	} catch (error) {
+		throw new Error(`invalid_policy_yaml:${error instanceof Error ? error.message : "alias_not_allowed"}`);
+	}
+}
+
+Deno.serve(async (req) => {
+	const preflight = handleCors(req);
+	if (preflight) return preflight;
+	if (req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) return configFailure("policy-management", config.error, (status, body) => corsJson(req, status, body));
+	const token = getBearerToken(req.headers.get("Authorization"));
+	if (!token) return corsJson(req, 401, { error: "missing_access_token" });
+	try {
+		const db = createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+		const { data: auth, error: authError } = await db.auth.getUser(token);
+		if (authError || !auth.user) return corsJson(req, 401, { error: "invalid_access_token" });
+		const parsed = await readBoundedJson(req, 65536);
+		if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
+		const body = parsed.value as Record<string, unknown>;
+		if (!body || typeof body !== "object" || Array.isArray(body)) return corsJson(req, 400, { error: "invalid_request" });
+		const tenant = body.tenant_id ?? auth.user.id;
+		if (typeof tenant !== "string" || !/^[0-9a-f-]{36}$/i.test(tenant)) return corsJson(req, 400, { error: "invalid_tenant" });
+		const identity = await checkIdentityBarrier(db, token, auth.user.id, tenant);
+		if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
+		const { data: member, error: memberError } = await db.from("tenant_members").select("role,expires_at").eq("tenant_id", tenant).eq("user_id", auth.user.id).maybeSingle();
+		if (memberError) return corsJson(req, 503, { error: "authorization_unavailable" });
+		if (!membershipActive(member)) return corsJson(req, 403, { error: "tenant_access_denied" });
+		const state = await db.from("tenants").select("status").eq("id", tenant).maybeSingle();
+		if (state.error) return corsJson(req, 503, { error: "authorization_unavailable" });
+		if (state.data?.status !== "active") return corsJson(req, 403, { error: "tenant_access_denied" });
+		const action = typeof body.action === "string" ? body.action : "";
+		const workCost = action === "adoption" ? 5 : action === "history" ? 2 : 1;
+		const rate = await consumeTenantRateLimit(db, {
+			tenantId: tenant,
+			subject: auth.user.id,
+			endpoint: "policy-management",
+			perSubject: 600,
+			perTenant: 30_000,
+			cost: workCost,
+		});
+		if (!rate.ok) {
+			return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
+		}
+		if (body.action === "read") {
+			const { data, error } = await db.from("tenant_runtime_policies").select("version,policy,updated_at").eq("tenant_id", tenant).maybeSingle();
+			return error ? corsJson(req, 503, { error: "policy_unavailable" }) : corsJson(req, 200, { ok: true, version: data?.version ?? 0, policy: data?.policy ?? null, updated_at: data?.updated_at ?? null });
+		}
+		if (body.action === "history") {
+			const result = await db.from("runtime_policy_revisions").select("version,policy,created_at").eq("tenant_id", tenant).order("version", { ascending: false }).limit(101);
+			return result.error ? corsJson(req, 503, { error: "history_unavailable" }) : corsJson(req, 200, { ok: true, revisions: result.data.slice(0, 100), truncated: result.data.length > 100 });
+		}
+		if (body.action === "adoption") {
+			if (body.after_agent !== undefined && (typeof body.after_agent !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.after_agent))) return corsJson(req, 400, { error: "invalid_agent_cursor" });
+			let agentQuery = db.from("agents").select("id,iid,display_name,last_seen").eq("tenant_id", tenant).order("id").limit(501);
+			if (body.after_agent) agentQuery = agentQuery.gt("id", body.after_agent);
+			const [agents, current] = await Promise.all([
+				agentQuery,
+				db.from("tenant_runtime_policies").select("version").eq("tenant_id", tenant).maybeSingle(),
+			]);
+			if (agents.error || current.error) return corsJson(req, 503, { error: "adoption_unavailable" });
+			const page = agents.data.slice(0, 500);
+			const ids = page.map((agent) => agent.id);
+			// Fetch only this page's agents so a larger fleet cannot silently lose a
+			// targeted assignment or receipt to PostgREST's row limit.
+			const chunks = Array.from({ length: Math.ceil(ids.length / 100) }, (_, i) => ids.slice(i * 100, (i + 1) * 100));
+			const [receiptPages, assignmentPages] = await Promise.all([
+				Promise.all(chunks.map((chunk) => db.from("agent_policy_receipts").select("agent_id,version,received_at").eq("tenant_id", tenant).in("agent_id", chunk))),
+				Promise.all(chunks.map((chunk) => db.from("agent_policy_assignments").select("agent_id,version").eq("tenant_id", tenant).in("agent_id", chunk))),
+			]);
+			if ([...receiptPages, ...assignmentPages].some((page) => page.error)) return corsJson(req, 503, { error: "adoption_unavailable" });
+			const receiptByAgent = new Map(receiptPages.flatMap((page) => page.data ?? []).map((row) => [row.agent_id, row]));
+			const assignmentByAgent = new Map(assignmentPages.flatMap((page) => page.data ?? []).map((row) => [row.agent_id, row.version]));
+			return corsJson(req, 200, { ok: true, truncated: agents.data.length > 500, next_agent: agents.data.length > 500 ? page[page.length - 1].id : null, receipt_type: "agent_reported_policy_loaded", agents: page.map((agent) => {
+				const receipt = receiptByAgent.get(agent.id); const target = assignmentByAgent.get(agent.id) ?? current.data?.version ?? 0;
+				return { ...agent, target_version: target, loaded_version: receipt?.version ?? null, received_at: receipt?.received_at ?? null, state: !receipt ? "unknown" : Date.parse(receipt.received_at) < Date.now() - 300000 ? "stale" : receipt.version === target ? "current" : "outdated" };
+			}) });
+		}
+		let documentCompilation: RuntimePolicyDocumentCompilation | null = null;
+		let documentSource: { id: string; updated_at: string } | null = null;
+		if (["compile_document", "publish_document"].includes(String(body.action))) {
+			const stored = await db.from("team_policies").select("id,content,updated_at").eq("team_id", tenant).order("updated_at", { ascending: false }).limit(1);
+			if (stored.error) return corsJson(req, 503, { error: "policy_document_unavailable" });
+			const row = stored.data?.[0];
+			if (!row || typeof row.content !== "string") return corsJson(req, 404, { error: "policy_document_not_found" });
+			try {
+				documentCompilation = compileRuntimePolicyDocument(parseStoredDocument(row.content));
+			} catch (error) {
+				return corsJson(req, 400, { error: error instanceof Error ? error.message : "invalid_policy_document" });
+			}
+			documentSource = { id: row.id, updated_at: row.updated_at };
+			if (body.action === "compile_document") {
+				let simulation: ReturnType<typeof simulateCompiledRuntimePolicy> | null = null;
+				if (body.simulation !== undefined) {
+					try { simulation = simulateCompiledRuntimePolicy(documentCompilation.runtime_policy, body.simulation); }
+					catch (error) { return corsJson(req, 400, { error: error instanceof Error ? error.message : "invalid_simulation" }); }
+				}
+				return corsJson(req, 200, { ok: true, dry_run: true, source: documentSource, ...documentCompilation, ...(simulation ? { simulation } : {}) });
+			}
+		}
+		if (!["publish", "stage", "restore", "publish_document"].includes(String(body.action))) return corsJson(req, 400, { error: "invalid_action" });
+		if (!member || !["owner", "admin"].includes(member.role)) return corsJson(req, 403, { error: "policy_forbidden" });
+		if (!Number.isSafeInteger(body.expected_version) || Number(body.expected_version) < 0) return corsJson(req, 400, { error: "invalid_version" });
+		let policy: Record<string, unknown>;
+		if (body.action === "restore") {
+			if (!Number.isSafeInteger(body.target_version) || Number(body.target_version) < 1) return corsJson(req, 400, { error: "invalid_target_version" });
+			const revision = await db.from("runtime_policy_revisions").select("policy").eq("tenant_id", tenant).eq("version", body.target_version).maybeSingle();
+			if (revision.error) return corsJson(req, 503, { error: "history_unavailable" });
+			if (!revision.data) return corsJson(req, 404, { error: "revision_not_found" });
+			body.policy = revision.data.policy;
+		}
+		try { policy = validateRuntimePolicy(documentCompilation?.runtime_policy ?? body.policy); } catch (error) { return corsJson(req, 400, { error: error instanceof Error ? error.message : "invalid_policy" }); }
+		if (body.action === "stage") {
+			if (!Array.isArray(body.agent_ids) || body.agent_ids.length < 1 || body.agent_ids.length > 200 || body.agent_ids.some((id) => typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id))) return corsJson(req, 400, { error: "invalid_stage_agents" });
+			if (!Number.isSafeInteger(body.expected_revision_version) || Number(body.expected_revision_version) < Number(body.expected_version)) return corsJson(req, 400, { error: "invalid_revision_version" });
+		}
+		const { data, error } = body.action === "stage" ? await db.rpc("stage_runtime_policy", { p_tenant_id: tenant, p_user_id: auth.user.id, p_expected_version: body.expected_version, p_expected_revision_version: body.expected_revision_version, p_policy: policy, p_agent_ids: body.agent_ids }) : await db.rpc("publish_runtime_policy", { p_tenant_id: tenant, p_user_id: auth.user.id, p_expected_version: body.expected_version, p_policy: policy });
+		if (error) return corsJson(req, error.code === "PT409" ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 503, { error: error.code === "PT409" ? "policy_version_conflict" : "policy_publish_failed" });
+		return corsJson(req, 200, { ok: true, version: data.version, policy: data.policy, updated_at: data.updated_at, ...(body.action === "stage" ? { target_count: data.target_count, staged: true } : {}), ...(documentCompilation && documentSource ? { compiled_from: documentSource, compiler: { diagnostics: documentCompilation.diagnostics, semantics: documentCompilation.semantics } } : {}) });
+	} catch {
+		return corsJson(req, 503, { error: "policy_unavailable" });
+	}
+});

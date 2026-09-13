@@ -9,30 +9,31 @@
 // This is a self-hostable replacement for proprietary URL reputation providers.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { getBearerToken } from "../_shared/auth.ts";
+import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import {
+	consumeTenantRateLimit,
+	rateLimitHeaders,
+	readBoundedJson,
+} from "../_shared/request-limits.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011).
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const MAX_BODY_BYTES = 128 * 1024;
+const MAX_QUERIES = 50;
 
-function json(status: number, body: Record<string, unknown>) {
+function json(
+	status: number,
+	body: Record<string, unknown>,
+	headers: Record<string, string> = {},
+) {
 	return new Response(JSON.stringify(body), {
 		status,
-		headers: { "Content-Type": "application/json" },
+		headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
 	});
-}
-
-function getBearerToken(req: Request): string | null {
-	const header = req.headers.get("Authorization") ?? "";
-	const m = header.match(/^Bearer\s+(.+)$/i);
-	return m?.[1]?.trim() ? m[1].trim() : null;
-}
-
-async function sha256Hex(input: string): Promise<string> {
-	const data = new TextEncoder().encode(input);
-	const digest = await crypto.subtle.digest("SHA-256", data);
-	const bytes = new Uint8Array(digest);
-	return Array.from(bytes)
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("");
 }
 
 function extractUrlLike(query: unknown): string | null {
@@ -85,54 +86,51 @@ Deno.serve(async (req) => {
 		return json(405, { error: "method_not_allowed" });
 	}
 
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-		return json(500, { error: "misconfigured_supabase_env" });
-	}
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) return configFailure("url-check", config.error, json);
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
 
-	const apiKey = getBearerToken(req);
+	const apiKey = getBearerToken(req.headers.get("Authorization"));
 	if (!apiKey) {
 		return json(401, { error: "missing_api_key" });
 	}
-
-	let body: Record<string, unknown>;
-	try {
-		const parsed = await req.json();
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-			return json(400, { error: "invalid_json" });
-		}
-		body = parsed as Record<string, unknown>;
-	} catch {
-		return json(400, { error: "invalid_json" });
-	}
-
-	const rawQueries = Array.isArray(body.queries) ? (body.queries as unknown[]) : [];
-	const urls = rawQueries
-		.map((q) => extractUrlLike(q))
-		.filter((u): u is string => Boolean(u))
-		.slice(0, 50);
-
-	if (urls.length === 0) {
-		return json(200, { answers: [] });
-	}
-
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
-
-	// api_key -> user_id (hash-only)
-	const keyHash = await sha256Hex(apiKey);
-	const { data: keyRow, error: keyErr } = await supabase
-		.from("api_keys")
-		.select("user_id, tenant_id, revoked")
-		.eq("key_hash", keyHash)
-		.maybeSingle();
-
-	if (keyErr || !keyRow || keyRow.revoked) {
-		return json(401, { error: "invalid_api_key" });
+	const auth = await authenticateTenantApiKey(supabase, apiKey);
+	if (!auth.ok) {
+		return json(auth.status, { error: auth.error });
 	}
+	const { tenantId, userId } = auth;
 
-	const userId = keyRow.user_id as string;
-	const tenantId = (keyRow.tenant_id as string | null) ?? userId;
+	const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+	if (!parsed.ok) return json(parsed.status, { error: parsed.error });
+	if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+		return json(400, { error: "invalid_json" });
+	}
+	const body = parsed.value as Record<string, unknown>;
+
+	const rawQueries = Array.isArray(body.queries) ? (body.queries as unknown[]) : [];
+	if (rawQueries.length > MAX_QUERIES) {
+		return json(413, { error: "query_limit_exceeded", max_queries: MAX_QUERIES });
+	}
+	const urls = rawQueries
+		.map((q) => extractUrlLike(q))
+		.filter((u): u is string => Boolean(u));
+
+	const rate = await consumeTenantRateLimit(supabase, {
+		tenantId,
+		subject: userId,
+		endpoint: "url-check",
+		perSubject: 600,
+		perTenant: 30_000,
+		cost: Math.max(1, rawQueries.length),
+	});
+	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
+
+	if (urls.length === 0) {
+		return json(200, { answers: [] }, rateLimitHeaders(rate));
+	}
 
 	const domains = urls
 		.map((u) => domainFromUrl(u))
@@ -208,5 +206,5 @@ Deno.serve(async (req) => {
 		};
 	});
 
-	return json(200, { answers });
+	return json(200, { answers }, rateLimitHeaders(rate));
 });

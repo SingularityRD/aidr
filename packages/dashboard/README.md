@@ -121,6 +121,28 @@ enabled in a sale release. The dashboard never grants entitlements from a
 checkout link: Finance reconciliation and the tenant-scoped entitlement record
 remain authoritative.
 
+## Billing provider: Stripe (not deployed)
+
+Lemon Squeezy was removed. Its webhook Edge Function
+(`supabase/functions/lemon-webhook/`) dispatched on an unauthenticated
+`meta.event_name` with no signature verification, and
+`src/billing/lemon-client.ts` exported a `verifyWebhookSignature` that always
+returned `true`. Both are deleted.
+
+- Seat entitlements are reconciled by `supabase/functions/stripe-webhook`
+  (signature-verified over the raw body, deduplicated by event id, gated on the
+  subscription status and the configured extra-agent price). See
+  [`docs/billing.md`](../../docs/billing.md).
+- The dashboard bundle never holds `STRIPE_SECRET_KEY` and exposes **no**
+  webhook verification helper. `src/billing/stripe-client.ts` fails closed: it
+  refuses to call Stripe directly and requires a server-side Checkout Session.
+- `supabase/functions/billing-checkout` still returns a Paddle URL, so there is
+  currently **no** Stripe checkout path and no Stripe metadata on Stripe
+  objects. Until that follow-up ships, Stripe events resolve to no tenant and
+  grant nothing.
+- Status: implemented and unit-tested, **not deployed and not verified against a
+  live Stripe account**; `STRIPE_WEBHOOK_SECRET` is not provisioned anywhere.
+
 For local structural checks while credentials are being provisioned, use the
 explicitly non-production mode:
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { useTeam } from "../../enterprise/team-provider";
 
 type Runtime = "claude-code" | "cursor" | "vscode" | "openclaw" | "opencode";
 
@@ -31,9 +32,10 @@ function maskSecret(secret: string): string {
  * untrusted input and keep malformed or dangerous values on the local verify
  * route instead of rendering a javascript/data/protocol-relative link.
  */
-function safeVerificationUrl(raw: string): string {
+function safeVerificationUrl(raw: string, userCode: string, teamId: string): string {
 	const candidate = raw.trim();
-	if (!candidate || candidate.startsWith("//")) return "/verify";
+	const fallback = `/verify?code=${encodeURIComponent(userCode)}&team=${encodeURIComponent(teamId)}`;
+	if (!candidate || candidate.startsWith("//")) return fallback;
 	try {
 		const parsed = new URL(candidate, window.location.origin);
 		if (
@@ -41,12 +43,16 @@ function safeVerificationUrl(raw: string): string {
 			!parsed.password &&
 			(parsed.origin === window.location.origin || parsed.protocol === "https:")
 		) {
+			if (parsed.origin === window.location.origin && parsed.pathname === "/verify") {
+				parsed.searchParams.set("code", userCode);
+				parsed.searchParams.set("team", teamId);
+			}
 			return parsed.toString();
 		}
 	} catch {
 		// Keep the local verify route as the only fallback for malformed input.
 	}
-	return "/verify";
+	return fallback;
 }
 
 function promptForRuntime(runtime: Runtime): string {
@@ -107,25 +113,39 @@ function promptForRuntime(runtime: Runtime): string {
 }
 
 export function OnboardingPage() {
+	const { currentTeam, currentRole, isLoading, roleResolved, error: teamError } = useTeam();
+	if (isLoading || (currentTeam && !roleResolved)) {
+		return <div className="card" role="status">Checking team access…</div>;
+	}
+	if (!currentTeam || !currentRole) {
+		return <div className="card" role="alert">{teamError ?? "Select a team to enroll an agent."}</div>;
+	}
+	return <TeamOnboarding key={currentTeam.id} teamId={currentTeam.id} teamName={currentTeam.name} canEnroll={["owner", "admin", "member"].includes(currentRole)} />;
+}
+function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamName: string; canEnroll: boolean }) {
 	const [runtime, setRuntime] = useState<Runtime>("claude-code");
 	const [pilotStatus, setPilotStatus] = useState<string>("loading");
+	const [pilotReload, setPilotReload] = useState(0);
 	const [device, setDevice] = useState<DeviceStartResult | null>(null);
 	const [poll, setPoll] = useState<DevicePollResult | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [promptCopyStatus, setPromptCopyStatus] = useState<"idle" | "copied" | "error">("idle");
 	const [showEnrollmentToken, setShowEnrollmentToken] = useState(false);
 	const [copiedEnrollmentToken, setCopiedEnrollmentToken] = useState(false);
 
 	const prompt = useMemo(() => promptForRuntime(runtime), [runtime]);
-	const intervalSeconds = Math.max(2, Math.min(10, Number(device?.interval_seconds ?? 5)));
+	const requestedInterval = device?.interval_seconds;
+	const intervalSeconds = typeof requestedInterval === "number" && Number.isFinite(requestedInterval)
+		? Math.max(2, Math.min(10, requestedInterval)) : 5;
 
 	useEffect(() => {
 		let cancelled = false;
 		async function load() {
 			try {
-				const res = await supabase.functions.invoke("pilot-status", { method: "GET" });
+				const res = await supabase.functions.invoke("pilot-status", { method: "GET", headers: { "X-AIDR-Tenant-ID": teamId } });
 				if (cancelled) return;
-				if (res.error) {
+				if (res.error || res.data?.ok !== true) {
 					setPilotStatus("unknown");
 					return;
 				}
@@ -139,7 +159,7 @@ export function OnboardingPage() {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [teamId, pilotReload]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -150,6 +170,7 @@ export function OnboardingPage() {
 			if (!device || cancelled) return;
 			const expiresAtMs = Date.parse(device.expires_at);
 			if (!Number.isFinite(expiresAtMs) || Date.now() >= expiresAtMs) {
+				setDevice(null);
 				setPoll({ status: "expired" });
 				setError("This authorization code expired. Generate a new code to continue.");
 				return;
@@ -162,25 +183,38 @@ export function OnboardingPage() {
 					body: { device_code: device.device_code },
 				});
 				if (cancelled) return;
-				if (res.error) {
+				if (res.error || res.data?.ok !== true) {
 					setPoll(null);
-					setError("We could not check authorization yet. Retrying automatically.");
-					nextDelayMs = Math.min(Math.max(nextDelayMs * 2, intervalSeconds * 1000), 30_000);
+					const status = (res.error as { context?: { status?: number } } | null)?.context?.status;
+					if (status === 401 || status === 403 || status === 409) {
+						setDevice(null);
+						setError("Authorization could not continue. This code was rejected or already used. Generate a new code.");
+						shouldRetry = false;
+					} else {
+						setError("We could not check authorization yet. Retrying automatically.");
+						nextDelayMs = Math.min(Math.max(nextDelayMs * 2, intervalSeconds * 1000), 30_000);
+					}
 				} else {
 					const data = (res.data ?? {}) as Record<string, unknown>;
-					const status = String(data.status ?? "authorization_pending");
+					const status = String(data.status ?? "unknown");
 					// Back-compat: server may return "approved" for the final state.
 					if (status === "authorized" || status === "approved") {
 						const enrollmentToken =
-							typeof data.enrollment_token === "string" ? data.enrollment_token : null;
+							typeof data.enrollment_token === "string" && data.enrollment_token.length > 0 ? data.enrollment_token : null;
 						const enrollmentTokenExpiresAt =
 							typeof data.expires_at === "string" ? data.expires_at : null;
-						setPoll({
-							status: "authorized",
-							enrollment_token: enrollmentToken,
-							enrollment_token_expires_at: enrollmentTokenExpiresAt,
-						});
-						setError(null);
+						if (!enrollmentToken || !enrollmentTokenExpiresAt || !Number.isFinite(Date.parse(enrollmentTokenExpiresAt)) || Date.parse(enrollmentTokenExpiresAt) <= Date.now()) {
+							setDevice(null);
+							setPoll(null);
+							setError("Authorization completed, but no usable enrollment token was returned. Generate a new code.");
+						} else {
+							setPoll({
+								status: "authorized",
+								enrollment_token: enrollmentToken,
+								enrollment_token_expires_at: enrollmentTokenExpiresAt,
+							});
+							setError(null);
+						}
 						shouldRetry = false;
 					} else if (status === "authorization_pending" || status === "pending") {
 						setPoll({ status: "authorization_pending" });
@@ -188,9 +222,11 @@ export function OnboardingPage() {
 						nextDelayMs = intervalSeconds * 1000;
 					} else if (status === "expired") {
 						setPoll({ status: "expired" });
+						setDevice(null);
 						setError("This authorization code expired. Generate a new code to continue.");
 						shouldRetry = false;
-					} else {
+						} else {
+						setDevice(null);
 						setPoll(null);
 						setError(
 							"The authorization service returned an unknown state. Please generate a new code.",
@@ -209,6 +245,7 @@ export function OnboardingPage() {
 				const remainingMs = expiresAtMs - Date.now();
 				if (remainingMs <= 0) {
 					setPoll({ status: "expired" });
+					setDevice(null);
 					setError("This authorization code expired. Generate a new code to continue.");
 					return;
 				}
@@ -232,9 +269,8 @@ export function OnboardingPage() {
 		if (!token || !expiresAt) return;
 		const expiresAtMs = Date.parse(expiresAt);
 		const clearToken = () => {
-			setPoll((current) =>
-				current?.status === "authorized" ? { ...current, enrollment_token: null } : current,
-			);
+			setPoll({ status: "expired" });
+			setDevice(null);
 			setShowEnrollmentToken(false);
 			setCopiedEnrollmentToken(false);
 			setError("The enrollment token expired. Generate a new authorization code.");
@@ -250,14 +286,16 @@ export function OnboardingPage() {
 		poll?.status === "authorized" ? poll.enrollment_token_expires_at : null,
 	]);
 
-	const canAuthorize = pilotStatus === "approved";
+	const canAuthorize = pilotStatus === "approved" && canEnroll;
 
 	return (
 		<div className="stack">
 			<div className="card">
 				<h1>Onboarding</h1>
+				<p style={{ overflowWrap: "anywhere" }}>Team: {teamName}</p>
+				{!canEnroll ? <div className="notice notice-warning" role="alert">Your role cannot enroll agents for this team.</div> : null}
 				<p className="muted">
-					Pick your runtime, paste the prompt into your agent, then authorize once in your browser.
+					Choose your runtime and copy the install prompt. When your agent shows a code, verify it for this team.
 				</p>
 				{pilotStatus !== "approved" ? (
 					<div className="notice notice-warning">
@@ -265,8 +303,11 @@ export function OnboardingPage() {
 						<div className="mono" style={{ marginTop: 4 }}>
 							{pilotStatus}
 						</div>
+						{pilotStatus === "loading" ? <div role="status">Checking pilot access…</div> : null}
+						{pilotStatus === "unknown" ? <div role="alert">Pilot access could not be checked. Retry before generating a code.</div> : null}
 						{pilotStatus !== "loading" ? (
 							<div className="row" style={{ marginTop: 10 }}>
+								{pilotStatus === "unknown" ? <button className="button button-secondary button-sm" type="button" onClick={() => { setPilotStatus("loading"); setPilotReload((count) => count + 1); }}>Retry status</button> : null}
 								<Link className="button button-secondary button-sm" to="/pilot">
 									View / request pilot
 								</Link>
@@ -293,7 +334,7 @@ export function OnboardingPage() {
 								key={id}
 								className={`button ${runtime === id ? "" : "button-secondary"}`}
 								type="button"
-								onClick={() => setRuntime(id)}
+								onClick={() => { setRuntime(id); setPromptCopyStatus("idle"); }}
 								aria-pressed={runtime === id}
 							>
 								{label}
@@ -302,13 +343,19 @@ export function OnboardingPage() {
 					</div>
 
 					<div className="notice" style={{ marginTop: 12 }}>
-						<div className="muted small">Prompt to give your agent</div>
+						<label className="muted small" htmlFor="onboarding-agent-prompt">Prompt to give your agent</label>
 						<textarea
+							id="onboarding-agent-prompt"
 							className="input mono"
 							style={{ minHeight: 220, resize: "vertical" }}
 							readOnly
 							value={prompt}
 						/>
+						<button className="button button-secondary button-sm" type="button" onClick={async () => {
+							try { await navigator.clipboard.writeText(prompt); setPromptCopyStatus("copied"); }
+							catch { setPromptCopyStatus("error"); }
+						}}>{promptCopyStatus === "copied" ? "Prompt copied" : "Copy prompt"}</button>
+						{promptCopyStatus === "error" ? <div role="alert">Clipboard access was blocked. Select the prompt above and copy it manually.</div> : null}
 						<div className="muted small" style={{ marginTop: 10 }}>
 							This prompt focuses the agent on install + authorization without asking you to
 							manually copy API keys.
@@ -319,8 +366,7 @@ export function OnboardingPage() {
 				<div className="card">
 					<h2>2) Authorize</h2>
 					<p className="muted">
-						Generate a short code, then sign in and authorize in your browser. Your runtime will
-						complete enrollment automatically.
+						Use the verify page for a code shown by your agent. Generate a code here only if you need a manual enrollment token.
 					</p>
 
 					<div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
@@ -331,21 +377,23 @@ export function OnboardingPage() {
 							onClick={async () => {
 								setBusy(true);
 								setError(null);
+								setDevice(null);
 								setPoll(null);
 								setShowEnrollmentToken(false);
 								setCopiedEnrollmentToken(false);
 								try {
 									const res = await supabase.functions.invoke("device-start", { method: "POST" });
-									if (res.error) {
-										setError(res.error.message);
+									if (res.error || res.data?.ok !== true) {
+										setError(res.error?.message ?? "The authorization service did not confirm a code.");
 										return;
 									}
 									const data = (res.data ?? {}) as Record<string, unknown>;
+									const userCode = String(data.user_code ?? "");
 									const result: DeviceStartResult = {
 										verification_url: safeVerificationUrl(
-											String(data.verification_url ?? "/verify"),
+											String(data.verification_url ?? "/verify"), userCode, teamId,
 										),
-										user_code: String(data.user_code ?? ""),
+										user_code: userCode,
 										device_code: String(data.device_code ?? ""),
 										expires_at: String(data.expires_at ?? ""),
 										interval_seconds:
@@ -374,9 +422,9 @@ export function OnboardingPage() {
 								}
 							}}
 						>
-							Generate code
+							{busy ? "Generating code…" : "Generate code"}
 						</button>
-						<Link className="button button-secondary" to="/verify">
+						<Link className="button button-secondary" to={`/verify?team=${encodeURIComponent(teamId)}`}>
 							Open verify page
 						</Link>
 						{device ? (
@@ -414,7 +462,7 @@ export function OnboardingPage() {
 							<div className="muted small" style={{ marginTop: 8 }}>
 								Verification URL
 							</div>
-							<div className="mono">{device.verification_url}</div>
+							<div className="mono" style={{ overflowWrap: "anywhere" }}>{device.verification_url}</div>
 							<div className="muted small" style={{ marginTop: 8 }}>
 								Expires:{" "}
 								<span className="mono">
@@ -433,14 +481,14 @@ export function OnboardingPage() {
 								</a>
 								<Link
 									className="button button-secondary"
-									to={`/verify?code=${encodeURIComponent(device.user_code)}`}
+									to={`/verify?code=${encodeURIComponent(device.user_code)}&team=${encodeURIComponent(teamId)}`}
 								>
 									I already opened it
 								</Link>
 							</div>
 
-							{poll?.status === "authorization_pending" ? (
-								<div className="muted small" style={{ marginTop: 12 }}>
+						{poll?.status === "authorization_pending" ? (
+								<div className="muted small" role="status" style={{ marginTop: 12 }}>
 									Waiting for authorization…
 								</div>
 							) : null}
@@ -448,8 +496,7 @@ export function OnboardingPage() {
 							{poll?.status === "authorized" ? (
 								<div className="notice" style={{ marginTop: 12 }}>
 									<div>
-										<b>Authorized.</b> Start your agent runtime now. It will complete enrollment and
-										enable protection.
+										<b>Authorized.</b> Use the enrollment token below in your local runtime setup, then check the Agents page to confirm protection.
 									</div>
 									{poll.enrollment_token ? (
 										<div className="muted small" style={{ marginTop: 8 }}>
@@ -517,8 +564,7 @@ export function OnboardingPage() {
 									) : null}
 									{poll.enrollment_token ? null : (
 										<div className="muted small" style={{ marginTop: 8 }}>
-											No enrollment token is available on this screen. The runtime can finish
-											enrollment without exposing a reusable secret here.
+											The enrollment token was cleared from this screen. Generate a new code if setup still needs one.
 										</div>
 									)}
 									<div className="row" style={{ marginTop: 12 }}>

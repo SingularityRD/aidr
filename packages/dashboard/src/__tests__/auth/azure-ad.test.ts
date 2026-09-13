@@ -3,9 +3,9 @@
  *
  * Covers:
  * - signInWithAzureAD: OAuth initiation, error handling
- * - handleAzureADCallback: session validation, claim extraction, error states
- * - getAzureADGroups: metadata extraction, edge function fallback, user mismatch
- * - mapGroupToRole: display name to role mapping
+ * - handleAzureADCallback: session validation without trusting metadata groups
+ * - getAzureADGroups: explicit unsupported state and user mismatch
+ * - mapGroupToRole: no role grant from unverified display names
  */
 
 import type * as SupabaseModule from "@supabase/supabase-js";
@@ -189,11 +189,8 @@ describe("handleAzureADCallback", () => {
 		expect(result.id).toBe("user-123");
 		expect(result.email).toBe("admin@contoso.com");
 		expect(result.tenantId).toBe("tenant-guid");
-		expect(result.groups).toHaveLength(2);
-		const firstGroup = result.groups[0];
-		expect(firstGroup).toBeDefined();
-		expect(firstGroup?.id).toBe("group-admin");
-		expect(firstGroup?.displayName).toBe("AIDR-Admins");
+		expect(result.groups).toEqual([]);
+		expect(mockFunctionsInvoke).not.toHaveBeenCalled();
 	});
 
 	it("throws AzureADError when there is no active session", async () => {
@@ -277,147 +274,52 @@ describe("handleAzureADCallback", () => {
 // ---------------------------------------------------------------------------
 
 describe("getAzureADGroups", () => {
-	it("returns cached groups from user metadata", async () => {
+	it("rejects browser metadata groups, including an admin-like name, without calling an absent Edge function", async () => {
 		mockGetSession.mockResolvedValueOnce({
 			data: { session: createMockSession() },
 			error: null,
 		});
 
-		const result = await getAzureADGroups("user-123");
-
-		expect(result.userId).toBe("user-123");
-		expect(result.syncedGroups).toHaveLength(2);
-		const firstSynced = result.syncedGroups[0];
-		expect(firstSynced).toBeDefined();
-		expect(firstSynced?.displayName).toBe("AIDR-Admins");
-		expect(result.syncedAt).toBeDefined();
+		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({
+			code: "GROUP_SYNC_UNAVAILABLE",
+		});
+		expect(mockFunctionsInvoke).not.toHaveBeenCalled();
 	});
 
-	it("throws AzureADError when no active session exists", async () => {
+	it("rejects an app_metadata group as an authority source", async () => {
+		mockGetSession.mockResolvedValueOnce({
+			data: {
+				session: createMockSession({
+					user_metadata: {},
+					app_metadata: {
+						provider: "azure",
+						issuer: "https://login.microsoftonline.com/tenant-guid/v2.0",
+						azure_ad_groups: [{ id: "attacker", displayName: "AIDR-Admins" }],
+					},
+				}),
+			},
+			error: null,
+		});
+		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({
+			code: "GROUP_SYNC_UNAVAILABLE",
+		});
+		expect(mockFunctionsInvoke).not.toHaveBeenCalled();
+	});
+
+	it("rejects when no active session exists", async () => {
 		mockGetSession.mockResolvedValueOnce({
 			data: { session: null },
 			error: null,
 		});
-
-		const promise = getAzureADGroups("user-123");
-		await expect(promise).rejects.toThrow(AzureADError);
-		await expect(promise).rejects.toThrow("No active session");
+		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({ code: "NO_SESSION" });
 	});
 
-	it("throws AzureADError on user ID mismatch", async () => {
+	it("rejects user ID mismatch before reporting unsupported sync", async () => {
 		mockGetSession.mockResolvedValueOnce({
 			data: { session: createMockSession() },
 			error: null,
 		});
-
-		const promise = getAzureADGroups("user-456");
-		await expect(promise).rejects.toThrow(AzureADError);
-		await expect(promise).rejects.toThrow("User ID mismatch");
-	});
-
-	it("falls back to edge function when metadata has no groups", async () => {
-		const session = createMockSession({
-			user_metadata: {},
-		});
-		mockGetSession.mockResolvedValueOnce({
-			data: { session },
-			error: null,
-		});
-		mockFunctionsInvoke.mockResolvedValueOnce({
-			data: {
-				groups: [{ id: "group-func-1", displayName: "Graph-Admins" }],
-			},
-			error: null,
-		});
-
-		const result = await getAzureADGroups("user-123");
-
-		expect(result.syncedGroups).toHaveLength(1);
-		const graphGroup = result.syncedGroups[0];
-		expect(graphGroup).toBeDefined();
-		expect(graphGroup?.displayName).toBe("Graph-Admins");
-		expect(mockFunctionsInvoke).toHaveBeenCalledWith("azure-ad-groups", {
-			body: { userId: "user-123" },
-		});
-	});
-
-	it("throws AzureADError when edge function fails", async () => {
-		const session = createMockSession({
-			user_metadata: {},
-		});
-		mockGetSession.mockResolvedValueOnce({
-			data: { session },
-			error: null,
-		});
-		mockFunctionsInvoke.mockResolvedValueOnce({
-			data: null,
-			error: { message: "Function not found" },
-		});
-
-		const promise = getAzureADGroups("user-123");
-		await expect(promise).rejects.toThrow(AzureADError);
-		await expect(promise).rejects.toThrow("Failed to fetch Azure AD groups");
-	});
-
-	it("handles edge function returning empty groups array", async () => {
-		const session = createMockSession({
-			user_metadata: {},
-		});
-		mockGetSession.mockResolvedValueOnce({
-			data: { session },
-			error: null,
-		});
-		mockFunctionsInvoke.mockResolvedValueOnce({
-			data: { groups: [] },
-			error: null,
-		});
-
-		const result = await getAzureADGroups("user-123");
-		expect(result.syncedGroups).toEqual([]);
-	});
-
-	it("extracts groups from app_metadata when user_metadata is empty", async () => {
-		const session = createMockSession({
-			user_metadata: {},
-			app_metadata: {
-				provider: "azure",
-				issuer: "https://login.microsoftonline.com/tenant-guid/v2.0",
-				azure_ad_groups: [{ id: "app-group-1", displayName: "App-Group" }],
-			},
-		});
-		mockGetSession.mockResolvedValueOnce({
-			data: { session },
-			error: null,
-		});
-
-		const result = await getAzureADGroups("user-123");
-		expect(result.syncedGroups).toHaveLength(1);
-		const appGroup = result.syncedGroups[0];
-		expect(appGroup).toBeDefined();
-		expect(appGroup?.displayName).toBe("App-Group");
-	});
-
-	it("prefers user_metadata groups over app_metadata groups", async () => {
-		const session = createMockSession({
-			user_metadata: {
-				azure_ad_groups: [{ id: "um-1", displayName: "UserMeta-Group" }],
-			},
-			app_metadata: {
-				provider: "azure",
-				issuer: "https://login.microsoftonline.com/tenant-guid/v2.0",
-				azure_ad_groups: [{ id: "am-1", displayName: "AppMeta-Group" }],
-			},
-		});
-		mockGetSession.mockResolvedValueOnce({
-			data: { session },
-			error: null,
-		});
-
-		const result = await getAzureADGroups("user-123");
-		expect(result.syncedGroups).toHaveLength(1);
-		const umGroup = result.syncedGroups[0];
-		expect(umGroup).toBeDefined();
-		expect(umGroup?.id).toBe("um-1");
+		await expect(getAzureADGroups("user-456")).rejects.toMatchObject({ code: "USER_ID_MISMATCH" });
 	});
 });
 
@@ -426,29 +328,14 @@ describe("getAzureADGroups", () => {
 // ---------------------------------------------------------------------------
 
 describe("mapGroupToRole", () => {
-	it('maps "AIDR-Admins" to admin', () => {
-		expect(mapGroupToRole("AIDR-Admins")).toBe("admin");
-	});
-
-	it('maps "AIDR-Developers" to member', () => {
-		expect(mapGroupToRole("AIDR-Developers")).toBe("member");
-	});
-
-	it('maps "Engineering" to member', () => {
-		expect(mapGroupToRole("Engineering")).toBe("member");
-	});
-
-	it('maps "ReadOnly-Viewers" to viewer', () => {
-		expect(mapGroupToRole("ReadOnly-Viewers")).toBe("viewer");
-	});
-
-	it("returns undefined for unmapped group names", () => {
-		expect(mapGroupToRole("Everyone")).toBeUndefined();
-	});
-
-	it("is case-insensitive", () => {
-		expect(mapGroupToRole("aidr-admins")).toBe("admin");
-		expect(mapGroupToRole("AIDR-ADMINS")).toBe("admin");
+	it.each([
+		"AIDR-Admins",
+		"AIDR-ADMINS",
+		"Engineering",
+		"ReadOnly-Viewers",
+		"Everyone",
+	])("does not grant a tenant role from display name %s", (name) => {
+		expect(mapGroupToRole(name)).toBeUndefined();
 	});
 });
 

@@ -9,7 +9,7 @@
 		"DEMO_USER_PASSWORD"
 	],
 	"routes": {
-		"public": ["/", "/demo", "/pilot", "/pricing", "/verify", "/login", "/support", "/status", "/privacy", "/security", "/terms"],
+		"public": ["/", "/demo", "/pilot", "/pricing", "/verify", "/login", "/auth/recover", "/support", "/status", "/privacy", "/security", "/terms"],
 		"protected": ["/onboarding", "/agents", "/autosecops", "/incidents", "/api-keys", "/billing", "/dashboard", "/events", "/settings"]
 	},
 	"scenarios": [
@@ -23,7 +23,7 @@
 		},
 		{
 			"id": "password-and-oauth-recovery",
-			"steps": ["Submit invalid credentials", "Confirm actionable error with no secret echo", "Exercise OAuth callback timeout/retry", "Confirm callback returnTo is consumed once"]
+			"steps": ["Submit invalid credentials", "Confirm actionable error with no secret echo", "Request password recovery and confirm the response does not disclose whether the account exists", "Exercise a pre-issued break-glass code and confirm it cannot be reused", "Complete password recovery and confirm refresh sessions are revoked", "Exercise OAuth callback timeout/retry", "Confirm callback returnTo is consumed once"]
 		},
 		{
 			"id": "device-enrollment",

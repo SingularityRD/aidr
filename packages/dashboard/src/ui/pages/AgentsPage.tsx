@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useTeam } from "../../enterprise/team-provider";
 import { supabase } from "../../lib/supabase";
 
 type AgentRow = {
@@ -15,6 +16,8 @@ type AgentRow = {
 type EntitlementsRow = { included_agents: number; extra_agents: number };
 
 export function AgentsPage() {
+	const { currentTeam } = useTeam();
+	const tenantId = currentTeam?.id;
 	const [agents, setAgents] = useState<AgentRow[]>([]);
 	const [entitlements, setEntitlements] = useState<EntitlementsRow | null>(null);
 	const [entitlementsError, setEntitlementsError] = useState<string | null>(null);
@@ -22,6 +25,10 @@ export function AgentsPage() {
 
 	useEffect(() => {
 		let cancelled = false;
+		setAgents([]);
+		setEntitlements(null);
+		if (!tenantId) return;
+		const activeTenantId = tenantId;
 
 		async function load() {
 			setError(null);
@@ -30,8 +37,13 @@ export function AgentsPage() {
 				supabase
 					.from("agents")
 					.select("id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen")
+					.eq("tenant_id", activeTenantId)
 					.order("last_seen", { ascending: false }),
-				supabase.from("entitlements").select("included_agents,extra_agents").maybeSingle(),
+				supabase
+					.from("entitlements")
+					.select("included_agents,extra_agents")
+					.eq("tenant_id", activeTenantId)
+					.maybeSingle(),
 			]);
 
 			if (cancelled) return;
@@ -54,7 +66,7 @@ export function AgentsPage() {
 			cancelled = true;
 			clearInterval(t);
 		};
-	}, []);
+	}, [tenantId]);
 
 	const allowed = entitlements
 		? Number(entitlements.included_agents ?? 1) + Number(entitlements.extra_agents ?? 0)
@@ -66,6 +78,7 @@ export function AgentsPage() {
 				<div className="row space-between" style={{ alignItems: "flex-start", gap: 16 }}>
 					<div>
 						<h1>Agents</h1>
+						<p className="muted">{currentTeam?.name ?? "Select a team to view its agents."}</p>
 						<p className="muted">
 							Connected installations (unique <code>iid</code>). Allowed:{" "}
 							<b>{allowed ?? "unavailable"}</b>. Current: <b>{agents.length}</b>.

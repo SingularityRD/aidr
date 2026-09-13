@@ -1,22 +1,6 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { supabaseEnvError } from "../lib/supabase";
-import { MoonIcon, SunIcon } from "./icons";
-import { useTheme } from "./ThemeProvider";
-
-function DarkModeToggle() {
-	const { theme, toggleTheme } = useTheme();
-
-	return (
-		<button
-			type="button"
-			onClick={toggleTheme}
-			aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-			className="theme-toggle"
-		>
-			{theme === "light" ? <MoonIcon /> : <SunIcon />}
-		</button>
-	);
-}
+import { ThemeToggle } from "./ThemeToggle";
 
 export function PublicLayout() {
 	const location = useLocation();
@@ -44,7 +28,7 @@ export function PublicLayout() {
 					<Link className="button button-sm" to="/login">
 						Sign in
 					</Link>
-					<DarkModeToggle />
+					<ThemeToggle />
 				</div>
 			</header>
 			<main className="main">

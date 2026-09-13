@@ -10,7 +10,7 @@ This folder contains a reference **Supabase** schema + edge function for running
 - Public waitlist intake
 - Agent inventory (per installation id `iid`)
 - Event ingestion endpoint (`ingest` edge function)
-- Billing/entitlement primitives (enterprise invoice reconciliation plus a disabled legacy checkout/webhook stub)
+- Billing/entitlement primitives (enterprise invoice reconciliation plus disabled legacy self-service checkout/webhook endpoints)
 - Optional reputation endpoints (`url-check`, `file-check` edge functions)
 - Row-Level Security policies for a multi-tenant dashboard
 
@@ -30,7 +30,7 @@ This folder contains a reference **Supabase** schema + edge function for running
    - Device auth (prompt-install bootstrap): `supabase/functions/device-start`, `supabase/functions/device-poll`, `supabase/functions/device-verify`
    - Pilot gate: `supabase/functions/pilot-apply`, `supabase/functions/pilot-status`, `supabase/functions/pilot-admin`
    - Waitlist intake: `supabase/functions/waitlist-signup`
-   - Legacy billing functions (do not deploy or advertise for direct GA): `supabase/functions/billing-checkout`, `supabase/functions/paddle-webhook`
+   - Legacy billing functions (do not deploy or advertise for direct GA): `supabase/functions/billing-checkout`, `supabase/functions/paddle-webhook`, `supabase/functions/stripe-webhook`
    - Optional reputation: `supabase/functions/url-check`, `supabase/functions/file-check`
    - Optional premium intel delivery: `supabase/functions/packs-manifest`, `supabase/functions/packs-download`
    - Optional revocations feed: `supabase/functions/revocations`
@@ -40,6 +40,34 @@ The edge function requires (provided automatically in the Supabase Edge Function
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+
+### Configuration is validated, not assumed
+
+Every Edge Function resolves these through `supabase/functions/_shared/config.ts`
+and validates them at the start of the request, before any authentication,
+database or network work. A missing variable is a **fail-closed** server
+configuration error, not an empty credential:
+
+```json
+HTTP/1.1 500
+{ "error": "server_misconfigured", "missing": ["SUPABASE_SERVICE_ROLE_KEY"] }
+```
+
+The response names the missing *variable*; a configured value is never echoed
+into a response or a log line. The same contract covers function-specific
+secrets: `AIDR_PADDLE_WEBHOOK_SECRET` (paddle-webhook) and
+`AIDR_PADDLE_CHECKOUT_URL` (billing-checkout, required only while the legacy
+self-service path is enabled). `stripe-webhook` keeps its own documented
+fail-closed path for an unprovisioned `STRIPE_WEBHOOK_SECRET`: `400`
+`invalid_signature` with no writes, because Stripe must not retry a delivery
+that could never be verified.
+
+A *half*-configured secret pair (a `*_KEY_ID` without its
+`*_PRIVATE_KEY_PKCS8_B64`, or an AutoSecOps endpoint without its token) is also
+reported instead of silently degrading to an unsigned or "not configured"
+answer. Variables with documented defaults (`AIDR_PACKS_BUCKET`,
+`AIDR_*_TTL_HOURS`, `AIDR_*_RL_PER_MIN`, `AIDR_ALLOWED_ORIGINS`, ...) stay
+optional.
 
 Commercial v1 (managed-first) requires additional secrets for signing and premium pack key derivation:
 
@@ -120,7 +148,7 @@ read-then-write logic in an Edge Function:
 | `register_agent_for_ingest` | Upsert an agent and enforce included + extra seats | Tenant advisory lock prevents seat oversubscription |
 | `authorize_device_session` | Attach a user to a pending device session | `authorized_at is null` compare-and-set |
 | `exchange_device_session` | Claim a device code for enrollment | `exchanged_at is null` compare-and-set |
-| `record_billing_webhook_event` | Record a provider event | `event_id` conflict makes duplicate delivery a no-op |
+| `record_billing_webhook_event` | Record a provider event (`paddle`, `stripe`) | `event_id` conflict makes duplicate delivery a no-op |
 
 Service-role functions must return caller-safe errors and a request id. Never
 log API keys, enrollment tokens, raw webhook signatures, or entitlement private
@@ -175,10 +203,18 @@ all of the following:
    dashboard-facing device, pilot, key, enrollment, and billing functions reject
    browser origins that are not on this allowlist and answer `OPTIONS` preflight
    requests before any auth or database work. Direct-GA
-   billing is invoice/order based; keep the legacy Paddle/Lemon checkout and
-   portal paths disabled unless a separately approved commercial decision enables
-   them with `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING=true`. Rotate keys through
-   a reviewed runbook.
+   billing is invoice/order based; keep the legacy Paddle checkout/portal and the
+   Paddle/Stripe webhook endpoints disabled unless a separately approved
+   commercial decision enables them with
+   `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING=true`. The Lemon Squeezy webhook was
+   removed (it performed no signature verification) and replaced by
+   `supabase/functions/stripe-webhook`, which verifies the raw-body
+   `Stripe-Signature` in constant time inside a replay window, deduplicates event
+   ids before writing, and gates entitlements on the subscription status and the
+   configured extra-agent price. Stripe is implemented and unit-tested only: it
+   is not deployed, `STRIPE_WEBHOOK_SECRET` is not provisioned, and it has not
+   been verified against a live Stripe account. Rotate keys through a reviewed
+   runbook.
 5. Run a staging replay: device start → verify → poll → enroll → ingest;
    concurrent poll/enroll/ingest calls must produce one exchange, one token,
    and no seat oversubscription. Reconcile one signed enterprise order into an

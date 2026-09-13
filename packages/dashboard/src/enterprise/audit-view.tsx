@@ -63,6 +63,7 @@ export function AuditView() {
 				a.href = url;
 				a.download = `audit-logs-${new Date().toISOString().split("T")[0]}.${format}`;
 				a.click();
+				if (url.startsWith("blob:")) setTimeout(() => URL.revokeObjectURL(url), 30000);
 				setStatus(`Audit logs exported as ${format.toUpperCase()}`);
 			}
 		} catch (err) {
@@ -146,20 +147,21 @@ export function AuditView() {
 						<button
 							className="button button-secondary"
 							onClick={() => void handleExport("csv")}
-							disabled={busy || filteredLogs.length === 0}
+							disabled={busy}
 						>
 							Export CSV
 						</button>
 						<button
 							className="button button-secondary"
 							onClick={() => void handleExport("json")}
-							disabled={busy || filteredLogs.length === 0}
+							disabled={busy}
 						>
 							Export JSON
 						</button>
 					</div>
 				</div>
 
+				<p className="muted small">Export includes all team audit records present when it starts. The filters below affect this view. Large exports load in pages; the browser supports up to 100,000 records or 64 MB.</p>
 				<div className="row" style={{ flexWrap: "wrap", gap: "12px", marginTop: "16px" }}>
 					<input
 						className="input"

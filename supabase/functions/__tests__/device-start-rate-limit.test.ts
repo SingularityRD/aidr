@@ -1,0 +1,180 @@
+import { createHmac, webcrypto } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
+import { describe, expect, it } from "vitest";
+
+const source = readFileSync(
+	join(dirname(fileURLToPath(import.meta.url)), "..", "device-start", "index.ts"),
+	"utf8",
+);
+const javascript = ts.transpileModule(source, {
+	compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+}).outputText;
+
+const SECRET = "device-start-ingress-test-secret-at-least-32-bytes";
+
+type Handler = (request: Request) => Promise<Response>;
+
+function harness(overrides: Record<string, string> = {}, rpcUnavailable = false) {
+	const env: Record<string, string> = {
+		SUPABASE_URL: "https://test.supabase.co",
+		SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+		AIDR_DEVICE_START_INGRESS_SECRET: SECRET,
+		...overrides,
+	};
+	const counts = new Map<string, number>();
+	let minted = 0;
+	let clientCreations = 0;
+	let handler: Handler | undefined;
+	const database = {
+		rpc: async (_name: string, args: { p_key: string; p_window_start: number; p_delta: number }) => {
+			if (rpcUnavailable) return { error: { message: "storage unavailable" } };
+			const key = `${args.p_key}:${args.p_window_start}`;
+			counts.set(key, (counts.get(key) ?? 0) + args.p_delta);
+			return { error: null };
+		},
+		from: (table: string) => {
+			if (table === "device_sessions") return {
+				insert: async () => { minted++; return { error: null }; },
+			};
+			let key = "";
+			let window = 0;
+			const query = {
+				select: () => query,
+				eq: (field: string, value: string | number) => {
+					if (field === "key") key = String(value);
+					if (field === "window_start") window = Number(value);
+					return query;
+				},
+				maybeSingle: async () => ({ data: { count: counts.get(`${key}:${window}`) ?? 0 }, error: null }),
+			};
+			return query;
+		},
+	};
+	const modules: Record<string, unknown> = {
+		"npm:@supabase/supabase-js@2": { createClient: () => { clientCreations++; return database; } },
+		"../_shared/config.ts": {
+			runtimeEnv: (name: string) => env[name],
+			loadConfig: (_reader: unknown, required: readonly string[]) => {
+				const missing = required.filter((name) => !env[name]?.trim());
+				return missing.length
+					? { ok: false, error: { missing } }
+					: { ok: true, values: Object.fromEntries(required.map((name) => [name, env[name]])) };
+			},
+			configFailure: (_name: string, error: { missing: string[] }, json: (status: number, body: Record<string, unknown>) => Response) =>
+				json(500, { error: "server_misconfigured", missing: error.missing }),
+		},
+		"../_shared/cors.ts": {
+			corsJson: (_request: Request, status: number, body: Record<string, unknown>) =>
+				new Response(JSON.stringify(body), { status }),
+			handleCors: () => null,
+		},
+	};
+	const module = { exports: {} };
+	runInNewContext(javascript, {
+		module,
+		exports: module.exports,
+		require: (name: string) => {
+			if (!(name in modules)) throw new Error(`unexpected module: ${name}`);
+			return modules[name];
+		},
+		Deno: { env: { get: (name: string) => env[name] }, serve: (value: Handler) => { handler = value; } },
+		crypto: webcrypto,
+		URL,
+		Request,
+		Response,
+		TextEncoder,
+		Uint8Array,
+		Date,
+		Number,
+		String,
+		Array,
+		Math,
+		btoa,
+	});
+	if (!handler) throw new Error("device-start did not register a handler");
+	return { handler, counts, get minted() { return minted; }, get clientCreations() { return clientCreations; } };
+}
+
+function signedRequest(ip: string, headers: Record<string, string> = {}, secret = SECRET, timestamp = Math.floor(Date.now() / 1000)) {
+	const signature = createHmac("sha256", secret)
+		.update(`device-start:v1\n${timestamp}\n${ip}`)
+		.digest("hex");
+	return new Request("https://aidr.test/functions/v1/device-start", {
+		method: "POST",
+		headers: {
+			"x-aidr-client-ip": ip,
+			"x-aidr-client-timestamp": String(timestamp),
+			"x-aidr-client-signature": signature,
+			...headers,
+		},
+	});
+}
+
+describe("anonymous device-start ingress and rate limits", () => {
+	it("mints a browser-compatible device session from a signed ingress request", async () => {
+		const runtime = harness();
+		const response = await runtime.handler(signedRequest("198.51.100.4", { Origin: "https://dashboard.test" }));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ ok: true, user_code: expect.any(String), device_code: expect.stringMatching(/^aidr_device_/) });
+		expect(runtime.minted).toBe(1);
+	});
+
+	it("does not let rotating caller-controlled proxy headers evade the signed-client quota", async () => {
+		const runtime = harness();
+		const statuses: number[] = [];
+		for (let i = 0; i < 31; i++) {
+			const request = signedRequest("198.51.100.4", {
+				"x-forwarded-for": `203.0.113.${i + 1}`,
+				"cf-connecting-ip": `203.0.113.${i + 1}`,
+				"x-real-ip": `203.0.113.${i + 1}`,
+			});
+			statuses.push((await runtime.handler(request)).status);
+		}
+		expect(statuses.slice(0, 30)).toEqual(Array(30).fill(200));
+		expect(statuses[30]).toBe(429);
+		expect(runtime.minted).toBe(30);
+	});
+
+	it("rejects forged ingress IPs, stale signatures and missing ingress proof", async () => {
+		const runtime = harness();
+		const valid = signedRequest("198.51.100.4");
+		valid.headers.set("x-aidr-client-ip", "203.0.113.5");
+		expect((await runtime.handler(valid)).status).toBe(403);
+		expect((await runtime.handler(signedRequest("198.51.100.4", {}, SECRET, Math.floor(Date.now() / 1000) - 120))).status).toBe(403);
+		const unsigned = new Request("https://aidr.test/functions/v1/device-start", { method: "POST", headers: { "x-forwarded-for": "198.51.100.4" } });
+		const response = await runtime.handler(unsigned);
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "trusted_ingress_required" });
+		expect(runtime.clientCreations).toBe(0);
+		expect(runtime.minted).toBe(0);
+	});
+
+	it("caps aggregate minting even when many distinct IPs have valid ingress proofs", async () => {
+		const runtime = harness({ AIDR_DEVICE_START_GLOBAL_RL_PER_MIN: "30" });
+		const statuses: number[] = [];
+		for (let i = 1; i <= 31; i++) statuses.push((await runtime.handler(signedRequest(`198.51.100.${i}`))).status);
+		expect(statuses.slice(0, 30)).toEqual(Array(30).fill(200));
+		expect(statuses[30]).toBe(429);
+		expect(runtime.minted).toBe(30);
+	});
+
+	it("fails closed on absent/weak ingress secret or unavailable rate-limit storage", async () => {
+		const absent = harness({ AIDR_DEVICE_START_INGRESS_SECRET: "" });
+		const absentResponse = await absent.handler(signedRequest("198.51.100.4"));
+		expect(absentResponse.status).toBe(500);
+		expect(await absentResponse.json()).toEqual({ error: "server_misconfigured", missing: ["AIDR_DEVICE_START_INGRESS_SECRET"] });
+		expect(absent.minted).toBe(0);
+
+		const weak = harness({ AIDR_DEVICE_START_INGRESS_SECRET: "weak" });
+		expect((await weak.handler(signedRequest("198.51.100.4"))).status).toBe(500);
+		expect(weak.minted).toBe(0);
+
+		const unavailable = harness({}, true);
+		expect((await unavailable.handler(signedRequest("198.51.100.4"))).status).toBe(429);
+		expect(unavailable.minted).toBe(0);
+	});
+});

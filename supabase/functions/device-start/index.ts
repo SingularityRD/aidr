@@ -5,26 +5,78 @@
 // Creates a short-lived device session. The client polls /v1/device/poll until authorized.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011).
+// The reverse proxy must remove any client-supplied x-aidr-client-* headers and
+// add a signed, canonical remote IP. The function must not infer a client IP
+// from x-forwarded-for/cf-connecting-ip/x-real-ip: direct callers control them.
+const REQUIRED_ENV = [
+	"SUPABASE_URL",
+	"SUPABASE_SERVICE_ROLE_KEY",
+	"AIDR_DEVICE_START_INGRESS_SECRET",
+] as const;
 
 const DASHBOARD_VERIFY_URL = (Deno.env.get("AIDR_DASHBOARD_VERIFY_URL") ?? "/verify").trim();
 
 const DEVICE_TTL_MINUTES = Number(Deno.env.get("AIDR_DEVICE_TTL_MINUTES") ?? "10");
 const DEVICE_POLL_INTERVAL_SECONDS = Number(Deno.env.get("AIDR_DEVICE_POLL_INTERVAL_SECONDS") ?? "3");
 const DEVICE_START_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_START_RL_PER_MIN") ?? "30");
+const DEVICE_START_GLOBAL_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_START_GLOBAL_RL_PER_MIN") ?? "300");
 
-function getClientIp(req: Request): string {
-	const h =
-		req.headers.get("x-forwarded-for") ??
-		req.headers.get("cf-connecting-ip") ??
-		req.headers.get("x-real-ip") ??
-		"";
-	// x-forwarded-for can be a list: client, proxy1, proxy2...
-	const first = h.split(",")[0]?.trim() ?? "";
-	return first || "unknown";
+const INGRESS_IP_HEADER = "x-aidr-client-ip";
+const INGRESS_TIMESTAMP_HEADER = "x-aidr-client-timestamp";
+const INGRESS_SIGNATURE_HEADER = "x-aidr-client-signature";
+const INGRESS_CONTEXT = "device-start:v1";
+const MAX_CLOCK_SKEW_SECONDS = 60;
+
+function canonicalIp(value: string | null): string | null {
+	if (!value || value.length > 45 || value !== value.trim()) return null;
+	if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(value)) {
+		const parts = value.split(".");
+		if (parts.some((part) => Number(part) > 255 || (part.length > 1 && part.startsWith("0")))) return null;
+		return value;
+	}
+	if (!value.includes(":") || !/^[0-9a-fA-F:]+$/.test(value)) return null;
+	try {
+		const hostname = new URL(`http://[${value}]/`).hostname;
+		return hostname.slice(1, -1).toLowerCase();
+	} catch {
+		return null;
+	}
+}
+
+function constantTimeHexEqual(actual: string, expected: string): boolean {
+	if (!/^[a-f0-9]{64}$/.test(actual) || expected.length !== 64) return false;
+	let difference = 0;
+	for (let i = 0; i < 64; i++) difference |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
+	return difference === 0;
+}
+
+async function verifiedIngressIp(req: Request, secret: string): Promise<string | null> {
+	const ip = canonicalIp(req.headers.get(INGRESS_IP_HEADER));
+	const timestamp = req.headers.get(INGRESS_TIMESTAMP_HEADER);
+	const signature = req.headers.get(INGRESS_SIGNATURE_HEADER);
+	if (!ip || !timestamp || !signature || !/^(0|[1-9]\d{0,15})$/.test(timestamp)) return null;
+	const seconds = Number(timestamp);
+	if (!Number.isSafeInteger(seconds) || Math.abs(Math.floor(Date.now() / 1000) - seconds) > MAX_CLOCK_SKEW_SECONDS) return null;
+	const key = await crypto.subtle.importKey(
+		"raw",
+		new TextEncoder().encode(secret),
+		{ name: "HMAC", hash: "SHA-256" },
+		false,
+		["sign"],
+	);
+	const signed = await crypto.subtle.sign(
+		"HMAC",
+		key,
+		new TextEncoder().encode(`${INGRESS_CONTEXT}\n${timestamp}\n${ip}`),
+	);
+	const expected = Array.from(new Uint8Array(signed), (byte) => byte.toString(16).padStart(2, "0")).join("");
+	return constantTimeHexEqual(signature, expected) ? ip : null;
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -74,7 +126,20 @@ async function rateLimitStart(
 ): Promise<boolean> {
 	const nowMin = Math.floor(Date.now() / 60000);
 	const ipHash = await sha256Hex(ip);
-	const key = `device_start:${ipHash.slice(0, 16)}`;
+	// Check the signed client bucket first so a single caller cannot consume the
+	// shared deployment budget after reaching its own quota. A bounded aggregate
+	// also limits session creation by many real IPs. It is an availability tradeoff:
+	// an attacker with enough real IPs can exhaust the public bootstrap budget.
+	return await consumeRateLimit(supabase, `device_start:v2:client:${ipHash}`, nowMin, DEVICE_START_RL_PER_MIN)
+		&& await consumeRateLimit(supabase, "device_start:v2:aggregate", nowMin, DEVICE_START_GLOBAL_RL_PER_MIN);
+}
+
+async function consumeRateLimit(
+	supabase: ReturnType<typeof createClient>,
+	key: string,
+	nowMin: number,
+	limit: number,
+): Promise<boolean> {
 	const { error } = await supabase.rpc("increment_rate_limit", {
 		p_key: key,
 		p_window_start: nowMin,
@@ -92,22 +157,32 @@ async function rateLimitStart(
 		.maybeSingle();
 	if (countError) return false;
 	const count = Number((data as any)?.count ?? 0);
-	return Number.isFinite(DEVICE_START_RL_PER_MIN) && DEVICE_START_RL_PER_MIN > 0
-		? count <= DEVICE_START_RL_PER_MIN
-		: true;
+	return Number.isSafeInteger(count) && count > 0 && count <= limit;
 }
 
 Deno.serve(async (req) => {
 	const preflight = handleCors(req);
 	if (preflight) return preflight;
 	if (req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return corsJson(req, 500, { error: "misconfigured_supabase_env" });
+
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) {
+		return configFailure("device-start", config.error, (status, body) => corsJson(req, status, body));
+	}
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AIDR_DEVICE_START_INGRESS_SECRET } = config.values;
+	const invalid: string[] = [];
+	if (new TextEncoder().encode(AIDR_DEVICE_START_INGRESS_SECRET).length < 32) invalid.push("AIDR_DEVICE_START_INGRESS_SECRET");
+	if (!Number.isSafeInteger(DEVICE_START_RL_PER_MIN) || DEVICE_START_RL_PER_MIN < 1 || DEVICE_START_RL_PER_MIN > 10000) invalid.push("AIDR_DEVICE_START_RL_PER_MIN");
+	if (!Number.isSafeInteger(DEVICE_START_GLOBAL_RL_PER_MIN) || DEVICE_START_GLOBAL_RL_PER_MIN < DEVICE_START_RL_PER_MIN || DEVICE_START_GLOBAL_RL_PER_MIN > 100000) invalid.push("AIDR_DEVICE_START_GLOBAL_RL_PER_MIN");
+	if (invalid.length > 0) return corsJson(req, 500, { error: "server_misconfigured", invalid });
+
+	const ip = await verifiedIngressIp(req, AIDR_DEVICE_START_INGRESS_SECRET);
+	if (!ip) return corsJson(req, 403, { error: "trusted_ingress_required" });
 
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
 
-	const ip = getClientIp(req);
 	const ok = await rateLimitStart(supabase, ip);
 	if (!ok) return corsJson(req, 429, { error: "rate_limited" });
 

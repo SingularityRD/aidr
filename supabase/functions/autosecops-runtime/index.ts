@@ -6,10 +6,22 @@
 // bounded read-only runtime queries needed by the AIDR dashboard.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
+import {
+	ConfigurationError,
+	configFailure,
+	isConfiguredValue,
+	loadConfig,
+	partialGroupError,
+	runtimeEnv,
+} from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Required configuration. Validated per request, before any auth or DB work, so
+// a missing variable answers with an explicit 500 that names it instead of
+// failing later with an empty credential (AIDR-011).
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+
 const AUTOSECOPS_RUNTIME_URL = (Deno.env.get("AUTOSECOPS_RUNTIME_URL") ?? "").trim();
 const AUTOSECOPS_RUNTIME_TOKEN = (Deno.env.get("AUTOSECOPS_RUNTIME_TOKEN") ?? "").trim();
 const AUTOSECOPS_AIDR_TEAM_ID = (Deno.env.get("AUTOSECOPS_AIDR_TEAM_ID") ?? "").trim();
@@ -69,6 +81,35 @@ function configured(): boolean {
 	return singleTenantMapping || Boolean(AUTOSECOPS_TEAM_MAP);
 }
 
+/**
+ * Distinguish "this deployment does not use the AutoSecOps bridge" from "the
+ * bridge credentials are misconfigured".
+ *
+ * - Nothing set: the integration is optional and simply off. The handler
+ *   answers `integration_not_configured` (503), unchanged.
+ * - Half set: the operator believes the bridge is on, so name the missing
+ *   variable instead of silently answering "not configured".
+ * - URL present but unusable (not a bare https origin): a configuration error,
+ *   reported as `invalid` rather than an opaque downstream failure.
+ */
+function integrationConfigProblem(): ConfigurationError | null {
+	const partial = partialGroupError({
+		AUTOSECOPS_RUNTIME_URL,
+		AUTOSECOPS_RUNTIME_TOKEN,
+	});
+	if (partial) return partial;
+	if (!isConfiguredValue(AUTOSECOPS_RUNTIME_URL)) return null;
+
+	try {
+		const url = new URL(AUTOSECOPS_RUNTIME_URL);
+		const usable =
+			url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash;
+		return usable ? null : new ConfigurationError({ invalid: ["AUTOSECOPS_RUNTIME_URL"] });
+	} catch {
+		return new ConfigurationError({ invalid: ["AUTOSECOPS_RUNTIME_URL"] });
+	}
+}
+
 function parseQuery(action: Action, value: unknown): Record<string, unknown> {
 	if (action !== "fleet") return {};
 	if (value === undefined) return { limit: 100 };
@@ -96,16 +137,21 @@ function parseQuery(action: Action, value: unknown): Record<string, unknown> {
 	return output;
 }
 
-async function authenticatedUser(req: Request) {
-	if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("misconfigured_supabase");
+async function authenticatedUser(
+	req: Request,
+	supabaseUrl: string,
+	serviceRoleKey: string,
+) {
 	const token = getBearerToken(req);
 	if (!token) throw new Error("missing_access_token");
-	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+	const supabase = createClient(supabaseUrl, serviceRoleKey, {
 		auth: { persistSession: false },
 	});
 	const { data, error } = await supabase.auth.getUser(token);
 	if (error || !data?.user?.id) throw new Error("invalid_access_token");
-	return { supabase, userId: data.user.id };
+	const identity = await checkIdentityBarrier(supabase, token, data.user.id);
+	if (!identity.ok) throw new Error(identity.error);
+	return { supabase, userId: data.user.id, token };
 }
 
 async function resolveAidrTeam(
@@ -153,15 +199,20 @@ function errorStatus(error: Error): number {
 	switch (error.message) {
 		case "missing_access_token":
 		case "invalid_access_token":
+		case "session_revoked":
 			return 401;
+		case "mfa_required":
 		case "team_membership_required":
 			return 403;
 		case "team_selection_required":
 		case "invalid_team_id":
 		case "invalid_query":
 			return 400;
-		case "misconfigured_supabase":
 		case "team_membership_unavailable":
+		case "identity_state_unavailable":
+		case "identity_policy_unavailable":
+		case "identity_barrier_unavailable":
+		case "assurance_unavailable":
 		case "integration_not_configured":
 			return 503;
 		default:
@@ -174,6 +225,21 @@ Deno.serve(async (req) => {
 	if (preflight) return preflight;
 	if (req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
 
+	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+	if (!config.ok) {
+		return configFailure("autosecops-runtime", config.error, (status, body) =>
+			corsJson(req, status, body),
+		);
+	}
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
+
+	const integrationProblem = integrationConfigProblem();
+	if (integrationProblem) {
+		return configFailure("autosecops-runtime", integrationProblem, (status, body) =>
+			corsJson(req, status, body),
+		);
+	}
+
 	try {
 		if (!configured()) throw new Error("integration_not_configured");
 		const body = (await req.json()) as RequestBody;
@@ -181,12 +247,14 @@ Deno.serve(async (req) => {
 		if (action !== "health" && action !== "fleet" && action !== "performance") {
 			throw new Error("invalid_query");
 		}
-		const { supabase, userId } = await authenticatedUser(req);
+		const { supabase, userId, token } = await authenticatedUser(req, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 		const aidrTeamId = await resolveAidrTeam(
 			supabase,
 			userId,
 			typeof body.team_id === "string" ? body.team_id : undefined,
 		);
+		const tenantIdentity = await checkIdentityBarrier(supabase, token, userId, aidrTeamId);
+		if (!tenantIdentity.ok) throw new Error(tenantIdentity.error);
 		const autoSecOpsTeamId = resolveAutoSecOpsTeam(aidrTeamId);
 		if (!autoSecOpsTeamId) throw new Error("integration_not_configured");
 		const query = parseQuery(action, body.query);

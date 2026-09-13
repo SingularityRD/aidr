@@ -1,0 +1,98 @@
+export type DiscoveryItem = {
+	target: string;
+	reachable: boolean;
+	attempts: number;
+	error_code: string | null;
+};
+
+export type DiscoveryIngest = {
+	action: "ingest";
+	tenant_id: string;
+	collector_id: string;
+	cycle_id: string;
+	sequence: number;
+	stale_after_ms: number;
+	complete: boolean;
+	expected_targets: number;
+	items: DiscoveryItem[];
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const COLLECTOR = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const ERROR_CODE = /^(timeout|unreachable|target_not_allowed|invalid_target_url|collector_exception|other)$/;
+
+function record(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+	return Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+export function validUuid(value: unknown): value is string {
+	return typeof value === "string" && UUID.test(value);
+}
+
+export function validCollectorId(value: unknown): value is string {
+	return typeof value === "string" && COLLECTOR.test(value);
+}
+
+/** Central inventory records origins only; paths can carry tenant secrets. */
+export function canonicalDiscoveryOrigin(value: unknown): string | null {
+	if (typeof value !== "string" || value.length < 8 || value.length > 512 || /[\u0000-\u001f\u007f]/.test(value)) return null;
+	try {
+		const url = new URL(value);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+		if (url.username || url.password || url.search || url.hash || url.pathname !== "/") return null;
+		return `${url.origin}/`;
+	} catch {
+		return null;
+	}
+}
+
+export function parseDiscoveryIngest(value: unknown): DiscoveryIngest | null {
+	if (!record(value) || !exactKeys(value, ["action", "tenant_id", "collector_id", "cycle_id", "sequence", "stale_after_ms", "complete", "expected_targets", "items"])) return null;
+	if (value.action !== "ingest" || !validUuid(value.tenant_id) || !validCollectorId(value.collector_id) || !validUuid(value.cycle_id)) return null;
+	if (typeof value.sequence !== "number" || !Number.isSafeInteger(value.sequence) || value.sequence < 1) return null;
+	if (typeof value.stale_after_ms !== "number" || !Number.isSafeInteger(value.stale_after_ms) || value.stale_after_ms < 60_000 || value.stale_after_ms > 2_592_000_000) return null;
+	if (typeof value.complete !== "boolean" || typeof value.expected_targets !== "number" || !Number.isSafeInteger(value.expected_targets) || value.expected_targets < 1 || value.expected_targets > 100) return null;
+	if (!Array.isArray(value.items) || value.items.length > value.expected_targets || (value.complete && value.items.length !== value.expected_targets)) return null;
+	const seen = new Set<string>();
+	const items: DiscoveryItem[] = [];
+	for (const item of value.items) {
+		if (!record(item) || !exactKeys(item, ["target", "reachable", "attempts", "error_code"])) return null;
+		const target = canonicalDiscoveryOrigin(item.target);
+		if (!target || seen.has(target) || typeof item.reachable !== "boolean" || typeof item.attempts !== "number" || !Number.isSafeInteger(item.attempts) || item.attempts < 1 || item.attempts > 5) return null;
+		if (item.reachable ? item.error_code !== null : typeof item.error_code !== "string" || !ERROR_CODE.test(item.error_code)) return null;
+		seen.add(target);
+		items.push({ target, reachable: item.reachable, attempts: item.attempts, error_code: item.error_code as string | null });
+	}
+	return {
+		action: "ingest",
+		tenant_id: value.tenant_id,
+		collector_id: value.collector_id,
+		cycle_id: value.cycle_id,
+		sequence: value.sequence,
+		stale_after_ms: value.stale_after_ms,
+		complete: value.complete,
+		expected_targets: value.expected_targets,
+		items,
+	};
+}
+
+export type DiscoveryFreshness = "fresh" | "stale" | "never_seen";
+
+export function discoveryFreshness(lastReachableAt: string | null, staleAfterMs: number, now = Date.now()): DiscoveryFreshness {
+	if (!lastReachableAt) return "never_seen";
+	const last = Date.parse(lastReachableAt);
+	if (!Number.isFinite(last)) return "never_seen";
+	return last <= now && now - last <= staleAfterMs ? "fresh" : "stale";
+}
+
+export function discoveryAlertState(input: { lastReachableAt: string | null; lastCycleId: string; cycleId: string; reachable: boolean; complete: boolean; staleAfterMs: number }, now = Date.now()): "healthy" | "unreachable" | "stale" | "never_seen" | "not_reported" | "collection_partial" {
+	if (!input.complete) return "collection_partial";
+	if (input.lastCycleId !== input.cycleId) return "not_reported";
+	if (!input.reachable) return "unreachable";
+	const freshness = discoveryFreshness(input.lastReachableAt, input.staleAfterMs, now);
+	return freshness === "fresh" ? "healthy" : freshness;
+}
