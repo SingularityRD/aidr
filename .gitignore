@@ -7,6 +7,10 @@ packages/claude-code/dist/*
 !packages/claude-code/dist/post-tool-use.cjs
 !packages/claude-code/dist/session-start.cjs
 !packages/claude-code/dist/mcp-server.cjs
+# health.cjs is the package's declared `bin` entry, so it is a shipped artifact.
+# Without this negation the build creates an untracked file and the CI
+# "enforce clean diff after verification/build" step fails.
+!packages/claude-code/dist/health.cjs
 packages/extension/resources/
 packages/claude-code/resources/
 packages/extension/.vsce/
@@ -16,6 +20,7 @@ packages/extension/.vsce/
 bin/
 packages/openclaw/resources/
 packages/opencode/resources/
+packages/sdk/resources/
 
 # Python
 __pycache__/
@@ -64,6 +69,19 @@ coverage/
 
 # Local release/Supabase CLI evidence and generated secrets
 .release-evidence/
+.aidr-deploy/
+.aidr-cloud/
+packages/cli/resources/
+packages/codex/resources/
+# Historical ad hoc diagnostics are not product artifacts.
+/lint*.txt
+/errors*.txt
+/err.txt
+/error-list.txt
+/out.txt
+/full_lint.txt
+/final*.txt
+/quality-gate-output.txt
 supabase/.branches/
 supabase/.temp/
 ~/
