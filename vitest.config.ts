@@ -12,6 +12,10 @@ export default defineConfig({
 		],
 		exclude: ["**/node_modules/**", "**/*.e2e.test.ts", "**/*e2e-integration*", "**/src/__tests__/e2e.test.ts"],
 		environment: "node",
+		// Built connector suites spawn native Node processes. Parallel suites on
+		// Windows compete for process startup/file scanning and exceed otherwise
+		// unchanged per-scenario deadlines. Keep the Windows gate serial.
+		maxWorkers: process.platform === "win32" ? 1 : undefined,
 		hookTimeout: 60_000,
 		testTimeout: 60_000,
 		reporters: ["verbose", "json"],

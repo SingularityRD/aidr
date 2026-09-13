@@ -74,7 +74,7 @@
 			"testFile": "services/aig-bridge/tests",
 			"expectedTests": 31,
 			"capabilities": ["aig-bridge-schema", "aig-ssrf-guard", "aig-task-ownership", "aig-idempotency"],
-			"prerequisites": ["Python with pytest, FastAPI and bridge requirements installed"],
+			"prerequisites": ["Python with services/aig-bridge/requirements-test.txt installed"],
 			"requiredCommands": ["python"],
 			"command": ["python", "-m", "pytest", "services/aig-bridge/tests", "-q", "--junitxml", "{junit}"],
 			"env": {"PYTHONPATH": "services/aig-bridge"}

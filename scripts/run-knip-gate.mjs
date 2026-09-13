@@ -52,12 +52,23 @@ function isApprovedWorkflowTool(issue, type, value) {
 	);
 }
 
+function isDenoTypeSpecifier(issue, type, value) {
+	// Knip parses Deno's `npm:` URL scheme as an npm package named "npm".
+	// These exact type-only imports are erased from the Edge runtime bundle.
+	const denoTypeOnlyImports = new Set([
+		"supabase/functions/_shared/identity-barrier.ts",
+		"supabase/functions/team-invite/lifecycle.ts",
+	]);
+	return type === "unlisted" && value?.name === "npm" &&
+		denoTypeOnlyImports.has(String(issue.file ?? "").replaceAll("\\", "/"));
+}
+
 for (const issue of report.issues ?? []) {
 	for (const [type, values] of Object.entries(issue)) {
 		if (!Array.isArray(values) || values.length === 0 || type === "file" || type === "owners") {
 			continue;
 		}
-		if (values.every((value) => isApprovedWorkflowTool(issue, type, value))) {
+		if (values.every((value) => isApprovedWorkflowTool(issue, type, value) || isDenoTypeSpecifier(issue, type, value))) {
 			continue;
 		}
 		if (allowedReviewDebt.has(type)) {

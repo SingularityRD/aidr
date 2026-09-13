@@ -32,6 +32,7 @@ const publicRoutes = [
 	"/pricing",
 	"/verify",
 	"/login",
+	"/auth/recover",
 	"/support",
 	"/status",
 	"/privacy",
@@ -126,7 +127,7 @@ async function structuralChecks() {
 	assertIncludes(autoSecOps, 'autosecops-runtime', "AutoSecOps dashboard bridge");
 	assertIncludes(autoSecOps, "No synthetic or cached AutoSecOps data", "AutoSecOps fail-closed rendering");
 	assertIncludes(login, 'id="login-email"', "login email input id");
-	assertIncludes(login, "const captchaReady = !captchaConfigured || captchaVerified", "optional CAPTCHA login path");
+	assertIncludes(login, "const captchaReady = !captchaConfigured || Boolean(captchaToken)", "optional CAPTCHA login path");
 	assertIncludes(await read("packages/dashboard/src/ui/pages/public/VerifyPage.tsx"), "signInReturnTo", "verify code survives sign-in redirect");
 	assertIncludes(returnTo, 'candidate.startsWith("//")', "open redirect protection");
 	assertRegex(returnTo, /candidate\.includes\(["']\\\\["']\)/, "backslash redirect protection");

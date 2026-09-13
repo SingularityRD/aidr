@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singularity.example/schemas/aidr-load-test-result-v1.json",
+  "title": "AIDR load and failover result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "passed", "started_at", "completed_at", "workload", "metrics", "fault_observations", "threshold_checks", "limitations", "claims"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "aidr_load_test_result" },
+    "passed": { "type": "boolean" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": "string", "format": "date-time" },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "class", "profile_sha256", "duration_seconds", "rate_per_second", "max_in_flight", "target_origin", "environment_label", "candidate_id"],
+      "properties": {
+        "id": { "type": "string" },
+        "class": { "enum": ["load", "soak", "failover", "noisy_neighbor"] },
+        "profile_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "duration_seconds": { "type": "number" },
+        "rate_per_second": { "type": "number" },
+        "max_in_flight": { "type": "integer" },
+        "target_origin": { "type": "string", "format": "uri" },
+        "environment_label": { "type": "string" },
+        "candidate_id": { "type": ["string", "null"] }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overall", "scenarios", "cohorts"],
+      "properties": {
+        "overall": { "$ref": "#/$defs/aggregate" },
+        "scenarios": { "type": "object", "additionalProperties": { "$ref": "#/$defs/aggregate" } },
+        "cohorts": { "type": "object", "additionalProperties": { "$ref": "#/$defs/aggregate" } }
+      }
+    },
+    "diagnostics": { "$ref": "#/$defs/diagnostics" },
+    "fault_observations": { "type": "array", "items": { "$ref": "#/$defs/faultObservation" } },
+    "threshold_checks": { "type": "array", "items": { "$ref": "#/$defs/thresholdCheck" } },
+    "limitations": { "type": "array", "minItems": 3, "items": { "type": "string" } },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["production_accepted", "production_sla_proven", "ha_proven"],
+      "properties": {
+        "production_accepted": { "const": false },
+        "production_sla_proven": { "const": false },
+        "ha_proven": { "const": false }
+      }
+    }
+  },
+  "$defs": {
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generator", "failure_classes"],
+      "properties": {
+        "generator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schedule_lag_ms", "peak_in_flight", "schedule_finished_at_ms", "drain_finished_at_ms", "completed_rate_per_second"],
+          "properties": {
+            "schedule_lag_ms": { "$ref": "#/$defs/latencySeries" },
+            "peak_in_flight": { "type": "integer", "minimum": 0 },
+            "schedule_finished_at_ms": { "type": "number", "minimum": 0 },
+            "drain_finished_at_ms": { "type": "number", "minimum": 0 },
+            "completed_rate_per_second": { "type": "number", "minimum": 0 }
+          }
+        },
+        "failure_classes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["overall", "scenarios", "cohorts"],
+          "properties": {
+            "overall": { "$ref": "#/$defs/failureClassCounts" },
+            "scenarios": { "type": "object", "additionalProperties": { "$ref": "#/$defs/failureClassCounts" } },
+            "cohorts": { "type": "object", "additionalProperties": { "$ref": "#/$defs/failureClassCounts" } }
+          }
+        }
+      }
+    },
+    "failureClassCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unexpected_status": { "type": "integer", "minimum": 0 },
+        "timeout": { "type": "integer", "minimum": 0 },
+        "network": { "type": "integer", "minimum": 0 },
+        "response_body_limit": { "type": "integer", "minimum": 0 },
+        "client_error": { "type": "integer", "minimum": 0 },
+        "other": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "latencySeries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50", "p95", "p99", "max", "samples", "observations", "sampling"],
+      "properties": {
+        "p50": { "type": ["number", "null"] },
+        "p95": { "type": ["number", "null"] },
+        "p99": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "samples": { "type": "integer", "minimum": 0 },
+        "observations": { "type": "integer", "minimum": 0 },
+        "sampling": { "enum": ["complete", "reservoir"] }
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheduled", "started", "completed", "expected_responses", "unexpected_responses", "transport_errors", "dropped_requests", "availability_ratio", "error_ratio", "loss_ratio", "latency_ms", "status_counts"],
+      "properties": {
+        "scheduled": { "type": "integer", "minimum": 0 },
+        "started": { "type": "integer", "minimum": 0 },
+        "completed": { "type": "integer", "minimum": 0 },
+        "expected_responses": { "type": "integer", "minimum": 0 },
+        "unexpected_responses": { "type": "integer", "minimum": 0 },
+        "transport_errors": { "type": "integer", "minimum": 0 },
+        "dropped_requests": { "type": "integer", "minimum": 0 },
+        "availability_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "error_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "loss_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "latency_ms": { "$ref": "#/$defs/latencySeries" },
+        "status_counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+      }
+    },
+    "thresholdCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "metric", "operator", "actual", "expected", "passed"],
+      "properties": {
+        "label": { "type": "string" },
+        "metric": { "type": "string" },
+        "operator": { "enum": ["<=", ">=", "="] },
+        "actual": { "type": ["number", "boolean", "null"] },
+        "expected": { "type": ["number", "boolean"] },
+        "passed": { "type": "boolean" }
+      }
+    },
+    "faultObservation": {
+      "type": "object",
+      "required": ["name", "target", "scenario_names", "status", "fault_observed", "estimated_rto_ms"],
+      "properties": {
+        "name": { "type": "string" },
+        "target": { "type": "string" },
+        "scenario_names": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "status": { "enum": ["insufficient_samples", "fault_not_observed", "not_recovered", "recovered"] },
+        "fault_observed": { "type": "boolean" },
+        "first_failure_at_ms": { "type": "number", "minimum": 0 },
+        "recovered_at_ms": { "type": ["number", "null"], "minimum": 0 },
+        "estimated_rto_ms": { "type": ["number", "null"], "minimum": 0 },
+        "recovery_confirmation_successes": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

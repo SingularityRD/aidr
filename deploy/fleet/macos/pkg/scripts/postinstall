@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+ROOT="/Library/Application Support/Singularity AIDR"
+DIGEST=$(tr -d ' \r\n' < "$ROOT/payload/connector.tgz.sha256")
+export AIDR_FLEET_PLATFORM=macos
+"$ROOT/fleet/unix/aidr-fleet.sh" verify \
+	--artifact "$ROOT/payload/connector.tgz" \
+	--sha256 "$DIGEST" \
+	--signature "$ROOT/payload/connector.tgz.sig" \
+	--public-key "$ROOT/config/release-public.pem"
+chmod -R go-w "$ROOT"
+exit 0

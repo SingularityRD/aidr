@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singularity.example/schemas/aidr-workload-profile-v1.json",
+  "title": "AIDR load and failover workload profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "workload_id", "workload_class", "base_url_env", "duration_seconds", "rate_per_second", "max_in_flight", "scenarios", "thresholds"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": 1 },
+    "workload_id": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{2,127}$" },
+    "workload_class": { "enum": ["load", "soak", "failover", "noisy_neighbor"] },
+    "description": { "type": "string" },
+    "environment_label": { "type": "string" },
+    "candidate_id": { "type": "string" },
+    "base_url_env": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,127}$" },
+    "duration_seconds": { "type": "number", "minimum": 0.2, "maximum": 604800 },
+    "rate_per_second": { "type": "number", "minimum": 0.1, "maximum": 10000 },
+    "max_in_flight": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "request_timeout_ms": { "type": "integer", "minimum": 100, "maximum": 120000 },
+    "max_response_bytes": { "type": "integer", "minimum": 0, "maximum": 16777216 },
+    "max_latency_samples": { "type": "integer", "minimum": 100, "maximum": 1000000 },
+    "max_fault_event_samples": { "type": "integer", "minimum": 100, "maximum": 1000000 },
+    "thresholds": { "$ref": "#/$defs/thresholds" },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/scenario" }
+    },
+    "fault_windows": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/faultWindow" }
+    }
+  },
+  "$defs": {
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_requests"],
+      "anyOf": [
+        { "required": ["max_error_ratio"] },
+        { "required": ["max_loss_ratio"] },
+        { "required": ["min_availability_ratio"] }
+      ],
+      "properties": {
+        "min_requests": { "type": "integer", "minimum": 0 },
+        "max_error_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_loss_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "min_availability_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_p95_ms": { "type": "number", "minimum": 0 },
+        "max_p99_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "environmentTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$env"],
+      "properties": { "$env": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,127}$" } }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "cohort", "method", "path", "weight", "expected_statuses"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,127}$" },
+        "cohort": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$" },
+        "method": { "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] },
+        "path": { "type": "string", "pattern": "^/[^/].*|^/$" },
+        "weight": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "expected_statuses": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 100, "maximum": 599 } },
+        "headers_env": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,127}$" } },
+        "body_json": {},
+        "thresholds": { "$ref": "#/$defs/thresholds" }
+      }
+    },
+    "faultWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "target", "scenario_names", "start_seconds", "end_seconds"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,127}$" },
+        "target": { "type": "string" },
+        "scenario_names": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+        "start_seconds": { "type": "number", "minimum": 0 },
+        "end_seconds": { "type": "number", "minimum": 0 },
+        "recovery_confirmation_successes": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "require_fault_observed": { "type": "boolean" },
+        "max_rto_ms": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+rule_files:
+  - prometheus-alerts.yml
+evaluation_interval: 1m
+tests:
+  - name: one failed scrape fires even while another instance is healthy
+    interval: 1m
+    input_series:
+      - series: 'up{job="aidr-control-plane",instance="healthy:8080"}'
+        values: '1 1 1 1'
+      - series: 'aidr_readiness{job="aidr-control-plane",instance="healthy:8080"}'
+        values: '1 1 1 1'
+      - series: 'up{job="aidr-control-plane",instance="failed:8080"}'
+        values: '1 0 0 0'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: AIDRScrapeFailed
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: failed:8080
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: Prometheus cannot scrape an AIDR control-plane instance
+              action: Check target discovery, private network routing, dashboard liveness, and the metrics handler.
+
+  - name: missing readiness metric is isolated to one successful scrape
+    interval: 1m
+    input_series:
+      - series: 'up{job="aidr-control-plane",instance="healthy:8080"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness{job="aidr-control-plane",instance="healthy:8080"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'up{job="aidr-control-plane",instance="missing-metric:8080"}'
+        values: '1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: AIDRMetricsAbsent
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: missing-metric:8080
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR target scraped successfully but readiness metric is absent
+              action: Check the dashboard metrics handler and deployed version for this instance.
+
+  - name: no discovered targets fires independently of dashboard metrics
+    interval: 1m
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: AIDRTargetDiscoveryEmpty
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: Prometheus has no AIDR control-plane monitoring targets
+              action: Restore the configured targets and verify service discovery before admitting traffic.

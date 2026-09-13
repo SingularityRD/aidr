@@ -1,0 +1,43 @@
+apiVersion: aidr.singularity/v1alpha1
+kind: AvailabilityTopologyReference
+metadata:
+  name: managed-cloud-multi-zone
+  status: reference-only-not-deployed
+spec:
+  deploymentModel: managed-cloud
+  minimumFailureDomains: 3
+  ingress:
+    replicas: provider-managed
+    crossZone: required
+    tlsTermination: managed-certificate
+    healthPath: /healthz
+  statelessServices:
+    dashboard:
+      replicas: 3
+      topologySpread: failure-domain
+      disruptionBudget:
+        minAvailable: 2
+    edgeGateway:
+      replicas: provider-managed-multi-zone
+  statefulServices:
+    postgres:
+      architecture: managed-ha-with-point-in-time-recovery
+      automaticFailover: provider-capability-must-be-verified
+      backups: encrypted-cross-account-or-cross-project-copy
+    objectStorage:
+      architecture: managed-multi-zone
+      versioning: required
+    realtime:
+      architecture: provider-managed
+      reconnectAndReplayTest: required
+  operations:
+    externalHealthProbe: required
+    metricsRetentionDays: contract-aligned
+    alertRouting: supplier-on-call
+    maintenanceProcedure: rolling-with-measured-impact
+  unresolvedSelections:
+    - cloud account, provider, region and project
+    - provider HA tier and documented dependency behavior
+    - cross-account backup destination and key custody
+    - DNS, certificate, WAF and egress controls
+    - capacity envelope and contractual SLI

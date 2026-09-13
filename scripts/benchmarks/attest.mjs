@@ -1,0 +1,55 @@
+#!/usr/bin/env node
+// Run on the independent evaluator's machine with a private key kept outside this repository.
+import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+function fail(message) { throw new Error(message); }
+function sha(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
+function optionMap(argv) {
+	const options = {};
+	for (let index = 0; index < argv.length; index += 2) {
+		const key = argv[index];
+		if (!["--corpus", "--observations", "--private-key", "--evaluator-id", "--output"].includes(key) || !argv[index + 1] || options[key])
+			fail("usage: node scripts/benchmarks/attest.mjs --corpus PATH --observations PATH --private-key PATH --evaluator-id ID --output PATH");
+		options[key] = argv[index + 1];
+	}
+	for (const key of ["--corpus", "--observations", "--private-key", "--evaluator-id", "--output"]) if (!options[key]) fail(`missing ${key}`);
+	return options;
+}
+
+try {
+	const options = optionMap(process.argv.slice(2));
+	const corpusBytes = readFileSync(resolve(options["--corpus"]));
+	const observationBytes = readFileSync(resolve(options["--observations"]));
+	const corpus = JSON.parse(corpusBytes.toString("utf8"));
+	const observations = JSON.parse(observationBytes.toString("utf8"));
+	const evaluatorId = options["--evaluator-id"].trim();
+	if (!evaluatorId || evaluatorId === corpus.rule_author_id || evaluatorId === corpus.oracle_reviewer_id)
+		fail("evaluator identity must differ from rule author and oracle reviewer");
+	const candidate = observations.products?.find((p) => p.product_id === observations.candidate_product_id);
+	if (!candidate || !/^[a-f0-9]{64}$/i.test(candidate.artifact_sha256)) fail("candidate artifact digest is missing or invalid");
+	const privateKey = createPrivateKey(readFileSync(resolve(options["--private-key"])));
+	if (privateKey.asymmetricKeyType !== "ed25519") fail("private key must be Ed25519");
+	const payload = {
+		protocol_version: 1,
+		corpus_sha256: sha(corpusBytes),
+		observations_sha256: sha(observationBytes),
+		candidate_artifact_sha256: candidate.artifact_sha256.toLowerCase(),
+		rule_author_id: corpus.rule_author_id,
+		evaluator_id: evaluatorId,
+		evaluator_role: "independent_evaluator",
+		completed_at: new Date().toISOString(),
+	};
+	const attestation = {
+		schema_version: 1,
+		payload,
+		signature_base64: sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString("base64"),
+	};
+	writeFileSync(resolve(options["--output"]), `${JSON.stringify(attestation, null, 2)}\n`, { flag: "wx" });
+	const publicKey = createPublicKey(privateKey);
+	process.stdout.write(`Attestation written. Evaluator public-key SHA-256: ${sha(publicKey.export({ type: "spki", format: "der" }))}\n`);
+} catch (error) {
+	process.stderr.write(`attestation failed: ${error.message}\n`);
+	process.exitCode = 1;
+}

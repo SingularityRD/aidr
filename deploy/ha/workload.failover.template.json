@@ -1,0 +1,46 @@
+{
+  "$schema": "./workload-profile.schema.json",
+  "schema_version": 1,
+  "workload_id": "control-plane-failover-v1",
+  "workload_class": "failover",
+  "description": "Operator-controlled node or database failover while authenticated policy traffic continues.",
+  "environment_label": "customer-staging",
+  "candidate_id": "REPLACE_WITH_RELEASE_CANDIDATE_DIGEST",
+  "base_url_env": "AIDR_LOAD_BASE_URL",
+  "duration_seconds": 900,
+  "rate_per_second": 50,
+  "max_in_flight": 100,
+  "request_timeout_ms": 10000,
+  "max_response_bytes": 1048576,
+  "scenarios": [
+    {
+      "name": "policy-read-during-failover",
+      "cohort": "enrolled_agents",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 1,
+      "headers_env": { "Authorization": "AIDR_LOAD_AUTHORIZATION" },
+      "expected_statuses": [200],
+      "thresholds": { "min_requests": 40000, "max_loss_ratio": 0.001, "max_p99_ms": 2000 }
+    }
+  ],
+  "fault_windows": [
+    {
+      "name": "approved-node-or-db-failover",
+      "target": "REPLACE_WITH_EXACT_COMPONENT_AND_FAILURE_MECHANISM",
+      "scenario_names": ["policy-read-during-failover"],
+      "start_seconds": 300,
+      "end_seconds": 420,
+      "recovery_confirmation_successes": 25,
+      "require_fault_observed": true,
+      "max_rto_ms": 120000
+    }
+  ],
+  "thresholds": {
+    "min_requests": 40000,
+    "max_error_ratio": 0.01,
+    "max_loss_ratio": 0.001,
+    "max_p95_ms": 750,
+    "max_p99_ms": 2000
+  }
+}

@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+ROOT="/Library/Application Support/Singularity AIDR"
+[ ! -L "$ROOT" ] || { echo "Refusing to install through a symlinked AIDR root" >&2; exit 1; }
+# Payload verification happens before pkg creation and again in postinstall. A
+# clean endpoint has no payload at preinstall time.
+exit 0

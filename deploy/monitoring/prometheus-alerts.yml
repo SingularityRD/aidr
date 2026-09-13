@@ -1,0 +1,152 @@
+groups:
+  - name: aidr-control-plane
+    rules:
+      - alert: AIDRMetricsAbsent
+        expr: up{job="aidr-control-plane"} == 1 unless on (job, instance) aidr_readiness{job="aidr-control-plane"}
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR target scraped successfully but readiness metric is absent
+          action: Check the dashboard metrics handler and deployed version for this instance.
+
+      - alert: AIDRScrapeFailed
+        expr: up{job="aidr-control-plane"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: Prometheus cannot scrape an AIDR control-plane instance
+          action: Check target discovery, private network routing, dashboard liveness, and the metrics handler.
+
+      - alert: AIDRTargetDiscoveryEmpty
+        expr: absent(up{job="aidr-control-plane"})
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: Prometheus has no AIDR control-plane monitoring targets
+          action: Restore the configured targets and verify service discovery before admitting traffic.
+
+      - alert: AIDRControlPlaneNotReady
+        expr: aidr_readiness == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR control plane is not ready for production traffic
+          action: Remove the instance from traffic and inspect the failing fixed-name readiness check.
+
+      - alert: AIDRDatabaseUnavailable
+        expr: aidr_readiness_check{check="database"} == 0 or absent(aidr_readiness_check{check="database"})
+        for: 2m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR database readiness failed
+          action: Check PostgREST and PostgreSQL health, saturation, and recent changes.
+
+      - alert: AIDRStorageUnavailable
+        expr: aidr_readiness_check{check="storage"} == 0 or absent(aidr_readiness_check{check="storage"})
+        for: 2m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR object storage readiness failed
+          action: Check storage API, backing volume or bucket, capacity, and permissions.
+
+      - alert: AIDRFunctionsUnavailable
+        expr: aidr_readiness_check{check="functions"} == 0 or absent(aidr_readiness_check{check="functions"})
+        for: 2m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR Edge Functions readiness failed
+          action: Check edge runtime health, gateway routing, deployment revision, and function logs.
+
+      - alert: AIDRSigningUnhealthy
+        expr: aidr_readiness_check{check="signing"} == 0 or absent(aidr_readiness_check{check="signing"})
+        for: 2m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR signed entitlement canary is stale or invalid
+          action: Stop enrollment changes and validate the signer, key access, and canary verification.
+
+      - alert: AIDRSigningKeyExpiresSoon
+        expr: aidr_signing_key_remaining_seconds < 604800
+        for: 15m
+        labels:
+          severity: warning
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR active signing key expires in less than seven days
+          action: Execute the approved key rotation and client trust-bundle rollout.
+
+      - alert: AIDRBackupUnhealthy
+        expr: aidr_readiness_check{check="backup"} == 0 or absent(aidr_readiness_check{check="backup"})
+        for: 15m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR verified backup is missing or stale
+          action: Check the backup job, separate-key verification, offsite copy, and available capacity.
+
+      - alert: AIDRQueueUnhealthy
+        expr: aidr_readiness_check{check="queue"} == 0 or absent(aidr_readiness_check{check="queue"})
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR durable delivery queue is stale or above its limit
+          action: Check worker availability, downstream delivery, retries, dead letters, and saturation.
+
+      - alert: AIDRQueueGrowing
+        expr: deriv(aidr_queue_depth[15m]) > 0 and aidr_queue_depth > 100
+        for: 15m
+        labels:
+          severity: warning
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR durable delivery queue is continuously growing
+          action: Compare producer and consumer rates and add approved worker capacity.
+
+      - alert: AIDRCertificateExpiresSoon
+        expr: aidr_certificate_remaining_seconds < 1209600
+        for: 30m
+        labels:
+          severity: warning
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR public TLS certificate expires in less than fourteen days
+          action: Renew the certificate and verify the complete served chain from outside the ingress.
+
+      - alert: AIDRCertificateProbeUnhealthy
+        expr: aidr_readiness_check{check="certificate"} == 0 or absent(aidr_readiness_check{check="certificate"})
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR public TLS certificate probe failed
+          action: Check DNS, ingress reachability, trust chain, hostname match, and certificate validity.
+
+      - alert: AIDRCertificateExpiryCritical
+        expr: aidr_certificate_remaining_seconds < 259200
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR public TLS certificate expires in less than three days
+          action: Page the certificate owner and complete emergency renewal.

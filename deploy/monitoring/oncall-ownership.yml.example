@@ -1,0 +1,10 @@
+service: aidr-control-plane
+primary_owner: REPLACE_WITH_NAMED_PRIMARY
+secondary_owner: REPLACE_WITH_NAMED_SECONDARY
+business_owner: REPLACE_WITH_NAMED_BUSINESS_OWNER
+paging_destination: REPLACE_WITH_PAGING_INTEGRATION
+security_escalation: REPLACE_WITH_SECURITY_ESCALATION
+customer_communications_owner: REPLACE_WITH_CUSTOMER_COMMS_OWNER
+acknowledgement_target_minutes: 5
+escalation_target_minutes: 15
+post_incident_review_required: true

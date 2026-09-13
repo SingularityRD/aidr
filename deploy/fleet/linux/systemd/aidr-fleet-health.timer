@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Singularity AIDR installed release health check
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+RandomizedDelaySec=2min
+Persistent=true
+Unit=aidr-fleet-health.service
+
+[Install]
+WantedBy=timers.target

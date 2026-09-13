@@ -1,0 +1,49 @@
+{
+  "$schema": "./workload-profile.schema.json",
+  "schema_version": 1,
+  "workload_id": "tenant-policy-noisy-neighbor-v1",
+  "workload_class": "noisy_neighbor",
+  "description": "Two independently enrolled tenant cohorts polling policy. Replace candidate and thresholds with the approved test plan.",
+  "environment_label": "customer-staging",
+  "candidate_id": "REPLACE_WITH_RELEASE_CANDIDATE_DIGEST",
+  "base_url_env": "AIDR_LOAD_BASE_URL",
+  "duration_seconds": 1800,
+  "rate_per_second": 100,
+  "max_in_flight": 200,
+  "request_timeout_ms": 10000,
+  "max_response_bytes": 1048576,
+  "scenarios": [
+    {
+      "name": "baseline-tenant-policy",
+      "cohort": "baseline_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 1,
+      "headers_env": { "Authorization": "AIDR_LOAD_BASELINE_AUTHORIZATION" },
+      "expected_statuses": [200],
+      "thresholds": {
+        "min_requests": 2000,
+        "max_error_ratio": 0.001,
+        "max_loss_ratio": 0.001,
+        "max_p95_ms": 500,
+        "max_p99_ms": 1000
+      }
+    },
+    {
+      "name": "noisy-tenant-policy",
+      "cohort": "noisy_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 9,
+      "headers_env": { "Authorization": "AIDR_LOAD_NOISY_AUTHORIZATION" },
+      "expected_statuses": [200]
+    }
+  ],
+  "thresholds": {
+    "min_requests": 100000,
+    "max_error_ratio": 0.001,
+    "max_loss_ratio": 0.001,
+    "max_p95_ms": 750,
+    "max_p99_ms": 1500
+  }
+}

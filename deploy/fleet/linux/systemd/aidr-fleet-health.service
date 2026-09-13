@@ -1,0 +1,33 @@
+[Unit]
+Description=Singularity AIDR installed release health evidence
+Documentation=file:/opt/singularity-aidr/share/fleet/README.md
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=aidr-health
+Group=aidr-health
+ExecStart=/opt/singularity-aidr/libexec/aidr-fleet-health --state-root /var/lib/singularity-aidr --install-root /opt/singularity-aidr --write /var/lib/singularity-aidr/health/status.json
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/singularity-aidr /var/lib/singularity-aidr/users
+ReadWritePaths=/var/lib/singularity-aidr/health
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

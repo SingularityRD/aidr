@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { validateCommercialReadiness } from "./check-commercial-readiness.mjs";
 
 const root = process.cwd();
 const files = {
@@ -30,10 +31,18 @@ for (const key of ["checkout", "webhook"]) {
 }
 requirePattern("docs", /enterprise invoice\/order workflow/i, "invoice/order source-of-truth documentation");
 
+const [inventory, gaps, registry, releaseSource] = await Promise.all([
+	readFile(path.join(root, "FEATURE_INVENTORY.json"), "utf8").then(JSON.parse),
+	readFile(path.join(root, "PRODUCTION_SALES_GAPS.json"), "utf8").then(JSON.parse),
+	readFile(path.join(root, "docs", "production-readiness", "commercial-go-evidence-registry.json"), "utf8").then(JSON.parse),
+	readFile(path.join(root, "scripts", "release-artifact-manifests.mjs"), "utf8"),
+]);
+failures.push(...validateCommercialReadiness({ inventory, gaps, registry, releaseSource }));
+
 if (failures.length) {
 	console.error("Commercial surface contract failed:");
 	for (const failure of failures) console.error(`- ${failure}`);
 	process.exitCode = 1;
 } else {
-	console.log("Commercial surface contract passed (invoice-only direct-GA defaults and backend gates present).");
+	console.log("Commercial surface contract passed (invoice defaults, release package scope, readiness counts, and claim approval state).");
 }

@@ -1,0 +1,31 @@
+[Unit]
+Description=AIDR encrypted offsite backup, remote verification and retention
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+ConditionPathExists=/srv/aidr/deployment.json
+ConditionPathExists=/etc/aidr/backup-offsite.env
+ConditionPathExists=/etc/aidr/aidr-recovery.key
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/aidr-kit
+EnvironmentFile=/etc/aidr/backup-offsite.env
+LoadCredential=aidr-recovery.key:/etc/aidr/aidr-recovery.key
+RuntimeDirectory=aidr-health
+RuntimeDirectoryMode=0700
+StateDirectory=aidr-backup
+StateDirectoryMode=0700
+ExecStart=/usr/bin/node /opt/aidr-kit/scripts/deployment-backup-offsite.mjs cycle --deployment /srv/aidr --spool /var/lib/aidr-backup --key-file %d/aidr-recovery.key --health-file /run/aidr-health/backup.json --apply-retention
+TimeoutStartSec=6h
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/srv/aidr /var/lib/aidr-backup /run/aidr-health
+UMask=0077

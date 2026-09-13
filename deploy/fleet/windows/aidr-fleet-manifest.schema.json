@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singularityrd.example/schemas/aidr-fleet-manifest-v1.json",
+  "title": "Singularity AIDR Windows fleet package manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product", "connector", "package_version", "minimum_node_major", "artifact", "installer", "agent_config", "operations", "assurance"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "product": { "const": "singularity-aidr" },
+    "connector": { "const": "claude-code" },
+    "package_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "minimum_node_major": { "type": "integer", "minimum": 18, "maximum": 99 },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "signature_path", "signature_required", "allowed_signer_thumbprints", "require_trusted_chain"],
+      "properties": {
+        "path": { "$ref": "#/$defs/relativePath" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "signature_path": { "$ref": "#/$defs/relativePath" },
+        "signature_required": { "const": true },
+        "allowed_signer_thumbprints": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-fA-F0-9]{40,128}$" } },
+        "require_trusted_chain": { "type": "boolean" }
+      }
+    },
+    "installer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "package_root"],
+      "properties": {
+        "path": { "$ref": "#/$defs/relativePath" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "package_root": { "const": "package" }
+      }
+    },
+    "agent_config": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256", "preserve_existing"],
+          "properties": {
+            "path": { "$ref": "#/$defs/relativePath" },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "preserve_existing": { "const": true }
+          }
+        }
+      ]
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installation_context", "target_home_required", "preserve_existing_config", "retained_rollback_candidates"],
+      "properties": {
+        "installation_context": { "const": "machine-or-mdm-managed-user" },
+        "target_home_required": { "const": true },
+        "preserve_existing_config": { "const": true },
+        "retained_rollback_candidates": { "const": 3 }
+      }
+    },
+    "assurance": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+    "relativePath": { "type": "string", "pattern": "^(?![A-Za-z]:)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$" }
+  }
+}

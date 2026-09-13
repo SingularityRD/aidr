@@ -8,7 +8,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
 	test: {
 		environment: "node",
-		include: ["supabase/functions/__tests__/security-flow.test.ts"],
+		include: [
+			"supabase/functions/__tests__/security-flow.test.ts",
+			"supabase/functions/__tests__/identity-security.test.ts",
+		],
 		maxWorkers: 1,
 		pool: "forks",
 	},

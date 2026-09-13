@@ -1,0 +1,49 @@
+apiVersion: aidr.singularity/v1alpha1
+kind: AvailabilityTopologyReference
+metadata:
+  name: customer-owned-multi-zone
+  status: reference-only-not-deployed
+spec:
+  deploymentModel: self-hosted
+  minimumFailureDomains: 3
+  ingress:
+    replicas: 2
+    crossZone: true
+    tlsTermination: customer-approved
+    healthPath: /healthz
+  statelessServices:
+    dashboard:
+      replicas: 3
+      topologySpread: failure-domain
+      disruptionBudget:
+        minAvailable: 2
+    edgeGateway:
+      replicas: 3
+      topologySpread: failure-domain
+      disruptionBudget:
+        minAvailable: 2
+  statefulServices:
+    postgres:
+      architecture: primary-with-synchronous-standbys
+      replicas: 3
+      automaticFailover: required-and-customer-selected
+      backups: encrypted-off-host-and-restore-tested
+    objectStorage:
+      architecture: replicated-or-managed-s3-compatible
+      minimumCopies: 3
+      crossFailureDomain: true
+    realtime:
+      replicas: 3
+      reconnectAndReplayTest: required
+  operations:
+    externalHealthProbe: required
+    metricsRetentionDays: customer-approved
+    alertRouting: customer-on-call
+    maintenanceProcedure: rolling-with-measured-impact
+  unresolvedSelections:
+    - orchestrator and ingress implementation
+    - Postgres failover manager and fencing
+    - object storage implementation
+    - secret manager and key custody
+    - region, failure domains and network paths
+    - capacity envelope and contractual SLI

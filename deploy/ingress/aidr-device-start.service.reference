@@ -1,0 +1,25 @@
+# Copy to /etc/systemd/system/aidr-device-start.service after replacing the
+# installation path and creating the restricted aidr service account.
+[Unit]
+Description=AIDR device-start trusted ingress signer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aidr
+Group=aidr
+WorkingDirectory=/opt/aidr
+EnvironmentFile=/etc/aidr/device-start-signer.env
+ExecStart=/usr/bin/node /opt/aidr/deploy/ingress/device-start.mjs
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

@@ -31,6 +31,8 @@ const targets = [
 	{ pkg: "packages/cli/package.json", dir: "packages/cli/dist", artifactId: "cli/dist" },
 	{ pkg: "packages/sdk/package.json", dir: "packages/sdk/dist", artifactId: "sdk/dist" },
 	{ pkg: "packages/dashboard/package.json", dir: "packages/dashboard/dist", artifactId: "dashboard/dist" },
+	{ pkg: "packages/codex/package.json", dir: "packages/codex/dist", artifactId: "codex/dist" },
+	{ pkg: "packages/mcp-gateway/package.json", dir: "packages/mcp-gateway/dist", artifactId: "mcp-gateway/dist" },
 ];
 
 if (commercial) {

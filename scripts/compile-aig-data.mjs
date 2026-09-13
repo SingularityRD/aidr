@@ -23,6 +23,24 @@ const OUT = join(ROOT, "packages", "core", "src", "generated");
 const AIG_MANIFEST_FILE = "aig-data-manifest.json";
 const DATA_SCHEMA_VERSION = 2;
 
+function writeGenerated(path, contents) {
+  try {
+    if (readFileSync(path, "utf8") === contents) return;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      writeFileSync(path, contents);
+      if (readFileSync(path, "utf8") !== contents) throw new Error(`Generated file verification failed: ${path}`);
+      return;
+    } catch (error) {
+      if (process.platform !== "win32" || !["UNKNOWN", "EPERM", "EACCES", "EBUSY"].includes(error.code) || attempt === 5) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100 * (attempt + 1));
+    }
+  }
+}
+
 const CVE_DIRS = [
   join(AIG, "data", "vuln_en"),
   join(AIG, "data", "vuln"),
@@ -580,6 +598,185 @@ function compileCveIndex() {
 
 // ─── 2. Framework Fingerprint Compiler ──────────────────────────────────────
 
+/**
+ * Parse one AIG fingerprint YAML into a compact, executable detection record.
+ *
+ * The upstream file has this shape:
+ *
+ *   info:   {name, author, severity, desc, metadata:{product, vendor}}
+ *   http:   [ {method, path, matchers: [ 'body="x" && header="y"', ... ]} ]
+ *   version:[ {method, path, extractor:{part, group, regex}} ]
+ *
+ * Only the `info` block used to be compiled, which is why the shipped data could
+ * not detect anything. We now keep the request/matcher/extractor blocks so the
+ * runtime can probe a target natively — no Go/Python AIG stack required.
+ *
+ * Matcher grammar observed upstream (177 `body`, 10 `header`, 3 `icon`):
+ *   key="value"      equality (`body="9Router"`)
+ *   key=="value"     substring/contains
+ *   key!="value"     negation
+ *   key=~"regex"     regex
+ * joined by `&&`. Anything we cannot confidently parse is retained as `raw` and
+ * marked unsupported rather than being silently treated as a match.
+ */
+function parseMatcherExpression(expression) {
+  const parts = String(expression)
+    .split(/\s*&&\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const matchers = [];
+  for (const part of parts) {
+    const m = part.match(/^(body|header|icon|status|title|word)\s*(==|!=|=~|=)\s*"?(.*?)"?\s*$/i);
+    if (!m) return { supported: false, raw: expression, matchers: [] };
+    const [, rawKey, operator, value] = m;
+    const key = rawKey.toLowerCase();
+    // `==` upstream means "contains"; a bare `=` means exact equality. Both are
+    // treated as substring tests because AIG fingerprints use `=` for markers
+    // embedded in larger payloads (e.g. body="9Router" inside an HTML page).
+    const negate = operator === "!=";
+    if (operator === "=~") {
+      matchers.push({ key, negate, regex: value });
+    } else {
+      matchers.push({ key, negate, contains: value });
+    }
+  }
+  return { supported: matchers.length > 0, raw: expression, matchers };
+}
+
+/**
+ * Unescape the escape sequences AIG uses inside YAML double-quoted scalars.
+ *
+ * Upstream writes matchers such as `body="\"checks\":"`. The `\"` is a YAML
+ * escape for a literal `"`, so the runtime must test for `"checks":` — keeping
+ * the backslashes would make the matcher unmatchable against any real body.
+ */
+function unescapeYamlScalar(value) {
+  return String(value)
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
+/**
+ * Parse one fingerprint YAML body into a record. Uses a dedicated line scanner
+ * because `parseSimpleYaml` is a flat key/value reader that cannot represent the
+ * nested `http:`/`matchers:` lists.
+ */
+function parseFingerprintYaml(text) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const info = {};
+  const http = [];
+  const versionBlocks = [];
+
+  let section = null; // "info" | "http" | "version"
+  let currentBlock = null; // http/version entry being built
+  let inMatchers = false;
+  let inExtractor = false;
+  let inMetadata = false;
+  let key = null; // block-scalar target
+
+  const pushBlock = () => {
+    if (!currentBlock) return;
+    if (currentBlock.__kind === "http") http.push(currentBlock);
+    else if (currentBlock.__kind === "version") versionBlocks.push(currentBlock);
+    currentBlock = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, "");
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    const indent = line.length - line.trimStart().length;
+    const trimmed = line.trim();
+
+    if (indent === 0) {
+      pushBlock();
+      inMatchers = false;
+      inExtractor = false;
+      inMetadata = false;
+      const top = trimmed.match(/^([a-z_]+):\s*(.*)$/i);
+      if (!top) continue;
+      section = top[1];
+      if (section !== "http" && section !== "version" && section !== "info") section = null;
+      continue;
+    }
+
+    if (section === "info") {
+      if (indent === 2) {
+        if (trimmed === "metadata:") {
+          inMetadata = true;
+          continue;
+        }
+        inMetadata = false;
+        const kv = trimmed.match(/^([\w-]+):\s*(.*)$/);
+        if (kv) info[kv[1]] = kv[2].replace(/^["']|["']$/g, "");
+        continue;
+      }
+      if (inMetadata && indent >= 4) {
+        const kv = trimmed.match(/^([\w-]+):\s*(.*)$/);
+        if (kv) info[kv[1]] = kv[2].replace(/^["']|["']$/g, "");
+      }
+      continue;
+    }
+
+    if (section === "http" || section === "version") {
+      const isNewEntry = trimmed.startsWith("- ") || trimmed === "-";
+      if (isNewEntry && indent <= 2) {
+        pushBlock();
+        currentBlock = { __kind: section };
+        inMatchers = false;
+        inExtractor = false;
+        const rest = trimmed.slice(1).trim();
+        if (rest) {
+          const kv = rest.match(/^([\w-]+):\s*(.*)$/);
+          if (kv) currentBlock[kv[1]] = kv[2].replace(/^["']|["']$/g, "");
+        }
+        continue;
+      }
+      if (!currentBlock) {
+        currentBlock = { __kind: section };
+      }
+      if (/^matchers:\s*$/.test(trimmed)) {
+        inMatchers = true;
+        inExtractor = false;
+        currentBlock.matchers = currentBlock.matchers || [];
+        continue;
+      }
+      if (/^extractor:\s*$/.test(trimmed)) {
+        inExtractor = true;
+        inMatchers = false;
+        currentBlock.extractor = currentBlock.extractor || {};
+        continue;
+      }
+      if (inMatchers) {
+        const item = trimmed.match(/^-\s*(.+)$/);
+        if (item) {
+          currentBlock.matchers.push(
+            unescapeYamlScalar(item[1].trim().replace(/^["']|["']$/g, "")),
+          );
+          continue;
+        }
+        inMatchers = false;
+      }
+      if (inExtractor) {
+        const kv = trimmed.match(/^([\w-]+):\s*(.*)$/);
+        if (kv) {
+          currentBlock.extractor[kv[1]] = unescapeYamlScalar(kv[2].replace(/^["']|["']$/g, ""));
+          continue;
+        }
+        inExtractor = false;
+      }
+      const kv = trimmed.match(/^([\w-]+):\s*(.*)$/);
+      if (kv && kv[2] !== "") {
+        currentBlock[kv[1]] = unescapeYamlScalar(kv[2].replace(/^["']|["']$/g, ""));
+      }
+      continue;
+    }
+  }
+  pushBlock();
+
+  return { info, http, version: versionBlocks, key };
+}
+
 function compileFingerprintIndex() {
   console.log("[aig] Compiling fingerprint index...");
 
@@ -590,27 +787,78 @@ function compileFingerprintIndex() {
 
   const files = walkYaml(FP_DIR).sort((a, b) => a.path.localeCompare(b.path));
   const fingerprints = [];
+  let withDetection = 0;
+  let withVersion = 0;
 
   for (const { path: file } of files) {
     const text = readFileSync(file, "utf-8");
-    const data = parseSimpleYaml(text) || {};
-    const info = data;
-    if (info && info.name) {
-      fingerprints.push({
-        n: info.name,
-        a: info.author || "",
-        sev: info.severity || "info",
-        desc: (info.desc || "").slice(0, 120),
+    const parsed = parseFingerprintYaml(text);
+    const info = parsed.info || {};
+    if (!info.name) continue;
+
+    // Build executable probes. Each probe is a bounded HTTP request plus the
+    // matcher expressions that must hold, so the runtime can evaluate it.
+    const probes = [];
+    for (const block of parsed.http) {
+      const path = block.path;
+      if (!path) continue;
+      const matchers = [];
+      let supported = true;
+      for (const expression of block.matchers || []) {
+        const parsedMatcher = parseMatcherExpression(expression);
+        if (!parsedMatcher.supported) {
+          supported = false;
+          matchers.push({ unsupported: expression });
+          continue;
+        }
+        matchers.push(...parsedMatcher.matchers);
+      }
+      probes.push({
+        method: (block.method || "GET").toUpperCase(),
+        path,
+        matchers,
+        supported,
       });
     }
+
+    const version = [];
+    for (const block of parsed.version) {
+      const ex = block.extractor;
+      if (!block.path || !ex || !ex.regex) continue;
+      version.push({
+        method: (block.method || "GET").toUpperCase(),
+        path: block.path,
+        part: ex.part || "body",
+        group: ex.group ? Number.parseInt(ex.group, 10) || 0 : 0,
+        regex: ex.regex,
+      });
+    }
+
+    if (probes.length > 0) withDetection++;
+    if (version.length > 0) withVersion++;
+
+    const record = {
+      n: info.name,
+      a: info.author || "",
+      sev: info.severity || "info",
+      desc: (info.desc || "").slice(0, 300),
+      p: info.product || "",
+      v: info.vendor || "",
+    };
+    if (probes.length > 0) record.http = probes;
+    if (version.length > 0) record.ver = version;
+
+    fingerprints.push(record);
   }
 
-  console.log(`[aig]   Found ${fingerprints.length} fingerprints`);
+  console.log(
+    `[aig]   Found ${fingerprints.length} fingerprints (${withDetection} with HTTP detection, ${withVersion} with version extractors)`,
+  );
 
   fingerprints.sort((a, b) => `${a.n}\u0000${a.a}`.localeCompare(`${b.n}\u0000${b.a}`));
   return {
-    schema: "aig-fingerprint-index/v2",
-    version: DATA_SCHEMA_VERSION,
+    schema: "aig-fingerprint-index/v3",
+    version: 3,
     generated: GENERATED_AT,
     source_commit: SOURCE_COMMIT,
     fingerprints,
@@ -772,10 +1020,10 @@ function main() {
     "aig-mcp-categories.json": JSON.stringify(mcpCategories),
   };
   for (const [name, contents] of Object.entries(artifacts)) {
-    writeFileSync(join(OUT, name), contents);
+    writeGenerated(join(OUT, name), contents);
   }
   const manifest = buildManifest(artifacts);
-  writeFileSync(join(OUT, AIG_MANIFEST_FILE), JSON.stringify(manifest));
+  writeGenerated(join(OUT, AIG_MANIFEST_FILE), JSON.stringify(manifest));
 
   const elapsed = Date.now() - start;
 

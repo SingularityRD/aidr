@@ -33,6 +33,14 @@ const evidenceDir = resolve(
 const summaryPath = resolve(evidenceDir, "summary.json");
 const runId = `${new Date().toISOString().replaceAll(/[^0-9A-Z]+/gi, "-")}-${process.pid}`;
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const DEFAULT_SUITE_TIMEOUT_MS = 15 * 60 * 1000;
+const MAX_EXTERNAL_EVIDENCE_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+function sha256Digest(value) {
+	const match = /^(?:sha256:)?([a-f0-9]{64})$/i.exec(String(value ?? "").trim());
+	return match?.[1].toLowerCase() ?? null;
+}
 
 function readJson(filePath) {
 	try {
@@ -121,7 +129,9 @@ function validateManifest(manifest) {
 	const ids = new Set();
 	for (const suite of manifest.suites) {
 		if (!suite || typeof suite !== "object") throw new Error("each suite must be an object");
-		if (typeof suite.id !== "string" || !suite.id.trim()) throw new Error("each suite requires id");
+		if (typeof suite.id !== "string" || !/^[a-z0-9][a-z0-9_-]*$/i.test(suite.id)) {
+			throw new Error("each suite requires a filesystem-safe id");
+		}
 		if (ids.has(suite.id)) throw new Error(`duplicate suite id: ${suite.id}`);
 		ids.add(suite.id);
 		if (!["vitest", "command", "external"].includes(suite.kind)) {
@@ -134,6 +144,9 @@ function validateManifest(manifest) {
 		}
 		if (!Number.isInteger(suite.expectedTests) || suite.expectedTests < 1) {
 			throw new Error(`${suite.id}: expectedTests must be a positive integer`);
+		}
+		if (suite.timeoutMs !== undefined && (!Number.isInteger(suite.timeoutMs) || suite.timeoutMs < 1 || suite.timeoutMs > 60 * 60 * 1000)) {
+			throw new Error(`${suite.id}: timeoutMs must be an integer from 1 to 3600000`);
 		}
 		for (const field of ["requiredEnv", "requiredAnyEnv", "requiredCommands"]) {
 			if (suite[field] !== undefined && (!Array.isArray(suite[field]) || suite[field].some((v) => typeof v !== "string"))) {
@@ -160,6 +173,7 @@ function commandAvailable(command, env) {
 		stdio: "ignore",
 		windowsHide: true,
 		shell: process.platform === "win32",
+		timeout: 10_000,
 	});
 	return !result.error && result.status === 0;
 }
@@ -177,6 +191,9 @@ function preflight(suite, env) {
 	}
 	if (suite.kind === "external" && !String(env[suite.externalEvidenceEnv] ?? "").trim()) {
 		reasons.push(`external evidence path is missing: ${suite.externalEvidenceEnv}`);
+	}
+	if (suite.kind === "external" && !sha256Digest(env.AIDR_E2E_RC_DIGEST)) {
+		reasons.push("AIDR_E2E_RC_DIGEST must be a SHA-256 candidate checksum for external evidence");
 	}
 	return reasons;
 }
@@ -292,8 +309,13 @@ function writeJunit(filePath, suite, report) {
 function parseJUnit(filePath, suite) {
 	if (!existsSync(filePath)) return undefined;
 	const xml = readFileSync(filePath, "utf8");
+	const suiteHeaders = [...xml.matchAll(/<testsuite\b([^>]*)>/gi)].map((match) => match[1]);
 	const matches = [...xml.matchAll(/<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/gi)];
-	if (matches.length === 0) return undefined;
+	if (suiteHeaders.length === 0 || matches.length === 0) return reportFromStatuses(suite, [], false);
+	const declaredCount = (attribute) => suiteHeaders.reduce((total, header) => {
+		const value = new RegExp(`\\b${attribute}=["'](\\d+)["']`, "i").exec(header)?.[1];
+		return value === undefined ? Number.NaN : total + Number(value);
+	}, 0);
 	const statuses = matches.map((match) => {
 		const body = match[2] ?? "";
 		if (/<skipped\b/i.test(body)) return "skipped";
@@ -306,8 +328,14 @@ function parseJUnit(filePath, suite) {
 		status,
 		failureMessages: status === "passed" ? [] : ["JUnit reported a non-passing case"],
 	}));
+	const failed = statuses.filter((status) => status === "failed").length;
+	const skipped = statuses.filter((status) => status === "skipped").length;
+	const consistent = declaredCount("tests") === statuses.length
+		&& declaredCount("errors") === 0
+		&& declaredCount("failures") === failed
+		&& declaredCount("skipped") === skipped;
 	return {
-		...reportFromStatuses(suite, statuses, statuses.every((status) => status === "passed")),
+		...reportFromStatuses(suite, statuses, consistent && statuses.every((status) => status === "passed")),
 		testResults: [{ name: suite.testFile, assertionResults }],
 	};
 }
@@ -332,14 +360,34 @@ function validateExternalEvidence(suite, env) {
 	if (external.suiteId !== suite.id) errors.push(`external suiteId mismatch: expected ${suite.id}`);
 	if (external.status !== "passed") errors.push("external evidence status is not passed");
 	if (external.redacted !== true) errors.push("external evidence must declare redacted=true");
-	if (!String(external.generatedAt ?? "").trim()) errors.push("external generatedAt is missing");
-	if (!String(external.rcDigest ?? "").trim()) errors.push("external rcDigest is missing");
+	const generatedAt = String(external.generatedAt ?? "");
+	const generatedAtMs = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(generatedAt)
+		? Date.parse(generatedAt)
+		: Number.NaN;
+	if (!Number.isFinite(generatedAtMs)) errors.push("external generatedAt must be an RFC 3339 timestamp");
+	else {
+		const ageMs = Date.now() - generatedAtMs;
+		if (ageMs > MAX_EXTERNAL_EVIDENCE_AGE_MS) errors.push("external evidence is stale (older than 24 hours)");
+		if (ageMs < -MAX_CLOCK_SKEW_MS) errors.push("external evidence timestamp is too far in the future");
+	}
+	const expectedDigest = sha256Digest(env.AIDR_E2E_RC_DIGEST);
+	const receiptDigest = sha256Digest(external.rcDigest);
+	if (!receiptDigest) errors.push("external rcDigest must be a SHA-256 checksum");
+	else if (expectedDigest && receiptDigest !== expectedDigest) errors.push("external rcDigest does not match the release candidate checksum");
 	if (!String(external.attestation ?? "").trim()) errors.push("external attestation is missing");
 	const assertions = Array.isArray(external.assertions) ? external.assertions : [];
 	if (assertions.length !== suite.expectedTests) errors.push(`external assertions=${assertions.length}, expected=${suite.expectedTests}`);
 	if (assertions.some((assertion) => assertion?.status !== "passed")) errors.push("external assertions contain non-passed status");
 	const report = reportFromStatuses(suite, assertions.map(() => "passed"), errors.length === 0);
-	return { report, errors, evidencePath: relativePath(evidencePath), externalMeta: { generatedAt: external.generatedAt, rcDigest: external.rcDigest } };
+	return {
+		report,
+		errors,
+		evidencePath: relativePath(evidencePath),
+		externalMeta: {
+			generatedAt: Number.isFinite(generatedAtMs) ? new Date(generatedAtMs).toISOString() : null,
+			rcDigest: receiptDigest,
+		},
+	};
 }
 
 function replacePlaceholders(values, replacements) {
@@ -350,14 +398,19 @@ function replacePlaceholders(values, replacements) {
 	);
 }
 
-function spawnProcess(command, args, env) {
+function spawnProcess(command, args, env, timeoutMs) {
+	// A shell wrapper can outlive spawnSync's timeout on Windows and keep the
+	// suite HOME locked after the reported process has exited. Directly launch
+	// ordinary executables; only .cmd/.bat shims require cmd.exe resolution.
+	const shell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command);
 	return spawnSync(command, args, {
 		cwd: root,
 		encoding: "utf8",
 		env,
 		stdio: ["ignore", "pipe", "pipe"],
 		windowsHide: true,
-		shell: process.platform === "win32",
+		shell,
+		timeout: timeoutMs,
 	});
 }
 
@@ -392,23 +445,27 @@ function runSuite(suite, evidence) {
 		HOME: homeDir,
 		USERPROFILE: homeDir,
 		XDG_CONFIG_HOME: join(homeDir, ".config"),
+		AIDR_E2E_RC_DIGEST: process.env.AIDR_E2E_RC_DIGEST,
 	};
 	writeLog(stdoutPath, "", env);
 	writeLog(stderrPath, "", env);
 	let reasons = preflight(suite, env);
 	let report;
+	let externalEvidence;
 	let result = { status: null, signal: null, error: null, stdout: "", stderr: "" };
 	let setupStatus = reasons.length === 0 ? "ready" : "blocked";
+	const timeoutMs = suite.timeoutMs ?? DEFAULT_SUITE_TIMEOUT_MS;
 
 	try {
 		writeHomeFiles(homeDir, suite.homeFiles);
 		if (reasons.length === 0 && suite.kind === "external") {
 			const external = validateExternalEvidence(suite, env);
+			externalEvidence = { path: external.evidencePath, ...external.externalMeta };
 			reasons = [...reasons, ...(external.errors ?? [])];
 			report = external.report;
 			if (external.evidencePath) env.AIDR_EXTERNAL_EVIDENCE = external.evidencePath;
 		} else if (reasons.length === 0 && suite.kind === "vitest") {
-			result = spawnProcess(pnpm, ["exec", "vitest", "run", "--config", suite.config ?? "vitest.e2e.config.ts", suite.target, "--reporter=json", "--reporter=junit", "--outputFile.json", reportPath, "--outputFile.junit", junitPath], env);
+			result = spawnProcess(pnpm, ["exec", "vitest", "run", "--config", suite.config ?? "vitest.e2e.config.ts", suite.target, "--reporter=json", "--reporter=junit", "--outputFile.json", reportPath, "--outputFile.junit", junitPath], env, timeoutMs);
 			writeLog(stdoutPath, result.stdout, env);
 			writeLog(stderrPath, result.stderr, env);
 			try {
@@ -418,7 +475,7 @@ function runSuite(suite, evidence) {
 			}
 		} else if (reasons.length === 0 && suite.kind === "command") {
 			const command = replacePlaceholders(suite.command, { json: reportPath, junit: junitPath, tenant: tenantId, runId });
-			result = spawnProcess(command[0], command.slice(1), env);
+			result = spawnProcess(command[0], command.slice(1), env, timeoutMs);
 			writeLog(stdoutPath, result.stdout, env);
 			writeLog(stderrPath, result.stderr, env);
 			report = parseJUnit(junitPath, suite);
@@ -449,6 +506,7 @@ function runSuite(suite, evidence) {
 		capabilities: suite.capabilities ?? [],
 		prerequisites: suite.prerequisites ?? [],
 		expectedTests: suite.expectedTests,
+		timeoutMs,
 		tenantId,
 		setupStatus,
 		exitCode: result.status,
@@ -458,6 +516,7 @@ function runSuite(suite, evidence) {
 		stdout: relativePath(stdoutPath),
 		stderr: relativePath(stderrPath),
 		redactedLogs: true,
+		...(externalEvidence ? { externalEvidence } : {}),
 		artifactSha256: {
 			json: fileSha256(reportPath),
 			junit: fileSha256(junitPath),
@@ -498,6 +557,7 @@ const evidence = {
 		node: process.version,
 		tenantIsolation: "fresh HOME and unique tenant per suite",
 		secrets: "not recorded",
+		candidateDigest: sha256Digest(process.env.AIDR_E2E_RC_DIGEST),
 	},
 	suites: [],
 };

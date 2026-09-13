@@ -1,0 +1,17 @@
+[Unit]
+Description=AIDR expired audit export cleanup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/aidr-kit
+ExecStart=/usr/bin/node /opt/aidr-kit/scripts/deployment-maintenance.mjs /srv/aidr --apply
+TimeoutStartSec=15min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/aidr
+UMask=0077

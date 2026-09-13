@@ -7,8 +7,10 @@
  */
 
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
@@ -20,6 +22,13 @@ const gitSha = process.env.AIDR_BUILD_ID;
 
 if (!Number.isInteger(sourceDateEpoch) || sourceDateEpoch < 0) fail("SOURCE_DATE_EPOCH is required");
 if (!releaseVersion || !releaseTag || !gitSha) fail("AIDR_RELEASE_VERSION, AIDR_RELEASE_TAG, and AIDR_BUILD_ID are required");
+
+const outputRelative = relative(repoRoot, outputDir);
+if (!outputRelative || isAbsolute(outputRelative) || outputRelative === ".." || outputRelative.startsWith(`..${sep}`)) fail("Release output must be a child directory of the workspace");
+const gitTar = join(process.env.ProgramFiles || "C:/Program Files", "Git/usr/bin/tar.exe");
+const tarCommand = process.env.AIDR_TAR_BIN || (process.platform === "win32" && existsSync(gitTar) ? gitTar : "tar");
+const tarVersion = spawnSync(tarCommand, ["--version"], { encoding: "utf8" });
+if (tarVersion.status !== 0 || !tarVersion.stdout?.includes("GNU tar")) fail("Reproducible archives require GNU tar; configure AIDR_TAR_BIN (Git for Windows includes it)");
 
 await rm(outputDir, { recursive: true, force: true });
 await mkdir(outputDir, { recursive: true });
@@ -38,6 +47,8 @@ const packageDirs = [
 	"packages/cli",
 	"packages/sdk",
 	"packages/dashboard",
+	"packages/codex",
+	"packages/mcp-gateway",
 ];
 
 for (const packageDir of packageDirs) {
@@ -56,7 +67,7 @@ for (const packageDir of packageDirs) {
 
 createTarball(
 	join(outputDir, `aidr-claude-plugin-${releaseVersion}.tar.gz`),
-	[".claude-plugin", "packages/claude-code/dist", "packages/claude-code/package.json", "skills"],
+	[".claude-plugin", "hooks", "packages/claude-code/dist", "packages/claude-code/resources", "packages/claude-code/package.json", "skills"],
 );
 createTarball(
 	join(outputDir, `aidr-dashboard-dist-${releaseVersion}.tar.gz`),
@@ -73,7 +84,7 @@ for (const entry of await readdir(outputDir, { withFileTypes: true })) {
 	}
 	if (entry.name.endsWith(".tgz")) {
 		const listing = tarList(filePath);
-		if (/\.map(?:\s|$)|node_modules|(?:^|\/)\.env(?:\.|$)/i.test(listing)) {
+		if (/\.map(?:\s|$)|node_modules|(?:^|\/)\.env(?:\.|$)|(?:^|\/)package\/(?:src|tests|__tests__)\/|(?:^|\/)__tests__\/|\.(?:test|spec)\.(?:[cm]?[jt]sx?|d\.ts)(?:\s|$)/im.test(listing)) {
 			fail(`packed consumer artifact contains forbidden files: ${entry.name}`);
 		}
 	}
@@ -117,21 +128,25 @@ function createTarball(outputPath, paths) {
 		"--owner=0",
 		"--group=0",
 		"--numeric-owner",
-		"-czf",
-		outputPath,
+		"-cf",
+		`${outputPath}.tar-tmp`,
 		...paths,
 	];
-	const result = spawnSync("tar", args, {
+	const result = spawnSync(tarCommand, ["--force-local", ...args], {
 		cwd: repoRoot,
 		encoding: "utf8",
 		stdio: "inherit",
 		env: { ...process.env, GZIP: "-n" },
 	});
 	if (result.status !== 0) fail(`tar failed for ${outputPath}`);
+	// Node supplies deterministic gzip without depending on a separate Unix gzip
+	// executable being on PATH when Git's GNU tar is used from PowerShell.
+	writeFileSync(outputPath, gzipSync(readFileSync(`${outputPath}.tar-tmp`)));
+	unlinkSync(`${outputPath}.tar-tmp`);
 }
 
 function tarList(filePath) {
-	const result = spawnSync("tar", ["-tzf", filePath], { encoding: "utf8" });
+	const result = spawnSync(tarCommand, ["-tf", "-"], { encoding: "utf8", input: gunzipSync(readFileSync(filePath)), maxBuffer: 8 * 1024 * 1024 });
 	if (result.status !== 0) fail(`unable to inspect ${filePath}`);
 	return result.stdout ?? "";
 }

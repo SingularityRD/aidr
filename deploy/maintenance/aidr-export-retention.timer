@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly AIDR temporary audit export retention
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+Unit=aidr-export-retention.service
+
+[Install]
+WantedBy=timers.target

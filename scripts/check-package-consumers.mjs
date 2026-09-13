@@ -31,6 +31,8 @@ const TARGETS = [
 	{ key: "packages/cli", check: checkCli },
 	{ key: "packages/sdk", check: checkSdk },
 	{ key: "packages/dashboard", check: checkDashboard },
+	{ key: "packages/codex", check: checkCodex },
+	{ key: "packages/mcp-gateway", check: checkMcpGateway },
 ];
 
 const requested = process.argv.slice(2).map(normalizePackageArg);
@@ -185,6 +187,26 @@ async function checkCli() {
 	assertSuccess(result, "AIDR CLI --help");
 	if (!/Usage:\s+aidr\b/i.test(result.stdout)) {
 		throw new Error("CLI help output does not contain the aidr usage header");
+	}
+}
+
+async function checkCodex() {
+	const result = runNodeModule(artifact("packages/codex/dist/index.js"),
+		"const mod = await import(process.argv[1]); if (typeof mod.enforceCodexPreToolUse !== 'function') throw new Error('Codex enforcement export is missing');");
+	assertSuccess(result, "Codex ESM consumer import");
+	assertSuccess(runNode(["--check", artifact("packages/codex/dist/pre-tool-use.cjs")]), "Codex hook syntax");
+}
+
+async function checkMcpGateway() {
+	const gateway = artifact("packages/mcp-gateway/dist/aidr-mcp-gateway.mjs");
+	const approve = artifact("packages/mcp-gateway/dist/aidr-mcp-approve.mjs");
+	const stdio = artifact("packages/mcp-gateway/dist/aidr-mcp-stdio.mjs");
+	assertSuccess(runNode(["--check", gateway]), "MCP gateway syntax");
+	assertSuccess(runNode(["--check", approve]), "MCP gateway operator CLI syntax");
+	assertSuccess(runNode(["--check", stdio]), "MCP gateway stdio syntax");
+	const usage = runNode([gateway]);
+	if (usage.status !== 2 || !/usage: aidr-mcp-gateway <config\.json>/.test(usage.stderr ?? "")) {
+		throw new Error("MCP gateway did not report bounded configuration usage");
 	}
 }
 

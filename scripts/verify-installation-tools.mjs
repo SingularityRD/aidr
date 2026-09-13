@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+
+mkdirSync(".release-evidence", { recursive: true });
+const root = mkdtempSync(resolve(".release-evidence/install-tools-"));
+const checks = [];
+function run(script, args, success = true) {
+	const result = spawnSync(process.execPath, [script, ...args], { encoding: "utf8", timeout: 60000 });
+	assert.equal(result.status === 0, success, `${script}: unexpected exit ${result.status}`);
+}
+function read(path) { return JSON.parse(readFileSync(path, "utf8")); }
+const cloud = join(root, "cloud");
+run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", cloud, "--dashboard-url", "https://aidr.example.test", "--supabase-url", "https://project.supabase.co"]);
+const deployment = read(join(cloud, "deployment.json"));
+assert.equal(deployment.mode, "cloud");
+assert.ok(deployment.artifacts.length > 20);
+checks.push("cloud preparation includes artifact hashes");
+const secrets = Object.fromEntries(readFileSync(join(cloud, ".env.functions"), "utf8").trim().split("\n").map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
+await crypto.subtle.importKey("pkcs8", Buffer.from(secrets.AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64, "base64"), { name: "Ed25519" }, false, ["sign"]);
+checks.push("generated signing key imports as DER PKCS8");
+const before = readFileSync(join(cloud, ".env.functions"));
+run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", cloud, "--development"], false);
+assert.ok(readFileSync(join(cloud, ".env.functions")).equals(before));
+checks.push("existing installation secrets cannot be overwritten by preparation");
+run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", join(root, "invalid"), "--dashboard-url", "http://public.example.test", "--supabase-url", "https://project.supabase.co"], false);
+checks.push("production plaintext origin rejected");
+const second = join(root, "second");
+run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", second, "--development"]);
+assert.notEqual(read(join(second, "deployment.json")).project_name, deployment.project_name);
+checks.push("independent installations have distinct Compose volume namespaces");
+const envValues = (dir) => Object.fromEntries(readFileSync(join(dir, ".env"), "utf8").split(/\r?\n/).filter((line) => line.includes("=")).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
+const firstEnv = envValues(cloud), secondEnv = envValues(second);
+assert.match(firstEnv.S3_PROTOCOL_ACCESS_KEY_SECRET, /^[a-f0-9]{64}$/);
+assert.match(firstEnv.S3_PROTOCOL_ACCESS_KEY_ID, /^[a-f0-9]{32}$/);
+assert.notEqual(firstEnv.S3_PROTOCOL_ACCESS_KEY_SECRET, secondEnv.S3_PROTOCOL_ACCESS_KEY_SECRET);
+assert.notEqual(firstEnv.S3_PROTOCOL_ACCESS_KEY_ID, secondEnv.S3_PROTOCOL_ACCESS_KEY_ID);
+checks.push("S3 protocol access credentials are random per installation instead of inherited demonstration values");
+const home = join(root, "endpoint");
+mkdirSync(join(home, ".claude"), { recursive: true });
+const settingsPath = join(home, ".claude/settings.json");
+writeFileSync(settingsPath, JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "existing-customer-hook" }] }] } }));
+const args = ["--package-dir", "packages/claude-code", "--home", home];
+run("scripts/endpoint-install.mjs", args);
+run("scripts/endpoint-install.mjs", args);
+const settings = read(settingsPath);
+assert.equal(settings.hooks.PreToolUse.length, 2);
+assert.equal(settings.hooks.PreToolUse[0].hooks[0].command, "existing-customer-hook");
+assert.equal(settings.hooks.PreToolUse[1].matcher, "*");
+checks.push("idempotent endpoint install preserves unrelated hooks and covers MCP");
+assert.equal(read(join(home, ".singularity-aidr/installation.json")).local_canary, "deny");
+checks.push("copied connector passes local denial canary outside repository cwd");
+settings.disableAllHooks = true;
+writeFileSync(settingsPath, JSON.stringify(settings));
+run("scripts/endpoint-install.mjs", args, false);
+assert.equal(read(settingsPath).disableAllHooks, true);
+checks.push("disabled host hooks are not silently reenabled");
+writeFileSync(join(root, "evidence.json"), JSON.stringify({ passed: true, checked_at: new Date().toISOString(), checks }, null, 2));
+console.log(`${checks.length} installation-tool checks passed. Evidence: ${join(root, "evidence.json")}`);
