@@ -1,4 +1,4 @@
-import type { LemonSqueezyBilling, LicenseValidationResult } from "./billing.js";
+import type { LicenseValidationResult } from "./license.js";
 import type { Logger } from "./client.js";
 
 /**
@@ -160,17 +160,14 @@ export const DEFAULT_FREEMIUM_OPTIONS: FreemiumOptions = {
  */
 export class FreemiumManager {
 	private options: FreemiumOptions;
-	private billing: LemonSqueezyBilling;
 	private licenseManager: LicenseManager;
 	private logger?: Logger;
 
 	constructor(
-		billing: LemonSqueezyBilling,
 		licenseManager: LicenseManager,
 		options: Partial<FreemiumOptions> = {},
 		logger?: Logger,
 	) {
-		this.billing = billing;
 		this.licenseManager = licenseManager;
 		this.options = { ...DEFAULT_FREEMIUM_OPTIONS, ...options };
 		this.logger = logger;
@@ -226,15 +223,20 @@ export class FreemiumManager {
 	}
 
 	/**
-	 * Activate a license for a user
+	 * Activate a licence for a user from an already-issued entitlement.
+	 *
+	 * This deliberately does NOT contact a payment provider. Entitlements are
+	 * issued server-side by a signature-verified webhook; the SDK only records the
+	 * resulting entitlement, and the caller is responsible for having obtained it
+	 * through the entitlement API rather than by trusting client input.
 	 */
 	async activateLicense(
 		userId: string,
 		licenseKey: string,
+		issue: (licenseKey: string) => Promise<LicenseValidationResult>,
 	): Promise<{ success: boolean; error?: string; license?: LicenseInfo }> {
 		try {
-			// Validate with Lemon Squeezy
-			const validation = await this.billing.validateLicense(licenseKey);
+			const validation = await issue(licenseKey);
 
 			if (!validation.valid) {
 				return {
@@ -284,8 +286,9 @@ export class FreemiumManager {
 			return false;
 		}
 
-		// In a real implementation, you would call Lemon Squeezy to deactivate
-		// For now, just remove from storage
+		// Local deactivation only: this clears the locally recorded licence. Server
+		// side revocation is authoritative and is handled by the control plane
+		// (signed revocation lists), not by the SDK.
 		await this.licenseManager.setLicense(userId, {
 			...license,
 			valid: false,
@@ -330,16 +333,24 @@ export class FreemiumManager {
 	}
 
 	/**
-	 * Create a checkout URL for upgrading
+	 * Return a checkout URL for upgrading.
+	 *
+	 * The SDK no longer talks to a payment provider. Checkout is created
+	 * server-side (the direct-GA model is invoice/order based), so the caller must
+	 * supply the URL its own server issued. Refusing here rather than fabricating a
+	 * URL keeps the failure visible instead of sending a user to a dead link.
 	 */
 	async createUpgradeCheckout(
-		userId: string,
-		options?: {
+		_userId: string,
+		_options?: {
 			variantId?: string;
 			redirectUrl?: string;
 		},
 	): Promise<string> {
-		return this.billing.createCheckout(userId, options);
+		throw new Error(
+			"Checkout is created server-side. The SDK does not construct payment-provider checkout URLs; " +
+				"obtain the checkout/order URL from your control plane and present it to the user.",
+		);
 	}
 
 	/**

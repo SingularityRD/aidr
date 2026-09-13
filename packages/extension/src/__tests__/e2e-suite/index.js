@@ -15,6 +15,8 @@ const REQUIRED_COMMANDS = [
 const REQUIRED_CURSOR_EVENTS = [
 	"beforeShellExecution",
 	"preToolUse",
+	"postToolUse",
+	"afterAgentResponse",
 	"beforeMCPExecution",
 	"beforeReadFile",
 ];
@@ -316,64 +318,61 @@ function verifyCursorManagedHooks(config) {
 
 function verifyVsCodeManagedHooks(config) {
 	const hooks = asObject(config.hooks);
-	const preToolUse = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
-	assert.ok(preToolUse.length > 0, "Expected PreToolUse entries in VS Code settings hooks");
+	for (const eventName of ["PreToolUse", "PostToolUse"]) {
+		const eventHooks = Array.isArray(hooks[eventName]) ? hooks[eventName] : [];
+		assert.ok(eventHooks.length > 0, `Expected ${eventName} entries in VS Code settings hooks`);
 
-	const hasManagedCommand = preToolUse.some((matcherEntry) => {
-		const hooksArray =
-			matcherEntry && typeof matcherEntry === "object" ? matcherEntry.hooks : undefined;
-		if (!Array.isArray(hooksArray)) {
-			return false;
-		}
-		return hooksArray.some(
-			(hookEntry) =>
-				hookEntry &&
-				typeof hookEntry === "object" &&
-				typeof hookEntry.command === "string" &&
-				hookEntry.command.includes(managedMarker),
-		);
-	});
-	assert.ok(hasManagedCommand, "Expected managed command hook in VS Code PreToolUse entries");
+		const hasManagedCommand = eventHooks.some((matcherEntry) => {
+			const hooksArray =
+				matcherEntry && typeof matcherEntry === "object" ? matcherEntry.hooks : undefined;
+			if (!Array.isArray(hooksArray)) {
+				return false;
+			}
+			return hooksArray.some(
+				(hookEntry) =>
+					hookEntry &&
+					typeof hookEntry === "object" &&
+					typeof hookEntry.command === "string" &&
+					hookEntry.command.includes(managedMarker),
+			);
+		});
+		assert.ok(hasManagedCommand, `Expected managed command hook in VS Code ${eventName} entries`);
+	}
 }
 
 function collectManagedCommands(config) {
-	if (host === "cursor") {
-		const hooks = asObject(config.hooks);
-		const commands = [];
-		for (const entries of Object.values(hooks)) {
-			if (!Array.isArray(entries)) {
+	const hooks = asObject(config.hooks);
+	return host === "cursor"
+		? collectCursorManagedCommands(hooks)
+		: collectVsCodeManagedCommands(hooks);
+}
+
+function isManagedCommand(entry) {
+	return (
+		entry &&
+		typeof entry === "object" &&
+		typeof entry.command === "string" &&
+		entry.command.includes(managedMarker)
+	);
+}
+
+function collectCursorManagedCommands(hooks) {
+	return Object.values(hooks)
+		.filter(Array.isArray)
+		.flatMap((entries) => entries.filter(isManagedCommand).map((entry) => entry.command));
+}
+
+function collectVsCodeManagedCommands(hooks) {
+	const commands = [];
+	for (const eventHooks of Object.values(hooks)) {
+		if (!Array.isArray(eventHooks)) continue;
+		for (const matcherEntry of eventHooks) {
+			if (!matcherEntry || typeof matcherEntry !== "object" || !Array.isArray(matcherEntry.hooks)) {
 				continue;
 			}
-			for (const entry of entries) {
-				if (
-					entry &&
-					typeof entry === "object" &&
-					typeof entry.command === "string" &&
-					entry.command.includes(managedMarker)
-				) {
-					commands.push(entry.command);
-				}
-			}
-		}
-		return commands;
-	}
-
-	const commands = [];
-	const hooks = asObject(config.hooks);
-	const preToolUse = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
-	for (const matcherEntry of preToolUse) {
-		if (!matcherEntry || typeof matcherEntry !== "object" || !Array.isArray(matcherEntry.hooks)) {
-			continue;
-		}
-		for (const hookEntry of matcherEntry.hooks) {
-			if (
-				hookEntry &&
-				typeof hookEntry === "object" &&
-				typeof hookEntry.command === "string" &&
-				hookEntry.command.includes(managedMarker)
-			) {
-				commands.push(hookEntry.command);
-			}
+			commands.push(
+				...matcherEntry.hooks.filter(isManagedCommand).map((hookEntry) => hookEntry.command),
+			);
 		}
 	}
 	return commands;

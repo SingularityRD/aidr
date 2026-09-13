@@ -1,5 +1,7 @@
 import * as esbuild from "esbuild";
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 
 const pkg = JSON.parse(readFileSync("../core/package.json", "utf-8"));
 const isRelease =
@@ -75,6 +77,39 @@ const outputs = [
 	"dist/health.cjs",
 ];
 
+/**
+ * The customer kit and endpoint installer intentionally omit node_modules.
+ * Keep the small, platform-specific native AMSI dependency inside dist so the
+ * release manifest and installer digest cover the exact bytes the hook loads.
+ * Do not copy arbitrary dependency trees or follow links into the kit.
+ */
+function stageWindowsKoffi() {
+	const require = createRequire(import.meta.url);
+	let source;
+	try {
+		source = dirname(require.resolve("koffi"));
+	} catch (error) {
+		if (isRelease || process.platform === "win32") {
+			throw new Error("Windows AMSI release requires the pinned koffi package", { cause: error });
+		}
+		return;
+	}
+	const nativeFiles = ["win32_x64", "win32_arm64", "win32_ia32"].map((arch) =>
+		join("build", "koffi", arch, "koffi.node"),
+	);
+	const shipped = ["index.js", "package.json", "LICENSE.txt", ...nativeFiles];
+	const vendor = join("dist", "vendor", "koffi");
+	for (const relative of shipped) {
+		const from = join(source, relative);
+		if (!existsSync(from) || !statSync(from).isFile()) {
+			throw new Error(`Windows AMSI release dependency is incomplete: koffi/${relative.replaceAll("\\", "/")}`);
+		}
+		const to = join(vendor, relative);
+		mkdirSync(dirname(to), { recursive: true });
+		copyFileSync(from, to);
+	}
+}
+
 await Promise.all([
 	esbuild.build({ ...shared, entryPoints: ["src/pre-tool-use.ts"], outfile: outputs[0] }),
 	esbuild.build({ ...shared, entryPoints: ["src/post-tool-use.ts"], outfile: outputs[1] }),
@@ -82,6 +117,8 @@ await Promise.all([
 	esbuild.build({ ...shared, entryPoints: ["src/session-start.ts"], outfile: outputs[3] }),
 	esbuild.build({ ...shared, entryPoints: ["src/health.ts"], outfile: outputs[4] }),
 ]);
+
+stageWindowsKoffi();
 
 for (const out of outputs) {
 	stripSourceMappingUrl(out);

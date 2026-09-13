@@ -81,12 +81,10 @@ export function createToolCallHandler(
 		try {
 			const { toolName, params } = event;
 
-			// Map tool → artifacts. No artifacts → pass through.
-			const artifacts = mapToolToArtifacts(toolName, params);
-			if (!artifacts || artifacts.length === 0) return undefined;
-
+			// Core may find artifacts after normalizing connector-specific fields.
+			const artifacts = mapToolToArtifacts(toolName, params) ?? [];
 			const sessionId = ctx?.sessionKey ?? "unknown";
-			const { verdict, actionId } = await guardToolCall(
+			const { verdict, actionId, responseActions } = await guardToolCall(
 				{ sessionId, toolName, toolInput: params, artifacts },
 				{ threatsDir, allowlistsDir, logger, agentRuntime: "openclaw" },
 				approvalStore,
@@ -94,14 +92,17 @@ export function createToolCallHandler(
 
 			if (verdict.decision === "allow") return undefined;
 
+			// Pass the response actions through so the user is told what the runtime
+			// actually did (e.g. that a copy of the file was preserved). Without this
+			// the response happens silently.
 			if (verdict.decision === "deny") {
-				return { block: true, blockReason: formatDenyMessage(verdict) };
+				return { block: true, blockReason: formatDenyMessage(verdict, responseActions) };
 			}
 
 			// ask — actionId is always set for ask verdicts
 			return {
 				block: true,
-				blockReason: formatAskMessage(actionId as string, verdict, artifacts),
+				blockReason: formatAskMessage(actionId as string, verdict, artifacts, responseActions),
 			};
 		} catch (e) {
 			// Evaluation failures must never authorize execution.

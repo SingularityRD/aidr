@@ -1,7 +1,21 @@
 import * as esbuild from "esbuild";
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const pkg = JSON.parse(readFileSync("../core/package.json", "utf-8"));
+/**
+ * Resolve paths against this file, not the process cwd.
+ *
+ * The post-processing steps used cwd-relative paths (`dist/index.cjs`,
+ * `../core/package.json`). That works only while the caller happens to be the
+ * package directory; under any other cwd the read throws ENOENT and the build
+ * dies, which is exactly how the workspace build failed. Anchoring to
+ * `import.meta.url` removes the dependency on cwd altogether.
+ */
+const packageRoot = dirname(fileURLToPath(import.meta.url));
+const repositoryRoot = resolve(packageRoot, "..", "..");
+
+const pkg = JSON.parse(readFileSync(join(repositoryRoot, "packages", "core", "package.json"), "utf-8"));
 const isRelease =
 	process.argv.includes("--release") || process.env.npm_lifecycle_event === "build:release";
 
@@ -44,7 +58,12 @@ const stripYamlProcessRefs = {
 	name: "strip-yaml-process-refs",
 	setup(build) {
 		build.onEnd(async () => {
-			const outPath = "dist/index.cjs";
+			const outPath = join(packageRoot, "dist", "index.cjs");
+			// Post-processing is best-effort cleanup of debug helpers, not part of
+			// producing the artifact. If the bundle is absent there is nothing to
+			// strip; failing the build over it would turn a cosmetic step into a
+			// build outage.
+			if (!existsSync(outPath)) return;
 			let code = readFileSync(outPath, "utf-8");
 			code = code
 				// Remove debug env checks
@@ -85,13 +104,13 @@ await esbuild.build({
 	// Avoid carrying third-party license/debug banners into closed-source bundles.
 	legalComments: isRelease ? "none" : "eof",
 	external: ["koffi"],
-	entryPoints: ["src/index.ts"],
-	outfile: "dist/index.cjs",
+	entryPoints: [join(packageRoot, "src", "index.ts")],
+	outfile: join(packageRoot, "dist", "index.cjs"),
 	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
 	plugins: [stripYamlProcessRefs],
 });
 
-stripSourceMappingUrl("dist/index.cjs");
-removeReleaseSourceMaps("dist");
+stripSourceMappingUrl(join(packageRoot, "dist", "index.cjs"));
+removeReleaseSourceMaps(join(packageRoot, "dist"));
 
 console.log("Build complete.");

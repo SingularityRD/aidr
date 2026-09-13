@@ -1,5 +1,7 @@
 import chalk from "chalk";
+import { ConfigSchema } from "@singularityrd/aidr-core";
 import { type Config, getConfig, updateConfig } from "../utils/config-manager.js";
+import { configPathParts, displayConfigValue, parseConfigValue } from "../utils/config-values.js";
 
 interface ConfigOptions {
 	get?: string;
@@ -17,7 +19,7 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 
 	if (options.get) {
 		const value = getNestedValue(config, options.get);
-		console.log(value !== undefined ? value : chalk.gray("(not set)"));
+		console.log(value !== undefined ? displayConfigValue(options.get, value) : chalk.gray("(not set)"));
 		return;
 	}
 
@@ -25,8 +27,10 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 		const [key, ...valueParts] = options.set;
 		const value = valueParts.join(" ");
 		setNestedValue(config, key, value);
+		const checked = ConfigSchema.safeParse(config);
+		if (!checked.success) { console.error("Invalid runtime configuration; no changes saved."); process.exitCode = 1; return; }
 		updateConfig(config);
-		console.log(chalk.green(`✅ Set ${key} = ${value}`));
+		console.log(chalk.green(`✅ Set ${key} = ${displayConfigValue(key, parseConfigValue(value))}`));
 		return;
 	}
 
@@ -48,7 +52,7 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 }
 
 function getNestedValue(obj: Config, path: string): unknown {
-	return path.split(".").reduce<unknown>((current, key) => {
+	return configPathParts(path).reduce<unknown>((current, key) => {
 		if (current && typeof current === "object" && key in current) {
 			return (current as Record<string, unknown>)[key];
 		}
@@ -57,19 +61,20 @@ function getNestedValue(obj: Config, path: string): unknown {
 }
 
 function setNestedValue(obj: Config, path: string, value: string): void {
-	const keys = path.split(".");
+	const keys = configPathParts(path);
+	if (!(keys[0] in ConfigSchema.shape)) throw new Error("Unknown or read-only configuration field");
 	const last = keys.pop();
 	if (last === undefined) return;
 	let current: Record<string, unknown> = obj as unknown as Record<string, unknown>;
 
 	for (const key of keys) {
-		if (!(key in current) || typeof current[key] !== "object") {
+		if (!Object.hasOwn(current, key) || !current[key] || typeof current[key] !== "object" || Array.isArray(current[key])) {
 			current[key] = {};
 		}
 		current = current[key] as Record<string, unknown>;
 	}
 
-	current[last] = value;
+	current[last] = parseConfigValue(value);
 }
 
 function printConfig(config: Config, prefix = ""): void {
@@ -78,7 +83,7 @@ function printConfig(config: Config, prefix = ""): void {
 		if (typeof value === "object" && value !== null) {
 			printConfig(value as Config, fullKey);
 		} else {
-			console.log(`  ${fullKey}: ${chalk.gray(String(value))}`);
+			console.log(`  ${fullKey}: ${chalk.gray(displayConfigValue(fullKey, value))}`);
 		}
 	}
 }

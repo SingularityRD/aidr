@@ -13,11 +13,21 @@ import {
 	extractFromWrite,
 	type Verdict,
 } from "@singularityrd/aidr-core";
+import {
+	auditOutputInspection,
+	inspectOutput,
+	type OutputInspectionResult,
+} from "./output-inspection.js";
 
 declare const __dirname: string;
 
+const MAX_HOOK_INPUT_BYTES = 1024 * 1024;
+const HOOK_INPUT_LIMIT_EXCEEDED = Symbol("HOOK_INPUT_LIMIT_EXCEEDED");
+
 type CursorEventName =
 	| "preToolUse"
+	| "postToolUse"
+	| "afterAgentResponse"
 	| "beforeShellExecution"
 	| "beforeMCPExecution"
 	| "beforeReadFile";
@@ -55,6 +65,10 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
 	const mode = argv[0] as HookMode | undefined;
 	await maybeVerifyIntegrity("extension/dist");
 	const payload = await readStdinJson();
+	if (payload === HOOK_INPUT_LIMIT_EXCEEDED) {
+		writeHookInputLimitResponse(mode);
+		return;
+	}
 
 	if (mode === "cursor") {
 		await handleCursor(payload);
@@ -75,12 +89,18 @@ async function handleCursor(payload: unknown): Promise<void> {
 		writeJson(internalCursorResponse("deny", "Singularity AIDR could not identify hook event."));
 		return;
 	}
+	if (eventName === "postToolUse") {
+		await handleCursorToolOutput(payload);
+		return;
+	}
+	if (eventName === "afterAgentResponse") {
+		await handleCursorAssistantOutput(payload);
+		return;
+	}
 
 	const normalized = normalizeCursorCall(payload, eventName);
 	if (!normalized) {
-		writeJson(
-			internalCursorResponse("deny", "Singularity AIDR could not normalize hook payload."),
-		);
+		writeJson(internalCursorResponse("deny", "Singularity AIDR could not normalize hook payload."));
 		return;
 	}
 
@@ -89,15 +109,16 @@ async function handleCursor(payload: unknown): Promise<void> {
 		writeJson(toCursorResponse(verdict));
 	} catch {
 		writeJson(
-			internalCursorResponse(
-				"deny",
-				"Singularity AIDR internal error; execution was denied.",
-			),
+			internalCursorResponse("deny", "Singularity AIDR internal error; execution was denied."),
 		);
 	}
 }
 
 async function handleVsCode(payload: unknown): Promise<void> {
+	if (isVsCodePostToolUse(payload)) {
+		await handleVsCodeToolOutput(payload);
+		return;
+	}
 	const normalized = normalizeVsCodeCall(payload);
 	if (!normalized) {
 		writeJson(internalVsCodeResponse("Singularity AIDR could not normalize hook payload."));
@@ -110,6 +131,152 @@ async function handleVsCode(payload: unknown): Promise<void> {
 	} catch {
 		writeJson(internalVsCodeResponse("Singularity AIDR internal error; execution was denied."));
 	}
+}
+
+async function handleCursorToolOutput(payload: unknown): Promise<void> {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+		writeJson(cursorOutputCoverageResponse("Singularity AIDR could not normalize tool output."));
+		return;
+	}
+	const input = payload as Record<string, unknown>;
+	const result = inspectOutput(input.tool_output);
+	if (result.status === "clean") {
+		writeJson({});
+		return;
+	}
+
+	const toolName = asString(input.tool_name) ?? "Unknown";
+	const isMcp = toolName === "MCP" || toolName.startsWith("MCP:");
+	const reason = cursorOutputReason(result, isMcp);
+	await auditOutputInspection(result, {
+		host: "cursor",
+		surface: "tool_output",
+		sessionId: cursorSessionId(input),
+		toolName,
+		preConsumptionEnforcement: isMcp ? "mcp_quarantine" : "advisory_only",
+	});
+	writeJson({
+		...(isMcp ? { updated_mcp_tool_output: quarantinedMcpOutput(reason) } : {}),
+		additional_context: reason,
+	});
+}
+
+async function handleCursorAssistantOutput(payload: unknown): Promise<void> {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+		writeJson({});
+		return;
+	}
+	const input = payload as Record<string, unknown>;
+	const result = inspectOutput(input.text);
+	await auditOutputInspection(result, {
+		host: "cursor",
+		surface: "assistant_response",
+		sessionId: cursorSessionId(input),
+		preConsumptionEnforcement: "observe_only",
+	});
+	// Cursor's afterAgentResponse hook is observation-only: it runs after display and
+	// currently supports no output fields. The audit record makes that boundary visible.
+	writeJson({});
+}
+
+async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
+	const input = payload as Record<string, unknown>;
+	const result = inspectOutput(input.tool_response);
+	if (result.status === "clean") {
+		writeJson({});
+		return;
+	}
+	const toolName = asString(input.tool_name) ?? "Unknown";
+	await auditOutputInspection(result, {
+		host: "vscode",
+		surface: "tool_output",
+		sessionId: vsCodeSessionId(input),
+		toolName,
+		preConsumptionEnforcement: "block",
+	});
+	writeJson({
+		decision: "block",
+		reason: result.reason ?? "Singularity AIDR blocked untrusted tool output.",
+		hookSpecificOutput: {
+			hookEventName: "PostToolUse",
+			additionalContext:
+				result.reason ??
+				"Singularity AIDR blocked untrusted tool output before further processing.",
+		},
+	});
+}
+
+function isVsCodePostToolUse(payload: unknown): payload is Record<string, unknown> {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+	const input = payload as Record<string, unknown>;
+	return input.hook_event_name === "PostToolUse" || "tool_response" in input;
+}
+
+function cursorSessionId(input: Record<string, unknown>): string {
+	return (
+		asString(input.conversation_id) ??
+		asString(input.conversationId) ??
+		asString(input.session_id) ??
+		asString(input.sessionId) ??
+		"cursor"
+	);
+}
+
+function vsCodeSessionId(input: Record<string, unknown>): string {
+	return (
+		asString(input.session_id) ??
+		asString(input.sessionId) ??
+		asString(input.conversation_id) ??
+		asString(input.conversationId) ??
+		"vscode"
+	);
+}
+
+function cursorOutputReason(result: OutputInspectionResult, isMcp: boolean): string {
+	const base = result.reason ?? "Singularity AIDR detected untrusted tool output.";
+	return isMcp
+		? `${base} The MCP result was replaced before model consumption.`
+		: `${base} Cursor does not expose output replacement for this non-MCP tool; the original result could not be quarantined and this warning is advisory.`;
+}
+
+function quarantinedMcpOutput(reason: string): Record<string, unknown> {
+	return {
+		isError: true,
+		content: [{ type: "text", text: reason }],
+	};
+}
+
+function cursorOutputCoverageResponse(reason: string): Record<string, unknown> {
+	return {
+		updated_mcp_tool_output: quarantinedMcpOutput(reason),
+		additional_context: `${reason} The output was not classified as clean.`,
+	};
+}
+
+function writeHookInputLimitResponse(mode: HookMode | undefined): void {
+	const reason = `Singularity AIDR hook input exceeds the ${MAX_HOOK_INPUT_BYTES}-byte processing limit. Output inspection coverage is incomplete and the payload was not classified as clean.`;
+	if (mode === "vscode") {
+		writeJson({
+			decision: "block",
+			reason,
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: reason,
+				additionalContext: reason,
+			},
+		});
+		return;
+	}
+	writeJson({
+		decision: "deny",
+		permission: "deny",
+		reason,
+		user_message: reason,
+		agent_message: reason,
+		updated_mcp_tool_output: quarantinedMcpOutput(reason),
+		additional_context: reason,
+	});
 }
 
 async function evaluateNormalizedCall(call: NormalizedHookCall, mode: HookMode): Promise<Verdict> {
@@ -419,6 +586,8 @@ function getBundledDataDirs(): { threatsDir: string; allowlistsDir: string } {
 function isCursorEvent(value: string): value is CursorEventName {
 	return (
 		value === "preToolUse" ||
+		value === "postToolUse" ||
+		value === "afterAgentResponse" ||
 		value === "beforeShellExecution" ||
 		value === "beforeMCPExecution" ||
 		value === "beforeReadFile"
@@ -449,14 +618,26 @@ function parseUnknownObject(value: unknown): Record<string, unknown> {
 async function readStdinJson(): Promise<unknown> {
 	// Cursor hooks on Windows can deliver stdin as UTF-16LE (PowerShell pipeline encoding),
 	// which breaks JSON.parse if we assume UTF-8. Read bytes and attempt both decodings.
-	const raw = await new Promise<Buffer>((resolve) => {
+	const raw = await new Promise<Buffer | typeof HOOK_INPUT_LIMIT_EXCEEDED>((resolve) => {
 		const chunks: Buffer[] = [];
+		let byteLength = 0;
+		let exceeded = false;
 		process.stdin.on("data", (chunk) => {
 			// Node normally gives Buffer chunks when no encoding is set, but be defensive.
-			chunks.push(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk);
+			const bytes = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
+			byteLength += bytes.length;
+			if (byteLength > MAX_HOOK_INPUT_BYTES) {
+				exceeded = true;
+				chunks.length = 0;
+				return;
+			}
+			if (!exceeded) chunks.push(bytes);
 		});
-		process.stdin.on("end", () => resolve(Buffer.concat(chunks)));
+		process.stdin.on("end", () =>
+			resolve(exceeded ? HOOK_INPUT_LIMIT_EXCEEDED : Buffer.concat(chunks)),
+		);
 	});
+	if (raw === HOOK_INPUT_LIMIT_EXCEEDED) return raw;
 
 	function stripBom(value: string): string {
 		return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;

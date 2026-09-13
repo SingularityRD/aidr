@@ -1,5 +1,29 @@
 import type { AIDRClient } from "./client.js";
 import type { CheckRequest, CheckResult, MiddlewareFn } from "./config.js";
+import { type ApprovalCallback, enforceCheckResult } from "./enforcement.js";
+
+/**
+ * Options for the SDK middleware surface (`wrap`, `express`, `nextjs`).
+ *
+ * Enforcement is fail-closed: `wrap()` executes the wrapped function only on an
+ * explicit `allow` verdict. An `ask` verdict (or an indeterminate/failed check)
+ * blocks unless the caller supplies `onAsk` AND that callback explicitly
+ * returns true. See `enforcement.ts` for the full semantic.
+ */
+export interface MiddlewareEnforcementOptions {
+	/**
+	 * Caller-supplied human-approval callback for `ask` verdicts. It is the
+	 * caller's responsibility to route this to a real human. When omitted, an
+	 * `ask` verdict throws instead of executing.
+	 */
+	onAsk?: ApprovalCallback;
+	/**
+	 * Allow an indeterminate result (the security check itself failed, or the
+	 * result is inconsistent) to be routed to `onAsk`. Defaults to `false`: a
+	 * broken check can never be turned into an approval.
+	 */
+	allowApprovalOfIndeterminateResults?: boolean;
+}
 
 /**
  * Middleware chain for framework integration
@@ -21,9 +45,20 @@ class MiddlewareChain {
 
 /**
  * Create middleware chain with AIDR client integration
+ *
+ * @param client - AIDR client used for every security check
+ * @param options - Enforcement options (approval callback, indeterminate policy)
  */
-export function createMiddleware(client: AIDRClient) {
+export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcementOptions = {}) {
 	const chain = new MiddlewareChain();
+
+	/**
+	 * Single enforcement rule for every API in this module: a request may only
+	 * proceed on an explicit `allow` (or a genuine human approval of an `ask`).
+	 * `express()` / `nextjs()` / `wrap()` previously disagreed on the same
+	 * result object; they now all go through `enforceCheckResult`.
+	 */
+	const enforce = (result: CheckResult) => enforceCheckResult(result, options);
 
 	const api = {
 		/**
@@ -35,7 +70,11 @@ export function createMiddleware(client: AIDRClient) {
 		},
 
 		/**
-		 * Execute security check with middleware chain
+		 * Execute security check with middleware chain.
+		 *
+		 * Returns the raw result without enforcing it — callers that act on the
+		 * result themselves must enforce it (use `enforceCheckResult`, exported
+		 * from this package, or one of the wrapping helpers below).
 		 */
 		check: async (request: CheckRequest): Promise<CheckResult> => {
 			let result: CheckResult | undefined;
@@ -57,7 +96,12 @@ export function createMiddleware(client: AIDRClient) {
 		},
 
 		/**
-		 * Wrap a function with security check
+		 * Wrap a function with security check.
+		 *
+		 * The wrapped function runs only when the check explicitly allows it.
+		 * `deny` always throws. `ask` throws unless `onAsk` is configured and
+		 * approves. An indeterminate (failed) check always throws unless the
+		 * caller opted in with `allowApprovalOfIndeterminateResults`.
 		 */
 		wrap: <T extends (...args: unknown[]) => unknown>(
 			fn: T,
@@ -67,8 +111,9 @@ export function createMiddleware(client: AIDRClient) {
 				const request = requestFactory(...args);
 				const result = await client.check(request);
 
-				if (!result.allowed && result.decision === "deny") {
-					throw new Error(`Security check denied: ${result.reason || "Unknown threat"}`);
+				const outcome = await enforce(result);
+				if (!outcome.execute) {
+					throw new Error(outcome.message);
 				}
 
 				// Execute middleware chain
@@ -79,7 +124,11 @@ export function createMiddleware(client: AIDRClient) {
 		},
 
 		/**
-		 * Express/Connect compatible middleware
+		 * Express/Connect compatible middleware.
+		 *
+		 * Responds 403 for anything that is not an explicit allow (deny, ask
+		 * without an approving `onAsk`, indeterminate/failed check, inconsistent
+		 * result). The response `reason` states which case applied.
 		 */
 		express: () => {
 			return async (
@@ -99,13 +148,15 @@ export function createMiddleware(client: AIDRClient) {
 					};
 
 					const result = await client.check(checkRequest);
+					const outcome = await enforce(result);
 
 					// Execute middleware chain
 					await chain.execute(checkRequest, result);
 
-					if (!result.allowed) {
+					if (!outcome.execute) {
 						res.status(403).json({
 							error: "Security check failed",
+							reason: outcome.message,
 							details: result,
 						});
 						return;
@@ -119,7 +170,10 @@ export function createMiddleware(client: AIDRClient) {
 		},
 
 		/**
-		 * Next.js API route middleware
+		 * Next.js API route middleware.
+		 *
+		 * Returns a 403 response for anything that is not an explicit allow (see
+		 * `express()` above), or `null` to continue to the route handler.
 		 */
 		nextjs: () => {
 			return async (request: Request): Promise<Response | null> => {
@@ -134,15 +188,23 @@ export function createMiddleware(client: AIDRClient) {
 				};
 
 				const result = await client.check(checkRequest);
+				const outcome = await enforce(result);
 
 				// Execute middleware chain
 				await chain.execute(checkRequest, result);
 
-				if (!result.allowed) {
-					return new Response(JSON.stringify({ error: "Security check failed", details: result }), {
-						status: 403,
-						headers: { "Content-Type": "application/json" },
-					});
+				if (!outcome.execute) {
+					return new Response(
+						JSON.stringify({
+							error: "Security check failed",
+							reason: outcome.message,
+							details: result,
+						}),
+						{
+							status: 403,
+							headers: { "Content-Type": "application/json" },
+						},
+					);
 				}
 
 				return null; // Continue to handler

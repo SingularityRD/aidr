@@ -4,6 +4,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "composite": true,
+    "sourceMap": false,
+    "declarationMap": false,
     "lib": ["es2023", "dom"],
     "types": ["node"]
   },

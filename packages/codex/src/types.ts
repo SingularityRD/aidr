@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { CodexEventInspectionCoverage } from "./coverage.js";
 
 export const CODEX_CONNECTOR = "codex" as const;
 export const RUNTIME_SCHEMA_VERSION = "ai-runtime/v1" as const;
@@ -29,11 +30,21 @@ export interface CodexRuntimeIdentity {
 }
 
 export interface CodexHookInput {
+	hook_event_name?: unknown;
 	event?: unknown;
 	type?: unknown;
 	phase?: unknown;
 	tool_name?: unknown;
 	tool?: unknown;
+	tool_input?: unknown;
+	tool_response?: unknown;
+	tool_use_id?: unknown;
+	turn_id?: unknown;
+	transcript_path?: unknown;
+	model?: unknown;
+	permission_mode?: unknown;
+	agent_id?: unknown;
+	agent_type?: unknown;
 	call_id?: unknown;
 	session_id?: unknown;
 	arguments?: unknown;
@@ -67,6 +78,7 @@ export interface NormalizedRuntimeEvent {
 	sequence: number;
 	idempotencyKey: string;
 	redaction: "redacted";
+	inspectionCoverage: CodexEventInspectionCoverage;
 }
 
 export interface PolicyBinding {

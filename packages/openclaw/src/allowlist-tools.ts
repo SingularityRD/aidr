@@ -1,5 +1,10 @@
 /**
  * aidr_allowlist_add and aidr_allowlist_remove tools for OpenClaw.
+ *
+ * These tools cannot grant an approval: `aidr_allowlist_add` only succeeds when
+ * the shared `ApprovalStore` already holds an approval for the exact artifact,
+ * and that approval can only be recorded out of band by a human/operator. The
+ * agent has no way to create one.
  */
 
 import {
@@ -8,7 +13,7 @@ import {
 	type Logger,
 	removeFromAllowlist,
 } from "@singularityrd/aidr-core";
-import type { ToolDefinition } from "./gate-tool.js";
+import type { ToolDefinition } from "./tool-types.js";
 
 export function createAllowlistAddTool(
 	approvalStore: ApprovalStore,

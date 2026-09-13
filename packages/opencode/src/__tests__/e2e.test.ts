@@ -311,12 +311,18 @@ function assertSpawnResultOk(result: ReturnType<typeof runOpenCode>, note: strin
 function canExecute(bin: string): boolean {
 	const result = spawnResolved(bin, ["--version"], {
 		encoding: "utf8",
-		timeout: 10_000,
+		// A cold native host startup can take longer than ten seconds on Windows.
+		// A timeout must never be converted into a green skipped acceptance run.
+		timeout: 45_000,
 		killSignal: "SIGKILL",
 		windowsHide: true,
 		stdio: ["ignore", "pipe", "pipe"], // Ignore stdin to prevent hanging in vitest
 	});
-	return !result.error && result.status === 0;
+	if (result.error && "code" in result.error && result.error.code === "ENOENT" && !process.env.OPENCODE_E2E_BIN) return false;
+	if (result.error || result.status !== 0) {
+		throw new Error(`OpenCode E2E prerequisite failed: ${result.error?.message ?? `exit ${result.status}`}`);
+	}
+	return true;
 }
 
 const canRunBinary = canExecute(OPENCODE_BIN);
@@ -465,19 +471,24 @@ describeE2E("E2E: Singularity AIDR plugin in OpenCode", { timeout: 180_000 }, ()
 		assertAidrOrRefusal(events, ctx);
 	});
 
-	it("supports aidr_approve tool", (ctx) => {
+	it("does not expose an agent-callable approval tool", (ctx) => {
 		const result = runPrompt("What tools do you have? List all of them.", tmpDir, {
 			cwd: projectDir,
 		});
 
-		assertSpawnResultOk(result, "OpenCode command failed while checking aidr_approve registration");
+		assertSpawnResultOk(
+			result,
+			"OpenCode command failed while checking that no approval tool is registered",
+		);
 		const events = parseJsonEvents(result.stdout);
 		const allText = extractAllText(events).toLowerCase();
-		const mentionsTool = allText.includes("aidr_approve");
-		if (!mentionsTool) {
-			ctx.skip("Model did not list aidr_approve in tool list");
+		// Only meaningful if the model actually listed Singularity AIDR tools.
+		if (!allText.includes("aidr_")) {
+			ctx.skip("Model did not list any Singularity AIDR tools");
 		}
-		expect(mentionsTool).toBe(true);
+		// An approval tool callable by the model would let a prompt-injected agent
+		// approve its own blocked action.
+		expect(allText).not.toContain("aidr_approve");
 	});
 
 	it("supports aidr_allowlist_add tool", (ctx) => {

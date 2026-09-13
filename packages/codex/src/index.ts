@@ -1,10 +1,26 @@
-export { handleCodexHook } from "./hook.js";
-export { createCodexInstrumentation } from "./instrumentation.js";
+export { hasAssetDir, resolveAssetDir } from "./assets.js";
+export type {
+	CodexConnectorCoverageEvidence,
+	CodexCoverageHealthStatus,
+	CodexEventInspectionCoverage,
+	CodexHookEventName,
+} from "./coverage.js";
 export {
-	CodexExecutionInterceptError,
-	createCodexExecutionInterceptor,
-	TypedCodexToolRegistry,
-} from "./execution-interceptor.js";
+	CODEX_COVERAGE_SCHEMA_VERSION,
+	getCodexConnectorCoverageEvidence,
+	inspectionCoverageForEvent,
+} from "./coverage.js";
+export type {
+	CodexEnforcementOptions,
+	CodexEnforcementResult,
+	CodexHookWireOutput,
+	CodexWireResult,
+} from "./enforcement.js";
+export {
+	DENY_HEADLINE,
+	enforceCodexPreToolUse,
+	toWireOutput,
+} from "./enforcement.js";
 export type {
 	CodexExecutionInterceptorOptions,
 	CodexExecutionInterceptResult,
@@ -14,15 +30,23 @@ export type {
 	RegisteredCodexTool,
 	SignedIngressTransport,
 } from "./execution-interceptor.js";
+export {
+	CodexExecutionInterceptError,
+	createCodexExecutionInterceptor,
+	TypedCodexToolRegistry,
+} from "./execution-interceptor.js";
+export { extractFromApplyPatch, extractFromCodexTool } from "./extractors.js";
+export { handleCodexHook } from "./hook.js";
+export { createCodexInstrumentation } from "./instrumentation.js";
 export { normalizeCodexHookInput } from "./normalize.js";
 export { CentralPolicyClient } from "./policy.js";
-export { SignedIngressClient, SignedIngressError } from "./signed-ingress.js";
+export { redactRecord, redactString, redactValue } from "./redaction.js";
 export type {
 	SignedIngressClientOptions,
 	SignedIngressRequest,
 	SignedIngressResponse,
 } from "./signed-ingress.js";
-export { redactRecord, redactString, redactValue } from "./redaction.js";
+export { SignedIngressClient, SignedIngressError } from "./signed-ingress.js";
 export type {
 	CentralPolicyDecision,
 	CodexHookInput,

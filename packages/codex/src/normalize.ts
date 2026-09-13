@@ -1,3 +1,4 @@
+import { inspectionCoverageForEvent } from "./coverage.js";
 import { redactValue } from "./redaction.js";
 import {
 	CODEX_CONNECTOR,
@@ -31,15 +32,21 @@ function objectValue(value: unknown, field: string): Record<string, unknown> {
 	return value as Record<string, unknown>;
 }
 function phaseOf(input: CodexHookInput): CodexPhase {
-	const value = input.phase ?? input.event ?? input.type;
+	const value = input.hook_event_name ?? input.phase ?? input.event ?? input.type;
 	if (
 		value === undefined ||
+		value === "PreToolUse" ||
 		value === "pre_tool_use" ||
 		value === "pre_tool" ||
 		value === "before_tool_call"
 	)
 		return "pre_tool_use";
-	if (value === "post_tool_use" || value === "post_tool" || value === "after_tool_call")
+	if (
+		value === "PostToolUse" ||
+		value === "post_tool_use" ||
+		value === "post_tool" ||
+		value === "after_tool_call"
+	)
 		return "post_tool_use";
 	throw new CodexNormalizationError("unsupported Codex hook phase");
 }
@@ -56,11 +63,17 @@ export function normalizeCodexHookInput(
 ): NormalizedRuntimeEvent {
 	const phase = phaseOf(input);
 	const toolName = requiredString(input.tool_name ?? input.tool, "tool_name");
-	const callId = requiredString(input.call_id, "call_id");
-	const args = objectValue(input.arguments ?? input.input ?? input.args, "arguments");
+	const callId = requiredString(input.tool_use_id ?? input.call_id, "call_id");
+	const args = objectValue(
+		input.tool_input ?? input.arguments ?? input.input ?? input.args,
+		"arguments",
+	);
 	const redactedInput = redactValue(args);
 	const target = redactValue(input.target ?? input.cwd ?? "unknown");
-	const observationSource = input.result ?? input.output ?? input.error;
+	const observationSource = input.tool_response ?? input.result ?? input.output ?? input.error;
+	if (phase === "post_tool_use" && observationSource === undefined) {
+		throw new CodexNormalizationError("PostToolUse requires a tool response or error observation");
+	}
 	const observation = observationSource === undefined ? undefined : redactValue(observationSource);
 	const sequence = input.sequence ?? identity.sequence ?? 1;
 	if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 1)
@@ -89,5 +102,8 @@ export function normalizeCodexHookInput(
 		sequence,
 		idempotencyKey: sha256(`${identity.tenantId}:${identity.instanceId}:${callId}:${sequence}`),
 		redaction: "redacted",
+		inspectionCoverage: inspectionCoverageForEvent(
+			phase === "pre_tool_use" ? "PreToolUse" : "PostToolUse",
+		),
 	};
 }

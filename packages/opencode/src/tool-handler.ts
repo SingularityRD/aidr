@@ -24,7 +24,7 @@ export function createToolHandlers(
 			const args = output.args ?? {};
 			const artifacts = extractFromOpenCodeTool(input.tool, args) ?? [];
 
-			const { verdict, actionId } = await guardToolCall(
+			const { verdict, actionId, responseActions } = await guardToolCall(
 				{
 					sessionId: input.sessionID,
 					toolName: input.tool,
@@ -45,11 +45,13 @@ export function createToolHandlers(
 			}
 
 			if (verdict.decision === "deny") {
-				throw new AidrVerdictBlockError(formatDenyMessage(verdict));
+				throw new AidrVerdictBlockError(formatDenyMessage(verdict, responseActions));
 			}
 
 			// ask — actionId is always set for ask verdicts
-			throw new AidrVerdictBlockError(formatAskMessage(actionId as string, verdict, artifacts));
+			throw new AidrVerdictBlockError(
+			formatAskMessage(actionId as string, verdict, artifacts, responseActions),
+		);
 		} catch (error) {
 			// Verdict errors are expected (blocks and asks); internal errors deny execution.
 			if (error instanceof AidrVerdictError) throw error;

@@ -79,14 +79,28 @@ export {
 	withAIDRLlamaIndex,
 	wrapQueryEnginesWithAIDR,
 } from "./adapters/llamaindex.js";
+// Licence/entitlement types (provider-agnostic).
+//
+// There is deliberately no payment-provider client in the SDK. Lemon Squeezy was
+// removed after its webhook was found to perform no signature verification, and
+// billing/entitlement issuance is a server-side concern handled by the
+// signature-verified Stripe webhook Edge Function.
+export type { LicenseValidationResult, UsageInfo } from "./license.js";
+// Bundled rule-data resolution (threats + allowlists). Exported so host
+// applications, health checks and tests can report exactly where detection data
+// came from instead of assuming the cwd.
 export type {
-	BillingConfig,
-	CheckoutData,
-	LicenseValidationResult,
-	UsageInfo,
-} from "./billing.js";
-// Billing exports
-export { LemonSqueezyBilling } from "./billing.js";
+	AssetKind,
+	DataDirOptions,
+	DataDirResolution,
+	DataDirSource,
+} from "./bundled-dirs.js";
+export {
+	AIDRDataDirError,
+	AIDRInitError,
+	getBundledDataDirs,
+	resolveDataDirs,
+} from "./bundled-dirs.js";
 // SDK client and config exports
 export { AIDRClient } from "./client.js";
 export type {
@@ -120,6 +134,42 @@ export {
 } from "./freemium.js";
 // Middleware exports
 export { createMiddleware } from "./middleware.js";
+export type { MiddlewareEnforcementOptions } from "./middleware.js";
+// Fail-closed enforcement (shared by every adapter and middleware)
+export type {
+	ApprovalCallback,
+	EnforcementBlock,
+	EnforcementOptions,
+	EnforcementOutcome,
+} from "./enforcement.js";
+export {
+	ASK_DENIED_MESSAGE,
+	ASK_REQUIRES_APPROVAL_MESSAGE,
+	DENY_MESSAGE_PREFIX,
+	INDETERMINATE_MESSAGE,
+	INDETERMINATE_METADATA_KEY,
+	enforceCheckResult,
+	isInconsistent,
+	isIndeterminate,
+} from "./enforcement.js";
+export type {
+	ToolOutputDelivery,
+	ToolOutputGuardOptions,
+	ToolOutputGuardResult,
+	ToolOutputFinding,
+	ToolOutputInspection,
+	ToolOutputInspectionStatus,
+	ToolOutputUnsafeAction,
+} from "./output-guard.js";
+export {
+	AIDRToolOutputError,
+	DEFAULT_TOOL_OUTPUT_MAX_BYTES,
+	MAX_TOOL_OUTPUT_MAX_BYTES,
+	enforceToolOutput,
+	formatToolOutputBlockReason,
+	guardToolOutput,
+	scanToolOutput,
+} from "./output-guard.js";
 export type {
 	LeaderboardEntry,
 	Referral,

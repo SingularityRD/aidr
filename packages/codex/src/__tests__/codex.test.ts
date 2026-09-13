@@ -28,10 +28,53 @@ describe("Codex normalized event", () => {
 		expect(JSON.stringify(event)).not.toContain("sk-test-secret-value");
 		expect(event.inputHash).toMatch(/^[a-f0-9]{64}$/);
 		expect(event.actionHash).toMatch(/^[a-f0-9]{64}$/);
+		expect(event.inspectionCoverage).toMatchObject({
+			eventVisibility: { toolInput: true, toolOutput: false },
+			outputInspection: "unavailable",
+			enforcement: { outputBeforeModelConsumption: "unavailable" },
+		});
+	});
+	it("normalizes the native PostToolUse response as observation-only coverage", () => {
+		const event = normalizeCodexHookInput(
+			{
+				hook_event_name: "PostToolUse",
+				tool_name: "Bash",
+				tool_use_id: "call-native-1",
+				tool_input: { command: "printf ok" },
+				tool_response: { stdout: "ok", token: "sk-output-secret-value" },
+				cwd: "/workspace/project",
+			},
+			identity,
+			new Date("2026-08-07T00:00:00.000Z"),
+		);
+
+		expect(event.phase).toBe("post_tool_use");
+		expect(event.kind).toBe("execution_completed");
+		expect(event.callId).toBe("call-native-1");
+		expect(JSON.stringify(event.observation)).not.toContain("sk-output-secret-value");
+		expect(event.inspectionCoverage).toMatchObject({
+			eventVisibility: { toolOutput: true },
+			outputInspection: "post_execution_observation",
+			enforcement: {
+				toolCall: "none",
+				outputBeforeModelConsumption: "unavailable",
+			},
+		});
 	});
 	it("fails closed on malformed identity or tool input", () => {
 		expect(() => normalizeCodexHookInput({ ...input, arguments: [] }, identity)).toThrow();
 		expect(() => normalizeCodexHookInput(input, { ...identity, tenantId: "" })).toThrow();
+		expect(() =>
+			normalizeCodexHookInput(
+				{
+					hook_event_name: "PostToolUse",
+					tool_name: "Bash",
+					tool_use_id: "call-without-response",
+					tool_input: { command: "printf ok" },
+				},
+				identity,
+			),
+		).toThrow("PostToolUse requires a tool response");
 	});
 });
 describe("Codex redaction", () => {

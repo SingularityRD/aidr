@@ -23,7 +23,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "pnpm -C ../core build && pnpm run clean && pnpm run sync:assets && tsc",
+    "build": "node ../../scripts/ensure-core-build.mjs && pnpm run clean && pnpm run sync:assets && tsc",
     "build:release": "pnpm run clean && pnpm run sync:assets && tsc -p tsconfig.release.json && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-opencode && node ../../scripts/check-no-sourcemaps.mjs dist",
     "clean": "node ../../scripts/rmrf.mjs dist resources tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo",
     "prepack": "node ../../scripts/check-workspace-refs.mjs",

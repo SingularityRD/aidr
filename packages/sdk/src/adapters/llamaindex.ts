@@ -8,6 +8,12 @@
 
 import type { AIDRClient } from "../client.js";
 import type { CheckResult } from "../config.js";
+import { type ApprovalCallback, enforceCheckResult } from "../enforcement.js";
+import {
+	formatToolOutputBlockReason,
+	guardToolOutput,
+	type ToolOutputGuardOptions,
+} from "../output-guard.js";
 
 /**
  * Options for AIDRQueryEngine wrapper
@@ -15,10 +21,26 @@ import type { CheckResult } from "../config.js";
 export interface AIDRQueryEngineOptions {
 	/** Session ID for tracking security decisions */
 	sessionId?: string;
-	/** Whether to throw on deny verdict (default: true) */
+	/**
+	 * Whether to throw AIDRLlamaIndexError (or return a blocked result) instead
+	 * of executing. Applies to every non-executing verdict: deny, and ask
+	 * without (or refused) approval. Default: true (throw).
+	 */
 	throwOnDeny?: boolean;
+	/**
+	 * Caller-supplied human-approval callback for `ask` verdicts. When omitted
+	 * (the default) an `ask` verdict blocks the query.
+	 */
+	onAsk?: ApprovalCallback;
+	/**
+	 * Allow an indeterminate result (failed/inconsistent security check) to be
+	 * routed to `onAsk`. Defaults to `false`.
+	 */
+	allowApprovalOfIndeterminateResults?: boolean;
 	/** Whether to validate source URLs (default: true) */
 	validateSourceUrls?: boolean;
+	/** Inspect query output before LlamaIndex returns it to the model/application. */
+	outputGuard?: ToolOutputGuardOptions;
 }
 
 /**
@@ -95,9 +117,14 @@ export class AIDRQueryEngine {
 	 * 3. Executes the query if allowed
 	 * 4. Returns the result with security metadata
 	 *
+	 * Fail-closed: the query runs only on an explicit `allow` verdict, or on an
+	 * `ask` verdict approved through the caller-supplied `onAsk` callback. An
+	 * `ask` verdict with no approval callback — and any indeterminate (failed)
+	 * check — blocks the query.
+	 *
 	 * @param query - The query string to execute
 	 * @returns Promise resolving to the query result
-	 * @throws AIDRLlamaIndexError if verdict is deny and throwOnDeny is true
+	 * @throws AIDRLlamaIndexError when the query must not run and throwOnDeny is not false
 	 */
 	async query(query: string): Promise<QueryResult> {
 		// Validate the query through AIDR
@@ -111,8 +138,13 @@ export class AIDRQueryEngine {
 			},
 		});
 
-		if (verdict.decision !== "allow") {
-			const errorMessage = `AIDR: ${verdict.reason || "Query blocked by security policy"}`;
+		const outcome = await enforceCheckResult(verdict, {
+			onAsk: this.options.onAsk,
+			allowApprovalOfIndeterminateResults: this.options.allowApprovalOfIndeterminateResults,
+		});
+
+		if (!outcome.execute) {
+			const errorMessage = `AIDR: ${outcome.message}`;
 
 			if (this.options.throwOnDeny !== false) {
 				throw new AIDRLlamaIndexError(errorMessage, verdict, query);
@@ -146,20 +178,59 @@ export class AIDRQueryEngine {
 					},
 				});
 
-				if (urlVerdict.decision === "deny") {
-					const errorMessage = `AIDR: Source URL blocked - ${url}: ${urlVerdict.reason || "URL validation failed"}`;
+				// Same enforcement semantic as the query itself: ask/failed
+				// checks are no longer downgraded to "log and continue".
+				const urlOutcome = await enforceCheckResult(urlVerdict, {
+					onAsk: this.options.onAsk,
+					allowApprovalOfIndeterminateResults: this.options.allowApprovalOfIndeterminateResults,
+				});
+
+				if (!urlOutcome.execute) {
+					const errorMessage = `AIDR: Source URL blocked - ${url}: ${urlOutcome.message}`;
 
 					if (this.options.throwOnDeny !== false) {
 						throw new AIDRLlamaIndexError(errorMessage, urlVerdict, query, sourceUrls);
 					}
 
-					// Mark the result with warning but don't block
+					// Caller opted out of throwing: annotate the result instead.
 					result.metadata = {
 						...result.metadata,
 						aidrUrlWarnings: [...((result.metadata?.aidrUrlWarnings as string[]) || []), url],
 					};
 				}
 			}
+		}
+
+		const guardedResult = guardToolOutput(result.response ?? result, this.options.outputGuard);
+		if (guardedResult.delivery === "block") {
+			const reason = formatToolOutputBlockReason(guardedResult.inspection);
+			const outputVerdict: CheckResult = {
+				allowed: false,
+				decision: "deny",
+				confidence: 1,
+				reason,
+				metadata: { outputInspection: true },
+			};
+			if (this.options.throwOnDeny !== false) {
+				throw new AIDRLlamaIndexError(reason, outputVerdict, query);
+			}
+			return {
+				response: `[BLOCKED] ${reason}`,
+				metadata: {
+					aidrBlocked: true,
+					aidrDecision: "deny",
+					aidrOutputStatus: guardedResult.inspection.status,
+				},
+			};
+		}
+		if (guardedResult.delivery === "redact") {
+			result.response = guardedResult.output as string;
+			result.sourceNodes = undefined;
+			result.metadata = {
+				...result.metadata,
+				aidrOutputRedacted: true,
+				aidrOutputStatus: guardedResult.inspection.status,
+			};
 		}
 
 		// Add security metadata to result

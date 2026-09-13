@@ -9,6 +9,12 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import { Tool } from "@langchain/core/tools";
 import type { Decision, Verdict } from "@singularityrd/aidr-core";
 import type { CheckRequest, CheckResult } from "../config.js";
+import { enforceCheckResult } from "../enforcement.js";
+import {
+	formatToolOutputBlockReason,
+	guardToolOutput,
+	type ToolOutputGuardOptions,
+} from "../output-guard.js";
 
 /**
  * Options for AIDRTool wrapper
@@ -20,10 +26,21 @@ export interface AIDRToolOptions {
 	throwOnDeny?: boolean;
 	/** Whether to throw on ask verdict (default: false) */
 	throwOnAsk?: boolean;
+	/**
+	 * Allow an indeterminate result (failed/inconsistent security check) to be
+	 * routed to `onAsk`. Defaults to `false`: a broken check is never turned
+	 * into an approval.
+	 */
+	allowApprovalOfIndeterminateResults?: boolean;
 	/** Handler for deny verdict */
 	onDeny?: (verdict: Verdict, input: unknown) => void;
-	/** Handler for ask verdict - returns true if approved */
+	/**
+	 * Caller-supplied human-approval callback for ask verdicts - returns true if
+	 * approved. When omitted, an `ask` verdict blocks the tool call.
+	 */
 	onAsk?: (verdict: Verdict, input: unknown) => Promise<boolean>;
+	/** Inspect the returned tool value before LangChain can deliver it to the model. */
+	outputGuard?: ToolOutputGuardOptions;
 }
 
 /**
@@ -81,6 +98,22 @@ export interface AIDRClient {
 }
 
 /**
+ * Convert an SDK CheckResult into a core Verdict (used for callbacks).
+ */
+function asVerdictFrom(result: CheckResult): Verdict {
+	return {
+		decision: result.decision,
+		category: "",
+		confidence: result.confidence,
+		severity: "info",
+		source: "sdk",
+		artifacts: [],
+		matchedThreatId: result.threatId ?? null,
+		reasons: result.reason ? [result.reason] : [],
+	};
+}
+
+/**
  * Wrapper class that adds AIDR security analysis to any LangChain Tool
  *
  * This class intercepts tool calls, performs security analysis using AIDR's
@@ -125,6 +158,12 @@ export class AIDRTool<T extends Tool> extends Tool {
 	 *
 	 * Returns a structured result with both tool output and security metadata.
 	 *
+	 * Fail-closed: the inner tool is invoked only on an explicit `allow` verdict,
+	 * or on an `ask` verdict that the caller-supplied `onAsk` callback
+	 * explicitly approved. `deny` always blocks. An `ask` verdict with no
+	 * approval callback — and any indeterminate (failed) check — returns
+	 * `allowed: false` without executing; it is never silently executed.
+	 *
 	 * @param input - Tool input (string for simple tools, object for structured)
 	 * @param config - Optional RunnableConfig
 	 * @returns Promise resolving to AIDRToolResult
@@ -149,18 +188,16 @@ export class AIDRTool<T extends Tool> extends Tool {
 			artifacts: [],
 		};
 
+		const asVerdict: Verdict = asVerdictFrom(checkResult);
+
+		const onAskOption = this.options.onAsk;
+		const outcome = await enforceCheckResult(checkResult, {
+			onAsk: onAskOption ? (result) => onAskOption(asVerdictFrom(result), input) : undefined,
+			allowApprovalOfIndeterminateResults: this.options.allowApprovalOfIndeterminateResults,
+		});
+
 		// Handle deny verdict
-		if (checkResult.decision === "deny") {
-			const asVerdict: Verdict = {
-				decision: checkResult.decision,
-				category: "",
-				confidence: checkResult.confidence,
-				severity: "info",
-				source: "sdk",
-				artifacts: [],
-				matchedThreatId: checkResult.threatId ?? null,
-				reasons: checkResult.reason ? [checkResult.reason] : [],
-			};
+		if (!outcome.execute && outcome.block === "deny") {
 			this.options.onDeny?.(asVerdict, input);
 			const errorMessage = `Security violation: ${checkResult.reason || "Unknown threat"}`;
 
@@ -175,34 +212,16 @@ export class AIDRTool<T extends Tool> extends Tool {
 			};
 		}
 
-		// Handle ask verdict - prompt user if handler provided
-		if (checkResult.decision === "ask") {
-			const asVerdict: Verdict = {
-				decision: checkResult.decision,
-				category: "",
-				confidence: checkResult.confidence,
-				severity: "info",
-				source: "sdk",
-				artifacts: [],
-				matchedThreatId: checkResult.threatId ?? null,
-				reasons: checkResult.reason ? [checkResult.reason] : [],
-			};
-			const approved = await this.options.onAsk?.(asVerdict, input);
-			if (!approved) {
-				if (this.options.throwOnAsk) {
-					throw new AIDRSecurityError(
-						"AIDR: User denied permission",
-						asVerdict,
-						this.innerTool.name,
-						input,
-					);
-				}
-				return {
-					output: "[DENIED] User did not approve the action",
-					security: securityMetadata,
-					allowed: false,
-				};
+		// Handle ask verdict (and indeterminate results) - block unless approved
+		if (!outcome.execute) {
+			if (this.options.throwOnAsk) {
+				throw new AIDRSecurityError(outcome.message, asVerdict, this.innerTool.name, input);
 			}
+			return {
+				output: `[DENIED] ${outcome.message}`,
+				security: securityMetadata,
+				allowed: false,
+			};
 		}
 
 		const result = await this.innerTool.invoke(args, config);
@@ -216,6 +235,39 @@ export class AIDRTool<T extends Tool> extends Tool {
 		} else {
 			output = String(result);
 		}
+
+		const guardedOutput = guardToolOutput(output, this.options.outputGuard);
+		if (guardedOutput.delivery === "block") {
+			const reason = formatToolOutputBlockReason(guardedOutput.inspection);
+			const outputVerdict: Verdict = {
+				decision: "deny",
+				category: "output_security",
+				confidence: 1,
+				severity: "critical",
+				source: "sdk_output_guard",
+				artifacts: [],
+				matchedThreatId: guardedOutput.inspection.findings[0]?.ruleId ?? null,
+				reasons: [reason],
+			};
+			this.options.onDeny?.(outputVerdict, input);
+			if (this.options.throwOnDeny !== false) {
+				throw new AIDRSecurityError(reason, outputVerdict, this.innerTool.name, input);
+			}
+			return {
+				output: `[BLOCKED] ${reason}`,
+				security: {
+					decision: "deny",
+					confidence: 1,
+					category: "output_security",
+					severity: "critical",
+					matchedThreatId: outputVerdict.matchedThreatId,
+					reasons: [reason],
+					artifacts: [],
+				},
+				allowed: false,
+			};
+		}
+		output = guardedOutput.output as string;
 
 		return {
 			output,

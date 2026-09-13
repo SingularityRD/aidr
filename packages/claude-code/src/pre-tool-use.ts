@@ -2,13 +2,12 @@
 /**
  * Singularity AIDR PreToolUse hook entry point.
  * Reads tool call JSON from stdin, checks for threats, outputs verdict JSON to stdout.
- * Always exits 0 — even on errors, outputs an allow verdict.
+ * Always exits 0. Input and hook failures emit a deny verdict.
  */
 
 import { readFileSync } from "node:fs";
 import {
 	type Artifact,
-	allowVerdict,
 	evaluateToolCall,
 	extractFromToolCall,
 	initSentry,
@@ -18,6 +17,7 @@ import {
 import pino from "pino";
 import { addPendingApproval } from "./approval-tracker.js";
 import { resolveAssetDir } from "./assets.js";
+import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
 import { formatBlockReason } from "./format.js";
 
 // Initialize Sentry
@@ -68,6 +68,39 @@ function makeResponse(verdict: Verdict): Record<string, unknown> {
 	};
 }
 
+/** Fixed protocol response: never echo malformed input or exception details. */
+function writeInspectionFailure(): void {
+	process.stdout.write(
+		`${JSON.stringify({
+			systemMessage: "Singularity AIDR could not inspect this tool call. The action was blocked.",
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: "Singularity AIDR inspection unavailable",
+			},
+		})}\n`,
+	);
+}
+
+function parseToolCall(rawInput: string): Record<string, unknown> | null {
+	try {
+		const parsed: unknown = JSON.parse(rawInput);
+		if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+		const fields = parsed as Record<string, unknown>;
+		if (
+			typeof fields.tool_name !== "string" ||
+			fields.tool_name.trim() === "" ||
+			(fields.tool_input != null &&
+				(typeof fields.tool_input !== "object" || Array.isArray(fields.tool_input)))
+		) {
+			return null;
+		}
+		return fields;
+	} catch {
+		return null;
+	}
+}
+
 async function main(): Promise<void> {
 	await maybeVerifyIntegrity();
 
@@ -75,31 +108,24 @@ async function main(): Promise<void> {
 	try {
 		rawInput = readFileSync(0, "utf-8");
 	} catch {
-		process.stdout.write("{}\n");
+		writeInspectionFailure();
 		return;
 	}
 
-	let toolCall: Record<string, unknown>;
-	try {
-		toolCall = JSON.parse(rawInput) as Record<string, unknown>;
-	} catch (e) {
-		process.stdout.write(
-			`${JSON.stringify(makeResponse(allowVerdict(`Failed to parse input: ${e}`)))}\n`,
-		);
+	const toolCall = parseToolCall(rawInput);
+	if (!toolCall) {
+		writeInspectionFailure();
 		return;
 	}
 
-	const toolName = (toolCall.tool_name ?? "") as string;
+	const toolName = toolCall.tool_name as string;
 	const toolInput = (toolCall.tool_input ?? {}) as Record<string, unknown>;
-	const sessionId = (toolCall.session_id ?? "unknown") as string;
-	const toolUseId = (toolCall.tool_use_id ?? "") as string;
-	// Extract artifacts based on tool type (with MCP/unknown fallback)
+	const sessionId = typeof toolCall.session_id === "string" ? toolCall.session_id : "unknown";
+	const toolUseId = typeof toolCall.tool_use_id === "string" ? toolCall.tool_use_id : "";
+	// Extraction is best-effort. Even without artifacts, the evaluator must see
+	// the raw tool input for configured runtime inspection and MCP policy.
 	const artifacts: Artifact[] = extractFromToolCall(toolName, toolInput);
-
-	if (artifacts.length === 0) {
-		process.stdout.write("{}\n");
-		return;
-	}
+	const provisionedDetectors = await loadProvisionedDetectorContext();
 	const verdict = await evaluateToolCall(
 		{ sessionId, toolName, toolInput, artifacts },
 		{
@@ -107,6 +133,7 @@ async function main(): Promise<void> {
 			allowlistsDir: resolveAssetDir("allowlists"),
 			agentRuntime: "claude-code",
 			logger,
+			...provisionedDetectors,
 		},
 	);
 
@@ -136,6 +163,6 @@ async function main(): Promise<void> {
 	process.stdout.write(`${JSON.stringify(makeResponse(verdict))}\n`);
 }
 
-main().catch((e) => {
-	process.stdout.write(`${JSON.stringify(makeResponse(allowVerdict(`Internal error: ${e}`)))}\n`);
+main().catch(() => {
+	writeInspectionFailure();
 });

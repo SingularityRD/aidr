@@ -180,6 +180,14 @@ function upsertManagedHooks(existing: CursorHooksFile, command: string): CursorH
 		command,
 		timeout: 30,
 	});
+	hooks.postToolUse = appendManaged(hooks.postToolUse, {
+		command,
+		timeout: 30,
+	});
+	hooks.afterAgentResponse = appendManaged(hooks.afterAgentResponse, {
+		command,
+		timeout: 30,
+	});
 	hooks.beforeMCPExecution = appendManaged(hooks.beforeMCPExecution, {
 		command,
 		timeout: 30,

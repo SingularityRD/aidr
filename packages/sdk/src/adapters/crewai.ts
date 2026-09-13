@@ -8,6 +8,12 @@
 
 import type { AIDRClient } from "../client.js";
 import type { CheckRequest, CheckResult } from "../config.js";
+import { type ApprovalCallback, enforceCheckResult } from "../enforcement.js";
+import {
+	formatToolOutputBlockReason,
+	guardToolOutput,
+	type ToolOutputGuardOptions,
+} from "../output-guard.js";
 
 /**
  * Interface for CrewAI tool structure
@@ -50,10 +56,26 @@ export class AIDRCrewSecurityError extends Error {
 export interface AIDRCrewToolOptions {
 	/** Session ID for tracking security decisions */
 	sessionId?: string;
-	/** Whether to throw on deny verdict (default: true) */
+	/**
+	 * Whether to throw AIDRCrewSecurityError instead of returning
+	 * `{ error, blocked: true }`. Applies to every non-executing verdict: deny,
+	 * and ask without (or refused) approval. Default: true.
+	 */
 	throwOnDeny?: boolean;
+	/**
+	 * Caller-supplied human-approval callback for `ask` verdicts. When omitted
+	 * (the default) an `ask` verdict blocks the tool call.
+	 */
+	onAsk?: ApprovalCallback;
+	/**
+	 * Allow an indeterminate result (failed/inconsistent security check) to be
+	 * routed to `onAsk`. Defaults to `false`.
+	 */
+	allowApprovalOfIndeterminateResults?: boolean;
 	/** Custom metadata for the security check */
 	metadata?: Record<string, unknown>;
+	/** Inspect returned tool values before CrewAI can feed them to a model. */
+	outputGuard?: ToolOutputGuardOptions;
 }
 
 /**
@@ -91,13 +113,18 @@ export class AIDRCrewTool {
 	 *
 	 * This method:
 	 * 1. Calls AIDR client to evaluate security
-	 * 2. Handles the verdict (allow/deny/ask)
-	 * 3. Executes the inner tool if allowed
+	 * 2. Enforces the verdict (allow/deny/ask) — fail-closed
+	 * 3. Executes the inner tool only if enforcement allows it
 	 * 4. Returns the tool result
+	 *
+	 * The inner tool runs only on an explicit `allow` verdict, or on an `ask`
+	 * verdict that the caller-supplied `onAsk` callback explicitly approved. An
+	 * `ask` verdict without an approval callback — and any indeterminate
+	 * (failed) check — blocks the call; it is never merely logged.
 	 *
 	 * @param args - Tool arguments
 	 * @returns Tool result
-	 * @throws AIDRCrewSecurityError if verdict is deny and throwOnDeny is true
+	 * @throws AIDRCrewSecurityError when the call must not proceed and throwOnDeny is not false
 	 */
 	async run(...args: unknown[]): Promise<unknown> {
 		const toolName = this.innerTool.name || "unknown";
@@ -113,9 +140,15 @@ export class AIDRCrewTool {
 		// Get verdict from AIDR client
 		const verdict = await this.aidrClient.check(checkRequest);
 
-		// Handle deny verdict
-		if (verdict.decision === "deny") {
-			const errorMessage = `AIDR blocked: ${verdict.reason}`;
+		// Enforce the verdict. `ask` without approval and indeterminate results
+		// are blocked exactly like `deny` — never "log and proceed".
+		const outcome = await enforceCheckResult(verdict, {
+			onAsk: this.options.onAsk,
+			allowApprovalOfIndeterminateResults: this.options.allowApprovalOfIndeterminateResults,
+		});
+
+		if (!outcome.execute) {
+			const errorMessage = `AIDR blocked: ${outcome.message}`;
 
 			if (this.options.throwOnDeny !== false) {
 				throw new AIDRCrewSecurityError(errorMessage, verdict, toolName);
@@ -125,15 +158,24 @@ export class AIDRCrewTool {
 			return { error: errorMessage, blocked: true };
 		}
 
-		// Handle ask verdict - could implement approval flow here
-		if (verdict.decision === "ask") {
-			// For 'ask' verdicts, we could trigger an approval flow
-			// For now, we log and proceed (approval flow could be implemented via options)
-			console.warn(`Security warning for tool "${toolName}": ${verdict.reason}`);
+		// Execute, then inspect the complete result before CrewAI can consume it.
+		const result = await this.innerTool.run(...args);
+		const guardedResult = guardToolOutput(result, this.options.outputGuard);
+		if (guardedResult.delivery === "block") {
+			const reason = formatToolOutputBlockReason(guardedResult.inspection);
+			const outputVerdict: CheckResult = {
+				allowed: false,
+				decision: "deny",
+				confidence: 1,
+				reason,
+				metadata: { outputInspection: true },
+			};
+			if (this.options.throwOnDeny !== false) {
+				throw new AIDRCrewSecurityError(reason, outputVerdict, toolName);
+			}
+			return { error: reason, blocked: true };
 		}
-
-		// Execute the wrapped tool
-		return this.innerTool.run(...args);
+		return guardedResult.output;
 	}
 
 	/**
@@ -254,9 +296,16 @@ export function wrapCrewAgentWithAIDR(
 
 			const verdict = await client.check(checkRequest);
 
-			if (verdict.decision === "deny") {
+			// Fail-closed: delegation proceeds only on an explicit allow (or an
+			// ask verdict approved through onAsk).
+			const outcome = await enforceCheckResult(verdict, {
+				onAsk: options?.onAsk,
+				allowApprovalOfIndeterminateResults: options?.allowApprovalOfIndeterminateResults,
+			});
+
+			if (!outcome.execute) {
 				throw new AIDRCrewSecurityError(
-					`Task delegation blocked: ${verdict.reason}`,
+					`Task delegation blocked: ${outcome.message}`,
 					verdict,
 					agent.role || agent.name || "unknown",
 				);
@@ -289,7 +338,7 @@ export function wrapCrewWithAIDR(
 	crew: CrewLike,
 	client: AIDRClient,
 	options?: AIDRCrewToolOptions,
-	): CrewLike {
+): CrewLike {
 	// Wrap kickoff method to monitor crew execution
 	if (crew.kickoff) {
 		const originalKickoff = crew.kickoff.bind(crew);
@@ -301,9 +350,7 @@ export function wrapCrewWithAIDR(
 
 			// Wrap all agent tools in the crew
 			if (crew.agents && Array.isArray(crew.agents)) {
-				crew.agents = crew.agents.map((agent) =>
-					wrapCrewAgentWithAIDR(agent, client, options),
-				);
+				crew.agents = crew.agents.map((agent) => wrapCrewAgentWithAIDR(agent, client, options));
 			}
 
 			try {

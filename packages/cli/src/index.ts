@@ -2,7 +2,10 @@
 
 import { VERSION } from "@singularityrd/aidr-core";
 import { Command } from "commander";
+import collectCommand from "./commands/collect.js";
 import configCommand from "./commands/config.js";
+import discoverCommand from "./commands/discover.js";
+import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import statusCommand from "./commands/status.js";
 
@@ -30,6 +33,54 @@ program
 program
 	.command("status")
 	.description("Show the local AIDR configuration and hook status")
+	.option("--json", "Emit measured installation state without credentials")
 	.action(statusCommand);
+
+program
+	.command("scan")
+	.description(
+		"Scan AI infrastructure targets for known products and CVEs (native, no external service)",
+	)
+	.option(
+		"-t, --target <url...>",
+		"Target base URL (repeatable). Loopback/private only unless --allow-public",
+	)
+	.option("-f, --file <path>", "Read targets from a file, one URL per line")
+	.option("--json", "Emit machine-readable JSON")
+	.option("--allow-public", "Permit non-private targets (off by default)")
+	.option("--timeout <ms>", "Per-request timeout in milliseconds", "3000")
+	.option("--concurrency <n>", "Number of targets to scan in parallel", "4")
+	.option("--save-report <path>", "Persist a scan report for the configured infrastructure policy")
+	.action(scanCommand);
+
+program
+	.command("collect")
+	.description("Continuously collect tenant-scoped AI infrastructure inventory")
+	.requiredOption("--tenant <id>", "Tenant identifier recorded in the inventory")
+	.option("-t, --target <url...>", "Target base URL (repeatable)")
+	.option("-f, --file <path>", "Read targets from a file, one URL per line")
+	.option(
+		"--inventory <path>",
+		"Inventory output path (tenant-isolated default under ~/.singularity-aidr)",
+	)
+	.option(
+		"--interval <seconds>",
+		"Repeat without overlap every 10-86400 seconds; omitted means one run",
+	)
+	.option("--stale-after <minutes>", "Mark last-seen evidence stale after this age", "15")
+	.option("--retry-attempts <n>", "Bounded attempts per unreachable target (1-5)", "3")
+	.option("--retry-base-ms <ms>", "Initial retry backoff in milliseconds", "250")
+	.option("--timeout <ms>", "Per-request timeout in milliseconds", "3000")
+	.option("--concurrency <n>", "Maximum concurrently collected targets", "4")
+	.option("--allow-public", "Permit non-private targets (off by default)")
+	.option("--json", "Emit machine-readable inventory; interval mode emits JSON lines")
+	.action(collectCommand);
+
+program
+	.command("discover")
+	.description("Inventory local MCP servers with risk indicators and configuration fingerprints")
+	.option("--config <paths...>", "Inspect explicit JSON configuration paths")
+	.option("--json", "Emit a redacted machine-readable inventory")
+	.action(discoverCommand);
 
 await program.parseAsync(process.argv);

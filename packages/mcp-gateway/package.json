@@ -1,0 +1,24 @@
+{
+  "name": "@singularityrd/aidr-mcp-gateway",
+  "license": "Proprietary",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist", "README.md"],
+  "bin": {
+    "aidr-mcp-gateway": "dist/aidr-mcp-gateway.mjs",
+    "aidr-mcp-approve": "dist/aidr-mcp-approve.mjs",
+    "aidr-mcp-stdio": "dist/aidr-mcp-stdio.mjs"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:release": "node scripts/build.mjs",
+    "test": "node --test src/__tests__/*.test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

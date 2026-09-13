@@ -8,6 +8,12 @@
 
 import type { AIDRClient } from "../client.js";
 import type { CheckRequest, CheckResult } from "../config.js";
+import { enforceCheckResult } from "../enforcement.js";
+import {
+	formatToolOutputBlockReason,
+	guardToolOutput,
+	type ToolOutputGuardOptions,
+} from "../output-guard.js";
 
 /**
  * Context passed through the middleware chain
@@ -43,20 +49,34 @@ export class AIDRMiddlewareError extends Error {
 export interface MiddlewareOptions {
 	/** Callback when verdict is deny */
 	onDeny?: (ctx: MiddlewareContext, verdict: CheckResult) => void;
-	/** Callback when verdict is ask - return true to approve, false to deny */
+	/**
+	 * Callback when verdict is ask - return true to approve, false to deny.
+	 * When omitted, an `ask` verdict blocks (fail-closed).
+	 */
 	onAsk?: (ctx: MiddlewareContext, verdict: CheckResult) => Promise<boolean> | boolean;
 	/** Callback when verdict is allow */
 	onAllow?: (ctx: MiddlewareContext, verdict: CheckResult) => void;
 	/** Callback before security check */
 	beforeCheck?: (ctx: MiddlewareContext) => void | Promise<void>;
 	/** Callback after security check (after tool execution too) */
-	afterCheck?: (ctx: MiddlewareContext, verdict: CheckResult, result?: unknown) => void | Promise<void>;
+	afterCheck?: (
+		ctx: MiddlewareContext,
+		verdict: CheckResult,
+		result?: unknown,
+	) => void | Promise<void>;
 	/** Whether to throw on deny (default: true) */
 	throwOnDeny?: boolean;
+	/**
+	 * Allow an indeterminate result (failed/inconsistent security check) to be
+	 * routed to `onAsk`. Defaults to `false`.
+	 */
+	allowApprovalOfIndeterminateResults?: boolean;
 	/** Custom error message formatter */
 	formatErrorMessage?: (ctx: MiddlewareContext, verdict: CheckResult) => string;
 	/** Optional metadata for the request */
 	metadata?: Record<string, unknown>;
+	/** Inspect the returned tool value before it is delivered to the model. */
+	outputGuard?: ToolOutputGuardOptions;
 }
 
 /**
@@ -67,7 +87,10 @@ export type NextFunction = () => Promise<unknown>;
 /**
  * Middleware function type
  */
-export type MiddlewareFunction = (context: MiddlewareContext, next: NextFunction) => Promise<unknown>;
+export type MiddlewareFunction = (
+	context: MiddlewareContext,
+	next: NextFunction,
+) => Promise<unknown>;
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 	return (
@@ -76,6 +99,61 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 		"then" in value &&
 		typeof (value as { then?: unknown }).then === "function"
 	);
+}
+
+function outputBlockedResult(reason: string): CheckResult {
+	return {
+		allowed: false,
+		decision: "deny",
+		confidence: 1,
+		reason,
+		metadata: { outputInspection: true },
+	};
+}
+
+async function guardResult(
+	result: unknown,
+	context: MiddlewareContext,
+	verdict: CheckResult,
+	options: MiddlewareOptions,
+): Promise<unknown> {
+	const guarded = guardToolOutput(result, options.outputGuard);
+	if (guarded.delivery !== "block") return guarded.output;
+
+	const reason = formatToolOutputBlockReason(guarded.inspection);
+	const blockedVerdict = outputBlockedResult(reason);
+	if (options.afterCheck) await options.afterCheck(context, blockedVerdict, undefined);
+	if (options.throwOnDeny === false) return undefined;
+	throw new AIDRMiddlewareError(reason, blockedVerdict, context);
+}
+
+/**
+ * Shared fail-closed enforcement for the async and sync middleware.
+ *
+ * Uses the same semantic as every other SDK surface: `deny` never executes,
+ * `ask` executes only after an explicit approval from the caller-supplied
+ * `onAsk` callback, and an indeterminate/failed check is never approved.
+ * `throwOnDeny: false` only softens `deny` (return without calling `next()`);
+ * `ask` and indeterminate results still throw.
+ */
+async function enforceVerdict(
+	context: MiddlewareContext,
+	verdict: CheckResult,
+	options: MiddlewareOptions,
+): Promise<void> {
+	const onAskOption = options.onAsk;
+	const outcome = await enforceCheckResult(verdict, {
+		onAsk: onAskOption ? (result) => onAskOption(context, result) : undefined,
+		allowApprovalOfIndeterminateResults: options.allowApprovalOfIndeterminateResults,
+	});
+
+	if (outcome.execute) return;
+
+	const message = options.formatErrorMessage
+		? options.formatErrorMessage(context, verdict)
+		: outcome.message;
+
+	throw new AIDRMiddlewareError(message, verdict, context);
 }
 
 /**
@@ -145,15 +223,9 @@ export function createMiddleware(
 			return undefined;
 		}
 
-		// Handle ask verdict
-		if (verdict.decision === "ask") {
-			const approved = await options.onAsk?.(context, verdict);
-			if (!approved) {
-				const message = options.formatErrorMessage
-					? options.formatErrorMessage(context, verdict)
-					: "User denied";
-				throw new AIDRMiddlewareError(message, verdict, context);
-			}
+		// Handle ask verdict (and indeterminate/failed checks) - fail-closed
+		if (verdict.decision !== "allow") {
+			await enforceVerdict(context, verdict, options);
 		}
 
 		// Call onAllow hook
@@ -172,6 +244,7 @@ export function createMiddleware(
 			}
 			throw error;
 		}
+		result = await guardResult(result, context, verdict, options);
 
 		// Call afterCheck hook
 		if (options.afterCheck) {
@@ -245,15 +318,9 @@ export function createSyncCompatibleMiddleware(
 				return undefined;
 			}
 
-			// Handle ask
-			if (verdict.decision === "ask") {
-				const approved = await options.onAsk?.(context, verdict);
-				if (!approved) {
-					const message = options.formatErrorMessage
-						? options.formatErrorMessage(context, verdict)
-						: "User denied";
-					throw new AIDRMiddlewareError(message, verdict, context);
-				}
+			// Handle ask (and indeterminate/failed checks) - fail-closed
+			if (verdict.decision !== "allow") {
+				await enforceVerdict(context, verdict, options);
 			}
 
 			// Call onAllow
@@ -273,6 +340,7 @@ export function createSyncCompatibleMiddleware(
 				}
 				throw error;
 			}
+			result = await guardResult(result, context, verdict, options);
 
 			// Call afterCheck
 			if (options.afterCheck) {
@@ -355,9 +423,7 @@ export function wrapToolWithMiddleware(
 				tool: tool.name,
 				input: JSON.stringify(args),
 				sessionId:
-					typeof options.metadata?.sessionId === "string"
-						? options.metadata.sessionId
-						: undefined,
+					typeof options.metadata?.sessionId === "string" ? options.metadata.sessionId : undefined,
 				metadata: options.metadata,
 			};
 

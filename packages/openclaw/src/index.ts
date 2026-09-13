@@ -1,14 +1,20 @@
 /**
  * Singularity AIDR OpenClaw plugin entry point.
- * Registers before_tool_call handler, aidr_approve tool, allowlist tools,
- * startup/session scan hooks, and before_agent_start handler.
+ * Registers tool-input enforcement, bounded post-execution/output protection,
+ * allowlist tools, startup/session scan hooks, and before_agent_start handler.
+ *
+ * SECURITY: this plugin deliberately registers NO approval tool. An approval
+ * tool callable by the model would let a prompt-injected agent approve its own
+ * blocked action (it receives the actionId in the block message). Approval
+ * authority must be an action the agent cannot perform, so `ask` verdicts stay
+ * blocking. See README.md ("Approving a flagged action").
  */
 
 import { ApprovalStore, initSentry } from "@singularityrd/aidr-core";
 import { createAllowlistAddTool, createAllowlistRemoveTool } from "./allowlist-tools.js";
 import { getBundledDataDirs } from "./bundled-dirs.js";
-import { createAidrApproveTool } from "./gate-tool.js";
 import { createLogger, type PluginLogger } from "./logger-adapter.js";
+import { OpenClawOutputProtection } from "./output-protection.js";
 import {
 	createBeforeAgentStartHandler,
 	createSessionScanHandler,
@@ -56,6 +62,7 @@ export default {
 		const logger = createLogger(api.logger);
 		void maybeVerifyIntegrity();
 		const approvalStore = new ApprovalStore();
+		const outputProtection = new OpenClawOutputProtection(logger);
 		const { threatsDir, allowlistsDir } = getBundledDataDirs();
 
 		const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
@@ -73,7 +80,23 @@ export default {
 			createToolCallHandler(approvalStore, logger, threatsDir, allowlistsDir),
 			{ priority: 100 },
 		);
-		api.registerTool(createAidrApproveTool(approvalStore) as unknown as Record<string, unknown>);
+		api.on("after_tool_call", outputProtection.afterToolCall.bind(outputProtection));
+		// OpenClaw requires this persistence hook to be synchronous. It can keep
+		// future transcript reads safe, but it runs after the tool already executed.
+		api.on("tool_result_persist", outputProtection.toolResultPersist.bind(outputProtection), {
+			priority: 100,
+		});
+		// This is the enforceable output boundary: replace risky model text before
+		// it is delivered, including turns influenced by a flagged tool result.
+		api.on("message_sending", outputProtection.messageSending.bind(outputProtection), {
+			priority: 100,
+		});
+		api.on("reply_payload_sending", outputProtection.replyPayloadSending.bind(outputProtection), {
+			priority: 100,
+		});
+		// No approval tool is registered: the agent must not be able to approve
+		// its own blocked actions. `ask` verdicts stay blocking until a human
+		// approves out of band (see README.md).
 		api.registerTool(
 			createAllowlistAddTool(approvalStore, logger) as unknown as Record<string, unknown>,
 		);

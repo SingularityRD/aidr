@@ -29,6 +29,18 @@ function parseResponse(stdout: string): Record<string, unknown> {
 	return JSON.parse(stdout.trim()) as Record<string, unknown>;
 }
 
+/**
+ * VS Code / Cursor hooks express a block through
+ * `hookSpecificOutput.permissionDecision` and signal "allow" by returning an
+ * empty object. Local enforcement is the documented default, so threat payloads
+ * must produce a block here.
+ */
+function permissionDecision(stdout: string): string | undefined {
+	const response = parseResponse(stdout);
+	const hookOutput = response.hookSpecificOutput as Record<string, unknown> | undefined;
+	return hookOutput?.permissionDecision as string | undefined;
+}
+
 describe("Cursor hook integration", () => {
 	it("allows clean preToolUse write", async () => {
 		const { stdout, code } = await runHook("cursor", {
@@ -62,8 +74,8 @@ describe("Cursor hook integration", () => {
 
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(response.decision).toBe("allow");
+		// Local enforcement is the documented default; these payloads are threats.
+		expect(response.decision).toBe("deny");
 	});
 
 	it("denies sensitive write in preToolUse", async () => {
@@ -78,8 +90,8 @@ describe("Cursor hook integration", () => {
 
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(response.decision).toBe("allow");
+		// Local enforcement is the documented default; these payloads are threats.
+		expect(response.decision).toBe("deny");
 	});
 
 	it("denies Edit payloads that use path + streamContent fields", async () => {
@@ -94,8 +106,8 @@ describe("Cursor hook integration", () => {
 
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(response.decision).toBe("allow");
+		// Local enforcement is the documented default; these payloads are threats.
+		expect(response.decision).toBe("deny");
 	});
 
 	it("denies suspicious shell command", async () => {
@@ -106,8 +118,8 @@ describe("Cursor hook integration", () => {
 		});
 
 		const response = parseResponse(stdout);
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(response.permission).toBe("allow");
+		// Local enforcement is the documented default; these payloads are threats.
+		expect(response.permission).toBe("deny");
 		expect(code).toBe(0);
 	});
 
@@ -121,8 +133,8 @@ describe("Cursor hook integration", () => {
 
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(response.permission).toBe("allow");
+		// Local enforcement is the documented default; these payloads are threats.
+		expect(response.permission).toBe("deny");
 	});
 
 	it("allows benign mcp call", async () => {
@@ -176,9 +188,8 @@ describe("VS Code hook integration", () => {
 			},
 		});
 
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
+		expect(permissionDecision(stdout)).toBe("deny");
 	});
 
 	it("denies read of sensitive file", async () => {
@@ -187,9 +198,8 @@ describe("VS Code hook integration", () => {
 			tool_input: { file_path: "/etc/shadow" },
 		});
 
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
+		expect(permissionDecision(stdout)).toBe("deny");
 	});
 
 	it("allows read of benign file", async () => {
@@ -208,9 +218,8 @@ describe("VS Code hook integration", () => {
 			tool_input: { file_path: "/home/user/.ssh/authorized_keys" },
 		});
 
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
+		expect(permissionDecision(stdout)).toBe("deny");
 	});
 
 	it("allows delete of benign file", async () => {
@@ -229,9 +238,8 @@ describe("VS Code hook integration", () => {
 			tool_input: { filePath: "/etc/shadow" },
 		});
 
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
+		expect(permissionDecision(stdout)).toBe("deny");
 	});
 
 	it("denies delete with variant key name 'path'", async () => {
@@ -240,9 +248,8 @@ describe("VS Code hook integration", () => {
 			tool_input: { path: "/home/user/.ssh/authorized_keys" },
 		});
 
-		// Commercial v1 is managed-only/auth-first. Without enrollment, protection is disabled.
-		expect(parseResponse(stdout)).toEqual({});
 		expect(code).toBe(0);
+		expect(permissionDecision(stdout)).toBe("deny");
 	});
 
 	it("fails closed on invalid json", async () => {

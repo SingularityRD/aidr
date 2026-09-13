@@ -4,18 +4,31 @@
   "publishConfig": { "access": "restricted", "registry": "https://npm.pkg.github.com" },
   "version": "0.6.0",
   "type": "module",
-  "description": "Singularity AIDR Codex hook and central policy handoff",
+  "description": "Singularity AIDR Codex PreToolUse hook and central policy handoff",
   "main": "./dist/index.js",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "bin": { "aidr-codex-hook": "./dist/cli.js" },
-  "files": ["dist/**", "package.json", "README.md", "LICENSE"],
+  "bin": { "aidr-codex-hook": "./dist/pre-tool-use.cjs" },
+  "files": ["dist/**", "resources/**", "package.json", "README.md", "LICENSE"],
   "scripts": {
-    "build": "npm run clean && tsc",
+    "build": "node ../../scripts/ensure-core-build.mjs && pnpm run sync:assets && node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && node esbuild.config.js && tsc",
+    "build:release": "pnpm run sync:assets && node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && node esbuild.config.js --release && tsc && node ../../scripts/check-no-sourcemaps.mjs dist",
     "clean": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo",
+    "sync:assets": "node scripts/sync-assets.mjs",
     "typecheck": "tsc --noEmit",
-		"test": "vitest run --config ./vitest.config.ts",
+    "test": "vitest run --config ./vitest.config.ts",
     "prepack": "node ../../scripts/check-workspace-refs.mjs"
   },
-  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.0", "vitest": "^4.1.2" },
+  "optionalDependencies": {
+    "koffi": "^2.15.2"
+  },
+  "dependencies": {
+    "@singularityrd/aidr-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.2"
+  },
   "engines": { "node": ">=18" }
 }

@@ -174,6 +174,16 @@ function upsertManagedHooks(existing: SettingsObject, command: string): Settings
 			},
 		],
 	});
+	hooks.PostToolUse = appendManaged(asMatcherEntries(hooks.PostToolUse), {
+		hooks: [
+			{
+				type: "command",
+				command,
+				timeout: 30,
+				statusMessage: "Singularity AIDR: Inspecting tool output...",
+			},
+		],
+	});
 
 	return {
 		...existing,

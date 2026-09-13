@@ -1,37 +1,114 @@
 #!/usr/bin/env node
-import { handleCodexHook } from "./hook.js";
-import type { CodexHookInput, CodexRuntimeIdentity } from "./types.js";
+/**
+ * Singularity AIDR Codex PreToolUse hook entry point.
+ *
+ * Wired into Codex via `~/.codex/config.toml`:
+ *
+ *   [[hooks.PreToolUse]]
+ *   matcher = "^(Bash|apply_patch)$"
+ *   [[hooks.PreToolUse.hooks]]
+ *   type = "command"
+ *   command = 'aidr-codex-hook'
+ *   timeout = 10
+ *
+ * or equivalently via `~/.codex/hooks.json`.
+ *
+ * Codex fails OPEN in every failure mode except a well-formed explicit deny, so
+ * this entry point is written to always produce a decision. Even an unexpected
+ * throw is converted into a deny on stdout, with a secondary stderr write so
+ * that a partially-broken stdout still blocks (Codex treats `exit 2` with a
+ * non-empty stderr as a block).
+ */
 
-function env(name: string): string {
-	return process.env[name]?.trim() ?? "";
+import { readFileSync } from "node:fs";
+import { createLogger, type Logger } from "@singularityrd/aidr-core";
+import { getCodexConnectorCoverageEvidence } from "./coverage.js";
+import { type CodexWireResult, DENY_HEADLINE, enforceCodexPreToolUse } from "./enforcement.js";
+
+// Codex surfaces stderr on a non-zero exit as the block reason, so diagnostics
+// must never share the channel that carries a decision.
+const logger: Logger = createLogger({ name: "aidr-codex", level: "warn" });
+
+function write(wire: CodexWireResult): void {
+	process.stdout.write(`${JSON.stringify(wire)}\n`);
 }
-async function main(): Promise<void> {
-	let input: CodexHookInput;
+
+/** Last-resort block. Writes both channels Codex can honour. */
+function blockUnconditionally(reason: string): void {
 	try {
-		let stdin = "";
-		for await (const chunk of process.stdin) stdin += String(chunk);
-		input = JSON.parse(stdin) as CodexHookInput;
+		write({
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: reason,
+			},
+		});
 	} catch {
-		process.stdout.write(JSON.stringify({ decision: "deny", reasonCode: "codex_input_malformed" }));
+		// stdout is gone; fall through to the stderr/exit-2 channel below.
+	}
+	try {
+		process.stderr.write(`${reason}\n`);
+	} catch {
+		// Nothing further we can do.
+	}
+	// Exit 2 with non-empty stderr is Codex's secondary block signal.
+	process.exitCode = 2;
+}
+
+async function main(): Promise<void> {
+	if (process.argv.includes("--health") || process.argv.includes("--coverage")) {
+		process.stdout.write(`${JSON.stringify(getCodexConnectorCoverageEvidence(), null, 2)}\n`);
 		return;
 	}
-	const identity: CodexRuntimeIdentity = {
-		tenantId: env("AUTOSECOPS_TENANT_ID"),
-		teamId: env("AUTOSECOPS_TEAM_ID"),
-		endpointId: env("AUTOSECOPS_ENDPOINT_ID"),
-		agentId: env("AUTOSECOPS_AGENT_ID"),
-		instanceId: env("AUTOSECOPS_INSTANCE_ID"),
-		sessionId: env("AUTOSECOPS_SESSION_ID") || String(input.session_id ?? ""),
-		connectorVersion: env("AUTOSECOPS_CONNECTOR_VERSION") || "codex-unknown",
-	};
-	const result = await handleCodexHook(input, {
-		identity,
-		policy: {
-			endpoint: env("AUTOSECOPS_POLICY_ENDPOINT"),
-			apiKey: env("AUTOSECOPS_API_KEY"),
-			timeoutMs: Number(env("AUTOSECOPS_POLICY_TIMEOUT_MS") || "1000"),
-		},
-	});
-	process.stdout.write(JSON.stringify(result));
+
+	let raw = "";
+	try {
+		raw = readFileSync(0, "utf-8");
+	} catch (error) {
+		// We could not even read the tool call, so we cannot judge it.
+		blockUnconditionally(
+			`${DENY_HEADLINE}\nSingularity AIDR could not read the tool call, so it was blocked.`,
+		);
+		logger.error("codex hook could not read stdin", { error: String(error) });
+		return;
+	}
+
+	let input: Record<string, unknown>;
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			throw new Error("hook input is not a JSON object");
+		}
+		input = parsed as Record<string, unknown>;
+	} catch (error) {
+		blockUnconditionally(
+			`${DENY_HEADLINE}\nSingularity AIDR could not parse the tool call, so it was blocked. (${String(error)})`,
+		);
+		return;
+	}
+
+	// The Codex schema only ever sends PreToolUse here, but a mismatched event
+	// means our configuration is wrong; blocking is the safe reading.
+	const event = typeof input.hook_event_name === "string" ? input.hook_event_name : "PreToolUse";
+	if (event !== "PreToolUse") {
+		write({});
+		return;
+	}
+
+	try {
+		const outcome = await enforceCodexPreToolUse(input, { logger });
+		write(outcome.wire);
+	} catch (error) {
+		// enforceCodexPreToolUse already fails closed internally; reaching here
+		// means something outside it broke, which must still block.
+		blockUnconditionally(
+			`${DENY_HEADLINE}\nSingularity AIDR failed while evaluating this tool call, so it was blocked. (${String(error)})`,
+		);
+	}
 }
-await main();
+
+main().catch((error) => {
+	blockUnconditionally(
+		`${DENY_HEADLINE}\nSingularity AIDR failed to start, so the tool call was blocked. (${String(error)})`,
+	);
+});

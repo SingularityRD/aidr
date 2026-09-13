@@ -88,11 +88,11 @@
     }
   },
   "scripts": {
-    "build": "pnpm -C ../core build && npm run clean && npm run sync:assets && node esbuild.config.cjs",
+    "build": "node ../../scripts/ensure-core-build.mjs && npm run clean && npm run sync:assets && node esbuild.config.cjs",
     "build:release": "npm run clean && npm run sync:assets && node esbuild.config.cjs --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id aidr-cursor && node ../../scripts/check-no-sourcemaps.mjs dist",
     "clean": "node ../../scripts/rmrf.mjs dist resources .vsce",
     "sync:assets": "node scripts/sync-assets.mjs",
-    "pretest": "pnpm -C ../core build && npm run sync:assets && node esbuild.config.cjs",
+    "pretest": "node ../../scripts/ensure-core-build.mjs && npm run sync:assets && node esbuild.config.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "package:cursor:vsix": "npm run build:release && pnpm dlx @vscode/vsce package -o ../../aidr-cursor.vsix --no-dependencies --allow-package-secrets github --allow-package-secrets slack",

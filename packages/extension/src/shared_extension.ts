@@ -19,6 +19,7 @@ import type {
 	ManagedHookInstallOptions,
 	ManagedHookScope,
 } from "./managedHooks.js";
+import { MAX_INSPECTED_OUTPUT_BYTES } from "./output-inspection.js";
 
 interface ManagedHookInstaller {
 	installManagedHooks(options: ManagedHookInstallOptions): Promise<ManagedHookHealth>;
@@ -176,6 +177,7 @@ export function activateManagedHooksExtension(
 					`managed events: ${
 						health.installedEvents.length > 0 ? health.installedEvents.join(", ") : "none"
 					}`,
+					...describeOutputInspection(target.hostName),
 					`last verdict: ${lastVerdict}`,
 				].join("\n");
 
@@ -183,6 +185,21 @@ export function activateManagedHooksExtension(
 			});
 		}),
 	);
+}
+
+function describeOutputInspection(hostName: string): string[] {
+	if (hostName === "Cursor") {
+		return [
+			"tool output inspection: MCP replacement before model consumption; non-MCP advisory only",
+			"assistant response inspection: observe-only after display (host cannot block or replace)",
+			`output inspection limit: ${MAX_INSPECTED_OUTPUT_BYTES} bytes; larger output is coverage-limited, never clean`,
+		];
+	}
+	return [
+		"tool output inspection: blocks further model processing",
+		"assistant response inspection: unsupported by the host hook API",
+		`output inspection limit: ${MAX_INSPECTED_OUTPUT_BYTES} bytes; larger output is coverage-limited, never clean`,
+	];
 }
 
 function getScope(scopeSettingKey: string): ManagedHookScope {

@@ -8,6 +8,16 @@
 
 import type { AIDRClient } from "../client.js";
 import type { CheckResult } from "../config.js";
+import {
+	type ApprovalCallback,
+	type EnforcementOutcome,
+	enforceCheckResult,
+} from "../enforcement.js";
+import {
+	formatToolOutputBlockReason,
+	guardToolOutput,
+	type ToolOutputGuardOptions,
+} from "../output-guard.js";
 
 /**
  * Options for AIDRSpeaker wrapper
@@ -15,14 +25,32 @@ import type { CheckResult } from "../config.js";
 export interface AIDRSpeakerOptions {
 	/** Session ID for tracking security decisions */
 	sessionId?: string;
-	/** Whether to throw on deny verdict (default: false - messages are silently dropped) */
+	/**
+	 * Whether to throw AIDRAutoGenError instead of returning
+	 * `{ allowed: false }` when a message must not proceed. Applies to every
+	 * non-executing verdict: `deny`, and `ask` without (or refused) approval.
+	 * Default: false — the message is blocked/returned as not allowed.
+	 */
 	throwOnDeny?: boolean;
 	/** Whether to block code execution agents (default: true) */
 	blockCodeExecution?: boolean;
+	/**
+	 * Caller-supplied human-approval callback for `ask` verdicts. When omitted
+	 * (the default) an `ask` verdict blocks: the message is reported as not
+	 * allowed instead of being treated as "all checks passed".
+	 */
+	onAsk?: ApprovalCallback;
+	/**
+	 * Allow an indeterminate result (failed/inconsistent security check) to be
+	 * routed to `onAsk`. Defaults to `false`.
+	 */
+	allowApprovalOfIndeterminateResults?: boolean;
 	/** Allow specific agent roles */
 	allowedRoles?: string[];
 	/** Deny specific agent roles */
 	deniedRoles?: string[];
+	/** Inspect model/tool message content before another AutoGen agent consumes it. */
+	outputGuard?: ToolOutputGuardOptions;
 }
 
 /**
@@ -129,10 +157,16 @@ export class AIDRSpeaker {
 	 * 4. Blocks code execution if configured
 	 * 5. Returns validation result
 	 *
+	 * Enforcement is fail-closed: the message proceeds only when every check
+	 * returns an explicit `allow`, or when an `ask` verdict was explicitly
+	 * approved by the caller-supplied `onAsk` callback. An `ask` verdict with no
+	 * approval callback — and any indeterminate (failed) check — is reported as
+	 * `allowed: false`; it is never converted into a synthesized allow.
+	 *
 	 * @param message - The AutoGen message
 	 * @param sender - The sender agent information
 	 * @returns Promise resolving to validation result
-	 * @throws AIDRAutoGenError if verdict is deny and throwOnDeny is true
+	 * @throws AIDRAutoGenError when a check does not allow the message and throwOnDeny is true
 	 */
 	async onMessage(
 		message: AutoGenMessage,
@@ -147,16 +181,12 @@ export class AIDRSpeaker {
 				reason: `Sender role '${sender.role}' is in denied roles list`,
 			};
 
-			if (this.options.throwOnDeny) {
-				throw new AIDRAutoGenError(
-					`AIDR: Message blocked - denied role: ${sender.role}`,
-					verdict,
-					message,
-					sender,
-				);
-			}
-
-			return { allowed: false, verdict };
+			return this.blockMessage(
+				`AIDR: Message blocked - denied role: ${sender.role}`,
+				verdict,
+				message,
+				sender,
+			);
 		}
 
 		if (this.options.allowedRoles && !this.options.allowedRoles.includes(sender.role || "")) {
@@ -167,22 +197,39 @@ export class AIDRSpeaker {
 				reason: `Sender role '${sender.role}' is not in allowed roles list`,
 			};
 
-			if (this.options.throwOnDeny) {
-				throw new AIDRAutoGenError(
-					`AIDR: Message blocked - role not allowed: ${sender.role}`,
-					verdict,
-					message,
-					sender,
-				);
-			}
-
-			return { allowed: false, verdict };
+			return this.blockMessage(
+				`AIDR: Message blocked - role not allowed: ${sender.role}`,
+				verdict,
+				message,
+				sender,
+			);
 		}
+
+		const guardedContent = guardToolOutput(message.content ?? "", this.options.outputGuard);
+		if (guardedContent.delivery === "block") {
+			const reason = formatToolOutputBlockReason(guardedContent.inspection);
+			return this.blockMessage(
+				reason,
+				{
+					allowed: false,
+					decision: "deny",
+					confidence: 1,
+					reason,
+					metadata: { outputInspection: true },
+				},
+				message,
+				sender,
+			);
+		}
+		const inspectedMessage =
+			guardedContent.delivery === "redact"
+				? { ...message, content: guardedContent.output as string }
+				: message;
 
 		// Validate message content
 		const contentVerdict = await this.aidrClient.check({
 			action: "read",
-			resource: message.content || "",
+			resource: inspectedMessage.content || "",
 			context: {
 				sessionId: this.options.sessionId || `autogen_${Date.now()}`,
 				tool: "autogen_message",
@@ -192,68 +239,93 @@ export class AIDRSpeaker {
 			},
 		});
 
-		if (contentVerdict.decision === "deny") {
-			if (this.options.throwOnDeny) {
-				throw new AIDRAutoGenError(
-					`AIDR: ${contentVerdict.reason || "Message content blocked"}`,
-					contentVerdict,
-					message,
+		const contentOutcome = await this.enforce(contentVerdict);
+		if (!contentOutcome.execute) {
+			return this.blockMessage(
+				`AIDR: ${contentOutcome.message}`,
+				contentVerdict,
+				inspectedMessage,
+				sender,
+			);
+		}
+		const contentApproved = contentVerdict.decision !== "allow";
+
+		// Validate function calls
+		if (inspectedMessage.function_call || inspectedMessage.tool_calls) {
+			const functionVerdict = await this.validateFunctionCalls(inspectedMessage, sender);
+
+			const functionOutcome = await this.enforce(functionVerdict);
+			if (!functionOutcome.execute) {
+				return this.blockMessage(
+					`AIDR: ${functionOutcome.message}`,
+					functionVerdict,
+					inspectedMessage,
 					sender,
 				);
 			}
 
-			return { allowed: false, verdict: contentVerdict };
-		}
+			// Block code execution if configured
+			if (this.options.blockCodeExecution !== false) {
+				const codeVerdict = await this.checkCodeExecution(inspectedMessage, sender);
 
-		// Validate function calls
-		if (message.function_call || message.tool_calls) {
-			const functionVerdict = await this.validateFunctionCalls(message, sender);
-
-			if (functionVerdict.decision === "deny") {
-				if (this.options.throwOnDeny) {
-					throw new AIDRAutoGenError(
-						`AIDR: ${functionVerdict.reason || "Function call blocked"}`,
-						functionVerdict,
-						message,
+				const codeOutcome = await this.enforce(codeVerdict);
+				if (!codeOutcome.execute) {
+					return this.blockMessage(
+						`AIDR: ${codeOutcome.message}`,
+						codeVerdict,
+						inspectedMessage,
 						sender,
 					);
 				}
-
-				return { allowed: false, verdict: functionVerdict };
-			}
-
-			// Block code execution if configured
-			if (this.options.blockCodeExecution !== false) {
-				const codeVerdict = await this.checkCodeExecution(message, sender);
-
-				if (codeVerdict.decision === "deny") {
-					if (this.options.throwOnDeny) {
-						throw new AIDRAutoGenError(
-							`AIDR: ${codeVerdict.reason || "Code execution blocked"}`,
-							codeVerdict,
-							message,
-							sender,
-						);
-					}
-
-					return { allowed: false, verdict: codeVerdict };
-				}
 			}
 		}
 
-		// All checks passed
+		// Every check either returned an explicit allow or was approved by the
+		// caller-supplied onAsk callback. No verdict is invented here.
 		const combinedVerdict: CheckResult = {
 			allowed: true,
 			decision: "allow",
 			confidence: contentVerdict.confidence,
-			reason: "Message validated successfully",
+			reason: contentApproved
+				? "Message validated successfully (ask verdict approved by onAsk)"
+				: "Message validated successfully",
 		};
 
 		return {
 			allowed: true,
 			verdict: combinedVerdict,
-			filteredMessage: message,
+			filteredMessage: inspectedMessage,
 		};
+	}
+
+	/**
+	 * Apply the shared fail-closed enforcement semantic to a check result.
+	 *
+	 * @param result - The verdict returned by the AIDR client
+	 * @returns The enforcement outcome (execute or block)
+	 */
+	private enforce(result: CheckResult): Promise<EnforcementOutcome> {
+		return enforceCheckResult(result, {
+			onAsk: this.options.onAsk,
+			allowApprovalOfIndeterminateResults: this.options.allowApprovalOfIndeterminateResults,
+		});
+	}
+
+	/**
+	 * Report a message that must not proceed, throwing only when the caller
+	 * opted into throwing.
+	 */
+	private blockMessage(
+		reason: string,
+		verdict: CheckResult,
+		message: AutoGenMessage,
+		sender: AutoGenSender,
+	): MessageValidationResult {
+		if (this.options.throwOnDeny) {
+			throw new AIDRAutoGenError(reason, verdict, message, sender);
+		}
+
+		return { allowed: false, verdict };
 	}
 
 	/**
@@ -261,7 +333,9 @@ export class AIDRSpeaker {
 	 *
 	 * @param message - The AutoGen message
 	 * @param sender - The sender agent
-	 * @returns AIDR verdict for function calls
+	 * @returns AIDR verdict for function calls; the first verdict that is not an
+	 * explicit `allow` (so `deny` and `ask` both stop the message from being
+	 * treated as validated)
 	 */
 	private async validateFunctionCalls(
 		message: AutoGenMessage,
@@ -303,10 +377,10 @@ export class AIDRSpeaker {
 				},
 			});
 
-			if (verdict.decision === "deny") {
+			if (verdict.decision !== "allow") {
 				return {
 					...verdict,
-					reason: `Function call '${func.name}' blocked: ${verdict.reason}`,
+					reason: `Function call '${func.name}' not allowed: ${verdict.reason}`,
 				};
 			}
 		}
@@ -401,6 +475,9 @@ export class AIDRSpeaker {
 	/**
 	 * Validate a function response before sending
 	 *
+	 * Fail-closed: the response is only forwarded when the check explicitly
+	 * allows it (or an `ask` verdict was approved through `onAsk`).
+	 *
 	 * @param functionName - Name of the function
 	 * @param response - Function response content
 	 * @param sender - The agent sending the response
@@ -423,23 +500,37 @@ export class AIDRSpeaker {
 			},
 		});
 
-		if (verdict.decision === "deny") {
-			if (this.options.throwOnDeny) {
-				throw new AIDRAutoGenError(
-					`AIDR: Function response blocked for '${functionName}': ${verdict.reason}`,
-					verdict,
-					{ content: response, role: "function" },
-					sender,
-				);
-			}
+		const outcome = await this.enforce(verdict);
+		if (!outcome.execute) {
+			return this.blockMessage(
+				`AIDR: Function response blocked for '${functionName}': ${outcome.message}`,
+				verdict,
+				{ content: response, role: "function" },
+				sender,
+			);
+		}
 
-			return { allowed: false, verdict };
+		const guardedResponse = guardToolOutput(response, this.options.outputGuard);
+		if (guardedResponse.delivery === "block") {
+			const reason = formatToolOutputBlockReason(guardedResponse.inspection);
+			return this.blockMessage(
+				reason,
+				{
+					allowed: false,
+					decision: "deny",
+					confidence: 1,
+					reason,
+					metadata: { outputInspection: true },
+				},
+				{ content: response, role: "function" },
+				sender,
+			);
 		}
 
 		return {
 			allowed: true,
 			verdict,
-			filteredMessage: { content: response, role: "function" },
+			filteredMessage: { content: guardedResponse.output as string, role: "function" },
 		};
 	}
 
@@ -499,7 +590,8 @@ export class AIDRSpeaker {
 				},
 			});
 
-			if (verdict.decision === "deny") {
+			const outcome = await this.enforce(verdict);
+			if (!outcome.execute) {
 				return null; // Block this speaker
 			}
 
@@ -555,8 +647,10 @@ export function wrapAutoGenHandler(
 		const result = await speaker.onMessage(message, sender);
 
 		if (result.allowed) {
-			await handler(message, sender);
+			await handler(result.filteredMessage ?? message, sender);
 		}
-		// If not allowed, message is silently dropped (or error thrown if throwOnDeny)
+		// Fail-closed: on deny, ask without approval, or a failed/indeterminate
+		// check the message is dropped (or AIDRAutoGenError is thrown when
+		// throwOnDeny is set). The handler is never called for `ask`.
 	};
 }

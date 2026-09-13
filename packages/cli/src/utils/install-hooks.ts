@@ -4,102 +4,106 @@ import { join } from "node:path";
 import type { Environment } from "./config-manager.js";
 import { updateConfig } from "./config-manager.js";
 
-const HOOKS_DIR = join(homedir(), ".singularity-aidr", "hooks");
+const AIDR_DIR = join(homedir(), ".singularity-aidr");
 
-export async function installHooks(env: Environment): Promise<void> {
-	if (!existsSync(HOOKS_DIR)) {
-		mkdirSync(HOOKS_DIR, { recursive: true });
+export interface HookInstallResult {
+	/** Single line describing precisely what was and was not done. */
+	summary: string;
+	/** Extra lines shown to the user after setup (documented next steps). */
+	followUp: string[];
+}
+
+/**
+ * Records the local setup state and tells the user truthfully what still has to
+ * happen for the agent to be protected.
+ *
+ * A previous version of this module wrote `claude-hooks.json`, `aidr.enabled` /
+ * `aidr.hooksPath` editor settings and an OpenClaw `plugins` array, then reported
+ * success. None of those files or keys are read by any shipped connector, so the
+ * agent was never actually protected while the CLI claimed it was.
+ *
+ * Correct behaviour is to point at the documented, real installation path for
+ * the detected runtime and never imply that protection is active when it is not.
+ */
+export async function installHooks(env: Environment): Promise<HookInstallResult> {
+	if (!existsSync(AIDR_DIR)) {
+		mkdirSync(AIDR_DIR, { recursive: true, mode: 0o700 });
 	}
 
-	// Install agent-specific hooks
+	// Record the detected runtime so `aidr status` can report it. This is state
+	// only - it does not install anything.
+	updateConfig({ hooksInstalled: false });
+
+	const followUp = ["Protection is NOT yet active for your agent. Install the connector:"];
+
 	switch (env.agent) {
 		case "claude":
-			await installClaudeHooks();
+			followUp.push(
+				"  Claude Code:  /plugin marketplace add https://github.com/singularityrd/aidr.git",
+				"                /plugin install aidr@aidr",
+			);
 			break;
 		case "cursor":
+			followUp.push(
+				"  Cursor:       build and install the VSIX, then run",
+				"                'Singularity AIDR: Enable protection' from the command palette.",
+			);
+			break;
 		case "vscode":
-			await installVSCodeHooks(env.agent);
+			followUp.push(
+				"  VS Code:      build and install the VSIX, then enable protection",
+				"                from the command palette.",
+			);
 			break;
 		case "openclaw":
-			await installOpenClawHooks();
+			followUp.push("  OpenClaw:     openclaw plugins install @singularityrd/aidr-openclaw");
 			break;
 		default:
-			// Install generic hooks
-			await installGenericHooks();
+			followUp.push(
+				"  See docs/getting-started.md for the supported runtimes",
+				"  (Claude Code, Cursor, VS Code, OpenClaw, OpenCode).",
+			);
+			break;
 	}
 
-	updateConfig({ hooksInstalled: true });
-}
+	followUp.push("  Docs: https://aidr.singularityrd.com");
 
-async function installClaudeHooks(): Promise<void> {
-	const hookContent = {
-		hooks: [
-			{
-				name: "aidr-pre-tool",
-				entrypoint: "~/.singularity-aidr/hooks/pre-tool.js",
-				event: "pre_tool_use",
-			},
-		],
+	return {
+		summary:
+			env.agent === "unknown"
+				? "No supported agent detected - nothing installed"
+				: `${env.agent} detected - connector install required`,
+		followUp,
 	};
-
-	writeFileSync(join(HOOKS_DIR, "claude-hooks.json"), JSON.stringify(hookContent, null, 2));
 }
 
-async function installVSCodeHooks(editor: "cursor" | "vscode"): Promise<void> {
-	const settingsDir = join(homedir(), editor === "cursor" ? ".cursor" : ".vscode");
+/**
+ * Writes a generic hook entry point for runtimes without a dedicated connector.
+ * The script is self-contained: it invokes the packaged AIDR hook bundle rather
+ * than a CLI subcommand that does not exist.
+ */
+export function writeGenericHookTemplate(hookBundlePath: string): string {
+	const target = join(AIDR_DIR, "hooks", "generic-hook.cjs");
+	mkdirSync(join(AIDR_DIR, "hooks"), { recursive: true, mode: 0o700 });
 
-	if (!existsSync(settingsDir)) {
-		mkdirSync(settingsDir, { recursive: true });
-	}
-
-	const settingsFile = join(settingsDir, "settings.json");
-	let settings: Record<string, unknown> = {};
-
-	if (existsSync(settingsFile)) {
-		settings = JSON.parse(
-			await import("node:fs").then((fs) => fs.readFileSync(settingsFile, "utf-8")),
-		);
-	}
-
-	settings["aidr.enabled"] = true;
-	settings["aidr.hooksPath"] = HOOKS_DIR;
-
-	writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
-}
-
-async function installOpenClawHooks(): Promise<void> {
-	const configPath = join(homedir(), ".openclaw", "config.json");
-
-	if (!existsSync(configPath)) {
-		throw new Error("OpenClaw not configured. Please run 'openclaw setup' first.");
-	}
-
-	const config = JSON.parse(
-		await import("node:fs").then((fs) => fs.readFileSync(configPath, "utf-8")),
-	);
-	config.plugins = config.plugins || [];
-
-	if (!config.plugins.includes("@singularityrd/aidr-openclaw")) {
-		config.plugins.push("@singularityrd/aidr-openclaw");
-	}
-
-	writeFileSync(configPath, JSON.stringify(config, null, 2));
-}
-
-async function installGenericHooks(): Promise<void> {
-	// Create a generic hook template that users can manually integrate
 	const template = `#!/usr/bin/env node
-// AIDR Generic Hook
-// Add this to your agent's hook system
+// Singularity AIDR generic hook.
+// Wire this into your agent's hook system: it reads a tool-call JSON payload on
+// stdin and writes the AIDR verdict JSON to stdout.
+const { spawnSync } = require("node:child_process");
 
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+const HOOK_BUNDLE = ${JSON.stringify(hookBundlePath)};
 
-const input = fs.readFileSync(0, 'utf-8');
-const result = execSync('aidr check', { input, encoding: 'utf-8' });
-console.log(result);
+const chunks = [];
+process.stdin.on("data", (c) => chunks.push(c));
+process.stdin.on("end", () => {
+	const input = Buffer.concat(chunks);
+	const result = spawnSync(process.execPath, [HOOK_BUNDLE, "cursor"], { input });
+	if (result.stdout) process.stdout.write(result.stdout);
+	process.exit(0);
+});
 `;
 
-	writeFileSync(join(HOOKS_DIR, "generic-hook.js"), template);
+	writeFileSync(target, template, { mode: 0o700 });
+	return target;
 }

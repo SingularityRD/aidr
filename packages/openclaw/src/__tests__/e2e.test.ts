@@ -159,12 +159,15 @@ describeE2E("E2E: Singularity AIDR plugin in OpenClaw gateway", { timeout: 180_0
 		assertAidrOrRefusal(text, ctx);
 	});
 
-	it("aidr_approve tool is registered", async (ctx) => {
+	it("does not expose an agent-callable approval tool", async (ctx) => {
 		const text = await chat("What tools do you have? List all of them.");
-		const mentionsAidr = text.toLowerCase().includes("aidr_approve");
-		if (!mentionsAidr) {
-			ctx.skip("Model did not mention aidr_approve in tool list");
+		const lower = text.toLowerCase();
+		// Only meaningful if the model actually listed Singularity AIDR tools.
+		if (!lower.includes("aidr_")) {
+			ctx.skip("Model did not list any Singularity AIDR tools");
 		}
-		expect(mentionsAidr).toBe(true);
+		// An approval tool callable by the model would let a prompt-injected agent
+		// approve its own blocked action.
+		expect(lower).not.toContain("aidr_approve");
 	});
 });

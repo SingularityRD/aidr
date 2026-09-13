@@ -17,7 +17,73 @@ openclaw plugins install @singularityrd/aidr-openclaw
 - Matches commands and file paths against YAML-based threat definitions
 - Validates npm/PyPI packages against supply-chain risks
 - Scans installed plugins for threats at session start
-- Provides a `aidr_approve` gate tool for interactive approval of flagged actions
+- Inspects tool output and outbound model responses with a bounded 256 KiB text budget
+- Replaces risky persisted tool output and risky outbound text with a safe, non-echoing notice
+- Blocks `ask` verdicts until a human approves them out of band (see below)
+
+## Output protection boundaries
+
+OpenClaw exposes different guarantees at each output hook, so the connector
+labels them explicitly:
+
+- `after_tool_call` observes the result after the tool has executed. A finding is
+  recorded and correlated with the run when OpenClaw supplies a run or session
+  identifier. This hook cannot undo the call or change what the same-turn model
+  already received.
+- `tool_result_persist` synchronously replaces risky text before OpenClaw writes
+  it to its transcript. This protects later transcript reuse, but it is still a
+  **post-execution transcript boundary**, not a pre-consumption tool-result gate.
+- `message_sending` scans outbound text and replaces a risky or incompletely
+  inspected response before channel delivery. The replacement includes only rule
+  identifiers and safe metadata; it never repeats detected content or secrets.
+- `reply_payload_sending` applies the same decision to the complete normalized
+  reply. A risky payload becomes a fresh text-only notice, so attached media,
+  presentation data, and delivery actions cannot bypass the text decision.
+
+The scanner visits at most 256 KiB of primitive text with explicit node and
+depth ceilings. Output beyond those limits is reported as incompletely inspected
+and is withheld at the delivery boundary instead of being declared clean.
+
+## Verdicts
+
+| Verdict | Behaviour                                                                 |
+| ------- | ------------------------------------------------------------------------- |
+| `allow` | Tool call passes through.                                                  |
+| `deny`  | Tool call is blocked and reported to the model.                            |
+| `ask`   | Tool call is **blocked**. The model is told to hand the approval reference (`actionId`) to the user; nothing the model can call can approve it. |
+| paranoid sensitivity | `ask` is promoted to `deny` (no approval path at all).      |
+
+## Approving a flagged action
+
+**The agent cannot approve its own actions.** Singularity AIDR deliberately does
+not register an approval tool. An earlier version exposed an agent-callable
+`aidr_approve` tool; because the block message necessarily contains the
+`actionId`, a prompt-injected model could approve its own blocked call and then
+re-issue it (and make the bypass permanent through `aidr_allowlist_add`). That
+tool has been removed.
+
+Approval is therefore an **out-of-band, human-only action**. Today the supported
+paths are:
+
+1. **Permanently allowlist the exact artifact.** Add the URL/command/file path to
+   the allowlist file (`~/.singularity-aidr/allowlist.json` by default) — e.g.
+   with the Claude Code connector's allowlist flow, or by editing the file. Any
+   later tool call with that exact artifact evaluates to `allowlisted`.
+2. **Out-of-band `ApprovalStore` approval** for hosts that wire their own human
+   approval channel: the process that owns the `ApprovalStore` can
+   `setPending(actionId, …)` + `approve(actionId)` (see `approveAction` in
+   `@singularityrd/aidr-core`) and the retry is then allowed.
+
+### Honest limitation
+
+OpenClaw's plugin API does not (yet) expose a host-native confirmation dialog the
+plugin can drive, so **this connector has no in-session approval path**. The
+practical consequence: an `ask` verdict cannot be approved while the session is
+running — it stays blocked, and the user must allowlist the artifact or answer
+the model's report with an alternative action. Blocking is the safe failure mode:
+a blocked action is recoverable, a self-approved one is not. When OpenClaw
+exposes a host confirmation primitive, wire it to `ApprovalStore` **without**
+exposing it as a model-callable tool.
 
 ## Configuration
 
@@ -45,5 +111,3 @@ Order Form. Threat resources retain the [Detection Rule License 1.1](resources/t
 Third-party components retain their original terms listed in
 [THIRD_PARTY_NOTICES](../../THIRD_PARTY_NOTICES). Legal approval of the
 current Release Candidate remains open.
-
-

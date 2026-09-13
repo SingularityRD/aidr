@@ -207,71 +207,68 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 		expect(message).toContain("Severity:");
 	});
 
-	it("creates an approval action for a high-risk command", async () => {
+	it("blocks a high-risk command and surfaces an operator-only approval reference", async () => {
 		const message = await captureBlock("chmod 777 ./script.sh", "ask-session");
-		expect(message).toContain("requires explicit user approval");
-		expect(message).toContain("aidr_approve");
+		expect(message).toContain("blocked it pending explicit user approval");
 		expect(actionIdFrom(message)).toHaveLength(64);
+		// No agent-callable approval recipe is offered.
+		expect(message).not.toContain("aidr_approve");
+		expect(message).toContain("cannot approve this action yourself");
 	});
 
-	it("approves an ask verdict and allows the exact retry", async () => {
+	it("exposes no agent-callable approval tool and keeps the retry blocked", async () => {
 		const command = "chmod 777 ./approved-script.sh";
 		const message = await captureBlock(command, "approve-session");
 		const actionId = actionIdFrom(message);
-		const approve = hooks.tool?.aidr_approve;
-		expect(approve).toBeDefined();
 
-		await expect(
-			approve?.execute({ actionId, approved: true }, makeContext("approve-session")),
-		).resolves.toContain("Approved action");
-		await expect(runBefore(command, "approve-session", "retry-call")).resolves.toBeUndefined();
+		// An approval tool callable by the model would let a prompt-injected agent
+		// approve its own blocked action: the actionId is in the block message.
+		expect(actionId).toHaveLength(64);
+		expect(hooks.tool?.aidr_approve).toBeUndefined();
+		expect(Object.keys(hooks.tool ?? {}).filter((name) => /approv/i.test(name))).toEqual([]);
+
+		// Even armed with the actionId from the error message, the retry is blocked.
+		await expect(runBefore(command, "approve-session", "retry-call")).rejects.toThrow(
+			/blocked it pending explicit user approval/,
+		);
 	});
 
-	it("rejects approval and re-asks on retry", async () => {
+	it("keeps re-asking (never approving) when a flagged action is retried", async () => {
 		const command = "chmod 777 ./rejected-script.sh";
-		const message = await captureBlock(command, "reject-session");
-		const actionId = actionIdFrom(message);
-		const approve = hooks.tool?.aidr_approve;
-		expect(approve).toBeDefined();
+		const first = await captureBlock(command, "reject-session");
+		const retry = await captureBlock(command, "reject-session");
 
-		await expect(
-			approve?.execute({ actionId, approved: false }, makeContext("reject-session")),
-		).resolves.toContain("Rejected by user");
-		const retryMessage = await captureBlock(command, "reject-session");
-		expect(retryMessage).toContain("requires explicit user approval");
+		expect(retry).toContain("blocked it pending explicit user approval");
+		// Same action, same approval reference - and still no way for the agent to
+		// satisfy it on its own.
+		expect(actionIdFrom(retry)).toBe(actionIdFrom(first));
 	});
 
-	it("persists an allowlist entry only after approval and bypasses the exact artifact", async () => {
+	it("aidr_allowlist_add refuses without a genuine out-of-band approval", async () => {
 		const command = "chmod 777 ./allowlisted-script.sh";
 		const message = await captureBlock(command, "allowlist-session");
 		const actionId = actionIdFrom(message);
-		const approve = hooks.tool?.aidr_approve;
 		const add = hooks.tool?.aidr_allowlist_add;
 		const remove = hooks.tool?.aidr_allowlist_remove;
-		expect(approve).toBeDefined();
 		expect(add).toBeDefined();
 		expect(remove).toBeDefined();
 
-		await approve?.execute({ actionId, approved: true }, makeContext("allowlist-session"));
+		// The agent knows the actionId, but knowing it is not approval: the
+		// allowlist tool only accepts artifacts with a recorded human approval.
 		await expect(
 			add?.execute(
-				{ type: "command", value: command, reason: "AIDR contract test" },
+				{ type: "command", value: command, reason: "self-approved", actionId },
 				makeContext("allowlist-session"),
 			),
-		).resolves.toContain("Added command");
+		).resolves.toContain("no recent user approval");
 
-		const allowlist = JSON.parse(await readFile(allowlistPath, "utf8")) as {
-			commands?: Record<string, unknown>;
-		};
-		expect(Object.keys(allowlist.commands ?? {}).length).toBeGreaterThan(0);
-		await expect(runBefore(command, "allowlist-session", "allowlisted-retry")).resolves.toBeUndefined();
-
+		// Nothing was persisted and the command stays blocked.
+		await expect(runBefore(command, "allowlist-session", "allowlisted-retry")).rejects.toThrow(
+			/blocked it pending explicit user approval/,
+		);
 		await expect(
 			remove?.execute({ type: "command", value: command }, makeContext("allowlist-session")),
-		).resolves.toContain("Removed command");
-		await expect(captureBlock(command, "allowlist-session")).resolves.toContain(
-			"requires explicit user approval",
-		);
+		).resolves.toContain("not found");
 	});
 
 	it("measures harmless harmful-use-case probes at the OpenCode hook", async () => {
@@ -350,12 +347,13 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 			{ command: "npm install synthetic-aidr-package@latest" },
 			"matrix-package-check",
 		);
+		expect(packageCheckProbe.status).toBe("guarded");
+		expect(packageCheckProbe.message).toContain("Synthetic package intelligence deny");
 		results.push({
 			name: "package supply-chain change with production-like package check",
 			command: "npm install synthetic-aidr-package@latest",
 			...packageCheckProbe,
-			expected:
-				"currently uncovered: OpenCode sends tool='bash' while package checks match toolName='Bash'",
+			expected: "guarded by the shared package intelligence path",
 		});
 
 		for (const [index, probe] of [

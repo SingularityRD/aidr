@@ -10,14 +10,12 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { VERSION } from "@singularityrd/aidr-core";
 import { Command } from "commander";
-import { LemonSqueezyBilling } from "./billing.js";
 import { AIDRClient } from "./client.js";
 import { SDKConfigSchema } from "./config.js";
 import { FreemiumManager, InMemoryLicenseManager } from "./freemium.js";
 
 const CONFIG_FILE_NAME = ".aidr.json";
 const GLOBAL_CONFIG_PATH = resolve(homedir(), CONFIG_FILE_NAME);
-const BILLING_CONFIG_NAME = ".aidr-billing.json";
 
 /**
  * Load configuration from local or global config file
@@ -31,21 +29,6 @@ function loadConfig(): unknown {
 	// Fall back to global config
 	if (existsSync(GLOBAL_CONFIG_PATH)) {
 		return JSON.parse(readFileSync(GLOBAL_CONFIG_PATH, "utf-8"));
-	}
-	return null;
-}
-
-/**
- * Load billing configuration
- */
-function loadBillingConfig(): unknown {
-	const localPath = resolve(process.cwd(), BILLING_CONFIG_NAME);
-	if (existsSync(localPath)) {
-		return JSON.parse(readFileSync(localPath, "utf-8"));
-	}
-	const globalPath = resolve(homedir(), BILLING_CONFIG_NAME);
-	if (existsSync(globalPath)) {
-		return JSON.parse(readFileSync(globalPath, "utf-8"));
 	}
 	return null;
 }
@@ -67,27 +50,15 @@ function prompt(question: string): Promise<string> {
 }
 
 /**
- * Get or create FreemiumManager instance
+ * Get a FreemiumManager for local licence/usage bookkeeping.
+ *
+ * No payment provider is involved: entitlements are issued server-side by a
+ * signature-verified webhook, so this only manages the locally recorded licence
+ * and usage counters.
  */
 function getFreemiumManager(): FreemiumManager | null {
-	const billingConfig = loadBillingConfig() as {
-		lemonSqueezyApiKey?: string;
-		storeId?: string;
-		productId?: string;
-	} | null;
-
-	if (!billingConfig?.lemonSqueezyApiKey || !billingConfig.storeId || !billingConfig.productId) {
-		return null;
-	}
-
-	const billing = new LemonSqueezyBilling({
-		lemonSqueezyApiKey: billingConfig.lemonSqueezyApiKey,
-		storeId: billingConfig.storeId,
-		productId: billingConfig.productId,
-	});
-
 	const licenseManager = new InMemoryLicenseManager();
-	return new FreemiumManager(billing, licenseManager);
+	return new FreemiumManager(licenseManager);
 }
 
 const program = new Command();
@@ -158,146 +129,11 @@ program
 		}
 	});
 
-program
-	.command("billing:init")
-	.description("Initialize Lemon Squeezy billing configuration")
-	.option("-g, --global", "Create global config in home directory")
-	.option("-f, --force", "Overwrite existing config")
-	.action(async (options) => {
-		const configPath = options.global
-			? resolve(homedir(), BILLING_CONFIG_NAME)
-			: resolve(process.cwd(), BILLING_CONFIG_NAME);
-
-		if (existsSync(configPath) && !options.force) {
-			console.error(`Error: Billing config already exists at ${configPath}`);
-			console.error("Use --force to overwrite");
-			process.exit(1);
-		}
-
-		console.log("Initializing Lemon Squeezy billing configuration...\n");
-
-		const apiKey = await prompt("Lemon Squeezy API Key (required): ");
-		if (!apiKey) {
-			console.error("Error: API key is required");
-			process.exit(1);
-		}
-
-		const storeId = await prompt("Store ID (required): ");
-		if (!storeId) {
-			console.error("Error: Store ID is required");
-			process.exit(1);
-		}
-
-		const productId = await prompt("Product ID (required): ");
-		if (!productId) {
-			console.error("Error: Product ID is required");
-			process.exit(1);
-		}
-
-		const webhookSecret = await prompt("Webhook Secret (optional): ");
-
-		const config = {
-			lemonSqueezyApiKey: apiKey,
-			storeId,
-			productId,
-			webhookSecret: webhookSecret || undefined,
-		};
-
-		try {
-			writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-			console.log(`\n✓ Billing configuration saved to ${configPath}`);
-		} catch (error) {
-			console.error(`Error: Failed to write config file: ${error}`);
-			process.exit(1);
-		}
-	});
-
-program
-	.command("billing:checkout")
-	.description("Generate checkout URL for license purchase")
-	.argument("<userId>", "User ID for the license")
-	.option("--variant <variantId>", "Product variant ID")
-	.option("--redirect <url>", "Redirect URL after purchase")
-	.action(async (userId, options) => {
-		const billingConfig = loadBillingConfig() as {
-			lemonSqueezyApiKey?: string;
-			storeId?: string;
-			productId?: string;
-		} | null;
-
-		if (
-			!billingConfig?.lemonSqueezyApiKey ||
-			!billingConfig.storeId ||
-			!billingConfig.productId
-		) {
-			console.error("Error: Billing not configured");
-			console.error("Run 'aidr billing:init' to set up billing");
-			process.exit(1);
-		}
-
-		const billing = new LemonSqueezyBilling({
-			lemonSqueezyApiKey: billingConfig.lemonSqueezyApiKey,
-			storeId: billingConfig.storeId,
-			productId: billingConfig.productId,
-		});
-
-		try {
-			const url = await billing.createCheckout(userId, {
-				variantId: options.variant,
-				redirectUrl: options.redirect,
-			});
-			console.log("✓ Checkout URL generated:");
-			console.log(`  ${url}`);
-		} catch (error) {
-			console.error(
-				`Error: Failed to create checkout: ${error instanceof Error ? error.message : String(error)}`,
-			);
-			process.exit(1);
-		}
-	});
-
-program
-	.command("billing:validate")
-	.description("Validate a license key")
-	.argument("<licenseKey>", "License key to validate")
-	.action(async (licenseKey) => {
-		const billingConfig = loadBillingConfig() as {
-			lemonSqueezyApiKey?: string;
-			storeId?: string;
-			productId?: string;
-		} | null;
-
-		if (
-			!billingConfig?.lemonSqueezyApiKey ||
-			!billingConfig.storeId ||
-			!billingConfig.productId
-		) {
-			console.error("Error: Billing not configured");
-			console.error("Run 'aidr billing:init' to set up billing");
-			process.exit(1);
-		}
-
-		const billing = new LemonSqueezyBilling({
-			lemonSqueezyApiKey: billingConfig.lemonSqueezyApiKey,
-			storeId: billingConfig.storeId,
-			productId: billingConfig.productId,
-		});
-
-		try {
-			const result = await billing.validateLicense(licenseKey);
-			console.log("License validation result:");
-			console.log(`  Valid: ${result.valid ? "✓" : "✗"}`);
-			console.log(`  Seats: ${result.seats}`);
-			if (result.expiresAt) {
-				console.log(`  Expires: ${result.expiresAt.toISOString()}`);
-			}
-		} catch (error) {
-			console.error(
-				`Error: Validation failed: ${error instanceof Error ? error.message : String(error)}`,
-			);
-			process.exit(1);
-		}
-	});
+// Billing/provider commands were removed together with the Lemon Squeezy client.
+// There is deliberately no SDK-side payment-provider integration: checkout and
+// entitlements are created server-side, and the Stripe webhook verifies
+// signatures at the Edge Function. A client-side verifier cannot be made safe
+// (it either holds a secret in an unsafe place or skips verification).
 
 program
 	.command("license:activate")
@@ -305,22 +141,16 @@ program
 	.argument("<licenseKey>", "License key to activate")
 	.option("-u, --user <userId>", "User ID (defaults to 'cli-user')", "cli-user")
 	.action(async (licenseKey, options) => {
-		const freemium = getFreemiumManager();
-		if (!freemium) {
-			console.error("Error: Billing not configured");
-			console.error("Run 'aidr billing:init' to set up billing");
-			process.exit(1);
-		}
-
-		const result = await freemium.activateLicense(options.user, licenseKey);
-		if (result.success) {
-			console.log("✓ License activated successfully");
-			console.log(`  Tier: ${result.license?.tier}`);
-			console.log(`  Seats: ${result.license?.seats}`);
-		} else {
-			console.error(`✗ License activation failed: ${result.error}`);
-			process.exit(1);
-		}
+		// Entitlements are issued server-side by a signature-verified webhook. The
+		// CLI cannot validate a licence key without the entitlement service, and it
+		// must not pretend to: previously this called a payment-provider API whose
+		// webhook performed no signature verification.
+		console.error("Error: Licence activation requires the entitlement service.");
+		console.error(
+			"Entitlements are issued server-side after a verified purchase; configure the control plane",
+		);
+		console.error("and enrol the installation, then re-run 'aidr license:status'.");
+		process.exit(1);
 	});
 
 program
@@ -330,8 +160,7 @@ program
 	.action(async (options) => {
 		const freemium = getFreemiumManager();
 		if (!freemium) {
-			console.error("Error: Billing not configured");
-			console.error("Run 'aidr billing:init' to set up billing");
+			console.error("Error: licence manager unavailable");
 			process.exit(1);
 		}
 
@@ -354,8 +183,7 @@ program
 	.action(async (operation, options) => {
 		const freemium = getFreemiumManager();
 		if (!freemium) {
-			console.error("Error: Billing not configured");
-			console.error("Run 'aidr billing:init' to set up billing");
+			console.error("Error: licence manager unavailable");
 			process.exit(1);
 		}
 

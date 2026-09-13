@@ -1,6 +1,10 @@
 /**
  * Singularity AIDR OpenCode plugin.
  * Intercepts tool calls and uses @singularityrd/aidr-core to enforce security verdicts.
+ *
+ * SECURITY: this plugin deliberately registers NO approval tool. Approval
+ * authority must be an action the model cannot invoke, so `ask` verdicts stay
+ * blocking (see README.md).
  */
 
 import { join } from "node:path";
@@ -9,13 +13,13 @@ import { tool } from "@opencode-ai/plugin/tool";
 import {
 	ApprovalStore,
 	addToAllowlist,
-	approveAction,
 	createChildLogger,
 	getLogger,
 	initSentry,
 	removeFromAllowlist,
 } from "@singularityrd/aidr-core";
 import { getBundledDataDirs } from "./bundled-dirs.js";
+import { createOutputHandlers, reportOpenCodeOutputCoverage } from "./output-handler.js";
 import { createSessionScanHandler } from "./startup-scan.js";
 import { createToolHandlers } from "./tool-handler.js";
 
@@ -66,10 +70,13 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 	const ARTIFACT_TYPE = tool.schema.enum(["url", "command", "file_path"]);
 
 	const toolHandlers = createToolHandlers(logger, approvalStore, threatsDir, allowlistsDir);
+	const outputHandlers = createOutputHandlers(logger);
+	reportOpenCodeOutputCoverage(logger);
 	await createSessionScanHandler(logger, undefined)();
 
 	return {
 		"tool.execute.before": toolHandlers["tool.execute.before"],
+		"tool.execute.after": outputHandlers["tool.execute.after"],
 
 		/**
 		 * Inject plugin scan findings into first user message as <system-reminder>.
@@ -131,27 +138,14 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 		},
 
 		tool: {
-			// TODO: After the following PR merged to support client V2 in Opencode Plugin, gitleaks:allow
-			// use QuestionTools.ask to replace aidr_approve tool
-			// PR: https://github.com/anomalyco/opencode/pull/12046
-			// Discussion: https://github.com/singularityrd/aidr/pull/21#discussion_r2873812399
-			aidr_approve: tool({
-				description:
-					"Approve or reject a Singularity AIDR-flagged tool call. IMPORTANT: you MUST ask the user for explicit confirmation in the conversation BEFORE calling this tool. Never auto-approve - always present the flagged action and wait for the user to respond.",
-				args: {
-					actionId: tool.schema
-						.string()
-						.describe("Action ID from Singularity AIDR blocked message"),
-					approved: tool.schema.boolean().describe("true to approve, false to reject"),
-				},
-				async execute(args: { actionId: string; approved: boolean }, _context) {
-					if (!args.approved) {
-						approvalStore.deletePending(args.actionId);
-						return "Rejected by user.";
-					}
-					return approveAction(approvalStore, args.actionId);
-				},
-			}),
+			// SECURITY: no `aidr_approve` tool is registered. An approval tool
+			// callable by the model would let a prompt-injected agent approve its
+			// own blocked action (the actionId is in the block message), turning
+			// every `ask` verdict into a self-service bypass. Until OpenCode
+			// exposes a host-native question/confirmation API that the plugin can
+			// drive from outside the model's tool surface (upstream PR:
+			// https://github.com/anomalyco/opencode/pull/12046), `ask` verdicts
+			// stay blocking. See README.md ("Approving a flagged action").
 			aidr_allowlist_add: tool({
 				description:
 					"Permanently allow a URL, command, or file path after recent user approval through Singularity AIDR.",

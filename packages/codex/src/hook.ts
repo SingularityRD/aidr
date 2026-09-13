@@ -5,8 +5,11 @@ export async function handleCodexHook(
 	options: CodexInstrumentationOptions,
 ): Promise<CodexHookResult> {
 	const instrumentation = createCodexInstrumentation(options);
-	const phase = input.phase ?? input.event ?? input.type;
-	return phase === "post_tool_use" || phase === "post_tool" || phase === "after_tool_call"
+	const phase = input.hook_event_name ?? input.phase ?? input.event ?? input.type;
+	return phase === "PostToolUse" ||
+		phase === "post_tool_use" ||
+		phase === "post_tool" ||
+		phase === "after_tool_call"
 		? instrumentation.postToolUse(input)
 		: instrumentation.preToolUse(input);
 }

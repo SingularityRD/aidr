@@ -11,6 +11,7 @@ import {
 	type Verdict,
 	VerdictCache,
 } from "@singularityrd/aidr-core";
+import { AIDRInitError, type DataDirResolution, resolveDataDirs } from "./bundled-dirs.js";
 import type {
 	CheckRequest,
 	CheckResult,
@@ -20,9 +21,17 @@ import type {
 	SDKConfig,
 	SDKEvent,
 } from "./config.js";
-import { CheckResultSchema } from "./config.js";
+import { CheckResultSchema, SDKConfigSchema } from "./config.js";
+import { INDETERMINATE_METADATA_KEY } from "./enforcement.js";
 
 export type { Logger };
+
+/** Render a candidate-path list for error messages. */
+function formatSearched(paths: string[]): string {
+	return paths.length > 0
+		? paths.map((path, index) => `  ${index + 1}. ${path}`).join("\n")
+		: "  (none)";
+}
 
 /**
  * AIDRClient - Main SDK client for security checks
@@ -39,18 +48,28 @@ export class AIDRClient {
 	private retryDelays = [1000, 2000, 4000];
 	private threats: Threat[] = [];
 	private trustedDomains: TrustedDomain[] = [];
+	private dataDirs?: DataDirResolution;
 	private initialized = false;
 
 	constructor(config: SDKConfig) {
-		this.config = config;
-		this.logger = config.logger ?? nullLogger;
+		// Validate and default the configuration up front.
+		//
+		// Without this the SDK trusted its caller's object shape: a JavaScript
+		// caller (or a JSON config file) that omitted `retries` left it
+		// `undefined`, and `while (attempts <= undefined)` is false, so the retry
+		// loop never ran once and the first failure went straight to the
+		// fail-closed fallback. `SDKConfigSchema.parse` supplies the schema
+		// defaults (retries: 2, timeout: 5000, cache: true, cacheTtl: 300000,
+		// environment: "production") and rejects out-of-range values.
+		this.config = SDKConfigSchema.parse(config);
+		this.logger = this.config.logger ?? nullLogger;
 
 		// Initialize cache if enabled
-		if (config.cache) {
+		if (this.config.cache) {
 			this.cache = new VerdictCache({
 				enabled: true,
-				ttl_malicious_seconds: Math.floor((config.cacheTtl ?? 300000) / 1000),
-				ttl_clean_seconds: Math.floor((config.cacheTtl ?? 300000) / 1000),
+				ttl_malicious_seconds: Math.floor(this.config.cacheTtl / 1000),
+				ttl_clean_seconds: Math.floor(this.config.cacheTtl / 1000),
 				path: "~/.singularity-aidr/cache.json",
 			});
 		}
@@ -59,23 +78,102 @@ export class AIDRClient {
 		this.engine = new DecisionEngine("balanced");
 		this.urlClient = new UrlCheckClient({
 			enabled: true,
-			timeout_seconds: (config.timeout ?? 5000) / 1000,
+			timeout_seconds: this.config.timeout / 1000,
 		});
 	}
 
 	/**
-	 * Initialize the client by loading threats and trusted domains
+	 * Initialize the client by loading the bundled threat rules and trusted
+	 * domains.
+	 *
+	 * The rules are resolved relative to this module — never relative to
+	 * `process.cwd()` — so the same code works from the monorepo source tree, from
+	 * an installed tarball (`resources/` next to `dist/`), and with an explicit
+	 * `AIDR_THREATS_DIR` / `AIDR_ALLOWLISTS_DIR` override. See
+	 * `bundled-dirs.ts` for the full resolution order.
+	 *
+	 * Failure here is fatal and explicit, by design. A missing or empty rule set
+	 * is an initialisation error, never a working client: with fail-closed
+	 * enforcement in place, a client that loaded zero rules would answer `ask`
+	 * forever and detect nothing, which is exactly the silent degradation this
+	 * package must not have.
+	 *
+	 * @throws {AIDRDataDirError} when no threat/allowlist directory can be found;
+	 *   the error names every path that was searched.
+	 * @throws {AIDRInitError} when the directories exist but cannot be loaded, or
+	 *   when zero threat rules load.
 	 */
 	async init(): Promise<void> {
 		if (this.initialized) return;
 
-		// Load threats and trusted domains
-		this.threats = await loadThreats("threats");
-		this.trustedDomains = await loadTrustedDomains("allowlists");
-		this.heuristics = new HeuristicsEngine(this.threats, this.trustedDomains);
+		// Throws AIDRDataDirError (naming every candidate path) when the packaged
+		// rule data is not present.
+		const dataDirs = resolveDataDirs();
+		const searchedThreats = dataDirs.searchedPaths.threats;
+		const searchedAllowlists = dataDirs.searchedPaths.allowlists;
 
+		let threats: Threat[];
+		try {
+			threats = await loadThreats(dataDirs.threatsDir, this.logger);
+		} catch (error) {
+			throw new AIDRInitError(
+				`Singularity AIDR cannot initialise: failed to load threat rules from ${dataDirs.threatsDir} ` +
+					`(${error instanceof Error ? error.message : String(error)}).\n` +
+					`Searched for "threats" (in order):\n${formatSearched(searchedThreats)}`,
+				{ searchedPaths: searchedThreats, cause: error },
+			);
+		}
+
+		if (threats.length === 0) {
+			throw new AIDRInitError(
+				`Singularity AIDR cannot initialise: ${dataDirs.threatsDir} contains no loadable threat rules, ` +
+					"so every check would be evaluated against an empty rule set and nothing could ever be detected. " +
+					"This is an installation failure, not a clean result.\n" +
+					`Searched for "threats" (in order):\n${formatSearched(searchedThreats)}`,
+				{ searchedPaths: searchedThreats },
+			);
+		}
+
+		let trustedDomains: TrustedDomain[];
+		try {
+			trustedDomains = await loadTrustedDomains(dataDirs.allowlistsDir, this.logger);
+		} catch (error) {
+			throw new AIDRInitError(
+				`Singularity AIDR cannot initialise: failed to load trusted domains from ${dataDirs.allowlistsDir} ` +
+					`(${error instanceof Error ? error.message : String(error)}).\n` +
+					`Searched for "allowlists" (in order):\n${formatSearched(searchedAllowlists)}`,
+				{ searchedPaths: searchedAllowlists, cause: error },
+			);
+		}
+
+		if (trustedDomains.length === 0) {
+			// Not fatal: an empty allowlist only costs extra false positives
+			// (nothing is suppressed), it can never turn an unclean action into a
+			// clean one.
+			this.logger.warn(
+				`No trusted domains loaded from ${dataDirs.allowlistsDir}; trusted-domain suppression is inactive`,
+			);
+		}
+
+		this.threats = threats;
+		this.trustedDomains = trustedDomains;
+		this.heuristics = new HeuristicsEngine(this.threats, this.trustedDomains);
+		this.dataDirs = dataDirs;
 		this.initialized = true;
-		this.logger.info("AIDR client initialized");
+		this.logger.info(
+			`AIDR client initialized: ${threats.length} threat rules from ${dataDirs.threatsDir} ` +
+				`[${dataDirs.sources.threats}], ${trustedDomains.length} trusted domains from ${dataDirs.allowlistsDir} ` +
+				`[${dataDirs.sources.allowlists}]`,
+		);
+	}
+
+	/**
+	 * Rule-data directories this client loaded, and which candidate produced each
+	 * one. `undefined` until `init()` has succeeded. Exposed so host applications
+	 * and health checks can report where detection data came from.
+	 */
+	getDataDirs(): DataDirResolution | undefined {
+		return this.dataDirs;
 	}
 
 	/**
@@ -87,10 +185,17 @@ export class AIDRClient {
 			await this.init();
 		}
 
+		// `this.config` is always the output of `SDKConfigSchema.parse` (constructor
+		// and updateConfig both parse), so `retries` is a validated number here —
+		// the schema default of 2 applies when the caller omitted it. The previous
+		// code compared against a possibly-`undefined` value, and
+		// `0 <= undefined` is false, so the loop body never executed once.
+		const maxRetries = this.config.retries;
+
 		let attempts = 0;
 		let lastError: Error | undefined;
 
-		while (attempts <= this.config.retries) {
+		while (attempts <= maxRetries) {
 			try {
 				const result = await this._performCheck(request);
 				this._emitDecisionEvent(request, result);
@@ -99,7 +204,7 @@ export class AIDRClient {
 				lastError = error instanceof Error ? error : new Error(String(error));
 				attempts++;
 
-				if (attempts <= this.config.retries) {
+				if (attempts <= maxRetries) {
 					const delay = this.retryDelays[attempts - 1] ?? 4000;
 					this.logger.warn(
 						`Retrying security check (attempt ${attempts}, delay: ${delay}ms): ${lastError.message}`,
@@ -109,12 +214,19 @@ export class AIDRClient {
 			}
 		}
 
-		// All retries exhausted - fail open with ask decision
+		// All retries exhausted. This is a FAIL-CLOSED result, not an approval:
+		// `allowed: false` means "do not execute", and the `indeterminate` marker
+		// tells every SDK enforcer (see enforcement.ts) that this came from a
+		// broken security check rather than from a real `ask` verdict. An
+		// indeterminate result is never routed to an approval callback unless the
+		// caller explicitly opts in, so "the check is broken" can never be
+		// converted into "run the wrapped function".
 		const fallbackResult: CheckResult = {
 			allowed: false,
 			decision: "ask",
 			confidence: 0.5,
 			reason: `Check failed after ${attempts} attempts: ${lastError?.message}`,
+			metadata: { [INDETERMINATE_METADATA_KEY]: true, attempts },
 		};
 
 		this._emitErrorEvent(lastError ?? new Error("Security check failed"), request);
@@ -334,8 +446,8 @@ export class AIDRClient {
 		if (this.cache && this.config.cache) {
 			this.cache = new VerdictCache({
 				enabled: true,
-				ttl_malicious_seconds: Math.floor((this.config.cacheTtl ?? 300000) / 1000),
-				ttl_clean_seconds: Math.floor((this.config.cacheTtl ?? 300000) / 1000),
+				ttl_malicious_seconds: Math.floor(this.config.cacheTtl / 1000),
+				ttl_clean_seconds: Math.floor(this.config.cacheTtl / 1000),
 				path: "~/.singularity-aidr/cache.json",
 			});
 			this.cacheEntryCount = 0;
@@ -355,10 +467,16 @@ export class AIDRClient {
 	}
 
 	/**
-	 * Update configuration
+	 * Update configuration.
+	 *
+	 * The merged result is re-validated, so an invalid or missing `retries` /
+	 * `timeout` cannot be introduced after construction either — the retry loop
+	 * always reads a value the schema produced and defaulted.
+	 *
+	 * @throws {ZodError} when the merged configuration is invalid.
 	 */
 	updateConfig(updates: Partial<SDKConfig>): void {
-		this.config = { ...this.config, ...updates };
+		this.config = SDKConfigSchema.parse({ ...this.config, ...updates });
 		this.logger.info(`Configuration updated: ${Object.keys(updates).join(", ")}`);
 	}
 

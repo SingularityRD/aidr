@@ -27,13 +27,16 @@
     }
   },
   "files": [
-    "dist/**"
+    "dist/**",
+    "resources/**"
   ],
   "scripts": {
-    "build": "pnpm run clean && node esbuild.config.js",
-    "build:release": "pnpm run clean && node esbuild.config.js --release && tsc -p tsconfig.release.json --emitDeclarationOnly && node ../../scripts/copy-cjs-types.mjs dist/index.d.ts dist/index.d.cts && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-sdk && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "build": "pnpm run clean && pnpm run sync:assets && node esbuild.config.js",
+    "build:release": "pnpm run clean && pnpm run sync:assets && node esbuild.config.js --release && tsc -p tsconfig.release.json --emitDeclarationOnly && node ../../scripts/copy-cjs-types.mjs dist/index.d.ts dist/index.d.cts && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-sdk && node ../../scripts/check-no-sourcemaps.mjs dist",
     "clean": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo",
-    "prepack": "node ../../scripts/check-workspace-refs.mjs"
+    "sync:assets": "node scripts/sync-assets.mjs",
+    "prepack": "node ../../scripts/check-workspace-refs.mjs",
+    "prepublishOnly": "pnpm run build:release"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",
