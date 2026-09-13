@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { isIP, type LookupFunction } from "node:net";
+import { Readable, type Transform } from "node:stream";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
 import { redactTelemetryString } from "./telemetry-redaction.js";
 
@@ -10,6 +14,8 @@ export const MCP_TRANSPORT_LIMITS = {
 	maxBufferedBytes: 2 * 1024 * 1024,
 	maxHttpBodyBytes: 4 * 1024 * 1024,
 	maxMethodBytes: 512,
+	dnsLookupTimeoutMs: 5_000,
+	responseHeadersTimeoutMs: 30_000,
 } as const;
 
 export type JsonRpcId = string | number | null;
@@ -83,8 +89,18 @@ function parseJsonRpcMessage(bytes: Uint8Array, maxFrameBytes: number): JsonRpcM
 	if (message.jsonrpc !== "2.0") {
 		throw new McpTransportError("invalid_json_rpc", "MCP JSON-RPC frame must use version 2.0");
 	}
+	validateJsonRpcMethod(message);
+	validateJsonRpcId(message);
+	validateJsonRpcEnvelope(message);
+	return message as JsonRpcMessage;
+}
+
+function validateJsonRpcMethod(message: Record<string, unknown>): void {
 	if ("method" in message && (typeof message.method !== "string" || message.method.length === 0)) {
 		throw new McpTransportError("invalid_json_rpc", "MCP JSON-RPC method is invalid");
+	}
+	if ("method" in message && ("result" in message || "error" in message)) {
+		throw new McpTransportError("invalid_json_rpc", "MCP JSON-RPC request cannot be a response");
 	}
 	if (
 		typeof message.method === "string" &&
@@ -92,6 +108,9 @@ function parseJsonRpcMessage(bytes: Uint8Array, maxFrameBytes: number): JsonRpcM
 	) {
 		throw new McpTransportError("invalid_json_rpc", "MCP JSON-RPC method is too long");
 	}
+}
+
+function validateJsonRpcId(message: Record<string, unknown>): void {
 	if (
 		"id" in message &&
 		message.id !== null &&
@@ -100,13 +119,24 @@ function parseJsonRpcMessage(bytes: Uint8Array, maxFrameBytes: number): JsonRpcM
 	) {
 		throw new McpTransportError("invalid_json_rpc", "MCP JSON-RPC id is invalid");
 	}
+	if (typeof message.id === "number" && !Number.isSafeInteger(message.id)) {
+		throw new McpTransportError("invalid_json_rpc", "MCP JSON-RPC numeric id is invalid");
+	}
+}
+
+function validateJsonRpcEnvelope(message: Record<string, unknown>): void {
 	if (!("method" in message) && !("result" in message) && !("error" in message)) {
 		throw new McpTransportError(
 			"invalid_json_rpc",
 			"MCP JSON-RPC frame is neither a request nor a response",
 		);
 	}
-	return message as JsonRpcMessage;
+	if (
+		!("method" in message) &&
+		(!("id" in message) || "result" in message === "error" in message)
+	) {
+		throw new McpTransportError("invalid_json_rpc", "MCP JSON-RPC response is invalid");
+	}
 }
 
 /** Incremental parser for newline-delimited MCP stdio and Content-Length frames. */
@@ -200,7 +230,14 @@ export class JsonRpcStdioFramer {
 			throw new McpTransportError("invalid_header", "MCP stdio headers are not valid UTF-8");
 		}
 		const headers = headerText.split(/\r?\n/);
-		const lengthHeader = headers.find((header) => /^content-length\s*:/i.test(header));
+		const lengthHeaders = headers.filter((header) => /^content-length\s*:/i.test(header));
+		if (lengthHeaders.length !== 1) {
+			throw new McpTransportError(
+				"invalid_content_length",
+				"MCP Content-Length header must appear exactly once",
+			);
+		}
+		const lengthHeader = lengthHeaders[0];
 		if (!lengthHeader) return null;
 		const rawLength = lengthHeader.slice(lengthHeader.indexOf(":") + 1).trim();
 		if (!/^\d+$/.test(rawLength)) {
@@ -391,6 +428,54 @@ function isPrivateIpv4(value: string): boolean {
 	);
 }
 
+function replaceEmbeddedIpv4(value: string): string | null {
+	if (!value.includes(".")) return value;
+	const separator = value.lastIndexOf(":");
+	const ipv4 = separator === -1 ? null : normalizeIpv4(value.slice(separator + 1));
+	if (!ipv4) return null;
+	const high = ((ipv4[0] ?? 0) << 8) | (ipv4[1] ?? 0);
+	const low = ((ipv4[2] ?? 0) << 8) | (ipv4[3] ?? 0);
+	return `${value.slice(0, separator)}:${high.toString(16)}:${low.toString(16)}`;
+}
+
+function parseIpv6Half(half: string): number[] | null {
+	if (half === "") return [];
+	const parts = half.split(":");
+	if (parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) return null;
+	return parts.map((part) => Number.parseInt(part, 16));
+}
+
+function normalizeIpv6(value: string): number[] | null {
+	if (value.includes("%")) return null;
+	const candidate = replaceEmbeddedIpv4(value.toLowerCase());
+	if (!candidate) return null;
+	const halves = candidate.split("::");
+	if (halves.length > 2) return null;
+	const left = parseIpv6Half(halves[0] ?? "");
+	const right = parseIpv6Half(halves[1] ?? "");
+	if (!left || !right) return null;
+	if (halves.length === 1) return left.length === 8 ? left : null;
+	const omitted = 8 - left.length - right.length;
+	return omitted >= 1 ? [...left, ...Array<number>(omitted).fill(0), ...right] : null;
+}
+
+function embeddedIpv4(words: readonly number[], offset: number): string {
+	const high = words[offset] ?? 0;
+	const low = words[offset + 1] ?? 0;
+	return `${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`;
+}
+
+function hasIpv6Prefix(words: readonly number[], prefix: readonly number[], bits: number): boolean {
+	const wholeWords = Math.floor(bits / 16);
+	for (let index = 0; index < wholeWords; index += 1) {
+		if (words[index] !== prefix[index]) return false;
+	}
+	const remaining = bits % 16;
+	if (remaining === 0) return true;
+	const mask = (0xffff << (16 - remaining)) & 0xffff;
+	return ((words[wholeWords] ?? 0) & mask) === ((prefix[wholeWords] ?? 0) & mask);
+}
+
 export function isPrivateIpAddress(value: string): boolean {
 	const normalized =
 		value
@@ -400,26 +485,45 @@ export function isPrivateIpAddress(value: string): boolean {
 			?.toLowerCase() ?? "";
 	if (isIP(normalized) === 4) return isPrivateIpv4(normalized);
 	if (isIP(normalized) !== 6) return false;
-	if (
-		normalized === "::" ||
-		normalized === "::1" ||
-		normalized.startsWith("fc") ||
-		normalized.startsWith("fd") ||
-		normalized.startsWith("fe8") ||
-		normalized.startsWith("fe9") ||
-		normalized.startsWith("fea") ||
-		normalized.startsWith("feb") ||
-		normalized.startsWith("ff")
-	)
-		return true;
-	const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-	return mapped ? isPrivateIpv4(mapped[1] ?? "") : false;
+	const words = normalizeIpv6(normalized);
+	if (!words) return true;
+	const firstSixZero = words.slice(0, 6).every((word) => word === 0);
+	if (firstSixZero) return isPrivateIpv4(embeddedIpv4(words, 6));
+	const ipv4Mapped = words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff;
+	if (ipv4Mapped) return isPrivateIpv4(embeddedIpv4(words, 6));
+	const nat64 = hasIpv6Prefix(words, [0x0064, 0xff9b, 0, 0, 0, 0], 96);
+	if (nat64) return isPrivateIpv4(embeddedIpv4(words, 6));
+	const sixToFour = words[0] === 0x2002;
+	if (sixToFour) return isPrivateIpv4(embeddedIpv4(words, 1));
+	return (
+		hasIpv6Prefix(words, [0xfc00], 7) ||
+		hasIpv6Prefix(words, [0xfe80], 10) ||
+		hasIpv6Prefix(words, [0xfec0], 10) ||
+		hasIpv6Prefix(words, [0xff00], 8) ||
+		hasIpv6Prefix(words, [0x0100, 0, 0, 0], 64) ||
+		hasIpv6Prefix(words, [0x2001, 0x0000], 32) ||
+		hasIpv6Prefix(words, [0x2001, 0x0002, 0], 48) ||
+		hasIpv6Prefix(words, [0x2001, 0x0010], 28) ||
+		hasIpv6Prefix(words, [0x2001, 0x0020], 28) ||
+		hasIpv6Prefix(words, [0x2001, 0x0db8], 32) ||
+		hasIpv6Prefix(words, [0x3fff, 0], 20)
+	);
 }
 
 export interface SsrfValidationOptions {
 	requireHttps?: boolean;
 	lookup?: (hostname: string) => Promise<readonly string[]>;
 }
+
+export interface McpPinnedFetchRequest {
+	url: URL;
+	init: RequestInit;
+	/** Every address was resolved and classified before this transport is invoked. */
+	addresses: readonly string[];
+	responseHeadersTimeoutMs: number;
+}
+
+export type McpPinnedFetch = (request: McpPinnedFetchRequest) => Promise<Response>;
 
 const privateHostnames = new Set([
 	"localhost",
@@ -431,40 +535,138 @@ const privateHostnames = new Set([
 	"instance-data.ec2.internal",
 ]);
 
-export async function validateMcpRemoteUrl(
+interface ResolvedMcpRemoteUrl {
+	validation: McpValidationResult;
+	url?: URL;
+	addresses?: readonly string[];
+}
+
+function normalizedUrlHostname(url: URL): string {
+	return url.hostname
+		.toLowerCase()
+		.replace(/^\[|\]$/g, "")
+		.replace(/\.+$/, "");
+}
+
+async function resolveMcpRemoteUrl(
 	value: string | URL,
-	options: SsrfValidationOptions = {},
-): Promise<McpValidationResult> {
+	options: SsrfValidationOptions,
+): Promise<ResolvedMcpRemoteUrl> {
 	let url: URL;
 	try {
 		url = value instanceof URL ? new URL(value.href) : new URL(value);
 	} catch {
-		return { ok: false, error: "invalid_url" };
+		return { validation: { ok: false, error: "invalid_url" } };
 	}
 	if (url.protocol !== "https:" && !(url.protocol === "http:" && options.requireHttps === false)) {
-		return { ok: false, error: "insecure_scheme" };
+		return { validation: { ok: false, error: "insecure_scheme" } };
 	}
-	if (url.username || url.password) return { ok: false, error: "url_credentials_forbidden" };
-	const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-	if (privateHostnames.has(hostname) || isPrivateIpAddress(hostname))
-		return { ok: false, error: "private_address" };
+	if (url.username || url.password)
+		return { validation: { ok: false, error: "url_credentials_forbidden" } };
+	const hostname = normalizedUrlHostname(url);
+	if (!hostname || privateHostnames.has(hostname) || isPrivateIpAddress(hostname))
+		return { validation: { ok: false, error: "private_address" } };
+	if (isIP(hostname) !== 0) return { validation: { ok: true }, url, addresses: [hostname] };
 	const lookup =
 		options.lookup ??
-		(async (host) =>
+		(async (host: string) =>
 			(await dnsLookup(host, { all: true, verbatim: true })).map((item) => item.address));
 	try {
-		const addresses = await lookup(hostname);
-		if (addresses.length === 0 || addresses.some(isPrivateIpAddress))
-			return { ok: false, error: "private_address" };
+		const resolved = await lookup(hostname);
+		const addresses = [...new Set(resolved.map((address) => address.trim().toLowerCase()))];
+		if (addresses.length === 0 || addresses.some((address) => isIP(address) === 0))
+			return { validation: { ok: false, error: "dns_lookup_failed" } };
+		if (addresses.some(isPrivateIpAddress))
+			return { validation: { ok: false, error: "private_address" } };
+		return { validation: { ok: true }, url, addresses };
 	} catch {
-		return { ok: false, error: "dns_lookup_failed" };
+		return { validation: { ok: false, error: "dns_lookup_failed" } };
 	}
-	return { ok: true };
+}
+
+export async function validateMcpRemoteUrl(
+	value: string | URL,
+	options: SsrfValidationOptions = {},
+): Promise<McpValidationResult> {
+	return (await resolveMcpRemoteUrl(value, options)).validation;
 }
 
 export interface McpFetchOptions extends SsrfValidationOptions {
 	mode?: "json" | "sse";
 	maxBodyBytes?: number;
+	/** Maximum time spent waiting for DNS before any connection is attempted. */
+	dnsLookupTimeoutMs?: number;
+	/** Maximum time spent waiting for upstream HTTP response headers. */
+	responseHeadersTimeoutMs?: number;
+	/** Permit a bodyless HTTP 202 acknowledgement for a JSON-RPC notification only. */
+	acceptNotificationResponse?: boolean;
+	/** Trusted transport hook for embedders/tests; it must connect only to one supplied address. */
+	pinnedFetch?: McpPinnedFetch;
+}
+
+interface CompleteResolvedMcpRemoteUrl {
+	url: URL;
+	addresses: readonly string[];
+}
+
+function requireResolvedMcpRemoteUrl(resolved: ResolvedMcpRemoteUrl): CompleteResolvedMcpRemoteUrl {
+	if (resolved.validation.ok && resolved.url && resolved.addresses) {
+		return { url: resolved.url, addresses: resolved.addresses };
+	}
+	throw new McpTransportError(
+		resolved.validation.error ?? "invalid_url",
+		"MCP upstream URL rejected",
+	);
+}
+
+function validatedHttpBodyLimit(options: McpFetchOptions): number {
+	const limit = options.maxBodyBytes ?? MCP_TRANSPORT_LIMITS.maxHttpBodyBytes;
+	if (!Number.isSafeInteger(limit) || limit < 0)
+		throw new McpTransportError("invalid_limits", "MCP HTTP body limit is invalid");
+	return limit;
+}
+
+function validatedNetworkTimeout(value: number, name: string): number {
+	if (!Number.isSafeInteger(value) || value < 1 || value > 120_000)
+		throw new McpTransportError("invalid_limits", `MCP ${name} timeout is invalid`);
+	return value;
+}
+
+async function withDnsDeadline<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			work,
+			new Promise<never>((_resolve, reject) => {
+				timer = setTimeout(
+					() => reject(new McpTransportError("dns_lookup_timeout", "MCP DNS lookup timed out")),
+					timeoutMs,
+				);
+			}),
+		]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
+function validatedMcpHttpRequest(
+	url: URL,
+	init: RequestInit,
+	options: McpFetchOptions,
+): McpHttpRequest & { method: string; url: URL; headers: Headers } {
+	const body = normalizeRequestBody(init.body);
+	if (body === "unsupported")
+		throw new McpTransportError("unsupported_body", "MCP HTTP body type is not supported");
+	const request = {
+		method: (init.method ?? "GET").toUpperCase(),
+		url,
+		headers: init.headers instanceof Headers ? init.headers : new Headers(init.headers),
+		body,
+	};
+	const validation = validateMcpHttpRequest(request, options);
+	if (!validation.ok)
+		throw new McpTransportError(validation.error ?? "invalid_request", "MCP HTTP request rejected");
+	return request;
 }
 
 /** Fetch an upstream MCP HTTP/SSE endpoint with DNS, redirect and media-type enforcement. */
@@ -473,49 +675,93 @@ export async function fetchMcpEndpoint(
 	init: RequestInit = {},
 	options: McpFetchOptions = {},
 ): Promise<Response> {
-	const safeUrl = await validateMcpRemoteUrl(url, options);
-	if (!safeUrl.ok)
-		throw new McpTransportError(safeUrl.error ?? "invalid_url", "MCP upstream URL rejected");
-	const requestBody = normalizeRequestBody(init.body);
-	if (requestBody === "unsupported")
-		throw new McpTransportError("unsupported_body", "MCP HTTP body type is not supported");
-	const request = {
-		method: (init.method ?? "GET").toUpperCase(),
-		url,
-		headers: init.headers instanceof Headers ? init.headers : new Headers(init.headers),
-		body: requestBody,
-	};
-	const requestValidation = validateMcpHttpRequest(request, options);
-	if (!requestValidation.ok)
+	const maxBodyBytes = validatedHttpBodyLimit(options);
+	const dnsLookupTimeoutMs = validatedNetworkTimeout(
+		options.dnsLookupTimeoutMs ?? MCP_TRANSPORT_LIMITS.dnsLookupTimeoutMs,
+		"DNS lookup",
+	);
+	const responseHeadersTimeoutMs = validatedNetworkTimeout(
+		options.responseHeadersTimeoutMs ?? MCP_TRANSPORT_LIMITS.responseHeadersTimeoutMs,
+		"response headers",
+	);
+	const resolved = requireResolvedMcpRemoteUrl(
+		await withDnsDeadline(resolveMcpRemoteUrl(url, options), dnsLookupTimeoutMs),
+	);
+	const request = validatedMcpHttpRequest(resolved.url, init, options);
+	if (options.acceptNotificationResponse && !isJsonRpcNotification(request))
 		throw new McpTransportError(
-			requestValidation.error ?? "invalid_request",
-			"MCP HTTP request rejected",
+			"invalid_notification_request",
+			"MCP HTTP 202 acknowledgement requires a JSON-RPC notification",
 		);
-	const response = await fetch(url, { ...init, redirect: "error" });
-	if (response.status >= 300 && response.status < 400) {
-		throw new McpTransportError("redirect_forbidden", "MCP upstream redirects are forbidden");
-	}
-	const responseValidation = validateMcpHttpResponse(
+	const requestInit = { ...init, redirect: "error" as const };
+	const response = await (options.pinnedFetch ?? performPinnedFetch)({
+		url: resolved.url,
+		init: requestInit,
+		addresses: resolved.addresses,
+		responseHeadersTimeoutMs,
+	});
+	return validateAndBoundMcpResponse(
 		response,
 		options.mode ?? (request.method === "GET" ? "sse" : "json"),
+		maxBodyBytes,
+		options.acceptNotificationResponse === true,
 	);
-	if (!responseValidation.ok)
+}
+
+function isJsonRpcNotification(request: McpHttpRequest): boolean {
+	if (
+		request.method !== "POST" ||
+		!request.body ||
+		!(typeof request.body === "string" || request.body instanceof Uint8Array)
+	)
+		return false;
+	try {
+		const bytes =
+			typeof request.body === "string" ? textEncoder.encode(request.body) : request.body;
+		const value = parseJsonRpcMessage(bytes, bytes.byteLength);
+		return typeof value.method === "string" && !("id" in value);
+	} catch {
+		return false;
+	}
+}
+
+async function validateAndBoundMcpResponse(
+	response: Response,
+	mode: "json" | "sse",
+	maxBodyBytes: number,
+	acceptNotificationResponse: boolean,
+): Promise<Response> {
+	if (response.status >= 300 && response.status < 400) {
+		await cancelResponseBody(response);
+		throw new McpTransportError("redirect_forbidden", "MCP upstream redirects are forbidden");
+	}
+	if (acceptNotificationResponse && response.status === 202) {
+		const bounded = boundResponseBody(response, maxBodyBytes);
+		const bytes = new Uint8Array(await bounded.arrayBuffer());
+		if (bytes.byteLength !== 0)
+			throw new McpTransportError(
+				"notification_response_body",
+				"MCP notification acknowledgement must not contain a body",
+			);
+		return cloneResponseMetadata(response, null);
+	}
+	const responseValidation = validateMcpHttpResponse(response, mode);
+	if (!responseValidation.ok) {
+		await cancelResponseBody(response);
 		throw new McpTransportError(
 			responseValidation.error ?? "invalid_response",
 			"MCP upstream response rejected",
 		);
-	if (
-		responseBodyExceedsLimit(
-			response,
-			options.maxBodyBytes ?? MCP_TRANSPORT_LIMITS.maxHttpBodyBytes,
-		)
-	) {
+	}
+	if (responseBodyExceedsLimit(response, maxBodyBytes)) {
+		await cancelResponseBody(response);
 		throw new McpTransportError(
 			"body_too_large",
 			"MCP upstream response exceeds the configured limit",
 		);
 	}
-	return response;
+	const bounded = boundResponseBody(response, maxBodyBytes);
+	return mode === "json" ? bufferBoundedResponse(bounded) : bounded;
 }
 
 function normalizeRequestBody(
@@ -533,6 +779,254 @@ function responseBodyExceedsLimit(
 ): boolean {
 	const length = response.headers.get("content-length");
 	return Boolean(length && /^\d+$/.test(length) && Number(length) > maxBodyBytes);
+}
+
+function normalizedComparableIp(value: string): string | null {
+	const candidate = value.trim().toLowerCase().split("%", 1)[0] ?? "";
+	if (isIP(candidate) === 4) return candidate;
+	if (isIP(candidate) !== 6) return null;
+	const words = normalizeIpv6(candidate);
+	if (!words) return null;
+	const mapped = words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff;
+	return mapped
+		? embeddedIpv4(words, 6)
+		: words.map((word) => word.toString(16).padStart(4, "0")).join(":");
+}
+
+function pinnedLookup(address: string): LookupFunction {
+	const family = isIP(address) as 4 | 6;
+	return ((...args: unknown[]) => {
+		const options = args[1];
+		const callback = args.at(-1) as (...callbackArgs: unknown[]) => void;
+		if (typeof options === "object" && options !== null && "all" in options && options.all) {
+			callback(null, [{ address, family }]);
+			return;
+		}
+		callback(null, address, family);
+	}) as LookupFunction;
+}
+
+async function performPinnedFetch(request: McpPinnedFetchRequest): Promise<Response> {
+	const address = request.addresses[0];
+	if (!address)
+		throw new McpTransportError("dns_lookup_failed", "MCP upstream has no resolved address");
+	const headers = new Headers(request.init.headers);
+	headers.delete("connection");
+	headers.delete("host");
+	headers.delete("transfer-encoding");
+	if (!headers.has("accept-encoding")) headers.set("accept-encoding", "gzip, deflate, br");
+	const body = normalizeRequestBody(request.init.body);
+	if (body === "unsupported")
+		throw new McpTransportError("unsupported_body", "MCP HTTP body type is not supported");
+	if (body === null) headers.delete("content-length");
+	else headers.set("content-length", String(bodyByteLength(body)));
+	const headerRecord: Record<string, string> = {};
+	headers.forEach((value, name) => {
+		headerRecord[name] = value;
+	});
+
+	return new Promise<Response>((resolve, reject) => {
+		let settled = false;
+		let headersDeadline: ReturnType<typeof setTimeout> | undefined;
+		const finishReject = (error: unknown) => {
+			if (settled) return;
+			settled = true;
+			if (headersDeadline) clearTimeout(headersDeadline);
+			reject(error);
+		};
+		const nodeRequest = (request.url.protocol === "https:" ? httpsRequest : httpRequest)(
+			request.url,
+			{
+				method: request.init.method ?? "GET",
+				headers: headerRecord,
+				lookup: pinnedLookup(address),
+				agent: false,
+				signal: request.init.signal ?? undefined,
+			},
+			(incoming) => {
+				if (settled) {
+					incoming.destroy();
+					return;
+				}
+				try {
+					const response = responseFromIncomingMessage(incoming, request.url);
+					settled = true;
+					if (headersDeadline) clearTimeout(headersDeadline);
+					resolve(response);
+				} catch (error) {
+					incoming.destroy();
+					finishReject(error);
+				}
+			},
+		);
+		headersDeadline = setTimeout(() => {
+			nodeRequest.destroy(
+				new McpTransportError(
+					"response_headers_timeout",
+					"MCP upstream response headers timed out",
+				),
+			);
+		}, request.responseHeadersTimeoutMs);
+		nodeRequest.once("socket", (socket) => {
+			const verifyRemoteAddress = () => {
+				const actual = socket.remoteAddress ? normalizedComparableIp(socket.remoteAddress) : null;
+				if (actual !== normalizedComparableIp(address)) {
+					nodeRequest.destroy(
+						new McpTransportError(
+							"dns_rebinding_detected",
+							"MCP upstream connected to an address that was not pinned",
+						),
+					);
+				}
+			};
+			if (socket.connecting) socket.once("connect", verifyRemoteAddress);
+			else verifyRemoteAddress();
+		});
+		nodeRequest.once("error", finishReject);
+		if (body !== null) nodeRequest.end(body);
+		else nodeRequest.end();
+	});
+}
+
+function headersFromIncomingMessage(incoming: import("node:http").IncomingMessage): Headers {
+	const headers = new Headers();
+	for (let index = 0; index < incoming.rawHeaders.length; index += 2) {
+		const name = incoming.rawHeaders[index];
+		const value = incoming.rawHeaders[index + 1];
+		if (name && value !== undefined) headers.append(name, value);
+	}
+	return headers;
+}
+
+function contentDecoder(encoding: string): Transform | null {
+	if (encoding === "gzip" || encoding === "x-gzip") return createGunzip();
+	if (encoding === "deflate") return createInflate();
+	if (encoding === "br") return createBrotliDecompress();
+	if (encoding === "identity") return null;
+	throw new McpTransportError(
+		"unsupported_content_encoding",
+		"MCP upstream content encoding is not supported",
+	);
+}
+
+function decodedIncomingBody(
+	incoming: import("node:http").IncomingMessage,
+	encodings: readonly string[],
+): Readable {
+	let body: Readable = incoming;
+	for (const encoding of [...encodings].reverse()) {
+		const decoder = contentDecoder(encoding);
+		if (!decoder) continue;
+		const encoded = body;
+		encoded.once("error", (error) => decoder.destroy(error));
+		decoder.once("error", () => incoming.destroy());
+		body = encoded.pipe(decoder);
+	}
+	return body;
+}
+
+function responseFromIncomingMessage(
+	incoming: import("node:http").IncomingMessage,
+	url: URL,
+): Response {
+	const headers = headersFromIncomingMessage(incoming);
+	const encodings = (headers.get("content-encoding") ?? "")
+		.split(",")
+		.map((encoding) => encoding.trim().toLowerCase())
+		.filter(Boolean);
+	if (encodings.length > 3)
+		throw new McpTransportError(
+			"unsupported_content_encoding",
+			"MCP upstream content encoding chain is too deep",
+		);
+	const body = decodedIncomingBody(incoming, encodings);
+	if (encodings.length > 0) {
+		headers.delete("content-encoding");
+		headers.delete("content-length");
+	}
+	const status = incoming.statusCode ?? 502;
+	const responseBody =
+		status === 204 || status === 205 || status === 304
+			? null
+			: (Readable.toWeb(body) as ReadableStream<Uint8Array>);
+	const response = new Response(responseBody, {
+		status,
+		statusText: incoming.statusMessage ?? "",
+		headers,
+	});
+	Object.defineProperty(response, "url", {
+		configurable: true,
+		enumerable: true,
+		value: url.href,
+	});
+	return response;
+}
+
+function boundResponseBody(response: Response, maxBodyBytes: number): Response {
+	if (!response.body) return response;
+	const reader = response.body.getReader();
+	let bytesRead = 0;
+	const body = new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			try {
+				const item = await reader.read();
+				if (item.done) {
+					controller.close();
+					return;
+				}
+				bytesRead += item.value.byteLength;
+				if (bytesRead > maxBodyBytes) {
+					const error = new McpTransportError(
+						"body_too_large",
+						"MCP upstream response exceeds the configured limit",
+					);
+					await reader.cancel(error).catch(() => undefined);
+					controller.error(error);
+					return;
+				}
+				controller.enqueue(item.value);
+			} catch (error) {
+				controller.error(error);
+			}
+		},
+		cancel(reason) {
+			return reader.cancel(reason);
+		},
+	});
+	return cloneResponseMetadata(response, body);
+}
+
+function cloneResponseMetadata(
+	response: Response,
+	body: ConstructorParameters<typeof Response>[0],
+	headers: Headers = response.headers,
+): Response {
+	const clone = new Response(body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	});
+	for (const property of ["url", "redirected", "type"] as const) {
+		Object.defineProperty(clone, property, {
+			configurable: true,
+			enumerable: true,
+			value: response[property],
+		});
+	}
+	return clone;
+}
+
+async function bufferBoundedResponse(response: Response): Promise<Response> {
+	const bytes = new Uint8Array(await response.arrayBuffer());
+	parseJsonRpcMessage(bytes, Math.max(bytes.byteLength, 1));
+	const headers = new Headers(response.headers);
+	headers.set("content-length", String(bytes.byteLength));
+	return cloneResponseMetadata(response, bytes, headers);
+}
+
+async function cancelResponseBody(response: Response): Promise<void> {
+	if (!response.body || response.bodyUsed) return;
+	await response.body.cancel().catch(() => undefined);
 }
 
 export interface McpToolCall {
@@ -602,11 +1096,17 @@ export function hashMcpSchema(schema: unknown): string {
 export class McpSchemaRegistry {
 	private readonly hashes = new Map<string, string>();
 
+	hasBaseline(serverName: string, toolName: string): boolean {
+		return this.hashes.has(JSON.stringify([serverName, toolName]));
+	}
+
 	observe(serverName: string, toolName: string, schema: unknown): SchemaObservation {
-		const key = `${serverName}\u0000${toolName}`;
+		const key = JSON.stringify([serverName, toolName]);
 		const hash = hashMcpSchema(schema);
 		const previousHash = this.hashes.get(key);
-		this.hashes.set(key, hash);
+		// Observation is not approval: keep the first baseline so repeating a
+		// changed schema cannot silently make a rejected tool trusted again.
+		if (previousHash === undefined) this.hashes.set(key, hash);
 		return { hash, drift: previousHash !== undefined && previousHash !== hash, previousHash };
 	}
 
@@ -685,24 +1185,25 @@ export async function interceptMcpToolCall(
 	const inputHash = createHash("sha256")
 		.update(canonicalJson(call.arguments ?? {}), "utf8")
 		.digest("hex");
+	const registry = options.schemaRegistry ?? defaultMcpSchemaRegistry;
+	const missingSchema =
+		call.schema === undefined && registry.hasBaseline(call.serverName, call.toolName);
 	const schemaObservation =
 		call.schema === undefined
 			? undefined
-			: (options.schemaRegistry ?? defaultMcpSchemaRegistry).observe(
-					call.serverName,
-					call.toolName,
-					call.schema,
-				);
+			: registry.observe(call.serverName, call.toolName, call.schema);
 	const schemaHash = schemaObservation?.hash;
-	const reason = schemaObservation?.drift
-		? "schema_drift"
-		: await evaluateMcpPolicy(
-				call,
-				policyClient,
-				inputHash,
-				schemaHash,
-				options.policyTimeoutMs ?? 1000,
-			);
+	const reason = missingSchema
+		? "schema_missing"
+		: schemaObservation?.drift
+			? "schema_drift"
+			: await evaluateMcpPolicy(
+					call,
+					policyClient,
+					inputHash,
+					schemaHash,
+					options.policyTimeoutMs ?? 1000,
+				);
 
 	const allowed = reason === "policy_allowed";
 	const event = makeEvent(

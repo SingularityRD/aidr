@@ -2,6 +2,13 @@
  * Guard orchestrator for soft-gated connectors (OpenCode, OpenClaw).
  * Wraps evaluateToolCall with approval store checks, paranoid promotion,
  * and shared message formatting / allowlist operations.
+ *
+ * ── Approval authority ─────────────────────────────────────────────────────
+ * The `ApprovalStore` is the *mechanism*; connectors must never expose it (or
+ * an `approve` action wrapping it) as a tool the policed agent can call. An
+ * agent that can approve its own blocked action defeats the gate entirely,
+ * because it already receives the actionId in the block message. Approvals must
+ * come from an out-of-band, human-only action (see `formatAskMessage`).
  */
 
 import {
@@ -15,10 +22,32 @@ import {
 	saveAllowlist,
 } from "./allowlist.js";
 import { ApprovalStore } from "./approval-store.js";
+import {
+	logAllowedResponseActions,
+	logResponseActions,
+	toolInputSummaryForAudit,
+} from "./audit-log.js";
 import { loadConfig } from "./config.js";
 import type { ToolEvaluationContext, ToolEvaluationRequest } from "./evaluator.js";
 import { allowVerdict, evaluateToolCall } from "./evaluator.js";
-import type { Artifact, Logger, Verdict } from "./types.js";
+import {
+	DEFAULT_RESPONSE_OPTIONS,
+	type PreOperationSnapshot,
+	type ResponseActionRecord,
+	type ResponseOptions,
+	rollbackPreOperationSnapshot,
+	runPreAllowedResponseActions,
+	runResponseActions,
+	summarizeResponseActions,
+} from "./response-actions.js";
+import {
+	DEFAULT_RESPONSE_AUDIT_CONFIG,
+	logResponseActionToChain,
+	type ResponseAuditor,
+	type ResponseChainWrite,
+	responseAuditorFromConfig,
+} from "./response-audit.js";
+import type { Artifact, Config, Logger, ResponseAuditConfig, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 import { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 
@@ -27,6 +56,201 @@ import { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 export interface GuardResult {
 	verdict: Verdict;
 	actionId?: string;
+	/**
+	 * Response actions taken as a result of the verdict (snapshot, ...).
+	 *
+	 * Empty when nothing was configured or applicable. Present so a caller can
+	 * tell the user what the runtime actually did, instead of the response being
+	 * invisible.
+	 */
+	responseActions?: ResponseActionRecord[];
+	/**
+	 * Set when an ALLOWED destructive call had its target snapshotted first.
+	 *
+	 * The call was not blocked, so the snapshot is not a response to a verdict — it
+	 * is the thing that makes the allowed call reversible. Pass this whole
+	 * `GuardResult` to `executeWithRollback` (or `finalizeSnapshot` /
+	 * `rollbackSnapshotFromGuardResult`) once the call finishes.
+	 */
+	snapshot?: PreOperationSnapshot;
+	/** What happened when the response was written to the signed chain. */
+	signedChain?: ResponseChainWrite;
+	/**
+	 * Finish the snapshot lifecycle for this call. Omitted when no snapshot was
+	 * taken. `rolledBack: false` means the target was already restored — it does not
+	 * mean the restore failed (that is reported as a thrown error instead).
+	 */
+	finalizeSnapshot?: (outcome: "success" | "failure") => Promise<{ rolledBack: boolean }>;
+}
+
+/**
+ * Read the response settings off a config object defensively.
+ *
+ * Partial or mocked config objects exist in practice (and in tests), and a missing
+ * `response` block must mean "no response actions" - never a crash on the security
+ * path, and never an accidentally enabled mutation.
+ *
+ * The same applies to a MISSING SIBLING: Zod's nested `.default({})` only fires
+ * when the key itself is absent, so `response: { actions: {...} }` leaves
+ * `response.audit` undefined. Absent therefore has to be handled here, not assumed
+ * away.
+ */
+function resolveResponseActions(config: Config): Partial<ResponseOptions> {
+	const actions = config.response?.actions;
+	return {
+		snapshotOnDeny: actions?.snapshot_on_deny ?? DEFAULT_RESPONSE_OPTIONS.snapshotOnDeny,
+		snapshotDir: actions?.snapshot_dir ?? DEFAULT_RESPONSE_OPTIONS.snapshotDir,
+		snapshotMinSeverity:
+			actions?.snapshot_min_severity ?? DEFAULT_RESPONSE_OPTIONS.snapshotMinSeverity,
+		snapshotMaxBytes: actions?.snapshot_max_bytes ?? DEFAULT_RESPONSE_OPTIONS.snapshotMaxBytes,
+		snapshotBeforeDestructive:
+			actions?.snapshot_before_destructive ?? DEFAULT_RESPONSE_OPTIONS.snapshotBeforeDestructive,
+		protectPaths: actions?.protect_paths ?? DEFAULT_RESPONSE_OPTIONS.protectPaths,
+		snapshotRootDir: actions?.snapshot_root_dir ?? DEFAULT_RESPONSE_OPTIONS.snapshotRootDir,
+		snapshotRetentionDays:
+			actions?.snapshot_retention_days ?? DEFAULT_RESPONSE_OPTIONS.snapshotRetentionDays,
+	};
+}
+
+/** Response settings resolved from config, for callers wrapping the operation. */
+export interface GuardResponseSettings {
+	responseOptions: Partial<ResponseOptions>;
+	auditor?: ResponseAuditor;
+	/** Why the signed chain is unavailable, when it is. */
+	chainUnavailableReason?: string;
+}
+
+/**
+ * Resolve the response configuration once, so the guard and the
+ * rollback wrapper cannot disagree about which snapshot directory to use.
+ */
+export async function resolveGuardResponseSettings(
+	configPath: string | undefined,
+	logger: Logger = nullLogger,
+): Promise<GuardResponseSettings> {
+	const config = (await loadConfig(configPath, logger)) ?? ({} as Config);
+	return guardResponseSettingsFromConfig(config, logger);
+}
+
+function guardResponseSettingsFromConfig(config: Config, logger: Logger): GuardResponseSettings {
+	const { auditor, unavailableReason } = responseAuditorFromConfig(
+		// `response.audit` is genuinely optional: `.default({})` on a nested object is
+		// not applied when a sibling key is present. Defaulted here so "off" is the
+		// answer for a partial config rather than an exception.
+		config.response?.audit ?? DEFAULT_RESPONSE_AUDIT_CONFIG,
+		logger,
+	);
+	return {
+		responseOptions: resolveResponseActions(config),
+		auditor,
+		chainUnavailableReason: unavailableReason,
+	};
+}
+
+/** Bounded, redacted description of the call, shared by every audit surface. */
+export function guardInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
+	return toolInputSummaryForAudit(toolName, toolInput);
+}
+
+/**
+ * Roll an allowed destructive operation back from the snapshot the guard took.
+ *
+ * Never throws: the caller has already told the user the operation failed, and a
+ * rollback problem must not replace that error with a confusing one. The returned
+ * record says whether the target was actually restored.
+ */
+export async function rollbackSnapshotFromGuardResult(
+	result: GuardResult,
+	request: {
+		toolName: string;
+		toolInput?: Record<string, unknown>;
+		sessionId: string;
+		configPath?: string;
+	},
+	settings: Pick<
+		GuardResponseSettings,
+		"responseOptions" | "auditor" | "chainUnavailableReason"
+	> = {
+		responseOptions: {},
+	},
+	logger: Logger = nullLogger,
+): Promise<ResponseActionRecord | null> {
+	if (!result.snapshot) return null;
+
+	// Resolve the chain from config when the caller did not hand one over.
+	//
+	// This is not a convenience: a rollback that is not on the signed chain is
+	// indistinguishable from a rollback that never happened, so silently skipping
+	// the write because a caller forgot an argument would quietly destroy the
+	// evidence. Failures inside `loadConfig` are already handled there.
+	let effectiveSettings: GuardResponseSettings = settings;
+	if (!settings.auditor) {
+		const resolved = await resolveGuardResponseSettings(request.configPath, logger);
+		effectiveSettings = {
+			auditor: resolved.auditor,
+			responseOptions:
+				Object.keys(settings.responseOptions).length > 0
+					? settings.responseOptions
+					: resolved.responseOptions,
+			chainUnavailableReason: resolved.chainUnavailableReason,
+		};
+	}
+
+	const record = await rollbackPreOperationSnapshot(
+		result.snapshot,
+		{
+			toolName: request.toolName,
+			toolInput: request.toolInput,
+			sessionId: request.sessionId,
+			verdict: result.verdict,
+		},
+		effectiveSettings.responseOptions,
+		logger,
+		effectiveSettings.auditor,
+	);
+
+	// The plain audit log gets the same record shape as every other response, and
+	// the signed chain gets the tamper-evident one.
+	try {
+		const loggingConfig = (await loadConfig(request.configPath, logger))?.logging;
+		if (loggingConfig) {
+			await logAllowedResponseActions(
+				loggingConfig,
+				request.sessionId,
+				request.toolName,
+				result.verdict,
+				[record],
+			);
+		}
+	} catch (error) {
+		logger.warn("Rollback happened but the plain audit entry could not be written", {
+			error: String(error),
+		});
+	}
+
+	if (effectiveSettings.auditor) {
+		await logResponseActionToChain(
+			effectiveSettings.auditor,
+			[record],
+			{
+				decision: "allow",
+				toolName: request.toolName,
+				inputSummary: guardInputSummary(request.toolName, request.toolInput ?? {}),
+				sessionId: request.sessionId,
+				verdict: result.verdict,
+				snapshotId: result.snapshot.id,
+				snapshotTarget: result.snapshot.target,
+			},
+			logger,
+		);
+	} else {
+		logger.warn("Rollback completed but was NOT recorded in the signed chain", {
+			reason: effectiveSettings.chainUnavailableReason ?? "unknown",
+			snapshotId: result.snapshot.id,
+		});
+	}
+
+	return record;
 }
 
 export async function guardToolCall(
@@ -42,23 +266,209 @@ export async function guardToolCall(
 
 	const verdict = await evaluateToolCall(request, context);
 
-	if (verdict.decision === "allow" || verdict.decision === "deny") {
-		return { verdict };
-	}
-
-	// ask verdict — check paranoid mode
 	const logger = context.logger ?? nullLogger;
-	const config = await loadConfig(context.configPath, logger);
-	if (config.sensitivity === "paranoid") {
-		return { verdict: { ...verdict, decision: "deny" } };
+	// Needed for paranoid promotion and for the response settings. Read defensively:
+	// a config read that yields nothing must not crash the security path, and must
+	// not accidentally enable a response action.
+	const config = (await loadConfig(context.configPath, logger)) ?? ({} as Config);
+
+	let effective = verdict;
+	if (verdict.decision === "ask" && config.sensitivity === "paranoid") {
+		effective = { ...verdict, decision: "deny" };
 	}
 
-	approvalStore.setPending(actionId, {
-		artifacts: request.artifacts,
-		createdAt: Date.now(),
-	});
+	const responseOptions = resolveResponseActions(config);
+	const { auditor, unavailableReason } = responseAuditorFromConfig(
+		config.response?.audit ?? DEFAULT_RESPONSE_AUDIT_CONFIG,
+		logger,
+	);
+	const inputSummary = guardInputSummary(request.toolName, request.toolInput);
 
-	return { verdict, actionId };
+	let responseActions: ResponseActionRecord[] = [];
+	let signedChain: ResponseChainWrite | undefined;
+
+	if (effective.decision !== "allow") {
+		// Run the configured response actions for a blocking decision. This happens
+		// before returning so the caller can report what was done, and it can never
+		// change the verdict itself.
+		responseActions = await runResponseActions(
+			effective,
+			{ toolName: request.toolName, toolInput: request.toolInput },
+			responseOptions,
+			logger,
+		);
+
+		// Record what the runtime did. Without this the response would be
+		// invisible: an operator could not tell whether a file had been touched.
+		if (responseActions.length > 0 && config.logging) {
+			await logResponseActions(
+				config.logging,
+				request.sessionId,
+				request.toolName,
+				effective,
+				responseActions,
+			);
+		}
+		if (auditor && responseActions.length > 0) {
+			signedChain = await logResponseActionToChain(
+				auditor,
+				responseActions,
+				{
+					decision: effective.decision === "ask" ? "ask" : "deny",
+					toolName: request.toolName,
+					inputSummary,
+					sessionId: request.sessionId,
+					verdict: effective,
+				},
+				logger,
+			);
+		}
+
+		if (effective.decision === "deny") {
+			return { verdict: effective, responseActions, signedChain };
+		}
+
+		approvalStore.setPending(actionId, {
+			artifacts: request.artifacts,
+			createdAt: Date.now(),
+		});
+
+		return { verdict: effective, actionId, responseActions, signedChain };
+	}
+
+	// ── Allowed path ────────────────────────────────────────────────
+	//
+	// The call is going to run. If it is destructive and targets a protected path,
+	// preserve the target FIRST so a failed or regretted operation can be undone.
+	// This is the only place in the product that makes an allowed operation
+	// reversible, and it is doubly opt-in (flag + non-empty protect_paths).
+	//
+	// The auditor is deliberately NOT threaded in here: `guardToolCall` is the single
+	// writer for this call's signed-chain entry, so a response can never produce two
+	// chain records for one decision.
+	const preAllowed = await runPreAllowedResponseActions(
+		effective,
+		{ toolName: request.toolName, toolInput: request.toolInput, sessionId: request.sessionId },
+		responseOptions,
+		logger,
+	);
+
+	if (preAllowed.records.length === 0) {
+		return { verdict: effective, responseActions: [], signedChain };
+	}
+
+	if (config.logging) {
+		await logAllowedResponseActions(
+			config.logging,
+			request.sessionId,
+			request.toolName,
+			effective,
+			preAllowed.records,
+		);
+	}
+	if (auditor) {
+		signedChain = await logResponseActionToChain(
+			auditor,
+			preAllowed.records,
+			{
+				decision: "allow",
+				toolName: request.toolName,
+				inputSummary,
+				sessionId: request.sessionId,
+				verdict: effective,
+				snapshotId: preAllowed.snapshot?.id,
+				snapshotTarget: preAllowed.snapshot?.target,
+			},
+			logger,
+		);
+	} else if (unavailableReason) {
+		// A response happened but there is no chain to record it in. Say so in the
+		// result rather than leaving the caller to infer it from an absent field:
+		// "we did something and could not record it" is information the operator
+		// needs, and an absent `signedChain` reads as "nothing to report".
+		signedChain = { written: false, reason: unavailableReason };
+	}
+
+	const snapshot = preAllowed.snapshot;
+	let finalized = false;
+	const result: GuardResult = {
+		verdict: effective,
+		responseActions: preAllowed.records,
+		snapshot: snapshot ?? undefined,
+		signedChain,
+	};
+
+	if (snapshot) {
+		result.finalizeSnapshot = async () => {
+			if (finalized) return { rolledBack: false };
+			finalized = true;
+			await rollbackSnapshotFromGuardResult(
+				result,
+				{
+					toolName: request.toolName,
+					toolInput: request.toolInput,
+					sessionId: request.sessionId,
+					configPath: context.configPath,
+				},
+				{ responseOptions, auditor },
+				logger,
+			);
+			return { rolledBack: true };
+		};
+	}
+
+	if (snapshot && !signedChain?.written) {
+		// The snapshot exists but the tamper-evident record of it does not. Report
+		// that plainly: a caller must not be able to read `snapshot` and assume the
+		// chain holds the corresponding entry.
+		logger.warn("Pre-operation snapshot taken but NOT recorded in the signed chain", {
+			reason: signedChain?.reason ?? unavailableReason ?? "unknown",
+			detail: signedChain?.detail,
+			snapshotId: snapshot.id,
+		});
+	}
+
+	return result;
+}
+
+/**
+ * Run an allowed operation with the snapshot the guard already took, rolling the
+ * target back if the operation fails.
+ *
+ * This is the end-to-end shape of a real response: `guardToolCall` allowed the
+ * call and preserved the target, the connector runs the call, and this wrapper
+ * decides what to do about the outcome. When the guard did not take a snapshot
+ * (feature off, unprotected path, nothing to preserve) it simply runs the
+ * operation — it never weakens the decision and never invents a rollback.
+ */
+export async function executeWithRollback<T>(
+	result: GuardResult,
+	request: { toolName: string; toolInput?: Record<string, unknown>; sessionId: string },
+	operation: () => Promise<T>,
+	settings: Pick<GuardResponseSettings, "responseOptions" | "auditor"> & {
+		onFailure?: "rollback" | "notify";
+	} = { responseOptions: {} },
+	logger: Logger = nullLogger,
+): Promise<T> {
+	try {
+		return await operation();
+	} catch (error) {
+		const shouldRollback = (settings.onFailure ?? "rollback") === "rollback";
+		if (shouldRollback && result.snapshot && result.finalizeSnapshot) {
+			// The guard's finalize handle records the rollback in the plain log AND the
+			// signed chain. It reports its own failure, which must not replace the
+			// operation's error — that is the error the caller needs to see.
+			try {
+				await result.finalizeSnapshot("failure");
+			} catch (rollbackError) {
+				logger.error("Rollback after a failed operation did not complete", {
+					snapshotId: result.snapshot.id,
+					error: String(rollbackError),
+				});
+			}
+		}
+		throw error;
+	}
 }
 
 // ── Message formatting ─────────────────────────────────────────────
@@ -79,43 +489,92 @@ export function summarizeArtifacts(artifacts: Artifact[]): string {
 		.join(", ");
 }
 
-export function formatDenyMessage(verdict: Verdict): string {
+/**
+ * Line telling the user what the runtime DID, so a response action is visible
+ * rather than silent. Returns null only when nothing was attempted or every
+ * action was a deliberate skip (not something the user must act on).
+ */
+function responseLine(actions?: ResponseActionRecord[]): string | null {
+	if (!actions || actions.length === 0) return null;
+	const parts: string[] = [];
+
+	const succeeded = summarizeResponseActions(actions);
+	if (succeeded) parts.push(succeeded);
+
+	// A FAILED action must be reported even when nothing succeeded, otherwise the
+	// user is told only that the call was blocked and never learns that the
+	// runtime tried and failed to preserve anything.
+	const failures = actions.filter((a) => a.outcome === "failure");
+	if (failures.length > 0) {
+		parts.push(
+			`response action(s) failed: ${failures
+				.map((f) => `${f.action} (${f.reason ?? "unknown"})`)
+				.join(", ")} - nothing was preserved`,
+		);
+	}
+
+	return parts.length > 0 ? parts.join("; ") : null;
+}
+
+export function formatDenyMessage(verdict: Verdict, actions?: ResponseActionRecord[]): string {
 	const reasons =
 		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 5).join("; ") : verdict.category;
 
-	return [
+	const lines = [
 		"Singularity AIDR blocked this action.",
 		`Severity: ${verdict.severity}`,
 		`Category: ${verdict.category}`,
 		`Reason: ${reasons}`,
-	].join("\n");
+	];
+
+	const responded = responseLine(actions);
+	if (responded) lines.push(`Response: ${responded}`);
+
+	return lines.join("\n");
 }
 
 export function formatAskMessage(
 	actionId: string,
 	verdict: Verdict,
 	artifacts: Artifact[],
+	actions?: ResponseActionRecord[],
 ): string {
 	const reasons =
 		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 3).join("; ") : verdict.category;
 
-	return [
-		"Singularity AIDR flagged this action and requires explicit user approval.",
+	const lines = [
+		"Singularity AIDR flagged this action and blocked it pending explicit user approval.",
 		`Severity: ${verdict.severity}`,
 		`Category: ${verdict.category}`,
 		`Reason: ${reasons}`,
 		`Artifacts: ${summarizeArtifacts(artifacts)}`,
+	];
+
+	const responded = responseLine(actions);
+	if (responded) lines.push(`Response: ${responded}`);
+
+	lines.push(
 		"",
-		"Ask the user for confirmation to proceed, DO NOT auto-approve.",
-		`if the user confirms, call:`,
-		`  aidr_approve({ actionId: "${actionId}", approved: true })`,
-		"If the user declines, call:",
-		`  aidr_approve({ actionId: "${actionId}", approved: false })`,
-	].join("\n");
+		`Approval reference: actionId: "${actionId}"`,
+		"You cannot approve this action yourself and no tool available to you can approve it.",
+		"Approval is an out-of-band, human-only action. Report the reference above to the user and",
+		"stop here: do NOT retry this tool call and do NOT try to work around the block. The action",
+		"stays blocked until the user approves it out of band or permanently allowlists the artifact.",
+	);
+
+	return lines.join("\n");
 }
 
 // ── Allowlist tool logic ───────────────────────────────────────────
 
+/**
+ * Record an approval for a pending action and return an operator-facing message.
+ *
+ * OUT-OF-BAND / OPERATOR ONLY: call this from a human-facing approval channel
+ * (host UI, CLI prompt, an MCP tool whose confirmation comes from the user).
+ * Never expose it as a tool the policed agent can call — that would let the
+ * agent approve its own blocked actions.
+ */
 export async function approveAction(store: ApprovalStore, actionId: string): Promise<string> {
 	const entry = store.approve(actionId);
 	if (!entry) {
@@ -142,7 +601,7 @@ export async function addToAllowlist(
 
 	const config = await loadConfig(configPath, logger);
 	const allowlist = await loadAllowlist(config.allowlist, logger);
-	const entryReason = reason ?? "Approved by user via aidr_approve";
+	const entryReason = reason ?? "Approved by user (out-of-band approval)";
 
 	if (type === "url") {
 		addUrl(allowlist, value, entryReason, "ask");

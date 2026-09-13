@@ -3,12 +3,16 @@
 # License: DRL-1.1 (see threats/LICENSE)
 
 # --- Install scripts piped to shell ---
+# Perf (linear-time rewrite): both unbounded `.*` spans were rescanned from
+# every `curl|wget` occurrence (~88ms per 20KB of `curl ...;` text, ~1.0s at
+# the 64KB match cap). Bounded to 300 characters each, which still covers
+# `curl -fsSL https://<long-url>/install.sh | bash`.
 - id: "CLT-SUPPLY-001"
   category: supply_chain
   severity: high
   confidence: 0.85
   action: block
-  pattern: "(curl|wget)\\s+.*install.*\\|\\s*(bash|sh|zsh|sudo\\s+bash|sudo\\s+sh)"
+  pattern: "(curl|wget)\\s+.{0,300}install.{0,300}\\|\\s*(bash|sh|zsh|sudo\\s+bash|sudo\\s+sh)"
   match_on: command
   title: "Install script piped to shell (supply chain risk)"
   expires_at: null

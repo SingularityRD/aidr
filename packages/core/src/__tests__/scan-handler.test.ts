@@ -109,7 +109,8 @@ describe("runPluginScan", () => {
 
 		expect(message).toContain("Threat Detected");
 		expect(message).toContain("Startup command downloads and executes remote code");
-		expect(message).toContain("Blocked");
+		expect(message).toContain("Block recommendation");
+		expect(message).not.toContain("Action      Blocked");
 		expect(message).toContain("Update available");
 		expect(logger.info).toHaveBeenCalledWith("Singularity AIDR plugin scan (openclaw) complete", {
 			findings: 1,

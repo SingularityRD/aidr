@@ -1,3 +1,6 @@
+import { mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ControlPlaneClient } from "../clients/control-plane.js";
 import type { ControlPlaneConfig } from "../types.js";
@@ -5,8 +8,11 @@ import type { ControlPlaneConfig } from "../types.js";
 const originalFetch = globalThis.fetch;
 
 describe("control-plane outbound redaction canary", () => {
-	afterEach(() => {
+	let queueRoot: string | undefined;
+
+	afterEach(async () => {
 		globalThis.fetch = originalFetch;
+		if (queueRoot) await rm(queueRoot, { recursive: true, force: true });
 	});
 
 	it("scrubs credentials even when a caller sends a raw event", async () => {
@@ -20,8 +26,13 @@ describe("control-plane outbound redaction canary", () => {
 			endpoint: "https://control.example.test",
 			timeout_seconds: 1,
 		} as ControlPlaneConfig;
-		const client = new ControlPlaneClient(config, "aidr-live-token");
+		queueRoot = join(tmpdir(), `aidr-control-plane-redaction-${crypto.randomUUID()}`);
+		await mkdir(queueRoot, { recursive: true });
+		const client = new ControlPlaneClient(config, "aidr-live-token", undefined, {
+			telemetryQueueRoot: queueRoot,
+		});
 		await client.ingest({
+			iid: "redaction-test-iid",
 			events: [
 				{
 					type: "runtime_verdict",

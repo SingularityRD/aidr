@@ -65,6 +65,7 @@ export AIG_BRIDGE_API_KEY="$BRIDGE_API_KEY"
 export AIG_TENANT_ID='demo-tenant'
 
 # Run tests
+python -m pip install -r requirements-test.txt
 PYTHONPATH=. pytest
 
 # Audit the pinned runtime dependency set (must report zero known vulnerabilities)

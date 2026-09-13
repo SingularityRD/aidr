@@ -32,6 +32,12 @@ function defaultAuditPath(): string {
 	return join(resolvedAidrDir(), "audit.jsonl");
 }
 
+function defaultResponseAuditPath(): string {
+	return join(resolvedAidrDir(), "response-audit.jsonl");
+}
+
+type StateFileField = "cache" | "allowlist" | "logging" | "response.audit";
+
 /** Expand ~ to the user's home directory. */
 export function resolvePath(pathStr: string): string {
 	if (pathStr.startsWith("~/") || pathStr === "~") {
@@ -52,7 +58,7 @@ function isWithinDirectory(baseDir: string, targetPath: string): boolean {
 function normalizeStateFilePath(
 	configuredPath: string,
 	fallbackPath: string,
-	field: "cache" | "allowlist" | "logging",
+	field: StateFileField,
 	logger: Logger,
 ): string {
 	const aidrDir = resolvedAidrDir();
@@ -89,6 +95,7 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 	const cachePath = defaultCachePath();
 	const allowlistPath = defaultAllowlistPath();
 	const auditPath = defaultAuditPath();
+	const responseAuditPath = defaultResponseAuditPath();
 	let next: Config = {
 		...config,
 		cache: {
@@ -102,6 +109,24 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 		logging: {
 			...config.logging,
 			path: normalizeStateFilePath(config.logging.path, auditPath, "logging", logger),
+		},
+		// The signed response chain is security evidence: like the other state
+		// files it must not be redirectable outside the AIDR state directory.
+		//
+		// `response.audit` can be genuinely absent (a nested Zod default is not
+		// applied when a sibling key such as `response.actions` is present), so the
+		// configured path is read defensively and falls back to the default location.
+		response: {
+			...config.response,
+			audit: {
+				...(config.response?.audit ?? {}),
+				path: normalizeStateFilePath(
+					config.response?.audit?.path ?? responseAuditPath,
+					responseAuditPath,
+					"response.audit",
+					logger,
+				),
+			},
 		},
 	};
 

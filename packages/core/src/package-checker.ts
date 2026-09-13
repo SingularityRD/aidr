@@ -5,6 +5,12 @@
 
 import { FileCheckClient } from "./clients/file-check.js";
 import { type PackageMetadata, RegistryClient } from "./clients/package-registry.js";
+import {
+	loadReputationFeed,
+	type ReputationFeedLoadOptions,
+	type ReputationFeedLoadResult,
+	type ReputationFeedRecord,
+} from "./reputation-feed.js";
 import type { Logger, PackageCheckResult } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -29,6 +35,8 @@ export interface PackageCheckerConfig {
 	 */
 	intelPackageNameDeny?: Set<string>;
 	intelPackageHashDeny?: Set<string>;
+	/** Verified, freshness-bound signed feed. Missing or untrusted configured feed is unavailable, never clean. */
+	reputationFeed?: ReputationFeedLoadOptions;
 }
 
 export class PackageChecker {
@@ -37,6 +45,7 @@ export class PackageChecker {
 	private readonly logger: Logger;
 	private readonly intelPackageNameDeny: Set<string> | null;
 	private readonly intelPackageHashDeny: Set<string> | null;
+	private readonly reputationFeed?: ReputationFeedLoadOptions;
 
 	constructor(config: PackageCheckerConfig = {}, logger: Logger = nullLogger) {
 		this.logger = logger;
@@ -58,16 +67,70 @@ export class PackageChecker {
 
 		this.intelPackageNameDeny = config.intelPackageNameDeny ?? null;
 		this.intelPackageHashDeny = config.intelPackageHashDeny ?? null;
+		this.reputationFeed = config.reputationFeed;
+	}
+
+	private loadSignedFeed(): Promise<ReputationFeedLoadResult | null> {
+		return this.reputationFeed ? loadReputationFeed(this.reputationFeed) : Promise.resolve(null);
+	}
+
+	private signedNameMatch(
+		feed: ReputationFeedLoadResult | null,
+		pkg: PackageCheckInput,
+	): ReputationFeedRecord | undefined {
+		if (feed?.availability !== "available") return undefined;
+		const normalize = (name: string) =>
+			pkg.registry === "pypi" ? name.toLowerCase().replace(/[-_.]+/g, "-") : name.toLowerCase();
+		const packageName = normalize(pkg.name);
+		return feed.records.find(
+			(record) =>
+				record.kind === "package_name" &&
+				record.verdict === "deny" &&
+				normalize(record.indicator.replace(/^(npm|pypi):/i, "")) === packageName &&
+				(!record.indicator.includes(":") ||
+					record.indicator.toLowerCase().startsWith(`${pkg.registry}:`)),
+		);
+	}
+
+	private signedHashMatch(
+		feed: ReputationFeedLoadResult | null,
+		metadata: PackageMetadata,
+	): ReputationFeedRecord | undefined {
+		if (feed?.availability !== "available" || metadata.hashAlgorithm !== "sha256") return undefined;
+		return feed.records.find(
+			(record) =>
+				(record.kind === "package_sha256" || record.kind === "file_sha256") &&
+				record.verdict === "deny" &&
+				record.indicator.toLowerCase() === metadata.latestHash.toLowerCase(),
+		);
+	}
+
+	private signedMalicious(
+		pkg: PackageCheckInput,
+		feedId: string,
+		record: ReputationFeedRecord,
+	): PackageCheckResult {
+		return {
+			packageName: pkg.name,
+			registry: pkg.registry,
+			verdict: "malicious",
+			confidence: record.confidence ?? 0.9,
+			details: `Package '${pkg.name}' denied by verified signed feed ${feedId}, record ${record.id}${record.reason ? `: ${record.reason}` : ""}`,
+		};
 	}
 
 	async checkPackages(packages: PackageCheckInput[]): Promise<PackageCheckResult[]> {
-		// v1: Skip all scoped packages (@scope/pkg) — they are typically from
-		// private registries and would false-positive against public npm.
-		// Future: support configurable public/private scope lists.
+		const feed = await this.loadSignedFeed();
+		// Signed and legacy offline denylists take precedence over registry checks.
 		const toCheck: PackageCheckInput[] = [];
 		const results: PackageCheckResult[] = [];
 
 		for (const pkg of packages) {
+			const signedMatch = this.signedNameMatch(feed, pkg);
+			if (signedMatch && feed?.availability === "available") {
+				results.push(this.signedMalicious(pkg, feed.feedId, signedMatch));
+				continue;
+			}
 			// Offline intel: denylist by name (works for scoped packages too).
 			if (this.intelPackageNameDeny?.has(pkg.name)) {
 				results.push({
@@ -80,23 +143,20 @@ export class PackageChecker {
 				continue;
 			}
 
-			if (pkg.name.startsWith("@")) {
-				results.push({
-					packageName: pkg.name,
-					registry: pkg.registry,
-					verdict: "clean",
-					confidence: 1.0,
-					details: "Scoped package — skipped (v1)",
-				});
-			} else {
-				toCheck.push(pkg);
-			}
+			// Scoped packages (@scope/name) are checked like any other package.
+			//
+			// They used to be skipped and reported "clean" at confidence 1.0, which
+			// is a positive false-clean: a large share of the npm ecosystem is
+			// scoped, and an attacker can register a scope as easily as a plain
+			// name, so `npm install @evil/pkg` was reported as verified clean
+			// without any registry lookup, hash reputation or age analysis.
+			toCheck.push(pkg);
 		}
 
 		// Run checks with concurrency limit
 		const checkResults = await this.runWithConcurrencyLimit(
 			toCheck,
-			(pkg) => this.checkSinglePackage(pkg),
+			(pkg) => this.checkSinglePackageWithFeed(pkg, feed),
 			MAX_CONCURRENT,
 		);
 		results.push(...checkResults);
@@ -105,17 +165,41 @@ export class PackageChecker {
 	}
 
 	async checkSinglePackage(pkg: PackageCheckInput): Promise<PackageCheckResult> {
+		return this.checkSinglePackageWithFeed(pkg, await this.loadSignedFeed());
+	}
+
+	private async checkSinglePackageWithFeed(
+		pkg: PackageCheckInput,
+		feed: ReputationFeedLoadResult | null,
+	): Promise<PackageCheckResult> {
+		const signedName = this.signedNameMatch(feed, pkg);
+		if (signedName && feed?.availability === "available") {
+			return this.signedMalicious(pkg, feed.feedId, signedName);
+		}
+		if (feed && feed.availability !== "available") {
+			return {
+				packageName: pkg.name,
+				registry: pkg.registry,
+				verdict: "unknown",
+				confidence: 0,
+				details: `Signed feed ${feed.feedId} is ${feed.availability}: ${feed.detail}`,
+			};
+		}
 		// Step 1: Query registry
 		let metadata: PackageMetadata | null;
 		try {
 			metadata = await this.registryClient.getPackageMetadata(pkg.name, pkg.registry, pkg.version);
-		} catch {
+		} catch (error) {
+			const reason =
+				error instanceof Error && /^Malformed (npm|PyPI) registry response$/.test(error.message)
+					? "registry response was malformed"
+					: "registry lookup failed";
 			return {
 				packageName: pkg.name,
 				registry: pkg.registry,
 				verdict: "unknown",
 				confidence: 0.6,
-				details: `Package check for '${pkg.name}' timed out (verify manually)`,
+				details: `Package check for '${pkg.name}' is unavailable: ${reason} (verify manually)`,
 			};
 		}
 
@@ -151,11 +235,20 @@ export class PackageChecker {
 				fileCheckSeverity: "SEVERITY_MALWARE",
 			};
 		}
+		const signedHash = this.signedHashMatch(feed, metadata);
+		if (signedHash && feed?.availability === "available") {
+			return this.signedMalicious(pkg, feed.feedId, signedHash);
+		}
 
+		// The file-check endpoint accepts SHA-256 only. Supplying a SHA-512 digest
+		// in its sha256 field would produce a meaningless negative verdict.
+		let fileReputationChecked = false;
+		let fileReputationUnavailable = false;
 		if (metadata.latestHash && this.fileCheckClient && metadata.hashAlgorithm === "sha256") {
 			try {
 				const fileResult = await this.fileCheckClient.checkHash(metadata.latestHash);
 				if (fileResult) {
+					fileReputationChecked = true;
 					const sev = fileResult.severity.toUpperCase();
 					if (sev === "SEVERITY_MALWARE") {
 						const detections =
@@ -169,9 +262,13 @@ export class PackageChecker {
 							fileCheckSeverity: sev,
 						};
 					}
+				} else {
+					// The client returns null for HTTP, timeout and malformed-response
+					// failures. None of those is a clean reputation verdict.
+					fileReputationUnavailable = true;
 				}
 			} catch {
-				// File-check is supplementary — fail-open
+				fileReputationUnavailable = true;
 				this.logger.warn("File-check failed for package", { name: pkg.name });
 			}
 		}
@@ -187,7 +284,27 @@ export class PackageChecker {
 				registry: pkg.registry,
 				verdict: "suspicious_age",
 				confidence: 0.75,
-				details: `Package '${pkg.name}' first published ${Math.floor(ageDays)} days ago (suspicious age)`,
+				details: `Package '${pkg.name}' first published ${Math.floor(ageDays)} days ago (suspicious age)${fileReputationUnavailable ? "; file reputation check unavailable" : ""}`,
+				ageDays,
+			};
+		}
+		if (fileReputationUnavailable) {
+			return {
+				packageName: pkg.name,
+				registry: pkg.registry,
+				verdict: "unknown",
+				confidence: 0,
+				details: `Package '${pkg.name}' exists, but its file reputation check is unavailable; it was not verified clean`,
+				ageDays,
+			};
+		}
+		if (feed && !fileReputationChecked) {
+			return {
+				packageName: pkg.name,
+				registry: pkg.registry,
+				verdict: "unknown",
+				confidence: 0,
+				details: `Package '${pkg.name}' exists, but no SHA-256 file reputation verdict was available; signed feed had no matching deny indicator`,
 				ageDays,
 			};
 		}

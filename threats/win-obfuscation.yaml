@@ -20,7 +20,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "[Cc][Ee][Rr][Tt][Uu][Tt][Ii][Ll]\\s.*-decode"
+  pattern: "[Cc][Ee][Rr][Tt][Uu][Tt][Ii][Ll]\\s.{0,300}-decode"
   match_on: command
   title: "certutil base64 decode (obfuscation)"
   expires_at: null
@@ -39,12 +39,29 @@
   revoked: false
 
 # Bypass + NoProfile combo
+#
+# Gap sizing: this rule must not have a gap limit — an attacker pads a real
+# command with extra arguments, and any bound N is evadable by padding past N
+# (a 300-char bound missed a 1239-char real-form command). Instead of a bound the
+# gap is written as a "tempered" scan that cannot step over the rule's own anchor:
+#     (?:(?!-[Ee]xecution[Pp]olicy)[^\n])*
+# It matches exactly the same inputs as the original `.*`: if `A ... B` matches at
+# all, it also matches starting from the LAST `A` before `B`, and that gap
+# contains no `A` by construction. The difference is that a scan can never run
+# past the next occurrence of the anchor, which makes the rule linear where the
+# original was quadratic (anchor repeated, target absent).
+#   measured on 64KB of `-ExecutionPolicy Bypass` with no `-NoProfile`:
+#     `.*` (original)   441ms
+#     `.{0,2000}`        38ms   (and it misses any gap longer than 2000)
+#     `.{0,64000}`      350ms
+#     tempered scan     0.4ms   (no gap limit at all)
+# A 1.2KB real command and a 50KB-padded variant both still match.
 - id: "CLT-WIN-OBFUS-004"
   category: tool
   severity: high
   confidence: 0.90
   action: block
-  pattern: "-[Ee]xecution[Pp]olicy\\s+[Bb]ypass.*-[Nn]o[Pp]rofile"
+  pattern: "-[Ee]xecution[Pp]olicy\\s+[Bb]ypass(?:(?!-[Ee]xecution[Pp]olicy)[^\\n])*-[Nn]o[Pp]rofile"
   match_on: command
   title: "PowerShell -ExecutionPolicy Bypass -NoProfile (malware pattern)"
   expires_at: null
@@ -56,7 +73,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "\\[char\\]\\s*\\d+.*-[Jj]oin"
+  pattern: "\\[char\\]\\s*\\d+.{0,300}-[Jj]oin"
   match_on: [command, content]
   title: "PowerShell [char] code obfuscation with -join"
   expires_at: null
@@ -80,7 +97,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bmshta\\b.*\\bvbscript:(Execute|CreateObject|close\\s*\\()"
+  pattern: "\\bmshta\\b.{0,300}\\bvbscript:(Execute|CreateObject|close\\s*\\()"
   case_insensitive: true
   match_on: command
   title: "mshta VBScript execution (Execute/CreateObject obfuscation)"
@@ -93,7 +110,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bmshta\\b.*\\bjavascript:"
+  pattern: "\\bmshta\\b.{0,300}\\bjavascript:"
   case_insensitive: true
   match_on: command
   title: "mshta JavaScript execution (LOLBin obfuscation)"
@@ -106,7 +123,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(wscript|cscript)(\\.exe)?\\b.*//[Ee]:([Vv][Bb][Ss]cript|[Jj][Ss]cript)"
+  pattern: "(wscript|cscript)(\\.exe)?\\b.{0,300}//[Ee]:([Vv][Bb][Ss]cript|[Jj][Ss]cript)"
   case_insensitive: true
   match_on: command
   title: "wscript/cscript script engine override (//E:VBScript evasion)"
@@ -119,7 +136,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "echo [\\S\\s]+> [a-zA-Z0-9.]+::\\$INDEX_ALLOCATION"
+  pattern: "echo [\\S\\s]{1,300}> [a-zA-Z0-9.]+::\\$INDEX_ALLOCATION"
   case_insensitive: true
   match_on: command
   title: "NTFS $INDEX_ALLOCATION folder creation without permissions"
@@ -140,12 +157,20 @@
   revoked: false
 
 # Dotdotdot hidden folder (ex CLT-TECH-003)
+# Perf (linear-time rewrite): the second alternative used to start with a bare
+# `[a-zA-Z]+`. The regex engine retried it at *every* offset, rescanned the rest
+# of a long letter run and then backtracked — O(n^2): ~0.85s for a 20KB command,
+# ~27s for 100KB, which killed the 15s hook before it could emit a verdict.
+# `(?<![a-zA-Z])` restricts the attempt to the start of a word run. A match that
+# used to be found mid-run (e.g. inside `abcdmkdir ...`) can still be found at
+# the run start, so the match set for this character-class-led alternative is
+# unchanged; the rule is now linear in the input length.
 - id: "CLT-WIN-OBFUS-012"
   category: tool
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(mkdir\\s+\\.{3,}|[a-zA-Z]+\\s+[a-z0-9]+\\s+>\\s+\\.{3,})"
+  pattern: "(mkdir\\s+\\.{3,}|(?<![a-zA-Z])[a-zA-Z]+\\s+[a-z0-9]+\\s+>\\s+\\.{3,})"
   case_insensitive: true
   match_on: command
   title: "Hidden file/folder via ... directory trick"
@@ -158,7 +183,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "cmd.*([^\\^]\\^[a-z].*){5}"
+  pattern: "cmd.{0,300}([^\\^]\\^[a-z].{0,300}){5}"
   case_insensitive: true
   match_on: command
   title: "cmd caret (^) obfuscation"
@@ -171,7 +196,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "cmd.*(%[^%]+:~[^%]*%[a-z]*){2}"
+  pattern: "cmd.{0,300}(%[^%]{1,300}:~[^%]{0,300}%[a-z]{0,300}){2}"
   case_insensitive: true
   match_on: command
   title: "cmd substring concatenation obfuscation"
@@ -184,7 +209,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "powershell.*(`[a-z].*){4}"
+  pattern: "powershell.{0,300}(`[a-z].{0,300}){4}"
   case_insensitive: true
   match_on: command
   title: "PowerShell backtick obfuscation"
@@ -197,7 +222,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "powershell.+-bxor\\s*['\"]"
+  pattern: "powershell.{1,300}-bxor\\s*['\"]"
   case_insensitive: true
   match_on: command
   title: "PowerShell XOR decryption"

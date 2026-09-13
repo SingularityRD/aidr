@@ -19,6 +19,48 @@ export {
 	shannonEntropy,
 } from "./pii-detector.js";
 export type {
+	DlpDirection,
+	DlpException,
+	DlpExceptionScope,
+	DlpLabel,
+	DlpMatcher,
+	DlpPolicy,
+	DlpRule,
+	DlpRuleAction,
+	DlpSensitivity,
+	DlpUnavailableAction,
+} from "./policy.js";
+export {
+	DlpDirectionSchema,
+	DlpExceptionSchema,
+	DlpExceptionScopeSchema,
+	DlpLabelSchema,
+	DlpMatcherSchema,
+	DlpPolicySchema,
+	DlpRuleActionSchema,
+	DlpRuleSchema,
+	DlpSensitivitySchema,
+	DlpUnavailableActionSchema,
+} from "./policy.js";
+export type {
+	DlpFinding,
+	DlpInspectedResult,
+	DlpScanAction,
+	DlpScanRequest,
+	DlpScanResult,
+	DlpUnavailableReason,
+	DlpUnavailableResult,
+} from "./scanner.js";
+export {
+	createDlpContentFingerprint,
+	createDlpMatchFingerprint,
+	DlpScanRequestSchema,
+	DlpTenantIsolationError,
+	scanDlpContent,
+	scanDlpInput,
+	scanDlpOutput,
+} from "./scanner.js";
+export type {
 	SecretDetectorConfig,
 	SecretMatch,
 	SecretSeverity,

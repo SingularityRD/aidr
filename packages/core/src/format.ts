@@ -75,6 +75,42 @@ export function formatStartupDisabled(version: string, reason: string): string {
 	return `Singularity AIDR v${version} - Disabled (${reason})`;
 }
 
+/**
+ * A managed/commercial installation that has not been enrolled still enforces
+ * locally - the evaluator runs the full local detection layer. Reporting it as
+ * "Disabled" is wrong and dangerous: it tells the operator there is no
+ * protection while threats are in fact being blocked, and it was the message
+ * that made the un-enrolled state look like a dead end.
+ *
+ * Used only for the reasons in LOCAL_ENFORCEMENT_ACTIVE_REASONS. Reasons that
+ * genuinely stop enforcement (degraded integrity, a commercial build forced to
+ * local mode, an unrecognised reason) use formatStartupDisabled instead.
+ */
+export function formatStartupLocalOnly(version: string, reason: string): string {
+	return `Singularity AIDR v${version} - Local protection ACTIVE (managed features unavailable: ${reason})`;
+}
+
+/**
+ * The reasons for which the local detection layer still runs and therefore for
+ * which this banner must NOT claim the product is switched off.
+ *
+ * This is an allow-list on purpose. The failure mode being guarded against is
+ * over-claiming protection, so an unrecognised reason must fall back to
+ * "Disabled" rather than to "protection is ACTIVE".
+ */
+const LOCAL_ENFORCEMENT_ACTIVE_REASONS = new Set<string>([
+	// Managed/commercial installation that has not been enrolled. The evaluator
+	// keeps running the full local layer; only managed features are unavailable.
+	"auth_required",
+	"missing_or_invalid_signed_entitlement",
+	"activation_required",
+]);
+
+export function isEnforcementStopped(disabledReason: string | undefined): boolean {
+	if (!disabledReason) return true;
+	return !LOCAL_ENFORCEMENT_ACTIVE_REASONS.has(disabledReason);
+}
+
 export function formatThreatBanner(
 	version: string,
 	results: PluginScanResult[],
@@ -105,8 +141,8 @@ export function formatThreatBanner(
 				lines.push(kv("Artifact", f.artifact));
 			}
 			lines.push(kv("Source", f.sourceFile));
-			const actionLabel = f.action === "block" ? "Blocked" : "Flagged";
-			lines.push(kv("Action", actionLabel));
+			const actionLabel = f.action === "block" ? "Block recommendation; review or disable this plugin" : "Review recommended";
+			lines.push(kv("Finding", actionLabel));
 		}
 
 		const overflow = highCrit.length - MAX_FINDINGS;
@@ -132,7 +168,12 @@ export function formatThreatBanner(
 
 export function formatSessionStartMessage(version: string, result: SessionStartResult): string {
 	if (result.enabled === false) {
-		const base = formatStartupDisabled(version, result.disabled_reason ?? "disabled");
+		const reason = result.disabled_reason ?? "disabled";
+		// Only claim the product is off when it actually is. The managed-only
+		// reasons below leave local detection running, so the banner must say so.
+		const base = isEnforcementStopped(result.disabled_reason)
+			? formatStartupDisabled(version, reason)
+			: formatStartupLocalOnly(version, reason);
 		if (!result.bootstrap) return base;
 
 		const lines: string[] = [base, ""];
@@ -144,8 +185,8 @@ export function formatSessionStartMessage(version: string, result: SessionStartR
 		}
 		return lines.join("\n");
 	}
-	if (result.scanResults.length > 0) {
-		return formatThreatBanner(version, result.scanResults, result.versionCheck);
-	}
-	return formatStartupClean(version, result.versionCheck);
+	const message = result.scanResults.length > 0 ? formatThreatBanner(version, result.scanResults, result.versionCheck) : formatStartupClean(version, result.versionCheck);
+	if (!result.posture) return message;
+	const { mcpServers, riskyMcpServers, invalidSources, infrastructure } = result.posture;
+	return `${message}\nMCP inventory: ${mcpServers} configured, ${riskyMcpServers} with risk indicators, ${invalidSources} unreadable sources. Configuration discovery does not verify server trust.\nAI infrastructure policy assessment: ${infrastructure}.`;
 }

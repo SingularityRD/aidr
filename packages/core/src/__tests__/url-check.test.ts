@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UrlCheckClient } from "../clients/url-check.js";
+import { DetectionLegUnavailableError } from "../detection-leg.js";
 
 describe("UrlCheckClient", () => {
 	const originalFetch = globalThis.fetch;
@@ -102,23 +103,32 @@ describe("UrlCheckClient", () => {
 		expect(results[0]?.flags).toContain("TYPOSQUATTING");
 	});
 
-	it("returns empty on fetch error (fail-open)", async () => {
+	// These two cases previously asserted `results === []` and were named
+	// "fail-open". That expectation encoded a false-clean: an empty array is the
+	// same value returned when every URL was checked and none was malicious, so an
+	// unreachable or rejecting endpoint was reported to the user as "no malicious
+	// URLs found". The caller may still choose to degrade - the evaluator already
+	// wraps this call in try/catch - but the client must not make that choice
+	// silently on the caller's behalf. See detection-leg.ts.
+	it("throws on fetch error instead of reporting nothing found", async () => {
 		globalThis.fetch = vi.fn().mockRejectedValue(new Error("network error"));
 
 		const client = new UrlCheckClient();
-		const results = await client.checkUrls(["http://any.test"]);
-		expect(results).toEqual([]);
+		await expect(client.checkUrls(["http://any.test"])).rejects.toBeInstanceOf(
+			DetectionLegUnavailableError,
+		);
 	});
 
-	it("returns empty on non-ok response (fail-open)", async () => {
+	it("throws on non-ok response instead of reporting nothing found", async () => {
 		globalThis.fetch = vi.fn().mockResolvedValue({
 			ok: false,
 			status: 500,
 		});
 
 		const client = new UrlCheckClient();
-		const results = await client.checkUrls(["http://any.test"]);
-		expect(results).toEqual([]);
+		await expect(client.checkUrls(["http://any.test"])).rejects.toBeInstanceOf(
+			DetectionLegUnavailableError,
+		);
 	});
 
 	it("sends request payload with kebab-case field names", async () => {

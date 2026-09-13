@@ -1,4 +1,4 @@
-# Command threat patterns for Singularity AIDR
+﻿# Command threat patterns for Singularity AIDR
 # Author: SingularityRD
 # License: DRL-1.1 (see threats/LICENSE)
 # Schema: id, category, severity, confidence, action, pattern, match_on, title, expires_at, revoked
@@ -9,7 +9,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "curl\\s[^|]*\\|\\s*(bash|sh|zsh|ksh|dash)"
+  pattern: "curl\\s[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)"
   match_on: command
   title: "Remote code execution via curl pipe to shell"
   expires_at: null
@@ -20,7 +20,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "wget\\s[^|]*\\|\\s*(bash|sh|zsh|ksh|dash)"
+  pattern: "wget\\s[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)"
   match_on: command
   title: "Remote code execution via wget pipe to shell"
   expires_at: null
@@ -43,7 +43,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bnc\\b.*\\s-e\\s"
+  pattern: "\\bnc\\b.{0,300}\\s-e\\s"
   match_on: command
   title: "Reverse shell via netcat -e"
   expires_at: null
@@ -66,7 +66,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\brm\\s+(-[a-zA-Z]*f[a-zA-Z]*\\s+)?(-[a-zA-Z]*r[a-zA-Z]*\\s+)?/(\\s|$|[;&|*])|\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*\\s+)?(-[a-zA-Z]*f[a-zA-Z]*\\s+)?/(\\s|$|[;&|*])|\\brm\\s+-[a-zA-Z]*rf[a-zA-Z]*\\s+/(\\s|$|[;&|*])"
+  pattern: "\\brm\\s+(-[a-zA-Z]{0,300}f[a-zA-Z]{0,300}\\s+)?(-[a-zA-Z]{0,300}r[a-zA-Z]{0,300}\\s+)?/(\\s|$|[;&|*])|\\brm\\s+(-[a-zA-Z]{0,300}r[a-zA-Z]{0,300}\\s+)?(-[a-zA-Z]{0,300}f[a-zA-Z]{0,300}\\s+)?/(\\s|$|[;&|*])|\\brm\\s+-[a-zA-Z]{0,300}rf[a-zA-Z]{0,300}\\s+/(\\s|$|[;&|*])"
   match_on: command
   title: "Recursive forced deletion from root"
   expires_at: null
@@ -88,7 +88,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\bdd\\s+if=.*of=/dev/"
+  pattern: "\\bdd\\s+if=.{0,300}of=/dev/"
   match_on: command
   title: "Direct disk write via dd"
   expires_at: null
@@ -106,12 +106,16 @@
   revoked: false
 
 # --- Download + execute chains ---
+# Perf (linear-time rewrite): unbounded `[^&]*` was rescanned from every
+# `curl|wget` occurrence, so a command repeating those verbs without a `&`
+# cost O(n^2) (~88ms per 20KB, ~770ms at the 64KB match cap). Bounded to 300
+# characters, far beyond `curl -fsSL <url>` plus flags.
 - id: "CLT-CMD-010"
   category: tool
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(curl|wget)\\s[^&]*&&\\s*chmod\\s+\\+x"
+  pattern: "(curl|wget)\\s[^&]{0,300}&&\\s*chmod\\s+\\+x"
   match_on: command
   title: "Download and execute chain"
   expires_at: null
@@ -141,12 +145,16 @@
   revoked: false
 
 # --- Data exfiltration ---
+# Perf (linear-time rewrite): unbounded `[^|;]*` was rescanned from every
+# `curl` occurrence when the command contains neither `|` nor `;` (~69ms per
+# 20KB, ~770ms at the 64KB match cap). Bounded to 300 characters, far beyond a
+# real `curl -d @file https://...` invocation.
 - id: "CLT-CMD-013"
   category: network_egress
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "curl\\s[^|;]*(-d|--data|--data-binary)\\s\\S*(/etc/passwd|/etc/shadow|\\.ssh/|id_rsa|credentials|secrets)"
+  pattern: "curl\\s[^|;]{0,300}(-d|--data|--data-binary)\\s\\S{0,300}(/etc/passwd|/etc/shadow|\\.ssh/|id_rsa|credentials|secrets)"
   match_on: command
   title: "Possible data exfiltration of sensitive files"
   expires_at: null
@@ -158,7 +166,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bsudo\\s+(curl|wget)\\s[^|]*\\|\\s*(bash|sh|zsh|ksh|dash)"
+  pattern: "\\bsudo\\s+(curl|wget)\\s[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)"
   match_on: command
   title: "Privileged pipe-to-shell (sudo curl/wget piped to shell)"
   expires_at: null
@@ -170,7 +178,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "python[3]?\\s+-c\\s+[\"'][^\"']*\\b(os\\.system|subprocess|os\\.exec|os\\.popen|__import__)\\b"
+  pattern: "python[3]?\\s+-c\\s+[\"'][^\"']{0,300}\\b(os\\.system|subprocess|os\\.exec|os\\.popen|__import__)\\b"
   match_on: command
   title: "Python one-liner with dangerous imports"
   expires_at: null
@@ -193,7 +201,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\beval\\b[^;|]*\\b(curl|wget)\\b"
+  pattern: "\\beval\\b[^;|]{0,300}\\b(curl|wget)\\b"
   match_on: command
   title: "Eval executing remote download command"
   expires_at: null
@@ -204,7 +212,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\bxargs\\b[^|;]*\\b(curl|wget|bash|sh)\\b"
+  pattern: "\\bxargs\\b[^|;]{0,300}\\b(curl|wget|bash|sh)\\b"
   match_on: command
   title: "xargs dispatching download or shell execution"
   expires_at: null
@@ -215,7 +223,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\bfind\\b[^|;]*-exec\\s+(bash|sh|curl|wget)\\b"
+  pattern: "\\bfind\\b[^|;]{0,300}-exec\\s+(bash|sh|curl|wget)\\b"
   match_on: command
   title: "find -exec executing shell or download commands"
   expires_at: null
@@ -227,7 +235,7 @@
   severity: high
   confidence: 0.80
   action: block
-  pattern: "\\b(nslookup|dig|host)\\b[^|;]*\\$\\([^)]+\\)\\.[a-zA-Z]"
+  pattern: "\\b(nslookup|dig|host)\\b[^|;]{0,300}\\$\\([^)]{1,300}\\)\\.[a-zA-Z]"
   match_on: command
   title: "DNS exfiltration via command substitution as subdomain label"
   expires_at: null
@@ -238,7 +246,7 @@
   severity: high
   confidence: 0.80
   action: block
-  pattern: "\\b(nslookup|dig|host)\\b[^|;]*`[^`]+`\\.[a-zA-Z]"
+  pattern: "\\b(nslookup|dig|host)\\b[^|;]{0,300}`[^`]{1,300}`\\.[a-zA-Z]"
   match_on: command
   title: "DNS exfiltration via backtick substitution as subdomain label"
   expires_at: null
@@ -250,7 +258,7 @@
   severity: high
   confidence: 0.80
   action: block
-  pattern: "\\b(while|for)\\b[^;]*;\\s*do[^;]*(\\b(bash|sh)\\s+-c\\b|\\b(curl|wget)\\b[^;]*\\|\\s*(?:sudo\\s+)?(?:env\\s+)?(?:[^\\s\"']*[\\\\/])?(bash|sh|zsh|ksh|dash)\\b|\\b(curl|wget)\\b[^;]*(?:(-d|--data|--data-binary)\\s+['\\\"]?@\\S+|(--upload-file|-T)\\s+['\\\"]?\\S+))"
+  pattern: "\\b(while|for)\\b[^;]{0,300};\\s*do[^;]{0,300}(\\b(bash|sh)\\s+-c\\b|\\b(curl|wget)\\b[^;]{0,300}\\|\\s*(?:sudo\\s+)?(?:env\\s+)?(?:[^\\s\"']{0,300}[\\\\/])?(bash|sh|zsh|ksh|dash)\\b|\\b(curl|wget)\\b[^;]{0,300}(?:(-d|--data|--data-binary)\\s+['\\\"]?@\\S{1,300}|(--upload-file|-T)\\s+['\\\"]?\\S{1,300}))"
   match_on: command
   title: "Loop executing shell or download commands"
   expires_at: null
@@ -264,7 +272,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "python[23]?\\s+-c.*socket.*connect.*(\\/bin\\/zsh|\\/bin\\/sh|\\/bin\\/bash)"
+  pattern: "python[23]?\\s+-c.{0,300}socket.{0,300}connect.{0,300}(\\/bin\\/zsh|\\/bin\\/sh|\\/bin\\/bash)"
   match_on: command
   title: "Python reverse shell via socket"
   expires_at: null
@@ -276,7 +284,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "ruby\\s+-e.*TCPSocket.*exec.*(\\/bin\\/zsh|\\/bin\\/sh)"
+  pattern: "ruby\\s+-e.{0,300}TCPSocket.{0,300}exec.{0,300}(\\/bin\\/zsh|\\/bin\\/sh)"
   match_on: command
   title: "Ruby reverse shell via TCPSocket"
   expires_at: null
@@ -288,7 +296,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bzsh\\s+-c\\b.*\\b(exec|socket|/dev/tcp)\\b"
+  pattern: "\\bzsh\\s+-c\\b.{0,300}\\b(exec|socket|/dev/tcp)\\b"
   match_on: command
   title: "Zsh reverse shell pattern"
   expires_at: null
@@ -300,7 +308,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\brm\\s+(-[a-zA-Z]+\\s+)*-[a-zA-Z]*[rR][a-zA-Z]*(\\s+-[a-zA-Z]+)*\\s+/(home|Users|etc|usr|var|boot|bin|sbin|lib|lib64|opt|root|System|Applications|Library|Volumes|private|mnt)\\b/?(\\s|$|[;&|])"
+  pattern: "\\brm\\s+(-[a-zA-Z]+\\s+)*-[a-zA-Z]{0,300}[rR][a-zA-Z]{0,300}(\\s+-[a-zA-Z]+)*\\s+/(home|Users|etc|usr|var|boot|bin|sbin|lib|lib64|opt|root|System|Applications|Library|Volumes|private|mnt)\\b/?(\\s|$|[;&|])"
   match_on: command
   title: "Recursive deletion of critical system directory"
   expires_at: null
@@ -312,7 +320,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\brm\\s+(-{1,2}[\\w-]+(=\\S+)?\\s+)*(\\S+[\\\\/])?\\.env(?!\\S*\\.(example|sample|template|dist)\\b)(\\.(local|production|prod|staging|stage|development|dev|test))?\\b"
+  pattern: "\\brm\\s+(-{1,2}[\\w-]+(=\\S{1,300})?\\s+)*(\\S{1,300}[\\\\/])?\\.env(?!\\S{0,300}\\.(example|sample|template|dist)\\b)(\\.(local|production|prod|staging|stage|development|dev|test))?\\b"
   match_on: command
   title: "Deletion of .env file"
   expires_at: null
@@ -324,19 +332,26 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\brm\\s+(-{1,2}[\\w-]+(=\\S+)?\\s+)*\\S+\\.(db|sqlite|sqlite3)\\b"
+  pattern: "\\brm\\s+(-{1,2}[\\w-]+(=\\S{1,300})?\\s+)*\\S{1,300}\\.(db|sqlite|sqlite3)\\b"
   match_on: command
   title: "Deletion of database file"
   expires_at: null
   revoked: false
 
 # --- Deletion of .git directory ---
+# Perf (linear-time rewrite): the unbounded `.*` between the verb and the target
+# was rescanned from every occurrence of `rm|del|rd|...`, i.e. O(n^2) on a
+# command that repeats those verbs (~80ms for 20KB of `rm -rf build/`, and
+# minutes for megabytes). The gap is now bounded to 300 characters â€” several
+# times any realistic argument list (`rm -rf --preserve-root
+# /home/user/projects/<name>/.git` is ~55) â€” which makes the rule linear while
+# still matching every real invocation.
 - id: "CLT-CMD-029"
   category: tool
   severity: high
   confidence: 0.90
   action: require_approval
-  pattern: "\\b(rm|del|rmdir|rd|Remove-Item|unlink)\\b.*(\\s|[\\\\/])\\.git(\\s|[\\\\/]|$)"
+  pattern: "\\b(rm|del|rmdir|rd|Remove-Item|unlink)\\b.{0,300}(\\s|[\\\\/])\\.git(\\s|[\\\\/]|$)"
   case_insensitive: true
   match_on: command
   title: "Deletion of .git directory"

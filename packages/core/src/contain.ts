@@ -66,8 +66,18 @@ export class AutoContain {
 					error: "Container runtime not available",
 				});
 			}
-			const result = await operation();
-			return { result, isolated: false };
+			// REFUSE, do not run unisolated.
+			//
+			// This method exists to contain an operation that has already been
+			// judged dangerous. Executing it here without isolation and returning
+			// `isolated: false` invites a caller to treat "contained" as done while
+			// the operation ran with full privileges - the opposite of the intent.
+			// A containment primitive that cannot contain must fail, loudly.
+			throw new Error(
+				`Container isolation requested but runtime '${this.config.runtime}' is not available; ` +
+					"refusing to run the operation unisolated. Install a container runtime, or handle the " +
+					"verdict by blocking the call instead of containing it.",
+			);
 		}
 
 		const containerId = await this.createContainer();

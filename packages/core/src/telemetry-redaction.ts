@@ -9,7 +9,7 @@
 export const REDACTED_TELEMETRY_VALUE = "[Redacted]";
 
 const SENSITIVE_KEY_RE =
-	/(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|cookie|credential|password|passwd|private[_-]?key|secret|session[_-]?token|signature|sig|token|client[_-]?secret|dsn)/i;
+	/(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|cookie|credential|password|passwd|private[_-]?key|secret|session[_-]?token|signature|sig|token|client[_-]?secret|dsn|prompt|tool[_-]?input(?![_-]?summary)|tool[_-]?output|completion|response[_-]?body|request[_-]?body|content)/i;
 
 // Secrets commonly appear in free-form commands, exception messages and URL
 // query strings rather than under an object key.  Keep these expressions

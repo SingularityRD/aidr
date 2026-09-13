@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileCheckClient } from "../clients/file-check.js";
+import { DetectionLegUnavailableError } from "../detection-leg.js";
 
 describe("FileCheckClient", () => {
 	const originalFetch = globalThis.fetch;
@@ -154,26 +155,37 @@ describe("FileCheckClient", () => {
 			expect(mockFetch).toHaveBeenCalledTimes(3);
 		});
 
-		it("returns empty on API error (fail-open)", async () => {
+		// These previously asserted `results === []` and were named "fail-open".
+		// An empty array is the same value returned when every hash was checked and
+		// none was malicious, so a rejecting or unreachable endpoint was reported to
+		// the user as "no malicious files found". The caller may still degrade - the
+		// plugin scanner now reports the gap explicitly - but the client must not
+		// make that choice silently. See detection-leg.ts.
+		it("throws on API error instead of reporting nothing found", async () => {
 			globalThis.fetch = vi.fn().mockResolvedValue({
 				ok: false,
 				status: 500,
 			});
 
 			const client = new FileCheckClient();
-			const results = await client.checkHashes(["abc123"]);
-			expect(results).toEqual([]);
+			await expect(client.checkHashes(["abc123"])).rejects.toBeInstanceOf(
+				DetectionLegUnavailableError,
+			);
 		});
 
-		it("returns empty on timeout (fail-open)", async () => {
+		it("throws on timeout instead of reporting nothing found", async () => {
 			globalThis.fetch = vi.fn().mockRejectedValue(new Error("timeout"));
 
 			const client = new FileCheckClient();
-			const results = await client.checkHashes(["abc123"]);
-			expect(results).toEqual([]);
+			await expect(client.checkHashes(["abc123"])).rejects.toBeInstanceOf(
+				DetectionLegUnavailableError,
+			);
 		});
 
-		it("preserves results from successful batches when one batch fails", async () => {
+		it("keeps detections from successful batches AND reports the batches that failed", async () => {
+			// Partial coverage is the subtle case: the detections are real evidence
+			// and must survive, while the unchecked hashes are a gap that must not be
+			// mistaken for a clean result. Both must come out of the same call.
 			const hashes = Array.from({ length: 75 }, (_, i) => i.toString(16).padStart(64, "0"));
 			const hash0 = hashes[0];
 
@@ -198,11 +210,21 @@ describe("FileCheckClient", () => {
 			});
 
 			const client = new FileCheckClient();
-			const results = await client.checkHashes(hashes);
+			const error = await client.checkHashes(hashes).catch((e: unknown) => e);
 
-			expect(results).toHaveLength(1);
-			expect(results[0].sha256).toBe(hash0);
-			expect(results[0].severity).toBe("SEVERITY_MALWARE");
+			expect(error).toBeInstanceOf(DetectionLegUnavailableError);
+			const legError = error as DetectionLegUnavailableError;
+
+			// The real detection survived.
+			const partial = legError.partialResults as Array<{ sha256: string; severity: string }>;
+			expect(partial).toHaveLength(1);
+			expect(partial[0]?.sha256).toBe(hash0);
+			expect(partial[0]?.severity).toBe("SEVERITY_MALWARE");
+
+			// And the gap is quantified, not hidden.
+			expect(legError.uncheckedCount).toBeGreaterThan(0);
+			expect(legError.reason.length).toBeGreaterThan(0);
+			expect(legError.leg).toBe("file_reputation");
 		});
 	});
 });

@@ -56,5 +56,19 @@ You are working in an environment protected by Singularity AIDR, a security plug
 
 ## AIDR Flagged Actions
 
-When Singularity AIDR flags a tool call (as opposed to blocking it outright), you **must** present the details to the user and wait for their explicit approval before calling `aidr_approve`. Never auto-approve a flagged action on your own — the user must decide.
+When Singularity AIDR flags a tool call it is **blocked**, and the block cannot be
+resolved by you. There is deliberately no approval tool available to the agent:
+approval is an out-of-band, human-only action, because an agent able to approve its
+own blocked action would defeat the gate entirely.
+
+When you are blocked:
+
+1. Report the block reason and the `actionId` reference to the user.
+2. Stop. Do not retry the tool call, do not rephrase it to evade the rule, and do
+   not attempt to approve it yourself.
+3. Wait for the user to approve it out of band or to permanently allowlist the exact
+   artifact.
+
+If you believe the block is a false positive, say so plainly and explain the
+intended action so the user can decide; never work around the control.
 

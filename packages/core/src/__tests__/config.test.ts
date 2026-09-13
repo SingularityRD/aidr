@@ -35,7 +35,10 @@ describe("resolvePath", () => {
 describe("loadConfig", () => {
 	it("returns defaults for missing file", async () => {
 		const config = await loadConfig("/nonexistent/config.json");
-		expect(config.mode).toBe("managed");
+		// Local enforcement is the default so a fresh install protects on the first
+		// tool call. Managed mode is an explicit opt-in that adds the control plane,
+		// signed entitlements and premium intel packs. See AIDR-015.
+		expect(config.mode).toBe("local");
 		expect(config.sensitivity).toBe("balanced");
 		expect(config.heuristics_enabled).toBe(true);
 		expect(config.url_check.enabled).toBe(true);

@@ -9,19 +9,22 @@
   severity: high
   confidence: 0.90
   action: block
-  pattern: "(LaunchAgents|LaunchDaemons)/.*\\.plist"
+  pattern: "(LaunchAgents|LaunchDaemons)/.{0,300}\\.plist"
   match_on: command
   title: "macOS LaunchAgent/LaunchDaemon persistence"
   expires_at: null
   revoked: false
 
 # Login Items via osascript
+# Perf (linear-time rewrite): unbounded `.*` rescanned from every `osascript`
+# occurrence (~68ms per 20KB, ~460ms at the 64KB match cap). Bounded to 300
+# characters, far beyond a real `osascript -e '... make login item ...'` call.
 - id: "CLT-MAC-PERSIST-002"
   category: tool
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\bosascript\\b.*login item"
+  pattern: "\\bosascript\\b.{0,300}login item"
   case_insensitive: true
   match_on: command
   title: "Add login item via osascript"
@@ -34,7 +37,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\bdefaults\\b.*\\bwrite\\b.*loginwindow.*(AutoLaunch|LoginHook|LogoutHook)"
+  pattern: "\\bdefaults\\b.{0,300}\\bwrite\\b.{0,300}loginwindow.{0,300}(AutoLaunch|LoginHook|LogoutHook)"
   case_insensitive: true
   match_on: command
   title: "Login window hook manipulation via defaults write"
@@ -92,12 +95,15 @@
   revoked: false
 
 # Folder Actions via osascript
+# Perf (linear-time rewrite): unbounded `.*` rescanned from every `osascript`
+# occurrence (~58ms per 20KB, ~485ms at the 64KB match cap). Bounded to 300
+# characters (see CLT-MAC-PERSIST-002).
 - id: "CLT-MAC-PERSIST-008"
   category: tool
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\bosascript\\b.*folder action"
+  pattern: "\\bosascript\\b.{0,300}folder action"
   case_insensitive: true
   match_on: command
   title: "Folder Action script persistence via osascript"
@@ -110,7 +116,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\blaunchctl\\b.*\\b(load|bootstrap)\\b"
+  pattern: "\\blaunchctl\\b.{0,300}\\b(load|bootstrap)\\b"
   match_on: command
   title: "Load persistent launch agent/daemon via launchctl"
   expires_at: null

@@ -9,7 +9,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(rundll32(\\.exe)?.*comsvcs\\.dll,MiniDump.*|procdump.*-ma.*lsass\\.exe.*lsass_dump|sekurlsa::Minidump.*lsassdump\\.dmp|sekurlsa::logonPasswords)"
+  pattern: "(rundll32(\\.exe)?.{0,300}comsvcs\\.dll,MiniDump.{0,300}|procdump.{0,300}-ma.{0,300}lsass\\.exe.{0,300}lsass_dump|sekurlsa::Minidump.{0,300}lsassdump\\.dmp|sekurlsa::logonPasswords)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1003.001 - LSASS Memory"
@@ -22,7 +22,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(reg.*save.*HKLM.*sam.*sam|reg.*save.*HKLM.*system.*system)"
+  pattern: "(reg.{0,300}save.{0,300}HKLM.{0,300}sam.{0,300}sam|reg.{0,300}save.{0,300}HKLM.{0,300}system.{0,300}system)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1003.002 - Security Account Manager"
@@ -61,7 +61,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "cmdkey(\\.exe)?.*/list"
+  pattern: "cmdkey(\\.exe)?.{0,300}/list"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1003.005 - Cached Domain Credentials"
@@ -74,7 +74,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "Invoke-Mimikatz.*-Command.*lsadump::dcsync.*/user:"
+  pattern: "Invoke-Mimikatz.{0,300}-Command.{0,300}lsadump::dcsync.{0,300}/user:"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1003.006 - DC Sync"
@@ -87,7 +87,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(reg(\\.exe)? (save|export).*SAM|(PasswordDump|CreateMiniDump)|Invoke-PowerDump\\.ps1|Get-PassHashes\\.ps1|Get-RegAutoLogon\\.ps1)"
+  pattern: "(reg(\\.exe)? (save|export).{0,300}SAM|(PasswordDump|CreateMiniDump)|Invoke-PowerDump\\.ps1|Get-PassHashes\\.ps1|Get-RegAutoLogon\\.ps1)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1003 - OS Credential Dumping"
@@ -100,7 +100,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(rar(\\.exe)?.*[afu].*\\s(-dw|-tb|-ta)|7z(\\.exe)?.*[au].*-sdel|Add-Exfiltration\\.ps1|Do-Exfiltration\\.ps1|Invoke-PostExfil\\.ps1)"
+  pattern: "(rar(\\.exe)?.{0,300}[afu].{0,300}\\s(-dw|-tb|-ta)|7z(\\.exe)?.{0,300}[au].{0,300}-sdel|Add-Exfiltration\\.ps1|Do-Exfiltration\\.ps1|Invoke-PostExfil\\.ps1)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1020 - Automated Exfiltration"
@@ -113,7 +113,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "Invoke-DCOM.*\\-ComputerName"
+  pattern: "Invoke-DCOM.{0,300}\\-ComputerName"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1021.003 - Distributed Component Object Model"
@@ -126,7 +126,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(Invoke-PSImage.*-Script|Invoke-PSImage)"
+  pattern: "(Invoke-PSImage.{0,300}-Script|Invoke-PSImage)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1027.003 - Steganography"
@@ -139,7 +139,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "Find-AVSignature.*-Startbyte"
+  pattern: "Find-AVSignature.{0,300}-Startbyte"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1027.005 - Indicator Removalfrom Tools"
@@ -152,7 +152,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "netsh(\\.exe)?.*start.*trace"
+  pattern: "netsh(\\.exe)?.{0,300}start.{0,300}trace"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1040 - Network Sniffing"
@@ -230,7 +230,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(cmd(\\.exe)?\\s+/c\\s+del\\s+/[sqf]|fsutil(\\.exe)?.*usn.*deleteJournal)"
+  pattern: "(cmd(\\.exe)?\\s+/c\\s+del\\s+/[sqf]|fsutil(\\.exe)?.{0,300}usn.{0,300}deleteJournal)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1070.004 - File Deletion"
@@ -243,7 +243,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "net(1)?(\\.exe)?.*use.*\\\\\\\\.*\\\\.*/delete$"
+  pattern: "net(1)?(\\.exe)?.{0,300}use.{0,300}\\\\\\\\.{0,300}\\\\.{0,300}/delete$"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1070.005 - Network Share Connection Removal"
@@ -256,7 +256,7 @@
   severity: medium
   confidence: 0.70
   action: require_approval
-  pattern: "(net1.*user.*/dom|net(\\.exe)?.*user.*/dom|net1.*group.*/dom|net(\\.exe)?.*group.*/dom)"
+  pattern: "(net1.{0,300}user.{0,300}/dom|net(\\.exe)?.{0,300}user.{0,300}/dom|net1.{0,300}group.{0,300}/dom|net(\\.exe)?.{0,300}group.{0,300}/dom)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1087.002 - Domain Account"
@@ -269,7 +269,7 @@
   severity: medium
   confidence: 0.70
   action: require_approval
-  pattern: "Get-.*GlobalAddressList"
+  pattern: "Get-.{0,300}GlobalAddressList"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1087.003 - Email Account"
@@ -295,7 +295,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(net(1|\\.exe)?.*user.*\\w+.*/add|net(1|\\.exe)?.*group.*Administrators.*\\w+ /add|net(1|\\.exe)?.*localgroup.*Administrators.*\\w+ /add)"
+  pattern: "(net(1|\\.exe)?.{0,300}user.{0,300}\\w{1,300}.{0,300}/add|net(1|\\.exe)?.{0,300}group.{0,300}Administrators.{0,300}\\w{1,300} /add|net(1|\\.exe)?.{0,300}localgroup.{0,300}Administrators.{0,300}\\w{1,300} /add)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1098 - Account Manipulation"
@@ -308,7 +308,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(certutil(\\.exe)?.*-(decode|decodehex|encode|ping|url|urlcache|verifyctl)|MpCmdRun(\\.exe)?.*-DownloadFile.*-url.*http|\\(new-object System\\.Net\\.WebClient\\)\\.DownloadFile|bitsadmin(\\.exe)?.*/(transfer|download|create|addfile|setnotifycmdline|resume|complete)|Start-BitsTransfer)"
+  pattern: "(certutil(\\.exe)?.{0,300}-(decode|decodehex|encode|ping|url|urlcache|verifyctl)|MpCmdRun(\\.exe)?.{0,300}-DownloadFile.{0,300}-url.{0,300}http|\\(new-object System\\.Net\\.WebClient\\)\\.DownloadFile|bitsadmin(\\.exe)?.{0,300}/(transfer|download|create|addfile|setnotifycmdline|resume|complete)|Start-BitsTransfer)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1105 - Ingress Tool Transfer"
@@ -334,7 +334,7 @@
   severity: medium
   confidence: 0.70
   action: require_approval
-  pattern: "(Get-WMIObject.*Win32_PnPEntity|pnputil(\\.exe)?.*/enum-devices)"
+  pattern: "(Get-WMIObject.{0,300}Win32_PnPEntity|pnputil(\\.exe)?.{0,300}/enum-devices)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1120 - Peripheral Device Discovery"
@@ -347,7 +347,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "net(1)?(\\.exe)?.*user.*/add"
+  pattern: "net(1)?(\\.exe)?.{0,300}user.{0,300}/add"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1136.001 - Local Account"
@@ -360,7 +360,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "net(1)?(\\.exe)?.*user.*/add.*/domain"
+  pattern: "net(1)?(\\.exe)?.{0,300}user.{0,300}/add.{0,300}/domain"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1136.002 - Domain Account"
@@ -373,7 +373,7 @@
   severity: medium
   confidence: 0.70
   action: require_approval
-  pattern: "(net.*accounts|Get-ADDefaultDomainPasswordPolicy|Get-PassPol)"
+  pattern: "(net.{0,300}accounts|Get-ADDefaultDomainPasswordPolicy|Get-PassPol)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1201 - Password Policy Discovery"
@@ -386,7 +386,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(regsvr32(\\.exe)?.*/i:http(s)?://.+.*scrobj\\.dll|rundll32(\\.exe)?.*pcwutl\\.dll,LaunchApplication|rundll32(\\.exe)?.*shell32\\.dll,ShellExec_RunDLL|rundll32(\\.exe)?.*url\\.dll,OpenURL|msiexec(\\.exe)?.*-(Y|Z)|regasm(\\.exe)?.*/u.*\\\\)"
+  pattern: "(regsvr32(\\.exe)?.{0,300}/i:http(s)?://.{1,300}.{0,300}scrobj\\.dll|rundll32(\\.exe)?.{0,300}pcwutl\\.dll,LaunchApplication|rundll32(\\.exe)?.{0,300}shell32\\.dll,ShellExec_RunDLL|rundll32(\\.exe)?.{0,300}url\\.dll,OpenURL|msiexec(\\.exe)?.{0,300}-(Y|Z)|regasm(\\.exe)?.{0,300}/u.{0,300}\\\\)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1202 - Indirect Command Execution"
@@ -399,7 +399,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(p\\^+o\\^+w\\^+e\\^+r\\^+s\\^+h\\^+e\\^+l\\^+l|w\\^+s\\^+c\\^+r\\^+i\\^+p\\^+t|c\\^+e\\^+r\\^+t\\^+u\\^+t\\^+i\\^+l|m\\^+s\\^+h\\^+t\\^+a|explorer\\.exe .*\\.vbs$)"
+  pattern: "(p\\^+o\\^+w\\^+e\\^+r\\^+s\\^+h\\^+e\\^+l\\^+l|w\\^+s\\^+c\\^+r\\^+i\\^+p\\^+t|c\\^+e\\^+r\\^+t\\^+u\\^+t\\^+i\\^+l|m\\^+s\\^+h\\^+t\\^+a|explorer\\.exe .{0,300}\\.vbs$)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1203 - Exploitationfor Client Execution"
@@ -425,7 +425,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "verclsid(\\.exe)?.*/S.*/C.*\\{[0-9a-fA-F]{8}"
+  pattern: "verclsid(\\.exe)?.{0,300}/S.{0,300}/C.{0,300}\\{[0-9a-fA-F]{8}"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1218.012 - Verclsid"
@@ -438,7 +438,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(msxsl(\\.exe)?.+\\.xsl|wmic(\\.exe)?.*process.*list.*/FORMAT:.+\\.xsl|wmic(\\.exe)?.*os.*get.*/FORMAT:.+\\.xsl|wmic.*process.*list.*/FORMAT:evil\\[\\.\\]xsl|wmic.*os.*get.*/FORMAT:https\\[:\\]//example\\[\\.\\]com/evil\\[\\.\\]xsl)"
+  pattern: "(msxsl(\\.exe)?.{1,300}\\.xsl|wmic(\\.exe)?.{0,300}process.{0,300}list.{0,300}/FORMAT:.{1,300}\\.xsl|wmic(\\.exe)?.{0,300}os.{0,300}get.{0,300}/FORMAT:.{1,300}\\.xsl|wmic.{0,300}process.{0,300}list.{0,300}/FORMAT:evil\\[\\.\\]xsl|wmic.{0,300}os.{0,300}get.{0,300}/FORMAT:https\\[:\\]//example\\[\\.\\]com/evil\\[\\.\\]xsl)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1220 - XSL Script Processing"
@@ -451,7 +451,7 @@
   severity: medium
   confidence: 0.70
   action: require_approval
-  pattern: "(nltest(\\.exe)?.*/domain_trusts|dsquery(\\.exe)?.*/trustedDomain|Get-NetDomainTrust|Get-NetForestTrust|Get-ADDomain)"
+  pattern: "(nltest(\\.exe)?.{0,300}/domain_trusts|dsquery(\\.exe)?.{0,300}/trustedDomain|Get-NetDomainTrust|Get-NetForestTrust|Get-ADDomain)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1482 - Domain Trust Discovery"
@@ -464,7 +464,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(New-GPOImmediateTask|New-.*GPOImmediateTask)"
+  pattern: "(New-GPOImmediateTask|New-.{0,300}GPOImmediateTask)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1484.001 - Group Policy Modification"
@@ -477,7 +477,7 @@
   severity: medium
   confidence: 0.70
   action: require_approval
-  pattern: "(tasklist(\\.exe)?.+(virus|defender|cylance)|wmic(\\.exe)?.+Path.*AntiVirusProduct)"
+  pattern: "(tasklist(\\.exe)?.{1,300}(virus|defender|cylance)|wmic(\\.exe)?.{1,300}Path.{0,300}AntiVirusProduct)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1518.001 - Security Software Discovery"
@@ -503,7 +503,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "cmd(\\.exe)?.*/c.+assoc"
+  pattern: "cmd(\\.exe)?.{0,300}/c.{1,300}assoc"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1546.001 - Change Default File Association"
@@ -633,7 +633,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(net(1)?(\\.exe)?.*group.*(domain admins|enterprise admins|organization management).*/domain$|Invoke-Mimikatz.*Golden.*Ticket)"
+  pattern: "(net(1)?(\\.exe)?.{0,300}group.{0,300}(domain admins|enterprise admins|organization management).{0,300}/domain$|Invoke-Mimikatz.{0,300}Golden.{0,300}Ticket)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1558.001 - Golden Ticket"
@@ -646,7 +646,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "Invoke-Mimikatz.*Silver.*Ticket"
+  pattern: "Invoke-Mimikatz.{0,300}Silver.{0,300}Ticket"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1558.002 - Silver Ticket"
@@ -685,7 +685,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(\\brar(\\.exe)?\\s+.*\\b[afu]\\b|\\bWinRAR(\\.exe)?\\s|\\b7z(\\.exe)?\\s+.*\\ba\\b|\\bzip(\\.exe)?\\s+.*-u|\\bWinZip32(\\.exe)?\\s)"
+  pattern: "(\\brar(\\.exe)?\\s+.{0,300}\\b[afu]\\b|\\bWinRAR(\\.exe)?\\s|\\b7z(\\.exe)?\\s+.{0,300}\\ba\\b|\\bzip(\\.exe)?\\s+.{0,300}-u|\\bWinZip32(\\.exe)?\\s)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1560.001 - Archive Via Utility"
@@ -698,7 +698,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "AUDITPOL(\\.exe)?.*/set.*/category:Detailed Tracking"
+  pattern: "AUDITPOL(\\.exe)?.{0,300}/set.{0,300}/category:Detailed Tracking"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1562.002 - Disable Windows Event Logging"
@@ -711,7 +711,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(Set-.*PSReadLineOption.*-HistorySavePath.*\\{File.*Path\\}|Set-PSReadlineOption.*-HistorySaveStyle.*SaveNothing)"
+  pattern: "(Set-.{0,300}PSReadLineOption.{0,300}-HistorySavePath.{0,300}\\{File.{0,300}Path\\}|Set-PSReadlineOption.{0,300}-HistorySaveStyle.{0,300}SaveNothing)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1562.003 - Impair Command History Logging"
@@ -724,7 +724,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(wevtutil(\\.exe)?.*(sl|set-log).+/e:false|wevtutil(\\.exe)?.*(cl|clear-log)|Set-.*EtwTraceProvider)"
+  pattern: "(wevtutil(\\.exe)?.{0,300}(sl|set-log).{1,300}/e:false|wevtutil(\\.exe)?.{0,300}(cl|clear-log)|Set-.{0,300}EtwTraceProvider)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1562.006 - Indicator Blocking"
@@ -732,12 +732,18 @@
   revoked: false
 
 # --- T1563.002: RDP Hijacking ---
+# Perf (linear-time rewrite): `[^\s"']*` (and the quoted variants' `[^"]*` /
+# `[^']*`) are unbounded scans that were retried at every `;`/`|`/`&`/space
+# anchor. On a 64KB command of `a;b;c;` runs this pattern alone took 6.9s; the
+# same shape with unbalanced quotes behaves the same way. All three prefixes are
+# bounded to 300 characters, far beyond any real path
+# (`C:\Windows\System32\` is 18).
 - id: "CLT-MITRE-096"
   category: lateral_movement
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(^|\\s|[;&|])(?:\"[^\"]*\\btscon(?:\\.exe)?\\b\"|'[^']*\\btscon(?:\\.exe)?\\b'|(?:[^\\s\"']*[\\\\/])?\\btscon(?:\\.exe)?\\b)\\s+\\S+(\\s+/dest:[^\\s]+)?"
+  pattern: "(^|\\s|[;&|])(?:\"[^\"]{0,300}\\btscon(?:\\.exe)?\\b\"|'[^']{0,300}\\btscon(?:\\.exe)?\\b'|(?:[^\\s\"']{0,300}[\\\\/])?\\btscon(?:\\.exe)?\\b)\\s+\\S{1,300}(\\s+/dest:[^\\s]{1,300})?"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1563.002 - RDP Hijacking"
@@ -789,7 +795,7 @@
   severity: medium
   confidence: 0.70
   action: require_approval
-  pattern: "(powershell(\\.exe)?.*-Class.*AntiVirusProduct|powershell(\\.exe)?.*path.*AntiVirusProduct)"
+  pattern: "(powershell(\\.exe)?.{0,300}-Class.{0,300}AntiVirusProduct|powershell(\\.exe)?.{0,300}path.{0,300}AntiVirusProduct)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1592.002 - Software"
@@ -802,7 +808,7 @@
   severity: medium
   confidence: 0.70
   action: require_approval
-  pattern: "(powershell(\\.exe)?.*-Class.*Win32_UserAccount|powershell(\\.exe)?.*Get-SmbShare)"
+  pattern: "(powershell(\\.exe)?.{0,300}-Class.{0,300}Win32_UserAccount|powershell(\\.exe)?.{0,300}Get-SmbShare)"
   case_insensitive: true
   match_on: command
   title: "MITRE ATT&CK T1592.004 - Client Configurations"

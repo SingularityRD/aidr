@@ -24,6 +24,20 @@ const STAGED_POINTER = "staged.json";
 const RELEASES_DIR = "releases";
 const BUNDLE_ID_RE = /^[a-f0-9]{64}$/;
 
+/**
+ * Index schema generations this runtime can consume.
+ *
+ * The fingerprint index was bumped to v3 when it gained executable detection
+ * blocks; accepting only v2 made a legitimately promoted bundle look invalid.
+ * Unknown generations still fail closed.
+ */
+const SUPPORTED_INDEX_SCHEMAS: ReadonlyArray<{ schema: string; version: number }> = [
+	{ schema: "aig-cve-index/v2", version: 2 },
+	{ schema: "aig-fingerprint-index/v2", version: 2 },
+	{ schema: "aig-fingerprint-index/v3", version: 3 },
+	{ schema: "aig-mcp-categories/v2", version: 2 },
+];
+
 export interface AigSyncConfig {
 	enabled: boolean;
 	mode: "local" | "http";
@@ -192,7 +206,19 @@ export async function validateAigDataBundle(
 		}
 		try {
 			const index = JSON.parse(await getFileContent(join(dir, file))) as IndexMeta;
-			if (index.version !== 2 || typeof index.schema !== "string" || !index.schema.endsWith("/v2")) {
+			// Accept every supported index schema generation. The fingerprint index
+			// moved to v3 when it started carrying executable detection blocks
+			// (probes, matchers, version extractors); the CVE and MCP indexes remain
+			// at v2. Rejecting v3 here would make a valid promoted bundle look
+			// tampered, and the check runs before the signature test, so it also
+			// masked the "signed manifest required" error.
+			const schemaVersion = Number(index.version);
+			if (
+				typeof index.schema !== "string" ||
+				!SUPPORTED_INDEX_SCHEMAS.some(
+					(entry) => entry.schema === index.schema && entry.version === schemaVersion,
+				)
+			) {
 				return { valid: false, signaturePresent: Boolean(manifest.signature), bundleId: manifest.bundle_id, error: `unsupported index schema: ${file}` };
 			}
 		} catch {

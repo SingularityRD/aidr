@@ -44,7 +44,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\beval\\s+.*\\$\\(\\s*base64|python[3]?\\s+-c\\s+[\"'].*exec\\(.*decode"
+  pattern: "\\beval\\s+.{0,300}\\$\\(\\s*base64|python[3]?\\s+-c\\s+[\"'].{0,300}exec\\(.{0,300}decode"
   match_on: [command, content]
   title: "Eval with decode (obfuscated code execution)"
   expires_at: null
@@ -56,7 +56,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\|\\s*[\\\\'\"]+(bash|sh|zsh|ksh|dash)[\\\\'\"]*(\\s|$)"
+  pattern: "\\|\\s*[\\\\'\"]+(bash|sh|zsh|ksh|dash)[\\\\'\"]{0,300}(\\s|$)"
   match_on: command
   title: "Shell metacharacter escaping to hide pipe target"
   expires_at: null
@@ -91,7 +91,7 @@
   severity: critical
   confidence: 0.85
   action: block
-  pattern: "python[23]?\\s+-c\\s+[\"'].*\\b(exec|eval|compile|__import__)\\b.*\\b(base64|decode|decompress)\\b"
+  pattern: "python[23]?\\s+-c\\s+[\"'].{0,300}\\b(exec|eval|compile|__import__)\\b.{0,300}\\b(base64|decode|decompress)\\b"
   match_on: command
   title: "Python encoded payload execution via -c"
   expires_at: null

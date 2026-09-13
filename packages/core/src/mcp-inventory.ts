@@ -48,9 +48,10 @@ function inventoryItemFromEntry(
 ): McpInventoryItem | null {
 	const rec = asRecord(raw);
 	if (!rec) return null;
-	const command = typeof rec.command === "string" ? rec.command : null;
+	const commandParts = stringArray(rec.command);
+	const command = typeof rec.command === "string" ? rec.command : commandParts[0] ?? null;
 	const url = typeof rec.url === "string" ? rec.url : null;
-	const args = stringArray(rec.args);
+	const args = [...commandParts.slice(1), ...stringArray(rec.args)];
 	const riskHints = riskHintsFor({ command, url, args });
 	return {
 		name,
@@ -102,8 +103,15 @@ function parseMcpServers(data: unknown, sourcePath: string): McpInventoryItem[] 
 	return items;
 }
 
-export async function loadMcpServerInventory(configPaths?: string[]): Promise<McpInventoryItem[]> {
+export interface McpInventoryReport {
+	items: McpInventoryItem[];
+	sources: Array<{ path: string; status: "read" | "missing" | "invalid" }>;
+}
+
+export async function inspectMcpServerInventory(configPaths?: string[]): Promise<McpInventoryReport> {
 	const defaultPaths = [
+		"~/.claude.json",
+		".mcp.json",
 		"~/.claude/claude_desktop_config.json",
 		"~/.config/claude/claude_desktop_config.json",
 		"~/.cursor/mcp.json",
@@ -120,14 +128,22 @@ export async function loadMcpServerInventory(configPaths?: string[]): Promise<Mc
 		resolvePath,
 	);
 	const all: McpInventoryItem[] = [];
+	const sources: McpInventoryReport["sources"] = [];
 	for (const path of paths) {
 		try {
 			const content = await getFileContent(path);
+			if (content.length > 2 * 1024 * 1024) throw new Error("inventory_source_too_large");
 			const parsed = JSON.parse(content) as unknown;
+			if (!asRecord(parsed) || Array.isArray(parsed)) throw new Error("invalid_inventory_root");
 			all.push(...parseMcpServers(parsed, path));
-		} catch {
-			// Optional source files; fail-open.
+			sources.push({ path, status: "read" });
+		} catch (error) {
+			sources.push({ path, status: (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "invalid" });
 		}
 	}
-	return all;
+	return { items: all, sources };
+}
+
+export async function loadMcpServerInventory(configPaths?: string[]): Promise<McpInventoryItem[]> {
+	return (await inspectMcpServerInventory(configPaths)).items;
 }

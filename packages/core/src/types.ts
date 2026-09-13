@@ -204,7 +204,7 @@ export const ControlPlaneConfigSchema = z.object({
 	 * Base URL for the control plane ingest API (no trailing slash).
 	 * Example: "https://aidr.example.com"
 	 */
-	endpoint: z.string().default("https://aidr-control.svc.singularityrd.com"),
+	endpoint: z.string().default(""),
 	/** Request timeout for control-plane calls. */
 	timeout_seconds: z.number().default(0.5),
 	/** Send runtime verdict events to the control plane for the dashboard. */
@@ -227,6 +227,10 @@ export const ControlPlaneConfigSchema = z.object({
 	redact_mode: z.enum(["none", "hash", "full"]).default("hash"),
 	remote_policy_cache_path: z.string().default("~/.singularity-aidr/remote-policy-cache"),
 	remote_policy_cache_enabled: z.boolean().default(true),
+	/** Enrolled endpoints must retain central controls or block when unavailable. */
+	remote_policy_required: z.boolean().default(false),
+	/** Maximum stale-policy grace after its normal refresh expiry; never renewed offline. */
+	remote_policy_offline_grace_seconds: z.number().int().min(0).max(604800).default(3600),
 });
 
 export const PolicyFilesystemSchema = z.object({
@@ -272,6 +276,14 @@ export const PolicyConfigSchema = z.object({
 	shell: PolicyShellSchema.default({}),
 	mcp: PolicyMcpSchema.default({}),
 	runtime_defaults: z.record(z.string(), z.unknown()).default({}),
+	ai_infrastructure: z.object({
+		enabled: z.boolean().default(false),
+		targets: z.array(z.string().url()).max(200).default([]),
+		report_path: z.string().default("~/.singularity-aidr/infra-scan.json"),
+		max_age_seconds: z.number().int().min(1).max(604800).default(3600),
+		critical_action: z.enum(["block", "require_approval"]).default("block"),
+		unverified_action: z.enum(["allow", "block", "require_approval"]).default("require_approval"),
+	}).default({}),
 });
 
 export const IntelConfigSchema = z.object({
@@ -357,6 +369,98 @@ export const IncidentConfigSchema = z.object({
 
 export const ResponseConfigSchema = z.object({
 	emit_incidents: z.boolean().default(true),
+	/**
+	 * Response actions taken when the runtime blocks a tool call.
+	 *
+	 * These are OFF by default. A guardrail that silently moves or copies a
+	 * user's files on its own initiative is more dangerous than one that only
+	 * blocks, so every action here is an explicit opt-in.
+	 *
+	 * Snapshot semantics: the connector decides a tool call BEFORE it executes,
+	 * so the target of a blocked write still holds its previous contents. We take
+	 * a COPY into the response vault and never move or delete the original - the
+	 * blocked action did not happen, so the file must be left exactly as it was.
+	 */
+	actions: z
+		.object({
+			/** Copy the existing target of a blocked write/edit/delete into the vault. */
+			snapshot_on_deny: z.boolean().default(false),
+			/** Where snapshots are written. */
+			snapshot_dir: z.string().default("~/.singularity-aidr/response-vault"),
+			/**
+			 * Only snapshot when the verdict severity is at least this level, so a
+			 * low-severity deny cannot fill the vault. These are the runtime's own
+			 * verdict severities (`VerdictSeverity`), not the threat-rule severities.
+			 */
+			snapshot_min_severity: z.enum(["info", "warning", "critical"]).default("warning"),
+			/** Skip files larger than this (bytes). Default 10 MiB. */
+			snapshot_max_bytes: z
+				.number()
+				.int()
+				.positive()
+				.default(10 * 1024 * 1024),
+			/**
+			 * Snapshot the target of a DESTRUCTIVE operation that is about to be
+			 * ALLOWED, so the operation can actually be rolled back if it goes wrong.
+			 *
+			 * Snapshot-on-deny (above) cannot be rolled back into anything useful: the
+			 * blocked call never ran, so the file was never changed. The dangerous case
+			 * is the opposite one - a destructive command the runtime decided to allow.
+			 * That call runs, and without a pre-operation copy there is nothing to
+			 * restore.
+			 *
+			 * OFF by default: this copies user files during a path that the runtime
+			 * decided was safe, which is exactly the kind of unilateral action that must
+			 * be an explicit operator choice.
+			 */
+			snapshot_before_destructive: z.boolean().default(false),
+			/**
+			 * Path prefixes a pre-operation snapshot may copy. This is a second,
+			 * independent gate: even with `snapshot_before_destructive` on, an EMPTY
+			 * list snapshots nothing. Guarding the whole filesystem was never the
+			 * intent - the operator names the trees that are expensive to lose.
+			 *
+			 * Entries are matched as path prefixes (after `~` expansion); an entry
+			 * ending in `/**` or `/*` matches everything under it.
+			 */
+			protect_paths: z.array(z.string()).default([]),
+			/** Directory holding pre-operation (rollback) snapshots. */
+			snapshot_root_dir: z.string().default("~/.singularity-aidr/snapshots"),
+			/**
+			 * How long a pre-operation snapshot is kept so it stays restorable.
+			 * 0 disables pruning. Retention is applied when a rollback snapshot is
+			 * taken, so stale copies cannot accumulate without bound.
+			 */
+			snapshot_retention_days: z.number().int().min(0).default(7),
+		})
+		.default({}),
+	/**
+	 * Tamper-evident response chain.
+	 *
+	 * `logging.path` (audit.jsonl) is a plain append-only log: edit it and nothing
+	 * detects the change. Response records additionally go to the signed chain in
+	 * `response-audit.ts` (Ed25519 signature + SHA-256 hash chain), which is what
+	 * makes "the runtime did X" defensible after the fact.
+	 *
+	 * OFF by default: it provisions a signing key on disk and never silently
+	 * downgrades - if signing cannot happen, no record is written and the caller is
+	 * told, rather than an unsigned line being passed off as signed.
+	 */
+	audit: z
+		.object({
+			/** Write response records to the signed chain. */
+			signed_chain: z.boolean().default(false),
+			/** Where the signed chain lives. Confined to the AIDR state directory. */
+			path: z.string().default("~/.singularity-aidr/response-audit.jsonl"),
+			/** Purge signed records older than this many days. 0 keeps everything. */
+			retention_days: z.number().int().min(0).default(0),
+			/**
+			 * Emit a signed deletion manifest before retention purges records, so the
+			 * purge itself is evidence rather than an unexplained gap in the chain.
+			 */
+			retain_deletion_evidence: z.boolean().default(true),
+		})
+		.default({}),
 });
 
 export const UrlCheckConfigSchema = z.object({
@@ -438,7 +542,11 @@ export const NvdConfigSchema = z.object({
 });
 
 export const ConfigSchema = z.object({
-	mode: OperatingModeSchema.default("managed"),
+	// Default to local enforcement so a fresh install protects on the first tool
+	// call. Managed mode adds the control plane, signed entitlements and premium
+	// intel packs; it is an explicit opt-in and must never be a precondition for
+	// baseline detection. See docs/configuration.md ("Modes").
+	mode: OperatingModeSchema.default("local"),
 	auth: AuthConfigSchema.default({}),
 	control_plane: ControlPlaneConfigSchema.default({}),
 	policy: PolicyConfigSchema.default({}),
@@ -471,6 +579,8 @@ export type IntegrityConfig = z.infer<typeof IntegrityConfigSchema>;
 export type LicensingConfig = z.infer<typeof LicensingConfigSchema>;
 export type IncidentConfig = z.infer<typeof IncidentConfigSchema>;
 export type ResponseConfig = z.infer<typeof ResponseConfigSchema>;
+export type ResponseActionsConfig = ResponseConfig["actions"];
+export type ResponseAuditConfig = ResponseConfig["audit"];
 export type UrlCheckConfig = z.infer<typeof UrlCheckConfigSchema>;
 export type FileCheckConfig = z.infer<typeof FileCheckConfigSchema>;
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
@@ -525,6 +635,29 @@ export interface PluginFinding {
 export interface PluginScanResult {
 	plugin: PluginInfo;
 	findings: PluginFinding[];
+	/**
+	 * Reputation legs that were requested but could NOT run, with the reason.
+	 *
+	 * Present so a caller can distinguish "the URL/file reputation checks ran and
+	 * found nothing" from "they never ran". Before this field existed the two
+	 * were indistinguishable: the clients were constructed without an API key, the
+	 * resulting 401 was swallowed by `catch { /* Fail open *\/ }`, and the scan
+	 * reported a clean plugin. A leg that cannot run must never be presented as a
+	 * clean result.
+	 *
+	 * Not part of the persisted cache (`CachedPluginScanResult` stores findings
+	 * only), so adding this cannot invalidate cached scan data.
+	 */
+	unavailableChecks?: PluginScanUnavailableCheck[];
+}
+
+export interface PluginScanUnavailableCheck {
+	/** Which leg. */
+	check: "url_reputation" | "file_reputation";
+	/** Why it could not run, in operator-readable form. */
+	reason: string;
+	/** How many artifacts went unchecked. */
+	uncheckedCount: number;
 }
 
 // ── Plugin scan cache ───────────────────────────────────────────────
@@ -553,4 +686,9 @@ export interface PluginScanCache {
 
 // ── Agent runtime ──────────────────────────────────────────────────
 
-export type AgentRuntime = "claude-code" | "openclaw" | "opencode" | "cursor" | "vscode";
+/**
+ * Supported agent runtimes. Every value here has a connector that enforces
+ * locally through this core; an unsupported runtime must not be listed, because
+ * telemetry and policy treat membership as "this connector is real".
+ */
+export type AgentRuntime = "claude-code" | "openclaw" | "opencode" | "cursor" | "vscode" | "codex";

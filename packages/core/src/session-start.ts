@@ -4,6 +4,8 @@
  */
 
 import { isCommercialBuild } from "./build-flavor.js";
+import { inspectInfrastructurePolicy } from "./aig-policy.js";
+import { discoverMcpServers } from "./mcp-discovery.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { loadConfig, resolvePath } from "./config.js";
 import { pruneOrphanedTmpFiles } from "./file-utils.js";
@@ -55,6 +57,7 @@ export interface SessionStartResult {
 	};
 	scanResults: PluginScanResult[];
 	versionCheck: VersionCheckResult | null;
+	posture?: { mcpServers: number; riskyMcpServers: number; invalidSources: number; infrastructure: string };
 }
 
 export async function runSessionStart(ctx: SessionStartContext): Promise<SessionStartResult> {
@@ -62,6 +65,10 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 	const aidrDirPath = resolvePath(ctx.aidrDirPath ?? "~/.singularity-aidr");
 	const config = await loadConfig(ctx.configPath, logger).catch(() => ConfigSchema.parse({}));
 	const commercial = isCommercialBuild();
+	const [inventory, infrastructure] = await Promise.all([
+		discoverMcpServers(config.policy.mcp.inventory_paths), inspectInfrastructurePolicy(config),
+	]);
+	const posture = { mcpServers: inventory.servers.length, riskyMcpServers: inventory.servers.filter((s) => s.risk_hints.length > 0).length, invalidSources: inventory.sources.filter((s) => s.status === "invalid").length, infrastructure: infrastructure.state };
 
 	if (commercial && config.mode !== "managed") {
 		return {
@@ -105,7 +112,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 
 	// Managed-only: if there's no auth token, start (or reuse) a device-code bootstrap session.
 	// This must not block: create (or reuse) a short code + URL so the user can authorize in a browser.
-	if (!token) {
+	if (!token && config.mode === "managed" && config.control_plane.enabled) {
 		let bootstrap:
 			| {
 					device_code: string;
@@ -279,7 +286,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 		try {
 			const iid = await iidPromise;
 			if (iid) {
-				const client = new ControlPlaneClient(config.control_plane, token, logger);
+				const client = new ControlPlaneClient(config.control_plane, token ?? "", logger);
 				const result = await client.ingest({
 					iid,
 					agent_runtime: ctx.agentRuntime,
@@ -456,7 +463,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 			}),
 			versionCheckPromise,
 		]);
-		return { enabled: true, scanResults, versionCheck };
+		return { enabled: true, scanResults, versionCheck, posture };
 	}
 
 	// Parallel: scan + version check + managed heartbeat
@@ -476,5 +483,5 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 		heartbeatPromise,
 	]);
 
-	return { enabled: true, scanResults, versionCheck };
+	return { enabled: true, scanResults, versionCheck, posture };
 }

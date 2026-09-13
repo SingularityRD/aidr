@@ -67,7 +67,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "(when|if|after) (the user|someone|a user) (asks?|requests?|types?|says?).*(ignore|disregard|override|bypass|skip)"
+  pattern: "(when|if|after) (the user|someone|a user) (asks?|requests?|types?|says?).{0,300}(ignore|disregard|override|bypass|skip)"
   match_on:
     - content
     - command
@@ -80,7 +80,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(in the response|in your reply|in your answer).*(include|append|prepend|add|insert|concatenate)"
+  pattern: "(in the response|in your reply|in your answer).{0,300}(include|append|prepend|add|insert|concatenate)"
   match_on:
     - content
     - command
@@ -93,7 +93,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "(hidden|invisible|zero-width|steganographic|base64).*(instruction|command|prompt|directive)"
+  pattern: "(hidden|invisible|zero-width|steganographic|base64).{0,300}(instruction|command|prompt|directive)"
   match_on:
     - content
     - command

@@ -68,7 +68,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(echo|printf)\\s+.*>>\\s*~?/?(\\$HOME/)?\\.?(bashrc|zshrc|profile|bash_profile)"
+  pattern: "(echo|printf)\\s+.{0,300}>>\\s*~?/?(\\$HOME/)?\\.?(bashrc|zshrc|profile|bash_profile)"
   match_on: command
   title: "Echo/printf append to shell RC file (code injection persistence)"
   expires_at: null

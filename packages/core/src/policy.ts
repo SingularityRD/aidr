@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import { evaluateInfrastructurePolicy } from "./aig-policy.js";
 
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
@@ -151,6 +152,8 @@ export async function evaluatePolicy(
 	toolInput?: Record<string, unknown>,
 ): Promise<Verdict | null> {
 	if (!config.policy.enabled) return null;
+	const infrastructureVerdict = await evaluateInfrastructurePolicy(artifacts, config);
+	if (infrastructureVerdict?.decision === "deny") return infrastructureVerdict;
 
 	// --- Intel: legacy denylist file + signed intel packs ---
 	// Back-compat: if `intel.enabled` is on, we also consider signed packs on disk.
@@ -502,6 +505,8 @@ export async function evaluatePolicy(
 		}
 
 		if (mcpServerId && mcpToolName) {
+			mcpServerId = mcpServerId.toLowerCase();
+			mcpToolName = mcpToolName.toLowerCase();
 			const fullToolId = `${mcpServerId}.${mcpToolName}`;
 
 			if (config.policy.mcp.deny_tools.includes(fullToolId)) {
@@ -517,6 +522,19 @@ export async function evaluatePolicy(
 				});
 			}
 
+			if (config.policy.mcp.deny_servers.includes(mcpServerId)) {
+				return makeVerdict({
+					decision: "deny",
+					category: "mcp_tool_call",
+					severity: "critical",
+					source: "policy",
+					artifact: fullToolId,
+					threatId: "POL-MCP-006",
+					reasons: ["MCP server denied by policy"],
+					confidence: 0.95,
+				});
+			}
+
 			if (config.policy.mcp.require_approval_tools.includes(fullToolId)) {
 				return makeVerdict({
 					decision: "ask",
@@ -528,6 +546,23 @@ export async function evaluatePolicy(
 					reasons: ["MCP tool requires approval"],
 					confidence: 0.9,
 				});
+			}
+
+			if (config.policy.mcp.require_approval_servers.includes(mcpServerId)) {
+				return makeVerdict({
+					decision: "ask",
+					category: "mcp_tool_call",
+					severity: "warning",
+					source: "policy",
+					artifact: fullToolId,
+					threatId: "POL-MCP-007",
+					reasons: ["MCP server requires approval"],
+					confidence: 0.9,
+				});
+			}
+
+			if (config.policy.mcp.allow_tools.includes(fullToolId)) {
+				return null;
 			}
 
 			// If server is explicitly allowed, skip remaining risk checks
@@ -570,16 +605,32 @@ export async function evaluatePolicy(
 			}
 
 			if (isRiskyServer) {
-				return makeVerdict({
-					decision: "deny",
-					category: "mcp_tool_call",
-					severity: "critical",
-					source: "policy",
-					artifact: fullToolId,
-					threatId: "POL-MCP-001",
-					reasons: ["MCP server uses shell_wrapper_command"],
-					confidence: 0.95,
-				});
+				const riskyAction = config.policy.mcp.risky_server_action ?? "block";
+				if (riskyAction === "block") {
+					return makeVerdict({
+						decision: "deny",
+						category: "mcp_tool_call",
+						severity: "critical",
+						source: "policy",
+						artifact: fullToolId,
+						threatId: "POL-MCP-001",
+						reasons: ["MCP server uses shell_wrapper_command"],
+						confidence: 0.95,
+					});
+				}
+				if (riskyAction === "require_approval") {
+					return makeVerdict({
+						decision: "ask",
+						category: "mcp_tool_call",
+						severity: "warning",
+						source: "policy",
+						artifact: fullToolId,
+						threatId: "POL-MCP-001",
+						reasons: ["MCP server uses shell_wrapper_command"],
+						confidence: 0.9,
+					});
+				}
+				return null;
 			}
 
 			if (!isInInventory) {
@@ -640,5 +691,5 @@ export async function evaluatePolicy(
 		}
 	}
 
-	return null;
+	return infrastructureVerdict;
 }

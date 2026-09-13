@@ -2,15 +2,16 @@ import { createHash, generateKeyPairSync, randomUUID, sign, verify } from "node:
 import { appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { resolvePath } from "./config.js";
+import type { ResponseActionRecord } from "./response-actions.js";
 import type { ResponseMode } from "./response-config.js";
 import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
-import type { Logger, Verdict } from "./types.js";
+import type { Logger, ResponseAuditConfig, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 
 export interface ResponseAuditEntry {
 	id: string;
 	timestamp: Date;
-	action: "contain" | "rollback" | "quarantine" | "block" | "notify";
+	action: "contain" | "rollback" | "quarantine" | "block" | "notify" | "snapshot";
 	threatId: string;
 	tool: string;
 	input: string;
@@ -678,3 +679,190 @@ export class ResponseAuditor {
 export function createResponseAuditor(options?: ResponseAuditorOptions): ResponseAuditor {
 	return new ResponseAuditor("~/.singularity-aidr/response-audit.jsonl", options);
 }
+
+/*
+ * ── Wiring the detection path into the signed chain ────────────────────────
+ *
+ * Everything below turns a response that actually happened into a signed,
+ * chained record. It reuses the mechanism above (Ed25519 signature over the
+ * serialized entry, SHA-256 hash chain, head checkpoint) — there is no second
+ * signing implementation.
+ *
+ * Two properties matter more than completeness here:
+ *
+ * 1. **A record is never written without a signature.** `ResponseAuditor.log`
+ *    already refuses to append when signing fails; these helpers pass
+ *    `signEntries: true` always, so the only way a response reaches this file is
+ *    signed. When the chain is unavailable the caller gets `written: false` plus
+ *    the reason, and says so — "could not record it" is reported, never rounded
+ *    up to "recorded".
+ * 2. **Records carry paths and outcomes, never contents.** The snapshot payload
+ *    lives in the snapshot/vault directory; the chain only ever learns which
+ *    path was preserved, how large it was, and whether it worked.
+ */
+
+export interface ResponseChainContext {
+	/** The decision the guard reached: "deny" | "ask" | "allow". */
+	decision: "deny" | "ask" | "allow";
+	toolName: string;
+	/** Bounded, credential-redacted description of the call. Never file contents. */
+	inputSummary: string;
+	sessionId?: string;
+	verdict: Verdict;
+	/** Snapshot id, when the action created a restorable snapshot. */
+	snapshotId?: string;
+	/** Pre-operation snapshot target path. */
+	snapshotTarget?: string;
+}
+
+export interface ResponseChainWrite {
+	written: boolean;
+	entryId?: string;
+	/** Machine-readable reason the record is NOT in the chain. Never silently dropped. */
+	reason?: string;
+	detail?: string;
+}
+
+/** Map a response action onto the chain's own action/response-mode vocabulary. */
+export function chainActionFor(
+	action: ResponseActionRecord["action"],
+	decision: ResponseChainContext["decision"],
+): { action: ResponseAuditEntry["action"]; responseTaken: ResponseMode } {
+	if (action === "rollback") return { action: "rollback", responseTaken: "rollback" };
+	// A snapshot preserves prior state without moving or blocking anything: that is
+	// containment. It is emphatically NOT "quarantine", which relocates the file.
+	if (action === "snapshot") return { action: "snapshot", responseTaken: "contain" };
+	if (decision === "ask") return { action: "notify", responseTaken: "notify" };
+	return { action: "block", responseTaken: "block" };
+}
+
+/**
+ * Which record the single chain entry describes.
+ *
+ * One entry per response, so a mixed result must pick the record that matters:
+ * a failure outranks a success, and a restore outranks everything else, because
+ * those are the outcomes an operator has to act on.
+ */
+function primaryRecord(records: ResponseActionRecord[]): ResponseActionRecord | undefined {
+	const rank = (record: ResponseActionRecord): number => {
+		if (record.outcome === "failure") return 4;
+		if (record.action === "rollback") return 3;
+		if (record.outcome === "success") return 2;
+		return 1;
+	};
+	return records.reduce<ResponseActionRecord | undefined>(
+		(best, record) => (best === undefined || rank(record) > rank(best) ? record : best),
+		undefined,
+	);
+}
+
+function chainOutcomeFor(records: ResponseActionRecord[]): "success" | "failure" {
+	// Absence of success is failure, never "assume it worked".
+	return records.some((record) => record.outcome === "success") ? "success" : "failure";
+}
+
+function chainErrorFor(records: ResponseActionRecord[]): string | undefined {
+	const failed = records.filter((record) => record.outcome === "failure");
+	if (failed.length === 0) return undefined;
+	return failed
+		.map(
+			(record) => `${record.action} failed (${record.reason ?? "unknown"}): ${record.detail ?? ""}`,
+		)
+		.join("; ");
+}
+
+/**
+ * Append one signed chain record for a response action.
+ *
+ * Never throws: the guard's block must survive any failure here. A caller that
+ * cares whether the record landed reads the returned `written` flag — and must
+ * report the failure rather than implying the chain holds something it does not.
+ */
+export async function logResponseActionToChain(
+	auditor: ResponseAuditor,
+	records: ResponseActionRecord[],
+	context: ResponseChainContext,
+	logger: Logger = nullLogger,
+): Promise<ResponseChainWrite> {
+	if (records.length === 0) {
+		return { written: false, reason: "no_response_actions" };
+	}
+
+	const primary = primaryRecord(records);
+	const { action, responseTaken } = chainActionFor(primary?.action ?? "snapshot", context.decision);
+	const threatId = context.verdict.matchedThreatId ?? context.verdict.category ?? "unknown";
+	const outcome = chainOutcomeFor(records);
+
+	try {
+		const entry = await auditor.log({
+			action,
+			threatId,
+			tool: context.toolName,
+			// Already redacted by the caller through `redactTelemetryString`; the
+			// auditor redacts again on the way out. Never a contents dump.
+			input: context.inputSummary,
+			verdict: context.verdict,
+			responseTaken,
+			metadata: {
+				snapshotId: context.snapshotId,
+				userNotified: context.decision !== "allow",
+				notificationSent: context.decision === "ask",
+			},
+			outcome,
+			error: chainErrorFor(records),
+		});
+
+		logger.debug("Response action recorded in signed chain", {
+			entryId: entry.id,
+			action,
+			outcome,
+		});
+		return { written: true, entryId: entry.id };
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		// Fail honest, never fail silent: no unsigned record is written in place of
+		// the signed one, and the caller is told the evidence is missing.
+		logger.warn("Response action NOT recorded in signed chain", { action, error: detail });
+		return { written: false, reason: "signed_chain_unavailable", detail };
+	}
+}
+
+/**
+ * Build the auditor described by config, or explain why there is none.
+ *
+ * `signEntries` is hard-coded true: this chain exists to be tamper-evident, and a
+ * config flag that could turn signing off would let a deployment believe it had
+ * evidence it does not have.
+ */
+export function responseAuditorFromConfig(
+	config: ResponseAuditConfig | undefined,
+	logger: Logger = nullLogger,
+): { auditor?: ResponseAuditor; unavailableReason?: string } {
+	// Tolerate an absent block: `response: { actions: {...} }` with no `audit` key is
+	// a valid config, and absent must mean OFF rather than a throw on the security
+	// path. (A nested Zod `.default({})` does not fire when a sibling key is given.)
+	const resolved = config ?? DEFAULT_RESPONSE_AUDIT_CONFIG;
+	if (!resolved.signed_chain) {
+		return { unavailableReason: "signed_chain_disabled" };
+	}
+	try {
+		return {
+			auditor: new ResponseAuditor(resolved.path, {
+				signEntries: true,
+				retentionDays: resolved.retention_days,
+				retainDeletionEvidence: resolved.retain_deletion_evidence,
+				logger,
+			}),
+		};
+	} catch (error) {
+		return { unavailableReason: `auditor_init_failed: ${String(error)}` };
+	}
+}
+
+/** The shipped defaults for the signed response chain, in one place. */
+export const DEFAULT_RESPONSE_AUDIT_CONFIG: ResponseAuditConfig = {
+	signed_chain: false,
+	path: "~/.singularity-aidr/response-audit.jsonl",
+	retention_days: 0,
+	retain_deletion_evidence: true,
+};

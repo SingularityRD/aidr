@@ -78,6 +78,8 @@ export function normalizeAuditEntryToSignals(entry: unknown): NormalizedSignal[]
 		parseTimestampMs(e.created_at) ??
 		parseTimestampMs(e.time) ??
 		Date.now();
+	const agentIid = getString(e, "agent_iid");
+	const connector = getString(e, "connector");
 
 	// --- runtime_verdict ---
 	if (type === "runtime_verdict") {
@@ -119,6 +121,8 @@ export function normalizeAuditEntryToSignals(entry: unknown): NormalizedSignal[]
 				signal_type: "runtime_verdict",
 				timestamp_ms: tsMs,
 				session_id: sessionId,
+				agent_iid: agentIid,
+				connector,
 				tool_name: toolName,
 				decision,
 				severity,
@@ -160,6 +164,8 @@ export function normalizeAuditEntryToSignals(entry: unknown): NormalizedSignal[]
 				signal_id: normalizeSignalId("plugin_scan_finding", tsMs, seed),
 				signal_type: "plugin_scan_finding",
 				timestamp_ms: tsMs,
+				agent_iid: agentIid,
+				connector,
 				plugin_key: pluginKey,
 				severity: sev,
 				artifact,
@@ -224,6 +230,8 @@ export function normalizeAuditEntryToSignals(entry: unknown): NormalizedSignal[]
 				signal_type: "explicit_incident",
 				timestamp_ms: tsMs,
 				session_id: sessionId,
+				agent_iid: agentIid,
+				connector,
 				decision,
 				severity: sev,
 				threat_id: matchedThreatId,
@@ -239,6 +247,8 @@ export function normalizeAuditEntryToSignals(entry: unknown): NormalizedSignal[]
 			signal_id: normalizeSignalId("unknown", tsMs, JSON.stringify(entry).slice(0, 500)),
 			signal_type: "unknown",
 			timestamp_ms: tsMs,
+			agent_iid: agentIid,
+			connector,
 			severity: "info",
 			raw: entry,
 		},

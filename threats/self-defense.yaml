@@ -1,16 +1,21 @@
-# Self-defense patterns — protect Singularity AIDR and Claude Code configuration
+﻿# Self-defense patterns â€” protect Singularity AIDR and Claude Code configuration
 # Author: SingularityRD
 # License: DRL-1.1 (see threats/LICENSE)
 # These flag when the AI agent may be manipulated into disabling its own guardrails
 # Using require_approval (not block) to allow legitimate plugin dev and config changes
 
 # Delete .singularity-aidr directory
+# Perf (linear-time rewrite): `\s.*` between the verb and the target was
+# rescanned from every occurrence of `rm|del|rd|...` â€” O(n^2) on commands that
+# repeat those verbs (~59ms per 20KB, unbounded beyond that). The gap is now
+# bounded to 300 characters, several times any realistic argument list
+# (`rm -rf /home/user/.singularity-aidr` needs 15).
 - id: "CLT-SELF-001"
   category: self_defense
   severity: critical
   confidence: 0.90
   action: require_approval
-  pattern: "(rm|del|rmdir|rd|Remove-Item|unlink)\\s.*\\.singularity-aidr(\\s|[\\\\/]|$)"
+  pattern: "(rm|del|rmdir|rd|Remove-Item|unlink)\\s.{0,300}\\.singularity-aidr(\\s|[\\\\/]|$)"
   case_insensitive: true
   match_on: command
   title: "Attempt to delete Singularity AIDR configuration directory"
@@ -30,12 +35,17 @@
   revoked: false
 
 # Delete Claude Code hook or plugin config
+# Perf (linear-time rewrite): two unbounded `.*` spans, each rescanned from
+# every occurrence of `rm|del|Remove-Item|unlink` â€” O(n^2) (~57ms per 20KB).
+# Both gaps are now bounded to 300 characters, several times any realistic
+# path/argument list (`rm ~/.claude/plugins/marketplaces/<repo>/hooks.json`
+# needs 16 and 0).
 - id: "CLT-SELF-003"
   category: self_defense
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "(rm|del|Remove-Item|unlink)\\s.*\\.claude[\\\\/].*(hooks\\.json|installed_plugins)"
+  pattern: "(rm|del|Remove-Item|unlink)\\s.{0,300}\\.claude[\\\\/].{0,300}(hooks\\.json|installed_plugins)"
   case_insensitive: true
   match_on: command
   title: "Attempt to delete Claude Code hook or plugin configuration"
@@ -48,7 +58,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\"heuristics_enabled\"\\s*:\\s*false|\"url_check\"\\s*:\\s*\\{[^}]*\"enabled\"\\s*:\\s*false"
+  pattern: "\"heuristics_enabled\"\\s*:\\s*false|\"url_check\"\\s*:\\s*\\{[^}]{0,300}\"enabled\"\\s*:\\s*false"
   match_on: content
   title: "Attempt to disable Singularity AIDR security features via config"
   expires_at: null

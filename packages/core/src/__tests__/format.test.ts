@@ -112,6 +112,52 @@ describe("core format helpers", () => {
 		expect(message).toContain("Expires");
 	});
 
+	it("does not claim the product is off when local detection is still running", () => {
+		// `enabled: false` historically meant "the product does nothing", but an
+		// un-enrolled install still blocks threats locally. The banner must say so
+		// rather than reporting a dead end.
+		for (const reason of [
+			"auth_required",
+			"missing_or_invalid_signed_entitlement",
+			"activation_required",
+		]) {
+			const message = formatSessionStartMessage("1.0.0", {
+				enabled: false,
+				disabled_reason: reason,
+				scanResults: [],
+				versionCheck: null,
+			});
+			expect(message).toContain("Local protection ACTIVE");
+			expect(message).not.toContain("Disabled");
+		}
+
+		// Reasons that really do stop enforcement must still say Disabled.
+		for (const reason of [
+			"degraded_safe_mode:integrity",
+			"commercial_build_requires_managed_mode",
+		]) {
+			const message = formatSessionStartMessage("1.0.0", {
+				enabled: false,
+				disabled_reason: reason,
+				scanResults: [],
+				versionCheck: null,
+			});
+			expect(message).toContain("Disabled");
+			expect(message).not.toContain("ACTIVE");
+		}
+
+		// An unrecognised reason must not be assumed safe: over-claiming protection
+		// is the failure mode being guarded against.
+		const unknown = formatSessionStartMessage("1.0.0", {
+			enabled: false,
+			disabled_reason: "some_future_reason",
+			scanResults: [],
+			versionCheck: null,
+		});
+		expect(unknown).toContain("Disabled");
+		expect(unknown).not.toContain("ACTIVE");
+	});
+
 	it("formats threat banners with high/critical findings, overflow, and footer notices", () => {
 		const findings = Array.from({ length: 6 }, (_, index) => ({
 			threatId: `TST-${index}`,

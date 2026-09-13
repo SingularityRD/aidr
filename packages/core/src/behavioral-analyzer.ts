@@ -75,7 +75,11 @@ export class BehavioralAnalyzer {
 
 	detectAnomaly(sessionId: string): AnomalyDetectionResult {
 		const profile = this.analyzeCurrentSession(sessionId);
-		const baseline = this.calculateBaseline();
+		const sessionEvents = this.events.filter((event) => event.sessionId === sessionId);
+		// The newest observation is the candidate being scored. It must not set its
+		// own baseline, and observations from another session must not affect it.
+		const baselineEvents = sessionEvents.slice(0, -1);
+		const baseline = this.calculateBaseline(baselineEvents);
 
 		for (const pattern of profile.suspiciousPatterns) {
 			if (pattern.confidence > 0.7) {
@@ -88,14 +92,19 @@ export class BehavioralAnalyzer {
 			}
 		}
 
-		const frequencyAnomaly = this.checkFrequencyAnomaly(profile.toolFrequency, baseline);
-		if (frequencyAnomaly.isAnomaly) {
-			return frequencyAnomaly;
-		}
+		if (baselineEvents.length > 0) {
+			const frequencyAnomaly = this.checkFrequencyAnomaly(profile.toolFrequency, baseline);
+			if (frequencyAnomaly.isAnomaly) {
+				return frequencyAnomaly;
+			}
 
-		const riskAnomaly = this.checkRiskAnomaly(profile.averageRiskScore, baseline);
-		if (riskAnomaly.isAnomaly) {
-			return riskAnomaly;
+			const candidate = sessionEvents[sessionEvents.length - 1];
+			if (candidate) {
+				const riskAnomaly = this.checkRiskAnomaly(candidate.riskScore, baseline);
+				if (riskAnomaly.isAnomaly) {
+					return riskAnomaly;
+				}
+			}
 		}
 
 		return {
@@ -171,24 +180,25 @@ export class BehavioralAnalyzer {
 		return patterns;
 	}
 
-	private calculateBaseline(): { avgToolFrequency: number; avgRiskScore: number } {
-		const allEvents = this.events;
-
-		if (allEvents.length === 0) {
+	private calculateBaseline(events: ToolCallEvent[]): {
+		avgToolFrequency: number;
+		avgRiskScore: number;
+	} {
+		if (events.length === 0) {
 			return { avgToolFrequency: 0, avgRiskScore: 0 };
 		}
 
 		const toolCounts = new Map<string, number>();
 		let totalRisk = 0;
 
-		for (const event of allEvents) {
+		for (const event of events) {
 			const count = toolCounts.get(event.toolName) || 0;
 			toolCounts.set(event.toolName, count + 1);
 			totalRisk += event.riskScore;
 		}
 
-		const avgToolFrequency = allEvents.length / toolCounts.size;
-		const avgRiskScore = totalRisk / allEvents.length;
+		const avgToolFrequency = events.length / toolCounts.size;
+		const avgRiskScore = totalRisk / events.length;
 
 		return { avgToolFrequency, avgRiskScore };
 	}

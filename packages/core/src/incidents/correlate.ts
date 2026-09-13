@@ -60,13 +60,18 @@ function summarizeSignal(s: NormalizedSignal): string {
 }
 
 function incidentKey(s: NormalizedSignal): string {
-	// Order: most specific -> fallback.
-	if (s.session_id) return `sess:${s.session_id}`;
-	if (s.plugin_key) return `plugin:${s.plugin_key}`;
-	if (s.package_name) return `pkg:${s.package_name}`;
-	if (s.domain) return `dom:${s.domain}`;
-	if (s.file_path) return `path:${s.file_path}`;
-	return "unknown";
+	// An agent id is the endpoint boundary: the same session name, plugin or
+	// destination on two endpoints must never become one incident.
+	const scope = `scope:${JSON.stringify([s.agent_iid ?? null, s.connector ?? null])}:`;
+	if (s.session_id) return `${scope}sess:${JSON.stringify(s.session_id)}`;
+	// Without an endpoint or session identity, a shared package/domain is not
+	// enough evidence that two independent signals belong to one incident.
+	if (!s.agent_iid) return `${scope}signal:${JSON.stringify(s.signal_id)}`;
+	if (s.plugin_key) return `${scope}plugin:${JSON.stringify(s.plugin_key)}`;
+	if (s.package_name) return `${scope}pkg:${JSON.stringify(s.package_name)}`;
+	if (s.domain) return `${scope}dom:${JSON.stringify(s.domain)}`;
+	if (s.file_path) return `${scope}path:${JSON.stringify(s.file_path)}`;
+	return `${scope}signal:${JSON.stringify(s.signal_id)}`;
 }
 
 function toEventRef(s: NormalizedSignal): IncidentEventRef {
@@ -98,7 +103,10 @@ export function correlateIncidents(
 	options: CorrelateOptions = {},
 ): Incident[] {
 	const cfg = { ...DEFAULTS, ...options };
-	const sorted = [...signals].sort((a, b) => a.timestamp_ms - b.timestamp_ms);
+	const sorted = [...signals].sort(
+		(a, b) => a.timestamp_ms - b.timestamp_ms || a.signal_id.localeCompare(b.signal_id),
+	);
+	const seenSignalIds = new Set<string>();
 
 	const open = new Map<string, Incident>();
 	const denyCounters = new Map<string, number[]>();
@@ -125,12 +133,19 @@ export function correlateIncidents(
 	}
 
 	for (const s of sorted) {
+		// Replayed audit windows contain the same signal more than once. Counting
+		// it again would fabricate both evidence and deny escalation.
+		const replayKey = JSON.stringify([s.agent_iid ?? null, s.connector ?? null, s.signal_id]);
+		if (seenSignalIds.has(replayKey)) continue;
+		seenSignalIds.add(replayKey);
 		const key = incidentKey(s);
 		const existing = open.get(key);
 
 		const isGapTooLarge = existing && s.timestamp_ms - existing.last_seen_ms > cfg.max_gap_ms;
 		if (existing && isGapTooLarge) {
 			open.delete(key);
+			denyCounters.delete(key);
+			keyFlags.delete(key);
 		}
 
 		const incident = open.get(key) ?? {

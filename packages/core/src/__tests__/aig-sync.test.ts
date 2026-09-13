@@ -32,7 +32,18 @@ describe("AIG sync bundle contract", () => {
 		expect(status.manifestValid).toBe(true);
 		expect(status.signaturePresent).toBe(false);
 		expect(status.bundleId).toMatch(/^[a-f0-9]{64}$/);
-		expect(status.cveCount).toBe(1925);
+		// Assert the count matches the shipped bundle rather than a hardcoded
+		// total: a literal here only encodes which dataset revision was current
+		// when the test was written, so a legitimate AIG upgrade fails the suite
+		// for no security reason. What matters is that the reported count equals
+		// the actual compiled data and is non-trivial.
+		const shippedCves = (
+			JSON.parse(readFileSync(join(SOURCE_GENERATED, "aig-cve-index.json"), "utf8")) as {
+				cves: unknown[];
+			}
+		).cves.length;
+		expect(shippedCves).toBeGreaterThan(1000);
+		expect(status.cveCount).toBe(shippedCves);
 		expect((await checkForUpdates({ mode: "local", generated_dir: tempDir })).updateAvailable).toBe(false);
 	});
 

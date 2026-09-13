@@ -7,12 +7,22 @@ import { appendFile, mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
+import type { ResponseActionRecord } from "./response-actions.js";
 import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
 import type { LoggingConfig, Verdict } from "./types.js";
 
 const MAX_SUMMARY_LEN = 200;
 
-function toolInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
+/**
+ * Bounded, credential-redacted one-line description of a tool call.
+ *
+ * The same text feeds the verdict entry and the signed response chain, so the two
+ * can be correlated without the chain ever learning more than the plain log does.
+ */
+export function toolInputSummaryForAudit(
+	toolName: string,
+	toolInput: Record<string, unknown>,
+): string {
 	let summary: string;
 	if (toolName === "Bash") {
 		summary = String(toolInput.command ?? "");
@@ -29,6 +39,10 @@ function toolInputSummary(toolName: string, toolInput: Record<string, unknown>):
 		summary = JSON.stringify(toolInput);
 	}
 	return redactTelemetryString(summary, MAX_SUMMARY_LEN);
+}
+
+function toolInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
+	return toolInputSummaryForAudit(toolName, toolInput);
 }
 
 export function buildRuntimeVerdictEntry(
@@ -185,6 +199,140 @@ export async function logVerdict(
 		await appendEntry(config, entry);
 	} catch {
 		// Fail-open: logging errors swallowed
+	}
+}
+
+/**
+ * Serialize response actions for a log record: paths and outcomes only.
+ *
+ * Shared by the plain audit entry and the signed response chain so the two can
+ * never disagree about what happened, and so there is exactly one place where the
+ * "never record contents" rule is enforced.
+ */
+export function summarizeActionsForLog(actions: ResponseActionRecord[]): Array<{
+	action: string;
+	outcome: string;
+	target: string;
+	vault_path?: string;
+	snapshot_id?: string;
+	reason?: string;
+	detail?: string;
+	bytes?: number;
+	skipped?: Array<{ path: string; reason: string; detail?: string }>;
+}> {
+	return actions.map((action) => ({
+		action: action.action,
+		outcome: action.outcome,
+		target: redactTelemetryString(action.target, MAX_SUMMARY_LEN),
+		vault_path: action.vaultPath
+			? redactTelemetryString(action.vaultPath, MAX_SUMMARY_LEN)
+			: undefined,
+		snapshot_id: action.snapshotId,
+		reason: action.reason,
+		// `detail` carries error text. It is bounded and credential-scrubbed, but it
+		// is never allowed to become a channel for file contents.
+		detail: action.detail ? redactTelemetryString(action.detail, MAX_SUMMARY_LEN) : undefined,
+		bytes: action.bytes,
+		skipped: action.skipped?.map((skip) => ({
+			path: redactTelemetryString(skip.path, MAX_SUMMARY_LEN),
+			reason: skip.reason,
+			detail: skip.detail ? redactTelemetryString(skip.detail, MAX_SUMMARY_LEN) : undefined,
+		})),
+	}));
+}
+
+/**
+ * Build an audit entry describing what the runtime DID in response to a verdict.
+ *
+ * Response actions used to be invisible: they were returned to the caller and
+ * then dropped, so there was no record that the runtime had preserved a copy of
+ * a file. A response with no audit trail is worse than no response, because the
+ * operator cannot tell whether anything was touched.
+ *
+ * Records contain paths and outcomes only - never file contents.
+ */
+export function buildResponseActionEntry(
+	sessionId: string,
+	toolName: string,
+	verdict: Verdict,
+	actions: ResponseActionRecord[],
+): Record<string, unknown> {
+	return {
+		type: "response_action",
+		timestamp: new Date().toISOString(),
+		session_id: sessionId,
+		tool_name: toolName,
+		verdict: verdict.decision,
+		severity: verdict.severity,
+		matched_threat_id: verdict.matchedThreatId,
+		actions: summarizeActionsForLog(actions),
+	};
+}
+
+/**
+ * Build the audit entry for a response taken on an ALLOWED call.
+ *
+ * A pre-operation snapshot happens when the runtime lets a destructive call
+ * through, so the verdict is `allow` and the entry is filed under its own `type`.
+ * Without the distinct type an operator scanning for `response_action` could not
+ * tell "we blocked this and kept a copy" from "we allowed this and kept a copy
+ * because it was about to destroy something".
+ */
+export function buildAllowedResponseActionEntry(
+	sessionId: string,
+	toolName: string,
+	verdict: Verdict,
+	actions: ResponseActionRecord[],
+): Record<string, unknown> {
+	return {
+		type: "response_action_allowed",
+		timestamp: new Date().toISOString(),
+		session_id: sessionId,
+		tool_name: toolName,
+		verdict: verdict.decision,
+		severity: verdict.severity,
+		matched_threat_id: verdict.matchedThreatId,
+		actions: summarizeActionsForLog(actions),
+	};
+}
+
+/** Append a response-action record. Never throws: logging must not break a block. */
+export async function logResponseActions(
+	config: LoggingConfig,
+	sessionId: string,
+	toolName: string,
+	verdict: Verdict,
+	actions: ResponseActionRecord[],
+): Promise<void> {
+	if (!config.enabled || actions.length === 0) return;
+	try {
+		await appendEntry(config, buildResponseActionEntry(sessionId, toolName, verdict, actions));
+	} catch {
+		// Fail-open: a logging error must not turn into a hook failure.
+	}
+}
+
+/**
+ * Append the record for a response taken on an allowed call.
+ *
+ * Same guarantees as `logResponseActions`: never throws, and the allow is never
+ * reconsidered because the log write failed.
+ */
+export async function logAllowedResponseActions(
+	config: LoggingConfig,
+	sessionId: string,
+	toolName: string,
+	verdict: Verdict,
+	actions: ResponseActionRecord[],
+): Promise<void> {
+	if (!config.enabled || actions.length === 0) return;
+	try {
+		await appendEntry(
+			config,
+			buildAllowedResponseActionEntry(sessionId, toolName, verdict, actions),
+		);
+	} catch {
+		// Fail-open: a logging error must not turn into a hook failure.
 	}
 }
 

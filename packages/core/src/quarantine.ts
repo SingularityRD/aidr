@@ -4,11 +4,12 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import { copyFile, mkdir, readFile, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { logIncident } from "./audit-log.js";
 import { resolvePath } from "./config.js";
-import { atomicWriteJson, getFileContent } from "./file-utils.js";
+import { atomicWriteJson, getFileContent, getFileContentSync } from "./file-utils.js";
 import type { ResponseAuditor } from "./response-audit.js";
 import type { Logger, LoggingConfig, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
@@ -93,8 +94,12 @@ export class AutoQuarantine {
 		this.logger = logger ?? nullLogger;
 		this.loggingConfig = loggingConfig;
 		this.manifestPath = join(resolvePath(config.quarantineDir), MANIFEST_FILENAME);
-		this.ensureQuarantineDir();
-		this.loadManifest();
+		// These MUST complete before the constructor returns. They used to be
+		// `async` and called without `await`, so `list()`/`restore()` on a fresh
+		// instance observed an empty map until an unrelated microtask happened to
+		// run, and a failure surfaced as an unhandled rejection.
+		this.ensureQuarantineDirSync();
+		this.loadManifestSync();
 	}
 
 	/**
@@ -383,19 +388,26 @@ export class AutoQuarantine {
 	}
 
 	/**
-	 * Ensure the quarantine directory exists.
+	 * Ensure the quarantine directory exists (synchronous: must finish before the
+	 * constructor returns so the instance is usable immediately).
 	 */
-	private async ensureQuarantineDir(): Promise<void> {
-		const quarantineDir = resolvePath(this.config.quarantineDir);
-		await mkdir(quarantineDir, { recursive: true });
+	private ensureQuarantineDirSync(): void {
+		try {
+			mkdirSync(resolvePath(this.config.quarantineDir), { recursive: true });
+		} catch (error) {
+			this.logger.warn("Failed to create quarantine directory", { error: String(error) });
+		}
 	}
 
 	/**
-	 * Load the quarantine manifest from disk.
+	 * Load the quarantine manifest from disk (synchronous, see above).
 	 */
-	private async loadManifest(): Promise<void> {
+	private loadManifestSync(): void {
+		this.items.clear();
 		try {
-			const content = await getFileContent(this.manifestPath);
+			// Throws when the manifest does not exist yet, which is the normal
+			// first-run case handled by the catch below.
+			const content = getFileContentSync(this.manifestPath);
 			const manifest: QuarantineManifest = JSON.parse(content);
 
 			if (manifest.version !== MANIFEST_VERSION) {
@@ -403,7 +415,6 @@ export class AutoQuarantine {
 				return;
 			}
 
-			this.items.clear();
 			for (const item of manifest.items) {
 				this.items.set(item.id, {
 					...item,
@@ -411,7 +422,7 @@ export class AutoQuarantine {
 				});
 			}
 		} catch {
-			// Manifest doesn't exist yet, start fresh
+			// Manifest doesn't exist yet, or is unreadable/corrupt: start fresh.
 			this.items.clear();
 		}
 	}

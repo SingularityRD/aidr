@@ -10,9 +10,16 @@ import { atomicWriteJson, getFileContent } from "./file-utils.js";
 import type { ResponseAuditEntry, ResponseAuditor } from "./response-audit.js";
 import type { Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
-
-/** Available response modes for threat handling */
-export type ResponseMode = "block" | "quarantine" | "contain" | "notify" | "log";
+/**
+ * Available response modes for threat handling.
+ *
+ * `rollback` is included because a rollback is a real recorded response — the
+ * signed chain and `ResponseAuditEntry` have always accepted it as an
+ * `action`/`responseTaken` value. Leaving it out of `ResponseMode` meant the one
+ * genuinely restorative response could not be named in the type that every other
+ * response is expressed in.
+ */
+export type ResponseMode = "block" | "quarantine" | "contain" | "notify" | "rollback" | "log";
 
 /** Severity levels for response rules */
 export type ResponseSeverity = "low" | "medium" | "high" | "critical";
@@ -55,6 +62,32 @@ const SEVERITY_RANK: Record<ResponseSeverity, number> = {
 	high: 3,
 	critical: 4,
 };
+
+/**
+ * Audit action for a response mode.
+ *
+ * `log` has no action of its own — nothing was done beyond recording the
+ * decision — so it is filed as `block`, matching how the rest of the runtime
+ * treats "blocked or refused". `rollback` maps to itself: it is the only mode
+ * that restores prior state, and filing it as anything else would make an
+ * actual restoration indistinguishable from a refusal in the signed chain.
+ */
+export function auditActionForMode(mode: ResponseMode): ResponseAuditEntry["action"] {
+	switch (mode) {
+		case "notify":
+			return "notify";
+		case "quarantine":
+			return "quarantine";
+		case "contain":
+			return "contain";
+		case "rollback":
+			return "rollback";
+		case "block":
+		case "log":
+		default:
+			return "block";
+	}
+}
 
 /**
  * Response configurator for managing automated threat responses.
@@ -188,7 +221,14 @@ export class ResponseConfigurator {
 	 * Validate response mode string.
 	 */
 	private isValidResponseMode(mode: string): mode is ResponseMode {
-		const validModes: ResponseMode[] = ["block", "quarantine", "contain", "notify", "log"];
+		const validModes: ResponseMode[] = [
+			"block",
+			"quarantine",
+			"contain",
+			"notify",
+			"rollback",
+			"log",
+		];
 		return validModes.includes(mode as ResponseMode);
 	}
 
@@ -262,19 +302,8 @@ export class ResponseConfigurator {
 
 		// Log to response auditor if available
 		if (this.auditor) {
-			const action: ResponseAuditEntry["action"] =
-				mode === "block"
-					? "block"
-					: mode === "notify"
-						? "notify"
-						: mode === "quarantine"
-							? "quarantine"
-							: mode === "contain"
-								? "contain"
-								: "block"; // "log" maps to "block" for audit purposes
-
 			await this.auditor.log({
-				action,
+				action: auditActionForMode(mode),
 				threatId: context.threatId,
 				tool: context.tool,
 				input: context.input,
@@ -533,6 +562,7 @@ export class ResponseConfigurator {
 	 */
 	static getModePriority(mode: ResponseMode): number {
 		const priorities: Record<ResponseMode, number> = {
+			rollback: 6,
 			block: 5,
 			quarantine: 4,
 			contain: 3,

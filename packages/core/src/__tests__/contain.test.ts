@@ -21,7 +21,7 @@ describe("AutoContain", () => {
 	});
 
 	describe("isolate", () => {
-		it("runs operation without isolation when runtime unavailable", async () => {
+		it("refuses to run the operation unisolated when the runtime is unavailable", async () => {
 			const contain = new AutoContain({
 				runtime: "nonexistent-runtime",
 				baseImage: "alpine:latest",
@@ -31,11 +31,17 @@ describe("AutoContain", () => {
 			});
 
 			const operation = vi.fn().mockResolvedValue("success");
-			const result = await contain.isolate(operation, { tool: "test", input: "test" });
 
-			expect(operation).toHaveBeenCalled();
-			expect(result.isolated).toBe(false);
-			expect(result.result).toBe("success");
+			// Containment exists to hold an operation that was already judged
+			// dangerous. This test previously asserted that the operation RAN
+			// without isolation and merely reported `isolated: false`, which means a
+			// caller reading only "the call succeeded" would believe a dangerous
+			// operation had been contained while it actually ran with full
+			// privileges. A containment primitive that cannot contain must refuse.
+			await expect(contain.isolate(operation, { tool: "test", input: "test" })).rejects.toThrow(
+				/refusing to run the operation unisolated/i,
+			);
+			expect(operation).not.toHaveBeenCalled();
 		});
 	});
 

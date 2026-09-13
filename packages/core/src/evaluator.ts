@@ -11,12 +11,16 @@ import {
 	logIncident,
 	logVerdict,
 } from "./audit-log.js";
+import { BehavioralDetectionOrchestrator } from "./behavioral-orchestrator.js";
 import { isCommercialBuild } from "./build-flavor.js";
 import { VerdictCache } from "./cache.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
 import { loadConfig, resolvePath } from "./config.js";
+import { DetectionLegUnavailableError } from "./detection-leg.js";
+import type { DlpPolicy } from "./dlp/policy.js";
+import { scanDlpInput } from "./dlp/scanner.js";
 import { DecisionEngine } from "./engine.js";
 import { HeuristicsEngine } from "./heuristics.js";
 import {
@@ -54,7 +58,9 @@ import {
 } from "./package-extractor.js";
 import { evaluatePolicy } from "./policy.js";
 import { syncRemoteRuntimePolicy } from "./remote-policy.js";
+import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { loadThreatsFromDirs } from "./threat-loader.js";
+import { normalizeToolEvaluationRequest } from "./tool-normalization.js";
 import {
 	initTracing,
 	recordDetectionPhase,
@@ -152,6 +158,257 @@ export interface ToolEvaluationContext {
 	agentRuntime?: AgentRuntime;
 	agentRuntimeVersion?: string;
 	logger?: Logger;
+	/** Trusted caller-owned detector policy. Tool payloads must never select their tenant. */
+	runtimeDetectors?: {
+		tenantId: string;
+		dlp?: { enabled: boolean; policy: DlpPolicy; contentType?: string };
+		behavioral?: {
+			enabled: boolean;
+			orchestrator: BehavioralDetectionOrchestrator;
+			/** Only an operator-approved baseline workflow should set this to true. */
+			learningAllowed?: boolean;
+		};
+	};
+	/** Verified, local signed feed configuration; absent means no feed claim. */
+	reputationFeed?: ReputationFeedLoadOptions;
+}
+
+const DETECTOR_DECISION_RANK = { allow: 0, ask: 1, deny: 2 } as const;
+
+function detectorVerdict(
+	decision: "ask" | "deny",
+	category: string,
+	source: string,
+	reason: string,
+	matchedThreatId: string | null = null,
+): Verdict {
+	return {
+		decision,
+		category,
+		confidence: 1,
+		severity: decision === "deny" ? "critical" : "warning",
+		source,
+		artifacts: [],
+		matchedThreatId,
+		reasons: [reason],
+	};
+}
+
+function auditToolInputForVerdict(
+	toolInput: Record<string, unknown>,
+	verdict: Verdict,
+	context: ToolEvaluationContext,
+): Record<string, unknown> {
+	// Tenant DLP matches can be arbitrary business secrets that the generic
+	// credential redactor does not know. Never copy their raw payload into an
+	// audit summary or remote event when the configured detector determined the
+	// outcome (including unavailable inspection).
+	return context.runtimeDetectors?.dlp?.enabled === true ||
+		verdict.source === "dlp" ||
+		verdict.source === "runtime_detectors"
+		? { content_omitted: "runtime detector decision" }
+		: toolInput;
+}
+
+function mergeDetectorVerdict(current: Verdict, candidate: Verdict | null, base: Verdict): Verdict {
+	if (!candidate) return current;
+	return DETECTOR_DECISION_RANK[candidate.decision] > DETECTOR_DECISION_RANK[current.decision] ||
+		(candidate.decision === current.decision && current === base)
+		? candidate
+		: current;
+}
+
+function isUrlCheckResult(value: unknown): value is UrlCheckResult {
+	if (!value || typeof value !== "object") return false;
+	const result = value as Partial<UrlCheckResult>;
+	return (
+		typeof result.url === "string" &&
+		typeof result.isMalicious === "boolean" &&
+		Array.isArray(result.findings) &&
+		Array.isArray(result.flags)
+	);
+}
+
+function evaluateDlpDetector(
+	detector: NonNullable<NonNullable<ToolEvaluationContext["runtimeDetectors"]>["dlp"]>,
+	tenantId: string,
+	content: string,
+): Verdict | null {
+	try {
+		const dlp = scanDlpInput(detector.policy, {
+			tenantId,
+			content,
+			contentType: detector.contentType ?? "application/json",
+		});
+		if (dlp.status === "unavailable") {
+			return detectorVerdict(
+				dlp.action === "block" ? "deny" : "ask",
+				"dlp_unavailable",
+				"dlp",
+				`DLP inspection unavailable: ${dlp.unavailable.reason}.`,
+			);
+		}
+		if (dlp.action === "allow") return null;
+		// A hook returns a verdict, not a rewritten tool payload. Passing a
+		// redact result through would disclose the original value.
+		return detectorVerdict(
+			dlp.action === "ask" ? "ask" : "deny",
+			"dlp",
+			"dlp",
+			dlp.action === "redact"
+				? "DLP redaction required; this connector cannot rewrite tool input."
+				: `DLP policy requires ${dlp.action}.`,
+			dlp.findings[0]?.ruleId ?? null,
+		);
+	} catch {
+		return detectorVerdict(
+			"deny",
+			"dlp_unavailable",
+			"dlp",
+			"Configured DLP policy or tenant binding could not be validated.",
+		);
+	}
+}
+
+async function evaluateBehavioralDetector(
+	detector: NonNullable<NonNullable<ToolEvaluationContext["runtimeDetectors"]>["behavioral"]>,
+	request: ToolEvaluationRequest,
+	tenantId: string,
+	content: string,
+	currentVerdict: Verdict,
+): Promise<Verdict | null> {
+	try {
+		const input = request.toolInput;
+		const behavioral = await detector.orchestrator.evaluate({
+			tenantId,
+			sessionId: request.sessionId,
+			toolName: request.toolName,
+			riskScore: currentVerdict.decision === "deny" ? 100 : currentVerdict.decision === "ask" ? 75 : 0,
+			timestamp: Date.now(),
+			command: typeof input.command === "string" ? input.command : undefined,
+			path: typeof input.file_path === "string" ? input.file_path : undefined,
+			url: typeof input.url === "string" ? input.url : undefined,
+			classificationText: content,
+			learningAllowed: detector.learningAllowed === true && currentVerdict.decision === "allow",
+		});
+		if (behavioral.outcome === "anomalous") {
+			return detectorVerdict(
+				"ask",
+				"behavioral_anomaly",
+				"behavioral",
+				`Behavioral anomaly detected (score ${behavioral.anomalyScore ?? "unknown"}).`,
+			);
+		}
+		if (behavioral.outcome === "learning" || behavioral.outcome === "unavailable") {
+			return detectorVerdict(
+				"ask",
+				"behavioral_unavailable",
+				"behavioral",
+				`Behavioral detection ${behavioral.outcome}; no clean result available.`,
+			);
+		}
+		return null;
+	} catch {
+		return detectorVerdict(
+			"ask",
+			"behavioral_unavailable",
+			"behavioral",
+			"Configured behavioral detection could not inspect this call.",
+		);
+	}
+}
+
+/** Do not turn a configured inspection failure into a clean allow. */
+async function applyRuntimeDetectors(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	baseVerdict: Verdict,
+	managedState: ManagedState,
+): Promise<Verdict> {
+	const detectors = context.runtimeDetectors;
+	if (!detectors || (detectors.dlp?.enabled !== true && detectors.behavioral?.enabled !== true)) {
+		return baseVerdict;
+	}
+
+	const tenantId = detectors.tenantId;
+	if (typeof tenantId !== "string" || tenantId.trim() === "" || tenantId.length > 128) {
+		return detectorVerdict("deny", "detection_unavailable", "runtime_detectors", "Detector tenant identity is missing or invalid.");
+	}
+	if (
+		managedState.entitlement?.schema_version === 2 &&
+		managedState.entitlement.tenant_id !== tenantId
+	) {
+		return detectorVerdict("deny", "tenant_isolation", "runtime_detectors", "Detector tenant does not match the signed managed entitlement.");
+	}
+
+	let content: string;
+	try {
+		content = JSON.stringify(request.toolInput);
+		if (typeof content !== "string") throw new Error("Tool input cannot be serialized");
+	} catch {
+		return detectorVerdict("deny", "detection_unavailable", "runtime_detectors", "Tool input could not be serialized for configured inspection.");
+	}
+
+	let result = baseVerdict;
+	if (detectors.dlp?.enabled === true) {
+		result = mergeDetectorVerdict(result, evaluateDlpDetector(detectors.dlp, tenantId, content), baseVerdict);
+	}
+
+	if (detectors.behavioral?.enabled === true) {
+		result = mergeDetectorVerdict(
+			result,
+			await evaluateBehavioralDetector(detectors.behavioral, request, tenantId, content, result),
+			baseVerdict,
+		);
+	}
+	// Even when another detector has higher precedence, its artifact list may
+	// contain a tenant-specific value that generic redaction cannot recognize.
+	return detectors.dlp?.enabled === true && result.artifacts.length > 0
+		? { ...result, artifacts: [] }
+		: result;
+}
+
+async function recordEarlyVerdict(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+	verdict: Verdict,
+	logger: Logger,
+	allowlisted = false,
+): Promise<void> {
+	let incidentEntry: Record<string, unknown> | null = null;
+	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);
+	if (
+		config.mode === "managed" &&
+		config.response.emit_incidents &&
+		(verdict.decision === "ask" || verdict.decision === "deny")
+	) {
+		try {
+			incidentEntry = buildIncidentEntry({
+				incidentId: `inc_${request.sessionId}_${Date.now()}`,
+				sessionId: request.sessionId,
+				toolName: request.toolName,
+				toolInput: auditInput,
+				verdict,
+				recommendedActions: verdict.decision === "deny" ? ["review", "block"] : ["review"],
+			});
+			await logIncident(config.logging, incidentEntry);
+		} catch {
+			incidentEntry = null;
+		}
+	}
+	try {
+		await logVerdict(config.logging, request.sessionId, request.toolName, auditInput, verdict, allowlisted);
+	} catch {
+		// An audit failure cannot erase the detector decision.
+	}
+	if (verdict.decision !== "allow") {
+		try {
+			await ingestToControlPlaneIfEnabled(request, context, config, verdict, incidentEntry, logger);
+		} catch {
+			// Telemetry failure cannot erase the local decision.
+		}
+	}
 }
 
 export function allowVerdict(source = "none"): Verdict {
@@ -171,6 +428,7 @@ export async function evaluateToolCall(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
 ): Promise<Verdict> {
+	const normalizedRequest = normalizeToolEvaluationRequest(request);
 	// Initialize tracing on first call if enabled
 	initTracing();
 
@@ -179,16 +437,16 @@ export async function evaluateToolCall(
 	return startActiveSpan(
 		"security_decision",
 		async (mainSpan) => {
-			mainSpan.setAttribute("aidr.session_id", request.sessionId);
-			mainSpan.setAttribute("aidr.tool_name", request.toolName);
+			mainSpan.setAttribute("aidr.session_id", normalizedRequest.sessionId);
+			mainSpan.setAttribute("aidr.tool_name", normalizedRequest.toolName);
 
-			const verdict = await runEvaluationPipeline(request, context, startTime);
+			const verdict = await runEvaluationPipeline(normalizedRequest, context, startTime);
 
 			// Record final decision attributes
 			const durationMs = performance.now() - startTime;
 			setSecurityDecisionAttributes({
-				toolName: request.toolName,
-				sessionId: request.sessionId,
+				toolName: normalizedRequest.toolName,
+				sessionId: normalizedRequest.sessionId,
 				decision: verdict.decision,
 				category: verdict.category,
 				confidence: verdict.confidence,
@@ -232,7 +490,14 @@ async function runEvaluationPipeline(
 				reasons: [reason],
 			};
 		}
-		return { ...allowVerdict("managed_disabled"), reasons: [reason] };
+		return {
+			...allowVerdict("managed_disabled"),
+			// Keep the category consistent with the source. A licensing disable is not a
+			// clean inspection, and a caller that logs only `category` must be able to
+			// tell the two apart.
+			category: "managed_disabled",
+			reasons: [reason],
+		};
 	};
 
 	// Commercial gating: if runtime integrity is degraded, do not enable protections.
@@ -249,6 +514,15 @@ async function runEvaluationPipeline(
 	let token = (config.auth.api_key ?? "").trim();
 	let managedState: ManagedState = {};
 	let revocationsForIntel: RevocationListV1 | null = null;
+	// Set when a managed/commercial installation has not completed enrollment or
+	// entitlement acquisition. Managed-only features (signed intel packs, remote
+	// policy, control-plane sync, entitlement-enforced premium modules) stay
+	// disabled, but local heuristics/policy/allowlist detection MUST still run.
+	// Returning an allow verdict here would silently disable the product's core
+	// protection, which is exactly the failure mode this flag exists to prevent.
+	let managedUnenrolled = false;
+	const unenrolledReason =
+		"AIDR is not enrolled: running local detection only (managed features disabled).";
 
 	if (managedOnly) {
 		// Effective auth token can come from config (api_key/enrollment_token) or from managed state cache.
@@ -269,38 +543,42 @@ async function runEvaluationPipeline(
 		const enrollToken = (config.auth.enrollment_token ?? "").trim();
 
 		if (!apiKey && !enrollToken) {
-			return disabled(
-				"AIDR disabled: missing auth.api_key or auth.enrollment_token (managed-only build).",
-			);
+			// No credentials yet. Do NOT disable detection: fall through to local
+			// evaluation with managed features switched off, and surface the state.
+			managedUnenrolled = true;
+			logger.warn(unenrolledReason);
 		}
 
 		// If only enrollment_token is present, try to exchange it for an api_key.
 		if (!apiKey && enrollToken && config.control_plane.enabled) {
 			const iid = await getInstallationId(aidrDir).catch(() => undefined);
-			if (!iid) return disabled("AIDR disabled: missing installation id (iid).");
-
-			try {
-				const client = new ControlPlaneClient(config.control_plane, enrollToken, logger);
-				const res = await client.enroll({
-					iid,
-					agent_runtime: context.agentRuntime,
-					agent_runtime_version: context.agentRuntimeVersion,
-				});
-				const issued =
-					typeof res.body?.api_key === "string" ? (res.body.api_key as string).trim() : "";
-				if (res.ok && issued) {
-					managedState = applyIngestResult(
-						managedState,
-						{ ok: true, status: res.status, body: res.body },
-						config.control_plane.grace_period_hours,
-						{ authToken: issued, publicKeysPem: config.licensing.public_keys_pem },
-					);
-					managedState.api_key = issued;
-					await saveManagedState(managedPath, managedState);
-					await saveEntitlementKeyringFromState(managedState);
+			if (!iid) {
+				managedUnenrolled = true;
+				logger.warn(`${unenrolledReason} (missing installation id)`);
+			} else {
+				try {
+					const client = new ControlPlaneClient(config.control_plane, enrollToken, logger);
+					const res = await client.enroll({
+						iid,
+						agent_runtime: context.agentRuntime,
+						agent_runtime_version: context.agentRuntimeVersion,
+					});
+					const issued =
+						typeof res.body?.api_key === "string" ? (res.body.api_key as string).trim() : "";
+					if (res.ok && issued) {
+						managedState = applyIngestResult(
+							managedState,
+							{ ok: true, status: res.status, body: res.body },
+							config.control_plane.grace_period_hours,
+							{ authToken: issued, publicKeysPem: config.licensing.public_keys_pem },
+						);
+						managedState.api_key = issued;
+						await saveManagedState(managedPath, managedState);
+						await saveEntitlementKeyringFromState(managedState);
+					}
+				} catch {
+					// Ignore; handled below by entitlement gating.
 				}
-			} catch {
-				// Ignore; handled below by entitlement gating.
 			}
 		}
 
@@ -308,12 +586,36 @@ async function runEvaluationPipeline(
 		token =
 			(config.auth.api_key ?? "").trim() ||
 			(typeof managedState.api_key === "string" ? managedState.api_key.trim() : "");
-		if (!token) return disabled("AIDR disabled: enrollment did not produce an API key.");
+
+		// Whether this installation actually holds managed credentials. Managed-only
+		// hard gates (missing iid, control plane off, unsigned entitlement) describe
+		// a *broken enrolled* installation. An installation that was never enrolled
+		// cannot satisfy any of them by construction - it has no iid (that file is
+		// created during enrollment) and no signed entitlement - so evaluating those
+		// gates against it is meaningless and, before this flag existed, turned every
+		// un-enrolled managed/commercial install into a blanket deny.
+		const hasCredentials = token.length > 0;
+
+		if (!hasCredentials) {
+			// Enrollment did not produce a key (unreachable control plane, rejected
+			// token, or no token). Keep enforcing locally instead of going inert.
+			managedUnenrolled = true;
+			logger.warn(unenrolledReason);
+		}
 
 		// Ensure we have a signed entitlement (or offline grace) before enforcing.
 		// If missing, attempt a best-effort heartbeat to fetch it.
 		// Respect managed sync backoff to avoid repeated remote attempts when over-limit / abuse-throttled.
-		if (!isEntitlementActive(managedState) && !isSyncDisabled(managedState)) {
+		//
+		// The credential check is what keeps an un-enrolled install out of here: with
+		// no token there is nothing to authenticate the heartbeat with, and the gates
+		// below must not be evaluated against it.
+		//
+		// Note this DOES run for an installation holding a credential that has not
+		// validated yet. An enrolled commercial install that cannot produce a signed
+		// entitlement must fail closed (see the gates below) - that is a licensing
+		// control, and it is deliberately not relaxed here.
+		if (hasCredentials && !isEntitlementActive(managedState) && !isSyncDisabled(managedState)) {
 			try {
 				const iid = await getInstallationId(aidrDir).catch(() => undefined);
 				if (!iid) return disabled("AIDR disabled: missing installation id (iid).");
@@ -345,6 +647,7 @@ async function runEvaluationPipeline(
 		}
 
 		// Require server-signed entitlements when configured and keys are present; otherwise remain inert.
+		// This is a licensing control and applies to any installation holding credentials.
 		if (
 			config.licensing.require_signed_entitlements &&
 			config.licensing.public_keys_pem.length > 0
@@ -352,6 +655,17 @@ async function runEvaluationPipeline(
 			if (managedState.entitlement_alg !== "ed25519" || !isEntitlementActive(managedState)) {
 				return disabled("AIDR disabled: missing or invalid server-signed entitlement (ed25519).");
 			}
+		}
+
+		// Credentials exist but no signed entitlement was obtained: a mistyped,
+		// rotated or revoked api_key, or an unreachable endpoint. Managed features are
+		// genuinely unavailable, so record that state. It must never be used to grant
+		// managed features - only to describe why they are off.
+		if (hasCredentials && !isEntitlementActive(managedState)) {
+			managedUnenrolled = true;
+			logger.warn(
+				`${unenrolledReason} (credentials present but not validated by the control plane)`,
+			);
 		}
 
 		// Best-effort: refresh revocations cache and apply after entitlement gating (startup order).
@@ -410,12 +724,30 @@ async function runEvaluationPipeline(
 		}
 
 		// If revocations disabled sync or invalidated the entitlement, stay inert.
+		//
+		// This is safe for an installation that never enrolled: `loadManagedState`
+		// only returns state whose signature verified against the configured public
+		// keys, and such an installation has no keys and no token to sync with, so it
+		// cannot be handed a forged revocation locally. Do NOT widen this to cover
+		// "credentials present but unverified" - a routine seat-limit backoff sets the
+		// same field, and that 24h backoff is explicitly documented as leaving local
+		// protection running.
 		if (isSyncDisabled(managedState)) {
 			return disabled(
 				`AIDR disabled: managed sync is disabled (${managedState.sync_disabled_reason ?? "unknown"}).`,
 			);
 		}
-		if (config.licensing.require_signed_entitlements) {
+		// Both signed-entitlement gates require configured keys. Without a key there is
+		// no way to verify an ed25519 entitlement, so "no entitlement" carries no
+		// information about licensing - it only means this installation was never
+		// enrolled. Requiring signed entitlements is a declaration of *how* to verify
+		// one, not a claim that the operator already holds one; treating it as the
+		// latter disarmed every default install, which is the same defect as the
+		// missing-credential gate fixed above.
+		if (
+			config.licensing.require_signed_entitlements &&
+			config.licensing.public_keys_pem.length > 0
+		) {
 			if (managedState.entitlement_alg !== "ed25519" || !isEntitlementActive(managedState)) {
 				return disabled("AIDR disabled: entitlement revoked or no longer valid (ed25519).");
 			}
@@ -430,8 +762,10 @@ async function runEvaluationPipeline(
 				// Only assign if sync actually modified the config
 				config = { ...config, ...merged };
 			}
-		} catch {
-			// Fail open if remote policy sync fails
+		} catch (error) {
+			if (config.control_plane.remote_policy_required) {
+				return { ...allowVerdict("remote_policy_unavailable"), decision: "deny", category: "remote_policy_unavailable", severity: "warning", reasons: [error instanceof Error ? error.message : "Required central policy is unavailable."] };
+			}
 		}
 	}
 
@@ -439,10 +773,17 @@ async function runEvaluationPipeline(
 	if (request.artifacts.length === 0) {
 		const isMcpTool = request.toolName.startsWith("mcp__") || request.toolName === "MCP";
 		if (!isMcpTool) {
-			return allowVerdict("no_artifacts");
+			const verdict = await applyRuntimeDetectors(request, context, allowVerdict("no_artifacts"), managedState);
+			if (verdict.decision !== "allow") {
+				await recordEarlyVerdict(request, context, config, verdict, logger);
+			}
+			return verdict;
 		}
 	}
 
+	// An explicit policy denial outranks a local false-positive exception.
+	// Approval-required actions may still use the operator-managed approval path.
+	const policyVerdict = await evaluatePolicy(request.toolName, request.artifacts, config, request.toolInput);
 	// Allowlist check phase
 	const allowlisted = await startActiveSpan("allowlist_check", async (allowlistSpan) => {
 		const allowlistStart = performance.now();
@@ -450,16 +791,8 @@ async function runEvaluationPipeline(
 		try {
 			const allowlist = await loadAllowlist(config.allowlist, logger);
 			isAllowlistedResult = isAllowlisted(allowlist, request.artifacts);
-			if (isAllowlistedResult) {
+			if (isAllowlistedResult && policyVerdict?.decision !== "deny") {
 				const verdict = allowVerdict("allowlisted");
-				await logVerdict(
-					config.logging,
-					request.sessionId,
-					request.toolName,
-					request.toolInput,
-					verdict,
-					true,
-				);
 				allowlistSpan.setAttribute("aidr.allowlisted", true);
 				allowlistSpan.end();
 				return verdict;
@@ -478,29 +811,29 @@ async function runEvaluationPipeline(
 		return null;
 	});
 
-	if (allowlisted) return allowlisted;
+	if (allowlisted) {
+		const finalVerdict = await applyRuntimeDetectors(request, context, allowlisted, managedState);
+		await recordEarlyVerdict(request, context, config, finalVerdict, logger, finalVerdict.decision === "allow");
+		return finalVerdict;
+	}
 
-	const policyVerdict = await evaluatePolicy(
-		request.toolName,
-		request.artifacts,
-		config,
-		request.toolInput,
-	);
 	if (policyVerdict) {
+		const finalVerdict = await applyRuntimeDetectors(request, context, policyVerdict, managedState);
+		const auditInput = auditToolInputForVerdict(request.toolInput, finalVerdict, context);
 		let incidentEntry: Record<string, unknown> | null = null;
 		if (
 			config.mode === "managed" &&
 			config.response.emit_incidents &&
-			(policyVerdict.decision === "ask" || policyVerdict.decision === "deny")
+			(finalVerdict.decision === "ask" || finalVerdict.decision === "deny")
 		) {
 			try {
 				incidentEntry = buildIncidentEntry({
 					incidentId: `inc_${request.sessionId}_${Date.now()}`,
 					sessionId: request.sessionId,
 					toolName: request.toolName,
-					toolInput: request.toolInput,
-					verdict: policyVerdict,
-					recommendedActions: policyVerdict.decision === "deny" ? ["review", "block"] : ["review"],
+					toolInput: auditInput,
+					verdict: finalVerdict,
+					recommendedActions: finalVerdict.decision === "deny" ? ["review", "block"] : ["review"],
 				});
 				await logIncident(config.logging, incidentEntry);
 			} catch {
@@ -513,8 +846,8 @@ async function runEvaluationPipeline(
 				config.logging,
 				request.sessionId,
 				request.toolName,
-				request.toolInput,
-				policyVerdict,
+				auditInput,
+				finalVerdict,
 			);
 		} catch {
 			// Fail open.
@@ -524,11 +857,11 @@ async function runEvaluationPipeline(
 			request,
 			context,
 			config,
-			policyVerdict,
+			finalVerdict,
 			incidentEntry,
 			logger,
 		);
-		return policyVerdict;
+		return finalVerdict;
 	}
 
 	let cache: VerdictCache | null = null;
@@ -542,9 +875,16 @@ async function runEvaluationPipeline(
 	const urls = request.artifacts
 		.filter((artifact) => artifact.type === "url")
 		.map((artifact) => artifact.value);
-	const { cachedUrlVerdicts, uncachedUrls } = partitionUrlsByCache(urls, cache);
+	// An older clean cache entry is not proof that a newly configured signed feed
+	// was verified for this request.
+	const { cachedUrlVerdicts, uncachedUrls } = context.reputationFeed
+		? { cachedUrlVerdicts: new Map<string, CachedVerdict>(), uncachedUrls: urls }
+		: partitionUrlsByCache(urls, cache);
 
 	let heuristicMatches: ReturnType<HeuristicsEngine["match"]> = [];
+	// Tracked so the degraded-detection guard below can tell "nothing matched"
+	// apart from "no rules were loaded at all".
+	let threatsLoaded = 0;
 	if (config.heuristics_enabled) {
 		const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
 		let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
@@ -552,30 +892,41 @@ async function runEvaluationPipeline(
 			const disabledSet = new Set(config.disabled_threats);
 			threats = threats.filter((t) => !disabledSet.has(t.id));
 		}
+		threatsLoaded = threats.length;
 		const trustedDomains = await loadTrustedDomains(context.allowlistsDir, logger);
 		const heuristics = new HeuristicsEngine(threats, trustedDomains);
 		heuristicMatches = heuristics.match(request.artifacts);
 	}
 
 	let urlCheckResults: Awaited<ReturnType<UrlCheckClient["checkUrls"]>> = [];
+	let signedUrlFeedUnavailable = false;
 	const urlsToCheck = cache ? uncachedUrls : urls;
 	if (urlsToCheck.length > 0 && config.url_check.enabled) {
 		try {
-			const client = new UrlCheckClient(config.url_check, logger, token);
+			const client = new UrlCheckClient({ ...config.url_check, reputationFeed: context.reputationFeed }, logger, token);
 			urlCheckResults = await client.checkUrls(urlsToCheck);
-		} catch {
-			// Fail open.
+		} catch (error) {
+			if (context.reputationFeed) {
+				signedUrlFeedUnavailable = true;
+				if (error instanceof DetectionLegUnavailableError) {
+					urlCheckResults = error.partialResults.filter(isUrlCheckResult);
+				}
+				logger.warn("Configured signed URL feed did not provide complete inspection", {
+					errorType: error instanceof Error ? error.name : typeof error,
+				});
+			}
 		}
 	}
 
 	const packageCheckResults = await checkPackages(
 		request,
 		config,
-		cache,
+		context.reputationFeed ? null : cache,
 		logger,
 		token,
 		managedState,
 		revocationsForIntel,
+		context.reputationFeed,
 	);
 
 	// AMSI scan (Windows only)
@@ -647,15 +998,63 @@ async function runEvaluationPipeline(
 			break;
 		}
 	}
+	if (signedUrlFeedUnavailable && verdict.decision === "allow") {
+		verdict = detectorVerdict(
+			"ask",
+			"url_reputation_unavailable",
+			"url_check",
+			"Configured signed URL feed did not provide complete inspection.",
+		);
+	}
 
-	await cacheUrlResults(urlCheckResults, cache);
+	// ── Degraded-detection guard ───────────────────────────────────────
+	//
+	// If heuristics are enabled and there is something to inspect, but no rule
+	// could be loaded, then the local detection layer is not running at all. An
+	// `allow` here would be indistinguishable from a clean verdict and would
+	// silently turn the product into a no-op (a typo in the threats path, an
+	// incomplete install, or a renamed bundle is enough). Report it as
+	// indeterminate instead: the call goes to a human rather than through.
+	//
+	// The check is deliberately narrow. It does NOT fire when:
+	//   - heuristics are disabled by configuration, or
+	//   - there are no artifacts to inspect (nothing was going to be matched).
+	// The first is an explicit operator choice; the second is not a degradation.
+	if (
+		verdict.decision === "allow" &&
+		config.heuristics_enabled &&
+		threatsLoaded === 0 &&
+		request.artifacts.length > 0
+	) {
+		verdict = {
+			decision: "ask",
+			category: "detection_unavailable",
+			confidence: 1.0,
+			severity: "warning",
+			source: "detection_unavailable",
+			artifacts: request.artifacts.map((a) => a.value),
+			matchedThreatId: null,
+			reasons: [
+				`No local threat rules could be loaded from ${context.threatsDir ?? "(no threats directory supplied)"}, so this call was NOT inspected.`,
+				"This is not a clean result. Check the threat-rule path and reinstall the connector bundle.",
+			],
+		};
+		logger.warn("Local detection unavailable: no threat rules loaded", {
+			threatsDir: context.threatsDir,
+			artifacts: request.artifacts.length,
+		});
+	}
+	verdict = await applyRuntimeDetectors(request, context, verdict, managedState);
+	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);
+
+	await cacheUrlResults(urlCheckResults, context.reputationFeed ? null : cache);
 
 	try {
 		await logVerdict(
 			config.logging,
 			request.sessionId,
 			request.toolName,
-			request.toolInput,
+			auditInput,
 			verdict,
 		);
 	} catch {
@@ -674,7 +1073,7 @@ async function runEvaluationPipeline(
 				incidentId: `inc_${request.sessionId}_${Date.now()}`,
 				sessionId: request.sessionId,
 				toolName: request.toolName,
-				toolInput: request.toolInput,
+				toolInput: auditInput,
 				verdict,
 				recommendedActions: verdict.decision === "deny" ? ["review", "block"] : ["review"],
 			});
@@ -750,7 +1149,7 @@ async function ingestToControlPlaneIfEnabled(
 	const entry = buildRuntimeVerdictEntry(
 		request.sessionId,
 		request.toolName,
-		request.toolInput,
+		auditToolInputForVerdict(request.toolInput, verdict, context),
 		verdict,
 		false,
 	);
@@ -859,13 +1258,13 @@ async function checkPackages(
 	apiKey: string,
 	managedState: ManagedState,
 	revocations: RevocationListV1 | null,
+	reputationFeed?: ReputationFeedLoadOptions,
 ): Promise<PackageCheckResult[]> {
 	const results: PackageCheckResult[] = [];
 	if (!config.package_check.enabled) return results;
 
+	let parsedPackages: ParsedPackage[] | undefined;
 	try {
-		const intelMerged = await getPackageIntelMerged(config, managedState, revocations);
-		let parsedPackages: ParsedPackage[] | undefined;
 		if (request.toolName === "Bash") {
 			const command = (request.toolInput.command ?? "") as string;
 			parsedPackages = extractPackagesFromCommand(command);
@@ -874,27 +1273,47 @@ async function checkPackages(
 			const content = (request.toolInput.content ?? request.toolInput.new_string ?? "") as string;
 			parsedPackages = extractPackagesFromManifest(filePath, content);
 		}
+	} catch (error) {
+		logger.warn("Package input extraction failed", {
+			toolName: request.toolName,
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
+		return [packageCheckUnavailableResult("package operation", "npm")];
+	}
 
-		if (!parsedPackages || parsedPackages.length === 0) return results;
+	if (!parsedPackages || parsedPackages.length === 0) return results;
 
-		const uncached: ParsedPackage[] = [];
-		for (const pkg of parsedPackages) {
-			const cacheKey = `${pkg.registry}:${pkg.name}${pkg.version ? `@${pkg.version}` : ""}`;
-			const cached = cache?.getPackage(cacheKey);
-			if (cached && cached.verdict !== "allow") {
-				results.push({
-					packageName: pkg.name,
-					registry: pkg.registry,
-					verdict: cached.verdict === "deny" ? "malicious" : "suspicious_age",
-					confidence: 1.0,
-					details: cached.reasons.join("; "),
-				});
-			} else if (!cached) {
-				uncached.push(pkg);
-			}
+	const intelMerged = await getPackageIntelMerged(config, managedState, revocations);
+	const uncached: ParsedPackage[] = [];
+	for (const pkg of parsedPackages) {
+		const cacheKey = `${pkg.registry}:${pkg.name}${pkg.version ? `@${pkg.version}` : ""}`;
+		let cached: CachedVerdict | null = null;
+		try {
+			cached = cache?.getPackage(cacheKey) ?? null;
+		} catch (error) {
+			logger.warn("Package verdict cache read failed; running a live check", {
+				packageName: pkg.name,
+				registry: pkg.registry,
+				errorType: error instanceof Error ? error.name : typeof error,
+			});
 		}
 
-		if (uncached.length > 0) {
+		if (cached && cached.verdict !== "allow") {
+			results.push({
+				packageName: pkg.name,
+				registry: pkg.registry,
+				verdict: cached.verdict === "deny" ? "malicious" : "suspicious_age",
+				confidence: 1.0,
+				details: cached.reasons.join("; "),
+			});
+		} else if (!cached) {
+			uncached.push(pkg);
+		}
+	}
+
+	if (uncached.length > 0) {
+		let checked: PackageCheckResult[] = [];
+		try {
 			const checker = new PackageChecker(
 				{
 					registryTimeoutSeconds: config.package_check.timeout_seconds,
@@ -904,13 +1323,34 @@ async function checkPackages(
 					apiKey,
 					intelPackageNameDeny: intelMerged?.packageNameDeny,
 					intelPackageHashDeny: intelMerged?.packageHashDeny,
+					reputationFeed,
 				},
 				logger,
 			);
-			const checked = await checker.checkPackages(uncached);
-			results.push(...checked);
+			const checkResults = await checker.checkPackages(uncached);
+			if (Array.isArray(checkResults)) checked = checkResults;
+		} catch (error) {
+			logger.warn("Package checker unavailable; package operation requires review", {
+				packageCount: uncached.length,
+				errorType: error instanceof Error ? error.name : typeof error,
+			});
+		}
 
-			if (cache) {
+		results.push(...checked);
+		const unchecked = findUncheckedPackages(uncached, checked);
+		if (unchecked.length > 0) {
+			logger.warn("Package checker returned incomplete coverage", {
+				requested: uncached.length,
+				checked: checked.length,
+				unchecked: unchecked.length,
+			});
+			results.push(
+				...unchecked.map((pkg) => packageCheckUnavailableResult(pkg.name, pkg.registry)),
+			);
+		}
+
+		if (cache) {
+			try {
 				for (const result of checked) {
 					const pkg = uncached.find((p) => p.name === result.packageName);
 					const cacheKey = `${result.registry}:${result.packageName}${pkg?.version ? `@${pkg.version}` : ""}`;
@@ -926,11 +1366,45 @@ async function checkPackages(
 						result.ageDays ?? null,
 					);
 				}
+			} catch (error) {
+				logger.warn("Package verdict cache write failed", {
+					errorType: error instanceof Error ? error.name : typeof error,
+				});
 			}
 		}
-	} catch {
-		// Fail open
 	}
 
 	return results;
+}
+
+function packageCheckUnavailableResult(
+	packageName: string,
+	registry: "npm" | "pypi",
+): PackageCheckResult {
+	return {
+		packageName,
+		registry,
+		verdict: "unknown",
+		confidence: 0.6,
+		details: `Package check for '${packageName}' is unavailable; this package was NOT verified clean and requires review`,
+	};
+}
+
+function findUncheckedPackages(
+	expected: ParsedPackage[],
+	observed: PackageCheckResult[],
+): ParsedPackage[] {
+	const observedCounts = new Map<string, number>();
+	for (const result of observed) {
+		const key = `${result.registry}:${result.packageName}`;
+		observedCounts.set(key, (observedCounts.get(key) ?? 0) + 1);
+	}
+
+	return expected.filter((pkg) => {
+		const key = `${pkg.registry}:${pkg.name}`;
+		const remaining = observedCounts.get(key) ?? 0;
+		if (remaining === 0) return true;
+		observedCounts.set(key, remaining - 1);
+		return false;
+	});
 }

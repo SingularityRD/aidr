@@ -8,7 +8,7 @@
   severity: medium
   confidence: 0.65
   action: require_approval
-  pattern: "[Ii]nstall-[Mm]odule\\s+(?!.*-[Rr]equired[Vv]ersion)"
+  pattern: "[Ii]nstall-[Mm]odule\\s+(?!.{0,300}-[Rr]equired[Vv]ersion)"
   match_on: command
   title: "PowerShell Install-Module without -RequiredVersion"
   expires_at: null

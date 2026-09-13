@@ -1,9 +1,12 @@
 /**
  * HTTP client for file reputation API.
  * Queries file hash reputation — returns severity and detection names.
- * Fails open (returns null) on any error — file-check is supplementary.
+ * Single remote checks return null on endpoint errors; batch checks report an
+ * unavailable detection leg. A configured signed feed fails closed if invalid.
  */
 
+import { DetectionLegUnavailableError, describeHttpFailure } from "../detection-leg.js";
+import { loadReputationFeed, type ReputationFeedLoadOptions } from "../reputation-feed.js";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { VERSION } from "../version.js";
@@ -40,9 +43,14 @@ export class FileCheckClient {
 	private readonly timeoutMs: number;
 	private readonly apiKey?: string;
 	private readonly logger: Logger;
+	private readonly reputationFeed?: ReputationFeedLoadOptions;
 
 	constructor(
-		config?: { endpoint?: string; timeout_seconds?: number },
+		config?: {
+			endpoint?: string;
+			timeout_seconds?: number;
+			reputationFeed?: ReputationFeedLoadOptions;
+		},
 		logger: Logger = nullLogger,
 		apiKey?: string,
 	) {
@@ -50,6 +58,42 @@ export class FileCheckClient {
 		this.timeoutMs = (config?.timeout_seconds ?? DEFAULT_TIMEOUT) * 1000;
 		this.apiKey = apiKey;
 		this.logger = logger;
+		this.reputationFeed = config?.reputationFeed;
+	}
+
+	private async signedMatches(hashes: string[]): Promise<Map<string, FileCheckBatchResult>> {
+		const matches = new Map<string, FileCheckBatchResult>();
+		if (!this.reputationFeed) return matches;
+		const feed = await loadReputationFeed(this.reputationFeed);
+		if (feed.availability !== "available") {
+			throw new DetectionLegUnavailableError(
+				"file_reputation",
+				`signed feed ${feed.feedId} is ${feed.availability}: ${feed.detail}`,
+				undefined,
+				[],
+				hashes.length,
+			);
+		}
+		const denyByHash = new Map<string, string>();
+		for (const record of feed.records) {
+			if (
+				(record.kind === "file_sha256" || record.kind === "package_sha256") &&
+				record.verdict === "deny"
+			) {
+				denyByHash.set(record.indicator.toLowerCase(), record.id);
+			}
+		}
+		for (const hash of hashes) {
+			const recordId = denyByHash.get(hash.toLowerCase());
+			if (recordId) {
+				matches.set(hash, {
+					sha256: hash,
+					severity: "SEVERITY_MALWARE",
+					detectionNames: [`signed-feed:${feed.feedId}:${recordId}`],
+				});
+			}
+		}
+		return matches;
 	}
 
 	private buildPath(): string {
@@ -58,6 +102,8 @@ export class FileCheckClient {
 
 	async checkHash(hash: string): Promise<FileCheckResult | null> {
 		try {
+			const signed = (await this.signedMatches([hash])).get(hash);
+			if (signed) return { severity: signed.severity, detectionNames: signed.detectionNames };
 			const headers: Record<string, string> = Object.fromEntries(
 				REQUEST_HEADERS.map((h) => [h.name, h.value]),
 			);
@@ -85,8 +131,9 @@ export class FileCheckClient {
 			}
 
 			const data = (await response.json()) as Record<string, unknown>;
-			return this.parseResponse(data);
+			return this.parseResponse(data, hash);
 		} catch (e) {
+			if (e instanceof DetectionLegUnavailableError) throw e;
 			this.logger.warn("FileCheck request failed", { error: String(e) });
 			return null;
 		}
@@ -100,17 +147,28 @@ export class FileCheckClient {
 		return `https://${SERVICE_NAME}-proxy.${this.buildDomain()}${this.buildPath()}`;
 	}
 
-	private parseResponse(data: Record<string, unknown>): FileCheckResult | null {
+	private parseResponse(data: Record<string, unknown>, hash: string): FileCheckResult | null {
 		try {
-			const responses = (data.responses ?? []) as Record<string, unknown>[];
-			if (responses.length === 0) return null;
-
-			const first = responses[0] as Record<string, unknown>;
-			const severity = (first.severity ?? "SEVERITY_UNKNOWN") as string;
+			if (!data || !Array.isArray(data.responses) || data.responses.length !== 1) return null;
+			const first: unknown = data.responses[0];
+			if (!first || typeof first !== "object" || Array.isArray(first)) return null;
+			const entry = first as Record<string, unknown>;
+			if (entry.key !== undefined) {
+				if (!entry.key || typeof entry.key !== "object" || Array.isArray(entry.key)) return null;
+				if ((entry.key as Record<string, unknown>).sha256 !== hash) return null;
+			}
+			// An omitted or invented severity is not a completed benign verdict.
+			if (entry.severity !== "SEVERITY_UNKNOWN" && entry.severity !== "SEVERITY_MALWARE") {
+				return null;
+			}
+			const severity = entry.severity;
 
 			// malware_name is a repeated string field directly on FileResponse
-			const malwareNames = (first.malware_name ?? []) as string[];
+			if (entry.malware_name !== undefined && !Array.isArray(entry.malware_name)) return null;
+			const malwareNames = (entry.malware_name ?? []) as string[];
+			if (!malwareNames.every((name) => typeof name === "string")) return null;
 			const detectionNames = malwareNames.filter((n) => typeof n === "string" && n.length > 0);
+			if (severity === "SEVERITY_UNKNOWN" && detectionNames.length > 0) return null;
 
 			return { severity, detectionNames };
 		} catch (e) {
@@ -121,14 +179,52 @@ export class FileCheckClient {
 
 	async checkHashes(hashes: string[]): Promise<FileCheckBatchResult[]> {
 		if (hashes.length === 0) return [];
+		const signed = await this.signedMatches(hashes);
+		const uncheckedHashes = hashes.filter((hash) => !signed.has(hash));
+		if (uncheckedHashes.length === 0) return [...signed.values()];
 
 		const batches: string[][] = [];
-		for (let i = 0; i < hashes.length; i += MAX_HASHES_PER_REQUEST) {
-			batches.push(hashes.slice(i, i + MAX_HASHES_PER_REQUEST));
+		for (let i = 0; i < uncheckedHashes.length; i += MAX_HASHES_PER_REQUEST) {
+			batches.push(uncheckedHashes.slice(i, i + MAX_HASHES_PER_REQUEST));
 		}
 
-		const batchResults = await Promise.all(batches.map((batch) => this.checkHashBatch(batch)));
-		return batchResults.flat();
+		// allSettled, not all: a failure in one batch must not discard the
+		// detections the other batches found, and it must not be silent either.
+		// Whatever succeeded is kept, and the gap is reported.
+		const settled = await Promise.allSettled(batches.map((batch) => this.checkHashBatch(batch)));
+
+		const results: FileCheckBatchResult[] = [...signed.values()];
+		const failures: DetectionLegUnavailableError[] = [];
+		let uncheckedCount = 0;
+		settled.forEach((outcome, index) => {
+			if (outcome.status === "fulfilled") {
+				results.push(...outcome.value);
+				return;
+			}
+			const reason = outcome.reason;
+			failures.push(
+				reason instanceof DetectionLegUnavailableError
+					? reason
+					: new DetectionLegUnavailableError("file_reputation", String(reason)),
+			);
+			uncheckedCount += batches[index]?.length ?? 0;
+		});
+
+		if (failures.length > 0) {
+			// Carry the real detections out with the error so the caller can report
+			// both "here is what we found" and "here is what we could not check".
+			throw new DetectionLegUnavailableError(
+				"file_reputation",
+				failures.length === 1
+					? (failures[0]?.reason ?? "check failed")
+					: `${failures.length} of ${batches.length} batches failed: ${failures[0]?.reason ?? "check failed"}`,
+				failures[0]?.status,
+				results,
+				uncheckedCount,
+			);
+		}
+
+		return results;
 	}
 
 	private async checkHashBatch(hashes: string[]): Promise<FileCheckBatchResult[]> {
@@ -154,15 +250,24 @@ export class FileCheckClient {
 			});
 
 			if (!response.ok) {
+				// Return [] here and an unauthenticated endpoint becomes
+				// indistinguishable from a clean verdict - see detection-leg.ts.
 				this.logger.warn(`FileCheck batch HTTP error: ${response.status}`);
-				return [];
+				throw new DetectionLegUnavailableError(
+					"file_reputation",
+					describeHttpFailure(response.status),
+					response.status,
+				);
 			}
 
 			const data = (await response.json()) as Record<string, unknown>;
 			return this.parseBatchResponse(data);
 		} catch (e) {
+			// An unavailable leg must stay distinguishable from a clean one, so the
+			// typed error is re-thrown rather than converted into an empty result.
+			if (e instanceof DetectionLegUnavailableError) throw e;
 			this.logger.warn("FileCheck batch request failed", { error: String(e) });
-			return [];
+			throw new DetectionLegUnavailableError("file_reputation", String(e));
 		}
 	}
 

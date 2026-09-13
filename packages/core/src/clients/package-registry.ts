@@ -1,7 +1,9 @@
 /**
  * Registry client for npm and PyPI.
  * Fetches package metadata (existence, hashes, release dates) — no tarball downloads.
- * Returns null on 404 or error (fail-open at client level).
+ * Returns null only for a genuine 404 (or a locally rejected package name).
+ * Transport and malformed-success failures reject so callers can mark the
+ * package check unavailable instead of claiming the package does not exist.
  */
 
 import type { Logger } from "../types.js";
@@ -15,11 +17,56 @@ const DEFAULT_TIMEOUT = 5.0;
 const NPM_NAME_RE = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
 const PYPI_NAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$/;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function malformedRegistryResponse(registry: "npm" | "PyPI"): Error {
+	return new Error(`Malformed ${registry} registry response`);
+}
+
+/**
+ * Choose the strongest digest a registry advertised for a release.
+ *
+ * npm publishes `dist.integrity` as `sha512-<base64>` and only keeps the legacy
+ * `sha1` in `dist.shasum`. The previous implementation recognised a `sha256-`
+ * prefix only, so for essentially every npm package the algorithm stayed `sha1`
+ * and every downstream SHA-256 hash check silently did nothing - and the package
+ * was then reported "clean" at confidence 1.0 without any hash check having run.
+ *
+ * Exported for testing: this decision is pure and directly assertable, unlike the
+ * registry fetch around it.
+ */
+export function resolveDistDigest(
+	shasum: string,
+	integrity: string,
+): { hash: string; hashAlgorithm: "sha1" | "sha256" | "sha384" | "sha512" } {
+	const match = String(integrity ?? "").match(/^(sha256|sha384|sha512)-(.+)$/);
+	if (match?.[1] && match[2]) {
+		const hex = Buffer.from(match[2], "base64").toString("hex");
+		const expectedHexLength = Number.parseInt(match[1].slice(3), 10) / 4;
+		// Require a well-formed digest rather than trusting a decoding accident.
+		if (hex.length === expectedHexLength && /^[0-9a-f]+$/.test(hex)) {
+			return { hash: hex, hashAlgorithm: match[1] as "sha256" | "sha384" | "sha512" };
+		}
+	}
+	// Only the legacy digest was available. Callers must not treat this as verified.
+	return { hash: String(shasum ?? ""), hashAlgorithm: "sha1" };
+}
+
 export interface PackageMetadata {
 	name: string;
 	resolvedVersion: string;
 	latestHash: string;
-	hashAlgorithm: "sha1" | "sha256";
+	/**
+	 * Digest algorithm of `latestHash`.
+	 *
+	 * npm publishes `sha512-` in `dist.integrity`, so `sha512` is the common case;
+	 * `sha1` means only the legacy `shasum` was available, which is too weak to
+	 * use for a reputation lookup and must not be treated as a verified hash.
+	 * `sha256` is kept for registries (and the PyPI path) that publish it.
+	 */
+	hashAlgorithm: "sha1" | "sha256" | "sha384" | "sha512";
 	firstReleaseDate: Date | null;
 	/** False when a specific version was requested but not found in the registry. */
 	requestedVersionFound: boolean;
@@ -76,11 +123,16 @@ export class RegistryClient {
 		name: string,
 		data: Record<string, unknown>,
 		requestedVersion?: string,
-	): PackageMetadata | null {
+	): PackageMetadata {
 		try {
+			if (!isRecord(data) || !isRecord(data["dist-tags"]) || !isRecord(data.versions)) {
+				throw malformedRegistryResponse("npm");
+			}
 			const distTags = (data["dist-tags"] ?? {}) as Record<string, string>;
 			const latestTag = distTags.latest;
-			if (!latestTag) return null;
+			if (typeof latestTag !== "string" || !latestTag.trim()) {
+				throw malformedRegistryResponse("npm");
+			}
 
 			const versions = (data.versions ?? {}) as Record<string, Record<string, unknown>>;
 			// Resolve dist-tags (e.g. "latest", "next", "canary") to actual version strings
@@ -93,20 +145,22 @@ export class RegistryClient {
 			const resolvedVersion =
 				effectiveVersion && versions[effectiveVersion] ? effectiveVersion : latestTag;
 			const resolvedVersionData = versions[resolvedVersion];
-			if (!resolvedVersionData) return null;
+			if (!isRecord(resolvedVersionData) || !isRecord(resolvedVersionData.dist)) {
+				throw malformedRegistryResponse("npm");
+			}
 
 			const dist = (resolvedVersionData.dist ?? {}) as Record<string, unknown>;
+			if (
+				(dist.shasum !== undefined && typeof dist.shasum !== "string") ||
+				(dist.integrity !== undefined && typeof dist.integrity !== "string") ||
+				(!dist.shasum && !dist.integrity)
+			) {
+				throw malformedRegistryResponse("npm");
+			}
 			const shasum = (dist.shasum ?? "") as string;
 			const integrity = (dist.integrity ?? "") as string;
-
-			// Prefer sha256 from integrity (format: "sha512-..." or "sha256-...")
-			let latestHash = shasum;
-			let hashAlgorithm: "sha1" | "sha256" = "sha1";
-			if (integrity.startsWith("sha256-")) {
-				// base64-encoded sha256
-				latestHash = Buffer.from(integrity.slice(7), "base64").toString("hex");
-				hashAlgorithm = "sha256";
-			}
+			const { hash: latestHash, hashAlgorithm } = resolveDistDigest(shasum, integrity);
+			if (!latestHash) throw malformedRegistryResponse("npm");
 
 			// Find first release date from `time` field
 			const time = (data.time ?? {}) as Record<string, string>;
@@ -114,6 +168,9 @@ export class RegistryClient {
 			const created = time.created;
 			if (created) {
 				firstReleaseDate = new Date(created);
+				if (Number.isNaN(firstReleaseDate.getTime())) {
+					throw malformedRegistryResponse("npm");
+				}
 			}
 
 			return {
@@ -126,7 +183,7 @@ export class RegistryClient {
 			};
 		} catch (e) {
 			this.logger.warn("Failed to parse npm response", { name, error: String(e) });
-			return null;
+			throw e;
 		}
 	}
 
@@ -161,36 +218,54 @@ export class RegistryClient {
 		name: string,
 		data: Record<string, unknown>,
 		requestedVersion?: string,
-	): PackageMetadata | null {
+	): PackageMetadata {
 		try {
+			if (!isRecord(data) || !isRecord(data.info) || !isRecord(data.releases)) {
+				throw malformedRegistryResponse("PyPI");
+			}
 			const info = (data.info ?? {}) as Record<string, unknown>;
 			const latestTag = (info.version ?? "") as string;
-			if (!latestTag) return null;
+			if (typeof latestTag !== "string" || !latestTag.trim()) {
+				throw malformedRegistryResponse("PyPI");
+			}
 
 			const releases = (data.releases ?? {}) as Record<string, Record<string, unknown>[]>;
 			const requestedVersionFound =
 				!requestedVersion || Boolean(releases[requestedVersion]?.length);
 			const resolvedVersion =
 				requestedVersion && releases[requestedVersion]?.length ? requestedVersion : latestTag;
+			if (!Array.isArray(releases[resolvedVersion]) || releases[resolvedVersion].length === 0) {
+				throw malformedRegistryResponse("PyPI");
+			}
 
 			// Get hash from resolved version's first file
 			let latestHash = "";
 			const latestFiles = releases[resolvedVersion] ?? [];
 			for (const file of latestFiles) {
+				if (!isRecord(file) || !isRecord(file.digests)) {
+					throw malformedRegistryResponse("PyPI");
+				}
 				const digests = (file.digests ?? {}) as Record<string, string>;
+				if (digests.sha256 !== undefined && typeof digests.sha256 !== "string") {
+					throw malformedRegistryResponse("PyPI");
+				}
 				if (digests.sha256) {
 					latestHash = digests.sha256;
 					break;
 				}
 			}
+			if (!latestHash) throw malformedRegistryResponse("PyPI");
 
 			// Find first release date (earliest version upload)
 			let firstReleaseDate: Date | null = null;
 			for (const [, files] of Object.entries(releases)) {
+				if (!Array.isArray(files)) throw malformedRegistryResponse("PyPI");
 				for (const file of files) {
+					if (!isRecord(file)) throw malformedRegistryResponse("PyPI");
 					const uploadTime = file.upload_time_iso_8601 as string | undefined;
 					if (uploadTime) {
 						const date = new Date(uploadTime);
+						if (Number.isNaN(date.getTime())) throw malformedRegistryResponse("PyPI");
 						if (!firstReleaseDate || date < firstReleaseDate) {
 							firstReleaseDate = date;
 						}
@@ -208,7 +283,7 @@ export class RegistryClient {
 			};
 		} catch (e) {
 			this.logger.warn("Failed to parse PyPI response", { name, error: String(e) });
-			return null;
+			throw e;
 		}
 	}
 }

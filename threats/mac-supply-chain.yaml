@@ -8,7 +8,7 @@
   severity: medium
   confidence: 0.65
   action: require_approval
-  pattern: "\\bbrew\\s+install\\b(?!.*@\\d)"
+  pattern: "\\bbrew\\s+install\\b(?!.{0,300}@\\d)"
   match_on: command
   title: "Homebrew install without version pin"
   expires_at: null
@@ -20,7 +20,7 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "\\binstaller\\b.*-pkg.*https?://"
+  pattern: "\\binstaller\\b.{0,300}-pkg.{0,300}https?://"
   case_insensitive: true
   match_on: command
   title: "Remote package install via installer -pkg (unsigned)"

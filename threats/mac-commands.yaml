@@ -6,12 +6,16 @@
 # --- osascript Remote Code Execution ---
 
 # osascript -e 'do shell script' (AppleScript shell execution)
+# Perf (linear-time rewrite): two unbounded `.*` spans, rescanned from every
+# `osascript` occurrence. On 20KB of `osascript -e 'x';` this single rule took
+# 23s — a hook-killing ReDoS. Both gaps are bounded to 300 characters;
+# `osascript -e 'do shell script "id"'` needs 5 and 1.
 - id: "CLT-MAC-CMD-001"
   category: tool
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bosascript\\b.*-e.*do shell script"
+  pattern: "\\bosascript\\b.{0,300}-e.{0,300}do shell script"
   case_insensitive: true
   match_on: command
   title: "AppleScript shell execution via osascript -e"
@@ -19,12 +23,13 @@
   revoked: false
 
 # osascript -l JavaScript (JXA execution)
+# Perf: unbounded `.*` bounded to 300 characters (see CLT-MAC-CMD-001).
 - id: "CLT-MAC-CMD-002"
   category: tool
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bosascript\\b.*-l\\s+JavaScript"
+  pattern: "\\bosascript\\b.{0,300}-l\\s+JavaScript"
   case_insensitive: true
   match_on: command
   title: "JavaScript for Automation (JXA) execution via osascript"
@@ -44,12 +49,22 @@
   revoked: false
 
 # osascript loading script file from remote download
+# Perf (linear-time rewrite): the two unbounded `.*` spans made the engine
+# rescan the tail of the command from every `curl|wget` occurrence — ~9.2s for
+# a 20KB command that repeats `curl ... | sh;`, i.e. a hook-killing ReDoS.
+# Fix: the gaps are "tempered" so they cannot step over the rule's own anchor
+# (`(?!(?:curl|wget))[^\n]`). That matches exactly the same inputs as `.*` — a
+# match can always be re-anchored at the LAST `curl|wget` before `osascript` —
+# but a scan can never run past the next anchor, so the rule is linear. No gap
+# limit is imposed, so a long real command still matches.
+#   measured on 64KB of repeated `curl -fsSL <url>` with no `| osascript`:
+#     `.*` (original) 237ms | `[^|]{0,600}` 5.1ms | tempered 0.8ms
 - id: "CLT-MAC-CMD-004"
   category: tool
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "(curl|wget).*\\|.*osascript|osascript.*(curl|wget)"
+  pattern: "(curl|wget)(?:(?!(?:curl|wget))[^\\n])*\\|(?:(?!(?:curl|wget))[^\\n])*osascript|osascript(?:(?!osascript)[^\\n])*(curl|wget)"
   case_insensitive: true
   match_on: command
   title: "Remote script download piped to osascript"
@@ -90,7 +105,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\bdscl\\b.*(-create|-delete|-passwd|-append)"
+  pattern: "\\bdscl\\b.{0,300}(-create|-delete|-passwd|-append)"
   match_on: command
   title: "Directory Services user/group manipulation via dscl"
   expires_at: null
@@ -102,7 +117,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\bnetworksetup\\b.*(-setwebproxy|-setsocksfirewallproxy|-setdnsservers|-setautoproxyurl)"
+  pattern: "\\bnetworksetup\\b.{0,300}(-setwebproxy|-setsocksfirewallproxy|-setdnsservers|-setautoproxyurl)"
   case_insensitive: true
   match_on: command
   title: "Network proxy/DNS manipulation via networksetup"
@@ -115,7 +130,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bsystemsetup\\b.*(-setremotelogin\\s+on|-setwakeonnetworkaccess\\s+on)"
+  pattern: "\\bsystemsetup\\b.{0,300}(-setremotelogin\\s+on|-setwakeonnetworkaccess\\s+on)"
   case_insensitive: true
   match_on: command
   title: "Enable remote login/wake via systemsetup"
@@ -128,7 +143,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "kickstart.*-activate.*-configure"
+  pattern: "kickstart.{0,300}-activate.{0,300}-configure"
   case_insensitive: true
   match_on: command
   title: "Apple Remote Desktop activation via kickstart"
@@ -141,7 +156,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\binstaller\\b.*-pkg.*-target"
+  pattern: "\\binstaller\\b.{0,300}-pkg.{0,300}-target"
   case_insensitive: true
   match_on: command
   title: "Silent package install via installer command"
@@ -154,7 +169,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\bhdiutil\\b.*\\b(attach|mount)\\b.*https?://"
+  pattern: "\\bhdiutil\\b.{0,300}\\b(attach|mount)\\b.{0,300}https?://"
   case_insensitive: true
   match_on: command
   title: "Mount remote DMG via hdiutil"
@@ -167,7 +182,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "\\bpkgutil\\b.*--forget"
+  pattern: "\\bpkgutil\\b.{0,300}--forget"
   match_on: command
   title: "Package receipt removal via pkgutil --forget"
   expires_at: null
@@ -181,7 +196,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bdiskutil\\b.*\\b(eraseDisk|partitionDisk|secureErase)\\b"
+  pattern: "\\bdiskutil\\b.{0,300}\\b(eraseDisk|partitionDisk|secureErase)\\b"
   match_on: command
   title: "Disk erase/partition via diskutil"
   expires_at: null
@@ -193,7 +208,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\btmutil\\b.*\\b(delete|disable)\\b"
+  pattern: "\\btmutil\\b.{0,300}\\b(delete|disable)\\b"
   match_on: command
   title: "Time Machine backup deletion/disable via tmutil (ransomware indicator)"
   expires_at: null
@@ -207,7 +222,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bspctl\\b.*--master-disable"
+  pattern: "\\bspctl\\b.{0,300}--master-disable"
   match_on: command
   title: "Gatekeeper disable via spctl --master-disable"
   expires_at: null
@@ -219,7 +234,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bcsrutil\\b.*\\bdisable\\b"
+  pattern: "\\bcsrutil\\b.{0,300}\\bdisable\\b"
   match_on: command
   title: "System Integrity Protection disable via csrutil"
   expires_at: null
@@ -231,7 +246,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bdefaults\\b.*\\bwrite\\b.*LSQuarantine"
+  pattern: "\\bdefaults\\b.{0,300}\\bwrite\\b.{0,300}LSQuarantine"
   case_insensitive: true
   match_on: command
   title: "Quarantine flag disable via defaults write LSQuarantine"
@@ -244,7 +259,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\bxattr\\b.*-d.*com\\.apple\\.quarantine"
+  pattern: "\\bxattr\\b.{0,300}-d.{0,300}com\\.apple\\.quarantine"
   match_on: command
   title: "Quarantine attribute removal via xattr"
   expires_at: null
@@ -256,7 +271,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bpfctl\\b.*\\s-d\\b"
+  pattern: "\\bpfctl\\b.{0,300}\\s-d\\b"
   match_on: command
   title: "Packet filter (firewall) disable via pfctl -d"
   expires_at: null
@@ -268,7 +283,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\btccutil\\b.*\\breset\\b"
+  pattern: "\\btccutil\\b.{0,300}\\breset\\b"
   match_on: command
   title: "TCC privacy permissions reset via tccutil"
   expires_at: null
@@ -280,7 +295,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\blaunchctl\\b.*\\b(unload|bootout)\\b.*(com\\.apple\\.MRT|com\\.apple\\.XProtect|com\\.apple\\.security)"
+  pattern: "\\blaunchctl\\b.{0,300}\\b(unload|bootout)\\b.{0,300}(com\\.apple\\.MRT|com\\.apple\\.XProtect|com\\.apple\\.security)"
   case_insensitive: true
   match_on: command
   title: "Unload macOS security daemon via launchctl"
@@ -293,7 +308,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bdefaults\\b.*\\bwrite\\b.*(com\\.apple\\.Finder\\s+AppleShowAllFiles|com\\.apple\\.LaunchServices\\s+LSQuarantine|com\\.apple\\.loginwindow)"
+  pattern: "\\bdefaults\\b.{0,300}\\bwrite\\b.{0,300}(com\\.apple\\.Finder\\s+AppleShowAllFiles|com\\.apple\\.LaunchServices\\s+LSQuarantine|com\\.apple\\.loginwindow)"
   case_insensitive: true
   match_on: command
   title: "Modify macOS security-related defaults"
@@ -308,7 +323,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bdscl\\b.*\\s-passwd\\b"
+  pattern: "\\bdscl\\b.{0,300}\\s-passwd\\b"
   match_on: command
   title: "User password change via dscl"
   expires_at: null
@@ -320,7 +335,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\bdseditgroup\\b.*-o\\s+edit.*-a.*admin"
+  pattern: "\\bdseditgroup\\b.{0,300}-o\\s+edit.{0,300}-a.{0,300}admin"
   match_on: command
   title: "Add user to admin group via dseditgroup"
   expires_at: null
@@ -348,7 +363,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "\\bscreencapture\\b.*(-x|-C)"
+  pattern: "\\bscreencapture\\b.{0,300}(-x|-C)"
   match_on: command
   title: "Silent screen capture via screencapture"
   expires_at: null

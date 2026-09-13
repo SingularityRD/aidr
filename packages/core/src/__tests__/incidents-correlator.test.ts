@@ -3,6 +3,64 @@ import { describe, expect, it } from "vitest";
 import { correlateIncidents, normalizeAuditEntriesToSignals } from "../incidents/index.js";
 
 describe("incidents correlator", () => {
+	it("does not merge the same session on different agents or unrelated unscoped signals", () => {
+		const base = 1_700_000_000_000;
+		const make = (signalId: string, agentId?: string) => ({
+			signal_id: signalId,
+			signal_type: "runtime_verdict" as const,
+			timestamp_ms: base,
+			session_id: agentId ? "shared-session" : undefined,
+			agent_iid: agentId,
+			domain: "same.example",
+			decision: "deny" as const,
+			severity: "high" as const,
+		});
+		const incidents = correlateIncidents([
+			make("agent-one", "agent-1"),
+			make("agent-two", "agent-2"),
+			make("unscoped-one"),
+			make("unscoped-two"),
+		]);
+		expect(incidents).toHaveLength(4);
+		expect(incidents.every((incident) => incident.events.length === 1)).toBe(true);
+	});
+
+	it("retains endpoint identity while normalizing audit entries", () => {
+		const entries = ["agent-1", "agent-2"].map((agentId) => ({
+			type: "runtime_verdict",
+			timestamp: "2026-09-13T00:00:00.000Z",
+			session_id: "shared-session",
+			agent_iid: agentId,
+			connector: "claude-code",
+			tool_name: "Bash",
+			artifacts: ["https://same.example"],
+			verdict: "deny",
+			severity: "high",
+		}));
+		const signals = normalizeAuditEntriesToSignals(entries);
+		expect(signals.map((signal) => signal.agent_iid)).toEqual(["agent-1", "agent-2"]);
+		expect(correlateIncidents(signals)).toHaveLength(2);
+	});
+
+	it("ignores replayed signal ids and resets escalation after an incident gap", () => {
+		const base = 1_700_000_000_000;
+		const signal = (id: string, offset: number) => ({
+			signal_id: id,
+			signal_type: "runtime_verdict" as const,
+			timestamp_ms: base + offset,
+			session_id: "session-1",
+			decision: "deny" as const,
+			severity: "high" as const,
+		});
+		const incidents = correlateIncidents(
+			[signal("a", 0), signal("a", 0), signal("b", 1_000), signal("c", 30_000)],
+			{ max_gap_ms: 10_000, deny_window_ms: 60_000, deny_escalation_threshold: 3 },
+		);
+		expect(incidents).toHaveLength(2);
+		expect(incidents.map((incident) => incident.events.length).sort()).toEqual([1, 2]);
+		expect(incidents.every((incident) => incident.severity === "high")).toBe(true);
+	});
+
 	it("groups repeated denies within a short window and escalates to critical", () => {
 		const base = Date.now();
 		const entries = [

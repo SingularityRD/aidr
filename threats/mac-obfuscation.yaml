@@ -3,12 +3,16 @@
 # License: DRL-1.1 (see threats/LICENSE)
 
 # osascript 'do shell script' wrapping (shell via AppleScript)
+# Perf (linear-time rewrite): the unbounded `.*` was rescanned from every
+# `osascript` occurrence (~40ms per 20KB, ~520ms at the 64KB match cap and
+# unbounded growth beyond). Bounded to 300 characters, far beyond
+# `osascript -e 'do shell script "..."'`.
 - id: "CLT-MAC-OBFUS-001"
   category: tool
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bosascript\\b.*do shell script"
+  pattern: "\\bosascript\\b.{0,300}do shell script"
   case_insensitive: true
   match_on: command
   title: "Shell command obfuscated via AppleScript do shell script"
@@ -16,12 +20,13 @@
   revoked: false
 
 # JXA (JavaScript for Automation) execution
+# Perf: both unbounded `.*` gaps bounded to 300 characters (see CLT-MAC-OBFUS-001).
 - id: "CLT-MAC-OBFUS-002"
   category: tool
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bosascript\\b.*-l\\s+JavaScript.*-e"
+  pattern: "\\bosascript\\b.{0,300}-l\\s+JavaScript.{0,300}-e"
   case_insensitive: true
   match_on: command
   title: "JXA inline execution (JavaScript for Automation obfuscation)"
@@ -34,7 +39,15 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "base64\\s+(-d|-D|--decode).*\\|.*osascript"
+  # Gap sizing: the decoded payload is produced inline
+  # (`echo <base64> | base64 -d | osascript ...`), so the span before the pipe can
+  # be long — no bound is imposed. The gaps are "tempered" so they cannot step
+  # over the rule's own anchor (`(?!(?:base64))[^\n]`): same match set as `.*`
+  # (a match can be re-anchored at the last `base64`), but a scan stops at the
+  # next anchor instead of rescanning the tail, which is what made the original
+  # quadratic. Measured on 64KB of repeated `base64 -d`: `.*` 843ms,
+  # `[^|]{0,600}` 15ms, tempered 0.5ms.
+  pattern: "base64\\s+(-d|-D|--decode)(?:(?!base64)[^\\n])*\\|(?:(?!base64)[^\\n])*osascript"
   match_on: command
   title: "Base64 decode piped to osascript (encoded payload execution)"
   expires_at: null
@@ -46,7 +59,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "DYLD_INSERT_LIBRARIES=.*\\.(dylib|so)"
+  pattern: "DYLD_INSERT_LIBRARIES=.{0,300}\\.(dylib|so)"
   match_on: command
   title: "Dynamic library injection via DYLD_INSERT_LIBRARIES"
   expires_at: null
@@ -58,7 +71,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\bxattr\\b.*(-d|-c).*com\\.apple\\.quarantine"
+  pattern: "\\bxattr\\b.{0,300}(-d|-c).{0,300}com\\.apple\\.quarantine"
   match_on: command
   title: "Quarantine attribute removal (Gatekeeper evasion)"
   expires_at: null
@@ -72,7 +85,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "\\bplutil\\b.*-convert\\s+(binary1|raw)"
+  pattern: "\\bplutil\\b.{0,300}-convert\\s+(binary1|raw)"
   match_on: command
   title: "Plist conversion to binary (payload obfuscation)"
   expires_at: null
@@ -84,7 +97,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "\\bswift\\b\\s+-e\\s+[\"'].*\\b(Process|NSTask|URLSession|shell)\\b"
+  pattern: "\\bswift\\b\\s+-e\\s+[\"'].{0,300}\\b(Process|NSTask|URLSession|shell)\\b"
   case_insensitive: true
   match_on: command
   title: "Swift inline execution with system calls"

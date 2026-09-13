@@ -1,5 +1,60 @@
 // @singularityrd/aidr-core public API
 
+export type {
+	AigCveFinding,
+	AigFingerprintMatch,
+	AigInfraScanOptions,
+	AigInfraScanSummary,
+	AigInfraScanTarget,
+	AigInfraTargetResult,
+} from "./aig-infra-scan.js";
+// Native AI-infrastructure scanner.
+//
+// Reimplements AIG's Infra Scan capability in-process from the compiled dataset:
+// HTTP fingerprint probes, version extraction and CVE applicability, with no Go
+// server, Python worker, Docker stack or LLM. See aig-infra-scan.ts.
+export {
+	compareVersions,
+	cveCount,
+	evaluateVersionRule,
+	extractVersion,
+	fingerprintCount,
+	isScannableHost,
+	isTargetAllowed,
+	lookupCvesForProduct,
+	probeMatches,
+	resetAigScanCache,
+	scanTarget,
+	scanTargets,
+} from "./aig-infra-scan.js";
+export { evaluateInfrastructurePolicy, inspectInfrastructurePolicy } from "./aig-policy.js";
+export type {
+	AigAgentScanOptions,
+	AigFinding,
+	AigJailbreakScanOptions,
+	AigMcpScanOptions,
+	AigModelConfig,
+	AigScanOptions,
+	AigScanRequest,
+	AigScanResult,
+	AigScanType,
+	AigTaskStatus,
+} from "./aig-scan-client.js";
+// AIG sidecar scan client
+export {
+	AigBridgeError,
+	getAigScanResult,
+	isAigAvailable,
+	triggerAigScan,
+} from "./aig-scan-client.js";
+export type { AigSyncConfig, SyncStatus } from "./aig-sync.js";
+export {
+	applyUpdate as applyAigThreatUpdate,
+	checkForUpdates as checkAigThreatUpdates,
+	downloadUpdate as downloadAigThreatUpdate,
+	fullSyncCycle as fullAigThreatSync,
+	getSyncStatus as getAigSyncStatus,
+} from "./aig-sync.js";
 // Allowlist
 export {
 	addCommand,
@@ -18,11 +73,33 @@ export type { ApprovedEntry, PendingEntry } from "./approval-store.js";
 export { ApprovalStore } from "./approval-store.js";
 // Audit log
 export {
+	buildAllowedResponseActionEntry,
+	buildResponseActionEntry,
 	buildRuntimeVerdictEntry,
 	getRecentEntries,
+	logAllowedResponseActions,
 	logPluginScan,
+	logResponseActions,
 	logVerdict,
+	summarizeActionsForLog,
+	toolInputSummaryForAudit,
 } from "./audit-log.js";
+// Tenant/session-isolated behavioral, novelty and ML orchestration
+export {
+	type BehavioralDetectionInput,
+	type BehavioralDetectionLeg,
+	type BehavioralDetectionLegStatus,
+	BehavioralDetectionOrchestrator,
+	type BehavioralDetectionOutcome,
+	type BehavioralDetectionResult,
+	type BehavioralEmbeddingModel,
+	type BehavioralLearningDisposition,
+	type BehavioralLegExplanation,
+	type BehavioralOrchestratorConfig,
+	type BehavioralOrchestratorDependencies,
+	type BehavioralOrchestratorStats,
+	createBehavioralDetectionOrchestrator,
+} from "./behavioral-orchestrator.js";
 // Build flavor
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
@@ -30,74 +107,11 @@ export { VerdictCache } from "./cache.js";
 // Clients
 export { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 // Control plane client (optional telemetry/licensing)
-export { ControlPlaneClient } from "./clients/control-plane.js";
-// AIG sidecar scan client
-export {
-	AigBridgeError,
-	getAigScanResult,
-	isAigAvailable,
-	triggerAigScan,
-} from "./aig-scan-client.js";
-export type {
-	AigAgentScanOptions,
-	AigFinding,
-	AigInfraScanOptions,
-	AigJailbreakScanOptions,
-	AigMcpScanOptions,
-	AigModelConfig,
-	AigScanOptions,
-	AigScanRequest,
-	AigScanResult,
-	AigScanType,
-	AigTaskStatus,
-} from "./aig-scan-client.js";
-export {
-	applyUpdate as applyAigThreatUpdate,
-	checkForUpdates as checkAigThreatUpdates,
-	downloadUpdate as downloadAigThreatUpdate,
-	fullSyncCycle as fullAigThreatSync,
-	getSyncStatus as getAigSyncStatus,
-} from "./aig-sync.js";
-export type { AigSyncConfig, SyncStatus } from "./aig-sync.js";
-// AIG compiled product/CVE data and MCP risk categories
-export {
-	checkFrameworkCves,
-	checkPackageAgainstCveIndex,
-	checkProductAgainstCveIndex,
-	getAigCveIndexMetadata,
-	getAigCveIndexPath,
-	getAigDataIntegrityStatus,
-	getCveStats,
-	resetCveIndexCache,
-	setTestIndexPath,
-} from "./cve-checker.js";
-export type {
-	AigDataIntegrityStatus,
-	AigTargetKind,
-	CveEntry,
-	CveResult,
-	CveRuleStatus,
-	CveStats,
-} from "./cve-checker.js";
-export {
-	aigRiskToPolicyAction,
-	classifyMcpTool,
-	getAigMcpDataStatus,
-	getAllCategories,
-	isAigMcpDataReady,
-	loadAigMcpCategories,
-	resetCategoryCache,
-} from "./mcp-aig-categories.js";
-export type {
-	AigMcpCategory,
-	AigMcpDataStatus,
-	AigPolicyAction,
-	AigRiskLevel,
-} from "./mcp-aig-categories.js";
+export { ControlPlaneClient, type ControlPlaneClientOptions } from "./clients/control-plane.js";
 export type { FileCheckBatchResult, FileCheckResult } from "./clients/file-check.js";
 export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
-export { RegistryClient } from "./clients/package-registry.js";
+export { RegistryClient, resolveDistDigest } from "./clients/package-registry.js";
 export { UrlCheckClient } from "./clients/url-check.js";
 export type {
 	CommunityRule,
@@ -128,9 +142,90 @@ export { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
 export type { ContainConfig } from "./contain.js";
 // Auto-Contain
 export { AutoContain, createDefaultContainConfig } from "./contain.js";
+export type {
+	AigDataIntegrityStatus,
+	AigTargetKind,
+	CveEntry,
+	CveResult,
+	CveRuleStatus,
+	CveStats,
+} from "./cve-checker.js";
+// AIG compiled product/CVE data and MCP risk categories
+export {
+	checkFrameworkCves,
+	checkPackageAgainstCveIndex,
+	checkProductAgainstCveIndex,
+	getAigCveIndexMetadata,
+	getAigCveIndexPath,
+	getAigDataIntegrityStatus,
+	getCveStats,
+	resetCveIndexCache,
+	setTestIndexPath,
+} from "./cve-checker.js";
+// Scoped, short-lived user -> agent -> tool -> resource credentials.
+export {
+	canonicalDelegatedCredentialJson,
+	DELEGATED_CREDENTIAL_ALGORITHM,
+	DELEGATED_CREDENTIAL_TYPE,
+	DELEGATED_CREDENTIAL_VERSION,
+	type DelegatedCredentialClaimsV1,
+	type DelegatedCredentialErrorCode,
+	type DelegatedCredentialVerificationContext,
+	type DelegatedCredentialVerificationResult,
+	type DelegatedResourceIdentity,
+	type DelegatedToolIdentity,
+	delegationDoesNotEscalate,
+	MAX_DELEGATED_CREDENTIAL_SECONDS,
+	MAX_DELEGATION_DEPTH,
+	parseDelegatedCredentialClaims,
+	verifyDelegatedCredential,
+} from "./delegated-credential.js";
+export type { DetectionLeg } from "./detection-leg.js";
+export { DetectionLegUnavailableError, describeHttpFailure } from "./detection-leg.js";
 // DLP (Data Loss Prevention)
-export type { ContentClassification, ContentClassifierConfig, EntropyMatch } from "./dlp/index.js";
-export { ContentClassifier, EntropyDetector } from "./dlp/index.js";
+export type {
+	ContentClassification,
+	ContentClassifierConfig,
+	DlpDirection,
+	DlpException,
+	DlpExceptionScope,
+	DlpFinding,
+	DlpInspectedResult,
+	DlpLabel,
+	DlpMatcher,
+	DlpPolicy,
+	DlpRule,
+	DlpRuleAction,
+	DlpScanAction,
+	DlpScanRequest,
+	DlpScanResult,
+	DlpSensitivity,
+	DlpUnavailableAction,
+	DlpUnavailableReason,
+	DlpUnavailableResult,
+	EntropyMatch,
+} from "./dlp/index.js";
+export {
+	ContentClassifier,
+	createDlpContentFingerprint,
+	createDlpMatchFingerprint,
+	DlpDirectionSchema,
+	DlpExceptionSchema,
+	DlpExceptionScopeSchema,
+	DlpLabelSchema,
+	DlpMatcherSchema,
+	DlpPolicySchema,
+	DlpRuleActionSchema,
+	DlpRuleSchema,
+	DlpScanRequestSchema,
+	DlpSensitivitySchema,
+	DlpTenantIsolationError,
+	DlpUnavailableActionSchema,
+	EntropyDetector,
+	scanDlpContent,
+	scanDlpInput,
+	scanDlpOutput,
+} from "./dlp/index.js";
 // Encryption
 export {
 	decryptBuffer,
@@ -143,6 +238,21 @@ export {
 } from "./encryption.js";
 // Decision engine
 export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
+// Strict policy-as-code compiler and dry-run evaluator.
+export {
+	compilePolicyDocument,
+	compilePolicyDocumentYaml,
+	type CompiledRuntimePolicy,
+	parsePolicyDocument,
+	type PolicyCompilationDiagnostic,
+	type PolicyCompilationResult,
+	type PolicyDocument,
+	POLICY_DOCUMENT_ACTIONS,
+	PolicyDocumentSchema,
+	type PolicySimulationInput,
+	type PolicySimulationResult,
+	simulateRuntimePolicy,
+} from "./policy-document.js";
 // Runtime evaluator
 export {
 	allowVerdict,
@@ -152,6 +262,7 @@ export {
 } from "./evaluator.js";
 // Extractors
 export {
+	boundArtifact,
 	extractFromBash,
 	extractFromDelete,
 	extractFromEdit,
@@ -175,6 +286,21 @@ export {
 	getFileContentSync,
 	pruneOrphanedTmpFiles,
 } from "./file-utils.js";
+export {
+	collectFleetInventory,
+	defaultFleetInventoryPath,
+	type FleetCollectionOptions,
+	type FleetFreshness,
+	type FleetInventory,
+	type FleetInventoryEntry,
+	type FleetReachability,
+	fleetInventoryEntryId,
+	loadFleetInventory,
+	normalizeFleetTarget,
+	normalizeFleetTargets,
+	refreshFleetInventoryFreshness,
+	saveFleetInventory,
+} from "./fleet-inventory.js";
 // Format (shared alert formatting)
 export {
 	formatSessionStartMessage,
@@ -188,14 +314,23 @@ export {
 	severityEmoji,
 } from "./format.js";
 // Guard (soft-gated connector orchestrator)
+//
+// `executeWithRollback` is the connector-facing shape of a response: the guard
+// allowed the call and snapshotted the target, the connector runs the call, and
+// this wrapper rolls the target back if the call fails.
 export {
 	addToAllowlist,
 	approveAction,
+	executeWithRollback,
 	formatAskMessage,
 	formatDenyMessage,
+	type GuardResponseSettings,
 	type GuardResult,
+	guardInputSummary,
 	guardToolCall,
 	removeFromAllowlist,
+	resolveGuardResponseSettings,
+	rollbackSnapshotFromGuardResult,
 	summarizeArtifacts,
 } from "./guard.js";
 // Health checks
@@ -218,11 +353,22 @@ export {
 	type CorrelateOptions,
 	correlateIncidents,
 	type Incident,
+	type IncidentAnchorPayloadV1,
+	type IncidentAnchorVerification,
+	type IncidentStoreVerification,
 	type IncidentSeverity,
 	type NormalizedSignal,
 	normalizeAuditEntriesToSignals,
 	normalizeAuditEntryToSignals,
+	persistIncidentRecords,
+	type PersistIncidentRecordsOptions,
+	type SignedIncidentAnchorReceiptV1,
 	type SignalType,
+	verifyIncidentSqliteStore,
+	type VerifyIncidentAnchorOptions,
+	verifySignedIncidentAnchorReceipt,
+	type WriteIncidentAnchorOptions,
+	writeSignedIncidentAnchorReceipt,
 } from "./incidents/index.js";
 // Installation ID
 export { getInstallationId } from "./installation-id.js";
@@ -245,8 +391,57 @@ export type {
 } from "./intel/provider.js";
 export { createIntelReputationProvider } from "./intel/provider.js";
 export type { DomainRiskEntry, IntelMerged } from "./intel/types.js";
+// Signed, versioned reputation feed storage and fail-closed freshness state.
+export {
+	canonicalReputationFeedManifest,
+	canonicalReputationFeedPayload,
+	createFileReputationFeedSource,
+	DEFAULT_REPUTATION_FEED_MAX_AGE_MS,
+	DEFAULT_REPUTATION_FEED_MAX_PAYLOAD_BYTES,
+	loadReputationFeed,
+	REPUTATION_FEED_SCHEMA_VERSION,
+	ReputationFeedManifestSchema,
+	ReputationFeedPayloadSchema,
+	ReputationFeedRecordSchema,
+	ReputationFeedUnavailableError,
+	ReputationFeedUpdateError,
+	requireAvailableReputationFeed,
+	rollbackReputationFeed,
+	updateReputationFeed,
+} from "./reputation-feed.js";
+export type {
+	ReputationFeedBundle,
+	ReputationFeedLoadOptions,
+	ReputationFeedLoadResult,
+	ReputationFeedManifest,
+	ReputationFeedPayload,
+	ReputationFeedRecord,
+	ReputationFeedSnapshot,
+	ReputationFeedSource,
+	ReputationFeedTransportProvenance,
+	ReputationFeedUnavailable,
+	ReputationFeedUnavailableReason,
+	ReputationFeedUpdateOptions,
+	ReputationIndicatorKind,
+} from "./reputation-feed.js";
 // Logger
 export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.js";
+export type {
+	AigMcpCategory,
+	AigMcpDataStatus,
+	AigPolicyAction,
+	AigRiskLevel,
+} from "./mcp-aig-categories.js";
+export {
+	aigRiskToPolicyAction,
+	classifyMcpTool,
+	getAigMcpDataStatus,
+	getAllCategories,
+	isAigMcpDataReady,
+	loadAigMcpCategories,
+	resetCategoryCache,
+} from "./mcp-aig-categories.js";
+export { discoverMcpServers } from "./mcp-discovery.js";
 // Metrics
 export { getMetricsCollector, MetricsCollector, metrics } from "./metrics.js";
 export type {
@@ -257,6 +452,7 @@ export type {
 export { LocalEmbeddingModel } from "./ml-model.js";
 export type { AnomalyEvent, BehaviorProfile } from "./novelty-detection.js";
 export { createNoveltyDetector, NoveltyDetector } from "./novelty-detection.js";
+export { scanModelOutput } from "./output-scanner.js";
 export type { PackageCheckerConfig, PackageCheckInput } from "./package-checker.js";
 // Package checker
 export { PackageChecker } from "./package-checker.js";
@@ -292,11 +488,47 @@ export {
 	type QuarantineConfig,
 	type QuarantinedItem,
 } from "./quarantine.js";
+export type {
+	PreOperationSnapshot,
+	ResponseActionRecord,
+	ResponseOptions,
+} from "./response-actions.js";
+// Response layer: what the runtime DOES after it decides to block, and what it
+// preserves before it lets a destructive call through.
+//
+// Off by default; snapshot semantics are copy-only because the connector runs
+// before the tool call, so the blocked write never happened. The pre-operation
+// (rollback) half is doubly gated: flag + non-empty protect_paths.
+export {
+	anyActionSucceeded,
+	commandTargetPath,
+	DEFAULT_RESPONSE_OPTIONS,
+	fileArtifacts,
+	isProtectedPath,
+	rollbackPreOperationSnapshot,
+	runPreAllowedResponseActions,
+	runResponseActions,
+	summarizeResponseActions,
+	targetPathFor,
+} from "./response-actions.js";
 export type { ResponseAuditEntry, ResponseAuditorOptions } from "./response-audit.js";
-// Response Audit
-export { createResponseAuditor, ResponseAuditor } from "./response-audit.js";
+// Response Audit — the tamper-evident signed chain.
+//
+// `ResponseAuditor.log` refuses to append without a valid Ed25519 signature, so a
+// response record on this chain is signed or absent, never unsigned-but-present.
+export {
+	chainActionFor,
+	createResponseAuditor,
+	DEFAULT_RESPONSE_AUDIT_CONFIG,
+	logResponseActionToChain,
+	ResponseAuditor,
+	type ResponseChainContext,
+	type ResponseChainWrite,
+	responseAuditorFromConfig,
+} from "./response-audit.js";
 // Response config
 export {
+	auditActionForMode,
 	getDefaultResponseConfig,
 	getDefaultResponseRules,
 	type ResponseConfigFile,
@@ -305,9 +537,20 @@ export {
 	type ResponseRule,
 	type ResponseSeverity,
 } from "./response-config.js";
-export type { Snapshot } from "./rollback.js";
+export type {
+	Snapshot,
+	SnapshotOptions,
+	SnapshotResult,
+	SnapshotRollbackResult,
+	SnapshotSkip,
+} from "./rollback.js";
 // Auto-Rollback
-export { AutoRollback, createAutoRollback } from "./rollback.js";
+export {
+	AutoRollback,
+	createAutoRollback,
+	DEFAULT_SNAPSHOT_OPTIONS,
+	DEFAULT_SNAPSHOTS_DIR,
+} from "./rollback.js";
 export type { RuleSyncConfig } from "./rule-sync.js";
 // Real-Time Rule Sync
 export { RealTimeRuleSync } from "./rule-sync.js";
@@ -315,13 +558,6 @@ export { RealTimeRuleSync } from "./rule-sync.js";
 export { createScanHandler, runPluginScan, type ScanHandlerOptions } from "./scan-handler.js";
 // Sentry
 export { initSentry } from "./sentry.js";
-// Telemetry privacy boundary
-export {
-	redactTelemetryAttributes,
-	redactTelemetryData,
-	redactTelemetryString,
-	sanitizeTelemetryEndpoint,
-} from "./telemetry-redaction.js";
 // Session start orchestrator
 export {
 	runSessionStart,
@@ -336,13 +572,53 @@ export {
 	toAuditFindingData,
 	toFindingData,
 } from "./session-start-scan.js";
+export {
+	createSiemEvent,
+	DurableSiemDelivery,
+	type ElasticSiemConfig,
+	type SentinelSiemConfig,
+	SIEM_EVENT_JSON_SCHEMA,
+	SIEM_EVENT_SCHEMA_VERSION,
+	type SiemAdapterConfig,
+	type SiemDeliveryHealth,
+	type SiemDeliveryOptions,
+	type SiemDeliveryReceipt,
+	type SiemDeliveryStatus,
+	type SiemEnqueueResult,
+	type SiemEventEnvelope,
+	type SiemFlushResult,
+	type SiemProvider,
+	SiemQueueCapacityError,
+	SiemStateIntegrityError,
+	type SplunkHecSiemConfig,
+	type WebhookSiemConfig,
+} from "./siem-delivery.js";
 // SIEM export (CEF, LEEF, JSON)
 export {
 	exportToCEF,
 	exportToJSON,
 	exportToLEEF,
+	incidentToSiemRecord,
 	type SiemExportFilter,
 } from "./siem-export.js";
+export type {
+	DurableTelemetryEvent,
+	TelemetryDeliveryResult,
+	TelemetryEnqueueResult,
+	TelemetryFlushResult,
+	TelemetryQueueMetrics,
+	TelemetryQueueOptions,
+	TelemetryQueueReadinessEvidence,
+	TelemetryQueueStatus,
+} from "./telemetry-queue.js";
+export { DurableTelemetryQueue } from "./telemetry-queue.js";
+// Telemetry privacy boundary
+export {
+	redactTelemetryAttributes,
+	redactTelemetryData,
+	redactTelemetryString,
+	sanitizeTelemetryEndpoint,
+} from "./telemetry-redaction.js";
 // Threat loader
 export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
 export type {
@@ -445,8 +721,62 @@ export {
 } from "./types.js";
 // URL utilities
 export { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
+// Build/runtime version used by health, telemetry and consumer CLIs.
+export { getVersion, VERSION } from "./version.js";
 export type { VersionCheckContext, VersionCheckResult } from "./version-check.js";
 // Version check
 export { checkForUpdate, isNewerVersion } from "./version-check.js";
-// Build/runtime version used by health, telemetry and consumer CLIs.
-export { VERSION, getVersion } from "./version.js";
+// Verified managed identity and entitlement state for connector provisioning.
+export {
+	isEntitlementActive,
+	loadManagedState,
+	managedStatePath,
+} from "./managed.js";
+export type { ManagedState } from "./managed.js";
+export { FleetResponseCommandConsumer } from "./response-command-consumer-v6.js";
+export {
+	FleetResponseCommandWorker,
+	type FleetResponseWorkerOptions,
+} from "./response-command-worker-v6.js";
+export type {
+	FleetResponseActionAdapter,
+	FleetResponseCommand,
+	FleetResponseCommandType,
+	FleetResponseConsumerOptions,
+	FleetResponseCycleResult,
+	FleetResponseIdentity,
+} from "./response-command-consumer-v6.js";
+// MCP tool identity, signed schema attestation and drift quarantine.
+export {
+	approveQuarantinedMcpToolset,
+	attestMcpToolManifest,
+	canonicalMcpToolManifest,
+	diffMcpTools,
+	FileMcpAttestationStore,
+	mcpManifestHash,
+	mcpToolsetHash,
+	McpToolDefinitionSchema,
+	McpToolManifestV1Schema,
+	MemoryMcpAttestationStore,
+	signMcpToolManifest,
+	SignedMcpToolManifestV1Schema,
+	verifySignedMcpToolManifest,
+	writeMcpSignerHealthEvidence,
+} from "./mcp-attestation.js";
+export type {
+	McpApprovalResult,
+	McpAttestationDecision,
+	McpAttestationStateStore,
+	McpAttestationStateV1,
+	McpCryptographicVerification,
+	McpJsonValue,
+	McpManifestRejectionReason,
+	McpManifestVerifierConfig,
+	McpQuarantinedManifest,
+	McpSignerHealthEvidenceV1,
+	McpToolDefinition,
+	McpToolDrift,
+	McpToolManifestV1,
+	McpToolsetApproval,
+	SignedMcpToolManifestV1,
+} from "./mcp-attestation.js";

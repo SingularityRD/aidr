@@ -93,6 +93,9 @@ export interface ManagedState {
 export interface ManagedSecurityEvent {
 	code:
 		| "missing_public_keys"
+		| "missing_entitlement_signature"
+		| "invalid_entitlement_alg"
+		| "invalid_ed25519_schema"
 		| "invalid_ed25519_signature"
 		| "invalid_hmac_signature"
 		| "invalid_hmac_schema";
@@ -244,7 +247,22 @@ export function redactRemoteEvent(
 	// Always scrub credential material at the network boundary, including when
 	// a caller explicitly chooses raw (`none`) mode. Hash/full then provide
 	// stronger minimisation for production telemetry.
-	const safeEntry = redactTelemetryData(entry);
+	const scrubbed = redactTelemetryData(entry);
+	// Remote event producers are not a schema boundary. A new field can contain
+	// arbitrary prompt or tool content under an innocuous key, so export only
+	// the fields the ingest contract actually understands. The server repeats
+	// this projection for clients that bypass the managed runtime.
+	const allowed = [
+		"event_id", "type", "timestamp", "session_id", "incident_id", "tool_name",
+		"source", "matched_threat_id", "plugin_key", "verdict", "decision",
+		"severity", "status", "findings_count", "user_override",
+		"tool_input_summary", "artifacts", "reasons", "recommended_actions",
+		"runtime_policy_cache",
+	] as const;
+	const safeEntry: Record<string, unknown> = {};
+	for (const key of allowed) {
+		if (Object.hasOwn(scrubbed, key)) safeEntry[key] = scrubbed[key];
+	}
 	if (mode === "none") return safeEntry;
 	const effectiveMode = mode ?? "hash";
 
@@ -350,6 +368,11 @@ function validateEntitlementSnapshotV2Strict(input: unknown): EntitlementSnapsho
 	if (!isIsoDateString(issuedAt) || !isIsoDateString(expiresAt) || !isIsoDateString(graceUntil)) {
 		return null;
 	}
+	const issuedMs = Date.parse(issuedAt);
+	const expiresMs = Date.parse(expiresAt);
+	const graceMs = Date.parse(graceUntil);
+	// A zero-hour grace is valid, but it cannot precede the online expiry.
+	if (issuedMs > expiresMs || expiresMs > graceMs) return null;
 
 	const includedAgents = parseNonNegIntStrict(obj.included_agents);
 	const extraAgents = parseNonNegIntStrict(obj.extra_agents);
@@ -383,6 +406,9 @@ function validateEntitlementSnapshotV2Strict(input: unknown): EntitlementSnapsho
 			if (alg !== "aes-256-gcm") return null;
 			if (!keyId || !keyB64) return null;
 			if (!isIsoDateString(exp)) return null;
+			if (Date.parse(exp) > graceMs || Date.parse(exp) < issuedMs) return null;
+			if (!/^(?:[A-Za-z0-9+/]{4}){10}[A-Za-z0-9+/]{3}=$/.test(keyB64)) return null;
+			if (Buffer.from(keyB64, "base64").length !== 32) return null;
 			out.push({ alg: "aes-256-gcm", key_id: keyId, key_b64: keyB64, expires_at: exp });
 		}
 		packKeys = out;
@@ -525,9 +551,37 @@ export async function loadManagedState(
 		const parsed = JSON.parse(raw) as ManagedState;
 		if (!parsed || typeof parsed !== "object") return {};
 
-		// Best-effort signature check: if invalid, drop entitlement fields (fail-open).
-		if (parsed.entitlement && parsed.entitlement_sig) {
+		const dropEntitlement = (event: ManagedSecurityEvent): ManagedState => {
+			emitManagedSecurityEvent(event, opts?.onSecurityEvent);
+			return {
+				...parsed,
+				entitlement: undefined,
+				entitlement_alg: undefined,
+				entitlement_key_id: undefined,
+				entitlement_sig: undefined,
+			};
+		};
+
+		// A cached entitlement is usable only with its verified signature and a
+		// valid schema. Old signed v2 snapshots with grace before expiry must be
+		// refreshed by the control plane; their signed timestamps cannot be repaired locally.
+		if (parsed.entitlement !== undefined) {
+			if (typeof parsed.entitlement_sig !== "string" || !parsed.entitlement_sig.trim()) {
+				return dropEntitlement({
+					code: "missing_entitlement_signature",
+					message: "Dropping cached entitlement without a signature.",
+				});
+			}
 			if (parsed.entitlement_alg === "ed25519") {
+				const validated =
+					validateEntitlementSnapshotV2Strict(parsed.entitlement) ??
+					validateEntitlementSnapshotV1Strict(parsed.entitlement);
+				if (!validated) {
+					return dropEntitlement({
+						code: "invalid_ed25519_schema",
+						message: "Dropping cached entitlement with an invalid signed snapshot schema.",
+					});
+				}
 				const keys = opts?.publicKeysPem ?? [];
 				if (
 					keys.length === 0 ||
@@ -537,59 +591,38 @@ export async function loadManagedState(
 						public_keys_pem: keys,
 					})
 				) {
-					emitManagedSecurityEvent(
-						{
+					return dropEntitlement({
 							code: keys.length === 0 ? "missing_public_keys" : "invalid_ed25519_signature",
 							message: "Dropping cached entitlement due to failed ed25519 verification.",
-						},
-						opts?.onSecurityEvent,
-					);
-					return {
-						...parsed,
-						entitlement: undefined,
-						entitlement_alg: undefined,
-						entitlement_key_id: undefined,
-						entitlement_sig: undefined,
-					};
+					});
 				}
 			} else if (parsed.entitlement_alg === "hmac-sha256") {
 				const authToken = opts?.authToken;
 				// HMAC entitlements are legacy v1 only.
-				if (parsed.entitlement.schema_version !== 1) {
-					emitManagedSecurityEvent(
-						{
+				if (!validateEntitlementSnapshotV1Strict(parsed.entitlement)) {
+					return dropEntitlement({
 							code: "invalid_hmac_schema",
 							message: "Dropping cached entitlement due to unexpected HMAC schema version.",
-						},
-						opts?.onSecurityEvent,
-					);
-					return {
-						...parsed,
-						entitlement: undefined,
-						entitlement_alg: undefined,
-						entitlement_key_id: undefined,
-						entitlement_sig: undefined,
-					};
+					});
 				}
 				if (
 					!authToken ||
-					!verifyEntitlementSnapshotSignature(parsed.entitlement, parsed.entitlement_sig, authToken)
+					!verifyEntitlementSnapshotSignature(
+						parsed.entitlement as EntitlementSnapshotV1,
+						parsed.entitlement_sig,
+						authToken,
+					)
 				) {
-					emitManagedSecurityEvent(
-						{
+					return dropEntitlement({
 							code: "invalid_hmac_signature",
 							message: "Dropping cached entitlement due to failed HMAC verification.",
-						},
-						opts?.onSecurityEvent,
-					);
-					return {
-						...parsed,
-						entitlement: undefined,
-						entitlement_alg: undefined,
-						entitlement_key_id: undefined,
-						entitlement_sig: undefined,
-					};
+					});
 				}
+			} else {
+				return dropEntitlement({
+					code: "invalid_entitlement_alg",
+					message: "Dropping cached entitlement without a supported signature algorithm.",
+				});
 			}
 		}
 
@@ -615,27 +648,67 @@ export async function saveManagedState(path: string, state: ManagedState): Promi
  * Writes a minimal keyring file used by encrypted intel packs.
  * This keeps the intel layer decoupled from managed state schema.
  */
+async function clearManagedKeyring(path: string, revoked: boolean): Promise<void> {
+	let previous: Record<string, unknown> | null = null;
+	try {
+		previous = JSON.parse(await getFileContent(path, "utf-8")) as Record<string, unknown>;
+	} catch {
+		// No previously issued keyring.
+	}
+	if (
+		revoked ||
+		previous?.managed === true ||
+		(typeof previous?.tenant_id === "string" && typeof previous?.serial === "string")
+	) {
+		await atomicWriteJson(path, { managed: true, intel_keys: {}, revoked });
+	}
+}
+
+function currentPackKeys(ent: EntitlementSnapshotV2): {
+	keys: Record<string, string>;
+	expiresAt: Record<string, string>;
+} {
+	const keys: Record<string, string> = {};
+	const expiresAt: Record<string, string> = {};
+	for (const key of ent.pack_keys ?? []) {
+		const id = key.key_id.trim();
+		const b64 = key.key_b64.trim();
+		const expiry = Date.parse(key.expires_at);
+		if (
+			!id ||
+			!b64 ||
+			!Number.isFinite(expiry) ||
+			expiry <= Date.now() ||
+			expiry > Date.parse(ent.grace_until)
+		)
+			continue;
+		keys[id] = b64;
+		expiresAt[id] = key.expires_at;
+	}
+	return { keys, expiresAt };
+}
+
 export async function saveEntitlementKeyringFromState(state: ManagedState): Promise<void> {
 	try {
 		const ent = state.entitlement;
-		if (!ent || ent.schema_version !== 2) return;
-		if (state.entitlement_alg !== "ed25519") return;
-		if (!Array.isArray(ent.pack_keys) || ent.pack_keys.length === 0) return;
-
-		const keys: Record<string, string> = {};
-		for (const k of ent.pack_keys) {
-			if (!k || typeof k !== "object") continue;
-			if (k.alg !== "aes-256-gcm") continue;
-			const id = typeof k.key_id === "string" ? k.key_id.trim() : "";
-			const b64 = typeof k.key_b64 === "string" ? k.key_b64.trim() : "";
-			if (!id || !b64) continue;
-			keys[id] = b64;
+		const path = entitlementKeyringPath();
+		const active =
+			ent?.schema_version === 2 &&
+			state.entitlement_alg === "ed25519" &&
+			isEntitlementActive(state);
+		if (!active) {
+			// Revocation clears the in-memory entitlement. Replace any previously
+			// issued managed keyring so a stale encrypted pack cannot reload it.
+			await clearManagedKeyring(path, state.sync_disabled_reason === "revoked");
+			return;
 		}
 
-		if (Object.keys(keys).length === 0) return;
+		const packKeys = currentPackKeys(ent);
 
-		await atomicWriteJson(entitlementKeyringPath(), {
-			intel_keys: keys,
+		await atomicWriteJson(path, {
+			managed: true,
+			intel_keys: packKeys.keys,
+			key_expires_at: packKeys.expiresAt,
 			issued_at: ent.issued_at,
 			expires_at: ent.grace_until,
 			tenant_id: ent.tenant_id,
@@ -733,6 +806,26 @@ export function applyIngestResult(
 	}
 
 	if (
+		result.status === 401 &&
+		(result.error === "invalid_api_key" || result.body?.error === "invalid_api_key")
+	) {
+		// A definitive authentication rejection invalidates the local grant.
+		// Transport failures retain the signed offline window, but a revoked or
+		// malformed key must not continue to use it after the server rejects it.
+		return {
+			...state,
+			api_key: state.api_key === opts?.authToken ? undefined : state.api_key,
+			seat_status: "unknown",
+			sync_disabled_until: undefined,
+			sync_disabled_reason: "invalid_api_key",
+			entitlement: undefined,
+			entitlement_alg: undefined,
+			entitlement_key_id: undefined,
+			entitlement_sig: undefined,
+		};
+	}
+
+	if (
 		result.status === 402 &&
 		typeof result.body?.error === "string" &&
 		result.body.error === "agent_limit_exceeded"
@@ -761,17 +854,17 @@ export function applyIngestResult(
 
 export function isEntitlementActive(state: ManagedState, now = new Date()): boolean {
 	if (!state.entitlement) return false;
+	if (state.sync_disabled_reason === "revoked") return false;
 	const exp = Date.parse(state.entitlement.expires_at);
-	if (Number.isFinite(exp) && now.getTime() < exp) return true;
+	if (!Number.isFinite(exp)) return false;
 
-	// v2: allow grace window beyond expires_at
 	if (state.entitlement.schema_version === 2) {
 		const grace = Date.parse(state.entitlement.grace_until);
-		if (!Number.isFinite(grace)) return false;
+		if (!Number.isFinite(grace) || grace < exp) return false;
 		return now.getTime() < grace;
 	}
 
-	return false;
+	return now.getTime() < exp;
 }
 
 /**

@@ -1,42 +1,50 @@
 /**
  * Heuristics engine — matches artifacts against loaded threat definitions.
+ *
+ * ── Bounded-work contract (read before changing this file) ──────────────────
+ * Matching runs synchronously in the hook process, and `hooks/hooks.json` gives
+ * the PreToolUse hook a 15s timeout. A hook that is killed before it writes its
+ * verdict leaves the tool call uninspected — so unbounded matching time is a
+ * detection-evasion primitive, not just a slowdown.
+ *
+ * A previous implementation tried to defend against that with a wall-clock
+ * check *after* `RegExp.exec()` returned. That only measured elapsed time; it
+ * could not interrupt anything, so it never prevented the blow-up (a 20KB
+ * command already cost ~0.9s, 100KB ~27s), and when it did fire it dropped the
+ * threat — losing the detection it was meant to protect.
+ *
+ * GUARANTEED:
+ *  - Every artifact is matched against at most MAX_MATCH_INPUT characters (its
+ *    retained prefix), so matching work is bounded by
+ *    O(patterns × MAX_MATCH_INPUT) and does not grow with the tool call size.
+ *  - Truncation is never silent: it is reported on stderr, stating that the
+ *    result covers the retained prefix only.
+ *  - The patterns shipped in `threats/*.yaml` are linear-time in the input
+ *    length (no ambiguous/nested quantifiers over unbounded spans). That is a
+ *    data invariant guarded by `__tests__/regex-performance.test.ts`.
+ *
+ * NOT GUARANTEED:
+ *  - There is NO wall-clock timeout. JavaScript cannot pre-empt a running
+ *    `RegExp.exec()` on the same thread; only a Worker could, at the cost of
+ *    copying and serialising every artifact. Bounded input + linear patterns
+ *    are the actual bound: a newly introduced pathological pattern would still
+ *    block the thread, but only for the bounded input size.
+ *  - Content that appears exclusively after MAX_MATCH_INPUT characters is not
+ *    inspected by heuristics. The truncation warning is the signal that this
+ *    happened; a truncated evaluation must never be read as a full clean one.
  */
 
-import { extractUrls } from "./extractors.js";
+import { boundArtifact, extractUrls, MAX_ARTIFACT_SIZE } from "./extractors.js";
 import { extractDomain, isTrustedDomain } from "./trusted-domains.js";
 import type { Artifact, HeuristicMatch, Threat, TrustedDomain } from "./types.js";
 
-/** Default timeout for regex operations (in milliseconds) to prevent ReDoS. */
-const REGEX_TIMEOUT_MS = 5000;
-
 /**
- * Execute regex with timeout protection against ReDoS attacks.
- * Throws an error if the regex takes too long to execute.
+ * Maximum number of characters of an artifact that any pattern is run against.
+ * Kept equal to the extraction cap so the engine and the extractors agree on
+ * what "inspected" means; this is a backstop for artifacts that reach the
+ * engine without passing through the extractors.
  */
-function execRegexWithTimeout(
-	pattern: RegExp,
-	input: string,
-	timeoutMs: number = REGEX_TIMEOUT_MS,
-): RegExpExecArray | null {
-	// Use a fresh RegExp instance to avoid state issues
-	const freshPattern = new RegExp(pattern.source, pattern.flags);
-
-	// For short inputs, execute directly without timeout overhead
-	if (input.length < 1000) {
-		return freshPattern.exec(input);
-	}
-
-	// For longer inputs, use timeout protection
-	const startTime = Date.now();
-	const result = freshPattern.exec(input);
-	const elapsed = Date.now() - startTime;
-
-	if (elapsed > timeoutMs) {
-		throw new Error(`Regex execution timeout: pattern took ${elapsed}ms (limit: ${timeoutMs}ms)`);
-	}
-
-	return result;
-}
+const MAX_MATCH_INPUT = MAX_ARTIFACT_SIZE;
 
 /** Threat IDs where trusted installer domains suppress matches. */
 const TRUSTED_DOMAIN_SUPPRESSIBLE = new Set([
@@ -89,20 +97,32 @@ export class HeuristicsEngine {
 		const matches: HeuristicMatch[] = [];
 
 		for (const artifact of artifacts) {
+			// Match the retained prefix only. `boundArtifact` reports on stderr
+			// when it truncates, so a partial evaluation is never reported as a
+			// full clean result.
+			const value = boundArtifact(`${artifact.type} artifact`, artifact.value, MAX_MATCH_INPUT);
 			const threats = this.threatMap.get(artifact.type) ?? [];
+
 			for (const threat of threats) {
 				try {
-					const m = execRegexWithTimeout(threat.compiledPattern, artifact.value);
+					// YAML patterns are compiled without `g`/`y`, so `exec` is
+					// stateless and the compiled instance can be reused. Only a
+					// caller-supplied stateful pattern needs a fresh clone.
+					const pattern =
+						threat.compiledPattern.global || threat.compiledPattern.sticky
+							? new RegExp(threat.compiledPattern.source, threat.compiledPattern.flags)
+							: threat.compiledPattern;
+					const m = pattern.exec(value);
 					if (m) {
 						matches.push({
 							threat,
-							artifact: artifact.value,
+							artifact: value,
 							matchValue: m[0],
 						});
 					}
 				} catch (error) {
-					// Log regex timeout/pattern errors but don't crash - fail open for this threat
-					// This prevents malicious patterns from causing denial of service
+					// A malformed user-supplied pattern must not break the scan -
+					// fail open for this one threat and say so.
 					console.warn(
 						`Regex execution failed for threat ${threat.id}: ${error instanceof Error ? error.message : String(error)}`,
 					);

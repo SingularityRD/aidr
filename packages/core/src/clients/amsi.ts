@@ -5,6 +5,9 @@
  */
 
 import type { ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { AmsiCheckResult, Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { spawn } from "./amsi-spawn.js";
@@ -18,6 +21,23 @@ const MAX_SCAN_LENGTH = 1_048_576; // 1 MB
 
 /** Timeout for PowerShell operations (ms). */
 const PS_TIMEOUT = 15_000;
+
+/**
+ * Bundled Claude hooks load the manifest-covered native addon from dist/vendor.
+ * The unbundled core library keeps its normal optional dependency resolution.
+ * A present but broken bundled addon must not silently select a different copy
+ * from the host's node_modules; the caller will use the PowerShell fallback.
+ */
+type KoffiModule = typeof import("koffi") & { default?: typeof import("koffi") };
+
+async function loadKoffi(): Promise<KoffiModule> {
+	const bundledPath =
+		typeof __dirname === "string" ? join(__dirname, "vendor", "koffi", "index.js") : null;
+	if (bundledPath && existsSync(bundledPath)) {
+		return (await import(pathToFileURL(bundledPath).href)) as KoffiModule;
+	}
+	return (await import("koffi")) as KoffiModule;
+}
 
 /** Detect whether we're running inside WSL (Windows Subsystem for Linux). */
 function isWSL(): boolean {
@@ -81,7 +101,7 @@ class KoffiAmsiBackend implements AmsiBackend {
 
 	async init(): Promise<void> {
 		try {
-			const koffiModule = await import("koffi");
+			const koffiModule = await loadKoffi();
 			// unwrap CJS module if needed
 			const koffi = koffiModule.default ?? koffiModule;
 
@@ -589,6 +609,7 @@ class WslPowershellAmsiBackend implements AmsiBackend {
 export class AmsiClient {
 	private readonly logger: Logger;
 	private backend: AmsiBackend | null = null;
+	private selectedBackend: "native-koffi" | "powershell-persistent" | "powershell-oneshot" | "unavailable" = "unavailable";
 
 	constructor(logger: Logger = nullLogger) {
 		this.logger = logger;
@@ -596,6 +617,11 @@ export class AmsiClient {
 
 	get isAvailable(): boolean {
 		return this.backend?.isAvailable ?? false;
+	}
+
+	/** Makes native availability and fallback visible to installers and diagnostics. */
+	get backendKind(): "native-koffi" | "powershell-persistent" | "powershell-oneshot" | "unavailable" {
+		return this.selectedBackend;
 	}
 
 	async init(): Promise<void> {
@@ -613,8 +639,10 @@ export class AmsiClient {
 			await koffi.init();
 			if (koffi.isAvailable) {
 				this.backend = koffi;
+				this.selectedBackend = "native-koffi";
 				return;
 			}
+			this.logger.warn("AMSI native backend unavailable; trying PowerShell fallback");
 		}
 
 		// PowerShell P/Invoke — works on native Windows and WSL (WSL interop
@@ -625,10 +653,13 @@ export class AmsiClient {
 		await ps.init();
 		if (ps.isAvailable) {
 			this.backend = ps;
+			this.selectedBackend = wsl ? "powershell-oneshot" : "powershell-persistent";
+			if (!wsl) this.logger.warn("AMSI PowerShell fallback active");
 			return;
 		}
 
-		this.logger.debug("AMSI: no backend available");
+		this.selectedBackend = "unavailable";
+		this.logger.warn("AMSI unavailable: native and PowerShell backends failed");
 	}
 
 	async scanString(content: string, contentName: string): Promise<AmsiCheckResult | null> {
@@ -638,5 +669,6 @@ export class AmsiClient {
 	close(): void {
 		this.backend?.close();
 		this.backend = null;
+		this.selectedBackend = "unavailable";
 	}
 }

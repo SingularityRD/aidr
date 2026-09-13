@@ -155,7 +155,12 @@ describe("PackageChecker", () => {
 		expect(results[0]?.confidence).toBe(0.6);
 	});
 
-	it("skips all scoped packages", async () => {
+	it("checks scoped packages instead of assuming them clean", async () => {
+		// This test previously asserted the opposite - that a scoped package is
+		// reported "clean" without any registry lookup. That was a positive
+		// false-clean: a large share of the npm ecosystem is scoped, and an
+		// attacker can register a scope as easily as a plain name, so
+		// `npm install @evil/pkg` was reported verified clean.
 		const mockFetch = vi.fn();
 		globalThis.fetch = mockFetch;
 
@@ -163,28 +168,26 @@ describe("PackageChecker", () => {
 		const results = await checker.checkPackages([
 			{ name: "@mycompany/internal-lib", registry: "npm" },
 		]);
+
 		expect(results).toHaveLength(1);
-		expect(results[0]?.verdict).toBe("clean");
-		expect(results[0]?.details).toContain("Scoped package");
-		expect(mockFetch).not.toHaveBeenCalled();
+		// The registry must actually be consulted for a scoped name.
+		expect(mockFetch).toHaveBeenCalled();
+		const calledUrl = String(mockFetch.mock.calls[0]?.[0] ?? "");
+		expect(calledUrl).toContain("registry.npmjs.org");
+		// The scope separator must be percent-encoded.
+		expect(calledUrl).toContain("%2f");
+		// And the verdict must not claim the package was skipped.
+		expect(String(results[0]?.details ?? "")).not.toContain("Scoped package");
 	});
 
 	it("handles multiple packages in parallel", async () => {
-		const mockFetch = vi.fn();
-		// Package 1: exists, clean
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			status: 200,
-			json: async () => mockNpmPackage("pkg-a"),
-		});
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			json: async () => mockFileCheckResponse("SEVERITY_UNKNOWN"),
-		});
-		// Package 2: not found
-		mockFetch.mockResolvedValueOnce({
-			ok: false,
-			status: 404,
+		// Concurrent registry requests may complete in either order.
+		const mockFetch = vi.fn(async (url: string) => {
+			if (url.endsWith("/pkg-a")) {
+				return { ok: true, status: 200, json: async () => mockNpmPackage("pkg-a") };
+			}
+			if (url.endsWith("/pkg-b")) return { ok: false, status: 404 };
+			throw new Error(`Unexpected request: ${url}`);
 		});
 		globalThis.fetch = mockFetch;
 

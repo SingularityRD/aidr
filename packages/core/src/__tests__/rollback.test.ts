@@ -1,9 +1,17 @@
 /**
  * Tests for Auto-Rollback module.
+ *
+ * ISOLATION: `AutoRollback` resolves its snapshot root from HOME, and
+ * `pruneOlderThan` scans that directory. Without redirecting HOME these tests
+ * write into the developer's real `~/.singularity-aidr/snapshots` and the prune
+ * assertions count *every snapshot ever taken on the machine* — so they pass on a
+ * clean checkout and fail on any machine that has run AIDR or this suite before.
+ * HOME is redirected here; no assertion was changed.
  */
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRollback, createAutoRollback } from "../rollback.js";
 import { makeTmpDir } from "./test-utils.js";
 
@@ -20,6 +28,9 @@ describe("AutoRollback", () => {
 	let testFile2: string;
 	let nestedDir: string;
 	let nestedFile: string;
+	let home: string;
+	let previousHome: string | undefined;
+	let previousUserProfile: string | undefined;
 
 	beforeEach(async () => {
 		tmpDir = await makeTmpDir();
@@ -28,10 +39,26 @@ describe("AutoRollback", () => {
 		nestedDir = join(tmpDir, "nested");
 		nestedFile = join(nestedDir, "nested.txt");
 
+		// Keep snapshots inside this test's temp tree instead of the real HOME.
+		home = await makeTmpDir();
+		previousHome = process.env.HOME;
+		previousUserProfile = process.env.USERPROFILE;
+		process.env.HOME = home;
+		process.env.USERPROFILE = home;
+
 		await writeFile(testFile1, "original content 1");
 		await writeFile(testFile2, "original content 2");
 		await mkdir(nestedDir);
 		await writeFile(nestedFile, "original nested content");
+	});
+
+	afterEach(async () => {
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+		if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+		else process.env.USERPROFILE = previousUserProfile;
+		await rm(home, { recursive: true, force: true });
+		await rm(tmpDir, { recursive: true, force: true });
 	});
 
 	describe("createSnapshot", () => {

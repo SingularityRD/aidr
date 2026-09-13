@@ -7,7 +7,10 @@ import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, relative } from "node:path";
 import { FileCheckClient } from "./clients/file-check.js";
+import type { FileCheckBatchResult } from "./clients/file-check.js";
 import { UrlCheckClient } from "./clients/url-check.js";
+import type { UrlCheckResult } from "./types.js";
+import { DetectionLegUnavailableError } from "./detection-leg.js";
 import { extractUrls } from "./extractors.js";
 import { getFileContent, getFileContentRaw } from "./file-utils.js";
 import { HeuristicsEngine } from "./heuristics.js";
@@ -17,10 +20,85 @@ import type {
 	Logger,
 	PluginInfo,
 	PluginScanResult,
+	PluginScanUnavailableCheck,
 	Threat,
 	TrustedDomain,
 } from "./types.js";
 import { nullLogger } from "./types.js";
+
+/**
+ * Record that a reputation leg did not run.
+ *
+ * The point is to keep "we checked and found nothing" distinguishable from "we
+ * never checked". Detection internals are allowed to degrade, but the
+ * degradation has to be legible to whoever reads the scan result.
+ */
+function markUnavailable(
+	result: PluginScanResult,
+	entry: PluginScanUnavailableCheck,
+): void {
+	if (!result.unavailableChecks) result.unavailableChecks = [];
+	result.unavailableChecks.push(entry);
+}
+
+/** Turn URL reputation results into findings. Shared by the success and partial paths. */
+function pushUrlFindings(result: PluginScanResult, checkResults: UrlCheckResult[]): void {
+	for (const ur of checkResults) {
+		if (!ur.isMalicious) continue;
+		const findingDetails = ur.findings.map((f) => `${f.severityName}/${f.typeName}`).join(", ");
+		result.findings.push({
+			threatId: "URL_CHECK",
+			title: `Malicious URL (${findingDetails})`,
+			severity: "critical",
+			confidence: 1.0,
+			action: "block",
+			artifact: ur.url.slice(0, 200),
+			sourceFile: "URL check",
+		});
+	}
+}
+
+/** Turn file reputation results into findings. Shared by the success and partial paths. */
+function pushFileFindings(
+	result: PluginScanResult,
+	plugin: PluginInfo,
+	checkResults: FileCheckBatchResult[],
+	hashToFiles: Map<string, string[]>,
+): void {
+	for (const fr of checkResults) {
+		if (fr.severity !== "SEVERITY_MALWARE") continue;
+		for (const filePath of hashToFiles.get(fr.sha256) ?? []) {
+			result.findings.push({
+				threatId: "FILE_CHECK",
+				title: `Malicious file (${fr.detectionNames.join(", ") || "unknown"})`,
+				severity: "critical",
+				confidence: 1.0,
+				action: "block",
+				artifact: fr.sha256,
+				sourceFile: relative(plugin.installPath, filePath),
+			});
+		}
+	}
+}
+
+/**
+ * Turn a leg failure into something an operator can act on.
+ *
+ * `DetectionLegUnavailableError` already carries an operator-readable reason
+ * (including the unauthenticated-401 case that caused the original false clean),
+ * so it is preferred over re-deriving one from the message.
+ */
+function describeLegFailure(error: unknown): string {
+	if (error instanceof DetectionLegUnavailableError) return error.reason;
+	const message = error instanceof Error ? error.message : String(error);
+	if (/\b401\b|\b403\b|unauthor|forbidden/i.test(message)) {
+		return `endpoint rejected the request as unauthenticated (${message})`;
+	}
+	if (/ENOTFOUND|EAI_AGAIN|getaddrinfo|fetch failed|ECONNREFUSED|ETIMEDOUT/i.test(message)) {
+		return `endpoint unreachable (${message})`;
+	}
+	return message;
+}
 
 const DEFAULT_PLUGINS_REGISTRY = join(homedir(), ".claude", "plugins", "installed_plugins.json");
 
@@ -325,6 +403,12 @@ export async function scanPlugin(
 		trustedDomains?: TrustedDomain[];
 		intelMerged?: IntelMerged | null;
 		logger?: Logger;
+		/**
+		 * Bearer key for the first-party reputation endpoints. Optional: an
+		 * unauthenticated deployment is legal, and that case is reported through
+		 * `unavailableChecks` rather than being mistaken for a clean scan.
+		 */
+		apiKey?: string;
 	} = {},
 ): Promise<PluginScanResult> {
 	const {
@@ -415,26 +499,34 @@ export async function scanPlugin(
 			? (async () => {
 					try {
 						const uniqueUrls = [...new Set(allUrls)];
-						const client = new UrlCheckClient();
+						// Pass the configured API key. Without it the first-party
+						// endpoint answers 401 and the leg silently produced nothing -
+						// a false clean. The key is optional; an unauthenticated
+						// deployment is legal, so a failure is reported rather than
+						// thrown (see the catch below).
+						const client = new UrlCheckClient(undefined, logger, options.apiKey);
 						const checkResults = await client.checkUrls(uniqueUrls);
-						for (const ur of checkResults) {
-							if (ur.isMalicious) {
-								const findingDetails = ur.findings
-									.map((f) => `${f.severityName}/${f.typeName}`)
-									.join(", ");
-								result.findings.push({
-									threatId: "URL_CHECK",
-									title: `Malicious URL (${findingDetails})`,
-									severity: "critical",
-									confidence: 1.0,
-									action: "block",
-									artifact: ur.url.slice(0, 200),
-									sourceFile: "URL check",
-								});
-							}
-						}
-					} catch {
-						// Fail open
+						pushUrlFindings(result, checkResults);
+					} catch (error) {
+						// The leg could not run (or ran only partly). Detection internals
+						// are allowed to degrade, but the degradation MUST be visible:
+						// silently continuing makes "unchecked" indistinguishable from
+						// "clean". Detections from any batch that did succeed are kept.
+						const partial =
+							error instanceof DetectionLegUnavailableError ? error.partialResults : [];
+						pushUrlFindings(result, partial as UrlCheckResult[]);
+						markUnavailable(result, {
+							check: "url_reputation",
+							reason: describeLegFailure(error),
+							uncheckedCount:
+								error instanceof DetectionLegUnavailableError && error.uncheckedCount > 0
+									? error.uncheckedCount
+									: [...new Set(allUrls)].length,
+						});
+						logger.warn("Plugin scan: URL reputation leg did not run", {
+							reason: describeLegFailure(error),
+							uncheckedCount: [...new Set(allUrls)].length,
+						});
 					}
 				})()
 			: Promise.resolve();
@@ -443,27 +535,31 @@ export async function scanPlugin(
 		checkFileHashes && hashToFiles.size > 0
 			? (async () => {
 					try {
-						const client = new FileCheckClient();
+						const client = new FileCheckClient(undefined, logger, options.apiKey);
 						const uniqueHashes = [...hashToFiles.keys()];
 						const checkResults = await client.checkHashes(uniqueHashes);
-						for (const fr of checkResults) {
-							if (fr.severity === "SEVERITY_MALWARE") {
-								const filePaths = hashToFiles.get(fr.sha256) ?? [];
-								for (const filePath of filePaths) {
-									result.findings.push({
-										threatId: "FILE_CHECK",
-										title: `Malicious file (${fr.detectionNames.join(", ") || "unknown"})`,
-										severity: "critical",
-										confidence: 1.0,
-										action: "block",
-										artifact: fr.sha256,
-										sourceFile: relative(plugin.installPath, filePath),
-									});
-								}
-							}
-						}
-					} catch {
-						// Fail open
+						pushFileFindings(result, plugin, checkResults, hashToFiles);
+					} catch (error) {
+						const partial =
+							error instanceof DetectionLegUnavailableError ? error.partialResults : [];
+						pushFileFindings(
+							result,
+							plugin,
+							partial as FileCheckBatchResult[],
+							hashToFiles,
+						);
+						markUnavailable(result, {
+							check: "file_reputation",
+							reason: describeLegFailure(error),
+							uncheckedCount:
+								error instanceof DetectionLegUnavailableError && error.uncheckedCount > 0
+									? error.uncheckedCount
+									: hashToFiles.size,
+						});
+						logger.warn("Plugin scan: file reputation leg did not run", {
+							reason: describeLegFailure(error),
+							uncheckedCount: hashToFiles.size,
+						});
 					}
 				})()
 			: Promise.resolve();

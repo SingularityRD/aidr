@@ -89,5 +89,18 @@ describe("telemetry redaction boundary", () => {
 			undefined,
 		);
 		expect(defaultSafe.tool_input_summary).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+		const untrustedFields = redactRemoteEvent(
+			{
+				type: "runtime_verdict",
+				prompt: "private customer prompt",
+				nested: { content: "private customer content" },
+				tool_input_summary: "ordinary command",
+			},
+			"hash",
+		);
+		expect(untrustedFields).not.toHaveProperty("prompt");
+		expect(untrustedFields).not.toHaveProperty("nested");
+		expect(JSON.stringify(untrustedFields)).not.toContain("private customer");
 	});
 });

@@ -9,7 +9,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\b[Rr][Ee][Gg]\\b\\s+[Aa][Dd][Dd].*\\\\(Run|RunOnce)\\\\"
+  pattern: "\\b[Rr][Ee][Gg]\\b\\s+[Aa][Dd][Dd].{0,300}\\\\(Run|RunOnce)\\\\"
   match_on: command
   title: "Registry Run key persistence via reg add"
   expires_at: null
@@ -21,7 +21,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\b[Ss][Cc]\\b\\s+(create|config).*binpath"
+  pattern: "\\b[Ss][Cc]\\b\\s+(create|config).{0,300}binpath"
   match_on: command
   title: "Windows service creation/modification via sc"
   expires_at: null
@@ -33,7 +33,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\b[Ss][Cc][Hh][Tt][Aa][Ss][Kk][Ss]\\b.*/[Cc]reate"
+  pattern: "\\b[Ss][Cc][Hh][Tt][Aa][Ss][Kk][Ss]\\b.{0,300}/[Cc]reate"
   match_on: command
   title: "Scheduled task creation via schtasks"
   expires_at: null
@@ -57,7 +57,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "[Ss]et-[Ii]tem[Pp]roperty.*\\\\(Run|RunOnce)\\\\"
+  pattern: "[Ss]et-[Ii]tem[Pp]roperty.{0,300}\\\\(Run|RunOnce)\\\\"
   match_on: command
   title: "PowerShell Registry Run key persistence"
   expires_at: null

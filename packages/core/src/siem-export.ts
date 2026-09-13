@@ -197,7 +197,7 @@ function leefEventId(incident: Incident): string {
 /**
  * Serialize an incident for JSON SIEM output — a flat envelope with metadata.
  */
-function toJsonRecord(incident: Incident): Record<string, unknown> {
+export function incidentToSiemRecord(incident: Incident): Record<string, unknown> {
 	return {
 		siem_type: "aidr_incident",
 		incident_id: incident.incident_id,
@@ -340,5 +340,5 @@ export function exportToLEEF(incidents: Incident[], filter?: SiemExportFilter): 
  */
 export function exportToJSON(incidents: Incident[], filter?: SiemExportFilter): string {
 	const matched = applyFilter(incidents, filter);
-	return JSON.stringify(matched.map(toJsonRecord));
+	return JSON.stringify(matched.map(incidentToSiemRecord));
 }
