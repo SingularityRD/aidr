@@ -61,6 +61,18 @@ export const MIN_ALLOWLIST_REASON_LENGTH = 24;
  */
 export const ALLOWLIST = [
 	{
+		path: "scripts/verify-repo-hygiene.mjs",
+		owner: "AIDR-012",
+		reason:
+			"The gate's own documentation and regular-expression examples contain anonymous paths such as `C:\\Users\\name` and `/home/node` to define the strings it must reject; they are rule fixtures, not observed host paths.",
+	},
+	{
+		path: "scripts/verify-repo-hygiene.test.mjs",
+		owner: "AIDR-012",
+		reason:
+			"The gate's test suite writes synthetic `C:\\Users\\someone` and `/home/someone` fixture paths and asserts they are reported; removing those canaries would make the security gate untested.",
+	},
+	{
 		path: "docs/**",
 		owner: "AIDR-012",
 		reason:
