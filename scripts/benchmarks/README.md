@@ -4,7 +4,7 @@ This directory contains an **analysis harness**, not a benchmark result. It does
 
 ## Inputs
 
-Keep the corpus, observations, raw artifacts, private key, and output outside the repository. The corpus JSON uses `schema_version: 1`, a stable `corpus_id` and `version`, distinct `rule_author_id` and `oracle_reviewer_id`, a `scope` listing `required_attack_families`, `required_connectors`, and `required_surfaces`, and `cases` with these fields. Declare the full agreed scope before collecting outcomes; absent required dimensions are reported as uncovered. The starting attack-family list should cover direct and indirect injection, MCP description drift, credential exfiltration, shell obfuscation, package tampering, malicious outputs, and excessive delegated authority, adapted to the customer's actual connectors.
+Keep the corpus, observations, raw artifacts, private key, and output outside the repository. The corpus JSON uses `schema_version: 1`, a stable `corpus_id` and `version`, distinct `rule_author_id` and `oracle_reviewer_id`, a `scope` listing `required_attack_families`, `required_connectors`, and `required_surfaces`, and `cases` with these fields. Declare the full agreed scope before collecting outcomes; absent required dimensions are reported as uncovered. The committed denominator for the sold product is `scripts/benchmarks/sold-scope.json` (see below); the list in this paragraph is a starting point, not the declaration. The starting attack-family list should cover direct and indirect injection, MCP description drift, credential exfiltration, shell obfuscation, package tampering, malicious outputs, and excessive delegated authority, adapted to the customer's actual connectors.
 
 | Field | Values / purpose |
 | --- | --- |
@@ -12,10 +12,47 @@ Keep the corpus, observations, raw artifacts, private key, and output outside th
 | `partition` | `development` or evaluator-controlled `holdout`. |
 | `oracle` | `malicious` or `benign`, adjudicated independently of rule authors. |
 | `family`, `connector`, `surface` | Explicit coverage dimensions. Unsupported or absent observations stay visible in each dimension. |
+| `content_sha256` | Required. SHA-256 of the case's normalized content. It is the case's content identity for the overlap guard and is never derived from a case title alone. |
+| `content` | Optional. The case text. When present the validator normalizes it (CRLF/CR to LF, then trims) and requires `content_sha256` to equal the digest of that normalized text. When absent, `content_sha256` is still required and must be a real 64-hex digest computed by the corpus owner. |
+| `derived_from_case_id` | Optional. The `case_id` this case was derived from. Must name a declared case and must stay inside the same partition. `development_derived_from` is accepted as an alias; declaring both is rejected. |
+
+The corpus may also declare `trials_per_case_by_partition` as `{ "development": n, "holdout": n }`. The observations may declare the same object. Declared values must agree with the observations, and a partition trial difference that the corpus does not declare is rejected.
 
 The observations JSON uses `schema_version: 1`, `workload_id`, `trials_per_case`, `candidate_product_id`, `products`, `environment`, and `measurements`. Each product has `product_id`, `version`, and the exact tested artifact's `artifact_sha256`. The shared `environment` records `environment_id`, `os`, `hardware`, `runtime`, `region`, `concurrency`, and `workload_description`. Use the same cases, trial count, workload, timeout policy, and hardware for every product; the evaluator must verify that these declarations match the actual runs.
 
 Each measurement has `case_id`, `product_id`, `trial` (starting at 1), `action` (`block`, `approval`, `allow`, `unsupported`, `timeout`, or `error`), `phase` (`cold_local`, `warm_local`, `remote_reputation`, `policy_refresh`, or `output_inspection`), `latency_ms` (number for completed decisions; `null` otherwise), `raw_evidence_file`, and `raw_evidence_sha256`. Raw files are distinct, relative to the observations file, and checked against their hashes. For every malicious completed decision, record `side_effect_occurred` as an observed boolean. A denied response with a completed protected side effect is a failure. Never infer this boolean from the product's own verdict alone.
+
+Each measurement may also carry `cpu_percent` (CPU utilization in percent; a multi-core host may report more than 100, and any finite value `>= 0` is accepted) and `rss_mb` (resident set size in MiB, finite and `>= 0`). Both are optional so an existing corpus keeps working. **Absent means unmeasured, not zero:** a statistic with no observation reports `measured: false`, `observations: 0` and `null` for every percentile and for the peak, and `report.gates.resource_measured` is `false`. The gate is `true` only when the candidate product has at least one completed decision row and every completed decision row carries both fields. Statistics are computed from completed decision rows only, exactly like latency, and a negative, `NaN`, or infinite value is rejected rather than clamped.
+
+### Blind-holdout contamination guard
+
+Validation is fail-closed before any report exists. Each refusal carries a stable `holdout guard failed [<reason>] <subject>: <detail>` message naming the offending case, and the outcome is also visible as `report.gates.holdout_partition_blind` and `report.gates.holdout_no_case_overlap`:
+
+| Reason | Refused corpus |
+| --- | --- |
+| `case_id_in_multiple_partitions` | One `case_id` is declared in both partitions. |
+| `duplicate_case_content` | Two cases in different partitions have identical normalized content (identical `content_sha256`). |
+| `content_sha256_mismatch` | A declared `content` does not hash to the declared `content_sha256`. |
+| `cross_partition_derivation` | A case's `derived_from_case_id` points at a case in the other partition. |
+| `unknown_derivation_reference`, `self_derivation_reference`, `duplicate_derivation_field` | The derivation reference does not resolve, points at itself, or both field names are present. |
+| `holdout_partition_empty` | No `holdout` case is declared. |
+| `holdout_single_oracle_class` | The holdout holds only `malicious` or only `benign` cases. |
+| `undeclared_partition_trial_difference`, `declared_partition_trials_mismatch` | Per-partition trial counts differ without a corpus declaration, or a declaration disagrees with the observations. |
+
+An existing corpus without `content_sha256` is rejected until the owner declares the digest; that is intentional, because the guard cannot be evaluated without a content identity.
+
+## Sold scope and the committed scaffold
+
+`scripts/benchmarks/sold-scope.json` is the machine-readable denominator of what the product actually sells: the attack families the shipped rules and detection modules implement, the sold connectors from `deploy/native/support-matrix.json#soldConnectorScope`, and the interception surfaces (each with whether the product enforces or only observes today). Every entry carries the repository path that justifies it, and families with no shipped verdict path are listed under `out_of_scope_with_reason` instead. It is a scope declaration, not evidence.
+
+`scripts/benchmarks/corpus.template.json` is a structurally valid, **empty** corpus scaffold whose `scope` block is generated from the sold-scope file. It contains no case, digest, evaluator identity or measurement, and it fails the sold-scope check on purpose. `node scripts/benchmarks/evaluate.mjs --corpus scripts/benchmarks/corpus.template.json --scope-file scripts/benchmarks/sold-scope.json` (also `pnpm run benchmark:scope`) reads only the corpus and the sold scope, reports the coverage verdict without needing observations, an attestation or a public key, and exits non-zero until a real corpus covers the sold scope.
+
+With `--scope-file`, the analysis additionally asserts that
+
+- the corpus's `required_attack_families`, `required_connectors` and `required_surfaces` equal the sold scope exactly - a missing id, an extra id or a duplicate is rejected; and
+- every required family, connector and surface has at least `required_scenarios_per_family.minimum_malicious_cases` malicious cases and at least `minimum_benign_twins` benign cases declaring the same item.
+
+A failure is fail-closed before any report exists and carries a stable token naming the item, for example `sold scope check failed [scope_attack_family_benign_twin_missing] attack family "shell-obfuscation": the corpus declares 0 benign twin(s) but the sold scope requires at least 2`. `report.gates.sold_scope_checked` is `true` only when a scope file was supplied and the check passed, and it says nothing about whether any case was detected. Without `--scope-file` every flag and gate behaves exactly as before.
 
 ## Run
 
@@ -24,9 +61,10 @@ An external evaluator holds an Ed25519 private key outside the repository. After
 ```text
 node scripts/benchmarks/attest.mjs --corpus <corpus.json> --observations <observations.json> --private-key <evaluator-private.pem> --evaluator-id <independent-evaluator-id> --output <attestation.json>
 node scripts/benchmarks/evaluate.mjs --corpus <corpus.json> --observations <observations.json> --attestation <attestation.json> --public-key <evaluator-public.pem> --output <report.json>
+node scripts/benchmarks/evaluate.mjs --corpus <corpus.json> --scope-file scripts/benchmarks/sold-scope.json --observations <observations.json> --attestation <attestation.json> --public-key <evaluator-public.pem> --output <report.json>
 node --test scripts/benchmarks/evaluate.test.mjs
 ```
 
 The trust owner must bind the evaluator identity to the public-key fingerprint and establish independence, authorization, oracle quality, release candidate identity, environment equality, and protected side-effect evidence outside this tool. The signature proves integrity and possession of a private key, not those facts.
 
-The report retains all case/trial/product combinations. Missing, unsupported, timeout, and error outcomes stay in the malicious and benign denominators and cannot increase prevention. It separates prevention (block plus no side effect), held approvals, false blocks, false approvals, and latency p50/p95/p99 by phase. It reports development and holdout, family, connector, and surface separately, with Wilson 95% intervals for rates. Latency excludes non-decisions and reports its sample count. The 1,000 measured benign calls per connector gate is visible but does not by itself certify a false-positive target. No overall winner, zero-false-positive, evasion-resistance, SLA, or best-product claim is generated.
+The report retains all case/trial/product combinations. Missing, unsupported, timeout, and error outcomes stay in the malicious and benign denominators and cannot increase prevention. It separates prevention (block plus no side effect), held approvals, false blocks, false approvals, and latency p50/p95/p99 by phase. It reports development and holdout, family, connector, and surface separately, with Wilson 95% intervals for rates. It also reports `resources` (`cpu_percent` and `rss_mb`, each with `measured`, `observations`, `p50`, `p95`, `peak`) and `resources_by_phase` per product and per dimension. Latency excludes non-decisions and reports its sample count; resource statistics do too, and an unmeasured statistic is `null` with `observations: 0` rather than `0`. `report.gates` records `holdout_partition_blind`, `holdout_no_case_overlap`, and `resource_measured` alongside the existing gates. The 1,000 measured benign calls per connector gate is visible but does not by itself certify a false-positive target. No overall winner, zero-false-positive, evasion-resistance, SLA, or best-product claim is generated.

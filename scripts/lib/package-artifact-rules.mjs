@@ -1,0 +1,29 @@
+/**
+ * Packaging rules shared by the release artifact gates.
+ *
+ * `check-no-sourcemaps.mjs` and `verify-package-install.mjs` must agree on what
+ * counts as debug/source leakage. The rules live here instead of being restated
+ * in each gate, so a release artifact can never satisfy one gate and fail the
+ * other for the same bytes.
+ *
+ * Keep this module dependency-free: every gate and its `node --test` suite
+ * imports it directly.
+ */
+
+import path from "node:path";
+
+/** Directories that are never part of a shipped release artifact. */
+export const IGNORE_DIRS = new Set(["node_modules", ".git", ".changeset", ".pnpm", ".vscode", ".idea"]);
+
+export const SOURCE_MAPPING_DIRECTIVE_RE = /^[ \t]*(?:\/\/#|\/\*#)\s*sourceMappingURL\s*[:=]/m;
+export const SOURCE_URL_DIRECTIVE_RE = /^[ \t]*(?:\/\/#|\/\*#)\s*sourceURL\s*[:=]/m;
+
+/** True when the file name carries debug/sourcemap information. */
+export function isSourceMapFile(fileName) {
+	return fileName.endsWith(".map");
+}
+
+/** True when the directory is the one release artifacts are emitted into. */
+export function isDistDir(dirPath) {
+	return path.basename(dirPath) === "dist";
+}
