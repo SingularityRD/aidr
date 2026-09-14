@@ -5,9 +5,42 @@ import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
 import { matchPackageIntel } from "./intel/api.js";
 import { loadMergedIntelFromDisk } from "./intel/loader.js";
+import { parseJsonc } from "./jsonc.js";
 import { loadRevocationsCache } from "./managed.js";
 import { extractPackagesFromCommand, extractPackagesFromManifest } from "./package-extractor.js";
 import type { Artifact, Config, Verdict } from "./types.js";
+
+/**
+ * True only for a JSON/JSONC document whose root can hold server records.
+ * Matches the inventory reader's `invalid_inventory_root` rule so both call
+ * sites agree on what counts as an unreadable inventory file.
+ */
+function asInventoryRoot(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** One configured inventory file, read through the shared JSONC reader. */
+type InventoryFileRead =
+	| { status: "read"; servers: Record<string, { command?: string; args?: string[] }> }
+	| { status: "missing" }
+	| { status: "unreadable" };
+
+async function readInventoryFile(resolvedPath: string): Promise<InventoryFileRead> {
+	let content: string;
+	try {
+		content = await getFileContent(resolvedPath, "utf-8");
+	} catch (error) {
+		// An absent path is "not configured here"; anything else (permissions,
+		// I/O) is a present inventory we could not read.
+		return {
+			status: (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable",
+		};
+	}
+	const parsed = parseJsonc(content);
+	if (parsed.status !== "ok" || !asInventoryRoot(parsed.value)) return { status: "unreadable" };
+	const root = parsed.value as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
+	return { status: "read", servers: root.mcpServers ?? {} };
+}
 
 function normalizePathForCompare(p: string): string {
 	const normalized = p.replace(/\\/g, "/");
@@ -572,35 +605,24 @@ export async function evaluatePolicy(
 
 			let isInInventory = false;
 			let isRiskyServer = false;
+			const unreadableInventoryPaths: string[] = [];
 
 			const inventoryPaths = config.policy.mcp.inventory_paths ?? [];
 			for (const invPath of inventoryPaths) {
-				try {
-					const resolved = resolvePath(invPath);
-					const content = await getFileContent(resolved, "utf-8").catch(() => null);
-					if (!content) continue;
+				const resolved = resolvePath(invPath);
+				const read = await readInventoryFile(resolved);
+				if (read.status === "missing") continue;
+				if (read.status === "unreadable") {
+					unreadableInventoryPaths.push(resolved);
+					continue;
+				}
 
-					const parsed = JSON.parse(content) as {
-						mcpServers?: Record<string, { command?: string; args?: string[] }>;
-					};
-					const servers = parsed.mcpServers ?? {};
-					const serverCfg = servers[mcpServerId];
-
-					if (serverCfg) {
-						isInInventory = true;
-						const cmd = (serverCfg.command ?? "").toLowerCase();
-						if (
-							cmd === "bash" ||
-							cmd === "sh" ||
-							cmd === "zsh" ||
-							cmd === "npx" ||
-							cmd === "npx--yes"
-						) {
-							isRiskyServer = true;
-						}
-					}
-				} catch {
-					// Ignore invalid inventory files
+				const serverCfg = read.servers[mcpServerId];
+				if (!serverCfg) continue;
+				isInInventory = true;
+				const cmd = (serverCfg.command ?? "").toLowerCase();
+				if (cmd === "bash" || cmd === "sh" || cmd === "zsh" || cmd === "npx" || cmd === "npx--yes") {
+					isRiskyServer = true;
 				}
 			}
 
@@ -631,6 +653,37 @@ export async function evaluatePolicy(
 					});
 				}
 				return null;
+			}
+
+			// A coverage gap is not the same fact as "server not in inventory": the
+			// file exists but could not be parsed, so its servers (and their risk
+			// hints) are unknown. It is never resolved to allow.
+			if (!isInInventory && unreadableInventoryPaths.length > 0) {
+				const reasons = [
+					`MCP inventory unreadable: ${unreadableInventoryPaths.join(", ")}`,
+				];
+				if (config.policy.mcp.unknown_server_action === "block") {
+					return makeVerdict({
+						decision: "deny",
+						category: "mcp_tool_call",
+						severity: "critical",
+						source: "policy",
+						artifact: fullToolId,
+						threatId: "POL-MCP-008",
+						reasons,
+						confidence: 0.9,
+					});
+				}
+				return makeVerdict({
+					decision: "ask",
+					category: "mcp_tool_call",
+					severity: "warning",
+					source: "policy",
+					artifact: fullToolId,
+					threatId: "POL-MCP-008",
+					reasons,
+					confidence: 0.9,
+				});
 			}
 
 			if (!isInInventory) {

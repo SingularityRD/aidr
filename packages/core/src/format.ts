@@ -187,6 +187,26 @@ export function formatSessionStartMessage(version: string, result: SessionStartR
 	}
 	const message = result.scanResults.length > 0 ? formatThreatBanner(version, result.scanResults, result.versionCheck) : formatStartupClean(version, result.versionCheck);
 	if (!result.posture) return message;
-	const { mcpServers, riskyMcpServers, invalidSources, infrastructure } = result.posture;
-	return `${message}\nMCP inventory: ${mcpServers} configured, ${riskyMcpServers} with risk indicators, ${invalidSources} unreadable sources. Configuration discovery does not verify server trust.\nAI infrastructure policy assessment: ${infrastructure}.`;
+	const {
+		mcpServers,
+		riskyMcpServers,
+		invalidSources,
+		mcpCoverage,
+		mcpServersNotEnumerated,
+		mcpSourcesNotEnumerated,
+		infrastructure,
+	} = result.posture;
+	const gapParts: string[] = [];
+	if (mcpServersNotEnumerated > 0) {
+		gapParts.push(`${mcpServersNotEnumerated} server entries were unusable`);
+	}
+	if (mcpSourcesNotEnumerated > 0) {
+		gapParts.push(`${mcpSourcesNotEnumerated} source(s) could not be read at all`);
+	}
+	const gapNote = gapParts.length > 0 ? ` ${gapParts.join("; ")}.` : "";
+	// Coverage is stated out loud: an unreadable source must never be presented
+	// as a complete inventory.
+	const coverageWarning =
+		mcpCoverage === "read" ? "" : ` Inventory coverage is ${mcpCoverage}, not complete.`;
+	return `${message}\nMCP inventory: ${mcpServers} configured, ${riskyMcpServers} with risk indicators, ${invalidSources} unreadable sources.${coverageWarning}${gapNote} Configuration discovery does not verify server trust.\nAI infrastructure policy assessment: ${infrastructure}.`;
 }

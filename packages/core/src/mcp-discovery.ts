@@ -18,8 +18,19 @@ export async function discoverMcpServers(paths?: string[]) {
 		schema_version: 1,
 		scanned_at: new Date().toISOString(),
 		scope:
-			"Local JSON MCP configurations; not cloud-wide discovery or tool-description attestation",
+			"Local JSON/JSONC MCP configurations; not cloud-wide discovery or tool-description attestation",
 		sources: report.sources,
+		// Coverage is published next to `servers` so an unreadable configuration
+		// is reported as a gap instead of as an empty (but complete) inventory.
+		coverage: {
+			status: report.coverage.status,
+			total_sources: report.coverage.totalSources,
+			read_sources: report.coverage.readSources,
+			missing_sources: report.coverage.missingSources,
+			invalid_sources: report.coverage.invalidSources,
+			servers_not_enumerated: report.coverage.serversNotEnumerated,
+			sources_not_enumerated: report.coverage.sourcesNotEnumerated,
+		},
 		servers: report.items.map((item) => {
 			let endpoint: string | null = null;
 			try {

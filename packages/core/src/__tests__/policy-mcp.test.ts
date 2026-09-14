@@ -115,4 +115,60 @@ describe("MCP policy enforcement", () => {
 		expect(verdict?.artifacts).toEqual(["filesystem.read_file"]);
 		expect(verdict?.reasons.join(" ")).toContain("requires approval");
 	});
+
+	it("does not treat an unparseable inventory file as an empty inventory", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-policy-"));
+		const cfg = join(dir, "claude_desktop_config.json");
+		// Truncated mid-document. `JSON.parse` throws, so the server used to fall
+		// through to `unknown_server_action: "allow"` and be allowed silently.
+		await writeFile(cfg, '{ "mcpServers": { "filesystem": { "command": "bash" ');
+		const config = ConfigSchema.parse({
+			policy: {
+				enabled: true,
+				mcp: {
+					enabled: true,
+					inventory_paths: [cfg],
+					unknown_server_action: "allow",
+				},
+			},
+		});
+
+		const verdict = await evaluatePolicy("mcp__filesystem__read_file", [], config, {});
+
+		expect(verdict?.decision).toBe("ask");
+		expect(verdict?.matchedThreatId).toBe("POL-MCP-008");
+		expect(verdict?.reasons.join(" ")).toContain("inventory unreadable");
+		expect(verdict?.reasons.join(" ")).not.toContain("not in inventory");
+	});
+
+	it("reads a JSONC inventory file so risk escalation still applies", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-policy-jsonc-"));
+		const cfg = join(dir, "mcp.json");
+		await writeFile(
+			cfg,
+			[
+				"{",
+				"  // JSONC host config",
+				'  "mcpServers": {',
+				'    "filesystem": { "command": "bash", "args": ["--allow-all", "/"], },',
+				"  },",
+				"}",
+			].join("\n"),
+		);
+		const config = ConfigSchema.parse({
+			policy: {
+				enabled: true,
+				mcp: {
+					enabled: true,
+					inventory_paths: [cfg],
+				},
+			},
+		});
+
+		const verdict = await evaluatePolicy("mcp__filesystem__read_file", [], config, {});
+
+		expect(verdict?.decision).toBe("deny");
+		expect(verdict?.matchedThreatId).toBe("POL-MCP-001");
+		expect(verdict?.reasons.join(" ")).toContain("shell_wrapper_command");
+	});
 });

@@ -1,5 +1,6 @@
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
+import { parseJsonc } from "./jsonc.js";
 
 export interface McpInventoryItem {
 	name: string;
@@ -64,22 +65,30 @@ function inventoryItemFromEntry(
 	};
 }
 
+interface ParsedServers {
+	items: McpInventoryItem[];
+	/** Names present in the file that are not usable server records. */
+	skippedNames: string[];
+}
+
 function parseServerRecord(
 	servers: Record<string, unknown> | null | undefined,
 	sourcePath: string,
-): McpInventoryItem[] {
-	if (!servers) return [];
+): ParsedServers {
+	if (!servers) return { items: [], skippedNames: [] };
 	const items: McpInventoryItem[] = [];
+	const skippedNames: string[] = [];
 	for (const [name, raw] of Object.entries(servers)) {
 		const item = inventoryItemFromEntry(name, raw, sourcePath);
 		if (item) items.push(item);
+		else skippedNames.push(name);
 	}
-	return items;
+	return { items, skippedNames };
 }
 
-function parseMcpServers(data: unknown, sourcePath: string): McpInventoryItem[] {
+function parseMcpServers(data: unknown, sourcePath: string): ParsedServers {
 	const root = asRecord(data);
-	if (!root) return [];
+	if (!root) return { items: [], skippedNames: [] };
 
 	const nestedMcp = asRecord(root.mcp);
 	const nestedMcpServers = asRecord(nestedMcp?.servers);
@@ -92,20 +101,103 @@ function parseMcpServers(data: unknown, sourcePath: string): McpInventoryItem[] 
 
 	const items: McpInventoryItem[] = [];
 	const seen = new Set<string>();
+	const skippedNames = new Set<string>();
 	for (const servers of candidates) {
-		for (const item of parseServerRecord(servers, sourcePath)) {
+		const parsed = parseServerRecord(servers, sourcePath);
+		for (const name of parsed.skippedNames) skippedNames.add(name);
+		for (const item of parsed.items) {
 			const key = `${item.sourcePath}\0${item.name}`;
 			if (seen.has(key)) continue;
 			seen.add(key);
 			items.push(item);
 		}
 	}
-	return items;
+	// A name that was unusable in one config shape but enumerated in another is
+	// not a gap.
+	for (const item of items) skippedNames.delete(item.name);
+	return { items, skippedNames: [...skippedNames] };
+}
+
+export type McpInventorySourceStatus = "read" | "missing" | "invalid";
+
+/**
+ * Aggregate readability of the configured inventory sources.
+ *
+ * `read` means every source that exists was enumerated (absent files are not a
+ * gap: there is nothing to enumerate). `partial` / `invalid` mean at least one
+ * present source could not be enumerated, so the item list is incomplete and
+ * must never be treated as a full inventory.
+ */
+export type McpInventoryCoverageStatus = "read" | "missing" | "invalid" | "partial";
+
+export interface McpInventoryCoverage {
+	status: McpInventoryCoverageStatus;
+	/** Configured sources examined. */
+	totalSources: number;
+	/** Sources enumerated successfully. */
+	readSources: number;
+	/** Configured sources that do not exist. */
+	missingSources: number;
+	/** Sources that exist but could not be parsed or read. */
+	invalidSources: number;
+	/**
+	 * Server entries visible in a readable source that could not be turned into
+	 * inventory items (malformed records).
+	 */
+	serversNotEnumerated: number;
+	/**
+	 * Sources whose server list is entirely unknown because the file could not
+	 * be parsed. Each one is a coverage gap: it may declare any number of
+	 * servers, including risky ones, so the true server count is unknowable.
+	 */
+	sourcesNotEnumerated: number;
 }
 
 export interface McpInventoryReport {
 	items: McpInventoryItem[];
-	sources: Array<{ path: string; status: "read" | "missing" | "invalid" }>;
+	sources: Array<{ path: string; status: McpInventorySourceStatus }>;
+	coverage: McpInventoryCoverage;
+}
+
+interface InventorySourceRead {
+	status: McpInventorySourceStatus;
+	items: McpInventoryItem[];
+	serversNotEnumerated: number;
+}
+
+/**
+ * Enumerate one configured source.
+ *
+ * JSONC is the normal shape of `.vscode/mcp.json` and friends, so a strict
+ * `JSON.parse` here would record a readable file as invalid and silently empty
+ * the inventory.
+ */
+async function readInventorySource(path: string): Promise<InventorySourceRead> {
+	try {
+		const content = await getFileContent(path);
+		if (content.length > 2 * 1024 * 1024) throw new Error("inventory_source_too_large");
+		const parsed = parseJsonc(content);
+		if (parsed.status !== "ok") throw new Error(`invalid_inventory_json:${parsed.error}`);
+		if (!asRecord(parsed.value) || Array.isArray(parsed.value)) {
+			throw new Error("invalid_inventory_root");
+		}
+		const servers = parseMcpServers(parsed.value, path);
+		return { status: "read", items: servers.items, serversNotEnumerated: servers.skippedNames.length };
+	} catch (error) {
+		return {
+			status: (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "invalid",
+			items: [],
+			serversNotEnumerated: 0,
+		};
+	}
+}
+
+function coverageStatus(
+	readSources: number,
+	invalidSources: number,
+): McpInventoryCoverageStatus {
+	if (invalidSources > 0) return readSources > 0 ? "partial" : "invalid";
+	return readSources > 0 ? "read" : "missing";
 }
 
 export async function inspectMcpServerInventory(configPaths?: string[]): Promise<McpInventoryReport> {
@@ -129,19 +221,31 @@ export async function inspectMcpServerInventory(configPaths?: string[]): Promise
 	);
 	const all: McpInventoryItem[] = [];
 	const sources: McpInventoryReport["sources"] = [];
+	let serversNotEnumerated = 0;
 	for (const path of paths) {
-		try {
-			const content = await getFileContent(path);
-			if (content.length > 2 * 1024 * 1024) throw new Error("inventory_source_too_large");
-			const parsed = JSON.parse(content) as unknown;
-			if (!asRecord(parsed) || Array.isArray(parsed)) throw new Error("invalid_inventory_root");
-			all.push(...parseMcpServers(parsed, path));
-			sources.push({ path, status: "read" });
-		} catch (error) {
-			sources.push({ path, status: (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "invalid" });
-		}
+		const read = await readInventorySource(path);
+		all.push(...read.items);
+		serversNotEnumerated += read.serversNotEnumerated;
+		sources.push({ path, status: read.status });
 	}
-	return { items: all, sources };
+
+	const readSources = sources.filter((source) => source.status === "read").length;
+	const missingSources = sources.filter((source) => source.status === "missing").length;
+	const invalidSources = sources.filter((source) => source.status === "invalid").length;
+
+	return {
+		items: all,
+		sources,
+		coverage: {
+			status: coverageStatus(readSources, invalidSources),
+			totalSources: sources.length,
+			readSources,
+			missingSources,
+			invalidSources,
+			serversNotEnumerated,
+			sourcesNotEnumerated: invalidSources,
+		},
+	};
 }
 
 export async function loadMcpServerInventory(configPaths?: string[]): Promise<McpInventoryItem[]> {

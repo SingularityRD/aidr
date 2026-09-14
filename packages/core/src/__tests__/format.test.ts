@@ -231,4 +231,41 @@ describe("core format helpers", () => {
 			}),
 		).toBe("Singularity AIDR v1.0.0 - Disabled (disabled)");
 	});
+
+	it("reports an MCP inventory coverage gap instead of a complete inventory", () => {
+		const gapped = formatSessionStartMessage("1.0.0", {
+			enabled: true,
+			scanResults: [],
+			versionCheck: null,
+			posture: {
+				mcpServers: 0,
+				riskyMcpServers: 0,
+				invalidSources: 1,
+				mcpCoverage: "invalid",
+				mcpServersNotEnumerated: 0,
+				mcpSourcesNotEnumerated: 1,
+				infrastructure: "inactive",
+			},
+		});
+		expect(gapped).toContain("Inventory coverage is invalid, not complete");
+		expect(gapped).toContain("1 source(s) could not be read at all");
+
+		// A fully readable inventory must not be presented as a gap.
+		const complete = formatSessionStartMessage("1.0.0", {
+			enabled: true,
+			scanResults: [],
+			versionCheck: null,
+			posture: {
+				mcpServers: 2,
+				riskyMcpServers: 0,
+				invalidSources: 0,
+				mcpCoverage: "read",
+				mcpServersNotEnumerated: 0,
+				mcpSourcesNotEnumerated: 0,
+				infrastructure: "inactive",
+			},
+		});
+		expect(complete).toContain("MCP inventory: 2 configured");
+		expect(complete).not.toContain("not complete");
+	});
 });

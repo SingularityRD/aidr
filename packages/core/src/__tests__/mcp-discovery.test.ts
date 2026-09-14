@@ -35,6 +35,88 @@ describe("MCP discovery evidence", () => {
 		}
 	});
 
+	it("reads a JSONC configuration with comments and a trailing comma", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-discover-jsonc-"));
+		try {
+			const path = join(dir, "mcp.json");
+			// The shape of the `.vscode/mcp.json` family: line comments, a block
+			// comment and trailing commas, plus `//` and `,` inside string values.
+			await writeFile(
+				path,
+				[
+					"{",
+					"  // VS Code-style MCP hosts accept comments",
+					'  "servers": {',
+					'    "filesystem": {',
+					'      "command": "bash",',
+					'      "args": ["--allow-all", "/"], // risky wrapper',
+					"    },",
+					"  },",
+					"  /* a block comment */",
+					'  "notes": "see https://example.test/a//b, then c,",',
+					"}",
+				].join("\n"),
+			);
+			const report = await discoverMcpServers([path]);
+			expect(report.sources[0]?.status).toBe("read");
+			expect(report.coverage.status).toBe("read");
+			expect(report.coverage.invalid_sources).toBe(0);
+			expect(report.coverage.servers_not_enumerated).toBe(0);
+			expect(report.servers).toHaveLength(1);
+			expect(report.servers[0]?.name).toBe("filesystem");
+			expect(report.servers[0]?.risk_hints).toContain("shell_wrapper_command");
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("reports an unreadable inventory file as a coverage gap instead of an empty inventory", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-discover-gap-"));
+		try {
+			const path = join(dir, "mcp.json");
+			// Truncated mid-document: no tolerant reader may accept this.
+			await writeFile(path, '{ "servers": { "filesystem": { "command": "bash" ');
+			const report = await discoverMcpServers([path]);
+			expect(report.servers).toHaveLength(0);
+			expect(report.sources[0]?.status).toBe("invalid");
+			expect(report.coverage.status).toBe("invalid");
+			expect(report.coverage.read_sources).toBe(0);
+			expect(report.coverage.invalid_sources).toBe(1);
+			expect(report.coverage.sources_not_enumerated).toBe(1);
+			expect(report.coverage.status).not.toBe("read");
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("distinguishes a partial inventory from a complete or empty one", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-discover-partial-"));
+		try {
+			const good = join(dir, "good.json");
+			const broken = join(dir, "broken.json");
+			await writeFile(
+				good,
+				JSON.stringify({
+					mcpServers: { ok: { command: "node" }, malformed: "not a server record" },
+				}),
+			);
+			await writeFile(broken, '{ "mcpServers": { "truncated":');
+			const report = await discoverMcpServers([good, broken, join(dir, "absent.json")]);
+			expect(report.servers.map((server) => server.name)).toEqual(["ok"]);
+			expect(report.coverage.status).toBe("partial");
+			expect(report.coverage.total_sources).toBe(3);
+			expect(report.coverage.read_sources).toBe(1);
+			expect(report.coverage.invalid_sources).toBe(1);
+			expect(report.coverage.missing_sources).toBe(1);
+			// A malformed record inside a readable file is countable; an unreadable
+			// source is not, so it is reported as an unenumerated source instead.
+			expect(report.coverage.servers_not_enumerated).toBe(1);
+			expect(report.coverage.sources_not_enumerated).toBe(1);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("binds stable IDs to canonical source and configured alias", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "aidr-discover-id-"));
 		try {

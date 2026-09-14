@@ -6,6 +6,7 @@
 import { isCommercialBuild } from "./build-flavor.js";
 import { inspectInfrastructurePolicy } from "./aig-policy.js";
 import { discoverMcpServers } from "./mcp-discovery.js";
+import type { McpInventoryCoverageStatus } from "./mcp-inventory.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { loadConfig, resolvePath } from "./config.js";
 import { pruneOrphanedTmpFiles } from "./file-utils.js";
@@ -57,7 +58,19 @@ export interface SessionStartResult {
 	};
 	scanResults: PluginScanResult[];
 	versionCheck: VersionCheckResult | null;
-	posture?: { mcpServers: number; riskyMcpServers: number; invalidSources: number; infrastructure: string };
+	posture?: {
+		mcpServers: number;
+		riskyMcpServers: number;
+		invalidSources: number;
+		/** Aggregate readability of the MCP inventory sources; never claims a
+		 * complete inventory when a configured source could not be read. */
+		mcpCoverage: McpInventoryCoverageStatus;
+		/** Server records visible in a readable source but not enumerable. */
+		mcpServersNotEnumerated: number;
+		/** Sources whose whole server list is unknown (unparseable files). */
+		mcpSourcesNotEnumerated: number;
+		infrastructure: string;
+	};
 }
 
 export async function runSessionStart(ctx: SessionStartContext): Promise<SessionStartResult> {
@@ -68,7 +81,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 	const [inventory, infrastructure] = await Promise.all([
 		discoverMcpServers(config.policy.mcp.inventory_paths), inspectInfrastructurePolicy(config),
 	]);
-	const posture = { mcpServers: inventory.servers.length, riskyMcpServers: inventory.servers.filter((s) => s.risk_hints.length > 0).length, invalidSources: inventory.sources.filter((s) => s.status === "invalid").length, infrastructure: infrastructure.state };
+	const posture = { mcpServers: inventory.servers.length, riskyMcpServers: inventory.servers.filter((s) => s.risk_hints.length > 0).length, invalidSources: inventory.sources.filter((s) => s.status === "invalid").length, mcpCoverage: inventory.coverage.status, mcpServersNotEnumerated: inventory.coverage.servers_not_enumerated, mcpSourcesNotEnumerated: inventory.coverage.sources_not_enumerated, infrastructure: infrastructure.state };
 
 	if (commercial && config.mode !== "managed") {
 		return {
