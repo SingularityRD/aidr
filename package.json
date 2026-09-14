@@ -105,6 +105,7 @@
 		"verify:repo-hygiene": "node scripts/verify-repo-hygiene.mjs",
 		"verify:backup-offsite": "node --test scripts/deployment-backup-offsite.test.mjs",
 		"verify:offboarding": "node --test scripts/deployment-offboarding.test.mjs scripts/tenant-offboarding-migration.test.mjs",
+		"verify:endpoint-auth-matrix": "node --test scripts/verify-endpoint-auth-matrix.test.mjs",
 		"verify:commercial-gates": "node scripts/verify-commercial-gate-receipts.mjs",
 		"package:customer": "node scripts/customer-kit.mjs",
 		"evidence:index": "node scripts/generate-v8-evidence-index.mjs",

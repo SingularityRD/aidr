@@ -112,6 +112,12 @@ type OperatorContext = { userId: string; tenantId: string };
 type AgentContext = { tenantId: string; agentId: string; keyHash: string };
 
 function commandError(req: Request, error: { code?: string }, fallback: string): Response {
+	// 54000 is the bounded queue's depth rejection: the tenant has reached its
+	// live-command ceiling and must let commands finish (or cancel them) before
+	// queueing more. It is a quota answer, not a transport failure.
+	if (error.code === "54000") {
+		return corsJson(req, 429, { error: "tenant_queue_limit_reached" });
+	}
 	return corsJson(req, rpcStatus(error.code), {
 		error: error.code === "PT409" || error.code === "23505"
 			? "fleet_command_conflict"
@@ -188,12 +194,31 @@ async function agentContext(db: DatabaseClient, req: Request): Promise<AgentCont
 	return { tenantId: key.tenant_id, agentId: key.agent_id, keyHash };
 }
 
-async function handleFleetCommand(req: Request): Promise<Response> {
-	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
-	if (!config.ok) {
-		return configFailure("revocations", config.error, (status, body) =>
-			corsJson(req, status, body));
-	}
+export interface FleetCommandDeps {
+	/** Overrides the service-role client; used by the contract suite. */
+	db?: DatabaseClient;
+}
+
+/** Build the POST fleet-command handler. Exported so the contract suite can drive it. */
+export function createFleetCommandHandler(deps: FleetCommandDeps = {}) {
+	return async function handleFleetCommand(req: Request): Promise<Response> {
+		// Preflight and origin policy are answered before any configuration or
+		// database work, exactly as the module-level request path does.
+		const preflight = handleCors(req);
+		if (preflight) return preflight;
+		const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+		if (!config.ok) {
+			return configFailure("revocations", config.error, (status, body) =>
+				corsJson(req, status, body));
+		}
+		const db = deps.db ?? createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, {
+			auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+		});
+		return handleFleetCommandRequest(req, db);
+	};
+}
+
+async function handleFleetCommandRequest(req: Request, db: DatabaseClient): Promise<Response> {
 	const parsed = await readBoundedJson(req, 4096);
 	if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
 	const body = parsed.value;
@@ -203,9 +228,6 @@ async function handleFleetCommand(req: Request): Promise<Response> {
 	const values = body as Record<string, unknown>;
 	const action = values.action;
 	if (typeof action !== "string") return corsJson(req, 400, { error: "invalid_action" });
-	const db = createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, {
-		auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
-	});
 	try {
 		if (["poll", "ack", "result"].includes(action)) {
 			const identity = await agentContext(db, req);
@@ -325,7 +347,7 @@ async function handleFleetCommand(req: Request): Promise<Response> {
 			ttlSeconds = rollback.ttlSeconds;
 			rollbackOf = rollback.rollbackOf;
 		}
-		const { data, error } = await db.rpc("queue_fleet_response_command", {
+		const { data, error } = await db.rpc("queue_bounded_fleet_response_command", {
 			p_tenant_id: identity.tenantId,
 			p_actor_user_id: identity.userId,
 			p_agent_id: agentId,
@@ -352,10 +374,14 @@ async function handleFleetCommand(req: Request): Promise<Response> {
 	}
 }
 
+const fleetCommand = createFleetCommandHandler();
+
 Deno.serve(async (req) => {
+	// The fleet-command factory owns preflight, configuration ordering and the
+	// POST method guard for its own request path.
+	if (req.method === "POST" || req.method === "OPTIONS") return fleetCommand(req);
 	const preflight = handleCors(req);
 	if (preflight) return preflight;
-	if (req.method === "POST") return handleFleetCommand(req);
 	if (req.method !== "GET") {
 		return json(405, { error: "method_not_allowed" });
 	}
