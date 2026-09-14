@@ -679,11 +679,126 @@ describe("team invitation lifecycle", () => {
 		expect(JSON.stringify(secondBody)).not.toContain(firstSecret);
 	});
 
-	it("treats a different request (same recipient, different role) as a new invitation", async () => {
+	it("rejects a role change for a recipient who already has a pending invitation and leaves exactly one row", async () => {
 		const fake = handlerWith();
-		expect((await fake.handle(post({ ...CREATE, role: "viewer" }))).status).toBe(200);
-		expect((await fake.handle(post({ ...CREATE, role: "admin" }))).status).toBe(200);
-		expect(fake.invitations.map((row) => row.role).sort()).toEqual(["admin", "viewer"]);
+		const first = await fake.handle(post({ ...CREATE, role: "viewer" }));
+		expect(first.status).toBe(200);
+		const created = (await first.json()) as Record<string, unknown>;
+		const createdSecret = secretOf(created.invite_url);
+
+		// The recipient already holds a live viewer invitation. Asking for a
+		// different role is a decision only the operator can make and must not
+		// be answered with a second live link (nor by silently rewriting the
+		// pending row's role).
+		for (const role of ["admin", "member"]) {
+			const conflict = await fake.handle(post({ ...CREATE, role }));
+			expect(conflict.status, `role/${role}`).toBe(409);
+			expect(await conflict.json()).toEqual({ error: "invitation_role_conflict" });
+		}
+
+		// Exactly one pending invitation survives, it still carries the role it
+		// was created with, and the link already handed out is the only one that
+		// redeems.
+		const pending = fake.invitations.filter(
+			(row) => row.accepted_at === null && Date.parse(row.expires_at) > Date.now(),
+		);
+		expect(pending).toHaveLength(1);
+		expect(fake.invitations).toHaveLength(1);
+		expect(pending[0]?.id).toBe(created.invitation_id);
+		expect(pending[0]?.role).toBe("viewer");
+		expect(pending[0]).toMatchObject({ tenant_id: TEAM, email: "new.member@example.com" });
+		expect(redeemable(fake.invitations, createdSecret)).toHaveLength(1);
+		expect(fake.invitations.map((row) => row.role)).not.toContain("admin");
+	});
+
+	it("still creates a new invitation for a different recipient", async () => {
+		const fake = handlerWith();
+		const first = await fake.handle(post({ ...CREATE, email: "First.Member@Example.com", role: "viewer" }));
+		const second = await fake.handle(post({ ...CREATE, email: "second.member@example.com", role: "admin" }));
+		expect([first.status, second.status]).toEqual([200, 200]);
+
+		const firstBody = (await first.json()) as Record<string, unknown>;
+		const secondBody = (await second.json()) as Record<string, unknown>;
+		expect(secondBody.invitation_id).not.toBe(firstBody.invitation_id);
+		expect(fake.invitations.map((row) => row.email).sort()).toEqual([
+			"first.member@example.com",
+			"second.member@example.com",
+		]);
+		// Each recipient keeps an independently redeemable link: the recipient
+		// scope of the conflict check did not collapse distinct invitations.
+		expect(redeemable(fake.invitations, secretOf(firstBody.invite_url))).toHaveLength(1);
+		expect(redeemable(fake.invitations, secretOf(secondBody.invite_url))).toHaveLength(1);
+	});
+
+	it("still resends rather than duplicating when the role is unchanged", async () => {
+		const fake = handlerWith();
+		const request = { ...CREATE, role: "admin" };
+		const first = await fake.handle(post(request));
+		const second = await fake.handle(post(request));
+		expect([first.status, second.status]).toEqual([200, 200]);
+
+		const firstBody = (await first.json()) as Record<string, unknown>;
+		const secondBody = (await second.json()) as Record<string, unknown>;
+		expect(secondBody.invitation_id).toBe(firstBody.invitation_id);
+		expect(fake.invitations).toHaveLength(1);
+		expect((fake.invitations[0] as InvitationRow).role).toBe("admin");
+
+		const firstSecret = secretOf(firstBody.invite_url);
+		const secondSecret = secretOf(secondBody.invite_url);
+		expect(secondSecret).not.toBe(firstSecret);
+		expect(redeemable(fake.invitations, firstSecret)).toHaveLength(0);
+		expect(redeemable(fake.invitations, secondSecret)).toHaveLength(1);
+	});
+
+	it("allows a new invitation after the previous one expired or was revoked", async () => {
+		// An expired row is not pending, so it neither blocks the request nor
+		// turns a different role into a conflict.
+		const expired = handlerWith({
+			invitations: [
+				invitationRow({
+					email: "new.member@example.com",
+					role: "viewer",
+					expires_at: EARLIER,
+					token_hash: sha256Hex("expired-secret"),
+				}),
+			],
+		});
+		const reissued = await expired.handle(post({ ...CREATE, role: "admin" }));
+		expect(reissued.status).toBe(200);
+		const reissuedBody = (await reissued.json()) as Record<string, unknown>;
+		expect(reissuedBody.invitation_id).not.toBe(INVITE);
+		expect(expired.invitations).toHaveLength(2);
+		expect(redeemable(expired.invitations, "expired-secret")).toHaveLength(0);
+		expect(
+			expired.invitations
+				.filter((row) => Date.parse(row.expires_at) > Date.now())
+				.map((row) => row.role),
+		).toEqual(["admin"]);
+		expect(redeemable(expired.invitations, secretOf(reissuedBody.invite_url))).toHaveLength(1);
+
+		// Revocation is an expiry in the past, so a revoked invitation does not
+		// block a later request for a different role either.
+		const revoked = handlerWith();
+		const created = (await (
+			await revoked.handle(post({ ...CREATE, role: "viewer" }))
+		).json()) as Record<string, unknown>;
+		const revoke = await revoked.handle(
+			post({ team_id: TEAM, action: "revoke", invitation_id: created.invitation_id }),
+		);
+		expect(revoke.status).toBe(200);
+
+		const recreated = await revoked.handle(post({ ...CREATE, role: "member" }));
+		expect(recreated.status).toBe(200);
+		const recreatedBody = (await recreated.json()) as Record<string, unknown>;
+		expect(recreatedBody.invitation_id).not.toBe(created.invitation_id);
+		expect(revoked.invitations).toHaveLength(2);
+		expect(redeemable(revoked.invitations, secretOf(created.invite_url))).toHaveLength(0);
+		expect(redeemable(revoked.invitations, secretOf(recreatedBody.invite_url))).toHaveLength(1);
+		expect(
+			revoked.invitations
+				.filter((row) => Date.parse(row.expires_at) > Date.now())
+				.map((row) => row.role),
+		).toEqual(["member"]);
 	});
 
 	it("rotates the token on resend so the previous token stops working", async () => {
