@@ -95,6 +95,33 @@ function safeToolIdentifier(value: unknown): string | undefined {
 	return typeof value === "string" && /^[A-Za-z0-9._:/-]{1,256}$/.test(value) ? value : undefined;
 }
 
+/**
+ * Construct a fresh transcript message. Copying the original record would
+ * retain arbitrary model-visible fields and could execute property getters.
+ */
+function redactedToolResultMessage(
+	toolCallId: string,
+	toolName: string,
+	text: string,
+	isError: boolean,
+	timestamp: number,
+): unknown {
+	return {
+		role: "toolResult",
+		toolCallId,
+		toolName,
+		content: [{ type: "text", text }],
+		details: {
+			aidr: {
+				decision: "replace_persisted_tool_output",
+				boundary: "post_execution_transcript_only",
+			},
+		},
+		isError,
+		timestamp,
+	};
+}
+
 function replaceMessageContent(
 	message: unknown,
 	replacement: string,
@@ -111,27 +138,41 @@ function replaceMessageContent(
 	const isError = safeOwnData(message, "isError");
 	const originalTimestamp = safeOwnData(message, "timestamp");
 
-	// Construct a fresh transcript message. Copying the original record would
-	// retain arbitrary model-visible fields and could execute property getters.
-	return {
-		role: "toolResult",
+	return redactedToolResultMessage(
 		toolCallId,
 		toolName,
-		content: [{ type: "text", text: replacement }],
-		details: {
-			aidr: {
-				decision: "replace_persisted_tool_output",
-				boundary: "post_execution_transcript_only",
-			},
-		},
-		isError: typeof isError === "boolean" ? isError : true,
-		timestamp:
-			typeof originalTimestamp === "number" &&
+		replacement,
+		typeof isError === "boolean" ? isError : true,
+		typeof originalTimestamp === "number" &&
 			Number.isSafeInteger(originalTimestamp) &&
 			originalTimestamp >= 0
-				? originalTimestamp
-				: Date.now(),
-	};
+			? originalTimestamp
+			: Date.now(),
+	);
+}
+
+const PERSIST_INSPECTION_FAILURE_NOTICE =
+	"Singularity AIDR replaced this tool output because the post-execution transcript inspection failed. The tool had already executed; treat the current turn as potentially influenced.";
+const PERSIST_REWRITE_FAILURE_NOTICE =
+	"Singularity AIDR replaced this tool output because the post-execution transcript rewrite failed after the tool had already executed. Treat the current turn as potentially influenced.";
+
+/**
+ * Fail closed at the transcript boundary: never return the original message to
+ * the host. The notice is built from a fresh record, so neither the inspection
+ * error nor a hostile message object can let the original text through.
+ */
+function failClosedPersistedMessage(
+	event: ToolResultPersistEvent,
+	notice: string = PERSIST_INSPECTION_FAILURE_NOTICE,
+): ToolResultPersistResult {
+	try {
+		return { message: replaceMessageContent(event.message, notice, event) };
+	} catch {
+		// Last resort: an identifier-less record still replaces the original text.
+		return {
+			message: redactedToolResultMessage("aidr-redacted", "unknown", notice, true, Date.now()),
+		};
+	}
 }
 
 function persistedToolWarning(inspection: OutputInspection): string {
@@ -178,7 +219,8 @@ const SAFE_REPLY_REPLACEMENT_REASON = "aidr_output_inspection";
 /**
  * OpenClaw output protection spans three different host boundaries:
  * - after_tool_call: observation only, after execution;
- * - tool_result_persist: synchronous transcript rewrite, also after execution;
+ * - tool_result_persist: synchronous transcript rewrite, also after execution,
+ *   which carries a finding observed by after_tool_call for the same tool call;
  * - reply_payload_sending/message_sending: final outbound response rewrite
  *   before channel delivery.
  */
@@ -213,8 +255,43 @@ export class OpenClawOutputProtection {
 		context: OutputHookContext = {},
 	): ToolResultPersistResult | undefined {
 		try {
-			const inspection = inspectBoundedOutput(event.message, "tool_output");
-			if (!requiresOutputProtection(inspection)) return undefined;
+			return this.rewritePersistedResult(event, context);
+		} catch (error) {
+			// The rewrite itself failed, so the boundary was not enforced as
+			// designed. Record that gap and still fail closed instead of handing
+			// the host the untouched original.
+			this.recordPersistBoundaryUnavailable(
+				`tool_result_persist handler failed: ${error instanceof Error ? error.name : typeof error}`,
+			);
+			return failClosedPersistedMessage(event, PERSIST_REWRITE_FAILURE_NOTICE);
+		}
+	}
+
+	private rewritePersistedResult(
+		event: ToolResultPersistEvent,
+		context: OutputHookContext,
+	): ToolResultPersistResult | undefined {
+		let inspection: OutputInspection | undefined;
+		try {
+			const messageInspection = inspectBoundedOutput(event.message, "tool_output");
+			if (requiresOutputProtection(messageInspection)) inspection = messageInspection;
+		} catch (error) {
+			this.logger.error("AIDR: tool-output persistence inspection failed", {
+				boundary: "post_execution_transcript_only",
+				errorType: error instanceof Error ? error.name : typeof error,
+			});
+			return failClosedPersistedMessage(event);
+		}
+
+		// `after_tool_call` runs first and can only observe, so a finding it
+		// recorded for this tool call still has to reach the persisted transcript:
+		// this synchronous rewrite is the last surface that can keep the observed
+		// output away from later transcript reads.
+		const carried = inspection ? undefined : this.observedFindingFor(event, context);
+		const effective = inspection ?? carried?.inspection;
+		if (!effective) return undefined;
+
+		if (inspection) {
 			this.recordPending(
 				event.toolCallId,
 				event.toolName ?? "unknown",
@@ -222,25 +299,89 @@ export class OpenClawOutputProtection {
 				undefined,
 				context,
 			);
-
-			this.logger.warn("AIDR: replacing risky persisted tool output", {
-				boundary: "post_execution_transcript_only",
-				toolName: event.toolName,
-				toolCallId: event.toolCallId,
-				summary: outputInspectionSummary(inspection),
-			});
-			return {
-				message: replaceMessageContent(event.message, persistedToolWarning(inspection), event),
-			};
-		} catch (error) {
-			this.logger.error("AIDR: tool-output persistence inspection failed", {
-				boundary: "post_execution_transcript_only",
-				errorType: error instanceof Error ? error.name : typeof error,
-			});
-			const fallback =
-				"Singularity AIDR replaced this tool output because the post-execution transcript inspection failed. The tool had already executed; treat the current turn as potentially influenced.";
-			return { message: replaceMessageContent(event.message, fallback, event) };
 		}
+
+		this.logger.warn("AIDR: replacing risky persisted tool output", {
+			boundary: "post_execution_transcript_only",
+			...(carried ? { observedBoundary: "post_execution_observation_only" } : {}),
+			toolName: event.toolName,
+			toolCallId: event.toolCallId,
+			summary: outputInspectionSummary(effective),
+		});
+		return {
+			message: replaceMessageContent(event.message, persistedToolWarning(effective), event),
+		};
+	}
+
+	/**
+	 * Record that the post-execution transcript boundary could not be applied:
+	 * the host does not deliver `tool_result_persist` (or registering the handler
+	 * failed), so an observation-only finding cannot be carried into the
+	 * transcript and the original output keeps reaching later reads. The
+	 * limitation must be visible rather than implied to be a clean result.
+	 */
+	recordPersistBoundaryUnavailable(reason: string): void {
+		this.logger.error("AIDR: post-execution transcript boundary was not enforced", {
+			boundary: "post_execution_transcript_only",
+			enforced: false,
+			reason,
+			unenforcedFindingCount: this.trackedFindingCount(),
+		});
+	}
+
+	/**
+	 * Resolve the finding `after_tool_call` observed for the tool call this
+	 * persistence event belongs to. An exact tool-call id match wins; the
+	 * run/session correlation is the compatibility fallback.
+	 */
+	private observedFindingFor(
+		event: ToolResultPersistEvent,
+		context: OutputHookContext,
+	): PendingFinding | undefined {
+		const toolCallId =
+			safeToolIdentifier(event.toolCallId) ??
+			safeToolIdentifier(safeOwnData(event.message, "toolCallId"));
+		if (toolCallId) {
+			const exact = this.findTrackedById(toolCallId);
+			if (exact) return exact;
+		}
+
+		const candidates = this.peekPendingFor(context);
+		if (candidates.length === 0) return undefined;
+
+		const toolName =
+			safeToolIdentifier(event.toolName) ??
+			safeToolIdentifier(safeOwnData(event.message, "toolName"));
+		if (toolName) {
+			const named = candidates.filter((finding) => finding.toolName === toolName);
+			return named.at(-1);
+		}
+
+		// No tool identity on either side: carry the finding only when the
+		// correlation is unambiguous, so an unrelated benign result is not
+		// replaced on a guess.
+		return candidates.length === 1 ? candidates[0] : undefined;
+	}
+
+	private findTrackedById(toolCallId: string): PendingFinding | undefined {
+		const now = this.now();
+		for (const entries of this.pending.values()) {
+			for (const finding of entries.values()) {
+				if (finding.id === toolCallId && finding.expiresAt > now) return finding;
+			}
+		}
+		return undefined;
+	}
+
+	private trackedFindingCount(): number {
+		const now = this.now();
+		const unique = new Set<string>();
+		for (const entries of this.pending.values()) {
+			for (const [id, finding] of entries) {
+				if (finding.expiresAt > now) unique.add(id);
+			}
+		}
+		return unique.size;
 	}
 
 	messageSending(
@@ -326,6 +467,22 @@ export class OpenClawOutputProtection {
 	}
 
 	private pendingFor(context: OutputHookContext): PendingFinding[] {
+		return this.correlatedFindings(context, true);
+	}
+
+	/**
+	 * Look up correlated findings without consuming their delivery window: the
+	 * transcript boundary must not shorten the window the delivery boundary uses
+	 * to withhold a response influenced by the same tool output.
+	 */
+	private peekPendingFor(context: OutputHookContext): PendingFinding[] {
+		return this.correlatedFindings(context, false);
+	}
+
+	private correlatedFindings(
+		context: OutputHookContext,
+		markDelivered: boolean,
+	): PendingFinding[] {
 		const now = this.now();
 		const unique = new Map<string, PendingFinding>();
 		// Prefer the per-turn run id. Session correlation is a compatibility
@@ -335,7 +492,7 @@ export class OpenClawOutputProtection {
 		const keys = exactRunKey ? [exactRunKey] : [sessionKey(context)];
 
 		for (const key of keys) {
-			if (key) this.collectPendingForKey(key, now, unique);
+			if (key) this.collectPendingForKey(key, now, unique, markDelivered);
 		}
 
 		return [...unique.values()];
@@ -345,6 +502,7 @@ export class OpenClawOutputProtection {
 		key: string,
 		now: number,
 		unique: Map<string, PendingFinding>,
+		markDelivered: boolean,
 	): void {
 		const entries = this.pending.get(key);
 		if (!entries) return;
@@ -354,6 +512,7 @@ export class OpenClawOutputProtection {
 				continue;
 			}
 			unique.set(id, finding);
+			if (!markDelivered) continue;
 			finding.deliveredAt ??= now;
 			// When only a session key is available, retain the warning briefly so
 			// every chunk in the same delivery is protected without poisoning the

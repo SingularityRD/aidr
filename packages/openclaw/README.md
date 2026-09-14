@@ -29,10 +29,15 @@ labels them explicitly:
 - `after_tool_call` observes the result after the tool has executed. A finding is
   recorded and correlated with the run when OpenClaw supplies a run or session
   identifier. This hook cannot undo the call or change what the same-turn model
-  already received.
+  already received. When the same tool call reaches `tool_result_persist`, the
+  recorded finding is carried into that transcript rewrite.
 - `tool_result_persist` synchronously replaces risky text before OpenClaw writes
-  it to its transcript. This protects later transcript reuse, but it is still a
+  it to its transcript, including text that only `after_tool_call` observed for
+  the same tool call. This protects later transcript reuse, but it is still a
   **post-execution transcript boundary**, not a pre-consumption tool-result gate.
+  If the host does not deliver this hook (or registering it fails), the connector
+  records the transcript boundary as **not enforced** instead of implying the
+  observed output was contained.
 - `message_sending` scans outbound text and replaces a risky or incompletely
   inspected response before channel delivery. The replacement includes only rule
   identifiers and safe metadata; it never repeats detected content or secrets.
