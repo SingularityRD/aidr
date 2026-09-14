@@ -67,6 +67,28 @@ Every run writes machine-readable evidence to `.e2e-artifacts/release/`:
 
 An exit code of `0` means every manifest assertion was collected, executed and passed. A zero exit code from Vitest alone is not sufficient because Vitest considers skipped suites successful. A missing host, binary, gateway or model credential is therefore an intentional release `NO-GO`, never an automatic pass. Run `pnpm test:e2e:negative` to verify the missing-credential control.
 
+#### Negative credential control vocabulary
+
+`pnpm test:e2e:negative` proves that the release gate refuses to run with credentials
+removed. It never treats an unavailable environment as a product defect, and it never
+turns a genuinely accepted negative case into a skip. Every scenario is classified into
+this fixed vocabulary in `.e2e-artifacts/negative-credentials/summary.json`:
+
+| Status | Meaning |
+|--------|---------|
+| `PASS` | The negative case was correctly refused, and the host/inputs the suite needs are present, so the refusal is attributable to the input the control removed. |
+| `FAIL` | The negative case was wrongly accepted (at least one assertion executed). A product defect; always exits non-zero. |
+| `HOST_UNAVAILABLE` | The host binary or extension host is not installed on this machine. An environment blocker. |
+| `BLOCKED_EXTERNAL` | A credential, gateway or customer input is missing. An environment blocker. |
+| `UNSUPPORTED` | The scenario is not advertised for this platform/architecture. |
+| `SETUP_FAILURE` | The control could not be exercised (missing build artifacts, unreadable evidence, no refusal evidence). Exits non-zero: an unusable control never reports `PASS`. |
+
+Exit code `0` means no negative case was wrongly accepted. When the only non-`PASS`
+scenarios are `HOST_UNAVAILABLE`/`BLOCKED_EXTERNAL`/`UNSUPPORTED`, the summary reports
+`decision: "NO-GO"`, `status: "blocked"` and the exact hosts and inputs that are missing:
+the control observed no product defect, and the release gate `pnpm test:e2e` remains the
+fail-closed `NO-GO` for that environment. Any `FAIL` or `SETUP_FAILURE` exits `1`.
+
 ### Cursor / VS Code E2E Setup
 
 The extension E2E tests run inside a real Extension Host process using installed IDE binaries. They do not download IDEs.
