@@ -67,6 +67,7 @@ describe("audit-export legal-hold barrier", () => {
 	function database(options: DbOptions = {}) {
 		const tables: string[] = [];
 		const inserts: Array<{ table: string; values: unknown }> = [];
+		const rpcs: Array<{ name: string; args: Record<string, unknown> }> = [];
 		const uploads: string[] = [];
 		const signedUrls: string[] = [];
 		const queryFor = (table: string) => {
@@ -119,6 +120,16 @@ describe("audit-export legal-hold barrier", () => {
 					),
 				},
 				from: vi.fn((table: string) => queryFor(table)),
+				rpc: async (name: string, args: Record<string, unknown>) => {
+					rpcs.push({ name, args });
+					// `register_audit_export_object` is the reviewed byte reservation and
+					// it is the retention-ledger write: it inserts the export row under
+					// the tenant advisory lock, before any object is uploaded.
+					if (name === "register_audit_export_object") {
+						return { data: [{ allowed: true, remaining_bytes: 4096 }], error: null };
+					}
+					return { data: null, error: null };
+				},
 				storage: {
 					from: (bucket: string) => ({
 						upload: async (path: string) => {
@@ -139,6 +150,7 @@ describe("audit-export legal-hold barrier", () => {
 			},
 			tables,
 			inserts,
+			rpcs,
 			uploads,
 			signedUrls,
 		};
@@ -171,24 +183,25 @@ describe("audit-export legal-hold barrier", () => {
 	}
 
 	it("refuses an export while an unreleased legal hold exists", async () => {
-		const { handle, tables, inserts, uploads, signedUrls } = await handlerWith({ hold: { id: HOLD_ID } });
+		const { handle, tables, inserts, rpcs, uploads, signedUrls } = await handlerWith({ hold: { id: HOLD_ID } });
 		const response = await handle(post());
 
 		expect(response.status).toBe(409);
 		expect(await response.json()).toMatchObject({ error: "legal_hold_active" });
 
 		// The hold is consulted before any record is read and before any byte is
-		// produced: no page query, no retention ledger row, no stored object and
-		// no download link may exist for a held tenant.
+		// produced: no page query, no byte reservation, no retention ledger row, no
+		// stored object and no download link may exist for a held tenant.
 		expect(tables).toContain("tenant_legal_holds");
 		expect(tables).not.toContain("audit_logs");
 		expect(inserts).toEqual([]);
+		expect(rpcs).toEqual([]);
 		expect(uploads).toEqual([]);
 		expect(signedUrls).toEqual([]);
 	});
 
 	it("proceeds with the export when no unreleased hold exists", async () => {
-		const { handle, tables, inserts, uploads, signedUrls } = await handlerWith({ hold: null });
+		const { handle, tables, inserts, rpcs, uploads, signedUrls } = await handlerWith({ hold: null });
 		const response = await handle(post());
 
 		expect(response.status).toBe(200);
@@ -198,20 +211,30 @@ describe("audit-export legal-hold barrier", () => {
 		expect(body.complete).toBe(true);
 		expect(tables).toContain("tenant_legal_holds");
 		expect(tables).toContain("audit_logs");
-		expect(inserts.map((entry) => entry.table)).toEqual(["audit_export_objects"]);
+		// The retention ledger row is written by the reviewed byte-reservation RPC
+		// under the tenant advisory lock, not by a second client-side insert: `path`
+		// is the primary key, so a duplicate write would fail every export.
+		expect(inserts).toEqual([]);
+		expect(rpcs.map((entry) => entry.name)).toEqual(["register_audit_export_object"]);
+		expect(rpcs[0]?.args).toMatchObject({ p_tenant_id: TENANT, p_limit_bytes: 536870912 });
+		expect(rpcs[0]?.args.p_bytes).toBeGreaterThan(0);
 		expect(uploads).toHaveLength(1);
+		// The reserved path is the stored object: the bytes were accounted for the
+		// exact object that was uploaded.
+		expect(rpcs[0]?.args.p_path).toBe(uploads[0]?.replace("aidr-audit-exports/", ""));
 		expect(signedUrls).toHaveLength(1);
 		expect(String(body.url)).toContain("/storage/v1/object/sign/aidr-audit-exports/");
 	});
 
 	it("fails closed, never open, when the hold state cannot be read", async () => {
-		const { handle, tables, inserts, uploads } = await handlerWith({ holdError: true });
+		const { handle, tables, inserts, rpcs, uploads } = await handlerWith({ holdError: true });
 		const response = await handle(post());
 
 		expect(response.status).toBe(503);
 		expect(await response.json()).toMatchObject({ error: "legal_hold_unavailable" });
 		expect(tables).not.toContain("audit_logs");
 		expect(inserts).toEqual([]);
+		expect(rpcs).toEqual([]);
 		expect(uploads).toEqual([]);
 	});
 });

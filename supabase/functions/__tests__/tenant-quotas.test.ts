@@ -53,6 +53,7 @@ const OTHER_TENANT = "33333333-3333-4333-8333-333333333333";
 const USER = "11111111-1111-4111-8111-111111111111";
 const AGENT = "44444444-4444-4444-8444-444444444444";
 const COMMAND = "55555555-5555-4555-8555-555555555555";
+const HOLD = "66666666-6666-4666-8666-666666666666";
 
 type QueryResult = { data: unknown; error: unknown };
 type RpcCall = { name: string; args: Record<string, unknown> };
@@ -64,6 +65,9 @@ function tableBuilder(result: () => QueryResult) {
 	Object.assign(builder, {
 		select: chain,
 		eq: chain,
+		// The legal-hold barrier reads `.is("released_at", null)` before any export
+		// work; an unfiltered builder would throw and be reported as a generic 503.
+		is: chain,
 		lte: chain,
 		or: chain,
 		order: chain,
@@ -79,6 +83,10 @@ describe("tenant storage byte quota", () => {
 	interface StorageOptions {
 		quota?: QueryResult;
 		rows?: unknown[];
+		/** An unreleased hold the barrier must find, or an explicit absence. */
+		hold?: { id: string } | null;
+		/** Makes the hold read fail the way an unreachable database does. */
+		holdError?: boolean;
 	}
 
 	function database(options: StorageOptions = {}) {
@@ -93,6 +101,15 @@ describe("tenant storage byte quota", () => {
 			if (name === "tenant_identity_policies") return tableBuilder(() => ({ data: { require_mfa: false }, error: null }));
 			if (name === "tenant_members") return tableBuilder(() => ({ data: { role: "owner", expires_at: null }, error: null }));
 			if (name === "tenants") return tableBuilder(() => ({ data: { status: "active" }, error: null }));
+			// The export route's legal-hold barrier is unconditional and runs before
+			// the byte reservation: absent or released means "no active hold".
+			if (name === "tenant_legal_holds") {
+				return tableBuilder(() =>
+					options.holdError
+						? { data: null, error: { code: "08006", message: "connection failure" } }
+						: { data: options.hold ?? null, error: null },
+				);
+			}
 			if (name === "audit_logs") return tableBuilder(() => ({ data: options.rows ?? [], error: null }));
 			return tableBuilder(() => ({ data: null, error: null }));
 		};
@@ -194,6 +211,23 @@ describe("tenant storage byte quota", () => {
 			expect(await response.json()).toMatchObject({ error: "export_retention_unavailable" });
 			expect(broken.upload).not.toHaveBeenCalled();
 		}
+	});
+
+	it("consults the legal-hold barrier before reserving any bytes", async () => {
+		const held = await handlerWith({ hold: { id: HOLD } });
+		const blocked = await held.handle(post());
+		expect(blocked.status).toBe(409);
+		expect(await blocked.json()).toMatchObject({ error: "legal_hold_active" });
+		// A held tenant cannot even reserve budget, let alone store an object.
+		expect(held.rpcCalls).toEqual([]);
+		expect(held.upload).not.toHaveBeenCalled();
+
+		const unreadable = await handlerWith({ holdError: true });
+		const unavailable = await unreadable.handle(post());
+		expect(unavailable.status).toBe(503);
+		expect(await unavailable.json()).toMatchObject({ error: "legal_hold_unavailable" });
+		expect(unreadable.rpcCalls).toEqual([]);
+		expect(unreadable.upload).not.toHaveBeenCalled();
 	});
 
 	it("keeps the byte budget tenant-scoped, bounded and ceiling-checked in SQL", () => {
