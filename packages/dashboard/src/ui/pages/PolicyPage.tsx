@@ -1,3 +1,4 @@
+import { DlpPolicyEditor } from "../../enterprise/dlp-editor";
 import { PolicyEditor } from "../../enterprise/policy-editor";
 import { RuntimePolicyEditor } from "../../enterprise/runtime-policy-editor";
 
@@ -34,6 +35,7 @@ export function PolicyPage() {
 			</div>
 			<PolicyEditor />
 			<RuntimePolicyEditor />
+			<DlpPolicyEditor />
 		</div>
 	);
 }
