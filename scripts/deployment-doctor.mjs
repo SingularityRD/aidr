@@ -8,8 +8,12 @@ import { parseArgs } from "node:util";
 const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, online: { type: "boolean", default: false } } });
 const dir = resolve(values.deployment);
 const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
-const checks = []; const failures = [];
+const checks = []; const failures = []; const unverified = [];
 function check(ok, label) { (ok ? checks : failures).push(label); console.log(`${ok ? "PASS" : "FAIL"} ${label}`); }
+// A control this preflight cannot read on this host is recorded separately and
+// is never reported as PASS: the evidence must not claim a verification that
+// did not happen.
+function unverifiedCheck(label) { unverified.push(label); console.log(`UNVERIFIED ${label}`); }
 for (const entry of manifest.migrations ?? []) {
   const safe = /^\d{14}_[a-z0-9_]+\.sql$/.test(entry.name);
   check(safe && existsSync(join(dir, "migrations", entry.name)) && createHash("sha256").update(readFileSync(join(dir, "migrations", entry.name))).digest("hex") === entry.sha256, `migration ${safe ? entry.name : "invalid path"}`);
@@ -50,6 +54,25 @@ for (const url of [manifest.dashboard_url, manifest.supabase_url]) {
   const parsed = new URL(url);
   check(parsed.protocol === "https:" || (manifest.development && ["localhost", "127.0.0.1"].includes(parsed.hostname)), `HTTPS origin or isolated development: ${parsed.origin}`);
 }
+// Nothing else in the repository verifies that the host armed the retention
+// reaper, so an expired private export can silently outlive its retention
+// window. Only the host's own scheduler can answer this: on a systemd host the
+// timer must be installed and enabled, and where the scheduler cannot be read
+// (non-systemd init, including Windows where the operator may register a
+// scheduled task under any name) the result is recorded as UNVERIFIED rather
+// than assumed installed.
+const retentionReaperTimer = "aidr-export-retention.timer";
+if (process.platform === "linux" && existsSync("/run/systemd/system")) {
+  const probe = spawnSync("systemctl", ["is-enabled", retentionReaperTimer], { encoding: "utf8", timeout: 15000 });
+  const state = (probe.stdout ?? "").trim().split(/\r?\n/)[0] ?? "";
+  if (probe.error) {
+    unverifiedCheck(`retention reaper timer state unreadable: ${retentionReaperTimer} (systemctl ${probe.error.code ?? "unavailable"})`);
+  } else {
+    check(probe.status === 0 && /^enabled/.test(state), `retention reaper timer installed and enabled: ${retentionReaperTimer}${probe.status === 0 ? "" : ` (${state || "not enabled"})`}`);
+  }
+} else {
+  unverifiedCheck(`retention reaper timer not verified: ${retentionReaperTimer} must be installed as a systemd timer or host scheduled task, which a ${process.platform} run cannot inspect`);
+}
 if (manifest.mode === "self-hosted") {
   const config = spawnSync("docker", ["compose", "--project-directory", dir, "-f", join(dir, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 15000 });
   check(config.status === 0, "Docker Compose configuration resolves");
@@ -71,5 +94,6 @@ if (values.online) {
     check(response.ok && settings.disable_signup === true, "authentication service confirms signup is disabled");
   } catch { check(false, "authentication settings reachable"); }
 }
-writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed: failures.length === 0, mode: manifest.mode, online: values.online, checks, failures, scope: "Operational preflight only. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate." }, null, 2));
+if (unverified.length) console.log(`${unverified.length} check(s) UNVERIFIED on this host; none of them was reported as PASS`);
+writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed: failures.length === 0, mode: manifest.mode, online: values.online, checks, failures, unverified, scope: "Operational preflight only. Unverified checks were not confirmed on this host. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate." }, null, 2));
 if (failures.length) process.exitCode = 1;

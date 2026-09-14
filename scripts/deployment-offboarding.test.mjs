@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -188,4 +189,98 @@ test("storage failure never acknowledges deletion", async () => {
 	assert.equal(result.status, 1);
 	assert.equal(acknowledged, false);
 	assert.match(result.stderr, /durable receipts remain resumable/);
+});
+
+test("an unacknowledged cache invalidation leaves the run explicitly incomplete", async () => {
+	const calls = [];
+	const directory = await fixture((request, response) => {
+		calls.push(request.url);
+		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "requested", backup_scope: "excluded_external_retention", backup_exception: "separate backup evidence required" });
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { run_id: runId, status: "running", complete: false, phase: "tenant_cache", action: "invalidate_cache", cache_scope: tenantId });
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, [{ phase: "tenant_cache", status: "running", cache_invalidation_receipt: null }]);
+		return json(response, 404, {});
+	});
+	const result = await run(directory, ["--apply", "--requested-by", operatorId]);
+	assert.equal(result.status, 2, result.stderr);
+	const evidence = JSON.parse(await readFile(path.join(directory, `offboarding-evidence-${tenantId}.json`), "utf8"));
+	assert.equal(evidence.complete, false);
+	assert.equal(evidence.cache_invalidation.required_for_completion, true);
+	assert.equal(evidence.cache_invalidation.action_returned, true);
+	assert.equal(evidence.cache_invalidation.acknowledged, false);
+	assert.equal(evidence.cache_invalidation.receipt, null);
+	// The driver cannot purge an external cache, so it must never acknowledge it.
+	assert.ok(!calls.includes("/rest/v1/rpc/ack_tenant_offboarding_cache"), "cache acknowledgement must come from the operator, not the driver");
+});
+
+test("a recorded cache receipt is visible in the offboarding evidence", async () => {
+	const receipt = { invalidated: 2, keys: ["tenant:cache:1", "tenant:cache:2"] };
+	const directory = await fixture((request, response) => {
+		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "requested", backup_scope: "excluded_external_retention", backup_exception: "separate backup evidence required" });
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { run_id: runId, status: "completed", complete: true });
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, [{ phase: "tenant_cache", status: "completed", cache_invalidation_receipt: receipt }]);
+		return json(response, 404, {});
+	});
+	const result = await run(directory, ["--apply", "--requested-by", operatorId]);
+	assert.equal(result.status, 0, result.stderr);
+	const evidence = JSON.parse(await readFile(path.join(directory, `offboarding-evidence-${tenantId}.json`), "utf8"));
+	assert.equal(evidence.complete, true);
+	assert.equal(evidence.cache_invalidation.action_returned, false);
+	assert.equal(evidence.cache_invalidation.acknowledged, true);
+	assert.deepEqual(evidence.cache_invalidation.receipt, receipt);
+});
+
+// The deployment doctor covers the retention reaper timer, which is the hourly
+// job that deletes expired private exports. There is no dedicated doctor test
+// file, so this lives with the retention/offboarding script tests.
+async function doctorFixture() {
+	const directory = await mkdtemp(path.join(os.tmpdir(), "aidr-doctor-"));
+	temporaryDirectories.push(directory);
+	await writeFile(
+		path.join(directory, "deployment.json"),
+		JSON.stringify({
+			schema_version: 1,
+			mode: "cloud",
+			development: true,
+			dashboard_url: "http://localhost:8080",
+			supabase_url: "http://127.0.0.1:8000",
+		}),
+	);
+	await writeFile(
+		path.join(directory, ".env"),
+		"SERVICE_ROLE_KEY=test-service-role\nDISABLE_SIGNUP=true\nS3_PROTOCOL_ACCESS_KEY_SECRET=0123456789abcdef0123456789abcdef\n",
+	);
+	await writeFile(path.join(directory, ".env.functions"), "AIDR_SIGNING_KEY=test-signing-key\n");
+	return directory;
+}
+
+function runDoctor(directory) {
+	return spawnSync(process.execPath, [path.resolve("scripts/deployment-doctor.mjs"), "--deployment", directory], {
+		cwd: process.cwd(),
+		encoding: "utf8",
+		timeout: 60_000,
+	});
+}
+
+test("the doctor reports the retention reaper timer honestly instead of assuming it is installed", async () => {
+	const directory = await doctorFixture();
+	const result = runDoctor(directory);
+	assert.ok(existsSync(path.join(directory, "doctor-evidence.json")), result.stderr);
+	const evidence = JSON.parse(await readFile(path.join(directory, "doctor-evidence.json"), "utf8"));
+	const verdicts = [...(evidence.checks ?? []), ...(evidence.failures ?? []), ...(evidence.unverified ?? [])]
+		.filter((label) => String(label).includes("aidr-export-retention.timer"));
+	assert.equal(verdicts.length, 1, `expected exactly one retention reaper verdict: ${JSON.stringify(verdicts)}`);
+	const [verdict] = verdicts;
+	if (process.platform === "linux" && existsSync("/run/systemd/system")) {
+		// A readable host scheduler is definitive: the timer is armed, or it is not.
+		assert.ok([...(evidence.checks ?? []), ...(evidence.failures ?? [])].includes(verdict));
+		assert.doesNotMatch(result.stdout, /UNVERIFIED .*aidr-export-retention\.timer/);
+	} else {
+		// No readable scheduler on this host: the check must stay unverified and
+		// must never be reported as a passed installation check.
+		assert.ok((evidence.unverified ?? []).includes(verdict), "the timer must be recorded as unverified, not assumed installed");
+		assert.ok(!(evidence.checks ?? []).includes(verdict), "the timer must never be a passed check without reading the host scheduler");
+		assert.match(result.stdout, /UNVERIFIED .*aidr-export-retention\.timer/, "the console must state the unverified timer");
+		assert.match(result.stdout, /reported as PASS/);
+	}
+	assert.match(String(evidence.scope ?? ""), /Unverified checks were not confirmed/);
 });

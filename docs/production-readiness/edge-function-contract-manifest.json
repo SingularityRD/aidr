@@ -14,7 +14,7 @@
     },
     "audit-export": {
       "owner": "Platform Engineering",
-      "tests": ["supabase/functions/__tests__/audit-export.test.ts", "supabase/functions/__tests__/export-cursor.test.ts"]
+      "tests": ["supabase/functions/__tests__/audit-export.test.ts", "supabase/functions/__tests__/audit-export-legal-hold.test.ts", "supabase/functions/__tests__/export-cursor.test.ts"]
     },
     "autosecops-runtime": {
       "owner": "Response Engineering",

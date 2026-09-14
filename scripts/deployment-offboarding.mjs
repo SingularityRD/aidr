@@ -147,6 +147,7 @@ if (run.backup_scope !== "excluded_external_retention") {
 let state = run;
 let batches = 0;
 let storageBatches = 0;
+let cacheInvalidationRequired = false;
 while (batches < maxBatches && state.status !== "completed") {
 	state = await request("/rest/v1/rpc/run_tenant_offboarding_batch", "POST", {
 		p_run_id: run.run_id,
@@ -176,12 +177,27 @@ while (batches < maxBatches && state.status !== "completed") {
 		});
 		storageBatches += 1;
 	}
+	if (state.action === "invalidate_cache") {
+		// The cache layer is external to this deployment's database, so this
+		// driver cannot purge it and must not claim that it did. It records the
+		// required scope and stops: the run stays incomplete until an operator
+		// purges the cache and records the receipt through
+		// `ack_tenant_offboarding_cache`.
+		if (typeof state.cache_scope !== "string" || state.cache_scope.toLowerCase() !== tenantId.toLowerCase()) {
+			throw new Error("Offboarding returned a cache scope outside the tenant");
+		}
+		cacheInvalidationRequired = true;
+		break;
+	}
 	if (["blocked_legal_hold", "waiting_retention"].includes(state.status)) break;
 }
 
 const receipts = await request(
-	`/rest/v1/tenant_offboarding_phase_receipts?run_id=eq.${run.run_id}&select=phase,data_class,status,retention_days,eligible_at,rows_deleted,attempts&order=phase_order.asc`,
+	`/rest/v1/tenant_offboarding_phase_receipts?run_id=eq.${run.run_id}&select=phase,data_class,status,retention_days,eligible_at,rows_deleted,attempts,cache_invalidation_receipt&order=phase_order.asc`,
 );
+const cachePhase = Array.isArray(receipts)
+	? receipts.find((receipt) => receipt?.phase === "tenant_cache")
+	: undefined;
 const complete = state.status === "completed";
 const evidence = {
 	checked_at: checkedAt,
@@ -194,6 +210,15 @@ const evidence = {
 	batches,
 	storage_batches: storageBatches,
 	phase_receipts: receipts,
+	cache_invalidation: {
+		phase: "tenant_cache",
+		required_for_completion: true,
+		action_returned: cacheInvalidationRequired,
+		acknowledged: cachePhase?.status === "completed",
+		acknowledged_by: "ack_tenant_offboarding_cache",
+		cache_scope: tenantId,
+		receipt: cachePhase?.cache_invalidation_receipt ?? null,
+	},
 	backup_scope: "excluded_external_retention",
 	backup_exception: run.backup_exception || backupException,
 };
