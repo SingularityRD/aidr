@@ -4,6 +4,11 @@ import { VERSION } from "@singularityrd/aidr-core";
 import { Command } from "commander";
 import collectCommand from "./commands/collect.js";
 import configCommand from "./commands/config.js";
+import {
+	SECRET_STORE_OPTION_DESCRIPTION,
+	revokeKeyCommand,
+	rotateKeyCommand,
+} from "./commands/config-secret.js";
 import discoverCommand from "./commands/discover.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
@@ -20,15 +25,30 @@ program
 	.command("setup")
 	.description("Configure AIDR and install the detected agent hooks")
 	.option("-f, --force", "Replace an existing local configuration")
+	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
 	.action(setupCommand);
 
-program
+const configProgram = program
 	.command("config")
 	.description("Read or update the local AIDR configuration")
 	.option("-g, --get <key>", "Read a dotted configuration key")
 	.option("-s, --set <values...>", "Set a dotted configuration key and value")
 	.option("-l, --list", "Print all configuration values")
 	.action(configCommand);
+
+configProgram
+	.command("rotate-key")
+	.description("Mint a new local credential through the selected secret store")
+	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
+	.option("--json", "Emit a machine-readable rotation receipt")
+	.action(rotateKeyCommand);
+
+configProgram
+	.command("revoke-key")
+	.description("Revoke the local credential in the selected secret store")
+	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
+	.option("--json", "Emit a machine-readable revocation receipt")
+	.action(revokeKeyCommand);
 
 program
 	.command("status")

@@ -24,6 +24,14 @@ vi.mock("node:os", async (importOriginal) => {
 	return { ...actual, homedir: () => testHome };
 });
 
+/**
+ * This suite is about the private FILE store, which is now the explicitly
+ * selected `file-acl` fallback (the OS vault is the default and a silently
+ * chosen plaintext fallback is refused by design). Selecting it here is what
+ * the suite has always been exercising; no assertion is relaxed by it.
+ */
+process.env.AIDR_SECRET_STORE = "file-acl";
+
 const { createConfig, getConfig, updateConfig } = await import("../utils/config-manager.js");
 type Environment = import("../utils/config-manager.js").Environment;
 const configDir = join(testHome, ".singularity-aidr");

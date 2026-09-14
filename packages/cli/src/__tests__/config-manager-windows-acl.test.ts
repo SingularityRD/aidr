@@ -15,6 +15,15 @@ vi.mock("node:os", async (importOriginal) => {
 	return { ...actual, homedir: () => testHome };
 });
 
+/**
+ * This suite pins the ACL-hardened file boundary specifically: it counts the
+ * PowerShell ACL invocations and asserts the credential lands in `config.json`.
+ * That layout is now the explicitly selected `file-acl` fallback, so the suite
+ * selects it instead of relying on it being the silent default. Every assertion
+ * is unchanged.
+ */
+process.env.AIDR_SECRET_STORE = "file-acl";
+
 const { createConfig, getConfig, updateConfig } = await import("../utils/config-manager.js");
 const configDir = join(testHome, ".singularity-aidr");
 const configFile = join(configDir, "config.json");
