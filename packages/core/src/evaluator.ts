@@ -899,18 +899,35 @@ async function runEvaluationPipeline(
 	}
 
 	let urlCheckResults: Awaited<ReturnType<UrlCheckClient["checkUrls"]>> = [];
-	let signedUrlFeedUnavailable = false;
+	// Any DetectionLegUnavailableError from the URL leg is a degradation, whether
+	// or not a signed feed is configured: an endpoint that answered 401/5xx, an
+	// unreachable endpoint, and an endpoint that answered without feed coverage
+	// for some URLs are all "these URLs were NOT checked". Only the configured
+	// signed-feed branch used to set this, so a first-party outage produced a
+	// clean `allow`.
+	let urlLegUnavailable = false;
+	let urlLegUnavailableReason = "the URL reputation leg did not run";
 	const urlsToCheck = cache ? uncachedUrls : urls;
 	if (urlsToCheck.length > 0 && config.url_check.enabled) {
 		try {
 			const client = new UrlCheckClient({ ...config.url_check, reputationFeed: context.reputationFeed }, logger, token);
 			urlCheckResults = await client.checkUrls(urlsToCheck);
 		} catch (error) {
-			if (context.reputationFeed) {
-				signedUrlFeedUnavailable = true;
-				if (error instanceof DetectionLegUnavailableError) {
-					urlCheckResults = error.partialResults.filter(isUrlCheckResult);
-				}
+			if (error instanceof DetectionLegUnavailableError && error.leg === "url_reputation") {
+				urlLegUnavailable = true;
+				urlLegUnavailableReason = error.reason;
+				// Detections from the batches that did run are evidence; the
+				// missing batches are the gap. Keep both.
+				urlCheckResults = error.partialResults.filter(isUrlCheckResult);
+				logger.warn("URL reputation leg did not provide complete inspection", {
+					reason: error.reason,
+					uncheckedCount: error.uncheckedCount,
+				});
+			} else if (context.reputationFeed) {
+				// A configured signed feed must never be silently skipped, so any
+				// other failure while it is configured is still an unavailable leg.
+				urlLegUnavailable = true;
+				urlLegUnavailableReason = error instanceof Error ? error.message : String(error);
 				logger.warn("Configured signed URL feed did not provide complete inspection", {
 					errorType: error instanceof Error ? error.name : typeof error,
 				});
@@ -998,15 +1015,6 @@ async function runEvaluationPipeline(
 			break;
 		}
 	}
-	if (signedUrlFeedUnavailable && verdict.decision === "allow") {
-		verdict = detectorVerdict(
-			"ask",
-			"url_reputation_unavailable",
-			"url_check",
-			"Configured signed URL feed did not provide complete inspection.",
-		);
-	}
-
 	// ── Degraded-detection guard ───────────────────────────────────────
 	//
 	// If heuristics are enabled and there is something to inspect, but no rule
@@ -1043,6 +1051,25 @@ async function runEvaluationPipeline(
 			threatsDir: context.threatsDir,
 			artifacts: request.artifacts.length,
 		});
+	}
+
+	// A URL leg that ran and produced results did not degrade; a leg that did not
+	// run (or covered only part of the requested URLs) did. The guard is
+	// deliberately narrow: it only fires while the leg is enabled, the engine
+	// still says `allow`, and no broader degradation has already been reported.
+	// An operator who disabled `url_check` is making an explicit choice, and that
+	// choice must stay silent rather than degrade every call.
+	//
+	// This sits AFTER the degraded-detection guard on purpose: when the local
+	// rule set is missing entirely, "this call was NOT inspected" is the more
+	// accurate report, and both guards would only ever say `ask`.
+	if (urlLegUnavailable && verdict.decision === "allow") {
+		verdict = detectorVerdict(
+			"ask",
+			"url_reputation_unavailable",
+			"url_check",
+			`URL reputation lookup was unavailable (${urlLegUnavailableReason}), so the URLs in this call were NOT verified clean and require review.`,
+		);
 	}
 	verdict = await applyRuntimeDetectors(request, context, verdict, managedState);
 	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);

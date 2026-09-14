@@ -6,6 +6,7 @@
  * organization, if you override `url_check.endpoint`). Treat it as best-effort:
  * endpoint failures are reported as an unavailable detection leg. A configured
  * signed feed is verified for trust and freshness before its results are used.
+ * An answer that the feed has no row for is unavailable too - never clean.
  */
 
 import { DetectionLegUnavailableError, describeHttpFailure } from "../detection-leg.js";
@@ -21,6 +22,30 @@ import { VERSION } from "../version.js";
 const DEFAULT_TIMEOUT = 5.0;
 const MAX_URLS_PER_REQUEST = 50;
 const SERVICE_NAME = "aidr";
+
+/**
+ * The endpoint's marker for "the reputation store holds no row for this URL".
+ * Kept in sync with `supabase/functions/url-check/index.ts`. An answer that
+ * carries it, or an `unknown` classification, means the URL was NOT checked -
+ * which is not the same value as a checked-and-clean URL.
+ */
+const NO_COVERAGE = "no_data";
+
+type ParsedAnswer =
+	| { kind: "covered"; result: UrlCheckResult }
+	| { kind: "uncovered"; url: string }
+	| null;
+
+function isUrlCheckResult(value: unknown): value is UrlCheckResult {
+	if (!value || typeof value !== "object") return false;
+	const candidate = value as Partial<UrlCheckResult>;
+	return (
+		typeof candidate.url === "string" &&
+		typeof candidate.isMalicious === "boolean" &&
+		Array.isArray(candidate.findings) &&
+		Array.isArray(candidate.flags)
+	);
+}
 
 function getProviderTld(): string {
 	return "com";
@@ -144,12 +169,17 @@ export class UrlCheckClient {
 				return;
 			}
 			const reason = outcome.reason;
-			failures.push(
+			const failure =
 				reason instanceof DetectionLegUnavailableError
 					? reason
-					: new DetectionLegUnavailableError("url_reputation", String(reason)),
-			);
-			uncheckedCount += batches[index]?.length ?? 0;
+					: new DetectionLegUnavailableError("url_reputation", String(reason));
+			failures.push(failure);
+			// A batch can cover some of its URLs and not others (a feed with no
+			// row for one of them). The classifications it did produce are
+			// evidence, so they survive alongside the gap.
+			results.push(...failure.partialResults.filter(isUrlCheckResult));
+			uncheckedCount +=
+				failure.uncheckedCount > 0 ? failure.uncheckedCount : (batches[index]?.length ?? 0);
 		});
 
 		if (failures.length > 0) {
@@ -207,11 +237,29 @@ export class UrlCheckClient {
 			const answers = (data.answers ?? []) as Record<string, unknown>[];
 
 			const results: UrlCheckResult[] = [];
+			const uncovered: string[] = [];
 			for (const answer of answers) {
-				const result = this.parseAnswer(answer);
-				if (result !== null) {
-					results.push(result);
+				const parsed = this.parseAnswer(answer);
+				if (parsed === null) continue;
+				if (parsed.kind === "uncovered") {
+					uncovered.push(parsed.url);
+					continue;
 				}
+				results.push(parsed.result);
+			}
+			if (uncovered.length > 0) {
+				// The endpoint answered, but its reputation store holds no row for
+				// these URLs. Reporting them as clean is exactly the false-clean
+				// this client exists to prevent, so the gap is raised as an
+				// unavailable leg while any real classification in the same batch
+				// is kept as a partial result.
+				throw new DetectionLegUnavailableError(
+					"url_reputation",
+					`no reputation feed coverage for ${uncovered.length} of ${urls.length} requested URLs`,
+					undefined,
+					results,
+					uncovered.length,
+				);
 			}
 			return results;
 		} catch (e) {
@@ -223,7 +271,7 @@ export class UrlCheckClient {
 		}
 	}
 
-	private parseAnswer(answer: Record<string, unknown>): UrlCheckResult | null {
+	private parseAnswer(answer: Record<string, unknown>): ParsedAnswer {
 		try {
 			const url = (answer.key ?? "") as string;
 			const result = (answer.result ?? {}) as Record<string, unknown>;
@@ -233,6 +281,20 @@ export class UrlCheckClient {
 			const flags = (success.flags ?? []) as string[];
 			const malicious = classResult.malicious as Record<string, unknown> | undefined;
 
+			// "No row in the reputation store" is not "clean". The endpoint marks
+			// it explicitly (`unknown` classification and/or a `no_data` coverage
+			// indicator); a URL that carries neither marker was checked, and its
+			// empty classification is a genuine clean answer - otherwise an older
+			// deployment that never emits coverage would become a permanent
+			// outage.
+			const uncovered =
+				classResult.unknown !== undefined ||
+				answer.coverage === NO_COVERAGE ||
+				success.coverage === NO_COVERAGE;
+			if (uncovered && !malicious) {
+				return { kind: "uncovered", url };
+			}
+
 			const findings: UrlCheckFinding[] = malicious
 				? ((malicious.findings ?? []) as Record<string, unknown>[]).map((f) => ({
 						severityName: (f["severity-name"] ?? "unknown") as string,
@@ -241,10 +303,13 @@ export class UrlCheckClient {
 				: [];
 
 			return {
-				url,
-				isMalicious: Boolean(malicious),
-				findings,
-				flags,
+				kind: "covered",
+				result: {
+					url,
+					isMalicious: Boolean(malicious),
+					findings,
+					flags,
+				},
 			};
 		} catch (e) {
 			this.logger.warn("Failed to parse answer", { error: String(e) });

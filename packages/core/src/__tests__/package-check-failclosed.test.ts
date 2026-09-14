@@ -57,6 +57,34 @@ function request(command: string) {
 	};
 }
 
+/** A request whose only artifact is a URL, so the URL reputation leg decides. */
+function urlRequest(url = "https://unlisted.example/payload.sh") {
+	return {
+		sessionId: "url-leg-unavailable",
+		toolName: "WebFetch",
+		toolInput: { url },
+		artifacts: [{ type: "url" as const, value: url }],
+	};
+}
+
+/** The shared config, with the URL reputation leg enabled instead of disabled. */
+async function writeUrlCheckConfig(): Promise<void> {
+	await writeFile(
+		configPath,
+		JSON.stringify({
+			mode: "local",
+			heuristics_enabled: false,
+			package_check: { enabled: false },
+			file_check: { enabled: false },
+			url_check: { enabled: true, timeout_seconds: 0.1 },
+			amsi_check: { enabled: false },
+			cache: { enabled: false },
+			logging: { enabled: false },
+		}),
+		"utf8",
+	);
+}
+
 describe("package check availability is fail-closed", () => {
 	it("turns an unexpected checker exception into an explicit blocking review", async () => {
 		vi.spyOn(PackageChecker.prototype, "checkPackages").mockRejectedValueOnce(
@@ -155,5 +183,70 @@ describe("package check availability is fail-closed", () => {
 
 		expect(checker).not.toHaveBeenCalled();
 		expect(verdict.decision).toBe("allow");
+	});
+
+	it("turns a URL reputation outage into an explicit blocking review when no signed feed is configured", async () => {
+		await writeUrlCheckConfig();
+		// No signed feed is configured and the first-party endpoint is
+		// unreachable. That failure used to be discarded unless a feed was
+		// present, so a reputation outage produced a clean `allow` for URLs
+		// nobody had checked.
+		vi.spyOn(globalThis, "fetch").mockRejectedValue(
+			new Error("simulated URL reputation endpoint outage"),
+		);
+
+		const verdict = await evaluateToolCall(urlRequest(), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "url_reputation_unavailable",
+			source: "url_check",
+			severity: "warning",
+		});
+		// Not a clean result, and the operator is told why.
+		expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
+		expect(verdict.reasons.join(" ")).toContain("simulated URL reputation endpoint outage");
+	});
+
+	it("keeps a URL leg the operator disabled from degrading the verdict", async () => {
+		// The shared config leaves `url_check` disabled. The leg must not run, and
+		// a no-coverage answer - which would be a blocking review if the leg were
+		// enabled - must not change the verdict of a switched-off leg.
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					coverage: "none",
+					answers: [
+						{
+							key: "https://unlisted.example/payload.sh",
+							coverage: "no_data",
+							result: {
+								success: {
+									classification: { result: { unknown: { reason: "no_reputation_row" } } },
+									flags: [],
+									coverage: "no_data",
+								},
+							},
+						},
+					],
+				}),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			),
+		);
+
+		const verdict = await evaluateToolCall(urlRequest(), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(fetchSpy.mock.calls.some(([input]) => String(input).includes("url-check"))).toBe(false);
+		expect(verdict.decision).toBe("allow");
+		expect(verdict.category).not.toBe("url_reputation_unavailable");
+		expect(verdict.source).not.toBe("url_check");
 	});
 });

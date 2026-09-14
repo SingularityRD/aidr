@@ -4,7 +4,7 @@
 //
 // Compatible with @singularityrd/aidr-core UrlCheckClient:
 // Body: { queries: [{ key: { "url-like": "https://..." } }], "client-info": {...} }
-// Resp: { answers: [{ key: "<url>", result: { success: { classification: { result: { malicious?: { findings: [...] } } }, flags: [...] } } }] }
+// Resp: { coverage: "complete"|"partial"|"none", answers: [{ key: "<url>", coverage: "covered"|"no_data", result: { success: { classification: { result: { malicious?: { findings: [...] }, unknown?: { reason } } }, flags: [...] } } }] }
 //
 // This is a self-hostable replacement for proprietary URL reputation providers.
 
@@ -81,130 +81,191 @@ type UrlRepRow = {
 	flags: string[] | null;
 };
 
-Deno.serve(async (req) => {
-	if (req.method !== "POST") {
-		return json(405, { error: "method_not_allowed" });
-	}
+/**
+ * Whether the tenant's reputation store holds a row for a queried URL.
+ *
+ * A missing row is not a clean verdict. This endpoint used to answer an empty
+ * `classification.result` for a URL it has no row for, which the client read as
+ * `isMalicious: false` - "we have no data about this URL" was reported to the
+ * caller as "this URL is clean". The state is now explicit and
+ * machine-readable:
+ *
+ *   - `covered` - a row exists. A malicious row keeps its historical
+ *     `classification.result.malicious` shape; a benign row keeps the empty
+ *     `classification.result` shape, because a row that says "not malicious" is
+ *     a genuine clean answer;
+ *   - `no_data` - no row covers this URL, so no classification was performed.
+ *     The per-answer classification carries `result.unknown` and the top-level
+ *     `coverage` summary reports the gap, so a caller can never mistake absent
+ *     data for a passed check.
+ */
+const COVERED = "covered";
+const NO_COVERAGE = "no_data";
 
-	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
-	if (!config.ok) return configFailure("url-check", config.error, json);
-	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
+type UrlCheckCoverage = typeof COVERED | typeof NO_COVERAGE;
 
-	const apiKey = getBearerToken(req.headers.get("Authorization"));
-	if (!apiKey) {
-		return json(401, { error: "missing_api_key" });
-	}
-	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-		auth: { persistSession: false },
-	});
-	const auth = await authenticateTenantApiKey(supabase, apiKey);
-	if (!auth.ok) {
-		return json(auth.status, { error: auth.error });
-	}
-	const { tenantId, userId } = auth;
+type UrlCheckAnswer = {
+	key: string;
+	coverage: UrlCheckCoverage;
+	result: {
+		success: {
+			classification: Record<string, unknown>;
+			flags: string[];
+			coverage: UrlCheckCoverage;
+		};
+	};
+};
 
-	const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
-	if (!parsed.ok) return json(parsed.status, { error: parsed.error });
-	if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
-		return json(400, { error: "invalid_json" });
-	}
-	const body = parsed.value as Record<string, unknown>;
+export interface UrlCheckDeps {
+	/** Overrides the service-role client; used by the contract suite. */
+	db?: ReturnType<typeof createClient>;
+}
 
-	const rawQueries = Array.isArray(body.queries) ? (body.queries as unknown[]) : [];
-	if (rawQueries.length > MAX_QUERIES) {
-		return json(413, { error: "query_limit_exceeded", max_queries: MAX_QUERIES });
-	}
-	const urls = rawQueries
-		.map((q) => extractUrlLike(q))
-		.filter((u): u is string => Boolean(u));
+// The runtime entry point is declared above the factory on purpose: the
+// repository's contract gates anchor a function's request path at the first
+// `Deno.serve(` occurrence in the file and require the configuration guard,
+// the authorization check and every database call to appear after it.
+Deno.serve(createUrlCheckHandler());
 
-	const rate = await consumeTenantRateLimit(supabase, {
-		tenantId,
-		subject: userId,
-		endpoint: "url-check",
-		perSubject: 600,
-		perTenant: 30_000,
-		cost: Math.max(1, rawQueries.length),
-	});
-	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
-
-	if (urls.length === 0) {
-		return json(200, { answers: [] }, rateLimitHeaders(rate));
-	}
-
-	const domains = urls
-		.map((u) => domainFromUrl(u))
-		.filter((d): d is string => Boolean(d));
-	const domainCandidates = [...new Set(domains.flatMap((d) => domainSuffixes(d)))].slice(0, 200);
-
-	const { data: urlRows } = await supabase
-		.from("url_reputation")
-		.select("url,domain,is_malicious,severity_name,type_name,flags")
-		.eq("tenant_id", tenantId)
-		.in("url", urls);
-
-	const { data: domainRows } =
-		domainCandidates.length > 0
-			? await supabase
-					.from("url_reputation")
-					.select("url,domain,is_malicious,severity_name,type_name,flags")
-					.eq("tenant_id", tenantId)
-					.in("domain", domainCandidates)
-			: { data: [] as UrlRepRow[] };
-
-	const byUrl = new Map<string, UrlRepRow>();
-	for (const row of (urlRows ?? []) as UrlRepRow[]) {
-		if (row.url) byUrl.set(row.url, row);
-	}
-
-	const byDomain = new Map<string, UrlRepRow>();
-	for (const row of (domainRows ?? []) as UrlRepRow[]) {
-		if (row.domain) byDomain.set(row.domain, row);
-	}
-
-	const answers = urls.map((u) => {
-		const urlRow = byUrl.get(u);
-		const domain = domainFromUrl(u);
-		let domRow: UrlRepRow | undefined;
-		if (!urlRow && domain) {
-			for (const suffix of domainSuffixes(domain)) {
-				const hit = byDomain.get(suffix);
-				if (hit) {
-					domRow = hit;
-					break;
-				}
-			}
+/** Build the request handler. Exported so the contract suite can drive it. */
+export function createUrlCheckHandler(deps: UrlCheckDeps = {}) {
+	return async function handle(req: Request): Promise<Response> {
+		if (req.method !== "POST") {
+			return json(405, { error: "method_not_allowed" });
 		}
 
-		const row = urlRow ?? domRow ?? null;
-		const isMalicious = Boolean(row?.is_malicious);
-		const flags = Array.isArray(row?.flags) ? row?.flags.filter((f) => typeof f === "string") : [];
+		const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+		if (!config.ok) return configFailure("url-check", config.error, json);
+		const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
 
-		const classification = isMalicious
-			? {
-					result: {
-						malicious: {
-							findings: [
-								{
-									"severity-name": row?.severity_name ?? "high",
-									"type-name": row?.type_name ?? "phishing",
-								},
-							],
-						},
-					},
+		const apiKey = getBearerToken(req.headers.get("Authorization"));
+		if (!apiKey) {
+			return json(401, { error: "missing_api_key" });
+		}
+		const supabase = deps.db ?? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+			auth: { persistSession: false },
+		});
+		const auth = await authenticateTenantApiKey(supabase, apiKey);
+		if (!auth.ok) {
+			return json(auth.status, { error: auth.error });
+		}
+		const { tenantId, userId } = auth;
+
+		const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+		if (!parsed.ok) return json(parsed.status, { error: parsed.error });
+		if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+			return json(400, { error: "invalid_json" });
+		}
+		const body = parsed.value as Record<string, unknown>;
+
+		const rawQueries = Array.isArray(body.queries) ? (body.queries as unknown[]) : [];
+		if (rawQueries.length > MAX_QUERIES) {
+			return json(413, { error: "query_limit_exceeded", max_queries: MAX_QUERIES });
+		}
+		const urls = rawQueries
+			.map((q) => extractUrlLike(q))
+			.filter((u): u is string => Boolean(u));
+
+		const rate = await consumeTenantRateLimit(supabase, {
+			tenantId,
+			subject: userId,
+			endpoint: "url-check",
+			perSubject: 600,
+			perTenant: 30_000,
+			cost: Math.max(1, rawQueries.length),
+		});
+		if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
+
+		if (urls.length === 0) {
+			return json(200, { answers: [] }, rateLimitHeaders(rate));
+		}
+
+		const domains = urls
+			.map((u) => domainFromUrl(u))
+			.filter((d): d is string => Boolean(d));
+		const domainCandidates = [...new Set(domains.flatMap((d) => domainSuffixes(d)))].slice(0, 200);
+
+		const { data: urlRows } = await supabase
+			.from("url_reputation")
+			.select("url,domain,is_malicious,severity_name,type_name,flags")
+			.eq("tenant_id", tenantId)
+			.in("url", urls);
+
+		const { data: domainRows } =
+			domainCandidates.length > 0
+				? await supabase
+						.from("url_reputation")
+						.select("url,domain,is_malicious,severity_name,type_name,flags")
+						.eq("tenant_id", tenantId)
+						.in("domain", domainCandidates)
+				: { data: [] as UrlRepRow[] };
+
+		const byUrl = new Map<string, UrlRepRow>();
+		for (const row of (urlRows ?? []) as UrlRepRow[]) {
+			if (row.url) byUrl.set(row.url, row);
+		}
+
+		const byDomain = new Map<string, UrlRepRow>();
+		for (const row of (domainRows ?? []) as UrlRepRow[]) {
+			if (row.domain) byDomain.set(row.domain, row);
+		}
+
+		const answers: UrlCheckAnswer[] = urls.map((u) => {
+			const urlRow = byUrl.get(u);
+			const domain = domainFromUrl(u);
+			let domRow: UrlRepRow | undefined;
+			if (!urlRow && domain) {
+				for (const suffix of domainSuffixes(domain)) {
+					const hit = byDomain.get(suffix);
+					if (hit) {
+						domRow = hit;
+						break;
+					}
 				}
-			: { result: {} };
+			}
 
-		return {
-			key: u,
-			result: {
-				success: {
-					classification,
-					flags,
+			const row = urlRow ?? domRow ?? null;
+			const coverage: UrlCheckCoverage = row ? COVERED : NO_COVERAGE;
+			const isMalicious = Boolean(row?.is_malicious);
+			const flags = Array.isArray(row?.flags) ? row?.flags.filter((f) => typeof f === "string") : [];
+
+			const classification = isMalicious
+				? {
+						result: {
+							malicious: {
+								findings: [
+									{
+										"severity-name": row?.severity_name ?? "high",
+										"type-name": row?.type_name ?? "phishing",
+									},
+								],
+							},
+						},
+					}
+				: row
+					? { result: {} }
+					: // No row: no classification was performed. `unknown` is the
+						// machine-readable marker the client maps to an unavailable
+						// reputation leg rather than to `isMalicious: false`.
+						{ result: { unknown: { reason: "no_reputation_row" } } };
+
+			return {
+				key: u,
+				coverage,
+				result: {
+					success: {
+						classification,
+						flags,
+						coverage,
+					},
 				},
-			},
-		};
-	});
+			};
+		});
 
-	return json(200, { answers }, rateLimitHeaders(rate));
-});
+		const covered = answers.filter((answer) => answer.coverage === COVERED).length;
+		const coverage =
+			covered === answers.length ? "complete" : covered === 0 ? "none" : "partial";
+
+		return json(200, { coverage, answers }, rateLimitHeaders(rate));
+	};
+}
