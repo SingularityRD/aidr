@@ -61,6 +61,7 @@ function isDenoTypeSpecifier(issue, type, value) {
 	const denoSpecifierFiles = new Set([
 		"supabase/functions/_shared/identity-barrier.ts",
 		"supabase/functions/team-invite/lifecycle.ts",
+		"supabase/functions/audit-export/index.ts",
 		"supabase/functions/autosecops-runtime/index.ts",
 		"supabase/functions/billing-portal/index.ts",
 		"supabase/functions/invoice-entitlement/index.ts",
@@ -68,7 +69,9 @@ function isDenoTypeSpecifier(issue, type, value) {
 		"supabase/functions/pilot-apply/index.ts",
 		"supabase/functions/pilot-status/index.ts",
 		"supabase/functions/policy-management/index.ts",
+		"supabase/functions/revocations/index.ts",
 		"supabase/functions/team-invite/index.ts",
+		"supabase/functions/url-check/index.ts",
 	]);
 	const file = String(issue.file ?? "").replaceAll("\\", "/");
 	if (type !== "unlisted") return false;
