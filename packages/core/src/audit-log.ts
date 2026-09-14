@@ -163,12 +163,17 @@ async function rotateIfNeeded(filePath: string, maxBytes: number, maxFiles: numb
 
 	if (size < maxBytes) return;
 
-	// Delete oldest backup
+	// Delete oldest backup. A rotation that drops a file is data loss, so it is
+	// counted rather than performed silently; ENOENT means there was nothing to
+	// drop and is not a loss.
+	let droppedOldest = false;
 	try {
 		await unlink(`${filePath}.${maxFiles}`);
+		droppedOldest = true;
 	} catch {
 		// ENOENT OK
 	}
+	if (droppedOldest) recordAuditRotationDrop();
 
 	// Shift .N-1 → .N down to .1 → .2
 	for (let i = maxFiles - 1; i >= 1; i--) {
@@ -211,9 +216,65 @@ export async function logVerdict(
 
 	try {
 		await appendEntry(config, entry);
-	} catch {
-		// Fail-open: logging errors swallowed
+	} catch (error) {
+		// Fail-open is deliberate: an audit-write failure must never turn into a
+		// block (see CLAUDE.md). Staying silent about it is not. A full disk or a
+		// read-only home used to lose records with no trace anywhere, so the loss
+		// is counted here and surfaced by `aidr status`.
+		recordAuditWriteFailure(error);
 	}
+}
+
+/* ------------------------------------------------------------------ *
+ * Loss accounting
+ * ------------------------------------------------------------------ */
+
+export interface AuditLogLossState {
+	/** Appends that could not be written since this process started. */
+	writeFailures: number;
+	/** Rotations that had to drop the oldest file. */
+	rotationDrops: number;
+	/** The most recent failure's message, or null when none has occurred. */
+	lastError: string | null;
+	/** Epoch milliseconds of the most recent failure, or null. */
+	lastErrorAt: number | null;
+}
+
+const lossState: AuditLogLossState = {
+	writeFailures: 0,
+	rotationDrops: 0,
+	lastError: null,
+	lastErrorAt: null,
+};
+
+/** Record a failed audit append. Exported so tests can exercise it directly. */
+export function recordAuditWriteFailure(error: unknown, now = Date.now()): void {
+	lossState.writeFailures += 1;
+	lossState.lastError = error instanceof Error ? error.message : String(error);
+	lossState.lastErrorAt = now;
+}
+
+/** Record that rotation dropped the oldest file to stay within `max_files`. */
+export function recordAuditRotationDrop(now = Date.now()): void {
+	lossState.rotationDrops += 1;
+	lossState.lastErrorAt = lossState.lastErrorAt ?? now;
+}
+
+/**
+ * The current loss counters. A clean log means both counters are zero; anything
+ * else must be reported to the operator rather than presented as a complete
+ * record.
+ */
+export function getAuditLogLossState(): AuditLogLossState {
+	return { ...lossState };
+}
+
+/** Reset the counters. Tests only. */
+export function resetAuditLogLossState(): void {
+	lossState.writeFailures = 0;
+	lossState.rotationDrops = 0;
+	lossState.lastError = null;
+	lossState.lastErrorAt = null;
 }
 
 /**

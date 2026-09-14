@@ -73,14 +73,19 @@ export type { ApprovedEntry, PendingEntry } from "./approval-store.js";
 export { ApprovalStore } from "./approval-store.js";
 // Audit log
 export {
+	type AuditLogLossState,
 	buildAllowedResponseActionEntry,
 	buildResponseActionEntry,
 	buildRuntimeVerdictEntry,
+	getAuditLogLossState,
 	getRecentEntries,
 	logAllowedResponseActions,
 	logPluginScan,
 	logResponseActions,
 	logVerdict,
+	recordAuditRotationDrop,
+	recordAuditWriteFailure,
+	resetAuditLogLossState,
 	summarizeActionsForLog,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
@@ -775,7 +780,7 @@ export type {
 	TelemetryQueueReadinessEvidence,
 	TelemetryQueueStatus,
 } from "./telemetry-queue.js";
-export { DurableTelemetryQueue } from "./telemetry-queue.js";
+export { DurableTelemetryQueue, readTelemetryLossSummary, type TelemetryLossSummary } from "./telemetry-queue.js";
 // Telemetry privacy boundary
 export {
 	redactTelemetryAttributes,

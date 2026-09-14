@@ -14,6 +14,7 @@ import {
 	chmod,
 	mkdir,
 	open,
+	readdir,
 	readFile,
 	rename,
 	rmdir,
@@ -945,4 +946,79 @@ export class DurableTelemetryQueue {
 		this.volatileStorageErrors += reason === "storage_unavailable" ? 1 : 0;
 		this.volatileLastLossReason = reason;
 	}
+}
+
+/** Aggregate queue state across every installation namespace under a root. */
+export interface TelemetryLossSummary {
+	/** Number of queue directories found. */
+	queues: number;
+	/** Events durably queued and not yet acknowledged. */
+	pendingEvents: number;
+	/** Seconds since the oldest pending event was written. */
+	oldestAgeSeconds: number;
+	/** Events the queue gave up on, across every namespace. */
+	lostTotal: number;
+	/** `queued` when anything is pending, `idle` when nothing is, `unavailable` when unreadable. */
+	state: "idle" | "queued" | "unavailable";
+	/** Per-namespace detail, so a single broken queue cannot hide behind a total. */
+	namespaces: Array<{ namespace: string; pendingEvents: number; lostTotal: number; state: string }>;
+}
+
+/**
+ * Read the durable telemetry queue state without flushing it.
+ *
+ * The durability counters otherwise only exist inside a live control-plane
+ * client, so an operator had no way to see that events were undelivered or
+ * lost. This reads every namespace under the queue root and reports both the
+ * totals and the per-namespace breakdown; a queue that cannot be read is
+ * reported as `unavailable` rather than as an empty one.
+ */
+export async function readTelemetryLossSummary(
+	root: string,
+	options: { now?: () => number } = {},
+): Promise<TelemetryLossSummary> {
+	const now = options.now ?? Date.now;
+	let namespaces: string[] = [];
+	let unreadable = false;
+	try {
+		const entries = await readdir(root, { withFileTypes: true });
+		namespaces = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+	} catch (error) {
+		// ENOENT means nothing has ever been queued, which is genuinely idle. Any
+		// other failure means the state is unknown and must not read as clean.
+		if (errorCode(error) !== "ENOENT") unreadable = true;
+	}
+
+	const detail: TelemetryLossSummary["namespaces"] = [];
+	let pendingEvents = 0;
+	let lostTotal = 0;
+	let oldestAgeSeconds = 0;
+
+	for (const namespace of namespaces) {
+		try {
+			const queue = new DurableTelemetryQueue({ directory: join(root, namespace), now });
+			const evidence = await queue.readinessEvidence();
+			pendingEvents += evidence.depth;
+			lostTotal += evidence.failed_jobs;
+			oldestAgeSeconds = Math.max(oldestAgeSeconds, evidence.oldest_age_seconds);
+			detail.push({
+				namespace,
+				pendingEvents: evidence.depth,
+				lostTotal: evidence.failed_jobs,
+				state: evidence.status,
+			});
+		} catch {
+			unreadable = true;
+			detail.push({ namespace, pendingEvents: 0, lostTotal: 0, state: "unavailable" });
+		}
+	}
+
+	return {
+		queues: namespaces.length,
+		pendingEvents,
+		oldestAgeSeconds,
+		lostTotal,
+		state: unreadable ? "unavailable" : pendingEvents > 0 ? "queued" : "idle",
+		namespaces: detail,
+	};
 }
