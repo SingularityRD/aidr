@@ -590,6 +590,15 @@ export {
 	resetCategoryCache,
 } from "./mcp-aig-categories.js";
 export { discoverMcpServers } from "./mcp-discovery.js";
+// JSONC-tolerant config reader shared by the inventory and policy call sites
+export type { JsoncParseResult, JsoncParseStatus } from "./jsonc.js";
+export { parseJsonc, stripJsonComments } from "./jsonc.js";
+export type {
+	McpInventoryCoverage,
+	McpInventoryCoverageStatus,
+	McpInventoryReport,
+	McpInventorySourceStatus,
+} from "./mcp-inventory.js";
 // Metrics
 export { getMetricsCollector, MetricsCollector, metrics } from "./metrics.js";
 export type {
