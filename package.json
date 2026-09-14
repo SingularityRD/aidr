@@ -103,6 +103,7 @@
 		"verify:load": "node scripts/verify-load-test.mjs",
 		"verify:release-signing": "node --test scripts/release-signing.test.mjs",
 		"verify:repo-hygiene": "node scripts/verify-repo-hygiene.mjs",
+		"verify:endpoint-auth": "node scripts/verify-endpoint-auth-matrix.mjs",
 		"verify:backup-offsite": "node --test scripts/deployment-backup-offsite.test.mjs",
 		"verify:offboarding": "node --test scripts/deployment-offboarding.test.mjs scripts/tenant-offboarding-migration.test.mjs",
 		"verify:commercial-gates": "node scripts/verify-commercial-gate-receipts.mjs",
