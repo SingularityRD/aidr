@@ -21,6 +21,27 @@ Commercial mode also creates `.release-evidence/` with a signed
 Supabase function sources and configured container image digests are staged
 there with `release-inventory.json`.
 
+## In-toto/SLSA-style provenance
+
+`scripts/generate-provenance.mjs` binds the released artifacts into one in-toto
+statement (`predicateType` `https://slsa.dev/provenance/v0.2`): the `subject` is
+the digest of every `aidr-artifact.manifest.json`, `materials` records the
+`pnpm-lock.yaml` digest, and `byproducts` records the SBOM digest.
+`.github/scripts/build-release-bundle.mjs` runs it beside the SBOM copy and then
+re-verifies the written statement before the bundle is assembled. The same
+statement can be re-checked offline at any time:
+
+```powershell
+node scripts/generate-provenance.mjs --output .release-evidence/aidr-provenance.intoto.json
+node scripts/generate-provenance.mjs --verify-provenance --provenance .release-evidence/aidr-provenance.intoto.json
+```
+
+Verification fails closed when a manifest, the lockfile, or the SBOM no longer
+matches the recorded digest, or when an artifact manifest is missing from the
+statement. This predicate is unsigned and locally constructed: it carries no
+publisher identity, no signature and no transparency-log entry, so it does not
+replace signer key custody, registry publication, or the Ed25519 evidence above.
+
 ## Required commercial inputs
 
 Never commit these values or place private key material in an artifact:

@@ -3,7 +3,9 @@
  *
  * This script deliberately packages from already-built dist directories. It
  * never runs a build or changes source files, making the promotion digest the
- * same digest that was tested and signed by the RC job.
+ * same digest that was tested and signed by the RC job. It also assembles an
+ * unsigned in-toto/SLSA-style provenance statement beside the SBOM and
+ * immediately re-verifies it against the manifests, lockfile and SBOM bytes.
  */
 
 import { createHash } from "node:crypto";
@@ -50,6 +52,32 @@ const packageDirs = [
 	"packages/codex",
 	"packages/mcp-gateway",
 ];
+
+// Locally constructed in-toto/SLSA-style provenance for the artifact manifests
+// promoted from this build, bound to the lockfile and to the SBOM copied above.
+// It is unsigned evidence, not a publisher attestation: generating it and then
+// re-verifying it here means the bundle cannot ship a predicate that disagrees
+// with the manifests, lockfile, or SBOM it accompanies.
+const provenanceOutput = join(outputDir, "aidr-provenance.intoto.json");
+const provenanceDirs = packageDirs
+	.map((packageDir) => join(repoRoot, packageDir, "dist"))
+	.filter((manifestDir) => existsSync(join(manifestDir, "aidr-artifact.manifest.json")));
+if (provenanceDirs.length === 0) fail("no artifact manifests were found to build release provenance from");
+const provenanceArguments = [
+	...provenanceDirs.flatMap((manifestDir) => ["--artifact-dir", manifestDir]),
+	"--lockfile",
+	join(repoRoot, "pnpm-lock.yaml"),
+	"--sbom",
+	join(outputDir, "aidr-sbom.cdx.json"),
+	"--output",
+	provenanceOutput,
+];
+runNodeScript(join(repoRoot, "scripts", "generate-provenance.mjs"), provenanceArguments, "release provenance generation");
+runNodeScript(
+	join(repoRoot, "scripts", "generate-provenance.mjs"),
+	["--verify-provenance", "--provenance", provenanceOutput, ...provenanceArguments],
+	"release provenance verification",
+);
 
 for (const packageDir of packageDirs) {
 	// Windows exposes pnpm as a .cmd shim; Node's direct spawn path can return
@@ -149,6 +177,15 @@ function tarList(filePath) {
 	const result = spawnSync(tarCommand, ["-tf", "-"], { encoding: "utf8", input: gunzipSync(readFileSync(filePath)), maxBuffer: 8 * 1024 * 1024 });
 	if (result.status !== 0) fail(`unable to inspect ${filePath}`);
 	return result.stdout ?? "";
+}
+
+function runNodeScript(script, scriptArguments, label) {
+	const result = spawnSync(process.execPath, [script, ...scriptArguments], {
+		cwd: repoRoot,
+		encoding: "utf8",
+		stdio: "inherit",
+	});
+	if (result.error || result.status !== 0) fail(`${label} failed`);
 }
 
 function fail(message) {
