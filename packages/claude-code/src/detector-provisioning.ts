@@ -8,6 +8,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	type Config,
+	createBehavioralBaselineStore,
 	createBehavioralDetectionOrchestrator,
 	DlpPolicySchema,
 	isEntitlementActive,
@@ -38,8 +39,12 @@ const DetectorPolicyPayloadSchema = z
 		behavioral: z
 			.object({
 				enabled: z.literal(true),
-				// The hook is a new process per call; learning here cannot form a
-				// durable baseline and must not be advertised as operational.
+				// Signed policy pins learning OFF, and this schema still refuses a
+				// policy that claims otherwise. A durable baseline store now exists
+				// (`behavioralBaselineDir`), so the original reason — a one-shot hook
+				// process cannot form a baseline — no longer applies technically;
+				// enabling learning is therefore a deliberate signed-policy/product
+				// decision that this contract has not taken (see detectorContext).
 				learning_allowed: z.literal(false).default(false),
 			})
 			.strict()
@@ -77,6 +82,16 @@ type SignedDetectorPolicy = z.infer<typeof SignedDetectorPolicySchema>;
 /** Fixed, non-tool-selectable location under the local AIDR state directory. */
 export function detectorPolicyPath(): string {
 	return join(resolvePath("~/.singularity-aidr"), "detectors", "claude-code.json");
+}
+
+/**
+ * Fixed, non-tool-selectable location for the durable behavioural baseline. The
+ * hook is a new process per tool call, so the baseline must outlive the process
+ * that accepted an observation. It is keyed by tenant and session inside the
+ * store; the directory itself is per installation.
+ */
+export function behavioralBaselineDir(): string {
+	return join(resolvePath("~/.singularity-aidr"), "behavioral-baseline");
 }
 
 /** The publisher signs the canonical payload bytes, never the wrapper. */
@@ -226,8 +241,17 @@ function detectorContext(payload: SignedDetectorPolicy["payload"]): DetectorCont
 		if (payload.behavioral) {
 			runtimeDetectors.behavioral = {
 				enabled: true,
-				orchestrator: createBehavioralDetectionOrchestrator(),
-				learningAllowed: false,
+				// The signed policy is the single source of truth for learning, so
+				// this wiring can no longer assert a policy the tenant did not
+				// receive. `DetectorPolicyPayloadSchema` currently pins
+				// `learning_allowed` to `false`, because a one-shot hook with no
+				// durable baseline could not act on it. The durable store below
+				// removes that limitation, so enabling learning is now purely a
+				// signed-policy decision and is deliberately not taken here.
+				learningAllowed: payload.behavioral.learning_allowed,
+				orchestrator: createBehavioralDetectionOrchestrator(undefined, {
+					baselineStore: createBehavioralBaselineStore({ storeDir: behavioralBaselineDir() }),
+				}),
 			};
 		}
 		context.runtimeDetectors = runtimeDetectors;
