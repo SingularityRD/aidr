@@ -7750,6 +7750,832 @@ var init_cache = __esm({
   }
 });
 
+// ../core/dist/incidents/evidence-receipt.js
+function fail(error3) {
+  return { ok: false, error: error3 };
+}
+function accept(value) {
+  return { ok: true, value };
+}
+function parseIso(value) {
+  if (typeof value !== "string")
+    return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed) || parsed <= 0)
+    return null;
+  return new Date(parsed).toISOString();
+}
+function parseBinding(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail("invalid_binding");
+  const raw = value;
+  if (typeof raw.candidateDigest !== "string" || !HASH.test(raw.candidateDigest)) {
+    return fail("invalid_candidate_digest");
+  }
+  for (const key of ["policyRevision", "deviceId", "actorRef", "incidentId"]) {
+    if (typeof raw[key] !== "string" || !REF.test(raw[key]))
+      return fail(`invalid_${key}`);
+  }
+  if (raw.actionId !== null && (typeof raw.actionId !== "string" || !REF.test(raw.actionId))) {
+    return fail("invalid_action_id");
+  }
+  return accept({
+    candidateDigest: raw.candidateDigest,
+    policyRevision: raw.policyRevision,
+    deviceId: raw.deviceId,
+    actorRef: raw.actorRef,
+    incidentId: raw.incidentId,
+    actionId: raw.actionId ?? null
+  });
+}
+function parseClock(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail("invalid_clock");
+  const raw = value;
+  const wallClockUtc = parseIso(raw.wallClockUtc);
+  if (!wallClockUtc)
+    return fail("invalid_wall_clock");
+  if (!Number.isSafeInteger(raw.logicalCounter) || raw.logicalCounter < 0) {
+    return fail("invalid_logical_counter");
+  }
+  if (raw.observedSkewMs !== null && (!Number.isSafeInteger(raw.observedSkewMs) || Math.abs(raw.observedSkewMs) > 864e5)) {
+    return fail("invalid_observed_skew");
+  }
+  return accept({
+    wallClockUtc,
+    logicalCounter: raw.logicalCounter,
+    observedSkewMs: raw.observedSkewMs ?? null
+  });
+}
+function parseEvidenceReceipt(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail("invalid_receipt");
+  const raw = value;
+  if (raw.version !== EVIDENCE_RECEIPT_VERSION)
+    return fail("unsupported_version");
+  if (typeof raw.receiptId !== "string" || !UUID.test(raw.receiptId))
+    return fail("invalid_receipt_id");
+  const binding = parseBinding(raw.binding);
+  if (!binding.ok)
+    return fail(binding.error);
+  const clock = parseClock(raw.clock);
+  if (!clock.ok)
+    return fail(clock.error);
+  if (typeof raw.previousHash !== "string" || !HASH.test(raw.previousHash)) {
+    return fail("invalid_previous_hash");
+  }
+  if (typeof raw.receiptHash !== "string" || !HASH.test(raw.receiptHash))
+    return fail("invalid_receipt_hash");
+  if (!["decision", "response", "telemetry", "audit"].includes(String(raw.dataClass))) {
+    return fail("invalid_data_class");
+  }
+  if (typeof raw.payloadSummary !== "string" || raw.payloadSummary.length > 4096) {
+    return fail("invalid_payload_summary");
+  }
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(raw.payloadSummary)) {
+    return fail("invalid_payload_summary");
+  }
+  if (raw.externallyAnchored !== false)
+    return fail("external_anchor_not_permitted_here");
+  return accept({
+    version: EVIDENCE_RECEIPT_VERSION,
+    receiptId: raw.receiptId,
+    binding: binding.value,
+    clock: clock.value,
+    previousHash: raw.previousHash,
+    receiptHash: raw.receiptHash,
+    dataClass: raw.dataClass,
+    payloadSummary: raw.payloadSummary,
+    externallyAnchored: false
+  });
+}
+function evidenceReceiptHashInput(receipt) {
+  const b2 = receipt.binding;
+  return [
+    `aidr.evidence.receipt.v${EVIDENCE_RECEIPT_VERSION}`,
+    receipt.receiptId,
+    b2.candidateDigest,
+    b2.policyRevision,
+    b2.deviceId,
+    b2.actorRef,
+    b2.incidentId,
+    b2.actionId ?? "-",
+    receipt.clock.wallClockUtc,
+    String(receipt.clock.logicalCounter),
+    receipt.clock.observedSkewMs === null ? "-" : String(receipt.clock.observedSkewMs),
+    receipt.previousHash,
+    receipt.dataClass,
+    receipt.payloadSummary,
+    String(receipt.externallyAnchored)
+  ].join("\n");
+}
+function evidenceReceiptHash(receipt, context2) {
+  return context2.hash(evidenceReceiptHashInput(receipt));
+}
+function verifyEvidenceReceipt(value, context2) {
+  const parsed = parseEvidenceReceipt(value);
+  if (!parsed.ok)
+    return { status: "unavailable", reason: parsed.error };
+  const { receiptHash, ...bound } = parsed.value;
+  try {
+    const expected = evidenceReceiptHash(bound, context2);
+    return expected === receiptHash ? { status: "intact", reason: "receipt_hash_matches" } : { status: "tampered", reason: "receipt_hash_mismatch" };
+  } catch {
+    return { status: "unavailable", reason: "hash_unavailable" };
+  }
+}
+function compareEvidenceClock(a, b2) {
+  if (a.logicalCounter !== b2.logicalCounter)
+    return a.logicalCounter - b2.logicalCounter;
+  const aTime = Date.parse(a.wallClockUtc);
+  const bTime = Date.parse(b2.wallClockUtc);
+  if (aTime !== bTime)
+    return aTime < bTime ? -1 : 1;
+  return 0;
+}
+function verifyEvidenceChain(receipts, context2) {
+  const result = {
+    valid: false,
+    checked: 0,
+    head: null,
+    findings: [],
+    devices: [],
+    maxObservedSkewMs: null
+  };
+  const parsedReceipts = [];
+  for (const entry of receipts) {
+    const parsed = parseEvidenceReceipt(entry);
+    if (!parsed.ok) {
+      result.findings.push({ code: "receipt_unreadable", detail: parsed.error });
+      continue;
+    }
+    parsedReceipts.push(parsed.value);
+  }
+  result.checked = parsedReceipts.length;
+  if (parsedReceipts.length === 0) {
+    result.findings.push({ code: "no_receipts" });
+    return result;
+  }
+  const first = parsedReceipts[0];
+  for (const receipt of parsedReceipts) {
+    if (receipt.binding.incidentId !== first.binding.incidentId) {
+      result.findings.push({ code: "incident_mismatch", receiptId: receipt.receiptId });
+    }
+    if (receipt.binding.candidateDigest !== first.binding.candidateDigest) {
+      result.findings.push({ code: "candidate_digest_mismatch", receiptId: receipt.receiptId });
+    }
+    if (receipt.binding.policyRevision !== first.binding.policyRevision) {
+      result.findings.push({ code: "policy_revision_mismatch", receiptId: receipt.receiptId });
+    }
+    if (receipt.clock.observedSkewMs !== null) {
+      const observed = Math.abs(receipt.clock.observedSkewMs);
+      result.maxObservedSkewMs = result.maxObservedSkewMs === null ? observed : Math.max(result.maxObservedSkewMs, observed);
+    }
+  }
+  const byId = /* @__PURE__ */ new Map();
+  const unique = [];
+  for (const receipt of parsedReceipts) {
+    const existing = byId.get(receipt.receiptId);
+    if (existing) {
+      if (existing.receiptHash !== receipt.receiptHash) {
+        result.findings.push({ code: "duplicate_receipt_conflict", receiptId: receipt.receiptId });
+      }
+      continue;
+    }
+    byId.set(receipt.receiptId, receipt);
+    unique.push(receipt);
+  }
+  unique.sort((a, b2) => {
+    const byClock = compareEvidenceClock(a.clock, b2.clock);
+    if (byClock !== 0)
+      return byClock;
+    return a.receiptId < b2.receiptId ? -1 : a.receiptId > b2.receiptId ? 1 : 0;
+  });
+  let expectedPrevious = EVIDENCE_GENESIS_HASH;
+  for (const receipt of unique) {
+    const verification = verifyEvidenceReceipt(receipt, context2);
+    if (verification.status !== "intact") {
+      result.findings.push({
+        code: verification.status === "tampered" ? "receipt_hash_mismatch" : "receipt_hash_unavailable",
+        receiptId: receipt.receiptId
+      });
+    }
+    if (receipt.previousHash !== expectedPrevious) {
+      result.findings.push({
+        code: "chain_link_mismatch",
+        receiptId: receipt.receiptId,
+        detail: `expected ${expectedPrevious.slice(0, 12)}\u2026`
+      });
+    }
+    expectedPrevious = receipt.receiptHash;
+  }
+  const devices = /* @__PURE__ */ new Map();
+  for (const receipt of unique) {
+    const entry = devices.get(receipt.binding.deviceId) ?? { maxLogicalCounter: 0, receipts: 0 };
+    entry.maxLogicalCounter = Math.max(entry.maxLogicalCounter, receipt.clock.logicalCounter);
+    entry.receipts += 1;
+    devices.set(receipt.binding.deviceId, entry);
+  }
+  result.devices = [...devices.entries()].map(([deviceId, value]) => ({ deviceId, ...value })).sort((a, b2) => a.deviceId < b2.deviceId ? -1 : 1);
+  result.valid = result.findings.length === 0;
+  const head = unique[unique.length - 1];
+  if (result.valid) {
+    result.head = {
+      receiptId: head.receiptId,
+      receiptHash: head.receiptHash,
+      logicalCounter: head.clock.logicalCounter
+    };
+  }
+  return result;
+}
+function detectEvidenceTruncation(previousHead, verification) {
+  if (!previousHead)
+    return { truncated: false, reason: "no_previous_head" };
+  if (!verification.valid || !verification.head) {
+    return { truncated: false, reason: "chain_not_verifiable" };
+  }
+  if (verification.head.receiptHash === previousHead.receiptHash) {
+    return { truncated: false, reason: "head_unchanged" };
+  }
+  if (verification.head.logicalCounter < previousHead.logicalCounter) {
+    return { truncated: true, reason: "logical_counter_regressed" };
+  }
+  const present = verification.head.receiptId === previousHead.receiptId;
+  if (!present && verification.head.logicalCounter === previousHead.logicalCounter) {
+    return { truncated: true, reason: "head_replaced_at_same_counter" };
+  }
+  return { truncated: false, reason: "head_advanced" };
+}
+function appendEvidenceReceipt(input, chainHead, context2) {
+  const bound = {
+    version: EVIDENCE_RECEIPT_VERSION,
+    receiptId: input.receiptId,
+    binding: input.binding,
+    clock: input.clock,
+    previousHash: chainHead?.receiptHash ?? EVIDENCE_GENESIS_HASH,
+    dataClass: input.dataClass,
+    payloadSummary: input.payloadSummary,
+    externallyAnchored: false
+  };
+  let receiptHash;
+  try {
+    receiptHash = evidenceReceiptHash(bound, context2);
+  } catch {
+    return fail("hash_unavailable");
+  }
+  const candidate = { ...bound, receiptHash };
+  return parseEvidenceReceipt(candidate);
+}
+async function anchorEvidenceHead(sink, request2, options = {}) {
+  if (!sink)
+    return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "no_archive_sink" };
+  if (!HASH.test(request2.headReceiptHash)) {
+    return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "invalid_head_hash" };
+  }
+  const timeoutMs = options.timeoutMs ?? 15e3;
+  const now = options.now ?? Date.now;
+  let result;
+  const started = now();
+  try {
+    result = await Promise.race([
+      sink.anchor(request2),
+      new Promise((resolve13) => setTimeout(() => resolve13({ status: "unavailable", reason: "archive_timeout" }), timeoutMs))
+    ]);
+  } catch (error3) {
+    return {
+      status: "unanchored",
+      reference: null,
+      anchoredAtUtc: null,
+      reason: `archive_error:${error3 instanceof Error ? error3.name : "unknown"}`
+    };
+  }
+  if (result.status === "unavailable") {
+    return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: result.reason };
+  }
+  if (result.status === "rejected") {
+    return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: `rejected:${result.reason}` };
+  }
+  if (result.anchoredReceiptHash !== request2.headReceiptHash) {
+    return {
+      status: "unanchored",
+      reference: null,
+      anchoredAtUtc: null,
+      reason: "archive_digest_mismatch"
+    };
+  }
+  if (typeof result.reference !== "string" || result.reference.trim() === "" || result.reference.length > 512) {
+    return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "archive_reference_invalid" };
+  }
+  const anchoredAt = parseIso(result.anchoredAtUtc);
+  if (!anchoredAt) {
+    return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "archive_timestamp_invalid" };
+  }
+  if (now() - started > timeoutMs) {
+    return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "archive_timeout_exceeded" };
+  }
+  return {
+    status: "anchored",
+    reference: result.reference.trim(),
+    anchoredAtUtc: anchoredAt,
+    reason: "archive_confirmed_digest"
+  };
+}
+var EVIDENCE_RECEIPT_VERSION, EVIDENCE_GENESIS_HASH, UUID, HASH, REF;
+var init_evidence_receipt = __esm({
+  "../core/dist/incidents/evidence-receipt.js"() {
+    "use strict";
+    EVIDENCE_RECEIPT_VERSION = 1;
+    EVIDENCE_GENESIS_HASH = "0".repeat(64);
+    UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    HASH = /^[0-9a-f]{64}$/;
+    REF = /^[A-Za-z0-9._:@/-]{1,200}$/;
+  }
+});
+
+// ../core/dist/causal-chain.js
+function causalKindRank(kind) {
+  return CAUSAL_CHAIN_ORDER.indexOf(kind);
+}
+function isIsoUtc(value) {
+  if (typeof value !== "string")
+    return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && parsed > 0;
+}
+function sha256(input) {
+  return (0, import_node_crypto7.createHash)("sha256").update(input).digest("hex");
+}
+function causalLinkDigestInput(link2) {
+  const c = link2.correlation;
+  return [
+    "aidr.causal.link.v1",
+    link2.linkId,
+    link2.kind,
+    String(causalKindRank(link2.kind)),
+    String(link2.position),
+    link2.wallClockUtc,
+    c.sessionId,
+    c.agentIid,
+    c.connector,
+    c.incidentId,
+    c.traceId,
+    c.spanId,
+    c.handoffFromAgentIid ?? "-",
+    [...link2.previousLinkIds ?? []].sort().join(","),
+    [...link2.nextLinkIds ?? []].sort().join(","),
+    link2.severity,
+    link2.payloadSummary
+  ].join("\n");
+}
+function causalLinkDigest(link2, context2) {
+  return context2.hash(causalLinkDigestInput(link2));
+}
+function parseLink(value, context2) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "not_an_object" };
+  }
+  const raw = value;
+  if (typeof raw.linkId !== "string" || !LINK_ID.test(raw.linkId)) {
+    return { ok: false, error: "invalid_link_id" };
+  }
+  if (typeof raw.kind !== "string" || !KIND_SET.has(raw.kind)) {
+    return { ok: false, error: "invalid_link_kind" };
+  }
+  if (!Number.isSafeInteger(raw.position) || raw.position < 0) {
+    return { ok: false, error: "invalid_position" };
+  }
+  if (!isIsoUtc(raw.wallClockUtc))
+    return { ok: false, error: "invalid_wall_clock" };
+  if (!raw.correlation || typeof raw.correlation !== "object" || Array.isArray(raw.correlation)) {
+    return { ok: false, error: "invalid_correlation" };
+  }
+  const correlationRaw = raw.correlation;
+  const required = ["sessionId", "agentIid", "connector", "incidentId", "traceId", "spanId"];
+  for (const key of required) {
+    if (typeof correlationRaw[key] !== "string" || !LINK_ID.test(correlationRaw[key])) {
+      return { ok: false, error: `invalid_correlation_${key}` };
+    }
+  }
+  if (correlationRaw.handoffFromAgentIid !== void 0 && (typeof correlationRaw.handoffFromAgentIid !== "string" || !LINK_ID.test(correlationRaw.handoffFromAgentIid))) {
+    return { ok: false, error: "invalid_handoff_from" };
+  }
+  if (typeof raw.payloadSummary !== "string" || raw.payloadSummary.length > 4096) {
+    return { ok: false, error: "invalid_payload_summary" };
+  }
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(raw.payloadSummary)) {
+    return { ok: false, error: "invalid_payload_summary" };
+  }
+  if (typeof raw.severity !== "string" || !SEVERITY_SET.has(raw.severity)) {
+    return { ok: false, error: "invalid_severity" };
+  }
+  const parseLinkIds = (entry, label) => {
+    if (entry === void 0)
+      return [];
+    if (!Array.isArray(entry))
+      return `invalid_${label}`;
+    const out = [];
+    for (const item of entry) {
+      if (typeof item !== "string" || !LINK_ID.test(item))
+        return `invalid_${label}`;
+      if (item === raw.linkId)
+        return `self_${label}`;
+      if (!out.includes(item))
+        out.push(item);
+    }
+    return out.sort();
+  };
+  const previous = parseLinkIds(raw.previousLinkIds, "previous_link_ids");
+  if (typeof previous === "string")
+    return { ok: false, error: previous };
+  const next = parseLinkIds(raw.nextLinkIds, "next_link_ids");
+  if (typeof next === "string")
+    return { ok: false, error: next };
+  const correlation = {
+    sessionId: correlationRaw.sessionId,
+    agentIid: correlationRaw.agentIid,
+    connector: correlationRaw.connector,
+    incidentId: correlationRaw.incidentId,
+    traceId: correlationRaw.traceId,
+    spanId: correlationRaw.spanId,
+    ...correlationRaw.handoffFromAgentIid === void 0 ? {} : { handoffFromAgentIid: correlationRaw.handoffFromAgentIid }
+  };
+  const link2 = {
+    linkId: raw.linkId,
+    kind: raw.kind,
+    position: raw.position,
+    wallClockUtc: new Date(Date.parse(raw.wallClockUtc)).toISOString(),
+    correlation,
+    ...previous.length === 0 ? {} : { previousLinkIds: previous },
+    ...next.length === 0 ? {} : { nextLinkIds: next },
+    payloadSummary: raw.payloadSummary,
+    severity: raw.severity
+  };
+  try {
+    void causalLinkDigest(link2, context2);
+  } catch {
+    return { ok: false, error: "hash_unavailable" };
+  }
+  return { ok: true, value: link2 };
+}
+function sameCorrelationScope(a, b2) {
+  return a.sessionId === b2.sessionId && a.agentIid === b2.agentIid && a.connector === b2.connector && a.incidentId === b2.incidentId && a.traceId === b2.traceId && a.spanId === b2.spanId && (a.handoffFromAgentIid ?? null) === (b2.handoffFromAgentIid ?? null);
+}
+function compareLinks(a, b2) {
+  if (a.position !== b2.position)
+    return a.position - b2.position;
+  const aTime = Date.parse(a.wallClockUtc);
+  const bTime = Date.parse(b2.wallClockUtc);
+  if (aTime !== bTime)
+    return aTime < bTime ? -1 : 1;
+  return a.linkId < b2.linkId ? -1 : a.linkId > b2.linkId ? 1 : 0;
+}
+function detectCycle(links) {
+  const byId = new Map(links.map((link2) => [link2.linkId, link2]));
+  const state = /* @__PURE__ */ new Map();
+  let cycle = null;
+  const visit2 = (linkId, path3) => {
+    if (cycle)
+      return;
+    const current = state.get(linkId) ?? 0;
+    if (current === 1) {
+      cycle = [...path3, linkId];
+      return;
+    }
+    if (current === 2)
+      return;
+    state.set(linkId, 1);
+    for (const successor of byId.get(linkId)?.nextLinkIds ?? []) {
+      if (byId.has(successor))
+        visit2(successor, [...path3, linkId]);
+      if (cycle)
+        return;
+    }
+    state.set(linkId, 2);
+  };
+  for (const link2 of [...links].sort(compareLinks))
+    visit2(link2.linkId, []);
+  return cycle;
+}
+function causalLinkReceiptId(linkId) {
+  if (!LINK_ID.test(linkId))
+    throw new Error("causal_link_id_invalid");
+  const digest = sha256(`aidr.causal.receipt-id.v1
+${linkId}`);
+  return [
+    digest.slice(0, 8),
+    digest.slice(8, 12),
+    `4${digest.slice(13, 16)}`,
+    `8${digest.slice(17, 20)}`,
+    digest.slice(20, 32)
+  ].join("-");
+}
+function sortFindings(findings) {
+  return [...findings].sort((a, b2) => {
+    if ((a.linkId ?? "") !== (b2.linkId ?? ""))
+      return (a.linkId ?? "") < (b2.linkId ?? "") ? -1 : 1;
+    if (a.code !== b2.code)
+      return a.code < b2.code ? -1 : 1;
+    const aDetail = a.detail ?? "";
+    const bDetail = b2.detail ?? "";
+    return aDetail < bDetail ? -1 : aDetail > bDetail ? 1 : 0;
+  });
+}
+function recordCausalChain(inputs, options) {
+  const expectedKinds = (() => {
+    const source = options.expectedKinds ?? CAUSAL_CHAIN_ORDER;
+    const seen = /* @__PURE__ */ new Set();
+    for (const kind of source) {
+      if (!KIND_SET.has(kind))
+        throw new Error("causal_expected_kind_invalid");
+      seen.add(kind);
+    }
+    return [...seen].sort((a, b2) => causalKindRank(a) - causalKindRank(b2));
+  })();
+  const findings = [];
+  const duplicates = [];
+  const refused = [];
+  const byId = /* @__PURE__ */ new Map();
+  const digestById = /* @__PURE__ */ new Map();
+  const positionOwner = /* @__PURE__ */ new Map();
+  let correlation = null;
+  for (const input of inputs) {
+    const parsed = parseLink(input, options);
+    if (!parsed.ok) {
+      findings.push({ code: "link_unreadable", detail: parsed.error });
+      continue;
+    }
+    const link2 = parsed.value;
+    if (correlation === null) {
+      correlation = link2.correlation;
+    } else if (!sameCorrelationScope(correlation, link2.correlation)) {
+      refused.push(link2.linkId);
+      findings.push({
+        code: "correlation_mismatch",
+        linkId: link2.linkId,
+        detail: "link_belongs_to_another_correlation_scope"
+      });
+      continue;
+    }
+    const digest = causalLinkDigest(link2, options);
+    const existingDigest = digestById.get(link2.linkId);
+    if (existingDigest !== void 0) {
+      if (existingDigest === digest) {
+        duplicates.push(link2.linkId);
+      } else {
+        findings.push({
+          code: "duplicate_link_conflict",
+          linkId: link2.linkId,
+          detail: "link_id_reused_with_different_content"
+        });
+      }
+      continue;
+    }
+    const owner = positionOwner.get(link2.position);
+    if (owner !== void 0 && owner !== link2.linkId) {
+      findings.push({
+        code: "position_conflict",
+        linkId: link2.linkId,
+        detail: `position_${link2.position}_claimed_by:${owner}`
+      });
+    } else {
+      positionOwner.set(link2.position, link2.linkId);
+    }
+    digestById.set(link2.linkId, digest);
+    byId.set(link2.linkId, { ...link2, linkDigest: digest, receiptId: null });
+  }
+  const links = [...byId.values()].sort(compareLinks);
+  const linkIds = new Set(links.map((link2) => link2.linkId));
+  for (const link2 of links) {
+    for (const successor of link2.nextLinkIds ?? []) {
+      if (linkIds.has(successor))
+        continue;
+      findings.push({
+        code: "chain_gap",
+        linkId: link2.linkId,
+        detail: `missing_successor:${successor}`
+      });
+    }
+    for (const predecessor of link2.previousLinkIds ?? []) {
+      if (linkIds.has(predecessor))
+        continue;
+      findings.push({
+        code: "chain_gap",
+        linkId: link2.linkId,
+        detail: `missing_predecessor:${predecessor}`
+      });
+    }
+  }
+  const observedKinds = CAUSAL_CHAIN_ORDER.filter((kind) => links.some((link2) => link2.kind === kind));
+  for (const kind of expectedKinds) {
+    if (observedKinds.includes(kind))
+      continue;
+    findings.push({ code: "chain_gap", missingKind: kind, detail: `no_link_for_kind:${kind}` });
+  }
+  const cycle = detectCycle(links);
+  if (cycle)
+    findings.push({ code: "cycle_detected", detail: cycle.join("->") });
+  const head = links[links.length - 1];
+  const chain = {
+    schemaVersion: CAUSAL_CHAIN_SCHEMA_VERSION,
+    correlation: correlation ?? {
+      sessionId: "unknown",
+      agentIid: "unknown",
+      connector: "unknown",
+      incidentId: "unknown",
+      traceId: "unknown",
+      spanId: "unknown"
+    },
+    links,
+    head: head ? { linkId: head.linkId, linkDigest: head.linkDigest, position: head.position } : null,
+    findings: sortFindings(findings),
+    duplicates: [...duplicates].sort(),
+    expectedKinds,
+    observedKinds,
+    refused: [...refused].sort(),
+    receipts: [],
+    receiptOutcome: { status: "not_requested" }
+  };
+  const binding = options.binding;
+  return binding ? bindCausalChainReceipts(chain, binding, options) : chain;
+}
+function bindCausalChainReceipts(chain, binding, options) {
+  const receipts = [];
+  const links = chain.links.map((link2) => ({ ...link2 }));
+  const base = options.logicalCounterBase ?? 0;
+  const findings = [...chain.findings];
+  for (let index = 0; index < links.length; index += 1) {
+    const link2 = links[index];
+    if (!link2)
+      continue;
+    let receiptId;
+    try {
+      receiptId = causalLinkReceiptId(link2.linkId);
+    } catch {
+      findings.push({ code: "receipt_unavailable", linkId: link2.linkId, detail: "receipt_id_unavailable" });
+      continue;
+    }
+    const clock = {
+      // The logical counter is authoritative and follows chain order, so a
+      // host with a wrong wall clock still produces a verifiable order.
+      wallClockUtc: link2.wallClockUtc,
+      logicalCounter: base + index,
+      observedSkewMs: null
+    };
+    const appended = appendEvidenceReceipt({
+      receiptId,
+      binding,
+      clock,
+      dataClass: "audit",
+      payloadSummary: [
+        `causal=${link2.kind}`,
+        `position=${link2.position}`,
+        `link=${link2.linkId}`,
+        `link_digest=${link2.linkDigest}`
+      ].join(" ").slice(0, 4096)
+    }, receipts[receipts.length - 1] ?? null, options);
+    if (!appended.ok) {
+      findings.push({ code: "receipt_unavailable", linkId: link2.linkId, detail: appended.error });
+      continue;
+    }
+    link2.receiptId = appended.value.receiptId;
+    receipts.push(appended.value);
+  }
+  chain.links = links;
+  chain.receipts = receipts;
+  chain.findings = sortFindings(findings);
+  const lastReceipt = receipts[receipts.length - 1];
+  chain.receiptOutcome = {
+    status: "bound",
+    receipts: receipts.length,
+    headReceiptId: lastReceipt ? lastReceipt.receiptId : null
+  };
+  const head = chain.links[chain.links.length - 1];
+  chain.head = head && receipts.length === chain.links.length ? { linkId: head.linkId, linkDigest: head.linkDigest, position: head.position } : null;
+  return chain;
+}
+function verifyCausalLink(link2, receiptById, context2, findings) {
+  const { linkDigest, receiptId, ...input } = link2;
+  let expected;
+  try {
+    expected = causalLinkDigest(input, context2);
+  } catch {
+    findings.push({ code: "receipt_unavailable", linkId: link2.linkId, detail: "hash_unavailable" });
+    return null;
+  }
+  const digestMatches = expected === linkDigest;
+  if (!digestMatches) {
+    findings.push({
+      code: "link_digest_mismatch",
+      linkId: link2.linkId,
+      detail: "link_digest_mismatch"
+    });
+  }
+  if (!receiptId) {
+    findings.push({ code: "receipt_unavailable", linkId: link2.linkId, detail: "link_has_no_receipt" });
+    return null;
+  }
+  const receipt = receiptById.get(receiptId);
+  if (!receipt) {
+    findings.push({ code: "receipt_unavailable", linkId: link2.linkId, detail: "receipt_missing" });
+    return null;
+  }
+  const parsed = parseEvidenceReceipt(receipt);
+  if (!parsed.ok) {
+    findings.push({ code: "receipt_unavailable", linkId: link2.linkId, detail: parsed.error });
+    return null;
+  }
+  const verification = verifyEvidenceReceipt(parsed.value, context2);
+  if (verification.status !== "intact") {
+    findings.push({ code: "receipt_not_intact", linkId: link2.linkId, detail: verification.reason });
+    return null;
+  }
+  if (!digestMatches || !parsed.value.payloadSummary.includes(`link_digest=${linkDigest}`)) {
+    findings.push({
+      code: "receipt_not_intact",
+      linkId: link2.linkId,
+      detail: "receipt_does_not_document_this_link"
+    });
+    return null;
+  }
+  return parsed.value.receiptId;
+}
+function verifyCausalChainEvidence(chain, context2) {
+  const findings = [];
+  const intactReceiptIds = [];
+  const receiptById = /* @__PURE__ */ new Map();
+  for (const receipt of chain.receipts)
+    receiptById.set(receipt.receiptId, receipt);
+  for (const link2 of chain.links) {
+    const intactId = verifyCausalLink(link2, receiptById, context2, findings);
+    if (intactId !== null)
+      intactReceiptIds.push(intactId);
+  }
+  for (let index = 1; index < chain.receipts.length; index += 1) {
+    const previous = chain.receipts[index - 1];
+    const current = chain.receipts[index];
+    if (!previous || !current)
+      continue;
+    if (current.previousHash !== previous.receiptHash) {
+      findings.push({ code: "receipt_not_intact", detail: `chain_link_mismatch:${current.receiptId}` });
+    }
+  }
+  const headReceipt = chain.receipts[chain.receipts.length - 1];
+  return {
+    valid: findings.length === 0,
+    checkedLinks: chain.links.length,
+    checkedReceipts: chain.receipts.length,
+    findings: sortFindings(findings),
+    intactReceiptIds,
+    headReceiptHash: headReceipt ? headReceipt.receiptHash : null
+  };
+}
+function canonicalCausalChainJson(chain) {
+  return JSON.stringify({
+    schemaVersion: chain.schemaVersion,
+    correlation: chain.correlation,
+    links: chain.links.map((link2) => ({
+      linkId: link2.linkId,
+      kind: link2.kind,
+      position: link2.position,
+      wallClockUtc: link2.wallClockUtc,
+      linkDigest: link2.linkDigest,
+      receiptId: link2.receiptId,
+      previousLinkIds: [...link2.previousLinkIds ?? []].sort(),
+      nextLinkIds: [...link2.nextLinkIds ?? []].sort(),
+      payloadSummary: link2.payloadSummary,
+      severity: link2.severity,
+      correlation: link2.correlation
+    })),
+    head: chain.head,
+    findings: chain.findings,
+    duplicates: chain.duplicates,
+    expectedKinds: chain.expectedKinds,
+    observedKinds: chain.observedKinds
+  });
+}
+var import_node_crypto7, CAUSAL_CHAIN_SCHEMA_VERSION, CAUSAL_CHAIN_ORDER, LINK_ID, KIND_SET, SEVERITY_SET;
+var init_causal_chain = __esm({
+  "../core/dist/causal-chain.js"() {
+    "use strict";
+    import_node_crypto7 = require("node:crypto");
+    init_evidence_receipt();
+    CAUSAL_CHAIN_SCHEMA_VERSION = 1;
+    CAUSAL_CHAIN_ORDER = [
+      "message",
+      "retrieval",
+      "tool_description",
+      "tool_response",
+      "authorization",
+      "action",
+      "side_effect",
+      "intervention"
+    ];
+    LINK_ID = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
+    KIND_SET = new Set(CAUSAL_CHAIN_ORDER);
+    SEVERITY_SET = /* @__PURE__ */ new Set(["info", "warning", "high", "critical"]);
+  }
+});
+
 // ../core/dist/clients/amsi-spawn.js
 function spawn(command, args, options) {
   return (0, import_node_child_process.spawn)(command, args, options);
@@ -8351,7 +9177,7 @@ function canonicalize(value) {
   return output;
 }
 function eventHash(event) {
-  return (0, import_node_crypto7.createHash)("sha256").update(JSON.stringify(canonicalize(event))).digest("hex");
+  return (0, import_node_crypto8.createHash)("sha256").update(JSON.stringify(canonicalize(event))).digest("hex");
 }
 function errorCode(error3) {
   return typeof error3 === "object" && error3 !== null && "code" in error3 ? String(error3.code ?? "") : "";
@@ -8362,11 +9188,11 @@ function isMissing(error3) {
 function sleep(ms) {
   return new Promise((resolve13) => setTimeout(resolve13, ms));
 }
-var import_node_crypto7, import_promises4, import_node_path8, WAL_VERSION, EVENT_ID_PATTERN, EVENT_HASH_PATTERN, RECENT_EVENT_LIMIT, DEFAULT_MAX_READY_PENDING_AGE_MS, LOSS_REASONS, EMPTY_TOTALS, DurableTelemetryQueue;
+var import_node_crypto8, import_promises4, import_node_path8, WAL_VERSION, EVENT_ID_PATTERN, EVENT_HASH_PATTERN, RECENT_EVENT_LIMIT, DEFAULT_MAX_READY_PENDING_AGE_MS, LOSS_REASONS, EMPTY_TOTALS, DurableTelemetryQueue;
 var init_telemetry_queue = __esm({
   "../core/dist/telemetry-queue.js"() {
     "use strict";
-    import_node_crypto7 = require("node:crypto");
+    import_node_crypto8 = require("node:crypto");
     import_promises4 = require("node:fs/promises");
     import_node_path8 = require("node:path");
     init_telemetry_redaction();
@@ -8659,7 +9485,7 @@ var init_telemetry_queue = __esm({
       async writeReadinessEvidence(path3) {
         const evidence = await this.readinessEvidence();
         await (0, import_promises4.mkdir)((0, import_node_path8.dirname)(path3), { recursive: true, mode: 448 });
-        const temporary = `${path3}.${process.pid}.${(0, import_node_crypto7.randomUUID)()}.tmp`;
+        const temporary = `${path3}.${process.pid}.${(0, import_node_crypto8.randomUUID)()}.tmp`;
         try {
           const handle = await (0, import_promises4.open)(temporary, "wx", 384);
           try {
@@ -8693,7 +9519,7 @@ var init_telemetry_queue = __esm({
         if (requestedId !== void 0 && (typeof requestedId !== "string" || !EVENT_ID_PATTERN.test(requestedId))) {
           throw new TypeError("invalid telemetry event_id");
         }
-        const event = JSON.parse(JSON.stringify({ ...safeCandidate, event_id: requestedId ?? (0, import_node_crypto7.randomUUID)() }));
+        const event = JSON.parse(JSON.stringify({ ...safeCandidate, event_id: requestedId ?? (0, import_node_crypto8.randomUUID)() }));
         if (!event || typeof event !== "object")
           throw new TypeError("telemetry event is not serializable");
         const serialized = JSON.stringify(event);
@@ -8838,7 +9664,7 @@ var init_telemetry_queue = __esm({
       async rewriteWal(snapshot) {
         await this.faultInjector?.("compact");
         await (0, import_promises4.mkdir)(this.directory, { recursive: true, mode: 448 });
-        const temporary = `${this.walPath}.${process.pid}.${(0, import_node_crypto7.randomUUID)()}.tmp`;
+        const temporary = `${this.walPath}.${process.pid}.${(0, import_node_crypto8.randomUUID)()}.tmp`;
         const checkpoint = {
           v: WAL_VERSION,
           op: "checkpoint",
@@ -9013,11 +9839,11 @@ var init_control_plane_url = __esm({
 });
 
 // ../core/dist/clients/control-plane.js
-var import_node_crypto8, import_node_path10, ControlPlaneClient;
+var import_node_crypto9, import_node_path10, ControlPlaneClient;
 var init_control_plane = __esm({
   "../core/dist/clients/control-plane.js"() {
     "use strict";
-    import_node_crypto8 = require("node:crypto");
+    import_node_crypto9 = require("node:crypto");
     import_node_path10 = require("node:path");
     init_config();
     init_degraded_safe_mode();
@@ -9311,7 +10137,7 @@ var init_control_plane = __esm({
         return { flushed, lastResult };
       }
       telemetryQueue(iid) {
-        const namespace = (0, import_node_crypto8.createHash)("sha256").update(`${this.baseUrl}\0${this.apiKey}\0${iid}`).digest("hex");
+        const namespace = (0, import_node_crypto9.createHash)("sha256").update(`${this.baseUrl}\0${this.apiKey}\0${iid}`).digest("hex");
         const root = this.options.telemetryQueueRoot ?? resolvePath("~/.singularity-aidr/telemetry");
         return new DurableTelemetryQueue({
           ...this.options.telemetryQueue,
@@ -9498,7 +10324,7 @@ var init_control_plane = __esm({
             body: JSON.stringify({
               seats: options.seats ?? 1,
               plan: options.plan ?? "monthly",
-              request_id: options.requestId ?? (0, import_node_crypto8.randomUUID)()
+              request_id: options.requestId ?? (0, import_node_crypto9.randomUUID)()
             })
           });
           let body;
@@ -9632,18 +10458,18 @@ var init_detection_leg = __esm({
 // ../core/dist/intel/verify.js
 function verifyEd25519Signature(params) {
   try {
-    const key = (0, import_node_crypto9.createPublicKey)(params.publicKeyPem);
+    const key = (0, import_node_crypto10.createPublicKey)(params.publicKeyPem);
     const sig = Buffer.from(params.signatureBase64, "base64");
-    return (0, import_node_crypto9.verify)(null, Buffer.from(params.message), key, sig);
+    return (0, import_node_crypto10.verify)(null, Buffer.from(params.message), key, sig);
   } catch {
     return false;
   }
 }
-var import_node_crypto9;
+var import_node_crypto10;
 var init_verify = __esm({
   "../core/dist/intel/verify.js"() {
     "use strict";
-    import_node_crypto9 = require("node:crypto");
+    import_node_crypto10 = require("node:crypto");
   }
 });
 
@@ -9651,8 +10477,8 @@ var init_verify = __esm({
 function bytes(value) {
   return typeof value === "string" ? Buffer.from(value, "utf8") : value;
 }
-function sha256(value) {
-  return (0, import_node_crypto10.createHash)("sha256").update(bytes(value)).digest("hex");
+function sha2562(value) {
+  return (0, import_node_crypto11.createHash)("sha256").update(bytes(value)).digest("hex");
 }
 function canonicalJsonValue(value) {
   if (value === null || typeof value === "boolean" || typeof value === "string") {
@@ -9799,7 +10625,7 @@ function validateBundle(params) {
     provenance: params.provenance
   });
   assertTimeWindow(manifest, params.now.getTime(), params.clockSkewMs, params.maxAgeMs);
-  if (sha256(payloadBytes) !== manifest.payload.sha256) {
+  if (sha2562(payloadBytes) !== manifest.payload.sha256) {
     throw new FeedValidationError("malformed", "Feed payload sha256 does not match manifest");
   }
   const payloadParsed = ReputationFeedPayloadSchema.safeParse(parseJson(payloadBytes, "Feed payload"));
@@ -9830,7 +10656,7 @@ async function durableWrite(path3, value) {
   }
 }
 async function atomicJson(path3, value) {
-  const temporary = `${path3}.${process.pid}.${(0, import_node_crypto10.randomUUID)()}.tmp`;
+  const temporary = `${path3}.${process.pid}.${(0, import_node_crypto11.randomUUID)()}.tmp`;
   try {
     await durableWrite(temporary, `${JSON.stringify(value)}
 `);
@@ -9899,7 +10725,7 @@ async function readVersion(params) {
   const receipt = FetchReceiptSchema.safeParse(parseJson(Buffer.from(receiptRaw), "Feed receipt"));
   if (!receipt.success)
     throw new FeedValidationError("malformed", "Feed receipt schema is invalid");
-  if (receipt.data.manifest_sha256 !== sha256(manifestBytes)) {
+  if (receipt.data.manifest_sha256 !== sha2562(manifestBytes)) {
     throw new FeedValidationError("malformed", "Feed receipt does not match manifest");
   }
   const fetchedAt = Date.parse(receipt.data.fetched_at);
@@ -10030,7 +10856,7 @@ async function assertVersionDoesNotExist(root, version) {
 }
 async function stageVersion(params) {
   const finalRoot = versionRoot(params.root, params.validated.manifest.version);
-  const staging = (0, import_node_path11.join)(params.root, `.staging-${(0, import_node_crypto10.randomUUID)()}`);
+  const staging = (0, import_node_path11.join)(params.root, `.staging-${(0, import_node_crypto11.randomUUID)()}`);
   try {
     await (0, import_promises5.mkdir)(staging, { recursive: false });
     await durableWrite((0, import_node_path11.join)(staging, "manifest.json"), params.validated.manifestBytes);
@@ -10040,7 +10866,7 @@ async function stageVersion(params) {
     await durableWrite((0, import_node_path11.join)(staging, "receipt.json"), `${JSON.stringify({
       schema_version: REPUTATION_FEED_SCHEMA_VERSION,
       fetched_at: params.now.toISOString(),
-      manifest_sha256: sha256(params.validated.manifestBytes),
+      manifest_sha256: sha2562(params.validated.manifestBytes),
       source: {
         transport: params.source.transport,
         locator: params.source.locator
@@ -10190,11 +11016,11 @@ function createFileReputationFeedSource(options) {
     }
   };
 }
-var import_node_crypto10, import_promises5, import_node_path11, REPUTATION_FEED_SCHEMA_VERSION, DEFAULT_REPUTATION_FEED_MAX_AGE_MS, DEFAULT_REPUTATION_FEED_MAX_PAYLOAD_BYTES, SAFE_ID, SHA256, BASE64, DateTimeSchema, SafeIdSchema, ReputationIndicatorKindSchema, ReputationFeedRecordSchema, ReputationFeedPayloadSchema, ReputationFeedManifestSchema, StoreStateSchema, FetchReceiptSchema, ReputationFeedUnavailableError, ReputationFeedUpdateError, FeedValidationError;
+var import_node_crypto11, import_promises5, import_node_path11, REPUTATION_FEED_SCHEMA_VERSION, DEFAULT_REPUTATION_FEED_MAX_AGE_MS, DEFAULT_REPUTATION_FEED_MAX_PAYLOAD_BYTES, SAFE_ID, SHA256, BASE64, DateTimeSchema, SafeIdSchema, ReputationIndicatorKindSchema, ReputationFeedRecordSchema, ReputationFeedPayloadSchema, ReputationFeedManifestSchema, StoreStateSchema, FetchReceiptSchema, ReputationFeedUnavailableError, ReputationFeedUpdateError, FeedValidationError;
 var init_reputation_feed = __esm({
   "../core/dist/reputation-feed.js"() {
     "use strict";
-    import_node_crypto10 = require("node:crypto");
+    import_node_crypto11 = require("node:crypto");
     import_promises5 = require("node:fs/promises");
     import_node_path11 = require("node:path");
     init_zod();
@@ -10503,13 +11329,13 @@ var init_file_check = __esm({
           const responses = data.responses ?? [];
           for (const entry of responses) {
             const key = entry.key;
-            const sha2563 = key?.sha256 ?? "";
-            if (!sha2563)
+            const sha2564 = key?.sha256 ?? "";
+            if (!sha2564)
               continue;
             const severity = entry.severity ?? "SEVERITY_UNKNOWN";
             const malwareNames = entry.malware_name ?? [];
             const detectionNames = malwareNames.filter((n) => typeof n === "string" && n.length > 0);
-            results.push({ sha256: sha2563, severity, detectionNames });
+            results.push({ sha256: sha2564, severity, detectionNames });
           }
         } catch (e) {
           this.logger.warn("Failed to parse FileCheck batch response", { error: String(e) });
@@ -10920,11 +11746,11 @@ var init_url_check = __esm({
 });
 
 // ../core/dist/community-rules.js
-var import_node_crypto11, CommunityRuleRegistry;
+var import_node_crypto12, CommunityRuleRegistry;
 var init_community_rules = __esm({
   "../core/dist/community-rules.js"() {
     "use strict";
-    import_node_crypto11 = require("node:crypto");
+    import_node_crypto12 = require("node:crypto");
     init_types2();
     CommunityRuleRegistry = class {
       config;
@@ -10942,7 +11768,7 @@ var init_community_rules = __esm({
        * Returns the generated rule ID.
        */
       async submitRule(authorId, rule) {
-        const id = (0, import_node_crypto11.randomUUID)();
+        const id = (0, import_node_crypto12.randomUUID)();
         this.ensureContributor(authorId);
         const communityRule = {
           ...rule,
@@ -11390,12 +12216,12 @@ function createDefaultContainConfig() {
     timeoutSeconds: 60
   };
 }
-var import_node_child_process2, import_node_crypto12, AutoContain;
+var import_node_child_process2, import_node_crypto13, AutoContain;
 var init_contain = __esm({
   "../core/dist/contain.js"() {
     "use strict";
     import_node_child_process2 = require("node:child_process");
-    import_node_crypto12 = require("node:crypto");
+    import_node_crypto13 = require("node:crypto");
     init_config();
     init_types2();
     AutoContain = class {
@@ -11532,7 +12358,7 @@ var init_contain = __esm({
         });
       }
       async createContainer() {
-        const containerId = `aidr-${(0, import_node_crypto12.randomBytes)(8).toString("hex")}`;
+        const containerId = `aidr-${(0, import_node_crypto13.randomBytes)(8).toString("hex")}`;
         const args = [
           "create",
           "--name",
@@ -13614,7 +14440,7 @@ function validateManifest(indexPath) {
     base.signature_present = Boolean(manifest.signature);
     const artifact = manifest.artifacts?.["aig-cve-index.json"];
     const bytes2 = (0, import_node_fs5.readFileSync)(indexPath);
-    if (!artifact || artifact.bytes !== bytes2.length || artifact.sha256 !== (0, import_node_crypto13.createHash)("sha256").update(bytes2).digest("hex")) {
+    if (!artifact || artifact.bytes !== bytes2.length || artifact.sha256 !== (0, import_node_crypto14.createHash)("sha256").update(bytes2).digest("hex")) {
       return { ...base, bundle_id: manifest.bundle_id, error: "CVE index hash/size does not match manifest" };
     }
     if (manifest.schema !== "aig-data-manifest/v1" || !manifest.bundle_id) {
@@ -13624,7 +14450,7 @@ function validateManifest(indexPath) {
     if (manifest.signature && publicKey3) {
       const payload = { ...manifest };
       delete payload.signature;
-      const verifier = (0, import_node_crypto13.createVerify)("RSA-SHA256");
+      const verifier = (0, import_node_crypto14.createVerify)("RSA-SHA256");
       verifier.update(JSON.stringify(payload));
       verifier.end();
       if (!verifier.verify(publicKey3, manifest.signature.value, "base64")) {
@@ -13800,11 +14626,11 @@ function getAigCveIndexMetadata() {
     integrity: getAigDataIntegrityStatus()
   };
 }
-var import_node_crypto13, import_node_fs5, import_node_path12, import_node_url5, import_semver, import_meta4, _dirname, DEFAULT_GENERATED_DIR, _testIndexPath, _index, _integrity;
+var import_node_crypto14, import_node_fs5, import_node_path12, import_node_url5, import_semver, import_meta4, _dirname, DEFAULT_GENERATED_DIR, _testIndexPath, _index, _integrity;
 var init_cve_checker = __esm({
   "../core/dist/cve-checker.js"() {
     "use strict";
-    import_node_crypto13 = require("node:crypto");
+    import_node_crypto14 = require("node:crypto");
     import_node_fs5 = require("node:fs");
     import_node_path12 = require("node:path");
     import_node_url5 = require("node:url");
@@ -13884,7 +14710,7 @@ function validInteger(value) {
   return typeof value === "number" && Number.isSafeInteger(value);
 }
 function validClaimIdentities(claims) {
-  return claims.version === DELEGATED_CREDENTIAL_VERSION && safeString(claims.issuer) && safeString(claims.audience) && [claims.subjectUserId, claims.tenantId, claims.agentId, claims.tokenId].every((id) => typeof id === "string" && UUID.test(id)) && validTool(claims.tool) && validResource(claims.resource) && validScopes(claims.scopes);
+  return claims.version === DELEGATED_CREDENTIAL_VERSION && safeString(claims.issuer) && safeString(claims.audience) && [claims.subjectUserId, claims.tenantId, claims.agentId, claims.tokenId].every((id) => typeof id === "string" && UUID2.test(id)) && validTool(claims.tool) && validResource(claims.resource) && validScopes(claims.scopes);
 }
 function claimTimes(claims) {
   const { issuedAt, notBefore, expiresAt, delegationDepth } = claims;
@@ -13898,7 +14724,7 @@ function claimTimes(claims) {
 }
 function validParentLineage(claims, depth) {
   const parent = claims.parentTokenId;
-  if (parent !== void 0 && (typeof parent !== "string" || !UUID.test(parent)))
+  if (parent !== void 0 && (typeof parent !== "string" || !UUID2.test(parent)))
     return false;
   return depth === 0 === (parent === void 0);
 }
@@ -13958,7 +14784,7 @@ function publicKey(raw) {
   if (!value)
     return null;
   try {
-    const key = value.includes("BEGIN PUBLIC KEY") ? (0, import_node_crypto14.createPublicKey)(value) : (0, import_node_crypto14.createPublicKey)({ key: Buffer.from(value, "base64"), format: "der", type: "spki" });
+    const key = value.includes("BEGIN PUBLIC KEY") ? (0, import_node_crypto15.createPublicKey)(value) : (0, import_node_crypto15.createPublicKey)({ key: Buffer.from(value, "base64"), format: "der", type: "spki" });
     return key.asymmetricKeyType === "ed25519" ? key : null;
   } catch {
     return null;
@@ -14006,7 +14832,7 @@ function verifyCompactSignature(parsed, publicKeysById) {
     if (signature.length !== 64 || encodeBase64Url(signature) !== parsed.signatureSegment)
       return "malformed_token";
     const input = Buffer.from(`${parsed.headerSegment}.${parsed.payloadSegment}`, "ascii");
-    return (0, import_node_crypto14.verify)(null, input, key, signature) ? null : "invalid_signature";
+    return (0, import_node_crypto15.verify)(null, input, key, signature) ? null : "invalid_signature";
   } catch {
     return "invalid_signature";
   }
@@ -14019,7 +14845,7 @@ function finiteOptionalNumber(value) {
   return value === void 0 || typeof value === "number" && Number.isFinite(value);
 }
 function validVerificationOptions(context2) {
-  return !!context2 && typeof context2 === "object" && safeString(context2.issuer) && safeString(context2.audience) && [context2.tenantId, context2.subjectUserId, context2.agentId].every((id) => typeof id === "string" && UUID.test(id)) && validTool(context2.tool) && validResource(context2.resource) && finiteOptionalNumber(context2.clockSkewSeconds) && finiteOptionalNumber(context2.maxLifetimeSeconds) && finiteOptionalNumber(context2.maxDelegationDepth) && Array.isArray(context2.requiredScopes) && context2.requiredScopes.length >= 1 && context2.requiredScopes.length <= 32 && context2.requiredScopes.every((scope) => typeof scope === "string" && SCOPE.test(scope));
+  return !!context2 && typeof context2 === "object" && safeString(context2.issuer) && safeString(context2.audience) && [context2.tenantId, context2.subjectUserId, context2.agentId].every((id) => typeof id === "string" && UUID2.test(id)) && validTool(context2.tool) && validResource(context2.resource) && finiteOptionalNumber(context2.clockSkewSeconds) && finiteOptionalNumber(context2.maxLifetimeSeconds) && finiteOptionalNumber(context2.maxDelegationDepth) && Array.isArray(context2.requiredScopes) && context2.requiredScopes.length >= 1 && context2.requiredScopes.length <= 32 && context2.requiredScopes.every((scope) => typeof scope === "string" && SCOPE.test(scope));
 }
 function matchesIdentity(claims, context2) {
   return claims.issuer === context2.issuer && claims.tenantId === context2.tenantId && claims.subjectUserId === context2.subjectUserId && claims.agentId === context2.agentId;
@@ -14074,17 +14900,17 @@ function verifyDelegatedCredential(params) {
     return failure(claimsFailure);
   return { ok: true, keyId: parsed.header.kid, claims: parsed.claims };
 }
-var import_node_crypto14, DELEGATED_CREDENTIAL_TYPE, DELEGATED_CREDENTIAL_ALGORITHM, DELEGATED_CREDENTIAL_VERSION, MAX_DELEGATED_CREDENTIAL_SECONDS, MAX_DELEGATION_DEPTH, UUID, SAFE_NAME, SCOPE, BASE64URL, REQUIRED_CLAIM_KEYS;
+var import_node_crypto15, DELEGATED_CREDENTIAL_TYPE, DELEGATED_CREDENTIAL_ALGORITHM, DELEGATED_CREDENTIAL_VERSION, MAX_DELEGATED_CREDENTIAL_SECONDS, MAX_DELEGATION_DEPTH, UUID2, SAFE_NAME, SCOPE, BASE64URL, REQUIRED_CLAIM_KEYS;
 var init_delegated_credential = __esm({
   "../core/dist/delegated-credential.js"() {
     "use strict";
-    import_node_crypto14 = require("node:crypto");
+    import_node_crypto15 = require("node:crypto");
     DELEGATED_CREDENTIAL_TYPE = "aidr-delegation+jwt";
     DELEGATED_CREDENTIAL_ALGORITHM = "EdDSA";
     DELEGATED_CREDENTIAL_VERSION = 1;
     MAX_DELEGATED_CREDENTIAL_SECONDS = 900;
     MAX_DELEGATION_DEPTH = 4;
-    UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/;
     SCOPE = /^[a-z0-9][a-z0-9._:/-]{0,127}$/;
     BASE64URL = /^[A-Za-z0-9_-]+$/;
@@ -14869,14 +15695,14 @@ var init_policy = __esm({
 });
 
 // ../core/dist/dlp/scanner.js
-function sha2562(value) {
-  return (0, import_node_crypto15.createHash)("sha256").update(value, "utf8").digest("hex");
+function sha2563(value) {
+  return (0, import_node_crypto16.createHash)("sha256").update(value, "utf8").digest("hex");
 }
 function createDlpContentFingerprint(tenantId, content) {
-  return sha2562(`${tenantId}\0${content}`);
+  return sha2563(`${tenantId}\0${content}`);
 }
 function createDlpMatchFingerprint(tenantId, ruleId, matchedValue) {
-  return sha2562(`${tenantId}\0${ruleId}\0${matchedValue}`);
+  return sha2563(`${tenantId}\0${ruleId}\0${matchedValue}`);
 }
 function normalizedContentType(value) {
   return value.split(";", 1)[0]?.trim().toLowerCase() ?? "";
@@ -15183,11 +16009,11 @@ function scanDlpInput(policy, request2) {
 function scanDlpOutput(policy, request2) {
   return scanDlpContent(policy, { ...request2, direction: "output" });
 }
-var import_node_crypto15, DlpScanRequestSchema, DlpTenantIsolationError, WORD_CHARACTER, ACTION_RANK;
+var import_node_crypto16, DlpScanRequestSchema, DlpTenantIsolationError, WORD_CHARACTER, ACTION_RANK;
 var init_scanner = __esm({
   "../core/dist/dlp/scanner.js"() {
     "use strict";
-    import_node_crypto15 = require("node:crypto");
+    import_node_crypto16 = require("node:crypto");
     init_zod();
     init_policy();
     DlpScanRequestSchema = external_exports.object({
@@ -15521,6 +16347,710 @@ var init_engine = __esm({
         };
       }
     };
+  }
+});
+
+// ../core/dist/exposure-graph.js
+function createSha256HasherContext() {
+  return { hash: (value) => (0, import_node_crypto17.createHash)("sha256").update(value).digest("hex") };
+}
+function accept2(value) {
+  return { ok: true, value };
+}
+function fail2(error3) {
+  return { ok: false, error: error3 };
+}
+function nodeDigestInput(tenantId, kind, naturalKey) {
+  return ["aidr.exposure.node.v1", tenantId, kind, naturalKey].join("\n");
+}
+function edgeDigestInput(tenantId, kind, fromNodeId, toNodeId) {
+  return ["aidr.exposure.edge.v1", tenantId, kind, fromNodeId, toNodeId].join("\n");
+}
+function exposureNodeId(tenantId, kind, naturalKey, context2) {
+  if (!IDENTIFIER.test(tenantId))
+    throw new Error("exposure_tenant_id_invalid");
+  if (!KIND_SET2.has(kind))
+    throw new Error("exposure_kind_invalid");
+  if (!NATURAL_KEY.test(naturalKey))
+    throw new Error("exposure_natural_key_invalid");
+  return `xnode_${context2.hash(nodeDigestInput(tenantId, kind, naturalKey))}`;
+}
+function exposureEdgeId(tenantId, kind, fromNodeId, toNodeId, context2) {
+  if (!IDENTIFIER.test(tenantId))
+    throw new Error("exposure_tenant_id_invalid");
+  if (!EDGE_KIND_SET.has(kind))
+    throw new Error("exposure_edge_kind_invalid");
+  if (!NODE_ID.test(fromNodeId) || !NODE_ID.test(toNodeId)) {
+    throw new Error("exposure_edge_endpoint_invalid");
+  }
+  return `xedge_${context2.hash(edgeDigestInput(tenantId, kind, fromNodeId, toNodeId))}`;
+}
+function observationDigestInput(record) {
+  const nodes = [...record.nodes].map((node2) => [node2.kind, node2.naturalKey, node2.label ?? "", JSON.stringify(node2.metadata ?? {})]).sort((a, b2) => JSON.stringify(a) < JSON.stringify(b2) ? -1 : 1);
+  const edges = [...record.edges].map((edge) => [edge.kind, edge.fromNodeId, edge.toNodeId]).sort((a, b2) => JSON.stringify(a) < JSON.stringify(b2) ? -1 : 1);
+  return [
+    "aidr.exposure.observation.v1",
+    record.tenantId,
+    record.observationId,
+    record.source,
+    record.sourceRef,
+    String(record.observedAtMs),
+    String(record.observed),
+    JSON.stringify(nodes),
+    JSON.stringify(edges)
+  ].join("\n");
+}
+function exposureObservationDigest(record, context2) {
+  return context2.hash(observationDigestInput({
+    tenantId: record.tenantId,
+    observationId: record.observationId,
+    source: record.source,
+    sourceRef: record.sourceRef,
+    observedAtMs: record.observedAtMs,
+    observed: record.observed !== false,
+    nodes: record.nodes,
+    edges: record.edges ?? []
+  }));
+}
+function parseObservationNode(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail2("invalid_node");
+  const node2 = value;
+  if (typeof node2.kind !== "string" || !KIND_SET2.has(node2.kind))
+    return fail2("invalid_node_kind");
+  if (typeof node2.naturalKey !== "string" || !NATURAL_KEY.test(node2.naturalKey)) {
+    return fail2("invalid_node_natural_key");
+  }
+  if (node2.label !== void 0 && (typeof node2.label !== "string" || node2.label.length > 200)) {
+    return fail2("invalid_node_label");
+  }
+  if (node2.metadata === void 0) {
+    return accept2({
+      kind: node2.kind,
+      naturalKey: node2.naturalKey,
+      ...node2.label === void 0 ? {} : { label: node2.label }
+    });
+  }
+  if (!node2.metadata || typeof node2.metadata !== "object" || Array.isArray(node2.metadata)) {
+    return fail2("invalid_node_metadata");
+  }
+  const metadata = {};
+  for (const [key, entry] of Object.entries(node2.metadata)) {
+    if (typeof entry !== "string" || entry.length > 200 || key.length > 64) {
+      return fail2("invalid_node_metadata");
+    }
+    metadata[key] = entry;
+  }
+  return accept2({
+    kind: node2.kind,
+    naturalKey: node2.naturalKey,
+    ...node2.label === void 0 ? {} : { label: node2.label },
+    metadata
+  });
+}
+function parseObservationEdge(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail2("invalid_edge");
+  const edge = value;
+  if (typeof edge.kind !== "string" || !EDGE_KIND_SET.has(edge.kind))
+    return fail2("invalid_edge_kind");
+  if (typeof edge.fromNodeId !== "string" || !NODE_ID.test(edge.fromNodeId)) {
+    return fail2("invalid_edge_from");
+  }
+  if (typeof edge.toNodeId !== "string" || !NODE_ID.test(edge.toNodeId))
+    return fail2("invalid_edge_to");
+  if (edge.fromNodeId === edge.toNodeId)
+    return fail2("self_edge");
+  return accept2({
+    kind: edge.kind,
+    fromNodeId: edge.fromNodeId,
+    toNodeId: edge.toNodeId
+  });
+}
+function parseObservationNodes(value) {
+  if (value.length === 0)
+    return fail2("invalid_nodes");
+  const nodes = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const entry of value) {
+    const parsed = parseObservationNode(entry);
+    if (!parsed.ok)
+      return fail2(parsed.error);
+    const dedupeKey = `${parsed.value.kind}\0${parsed.value.naturalKey}`;
+    if (seen.has(dedupeKey))
+      continue;
+    seen.add(dedupeKey);
+    nodes.push(parsed.value);
+  }
+  return nodes.length === 0 ? fail2("invalid_nodes") : accept2(nodes);
+}
+function parseObservationEdges(value) {
+  const edges = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const entry of value) {
+    const parsed = parseObservationEdge(entry);
+    if (!parsed.ok)
+      return fail2(parsed.error);
+    const edge = parsed.value;
+    const dedupeKey = `${edge.kind}\0${edge.fromNodeId}\0${edge.toNodeId}`;
+    if (seen.has(dedupeKey))
+      continue;
+    seen.add(dedupeKey);
+    edges.push(edge);
+  }
+  return accept2(edges);
+}
+function parseObservation(value, context2) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail2("not_an_object");
+  const raw = value;
+  if (typeof raw.tenantId !== "string" || !IDENTIFIER.test(raw.tenantId))
+    return fail2("invalid_tenant_id");
+  if (typeof raw.observationId !== "string" || !IDENTIFIER.test(raw.observationId)) {
+    return fail2("invalid_observation_id");
+  }
+  if (typeof raw.source !== "string" || !SOURCE_SET.has(raw.source))
+    return fail2("invalid_source");
+  if (typeof raw.sourceRef !== "string" || !NATURAL_KEY.test(raw.sourceRef))
+    return fail2("invalid_source_ref");
+  if (!Number.isSafeInteger(raw.observedAtMs) || raw.observedAtMs < 0) {
+    return fail2("invalid_observed_at");
+  }
+  if (raw.observed !== void 0 && typeof raw.observed !== "boolean")
+    return fail2("invalid_observed");
+  if (!Array.isArray(raw.nodes))
+    return fail2("invalid_nodes");
+  if (raw.edges !== void 0 && !Array.isArray(raw.edges))
+    return fail2("invalid_edges");
+  const nodes = parseObservationNodes(raw.nodes);
+  if (!nodes.ok)
+    return fail2(nodes.error);
+  const edges = parseObservationEdges(raw.edges ?? []);
+  if (!edges.ok)
+    return fail2(edges.error);
+  const normalized = {
+    tenantId: raw.tenantId,
+    observationId: raw.observationId,
+    source: raw.source,
+    sourceRef: raw.sourceRef,
+    observedAtMs: raw.observedAtMs,
+    observed: raw.observed !== false,
+    nodes: nodes.value,
+    edges: edges.value,
+    digest: ""
+  };
+  normalized.digest = exposureObservationDigest(normalized, context2);
+  return accept2(normalized);
+}
+function emptyKindCounts() {
+  const counts = {};
+  for (const kind of EXPOSURE_NODE_KINDS)
+    counts[kind] = 0;
+  return counts;
+}
+function validatePreviousGraph(previous) {
+  if (!previous)
+    return null;
+  if (previous.schemaVersion !== EXPOSURE_GRAPH_SCHEMA_VERSION) {
+    throw new Error("exposure_graph_schema_mismatch");
+  }
+  if (!IDENTIFIER.test(previous.tenantId))
+    throw new Error("exposure_graph_tenant_invalid");
+  if (!Array.isArray(previous.nodes) || !Array.isArray(previous.edges)) {
+    throw new Error("exposure_graph_invalid");
+  }
+  return previous;
+}
+function normalizeExpectedKinds(kinds, previous) {
+  const source = kinds ?? previous?.expectedKinds ?? EXPOSURE_NODE_KINDS;
+  const seen = /* @__PURE__ */ new Set();
+  for (const kind of source) {
+    if (!KIND_SET2.has(kind))
+      throw new Error("exposure_expected_kind_invalid");
+    seen.add(kind);
+  }
+  return [...seen].sort();
+}
+function sortNodes(nodes) {
+  return [...nodes].sort((a, b2) => a.nodeId < b2.nodeId ? -1 : a.nodeId > b2.nodeId ? 1 : 0);
+}
+function sortEdges(edges) {
+  return [...edges].sort((a, b2) => a.edgeId < b2.edgeId ? -1 : a.edgeId > b2.edgeId ? 1 : 0);
+}
+function observationRank(a, b2) {
+  if (a.observedAtMs !== b2.observedAtMs)
+    return b2.observedAtMs - a.observedAtMs;
+  return a.observationId < b2.observationId ? -1 : a.observationId > b2.observationId ? 1 : 0;
+}
+function addObservationId(current, observationId) {
+  if (current.includes(observationId))
+    return current;
+  return [...current, observationId].sort();
+}
+function createFoldState(previous) {
+  const state = {
+    nodes: /* @__PURE__ */ new Map(),
+    nodeObservations: /* @__PURE__ */ new Map(),
+    edges: /* @__PURE__ */ new Map(),
+    digestByObservationId: /* @__PURE__ */ new Map(),
+    nodeIdSet: /* @__PURE__ */ new Set(),
+    edgeProvenance: /* @__PURE__ */ new Map(),
+    rejections: [],
+    accepted: [],
+    duplicates: [],
+    effectiveTenantId: previous?.tenantId
+  };
+  for (const node2 of previous?.nodes ?? []) {
+    if (!NODE_ID.test(node2.nodeId))
+      throw new Error("exposure_graph_node_invalid");
+    state.nodes.set(node2.nodeId, { ...node2, observationIds: [...node2.observationIds] });
+    state.nodeIdSet.add(node2.nodeId);
+  }
+  for (const edge of previous?.edges ?? []) {
+    if (!EDGE_ID.test(edge.edgeId))
+      throw new Error("exposure_graph_edge_invalid");
+    state.edges.set(edge.edgeId, { ...edge, observationIds: [...edge.observationIds] });
+  }
+  return state;
+}
+function mergeNodeObservation(state, nodeId, observation, kind, naturalKey) {
+  const existing = state.nodes.get(nodeId);
+  if (existing && (existing.kind !== kind || existing.naturalKey !== naturalKey)) {
+    return false;
+  }
+  const list = state.nodeObservations.get(nodeId) ?? [];
+  list.push(observation);
+  state.nodeObservations.set(nodeId, list);
+  const observedAt = observation.observed ? observation.observedAtMs : null;
+  const next = existing ?? {
+    nodeId,
+    kind,
+    naturalKey,
+    label: naturalKey,
+    firstSeenAtMs: observation.observedAtMs,
+    lastSeenAtMs: observedAt,
+    observationIds: [],
+    metadata: {}
+  };
+  next.firstSeenAtMs = Math.min(next.firstSeenAtMs, observation.observedAtMs);
+  if (observedAt !== null) {
+    next.lastSeenAtMs = next.lastSeenAtMs === null ? observedAt : Math.max(next.lastSeenAtMs, observedAt);
+  }
+  next.observationIds = addObservationId(next.observationIds, observation.observationId);
+  state.nodes.set(nodeId, next);
+  state.nodeIdSet.add(nodeId);
+  return true;
+}
+function mergeObservationNodes(state, observation, options) {
+  for (const node2 of observation.nodes) {
+    const nodeId = exposureNodeId(observation.tenantId, node2.kind, node2.naturalKey, options);
+    const merged = mergeNodeObservation(state, nodeId, {
+      observationId: observation.observationId,
+      source: observation.source,
+      observedAtMs: observation.observedAtMs,
+      observed: observation.observed,
+      ...node2.label === void 0 ? {} : { label: node2.label },
+      ...node2.metadata === void 0 ? {} : { metadata: node2.metadata }
+    }, node2.kind, node2.naturalKey);
+    if (!merged) {
+      state.rejections.push({
+        observationId: observation.observationId,
+        tenantId: observation.tenantId,
+        sourceRef: observation.sourceRef,
+        code: "conflicting_observation",
+        detail: `node_identity_conflict:${nodeId}`
+      });
+    }
+  }
+}
+function mergeObservationEdges(state, observation, options) {
+  for (const edge of observation.edges) {
+    const edgeId = exposureEdgeId(observation.tenantId, edge.kind, edge.fromNodeId, edge.toNodeId, options);
+    const existing = state.edges.get(edgeId);
+    const observedAt = observation.observed ? observation.observedAtMs : null;
+    const next = existing ?? {
+      edgeId,
+      kind: edge.kind,
+      fromNodeId: edge.fromNodeId,
+      toNodeId: edge.toNodeId,
+      firstSeenAtMs: observation.observedAtMs,
+      lastSeenAtMs: observedAt,
+      observationIds: []
+    };
+    next.firstSeenAtMs = Math.min(next.firstSeenAtMs, observation.observedAtMs);
+    if (observedAt !== null) {
+      next.lastSeenAtMs = next.lastSeenAtMs === null ? observedAt : Math.max(next.lastSeenAtMs, observedAt);
+    }
+    next.observationIds = addObservationId(next.observationIds, observation.observationId);
+    state.edges.set(edgeId, next);
+    if (!state.edgeProvenance.has(edgeId)) {
+      state.edgeProvenance.set(edgeId, {
+        observationId: observation.observationId,
+        tenantId: observation.tenantId,
+        sourceRef: observation.sourceRef
+      });
+    }
+  }
+}
+function rejectUnreadableRecord(state, record, detail) {
+  const raw = record && typeof record === "object" && !Array.isArray(record) ? record : {};
+  state.rejections.push({
+    observationId: typeof raw.observationId === "string" ? raw.observationId : "unknown",
+    tenantId: typeof raw.tenantId === "string" ? raw.tenantId : "",
+    sourceRef: typeof raw.sourceRef === "string" ? raw.sourceRef : "",
+    code: "invalid_record",
+    detail
+  });
+}
+function foldOneObservation(state, observation, options) {
+  if (state.effectiveTenantId === void 0) {
+    state.effectiveTenantId = observation.tenantId;
+  } else if (observation.tenantId !== state.effectiveTenantId) {
+    state.rejections.push({
+      observationId: observation.observationId,
+      tenantId: observation.tenantId,
+      sourceRef: observation.sourceRef,
+      code: "cross_tenant_record",
+      detail: `graph_tenant:${state.effectiveTenantId}`
+    });
+    return;
+  }
+  const seenDigest = state.digestByObservationId.get(observation.observationId);
+  if (seenDigest !== void 0) {
+    if (seenDigest === observation.digest) {
+      state.duplicates.push(observation.observationId);
+    } else {
+      state.rejections.push({
+        observationId: observation.observationId,
+        tenantId: observation.tenantId,
+        sourceRef: observation.sourceRef,
+        code: "conflicting_observation",
+        detail: "observation_id_reused_with_different_content"
+      });
+    }
+    return;
+  }
+  state.digestByObservationId.set(observation.observationId, observation.digest);
+  mergeObservationNodes(state, observation, options);
+  mergeObservationEdges(state, observation, options);
+  state.accepted.push(observation.observationId);
+}
+function pruneDanglingEdges(state) {
+  for (const [edgeId, edge] of [...state.edges]) {
+    if (state.nodeIdSet.has(edge.fromNodeId) && state.nodeIdSet.has(edge.toNodeId))
+      continue;
+    state.edges.delete(edgeId);
+    const provenance = state.edgeProvenance.get(edgeId);
+    state.rejections.push({
+      observationId: provenance?.observationId ?? "unknown",
+      tenantId: provenance?.tenantId ?? state.effectiveTenantId ?? "",
+      sourceRef: provenance?.sourceRef ?? "",
+      code: "dangling_edge",
+      detail: `${edge.kind}:${edge.fromNodeId}->${edge.toNodeId}`
+    });
+  }
+}
+function resolveNodeDescriptions(state) {
+  for (const [nodeId, observations] of state.nodeObservations) {
+    const node2 = state.nodes.get(nodeId);
+    if (!node2)
+      continue;
+    const ranked = [...observations].sort(observationRank);
+    const best = ranked[0];
+    if (!best)
+      continue;
+    node2.label = best.label ?? node2.naturalKey;
+    const metadata = {};
+    for (const entry of [...ranked].reverse())
+      Object.assign(metadata, entry.metadata ?? {});
+    node2.metadata = metadata;
+  }
+}
+function sortRejections(rejections) {
+  return [...rejections].sort((a, b2) => {
+    if (a.observationId !== b2.observationId)
+      return a.observationId < b2.observationId ? -1 : 1;
+    return a.code < b2.code ? -1 : a.code > b2.code ? 1 : 0;
+  });
+}
+function foldExposureObservations(records, options) {
+  const previous = validatePreviousGraph(options.previous);
+  const expectedKinds = normalizeExpectedKinds(options.expectedKinds, previous);
+  if (options.tenantId !== void 0 && !IDENTIFIER.test(options.tenantId)) {
+    throw new Error("exposure_tenant_id_invalid");
+  }
+  const tenantId = options.tenantId ?? previous?.tenantId;
+  if (tenantId !== void 0 && previous && previous.tenantId !== tenantId) {
+    throw new Error("exposure_graph_tenant_mismatch");
+  }
+  const state = createFoldState(previous);
+  for (const record of records) {
+    const parsed = parseObservation(record, options);
+    if (!parsed.ok) {
+      rejectUnreadableRecord(state, record, parsed.error);
+      continue;
+    }
+    foldOneObservation(state, parsed.value, options);
+  }
+  pruneDanglingEdges(state);
+  resolveNodeDescriptions(state);
+  const graph = {
+    schemaVersion: EXPOSURE_GRAPH_SCHEMA_VERSION,
+    tenantId: state.effectiveTenantId ?? "",
+    expectedKinds,
+    nodes: sortNodes([...state.nodes.values()]),
+    edges: sortEdges([...state.edges.values()])
+  };
+  return {
+    graph,
+    // Sorted, because the result of a fold must not depend on arrival order.
+    accepted: [...state.accepted].sort(),
+    duplicates: [...state.duplicates].sort(),
+    rejections: sortRejections(state.rejections),
+    coverage: exposureCoverage(graph, [])
+  };
+}
+function exposureCoverage(graph, sources = []) {
+  const nodeCountsByKind = emptyKindCounts();
+  for (const node2 of graph.nodes)
+    nodeCountsByKind[node2.kind] += 1;
+  const observedKinds = EXPOSURE_NODE_KINDS.filter((kind) => nodeCountsByKind[kind] > 0);
+  const expected = graph.expectedKinds.length > 0 ? graph.expectedKinds : [...EXPOSURE_NODE_KINDS];
+  const unobservedKinds = EXPOSURE_NODE_KINDS.filter((kind) => expected.includes(kind) && nodeCountsByKind[kind] === 0);
+  const unreadableSources = sources.filter((source) => source.status === "unreadable").map((source) => ({
+    sourceRef: source.sourceRef,
+    source: source.source,
+    detail: source.detail ?? "source_unreadable"
+  })).sort((a, b2) => a.sourceRef === b2.sourceRef ? a.source < b2.source ? -1 : 1 : a.sourceRef < b2.sourceRef ? -1 : 1);
+  return {
+    expectedKinds: expected,
+    observedKinds,
+    unobservedKinds,
+    unreadableSources,
+    nodeCountsByKind,
+    scope: "Locally reported observations only; absence of a kind is a coverage gap, not evidence the kind is unused"
+  };
+}
+function exposureStaleness(lastSeenAtMs, nowMs, freshnessWindowMs) {
+  if (lastSeenAtMs === null || lastSeenAtMs === void 0)
+    return "unknown";
+  if (!Number.isFinite(lastSeenAtMs) || !Number.isFinite(nowMs))
+    return "unknown";
+  if (!Number.isFinite(freshnessWindowMs) || freshnessWindowMs < 0)
+    return "unknown";
+  if (lastSeenAtMs > nowMs)
+    return "unknown";
+  return nowMs - lastSeenAtMs <= freshnessWindowMs ? "fresh" : "stale";
+}
+function exposureStalenessReport(graph, nowMs, freshnessWindowMs) {
+  const entries = graph.nodes.map((node2) => ({
+    nodeId: node2.nodeId,
+    kind: node2.kind,
+    lastSeenAtMs: node2.lastSeenAtMs,
+    staleness: exposureStaleness(node2.lastSeenAtMs, nowMs, freshnessWindowMs)
+  }));
+  let fresh = 0;
+  let stale = 0;
+  let unknown = 0;
+  for (const entry of entries) {
+    if (entry.staleness === "fresh")
+      fresh += 1;
+    else if (entry.staleness === "stale")
+      stale += 1;
+    else
+      unknown += 1;
+  }
+  return {
+    nowMs,
+    freshnessWindowMs,
+    entries,
+    fresh,
+    stale,
+    unknown,
+    hasStaleOrUnknown: stale > 0 || unknown > 0
+  };
+}
+function exposureEdgesTouching(graph, query) {
+  return graph.edges.filter((edge) => edge.kind === query.kind && (edge.fromNodeId === query.nodeId || edge.toNodeId === query.nodeId)).sort((a, b2) => a.edgeId < b2.edgeId ? -1 : a.edgeId > b2.edgeId ? 1 : 0).map((edge) => ({
+    ...edge,
+    staleness: exposureStaleness(edge.lastSeenAtMs, query.nowMs, query.freshnessWindowMs)
+  }));
+}
+function canonicalExposureGraphJson(graph) {
+  return JSON.stringify({
+    schemaVersion: graph.schemaVersion,
+    tenantId: graph.tenantId,
+    expectedKinds: [...graph.expectedKinds].sort(),
+    nodes: sortNodes(graph.nodes).map((node2) => ({
+      nodeId: node2.nodeId,
+      kind: node2.kind,
+      naturalKey: node2.naturalKey,
+      label: node2.label,
+      firstSeenAtMs: node2.firstSeenAtMs,
+      lastSeenAtMs: node2.lastSeenAtMs,
+      observationIds: [...node2.observationIds].sort(),
+      metadata: Object.fromEntries(Object.entries(node2.metadata).sort(([a], [b2]) => a < b2 ? -1 : 1))
+    })),
+    edges: sortEdges(graph.edges).map((edge) => ({
+      edgeId: edge.edgeId,
+      kind: edge.kind,
+      fromNodeId: edge.fromNodeId,
+      toNodeId: edge.toNodeId,
+      firstSeenAtMs: edge.firstSeenAtMs,
+      lastSeenAtMs: edge.lastSeenAtMs,
+      observationIds: [...edge.observationIds].sort()
+    }))
+  });
+}
+var import_node_crypto17, EXPOSURE_GRAPH_SCHEMA_VERSION, EXPOSURE_NODE_KINDS, NODE_ID, EDGE_ID, NATURAL_KEY, IDENTIFIER, KIND_SET2, EDGE_KIND_SET, SOURCE_SET;
+var init_exposure_graph = __esm({
+  "../core/dist/exposure-graph.js"() {
+    "use strict";
+    import_node_crypto17 = require("node:crypto");
+    EXPOSURE_GRAPH_SCHEMA_VERSION = 1;
+    EXPOSURE_NODE_KINDS = [
+      "agent",
+      "host",
+      "user",
+      "mcp_server",
+      "tool",
+      "credential",
+      "data_source"
+    ];
+    NODE_ID = /^xnode_[0-9a-f]{64}$/;
+    EDGE_ID = /^xedge_[0-9a-f]{64}$/;
+    NATURAL_KEY = /^[^\u0000-\u001f\u007f]{1,400}$/;
+    IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
+    KIND_SET2 = new Set(EXPOSURE_NODE_KINDS);
+    EDGE_KIND_SET = /* @__PURE__ */ new Set(["authorizes", "runs_on", "uses", "can_reach", "last_seen_at"]);
+    SOURCE_SET = /* @__PURE__ */ new Set([
+      "mcp_inventory",
+      "mcp_discovery",
+      "fleet_inventory",
+      "runtime_verdict",
+      "operator",
+      "idp",
+      "cloud",
+      "mdm"
+    ]);
+  }
+});
+
+// ../core/dist/exposure-sources.js
+function endpointNodes(options) {
+  const nodes = [];
+  let hostNodeId = null;
+  if (options.hostNaturalKey) {
+    hostNodeId = exposureNodeId(options.tenantId, "host", options.hostNaturalKey, options.context);
+    nodes.push({ kind: "host", naturalKey: options.hostNaturalKey });
+  }
+  let agentNodeId = null;
+  if (options.agentNaturalKey) {
+    agentNodeId = exposureNodeId(options.tenantId, "agent", options.agentNaturalKey, options.context);
+    nodes.push({ kind: "agent", naturalKey: options.agentNaturalKey });
+  }
+  return { nodes, hostNodeId, agentNodeId };
+}
+function exposureObservationsFromMcpInventory(report, options) {
+  const endpoint = endpointNodes(options);
+  const nodes = [...endpoint.nodes];
+  const edges = [];
+  for (const item of report.items) {
+    const serverNodeId = exposureNodeId(options.tenantId, "mcp_server", mcpServerNaturalKey(item), options.context);
+    nodes.push({
+      kind: "mcp_server",
+      naturalKey: mcpServerNaturalKey(item),
+      label: item.name,
+      metadata: {
+        transport: item.url ? "remote" : "stdio",
+        status: item.status,
+        risk_hints: item.riskHints.join(",")
+      }
+    });
+    if (endpoint.hostNodeId) {
+      edges.push({ kind: "runs_on", fromNodeId: serverNodeId, toNodeId: endpoint.hostNodeId });
+    }
+    if (endpoint.agentNodeId) {
+      edges.push({ kind: "uses", fromNodeId: endpoint.agentNodeId, toNodeId: serverNodeId });
+    }
+  }
+  const sources = report.sources.map((source) => ({
+    sourceRef: source.path,
+    source: "mcp_inventory",
+    // `invalid` is the inventory layer's "present but unreadable": it is a
+    // coverage gap, whereas a genuinely absent file is only `missing`.
+    status: source.status === "invalid" ? "unreadable" : source.status,
+    ...source.status === "invalid" ? { detail: "inventory_unreadable" } : {}
+  }));
+  const observations = [];
+  if (nodes.length > 0) {
+    observations.push({
+      tenantId: options.tenantId,
+      observationId: options.observationId,
+      source: "mcp_inventory",
+      sourceRef: options.sourceRef,
+      observedAtMs: options.observedAtMs,
+      nodes,
+      ...edges.length === 0 ? {} : { edges }
+    });
+  }
+  return { observations, sources };
+}
+function mcpServerNaturalKey(item) {
+  return `mcp:${item.sourcePath}#${item.name}`;
+}
+function exposureObservationsFromFleetInventory(inventory, options) {
+  return inventory.items.map((item) => exposureObservationFromFleetEntry(item, {
+    tenantId: options.tenantId,
+    observationId: `${options.observationId}:${item.id.slice(0, 16)}`,
+    context: options.context
+  }));
+}
+function exposureObservationFromFleetEntry(entry, options) {
+  const lastSeenAtMs = entry.lastSeenAt ? Date.parse(entry.lastSeenAt) : Number.NaN;
+  const observed = entry.reachability === "reachable" && Number.isFinite(lastSeenAtMs);
+  const observedAtMs = observed ? lastSeenAtMs : Number.isFinite(Date.parse(entry.lastAttemptAt)) ? Date.parse(entry.lastAttemptAt) : 0;
+  return {
+    tenantId: options.tenantId,
+    observationId: options.observationId,
+    source: "fleet_inventory",
+    sourceRef: entry.target,
+    observedAtMs,
+    observed,
+    nodes: [
+      {
+        kind: "data_source",
+        naturalKey: `origin:${entry.target}`,
+        label: entry.target,
+        metadata: {
+          freshness: entry.freshness,
+          reachability: entry.reachability,
+          consecutive_failures: String(entry.consecutiveFailures)
+        }
+      }
+    ]
+  };
+}
+function exposureSourcesFromFleetInventory(inventory) {
+  return inventory.items.map((item) => ({
+    sourceRef: item.target,
+    source: "fleet_inventory",
+    // An unreachable target is not an unreadable source: the collector ran and
+    // reported. Only a malformed report would be unreadable, and that is
+    // rejected before it becomes an inventory.
+    status: "read"
+  }));
+}
+function mergeExposureObservationBatches(batches) {
+  const out = [];
+  for (const batch of batches)
+    out.push(...batch);
+  return out;
+}
+var init_exposure_sources = __esm({
+  "../core/dist/exposure-sources.js"() {
+    "use strict";
+    init_exposure_graph();
   }
 });
 
@@ -23977,7 +25507,7 @@ function redactStrings(value, depth = 0) {
   return output;
 }
 function hashJson(value) {
-  return (0, import_node_crypto16.createHash)("sha256").update(JSON.stringify(value)).digest("hex");
+  return (0, import_node_crypto18.createHash)("sha256").update(JSON.stringify(value)).digest("hex");
 }
 function createSiemEvent(incident, observedAtMs = Date.now()) {
   if (!Number.isSafeInteger(observedAtMs) || observedAtMs < 0)
@@ -24029,7 +25559,7 @@ async function persistState(stateFile, state) {
     payload: state,
     sha256: hashJson(state)
   };
-  const tempFile = `${stateFile}.${process.pid}.${(0, import_node_crypto16.randomUUID)()}.tmp`;
+  const tempFile = `${stateFile}.${process.pid}.${(0, import_node_crypto18.randomUUID)()}.tmp`;
   const handle = await (0, import_promises7.open)(tempFile, "wx", 384);
   try {
     await handle.writeFile(`${JSON.stringify(wrapper)}
@@ -24048,11 +25578,11 @@ async function persistState(stateFile, state) {
 function cloneReceipt(receipt) {
   return { ...receipt };
 }
-var import_node_crypto16, import_promises7, import_node_path14, SIEM_EVENT_SCHEMA_VERSION, SIEM_EVENT_JSON_SCHEMA, SiemQueueCapacityError, SiemStateIntegrityError, DEFAULT_MAX_QUEUE_ENTRIES, DEFAULT_MAX_QUEUE_BYTES, DEFAULT_MAX_RECEIPTS, DEFAULT_MAX_ATTEMPTS, DEFAULT_MIN_BACKOFF_MS, DEFAULT_MAX_BACKOFF_MS, DEFAULT_REQUEST_TIMEOUT_MS, MAX_RESPONSE_BYTES, DurableSiemDelivery;
+var import_node_crypto18, import_promises7, import_node_path14, SIEM_EVENT_SCHEMA_VERSION, SIEM_EVENT_JSON_SCHEMA, SiemQueueCapacityError, SiemStateIntegrityError, DEFAULT_MAX_QUEUE_ENTRIES, DEFAULT_MAX_QUEUE_BYTES, DEFAULT_MAX_RECEIPTS, DEFAULT_MAX_ATTEMPTS, DEFAULT_MIN_BACKOFF_MS, DEFAULT_MAX_BACKOFF_MS, DEFAULT_REQUEST_TIMEOUT_MS, MAX_RESPONSE_BYTES, DurableSiemDelivery;
 var init_siem_delivery = __esm({
   "../core/dist/siem-delivery.js"() {
     "use strict";
-    import_node_crypto16 = require("node:crypto");
+    import_node_crypto18 = require("node:crypto");
     import_promises7 = require("node:fs/promises");
     import_node_path14 = require("node:path");
     init_siem_export();
@@ -24257,7 +25787,7 @@ var init_siem_delivery = __esm({
           }
           const nowMs = this.now();
           const receipt = {
-            receiptId: (0, import_node_crypto16.randomUUID)(),
+            receiptId: (0, import_node_crypto18.randomUUID)(),
             eventId: envelope.event_id,
             provider: this.adapter.provider,
             endpointOrigin: this.adapter.endpointOrigin,
@@ -24514,7 +26044,7 @@ async function openSqlite(path3, readOnly = false) {
   return new sqlite.DatabaseSync(path3, { readOnly });
 }
 function revisionHash(incidentId, revisionNumber, previousHash, payloadJson) {
-  return (0, import_node_crypto17.createHash)("sha256").update(`aidr.incident.revision.v1\0${incidentId}\0${revisionNumber}\0${previousHash}\0`).update(payloadJson).digest("hex");
+  return (0, import_node_crypto19.createHash)("sha256").update(`aidr.incident.revision.v1\0${incidentId}\0${revisionNumber}\0${previousHash}\0`).update(payloadJson).digest("hex");
 }
 function getIncidentRecordLastSeenMs(entry) {
   if (!entry || typeof entry !== "object")
@@ -24753,11 +26283,11 @@ async function verifyIncidentSqliteStore(dbPath) {
   }
   return result;
 }
-var import_node_crypto17, import_promises10, GENESIS_HASH;
+var import_node_crypto19, import_promises10, GENESIS_HASH;
 var init_persist = __esm({
   "../core/dist/incidents/persist.js"() {
     "use strict";
-    import_node_crypto17 = require("node:crypto");
+    import_node_crypto19 = require("node:crypto");
     import_promises10 = require("node:fs/promises");
     init_audit_log();
     init_config();
@@ -24770,10 +26300,10 @@ var init_persist = __esm({
 // ../core/dist/incidents/anchor.js
 function keyFingerprint(publicKey3) {
   const der = publicKey3.export({ format: "der", type: "spki" });
-  return (0, import_node_crypto18.createHash)("sha256").update(der).digest("hex");
+  return (0, import_node_crypto20.createHash)("sha256").update(der).digest("hex");
 }
 function headsDigest(heads, order = "utf16") {
-  const hash = (0, import_node_crypto18.createHash)("sha256").update("aidr.incident.heads.v1\0");
+  const hash = (0, import_node_crypto20.createHash)("sha256").update("aidr.incident.heads.v1\0");
   for (const head of [...heads].sort((a, b2) => order === "legacy_locale" ? a.incident_id.localeCompare(b2.incident_id) : a.incident_id < b2.incident_id ? -1 : a.incident_id > b2.incident_id ? 1 : 0))
     hash.update(JSON.stringify([head.incident_id, head.revision_number, head.record_hash])).update("\n");
   return hash.digest("hex");
@@ -24816,10 +26346,10 @@ async function writeSignedIncidentAnchorReceipt(options) {
   const local = await verifyIncidentSqliteStore(options.sqlite_path);
   if (!local.valid)
     throw new Error("Incident store consistency verification failed");
-  const privateKey = (0, import_node_crypto18.createPrivateKey)(await (0, import_promises11.readFile)(options.private_key_path));
+  const privateKey = (0, import_node_crypto20.createPrivateKey)(await (0, import_promises11.readFile)(options.private_key_path));
   if (privateKey.asymmetricKeyType !== "ed25519")
     throw new Error("Incident anchor key must be Ed25519");
-  const publicKey3 = (0, import_node_crypto18.createPublicKey)(privateKey);
+  const publicKey3 = (0, import_node_crypto20.createPublicKey)(privateKey);
   const payload = {
     type: "aidr_incident_anchor_payload",
     schema_version: 1,
@@ -24837,7 +26367,7 @@ async function writeSignedIncidentAnchorReceipt(options) {
     schema_version: 1,
     algorithm: "Ed25519",
     payload_base64: payloadBytes.toString("base64"),
-    signature_base64: (0, import_node_crypto18.sign)(null, payloadBytes, privateKey).toString("base64")
+    signature_base64: (0, import_node_crypto20.sign)(null, payloadBytes, privateKey).toString("base64")
   };
   const handle = await (0, import_promises11.open)(options.receipt_path, "wx", 384);
   try {
@@ -24865,10 +26395,10 @@ async function verifySignedIncidentAnchorReceipt(options) {
     const signatureBytes = decodeCanonicalBase64(receipt.signature_base64);
     if (!payloadBytes || !signatureBytes || signatureBytes.length !== 64)
       return { valid: false, code: "receipt_invalid" };
-    const publicKey3 = (0, import_node_crypto18.createPublicKey)(await (0, import_promises11.readFile)(options.public_key_path));
+    const publicKey3 = (0, import_node_crypto20.createPublicKey)(await (0, import_promises11.readFile)(options.public_key_path));
     if (publicKey3.asymmetricKeyType !== "ed25519")
       return { valid: false, code: "key_mismatch" };
-    if (!(0, import_node_crypto18.verify)(null, payloadBytes, publicKey3, signatureBytes))
+    if (!(0, import_node_crypto20.verify)(null, payloadBytes, publicKey3, signatureBytes))
       return { valid: false, code: "signature_invalid" };
     const payload = readPayload(payloadBytes);
     if (!payload)
@@ -24892,11 +26422,11 @@ async function verifySignedIncidentAnchorReceipt(options) {
     return { valid: false, code: "unavailable" };
   }
 }
-var import_node_crypto18, import_promises11, import_node_path16;
+var import_node_crypto20, import_promises11, import_node_path16;
 var init_anchor = __esm({
   "../core/dist/incidents/anchor.js"() {
     "use strict";
-    import_node_crypto18 = require("node:crypto");
+    import_node_crypto20 = require("node:crypto");
     import_promises11 = require("node:fs/promises");
     import_node_path16 = require("node:path");
     init_persist();
@@ -25101,7 +26631,7 @@ var init_correlate = __esm({
 
 // ../core/dist/incidents/normalize.js
 function sha256Hex(input) {
-  return (0, import_node_crypto19.createHash)("sha256").update(input).digest("hex");
+  return (0, import_node_crypto21.createHash)("sha256").update(input).digest("hex");
 }
 function parseTimestampMs(value) {
   if (typeof value === "number" && Number.isFinite(value))
@@ -25299,11 +26829,11 @@ function normalizeAuditEntriesToSignals(entries) {
     out.push(...normalizeAuditEntryToSignals(e));
   return out;
 }
-var import_node_crypto19;
+var import_node_crypto21;
 var init_normalize = __esm({
   "../core/dist/incidents/normalize.js"() {
     "use strict";
-    import_node_crypto19 = require("node:crypto");
+    import_node_crypto21 = require("node:crypto");
   }
 });
 
@@ -25313,6 +26843,7 @@ var init_incidents = __esm({
     "use strict";
     init_anchor();
     init_correlate();
+    init_evidence_receipt();
     init_normalize();
     init_persist();
     init_records();
@@ -25333,7 +26864,7 @@ async function getInstallationId(aidrDirPath) {
   } catch {
   }
   try {
-    const id = (0, import_node_crypto20.randomUUID)();
+    const id = (0, import_node_crypto22.randomUUID)();
     await (0, import_promises12.mkdir)(aidrDir, { recursive: true, mode: 448 });
     await (0, import_promises12.writeFile)(idPath, id, { encoding: "utf-8", mode: 384, flag: fileExists ? "w" : "wx" });
     return id;
@@ -25349,11 +26880,11 @@ async function getInstallationId(aidrDirPath) {
     return void 0;
   }
 }
-var import_node_crypto20, import_promises12, import_node_path17;
+var import_node_crypto22, import_promises12, import_node_path17;
 var init_installation_id = __esm({
   "../core/dist/installation-id.js"() {
     "use strict";
-    import_node_crypto20 = require("node:crypto");
+    import_node_crypto22 = require("node:crypto");
     import_promises12 = require("node:fs/promises");
     import_node_path17 = require("node:path");
     init_config();
@@ -25389,7 +26920,7 @@ function entitlementKeyringPath() {
   return resolvePath("~/.singularity-aidr/entitlement.json");
 }
 function sha256Hex2(input) {
-  return (0, import_node_crypto21.createHash)("sha256").update(input).digest("hex");
+  return (0, import_node_crypto23.createHash)("sha256").update(input).digest("hex");
 }
 function canonicalizeForSigning(value) {
   if (Array.isArray(value))
@@ -25407,7 +26938,7 @@ function canonicalJson2(value) {
   return JSON.stringify(canonicalizeForSigning(value));
 }
 function signEntitlementSnapshot(snapshot, authToken) {
-  return (0, import_node_crypto21.createHmac)("sha256", authToken).update(canonicalJson2(snapshot)).digest("hex");
+  return (0, import_node_crypto23.createHmac)("sha256", authToken).update(canonicalJson2(snapshot)).digest("hex");
 }
 function verifyEntitlementSnapshotSignature(snapshot, sig, authToken) {
   try {
@@ -25436,8 +26967,8 @@ function toPublicKey(key) {
     return null;
   try {
     if (t.includes("BEGIN PUBLIC KEY"))
-      return (0, import_node_crypto21.createPublicKey)(t);
-    return (0, import_node_crypto21.createPublicKey)({ key: Buffer.from(t, "base64"), format: "der", type: "spki" });
+      return (0, import_node_crypto23.createPublicKey)(t);
+    return (0, import_node_crypto23.createPublicKey)({ key: Buffer.from(t, "base64"), format: "der", type: "spki" });
   } catch {
     return null;
   }
@@ -25448,7 +26979,7 @@ function verifyEd25519(message, signature, publicKeys) {
     if (!key)
       continue;
     try {
-      if ((0, import_node_crypto21.verify)(null, message, key, signature))
+      if ((0, import_node_crypto23.verify)(null, message, key, signature))
         return true;
     } catch {
     }
@@ -26106,11 +27637,11 @@ function applyRevocationsToManagedState(params) {
     entitlement_sig: void 0
   };
 }
-var import_node_crypto21, FREE_AGENT_SEATS, PRICE_PER_EXTRA_AGENT_USD_MONTH;
+var import_node_crypto23, FREE_AGENT_SEATS, PRICE_PER_EXTRA_AGENT_USD_MONTH;
 var init_managed = __esm({
   "../core/dist/managed.js"() {
     "use strict";
-    import_node_crypto21 = require("node:crypto");
+    import_node_crypto23 = require("node:crypto");
     init_config();
     init_file_utils();
     init_telemetry_redaction();
@@ -26197,7 +27728,7 @@ var init_schema = __esm({
 
 // ../core/dist/integrity/verify.js
 function sha256Hex3(buf) {
-  return (0, import_node_crypto22.createHash)("sha256").update(buf).digest("hex");
+  return (0, import_node_crypto24.createHash)("sha256").update(buf).digest("hex");
 }
 function isSafeRelativePath(p) {
   const normalized = p.replace(/\\/g, "/");
@@ -26242,8 +27773,8 @@ function toPublicKey2(key) {
     return null;
   try {
     if (t.includes("BEGIN PUBLIC KEY"))
-      return (0, import_node_crypto22.createPublicKey)(t);
-    return (0, import_node_crypto22.createPublicKey)({ key: Buffer.from(t, "base64"), format: "der", type: "spki" });
+      return (0, import_node_crypto24.createPublicKey)(t);
+    return (0, import_node_crypto24.createPublicKey)({ key: Buffer.from(t, "base64"), format: "der", type: "spki" });
   } catch {
     return null;
   }
@@ -26254,7 +27785,7 @@ function verifyEd255192(message, signature, publicKeys) {
     if (!key)
       continue;
     try {
-      if ((0, import_node_crypto22.verify)(null, message, key, signature))
+      if ((0, import_node_crypto24.verify)(null, message, key, signature))
         return true;
     } catch {
     }
@@ -26329,11 +27860,11 @@ async function verifyArtifactIntegrity(params) {
   }
   return { status: "ok", manifest };
 }
-var import_node_crypto22, import_promises13, import_node_path18, DEFAULT_MANIFEST_NAME, DEFAULT_SIGNATURE_NAME;
+var import_node_crypto24, import_promises13, import_node_path18, DEFAULT_MANIFEST_NAME, DEFAULT_SIGNATURE_NAME;
 var init_verify2 = __esm({
   "../core/dist/integrity/verify.js"() {
     "use strict";
-    import_node_crypto22 = require("node:crypto");
+    import_node_crypto24 = require("node:crypto");
     import_promises13 = require("node:fs/promises");
     import_node_path18 = __toESM(require("node:path"), 1);
     init_schema();
@@ -26521,7 +28052,7 @@ function decryptAes256GcmEnvelope(params) {
   const tag = blob.subarray(blob.length - 16);
   const ciphertext = blob.subarray(12, blob.length - 16);
   try {
-    const decipher = (0, import_node_crypto23.createDecipheriv)("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
+    const decipher = (0, import_node_crypto25.createDecipheriv)("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
     decipher.setAuthTag(Buffer.from(tag));
     const out = Buffer.concat([decipher.update(Buffer.from(ciphertext)), decipher.final()]);
     return new Uint8Array(out);
@@ -26529,11 +28060,11 @@ function decryptAes256GcmEnvelope(params) {
     return null;
   }
 }
-var import_node_crypto23;
+var import_node_crypto25;
 var init_crypto = __esm({
   "../core/dist/intel/crypto.js"() {
     "use strict";
-    import_node_crypto23 = require("node:crypto");
+    import_node_crypto25 = require("node:crypto");
   }
 });
 
@@ -26756,7 +28287,7 @@ var init_types3 = __esm({
 
 // ../core/dist/intel/loader.js
 function sha256Hex4(data) {
-  return (0, import_node_crypto24.createHash)("sha256").update(data).digest("hex");
+  return (0, import_node_crypto26.createHash)("sha256").update(data).digest("hex");
 }
 async function loadTrustedKeys(path3) {
   try {
@@ -27050,11 +28581,11 @@ async function loadMergedIntelFromDisk(params = {}, logger2 = nullLogger) {
   void intelDir;
   return merged;
 }
-var import_node_crypto24, import_promises14, import_node_path19, DEFAULT_INTEL_DIR, DEFAULT_PACKS_DIR, DEFAULT_TRUSTED_KEYS_PATH, INTEL_PACK_ACTIVE_POINTER;
+var import_node_crypto26, import_promises14, import_node_path19, DEFAULT_INTEL_DIR, DEFAULT_PACKS_DIR, DEFAULT_TRUSTED_KEYS_PATH, INTEL_PACK_ACTIVE_POINTER;
 var init_loader = __esm({
   "../core/dist/intel/loader.js"() {
     "use strict";
-    import_node_crypto24 = require("node:crypto");
+    import_node_crypto26 = require("node:crypto");
     import_promises14 = require("node:fs/promises");
     import_node_path19 = require("node:path");
     init_config();
@@ -28261,7 +29792,7 @@ function validRequiredPolicy(body) {
   });
 }
 function cacheKeyHash(endpoint, token) {
-  return (0, import_node_crypto25.createHash)("sha256").update(`${endpoint}|${token}`).digest("hex");
+  return (0, import_node_crypto27.createHash)("sha256").update(`${endpoint}|${token}`).digest("hex");
 }
 function getRemotePolicyCachePath(config) {
   return resolvePath(config.control_plane.remote_policy_cache_path);
@@ -28565,7 +30096,7 @@ async function syncRemoteRuntimePolicy(config, token, logger2 = nullLogger, now 
     if (body.agent_bound === true && typeof body.policy_sha256 === "string" && /^[a-f0-9]{64}$/.test(body.policy_sha256) && Number.isSafeInteger(Number(body.policy_version)) && Number(body.policy_version) > 0) {
       const policy = getRuntimePolicy(body);
       const normalized = policy ? Object.fromEntries(Object.entries(policy).sort(([a], [b2]) => a < b2 ? -1 : a > b2 ? 1 : 0)) : null;
-      const hash = (0, import_node_crypto25.createHash)("sha256").update(JSON.stringify(normalized)).digest("hex");
+      const hash = (0, import_node_crypto27.createHash)("sha256").update(JSON.stringify(normalized)).digest("hex");
       if (hash === body.policy_sha256)
         await client.acknowledgeRuntimePolicy(Number(body.policy_version), hash);
     }
@@ -28577,11 +30108,11 @@ async function syncRemoteRuntimePolicy(config, token, logger2 = nullLogger, now 
     return unavailable2(true);
   }
 }
-var import_node_crypto25, import_promises15, import_node_path20, cachedPolicy, RemoteRuntimePolicyUnavailableError;
+var import_node_crypto27, import_promises15, import_node_path20, cachedPolicy, RemoteRuntimePolicyUnavailableError;
 var init_remote_policy = __esm({
   "../core/dist/remote-policy.js"() {
     "use strict";
-    import_node_crypto25 = require("node:crypto");
+    import_node_crypto27 = require("node:crypto");
     import_promises15 = require("node:fs/promises");
     import_node_path20 = require("node:path");
     init_control_plane();
@@ -47743,12 +49274,489 @@ var init_evaluator = __esm({
   }
 });
 
+// ../core/dist/false-positive-feedback.js
+function createSha256HasherContext2() {
+  return { hash: (value) => (0, import_node_crypto28.createHash)("sha256").update(value).digest("hex") };
+}
+function accept3(value) {
+  return { ok: true, value };
+}
+function fail3(error3) {
+  return { ok: false, error: error3 };
+}
+function falsePositiveBindingKey(binding) {
+  return JSON.stringify([binding.incidentId, binding.policyRevision]);
+}
+function bindingKeyOf(record) {
+  return JSON.stringify([record.binding.incidentId, record.binding.policyRevision]);
+}
+function falsePositiveFeedbackHashInput(record) {
+  const b2 = record.binding;
+  return [
+    `aidr.false-positive-feedback.v${FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION}`,
+    record.tenantId,
+    String(record.sequence),
+    b2.policyRevision,
+    b2.incidentId,
+    b2.candidateDigest,
+    b2.deviceId,
+    b2.actorRef,
+    record.feedback,
+    record.reasonCode,
+    record.rationale,
+    record.origin,
+    record.observedSideEffect ?? "-",
+    record.previousHash
+  ].join("\n");
+}
+function falsePositiveFeedbackHash(record, context2) {
+  return context2.hash(falsePositiveFeedbackHashInput(record));
+}
+function falsePositiveFeedbackSubmissionDigest(input, context2) {
+  const b2 = input.binding;
+  return context2.hash([
+    "aidr.false-positive-feedback.submission.v1",
+    input.tenantId,
+    b2.policyRevision,
+    b2.incidentId,
+    b2.candidateDigest,
+    b2.deviceId,
+    b2.actorRef,
+    input.feedback,
+    input.reasonCode,
+    input.rationale,
+    input.origin,
+    input.observedSideEffect ?? "-"
+  ].join("\n"));
+}
+function falsePositiveFeedbackId(input, sequence, context2) {
+  if (!Number.isSafeInteger(sequence) || sequence < 1)
+    throw new Error("feedback_sequence_invalid");
+  const digest = context2.hash(["aidr.false-positive-feedback.id.v1", falsePositiveFeedbackSubmissionDigest(input, context2), String(sequence)].join("\n"));
+  return `fpfb_${digest}`;
+}
+function parseBinding2(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail3("invalid_binding");
+  const raw = value;
+  if (typeof raw.policyRevision !== "string" || !REF2.test(raw.policyRevision)) {
+    return fail3("invalid_policy_revision");
+  }
+  if (typeof raw.incidentId !== "string" || !REF2.test(raw.incidentId))
+    return fail3("invalid_incident_id");
+  if (typeof raw.candidateDigest !== "string" || !HASH2.test(raw.candidateDigest)) {
+    return fail3("invalid_candidate_digest");
+  }
+  if (typeof raw.deviceId !== "string" || !REF2.test(raw.deviceId))
+    return fail3("invalid_device_id");
+  if (typeof raw.actorRef !== "string" || !REF2.test(raw.actorRef))
+    return fail3("invalid_actor_ref");
+  return accept3({
+    policyRevision: raw.policyRevision,
+    incidentId: raw.incidentId,
+    candidateDigest: raw.candidateDigest,
+    deviceId: raw.deviceId,
+    actorRef: raw.actorRef
+  });
+}
+function parseInput(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail3("not_an_object");
+  const raw = value;
+  if (typeof raw.tenantId !== "string" || !TENANT.test(raw.tenantId))
+    return fail3("invalid_tenant_id");
+  const binding = parseBinding2(raw.binding);
+  if (!binding.ok)
+    return fail3(binding.error);
+  if (typeof raw.feedback !== "string" || !FEEDBACK.has(raw.feedback))
+    return fail3("invalid_feedback");
+  if (typeof raw.reasonCode !== "string" || !REASONS.has(raw.reasonCode))
+    return fail3("invalid_reason_code");
+  if (typeof raw.rationale !== "string" || raw.rationale.length > 2e3)
+    return fail3("invalid_rationale");
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(raw.rationale))
+    return fail3("invalid_rationale");
+  if (typeof raw.origin !== "string" || !ORIGINS.has(raw.origin))
+    return fail3("invalid_origin");
+  if (raw.observedSideEffect !== void 0 && (typeof raw.observedSideEffect !== "string" || !REF2.test(raw.observedSideEffect))) {
+    return fail3("invalid_observed_side_effect");
+  }
+  return accept3({
+    tenantId: raw.tenantId,
+    binding: binding.value,
+    feedback: raw.feedback,
+    reasonCode: raw.reasonCode,
+    rationale: raw.rationale,
+    origin: raw.origin,
+    ...raw.observedSideEffect === void 0 ? {} : { observedSideEffect: raw.observedSideEffect }
+  });
+}
+function parseFalsePositiveFeedbackRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail3("not_a_record");
+  const raw = value;
+  if (raw.version !== FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION)
+    return fail3("unsupported_version");
+  if (!Number.isSafeInteger(raw.sequence) || raw.sequence < 1)
+    return fail3("invalid_sequence");
+  if (typeof raw.feedbackId !== "string" || !/^fpfb_[0-9a-f]{64}$/.test(raw.feedbackId)) {
+    return fail3("invalid_feedback_id");
+  }
+  if (typeof raw.previousHash !== "string" || !HASH2.test(raw.previousHash)) {
+    return fail3("invalid_previous_hash");
+  }
+  if (typeof raw.recordHash !== "string" || !HASH2.test(raw.recordHash)) {
+    return fail3("invalid_record_hash");
+  }
+  const input = parseInput({
+    tenantId: raw.tenantId,
+    binding: raw.binding,
+    feedback: raw.feedback,
+    reasonCode: raw.reasonCode,
+    rationale: raw.rationale,
+    origin: raw.origin,
+    ...raw.observedSideEffect === void 0 ? {} : { observedSideEffect: raw.observedSideEffect }
+  });
+  if (!input.ok)
+    return fail3(input.error);
+  return accept3({
+    version: FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION,
+    feedbackId: raw.feedbackId,
+    sequence: raw.sequence,
+    previousHash: raw.previousHash,
+    recordHash: raw.recordHash,
+    ...input.value
+  });
+}
+function createFalsePositiveFeedbackStore(tenantId) {
+  if (!TENANT.test(tenantId))
+    throw new Error("feedback_tenant_id_invalid");
+  return {
+    schemaVersion: FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION,
+    tenantId,
+    records: [],
+    maxSequenceByBinding: {}
+  };
+}
+function validateStore(store) {
+  if (!store || typeof store !== "object")
+    throw new Error("feedback_store_invalid");
+  if (store.schemaVersion !== FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION) {
+    throw new Error("feedback_store_schema_mismatch");
+  }
+  if (!TENANT.test(store.tenantId))
+    throw new Error("feedback_store_tenant_invalid");
+  if (!Array.isArray(store.records))
+    throw new Error("feedback_store_records_invalid");
+  return store;
+}
+function headFor(store, key) {
+  for (let index = store.records.length - 1; index >= 0; index -= 1) {
+    const record = store.records[index];
+    if (record && bindingKeyOf(record) === key)
+      return record;
+  }
+  return null;
+}
+function recordFalsePositiveFeedback(store, submission, context2) {
+  validateStore(store);
+  const parsed = parseInput(submission);
+  if (!parsed.ok) {
+    return {
+      store,
+      outcome: {
+        status: "refused",
+        changed: false,
+        version: null,
+        reason: parsed.error,
+        record: null
+      }
+    };
+  }
+  const input = parsed.value;
+  if (input.tenantId !== store.tenantId) {
+    return {
+      store,
+      outcome: {
+        status: "refused",
+        changed: false,
+        version: null,
+        reason: "cross_tenant_feedback",
+        record: null
+      }
+    };
+  }
+  const key = falsePositiveBindingKey(input.binding);
+  const submissionDigest = falsePositiveFeedbackSubmissionDigest(input, context2);
+  const head = headFor(store, key);
+  const headDigest = head ? falsePositiveFeedbackSubmissionDigest({
+    tenantId: head.tenantId,
+    binding: head.binding,
+    feedback: head.feedback,
+    reasonCode: head.reasonCode,
+    rationale: head.rationale,
+    origin: head.origin,
+    ...head.observedSideEffect === void 0 ? {} : { observedSideEffect: head.observedSideEffect }
+  }, context2) : null;
+  if (head && headDigest === submissionDigest) {
+    return {
+      store,
+      outcome: {
+        status: "duplicate",
+        changed: false,
+        version: head.sequence,
+        reason: "no-op_replay",
+        record: head
+      }
+    };
+  }
+  if (head) {
+    return {
+      store,
+      outcome: {
+        status: "refused",
+        changed: false,
+        version: null,
+        reason: "conflicting_feedback_submission",
+        record: null
+      }
+    };
+  }
+  const previousSequence = store.maxSequenceByBinding[key] ?? 0;
+  if (previousSequence !== 0) {
+    return {
+      store,
+      outcome: {
+        status: "refused",
+        changed: false,
+        version: null,
+        reason: "store_tail_truncated",
+        record: null
+      }
+    };
+  }
+  const sequence = 1;
+  const bound = {
+    version: FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION,
+    feedbackId: falsePositiveFeedbackId(input, sequence, context2),
+    sequence,
+    previousHash: FALSE_POSITIVE_GENESIS_HASH,
+    ...input
+  };
+  let recordHash;
+  try {
+    recordHash = falsePositiveFeedbackHash(bound, context2);
+  } catch {
+    return {
+      store,
+      outcome: {
+        status: "refused",
+        changed: false,
+        version: null,
+        reason: "hash_unavailable",
+        record: null
+      }
+    };
+  }
+  const record = { ...bound, recordHash };
+  return {
+    store: {
+      ...store,
+      records: [...store.records, record],
+      maxSequenceByBinding: { ...store.maxSequenceByBinding, [key]: sequence }
+    },
+    outcome: {
+      status: "appended",
+      changed: true,
+      version: sequence,
+      reason: "appended",
+      record
+    }
+  };
+}
+function falsePositiveFeedbackState(store, incidentId, policyRevision) {
+  validateStore(store);
+  const key = falsePositiveBindingKey({ incidentId, policyRevision });
+  const head = headFor(store, key);
+  if (!head)
+    return null;
+  return {
+    incidentId: head.binding.incidentId,
+    policyRevision: head.binding.policyRevision,
+    version: head.sequence,
+    feedback: head.feedback,
+    reasonCode: head.reasonCode,
+    rationale: head.rationale,
+    actorRef: head.binding.actorRef,
+    feedbackId: head.feedbackId,
+    recordHash: head.recordHash
+  };
+}
+function falsePositiveFeedbackHistory(store, incidentId) {
+  validateStore(store);
+  return store.records.filter((record) => record.binding.incidentId === incidentId);
+}
+function falsePositiveRateByPolicyRevision(store) {
+  validateStore(store);
+  const byRevision = /* @__PURE__ */ new Map();
+  for (const record of store.records)
+    byRevision.set(record.binding.policyRevision, record);
+  const out = [];
+  for (const record of byRevision.values()) {
+    let falsePositive = 0;
+    let confirmed = 0;
+    for (const candidate of store.records) {
+      if (candidate.binding.policyRevision !== record.binding.policyRevision)
+        continue;
+      if (candidate.feedback === "false_positive")
+        falsePositive += 1;
+      else
+        confirmed += 1;
+    }
+    const judged = falsePositive + confirmed;
+    out.push({
+      policyRevision: record.binding.policyRevision,
+      falsePositive,
+      confirmed,
+      rate: judged === 0 ? null : falsePositive / judged
+    });
+  }
+  return out.sort((a, b2) => a.policyRevision < b2.policyRevision ? -1 : a.policyRevision > b2.policyRevision ? 1 : 0);
+}
+function submissionOf(record) {
+  return {
+    tenantId: record.tenantId,
+    binding: record.binding,
+    feedback: record.feedback,
+    reasonCode: record.reasonCode,
+    rationale: record.rationale,
+    origin: record.origin,
+    ...record.observedSideEffect === void 0 ? {} : { observedSideEffect: record.observedSideEffect }
+  };
+}
+function verifyFeedbackRecord(record, previous, storeTenantId, context2, findings) {
+  if (record.tenantId !== storeTenantId) {
+    findings.push({ code: "tenant_mismatch", feedbackId: record.feedbackId });
+    return;
+  }
+  const expectedSequence = (previous?.sequence ?? 0) + 1;
+  if (record.sequence !== expectedSequence) {
+    findings.push({
+      code: "sequence_regressed",
+      feedbackId: record.feedbackId,
+      ...record.sequence > expectedSequence ? { detail: `expected_sequence:${expectedSequence}` } : {}
+    });
+  }
+  const expectedPreviousHash = previous ? previous.recordHash : FALSE_POSITIVE_GENESIS_HASH;
+  if (record.previousHash !== expectedPreviousHash) {
+    findings.push({ code: "chain_link_mismatch", feedbackId: record.feedbackId });
+  }
+  if (falsePositiveFeedbackId(submissionOf(record), record.sequence, context2) !== record.feedbackId) {
+    findings.push({ code: "feedback_id_mismatch", feedbackId: record.feedbackId });
+  }
+  const { recordHash, ...bound } = record;
+  try {
+    if (falsePositiveFeedbackHash(bound, context2) !== recordHash) {
+      findings.push({ code: "record_hash_mismatch", feedbackId: record.feedbackId });
+    }
+  } catch {
+    findings.push({ code: "record_unreadable", feedbackId: record.feedbackId, detail: "hash_unavailable" });
+  }
+}
+function verifyFalsePositiveFeedbackStore(store, context2) {
+  const findings = [];
+  if (!store || store.schemaVersion !== FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION) {
+    return { valid: false, checked: 0, findings: [{ code: "record_unreadable", detail: "store_invalid" }] };
+  }
+  const ordered = [...store.records].sort((a, b2) => a.sequence - b2.sequence);
+  const headByBinding = /* @__PURE__ */ new Map();
+  for (const entry of ordered) {
+    const parsed = parseFalsePositiveFeedbackRecord(entry);
+    if (!parsed.ok) {
+      findings.push({ code: "record_unreadable", detail: parsed.error });
+      continue;
+    }
+    const record = parsed.value;
+    const key = bindingKeyOf(record);
+    verifyFeedbackRecord(record, headByBinding.get(key) ?? null, store.tenantId, context2, findings);
+    headByBinding.set(key, record);
+  }
+  for (const [key, maxSequence] of Object.entries(store.maxSequenceByBinding ?? {})) {
+    const head = headByBinding.get(key);
+    if (!head) {
+      findings.push({ code: "tail_truncated", detail: `binding_without_records:${key}` });
+      continue;
+    }
+    if (head.sequence < maxSequence) {
+      findings.push({
+        code: "tail_truncated",
+        feedbackId: head.feedbackId,
+        detail: `recorded_max:${maxSequence}`
+      });
+    }
+  }
+  return { valid: findings.length === 0, checked: ordered.length, findings };
+}
+function canonicalFalsePositiveFeedbackJson(store) {
+  const ordered = [...store.records].sort((a, b2) => a.sequence === b2.sequence ? a.feedbackId < b2.feedbackId ? -1 : 1 : a.sequence - b2.sequence);
+  return JSON.stringify({
+    schemaVersion: store.schemaVersion,
+    tenantId: store.tenantId,
+    records: ordered.map((record) => ({
+      version: record.version,
+      feedbackId: record.feedbackId,
+      sequence: record.sequence,
+      previousHash: record.previousHash,
+      recordHash: record.recordHash,
+      tenantId: record.tenantId,
+      binding: record.binding,
+      feedback: record.feedback,
+      reasonCode: record.reasonCode,
+      rationale: record.rationale,
+      origin: record.origin,
+      observedSideEffect: record.observedSideEffect ?? null
+    })),
+    maxSequenceByBinding: Object.fromEntries(Object.entries(store.maxSequenceByBinding).sort(([a], [b2]) => a < b2 ? -1 : 1))
+  });
+}
+var import_node_crypto28, FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION, FALSE_POSITIVE_GENESIS_HASH, REF2, HASH2, TENANT, FEEDBACK, REASONS, ORIGINS;
+var init_false_positive_feedback = __esm({
+  "../core/dist/false-positive-feedback.js"() {
+    "use strict";
+    import_node_crypto28 = require("node:crypto");
+    FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION = 1;
+    FALSE_POSITIVE_GENESIS_HASH = "0".repeat(64);
+    REF2 = /^[A-Za-z0-9._:@/-]{1,200}$/;
+    HASH2 = /^[0-9a-f]{64}$/;
+    TENANT = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+    FEEDBACK = /* @__PURE__ */ new Set(["false_positive", "confirmed"]);
+    REASONS = /* @__PURE__ */ new Set([
+      "benign_automation",
+      "benign_maintenance",
+      "expected_egress",
+      "expected_file_write",
+      "legitimate_mcp_tool",
+      "developer_test",
+      "environment_specific",
+      "insufficient_context",
+      "policy_too_strict",
+      "other"
+    ]);
+    ORIGINS = /* @__PURE__ */ new Set([
+      "runtime_verdict",
+      "plugin_scan_finding",
+      "explicit_incident",
+      "operator_review"
+    ]);
+  }
+});
+
 // ../core/dist/federated.js
-var import_node_crypto26, FederatedLearning;
+var import_node_crypto29, FederatedLearning;
 var init_federated = __esm({
   "../core/dist/federated.js"() {
     "use strict";
-    import_node_crypto26 = require("node:crypto");
+    import_node_crypto29 = require("node:crypto");
     FederatedLearning = class {
       config;
       localPatterns = /* @__PURE__ */ new Map();
@@ -47867,13 +49875,13 @@ var init_federated = __esm({
        */
       hashThreatId(threatId) {
         const salt = this.config.nodeId.slice(0, 16);
-        return (0, import_node_crypto26.createHash)("sha256").update(threatId + salt).digest("hex").slice(0, 32);
+        return (0, import_node_crypto29.createHash)("sha256").update(threatId + salt).digest("hex").slice(0, 32);
       }
       /**
        * Generate unique pattern ID.
        */
       generatePatternId() {
-        return `pattern_${Date.now()}_${(0, import_node_crypto26.randomBytes)(4).toString("hex")}`;
+        return `pattern_${Date.now()}_${(0, import_node_crypto29.randomBytes)(4).toString("hex")}`;
       }
       /**
        * Find local pattern by its hash.
@@ -47932,7 +49940,7 @@ var init_federated = __esm({
        */
       static createDefaultConfig(nodeId) {
         return {
-          nodeId: nodeId || `node_${(0, import_node_crypto26.randomBytes)(8).toString("hex")}`,
+          nodeId: nodeId || `node_${(0, import_node_crypto29.randomBytes)(8).toString("hex")}`,
           coordinatorUrl: void 0,
           shareIntervalMinutes: 60,
           privacyBudget: 1
@@ -47992,11 +50000,11 @@ function normalizeFleetTargets(targets) {
 function fleetInventoryEntryId(tenantId, target) {
   const tenant = requireIdentity("tenant_id", tenantId);
   const normalizedTarget = normalizeFleetTarget(target);
-  return (0, import_node_crypto27.createHash)("sha256").update(`${tenant}\0ai_infrastructure\0${normalizedTarget}`).digest("hex");
+  return (0, import_node_crypto30.createHash)("sha256").update(`${tenant}\0ai_infrastructure\0${normalizedTarget}`).digest("hex");
 }
 function defaultFleetInventoryPath(tenantId) {
   const tenant = requireIdentity("tenant_id", tenantId);
-  const tenantKey = (0, import_node_crypto27.createHash)("sha256").update(tenant).digest("hex").slice(0, 24);
+  const tenantKey = (0, import_node_crypto30.createHash)("sha256").update(tenant).digest("hex").slice(0, 24);
   return (0, import_node_path22.join)(resolvePath("~/.singularity-aidr/fleet-inventory"), `${tenantKey}.json`);
 }
 function freshnessFor(lastSeenAt, nowMs, staleAfterMs) {
@@ -48167,11 +50175,11 @@ async function loadFleetInventory(path3) {
 async function saveFleetInventory(path3, inventory) {
   await atomicWriteJson(path3, inventory);
 }
-var import_node_crypto27, import_node_path22, DEFAULT_STALE_AFTER_MS, DEFAULT_MAX_ATTEMPTS2, DEFAULT_BASE_RETRY_DELAY_MS, DEFAULT_MAX_RETRY_DELAY_MS;
+var import_node_crypto30, import_node_path22, DEFAULT_STALE_AFTER_MS, DEFAULT_MAX_ATTEMPTS2, DEFAULT_BASE_RETRY_DELAY_MS, DEFAULT_MAX_RETRY_DELAY_MS;
 var init_fleet_inventory = __esm({
   "../core/dist/fleet-inventory.js"() {
     "use strict";
-    import_node_crypto27 = require("node:crypto");
+    import_node_crypto30 = require("node:crypto");
     import_node_path22 = require("node:path");
     init_aig_infra_scan();
     init_config();
@@ -48324,11 +50332,11 @@ var init_format = __esm({
 function createAutoRollback(logger2) {
   return new AutoRollback(logger2);
 }
-var import_node_crypto28, import_promises17, import_node_path23, DEFAULT_SNAPSHOTS_DIR, DEFAULT_SNAPSHOT_OPTIONS, AutoRollback;
+var import_node_crypto31, import_promises17, import_node_path23, DEFAULT_SNAPSHOTS_DIR, DEFAULT_SNAPSHOT_OPTIONS, AutoRollback;
 var init_rollback = __esm({
   "../core/dist/rollback.js"() {
     "use strict";
-    import_node_crypto28 = require("node:crypto");
+    import_node_crypto31 = require("node:crypto");
     import_promises17 = require("node:fs/promises");
     import_node_path23 = require("node:path");
     init_config();
@@ -48365,7 +50373,7 @@ var init_rollback = __esm({
        */
       async createSnapshotDetailed(paths, operationId, auditContext, options = {}) {
         const opts = { ...DEFAULT_SNAPSHOT_OPTIONS, ...options };
-        const snapshotId = `${operationId}-${(0, import_node_crypto28.randomBytes)(4).toString("hex")}`;
+        const snapshotId = `${operationId}-${(0, import_node_crypto31.randomBytes)(4).toString("hex")}`;
         const snapshotDir = (0, import_node_path23.join)(this.snapshotsDir, snapshotId);
         const files = /* @__PURE__ */ new Map();
         const copied = [];
@@ -48464,7 +50472,7 @@ var init_rollback = __esm({
         return { snapshot, copied, skipped, bytes: bytes2 };
       }
       async executeWithRollback(operation, paths, options) {
-        const operationId = options.operationId ?? `op-${(0, import_node_crypto28.randomBytes)(4).toString("hex")}`;
+        const operationId = options.operationId ?? `op-${(0, import_node_crypto31.randomBytes)(4).toString("hex")}`;
         const auditContext = options.verdict && options.threatId ? {
           tool: options.tool,
           input: options.input,
@@ -49117,11 +51125,11 @@ function responseAuditorFromConfig(config, logger2 = nullLogger) {
     return { unavailableReason: `auditor_init_failed: ${String(error3)}` };
   }
 }
-var import_node_crypto29, import_promises19, import_node_path25, ResponseAuditor, DEFAULT_RESPONSE_AUDIT_CONFIG;
+var import_node_crypto32, import_promises19, import_node_path25, ResponseAuditor, DEFAULT_RESPONSE_AUDIT_CONFIG;
 var init_response_audit = __esm({
   "../core/dist/response-audit.js"() {
     "use strict";
-    import_node_crypto29 = require("node:crypto");
+    import_node_crypto32 = require("node:crypto");
     import_promises19 = require("node:fs/promises");
     import_node_path25 = require("node:path");
     init_config();
@@ -49162,7 +51170,7 @@ var init_response_audit = __esm({
           this.publicKey = keys.publicKey;
           this.logger.debug("Loaded existing signing keys for response audit");
         } catch {
-          const { privateKey, publicKey: publicKey3 } = (0, import_node_crypto29.generateKeyPairSync)("ed25519", {
+          const { privateKey, publicKey: publicKey3 } = (0, import_node_crypto32.generateKeyPairSync)("ed25519", {
             privateKeyEncoding: { type: "pkcs8", format: "pem" },
             publicKeyEncoding: { type: "spki", format: "pem" }
           });
@@ -49190,7 +51198,7 @@ var init_response_audit = __esm({
           error: entry.error,
           _prev_hash: entry._prev_hash
         });
-        return (0, import_node_crypto29.createHash)("sha256").update(data).digest("hex");
+        return (0, import_node_crypto32.createHash)("sha256").update(data).digest("hex");
       }
       signEntry(entry) {
         if (!this.signEntries || !this.privateKey)
@@ -49211,7 +51219,7 @@ var init_response_audit = __esm({
             _prev_hash: entry._prev_hash,
             _entry_hash: entry._entry_hash
           });
-          return (0, import_node_crypto29.sign)(void 0, Buffer.from(data), this.privateKey).toString("base64");
+          return (0, import_node_crypto32.sign)(void 0, Buffer.from(data), this.privateKey).toString("base64");
         } catch (error3) {
           this.logger.warn("Failed to sign audit entry", { error: String(error3) });
           return void 0;
@@ -49236,7 +51244,7 @@ var init_response_audit = __esm({
             _prev_hash: entry._prev_hash,
             _entry_hash: entry._entry_hash
           });
-          return (0, import_node_crypto29.verify)(void 0, Buffer.from(data), this.publicKey, Buffer.from(entry._signature, "base64"));
+          return (0, import_node_crypto32.verify)(void 0, Buffer.from(data), this.publicKey, Buffer.from(entry._signature, "base64"));
         } catch {
           return false;
         }
@@ -49248,7 +51256,7 @@ var init_response_audit = __esm({
           entry_hash: entryHash,
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         };
-        const temporaryPath = `${this.headPath}.${(0, import_node_crypto29.randomUUID)()}.tmp`;
+        const temporaryPath = `${this.headPath}.${(0, import_node_crypto32.randomUUID)()}.tmp`;
         await (0, import_promises19.mkdir)((0, import_node_path25.dirname)(this.headPath), { recursive: true });
         await (0, import_promises19.writeFile)(temporaryPath, `${JSON.stringify(checkpoint)}
 `, {
@@ -49288,10 +51296,10 @@ var init_response_audit = __esm({
           entry_ids: removed.map((entry) => entry.id),
           entry_hashes: removed.map((entry) => entry._entry_hash).filter((hash) => typeof hash === "string" && /^[0-9a-f]{64}$/.test(hash))
         };
-        const recordHash = (0, import_node_crypto29.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
+        const recordHash = (0, import_node_crypto32.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
         const record = { ...base, record_hash: recordHash };
         if (this.signEntries && this.privateKey) {
-          record._signature = (0, import_node_crypto29.sign)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: recordHash })), this.privateKey).toString("base64");
+          record._signature = (0, import_node_crypto32.sign)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: recordHash })), this.privateKey).toString("base64");
         }
         await (0, import_promises19.mkdir)((0, import_node_path25.dirname)(this.retentionManifestPath), { recursive: true });
         await (0, import_promises19.appendFile)(this.retentionManifestPath, `${JSON.stringify(record)}
@@ -49306,7 +51314,7 @@ var init_response_audit = __esm({
           entry_ids: record.entry_ids,
           entry_hashes: record.entry_hashes
         };
-        const expectedHash = (0, import_node_crypto29.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
+        const expectedHash = (0, import_node_crypto32.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
         if (record.record_hash !== expectedHash)
           return false;
         if (!this.signEntries)
@@ -49314,7 +51322,7 @@ var init_response_audit = __esm({
         if (!record._signature || !this.publicKey)
           return false;
         try {
-          return (0, import_node_crypto29.verify)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: record.record_hash })), this.publicKey, Buffer.from(record._signature, "base64"));
+          return (0, import_node_crypto32.verify)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: record.record_hash })), this.publicKey, Buffer.from(record._signature, "base64"));
         } catch {
           return false;
         }
@@ -49378,7 +51386,7 @@ var init_response_audit = __esm({
       }
       async log(entry) {
         await this.ensureSigningReady();
-        const id = (0, import_node_crypto29.randomUUID)();
+        const id = (0, import_node_crypto32.randomUUID)();
         const timestamp = /* @__PURE__ */ new Date();
         const fullEntry = {
           ...entry,
@@ -53798,8 +55806,8 @@ var require_safe_stable_stringify = __commonJS({
     }
     function configure(options) {
       options = { ...options };
-      const fail = getStrictOption(options);
-      if (fail) {
+      const fail4 = getStrictOption(options);
+      if (fail4) {
         if (options.bigint === void 0) {
           options.bigint = false;
         }
@@ -53910,7 +55918,7 @@ ${originalIndentation}`;
             return `{${res}}`;
           }
           case "number":
-            return isFinite(value) ? String(value) : fail ? fail(value) : "null";
+            return isFinite(value) ? String(value) : fail4 ? fail4(value) : "null";
           case "boolean":
             return value === true ? "true" : "false";
           case "undefined":
@@ -53921,7 +55929,7 @@ ${originalIndentation}`;
             }
           // fallthrough
           default:
-            return fail ? fail(value) : void 0;
+            return fail4 ? fail4(value) : void 0;
         }
       }
       function stringifyArrayReplacer(key, value, stack, replacer, spacer, indentation) {
@@ -54001,7 +56009,7 @@ ${originalIndentation}`;
             return `{${res}}`;
           }
           case "number":
-            return isFinite(value) ? String(value) : fail ? fail(value) : "null";
+            return isFinite(value) ? String(value) : fail4 ? fail4(value) : "null";
           case "boolean":
             return value === true ? "true" : "false";
           case "undefined":
@@ -54012,7 +56020,7 @@ ${originalIndentation}`;
             }
           // fallthrough
           default:
-            return fail ? fail(value) : void 0;
+            return fail4 ? fail4(value) : void 0;
         }
       }
       function stringifyIndent(key, value, stack, spacer, indentation) {
@@ -54113,7 +56121,7 @@ ${originalIndentation}`;
             return `{${res}}`;
           }
           case "number":
-            return isFinite(value) ? String(value) : fail ? fail(value) : "null";
+            return isFinite(value) ? String(value) : fail4 ? fail4(value) : "null";
           case "boolean":
             return value === true ? "true" : "false";
           case "undefined":
@@ -54124,7 +56132,7 @@ ${originalIndentation}`;
             }
           // fallthrough
           default:
-            return fail ? fail(value) : void 0;
+            return fail4 ? fail4(value) : void 0;
         }
       }
       function stringifySimple(key, value, stack) {
@@ -54209,7 +56217,7 @@ ${originalIndentation}`;
             return `{${res}}`;
           }
           case "number":
-            return isFinite(value) ? String(value) : fail ? fail(value) : "null";
+            return isFinite(value) ? String(value) : fail4 ? fail4(value) : "null";
           case "boolean":
             return value === true ? "true" : "false";
           case "undefined":
@@ -54220,7 +56228,7 @@ ${originalIndentation}`;
             }
           // fallthrough
           default:
-            return fail ? fail(value) : void 0;
+            return fail4 ? fail4(value) : void 0;
         }
       }
       function stringify3(value, replacer, space) {
@@ -55002,7 +57010,7 @@ var init_mcp_inventory = __esm({
 function inventoryId(sourcePath, name) {
   const resolvedPath = (0, import_node_path30.resolve)(sourcePath);
   const canonicalPath = process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
-  return (0, import_node_crypto30.createHash)("sha256").update("aidr-mcp-inventory-v1\0").update(JSON.stringify([canonicalPath, name])).digest("hex");
+  return (0, import_node_crypto33.createHash)("sha256").update("aidr-mcp-inventory-v1\0").update(JSON.stringify([canonicalPath, name])).digest("hex");
 }
 async function discoverMcpServers(paths) {
   const report = await inspectMcpServerInventory(paths);
@@ -55025,16 +57033,16 @@ async function discoverMcpServers(paths) {
         transport: item.url ? "remote" : "stdio",
         endpoint,
         risk_hints: item.riskHints,
-        configuration_sha256: (0, import_node_crypto30.createHash)("sha256").update(JSON.stringify([item.command, item.args, item.url])).digest("hex")
+        configuration_sha256: (0, import_node_crypto33.createHash)("sha256").update(JSON.stringify([item.command, item.args, item.url])).digest("hex")
       };
     })
   };
 }
-var import_node_crypto30, import_node_path30;
+var import_node_crypto33, import_node_path30;
 var init_mcp_discovery = __esm({
   "../core/dist/mcp-discovery.js"() {
     "use strict";
-    import_node_crypto30 = require("node:crypto");
+    import_node_crypto33 = require("node:crypto");
     import_node_path30 = require("node:path");
     init_mcp_inventory();
   }
@@ -56108,7 +58116,7 @@ function cacheKey(pluginKey, version, lastUpdated) {
   return `${pluginKey}:${version}:${lastUpdated}`;
 }
 async function computeConfigHash(aidrVersion, ...dirs) {
-  const h = (0, import_node_crypto31.createHash)("sha256");
+  const h = (0, import_node_crypto34.createHash)("sha256");
   if (aidrVersion)
     h.update(aidrVersion);
   for (const dir of dirs) {
@@ -56209,11 +58217,11 @@ function storeResult(cache, pluginKey, version, lastUpdated, findings) {
     findings
   };
 }
-var import_node_crypto31, import_promises20, import_node_path32, DEFAULT_CACHE_PATH, CACHE_TTL_DAYS;
+var import_node_crypto34, import_promises20, import_node_path32, DEFAULT_CACHE_PATH, CACHE_TTL_DAYS;
 var init_plugin_scan_cache = __esm({
   "../core/dist/plugin-scan-cache.js"() {
     "use strict";
-    import_node_crypto31 = require("node:crypto");
+    import_node_crypto34 = require("node:crypto");
     import_promises20 = require("node:fs/promises");
     import_node_path32 = require("node:path");
     init_config();
@@ -56463,20 +58471,20 @@ async function scanPlugin(plugin, threats, options = {}) {
       allUrls.push(...extractUrls(content));
     }
     if (checkFileHashes) {
-      const sha2563 = (0, import_node_crypto32.createHash)("sha256").update(rawBytes).digest("hex");
-      const existing = hashToFiles.get(sha2563);
+      const sha2564 = (0, import_node_crypto35.createHash)("sha256").update(rawBytes).digest("hex");
+      const existing = hashToFiles.get(sha2564);
       if (existing) {
         existing.push(filePath);
       } else {
-        hashToFiles.set(sha2563, [filePath]);
+        hashToFiles.set(sha2564, [filePath]);
       }
     }
   }
   if (intelMerged && intelMerged.pluginSignatureDeny.size > 0 && hashToFiles.size > 0) {
-    for (const sha2563 of hashToFiles.keys()) {
-      if (!intelMerged.pluginSignatureDeny.has(sha2563.toLowerCase()))
+    for (const sha2564 of hashToFiles.keys()) {
+      if (!intelMerged.pluginSignatureDeny.has(sha2564.toLowerCase()))
         continue;
-      const filePaths = hashToFiles.get(sha2563) ?? [];
+      const filePaths = hashToFiles.get(sha2564) ?? [];
       for (const filePath of filePaths) {
         result.findings.push({
           threatId: "INTEL-PLUGIN-SIGNATURE-001",
@@ -56484,7 +58492,7 @@ async function scanPlugin(plugin, threats, options = {}) {
           severity: "critical",
           confidence: 1,
           action: "block",
-          artifact: sha2563,
+          artifact: sha2564,
           sourceFile: (0, import_node_path33.relative)(plugin.installPath, filePath)
         });
       }
@@ -56533,11 +58541,11 @@ async function scanPlugin(plugin, threats, options = {}) {
   await Promise.all([urlCheckPromise, fileCheckPromise]);
   return result;
 }
-var import_node_crypto32, import_promises21, import_node_os4, import_node_path33, DEFAULT_PLUGINS_REGISTRY, SCANNABLE_EXTENSIONS, SKIP_DIRS, MAX_FILE_SIZE, JS_TS_EXTENSIONS, STRING_OR_COMMENT_RE, STR_ARG, JS_EXEC_RE, JS_SPAWN_RE, JS_SPAWN_ARGS_RE, SHELL_EXECUTABLES, JS_EXECA_RE, JS_EXECA_ARGS_RE, JS_BUN_SHELL_RE, JS_BUN_DOLLAR_RE, JS_ZX_RE;
+var import_node_crypto35, import_promises21, import_node_os4, import_node_path33, DEFAULT_PLUGINS_REGISTRY, SCANNABLE_EXTENSIONS, SKIP_DIRS, MAX_FILE_SIZE, JS_TS_EXTENSIONS, STRING_OR_COMMENT_RE, STR_ARG, JS_EXEC_RE, JS_SPAWN_RE, JS_SPAWN_ARGS_RE, SHELL_EXECUTABLES, JS_EXECA_RE, JS_EXECA_ARGS_RE, JS_BUN_SHELL_RE, JS_BUN_DOLLAR_RE, JS_ZX_RE;
 var init_plugin_scanner = __esm({
   "../core/dist/plugin-scanner.js"() {
     "use strict";
-    import_node_crypto32 = require("node:crypto");
+    import_node_crypto35 = require("node:crypto");
     import_promises21 = require("node:fs/promises");
     import_node_os4 = require("node:os");
     import_node_path33 = require("node:path");
@@ -56606,11 +58614,11 @@ function getDefaultQuarantineConfig() {
     notifyChannels: []
   };
 }
-var import_node_crypto33, import_node_fs10, import_promises22, import_node_path34, MANIFEST_VERSION, MANIFEST_FILENAME, AutoQuarantine;
+var import_node_crypto36, import_node_fs10, import_promises22, import_node_path34, MANIFEST_VERSION, MANIFEST_FILENAME, AutoQuarantine;
 var init_quarantine = __esm({
   "../core/dist/quarantine.js"() {
     "use strict";
-    import_node_crypto33 = require("node:crypto");
+    import_node_crypto36 = require("node:crypto");
     import_node_fs10 = require("node:fs");
     import_promises22 = require("node:fs/promises");
     import_node_path34 = require("node:path");
@@ -56672,7 +58680,7 @@ var init_quarantine = __esm({
           }
           throw new Error(error3);
         }
-        const id = (0, import_node_crypto33.randomUUID)();
+        const id = (0, import_node_crypto36.randomUUID)();
         const fileHash = await this.computeFileHash(resolvedPath);
         const fileSize = fileStats.size;
         const now = /* @__PURE__ */ new Date();
@@ -56909,7 +58917,7 @@ var init_quarantine = __esm({
        */
       async computeFileHash(filePath) {
         const content = await (0, import_promises22.readFile)(filePath);
-        return (0, import_node_crypto33.createHash)("sha256").update(content).digest("hex");
+        return (0, import_node_crypto36.createHash)("sha256").update(content).digest("hex");
       }
       /**
        * Log a quarantine event to the audit log.
@@ -86859,7 +88867,7 @@ function tapModelCallStream(stream, onFinal, onError2) {
     }
     onFinal(state);
   };
-  const fail = (error3) => {
+  const fail4 = (error3) => {
     if (settled) {
       return;
     }
@@ -86878,7 +88886,7 @@ function tapModelCallStream(stream, onFinal, onError2) {
         text += accumulateChunk(state, value) ?? "";
         controller.enqueue(value);
       } catch (error3) {
-        fail(error3);
+        fail4(error3);
         controller.error(error3);
       }
     },
@@ -103653,7 +105661,7 @@ function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isUuid(value) {
-  return typeof value === "string" && UUID2.test(value);
+  return typeof value === "string" && UUID3.test(value);
 }
 function resultCode(value, fallback) {
   return RESULT_CODE.test(value) ? value : fallback;
@@ -103751,12 +105759,12 @@ function responseEndpoint(endpoint, developmentLoopback) {
   }
   return controlPlaneUrl(parsed.toString().replace(/\/$/, ""), "revocations");
 }
-var UUID2, RESULT_CODE, COMMAND_TYPES, MAX_RESPONSE_BYTES2, FleetResponseCommandConsumer;
+var UUID3, RESULT_CODE, COMMAND_TYPES, MAX_RESPONSE_BYTES2, FleetResponseCommandConsumer;
 var init_response_command_consumer_v6 = __esm({
   "../core/dist/response-command-consumer-v6.js"() {
     "use strict";
     init_control_plane_url();
-    UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    UUID3 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     RESULT_CODE = /^[a-z][a-z0-9_]{0,63}$/;
     COMMAND_TYPES = [
       "agent_pause",
@@ -103907,7 +105915,7 @@ function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function assertCommand(value) {
-  if (!isRecord5(value) || typeof value.id !== "string" || !UUID3.test(value.id) || !TYPES.has(value.commandType) || typeof value.expiresAt !== "string" || !Number.isFinite(Date.parse(value.expiresAt)) || !Number.isSafeInteger(value.attempt) || value.attempt < 1 || value.attempt > 5 || value.rollbackOf !== null && (typeof value.rollbackOf !== "string" || !UUID3.test(value.rollbackOf))) {
+  if (!isRecord5(value) || typeof value.id !== "string" || !UUID4.test(value.id) || !TYPES.has(value.commandType) || typeof value.expiresAt !== "string" || !Number.isFinite(Date.parse(value.expiresAt)) || !Number.isSafeInteger(value.attempt) || value.attempt < 1 || value.attempt > 5 || value.rollbackOf !== null && (typeof value.rollbackOf !== "string" || !UUID4.test(value.rollbackOf))) {
     throw new Error("invalid_fleet_journal_command");
   }
   const reverse = value.commandType === "agent_resume" || value.commandType === "network_release";
@@ -103915,7 +105923,7 @@ function assertCommand(value) {
     throw new Error("invalid_fleet_journal_rollback");
 }
 function assertState(value, identity) {
-  if (!isRecord5(value) || value.schema_version !== 1 || !Number.isSafeInteger(value.sequence) || value.sequence < 0 || value.tenant_id !== identity.tenantId || value.agent_id !== identity.agentId || !Array.isArray(value.recent_ids) || value.recent_ids.length > MAX_RECENT_FLEET_COMMANDS || value.recent_ids.some((id) => typeof id !== "string" || !UUID3.test(id)) || new Set(value.recent_ids).size !== value.recent_ids.length) {
+  if (!isRecord5(value) || value.schema_version !== 1 || !Number.isSafeInteger(value.sequence) || value.sequence < 0 || value.tenant_id !== identity.tenantId || value.agent_id !== identity.agentId || !Array.isArray(value.recent_ids) || value.recent_ids.length > MAX_RECENT_FLEET_COMMANDS || value.recent_ids.some((id) => typeof id !== "string" || !UUID4.test(id)) || new Set(value.recent_ids).size !== value.recent_ids.length) {
     throw new Error("invalid_fleet_journal_state");
   }
   if (value.current === null)
@@ -103940,7 +105948,7 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 function macFor(payload, key) {
-  return (0, import_node_crypto34.createHmac)("sha256", key).update(canonical(payload)).digest("hex");
+  return (0, import_node_crypto37.createHmac)("sha256", key).update(canonical(payload)).digest("hex");
 }
 async function regularFile(path3) {
   try {
@@ -103974,7 +105982,7 @@ function pidAlive(pid) {
   }
 }
 function rememberCommand(state, commandId) {
-  if (!UUID3.test(commandId))
+  if (!UUID4.test(commandId))
     throw new Error("invalid_fleet_command_id");
   return {
     ...state,
@@ -103982,14 +105990,14 @@ function rememberCommand(state, commandId) {
     recent_ids: [...state.recent_ids.filter((id) => id !== commandId), commandId].slice(-MAX_RECENT_FLEET_COMMANDS)
   };
 }
-var import_node_crypto34, import_promises23, import_node_path38, UUID3, CODE, TYPES, PHASES, MAX_JOURNAL_BYTES, MAX_RECENT_FLEET_COMMANDS, FleetResponseJournal;
+var import_node_crypto37, import_promises23, import_node_path38, UUID4, CODE, TYPES, PHASES, MAX_JOURNAL_BYTES, MAX_RECENT_FLEET_COMMANDS, FleetResponseJournal;
 var init_response_command_journal_v6 = __esm({
   "../core/dist/response-command-journal-v6.js"() {
     "use strict";
-    import_node_crypto34 = require("node:crypto");
+    import_node_crypto37 = require("node:crypto");
     import_promises23 = require("node:fs/promises");
     import_node_path38 = require("node:path");
-    UUID3 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     CODE = /^[a-z][a-z0-9_]{0,63}$/;
     TYPES = /* @__PURE__ */ new Set(["agent_pause", "agent_resume", "network_isolate", "network_release"]);
     PHASES = /* @__PURE__ */ new Set([
@@ -104039,7 +106047,7 @@ var init_response_command_journal_v6 = __esm({
         assertState(envelope.payload, this.identity);
         const expected = Buffer.from(macFor(envelope.payload, this.key), "hex");
         const actual = Buffer.from(envelope.mac, "hex");
-        if (!(0, import_node_crypto34.timingSafeEqual)(expected, actual))
+        if (!(0, import_node_crypto37.timingSafeEqual)(expected, actual))
           throw new Error("fleet_journal_integrity_failed");
         return envelope.payload;
       }
@@ -104066,7 +106074,7 @@ var init_response_command_journal_v6 = __esm({
         const envelope = { payload: next, mac: macFor(next, this.key) };
         const target = this.slot === "a" ? "b" : "a";
         const targetPath = this.slotPath(target);
-        const temporary = `${targetPath}.${(0, import_node_crypto34.randomUUID)()}.tmp`;
+        const temporary = `${targetPath}.${(0, import_node_crypto37.randomUUID)()}.tmp`;
         await this.ensureDirectory();
         await writeSynced(temporary, JSON.stringify(envelope));
         try {
@@ -104082,7 +106090,7 @@ var init_response_command_journal_v6 = __esm({
       async acquireLock() {
         await this.ensureDirectory();
         const lockPath = `${this.path}.lock`;
-        const token = (0, import_node_crypto34.randomUUID)();
+        const token = (0, import_node_crypto37.randomUUID)();
         const temporary = `${lockPath}.${token}.tmp`;
         await writeSynced(temporary, JSON.stringify({ pid: process.pid, token }));
         try {
@@ -104102,7 +106110,7 @@ var init_response_command_journal_v6 = __esm({
       }
       async recoverDeadLock(lockPath) {
         const recoveryPath = `${lockPath}.recovery`;
-        const recoveryToken = (0, import_node_crypto34.randomUUID)();
+        const recoveryToken = (0, import_node_crypto37.randomUUID)();
         const temporary = `${recoveryPath}.${recoveryToken}.tmp`;
         await writeSynced(temporary, JSON.stringify({ pid: process.pid, token: recoveryToken }));
         try {
@@ -104115,7 +106123,7 @@ var init_response_command_journal_v6 = __esm({
             if (!await regularFile(lockPath))
               return;
             const owner = JSON.parse(await (0, import_promises23.readFile)(lockPath, "utf8"));
-            if (!isRecord5(owner) || !Number.isSafeInteger(owner.pid) || owner.pid < 1 || typeof owner.token !== "string" || !UUID3.test(owner.token)) {
+            if (!isRecord5(owner) || !Number.isSafeInteger(owner.pid) || owner.pid < 1 || typeof owner.token !== "string" || !UUID4.test(owner.token)) {
               throw new Error("fleet_journal_lock_invalid");
             }
             if (pidAlive(owner.pid))
@@ -104317,6 +106325,245 @@ var init_response_command_worker_v6 = __esm({
   }
 });
 
+// ../core/dist/response-worker-contract.js
+function planResponseStep(request2) {
+  if (!CAPABILITY_SET.has(request2.capability)) {
+    return { ok: false, code: "unknown_capability", detail: String(request2.capability) };
+  }
+  const declared = request2.adapter.capabilities();
+  if (!declared.includes(request2.capability)) {
+    return {
+      ok: false,
+      code: "unsupported_action",
+      detail: `${request2.adapter.adapterId} does not declare ${request2.capability}`
+    };
+  }
+  if (!IDEMPOTENCY_KEY.test(request2.idempotencyKey)) {
+    return { ok: false, code: "invalid_idempotency_key", detail: "idempotency key is malformed" };
+  }
+  const ttlMs = request2.ttlMs ?? 5 * 60 * 1e3;
+  if (!Number.isSafeInteger(ttlMs) || ttlMs < 1e3 || ttlMs > MAX_TTL_MS) {
+    return { ok: false, code: "invalid_ttl", detail: "ttl must be between 1s and 24h" };
+  }
+  const binding = request2.binding;
+  if (!binding || typeof binding.target !== "string" || binding.target.trim() === "") {
+    return { ok: false, code: "missing_target", detail: "target is required" };
+  }
+  if (typeof binding.incidentId !== "string" || binding.incidentId.trim() === "") {
+    return { ok: false, code: "missing_incident", detail: "incidentId is required" };
+  }
+  if (typeof binding.authorizedBy !== "string" || binding.authorizedBy.trim().length < 3) {
+    return { ok: false, code: "missing_authorization", detail: "authorizedBy is required" };
+  }
+  if (binding.expectedSha256 !== null && !SHA2562.test(binding.expectedSha256)) {
+    return { ok: false, code: "invalid_expected_digest", detail: "expectedSha256 must be a SHA-256" };
+  }
+  if (request2.escapesWorkspace === true) {
+    return {
+      ok: false,
+      code: "target_escapes_workspace",
+      detail: "the resolved target is outside the permitted root"
+    };
+  }
+  const fileAction = request2.capability === "quarantine_file" || request2.capability === "restore_file";
+  if (fileAction) {
+    if (request2.liveExists !== true) {
+      return { ok: false, code: "target_missing", detail: "the target does not exist" };
+    }
+    if (typeof request2.vaultPath !== "string" || request2.vaultPath.trim() === "") {
+      return { ok: false, code: "missing_vault_path", detail: "a vault path is required" };
+    }
+    if (binding.expectedSha256 !== null) {
+      if (typeof request2.liveSha256 !== "string" || !SHA2562.test(request2.liveSha256)) {
+        return { ok: false, code: "target_unreadable", detail: "the target digest could not be read" };
+      }
+      if (request2.liveSha256 !== binding.expectedSha256) {
+        return {
+          ok: false,
+          code: "target_changed",
+          detail: "the target digest no longer matches the authorized digest"
+        };
+      }
+    }
+  }
+  if (request2.capability === "isolate_host" && request2.hasPrivilege !== true) {
+    return {
+      ok: false,
+      code: "insufficient_privilege",
+      detail: "host isolation requires an elevated platform adapter"
+    };
+  }
+  if ((request2.capability === "terminate_process" || request2.capability === "revoke_credential") && request2.hasPrivilege !== true) {
+    return {
+      ok: false,
+      code: "insufficient_privilege",
+      detail: `${request2.capability} requires the documented privilege`
+    };
+  }
+  return {
+    ok: true,
+    step: {
+      capability: request2.capability,
+      binding,
+      vaultPath: fileAction ? request2.vaultPath : null,
+      ttlMs,
+      idempotencyKey: request2.idempotencyKey,
+      reversible: request2.capability !== "isolate_host"
+    }
+  };
+}
+async function executeResponseStep(step, options) {
+  const now = options.now ?? Date.now;
+  const startedAt = now();
+  const existing = await options.journal.get(step.idempotencyKey);
+  if (existing) {
+    if (existing.expiresAtMs > startedAt)
+      return { receipt: existing.receipt, replayed: true };
+    return {
+      replayed: true,
+      receipt: {
+        commandId: step.idempotencyKey,
+        incidentId: step.binding.incidentId,
+        adapterId: options.adapter.adapterId,
+        platform: options.adapter.platform,
+        capability: step.capability,
+        status: "refused",
+        code: "stale_command",
+        target: step.binding.target,
+        observed: null,
+        rollbackToken: null,
+        rollbackPossible: false,
+        appliedAtUtc: new Date(startedAt).toISOString(),
+        fullyReversible: false,
+        idempotencyKey: step.idempotencyKey
+      }
+    };
+  }
+  let outcome;
+  try {
+    outcome = await options.adapter.execute(step);
+  } catch (error3) {
+    outcome = {
+      status: "failed",
+      code: "adapter_threw",
+      detail: error3 instanceof Error ? error3.message : String(error3),
+      rollbackToken: null
+    };
+  }
+  const status = outcome.status === "applied" ? step.reversible && outcome.rollbackToken !== null ? "applied" : step.reversible ? (
+    // An applied step with no rollback token cannot be undone on
+    // request, so the action is partial and the operator must know.
+    "partial"
+  ) : "partial" : outcome.status === "noop" ? "noop" : outcome.status;
+  const receipt = {
+    commandId: step.idempotencyKey,
+    incidentId: step.binding.incidentId,
+    adapterId: options.adapter.adapterId,
+    platform: options.adapter.platform,
+    capability: step.capability,
+    status,
+    code: outcome.status === "applied" ? status === "applied" ? "applied" : "applied_without_rollback" : outcome.status === "noop" ? "already_in_desired_state" : outcome.code,
+    target: step.binding.target,
+    observed: outcome.status === "applied" || outcome.status === "noop" ? outcome.observed : null,
+    rollbackToken: outcome.status === "refused" ? null : outcome.rollbackToken,
+    rollbackPossible: outcome.status !== "refused" && outcome.rollbackToken !== null,
+    appliedAtUtc: new Date(startedAt).toISOString(),
+    fullyReversible: status === "applied",
+    idempotencyKey: step.idempotencyKey
+  };
+  await options.journal.put({
+    idempotencyKey: step.idempotencyKey,
+    expiresAtMs: startedAt + step.ttlMs,
+    outcome,
+    receipt
+  });
+  return { receipt, replayed: false };
+}
+function planResponseRollback(request2) {
+  const { receipt } = request2;
+  if (receipt.rollbackToken === null) {
+    return {
+      ok: false,
+      code: "no_rollback_token",
+      detail: `${receipt.capability} recorded no rollback token`
+    };
+  }
+  const inverse = {
+    quarantine_file: "restore_file",
+    restore_file: "quarantine_file"
+  };
+  const capability = inverse[receipt.capability];
+  if (!capability) {
+    return {
+      ok: false,
+      code: "no_inverse_action",
+      detail: `${receipt.capability} has no inverse on this adapter`
+    };
+  }
+  if (!request2.adapter.capabilities().includes(capability)) {
+    return {
+      ok: false,
+      code: "unsupported_action",
+      detail: `${request2.adapter.adapterId} does not declare ${capability}`
+    };
+  }
+  return {
+    ok: true,
+    step: {
+      capability,
+      binding: {
+        target: receipt.target,
+        expectedSha256: null,
+        incidentId: receipt.incidentId,
+        authorizedBy: `rollback:${receipt.commandId}`
+      },
+      vaultPath: receipt.rollbackToken,
+      ttlMs: 5 * 60 * 1e3,
+      idempotencyKey: request2.idempotencyKey,
+      reversible: false
+    }
+  };
+}
+function reportWorkerCapabilities(adapter, requested) {
+  const declared = adapter.capabilities();
+  const known = requested.filter((entry) => CAPABILITY_SET.has(entry));
+  const requestedUnknown = requested.filter((entry) => !CAPABILITY_SET.has(entry));
+  const missing = known.filter((capability) => !declared.includes(capability));
+  const limitations = [
+    ...requestedUnknown.length ? [`unknown capability requested: ${requestedUnknown.join(", ")}`] : [],
+    ...missing.length ? [`not implemented on this host: ${missing.join(", ")}`] : [],
+    ...declared.includes("isolate_host") ? [] : ["host network isolation is not provided by this adapter"]
+  ];
+  return { adapterId: adapter.adapterId, platform: adapter.platform, declared, missing, limitations };
+}
+var RESPONSE_CAPABILITIES, CAPABILITY_SET, IDEMPOTENCY_KEY, SHA2562, MAX_TTL_MS, MemoryResponseJournal;
+var init_response_worker_contract = __esm({
+  "../core/dist/response-worker-contract.js"() {
+    "use strict";
+    RESPONSE_CAPABILITIES = [
+      "quarantine_file",
+      "restore_file",
+      "terminate_process",
+      "isolate_host",
+      "revoke_credential"
+    ];
+    CAPABILITY_SET = new Set(RESPONSE_CAPABILITIES);
+    IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,200}$/;
+    SHA2562 = /^[0-9a-f]{64}$/;
+    MAX_TTL_MS = 24 * 60 * 60 * 1e3;
+    MemoryResponseJournal = class {
+      #entries = /* @__PURE__ */ new Map();
+      get(idempotencyKey) {
+        return Promise.resolve(this.#entries.get(idempotencyKey) ?? null);
+      }
+      put(entry) {
+        this.#entries.set(entry.idempotencyKey, entry);
+        return Promise.resolve();
+      }
+    };
+  }
+});
+
 // ../core/dist/mcp-attestation.js
 function isJsonValue(value, seen = /* @__PURE__ */ new Set()) {
   if (value === null || typeof value === "string" || typeof value === "boolean")
@@ -104370,7 +106617,7 @@ function signingPayload(manifest, keyId) {
 ${canonicalMcpToolManifest(manifest)}`, "utf8");
 }
 function mcpManifestHash(manifest) {
-  return (0, import_node_crypto35.createHash)("sha256").update(manifestPayload2(manifest)).digest("hex");
+  return (0, import_node_crypto38.createHash)("sha256").update(manifestPayload2(manifest)).digest("hex");
 }
 function mcpToolsetHash(tools) {
   const parsed = external_exports.array(McpToolDefinitionSchema).max(4096).parse(tools);
@@ -104381,20 +106628,20 @@ function mcpToolsetHash(tools) {
     names.add(tool.name);
   }
   const ordered = [...parsed].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-  return (0, import_node_crypto35.createHash)("sha256").update(JSON.stringify(canonicalize3(ordered))).digest("hex");
+  return (0, import_node_crypto38.createHash)("sha256").update(JSON.stringify(canonicalize3(ordered))).digest("hex");
 }
 function signMcpToolManifest(params) {
   if (!ID_PATTERN.test(params.keyId))
     throw new Error("invalid MCP signer key id");
   const manifest = McpToolManifestV1Schema.parse(params.manifest);
-  const privateKey = params.privateKey instanceof import_node_crypto35.KeyObject ? params.privateKey : (0, import_node_crypto35.createPrivateKey)(params.privateKey);
+  const privateKey = params.privateKey instanceof import_node_crypto38.KeyObject ? params.privateKey : (0, import_node_crypto38.createPrivateKey)(params.privateKey);
   if (privateKey.type !== "private" || privateKey.asymmetricKeyType !== "ed25519") {
     throw new Error("MCP manifests must be signed with an Ed25519 private key");
   }
   return {
     key_id: params.keyId,
     manifest,
-    signature_b64: (0, import_node_crypto35.sign)(null, signingPayload(manifest, params.keyId), privateKey).toString("base64")
+    signature_b64: (0, import_node_crypto38.sign)(null, signingPayload(manifest, params.keyId), privateKey).toString("base64")
   };
 }
 async function writeMcpSignerHealthEvidence(params) {
@@ -104460,10 +106707,10 @@ function verifyManifestSignature2(manifest, keyId, publicKeyPem, signatureBase64
   if (!signature)
     return "invalid_signature";
   try {
-    const publicKey3 = (0, import_node_crypto35.createPublicKey)(publicKeyPem);
+    const publicKey3 = (0, import_node_crypto38.createPublicKey)(publicKeyPem);
     if (publicKey3.asymmetricKeyType !== "ed25519")
       return "invalid_public_key";
-    return (0, import_node_crypto35.verify)(null, signingPayload(manifest, keyId), publicKey3, signature) ? null : "invalid_signature";
+    return (0, import_node_crypto38.verify)(null, signingPayload(manifest, keyId), publicKey3, signature) ? null : "invalid_signature";
   } catch {
     return "invalid_public_key";
   }
@@ -104510,7 +106757,7 @@ async function removeStaleLock(path3, staleAfter) {
 function toolMap(tools) {
   return new Map(tools.map((tool) => [
     tool.name,
-    (0, import_node_crypto35.createHash)("sha256").update(JSON.stringify(canonicalize3(tool))).digest("hex")
+    (0, import_node_crypto38.createHash)("sha256").update(JSON.stringify(canonicalize3(tool))).digest("hex")
   ]));
 }
 function diffMcpTools(activeTools, candidateTools) {
@@ -104629,11 +106876,11 @@ async function approveQuarantinedMcpToolset(params) {
     };
   });
 }
-var import_node_crypto35, import_promises24, import_node_path39, import_promises25, SIGNING_DOMAIN, DEFAULT_CLOCK_SKEW_MS, DEFAULT_MAX_LIFETIME_MS, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_STALE_LOCK_MS, MAX_APPROVED_TOOLSETS, ID_PATTERN, TOOL_NAME_PATTERN, SHA256_PATTERN2, JsonObjectSchema, McpToolDefinitionSchema, McpToolManifestV1Schema, SignedMcpToolManifestV1Schema, McpToolDriftSchema, McpAttestationStateV1Schema, MemoryMcpAttestationStore, FileMcpAttestationStore;
+var import_node_crypto38, import_promises24, import_node_path39, import_promises25, SIGNING_DOMAIN, DEFAULT_CLOCK_SKEW_MS, DEFAULT_MAX_LIFETIME_MS, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_STALE_LOCK_MS, MAX_APPROVED_TOOLSETS, ID_PATTERN, TOOL_NAME_PATTERN, SHA256_PATTERN2, JsonObjectSchema, McpToolDefinitionSchema, McpToolManifestV1Schema, SignedMcpToolManifestV1Schema, McpToolDriftSchema, McpAttestationStateV1Schema, MemoryMcpAttestationStore, FileMcpAttestationStore;
 var init_mcp_attestation = __esm({
   "../core/dist/mcp-attestation.js"() {
     "use strict";
-    import_node_crypto35 = require("node:crypto");
+    import_node_crypto38 = require("node:crypto");
     import_promises24 = require("node:fs/promises");
     import_node_path39 = require("node:path");
     import_promises25 = require("node:timers/promises");
@@ -104745,7 +106992,7 @@ var init_mcp_attestation = __esm({
         this.options = options;
       }
       statePath(serverId) {
-        const id = (0, import_node_crypto35.createHash)("sha256").update(serverId, "utf8").digest("hex");
+        const id = (0, import_node_crypto38.createHash)("sha256").update(serverId, "utf8").digest("hex");
         return (0, import_node_path39.join)(this.directory, `${id}.json`);
       }
       async acquireLock(path3) {
@@ -104832,6 +107079,8 @@ __export(dist_exports, {
   AutoQuarantine: () => AutoQuarantine,
   AutoRollback: () => AutoRollback,
   BehavioralDetectionOrchestrator: () => BehavioralDetectionOrchestrator,
+  CAUSAL_CHAIN_ORDER: () => CAUSAL_CHAIN_ORDER,
+  CAUSAL_CHAIN_SCHEMA_VERSION: () => CAUSAL_CHAIN_SCHEMA_VERSION,
   CONFIDENCE_THRESHOLD: () => CONFIDENCE_THRESHOLD,
   CacheConfigSchema: () => CacheConfigSchema,
   CommunityRuleRegistry: () => CommunityRuleRegistry,
@@ -104865,7 +107114,13 @@ __export(dist_exports, {
   DlpUnavailableActionSchema: () => DlpUnavailableActionSchema,
   DurableSiemDelivery: () => DurableSiemDelivery,
   DurableTelemetryQueue: () => DurableTelemetryQueue,
+  EVIDENCE_GENESIS_HASH: () => EVIDENCE_GENESIS_HASH,
+  EVIDENCE_RECEIPT_VERSION: () => EVIDENCE_RECEIPT_VERSION,
+  EXPOSURE_GRAPH_SCHEMA_VERSION: () => EXPOSURE_GRAPH_SCHEMA_VERSION,
+  EXPOSURE_NODE_KINDS: () => EXPOSURE_NODE_KINDS,
   EntropyDetector: () => EntropyDetector,
+  FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION: () => FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION,
+  FALSE_POSITIVE_GENESIS_HASH: () => FALSE_POSITIVE_GENESIS_HASH,
   FederatedLearning: () => FederatedLearning,
   FileCheckClient: () => FileCheckClient,
   FileCheckConfigSchema: () => FileCheckConfigSchema,
@@ -104884,6 +107139,7 @@ __export(dist_exports, {
   McpToolDefinitionSchema: () => McpToolDefinitionSchema,
   McpToolManifestV1Schema: () => McpToolManifestV1Schema,
   MemoryMcpAttestationStore: () => MemoryMcpAttestationStore,
+  MemoryResponseJournal: () => MemoryResponseJournal,
   MetricsCollector: () => MetricsCollector,
   NoveltyDetector: () => NoveltyDetector,
   PAD: () => PAD,
@@ -104892,6 +107148,7 @@ __export(dist_exports, {
   PackageChecker: () => PackageChecker,
   PolicyDocumentSchema: () => PolicyDocumentSchema,
   REPUTATION_FEED_SCHEMA_VERSION: () => REPUTATION_FEED_SCHEMA_VERSION,
+  RESPONSE_CAPABILITIES: () => RESPONSE_CAPABILITIES,
   RealTimeRuleSync: () => RealTimeRuleSync,
   RegistryClient: () => RegistryClient,
   ReputationFeedManifestSchema: () => ReputationFeedManifestSchema,
@@ -104922,7 +107179,9 @@ __export(dist_exports, {
   addUrl: () => addUrl,
   aigRiskToPolicyAction: () => aigRiskToPolicyAction,
   allowVerdict: () => allowVerdict,
+  anchorEvidenceHead: () => anchorEvidenceHead,
   anyActionSucceeded: () => anyActionSucceeded,
+  appendEvidenceReceipt: () => appendEvidenceReceipt,
   applyAigThreatUpdate: () => applyUpdate,
   approveAction: () => approveAction,
   approveQuarantinedMcpToolset: () => approveQuarantinedMcpToolset,
@@ -104934,10 +107193,17 @@ __export(dist_exports, {
   buildResponseActionEntry: () => buildResponseActionEntry,
   buildRuntimeVerdictEntry: () => buildRuntimeVerdictEntry,
   cacheKey: () => cacheKey,
+  canonicalCausalChainJson: () => canonicalCausalChainJson,
   canonicalDelegatedCredentialJson: () => canonicalDelegatedCredentialJson,
+  canonicalExposureGraphJson: () => canonicalExposureGraphJson,
+  canonicalFalsePositiveFeedbackJson: () => canonicalFalsePositiveFeedbackJson,
   canonicalMcpToolManifest: () => canonicalMcpToolManifest,
   canonicalReputationFeedManifest: () => canonicalReputationFeedManifest,
   canonicalReputationFeedPayload: () => canonicalReputationFeedPayload,
+  causalKindRank: () => causalKindRank,
+  causalLinkDigest: () => causalLinkDigest,
+  causalLinkDigestInput: () => causalLinkDigestInput,
+  causalLinkReceiptId: () => causalLinkReceiptId,
   chainActionFor: () => chainActionFor,
   checkAigThreatUpdates: () => checkForUpdates,
   checkForUpdate: () => checkForUpdate,
@@ -104947,6 +107213,7 @@ __export(dist_exports, {
   classifyMcpTool: () => classifyMcpTool,
   collectFleetInventory: () => collectFleetInventory,
   commandTargetPath: () => commandTargetPath,
+  compareEvidenceClock: () => compareEvidenceClock,
   compareVersions: () => compareVersions,
   compilePolicyDocument: () => compilePolicyDocument,
   compilePolicyDocumentYaml: () => compilePolicyDocumentYaml,
@@ -104958,6 +107225,9 @@ __export(dist_exports, {
   createDefaultContainConfig: () => createDefaultContainConfig,
   createDlpContentFingerprint: () => createDlpContentFingerprint,
   createDlpMatchFingerprint: () => createDlpMatchFingerprint,
+  createExposureHasherContext: () => createSha256HasherContext,
+  createFalsePositiveFeedbackStore: () => createFalsePositiveFeedbackStore,
+  createFeedbackHasherContext: () => createSha256HasherContext2,
   createFileReputationFeedSource: () => createFileReputationFeedSource,
   createIntelReputationProvider: () => createIntelReputationProvider,
   createLogger: () => createLogger,
@@ -104972,6 +107242,7 @@ __export(dist_exports, {
   delegationDoesNotEscalate: () => delegationDoesNotEscalate,
   deriveKey: () => deriveKey,
   describeHttpFailure: () => describeHttpFailure,
+  detectEvidenceTruncation: () => detectEvidenceTruncation,
   detectPII: () => detectPII,
   diffMcpTools: () => diffMcpTools,
   discoverMcpServers: () => discoverMcpServers,
@@ -104984,11 +107255,24 @@ __export(dist_exports, {
   evaluateInfrastructurePolicy: () => evaluateInfrastructurePolicy,
   evaluateToolCall: () => evaluateToolCall,
   evaluateVersionRule: () => evaluateVersionRule,
+  evidenceReceiptHash: () => evidenceReceiptHash,
+  evidenceReceiptHashInput: () => evidenceReceiptHashInput,
+  executeResponseStep: () => executeResponseStep,
   executeWithRollback: () => executeWithRollback,
   exportReport: () => exportReport,
   exportToCEF: () => exportToCEF,
   exportToJSON: () => exportToJSON,
   exportToLEEF: () => exportToLEEF,
+  exposureCoverage: () => exposureCoverage,
+  exposureEdgeId: () => exposureEdgeId,
+  exposureEdgesTouching: () => exposureEdgesTouching,
+  exposureNodeId: () => exposureNodeId,
+  exposureObservationDigest: () => exposureObservationDigest,
+  exposureObservationsFromFleetInventory: () => exposureObservationsFromFleetInventory,
+  exposureObservationsFromMcpInventory: () => exposureObservationsFromMcpInventory,
+  exposureSourcesFromFleetInventory: () => exposureSourcesFromFleetInventory,
+  exposureStaleness: () => exposureStaleness,
+  exposureStalenessReport: () => exposureStalenessReport,
   extractDomain: () => extractDomain,
   extractFromBash: () => extractFromBash,
   extractFromDelete: () => extractFromDelete,
@@ -105002,9 +107286,18 @@ __export(dist_exports, {
   extractPackagesFromManifest: () => extractPackagesFromManifest,
   extractUrls: () => extractUrls,
   extractVersion: () => extractVersion,
+  falsePositiveBindingKey: () => falsePositiveBindingKey,
+  falsePositiveFeedbackHash: () => falsePositiveFeedbackHash,
+  falsePositiveFeedbackHashInput: () => falsePositiveFeedbackHashInput,
+  falsePositiveFeedbackHistory: () => falsePositiveFeedbackHistory,
+  falsePositiveFeedbackId: () => falsePositiveFeedbackId,
+  falsePositiveFeedbackState: () => falsePositiveFeedbackState,
+  falsePositiveFeedbackSubmissionDigest: () => falsePositiveFeedbackSubmissionDigest,
+  falsePositiveRateByPolicyRevision: () => falsePositiveRateByPolicyRevision,
   fileArtifacts: () => fileArtifacts,
   fingerprintCount: () => fingerprintCount,
   fleetInventoryEntryId: () => fleetInventoryEntryId,
+  foldExposureObservations: () => foldExposureObservations,
   formatAskMessage: () => formatAskMessage,
   formatDenyMessage: () => formatDenyMessage,
   formatHealthStatus: () => formatHealthStatus,
@@ -105083,7 +107376,9 @@ __export(dist_exports, {
   managedStatePath: () => managedStatePath,
   maskPII: () => maskPII,
   mcpManifestHash: () => mcpManifestHash,
+  mcpServerNaturalKey: () => mcpServerNaturalKey,
   mcpToolsetHash: () => mcpToolsetHash,
+  mergeExposureObservationBatches: () => mergeExposureObservationBatches,
   metrics: () => metrics2,
   migrateToEncrypted: () => migrateToEncrypted,
   normalizeAuditEntriesToSignals: () => normalizeAuditEntriesToSignals,
@@ -105094,12 +107389,17 @@ __export(dist_exports, {
   normalizeUrl: () => normalizeUrl,
   nullLogger: () => nullLogger,
   parseDelegatedCredentialClaims: () => parseDelegatedCredentialClaims,
+  parseEvidenceReceipt: () => parseEvidenceReceipt,
   parsePolicyDocument: () => parsePolicyDocument,
   persistIncidentRecords: () => persistIncidentRecords,
+  planResponseRollback: () => planResponseRollback,
+  planResponseStep: () => planResponseStep,
   probeMatches: () => probeMatches,
   pruneOrphanedTmpFiles: () => pruneOrphanedTmpFiles,
+  recordCausalChain: () => recordCausalChain,
   recordDetectionPhase: () => recordDetectionPhase,
   recordException: () => recordException,
+  recordFalsePositiveFeedback: () => recordFalsePositiveFeedback,
   redactPII: () => redactPII,
   redactTelemetryAttributes: () => redactTelemetryAttributes,
   redactTelemetryData: () => redactTelemetryData,
@@ -105109,6 +107409,7 @@ __export(dist_exports, {
   removeFilePath: () => removeFilePath,
   removeFromAllowlist: () => removeFromAllowlist,
   removeUrl: () => removeUrl,
+  reportWorkerCapabilities: () => reportWorkerCapabilities,
   requireAvailableReputationFeed: () => requireAvailableReputationFeed,
   resetAigScanCache: () => resetAigScanCache,
   resetCategoryCache: () => resetCategoryCache,
@@ -105164,7 +107465,11 @@ __export(dist_exports, {
   validateNoPII: () => validateNoPII,
   verifyArtifactIntegrity: () => verifyArtifactIntegrity,
   verifyArtifactIntegrityAndLog: () => verifyArtifactIntegrityAndLog,
+  verifyCausalChainEvidence: () => verifyCausalChainEvidence,
   verifyDelegatedCredential: () => verifyDelegatedCredential,
+  verifyEvidenceChain: () => verifyEvidenceChain,
+  verifyEvidenceReceipt: () => verifyEvidenceReceipt,
+  verifyFalsePositiveFeedbackStore: () => verifyFalsePositiveFeedbackStore,
   verifyIncidentSqliteStore: () => verifyIncidentSqliteStore,
   verifySignedIncidentAnchorReceipt: () => verifySignedIncidentAnchorReceipt,
   verifySignedMcpToolManifest: () => verifySignedMcpToolManifest,
@@ -105184,6 +107489,7 @@ var init_dist = __esm({
     init_behavioral_orchestrator();
     init_build_flavor();
     init_cache();
+    init_causal_chain();
     init_amsi();
     init_control_plane();
     init_file_check();
@@ -105199,9 +107505,12 @@ var init_dist = __esm({
     init_dlp();
     init_encryption();
     init_engine();
+    init_exposure_graph();
+    init_exposure_sources();
     init_policy_document();
     init_evaluator();
     init_extractors();
+    init_false_positive_feedback();
     init_federated();
     init_file_utils();
     init_fleet_inventory();
@@ -105251,6 +107560,7 @@ var init_dist = __esm({
     init_managed();
     init_response_command_consumer_v6();
     init_response_command_worker_v6();
+    init_response_worker_contract();
     init_mcp_attestation();
   }
 });
@@ -105347,7 +107657,7 @@ function isDirectory(candidate) {
 }
 
 // src/detector-provisioning.ts
-var import_node_crypto36 = require("node:crypto");
+var import_node_crypto39 = require("node:crypto");
 var import_promises27 = require("node:fs/promises");
 var import_node_path42 = require("node:path");
 init_dist();
@@ -105403,12 +107713,12 @@ function canonicalDetectorPolicyPayload(value) {
 }
 function publicKey2(raw) {
   const trimmed = raw.trim();
-  if (trimmed.startsWith("-----BEGIN")) return (0, import_node_crypto36.createPublicKey)(trimmed);
+  if (trimmed.startsWith("-----BEGIN")) return (0, import_node_crypto39.createPublicKey)(trimmed);
   const bytes2 = Buffer.from(trimmed, "base64");
   if (bytes2.length === 0 || bytes2.toString("base64") !== trimmed) {
     throw new Error("Invalid public key encoding");
   }
-  return (0, import_node_crypto36.createPublicKey)({ key: bytes2, format: "der", type: "spki" });
+  return (0, import_node_crypto39.createPublicKey)({ key: bytes2, format: "der", type: "spki" });
 }
 function verifySignature(payload, signatureBase64, trustedKeys) {
   const signature = Buffer.from(signatureBase64, "base64");
@@ -105417,7 +107727,7 @@ function verifySignature(payload, signatureBase64, trustedKeys) {
   return trustedKeys.some((keyText) => {
     try {
       const key = publicKey2(keyText);
-      return key.asymmetricKeyType === "ed25519" && (0, import_node_crypto36.verify)(null, message, key, signature);
+      return key.asymmetricKeyType === "ed25519" && (0, import_node_crypto39.verify)(null, message, key, signature);
     } catch {
       return false;
     }
