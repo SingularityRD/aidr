@@ -114,17 +114,19 @@ Yeni test dosyaları (v8): `supabase/functions/__tests__/billing-portal.test.ts`
 
 ## 6. Teslimat yolları ve digestler
 
-- Aday kaydı: bu dosya.
-- Release çıktısı: `.release-evidence/customer-release-v8-local-20260913-r2/` (14 artefakt, `release-metadata.json` `git_sha=07a4fc4a…`, `release_version=0.6.0-rc.8`).
+- Aday kaydı: bu dosya. Donmuş kaynak commit: `6b114f64628f88c9127ee059c44256a23d7f3d5d`.
+- Release çıktısı: `.release-evidence/customer-release-v8-local-20260913-r3/` (14 artefakt, `release-metadata.json` `git_sha=6b114f64…`, `release_version=0.6.0-rc.8`).
 - Release-inventory SHA-256 (candidate digest): `0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4`.
-- Portable customer kit: `.release-evidence/aidr-customer-kit-v8-local-20260913-r2/` (345 dosya, kit verifier 6/6).
-- İmzasız dış zarf: `.release-evidence/aidr-envelope-v8-local-20260913-r2/` (`publisher_authenticated=false`).
+- Portable customer kit: `.release-evidence/aidr-customer-kit-v8-local-20260913-r3/` (344 dosya, kit verifier 6/6).
+- İmzasız dış zarf: `.release-evidence/aidr-envelope-v8-local-20260913-r3/` (`publisher_authenticated=false`).
 - Native matris kaydı: `.release-evidence/v8-native-probe.json`, girdi `deploy/native/support-matrix.json`.
 - Ölçülen kaynak profili: `.release-evidence/v8-resource-profile-aidr-v6-local.json`, insan okunur özet `resource-sizing-v8.md`.
 - Makine okunur kanıt indeksi: `v8-evidence-index.json` + `v8-evidence-index.schema.json`.
 - Ticari kapı makbuzları: `commercial-gate-receipts.json` + `.schema.json` (13 kapının tamamı `open`).
 - Komut logları: `.release-evidence/v8-logs/`.
-- v7 klasörleri (`customer-release-v7-local-20260913`, `aidr-customer-kit-v7-local-20260913*`, `aidr-envelope-v7-local-20260913*`) değiştirilmedi. İlk v8 paketleme denemesi `…-20260913` (digest `986e404d…`) geçersiz kılınmadı; onu `…-20260913-r2` supersede eder.
+- v7 klasörleri (`customer-release-v7-local-20260913`, `aidr-customer-kit-v7-local-20260913*`, `aidr-envelope-v7-local-20260913*`) değiştirilmedi. Önceki v8 paketleme denemeleri (`…-20260913`, `…-r2`) silinmedi; `…-r3` bunları supersede eder. `r2` ile aynı digest'e sahiptir çünkü aradaki commit yalnızca üretilmiş kayıtları yeniden pinler; paketlenen baytlar değişmez.
+
+> **Kendine referans notu.** Üretici kayıtlar (`FEATURE_INVENTORY.json`, `PRODUCTION_SALES_GAPS.json`, `v8-evidence-index.json`) üretildikleri commit'i `source_commit` alanında taşır. Bu alanı içeren bir commit atıldığında değer bir sonraki commit'e kayar; bu yüzden "generator determinizmi" kapısı, commit edilmiş dosyayı değil **iki ardışık üretici koşusunun bayt-eşitliğini** esas alır. Kanıt: iki ardışık koşu 6 üretilmiş dosyada da aynı SHA-256'yı verir; `source_commit` dışındaki hiçbir satır değişmez.
 
 ## 7. Kaynak ve kapasite
 
