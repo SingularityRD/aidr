@@ -1,21 +1,166 @@
 #!/usr/bin/env node
+// Deployment bootstrap CLI.
+//
+// Two operator actions live here and nowhere else: provisioning the first
+// customer owner, and transferring that ownership to a second account. Neither
+// is exposed as an Edge Function, an HTTP route, an MCP tool or any other
+// agent-callable surface, and both require the deployment's service-role
+// credential plus an accountable principal — an unauthenticated caller cannot
+// reach either path.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 
-const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, email: { type: "string" }, name: { type: "string" }, seats: { type: "string", default: "1" }, resume: { type: "boolean", default: false } } });
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, email: { type: "string" }, name: { type: "string" }, seats: { type: "string", default: "1" }, resume: { type: "boolean", default: false }, "transfer-owner": { type: "string" }, "requested-by": { type: "string" } } });
 const dir = resolve(values.deployment);
 const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
 const env = Object.fromEntries(readFileSync(join(dir, ".env"), "utf8").split(/\r?\n/).filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line)).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
 const base = new URL(manifest.supabase_url);
 if (base.protocol !== "https:" && !(manifest.development && ["localhost", "127.0.0.1"].includes(base.hostname))) throw new Error("HTTPS required");
 if (!env.SERVICE_ROLE_KEY || env.SERVICE_ROLE_KEY.startsWith("REPLACE_")) throw new Error("Configure the selected project's credentials first");
+const receiptPath = join(dir, "bootstrap-receipt.json");
+const transferReceiptPath = join(dir, "owner-transfer-receipt.json");
+
+async function request(path, body, method = "POST", extraHeaders = {}) {
+  const response = await fetch(new URL(path, base), { method, headers: { apikey: env.ANON_KEY, Authorization: `Bearer ${env.SERVICE_ROLE_KEY}`, "Content-Type": "application/json", ...extraHeaders }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) });
+  if (!response.ok) throw new Error(`Provisioning failed at ${path.split("?")[0]} (HTTP ${response.status}); review service logs, then resume. No credentials printed.`);
+  return response.json();
+}
+
+/**
+ * Read one line of operator confirmation from stdin. Confirmation is never
+ * accepted from command arguments: an argument is visible in shell history and
+ * process listings, and it would let the transfer be driven without an
+ * accountable operator actually confirming it.
+ */
+async function readConfirmation(expected) {
+  if (process.stdin.isTTY) throw new Error(`Owner transfer is an operator action: pipe the confirmation on stdin from your terminal or secret manager (for example: printf '%s\\n' "${expected}" | node scripts/deployment-bootstrap.mjs --transfer-owner ...). Do not put the confirmation in command arguments.`);
+  const chunks = []; let size = 0;
+  for await (const chunk of process.stdin) { size += chunk.length; if (size > 1024) throw new Error("Confirmation input too large"); chunks.push(chunk); }
+  const confirmation = Buffer.concat(chunks).toString("utf8").trim().toLowerCase();
+  if (confirmation !== expected.toLowerCase()) throw new Error("Confirmation must repeat the new owner's email address");
+}
+
+async function findAccountByEmail(email) {
+  for (let page = 1; page <= 100; page++) {
+    const result = await request(`/auth/v1/admin/users?page=${page}&per_page=100`, undefined, "GET");
+    const user = result.users?.find((candidate) => candidate.email?.toLowerCase() === email);
+    if (user) return user;
+    if ((result.users?.length ?? 0) < 100) break;
+  }
+  return null;
+}
+
+function selectedRows(result) {
+  return Array.isArray(result) ? result : [];
+}
+
+async function membershipRow(tenantId, userId) {
+  const rows = selectedRows(await request(`/rest/v1/team_members?tenant_id=eq.${tenantId}&user_id=eq.${userId}&select=user_id,role`, undefined, "GET"));
+  return rows[0] ?? null;
+}
+
+async function ownerRows(tenantId) {
+  return selectedRows(await request(`/rest/v1/team_members?tenant_id=eq.${tenantId}&role=eq.owner&select=user_id,role`, undefined, "GET"));
+}
+
+/**
+ * Transfer ownership recorded by a completed bootstrap to a second account.
+ *
+ * The path refuses to run without the current owner: the completed bootstrap
+ * receipt must name the principal, `--requested-by` must be that principal, that
+ * principal must still hold `owner` in the tenant, and the receipt written
+ * afterwards records both principals. The second owner is added before the
+ * bootstrap principal is demoted, so the tenant is never left ownerless, and an
+ * interrupted run is resumable from its own `in_progress` receipt.
+ */
+async function transferOwnership() {
+  const requestedBy = values["requested-by"]?.trim().toLowerCase();
+  const newOwnerEmail = values["transfer-owner"]?.trim().toLowerCase();
+  if (!newOwnerEmail || !EMAIL.test(newOwnerEmail)) throw new Error("--transfer-owner must be a valid email address");
+  if (!requestedBy || !UUID.test(requestedBy)) throw new Error("--requested-by must identify the accountable operator (the current owner's user id)");
+
+  const bootstrap = existsSync(receiptPath) ? JSON.parse(readFileSync(receiptPath, "utf8")) : null;
+  const tenantId = bootstrap?.tenant_id;
+  const previousOwnerId = bootstrap?.user_id;
+  const previousOwnerEmail = bootstrap?.email;
+  if (bootstrap?.state !== "complete" || !UUID.test(String(tenantId ?? "")) || !UUID.test(String(previousOwnerId ?? "")) || !previousOwnerEmail) {
+    throw new Error("Owner transfer requires the completed bootstrap receipt that records the current owner; run the bootstrap first");
+  }
+  if (requestedBy !== previousOwnerId) throw new Error("--requested-by must be the current owner recorded by the bootstrap receipt; ownership is transferred by its holder");
+  await readConfirmation(newOwnerEmail);
+
+  let receipt = null;
+  if (existsSync(transferReceiptPath)) {
+    receipt = JSON.parse(readFileSync(transferReceiptPath, "utf8"));
+    if (receipt?.state !== "in_progress") throw new Error("An owner-transfer receipt already exists; ownership is never transferred twice by this command. Review owner-transfer-receipt.json.");
+    if (receipt.tenant_id !== tenantId || receipt.previous_owner?.user_id !== previousOwnerId) throw new Error("The in-progress owner-transfer receipt does not match this deployment's current owner");
+  }
+
+  const target = await findAccountByEmail(newOwnerEmail);
+  if (!target?.id || !UUID.test(String(target.id))) throw new Error("The new owner must already have a confirmed account in this project; create or confirm it first, then run the transfer again");
+  if (target.id === previousOwnerId) throw new Error("The new owner is already the current owner");
+  if (receipt && receipt.new_owner?.user_id !== target.id) throw new Error("The in-progress owner-transfer receipt names a different new owner");
+
+  const previousMembership = await membershipRow(tenantId, previousOwnerId);
+  // A recorded `in_progress` receipt plus an already-demoted principal is an
+  // interrupted run: the mutations are finished, only the receipt is open.
+  const resuming = receipt !== null && previousMembership?.role === "admin";
+  if (!resuming && previousMembership?.role !== "owner") throw new Error("The bootstrap principal is not the tenant's current owner; no transfer was performed");
+  if (!resuming) {
+    const owners = await ownerRows(tenantId);
+    if (owners.length !== 1 || owners[0]?.user_id !== previousOwnerId) throw new Error("The tenant does not have exactly one owner; resolve the membership state before transferring ownership");
+  }
+
+  if (!receipt) {
+    receipt = {
+      bootstrap_id: bootstrap.bootstrap_id,
+      tenant_id: tenantId,
+      supabase_url: base.origin,
+      state: "in_progress",
+      started_at: new Date().toISOString(),
+      authorized_by: requestedBy,
+      previous_owner: { user_id: previousOwnerId, email: previousOwnerEmail, role_before: "owner", role_after: "admin" },
+      new_owner: { user_id: target.id, email: newOwnerEmail, role: "owner" },
+    };
+    writeFileSync(transferReceiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600, flag: "wx" });
+  }
+
+  if (!resuming) {
+    const added = selectedRows(await request("/rest/v1/team_members?on_conflict=team_id,user_id", { team_id: tenantId, tenant_id: tenantId, user_id: target.id, role: "owner" }, "POST", { Prefer: "resolution=merge-duplicates,return=representation" }));
+    if (added.length !== 1 || added[0]?.user_id !== target.id || added[0]?.role !== "owner") throw new Error("The second owner membership was not confirmed; the transfer is incomplete");
+    const ownersAfterAdd = await ownerRows(tenantId);
+    if (ownersAfterAdd.length !== 2 || !ownersAfterAdd.some((row) => row.user_id === target.id) || !ownersAfterAdd.some((row) => row.user_id === previousOwnerId)) throw new Error("The tenant does not have two owners after the transfer step; the transfer is incomplete");
+
+    const demoted = selectedRows(await request(`/rest/v1/team_members?tenant_id=eq.${tenantId}&user_id=eq.${previousOwnerId}&role=eq.owner`, { role: "admin" }, "PATCH", { Prefer: "return=representation" }));
+    if (demoted.length !== 1 || demoted[0]?.role !== "admin") {
+      // A conditional update matches nothing once the row is already demoted, so
+      // the final membership - not the response - decides whether this is safe.
+      const after = await membershipRow(tenantId, previousOwnerId);
+      if (after?.role !== "admin") throw new Error("The previous owner was not demoted; the transfer is incomplete");
+    }
+  }
+
+  const finalOwners = await ownerRows(tenantId);
+  if (finalOwners.length !== 1 || finalOwners[0]?.user_id !== target.id) throw new Error("Ownership verification failed; the transfer is incomplete");
+  const previousFinal = await membershipRow(tenantId, previousOwnerId);
+  if (previousFinal?.role !== "admin") throw new Error("The previous owner's demotion was not confirmed; the transfer is incomplete");
+
+  receipt.state = "complete";
+  receipt.completed_at = new Date().toISOString();
+  writeFileSync(transferReceiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600 });
+  console.log(`Ownership transferred from ${previousOwnerEmail} to ${newOwnerEmail} (tenant ${tenantId}). Private receipt saved; no password or token was printed.`);
+}
+
+async function bootstrap() {
 const email = values.email?.trim().toLowerCase();
 const name = values.name?.trim();
 const seats = Number(values.seats);
-if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !name || name.length > 120 || !Number.isInteger(seats) || seats < 1 || seats > 100000) throw new Error("Valid --email, --name and --seats (1..100000) required");
-const receiptPath = join(dir, "bootstrap-receipt.json");
+if (!email || !EMAIL.test(email) || !name || name.length > 120 || !Number.isInteger(seats) || seats < 1 || seats > 100000) throw new Error("Valid --email, --name and --seats (1..100000) required");
 let receipt;
 if (existsSync(receiptPath)) {
   if (!values.resume) throw new Error("Bootstrap receipt exists. Use --resume with identical parameters; existing passwords are never reset.");
@@ -27,11 +172,6 @@ if (existsSync(receiptPath)) {
   writeFileSync(receiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600, flag: "wx" });
 }
 const save = () => writeFileSync(receiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600 });
-async function request(path, body, method = "POST") {
-  const response = await fetch(new URL(path, base), { method, headers: { apikey: env.ANON_KEY, Authorization: `Bearer ${env.SERVICE_ROLE_KEY}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw new Error(`Provisioning failed at ${path.split("?")[0]} (HTTP ${response.status}); review service logs, then resume. No credentials printed.`);
-  return response.json();
-}
 if (values.resume && !receipt.user_id) {
   // Recover an interrupted successful account creation without changing accounts
   // that predate this operation. Bind to server-only app_metadata, never email alone.
@@ -54,3 +194,7 @@ if (!receipt.user_id) {
 const completed = await request("/rest/v1/rpc/bootstrap_customer", { p_user_id: receipt.user_id, p_bootstrap_id: receipt.bootstrap_id, p_name: name, p_seats: seats });
 Object.assign(receipt, completed, { state: "complete", completed_at: new Date().toISOString() }); save();
 console.log(`Customer owner and ${seats} agent seats provisioned. Sign in at ${manifest.dashboard_url}/login. Private receipt saved; no password or token was printed.`);
+}
+
+if (values["transfer-owner"] !== undefined) await transferOwnership();
+else await bootstrap();

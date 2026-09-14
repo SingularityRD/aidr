@@ -30,7 +30,7 @@ import { SettingsPage } from "./ui/pages/SettingsPage";
 import { TeamPage } from "./ui/pages/TeamPage";
 import { RouteErrorPage } from "./ui/RouteErrorPage";
 import { buildReturnToFromRequest, sanitizeReturnTo, setPostAuthReturnTo } from "./ui/return-to";
-import { getSession } from "./ui/session";
+import { getSession, installInactivityTimeout } from "./ui/session";
 import { ThemeProvider } from "./ui/ThemeProvider";
 import "./styles.css";
 
@@ -188,6 +188,16 @@ const router = createBrowserRouter([
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Missing #root element");
+
+// End an idle session locally and send the operator back to sign-in. This is the
+// dashboard's own lifetime bound; the deployment's JWT expiry and the identity
+// revocation barrier stay authoritative, so this must never be treated as the
+// control that makes a token unusable.
+installInactivityTimeout((status) => {
+	if (status.state !== "expired") return;
+	const returnTo = sanitizeReturnTo(`${window.location.pathname}${window.location.search}`);
+	void router.navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+});
 
 function DashboardConfigurationError() {
 	return (
