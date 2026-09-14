@@ -1,0 +1,42 @@
+Singularity AIDR Commercial License
+====================================
+
+Copyright (c) 2026 SingularityRD. All rights reserved.
+
+This license notice applies to the Singularity AIDR source code, compiled
+artifacts, connectors, SDK, CLI, dashboard, documentation, threat-response
+logic (excluding rule files governed by threats/LICENSE), and related product
+materials identified as proprietary by the accompanying package metadata.
+Except for rights expressly granted in a
+written agreement signed by SingularityRD, no permission is granted to use,
+copy, modify, merge, publish, distribute, sublicense, sell, lease, reverse
+engineer, or create derivative works from these materials.
+
+Customer use is limited to the deployment, seat, environment, retention,
+region, and support scope stated in the applicable Order Form or other
+written commercial agreement. A customer may make the minimum number of
+copies required for its authorized internal backup and disaster-recovery
+procedures, provided that every copy retains this notice and is protected
+from unauthorized access.
+
+The SingularityRD name, AIDR marks, logos, service endpoints, threat
+intelligence, and hosted control-plane services are not licensed by
+implication. Resale, public hosting, managed-service use, benchmarking for
+competitive publication, and redistribution require a separate written
+authorization.
+
+Third-party components are not relicensed by this notice. Their applicable
+copyright, licence, attribution, source-availability, and notice obligations
+are listed in THIRD_PARTY_NOTICES and in any component-specific notice shipped
+with an artifact. Detection rules may carry additional terms in
+threats/LICENSE; those terms remain applicable to rule files and derived
+outputs.
+
+THIS NOTICE DOES NOT REPRESENT COUNSEL APPROVAL, A CERTIFICATION, OR A
+COMMITMENT TO ANY PARTICULAR COMMERCIAL PLAN. THE RELEASE CANDIDATE MUST BE
+REVIEWED AND APPROVED BY SINGULARITYRD LEGAL BEFORE CUSTOMER DISTRIBUTION.
+
+Unless a signed agreement states otherwise, the materials are provided “as
+is” and SingularityRD disclaims warranties to the maximum extent permitted
+by law. Nothing in this notice limits liability or grants rights where a
+mandatory law prohibits that limitation.
