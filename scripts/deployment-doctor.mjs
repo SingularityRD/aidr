@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
 
 const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, online: { type: "boolean", default: false } } });
 const dir = resolve(values.deployment);
 const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
-const checks = []; const failures = [];
+const checks = []; const failures = []; const unverified = [];
 function check(ok, label) { (ok ? checks : failures).push(label); console.log(`${ok ? "PASS" : "FAIL"} ${label}`); }
 for (const entry of manifest.migrations ?? []) {
   const safe = /^\d{14}_[a-z0-9_]+\.sql$/.test(entry.name);
@@ -46,6 +47,30 @@ check(delegationKeyPairValid, "delegated credential signing and verification key
 check(env.DISABLE_SIGNUP === "true", "public signup disabled");
 const demoS3SecretHash = "7f59edafa4d502ca0156b8fddf28394634d77b1843838b5783a7c9c95fcbd32f";
 check(typeof env.S3_PROTOCOL_ACCESS_KEY_SECRET === "string" && env.S3_PROTOCOL_ACCESS_KEY_SECRET.length >= 32 && createHash("sha256").update(env.S3_PROTOCOL_ACCESS_KEY_SECRET).digest("hex") !== demoS3SecretHash, "S3 protocol credential is private and differs from the upstream demonstration secret");
+// Failed SIEM deliveries are retried only while a scheduler runs the drain worker, so
+// the doctor reports two separate facts: the unit templates travel with the kit, and the
+// host actually schedules them. Only systemd can answer the second one, and only when
+// this host exposes it; anywhere it cannot be determined the check is recorded as
+// unverified instead of being reported as a pass.
+const kitRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const readSiemUnit = (name) => {
+  const path = join(kitRoot, "deploy", "maintenance", name);
+  return existsSync(path) ? readFileSync(path, "utf8") : "";
+};
+const siemServiceUnit = readSiemUnit("aidr-siem-delivery.service");
+const siemTimerUnit = readSiemUnit("aidr-siem-delivery.timer");
+check(siemTimerUnit.includes("Unit=aidr-siem-delivery.service") && /siem-delivery-worker\.mjs --max-items \d+/.test(siemServiceUnit), "SIEM delivery retry timer present and wired to the drain worker");
+const siemScheduler = (() => {
+  if (process.platform !== "linux") return { determinable: false, reason: `systemd timers are unavailable on ${process.platform}` };
+  const probe = spawnSync("systemctl", ["is-enabled", "aidr-siem-delivery.timer"], { encoding: "utf8", timeout: 15000 });
+  if (probe.error) return { determinable: false, reason: "systemctl is not available on this host" };
+  return { determinable: true, enabled: probe.status === 0 };
+})();
+if (siemScheduler.determinable) check(siemScheduler.enabled, "SIEM delivery timer is enabled in the host scheduler");
+else {
+  unverified.push({ check: "SIEM delivery timer is enabled in the host scheduler", reason: siemScheduler.reason });
+  console.log(`UNVERIFIED SIEM delivery timer is enabled in the host scheduler (${siemScheduler.reason})`);
+}
 for (const url of [manifest.dashboard_url, manifest.supabase_url]) {
   const parsed = new URL(url);
   check(parsed.protocol === "https:" || (manifest.development && ["localhost", "127.0.0.1"].includes(parsed.hostname)), `HTTPS origin or isolated development: ${parsed.origin}`);
@@ -71,5 +96,5 @@ if (values.online) {
     check(response.ok && settings.disable_signup === true, "authentication service confirms signup is disabled");
   } catch { check(false, "authentication settings reachable"); }
 }
-writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed: failures.length === 0, mode: manifest.mode, online: values.online, checks, failures, scope: "Operational preflight only. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate." }, null, 2));
+writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed: failures.length === 0, mode: manifest.mode, online: values.online, checks, failures, unverified, scope: "Operational preflight only. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate. Entries under unverified could not be determined on this host and are not evidence of success." }, null, 2));
 if (failures.length) process.exitCode = 1;
