@@ -5,7 +5,7 @@ import { detectEnvironment } from "../utils/detect-env.js";
 import { installHooks } from "../utils/install-hooks.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 
-async function setupCommand(options: { force?: boolean }): Promise<void> {
+async function setupCommand(options: { force?: boolean; secretStore?: string }): Promise<void> {
 	console.log(chalk.blue("\n🛡️  AIDR Setup\n"));
 
 	const spinner = ora();
@@ -16,12 +16,18 @@ async function setupCommand(options: { force?: boolean }): Promise<void> {
 		spinner.succeed(`${env.agent} detected`);
 
 		spinner.start("Creating config...");
-		const config = await createConfig(env, options.force || false);
+		// The credential store is resolved before anything is written: with no
+		// vault available and no explicit fallback this throws, and setup fails
+		// closed instead of leaving a plaintext credential behind.
+		const config = await createConfig(env, options.force || false, {
+			secretStoreSelection: options.secretStore,
+		});
 		spinner.succeed(
 			config.outcome === "reused"
 				? `Config already present: ${config.path}`
 				: `Config: ${config.path}`,
 		);
+		if (config.warning) spinner.warn(config.warning);
 
 		spinner.start("Installing hooks...");
 		const hookResult = await installHooks(env);

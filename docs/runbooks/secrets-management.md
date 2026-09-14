@@ -83,6 +83,40 @@ unset, and refuses to grant seats while the extra-agent price id is unset.
 
 ## Secret Rotation Procedures
 
+### CLI Local Credential (`aidr config rotate-key`, `aidr config revoke-key`)
+
+The local CLI credential is kept in the OS credential vault — Windows DPAPI,
+macOS Keychain or the Linux Secret Service — and `~/.singularity-aidr/config.json`
+stores only a `secret_ref` handle. The ACL-hardened plaintext file survives as a
+reduced-protection fallback and is used **only when it is selected explicitly**
+(`--secret-store file-acl` or `AIDR_SECRET_STORE=file-acl`); with no vault
+available and no explicit fallback the CLI fails closed instead of writing the
+credential in plaintext.
+
+```bash
+# Rotate. Order matters: the new credential is written to the store, then
+# config.json commits atomically, and only then is the previous credential
+# revoked. A failed commit discards the new credential and leaves the previous
+# one valid.
+aidr config rotate-key
+aidr config rotate-key --json                    # machine-readable receipt
+
+# Revoke: remove the credential from the store and record it in the config.
+aidr config revoke-key
+
+# Select a store explicitly, or accept the labelled file fallback.
+aidr setup --secret-store windows-dpapi
+aidr config rotate-key --secret-store macos-keychain
+aidr setup --force --secret-store file-acl       # reduced protection, recorded
+```
+
+`secret_rotated_at` / `secret_revoked_at` in `~/.singularity-aidr/config.json`
+record the last outcome; the credential itself is never written there. Evidence
+boundary: the macOS Keychain and Linux Secret Service adapters are covered by
+tests that inject the `security` / `secret-tool` command runner, so no real
+Keychain or Secret Service item has been exercised — only the Windows DPAPI path
+has been run against the real OS API.
+
 ### GitHub Packages Token and Permission Rotation
 
 The release workflow publishes only to the private `npm.pkg.github.com`

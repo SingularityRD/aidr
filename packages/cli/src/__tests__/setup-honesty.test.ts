@@ -40,6 +40,15 @@ vi.mock("node:os", async (importOriginal) => {
 	return { ...actual, homedir: () => testHome };
 });
 
+/**
+ * `createConfig` now resolves a secret store before writing anything, and the
+ * ACL-hardened file is only used when it is selected explicitly. These cases
+ * pin the file layout (`apiKey` in `config.json`) and its reuse/rotation
+ * behaviour, so they select that fallback on purpose. The OS-vault path is
+ * covered by `secret-store.test.ts`; nothing asserted here is weakened.
+ */
+process.env.AIDR_SECRET_STORE = "file-acl";
+
 const { createConfig, getConfig } = await import("../utils/config-manager.js");
 type Environment = import("../utils/config-manager.js").Environment;
 
