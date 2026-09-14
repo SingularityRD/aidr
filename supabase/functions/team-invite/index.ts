@@ -92,16 +92,31 @@ async function handleTeamInvite(req: Request, deps: TeamInviteDeps): Promise<Res
 		// and role) must never mint a second live invitation: the pending row is
 		// reused and its token rotated, so exactly one link stays usable and one
 		// response never carries two usable secrets.
+		//
+		// The read is deliberately scoped to the recipient and NOT to the role.
+		// Scoping it by role would treat "same recipient, different role" as a
+		// brand-new invitation and leave the recipient holding two live links
+		// with two different grants. The newest live row decides the answer, so
+		// a duplicate left behind by a racing request cannot turn the check into
+		// an opaque failure.
 		const { data: pending, error: pendingError } = await db.from("team_invitations")
-			.select("id")
+			.select("id,role")
 			.eq("tenant_id", command.teamId)
 			.eq("email", command.email)
-			.eq("role", command.role)
 			.is("accepted_at", null)
 			.gt("expires_at", new Date().toISOString())
+			.order("created_at", { ascending: false })
+			.limit(1)
 			.maybeSingle();
 		if (pendingError) return corsJson(req, 503, { error: "invitation_create_failed" });
 		if (pending) {
+			// A pending invitation already grants this recipient a role. Minting
+			// a second one for a different role would silently widen or narrow
+			// that grant, and rewriting the existing row's role would decide the
+			// operator's intent for them. Refuse instead: changing a pending
+			// invitation's role requires revoking it first, which is an explicit
+			// operator action.
+			if (pending.role !== command.role) return corsJson(req, 409, { error: "invitation_role_conflict" });
 			const { data: rotated, error: rotateError } = await resendPendingInvitation(db, command.teamId, pending.id, tokenHash, auth.user.id, new Date());
 			if (rotateError?.code === "23505") return corsJson(req, 409, { error: "invitation_conflict" });
 			if (rotateError || !rotated) return corsJson(req, 503, { error: "invitation_create_failed" });
