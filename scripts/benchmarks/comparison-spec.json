@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "kind": "aidr-benchmark-comparison-contract",
+  "unknown_reasons": {
+    "not_authorized": "The evaluator lacks authorization to run the competitor.",
+    "not_available": "The competitor artifact or service was unavailable.",
+    "budget_blocked": "No signed measurement-budget authorization covers the run.",
+    "missing_measurements": "One or more required case/trial cells have no observation.",
+    "unsupported_product": "The product does not support the measured connector or surface."
+  },
+  "rule": "Unknown cells remain null and reason-coded; this harness never estimates or substitutes competitor results."
+}

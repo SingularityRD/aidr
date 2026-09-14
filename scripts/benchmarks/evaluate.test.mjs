@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { evaluateBenchmark, validateCorpusStructure, validateSoldScope, assertSoldScopeCoverage } from "./evaluate.mjs";
+import { canonicalJson, evaluateBenchmark, validateCorpusStructure, validateSoldScope, assertSoldScopeCoverage } from "./evaluate.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -48,7 +48,7 @@ function fixture() {
 		if (entry.oracle === "malicious") row.side_effect_occurred = false;
 		observations.measurements.push(row);
 	}
-	function evaluate(soldScope = null) {
+	function evaluate(soldScope = null, evaluationOptions = {}) {
 		const corpusBytes = Buffer.from(JSON.stringify(corpus));
 		const observationBytes = Buffer.from(JSON.stringify(observations));
 		const observationsPath = join(directory, "observations.json");
@@ -58,9 +58,11 @@ function fixture() {
 			candidate_artifact_sha256: observations.products[0].artifact_sha256,
 			rule_author_id: corpus.rule_author_id, evaluator_id: "external-evaluator",
 			evaluator_role: "independent_evaluator", completed_at: "2026-09-13T00:00:00Z",
+			...(evaluationOptions.payloadExtra ?? {}),
 		};
 		const attestation = { schema_version: 1, payload, signature_base64: sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString("base64") };
-		return evaluateBenchmark({ corpus, observations, attestation, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }), corpusBytes, observationBytes, observationsPath, soldScope });
+		if (evaluationOptions.signatureBase64 !== undefined) attestation.signature_base64 = evaluationOptions.signatureBase64;
+		return evaluateBenchmark({ corpus, observations, attestation, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }), corpusBytes, observationBytes, observationsPath, soldScope, trustedKeys: evaluationOptions.trustedKeys ?? null, splitManifest: evaluationOptions.splitManifest ?? null, splitManifestBytes: evaluationOptions.splitManifestBytes ?? null });
 	}
 	return { directory, corpus, observations, publicKey, privateKey, evaluate };
 }
@@ -193,7 +195,15 @@ test("attestation and analysis CLIs run end to end and reject changed signed inp
 			"--attestation", attestationPath, "--public-key", publicPath, "--output", reportPath];
 		const analyzed = spawnSync(process.execPath, command, { encoding: "utf8" });
 		assert.equal(analyzed.status, 0, analyzed.stderr);
-		assert.equal(JSON.parse(readFileSync(reportPath, "utf8")).claim_status, "EVIDENCE_REVIEW_REQUIRED");
+		const writtenReport = JSON.parse(readFileSync(reportPath, "utf8"));
+		assert.equal(writtenReport.claim_status, "EVIDENCE_REVIEW_REQUIRED");
+		assert.match(writtenReport.canonical_report_sha256, /^[a-f0-9]{64}$/);
+		const reproduced = spawnSync(process.execPath, [...command.slice(0, -2), "--reproduce", reportPath], { encoding: "utf8" });
+		assert.equal(reproduced.status, 0, reproduced.stderr);
+		assert.equal(reproduced.stdout, readFileSync(reportPath, "utf8"));
+		const overwriteRefused = spawnSync(process.execPath, command, { encoding: "utf8" });
+		assert.equal(overwriteRefused.status, 1);
+		assert.match(overwriteRefused.stderr, /EEXIST/);
 		data.observations.workload_id = "changed-after-signature";
 		writeFileSync(observationsPath, JSON.stringify(data.observations));
 		const rejected = spawnSync(process.execPath, command, { encoding: "utf8" });
@@ -456,6 +466,100 @@ test("a corpus that declares a dimension the sold scope does not fails the scope
 		data.corpus.scope.required_connectors = ["tool-a", "tool-b"];
 		data.corpus.scope.required_surfaces.push("network-egress");
 		assert.throws(() => data.evaluate(soldScope), /\[scope_surface_extra\] surface "network-egress"/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("classification metrics expose indeterminate outcomes and never invent absent-score ROC", () => {
+	const data = fixture();
+	try {
+		const row = data.observations.measurements.find((entry) => entry.case_id === "attack-holdout" && entry.product_id === "candidate" && entry.trial === 1);
+		row.action = "timeout";
+		row.latency_ms = null;
+		const report = data.evaluate();
+		const classification = report.coverage.candidate.overall.classification;
+		assert.deepEqual(classification.confusion_matrix, { true_positive: 3, false_positive: 0, true_negative: 4, false_negative: 0, indeterminate: 1 });
+		assert.deepEqual(classification.roc, { measured: false, value: null, observations: 0 });
+		assert.deepEqual(classification.roc_auc, { measured: false, value: null, observations: 0 });
+		assert.equal(classification.precision.value, 1);
+		assert.equal(classification.recall.value, 1);
+		assert.equal(classification.f1.value, 1);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("benign side-effect metadata cannot hide a false-positive intervention", () => {
+	const data = fixture();
+	try {
+		const row = data.observations.measurements.find((entry) => entry.case_id === "benign-dev" && entry.product_id === "candidate" && entry.trial === 1);
+		row.action = "block";
+		row.side_effect_occurred = true;
+		const matrix = data.evaluate().coverage.candidate.overall.classification.confusion_matrix;
+		assert.equal(matrix.false_positive, 1);
+		assert.equal(matrix.true_negative, 3);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("scores measure development ROC only until a signed frozen holdout operating point exists", () => {
+	const data = fixture();
+	try {
+		for (const row of data.observations.measurements) row.score = data.corpus.cases.find((entry) => entry.case_id === row.case_id).oracle === "malicious" ? 0.9 : 0.1;
+		const report = data.evaluate();
+		assert.deepEqual(report.coverage.candidate.overall.classification.roc_auc, { measured: false, value: null, observations: 0 });
+		assert.deepEqual(report.coverage.candidate.by_partition.holdout.classification.roc_auc, { measured: false, value: null, observations: 0 });
+		assert.deepEqual(report.coverage.candidate.by_partition.development.classification.roc_auc, { measured: true, value: 1, observations: 4 });
+		delete data.observations.measurements.find((row) => row.product_id === "candidate" && row.case_id === "attack-dev").score;
+		assert.deepEqual(data.evaluate().coverage.candidate.by_partition.development.classification.roc_auc, { measured: false, value: null, observations: 0 });
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("signed split manifest freezes holdout and any assignment mismatch fails closed", () => {
+	const data = fixture();
+	try {
+		for (const row of data.observations.measurements) row.score = data.corpus.cases.find((entry) => entry.case_id === row.case_id).oracle === "malicious" ? 0.9 : 0.1;
+		const partitionless = { ...data.corpus, cases: data.corpus.cases.map(({ partition: _partition, ...entry }) => entry) };
+		const manifest = {
+			schema_version: 1, kind: "aidr-content-digest-split-manifest", algorithm: "HMAC-SHA256-content-digest-v1", holdout_percent: 50,
+			source_corpus_sha256: hash(Buffer.from(canonicalJson(partitionless))),
+			assignments: data.corpus.cases.map((entry) => ({ content_sha256: entry.content_sha256, partition: entry.partition })),
+		};
+		let manifestBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
+		let report = data.evaluate(null, { payloadExtra: { split_manifest_sha256: hash(manifestBytes), frozen_operating_point: { frozen: true, threshold: 0.5 } }, splitManifest: manifest, splitManifestBytes: manifestBytes });
+		assert.equal(report.gates.holdout_frozen, true);
+		assert.deepEqual(report.coverage.candidate.by_partition.holdout.classification.roc_auc, { measured: true, value: 1, observations: 4 });
+		manifest.assignments[0].partition = manifest.assignments[0].partition === "holdout" ? "development" : "holdout";
+		manifestBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
+		assert.throws(() => data.evaluate(null, { payloadExtra: { split_manifest_sha256: hash(manifestBytes) }, splitManifest: manifest, splitManifestBytes: manifestBytes }), /split manifest partition mismatch/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("trust, customer and budget gates default closed; unknown keys and malformed signatures fail closed", () => {
+	const data = fixture();
+	try {
+		data.corpus.provenance = "synthetic_open";
+		data.observations.measurement_budget = { currency: "USD", ceiling: 100, spent: 25, authorization_id: null };
+		let report = data.evaluate(null, { payloadExtra: { customer_corpus_authorized: true } });
+		assert.equal(report.gates.attestation_trusted, false);
+		assert.equal(report.gates.customer_corpus_authorized, false);
+		assert.equal(report.gates.measurement_budget_authorized, false);
+		assert.equal(report.measurement_budget.status, "BLOCKED_EXTERNAL");
+		assert.equal(report.duty_separation.independent, false);
+		assert.throws(() => data.evaluate(null, { payloadExtra: { signing_key_id: "unknown" }, trustedKeys: { schema_version: 1, keys: [] } }), /unknown, mismatched, or unauthorized attestation signing key/);
+		const fingerprint = hash(data.publicKey.export({ type: "spki", format: "der" }));
+		report = data.evaluate(null, { payloadExtra: { signing_key_id: "test-key", customer_corpus_authorized: true }, trustedKeys: { schema_version: 1, keys: [{ key_id: "test-key", public_key_sha256: fingerprint, roles: ["independent_evaluator"] }] } });
+		assert.equal(report.gates.attestation_trusted, true);
+		assert.equal(report.gates.customer_corpus_authorized, false);
+		assert.throws(() => data.evaluate(null, { signatureBase64: Buffer.alloc(63).toString("base64") }), /exactly 64 bytes/);
+		data.observations.measurement_budget.spent = 101;
+		assert.throws(() => data.evaluate(), /spent exceeds ceiling/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("competitor comparison cells are reason-coded unknown without fabricated values", () => {
+	const data = fixture();
+	try {
+		data.observations.products[1].comparison_unknown_reason = "not_authorized";
+		data.observations.measurements = data.observations.measurements.filter((row) => row.product_id !== "competitor");
+		const cell = data.evaluate().comparison.competitor.malicious_prevention;
+		assert.deepEqual(cell, { status: "unknown", value: null, reason: "not_authorized" });
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 

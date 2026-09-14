@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singularityrd.example/schemas/benchmark-attestation-v1.json",
+  "title": "AIDR T39 attestation (descriptive; evaluate.mjs is normative)",
+  "type": "object",
+  "required": ["schema_version", "payload", "signature_base64"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "payload": {
+      "type": "object",
+      "required": ["protocol_version", "corpus_sha256", "observations_sha256", "candidate_artifact_sha256", "rule_author_id", "evaluator_id", "evaluator_role", "completed_at"],
+      "properties": {
+        "protocol_version": { "const": 1 }, "corpus_sha256": { "$ref": "#/$defs/sha256" },
+        "observations_sha256": { "$ref": "#/$defs/sha256" }, "candidate_artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "rule_author_id": { "type": "string", "minLength": 1 }, "evaluator_id": { "type": "string", "minLength": 1 },
+        "evaluator_role": { "const": "independent_evaluator" }, "completed_at": { "type": "string", "minLength": 1 },
+        "split_manifest_sha256": { "$ref": "#/$defs/sha256" }, "signing_key_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "signature_base64": { "type": "string", "description": "Canonical base64 encoding of a 64-byte Ed25519 signature." }
+  },
+  "$defs": { "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" } }
+}
