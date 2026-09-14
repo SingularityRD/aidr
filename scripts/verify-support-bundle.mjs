@@ -259,6 +259,7 @@ function copyFlatDirectory(source, destination) {
 }
 
 function selfTest() {
+	mkdirSync(resolve(".release-evidence"), { recursive: true });
 	const root = mkdtempSync(resolve(".release-evidence/support-bundle-"));
 	const fixture = join(root, "deployment");
 	createFixture(fixture);
