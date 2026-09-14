@@ -1,0 +1,9 @@
+version: "1.0"
+description: The rule name below exceeds the length the server compiler accepts
+default_action: ask
+rules:
+  - name: Block repository deletion nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+    condition:
+      mcp_tool: github.delete_repository
+    action: deny
+    priority: 100

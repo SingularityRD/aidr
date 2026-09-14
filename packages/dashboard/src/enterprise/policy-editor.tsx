@@ -263,8 +263,12 @@ function unsupportedKey(value: Record<string, unknown>, allowed: readonly string
  * Validate the parsed document rather than trusting it. The editor used to
  * declare any text "✓ Valid YAML" and let Save report success, so a policy the
  * engine cannot read was stored as if it were accepted.
+ *
+ * Exported for the parity suite: the local rules here must not drift from the
+ * server compiler in `supabase/functions/_shared/policy-document.ts`, and the
+ * suite compares the two rather than restating either one.
  */
-function validateDocument(yaml: string): { ok: true; document: PolicyDocument } | { ok: false; message: string } {
+export function validateDocument(yaml: string): { ok: true; document: PolicyDocument } | { ok: false; message: string } {
 	let parsed: unknown;
 	try {
 		parsed = parseYaml(yaml);
@@ -332,6 +336,210 @@ function validateDocument(yaml: string): { ok: true; document: PolicyDocument } 
 	return { ok: true, document: document as unknown as PolicyDocument };
 }
 
+// ── Server dry run ─────────────────────────────────────────────────────
+// The checks above are this editor's own; the compiler that enforces the
+// document at runtime is `compileRuntimePolicyDocument` in
+// supabase/functions/_shared/policy-document.ts, reached through the
+// `policy-management` Edge Function. It is stricter (bounded rule names,
+// bounded description, at most 200 rules) and it is the only authority on
+// what the runtime can enforce, so the editor asks it before it accepts a
+// write instead of publishing a verdict of its own.
+
+/** The unknown-MCP probe the sibling runtime policy editor also sends. */
+const DRY_RUN_SIMULATION = {
+	kind: "mcp",
+	server: "unregistered-preview",
+	tool: "call",
+	inventory: "unknown",
+} as const;
+
+export interface UnsupportedField {
+	/** Dotted document path the server named, e.g. `rules.0.condition`. */
+	path: string;
+	/** Field name the server refused, e.g. `pattern`. */
+	field: string;
+}
+
+interface DryRunSimulation {
+	action: string;
+	source: string;
+	matched: string | null;
+}
+
+export type PolicyDryRun =
+	| {
+			status: "compiled";
+			unsupported: UnsupportedField[];
+			simulation: DryRunSimulation | null;
+			precedence: string[];
+			diagnostics: number;
+	  }
+	| { status: "refused"; unsupported: UnsupportedField[]; code: string }
+	| { status: "absent" }
+	| { status: "unavailable"; code: string };
+
+/**
+ * Every field name the server compiler refused, taken from its own error code.
+ *
+ * `compileRuntimePolicyDocument` reports
+ * `invalid_policy_document:<path>:unsupported_field:<field>`. The list is the
+ * server's, not a local guess: it is parsed out of the response rather than
+ * recomputed here.
+ */
+function unsupportedFieldsFrom(code: string): UnsupportedField[] {
+	const segments = code.split(":");
+	const marker = segments.indexOf("unsupported_field");
+	const field = marker >= 0 ? segments[marker + 1] : undefined;
+	if (!field) return [];
+	const prefix = segments[0] === "invalid_policy_document" ? 1 : 0;
+	return [{ path: segments.slice(prefix, marker).join(":") || "document", field }];
+}
+
+async function serverErrorCode(payload: { error?: unknown }, error: unknown): Promise<string> {
+	if (typeof payload.error === "string" && payload.error) return payload.error;
+	// A rejected invoke resolves with a FunctionsHttpError whose `context` is the
+	// response, so the server's code is read from the body when it is available.
+	const context = (error as { context?: unknown } | null | undefined)?.context;
+	if (context && typeof (context as Response).json === "function") {
+		try {
+			const body = (await (context as Response).json()) as { error?: unknown };
+			if (typeof body.error === "string" && body.error) return body.error;
+		} catch {
+			// The body was already consumed; fall through to the error message.
+		}
+	}
+	if (error instanceof Error && error.message) return error.message;
+	return "policy_compile_unavailable";
+}
+
+function readSimulation(value: unknown): DryRunSimulation | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const candidate = value as { action?: unknown; source?: unknown; matched?: unknown };
+	if (typeof candidate.action !== "string" || typeof candidate.source !== "string") return null;
+	return {
+		action: candidate.action,
+		source: candidate.source,
+		matched: typeof candidate.matched === "string" ? candidate.matched : null,
+	};
+}
+
+function readPrecedence(value: unknown): string[] {
+	const semantics = value as { precedence?: unknown } | null | undefined;
+	if (!Array.isArray(semantics?.precedence)) return [];
+	return semantics.precedence.filter((entry): entry is string => typeof entry === "string");
+}
+
+/**
+ * Dry-run the document the server compiler would enforce.
+ *
+ * `compile_document` compiles the newest `team_policies` row for the tenant —
+ * the stored document — so this verdict describes stored bytes, never a draft
+ * that has not reached the table. Callers must compare the stored content with
+ * the document they are about to write before treating a verdict as that
+ * document's.
+ */
+export async function dryRunStoredDocument(teamId: string): Promise<PolicyDryRun> {
+	let data: unknown = null;
+	let error: unknown = null;
+	try {
+		const response = await supabase.functions.invoke("policy-management", {
+			body: {
+				action: "compile_document",
+				tenant_id: teamId,
+				simulation: { ...DRY_RUN_SIMULATION },
+			},
+		});
+		data = response.data;
+		error = response.error;
+	} catch (err) {
+		error = err;
+	}
+
+	const payload = (data ?? {}) as {
+		ok?: unknown;
+		error?: unknown;
+		simulation?: unknown;
+		semantics?: unknown;
+		diagnostics?: unknown;
+	};
+	if (payload.ok === true) {
+		return {
+			status: "compiled",
+			unsupported: [],
+			simulation: readSimulation(payload.simulation),
+			precedence: readPrecedence(payload.semantics),
+			diagnostics: Array.isArray(payload.diagnostics) ? payload.diagnostics.length : 0,
+		};
+	}
+
+	const code = await serverErrorCode(payload, error);
+	if (code === "policy_document_not_found") return { status: "absent" };
+	if (
+		code.startsWith("invalid_policy") ||
+		code === "policy_document_empty" ||
+		code === "policy_document_too_large"
+	) {
+		return { status: "refused", unsupported: unsupportedFieldsFrom(code), code };
+	}
+	return { status: "unavailable", code };
+}
+
+/** One line naming exactly what the server said, for the save status. */
+function describeDryRun(verdict: PolicyDryRun): string {
+	if (verdict.status === "refused") {
+		const fields = verdict.unsupported.map((entry) => `${entry.field} (${entry.path})`).join(", ");
+		return fields
+			? `the runtime compiler rejected unsupported field(s): ${fields}.`
+			: `the runtime compiler rejected the document (${verdict.code}).`;
+	}
+	if (verdict.status === "absent") return "the server has no stored policy document to compile.";
+	if (verdict.status === "unavailable") {
+		return `the server could not compile the stored document (${verdict.code}).`;
+	}
+	return "the server compiled the document.";
+}
+
+/**
+ * Put the previously stored document back after the compiler refused a draft.
+ *
+ * A draft reaches the compiler only once it is stored, so refusing it means
+ * undoing the write. An update is restored from the content read before it; an
+ * insert is removed. `updated_by` stays the caller, because the update policy
+ * requires `updated_by = auth.uid()`. A member may author a policy but only an
+ * admin may delete one, so a failed rollback is reported rather than hidden.
+ */
+async function restoreStoredDocument(args: {
+	currentRowId: string | null;
+	storedRowId: string | null;
+	previousContent: string | null;
+	tenantId: string;
+	updatedBy: string | null;
+}): Promise<boolean> {
+	try {
+		if (args.currentRowId) {
+			const restored = await supabase
+				.from("team_policies")
+				.update({
+					content: args.previousContent ?? "",
+					tenant_id: args.tenantId,
+					updated_by: args.updatedBy,
+				})
+				.eq("id", args.currentRowId)
+				.select("id");
+			if (restored.error) throw restored.error;
+			if (!restored.data || (restored.data as unknown[]).length === 0) {
+				throw new Error("no stored policy row was restored");
+			}
+			return true;
+		}
+		if (!args.storedRowId) return false;
+		const removed = await supabase.from("team_policies").delete().eq("id", args.storedRowId);
+		return !removed.error;
+	} catch {
+		return false;
+	}
+}
+
 export function PolicyEditor() {
 	const { currentTeam, canEditPolicy, isLoading: teamLoading, error: teamError } = useTeam();
 	const [policyYaml, setPolicyYaml] = useState("");
@@ -343,6 +551,7 @@ export function PolicyEditor() {
 	const [loadedTeamId, setLoadedTeamId] = useState<string | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
 	const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
+	const [dryRun, setDryRun] = useState<PolicyDryRun | null>(null);
 
 	const teamId = currentTeam?.id ?? null;
 	// The editor must not paint before the current team's stored policy has been
@@ -436,6 +645,9 @@ export function PolicyEditor() {
 
 		setIsSaving(true);
 		setSaveStatus(null);
+		setDryRun(null);
+
+		const requestedTeam = currentTeam.id;
 
 		try {
 			const { data: userData } = await supabase.auth.getUser();
@@ -445,22 +657,36 @@ export function PolicyEditor() {
 			// previous `upsert(..., { onConflict: "team_id" })` could never
 			// succeed ("no unique or exclusion constraint matching the ON
 			// CONFLICT specification"). Read the newest row, then update it, or
-			// insert one when the team has no policy yet.
+			// insert one when the team has no policy yet. The stored content is
+			// read too: it is the document the server compiler can see.
 			const existing = await supabase
 				.from("team_policies")
-				.select("id")
-				.eq("team_id", currentTeam.id)
+				.select("id, content")
+				.eq("team_id", requestedTeam)
 				.order("updated_at", { ascending: false })
 				.limit(1);
 			if (existing.error) throw existing.error;
 
-			const currentRow = ((existing.data ?? []) as unknown as { id: string }[])[0];
+			const currentRow = ((existing.data ?? []) as unknown as { id: string; content?: string }[])[0];
+			const previousContent = typeof currentRow?.content === "string" ? currentRow.content : null;
+
+			// Dry-run against the server compiler BEFORE the write, with the same
+			// call the runtime policy editor makes. It compiles the stored
+			// document, so when what is stored is exactly this document the
+			// verdict is this document's and a refusal blocks the write outright.
+			const before = await dryRunStoredDocument(requestedTeam);
+			if (previousContent !== null && previousContent === policyYaml && before.status === "refused") {
+				setDryRun(before);
+				setSaveStatus({ tone: "error", message: `Policy was not saved: ${describeDryRun(before)}` });
+				return;
+			}
+
 			// updated_at is maintained by the team_policies_touch_updated_at
 			// trigger on the server; tenant_id must equal team_id (enforced by the
 			// team_policies_tenant_matches_team check constraint).
 			const body = {
 				content: policyYaml,
-				tenant_id: currentTeam.id,
+				tenant_id: requestedTeam,
 				updated_by: updatedBy,
 			};
 
@@ -476,7 +702,7 @@ export function PolicyEditor() {
 			} else {
 				const inserted = await supabase
 					.from("team_policies")
-					.insert({ ...body, team_id: currentTeam.id })
+					.insert({ ...body, team_id: requestedTeam })
 					.select("id");
 				if (inserted.error) throw inserted.error;
 				stored = (inserted.data ?? []) as unknown as { id: string }[];
@@ -488,6 +714,32 @@ export function PolicyEditor() {
 				);
 			}
 
+			// An edited draft (or the team's first document) is not what the
+			// pre-write dry run compiled, so it cannot speak for the draft. The
+			// draft is stored now — that is the only way the compiler can see it —
+			// so compile what is stored and put the previous revision back when it
+			// refuses. This verdict is the one rendered, because it describes the
+			// document this save is accepting.
+			const verdict = await dryRunStoredDocument(requestedTeam);
+			if (verdict.status !== "compiled") {
+				const restored = await restoreStoredDocument({
+					currentRowId: currentRow?.id ?? null,
+					storedRowId: stored[0]?.id ?? null,
+					previousContent,
+					tenantId: requestedTeam,
+					updatedBy,
+				});
+				setDryRun(verdict);
+				setSaveStatus({
+					tone: "error",
+					message: restored
+						? `Policy was not saved: ${describeDryRun(verdict)} The stored policy was restored.`
+						: `Policy was not saved: ${describeDryRun(verdict)} The rejected draft could not be rolled back, so review the stored policy before it is published.`,
+				});
+				return;
+			}
+
+			setDryRun(verdict);
 			setSaveStatus({ tone: "success", message: "Policy saved successfully" });
 		} catch (err) {
 			setSaveStatus({
@@ -503,6 +755,7 @@ export function PolicyEditor() {
 		const defaultYaml = objectToYaml(DEFAULT_POLICY);
 		setPolicyYaml(defaultYaml);
 		setSaveStatus(null);
+		setDryRun(null);
 		validateAndParse(defaultYaml);
 	}
 
@@ -607,6 +860,7 @@ export function PolicyEditor() {
 							onChange={(e) => {
 								setPolicyYaml(e.target.value);
 								setSaveStatus(null);
+								setDryRun(null);
 								validateAndParse(e.target.value);
 							}}
 							rows={25}
@@ -688,6 +942,63 @@ export function PolicyEditor() {
 					) : (
 						<p className="muted">No valid policy document to preview yet.</p>
 					)}
+
+					<div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid var(--border)" }}>
+						<h4 style={{ marginTop: 0 }}>Server dry run</h4>
+						{!dryRun ? (
+							<p className="muted small" style={{ margin: 0 }}>
+								Saving asks the <span className="mono">policy-management</span> compiler to dry-run
+								the document it has stored. Its unsupported fields and simulation appear here
+								before the write is accepted.
+							</p>
+						) : dryRun.status === "compiled" ? (
+							<div className="muted small">
+								<div>
+									<strong>Compiled by the server compiler.</strong>
+								</div>
+								<div>Unsupported fields: none.</div>
+								{dryRun.precedence.length > 0 && (
+									<div>Conflict precedence: {dryRun.precedence.join(" > ")}.</div>
+								)}
+								{dryRun.simulation && (
+									<div>
+										Simulated unknown MCP call: {dryRun.simulation.action} (
+										{dryRun.simulation.source}).
+									</div>
+								)}
+								{dryRun.diagnostics > 0 && (
+									<div>{dryRun.diagnostics} shadowed rule warning(s).</div>
+								)}
+							</div>
+						) : dryRun.status === "refused" ? (
+							<div>
+								<strong>The runtime compiler refused the stored document.</strong>
+								<div className="mono small" style={{ marginTop: 6 }}>
+									{dryRun.code}
+								</div>
+								{dryRun.unsupported.length > 0 && (
+									<>
+										<div className="muted small" style={{ marginTop: 6 }}>
+											Unsupported fields reported by the server:
+										</div>
+										<ul className="muted small" style={{ margin: "4px 0 0" }}>
+											{dryRun.unsupported.map((entry) => (
+												<li key={`${entry.path}:${entry.field}`}>
+													{entry.field} ({entry.path})
+												</li>
+											))}
+										</ul>
+									</>
+								)}
+							</div>
+						) : (
+							<p className="muted small" style={{ margin: 0 }}>
+								{dryRun.status === "absent"
+									? "The server has no stored policy document to compile yet."
+									: `The server could not compile the stored document (${dryRun.code}).`}
+							</p>
+						)}
+					</div>
 				</div>
 			</div>
 

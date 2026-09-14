@@ -1,0 +1,10 @@
+version: "1.0"
+description: The condition cannot carry a matching pattern the runtime never reads
+default_action: ask
+rules:
+  - name: Regex rule
+    condition:
+      mcp_tool: github.read
+      pattern: ".*"
+    action: deny
+    priority: 10

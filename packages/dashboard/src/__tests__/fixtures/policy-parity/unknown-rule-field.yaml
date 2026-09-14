@@ -1,0 +1,10 @@
+version: "1.0"
+description: The rule-level field below is not part of the enforceable schema
+default_action: ask
+rules:
+  - name: Deny shell execution
+    when: always
+    condition:
+      mcp_tool: shell.execute
+    action: deny
+    priority: 100

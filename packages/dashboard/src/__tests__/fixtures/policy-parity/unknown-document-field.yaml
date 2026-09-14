@@ -1,0 +1,10 @@
+version: "1.0"
+description: The document-level field below is not part of the enforceable schema
+default_action: ask
+telemetry_upload: true
+rules:
+  - name: Allow github reads
+    condition:
+      mcp_tool: github.read
+    action: allow
+    priority: 20

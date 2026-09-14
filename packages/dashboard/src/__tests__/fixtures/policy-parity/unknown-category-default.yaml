@@ -1,0 +1,12 @@
+version: "1.0"
+description: The category default below has no runtime effect
+default_action: ask
+category_defaults:
+  command: ask
+  network: deny
+rules:
+  - name: Allow github reads
+    condition:
+      mcp_tool: github.read
+    action: allow
+    priority: 20
