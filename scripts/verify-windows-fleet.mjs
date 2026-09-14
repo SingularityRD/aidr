@@ -2,12 +2,13 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const sourceRoot = repo;
 const fleet = join(repo, "deploy", "fleet", "windows");
 const powershell = process.platform === "win32" ? "powershell.exe" : "pwsh";
 const tar = process.platform === "win32" ? "tar.exe" : "tar";
@@ -175,6 +176,30 @@ function makePackage(version, marker) {
 	writeFileSync(join(root, "dist", "pre-tool-use.cjs"), `process.stdout.write(JSON.stringify({hookSpecificOutput:{permissionDecision:"deny",reason:"${marker}"}}));\n`);
 	writeFileSync(join(root, "dist", "post-tool-use.cjs"), `process.stdout.write("${marker}");\n`);
 	writeFileSync(join(root, "dist", "session-start.cjs"), `process.stdout.write("${marker}");\n`);
+	// endpoint-install.mjs refuses to register hooks on Windows when the
+	// packaged native AMSI payload is absent: it loads `amsi.dll` through that
+	// addon before touching hook configuration. The fixture therefore has to
+	// carry the real staged payload. Skipping the check would turn the
+	// command-line installer into something it is not.
+	const stagedKoffi = join(root, "dist", "vendor", "koffi");
+	const realKoffi = join(sourceRoot, "packages", "claude-code", "dist", "vendor", "koffi");
+	const archFolder = process.arch === "arm64" ? "win32_arm64" : "win32_x64";
+	for (const relative of [
+		"index.js",
+		"package.json",
+		"LICENSE.txt",
+		join("build", "koffi", archFolder, "koffi.node"),
+	]) {
+		const from = join(realKoffi, relative);
+		if (!existsSync(from)) {
+			throw new Error(
+				`the staged Windows AMSI payload is missing (${relative}); run \`pnpm build\` before the fleet gate (expected under ${realKoffi})`,
+			);
+		}
+		const to = join(stagedKoffi, relative);
+		mkdirSync(dirname(to), { recursive: true });
+		copyFileSync(from, to);
+	}
 	writeFileSync(join(root, "resources", "threats", "fixture.json"), "{}\n");
 	writeFileSync(join(root, "resources", "allowlists", "fixture.json"), "{}\n");
 	const artifact = join(work, `aidr-claude-${version}.tgz`);

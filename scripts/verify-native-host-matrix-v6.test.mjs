@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { GATE_STATUSES, validateScenarioManifest } from "./verify-native-host-matrix-v6.mjs";
 
-const script = join(dirname(fileURLToPath(import.meta.url)), "verify-native-host-matrix-v6.mjs");
+const here = dirname(fileURLToPath(import.meta.url));
+const script = join(here, "verify-native-host-matrix-v6.mjs");
+const templatePath = resolve(here, "..", "deploy", "native", "scenarios", "TEMPLATE.json");
 const code = `const fs=require('node:fs'); console.log('HOST_ATTEMPT'); if(!process.argv.some(arg=>arg.includes('disabled'))) fs.writeFileSync(process.env.AIDR_NATIVE_TEST_RECEIPT,'AIDR_HOOK_INVOKED'); if(process.argv.some(arg=>arg.includes('write'))) fs.writeFileSync(process.env.AIDR_NATIVE_TEST_SENTINEL,'side effect');`;
 const observation = (source, contains, path) => ({ source, contains, ...(path ? { path } : {}) });
 const fixtureCase = (id, action) => ({ id, argv: ["{host_binary}", "-e", code, action],
@@ -120,4 +123,158 @@ test("a harness timeout never passes even when benign side effect was written", 
 	const entry = report.hosts.find((host) => host.id === "codex").cases[0];
 	assert.equal(entry.status, "HOST_TIMED_OUT");
 	assert.equal(entry.side_effect_observed, true);
+}));
+
+const observedCase = (id, attackId) => ({ id, ...(attackId ? { attack_id: attackId } : {}),
+	argv: ["{host_binary}", "--non-interactive", "prompt"],
+	attempt: { source: "file", path: "{workspace}/attempt.log", contains: "ATTEMPT:{case_nonce}" },
+	hook: { source: "file", path: "{receipt}", contains: "HOOK:{case_nonce}" } });
+const observedAcceptance = () => ({ os_platform: "win32", os_release: "10.0.19045", architecture: "x64",
+	host_version: "codex-cli 0.141.0", launcher_sha256: "a".repeat(64), candidate_sha256: "b".repeat(64),
+	policy_sha256: "c".repeat(64), install_evidence_sha256: "d".repeat(64), uninstall_evidence_sha256: "e".repeat(64),
+	qa_owner: "QA Lead", endpoint_owner: "Endpoint Lead", support_owner: "Support Lead",
+	unobserved_actions: [], required_attack_ids: ["credential_read"] });
+const observedManifest = () => ({ schema_version: 1, hosts: { codex: { binary: process.execPath,
+	version_args: ["--version"], acceptance: observedAcceptance(),
+	cases: [observedCase("denied_side_effect", "credential_read"), observedCase("benign_allow", "credential_read")] } } });
+const failureCodes = (validation) => validation.failures.map((entry) => entry.code);
+function runCli(dir, args) {
+	return spawnSync(process.execPath, [script, ...args], {
+		encoding: "utf8", timeout: 120_000, cwd: dir, env: { ...process.env, PATH: dirname(process.execPath) },
+	});
+}
+
+test("a fully filled manifest is structurally valid", () => {
+	const validation = validateScenarioManifest(observedManifest());
+	assert.equal(validation.ok, true, JSON.stringify(validation.failures));
+	assert.equal(validation.error_count, 0);
+	assert.equal(validation.placeholder_count, 0);
+	assert.equal(validation.template, false);
+});
+
+test("the committed template is structurally valid and honestly unfilled", () => {
+	const spec = JSON.parse(readFileSync(templatePath, "utf8"));
+	const validation = validateScenarioManifest(spec);
+	assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+	assert.equal(validation.template, true);
+	assert.equal(validation.error_count, 0);
+	assert.ok(validation.placeholder_count > 0);
+	for (const field of ["launcher_sha256", "candidate_sha256", "policy_sha256", "install_evidence_sha256", "uninstall_evidence_sha256"]) {
+		assert.ok(validation.placeholders.some((entry) => entry.field === field), `${field} must stay a placeholder`);
+	}
+	for (const host of Object.values(spec.hosts)) {
+		assert.deepEqual([...new Set(host.cases.map((entry) => entry.id))].sort(),
+			["benign_allow", "crash", "denied_side_effect", "disabled_hook", "offline", "restart", "timeout"],
+			"the template documents every native case");
+	}
+});
+
+test("an unreplaced template value fails validation outside a template", () => {
+	const spec = observedManifest();
+	spec.hosts.codex.acceptance.host_version = "REPLACE_WITH_PROBED_HOST_VERSION";
+	const validation = validateScenarioManifest(spec);
+	assert.equal(validation.ok, false);
+	assert.ok(failureCodes(validation).includes("PLACEHOLDER_VALUE_UNREPLACED"));
+	const entry = validation.errors.find((item) => item.code === "PLACEHOLDER_VALUE_UNREPLACED");
+	assert.equal(entry.field, "host_version");
+	assert.equal(entry.path, "hosts.codex.acceptance.host_version");
+	assert.equal(entry.severity, "error");
+});
+
+test("argv that does not start with the probed host binary fails validation", () => {
+	const spec = observedManifest();
+	spec.hosts.codex.cases[0].argv = ["codex", "--non-interactive", "prompt"];
+	const validation = validateScenarioManifest(spec);
+	assert.equal(validation.ok, false);
+	assert.ok(failureCodes(validation).includes("CASE_ARGV_MUST_START_WITH_HOST_BINARY"));
+	assert.equal(validation.errors.find((item) => item.code === "CASE_ARGV_MUST_START_WITH_HOST_BINARY").path, "hosts.codex.cases[0].argv");
+});
+
+test("a duplicate id:attack_id pair fails validation", () => {
+	const spec = observedManifest();
+	spec.hosts.codex.cases.push(observedCase("denied_side_effect", "credential_read"));
+	const validation = validateScenarioManifest(spec);
+	assert.equal(validation.ok, false);
+	assert.ok(failureCodes(validation).includes("DUPLICATE_CASE_ID_ATTACK_PAIR"));
+	assert.equal(validation.errors.find((item) => item.code === "DUPLICATE_CASE_ID_ATTACK_PAIR").detail, "denied_side_effect:credential_read");
+});
+
+test("an unknown case id fails validation", () => {
+	const spec = observedManifest();
+	spec.hosts.codex.cases[1].id = "denied_side_effect_not_really";
+	const validation = validateScenarioManifest(spec);
+	assert.equal(validation.ok, false);
+	assert.ok(failureCodes(validation).includes("UNKNOWN_CASE_ID"));
+});
+
+test("a missing attempt or hook observation fails validation", () => {
+	const withoutAttempt = observedManifest();
+	delete withoutAttempt.hosts.codex.cases[0].attempt;
+	const attemptValidation = validateScenarioManifest(withoutAttempt);
+	assert.equal(attemptValidation.ok, false);
+	assert.ok(failureCodes(attemptValidation).includes("ATTEMPT_OBSERVATION_MISSING"));
+	const withoutHook = observedManifest();
+	delete withoutHook.hosts.codex.cases[0].hook;
+	const hookValidation = validateScenarioManifest(withoutHook);
+	assert.equal(hookValidation.ok, false);
+	assert.ok(failureCodes(hookValidation).includes("HOOK_OBSERVATION_MISSING"));
+});
+
+test("an acceptance block missing a required field fails validation", () => {
+	const spec = observedManifest();
+	delete spec.hosts.codex.acceptance.candidate_sha256;
+	const validation = validateScenarioManifest(spec);
+	assert.equal(validation.ok, false);
+	const entry = validation.errors.find((item) => item.code === "ACCEPTANCE_FIELD_MISSING");
+	assert.ok(entry, JSON.stringify(validation.failures));
+	assert.equal(entry.field, "candidate_sha256");
+	assert.equal(entry.path, "hosts.codex.acceptance.candidate_sha256");
+});
+
+test("--validate-only accepts the template structurally and never claims host acceptance", () => withFixture((dir) => {
+	const result = runCli(dir, ["--scenario-file", templatePath, "--validate-only"]);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /validity\s+STRUCTURE_OK/u);
+	assert.match(result.stdout, /"status": "STRUCTURE_OK"/u);
+	assert.match(result.stdout, /PLACEHOLDER_VALUE_UNREPLACED hosts\.codex\.binary/u);
+	assert.doesNotMatch(result.stdout, /\bPASS\b/u);
+}));
+
+test("--validate-only fails an accepted manifest that still holds a placeholder", () => withFixture((dir) => {
+	const path = join(dir, "unfilled.json");
+	const spec = observedManifest();
+	spec.hosts.codex.cases[0].argv[2] = "REPLACE_WITH_DENIED_ACTION_PROMPT";
+	writeFileSync(path, JSON.stringify(spec));
+	const result = runCli(dir, ["--scenario-file", path, "--validate-only"]);
+	assert.equal(result.status, 1);
+	assert.match(result.stdout, /validity\s+STRUCTURE_INVALID/u);
+	assert.match(result.stdout, /PLACEHOLDER_VALUE_UNREPLACED/u);
+}));
+
+test("a missing scenario manifest reports SCENARIO_MANIFEST_MISSING and fails closed", () => withFixture((dir) => {
+	const output = join(dir, "gate.json");
+	const result = runCli(dir, ["--scenario-file", join(dir, "not-committed.json"), "--output", output]);
+	assert.equal(result.status, 1);
+	assert.match(result.stdout, /^status\s+SCENARIO_MANIFEST_MISSING$/mu);
+	assert.ok(existsSync(output), "the gate must still write its report");
+	const report = JSON.parse(readFileSync(output, "utf8"));
+	assert.equal(report.status, "SCENARIO_MANIFEST_MISSING");
+	assert.equal(report.gate, "NO_GO");
+	assert.equal(report.scenario_manifest_present, false);
+	assert.deepEqual(report.status_vocabulary, GATE_STATUSES);
+	assert.ok(report.blockers.some((blocker) => blocker.startsWith("SCENARIO_MANIFEST_MISSING:")));
+}));
+
+test("the gate without a scenario file stays inside the status vocabulary and never exits 0", () => withFixture((dir) => {
+	// The repository deliberately commits no default manifest: only a real host run
+	// may produce one, so this is where that expectation is asserted.
+	const defaultManifest = resolve(here, "..", "deploy", "native", "scenarios", "native-host-scenarios.json");
+	assert.equal(existsSync(defaultManifest), false, "a default manifest must not be invented in the repository");
+	const result = runCli(dir, []);
+	assert.equal(result.status, 1);
+	const report = JSON.parse(result.stdout.slice(result.stdout.indexOf("{")));
+	assert.equal(report.gate, "NO_GO");
+	assert.ok(GATE_STATUSES.includes(report.status), report.status);
+	assert.equal(report.status, "SCENARIO_MANIFEST_MISSING");
+	assert.doesNotMatch(result.stdout.split("\n{")[0], /\bPASS\b/u);
 }));
