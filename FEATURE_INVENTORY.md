@@ -1,6 +1,6 @@
 # AIDR alt özellik envanteri
 
-13 Eylül 2026. 71 alt özellik ve teslimat gereksinimi incelendi: 41 çalışan kod akışına bağlı, 27 kısmi, 1 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
+13 Eylül 2026. 71 alt özellik ve teslimat gereksinimi incelendi: 41 çalışan kod akışına bağlı, 28 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
 
 Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tüketen bileşenler ve her satırın kalan işi bu dosyada bulunur. Önceki PRODUCT_SCOPE_AND_FEATURES.md dosyasındaki modül erişilebilirlik sayıları tarihsel bir ara denetime aittir.
 
@@ -119,7 +119,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 |---|---|---|---|
 | BIL-01 | [Invoice-based sales model](packages/dashboard/src/ui/pages/BillingPage.tsx) | partial | Approved quote, provider receipt, reconciliation and audited paid-to-entitlement lifecycle remain open |
 | BIL-02 | [Stripe checkout and event processing](supabase/functions/billing-checkout/index.ts) | partial | Live keys/prices/webhook registration, refund/cancel/reconcile and tax acceptance remain open |
-| BIL-03 | [Subscription self-service portal](packages/dashboard/src/billing/stripe-client.ts) | missing | Implement verified billing portal and invoice lifecycle if offered in sold SKU |
+| BIL-03 | [Subscription self-service portal](packages/dashboard/src/billing/billing-portal.ts) | partial | Live provider keys, approved price/SKU catalogue, finance reconciliation and accounting approval remain external |
 
 ## Deployment
 
