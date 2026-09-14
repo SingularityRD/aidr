@@ -95,6 +95,25 @@ async function main(): Promise<void> {
 		return;
 	}
 
+	// Codex's payload schema marks every field required, so a PreToolUse event
+	// always names the tool it is about to run and carries an object
+	// `tool_input`. A payload missing either is not something the host can send,
+	// and we cannot judge a call we cannot identify: without this check the
+	// payload falls through to the detection core, which correctly finds no
+	// artifacts and returns an allow, so Codex would run the call uninspected.
+	// This mirrors the shape check the Claude Code entry point performs.
+	if (
+		typeof input.tool_name !== "string" ||
+		input.tool_name.trim() === "" ||
+		(input.tool_input != null &&
+			(typeof input.tool_input !== "object" || Array.isArray(input.tool_input)))
+	) {
+		blockUnconditionally(
+			`${DENY_HEADLINE}\nSingularity AIDR could not identify the tool call, so it was blocked.`,
+		);
+		return;
+	}
+
 	try {
 		const outcome = await enforceCodexPreToolUse(input, { logger });
 		write(outcome.wire);
