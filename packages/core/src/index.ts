@@ -104,6 +104,30 @@ export {
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
 export { VerdictCache } from "./cache.js";
+// Causal agent chain (message -> retrieval -> tool -> authorization -> action ->
+// side effect -> intervention), ordered by position and logical clock, with a
+// missing link reported as `chain_gap` and tamper-evident binding through the
+// incident evidence receipts.
+export {
+	type CausalChain,
+	type CausalChainFinding,
+	type CausalChainFindingCode,
+	CAUSAL_CHAIN_ORDER,
+	CAUSAL_CHAIN_SCHEMA_VERSION,
+	type CausalChainLink,
+	type CausalChainLinkInput,
+	type CausalChainOptions,
+	type CausalChainReceiptOutcome,
+	type CausalChainVerification,
+	type CausalCorrelationIds,
+	causalKindRank,
+	causalLinkDigest,
+	causalLinkDigestInput,
+	causalLinkReceiptId,
+	canonicalCausalChainJson,
+	recordCausalChain,
+	verifyCausalChainEvidence,
+} from "./causal-chain.js";
 // Clients
 export { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 // Control plane client (optional telemetry/licensing)
@@ -238,6 +262,60 @@ export {
 } from "./encryption.js";
 // Decision engine
 export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
+// Tenant-scoped AI exposure graph: persistent identity for agents, hosts,
+// users, MCP servers, tools, credentials and data sources; cross-tenant
+// records refused; staleness computed from an injected clock; coverage gaps
+// reported as data.
+export {
+	canonicalExposureGraphJson,
+	createSha256HasherContext as createExposureHasherContext,
+	EXPOSURE_GRAPH_SCHEMA_VERSION,
+	EXPOSURE_NODE_KINDS,
+	type ExposureAuthorizationQuery,
+	type ExposureCoverageReport,
+	type ExposureEdge,
+	type ExposureEdgeKind,
+	type ExposureGraph,
+	type ExposureGraphOptions,
+	type ExposureNode,
+	type ExposureNodeKind,
+	type ExposureObservationEdge,
+	type ExposureObservationInput,
+	type ExposureObservationNode,
+	type ExposureObservationRejection,
+	type ExposureObservationRejectionCode,
+	type ExposureObservationSource,
+	type ExposureParseResult,
+	type ExposureSourceStatus,
+	type ExposureStaleness,
+	type ExposureStalenessEntry,
+	type ExposureStalenessReport,
+	type ExposureUnreadableSource,
+	exposureCoverage,
+	exposureEdgeId,
+	exposureEdgesTouching,
+	exposureNodeId,
+	exposureObservationDigest,
+	exposureStaleness,
+	exposureStalenessReport,
+	type FoldExposureGraphResult,
+	foldExposureObservations,
+	type HasherContext as ExposureHasherContext,
+} from "./exposure-graph.js";
+// Adapters that turn the existing MCP inventory/discovery and AI-infrastructure
+// fleet records into exposure observations, including the source statuses that
+// become coverage gaps.
+export {
+	type ExposureFleetInventoryOptions,
+	type ExposureMcpInventoryBatch,
+	type ExposureMcpInventoryOptions,
+	type ExposureSourceKind,
+	exposureObservationsFromFleetInventory,
+	exposureObservationsFromMcpInventory,
+	exposureSourcesFromFleetInventory,
+	mcpServerNaturalKey,
+	mergeExposureObservationBatches,
+} from "./exposure-sources.js";
 // Strict policy-as-code compiler and dry-run evaluator.
 export {
 	compilePolicyDocument,
@@ -273,6 +351,41 @@ export {
 	extractFromWrite,
 	extractUrls,
 } from "./extractors.js";
+// Versioned, append-only operator false-positive feedback bound to the policy
+// revision and incident it judges: an identical resubmission is idempotent and a
+// conflicting one is refused, never overwritten.
+export {
+	canonicalFalsePositiveFeedbackJson,
+	createFalsePositiveFeedbackStore,
+	createSha256HasherContext as createFeedbackHasherContext,
+	FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION,
+	FALSE_POSITIVE_GENESIS_HASH,
+	type FalsePositiveFeedbackBinding,
+	type FalsePositiveFeedbackFoldResult,
+	type FalsePositiveFeedbackInput,
+	type FalsePositiveFeedbackOrigin,
+	type FalsePositiveFeedbackOutcome,
+	type FalsePositiveFeedbackOutcomeStatus,
+	type FalsePositiveFeedbackRecordInput,
+	type FalsePositiveFeedbackRecordV1,
+	type FalsePositiveFeedbackState,
+	type FalsePositiveFeedbackStore,
+	type FalsePositiveParseResult,
+	type FalsePositiveRateByRevision,
+	type FalsePositiveReasonCode,
+	type FalsePositiveStoreFinding,
+	type FalsePositiveStoreVerification,
+	falsePositiveBindingKey,
+	falsePositiveFeedbackHash,
+	falsePositiveFeedbackHashInput,
+	falsePositiveFeedbackHistory,
+	falsePositiveFeedbackId,
+	falsePositiveFeedbackState,
+	falsePositiveFeedbackSubmissionDigest,
+	falsePositiveRateByPolicyRevision,
+	recordFalsePositiveFeedback,
+	verifyFalsePositiveFeedbackStore,
+} from "./false-positive-feedback.js";
 export type {
 	AnonymizedThreatPattern,
 	FederatedConfig,
@@ -350,8 +463,28 @@ export {
 export { HeuristicsEngine } from "./heuristics.js";
 // Incidents (normalized signals + correlation engine)
 export {
+	appendEvidenceReceipt,
+	anchorEvidenceHead,
+	compareEvidenceClock,
 	type CorrelateOptions,
 	correlateIncidents,
+	detectEvidenceTruncation,
+	EVIDENCE_GENESIS_HASH,
+	EVIDENCE_RECEIPT_VERSION,
+	type EvidenceAnchorOutcome,
+	type EvidenceArchiveRequest,
+	type EvidenceArchiveResult,
+	type EvidenceArchiveSink,
+	type EvidenceBinding,
+	type EvidenceChainFinding,
+	type EvidenceChainVerification,
+	type EvidenceClock,
+	type EvidenceHashContext,
+	type EvidenceParseResult,
+	type EvidenceReceiptV1,
+	type EvidenceVerifyResult,
+	evidenceReceiptHash,
+	evidenceReceiptHashInput,
 	type Incident,
 	type IncidentAnchorPayloadV1,
 	type IncidentAnchorVerification,
@@ -360,10 +493,13 @@ export {
 	type NormalizedSignal,
 	normalizeAuditEntriesToSignals,
 	normalizeAuditEntryToSignals,
+	parseEvidenceReceipt,
 	persistIncidentRecords,
 	type PersistIncidentRecordsOptions,
 	type SignedIncidentAnchorReceiptV1,
 	type SignalType,
+	verifyEvidenceChain,
+	verifyEvidenceReceipt,
 	verifyIncidentSqliteStore,
 	type VerifyIncidentAnchorOptions,
 	verifySignedIncidentAnchorReceipt,
@@ -746,6 +882,32 @@ export type {
 	FleetResponseCycleResult,
 	FleetResponseIdentity,
 } from "./response-command-consumer-v6.js";
+// Installed endpoint response-worker contract (capability, precondition, TTL,
+// rollback receipt).
+export {
+	executeResponseStep,
+	MemoryResponseJournal,
+	planResponseRollback,
+	planResponseStep,
+	reportWorkerCapabilities,
+	RESPONSE_CAPABILITIES,
+} from "./response-worker-contract.js";
+export type {
+	ExecuteResponseOptions,
+	ExecuteResponseResult,
+	PlanResponseRequest,
+	ResponseAdapter,
+	ResponseCapability,
+	ResponseJournal,
+	ResponseJournalEntry,
+	ResponsePlanDecision,
+	ResponseReceipt,
+	ResponseRollbackRequest,
+	ResponseStep,
+	ResponseStepOutcome,
+	ResponseTargetBinding,
+	WorkerCapabilityReport,
+} from "./response-worker-contract.js";
 // MCP tool identity, signed schema attestation and drift quarantine.
 export {
 	approveQuarantinedMcpToolset,
