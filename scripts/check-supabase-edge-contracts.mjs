@@ -1,7 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
-
 const root = process.cwd();
 const failures = [];
 
@@ -57,6 +56,50 @@ const functionConfig = await readFile(path.join(root, "supabase", "config.toml")
 for (const name of browserFunctions) {
 	if (!new RegExp(`^\\[functions\\.${name}\\]$`, "m").test(functionConfig)) {
 		failures.push(`${name}: missing supabase/config.toml deployment entry (${browserFunctionReferences.get(name).join(", ")})`);
+	}
+}
+
+// --- AIDR-019: every browser-invoked function has a named contract test ----
+//
+// The browser call sites above are discovered from the AST, so this section
+// cannot be satisfied by editing a list: adding an `invoke()` call without a
+// manifest entry fails the gate. A manifest entry with an empty test list is a
+// recorded, reported gap rather than a silent pass.
+const manifestPath = path.join(root, "docs", "production-readiness", "edge-function-contract-manifest.json");
+let contractManifest = null;
+try {
+	contractManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+} catch (error) {
+	failures.push(
+		`edge-function contract manifest is missing or unreadable (${error instanceof Error ? error.message : String(error)})`,
+	);
+}
+const uncovered = [];
+if (contractManifest) {
+	const entries = contractManifest.functions ?? {};
+	for (const name of browserFunctions) {
+		const entry = entries[name];
+		if (!entry) {
+			failures.push(`${name}: is invoked from browser code but has no contract manifest entry`);
+			continue;
+		}
+		const tests = Array.isArray(entry.tests) ? entry.tests : [];
+		if (tests.length === 0) {
+			uncovered.push(name);
+			continue;
+		}
+		for (const test of tests) {
+			try {
+				await readFile(path.join(root, test), "utf8");
+			} catch {
+				failures.push(`${name}: declared contract test does not exist (${test})`);
+			}
+		}
+	}
+	for (const name of Object.keys(entries)) {
+		if (!browserFunctions.includes(name)) {
+			failures.push(`${name}: contract manifest entry has no browser call site (stale entry)`);
+		}
 	}
 }
 // Discovery accepts an operator JWT or a collector-bound machine key. The
@@ -197,4 +240,9 @@ if (failures.length) {
 	console.log(
 		`Supabase Edge browser contract passed (${browserFunctions.length} functions + shared helper, ${guardedFunctions}/${functionNames.length} functions config-guarded).`,
 	);
+	if (uncovered.length) {
+		console.warn(
+			`AIDR-019 recorded gaps: ${uncovered.length} browser-invoked function(s) have no contract test yet: ${uncovered.join(", ")}`,
+		);
+	}
 }
