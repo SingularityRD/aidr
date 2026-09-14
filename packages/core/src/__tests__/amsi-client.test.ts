@@ -13,6 +13,7 @@ vi.mock("../clients/amsi-spawn.js", () => ({
 
 import { AmsiClient, isAmsiSupported } from "../clients/amsi.js";
 import { spawn } from "../clients/amsi-spawn.js";
+import { DetectionLegUnavailableError } from "../detection-leg.js";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 
@@ -248,6 +249,44 @@ describe("AmsiClient", () => {
 		const client = new AmsiClient(nullLogger);
 		const result = await client.scanString("test content", "test:name");
 		expect(result).toBeNull();
+	});
+
+	it("does not return null for a scan that did not run", async () => {
+		vi.spyOn(process, "platform", "get").mockReturnValue("win32" as NodeJS.Platform);
+		const proc = createMockProcess();
+		mockSpawn.mockReturnValue(proc as never);
+		// koffi throws (module mock above) and the PowerShell fallback exits during
+		// init, so this host supports AMSI but has no backend that can scan.
+		emitExit(proc);
+
+		const client = new AmsiClient(mockLogger);
+		await client.init();
+		expect(client.isAvailable).toBe(false);
+		expect(client.backendKind).toBe("unavailable");
+
+		const failure = await client.scanString("content", "test:outage").then(
+			() => null,
+			(error: unknown) => error,
+		);
+		// A null here would be indistinguishable from "scanned and found nothing".
+		expect(failure).toBeInstanceOf(DetectionLegUnavailableError);
+		expect((failure as DetectionLegUnavailableError).leg).toBe("amsi");
+		expect((failure as DetectionLegUnavailableError).reason).toMatch(/backend/i);
+	});
+
+	it("stays a silent no-op on a host that does not support AMSI", async () => {
+		vi.spyOn(process, "platform", "get").mockReturnValue("linux" as NodeJS.Platform);
+		const origWsl = process.env.WSL_DISTRO_NAME;
+		delete process.env.WSL_DISTRO_NAME;
+		try {
+			const client = new AmsiClient(mockLogger);
+			await client.init();
+			expect(client.isAvailable).toBe(false);
+			// The leg does not exist on this host, so there is nothing to report.
+			await expect(client.scanString("content", "test:unsupported")).resolves.toBeNull();
+		} finally {
+			if (origWsl !== undefined) process.env.WSL_DISTRO_NAME = origWsl;
+		}
 	});
 
 	it("close is safe when not initialized", () => {

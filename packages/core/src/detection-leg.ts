@@ -14,9 +14,17 @@
  * still allowed to degrade - callers may catch this and continue - but the
  * failure now carries enough information to be reported honestly instead of
  * being silently rounded down to "clean".
+ *
+ * AMSI joins the vocabulary for the same reason. It used to live outside this
+ * abstraction entirely: every failure path in `clients/amsi.ts` returned null,
+ * so "a Windows host with no working AMSI backend" and "AMSI scanned the
+ * content and found nothing" produced byte-for-byte identical verdicts.
+ *
+ * A host that does not support AMSI at all (neither native Windows nor WSL) is
+ * NOT an unavailable leg - the leg does not exist there - and must stay silent.
  */
 
-export type DetectionLeg = "url_reputation" | "file_reputation";
+export type DetectionLeg = "url_reputation" | "file_reputation" | "amsi";
 
 export class DetectionLegUnavailableError extends Error {
 	readonly leg: DetectionLeg;
