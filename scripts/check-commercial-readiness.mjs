@@ -18,8 +18,13 @@ function releaseArtifactRoots(source) {
 }
 
 function compareCounts(label, actual, declared, failures) {
+	// A category with zero members is normally omitted from the generated JSON.
+	// Absent and explicit zero mean the same thing here; only a real disagreement
+	// is a failure.
 	for (const status of new Set([...Object.keys(actual), ...Object.keys(declared ?? {})])) {
-		if (actual[status] !== declared?.[status]) failures.push(`${label}.${status}: declared ${declared?.[status] ?? "missing"}, actual ${actual[status] ?? 0}`);
+		const actualValue = actual[status] ?? 0;
+		const declaredValue = declared?.[status] ?? 0;
+		if (actualValue !== declaredValue) failures.push(`${label}.${status}: declared ${declaredValue}, actual ${actualValue}`);
 	}
 }
 

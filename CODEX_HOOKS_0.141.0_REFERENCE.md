@@ -1,7 +1,7 @@
 # Codex CLI Hooks — Verified Protocol Reference for **0.141.0**
 
 Scope: `codex-cli 0.141.0` (verified installed binary at
-`C:\Users\anıl\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe`, 313,418,032 bytes).
+`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`, 313,418,032 bytes).
 Primary evidence is pinned to the release tag **`rust-v0.141.0`** in `openai/codex`,
 plus the generated JSON Schemas shipped at that tag, plus direct string/config probes
 of the installed binary.

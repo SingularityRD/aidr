@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singularityrd.dev/schemas/commercial-gate-receipts.schema.json",
+  "title": "Singularity AIDR commercial hard-gate evidence receipt",
+  "description": "One evidence receipt for one hard gate of docs/production-readiness/commercial-go-evidence-registry.json. The receipts file (docs/production-readiness/commercial-gate-receipts.json) is a JSON array of these records with exactly one record per registry hard gate. A record may say \"open\" with no evidence at all; it may only say \"closed\" when it carries a named owner, an effective version and candidate binding, an immutable evidence path with a matching SHA-256, a reviewer whose role differs from the owner's, and a recorded date. The explicit string \"REQUIRED\" marks a value that a real external counterparty still has to supply; it is never a stand-in for a fact that already exists. Fabricating an owner, approver, signature, date, hash, ticket, pentest, SLA measurement, payment or approval is prohibited by registry.policy.nonWaivableClasses.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "gate_id",
+    "decision",
+    "owner_name",
+    "owner_role",
+    "evidence_path",
+    "evidence_sha256",
+    "candidate_digest",
+    "effective_version",
+    "recorded_at_utc",
+    "reviewer_name",
+    "reviewer_role",
+    "scope",
+    "limitations",
+    "external_inputs"
+  ],
+  "properties": {
+    "gate_id": {
+      "description": "The registry hard gate this receipt answers. This enum mirrors registry.hardGates[].id verbatim and is re-checked against the registry at verification time.",
+      "enum": [
+        "COM-001",
+        "COM-002",
+        "COM-003",
+        "COM-004",
+        "COM-005",
+        "COM-010",
+        "COM-011",
+        "COM-012",
+        "COM-013",
+        "SEC-EXT-001",
+        "POV-001",
+        "INV-001",
+        "CLM-001"
+      ]
+    },
+    "decision": {
+      "description": "Receipt decision for this gate. It must equal registry.hardGates[].status for the same gate; this enum mirrors registry.policy.acceptedStatuses verbatim.",
+      "enum": ["open", "in-review", "blocked", "closed", "expired"]
+    },
+    "owner_name": {
+      "description": "Named accountable owner. \"REQUIRED\" until a real person accepts the gate; mirrors policy.closedRequires \"named owner\".",
+      "type": "string",
+      "minLength": 1
+    },
+    "owner_role": {
+      "description": "Owner role copied verbatim from the registry hardGates[].ownerRole. It is never \"REQUIRED\" because the registry already fixes the role.",
+      "type": "string",
+      "minLength": 1,
+      "not": { "const": "REQUIRED" }
+    },
+    "evidence_path": {
+      "description": "Repository-relative path of the immutable evidence artefact. null while the gate is open; mirrors policy.closedRequires \"immutable evidence path and SHA-256\".",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "not": { "const": "REQUIRED" }
+    },
+    "evidence_sha256": {
+      "description": "Lowercase SHA-256 of the exact bytes at evidence_path. null while the gate is open; mirrors policy.closedRequires \"immutable evidence path and SHA-256\".",
+      "oneOf": [{ "const": null }, { "$ref": "#/$defs/sha256" }]
+    },
+    "candidate_digest": {
+      "description": "Release-candidate binding: the SHA-256 of the current release-inventory.json, or null while no candidate is bound, or \"unknown\" when no release inventory exists on disk. \"unknown\" can never close a gate.",
+      "oneOf": [{ "const": null }, { "const": "unknown" }, { "$ref": "#/$defs/sha256" }]
+    },
+    "effective_version": {
+      "description": "Release Candidate commit/version or effective version the evidence is bound to. null while no candidate exists; mirrors policy.closedRequires \"Release Candidate or effective version\".",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "not": { "const": "REQUIRED" }
+    },
+    "recorded_at_utc": {
+      "description": "When the evidence was recorded, RFC3339 UTC with milliseconds. null until a real record exists: a date is never invented; mirrors policy.closedRequires \"recorded date\".",
+      "oneOf": [{ "const": null }, { "$ref": "#/$defs/utc_timestamp" }]
+    },
+    "reviewer_name": {
+      "description": "\"REQUIRED\" until a reviewer or approver other than the owner accepts the evidence; mirrors policy.closedRequires \"reviewer or approver\".",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "reviewer_role": {
+      "description": "\"REQUIRED\" until a reviewer is assigned. Must differ from owner_role before the gate can close (checked at verification time).",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "scope": {
+      "description": "What this receipt does and does not cover, including the evidence gap. A real statement, never \"REQUIRED\".",
+      "type": "string",
+      "minLength": 1,
+      "not": { "const": "REQUIRED" }
+    },
+    "limitations": {
+      "description": "Known limits of this receipt. Non-empty even when the gate is open: an empty list would hide the gap.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "external_inputs": {
+      "description": "The concrete real-world inputs this gate depends on (named people, live systems, signed artefacts). These cannot be produced from this repository and are never fabricated.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["decision"],
+        "properties": { "decision": { "const": "closed" } }
+      },
+      "then": {
+        "description": "Mirrors registry.policy.closedRequires exactly: named owner; Release Candidate or effective version; immutable evidence path and SHA-256; reviewer or approver; recorded date. A closed receipt can never carry the \"REQUIRED\" sentinel, a null evidence path, a null/mismatched hash or an unbound candidate digest.",
+        "required": [
+          "owner_name",
+          "evidence_path",
+          "evidence_sha256",
+          "candidate_digest",
+          "effective_version",
+          "recorded_at_utc",
+          "reviewer_name",
+          "reviewer_role"
+        ],
+        "properties": {
+          "owner_name": {
+            "type": "string",
+            "minLength": 1,
+            "not": { "const": "REQUIRED" }
+          },
+          "evidence_path": {
+            "type": "string",
+            "minLength": 1,
+            "not": { "const": "REQUIRED" }
+          },
+          "evidence_sha256": { "$ref": "#/$defs/sha256" },
+          "candidate_digest": { "$ref": "#/$defs/sha256" },
+          "effective_version": {
+            "type": "string",
+            "minLength": 1,
+            "not": { "const": "REQUIRED" }
+          },
+          "recorded_at_utc": { "$ref": "#/$defs/utc_timestamp" },
+          "reviewer_name": {
+            "type": "string",
+            "minLength": 1,
+            "not": { "const": "REQUIRED" }
+          },
+          "reviewer_role": {
+            "type": "string",
+            "minLength": 1,
+            "not": { "const": "REQUIRED" }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    }
+  }
+}

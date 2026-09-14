@@ -9,9 +9,32 @@ const HEX_256 = /^[a-f0-9]{64}$/i;
 const ACTIONS = new Set(["block", "approval", "allow", "unsupported", "timeout", "error"]);
 const PARTITIONS = new Set(["development", "holdout"]);
 const PHASES = new Set(["cold_local", "warm_local", "remote_reputation", "policy_refresh", "output_inspection"]);
+// The three dimensions a corpus must declare against the sold scope. The corpus scope field and
+// the per-case field are named separately because they deliberately differ in this schema.
+const SCOPE_DIMENSIONS = [
+	{ dimension: "attack_family", scopeField: "required_attack_families", caseField: "family", label: "attack family" },
+	{ dimension: "connector", scopeField: "required_connectors", caseField: "connector", label: "connector" },
+	{ dimension: "surface", scopeField: "required_surfaces", caseField: "surface", label: "surface" },
+];
+const SCOPE_POSTURES = new Set(["enforce", "observe", "unsupported"]);
+// Exactly one of these may appear on a case. They name the case it was derived from.
+const DERIVATION_FIELDS = ["derived_from_case_id", "development_derived_from"];
+const RESOURCE_FIELDS = ["cpu_percent", "rss_mb"];
 
 function fail(message) {
 	throw new Error(message);
+}
+
+// Holdout-contamination failures carry a stable reason token and the offending subject so a
+// reader (or a CI job) can tell exactly which guard refused the corpus.
+function guardFail(reason, subject, detail) {
+	fail(`holdout guard failed [${reason}] ${subject}: ${detail}`);
+}
+
+// Sold-scope failures use the same shape as the holdout guard: a stable reason token, the
+// dimension item that is missing or short, and the requirement it fails.
+function scopeFail(reason, subject, detail) {
+	fail(`sold scope check failed [${reason}] ${subject}: ${detail}`);
 }
 
 function object(value, label) {
@@ -49,6 +72,23 @@ function finiteNonnegative(value, label) {
 	return value;
 }
 
+function positiveInteger(value, label) {
+	if (!Number.isSafeInteger(value) || value < 1) fail(`${label} must be a positive integer`);
+	return value;
+}
+
+// Resource fields are optional per measurement. Absence is recorded as unmeasured, never as zero.
+function optionalNonnegative(value, label) {
+	if (value === undefined || value === null) return null;
+	return finiteNonnegative(value, label);
+}
+
+// Case content is compared in a normalized form so line-ending or surrounding-whitespace
+// differences cannot hide a holdout case that is a copy of a development case.
+function normalizeContent(value) {
+	return value.replace(/\r\n?/g, "\n").trim();
+}
+
 function percentile(values, percentileValue) {
 	if (values.length === 0) return null;
 	const sorted = [...values].sort((a, b) => a - b);
@@ -64,6 +104,49 @@ function stats(values) {
 	};
 }
 
+// No value is invented for an unmeasured statistic: the count is 0 and every statistic is null.
+function resourceStats(values) {
+	let peak = null;
+	for (const value of values) if (peak === null || value > peak) peak = value;
+	return { measured: values.length > 0, observations: values.length, p50: percentile(values, 50), p95: percentile(values, 95), peak };
+}
+
+function resourceRollup(rows) {
+	const values = { cpu_percent: [], rss_mb: [] };
+	for (const row of rows) for (const field of RESOURCE_FIELDS) if (typeof row[field] === "number") values[field].push(row[field]);
+	return Object.fromEntries(RESOURCE_FIELDS.map((field) => [field, resourceStats(values[field])]));
+}
+
+function declaredPartitionTrials(value, label) {
+	object(value, label);
+	for (const key of Object.keys(value)) if (!PARTITIONS.has(key)) fail(`${label}.${key} is not a declared partition`);
+	const trials = {};
+	for (const partition of PARTITIONS) {
+		if (!Number.isSafeInteger(value[partition]) || value[partition] < 1) fail(`${label}.${partition} must be a positive integer`);
+		trials[partition] = value[partition];
+	}
+	return trials;
+}
+
+function caseContentSha(entry) {
+	const id = entry.case_id;
+	const declared = assertSha(entry.content_sha256, `content_sha256 for ${id}`);
+	if (entry.content === undefined) return declared;
+	if (typeof entry.content !== "string" || !entry.content.trim()) fail(`content for ${id} must be a nonempty string`);
+	const recomputed = digest(Buffer.from(normalizeContent(entry.content), "utf8"));
+	if (recomputed !== declared)
+		guardFail("content_sha256_mismatch", `case ${id}`, `declared content_sha256 ${declared} does not match the normalized content digest ${recomputed}`);
+	return declared;
+}
+
+function derivationReference(entry) {
+	const id = entry.case_id;
+	const declared = DERIVATION_FIELDS.filter((field) => entry[field] !== undefined && entry[field] !== null);
+	if (declared.length === 0) return null;
+	if (declared.length > 1) guardFail("duplicate_derivation_field", `case ${id}`, `declares both ${declared.join(" and ")}; use exactly one derivation reference`);
+	return safeId(entry[declared[0]], `${declared[0]} for ${id}`);
+}
+
 function wilson(successes, total) {
 	if (total === 0) return null;
 	const z = 1.959963984540054;
@@ -74,7 +157,10 @@ function wilson(successes, total) {
 	return { low: Math.max(0, center - halfWidth), high: Math.min(1, center + halfWidth), method: "Wilson 95%" };
 }
 
-function validateCorpus(corpus) {
+// Structural validation never looks at cases, so the committed scaffold in
+// scripts/benchmarks/corpus.template.json can be proven structurally valid - and checked against
+// the sold scope - before an independent evaluator has authored a single case.
+export function validateCorpusStructure(corpus) {
 	object(corpus, "corpus");
 	if (corpus.schema_version !== 1) fail("unsupported corpus schema_version");
 	nonempty(corpus.corpus_id, "corpus_id");
@@ -88,23 +174,187 @@ function validateCorpus(corpus) {
 		const values = scope[field].map((value) => nonempty(value, `scope.${field} entry`));
 		if (new Set(values).size !== values.length) fail(`scope.${field} contains duplicates`);
 	}
+	if (!Array.isArray(corpus.cases)) fail("corpus.cases must be an array");
+	return scope;
+}
+
+function validateCorpus(corpus) {
+	const scope = validateCorpusStructure(corpus);
 	if (!Array.isArray(corpus.cases) || corpus.cases.length === 0) fail("corpus.cases must be nonempty");
+	const declaredTrials = corpus.trials_per_case_by_partition === undefined ? null : declaredPartitionTrials(corpus.trials_per_case_by_partition, "corpus.trials_per_case_by_partition");
 	const cases = new Map();
+	const contentShaById = new Map();
+	const contentOwner = new Map();
+	const derivedById = new Map();
 	for (const entry of corpus.cases) {
 		object(entry, "corpus case");
 		const id = safeId(entry.case_id, "case_id");
-		if (cases.has(id)) fail(`duplicate case_id: ${id}`);
+		if (cases.has(id)) {
+			const existing = cases.get(id);
+			if (existing.partition !== entry.partition)
+				guardFail("case_id_in_multiple_partitions", `case ${id}`, `the same case_id is declared in partition ${existing.partition} and partition ${entry.partition}`);
+			fail(`duplicate case_id: ${id}`);
+		}
 		if (!PARTITIONS.has(entry.partition)) fail(`invalid partition for ${id}`);
 		if (!(["malicious", "benign"].includes(entry.oracle))) fail(`invalid oracle for ${id}`);
 		nonempty(entry.family, `family for ${id}`);
 		nonempty(entry.connector, `connector for ${id}`);
 		nonempty(entry.surface, `surface for ${id}`);
+		const contentSha = caseContentSha(entry);
+		const owner = contentOwner.get(contentSha);
+		if (!owner) contentOwner.set(contentSha, { case_id: id, partition: entry.partition });
+		else if (owner.partition !== entry.partition)
+			guardFail("duplicate_case_content", `case ${id}`, `normalized content is identical to case ${owner.case_id} in partition ${owner.partition}`);
+		contentShaById.set(id, contentSha);
+		derivedById.set(id, derivationReference(entry));
 		cases.set(id, entry);
 	}
-	return cases;
+	// Recompute overlap and derivation from the raw case list so the reported gates stay honest
+	// even if a rejection above is ever relaxed.
+	const contamination = { cross_partition_case_id: [], cross_partition_content: [], cross_partition_derivation: [] };
+	const seenIds = new Map();
+	const seenContent = new Map();
+	for (const entry of corpus.cases) {
+		const id = entry.case_id;
+		if (seenIds.has(id) && seenIds.get(id) !== entry.partition) contamination.cross_partition_case_id.push(id);
+		if (!seenIds.has(id)) seenIds.set(id, entry.partition);
+		const contentSha = contentShaById.get(id);
+		if (contentSha === undefined) continue;
+		const owner = seenContent.get(contentSha);
+		if (owner === undefined) seenContent.set(contentSha, { partition: entry.partition });
+		else if (owner.partition !== entry.partition) contamination.cross_partition_content.push(id);
+	}
+	for (const [id, reference] of derivedById) {
+		if (reference === null) continue;
+		if (reference === id) guardFail("self_derivation_reference", `case ${id}`, "a case cannot be derived from itself");
+		const source = cases.get(reference);
+		if (!source) guardFail("unknown_derivation_reference", `case ${id}`, `references undeclared case ${reference}`);
+		if (source.partition === cases.get(id).partition) continue;
+		contamination.cross_partition_derivation.push(id);
+		guardFail("cross_partition_derivation", `case ${id}`, `partition ${cases.get(id).partition} derives from case ${reference} in partition ${source.partition}`);
+	}
+	const holdout = [...cases.values()].filter((entry) => entry.partition === "holdout");
+	if (holdout.length === 0) guardFail("holdout_partition_empty", "partition holdout", "the corpus declares no holdout case, so no blind partition exists");
+	for (const oracle of ["malicious", "benign"])
+		if (!holdout.some((entry) => entry.oracle === oracle)) guardFail("holdout_single_oracle_class", "partition holdout", `the holdout contains no ${oracle} case`);
+	return {
+		cases,
+		declaredTrials,
+		contamination,
+		holdoutBlind: {
+			holdout_nonempty: holdout.length > 0,
+			holdout_both_oracles: ["malicious", "benign"].every((oracle) => holdout.some((entry) => entry.oracle === oracle)),
+		},
+	};
 }
 
-function validateObservations(observations, cases) {
+// The sold scope is the machine-readable denominator of what the product actually sells:
+// scripts/benchmarks/sold-scope.json. Loading it validates its own shape so a malformed
+// denominator fails before it can be used to accept a corpus.
+export function validateSoldScope(value) {
+	object(value, "sold scope");
+	if (value.schema_version !== 1) fail("unsupported sold scope schema_version");
+	const scopeId = nonempty(value.scope_id, "sold scope scope_id");
+	const idsOf = (entries, field) => {
+		if (!Array.isArray(entries) || entries.length === 0) fail(`sold scope ${field} must be a nonempty array`);
+		const ids = entries.map((entry) => {
+			object(entry, `sold scope ${field} entry`);
+			nonempty(entry.source, `sold scope ${field} entry source`);
+			return nonempty(entry.id, `sold scope ${field} entry id`);
+		});
+		if (new Set(ids).size !== ids.length) fail(`sold scope ${field} contains duplicate ids`);
+		return ids;
+	};
+	const requiredAttackFamilies = idsOf(value.attack_families, "attack_families");
+	const requiredConnectors = idsOf(value.connectors, "connectors");
+	const surfaceIds = idsOf(value.surfaces, "surfaces");
+	for (const entry of value.surfaces) {
+		if (typeof entry.required !== "boolean") fail(`sold scope surface ${entry.id} must declare a boolean required`);
+		if (!SCOPE_POSTURES.has(entry.posture)) fail(`sold scope surface ${entry.id} has an unknown posture`);
+	}
+	const requiredSurfaces = value.surfaces.filter((entry) => entry.required).map((entry) => entry.id);
+	if (requiredSurfaces.length === 0) fail("sold scope declares no required surface");
+	const declared = object(value.required_scenarios_per_family, "sold scope required_scenarios_per_family");
+	const minimums = {
+		malicious: positiveInteger(declared.minimum_malicious_cases, "sold scope minimum_malicious_cases"),
+		benign: positiveInteger(declared.minimum_benign_twins, "sold scope minimum_benign_twins"),
+	};
+	const overrides = declared.overrides === undefined ? {} : object(declared.overrides, "sold scope required_scenarios_per_family.overrides");
+	const known = {
+		attack_family: new Set(requiredAttackFamilies),
+		connector: new Set(requiredConnectors),
+		surface: new Set(surfaceIds),
+	};
+	for (const [key, override] of Object.entries(overrides)) {
+		const separator = key.indexOf(":");
+		const dimension = separator === -1 ? "" : key.slice(0, separator);
+		const id = separator === -1 ? "" : key.slice(separator + 1);
+		if (!known[dimension] || !known[dimension].has(id)) fail(`sold scope override ${key} does not name a declared ${dimension || "item"}`);
+		object(override, `sold scope override ${key}`);
+		if (override.minimum_malicious_cases !== undefined) positiveInteger(override.minimum_malicious_cases, `sold scope override ${key} minimum_malicious_cases`);
+		if (override.minimum_benign_twins !== undefined) positiveInteger(override.minimum_benign_twins, `sold scope override ${key} minimum_benign_twins`);
+	}
+	if (!Array.isArray(value.out_of_scope_with_reason)) fail("sold scope out_of_scope_with_reason must be an array");
+	for (const entry of value.out_of_scope_with_reason) {
+		object(entry, "sold scope out_of_scope_with_reason entry");
+		nonempty(entry.id, "sold scope out_of_scope_with_reason entry id");
+		nonempty(entry.dimension, `sold scope out_of_scope_with_reason dimension for ${entry.id}`);
+		nonempty(entry.reason, `sold scope out_of_scope_with_reason reason for ${entry.id}`);
+		nonempty(entry.source, `sold scope out_of_scope_with_reason source for ${entry.id}`);
+	}
+	return { scopeId, requiredAttackFamilies, requiredConnectors, requiredSurfaces, minimums, overrides };
+}
+
+function scopeMinimums(soldScope, dimension, id) {
+	const override = soldScope.overrides[`${dimension}:${id}`] ?? {};
+	return {
+		malicious: override.minimum_malicious_cases ?? soldScope.minimums.malicious,
+		benign: override.minimum_benign_twins ?? soldScope.minimums.benign,
+	};
+}
+
+// A corpus is in scope only when it declares exactly the sold dimensions - no omissions so a
+// family cannot be quietly dropped, no extras so the corpus cannot claim credit for a dimension
+// the product does not sell - and carries the declared minimum of malicious cases plus matching
+// benign twins for every item. The first failure is fatal and names the item.
+function checkSoldScopeCoverage(scope, cases, soldScope) {
+	const declared = {
+		attack_family: scope.required_attack_families,
+		connector: scope.required_connectors,
+		surface: scope.required_surfaces,
+	};
+	const required = {
+		attack_family: soldScope.requiredAttackFamilies,
+		connector: soldScope.requiredConnectors,
+		surface: soldScope.requiredSurfaces,
+	};
+	for (const { dimension, scopeField, label } of SCOPE_DIMENSIONS) {
+		for (const id of required[dimension]) if (!declared[dimension].includes(id))
+			scopeFail(`scope_${dimension}_missing`, `${label} "${id}"`, `the sold scope "${soldScope.scopeId}" requires it but corpus.scope.${scopeField} does not declare it`);
+		for (const id of declared[dimension]) if (!required[dimension].includes(id))
+			scopeFail(`scope_${dimension}_extra`, `${label} "${id}"`, `corpus.scope.${scopeField} declares it but the sold scope does not`);
+	}
+	for (const { dimension, caseField, label } of SCOPE_DIMENSIONS) {
+		for (const id of required[dimension]) {
+			const minimums = scopeMinimums(soldScope, dimension, id);
+			const malicious = cases.filter((entry) => entry !== null && typeof entry === "object" && entry[caseField] === id && entry.oracle === "malicious").length;
+			if (malicious < minimums.malicious)
+				scopeFail(`scope_${dimension}_minimum_not_met`, `${label} "${id}"`, `the corpus declares ${malicious} malicious case(s) but the sold scope requires at least ${minimums.malicious}`);
+			const benign = cases.filter((entry) => entry !== null && typeof entry === "object" && entry[caseField] === id && entry.oracle === "benign").length;
+			if (benign < minimums.benign)
+				scopeFail(`scope_${dimension}_benign_twin_missing`, `${label} "${id}"`, `the corpus declares ${benign} benign twin(s) but the sold scope requires at least ${minimums.benign}`);
+		}
+	}
+}
+
+// soldScope is the validated form returned by validateSoldScope, never the raw JSON.
+export function assertSoldScopeCoverage(corpus, soldScope) {
+	const scope = validateCorpusStructure(corpus);
+	checkSoldScopeCoverage(scope, corpus.cases, soldScope);
+	return scope;
+}
+
+function validateObservations(observations, cases, declaredTrials) {
 	object(observations, "observations");
 	if (observations.schema_version !== 1) fail("unsupported observations schema_version");
 	nonempty(observations.workload_id, "workload_id");
@@ -112,6 +362,19 @@ function validateObservations(observations, cases) {
 	for (const field of ["environment_id", "os", "hardware", "runtime", "region", "concurrency", "workload_description"])
 		nonempty(environment[field], `environment.${field}`);
 	if (!Number.isSafeInteger(observations.trials_per_case) || observations.trials_per_case < 1) fail("trials_per_case must be a positive integer");
+	const trialsByPartition = observations.trials_per_case_by_partition === undefined
+		? { development: observations.trials_per_case, holdout: observations.trials_per_case }
+		: declaredPartitionTrials(observations.trials_per_case_by_partition, "observations.trials_per_case_by_partition");
+	if (trialsByPartition.development !== trialsByPartition.holdout && declaredTrials === null)
+		guardFail("undeclared_partition_trial_difference", "partition trials", `observations use development=${trialsByPartition.development} and holdout=${trialsByPartition.holdout} trials but the corpus does not declare trials_per_case_by_partition`);
+	let partitionTrialsDeclared = trialsByPartition.development === trialsByPartition.holdout;
+	if (declaredTrials !== null) {
+		partitionTrialsDeclared = true;
+		for (const partition of PARTITIONS) if (declaredTrials[partition] !== trialsByPartition[partition]) {
+			partitionTrialsDeclared = false;
+			guardFail("declared_partition_trials_mismatch", `partition ${partition}`, `the corpus declares ${declaredTrials[partition]} trials but observations use ${trialsByPartition[partition]}`);
+		}
+	}
 	if (!Array.isArray(observations.products) || observations.products.length === 0) fail("products must be nonempty");
 	const products = new Map();
 	for (const product of observations.products) {
@@ -131,20 +394,33 @@ function validateObservations(observations, cases) {
 		const caseId = safeId(row.case_id, "measurement.case_id");
 		const productId = safeId(row.product_id, "measurement.product_id");
 		if (!cases.has(caseId) || !products.has(productId)) fail(`unknown case/product: ${caseId}/${productId}`);
-		if (!Number.isSafeInteger(row.trial) || row.trial < 1 || row.trial > observations.trials_per_case) fail(`invalid trial for ${caseId}/${productId}`);
+		if (!Number.isSafeInteger(row.trial) || row.trial < 1 || row.trial > trialsByPartition[cases.get(caseId).partition]) fail(`invalid trial for ${caseId}/${productId}`);
 		if (!ACTIONS.has(row.action)) fail(`invalid action for ${caseId}/${productId}`);
 		if (!PHASES.has(row.phase)) fail(`invalid phase for ${caseId}/${productId}`);
 		if (row.latency_ms !== null) finiteNonnegative(row.latency_ms, `latency_ms for ${caseId}/${productId}`);
 		if (["block", "approval", "allow"].includes(row.action) && row.latency_ms === null) fail(`missing decision latency for ${caseId}/${productId}`);
 		if (cases.get(caseId).oracle === "malicious" && ["block", "approval", "allow"].includes(row.action) && typeof row.side_effect_occurred !== "boolean")
 			fail(`side_effect_occurred must be observed for ${caseId}/${productId}`);
+		optionalNonnegative(row.cpu_percent, `cpu_percent for ${caseId}/${productId}`);
+		optionalNonnegative(row.rss_mb, `rss_mb for ${caseId}/${productId}`);
 		assertSha(row.raw_evidence_sha256, `raw_evidence_sha256 for ${caseId}/${productId}`);
 		nonempty(row.raw_evidence_file, `raw_evidence_file for ${caseId}/${productId}`);
 		const key = `${caseId}\u0000${productId}\u0000${row.trial}`;
 		if (records.has(key)) fail(`duplicate measurement: ${caseId}/${productId}/${row.trial}`);
 		records.set(key, row);
 	}
-	return { products, candidateId, records };
+	return { products, candidateId, records, trialsByPartition, partitionTrialsDeclared };
+}
+
+// A resource gate is true only when every completed candidate decision was measured for both fields.
+function candidateResourceMeasured(observations, candidateId) {
+	let decisions = 0;
+	for (const row of observations.measurements) {
+		if (row.product_id !== candidateId || !["block", "approval", "allow"].includes(row.action)) continue;
+		decisions += 1;
+		if (RESOURCE_FIELDS.some((field) => typeof row[field] !== "number")) return false;
+	}
+	return decisions > 0;
 }
 
 function verifyEvidenceFiles(observations, observationsPath) {
@@ -192,7 +468,10 @@ function summarizeRows(rows, caseMap) {
 		false_approvals: 0, unsupported: 0, timeout: 0, error: 0, missing: 0,
 	};
 	const latency = new Map();
-	for (const { case_id: caseId, action, side_effect_occurred: effect, phase, latency_ms: ms } of rows) {
+	const resources = new Map();
+	const decisionResources = [];
+	for (const row of rows) {
+		const { case_id: caseId, action, side_effect_occurred: effect, phase, latency_ms: ms } = row;
 		const entry = caseMap.get(caseId);
 		counts[entry.oracle] += 1;
 		if (entry.oracle === "malicious") {
@@ -210,6 +489,9 @@ function summarizeRows(rows, caseMap) {
 		if (["block", "approval", "allow"].includes(action)) {
 			if (!latency.has(phase)) latency.set(phase, []);
 			latency.get(phase).push(ms);
+			if (!resources.has(phase)) resources.set(phase, []);
+			resources.get(phase).push(row);
+			decisionResources.push(row);
 		}
 	}
 	return {
@@ -227,12 +509,18 @@ function summarizeRows(rows, caseMap) {
 			benign_false_approval: wilson(counts.false_approvals, counts.benign),
 		},
 		latency_by_phase: Object.fromEntries([...latency].sort(([a], [b]) => a.localeCompare(b)).map(([phase, values]) => [phase, stats(values)])),
+		resources: resourceRollup(decisionResources),
+		resources_by_phase: Object.fromEntries([...resources].sort(([a], [b]) => a.localeCompare(b)).map(([phase, phaseRows]) => [phase, resourceRollup(phaseRows)])),
 	};
 }
 
-export function evaluateBenchmark({ corpus, observations, attestation, publicKeyPem, corpusBytes, observationBytes, observationsPath }) {
-	const cases = validateCorpus(corpus);
-	const { products, candidateId, records } = validateObservations(observations, cases);
+// soldScope is the validated sold scope from validateSoldScope, or null when no --scope-file was
+// supplied. Passing it asserts declared coverage and the per-item minimums before any report
+// exists; it never changes how an observation is scored.
+export function evaluateBenchmark({ corpus, observations, attestation, publicKeyPem, corpusBytes, observationBytes, observationsPath, soldScope = null }) {
+	if (soldScope !== null) assertSoldScopeCoverage(corpus, soldScope);
+	const { cases, declaredTrials, contamination, holdoutBlind } = validateCorpus(corpus);
+	const { products, candidateId, records, trialsByPartition, partitionTrialsDeclared } = validateObservations(observations, cases, declaredTrials);
 	const signer = verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, corpus, observations);
 	verifyEvidenceFiles(observations, observationsPath);
 	const report = {
@@ -253,17 +541,37 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		workload_id: observations.workload_id,
 		environment: Object.fromEntries(["environment_id", "os", "hardware", "runtime", "region", "concurrency", "workload_description"].map((field) => [field, observations.environment[field]])),
 		trials_per_case: observations.trials_per_case,
+		trials_per_case_by_partition: trialsByPartition,
 		attestation: signer,
 		coverage: Object.create(null),
 		limitations: [
 			"A valid signature proves control of the evaluator key and input integrity; organizational independence and oracle quality require external review.",
 			"The tool verifies raw artifact hashes but cannot independently prove protected side effects, equal test conditions, or customer deployment acceptance.",
 			"Missing, unsupported, error, and timeout observations remain in denominators and never count as prevention.",
+			"cpu_percent and rss_mb are optional per measurement; an absent value is reported as unmeasured (measured false, observations 0, null statistics) and is never reported as zero.",
+			"The holdout guard is fail-closed: a corpus with one case_id in both partitions, repeated normalized case content, a cross-partition derivation reference, an empty or single-oracle holdout, or an undeclared per-partition trial difference is rejected before any report exists.",
 		],
 	};
+	// Recorded only when a sold scope was supplied. `covered: true` means the declared coverage
+	// denominator and its per-item minimums were satisfied - it is a scope statement, not a result.
+	report.sold_scope = soldScope === null
+		? null
+		: {
+				scope_id: soldScope.scopeId,
+				required_attack_families: soldScope.requiredAttackFamilies,
+				required_connectors: soldScope.requiredConnectors,
+				required_surfaces: soldScope.requiredSurfaces,
+				minimum_malicious_cases: soldScope.minimums.malicious,
+				minimum_benign_twins: soldScope.minimums.benign,
+				covered: true,
+			};
+	if (soldScope !== null)
+		report.limitations.push(
+			"The sold-scope check proves only that the corpus declares the sold attack families, connectors and surfaces and carries the declared malicious and benign case minimums; it measures nothing and does not show that any case was detected.",
+		);
 	for (const [productId, product] of products) {
 		const rows = [];
-		for (const caseId of cases.keys()) for (let trial = 1; trial <= observations.trials_per_case; trial++) {
+		for (const [caseId, entry] of cases) for (let trial = 1; trial <= trialsByPartition[entry.partition]; trial++) {
 			rows.push(records.get(`${caseId}\u0000${productId}\u0000${trial}`) ?? { case_id: caseId, action: "missing", phase: null, latency_ms: null });
 		}
 		const byDimension = (field) => Object.fromEntries([...new Set([...cases.values()].map((c) => c[field]))].sort().map((name) => [name, summarizeRows(rows.filter((row) => cases.get(row.case_id)[field] === name), cases)]));
@@ -281,17 +589,22 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		development_and_holdout_present: report.corpus.partitions.includes("development") && report.corpus.partitions.includes("holdout"),
 		both_classes_in_each_partition: ["development", "holdout"].every((partition) => ["malicious", "benign"].every((oracle) => [...cases.values()].some((entry) => entry.partition === partition && entry.oracle === oracle))),
 		declared_scope_covered: report.scope.uncovered_attack_families.length === 0 && report.scope.uncovered_connectors.length === 0 && report.scope.uncovered_surfaces.length === 0,
+		// True means the sold-scope check ran and passed for this report; it is not a measurement.
+		sold_scope_checked: soldScope !== null,
 		competitor_in_same_record: products.size > 1,
 		complete_matrix: Object.values(report.coverage).every((p) => p.overall.counts.missing === 0),
 		candidate_1000_measured_benign_calls_per_connector: [...new Set([...cases.values()].map((entry) => entry.connector))].every((connector) => {
 			let measured = 0;
 			for (const entry of cases.values()) if (entry.connector === connector && entry.oracle === "benign")
-				for (let trial = 1; trial <= observations.trials_per_case; trial++) {
+				for (let trial = 1; trial <= trialsByPartition[entry.partition]; trial++) {
 					const action = records.get(`${entry.case_id}\u0000${candidateId}\u0000${trial}`)?.action;
 					if (["allow", "block", "approval"].includes(action)) measured += 1;
 				}
 			return measured >= 1000;
 		}),
+		holdout_partition_blind: holdoutBlind.holdout_nonempty && holdoutBlind.holdout_both_oracles && contamination.cross_partition_derivation.length === 0 && partitionTrialsDeclared,
+		holdout_no_case_overlap: contamination.cross_partition_case_id.length === 0 && contamination.cross_partition_content.length === 0,
+		resource_measured: candidateResourceMeasured(observations, candidateId),
 		candidate_id: candidateId,
 		independent_acceptance: false,
 	};
@@ -302,11 +615,15 @@ function argsFromCli(argv) {
 	const args = {};
 	for (let index = 0; index < argv.length; index += 2) {
 		const key = argv[index];
-		if (!["--corpus", "--observations", "--attestation", "--public-key", "--output"].includes(key) || !argv[index + 1] || args[key])
-			fail("usage: node scripts/benchmarks/evaluate.mjs --corpus PATH --observations PATH --attestation PATH --public-key PATH [--output PATH]");
+		if (!["--corpus", "--observations", "--attestation", "--public-key", "--scope-file", "--output"].includes(key) || !argv[index + 1] || args[key])
+			fail("usage: node scripts/benchmarks/evaluate.mjs --corpus PATH --observations PATH --attestation PATH --public-key PATH [--scope-file PATH] [--output PATH]");
 		args[key] = argv[index + 1];
 	}
-	for (const key of ["--corpus", "--observations", "--attestation", "--public-key"]) if (!args[key]) fail(`missing ${key}`);
+	if (!args["--corpus"]) fail("missing --corpus");
+	// With --scope-file the coverage verdict is reported before the signed inputs are needed, so a
+	// corpus that does not cover the sold scope fails with its real reason instead of "cases must
+	// be nonempty". Without --scope-file every flag behaves exactly as before.
+	if (!args["--scope-file"]) for (const key of ["--observations", "--attestation", "--public-key"]) if (!args[key]) fail(`missing ${key}`);
 	return args;
 }
 
@@ -314,14 +631,22 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 	try {
 		const args = argsFromCli(process.argv.slice(2));
 		const corpusPath = resolve(args["--corpus"]);
-		const observationsPath = resolve(args["--observations"]);
 		const corpus = jsonFile(corpusPath);
+		let soldScope = null;
+		if (args["--scope-file"]) {
+			soldScope = validateSoldScope(jsonFile(resolve(args["--scope-file"])).value);
+			// Coverage is asserted before anything else is read, so an empty or partial corpus
+			// fails closed naming the item it misses rather than reporting a structural error.
+			assertSoldScopeCoverage(corpus.value, soldScope);
+			for (const key of ["--observations", "--attestation", "--public-key"]) if (!args[key]) fail(`missing ${key}`);
+		}
+		const observationsPath = resolve(args["--observations"]);
 		const observations = jsonFile(observationsPath);
 		const attestation = jsonFile(resolve(args["--attestation"])).value;
 		const report = evaluateBenchmark({
 			corpus: corpus.value, observations: observations.value, attestation,
 			publicKeyPem: readFileSync(resolve(args["--public-key"]), "utf8"),
-			corpusBytes: corpus.bytes, observationBytes: observations.bytes, observationsPath,
+			corpusBytes: corpus.bytes, observationBytes: observations.bytes, observationsPath, soldScope,
 		});
 		const output = `${JSON.stringify(report, null, 2)}\n`;
 		if (args["--output"]) writeFileSync(resolve(args["--output"]), output);
