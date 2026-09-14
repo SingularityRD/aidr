@@ -4,6 +4,27 @@
  * enforcement result: every attack case needs an observed tool attempt, an
  * observed connector invocation, and an independent side-effect marker.
  *
+ * Status vocabulary, most specific first:
+ *
+ *   SCENARIO_MANIFEST_MISSING             no scenario manifest was supplied and
+ *                                        the committed default is absent, so the
+ *                                        per-host matrix could not be exercised
+ *   HOST_UNAVAILABLE                      a manifest is available but no
+ *                                        advertised host binary exists here
+ *   VERSION_PROBED                        inventory only (--probe-only): versions
+ *                                        were read, nothing was exercised
+ *   HOST_ACCEPTANCE_OPEN                  scenarios ran or failed and/or the named
+ *                                        acceptance record is incomplete
+ *   LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN  every GA host passed every local case and
+ *                                        still needs named external review
+ *   NO_GO                                 the gate decision; it is never GO while a
+ *                                        named accepted-host record is missing
+ *
+ * `--validate-only` validates a scenario manifest structure, reports every
+ * violation with a stable machine-readable code, and exits 0 for a structurally
+ * valid template. Structure validation is not host acceptance and never prints
+ * PASS; a template is never acceptance evidence.
+ *
  * Without a scenario file this command inventories installed hosts only. It
  * never converts a missing runtime, model credential, or skipped suite to PASS.
  */
@@ -14,6 +35,10 @@ import { release as osRelease, tmpdir, version as osVersion } from "node:os";
 import { delimiter, dirname, join, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** The manifest this gate expects when no --scenario-file is supplied. */
+const DEFAULT_SCENARIO_PATH = resolve(HERE, "..", "deploy", "native", "scenarios", "native-host-scenarios.json");
 
 const HOSTS = [
 	{ id: "claude", command: "claude", ga: true },
@@ -30,8 +55,31 @@ const FAULTS = new Set(["disabled_hook", "crash", "timeout"]);
 const CONDITIONS = new Set(["disabled_hook", "crash", "timeout", "offline", "restart"]);
 const SHA256 = /^[a-f0-9]{64}$/u;
 
+/** Every status a report or a host record may carry. */
+const GATE_STATUSES = ["SCENARIO_MANIFEST_MISSING", "HOST_UNAVAILABLE", "VERSION_PROBED", "HOST_ACCEPTANCE_OPEN",
+	"LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN", "NO_GO"];
+const GATE_REASONS = {
+	SCENARIO_MANIFEST_MISSING: "No scenario manifest was supplied and the committed default is absent; the per-host matrix could not be exercised.",
+	HOST_UNAVAILABLE: "No advertised host binary is installed on this machine, so no host enforcement was observed.",
+	VERSION_PROBED: "Inventory only: a version probe does not prove hook registration, tool interception, or a prevented side effect.",
+	HOST_ACCEPTANCE_OPEN: "Host scenarios or the named acceptance record are still incomplete.",
+	LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN: "Local scenarios completed; independent trace collection and named acceptance still require external review.",
+};
+
+/** A value that must come from a real host run. Never a real digest, version or name. */
+const PLACEHOLDER = /REPLACE_WITH_[A-Z0-9_]+/u;
+const OBSERVATION_SOURCES = ["stdout", "stderr", "file"];
+const ACCEPTANCE_PINNED_FIELDS = ["os_platform", "os_release", "architecture", "host_version"];
+const ACCEPTANCE_SHA256_FIELDS = ["launcher_sha256", "candidate_sha256", "policy_sha256", "install_evidence_sha256", "uninstall_evidence_sha256"];
+const ACCEPTANCE_OWNER_FIELDS = ["qa_owner", "endpoint_owner", "support_owner"];
+const ACCEPTANCE_ARRAY_FIELDS = ["unobserved_actions", "required_attack_ids"];
+const ATTACK_ID = /^[a-z0-9][a-z0-9_.-]{0,100}$/u;
+const ENV_KEY = /^[A-Z][A-Z0-9_]*$/u;
+const RESERVED_ENV_KEYS = /^(HOME|USERPROFILE|APPDATA|LOCALAPPDATA|PATH|NODE_OPTIONS)$/u;
+
 function digest(data) { return createHash("sha256").update(data).digest("hex"); }
 function bounded(value, limit = 200) { return String(value ?? "").trim().slice(0, limit); }
+function isPlaceholder(value) { return typeof value === "string" && PLACEHOLDER.test(value); }
 function interpolate(value, vars) {
 	return value.replaceAll(/\{(host_binary|workspace|home|sentinel|receipt|case_nonce)\}/g, (whole, key) => vars[key] ?? whole);
 }
@@ -90,7 +138,7 @@ function observation(spec, result, vars) {
 }
 function runCase(host, spec, index) {
 	if (!CASES.includes(spec.id)) throw new Error(`${host.id}: unsupported case ${spec.id}`);
-	if (spec.attack_id !== undefined && (typeof spec.attack_id !== "string" || !/^[a-z0-9][a-z0-9_.-]{0,100}$/u.test(spec.attack_id))) {
+	if (spec.attack_id !== undefined && (typeof spec.attack_id !== "string" || !ATTACK_ID.test(spec.attack_id))) {
 		throw new Error(`${host.id}/${spec.id}: invalid attack_id`);
 	}
 	if (!Array.isArray(spec.argv) || spec.argv[0] !== "{host_binary}" || !spec.argv.every((arg) => typeof arg === "string" && arg.length < 20_000)) {
@@ -125,7 +173,7 @@ function runCase(host, spec, index) {
 		if (spec.env !== undefined) {
 			if (!spec.env || typeof spec.env !== "object" || Array.isArray(spec.env)) throw new Error("Invalid scenario env");
 			for (const [key, value] of Object.entries(spec.env)) {
-				if (!/^[A-Z][A-Z0-9_]*$/u.test(key) || /^(HOME|USERPROFILE|APPDATA|LOCALAPPDATA|PATH|NODE_OPTIONS)$/u.test(key) || key.startsWith("AIDR_NATIVE_TEST_") ||
+				if (!ENV_KEY.test(key) || RESERVED_ENV_KEYS.test(key) || key.startsWith("AIDR_NATIVE_TEST_") ||
 					typeof value !== "string" || value.length > 2000) throw new Error("Invalid scenario environment override");
 				env[key] = interpolate(value, vars);
 			}
@@ -185,7 +233,7 @@ function acceptanceBlockers(host, config) {
 		blockers.push("MISSING_UNOBSERVED_ACTIONS_INVENTORY");
 	} else if (record.unobserved_actions.length > 0) blockers.push("UNOBSERVED_ACTIONS_REMAIN");
 	if (!Array.isArray(record.required_attack_ids) || record.required_attack_ids.length === 0 ||
-		!record.required_attack_ids.every((id) => typeof id === "string" && /^[a-z0-9][a-z0-9_.-]{0,100}$/u.test(id)) ||
+		!record.required_attack_ids.every((id) => typeof id === "string" && ATTACK_ID.test(id)) ||
 		new Set(record.required_attack_ids).size !== record.required_attack_ids.length) {
 		blockers.push("MISSING_REQUIRED_ATTACK_IDS");
 	} else for (const attackId of record.required_attack_ids) {
@@ -198,21 +246,276 @@ function acceptanceBlockers(host, config) {
 	}
 	return blockers;
 }
+
+/**
+ * Structural validation of a scenario manifest. It never throws, so a caller
+ * can list every violation at once, and every finding carries a stable
+ * machine-readable `code`.
+ *
+ * A value that must come from a real host run is written as the literal
+ * `REPLACE_WITH_*` placeholder. Inside a manifest that declares itself a
+ * template those values are reported with severity `placeholder` (a template is
+ * expected to be unfilled). Anywhere else the same value is an `error`, because
+ * an accepted manifest may not ship an invented or unfilled value.
+ */
+export function validateScenarioManifest(spec) {
+	const failures = [];
+	const template = spec?.template === true || spec?.kind === "aidr-native-host-scenario-template";
+	const push = (code, extra = {}) => {
+		failures.push({ code, severity: extra.placeholder === true && template ? "placeholder" : "error",
+			host: extra.host ?? null, case_id: extra.case_id ?? null, case_index: extra.case_index ?? null,
+			field: extra.field ?? null, path: extra.path ?? null, detail: extra.detail ?? null });
+	};
+	const checkText = (value, code, extra) => {
+		if (isPlaceholder(value)) { push("PLACEHOLDER_VALUE_UNREPLACED", { ...extra, placeholder: true, detail: value }); return true; }
+		if (typeof value !== "string" || value.trim().length === 0) { push(code, extra); return true; }
+		return false;
+	};
+	const checkObservation = (value, prefix, extra) => {
+		if (!value || typeof value !== "object" || Array.isArray(value)) { push(`${prefix}_NOT_OBJECT`, extra); return; }
+		if (typeof value.source !== "string" || !OBSERVATION_SOURCES.includes(value.source)) { push(`${prefix}_SOURCE_INVALID`, { ...extra, detail: String(value.source) }); return; }
+		if (isPlaceholder(value.contains)) push("PLACEHOLDER_VALUE_UNREPLACED", { ...extra, field: `${extra.field}.contains`, placeholder: true, detail: value.contains });
+		else if (typeof value.contains !== "string" || value.contains.length === 0 || value.contains.length > 200) push(`${prefix}_CONTAINS_INVALID`, { ...extra, field: `${extra.field}.contains` });
+		if (value.source === "file") checkText(value.path, `${prefix}_PATH_MISSING`, { ...extra, field: `${extra.field}.path` });
+	};
+	const checkAcceptance = (host, acceptance) => {
+		if (acceptance === undefined || acceptance === null) { push("ACCEPTANCE_BLOCK_MISSING", { host, field: "acceptance" }); return; }
+		if (typeof acceptance !== "object" || Array.isArray(acceptance)) { push("ACCEPTANCE_BLOCK_NOT_OBJECT", { host, field: "acceptance" }); return; }
+		for (const field of [...ACCEPTANCE_PINNED_FIELDS, ...ACCEPTANCE_SHA256_FIELDS, ...ACCEPTANCE_OWNER_FIELDS]) {
+			const path = `hosts.${host}.acceptance.${field}`;
+			if (!Object.hasOwn(acceptance, field)) { push("ACCEPTANCE_FIELD_MISSING", { host, field, path }); continue; }
+			const value = acceptance[field];
+			if (isPlaceholder(value)) { push("PLACEHOLDER_VALUE_UNREPLACED", { host, field, path, placeholder: true, detail: value }); continue; }
+			if (typeof value !== "string" || value.trim().length === 0) { push("ACCEPTANCE_FIELD_INVALID", { host, field, path, detail: String(value) }); continue; }
+			if (ACCEPTANCE_SHA256_FIELDS.includes(field) && !SHA256.test(value)) { push("ACCEPTANCE_SHA256_INVALID", { host, field, path, detail: value }); continue; }
+			if (ACCEPTANCE_OWNER_FIELDS.includes(field) && value.trim().length < 3) push("ACCEPTANCE_OWNER_INVALID", { host, field, path, detail: value });
+		}
+		for (const field of ACCEPTANCE_ARRAY_FIELDS) {
+			const path = `hosts.${host}.acceptance.${field}`;
+			if (!Object.hasOwn(acceptance, field)) { push("ACCEPTANCE_FIELD_MISSING", { host, field, path }); continue; }
+			const value = acceptance[field];
+			// An empty `unobserved_actions` list is the goal state; an empty
+			// `required_attack_ids` list proves nothing was ever attacked.
+			if (!Array.isArray(value) || (field === "required_attack_ids" && value.length === 0)) {
+				push("ACCEPTANCE_ARRAY_INVALID", { host, field, path, detail: String(value) });
+				continue;
+			}
+			const seenEntries = new Set();
+			value.forEach((entry, index) => {
+				const entryPath = `${path}[${index}]`;
+				if (isPlaceholder(entry)) { push("PLACEHOLDER_VALUE_UNREPLACED", { host, field, path: entryPath, placeholder: true, detail: entry }); return; }
+				if (typeof entry !== "string" || entry.trim().length === 0) { push("ACCEPTANCE_ARRAY_INVALID", { host, field, path: entryPath, detail: String(entry) }); return; }
+				if (field === "required_attack_ids" && !ATTACK_ID.test(entry)) { push("ACCEPTANCE_ATTACK_ID_INVALID", { host, field, path: entryPath, detail: entry }); return; }
+				if (seenEntries.has(entry)) push("ACCEPTANCE_ARRAY_DUPLICATE", { host, field, path: entryPath, detail: entry });
+				seenEntries.add(entry);
+			});
+		}
+	};
+	const checkCases = (host, cases) => {
+		if (cases === undefined || cases === null) { push("HOST_CASES_MISSING", { host, field: "cases", path: `hosts.${host}.cases` }); return; }
+		if (!Array.isArray(cases)) { push("HOST_CASES_NOT_ARRAY", { host, field: "cases", path: `hosts.${host}.cases` }); return; }
+		if (cases.length === 0) push("HOST_CASES_MISSING", { host, field: "cases", path: `hosts.${host}.cases` });
+		const seenPairs = new Set();
+		cases.forEach((entry, index) => {
+			const path = `hosts.${host}.cases[${index}]`;
+			if (!entry || typeof entry !== "object" || Array.isArray(entry)) { push("CASE_NOT_OBJECT", { host, case_index: index, path }); return; }
+			const caseId = typeof entry.id === "string" ? entry.id : null;
+			const scope = { host, case_id: caseId, case_index: index };
+			if (caseId === null) push("CASE_ID_MISSING", { ...scope, field: "id", path: `${path}.id` });
+			else if (!CASES.includes(caseId)) push("UNKNOWN_CASE_ID", { ...scope, field: "id", path: `${path}.id`, detail: caseId });
+			if (entry.attack_id !== undefined) {
+				if (isPlaceholder(entry.attack_id)) {
+					push("PLACEHOLDER_VALUE_UNREPLACED", { ...scope, field: "attack_id", path: `${path}.attack_id`, placeholder: true, detail: entry.attack_id });
+				} else if (typeof entry.attack_id !== "string" || !ATTACK_ID.test(entry.attack_id)) {
+					push("CASE_ATTACK_ID_INVALID", { ...scope, field: "attack_id", path: `${path}.attack_id`, detail: String(entry.attack_id) });
+				}
+			}
+			const pair = `${caseId ?? ""}:${entry.attack_id ?? ""}`;
+			if (caseId !== null && seenPairs.has(pair)) push("DUPLICATE_CASE_ID_ATTACK_PAIR", { ...scope, field: "attack_id", path: `${path}.attack_id`, detail: pair });
+			seenPairs.add(pair);
+			if (!Array.isArray(entry.argv)) push("CASE_ARGV_INVALID", { ...scope, field: "argv", path: `${path}.argv` });
+			else if (entry.argv[0] !== "{host_binary}") push("CASE_ARGV_MUST_START_WITH_HOST_BINARY", { ...scope, field: "argv", path: `${path}.argv`, detail: String(entry.argv[0] ?? null) });
+			else entry.argv.forEach((arg, argIndex) => {
+				const argPath = `${path}.argv[${argIndex}]`;
+				if (isPlaceholder(arg)) { push("PLACEHOLDER_VALUE_UNREPLACED", { ...scope, field: `argv[${argIndex}]`, path: argPath, placeholder: true, detail: arg }); return; }
+				if (typeof arg !== "string" || arg.length === 0 || arg.length >= 20_000) push("CASE_ARGV_ENTRY_INVALID", { ...scope, field: `argv[${argIndex}]`, path: argPath, detail: String(arg) });
+			});
+			if (entry.attempt === undefined || entry.attempt === null) push("ATTEMPT_OBSERVATION_MISSING", { ...scope, field: "attempt", path: `${path}.attempt` });
+			else checkObservation(entry.attempt, "ATTEMPT_OBSERVATION", { ...scope, field: "attempt", path: `${path}.attempt` });
+			if (entry.hook === undefined || entry.hook === null) push("HOOK_OBSERVATION_MISSING", { ...scope, field: "hook", path: `${path}.hook` });
+			else checkObservation(entry.hook, "HOOK_OBSERVATION", { ...scope, field: "hook", path: `${path}.hook` });
+			for (const [field, prefix] of [["condition", "CONDITION_OBSERVATION"], ["boundary", "BOUNDARY_OBSERVATION"]]) {
+				if (entry[field] === undefined || entry[field] === null) continue;
+				checkObservation(entry[field], prefix, { ...scope, field, path: `${path}.${field}` });
+			}
+			for (const [field, code] of [["timeout_ms", "CASE_TIMEOUT_MS_INVALID"], ["expected_exit_code", "CASE_EXPECTED_EXIT_CODE_INVALID"]]) {
+				if (entry[field] === undefined) continue;
+				if (isPlaceholder(entry[field])) { push("PLACEHOLDER_VALUE_UNREPLACED", { ...scope, field, path: `${path}.${field}`, placeholder: true, detail: entry[field] }); continue; }
+				const bounds = field === "timeout_ms" ? entry[field] >= 1000 && entry[field] <= 180_000 : true;
+				if (!Number.isInteger(entry[field]) || !bounds) push(code, { ...scope, field, path: `${path}.${field}`, detail: String(entry[field]) });
+			}
+			if (entry.files !== undefined) {
+				if (!Array.isArray(entry.files) || entry.files.length > 20) { push("CASE_FILES_INVALID", { ...scope, field: "files", path: `${path}.files` }); }
+				else entry.files.forEach((file, fileIndex) => {
+					const filePath = `${path}.files[${fileIndex}]`;
+					if (!file || typeof file !== "object" || Array.isArray(file)) { push("CASE_FILE_INVALID", { ...scope, field: `files[${fileIndex}]`, path: filePath }); return; }
+					checkText(file.path, "CASE_FILE_PATH_INVALID", { ...scope, field: `files[${fileIndex}].path`, path: `${filePath}.path` });
+					if (isPlaceholder(file.content)) push("PLACEHOLDER_VALUE_UNREPLACED", { ...scope, field: `files[${fileIndex}].content`, path: `${filePath}.content`, placeholder: true, detail: file.content });
+					else if (typeof file.content !== "string" || file.content.length > 20_000) push("CASE_FILE_CONTENT_INVALID", { ...scope, field: `files[${fileIndex}].content`, path: `${filePath}.content` });
+				});
+			}
+			if (entry.env !== undefined) {
+				if (!entry.env || typeof entry.env !== "object" || Array.isArray(entry.env)) { push("CASE_ENV_INVALID", { ...scope, field: "env", path: `${path}.env` }); }
+				else for (const [key, value] of Object.entries(entry.env)) {
+					const envPath = `${path}.env.${key}`;
+					if (!ENV_KEY.test(key) || RESERVED_ENV_KEYS.test(key) || key.startsWith("AIDR_NATIVE_TEST_")) { push("CASE_ENV_KEY_INVALID", { ...scope, field: `env.${key}`, path: envPath, detail: key }); continue; }
+					if (isPlaceholder(value)) push("PLACEHOLDER_VALUE_UNREPLACED", { ...scope, field: `env.${key}`, path: envPath, placeholder: true, detail: value });
+					else if (typeof value !== "string" || value.length > 2000) push("CASE_ENV_VALUE_INVALID", { ...scope, field: `env.${key}`, path: envPath });
+				}
+			}
+		});
+	};
+
+	if (!spec || typeof spec !== "object" || Array.isArray(spec)) push("MANIFEST_NOT_OBJECT", { field: "manifest" });
+	else {
+		if (spec.schema_version !== 1) push("SCHEMA_VERSION_UNSUPPORTED", { field: "schema_version", detail: String(spec.schema_version) });
+		if (spec.hosts === undefined || spec.hosts === null) push("HOSTS_MISSING", { field: "hosts" });
+		else if (typeof spec.hosts !== "object" || Array.isArray(spec.hosts)) push("HOSTS_NOT_OBJECT", { field: "hosts" });
+		else if (Object.keys(spec.hosts).length === 0) push("HOSTS_EMPTY", { field: "hosts" });
+		else for (const [host, config] of Object.entries(spec.hosts)) {
+			if (!HOSTS.some((definition) => definition.id === host)) { push("UNKNOWN_HOST", { host, field: "hosts", path: `hosts.${host}` }); continue; }
+			if (!config || typeof config !== "object" || Array.isArray(config)) { push("HOST_CONFIG_NOT_OBJECT", { host, field: "hosts", path: `hosts.${host}` }); continue; }
+			if (host !== "sdk") checkText(config.binary, "HOST_BINARY_MISSING", { host, field: "binary", path: `hosts.${host}.binary` });
+			if (config.version_args !== undefined) {
+				if (!Array.isArray(config.version_args) || config.version_args.length === 0) {
+					push("HOST_VERSION_ARGS_INVALID", { host, field: "version_args", path: `hosts.${host}.version_args` });
+				} else config.version_args.forEach((arg, index) => {
+					checkText(arg, "HOST_VERSION_ARGS_INVALID", { host, field: `version_args[${index}]`, path: `hosts.${host}.version_args[${index}]` });
+				});
+			}
+			checkAcceptance(host, config.acceptance);
+			checkCases(host, config.cases);
+		}
+	}
+
+	const errors = failures.filter((failure) => failure.severity === "error");
+	const placeholders = failures.filter((failure) => failure.severity === "placeholder");
+	return { ok: errors.length === 0, template, status: errors.length === 0 ? "STRUCTURE_OK" : "STRUCTURE_INVALID",
+		failures, errors, placeholders, error_count: errors.length, placeholder_count: placeholders.length };
+}
+
+/** Validate a scenario file on disk and wrap the findings in a report. */
+export function validateScenarioFile(scenarioPath) {
+	const raw = readFileSync(scenarioPath, "utf8");
+	const validation = validateScenarioManifest(JSON.parse(raw));
+	return { schema_version: 1, kind: "aidr_native_host_scenario_validation", validated_at: new Date().toISOString(),
+		path: scenarioPath, sha256: digest(raw), status: validation.status, ok: validation.ok, template: validation.template,
+		error_count: validation.error_count, placeholder_count: validation.placeholder_count, failures: validation.failures,
+		limitations: ["Structure validation is not host acceptance: no host was launched and no side effect was observed",
+			"A template is never acceptance evidence; every REPLACE_WITH_* value must be replaced from a real host run",
+			"Replacing every placeholder does not prove enforcement either: the traces still need independent collection and named review"] };
+}
+
+function missingManifestFailure(path, explicit) {
+	return { code: "SCENARIO_MANIFEST_MISSING", severity: "error", host: null, case_id: null, case_index: null, field: "scenario_file",
+		path, detail: explicit ? "the requested scenario file does not exist" : "the committed default scenario manifest does not exist" };
+}
+
+function manifestReport(path, requested) {
+	return { schema_version: 1, kind: "aidr_native_host_scenario_validation", validated_at: new Date().toISOString(),
+		path, sha256: null, status: "SCENARIO_MANIFEST_MISSING", ok: false, template: null, error_count: 1, placeholder_count: 0,
+		failures: [missingManifestFailure(path, requested)],
+		limitations: ["No scenario manifest exists at this path, so no host behaviour could be validated or exercised",
+			"deploy/native/scenarios/TEMPLATE.json is a schema template; copying it into place is not acceptance evidence"] };
+}
+
+function gateStatus(manifestPresent, probeOnly, hosts) {
+	if (!manifestPresent) return "SCENARIO_MANIFEST_MISSING";
+	if (probeOnly) return "VERSION_PROBED";
+	if (hosts.filter((host) => host.ga).every((host) => host.status === "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN")) return "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN";
+	if (hosts.some((host) => host.status === "HOST_ACCEPTANCE_OPEN" || host.status === "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN")) return "HOST_ACCEPTANCE_OPEN";
+	return "HOST_UNAVAILABLE";
+}
+
+function gateBlockers(manifestPresent, manifestPath, hosts, validation) {
+	const blockers = [];
+	if (!manifestPresent) blockers.push(`SCENARIO_MANIFEST_MISSING:${manifestPath}`);
+	if (validation?.template === true) blockers.push("SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE");
+	for (const failure of validation?.errors ?? []) blockers.push(`SCENARIO_MANIFEST_INVALID:${failure.code}${failure.field ? `:${failure.field}` : ""}`);
+	for (const host of hosts) {
+		if (host.status === "HOST_UNAVAILABLE") blockers.push(`${host.id}:HOST_UNAVAILABLE`);
+		if (host.status === "HOST_ACCEPTANCE_OPEN") blockers.push(`${host.id}:HOST_ACCEPTANCE_OPEN`);
+		if (host.status === "VERSION_PROBE_FAILED") blockers.push(`${host.id}:VERSION_PROBE_FAILED`);
+		for (const entry of host.acceptance_blockers ?? []) blockers.push(`${host.id}:${entry}`);
+	}
+	return [...new Set(blockers)];
+}
+
+function printGateSummary(report) {
+	console.log("Native host matrix v6 gate");
+	console.log(`status   ${report.status}`);
+	console.log(`gate     ${report.gate}`);
+	console.log(`vocab    ${report.status_vocabulary.join(" ")}`);
+	console.log(`manifest ${report.scenario_manifest_present ? report.scenario_manifest_path : `${report.scenario_manifest_expected_path} (absent)`}`);
+	console.log(`coverage ${report.local_scenario_coverage}`);
+	for (const host of report.hosts) console.log(`  ${host.id.padEnd(9)} ${host.status}${host.version ? ` version=${host.version}` : ""}`);
+	console.log(`blockers ${report.blockers.length}`);
+	for (const blocker of report.blockers) console.log(`  ${blocker}`);
+	console.log(`reason   ${report.gate_reason}`);
+	console.log(`note     Only a real host run plus independently collected traces and named external acceptance can raise this gate to GO.`);
+}
+
+function printValidationSummary(report) {
+	console.log("Native host scenario manifest validation");
+	console.log(`file         ${report.path}`);
+	console.log(`sha256       ${report.sha256 ?? "unavailable"}`);
+	console.log(`kind         ${report.template ? "template (never acceptance evidence)" : "acceptance manifest"}`);
+	console.log(`validity     ${report.status}`);
+	console.log(`errors       ${report.error_count}`);
+	console.log(`placeholders ${report.placeholder_count}`);
+	for (const failure of report.failures) {
+		console.log(`  ${failure.severity.padEnd(11)} ${failure.code}${failure.path ? ` ${failure.path}` : ""}${failure.detail ? ` = ${JSON.stringify(failure.detail)}` : ""}`);
+	}
+	console.log("note         Structure validation is not host acceptance: no host was launched and no side effect was observed.");
+}
+
+function writeReport(outputPath, report, manifestPath) {
+	const output = resolve(outputPath);
+	if (manifestPath && output === manifestPath) throw new Error("Refusing to overwrite scenario manifest");
+	writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
+}
+
 function parseCli(argv) {
 	const { values } = parseArgs({ args: argv, options: {
 		"scenario-file": { type: "string" }, output: { type: "string" }, "probe-only": { type: "boolean" },
+		"validate-only": { type: "boolean" },
 	}, strict: true });
 	return values;
 }
 function main(argv) {
 	const options = parseCli(argv);
-	const scenarioPath = options["scenario-file"] ? resolve(options["scenario-file"]) : null;
-	const spec = scenarioPath ? JSON.parse(readFileSync(scenarioPath, "utf8")) : { schema_version: 1, hosts: {} };
+	const requested = options["scenario-file"] ? resolve(options["scenario-file"]) : null;
+	const manifestPath = requested ?? DEFAULT_SCENARIO_PATH;
+	const manifestPresent = existsSync(manifestPath);
+
+	if (options["validate-only"] === true) {
+		const report = manifestPresent ? validateScenarioFile(manifestPath) : manifestReport(manifestPath, requested !== null);
+		if (options.output) writeReport(options.output, report, manifestPath);
+		printValidationSummary(report);
+		console.log(JSON.stringify(report, null, 2));
+		if (!report.ok) process.exitCode = 1;
+		return;
+	}
+
+	const spec = manifestPresent ? JSON.parse(readFileSync(manifestPath, "utf8")) : { schema_version: 1, hosts: {} };
 	if (spec.schema_version !== 1 || !spec.hosts || typeof spec.hosts !== "object" || Array.isArray(spec.hosts)) throw new Error("Invalid native scenario manifest");
 	for (const id of Object.keys(spec.hosts)) if (!HOSTS.some((host) => host.id === id)) throw new Error(`Unknown host: ${id}`);
+	const validation = manifestPresent ? validateScenarioManifest(spec) : null;
 	const hosts = HOSTS.map((definition) => {
 		const host = probe(definition, spec.hosts[definition.id]);
-		if (host.status === "VERSION_PROBED" && !options["probe-only"]) {
+		// Without a manifest there is nothing to exercise: probing is all this
+		// machine can honestly report, so the host record stays VERSION_PROBED.
+		if (host.status === "VERSION_PROBED" && manifestPresent && !options["probe-only"]) {
 			const cases = spec.hosts[host.id]?.cases ?? [];
 			if (!Array.isArray(cases) || new Set(cases.map((entry) => `${entry?.id}:${entry?.attack_id ?? ""}`)).size !== cases.length) throw new Error(`${host.id}: duplicate or invalid cases`);
 			host.cases = cases.map((entry, index) => runCase(host, entry, index));
@@ -224,21 +527,29 @@ function main(argv) {
 		}
 		return host;
 	});
+	const status = gateStatus(manifestPresent, options["probe-only"] === true, hosts);
 	const report = { schema_version: 1, kind: "aidr_native_host_matrix_v6", measured_at: new Date().toISOString(),
 		platform: process.platform, os_release: osRelease(), os_version: osVersion(), architecture: process.arch, node_version: process.version,
-		scenario_manifest_sha256: scenarioPath ? digest(readFileSync(scenarioPath)) : null,
+		scenario_manifest_path: manifestPresent ? manifestPath : null,
+		scenario_manifest_expected_path: manifestPath,
+		scenario_manifest_present: manifestPresent,
+		scenario_manifest_sha256: manifestPresent ? digest(readFileSync(manifestPath)) : null,
+		status_vocabulary: GATE_STATUSES,
+		status,
 		gate: "NO_GO",
+		gate_reason: GATE_REASONS[status],
+		manifest_validation: validation ? { status: validation.status, ok: validation.ok, template: validation.template,
+			error_count: validation.error_count, placeholder_count: validation.placeholder_count, failures: validation.failures } : null,
 		local_scenario_coverage: hosts.filter((host) => host.ga).every((host) => host.status === "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN") ? "COMPLETE_REVIEW_OPEN" : "INCOMPLETE",
+		blockers: gateBlockers(manifestPresent, manifestPath, hosts, validation),
 		hosts,
 		limitations: ["A version probe does not prove hook registration, tool interception, or prevented side effects",
 			"SDK acceptance requires a named embedding application and cannot be inferred from an in-process unit test",
 			"File observations and manifest owner names are operator supplied; independent collection and named acceptance require external review",
-			"One local OS run is not a supported host and operating-system version matrix"] };
-	if (options.output) {
-		const output = resolve(options.output);
-		if (scenarioPath && output === scenarioPath) throw new Error("Refusing to overwrite scenario manifest");
-		writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
-	}
+			"One local OS run is not a supported host and operating-system version matrix",
+			"SCENARIO_MANIFEST_MISSING is a repository state, not a host result: deploy/native/scenarios/TEMPLATE.json is a schema template and a template is never acceptance evidence"] };
+	if (options.output) writeReport(options.output, report, manifestPresent ? manifestPath : null);
+	printGateSummary(report);
 	console.log(JSON.stringify(report, null, 2));
 	if (!options["probe-only"] && report.gate !== "GO") process.exitCode = 1;
 }
@@ -248,4 +559,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 	catch (error) { console.error(`Native host matrix error: ${error.message}`); process.exitCode = 2; }
 }
 
-export { main };
+export { CASES, DEFAULT_SCENARIO_PATH, GATE_STATUSES, main };

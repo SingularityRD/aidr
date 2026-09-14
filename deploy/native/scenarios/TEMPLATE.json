@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "kind": "aidr-native-host-scenario-template",
+  "template": true,
+  "template_notice": "Schema template only. This file is not acceptance evidence and no host was run to produce it. Replace every REPLACE_WITH_* value with a value observed on a real host run, add one host block per host you actually exercised, then save the result outside this template (for example deploy/native/scenarios/<host>.json) and supply it with --scenario-file. See deploy/native/scenarios/README.md.",
+  "hosts": {
+    "codex": {
+      "binary": "REPLACE_WITH_HOST_BINARY_PATH",
+      "version_args": ["REPLACE_WITH_HOST_VERSION_ARG"],
+      "acceptance": {
+        "os_platform": "REPLACE_WITH_NODE_PROCESS_PLATFORM",
+        "os_release": "REPLACE_WITH_OS_RELEASE",
+        "architecture": "REPLACE_WITH_NODE_PROCESS_ARCH",
+        "host_version": "REPLACE_WITH_PROBED_HOST_VERSION",
+        "launcher_sha256": "REPLACE_WITH_LAUNCHER_SHA256",
+        "candidate_sha256": "REPLACE_WITH_CANDIDATE_ARTIFACT_SHA256",
+        "policy_sha256": "REPLACE_WITH_EFFECTIVE_POLICY_SHA256",
+        "install_evidence_sha256": "REPLACE_WITH_INSTALL_EVIDENCE_SHA256",
+        "uninstall_evidence_sha256": "REPLACE_WITH_UNINSTALL_EVIDENCE_SHA256",
+        "qa_owner": "REPLACE_WITH_QA_OWNER_NAME",
+        "endpoint_owner": "REPLACE_WITH_ENDPOINT_OWNER_NAME",
+        "support_owner": "REPLACE_WITH_SUPPORT_OWNER_NAME",
+        "unobserved_actions": ["REPLACE_WITH_UNOBSERVED_ACTION_OR_EMPTY_ARRAY"],
+        "required_attack_ids": ["REPLACE_WITH_THREAT_ID"]
+      },
+      "cases": [
+        {
+          "id": "denied_side_effect",
+          "attack_id": "REPLACE_WITH_THREAT_ID",
+          "argv": [
+            "{host_binary}",
+            "REPLACE_WITH_NON_INTERACTIVE_HOST_ARGV",
+            "REPLACE_WITH_DENIED_ACTION_PROMPT"
+          ],
+          "attempt": {
+            "source": "file",
+            "path": "{workspace}/attempt.log",
+            "contains": "REPLACE_WITH_ATTEMPT_MARKER:{case_nonce}"
+          },
+          "hook": {
+            "source": "file",
+            "path": "{receipt}",
+            "contains": "REPLACE_WITH_HOOK_RECEIPT_MARKER:{case_nonce}"
+          },
+          "files": [
+            {
+              "path": "{workspace}/fixtures/REPLACE_WITH_FIXTURE_FILE_NAME",
+              "content": "REPLACE_WITH_FIXTURE_CONTENT"
+            }
+          ],
+          "expected_exit_code": "REPLACE_WITH_OBSERVED_HOST_EXIT_CODE"
+        },
+        {
+          "id": "benign_allow",
+          "attack_id": "REPLACE_WITH_THREAT_ID",
+          "argv": [
+            "{host_binary}",
+            "REPLACE_WITH_NON_INTERACTIVE_HOST_ARGV",
+            "REPLACE_WITH_BENIGN_ACTION_PROMPT"
+          ],
+          "attempt": {
+            "source": "file",
+            "path": "{workspace}/attempt.log",
+            "contains": "REPLACE_WITH_ATTEMPT_MARKER:{case_nonce}"
+          },
+          "hook": {
+            "source": "file",
+            "path": "{receipt}",
+            "contains": "REPLACE_WITH_HOOK_RECEIPT_MARKER:{case_nonce}"
+          },
+          "expected_exit_code": "REPLACE_WITH_OBSERVED_HOST_EXIT_CODE"
+        },
+        {
+          "id": "disabled_hook",
+          "attack_id": "REPLACE_WITH_THREAT_ID",
+          "argv": [
+            "{host_binary}",
+            "REPLACE_WITH_NON_INTERACTIVE_HOST_ARGV",
+            "REPLACE_WITH_ACTION_WITH_HOOK_DISABLED"
+          ],
+          "attempt": {
+            "source": "file",
+            "path": "{workspace}/attempt.log",
+            "contains": "REPLACE_WITH_ATTEMPT_MARKER:{case_nonce}"
+          },
+          "hook": {
+            "source": "file",
+            "path": "{receipt}",
+            "contains": "REPLACE_WITH_HOOK_RECEIPT_MARKER:{case_nonce}"
+          },
+          "condition": {
+            "source": "file",
+            "path": "{workspace}/condition.log",
+            "contains": "REPLACE_WITH_DISABLED_HOOK_MARKER:{case_nonce}"
+          },
+          "boundary": {
+            "source": "file",
+            "path": "{workspace}/boundary.log",
+            "contains": "REPLACE_WITH_INDEPENDENT_BOUNDARY_MARKER:{case_nonce}"
+          },
+          "expected_exit_code": "REPLACE_WITH_OBSERVED_HOST_EXIT_CODE"
+        },
+        {
+          "id": "crash",
+          "attack_id": "REPLACE_WITH_THREAT_ID",
+          "argv": [
+            "{host_binary}",
+            "REPLACE_WITH_NON_INTERACTIVE_HOST_ARGV",
+            "REPLACE_WITH_ACTION_WITH_HOOK_CRASHED"
+          ],
+          "attempt": {
+            "source": "file",
+            "path": "{workspace}/attempt.log",
+            "contains": "REPLACE_WITH_ATTEMPT_MARKER:{case_nonce}"
+          },
+          "hook": {
+            "source": "file",
+            "path": "{receipt}",
+            "contains": "REPLACE_WITH_HOOK_RECEIPT_MARKER:{case_nonce}"
+          },
+          "condition": {
+            "source": "file",
+            "path": "{workspace}/condition.log",
+            "contains": "REPLACE_WITH_CRASHED_HOOK_MARKER:{case_nonce}"
+          },
+          "boundary": {
+            "source": "file",
+            "path": "{workspace}/boundary.log",
+            "contains": "REPLACE_WITH_INDEPENDENT_BOUNDARY_MARKER:{case_nonce}"
+          },
+          "expected_exit_code": "REPLACE_WITH_OBSERVED_HOST_EXIT_CODE"
+        },
+        {
+          "id": "timeout",
+          "attack_id": "REPLACE_WITH_THREAT_ID",
+          "argv": [
+            "{host_binary}",
+            "REPLACE_WITH_NON_INTERACTIVE_HOST_ARGV",
+            "REPLACE_WITH_ACTION_WITH_HOOK_TIMEOUT"
+          ],
+          "timeout_ms": 90000,
+          "attempt": {
+            "source": "file",
+            "path": "{workspace}/attempt.log",
+            "contains": "REPLACE_WITH_ATTEMPT_MARKER:{case_nonce}"
+          },
+          "hook": {
+            "source": "file",
+            "path": "{receipt}",
+            "contains": "REPLACE_WITH_HOOK_RECEIPT_MARKER:{case_nonce}"
+          },
+          "condition": {
+            "source": "file",
+            "path": "{workspace}/condition.log",
+            "contains": "REPLACE_WITH_TIMEOUT_MARKER:{case_nonce}"
+          },
+          "boundary": {
+            "source": "file",
+            "path": "{workspace}/boundary.log",
+            "contains": "REPLACE_WITH_INDEPENDENT_BOUNDARY_MARKER:{case_nonce}"
+          },
+          "expected_exit_code": "REPLACE_WITH_OBSERVED_HOST_EXIT_CODE"
+        },
+        {
+          "id": "offline",
+          "attack_id": "REPLACE_WITH_THREAT_ID",
+          "argv": [
+            "{host_binary}",
+            "REPLACE_WITH_NON_INTERACTIVE_HOST_ARGV",
+            "REPLACE_WITH_ACTION_WITH_REPUTATION_ENDPOINT_UNREACHABLE"
+          ],
+          "attempt": {
+            "source": "file",
+            "path": "{workspace}/attempt.log",
+            "contains": "REPLACE_WITH_ATTEMPT_MARKER:{case_nonce}"
+          },
+          "hook": {
+            "source": "file",
+            "path": "{receipt}",
+            "contains": "REPLACE_WITH_HOOK_RECEIPT_MARKER:{case_nonce}"
+          },
+          "condition": {
+            "source": "file",
+            "path": "{workspace}/condition.log",
+            "contains": "REPLACE_WITH_OFFLINE_MARKER:{case_nonce}"
+          },
+          "env": {
+            "AIDR_URL_CHECK_ENDPOINT": "REPLACE_WITH_UNREACHABLE_ENDPOINT_URL"
+          },
+          "expected_exit_code": "REPLACE_WITH_OBSERVED_HOST_EXIT_CODE"
+        },
+        {
+          "id": "restart",
+          "attack_id": "REPLACE_WITH_THREAT_ID",
+          "argv": [
+            "{host_binary}",
+            "REPLACE_WITH_NON_INTERACTIVE_HOST_ARGV",
+            "REPLACE_WITH_ACTION_AFTER_HOST_RESTART"
+          ],
+          "attempt": {
+            "source": "file",
+            "path": "{workspace}/attempt.log",
+            "contains": "REPLACE_WITH_ATTEMPT_MARKER:{case_nonce}"
+          },
+          "hook": {
+            "source": "file",
+            "path": "{receipt}",
+            "contains": "REPLACE_WITH_HOOK_RECEIPT_MARKER:{case_nonce}"
+          },
+          "condition": {
+            "source": "file",
+            "path": "{workspace}/condition.log",
+            "contains": "REPLACE_WITH_RESTART_MARKER:{case_nonce}"
+          },
+          "expected_exit_code": "REPLACE_WITH_OBSERVED_HOST_EXIT_CODE"
+        }
+      ]
+    }
+  }
+}

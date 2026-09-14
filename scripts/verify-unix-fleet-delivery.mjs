@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -84,6 +84,31 @@ try {
 	writeFileSync(join(packageRoot, "resources", "allowlists", "fixture.yaml"), "domains: []\n");
 	writeFileSync(join(packageRoot, "dist", "pre-tool-use.cjs"), `let x="";process.stdin.on("data",d=>x+=d);process.stdin.on("end",()=>console.log(JSON.stringify({hookSpecificOutput:{permissionDecision:"deny"}})));\n`);
 	for (const name of ["post-tool-use.cjs", "session-start.cjs"]) writeFileSync(join(packageRoot, "dist", name), "process.exit(0);\n");
+	// `endpoint-install.mjs` runs under the host Node even when the fleet script
+	// is executed through Git bash on Windows, so it applies the Windows rule and
+	// refuses a package without the native AMSI payload. That refusal is correct;
+	// the fixture therefore carries the real staged payload instead of the gate
+	// pretending the requirement does not exist.
+	if (process.platform === "win32") {
+		const realKoffi = join(root, "packages", "claude-code", "dist", "vendor", "koffi");
+		const archFolder = process.arch === "arm64" ? "win32_arm64" : "win32_x64";
+		for (const relative of [
+			"index.js",
+			"package.json",
+			"LICENSE.txt",
+			join("build", "koffi", archFolder, "koffi.node"),
+		]) {
+			const from = join(realKoffi, relative);
+			if (!existsSync(from)) {
+				throw new Error(
+					`the staged Windows AMSI payload is missing (${relative}); run \`pnpm build\` before the fleet gate (expected under ${realKoffi})`,
+				);
+			}
+			const to = join(packageRoot, "dist", "vendor", "koffi", relative);
+			mkdirSync(dirname(to), { recursive: true });
+			copyFileSync(from, to);
+		}
+	}
 	const artifact = join(work, "connector-v1.tgz");
 	const privateKey = join(work, "release-private.pem");
 	const publicKey = join(work, "release-public.pem");
