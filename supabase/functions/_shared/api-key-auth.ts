@@ -1,3 +1,4 @@
+import { retiredSecretActive } from "./key-rotation.ts";
 import { membershipActive, sha256 } from "./runtime-policy.ts";
 
 type QueryResult = {
@@ -71,6 +72,10 @@ function tenantIsActive(value: unknown): boolean {
 /**
  * Authenticates a hash-only API key and binds it to an active tenant membership.
  * Service-role callers must use this guard before reading tenant-scoped data.
+ *
+ * A renewed key keeps working through its retired hash only while the bounded
+ * overlap window recorded by the renew action is still open. A hash that was
+ * never recorded, or a window that has closed, is an invalid credential.
  */
 export async function authenticateTenantApiKey(
 	database: unknown,
@@ -78,12 +83,13 @@ export async function authenticateTenantApiKey(
 	now = Date.now(),
 ): Promise<TenantApiKeyAuthResult> {
 	const db = database as DatabaseClient;
+	const presentedHash = await sha256(plaintextKey);
 	let keyResult: QueryResult;
 	try {
 		keyResult = await db
 			.from("api_keys")
 			.select("user_id,tenant_id,revoked")
-			.eq("key_hash", await sha256(plaintextKey))
+			.eq("key_hash", presentedHash)
 			.maybeSingle();
 	} catch {
 		return { ok: false, status: 503, error: "authorization_unavailable" };
@@ -92,7 +98,31 @@ export async function authenticateTenantApiKey(
 	if (keyResult.error) {
 		return { ok: false, status: 503, error: "authorization_unavailable" };
 	}
-	const key = apiKeyRow(keyResult.data);
+	let key = apiKeyRow(keyResult.data);
+
+	// Only a miss on the active hash consults the retired hash. A row that
+	// matched by its active hash but is revoked is refused outright, so a
+	// revoked key can never become resolvable again through an overlap window.
+	if (!key) {
+		let previousResult: QueryResult;
+		try {
+			previousResult = await db
+				.from("api_keys")
+				.select("user_id,tenant_id,revoked,previous_hash,previous_hash_expires_at")
+				.eq("previous_hash", presentedHash)
+				.maybeSingle();
+		} catch {
+			return { ok: false, status: 503, error: "authorization_unavailable" };
+		}
+		if (previousResult.error) {
+			return { ok: false, status: 503, error: "authorization_unavailable" };
+		}
+		const retired = apiKeyRow(previousResult.data);
+		if (retired && !retired.revoked && retiredSecretActive(previousResult.data, presentedHash, now)) {
+			key = retired;
+		}
+	}
+
 	if (!key || key.revoked) {
 		return { ok: false, status: 401, error: "invalid_api_key" };
 	}

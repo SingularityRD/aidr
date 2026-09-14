@@ -8,6 +8,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { boundedOverlapHours, rotationPlan } from "../_shared/key-rotation.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
@@ -17,6 +18,12 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 const CREATE_RL_PER_MIN = Number(Deno.env.get("AIDR_ENROLLTOKEN_CREATE_RL_PER_MIN") ?? "20");
 const DEFAULT_TTL_HOURS = Number(Deno.env.get("AIDR_ENROLLTOKEN_DEFAULT_TTL_HOURS") ?? "24");
+
+// How long the retired hash stays exchangeable after a renewal. Clamped to the
+// reviewed 1 hour .. 7 day range (see _shared/key-rotation.ts), never longer
+// than the retired token's own remaining validity, and enforced again by the
+// `enrollment_tokens_rotation_window_check` database constraint.
+const RENEW_OVERLAP_HOURS = Deno.env.get("AIDR_ENROLLTOKEN_RENEW_OVERLAP_HOURS") ?? "24";
 
 function getBearerToken(req: Request): string | null {
 	const header = req.headers.get("Authorization") ?? "";
@@ -149,7 +156,7 @@ Deno.serve(async (req) => {
 		}
 
 		const action = typeof body.action === "string" ? body.action : "create";
-		if (!["create", "delete"].includes(action)) return corsJson(req, 400, { error: "invalid_action" });
+		if (!["create", "delete", "renew"].includes(action)) return corsJson(req, 400, { error: "invalid_action" });
 
 		if (action === "delete") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
@@ -171,6 +178,80 @@ Deno.serve(async (req) => {
 				detail: { id },
 			});
 			return corsJson(req, 200, { ok: true });
+		}
+
+		// renew
+		if (action === "renew") {
+			const id = typeof body.id === "string" ? body.id.trim() : "";
+			if (!id) return corsJson(req, 400, { error: "missing_id" });
+			const ok = await rateLimitCreate(supabase, `${tenantId}:${userId}`);
+			if (!ok) return corsJson(req, 429, { error: "rate_limited" });
+
+			let read = supabase
+				.from("enrollment_tokens")
+				.select("id,token_hash,expires_at,consumed_at")
+				.eq("id", id)
+				.eq("tenant_id", tenantId);
+			if (tenant.role === "member") read = read.eq("user_id", userId);
+			const { data: current, error: readError } = await read.maybeSingle();
+			if (readError) return corsJson(req, 500, { error: "db_error" });
+			if (!current?.id) return corsJson(req, 404, { error: "token_not_found_or_not_owned" });
+			// A consumed one-time token must never come back through a rotation.
+			if (current.consumed_at) return corsJson(req, 409, { error: "token_already_consumed" });
+			const currentHash = typeof current.token_hash === "string" ? current.token_hash : "";
+			if (!/^[a-f0-9]{64}$/.test(currentHash)) return corsJson(req, 500, { error: "token_hash_unavailable" });
+
+			const ttlHoursRaw = Number(body.ttl_hours ?? DEFAULT_TTL_HOURS);
+			const ttlHours = Number.isFinite(ttlHoursRaw) ? Math.max(1, Math.min(24 * 30, Math.floor(ttlHoursRaw))) : DEFAULT_TTL_HOURS;
+			const expiresAt = addHoursIso(ttlHours);
+			const plan = rotationPlan(
+				Date.now(),
+				boundedOverlapHours(RENEW_OVERLAP_HOURS),
+				typeof current.expires_at === "string" ? current.expires_at : null,
+			);
+
+			let token = "";
+			let rotated = false;
+			for (let i = 0; i < 5; i++) {
+				token = randomEnrollmentToken();
+				const tokenHash = await sha256Hex(token);
+				// Compare-and-swap on the hash that was read: a concurrent renewal
+				// loses the race instead of silently discarding a rotation.
+				const { data: changed, error } = await supabase
+					.from("enrollment_tokens")
+					.update({
+						token_hash: tokenHash,
+						expires_at: expiresAt,
+						previous_hash: plan.previousHashExpiresAt === null ? null : currentHash,
+						previous_hash_expires_at: plan.previousHashExpiresAt,
+						rotated_at: plan.rotatedAt,
+					})
+					.eq("id", id)
+					.eq("tenant_id", tenantId)
+					.eq("token_hash", currentHash)
+					.select("id");
+				if (error) continue;
+				if (!changed?.length) return corsJson(req, 409, { error: "token_rotation_conflict" });
+				rotated = true;
+				break;
+			}
+
+			if (!rotated) return corsJson(req, 500, { error: "token_rotation_failed" });
+
+			await supabase.from("admin_audit_logs").insert({
+				actor_user_id: userId,
+				tenant_id: tenantId,
+				action: "enrollment_token.renew",
+				target_user_id: userId,
+				detail: { id, ttl_hours: ttlHours, previous_secret_valid_until: plan.previousHashExpiresAt },
+			});
+
+			return corsJson(req, 200, {
+				ok: true,
+				enrollment_token: token,
+				expires_at: expiresAt,
+				previous_secret_valid_until: plan.previousHashExpiresAt,
+			});
 		}
 
 		// create

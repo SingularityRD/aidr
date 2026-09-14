@@ -3,6 +3,48 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { getSession } from "../../session";
 
+/** `m:ss` remaining until the authorization window closes. */
+function formatRemaining(remainingMs: number | null): string {
+	if (remainingMs === null) return "";
+	const total = Math.max(0, Math.ceil(remainingMs / 1000));
+	const minutes = Math.floor(total / 60);
+	const seconds = total % 60;
+	return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** The code's own deadline, or null when the service reported no usable one. */
+function usableExpiry(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const parsed = Date.parse(value);
+	return Number.isFinite(parsed) && parsed > Date.now() ? value : null;
+}
+
+/**
+ * A replacement is only usable when it is a fresh, unexpired code that differs
+ * from the one that lapsed.
+ */
+function replacementCode(data: Record<string, unknown>, previous: string): string | null {
+	const code = typeof data.user_code === "string" ? data.user_code.trim().toUpperCase() : "";
+	if (!code || !usableExpiry(data.expires_at) || code === previous) return null;
+	return code;
+}
+
+type FunctionsResponse = { data?: unknown; error?: { message?: string } | null };
+
+/**
+ * Parses the `device-verify` response. A durable success requires a usable
+ * expiry: without one the page cannot say when the code dies.
+ */
+function verifyOutcome(res: FunctionsResponse): { expiresAt: string } | { error: string } {
+	if (res.error) return { error: res.error.message ?? "Verification failed." };
+	const data = (res.data ?? {}) as Record<string, unknown>;
+	if (data.ok !== true) return { error: "Verification failed." };
+	const expiresAt = usableExpiry(data.expires_at);
+	return expiresAt
+		? { expiresAt }
+		: { error: "The authorization service did not report a usable code expiry. Retry." };
+}
+
 export function VerifyPage() {
 	const navigate = useNavigate();
 	const [params] = useSearchParams();
@@ -12,6 +54,9 @@ export function VerifyPage() {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [ok, setOk] = useState(false);
+	const [expired, setExpired] = useState(false);
+	const [expiresAt, setExpiresAt] = useState<string | null>(null);
+	const [remainingMs, setRemainingMs] = useState<number | null>(null);
 	const [hasSession, setHasSession] = useState<boolean | null>(null);
 	const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
 	const [teamId, setTeamId] = useState("");
@@ -48,6 +93,102 @@ export function VerifyPage() {
 	const trimmed = useMemo(() => userCode.trim().toUpperCase(), [userCode]);
 	const signInReturnTo = trimmed ? `/verify?code=${encodeURIComponent(trimmed)}` : "/verify";
 
+	// The authorization window is owned by the device session, not by this page.
+	// When it closes the agent can no longer finish enrollment with this code, so
+	// the success claim is withdrawn instead of being left on screen.
+	useEffect(() => {
+		if (!expiresAt) {
+			setRemainingMs(null);
+			return;
+		}
+		const deadline = Date.parse(expiresAt);
+		if (!Number.isFinite(deadline)) {
+			setRemainingMs(null);
+			return;
+		}
+		const tick = () => {
+			const left = deadline - Date.now();
+			if (left > 0) {
+				setRemainingMs(left);
+				return;
+			}
+			setRemainingMs(0);
+			setExpiresAt(null);
+			setOk(false);
+			setExpired(true);
+		};
+		tick();
+		const timer = window.setInterval(tick, 500);
+		return () => window.clearInterval(timer);
+	}, [expiresAt]);
+
+	async function authorize() {
+		setBusy(true);
+		setError(null);
+		setOk(false);
+		setExpired(false);
+		setExpiresAt(null);
+		setRemainingMs(null);
+		try {
+			const sess = await getSession();
+			if (!sess) {
+				const rt = `/verify?code=${encodeURIComponent(trimmed)}`;
+				navigate(`/login?returnTo=${encodeURIComponent(rt)}`);
+				return;
+			}
+			if (!teamId) throw new Error("Select the team receiving this device.");
+
+			const outcome = verifyOutcome(
+				await supabase.functions.invoke("device-verify", {
+					method: "POST",
+					headers: { "X-AIDR-Tenant-ID": teamId },
+					body: { user_code: trimmed },
+				}),
+			);
+			if ("error" in outcome) {
+				setError(outcome.error);
+				return;
+			}
+			setExpiresAt(outcome.expiresAt);
+			setOk(true);
+		} catch (cause) {
+			setError(
+				cause instanceof Error ? cause.message : "Device authorization is unavailable.",
+			);
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	// Re-issue mints a fresh short-lived code and drops the old one entirely, so
+	// an expired code can never be authorized again from this page.
+	async function reissue() {
+		setBusy(true);
+		setError(null);
+		setOk(false);
+		setExpired(false);
+		setExpiresAt(null);
+		setRemainingMs(null);
+		try {
+			const res = await supabase.functions.invoke("device-start", { method: "POST" });
+			if (res.error || res.data?.ok !== true) {
+				setError(res.error?.message ?? "The authorization service did not return a replacement code.");
+				return;
+			}
+			const data = (res.data ?? {}) as Record<string, unknown>;
+			const next = replacementCode(data, trimmed);
+			if (!next) {
+				setError("The authorization service did not return a usable replacement code. Retry.");
+				return;
+			}
+			setUserCode(next);
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : "A replacement code could not be issued.");
+		} finally {
+			setBusy(false);
+		}
+	}
+
 	return (
 		<div className="stack">
 			<div className="card">
@@ -81,39 +222,7 @@ export function VerifyPage() {
 						className="button"
 						type="button"
 						disabled={busy || ok || !trimmed || (hasSession === true && !teamId)}
-						onClick={async () => {
-							setBusy(true);
-							setError(null);
-							setOk(false);
-							try {
-								const sess = await getSession();
-								if (!sess) {
-									const rt = `/verify?code=${encodeURIComponent(trimmed)}`;
-									navigate(`/login?returnTo=${encodeURIComponent(rt)}`);
-									return;
-								}
-								if (!teamId) throw new Error("Select the team receiving this device.");
-
-								const res = await supabase.functions.invoke("device-verify", {
-									method: "POST",
-									headers: { "X-AIDR-Tenant-ID": teamId },
-									body: { user_code: trimmed },
-								});
-								if (res.error) {
-									setError(res.error.message);
-									return;
-								}
-								const data = (res.data ?? {}) as Record<string, unknown>;
-								if (data.ok === true) setOk(true);
-								else setError("Verification failed.");
-							} catch (cause) {
-								setError(
-									cause instanceof Error ? cause.message : "Device authorization is unavailable.",
-								);
-							} finally {
-								setBusy(false);
-							}
-						}}
+						onClick={authorize}
 					>
 						Authorize
 					</button>
@@ -133,16 +242,31 @@ export function VerifyPage() {
 						<div>
 							<b>Authorized.</b> Return to your agent. It should complete enrollment automatically.
 						</div>
+						<div className="muted small" role="status" aria-live="polite" style={{ marginTop: 8 }}>
+							Code expires in {formatRemaining(remainingMs)}
+						</div>
 					</div>
 				) : null}
 
-				{error ? (
+				{!ok && (expired || error) ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
-						<div className="mono">{error}</div>
+						<div className="mono">
+							{expired
+								? "This code expired before enrollment finished. Issue a replacement code and authorize it again."
+								: error}
+						</div>
 						<div className="muted small" style={{ marginTop: 8 }}>
 							Need access? Apply for the pilot.
 						</div>
 						<div className="row" style={{ marginTop: 12 }}>
+							<button
+								className="button button-secondary"
+								type="button"
+								disabled={busy}
+								onClick={reissue}
+							>
+								Issue a replacement code
+							</button>
 							<Link className="button button-secondary" to="/pilot">
 								Request pilot
 							</Link>

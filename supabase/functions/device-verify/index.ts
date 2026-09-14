@@ -122,5 +122,7 @@ Deno.serve(async (req) => {
 	});
 	if (auditError) return corsJson(req, 500, { error: "device_audit_unavailable" });
 
-	return corsJson(req, 200, { ok: true });
+	// The browser must be able to show when this authorization window closes:
+	// once it does, the agent can no longer complete enrollment with this code.
+	return corsJson(req, 200, { ok: true, expires_at: session.expires_at });
 });
