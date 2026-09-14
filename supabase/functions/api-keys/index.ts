@@ -9,6 +9,7 @@ import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { boundedOverlapHours, rotationPlan } from "../_shared/key-rotation.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
@@ -17,6 +18,11 @@ import { membershipActive } from "../_shared/runtime-policy.ts";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 const CREATE_RL_PER_MIN = Number(Deno.env.get("AIDR_APIKEY_CREATE_RL_PER_MIN") ?? "10");
+
+// How long the retired hash stays accepted after a renewal. Clamped to the
+// reviewed 1 hour .. 7 day range (see _shared/key-rotation.ts) and enforced
+// again by the `api_keys_rotation_window_check` database constraint.
+const RENEW_OVERLAP_HOURS = Deno.env.get("AIDR_APIKEY_RENEW_OVERLAP_HOURS") ?? "24";
 
 type RateLimitRow = { count: number | null };
 
@@ -135,7 +141,7 @@ Deno.serve(async (req) => {
 			body = {};
 		}
 		const action = typeof body.action === "string" ? body.action : "create";
-		if (!["create", "revoke"].includes(action)) return corsJson(req, 400, { error: "invalid_action" });
+		if (!["create", "revoke", "renew"].includes(action)) return corsJson(req, 400, { error: "invalid_action" });
 
 		if (action === "revoke") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
@@ -157,6 +163,68 @@ Deno.serve(async (req) => {
 				detail: { id },
 			});
 			return corsJson(req, 200, { ok: true });
+		}
+
+		// renew
+		if (action === "renew") {
+			const id = typeof body.id === "string" ? body.id.trim() : "";
+			if (!id) return corsJson(req, 400, { error: "missing_id" });
+			const ok = await rateLimitCreate(supabase, `${tenant.id}:${userId}`);
+			if (!ok) return corsJson(req, 429, { error: "rate_limited" });
+
+			let read = supabase
+				.from("api_keys")
+				.select("id,key_hash,revoked")
+				.eq("id", id)
+				.eq("tenant_id", tenant.id);
+			if (tenant.role === "member") read = read.eq("user_id", userId);
+			const { data: current, error: readError } = await read.maybeSingle();
+			if (readError) return corsJson(req, 500, { error: "db_error" });
+			if (!current?.id) return corsJson(req, 404, { error: "key_not_found_or_not_owned" });
+			// A revoked key must never come back through a rotation.
+			if (current.revoked === true) return corsJson(req, 409, { error: "key_revoked" });
+			const currentHash = typeof current.key_hash === "string" ? current.key_hash : "";
+			if (!/^[a-f0-9]{64}$/.test(currentHash)) return corsJson(req, 500, { error: "key_hash_unavailable" });
+
+			const plan = rotationPlan(Date.now(), boundedOverlapHours(RENEW_OVERLAP_HOURS), null);
+			let apiKey = "";
+			let rotated = false;
+			for (let i = 0; i < 5; i++) {
+				apiKey = randomApiKey();
+				const keyHash = await sha256Hex(apiKey);
+				// Compare-and-swap on the hash that was read: a concurrent renewal
+				// loses the race instead of silently discarding a rotation.
+				const { data: changed, error } = await supabase
+					.from("api_keys")
+					.update({
+						key_hash: keyHash,
+						previous_hash: currentHash,
+						previous_hash_expires_at: plan.previousHashExpiresAt,
+						rotated_at: plan.rotatedAt,
+					})
+					.eq("id", id)
+					.eq("tenant_id", tenant.id)
+					.eq("key_hash", currentHash)
+					.select("id");
+				if (error) continue;
+				if (!changed?.length) return corsJson(req, 409, { error: "key_rotation_conflict" });
+				rotated = true;
+				break;
+			}
+			if (!rotated) return corsJson(req, 500, { error: "key_rotation_failed" });
+
+			await supabase.from("admin_audit_logs").insert({
+				actor_user_id: userId,
+				tenant_id: tenant.id,
+				action: "api_key.renew",
+				target_user_id: userId,
+				detail: { id, previous_secret_valid_until: plan.previousHashExpiresAt },
+			});
+			return corsJson(req, 200, {
+				ok: true,
+				api_key: apiKey,
+				previous_secret_valid_until: plan.previousHashExpiresAt,
+			});
 		}
 
 		// create

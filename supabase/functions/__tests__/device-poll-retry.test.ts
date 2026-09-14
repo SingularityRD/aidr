@@ -20,6 +20,7 @@ type Token = {
 	tenant_id: string;
 	expires_at: string;
 	consumed_at: string | null;
+	previous_hash: string | null;
 };
 
 const sourcePath = join(dirname(fileURLToPath(import.meta.url)), "..", "device-poll", "index.ts");
@@ -83,7 +84,8 @@ function harness(options: {
 			rpcCalls++;
 			if (session.exchanged_at) return { data: { status: "already_exchanged_or_invalid" }, error: null };
 			tokens.push({ token_hash: args.p_token_hash!, user_id: session.user_id,
-				tenant_id: session.tenant_id, expires_at: args.p_expires_at!, consumed_at: null });
+				tenant_id: session.tenant_id, expires_at: args.p_expires_at!, consumed_at: null,
+				previous_hash: null });
 			session.exchanged_at = new Date().toISOString();
 			if (options.lostFirstRpcResponse && rpcCalls === 1) {
 				return { data: null, error: { message: "response lost after commit" } };
@@ -141,6 +143,26 @@ describe("device poll retry after an atomic issue", () => {
 		expect((await app.poll()).body.enrollment_token).toBe(issued.body.enrollment_token);
 		app.tokens[0]!.consumed_at = new Date().toISOString();
 		expect(await app.poll()).toMatchObject({ status: 409, body: { error: "already_exchanged" } });
+	});
+
+	it("rejects a device code presented after the enrollment key was rotated", async () => {
+		const app = harness();
+		const issued = await app.poll();
+		expect(issued).toMatchObject({ status: 200, body: { ok: true, status: "approved" } });
+
+		// Renewal replaces the stored hash and records the retired one for a
+		// bounded overlap. The device code can only present the retired hash, so
+		// it must not recover it: otherwise a rotation could be undone by the
+		// device that minted the token.
+		const retired = app.tokens[0]!.token_hash;
+		app.tokens[0]!.previous_hash = retired;
+		app.tokens[0]!.token_hash = "f".repeat(64);
+
+		expect(app.tokens).toHaveLength(1);
+		expect(await app.poll()).toMatchObject({ status: 409, body: { error: "already_exchanged" } });
+		// The recovery path resolves the active hash only, so the device code
+		// never sees the overlap window that the exchange path honors.
+		expect(source).not.toContain("previous_hash");
 	});
 
 	it("keeps transient lookup failures distinct from an invalid device code", async () => {

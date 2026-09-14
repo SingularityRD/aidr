@@ -8,7 +8,7 @@ const sql = await readFile(migrationPath, "utf8");
 // The cache-invalidation extension is a separate, append-only migration. Keeping
 // it out of `sql` is what lets the assertions below distinguish "the shipped
 // phase list was extended" from "the shipped migration was edited".
-const cacheMigrationPath = "supabase/migrations/20260913000005_tenant_cache_invalidation_offboarding.sql";
+const cacheMigrationPath = "supabase/migrations/20260913000006_tenant_cache_invalidation_offboarding.sql";
 const cacheSql = await readFile(cacheMigrationPath, "utf8");
 
 test("retention policy covers ten explicit data classes and excludes backups", () => {
