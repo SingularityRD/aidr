@@ -18,6 +18,12 @@ import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
 import { loadConfig, resolvePath } from "./config.js";
+import {
+	type DelegatedCredentialClaimsV1,
+	type DelegatedCredentialErrorCode,
+	type DelegatedCredentialVerificationContext,
+	verifyDelegatedCredential,
+} from "./delegated-credential.js";
 import { DetectionLegUnavailableError } from "./detection-leg.js";
 import type { DlpPolicy } from "./dlp/policy.js";
 import { scanDlpInput } from "./dlp/scanner.js";
@@ -74,6 +80,7 @@ import type {
 	Artifact,
 	CachedVerdict,
 	Config,
+	DelegationLineage,
 	Logger,
 	PackageCheckResult,
 	UrlCheckResult,
@@ -150,6 +157,22 @@ export interface ToolEvaluationRequest {
 	artifacts: Artifact[];
 }
 
+/**
+ * Delegated-credential context for a tool call.
+ *
+ * Supplying it is opt-in. A connector that holds no delegated credential keeps
+ * calling the evaluator with an unchanged context, and a call that carries no
+ * delegation context is never denied for that reason. The expected fields are
+ * the verifier's own verification context, reusing its definition of what
+ * "bound to this exact call" means instead of restating it here.
+ */
+export interface ToolDelegationContext extends DelegatedCredentialVerificationContext {
+	/** Compact `aidr-delegation+jwt` credential presented with this tool call. */
+	token: string;
+	/** Trusted Ed25519 public keys (SPKI base64 or PEM) by key id. */
+	publicKeysById: Readonly<Record<string, string>>;
+}
+
 export interface ToolEvaluationContext {
 	threatsDir: string;
 	allowlistsDir: string;
@@ -171,6 +194,11 @@ export interface ToolEvaluationContext {
 	};
 	/** Verified, local signed feed configuration; absent means no feed claim. */
 	reputationFeed?: ReputationFeedLoadOptions;
+	/**
+	 * Delegated credential authorizing this exact call. Absent means the caller
+	 * makes no delegation claim, and the call is evaluated exactly as before.
+	 */
+	delegation?: ToolDelegationContext;
 }
 
 const DETECTOR_DECISION_RANK = { allow: 0, ask: 1, deny: 2 } as const;
@@ -318,8 +346,94 @@ async function evaluateBehavioralDetector(
 	}
 }
 
-/** Do not turn a configured inspection failure into a clean allow. */
+function lineageFromClaims(claims: DelegatedCredentialClaimsV1): DelegationLineage {
+	return {
+		issuer: claims.issuer,
+		tenantId: claims.tenantId,
+		subjectUserId: claims.subjectUserId,
+		agentId: claims.agentId,
+		tool: { serverId: claims.tool.serverId, name: claims.tool.name },
+		resource: { type: claims.resource.type, id: claims.resource.id },
+		audience: claims.audience,
+		scopes: [...claims.scopes],
+		tokenId: claims.tokenId,
+		delegationDepth: claims.delegationDepth,
+		expiresAt: claims.expiresAt,
+		...(claims.parentTokenId === undefined ? {} : { parentTokenId: claims.parentTokenId }),
+	};
+}
+
+/**
+ * Verify the delegated credential bound to a call, without letting a refusal
+ * fall through to the detectors.
+ *
+ * The verifier's machine-readable code is the reason prefix
+ * (`delegation_denied:<code>`), so an operator - or a log pipeline - can tell
+ * `audience_mismatch` from `scope_insufficient` from `token_expired` from
+ * `delegation_escalation` without parsing prose. Only a credential that
+ * verified against this exact call yields lineage; unauthorized claims are
+ * never recorded as if they had been accepted.
+ */
+function evaluateDelegation(
+	delegation: ToolDelegationContext,
+	toolName: string,
+): { verdict: Verdict } | { lineage: DelegationLineage } {
+	const { token, publicKeysById, ...verificationContext } = delegation;
+	let code: DelegatedCredentialErrorCode;
+	try {
+		const result = verifyDelegatedCredential({
+			token,
+			publicKeysById,
+			context: verificationContext,
+		});
+		if (result.ok) return { lineage: lineageFromClaims(result.claims) };
+		code = result.code;
+	} catch {
+		// A verifier that throws must not become a pass.
+		code = "invalid_context";
+	}
+	const refused = detectorVerdict(
+		"deny",
+		"delegation_denied",
+		"delegation",
+		`delegation_denied:${code}`,
+	);
+	return {
+		verdict: {
+			...refused,
+			reasons: [
+				...refused.reasons,
+				`The delegated credential presented with this ${toolName} call was refused (${code}); the call was blocked instead of being forwarded.`,
+			],
+		},
+	};
+}
+
+/**
+ * Do not turn a configured inspection failure into a clean allow.
+ *
+ * A delegated credential is an authorization claim about this exact call, so it
+ * is checked before any detector: a refusal is a hard DENY that no detector
+ * outcome may soften, and it cannot be skipped merely because no other runtime
+ * detector is configured. With no delegation context this is a pass-through, so
+ * calls that carry no credential keep their previous behaviour exactly.
+ */
 async function applyRuntimeDetectors(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	baseVerdict: Verdict,
+	managedState: ManagedState,
+): Promise<Verdict> {
+	const delegationOutcome = context.delegation
+		? evaluateDelegation(context.delegation, request.toolName)
+		: null;
+	if (delegationOutcome && "verdict" in delegationOutcome) return delegationOutcome.verdict;
+
+	const verdict = await applyConfiguredDetectors(request, context, baseVerdict, managedState);
+	return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
+}
+
+async function applyConfiguredDetectors(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
 	baseVerdict: Verdict,
