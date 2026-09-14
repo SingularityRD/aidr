@@ -187,7 +187,10 @@ function preflight(suite, env) {
 		reasons.push(`one of required environments is missing: ${suite.requiredAnyEnv.join(", ")}`);
 	}
 	for (const command of suite.requiredCommands ?? []) {
-		if (!commandAvailable(command, env)) reasons.push(`required command is not runnable: ${command}`);
+		// A suite may resolve its interpreter through a placeholder; check the
+		// command that will actually run, not the literal placeholder token.
+		const resolved = command === "python" ? pythonInterpreter(env) : command;
+		if (!commandAvailable(resolved, env)) reasons.push(`required command is not runnable: ${resolved}`);
 	}
 	if (suite.kind === "external" && !String(env[suite.externalEvidenceEnv] ?? "").trim()) {
 		reasons.push(`external evidence path is missing: ${suite.externalEvidenceEnv}`);
@@ -393,9 +396,29 @@ function validateExternalEvidence(suite, env) {
 function replacePlaceholders(values, replacements) {
 	return values.map((value) =>
 		typeof value === "string"
-			? value.replaceAll("{json}", replacements.json).replaceAll("{junit}", replacements.junit).replaceAll("{tenant}", replacements.tenant).replaceAll("{runId}", replacements.runId)
+			? value
+					.replaceAll("{json}", replacements.json)
+					.replaceAll("{junit}", replacements.junit)
+					.replaceAll("{tenant}", replacements.tenant)
+					.replaceAll("{runId}", replacements.runId)
+					.replaceAll("{python}", replacements.python)
 			: value,
 	);
+}
+
+/**
+ * Interpreter for the Python suites.
+ *
+ * The bridge's runtime and test dependencies are pinned, and a bare `python`
+ * frequently resolves to an interpreter that does not have them — which
+ * surfaces as a pytest collection error rather than as a missing-prerequisite
+ * message. `AIDR_AIG_PYTHON` lets an operator point the gate at the pinned
+ * environment (for example the isolated `.release-evidence/aig-bridge-venv`);
+ * the default stays the documented command so CI behaviour is unchanged.
+ */
+function pythonInterpreter(env) {
+	const configured = String(env.AIDR_AIG_PYTHON ?? "").trim();
+	return configured || "python";
 }
 
 function spawnProcess(command, args, env, timeoutMs) {
@@ -474,7 +497,7 @@ function runSuite(suite, evidence) {
 				reasons.push(`JSON evidence missing or invalid: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		} else if (reasons.length === 0 && suite.kind === "command") {
-			const command = replacePlaceholders(suite.command, { json: reportPath, junit: junitPath, tenant: tenantId, runId });
+			const command = replacePlaceholders(suite.command, { json: reportPath, junit: junitPath, tenant: tenantId, runId, python: pythonInterpreter(env) });
 			result = spawnProcess(command[0], command.slice(1), env, timeoutMs);
 			writeLog(stdoutPath, result.stdout, env);
 			writeLog(stderrPath, result.stderr, env);
