@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const source = readFileSync(
 	join(dirname(fileURLToPath(import.meta.url)), "..", "device-start", "index.ts"),
@@ -124,19 +124,47 @@ describe("anonymous device-start ingress and rate limits", () => {
 	});
 
 	it("does not let rotating caller-controlled proxy headers evade the signed-client quota", async () => {
-		const runtime = harness();
-		const statuses: number[] = [];
-		for (let i = 0; i < 31; i++) {
-			const request = signedRequest("198.51.100.4", {
-				"x-forwarded-for": `203.0.113.${i + 1}`,
-				"cf-connecting-ip": `203.0.113.${i + 1}`,
-				"x-real-ip": `203.0.113.${i + 1}`,
-			});
-			statuses.push((await runtime.handler(request)).status);
+		// The handler's quota key is `Math.floor(Date.now() / 60000)`, so a run that
+		// straddles a minute boundary legitimately resets the window and the 31st
+		// request is a 200. Pin the clock where the handler reads it (the VM context
+		// receives this same `Date` object) so the assertion is about the quota rule
+		// and not about how fast this machine happened to run.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-09-13T00:00:30.000Z"));
+		try {
+			const runtime = harness();
+			const statuses: number[] = [];
+			for (let i = 0; i < 31; i++) {
+				const request = signedRequest("198.51.100.4", {
+					"x-forwarded-for": `203.0.113.${i + 1}`,
+					"cf-connecting-ip": `203.0.113.${i + 1}`,
+					"x-real-ip": `203.0.113.${i + 1}`,
+				});
+				statuses.push((await runtime.handler(request)).status);
+			}
+			expect(statuses.slice(0, 30)).toEqual(Array(30).fill(200));
+			expect(statuses[30]).toBe(429);
+			expect(runtime.minted).toBe(30);
+		} finally {
+			vi.useRealTimers();
 		}
-		expect(statuses.slice(0, 30)).toEqual(Array(30).fill(200));
-		expect(statuses[30]).toBe(429);
-		expect(runtime.minted).toBe(30);
+	});
+
+	it("resets the quota in the next minute window instead of locking a client out permanently", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			vi.setSystemTime(new Date("2026-09-13T00:00:30.000Z"));
+			const runtime = harness();
+			for (let i = 0; i < 30; i++) {
+				expect((await runtime.handler(signedRequest("198.51.100.4"))).status).toBe(200);
+			}
+			expect((await runtime.handler(signedRequest("198.51.100.4"))).status).toBe(429);
+
+			vi.setSystemTime(new Date("2026-09-13T00:01:30.000Z"));
+			expect((await runtime.handler(signedRequest("198.51.100.4"))).status).toBe(200);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("rejects forged ingress IPs, stale signatures and missing ingress proof", async () => {
