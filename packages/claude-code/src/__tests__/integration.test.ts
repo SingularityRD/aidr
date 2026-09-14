@@ -176,13 +176,61 @@ describe("PreToolUse hook integration", () => {
 		}
 	}, 30_000);
 
-	it("allows clean WebFetch", async () => {
-		const { stdout, code } = await runHook(PRE_TOOL_USE, {
-			tool_name: "WebFetch",
-			tool_input: { url: "https://example.com" },
-		});
-		expect(code).toBe(0);
-		expect(parseResponse(stdout)).toEqual({});
+	// A benign URL must be allowed when the reputation leg is not part of the
+	// decision. This test used to rely on the URL leg silently failing: with no
+	// reachable endpoint the leg produced no result, which the evaluator treated
+	// as clean. That is the false-clean the URL-leg fix removed, so the leg is
+	// now explicitly disabled here and the honest behaviour of an unavailable
+	// leg is asserted separately below.
+	it("allows a benign URL when the reputation leg is disabled", async () => {
+		const home = mkdtempSync(join(tmpdir(), "aidr-url-off-"));
+		try {
+			mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
+			writeFileSync(
+				join(home, ".singularity-aidr", "config.json"),
+				JSON.stringify({
+					version_check: { enabled: false },
+					url_check: { enabled: false },
+				}),
+				"utf8",
+			);
+			const { stdout, code } = await runHook(
+				PRE_TOOL_USE,
+				{ tool_name: "WebFetch", tool_input: { url: "https://example.com" } },
+				{ HOME: home, USERPROFILE: home },
+			);
+			expect(code).toBe(0);
+			expect(parseResponse(stdout)).toEqual({});
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	}, 30_000);
+
+	it("asks for review instead of allowing when the reputation leg cannot run", async () => {
+		// No endpoint is reachable. The leg did not run, so the URL was never
+		// verified and the hook must say so rather than report it clean.
+		const home = mkdtempSync(join(tmpdir(), "aidr-url-down-"));
+		try {
+			mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
+			writeFileSync(
+				join(home, ".singularity-aidr", "config.json"),
+				JSON.stringify({
+					version_check: { enabled: false },
+					// A closed port: nothing is listening, so the leg fails.
+					url_check: { endpoint: "http://127.0.0.1:9/url-check", timeout_seconds: 1 },
+				}),
+				"utf8",
+			);
+			const { stdout, code } = await runHook(
+				PRE_TOOL_USE,
+				{ tool_name: "WebFetch", tool_input: { url: "https://example.com" } },
+				{ HOME: home, USERPROFILE: home },
+			);
+			expect(code).toBe(0);
+			expect(BLOCKED).toContain(permissionDecision(parseResponse(stdout)));
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
 	}, 30_000);
 
 	it("allows unknown tool type", async () => {
