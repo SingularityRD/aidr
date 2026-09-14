@@ -190,7 +190,9 @@ export function signMcpToolManifest(params: {
 	return {
 		key_id: params.keyId,
 		manifest,
-		signature_b64: cryptoSign(null, signingPayload(manifest, params.keyId), privateKey).toString("base64"),
+		signature_b64: cryptoSign(null, signingPayload(manifest, params.keyId), privateKey).toString(
+			"base64",
+		),
 	};
 }
 
@@ -435,6 +437,14 @@ export interface McpAttestationStateStore {
 			result: T;
 		},
 	): Promise<T>;
+	/**
+	 * Read persisted state without mutating it. Read-only surfaces such as
+	 * discovery use this instead of a no-op `transact`: replay state (highest
+	 * sequence and manifest hash) must never advance because a report was
+	 * generated. Stores without it report approval state as unavailable rather
+	 * than fabricating a verdict, so a missing reader can never look approved.
+	 */
+	read?(serverId: string): Promise<McpAttestationStateV1 | null>;
 }
 
 /** Useful for embedded runtimes and tests; use FileMcpAttestationStore across restarts. */
@@ -468,6 +478,13 @@ export class MemoryMcpAttestationStore implements McpAttestationStateStore {
 		});
 		await this.queue;
 		return resultPromise;
+	}
+
+	/** Read-only accessor; it never advances replay state. */
+	async read(serverId: string): Promise<McpAttestationStateV1 | null> {
+		await this.queue;
+		const current = this.states.get(serverId);
+		return current ? structuredClone(current) : null;
 	}
 }
 
@@ -528,7 +545,11 @@ export class FileMcpAttestationStore implements McpAttestationStateStore {
 		}
 	}
 
-	private async read(serverId: string): Promise<McpAttestationStateV1 | null> {
+	/**
+	 * Read-only accessor. Corrupt or mismatched state throws, so a read-only
+	 * caller reports the state as unavailable instead of treating it as absent.
+	 */
+	async read(serverId: string): Promise<McpAttestationStateV1 | null> {
 		try {
 			const parsed = McpAttestationStateV1Schema.parse(
 				JSON.parse(await getFileContent(this.statePath(serverId))),

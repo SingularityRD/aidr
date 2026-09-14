@@ -3,9 +3,8 @@
  * Combines plugin scanning, version check, and temp cleanup into a single call.
  */
 
-import { isCommercialBuild } from "./build-flavor.js";
 import { inspectInfrastructurePolicy } from "./aig-policy.js";
-import { discoverMcpServers } from "./mcp-discovery.js";
+import { isCommercialBuild } from "./build-flavor.js";
 import type { McpInventoryCoverageStatus } from "./mcp-inventory.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { loadConfig, resolvePath } from "./config.js";
@@ -27,6 +26,12 @@ import {
 	saveRevocationsCache,
 	verifyEd25519SignedRevocationList,
 } from "./managed.js";
+import {
+	discoverMcpServers,
+	type McpDiscoveryAttestationOptions,
+	type McpDiscoveryAttestationStatus,
+	type McpDiscoveryServer,
+} from "./mcp-discovery.js";
 import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import { runSessionStartScan } from "./session-start-scan.js";
 import type { AgentRuntime, Logger, PluginInfo, PluginScanResult } from "./types.js";
@@ -46,6 +51,32 @@ export interface SessionStartContext {
 	checkFileHashes?: boolean;
 	aidrDirPath?: string;
 	agentRuntimeVersion?: string;
+	/**
+	 * Tenant MCP tool-manifest attestation inputs (keyring, signed manifests,
+	 * recorded approval state). Trusted-publisher provisioning and signer key
+	 * custody are external; when this is omitted every discovered server is
+	 * reported as unverifiable rather than as a neutral inventory row.
+	 */
+	mcpAttestation?: McpDiscoveryAttestationOptions;
+}
+
+/**
+ * A discovery coverage gap, not a threat finding: the server's tool definitions
+ * could not be shown to be signed and operator-approved.
+ */
+export interface SessionStartCoverageFinding {
+	kind: "mcp_tool_manifest_unverified";
+	severity: "medium" | "high";
+	/** Locally configured server name. */
+	server: string;
+	/** Configuration file the server was discovered in. */
+	source: string;
+	/** Discovery attestation status that produced this finding. */
+	status: McpDiscoveryAttestationStatus;
+	reason: string;
+	detail: string;
+	/** Toolset hash held in quarantine, when one exists. */
+	quarantined_toolset_hash?: string;
 }
 
 export interface SessionStartResult {
@@ -61,6 +92,7 @@ export interface SessionStartResult {
 	posture?: {
 		mcpServers: number;
 		riskyMcpServers: number;
+		unverifiedMcpServers: number;
 		invalidSources: number;
 		/** Aggregate readability of the MCP inventory sources; never claims a
 		 * complete inventory when a configured source could not be read. */
@@ -71,6 +103,68 @@ export interface SessionStartResult {
 		mcpSourcesNotEnumerated: number;
 		infrastructure: string;
 	};
+	/**
+	 * Coverage gaps from MCP discovery. An unverified server is a finding here,
+	 * never a neutral count in `posture`.
+	 */
+	coverageFindings?: SessionStartCoverageFinding[];
+}
+
+/** Coverage gaps are visibility failures: verification could not be established. */
+const COVERAGE_SEVERITY: Record<McpDiscoveryAttestationStatus, "medium" | "high"> = {
+	approved: "medium",
+	quarantined: "medium",
+	unapproved: "medium",
+	unsigned: "medium",
+	unverifiable: "high",
+	rejected: "high",
+};
+
+const COVERAGE_DETAIL: Record<string, string> = {
+	no_keyring:
+		"No MCP signing keyring is configured on this agent, so the tool manifest cannot be verified. Trusted-publisher provisioning is external to this agent.",
+	no_signed_manifest:
+		"No signed tool manifest was supplied for this server, so its tool definitions are unverified.",
+	unknown_signer:
+		"The manifest signer is not present in the tenant keyring, so the tool manifest cannot be verified.",
+	invalid_public_key:
+		"The tenant keyring entry for the manifest signer is not a usable Ed25519 public key.",
+	approval_state_unavailable:
+		"The signed tool manifest verified, but no readable attestation state was available, so operator approval cannot be established.",
+	state_unavailable:
+		"The signed tool manifest verified, but the recorded attestation state could not be read, so the toolset cannot be treated as approved.",
+	not_approved:
+		"The signed tool manifest verified, but no operator approval is recorded for this toolset.",
+	quarantined_pending_operator_approval:
+		"The signed tool manifest is quarantined pending an out-of-band operator approval.",
+};
+
+function mcpToolManifestCoverageFindings(
+	servers: McpDiscoveryServer[],
+): SessionStartCoverageFinding[] {
+	const findings: SessionStartCoverageFinding[] = [];
+	for (const server of servers) {
+		const { attestation } = server;
+		if (attestation.status === "approved") continue;
+		const reason = attestation.reason ?? attestation.status;
+		const fallback =
+			attestation.status === "rejected"
+				? `The tool manifest failed verification (${reason}); it is not trusted.`
+				: `The tool manifest could not be verified (${reason}).`;
+		findings.push({
+			kind: "mcp_tool_manifest_unverified",
+			severity: COVERAGE_SEVERITY[attestation.status],
+			server: server.name,
+			source: server.source,
+			status: attestation.status,
+			reason,
+			detail: COVERAGE_DETAIL[reason] ?? fallback,
+			...(attestation.quarantined_toolset_hash
+				? { quarantined_toolset_hash: attestation.quarantined_toolset_hash }
+				: {}),
+		});
+	}
+	return findings;
 }
 
 export async function runSessionStart(ctx: SessionStartContext): Promise<SessionStartResult> {
@@ -79,9 +173,20 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 	const config = await loadConfig(ctx.configPath, logger).catch(() => ConfigSchema.parse({}));
 	const commercial = isCommercialBuild();
 	const [inventory, infrastructure] = await Promise.all([
-		discoverMcpServers(config.policy.mcp.inventory_paths), inspectInfrastructurePolicy(config),
+		discoverMcpServers(config.policy.mcp.inventory_paths, { attestation: ctx.mcpAttestation }),
+		inspectInfrastructurePolicy(config),
 	]);
-	const posture = { mcpServers: inventory.servers.length, riskyMcpServers: inventory.servers.filter((s) => s.risk_hints.length > 0).length, invalidSources: inventory.sources.filter((s) => s.status === "invalid").length, mcpCoverage: inventory.coverage.status, mcpServersNotEnumerated: inventory.coverage.servers_not_enumerated, mcpSourcesNotEnumerated: inventory.coverage.sources_not_enumerated, infrastructure: infrastructure.state };
+	const coverageFindings = mcpToolManifestCoverageFindings(inventory.servers);
+	const posture = {
+		mcpServers: inventory.servers.length,
+		riskyMcpServers: inventory.servers.filter((s) => s.risk_hints.length > 0).length,
+		unverifiedMcpServers: coverageFindings.length,
+		invalidSources: inventory.sources.filter((s) => s.status === "invalid").length,
+		mcpCoverage: inventory.coverage.status,
+		mcpServersNotEnumerated: inventory.coverage.servers_not_enumerated,
+		mcpSourcesNotEnumerated: inventory.coverage.sources_not_enumerated,
+		infrastructure: infrastructure.state,
+	};
 
 	if (commercial && config.mode !== "managed") {
 		return {
@@ -476,7 +581,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 			}),
 			versionCheckPromise,
 		]);
-		return { enabled: true, scanResults, versionCheck, posture };
+		return { enabled: true, scanResults, versionCheck, posture, coverageFindings };
 	}
 
 	// Parallel: scan + version check + managed heartbeat
@@ -496,5 +601,5 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 		heartbeatPromise,
 	]);
 
-	return { enabled: true, scanResults, versionCheck, posture };
+	return { enabled: true, scanResults, versionCheck, posture, coverageFindings };
 }

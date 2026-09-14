@@ -84,19 +84,8 @@ export {
 	summarizeActionsForLog,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
-// Durable, bounded baseline for the behavioural detector
-export {
-	type BehavioralBaselineObservation,
-	type BehavioralBaselineSessionState,
-	type BehavioralBaselineStore,
-	type BehavioralBaselineStoreBounds,
-	type BehavioralBaselineStoreOptions,
-	createBehavioralBaselineStore,
-	FileBehavioralBaselineStore,
-} from "./behavioral-baseline-store.js";
 // Tenant/session-isolated behavioral, novelty and ML orchestration
 export {
-	BEHAVIORAL_ORCHESTRATOR_BOUNDS,
 	type BehavioralDetectionInput,
 	type BehavioralDetectionLeg,
 	type BehavioralDetectionLegStatus,
@@ -110,7 +99,6 @@ export {
 	type BehavioralOrchestratorDependencies,
 	type BehavioralOrchestratorStats,
 	createBehavioralDetectionOrchestrator,
-	LOCAL_EMBEDDER_MODEL_VERSION,
 } from "./behavioral-orchestrator.js";
 // Build flavor
 export { isCommercialBuild } from "./build-flavor.js";
@@ -589,7 +577,15 @@ export {
 	loadAigMcpCategories,
 	resetCategoryCache,
 } from "./mcp-aig-categories.js";
-export { discoverMcpServers } from "./mcp-discovery.js";
+export {
+	discoverMcpServers,
+	type McpDiscoveryAttestation,
+	type McpDiscoveryAttestationOptions,
+	type McpDiscoveryAttestationStatus,
+	type McpDiscoveryOptions,
+	type McpDiscoveryServer,
+	type McpSignedManifestIndex,
+} from "./mcp-discovery.js";
 // JSONC-tolerant config reader shared by the inventory and policy call sites
 export type { JsoncParseResult, JsoncParseStatus } from "./jsonc.js";
 export { parseJsonc, stripJsonComments } from "./jsonc.js";
@@ -643,9 +639,7 @@ export {
 	getDefaultQuarantineConfig,
 	type NotifyChannel,
 	type QuarantineConfig,
-	QuarantineDeleteError,
 	type QuarantinedItem,
-	QuarantineRefusedError,
 } from "./quarantine.js";
 export type {
 	PreOperationSnapshot,
@@ -697,11 +691,7 @@ export {
 	type ResponseSeverity,
 } from "./response-config.js";
 export type {
-	RollbackOptions,
-	RollbackRefusal,
 	Snapshot,
-	SnapshotAuditContext,
-	SnapshotFileDigest,
 	SnapshotOptions,
 	SnapshotResult,
 	SnapshotRollbackResult,
@@ -713,8 +703,6 @@ export {
 	createAutoRollback,
 	DEFAULT_SNAPSHOT_OPTIONS,
 	DEFAULT_SNAPSHOTS_DIR,
-	RollbackRefusedError,
-	SnapshotIncompleteError,
 } from "./rollback.js";
 export type { RuleSyncConfig } from "./rule-sync.js";
 // Real-Time Rule Sync
@@ -727,6 +715,7 @@ export { initSentry } from "./sentry.js";
 export {
 	runSessionStart,
 	type SessionStartContext,
+	type SessionStartCoverageFinding,
 	type SessionStartResult,
 } from "./session-start.js";
 // Session start scan pipeline
@@ -916,7 +905,6 @@ export type {
 export {
 	executeResponseStep,
 	MemoryResponseJournal,
-	normalizeAuthorizedBy,
 	planResponseRollback,
 	planResponseStep,
 	reportWorkerCapabilities,
