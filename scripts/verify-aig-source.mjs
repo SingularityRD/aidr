@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const aigRoot = join(root, "vendor", "ai-infra-guard");
 const generatedRoot = join(root, "packages", "core", "src", "generated");
-const expectedCommit = "31c72a9799c8b19d89bcb331d4f8038f05462b8f";
+const expectedCommit = "e68bc5d09a222a3d16b873ded93eb6d726028975";
 const strict = process.env.AIG_STRICT_CASE === "true" || process.env.AIG_RELEASE === "true";
 const requireSignature = process.env.AIG_REQUIRE_SIGNED === "true" || process.env.AIG_RELEASE === "true";
 
@@ -104,7 +104,7 @@ const mcpIndex = JSON.parse(readFileSync(join(generatedRoot, "aig-mcp-categories
 const manifest = JSON.parse(readFileSync(join(generatedRoot, "aig-data-manifest.json"), "utf8"));
 
 if (cveIndex.schema !== "aig-cve-index/v2" || cveIndex.version !== 2) fail("CVE index schema/version is not v2");
-if (fingerprintIndex.schema !== "aig-fingerprint-index/v2" || fingerprintIndex.version !== 2) fail("fingerprint index schema/version is not v2");
+if (fingerprintIndex.schema !== "aig-fingerprint-index/v3" || fingerprintIndex.version !== 3) fail("fingerprint index schema/version is not v3");
 if (mcpIndex.schema !== "aig-mcp-categories/v2" || mcpIndex.version !== 2) fail("MCP index schema/version is not v2");
 if (manifest.schema !== "aig-data-manifest/v1") fail("AIG data manifest schema is invalid");
 if (manifest.source?.commit !== commit) fail(`manifest source commit mismatch: ${manifest.source?.commit}`);
