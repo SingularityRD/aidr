@@ -1,0 +1,22 @@
+version: "1.0"
+description: Parity fixture the local validator and the server compiler both accept
+default_action: ask
+unknown_action: deny
+risky_action: deny
+category_defaults:
+  command: ask
+  file: ask
+  url: ask
+  package: ask
+  output: ask
+rules:
+  - name: Allow github reads
+    condition:
+      mcp_tool: github.read
+    action: allow
+    priority: 20
+  - name: Deny filesystem servers
+    condition:
+      mcp_server: filesystem
+    action: deny
+    priority: 10
