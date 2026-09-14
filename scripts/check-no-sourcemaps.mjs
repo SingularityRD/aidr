@@ -11,6 +11,7 @@
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { IGNORE_DIRS, SOURCE_MAPPING_DIRECTIVE_RE, SOURCE_URL_DIRECTIVE_RE, isDistDir, isSourceMapFile } from "./lib/package-artifact-rules.mjs";
 
 const root = path.resolve(process.argv[2] || ".");
 
@@ -19,12 +20,7 @@ const mappingUrlHits = [];
 const sourceUrlHits = [];
 const absPathHits = [];
 
-const IGNORE_DIRS = new Set(["node_modules", ".git", ".changeset", ".pnpm", ".vscode", ".idea"]);
-
 const forbiddenNeedles = buildForbiddenNeedles(process.cwd());
-
-const SOURCE_MAPPING_DIRECTIVE_RE = /^[ \t]*(?:\/\/#|\/\*#)\s*sourceMappingURL\s*[:=]/m;
-const SOURCE_URL_DIRECTIVE_RE = /^[ \t]*(?:\/\/#|\/\*#)\s*sourceURL\s*[:=]/m;
 
 await scan(root);
 
@@ -49,10 +45,6 @@ if (mapFiles.length || mappingUrlHits.length || sourceUrlHits.length || absPathH
 		for (const n of forbiddenNeedles) console.error(`  ${n}`);
 	}
 	process.exit(1);
-}
-
-function isDistDir(dirPath) {
-	return path.basename(dirPath) === "dist";
 }
 
 async function scan(startPath) {
@@ -111,7 +103,7 @@ async function scanDist(distDir) {
 			}
 			if (!entry.isFile()) continue;
 
-			if (entry.name.endsWith(".map")) {
+			if (isSourceMapFile(entry.name)) {
 				mapFiles.push(full);
 				continue;
 			}

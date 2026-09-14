@@ -1,0 +1,358 @@
+[
+  {
+    "gate_id": "COM-001",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Commercial/Sales + Finance/Billing",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate COM-001 (commercial): SKU, price, metering, currency/tax, deployment, region, retention, SLA, support, licence rights, renewal, cancellation and offboarding fixed for one Release Candidate. No approved manifest is held, so this receipt records the gate and its inputs only.",
+    "limitations": [
+      "No approved Commercial Release Manifest exists for a Release Candidate; the registry still records releaseCandidate null.",
+      "The only manifest artefact in the repository is docs/production-readiness/commercial-release-manifest-template.md and it is marked DRAFT / NOT APPROVED with price, support, residency and offboarding rows explicitly not held.",
+      "Nothing in this receipt approves a price, a tax treatment or a contract term."
+    ],
+    "external_inputs": [
+      "named Commercial/Sales approver",
+      "named Finance/Billing approver",
+      "approved Commercial Release Manifest bound to one Release Candidate",
+      "sample signed quote and order",
+      "quote-to-offboarding rehearsal record with timestamps",
+      "signed-manifest verification output"
+    ]
+  },
+  {
+    "gate_id": "COM-002",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Legal + Engineering",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate COM-002 (licensing-ip): licences, notices, attribution, third-party source provenance, chain-of-title and every shipped package license field complete and counsel-approved, with a non-empty LICENSE reconciling with NOTICE and package metadata. Repository licence inventory is not counsel approval.",
+    "limitations": [
+      "The presence of LICENSE, NOTICE and THIRD_PARTY_NOTICES in the repository is inventory evidence only and is not a legal conclusion.",
+      "Chain-of-title, contributor and vendor provenance records are not held.",
+      "The exception register with expiry dates is not held.",
+      "docs/production-readiness/privacy-legal-review-template.md records counsel approval as not held."
+    ],
+    "external_inputs": [
+      "named Legal counsel approver",
+      "signed counsel approval bound to one Release Candidate",
+      "chain-of-title and contributor/source provenance records",
+      "lockfile-derived SBOM and third-party notice archive for the shipped packages",
+      "exception register entries with expiry dates"
+    ]
+  },
+  {
+    "gate_id": "COM-003",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Privacy/DPO + Legal + Security",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate COM-003 (privacy): actual telemetry, browser tracing, managed events, AIG payloads, retention, deletion, region, subprocessors and transfer mechanisms matching customer-facing notices and DPA/TOM/SCC terms. No field-level measurement or approval is held.",
+    "limitations": [
+      "No field-level data-flow matrix has been measured against a deployed build.",
+      "No DPA, TOM or SCC approval is held.",
+      "docs/production-readiness/data-flow-privacy-v6.md and the privacy/legal template remain unapproved drafts.",
+      "Privacy claims in the registry remain blocked until this gate closes."
+    ],
+    "external_inputs": [
+      "named Privacy/DPO approver",
+      "field-level data-flow matrix measured from the deployed build",
+      "payload assertion report from an instrumented environment",
+      "DPA/TOM/SCC approval from named Legal counsel",
+      "subprocessor and region list",
+      "deletion and export receipts from a real tenant"
+    ]
+  },
+  {
+    "gate_id": "COM-004",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Finance/Billing + Product",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate COM-004 (billing-entitlements): price and entitlements enforced by one provider-of-record surviving order, seat change, invoice/reconciliation, cancellation, revocation, export and deletion. No provider decision, invoice or revocation receipt is held.",
+    "limitations": [
+      "No provider-of-record decision is held; the dashboard defaults to invoice requests without granting entitlement.",
+      "No real invoice, reconciliation or dunning record exists.",
+      "No revocation or deletion receipt from a billing provider exists.",
+      "Self-service checkout is deliberately disabled and is not evidence for this gate."
+    ],
+    "external_inputs": [
+      "named Finance/Billing approver",
+      "provider-of-record decision",
+      "real invoice and reconciliation example",
+      "SKU and seat-change entitlement test run against the provider",
+      "revocation and deletion receipts from the provider"
+    ]
+  },
+  {
+    "gate_id": "COM-005",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Support/Customer Success + Operations",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate COM-005 (support-operations): customer-visible support, status, security contact, privacy/terms, escalation, severity SLA, diagnostic-consent and reachable ticket paths operating for the sold scope. No operated support surface is claimed.",
+    "limitations": [
+      "No published support schedule, severity matrix or status page is operated as evidence.",
+      "No ticket drill has been executed, so there are no timestamps to record.",
+      "No on-call rota or escalation record exists.",
+      "docs/production-readiness/support-sla-template.md records every support row as not held."
+    ],
+    "external_inputs": [
+      "named Support/Customer Success owner",
+      "published support schedule and severity SLA",
+      "timestamped ticket drill in the operated ticket system",
+      "reachable status, security and privacy URLs on the deployed domain",
+      "on-call escalation record naming real operators"
+    ]
+  },
+  {
+    "gate_id": "COM-010",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Product + QA + Engineering + Support",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate COM-010 (ga-connectors): Claude Code, Cursor, VS Code, OpenClaw and OpenCode each have a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner and limitations. No real-host acceptance or signed artifact is held.",
+    "limitations": [
+      "No real-host side-effect acceptance exists for the advertised connectors.",
+      "No official code-signing certificate, notarization or publisher identity is held.",
+      "No authenticated private-registry install has been performed.",
+      "Local unit and packaged-consumer tests are engineering evidence and are not real-host acceptance."
+    ],
+    "external_inputs": [
+      "named support owner per advertised connector",
+      "real-host E2E reports for Claude Code, Cursor, VS Code, OpenClaw and OpenCode",
+      "official code-signing certificate or notarization credentials",
+      "authenticated private-registry install logs",
+      "rollback and disable drill records"
+    ]
+  },
+  {
+    "gate_id": "COM-011",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Operations + Privacy/DPO + Legal",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate COM-011 (regions-data-residency): hybrid deployment supporting EU, US and APAC tenant placement with an approved routing, residency, retention, subprocessor, transfer, backup and deletion model. The region list is locked intent, not a working regional service.",
+    "limitations": [
+      "The EU/US/APAC entries in the registry are product intent and do not prove an operated regional service.",
+      "No tenant placement or cross-region negative test has been run against real regional deployments.",
+      "No regional DPA/SCC/TOM approval is held.",
+      "No regional backup or deletion receipt exists."
+    ],
+    "external_inputs": [
+      "named Operations owner per region",
+      "signed cloud provider and data-residency contracts for EU, US and APAC",
+      "tenant placement and cross-region negative test results from real regional deployments",
+      "DPA/SCC/TOM approval per region",
+      "regional backup and deletion receipts"
+    ]
+  },
+  {
+    "gate_id": "COM-012",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Finance/Billing + Release Engineering + Support",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate COM-012 (invoice-private-registry): invoice-based orders and signed artifacts delivered through an authenticated private registry with entitlement, revocation, download, audit and offline/air-gapped procedures defined. No authenticated registry or entitlement chain is held.",
+    "limitations": [
+      "No authenticated private registry is operated as evidence.",
+      "No invoice-to-entitlement test has run against a real billing provider.",
+      "No signed package install from a private registry exists.",
+      "No air-gapped delivery procedure has been validated on a disconnected host.",
+      "docs/production-readiness/invoice-entitlement-v6.md describes intended boundaries and is not an approval."
+    ],
+    "external_inputs": [
+      "named Release Engineering owner",
+      "provider and registry decision with a named Finance approver",
+      "invoice-to-entitlement test against the real billing provider",
+      "signed package install from the authenticated private registry",
+      "customer entitlement and revocation test",
+      "air-gapped delivery procedure validated on a disconnected host"
+    ]
+  },
+  {
+    "gate_id": "COM-013",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Operations + Legal + Support + Finance",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate COM-013 (sla): 99.9% monthly availability for the managed control plane and dashboard API with a measured SLI, exclusions, maintenance policy, service-credit terms, support escalation and incident evidence. 99.9% is a locked target, not a measurement.",
+    "limitations": [
+      "No SLI query, denominator, probe location or observation window is bound to a deployed service.",
+      "No monthly availability data exists, so no availability percentage is asserted anywhere in this receipt.",
+      "No service-credit schedule is approved.",
+      "No incident drill evidence exists.",
+      "docs/production-readiness/support-sla-template.md records the SLI, exclusions and service credits as not held."
+    ],
+    "external_inputs": [
+      "named Operations/SRE owner",
+      "approved SLA and support schedule signed by named Legal and Finance approvers",
+      "SLI query, denominator and observation window from production monitoring",
+      "at least one complete monthly observation window of real availability data",
+      "service-credit schedule approval",
+      "incident drill evidence with timestamps"
+    ]
+  },
+  {
+    "gate_id": "SEC-EXT-001",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Security Lead + independent assessor",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate SEC-EXT-001 (independent-security): an independent penetration test or equivalent assessment with no unresolved critical/high finding for the sold Release Candidate and scope. No assessor has been engaged and no report exists.",
+    "limitations": [
+      "No independent assessor or penetration-test firm has been engaged.",
+      "No signed assessment report, scope statement or retest letter exists.",
+      "Internal tests, dependency audits and static analysis are engineering evidence and are not an independent assessment.",
+      "The gate stays open until an external report exists for the same candidate."
+    ],
+    "external_inputs": [
+      "named independent assessor or penetration-test firm",
+      "signed independent assessment report with scope and dates",
+      "remediation and retest letter for the same Release Candidate",
+      "exception approvals with expiry for any high finding"
+    ]
+  },
+  {
+    "gate_id": "POV-001",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Customer Success + Product + evaluator",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate POV-001 (customer-validation): a named customer or investor evaluator completing the signed Evaluation Charter, independent sandbox/PoV, mandatory scenarios, limitations review and acceptance or reservations for the same Release Candidate. No evaluator has been engaged and no acceptance is recorded.",
+    "limitations": [
+      "No named customer or investor evaluator has been engaged.",
+      "No signed Evaluation Charter or independent run report exists.",
+      "No intervention/deviation log exists.",
+      "No customer result, acceptance or written reservations exist.",
+      "Local loopback rehearsal is not an independent proof of value."
+    ],
+    "external_inputs": [
+      "named customer or investor evaluator",
+      "signed Evaluation Charter",
+      "independent sandbox or PoV run report",
+      "intervention and deviation log",
+      "customer acceptance result or written reservations"
+    ]
+  },
+  {
+    "gate_id": "INV-001",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Product + Finance + Legal",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate INV-001 (investor-metrics): every investor-facing technical, customer, security, compliance, traction and financial metric carrying a formula, denominator, source, Release Candidate/environment, observation window, owner, reviewer and limitation statement. No metric is approved.",
+    "limitations": [
+      "docs/production-readiness/investor-metric-dictionary-template.md is marked DRAFT / NOT HELD and records every metric row as not held.",
+      "No metric is bound to a source query, signed source or observation window.",
+      "No reviewer approval exists for any metric.",
+      "No metric value is asserted anywhere in this receipt."
+    ],
+    "external_inputs": [
+      "named Finance data owner",
+      "named Product/Marketing reviewer",
+      "approved metric dictionary with formula, denominator and window per metric",
+      "source queries or signed source documents",
+      "reviewer approval records bound to one Release Candidate"
+    ]
+  },
+  {
+    "gate_id": "CLM-001",
+    "decision": "open",
+    "owner_name": "REQUIRED",
+    "owner_role": "Product/Marketing + Commercial + Legal",
+    "evidence_path": null,
+    "evidence_sha256": null,
+    "candidate_digest": null,
+    "effective_version": null,
+    "recorded_at_utc": null,
+    "reviewer_name": "REQUIRED",
+    "reviewer_role": "REQUIRED",
+    "scope": "Registry hard gate CLM-001 (claims): all customer, investor, procurement, landing, README, plugin and sales claims mapped to the Claim Registry, with only approved and unexpired claims on release-facing surfaces. No claim is approved.",
+    "limitations": [
+      "No claim in the registry is Sales Approved and every claim is blocked.",
+      "docs/scripts/claim-check.mjs --mode=gate still exits non-zero while hard gates are open and claims are unapproved; that failure is the honest state.",
+      "No build-output claim scan is bound to a Release Candidate.",
+      "The gate cannot be closed by repository edits alone: it needs a named Sales Approved review and Legal wording approval."
+    ],
+    "external_inputs": [
+      "named Sales Approved reviewer",
+      "registry snapshot hash bound to the same Release Candidate",
+      "build-output claim scan JSON from the release build",
+      "claim-to-evidence links for every release-facing claim",
+      "named Legal review of claim wording"
+    ]
+  }
+]
