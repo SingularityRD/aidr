@@ -1,0 +1,237 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://singularityrd.dev/schemas/v8-evidence-index.schema.json",
+	"title": "Singularity AIDR v8 evidence index",
+	"description": "Machine-readable index of every declared verification gate for the v8 release candidate. Each record must state a real, derived value or the explicit string \"unknown\"; no field may be an empty string that hides a gap, and a gate with no log must be present with status NOT_RUN rather than omitted. The record's evidence_level is the highest level its artefacts substantiate and can never exceed evidence_level_ceiling.",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"schema_version",
+		"generator",
+		"generator_version",
+		"candidate",
+		"commit_sha",
+		"candidate_digest",
+		"environment",
+		"tool_versions",
+		"evidence_levels",
+		"status_vocabulary",
+		"status_semantics",
+		"determinism",
+		"methodology",
+		"status_counts",
+		"gate_count",
+		"gates"
+	],
+	"properties": {
+		"schema_version": { "const": 1 },
+		"generator": { "const": "scripts/generate-v8-evidence-index.mjs" },
+		"generator_version": { "const": 1 },
+		"candidate": { "$ref": "#/$defs/candidate" },
+		"commit_sha": { "$ref": "#/$defs/commit_sha" },
+		"candidate_digest": { "$ref": "#/$defs/sha256_or_unknown" },
+		"environment": { "$ref": "#/$defs/environment" },
+		"tool_versions": { "$ref": "#/$defs/tool_versions" },
+		"evidence_levels": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["vocabulary", "floor", "semantics"],
+			"properties": {
+				"vocabulary": {
+					"type": "array",
+					"minItems": 8,
+					"items": { "$ref": "#/$defs/evidence_level" }
+				},
+				"floor": { "$ref": "#/$defs/evidence_level" },
+				"semantics": { "type": "string", "minLength": 1 }
+			}
+		},
+		"status_vocabulary": {
+			"type": "array",
+			"minItems": 4,
+			"items": { "$ref": "#/$defs/status" }
+		},
+		"status_semantics": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["PASS", "FAIL", "NOT_RUN", "unknown"],
+			"properties": {
+				"PASS": { "type": "string", "minLength": 1 },
+				"FAIL": { "type": "string", "minLength": 1 },
+				"NOT_RUN": { "type": "string", "minLength": 1 },
+				"unknown": { "type": "string", "minLength": 1 }
+			}
+		},
+		"determinism": { "type": "string", "minLength": 1 },
+		"methodology": { "type": "string", "minLength": 1 },
+		"status_counts": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["PASS", "FAIL", "NOT_RUN", "unknown"],
+			"properties": {
+				"PASS": { "type": "integer", "minimum": 0 },
+				"FAIL": { "type": "integer", "minimum": 0 },
+				"NOT_RUN": { "type": "integer", "minimum": 0 },
+				"unknown": { "type": "integer", "minimum": 0 }
+			}
+		},
+		"gate_count": { "type": "integer", "minimum": 1 },
+		"gates": {
+			"type": "array",
+			"minItems": 1,
+			"items": { "$ref": "#/$defs/gate_record" }
+		}
+	},
+	"$defs": {
+		"gate_record": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"gate_id",
+				"task_ids",
+				"feature_ids",
+				"status",
+				"command",
+				"exit_code",
+				"started_at_utc",
+				"ended_at_utc",
+				"duration_ms",
+				"commit_sha",
+				"candidate_digest",
+				"environment",
+				"tool_versions",
+				"test_counts",
+				"observed_effect",
+				"log_sha256",
+				"artifact_sha256",
+				"limitations",
+				"owner",
+				"evidence_level",
+				"evidence_level_ceiling"
+			],
+			"properties": {
+				"gate_id": { "type": "string", "minLength": 1 },
+				"task_ids": {
+					"type": "array",
+					"minItems": 1,
+					"items": { "type": "string", "pattern": "^T[0-9]{2}$" }
+				},
+				"feature_ids": {
+					"type": "array",
+					"minItems": 1,
+					"items": { "type": "string", "pattern": "^[A-Z]{3,4}-[0-9]{2}$" }
+				},
+				"status": { "$ref": "#/$defs/status" },
+				"command": { "type": "string", "minLength": 1 },
+				"exit_code": { "$ref": "#/$defs/exit_code" },
+				"started_at_utc": { "$ref": "#/$defs/timestamp_or_unknown" },
+				"ended_at_utc": { "$ref": "#/$defs/timestamp_or_unknown" },
+				"duration_ms": { "$ref": "#/$defs/duration_ms" },
+				"commit_sha": { "$ref": "#/$defs/commit_sha" },
+				"candidate_digest": { "$ref": "#/$defs/sha256_or_unknown" },
+				"environment": { "$ref": "#/$defs/environment" },
+				"tool_versions": { "$ref": "#/$defs/tool_versions" },
+				"test_counts": { "$ref": "#/$defs/test_counts_or_unknown" },
+				"observed_effect": { "type": "string", "minLength": 1 },
+				"log_sha256": { "$ref": "#/$defs/sha256_or_unknown" },
+				"artifact_sha256": { "$ref": "#/$defs/sha256_or_unknown" },
+				"limitations": {
+					"type": "array",
+					"minItems": 1,
+					"items": { "type": "string", "minLength": 1 }
+				},
+				"owner": { "type": "string", "minLength": 1 },
+				"evidence_level": { "$ref": "#/$defs/evidence_level" },
+				"evidence_level_ceiling": { "$ref": "#/$defs/evidence_level" }
+			}
+		},
+		"candidate": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["release_dir", "digest_source", "digest_source_exists"],
+			"properties": {
+				"release_dir": { "type": "string", "minLength": 1 },
+				"digest_source": { "type": "string", "minLength": 1 },
+				"digest_source_exists": { "type": "boolean" }
+			}
+		},
+		"environment": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["platform", "arch", "os_type", "os_release", "hostname", "gate_host_provenance"],
+			"properties": {
+				"platform": { "type": "string", "minLength": 1 },
+				"arch": { "type": "string", "minLength": 1 },
+				"os_type": { "type": "string", "minLength": 1 },
+				"os_release": { "type": "string", "minLength": 1 },
+				"hostname": { "type": "string", "minLength": 1 },
+				"gate_host_provenance": {
+					"const": "unknown",
+					"description": "The gate logs record no host identity, so the host that produced each log cannot be attested."
+				}
+			}
+		},
+		"tool_versions": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["node", "pnpm", "python", "docker", "os"],
+			"properties": {
+				"node": { "type": "string", "minLength": 1 },
+				"pnpm": { "type": "string", "minLength": 1 },
+				"python": { "type": "string", "minLength": 1 },
+				"docker": { "type": "string", "minLength": 1 },
+				"os": { "type": "string", "minLength": 1 }
+			}
+		},
+		"evidence_level": {
+			"enum": [
+				"source_inspection",
+				"unit_contract",
+				"packaged_consumer",
+				"isolated_integration",
+				"native_host",
+				"deployed_environment",
+				"customer_observed",
+				"externally_approved"
+			]
+		},
+		"status": { "enum": ["PASS", "FAIL", "NOT_RUN", "unknown"] },
+		"exit_code": {
+			"oneOf": [{ "const": "unknown" }, { "type": "integer", "minimum": 0 }]
+		},
+		"duration_ms": {
+			"oneOf": [{ "const": "unknown" }, { "type": "number", "minimum": 0 }]
+		},
+		"commit_sha": {
+			"oneOf": [{ "const": "unknown" }, { "type": "string", "pattern": "^[0-9a-f]{40}$" }]
+		},
+		"sha256_or_unknown": {
+			"oneOf": [{ "const": "unknown" }, { "type": "string", "pattern": "^[0-9a-f]{64}$" }]
+		},
+		"timestamp_or_unknown": {
+			"oneOf": [
+				{ "const": "unknown" },
+				{ "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" }
+			]
+		},
+		"unknownable_count": {
+			"oneOf": [{ "const": "unknown" }, { "type": "integer", "minimum": 0 }]
+		},
+		"test_counts_or_unknown": {
+			"oneOf": [{ "const": "unknown" }, { "$ref": "#/$defs/test_counts" }]
+		},
+		"test_counts": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["total", "passed", "failed", "skipped"],
+			"properties": {
+				"total": { "$ref": "#/$defs/unknownable_count" },
+				"passed": { "$ref": "#/$defs/unknownable_count" },
+				"failed": { "$ref": "#/$defs/unknownable_count" },
+				"skipped": { "$ref": "#/$defs/unknownable_count" },
+				"files_total": { "$ref": "#/$defs/unknownable_count" },
+				"files_passed": { "$ref": "#/$defs/unknownable_count" }
+			}
+		}
+	}
+}
