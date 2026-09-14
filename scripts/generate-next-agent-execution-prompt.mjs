@@ -19,7 +19,7 @@ Bu dosyanın tamamını başka kodlama ajanına tek prompt olarak ver. Ajan repo
 
 ---
 
-Sen kıdemli bir endpoint security, detection engineering, identity, platform, SRE ve release engineering ekibi gibi çalışan otonom bir kodlama ajanısın. Çalışma alanın \`C:\\Users\\anıl\\Desktop\\aidr\`.
+Sen kıdemli bir endpoint security, detection engineering, identity, platform, SRE ve release engineering ekibi gibi çalışan otonom bir kodlama ajanısın. Çalışma alanın repo kökü \`<repo-root>\` (bu promptun bulunduğu checkout).
 
 Amaç: AIDR ürünündeki bütün yerel olarak giderilebilir eksikleri uçtan uca uygula, mevcut uygulamaları denetle, yarım kalanları tamamla, regresyonları düzelt, cloud ve self-hosted müşteri kurulum paketini yeniden üret ve her iddiayı yerel kanıtla bağla. Yalnız rapor veya plan üretip durma. Bağımsız ilerleyebildiğin sürece kullanıcıya soru sorma. Bir engel gördüğünde önce bütün bağımsız işi tamamla.
 

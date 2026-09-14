@@ -1,0 +1,495 @@
+{
+  "schema_version": 1,
+  "kind": "aidr-sold-scope-coverage-denominator",
+  "scope_id": "singularity-aidr-sold-scope",
+  "reviewed_at": "2026-09-13",
+  "$comment": "The declared coverage denominator for the sold product. `node scripts/benchmarks/evaluate.mjs --scope-file scripts/benchmarks/sold-scope.json` asserts that a corpus declares exactly these attack families, connectors and surfaces (no extras, no omissions) and carries at least `required_scenarios_per_family` malicious cases plus matching benign twins for every one of them. This file is a scope declaration only: it contains no case, digest, measurement, reviewer name or customer fact, and it is not evidence that any detection works. A corpus that fails this check — including the committed empty scaffold scripts/benchmarks/corpus.template.json — is the correct honest state until an independent evaluator supplies signed data.",
+  "derivation": {
+    "$comment": "Every id below was read out of the shipped surface, not from a marketing claim. Connectors come from the sold connector scope; interception vocabulary comes from the support matrix and the MCP interception matrix; the edge-function contract manifest is the control-plane counterpart, which is why control-plane-only families are listed under out_of_scope_with_reason instead of here.",
+    "connector_source": "deploy/native/support-matrix.json#soldConnectorScope",
+    "interception_vocabulary_sources": [
+      "deploy/native/support-matrix.json#interceptionPointVocabulary",
+      "deploy/native/interception-matrix.json#pointVocabulary",
+      "docs/production-readiness/edge-function-contract-manifest.json#functions"
+    ],
+    "attack_family_sources": [
+      "threats/*.yaml",
+      "packages/core/src/**",
+      "packages/mcp-gateway/src/gateway.mjs"
+    ]
+  },
+  "attack_families": [
+    {
+      "id": "prompt-injection-direct",
+      "label": "Direct prompt injection, jailbreak and format-token injection",
+      "detection": "shipped_rule",
+      "rule_categories": ["prompt_injection"],
+      "rule_files": ["threats/llm-threats.yaml"],
+      "verdict_actions": ["deny"],
+      "source": "threats/llm-threats.yaml",
+      "evidence": "threats/llm-threats.yaml carries 5 shipped rules in category `prompt_injection` (instruction override, persona jailbreak, known jailbreak tokens, special-token system-message injection, ChatML/Llama format injection); every one has action `block`, which packages/core/src/engine.ts maps to a deny verdict."
+    },
+    {
+      "id": "prompt-injection-indirect",
+      "label": "Indirect prompt injection carried by content the agent reads",
+      "detection": "shipped_rule",
+      "rule_categories": ["indirect_prompt_injection"],
+      "rule_files": ["threats/llm-threats.yaml"],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/llm-threats.yaml",
+      "evidence": "threats/llm-threats.yaml carries 3 shipped rules in category `indirect_prompt_injection` (trigger-fired instructions, response-inclusion demands, hidden/encoded instructions) with actions block and require_approval; packages/core/src/output-scanner.ts additionally emits the `prompt_injection_payload` finding type for tool output."
+    },
+    {
+      "id": "prompt-extraction",
+      "label": "System-prompt extraction attempts",
+      "detection": "shipped_rule",
+      "rule_categories": ["prompt_extraction"],
+      "rule_files": ["threats/llm-threats.yaml"],
+      "verdict_actions": ["deny"],
+      "source": "threats/llm-threats.yaml",
+      "evidence": "threats/llm-threats.yaml carries 3 shipped rules in category `prompt_extraction` (direct extraction, repetition trick, translation/rephrasing) with action block; packages/core/src/output-scanner.ts emits the `system_prompt_leakage` finding type."
+    },
+    {
+      "id": "memory-poisoning",
+      "label": "Persistent-context / memory poisoning",
+      "detection": "shipped_rule",
+      "rule_categories": ["memory_poisoning"],
+      "rule_files": ["threats/llm-threats.yaml"],
+      "verdict_actions": ["deny"],
+      "source": "threats/llm-threats.yaml",
+      "evidence": "threats/llm-threats.yaml carries 2 shipped rules in category `memory_poisoning` (persistent-storage request, temporal persistence instruction) with action block. MKT-04 in docs/production-readiness/market-capability-delta-2026-09-13.md names memory poisoning as a required blind-corpus family."
+    },
+    {
+      "id": "tool-misuse-and-chaining",
+      "label": "Tool misuse and chained tool calls (eval/exec, shell chaining, exfiltration via tool)",
+      "detection": "shipped_rule",
+      "rule_categories": ["tool_misuse"],
+      "rule_files": ["threats/llm-threats.yaml"],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/llm-threats.yaml",
+      "evidence": "threats/llm-threats.yaml carries 4 shipped rules in category `tool_misuse` (eval/exec/spawn in tool input, Python execution, shell-tool chaining instruction, webhook exfiltration instruction); packages/core/src/command-chain-analyzer.ts adds multi-step chain analysis to the same verdict path."
+    },
+    {
+      "id": "content-policy-violation",
+      "label": "Content-safety policy violation in agent content",
+      "detection": "shipped_rule",
+      "rule_categories": ["content_safety"],
+      "rule_files": ["threats/llm-threats.yaml"],
+      "verdict_actions": ["ask"],
+      "source": "threats/llm-threats.yaml",
+      "evidence": "threats/llm-threats.yaml carries 2 shipped rules in category `content_safety` (credential/secret file access, database/backup access) with action require_approval, which packages/core/src/engine.ts maps to `ask` (block pending out-of-band approval)."
+    },
+    {
+      "id": "sensitive-information-disclosure",
+      "label": "Plaintext credential or password exposed in agent context",
+      "detection": "shipped_rule",
+      "rule_categories": ["information_disclosure"],
+      "rule_files": ["threats/llm-threats.yaml"],
+      "verdict_actions": ["ask"],
+      "source": "threats/llm-threats.yaml",
+      "evidence": "threats/llm-threats.yaml carries 2 shipped rules in category `information_disclosure` (credential in agent input/context, plaintext password in context) with action require_approval."
+    },
+    {
+      "id": "command-execution",
+      "label": "Shell command execution and pipe-to-shell download",
+      "detection": "shipped_rule",
+      "rule_categories": ["tool", "execution"],
+      "rule_files": [
+        "threats/commands.yaml",
+        "threats/win-commands.yaml",
+        "threats/mac-commands.yaml",
+        "threats/mitre.yaml"
+      ],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/commands.yaml",
+      "evidence": "The commands rule files are the largest shipped rule block (184 rules carry category `tool`, most of them command patterns such as `curl ... | bash`), and threats/mitre.yaml adds category `execution`; both use block and require_approval. DET-01/DET-02 in FEATURE_INVENTORY.json declare artifact extraction and rule-based decisions as wired."
+    },
+    {
+      "id": "shell-obfuscation",
+      "label": "Obfuscated, encoded or chain-assembled shell commands",
+      "detection": "shipped_rule",
+      "rule_categories": ["defense_evasion"],
+      "rule_files": [
+        "threats/obfuscation.yaml",
+        "threats/win-obfuscation.yaml",
+        "threats/mac-obfuscation.yaml",
+        "threats/mitre.yaml"
+      ],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/obfuscation.yaml",
+      "evidence": "DET-03 in FEATURE_INVENTORY.json cites threats/obfuscation.yaml and packages/core/src/command-chain-analyzer.ts for encoded command patterns and multi-step shell analysis; the obfuscation rule files and threats/mitre.yaml category `defense_evasion` both use block and require_approval."
+    },
+    {
+      "id": "credential-and-secret-access",
+      "label": "Credential, key and secret file access",
+      "detection": "shipped_rule",
+      "rule_categories": ["secrets", "credential_access"],
+      "rule_files": [
+        "threats/credentials.yaml",
+        "threats/files.yaml",
+        "threats/win-credentials.yaml",
+        "threats/win-files.yaml",
+        "threats/mac-credentials.yaml",
+        "threats/mac-files.yaml",
+        "threats/mitre.yaml"
+      ],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/credentials.yaml",
+      "evidence": "50 shipped rules carry category `secrets` across the credentials and files rule files (SSH keys, cloud provider credentials, Kubernetes config, vault, private keys, browser/IDE credential stores) and threats/mitre.yaml adds category `credential_access`; DET-04 in FEATURE_INVENTORY.json cites threats/credentials.yaml."
+    },
+    {
+      "id": "data-exfiltration",
+      "label": "Data exfiltration and staged collection",
+      "detection": "shipped_rule",
+      "rule_categories": ["exfiltration", "collection"],
+      "rule_files": ["threats/mitre.yaml", "threats/urls.yaml"],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/mitre.yaml",
+      "evidence": "threats/mitre.yaml carries the `exfiltration` and `collection` rule categories with block and require_approval, and threats/urls.yaml adds upload/paste-site/executable-download URL patterns in category `network_egress`. MKT-04 names exfiltration as a required blind-corpus family."
+    },
+    {
+      "id": "command-and-control",
+      "label": "Command-and-control channel establishment",
+      "detection": "shipped_rule",
+      "rule_categories": ["command_and_control"],
+      "rule_files": ["threats/mitre.yaml"],
+      "verdict_actions": ["ask"],
+      "source": "threats/mitre.yaml",
+      "evidence": "threats/mitre.yaml carries 1 shipped rule in category `command_and_control` with action require_approval; paste-site and direct-IP URL rules in threats/urls.yaml cover the same tactic at the URL artifact level."
+    },
+    {
+      "id": "cryptomining-resource-hijacking",
+      "label": "Cryptomining and resource hijacking",
+      "detection": "shipped_rule",
+      "rule_categories": ["resource_hijacking"],
+      "rule_files": ["threats/mining.yaml", "threats/win-commands.yaml", "threats/mac-commands.yaml"],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/mining.yaml",
+      "evidence": "threats/mining.yaml carries 17 shipped rules in category `resource_hijacking` (miner binaries, pool arguments, stratum URLs) with block and require_approval; DET-05 in FEATURE_INVENTORY.json cites threats/mining.yaml."
+    },
+    {
+      "id": "persistence",
+      "label": "Persistence installation (cron, services, startup, hooks, RC files)",
+      "detection": "shipped_rule",
+      "rule_categories": ["persistence", "tool"],
+      "rule_files": [
+        "threats/persistence.yaml",
+        "threats/win-persistence.yaml",
+        "threats/mac-persistence.yaml",
+        "threats/mitre.yaml"
+      ],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/persistence.yaml",
+      "evidence": "threats/persistence.yaml, threats/win-persistence.yaml and threats/mac-persistence.yaml ship cron/systemd/launchd/registry/RC-file/hook persistence rules and threats/mitre.yaml carries category `persistence`; require_approval and block are both used."
+    },
+    {
+      "id": "privilege-escalation",
+      "label": "Privilege escalation",
+      "detection": "shipped_rule",
+      "rule_categories": ["privilege_escalation"],
+      "rule_files": ["threats/mitre.yaml"],
+      "verdict_actions": ["ask"],
+      "source": "threats/mitre.yaml",
+      "evidence": "threats/mitre.yaml carries the `privilege_escalation` rule category with action require_approval, and the Windows/macOS command rule files add sudo/runas/setuid patterns. MKT-04 names privilege escalation as a required blind-corpus family."
+    },
+    {
+      "id": "discovery-and-reconnaissance",
+      "label": "Host, network and credential discovery / reconnaissance",
+      "detection": "shipped_rule",
+      "rule_categories": ["discovery", "reconnaissance"],
+      "rule_files": ["threats/mitre.yaml", "threats/win-commands.yaml", "threats/mac-commands.yaml"],
+      "verdict_actions": ["ask"],
+      "source": "threats/mitre.yaml",
+      "evidence": "threats/mitre.yaml carries 11 shipped rules across the `discovery` and `reconnaissance` categories with action require_approval."
+    },
+    {
+      "id": "lateral-movement",
+      "label": "Lateral movement to other hosts or sessions",
+      "detection": "shipped_rule",
+      "rule_categories": ["lateral_movement"],
+      "rule_files": ["threats/mitre.yaml"],
+      "verdict_actions": ["ask"],
+      "source": "threats/mitre.yaml",
+      "evidence": "threats/mitre.yaml carries 2 shipped rules in category `lateral_movement` with action require_approval."
+    },
+    {
+      "id": "security-control-tampering",
+      "label": "Tampering with AIDR or host security controls",
+      "detection": "shipped_rule",
+      "rule_categories": ["self_defense"],
+      "rule_files": ["threats/self-defense.yaml"],
+      "verdict_actions": ["ask"],
+      "source": "threats/self-defense.yaml",
+      "evidence": "threats/self-defense.yaml carries 4 shipped rules in category `self_defense` (deleting or disabling the AIDR configuration, disabling host controls) with action require_approval."
+    },
+    {
+      "id": "package-supply-chain-tampering",
+      "label": "Package, plugin and install-script supply-chain tampering",
+      "detection": "shipped_rule",
+      "rule_categories": ["supply_chain"],
+      "rule_files": [
+        "threats/supply_chain.yaml",
+        "threats/win-supply-chain.yaml",
+        "threats/mac-supply-chain.yaml"
+      ],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/supply_chain.yaml",
+      "evidence": "The supply-chain rule files ship install-script-piped-to-shell and dependency-tampering rules with block and require_approval; packages/core/src/package-checker.ts and packages/core/src/plugin-scanner.ts add registry reputation and installed-plugin scanning (DET-12 and DET-04 in FEATURE_INVENTORY.json)."
+    },
+    {
+      "id": "malware-and-file-reputation",
+      "label": "Malware content and known-bad file artifacts",
+      "detection": "shipped_module",
+      "rule_files": ["packages/core/src/clients/amsi.ts", "packages/core/src/clients/file-check.ts"],
+      "verdict_actions": ["deny"],
+      "source": "packages/core/src/clients/amsi.ts",
+      "evidence": "packages/core/src/evaluator.ts runs the AMSI scan (`config.amsi_check.enabled && isAmsiSupported()`) and feeds `amsiCheckResults` into packages/core/src/engine.ts, which emits category `malware` with a deny; DET-11 in FEATURE_INVENTORY.json cites packages/core/src/clients/file-check.ts and amsi.ts. Windows-only, and the file-reputation leg is inert without a deployed endpoint."
+    },
+    {
+      "id": "malicious-url-artifact",
+      "label": "Malicious or suspicious URL artifact",
+      "detection": "shipped_rule",
+      "rule_categories": ["network_egress"],
+      "rule_files": ["threats/urls.yaml", "threats/commands.yaml"],
+      "verdict_actions": ["deny", "ask"],
+      "source": "threats/urls.yaml",
+      "evidence": "threats/urls.yaml ships malware-hosting, paste-site C2, direct-IP and executable-download URL rules (block and require_approval) matched on the `url` artifact, and packages/core/src/clients/url-check.ts adds the reputation leg (DET-10). This is a URL extracted from a tool call, not network-boundary interception."
+    },
+    {
+      "id": "malicious-tool-output",
+      "label": "Malicious or unsafe tool output before the model consumes it",
+      "detection": "shipped_module",
+      "rule_files": [
+        "packages/core/src/output-scanner.ts",
+        "packages/claude-code/src/output-inspection.ts",
+        "packages/extension/src/output-inspection.ts",
+        "packages/openclaw/src/output-inspection.ts",
+        "packages/opencode/src/output-handler.ts",
+        "packages/sdk/src/output-guard.ts"
+      ],
+      "verdict_actions": ["deny"],
+      "source": "packages/core/src/output-scanner.ts",
+      "evidence": "packages/core/src/output-scanner.ts ships OUTPUT_RULES for secret leaks, prompt-injection payloads, system-prompt leakage and unsafe tool instructions; the connector output handlers consume it and set `decision: \"block\"` on a critical finding or a truncated inspection (packages/claude-code/src/output-inspection.ts), and DET-06 in FEATURE_INVENTORY.json lists those connectors."
+    },
+    {
+      "id": "dlp-and-pii-exposure",
+      "label": "Tenant DLP policy match and PII exposure",
+      "detection": "shipped_module",
+      "rule_files": ["packages/core/src/dlp/scanner.ts", "packages/core/src/dlp/policy.ts", "packages/core/src/pii-detector.ts"],
+      "verdict_actions": ["deny", "ask"],
+      "source": "packages/core/src/dlp/scanner.ts",
+      "evidence": "packages/core/src/evaluator.ts calls `scanDlpInput` through `applyRuntimeDetectors` and returns a deny/ask verdict (or a fail-closed `dlp_unavailable` verdict); packages/core/src/pii-detector.ts backs the sensitive-value findings. DET-07 in FEATURE_INVENTORY.json cites dlp/scanner.ts and dlp/policy.ts, provisioned by packages/claude-code/src/detector-provisioning.ts. Opt-in per tenant."
+    },
+    {
+      "id": "behavioral-anomaly",
+      "label": "Behavioral anomaly and novel tool-use pattern",
+      "detection": "shipped_module",
+      "rule_files": [
+        "packages/core/src/behavioral-analyzer.ts",
+        "packages/core/src/behavioral-orchestrator.ts",
+        "packages/core/src/ml-model.ts"
+      ],
+      "verdict_actions": ["ask"],
+      "source": "packages/core/src/behavioral-orchestrator.ts",
+      "evidence": "packages/core/src/evaluator.ts evaluates the behavioral orchestrator per tool call and returns an `ask` verdict for `anomalous`, `learning` or `unavailable` outcomes; DET-08 and DET-09 in FEATURE_INVENTORY.json cite behavioral-orchestrator.ts, behavioral-analyzer.ts and ml-model.ts. Opt-in per tenant."
+    },
+    {
+      "id": "mcp-tool-description-drift",
+      "label": "MCP tool description/schema drift and unapproved toolsets",
+      "detection": "shipped_module",
+      "rule_files": [
+        "packages/core/src/mcp-attestation.ts",
+        "packages/core/src/mcp-transport.ts",
+        "packages/mcp-gateway/src/gateway.mjs"
+      ],
+      "verdict_actions": ["deny", "ask"],
+      "source": "packages/core/src/mcp-attestation.ts",
+      "evidence": "attestMcpToolManifest + diffMcpTools quarantine a first-seen or changed toolset (packages/core/src/mcp-attestation.ts), the gateway refuses to forward until the manifest is accepted (packages/mcp-gateway/src/gateway.mjs, `if (result.status !== \"accepted\") throw new Error(...)`), and interceptMcpToolCall denies on `schema_missing`/`schema_drift` (packages/core/src/mcp-transport.ts). MCP-05/MCP-07 in FEATURE_INVENTORY.json. Only MCP traffic routed through the gateway is covered."
+    }
+  ],
+  "connectors": [
+    {
+      "id": "claude-code",
+      "host_binary": "claude",
+      "source": "deploy/native/support-matrix.json#soldConnectorScope",
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint pre-model-output, entry point packages/claude-code/src/pre-tool-use.ts."
+    },
+    {
+      "id": "cursor",
+      "host_binary": "cursor",
+      "source": "deploy/native/support-matrix.json#soldConnectorScope",
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint tool-output-inspection, entry point packages/extension/src/aidr-hook.ts (cursor branch)."
+    },
+    {
+      "id": "vscode",
+      "host_binary": "code",
+      "source": "deploy/native/support-matrix.json#soldConnectorScope",
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint tool-output-inspection, entry point packages/extension/src/aidr-hook.ts (VS Code branch)."
+    },
+    {
+      "id": "openclaw",
+      "host_binary": "openclaw",
+      "source": "deploy/native/support-matrix.json#soldConnectorScope",
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-call, entry point packages/openclaw/src/tool-handler.ts."
+    },
+    {
+      "id": "opencode",
+      "host_binary": "opencode",
+      "source": "deploy/native/support-matrix.json#soldConnectorScope",
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint pre-model-output, entry point packages/opencode/src/tool-handler.ts."
+    },
+    {
+      "id": "codex",
+      "host_binary": "codex",
+      "source": "deploy/native/support-matrix.json#soldConnectorScope",
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint none, entry point packages/codex/src/enforcement.ts; the host fails open when the hook is not invoked, so the connector maps ask to an explicit deny."
+    }
+  ],
+  "surfaces": [
+    {
+      "id": "tool-call-input",
+      "label": "Tool-call input: tool name and arguments evaluated before execution",
+      "interception_point": "pre-tool-call",
+      "posture": "enforce",
+      "required": true,
+      "source": "deploy/native/support-matrix.json#rows[].interceptionPoint",
+      "evidence": "All six sold rows declare interceptionPoint pre-tool-call and an in-connector deny path (packages/claude-code/src/pre-tool-use.ts, packages/extension/src/aidr-hook.ts, packages/openclaw/src/tool-handler.ts, packages/opencode/src/tool-handler.ts, packages/codex/src/enforcement.ts).",
+      "limitations": [
+        "The verdict is source-declared only: every deploy/native/interception-matrix.json pre-tool row is `declared-not-proven` because no row carries a named real-host acceptance record.",
+        "A disabled or unregistered hook/plugin is a documented fail-open bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "id": "tool-call-output",
+      "label": "Tool-call output: tool result inspected or replaced before the model consumes it",
+      "interception_point": "tool-output-inspection",
+      "posture": "enforce",
+      "required": true,
+      "source": "deploy/native/interception-matrix.json#rows (outputInterceptionPoint)",
+      "evidence": "claude-code, vscode, openclaw and opencode replace or block the tool result before model consumption (packages/claude-code/src/output-inspection.ts, packages/extension/src/output-inspection.ts, packages/openclaw/src/output-inspection.ts, packages/opencode/src/output-handler.ts); the host boundary is post-execution, so the tool has already run.",
+      "limitations": [
+        "cursor replaces only MCP tool output and is advisory for non-MCP tools; codex declares outputInterceptionPoint `none` and inspects no tool output at all."
+      ]
+    },
+    {
+      "id": "model-output",
+      "label": "Model output: assistant response before delivery",
+      "interception_point": "pre-model-output",
+      "posture": "enforce",
+      "required": true,
+      "source": "deploy/native/interception-matrix.json#rows (pre-model-output)",
+      "evidence": "openclaw rewrites the outbound response at the delivery boundary (packages/openclaw/src/output-protection.ts, `message_sending` / `reply_payload_sending`), and the pre-model-output rows for claude-code, vscode and opencode inspect content before model consumption.",
+      "limitations": [
+        "cursor `afterAgentResponse` is observation-only and carries no output fields, so model output is not enforced on that connector.",
+        "Provider streaming content is never inspected (model-stream is unsupported for every connector)."
+      ]
+    },
+    {
+      "id": "prompt",
+      "label": "Prompt: user or model input before submission",
+      "interception_point": "pre-prompt",
+      "posture": "observe",
+      "required": true,
+      "source": "deploy/native/interception-matrix.json#rows (pre-prompt)",
+      "evidence": "No connector inspects or blocks the prompt. openclaw `before_agent_start` prepends plugin-scan context (packages/openclaw/src/startup-scan.ts) and opencode `experimental.chat.messages.transform` appends a system-reminder (packages/opencode/src/index.ts); both are one-shot advisory injections. claude-code, cursor, vscode and codex register no pre-prompt hook.",
+      "limitations": [
+        "Prompt-injection rules therefore fire on tool artifacts and inspected output, not at the prompt boundary; the interception matrix records every pre-prompt row as `unsupported` or advisory `declared-not-proven`."
+      ]
+    },
+    {
+      "id": "network-egress",
+      "label": "Network egress: direct host traffic outside a tool call",
+      "interception_point": "network-egress",
+      "posture": "unsupported",
+      "required": false,
+      "source": "deploy/native/interception-matrix.json#rows (network rows, all `unsupported`)",
+      "evidence": "Every sold connector's `network` row is `unsupported` with reason \"No network egress interception is implemented for this connector\", and deploy/native/support-matrix.json lists \"Direct network access that never constructs a tool call\" as a known bypass.",
+      "limitations": [
+        "URL-based rules still run on URLs extracted from a tool call; that is the tool-call-input surface, not an egress boundary.",
+        "Residual MKT-03-NETWORK-EGRESS in deploy/native/interception-matrix.json is open."
+      ]
+    },
+    {
+      "id": "mcp-tool-description-schema",
+      "label": "MCP tool description and schema (manifest attestation, drift, tool allowlist)",
+      "interception_point": "tool-output-inspection",
+      "posture": "enforce",
+      "required": true,
+      "source": "packages/mcp-gateway/src/gateway.mjs",
+      "evidence": "The inline MCP gateway requires a signed Ed25519 tool manifest, quarantines a first-seen or drifted toolset, and refuses to forward until an operator approves it (packages/mcp-gateway/src/gateway.mjs calls attestMcpToolManifest and throws unless the status is `accepted`); schema_missing and schema_drift deny in packages/core/src/mcp-transport.ts.",
+      "limitations": [
+        "This is the separately deployed MCP transport boundary, not a connector surface; deploy/native/interception-matrix.json states it is not part of any connector's interception surface.",
+        "A client that can still reach the upstream MCP server directly is outside the gateway's enforcement boundary (packages/mcp-gateway/README.md)."
+      ]
+    }
+  ],
+  "required_scenarios_per_family": {
+    "$comment": "The minimum a blind evaluation needs per required item before its coverage claim is meaningful: at least `minimum_malicious_cases` malicious cases and at least `minimum_benign_twins` benign cases that declare the same family, connector or surface. Two malicious cases keep one observation from being a whole family's entire evidence, and two benign twins give the false-positive denominator a non-zero sample at the same coverage point. This is a coverage floor, not the release bar: the 1,000 measured benign calls per connector gate in scripts/benchmarks/evaluate.mjs remains a separate release gate. An override is keyed \"<dimension>:<id>\" (for example \"attack_family:shell-obfuscation\") and may only change a minimum with a recorded reason.",
+    "minimum_malicious_cases": 2,
+    "minimum_benign_twins": 2,
+    "applies_to": ["attack_family", "connector", "surface"],
+    "overrides": {}
+  },
+  "out_of_scope_with_reason": [
+    {
+      "id": "mcp-tool-name-risk-classification",
+      "dimension": "attack_family",
+      "reason": "packages/core/src/mcp-aig-categories.ts ships a keyword classifier (the 14 aig-mcp-* categories and the mcp-01..mcp-14 fallback list), but classifyMcpTool has no consumer outside the core barrel export (packages/core/src/index.ts); no connector, evaluator or gateway turns it into a verdict, and the signed v2 category index it prefers is absent, so only the embedded fallback list could run. No shipped rule detects this family.",
+      "source": "packages/core/src/mcp-aig-categories.ts"
+    },
+    {
+      "id": "mcp-rug-pull",
+      "dimension": "attack_family",
+      "reason": "Only the `mcp-12 Rug Pull Attack` detection_patterns keyword list in the unwired fallback categories exists: no rule id, no verdict path and no consumer.",
+      "source": "packages/core/src/mcp-aig-categories.ts"
+    },
+    {
+      "id": "mcp-name-confusion-and-tool-shadowing",
+      "dimension": "attack_family",
+      "reason": "Only the `mcp-11 Name Confusion Attack` and `mcp-13 Tool Shadowing Attack` keyword lists in the same unwired fallback categories exist: no rule id, no verdict path and no consumer.",
+      "source": "packages/core/src/mcp-aig-categories.ts"
+    },
+    {
+      "id": "mcp-cors-misconfiguration",
+      "dimension": "attack_family",
+      "reason": "Only the `mcp-14 CORS Misconfiguration` keyword list in the same unwired fallback categories exists, and no HTTP response header inspection path consumes it.",
+      "source": "packages/core/src/mcp-aig-categories.ts"
+    },
+    {
+      "id": "multi-agent-handoff-causality",
+      "dimension": "attack_family",
+      "reason": "recordCausalChain/verifyCausalChainEvidence (packages/core/src/causal-chain.ts) are referenced only by the core barrel export and their own test; no connector or control-plane path records a chain, so no shipped verdict detects a cross-agent handoff or a broken causal link. MKT-02 in docs/production-readiness/market-capability-delta-2026-09-13.md is still open.",
+      "source": "packages/core/src/causal-chain.ts"
+    },
+    {
+      "id": "delegated-authority-escalation",
+      "dimension": "attack_family",
+      "reason": "MCP-06 verifies delegated credentials in the control plane (supabase/functions/delegated-credentials/index.ts with packages/core/src/delegated-credential.ts and the delegated-credential SQL RPCs), which is not a connector interception surface, so a connector x surface corpus cannot exercise it. It needs a separate broker-level benchmark against supabase/functions/delegated-credentials/index.ts.",
+      "source": "supabase/functions/delegated-credentials/index.ts"
+    },
+    {
+      "id": "vulnerable-ai-infrastructure",
+      "dimension": "attack_family",
+      "reason": "INF-01/INF-02 scanning is reachable only from the `aidr scan` CLI command (packages/cli/src/commands/scan.ts) and the AIG bridge, not from a connector tool call, so it has no connector x surface combination in this corpus. It needs its own scan-level benchmark.",
+      "source": "packages/cli/src/commands/scan.ts"
+    },
+    {
+      "id": "provider-stream-inspection",
+      "dimension": "interception_point",
+      "reason": "model-stream is `unsupported` for every sold connector in deploy/native/interception-matrix.json, and residual MKT-03-PROVIDER-STREAM is open: no connector can block provider streaming content before consumption.",
+      "source": "deploy/native/interception-matrix.json"
+    },
+    {
+      "id": "network-egress-interception",
+      "dimension": "interception_point",
+      "reason": "No connector intercepts direct (non-tool) host traffic; every `network` row is `unsupported` and residual MKT-03-NETWORK-EGRESS is open. A corpus cannot require prevention on a surface the product does not claim to intercept.",
+      "source": "deploy/native/interception-matrix.json"
+    },
+    {
+      "id": "control-plane-broker-endpoints",
+      "dimension": "interception_point",
+      "reason": "docs/production-readiness/edge-function-contract-manifest.json enumerates the browser-invoked control-plane Edge Functions (identity, billing, policy-management, autosecops-runtime, audit-export and others). They are HTTP control-plane boundaries, not connector interception surfaces, so they belong to a separate control-plane contract benchmark rather than this corpus.",
+      "source": "docs/production-readiness/edge-function-contract-manifest.json"
+    }
+  ]
+}

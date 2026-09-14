@@ -53,14 +53,33 @@ function isApprovedWorkflowTool(issue, type, value) {
 }
 
 function isDenoTypeSpecifier(issue, type, value) {
-	// Knip parses Deno's `npm:` URL scheme as an npm package named "npm".
-	// These exact type-only imports are erased from the Edge runtime bundle.
-	const denoTypeOnlyImports = new Set([
+	// Knip parses Deno's `npm:` URL scheme as an npm package named "npm". The
+	// specifier is resolved by the Deno Edge runtime, not by Node or pnpm, so
+	// "unlisted" is a false positive for every Edge Function that imports it.
+	// The allowlist is enumerated by file on purpose: a new file must be added
+	// deliberately rather than inheriting a directory-wide exemption.
+	const denoSpecifierFiles = new Set([
 		"supabase/functions/_shared/identity-barrier.ts",
 		"supabase/functions/team-invite/lifecycle.ts",
+		"supabase/functions/autosecops-runtime/index.ts",
+		"supabase/functions/billing-portal/index.ts",
+		"supabase/functions/invoice-entitlement/index.ts",
+		"supabase/functions/oauth-callback/index.ts",
+		"supabase/functions/pilot-apply/index.ts",
+		"supabase/functions/pilot-status/index.ts",
+		"supabase/functions/policy-management/index.ts",
+		"supabase/functions/team-invite/index.ts",
 	]);
-	return type === "unlisted" && value?.name === "npm" &&
-		denoTypeOnlyImports.has(String(issue.file ?? "").replaceAll("\\", "/"));
+	const file = String(issue.file ?? "").replaceAll("\\", "/");
+	if (type !== "unlisted") return false;
+	if (value?.name === "npm") return denoSpecifierFiles.has(file);
+	// The policy contract suite redirects Deno's `npm:yaml@2.8.3` to the copy the
+	// repository already vendors for `@singularityrd/aidr-core`. The bare name is
+	// the mock specifier, not an import of an undeclared dependency.
+	if (value?.name === "yaml" && file === "supabase/functions/__tests__/policy-management-contract.test.ts") {
+		return true;
+	}
+	return false;
 }
 
 for (const issue of report.issues ?? []) {
