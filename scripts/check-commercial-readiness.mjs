@@ -1,4 +1,35 @@
 // Static commercial inventory checks. External approvals remain independent gates.
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkClaimEvidenceFreshness } from "./check-claim-evidence-freshness.mjs";
+
+// Connector names as a reader sees them on a release-facing surface, mapped to
+// the identifiers deploy/native/support-matrix.json sells. "Cursor / VS Code"
+// is one surface label for two sold connectors.
+const CONNECTOR_ALIASES = new Map([
+	["claude code", "claude-code"],
+	["cursor", "cursor"],
+	["vs code", "vscode"],
+	["vscode", "vscode"],
+	["openclaw", "openclaw"],
+	["opencode", "opencode"],
+	["codex", "codex"],
+]);
+
+const CONNECTOR_COUNT_WORDS = new Map([
+	["one", 1],
+	["two", 2],
+	["three", 3],
+	["four", 4],
+	["five", 5],
+	["six", 6],
+	["seven", 7],
+	["eight", 8],
+	["nine", 9],
+	["ten", 10],
+]);
+
 function releaseArtifactRoots(source) {
 	const block = source.match(/\bconst targets\s*=\s*\[([\s\S]*?)\]\s*;/);
 	if (!block) throw new Error("release artifact target list is missing or unreadable");
@@ -28,7 +59,113 @@ function compareCounts(label, actual, declared, failures) {
 	}
 }
 
-export function validateCommercialReadiness({ inventory, gaps, registry, releaseSource, now = new Date() }) {
+function normalizeRepoPath(value) {
+	return String(value).replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+function isPathShaped(surface) {
+	// A surface that opens with a path segment names a repository location, not a
+	// descriptive channel label such as "Order Form" or "release notes".
+	return /^[A-Za-z0-9._-]+\//.test(surface);
+}
+
+/**
+ * Every connector-scope advertisement must agree with the sold native support
+ * matrix: the README's connector sentence, the support matrix rows and the
+ * registry's connector claim (CLAIM-010/COM-010) are one scope or the check
+ * fails.
+ */
+export function validateConnectorScope({ supportMatrix, readme, registry }) {
+	const failures = [];
+	const sold = supportMatrix?.soldConnectorScope;
+	if (!Array.isArray(sold) || sold.length === 0) {
+		failures.push("native support matrix must declare a non-empty soldConnectorScope");
+		return failures;
+	}
+	if (new Set(sold).size !== sold.length) failures.push("native support matrix soldConnectorScope contains duplicates");
+	const rows = Array.isArray(supportMatrix?.rows) ? supportMatrix.rows.map((row) => row?.connector) : [];
+	if (rows.length === 0) failures.push("native support matrix must declare connector rows");
+	if (new Set(rows).size !== rows.length) failures.push("native support matrix contains duplicate connector rows");
+	for (const connector of sold) if (!rows.includes(connector)) failures.push(`native support matrix has no row for sold connector ${connector}`);
+	for (const connector of rows) if (!sold.includes(connector)) failures.push(`native support matrix row ${connector} is absent from soldConnectorScope`);
+
+	if (typeof readme !== "string" || readme.trim() === "") {
+		failures.push("README must be readable to check the advertised connector scope");
+	} else {
+		const scopeSentence = readme.split(/\r?\n/).find((line) => line.includes("hook systems in"));
+		if (!scopeSentence) {
+			failures.push('README must declare the advertised connector scope in a sentence containing "hook systems in"');
+		} else {
+			const labels = [...scopeSentence.matchAll(/\[([^\]]+)\]\([^)]*\)/g)].map((match) => match[1]);
+			if (labels.length === 0) failures.push("README connector scope sentence must link every advertised connector");
+			const advertised = new Set();
+			for (const label of labels) {
+				for (const part of label.split("/").map((value) => value.trim()).filter(Boolean)) {
+					const connector = CONNECTOR_ALIASES.get(part.toLowerCase());
+					if (!connector) failures.push(`README connector scope sentence names an unknown connector: ${part}`);
+					else advertised.add(connector);
+				}
+			}
+			for (const connector of sold) if (!advertised.has(connector)) failures.push(`README connector scope omits sold connector ${connector}`);
+			for (const connector of advertised) if (!sold.includes(connector)) failures.push(`README advertises connector ${connector} outside the sold support matrix`);
+		}
+	}
+
+	const scopeClaims = (registry?.claims ?? []).filter((claim) => claim?.decisionId === "COM-010" || claim?.id === "CLAIM-010");
+	if (scopeClaims.length !== 1) {
+		failures.push(`claim registry must contain exactly one connector-scope claim bound to COM-010, found ${scopeClaims.length}`);
+	} else {
+		const text = scopeClaims[0].exactText;
+		const match = typeof text === "string" ? text.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b/i) : null;
+		const declared = match ? (CONNECTOR_COUNT_WORDS.get(match[1].toLowerCase()) ?? Number(match[1])) : Number.NaN;
+		if (!Number.isInteger(declared)) failures.push(`${scopeClaims[0].id}: connector-scope claim must declare how many connectors are sold`);
+		else if (declared !== sold.length) failures.push(`${scopeClaims[0].id}: declares ${declared} connectors but the support matrix sells ${sold.length}`);
+	}
+	return failures;
+}
+
+/**
+ * A claim may only declare a surface that the registry actually scans, or a
+ * descriptive label that names no repository location. Every scan root must
+ * exist or be a build artifact root, so the scan configuration cannot point at
+ * material that is not there.
+ */
+export function validateClaimSurfaces({ registry, root = process.cwd(), exists = (value) => existsSync(resolve(root, value)) }) {
+	const failures = [];
+	const scanRoots = registry?.scanRoots;
+	if (!Array.isArray(scanRoots) || scanRoots.length === 0) {
+		failures.push("claim registry must declare a non-empty scanRoots list");
+		return failures;
+	}
+	const normalizedRoots = scanRoots.map(normalizeRepoPath);
+	const artifactRoots = (registry?.artifactRoots ?? []).map(normalizeRepoPath);
+	for (const scanRoot of normalizedRoots) {
+		if (!exists(scanRoot) && !artifactRoots.includes(scanRoot)) failures.push(`scan root ${scanRoot} does not exist and is not a build artifact root`);
+	}
+	for (const claim of registry?.claims ?? []) {
+		const surfaces = claim?.surfaces;
+		if (!Array.isArray(surfaces) || surfaces.length === 0) {
+			failures.push(`${claim?.id ?? "claim"}: every claim must declare at least one surface`);
+			continue;
+		}
+		for (const surface of surfaces) {
+			if (typeof surface !== "string" || surface.trim() === "") {
+				failures.push(`${claim.id}: claim surface entries must be non-empty strings`);
+				continue;
+			}
+			const normalized = normalizeRepoPath(surface);
+			const covered = normalizedRoots.some((scanRoot) => normalized === scanRoot || normalized.startsWith(`${scanRoot}/`));
+			if (exists(normalized)) {
+				if (!covered) failures.push(`${claim.id}: declared surface ${surface} exists but no scan root covers it`);
+			} else if (isPathShaped(surface)) {
+				failures.push(`${claim.id}: declared surface ${surface} is not present in the repository, so it can never be scanned`);
+			}
+		}
+	}
+	return failures;
+}
+
+export function validateCommercialReadiness({ inventory, gaps, registry, releaseSource, supportMatrix, readme, root = process.cwd(), exists, now = new Date() }) {
 	const failures = [];
 	let expectedRoots = [];
 	try {
@@ -77,5 +214,44 @@ export function validateCommercialReadiness({ inventory, gaps, registry, release
 		const expiry = typeof claim.expiresAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(claim.expiresAt) ? Date.parse(`${claim.expiresAt}T23:59:59.999Z`) : NaN;
 		if (!Number.isFinite(expiry) || expiry < now.getTime()) failures.push(`${claim.id}: Sales Approved claim is expired or has no valid expiresAt date`);
 	}
+	failures.push(...validateConnectorScope({ supportMatrix, readme, registry }));
+	failures.push(...validateClaimSurfaces({ registry, root, exists }));
 	return failures;
+}
+
+// CLI entry point. Reads the real repository files so a stale claim scan or a
+// connector-scope disagreement fails the command instead of staying invisible.
+export function main({ root = process.cwd() } = {}) {
+	const readJson = (value) => JSON.parse(readFileSync(resolve(root, value), "utf8"));
+	const readText = (value) => readFileSync(resolve(root, value), "utf8");
+	const failures = validateCommercialReadiness({
+		inventory: readJson("FEATURE_INVENTORY.json"),
+		gaps: readJson("PRODUCTION_SALES_GAPS.json"),
+		registry: readJson("docs/production-readiness/commercial-go-evidence-registry.json"),
+		releaseSource: readText("scripts/release-artifact-manifests.mjs"),
+		supportMatrix: readJson("deploy/native/support-matrix.json"),
+		readme: readText("README.md"),
+		root,
+	});
+	const freshness = checkClaimEvidenceFreshness({ root });
+	failures.push(...freshness.failures);
+	if (failures.length > 0) {
+		console.error("Commercial readiness: FAIL");
+		for (const failure of failures) console.error(`- ${failure}`);
+		return 1;
+	}
+	console.log(
+		`Commercial readiness: PASS (release package scope, connector scope, claim surfaces, readiness counts, claim approval state and claim-evidence freshness across ${freshness.checked.length} recorded claim scan(s)).`,
+	);
+	return 0;
+}
+
+const invokedDirectly = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+	try {
+		process.exitCode = main();
+	} catch (error) {
+		console.error(`Commercial readiness error: ${error instanceof Error ? error.message : String(error)}`);
+		process.exitCode = 2;
+	}
 }

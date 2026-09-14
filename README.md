@@ -6,7 +6,7 @@
   <img src="images/aidr-logo-shaded.png" alt="Singularity AIDR" width="50%">
 </p>
 
-Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [Cursor / VS Code](docs/platform-guides/cursor.md), [OpenClaw](docs/platform-guides/openclaw.md), and [OpenCode](docs/platform-guides/opencode.md), and checks them against:
+Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [Cursor / VS Code](docs/platform-guides/cursor.md), [OpenClaw](docs/platform-guides/openclaw.md), [OpenCode](docs/platform-guides/opencode.md) and [Codex](packages/codex/README.md), and checks them against:
 
 - **Reputation checks** - first-party URL/domain and package hash lookups (optional, privacy-preserving)
 - **Local heuristics** - YAML-based threat definitions for dangerous patterns
@@ -16,7 +16,7 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 ## Quick Start
 
 For the portable customer candidate, start with the [first customer installation guide](deploy/FIRST_CUSTOMER.md)
-and [v7 candidate status and verification report](docs/production-readiness/2026-09-13-customer-candidate-v7.md).
+and [v8 candidate status and verification report](docs/production-readiness/2026-09-13-customer-candidate-v8.md).
 Deployment details cover both [self-hosted and cloud preparation](deploy/README.md).
 The current capability inventory is [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md),
 with the machine-readable record in [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json).
@@ -109,7 +109,7 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 | [FAQ](docs/faq.md)                               | Common questions                               |
 | [Privacy](docs/privacy.md)                       | What data is sent, what stays local            |
 
-**Platform guides:** [Claude Code](docs/platform-guides/claude-code.md) · [Cursor / VS Code](docs/platform-guides/cursor.md) · [OpenClaw](docs/platform-guides/openclaw.md) · [OpenCode](docs/platform-guides/opencode.md)
+**Platform guides:** [Claude Code](docs/platform-guides/claude-code.md) · [Cursor / VS Code](docs/platform-guides/cursor.md) · [OpenClaw](docs/platform-guides/openclaw.md) · [OpenCode](docs/platform-guides/opencode.md) · [Codex](packages/codex/README.md)
 
 ## Current Limitations
 
