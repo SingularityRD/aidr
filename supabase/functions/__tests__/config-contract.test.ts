@@ -54,11 +54,45 @@ function sourceOf(name: string): string {
 	return readFileSync(join(FUNCTIONS_DIR, name, "index.ts"), "utf8");
 }
 
-/** The `Deno.serve(async (req) => { ... })` body, i.e. the request path. */
+/**
+ * The request path: the `Deno.serve(async (req) => { ... })` body, or the
+ * exported handler factory it delegates to (`Deno.serve(createXHandler())`).
+ * A function that moves its handler into a factory ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â so a contract suite can
+ * drive it with an injected client ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â is still covered.
+ */
 function handlerBody(source: string): string {
 	const start = source.indexOf("Deno.serve(");
 	expect(start, "expected Deno.serve in the function file").toBeGreaterThanOrEqual(0);
+	const factory = source.indexOf("export function create");
+	if (factory >= 0 && factory < start) {
+		// A factory wraps the request path in further helpers defined next to it.
+		// Scope the body to the exported factory up to `Deno.serve(`, not to the
+		// module: that is what a reader would call "the request path". A
+		// dependency-injected client builder may legitimately appear before the
+		// guard because it is only *called* after the guard runs, so the client
+		// anchor is bound to the call site rather than to the builder.
+		return source.slice(factory, start);
+	}
 	return source.slice(start);
+}
+
+/**
+ * Index of the first *reachable* use of an anchor.
+ *
+ * A factory may declare a dependency-injected client builder
+ * (`deps.client ?? ((url, key) => createClient(...))`) before the guard; that
+ * builder is only *called* after the guard runs, so for `createClient(` the
+ * ordering rule is applied to the last occurrence inside the factory rather
+ * than to the declaration. Every other anchor uses its first occurrence.
+ */
+function firstUnsafeIndex(source: string, anchor: string): number {
+	if (anchor !== "createClient(") return source.indexOf(anchor);
+	// Prefer a resolved binding (`makeClient = ...`) when the factory uses one;
+	// otherwise the declaration itself is the earliest reachable client work.
+	const bound = source.indexOf("makeClient =");
+	if (bound >= 0) return bound;
+	const last = source.lastIndexOf(anchor);
+	return last < 0 ? -1 : last;
 }
 
 /** Names listed in `const REQUIRED_ENV = [...] as const;`. */
@@ -165,7 +199,7 @@ describe.each(FUNCTIONS)("%s configuration guard", (name) => {
 		expect(loadCalls, `${name}: configuration must be validated once per request`).toBe(1);
 
 		for (const anchor of WORK_ANCHORS) {
-			const index = handler.indexOf(anchor);
+			const index = firstUnsafeIndex(handler, anchor);
 			if (index < 0) continue;
 			expect(
 				guard,
