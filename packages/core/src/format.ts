@@ -3,7 +3,7 @@
  * Plain text + Unicode only — no ANSI escape codes.
  */
 
-import type { SessionStartResult } from "./session-start.js";
+import type { SessionStartCoverageFinding, SessionStartResult } from "./session-start.js";
 import type { PluginScanResult } from "./types.js";
 import type { VersionCheckResult } from "./version-check.js";
 
@@ -141,7 +141,10 @@ export function formatThreatBanner(
 				lines.push(kv("Artifact", f.artifact));
 			}
 			lines.push(kv("Source", f.sourceFile));
-			const actionLabel = f.action === "block" ? "Block recommendation; review or disable this plugin" : "Review recommended";
+			const actionLabel =
+				f.action === "block"
+					? "Block recommendation; review or disable this plugin"
+					: "Review recommended";
 			lines.push(kv("Finding", actionLabel));
 		}
 
@@ -166,6 +169,24 @@ export function formatThreatBanner(
 	return lines.join("\n");
 }
 
+/** Inventory counts, including how many servers have no verified tool manifest. */
+function mcpInventorySection(posture: NonNullable<SessionStartResult["posture"]>): string {
+	const { mcpServers, riskyMcpServers, unverifiedMcpServers, invalidSources } = posture;
+	return `MCP inventory: ${mcpServers} configured, ${riskyMcpServers} with risk indicators, ${invalidSources} unreadable sources, ${unverifiedMcpServers ?? 0} with unverified tool manifests. Configuration discovery does not verify server trust.`;
+}
+
+/** Coverage gaps are rendered, never folded into the inventory counts. */
+function mcpCoverageGapSection(findings: SessionStartCoverageFinding[]): string[] {
+	const MAX_COVERAGE_FINDINGS = 5;
+	const lines = ["MCP tool-manifest coverage gaps:"];
+	for (const finding of findings.slice(0, MAX_COVERAGE_FINDINGS)) {
+		lines.push(`  - ${finding.server} (${finding.status}, ${finding.reason}): ${finding.detail}`);
+	}
+	const overflow = findings.length - MAX_COVERAGE_FINDINGS;
+	if (overflow > 0) lines.push(`  ... and ${overflow} more coverage gaps`);
+	return lines;
+}
+
 export function formatSessionStartMessage(version: string, result: SessionStartResult): string {
 	if (result.enabled === false) {
 		const reason = result.disabled_reason ?? "disabled";
@@ -185,8 +206,17 @@ export function formatSessionStartMessage(version: string, result: SessionStartR
 		}
 		return lines.join("\n");
 	}
-	const message = result.scanResults.length > 0 ? formatThreatBanner(version, result.scanResults, result.versionCheck) : formatStartupClean(version, result.versionCheck);
-	if (!result.posture) return message;
-	const { mcpServers, riskyMcpServers, invalidSources, infrastructure } = result.posture;
-	return `${message}\nMCP inventory: ${mcpServers} configured, ${riskyMcpServers} with risk indicators, ${invalidSources} unreadable sources. Configuration discovery does not verify server trust.\nAI infrastructure policy assessment: ${infrastructure}.`;
+	const message =
+		result.scanResults.length > 0
+			? formatThreatBanner(version, result.scanResults, result.versionCheck)
+			: formatStartupClean(version, result.versionCheck);
+	const sections: string[] = [];
+	if (result.posture) {
+		sections.push(mcpInventorySection(result.posture));
+		sections.push(`AI infrastructure policy assessment: ${result.posture.infrastructure}.`);
+	}
+	const coverage = result.coverageFindings ?? [];
+	if (coverage.length > 0) sections.push(...mcpCoverageGapSection(coverage));
+	if (sections.length === 0) return message;
+	return `${message}\n${sections.join("\n")}`;
 }

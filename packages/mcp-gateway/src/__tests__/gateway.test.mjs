@@ -43,15 +43,20 @@ function fixture(overrides = {}) {
 			allowedTools: { "server-a": ["search"] },
 		},
 	];
-	const servers = ["tenant-a", "tenant-b"].map((tenantId) => ({
-		tenantId,
-		id: "server-a",
-		url: "https://mcp.example.test/mcp",
-		transport: overrides.transport ?? "json",
-		sessionMode: overrides.sessionMode ?? "stateless",
-		signedManifest,
-		trustedSigners: { publisher: publicKey.export({ type: "spki", format: "pem" }) },
-	}));
+	const servers = ["tenant-a", "tenant-b"].map((tenantId) => {
+		const tenantOverrides = tenantId === "tenant-b" ? (overrides.tenantB ?? {}) : {};
+		return {
+			tenantId,
+			id: "server-a",
+			url: "https://mcp.example.test/mcp",
+			transport: overrides.transport ?? "json",
+			sessionMode: overrides.sessionMode ?? "stateless",
+			signedManifest: tenantOverrides.signedManifest ?? signedManifest,
+			trustedSigners: tenantOverrides.trustedSigners ?? {
+				publisher: publicKey.export({ type: "spki", format: "pem" }),
+			},
+		};
+	});
 	const stores = new Map();
 	let upstreamCalls = 0;
 	const dependencies = {
@@ -221,6 +226,30 @@ describe("inline MCP gateway", () => {
 		await f.approve("tenant-a");
 		assert.equal((await rpc(base, f.tokenA)).body.result.content[0].text, "Normal result");
 		assert.match((await rpc(base, f.tokenB)).body.error.message, /manifest_quarantined/);
+	});
+
+	it("refuses a manifest approved for a different tenant keyring", async () => {
+		const tenantBKeys = generateKeyPairSync("ed25519");
+		const f = fixture({
+			tenantB: {
+				trustedSigners: {
+					publisher: tenantBKeys.publicKey.export({ type: "spki", format: "pem" }),
+				},
+			},
+		});
+		const base = await f.start();
+		assert.match((await rpc(base, f.tokenA)).body.error.message, /manifest_quarantined/);
+		assert.deepEqual(await f.approve("tenant-a"), {
+			approved: true,
+			toolsetHash: mcpToolsetHash(f.tools),
+		});
+		assert.equal((await rpc(base, f.tokenA)).body.result.content[0].text, "Normal result");
+
+		// tenant-b is configured with the same server id and the same toolset hash, but
+		// its keyring holds a different publisher key: tenant-a's signer and tenant-a's
+		// approval must not authorize tenant-b's request.
+		assert.match((await rpc(base, f.tokenB)).body.error.message, /manifest_rejected/);
+		assert.equal(f.upstreamCalls, 2);
 	});
 
 	it("rejects an invalid signature and a revoked signer before any upstream call", async () => {

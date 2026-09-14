@@ -577,7 +577,15 @@ export {
 	loadAigMcpCategories,
 	resetCategoryCache,
 } from "./mcp-aig-categories.js";
-export { discoverMcpServers } from "./mcp-discovery.js";
+export {
+	discoverMcpServers,
+	type McpDiscoveryAttestation,
+	type McpDiscoveryAttestationOptions,
+	type McpDiscoveryAttestationStatus,
+	type McpDiscoveryOptions,
+	type McpDiscoveryServer,
+	type McpSignedManifestIndex,
+} from "./mcp-discovery.js";
 // Metrics
 export { getMetricsCollector, MetricsCollector, metrics } from "./metrics.js";
 export type {
@@ -698,6 +706,7 @@ export { initSentry } from "./sentry.js";
 export {
 	runSessionStart,
 	type SessionStartContext,
+	type SessionStartCoverageFinding,
 	type SessionStartResult,
 } from "./session-start.js";
 // Session start scan pipeline
