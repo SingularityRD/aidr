@@ -8,11 +8,58 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
 // failing later with an empty credential (AIDR-011).
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+
+// Bounds for the intake body. The body carries no identity: the application is
+// bound to the verified session below, so the schema accepts only the
+// documented application fields and rejects anything else instead of ignoring
+// it (a caller must not be able to assert user_id, tenant_id or status).
+const MAX_BODY_BYTES = 4096;
+const MAX_EMAIL_LENGTH = 320;
+const MAX_ORG_LENGTH = 200;
+const MAX_USE_CASE_LENGTH = 4000;
+const INTAKE_FIELDS = new Set(["email", "org", "useCase"]);
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+const EMAIL = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+
+type IntakeResult =
+	| { ok: true; email: string; org: string | null; useCase: string | null }
+	| { ok: false; status: 400; error: string };
+
+function boundedField(value: unknown, max: number): { ok: true; value: string | null } | { ok: false } {
+	if (value === undefined || value === null) return { ok: true, value: null };
+	if (typeof value !== "string") return { ok: false };
+	if (value.length > max || CONTROL_CHARACTERS.test(value)) return { ok: false };
+	const trimmed = value.trim();
+	return { ok: true, value: trimmed === "" ? null : trimmed };
+}
+
+/**
+ * Validate the documented intake body.
+ *
+ * `email` is checked for shape only and is never used to look up an account, so
+ * the answer cannot confirm whether an address is already registered.
+ */
+function parseIntake(body: unknown): IntakeResult {
+	if (!body || typeof body !== "object" || Array.isArray(body)) {
+		return { ok: false, status: 400, error: "invalid_body" };
+	}
+	const record = body as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!INTAKE_FIELDS.has(key)) return { ok: false, status: 400, error: "unsupported_field" };
+	}
+	const email = boundedField(record.email, MAX_EMAIL_LENGTH);
+	const org = boundedField(record.org, MAX_ORG_LENGTH);
+	const useCase = boundedField(record.useCase, MAX_USE_CASE_LENGTH);
+	if (!email.ok || !org.ok || !useCase.ok) return { ok: false, status: 400, error: "invalid_field" };
+	if (!email.value || !EMAIL.test(email.value)) return { ok: false, status: 400, error: "invalid_email" };
+	return { ok: true, email: email.value, org: org.value, useCase: useCase.value };
+}
 
 function getBearerToken(req: Request): string | null {
 	const header = req.headers.get("Authorization") ?? "";
@@ -20,68 +67,78 @@ function getBearerToken(req: Request): string | null {
 	return m?.[1]?.trim() ? m[1].trim() : null;
 }
 
-Deno.serve(async (req) => {
-	const preflight = handleCors(req);
-	if (preflight) return preflight;
-	if (req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
+export interface PilotApplyDeps {
+	/** Overrides the service-role client; used by the contract suite. */
+	db?: ReturnType<typeof createClient>;
+}
 
-	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
-	if (!config.ok) {
-		return configFailure("pilot-apply", config.error, (status, body) => corsJson(req, status, body));
-	}
-	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
+/** Build the request handler. Exported so the contract suite can drive it. */
+export function createPilotApplyHandler(deps: PilotApplyDeps = {}) {
+	return async function handle(req: Request): Promise<Response> {
+		const preflight = handleCors(req);
+		if (preflight) return preflight;
+		if (req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
 
-	const accessToken = getBearerToken(req);
-	if (!accessToken) return corsJson(req, 401, { error: "missing_access_token" });
+		const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+		if (!config.ok) {
+			return configFailure("pilot-apply", config.error, (status, body) => corsJson(req, status, body));
+		}
+		const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
 
-	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-		auth: { persistSession: false },
-	});
-	const { data: userData, error: userErr } = await supabase.auth.getUser(accessToken);
-	if (userErr || !userData?.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
-	const userId = userData.user.id;
-	const identity = await checkIdentityBarrier(supabase, accessToken, userId);
-	if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
+		const accessToken = getBearerToken(req);
+		if (!accessToken) return corsJson(req, 401, { error: "missing_access_token" });
 
-	let body: Record<string, unknown> = {};
-	try {
-		body = (await req.json()) as Record<string, unknown>;
-	} catch {
-		body = {};
-	}
-	const notes = typeof body.useCase === "string" ? body.useCase.trim().slice(0, 4000) : null;
+		const supabase =
+			deps.db ??
+			createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+				auth: { persistSession: false },
+			});
+		const { data: userData, error: userErr } = await supabase.auth.getUser(accessToken);
+		if (userErr || !userData?.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
+		const userId = userData.user.id;
+		const identity = await checkIdentityBarrier(supabase, accessToken, userId);
+		if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
 
-	const { data: existing, error: existingError } = await supabase
-		.from("pilot_applications")
-		.select("status,tenant_id")
-		.eq("user_id", userId)
-		.maybeSingle();
+		const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+		if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
+		const intake = parseIntake(parsed.value);
+		if (!intake.ok) return corsJson(req, intake.status, { error: intake.error });
+		const notes = intake.useCase;
 
-	if (existingError) return corsJson(req, 503, { error: "pilot_application_unavailable" });
-	const status = existing?.status === "approved" ? "approved" : "pending";
-	const tenantId = existing?.tenant_id ?? userId;
-	const tenantIdentity = await checkIdentityBarrier(supabase, accessToken, userId, tenantId);
-	if (!tenantIdentity.ok) return corsJson(req, tenantIdentity.status, { error: tenantIdentity.error });
+		const { data: existing, error: existingError } = await supabase
+			.from("pilot_applications")
+			.select("status,tenant_id")
+			.eq("user_id", userId)
+			.maybeSingle();
 
-	const { error: upsertError } = await supabase.from("pilot_applications").upsert(
-		{
-			user_id: userId,
+		if (existingError) return corsJson(req, 503, { error: "pilot_application_unavailable" });
+		const status = existing?.status === "approved" ? "approved" : "pending";
+		const tenantId = existing?.tenant_id ?? userId;
+		const tenantIdentity = await checkIdentityBarrier(supabase, accessToken, userId, tenantId);
+		if (!tenantIdentity.ok) return corsJson(req, tenantIdentity.status, { error: tenantIdentity.error });
+
+		const { error: upsertError } = await supabase.from("pilot_applications").upsert(
+			{
+				user_id: userId,
+				tenant_id: tenantId,
+				status,
+				notes,
+			},
+			{ onConflict: "user_id" },
+		);
+		if (upsertError) return corsJson(req, 500, { error: "pilot_application_unavailable" });
+
+		const { error: auditError } = await supabase.from("admin_audit_logs").insert({
+			actor_user_id: userId,
 			tenant_id: tenantId,
-			status,
-			notes,
-		},
-		{ onConflict: "user_id" },
-	);
-	if (upsertError) return corsJson(req, 500, { error: "pilot_application_unavailable" });
+			action: "pilot.apply",
+			target_user_id: userId,
+			detail: { has_use_case: Boolean(notes) },
+		});
+		if (auditError) return corsJson(req, 500, { error: "pilot_audit_unavailable" });
 
-	const { error: auditError } = await supabase.from("admin_audit_logs").insert({
-		actor_user_id: userId,
-		tenant_id: tenantId,
-		action: "pilot.apply",
-		target_user_id: userId,
-		detail: { has_use_case: Boolean(notes) },
-	});
-	if (auditError) return corsJson(req, 500, { error: "pilot_audit_unavailable" });
+		return corsJson(req, 200, { ok: true, status });
+	};
+}
 
-	return corsJson(req, 200, { ok: true, status });
-});
+Deno.serve(createPilotApplyHandler());

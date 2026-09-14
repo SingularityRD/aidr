@@ -1,0 +1,76 @@
+{
+  "$comment": "AIDR-019: every Edge Function the dashboard invokes from browser code must appear here with the contract test that exercises it. scripts/check-supabase-edge-contracts.mjs enumerates the real call sites with the TypeScript AST and fails when a browser-invoked function is absent, so an unlisted invocation cannot slip in. A `tests: []` entry is an explicit, recorded gap and is reported as such on every gate run; it is never silently treated as covered.",
+  "policy": {
+    "browserCalledFunctionsRequireContractTest": true,
+    "unenumeratedFunctionIsFailure": true,
+    "dynamicFunctionNameIsFailure": true,
+    "emptyTestListIsReported": true,
+    "gateMustMatchBrowserCallSites": true
+  },
+  "functions": {
+    "api-keys": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/api-key-auth.test.ts"]
+    },
+    "audit-export": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/audit-export.test.ts", "supabase/functions/__tests__/export-cursor.test.ts"]
+    },
+    "autosecops-runtime": {
+      "owner": "Response Engineering",
+      "tests": ["supabase/functions/__tests__/autosecops-runtime-contract.test.ts"]
+    },
+    "billing-checkout": {
+      "owner": "Billing Engineering",
+      "tests": ["supabase/functions/__tests__/stripe-checkout.test.ts"]
+    },
+    "billing-portal": {
+      "owner": "Billing Engineering",
+      "tests": ["supabase/functions/__tests__/billing-portal.test.ts"]
+    },
+    "device-poll": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/device-poll-retry.test.ts", "supabase/functions/__tests__/security-flow.test.ts"]
+    },
+    "device-start": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/device-start-rate-limit.test.ts", "supabase/functions/__tests__/security-flow.test.ts"]
+    },
+    "device-verify": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/security-flow.test.ts"]
+    },
+    "enrollment-tokens": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/enrollment-exchange.test.ts"]
+    },
+    "identity-security": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/identity-security.test.ts", "supabase/functions/__tests__/identity-barrier.test.ts"]
+    },
+    "invoice-entitlement": {
+      "owner": "Billing Engineering",
+      "tests": ["supabase/functions/__tests__/billing-invoice-entitlement.test.ts"]
+    },
+    "oauth-callback": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/oauth-callback-contract.test.ts"]
+    },
+    "pilot-apply": {
+      "owner": "Product Engineering",
+      "tests": ["supabase/functions/__tests__/pilot-intake-contract.test.ts"]
+    },
+    "pilot-status": {
+      "owner": "Product Engineering",
+      "tests": ["supabase/functions/__tests__/pilot-intake-contract.test.ts"]
+    },
+    "policy-management": {
+      "owner": "Detection Engineering",
+      "tests": ["supabase/functions/__tests__/policy-document.test.ts", "supabase/functions/__tests__/policy-management-contract.test.ts"]
+    },
+    "team-invite": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/team-invite-contract.test.ts"]
+    }
+  }
+}
