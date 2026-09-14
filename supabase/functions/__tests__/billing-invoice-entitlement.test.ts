@@ -5,14 +5,20 @@
 // (`docs/production-readiness/edge-function-contract-manifest.json`) so the
 // browser-invoked Edge Function
 // (`packages/dashboard/src/billing/enterprise-orders.ts`) can never ship
-// without an executable contract. The route is deliberately an *order intake
-// ledger*: no request through it may mark an invoice paid, and no request may
-// issue an entitlement.
+// without an executable contract. The route's *intake path* is deliberately an
+// order intake ledger: no intake request may mark an invoice paid, and no
+// intake request may issue an entitlement. The separate
+// `record_invoice_approval` action records an operator-supplied finance
+// decision and is the only path into the paid state.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	parseInvoiceApprovalRequest,
+	projectInvoiceApproval,
+} from "../invoice-entitlement/approval.ts";
 import {
 	parseInvoiceOrderRequest,
 	parseTenantId,
@@ -46,6 +52,21 @@ const migration = readFileSync(
 	"utf8",
 );
 
+// The approval -> paid transition ships as an append-only follow-up migration.
+// It is read separately so an assertion on it can never be satisfied by the
+// shipped intake ledger, and vice versa.
+const APPROVAL_MIGRATION_PATH = join(
+	ROOT,
+	"supabase",
+	"migrations",
+	"20260914000000_invoice_approval_transition.sql",
+);
+const approvalMigration = readFileSync(APPROVAL_MIGRATION_PATH, "utf8");
+const APPROVAL_TABLE =
+	approvalMigration.split("create table public.enterprise_invoice_approvals (")[1]?.split("\n);")[0] ?? "";
+const APPROVAL_RPC =
+	approvalMigration.split("create function public.record_invoice_approval(")[1]?.split("\n$$;")[0] ?? "";
+
 // The migration's three contract surfaces, split out so an assertion cannot be
 // satisfied by an unrelated statement elsewhere in the file.
 const ORDER_TABLE = migration.split("create table public.enterprise_invoice_orders (")[1]?.split("\n);")[0] ?? "";
@@ -59,9 +80,21 @@ const USER = "11111111-1111-4111-8111-111111111111";
 const ORDER_ID = "55555555-5555-4555-8555-555555555555";
 const REQUEST_ID = "order_request_1234567890ab";
 const QUOTE = "QUOTE-2026-0001";
+const EVIDENCE = "a1b2c3d4".repeat(8);
+const APPROVER = "finance.operator@example.invalid";
 
 /** The exact wire request the dashboard consumer sends for a new order. */
 const BODY = { request_id: REQUEST_ID, requested_agents: 25, quote_reference: QUOTE };
+
+/** The exact wire request an operator sends to record a finance approval. */
+const APPROVAL_BODY = {
+	action: "record_invoice_approval",
+	order_id: ORDER_ID,
+	approver: APPROVER,
+	amount_minor: 125000,
+	currency: "USD",
+	evidence_sha256: EVIDENCE,
+};
 
 /** A database row shaped exactly like `public.enterprise_invoice_orders`. */
 function invoiceRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -74,6 +107,24 @@ function invoiceRow(overrides: Record<string, unknown> = {}): Record<string, unk
 		status: "pending_finance",
 		created_at: "2026-09-13T00:00:00.000Z",
 		updated_at: "2026-09-13T00:01:00.000Z",
+		...overrides,
+	};
+}
+
+/** A row shaped exactly like the `record_invoice_approval` / list projection. */
+function approvalRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		order_id: ORDER_ID,
+		tenant_id: TENANT,
+		request_id: REQUEST_ID,
+		quote_reference: QUOTE,
+		status: "paid",
+		approver: APPROVER,
+		amount_minor: 125000,
+		currency: "USD",
+		evidence_sha256: EVIDENCE,
+		agents_granted: 25,
+		approved_at: "2026-09-13T02:00:00.000Z",
 		...overrides,
 	};
 }
@@ -260,6 +311,12 @@ describe("invoice-entitlement Edge handler", () => {
 		orderError?: { code: string; message: string } | null;
 		orders?: unknown;
 		listError?: { code: string; message: string } | null;
+		approvalOrder?: unknown;
+		approvalOrderError?: { code: string; message: string } | null;
+		approval?: unknown;
+		approvalError?: { code: string; message: string } | null;
+		approvals?: unknown;
+		approvalsError?: { code: string; message: string } | null;
 	}
 
 	function database(options: DbOptions = {}) {
@@ -318,6 +375,24 @@ describe("invoice-entitlement Edge handler", () => {
 						return {
 							data: options.orders === undefined ? [] : options.orders,
 							error: options.listError ?? null,
+						};
+					}
+					if (name === "get_enterprise_invoice_order_for_approval") {
+						return {
+							data: options.approvalOrder === undefined ? invoiceRow() : options.approvalOrder,
+							error: options.approvalOrderError ?? null,
+						};
+					}
+					if (name === "record_invoice_approval") {
+						return {
+							data: options.approval === undefined ? approvalRow() : options.approval,
+							error: options.approvalError ?? null,
+						};
+					}
+					if (name === "list_enterprise_invoice_approvals") {
+						return {
+							data: options.approvals === undefined ? [] : options.approvals,
+							error: options.approvalsError ?? null,
 						};
 					}
 					return { data: null, error: null };
@@ -568,6 +643,166 @@ describe("invoice-entitlement Edge handler", () => {
 		const unavailable = await handlerWith({ orders: null });
 		expect((await unavailable.handle(get())).status).toBe(503);
 	});
+
+	it("lists recorded finance approvals with the intake ledger and fails closed otherwise", async () => {
+		const listed = await handlerWith({ orders: [invoiceRow()], approvals: [approvalRow()] });
+		const response = await listed.handle(get());
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as Record<string, unknown>;
+		expect(body.ok).toBe(true);
+		expect(body.approvals).toEqual([approvalRow()]);
+		expect(listed.rpcCalls.find((call) => call.name === "list_enterprise_invoice_approvals")?.args).toEqual({
+			p_tenant_id: TENANT,
+			p_actor_user_id: USER,
+		});
+
+		// A read that cannot be completed is never reported as "nothing approved".
+		const failed = await handlerWith({ approvalsError: { code: "HY000" } });
+		const failedResponse = await failed.handle(get());
+		expect(failedResponse.status).toBe(503);
+		expect(await failedResponse.json()).toMatchObject({ error: "invoice_approvals_unavailable" });
+
+		const forbidden = await handlerWith({
+			approvalsError: { code: "42501", message: "invoice_order_forbidden" },
+		});
+		expect((await forbidden.handle(get())).status).toBe(403);
+
+		const broken = await handlerWith({ approvals: [approvalRow({ status: "pending_finance" })] });
+		const brokenResponse = await broken.handle(get());
+		expect(brokenResponse.status).toBe(503);
+		expect(await brokenResponse.json()).toMatchObject({ error: "invalid_invoice_approval_state" });
+
+		const crossTenant = await handlerWith({ approvals: [approvalRow({ tenant_id: OTHER_TENANT })] });
+		expect((await crossTenant.handle(get())).status).toBe(503);
+	});
+
+	it("grants entitlement only through a recorded finance approval with an evidence digest", async () => {
+		const { handle, rpcCalls } = await handlerWith();
+		const response = await handle(post(APPROVAL_BODY));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as Record<string, unknown>;
+		expect(body.ok).toBe(true);
+		expect(body.approval).toMatchObject({
+			order_id: ORDER_ID,
+			tenant_id: TENANT,
+			request_id: REQUEST_ID,
+			quote_reference: QUOTE,
+			status: "paid",
+			approver: APPROVER,
+			amount_minor: 125000,
+			currency: "USD",
+			evidence_sha256: EVIDENCE,
+			agents_granted: 25,
+		});
+		// The local system did not independently validate the payment, so it must
+		// never present the recorded decision as externally validated.
+		expect(body.external_validation).toBe(false);
+
+		// The transition is driven with the operator's inputs plus server facts:
+		// the approver, the amount, the currency and the evidence digest come from
+		// the body, and nothing client-supplied decides the tenant.
+		const transition = rpcCalls.find((call) => call.name === "record_invoice_approval");
+		expect(transition?.args).toEqual({
+			p_order_id: ORDER_ID,
+			p_approver: APPROVER,
+			p_amount_minor: 125000,
+			p_currency: "USD",
+			p_evidence_sha256: EVIDENCE,
+		});
+		expect(transition?.args).not.toHaveProperty("p_tenant_id");
+		expect(transition?.args).not.toHaveProperty("p_actor_user_id");
+
+		// The order is scoped to the authenticated tenant before the transition.
+		expect(
+			rpcCalls.find((call) => call.name === "get_enterprise_invoice_order_for_approval")?.args,
+		).toEqual({ p_tenant_id: TENANT, p_actor_user_id: USER, p_order_id: ORDER_ID });
+		expect(rpcCalls.find((call) => call.name === "consume_tenant_rate_limit")?.args).toMatchObject({
+			p_tenant_id: TENANT,
+			p_subject: USER,
+			p_endpoint: "invoice-approval",
+		});
+	});
+
+	it("refuses an approval that omits the approver, the amount, the currency or the evidence digest", async () => {
+		const { handle, rpcCalls } = await handlerWith();
+		for (const approval of [
+			{ ...APPROVAL_BODY, approver: undefined },
+			{ ...APPROVAL_BODY, approver: "   " },
+			{ ...APPROVAL_BODY, approver: `${APPROVER}\nX-Injected: 1` },
+			{ ...APPROVAL_BODY, approver: "x".repeat(201) },
+			{ ...APPROVAL_BODY, amount_minor: undefined },
+			{ ...APPROVAL_BODY, amount_minor: 0 },
+			{ ...APPROVAL_BODY, amount_minor: 12.5 },
+			{ ...APPROVAL_BODY, amount_minor: "125000" },
+			{ ...APPROVAL_BODY, currency: "usd" },
+			{ ...APPROVAL_BODY, currency: "JPY" },
+			{ ...APPROVAL_BODY, evidence_sha256: undefined },
+			{ ...APPROVAL_BODY, evidence_sha256: "A".repeat(64) },
+			{ ...APPROVAL_BODY, evidence_sha256: "a".repeat(63) },
+			{ ...APPROVAL_BODY, order_id: "not-a-uuid" },
+			{ ...APPROVAL_BODY, tenant_id: OTHER_TENANT },
+			{ ...APPROVAL_BODY, status: "paid" },
+			{ ...APPROVAL_BODY, agents_granted: 5000 },
+			{ ...APPROVAL_BODY, action: "approve_everything" },
+			{ ...APPROVAL_BODY, paid: true },
+		]) {
+			const response = await handle(post(approval));
+			expect(response.status, JSON.stringify(approval)).toBe(400);
+		}
+		// Nothing reached the database: no approval can be recorded from a body
+		// that does not fully describe the decision.
+		expect(rpcCalls).toEqual([]);
+	});
+
+	it("rejects a second approval for the same order", async () => {
+		const conflicted = await handlerWith({
+			approvalError: { code: "23505", message: "invoice_approval_conflict" },
+		});
+		const response = await conflicted.handle(post(APPROVAL_BODY));
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ error: "invoice_approval_conflict" });
+		// The refusal is not retried and cannot apply the decision twice.
+		expect(
+			conflicted.rpcCalls.filter((call) => call.name === "record_invoice_approval"),
+		).toHaveLength(1);
+
+		// Any other failure is unavailable, never a second silent application.
+		const unrelated = await handlerWith({
+			approvalError: { code: "23505", message: "duplicate key value violates unique constraint" },
+		});
+		const unrelatedResponse = await unrelated.handle(post(APPROVAL_BODY));
+		expect(unrelatedResponse.status).toBe(503);
+		expect(await unrelatedResponse.json()).toMatchObject({ error: "invoice_approval_unavailable" });
+
+		const missing = await handlerWith({ approvalError: { code: "P0002", message: "not found" } });
+		expect((await missing.handle(post(APPROVAL_BODY))).status).toBe(404);
+	});
+
+	it("cannot mark an invoice paid through the intake path", async () => {
+		const rejected = await handlerWith();
+		for (const body of [
+			{ ...BODY, status: "paid" },
+			{ ...BODY, status: "paid_verified" },
+			{ ...BODY, paid: true },
+			{ ...BODY, entitlement: { included_agents: 5000 } },
+			{ ...BODY, approver: APPROVER },
+			{ ...BODY, evidence_sha256: EVIDENCE },
+			{ action: "request_order", ...BODY },
+		]) {
+			const response = await rejected.handle(post(body));
+			expect(response.status, JSON.stringify(body)).toBe(400);
+		}
+		expect(rejected.rpcCalls).toEqual([]);
+
+		// The intake transition that *is* reached records no approval and never
+		// writes an entitlement through this route.
+		const accepted = await handlerWith();
+		expect((await accepted.handle(post(BODY))).status).toBe(200);
+		expect(accepted.rpcCalls.map((call) => call.name)).toEqual([
+			"consume_tenant_rate_limit",
+			"request_enterprise_invoice_order",
+		]);
+	});
 });
 
 describe("invoice entitlement migration contract", () => {
@@ -645,6 +880,144 @@ describe("invoice entitlement migration contract", () => {
 		]) {
 			expect(migration).toContain(`revoke all on function ${signature}\n  from public, anon, authenticated`);
 			expect(migration).toContain(`grant execute on function ${signature}\n  to service_role`);
+		}
+	});
+});
+
+describe("invoice approval contract", () => {
+	it("accepts only a complete operator decision and normalizes the approver", () => {
+		expect(parseInvoiceApprovalRequest(APPROVAL_BODY)).toEqual({
+			orderId: ORDER_ID,
+			approver: APPROVER,
+			amountMinor: 125000,
+			currency: "USD",
+			evidenceSha256: EVIDENCE,
+		});
+		expect(parseInvoiceApprovalRequest({ ...APPROVAL_BODY, approver: `  ${APPROVER}  ` }).approver).toBe(
+			APPROVER,
+		);
+		// An intake-shaped body is not an approval: the parser has no defaults,
+		// so a missing approver, amount, currency or digest cannot be fabricated.
+		for (const value of [null, undefined, [], "approve", BODY, { action: "record_invoice_approval" }]) {
+			expect(() => parseInvoiceApprovalRequest(value)).toThrow();
+		}
+	});
+
+	it("refuses any client-supplied state beyond the recorded decision", () => {
+		for (const extra of [
+			{ tenant_id: OTHER_TENANT },
+			{ status: "paid" },
+			{ paid: true },
+			{ agents_granted: 5000 },
+			{ evidence: EVIDENCE },
+			{ approver_user_id: USER },
+		]) {
+			expect(() => parseInvoiceApprovalRequest({ ...APPROVAL_BODY, ...extra })).toThrow(
+				"unsupported_invoice_approval_field",
+			);
+		}
+	});
+
+	it("projects only a complete paid decision for the authenticated tenant", () => {
+		expect(projectInvoiceApproval(approvalRow({ internal_note: "never returned" }), TENANT)).toEqual(
+			approvalRow(),
+		);
+		expect(projectInvoiceApproval(approvalRow({ tenant_id: OTHER_TENANT }), TENANT)).toBeNull();
+		for (const broken of [
+			null,
+			undefined,
+			[],
+			"row",
+			approvalRow({ status: "pending_finance" }),
+			approvalRow({ status: "settled" }),
+			approvalRow({ approver: "" }),
+			approvalRow({ amount_minor: 0 }),
+			approvalRow({ amount_minor: 1.5 }),
+			approvalRow({ currency: "JPY" }),
+			approvalRow({ evidence_sha256: "zz" }),
+			approvalRow({ order_id: "not-a-uuid" }),
+			approvalRow({ request_id: "short" }),
+			approvalRow({ agents_granted: 0 }),
+			approvalRow({ approved_at: "nonsense" }),
+		]) {
+			expect(projectInvoiceApproval(broken, TENANT)).toBeNull();
+		}
+	});
+});
+
+describe("invoice approval migration contract", () => {
+	it("keeps the paid state out of the shipped pending_finance ledger", () => {
+		// The intake ledger is not altered at all: its single-value status check
+		// still admits only pending_finance and no paid column is added.
+		expect(approvalMigration).not.toMatch(/alter table public\.enterprise_invoice_orders/);
+		expect(approvalMigration).not.toMatch(/drop constraint/);
+		expect(approvalMigration).not.toContain("enterprise_invoice_orders\n  add column");
+		expect(APPROVAL_TABLE).toMatch(/status text not null default 'paid'\s+check \(status = 'paid'\)/);
+		expect(APPROVAL_TABLE).toContain("order_id uuid primary key");
+		expect(APPROVAL_TABLE).toContain("amount_minor bigint not null check (amount_minor > 0)");
+		expect(APPROVAL_TABLE).toContain("currency text not null check (currency in ('USD', 'EUR', 'GBP'))");
+		expect(APPROVAL_TABLE).toContain("evidence_sha256 text not null check (evidence_sha256 ~ '^[0-9a-f]{64}$')");
+	});
+
+	it("is the only transition: audited, serialized per order and idempotent by refusal", () => {
+		expect(APPROVAL_RPC).toContain("pg_advisory_xact_lock(hashtextextended(p_order_id::text, 2615))");
+		expect(APPROVAL_RPC).toContain("for update");
+		expect(APPROVAL_RPC).toContain("from public.enterprise_invoice_approvals where order_id = p_order_id");
+		expect(APPROVAL_RPC).toContain("invoice_approval_conflict");
+		expect(APPROVAL_RPC).toContain("using errcode = '23505'");
+		expect(APPROVAL_RPC).toContain("using errcode = '22023'");
+		expect(APPROVAL_RPC).toContain("using errcode = '42501'");
+		expect(APPROVAL_RPC).toContain("insert into public.admin_audit_logs");
+		expect(APPROVAL_RPC).toContain("'invoice_approval.recorded'");
+		expect(APPROVAL_RPC).toContain("'evidence_sha256', v_approval.evidence_sha256");
+		expect(APPROVAL_RPC).toContain("'approver', v_approval.approver");
+		// The entitlement is granted from the recorded approvals only, and the
+		// approval row is written before the audit and entitlement statements.
+		expect(APPROVAL_RPC).toContain("insert into public.entitlements");
+		expect(APPROVAL_RPC.indexOf("insert into public.enterprise_invoice_approvals")).toBeLessThan(
+			APPROVAL_RPC.indexOf("insert into public.entitlements"),
+		);
+		expect(APPROVAL_RPC.indexOf("insert into public.entitlements")).toBeLessThan(
+			APPROVAL_RPC.indexOf("insert into public.admin_audit_logs"),
+		);
+		// No hard-coded commercial figure: the amount and currency are parameters.
+		expect(APPROVAL_RPC).not.toMatch(/amount_minor\s*:=\s*\d/);
+		expect(APPROVAL_RPC).not.toMatch(/tax/i);
+	});
+
+	it("re-checks the tenant and role before the approval transition", () => {
+		const scoping =
+			approvalMigration.split("create function public.get_enterprise_invoice_order_for_approval(")[1]?.split(
+				"\n$$;",
+			)[0] ?? "";
+		expect(scoping).toContain("public.tenant_members");
+		expect(scoping).toContain("m.user_id = p_actor_user_id");
+		expect(scoping).toContain("m.role in ('owner', 'admin')");
+		expect(scoping).toContain("t.status = 'active'");
+		expect(scoping).toContain("for share of t, m");
+		expect(scoping).toContain("tenant_id = p_tenant_id");
+	});
+
+	it("is service-role only: the table and every RPC", () => {
+		expect(approvalMigration).toContain(
+			"revoke all on public.enterprise_invoice_approvals from public, anon, authenticated",
+		);
+		expect(approvalMigration).toContain(
+			"grant select, insert on public.enterprise_invoice_approvals to service_role",
+		);
+		expect(approvalMigration).not.toMatch(/grant\s+[^;]*\bto\s+(?:anon|public)\b/);
+		expect(approvalMigration).not.toMatch(
+			/grant\s+[^;]*\b(?:select|insert|update|delete)\b[^;]*\bto\s+authenticated\b/,
+		);
+		for (const signature of [
+			"public.record_invoice_approval(uuid, text, bigint, text, text)",
+			"public.get_enterprise_invoice_order_for_approval(uuid, uuid, uuid)",
+			"public.list_enterprise_invoice_approvals(uuid, uuid)",
+		]) {
+			expect(approvalMigration).toContain(
+				`revoke all on function ${signature}\n  from public, anon, authenticated`,
+			);
+			expect(approvalMigration).toContain(`grant execute on function ${signature}\n  to service_role`);
 		}
 	});
 });

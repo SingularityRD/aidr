@@ -19,6 +19,12 @@ import {
 	requestSeats,
 	type SettlementStatus,
 } from "../../billing/billing-portal";
+import { type InvoiceApproval, listInvoiceApprovals } from "../../billing/invoice-approvals";
+import {
+	RECONCILIATION_LABELS,
+	reconcileApprovedOrders,
+	type ReconciliationRow,
+} from "../../billing/reconciliation";
 import { useTeam } from "../../enterprise/team-provider";
 import { supabase } from "../../lib/supabase";
 
@@ -63,6 +69,10 @@ export function BillingPage() {
 	const [requestedAgents, setRequestedAgents] = useState(1);
 	const [quoteReference, setQuoteReference] = useState("");
 	const [orderRequestId, setOrderRequestId] = useState(newBillingRequestId);
+	// Recorded finance approvals. `null` means "not read", which the
+	// reconciliation table must render as unavailable rather than as "nothing
+	// approved"; an empty array is a real, recorded answer.
+	const [approvals, setApprovals] = useState<InvoiceApproval[] | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -171,24 +181,35 @@ export function BillingPage() {
 		setRequestedAgents(1);
 		setQuoteReference("");
 		setOrderRequestId(newBillingRequestId());
+		setApprovals(null);
 		if (!tenantId || !canManageBilling) return;
 		const activeTenantId = tenantId;
 		async function loadOrders() {
 			const revision = ++ordersRevision.current;
+			const current = () => !cancelled && revision === ordersRevision.current;
 			try {
 				const rows = await listEnterpriseOrders(activeTenantId);
-				if (!cancelled && revision === ordersRevision.current) {
+				if (current()) {
 					setOrders(rows);
 					setOrdersLoaded(true);
 					setOrderError(null);
 				}
 			} catch {
-				if (!cancelled && revision === ordersRevision.current) {
+				if (current()) {
 					setOrdersLoaded(true);
 					setOrderError(
 						"Enterprise order status is unavailable. Contact the approved sales channel.",
 					);
 				}
+			}
+			// A failed approval read must not be presented as "nothing was
+			// approved": approvals stay `null` and the reconciliation table
+			// reports itself unavailable.
+			try {
+				const recorded = await listInvoiceApprovals(activeTenantId);
+				if (current()) setApprovals(recorded);
+			} catch {
+				if (current()) setApprovals(null);
 			}
 		}
 		void loadOrders();
@@ -232,6 +253,10 @@ export function BillingPage() {
 			checkoutSeats >= 1 &&
 			checkoutSeats <= 10000,
 	);
+	// The intake ledger can only ever report `pending_finance`, so an order with
+	// a recorded finance decision is shown as paid from that decision instead of
+	// from a ledger status it is structurally unable to carry.
+	const approvalByOrderId = new Map((approvals ?? []).map((approval) => [approval.orderId, approval]));
 	function isCurrentBillingTenant(expectedTenantId: string): boolean {
 		return activeTenantRef.current === expectedTenantId && activeBillingRoleRef.current;
 	}
@@ -390,7 +415,11 @@ export function BillingPage() {
 				)}
 			</div>
 
-			<SubscriptionPortalCard tenantId={tenantId} canManageBilling={canManageBilling} />
+			<SubscriptionPortalCard
+				tenantId={tenantId}
+				canManageBilling={canManageBilling}
+				approvals={approvals}
+			/>
 
 			<div className="card">
 				<h2>Enterprise / manual invoice</h2>
@@ -437,7 +466,9 @@ export function BillingPage() {
 							<div className="notice" key={order.id}>
 								<strong>{order.requested_agents} protected agents</strong>
 								{" · "}
-								{order.status.replaceAll("_", " ")}
+								{approvalByOrderId.has(order.id)
+									? "approved · paid"
+									: order.status.replaceAll("_", " ")}
 								{order.quote_reference ? <span> · Quote {order.quote_reference}</span> : null}
 								<div className="muted small">
 									Requested {new Date(order.created_at).toLocaleString()}
@@ -559,18 +590,145 @@ function formatMinor(amountMinor: number, currency: string): string {
 }
 
 /**
+ * A recorded amount is either exactly what the ledger/approval stored or
+ * explicitly absent. It is never rendered as zero, because zero would be a
+ * commercial figure nobody approved.
+ */
+function formatRecordedAmount(amountMinor: number | null, currency: string | null): string {
+	if (amountMinor === null || currency === null) return "Not recorded";
+	return formatMinor(amountMinor, currency);
+}
+
+function reconciliationBadgeClass(status: ReconciliationRow["status"]): string {
+	return status === "matched" ? "badge badge-success" : "badge badge-warning";
+}
+
+/**
+ * One reconciliation line. An unrecorded figure is rendered as "Not recorded"
+ * and never as zero, and the tax cell is always explicitly absent: this ledger
+ * stores no tax figure at all.
+ */
+function ReconciliationTableRow({ row }: { row: ReconciliationRow }) {
+	return (
+		<tr>
+			<td>
+				<div className="mono">{row.orderId ? row.orderId.slice(0, 12) : "No approved order"}</div>
+				{row.approvedAt ? (
+					<div className="muted small">Approved {new Date(row.approvedAt).toLocaleString()}</div>
+				) : null}
+			</td>
+			<td className="mono">{row.quoteReference ?? "Not recorded"}</td>
+			<td>{row.approver ?? "Not recorded"}</td>
+			<td className="right mono">{row.approvedAgents ?? "Not recorded"}</td>
+			<td className="right mono">
+				{formatRecordedAmount(row.approvedAmountMinor, row.currency)}
+			</td>
+			<td className="right muted">Not recorded</td>
+			<td className="mono small">
+				{row.settlementIds.length > 0 ? row.settlementIds.join(", ") : "None"}
+			</td>
+			<td className="right mono">
+				{formatRecordedAmount(row.settledAmountMinor, row.currency)}
+			</td>
+			<td className="right mono">{row.settledSeats === null ? "Not recorded" : row.settledSeats}</td>
+			<td>
+				<span className={reconciliationBadgeClass(row.status)}>
+					{RECONCILIATION_LABELS[row.status]}
+				</span>
+				<div className="muted small">{row.reason}</div>
+			</td>
+		</tr>
+	);
+}
+
+/**
+ * Approved-order reconciliation surface. An unread approval list or an unread
+ * ledger is reported as unavailable instead of being shown as an empty (and
+ * therefore apparently clean) reconciliation.
+ */
+function ReconciliationSection({
+	approvals,
+	snapshot,
+}: {
+	approvals: InvoiceApproval[] | null;
+	snapshot: PortalSnapshot | null;
+}) {
+	const rows = snapshot
+		? reconcileApprovedOrders({ approvals: approvals ?? [], settlements: snapshot.settlements })
+		: [];
+	return (
+		<>
+			<h3 style={{ marginTop: 20 }}>Approved order reconciliation</h3>
+			<p className="muted small">
+				Each recorded finance approval is matched to the settled settlements that quote the same
+				reference. A settled settlement no approval claims is marked unmatched; a settlement that
+				exceeds what was approved is marked over limit. Matching is by the quote reference recorded
+				by Finance — nothing here prices a settlement.
+			</p>
+			{approvals === null ? (
+				<div className="notice notice-danger" role="status" style={{ marginTop: 8 }}>
+					Reconciliation is unavailable: the recorded finance approvals could not be read. Treat
+					every settled settlement as unreconciled until this is resolved.
+				</div>
+			) : snapshot === null ? (
+				<div className="notice notice-danger" role="status" style={{ marginTop: 8 }}>
+					Reconciliation is unavailable: the settlement ledger could not be read.
+				</div>
+			) : rows.length === 0 ? (
+				<div className="muted small" style={{ marginTop: 8 }}>
+					No approved order and no settled settlement is on record for this tenant.
+				</div>
+			) : (
+				<div className="table-wrap" style={{ marginTop: 8 }}>
+					<table className="table" aria-label="Approved order reconciliation">
+						<thead>
+							<tr>
+								<th>Approved order</th>
+								<th>Quote</th>
+								<th>Approved by</th>
+								<th className="right">Approved agents</th>
+								<th className="right">Approved amount</th>
+								<th className="right">Tax</th>
+								<th>Settled settlement ids</th>
+								<th className="right">Settled amount</th>
+								<th className="right">Settled seats</th>
+								<th>Status</th>
+							</tr>
+						</thead>
+						<tbody>
+							{rows.map((row) => (
+								<ReconciliationTableRow key={row.key} row={row} />
+							))}
+						</tbody>
+					</table>
+				</div>
+			)}
+			<p className="muted small" style={{ marginTop: 8 }}>
+				Approved amounts are exactly what Finance recorded; a figure that was not recorded is shown
+				as “Not recorded”, never as zero. No tax rate and no catalogue price is recorded here, so
+				none is displayed or derived.
+			</p>
+		</>
+	);
+}
+
+/**
  * Self-service subscription portal.
  *
  * Read-only until the operator asks for a change, and every change carries a
  * fresh request id so a retry is idempotent server-side. A failed call clears
- * the success line rather than leaving a stale confirmation on screen.
+ * the success line rather than leaving a stale confirmation on screen. It also
+ * carries the approved-order reconciliation, because the settlement ledger and
+ * the approved orders only mean something when they are read together.
  */
 function SubscriptionPortalCard({
 	tenantId,
 	canManageBilling,
+	approvals,
 }: {
 	tenantId: string | undefined;
 	canManageBilling: boolean;
+	approvals: InvoiceApproval[] | null;
 }) {
 	const [snapshot, setSnapshot] = useState<PortalSnapshot | null>(null);
 	const [portalError, setPortalError] = useState<string | null>(null);
@@ -779,6 +937,7 @@ function SubscriptionPortalCard({
 							settled settlement exists.
 						</div>
 					)}
+					<ReconciliationSection approvals={approvals} snapshot={snapshot} />
 					{snapshot?.selfService ? (
 						<div className="row" style={{ marginTop: 12 }}>
 							<label>

@@ -28,7 +28,32 @@ for (let batch = 0; batch < 100; batch++) {
   for (const path of paths) await request(`/rest/v1/audit_export_objects?path=eq.${encodeURIComponent(path)}&expires_at=lte.${encodeURIComponent(cutoff)}`, "DELETE");
   removed += paths.length;
 }
-const evidence = { checked_at: new Date().toISOString(), action: "expire-private-audit-exports", applied: apply, selected, removed, complete, cutoff, scope: "Deletes expired temporary export objects only; source audit records remain append-only." };
+// Billing retention: expired request-idempotency keys and processed webhook ids
+// only. The settlement ledger (public.billing_settlements) is append-only
+// financial evidence and this stage never selects, updates or deletes it, so a
+// settled record cannot be reached by pruning. Dry runs count without deleting.
+const billing = { settlement_requests: 0, webhook_events: 0, eligible: 0, batches: 0, complete: false };
+for (let batch = 0; batch < 100; batch++) {
+  const result = await request("/rest/v1/rpc/prune_expired_billing_records", "POST", { p_limit: 100, p_apply: apply });
+  if (!result || typeof result !== "object"
+    || !Number.isInteger(result.settlement_requests_eligible) || !Number.isInteger(result.webhook_events_eligible)
+    || !Number.isInteger(result.settlement_requests_deleted) || !Number.isInteger(result.webhook_events_deleted)) {
+    throw new Error("Invalid billing retention response");
+  }
+  billing.eligible += result.settlement_requests_eligible + result.webhook_events_eligible;
+  billing.settlement_requests += result.settlement_requests_deleted;
+  billing.webhook_events += result.webhook_events_deleted;
+  billing.batches += 1;
+  if (!apply) break;
+  if (result.settlement_requests_deleted + result.webhook_events_deleted === 0) { billing.complete = true; break; }
+}
+const evidence = {
+  checked_at: new Date().toISOString(),
+  action: "expire-private-audit-exports-and-billing-idempotency-keys",
+  applied: apply, selected, removed, complete, cutoff,
+  billing_retention: billing,
+  scope: "Deletes expired temporary export objects and expired billing request/webhook idempotency keys only; source audit records remain append-only and the append-only settlement ledger is never touched.",
+};
 writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify(evidence, null, 2));
 console.log(JSON.stringify(evidence));
-if (apply && !complete) process.exitCode = 2;
+if (apply && (!complete || !billing.complete)) process.exitCode = 2;
