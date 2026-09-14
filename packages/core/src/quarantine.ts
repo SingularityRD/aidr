@@ -5,17 +5,55 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { copyFile, mkdir, readFile, stat, unlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { logIncident } from "./audit-log.js";
 import { resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent, getFileContentSync } from "./file-utils.js";
 import type { ResponseAuditor } from "./response-audit.js";
+import { normalizeAuthorizedBy } from "./response-worker-contract.js";
 import type { Logger, LoggingConfig, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 
 /** Notification channel types for security team alerts */
 export type NotifyChannel = "email" | "slack" | "webhook";
+
+/**
+ * Thrown when a quarantine is REFUSED before anything is moved.
+ *
+ * `code` is machine-readable: "symlink_refused" means the named path was a link to
+ * somewhere else, and moving it would have relocated — or hidden — a file the
+ * operator never named.
+ */
+export class QuarantineRefusedError extends Error {
+	readonly code: string;
+
+	constructor(reason: string, message: string) {
+		super(message);
+		this.name = "QuarantineRefusedError";
+		this.code = reason;
+	}
+}
+
+/**
+ * Thrown when a quarantined file could not be deleted.
+ *
+ * The item deliberately stays in tracking and in the manifest: reporting a file as
+ * permanently deleted while it is still on disk is the one outcome a quarantine
+ * must never produce.
+ */
+export class QuarantineDeleteError extends Error {
+	readonly code = "delete_failed";
+
+	constructor(
+		readonly itemId: string,
+		readonly quarantinePath: string,
+		detail: string,
+	) {
+		super(`Failed to delete quarantined file ${quarantinePath}: ${detail}`);
+		this.name = "QuarantineDeleteError";
+	}
+}
 
 /** Configuration for auto-quarantine behavior */
 export interface QuarantineConfig {
@@ -55,6 +93,8 @@ export interface QuarantinedItem {
 	fileHash?: string;
 	/** Original file size in bytes */
 	fileSize?: number;
+	/** Operator identity that authorized the quarantine, when one was supplied. */
+	authorizedBy?: string;
 }
 
 /** Quarantine manifest stored in the quarantine directory */
@@ -118,13 +158,40 @@ export class AutoQuarantine {
 			tool?: string;
 			input?: string;
 			verdict?: Verdict;
+			/** Operator identity that authorized this response, when one is known. */
+			authorizedBy?: string;
 		},
 	): Promise<QuarantinedItem> {
 		const resolvedPath = resolvePath(filePath);
 		const quarantineDir = resolvePath(this.config.quarantineDir);
+		const authorizedBy = normalizeAuthorizedBy(auditContext?.authorizedBy);
 
-		// Verify file exists and is accessible
-		const fileStats = await stat(resolvedPath).catch(() => null);
+		// lstat, not stat: this is the same rule the rollback module applies to a
+		// snapshot target. Following a symlink here would move (and then delete) the
+		// LINK TARGET — a file that was never named, and possibly one outside the
+		// workspace entirely.
+		const fileStats = await lstat(resolvedPath).catch(() => null);
+		if (fileStats?.isSymbolicLink()) {
+			const error = `Refusing to quarantine a symlink: ${resolvedPath}`;
+			// Log the refusal if auditor and context are available. It is reported as
+			// a failure: nothing was isolated.
+			if (this.auditor && auditContext?.verdict) {
+				await this.auditor.log({
+					action: "quarantine",
+					threatId,
+					tool: auditContext.tool ?? "unknown",
+					input: auditContext.input ?? filePath,
+					verdict: auditContext.verdict,
+					responseTaken: "quarantine",
+					metadata: { quarantineId: undefined, reason: "symlink_refused" },
+					outcome: "failure",
+					error,
+					authorizedBy,
+				});
+			}
+
+			throw new QuarantineRefusedError("symlink_refused", error);
+		}
 		if (!fileStats?.isFile()) {
 			const error = `File not found or not accessible: ${resolvedPath}`;
 
@@ -140,6 +207,7 @@ export class AutoQuarantine {
 					metadata: { quarantineId: undefined },
 					outcome: "failure",
 					error,
+					authorizedBy,
 				});
 			}
 
@@ -151,7 +219,9 @@ export class AutoQuarantine {
 		const fileHash = await this.computeFileHash(resolvedPath);
 		const fileSize = fileStats.size;
 
-		// Create quarantine subdirectory structure based on date
+		// Create quarantine subdirectory structure based on date. Mode 0o700, the same
+		// as a snapshot directory: a quarantine vault holds hostile content and must
+		// not be world-traversable.
 		const now = new Date();
 		const dateDir = join(
 			quarantineDir,
@@ -159,7 +229,7 @@ export class AutoQuarantine {
 			(now.getMonth() + 1).toString().padStart(2, "0"),
 			now.getDate().toString().padStart(2, "0"),
 		);
-		await mkdir(dateDir, { recursive: true });
+		await mkdir(dateDir, { recursive: true, mode: 0o700 });
 
 		// Move file to quarantine (using copy + delete for cross-device safety)
 		const quarantineFilename = `${id}_${basename(resolvedPath)}`;
@@ -185,6 +255,7 @@ export class AutoQuarantine {
 					metadata: { quarantineId: undefined },
 					outcome: "failure",
 					error: errorMsg,
+					authorizedBy,
 				});
 			}
 
@@ -202,6 +273,7 @@ export class AutoQuarantine {
 			metadata: metadata ?? {},
 			fileHash,
 			fileSize,
+			...(authorizedBy ? { authorizedBy } : {}),
 		};
 
 		await atomicWriteJson(metadataPath, {
@@ -231,6 +303,7 @@ export class AutoQuarantine {
 					notificationSent: this.config.notifyChannels.length > 0,
 				},
 				outcome: "success",
+				authorizedBy,
 			});
 		}
 
@@ -298,7 +371,18 @@ export class AutoQuarantine {
 
 	/**
 	 * Permanently delete a quarantined file.
+	 *
+	 * A failure to remove the file is REPORTED and the item stays tracked. The old
+	 * behaviour swallowed any `unlink` error, deleted the tracking entry and logged
+	 * the item as permanently deleted — telling the operator a hostile file was gone
+	 * while it was still in the vault.
+	 *
+	 * The one exception is `ENOENT`: the file is provably already absent, so the
+	 * item's removal is truthful rather than a claim about something that is still
+	 * there.
+	 *
 	 * @param itemId - ID of the quarantined item to delete
+	 * @throws QuarantineDeleteError when the quarantined file could not be removed
 	 */
 	async delete(itemId: string): Promise<void> {
 		const item = this.items.get(itemId);
@@ -309,9 +393,22 @@ export class AutoQuarantine {
 		// Delete quarantined file
 		try {
 			await unlink(item.quarantinePath);
-		} catch (_error) {
-			// File may not exist, continue
-			this.logger.warn(`Could not delete quarantined file: ${item.quarantinePath}`);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+				this.logger.error(`Could not delete quarantined file: ${item.quarantinePath}`, {
+					itemId,
+					error: String(error),
+				});
+				// Nothing is forgotten: the item and its manifest entry are untouched.
+				throw new QuarantineDeleteError(
+					itemId,
+					item.quarantinePath,
+					error instanceof Error ? error.message : String(error),
+				);
+			}
+			this.logger.warn(`Quarantined file was already absent: ${item.quarantinePath}`, {
+				itemId,
+			});
 		}
 
 		// Delete metadata file

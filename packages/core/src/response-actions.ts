@@ -419,6 +419,8 @@ export async function rollbackPreOperationSnapshot(
 		toolInput?: Record<string, unknown>;
 		sessionId?: string;
 		verdict: Verdict;
+		/** Operator identity that authorized this response, when one is known. */
+		authorizedBy?: string;
 	},
 	options: Partial<ResponseOptions> = {},
 	logger: Logger = nullLogger,
@@ -428,7 +430,13 @@ export async function rollbackPreOperationSnapshot(
 	const rollback = new AutoRollback(logger, auditor, opts.snapshotRootDir);
 
 	try {
-		const result = await rollback.rollbackSnapshot(snapshot.id);
+		const result = await rollback.rollbackSnapshot(snapshot.id, {
+			// This snapshot was taken by the guard immediately before the allowed call
+			// ran, and this restore happens as the call unwinds: a target that changed
+			// in between changed because of the operation being undone.
+			expectTargetChanged: true,
+			authorizedBy: context.authorizedBy,
+		});
 		logger.info?.("Rolled back an allowed destructive operation", {
 			target: snapshot.target,
 			snapshotId: snapshot.id,

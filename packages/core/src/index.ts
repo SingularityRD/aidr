@@ -634,7 +634,9 @@ export {
 	getDefaultQuarantineConfig,
 	type NotifyChannel,
 	type QuarantineConfig,
+	QuarantineDeleteError,
 	type QuarantinedItem,
+	QuarantineRefusedError,
 } from "./quarantine.js";
 export type {
 	PreOperationSnapshot,
@@ -686,7 +688,11 @@ export {
 	type ResponseSeverity,
 } from "./response-config.js";
 export type {
+	RollbackOptions,
+	RollbackRefusal,
 	Snapshot,
+	SnapshotAuditContext,
+	SnapshotFileDigest,
 	SnapshotOptions,
 	SnapshotResult,
 	SnapshotRollbackResult,
@@ -698,6 +704,8 @@ export {
 	createAutoRollback,
 	DEFAULT_SNAPSHOT_OPTIONS,
 	DEFAULT_SNAPSHOTS_DIR,
+	RollbackRefusedError,
+	SnapshotIncompleteError,
 } from "./rollback.js";
 export type { RuleSyncConfig } from "./rule-sync.js";
 // Real-Time Rule Sync
@@ -899,6 +907,7 @@ export type {
 export {
 	executeResponseStep,
 	MemoryResponseJournal,
+	normalizeAuthorizedBy,
 	planResponseRollback,
 	planResponseStep,
 	reportWorkerCapabilities,

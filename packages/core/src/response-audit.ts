@@ -23,9 +23,23 @@ export interface ResponseAuditEntry {
 		quarantineId?: string;
 		notificationSent?: boolean;
 		userNotified?: boolean;
+		/** Machine-readable reason a response was refused, when it was. */
+		reason?: string;
 	};
 	outcome: "success" | "failure";
 	error?: string;
+	/**
+	 * Identity of the operator that authorized this response, in the same shape
+	 * the installed-worker contract takes (`binding.authorizedBy`, e.g.
+	 * "operator:on-call"). Absent means the response was not operator-authorized.
+	 *
+	 * Deliberately a first-class field rather than a `metadata` key: `serializeEntry`
+	 * runs every metadata key through `SENSITIVE_KEY_RE`, which matches `auth*` and
+	 * would rewrite an `authorizedBy` value to "[Redacted]" — recording an operator
+	 * that was never actually named. As a top-level field it is covered by the chain
+	 * hash and the Ed25519 signature instead, so it is persisted and tamper-evident.
+	 */
+	authorizedBy?: string;
 }
 
 interface SerializedAuditEntry {
@@ -40,6 +54,7 @@ interface SerializedAuditEntry {
 	metadata: ResponseAuditEntry["metadata"];
 	outcome: "success" | "failure";
 	error?: string;
+	authorized_by?: string;
 	_prev_hash?: string;
 	_entry_hash?: string;
 	_signature?: string;
@@ -141,6 +156,7 @@ export class ResponseAuditor {
 			metadata: entry.metadata,
 			outcome: entry.outcome,
 			error: entry.error,
+			authorized_by: entry.authorized_by,
 			_prev_hash: entry._prev_hash,
 		});
 		return createHash("sha256").update(data).digest("hex");
@@ -161,6 +177,7 @@ export class ResponseAuditor {
 				metadata: entry.metadata,
 				outcome: entry.outcome,
 				error: entry.error,
+				authorized_by: entry.authorized_by,
 				_prev_hash: entry._prev_hash,
 				_entry_hash: entry._entry_hash,
 			});
@@ -186,6 +203,7 @@ export class ResponseAuditor {
 				metadata: entry.metadata,
 				outcome: entry.outcome,
 				error: entry.error,
+				authorized_by: entry.authorized_by,
 				_prev_hash: entry._prev_hash,
 				_entry_hash: entry._entry_hash,
 			});
@@ -324,7 +342,7 @@ export class ResponseAuditor {
 	}
 
 	private serializeEntry(entry: ResponseAuditEntry): SerializedAuditEntry {
-		return {
+		const serialized: SerializedAuditEntry = {
 			id: entry.id,
 			timestamp: entry.timestamp.toISOString(),
 			action: entry.action,
@@ -337,6 +355,12 @@ export class ResponseAuditor {
 			outcome: entry.outcome,
 			error: entry.error ? redactTelemetryString(entry.error) : undefined,
 		};
+		// Only present when an operator identity was actually supplied, so an entry
+		// that the runtime authorized on its own never claims an operator.
+		if (entry.authorizedBy) {
+			serialized.authorized_by = redactTelemetryString(entry.authorizedBy);
+		}
+		return serialized;
 	}
 
 	private async attachSignature(serialized: SerializedAuditEntry): Promise<void> {
@@ -408,6 +432,7 @@ export class ResponseAuditor {
 			verdict: serialized.verdict,
 			metadata: serialized.metadata,
 			error: serialized.error,
+			authorizedBy: serialized.authorized_by,
 		};
 	}
 
@@ -464,6 +489,7 @@ export class ResponseAuditor {
 						metadata: serialized.metadata,
 						outcome: serialized.outcome,
 						error: serialized.error,
+						authorizedBy: serialized.authorized_by,
 					});
 				} catch {
 					// Skip invalid lines
