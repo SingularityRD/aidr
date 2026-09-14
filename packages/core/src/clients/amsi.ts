@@ -1,13 +1,20 @@
 /**
  * AMSI (Antimalware Scan Interface) client.
  * Tries koffi FFI first, then PowerShell P/Invoke as fallback.
- * Fail-open: returns null/safe defaults on any error.
+ *
+ * Degradation policy. A host that does not support AMSI at all (not native
+ * Windows, not WSL) is a silent no-op: the leg does not exist there and an
+ * answer of `null` means "nothing to run". Everything else that stops a scan
+ * from running on a host that DOES support AMSI raises
+ * `DetectionLegUnavailableError` instead of answering `null`, because a null
+ * answer used to be indistinguishable from "scanned and found nothing".
  */
 
 import type { ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { DetectionLegUnavailableError } from "../detection-leg.js";
 import type { AmsiCheckResult, Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { spawn } from "./amsi-spawn.js";
@@ -610,6 +617,13 @@ export class AmsiClient {
 	private readonly logger: Logger;
 	private backend: AmsiBackend | null = null;
 	private selectedBackend: "native-koffi" | "powershell-persistent" | "powershell-oneshot" | "unavailable" = "unavailable";
+	/**
+	 * Operator-readable reason why this host, which supports AMSI, has no usable
+	 * backend. Set only by `init()` after both backends failed; a client that was
+	 * never initialised, was closed, or runs on an unsupported host leaves it
+	 * null, and those cases stay silent no-ops.
+	 */
+	private unavailableReason: string | null = null;
 
 	constructor(logger: Logger = nullLogger) {
 		this.logger = logger;
@@ -659,16 +673,32 @@ export class AmsiClient {
 		}
 
 		this.selectedBackend = "unavailable";
+		// The host supports AMSI (see isAmsiSupported), so reaching this point is an
+		// outage of the leg itself, not "there was nothing to scan".
+		this.unavailableReason =
+			"no AMSI backend could be established on this host: the native koffi backend and the PowerShell fallback both failed to initialize";
 		this.logger.warn("AMSI unavailable: native and PowerShell backends failed");
 	}
 
 	async scanString(content: string, contentName: string): Promise<AmsiCheckResult | null> {
-		return (await this.backend?.scanString(content, contentName)) ?? null;
+		if (!this.backend?.isAvailable) {
+			// An unsupported host, a never-initialised client and a closed client are
+			// all "this leg does not apply here" and stay a silent no-op. A supported
+			// host whose backends failed is a different thing entirely, and answering
+			// `null` there would read as "scanned, nothing found".
+			if (this.unavailableReason !== null) {
+				throw new DetectionLegUnavailableError("amsi", this.unavailableReason);
+			}
+			return null;
+		}
+
+		return (await this.backend.scanString(content, contentName)) ?? null;
 	}
 
 	close(): void {
 		this.backend?.close();
 		this.backend = null;
 		this.selectedBackend = "unavailable";
+		this.unavailableReason = null;
 	}
 }

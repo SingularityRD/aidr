@@ -930,43 +930,70 @@ async function runEvaluationPipeline(
 	);
 
 	// AMSI scan (Windows only)
+	//
+	// Every failure path here used to end in a bare `catch { /* Fail open */ }`,
+	// so a Windows host with no working AMSI backend produced exactly the same
+	// verdict as a host that scanned the content and found nothing. The leg state
+	// is tracked instead and the post-engine guard below turns it into a blocking
+	// review: `amsi_check` is enabled by default, and an enabled leg that did not
+	// run is not a clean result.
+	//
+	// The leg is skipped entirely when the host does not support AMSI at all
+	// (that is not an outage) and when the operator disabled `amsi_check` (an
+	// explicit choice that must not degrade every verdict).
+	const amsiScans: { content: string; name: string }[] = [];
+	if (request.toolName === "Bash") {
+		const command = (request.toolInput.command ?? "") as string;
+		if (command) {
+			amsiScans.push({ content: command, name: `Bash:command` });
+		}
+	} else if (request.toolName === "Write") {
+		const filePath = (request.toolInput.file_path ?? "") as string;
+		const content = (request.toolInput.content ?? "") as string;
+		if (content) {
+			amsiScans.push({ content, name: `Write:${filePath}` });
+		}
+	} else if (request.toolName === "Edit") {
+		const filePath = (request.toolInput.file_path ?? "") as string;
+		const newString = (request.toolInput.new_string ?? "") as string;
+		if (newString) {
+			amsiScans.push({ content: newString, name: `Edit:${filePath}` });
+		}
+	}
+
+	let amsiUnavailable = false;
 	const amsiCheckResults: AmsiCheckResult[] = [];
-	if (config.amsi_check.enabled && isAmsiSupported()) {
+	if (config.amsi_check.enabled && isAmsiSupported() && amsiScans.length > 0) {
 		let amsiClient: AmsiClient | null = null;
 		try {
 			amsiClient = new AmsiClient(logger);
 			await amsiClient.init();
 			if (amsiClient.isAvailable) {
-				const scans: { content: string; name: string }[] = [];
-
-				if (request.toolName === "Bash") {
-					const command = (request.toolInput.command ?? "") as string;
-					if (command) {
-						scans.push({ content: command, name: `Bash:command` });
-					}
-				} else if (request.toolName === "Write") {
-					const filePath = (request.toolInput.file_path ?? "") as string;
-					const content = (request.toolInput.content ?? "") as string;
-					if (content) {
-						scans.push({ content, name: `Write:${filePath}` });
-					}
-				} else if (request.toolName === "Edit") {
-					const filePath = (request.toolInput.file_path ?? "") as string;
-					const newString = (request.toolInput.new_string ?? "") as string;
-					if (newString) {
-						scans.push({ content: newString, name: `Edit:${filePath}` });
-					}
-				}
-
-				for (const scan of scans) {
+				for (const scan of amsiScans) {
 					const result = await amsiClient.scanString(scan.content, scan.name);
 					if (result) {
 						amsiCheckResults.push(result);
+					} else {
+						// A scan that returned nothing is not a scan that passed.
+						amsiUnavailable = true;
+						logger.warn("AMSI scan did not complete; content was NOT scanned", {
+							contentName: scan.name,
+						});
 					}
 				}
+			} else {
+				// This host supports AMSI, so no usable backend is an outage of the
+				// leg, not evidence that the content is clean.
+				amsiUnavailable = true;
+				logger.warn("AMSI leg unavailable: no working AMSI backend on this host", {
+					backendKind: amsiClient.backendKind,
+				});
 			}
-		} catch {
-			// Fail open
+		} catch (error) {
+			amsiUnavailable = true;
+			logger.warn("AMSI scan leg did not run", {
+				errorType: error instanceof Error ? error.name : typeof error,
+			});
 		} finally {
 			amsiClient?.close();
 		}
@@ -1004,6 +1031,20 @@ async function runEvaluationPipeline(
 			"url_reputation_unavailable",
 			"url_check",
 			"Configured signed URL feed did not provide complete inspection.",
+		);
+	}
+
+	// An enabled AMSI leg that did not run is a gap in coverage, not a clean
+	// result. `amsi_check` is enabled by default, so on a Windows host where
+	// koffi and the PowerShell fallback are both unusable this used to be
+	// swallowed and the call was allowed as if AMSI had inspected it. The source
+	// is "amsi" so an AMSI detection and an AMSI outage are grouped together.
+	if (amsiUnavailable && verdict.decision === "allow") {
+		verdict = detectorVerdict(
+			"ask",
+			"amsi_unavailable",
+			"amsi",
+			"AMSI malware scanning is enabled on this host but the scan did not run, so this content was NOT scanned.",
 		);
 	}
 
