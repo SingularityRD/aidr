@@ -84,8 +84,19 @@ export {
 	summarizeActionsForLog,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
+// Durable, bounded baseline for the behavioural detector
+export {
+	type BehavioralBaselineObservation,
+	type BehavioralBaselineSessionState,
+	type BehavioralBaselineStore,
+	type BehavioralBaselineStoreBounds,
+	type BehavioralBaselineStoreOptions,
+	createBehavioralBaselineStore,
+	FileBehavioralBaselineStore,
+} from "./behavioral-baseline-store.js";
 // Tenant/session-isolated behavioral, novelty and ML orchestration
 export {
+	BEHAVIORAL_ORCHESTRATOR_BOUNDS,
 	type BehavioralDetectionInput,
 	type BehavioralDetectionLeg,
 	type BehavioralDetectionLegStatus,
@@ -99,6 +110,7 @@ export {
 	type BehavioralOrchestratorDependencies,
 	type BehavioralOrchestratorStats,
 	createBehavioralDetectionOrchestrator,
+	LOCAL_EMBEDDER_MODEL_VERSION,
 } from "./behavioral-orchestrator.js";
 // Build flavor
 export { isCommercialBuild } from "./build-flavor.js";

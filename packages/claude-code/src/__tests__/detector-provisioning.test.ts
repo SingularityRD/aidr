@@ -1,8 +1,13 @@
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BehavioralBaselineStore } from "../../../core/src/behavioral-baseline-store.js";
+import {
+	BehavioralDetectionOrchestrator,
+	type BehavioralEmbeddingModel,
+} from "../../../core/src/behavioral-orchestrator.js";
 
 const mocked = vi.hoisted(() => ({
 	loadConfig: vi.fn(),
@@ -14,10 +19,16 @@ const mocked = vi.hoisted(() => ({
 
 vi.mock("@singularityrd/aidr-core", async () => {
 	const { DlpPolicySchema } = await import("../../../core/src/dlp/policy.js");
+	// The real durable store is used through the mocked package surface, so the
+	// provisioning wiring is exercised against the shipped implementation.
+	const { createBehavioralBaselineStore } = await import(
+		"../../../core/src/behavioral-baseline-store.js"
+	);
 	return {
 		...mocked,
 		DlpPolicySchema,
 		managedStatePath: () => "managed.json",
+		createBehavioralBaselineStore,
 	};
 });
 
@@ -191,5 +202,84 @@ describe("Claude Code detector provisioning", () => {
 
 	it("keeps optional detectors absent when none were provisioned", async () => {
 		await expect(loadProvisionedDetectorContext()).resolves.toEqual({});
+	});
+
+	it("provisions a behavioral baseline that persists between hook processes", async () => {
+		await installPolicy(payload({ behavioral: { enabled: true } }));
+		const model: BehavioralEmbeddingModel = {
+			load: async () => undefined,
+			findSimilarThreats: async () => [],
+			getStats: async () => ({
+				isLoaded: true,
+				threatCount: 1,
+				vectorSize: 64,
+				modelSizeBytes: 1280,
+			}),
+		};
+		// Provisioning builds the real orchestrator, so a wiring regression (for
+		// example dropping the store) fails this test instead of passing quietly.
+		mocked.createBehavioralDetectionOrchestrator.mockImplementation(
+			(config: ConstructorParameters<typeof BehavioralDetectionOrchestrator>[0], deps) =>
+				new BehavioralDetectionOrchestrator(config, deps),
+		);
+		const event = (command: string) => ({
+			tenantId,
+			sessionId: "session-a",
+			toolName: "Read",
+			riskScore: 10,
+			timestamp: Date.now(),
+			command,
+			learningAllowed: true,
+		});
+
+		// Hook process 1: an operator-approved baseline workflow accepts the
+		// default number of observations (minBaselineSamples is 10). The caller
+		// activates a threat model for the same reason it would in production:
+		// the shipped local embedder has no threat corpus, and an empty corpus
+		// correctly keeps every leg degraded (see the orchestrator tests).
+		const first = await loadProvisionedDetectorContext();
+		const baselineStore = mocked.createBehavioralDetectionOrchestrator.mock.calls.at(-1)?.[1] as
+			| { baselineStore?: BehavioralBaselineStore }
+			| undefined;
+		expect(baselineStore?.baselineStore).toBeDefined();
+		const firstProcess = first.runtimeDetectors?.behavioral?.orchestrator;
+		if (!firstProcess) throw new Error("Provisioning did not construct an orchestrator");
+		await firstProcess.refreshModel(model, "test-model-v1");
+		for (let index = 0; index < 10; index++) {
+			await firstProcess.evaluate(event(`npm test ${index}`));
+		}
+		expect(firstProcess.getStats().totalBaselineSamples).toBe(10);
+		expect((await baselineStore?.baselineStore?.load(tenantId, "session-a"))?.baselineSamples).toBe(
+			10,
+		);
+
+		// It is persisted under the fixed AIDR state directory, keyed by tenant.
+		const records = await readdir(join(stateDir, "behavioral-baseline"), { recursive: true });
+		expect(records.filter((entry) => entry.endsWith(".json"))).toHaveLength(1);
+
+		// Hook process 2: a brand-new process with no in-memory state continues
+		// the baseline instead of restarting it.
+		const second = await loadProvisionedDetectorContext();
+		// The signed provisioning contract still pins learning off, which is why
+		// this process may only be fed by an operator-approved workflow.
+		expect(second.runtimeDetectors?.behavioral?.learningAllowed).toBe(false);
+		const secondProcess = second.runtimeDetectors?.behavioral?.orchestrator;
+		if (!secondProcess) throw new Error("Provisioning did not construct an orchestrator");
+		await secondProcess.refreshModel(model, "test-model-v1");
+		const result = await secondProcess.evaluate(event("npm test 0"));
+
+		expect(result.learning.baselineSamplesBefore).toBe(10);
+		expect(result.outcome).toBe("normal");
+		expect(result.explanations).toContainEqual(
+			expect.objectContaining({ leg: "behavioral", status: "ready" }),
+		);
+		expect(result.explanations).toContainEqual(
+			expect.objectContaining({ leg: "novelty", status: "ready" }),
+		);
+		// Another tenant can never read this tenant's baseline.
+		const secondStore = mocked.createBehavioralDetectionOrchestrator.mock.calls.at(-1)?.[1] as
+			| { baselineStore?: BehavioralBaselineStore }
+			| undefined;
+		expect(await secondStore?.baselineStore?.load("tenant-b", "session-a")).toBeNull();
 	});
 });

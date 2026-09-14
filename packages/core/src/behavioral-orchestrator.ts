@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { BehavioralAnalyzer, type ToolCallEvent } from "./behavioral-analyzer.js";
-import type { LocalEmbeddingModel } from "./ml-model.js";
+import type {
+	BehavioralBaselineObservation,
+	BehavioralBaselineStore,
+} from "./behavioral-baseline-store.js";
+import { LocalEmbeddingModel } from "./ml-model.js";
 import { NoveltyDetector } from "./novelty-detection.js";
 import type { Logger } from "./types.js";
 import { nullLogger } from "./types.js";
@@ -102,6 +106,12 @@ export type BehavioralEmbeddingModel = Pick<
 
 export interface BehavioralOrchestratorDependencies {
 	mlModel?: BehavioralEmbeddingModel;
+	/**
+	 * Durable per-tenant/per-session baseline. Injecting it lets a short-lived
+	 * process (one hook invocation per tool call) continue a baseline that an
+	 * earlier process started; without it state lives only in this instance.
+	 */
+	baselineStore?: BehavioralBaselineStore;
 	logger?: Logger;
 	now?: () => number;
 	createBehavioralAnalyzer?: () => BehavioralAnalyzer;
@@ -109,7 +119,8 @@ export interface BehavioralOrchestratorDependencies {
 }
 
 interface SessionState {
-	behavioralEvents: ToolCallEvent[];
+	/** Accepted observations, already reduced to pseudonymous novelty tokens. */
+	observations: BehavioralBaselineObservation[];
 	noveltyDetector: NoveltyDetector;
 	baselineSamples: number;
 	fingerprintCounts: Map<string, number>;
@@ -121,16 +132,36 @@ interface TenantState {
 
 type ModelState = "uninitialized" | "ready" | "initialization_failed" | "empty_corpus";
 
-const DEFAULT_CONFIG: BehavioralOrchestratorConfig = {
-	minBaselineSamples: 10,
+/**
+ * Bounds the orchestrator applies in memory, and that any durable baseline store
+ * must apply on disk. Exported so a store and its orchestrator cannot drift.
+ * `retentionMs` is the event window `validateInput` already enforces.
+ */
+export const BEHAVIORAL_ORCHESTRATOR_BOUNDS = {
 	maxTenants: 50,
 	maxSessionsPerTenant: 20,
 	maxEventsPerSession: 100,
 	maxFingerprintsPerSession: 256,
+	retentionMs: 30 * 24 * 60 * 60 * 1000,
+} as const;
+
+/**
+ * Version reported for the built-in deterministic embedder. It is a real,
+ * named version rather than `unversioned`, because the local TinyHash embedder
+ * is a fixed algorithm and callers need to know which model produced a score.
+ */
+export const LOCAL_EMBEDDER_MODEL_VERSION = "local-tinyhash-v1";
+
+const DEFAULT_CONFIG: BehavioralOrchestratorConfig = {
+	minBaselineSamples: 10,
+	maxTenants: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxTenants,
+	maxSessionsPerTenant: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxSessionsPerTenant,
+	maxEventsPerSession: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxEventsPerSession,
+	maxFingerprintsPerSession: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxFingerprintsPerSession,
 	maxColdStartSamplesPerFingerprint: 5,
 	maxLearningRiskScore: 50,
 	behavioralAnomalyThreshold: 2.5,
-	maxEventAgeMs: 30 * 24 * 60 * 60 * 1000,
+	maxEventAgeMs: BEHAVIORAL_ORCHESTRATOR_BOUNDS.retentionMs,
 	maxFutureSkewMs: 5 * 60 * 1000,
 	modelVersion: "unversioned",
 };
@@ -152,6 +183,7 @@ export class BehavioralDetectionOrchestrator {
 	private readonly now: () => number;
 	private readonly createBehavioralAnalyzer: () => BehavioralAnalyzer;
 	private readonly createNoveltyDetector: () => NoveltyDetector;
+	private readonly baselineStore: BehavioralBaselineStore | undefined;
 	private readonly scopeQueues = new Map<string, Promise<void>>();
 	private mlModel: BehavioralEmbeddingModel | undefined;
 	private modelVersion: string | null;
@@ -169,6 +201,7 @@ export class BehavioralDetectionOrchestrator {
 		validateConfig(this.config);
 		this.logger = dependencies.logger ?? nullLogger;
 		this.now = dependencies.now ?? Date.now;
+		this.baselineStore = dependencies.baselineStore;
 		this.createBehavioralAnalyzer =
 			dependencies.createBehavioralAnalyzer ??
 			(() =>
@@ -183,9 +216,17 @@ export class BehavioralDetectionOrchestrator {
 				new NoveltyDetector({
 					minBaselineSamples: this.config.minBaselineSamples,
 				}));
-		this.mlModel = dependencies.mlModel;
-		this.modelVersion = dependencies.mlModel ? this.config.modelVersion : null;
-		this.modelState = dependencies.mlModel ? "uninitialized" : "initialization_failed";
+		// The ML leg must not be absent by accident: without a caller-supplied
+		// model it runs the deterministic local embedder instead of reporting
+		// "not configured" and forcing `ask` on every call.
+		const usesDefaultModel = dependencies.mlModel === undefined;
+		this.mlModel =
+			dependencies.mlModel ?? new LocalEmbeddingModel(LocalEmbeddingModel.createDefaultConfig());
+		this.modelVersion =
+			usesDefaultModel && config.modelVersion === undefined
+				? LOCAL_EMBEDDER_MODEL_VERSION
+				: this.config.modelVersion;
+		this.modelState = "uninitialized";
 	}
 
 	async evaluate(input: BehavioralDetectionInput): Promise<BehavioralDetectionResult> {
@@ -229,6 +270,7 @@ export class BehavioralDetectionOrchestrator {
 
 	clearSession(tenantId: string, sessionId: string): boolean {
 		const tenant = this.tenants.get(tenantId);
+		this.dropPersisted(() => this.baselineStore?.clearSession(tenantId, sessionId));
 		if (!tenant) return false;
 		const removed = tenant.sessions.delete(sessionId);
 		if (tenant.sessions.size === 0) this.tenants.delete(tenantId);
@@ -236,6 +278,7 @@ export class BehavioralDetectionOrchestrator {
 	}
 
 	clearTenant(tenantId: string): boolean {
+		this.dropPersisted(() => this.baselineStore?.clearTenant(tenantId));
 		return this.tenants.delete(tenantId);
 	}
 
@@ -262,7 +305,7 @@ export class BehavioralDetectionOrchestrator {
 	private async evaluateScoped(
 		event: ReturnType<BehavioralDetectionOrchestrator["validateInput"]>,
 	): Promise<BehavioralDetectionResult> {
-		const session = this.getOrCreateSession(event.tenantId, event.sessionId);
+		const session = await this.getOrCreateSession(event.tenantId, event.sessionId);
 		const samplesBefore = session.baselineSamples;
 		const explanations = await Promise.all([
 			this.evaluateBehavioralLeg(session, event, samplesBefore),
@@ -305,8 +348,12 @@ export class BehavioralDetectionOrchestrator {
 		return {
 			outcome,
 			anomalyScore,
+			// Only a leg that actually produced a score may claim a model version;
+			// an unavailable leg must not make the result look evaluated.
 			modelVersion:
-				explanations.find((explanation) => explanation.leg === "ml")?.modelVersion ?? null,
+				explanations.find(
+					(explanation) => explanation.leg === "ml" && explanation.status === "ready",
+				)?.modelVersion ?? null,
 			explanations,
 			learning: {
 				accepted,
@@ -329,7 +376,9 @@ export class BehavioralDetectionOrchestrator {
 
 		try {
 			const analyzer = this.createBehavioralAnalyzer();
-			for (const acceptedEvent of session.behavioralEvents) analyzer.recordEvent(acceptedEvent);
+			for (const observation of session.observations) {
+				analyzer.recordEvent(toStoredToolCallEvent(observation, event.sessionId));
+			}
 			analyzer.recordEvent(toToolCallEvent(event));
 			const result = analyzer.detectAnomaly(event.sessionId);
 			return {
@@ -395,16 +444,20 @@ export class BehavioralDetectionOrchestrator {
 	}
 
 	private async evaluateMlLeg(classificationText: string): Promise<BehavioralLegExplanation> {
-		if (!this.mlModel) return unavailableExplanation("ml", "not_configured");
-
 		await this.ensureModelInitialized();
 		const activeModel = this.mlModel;
 		const activeVersion = this.modelVersion;
 		if (this.modelState !== "ready" || !activeModel) {
-			return unavailableExplanation(
-				"ml",
-				this.modelState === "empty_corpus" ? "empty_corpus" : "initialization_failed",
-			);
+			// The local embedder always exists, so the leg reports the state it
+			// actually reached: an empty corpus is a missing threat database, not
+			// an absent model, and it still fails closed.
+			return {
+				...unavailableExplanation(
+					"ml",
+					this.modelState === "empty_corpus" ? "empty_corpus" : "initialization_failed",
+				),
+				modelVersion: activeVersion ?? undefined,
+			};
 		}
 
 		try {
@@ -479,9 +532,17 @@ export class BehavioralDetectionOrchestrator {
 			duration: event.durationMs,
 			hour: new Date(event.timestamp).getUTCHours(),
 		});
-		session.behavioralEvents.push(toToolCallEvent(event));
-		if (session.behavioralEvents.length > this.config.maxEventsPerSession) {
-			session.behavioralEvents.shift();
+		session.observations.push({
+			toolName: event.toolName,
+			timestamp: event.timestamp,
+			riskScore: event.riskScore,
+			commandToken: novelty.command,
+			pathToken: novelty.path,
+			urlToken: novelty.url,
+			durationMs: event.durationMs,
+		});
+		if (session.observations.length > this.config.maxEventsPerSession) {
+			session.observations.shift();
 		}
 		session.baselineSamples++;
 		if (session.fingerprintCounts.has(fingerprint)) {
@@ -492,9 +553,45 @@ export class BehavioralDetectionOrchestrator {
 		} else if (session.fingerprintCounts.size < this.config.maxFingerprintsPerSession) {
 			session.fingerprintCounts.set(fingerprint, 1);
 		}
+		await this.persistSession(event.tenantId, event.sessionId, session);
 	}
 
-	private getOrCreateSession(tenantId: string, sessionId: string): SessionState {
+	/**
+	 * Persist accepted observations so a later process continues this baseline.
+	 * Only an already-scored, accepted event is written, so a candidate can never
+	 * enter its own baseline, and a store failure can only delay a baseline.
+	 */
+	private async persistSession(
+		tenantId: string,
+		sessionId: string,
+		session: SessionState,
+	): Promise<void> {
+		const store = this.baselineStore;
+		if (!store) return;
+		try {
+			await store.save(tenantId, sessionId, {
+				baselineSamples: session.baselineSamples,
+				observations: session.observations,
+				fingerprintCounts: Object.fromEntries(session.fingerprintCounts),
+			});
+		} catch (error) {
+			this.logger.warn("Failed to persist the behavioural baseline", { error: String(error) });
+		}
+	}
+
+	private dropPersisted(clear: () => Promise<void> | undefined): void {
+		try {
+			void clear()?.catch((error: unknown) => {
+				this.logger.warn("Failed to clear persisted behavioural baseline", {
+					error: String(error),
+				});
+			});
+		} catch (error) {
+			this.logger.warn("Failed to clear persisted behavioural baseline", { error: String(error) });
+		}
+	}
+
+	private async getOrCreateSession(tenantId: string, sessionId: string): Promise<SessionState> {
 		let tenant = this.tenants.get(tenantId);
 		if (tenant) {
 			this.tenants.delete(tenantId);
@@ -526,14 +623,51 @@ export class BehavioralDetectionOrchestrator {
 			}
 		}
 
-		session = {
-			behavioralEvents: [],
+		session = await this.restoreSession(tenantId, sessionId);
+		tenant.sessions.set(sessionId, session);
+		return session;
+	}
+
+	/**
+	 * Rebuild a scope from durable state when this process has not seen it. Both
+	 * the behavioural baseline and the novelty profile are replayed from the same
+	 * accepted observations, so a restarted process scores a candidate against the
+	 * baseline the previous process had built.
+	 */
+	private async restoreSession(tenantId: string, sessionId: string): Promise<SessionState> {
+		const empty = (): SessionState => ({
+			observations: [],
 			noveltyDetector: this.createNoveltyDetector(),
 			baselineSamples: 0,
 			fingerprintCounts: new Map(),
-		};
-		tenant.sessions.set(sessionId, session);
-		return session;
+		});
+		const store = this.baselineStore;
+		if (!store) return empty();
+
+		try {
+			const stored = await store.load(tenantId, sessionId);
+			if (!stored) return empty();
+			const session = empty();
+			for (const observation of stored.observations) {
+				session.observations.push(observation);
+				await session.noveltyDetector.updateProfile("scope", {
+					command: observation.commandToken,
+					path: observation.pathToken,
+					url: observation.urlToken,
+					tool: stableToken("tool", observation.toolName),
+					duration: observation.durationMs,
+					hour: new Date(observation.timestamp).getUTCHours(),
+				});
+			}
+			for (const [fingerprint, count] of Object.entries(stored.fingerprintCounts)) {
+				session.fingerprintCounts.set(fingerprint, count);
+			}
+			session.baselineSamples = stored.baselineSamples;
+			return session;
+		} catch (error) {
+			this.logger.warn("Failed to restore the behavioural baseline", { error: String(error) });
+			return empty();
+		}
 	}
 
 	private validateInput(input: BehavioralDetectionInput): ValidatedBehavioralInput {
@@ -602,6 +736,18 @@ function toToolCallEvent(event: ValidatedBehavioralInput): ToolCallEvent {
 		timestamp: event.timestamp,
 		sessionId: event.sessionId,
 		riskScore: event.riskScore,
+	};
+}
+
+function toStoredToolCallEvent(
+	observation: BehavioralBaselineObservation,
+	sessionId: string,
+): ToolCallEvent {
+	return {
+		toolName: observation.toolName,
+		timestamp: observation.timestamp,
+		sessionId,
+		riskScore: observation.riskScore,
 	};
 }
 
