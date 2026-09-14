@@ -1,4 +1,4 @@
-﻿import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
 
 declare global {
@@ -17,6 +17,18 @@ export const supabaseEnvError =
 		: null;
 
 type SupabaseClient = ReturnType<typeof createClient<Database>>;
+
+/**
+ * Storage key for the persisted session.
+ *
+ * Setting it explicitly (instead of accepting the client's generated
+ * `sb-<project-ref>-auth-token`) keeps the dashboard's session under the
+ * application's own namespace and makes the storage contract reviewable rather
+ * than a function of the deployment URL. Sessions written under the previous
+ * key are not migrated: every signed-in browser authenticates once more, which
+ * is the fail-closed direction for a control-plane session.
+ */
+export const AUTH_STORAGE_KEY = "aidr.dashboard.auth.session.v1";
 
 const missingConfigResponse = () => ({
 	data: null,
@@ -53,6 +65,15 @@ function createUnavailableClient(): SupabaseClient {
 		signInWithIdToken: authError,
 		exchangeCodeForSession: authError,
 		onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => undefined } } }),
+		// The step-up surface calls these before rendering a protected screen.
+		// Answering with the configuration error keeps that surface fail-closed
+		// and actionable instead of crashing on `undefined.enroll`.
+		mfa: {
+			enroll: authError,
+			challenge: authError,
+			verify: authError,
+			listFactors: authError,
+		},
 	};
 
 	return {
@@ -67,7 +88,22 @@ function createSupabaseClient(): SupabaseClient {
 	if (supabaseEnvError) {
 		return createUnavailableClient();
 	}
-	return createClient<Database>(url as string, anonKey as string);
+	return createClient<Database, "public", "public">(url as string, anonKey as string, {
+		auth: {
+			// Session lifetime is an explicit control here, not an inherited
+			// client default: the dashboard decides whether a session is
+			// persisted at all, whether it is silently renewed in the
+			// background, and whether an auth callback in the URL is trusted.
+			// `ui/session.ts` adds the idle bound on top of these.
+			persistSession: true,
+			autoRefreshToken: true,
+			detectSessionInUrl: true,
+			storageKey: AUTH_STORAGE_KEY,
+			// Callers handle `{ data, error }`; auth failures must not become
+			// unhandled rejections that a screen renders as a blank console.
+			throwOnError: false,
+		},
+	});
 }
 
 export const supabase = createSupabaseClient();
