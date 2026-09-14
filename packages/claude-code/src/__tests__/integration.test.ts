@@ -207,17 +207,27 @@ describe("PreToolUse hook integration", () => {
 	}, 30_000);
 
 	it("asks for review instead of allowing when the reputation leg cannot run", async () => {
-		// No endpoint is reachable. The leg did not run, so the URL was never
-		// verified and the hook must say so rather than report it clean.
+		// A loopback endpoint answers with an explicit service failure. A hard-coded
+		// "closed" port is not deterministic across hosts (another process may own
+		// it), while this proves the exact HTTP-unavailable path the client handles.
 		const home = mkdtempSync(join(tmpdir(), "aidr-url-down-"));
+		const server = createServer((_request, response) => {
+			response.writeHead(503, { "content-type": "application/json" });
+			response.end(JSON.stringify({ error: "fixture_unavailable" }));
+		});
 		try {
+			await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+			const address = server.address();
+			if (!address || typeof address === "string") throw new Error("stub did not bind a port");
 			mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
 			writeFileSync(
 				join(home, ".singularity-aidr", "config.json"),
 				JSON.stringify({
 					version_check: { enabled: false },
-					// A closed port: nothing is listening, so the leg fails.
-					url_check: { endpoint: "http://127.0.0.1:9/url-check", timeout_seconds: 1 },
+					url_check: {
+						endpoint: `http://127.0.0.1:${address.port}/url-check`,
+						timeout_seconds: 1,
+					},
 				}),
 				"utf8",
 			);
@@ -229,6 +239,7 @@ describe("PreToolUse hook integration", () => {
 			expect(code).toBe(0);
 			expect(BLOCKED).toContain(permissionDecision(parseResponse(stdout)));
 		} finally {
+			await new Promise<void>((closed) => server.close(() => closed()));
 			rmSync(home, { recursive: true, force: true });
 		}
 	}, 30_000);
