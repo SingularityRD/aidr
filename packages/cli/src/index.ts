@@ -8,6 +8,7 @@ import discoverCommand from "./commands/discover.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import statusCommand from "./commands/status.js";
+import uninstallCommand from "./commands/uninstall.js";
 
 const program = new Command();
 
@@ -82,5 +83,15 @@ program
 	.option("--config <paths...>", "Inspect explicit JSON configuration paths")
 	.option("--json", "Emit a redacted machine-readable inventory")
 	.action(discoverCommand);
+
+program
+	.command("uninstall")
+	.description("Remove only the AIDR-managed agent hooks, preserving your own hooks and configuration")
+	.option(
+		"--home <path>",
+		"Target an explicit home directory (managed fleets and verification); defaults to the current user",
+	)
+	.option("--json", "Emit a machine-readable report")
+	.action(uninstallCommand);
 
 await program.parseAsync(process.argv);
