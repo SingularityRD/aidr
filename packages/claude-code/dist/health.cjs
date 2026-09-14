@@ -52554,7 +52554,7 @@ async function snapshotTarget(verdict, request2, opts, logger) {
     const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
     const threat = verdict.matchedThreatId ?? verdict.category;
     const safeThreat = threat.replace(/[^A-Za-z0-9._-]/g, "_");
-    const destination = (0, import_node_path25.join)(vaultDir, `${stamp}_${safeThreat}_${(0, import_node_path25.basename)(resolved)}`);
+    const destination = (0, import_node_path25.join)(vaultDir, `${stamp}_${(0, import_node_crypto33.randomUUID)()}_${safeThreat}_${(0, import_node_path25.basename)(resolved)}`);
     await (0, import_promises19.mkdir)(vaultDir, { recursive: true, mode: 448 });
     await (0, import_promises19.copyFile)(resolved, destination);
     logger.info?.("Response snapshot written", {
@@ -52599,10 +52599,11 @@ function summarizeResponseActions(records) {
 function fileArtifacts(artifacts) {
   return artifacts.filter((a) => a.type === "file_path").map((a) => a.value);
 }
-var import_promises19, import_node_path25, DEFAULT_RESPONSE_OPTIONS, SEVERITY_RANK2, FILE_TARGET_TOOLS, DESTRUCTIVE_TOOLS, DESTRUCTIVE_COMMAND_PATTERNS;
+var import_node_crypto33, import_promises19, import_node_path25, DEFAULT_RESPONSE_OPTIONS, SEVERITY_RANK2, FILE_TARGET_TOOLS, DESTRUCTIVE_TOOLS, DESTRUCTIVE_COMMAND_PATTERNS;
 var init_response_actions = __esm({
   "../core/dist/response-actions.js"() {
     "use strict";
+    import_node_crypto33 = require("node:crypto");
     import_promises19 = require("node:fs/promises");
     import_node_path25 = require("node:path");
     init_config();
@@ -52744,11 +52745,11 @@ function responseAuditorFromConfig(config, logger = nullLogger) {
     return { unavailableReason: `auditor_init_failed: ${String(error3)}` };
   }
 }
-var import_node_crypto33, import_promises20, import_node_path26, ResponseAuditor, DEFAULT_RESPONSE_AUDIT_CONFIG;
+var import_node_crypto34, import_promises20, import_node_path26, ResponseAuditor, DEFAULT_RESPONSE_AUDIT_CONFIG;
 var init_response_audit = __esm({
   "../core/dist/response-audit.js"() {
     "use strict";
-    import_node_crypto33 = require("node:crypto");
+    import_node_crypto34 = require("node:crypto");
     import_promises20 = require("node:fs/promises");
     import_node_path26 = require("node:path");
     init_config();
@@ -52789,7 +52790,7 @@ var init_response_audit = __esm({
           this.publicKey = keys.publicKey;
           this.logger.debug("Loaded existing signing keys for response audit");
         } catch {
-          const { privateKey, publicKey: publicKey3 } = (0, import_node_crypto33.generateKeyPairSync)("ed25519", {
+          const { privateKey, publicKey: publicKey3 } = (0, import_node_crypto34.generateKeyPairSync)("ed25519", {
             privateKeyEncoding: { type: "pkcs8", format: "pem" },
             publicKeyEncoding: { type: "spki", format: "pem" }
           });
@@ -52818,7 +52819,7 @@ var init_response_audit = __esm({
           authorized_by: entry.authorized_by,
           _prev_hash: entry._prev_hash
         });
-        return (0, import_node_crypto33.createHash)("sha256").update(data).digest("hex");
+        return (0, import_node_crypto34.createHash)("sha256").update(data).digest("hex");
       }
       signEntry(entry) {
         if (!this.signEntries || !this.privateKey)
@@ -52840,7 +52841,7 @@ var init_response_audit = __esm({
             _prev_hash: entry._prev_hash,
             _entry_hash: entry._entry_hash
           });
-          return (0, import_node_crypto33.sign)(void 0, Buffer.from(data), this.privateKey).toString("base64");
+          return (0, import_node_crypto34.sign)(void 0, Buffer.from(data), this.privateKey).toString("base64");
         } catch (error3) {
           this.logger.warn("Failed to sign audit entry", { error: String(error3) });
           return void 0;
@@ -52866,7 +52867,7 @@ var init_response_audit = __esm({
             _prev_hash: entry._prev_hash,
             _entry_hash: entry._entry_hash
           });
-          return (0, import_node_crypto33.verify)(void 0, Buffer.from(data), this.publicKey, Buffer.from(entry._signature, "base64"));
+          return (0, import_node_crypto34.verify)(void 0, Buffer.from(data), this.publicKey, Buffer.from(entry._signature, "base64"));
         } catch {
           return false;
         }
@@ -52878,7 +52879,7 @@ var init_response_audit = __esm({
           entry_hash: entryHash,
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         };
-        const temporaryPath = `${this.headPath}.${(0, import_node_crypto33.randomUUID)()}.tmp`;
+        const temporaryPath = `${this.headPath}.${(0, import_node_crypto34.randomUUID)()}.tmp`;
         await (0, import_promises20.mkdir)((0, import_node_path26.dirname)(this.headPath), { recursive: true });
         await (0, import_promises20.writeFile)(temporaryPath, `${JSON.stringify(checkpoint)}
 `, {
@@ -52918,10 +52919,10 @@ var init_response_audit = __esm({
           entry_ids: removed.map((entry) => entry.id),
           entry_hashes: removed.map((entry) => entry._entry_hash).filter((hash) => typeof hash === "string" && /^[0-9a-f]{64}$/.test(hash))
         };
-        const recordHash = (0, import_node_crypto33.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
+        const recordHash = (0, import_node_crypto34.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
         const record = { ...base, record_hash: recordHash };
         if (this.signEntries && this.privateKey) {
-          record._signature = (0, import_node_crypto33.sign)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: recordHash })), this.privateKey).toString("base64");
+          record._signature = (0, import_node_crypto34.sign)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: recordHash })), this.privateKey).toString("base64");
         }
         await (0, import_promises20.mkdir)((0, import_node_path26.dirname)(this.retentionManifestPath), { recursive: true });
         await (0, import_promises20.appendFile)(this.retentionManifestPath, `${JSON.stringify(record)}
@@ -52936,7 +52937,7 @@ var init_response_audit = __esm({
           entry_ids: record.entry_ids,
           entry_hashes: record.entry_hashes
         };
-        const expectedHash = (0, import_node_crypto33.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
+        const expectedHash = (0, import_node_crypto34.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
         if (record.record_hash !== expectedHash)
           return false;
         if (!this.signEntries)
@@ -52944,7 +52945,7 @@ var init_response_audit = __esm({
         if (!record._signature || !this.publicKey)
           return false;
         try {
-          return (0, import_node_crypto33.verify)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: record.record_hash })), this.publicKey, Buffer.from(record._signature, "base64"));
+          return (0, import_node_crypto34.verify)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: record.record_hash })), this.publicKey, Buffer.from(record._signature, "base64"));
         } catch {
           return false;
         }
@@ -53012,7 +53013,7 @@ var init_response_audit = __esm({
       }
       async log(entry) {
         await this.ensureSigningReady();
-        const id = (0, import_node_crypto33.randomUUID)();
+        const id = (0, import_node_crypto34.randomUUID)();
         const timestamp = /* @__PURE__ */ new Date();
         const fullEntry = {
           ...entry,
@@ -58564,7 +58565,7 @@ function signingPayload(manifest, keyId) {
 ${canonicalMcpToolManifest(manifest)}`, "utf8");
 }
 function mcpManifestHash(manifest) {
-  return (0, import_node_crypto34.createHash)("sha256").update(manifestPayload2(manifest)).digest("hex");
+  return (0, import_node_crypto35.createHash)("sha256").update(manifestPayload2(manifest)).digest("hex");
 }
 function mcpToolsetHash(tools) {
   const parsed = external_exports.array(McpToolDefinitionSchema).max(4096).parse(tools);
@@ -58575,20 +58576,20 @@ function mcpToolsetHash(tools) {
     names.add(tool.name);
   }
   const ordered = [...parsed].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-  return (0, import_node_crypto34.createHash)("sha256").update(JSON.stringify(canonicalize3(ordered))).digest("hex");
+  return (0, import_node_crypto35.createHash)("sha256").update(JSON.stringify(canonicalize3(ordered))).digest("hex");
 }
 function signMcpToolManifest(params) {
   if (!ID_PATTERN.test(params.keyId))
     throw new Error("invalid MCP signer key id");
   const manifest = McpToolManifestV1Schema.parse(params.manifest);
-  const privateKey = params.privateKey instanceof import_node_crypto34.KeyObject ? params.privateKey : (0, import_node_crypto34.createPrivateKey)(params.privateKey);
+  const privateKey = params.privateKey instanceof import_node_crypto35.KeyObject ? params.privateKey : (0, import_node_crypto35.createPrivateKey)(params.privateKey);
   if (privateKey.type !== "private" || privateKey.asymmetricKeyType !== "ed25519") {
     throw new Error("MCP manifests must be signed with an Ed25519 private key");
   }
   return {
     key_id: params.keyId,
     manifest,
-    signature_b64: (0, import_node_crypto34.sign)(null, signingPayload(manifest, params.keyId), privateKey).toString("base64")
+    signature_b64: (0, import_node_crypto35.sign)(null, signingPayload(manifest, params.keyId), privateKey).toString("base64")
   };
 }
 async function writeMcpSignerHealthEvidence(params) {
@@ -58654,10 +58655,10 @@ function verifyManifestSignature2(manifest, keyId, publicKeyPem, signatureBase64
   if (!signature)
     return "invalid_signature";
   try {
-    const publicKey3 = (0, import_node_crypto34.createPublicKey)(publicKeyPem);
+    const publicKey3 = (0, import_node_crypto35.createPublicKey)(publicKeyPem);
     if (publicKey3.asymmetricKeyType !== "ed25519")
       return "invalid_public_key";
-    return (0, import_node_crypto34.verify)(null, signingPayload(manifest, keyId), publicKey3, signature) ? null : "invalid_signature";
+    return (0, import_node_crypto35.verify)(null, signingPayload(manifest, keyId), publicKey3, signature) ? null : "invalid_signature";
   } catch {
     return "invalid_public_key";
   }
@@ -58704,7 +58705,7 @@ async function removeStaleLock(path3, staleAfter) {
 function toolMap(tools) {
   return new Map(tools.map((tool) => [
     tool.name,
-    (0, import_node_crypto34.createHash)("sha256").update(JSON.stringify(canonicalize3(tool))).digest("hex")
+    (0, import_node_crypto35.createHash)("sha256").update(JSON.stringify(canonicalize3(tool))).digest("hex")
   ]));
 }
 function diffMcpTools(activeTools, candidateTools) {
@@ -58823,11 +58824,11 @@ async function approveQuarantinedMcpToolset(params) {
     };
   });
 }
-var import_node_crypto34, import_promises21, import_node_path31, import_promises22, SIGNING_DOMAIN, DEFAULT_CLOCK_SKEW_MS, DEFAULT_MAX_LIFETIME_MS, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_STALE_LOCK_MS, MAX_APPROVED_TOOLSETS, ID_PATTERN, TOOL_NAME_PATTERN, SHA256_PATTERN2, JsonObjectSchema, McpToolDefinitionSchema, McpToolManifestV1Schema, SignedMcpToolManifestV1Schema, McpToolDriftSchema, McpAttestationStateV1Schema, MemoryMcpAttestationStore, FileMcpAttestationStore;
+var import_node_crypto35, import_promises21, import_node_path31, import_promises22, SIGNING_DOMAIN, DEFAULT_CLOCK_SKEW_MS, DEFAULT_MAX_LIFETIME_MS, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_STALE_LOCK_MS, MAX_APPROVED_TOOLSETS, ID_PATTERN, TOOL_NAME_PATTERN, SHA256_PATTERN2, JsonObjectSchema, McpToolDefinitionSchema, McpToolManifestV1Schema, SignedMcpToolManifestV1Schema, McpToolDriftSchema, McpAttestationStateV1Schema, MemoryMcpAttestationStore, FileMcpAttestationStore;
 var init_mcp_attestation = __esm({
   "../core/dist/mcp-attestation.js"() {
     "use strict";
-    import_node_crypto34 = require("node:crypto");
+    import_node_crypto35 = require("node:crypto");
     import_promises21 = require("node:fs/promises");
     import_node_path31 = require("node:path");
     import_promises22 = require("node:timers/promises");
@@ -58945,7 +58946,7 @@ var init_mcp_attestation = __esm({
         this.options = options;
       }
       statePath(serverId) {
-        const id = (0, import_node_crypto34.createHash)("sha256").update(serverId, "utf8").digest("hex");
+        const id = (0, import_node_crypto35.createHash)("sha256").update(serverId, "utf8").digest("hex");
         return (0, import_node_path31.join)(this.directory, `${id}.json`);
       }
       async acquireLock(path3) {
@@ -59190,7 +59191,7 @@ var init_mcp_inventory = __esm({
 function inventoryId(sourcePath, name) {
   const resolvedPath = (0, import_node_path32.resolve)(sourcePath);
   const canonicalPath = process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
-  return (0, import_node_crypto35.createHash)("sha256").update("aidr-mcp-inventory-v1\0").update(JSON.stringify([canonicalPath, name])).digest("hex");
+  return (0, import_node_crypto36.createHash)("sha256").update("aidr-mcp-inventory-v1\0").update(JSON.stringify([canonicalPath, name])).digest("hex");
 }
 function keyringIsConfigured(keyring) {
   if (!keyring)
@@ -59314,7 +59315,7 @@ async function discoverMcpServers(paths, options = {}) {
       transport: item.url ? "remote" : "stdio",
       endpoint,
       risk_hints: item.riskHints,
-      configuration_sha256: (0, import_node_crypto35.createHash)("sha256").update(JSON.stringify([item.command, item.args, item.url])).digest("hex"),
+      configuration_sha256: (0, import_node_crypto36.createHash)("sha256").update(JSON.stringify([item.command, item.args, item.url])).digest("hex"),
       attestation: await attestDiscoveredServer(item, id, attestationOptions)
     };
   }));
@@ -59337,11 +59338,11 @@ async function discoverMcpServers(paths, options = {}) {
     servers
   };
 }
-var import_node_crypto35, import_node_path32, UNVERIFIABLE_REASONS;
+var import_node_crypto36, import_node_path32, UNVERIFIABLE_REASONS;
 var init_mcp_discovery = __esm({
   "../core/dist/mcp-discovery.js"() {
     "use strict";
-    import_node_crypto35 = require("node:crypto");
+    import_node_crypto36 = require("node:crypto");
     import_node_path32 = require("node:path");
     init_mcp_attestation();
     init_mcp_inventory();
@@ -60263,7 +60264,7 @@ function cacheKey(pluginKey, version, lastUpdated) {
   return `${pluginKey}:${version}:${lastUpdated}`;
 }
 async function computeConfigHash(aidrVersion, ...dirs) {
-  const h = (0, import_node_crypto36.createHash)("sha256");
+  const h = (0, import_node_crypto37.createHash)("sha256");
   if (aidrVersion)
     h.update(aidrVersion);
   for (const dir of dirs) {
@@ -60364,11 +60365,11 @@ function storeResult(cache, pluginKey, version, lastUpdated, findings) {
     findings
   };
 }
-var import_node_crypto36, import_promises23, import_node_path34, DEFAULT_CACHE_PATH, CACHE_TTL_DAYS;
+var import_node_crypto37, import_promises23, import_node_path34, DEFAULT_CACHE_PATH, CACHE_TTL_DAYS;
 var init_plugin_scan_cache = __esm({
   "../core/dist/plugin-scan-cache.js"() {
     "use strict";
-    import_node_crypto36 = require("node:crypto");
+    import_node_crypto37 = require("node:crypto");
     import_promises23 = require("node:fs/promises");
     import_node_path34 = require("node:path");
     init_config();
@@ -60618,7 +60619,7 @@ async function scanPlugin(plugin, threats, options = {}) {
       allUrls.push(...extractUrls(content));
     }
     if (checkFileHashes) {
-      const sha2564 = (0, import_node_crypto37.createHash)("sha256").update(rawBytes).digest("hex");
+      const sha2564 = (0, import_node_crypto38.createHash)("sha256").update(rawBytes).digest("hex");
       const existing = hashToFiles.get(sha2564);
       if (existing) {
         existing.push(filePath);
@@ -60688,11 +60689,11 @@ async function scanPlugin(plugin, threats, options = {}) {
   await Promise.all([urlCheckPromise, fileCheckPromise]);
   return result;
 }
-var import_node_crypto37, import_promises24, import_node_os4, import_node_path35, DEFAULT_PLUGINS_REGISTRY, SCANNABLE_EXTENSIONS, SKIP_DIRS, MAX_FILE_SIZE, JS_TS_EXTENSIONS, STRING_OR_COMMENT_RE, STR_ARG, JS_EXEC_RE, JS_SPAWN_RE, JS_SPAWN_ARGS_RE, SHELL_EXECUTABLES, JS_EXECA_RE, JS_EXECA_ARGS_RE, JS_BUN_SHELL_RE, JS_BUN_DOLLAR_RE, JS_ZX_RE;
+var import_node_crypto38, import_promises24, import_node_os4, import_node_path35, DEFAULT_PLUGINS_REGISTRY, SCANNABLE_EXTENSIONS, SKIP_DIRS, MAX_FILE_SIZE, JS_TS_EXTENSIONS, STRING_OR_COMMENT_RE, STR_ARG, JS_EXEC_RE, JS_SPAWN_RE, JS_SPAWN_ARGS_RE, SHELL_EXECUTABLES, JS_EXECA_RE, JS_EXECA_ARGS_RE, JS_BUN_SHELL_RE, JS_BUN_DOLLAR_RE, JS_ZX_RE;
 var init_plugin_scanner = __esm({
   "../core/dist/plugin-scanner.js"() {
     "use strict";
-    import_node_crypto37 = require("node:crypto");
+    import_node_crypto38 = require("node:crypto");
     import_promises24 = require("node:fs/promises");
     import_node_os4 = require("node:os");
     import_node_path35 = require("node:path");
@@ -60761,11 +60762,11 @@ function getDefaultQuarantineConfig() {
     notifyChannels: []
   };
 }
-var import_node_crypto38, import_node_fs10, import_promises25, import_node_path36, QuarantineRefusedError, QuarantineDeleteError, MANIFEST_VERSION, MANIFEST_FILENAME, AutoQuarantine;
+var import_node_crypto39, import_node_fs10, import_promises25, import_node_path36, QuarantineRefusedError, QuarantineDeleteError, MANIFEST_VERSION, MANIFEST_FILENAME, AutoQuarantine;
 var init_quarantine = __esm({
   "../core/dist/quarantine.js"() {
     "use strict";
-    import_node_crypto38 = require("node:crypto");
+    import_node_crypto39 = require("node:crypto");
     import_node_fs10 = require("node:fs");
     import_promises25 = require("node:fs/promises");
     import_node_path36 = require("node:path");
@@ -60867,7 +60868,7 @@ var init_quarantine = __esm({
           }
           throw new Error(error3);
         }
-        const id = (0, import_node_crypto38.randomUUID)();
+        const id = (0, import_node_crypto39.randomUUID)();
         const fileHash = await this.computeFileHash(resolvedPath);
         const fileSize = fileStats.size;
         const now = /* @__PURE__ */ new Date();
@@ -61127,7 +61128,7 @@ var init_quarantine = __esm({
        */
       async computeFileHash(filePath) {
         const content = await (0, import_promises25.readFile)(filePath);
-        return (0, import_node_crypto38.createHash)("sha256").update(content).digest("hex");
+        return (0, import_node_crypto39.createHash)("sha256").update(content).digest("hex");
       }
       /**
        * Log a quarantine event to the audit log.
@@ -107951,12 +107952,12 @@ function canonicalDetectorPolicyPayload(value) {
 function publicKey2(raw) {
   const trimmed = raw.trim();
   if (trimmed.startsWith("-----BEGIN"))
-    return (0, import_node_crypto39.createPublicKey)(trimmed);
+    return (0, import_node_crypto40.createPublicKey)(trimmed);
   const bytes2 = Buffer.from(trimmed, "base64");
   if (bytes2.length === 0 || bytes2.toString("base64") !== trimmed) {
     throw new Error("Invalid public key encoding");
   }
-  return (0, import_node_crypto39.createPublicKey)({ key: bytes2, format: "der", type: "spki" });
+  return (0, import_node_crypto40.createPublicKey)({ key: bytes2, format: "der", type: "spki" });
 }
 function verifySignature(payload, signatureBase64, trustedKeys) {
   const signature = Buffer.from(signatureBase64, "base64");
@@ -107966,7 +107967,7 @@ function verifySignature(payload, signatureBase64, trustedKeys) {
   return trustedKeys.some((keyText) => {
     try {
       const key = publicKey2(keyText);
-      return key.asymmetricKeyType === "ed25519" && (0, import_node_crypto39.verify)(null, message, key, signature);
+      return key.asymmetricKeyType === "ed25519" && (0, import_node_crypto40.verify)(null, message, key, signature);
     } catch {
       return false;
     }
@@ -108074,11 +108075,11 @@ async function loadProvisionedDetectorContext(agentRuntime) {
   validateFeedKeyring(installed.signed.payload.reputation_feed);
   return detectorContext(installed.signed.payload);
 }
-var import_node_crypto39, import_promises26, import_node_path40, MAX_BUNDLE_BYTES, ID, FEED_ID, DateTime, DetectorPolicyPayloadSchema, SignedDetectorPolicySchema, DETECTOR_PROVISIONING_RUNTIMES;
+var import_node_crypto40, import_promises26, import_node_path40, MAX_BUNDLE_BYTES, ID, FEED_ID, DateTime, DetectorPolicyPayloadSchema, SignedDetectorPolicySchema, DETECTOR_PROVISIONING_RUNTIMES;
 var init_detector_provisioning = __esm({
   "../core/dist/detector-provisioning.js"() {
     "use strict";
-    import_node_crypto39 = require("node:crypto");
+    import_node_crypto40 = require("node:crypto");
     import_promises26 = require("node:fs/promises");
     import_node_path40 = require("node:path");
     init_zod();
@@ -108423,7 +108424,7 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 function macFor(payload, key) {
-  return (0, import_node_crypto40.createHmac)("sha256", key).update(canonical(payload)).digest("hex");
+  return (0, import_node_crypto41.createHmac)("sha256", key).update(canonical(payload)).digest("hex");
 }
 async function regularFile(path3) {
   try {
@@ -108465,11 +108466,11 @@ function rememberCommand(state, commandId) {
     recent_ids: [...state.recent_ids.filter((id) => id !== commandId), commandId].slice(-MAX_RECENT_FLEET_COMMANDS)
   };
 }
-var import_node_crypto40, import_promises27, import_node_path41, UUID4, CODE, TYPES, PHASES, MAX_JOURNAL_BYTES, MAX_RECENT_FLEET_COMMANDS, FleetResponseJournal;
+var import_node_crypto41, import_promises27, import_node_path41, UUID4, CODE, TYPES, PHASES, MAX_JOURNAL_BYTES, MAX_RECENT_FLEET_COMMANDS, FleetResponseJournal;
 var init_response_command_journal_v6 = __esm({
   "../core/dist/response-command-journal-v6.js"() {
     "use strict";
-    import_node_crypto40 = require("node:crypto");
+    import_node_crypto41 = require("node:crypto");
     import_promises27 = require("node:fs/promises");
     import_node_path41 = require("node:path");
     UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -108522,7 +108523,7 @@ var init_response_command_journal_v6 = __esm({
         assertState(envelope.payload, this.identity);
         const expected = Buffer.from(macFor(envelope.payload, this.key), "hex");
         const actual = Buffer.from(envelope.mac, "hex");
-        if (!(0, import_node_crypto40.timingSafeEqual)(expected, actual))
+        if (!(0, import_node_crypto41.timingSafeEqual)(expected, actual))
           throw new Error("fleet_journal_integrity_failed");
         return envelope.payload;
       }
@@ -108549,7 +108550,7 @@ var init_response_command_journal_v6 = __esm({
         const envelope = { payload: next, mac: macFor(next, this.key) };
         const target = this.slot === "a" ? "b" : "a";
         const targetPath = this.slotPath(target);
-        const temporary = `${targetPath}.${(0, import_node_crypto40.randomUUID)()}.tmp`;
+        const temporary = `${targetPath}.${(0, import_node_crypto41.randomUUID)()}.tmp`;
         await this.ensureDirectory();
         await writeSynced(temporary, JSON.stringify(envelope));
         try {
@@ -108565,7 +108566,7 @@ var init_response_command_journal_v6 = __esm({
       async acquireLock() {
         await this.ensureDirectory();
         const lockPath = `${this.path}.lock`;
-        const token = (0, import_node_crypto40.randomUUID)();
+        const token = (0, import_node_crypto41.randomUUID)();
         const temporary = `${lockPath}.${token}.tmp`;
         await writeSynced(temporary, JSON.stringify({ pid: process.pid, token }));
         try {
@@ -108585,7 +108586,7 @@ var init_response_command_journal_v6 = __esm({
       }
       async recoverDeadLock(lockPath) {
         const recoveryPath = `${lockPath}.recovery`;
-        const recoveryToken = (0, import_node_crypto40.randomUUID)();
+        const recoveryToken = (0, import_node_crypto41.randomUUID)();
         const temporary = `${recoveryPath}.${recoveryToken}.tmp`;
         await writeSynced(temporary, JSON.stringify({ pid: process.pid, token: recoveryToken }));
         try {
