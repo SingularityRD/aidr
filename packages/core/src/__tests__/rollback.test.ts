@@ -150,8 +150,11 @@ describe("AutoRollback", () => {
 			await writeFile(testFile1, "modified 1");
 			await writeFile(testFile2, "modified 2");
 
-			// Rollback
-			await rollback.rollback(snapshot.id);
+			// Rollback. `expectTargetChanged` is the caller vouching that the change it
+			// is about to overwrite is its own: a restore with no such authorization
+			// refuses with `target_changed` instead of silently clobbering the target
+			// (see rollback-precondition.test.ts).
+			await rollback.rollback(snapshot.id, { expectTargetChanged: true });
 
 			// Verify restoration
 			const content1 = await readFile(testFile1, "utf-8");
@@ -167,8 +170,10 @@ describe("AutoRollback", () => {
 			// Modify file
 			await writeFile(nestedFile, "modified nested");
 
-			// Rollback
-			await rollback.rollback(snapshot.id);
+			// Rollback, authorizing the overwrite of this test's own change. Without the
+			// authorization the restore refuses (`target_changed`): the snapshot cannot
+			// tell this change from anyone else's.
+			await rollback.rollback(snapshot.id, { expectTargetChanged: true });
 
 			// Verify restoration
 			const content = await readFile(nestedFile, "utf-8");

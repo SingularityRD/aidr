@@ -62,6 +62,20 @@ export interface ResponseTargetBinding {
 	authorizedBy: string;
 }
 
+/**
+ * Normalize an operator identity using the rule `planResponseStep` applies to
+ * `binding.authorizedBy`: a missing, blank or implausibly short string is not an
+ * identity.
+ *
+ * The response and rollback paths share this so that "who authorized this" cannot
+ * be recorded as an empty string that reads like a real operator, and so the
+ * minimum length is defined in exactly one place.
+ */
+export function normalizeAuthorizedBy(value: string | null | undefined): string | undefined {
+	const trimmed = value?.trim();
+	return trimmed !== undefined && trimmed.length >= 3 ? trimmed : undefined;
+}
+
 export interface ResponseStep {
 	capability: ResponseCapability;
 	binding: ResponseTargetBinding;
@@ -151,7 +165,11 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 		return { ok: false, code: "missing_authorization", detail: "authorizedBy is required" };
 	}
 	if (binding.expectedSha256 !== null && !SHA256.test(binding.expectedSha256)) {
-		return { ok: false, code: "invalid_expected_digest", detail: "expectedSha256 must be a SHA-256" };
+		return {
+			ok: false,
+			code: "invalid_expected_digest",
+			detail: "expectedSha256 must be a SHA-256",
+		};
 	}
 	if (request.escapesWorkspace === true) {
 		return {
@@ -161,7 +179,8 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 		};
 	}
 
-	const fileAction = request.capability === "quarantine_file" || request.capability === "restore_file";
+	const fileAction =
+		request.capability === "quarantine_file" || request.capability === "restore_file";
 	if (fileAction) {
 		if (request.liveExists !== true) {
 			return { ok: false, code: "target_missing", detail: "the target does not exist" };
@@ -171,7 +190,11 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 		}
 		if (binding.expectedSha256 !== null) {
 			if (typeof request.liveSha256 !== "string" || !SHA256.test(request.liveSha256)) {
-				return { ok: false, code: "target_unreadable", detail: "the target digest could not be read" };
+				return {
+					ok: false,
+					code: "target_unreadable",
+					detail: "the target digest could not be read",
+				};
 			}
 			if (request.liveSha256 !== binding.expectedSha256) {
 				return {
@@ -460,5 +483,11 @@ export function reportWorkerCapabilities(
 			? []
 			: ["host network isolation is not provided by this adapter"]),
 	];
-	return { adapterId: adapter.adapterId, platform: adapter.platform, declared, missing, limitations };
+	return {
+		adapterId: adapter.adapterId,
+		platform: adapter.platform,
+		declared,
+		missing,
+		limitations,
+	};
 }
