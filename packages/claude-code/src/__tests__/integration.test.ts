@@ -7,7 +7,10 @@
  */
 
 import { execFile } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const DIST_DIR = resolve(__dirname, "..", "..", "dist");
@@ -18,11 +21,17 @@ const SESSION_START = resolve(DIST_DIR, "session-start.cjs");
 function runHook(
 	script: string,
 	input: Record<string, unknown> | string,
+	extraEnv: Record<string, string> = {},
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
 	return new Promise((resolve) => {
-		const child = execFile("node", [script], { timeout: 30_000 }, (error, stdout, stderr) => {
-			resolve({ stdout, stderr, code: error?.code ? Number(error.code) : child.exitCode });
-		});
+		const child = execFile(
+			"node",
+			[script],
+			{ timeout: 30_000, env: { ...process.env, ...extraEnv } },
+			(error, stdout, stderr) => {
+				resolve({ stdout, stderr, code: error?.code ? Number(error.code) : child.exitCode });
+			},
+		);
 		const stdin = typeof input === "string" ? input : JSON.stringify(input);
 		child.stdin?.end(stdin);
 	});
@@ -101,14 +110,71 @@ describe("PreToolUse hook integration", () => {
 		expect(BLOCKED).toContain(permissionDecision(parseResponse(stdout)));
 	}, 30_000);
 
-	// The URL-reputation leg calls a first-party reputation endpoint. No such
-	// endpoint is reachable from this workspace (the configured hosts do not
-	// resolve), so a malicious URL is NOT blocked here and the previous version of
-	// this test passed only because it asserted an empty (allow) response — i.e.
-	// it asserted that detection failed. It is skipped rather than left as a
-	// misleading green test; restoring it requires a reachable reputation service.
+	// The URL-reputation leg calls a first-party reputation endpoint. No external
+	// endpoint is reachable from this workspace, so the test supplies its own
+	// loopback stub and points the hook at it with a HOME-scoped config. The
+	// previous version of this test was an empty `it.skip`; asserting detection
+	// against a stub is a real assertion and replaces it.
 	// Tracked as AIDR-020 in READINESS_BACKLOG.json.
-	it.skip("denies known malicious URL via URL check (requires reachable reputation endpoint)", () => {});
+	it("denies a known malicious URL through a loopback reputation endpoint", async () => {
+		const home = mkdtempSync(join(tmpdir(), "aidr-url-leg-"));
+		const server = createServer((request, response) => {
+			const chunks: Buffer[] = [];
+			request.on("data", (chunk: Buffer) => chunks.push(chunk));
+			request.on("end", () => {
+				const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+					queries?: Array<{ key?: Record<string, string> }>;
+				};
+				// The endpoint's own answer shape: a `covered` classification whose
+				// `success.classification.result.malicious` carries the findings.
+				const answers = (body.queries ?? []).map((query) => ({
+					key: query.key?.["url-like"] ?? "",
+					coverage: "covered",
+					result: {
+						success: {
+							classification: {
+								result: {
+									malicious: {
+										findings: [
+											{ "severity-name": "high", "type-name": "known_malicious_url" },
+										],
+									},
+								},
+							},
+							flags: ["reputation"],
+						},
+					},
+				}));
+				response.writeHead(200, { "content-type": "application/json" });
+				response.end(JSON.stringify({ answers }));
+			});
+		});
+		try {
+			await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+			const address = server.address();
+			if (!address || typeof address === "string") throw new Error("stub did not bind a port");
+			mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
+			writeFileSync(
+				join(home, ".singularity-aidr", "config.json"),
+				JSON.stringify({
+					version_check: { enabled: false },
+					url_check: { endpoint: `http://127.0.0.1:${address.port}/url-check` },
+				}),
+				"utf8",
+			);
+
+			const { stdout, code } = await runHook(
+				PRE_TOOL_USE,
+				{ tool_name: "WebFetch", tool_input: { url: "http://malware.test/payload" } },
+				{ HOME: home, USERPROFILE: home },
+			);
+			expect(code).toBe(0);
+			expect(BLOCKED).toContain(permissionDecision(parseResponse(stdout)));
+		} finally {
+			await new Promise<void>((closed) => server.close(() => closed()));
+			rmSync(home, { recursive: true, force: true });
+		}
+	}, 30_000);
 
 	it("allows clean WebFetch", async () => {
 		const { stdout, code } = await runHook(PRE_TOOL_USE, {
