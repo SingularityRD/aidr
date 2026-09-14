@@ -1,0 +1,11 @@
+[Unit]
+Description=Twice-daily AIDR public TLS certificate renewal check
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+RandomizedDelaySec=1h
+Persistent=true
+Unit=aidr-tls-renew.service
+
+[Install]
+WantedBy=timers.target

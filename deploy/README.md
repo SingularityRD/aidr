@@ -27,7 +27,7 @@ From the repository root:
 ```powershell
 pnpm install --frozen-lockfile
 pnpm build
-node scripts/deployment-prepare.mjs --mode self-hosted --output .aidr-deploy --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example
+node scripts/deployment-prepare.mjs --mode self-hosted --output .aidr-deploy --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example
 docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml config --quiet
 docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml up -d --wait --wait-timeout 180
 node scripts/deployment-migrate.mjs .aidr-deploy
@@ -79,10 +79,15 @@ restarting. Do not use `down -v` on customer data.
 
 ```powershell
 pnpm build
-node scripts/deployment-prepare.mjs --mode cloud --output .aidr-cloud --dashboard-url https://aidr.example.com --supabase-url https://PROJECT.supabase.co
+node scripts/deployment-prepare.mjs --mode cloud --output .aidr-cloud --region managed-cloud --tenant-region managed-cloud --dashboard-url https://aidr.example.com --supabase-url https://PROJECT.supabase.co
 ```
 
-Use a provisioned managed Supabase project in the approved region. Replace the
+Use a provisioned managed Supabase project in the approved region. Declare that
+region and its origin in `deploy/regions.manifest.json` first: replace the
+placeholder residency location and set `supabase_url` to the project's HTTPS
+origin. Preparation refuses an undeclared region, a region that still holds the
+placeholder location, a declared endpoint that is not the `--supabase-url`
+origin, and a tenant region that differs from the deployment region. Replace the
 anonymous/service-role placeholders in the private environment file with that
 project's keys. Apply repository migrations using the Supabase migration workflow
 for the selected project; the local Docker migration script deliberately refuses
@@ -97,6 +102,26 @@ Configure project SMTP, OAuth redirects, region/retention policy, monitoring and
 backup. Verify the same negative authorization and onboarding scenarios in a
 separate staging project. This preparation command does not create a cloud
 account, region, billing subscription or production deployment.
+
+## Declared regions and TLS renewal
+
+`deploy/regions.manifest.json` holds the regions an operator declares for an
+installation: per-region `supabase_url` and a residency declaration (`declared`
+plus `location`). The prepared `deployment.json` records `region`,
+`tenant_region` and that declared `regions` block, and the doctor fails an
+installation whose tenant and deployment regions do not match, whose region is
+not declared, or whose residency location is still a placeholder. These fields
+are operator declarations: they are not evidence of provider placement, a live
+regional service, a signed data-processing agreement or a legal residency
+property. The Docker baseline remains single-host; multi-region placement still
+requires additional infrastructure and evidence.
+
+The same output carries `ingress/aidr-tls-renew.service`,
+`ingress/aidr-tls-renew.timer` and the renewal script. They are prepared, not
+installed or enabled, and the doctor only asserts that both unit files are
+present. Enable the timer on the TLS host with the private environment file
+described in `deploy/ingress/README.md` so certificate renewal does not depend on
+an operator remembering it.
 
 ## Endpoint connector installation
 

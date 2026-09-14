@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "note": "Declared deployment configuration only. Each entry records the region an operator declares for one installation, the public API origin declared for that region and the residency declaration made with it. This file provisions nothing: it is not evidence of provider placement, a live regional service, a signed data-processing agreement or a legal residency property. Add or edit an entry before preparing an installation for that region.",
+  "regions": {
+    "unassigned": {
+      "supabase_url": null,
+      "residency": {
+        "declared": false,
+        "location": "unassigned",
+        "note": "Default when no hosting region has been declared. Tenant and deployment records agree on an explicitly undeclared region and make no residency claim."
+      }
+    },
+    "self-hosted": {
+      "supabase_url": null,
+      "residency": {
+        "declared": true,
+        "location": "customer-designated host",
+        "note": "Declared: the operator runs the control plane on a host the customer designates. The physical location, contractual region and any residency obligation remain the operator's declaration and are not verified by this repository."
+      }
+    },
+    "managed-cloud": {
+      "supabase_url": null,
+      "residency": {
+        "declared": true,
+        "location": "REPLACE_WITH_DECLARED_PROVIDER_REGION",
+        "note": "Template for a managed Supabase project. Replace the location with the region the customer approved and set supabase_url to that project's HTTPS origin before preparing a cloud installation; preparation and the doctor refuse the placeholder."
+      }
+    }
+  }
+}

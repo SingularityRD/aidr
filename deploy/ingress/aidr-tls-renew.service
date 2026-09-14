@@ -1,0 +1,24 @@
+# Reference unit. It is prepared into the deployment directory but is not
+# installed or enabled by this repository. Provide the private environment file
+# at /etc/aidr/tls-renew.env (AIDR_TLS_HOSTNAME, AIDR_TLS_EMAIL, AIDR_TLS_DIR,
+# AIDR_TLS_WEBROOT, AIDR_TLS_RECEIPT, AIDR_ACME_CLIENT, AIDR_NGINX) before
+# enabling it. The script refuses to run without an explicit hostname and email
+# and never reports success when the ACME client or the served chain is missing.
+[Unit]
+Description=AIDR public TLS certificate renewal and ingress reload
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/aidr-kit
+EnvironmentFile=/etc/aidr/tls-renew.env
+ExecStart=/usr/bin/node /opt/aidr-kit/scripts/deployment-tls-renew.mjs
+TimeoutStartSec=15min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/aidr/tls /var/log/aidr
+UMask=0077

@@ -81,6 +81,43 @@ simply substitute a client-provided forwarding header. See the
 [Nginx proxy header directives](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
 for the header replacement behavior used by the reference config.
 
+## Public TLS renewal
+
+`aidr-tls-renew.service` and `aidr-tls-renew.timer` are a reference systemd pair
+prepared beside this signer into the deployment directory (`ingress/`). Preparing
+them does not install, enable or run them, and the doctor only asserts that both
+files are present. On the TLS host, place the private environment file at
+`/etc/aidr/tls-renew.env` with `AIDR_TLS_HOSTNAME`, `AIDR_TLS_EMAIL`,
+`AIDR_TLS_DIR` (default `/etc/aidr/tls`), `AIDR_TLS_WEBROOT` (the HTTP-01 webroot
+Nginx serves), `AIDR_TLS_RECEIPT`, `AIDR_ACME_CLIENT` (default `certbot`) and
+`AIDR_NGINX`, then enable the timer:
+
+```
+systemctl enable --now aidr-tls-renew.timer
+```
+
+`scripts/deployment-tls-renew.mjs` drives the ACME client
+(`certbot certonly --keep-until-expiring --webroot -w <AIDR_TLS_WEBROOT>`), and
+touches Nginx only after the challenge succeeded and the served chain file was
+inspected: the file must carry a leaf plus its issuer, the leaf must have been
+issued by that issuer, it must cover the requested hostname, its validity window
+must contain the current time, `nginx -t` must pass and the reload command must
+succeed. Every attempt writes `renewal-receipt.json` next to the certificate
+chain with the timestamp, hostname, ACME client, SHA-256 certificate
+fingerprint, expiry, whether the challenge succeeded, whether the ingress was
+reloaded and the outcome. A missing ACME client, an incomplete chain, a chain for
+another hostname and a failed challenge all leave `reloaded: false`, write a
+`refused` or `failed` receipt and exit non-zero instead of reporting success. A
+certificate the client reports as not due is recorded as `unchanged` and the
+ingress is not reloaded.
+
+Keep the certificate paths in `nginx.device-start.reference.conf` pointed at the
+same chain and key this unit renews. A receipt is a local attempt record: it is
+not proof that a certificate authority issued a certificate for a public
+hostname, and the tests for this unit inject a command runner with fixture chain
+files, so no real ACME challenge, domain, certificate authority or certificate
+was exercised in this repository.
+
 Run the local contract tests with:
 
 ```

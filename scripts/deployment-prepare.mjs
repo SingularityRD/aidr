@@ -22,6 +22,7 @@ const { values } = parseArgs({ options: {
 	mode: { type: "string", default: "self-hosted" }, output: { type: "string", default: ".aidr-deploy" },
 	"upstream-dir": { type: "string" }, "dashboard-url": { type: "string" }, "supabase-url": { type: "string" }, development: { type: "boolean", default: false },
 	"project-name": { type: "string" }, "device-start-upstream-url": { type: "string" },
+	region: { type: "string" }, "tenant-region": { type: "string" }, "regions-manifest": { type: "string" },
 } });
 if (!["self-hosted", "cloud"].includes(values.mode)) throw new Error("mode must be self-hosted or cloud");
 const output = resolve(values.output);
@@ -37,6 +38,51 @@ const dashboardUrl = origin(values["dashboard-url"], "http://localhost:8080");
 const supabaseUrl = origin(values["supabase-url"], "http://localhost:8000");
 const projectName = values["project-name"] || `aidr-${randomBytes(6).toString("hex")}`;
 if (!/^[a-z][a-z0-9_-]{0,62}$/.test(projectName)) throw new Error("Invalid Compose project name");
+// Region and residency entries are operator declarations, not verified legal or
+// provider facts. Preparation refuses an undeclared region, a tenant region that
+// differs from the deployment region, a placeholder residency location and a
+// region whose declared public API origin is not this installation's origin.
+const regionsManifestPath = resolve(values["regions-manifest"] || join(root, "deploy/regions.manifest.json"));
+if (!existsSync(regionsManifestPath)) throw new Error("Deployment region manifest is missing; declare the regions this installation may use before preparing deployment");
+let regionManifest;
+try {
+	regionManifest = JSON.parse(readFileSync(regionsManifestPath, "utf8"));
+} catch {
+	throw new Error("Deployment region manifest is not valid JSON");
+}
+const regions = regionManifest.regions;
+if (regionManifest.schema_version !== 1 || !regions || typeof regions !== "object" || Array.isArray(regions) || Object.keys(regions).length === 0) {
+	throw new Error("Deployment region manifest must declare schema_version 1 and a non-empty regions object");
+}
+if (Object.keys(regions).some((id) => !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id))) throw new Error("Deployment region manifest contains an invalid region id");
+function declaredRegion(id, kind) {
+	if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) {
+		throw new Error(`${kind} region must be a lowercase identifier declared in the deployment region manifest`);
+	}
+	const entry = regions[id];
+	if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+		throw new Error(`${kind} region "${id}" is not declared in the deployment region manifest; declare it before preparing this installation`);
+	}
+	if (entry.supabase_url !== null && (typeof entry.supabase_url !== "string" || origin(entry.supabase_url) !== entry.supabase_url)) {
+		throw new Error(`Deployment region "${id}" must declare supabase_url as null or as an HTTPS origin without credentials or paths`);
+	}
+	const { residency } = entry;
+	if (!residency || typeof residency !== "object" || Array.isArray(residency) || typeof residency.declared !== "boolean" || typeof residency.location !== "string" || residency.location.length === 0) {
+		throw new Error(`Deployment region "${id}" must declare residency with a declared flag and a location`);
+	}
+	if (/^REPLACE/i.test(residency.location)) throw new Error(`Deployment region "${id}" still holds a placeholder residency location; declare the real location before preparing this installation`);
+	return entry;
+}
+const regionId = values.region ?? "unassigned";
+const tenantRegionId = values["tenant-region"] ?? regionId;
+const deploymentRegion = declaredRegion(regionId, "Deployment");
+declaredRegion(tenantRegionId, "Tenant");
+if (deploymentRegion.supabase_url !== null && deploymentRegion.supabase_url !== supabaseUrl) {
+	throw new Error(`Deployment region "${regionId}" declares public API origin ${deploymentRegion.supabase_url}, which is not this installation's --supabase-url origin`);
+}
+if (tenantRegionId !== regionId) {
+	throw new Error(`Tenant declared region "${tenantRegionId}" does not match deployment region "${regionId}"; refusing to prepare a cross-region installation`);
+}
 const deviceUpstream = values.mode === "self-hosted"
 	? "http://127.0.0.1:8000/functions/v1/device-start"
 	: (values["device-start-upstream-url"] ?? "REPLACE_WITH_PROVIDER_DEVICE_START_URL");
@@ -155,5 +201,5 @@ function inventory(dir, prefix = "") {
 }
 const artifacts = [...inventory(join(output, "dashboard"), "dashboard"), ...inventory(join(output, "ingress"), "ingress"), ...inventory(join(output, "volumes/functions"), "volumes/functions")];
 const source = existsSync(join(root, "release-source.json")) ? JSON.parse(readFileSync(join(root, "release-source.json"), "utf8")) : { commit: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), dirty: !!execFileSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" }).trim() };
-write("deployment.json", JSON.stringify({ schema_version: 1, project_name: compose.name, mode: values.mode, development: values.development, prepared_at: new Date().toISOString(), source_commit: source.commit, source_has_changes: source.dirty, upstream_sha: values.mode === "self-hosted" ? upstreamSha : null, dashboard_url: dashboardUrl, supabase_url: supabaseUrl, migrations, artifacts, note: "Prepared configuration, not a deployment acceptance record. TLS, authentication, backups and live smoke evidence required." }, null, 2));
+write("deployment.json", JSON.stringify({ schema_version: 1, project_name: compose.name, mode: values.mode, development: values.development, prepared_at: new Date().toISOString(), source_commit: source.commit, source_has_changes: source.dirty, upstream_sha: values.mode === "self-hosted" ? upstreamSha : null, dashboard_url: dashboardUrl, supabase_url: supabaseUrl, region: regionId, tenant_region: tenantRegionId, regions, migrations, artifacts, note: "Prepared configuration, not a deployment acceptance record. Region and residency fields are operator declarations, not evidence of provider placement. The TLS renewal unit is prepared but not installed or enabled. TLS, authentication, backups and live smoke evidence required." }, null, 2));
 console.log(`Prepared ${values.mode} installation at ${output}. Secrets written to private .env files; none printed.`);

@@ -76,6 +76,15 @@ The support-file arrays bind the current and target `compose.yml` and
 inventory. The upgrade rejects extra dashboard, function or migration files that
 were added after preparation.
 
+A deployment prepared before the region manifest existed carries no `region`,
+`tenant_region` or `regions` fields, so the online doctor cannot confirm that the
+tenant and deployment regions match and fails closed. Record the region the
+customer agreed on in the current `deployment.json` (`region` and `tenant_region`
+plus the matching entry from `deploy/regions.manifest.json` in `regions`, or the
+default `unassigned` declaration), and prepare the target with the same
+`--region` and `--tenant-region`, before running the upgrade. An upgrade must not
+change the declared region of an existing installation.
+
 The rehearsal must cover existing customer-shaped rows and objects, the target
 application on the final target schema, authorization boundaries, login,
 enrollment, policy enforcement and audit export. If a new environment or function
