@@ -309,11 +309,16 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 			},
 		];
 
-		const results = [] as Array<Record<string, unknown>>;
-		for (const [index, probe] of commandProbes.entries()) {
-			const result = await observeTool("bash", { command: probe.command }, `matrix-command-${index}`);
-			results.push({ ...probe, ...result });
-		}
+		const results = await Promise.all(
+			commandProbes.map(async (probe, index) => ({
+				...probe,
+				...(await observeTool("bash", { command: probe.command }, `matrix-command-${index}`)),
+			})),
+		) as Array<Record<string, unknown>>;
+		// Each probe has its own session id and this phase has no cache/audit writes,
+		// so running the independent matrix concurrently preserves every assertion
+		// while keeping the mandatory contract inside the existing hook budget on a
+		// contended Windows CI host.
 
 		const cachedPackageDeny = {
 			urls: {},
