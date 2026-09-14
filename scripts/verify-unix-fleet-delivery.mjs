@@ -11,6 +11,7 @@ const required = [
 	"deploy/fleet/unix/aidr-fleet.sh",
 	"deploy/fleet/unix/remove-managed-hooks.mjs",
 	"deploy/fleet/unix/fleet-health.mjs",
+	"deploy/fleet/unix/aidr-remediate.mjs",
 	"deploy/fleet/linux/install.sh",
 	"deploy/fleet/linux/upgrade.sh",
 	"deploy/fleet/linux/rollback.sh",
@@ -61,6 +62,13 @@ check(manager.includes("write_pending_state") && readFileSync(join(root, "deploy
 check(manager.includes("Existing agent configuration") || readFileSync(join(root, "scripts/endpoint-install.mjs"), "utf8").includes("Existing agent configuration preserved"), "existing agent configuration has an explicit preservation guard");
 const remover = readFileSync(join(root, "deploy/fleet/unix/remove-managed-hooks.mjs"), "utf8");
 check(remover.includes("Singularity AIDR managed installation") && remover.includes("aidr-backup"), "uninstall removes only marked AIDR hooks with an atomic settings backup");
+const remediator = readFileSync(join(root, "deploy/fleet/unix/aidr-remediate.mjs"), "utf8");
+check(
+	remediator.includes("Singularity AIDR managed installation") &&
+		remediator.includes("aidr-remediate-backup") &&
+		remediator.includes("deny_canary_failed"),
+	"local remediation re-runs the deny canary and repairs only marked AIDR hooks, backing up the settings it rewrites",
+);
 const unit = readFileSync(join(root, "deploy/fleet/linux/systemd/aidr-fleet-health.service"), "utf8");
 check(["User=aidr-health", "NoNewPrivileges=true", "ProtectSystem=strict", "CapabilityBoundingSet=", "RestrictAddressFamilies=AF_UNIX"].every((entry) => unit.includes(entry)), "systemd health job uses a dedicated identity and a restricted sandbox");
 const pkg = readFileSync(join(root, "deploy/fleet/macos/pkg/build-pkg.sh"), "utf8");

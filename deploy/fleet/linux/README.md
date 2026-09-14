@@ -24,6 +24,20 @@ to return to the immediately prior release; rollback rechecks the retained
 archive against the pinned key. `uninstall.sh --user alice` removes only the
 managed hook entries and keeps shared release bytes and user policy/config.
 
+When a managed hook registration is missing, mispointed or duplicated on an
+endpoint, the local remediation entry point re-runs detection, re-runs the
+connector's own deny canary and repairs only the marked AIDR hooks:
+
+```sh
+node deploy/fleet/unix/aidr-remediate.mjs --home /home/u             # repair
+node deploy/fleet/unix/aidr-remediate.mjs --home /home/u --check     # detect only
+```
+
+It needs no root, does not install or verify a release, leaves policy,
+allowlists, agent configuration, connector bytes and the receipt untouched, and
+will not re-enable a host whose hooks are globally disabled. Host execution,
+publisher signing and MDM delivery remain unverified.
+
 `install-systemd.sh` installs a timer under the unprivileged `aidr-health`
 account. Its JSON proves only that the release referenced by local state exists.
 It does not prove Claude invoked a hook or that MDM delivered the policy. Run the

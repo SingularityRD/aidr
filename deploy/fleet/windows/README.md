@@ -83,6 +83,20 @@ file rather than deleting it.
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy AllSigned -File .\Uninstall-Aidr.ps1 -TargetHome C:\Users\TARGET_USER
 ```
 
+When a managed hook registration is missing, mispointed or duplicated (for
+example after a partial package removal), remediation re-runs the receipt check
+and the connector's own local deny canary, then repairs only the AIDR-marked hook
+registrations. It requires no elevation, leaves policy, allowlists, agent
+configuration, connector bytes and the receipt untouched, and refuses to
+re-enable a host whose hooks are globally disabled:
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy AllSigned -File .\Invoke-AidrRemediation.ps1 -TargetHome C:\Users\TARGET_USER
+```
+
+Add `-DetectionOnly` for a read-only check (optionally with `-Json` for a
+machine-readable result). Neither mode proves host execution or MDM delivery.
+
 ## Operational behavior
 
 - Every install and detection resolves manifest paths beneath the package root,
