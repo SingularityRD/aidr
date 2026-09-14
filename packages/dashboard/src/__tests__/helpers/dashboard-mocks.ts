@@ -124,6 +124,8 @@ export interface MockOptions {
 	policyWriteRows?: unknown[] | null;
 	policyWriteError?: QueryError | null;
 	user?: { id: string } | null;
+	/** Session returned to protected route layouts. Defaults to an authenticated AAL2 fixture. */
+	session?: Record<string, unknown> | null;
 }
 
 export interface InstalledMocks {
@@ -144,7 +146,18 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 	const mocked = mockedSupabase();
 	vi.resetAllMocks();
 
-	mocked.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+	// These helpers render routes that already passed `requireSessionLoader`, so
+	// the default fixture is an authenticated, server-confirmed AAL2 session. A
+	// test that exercises signed-out behaviour can still request `session: null`.
+	mocked.auth.getSession.mockResolvedValue({
+		data: {
+			session:
+				options.session === undefined
+					? { user: { id: options.user?.id ?? ADMIN_USER_ID }, access_token: "fixture-session" }
+					: options.session,
+		},
+		error: null,
+	});
 	mocked.auth.getUser.mockResolvedValue({
 		data: { user: options.user === null ? null : (options.user ?? { id: ADMIN_USER_ID }) },
 		error: null,
@@ -157,6 +170,18 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 		data: { subscription: { unsubscribe: vi.fn() } },
 	});
 	mocked.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string } }) => {
+		if (name === "identity-security" && request?.body?.action === "status") {
+			return {
+				data: {
+					ok: true,
+					require_mfa: true,
+					current_assurance: "aal2",
+					next_assurance: "aal2",
+					access_allowed: true,
+				},
+				error: null,
+			};
+		}
 		if (name === "policy-management") {
 			const action = request?.body?.action;
 			if (action === "history") return { data: { ok: true, revisions: [], truncated: false }, error: null };

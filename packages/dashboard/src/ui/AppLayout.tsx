@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { EnterpriseAuth } from "../enterprise/auth";
 import { TeamProvider, useTeam } from "../enterprise/team-provider";
 import { supabaseEnvError } from "../lib/supabase";
 import { signOut } from "./session";
@@ -17,6 +18,21 @@ import { ThemeToggle } from "./ThemeToggle";
  * security both re-check the permission, so link visibility is never the
  * control.
  */
+function ManagedOutlet() {
+	const { currentTeam, isLoading } = useTeam();
+	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
+	// With no tenant there is no tenant assurance policy to ask the server for;
+	// the child page renders its own explicit no-team or membership-error boundary
+	// and no managed record can be read. Once a tenant exists, the server-confirmed
+	// AAL2 gate is mandatory for every managed route.
+	if (!currentTeam) return <Outlet />;
+	return (
+		<EnterpriseAuth tenantId={currentTeam.id}>
+			<Outlet />
+		</EnterpriseAuth>
+	);
+}
+
 function TeamNavLinks() {
 	const { canEditPolicy, roleResolved } = useTeam();
 
@@ -97,7 +113,7 @@ export function AppLayout() {
 							</div>
 						</div>
 					) : null}
-					<Outlet />
+					<ManagedOutlet />
 				</main>
 			</div>
 		</TeamProvider>

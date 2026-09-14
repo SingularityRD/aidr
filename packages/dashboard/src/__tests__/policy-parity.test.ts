@@ -177,6 +177,18 @@ function installParityServer(storedYaml: string | null) {
 	});
 	mocks.invoke.mockImplementation(
 		async (name: string, request?: { body?: { action?: string; simulation?: unknown } }) => {
+			if (name === "identity-security" && request?.body?.action === "status") {
+				return {
+					data: {
+						ok: true,
+						require_mfa: true,
+						current_assurance: "aal2",
+						next_assurance: "aal2",
+						access_allowed: true,
+					},
+					error: null,
+				};
+			}
 			if (name !== "policy-management") return { data: { ok: true }, error: null };
 			const body = request?.body ?? {};
 			if (body.action === "read") return { data: { ok: true, version: 0, policy: null }, error: null };
