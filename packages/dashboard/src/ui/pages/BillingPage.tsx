@@ -11,6 +11,14 @@ import {
 	requestEnterpriseOrder,
 } from "../../billing/enterprise-orders";
 import { createCheckout } from "../../billing/stripe-client";
+import {
+	cancelSettlement,
+	loadBillingPortal,
+	type PortalSnapshot,
+	projectedSeats,
+	requestSeats,
+	type SettlementStatus,
+} from "../../billing/billing-portal";
 import { useTeam } from "../../enterprise/team-provider";
 import { supabase } from "../../lib/supabase";
 
@@ -382,6 +390,8 @@ export function BillingPage() {
 				)}
 			</div>
 
+			<SubscriptionPortalCard tenantId={tenantId} canManageBilling={canManageBilling} />
+
 			<div className="card">
 				<h2>Enterprise / manual invoice</h2>
 				<p className="muted">
@@ -528,6 +538,280 @@ export function BillingPage() {
 					sales channel.
 				</p>
 			</div>
+		</div>
+	);
+}
+
+const SETTLEMENT_LABELS: Record<SettlementStatus, string> = {
+	quote_issued: "Quote issued",
+	order_placed: "Order placed",
+	settlement_pending: "Settlement pending",
+	settled: "Settled",
+	cancelled: "Cancelled",
+	refunded: "Refunded",
+};
+
+function formatMinor(amountMinor: number, currency: string): string {
+	if (!Number.isSafeInteger(amountMinor)) return "unknown";
+	const sign = amountMinor < 0 ? "-" : "";
+	const absolute = Math.abs(amountMinor);
+	return `${sign}${currency} ${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, "0")}`;
+}
+
+/**
+ * Self-service subscription portal.
+ *
+ * Read-only until the operator asks for a change, and every change carries a
+ * fresh request id so a retry is idempotent server-side. A failed call clears
+ * the success line rather than leaving a stale confirmation on screen.
+ */
+function SubscriptionPortalCard({
+	tenantId,
+	canManageBilling,
+}: {
+	tenantId: string | undefined;
+	canManageBilling: boolean;
+}) {
+	const [snapshot, setSnapshot] = useState<PortalSnapshot | null>(null);
+	const [portalError, setPortalError] = useState<string | null>(null);
+	const [portalNotice, setPortalNotice] = useState<string | null>(null);
+	const [portalLoaded, setPortalLoaded] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const [seats, setSeats] = useState(1);
+	const [seatRequestId, setSeatRequestId] = useState(newBillingRequestId);
+	const [cancelRequestId, setCancelRequestId] = useState(newBillingRequestId);
+	const activeTenantRef = useRef(tenantId);
+	activeTenantRef.current = tenantId;
+
+	const refresh = async (active: string): Promise<void> => {
+		setSnapshot(await loadBillingPortal(active));
+	};
+
+	useEffect(() => {
+		let cancelled = false;
+		setSnapshot(null);
+		setPortalError(null);
+		setPortalNotice(null);
+		setPortalLoaded(false);
+		setSeatRequestId(newBillingRequestId());
+		setCancelRequestId(newBillingRequestId());
+		if (!tenantId || !canManageBilling) {
+			setPortalLoaded(true);
+			return;
+		}
+		void (async () => {
+			try {
+				const next = await loadBillingPortal(tenantId);
+				if (cancelled || activeTenantRef.current !== tenantId) return;
+				setSnapshot(next);
+			} catch (loadError) {
+				if (cancelled || activeTenantRef.current !== tenantId) return;
+				setPortalError(
+					loadError instanceof Error ? loadError.message : "The billing portal is unavailable",
+				);
+			} finally {
+				if (!cancelled) setPortalLoaded(true);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [tenantId, canManageBilling]);
+
+	async function applySeatChange() {
+		const active = tenantId;
+		const requestId = seatRequestId;
+		if (typeof active !== "string" || typeof requestId !== "string" || busy) return;
+		setBusy(true);
+		setPortalNotice(null);
+		setPortalError(null);
+		try {
+			const result = await requestSeats(active, requestId, seats);
+			if (activeTenantRef.current !== active) return;
+			setPortalNotice(
+				result.action === "noop"
+					? `Provider already reports ${result.providerQuantity} seats.`
+					: `Provider now reports ${result.providerQuantity} seats (${result.action} ${result.delta > 0 ? "+" : ""}${result.delta}).`,
+			);
+			setSeatRequestId(newBillingRequestId());
+			await refresh(active);
+		} catch (changeError) {
+			if (activeTenantRef.current !== active) return;
+			setPortalError(
+				changeError instanceof Error ? changeError.message : "The seat change was not accepted",
+			);
+		} finally {
+			if (activeTenantRef.current === active) setBusy(false);
+		}
+	}
+
+	async function cancelOpenSettlement(settlementId: string) {
+		const active = tenantId;
+		const requestId = cancelRequestId;
+		if (typeof active !== "string" || typeof requestId !== "string" || busy) return;
+		setBusy(true);
+		setPortalNotice(null);
+		setPortalError(null);
+		try {
+			await cancelSettlement(active, requestId, settlementId);
+			if (activeTenantRef.current !== active) return;
+			setPortalNotice("The subscription was cancelled.");
+			setCancelRequestId(newBillingRequestId());
+			await refresh(active);
+		} catch (cancelError) {
+			if (activeTenantRef.current !== active) return;
+			setPortalError(
+				cancelError instanceof Error ? cancelError.message : "The cancellation was not accepted",
+			);
+		} finally {
+			if (activeTenantRef.current === active) setBusy(false);
+		}
+	}
+
+	const seatsFromLedger = snapshot ? projectedSeats(snapshot) : null;
+	const cancellable = snapshot
+		? snapshot.settlements
+				.filter(
+					(row) =>
+						row.sequence ===
+						Math.max(
+							...snapshot.settlements
+								.filter((other) => other.settlementId === row.settlementId)
+								.map((other) => other.sequence),
+						),
+				)
+				.filter((row) => ["settled", "settlement_pending", "order_placed"].includes(row.status))
+		: [];
+
+	return (
+		<div className="card">
+			<h2>Subscription portal</h2>
+			<p className="muted">
+				Seats are read from the settlement ledger, which the billing provider writes after a verified
+				event. Requesting a seat change here updates the provider first and only then reloads the
+				ledger.
+			</p>
+			{!tenantId || !canManageBilling ? (
+				<div className="notice" style={{ marginTop: 12 }}>
+					<div className="muted">
+						The subscription portal is limited to a tenant owner or admin.
+					</div>
+				</div>
+			) : !portalLoaded ? (
+				<div className="muted small" style={{ marginTop: 12 }}>
+					Loading subscription ledger…
+				</div>
+			) : (
+				<>
+					{portalError ? (
+						<div
+							className="notice notice-danger"
+							style={{ marginTop: 12 }}
+							role="status"
+							aria-live="assertive"
+							aria-label="Subscription portal error"
+						>
+							{portalError}
+						</div>
+					) : null}
+					{portalNotice ? (
+						<div className="notice" style={{ marginTop: 12 }} role="status">
+							{portalNotice}
+						</div>
+					) : null}
+					{snapshot && !snapshot.selfService ? (
+						<div className="notice notice-danger" style={{ marginTop: 12 }}>
+							Self-service billing is not enabled for this deployment. Seat changes require an
+							approved enterprise order.
+						</div>
+					) : null}
+					<div className="stat" style={{ marginTop: 12 }}>
+						<div className="stat-label">Settled seats</div>
+						<div className="stat-value">
+							{seatsFromLedger === null ? "No settlement evidence" : seatsFromLedger}
+						</div>
+					</div>
+					{snapshot && snapshot.settlements.length > 0 ? (
+						<div className="stack" aria-label="Settlement ledger" style={{ marginTop: 12 }}>
+							{snapshot.settlements.map((row) => (
+								<div
+									className="notice"
+									key={`${row.settlementId}-${row.sequence}`}
+									style={{ marginTop: 8 }}
+								>
+									<div className="row" style={{ justifyContent: "space-between" }}>
+										<strong>{SETTLEMENT_LABELS[row.status]}</strong>
+										<span className="mono small">
+											{formatMinor(row.settledAmountMinor, row.currency)}
+										</span>
+									</div>
+									<div className="muted small">
+										{row.lines
+											.map((line) => `${line.sku} × ${line.quantity}`)
+											.join(", ") || "No line items"}
+									</div>
+									<div className="muted small">
+										Occurred {row.occurredAt || "unknown"} · sequence {row.sequence}
+									</div>
+									<div className="muted small mono" title={row.receiptHash}>
+										Receipt {row.receiptHash.slice(0, 16)}…
+									</div>
+									{row.status === "settled" && cancellable.some(
+										(entry) => entry.settlementId === row.settlementId,
+									) ? (
+										<div className="row" style={{ marginTop: 8 }}>
+											<button
+												className="button button-secondary"
+												type="button"
+												disabled={busy}
+												onClick={() => void cancelOpenSettlement(row.settlementId)}
+											>
+												Cancel subscription
+											</button>
+										</div>
+									) : null}
+								</div>
+							))}
+						</div>
+					) : (
+						<div className="muted small" style={{ marginTop: 12 }}>
+							No settlement is on record for this tenant. A seat count is not zero until a
+							settled settlement exists.
+						</div>
+					)}
+					{snapshot?.selfService ? (
+						<div className="row" style={{ marginTop: 12 }}>
+							<label>
+								Seats
+								<input
+									className="input"
+									type="number"
+									min={1}
+									max={10000}
+									value={seats}
+									aria-label="Requested seats"
+									onChange={(event) => {
+										setSeats(Number(event.target.value));
+										setSeatRequestId(newBillingRequestId());
+									}}
+								/>
+							</label>
+							<button
+								className="button"
+								type="button"
+								disabled={busy}
+								onClick={() => void applySeatChange()}
+							>
+								{busy ? "Applying…" : "Apply seat change"}
+							</button>
+						</div>
+					) : null}
+				</>
+			)}
+			<p className="muted small" style={{ marginTop: 12 }}>
+				Receipts shown here are produced locally from verified provider events. They are not an
+				audited statement and are not marked externally validated.
+			</p>
 		</div>
 	);
 }
