@@ -61,6 +61,60 @@ describe("incidents correlator", () => {
 		expect(incidents.every((incident) => incident.severity === "high")).toBe(true);
 	});
 
+	it("orders out-of-order signals by logical counter rather than wall clock", () => {
+		const base = 1_700_000_000_000;
+		// The wall clocks are deliberately not in counter order: this device was
+		// offline and came back with a clock that runs backwards.
+		const signal = (id: string, timestampMs: number, logicalCounter: number) => ({
+			signal_id: id,
+			signal_type: "runtime_verdict" as const,
+			timestamp_ms: timestampMs,
+			session_id: "session-clock",
+			decision: "ask" as const,
+			severity: "warning" as const,
+			clock: {
+				wallClockUtc: new Date(timestampMs).toISOString(),
+				logicalCounter,
+				observedSkewMs: null,
+			},
+		});
+		const incidents = correlateIncidents([
+			signal("third", base + 3_000, 2),
+			signal("first", base + 30_000, 0),
+			signal("second", base + 1_000, 1),
+		]);
+		expect(incidents).toHaveLength(1);
+		// Wall-clock order here would be second, third, first.
+		expect(incidents[0]?.events.map((event) => event.signal_id)).toEqual([
+			"first",
+			"second",
+			"third",
+		]);
+	});
+
+	it("falls back to wall-clock ordering when no signal carries a logical clock", () => {
+		const base = 1_700_000_000_000;
+		const signal = (id: string, timestampMs: number) => ({
+			signal_id: id,
+			signal_type: "runtime_verdict" as const,
+			timestamp_ms: timestampMs,
+			session_id: "session-wall-clock",
+			decision: "ask" as const,
+			severity: "warning" as const,
+		});
+		const incidents = correlateIncidents([
+			signal("later", base + 20_000),
+			signal("earlier", base + 1_000),
+			signal("middle", base + 10_000),
+		]);
+		expect(incidents).toHaveLength(1);
+		expect(incidents[0]?.events.map((event) => event.signal_id)).toEqual([
+			"earlier",
+			"middle",
+			"later",
+		]);
+	});
+
 	it("groups repeated denies within a short window and escalates to critical", () => {
 		const base = Date.now();
 		const entries = [

@@ -1,3 +1,4 @@
+import { compareEvidenceClock, type EvidenceClock } from "./evidence-receipt.js";
 import type { Incident, IncidentEventRef, IncidentSeverity, NormalizedSignal } from "./types.js";
 
 const SEVERITY_RANK: Record<IncidentSeverity, number> = {
@@ -74,6 +75,47 @@ function incidentKey(s: NormalizedSignal): string {
 	return `${scope}signal:${JSON.stringify(s.signal_id)}`;
 }
 
+/** A signal that carries an evidence clock, whose counter is authoritative. */
+type ClockedSignal = NormalizedSignal & { clock: EvidenceClock };
+
+function hasEvidenceClock(signal: NormalizedSignal): signal is ClockedSignal {
+	return signal.clock !== undefined;
+}
+
+/**
+ * Order signals for the correlation pass.
+ *
+ * `compareEvidenceClock` decides the order wherever a signal carries a logical
+ * clock, so a device that was offline and came back with a wall clock running
+ * backwards still orders after everything it had already produced. Wall clock
+ * remains the fallback: it is the only ordering a producer that emits no clock
+ * offers, and it still decides which slot a clocked signal keeps when clocked
+ * and clockless records are mixed.
+ *
+ * The reorder is applied as a permutation over the wall-clock order rather than
+ * through one mixed comparator, because "both clocked -> compare clocks, else
+ * compare wall clocks" is not transitive: a non-transitive comparator can leave
+ * two clocked signals in host-time order, which is the defect this replaces.
+ */
+function orderSignals(signals: NormalizedSignal[]): NormalizedSignal[] {
+	const byWallClock = [...signals].sort(
+		(a, b) => a.timestamp_ms - b.timestamp_ms || a.signal_id.localeCompare(b.signal_id),
+	);
+	const clocked = byWallClock.filter(hasEvidenceClock);
+	if (clocked.length < 2) return byWallClock;
+	const byLogicalClock = [...clocked].sort((a, b) => {
+		const byClock = compareEvidenceClock(a.clock, b.clock);
+		return byClock !== 0 ? byClock : a.signal_id.localeCompare(b.signal_id);
+	});
+	let next = 0;
+	return byWallClock.map((signal) => {
+		if (!hasEvidenceClock(signal)) return signal;
+		const replacement = byLogicalClock[next];
+		next += 1;
+		return replacement ?? signal;
+	});
+}
+
 function toEventRef(s: NormalizedSignal): IncidentEventRef {
 	return {
 		signal_id: s.signal_id,
@@ -103,9 +145,7 @@ export function correlateIncidents(
 	options: CorrelateOptions = {},
 ): Incident[] {
 	const cfg = { ...DEFAULTS, ...options };
-	const sorted = [...signals].sort(
-		(a, b) => a.timestamp_ms - b.timestamp_ms || a.signal_id.localeCompare(b.signal_id),
-	);
+	const sorted = orderSignals(signals);
 	const seenSignalIds = new Set<string>();
 
 	const open = new Map<string, Incident>();
