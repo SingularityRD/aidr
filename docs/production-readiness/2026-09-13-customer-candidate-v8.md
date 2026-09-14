@@ -114,19 +114,19 @@ Yeni test dosyaları (v8): `supabase/functions/__tests__/billing-portal.test.ts`
 
 ## 6. Teslimat yolları ve digestler
 
-- Aday kaydı: bu dosya. Donmuş paket kaynak commit'i: `cdba3754d7f8d7a3096c9fb56eefb8ac75333823`; bu commit'in ardından yalnız yerel kapı kayıtları ve bu aday belgesi güncellendi.
-- Release çıktısı: `.release-evidence/customer-release-v8-local-20260914-r4/` (15 artefakt; onuncu paket manifestleri, SBOM ve yeni unsigned in-toto/SLSA-style provenance dahil; `release-metadata.json` `git_sha=cdba3754…`, `release_version=0.6.0-rc.8`).
-- Release-inventory SHA-256 (candidate digest): `0955ce9e188e0ed19380c8e67d8ee25a1e9fafccf9110bfaa35f04108fb09b6e`.
-- Portable customer kit: `.release-evidence/aidr-customer-kit-v8-local-20260914-r4/` (372 dosya, kit verifier PASS: 372 dosya + 15 release artefaktı).
-- İmzasız dış zarf: `.release-evidence/aidr-envelope-v8-local-20260914-r4/` (`publisher_authenticated=false`).
+- Aday kaydı: bu dosya. Donmuş paket kaynak commit'i: `cb82bf350168dcb68a627810286f823372e0c41d`; bu commit'in ardından yalnız yerel kapı kayıtları ve bu aday belgesi güncellendi.
+- Release çıktısı: `.release-evidence/customer-release-v8-local-20260915-r5/` (15 artefakt; onuncu paket manifestleri, SBOM ve yeni unsigned in-toto/SLSA-style provenance dahil; `release-metadata.json` `git_sha=cb82bf35…`, `release_version=0.6.0-rc.8`).
+- Release-inventory SHA-256 (candidate digest): `22b275e19e37e3d1eb460e0f3bd84e329b186186be90f4938747b7535a5a1d5e`.
+- Portable customer kit: `.release-evidence/aidr-customer-kit-v8-local-20260915-r5/` (372 dosya, kit verifier PASS: 372 dosya + 15 release artefaktı).
+- İmzasız dış zarf: `.release-evidence/aidr-envelope-v8-local-20260915-r5/` (`publisher_authenticated=false`).
 - Native matris kaydı: `.release-evidence/v8-native-probe.json`, girdi `deploy/native/support-matrix.json`.
 - Ölçülen kaynak profili: `.release-evidence/v8-resource-profile-aidr-v6-local.json`, insan okunur özet `resource-sizing-v8.md`.
 - Makine okunur kanıt indeksi: `v8-evidence-index.json` + `v8-evidence-index.schema.json`.
 - Ticari kapı makbuzları: `commercial-gate-receipts.json` + `.schema.json` (13 kapının tamamı `open`).
 - Komut logları: `.release-evidence/v8-logs/`.
-- v7 ve önceki v8 klasörleri değiştirilmedi. `…-20260914-r4`, `…-20260913-r3` adayını supersede eder. r4 digest'i kasıtlı olarak farklıdır: pakete yeni unsigned provenance artefaktı eklendi ve kaynak uygulama yerel kapanışlarla değişti.
+- v7 ve önceki v8 klasörleri değiştirilmedi. `…-20260915-r5`, `…-20260914-r4` ve daha eski adayları supersede eder. r5 digest'i kasıtlı olarak farklıdır: son dashboard MFA/DLP ulaşılabilirliği ve snapshot-collision düzeltmeleri paketlenmiştir.
 
-> **Commit serisi notu.** İlk 13 commit'lik v8 seri, her modül barrel'ı ve testiyle aynı atomik commit'te inecek şekilde yeniden oynatıldı; supersede edilen seri `backup/superseded-series` ref'inde tutulur. Ardından A/B/C yerel kapanış dalgaları ayrı atomik commit'ler olarak eklendi. r4 kaynak ağacının tam test, coverage, static quality, dependency audit, migration, enforcement, Codex, package-consumer ve release-build kapıları geçti. Kanıt indeksinde **27 PASS, 3 FAIL, 0 NOT_RUN, 0 unknown** bulunur; üç FAIL yerelde başarıya çevrilmeyen `18-native-host`, `19-release-e2e` ve `25-customer-onboarding` dış ortam kapılarıdır.
+> **Commit serisi notu.** İlk 13 commit'lik v8 seri, her modül barrel'ı ve testiyle aynı atomik commit'te inecek şekilde yeniden oynatıldı; supersede edilen seri `backup/superseded-series` ref'inde tutulur. Ardından A/B/C yerel kapanış dalgaları ayrı atomik commit'ler olarak eklendi. r5 kaynak ağacının tam test, coverage, static quality, dependency audit, migration, enforcement, Codex, package-consumer ve release-build kapıları geçti. Kanıt indeksinde **27 PASS, 3 FAIL, 0 NOT_RUN, 0 unknown** bulunur; üç FAIL yerelde başarıya çevrilmeyen `18-native-host`, `19-release-e2e` ve `25-customer-onboarding` dış ortam kapılarıdır.
 >
 > **Kendine referans notu.** Üretici kayıtlar (`FEATURE_INVENTORY.json`, `PRODUCTION_SALES_GAPS.json`, `v8-evidence-index.json`) üretildikleri commit'i `source_commit` alanında taşır. Bu alanı içeren bir commit atıldığında değer bir sonraki commit'e kayar; bu yüzden "generator determinizmi" kapısı, commit edilmiş dosyayı değil **iki ardışık üretici koşusunun bayt-eşitliğini** esas alır. Kanıt: iki ardışık koşu 6 üretilmiş dosyada da aynı SHA-256'yı verir; `source_commit` dışındaki hiçbir satır değişmez.
 
