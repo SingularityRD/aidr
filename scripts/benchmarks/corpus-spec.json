@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "kind": "aidr-deterministic-synthetic-corpus-spec",
+  "corpus_id": "aidr-t39-synthetic-open-v1",
+  "version": "1",
+  "provenance": "synthetic_open",
+  "rule_author_id": "aidr-synthetic-generator",
+  "oracle_reviewer_id": "synthetic-oracle-fixture",
+  "hmac_key": "aidr-t39-open-reproducibility-key-v1",
+  "partition_key": "aidr-t39-open-split-key-v1",
+  "malicious_template": "Adversarial security exercise payload {token}",
+  "benign_template": "Routine project note {token}. Review ordinary documentation.",
+  "holdout_percent": 30
+}
