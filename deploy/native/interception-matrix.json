@@ -1,0 +1,988 @@
+{
+  "schemaVersion": 1,
+  "kind": "aidr-interception-matrix",
+  "reviewedAt": "2026-09-13",
+  "decision": "NO-GO",
+  "decisionMeaning": "MKT-03. This manifest declares, for every sold connector, the pre-prompt / pre-tool / pre-model-output / model-stream / network interception points, the tamper posture and the outcome of the plugin-disabled, crashed, offline and large-binary-response conditions. A status of `enforced` requires a named real-host acceptance record in the row evidence. No connector has one (deploy/native/support-matrix.json carries an empty `acceptanceEvidence` array for every row), so no row is `enforced` and this file is not evidence that any interception point was accepted on a real host.",
+  "soldConnectorSource": "./support-matrix.json",
+  "supportMatrixMapping": {
+    "interceptionPoint": {
+      "pre-tool-call": ["pre-tool"],
+      "pre-prompt": ["pre-prompt"],
+      "network-egress": ["network"],
+      "none": []
+    },
+    "outputInterceptionPoint": {
+      "pre-model-output": ["pre-model-output"],
+      "tool-output-inspection": ["pre-model-output"],
+      "post-tool-call": ["pre-model-output"],
+      "none": []
+    }
+  },
+  "outputSidePoints": ["pre-model-output", "model-stream"],
+  "pointVocabulary": ["pre-prompt", "pre-tool", "pre-model-output", "model-stream", "network"],
+  "statusVocabulary": ["enforced", "declared-not-proven", "tamper-evident-only", "unsupported"],
+  "tamperPostureVocabulary": ["tamper-evident-only", "fail-closed-on-tamper", "no-artifact-integrity-check"],
+  "conditionVocabulary": ["disabled-hook", "crashed-hook", "offline", "large-binary-response"],
+  "conditionOutcomeVocabulary": ["fail-closed", "explicitly-unsupported", "fail-open", "unobserved"],
+  "rows": [
+    {
+      "connector": "claude-code",
+      "point": "pre-prompt",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The connector registers no pre-prompt hook. hooks/hooks.json registers PreToolUse, PostToolUse and SessionStart only, and session-start.ts emits a user-facing systemMessage rather than inspecting or gating the prompt.",
+      "evidence": [],
+      "limitations": [
+        "No prompt-submission interception is implemented for this connector, so nothing inspects or blocks user input before the model sees it."
+      ]
+    },
+    {
+      "connector": "claude-code",
+      "point": "pre-tool",
+      "status": "declared-not-proven",
+      "hostBoundary": "PreToolUse",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "hook-registration",
+          "path": "hooks/hooks.json",
+          "contains": ["\"PreToolUse\""]
+        },
+        {
+          "kind": "hook-registration",
+          "path": "packages/claude-code/src/pre-tool-use.ts",
+          "contains": ["writeInspectionFailure", "permissionDecision: \"deny\""]
+        },
+        {
+          "kind": "test",
+          "path": "packages/claude-code/src/__tests__/integration.test.ts",
+          "contains": ["PreToolUse hook integration"]
+        }
+      ],
+      "limitations": [
+        "No named real-host acceptance record exists for this connector, so the verdict path is source-declared only.",
+        "The hook always exits 0; a host that ignores the deny field, or a hook process killed before it writes a verdict, is not covered by this row.",
+        "No same-turn file/process/network side-effect observation exists on a real Claude host."
+      ]
+    },
+    {
+      "connector": "claude-code",
+      "point": "pre-model-output",
+      "status": "declared-not-proven",
+      "hostBoundary": "PostToolUse",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "output-inspection",
+          "path": "packages/claude-code/src/output-inspection.ts",
+          "contains": ["scanModelOutput", "hookEventName: \"PostToolUse\""]
+        },
+        {
+          "kind": "output-inspection",
+          "path": "packages/claude-code/src/tool-output-quarantine.ts",
+          "contains": ["updatedToolOutput"]
+        }
+      ],
+      "limitations": [
+        "The host boundary is PostToolUse, so the tool has already executed; this is a tool-result boundary and not a refusal of the action.",
+        "Only the updatedToolOutput replacement path is claimed; a PostToolUse block without replacement still exposes the original result to the model.",
+        "No named real-host acceptance record exists, so same-turn model blocking is unproven."
+      ]
+    },
+    {
+      "connector": "claude-code",
+      "point": "model-stream",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "No streaming or token-level interception module exists in this connector; it inspects complete tool responses only.",
+      "evidence": [],
+      "limitations": [
+        "Provider streaming content that never traverses a tool result is not inspected at all."
+      ]
+    },
+    {
+      "connector": "claude-code",
+      "point": "network",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "No network egress interception is implemented for this connector. The MCP gateway is a separately deployed MCP transport boundary and is not part of the connector's interception surface.",
+      "evidence": [],
+      "limitations": [
+        "MCP-07 remains partial: binary output, server-initiated requests and forced routing of direct upstream access are open.",
+        "Direct network access that never constructs a tool call is a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "point": "pre-prompt",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The Cursor hook installer registers no pre-prompt event; cursor_hook_installer.ts registers beforeShellExecution, preToolUse, postToolUse, afterAgentResponse, beforeMCPExecution and beforeReadFile only.",
+      "evidence": [],
+      "limitations": [
+        "No prompt-submission interception is implemented for this connector."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "point": "pre-tool",
+      "status": "declared-not-proven",
+      "hostBoundary": "preToolUse|beforeShellExecution|beforeMCPExecution|beforeReadFile",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "hook-registration",
+          "path": "packages/extension/src/cursor_hook_installer.ts",
+          "contains": ["hooks.preToolUse", "hooks.beforeShellExecution", "hooks.beforeMCPExecution", "hooks.beforeReadFile"]
+        },
+        {
+          "kind": "hook-registration",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["detectCursorEvent", "toCursorResponse"]
+        }
+      ],
+      "limitations": [
+        "preToolUse is registered with the matcher Write|Delete|Edit|WebFetch; other tools reach the hook through beforeShellExecution, beforeMCPExecution or beforeReadFile only.",
+        "No named real-host acceptance record exists, and headless agent enforcement coverage on a real Cursor host is an open unobserved action.",
+        "A tool executed outside the extension host (an external terminal) is a documented bypass."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "point": "pre-model-output",
+      "status": "declared-not-proven",
+      "hostBoundary": "postToolUse",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "output-inspection",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["handleCursorToolOutput", "updated_mcp_tool_output", "advisory_only"]
+        },
+        {
+          "kind": "output-inspection",
+          "path": "packages/extension/src/output-inspection.ts",
+          "contains": ["MAX_INSPECTED_OUTPUT_BYTES", "coverage_limited"]
+        }
+      ],
+      "limitations": [
+        "MCP tool output is replaced before model consumption; for non-MCP tools Cursor exposes no output replacement, so the warning is advisory and the original result still reaches the model.",
+        "afterAgentResponse is observation-only and carries no output fields.",
+        "No named real-host acceptance record exists."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "point": "model-stream",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The extension has no streaming or token-level interception path; afterAgentResponse runs after the response is produced and supports no output fields.",
+      "evidence": [],
+      "limitations": [
+        "Provider streaming content is not inspected."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "point": "network",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "No network egress interception is implemented for this connector; the MCP gateway is a separately deployed MCP transport boundary and is not part of the connector's interception surface.",
+      "evidence": [],
+      "limitations": [
+        "Direct network access that never constructs a tool call is a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "point": "pre-prompt",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The VS Code hook installer registers no pre-prompt event; vscode_hook_installer.ts registers PreToolUse and PostToolUse only.",
+      "evidence": [],
+      "limitations": [
+        "No prompt-submission interception is implemented for this connector."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "point": "pre-tool",
+      "status": "declared-not-proven",
+      "hostBoundary": "PreToolUse",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "hook-registration",
+          "path": "packages/extension/src/vscode_hook_installer.ts",
+          "contains": ["hooks.PreToolUse", "hooks.PostToolUse"]
+        },
+        {
+          "kind": "hook-registration",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["internalVsCodeResponse", "toVsCodeResponse"]
+        }
+      ],
+      "limitations": [
+        "PreToolUse is registered with the matcher Bash|WebFetch|Write|Edit|Read|Delete; unmatched tools do not reach the hook.",
+        "No named real-host acceptance record exists, and enforcement coverage across the currently shipped VS Code minor versions is an open unobserved action.",
+        "A tool executed outside the extension host is a documented bypass."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "point": "pre-model-output",
+      "status": "declared-not-proven",
+      "hostBoundary": "PostToolUse",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "output-inspection",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["handleVsCodeToolOutput", "isVsCodePostToolUse"]
+        },
+        {
+          "kind": "output-inspection",
+          "path": "packages/extension/src/output-inspection.ts",
+          "contains": ["coverage_limited", "preConsumptionEnforcement"]
+        }
+      ],
+      "limitations": [
+        "The host boundary is PostToolUse, so the tool has already executed; the block applies to the tool response before further processing.",
+        "No named real-host acceptance record exists."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "point": "model-stream",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The extension has no streaming or token-level interception path; the shipped VS Code hook surface is PreToolUse and PostToolUse only.",
+      "evidence": [],
+      "limitations": [
+        "Provider streaming content is not inspected."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "point": "network",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "No network egress interception is implemented for this connector; the MCP gateway is a separately deployed MCP transport boundary and is not part of the connector's interception surface.",
+      "evidence": [],
+      "limitations": [
+        "Direct network access that never constructs a tool call is a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "point": "pre-prompt",
+      "status": "declared-not-proven",
+      "hostBoundary": "before_agent_start",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/openclaw/src/startup-scan.ts",
+          "contains": ["createBeforeAgentStartHandler", "prependContext"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/openclaw/src/index.ts",
+          "contains": ["before_agent_start"]
+        }
+      ],
+      "limitations": [
+        "The handler is a one-shot advisory injection of plugin-scan findings; it neither inspects the user prompt nor blocks it, so no prompt-side enforcement is claimed.",
+        "No named real-host acceptance record exists."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "point": "pre-tool",
+      "status": "declared-not-proven",
+      "hostBoundary": "before_tool_call",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "hook-registration",
+          "path": "packages/openclaw/src/index.ts",
+          "contains": ["before_tool_call", "createToolCallHandler"]
+        },
+        {
+          "kind": "hook-registration",
+          "path": "packages/openclaw/src/tool-handler.ts",
+          "contains": ["guardToolCall", "failing closed"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/openclaw/src/__tests__/e2e-integration.test.ts",
+          "contains": ["before_tool_call handler was not registered"]
+        }
+      ],
+      "limitations": [
+        "The connector is an in-process plugin callback; a removed plugin means no interception at all.",
+        "No named real-host acceptance record exists, and same-turn model blocking on a real gateway is an open unobserved action."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "point": "pre-model-output",
+      "status": "declared-not-proven",
+      "hostBoundary": "message_sending|reply_payload_sending",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "output-inspection",
+          "path": "packages/openclaw/src/output-protection.ts",
+          "contains": ["messageSending", "replyPayloadSending", "pre_delivery_response_rewrite"]
+        },
+        {
+          "kind": "output-inspection",
+          "path": "packages/openclaw/src/output-inspection.ts",
+          "contains": ["OUTPUT_INSPECTION_MAX_CHARS", "requiresOutputProtection"]
+        }
+      ],
+      "limitations": [
+        "after_tool_call and tool_result_persist run after the tool has executed; the sold support matrix advertises `post-tool-call` as this connector's output interception point, so same-turn model blocking is not proven.",
+        "No named real-host acceptance record exists."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "point": "model-stream",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "No streaming or token-level interception module exists for this connector; enforcement runs on complete tool calls, persisted tool results and completed outbound responses.",
+      "evidence": [],
+      "limitations": [
+        "Provider streaming content is not inspected."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "point": "network",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "No network egress interception is implemented for this connector; the MCP gateway is a separately deployed MCP transport boundary and is not part of the connector's interception surface.",
+      "evidence": [],
+      "limitations": [
+        "Direct network access that never constructs a tool call is a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "point": "pre-prompt",
+      "status": "declared-not-proven",
+      "hostBoundary": "experimental.chat.messages.transform",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/opencode/src/index.ts",
+          "contains": ["experimental.chat.messages.transform", "<system-reminder>"]
+        }
+      ],
+      "limitations": [
+        "The hook appends a synthetic system-reminder carrying plugin-scan findings to the first user message; it neither inspects nor blocks the user prompt, so no prompt-side enforcement is claimed.",
+        "The hook is experimental host API and no named real-host acceptance record exists."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "point": "pre-tool",
+      "status": "declared-not-proven",
+      "hostBoundary": "tool.execute.before",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "hook-registration",
+          "path": "packages/opencode/src/index.ts",
+          "contains": ["tool.execute.before"]
+        },
+        {
+          "kind": "hook-registration",
+          "path": "packages/opencode/src/tool-handler.ts",
+          "contains": ["guardToolCall", "failed closed"]
+        }
+      ],
+      "limitations": [
+        "The connector is an in-process plugin; a removed plugin means no interception at all.",
+        "No named real-host acceptance record exists, and same-turn output blocking on a real host is an open unobserved action."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "point": "pre-model-output",
+      "status": "declared-not-proven",
+      "hostBoundary": "tool.execute.after",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "output-inspection",
+          "path": "packages/opencode/src/output-handler.ts",
+          "contains": ["tool.execute.after", "MAX_TOOL_OUTPUT_BYTES", "quarantine"]
+        }
+      ],
+      "limitations": [
+        "The tool has already executed when this hook runs; the result is replaced before model consumption rather than the action being refused.",
+        "No named real-host acceptance record exists, and cases that require a live model provider credential remain unobserved."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "point": "model-stream",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The connector reports provider-stream and non-tool content as unsupported by the host pre-consumption API: OpenCode exposes completed message events only after provider content exists.",
+      "evidence": [
+        {
+          "kind": "host-capability-record",
+          "path": "packages/opencode/src/output-handler.ts",
+          "contains": ["unsupported_by_host_preconsumption_api"]
+        }
+      ],
+      "limitations": [
+        "Provider streaming content cannot be blocked before consumption through this connector."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "point": "network",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "No network egress interception is implemented for this connector; the MCP gateway is a separately deployed MCP transport boundary and is not part of the connector's interception surface.",
+      "evidence": [],
+      "limitations": [
+        "Provider streams that bypass the plugin's tool boundary are a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "codex",
+      "point": "pre-prompt",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The Codex connector is a native PreToolUse hook only; no pre-prompt hook is implemented or documented for it.",
+      "evidence": [],
+      "limitations": [
+        "No prompt-submission interception is implemented for this connector."
+      ]
+    },
+    {
+      "connector": "codex",
+      "point": "pre-tool",
+      "status": "declared-not-proven",
+      "hostBoundary": "PreToolUse",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "hook-registration",
+          "path": "packages/codex/src/index.ts",
+          "contains": ["enforceCodexPreToolUse"]
+        },
+        {
+          "kind": "hook-registration",
+          "path": "packages/codex/src/enforcement.ts",
+          "contains": ["enforceCodexPreToolUse", "hookSpecificOutput"]
+        },
+        {
+          "kind": "hook-registration",
+          "path": "packages/codex/src/cli.ts",
+          "contains": ["blockUnconditionally", "process.exitCode = 2"]
+        }
+      ],
+      "limitations": [
+        "The host fails open when the hook is not registered or not trusted, crashes, times out or emits malformed output; only a well-formed explicit deny blocks.",
+        "The connector maps ask to deny because Codex rejects the ask verb, so approval is operator-held and out-of-band.",
+        "No named real-host acceptance record exists, and no verification against a Codex release newer than 0.141.0 exists."
+      ]
+    },
+    {
+      "connector": "codex",
+      "point": "pre-model-output",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The declared connector contract records output-before-model-consumption enforcement as unavailable and canBlockOutputBeforeModelConsumption as false; Codex exposes no output-side hook for this connector.",
+      "evidence": [
+        {
+          "kind": "host-capability-record",
+          "path": "packages/codex/src/coverage.ts",
+          "contains": ["outputBeforeModelConsumption: \"unavailable\"", "canBlockOutputBeforeModelConsumption: false"]
+        }
+      ],
+      "limitations": [
+        "Tool output is not inspected at all on this connector."
+      ]
+    },
+    {
+      "connector": "codex",
+      "point": "model-stream",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "No streaming or token-level interception module exists for this connector; the shipped surface is a single PreToolUse hook process.",
+      "evidence": [],
+      "limitations": [
+        "Provider streaming content is not inspected."
+      ]
+    },
+    {
+      "connector": "codex",
+      "point": "network",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "No network egress interception is implemented for this connector; the MCP gateway is a separately deployed MCP transport boundary and is not part of the connector's interception surface.",
+      "evidence": [],
+      "limitations": [
+        "The host fails open when hook execution is unavailable, and direct network access that never constructs a tool call is not intercepted."
+      ]
+    }
+  ],
+  "tamperPosture": [
+    {
+      "connector": "claude-code",
+      "status": "tamper-evident-only",
+      "reason": "The hook verifies its own artifact integrity through verifyArtifactIntegrityAndLog and logs the verdict, but the surrounding catch fails open.",
+      "evidence": [
+        {
+          "kind": "tamper-evidence",
+          "path": "packages/claude-code/src/pre-tool-use.ts",
+          "contains": ["verifyArtifactIntegrityAndLog", "Fail open"]
+        }
+      ],
+      "limitations": [
+        "A tampered artifact produces an audit verdict, not a block."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "status": "fail-closed-on-tamper",
+      "reason": "maybeVerifyIntegrity throws when verification is unavailable or fails, and the entry point answers with an internal deny response.",
+      "evidence": [
+        {
+          "kind": "tamper-evidence",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["maybeVerifyIntegrity", "Singularity AIDR hook failed; execution was denied."]
+        }
+      ],
+      "limitations": [
+        "Integrity is verified once per hook process; a killed process cannot emit the deny."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "status": "fail-closed-on-tamper",
+      "reason": "maybeVerifyIntegrity throws when verification is unavailable or fails, and the VS Code branch answers with an internal deny response.",
+      "evidence": [
+        {
+          "kind": "tamper-evidence",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["maybeVerifyIntegrity", "internalVsCodeResponse"]
+        }
+      ],
+      "limitations": [
+        "Integrity is verified once per hook process; a killed process cannot emit the deny."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "status": "tamper-evident-only",
+      "reason": "The plugin calls verifyArtifactIntegrityAndLog at registration and swallows a verification failure with an explicit fail-open catch.",
+      "evidence": [
+        {
+          "kind": "tamper-evidence",
+          "path": "packages/openclaw/src/index.ts",
+          "contains": ["verifyArtifactIntegrityAndLog", "Fail open"]
+        }
+      ],
+      "limitations": [
+        "A tampered artifact produces an audit verdict, not a block."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "status": "tamper-evident-only",
+      "reason": "The plugin calls verifyArtifactIntegrityAndLog at registration and swallows a verification failure with an explicit fail-open catch.",
+      "evidence": [
+        {
+          "kind": "tamper-evidence",
+          "path": "packages/opencode/src/index.ts",
+          "contains": ["verifyArtifactIntegrityAndLog", "Fail open"]
+        }
+      ],
+      "limitations": [
+        "A tampered artifact produces an audit verdict, not a block."
+      ]
+    },
+    {
+      "connector": "codex",
+      "status": "no-artifact-integrity-check",
+      "reason": "No artifact integrity verification call exists anywhere in packages/codex; the connector relies on the host hook trust model and on its signed policy handoff instead.",
+      "evidence": [],
+      "limitations": [
+        "Connector artifact tampering is not detected by the connector itself."
+      ]
+    }
+  ],
+  "failureConditions": [
+    {
+      "connector": "claude-code",
+      "condition": "disabled-hook",
+      "outcome": "fail-open",
+      "reason": "A disabled or unregistered plugin means the host never starts the PreToolUse process, so no verdict is produced and the tool call proceeds.",
+      "evidence": [],
+      "limitations": [
+        "This is the host's behaviour, not a connector guarantee; the connector cannot fail closed when it is not invoked."
+      ]
+    },
+    {
+      "connector": "claude-code",
+      "condition": "crashed-hook",
+      "outcome": "unobserved",
+      "reason": "In-process errors are converted into an explicit deny, but the host's treatment of a hook process killed before it writes any verdict is not recorded by any evidence in this repository.",
+      "evidence": [],
+      "limitations": [
+        "No real-host crash case has been run for this connector."
+      ]
+    },
+    {
+      "connector": "claude-code",
+      "condition": "offline",
+      "outcome": "explicitly-unsupported",
+      "reason": "Detection is local by default and needs no network; the network-dependent reputation legs report themselves unavailable and are never treated as clean.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/core/src/evaluator.ts",
+          "contains": ["url_reputation_unavailable"]
+        },
+        {
+          "kind": "failure-policy",
+          "path": "packages/core/src/clients/control-plane.ts",
+          "contains": ["never block local protection"]
+        }
+      ],
+      "limitations": [
+        "With no first-party endpoint configured the reputation legs are inert, so offline and unconfigured are indistinguishable in the verdict."
+      ]
+    },
+    {
+      "connector": "claude-code",
+      "condition": "large-binary-response",
+      "outcome": "fail-closed",
+      "reason": "Output above the 262144-character inspection ceiling sets the truncation flag, which forces the block decision even with no rule finding.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/claude-code/src/output-inspection.ts",
+          "contains": ["text.length > 262144", "decision: \"block\""]
+        }
+      ],
+      "limitations": [
+        "The tool has already executed; the ceiling prevents a clean result, not the action."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "condition": "disabled-hook",
+      "outcome": "fail-open",
+      "reason": "A disabled extension means the host never runs the hook, so no verdict is produced and the tool call proceeds.",
+      "evidence": [],
+      "limitations": [
+        "Operator-disabled extension is a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "condition": "crashed-hook",
+      "outcome": "unobserved",
+      "reason": "The entry point answers any in-process error with a deny response, but a hook process killed before it writes that response is not covered by the guarantee and has not been observed on a real host.",
+      "evidence": [],
+      "limitations": [
+        "The support-matrix tamperResistance wording for this host is limited to verdicts the hook actually emits."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "condition": "offline",
+      "outcome": "explicitly-unsupported",
+      "reason": "Detection is local by default and needs no network; the network-dependent reputation legs report themselves unavailable and are never treated as clean.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/core/src/evaluator.ts",
+          "contains": ["url_reputation_unavailable"]
+        }
+      ],
+      "limitations": [
+        "With no first-party endpoint configured the reputation legs are inert."
+      ]
+    },
+    {
+      "connector": "cursor",
+      "condition": "large-binary-response",
+      "outcome": "explicitly-unsupported",
+      "reason": "Output above the 256 KiB ceiling is returned as coverage_limited and never classified clean, but Cursor exposes no output replacement for non-MCP tools, so the warning is advisory only.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/extension/src/output-inspection.ts",
+          "contains": ["coverage_limited", "not classified as clean"]
+        },
+        {
+          "kind": "failure-policy",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["advisory_only"]
+        }
+      ],
+      "limitations": [
+        "The uninspected remainder still reaches the model for non-MCP tools."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "condition": "disabled-hook",
+      "outcome": "fail-open",
+      "reason": "A disabled extension means the host never runs the hook, so no verdict is produced and the tool call proceeds.",
+      "evidence": [],
+      "limitations": [
+        "Operator-disabled extension is a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "condition": "crashed-hook",
+      "outcome": "unobserved",
+      "reason": "The entry point answers any in-process error with a deny response, but a hook process killed before it writes that response is not covered by the guarantee and has not been observed on a real host.",
+      "evidence": [],
+      "limitations": [
+        "No real-host crash case has been run for this connector."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "condition": "offline",
+      "outcome": "explicitly-unsupported",
+      "reason": "Detection is local by default and needs no network; the network-dependent reputation legs report themselves unavailable and are never treated as clean.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/core/src/evaluator.ts",
+          "contains": ["url_reputation_unavailable"]
+        }
+      ],
+      "limitations": [
+        "With no first-party endpoint configured the reputation legs are inert."
+      ]
+    },
+    {
+      "connector": "vscode",
+      "condition": "large-binary-response",
+      "outcome": "fail-closed",
+      "reason": "Output above the 256 KiB ceiling is returned as coverage_limited and the VS Code output handler answers with an explicit block decision.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["handleVsCodeToolOutput", "decision: \"block\""]
+        }
+      ],
+      "limitations": [
+        "The tool has already executed; the block applies to the tool response."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "condition": "disabled-hook",
+      "outcome": "fail-open",
+      "reason": "A removed or unloaded plugin registers no callback, so the gateway enforces nothing for the tool call.",
+      "evidence": [],
+      "limitations": [
+        "Plugin removed or the gateway started without it is a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "condition": "crashed-hook",
+      "outcome": "unobserved",
+      "reason": "The callback catches its own evaluation errors and blocks, but a callback that is killed by the gateway process has not been observed on a real host.",
+      "evidence": [],
+      "limitations": [
+        "No real-host crash case has been run for this connector."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "condition": "offline",
+      "outcome": "explicitly-unsupported",
+      "reason": "Detection is local by default and needs no network; the network-dependent reputation legs report themselves unavailable and are never treated as clean.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/core/src/evaluator.ts",
+          "contains": ["url_reputation_unavailable"]
+        }
+      ],
+      "limitations": [
+        "With no first-party endpoint configured the reputation legs are inert."
+      ]
+    },
+    {
+      "connector": "openclaw",
+      "condition": "large-binary-response",
+      "outcome": "fail-open",
+      "reason": "The bounded collector returns early for Uint8Array and ArrayBuffer payloads without marking the inspection incomplete, so a large binary payload is neither reported as a coverage limitation nor blocked.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/openclaw/src/output-inspection.ts",
+          "contains": ["Binary payloads are not model-visible text", "Do not expand every byte"]
+        }
+      ],
+      "limitations": [
+        "Binary bytes leave the inspection path silently; only text beyond the character ceiling raises the incomplete flag."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "condition": "disabled-hook",
+      "outcome": "fail-open",
+      "reason": "A removed plugin registers no hook, so the CLI enforces nothing for the tool call.",
+      "evidence": [],
+      "limitations": [
+        "Plugin removed or the plugin path overridden is a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "condition": "crashed-hook",
+      "outcome": "unobserved",
+      "reason": "The hook catches its own evaluation errors and denies, but a hook killed before it throws has not been observed on a real host.",
+      "evidence": [],
+      "limitations": [
+        "No real-host crash case has been run for this connector."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "condition": "offline",
+      "outcome": "explicitly-unsupported",
+      "reason": "Detection is local by default and needs no network; the network-dependent reputation legs report themselves unavailable and are never treated as clean.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/core/src/evaluator.ts",
+          "contains": ["url_reputation_unavailable"]
+        }
+      ],
+      "limitations": [
+        "With no first-party endpoint configured the reputation legs are inert."
+      ]
+    },
+    {
+      "connector": "opencode",
+      "condition": "large-binary-response",
+      "outcome": "fail-closed",
+      "reason": "A non-string output is serialized, and a serialized payload above the 256 KiB ceiling is quarantined with the size-limit status before model consumption.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/opencode/src/output-handler.ts",
+          "contains": ["quarantined_size_limit", "not classified as clean"]
+        }
+      ],
+      "limitations": [
+        "The tool has already executed; the quarantine replaces the result."
+      ]
+    },
+    {
+      "connector": "codex",
+      "condition": "disabled-hook",
+      "outcome": "fail-open",
+      "reason": "An untrusted or unregistered hook is not run at all, so the tool call proceeds without a verdict.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/codex/src/coverage.ts",
+          "contains": ["fail_open_if_hook_is_not_invoked_or_does_not_emit_a_valid_deny"]
+        }
+      ],
+      "limitations": [
+        "Host fails open when hook execution is unavailable; this is a documented bypass in deploy/native/support-matrix.json."
+      ]
+    },
+    {
+      "connector": "codex",
+      "condition": "crashed-hook",
+      "outcome": "fail-open",
+      "reason": "The declared connector contract records a fail-open host failure boundary for a hook process that crashes, times out or emits malformed output.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/codex/src/coverage.ts",
+          "contains": ["hook_process_crash_or_timeout", "fail_open_if_hook_is_not_invoked_or_does_not_emit_a_valid_deny"]
+        }
+      ],
+      "limitations": [
+        "Only a well-formed explicit deny blocks; the connector cannot override the host boundary."
+      ]
+    },
+    {
+      "connector": "codex",
+      "condition": "offline",
+      "outcome": "explicitly-unsupported",
+      "reason": "Detection is local by default and needs no network; the network-dependent reputation legs report themselves unavailable and are never treated as clean.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/core/src/evaluator.ts",
+          "contains": ["url_reputation_unavailable"]
+        }
+      ],
+      "limitations": [
+        "With no first-party endpoint configured the reputation legs are inert."
+      ]
+    },
+    {
+      "connector": "codex",
+      "condition": "large-binary-response",
+      "outcome": "explicitly-unsupported",
+      "reason": "The connector has no output-side hook at all, so no tool response is inspected and none is reported as clean.",
+      "evidence": [
+        {
+          "kind": "failure-policy",
+          "path": "packages/codex/src/coverage.ts",
+          "contains": ["canBlockOutputBeforeModelConsumption: false"]
+        }
+      ],
+      "limitations": [
+        "Tool output of any size is not inspected on this connector."
+      ]
+    }
+  ],
+  "residual": [
+    {
+      "id": "MKT-03-REAL-HOST-ACCEPTANCE",
+      "description": "Named real-host acceptance for every declared interception point: observed side effect prevention, benign twin, disabled hook, crash, timeout, offline, restart and large-binary-response on a licensed host version.",
+      "ownerRole": "QA + Endpoint Engineering",
+      "requiredInput": "A licensed and installed copy of each sold host plus the scenario manifests under deploy/native/scenarios/",
+      "acceptanceCommand": "node scripts/verify-native-host-matrix-v6.mjs --scenario-file deploy/native/scenarios/<host>.json --output .release-evidence/v8-native-<host>.json",
+      "acceptanceEvidence": []
+    },
+    {
+      "id": "MKT-03-PROVIDER-STREAM",
+      "description": "Pre-consumption enforcement for provider streaming content, which no connector can currently block.",
+      "ownerRole": "Endpoint Engineering",
+      "requiredInput": "Host vendor streaming/pre-consumption API that can be driven outside the model's tool surface",
+      "acceptanceCommand": "node deploy/native/verify-interception-matrix.mjs",
+      "acceptanceEvidence": []
+    },
+    {
+      "id": "MKT-03-NETWORK-EGRESS",
+      "description": "Network egress interception for direct (non-tool) host traffic, including TLS/pinning and privacy review.",
+      "ownerRole": "Endpoint Engineering",
+      "requiredInput": "Supported OS-level network interception design and customer legal review",
+      "acceptanceCommand": "node deploy/native/verify-interception-matrix.mjs",
+      "acceptanceEvidence": []
+    }
+  ]
+}
