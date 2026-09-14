@@ -83,9 +83,18 @@ export default {
 		api.on("after_tool_call", outputProtection.afterToolCall.bind(outputProtection));
 		// OpenClaw requires this persistence hook to be synchronous. It can keep
 		// future transcript reads safe, but it runs after the tool already executed.
-		api.on("tool_result_persist", outputProtection.toolResultPersist.bind(outputProtection), {
-			priority: 100,
-		});
+		try {
+			api.on("tool_result_persist", outputProtection.toolResultPersist.bind(outputProtection), {
+				priority: 100,
+			});
+		} catch (error) {
+			// A host without this surface keeps the original output in its transcript,
+			// so a finding observed at after_tool_call cannot be carried forward.
+			// Record the unenforced boundary instead of degrading silently.
+			outputProtection.recordPersistBoundaryUnavailable(
+				`tool_result_persist registration failed: ${error instanceof Error ? error.name : typeof error}`,
+			);
+		}
 		// This is the enforceable output boundary: replace risky model text before
 		// it is delivered, including turns influenced by a flagged tool result.
 		api.on("message_sending", outputProtection.messageSending.bind(outputProtection), {
