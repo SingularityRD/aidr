@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "reviewed_at": "2026-09-13",
-  "source_commit": "b4361fa7d565e76f1604997b654a41e54c03db80",
+  "source_commit": "1d929ceb50712562435ab505c37a8f7deb2a7554",
   "worktree_has_changes": true,
   "decision": "NO-GO",
   "methodology": "Reviewed capability/consumer inventory; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
   "status_counts": {
     "wired": 41,
-    "partial": 27,
-    "missing": 1,
+    "partial": 28,
+    "missing": 0,
     "external": 2
   },
   "features": [
@@ -857,13 +857,18 @@
       "id": "BIL-03",
       "area": "Commercial",
       "name": "Subscription self-service portal",
-      "status": "missing",
+      "status": "partial",
       "source_paths": [
-        "packages/dashboard/src/billing/stripe-client.ts"
+        "packages/dashboard/src/billing/billing-portal.ts",
+        "packages/dashboard/src/ui/pages/BillingPage.tsx",
+        "supabase/functions/billing-portal/index.ts",
+        "supabase/functions/billing-portal/settlement.ts",
+        "supabase/functions/billing-portal/provider.ts",
+        "supabase/migrations/20260913000004_billing_settlement_portal.sql"
       ],
-      "consumer": "Unsupported helpers explicitly fail",
-      "delivered": "Checkout surface only",
-      "remaining": "Implement verified billing portal and invoice lifecycle if offered in sold SKU",
+      "consumer": "Billing page and the billing-portal Edge route",
+      "delivered": "Server-resolved tenant/customer identity, provider-of-record settlement state machine, seat grant/revoke reconciliation, cancel/refund with idempotency and TTL, portal return-URL allowlist",
+      "remaining": "Live provider keys, approved price/SKU catalogue, finance reconciliation and accounting approval remain external",
       "production_accepted": false
     },
     {
