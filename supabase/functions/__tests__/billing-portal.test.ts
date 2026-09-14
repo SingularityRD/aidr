@@ -36,6 +36,16 @@ const portalSource = readFileSync(
 	join(ROOT, "supabase", "functions", "billing-portal", "index.ts"),
 	"utf8",
 );
+// Bounded lifetime for the billing idempotency/webhook stores ships as an
+// append-only follow-up migration, plus the maintenance job that runs it.
+const pruningMigration = readFileSync(
+	join(ROOT, "supabase", "migrations", "20260914000001_billing_retention_pruning.sql"),
+	"utf8",
+);
+const maintenanceSource = readFileSync(
+	join(ROOT, "scripts", "deployment-maintenance.mjs"),
+	"utf8",
+);
 
 const settlement = await import("../billing-portal/settlement.ts");
 const providerModule = await import("../billing-portal/provider.ts");
@@ -908,6 +918,63 @@ describe("billing settlement migration contract", () => {
 		expect(migration).toContain("purge_billing_settlements_at_commercial_retention");
 		expect(migration).toContain("purge_billing_settlements_on_tenant_close");
 		expect(migration).toContain("delete from public.billing_settlements where tenant_id = new.id");
+	});
+});
+
+describe("billing retention migration contract", () => {
+	it("prunes expired settlement requests without touching settled records", () => {
+		// Both idempotency stores get an explicit, bounded lifetime.
+		expect(pruningMigration).toMatch(
+			/alter table public\.billing_settlement_requests\s+add column if not exists expires_at timestamptz not null default now\(\) \+ interval '90 days'/,
+		);
+		expect(pruningMigration).toMatch(
+			/alter table public\.billing_webhook_events\s+add column if not exists expires_at timestamptz not null default now\(\) \+ interval '30 days'/,
+		);
+		expect(pruningMigration).toContain(
+			"create index if not exists billing_settlement_requests_expiry_idx",
+		);
+		expect(pruningMigration).toContain("create index if not exists billing_webhook_events_expiry_idx");
+		expect(pruningMigration).toContain(
+			"create or replace function public.prune_expired_billing_records(",
+		);
+
+		const pruneRpc =
+			pruningMigration
+				.split("create or replace function public.prune_expired_billing_records(")[1]
+				?.split("\n$$;")[0] ?? "";
+		expect(pruneRpc).toContain("delete from public.billing_settlement_requests");
+		expect(pruneRpc).toContain("delete from public.billing_webhook_events");
+		expect(pruneRpc).toContain("where expires_at <= now()");
+		// The settlement ledger is the append-only financial evidence: the
+		// pruning function must never name it, so no settled record is reachable.
+		expect(pruneRpc).not.toContain("public.billing_settlements");
+		expect(pruneRpc).not.toContain("public.billing_entitlement_projections");
+		expect(pruningMigration).not.toMatch(/delete from public\.billing_settlements/);
+		expect(pruningMigration).not.toMatch(/update public\.billing_settlements/);
+
+		// A dry run counts without deleting, and the deletion is the observable
+		// part of the maintenance evidence.
+		expect(pruneRpc).toContain("if p_apply then");
+		expect(pruneRpc).toContain("'settlement_requests_eligible'");
+		expect(pruneRpc).toContain("'webhook_events_eligible'");
+		expect(pruneRpc).toContain("'settlement_requests_deleted'");
+		expect(pruneRpc).toContain("'webhook_events_deleted'");
+		expect(pruneRpc).toContain("get diagnostics v_requests_deleted = row_count");
+
+		// Service-role only.
+		expect(pruningMigration).toContain(
+			"revoke all on function public.prune_expired_billing_records(integer, boolean)\n  from public, anon, authenticated",
+		);
+		expect(pruningMigration).toContain(
+			"grant execute on function public.prune_expired_billing_records(integer, boolean)\n  to service_role",
+		);
+
+		// The scheduled maintenance job is what actually runs it, and its
+		// evidence file carries both the counts and the scope statement.
+		expect(maintenanceSource).toContain("/rest/v1/rpc/prune_expired_billing_records");
+		expect(maintenanceSource).toContain("p_apply: apply");
+		expect(maintenanceSource).toContain("billing_retention");
+		expect(maintenanceSource).toContain("append-only settlement ledger is never touched");
 	});
 });
 
