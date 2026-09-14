@@ -129,7 +129,7 @@ groups:
           service: aidr-control-plane
         annotations:
           summary: AIDR public TLS certificate expires in less than fourteen days
-          action: Renew the certificate and verify the complete served chain from outside the ingress.
+          action: Check the aidr-tls-renew.timer result and its renewal receipt, then verify the complete served chain from outside the ingress.
 
       - alert: AIDRCertificateProbeUnhealthy
         expr: aidr_readiness_check{check="certificate"} == 0 or absent(aidr_readiness_check{check="certificate"})
@@ -149,4 +149,4 @@ groups:
           service: aidr-control-plane
         annotations:
           summary: AIDR public TLS certificate expires in less than three days
-          action: Page the certificate owner and complete emergency renewal.
+          action: Page the certificate owner, run the aidr-tls-renew unit if the timer did not fire, and complete emergency renewal.

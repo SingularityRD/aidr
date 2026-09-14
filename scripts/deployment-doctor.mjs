@@ -22,6 +22,7 @@ const ingressEnv = existsSync(ingressEnvPath)
   ? Object.fromEntries(readFileSync(ingressEnvPath, "utf8").split(/\r?\n/).filter((s) => /^[A-Z][A-Z0-9_]*=/.test(s)).map((s) => [s.slice(0, s.indexOf("=")), s.slice(s.indexOf("=") + 1)]))
   : {};
 check(existsSync(join(dir, "ingress", "device-start.mjs")) && existsSync(ingressEnvPath), "device-start ingress signer and private environment prepared");
+check(existsSync(join(dir, "ingress", "aidr-tls-renew.service")) && existsSync(join(dir, "ingress", "aidr-tls-renew.timer")), "TLS renewal unit and timer prepared for the ingress host");
 check(typeof functionEnv.AIDR_DEVICE_START_INGRESS_SECRET === "string" && functionEnv.AIDR_DEVICE_START_INGRESS_SECRET.length >= 32 && functionEnv.AIDR_DEVICE_START_INGRESS_SECRET === ingressEnv.AIDR_DEVICE_START_INGRESS_SECRET, "device-start Edge and ingress signing secrets match");
 check(typeof ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN === "string" && ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN.length >= 32 && !ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN.startsWith("REPLACE_"), "device-start reverse-proxy token configured");
 let deviceUpstreamValid = false;
@@ -50,6 +51,24 @@ for (const url of [manifest.dashboard_url, manifest.supabase_url]) {
   const parsed = new URL(url);
   check(parsed.protocol === "https:" || (manifest.development && ["localhost", "127.0.0.1"].includes(parsed.hostname)), `HTTPS origin or isolated development: ${parsed.origin}`);
 }
+// Region and residency entries are the operator's declarations. A missing
+// declaration is a failure: the doctor cannot confirm that the tenant and the
+// deployment were prepared for the same region, and it must not pass that.
+const regions = manifest.regions && typeof manifest.regions === "object" && !Array.isArray(manifest.regions) ? manifest.regions : {};
+function declaredRegion(id) {
+  if (typeof id !== "string" || id.length === 0) return null;
+  const entry = regions[id];
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+  const residency = entry.residency;
+  if (!residency || typeof residency !== "object" || Array.isArray(residency) || typeof residency.declared !== "boolean" || typeof residency.location !== "string" || residency.location.length === 0) return null;
+  if (entry.supabase_url !== null && typeof entry.supabase_url !== "string") return null;
+  return entry;
+}
+const deploymentRegion = declaredRegion(manifest.region);
+check(!!deploymentRegion, "deployment manifest declares a known deployment region with residency information");
+check(!!declaredRegion(manifest.tenant_region) && manifest.tenant_region === manifest.region, "tenant declared region matches the deployment region");
+check(!!deploymentRegion && (deploymentRegion.supabase_url === null || deploymentRegion.supabase_url === manifest.supabase_url), "declared region endpoint matches this deployment's public API origin");
+check(!!deploymentRegion && !/^REPLACE/i.test(deploymentRegion.residency.location), "declared region residency location is not a placeholder");
 if (manifest.mode === "self-hosted") {
   const config = spawnSync("docker", ["compose", "--project-directory", dir, "-f", join(dir, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 15000 });
   check(config.status === 0, "Docker Compose configuration resolves");

@@ -55,3 +55,37 @@ test("cloud ingress upstream uses a provider origin behind the public API proxy"
 		assert.equal(deployment.supabase_url, supabaseUrl);
 	});
 });
+
+test("a region outside the declared manifest is rejected", () => {
+	inTemporaryDirectory((directory) => {
+		const output = join(directory, "undeclared-region");
+		const result = prepare(output, "--region", "mars-central-1");
+		assert.notEqual(result.status, 0, "an undeclared region unexpectedly succeeded");
+		assert.match(result.stderr, /mars-central-1.*is not declared in the deployment region manifest/);
+		assert.equal(existsSync(output), false, "an undeclared region left a partial installation");
+	});
+});
+
+test("a tenant region that differs from the deployment region is rejected", () => {
+	inTemporaryDirectory((directory) => {
+		const output = join(directory, "cross-region");
+		const result = prepare(output, "--region", "self-hosted", "--tenant-region", "unassigned");
+		assert.notEqual(result.status, 0, "a cross-region installation unexpectedly succeeded");
+		assert.match(result.stderr, /Tenant declared region "unassigned" does not match deployment region "self-hosted"/);
+		assert.equal(existsSync(output), false, "a cross-region preparation left a partial installation");
+	});
+});
+
+test("the declared region and its residency are recorded in the prepared manifest", () => {
+	inTemporaryDirectory((directory) => {
+		const output = join(directory, "declared-region");
+		const result = prepare(output, "--mode", "cloud", "--region", "self-hosted", "--tenant-region", "self-hosted");
+		assert.equal(result.status, 0, result.stderr);
+		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
+		assert.equal(deployment.region, "self-hosted");
+		assert.equal(deployment.tenant_region, "self-hosted");
+		assert.equal(deployment.regions["self-hosted"].supabase_url, null);
+		assert.equal(typeof deployment.regions["self-hosted"].residency.declared, "boolean");
+		assert.match(deployment.regions["self-hosted"].residency.location, /\S/);
+	});
+});
