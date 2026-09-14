@@ -40,6 +40,7 @@
  *    of whether the response succeeded.
  */
 
+import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { resolvePath } from "./config.js";
@@ -534,7 +535,13 @@ async function snapshotTarget(
 		const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 		const threat = verdict.matchedThreatId ?? verdict.category;
 		const safeThreat = threat.replace(/[^A-Za-z0-9._-]/g, "_");
-		const destination = join(vaultDir, `${stamp}_${safeThreat}_${basename(resolved)}`);
+		// ISO timestamps have millisecond resolution. Two denies in the same tick
+		// used to select the same path and the second copy overwrote the first,
+		// making the "both snapshots survive" guarantee timing-dependent.
+		const destination = join(
+			vaultDir,
+			`${stamp}_${randomUUID()}_${safeThreat}_${basename(resolved)}`,
+		);
 
 		await mkdir(vaultDir, { recursive: true, mode: 0o700 });
 		await copyFile(resolved, destination);
