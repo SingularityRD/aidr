@@ -103,8 +103,20 @@ export {
 	type BehavioralOrchestratorConfig,
 	type BehavioralOrchestratorDependencies,
 	type BehavioralOrchestratorStats,
+	BEHAVIORAL_ORCHESTRATOR_BOUNDS,
 	createBehavioralDetectionOrchestrator,
+	LOCAL_EMBEDDER_MODEL_VERSION,
 } from "./behavioral-orchestrator.js";
+// Durable, bounded baseline for the behavioural detector
+export {
+	type BehavioralBaselineObservation,
+	type BehavioralBaselineSessionState,
+	type BehavioralBaselineStore,
+	type BehavioralBaselineStoreBounds,
+	type BehavioralBaselineStoreOptions,
+	createBehavioralBaselineStore,
+	FileBehavioralBaselineStore,
+} from "./behavioral-baseline-store.js";
 // Build flavor
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
