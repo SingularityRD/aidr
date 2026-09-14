@@ -7,6 +7,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getBearerToken } from "../_shared/auth.ts";
+import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { getRequestId } from "../_shared/response.ts";
@@ -19,7 +20,6 @@ import {
 	normalizeRecoveryCode,
 	normalizeUuid,
 	policyAllowsAssurance,
-	sessionPassesRevocationBarrier,
 	validateNewPassword,
 } from "./logic.ts";
 
@@ -78,15 +78,11 @@ async function authenticate(db: DatabaseClient, req: Request): Promise<AuthConte
 	if (!token) return corsJson(req, 401, { error: "missing_access_token" });
 	const { data, error } = await db.auth.getUser(token);
 	if (error || !data.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
-	const { data: state, error: stateError } = await db
-		.from("identity_user_session_state")
-		.select("revoked_before")
-		.eq("user_id", data.user.id)
-		.maybeSingle();
-	if (stateError) return corsJson(req, 503, { error: "identity_state_unavailable" });
-	if (!sessionPassesRevocationBarrier(token, state?.revoked_before)) {
-		return corsJson(req, 401, { error: "session_revoked" });
-	}
+	// The shared barrier owns the session-revocation check, so this mixed route
+	// (public recovery + authenticated administration) uses the same rule the
+	// tenant routes use instead of a second copy of it.
+	const barrier = await checkIdentityBarrier(db, token, data.user.id);
+	if (!barrier.ok) return corsJson(req, barrier.status, { error: barrier.error });
 	const { data: assurance, error: assuranceError } =
 		await db.auth.mfa.getAuthenticatorAssuranceLevel(token);
 	if (assuranceError || !assurance) {

@@ -149,6 +149,13 @@ read-then-write logic in an Edge Function:
 | `authorize_device_session` | Attach a user to a pending device session | `authorized_at is null` compare-and-set |
 | `exchange_device_session` | Claim a device code for enrollment | `exchanged_at is null` compare-and-set |
 | `record_billing_webhook_event` | Record a provider event (`paddle`, `stripe`) | `event_id` conflict makes duplicate delivery a no-op |
+| `register_audit_export_object` | Reserve the stored bytes of one private export object against the tenant budget | Tenant advisory lock serializes the usage read and the reservation insert |
+| `queue_bounded_fleet_response_command` | Queue a fleet response command under the per-tenant live-command ceiling | Tenant advisory lock serializes the depth count and the insert; the unbounded `queue_fleet_response_command` is no longer an RPC |
+
+The per-tenant byte budget for stored audit exports is
+`AIDR_AUDIT_EXPORT_TENANT_BYTES` (default 512 MiB, hard ceiling 1 TiB enforced by
+the database). It is a configured plan figure, not a claim about any provider
+quota.
 
 Service-role functions must return caller-safe errors and a request id. Never
 log API keys, enrollment tokens, raw webhook signatures, or entitlement private
@@ -163,7 +170,9 @@ keys. Persist only SHA-256 hashes for API/enrollment secrets.
   `app.current_tenant_id()`.
 - `increment_rate_limit`, `user_id_by_email`, and the admission functions are
   not public RPC endpoints. Keep their `EXECUTE` grants restricted after every
-  schema change.
+  schema change. `increment_rate_limit` only accepts a key inside the reviewed
+  scope allowlist (`20260913000005_tenant_storage_queue_quotas.sql`): a new
+  caller scope is a migration, not a caller-side string.
 - Audit logs are append-only and team deletion is restricted while audit rows
   exist. Owner removal is rejected unless an explicit service-role
   offboarding workflow is running.
