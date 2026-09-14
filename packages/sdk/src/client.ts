@@ -239,6 +239,8 @@ export class AIDRClient {
 	private async _performCheck(request: CheckRequest): Promise<CheckResult> {
 		// Check cache first
 		const cacheKey = this._getCacheKey(request);
+		/** Set when the reputation leg could not run, so the result is never clean. */
+		let urlLegUnavailableReason: string | undefined;
 		if (this.cache) {
 			const cached = this.cache.getUrl(cacheKey);
 			if (cached) {
@@ -265,9 +267,13 @@ export class AIDRClient {
 				const results = await this.urlClient.checkUrls([request.resource]);
 				urlCheckResults.push(...results);
 			} catch (e) {
-				this.logger.warn(
-					`URL check failed for ${request.resource}: ${e instanceof Error ? e.message : String(e)}`,
-				);
+				// A failed reputation lookup is an unavailable leg, not a clean URL.
+				// Swallowing it made an outage indistinguishable from "checked and
+				// found nothing", so the verdict was reported as an approval for a
+				// resource nothing had actually inspected. Record it and let the
+				// indeterminate path below decide.
+				urlLegUnavailableReason = e instanceof Error ? e.message : String(e);
+				this.logger.warn(`URL check failed for ${request.resource}: ${urlLegUnavailableReason}`);
 			}
 		}
 
@@ -276,6 +282,25 @@ export class AIDRClient {
 			heuristicMatches: matches ?? [],
 			urlCheckResults,
 		});
+
+		// An unverified URL must never come back as `allow`. The same indeterminate
+		// marker the retry-exhaustion path uses keeps every SDK enforcer from
+		// routing this to an approval callback, so "the reputation leg is broken"
+		// cannot be turned into "run the call".
+		if (urlLegUnavailableReason && verdict.decision === "allow") {
+			const indeterminate: CheckResult = {
+				allowed: false,
+				decision: "ask",
+				confidence: 0.5,
+				reason: `URL reputation lookup was unavailable (${urlLegUnavailableReason}), so ${request.resource} was NOT verified and requires review.`,
+				metadata: { [INDETERMINATE_METADATA_KEY]: true, leg: "url_reputation" },
+			};
+			this._emitErrorEvent(
+				new Error(`URL reputation unavailable: ${urlLegUnavailableReason}`),
+				request,
+			);
+			return indeterminate;
+		}
 
 		// Cache the result
 		if (this.cache) {
