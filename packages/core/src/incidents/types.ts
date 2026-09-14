@@ -1,3 +1,5 @@
+import type { EvidenceClock } from "./evidence-receipt.js";
+
 export type IncidentSeverity = "info" | "warning" | "high" | "critical";
 
 export type SignalType =
@@ -10,6 +12,16 @@ export interface NormalizedSignal {
 	signal_id: string;
 	signal_type: SignalType;
 	timestamp_ms: number;
+
+	/**
+	 * Logical clock the producer attached to this signal, when it has one.
+	 *
+	 * `timestamp_ms` is an untrusted host wall clock; the correlator orders by
+	 * this clock instead whenever it is present (`correlate.ts`). It is absent on
+	 * the plain audit path, where ordering necessarily falls back to
+	 * `timestamp_ms`.
+	 */
+	clock?: EvidenceClock;
 
 	// Correlation keys (best-effort)
 	session_id?: string;

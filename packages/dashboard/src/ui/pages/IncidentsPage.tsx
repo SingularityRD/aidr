@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { type EvidenceAuditRow, EvidenceView } from "../../enterprise/evidence-view";
 import { supabase } from "../../lib/supabase";
 
 type AgentRow = {
@@ -136,6 +137,25 @@ export function IncidentsPage() {
 
 	const incidentEvents = useMemo(() => events.filter(isIncidentLikeEvent), [events]);
 
+	// The evidence view groups these records by the correlation id their payload
+	// already carries, so it is fed the same incident-like rows the table shows.
+	// A record whose payload carries no id is reported as uncorrelated there
+	// rather than merged into a neighbouring incident.
+	const evidenceRows = useMemo<EvidenceAuditRow[]>(
+		() =>
+			incidentEvents.map((event) => {
+				const observedAt = Date.parse(event.created_at);
+				return {
+					id: String(event.id),
+					action: event.type,
+					timestampMs: Number.isFinite(observedAt) ? observedAt : 0,
+					agentId: event.agent_id,
+					payload: event.payload,
+				};
+			}),
+		[incidentEvents],
+	);
+
 	const denyCount = useMemo(
 		() =>
 			incidentEvents.filter(
@@ -234,6 +254,8 @@ export function IncidentsPage() {
 					</table>
 				</div>
 			</div>
+
+			<EvidenceView rows={evidenceRows} error={error} />
 		</div>
 	);
 }
