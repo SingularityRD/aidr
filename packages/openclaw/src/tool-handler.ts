@@ -15,6 +15,7 @@ import {
 	formatDenyMessage,
 	guardToolCall,
 	type Logger,
+	loadProvisionedDetectorContext,
 } from "@singularityrd/aidr-core";
 
 export interface ToolCallEvent {
@@ -84,9 +85,16 @@ export function createToolCallHandler(
 			// Core may find artifacts after normalizing connector-specific fields.
 			const artifacts = mapToolToArtifacts(toolName, params) ?? [];
 			const sessionId = ctx?.sessionKey ?? "unknown";
+
+			// Operator-provisioned tenant detector policy for this runtime. No
+			// provisioned policy means an empty context, exactly as before; a
+			// provisioning failure throws and is caught below, which denies the
+			// call instead of evaluating it without the tenant's policy.
+			const provisioned = await loadProvisionedDetectorContext("openclaw");
+
 			const { verdict, actionId, responseActions } = await guardToolCall(
 				{ sessionId, toolName, toolInput: params, artifacts },
-				{ threatsDir, allowlistsDir, logger, agentRuntime: "openclaw" },
+				{ threatsDir, allowlistsDir, logger, agentRuntime: "openclaw", ...provisioned },
 				approvalStore,
 			);
 

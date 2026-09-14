@@ -11,6 +11,7 @@ import {
 	extractFromToolCall,
 	extractFromWebFetch,
 	extractFromWrite,
+	loadProvisionedDetectorContext,
 	type Verdict,
 } from "@singularityrd/aidr-core";
 import {
@@ -281,6 +282,11 @@ function writeHookInputLimitResponse(mode: HookMode | undefined): void {
 
 async function evaluateNormalizedCall(call: NormalizedHookCall, mode: HookMode): Promise<Verdict> {
 	const { threatsDir, allowlistsDir } = getBundledDataDirs();
+	// Operator-provisioned tenant detector policy for this host runtime. The
+	// policy file is selected by the reported runtime, which is the same closed
+	// union value the evaluator receives; an unprovisioned host gets an empty
+	// context and is evaluated exactly as before.
+	const provisioned = await loadProvisionedDetectorContext(mode);
 	return evaluateToolCall(
 		{
 			sessionId: call.sessionId,
@@ -288,7 +294,7 @@ async function evaluateNormalizedCall(call: NormalizedHookCall, mode: HookMode):
 			toolInput: call.toolInput,
 			artifacts: call.artifacts,
 		},
-		{ threatsDir, allowlistsDir, agentRuntime: mode },
+		{ threatsDir, allowlistsDir, agentRuntime: mode, ...provisioned },
 	);
 }
 

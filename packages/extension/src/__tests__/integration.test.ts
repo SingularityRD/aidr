@@ -1,8 +1,14 @@
 /// <reference types="node" />
 
 import { execFile } from "node:child_process";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import {
+	provisionTenantDetectorPolicy,
+	TEST_DLP_MARKER,
+} from "../../../core/src/__tests__/detector-provisioning-fixtures.js";
 
 const DIST_DIR = resolve(__dirname, "..", "..", "dist");
 const AIDR_HOOK = resolve(DIST_DIR, "aidr-hook.cjs");
@@ -11,11 +17,17 @@ type HookMode = "cursor" | "vscode";
 function runHook(
 	mode: HookMode,
 	input: Record<string, unknown> | string | Buffer,
+	env?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
 	return new Promise((resolveRun) => {
-		const child = execFile("node", [AIDR_HOOK, mode], (error, stdout, stderr) => {
-			resolveRun({ stdout, stderr, code: error?.code ? Number(error.code) : child.exitCode });
-		});
+		const child = execFile(
+			"node",
+			[AIDR_HOOK, mode],
+			{ env: env ? { ...process.env, ...env } : process.env },
+			(error, stdout, stderr) => {
+				resolveRun({ stdout, stderr, code: error?.code ? Number(error.code) : child.exitCode });
+			},
+		);
 		const stdin = Buffer.isBuffer(input)
 			? input
 			: typeof input === "string"
@@ -263,5 +275,59 @@ describe("VS Code hook integration", () => {
 				permissionDecisionReason: "Singularity AIDR could not normalize hook payload.",
 			},
 		});
+	});
+});
+
+const tempHomes: string[] = [];
+
+async function makeHome(): Promise<string> {
+	const dir = await mkdtemp(join(tmpdir(), "aidr-extension-home-"));
+	tempHomes.push(dir);
+	return dir;
+}
+
+afterAll(async () => {
+	await Promise.all(tempHomes.map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+describe("Provisioned tenant detector policy", () => {
+	const writePayload = {
+		tool_name: "Write",
+		tool_input: { file_path: "/tmp/notes.txt", content: `notes: ${TEST_DLP_MARKER}` },
+	};
+
+	it("applies a signed tenant DLP policy to the Cursor and VS Code hook runtimes", async () => {
+		const home = await makeHome();
+		await provisionTenantDetectorPolicy({ homeDir: home, agentRuntime: "cursor" });
+		await provisionTenantDetectorPolicy({ homeDir: home, agentRuntime: "vscode" });
+
+		const cursor = await runHook(
+			"cursor",
+			{ hook_event_name: "preToolUse", ...writePayload },
+			{ HOME: home },
+		);
+		expect(cursor.code).toBe(0);
+		expect(parseResponse(cursor.stdout).permission).toBe("deny");
+
+		const vscode = await runHook("vscode", writePayload, { HOME: home });
+		expect(vscode.code).toBe(0);
+		expect(permissionDecision(vscode.stdout)).toBe("deny");
+		expect(vscode.stdout).toContain("DLP");
+	});
+
+	it("leaves an unprovisioned host exactly as before", async () => {
+		const home = await makeHome();
+
+		const cursor = await runHook(
+			"cursor",
+			{ hook_event_name: "preToolUse", ...writePayload },
+			{ HOME: home },
+		);
+		expect(cursor.code).toBe(0);
+		expect(parseResponse(cursor.stdout).permission).toBe("allow");
+
+		const vscode = await runHook("vscode", writePayload, { HOME: home });
+		expect(vscode.code).toBe(0);
+		expect(parseResponse(vscode.stdout)).toEqual({});
 	});
 });
