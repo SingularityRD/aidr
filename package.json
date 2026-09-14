@@ -30,7 +30,7 @@
 	},
 	"scripts": {
 		"compile:aig": "node scripts/compile-aig-data.mjs",
-		"aig:verify": "node scripts/verify-aig-source.mjs",
+		"aig:verify": "node --test scripts/verify-aig-source.test.mjs && node scripts/verify-aig-source.mjs",
 		"sync:aig": "node scripts/sync-aig-threats.mjs",
 		"postinstall": "node scripts/compile-aig-data.mjs",
 		"build": "node scripts/build-workspace.mjs",
