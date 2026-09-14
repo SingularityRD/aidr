@@ -17,9 +17,26 @@ const SCOPE_DIMENSIONS = [
 	{ dimension: "surface", scopeField: "required_surfaces", caseField: "surface", label: "surface" },
 ];
 const SCOPE_POSTURES = new Set(["enforce", "observe", "unsupported"]);
+const COMPARISON_UNKNOWN_REASONS = new Set(["not_authorized", "not_available", "budget_blocked", "missing_measurements", "unsupported_product"]);
+export const MAX_ANALYSIS_MATRIX_CELLS = 1_000_000;
 // Exactly one of these may appear on a case. They name the case it was derived from.
 const DERIVATION_FIELDS = ["derived_from_case_id", "development_derived_from"];
 const RESOURCE_FIELDS = ["cpu_percent", "rss_mb"];
+
+// These constants are the normative required-field contract. The JSON Schemas are descriptive
+// mirrors and the schema-drift test requires their `required` arrays to match these exports.
+export const CORPUS_REQUIRED_FIELDS = ["schema_version", "corpus_id", "version", "rule_author_id", "oracle_reviewer_id", "scope", "cases"];
+export const CORPUS_CASE_REQUIRED_FIELDS = ["case_id", "partition", "oracle", "family", "connector", "surface", "content_sha256"];
+export const OBSERVATIONS_REQUIRED_FIELDS = ["schema_version", "workload_id", "environment", "trials_per_case", "candidate_product_id", "products", "measurements"];
+export const OBSERVATION_PRODUCT_REQUIRED_FIELDS = ["product_id", "version", "artifact_sha256"];
+export const MEASUREMENT_REQUIRED_FIELDS = ["case_id", "product_id", "trial", "action", "phase", "latency_ms", "raw_evidence_file", "raw_evidence_sha256"];
+export const ATTESTATION_REQUIRED_FIELDS = ["schema_version", "payload", "signature_base64"];
+export const ATTESTATION_PAYLOAD_REQUIRED_FIELDS = ["protocol_version", "corpus_sha256", "observations_sha256", "candidate_artifact_sha256", "rule_author_id", "evaluator_id", "evaluator_role", "completed_at"];
+export const REPORT_REQUIRED_FIELDS = ["schema_version", "kind", "claim_status", "production_accepted", "corpus", "observations_sha256", "workload_id", "environment", "attestation", "coverage", "gates", "canonical_report_sha256"];
+
+function requireFields(value, fields, label) {
+	for (const field of fields) if (!(field in value)) fail(`${label}.${field} is required`);
+}
 
 function fail(message) {
 	throw new Error(message);
@@ -55,6 +72,16 @@ function safeId(value, label) {
 
 function digest(bytes) {
 	return createHash("sha256").update(bytes).digest("hex");
+}
+
+export function canonicalJson(value) {
+	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+	if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+	return JSON.stringify(value);
+}
+
+function measuredMetric(value, observations) {
+	return { measured: observations > 0, value: observations > 0 ? value : null, observations };
 }
 
 function jsonFile(path) {
@@ -162,7 +189,9 @@ function wilson(successes, total) {
 // the sold scope - before an independent evaluator has authored a single case.
 export function validateCorpusStructure(corpus) {
 	object(corpus, "corpus");
+	requireFields(corpus, CORPUS_REQUIRED_FIELDS, "corpus");
 	if (corpus.schema_version !== 1) fail("unsupported corpus schema_version");
+	if (corpus.provenance !== undefined && !["synthetic_open", "customer_supplied"].includes(corpus.provenance)) fail("corpus.provenance must be synthetic_open or customer_supplied");
 	nonempty(corpus.corpus_id, "corpus_id");
 	nonempty(corpus.version, "corpus.version");
 	nonempty(corpus.rule_author_id, "rule_author_id");
@@ -178,7 +207,7 @@ export function validateCorpusStructure(corpus) {
 	return scope;
 }
 
-function validateCorpus(corpus) {
+export function validateCorpus(corpus) {
 	const scope = validateCorpusStructure(corpus);
 	if (!Array.isArray(corpus.cases) || corpus.cases.length === 0) fail("corpus.cases must be nonempty");
 	const declaredTrials = corpus.trials_per_case_by_partition === undefined ? null : declaredPartitionTrials(corpus.trials_per_case_by_partition, "corpus.trials_per_case_by_partition");
@@ -188,6 +217,7 @@ function validateCorpus(corpus) {
 	const derivedById = new Map();
 	for (const entry of corpus.cases) {
 		object(entry, "corpus case");
+		requireFields(entry, CORPUS_CASE_REQUIRED_FIELDS.filter((field) => field !== "content_sha256"), "corpus case");
 		const id = safeId(entry.case_id, "case_id");
 		if (cases.has(id)) {
 			const existing = cases.get(id);
@@ -356,12 +386,24 @@ export function assertSoldScopeCoverage(corpus, soldScope) {
 
 function validateObservations(observations, cases, declaredTrials) {
 	object(observations, "observations");
+	requireFields(observations, OBSERVATIONS_REQUIRED_FIELDS, "observations");
 	if (observations.schema_version !== 1) fail("unsupported observations schema_version");
 	nonempty(observations.workload_id, "workload_id");
 	const environment = object(observations.environment, "environment");
 	for (const field of ["environment_id", "os", "hardware", "runtime", "region", "concurrency", "workload_description"])
 		nonempty(environment[field], `environment.${field}`);
 	if (!Number.isSafeInteger(observations.trials_per_case) || observations.trials_per_case < 1) fail("trials_per_case must be a positive integer");
+	let measurementBudget = null;
+	if (observations.measurement_budget !== undefined) {
+		const budget = object(observations.measurement_budget, "measurement_budget");
+		measurementBudget = {
+			currency: nonempty(budget.currency, "measurement_budget.currency"),
+			ceiling: finiteNonnegative(budget.ceiling, "measurement_budget.ceiling"),
+			spent: finiteNonnegative(budget.spent, "measurement_budget.spent"),
+			authorization_ref: budget.authorization_ref === null || budget.authorization_ref === undefined ? null : safeId(budget.authorization_ref, "measurement_budget.authorization_ref"),
+		};
+		if (measurementBudget.spent > measurementBudget.ceiling) fail("measurement budget spent exceeds ceiling");
+	}
 	const trialsByPartition = observations.trials_per_case_by_partition === undefined
 		? { development: observations.trials_per_case, holdout: observations.trials_per_case }
 		: declaredPartitionTrials(observations.trials_per_case_by_partition, "observations.trials_per_case_by_partition");
@@ -379,18 +421,26 @@ function validateObservations(observations, cases, declaredTrials) {
 	const products = new Map();
 	for (const product of observations.products) {
 		object(product, "product");
+		requireFields(product, OBSERVATION_PRODUCT_REQUIRED_FIELDS, "product");
 		const id = safeId(product.product_id, "product_id");
 		if (products.has(id)) fail(`duplicate product_id: ${id}`);
+		if (product.comparison_unknown_reason !== undefined && !COMPARISON_UNKNOWN_REASONS.has(product.comparison_unknown_reason)) fail(`invalid comparison_unknown_reason for ${id}`);
 		nonempty(product.version, `version for ${id}`);
 		assertSha(product.artifact_sha256, `artifact_sha256 for ${id}`);
 		products.set(id, product);
 	}
 	const candidateId = safeId(observations.candidate_product_id, "candidate_product_id");
 	if (!products.has(candidateId)) fail("candidate_product_id is not in products");
+	let matrixCells = 0;
+	for (const entry of cases.values()) {
+		matrixCells += trialsByPartition[entry.partition] * products.size;
+		if (!Number.isSafeInteger(matrixCells) || matrixCells > MAX_ANALYSIS_MATRIX_CELLS) fail(`analysis matrix exceeds hard safety cap of ${MAX_ANALYSIS_MATRIX_CELLS} case/product/trial cells`);
+	}
 	if (!Array.isArray(observations.measurements)) fail("measurements must be an array");
 	const records = new Map();
 	for (const row of observations.measurements) {
 		object(row, "measurement");
+		requireFields(row, MEASUREMENT_REQUIRED_FIELDS, "measurement");
 		const caseId = safeId(row.case_id, "measurement.case_id");
 		const productId = safeId(row.product_id, "measurement.product_id");
 		if (!cases.has(caseId) || !products.has(productId)) fail(`unknown case/product: ${caseId}/${productId}`);
@@ -403,13 +453,14 @@ function validateObservations(observations, cases, declaredTrials) {
 			fail(`side_effect_occurred must be observed for ${caseId}/${productId}`);
 		optionalNonnegative(row.cpu_percent, `cpu_percent for ${caseId}/${productId}`);
 		optionalNonnegative(row.rss_mb, `rss_mb for ${caseId}/${productId}`);
+		if (row.score !== undefined && (typeof row.score !== "number" || !Number.isFinite(row.score) || row.score < 0 || row.score > 1)) fail(`score for ${caseId}/${productId} must be between 0 and 1`);
 		assertSha(row.raw_evidence_sha256, `raw_evidence_sha256 for ${caseId}/${productId}`);
 		nonempty(row.raw_evidence_file, `raw_evidence_file for ${caseId}/${productId}`);
 		const key = `${caseId}\u0000${productId}\u0000${row.trial}`;
 		if (records.has(key)) fail(`duplicate measurement: ${caseId}/${productId}/${row.trial}`);
 		records.set(key, row);
 	}
-	return { products, candidateId, records, trialsByPartition, partitionTrialsDeclared };
+	return { products, candidateId, records, trialsByPartition, partitionTrialsDeclared, measurementBudget };
 }
 
 // A resource gate is true only when every completed candidate decision was measured for both fields.
@@ -438,10 +489,45 @@ function verifyEvidenceFiles(observations, observationsPath) {
 	}
 }
 
-function verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, corpus, observations) {
+function validateTrustedKeys(value) {
+	object(value, "trusted keys");
+	if (value.schema_version !== 1 || !Array.isArray(value.keys)) fail("trusted keys must have schema_version 1 and a keys array");
+	const keys = new Map();
+	for (const entry of value.keys) {
+		object(entry, "trusted key");
+		const id = safeId(entry.key_id, "trusted key key_id");
+		if (keys.has(id)) fail(`duplicate trusted key_id: ${id}`);
+		if (!Array.isArray(entry.roles) || entry.roles.length === 0 || entry.roles.some((role) => !["independent_evaluator", "duty_separation_authority", "customer_authority", "budget_authority"].includes(role))) fail(`trusted key ${id} must declare recognized roles`);
+		keys.set(id, { sha256: assertSha(entry.public_key_sha256, `public_key_sha256 for trusted key ${id}`), roles: new Set(entry.roles) });
+	}
+	return keys;
+}
+
+function verifySplitManifest(splitManifest, splitManifestBytes, corpus, payload) {
+	if (splitManifest === null) return false;
+	object(splitManifest, "split manifest");
+	if (splitManifest.schema_version !== 1 || !Array.isArray(splitManifest.assignments)) fail("split manifest must have schema_version 1 and assignments");
+	const manifestSha = digest(splitManifestBytes);
+	if (assertSha(payload.split_manifest_sha256, "attested split_manifest_sha256") !== manifestSha) fail("split manifest hash differs from signed attestation");
+	const expectedCorpus = digest(Buffer.from(canonicalJson({ ...corpus, cases: corpus.cases.map(({ partition: _partition, ...entry }) => entry) }), "utf8"));
+	if (assertSha(splitManifest.source_corpus_sha256, "split manifest source_corpus_sha256") !== expectedCorpus) fail("split manifest is not bound to corpus content");
+	const assignments = new Map();
+	for (const entry of splitManifest.assignments) {
+		const contentSha = assertSha(entry.content_sha256, "split manifest content_sha256");
+		if (!PARTITIONS.has(entry.partition) || assignments.has(contentSha)) fail("split manifest has an invalid or duplicate assignment");
+		assignments.set(contentSha, entry.partition);
+	}
+	for (const entry of corpus.cases) if (assignments.get(entry.content_sha256.toLowerCase()) !== entry.partition) fail(`split manifest partition mismatch for ${entry.case_id}`);
+	if (assignments.size !== new Set(corpus.cases.map((entry) => entry.content_sha256.toLowerCase())).size) fail("split manifest assignment count differs from unique corpus content");
+	return true;
+}
+
+function verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, corpus, observations, trustedKeys = null) {
 	object(attestation, "attestation");
+	requireFields(attestation, ATTESTATION_REQUIRED_FIELDS, "attestation");
 	if (attestation.schema_version !== 1) fail("unsupported attestation schema_version");
 	const payload = object(attestation.payload, "attestation.payload");
+	requireFields(payload, ATTESTATION_PAYLOAD_REQUIRED_FIELDS, "attestation.payload");
 	if (payload.protocol_version !== 1) fail("unsupported benchmark protocol_version");
 	if (assertSha(payload.corpus_sha256, "attested corpus_sha256") !== digest(corpusBytes)) fail("corpus hash differs from signed attestation");
 	if (assertSha(payload.observations_sha256, "attested observations_sha256") !== digest(observationBytes)) fail("observations hash differs from signed attestation");
@@ -453,14 +539,72 @@ function verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBy
 	if (payload.evaluator_role !== "independent_evaluator") fail("evaluator_role must be independent_evaluator");
 	const time = nonempty(payload.completed_at, "completed_at");
 	if (!/^\d{4}-\d{2}-\d{2}T/.test(time) || Number.isNaN(Date.parse(time))) fail("completed_at must be an ISO timestamp");
-	const signature = Buffer.from(nonempty(attestation.signature_base64, "signature_base64"), "base64");
+	const signatureText = nonempty(attestation.signature_base64, "signature_base64");
+	const signature = Buffer.from(signatureText, "base64");
+	if (signature.length !== 64 || signature.toString("base64") !== signatureText) fail("attestation signature must be canonical base64 encoding of exactly 64 bytes");
 	const key = createPublicKey(publicKeyPem);
 	if (key.asymmetricKeyType !== "ed25519") fail("attestation key must be Ed25519");
+	const fingerprint = digest(key.export({ type: "spki", format: "der" }));
+	let trusted = false;
+	if (trustedKeys !== null) {
+		const keys = validateTrustedKeys(trustedKeys);
+		const keyId = safeId(payload.signing_key_id, "attested signing_key_id");
+		const trustedKey = keys.get(keyId);
+		if (!trustedKey || trustedKey.sha256 !== fingerprint || !trustedKey.roles.has("independent_evaluator")) fail(`unknown, mismatched, or unauthorized attestation signing key: ${keyId}`);
+		trusted = true;
+	}
 	if (!verify(null, Buffer.from(JSON.stringify(payload)), key, signature)) fail("invalid evaluator signature");
-	return { evaluator_id: evaluatorId, completed_at: time, public_key_sha256: digest(key.export({ type: "spki", format: "der" })) };
+	return { evaluator_id: evaluatorId, completed_at: time, public_key_sha256: fingerprint, signing_key_id: payload.signing_key_id ?? null, trusted };
 }
 
-function summarizeRows(rows, caseMap) {
+function classificationMetrics(rows, caseMap, allowRoc) {
+	const matrix = { true_positive: 0, false_positive: 0, true_negative: 0, false_negative: 0, indeterminate: 0 };
+	const scored = [];
+	let determinate = 0;
+	for (const row of rows) {
+		const oracle = caseMap.get(row.case_id).oracle;
+		if (!["block", "approval", "allow"].includes(row.action)) {
+			matrix.indeterminate += 1;
+			continue;
+		}
+		determinate += 1;
+		const intervention = ["block", "approval"].includes(row.action);
+		const positive = oracle === "malicious" ? intervention && row.side_effect_occurred !== true : intervention;
+		if (oracle === "malicious") matrix[positive ? "true_positive" : "false_negative"] += 1;
+		else matrix[positive ? "false_positive" : "true_negative"] += 1;
+		if (typeof row.score === "number") scored.push({ malicious: oracle === "malicious", score: row.score });
+	}
+	const precisionDenominator = matrix.true_positive + matrix.false_positive;
+	const recallDenominator = matrix.true_positive + matrix.false_negative;
+	const precision = precisionDenominator ? matrix.true_positive / precisionDenominator : null;
+	const recall = recallDenominator ? matrix.true_positive / recallDenominator : null;
+	const f1 = precision !== null && recall !== null && precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : null;
+	const positives = scored.filter((entry) => entry.malicious);
+	const negatives = scored.filter((entry) => !entry.malicious);
+	let auc = null;
+	let roc = null;
+	if (allowRoc && scored.length === determinate && positives.length > 0 && negatives.length > 0) {
+		let credit = 0;
+		for (const positive of positives) for (const negative of negatives) credit += positive.score > negative.score ? 1 : positive.score === negative.score ? 0.5 : 0;
+		auc = credit / (positives.length * negatives.length);
+		roc = [...new Set(scored.map((entry) => entry.score))].sort((a, b) => b - a).map((threshold) => ({
+			threshold,
+			true_positive_rate: positives.filter((entry) => entry.score >= threshold).length / positives.length,
+			false_positive_rate: negatives.filter((entry) => entry.score >= threshold).length / negatives.length,
+		}));
+	}
+	const rocObservations = auc === null ? 0 : scored.length;
+	return {
+		confusion_matrix: matrix,
+		precision: measuredMetric(precision, precision === null ? 0 : precisionDenominator),
+		recall: measuredMetric(recall, recall === null ? 0 : recallDenominator),
+		f1: measuredMetric(f1, f1 === null ? 0 : precisionDenominator + recallDenominator),
+		roc: measuredMetric(roc, rocObservations),
+		roc_auc: measuredMetric(auc, rocObservations),
+	};
+}
+
+function summarizeRows(rows, caseMap, allowRoc = false) {
 	const counts = {
 		total: rows.length, malicious: 0, benign: 0, prevented: 0, held_for_approval: 0,
 		malicious_allowed_or_effect: 0, malicious_side_effect_occurred: 0,
@@ -497,6 +641,7 @@ function summarizeRows(rows, caseMap) {
 	return {
 		counts,
 		denominators: { malicious: counts.malicious, benign: counts.benign, all: counts.total },
+		classification: classificationMetrics(rows, caseMap, allowRoc),
 		 rates: {
 			malicious_prevention: counts.malicious ? counts.prevented / counts.malicious : null,
 			malicious_intervention: counts.malicious ? (counts.prevented + counts.held_for_approval) / counts.malicious : null,
@@ -517,18 +662,41 @@ function summarizeRows(rows, caseMap) {
 // soldScope is the validated sold scope from validateSoldScope, or null when no --scope-file was
 // supplied. Passing it asserts declared coverage and the per-item minimums before any report
 // exists; it never changes how an observation is scored.
-export function evaluateBenchmark({ corpus, observations, attestation, publicKeyPem, corpusBytes, observationBytes, observationsPath, soldScope = null }) {
+export function evaluateBenchmark({ corpus, observations, attestation, publicKeyPem, corpusBytes, observationBytes, observationsPath, soldScope = null, trustedKeys = null, splitManifest = null, splitManifestBytes = null, dutySeparationReceipt = null, dutySeparationReceiptBytes = null }) {
 	if (soldScope !== null) assertSoldScopeCoverage(corpus, soldScope);
 	const { cases, declaredTrials, contamination, holdoutBlind } = validateCorpus(corpus);
-	const { products, candidateId, records, trialsByPartition, partitionTrialsDeclared } = validateObservations(observations, cases, declaredTrials);
-	const signer = verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, corpus, observations);
+	const { products, candidateId, records, trialsByPartition, partitionTrialsDeclared, measurementBudget } = validateObservations(observations, cases, declaredTrials);
+	const signer = verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, corpus, observations, trustedKeys);
+	const holdoutFrozen = verifySplitManifest(splitManifest, splitManifestBytes, corpus, attestation.payload);
 	verifyEvidenceFiles(observations, observationsPath);
+	// An evaluator cannot authorize its own spend. Budget authorization requires a separate
+	// externally verified budget-authority receipt, which is deliberately outside local execution.
+	const budgetAuthorized = false;
+	let dutySeparationBound = false;
+	if (dutySeparationReceipt !== null) {
+		object(dutySeparationReceipt, "duty separation receipt");
+		if (!signer.trusted || trustedKeys === null) fail("duty separation receipt requires trusted evaluator and authority keys");
+		if (assertSha(attestation.payload.duty_separation_receipt_sha256, "attested duty_separation_receipt_sha256") !== digest(dutySeparationReceiptBytes)) fail("duty separation receipt differs from signed attestation");
+		const receiptPayload = object(dutySeparationReceipt.payload, "duty separation receipt payload");
+		const receiptSignatureText = nonempty(dutySeparationReceipt.signature_base64, "duty separation receipt signature_base64");
+		const receiptSignature = Buffer.from(receiptSignatureText, "base64");
+		const authorityKey = createPublicKey(nonempty(dutySeparationReceipt.public_key_pem, "duty separation receipt public_key_pem"));
+		const authorityFingerprint = digest(authorityKey.export({ type: "spki", format: "der" }));
+		const authority = validateTrustedKeys(trustedKeys).get(safeId(receiptPayload.signing_key_id, "duty separation signing_key_id"));
+		if (authorityKey.asymmetricKeyType !== "ed25519" || !authority || authority.sha256 !== authorityFingerprint || !authority.roles.has("duty_separation_authority") || authorityFingerprint === signer.public_key_sha256) fail("duty separation receipt key is not an independent trusted authority");
+		if (receiptSignature.length !== 64 || receiptSignature.toString("base64") !== receiptSignatureText || !verify(null, Buffer.from(JSON.stringify(receiptPayload)), authorityKey, receiptSignature)) fail("invalid duty separation receipt signature");
+		if (receiptPayload.corpus_sha256 !== digest(corpusBytes) || receiptPayload.rule_author_id !== corpus.rule_author_id || receiptPayload.oracle_reviewer_id !== corpus.oracle_reviewer_id || receiptPayload.evaluator_id !== signer.evaluator_id) fail("duty separation receipt identities or corpus do not match benchmark inputs");
+		dutySeparationBound = new Set([receiptPayload.rule_author_id, receiptPayload.oracle_reviewer_id, receiptPayload.evaluator_id, receiptPayload.authority_id]).size === 4;
+	}
+	const operatingPoint = attestation.payload.frozen_operating_point;
+	if (operatingPoint !== undefined && (operatingPoint?.frozen !== true || typeof operatingPoint.threshold !== "number" || !Number.isFinite(operatingPoint.threshold) || operatingPoint.threshold < 0 || operatingPoint.threshold > 1)) fail("frozen operating point must declare frozen true and a threshold between 0 and 1");
+	const frozenOperatingPoint = holdoutFrozen && operatingPoint !== undefined;
 	const report = {
 		schema_version: 1,
 		kind: "aidr_independent_benchmark_analysis",
 		claim_status: "EVIDENCE_REVIEW_REQUIRED",
 		production_accepted: false,
-		corpus: { id: corpus.corpus_id, version: corpus.version, sha256: digest(corpusBytes), cases: cases.size, partitions: [...new Set([...cases.values()].map((c) => c.partition))].sort() },
+		corpus: { id: corpus.corpus_id, version: corpus.version, provenance: corpus.provenance ?? null, sha256: digest(corpusBytes), cases: cases.size, partitions: [...new Set([...cases.values()].map((c) => c.partition))].sort() },
 		scope: {
 			required_attack_families: corpus.scope.required_attack_families,
 			required_connectors: corpus.scope.required_connectors,
@@ -543,6 +711,11 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		trials_per_case: observations.trials_per_case,
 		trials_per_case_by_partition: trialsByPartition,
 		attestation: signer,
+		measurement_budget: measurementBudget === null
+			? { status: "BLOCKED_EXTERNAL", measured: false, authorized: false, authorization_ref: null, authorization_verified: false, ceiling: null, spent: null, currency: null }
+			: { status: "BLOCKED_EXTERNAL", measured: true, authorized: budgetAuthorized, authorization_ref: measurementBudget.authorization_ref, authorization_verified: false, ceiling: measurementBudget.ceiling, spent: measurementBudget.spent, currency: measurementBudget.currency },
+		duty_separation: { receipt_present: dutySeparationReceipt !== null, signed_and_bound: dutySeparationBound, independent: dutySeparationBound },
+		comparison: Object.create(null),
 		coverage: Object.create(null),
 		limitations: [
 			"A valid signature proves control of the evaluator key and input integrity; organizational independence and oracle quality require external review.",
@@ -574,16 +747,23 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		for (const [caseId, entry] of cases) for (let trial = 1; trial <= trialsByPartition[entry.partition]; trial++) {
 			rows.push(records.get(`${caseId}\u0000${productId}\u0000${trial}`) ?? { case_id: caseId, action: "missing", phase: null, latency_ms: null });
 		}
-		const byDimension = (field) => Object.fromEntries([...new Set([...cases.values()].map((c) => c[field]))].sort().map((name) => [name, summarizeRows(rows.filter((row) => cases.get(row.case_id)[field] === name), cases)]));
+		const byDimension = (field) => Object.fromEntries([...new Set([...cases.values()].map((c) => c[field]))].sort().map((name) => [name, summarizeRows(rows.filter((row) => cases.get(row.case_id)[field] === name), cases, field === "partition" ? name === "development" || frozenOperatingPoint : frozenOperatingPoint)]));
 		report.coverage[productId] = {
 			version: product.version,
 			artifact_sha256: product.artifact_sha256.toLowerCase(),
-			overall: summarizeRows(rows, cases),
+			overall: summarizeRows(rows, cases, frozenOperatingPoint),
 			by_partition: byDimension("partition"),
 			by_family: byDimension("family"),
 			by_connector: byDimension("connector"),
 			by_surface: byDimension("surface"),
 		};
+		if (productId !== candidateId) {
+			const missing = report.coverage[productId].overall.counts.missing;
+			const reason = product.comparison_unknown_reason ?? (missing > 0 ? "missing_measurements" : null);
+			report.comparison[productId] = reason === null
+				? { status: "measured", malicious_prevention: { status: "measured", value: report.coverage[productId].overall.rates.malicious_prevention } }
+				: { status: "unknown", malicious_prevention: { status: "unknown", value: null, reason } };
+		}
 	}
 	report.gates = {
 		development_and_holdout_present: report.corpus.partitions.includes("development") && report.corpus.partitions.includes("holdout"),
@@ -604,20 +784,33 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		}),
 		holdout_partition_blind: holdoutBlind.holdout_nonempty && holdoutBlind.holdout_both_oracles && contamination.cross_partition_derivation.length === 0 && partitionTrialsDeclared,
 		holdout_no_case_overlap: contamination.cross_partition_case_id.length === 0 && contamination.cross_partition_content.length === 0,
+		holdout_frozen: holdoutFrozen,
+		attestation_trusted: signer.trusted,
+		measurement_budget_authorized: budgetAuthorized,
+		// Evaluator self-attestation is not customer authorization; a separate customer-authority
+		// receipt remains an external boundary, so local evaluation cannot set this gate.
+		customer_corpus_authorized: false,
+		duty_separation_signed_and_bound: dutySeparationBound,
 		resource_measured: candidateResourceMeasured(observations, candidateId),
 		candidate_id: candidateId,
 		independent_acceptance: false,
 	};
+	report.canonical_report_sha256 = digest(Buffer.from(canonicalJson(report), "utf8"));
 	return report;
 }
 
 function argsFromCli(argv) {
 	const args = {};
-	for (let index = 0; index < argv.length; index += 2) {
+	const valued = new Set(["--corpus", "--observations", "--attestation", "--public-key", "--scope-file", "--trusted-keys", "--split-manifest", "--duty-separation-receipt", "--reproduce", "--output"]);
+	for (let index = 0; index < argv.length; index += 1) {
 		const key = argv[index];
-		if (!["--corpus", "--observations", "--attestation", "--public-key", "--scope-file", "--output"].includes(key) || !argv[index + 1] || args[key])
-			fail("usage: node scripts/benchmarks/evaluate.mjs --corpus PATH --observations PATH --attestation PATH --public-key PATH [--scope-file PATH] [--output PATH]");
-		args[key] = argv[index + 1];
+		if (key === "--force") {
+			if (args[key]) fail("duplicate --force");
+			args[key] = true;
+			continue;
+		}
+		if (!valued.has(key) || !argv[index + 1] || args[key]) fail("usage: node scripts/benchmarks/evaluate.mjs --corpus PATH --observations PATH --attestation PATH --public-key PATH [--scope-file PATH] [--trusted-keys PATH] [--split-manifest PATH] [--duty-separation-receipt PATH] [--reproduce REPORT] [--output PATH] [--force]");
+		args[key] = argv[++index];
 	}
 	if (!args["--corpus"]) fail("missing --corpus");
 	// With --scope-file the coverage verdict is reported before the signed inputs are needed, so a
@@ -643,13 +836,22 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 		const observationsPath = resolve(args["--observations"]);
 		const observations = jsonFile(observationsPath);
 		const attestation = jsonFile(resolve(args["--attestation"])).value;
+		const split = args["--split-manifest"] ? jsonFile(resolve(args["--split-manifest"])) : null;
+		const receipt = args["--duty-separation-receipt"] ? jsonFile(resolve(args["--duty-separation-receipt"])) : null;
 		const report = evaluateBenchmark({
 			corpus: corpus.value, observations: observations.value, attestation,
 			publicKeyPem: readFileSync(resolve(args["--public-key"]), "utf8"),
 			corpusBytes: corpus.bytes, observationBytes: observations.bytes, observationsPath, soldScope,
+			trustedKeys: args["--trusted-keys"] ? jsonFile(resolve(args["--trusted-keys"])).value : null,
+			splitManifest: split?.value ?? null, splitManifestBytes: split?.bytes ?? null,
+			dutySeparationReceipt: receipt?.value ?? null, dutySeparationReceiptBytes: receipt?.bytes ?? null,
 		});
 		const output = `${JSON.stringify(report, null, 2)}\n`;
-		if (args["--output"]) writeFileSync(resolve(args["--output"]), output);
+		if (args["--reproduce"]) {
+			const expected = readFileSync(resolve(args["--reproduce"]), "utf8");
+			if (expected !== output) fail("reproduced report bytes differ");
+		}
+		if (args["--output"]) writeFileSync(resolve(args["--output"]), output, { flag: args["--force"] ? "w" : "wx" });
 		else process.stdout.write(output);
 	} catch (error) {
 		process.stderr.write(`benchmark analysis failed: ${error.message}\n`);

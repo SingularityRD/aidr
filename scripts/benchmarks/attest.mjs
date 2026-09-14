@@ -10,8 +10,8 @@ function optionMap(argv) {
 	const options = {};
 	for (let index = 0; index < argv.length; index += 2) {
 		const key = argv[index];
-		if (!["--corpus", "--observations", "--private-key", "--evaluator-id", "--output"].includes(key) || !argv[index + 1] || options[key])
-			fail("usage: node scripts/benchmarks/attest.mjs --corpus PATH --observations PATH --private-key PATH --evaluator-id ID --output PATH");
+		if (!["--corpus", "--observations", "--private-key", "--evaluator-id", "--split-manifest", "--signing-key-id", "--operating-point", "--output"].includes(key) || !argv[index + 1] || options[key])
+			fail("usage: node scripts/benchmarks/attest.mjs --corpus PATH --observations PATH --private-key PATH --evaluator-id ID [--split-manifest PATH] [--signing-key-id ID] [--operating-point 0..1] --output PATH");
 		options[key] = argv[index + 1];
 	}
 	for (const key of ["--corpus", "--observations", "--private-key", "--evaluator-id", "--output"]) if (!options[key]) fail(`missing ${key}`);
@@ -41,6 +41,14 @@ try {
 		evaluator_role: "independent_evaluator",
 		completed_at: new Date().toISOString(),
 	};
+	if (options["--signing-key-id"]) payload.signing_key_id = options["--signing-key-id"];
+	if (options["--split-manifest"]) payload.split_manifest_sha256 = sha(readFileSync(resolve(options["--split-manifest"])));
+	if (options["--operating-point"]) {
+		if (!options["--split-manifest"]) fail("--operating-point requires --split-manifest");
+		const threshold = Number(options["--operating-point"]);
+		if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) fail("--operating-point must be between 0 and 1");
+		payload.frozen_operating_point = { frozen: true, threshold };
+	}
 	const attestation = {
 		schema_version: 1,
 		payload,
