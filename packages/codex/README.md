@@ -115,6 +115,28 @@ Note that Codex runs each hook in a **fresh process**, so an in-memory approval
 cannot survive from the blocked call to the retry. A blocked `ask` therefore
 stays blocked until an operator records the artifact in the allowlist.
 
+## Provisioned tenant detector policy
+
+An operator can deliver a signed tenant detector policy (DLP and behavioural
+detectors) for this connector at a fixed location under the local AIDR state
+directory:
+
+```
+~/.singularity-aidr/detectors/codex.json
+```
+
+The bundle is accepted only when it is signed by a key listed in
+`licensing.public_keys_pem` (ed25519), is inside its validity window, and is
+bound to the same tenant as the verified managed entitlement. Provisioning is
+opt-in: with no bundle and no `runtime_detectors` module on the signed
+entitlement, the hook evaluates exactly as it does without a tenant policy.
+A bundle that is present but invalid — or required by the signed entitlement and
+missing — becomes an explicit `deny`, because this host fails open on anything
+else.
+
+The policy's labels and rules are whatever the tenant's signed bundle defines;
+this connector ships no customer label taxonomy and assumes none.
+
 ## Configuration
 
 | Variable | Purpose |

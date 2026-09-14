@@ -4,6 +4,7 @@ import {
 	formatDenyMessage,
 	guardToolCall,
 	type Logger,
+	loadProvisionedDetectorContext,
 } from "@singularityrd/aidr-core";
 import { AidrVerdictBlockError, AidrVerdictError } from "./error.js";
 import { extractFromOpenCodeTool } from "./extractors.js";
@@ -24,6 +25,13 @@ export function createToolHandlers(
 			const args = output.args ?? {};
 			const artifacts = extractFromOpenCodeTool(input.tool, args) ?? [];
 
+			// Operator-provisioned tenant detector policy for this runtime. An
+			// unprovisioned install yields an empty context, so evaluation is
+			// byte-for-byte the same as before. A present-but-invalid or
+			// entitlement-required-but-missing policy throws, and the catch below
+			// fails closed rather than evaluating without it.
+			const provisioned = await loadProvisionedDetectorContext("opencode");
+
 			const { verdict, actionId, responseActions } = await guardToolCall(
 				{
 					sessionId: input.sessionID,
@@ -36,6 +44,7 @@ export function createToolHandlers(
 					allowlistsDir,
 					logger,
 					agentRuntime: "opencode",
+					...provisioned,
 				},
 				approvalStore,
 			);

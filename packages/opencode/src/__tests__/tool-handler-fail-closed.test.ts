@@ -6,6 +6,9 @@ vi.mock("@singularityrd/aidr-core", () => ({
 	guardToolCall: vi.fn().mockRejectedValue(new Error("policy unavailable")),
 	formatAskMessage: vi.fn(),
 	formatDenyMessage: vi.fn(),
+	// Provisioning is not what this test is about; an unprovisioned install
+	// returns an empty context so the guard call itself is the failing step.
+	loadProvisionedDetectorContext: vi.fn().mockResolvedValue({}),
 }));
 
 describe("OpenCode tool handler failure policy", () => {

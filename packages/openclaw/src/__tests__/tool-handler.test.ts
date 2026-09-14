@@ -1,5 +1,12 @@
+import { rm } from "node:fs/promises";
 import { ApprovalStore, nullLogger } from "@singularityrd/aidr-core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	generateProvisioningKeys,
+	provisionTenantDetectorPolicy,
+	TEST_TENANT_ID,
+} from "../../../core/src/__tests__/detector-provisioning-fixtures.js";
+import { makeTmpDir } from "../../../core/src/__tests__/test-utils.js";
 import {
 	createToolCallHandler,
 	type ToolCallContext,
@@ -23,6 +30,20 @@ vi.mock("@singularityrd/aidr-core", async (importOriginal) => {
 			},
 		}),
 	};
+});
+
+let homeDir: string;
+
+beforeEach(async () => {
+	// The handler loads the provisioned policy from the real AIDR state
+	// directory, so pin the home per test; an untouched home is unprovisioned.
+	homeDir = await makeTmpDir();
+	vi.stubEnv("HOME", homeDir);
+});
+
+afterEach(async () => {
+	vi.unstubAllEnvs();
+	await rm(homeDir, { recursive: true, force: true });
 });
 
 describe("createToolCallHandler", () => {
@@ -169,5 +190,41 @@ describe("createToolCallHandler", () => {
 			block: true,
 			blockReason: "Singularity AIDR could not evaluate this tool call; execution was denied.",
 		});
+	});
+
+	it("passes a provisioned tenant detector policy to the evaluator", async () => {
+		setup();
+		const keys = generateProvisioningKeys();
+		await provisionTenantDetectorPolicy({ homeDir, agentRuntime: "openclaw", keys });
+		const { guardToolCall } = await import("@singularityrd/aidr-core");
+
+		await handler({ toolName: "exec", params: { command: "ls -la" } });
+
+		expect(guardToolCall).toHaveBeenCalledWith(
+			expect.objectContaining({ toolName: "exec" }),
+			expect.objectContaining({
+				agentRuntime: "openclaw",
+				runtimeDetectors: expect.objectContaining({
+					tenantId: TEST_TENANT_ID,
+					dlp: expect.objectContaining({ enabled: true }),
+				}),
+			}),
+			approvalStore,
+		);
+	});
+
+	it("leaves the evaluator context unchanged when nothing is provisioned", async () => {
+		setup();
+		const { guardToolCall } = await import("@singularityrd/aidr-core");
+
+		await handler({ toolName: "exec", params: { command: "ls -la" } });
+
+		const context = (guardToolCall as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as Record<
+			string,
+			unknown
+		>;
+		expect(context).toMatchObject({ agentRuntime: "openclaw" });
+		expect(Object.keys(context)).not.toContain("runtimeDetectors");
+		expect(Object.keys(context)).not.toContain("reputationFeed");
 	});
 });

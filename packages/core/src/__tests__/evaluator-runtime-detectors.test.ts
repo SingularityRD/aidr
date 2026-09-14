@@ -1,12 +1,19 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApprovalStore } from "../approval-store.js";
 import {
 	BehavioralDetectionOrchestrator,
 	type BehavioralEmbeddingModel,
 } from "../behavioral-orchestrator.js";
 import { DlpPolicySchema } from "../dlp/policy.js";
 import { evaluateToolCall, type ToolEvaluationContext } from "../evaluator.js";
+import { nullLogger } from "../types.js";
+import {
+	generateProvisioningKeys,
+	provisionTenantDetectorPolicy,
+	TEST_DLP_MARKER,
+} from "./detector-provisioning-fixtures.js";
 import { makeTmpDir } from "./test-utils.js";
 
 let configPath: string;
@@ -279,5 +286,72 @@ describe("optional runtime detector wiring", () => {
 			category: "url_reputation_unavailable",
 			source: "url_check",
 		});
+	});
+});
+
+describe("provisioned tenant detector policy at the connector entry points", () => {
+	// The connectors load the shared core from its published entry point and the
+	// rule data from the repository, so a missing rule set cannot masquerade as
+	// this suite's subject.
+	const threatsDir = resolve(__dirname, "..", "..", "..", "..", "threats");
+	const allowlistsDir = resolve(__dirname, "..", "..", "..", "..", "allowlists");
+
+	async function openCodeHandler(approvalStore: ApprovalStore) {
+		const { createToolHandlers } = await import("../../../opencode/src/tool-handler.js");
+		return createToolHandlers(nullLogger, approvalStore, threatsDir, allowlistsDir);
+	}
+
+	async function codexEntryPoint(command: string) {
+		const { enforceCodexPreToolUse } = await import("../../../codex/src/enforcement.js");
+		return enforceCodexPreToolUse(
+			{
+				session_id: "codex-session",
+				hook_event_name: "PreToolUse",
+				tool_name: "Bash",
+				tool_input: { command },
+			},
+			{ threatsDir, allowlistsDir },
+		);
+	}
+
+	it("applies a provisioned tenant policy through the OpenCode and Codex entry points", async () => {
+		// One tenant, one publisher key, one signed policy per configured runtime.
+		const keys = generateProvisioningKeys();
+		await provisionTenantDetectorPolicy({ homeDir, agentRuntime: "opencode", keys });
+		await provisionTenantDetectorPolicy({ homeDir, agentRuntime: "codex", keys });
+
+		const handlers = await openCodeHandler(new ApprovalStore());
+		await expect(
+			handlers["tool.execute.before"](
+				{ tool: "bash", sessionID: "session-a", callID: "call-1" },
+				{ args: { command: `echo ${TEST_DLP_MARKER}` } },
+			),
+		).rejects.toThrow(/Singularity AIDR blocked this action[\s\S]*Category: dlp/);
+
+		const outcome = await codexEntryPoint(`echo ${TEST_DLP_MARKER}`);
+		expect(outcome).toMatchObject({ decision: "deny", reasonCode: "dlp" });
+		expect(outcome.wire).toMatchObject({
+			hookSpecificOutput: {
+				permissionDecision: "deny",
+				permissionDecisionReason: expect.stringContaining("Singularity AIDR blocked"),
+			},
+		});
+	});
+
+	it("leaves an unprovisioned connector exactly as it was", async () => {
+		// No managed state and no detector bundle: both entry points evaluate the
+		// same payload with no tenant context at all, which is the pre-existing
+		// behaviour (a tenant policy is opt-in).
+		const handlers = await openCodeHandler(new ApprovalStore());
+		await expect(
+			handlers["tool.execute.before"](
+				{ tool: "bash", sessionID: "session-a", callID: "call-1" },
+				{ args: { command: `echo ${TEST_DLP_MARKER}` } },
+			),
+		).resolves.toBeUndefined();
+
+		const outcome = await codexEntryPoint(`echo ${TEST_DLP_MARKER}`);
+		expect(outcome).toMatchObject({ decision: "allow", reasonCode: "allowed" });
+		expect(outcome.wire).toEqual({});
 	});
 });

@@ -48,6 +48,27 @@ OpenCode does not currently provide a pre-consumption hook for arbitrary
 provider streams or non-tool content. The health event reports that channel as
 `unsupported_by_host_preconsumption_api` rather than implying coverage.
 
+## Provisioned tenant detector policy
+
+An operator can deliver a signed tenant detector policy (DLP and behavioural
+detectors) for this connector at a fixed location under the local AIDR state
+directory:
+
+```
+~/.singularity-aidr/detectors/opencode.json
+```
+
+The bundle is accepted only when it is signed by a key listed in
+`licensing.public_keys_pem` (ed25519), is inside its validity window, and is
+bound to the same tenant as the verified managed entitlement. Provisioning is
+opt-in: with no bundle and no `runtime_detectors` module on the signed
+entitlement, the plugin evaluates exactly as it does without a tenant policy.
+A bundle that is present but invalid — or required by the signed entitlement and
+missing — blocks the tool call rather than being treated as an empty policy.
+
+The policy's labels and rules are whatever the tenant's signed bundle defines;
+this connector ships no customer label taxonomy and assumes none.
+
 ## Approval Flow
 
 OpenCode does not expose a plugin-spawned permission dialog, so there is **no

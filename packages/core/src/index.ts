@@ -918,6 +918,18 @@ export {
 	managedStatePath,
 } from "./managed.js";
 export type { ManagedState } from "./managed.js";
+// Signed tenant detector policy: the single provisioning implementation every
+// connector uses to build a `ToolEvaluationContext`. The policy file is fixed
+// per agent runtime under `~/.singularity-aidr/detectors/`, so an operator
+// delivers the same contract to Claude Code, OpenCode, OpenClaw, Codex and the
+// Cursor/VS Code extension.
+export {
+	behavioralBaselineDir,
+	canonicalDetectorPolicyPayload,
+	type DetectorProvisionedContext,
+	detectorPolicyPath,
+	loadProvisionedDetectorContext,
+} from "./detector-provisioning.js";
 export { FleetResponseCommandConsumer } from "./response-command-consumer-v6.js";
 export {
 	FleetResponseCommandWorker,

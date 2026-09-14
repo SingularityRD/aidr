@@ -1,5 +1,12 @@
+import { rm } from "node:fs/promises";
 import { ApprovalStore, nullLogger } from "@singularityrd/aidr-core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	generateProvisioningKeys,
+	provisionTenantDetectorPolicy,
+	TEST_TENANT_ID,
+} from "../../../core/src/__tests__/detector-provisioning-fixtures.js";
+import { makeTmpDir } from "../../../core/src/__tests__/test-utils.js";
 import { createToolHandlers } from "../tool-handler.js";
 
 vi.mock("@singularityrd/aidr-core", async (importOriginal) => {
@@ -19,6 +26,20 @@ vi.mock("@singularityrd/aidr-core", async (importOriginal) => {
 			},
 		}),
 	};
+});
+
+let homeDir: string;
+
+beforeEach(async () => {
+	// Provisioning reads the real `~/.singularity-aidr` state, so the home is
+	// pinned per test; an untouched home means "unprovisioned".
+	homeDir = await makeTmpDir();
+	vi.stubEnv("HOME", homeDir);
+});
+
+afterEach(async () => {
+	vi.unstubAllEnvs();
+	await rm(homeDir, { recursive: true, force: true });
 });
 
 describe("createToolHandlers", () => {
@@ -42,5 +63,53 @@ describe("createToolHandlers", () => {
 			expect.objectContaining({ agentRuntime: "opencode" }),
 			approvalStore,
 		);
+	});
+
+	it("passes a provisioned DLP policy to the evaluator", async () => {
+		const keys = generateProvisioningKeys();
+		await provisionTenantDetectorPolicy({ homeDir, agentRuntime: "opencode", keys });
+		const approvalStore = new ApprovalStore();
+		const handlers = createToolHandlers(nullLogger, approvalStore, "/threats", "/allowlists");
+		const { guardToolCall } = await import("@singularityrd/aidr-core");
+
+		await handlers["tool.execute.before"](
+			{ tool: "bash", sessionID: "s1", callID: "c1" },
+			{ args: { command: "git status" } },
+		);
+
+		expect(guardToolCall).toHaveBeenCalledWith(
+			expect.objectContaining({ toolName: "bash" }),
+			expect.objectContaining({
+				agentRuntime: "opencode",
+				runtimeDetectors: expect.objectContaining({
+					tenantId: TEST_TENANT_ID,
+					dlp: expect.objectContaining({ enabled: true }),
+				}),
+			}),
+			approvalStore,
+		);
+	});
+
+	it("leaves the evaluator context unchanged when nothing is provisioned", async () => {
+		const approvalStore = new ApprovalStore();
+		const handlers = createToolHandlers(nullLogger, approvalStore, "/threats", "/allowlists");
+		const { guardToolCall } = await import("@singularityrd/aidr-core");
+
+		await handlers["tool.execute.before"](
+			{ tool: "bash", sessionID: "s1", callID: "c1" },
+			{ args: { command: "git status" } },
+		);
+
+		expect(guardToolCall).toHaveBeenCalledWith(
+			expect.objectContaining({ toolName: "bash" }),
+			expect.objectContaining({ agentRuntime: "opencode" }),
+			approvalStore,
+		);
+		const context = (guardToolCall as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as Record<
+			string,
+			unknown
+		>;
+		expect(Object.keys(context)).not.toContain("runtimeDetectors");
+		expect(Object.keys(context)).not.toContain("reputationFeed");
 	});
 });

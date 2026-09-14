@@ -53,6 +53,27 @@ and is withheld at the delivery boundary instead of being declared clean.
 | `ask`   | Tool call is **blocked**. The model is told to hand the approval reference (`actionId`) to the user; nothing the model can call can approve it. |
 | paranoid sensitivity | `ask` is promoted to `deny` (no approval path at all).      |
 
+## Provisioned tenant detector policy
+
+An operator can deliver a signed tenant detector policy (DLP and behavioural
+detectors) for this connector at a fixed location under the local AIDR state
+directory:
+
+```
+~/.singularity-aidr/detectors/openclaw.json
+```
+
+The bundle is accepted only when it is signed by a key listed in
+`licensing.public_keys_pem` (ed25519), is inside its validity window, and is
+bound to the same tenant as the verified managed entitlement. Provisioning is
+opt-in: with no bundle and no `runtime_detectors` module on the signed
+entitlement, the plugin evaluates exactly as it does without a tenant policy.
+A bundle that is present but invalid — or required by the signed entitlement and
+missing — blocks the tool call rather than being treated as an empty policy.
+
+The policy's labels and rules are whatever the tenant's signed bundle defines;
+this connector ships no customer label taxonomy and assumes none.
+
 ## Approving a flagged action
 
 **The agent cannot approve its own actions.** Singularity AIDR deliberately does

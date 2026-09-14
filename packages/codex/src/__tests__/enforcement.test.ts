@@ -21,6 +21,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+	generateProvisioningKeys,
+	provisionTenantDetectorPolicy,
+	TEST_DLP_MARKER,
+} from "../../../core/src/__tests__/detector-provisioning-fixtures.js";
 import { enforceCodexPreToolUse, toWireOutput } from "../enforcement.js";
 import { extractFromApplyPatch, extractFromCodexTool } from "../extractors.js";
 
@@ -260,5 +265,47 @@ describe("Codex enforcement fails CLOSED when it cannot evaluate", () => {
 			options(),
 		);
 		expect(["allow", "deny", "ask"]).toContain(outcome.decision);
+	});
+});
+
+describe("Codex provisioned tenant detector policy", () => {
+	it("denies a tool input matched by the signed tenant DLP policy", async () => {
+		const keys = generateProvisioningKeys();
+		await provisionTenantDetectorPolicy({ homeDir: home, agentRuntime: "codex", keys });
+
+		const outcome = await enforceCodexPreToolUse(
+			preToolUse("Bash", { command: `echo ${TEST_DLP_MARKER}` }),
+			options(),
+		);
+
+		expect(outcome.decision).toBe("deny");
+		expect(outcome.reasonCode).toBe("dlp");
+		expect(outcome.wire).toMatchObject({
+			hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny" },
+		});
+	});
+
+	it("behaves exactly as before when no policy is provisioned", async () => {
+		const outcome = await enforceCodexPreToolUse(
+			preToolUse("Bash", { command: `echo ${TEST_DLP_MARKER}` }),
+			options(),
+		);
+
+		expect(outcome.decision).toBe("allow");
+		expect(outcome.wire).toEqual({});
+	});
+
+	it("fails closed when the entitlement requires a bundle that is not installed", async () => {
+		// The signed entitlement grants `runtime_detectors` but the operator has
+		// not delivered the policy: the connector must not evaluate without it.
+		await provisionTenantDetectorPolicy({ homeDir: home, agentRuntime: "codex", skipPolicy: true });
+
+		const outcome = await enforceCodexPreToolUse(preToolUse("Bash", { command: "ls -la" }), options());
+
+		expect(outcome.decision).toBe("deny");
+		expect(outcome.reasonCode).toBe("aidr_internal_error");
+		expect(outcome.wire).toMatchObject({
+			hookSpecificOutput: { permissionDecision: "deny" },
+		});
 	});
 });

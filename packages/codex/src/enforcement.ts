@@ -31,6 +31,7 @@ import {
 	formatDenyMessage,
 	guardToolCall,
 	type Logger,
+	loadProvisionedDetectorContext,
 	nullLogger,
 } from "@singularityrd/aidr-core";
 import { resolveAssetDir } from "./assets.js";
@@ -120,6 +121,11 @@ export async function enforceCodexPreToolUse(
 
 	try {
 		const artifacts: Artifact[] = extractFromCodexTool(toolName, toolInput);
+		// Operator-provisioned tenant detector policy for this runtime. Absent
+		// policy means an empty context (unchanged evaluation); a present-but-
+		// invalid policy throws and the catch below converts it into an explicit
+		// deny, which is the only reliable block Codex offers.
+		const provisioned = await loadProvisionedDetectorContext("codex");
 		// Core normalizes connector aliases before deciding whether the call has
 		// inspectable artifacts. An empty connector result is not an allow verdict.
 		const { verdict, actionId, responseActions } = await guardToolCall(
@@ -129,6 +135,7 @@ export async function enforceCodexPreToolUse(
 				allowlistsDir: options.allowlistsDir ?? resolveAssetDir("allowlists"),
 				logger,
 				agentRuntime: "codex",
+				...provisioned,
 			},
 			options.approvalStore ?? EPHEMERAL_APPROVALS,
 		);
