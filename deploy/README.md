@@ -164,6 +164,54 @@ guides. A universal MDM installer is still open.
   rows fail explicitly until pagination is implemented. Storage cleanup is a
   required operational follow-up.
 
+## Disconnected (air-gapped) installation
+
+The self-hosted control plane needs container images, and a disconnected host
+cannot pull them. `scripts/build-airgap-images.mjs` turns a prepared compose file
+into `docker save` tarballs plus a digest manifest; `--verify` re-checks the
+transferred bundle offline and never contacts a registry or the Docker daemon.
+Connector/CLI dependencies are already vendored into the customer kit
+(`deploy/vendor`, produced by `scripts/customer-kit.mjs`), and the Linux endpoint
+connector has its own signed offline fleet bundle
+(`deploy/fleet/linux/build-offline-bundle.sh`); the image bundle covers the
+remaining gap.
+
+On the connected staging host (network plus a running Docker daemon):
+
+```powershell
+pnpm build
+node scripts/deployment-prepare.mjs --mode self-hosted --output .aidr-deploy --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example
+node scripts/build-airgap-images.mjs --compose .aidr-deploy/compose.yml --output .aidr-airgap --platform linux/amd64
+```
+
+`--compose` reads every `image:` reference from the prepared stack; `--plan
+<json>` (a `{ "images": [{ "ref": "...", "digest": "sha256:..." }] }` document) or
+repeated `--images <ref>` are the alternatives when no compose file is available.
+Pinned digests are enforced when supplied. Every `docker save` output is hashed,
+and `.aidr-airgap/aidr-airgap-images.manifest.json` is written only after all
+images were saved and hashed. If Docker or its daemon is unavailable the command
+exits non-zero before writing anything and never reports a bundle it did not
+produce. The recorded digests mirror what the staging host pulled; they are not
+registry publication and not a publisher identity.
+
+Transfer the whole `.aidr-airgap` directory together with the signed release or
+customer kit on the customer-approved media. On the disconnected host:
+
+```powershell
+node scripts/build-airgap-images.mjs --verify --compose .aidr-deploy/compose.yml --output .aidr-airgap
+# repeat for every entry in aidr-airgap-images.manifest.json:
+docker load -i .aidr-airgap/tarballs/<name>.tar
+docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml up -d --wait --wait-timeout 180
+```
+
+`--verify` needs neither network nor Docker: it fails on a missing tarball, a
+size or SHA-256 mismatch, a manifest entry that is not a regular file, or an
+image set that does not exactly match the supplied plan. Keep the manifest and
+tarballs together — a digest list without its bytes proves nothing. This
+procedure is delivery media integrity and plan completeness only; notarization,
+MDM distribution, registry publication and publisher key custody remain external
+and are not claimed here.
+
 ## Release boundary
 
 Run `pnpm quality:static`, `pnpm check`, `pnpm test:ci`,
