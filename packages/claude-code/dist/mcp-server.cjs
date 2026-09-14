@@ -12749,14 +12749,14 @@ function manifestPayload(manifest) {
 function canonicalJson(value) {
   return JSON.stringify(value);
 }
-function verifyManifestSignature(manifest, publicKey2) {
-  if (!manifest.signature || !publicKey2)
+function verifyManifestSignature(manifest, publicKey3) {
+  if (!manifest.signature || !publicKey3)
     return false;
   try {
     const verifier = (0, import_node_crypto2.createVerify)("RSA-SHA256");
     verifier.update(canonicalJson(manifestPayload(manifest)));
     verifier.end();
-    return verifier.verify(publicKey2, manifest.signature.value, "base64");
+    return verifier.verify(publicKey3, manifest.signature.value, "base64");
   } catch {
     return false;
   }
@@ -13468,7 +13468,18 @@ function buildRuntimeVerdictEntry(sessionId, toolName, toolInput, verdict, userO
     reasons: redactTelemetryData(verdict.reasons),
     source: verdict.source,
     matched_threat_id: verdict.matchedThreatId,
-    user_override: userOverride
+    user_override: userOverride,
+    // Verified user -> agent -> tool -> resource lineage, present only when the
+    // call carried a delegated credential that verified. Without it an audited
+    // event cannot be traced back to the resource it touched.
+    //
+    // Deliberately not passed through the generic credential redactor: the
+    // lineage is a fixed projection of signed claims (never the bearer token,
+    // which is not copied into a verdict at all), and the redactor blanks any
+    // key containing "token" - which would erase `tokenId`, the join key to the
+    // broker's own lineage record. Remote telemetry drops this field entirely
+    // (see `redactRemoteEvent`), so nothing here reaches the control plane.
+    ...verdict.delegation ? { delegation: verdict.delegation } : {}
   };
 }
 function buildIncidentEntry(params, toolName, verdict) {
@@ -13516,7 +13527,10 @@ function buildIncidentEntry(params, toolName, verdict) {
     reasons: redactTelemetryData(params.verdict.reasons),
     source: params.verdict.source,
     matched_threat_id: params.verdict.matchedThreatId,
-    recommended_actions: params.recommendedActions
+    recommended_actions: params.recommendedActions,
+    // Same lineage rule as the plain verdict entry: the incident is traceable to
+    // the resource only when a delegated credential verified for the call.
+    ...params.verdict.delegation ? { delegation: params.verdict.delegation } : {}
   };
 }
 async function rotateIfNeeded(filePath, maxBytes, maxFiles) {
@@ -13531,10 +13545,14 @@ async function rotateIfNeeded(filePath, maxBytes, maxFiles) {
   }
   if (size < maxBytes)
     return;
+  let droppedOldest = false;
   try {
     await (0, import_promises2.unlink)(`${filePath}.${maxFiles}`);
+    droppedOldest = true;
   } catch {
   }
+  if (droppedOldest)
+    recordAuditRotationDrop();
   for (let i = maxFiles - 1; i >= 1; i--) {
     try {
       await (0, import_promises2.rename)(`${filePath}.${i}`, `${filePath}.${i + 1}`);
@@ -13561,8 +13579,27 @@ async function logVerdict(config2, sessionId, toolName, toolInput, verdict, user
   const entry = buildRuntimeVerdictEntry(sessionId, toolName, toolInput, verdict, userOverride);
   try {
     await appendEntry(config2, entry);
-  } catch {
+  } catch (error4) {
+    recordAuditWriteFailure(error4);
   }
+}
+function recordAuditWriteFailure(error4, now = Date.now()) {
+  lossState.writeFailures += 1;
+  lossState.lastError = error4 instanceof Error ? error4.message : String(error4);
+  lossState.lastErrorAt = now;
+}
+function recordAuditRotationDrop(now = Date.now()) {
+  lossState.rotationDrops += 1;
+  lossState.lastErrorAt = lossState.lastErrorAt ?? now;
+}
+function getAuditLogLossState() {
+  return { ...lossState };
+}
+function resetAuditLogLossState() {
+  lossState.writeFailures = 0;
+  lossState.rotationDrops = 0;
+  lossState.lastError = null;
+  lossState.lastErrorAt = null;
 }
 function summarizeActionsForLog(actions) {
   return actions.map((action) => ({
@@ -13665,7 +13702,7 @@ async function getRecentEntries(config2, limit = 100) {
     return [];
   }
 }
-var import_promises2, import_node_path6, MAX_SUMMARY_LEN;
+var import_promises2, import_node_path6, MAX_SUMMARY_LEN, lossState;
 var init_audit_log = __esm({
   "../core/dist/audit-log.js"() {
     "use strict";
@@ -13675,6 +13712,12 @@ var init_audit_log = __esm({
     init_file_utils();
     init_telemetry_redaction();
     MAX_SUMMARY_LEN = 200;
+    lossState = {
+      writeFailures: 0,
+      rotationDrops: 0,
+      lastError: null,
+      lastErrorAt: null
+    };
   }
 });
 
@@ -13851,6 +13894,285 @@ var init_behavioral_analyzer = __esm({
           totalEvents,
           uniqueSessions: sessionIds.length,
           averageSessionLength: sessionIds.length > 0 ? totalEvents / sessionIds.length : 0
+        };
+      }
+    };
+  }
+});
+
+// ../core/dist/ml/embedder.js
+function fnv1aHash(str, seed = HASH_SEED) {
+  let hash = seed;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+function extractNgrams(text, n = NGRAM_SIZE) {
+  const normalized = text.toLowerCase().trim().replace(/\s+/g, " ");
+  if (normalized.length <= n) {
+    return [normalized.padEnd(n, "_")];
+  }
+  const ngrams = [];
+  for (let i = 0; i <= normalized.length - n; i++) {
+    ngrams.push(normalized.slice(i, i + n));
+  }
+  ngrams.push(`^${normalized.slice(0, n - 1)}`);
+  ngrams.push(`${normalized.slice(-n + 1)}$`);
+  return ngrams;
+}
+function tokenize(text) {
+  const normalized = text.toLowerCase().replace(/https?:\/\//g, "http_").replace(/www\./g, "www_").replace(/[|;&&||]/g, " SEP ").replace(/\\/g, "/").replace(/[^a-z0-9_/.@$-]/g, " ").trim();
+  const tokens = normalized.split(/\s+/).filter((t) => t.length > 0);
+  return tokens.slice(0, MAX_TOKENS);
+}
+function generateEmbedding(text, dim = EMBEDDING_DIM) {
+  const embedding = new Float32Array(dim);
+  const ngrams = extractNgrams(text);
+  const tokens = tokenize(text);
+  const features = /* @__PURE__ */ new Map();
+  ngrams.forEach((ngram, idx) => {
+    const weight = 1 - idx / (ngrams.length + 1) * 0.3;
+    features.set(ngram, (features.get(ngram) || 0) + weight);
+  });
+  tokens.forEach((token, idx) => {
+    const weight = 1 + (tokens.length - idx) / tokens.length;
+    features.set(token, (features.get(token) || 0) + weight);
+  });
+  let featureCount = 0;
+  for (const [feature, weight] of features) {
+    const h1 = fnv1aHash(feature, HASH_SEED);
+    const h2 = fnv1aHash(feature, HASH_SEED ^ 1597463007);
+    const h3 = fnv1aHash([...feature].reverse().join(""), HASH_SEED ^ 1779033703);
+    const idx1 = h1 % dim;
+    const idx2 = h2 % dim;
+    const idx3 = h3 % dim;
+    const value = (h1 / 4294967295 * 2 - 1) * weight;
+    embedding[idx1] = (embedding[idx1] ?? 0) + value;
+    embedding[idx2] = (embedding[idx2] ?? 0) + value * 0.7;
+    embedding[idx3] = (embedding[idx3] ?? 0) + value * 0.5;
+    featureCount++;
+    if (featureCount > 256)
+      break;
+  }
+  let sumSquares = 0;
+  for (let i = 0; i < dim; i++) {
+    const component = embedding[i] ?? 0;
+    sumSquares += component * component;
+  }
+  if (sumSquares > 0) {
+    const norm = Math.sqrt(sumSquares);
+    for (let i = 0; i < dim; i++) {
+      embedding[i] = (embedding[i] ?? 0) / norm;
+    }
+  }
+  return embedding;
+}
+var EMBEDDING_DIM, MAX_TOKENS, NGRAM_SIZE, HASH_SEED;
+var init_embedder = __esm({
+  "../core/dist/ml/embedder.js"() {
+    "use strict";
+    EMBEDDING_DIM = 100;
+    MAX_TOKENS = 128;
+    NGRAM_SIZE = 3;
+    HASH_SEED = 2654435769;
+  }
+});
+
+// ../core/dist/ml/similarity.js
+function cosineSimilarity(a, b2) {
+  if (a.length !== b2.length) {
+    throw new Error(`Vector length mismatch: ${a.length} vs ${b2.length}`);
+  }
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  const len = a.length;
+  for (let i = 0; i < len; i++) {
+    const ai2 = a[i];
+    const bi = b2[i];
+    dotProduct += ai2 * bi;
+    normA += ai2 * ai2;
+    normB += bi * bi;
+  }
+  if (normA === 0 || normB === 0) {
+    return 0;
+  }
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+function findTopKSimilar(query, candidates, k2) {
+  const similarities = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    if (!candidate)
+      continue;
+    similarities.push({
+      index: i,
+      similarity: cosineSimilarity(query, candidate)
+    });
+  }
+  similarities.sort((a, b2) => b2.similarity - a.similarity);
+  return similarities.slice(0, k2);
+}
+var SIMILARITY_THRESHOLDS;
+var init_similarity = __esm({
+  "../core/dist/ml/similarity.js"() {
+    "use strict";
+    SIMILARITY_THRESHOLDS = {
+      /** Very high confidence match */
+      CRITICAL: 0.92,
+      /** High confidence match */
+      HIGH: 0.85,
+      /** Medium confidence - needs review */
+      MEDIUM: 0.75,
+      /** Low confidence - suspicious */
+      LOW: 0.65,
+      /** Ignore anything below this */
+      NOISE: 0.5
+    };
+  }
+});
+
+// ../core/dist/ml-model.js
+var LocalEmbeddingModel;
+var init_ml_model = __esm({
+  "../core/dist/ml-model.js"() {
+    "use strict";
+    init_embedder();
+    init_similarity();
+    LocalEmbeddingModel = class {
+      config;
+      threats = [];
+      isLoaded = false;
+      constructor(config2) {
+        this.config = config2;
+      }
+      /**
+       * Load the 300KB model from disk and initialize embedding engine.
+       * The model is lightweight and loads synchronously from in-memory structures.
+       */
+      async load() {
+        this.isLoaded = true;
+      }
+      /**
+       * Generate embedding vector for text using local TinyHash algorithm.
+       * No network calls - purely local computation.
+       */
+      async computeEmbedding(text) {
+        if (!this.isLoaded) {
+          throw new Error("Model not loaded. Call load() first.");
+        }
+        const embedding = generateEmbedding(text, this.config.vectorSize);
+        return Array.from(embedding);
+      }
+      /**
+       * Find similar threats to the given text.
+       * Computes embedding and performs cosine similarity search.
+       */
+      async findSimilarThreats(text, topK = 5) {
+        if (!this.isLoaded) {
+          throw new Error("Model not loaded. Call load() first.");
+        }
+        const queryEmbedding = await this.computeEmbedding(text);
+        const queryFloat32 = new Float32Array(queryEmbedding);
+        const candidates = this.threats.map((t) => new Float32Array(t.embedding));
+        if (candidates.length === 0) {
+          return [];
+        }
+        const topMatches = findTopKSimilar(queryFloat32, candidates, topK);
+        return topMatches.filter((match) => match.similarity >= this.config.similarityThreshold).map((match) => {
+          const threat = this.threats[match.index];
+          if (!threat) {
+            throw new Error(`Threat not found at index ${match.index}`);
+          }
+          return {
+            threatId: threat.threatId,
+            similarity: match.similarity,
+            metadata: threat.metadata
+          };
+        });
+      }
+      /**
+       * Add a new threat to the local database.
+       */
+      async addThreat(threat) {
+        const existingIndex = this.threats.findIndex((t) => t.threatId === threat.threatId);
+        if (existingIndex >= 0) {
+          this.threats[existingIndex] = threat;
+        } else {
+          this.threats.push(threat);
+        }
+      }
+      /**
+       * Remove a threat from the local database.
+       */
+      async removeThreat(threatId) {
+        const index = this.threats.findIndex((t) => t.threatId === threatId);
+        if (index >= 0) {
+          this.threats.splice(index, 1);
+          return true;
+        }
+        return false;
+      }
+      /**
+       * Get all threats in the local database.
+       */
+      async getAllThreats() {
+        return [...this.threats];
+      }
+      /**
+       * Get the count of threats in the local database.
+       */
+      async getThreatCount() {
+        return this.threats.length;
+      }
+      /**
+       * Check if a text matches any known threat above threshold.
+       */
+      async hasThreatMatch(text, threshold = SIMILARITY_THRESHOLDS.MEDIUM) {
+        const matches = await this.findSimilarThreats(text, 1);
+        if (matches.length === 0) {
+          return false;
+        }
+        const firstMatch = matches[0];
+        return firstMatch !== void 0 && firstMatch.similarity >= threshold;
+      }
+      /**
+       * Get model statistics.
+       */
+      async getStats() {
+        const modelSizeBytes = this.threats.length * this.config.vectorSize * 4 + 1024;
+        return {
+          isLoaded: this.isLoaded,
+          threatCount: this.threats.length,
+          vectorSize: this.config.vectorSize,
+          modelSizeBytes
+        };
+      }
+      /**
+       * Clear all threats from the local database.
+       */
+      async clear() {
+        this.threats = [];
+      }
+      /**
+       * Calculate cosine similarity between two embedding vectors.
+       * Public utility method for external similarity computations.
+       */
+      static cosineSimilarity(a, b2) {
+        const aFloat32 = new Float32Array(a);
+        const bFloat32 = new Float32Array(b2);
+        return cosineSimilarity(aFloat32, bFloat32);
+      }
+      /**
+       * Create default configuration for the embedding model.
+       */
+      static createDefaultConfig(modelPath = "./model.bin") {
+        return {
+          modelPath,
+          vectorSize: EMBEDDING_DIM,
+          similarityThreshold: SIMILARITY_THRESHOLDS.MEDIUM
         };
       }
     };
@@ -14176,6 +14498,14 @@ function toToolCallEvent(event) {
     riskScore: event.riskScore
   };
 }
+function toStoredToolCallEvent(observation, sessionId) {
+  return {
+    toolName: observation.toolName,
+    timestamp: observation.timestamp,
+    sessionId,
+    riskScore: observation.riskScore
+  };
+}
 function buildFingerprint(event) {
   return stableToken("event", [event.toolName, event.command ?? "", event.path ?? "", event.url ?? ""].join(""));
 }
@@ -14278,24 +14608,33 @@ function determineOutcome(explanations, anomalyDetected, detectionUnavailable) {
 function createBehavioralDetectionOrchestrator(config2, dependencies) {
   return new BehavioralDetectionOrchestrator(config2, dependencies);
 }
-var import_node_crypto5, DEFAULT_CONFIG, MAX_ID_LENGTH, MAX_TOOL_LENGTH, MAX_VALUE_LENGTH, BehavioralDetectionOrchestrator;
+var import_node_crypto5, BEHAVIORAL_ORCHESTRATOR_BOUNDS, LOCAL_EMBEDDER_MODEL_VERSION, DEFAULT_CONFIG, MAX_ID_LENGTH, MAX_TOOL_LENGTH, MAX_VALUE_LENGTH, BehavioralDetectionOrchestrator;
 var init_behavioral_orchestrator = __esm({
   "../core/dist/behavioral-orchestrator.js"() {
     "use strict";
     import_node_crypto5 = require("node:crypto");
     init_behavioral_analyzer();
+    init_ml_model();
     init_novelty_detection();
     init_types2();
-    DEFAULT_CONFIG = {
-      minBaselineSamples: 10,
+    BEHAVIORAL_ORCHESTRATOR_BOUNDS = {
       maxTenants: 50,
       maxSessionsPerTenant: 20,
       maxEventsPerSession: 100,
       maxFingerprintsPerSession: 256,
+      retentionMs: 30 * 24 * 60 * 60 * 1e3
+    };
+    LOCAL_EMBEDDER_MODEL_VERSION = "local-tinyhash-v1";
+    DEFAULT_CONFIG = {
+      minBaselineSamples: 10,
+      maxTenants: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxTenants,
+      maxSessionsPerTenant: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxSessionsPerTenant,
+      maxEventsPerSession: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxEventsPerSession,
+      maxFingerprintsPerSession: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxFingerprintsPerSession,
       maxColdStartSamplesPerFingerprint: 5,
       maxLearningRiskScore: 50,
       behavioralAnomalyThreshold: 2.5,
-      maxEventAgeMs: 30 * 24 * 60 * 60 * 1e3,
+      maxEventAgeMs: BEHAVIORAL_ORCHESTRATOR_BOUNDS.retentionMs,
       maxFutureSkewMs: 5 * 60 * 1e3,
       modelVersion: "unversioned"
     };
@@ -14309,6 +14648,7 @@ var init_behavioral_orchestrator = __esm({
       now;
       createBehavioralAnalyzer;
       createNoveltyDetector;
+      baselineStore;
       scopeQueues = /* @__PURE__ */ new Map();
       mlModel;
       modelVersion;
@@ -14322,13 +14662,15 @@ var init_behavioral_orchestrator = __esm({
         validateConfig(this.config);
         this.logger = dependencies.logger ?? nullLogger;
         this.now = dependencies.now ?? Date.now;
+        this.baselineStore = dependencies.baselineStore;
         this.createBehavioralAnalyzer = dependencies.createBehavioralAnalyzer ?? (() => new BehavioralAnalyzer(this.config.maxEventsPerSession, this.config.behavioralAnomalyThreshold, this.logger));
         this.createNoveltyDetector = dependencies.createNoveltyDetector ?? (() => new NoveltyDetector({
           minBaselineSamples: this.config.minBaselineSamples
         }));
-        this.mlModel = dependencies.mlModel;
-        this.modelVersion = dependencies.mlModel ? this.config.modelVersion : null;
-        this.modelState = dependencies.mlModel ? "uninitialized" : "initialization_failed";
+        const usesDefaultModel = dependencies.mlModel === void 0;
+        this.mlModel = dependencies.mlModel ?? new LocalEmbeddingModel(LocalEmbeddingModel.createDefaultConfig());
+        this.modelVersion = usesDefaultModel && config2.modelVersion === void 0 ? LOCAL_EMBEDDER_MODEL_VERSION : this.config.modelVersion;
+        this.modelState = "uninitialized";
       }
       async evaluate(input) {
         const event = this.validateInput(input);
@@ -14363,6 +14705,7 @@ var init_behavioral_orchestrator = __esm({
       }
       clearSession(tenantId, sessionId) {
         const tenant = this.tenants.get(tenantId);
+        this.dropPersisted(() => this.baselineStore?.clearSession(tenantId, sessionId));
         if (!tenant)
           return false;
         const removed = tenant.sessions.delete(sessionId);
@@ -14371,6 +14714,7 @@ var init_behavioral_orchestrator = __esm({
         return removed;
       }
       clearTenant(tenantId) {
+        this.dropPersisted(() => this.baselineStore?.clearTenant(tenantId));
         return this.tenants.delete(tenantId);
       }
       getStats() {
@@ -14392,7 +14736,7 @@ var init_behavioral_orchestrator = __esm({
         };
       }
       async evaluateScoped(event) {
-        const session = this.getOrCreateSession(event.tenantId, event.sessionId);
+        const session = await this.getOrCreateSession(event.tenantId, event.sessionId);
         const samplesBefore = session.baselineSamples;
         const explanations = await Promise.all([
           this.evaluateBehavioralLeg(session, event, samplesBefore),
@@ -14422,7 +14766,9 @@ var init_behavioral_orchestrator = __esm({
         return {
           outcome,
           anomalyScore,
-          modelVersion: explanations.find((explanation) => explanation.leg === "ml")?.modelVersion ?? null,
+          // Only a leg that actually produced a score may claim a model version;
+          // an unavailable leg must not make the result look evaluated.
+          modelVersion: explanations.find((explanation) => explanation.leg === "ml" && explanation.status === "ready")?.modelVersion ?? null,
           explanations,
           learning: {
             accepted,
@@ -14439,8 +14785,9 @@ var init_behavioral_orchestrator = __esm({
         }
         try {
           const analyzer = this.createBehavioralAnalyzer();
-          for (const acceptedEvent of session.behavioralEvents)
-            analyzer.recordEvent(acceptedEvent);
+          for (const observation of session.observations) {
+            analyzer.recordEvent(toStoredToolCallEvent(observation, event.sessionId));
+          }
           analyzer.recordEvent(toToolCallEvent(event));
           const result = analyzer.detectAnomaly(event.sessionId);
           return {
@@ -14496,13 +14843,14 @@ var init_behavioral_orchestrator = __esm({
         }
       }
       async evaluateMlLeg(classificationText) {
-        if (!this.mlModel)
-          return unavailableExplanation("ml", "not_configured");
         await this.ensureModelInitialized();
         const activeModel = this.mlModel;
         const activeVersion = this.modelVersion;
         if (this.modelState !== "ready" || !activeModel) {
-          return unavailableExplanation("ml", this.modelState === "empty_corpus" ? "empty_corpus" : "initialization_failed");
+          return {
+            ...unavailableExplanation("ml", this.modelState === "empty_corpus" ? "empty_corpus" : "initialization_failed"),
+            modelVersion: activeVersion ?? void 0
+          };
         }
         try {
           const matches = await activeModel.findSimilarThreats(classificationText, 1);
@@ -14567,9 +14915,17 @@ var init_behavioral_orchestrator = __esm({
           duration: event.durationMs,
           hour: new Date(event.timestamp).getUTCHours()
         });
-        session.behavioralEvents.push(toToolCallEvent(event));
-        if (session.behavioralEvents.length > this.config.maxEventsPerSession) {
-          session.behavioralEvents.shift();
+        session.observations.push({
+          toolName: event.toolName,
+          timestamp: event.timestamp,
+          riskScore: event.riskScore,
+          commandToken: novelty.command,
+          pathToken: novelty.path,
+          urlToken: novelty.url,
+          durationMs: event.durationMs
+        });
+        if (session.observations.length > this.config.maxEventsPerSession) {
+          session.observations.shift();
         }
         session.baselineSamples++;
         if (session.fingerprintCounts.has(fingerprint)) {
@@ -14577,8 +14933,39 @@ var init_behavioral_orchestrator = __esm({
         } else if (session.fingerprintCounts.size < this.config.maxFingerprintsPerSession) {
           session.fingerprintCounts.set(fingerprint, 1);
         }
+        await this.persistSession(event.tenantId, event.sessionId, session);
       }
-      getOrCreateSession(tenantId, sessionId) {
+      /**
+       * Persist accepted observations so a later process continues this baseline.
+       * Only an already-scored, accepted event is written, so a candidate can never
+       * enter its own baseline, and a store failure can only delay a baseline.
+       */
+      async persistSession(tenantId, sessionId, session) {
+        const store = this.baselineStore;
+        if (!store)
+          return;
+        try {
+          await store.save(tenantId, sessionId, {
+            baselineSamples: session.baselineSamples,
+            observations: session.observations,
+            fingerprintCounts: Object.fromEntries(session.fingerprintCounts)
+          });
+        } catch (error4) {
+          this.logger.warn("Failed to persist the behavioural baseline", { error: String(error4) });
+        }
+      }
+      dropPersisted(clear) {
+        try {
+          void clear()?.catch((error4) => {
+            this.logger.warn("Failed to clear persisted behavioural baseline", {
+              error: String(error4)
+            });
+          });
+        } catch (error4) {
+          this.logger.warn("Failed to clear persisted behavioural baseline", { error: String(error4) });
+        }
+      }
+      async getOrCreateSession(tenantId, sessionId) {
         let tenant = this.tenants.get(tenantId);
         if (tenant) {
           this.tenants.delete(tenantId);
@@ -14607,14 +14994,51 @@ var init_behavioral_orchestrator = __esm({
             this.sessionEvictions++;
           }
         }
-        session = {
-          behavioralEvents: [],
+        session = await this.restoreSession(tenantId, sessionId);
+        tenant.sessions.set(sessionId, session);
+        return session;
+      }
+      /**
+       * Rebuild a scope from durable state when this process has not seen it. Both
+       * the behavioural baseline and the novelty profile are replayed from the same
+       * accepted observations, so a restarted process scores a candidate against the
+       * baseline the previous process had built.
+       */
+      async restoreSession(tenantId, sessionId) {
+        const empty = () => ({
+          observations: [],
           noveltyDetector: this.createNoveltyDetector(),
           baselineSamples: 0,
           fingerprintCounts: /* @__PURE__ */ new Map()
-        };
-        tenant.sessions.set(sessionId, session);
-        return session;
+        });
+        const store = this.baselineStore;
+        if (!store)
+          return empty();
+        try {
+          const stored = await store.load(tenantId, sessionId);
+          if (!stored)
+            return empty();
+          const session = empty();
+          for (const observation of stored.observations) {
+            session.observations.push(observation);
+            await session.noveltyDetector.updateProfile("scope", {
+              command: observation.commandToken,
+              path: observation.pathToken,
+              url: observation.urlToken,
+              tool: stableToken("tool", observation.toolName),
+              duration: observation.durationMs,
+              hour: new Date(observation.timestamp).getUTCHours()
+            });
+          }
+          for (const [fingerprint, count2] of Object.entries(stored.fingerprintCounts)) {
+            session.fingerprintCounts.set(fingerprint, count2);
+          }
+          session.baselineSamples = stored.baselineSamples;
+          return session;
+        } catch (error4) {
+          this.logger.warn("Failed to restore the behavioural baseline", { error: String(error4) });
+          return empty();
+        }
       }
       validateInput(input) {
         const tenantId = validateIdentifier(input.tenantId, "tenantId");
@@ -14656,14 +15080,299 @@ var init_behavioral_orchestrator = __esm({
   }
 });
 
+// ../core/dist/behavioral-baseline-store.js
+function defaultBounds() {
+  return {
+    maxTenants: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxTenants,
+    maxSessionsPerTenant: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxSessionsPerTenant,
+    maxEventsPerSession: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxEventsPerSession,
+    maxFingerprintsPerSession: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxFingerprintsPerSession,
+    retentionMs: BEHAVIORAL_ORCHESTRATOR_BOUNDS.retentionMs
+  };
+}
+function digest(value) {
+  return (0, import_node_crypto6.createHash)("sha256").update(value, "utf8").digest("hex").slice(0, DIGEST_LENGTH);
+}
+function isBoundedString(value, maxLength) {
+  return typeof value === "string" && value.length > 0 && value.length <= maxLength && !/[\u0000-\u001f\u007f]/.test(value);
+}
+function readOptionalToken(value) {
+  if (value === void 0 || value === null)
+    return void 0;
+  return isBoundedString(value, MAX_TOKEN_LENGTH) ? value : null;
+}
+function isPositiveInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+function decodeBaselineSamples(record2) {
+  const baselineSamples = record2.baseline_samples;
+  if (typeof baselineSamples !== "number" || !Number.isInteger(baselineSamples) || baselineSamples < 0 || baselineSamples > MAX_BASELINE_SAMPLES) {
+    return null;
+  }
+  return baselineSamples;
+}
+function decodeFingerprintCounts(record2, baselineSamples, maxFingerprintsPerSession) {
+  const rawCounts = record2.fingerprint_counts;
+  if (rawCounts === null || typeof rawCounts !== "object" || Array.isArray(rawCounts))
+    return null;
+  const countEntries2 = Object.entries(rawCounts);
+  if (countEntries2.length > maxFingerprintsPerSession)
+    return null;
+  const fingerprintCounts = {};
+  let countedSamples = 0;
+  for (const [key, value] of countEntries2) {
+    if (!isBoundedString(key, MAX_TOKEN_LENGTH) || !isPositiveInteger(value))
+      return null;
+    fingerprintCounts[key] = value;
+    countedSamples += value;
+  }
+  if (countedSamples > baselineSamples)
+    return null;
+  return fingerprintCounts;
+}
+function createBehavioralBaselineStore(options = {}) {
+  return new FileBehavioralBaselineStore(options);
+}
+var import_node_crypto6, import_promises3, import_node_path7, SCHEMA_VERSION, MAX_ID_LENGTH2, MAX_TOKEN_LENGTH, MAX_TOOL_LENGTH2, MAX_BASELINE_SAMPLES, DIGEST_LENGTH, FileBehavioralBaselineStore;
+var init_behavioral_baseline_store = __esm({
+  "../core/dist/behavioral-baseline-store.js"() {
+    "use strict";
+    import_node_crypto6 = require("node:crypto");
+    import_promises3 = require("node:fs/promises");
+    import_node_path7 = require("node:path");
+    init_behavioral_orchestrator();
+    init_config();
+    init_file_utils();
+    init_types2();
+    SCHEMA_VERSION = 1;
+    MAX_ID_LENGTH2 = 256;
+    MAX_TOKEN_LENGTH = 512;
+    MAX_TOOL_LENGTH2 = 512;
+    MAX_BASELINE_SAMPLES = 1e6;
+    DIGEST_LENGTH = 40;
+    FileBehavioralBaselineStore = class {
+      storeDir;
+      bounds;
+      now;
+      logger;
+      constructor(options = {}) {
+        const defaults = defaultBounds();
+        this.bounds = {
+          maxTenants: options.maxTenants ?? defaults.maxTenants,
+          maxSessionsPerTenant: options.maxSessionsPerTenant ?? defaults.maxSessionsPerTenant,
+          maxEventsPerSession: options.maxEventsPerSession ?? defaults.maxEventsPerSession,
+          maxFingerprintsPerSession: options.maxFingerprintsPerSession ?? defaults.maxFingerprintsPerSession,
+          retentionMs: options.retentionMs ?? defaults.retentionMs
+        };
+        this.storeDir = options.storeDir ?? (0, import_node_path7.join)(resolvePath("~/.singularity-aidr"), "behavioral-baseline");
+        this.now = options.now ?? Date.now;
+        this.logger = options.logger ?? nullLogger;
+      }
+      async load(tenantId, sessionId) {
+        const path3 = this.sessionPath(tenantId, sessionId);
+        let raw;
+        try {
+          raw = await getFileContent(path3);
+        } catch {
+          return null;
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          const decoded = this.decode(parsed, tenantId, sessionId);
+          if (!decoded) {
+            this.logger.warn("Discarded a behavioural baseline record", { reason: "invalid_record" });
+          }
+          return decoded;
+        } catch {
+          this.logger.warn("Discarded an unreadable behavioural baseline record", {
+            reason: "invalid_record"
+          });
+          return null;
+        }
+      }
+      async save(tenantId, sessionId, state) {
+        const normalized = this.normalize(state);
+        try {
+          const path3 = this.sessionPath(tenantId, sessionId);
+          await (0, import_promises3.mkdir)((0, import_node_path7.join)(this.storeDir, digest(tenantId)), { recursive: true, mode: 448 });
+          await atomicWriteJson(path3, {
+            schema_version: SCHEMA_VERSION,
+            tenant_id: tenantId,
+            session_id: sessionId,
+            baseline_samples: normalized.baselineSamples,
+            updated_at: this.now(),
+            observations: normalized.observations.map((observation) => ({
+              tool_name: observation.toolName,
+              timestamp: observation.timestamp,
+              risk_score: observation.riskScore,
+              command: observation.commandToken ?? null,
+              path: observation.pathToken ?? null,
+              url: observation.urlToken ?? null,
+              duration_ms: observation.durationMs ?? null
+            })),
+            fingerprint_counts: normalized.fingerprintCounts
+          });
+          await this.prune(tenantId);
+        } catch (error4) {
+          this.logger.warn("Failed to persist a behavioural baseline record", {
+            error: String(error4)
+          });
+        }
+      }
+      async clearSession(tenantId, sessionId) {
+        await this.remove(this.sessionPath(tenantId, sessionId));
+      }
+      async clearTenant(tenantId) {
+        await this.remove((0, import_node_path7.join)(this.storeDir, digest(tenantId)));
+      }
+      sessionPath(tenantId, sessionId) {
+        return (0, import_node_path7.join)(this.storeDir, digest(tenantId), `${digest(sessionId)}.json`);
+      }
+      async remove(path3) {
+        try {
+          await (0, import_promises3.rm)(path3, { recursive: true, force: true });
+        } catch (error4) {
+          this.logger.warn("Failed to clear a behavioural baseline record", { error: String(error4) });
+        }
+      }
+      /** Re-derive the invariant the orchestrator maintains, then bound the payload. */
+      normalize(state) {
+        const observations = state.observations.slice(-this.bounds.maxEventsPerSession);
+        const declared = Number.isInteger(state.baselineSamples) && state.baselineSamples > 0 ? Math.min(state.baselineSamples, MAX_BASELINE_SAMPLES) : 0;
+        const entries = Object.entries(state.fingerprintCounts).filter(([key, count2]) => isBoundedString(key, MAX_TOKEN_LENGTH) && isPositiveInteger(count2)).sort((a, b2) => b2[1] - a[1]).slice(0, this.bounds.maxFingerprintsPerSession);
+        return {
+          baselineSamples: Math.max(declared, observations.length),
+          observations,
+          fingerprintCounts: Object.fromEntries(entries)
+        };
+      }
+      decode(parsed, tenantId, sessionId) {
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+          return null;
+        const record2 = parsed;
+        if (!this.decodeIdentity(record2, tenantId, sessionId))
+          return null;
+        const baselineSamples = decodeBaselineSamples(record2);
+        if (baselineSamples === null)
+          return null;
+        const observations = this.decodeObservations(record2, baselineSamples);
+        if (!observations)
+          return null;
+        const fingerprintCounts = decodeFingerprintCounts(record2, baselineSamples, this.bounds.maxFingerprintsPerSession);
+        if (!fingerprintCounts)
+          return null;
+        return { baselineSamples, observations, fingerprintCounts };
+      }
+      /** A record belongs to exactly one scope; a renamed or forged file is inert. */
+      decodeIdentity(record2, tenantId, sessionId) {
+        return record2.schema_version === SCHEMA_VERSION && record2.tenant_id === tenantId && record2.session_id === sessionId && isBoundedString(record2.tenant_id, MAX_ID_LENGTH2) && isBoundedString(record2.session_id, MAX_ID_LENGTH2);
+      }
+      decodeObservations(record2, baselineSamples) {
+        const rawObservations = record2.observations;
+        if (!Array.isArray(rawObservations))
+          return null;
+        if (rawObservations.length !== Math.min(baselineSamples, this.bounds.maxEventsPerSession)) {
+          return null;
+        }
+        const observations = [];
+        for (const raw of rawObservations) {
+          const observation = this.decodeObservation(raw);
+          if (!observation)
+            return null;
+          observations.push(observation);
+        }
+        return observations;
+      }
+      decodeObservation(raw) {
+        if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+          return null;
+        const record2 = raw;
+        if (!isBoundedString(record2.tool_name, MAX_TOOL_LENGTH2))
+          return null;
+        if (typeof record2.timestamp !== "number" || !Number.isInteger(record2.timestamp) || record2.timestamp <= 0 || record2.timestamp > this.now() + 5 * 60 * 1e3) {
+          return null;
+        }
+        if (typeof record2.risk_score !== "number" || !Number.isFinite(record2.risk_score) || record2.risk_score < 0 || record2.risk_score > 100) {
+          return null;
+        }
+        if (record2.duration_ms !== null && (typeof record2.duration_ms !== "number" || !Number.isFinite(record2.duration_ms) || record2.duration_ms < 0 || record2.duration_ms > 864e5)) {
+          return null;
+        }
+        const commandToken = readOptionalToken(record2.command);
+        const pathToken = readOptionalToken(record2.path);
+        const urlToken = readOptionalToken(record2.url);
+        if (commandToken === null || pathToken === null || urlToken === null)
+          return null;
+        return {
+          toolName: record2.tool_name,
+          timestamp: record2.timestamp,
+          riskScore: record2.risk_score,
+          commandToken,
+          pathToken,
+          urlToken,
+          durationMs: record2.duration_ms ?? void 0
+        };
+      }
+      /** Expire stale sessions, then enforce the session and tenant quotas. */
+      async prune(tenantId) {
+        try {
+          const tenantDir = (0, import_node_path7.join)(this.storeDir, digest(tenantId));
+          await pruneOrphanedTmpFiles(tenantDir);
+          const files = (await (0, import_promises3.readdir)(tenantDir)).filter((entry) => entry.endsWith(".json"));
+          const dated = [];
+          for (const file of files) {
+            const path3 = (0, import_node_path7.join)(tenantDir, file);
+            try {
+              const info2 = await (0, import_promises3.stat)(path3);
+              if (this.now() - info2.mtimeMs > this.bounds.retentionMs) {
+                await this.remove(path3);
+                continue;
+              }
+              dated.push({ path: path3, modifiedAt: info2.mtimeMs });
+            } catch {
+            }
+          }
+          dated.sort((a, b2) => b2.modifiedAt - a.modifiedAt);
+          for (const stale of dated.slice(this.bounds.maxSessionsPerTenant)) {
+            await this.remove(stale.path);
+          }
+          await this.pruneTenants();
+        } catch (error4) {
+          this.logger.warn("Failed to prune behavioural baseline state", { error: String(error4) });
+        }
+      }
+      async pruneTenants() {
+        try {
+          const entries = await (0, import_promises3.readdir)(this.storeDir, { withFileTypes: true });
+          const directories = [];
+          for (const entry of entries) {
+            if (!entry.isDirectory())
+              continue;
+            const path3 = (0, import_node_path7.join)(this.storeDir, entry.name);
+            try {
+              directories.push({ path: path3, modifiedAt: (await (0, import_promises3.stat)(path3)).mtimeMs });
+            } catch {
+            }
+          }
+          directories.sort((a, b2) => b2.modifiedAt - a.modifiedAt);
+          for (const stale of directories.slice(this.bounds.maxTenants)) {
+            await this.remove(stale.path);
+          }
+        } catch {
+        }
+      }
+    };
+  }
+});
+
 // ../core/dist/encryption.js
 function deriveKey(installationId) {
   const salt = `${PBKDF2_SALT}-${(0, import_node_os3.hostname)()}`;
-  return (0, import_node_crypto6.pbkdf2Sync)(installationId, salt, PBKDF2_ITERATIONS, KEY_LENGTH, "sha256");
+  return (0, import_node_crypto7.pbkdf2Sync)(installationId, salt, PBKDF2_ITERATIONS, KEY_LENGTH, "sha256");
 }
 function encryptBuffer(plaintext, key) {
-  const iv = (0, import_node_crypto6.randomBytes)(IV_LENGTH);
-  const cipher = (0, import_node_crypto6.createCipheriv)("aes-256-gcm", key, iv);
+  const iv = (0, import_node_crypto7.randomBytes)(IV_LENGTH);
+  const cipher = (0, import_node_crypto7.createCipheriv)("aes-256-gcm", key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, encrypted, tag]);
@@ -14675,7 +15384,7 @@ function decryptBuffer(encrypted, key) {
   const iv = encrypted.subarray(0, IV_LENGTH);
   const tag = encrypted.subarray(encrypted.length - TAG_LENGTH);
   const ciphertext = encrypted.subarray(IV_LENGTH, encrypted.length - TAG_LENGTH);
-  const decipher = (0, import_node_crypto6.createDecipheriv)("aes-256-gcm", key, iv);
+  const decipher = (0, import_node_crypto7.createDecipheriv)("aes-256-gcm", key, iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 }
@@ -14693,16 +15402,16 @@ function isEncrypted(data) {
   return true;
 }
 async function encryptFile(filePath, key) {
-  const plaintext = await (0, import_promises3.readFile)(filePath);
+  const plaintext = await (0, import_promises4.readFile)(filePath);
   if (isEncrypted(plaintext))
     return;
   const encrypted = encryptBuffer(plaintext, key);
   const encoded = `${HEADER}${encrypted.toString("base64")}
 `;
-  await (0, import_promises3.writeFile)(filePath, encoded, { mode: 384 });
+  await (0, import_promises4.writeFile)(filePath, encoded, { mode: 384 });
 }
 async function decryptFile(filePath, key) {
-  const raw = await (0, import_promises3.readFile)(filePath, { encoding: "utf-8" });
+  const raw = await (0, import_promises4.readFile)(filePath, { encoding: "utf-8" });
   if (!isEncrypted(raw)) {
     return raw;
   }
@@ -14712,30 +15421,30 @@ async function decryptFile(filePath, key) {
   return decrypted.toString("utf-8");
 }
 async function migrateToEncrypted(filePath, key) {
-  const raw = await (0, import_promises3.readFile)(filePath);
+  const raw = await (0, import_promises4.readFile)(filePath);
   if (isEncrypted(raw))
     return;
   const encrypted = encryptBuffer(raw, key);
   const encoded = `${HEADER}${encrypted.toString("base64")}
 `;
-  const tmp = `${filePath}.${(0, import_node_crypto6.randomBytes)(4).toString("hex")}.enc.tmp`;
+  const tmp = `${filePath}.${(0, import_node_crypto7.randomBytes)(4).toString("hex")}.enc.tmp`;
   try {
-    await (0, import_promises3.writeFile)(tmp, encoded, { mode: 384 });
-    await (0, import_promises3.rename)(tmp, filePath);
+    await (0, import_promises4.writeFile)(tmp, encoded, { mode: 384 });
+    await (0, import_promises4.rename)(tmp, filePath);
   } catch (err) {
     try {
-      await (0, import_promises3.unlink)(tmp);
+      await (0, import_promises4.unlink)(tmp);
     } catch {
     }
     throw err;
   }
 }
-var import_node_crypto6, import_promises3, import_node_os3, HEADER, KEY_LENGTH, IV_LENGTH, TAG_LENGTH, PBKDF2_ITERATIONS, PBKDF2_SALT;
+var import_node_crypto7, import_promises4, import_node_os3, HEADER, KEY_LENGTH, IV_LENGTH, TAG_LENGTH, PBKDF2_ITERATIONS, PBKDF2_SALT;
 var init_encryption = __esm({
   "../core/dist/encryption.js"() {
     "use strict";
-    import_node_crypto6 = require("node:crypto");
-    import_promises3 = require("node:fs/promises");
+    import_node_crypto7 = require("node:crypto");
+    import_promises4 = require("node:fs/promises");
     import_node_os3 = require("node:os");
     HEADER = "AIDRENC:1:";
     KEY_LENGTH = 32;
@@ -15268,7 +15977,7 @@ function isIsoUtc(value) {
   return Number.isFinite(parsed) && parsed > 0;
 }
 function sha256(input) {
-  return (0, import_node_crypto7.createHash)("sha256").update(input).digest("hex");
+  return (0, import_node_crypto8.createHash)("sha256").update(input).digest("hex");
 }
 function causalLinkDigestInput(link2) {
   const c = link2.correlation;
@@ -15424,14 +16133,14 @@ function detectCycle(links) {
 function causalLinkReceiptId(linkId) {
   if (!LINK_ID.test(linkId))
     throw new Error("causal_link_id_invalid");
-  const digest = sha256(`aidr.causal.receipt-id.v1
+  const digest2 = sha256(`aidr.causal.receipt-id.v1
 ${linkId}`);
   return [
-    digest.slice(0, 8),
-    digest.slice(8, 12),
-    `4${digest.slice(13, 16)}`,
-    `8${digest.slice(17, 20)}`,
-    digest.slice(20, 32)
+    digest2.slice(0, 8),
+    digest2.slice(8, 12),
+    `4${digest2.slice(13, 16)}`,
+    `8${digest2.slice(17, 20)}`,
+    digest2.slice(20, 32)
   ].join("-");
 }
 function sortFindings(findings) {
@@ -15481,10 +16190,10 @@ function recordCausalChain(inputs, options) {
       });
       continue;
     }
-    const digest = causalLinkDigest(link2, options);
+    const digest2 = causalLinkDigest(link2, options);
     const existingDigest = digestById.get(link2.linkId);
     if (existingDigest !== void 0) {
-      if (existingDigest === digest) {
+      if (existingDigest === digest2) {
         duplicates.push(link2.linkId);
       } else {
         findings.push({
@@ -15505,8 +16214,8 @@ function recordCausalChain(inputs, options) {
     } else {
       positionOwner.set(link2.position, link2.linkId);
     }
-    digestById.set(link2.linkId, digest);
-    byId.set(link2.linkId, { ...link2, linkDigest: digest, receiptId: null });
+    digestById.set(link2.linkId, digest2);
+    byId.set(link2.linkId, { ...link2, linkDigest: digest2, receiptId: null });
   }
   const links = [...byId.values()].sort(compareLinks);
   const linkIds = new Set(links.map((link2) => link2.linkId));
@@ -15718,11 +16427,11 @@ function canonicalCausalChainJson(chain) {
     observedKinds: chain.observedKinds
   });
 }
-var import_node_crypto7, CAUSAL_CHAIN_SCHEMA_VERSION, CAUSAL_CHAIN_ORDER, LINK_ID, KIND_SET, SEVERITY_SET;
+var import_node_crypto8, CAUSAL_CHAIN_SCHEMA_VERSION, CAUSAL_CHAIN_ORDER, LINK_ID, KIND_SET, SEVERITY_SET;
 var init_causal_chain = __esm({
   "../core/dist/causal-chain.js"() {
     "use strict";
-    import_node_crypto7 = require("node:crypto");
+    import_node_crypto8 = require("node:crypto");
     init_evidence_receipt();
     CAUSAL_CHAIN_SCHEMA_VERSION = 1;
     CAUSAL_CHAIN_ORDER = [
@@ -15741,6 +16450,55 @@ var init_causal_chain = __esm({
   }
 });
 
+// ../core/dist/detection-leg.js
+function describeHttpFailure(status) {
+  if (status === 401 || status === 403) {
+    return `endpoint rejected the request as unauthenticated (HTTP ${status}); check the configured API key`;
+  }
+  if (status === 404) {
+    return `endpoint not found (HTTP 404); the reputation service may not be deployed`;
+  }
+  if (status >= 500) {
+    return `endpoint error (HTTP ${status})`;
+  }
+  return `unexpected HTTP ${status}`;
+}
+var DetectionLegUnavailableError;
+var init_detection_leg = __esm({
+  "../core/dist/detection-leg.js"() {
+    "use strict";
+    DetectionLegUnavailableError = class extends Error {
+      leg;
+      /** HTTP status when the endpoint answered with an error. */
+      status;
+      /** Operator-readable reason. */
+      reason;
+      /**
+       * Results from the batches that DID succeed.
+       *
+       * A multi-batch check can partially fail. Returning the successful batches and
+       * throwing away the fact that others failed would report "1 of 75 hashes
+       * checked, 1 malicious" as if the whole set had been covered. The results are
+       * carried here so a caller can keep the real detections while still recording
+       * that coverage was incomplete - the detections are evidence, the missing
+       * batches are a gap, and both must survive.
+       */
+      partialResults;
+      /** How many artifacts went unchecked because of this failure. */
+      uncheckedCount;
+      constructor(leg, reason, status, partialResults = [], uncheckedCount = 0) {
+        super(`Detection leg "${leg}" did not run: ${reason}`);
+        this.name = "DetectionLegUnavailableError";
+        this.leg = leg;
+        this.reason = reason;
+        this.status = status;
+        this.partialResults = partialResults;
+        this.uncheckedCount = uncheckedCount;
+      }
+    };
+  }
+});
+
 // ../core/dist/clients/amsi-spawn.js
 function spawn(command, args, options) {
   return (0, import_node_child_process.spawn)(command, args, options);
@@ -15755,7 +16513,7 @@ var init_amsi_spawn = __esm({
 
 // ../core/dist/clients/amsi.js
 async function loadKoffi() {
-  const bundledPath = typeof __dirname === "string" ? (0, import_node_path7.join)(__dirname, "vendor", "koffi", "index.js") : null;
+  const bundledPath = typeof __dirname === "string" ? (0, import_node_path8.join)(__dirname, "vendor", "koffi", "index.js") : null;
   if (bundledPath && (0, import_node_fs3.existsSync)(bundledPath)) {
     return await import((0, import_node_url3.pathToFileURL)(bundledPath).href);
   }
@@ -15778,13 +16536,14 @@ function interpretAmsiResult(amsiResult, content, contentName) {
     isBlockedByAdmin: amsiResult >= AMSI_RESULT_BLOCKED_BY_ADMIN_START && amsiResult < AMSI_RESULT_DETECTED
   };
 }
-var import_node_fs3, import_node_path7, import_node_url3, AMSI_RESULT_DETECTED, AMSI_RESULT_BLOCKED_BY_ADMIN_START, MAX_SCAN_LENGTH, PS_TIMEOUT, KoffiAmsiBackend, AMSI_CSHARP_TYPE, PS_PERSISTENT_SCRIPT, PS_ONESHOT_SCRIPT, PersistentPowershellAmsiBackend, WslPowershellAmsiBackend, AmsiClient;
+var import_node_fs3, import_node_path8, import_node_url3, AMSI_RESULT_DETECTED, AMSI_RESULT_BLOCKED_BY_ADMIN_START, MAX_SCAN_LENGTH, PS_TIMEOUT, KoffiAmsiBackend, AMSI_CSHARP_TYPE, PS_PERSISTENT_SCRIPT, PS_ONESHOT_SCRIPT, PersistentPowershellAmsiBackend, WslPowershellAmsiBackend, AmsiClient;
 var init_amsi = __esm({
   "../core/dist/clients/amsi.js"() {
     "use strict";
     import_node_fs3 = require("node:fs");
-    import_node_path7 = require("node:path");
+    import_node_path8 = require("node:path");
     import_node_url3 = require("node:url");
+    init_detection_leg();
     init_types2();
     init_amsi_spawn();
     AMSI_RESULT_DETECTED = 32768;
@@ -16207,6 +16966,13 @@ ${AMSI_CSHARP_TYPE}
       logger;
       backend = null;
       selectedBackend = "unavailable";
+      /**
+       * Operator-readable reason why this host, which supports AMSI, has no usable
+       * backend. Set only by `init()` after both backends failed; a client that was
+       * never initialised, was closed, or runs on an unsupported host leaves it
+       * null, and those cases stay silent no-ops.
+       */
+      unavailableReason = null;
       constructor(logger2 = nullLogger) {
         this.logger = logger2;
       }
@@ -16243,15 +17009,23 @@ ${AMSI_CSHARP_TYPE}
           return;
         }
         this.selectedBackend = "unavailable";
+        this.unavailableReason = "no AMSI backend could be established on this host: the native koffi backend and the PowerShell fallback both failed to initialize";
         this.logger.warn("AMSI unavailable: native and PowerShell backends failed");
       }
       async scanString(content, contentName) {
-        return await this.backend?.scanString(content, contentName) ?? null;
+        if (!this.backend?.isAvailable) {
+          if (this.unavailableReason !== null) {
+            throw new DetectionLegUnavailableError("amsi", this.unavailableReason);
+          }
+          return null;
+        }
+        return await this.backend.scanString(content, contentName) ?? null;
       }
       close() {
         this.backend?.close();
         this.backend = null;
         this.selectedBackend = "unavailable";
+        this.unavailableReason = null;
       }
     };
   }
@@ -16342,7 +17116,7 @@ function canonicalize(value) {
   return output;
 }
 function eventHash(event) {
-  return (0, import_node_crypto8.createHash)("sha256").update(JSON.stringify(canonicalize(event))).digest("hex");
+  return (0, import_node_crypto9.createHash)("sha256").update(JSON.stringify(canonicalize(event))).digest("hex");
 }
 function errorCode(error4) {
   return typeof error4 === "object" && error4 !== null && "code" in error4 ? String(error4.code ?? "") : "";
@@ -16353,13 +17127,55 @@ function isMissing(error4) {
 function sleep(ms) {
   return new Promise((resolve12) => setTimeout(resolve12, ms));
 }
-var import_node_crypto8, import_promises4, import_node_path8, WAL_VERSION, EVENT_ID_PATTERN, EVENT_HASH_PATTERN, RECENT_EVENT_LIMIT, DEFAULT_MAX_READY_PENDING_AGE_MS, LOSS_REASONS, EMPTY_TOTALS, DurableTelemetryQueue;
+async function readTelemetryLossSummary(root, options = {}) {
+  const now = options.now ?? Date.now;
+  let namespaces = [];
+  let unreadable = false;
+  try {
+    const entries = await (0, import_promises5.readdir)(root, { withFileTypes: true });
+    namespaces = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch (error4) {
+    if (errorCode(error4) !== "ENOENT")
+      unreadable = true;
+  }
+  const detail = [];
+  let pendingEvents = 0;
+  let lostTotal = 0;
+  let oldestAgeSeconds = 0;
+  for (const namespace of namespaces) {
+    try {
+      const queue = new DurableTelemetryQueue({ directory: (0, import_node_path9.join)(root, namespace), now });
+      const evidence = await queue.readinessEvidence();
+      pendingEvents += evidence.depth;
+      lostTotal += evidence.failed_jobs;
+      oldestAgeSeconds = Math.max(oldestAgeSeconds, evidence.oldest_age_seconds);
+      detail.push({
+        namespace,
+        pendingEvents: evidence.depth,
+        lostTotal: evidence.failed_jobs,
+        state: evidence.status
+      });
+    } catch {
+      unreadable = true;
+      detail.push({ namespace, pendingEvents: 0, lostTotal: 0, state: "unavailable" });
+    }
+  }
+  return {
+    queues: namespaces.length,
+    pendingEvents,
+    oldestAgeSeconds,
+    lostTotal,
+    state: unreadable ? "unavailable" : pendingEvents > 0 ? "queued" : "idle",
+    namespaces: detail
+  };
+}
+var import_node_crypto9, import_promises5, import_node_path9, WAL_VERSION, EVENT_ID_PATTERN, EVENT_HASH_PATTERN, RECENT_EVENT_LIMIT, DEFAULT_MAX_READY_PENDING_AGE_MS, LOSS_REASONS, EMPTY_TOTALS, DurableTelemetryQueue;
 var init_telemetry_queue = __esm({
   "../core/dist/telemetry-queue.js"() {
     "use strict";
-    import_node_crypto8 = require("node:crypto");
-    import_promises4 = require("node:fs/promises");
-    import_node_path8 = require("node:path");
+    import_node_crypto9 = require("node:crypto");
+    import_promises5 = require("node:fs/promises");
+    import_node_path9 = require("node:path");
     init_telemetry_redaction();
     WAL_VERSION = 1;
     EVENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -16408,8 +17224,8 @@ var init_telemetry_queue = __esm({
         if (!options.directory.trim())
           throw new Error("telemetry queue directory is required");
         this.directory = options.directory;
-        this.walPath = (0, import_node_path8.join)(this.directory, "events.wal");
-        this.lockPath = (0, import_node_path8.join)(this.directory, ".lock");
+        this.walPath = (0, import_node_path9.join)(this.directory, "events.wal");
+        this.lockPath = (0, import_node_path9.join)(this.directory, ".lock");
         this.maxEvents = Math.max(1, Math.floor(options.maxEvents ?? 1e4));
         this.maxBytes = Math.max(1024, Math.floor(options.maxBytes ?? 64 * 1024 * 1024));
         this.maxEventBytes = Math.max(256, Math.floor(options.maxEventBytes ?? 256 * 1024));
@@ -16649,10 +17465,10 @@ var init_telemetry_queue = __esm({
        */
       async writeReadinessEvidence(path3) {
         const evidence = await this.readinessEvidence();
-        await (0, import_promises4.mkdir)((0, import_node_path8.dirname)(path3), { recursive: true, mode: 448 });
-        const temporary = `${path3}.${process.pid}.${(0, import_node_crypto8.randomUUID)()}.tmp`;
+        await (0, import_promises5.mkdir)((0, import_node_path9.dirname)(path3), { recursive: true, mode: 448 });
+        const temporary = `${path3}.${process.pid}.${(0, import_node_crypto9.randomUUID)()}.tmp`;
         try {
-          const handle = await (0, import_promises4.open)(temporary, "wx", 384);
+          const handle = await (0, import_promises5.open)(temporary, "wx", 384);
           try {
             await handle.writeFile(`${JSON.stringify(evidence)}
 `, "utf8");
@@ -16660,18 +17476,18 @@ var init_telemetry_queue = __esm({
           } finally {
             await handle.close();
           }
-          await (0, import_promises4.chmod)(temporary, 292);
+          await (0, import_promises5.chmod)(temporary, 292);
           try {
-            await (0, import_promises4.rename)(temporary, path3);
+            await (0, import_promises5.rename)(temporary, path3);
           } catch (error4) {
             if (errorCode(error4) !== "EPERM" && errorCode(error4) !== "EACCES")
               throw error4;
-            await (0, import_promises4.chmod)(path3, 384);
-            await (0, import_promises4.rename)(temporary, path3);
+            await (0, import_promises5.chmod)(path3, 384);
+            await (0, import_promises5.rename)(temporary, path3);
           }
           return evidence;
         } catch (error4) {
-          await (0, import_promises4.unlink)(temporary).catch(() => void 0);
+          await (0, import_promises5.unlink)(temporary).catch(() => void 0);
           throw error4;
         }
       }
@@ -16684,7 +17500,7 @@ var init_telemetry_queue = __esm({
         if (requestedId !== void 0 && (typeof requestedId !== "string" || !EVENT_ID_PATTERN.test(requestedId))) {
           throw new TypeError("invalid telemetry event_id");
         }
-        const event = JSON.parse(JSON.stringify({ ...safeCandidate, event_id: requestedId ?? (0, import_node_crypto8.randomUUID)() }));
+        const event = JSON.parse(JSON.stringify({ ...safeCandidate, event_id: requestedId ?? (0, import_node_crypto9.randomUUID)() }));
         if (!event || typeof event !== "object")
           throw new TypeError("telemetry event is not serializable");
         const serialized = JSON.stringify(event);
@@ -16705,7 +17521,7 @@ var init_telemetry_queue = __esm({
       async loadSnapshot(repairTail) {
         let raw = "";
         try {
-          raw = await (0, import_promises4.readFile)(this.walPath, "utf8");
+          raw = await (0, import_promises5.readFile)(this.walPath, "utf8");
         } catch (error4) {
           if (!isMissing(error4))
             throw error4;
@@ -16811,10 +17627,10 @@ var init_telemetry_queue = __esm({
       }
       async appendRecord(record2) {
         await this.faultInjector?.("append");
-        await (0, import_promises4.mkdir)((0, import_node_path8.dirname)(this.walPath), { recursive: true, mode: 448 });
-        const handle = await (0, import_promises4.open)(this.walPath, "a", 384);
+        await (0, import_promises5.mkdir)((0, import_node_path9.dirname)(this.walPath), { recursive: true, mode: 448 });
+        const handle = await (0, import_promises5.open)(this.walPath, "a", 384);
         try {
-          await (0, import_promises4.appendFile)(handle, `${JSON.stringify(record2)}
+          await (0, import_promises5.appendFile)(handle, `${JSON.stringify(record2)}
 `, "utf8");
           await handle.sync();
         } finally {
@@ -16828,8 +17644,8 @@ var init_telemetry_queue = __esm({
       }
       async rewriteWal(snapshot) {
         await this.faultInjector?.("compact");
-        await (0, import_promises4.mkdir)(this.directory, { recursive: true, mode: 448 });
-        const temporary = `${this.walPath}.${process.pid}.${(0, import_node_crypto8.randomUUID)()}.tmp`;
+        await (0, import_promises5.mkdir)(this.directory, { recursive: true, mode: 448 });
+        const temporary = `${this.walPath}.${process.pid}.${(0, import_node_crypto9.randomUUID)()}.tmp`;
         const checkpoint = {
           v: WAL_VERSION,
           op: "checkpoint",
@@ -16838,41 +17654,41 @@ var init_telemetry_queue = __esm({
           recent: [...snapshot.recent.entries()]
         };
         try {
-          await (0, import_promises4.writeFile)(temporary, `${JSON.stringify(checkpoint)}
+          await (0, import_promises5.writeFile)(temporary, `${JSON.stringify(checkpoint)}
 `, {
             encoding: "utf8",
             mode: 384
           });
-          const handle = await (0, import_promises4.open)(temporary, "r+");
+          const handle = await (0, import_promises5.open)(temporary, "r+");
           try {
             await handle.sync();
           } finally {
             await handle.close();
           }
-          await (0, import_promises4.rename)(temporary, this.walPath);
+          await (0, import_promises5.rename)(temporary, this.walPath);
           snapshot.recordCount = 1;
           snapshot.walBytes = Buffer.byteLength(JSON.stringify(checkpoint), "utf8") + 1;
         } catch (error4) {
-          await (0, import_promises4.unlink)(temporary).catch(() => void 0);
+          await (0, import_promises5.unlink)(temporary).catch(() => void 0);
           throw error4;
         }
       }
       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: bounded acquisition includes stale-lock recovery for cross-process crash safety
       async withLock(callback) {
         await this.faultInjector?.("mkdir");
-        await (0, import_promises4.mkdir)(this.directory, { recursive: true, mode: 448 });
+        await (0, import_promises5.mkdir)(this.directory, { recursive: true, mode: 448 });
         const started = Date.now();
         while (true) {
           try {
-            await (0, import_promises4.mkdir)(this.lockPath, { mode: 448 });
+            await (0, import_promises5.mkdir)(this.lockPath, { mode: 448 });
             break;
           } catch (error4) {
             if (errorCode(error4) !== "EEXIST")
               throw error4;
             try {
-              const lockStat = await (0, import_promises4.stat)(this.lockPath);
+              const lockStat = await (0, import_promises5.stat)(this.lockPath);
               if (Date.now() - lockStat.mtimeMs > this.staleLockMs) {
-                await (0, import_promises4.rmdir)(this.lockPath);
+                await (0, import_promises5.rmdir)(this.lockPath);
                 continue;
               }
             } catch (lockError) {
@@ -16887,7 +17703,7 @@ var init_telemetry_queue = __esm({
         try {
           return await callback();
         } finally {
-          await (0, import_promises4.rmdir)(this.lockPath).catch(() => void 0);
+          await (0, import_promises5.rmdir)(this.lockPath).catch(() => void 0);
         }
       }
       serialized(callback) {
@@ -16957,7 +17773,7 @@ function moduleDirectory3() {
   }
   try {
     if (typeof import_meta3.url === "string")
-      return (0, import_node_path9.dirname)((0, import_node_url4.fileURLToPath)(import_meta3.url));
+      return (0, import_node_path10.dirname)((0, import_node_url4.fileURLToPath)(import_meta3.url));
   } catch {
   }
   return process.cwd();
@@ -16966,7 +17782,7 @@ function resolveVersion() {
   if (true)
     return "0.6.0";
   try {
-    const pkgPath = (0, import_node_path9.join)(moduleDirectory3(), "..", "package.json");
+    const pkgPath = (0, import_node_path10.join)(moduleDirectory3(), "..", "package.json");
     const pkg = JSON.parse((0, import_node_fs4.readFileSync)(pkgPath, "utf-8"));
     if (typeof pkg.version === "string")
       return pkg.version;
@@ -16977,12 +17793,12 @@ function resolveVersion() {
 function getVersion() {
   return VERSION;
 }
-var import_node_fs4, import_node_path9, import_node_url4, import_meta3, VERSION;
+var import_node_fs4, import_node_path10, import_node_url4, import_meta3, VERSION;
 var init_version = __esm({
   "../core/dist/version.js"() {
     "use strict";
     import_node_fs4 = require("node:fs");
-    import_node_path9 = require("node:path");
+    import_node_path10 = require("node:path");
     import_node_url4 = require("node:url");
     import_meta3 = {};
     VERSION = resolveVersion();
@@ -17004,12 +17820,12 @@ var init_control_plane_url = __esm({
 });
 
 // ../core/dist/clients/control-plane.js
-var import_node_crypto9, import_node_path10, ControlPlaneClient;
+var import_node_crypto10, import_node_path11, ControlPlaneClient;
 var init_control_plane = __esm({
   "../core/dist/clients/control-plane.js"() {
     "use strict";
-    import_node_crypto9 = require("node:crypto");
-    import_node_path10 = require("node:path");
+    import_node_crypto10 = require("node:crypto");
+    import_node_path11 = require("node:path");
     init_config();
     init_degraded_safe_mode();
     init_telemetry_queue();
@@ -17302,11 +18118,11 @@ var init_control_plane = __esm({
         return { flushed, lastResult };
       }
       telemetryQueue(iid) {
-        const namespace = (0, import_node_crypto9.createHash)("sha256").update(`${this.baseUrl}\0${this.apiKey}\0${iid}`).digest("hex");
+        const namespace = (0, import_node_crypto10.createHash)("sha256").update(`${this.baseUrl}\0${this.apiKey}\0${iid}`).digest("hex");
         const root = this.options.telemetryQueueRoot ?? resolvePath("~/.singularity-aidr/telemetry");
         return new DurableTelemetryQueue({
           ...this.options.telemetryQueue,
-          directory: (0, import_node_path10.join)(root, namespace)
+          directory: (0, import_node_path11.join)(root, namespace)
         });
       }
       isRetryableIngestFailure(result) {
@@ -17489,7 +18305,7 @@ var init_control_plane = __esm({
             body: JSON.stringify({
               seats: options.seats ?? 1,
               plan: options.plan ?? "monthly",
-              request_id: options.requestId ?? (0, import_node_crypto9.randomUUID)()
+              request_id: options.requestId ?? (0, import_node_crypto10.randomUUID)()
             })
           });
           let body;
@@ -17571,70 +18387,21 @@ var init_control_plane = __esm({
   }
 });
 
-// ../core/dist/detection-leg.js
-function describeHttpFailure(status) {
-  if (status === 401 || status === 403) {
-    return `endpoint rejected the request as unauthenticated (HTTP ${status}); check the configured API key`;
-  }
-  if (status === 404) {
-    return `endpoint not found (HTTP 404); the reputation service may not be deployed`;
-  }
-  if (status >= 500) {
-    return `endpoint error (HTTP ${status})`;
-  }
-  return `unexpected HTTP ${status}`;
-}
-var DetectionLegUnavailableError;
-var init_detection_leg = __esm({
-  "../core/dist/detection-leg.js"() {
-    "use strict";
-    DetectionLegUnavailableError = class extends Error {
-      leg;
-      /** HTTP status when the endpoint answered with an error. */
-      status;
-      /** Operator-readable reason. */
-      reason;
-      /**
-       * Results from the batches that DID succeed.
-       *
-       * A multi-batch check can partially fail. Returning the successful batches and
-       * throwing away the fact that others failed would report "1 of 75 hashes
-       * checked, 1 malicious" as if the whole set had been covered. The results are
-       * carried here so a caller can keep the real detections while still recording
-       * that coverage was incomplete - the detections are evidence, the missing
-       * batches are a gap, and both must survive.
-       */
-      partialResults;
-      /** How many artifacts went unchecked because of this failure. */
-      uncheckedCount;
-      constructor(leg, reason, status, partialResults = [], uncheckedCount = 0) {
-        super(`Detection leg "${leg}" did not run: ${reason}`);
-        this.name = "DetectionLegUnavailableError";
-        this.leg = leg;
-        this.reason = reason;
-        this.status = status;
-        this.partialResults = partialResults;
-        this.uncheckedCount = uncheckedCount;
-      }
-    };
-  }
-});
-
 // ../core/dist/intel/verify.js
 function verifyEd25519Signature(params) {
   try {
-    const key = (0, import_node_crypto10.createPublicKey)(params.publicKeyPem);
+    const key = (0, import_node_crypto11.createPublicKey)(params.publicKeyPem);
     const sig = Buffer.from(params.signatureBase64, "base64");
-    return (0, import_node_crypto10.verify)(null, Buffer.from(params.message), key, sig);
+    return (0, import_node_crypto11.verify)(null, Buffer.from(params.message), key, sig);
   } catch {
     return false;
   }
 }
-var import_node_crypto10;
+var import_node_crypto11;
 var init_verify = __esm({
   "../core/dist/intel/verify.js"() {
     "use strict";
-    import_node_crypto10 = require("node:crypto");
+    import_node_crypto11 = require("node:crypto");
   }
 });
 
@@ -17643,7 +18410,7 @@ function bytes(value) {
   return typeof value === "string" ? Buffer.from(value, "utf8") : value;
 }
 function sha2562(value) {
-  return (0, import_node_crypto11.createHash)("sha256").update(bytes(value)).digest("hex");
+  return (0, import_node_crypto12.createHash)("sha256").update(bytes(value)).digest("hex");
 }
 function canonicalJsonValue(value) {
   if (value === null || typeof value === "boolean" || typeof value === "string") {
@@ -17803,16 +18570,16 @@ function validateBundle(params) {
 function feedRoot(storeDir, feedId) {
   if (!SAFE_ID.test(feedId))
     throw new FeedValidationError("malformed", "Feed id is invalid");
-  return (0, import_node_path11.join)((0, import_node_path11.resolve)(storeDir), feedId);
+  return (0, import_node_path12.join)((0, import_node_path12.resolve)(storeDir), feedId);
 }
 function versionRoot(root, version2) {
   if (!SAFE_ID.test(version2))
     throw new FeedValidationError("malformed", "Feed version is invalid");
-  return (0, import_node_path11.join)(root, "versions", version2);
+  return (0, import_node_path12.join)(root, "versions", version2);
 }
 async function durableWrite(path3, value) {
-  await (0, import_promises5.mkdir)((0, import_node_path11.dirname)(path3), { recursive: true });
-  const handle = await (0, import_promises5.open)(path3, "wx", 384);
+  await (0, import_promises6.mkdir)((0, import_node_path12.dirname)(path3), { recursive: true });
+  const handle = await (0, import_promises6.open)(path3, "wx", 384);
   try {
     await handle.writeFile(value);
     await handle.sync();
@@ -17821,19 +18588,19 @@ async function durableWrite(path3, value) {
   }
 }
 async function atomicJson(path3, value) {
-  const temporary = `${path3}.${process.pid}.${(0, import_node_crypto11.randomUUID)()}.tmp`;
+  const temporary = `${path3}.${process.pid}.${(0, import_node_crypto12.randomUUID)()}.tmp`;
   try {
     await durableWrite(temporary, `${JSON.stringify(value)}
 `);
-    await (0, import_promises5.rename)(temporary, path3);
+    await (0, import_promises6.rename)(temporary, path3);
   } catch (error4) {
-    await (0, import_promises5.unlink)(temporary).catch(() => void 0);
+    await (0, import_promises6.unlink)(temporary).catch(() => void 0);
     throw error4;
   }
 }
 async function readStoreState(root) {
   try {
-    return StoreStateSchema.parse(JSON.parse(await (0, import_promises5.readFile)((0, import_node_path11.join)(root, "state.json"), "utf8")));
+    return StoreStateSchema.parse(JSON.parse(await (0, import_promises6.readFile)((0, import_node_path12.join)(root, "state.json"), "utf8")));
   } catch (error4) {
     if (error4.code === "ENOENT")
       return null;
@@ -17845,8 +18612,8 @@ async function readStoredManifest(params) {
   let signature;
   try {
     [manifestBytes, signature] = await Promise.all([
-      (0, import_promises5.readFile)((0, import_node_path11.join)(versionRoot(params.root, params.version), "manifest.json")),
-      (0, import_promises5.readFile)((0, import_node_path11.join)(versionRoot(params.root, params.version), "manifest.sig"), "utf8")
+      (0, import_promises6.readFile)((0, import_node_path12.join)(versionRoot(params.root, params.version), "manifest.json")),
+      (0, import_promises6.readFile)((0, import_node_path12.join)(versionRoot(params.root, params.version), "manifest.sig"), "utf8")
     ]);
   } catch {
     throw new FeedValidationError("malformed", "Active feed manifest is incomplete");
@@ -17879,10 +18646,10 @@ async function readVersion(params) {
   let receiptRaw;
   try {
     [manifestBytes, payloadBytes, signature, receiptRaw] = await Promise.all([
-      (0, import_promises5.readFile)((0, import_node_path11.join)(root, "manifest.json")),
-      (0, import_promises5.readFile)((0, import_node_path11.join)(root, "records.json")),
-      (0, import_promises5.readFile)((0, import_node_path11.join)(root, "manifest.sig"), "utf8"),
-      (0, import_promises5.readFile)((0, import_node_path11.join)(root, "receipt.json"), "utf8")
+      (0, import_promises6.readFile)((0, import_node_path12.join)(root, "manifest.json")),
+      (0, import_promises6.readFile)((0, import_node_path12.join)(root, "records.json")),
+      (0, import_promises6.readFile)((0, import_node_path12.join)(root, "manifest.sig"), "utf8"),
+      (0, import_promises6.readFile)((0, import_node_path12.join)(root, "receipt.json"), "utf8")
     ]);
   } catch {
     throw new FeedValidationError("malformed", "Active feed version is incomplete");
@@ -17969,11 +18736,11 @@ function requireAvailableReputationFeed(result) {
   throw new ReputationFeedUnavailableError(result.availability, result.detail);
 }
 async function withUpdateLock(root, operation) {
-  await (0, import_promises5.mkdir)(root, { recursive: true });
-  const lockPath = (0, import_node_path11.join)(root, ".update.lock");
+  await (0, import_promises6.mkdir)(root, { recursive: true });
+  const lockPath = (0, import_node_path12.join)(root, ".update.lock");
   let handle;
   try {
-    handle = await (0, import_promises5.open)(lockPath, "wx", 384);
+    handle = await (0, import_promises6.open)(lockPath, "wx", 384);
   } catch (error4) {
     if (error4.code === "EEXIST") {
       throw new FeedValidationError("update_locked", "Another feed update is in progress");
@@ -17987,7 +18754,7 @@ async function withUpdateLock(root, operation) {
     return await operation();
   } finally {
     await handle.close();
-    await (0, import_promises5.unlink)(lockPath).catch(() => void 0);
+    await (0, import_promises6.unlink)(lockPath).catch(() => void 0);
   }
 }
 async function assertUpdateCanAdvance(params) {
@@ -18010,7 +18777,7 @@ async function assertUpdateCanAdvance(params) {
 }
 async function assertVersionDoesNotExist(root, version2) {
   try {
-    await (0, import_promises5.stat)(versionRoot(root, version2));
+    await (0, import_promises6.stat)(versionRoot(root, version2));
     throw new FeedValidationError("untrusted", "Feed version already exists in the store");
   } catch (error4) {
     if (error4 instanceof FeedValidationError)
@@ -18021,14 +18788,14 @@ async function assertVersionDoesNotExist(root, version2) {
 }
 async function stageVersion(params) {
   const finalRoot = versionRoot(params.root, params.validated.manifest.version);
-  const staging = (0, import_node_path11.join)(params.root, `.staging-${(0, import_node_crypto11.randomUUID)()}`);
+  const staging = (0, import_node_path12.join)(params.root, `.staging-${(0, import_node_crypto12.randomUUID)()}`);
   try {
-    await (0, import_promises5.mkdir)(staging, { recursive: false });
-    await durableWrite((0, import_node_path11.join)(staging, "manifest.json"), params.validated.manifestBytes);
-    await durableWrite((0, import_node_path11.join)(staging, "manifest.sig"), `${params.validated.signature}
+    await (0, import_promises6.mkdir)(staging, { recursive: false });
+    await durableWrite((0, import_node_path12.join)(staging, "manifest.json"), params.validated.manifestBytes);
+    await durableWrite((0, import_node_path12.join)(staging, "manifest.sig"), `${params.validated.signature}
 `);
-    await durableWrite((0, import_node_path11.join)(staging, "records.json"), params.validated.payloadBytes);
-    await durableWrite((0, import_node_path11.join)(staging, "receipt.json"), `${JSON.stringify({
+    await durableWrite((0, import_node_path12.join)(staging, "records.json"), params.validated.payloadBytes);
+    await durableWrite((0, import_node_path12.join)(staging, "receipt.json"), `${JSON.stringify({
       schema_version: REPUTATION_FEED_SCHEMA_VERSION,
       fetched_at: params.now.toISOString(),
       manifest_sha256: sha2562(params.validated.manifestBytes),
@@ -18038,10 +18805,10 @@ async function stageVersion(params) {
       }
     })}
 `);
-    await (0, import_promises5.mkdir)((0, import_node_path11.dirname)(finalRoot), { recursive: true });
-    await (0, import_promises5.rename)(staging, finalRoot);
+    await (0, import_promises6.mkdir)((0, import_node_path12.dirname)(finalRoot), { recursive: true });
+    await (0, import_promises6.rename)(staging, finalRoot);
   } catch (error4) {
-    await (0, import_promises5.rm)(staging, { recursive: true, force: true }).catch(() => void 0);
+    await (0, import_promises6.rm)(staging, { recursive: true, force: true }).catch(() => void 0);
     throw error4;
   }
 }
@@ -18075,7 +18842,7 @@ async function commitValidatedUpdate(params) {
     now: params.now,
     source: params.options.source.provenance
   });
-  await atomicJson((0, import_node_path11.join)(params.root, "state.json"), {
+  await atomicJson((0, import_node_path12.join)(params.root, "state.json"), {
     schema_version: REPUTATION_FEED_SCHEMA_VERSION,
     active_version: params.validated.manifest.version,
     previous_version: state?.active_version ?? null,
@@ -18136,7 +18903,7 @@ async function rollbackReputationFeed(options) {
         clockSkewMs: options.clockSkewMs ?? 5 * 60 * 1e3,
         maxAgeMs: options.maxAgeMs ?? DEFAULT_REPUTATION_FEED_MAX_AGE_MS
       });
-      await atomicJson((0, import_node_path11.join)(root, "state.json"), {
+      await atomicJson((0, import_node_path12.join)(root, "state.json"), {
         schema_version: REPUTATION_FEED_SCHEMA_VERSION,
         active_version: state.previous_version,
         previous_version: state.active_version,
@@ -18154,15 +18921,15 @@ async function rollbackReputationFeed(options) {
   }
 }
 function createFileReputationFeedSource(options) {
-  const directory = (0, import_node_path11.resolve)(options.directory);
+  const directory = (0, import_node_path12.resolve)(options.directory);
   const maxManifestBytes = options.maxManifestBytes ?? 256 * 1024;
   const maxPayloadBytes = options.maxPayloadBytes ?? DEFAULT_REPUTATION_FEED_MAX_PAYLOAD_BYTES;
   async function readBounded(path3, maximum) {
-    const info2 = await (0, import_promises5.lstat)(path3);
+    const info2 = await (0, import_promises6.lstat)(path3);
     if (!info2.isFile() || info2.size <= 0 || info2.size > maximum) {
       throw new Error("Feed source file size is invalid");
     }
-    return (0, import_promises5.readFile)(path3);
+    return (0, import_promises6.readFile)(path3);
   }
   return {
     provenance: {
@@ -18173,21 +18940,21 @@ function createFileReputationFeedSource(options) {
     },
     async fetch() {
       const [manifest, signature, payload] = await Promise.all([
-        readBounded((0, import_node_path11.join)(directory, "manifest.json"), maxManifestBytes),
-        readBounded((0, import_node_path11.join)(directory, "manifest.sig"), 16384),
-        readBounded((0, import_node_path11.join)(directory, "records.json"), maxPayloadBytes)
+        readBounded((0, import_node_path12.join)(directory, "manifest.json"), maxManifestBytes),
+        readBounded((0, import_node_path12.join)(directory, "manifest.sig"), 16384),
+        readBounded((0, import_node_path12.join)(directory, "records.json"), maxPayloadBytes)
       ]);
       return { manifest, signature: Buffer.from(signature).toString("utf8"), payload };
     }
   };
 }
-var import_node_crypto11, import_promises5, import_node_path11, REPUTATION_FEED_SCHEMA_VERSION, DEFAULT_REPUTATION_FEED_MAX_AGE_MS, DEFAULT_REPUTATION_FEED_MAX_PAYLOAD_BYTES, SAFE_ID, SHA256, BASE64, DateTimeSchema, SafeIdSchema, ReputationIndicatorKindSchema, ReputationFeedRecordSchema, ReputationFeedPayloadSchema, ReputationFeedManifestSchema, StoreStateSchema, FetchReceiptSchema, ReputationFeedUnavailableError, ReputationFeedUpdateError, FeedValidationError;
+var import_node_crypto12, import_promises6, import_node_path12, REPUTATION_FEED_SCHEMA_VERSION, DEFAULT_REPUTATION_FEED_MAX_AGE_MS, DEFAULT_REPUTATION_FEED_MAX_PAYLOAD_BYTES, SAFE_ID, SHA256, BASE64, DateTimeSchema, SafeIdSchema, ReputationIndicatorKindSchema, ReputationFeedRecordSchema, ReputationFeedPayloadSchema, ReputationFeedManifestSchema, StoreStateSchema, FetchReceiptSchema, ReputationFeedUnavailableError, ReputationFeedUpdateError, FeedValidationError;
 var init_reputation_feed = __esm({
   "../core/dist/reputation-feed.js"() {
     "use strict";
-    import_node_crypto11 = require("node:crypto");
-    import_promises5 = require("node:fs/promises");
-    import_node_path11 = require("node:path");
+    import_node_crypto12 = require("node:crypto");
+    import_promises6 = require("node:fs/promises");
+    import_node_path12 = require("node:path");
     init_zod();
     init_verify();
     REPUTATION_FEED_SCHEMA_VERSION = 1;
@@ -18719,6 +19486,12 @@ var init_package_registry = __esm({
 });
 
 // ../core/dist/clients/url-check.js
+function isUrlCheckResult(value) {
+  if (!value || typeof value !== "object")
+    return false;
+  const candidate = value;
+  return typeof candidate.url === "string" && typeof candidate.isMalicious === "boolean" && Array.isArray(candidate.findings) && Array.isArray(candidate.flags);
+}
 function getProviderTld2() {
   return "com";
 }
@@ -18755,7 +19528,7 @@ function resolveEndpoint(path3) {
   const normalizedPath = path3.startsWith("/") ? path3 : `/${path3}`;
   return `https://${SERVICE_NAME2}-proxy.${buildDomain()}${normalizedPath}`;
 }
-var DEFAULT_TIMEOUT3, MAX_URLS_PER_REQUEST, SERVICE_NAME2, REQUEST_HEADERS2, UrlCheckClient;
+var DEFAULT_TIMEOUT3, MAX_URLS_PER_REQUEST, SERVICE_NAME2, NO_COVERAGE, REQUEST_HEADERS2, UrlCheckClient;
 var init_url_check = __esm({
   "../core/dist/clients/url-check.js"() {
     "use strict";
@@ -18766,6 +19539,7 @@ var init_url_check = __esm({
     DEFAULT_TIMEOUT3 = 5;
     MAX_URLS_PER_REQUEST = 50;
     SERVICE_NAME2 = "aidr";
+    NO_COVERAGE = "no_data";
     REQUEST_HEADERS2 = [
       { name: "Accept", value: "application/json" },
       { name: "Content-Type", value: "application/json" },
@@ -18832,8 +19606,10 @@ var init_url_check = __esm({
             return;
           }
           const reason = outcome.reason;
-          failures.push(reason instanceof DetectionLegUnavailableError ? reason : new DetectionLegUnavailableError("url_reputation", String(reason)));
-          uncheckedCount += batches[index]?.length ?? 0;
+          const failure2 = reason instanceof DetectionLegUnavailableError ? reason : new DetectionLegUnavailableError("url_reputation", String(reason));
+          failures.push(failure2);
+          results.push(...failure2.partialResults.filter(isUrlCheckResult));
+          uncheckedCount += failure2.uncheckedCount > 0 ? failure2.uncheckedCount : batches[index]?.length ?? 0;
         });
         if (failures.length > 0) {
           throw new DetectionLegUnavailableError("url_reputation", failures.length === 1 ? failures[0]?.reason ?? "check failed" : `${failures.length} of ${batches.length} batches failed: ${failures[0]?.reason ?? "check failed"}`, failures[0]?.status, results, uncheckedCount);
@@ -18868,11 +19644,19 @@ var init_url_check = __esm({
           const data = await response.json();
           const answers = data.answers ?? [];
           const results = [];
+          const uncovered = [];
           for (const answer of answers) {
-            const result = this.parseAnswer(answer);
-            if (result !== null) {
-              results.push(result);
+            const parsed = this.parseAnswer(answer);
+            if (parsed === null)
+              continue;
+            if (parsed.kind === "uncovered") {
+              uncovered.push(parsed.url);
+              continue;
             }
+            results.push(parsed.result);
+          }
+          if (uncovered.length > 0) {
+            throw new DetectionLegUnavailableError("url_reputation", `no reputation feed coverage for ${uncovered.length} of ${urls.length} requested URLs`, void 0, results, uncovered.length);
           }
           return results;
         } catch (e) {
@@ -18891,15 +19675,22 @@ var init_url_check = __esm({
           const classResult = classification.result ?? {};
           const flags = success.flags ?? [];
           const malicious = classResult.malicious;
+          const uncovered = classResult.unknown !== void 0 || answer.coverage === NO_COVERAGE || success.coverage === NO_COVERAGE;
+          if (uncovered && !malicious) {
+            return { kind: "uncovered", url };
+          }
           const findings = malicious ? (malicious.findings ?? []).map((f) => ({
             severityName: f["severity-name"] ?? "unknown",
             typeName: f["type-name"] ?? "unknown"
           })) : [];
           return {
-            url,
-            isMalicious: Boolean(malicious),
-            findings,
-            flags
+            kind: "covered",
+            result: {
+              url,
+              isMalicious: Boolean(malicious),
+              findings,
+              flags
+            }
           };
         } catch (e) {
           this.logger.warn("Failed to parse answer", { error: String(e) });
@@ -18911,11 +19702,11 @@ var init_url_check = __esm({
 });
 
 // ../core/dist/community-rules.js
-var import_node_crypto12, CommunityRuleRegistry;
+var import_node_crypto13, CommunityRuleRegistry;
 var init_community_rules = __esm({
   "../core/dist/community-rules.js"() {
     "use strict";
-    import_node_crypto12 = require("node:crypto");
+    import_node_crypto13 = require("node:crypto");
     init_types2();
     CommunityRuleRegistry = class {
       config;
@@ -18933,7 +19724,7 @@ var init_community_rules = __esm({
        * Returns the generated rule ID.
        */
       async submitRule(authorId, rule) {
-        const id = (0, import_node_crypto12.randomUUID)();
+        const id = (0, import_node_crypto13.randomUUID)();
         this.ensureContributor(authorId);
         const communityRule = {
           ...rule,
@@ -19381,12 +20172,12 @@ function createDefaultContainConfig() {
     timeoutSeconds: 60
   };
 }
-var import_node_child_process2, import_node_crypto13, AutoContain;
+var import_node_child_process2, import_node_crypto14, AutoContain;
 var init_contain = __esm({
   "../core/dist/contain.js"() {
     "use strict";
     import_node_child_process2 = require("node:child_process");
-    import_node_crypto13 = require("node:crypto");
+    import_node_crypto14 = require("node:crypto");
     init_config();
     init_types2();
     AutoContain = class {
@@ -19523,7 +20314,7 @@ var init_contain = __esm({
         });
       }
       async createContainer() {
-        const containerId = `aidr-${(0, import_node_crypto13.randomBytes)(8).toString("hex")}`;
+        const containerId = `aidr-${(0, import_node_crypto14.randomBytes)(8).toString("hex")}`;
         const args = [
           "create",
           "--name",
@@ -21574,10 +22365,10 @@ function resolveGeneratedDir2() {
 function resolveIndexPath() {
   if (_testIndexPath)
     return _testIndexPath;
-  const direct = (0, import_node_path12.join)(resolveGeneratedDir2(), "aig-cve-index.json");
+  const direct = (0, import_node_path13.join)(resolveGeneratedDir2(), "aig-cve-index.json");
   if ((0, import_node_fs5.existsSync)(direct))
     return direct;
-  const sourceFallback = (0, import_node_path12.join)(_dirname, "..", "src", "generated", "aig-cve-index.json");
+  const sourceFallback = (0, import_node_path13.join)(_dirname, "..", "src", "generated", "aig-cve-index.json");
   return (0, import_node_fs5.existsSync)(sourceFallback) ? sourceFallback : direct;
 }
 function setTestIndexPath(path3) {
@@ -21588,7 +22379,7 @@ function getAigCveIndexPath() {
   return resolveIndexPath();
 }
 function validateManifest(indexPath) {
-  const manifestPath = (0, import_node_path12.join)((0, import_node_path12.dirname)(indexPath), "aig-data-manifest.json");
+  const manifestPath = (0, import_node_path13.join)((0, import_node_path13.dirname)(indexPath), "aig-data-manifest.json");
   const base = {
     valid: false,
     manifest_present: (0, import_node_fs5.existsSync)(manifestPath),
@@ -21605,20 +22396,20 @@ function validateManifest(indexPath) {
     base.signature_present = Boolean(manifest.signature);
     const artifact = manifest.artifacts?.["aig-cve-index.json"];
     const bytes2 = (0, import_node_fs5.readFileSync)(indexPath);
-    if (!artifact || artifact.bytes !== bytes2.length || artifact.sha256 !== (0, import_node_crypto14.createHash)("sha256").update(bytes2).digest("hex")) {
+    if (!artifact || artifact.bytes !== bytes2.length || artifact.sha256 !== (0, import_node_crypto15.createHash)("sha256").update(bytes2).digest("hex")) {
       return { ...base, bundle_id: manifest.bundle_id, error: "CVE index hash/size does not match manifest" };
     }
     if (manifest.schema !== "aig-data-manifest/v1" || !manifest.bundle_id) {
       return { ...base, error: "AIG data manifest schema is invalid" };
     }
-    const publicKey2 = process.env.AIG_SIGNING_PUBLIC_KEY || "";
-    if (manifest.signature && publicKey2) {
+    const publicKey3 = process.env.AIG_SIGNING_PUBLIC_KEY || "";
+    if (manifest.signature && publicKey3) {
       const payload = { ...manifest };
       delete payload.signature;
-      const verifier = (0, import_node_crypto14.createVerify)("RSA-SHA256");
+      const verifier = (0, import_node_crypto15.createVerify)("RSA-SHA256");
       verifier.update(JSON.stringify(payload));
       verifier.end();
-      if (!verifier.verify(publicKey2, manifest.signature.value, "base64")) {
+      if (!verifier.verify(publicKey3, manifest.signature.value, "base64")) {
         return { ...base, bundle_id: manifest.bundle_id, error: "AIG data manifest signature is invalid" };
       }
     }
@@ -21791,13 +22582,13 @@ function getAigCveIndexMetadata() {
     integrity: getAigDataIntegrityStatus()
   };
 }
-var import_node_crypto14, import_node_fs5, import_node_path12, import_node_url5, import_semver, import_meta4, _dirname, DEFAULT_GENERATED_DIR, _testIndexPath, _index, _integrity;
+var import_node_crypto15, import_node_fs5, import_node_path13, import_node_url5, import_semver, import_meta4, _dirname, DEFAULT_GENERATED_DIR, _testIndexPath, _index, _integrity;
 var init_cve_checker = __esm({
   "../core/dist/cve-checker.js"() {
     "use strict";
-    import_node_crypto14 = require("node:crypto");
+    import_node_crypto15 = require("node:crypto");
     import_node_fs5 = require("node:fs");
-    import_node_path12 = require("node:path");
+    import_node_path13 = require("node:path");
     import_node_url5 = require("node:url");
     import_semver = __toESM(require_semver2(), 1);
     import_meta4 = {};
@@ -21813,7 +22604,7 @@ var init_cve_checker = __esm({
         return process.cwd();
       }
     })();
-    DEFAULT_GENERATED_DIR = (0, import_node_path12.join)(_dirname, "generated");
+    DEFAULT_GENERATED_DIR = (0, import_node_path13.join)(_dirname, "generated");
     _testIndexPath = null;
     _integrity = null;
   }
@@ -21949,7 +22740,7 @@ function publicKey(raw) {
   if (!value)
     return null;
   try {
-    const key = value.includes("BEGIN PUBLIC KEY") ? (0, import_node_crypto15.createPublicKey)(value) : (0, import_node_crypto15.createPublicKey)({ key: Buffer.from(value, "base64"), format: "der", type: "spki" });
+    const key = value.includes("BEGIN PUBLIC KEY") ? (0, import_node_crypto16.createPublicKey)(value) : (0, import_node_crypto16.createPublicKey)({ key: Buffer.from(value, "base64"), format: "der", type: "spki" });
     return key.asymmetricKeyType === "ed25519" ? key : null;
   } catch {
     return null;
@@ -21997,7 +22788,7 @@ function verifyCompactSignature(parsed, publicKeysById) {
     if (signature.length !== 64 || encodeBase64Url(signature) !== parsed.signatureSegment)
       return "malformed_token";
     const input = Buffer.from(`${parsed.headerSegment}.${parsed.payloadSegment}`, "ascii");
-    return (0, import_node_crypto15.verify)(null, input, key, signature) ? null : "invalid_signature";
+    return (0, import_node_crypto16.verify)(null, input, key, signature) ? null : "invalid_signature";
   } catch {
     return "invalid_signature";
   }
@@ -22065,11 +22856,11 @@ function verifyDelegatedCredential(params) {
     return failure(claimsFailure);
   return { ok: true, keyId: parsed.header.kid, claims: parsed.claims };
 }
-var import_node_crypto15, DELEGATED_CREDENTIAL_TYPE, DELEGATED_CREDENTIAL_ALGORITHM, DELEGATED_CREDENTIAL_VERSION, MAX_DELEGATED_CREDENTIAL_SECONDS, MAX_DELEGATION_DEPTH, UUID2, SAFE_NAME, SCOPE, BASE64URL, REQUIRED_CLAIM_KEYS;
+var import_node_crypto16, DELEGATED_CREDENTIAL_TYPE, DELEGATED_CREDENTIAL_ALGORITHM, DELEGATED_CREDENTIAL_VERSION, MAX_DELEGATED_CREDENTIAL_SECONDS, MAX_DELEGATION_DEPTH, UUID2, SAFE_NAME, SCOPE, BASE64URL, REQUIRED_CLAIM_KEYS;
 var init_delegated_credential = __esm({
   "../core/dist/delegated-credential.js"() {
     "use strict";
-    import_node_crypto15 = require("node:crypto");
+    import_node_crypto16 = require("node:crypto");
     DELEGATED_CREDENTIAL_TYPE = "aidr-delegation+jwt";
     DELEGATED_CREDENTIAL_ALGORITHM = "EdDSA";
     DELEGATED_CREDENTIAL_VERSION = 1;
@@ -22742,7 +23533,16 @@ function validateReferences(items, field, validIds, collection, target, context2
 function isUnsafeRegex(pattern) {
   return /\\[1-9]/.test(pattern) || /\([^)]*[+*][^)]*\)[+*{]/.test(pattern) || /\.\*.*\.\*/.test(pattern);
 }
-var IDENTIFIER_PATTERN, MIME_PATTERN, SHA256_PATTERN, IdentifierSchema, DlpSensitivitySchema, DlpDirectionSchema, DlpRuleActionSchema, DlpUnavailableActionSchema, DlpLabelSchema, KeywordMatcherSchema, RegexMatcherSchema, DlpMatcherSchema, DlpRuleSchema, DlpExceptionScopeSchema, DlpExceptionSchema, DlpPolicySchema;
+function isDlpExceptionActive(exception, now) {
+  return Date.parse(exception.expiresAt) > now.getTime() && (exception.createdAt === void 0 || Date.parse(exception.createdAt) <= now.getTime());
+}
+function pruneExpiredExceptions(policy, now) {
+  const exceptions = policy.exceptions.filter((exception) => isDlpExceptionActive(exception, now));
+  if (exceptions.length === policy.exceptions.length)
+    return policy;
+  return { ...policy, exceptions };
+}
+var IDENTIFIER_PATTERN, MIME_PATTERN, SHA256_PATTERN, IdentifierSchema, DlpSensitivitySchema, DlpDirectionSchema, DlpRuleActionSchema, DlpUnavailableActionSchema, DlpLabelSchema, KeywordMatcherSchema, RegexMatcherSchema, DlpMatcherSchema, DlpRuleSchema, DlpExceptionScopeSchema, DlpExceptionSchema, EXCEPTION_DOMINANCE_MINIMUM, DLP_EXPIRED_EXCEPTION_DOMINANCE, DlpPolicySchema;
 var init_policy = __esm({
   "../core/dist/dlp/policy.js"() {
     "use strict";
@@ -22840,6 +23640,8 @@ var init_policy = __esm({
         });
       }
     });
+    EXCEPTION_DOMINANCE_MINIMUM = 2;
+    DLP_EXPIRED_EXCEPTION_DOMINANCE = "DLP_EXPIRED_EXCEPTION_DOMINANCE";
     DlpPolicySchema = external_exports.object({
       version: external_exports.number().int().positive(),
       tenantId: IdentifierSchema,
@@ -22855,13 +23657,18 @@ var init_policy = __esm({
       validateReferences(policy.rules, "labelId", labelIds, "rules", "label in this policy", context2);
       validateTenantOwnedIds(policy.exceptions, policy.tenantId, "exceptions", context2);
       validateReferences(policy.exceptions, "ruleId", ruleIds, "exceptions", "rule in this policy", context2);
+      const now = Date.now();
+      const expiredExceptions = policy.exceptions.filter((exception) => Date.parse(exception.expiresAt) <= now).length;
+      if (policy.exceptions.length >= EXCEPTION_DOMINANCE_MINIMUM && expiredExceptions * 2 > policy.exceptions.length) {
+        addPolicyIssue(context2, `${DLP_EXPIRED_EXCEPTION_DOMINANCE}: ${expiredExceptions} of ${policy.exceptions.length} exceptions have already expired; remove the expired records and re-publish the policy`, ["exceptions"]);
+      }
     });
   }
 });
 
 // ../core/dist/dlp/scanner.js
 function sha2563(value) {
-  return (0, import_node_crypto16.createHash)("sha256").update(value, "utf8").digest("hex");
+  return (0, import_node_crypto17.createHash)("sha256").update(value, "utf8").digest("hex");
 }
 function createDlpContentFingerprint(tenantId, content) {
   return sha2563(`${tenantId}\0${content}`);
@@ -23004,12 +23811,9 @@ function maskedPreview(value) {
   const characterCount = [...value].length;
   return "*".repeat(Math.min(12, characterCount));
 }
-function isActive(exception, scannedAt) {
-  return Date.parse(exception.expiresAt) > scannedAt.getTime() && (exception.createdAt === void 0 || Date.parse(exception.createdAt) <= scannedAt.getTime());
-}
 function matchingException(exceptions, ruleId, contentFingerprint, matchFingerprint, scannedAt) {
   return exceptions.find((exception) => {
-    if (exception.ruleId !== ruleId || !isActive(exception, scannedAt))
+    if (exception.ruleId !== ruleId || !isDlpExceptionActive(exception, scannedAt))
       return false;
     if (exception.scope === "rule")
       return true;
@@ -23042,10 +23846,12 @@ function redact(content, matched) {
   return transformed;
 }
 function scanDlpContent(policyInput, requestInput) {
-  const policy = DlpPolicySchema.parse(policyInput);
+  const validatedPolicy = DlpPolicySchema.parse(policyInput);
   const request2 = DlpScanRequestSchema.parse(requestInput);
-  if (request2.tenantId !== policy.tenantId)
+  if (request2.tenantId !== validatedPolicy.tenantId)
     throw new DlpTenantIsolationError();
+  const scannedAt = new Date(request2.scannedAt ?? Date.now());
+  const policy = pruneExpiredExceptions(validatedPolicy, scannedAt);
   const contentType = normalizedContentType(request2.contentType);
   const byteLength = new TextEncoder().encode(request2.content).byteLength;
   const contentFingerprint = createDlpContentFingerprint(request2.tenantId, request2.content);
@@ -23091,7 +23897,6 @@ function scanDlpContent(policyInput, requestInput) {
       }
     };
   }
-  const scannedAt = new Date(request2.scannedAt ?? Date.now());
   const labels = new Map(policy.labels.map((label) => [label.id, label]));
   const matchedFindings = [];
   const appliedExceptionIds = /* @__PURE__ */ new Set();
@@ -23174,11 +23979,11 @@ function scanDlpInput(policy, request2) {
 function scanDlpOutput(policy, request2) {
   return scanDlpContent(policy, { ...request2, direction: "output" });
 }
-var import_node_crypto16, DlpScanRequestSchema, DlpTenantIsolationError, WORD_CHARACTER, ACTION_RANK;
+var import_node_crypto17, DlpScanRequestSchema, DlpTenantIsolationError, WORD_CHARACTER, ACTION_RANK;
 var init_scanner = __esm({
   "../core/dist/dlp/scanner.js"() {
     "use strict";
-    import_node_crypto16 = require("node:crypto");
+    import_node_crypto17 = require("node:crypto");
     init_zod();
     init_policy();
     DlpScanRequestSchema = external_exports.object({
@@ -23517,7 +24322,7 @@ var init_engine = __esm({
 
 // ../core/dist/exposure-graph.js
 function createSha256HasherContext() {
-  return { hash: (value) => (0, import_node_crypto17.createHash)("sha256").update(value).digest("hex") };
+  return { hash: (value) => (0, import_node_crypto18.createHash)("sha256").update(value).digest("hex") };
 }
 function accept2(value) {
   return { ok: true, value };
@@ -24067,11 +24872,11 @@ function canonicalExposureGraphJson(graph) {
     }))
   });
 }
-var import_node_crypto17, EXPOSURE_GRAPH_SCHEMA_VERSION, EXPOSURE_NODE_KINDS, NODE_ID, EDGE_ID, NATURAL_KEY, IDENTIFIER, KIND_SET2, EDGE_KIND_SET, SOURCE_SET;
+var import_node_crypto18, EXPOSURE_GRAPH_SCHEMA_VERSION, EXPOSURE_NODE_KINDS, NODE_ID, EDGE_ID, NATURAL_KEY, IDENTIFIER, KIND_SET2, EDGE_KIND_SET, SOURCE_SET;
 var init_exposure_graph = __esm({
   "../core/dist/exposure-graph.js"() {
     "use strict";
-    import_node_crypto17 = require("node:crypto");
+    import_node_crypto18 = require("node:crypto");
     EXPOSURE_GRAPH_SCHEMA_VERSION = 1;
     EXPOSURE_NODE_KINDS = [
       "agent",
@@ -32017,14 +32822,14 @@ var init_extractors = __esm({
 async function loadTrustedDomains(allowlistsDir, logger2 = nullLogger) {
   let files;
   try {
-    files = (await (0, import_promises6.readdir)(allowlistsDir)).filter((f) => f.endsWith(".yaml")).sort();
+    files = (await (0, import_promises7.readdir)(allowlistsDir)).filter((f) => f.endsWith(".yaml")).sort();
   } catch {
     logger2.debug("Allowlists directory does not exist", { path: allowlistsDir });
     return [];
   }
   const domains = [];
   for (const filename of files) {
-    const filePath = (0, import_node_path13.join)(allowlistsDir, filename);
+    const filePath = (0, import_node_path14.join)(allowlistsDir, filename);
     let content;
     try {
       content = await getFileContent(filePath);
@@ -32083,12 +32888,12 @@ function isTrustedDomain(domain, trusted) {
   }
   return false;
 }
-var import_promises6, import_node_path13, import_yaml2;
+var import_promises7, import_node_path14, import_yaml2;
 var init_trusted_domains = __esm({
   "../core/dist/trusted-domains.js"() {
     "use strict";
-    import_promises6 = require("node:fs/promises");
-    import_node_path13 = require("node:path");
+    import_promises7 = require("node:fs/promises");
+    import_node_path14 = require("node:path");
     import_yaml2 = __toESM(require_dist2(), 1);
     init_file_utils();
     init_types2();
@@ -32672,7 +33477,7 @@ function redactStrings(value, depth = 0) {
   return output;
 }
 function hashJson(value) {
-  return (0, import_node_crypto18.createHash)("sha256").update(JSON.stringify(value)).digest("hex");
+  return (0, import_node_crypto19.createHash)("sha256").update(JSON.stringify(value)).digest("hex");
 }
 function createSiemEvent(incident, observedAtMs = Date.now()) {
   if (!Number.isSafeInteger(observedAtMs) || observedAtMs < 0)
@@ -32724,8 +33529,8 @@ async function persistState(stateFile, state) {
     payload: state,
     sha256: hashJson(state)
   };
-  const tempFile = `${stateFile}.${process.pid}.${(0, import_node_crypto18.randomUUID)()}.tmp`;
-  const handle = await (0, import_promises7.open)(tempFile, "wx", 384);
+  const tempFile = `${stateFile}.${process.pid}.${(0, import_node_crypto19.randomUUID)()}.tmp`;
+  const handle = await (0, import_promises8.open)(tempFile, "wx", 384);
   try {
     await handle.writeFile(`${JSON.stringify(wrapper)}
 `, "utf8");
@@ -32734,22 +33539,22 @@ async function persistState(stateFile, state) {
     await handle.close();
   }
   try {
-    await (0, import_promises7.rename)(tempFile, stateFile);
+    await (0, import_promises8.rename)(tempFile, stateFile);
   } catch (error4) {
-    await (0, import_promises7.unlink)(tempFile).catch(() => void 0);
+    await (0, import_promises8.unlink)(tempFile).catch(() => void 0);
     throw error4;
   }
 }
 function cloneReceipt(receipt) {
   return { ...receipt };
 }
-var import_node_crypto18, import_promises7, import_node_path14, SIEM_EVENT_SCHEMA_VERSION, SIEM_EVENT_JSON_SCHEMA, SiemQueueCapacityError, SiemStateIntegrityError, DEFAULT_MAX_QUEUE_ENTRIES, DEFAULT_MAX_QUEUE_BYTES, DEFAULT_MAX_RECEIPTS, DEFAULT_MAX_ATTEMPTS, DEFAULT_MIN_BACKOFF_MS, DEFAULT_MAX_BACKOFF_MS, DEFAULT_REQUEST_TIMEOUT_MS, MAX_RESPONSE_BYTES, DurableSiemDelivery;
+var import_node_crypto19, import_promises8, import_node_path15, SIEM_EVENT_SCHEMA_VERSION, SIEM_EVENT_JSON_SCHEMA, SiemQueueCapacityError, SiemStateIntegrityError, DEFAULT_MAX_QUEUE_ENTRIES, DEFAULT_MAX_QUEUE_BYTES, DEFAULT_MAX_RECEIPTS, DEFAULT_MAX_ATTEMPTS, DEFAULT_MIN_BACKOFF_MS, DEFAULT_MAX_BACKOFF_MS, DEFAULT_REQUEST_TIMEOUT_MS, MAX_RESPONSE_BYTES, DurableSiemDelivery;
 var init_siem_delivery = __esm({
   "../core/dist/siem-delivery.js"() {
     "use strict";
-    import_node_crypto18 = require("node:crypto");
-    import_promises7 = require("node:fs/promises");
-    import_node_path14 = require("node:path");
+    import_node_crypto19 = require("node:crypto");
+    import_promises8 = require("node:fs/promises");
+    import_node_path15 = require("node:path");
     init_siem_export();
     init_telemetry_redaction();
     SIEM_EVENT_SCHEMA_VERSION = "aidr.siem.event/v1";
@@ -32865,7 +33670,7 @@ var init_siem_delivery = __esm({
       state;
       operation = Promise.resolve();
       constructor(options, state) {
-        this.stateFile = (0, import_node_path14.resolve)(options.stateFile);
+        this.stateFile = (0, import_node_path15.resolve)(options.stateFile);
         this.adapter = createAdapter(options.adapter);
         bindDestination(state, options.adapter);
         this.maxQueueEntries = options.maxQueueEntries ?? DEFAULT_MAX_QUEUE_ENTRIES;
@@ -32896,15 +33701,15 @@ var init_siem_delivery = __esm({
         }
       }
       static async open(options) {
-        const stateFile = (0, import_node_path14.resolve)(options.stateFile);
-        await (0, import_promises7.mkdir)((0, import_node_path14.dirname)(stateFile), { recursive: true, mode: 448 });
+        const stateFile = (0, import_node_path15.resolve)(options.stateFile);
+        await (0, import_promises8.mkdir)((0, import_node_path15.dirname)(stateFile), { recursive: true, mode: 448 });
         let state = emptyState();
         let unboundState = true;
         try {
-          const fileStat = await (0, import_promises7.stat)(stateFile);
+          const fileStat = await (0, import_promises8.stat)(stateFile);
           if (!fileStat.isFile())
             throw new SiemStateIntegrityError("SIEM delivery state is not a regular file");
-          state = parseStateFile(await (0, import_promises7.readFile)(stateFile, "utf8"));
+          state = parseStateFile(await (0, import_promises8.readFile)(stateFile, "utf8"));
           unboundState = state.destinationFingerprint === void 0;
         } catch (error4) {
           if (error4.code !== "ENOENT")
@@ -32952,7 +33757,7 @@ var init_siem_delivery = __esm({
           }
           const nowMs = this.now();
           const receipt = {
-            receiptId: (0, import_node_crypto18.randomUUID)(),
+            receiptId: (0, import_node_crypto19.randomUUID)(),
             eventId: envelope.event_id,
             provider: this.adapter.provider,
             endpointOrigin: this.adapter.endpointOrigin,
@@ -33086,7 +33891,7 @@ function parseConfig(value) {
     throw new TypeError("invalid_siem_config");
   const config2 = value;
   const adapter = config2.adapter;
-  if (typeof config2.state_file !== "string" || config2.state_file.trim().length === 0 || !(0, import_node_path15.isAbsolute)(config2.state_file) && !/^~[/\\]/.test(config2.state_file) || !adapter || typeof adapter !== "object" || Array.isArray(adapter) || typeof adapter.provider !== "string" || typeof adapter.endpoint !== "string")
+  if (typeof config2.state_file !== "string" || config2.state_file.trim().length === 0 || !(0, import_node_path16.isAbsolute)(config2.state_file) && !/^~[/\\]/.test(config2.state_file) || !adapter || typeof adapter !== "object" || Array.isArray(adapter) || typeof adapter.provider !== "string" || typeof adapter.endpoint !== "string")
     throw new TypeError("invalid_siem_config");
   const timeout = config2.request_timeout_ms;
   if (timeout !== void 0 && (!Number.isInteger(timeout) || Number(timeout) < 1 || Number(timeout) > 3e3))
@@ -33099,42 +33904,42 @@ function parseConfig(value) {
 }
 async function readConfig(configPath) {
   const path3 = resolvePath(configPath);
-  const metadata = await (0, import_promises8.stat)(path3);
+  const metadata = await (0, import_promises9.stat)(path3);
   if (!metadata.isFile() || metadata.size > MAX_CONFIG_BYTES)
     throw new TypeError("invalid_siem_config_file");
   if (process.platform !== "win32" && (metadata.mode & 63) !== 0)
     throw new TypeError("siem_config_permissions_insecure");
-  return parseConfig(JSON.parse(await (0, import_promises8.readFile)(path3, "utf8")));
+  return parseConfig(JSON.parse(await (0, import_promises9.readFile)(path3, "utf8")));
 }
 async function withStateLock(stateFile, work) {
   const lockPath = `${stateFile}.lock`;
-  const ownerPath = (0, import_node_path15.join)(lockPath, "owner.json");
-  await (0, import_promises8.mkdir)((0, import_node_path15.dirname)(stateFile), { recursive: true, mode: 448 });
+  const ownerPath = (0, import_node_path16.join)(lockPath, "owner.json");
+  await (0, import_promises9.mkdir)((0, import_node_path16.dirname)(stateFile), { recursive: true, mode: 448 });
   const until = Date.now() + LOCK_WAIT_MS;
   for (; ; ) {
     try {
-      await (0, import_promises8.mkdir)(lockPath, { mode: 448 });
+      await (0, import_promises9.mkdir)(lockPath, { mode: 448 });
       break;
     } catch (error4) {
       if (error4.code !== "EEXIST")
         throw error4;
       if (Date.now() >= until)
         throw new Error("siem_state_lock_unavailable");
-      await (0, import_promises9.setTimeout)(LOCK_POLL_MS);
+      await (0, import_promises10.setTimeout)(LOCK_POLL_MS);
     }
   }
   try {
-    await (0, import_promises8.writeFile)(ownerPath, JSON.stringify({ pid: process.pid, acquired_at_ms: Date.now() }), {
+    await (0, import_promises9.writeFile)(ownerPath, JSON.stringify({ pid: process.pid, acquired_at_ms: Date.now() }), {
       flag: "wx",
       mode: 384
     });
     return await work();
   } finally {
-    await (0, import_promises8.unlink)(ownerPath).catch((error4) => {
+    await (0, import_promises9.unlink)(ownerPath).catch((error4) => {
       if (error4.code !== "ENOENT")
         throw error4;
     });
-    await (0, import_promises8.rmdir)(lockPath);
+    await (0, import_promises9.rmdir)(lockPath);
   }
 }
 async function configuredState() {
@@ -33173,13 +33978,13 @@ function reportSiemProducerFailure(code) {
   process.stderr.write(`AIDR SIEM delivery degraded: ${safeCode}
 `);
 }
-var import_promises8, import_node_path15, import_promises9, SIEM_CONFIG_PATH_ENV, MAX_CONFIG_BYTES, LOCK_WAIT_MS, LOCK_POLL_MS;
+var import_promises9, import_node_path16, import_promises10, SIEM_CONFIG_PATH_ENV, MAX_CONFIG_BYTES, LOCK_WAIT_MS, LOCK_POLL_MS;
 var init_siem_incident_producer = __esm({
   "../core/dist/siem-incident-producer.js"() {
     "use strict";
-    import_promises8 = require("node:fs/promises");
-    import_node_path15 = require("node:path");
-    import_promises9 = require("node:timers/promises");
+    import_promises9 = require("node:fs/promises");
+    import_node_path16 = require("node:path");
+    import_promises10 = require("node:timers/promises");
     init_config();
     init_siem_delivery();
     SIEM_CONFIG_PATH_ENV = "SINGULARITY_AIDR_SIEM_CONFIG_PATH";
@@ -33209,7 +34014,7 @@ async function openSqlite(path3, readOnly = false) {
   return new sqlite.DatabaseSync(path3, { readOnly });
 }
 function revisionHash(incidentId, revisionNumber, previousHash, payloadJson) {
-  return (0, import_node_crypto19.createHash)("sha256").update(`aidr.incident.revision.v1\0${incidentId}\0${revisionNumber}\0${previousHash}\0`).update(payloadJson).digest("hex");
+  return (0, import_node_crypto20.createHash)("sha256").update(`aidr.incident.revision.v1\0${incidentId}\0${revisionNumber}\0${previousHash}\0`).update(payloadJson).digest("hex");
 }
 function getIncidentRecordLastSeenMs(entry) {
   if (!entry || typeof entry !== "object")
@@ -33365,7 +34170,7 @@ async function verifyIncidentSqliteStore(dbPath) {
   };
   let db;
   try {
-    await (0, import_promises10.stat)(dbPath);
+    await (0, import_promises11.stat)(dbPath);
     db = await openSqlite(dbPath, true);
     const incidentRows = db.prepare("SELECT incident_id, opened_at_ms, last_seen_ms, severity, status, payload_json FROM incidents ORDER BY incident_id;").all();
     const revisionRows = db.prepare("SELECT incident_id, revision_number, previous_hash, record_hash, payload_json FROM incident_revisions ORDER BY incident_id, revision_number;").all();
@@ -33448,12 +34253,12 @@ async function verifyIncidentSqliteStore(dbPath) {
   }
   return result;
 }
-var import_node_crypto19, import_promises10, GENESIS_HASH;
+var import_node_crypto20, import_promises11, GENESIS_HASH;
 var init_persist = __esm({
   "../core/dist/incidents/persist.js"() {
     "use strict";
-    import_node_crypto19 = require("node:crypto");
-    import_promises10 = require("node:fs/promises");
+    import_node_crypto20 = require("node:crypto");
+    import_promises11 = require("node:fs/promises");
     init_audit_log();
     init_config();
     init_siem_incident_producer();
@@ -33463,12 +34268,12 @@ var init_persist = __esm({
 });
 
 // ../core/dist/incidents/anchor.js
-function keyFingerprint(publicKey2) {
-  const der = publicKey2.export({ format: "der", type: "spki" });
-  return (0, import_node_crypto20.createHash)("sha256").update(der).digest("hex");
+function keyFingerprint(publicKey3) {
+  const der = publicKey3.export({ format: "der", type: "spki" });
+  return (0, import_node_crypto21.createHash)("sha256").update(der).digest("hex");
 }
 function headsDigest(heads, order = "utf16") {
-  const hash = (0, import_node_crypto20.createHash)("sha256").update("aidr.incident.heads.v1\0");
+  const hash = (0, import_node_crypto21.createHash)("sha256").update("aidr.incident.heads.v1\0");
   for (const head of [...heads].sort((a, b2) => order === "legacy_locale" ? a.incident_id.localeCompare(b2.incident_id) : a.incident_id < b2.incident_id ? -1 : a.incident_id > b2.incident_id ? 1 : 0))
     hash.update(JSON.stringify([head.incident_id, head.revision_number, head.record_hash])).update("\n");
   return hash.digest("hex");
@@ -33478,7 +34283,7 @@ function nonEmptyScope(scope) {
 }
 function requireDistinctPaths(paths) {
   const normalized = paths.map((path3) => {
-    const absolute = (0, import_node_path16.resolve)(path3);
+    const absolute = (0, import_node_path17.resolve)(path3);
     return process.platform === "win32" ? absolute.toLowerCase() : absolute;
   });
   if (new Set(normalized).size !== paths.length)
@@ -33511,16 +34316,16 @@ async function writeSignedIncidentAnchorReceipt(options) {
   const local = await verifyIncidentSqliteStore(options.sqlite_path);
   if (!local.valid)
     throw new Error("Incident store consistency verification failed");
-  const privateKey = (0, import_node_crypto20.createPrivateKey)(await (0, import_promises11.readFile)(options.private_key_path));
+  const privateKey = (0, import_node_crypto21.createPrivateKey)(await (0, import_promises12.readFile)(options.private_key_path));
   if (privateKey.asymmetricKeyType !== "ed25519")
     throw new Error("Incident anchor key must be Ed25519");
-  const publicKey2 = (0, import_node_crypto20.createPublicKey)(privateKey);
+  const publicKey3 = (0, import_node_crypto21.createPublicKey)(privateKey);
   const payload = {
     type: "aidr_incident_anchor_payload",
     schema_version: 1,
     scope: options.scope,
     created_at: (/* @__PURE__ */ new Date()).toISOString(),
-    public_key_fingerprint_sha256: keyFingerprint(publicKey2),
+    public_key_fingerprint_sha256: keyFingerprint(publicKey3),
     checked_incidents: local.checked_incidents,
     checked_revisions: local.checked_revisions,
     head_order: "utf16",
@@ -33532,9 +34337,9 @@ async function writeSignedIncidentAnchorReceipt(options) {
     schema_version: 1,
     algorithm: "Ed25519",
     payload_base64: payloadBytes.toString("base64"),
-    signature_base64: (0, import_node_crypto20.sign)(null, payloadBytes, privateKey).toString("base64")
+    signature_base64: (0, import_node_crypto21.sign)(null, payloadBytes, privateKey).toString("base64")
   };
-  const handle = await (0, import_promises11.open)(options.receipt_path, "wx", 384);
+  const handle = await (0, import_promises12.open)(options.receipt_path, "wx", 384);
   try {
     await handle.writeFile(`${JSON.stringify(receipt)}
 `, "utf8");
@@ -33550,7 +34355,7 @@ async function verifySignedIncidentAnchorReceipt(options) {
       return { valid: false, code: "scope_mismatch" };
     let receipt;
     try {
-      receipt = JSON.parse(await (0, import_promises11.readFile)(options.receipt_path, "utf8"));
+      receipt = JSON.parse(await (0, import_promises12.readFile)(options.receipt_path, "utf8"));
     } catch {
       return { valid: false, code: "receipt_invalid" };
     }
@@ -33560,17 +34365,17 @@ async function verifySignedIncidentAnchorReceipt(options) {
     const signatureBytes = decodeCanonicalBase64(receipt.signature_base64);
     if (!payloadBytes || !signatureBytes || signatureBytes.length !== 64)
       return { valid: false, code: "receipt_invalid" };
-    const publicKey2 = (0, import_node_crypto20.createPublicKey)(await (0, import_promises11.readFile)(options.public_key_path));
-    if (publicKey2.asymmetricKeyType !== "ed25519")
+    const publicKey3 = (0, import_node_crypto21.createPublicKey)(await (0, import_promises12.readFile)(options.public_key_path));
+    if (publicKey3.asymmetricKeyType !== "ed25519")
       return { valid: false, code: "key_mismatch" };
-    if (!(0, import_node_crypto20.verify)(null, payloadBytes, publicKey2, signatureBytes))
+    if (!(0, import_node_crypto21.verify)(null, payloadBytes, publicKey3, signatureBytes))
       return { valid: false, code: "signature_invalid" };
     const payload = readPayload(payloadBytes);
     if (!payload)
       return { valid: false, code: "receipt_invalid" };
     if (payload.scope !== options.expected_scope)
       return { valid: false, code: "scope_mismatch" };
-    if (payload.public_key_fingerprint_sha256 !== keyFingerprint(publicKey2))
+    if (payload.public_key_fingerprint_sha256 !== keyFingerprint(publicKey3))
       return { valid: false, code: "key_mismatch" };
     const local = await verifyIncidentSqliteStore(options.sqlite_path);
     if (!local.valid)
@@ -33587,13 +34392,13 @@ async function verifySignedIncidentAnchorReceipt(options) {
     return { valid: false, code: "unavailable" };
   }
 }
-var import_node_crypto20, import_promises11, import_node_path16;
+var import_node_crypto21, import_promises12, import_node_path17;
 var init_anchor = __esm({
   "../core/dist/incidents/anchor.js"() {
     "use strict";
-    import_node_crypto20 = require("node:crypto");
-    import_promises11 = require("node:fs/promises");
-    import_node_path16 = require("node:path");
+    import_node_crypto21 = require("node:crypto");
+    import_promises12 = require("node:fs/promises");
+    import_node_path17 = require("node:path");
     init_persist();
   }
 });
@@ -33669,6 +34474,27 @@ function incidentKey(s) {
     return `${scope}path:${JSON.stringify(s.file_path)}`;
   return `${scope}signal:${JSON.stringify(s.signal_id)}`;
 }
+function hasEvidenceClock(signal) {
+  return signal.clock !== void 0;
+}
+function orderSignals(signals) {
+  const byWallClock = [...signals].sort((a, b2) => a.timestamp_ms - b2.timestamp_ms || a.signal_id.localeCompare(b2.signal_id));
+  const clocked = byWallClock.filter(hasEvidenceClock);
+  if (clocked.length < 2)
+    return byWallClock;
+  const byLogicalClock = [...clocked].sort((a, b2) => {
+    const byClock = compareEvidenceClock(a.clock, b2.clock);
+    return byClock !== 0 ? byClock : a.signal_id.localeCompare(b2.signal_id);
+  });
+  let next = 0;
+  return byWallClock.map((signal) => {
+    if (!hasEvidenceClock(signal))
+      return signal;
+    const replacement = byLogicalClock[next];
+    next += 1;
+    return replacement ?? signal;
+  });
+}
 function toEventRef(s) {
   return {
     signal_id: s.signal_id,
@@ -33680,7 +34506,7 @@ function toEventRef(s) {
 }
 function correlateIncidents(signals, options = {}) {
   const cfg = { ...DEFAULTS, ...options };
-  const sorted = [...signals].sort((a, b2) => a.timestamp_ms - b2.timestamp_ms || a.signal_id.localeCompare(b2.signal_id));
+  const sorted = orderSignals(signals);
   const seenSignalIds = /* @__PURE__ */ new Set();
   const open7 = /* @__PURE__ */ new Map();
   const denyCounters = /* @__PURE__ */ new Map();
@@ -33780,6 +34606,7 @@ var SEVERITY_RANK, DEFAULTS;
 var init_correlate = __esm({
   "../core/dist/incidents/correlate.js"() {
     "use strict";
+    init_evidence_receipt();
     SEVERITY_RANK = {
       info: 0,
       warning: 1,
@@ -33796,7 +34623,7 @@ var init_correlate = __esm({
 
 // ../core/dist/incidents/normalize.js
 function sha256Hex(input) {
-  return (0, import_node_crypto21.createHash)("sha256").update(input).digest("hex");
+  return (0, import_node_crypto22.createHash)("sha256").update(input).digest("hex");
 }
 function parseTimestampMs(value) {
   if (typeof value === "number" && Number.isFinite(value))
@@ -33994,11 +34821,11 @@ function normalizeAuditEntriesToSignals(entries) {
     out.push(...normalizeAuditEntryToSignals(e));
   return out;
 }
-var import_node_crypto21;
+var import_node_crypto22;
 var init_normalize = __esm({
   "../core/dist/incidents/normalize.js"() {
     "use strict";
-    import_node_crypto21 = require("node:crypto");
+    import_node_crypto22 = require("node:crypto");
   }
 });
 
@@ -34018,7 +34845,7 @@ var init_incidents = __esm({
 // ../core/dist/installation-id.js
 async function getInstallationId(aidrDirPath) {
   const aidrDir = aidrDirPath ?? resolvePath("~/.singularity-aidr");
-  const idPath = (0, import_node_path17.join)(aidrDir, "installation-id");
+  const idPath = (0, import_node_path18.join)(aidrDir, "installation-id");
   let fileExists = false;
   try {
     const existing = await getFileContent(idPath, "utf-8");
@@ -34029,9 +34856,9 @@ async function getInstallationId(aidrDirPath) {
   } catch {
   }
   try {
-    const id = (0, import_node_crypto22.randomUUID)();
-    await (0, import_promises12.mkdir)(aidrDir, { recursive: true, mode: 448 });
-    await (0, import_promises12.writeFile)(idPath, id, { encoding: "utf-8", mode: 384, flag: fileExists ? "w" : "wx" });
+    const id = (0, import_node_crypto23.randomUUID)();
+    await (0, import_promises13.mkdir)(aidrDir, { recursive: true, mode: 448 });
+    await (0, import_promises13.writeFile)(idPath, id, { encoding: "utf-8", mode: 384, flag: fileExists ? "w" : "wx" });
     return id;
   } catch (err) {
     if (err.code === "EEXIST") {
@@ -34045,13 +34872,13 @@ async function getInstallationId(aidrDirPath) {
     return void 0;
   }
 }
-var import_node_crypto22, import_promises12, import_node_path17;
+var import_node_crypto23, import_promises13, import_node_path18;
 var init_installation_id = __esm({
   "../core/dist/installation-id.js"() {
     "use strict";
-    import_node_crypto22 = require("node:crypto");
-    import_promises12 = require("node:fs/promises");
-    import_node_path17 = require("node:path");
+    import_node_crypto23 = require("node:crypto");
+    import_promises13 = require("node:fs/promises");
+    import_node_path18 = require("node:path");
     init_config();
     init_file_utils();
   }
@@ -34085,7 +34912,7 @@ function entitlementKeyringPath() {
   return resolvePath("~/.singularity-aidr/entitlement.json");
 }
 function sha256Hex2(input) {
-  return (0, import_node_crypto23.createHash)("sha256").update(input).digest("hex");
+  return (0, import_node_crypto24.createHash)("sha256").update(input).digest("hex");
 }
 function canonicalizeForSigning(value) {
   if (Array.isArray(value))
@@ -34103,7 +34930,7 @@ function canonicalJson2(value) {
   return JSON.stringify(canonicalizeForSigning(value));
 }
 function signEntitlementSnapshot(snapshot, authToken) {
-  return (0, import_node_crypto23.createHmac)("sha256", authToken).update(canonicalJson2(snapshot)).digest("hex");
+  return (0, import_node_crypto24.createHmac)("sha256", authToken).update(canonicalJson2(snapshot)).digest("hex");
 }
 function verifyEntitlementSnapshotSignature(snapshot, sig, authToken) {
   try {
@@ -34132,8 +34959,8 @@ function toPublicKey(key) {
     return null;
   try {
     if (t.includes("BEGIN PUBLIC KEY"))
-      return (0, import_node_crypto23.createPublicKey)(t);
-    return (0, import_node_crypto23.createPublicKey)({ key: Buffer.from(t, "base64"), format: "der", type: "spki" });
+      return (0, import_node_crypto24.createPublicKey)(t);
+    return (0, import_node_crypto24.createPublicKey)({ key: Buffer.from(t, "base64"), format: "der", type: "spki" });
   } catch {
     return null;
   }
@@ -34144,7 +34971,7 @@ function verifyEd25519(message, signature, publicKeys) {
     if (!key)
       continue;
     try {
-      if ((0, import_node_crypto23.verify)(null, message, key, signature))
+      if ((0, import_node_crypto24.verify)(null, message, key, signature))
         return true;
     } catch {
     }
@@ -34802,11 +35629,11 @@ function applyRevocationsToManagedState(params) {
     entitlement_sig: void 0
   };
 }
-var import_node_crypto23, FREE_AGENT_SEATS, PRICE_PER_EXTRA_AGENT_USD_MONTH;
+var import_node_crypto24, FREE_AGENT_SEATS, PRICE_PER_EXTRA_AGENT_USD_MONTH;
 var init_managed = __esm({
   "../core/dist/managed.js"() {
     "use strict";
-    import_node_crypto23 = require("node:crypto");
+    import_node_crypto24 = require("node:crypto");
     init_config();
     init_file_utils();
     init_telemetry_redaction();
@@ -34893,7 +35720,7 @@ var init_schema = __esm({
 
 // ../core/dist/integrity/verify.js
 function sha256Hex3(buf) {
-  return (0, import_node_crypto24.createHash)("sha256").update(buf).digest("hex");
+  return (0, import_node_crypto25.createHash)("sha256").update(buf).digest("hex");
 }
 function isSafeRelativePath(p) {
   const normalized = p.replace(/\\/g, "/");
@@ -34911,8 +35738,8 @@ function isSafeRelativePath(p) {
 function resolveUnderRoot(rootAbs, rel) {
   if (!isSafeRelativePath(rel))
     return null;
-  const full = import_node_path18.default.resolve(rootAbs, rel);
-  const rootWithSep = rootAbs.endsWith(import_node_path18.default.sep) ? rootAbs : `${rootAbs}${import_node_path18.default.sep}`;
+  const full = import_node_path19.default.resolve(rootAbs, rel);
+  const rootWithSep = rootAbs.endsWith(import_node_path19.default.sep) ? rootAbs : `${rootAbs}${import_node_path19.default.sep}`;
   if (full === rootAbs)
     return full;
   if (!full.startsWith(rootWithSep))
@@ -34938,8 +35765,8 @@ function toPublicKey2(key) {
     return null;
   try {
     if (t.includes("BEGIN PUBLIC KEY"))
-      return (0, import_node_crypto24.createPublicKey)(t);
-    return (0, import_node_crypto24.createPublicKey)({ key: Buffer.from(t, "base64"), format: "der", type: "spki" });
+      return (0, import_node_crypto25.createPublicKey)(t);
+    return (0, import_node_crypto25.createPublicKey)({ key: Buffer.from(t, "base64"), format: "der", type: "spki" });
   } catch {
     return null;
   }
@@ -34950,7 +35777,7 @@ function verifyEd255192(message, signature, publicKeys) {
     if (!key)
       continue;
     try {
-      if ((0, import_node_crypto24.verify)(null, message, key, signature))
+      if ((0, import_node_crypto25.verify)(null, message, key, signature))
         return true;
     } catch {
     }
@@ -34958,12 +35785,12 @@ function verifyEd255192(message, signature, publicKeys) {
   return false;
 }
 async function verifyArtifactIntegrity(params) {
-  const artifactDirAbs = import_node_path18.default.resolve(params.artifactDir);
-  const manifestPath = import_node_path18.default.join(artifactDirAbs, params.manifestName ?? DEFAULT_MANIFEST_NAME);
-  const signaturePath = import_node_path18.default.join(artifactDirAbs, params.signatureName ?? DEFAULT_SIGNATURE_NAME);
+  const artifactDirAbs = import_node_path19.default.resolve(params.artifactDir);
+  const manifestPath = import_node_path19.default.join(artifactDirAbs, params.manifestName ?? DEFAULT_MANIFEST_NAME);
+  const signaturePath = import_node_path19.default.join(artifactDirAbs, params.signatureName ?? DEFAULT_SIGNATURE_NAME);
   let manifestRaw;
   try {
-    manifestRaw = await (0, import_promises13.readFile)(manifestPath, "utf8");
+    manifestRaw = await (0, import_promises14.readFile)(manifestPath, "utf8");
   } catch {
     return { status: "missing_manifest" };
   }
@@ -34989,7 +35816,7 @@ async function verifyArtifactIntegrity(params) {
       return { status: "no_public_keys", manifest };
     let sigRaw;
     try {
-      sigRaw = await (0, import_promises13.readFile)(signaturePath, "utf8");
+      sigRaw = await (0, import_promises14.readFile)(signaturePath, "utf8");
     } catch {
       return { status: "missing_signature", manifest, reason: signaturePath };
     }
@@ -35009,7 +35836,7 @@ async function verifyArtifactIntegrity(params) {
     }
     let bytes2;
     try {
-      bytes2 = await (0, import_promises13.readFile)(full);
+      bytes2 = await (0, import_promises14.readFile)(full);
     } catch {
       mismatches.push({ path: f.path, expected: f.sha256, actual: null });
       missingCount += 1;
@@ -35025,13 +35852,13 @@ async function verifyArtifactIntegrity(params) {
   }
   return { status: "ok", manifest };
 }
-var import_node_crypto24, import_promises13, import_node_path18, DEFAULT_MANIFEST_NAME, DEFAULT_SIGNATURE_NAME;
+var import_node_crypto25, import_promises14, import_node_path19, DEFAULT_MANIFEST_NAME, DEFAULT_SIGNATURE_NAME;
 var init_verify2 = __esm({
   "../core/dist/integrity/verify.js"() {
     "use strict";
-    import_node_crypto24 = require("node:crypto");
-    import_promises13 = require("node:fs/promises");
-    import_node_path18 = __toESM(require("node:path"), 1);
+    import_node_crypto25 = require("node:crypto");
+    import_promises14 = require("node:fs/promises");
+    import_node_path19 = __toESM(require("node:path"), 1);
     init_schema();
     DEFAULT_MANIFEST_NAME = "aidr-artifact.manifest.json";
     DEFAULT_SIGNATURE_NAME = "aidr-artifact.manifest.sig";
@@ -35217,7 +36044,7 @@ function decryptAes256GcmEnvelope(params) {
   const tag = blob.subarray(blob.length - 16);
   const ciphertext = blob.subarray(12, blob.length - 16);
   try {
-    const decipher = (0, import_node_crypto25.createDecipheriv)("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
+    const decipher = (0, import_node_crypto26.createDecipheriv)("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
     decipher.setAuthTag(Buffer.from(tag));
     const out = Buffer.concat([decipher.update(Buffer.from(ciphertext)), decipher.final()]);
     return new Uint8Array(out);
@@ -35225,11 +36052,11 @@ function decryptAes256GcmEnvelope(params) {
     return null;
   }
 }
-var import_node_crypto25;
+var import_node_crypto26;
 var init_crypto = __esm({
   "../core/dist/intel/crypto.js"() {
     "use strict";
-    import_node_crypto25 = require("node:crypto");
+    import_node_crypto26 = require("node:crypto");
   }
 });
 
@@ -35452,7 +36279,7 @@ var init_types3 = __esm({
 
 // ../core/dist/intel/loader.js
 function sha256Hex4(data) {
-  return (0, import_node_crypto26.createHash)("sha256").update(data).digest("hex");
+  return (0, import_node_crypto27.createHash)("sha256").update(data).digest("hex");
 }
 async function loadTrustedKeys(path3) {
   try {
@@ -35473,7 +36300,7 @@ async function loadTrustedKeys(path3) {
 }
 async function listDirs(path3) {
   try {
-    const ents = await (0, import_promises14.readdir)(path3, { withFileTypes: true });
+    const ents = await (0, import_promises15.readdir)(path3, { withFileTypes: true });
     return ents.filter((e) => e.isDirectory()).map((e) => e.name);
   } catch {
     return [];
@@ -35481,7 +36308,7 @@ async function listDirs(path3) {
 }
 async function readActiveVersion(packRoot) {
   try {
-    const raw = await getFileContent((0, import_node_path19.join)(packRoot, INTEL_PACK_ACTIVE_POINTER), "utf-8");
+    const raw = await getFileContent((0, import_node_path20.join)(packRoot, INTEL_PACK_ACTIVE_POINTER), "utf-8");
     const parsed = PackActivePointerSchema.parse(JSON.parse(raw));
     return parsed.version;
   } catch {
@@ -35547,7 +36374,7 @@ function parseDomainRiskJson(raw) {
   return out;
 }
 async function loadPackFile(packVersionDir, file, keyring, revokedKeyIds, logger2) {
-  const fullPath = (0, import_node_path19.join)(packVersionDir, file.path);
+  const fullPath = (0, import_node_path20.join)(packVersionDir, file.path);
   let bytes2;
   try {
     bytes2 = await getFileContentRaw(fullPath);
@@ -35603,8 +36430,8 @@ async function loadPackFile(packVersionDir, file, keyring, revokedKeyIds, logger
     logger2.warn("Intel pack file missing sha256", { path: fullPath });
     return null;
   }
-  const digest = sha256Hex4(bytes2);
-  if (digest.toLowerCase() !== file.sha256.toLowerCase()) {
+  const digest2 = sha256Hex4(bytes2);
+  if (digest2.toLowerCase() !== file.sha256.toLowerCase()) {
     logger2.warn("Intel pack file sha256 mismatch", { path: fullPath });
     return null;
   }
@@ -35612,8 +36439,8 @@ async function loadPackFile(packVersionDir, file, keyring, revokedKeyIds, logger
   return { kind: file.kind, raw };
 }
 async function loadSinglePack(packId, packVersionDir, trustedKeys, keyring, revokedKeyIds, options, logger2) {
-  const manifestPath = (0, import_node_path19.join)(packVersionDir, "manifest.json");
-  const sigPath = (0, import_node_path19.join)(packVersionDir, "manifest.sig");
+  const manifestPath = (0, import_node_path20.join)(packVersionDir, "manifest.json");
+  const sigPath = (0, import_node_path20.join)(packVersionDir, "manifest.sig");
   let manifestBytes;
   let sigBase64;
   try {
@@ -35733,11 +36560,11 @@ async function loadMergedIntelFromDisk(params = {}, logger2 = nullLogger) {
       logger2.warn("Intel pack id is revoked; skipping", { packId });
       continue;
     }
-    const packRoot = (0, import_node_path19.join)(packsDir, packId);
+    const packRoot = (0, import_node_path20.join)(packsDir, packId);
     const version2 = await pickVersion(packRoot);
     if (!version2)
       continue;
-    const packVersionDir = (0, import_node_path19.join)(packRoot, version2);
+    const packVersionDir = (0, import_node_path20.join)(packRoot, version2);
     const single = await loadSinglePack(packId, packVersionDir, trustedKeys, keyring, revokedKeyIds, { verificationMode, graceHours }, logger2);
     if (!single)
       continue;
@@ -35746,13 +36573,13 @@ async function loadMergedIntelFromDisk(params = {}, logger2 = nullLogger) {
   void intelDir;
   return merged;
 }
-var import_node_crypto26, import_promises14, import_node_path19, DEFAULT_INTEL_DIR, DEFAULT_PACKS_DIR, DEFAULT_TRUSTED_KEYS_PATH, INTEL_PACK_ACTIVE_POINTER;
+var import_node_crypto27, import_promises15, import_node_path20, DEFAULT_INTEL_DIR, DEFAULT_PACKS_DIR, DEFAULT_TRUSTED_KEYS_PATH, INTEL_PACK_ACTIVE_POINTER;
 var init_loader = __esm({
   "../core/dist/intel/loader.js"() {
     "use strict";
-    import_node_crypto26 = require("node:crypto");
-    import_promises14 = require("node:fs/promises");
-    import_node_path19 = require("node:path");
+    import_node_crypto27 = require("node:crypto");
+    import_promises15 = require("node:fs/promises");
+    import_node_path20 = require("node:path");
     init_config();
     init_file_utils();
     init_types2();
@@ -36033,15 +36860,21 @@ function extractPackagesFromCommand(command) {
   }
   return packages;
 }
+function normalizeManifestPath(filePath) {
+  return filePath.toLowerCase().replace(/\\/g, "/");
+}
+function isPackageManifestPath(filePath) {
+  const lowerPath = normalizeManifestPath(filePath);
+  return PACKAGE_MANIFEST_SUFFIXES.some((suffix) => lowerPath.endsWith(suffix));
+}
 function extractPackagesFromManifest(filePath, content) {
-  const lowerPath = filePath.toLowerCase().replace(/\\/g, "/");
+  if (!isPackageManifestPath(filePath))
+    return [];
+  const lowerPath = normalizeManifestPath(filePath);
   if (lowerPath.endsWith("package.json")) {
     return extractFromPackageJson(content);
   }
-  if (lowerPath.endsWith("requirements.txt")) {
-    return extractFromRequirementsTxt(content);
-  }
-  return [];
+  return extractFromRequirementsTxt(content);
 }
 function shellTokenize(cmd) {
   const tokens = [];
@@ -36315,10 +37148,11 @@ function extractFromRequirementsTxt(content) {
   }
   return packages;
 }
-var NPM_VALUE_FLAGS;
+var PACKAGE_MANIFEST_SUFFIXES, NPM_VALUE_FLAGS;
 var init_package_extractor = __esm({
   "../core/dist/package-extractor.js"() {
     "use strict";
+    PACKAGE_MANIFEST_SUFFIXES = ["package.json", "requirements.txt"];
     NPM_VALUE_FLAGS = /* @__PURE__ */ new Set([
       "--registry",
       "--tag",
@@ -36332,7 +37166,120 @@ var init_package_extractor = __esm({
   }
 });
 
+// ../core/dist/jsonc.js
+function consumeString(content, start, emit) {
+  emit(content[start], start);
+  let escaped = false;
+  for (let i = start + 1; i < content.length; i++) {
+    const ch = content[i];
+    emit(ch, i);
+    if (escaped)
+      escaped = false;
+    else if (ch === "\\")
+      escaped = true;
+    else if (ch === '"')
+      return i + 1;
+  }
+  return content.length;
+}
+function endOfLineComment(content, start) {
+  let i = start;
+  while (i + 1 < content.length && content[i + 1] !== "\n" && content[i + 1] !== "\r") {
+    i++;
+  }
+  return i + 1;
+}
+function endOfBlockComment(content, start, emit) {
+  const end = content.indexOf("*/", start + 2);
+  if (end === -1)
+    throw new Error("unterminated_block_comment");
+  for (let i = start + 2; i < end; i++) {
+    const inner = content[i];
+    if (inner === "\n" || inner === "\r")
+      emit(inner, i);
+  }
+  return end + 2;
+}
+function walkJsonc(content, emit) {
+  let index = 0;
+  while (index < content.length) {
+    const ch = content[index];
+    if (ch === '"') {
+      index = consumeString(content, index, emit);
+      continue;
+    }
+    if (ch === "/" && content[index + 1] === "/") {
+      index = endOfLineComment(content, index);
+      continue;
+    }
+    if (ch === "/" && content[index + 1] === "*") {
+      index = endOfBlockComment(content, index, emit);
+      continue;
+    }
+    emit(ch, index);
+    index++;
+  }
+}
+function stripJsonComments(content) {
+  let out = "";
+  walkJsonc(content, (ch) => {
+    out += ch;
+  });
+  return out;
+}
+function isFollowedByCloser(content, start) {
+  for (let i = start; i < content.length; i++) {
+    const ch = content[i];
+    if (ch === "}" || ch === "]")
+      return true;
+    if (!/\s/.test(ch))
+      return false;
+  }
+  return false;
+}
+function stripTrailingCommas(content) {
+  let out = "";
+  walkJsonc(content, (ch, index) => {
+    if (ch === "," && isFollowedByCloser(content, index + 1))
+      return;
+    out += ch;
+  });
+  return out;
+}
+function parseJsonc(content) {
+  try {
+    const withoutBom = content.charCodeAt(0) === 65279 ? content.slice(1) : content;
+    const stripped = stripTrailingCommas(stripJsonComments(withoutBom));
+    return { status: "ok", value: JSON.parse(stripped) };
+  } catch (error4) {
+    return { status: "invalid", error: error4 instanceof Error ? error4.message : String(error4) };
+  }
+}
+var init_jsonc = __esm({
+  "../core/dist/jsonc.js"() {
+    "use strict";
+  }
+});
+
 // ../core/dist/policy.js
+function asInventoryRoot(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+async function readInventoryFile(resolvedPath) {
+  let content;
+  try {
+    content = await getFileContent(resolvedPath, "utf-8");
+  } catch (error4) {
+    return {
+      status: error4.code === "ENOENT" ? "missing" : "unreadable"
+    };
+  }
+  const parsed = parseJsonc(content);
+  if (parsed.status !== "ok" || !asInventoryRoot(parsed.value))
+    return { status: "unreadable" };
+  const root = parsed.value;
+  return { status: "read", servers: root.mcpServers ?? {} };
+}
 function normalizePathForCompare(p) {
   const normalized = p.replace(/\\/g, "/");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
@@ -36821,24 +37768,24 @@ async function evaluatePolicy(toolName, artifacts, config2, toolInput) {
       }
       let isInInventory = false;
       let isRiskyServer = false;
+      const unreadableInventoryPaths = [];
       const inventoryPaths = config2.policy.mcp.inventory_paths ?? [];
       for (const invPath of inventoryPaths) {
-        try {
-          const resolved = resolvePath(invPath);
-          const content = await getFileContent(resolved, "utf-8").catch(() => null);
-          if (!content)
-            continue;
-          const parsed = JSON.parse(content);
-          const servers = parsed.mcpServers ?? {};
-          const serverCfg = servers[mcpServerId];
-          if (serverCfg) {
-            isInInventory = true;
-            const cmd = (serverCfg.command ?? "").toLowerCase();
-            if (cmd === "bash" || cmd === "sh" || cmd === "zsh" || cmd === "npx" || cmd === "npx--yes") {
-              isRiskyServer = true;
-            }
-          }
-        } catch {
+        const resolved = resolvePath(invPath);
+        const read = await readInventoryFile(resolved);
+        if (read.status === "missing")
+          continue;
+        if (read.status === "unreadable") {
+          unreadableInventoryPaths.push(resolved);
+          continue;
+        }
+        const serverCfg = read.servers[mcpServerId];
+        if (!serverCfg)
+          continue;
+        isInInventory = true;
+        const cmd = (serverCfg.command ?? "").toLowerCase();
+        if (cmd === "bash" || cmd === "sh" || cmd === "zsh" || cmd === "npx" || cmd === "npx--yes") {
+          isRiskyServer = true;
         }
       }
       if (isRiskyServer) {
@@ -36868,6 +37815,33 @@ async function evaluatePolicy(toolName, artifacts, config2, toolInput) {
           });
         }
         return null;
+      }
+      if (!isInInventory && unreadableInventoryPaths.length > 0) {
+        const reasons = [
+          `MCP inventory unreadable: ${unreadableInventoryPaths.join(", ")}`
+        ];
+        if (config2.policy.mcp.unknown_server_action === "block") {
+          return makeVerdict({
+            decision: "deny",
+            category: "mcp_tool_call",
+            severity: "critical",
+            source: "policy",
+            artifact: fullToolId,
+            threatId: "POL-MCP-008",
+            reasons,
+            confidence: 0.9
+          });
+        }
+        return makeVerdict({
+          decision: "ask",
+          category: "mcp_tool_call",
+          severity: "warning",
+          source: "policy",
+          artifact: fullToolId,
+          threatId: "POL-MCP-008",
+          reasons,
+          confidence: 0.9
+        });
       }
       if (!isInInventory) {
         const unknownAction = config2.policy.mcp.unknown_server_action ?? "require_approval";
@@ -36935,6 +37909,7 @@ var init_policy2 = __esm({
     init_file_utils();
     init_api();
     init_loader();
+    init_jsonc();
     init_managed();
     init_package_extractor();
     cachedIntel = null;
@@ -36957,7 +37932,7 @@ function validRequiredPolicy(body) {
   });
 }
 function cacheKeyHash(endpoint, token) {
-  return (0, import_node_crypto27.createHash)("sha256").update(`${endpoint}|${token}`).digest("hex");
+  return (0, import_node_crypto28.createHash)("sha256").update(`${endpoint}|${token}`).digest("hex");
 }
 function getRemotePolicyCachePath(config2) {
   return resolvePath(config2.control_plane.remote_policy_cache_path);
@@ -36999,7 +37974,7 @@ async function readPersistentPolicyCache(input) {
   if (!input.config.control_plane.remote_policy_cache_enabled)
     return null;
   try {
-    const raw = await (0, import_promises15.readFile)(getRemotePolicyCachePath(input.config), "utf-8");
+    const raw = await (0, import_promises16.readFile)(getRemotePolicyCachePath(input.config), "utf-8");
     const parsed = parsePersistedRemotePolicyCache(raw);
     if (!parsed)
       return null;
@@ -37022,7 +37997,7 @@ async function writePersistentPolicyCache(input) {
     return;
   try {
     const cachePath = getRemotePolicyCachePath(input.config);
-    await (0, import_promises15.mkdir)((0, import_node_path20.dirname)(cachePath), { recursive: true });
+    await (0, import_promises16.mkdir)((0, import_node_path21.dirname)(cachePath), { recursive: true });
     const payload = {
       schema_version: 1,
       key_hash: input.keyHash,
@@ -37033,9 +38008,9 @@ async function writePersistentPolicyCache(input) {
       body: getPersistablePolicyBody(input.body)
     };
     const tmpPath = `${cachePath}.${process.pid}.tmp`;
-    await (0, import_promises15.writeFile)(tmpPath, `${JSON.stringify(payload, null, 2)}
+    await (0, import_promises16.writeFile)(tmpPath, `${JSON.stringify(payload, null, 2)}
 `, { encoding: "utf-8", mode: 384 });
-    await (0, import_promises15.rename)(tmpPath, cachePath);
+    await (0, import_promises16.rename)(tmpPath, cachePath);
   } catch (error4) {
     input.logger.debug("Remote runtime policy persistent cache write failed", {
       error: String(error4)
@@ -37048,7 +38023,7 @@ async function inspectRemoteRuntimePolicyCache(config2, token = "", now = Date.n
     return { enabled: false, path: path3, source: "disabled", usable: false, present: false };
   }
   try {
-    const raw = await (0, import_promises15.readFile)(path3, "utf-8");
+    const raw = await (0, import_promises16.readFile)(path3, "utf-8");
     const parsed = parsePersistedRemotePolicyCache(raw);
     if (!parsed || config2.control_plane.remote_policy_required && !validRequiredPolicy(parsed.body)) {
       return { enabled: true, path: path3, source: "invalid", usable: false, present: true };
@@ -37261,7 +38236,7 @@ async function syncRemoteRuntimePolicy(config2, token, logger2 = nullLogger, now
     if (body.agent_bound === true && typeof body.policy_sha256 === "string" && /^[a-f0-9]{64}$/.test(body.policy_sha256) && Number.isSafeInteger(Number(body.policy_version)) && Number(body.policy_version) > 0) {
       const policy = getRuntimePolicy(body);
       const normalized = policy ? Object.fromEntries(Object.entries(policy).sort(([a], [b2]) => a < b2 ? -1 : a > b2 ? 1 : 0)) : null;
-      const hash = (0, import_node_crypto27.createHash)("sha256").update(JSON.stringify(normalized)).digest("hex");
+      const hash = (0, import_node_crypto28.createHash)("sha256").update(JSON.stringify(normalized)).digest("hex");
       if (hash === body.policy_sha256)
         await client.acknowledgeRuntimePolicy(Number(body.policy_version), hash);
     }
@@ -37273,13 +38248,13 @@ async function syncRemoteRuntimePolicy(config2, token, logger2 = nullLogger, now
     return unavailable2(true);
   }
 }
-var import_node_crypto27, import_promises15, import_node_path20, cachedPolicy, RemoteRuntimePolicyUnavailableError;
+var import_node_crypto28, import_promises16, import_node_path21, cachedPolicy, RemoteRuntimePolicyUnavailableError;
 var init_remote_policy = __esm({
   "../core/dist/remote-policy.js"() {
     "use strict";
-    import_node_crypto27 = require("node:crypto");
-    import_promises15 = require("node:fs/promises");
-    import_node_path20 = require("node:path");
+    import_node_crypto28 = require("node:crypto");
+    import_promises16 = require("node:fs/promises");
+    import_node_path21 = require("node:path");
     init_control_plane();
     init_config();
     init_types2();
@@ -37314,14 +38289,14 @@ async function loadThreats(threatDir, logger2 = nullLogger) {
   const errors = [];
   let files;
   try {
-    files = (await (0, import_promises16.readdir)(threatDir)).filter((f) => f.endsWith(".yaml")).sort();
+    files = (await (0, import_promises17.readdir)(threatDir)).filter((f) => f.endsWith(".yaml")).sort();
   } catch (error4) {
     const errorMsg = `Threat directory does not exist or is unreadable: ${threatDir}`;
     logger2.error(errorMsg, { path: threatDir, error: String(error4) });
     throw new Error(errorMsg);
   }
   for (const filename of files) {
-    const filePath = (0, import_node_path21.join)(threatDir, filename);
+    const filePath = (0, import_node_path22.join)(threatDir, filename);
     let content;
     try {
       content = await getFileContent(filePath);
@@ -37429,12 +38404,12 @@ async function loadThreatsFromDirs(threatDirs, logger2 = nullLogger) {
   }
   return [...merged.values()];
 }
-var import_promises16, import_node_path21, import_yaml3, REQUIRED_FIELDS;
+var import_promises17, import_node_path22, import_yaml3, REQUIRED_FIELDS;
 var init_threat_loader = __esm({
   "../core/dist/threat-loader.js"() {
     "use strict";
-    import_promises16 = require("node:fs/promises");
-    import_node_path21 = require("node:path");
+    import_promises17 = require("node:fs/promises");
+    import_node_path22 = require("node:path");
     import_yaml3 = __toESM(require_dist2(), 1);
     init_file_utils();
     init_types2();
@@ -37456,6 +38431,90 @@ function canonicalToolName(toolName) {
   const trimmed = toolName.trim();
   return CANONICAL_TOOL_NAMES.get(trimmed.toLowerCase()) ?? toolName;
 }
+function normalizeDiffPath(rawPath) {
+  const withoutTimestamp = (rawPath.split("	")[0] ?? "").trim();
+  const withoutPrefix = withoutTimestamp.replace(/^[ab]\//, "").trim();
+  return withoutPrefix === "/dev/null" ? "" : withoutPrefix;
+}
+function looksLikePatch(text) {
+  for (const line of text.split(/\r?\n/)) {
+    if (CODEX_PATCH_HEADER_RE.test(line) || UNIFIED_DIFF_HEADER_RE.test(line))
+      return true;
+  }
+  return false;
+}
+function patchBodyFrom(toolInput) {
+  const explicit = toolInput.patch;
+  if (typeof explicit === "string" && explicit.trim() !== "")
+    return explicit;
+  for (const key of ["command", "input"]) {
+    const value = toolInput[key];
+    if (typeof value === "string" && looksLikePatch(value))
+      return value;
+  }
+  return void 0;
+}
+function introducedText(line) {
+  if (line.startsWith("@@"))
+    return [];
+  if (line.startsWith("--- "))
+    return [];
+  if (line.startsWith("-"))
+    return [];
+  if (line.startsWith("+"))
+    return [line.slice(1)];
+  if (line.startsWith(" "))
+    return [line.slice(1)];
+  return [line];
+}
+function parsePatchSections(patch) {
+  const sections = [];
+  let current;
+  const startSection = (filePath) => {
+    if (current) {
+      sections.push({ filePath: current.filePath, content: current.lines.join("\n") });
+    }
+    current = filePath === "" ? void 0 : { filePath, lines: [] };
+  };
+  for (const line of patch.split(/\r?\n/)) {
+    const codexHeader = CODEX_PATCH_HEADER_RE.exec(line);
+    if (codexHeader) {
+      startSection((codexHeader[1] ?? "").trim());
+      continue;
+    }
+    if (PATCH_SCAFFOLD_RE.test(line))
+      continue;
+    const unifiedHeader = UNIFIED_DIFF_HEADER_RE.exec(line);
+    if (unifiedHeader) {
+      startSection(normalizeDiffPath(unifiedHeader[1] ?? ""));
+      continue;
+    }
+    if (current)
+      current.lines.push(...introducedText(line));
+  }
+  startSection("");
+  return sections;
+}
+function readFileEditPayload(toolInput) {
+  const patch = patchBodyFrom(toolInput);
+  if (patch !== void 0) {
+    const explicitPath = firstString(toolInput, ["file_path", ...FILE_PATH_ALIASES]);
+    const sections = parsePatchSections(patch);
+    const chosen = (explicitPath === void 0 ? void 0 : sections.find((section) => section.filePath === explicitPath)) ?? sections.find((section) => isPackageManifestPath(section.filePath)) ?? sections[0];
+    return {
+      filePath: explicitPath ?? chosen?.filePath,
+      // No parseable section (e.g. only hunk markers): keep the raw body so
+      // the content is still inspected rather than silently dropped.
+      content: sections.length > 0 ? chosen?.content : patch,
+      patch: true
+    };
+  }
+  return {
+    filePath: firstString(toolInput, ["file_path", ...FILE_PATH_ALIASES]),
+    content: firstString(toolInput, EDIT_CONTENT_ALIASES),
+    patch: false
+  };
+}
 function firstString(input, keys) {
   let empty;
   for (const key of keys) {
@@ -37473,6 +38532,36 @@ function setCanonicalField(input, canonicalKey, aliases) {
   if (value !== void 0)
     input[canonicalKey] = value;
 }
+function setPatchFields(toolInput) {
+  const patchPayload = readFileEditPayload(toolInput);
+  if (!patchPayload.patch)
+    return false;
+  if (patchPayload.filePath !== void 0 && patchPayload.filePath.trim() !== "") {
+    toolInput.file_path = patchPayload.filePath;
+  }
+  const patchContent = patchPayload.content ?? "";
+  if (patchContent.trim() !== "") {
+    toolInput.new_string = patchContent;
+    toolInput.content = patchContent;
+  }
+  return true;
+}
+function applyEditFields(toolInput) {
+  if (setPatchFields(toolInput))
+    return;
+  setCanonicalField(toolInput, "file_path", FILE_PATH_ALIASES);
+  setCanonicalField(toolInput, "old_string", ["oldString", "oldText"]);
+  setCanonicalField(toolInput, "new_string", [
+    "newString",
+    "newText",
+    "replacement",
+    "content",
+    "text"
+  ]);
+  if (typeof toolInput.new_string === "string") {
+    toolInput.content = toolInput.new_string;
+  }
+}
 function normalizeToolEvaluationRequest(request2) {
   const toolName = canonicalToolName(request2.toolName);
   const toolInput = { ...request2.toolInput };
@@ -37481,47 +38570,15 @@ function normalizeToolEvaluationRequest(request2) {
       setCanonicalField(toolInput, "command", ["cmd", "shellCommand", "shell_command"]);
       break;
     case "Write":
-      setCanonicalField(toolInput, "file_path", [
-        "filePath",
-        "path",
-        "target_file",
-        "targetFile",
-        "filename",
-        "fileName"
-      ]);
+      setCanonicalField(toolInput, "file_path", FILE_PATH_ALIASES);
       setCanonicalField(toolInput, "content", ["text", "data", "new_string", "newString"]);
       break;
     case "Edit":
-      setCanonicalField(toolInput, "file_path", [
-        "filePath",
-        "path",
-        "target_file",
-        "targetFile",
-        "filename",
-        "fileName"
-      ]);
-      setCanonicalField(toolInput, "old_string", ["oldString", "oldText"]);
-      setCanonicalField(toolInput, "new_string", [
-        "newString",
-        "newText",
-        "replacement",
-        "content",
-        "text"
-      ]);
-      if (typeof toolInput.new_string === "string") {
-        toolInput.content = toolInput.new_string;
-      }
+      applyEditFields(toolInput);
       break;
     case "Read":
     case "Delete":
-      setCanonicalField(toolInput, "file_path", [
-        "filePath",
-        "path",
-        "target_file",
-        "targetFile",
-        "filename",
-        "fileName"
-      ]);
+      setCanonicalField(toolInput, "file_path", FILE_PATH_ALIASES);
       break;
     case "WebFetch":
       setCanonicalField(toolInput, "url", ["uri", "href"]);
@@ -37537,11 +38594,12 @@ function normalizeToolEvaluationRequest(request2) {
   }
   return { ...request2, toolName, toolInput, artifacts };
 }
-var CANONICAL_TOOL_NAMES;
+var CANONICAL_TOOL_NAMES, FILE_PATH_ALIASES, EDIT_CONTENT_ALIASES, CODEX_PATCH_HEADER_RE, UNIFIED_DIFF_HEADER_RE, PATCH_SCAFFOLD_RE;
 var init_tool_normalization = __esm({
   "../core/dist/tool-normalization.js"() {
     "use strict";
     init_extractors();
+    init_package_extractor();
     CANONICAL_TOOL_NAMES = /* @__PURE__ */ new Map([
       ["bash", "Bash"],
       ["shell", "Bash"],
@@ -37556,6 +38614,7 @@ var init_tool_normalization = __esm({
       ["edit", "Edit"],
       ["edit_file", "Edit"],
       ["update_file", "Edit"],
+      ["apply_patch", "Edit"],
       ["read", "Read"],
       ["read_file", "Read"],
       ["delete", "Delete"],
@@ -37566,6 +38625,26 @@ var init_tool_normalization = __esm({
       ["fetch_url", "WebFetch"],
       ["mcp", "MCP"]
     ]);
+    FILE_PATH_ALIASES = [
+      "filePath",
+      "path",
+      "target_file",
+      "targetFile",
+      "filename",
+      "fileName"
+    ];
+    EDIT_CONTENT_ALIASES = [
+      "new_string",
+      "content",
+      "newString",
+      "newText",
+      "replacement",
+      "text",
+      "data"
+    ];
+    CODEX_PATCH_HEADER_RE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/;
+    UNIFIED_DIFF_HEADER_RE = /^\+\+\+\s+(.+)$/;
+    PATCH_SCAFFOLD_RE = /^\*\*\* (?:Begin|End) Patch\b/;
   }
 });
 
@@ -55631,7 +56710,7 @@ function mergeDetectorVerdict(current, candidate, base) {
     return current;
   return DETECTOR_DECISION_RANK[candidate.decision] > DETECTOR_DECISION_RANK[current.decision] || candidate.decision === current.decision && current === base ? candidate : current;
 }
-function isUrlCheckResult(value) {
+function isUrlCheckResult2(value) {
   if (!value || typeof value !== "object")
     return false;
   const result = value;
@@ -55680,7 +56759,56 @@ async function evaluateBehavioralDetector(detector, request2, tenantId, content,
     return detectorVerdict("ask", "behavioral_unavailable", "behavioral", "Configured behavioral detection could not inspect this call.");
   }
 }
+function lineageFromClaims(claims) {
+  return {
+    issuer: claims.issuer,
+    tenantId: claims.tenantId,
+    subjectUserId: claims.subjectUserId,
+    agentId: claims.agentId,
+    tool: { serverId: claims.tool.serverId, name: claims.tool.name },
+    resource: { type: claims.resource.type, id: claims.resource.id },
+    audience: claims.audience,
+    scopes: [...claims.scopes],
+    tokenId: claims.tokenId,
+    delegationDepth: claims.delegationDepth,
+    expiresAt: claims.expiresAt,
+    ...claims.parentTokenId === void 0 ? {} : { parentTokenId: claims.parentTokenId }
+  };
+}
+function evaluateDelegation(delegation, toolName) {
+  const { token, publicKeysById, ...verificationContext } = delegation;
+  let code;
+  try {
+    const result = verifyDelegatedCredential({
+      token,
+      publicKeysById,
+      context: verificationContext
+    });
+    if (result.ok)
+      return { lineage: lineageFromClaims(result.claims) };
+    code = result.code;
+  } catch {
+    code = "invalid_context";
+  }
+  const refused = detectorVerdict("deny", "delegation_denied", "delegation", `delegation_denied:${code}`);
+  return {
+    verdict: {
+      ...refused,
+      reasons: [
+        ...refused.reasons,
+        `The delegated credential presented with this ${toolName} call was refused (${code}); the call was blocked instead of being forwarded.`
+      ]
+    }
+  };
+}
 async function applyRuntimeDetectors(request2, context2, baseVerdict, managedState) {
+  const delegationOutcome = context2.delegation ? evaluateDelegation(context2.delegation, request2.toolName) : null;
+  if (delegationOutcome && "verdict" in delegationOutcome)
+    return delegationOutcome.verdict;
+  const verdict = await applyConfiguredDetectors(request2, context2, baseVerdict, managedState);
+  return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
+}
+async function applyConfiguredDetectors(request2, context2, baseVerdict, managedState) {
   const detectors = context2.runtimeDetectors;
   if (!detectors || detectors.dlp?.enabled !== true && detectors.behavioral?.enabled !== true) {
     return baseVerdict;
@@ -55780,6 +56908,7 @@ async function runEvaluationPipeline(request2, context2, _startTime) {
   const logger2 = context2.logger ?? nullLogger;
   let config2 = await loadConfig(context2.configPath, logger2).catch(() => ConfigSchema.parse({}));
   const commercial = isCommercialBuild();
+  const manifestEdits = manifestEditInputs(request2);
   const disabled = (reason) => {
     if (commercial) {
       return {
@@ -55947,7 +57076,7 @@ async function runEvaluationPipeline(request2, context2, _startTime) {
   }
   if (request2.artifacts.length === 0) {
     const isMcpTool = request2.toolName.startsWith("mcp__") || request2.toolName === "MCP";
-    if (!isMcpTool) {
+    if (!isMcpTool && manifestEdits.length === 0) {
       const verdict2 = await applyRuntimeDetectors(request2, context2, allowVerdict("no_artifacts"), managedState);
       if (verdict2.decision !== "allow") {
         await recordEarlyVerdict(request2, context2, config2, verdict2, logger2);
@@ -56035,59 +57164,81 @@ async function runEvaluationPipeline(request2, context2, _startTime) {
     heuristicMatches = heuristics.match(request2.artifacts);
   }
   let urlCheckResults = [];
-  let signedUrlFeedUnavailable = false;
+  let urlLegUnavailable = false;
+  let urlLegUnavailableReason = "the URL reputation leg did not run";
   const urlsToCheck = cache ? uncachedUrls : urls;
   if (urlsToCheck.length > 0 && config2.url_check.enabled) {
     try {
       const client = new UrlCheckClient({ ...config2.url_check, reputationFeed: context2.reputationFeed }, logger2, token);
       urlCheckResults = await client.checkUrls(urlsToCheck);
     } catch (error4) {
-      if (context2.reputationFeed) {
-        signedUrlFeedUnavailable = true;
-        if (error4 instanceof DetectionLegUnavailableError) {
-          urlCheckResults = error4.partialResults.filter(isUrlCheckResult);
-        }
+      if (error4 instanceof DetectionLegUnavailableError && error4.leg === "url_reputation") {
+        urlLegUnavailable = true;
+        urlLegUnavailableReason = error4.reason;
+        urlCheckResults = error4.partialResults.filter(isUrlCheckResult2);
+        logger2.warn("URL reputation leg did not provide complete inspection", {
+          reason: error4.reason,
+          uncheckedCount: error4.uncheckedCount
+        });
+      } else if (context2.reputationFeed) {
+        urlLegUnavailable = true;
+        urlLegUnavailableReason = error4 instanceof Error ? error4.message : String(error4);
         logger2.warn("Configured signed URL feed did not provide complete inspection", {
           errorType: error4 instanceof Error ? error4.name : typeof error4
         });
       }
     }
   }
-  const packageCheckResults = await checkPackages(request2, config2, context2.reputationFeed ? null : cache, logger2, token, managedState, revocationsForIntel, context2.reputationFeed);
+  const packageCheckResults = await checkPackages(request2, manifestEdits, config2, context2.reputationFeed ? null : cache, logger2, token, managedState, revocationsForIntel, context2.reputationFeed);
+  const amsiScans = [];
+  if (request2.toolName === "Bash") {
+    const command = request2.toolInput.command ?? "";
+    if (command) {
+      amsiScans.push({ content: command, name: `Bash:command` });
+    }
+  } else if (request2.toolName === "Write") {
+    const filePath = request2.toolInput.file_path ?? "";
+    const content = request2.toolInput.content ?? "";
+    if (content) {
+      amsiScans.push({ content, name: `Write:${filePath}` });
+    }
+  } else if (request2.toolName === "Edit") {
+    const filePath = request2.toolInput.file_path ?? "";
+    const newString = request2.toolInput.new_string ?? "";
+    if (newString) {
+      amsiScans.push({ content: newString, name: `Edit:${filePath}` });
+    }
+  }
+  let amsiUnavailable = false;
   const amsiCheckResults = [];
-  if (config2.amsi_check.enabled && isAmsiSupported()) {
+  if (config2.amsi_check.enabled && isAmsiSupported() && amsiScans.length > 0) {
     let amsiClient = null;
     try {
       amsiClient = new AmsiClient(logger2);
       await amsiClient.init();
       if (amsiClient.isAvailable) {
-        const scans = [];
-        if (request2.toolName === "Bash") {
-          const command = request2.toolInput.command ?? "";
-          if (command) {
-            scans.push({ content: command, name: `Bash:command` });
-          }
-        } else if (request2.toolName === "Write") {
-          const filePath = request2.toolInput.file_path ?? "";
-          const content = request2.toolInput.content ?? "";
-          if (content) {
-            scans.push({ content, name: `Write:${filePath}` });
-          }
-        } else if (request2.toolName === "Edit") {
-          const filePath = request2.toolInput.file_path ?? "";
-          const newString = request2.toolInput.new_string ?? "";
-          if (newString) {
-            scans.push({ content: newString, name: `Edit:${filePath}` });
-          }
-        }
-        for (const scan of scans) {
+        for (const scan of amsiScans) {
           const result = await amsiClient.scanString(scan.content, scan.name);
           if (result) {
             amsiCheckResults.push(result);
+          } else {
+            amsiUnavailable = true;
+            logger2.warn("AMSI scan did not complete; content was NOT scanned", {
+              contentName: scan.name
+            });
           }
         }
+      } else {
+        amsiUnavailable = true;
+        logger2.warn("AMSI leg unavailable: no working AMSI backend on this host", {
+          backendKind: amsiClient.backendKind
+        });
       }
-    } catch {
+    } catch (error4) {
+      amsiUnavailable = true;
+      logger2.warn("AMSI scan leg did not run", {
+        errorType: error4 instanceof Error ? error4.name : typeof error4
+      });
     } finally {
       amsiClient?.close();
     }
@@ -56117,8 +57268,8 @@ async function runEvaluationPipeline(request2, context2, _startTime) {
       break;
     }
   }
-  if (signedUrlFeedUnavailable && verdict.decision === "allow") {
-    verdict = detectorVerdict("ask", "url_reputation_unavailable", "url_check", "Configured signed URL feed did not provide complete inspection.");
+  if (amsiUnavailable && verdict.decision === "allow") {
+    verdict = detectorVerdict("ask", "amsi_unavailable", "amsi", "AMSI malware scanning is enabled on this host but the scan did not run, so this content was NOT scanned.");
   }
   if (verdict.decision === "allow" && config2.heuristics_enabled && threatsLoaded === 0 && request2.artifacts.length > 0) {
     verdict = {
@@ -56138,6 +57289,9 @@ async function runEvaluationPipeline(request2, context2, _startTime) {
       threatsDir: context2.threatsDir,
       artifacts: request2.artifacts.length
     });
+  }
+  if (urlLegUnavailable && verdict.decision === "allow") {
+    verdict = detectorVerdict("ask", "url_reputation_unavailable", "url_check", `URL reputation lookup was unavailable (${urlLegUnavailableReason}), so the URLs in this call were NOT verified clean and require review.`);
   }
   verdict = await applyRuntimeDetectors(request2, context2, verdict, managedState);
   const auditInput = auditToolInputForVerdict(request2.toolInput, verdict, context2);
@@ -56275,7 +57429,36 @@ async function cacheUrlResults(urlCheckResults, cache) {
   } catch {
   }
 }
-async function checkPackages(request2, config2, cache, logger2, apiKey, managedState, revocations, reputationFeed) {
+function manifestEditInputs(request2) {
+  if (NON_EDIT_TOOL_NAMES.has(request2.toolName))
+    return [];
+  const inputs = [];
+  const seen = /* @__PURE__ */ new Set();
+  const add = (filePath2, content) => {
+    if (typeof filePath2 !== "string" || typeof content !== "string")
+      return;
+    if (filePath2.trim() === "" || content.trim() === "")
+      return;
+    const key = `${filePath2}\0${content}`;
+    if (seen.has(key))
+      return;
+    seen.add(key);
+    inputs.push({ filePath: filePath2, content });
+  };
+  const payload = readFileEditPayload(request2.toolInput);
+  const pathFromArtifacts = request2.artifacts.find((artifact) => artifact.type === "file_path" && artifact.value.trim() !== "")?.value;
+  const filePath = payload.filePath ?? pathFromArtifacts;
+  for (const artifact of request2.artifacts) {
+    if (artifact.type !== "content")
+      continue;
+    if (!EDIT_CONTENT_CONTEXTS.has(artifact.context ?? ""))
+      continue;
+    add(filePath, artifact.value);
+  }
+  add(payload.filePath, payload.content);
+  return inputs;
+}
+async function checkPackages(request2, manifestEdits, config2, cache, logger2, apiKey, managedState, revocations, reputationFeed) {
   const results = [];
   if (!config2.package_check.enabled)
     return results;
@@ -56284,10 +57467,11 @@ async function checkPackages(request2, config2, cache, logger2, apiKey, managedS
     if (request2.toolName === "Bash") {
       const command = request2.toolInput.command ?? "";
       parsedPackages = extractPackagesFromCommand(command);
-    } else if (request2.toolName === "Write" || request2.toolName === "Edit") {
-      const filePath = request2.toolInput.file_path ?? "";
-      const content = request2.toolInput.content ?? request2.toolInput.new_string ?? "";
-      parsedPackages = extractPackagesFromManifest(filePath, content);
+    } else {
+      parsedPackages = [];
+      for (const input of manifestEdits) {
+        parsedPackages.push(...extractPackagesFromManifest(input.filePath, input.content));
+      }
     }
   } catch (error4) {
     logger2.warn("Package input extraction failed", {
@@ -56402,7 +57586,7 @@ function findUncheckedPackages(expected, observed) {
     return false;
   });
 }
-var cachedPackageIntel, DETECTOR_DECISION_RANK;
+var cachedPackageIntel, DETECTOR_DECISION_RANK, EDIT_CONTENT_CONTEXTS, NON_EDIT_TOOL_NAMES;
 var init_evaluator = __esm({
   "../core/dist/evaluator.js"() {
     "use strict";
@@ -56415,6 +57599,7 @@ var init_evaluator = __esm({
     init_control_plane();
     init_url_check();
     init_config();
+    init_delegated_credential();
     init_detection_leg();
     init_scanner();
     init_engine();
@@ -56436,12 +57621,14 @@ var init_evaluator = __esm({
     init_version();
     cachedPackageIntel = null;
     DETECTOR_DECISION_RANK = { allow: 0, ask: 1, deny: 2 };
+    EDIT_CONTENT_CONTEXTS = /* @__PURE__ */ new Set(["write", "edit", "apply_patch"]);
+    NON_EDIT_TOOL_NAMES = /* @__PURE__ */ new Set(["Bash", "Read", "Delete", "WebFetch"]);
   }
 });
 
 // ../core/dist/false-positive-feedback.js
 function createSha256HasherContext2() {
-  return { hash: (value) => (0, import_node_crypto28.createHash)("sha256").update(value).digest("hex") };
+  return { hash: (value) => (0, import_node_crypto29.createHash)("sha256").update(value).digest("hex") };
 }
 function accept3(value) {
   return { ok: true, value };
@@ -56497,8 +57684,8 @@ function falsePositiveFeedbackSubmissionDigest(input, context2) {
 function falsePositiveFeedbackId(input, sequence, context2) {
   if (!Number.isSafeInteger(sequence) || sequence < 1)
     throw new Error("feedback_sequence_invalid");
-  const digest = context2.hash(["aidr.false-positive-feedback.id.v1", falsePositiveFeedbackSubmissionDigest(input, context2), String(sequence)].join("\n"));
-  return `fpfb_${digest}`;
+  const digest2 = context2.hash(["aidr.false-positive-feedback.id.v1", falsePositiveFeedbackSubmissionDigest(input, context2), String(sequence)].join("\n"));
+  return `fpfb_${digest2}`;
 }
 function parseBinding2(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -56884,11 +58071,11 @@ function canonicalFalsePositiveFeedbackJson(store) {
     maxSequenceByBinding: Object.fromEntries(Object.entries(store.maxSequenceByBinding).sort(([a], [b2]) => a < b2 ? -1 : 1))
   });
 }
-var import_node_crypto28, FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION, FALSE_POSITIVE_GENESIS_HASH, REF2, HASH2, TENANT, FEEDBACK, REASONS, ORIGINS;
+var import_node_crypto29, FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION, FALSE_POSITIVE_GENESIS_HASH, REF2, HASH2, TENANT, FEEDBACK, REASONS, ORIGINS;
 var init_false_positive_feedback = __esm({
   "../core/dist/false-positive-feedback.js"() {
     "use strict";
-    import_node_crypto28 = require("node:crypto");
+    import_node_crypto29 = require("node:crypto");
     FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION = 1;
     FALSE_POSITIVE_GENESIS_HASH = "0".repeat(64);
     REF2 = /^[A-Za-z0-9._:@/-]{1,200}$/;
@@ -56917,11 +58104,11 @@ var init_false_positive_feedback = __esm({
 });
 
 // ../core/dist/federated.js
-var import_node_crypto29, FederatedLearning;
+var import_node_crypto30, FederatedLearning;
 var init_federated = __esm({
   "../core/dist/federated.js"() {
     "use strict";
-    import_node_crypto29 = require("node:crypto");
+    import_node_crypto30 = require("node:crypto");
     FederatedLearning = class {
       config;
       localPatterns = /* @__PURE__ */ new Map();
@@ -57040,13 +58227,13 @@ var init_federated = __esm({
        */
       hashThreatId(threatId) {
         const salt = this.config.nodeId.slice(0, 16);
-        return (0, import_node_crypto29.createHash)("sha256").update(threatId + salt).digest("hex").slice(0, 32);
+        return (0, import_node_crypto30.createHash)("sha256").update(threatId + salt).digest("hex").slice(0, 32);
       }
       /**
        * Generate unique pattern ID.
        */
       generatePatternId() {
-        return `pattern_${Date.now()}_${(0, import_node_crypto29.randomBytes)(4).toString("hex")}`;
+        return `pattern_${Date.now()}_${(0, import_node_crypto30.randomBytes)(4).toString("hex")}`;
       }
       /**
        * Find local pattern by its hash.
@@ -57105,7 +58292,7 @@ var init_federated = __esm({
        */
       static createDefaultConfig(nodeId) {
         return {
-          nodeId: nodeId || `node_${(0, import_node_crypto29.randomBytes)(8).toString("hex")}`,
+          nodeId: nodeId || `node_${(0, import_node_crypto30.randomBytes)(8).toString("hex")}`,
           coordinatorUrl: void 0,
           shareIntervalMinutes: 60,
           privacyBudget: 1
@@ -57165,12 +58352,12 @@ function normalizeFleetTargets(targets) {
 function fleetInventoryEntryId(tenantId, target) {
   const tenant = requireIdentity("tenant_id", tenantId);
   const normalizedTarget = normalizeFleetTarget(target);
-  return (0, import_node_crypto30.createHash)("sha256").update(`${tenant}\0ai_infrastructure\0${normalizedTarget}`).digest("hex");
+  return (0, import_node_crypto31.createHash)("sha256").update(`${tenant}\0ai_infrastructure\0${normalizedTarget}`).digest("hex");
 }
 function defaultFleetInventoryPath(tenantId) {
   const tenant = requireIdentity("tenant_id", tenantId);
-  const tenantKey = (0, import_node_crypto30.createHash)("sha256").update(tenant).digest("hex").slice(0, 24);
-  return (0, import_node_path22.join)(resolvePath("~/.singularity-aidr/fleet-inventory"), `${tenantKey}.json`);
+  const tenantKey = (0, import_node_crypto31.createHash)("sha256").update(tenant).digest("hex").slice(0, 24);
+  return (0, import_node_path23.join)(resolvePath("~/.singularity-aidr/fleet-inventory"), `${tenantKey}.json`);
 }
 function freshnessFor(lastSeenAt, nowMs, staleAfterMs) {
   const lastSeenMs = parseEpoch(lastSeenAt);
@@ -57340,12 +58527,12 @@ async function loadFleetInventory(path3) {
 async function saveFleetInventory(path3, inventory) {
   await atomicWriteJson(path3, inventory);
 }
-var import_node_crypto30, import_node_path22, DEFAULT_STALE_AFTER_MS, DEFAULT_MAX_ATTEMPTS2, DEFAULT_BASE_RETRY_DELAY_MS, DEFAULT_MAX_RETRY_DELAY_MS;
+var import_node_crypto31, import_node_path23, DEFAULT_STALE_AFTER_MS, DEFAULT_MAX_ATTEMPTS2, DEFAULT_BASE_RETRY_DELAY_MS, DEFAULT_MAX_RETRY_DELAY_MS;
 var init_fleet_inventory = __esm({
   "../core/dist/fleet-inventory.js"() {
     "use strict";
-    import_node_crypto30 = require("node:crypto");
-    import_node_path22 = require("node:path");
+    import_node_crypto31 = require("node:crypto");
+    import_node_path23 = require("node:path");
     init_aig_infra_scan();
     init_config();
     init_file_utils();
@@ -57454,6 +58641,30 @@ function formatThreatBanner(version2, results, versionCheck, remotePolicyCache) 
   }
   return lines.join("\n");
 }
+function mcpInventorySection(posture) {
+  const { mcpServers, riskyMcpServers, unverifiedMcpServers, invalidSources, mcpCoverage, mcpServersNotEnumerated, mcpSourcesNotEnumerated } = posture;
+  const gapParts = [];
+  if ((mcpServersNotEnumerated ?? 0) > 0) {
+    gapParts.push(`${mcpServersNotEnumerated} server entries were unusable`);
+  }
+  if ((mcpSourcesNotEnumerated ?? 0) > 0) {
+    gapParts.push(`${mcpSourcesNotEnumerated} source(s) could not be read at all`);
+  }
+  const coverageWarning = mcpCoverage && mcpCoverage !== "read" ? ` Inventory coverage is ${mcpCoverage}, not complete.` : "";
+  const gapNote = gapParts.length > 0 ? ` ${gapParts.join("; ")}.` : "";
+  return `MCP inventory: ${mcpServers} configured, ${riskyMcpServers} with risk indicators, ${invalidSources} unreadable sources, ${unverifiedMcpServers ?? 0} with unverified tool manifests.${coverageWarning}${gapNote} Configuration discovery does not verify server trust.`;
+}
+function mcpCoverageGapSection(findings) {
+  const MAX_COVERAGE_FINDINGS = 5;
+  const lines = ["MCP tool-manifest coverage gaps:"];
+  for (const finding of findings.slice(0, MAX_COVERAGE_FINDINGS)) {
+    lines.push(`  - ${finding.server} (${finding.status}, ${finding.reason}): ${finding.detail}`);
+  }
+  const overflow = findings.length - MAX_COVERAGE_FINDINGS;
+  if (overflow > 0)
+    lines.push(`  ... and ${overflow} more coverage gaps`);
+  return lines;
+}
 function formatSessionStartMessage(version2, result) {
   if (result.enabled === false) {
     const reason = result.disabled_reason ?? "disabled";
@@ -57470,12 +58681,18 @@ function formatSessionStartMessage(version2, result) {
     return lines.join("\n");
   }
   const message = result.scanResults.length > 0 ? formatThreatBanner(version2, result.scanResults, result.versionCheck) : formatStartupClean(version2, result.versionCheck);
-  if (!result.posture)
+  const sections = [];
+  if (result.posture) {
+    sections.push(mcpInventorySection(result.posture));
+    sections.push(`AI infrastructure policy assessment: ${result.posture.infrastructure}.`);
+  }
+  const coverage = result.coverageFindings ?? [];
+  if (coverage.length > 0)
+    sections.push(...mcpCoverageGapSection(coverage));
+  if (sections.length === 0)
     return message;
-  const { mcpServers, riskyMcpServers, invalidSources, infrastructure } = result.posture;
   return `${message}
-MCP inventory: ${mcpServers} configured, ${riskyMcpServers} with risk indicators, ${invalidSources} unreadable sources. Configuration discovery does not verify server trust.
-AI infrastructure policy assessment: ${infrastructure}.`;
+${sections.join("\n")}`;
 }
 var PAD, SEPARATOR_WIDTH, LOCAL_ENFORCEMENT_ACTIVE_REASONS;
 var init_format = __esm({
@@ -57493,23 +58710,303 @@ var init_format = __esm({
   }
 });
 
+// ../core/dist/response-worker-contract.js
+function normalizeAuthorizedBy(value) {
+  const trimmed = value?.trim();
+  return trimmed !== void 0 && trimmed.length >= 3 ? trimmed : void 0;
+}
+function planResponseStep(request2) {
+  if (!CAPABILITY_SET.has(request2.capability)) {
+    return { ok: false, code: "unknown_capability", detail: String(request2.capability) };
+  }
+  const declared = request2.adapter.capabilities();
+  if (!declared.includes(request2.capability)) {
+    return {
+      ok: false,
+      code: "unsupported_action",
+      detail: `${request2.adapter.adapterId} does not declare ${request2.capability}`
+    };
+  }
+  if (!IDEMPOTENCY_KEY.test(request2.idempotencyKey)) {
+    return { ok: false, code: "invalid_idempotency_key", detail: "idempotency key is malformed" };
+  }
+  const ttlMs = request2.ttlMs ?? 5 * 60 * 1e3;
+  if (!Number.isSafeInteger(ttlMs) || ttlMs < 1e3 || ttlMs > MAX_TTL_MS) {
+    return { ok: false, code: "invalid_ttl", detail: "ttl must be between 1s and 24h" };
+  }
+  const binding = request2.binding;
+  if (!binding || typeof binding.target !== "string" || binding.target.trim() === "") {
+    return { ok: false, code: "missing_target", detail: "target is required" };
+  }
+  if (typeof binding.incidentId !== "string" || binding.incidentId.trim() === "") {
+    return { ok: false, code: "missing_incident", detail: "incidentId is required" };
+  }
+  if (typeof binding.authorizedBy !== "string" || binding.authorizedBy.trim().length < 3) {
+    return { ok: false, code: "missing_authorization", detail: "authorizedBy is required" };
+  }
+  if (binding.expectedSha256 !== null && !SHA2562.test(binding.expectedSha256)) {
+    return {
+      ok: false,
+      code: "invalid_expected_digest",
+      detail: "expectedSha256 must be a SHA-256"
+    };
+  }
+  if (request2.escapesWorkspace === true) {
+    return {
+      ok: false,
+      code: "target_escapes_workspace",
+      detail: "the resolved target is outside the permitted root"
+    };
+  }
+  const fileAction = request2.capability === "quarantine_file" || request2.capability === "restore_file";
+  if (fileAction) {
+    if (request2.liveExists !== true) {
+      return { ok: false, code: "target_missing", detail: "the target does not exist" };
+    }
+    if (typeof request2.vaultPath !== "string" || request2.vaultPath.trim() === "") {
+      return { ok: false, code: "missing_vault_path", detail: "a vault path is required" };
+    }
+    if (binding.expectedSha256 !== null) {
+      if (typeof request2.liveSha256 !== "string" || !SHA2562.test(request2.liveSha256)) {
+        return {
+          ok: false,
+          code: "target_unreadable",
+          detail: "the target digest could not be read"
+        };
+      }
+      if (request2.liveSha256 !== binding.expectedSha256) {
+        return {
+          ok: false,
+          code: "target_changed",
+          detail: "the target digest no longer matches the authorized digest"
+        };
+      }
+    }
+  }
+  if (request2.capability === "isolate_host" && request2.hasPrivilege !== true) {
+    return {
+      ok: false,
+      code: "insufficient_privilege",
+      detail: "host isolation requires an elevated platform adapter"
+    };
+  }
+  if ((request2.capability === "terminate_process" || request2.capability === "revoke_credential") && request2.hasPrivilege !== true) {
+    return {
+      ok: false,
+      code: "insufficient_privilege",
+      detail: `${request2.capability} requires the documented privilege`
+    };
+  }
+  return {
+    ok: true,
+    step: {
+      capability: request2.capability,
+      binding,
+      vaultPath: fileAction ? request2.vaultPath : null,
+      ttlMs,
+      idempotencyKey: request2.idempotencyKey,
+      reversible: request2.capability !== "isolate_host"
+    }
+  };
+}
+async function executeResponseStep(step, options) {
+  const now = options.now ?? Date.now;
+  const startedAt = now();
+  const existing = await options.journal.get(step.idempotencyKey);
+  if (existing) {
+    if (existing.expiresAtMs > startedAt)
+      return { receipt: existing.receipt, replayed: true };
+    return {
+      replayed: true,
+      receipt: {
+        commandId: step.idempotencyKey,
+        incidentId: step.binding.incidentId,
+        adapterId: options.adapter.adapterId,
+        platform: options.adapter.platform,
+        capability: step.capability,
+        status: "refused",
+        code: "stale_command",
+        target: step.binding.target,
+        observed: null,
+        rollbackToken: null,
+        rollbackPossible: false,
+        appliedAtUtc: new Date(startedAt).toISOString(),
+        fullyReversible: false,
+        idempotencyKey: step.idempotencyKey
+      }
+    };
+  }
+  let outcome;
+  try {
+    outcome = await options.adapter.execute(step);
+  } catch (error4) {
+    outcome = {
+      status: "failed",
+      code: "adapter_threw",
+      detail: error4 instanceof Error ? error4.message : String(error4),
+      rollbackToken: null
+    };
+  }
+  const status = outcome.status === "applied" ? step.reversible && outcome.rollbackToken !== null ? "applied" : step.reversible ? (
+    // An applied step with no rollback token cannot be undone on
+    // request, so the action is partial and the operator must know.
+    "partial"
+  ) : "partial" : outcome.status === "noop" ? "noop" : outcome.status;
+  const receipt = {
+    commandId: step.idempotencyKey,
+    incidentId: step.binding.incidentId,
+    adapterId: options.adapter.adapterId,
+    platform: options.adapter.platform,
+    capability: step.capability,
+    status,
+    code: outcome.status === "applied" ? status === "applied" ? "applied" : "applied_without_rollback" : outcome.status === "noop" ? "already_in_desired_state" : outcome.code,
+    target: step.binding.target,
+    observed: outcome.status === "applied" || outcome.status === "noop" ? outcome.observed : null,
+    rollbackToken: outcome.status === "refused" ? null : outcome.rollbackToken,
+    rollbackPossible: outcome.status !== "refused" && outcome.rollbackToken !== null,
+    appliedAtUtc: new Date(startedAt).toISOString(),
+    fullyReversible: status === "applied",
+    idempotencyKey: step.idempotencyKey
+  };
+  await options.journal.put({
+    idempotencyKey: step.idempotencyKey,
+    expiresAtMs: startedAt + step.ttlMs,
+    outcome,
+    receipt
+  });
+  return { receipt, replayed: false };
+}
+function planResponseRollback(request2) {
+  const { receipt } = request2;
+  if (receipt.rollbackToken === null) {
+    return {
+      ok: false,
+      code: "no_rollback_token",
+      detail: `${receipt.capability} recorded no rollback token`
+    };
+  }
+  const inverse = {
+    quarantine_file: "restore_file",
+    restore_file: "quarantine_file"
+  };
+  const capability = inverse[receipt.capability];
+  if (!capability) {
+    return {
+      ok: false,
+      code: "no_inverse_action",
+      detail: `${receipt.capability} has no inverse on this adapter`
+    };
+  }
+  if (!request2.adapter.capabilities().includes(capability)) {
+    return {
+      ok: false,
+      code: "unsupported_action",
+      detail: `${request2.adapter.adapterId} does not declare ${capability}`
+    };
+  }
+  return {
+    ok: true,
+    step: {
+      capability,
+      binding: {
+        target: receipt.target,
+        expectedSha256: null,
+        incidentId: receipt.incidentId,
+        authorizedBy: `rollback:${receipt.commandId}`
+      },
+      vaultPath: receipt.rollbackToken,
+      ttlMs: 5 * 60 * 1e3,
+      idempotencyKey: request2.idempotencyKey,
+      reversible: false
+    }
+  };
+}
+function reportWorkerCapabilities(adapter, requested) {
+  const declared = adapter.capabilities();
+  const known = requested.filter((entry) => CAPABILITY_SET.has(entry));
+  const requestedUnknown = requested.filter((entry) => !CAPABILITY_SET.has(entry));
+  const missing = known.filter((capability) => !declared.includes(capability));
+  const limitations = [
+    ...requestedUnknown.length ? [`unknown capability requested: ${requestedUnknown.join(", ")}`] : [],
+    ...missing.length ? [`not implemented on this host: ${missing.join(", ")}`] : [],
+    ...declared.includes("isolate_host") ? [] : ["host network isolation is not provided by this adapter"]
+  ];
+  return {
+    adapterId: adapter.adapterId,
+    platform: adapter.platform,
+    declared,
+    missing,
+    limitations
+  };
+}
+var RESPONSE_CAPABILITIES, CAPABILITY_SET, IDEMPOTENCY_KEY, SHA2562, MAX_TTL_MS, MemoryResponseJournal;
+var init_response_worker_contract = __esm({
+  "../core/dist/response-worker-contract.js"() {
+    "use strict";
+    RESPONSE_CAPABILITIES = [
+      "quarantine_file",
+      "restore_file",
+      "terminate_process",
+      "isolate_host",
+      "revoke_credential"
+    ];
+    CAPABILITY_SET = new Set(RESPONSE_CAPABILITIES);
+    IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,200}$/;
+    SHA2562 = /^[0-9a-f]{64}$/;
+    MAX_TTL_MS = 24 * 60 * 60 * 1e3;
+    MemoryResponseJournal = class {
+      #entries = /* @__PURE__ */ new Map();
+      get(idempotencyKey) {
+        return Promise.resolve(this.#entries.get(idempotencyKey) ?? null);
+      }
+      put(entry) {
+        this.#entries.set(entry.idempotencyKey, entry);
+        return Promise.resolve();
+      }
+    };
+  }
+});
+
 // ../core/dist/rollback.js
 function createAutoRollback(logger2) {
   return new AutoRollback(logger2);
 }
-var import_node_crypto31, import_promises17, import_node_path23, DEFAULT_SNAPSHOTS_DIR, DEFAULT_SNAPSHOT_OPTIONS, AutoRollback;
+var import_node_crypto32, import_promises18, import_node_path24, DEFAULT_SNAPSHOTS_DIR, DEFAULT_SNAPSHOT_OPTIONS, BENIGN_SNAPSHOT_SKIP_REASONS, SnapshotIncompleteError, RollbackRefusedError, AutoRollback;
 var init_rollback = __esm({
   "../core/dist/rollback.js"() {
     "use strict";
-    import_node_crypto31 = require("node:crypto");
-    import_promises17 = require("node:fs/promises");
-    import_node_path23 = require("node:path");
+    import_node_crypto32 = require("node:crypto");
+    import_promises18 = require("node:fs/promises");
+    import_node_path24 = require("node:path");
     init_config();
+    init_response_worker_contract();
     init_types2();
     DEFAULT_SNAPSHOTS_DIR = "~/.singularity-aidr/snapshots";
     DEFAULT_SNAPSHOT_OPTIONS = {
       maxBytesPerFile: 10 * 1024 * 1024,
       maxTotalBytes: 64 * 1024 * 1024
+    };
+    BENIGN_SNAPSHOT_SKIP_REASONS = /* @__PURE__ */ new Set(["not_found"]);
+    SnapshotIncompleteError = class extends Error {
+      code = "snapshot_incomplete";
+      skipped;
+      constructor(skipped) {
+        super(`Snapshot incomplete: ${skipped.map((skip) => `${skip.path} (${skip.reason})`).join(", ")}`);
+        this.name = "SnapshotIncompleteError";
+        this.skipped = skipped;
+      }
+    };
+    RollbackRefusedError = class extends Error {
+      code;
+      refusals;
+      restored;
+      constructor(refusals, restored, failed) {
+        super(`Rollback refused: ${refusals.map((refusal) => `${refusal.reason} (${refusal.path})`).join(", ")}. ${restored.length} file(s) restored, ${failed.length} failed.`);
+        this.name = "RollbackRefusedError";
+        this.code = refusals[0]?.reason ?? "rollback_refused";
+        this.refusals = refusals;
+        this.restored = restored;
+      }
     };
     AutoRollback = class {
       logger;
@@ -57538,9 +59035,10 @@ var init_rollback = __esm({
        */
       async createSnapshotDetailed(paths, operationId, auditContext, options = {}) {
         const opts = { ...DEFAULT_SNAPSHOT_OPTIONS, ...options };
-        const snapshotId = `${operationId}-${(0, import_node_crypto31.randomBytes)(4).toString("hex")}`;
-        const snapshotDir = (0, import_node_path23.join)(this.snapshotsDir, snapshotId);
+        const snapshotId = `${operationId}-${(0, import_node_crypto32.randomBytes)(4).toString("hex")}`;
+        const snapshotDir = (0, import_node_path24.join)(this.snapshotsDir, snapshotId);
         const files = /* @__PURE__ */ new Map();
+        const digests = /* @__PURE__ */ new Map();
         const copied = [];
         const skipped = [];
         let bytes2 = 0;
@@ -57548,9 +59046,9 @@ var init_rollback = __esm({
         const uniquePaths = Array.from(new Set(paths));
         let directoryReady = false;
         for (const filePath of uniquePaths) {
-          const resolved = (0, import_node_path23.resolve)(filePath);
+          const resolved = (0, import_node_path24.resolve)(filePath);
           try {
-            const stats = await (0, import_promises17.lstat)(resolved);
+            const stats = await (0, import_promises18.lstat)(resolved);
             if (!stats.isFile()) {
               skipped.push({
                 path: resolved,
@@ -57578,15 +59076,21 @@ var init_rollback = __esm({
               continue;
             }
             if (!directoryReady) {
-              await (0, import_promises17.mkdir)(snapshotDir, { recursive: true, mode: 448 });
+              await (0, import_promises18.mkdir)(snapshotDir, { recursive: true, mode: 448 });
               directoryReady = true;
             }
-            const backupPath = (0, import_node_path23.join)(snapshotDir, this.encodePath(resolved));
-            await (0, import_promises17.copyFile)(resolved, backupPath);
+            const backupPath = (0, import_node_path24.join)(snapshotDir, this.encodePath(resolved));
+            await (0, import_promises18.copyFile)(resolved, backupPath);
+            const sha2564 = await this.hashFile(backupPath);
             files.set(resolved, backupPath);
+            digests.set(resolved, { sha256: sha2564, size: stats.size });
             copied.push(resolved);
             bytes2 += stats.size;
-            this.logger.debug("Backed up file", { original: resolved, backup: backupPath });
+            this.logger.debug("Backed up file", {
+              original: resolved,
+              backup: backupPath,
+              sha256: sha2564
+            });
           } catch (err) {
             const missing = err?.code === "ENOENT";
             skipped.push({
@@ -57598,20 +59102,25 @@ var init_rollback = __esm({
           }
         }
         if (!directoryReady) {
-          await (0, import_promises17.mkdir)(snapshotDir, { recursive: true, mode: 448 });
+          await (0, import_promises18.mkdir)(snapshotDir, { recursive: true, mode: 448 });
         }
+        const authorizedBy = normalizeAuthorizedBy(auditContext?.authorizedBy);
         const metadata = {
           id: snapshotId,
           timestamp: timestamp.toISOString(),
-          files: Object.fromEntries(files)
+          files: Object.fromEntries(files),
+          digests: Object.fromEntries(digests),
+          ...authorizedBy ? { authorizedBy } : {}
         };
-        await (0, import_promises17.writeFile)((0, import_node_path23.join)(snapshotDir, "metadata.json"), JSON.stringify(metadata, null, 2), {
+        await (0, import_promises18.writeFile)((0, import_node_path24.join)(snapshotDir, "metadata.json"), JSON.stringify(metadata, null, 2), {
           mode: 384
         });
         const snapshot = {
           id: snapshotId,
           timestamp,
-          files
+          files,
+          digests,
+          ...authorizedBy ? { authorizedBy } : {}
         };
         this.snapshots.set(snapshotId, snapshot);
         this.logger.info("Created snapshot", {
@@ -57629,7 +59138,8 @@ var init_rollback = __esm({
             verdict: auditContext.verdict,
             responseTaken: "contain",
             metadata: { snapshotId },
-            outcome: "success"
+            outcome: "success",
+            authorizedBy
           }).catch((error4) => {
             this.logger.warn("Failed to log snapshot creation", { error: String(error4) });
           });
@@ -57637,19 +59147,31 @@ var init_rollback = __esm({
         return { snapshot, copied, skipped, bytes: bytes2 };
       }
       async executeWithRollback(operation, paths, options) {
-        const operationId = options.operationId ?? `op-${(0, import_node_crypto31.randomBytes)(4).toString("hex")}`;
+        const operationId = options.operationId ?? `op-${(0, import_node_crypto32.randomBytes)(4).toString("hex")}`;
         const auditContext = options.verdict && options.threatId ? {
           tool: options.tool,
           input: options.input,
           verdict: options.verdict,
-          threatId: options.threatId
+          threatId: options.threatId,
+          authorizedBy: options.authorizedBy
         } : void 0;
-        const { snapshot } = await this.createSnapshotDetailed(paths, operationId, auditContext, options.snapshotOptions ?? {});
+        const { snapshot, skipped } = await this.createSnapshotDetailed(paths, operationId, auditContext, options.snapshotOptions ?? {});
         this.logger.debug("Executing operation with rollback protection", {
           operationId,
           snapshotId: snapshot.id,
-          pathCount: paths.length
+          pathCount: paths.length,
+          skipped: skipped.length
         });
+        options.onSnapshotSkipped?.(skipped);
+        const unprotected = skipped.filter((skip) => !BENIGN_SNAPSHOT_SKIP_REASONS.has(skip.reason));
+        if (unprotected.length > 0) {
+          this.logger.error("Refusing to run: the snapshot could not protect every path", {
+            operationId,
+            snapshotId: snapshot.id,
+            skipped: unprotected
+          });
+          throw new SnapshotIncompleteError(unprotected);
+        }
         try {
           const result = await operation();
           if (options.retainSnapshot !== true) {
@@ -57665,7 +59187,13 @@ var init_rollback = __esm({
             });
             await this.logRollback(snapshot.id, paths, options, "success", void 0);
             try {
-              await this.rollbackSnapshot(snapshot.id);
+              await this.rollbackSnapshot(snapshot.id, {
+                // This wrapper took the snapshot and ran the operation itself, so a
+                // target that changed in between changed because of the operation
+                // being undone: overwriting it with the snapshot IS the undo.
+                expectTargetChanged: true,
+                authorizedBy: options.authorizedBy
+              });
             } catch (rollbackError2) {
               await this.logRollback(snapshot.id, paths, options, "failure", String(rollbackError2));
               throw rollbackError2;
@@ -57680,8 +59208,8 @@ var init_rollback = __esm({
           throw operationError;
         }
       }
-      async rollback(snapshotId) {
-        await this.rollbackSnapshot(snapshotId);
+      async rollback(snapshotId, options = {}) {
+        await this.rollbackSnapshot(snapshotId, options);
       }
       /**
        * Restore every file captured by a snapshot.
@@ -57690,8 +59218,14 @@ var init_rollback = __esm({
        * is not in memory, so a rollback still works from a *different* process than
        * the one that took the snapshot — which is the normal case for "the agent did
        * something destructive yesterday".
+       *
+       * That cross-process case is exactly why a target is verified before it is
+       * overwritten: the digest recorded at snapshot time proves what the target held
+       * when it was protected, so a target that has moved on since is refused
+       * (`target_changed`) rather than quietly replaced with stale content. Only the
+       * caller that witnessed the change may pass `expectTargetChanged`.
        */
-      async rollbackSnapshot(snapshotId) {
+      async rollbackSnapshot(snapshotId, options = {}) {
         let snapshot = this.snapshots.get(snapshotId);
         if (!snapshot) {
           snapshot = await this.loadSnapshot(snapshotId) ?? void 0;
@@ -57702,10 +59236,71 @@ var init_rollback = __esm({
         this.logger.info("Rolling back to snapshot", { snapshotId: snapshot.id });
         const restored = [];
         const failed = [];
+        const refusals = [];
         for (const [originalPath, backupPath] of Array.from(snapshot.files).reverse()) {
+          let vaultDigest;
           try {
-            await (0, import_promises17.mkdir)((0, import_node_path23.dirname)(originalPath), { recursive: true });
-            await (0, import_promises17.copyFile)(backupPath, originalPath);
+            const backupStats = await (0, import_promises18.lstat)(backupPath);
+            if (!backupStats.isFile()) {
+              failed.push({
+                path: originalPath,
+                error: `vault copy is not a regular file: ${backupPath}`
+              });
+              continue;
+            }
+            vaultDigest = await this.hashFile(backupPath);
+          } catch (err) {
+            failed.push({ path: originalPath, error: String(err) });
+            this.logger.error("Failed to read the snapshot copy", {
+              original: originalPath,
+              backup: backupPath,
+              error: String(err)
+            });
+            continue;
+          }
+          const recorded = snapshot.digests.get(originalPath);
+          if (recorded && recorded.sha256 !== vaultDigest) {
+            refusals.push({
+              path: originalPath,
+              reason: "vault_changed",
+              detail: "the stored copy no longer matches the digest recorded at snapshot time"
+            });
+            this.logger.error("Refusing to restore a snapshot copy that changed", {
+              original: originalPath,
+              backup: backupPath
+            });
+            continue;
+          }
+          const expectedDigest = recorded?.sha256 ?? vaultDigest;
+          const targetStats = await (0, import_promises18.lstat)(originalPath).catch(() => null);
+          if (targetStats && !targetStats.isFile()) {
+            refusals.push({
+              path: originalPath,
+              reason: "not_a_file",
+              detail: "the target is no longer a regular file; restoring would follow it"
+            });
+            this.logger.error("Refusing to restore over a non-file target", {
+              original: originalPath
+            });
+            continue;
+          }
+          if (targetStats) {
+            const liveDigest = await this.hashFile(originalPath).catch(() => null);
+            if (liveDigest !== expectedDigest && options.expectTargetChanged !== true) {
+              refusals.push({
+                path: originalPath,
+                reason: "target_changed",
+                detail: "the target no longer matches the digest recorded at snapshot time; refusing to overwrite it with stale content"
+              });
+              this.logger.error("Refusing to restore a target that changed after the snapshot", {
+                original: originalPath
+              });
+              continue;
+            }
+          }
+          try {
+            await (0, import_promises18.mkdir)((0, import_node_path24.dirname)(originalPath), { recursive: true });
+            await (0, import_promises18.copyFile)(backupPath, originalPath);
             restored.push(originalPath);
             this.logger.debug("Restored file", { original: originalPath });
           } catch (err) {
@@ -57719,8 +59314,12 @@ var init_rollback = __esm({
         this.logger.info("Rollback completed", {
           snapshotId: snapshot.id,
           restored: restored.length,
-          failed: failed.length
+          failed: failed.length,
+          refused: refusals.length
         });
+        if (refusals.length > 0) {
+          throw new RollbackRefusedError(refusals, restored, failed);
+        }
         if (failed.length > 0) {
           throw new Error(`Rollback partially failed. ${failed.length} file(s) could not be restored.`);
         }
@@ -57745,16 +59344,17 @@ var init_rollback = __esm({
             responseTaken: "rollback",
             metadata: { snapshotId },
             outcome,
-            error: error4
+            error: error4,
+            authorizedBy: normalizeAuthorizedBy(context2.authorizedBy)
           });
         } catch (err) {
           this.logger.warn("Failed to log rollback", { snapshotId, error: String(err) });
         }
       }
       async cleanup(snapshotId) {
-        const snapshotDir = (0, import_node_path23.join)(this.snapshotsDir, snapshotId);
+        const snapshotDir = (0, import_node_path24.join)(this.snapshotsDir, snapshotId);
         try {
-          await (0, import_promises17.rm)(snapshotDir, { recursive: true, force: true });
+          await (0, import_promises18.rm)(snapshotDir, { recursive: true, force: true });
           this.snapshots.delete(snapshotId);
           this.logger.debug("Cleaned up snapshot", { snapshotId });
         } catch (err) {
@@ -57802,19 +59402,27 @@ var init_rollback = __esm({
         return pruned;
       }
       async loadSnapshot(snapshotId) {
-        const snapshotDir = (0, import_node_path23.join)(this.snapshotsDir, snapshotId);
-        const metadataPath = (0, import_node_path23.join)(snapshotDir, "metadata.json");
+        const snapshotDir = (0, import_node_path24.join)(this.snapshotsDir, snapshotId);
+        const metadataPath = (0, import_node_path24.join)(snapshotDir, "metadata.json");
         try {
-          const metadataRaw = await (0, import_promises17.readFile)(metadataPath, "utf-8");
+          const metadataRaw = await (0, import_promises18.readFile)(metadataPath, "utf-8");
           const metadata = JSON.parse(metadataRaw);
           const files = /* @__PURE__ */ new Map();
           for (const [original, backup] of Object.entries(metadata.files)) {
             files.set(original, backup);
           }
+          const digests = /* @__PURE__ */ new Map();
+          for (const [original, digest2] of Object.entries(metadata.digests ?? {})) {
+            if (typeof digest2?.sha256 === "string") {
+              digests.set(original, { sha256: digest2.sha256, size: digest2.size ?? 0 });
+            }
+          }
           const snapshot = {
             id: metadata.id,
             timestamp: new Date(metadata.timestamp),
-            files
+            files,
+            digests,
+            ...metadata.authorizedBy ? { authorizedBy: metadata.authorizedBy } : {}
           };
           this.snapshots.set(snapshotId, snapshot);
           return snapshot;
@@ -57823,9 +59431,14 @@ var init_rollback = __esm({
           return null;
         }
       }
+      /** SHA-256 of a file's bytes, used to record and re-verify what a snapshot holds. */
+      async hashFile(filePath) {
+        const content = await (0, import_promises18.readFile)(filePath);
+        return (0, import_node_crypto32.createHash)("sha256").update(content).digest("hex");
+      }
       async loadAllSnapshots() {
         try {
-          const entries = await (0, import_promises17.readdir)(this.snapshotsDir, { withFileTypes: true });
+          const entries = await (0, import_promises18.readdir)(this.snapshotsDir, { withFileTypes: true });
           for (const entry of entries) {
             if (entry.isDirectory() && !this.snapshots.has(entry.name)) {
               await this.loadSnapshot(entry.name);
@@ -57880,7 +59493,7 @@ async function destructiveTargetFor(toolName, toolInput) {
   if (!target)
     return null;
   const resolved = resolvePath(target);
-  const stats = await (0, import_promises18.stat)(resolved).catch(() => null);
+  const stats = await (0, import_promises19.stat)(resolved).catch(() => null);
   return stats?.isFile() ? resolved : null;
 }
 function commandTargetPath(command) {
@@ -57902,18 +59515,18 @@ function commandTargetPath(command) {
 function isProtectedPath(path3, protectPaths) {
   if (protectPaths.length === 0)
     return false;
-  const resolved = (0, import_node_path24.normalize)((0, import_node_path24.isAbsolute)(path3) ? path3 : (0, import_node_path24.resolve)(path3));
+  const resolved = (0, import_node_path25.normalize)((0, import_node_path25.isAbsolute)(path3) ? path3 : (0, import_node_path25.resolve)(path3));
   return protectPaths.some((entry) => {
     const trimmed = entry.trim();
     if (trimmed === "")
       return false;
     const prefixInput = trimmed.replace(/[/\\]\*{1,2}$/, "");
-    const prefix = (0, import_node_path24.normalize)(resolvePath(prefixInput));
-    if (prefix === "" || prefix === import_node_path24.sep)
+    const prefix = (0, import_node_path25.normalize)(resolvePath(prefixInput));
+    if (prefix === "" || prefix === import_node_path25.sep)
       return false;
     if (resolved === prefix)
       return true;
-    return resolved.startsWith(prefix.endsWith(import_node_path24.sep) ? prefix : prefix + import_node_path24.sep);
+    return resolved.startsWith(prefix.endsWith(import_node_path25.sep) ? prefix : prefix + import_node_path25.sep);
   });
 }
 async function runResponseActions(verdict, request2, options = {}, logger2 = nullLogger) {
@@ -58015,7 +59628,13 @@ async function rollbackPreOperationSnapshot(snapshot, context2, options = {}, lo
   const opts = { ...DEFAULT_RESPONSE_OPTIONS, ...options };
   const rollback = new AutoRollback(logger2, auditor, opts.snapshotRootDir);
   try {
-    const result = await rollback.rollbackSnapshot(snapshot.id);
+    const result = await rollback.rollbackSnapshot(snapshot.id, {
+      // This snapshot was taken by the guard immediately before the allowed call
+      // ran, and this restore happens as the call unwinds: a target that changed
+      // in between changed because of the operation being undone.
+      expectTargetChanged: true,
+      authorizedBy: context2.authorizedBy
+    });
     logger2.info?.("Rolled back an allowed destructive operation", {
       target: snapshot.target,
       snapshotId: snapshot.id,
@@ -58066,7 +59685,7 @@ async function snapshotTarget(verdict, request2, opts, logger2) {
       detail: `severity ${verdict.severity} is below the configured floor ${opts.snapshotMinSeverity}`
     };
   }
-  const stats = await (0, import_promises18.stat)(resolved).catch(() => null);
+  const stats = await (0, import_promises19.stat)(resolved).catch(() => null);
   if (!stats) {
     return {
       action: "snapshot",
@@ -58100,9 +59719,9 @@ async function snapshotTarget(verdict, request2, opts, logger2) {
     const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
     const threat = verdict.matchedThreatId ?? verdict.category;
     const safeThreat = threat.replace(/[^A-Za-z0-9._-]/g, "_");
-    const destination = (0, import_node_path24.join)(vaultDir, `${stamp}_${safeThreat}_${(0, import_node_path24.basename)(resolved)}`);
-    await (0, import_promises18.mkdir)(vaultDir, { recursive: true, mode: 448 });
-    await (0, import_promises18.copyFile)(resolved, destination);
+    const destination = (0, import_node_path25.join)(vaultDir, `${stamp}_${safeThreat}_${(0, import_node_path25.basename)(resolved)}`);
+    await (0, import_promises19.mkdir)(vaultDir, { recursive: true, mode: 448 });
+    await (0, import_promises19.copyFile)(resolved, destination);
     logger2.info?.("Response snapshot written", {
       target: resolved,
       vaultPath: destination,
@@ -58145,12 +59764,12 @@ function summarizeResponseActions(records) {
 function fileArtifacts(artifacts) {
   return artifacts.filter((a) => a.type === "file_path").map((a) => a.value);
 }
-var import_promises18, import_node_path24, DEFAULT_RESPONSE_OPTIONS, SEVERITY_RANK2, FILE_TARGET_TOOLS, DESTRUCTIVE_TOOLS, DESTRUCTIVE_COMMAND_PATTERNS;
+var import_promises19, import_node_path25, DEFAULT_RESPONSE_OPTIONS, SEVERITY_RANK2, FILE_TARGET_TOOLS, DESTRUCTIVE_TOOLS, DESTRUCTIVE_COMMAND_PATTERNS;
 var init_response_actions = __esm({
   "../core/dist/response-actions.js"() {
     "use strict";
-    import_promises18 = require("node:fs/promises");
-    import_node_path24 = require("node:path");
+    import_promises19 = require("node:fs/promises");
+    import_node_path25 = require("node:path");
     init_config();
     init_rollback();
     init_types2();
@@ -58290,13 +59909,13 @@ function responseAuditorFromConfig(config2, logger2 = nullLogger) {
     return { unavailableReason: `auditor_init_failed: ${String(error4)}` };
   }
 }
-var import_node_crypto32, import_promises19, import_node_path25, ResponseAuditor, DEFAULT_RESPONSE_AUDIT_CONFIG;
+var import_node_crypto33, import_promises20, import_node_path26, ResponseAuditor, DEFAULT_RESPONSE_AUDIT_CONFIG;
 var init_response_audit = __esm({
   "../core/dist/response-audit.js"() {
     "use strict";
-    import_node_crypto32 = require("node:crypto");
-    import_promises19 = require("node:fs/promises");
-    import_node_path25 = require("node:path");
+    import_node_crypto33 = require("node:crypto");
+    import_promises20 = require("node:fs/promises");
+    import_node_path26 = require("node:path");
     init_config();
     init_telemetry_redaction();
     init_types2();
@@ -58317,7 +59936,7 @@ var init_response_audit = __esm({
         this.signEntries = options.signEntries ?? false;
         this.retentionDays = options.retentionDays ?? 0;
         this.retainDeletionEvidence = options.retainDeletionEvidence ?? this.signEntries;
-        this.keyPath = (0, import_node_path25.join)((0, import_node_path25.dirname)(resolvePath(auditLogPath)), ".response-audit-key");
+        this.keyPath = (0, import_node_path26.join)((0, import_node_path26.dirname)(resolvePath(auditLogPath)), ".response-audit-key");
         const resolvedAuditPath = resolvePath(auditLogPath);
         this.headPath = `${resolvedAuditPath}.head`;
         this.retentionManifestPath = `${resolvedAuditPath}.retention.jsonl`;
@@ -58329,20 +59948,20 @@ var init_response_audit = __esm({
       }
       async initializeSigning() {
         try {
-          const keyContent = await (0, import_promises19.readFile)(this.keyPath, "utf-8");
+          const keyContent = await (0, import_promises20.readFile)(this.keyPath, "utf-8");
           const keys = JSON.parse(keyContent);
           this.privateKey = keys.privateKey;
           this.publicKey = keys.publicKey;
           this.logger.debug("Loaded existing signing keys for response audit");
         } catch {
-          const { privateKey, publicKey: publicKey2 } = (0, import_node_crypto32.generateKeyPairSync)("ed25519", {
+          const { privateKey, publicKey: publicKey3 } = (0, import_node_crypto33.generateKeyPairSync)("ed25519", {
             privateKeyEncoding: { type: "pkcs8", format: "pem" },
             publicKeyEncoding: { type: "spki", format: "pem" }
           });
           this.privateKey = privateKey;
-          this.publicKey = publicKey2;
-          await (0, import_promises19.mkdir)((0, import_node_path25.dirname)(this.keyPath), { recursive: true });
-          await (0, import_promises19.writeFile)(this.keyPath, JSON.stringify({ privateKey, publicKey: publicKey2 }, null, 2), {
+          this.publicKey = publicKey3;
+          await (0, import_promises20.mkdir)((0, import_node_path26.dirname)(this.keyPath), { recursive: true });
+          await (0, import_promises20.writeFile)(this.keyPath, JSON.stringify({ privateKey, publicKey: publicKey3 }, null, 2), {
             mode: 384
           });
           this.logger.debug("Generated new signing keys for response audit");
@@ -58361,9 +59980,10 @@ var init_response_audit = __esm({
           metadata: entry.metadata,
           outcome: entry.outcome,
           error: entry.error,
+          authorized_by: entry.authorized_by,
           _prev_hash: entry._prev_hash
         });
-        return (0, import_node_crypto32.createHash)("sha256").update(data).digest("hex");
+        return (0, import_node_crypto33.createHash)("sha256").update(data).digest("hex");
       }
       signEntry(entry) {
         if (!this.signEntries || !this.privateKey)
@@ -58381,10 +60001,11 @@ var init_response_audit = __esm({
             metadata: entry.metadata,
             outcome: entry.outcome,
             error: entry.error,
+            authorized_by: entry.authorized_by,
             _prev_hash: entry._prev_hash,
             _entry_hash: entry._entry_hash
           });
-          return (0, import_node_crypto32.sign)(void 0, Buffer.from(data), this.privateKey).toString("base64");
+          return (0, import_node_crypto33.sign)(void 0, Buffer.from(data), this.privateKey).toString("base64");
         } catch (error4) {
           this.logger.warn("Failed to sign audit entry", { error: String(error4) });
           return void 0;
@@ -58406,10 +60027,11 @@ var init_response_audit = __esm({
             metadata: entry.metadata,
             outcome: entry.outcome,
             error: entry.error,
+            authorized_by: entry.authorized_by,
             _prev_hash: entry._prev_hash,
             _entry_hash: entry._entry_hash
           });
-          return (0, import_node_crypto32.verify)(void 0, Buffer.from(data), this.publicKey, Buffer.from(entry._signature, "base64"));
+          return (0, import_node_crypto33.verify)(void 0, Buffer.from(data), this.publicKey, Buffer.from(entry._signature, "base64"));
         } catch {
           return false;
         }
@@ -58421,27 +60043,27 @@ var init_response_audit = __esm({
           entry_hash: entryHash,
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         };
-        const temporaryPath = `${this.headPath}.${(0, import_node_crypto32.randomUUID)()}.tmp`;
-        await (0, import_promises19.mkdir)((0, import_node_path25.dirname)(this.headPath), { recursive: true });
-        await (0, import_promises19.writeFile)(temporaryPath, `${JSON.stringify(checkpoint)}
+        const temporaryPath = `${this.headPath}.${(0, import_node_crypto33.randomUUID)()}.tmp`;
+        await (0, import_promises20.mkdir)((0, import_node_path26.dirname)(this.headPath), { recursive: true });
+        await (0, import_promises20.writeFile)(temporaryPath, `${JSON.stringify(checkpoint)}
 `, {
           encoding: "utf8",
           mode: 384
         });
         try {
-          await (0, import_promises19.rename)(temporaryPath, this.headPath);
+          await (0, import_promises20.rename)(temporaryPath, this.headPath);
         } catch {
-          await (0, import_promises19.writeFile)(this.headPath, `${JSON.stringify(checkpoint)}
+          await (0, import_promises20.writeFile)(this.headPath, `${JSON.stringify(checkpoint)}
 `, {
             encoding: "utf8",
             mode: 384
           });
-          await (0, import_promises19.unlink)(temporaryPath).catch(() => void 0);
+          await (0, import_promises20.unlink)(temporaryPath).catch(() => void 0);
         }
       }
       async readHeadCheckpoint() {
         try {
-          const parsed = JSON.parse(await (0, import_promises19.readFile)(this.headPath, "utf8"));
+          const parsed = JSON.parse(await (0, import_promises20.readFile)(this.headPath, "utf8"));
           if (parsed.version !== 1 || typeof parsed.entry_id !== "string" || !parsed.entry_id || typeof parsed.entry_hash !== "string" || !/^[0-9a-f]{64}$/.test(parsed.entry_hash)) {
             return null;
           }
@@ -58461,13 +60083,13 @@ var init_response_audit = __esm({
           entry_ids: removed.map((entry) => entry.id),
           entry_hashes: removed.map((entry) => entry._entry_hash).filter((hash) => typeof hash === "string" && /^[0-9a-f]{64}$/.test(hash))
         };
-        const recordHash = (0, import_node_crypto32.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
+        const recordHash = (0, import_node_crypto33.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
         const record2 = { ...base, record_hash: recordHash };
         if (this.signEntries && this.privateKey) {
-          record2._signature = (0, import_node_crypto32.sign)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: recordHash })), this.privateKey).toString("base64");
+          record2._signature = (0, import_node_crypto33.sign)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: recordHash })), this.privateKey).toString("base64");
         }
-        await (0, import_promises19.mkdir)((0, import_node_path25.dirname)(this.retentionManifestPath), { recursive: true });
-        await (0, import_promises19.appendFile)(this.retentionManifestPath, `${JSON.stringify(record2)}
+        await (0, import_promises20.mkdir)((0, import_node_path26.dirname)(this.retentionManifestPath), { recursive: true });
+        await (0, import_promises20.appendFile)(this.retentionManifestPath, `${JSON.stringify(record2)}
 `, "utf8");
       }
       verifyRetentionDeletionRecord(record2) {
@@ -58479,7 +60101,7 @@ var init_response_audit = __esm({
           entry_ids: record2.entry_ids,
           entry_hashes: record2.entry_hashes
         };
-        const expectedHash = (0, import_node_crypto32.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
+        const expectedHash = (0, import_node_crypto33.createHash)("sha256").update(JSON.stringify(base)).digest("hex");
         if (record2.record_hash !== expectedHash)
           return false;
         if (!this.signEntries)
@@ -58487,7 +60109,7 @@ var init_response_audit = __esm({
         if (!record2._signature || !this.publicKey)
           return false;
         try {
-          return (0, import_node_crypto32.verify)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: record2.record_hash })), this.publicKey, Buffer.from(record2._signature, "base64"));
+          return (0, import_node_crypto33.verify)(void 0, Buffer.from(JSON.stringify({ ...base, record_hash: record2.record_hash })), this.publicKey, Buffer.from(record2._signature, "base64"));
         } catch {
           return false;
         }
@@ -58496,7 +60118,7 @@ var init_response_audit = __esm({
         const tampered = [];
         let content;
         try {
-          content = await (0, import_promises19.readFile)(this.retentionManifestPath, "utf8");
+          content = await (0, import_promises20.readFile)(this.retentionManifestPath, "utf8");
         } catch {
           return tampered;
         }
@@ -58514,7 +60136,7 @@ var init_response_audit = __esm({
         return tampered;
       }
       serializeEntry(entry) {
-        return {
+        const serialized = {
           id: entry.id,
           timestamp: entry.timestamp.toISOString(),
           action: entry.action,
@@ -58527,12 +60149,16 @@ var init_response_audit = __esm({
           outcome: entry.outcome,
           error: entry.error ? redactTelemetryString(entry.error) : void 0
         };
+        if (entry.authorizedBy) {
+          serialized.authorized_by = redactTelemetryString(entry.authorizedBy);
+        }
+        return serialized;
       }
       async attachSignature(serialized) {
         const path3 = resolvePath(this.auditLogPath);
         let prevHash = "GENESIS";
         try {
-          const content = await (0, import_promises19.readFile)(path3, "utf-8");
+          const content = await (0, import_promises20.readFile)(path3, "utf-8");
           const lines = content.trim().split("\n").filter(Boolean);
           const lastLine = lines.at(-1);
           if (lastLine) {
@@ -58551,7 +60177,7 @@ var init_response_audit = __esm({
       }
       async log(entry) {
         await this.ensureSigningReady();
-        const id = (0, import_node_crypto32.randomUUID)();
+        const id = (0, import_node_crypto33.randomUUID)();
         const timestamp = /* @__PURE__ */ new Date();
         const fullEntry = {
           ...entry,
@@ -58563,8 +60189,8 @@ var init_response_audit = __esm({
           await this.attachSignature(serialized);
         }
         const path3 = resolvePath(this.auditLogPath);
-        await (0, import_promises19.mkdir)((0, import_node_path25.dirname)(path3), { recursive: true });
-        await (0, import_promises19.appendFile)(path3, `${JSON.stringify(serialized)}
+        await (0, import_promises20.mkdir)((0, import_node_path26.dirname)(path3), { recursive: true });
+        await (0, import_promises20.appendFile)(path3, `${JSON.stringify(serialized)}
 `);
         if (this.signEntries && serialized._entry_hash) {
           await this.writeHeadCheckpoint(serialized.id, serialized._entry_hash);
@@ -58583,7 +60209,8 @@ var init_response_audit = __esm({
           input: serialized.input,
           verdict: serialized.verdict,
           metadata: serialized.metadata,
-          error: serialized.error
+          error: serialized.error,
+          authorizedBy: serialized.authorized_by
         };
       }
       async query(filters) {
@@ -58608,7 +60235,7 @@ var init_response_audit = __esm({
       async loadAllEntries() {
         const path3 = resolvePath(this.auditLogPath);
         try {
-          const content = await (0, import_promises19.readFile)(path3, "utf-8");
+          const content = await (0, import_promises20.readFile)(path3, "utf-8");
           const lines = content.trim().split("\n").filter(Boolean);
           const entries = [];
           for (const line of lines) {
@@ -58625,7 +60252,8 @@ var init_response_audit = __esm({
                 responseTaken: serialized.response_taken,
                 metadata: serialized.metadata,
                 outcome: serialized.outcome,
-                error: serialized.error
+                error: serialized.error,
+                authorizedBy: serialized.authorized_by
               });
             } catch {
             }
@@ -58638,7 +60266,7 @@ var init_response_audit = __esm({
       async loadAllSerialized() {
         const path3 = resolvePath(this.auditLogPath);
         try {
-          const content = await (0, import_promises19.readFile)(path3, "utf-8");
+          const content = await (0, import_promises20.readFile)(path3, "utf-8");
           const lines = content.trim().split("\n").filter(Boolean);
           const entries = [];
           for (const line of lines) {
@@ -58660,7 +60288,7 @@ var init_response_audit = __esm({
         const path3 = resolvePath(this.auditLogPath);
         const tamperedEntries = [];
         try {
-          const content = await (0, import_promises19.readFile)(path3, "utf-8");
+          const content = await (0, import_promises20.readFile)(path3, "utf-8");
           const lines = content.trim().split("\n").filter(Boolean);
           let expectedPrevHash = "GENESIS";
           let lastVerifiedEntry;
@@ -58743,7 +60371,7 @@ var init_response_audit = __esm({
               rechained.push(entry);
             }
             const serialized = rechained.map((e) => JSON.stringify(e));
-            await (0, import_promises19.writeFile)(path3, `${serialized.join("\n")}
+            await (0, import_promises20.writeFile)(path3, `${serialized.join("\n")}
 `);
             const last = rechained[rechained.length - 1];
             if (last?._entry_hash) {
@@ -58751,10 +60379,10 @@ var init_response_audit = __esm({
             }
           } else {
             const serialized = filtered.map((e) => JSON.stringify(e));
-            await (0, import_promises19.writeFile)(path3, `${serialized.join("\n")}
+            await (0, import_promises20.writeFile)(path3, `${serialized.join("\n")}
 `);
             if (this.signEntries) {
-              await (0, import_promises19.unlink)(this.headPath).catch(() => void 0);
+              await (0, import_promises20.unlink)(this.headPath).catch(() => void 0);
             }
           }
           this.logger.debug("Enforced retention policy", {
@@ -59166,7 +60794,7 @@ async function checkCoreHealth() {
 async function checkCacheHealth() {
   const start = Date.now();
   try {
-    const cachePath = (0, import_node_path26.join)(resolvePath(AIDR_DIR), "cache.json");
+    const cachePath = (0, import_node_path27.join)(resolvePath(AIDR_DIR), "cache.json");
     const cache = new VerdictCache({
       enabled: true,
       path: cachePath,
@@ -59193,15 +60821,15 @@ async function checkCacheHealth() {
 async function checkThreatRulesHealth() {
   const start = Date.now();
   try {
-    const threatsDir = process.env.AIDR_THREATS_DIR || (0, import_node_path26.join)(process.cwd(), "threats");
+    const threatsDir = process.env.AIDR_THREATS_DIR || (0, import_node_path27.join)(process.cwd(), "threats");
     let threats = await loadThreats(threatsDir, nullLogger);
     if (threats.length === 0) {
       const altDirs = [
-        (0, import_node_path26.join)(process.cwd(), "..", "..", "threats"),
+        (0, import_node_path27.join)(process.cwd(), "..", "..", "threats"),
         // From packages/x/dist
-        (0, import_node_path26.join)(process.cwd(), "..", "..", "..", "threats"),
+        (0, import_node_path27.join)(process.cwd(), "..", "..", "..", "threats"),
         // From packages/x/dist/bin
-        (0, import_node_path26.join)(resolvePath(AIDR_DIR), "threats")
+        (0, import_node_path27.join)(resolvePath(AIDR_DIR), "threats")
         // User's home directory
       ];
       for (const altDir of altDirs) {
@@ -59394,12 +61022,12 @@ function formatHealthStatus(status) {
   }
   return lines.join("\n");
 }
-var import_node_fs6, import_node_path26;
+var import_node_fs6, import_node_path27;
 var init_health = __esm({
   "../core/dist/health.js"() {
     "use strict";
     import_node_fs6 = require("node:fs");
-    import_node_path26 = require("node:path");
+    import_node_path27 = require("node:path");
     init_cache();
     init_config();
     init_remote_policy();
@@ -60748,7 +62376,7 @@ var require_sonic_boom = __commonJS({
       if (!(this instanceof SonicBoom)) {
         return new SonicBoom(opts);
       }
-      let { fd, dest, minLength, maxLength, maxWrite, periodicFlush, sync, append = true, mkdir: mkdir18, retryEAGAIN, fsync, contentMode, mode } = opts || {};
+      let { fd, dest, minLength, maxLength, maxWrite, periodicFlush, sync, append = true, mkdir: mkdir19, retryEAGAIN, fsync, contentMode, mode } = opts || {};
       fd = fd || dest;
       this._len = 0;
       this.fd = -1;
@@ -60773,7 +62401,7 @@ var require_sonic_boom = __commonJS({
       this.append = append || false;
       this.mode = mode;
       this.retryEAGAIN = retryEAGAIN || (() => true);
-      this.mkdir = mkdir18 || false;
+      this.mkdir = mkdir19 || false;
       let fsWriteSync;
       let fsWrite;
       if (contentMode === kContentModeBuffer) {
@@ -61489,7 +63117,7 @@ var require_thread_stream = __commonJS({
     var { version: version2 } = require_package();
     var { EventEmitter: EventEmitter4 } = require("events");
     var { Worker: Worker3 } = require("worker_threads");
-    var { join: join31 } = require("path");
+    var { join: join33 } = require("path");
     var { pathToFileURL: pathToFileURL3 } = require("url");
     var { wait } = require_wait();
     var {
@@ -61525,7 +63153,7 @@ var require_thread_stream = __commonJS({
     function createWorker(stream, opts) {
       const { filename, workerData } = opts;
       const bundlerOverrides = "__bundlerPathsOverrides" in globalThis ? globalThis.__bundlerPathsOverrides : {};
-      const toExecute = bundlerOverrides["thread-stream-worker"] || join31(__dirname, "lib", "worker.js");
+      const toExecute = bundlerOverrides["thread-stream-worker"] || join33(__dirname, "lib", "worker.js");
       const worker = new Worker3(toExecute, {
         ...opts.workerOpts,
         trackUnmanagedFds: false,
@@ -61911,7 +63539,7 @@ var require_transport = __commonJS({
     "use strict";
     var { createRequire: createRequire2 } = require("module");
     var getCallers = require_caller();
-    var { join: join31, isAbsolute: isAbsolute6, sep: sep4 } = require("node:path");
+    var { join: join33, isAbsolute: isAbsolute6, sep: sep4 } = require("node:path");
     var sleep2 = require_atomic_sleep();
     var onExit = require_on_exit_leak_free();
     var ThreadStream = require_thread_stream();
@@ -61974,7 +63602,7 @@ var require_transport = __commonJS({
         throw new Error("only one of target or targets can be specified");
       }
       if (targets) {
-        target = bundlerOverrides["pino-worker"] || join31(__dirname, "worker.js");
+        target = bundlerOverrides["pino-worker"] || join33(__dirname, "worker.js");
         options.targets = targets.filter((dest) => dest.target).map((dest) => {
           return {
             ...dest,
@@ -61992,7 +63620,7 @@ var require_transport = __commonJS({
           });
         });
       } else if (pipeline) {
-        target = bundlerOverrides["pino-worker"] || join31(__dirname, "worker.js");
+        target = bundlerOverrides["pino-worker"] || join33(__dirname, "worker.js");
         options.pipelines = [pipeline.map((dest) => {
           return {
             ...dest,
@@ -62014,7 +63642,7 @@ var require_transport = __commonJS({
           return origin2;
         }
         if (origin2 === "pino/file") {
-          return join31(__dirname, "..", "file.js");
+          return join33(__dirname, "..", "file.js");
         }
         let fixTarget2;
         for (const filePath of callers) {
@@ -63003,7 +64631,7 @@ var require_safe_stable_stringify = __commonJS({
               return circularValue;
             }
             let res = "";
-            let join31 = ",";
+            let join33 = ",";
             const originalIndentation = indentation;
             if (Array.isArray(value)) {
               if (value.length === 0) {
@@ -63017,7 +64645,7 @@ var require_safe_stable_stringify = __commonJS({
                 indentation += spacer;
                 res += `
 ${indentation}`;
-                join31 = `,
+                join33 = `,
 ${indentation}`;
               }
               const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
@@ -63025,13 +64653,13 @@ ${indentation}`;
               for (; i < maximumValuesToStringify - 1; i++) {
                 const tmp2 = stringifyFnReplacer(String(i), value, stack, replacer, spacer, indentation);
                 res += tmp2 !== void 0 ? tmp2 : "null";
-                res += join31;
+                res += join33;
               }
               const tmp = stringifyFnReplacer(String(i), value, stack, replacer, spacer, indentation);
               res += tmp !== void 0 ? tmp : "null";
               if (value.length - 1 > maximumBreadth) {
                 const removedKeys = value.length - maximumBreadth - 1;
-                res += `${join31}"... ${getItemCount(removedKeys)} not stringified"`;
+                res += `${join33}"... ${getItemCount(removedKeys)} not stringified"`;
               }
               if (spacer !== "") {
                 res += `
@@ -63052,7 +64680,7 @@ ${originalIndentation}`;
             let separator = "";
             if (spacer !== "") {
               indentation += spacer;
-              join31 = `,
+              join33 = `,
 ${indentation}`;
               whitespace = " ";
             }
@@ -63066,13 +64694,13 @@ ${indentation}`;
               const tmp = stringifyFnReplacer(key2, value, stack, replacer, spacer, indentation);
               if (tmp !== void 0) {
                 res += `${separator}${strEscape(key2)}:${whitespace}${tmp}`;
-                separator = join31;
+                separator = join33;
               }
             }
             if (keyLength > maximumBreadth) {
               const removedKeys = keyLength - maximumBreadth;
               res += `${separator}"...":${whitespace}"${getItemCount(removedKeys)} not stringified"`;
-              separator = join31;
+              separator = join33;
             }
             if (spacer !== "" && separator.length > 1) {
               res = `
@@ -63113,7 +64741,7 @@ ${originalIndentation}`;
             }
             const originalIndentation = indentation;
             let res = "";
-            let join31 = ",";
+            let join33 = ",";
             if (Array.isArray(value)) {
               if (value.length === 0) {
                 return "[]";
@@ -63126,7 +64754,7 @@ ${originalIndentation}`;
                 indentation += spacer;
                 res += `
 ${indentation}`;
-                join31 = `,
+                join33 = `,
 ${indentation}`;
               }
               const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
@@ -63134,13 +64762,13 @@ ${indentation}`;
               for (; i < maximumValuesToStringify - 1; i++) {
                 const tmp2 = stringifyArrayReplacer(String(i), value[i], stack, replacer, spacer, indentation);
                 res += tmp2 !== void 0 ? tmp2 : "null";
-                res += join31;
+                res += join33;
               }
               const tmp = stringifyArrayReplacer(String(i), value[i], stack, replacer, spacer, indentation);
               res += tmp !== void 0 ? tmp : "null";
               if (value.length - 1 > maximumBreadth) {
                 const removedKeys = value.length - maximumBreadth - 1;
-                res += `${join31}"... ${getItemCount(removedKeys)} not stringified"`;
+                res += `${join33}"... ${getItemCount(removedKeys)} not stringified"`;
               }
               if (spacer !== "") {
                 res += `
@@ -63153,7 +64781,7 @@ ${originalIndentation}`;
             let whitespace = "";
             if (spacer !== "") {
               indentation += spacer;
-              join31 = `,
+              join33 = `,
 ${indentation}`;
               whitespace = " ";
             }
@@ -63162,7 +64790,7 @@ ${indentation}`;
               const tmp = stringifyArrayReplacer(key2, value[key2], stack, replacer, spacer, indentation);
               if (tmp !== void 0) {
                 res += `${separator}${strEscape(key2)}:${whitespace}${tmp}`;
-                separator = join31;
+                separator = join33;
               }
             }
             if (spacer !== "" && separator.length > 1) {
@@ -63220,20 +64848,20 @@ ${originalIndentation}`;
               indentation += spacer;
               let res2 = `
 ${indentation}`;
-              const join32 = `,
+              const join34 = `,
 ${indentation}`;
               const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
               let i = 0;
               for (; i < maximumValuesToStringify - 1; i++) {
                 const tmp2 = stringifyIndent(String(i), value[i], stack, spacer, indentation);
                 res2 += tmp2 !== void 0 ? tmp2 : "null";
-                res2 += join32;
+                res2 += join34;
               }
               const tmp = stringifyIndent(String(i), value[i], stack, spacer, indentation);
               res2 += tmp !== void 0 ? tmp : "null";
               if (value.length - 1 > maximumBreadth) {
                 const removedKeys = value.length - maximumBreadth - 1;
-                res2 += `${join32}"... ${getItemCount(removedKeys)} not stringified"`;
+                res2 += `${join34}"... ${getItemCount(removedKeys)} not stringified"`;
               }
               res2 += `
 ${originalIndentation}`;
@@ -63249,16 +64877,16 @@ ${originalIndentation}`;
               return '"[Object]"';
             }
             indentation += spacer;
-            const join31 = `,
+            const join33 = `,
 ${indentation}`;
             let res = "";
             let separator = "";
             let maximumPropertiesToStringify = Math.min(keyLength, maximumBreadth);
             if (isTypedArrayWithEntries(value)) {
-              res += stringifyTypedArray(value, join31, maximumBreadth);
+              res += stringifyTypedArray(value, join33, maximumBreadth);
               keys = keys.slice(value.length);
               maximumPropertiesToStringify -= value.length;
-              separator = join31;
+              separator = join33;
             }
             if (deterministic) {
               keys = sort(keys, comparator);
@@ -63269,13 +64897,13 @@ ${indentation}`;
               const tmp = stringifyIndent(key2, value[key2], stack, spacer, indentation);
               if (tmp !== void 0) {
                 res += `${separator}${strEscape(key2)}: ${tmp}`;
-                separator = join31;
+                separator = join33;
               }
             }
             if (keyLength > maximumBreadth) {
               const removedKeys = keyLength - maximumBreadth;
               res += `${separator}"...": "${getItemCount(removedKeys)} not stringified"`;
-              separator = join31;
+              separator = join33;
             }
             if (separator !== "") {
               res = `
@@ -63853,7 +65481,7 @@ function createLogger(options) {
   };
   if (shouldLogToFile()) {
     const logPath = getLogFilePath();
-    (0, import_node_fs7.mkdirSync)((0, import_node_path27.dirname)(logPath), { recursive: true });
+    (0, import_node_fs7.mkdirSync)((0, import_node_path28.dirname)(logPath), { recursive: true });
     return (0, import_pino.default)(config2, import_pino.default.multistream([
       { level, stream: import_pino.default.destination(2) },
       { level, stream: (0, import_node_fs7.createWriteStream)(logPath, { flags: "a" }) }
@@ -63872,12 +65500,12 @@ function setLogger(logger2) {
 function createChildLogger(parent, component, meta) {
   return parent.child({ component, ...meta });
 }
-var import_node_fs7, import_node_path27, import_pino, SENSITIVE_FIELDS, defaultLogger;
+var import_node_fs7, import_node_path28, import_pino, SENSITIVE_FIELDS, defaultLogger;
 var init_logger = __esm({
   "../core/dist/logger.js"() {
     "use strict";
     import_node_fs7 = require("node:fs");
-    import_node_path27 = require("node:path");
+    import_node_path28 = require("node:path");
     import_pino = __toESM(require_pino(), 1);
     init_config();
     init_telemetry_redaction();
@@ -63911,7 +65539,7 @@ function findProjectRoot() {
     if (typeof import_meta5.dirname === "string") {
       moduleDir = import_meta5.dirname;
     } else if (typeof import_meta5.url === "string") {
-      moduleDir = (0, import_node_path28.dirname)((0, import_node_url6.fileURLToPath)(import_meta5.url));
+      moduleDir = (0, import_node_path29.dirname)((0, import_node_url6.fileURLToPath)(import_meta5.url));
     }
   } catch {
   }
@@ -63926,10 +65554,10 @@ function isCategory(value) {
 function loadCategoriesJson() {
   const moduleDir = findProjectRoot();
   const candidates = [
-    (0, import_node_path29.join)(moduleDir, "generated", "aig-mcp-categories.json"),
-    (0, import_node_path29.join)(moduleDir, "..", "generated", "aig-mcp-categories.json"),
-    (0, import_node_path29.join)(moduleDir, "..", "src", "generated", "aig-mcp-categories.json"),
-    ...process.env.AIG_GENERATED_DIR ? [(0, import_node_path29.join)(process.env.AIG_GENERATED_DIR, "aig-mcp-categories.json")] : []
+    (0, import_node_path30.join)(moduleDir, "generated", "aig-mcp-categories.json"),
+    (0, import_node_path30.join)(moduleDir, "..", "generated", "aig-mcp-categories.json"),
+    (0, import_node_path30.join)(moduleDir, "..", "src", "generated", "aig-mcp-categories.json"),
+    ...process.env.AIG_GENERATED_DIR ? [(0, import_node_path30.join)(process.env.AIG_GENERATED_DIR, "aig-mcp-categories.json")] : []
   ];
   for (const candidatePath of candidates) {
     try {
@@ -64018,13 +65646,13 @@ function resetCategoryCache() {
 function escapeRegex3(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-var import_node_fs8, import_node_path28, import_node_path29, import_node_url6, import_meta5, CANONICAL_FALLBACK_CATEGORIES, _categories, _categoryStatus;
+var import_node_fs8, import_node_path29, import_node_path30, import_node_url6, import_meta5, CANONICAL_FALLBACK_CATEGORIES, _categories, _categoryStatus;
 var init_mcp_aig_categories = __esm({
   "../core/dist/mcp-aig-categories.js"() {
     "use strict";
     import_node_fs8 = require("node:fs");
-    import_node_path28 = require("node:path");
     import_node_path29 = require("node:path");
+    import_node_path30 = require("node:path");
     import_node_url6 = require("node:url");
     import_meta5 = {};
     CANONICAL_FALLBACK_CATEGORIES = [
@@ -64045,6 +65673,514 @@ var init_mcp_aig_categories = __esm({
     ];
     _categories = null;
     _categoryStatus = null;
+  }
+});
+
+// ../core/dist/mcp-attestation.js
+function isJsonValue(value, seen = /* @__PURE__ */ new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean")
+    return true;
+  if (typeof value === "number")
+    return Number.isFinite(value);
+  if (typeof value !== "object")
+    return false;
+  if (seen.has(value))
+    return false;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    const valid2 = value.every((entry) => isJsonValue(entry, seen));
+    seen.delete(value);
+    return valid2;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    seen.delete(value);
+    return false;
+  }
+  const valid = Object.values(value).every((entry) => isJsonValue(entry, seen));
+  seen.delete(value);
+  return valid;
+}
+function canonicalize3(value) {
+  if (Array.isArray(value))
+    return value.map((entry) => canonicalize3(entry));
+  if (value === null || typeof value !== "object")
+    return value;
+  const output = /* @__PURE__ */ Object.create(null);
+  for (const key of Object.keys(value).sort())
+    output[key] = canonicalize3(value[key]);
+  return output;
+}
+function normalizedManifest(manifest) {
+  return {
+    ...manifest,
+    tools: [...manifest.tools].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
+  };
+}
+function canonicalMcpToolManifest(manifest) {
+  const parsed = McpToolManifestV1Schema.parse(manifest);
+  return JSON.stringify(canonicalize3(normalizedManifest(parsed)));
+}
+function manifestPayload2(manifest) {
+  return Buffer.from(`${SIGNING_DOMAIN}${canonicalMcpToolManifest(manifest)}`, "utf8");
+}
+function signingPayload(manifest, keyId) {
+  return Buffer.from(`${SIGNING_DOMAIN}${keyId}
+${canonicalMcpToolManifest(manifest)}`, "utf8");
+}
+function mcpManifestHash(manifest) {
+  return (0, import_node_crypto34.createHash)("sha256").update(manifestPayload2(manifest)).digest("hex");
+}
+function mcpToolsetHash(tools) {
+  const parsed = external_exports.array(McpToolDefinitionSchema).max(4096).parse(tools);
+  const names = /* @__PURE__ */ new Set();
+  for (const tool of parsed) {
+    if (names.has(tool.name))
+      throw new Error(`duplicate MCP tool name: ${tool.name}`);
+    names.add(tool.name);
+  }
+  const ordered = [...parsed].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+  return (0, import_node_crypto34.createHash)("sha256").update(JSON.stringify(canonicalize3(ordered))).digest("hex");
+}
+function signMcpToolManifest(params) {
+  if (!ID_PATTERN.test(params.keyId))
+    throw new Error("invalid MCP signer key id");
+  const manifest = McpToolManifestV1Schema.parse(params.manifest);
+  const privateKey = params.privateKey instanceof import_node_crypto34.KeyObject ? params.privateKey : (0, import_node_crypto34.createPrivateKey)(params.privateKey);
+  if (privateKey.type !== "private" || privateKey.asymmetricKeyType !== "ed25519") {
+    throw new Error("MCP manifests must be signed with an Ed25519 private key");
+  }
+  return {
+    key_id: params.keyId,
+    manifest,
+    signature_b64: (0, import_node_crypto34.sign)(null, signingPayload(manifest, params.keyId), privateKey).toString("base64")
+  };
+}
+async function writeMcpSignerHealthEvidence(params) {
+  const lastSuccessAt = params.lastSuccessAt.getTime();
+  const activeKeyExpiresAt = params.activeKeyExpiresAt.getTime();
+  const now = (params.now ?? /* @__PURE__ */ new Date()).getTime();
+  if (!Number.isFinite(lastSuccessAt) || lastSuccessAt > now) {
+    throw new Error("invalid MCP signer last-success timestamp");
+  }
+  if (!Number.isFinite(activeKeyExpiresAt) || activeKeyExpiresAt <= now) {
+    throw new Error("active MCP signer key is expired");
+  }
+  const evidence = {
+    schema_version: 1,
+    status: "ok",
+    last_success_at: params.lastSuccessAt.toISOString(),
+    active_key_expires_at: params.activeKeyExpiresAt.toISOString()
+  };
+  await atomicWriteJson(params.path, evidence);
+  return evidence;
+}
+function trustedSigner(config2, keyId) {
+  const signers = config2.trustedSigners;
+  if ("get" in signers && typeof signers.get === "function") {
+    const value2 = signers.get(keyId);
+    return typeof value2 === "string" ? value2 : void 0;
+  }
+  if (!Object.hasOwn(signers, keyId))
+    return void 0;
+  const value = signers[keyId];
+  return typeof value === "string" ? value : void 0;
+}
+function decodeEd25519Signature(value) {
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0)
+    return null;
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.length !== 64 || decoded.toString("base64") !== value)
+    return null;
+  return decoded;
+}
+function validateManifestTimes(manifest, config2) {
+  const issuedAt = Date.parse(manifest.issued_at);
+  const expiresAt = Date.parse(manifest.expires_at);
+  if (expiresAt <= issuedAt)
+    return "invalid_time_window";
+  const maxLifetime = config2.maxLifetimeMs ?? DEFAULT_MAX_LIFETIME_MS;
+  if (!Number.isFinite(maxLifetime) || maxLifetime <= 0 || expiresAt - issuedAt > maxLifetime) {
+    return "lifetime_too_long";
+  }
+  const now = (config2.now ?? /* @__PURE__ */ new Date()).getTime();
+  const clockSkew = config2.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
+  if (!Number.isFinite(now) || !Number.isFinite(clockSkew) || clockSkew < 0) {
+    return "invalid_time_window";
+  }
+  if (issuedAt > now + clockSkew)
+    return "not_yet_valid";
+  if (expiresAt <= now)
+    return "expired";
+  return null;
+}
+function verifyManifestSignature2(manifest, keyId, publicKeyPem, signatureBase64) {
+  const signature = decodeEd25519Signature(signatureBase64);
+  if (!signature)
+    return "invalid_signature";
+  try {
+    const publicKey3 = (0, import_node_crypto34.createPublicKey)(publicKeyPem);
+    if (publicKey3.asymmetricKeyType !== "ed25519")
+      return "invalid_public_key";
+    return (0, import_node_crypto34.verify)(null, signingPayload(manifest, keyId), publicKey3, signature) ? null : "invalid_signature";
+  } catch {
+    return "invalid_public_key";
+  }
+}
+function verifySignedMcpToolManifest(candidate, config2) {
+  const parsed = SignedMcpToolManifestV1Schema.safeParse(candidate);
+  if (!parsed.success)
+    return { valid: false, reason: "invalid_envelope" };
+  const signed = parsed.data;
+  if (config2.expectedServerId && signed.manifest.server_id !== config2.expectedServerId) {
+    return { valid: false, reason: "unexpected_server" };
+  }
+  if (config2.revokedKeyIds?.has(signed.key_id))
+    return { valid: false, reason: "revoked_signer" };
+  const publicKeyPem = trustedSigner(config2, signed.key_id);
+  if (!publicKeyPem)
+    return { valid: false, reason: "untrusted_signer" };
+  const timeFailure = validateManifestTimes(signed.manifest, config2);
+  if (timeFailure)
+    return { valid: false, reason: timeFailure };
+  const signatureFailure = verifyManifestSignature2(signed.manifest, signed.key_id, publicKeyPem, signed.signature_b64);
+  if (signatureFailure)
+    return { valid: false, reason: signatureFailure };
+  return {
+    valid: true,
+    signed,
+    manifestHash: mcpManifestHash(signed.manifest),
+    toolsetHash: mcpToolsetHash(signed.manifest.tools)
+  };
+}
+function errorCode2(error4) {
+  return typeof error4 === "object" && error4 !== null && "code" in error4 ? String(error4.code) : void 0;
+}
+async function removeStaleLock(path3, staleAfter) {
+  try {
+    const info2 = await (0, import_promises21.stat)(path3);
+    if (Date.now() - info2.mtimeMs > staleAfter)
+      await (0, import_promises21.unlink)(path3);
+  } catch (error4) {
+    if (errorCode2(error4) !== "ENOENT")
+      throw error4;
+  }
+}
+function toolMap(tools) {
+  return new Map(tools.map((tool) => [
+    tool.name,
+    (0, import_node_crypto34.createHash)("sha256").update(JSON.stringify(canonicalize3(tool))).digest("hex")
+  ]));
+}
+function diffMcpTools(activeTools, candidateTools) {
+  const active = toolMap(activeTools);
+  const candidate = toolMap(candidateTools);
+  const added = [...candidate.keys()].filter((name) => !active.has(name)).sort();
+  const removed = [...active.keys()].filter((name) => !candidate.has(name)).sort();
+  const changed = [...candidate.keys()].filter((name) => active.has(name) && active.get(name) !== candidate.get(name)).sort();
+  return { added, removed, changed };
+}
+async function attestMcpToolManifest(params) {
+  const verified = verifySignedMcpToolManifest(params.candidate, params.verifier);
+  if (!verified.valid)
+    return { status: "rejected", reason: verified.reason };
+  const { signed, manifestHash, toolsetHash } = verified;
+  const { manifest } = signed;
+  const detectedAt = (params.verifier.now ?? /* @__PURE__ */ new Date()).toISOString();
+  try {
+    return await params.store.transact(manifest.server_id, (current) => {
+      if (current && manifest.sequence < current.highestSequence) {
+        return {
+          state: current,
+          result: { status: "rejected", reason: "sequence_replay" }
+        };
+      }
+      if (current && manifest.sequence === current.highestSequence && manifestHash !== current.highestManifestHash) {
+        return {
+          state: current,
+          result: { status: "rejected", reason: "sequence_conflict" }
+        };
+      }
+      const drift = diffMcpTools(current?.activeTools ?? [], manifest.tools);
+      const approved = current?.approvedToolsets.some((entry) => entry.toolsetHash === toolsetHash);
+      const alreadyActive = current?.activeToolsetHash === toolsetHash;
+      const shouldAccept = approved || alreadyActive;
+      const base = current ?? {
+        schemaVersion: 1,
+        serverId: manifest.server_id,
+        revision: 0,
+        highestSequence: manifest.sequence,
+        highestManifestHash: manifestHash,
+        activeTools: [],
+        approvedToolsets: []
+      };
+      const next = {
+        ...base,
+        revision: base.revision + 1,
+        highestSequence: manifest.sequence,
+        highestManifestHash: manifestHash
+      };
+      if (shouldAccept) {
+        next.activeToolsetHash = toolsetHash;
+        next.activeTools = normalizedManifest(manifest).tools;
+        delete next.quarantine;
+        return {
+          state: next,
+          result: { status: "accepted", manifestHash, toolsetHash, drift }
+        };
+      }
+      next.quarantine = {
+        manifestHash,
+        toolsetHash,
+        keyId: signed.key_id,
+        sequence: manifest.sequence,
+        detectedAt,
+        drift,
+        tools: normalizedManifest(manifest).tools
+      };
+      return {
+        state: next,
+        result: { status: "quarantined", manifestHash, toolsetHash, drift }
+      };
+    });
+  } catch {
+    return { status: "rejected", reason: "state_unavailable" };
+  }
+}
+async function approveQuarantinedMcpToolset(params) {
+  if (!SHA256_PATTERN2.test(params.toolsetHash))
+    throw new Error("invalid MCP toolset hash");
+  const approvedBy = params.approvedBy.trim();
+  const reason = params.reason.trim();
+  if (!approvedBy || approvedBy.length > 256)
+    throw new Error("invalid MCP approval actor");
+  if (!reason || reason.length > 2048)
+    throw new Error("invalid MCP approval reason");
+  return params.store.transact(params.serverId, (current) => {
+    if (!current?.quarantine) {
+      return { state: current, result: { approved: false, reason: "no_quarantine" } };
+    }
+    if (current.quarantine.toolsetHash !== params.toolsetHash) {
+      return {
+        state: current,
+        result: { approved: false, reason: "toolset_mismatch" }
+      };
+    }
+    const approval = {
+      toolsetHash: params.toolsetHash,
+      approvedAt: (params.now ?? /* @__PURE__ */ new Date()).toISOString(),
+      approvedBy,
+      reason
+    };
+    const approvals = current.approvedToolsets.filter((entry) => entry.toolsetHash !== params.toolsetHash);
+    approvals.push(approval);
+    const next = {
+      ...current,
+      revision: current.revision + 1,
+      activeToolsetHash: params.toolsetHash,
+      activeTools: current.quarantine.tools,
+      approvedToolsets: approvals.slice(-MAX_APPROVED_TOOLSETS)
+    };
+    delete next.quarantine;
+    return {
+      state: next,
+      result: { approved: true, toolsetHash: params.toolsetHash }
+    };
+  });
+}
+var import_node_crypto34, import_promises21, import_node_path31, import_promises22, SIGNING_DOMAIN, DEFAULT_CLOCK_SKEW_MS, DEFAULT_MAX_LIFETIME_MS, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_STALE_LOCK_MS, MAX_APPROVED_TOOLSETS, ID_PATTERN, TOOL_NAME_PATTERN, SHA256_PATTERN2, JsonObjectSchema, McpToolDefinitionSchema, McpToolManifestV1Schema, SignedMcpToolManifestV1Schema, McpToolDriftSchema, McpAttestationStateV1Schema, MemoryMcpAttestationStore, FileMcpAttestationStore;
+var init_mcp_attestation = __esm({
+  "../core/dist/mcp-attestation.js"() {
+    "use strict";
+    import_node_crypto34 = require("node:crypto");
+    import_promises21 = require("node:fs/promises");
+    import_node_path31 = require("node:path");
+    import_promises22 = require("node:timers/promises");
+    init_zod();
+    init_file_utils();
+    SIGNING_DOMAIN = "AIDR-MCP-TOOL-MANIFEST-V1\n";
+    DEFAULT_CLOCK_SKEW_MS = 5 * 60 * 1e3;
+    DEFAULT_MAX_LIFETIME_MS = 7 * 24 * 60 * 60 * 1e3;
+    DEFAULT_LOCK_TIMEOUT_MS = 5e3;
+    DEFAULT_STALE_LOCK_MS = 3e4;
+    MAX_APPROVED_TOOLSETS = 256;
+    ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
+    TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
+    SHA256_PATTERN2 = /^[0-9a-f]{64}$/;
+    JsonObjectSchema = external_exports.custom((value) => value !== null && !Array.isArray(value) && typeof value === "object" && isJsonValue(value), { message: "must be a JSON object with finite values and no cycles" });
+    McpToolDefinitionSchema = external_exports.object({
+      name: external_exports.string().regex(TOOL_NAME_PATTERN),
+      description: external_exports.string().max(65536),
+      input_schema: JsonObjectSchema,
+      output_schema: JsonObjectSchema.optional(),
+      annotations: JsonObjectSchema.optional()
+    }).strict();
+    McpToolManifestV1Schema = external_exports.object({
+      schema_version: external_exports.literal(1),
+      server_id: external_exports.string().regex(ID_PATTERN),
+      sequence: external_exports.number().int().nonnegative().safe(),
+      issued_at: external_exports.string().datetime({ offset: true }),
+      expires_at: external_exports.string().datetime({ offset: true }),
+      tools: external_exports.array(McpToolDefinitionSchema).max(4096)
+    }).strict().superRefine((manifest, context2) => {
+      const names = /* @__PURE__ */ new Set();
+      for (const [index, tool] of manifest.tools.entries()) {
+        if (names.has(tool.name)) {
+          context2.addIssue({
+            code: external_exports.ZodIssueCode.custom,
+            path: ["tools", index, "name"],
+            message: `duplicate MCP tool name: ${tool.name}`
+          });
+        }
+        names.add(tool.name);
+      }
+    });
+    SignedMcpToolManifestV1Schema = external_exports.object({
+      key_id: external_exports.string().regex(ID_PATTERN),
+      manifest: McpToolManifestV1Schema,
+      signature_b64: external_exports.string().min(1).max(512)
+    }).strict();
+    McpToolDriftSchema = external_exports.object({
+      added: external_exports.array(external_exports.string().regex(TOOL_NAME_PATTERN)),
+      removed: external_exports.array(external_exports.string().regex(TOOL_NAME_PATTERN)),
+      changed: external_exports.array(external_exports.string().regex(TOOL_NAME_PATTERN))
+    });
+    McpAttestationStateV1Schema = external_exports.object({
+      schemaVersion: external_exports.literal(1),
+      serverId: external_exports.string().regex(ID_PATTERN),
+      revision: external_exports.number().int().nonnegative().safe(),
+      highestSequence: external_exports.number().int().nonnegative().safe(),
+      highestManifestHash: external_exports.string().regex(SHA256_PATTERN2),
+      activeToolsetHash: external_exports.string().regex(SHA256_PATTERN2).optional(),
+      activeTools: external_exports.array(McpToolDefinitionSchema).max(4096),
+      approvedToolsets: external_exports.array(external_exports.object({
+        toolsetHash: external_exports.string().regex(SHA256_PATTERN2),
+        approvedAt: external_exports.string().datetime({ offset: true }),
+        approvedBy: external_exports.string().min(1).max(256),
+        reason: external_exports.string().min(1).max(2048)
+      })).max(MAX_APPROVED_TOOLSETS),
+      quarantine: external_exports.object({
+        manifestHash: external_exports.string().regex(SHA256_PATTERN2),
+        toolsetHash: external_exports.string().regex(SHA256_PATTERN2),
+        keyId: external_exports.string().regex(ID_PATTERN),
+        sequence: external_exports.number().int().nonnegative().safe(),
+        detectedAt: external_exports.string().datetime({ offset: true }),
+        drift: McpToolDriftSchema,
+        tools: external_exports.array(McpToolDefinitionSchema).max(4096)
+      }).optional()
+    });
+    MemoryMcpAttestationStore = class {
+      states = /* @__PURE__ */ new Map();
+      queue = Promise.resolve();
+      async transact(serverId, operation) {
+        let resolveResult = () => void 0;
+        let rejectResult = () => void 0;
+        const resultPromise = new Promise((resolve12, reject) => {
+          resolveResult = resolve12;
+          rejectResult = reject;
+        });
+        this.queue = this.queue.then(async () => {
+          try {
+            const current = this.states.get(serverId) ?? null;
+            const outcome = operation(current ? structuredClone(current) : null);
+            if (outcome.state)
+              this.states.set(serverId, structuredClone(outcome.state));
+            else
+              this.states.delete(serverId);
+            resolveResult(outcome.result);
+          } catch (error4) {
+            rejectResult(error4);
+          }
+        });
+        await this.queue;
+        return resultPromise;
+      }
+      /** Read-only accessor; it never advances replay state. */
+      async read(serverId) {
+        await this.queue;
+        const current = this.states.get(serverId);
+        return current ? structuredClone(current) : null;
+      }
+    };
+    FileMcpAttestationStore = class {
+      directory;
+      options;
+      constructor(directory, options = {}) {
+        this.directory = directory;
+        this.options = options;
+      }
+      statePath(serverId) {
+        const id = (0, import_node_crypto34.createHash)("sha256").update(serverId, "utf8").digest("hex");
+        return (0, import_node_path31.join)(this.directory, `${id}.json`);
+      }
+      async acquireLock(path3) {
+        const startedAt = Date.now();
+        const timeout = this.options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+        const staleAfter = this.options.staleLockMs ?? DEFAULT_STALE_LOCK_MS;
+        for (; ; ) {
+          try {
+            const handle = await (0, import_promises21.open)(path3, "wx", 384);
+            await handle.writeFile(`${process.pid}
+`, "utf8");
+            await handle.close();
+            return async () => {
+              try {
+                await (0, import_promises21.unlink)(path3);
+              } catch (error4) {
+                if (errorCode2(error4) !== "ENOENT")
+                  throw error4;
+              }
+            };
+          } catch (error4) {
+            if (errorCode2(error4) !== "EEXIST")
+              throw error4;
+            await removeStaleLock(path3, staleAfter);
+            if (Date.now() - startedAt >= timeout) {
+              throw new Error("timed out acquiring MCP attestation state lock");
+            }
+            await (0, import_promises22.setTimeout)(20);
+          }
+        }
+      }
+      /**
+       * Read-only accessor. Corrupt or mismatched state throws, so a read-only
+       * caller reports the state as unavailable instead of treating it as absent.
+       */
+      async read(serverId) {
+        try {
+          const parsed = McpAttestationStateV1Schema.parse(JSON.parse(await getFileContent(this.statePath(serverId))));
+          if (parsed.serverId !== serverId)
+            throw new Error("MCP attestation state server mismatch");
+          return parsed;
+        } catch (error4) {
+          if (errorCode2(error4) === "ENOENT")
+            return null;
+          throw error4;
+        }
+      }
+      async transact(serverId, operation) {
+        if (!ID_PATTERN.test(serverId))
+          throw new Error("invalid MCP server id");
+        await (0, import_promises21.mkdir)(this.directory, { recursive: true, mode: 448 });
+        const release3 = await this.acquireLock(`${this.statePath(serverId)}.lock`);
+        try {
+          const current = await this.read(serverId);
+          const outcome = operation(current);
+          if (!outcome.state) {
+            if (current)
+              throw new Error("persistent MCP state cannot be deleted through transact");
+            return outcome.result;
+          }
+          const state = McpAttestationStateV1Schema.parse(outcome.state);
+          if (state.serverId !== serverId)
+            throw new Error("MCP attestation state server mismatch");
+          await atomicWriteJson(this.statePath(serverId), state);
+          return outcome.result;
+        } finally {
+          await release3();
+        }
+      }
+    };
   }
 });
 
@@ -64094,19 +66230,22 @@ function inventoryItemFromEntry(name, raw, sourcePath) {
 }
 function parseServerRecord(servers, sourcePath) {
   if (!servers)
-    return [];
+    return { items: [], skippedNames: [] };
   const items = [];
+  const skippedNames = [];
   for (const [name, raw] of Object.entries(servers)) {
     const item = inventoryItemFromEntry(name, raw, sourcePath);
     if (item)
       items.push(item);
+    else
+      skippedNames.push(name);
   }
-  return items;
+  return { items, skippedNames };
 }
 function parseMcpServers(data, sourcePath) {
   const root = asRecord(data);
   if (!root)
-    return [];
+    return { items: [], skippedNames: [] };
   const nestedMcp = asRecord(root.mcp);
   const nestedMcpServers = asRecord(nestedMcp?.servers);
   const candidates = [
@@ -64117,8 +66256,12 @@ function parseMcpServers(data, sourcePath) {
   ];
   const items = [];
   const seen = /* @__PURE__ */ new Set();
+  const skippedNames = /* @__PURE__ */ new Set();
   for (const servers of candidates) {
-    for (const item of parseServerRecord(servers, sourcePath)) {
+    const parsed = parseServerRecord(servers, sourcePath);
+    for (const name of parsed.skippedNames)
+      skippedNames.add(name);
+    for (const item of parsed.items) {
       const key = `${item.sourcePath}\0${item.name}`;
       if (seen.has(key))
         continue;
@@ -64126,7 +66269,35 @@ function parseMcpServers(data, sourcePath) {
       items.push(item);
     }
   }
-  return items;
+  for (const item of items)
+    skippedNames.delete(item.name);
+  return { items, skippedNames: [...skippedNames] };
+}
+async function readInventorySource(path3) {
+  try {
+    const content = await getFileContent(path3);
+    if (content.length > 2 * 1024 * 1024)
+      throw new Error("inventory_source_too_large");
+    const parsed = parseJsonc(content);
+    if (parsed.status !== "ok")
+      throw new Error(`invalid_inventory_json:${parsed.error}`);
+    if (!asRecord(parsed.value) || Array.isArray(parsed.value)) {
+      throw new Error("invalid_inventory_root");
+    }
+    const servers = parseMcpServers(parsed.value, path3);
+    return { status: "read", items: servers.items, serversNotEnumerated: servers.skippedNames.length };
+  } catch (error4) {
+    return {
+      status: error4.code === "ENOENT" ? "missing" : "invalid",
+      items: [],
+      serversNotEnumerated: 0
+    };
+  }
+}
+function coverageStatus(readSources, invalidSources) {
+  if (invalidSources > 0)
+    return readSources > 0 ? "partial" : "invalid";
+  return readSources > 0 ? "read" : "missing";
 }
 async function inspectMcpServerInventory(configPaths) {
   const defaultPaths = [
@@ -64147,69 +66318,202 @@ async function inspectMcpServerInventory(configPaths) {
   const paths = (configPaths && configPaths.length > 0 ? configPaths : defaultPaths).map(resolvePath);
   const all = [];
   const sources = [];
+  let serversNotEnumerated = 0;
   for (const path3 of paths) {
-    try {
-      const content = await getFileContent(path3);
-      if (content.length > 2 * 1024 * 1024)
-        throw new Error("inventory_source_too_large");
-      const parsed = JSON.parse(content);
-      if (!asRecord(parsed) || Array.isArray(parsed))
-        throw new Error("invalid_inventory_root");
-      all.push(...parseMcpServers(parsed, path3));
-      sources.push({ path: path3, status: "read" });
-    } catch (error4) {
-      sources.push({ path: path3, status: error4.code === "ENOENT" ? "missing" : "invalid" });
-    }
+    const read = await readInventorySource(path3);
+    all.push(...read.items);
+    serversNotEnumerated += read.serversNotEnumerated;
+    sources.push({ path: path3, status: read.status });
   }
-  return { items: all, sources };
+  const readSources = sources.filter((source) => source.status === "read").length;
+  const missingSources = sources.filter((source) => source.status === "missing").length;
+  const invalidSources = sources.filter((source) => source.status === "invalid").length;
+  return {
+    items: all,
+    sources,
+    coverage: {
+      status: coverageStatus(readSources, invalidSources),
+      totalSources: sources.length,
+      readSources,
+      missingSources,
+      invalidSources,
+      serversNotEnumerated,
+      sourcesNotEnumerated: invalidSources
+    }
+  };
 }
 var init_mcp_inventory = __esm({
   "../core/dist/mcp-inventory.js"() {
     "use strict";
     init_config();
     init_file_utils();
+    init_jsonc();
   }
 });
 
 // ../core/dist/mcp-discovery.js
 function inventoryId(sourcePath, name) {
-  const resolvedPath = (0, import_node_path30.resolve)(sourcePath);
+  const resolvedPath = (0, import_node_path32.resolve)(sourcePath);
   const canonicalPath = process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
-  return (0, import_node_crypto33.createHash)("sha256").update("aidr-mcp-inventory-v1\0").update(JSON.stringify([canonicalPath, name])).digest("hex");
+  return (0, import_node_crypto35.createHash)("sha256").update("aidr-mcp-inventory-v1\0").update(JSON.stringify([canonicalPath, name])).digest("hex");
 }
-async function discoverMcpServers(paths) {
+function keyringIsConfigured(keyring) {
+  if (!keyring)
+    return false;
+  if ("size" in keyring && typeof keyring.size === "number")
+    return keyring.size > 0;
+  return Object.keys(keyring).length > 0;
+}
+function manifestFor(index, key) {
+  if (!index)
+    return void 0;
+  if (index instanceof Map)
+    return index.get(key);
+  if (!Object.hasOwn(index, key))
+    return void 0;
+  return index[key];
+}
+async function attestDiscoveredServer(item, id, options) {
+  if (!keyringIsConfigured(options.keyring)) {
+    return {
+      status: "unverifiable",
+      keyring: "absent",
+      approval_state: "unavailable",
+      reason: "no_keyring"
+    };
+  }
+  const signed = manifestFor(options.manifests, id) ?? manifestFor(options.manifests, item.name);
+  if (!signed) {
+    return {
+      status: "unsigned",
+      keyring: "configured",
+      approval_state: "unavailable",
+      reason: "no_signed_manifest"
+    };
+  }
+  const verified = verifySignedMcpToolManifest(signed, {
+    trustedSigners: options.keyring,
+    ...options.revokedKeyIds ? { revokedKeyIds: new Set(options.revokedKeyIds) } : {},
+    ...options.now ? { now: options.now } : {}
+  });
+  if (!verified.valid) {
+    const unverifiableReason = UNVERIFIABLE_REASONS[verified.reason];
+    return {
+      status: unverifiableReason ? "unverifiable" : "rejected",
+      keyring: "configured",
+      approval_state: "unavailable",
+      key_id: signed.key_id,
+      server_id: signed.manifest.server_id,
+      reason: unverifiableReason ?? verified.reason
+    };
+  }
+  const verifiedEvidence = {
+    keyring: "configured",
+    key_id: verified.signed.key_id,
+    server_id: verified.signed.manifest.server_id,
+    toolset_hash: verified.toolsetHash
+  };
+  const store = options.store;
+  if (!store?.read) {
+    return {
+      ...verifiedEvidence,
+      status: "unapproved",
+      approval_state: "unavailable",
+      reason: "approval_state_unavailable"
+    };
+  }
+  let state;
+  try {
+    state = await store.read(verified.signed.manifest.server_id);
+  } catch {
+    return {
+      ...verifiedEvidence,
+      status: "unverifiable",
+      approval_state: "unavailable",
+      reason: "state_unavailable"
+    };
+  }
+  if (!state) {
+    return {
+      ...verifiedEvidence,
+      status: "unapproved",
+      approval_state: "available",
+      reason: "not_approved"
+    };
+  }
+  const approved = state.activeToolsetHash === verified.toolsetHash || state.approvedToolsets.some((entry) => entry.toolsetHash === verified.toolsetHash);
+  if (approved) {
+    return { ...verifiedEvidence, status: "approved", approval_state: "available" };
+  }
+  if (state.quarantine) {
+    return {
+      ...verifiedEvidence,
+      status: "quarantined",
+      approval_state: "available",
+      quarantined_toolset_hash: state.quarantine.toolsetHash,
+      reason: "quarantined_pending_operator_approval"
+    };
+  }
+  return {
+    ...verifiedEvidence,
+    status: "unapproved",
+    approval_state: "available",
+    reason: "not_approved"
+  };
+}
+async function discoverMcpServers(paths, options = {}) {
   const report = await inspectMcpServerInventory(paths);
+  const attestationOptions = options.attestation ?? {};
+  const servers = await Promise.all(report.items.map(async (item) => {
+    let endpoint = null;
+    try {
+      if (item.url)
+        endpoint = new URL(item.url).origin;
+    } catch {
+    }
+    const id = inventoryId(item.sourcePath, item.name);
+    return {
+      inventory_id: id,
+      name: item.name,
+      source: item.sourcePath,
+      transport: item.url ? "remote" : "stdio",
+      endpoint,
+      risk_hints: item.riskHints,
+      configuration_sha256: (0, import_node_crypto35.createHash)("sha256").update(JSON.stringify([item.command, item.args, item.url])).digest("hex"),
+      attestation: await attestDiscoveredServer(item, id, attestationOptions)
+    };
+  }));
   return {
     schema_version: 1,
     scanned_at: (/* @__PURE__ */ new Date()).toISOString(),
-    scope: "Local JSON MCP configurations; not cloud-wide discovery or tool-description attestation",
+    scope: "Local JSON/JSONC MCP configurations; not cloud-wide discovery. Tool-manifest attestation reflects only the operator-supplied tenant keyring, the supplied signed manifests and the recorded approval state; absence of a keyring is reported as unverifiable.",
     sources: report.sources,
-    servers: report.items.map((item) => {
-      let endpoint = null;
-      try {
-        if (item.url)
-          endpoint = new URL(item.url).origin;
-      } catch {
-      }
-      return {
-        inventory_id: inventoryId(item.sourcePath, item.name),
-        name: item.name,
-        source: item.sourcePath,
-        transport: item.url ? "remote" : "stdio",
-        endpoint,
-        risk_hints: item.riskHints,
-        configuration_sha256: (0, import_node_crypto33.createHash)("sha256").update(JSON.stringify([item.command, item.args, item.url])).digest("hex")
-      };
-    })
+    // Coverage is published next to `servers` so an unreadable configuration
+    // is reported as a gap instead of as an empty (but complete) inventory.
+    coverage: {
+      status: report.coverage.status,
+      total_sources: report.coverage.totalSources,
+      read_sources: report.coverage.readSources,
+      missing_sources: report.coverage.missingSources,
+      invalid_sources: report.coverage.invalidSources,
+      servers_not_enumerated: report.coverage.serversNotEnumerated,
+      sources_not_enumerated: report.coverage.sourcesNotEnumerated
+    },
+    servers
   };
 }
-var import_node_crypto33, import_node_path30;
+var import_node_crypto35, import_node_path32, UNVERIFIABLE_REASONS;
 var init_mcp_discovery = __esm({
   "../core/dist/mcp-discovery.js"() {
     "use strict";
-    import_node_crypto33 = require("node:crypto");
-    import_node_path30 = require("node:path");
+    import_node_crypto35 = require("node:crypto");
+    import_node_path32 = require("node:path");
+    init_mcp_attestation();
     init_mcp_inventory();
+    UNVERIFIABLE_REASONS = {
+      untrusted_signer: "unknown_signer",
+      invalid_public_key: "invalid_public_key"
+    };
   }
 });
 
@@ -64225,12 +66529,12 @@ function getMetricsCollector() {
     instance = new MetricsCollector();
   return instance;
 }
-var import_node_fs9, import_node_path31, Counter, Histogram, Gauge, MetricsRegistry, globalRegistry2, aidrMetrics, MetricsCollector, instance, metrics2;
+var import_node_fs9, import_node_path33, Counter, Histogram, Gauge, MetricsRegistry, globalRegistry2, aidrMetrics, MetricsCollector, instance, metrics2;
 var init_metrics2 = __esm({
   "../core/dist/metrics.js"() {
     "use strict";
     import_node_fs9 = require("node:fs");
-    import_node_path31 = require("node:path");
+    import_node_path33 = require("node:path");
     init_config();
     Counter = class {
       value = 0;
@@ -64547,7 +66851,7 @@ var init_metrics2 = __esm({
       }
       ensureMetricsDir() {
         try {
-          (0, import_node_fs9.mkdirSync)((0, import_node_path31.dirname)(this.metricsFilePath), { recursive: true });
+          (0, import_node_fs9.mkdirSync)((0, import_node_path33.dirname)(this.metricsFilePath), { recursive: true });
         } catch {
         }
       }
@@ -64677,282 +66981,125 @@ var init_metrics2 = __esm({
   }
 });
 
-// ../core/dist/ml/embedder.js
-function fnv1aHash(str, seed = HASH_SEED) {
-  let hash = seed;
-  for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
+// ../core/dist/connector-alias-contract.js
+function extractDeclaredToolNames(source) {
+  const names = /* @__PURE__ */ new Set();
+  for (const match of source.matchAll(CASE_LABEL_PATTERN)) {
+    const name = match[1];
+    if (name !== void 0 && name !== "")
+      names.add(name);
   }
-  return hash >>> 0;
+  for (const match of source.matchAll(ASSIGNED_TOOL_NAME_PATTERN)) {
+    const name = match[1];
+    if (name !== void 0 && name !== "")
+      names.add(name);
+  }
+  return [...names].sort();
 }
-function extractNgrams(text, n = NGRAM_SIZE) {
-  const normalized = text.toLowerCase().trim().replace(/\s+/g, " ");
-  if (normalized.length <= n) {
-    return [normalized.padEnd(n, "_")];
-  }
-  const ngrams = [];
-  for (let i = 0; i <= normalized.length - n; i++) {
-    ngrams.push(normalized.slice(i, i + n));
-  }
-  ngrams.push(`^${normalized.slice(0, n - 1)}`);
-  ngrams.push(`${normalized.slice(-n + 1)}$`);
-  return ngrams;
+function isCanonicalToolAlias(toolName) {
+  return CANONICAL_TOOL_NAMES.has(toolName.trim().toLowerCase());
 }
-function tokenize(text) {
-  const normalized = text.toLowerCase().replace(/https?:\/\//g, "http_").replace(/www\./g, "www_").replace(/[|;&&||]/g, " SEP ").replace(/\\/g, "/").replace(/[^a-z0-9_/.@$-]/g, " ").trim();
-  const tokens = normalized.split(/\s+/).filter((t) => t.length > 0);
-  return tokens.slice(0, MAX_TOKENS);
+function classifyToolName(surface, toolName, declaredPassThrough) {
+  const isAlias = isCanonicalToolAlias(toolName);
+  if (isAlias && declaredPassThrough.has(toolName)) {
+    return {
+      connector: surface.connector,
+      toolName,
+      kind: "stale-pass-through",
+      detail: `${toolName} is declared pass-through but now resolves to a canonical operation; remove it from passThrough.`
+    };
+  }
+  if (!isAlias && !declaredPassThrough.has(toolName)) {
+    return {
+      connector: surface.connector,
+      toolName,
+      kind: "unmapped",
+      detail: `${toolName} is emitted by ${surface.dispatchSource} but is neither a canonical alias nor a declared pass-through. Alias it in CANONICAL_TOOL_NAMES or declare it pass-through with a reason.`
+    };
+  }
+  return void 0;
 }
-function generateEmbedding(text, dim = EMBEDDING_DIM) {
-  const embedding = new Float32Array(dim);
-  const ngrams = extractNgrams(text);
-  const tokens = tokenize(text);
-  const features = /* @__PURE__ */ new Map();
-  ngrams.forEach((ngram, idx) => {
-    const weight = 1 - idx / (ngrams.length + 1) * 0.3;
-    features.set(ngram, (features.get(ngram) || 0) + weight);
-  });
-  tokens.forEach((token, idx) => {
-    const weight = 1 + (tokens.length - idx) / tokens.length;
-    features.set(token, (features.get(token) || 0) + weight);
-  });
-  let featureCount = 0;
-  for (const [feature, weight] of features) {
-    const h1 = fnv1aHash(feature, HASH_SEED);
-    const h2 = fnv1aHash(feature, HASH_SEED ^ 1597463007);
-    const h3 = fnv1aHash([...feature].reverse().join(""), HASH_SEED ^ 1779033703);
-    const idx1 = h1 % dim;
-    const idx2 = h2 % dim;
-    const idx3 = h3 % dim;
-    const value = (h1 / 4294967295 * 2 - 1) * weight;
-    embedding[idx1] = (embedding[idx1] ?? 0) + value;
-    embedding[idx2] = (embedding[idx2] ?? 0) + value * 0.7;
-    embedding[idx3] = (embedding[idx3] ?? 0) + value * 0.5;
-    featureCount++;
-    if (featureCount > 256)
-      break;
-  }
-  let sumSquares = 0;
-  for (let i = 0; i < dim; i++) {
-    const component = embedding[i] ?? 0;
-    sumSquares += component * component;
-  }
-  if (sumSquares > 0) {
-    const norm = Math.sqrt(sumSquares);
-    for (let i = 0; i < dim; i++) {
-      embedding[i] = (embedding[i] ?? 0) / norm;
+function findConnectorToolSurfaceViolations(derived, surfaces = CONNECTOR_TOOL_SURFACES) {
+  const violations = [];
+  for (const surface of surfaces) {
+    const names = derived.get(surface.connector) ?? [];
+    const declared = new Set(surface.passThrough);
+    for (const toolName of names) {
+      const violation = classifyToolName(surface, toolName, declared);
+      if (violation)
+        violations.push(violation);
+    }
+    for (const toolName of surface.passThrough) {
+      if (names.includes(toolName))
+        continue;
+      violations.push({
+        connector: surface.connector,
+        toolName,
+        kind: "stale-pass-through",
+        detail: `${toolName} is declared pass-through but ${surface.dispatchSource} no longer emits it.`
+      });
+    }
+    if (surface.passThrough.length > 0 && !surface.passThroughReason) {
+      violations.push({
+        connector: surface.connector,
+        toolName: surface.passThrough.join(", "),
+        kind: "undeclared-pass-through",
+        detail: `${surface.connector} declares pass-through tools without a passThroughReason.`
+      });
     }
   }
-  return embedding;
+  return violations;
 }
-var EMBEDDING_DIM, MAX_TOKENS, NGRAM_SIZE, HASH_SEED;
-var init_embedder = __esm({
-  "../core/dist/ml/embedder.js"() {
+var CONNECTOR_TOOL_SURFACES, CASE_LABEL_PATTERN, ASSIGNED_TOOL_NAME_PATTERN;
+var init_connector_alias_contract = __esm({
+  "../core/dist/connector-alias-contract.js"() {
     "use strict";
-    EMBEDDING_DIM = 100;
-    MAX_TOKENS = 128;
-    NGRAM_SIZE = 3;
-    HASH_SEED = 2654435769;
-  }
-});
-
-// ../core/dist/ml/similarity.js
-function cosineSimilarity(a, b2) {
-  if (a.length !== b2.length) {
-    throw new Error(`Vector length mismatch: ${a.length} vs ${b2.length}`);
-  }
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  const len = a.length;
-  for (let i = 0; i < len; i++) {
-    const ai2 = a[i];
-    const bi = b2[i];
-    dotProduct += ai2 * bi;
-    normA += ai2 * ai2;
-    normB += bi * bi;
-  }
-  if (normA === 0 || normB === 0) {
-    return 0;
-  }
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-function findTopKSimilar(query, candidates, k2) {
-  const similarities = [];
-  for (let i = 0; i < candidates.length; i++) {
-    const candidate = candidates[i];
-    if (!candidate)
-      continue;
-    similarities.push({
-      index: i,
-      similarity: cosineSimilarity(query, candidate)
-    });
-  }
-  similarities.sort((a, b2) => b2.similarity - a.similarity);
-  return similarities.slice(0, k2);
-}
-var SIMILARITY_THRESHOLDS;
-var init_similarity = __esm({
-  "../core/dist/ml/similarity.js"() {
-    "use strict";
-    SIMILARITY_THRESHOLDS = {
-      /** Very high confidence match */
-      CRITICAL: 0.92,
-      /** High confidence match */
-      HIGH: 0.85,
-      /** Medium confidence - needs review */
-      MEDIUM: 0.75,
-      /** Low confidence - suspicious */
-      LOW: 0.65,
-      /** Ignore anything below this */
-      NOISE: 0.5
-    };
-  }
-});
-
-// ../core/dist/ml-model.js
-var LocalEmbeddingModel;
-var init_ml_model = __esm({
-  "../core/dist/ml-model.js"() {
-    "use strict";
-    init_embedder();
-    init_similarity();
-    LocalEmbeddingModel = class {
-      config;
-      threats = [];
-      isLoaded = false;
-      constructor(config2) {
-        this.config = config2;
+    init_tool_normalization();
+    CONNECTOR_TOOL_SURFACES = [
+      {
+        connector: "claude-code",
+        dispatchSource: "packages/core/src/extractors.ts",
+        passThrough: [],
+        note: "Claude Code forwards the host's tool_name straight to core (packages/claude-code/src/pre-tool-use.ts), so the vocabulary core dispatches on is the connector's vocabulary."
+      },
+      {
+        connector: "cursor",
+        dispatchSource: "packages/extension/src/aidr-hook.ts",
+        passThrough: []
+      },
+      {
+        connector: "vscode",
+        dispatchSource: "packages/extension/src/aidr-hook.ts",
+        passThrough: []
+      },
+      {
+        connector: "openclaw",
+        dispatchSource: "packages/openclaw/src/tool-handler.ts",
+        passThrough: []
+      },
+      {
+        connector: "opencode",
+        dispatchSource: "packages/opencode/src/extractors.ts",
+        passThrough: [
+          "codesearch",
+          "glob",
+          "grep",
+          "ls",
+          "question",
+          "read_lines",
+          "task",
+          "websearch"
+        ],
+        passThroughReason: "Non-edit OpenCode tools with no canonical core equivalent. The connector extracts their artifacts itself and core inspects them on the unknown-tool path; none of them writes a file."
+      },
+      {
+        connector: "codex",
+        dispatchSource: "packages/codex/src/extractors.ts",
+        passThrough: []
       }
-      /**
-       * Load the 300KB model from disk and initialize embedding engine.
-       * The model is lightweight and loads synchronously from in-memory structures.
-       */
-      async load() {
-        this.isLoaded = true;
-      }
-      /**
-       * Generate embedding vector for text using local TinyHash algorithm.
-       * No network calls - purely local computation.
-       */
-      async computeEmbedding(text) {
-        if (!this.isLoaded) {
-          throw new Error("Model not loaded. Call load() first.");
-        }
-        const embedding = generateEmbedding(text, this.config.vectorSize);
-        return Array.from(embedding);
-      }
-      /**
-       * Find similar threats to the given text.
-       * Computes embedding and performs cosine similarity search.
-       */
-      async findSimilarThreats(text, topK = 5) {
-        if (!this.isLoaded) {
-          throw new Error("Model not loaded. Call load() first.");
-        }
-        const queryEmbedding = await this.computeEmbedding(text);
-        const queryFloat32 = new Float32Array(queryEmbedding);
-        const candidates = this.threats.map((t) => new Float32Array(t.embedding));
-        if (candidates.length === 0) {
-          return [];
-        }
-        const topMatches = findTopKSimilar(queryFloat32, candidates, topK);
-        return topMatches.filter((match) => match.similarity >= this.config.similarityThreshold).map((match) => {
-          const threat = this.threats[match.index];
-          if (!threat) {
-            throw new Error(`Threat not found at index ${match.index}`);
-          }
-          return {
-            threatId: threat.threatId,
-            similarity: match.similarity,
-            metadata: threat.metadata
-          };
-        });
-      }
-      /**
-       * Add a new threat to the local database.
-       */
-      async addThreat(threat) {
-        const existingIndex = this.threats.findIndex((t) => t.threatId === threat.threatId);
-        if (existingIndex >= 0) {
-          this.threats[existingIndex] = threat;
-        } else {
-          this.threats.push(threat);
-        }
-      }
-      /**
-       * Remove a threat from the local database.
-       */
-      async removeThreat(threatId) {
-        const index = this.threats.findIndex((t) => t.threatId === threatId);
-        if (index >= 0) {
-          this.threats.splice(index, 1);
-          return true;
-        }
-        return false;
-      }
-      /**
-       * Get all threats in the local database.
-       */
-      async getAllThreats() {
-        return [...this.threats];
-      }
-      /**
-       * Get the count of threats in the local database.
-       */
-      async getThreatCount() {
-        return this.threats.length;
-      }
-      /**
-       * Check if a text matches any known threat above threshold.
-       */
-      async hasThreatMatch(text, threshold = SIMILARITY_THRESHOLDS.MEDIUM) {
-        const matches = await this.findSimilarThreats(text, 1);
-        if (matches.length === 0) {
-          return false;
-        }
-        const firstMatch = matches[0];
-        return firstMatch !== void 0 && firstMatch.similarity >= threshold;
-      }
-      /**
-       * Get model statistics.
-       */
-      async getStats() {
-        const modelSizeBytes = this.threats.length * this.config.vectorSize * 4 + 1024;
-        return {
-          isLoaded: this.isLoaded,
-          threatCount: this.threats.length,
-          vectorSize: this.config.vectorSize,
-          modelSizeBytes
-        };
-      }
-      /**
-       * Clear all threats from the local database.
-       */
-      async clear() {
-        this.threats = [];
-      }
-      /**
-       * Calculate cosine similarity between two embedding vectors.
-       * Public utility method for external similarity computations.
-       */
-      static cosineSimilarity(a, b2) {
-        const aFloat32 = new Float32Array(a);
-        const bFloat32 = new Float32Array(b2);
-        return cosineSimilarity(aFloat32, bFloat32);
-      }
-      /**
-       * Create default configuration for the embedding model.
-       */
-      static createDefaultConfig(modelPath = "./model.bin") {
-        return {
-          modelPath,
-          vectorSize: EMBEDDING_DIM,
-          similarityThreshold: SIMILARITY_THRESHOLDS.MEDIUM
-        };
-      }
-    };
+    ];
+    CASE_LABEL_PATTERN = /^[ \t]*case\s+"([^"]+)":/gm;
+    ASSIGNED_TOOL_NAME_PATTERN = /toolName:\s*"([^"]+)"/g;
   }
 });
 
@@ -65281,19 +67428,19 @@ function cacheKey(pluginKey, version2, lastUpdated) {
   return `${pluginKey}:${version2}:${lastUpdated}`;
 }
 async function computeConfigHash(aidrVersion, ...dirs) {
-  const h = (0, import_node_crypto34.createHash)("sha256");
+  const h = (0, import_node_crypto36.createHash)("sha256");
   if (aidrVersion)
     h.update(aidrVersion);
   for (const dir of dirs) {
     let files;
     try {
-      files = (await (0, import_promises20.readdir)(dir)).filter((f) => f.endsWith(".yaml")).sort();
+      files = (await (0, import_promises23.readdir)(dir)).filter((f) => f.endsWith(".yaml")).sort();
     } catch {
       continue;
     }
     for (const file of files) {
       try {
-        const content = await getFileContent((0, import_node_path32.join)(dir, file));
+        const content = await getFileContent((0, import_node_path34.join)(dir, file));
         h.update(content);
       } catch {
       }
@@ -65336,7 +67483,7 @@ async function loadScanCache(configHash = "", cachePath = DEFAULT_CACHE_PATH, lo
 }
 async function saveScanCache(cache, cachePath = DEFAULT_CACHE_PATH, logger2 = nullLogger) {
   try {
-    await (0, import_promises20.mkdir)((0, import_node_path32.dirname)(cachePath), { recursive: true, mode: 448 });
+    await (0, import_promises23.mkdir)((0, import_node_path34.dirname)(cachePath), { recursive: true, mode: 448 });
     const data = {
       config_hash: cache.configHash,
       entries: Object.fromEntries(Object.entries(cache.entries).map(([key, entry]) => [
@@ -65382,17 +67529,17 @@ function storeResult(cache, pluginKey, version2, lastUpdated, findings) {
     findings
   };
 }
-var import_node_crypto34, import_promises20, import_node_path32, DEFAULT_CACHE_PATH, CACHE_TTL_DAYS;
+var import_node_crypto36, import_promises23, import_node_path34, DEFAULT_CACHE_PATH, CACHE_TTL_DAYS;
 var init_plugin_scan_cache = __esm({
   "../core/dist/plugin-scan-cache.js"() {
     "use strict";
-    import_node_crypto34 = require("node:crypto");
-    import_promises20 = require("node:fs/promises");
-    import_node_path32 = require("node:path");
+    import_node_crypto36 = require("node:crypto");
+    import_promises23 = require("node:fs/promises");
+    import_node_path34 = require("node:path");
     init_config();
     init_file_utils();
     init_types2();
-    DEFAULT_CACHE_PATH = (0, import_node_path32.join)(resolvePath(AIDR_DIR), "plugin_scan_cache.json");
+    DEFAULT_CACHE_PATH = (0, import_node_path34.join)(resolvePath(AIDR_DIR), "plugin_scan_cache.json");
     CACHE_TTL_DAYS = 7;
   }
 });
@@ -65431,7 +67578,7 @@ function pushFileFindings(result, plugin, checkResults, hashToFiles) {
         confidence: 1,
         action: "block",
         artifact: fr.sha256,
-        sourceFile: (0, import_node_path33.relative)(plugin.installPath, filePath)
+        sourceFile: (0, import_node_path35.relative)(plugin.installPath, filePath)
       });
     }
   }
@@ -65483,12 +67630,12 @@ async function walkPluginFiles(installPath, logger2) {
   async function walk(dirOrFile) {
     let stats;
     try {
-      stats = await (0, import_promises21.stat)(dirOrFile);
+      stats = await (0, import_promises24.stat)(dirOrFile);
     } catch {
       return;
     }
     if (stats.isFile()) {
-      if (SCANNABLE_EXTENSIONS.has((0, import_node_path33.extname)(dirOrFile).toLowerCase()) && stats.size <= MAX_FILE_SIZE) {
+      if (SCANNABLE_EXTENSIONS.has((0, import_node_path35.extname)(dirOrFile).toLowerCase()) && stats.size <= MAX_FILE_SIZE) {
         files.push(dirOrFile);
       }
       return;
@@ -65496,14 +67643,14 @@ async function walkPluginFiles(installPath, logger2) {
     if (stats.isDirectory()) {
       let entries;
       try {
-        entries = await (0, import_promises21.readdir)(dirOrFile);
+        entries = await (0, import_promises24.readdir)(dirOrFile);
       } catch {
         return;
       }
       for (const entry of entries) {
         if (SKIP_DIRS.has(entry))
           continue;
-        const fullPath = (0, import_node_path33.join)(dirOrFile, entry);
+        const fullPath = (0, import_node_path35.join)(dirOrFile, entry);
         await walk(fullPath);
       }
     }
@@ -65580,7 +67727,7 @@ function extractArtifactsFromFile(filePath, content) {
       continue;
     artifacts.push({ type: "url", value: url, context: `plugin_file:${fileName}` });
   }
-  const ext = (0, import_node_path33.extname)(filePath).toLowerCase();
+  const ext = (0, import_node_path35.extname)(filePath).toLowerCase();
   if ([".sh", ".bash", ".zsh", ".py"].includes(ext)) {
     for (const line of content.split("\n")) {
       const trimmed = line.trim();
@@ -65628,7 +67775,7 @@ async function scanPlugin(plugin, threats, options = {}) {
           confidence: match.threat.confidence,
           action: match.threat.action,
           artifact: match.artifact.slice(0, 200),
-          sourceFile: (0, import_node_path33.relative)(plugin.installPath, filePath)
+          sourceFile: (0, import_node_path35.relative)(plugin.installPath, filePath)
         });
       }
     }
@@ -65636,7 +67783,7 @@ async function scanPlugin(plugin, threats, options = {}) {
       allUrls.push(...extractUrls(content));
     }
     if (checkFileHashes) {
-      const sha2564 = (0, import_node_crypto35.createHash)("sha256").update(rawBytes).digest("hex");
+      const sha2564 = (0, import_node_crypto37.createHash)("sha256").update(rawBytes).digest("hex");
       const existing = hashToFiles.get(sha2564);
       if (existing) {
         existing.push(filePath);
@@ -65658,7 +67805,7 @@ async function scanPlugin(plugin, threats, options = {}) {
           confidence: 1,
           action: "block",
           artifact: sha2564,
-          sourceFile: (0, import_node_path33.relative)(plugin.installPath, filePath)
+          sourceFile: (0, import_node_path35.relative)(plugin.installPath, filePath)
         });
       }
     }
@@ -65706,14 +67853,14 @@ async function scanPlugin(plugin, threats, options = {}) {
   await Promise.all([urlCheckPromise, fileCheckPromise]);
   return result;
 }
-var import_node_crypto35, import_promises21, import_node_os4, import_node_path33, DEFAULT_PLUGINS_REGISTRY, SCANNABLE_EXTENSIONS, SKIP_DIRS, MAX_FILE_SIZE, JS_TS_EXTENSIONS, STRING_OR_COMMENT_RE, STR_ARG, JS_EXEC_RE, JS_SPAWN_RE, JS_SPAWN_ARGS_RE, SHELL_EXECUTABLES, JS_EXECA_RE, JS_EXECA_ARGS_RE, JS_BUN_SHELL_RE, JS_BUN_DOLLAR_RE, JS_ZX_RE;
+var import_node_crypto37, import_promises24, import_node_os4, import_node_path35, DEFAULT_PLUGINS_REGISTRY, SCANNABLE_EXTENSIONS, SKIP_DIRS, MAX_FILE_SIZE, JS_TS_EXTENSIONS, STRING_OR_COMMENT_RE, STR_ARG, JS_EXEC_RE, JS_SPAWN_RE, JS_SPAWN_ARGS_RE, SHELL_EXECUTABLES, JS_EXECA_RE, JS_EXECA_ARGS_RE, JS_BUN_SHELL_RE, JS_BUN_DOLLAR_RE, JS_ZX_RE;
 var init_plugin_scanner = __esm({
   "../core/dist/plugin-scanner.js"() {
     "use strict";
-    import_node_crypto35 = require("node:crypto");
-    import_promises21 = require("node:fs/promises");
+    import_node_crypto37 = require("node:crypto");
+    import_promises24 = require("node:fs/promises");
     import_node_os4 = require("node:os");
-    import_node_path33 = require("node:path");
+    import_node_path35 = require("node:path");
     init_file_check();
     init_url_check();
     init_detection_leg();
@@ -65721,7 +67868,7 @@ var init_plugin_scanner = __esm({
     init_file_utils();
     init_heuristics();
     init_types2();
-    DEFAULT_PLUGINS_REGISTRY = (0, import_node_path33.join)((0, import_node_os4.homedir)(), ".claude", "plugins", "installed_plugins.json");
+    DEFAULT_PLUGINS_REGISTRY = (0, import_node_path35.join)((0, import_node_os4.homedir)(), ".claude", "plugins", "installed_plugins.json");
     SCANNABLE_EXTENSIONS = /* @__PURE__ */ new Set([
       ".py",
       ".js",
@@ -65779,18 +67926,38 @@ function getDefaultQuarantineConfig() {
     notifyChannels: []
   };
 }
-var import_node_crypto36, import_node_fs10, import_promises22, import_node_path34, MANIFEST_VERSION, MANIFEST_FILENAME, AutoQuarantine;
+var import_node_crypto38, import_node_fs10, import_promises25, import_node_path36, QuarantineRefusedError, QuarantineDeleteError, MANIFEST_VERSION, MANIFEST_FILENAME, AutoQuarantine;
 var init_quarantine = __esm({
   "../core/dist/quarantine.js"() {
     "use strict";
-    import_node_crypto36 = require("node:crypto");
+    import_node_crypto38 = require("node:crypto");
     import_node_fs10 = require("node:fs");
-    import_promises22 = require("node:fs/promises");
-    import_node_path34 = require("node:path");
+    import_promises25 = require("node:fs/promises");
+    import_node_path36 = require("node:path");
     init_audit_log();
     init_config();
     init_file_utils();
+    init_response_worker_contract();
     init_types2();
+    QuarantineRefusedError = class extends Error {
+      code;
+      constructor(reason, message) {
+        super(message);
+        this.name = "QuarantineRefusedError";
+        this.code = reason;
+      }
+    };
+    QuarantineDeleteError = class extends Error {
+      itemId;
+      quarantinePath;
+      code = "delete_failed";
+      constructor(itemId, quarantinePath, detail) {
+        super(`Failed to delete quarantined file ${quarantinePath}: ${detail}`);
+        this.itemId = itemId;
+        this.quarantinePath = quarantinePath;
+        this.name = "QuarantineDeleteError";
+      }
+    };
     MANIFEST_VERSION = 1;
     MANIFEST_FILENAME = "manifest.json";
     AutoQuarantine = class {
@@ -65812,7 +67979,7 @@ var init_quarantine = __esm({
         this.auditor = auditor;
         this.logger = logger2 ?? nullLogger;
         this.loggingConfig = loggingConfig;
-        this.manifestPath = (0, import_node_path34.join)(resolvePath(config2.quarantineDir), MANIFEST_FILENAME);
+        this.manifestPath = (0, import_node_path36.join)(resolvePath(config2.quarantineDir), MANIFEST_FILENAME);
         this.ensureQuarantineDirSync();
         this.loadManifestSync();
       }
@@ -65827,7 +67994,26 @@ var init_quarantine = __esm({
       async quarantine(filePath, threatId, metadata, auditContext) {
         const resolvedPath = resolvePath(filePath);
         const quarantineDir = resolvePath(this.config.quarantineDir);
-        const fileStats = await (0, import_promises22.stat)(resolvedPath).catch(() => null);
+        const authorizedBy = normalizeAuthorizedBy(auditContext?.authorizedBy);
+        const fileStats = await (0, import_promises25.lstat)(resolvedPath).catch(() => null);
+        if (fileStats?.isSymbolicLink()) {
+          const error4 = `Refusing to quarantine a symlink: ${resolvedPath}`;
+          if (this.auditor && auditContext?.verdict) {
+            await this.auditor.log({
+              action: "quarantine",
+              threatId,
+              tool: auditContext.tool ?? "unknown",
+              input: auditContext.input ?? filePath,
+              verdict: auditContext.verdict,
+              responseTaken: "quarantine",
+              metadata: { quarantineId: void 0, reason: "symlink_refused" },
+              outcome: "failure",
+              error: error4,
+              authorizedBy
+            });
+          }
+          throw new QuarantineRefusedError("symlink_refused", error4);
+        }
         if (!fileStats?.isFile()) {
           const error4 = `File not found or not accessible: ${resolvedPath}`;
           if (this.auditor && auditContext?.verdict) {
@@ -65840,24 +68026,25 @@ var init_quarantine = __esm({
               responseTaken: "quarantine",
               metadata: { quarantineId: void 0 },
               outcome: "failure",
-              error: error4
+              error: error4,
+              authorizedBy
             });
           }
           throw new Error(error4);
         }
-        const id = (0, import_node_crypto36.randomUUID)();
+        const id = (0, import_node_crypto38.randomUUID)();
         const fileHash = await this.computeFileHash(resolvedPath);
         const fileSize = fileStats.size;
         const now = /* @__PURE__ */ new Date();
-        const dateDir = (0, import_node_path34.join)(quarantineDir, now.getFullYear().toString(), (now.getMonth() + 1).toString().padStart(2, "0"), now.getDate().toString().padStart(2, "0"));
-        await (0, import_promises22.mkdir)(dateDir, { recursive: true });
-        const quarantineFilename = `${id}_${(0, import_node_path34.basename)(resolvedPath)}`;
-        const quarantinePath = (0, import_node_path34.join)(dateDir, quarantineFilename);
+        const dateDir = (0, import_node_path36.join)(quarantineDir, now.getFullYear().toString(), (now.getMonth() + 1).toString().padStart(2, "0"), now.getDate().toString().padStart(2, "0"));
+        await (0, import_promises25.mkdir)(dateDir, { recursive: true, mode: 448 });
+        const quarantineFilename = `${id}_${(0, import_node_path36.basename)(resolvedPath)}`;
+        const quarantinePath = (0, import_node_path36.join)(dateDir, quarantineFilename);
         try {
-          await (0, import_promises22.copyFile)(resolvedPath, quarantinePath);
-          await (0, import_promises22.unlink)(resolvedPath);
+          await (0, import_promises25.copyFile)(resolvedPath, quarantinePath);
+          await (0, import_promises25.unlink)(resolvedPath);
         } catch (error4) {
-          await (0, import_promises22.unlink)(quarantinePath).catch(() => {
+          await (0, import_promises25.unlink)(quarantinePath).catch(() => {
           });
           const errorMsg = `Failed to quarantine file: ${error4 instanceof Error ? error4.message : String(error4)}`;
           if (this.auditor && auditContext?.verdict) {
@@ -65870,12 +68057,13 @@ var init_quarantine = __esm({
               responseTaken: "quarantine",
               metadata: { quarantineId: void 0 },
               outcome: "failure",
-              error: errorMsg
+              error: errorMsg,
+              authorizedBy
             });
           }
           throw new Error(errorMsg);
         }
-        const metadataPath = (0, import_node_path34.join)(dateDir, `${quarantineFilename}.metadata.json`);
+        const metadataPath = (0, import_node_path36.join)(dateDir, `${quarantineFilename}.metadata.json`);
         const item = {
           id,
           originalPath: resolvedPath,
@@ -65884,7 +68072,8 @@ var init_quarantine = __esm({
           threatId,
           metadata: metadata ?? {},
           fileHash,
-          fileSize
+          fileSize,
+          ...authorizedBy ? { authorizedBy } : {}
         };
         await atomicWriteJson(metadataPath, {
           ...item,
@@ -65906,7 +68095,8 @@ var init_quarantine = __esm({
               quarantineId: id,
               notificationSent: this.config.notifyChannels.length > 0
             },
-            outcome: "success"
+            outcome: "success",
+            authorizedBy
           });
         }
         this.logger.info(`File quarantined: ${resolvedPath} -> ${quarantinePath}`, {
@@ -65926,19 +68116,19 @@ var init_quarantine = __esm({
         if (!item) {
           throw new Error(`Quarantined item not found: ${itemId}`);
         }
-        await (0, import_promises22.mkdir)((0, import_node_path34.dirname)(item.originalPath), { recursive: true });
+        await (0, import_promises25.mkdir)((0, import_node_path36.dirname)(item.originalPath), { recursive: true });
         const currentHash = await this.computeFileHash(item.quarantinePath);
         if (currentHash !== item.fileHash) {
           throw new Error(`File integrity check failed for quarantined item: ${itemId}. Hash mismatch detected.`);
         }
         try {
-          await (0, import_promises22.copyFile)(item.quarantinePath, item.originalPath);
-          await (0, import_promises22.unlink)(item.quarantinePath);
+          await (0, import_promises25.copyFile)(item.quarantinePath, item.originalPath);
+          await (0, import_promises25.unlink)(item.quarantinePath);
         } catch (error4) {
           throw new Error(`Failed to restore file: ${error4 instanceof Error ? error4.message : String(error4)}`);
         }
         const metadataPath = `${item.quarantinePath}.metadata.json`;
-        await (0, import_promises22.unlink)(metadataPath).catch(() => {
+        await (0, import_promises25.unlink)(metadataPath).catch(() => {
         });
         this.items.delete(itemId);
         await this.saveManifest();
@@ -65955,7 +68145,18 @@ var init_quarantine = __esm({
       }
       /**
        * Permanently delete a quarantined file.
+       *
+       * A failure to remove the file is REPORTED and the item stays tracked. The old
+       * behaviour swallowed any `unlink` error, deleted the tracking entry and logged
+       * the item as permanently deleted — telling the operator a hostile file was gone
+       * while it was still in the vault.
+       *
+       * The one exception is `ENOENT`: the file is provably already absent, so the
+       * item's removal is truthful rather than a claim about something that is still
+       * there.
+       *
        * @param itemId - ID of the quarantined item to delete
+       * @throws QuarantineDeleteError when the quarantined file could not be removed
        */
       async delete(itemId) {
         const item = this.items.get(itemId);
@@ -65963,12 +68164,21 @@ var init_quarantine = __esm({
           throw new Error(`Quarantined item not found: ${itemId}`);
         }
         try {
-          await (0, import_promises22.unlink)(item.quarantinePath);
-        } catch (_error) {
-          this.logger.warn(`Could not delete quarantined file: ${item.quarantinePath}`);
+          await (0, import_promises25.unlink)(item.quarantinePath);
+        } catch (error4) {
+          if (error4?.code !== "ENOENT") {
+            this.logger.error(`Could not delete quarantined file: ${item.quarantinePath}`, {
+              itemId,
+              error: String(error4)
+            });
+            throw new QuarantineDeleteError(itemId, item.quarantinePath, error4 instanceof Error ? error4.message : String(error4));
+          }
+          this.logger.warn(`Quarantined file was already absent: ${item.quarantinePath}`, {
+            itemId
+          });
         }
         const metadataPath = `${item.quarantinePath}.metadata.json`;
-        await (0, import_promises22.unlink)(metadataPath).catch(() => {
+        await (0, import_promises25.unlink)(metadataPath).catch(() => {
         });
         this.items.delete(itemId);
         await this.saveManifest();
@@ -66081,8 +68291,8 @@ var init_quarantine = __esm({
        * Compute SHA-256 hash of a file.
        */
       async computeFileHash(filePath) {
-        const content = await (0, import_promises22.readFile)(filePath);
-        return (0, import_node_crypto36.createHash)("sha256").update(content).digest("hex");
+        const content = await (0, import_promises25.readFile)(filePath);
+        return (0, import_node_crypto38.createHash)("sha256").update(content).digest("hex");
       }
       /**
        * Log a quarantine event to the audit log.
@@ -67213,16 +69423,47 @@ var init_version_check = __esm({
 });
 
 // ../core/dist/session-start.js
+function mcpToolManifestCoverageFindings(servers) {
+  const findings = [];
+  for (const server2 of servers) {
+    const { attestation } = server2;
+    if (attestation.status === "approved")
+      continue;
+    const reason = attestation.reason ?? attestation.status;
+    const fallback = attestation.status === "rejected" ? `The tool manifest failed verification (${reason}); it is not trusted.` : `The tool manifest could not be verified (${reason}).`;
+    findings.push({
+      kind: "mcp_tool_manifest_unverified",
+      severity: COVERAGE_SEVERITY[attestation.status],
+      server: server2.name,
+      source: server2.source,
+      status: attestation.status,
+      reason,
+      detail: COVERAGE_DETAIL[reason] ?? fallback,
+      ...attestation.quarantined_toolset_hash ? { quarantined_toolset_hash: attestation.quarantined_toolset_hash } : {}
+    });
+  }
+  return findings;
+}
 async function runSessionStart(ctx) {
   const logger2 = ctx.logger ?? nullLogger;
   const aidrDirPath = resolvePath(ctx.aidrDirPath ?? "~/.singularity-aidr");
   const config2 = await loadConfig(ctx.configPath, logger2).catch(() => ConfigSchema.parse({}));
   const commercial = isCommercialBuild();
   const [inventory, infrastructure] = await Promise.all([
-    discoverMcpServers(config2.policy.mcp.inventory_paths),
+    discoverMcpServers(config2.policy.mcp.inventory_paths, { attestation: ctx.mcpAttestation }),
     inspectInfrastructurePolicy(config2)
   ]);
-  const posture = { mcpServers: inventory.servers.length, riskyMcpServers: inventory.servers.filter((s) => s.risk_hints.length > 0).length, invalidSources: inventory.sources.filter((s) => s.status === "invalid").length, infrastructure: infrastructure.state };
+  const coverageFindings = mcpToolManifestCoverageFindings(inventory.servers);
+  const posture = {
+    mcpServers: inventory.servers.length,
+    riskyMcpServers: inventory.servers.filter((s) => s.risk_hints.length > 0).length,
+    unverifiedMcpServers: coverageFindings.length,
+    invalidSources: inventory.sources.filter((s) => s.status === "invalid").length,
+    mcpCoverage: inventory.coverage.status,
+    mcpServersNotEnumerated: inventory.coverage.servers_not_enumerated,
+    mcpSourcesNotEnumerated: inventory.coverage.sources_not_enumerated,
+    infrastructure: infrastructure.state
+  };
   if (commercial && config2.mode !== "managed") {
     return {
       enabled: false,
@@ -67486,7 +69727,7 @@ async function runSessionStart(ctx) {
       }),
       versionCheckPromise
     ]);
-    return { enabled: true, scanResults: scanResults2, versionCheck: versionCheck2, posture };
+    return { enabled: true, scanResults: scanResults2, versionCheck: versionCheck2, posture, coverageFindings };
   }
   const [scanResults, versionCheck] = await Promise.all([
     runSessionStartScan({
@@ -67503,24 +69744,43 @@ async function runSessionStart(ctx) {
     versionCheckPromise,
     heartbeatPromise
   ]);
-  return { enabled: true, scanResults, versionCheck, posture };
+  return { enabled: true, scanResults, versionCheck, posture, coverageFindings };
 }
+var COVERAGE_SEVERITY, COVERAGE_DETAIL;
 var init_session_start = __esm({
   "../core/dist/session-start.js"() {
     "use strict";
-    init_build_flavor();
     init_aig_policy();
-    init_mcp_discovery();
+    init_build_flavor();
     init_control_plane();
     init_config();
     init_file_utils();
     init_installation_id();
     init_integrity();
     init_managed();
+    init_mcp_discovery();
     init_remote_policy();
     init_session_start_scan();
     init_types2();
     init_version_check();
+    COVERAGE_SEVERITY = {
+      approved: "medium",
+      quarantined: "medium",
+      unapproved: "medium",
+      unsigned: "medium",
+      unverifiable: "high",
+      rejected: "high"
+    };
+    COVERAGE_DETAIL = {
+      no_keyring: "No MCP signing keyring is configured on this agent, so the tool manifest cannot be verified. Trusted-publisher provisioning is external to this agent.",
+      no_signed_manifest: "No signed tool manifest was supplied for this server, so its tool definitions are unverified.",
+      unknown_signer: "The manifest signer is not present in the tenant keyring, so the tool manifest cannot be verified.",
+      invalid_public_key: "The tenant keyring entry for the manifest signer is not a usable Ed25519 public key.",
+      approval_state_unavailable: "The signed tool manifest verified, but no readable attestation state was available, so operator approval cannot be established.",
+      state_unavailable: "The signed tool manifest verified, but the recorded attestation state could not be read, so the toolset cannot be treated as approved.",
+      not_approved: "The signed tool manifest verified, but no operator approval is recorded for this toolset.",
+      quarantined_pending_operator_approval: "The signed tool manifest is quarantined pending an out-of-band operator approval."
+    };
   }
 });
 
@@ -69798,8 +72058,8 @@ function isValidProtocol(protocol) {
   return protocol === "http" || protocol === "https";
 }
 function dsnToString(dsn, withPassword = false) {
-  const { host, path: path3, pass, port, projectId, protocol, publicKey: publicKey2 } = dsn;
-  return `${protocol}://${publicKey2}${withPassword && pass ? `:${pass}` : ""}@${host}${port ? `:${port}` : ""}/${path3 ? `${path3}/` : path3}${projectId}`;
+  const { host, path: path3, pass, port, projectId, protocol, publicKey: publicKey3 } = dsn;
+  return `${protocol}://${publicKey3}${withPassword && pass ? `:${pass}` : ""}@${host}${port ? `:${port}` : ""}/${path3 ? `${path3}/` : path3}${projectId}`;
 }
 function dsnFromString(str) {
   const match = DSN_REGEX.exec(str);
@@ -69809,7 +72069,7 @@ function dsnFromString(str) {
     });
     return void 0;
   }
-  const [protocol, publicKey2, pass = "", host = "", port = "", lastPath = ""] = match.slice(1);
+  const [protocol, publicKey3, pass = "", host = "", port = "", lastPath = ""] = match.slice(1);
   let path3 = "";
   let projectId = lastPath;
   const split = projectId.split("/");
@@ -69823,7 +72083,7 @@ function dsnFromString(str) {
       projectId = projectMatch[0];
     }
   }
-  return dsnFromComponents({ host, pass, path: path3, projectId, port, protocol, publicKey: publicKey2 });
+  return dsnFromComponents({ host, pass, path: path3, projectId, port, protocol, publicKey: publicKey3 });
 }
 function dsnFromComponents(components) {
   return {
@@ -90730,7 +92990,7 @@ async function getLinuxInfo() {
     if (!distroFile) {
       return linuxInfo;
     }
-    const distroPath = (0, import_node_path35.join)("/etc", distroFile.name);
+    const distroPath = (0, import_node_path37.join)("/etc", distroFile.name);
     const contents = (await readFileAsync(distroPath, { encoding: "utf-8" })).toLowerCase();
     const { distros } = distroFile;
     linuxInfo.name = distros.find((d) => contents.indexOf(getLinuxDistroId(d)) >= 0) || distros[0];
@@ -90795,13 +93055,13 @@ function getCloudResourceContext() {
     return void 0;
   }
 }
-var import_node_child_process3, import_node_fs12, os, import_node_path35, import_node_util, readFileAsync, readDirAsync, INTEGRATION_NAME19, _nodeContextIntegration, nodeContextIntegration, PLATFORM_NAMES, LINUX_DISTROS, LINUX_VERSIONS;
+var import_node_child_process3, import_node_fs12, os, import_node_path37, import_node_util, readFileAsync, readDirAsync, INTEGRATION_NAME19, _nodeContextIntegration, nodeContextIntegration, PLATFORM_NAMES, LINUX_DISTROS, LINUX_VERSIONS;
 var init_context3 = __esm({
   "../../vendor/@sentry+node-core@10.69.0_@_5f8bdabc5aff1c68d18b5fd7b4cb4c5f/node_modules/@sentry/node-core/build/esm/integrations/context.js"() {
     import_node_child_process3 = require("node:child_process");
     import_node_fs12 = require("node:fs");
     os = __toESM(require("node:os"), 1);
-    import_node_path35 = require("node:path");
+    import_node_path37 = require("node:path");
     import_node_util = require("node:util");
     init_esm4();
     readFileAsync = (0, import_node_util.promisify)(import_node_fs12.readFile);
@@ -91657,7 +93917,7 @@ function _getModules() {
 }
 function getPackageJson() {
   try {
-    const filePath = (0, import_node_path36.join)(process.cwd(), "package.json");
+    const filePath = (0, import_node_path38.join)(process.cwd(), "package.json");
     const packageJson = JSON.parse((0, import_node_fs14.readFileSync)(filePath, "utf8"));
     return packageJson;
   } catch {
@@ -91671,11 +93931,11 @@ function getModulesFromPackageJson() {
     ...packageJson.devDependencies
   };
 }
-var import_node_fs14, import_node_path36, moduleCache, INTEGRATION_NAME22, _modulesIntegration, modulesIntegration;
+var import_node_fs14, import_node_path38, moduleCache, INTEGRATION_NAME22, _modulesIntegration, modulesIntegration;
 var init_modules = __esm({
   "../../vendor/@sentry+node-core@10.69.0_@_5f8bdabc5aff1c68d18b5fd7b4cb4c5f/node_modules/@sentry/node-core/build/esm/integrations/modules.js"() {
     import_node_fs14 = require("node:fs");
-    import_node_path36 = require("node:path");
+    import_node_path38 = require("node:path");
     init_esm4();
     INTEGRATION_NAME22 = "Modules";
     _modulesIntegration = (() => {
@@ -92560,14 +94820,14 @@ var init_spotlight2 = __esm({
 function normalizeWindowsPath(path3) {
   return path3.replace(/^[A-Z]:/, "").replace(/\\/g, "/");
 }
-function createGetModuleFromFilename(basePath = process.argv[1] ? dirname19(process.argv[1]) : process.cwd(), isWindows = import_node_path37.sep === "\\") {
+function createGetModuleFromFilename(basePath = process.argv[1] ? dirname19(process.argv[1]) : process.cwd(), isWindows = import_node_path39.sep === "\\") {
   const normalizedBase = isWindows ? normalizeWindowsPath(basePath) : basePath;
   return (filename) => {
     if (!filename) {
       return;
     }
     const normalizedFilename = isWindows ? normalizeWindowsPath(filename) : filename;
-    let { dir, base: file, ext } = import_node_path37.posix.parse(normalizedFilename);
+    let { dir, base: file, ext } = import_node_path39.posix.parse(normalizedFilename);
     if (ext === ".js" || ext === ".mjs" || ext === ".cjs") {
       file = file.slice(0, ext.length * -1);
     }
@@ -92586,10 +94846,10 @@ function createGetModuleFromFilename(basePath = process.argv[1] ? dirname19(proc
     return decodedFile;
   };
 }
-var import_node_path37;
+var import_node_path39;
 var init_module = __esm({
   "../../vendor/@sentry+node-core@10.69.0_@_5f8bdabc5aff1c68d18b5fd7b4cb4c5f/node_modules/@sentry/node-core/build/esm/utils/module.js"() {
-    import_node_path37 = require("node:path");
+    import_node_path39 = require("node:path");
     init_esm4();
   }
 });
@@ -112821,6 +115081,221 @@ var init_sentry = __esm({
   }
 });
 
+// ../core/dist/detector-provisioning.js
+function assertDetectorProvisioningRuntime(value) {
+  if (!DETECTOR_PROVISIONING_RUNTIMES.includes(value)) {
+    throw new Error("Detector provisioning agent runtime is not supported");
+  }
+  return value;
+}
+function detectorPolicyPath(agentRuntime) {
+  const runtime = assertDetectorProvisioningRuntime(agentRuntime);
+  return (0, import_node_path40.join)(resolvePath("~/.singularity-aidr"), "detectors", `${runtime}.json`);
+}
+function behavioralBaselineDir() {
+  return (0, import_node_path40.join)(resolvePath("~/.singularity-aidr"), "behavioral-baseline");
+}
+function canonicalDetectorPolicyPayload(value) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value))
+      throw new Error("Invalid detector policy number");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalDetectorPolicyPayload).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const record2 = value;
+    return `{${Object.keys(record2).sort().map((key) => `${JSON.stringify(key)}:${canonicalDetectorPolicyPayload(record2[key])}`).join(",")}}`;
+  }
+  throw new Error("Invalid detector policy value");
+}
+function publicKey2(raw) {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("-----BEGIN"))
+    return (0, import_node_crypto39.createPublicKey)(trimmed);
+  const bytes2 = Buffer.from(trimmed, "base64");
+  if (bytes2.length === 0 || bytes2.toString("base64") !== trimmed) {
+    throw new Error("Invalid public key encoding");
+  }
+  return (0, import_node_crypto39.createPublicKey)({ key: bytes2, format: "der", type: "spki" });
+}
+function verifySignature(payload, signatureBase64, trustedKeys) {
+  const signature = Buffer.from(signatureBase64, "base64");
+  if (signature.length !== 64 || signature.toString("base64") !== signatureBase64)
+    return false;
+  const message = Buffer.from(canonicalDetectorPolicyPayload(payload), "utf8");
+  return trustedKeys.some((keyText) => {
+    try {
+      const key = publicKey2(keyText);
+      return key.asymmetricKeyType === "ed25519" && (0, import_node_crypto39.verify)(null, message, key, signature);
+    } catch {
+      return false;
+    }
+  });
+}
+async function readInstalledPolicy(agentRuntime, required2) {
+  const path3 = detectorPolicyPath(agentRuntime);
+  let raw;
+  try {
+    const info2 = await (0, import_promises26.lstat)(path3);
+    if (!info2.isFile() || info2.isSymbolicLink() || info2.size > MAX_BUNDLE_BYTES) {
+      throw new Error("Detector policy file is invalid");
+    }
+    raw = await (0, import_promises26.readFile)(path3);
+    if (raw.length > MAX_BUNDLE_BYTES)
+      throw new Error("Detector policy exceeds size limit");
+  } catch (error4) {
+    if (error4.code === "ENOENT" && !required2)
+      return null;
+    throw new Error("Provisioned detector policy is unavailable");
+  }
+  try {
+    const parsed = JSON.parse(raw.toString("utf8"));
+    return {
+      signed: SignedDetectorPolicySchema.parse(parsed),
+      rawPayload: parsed.payload
+    };
+  } catch {
+    throw new Error("Provisioned detector policy is invalid");
+  }
+}
+function validatePolicyTrust(config2, state, signed, rawPayload) {
+  const payload = signed.payload;
+  const now = Date.now();
+  if (config2.mode !== "managed" || config2.licensing.public_keys_pem.length === 0 || state.entitlement_alg !== "ed25519" || !state.entitlement_sig || state.entitlement?.schema_version !== 2 || !isEntitlementActive(state) || state.entitlement.tenant_id !== payload.tenant_id || Date.parse(payload.issued_at) > now || Date.parse(payload.expires_at) <= now || Date.parse(payload.expires_at) <= Date.parse(payload.issued_at) || !verifySignature(rawPayload, signed.sig_b64, config2.licensing.public_keys_pem)) {
+    throw new Error("Provisioned detector policy trust or tenant binding failed");
+  }
+  if (payload.dlp?.policy.tenantId !== void 0 && payload.dlp.policy.tenantId !== payload.tenant_id) {
+    throw new Error("Provisioned DLP policy belongs to a different tenant");
+  }
+}
+function validateFeedKeyring(feed) {
+  if (!feed)
+    return;
+  if (feed && (Object.keys(feed.trusted_keys).length === 0 || Object.keys(feed.trusted_keys).length > 32)) {
+    throw new Error("Provisioned reputation feed keyring is invalid");
+  }
+  if (feed && Object.values(feed.trusted_keys).some((key) => {
+    try {
+      return publicKey2(key).asymmetricKeyType !== "ed25519";
+    } catch {
+      return true;
+    }
+  })) {
+    throw new Error("Provisioned reputation feed keyring is invalid");
+  }
+}
+function detectorContext(payload) {
+  const context2 = {};
+  if (payload.dlp || payload.behavioral) {
+    const runtimeDetectors = {
+      tenantId: payload.tenant_id
+    };
+    if (payload.dlp)
+      runtimeDetectors.dlp = { enabled: true, policy: payload.dlp.policy };
+    if (payload.behavioral) {
+      runtimeDetectors.behavioral = {
+        enabled: true,
+        // The signed policy is the single source of truth for learning, so
+        // this wiring can no longer assert a policy the tenant did not
+        // receive. `DetectorPolicyPayloadSchema` currently pins
+        // `learning_allowed` to `false`, because a one-shot hook with no
+        // durable baseline could not act on it. The durable store below
+        // removes that limitation, so enabling learning is now purely a
+        // signed-policy decision and is deliberately not taken here.
+        learningAllowed: payload.behavioral.learning_allowed,
+        orchestrator: createBehavioralDetectionOrchestrator(void 0, {
+          baselineStore: createBehavioralBaselineStore({ storeDir: behavioralBaselineDir() })
+        })
+      };
+    }
+    context2.runtimeDetectors = runtimeDetectors;
+  }
+  const feed = payload.reputation_feed;
+  if (feed) {
+    context2.reputationFeed = {
+      storeDir: (0, import_node_path40.join)(resolvePath("~/.singularity-aidr"), "reputation-feeds", feed.feed_id),
+      feedId: feed.feed_id,
+      trustedKeys: feed.trusted_keys,
+      ...feed.max_age_ms ? { maxAgeMs: feed.max_age_ms } : {}
+    };
+  }
+  return context2;
+}
+async function loadProvisionedDetectorContext(agentRuntime) {
+  const config2 = await loadConfig();
+  const state = await loadManagedState(managedStatePath(), {
+    publicKeysPem: config2.licensing.public_keys_pem
+  });
+  const required2 = state.entitlement_alg === "ed25519" && state.entitlement?.schema_version === 2 && isEntitlementActive(state) && state.entitlement.premium_modules.includes("runtime_detectors");
+  const installed = await readInstalledPolicy(agentRuntime, required2);
+  if (!installed)
+    return {};
+  validatePolicyTrust(config2, state, installed.signed, installed.rawPayload);
+  validateFeedKeyring(installed.signed.payload.reputation_feed);
+  return detectorContext(installed.signed.payload);
+}
+var import_node_crypto39, import_promises26, import_node_path40, MAX_BUNDLE_BYTES, ID, FEED_ID, DateTime, DetectorPolicyPayloadSchema, SignedDetectorPolicySchema, DETECTOR_PROVISIONING_RUNTIMES;
+var init_detector_provisioning = __esm({
+  "../core/dist/detector-provisioning.js"() {
+    "use strict";
+    import_node_crypto39 = require("node:crypto");
+    import_promises26 = require("node:fs/promises");
+    import_node_path40 = require("node:path");
+    init_zod();
+    init_behavioral_baseline_store();
+    init_behavioral_orchestrator();
+    init_config();
+    init_dlp();
+    init_managed();
+    MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
+    ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+    FEED_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+    DateTime = external_exports.string().datetime({ offset: true });
+    DetectorPolicyPayloadSchema = external_exports.object({
+      schema_version: external_exports.literal(1),
+      tenant_id: external_exports.string().regex(ID),
+      issued_at: DateTime,
+      expires_at: DateTime,
+      dlp: external_exports.object({ enabled: external_exports.literal(true), policy: DlpPolicySchema }).strict().optional(),
+      behavioral: external_exports.object({
+        enabled: external_exports.literal(true),
+        // Signed policy pins learning OFF, and this schema still refuses a
+        // policy that claims otherwise. A durable baseline store now exists
+        // (`behavioralBaselineDir`), so the original reason — a one-shot hook
+        // process cannot form a baseline — no longer applies technically;
+        // enabling learning is therefore a deliberate signed-policy/product
+        // decision that this contract has not taken (see detectorContext).
+        learning_allowed: external_exports.literal(false).default(false)
+      }).strict().optional(),
+      reputation_feed: external_exports.object({
+        feed_id: external_exports.string().regex(FEED_ID),
+        trusted_keys: external_exports.record(external_exports.string().min(1)),
+        max_age_ms: external_exports.number().int().positive().max(7 * 24 * 60 * 60 * 1e3).optional()
+      }).strict().optional()
+    }).strict().refine((value) => value.dlp || value.behavioral || value.reputation_feed, {
+      message: "At least one provisioned detector is required"
+    });
+    SignedDetectorPolicySchema = external_exports.object({
+      alg: external_exports.literal("ed25519"),
+      payload: DetectorPolicyPayloadSchema,
+      sig_b64: external_exports.string().min(1)
+    }).strict();
+    DETECTOR_PROVISIONING_RUNTIMES = [
+      "claude-code",
+      "cursor",
+      "vscode",
+      "openclaw",
+      "opencode",
+      "codex"
+    ];
+  }
+});
+
 // ../core/dist/response-command-consumer-v6.js
 function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -113113,11 +115588,11 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 function macFor(payload, key) {
-  return (0, import_node_crypto37.createHmac)("sha256", key).update(canonical(payload)).digest("hex");
+  return (0, import_node_crypto40.createHmac)("sha256", key).update(canonical(payload)).digest("hex");
 }
 async function regularFile(path3) {
   try {
-    const info2 = await (0, import_promises23.lstat)(path3);
+    const info2 = await (0, import_promises27.lstat)(path3);
     if (!info2.isFile() || info2.isSymbolicLink())
       throw new Error("unsafe_fleet_journal_file");
     if (info2.size > MAX_JOURNAL_BYTES)
@@ -113130,7 +115605,7 @@ async function regularFile(path3) {
   }
 }
 async function writeSynced(path3, content) {
-  const handle = await (0, import_promises23.open)(path3, "wx", 384);
+  const handle = await (0, import_promises27.open)(path3, "wx", 384);
   try {
     await handle.writeFile(content, "utf8");
     await handle.sync();
@@ -113155,13 +115630,13 @@ function rememberCommand(state, commandId) {
     recent_ids: [...state.recent_ids.filter((id) => id !== commandId), commandId].slice(-MAX_RECENT_FLEET_COMMANDS)
   };
 }
-var import_node_crypto37, import_promises23, import_node_path38, UUID4, CODE, TYPES, PHASES, MAX_JOURNAL_BYTES, MAX_RECENT_FLEET_COMMANDS, FleetResponseJournal;
+var import_node_crypto40, import_promises27, import_node_path41, UUID4, CODE, TYPES, PHASES, MAX_JOURNAL_BYTES, MAX_RECENT_FLEET_COMMANDS, FleetResponseJournal;
 var init_response_command_journal_v6 = __esm({
   "../core/dist/response-command-journal-v6.js"() {
     "use strict";
-    import_node_crypto37 = require("node:crypto");
-    import_promises23 = require("node:fs/promises");
-    import_node_path38 = require("node:path");
+    import_node_crypto40 = require("node:crypto");
+    import_promises27 = require("node:fs/promises");
+    import_node_path41 = require("node:path");
     UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     CODE = /^[a-z][a-z0-9_]{0,63}$/;
     TYPES = /* @__PURE__ */ new Set(["agent_pause", "agent_resume", "network_isolate", "network_release"]);
@@ -113181,11 +115656,11 @@ var init_response_command_journal_v6 = __esm({
       slot = null;
       sequence = 0;
       constructor(path3, identity, apiKey) {
-        if (!(0, import_node_path38.isAbsolute)(path3))
+        if (!(0, import_node_path41.isAbsolute)(path3))
           throw new Error("fleet_journal_path_must_be_absolute");
         if (!apiKey.trim())
           throw new Error("invalid_fleet_journal_key");
-        this.path = (0, import_node_path38.resolve)(path3);
+        this.path = (0, import_node_path41.resolve)(path3);
         this.identity = { ...identity };
         this.key = apiKey.trim();
       }
@@ -113193,9 +115668,9 @@ var init_response_command_journal_v6 = __esm({
         return `${this.path}.${slot}`;
       }
       async ensureDirectory() {
-        const directory = (0, import_node_path38.dirname)(this.path);
-        await (0, import_promises23.mkdir)(directory, { recursive: true, mode: 448 });
-        const info2 = await (0, import_promises23.lstat)(directory);
+        const directory = (0, import_node_path41.dirname)(this.path);
+        await (0, import_promises27.mkdir)(directory, { recursive: true, mode: 448 });
+        const info2 = await (0, import_promises27.lstat)(directory);
         if (!info2.isDirectory() || info2.isSymbolicLink())
           throw new Error("unsafe_fleet_journal_directory");
       }
@@ -113203,7 +115678,7 @@ var init_response_command_journal_v6 = __esm({
         const path3 = this.slotPath(slot);
         if (!await regularFile(path3))
           return null;
-        const raw = await (0, import_promises23.readFile)(path3, "utf8");
+        const raw = await (0, import_promises27.readFile)(path3, "utf8");
         if (Buffer.byteLength(raw) > MAX_JOURNAL_BYTES)
           throw new Error("fleet_journal_too_large");
         const envelope = JSON.parse(raw);
@@ -113212,7 +115687,7 @@ var init_response_command_journal_v6 = __esm({
         assertState(envelope.payload, this.identity);
         const expected = Buffer.from(macFor(envelope.payload, this.key), "hex");
         const actual = Buffer.from(envelope.mac, "hex");
-        if (!(0, import_node_crypto37.timingSafeEqual)(expected, actual))
+        if (!(0, import_node_crypto40.timingSafeEqual)(expected, actual))
           throw new Error("fleet_journal_integrity_failed");
         return envelope.payload;
       }
@@ -113239,14 +115714,14 @@ var init_response_command_journal_v6 = __esm({
         const envelope = { payload: next, mac: macFor(next, this.key) };
         const target = this.slot === "a" ? "b" : "a";
         const targetPath = this.slotPath(target);
-        const temporary = `${targetPath}.${(0, import_node_crypto37.randomUUID)()}.tmp`;
+        const temporary = `${targetPath}.${(0, import_node_crypto40.randomUUID)()}.tmp`;
         await this.ensureDirectory();
         await writeSynced(temporary, JSON.stringify(envelope));
         try {
-          await (0, import_promises23.rm)(targetPath, { force: true });
-          await (0, import_promises23.rename)(temporary, targetPath);
+          await (0, import_promises27.rm)(targetPath, { force: true });
+          await (0, import_promises27.rename)(temporary, targetPath);
         } finally {
-          await (0, import_promises23.rm)(temporary, { force: true });
+          await (0, import_promises27.rm)(temporary, { force: true });
         }
         this.slot = target;
         this.sequence = next.sequence;
@@ -113255,50 +115730,50 @@ var init_response_command_journal_v6 = __esm({
       async acquireLock() {
         await this.ensureDirectory();
         const lockPath = `${this.path}.lock`;
-        const token = (0, import_node_crypto37.randomUUID)();
+        const token = (0, import_node_crypto40.randomUUID)();
         const temporary = `${lockPath}.${token}.tmp`;
         await writeSynced(temporary, JSON.stringify({ pid: process.pid, token }));
         try {
           try {
-            await (0, import_promises23.link)(temporary, lockPath);
+            await (0, import_promises27.link)(temporary, lockPath);
             return token;
           } catch (error4) {
             if (!isRecord5(error4) || error4.code !== "EEXIST")
               throw error4;
           }
           await this.recoverDeadLock(lockPath);
-          await (0, import_promises23.link)(temporary, lockPath);
+          await (0, import_promises27.link)(temporary, lockPath);
           return token;
         } finally {
-          await (0, import_promises23.rm)(temporary, { force: true });
+          await (0, import_promises27.rm)(temporary, { force: true });
         }
       }
       async recoverDeadLock(lockPath) {
         const recoveryPath = `${lockPath}.recovery`;
-        const recoveryToken = (0, import_node_crypto37.randomUUID)();
+        const recoveryToken = (0, import_node_crypto40.randomUUID)();
         const temporary = `${recoveryPath}.${recoveryToken}.tmp`;
         await writeSynced(temporary, JSON.stringify({ pid: process.pid, token: recoveryToken }));
         try {
           try {
-            await (0, import_promises23.link)(temporary, recoveryPath);
+            await (0, import_promises27.link)(temporary, recoveryPath);
           } catch {
             throw new Error("fleet_journal_locked");
           }
           try {
             if (!await regularFile(lockPath))
               return;
-            const owner = JSON.parse(await (0, import_promises23.readFile)(lockPath, "utf8"));
+            const owner = JSON.parse(await (0, import_promises27.readFile)(lockPath, "utf8"));
             if (!isRecord5(owner) || !Number.isSafeInteger(owner.pid) || owner.pid < 1 || typeof owner.token !== "string" || !UUID4.test(owner.token)) {
               throw new Error("fleet_journal_lock_invalid");
             }
             if (pidAlive(owner.pid))
               throw new Error("fleet_journal_locked");
-            await (0, import_promises23.unlink)(lockPath);
+            await (0, import_promises27.unlink)(lockPath);
           } finally {
-            await (0, import_promises23.rm)(recoveryPath, { force: true });
+            await (0, import_promises27.rm)(recoveryPath, { force: true });
           }
         } finally {
-          await (0, import_promises23.rm)(temporary, { force: true });
+          await (0, import_promises27.rm)(temporary, { force: true });
         }
       }
       async withLock(work) {
@@ -113308,10 +115783,10 @@ var init_response_command_journal_v6 = __esm({
         } finally {
           const lockPath = `${this.path}.lock`;
           if (await regularFile(lockPath)) {
-            const owner = JSON.parse(await (0, import_promises23.readFile)(lockPath, "utf8"));
+            const owner = JSON.parse(await (0, import_promises27.readFile)(lockPath, "utf8"));
             if (!isRecord5(owner) || owner.token !== token)
               throw new Error("fleet_journal_lock_lost");
-            await (0, import_promises23.unlink)(lockPath);
+            await (0, import_promises27.unlink)(lockPath);
           }
         }
       }
@@ -113490,743 +115965,6 @@ var init_response_command_worker_v6 = __esm({
   }
 });
 
-// ../core/dist/response-worker-contract.js
-function planResponseStep(request2) {
-  if (!CAPABILITY_SET.has(request2.capability)) {
-    return { ok: false, code: "unknown_capability", detail: String(request2.capability) };
-  }
-  const declared = request2.adapter.capabilities();
-  if (!declared.includes(request2.capability)) {
-    return {
-      ok: false,
-      code: "unsupported_action",
-      detail: `${request2.adapter.adapterId} does not declare ${request2.capability}`
-    };
-  }
-  if (!IDEMPOTENCY_KEY.test(request2.idempotencyKey)) {
-    return { ok: false, code: "invalid_idempotency_key", detail: "idempotency key is malformed" };
-  }
-  const ttlMs = request2.ttlMs ?? 5 * 60 * 1e3;
-  if (!Number.isSafeInteger(ttlMs) || ttlMs < 1e3 || ttlMs > MAX_TTL_MS) {
-    return { ok: false, code: "invalid_ttl", detail: "ttl must be between 1s and 24h" };
-  }
-  const binding = request2.binding;
-  if (!binding || typeof binding.target !== "string" || binding.target.trim() === "") {
-    return { ok: false, code: "missing_target", detail: "target is required" };
-  }
-  if (typeof binding.incidentId !== "string" || binding.incidentId.trim() === "") {
-    return { ok: false, code: "missing_incident", detail: "incidentId is required" };
-  }
-  if (typeof binding.authorizedBy !== "string" || binding.authorizedBy.trim().length < 3) {
-    return { ok: false, code: "missing_authorization", detail: "authorizedBy is required" };
-  }
-  if (binding.expectedSha256 !== null && !SHA2562.test(binding.expectedSha256)) {
-    return { ok: false, code: "invalid_expected_digest", detail: "expectedSha256 must be a SHA-256" };
-  }
-  if (request2.escapesWorkspace === true) {
-    return {
-      ok: false,
-      code: "target_escapes_workspace",
-      detail: "the resolved target is outside the permitted root"
-    };
-  }
-  const fileAction = request2.capability === "quarantine_file" || request2.capability === "restore_file";
-  if (fileAction) {
-    if (request2.liveExists !== true) {
-      return { ok: false, code: "target_missing", detail: "the target does not exist" };
-    }
-    if (typeof request2.vaultPath !== "string" || request2.vaultPath.trim() === "") {
-      return { ok: false, code: "missing_vault_path", detail: "a vault path is required" };
-    }
-    if (binding.expectedSha256 !== null) {
-      if (typeof request2.liveSha256 !== "string" || !SHA2562.test(request2.liveSha256)) {
-        return { ok: false, code: "target_unreadable", detail: "the target digest could not be read" };
-      }
-      if (request2.liveSha256 !== binding.expectedSha256) {
-        return {
-          ok: false,
-          code: "target_changed",
-          detail: "the target digest no longer matches the authorized digest"
-        };
-      }
-    }
-  }
-  if (request2.capability === "isolate_host" && request2.hasPrivilege !== true) {
-    return {
-      ok: false,
-      code: "insufficient_privilege",
-      detail: "host isolation requires an elevated platform adapter"
-    };
-  }
-  if ((request2.capability === "terminate_process" || request2.capability === "revoke_credential") && request2.hasPrivilege !== true) {
-    return {
-      ok: false,
-      code: "insufficient_privilege",
-      detail: `${request2.capability} requires the documented privilege`
-    };
-  }
-  return {
-    ok: true,
-    step: {
-      capability: request2.capability,
-      binding,
-      vaultPath: fileAction ? request2.vaultPath : null,
-      ttlMs,
-      idempotencyKey: request2.idempotencyKey,
-      reversible: request2.capability !== "isolate_host"
-    }
-  };
-}
-async function executeResponseStep(step, options) {
-  const now = options.now ?? Date.now;
-  const startedAt = now();
-  const existing = await options.journal.get(step.idempotencyKey);
-  if (existing) {
-    if (existing.expiresAtMs > startedAt)
-      return { receipt: existing.receipt, replayed: true };
-    return {
-      replayed: true,
-      receipt: {
-        commandId: step.idempotencyKey,
-        incidentId: step.binding.incidentId,
-        adapterId: options.adapter.adapterId,
-        platform: options.adapter.platform,
-        capability: step.capability,
-        status: "refused",
-        code: "stale_command",
-        target: step.binding.target,
-        observed: null,
-        rollbackToken: null,
-        rollbackPossible: false,
-        appliedAtUtc: new Date(startedAt).toISOString(),
-        fullyReversible: false,
-        idempotencyKey: step.idempotencyKey
-      }
-    };
-  }
-  let outcome;
-  try {
-    outcome = await options.adapter.execute(step);
-  } catch (error4) {
-    outcome = {
-      status: "failed",
-      code: "adapter_threw",
-      detail: error4 instanceof Error ? error4.message : String(error4),
-      rollbackToken: null
-    };
-  }
-  const status = outcome.status === "applied" ? step.reversible && outcome.rollbackToken !== null ? "applied" : step.reversible ? (
-    // An applied step with no rollback token cannot be undone on
-    // request, so the action is partial and the operator must know.
-    "partial"
-  ) : "partial" : outcome.status === "noop" ? "noop" : outcome.status;
-  const receipt = {
-    commandId: step.idempotencyKey,
-    incidentId: step.binding.incidentId,
-    adapterId: options.adapter.adapterId,
-    platform: options.adapter.platform,
-    capability: step.capability,
-    status,
-    code: outcome.status === "applied" ? status === "applied" ? "applied" : "applied_without_rollback" : outcome.status === "noop" ? "already_in_desired_state" : outcome.code,
-    target: step.binding.target,
-    observed: outcome.status === "applied" || outcome.status === "noop" ? outcome.observed : null,
-    rollbackToken: outcome.status === "refused" ? null : outcome.rollbackToken,
-    rollbackPossible: outcome.status !== "refused" && outcome.rollbackToken !== null,
-    appliedAtUtc: new Date(startedAt).toISOString(),
-    fullyReversible: status === "applied",
-    idempotencyKey: step.idempotencyKey
-  };
-  await options.journal.put({
-    idempotencyKey: step.idempotencyKey,
-    expiresAtMs: startedAt + step.ttlMs,
-    outcome,
-    receipt
-  });
-  return { receipt, replayed: false };
-}
-function planResponseRollback(request2) {
-  const { receipt } = request2;
-  if (receipt.rollbackToken === null) {
-    return {
-      ok: false,
-      code: "no_rollback_token",
-      detail: `${receipt.capability} recorded no rollback token`
-    };
-  }
-  const inverse = {
-    quarantine_file: "restore_file",
-    restore_file: "quarantine_file"
-  };
-  const capability = inverse[receipt.capability];
-  if (!capability) {
-    return {
-      ok: false,
-      code: "no_inverse_action",
-      detail: `${receipt.capability} has no inverse on this adapter`
-    };
-  }
-  if (!request2.adapter.capabilities().includes(capability)) {
-    return {
-      ok: false,
-      code: "unsupported_action",
-      detail: `${request2.adapter.adapterId} does not declare ${capability}`
-    };
-  }
-  return {
-    ok: true,
-    step: {
-      capability,
-      binding: {
-        target: receipt.target,
-        expectedSha256: null,
-        incidentId: receipt.incidentId,
-        authorizedBy: `rollback:${receipt.commandId}`
-      },
-      vaultPath: receipt.rollbackToken,
-      ttlMs: 5 * 60 * 1e3,
-      idempotencyKey: request2.idempotencyKey,
-      reversible: false
-    }
-  };
-}
-function reportWorkerCapabilities(adapter, requested) {
-  const declared = adapter.capabilities();
-  const known = requested.filter((entry) => CAPABILITY_SET.has(entry));
-  const requestedUnknown = requested.filter((entry) => !CAPABILITY_SET.has(entry));
-  const missing = known.filter((capability) => !declared.includes(capability));
-  const limitations = [
-    ...requestedUnknown.length ? [`unknown capability requested: ${requestedUnknown.join(", ")}`] : [],
-    ...missing.length ? [`not implemented on this host: ${missing.join(", ")}`] : [],
-    ...declared.includes("isolate_host") ? [] : ["host network isolation is not provided by this adapter"]
-  ];
-  return { adapterId: adapter.adapterId, platform: adapter.platform, declared, missing, limitations };
-}
-var RESPONSE_CAPABILITIES, CAPABILITY_SET, IDEMPOTENCY_KEY, SHA2562, MAX_TTL_MS, MemoryResponseJournal;
-var init_response_worker_contract = __esm({
-  "../core/dist/response-worker-contract.js"() {
-    "use strict";
-    RESPONSE_CAPABILITIES = [
-      "quarantine_file",
-      "restore_file",
-      "terminate_process",
-      "isolate_host",
-      "revoke_credential"
-    ];
-    CAPABILITY_SET = new Set(RESPONSE_CAPABILITIES);
-    IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,200}$/;
-    SHA2562 = /^[0-9a-f]{64}$/;
-    MAX_TTL_MS = 24 * 60 * 60 * 1e3;
-    MemoryResponseJournal = class {
-      #entries = /* @__PURE__ */ new Map();
-      get(idempotencyKey) {
-        return Promise.resolve(this.#entries.get(idempotencyKey) ?? null);
-      }
-      put(entry) {
-        this.#entries.set(entry.idempotencyKey, entry);
-        return Promise.resolve();
-      }
-    };
-  }
-});
-
-// ../core/dist/mcp-attestation.js
-function isJsonValue(value, seen = /* @__PURE__ */ new Set()) {
-  if (value === null || typeof value === "string" || typeof value === "boolean")
-    return true;
-  if (typeof value === "number")
-    return Number.isFinite(value);
-  if (typeof value !== "object")
-    return false;
-  if (seen.has(value))
-    return false;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    const valid2 = value.every((entry) => isJsonValue(entry, seen));
-    seen.delete(value);
-    return valid2;
-  }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    seen.delete(value);
-    return false;
-  }
-  const valid = Object.values(value).every((entry) => isJsonValue(entry, seen));
-  seen.delete(value);
-  return valid;
-}
-function canonicalize3(value) {
-  if (Array.isArray(value))
-    return value.map((entry) => canonicalize3(entry));
-  if (value === null || typeof value !== "object")
-    return value;
-  const output = /* @__PURE__ */ Object.create(null);
-  for (const key of Object.keys(value).sort())
-    output[key] = canonicalize3(value[key]);
-  return output;
-}
-function normalizedManifest(manifest) {
-  return {
-    ...manifest,
-    tools: [...manifest.tools].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
-  };
-}
-function canonicalMcpToolManifest(manifest) {
-  const parsed = McpToolManifestV1Schema.parse(manifest);
-  return JSON.stringify(canonicalize3(normalizedManifest(parsed)));
-}
-function manifestPayload2(manifest) {
-  return Buffer.from(`${SIGNING_DOMAIN}${canonicalMcpToolManifest(manifest)}`, "utf8");
-}
-function signingPayload(manifest, keyId) {
-  return Buffer.from(`${SIGNING_DOMAIN}${keyId}
-${canonicalMcpToolManifest(manifest)}`, "utf8");
-}
-function mcpManifestHash(manifest) {
-  return (0, import_node_crypto38.createHash)("sha256").update(manifestPayload2(manifest)).digest("hex");
-}
-function mcpToolsetHash(tools) {
-  const parsed = external_exports.array(McpToolDefinitionSchema).max(4096).parse(tools);
-  const names = /* @__PURE__ */ new Set();
-  for (const tool of parsed) {
-    if (names.has(tool.name))
-      throw new Error(`duplicate MCP tool name: ${tool.name}`);
-    names.add(tool.name);
-  }
-  const ordered = [...parsed].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-  return (0, import_node_crypto38.createHash)("sha256").update(JSON.stringify(canonicalize3(ordered))).digest("hex");
-}
-function signMcpToolManifest(params) {
-  if (!ID_PATTERN.test(params.keyId))
-    throw new Error("invalid MCP signer key id");
-  const manifest = McpToolManifestV1Schema.parse(params.manifest);
-  const privateKey = params.privateKey instanceof import_node_crypto38.KeyObject ? params.privateKey : (0, import_node_crypto38.createPrivateKey)(params.privateKey);
-  if (privateKey.type !== "private" || privateKey.asymmetricKeyType !== "ed25519") {
-    throw new Error("MCP manifests must be signed with an Ed25519 private key");
-  }
-  return {
-    key_id: params.keyId,
-    manifest,
-    signature_b64: (0, import_node_crypto38.sign)(null, signingPayload(manifest, params.keyId), privateKey).toString("base64")
-  };
-}
-async function writeMcpSignerHealthEvidence(params) {
-  const lastSuccessAt = params.lastSuccessAt.getTime();
-  const activeKeyExpiresAt = params.activeKeyExpiresAt.getTime();
-  const now = (params.now ?? /* @__PURE__ */ new Date()).getTime();
-  if (!Number.isFinite(lastSuccessAt) || lastSuccessAt > now) {
-    throw new Error("invalid MCP signer last-success timestamp");
-  }
-  if (!Number.isFinite(activeKeyExpiresAt) || activeKeyExpiresAt <= now) {
-    throw new Error("active MCP signer key is expired");
-  }
-  const evidence = {
-    schema_version: 1,
-    status: "ok",
-    last_success_at: params.lastSuccessAt.toISOString(),
-    active_key_expires_at: params.activeKeyExpiresAt.toISOString()
-  };
-  await atomicWriteJson(params.path, evidence);
-  return evidence;
-}
-function trustedSigner(config2, keyId) {
-  const signers = config2.trustedSigners;
-  if ("get" in signers && typeof signers.get === "function") {
-    const value2 = signers.get(keyId);
-    return typeof value2 === "string" ? value2 : void 0;
-  }
-  if (!Object.hasOwn(signers, keyId))
-    return void 0;
-  const value = signers[keyId];
-  return typeof value === "string" ? value : void 0;
-}
-function decodeEd25519Signature(value) {
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0)
-    return null;
-  const decoded = Buffer.from(value, "base64");
-  if (decoded.length !== 64 || decoded.toString("base64") !== value)
-    return null;
-  return decoded;
-}
-function validateManifestTimes(manifest, config2) {
-  const issuedAt = Date.parse(manifest.issued_at);
-  const expiresAt = Date.parse(manifest.expires_at);
-  if (expiresAt <= issuedAt)
-    return "invalid_time_window";
-  const maxLifetime = config2.maxLifetimeMs ?? DEFAULT_MAX_LIFETIME_MS;
-  if (!Number.isFinite(maxLifetime) || maxLifetime <= 0 || expiresAt - issuedAt > maxLifetime) {
-    return "lifetime_too_long";
-  }
-  const now = (config2.now ?? /* @__PURE__ */ new Date()).getTime();
-  const clockSkew = config2.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
-  if (!Number.isFinite(now) || !Number.isFinite(clockSkew) || clockSkew < 0) {
-    return "invalid_time_window";
-  }
-  if (issuedAt > now + clockSkew)
-    return "not_yet_valid";
-  if (expiresAt <= now)
-    return "expired";
-  return null;
-}
-function verifyManifestSignature2(manifest, keyId, publicKeyPem, signatureBase64) {
-  const signature = decodeEd25519Signature(signatureBase64);
-  if (!signature)
-    return "invalid_signature";
-  try {
-    const publicKey2 = (0, import_node_crypto38.createPublicKey)(publicKeyPem);
-    if (publicKey2.asymmetricKeyType !== "ed25519")
-      return "invalid_public_key";
-    return (0, import_node_crypto38.verify)(null, signingPayload(manifest, keyId), publicKey2, signature) ? null : "invalid_signature";
-  } catch {
-    return "invalid_public_key";
-  }
-}
-function verifySignedMcpToolManifest(candidate, config2) {
-  const parsed = SignedMcpToolManifestV1Schema.safeParse(candidate);
-  if (!parsed.success)
-    return { valid: false, reason: "invalid_envelope" };
-  const signed = parsed.data;
-  if (config2.expectedServerId && signed.manifest.server_id !== config2.expectedServerId) {
-    return { valid: false, reason: "unexpected_server" };
-  }
-  if (config2.revokedKeyIds?.has(signed.key_id))
-    return { valid: false, reason: "revoked_signer" };
-  const publicKeyPem = trustedSigner(config2, signed.key_id);
-  if (!publicKeyPem)
-    return { valid: false, reason: "untrusted_signer" };
-  const timeFailure = validateManifestTimes(signed.manifest, config2);
-  if (timeFailure)
-    return { valid: false, reason: timeFailure };
-  const signatureFailure = verifyManifestSignature2(signed.manifest, signed.key_id, publicKeyPem, signed.signature_b64);
-  if (signatureFailure)
-    return { valid: false, reason: signatureFailure };
-  return {
-    valid: true,
-    signed,
-    manifestHash: mcpManifestHash(signed.manifest),
-    toolsetHash: mcpToolsetHash(signed.manifest.tools)
-  };
-}
-function errorCode2(error4) {
-  return typeof error4 === "object" && error4 !== null && "code" in error4 ? String(error4.code) : void 0;
-}
-async function removeStaleLock(path3, staleAfter) {
-  try {
-    const info2 = await (0, import_promises24.stat)(path3);
-    if (Date.now() - info2.mtimeMs > staleAfter)
-      await (0, import_promises24.unlink)(path3);
-  } catch (error4) {
-    if (errorCode2(error4) !== "ENOENT")
-      throw error4;
-  }
-}
-function toolMap(tools) {
-  return new Map(tools.map((tool) => [
-    tool.name,
-    (0, import_node_crypto38.createHash)("sha256").update(JSON.stringify(canonicalize3(tool))).digest("hex")
-  ]));
-}
-function diffMcpTools(activeTools, candidateTools) {
-  const active = toolMap(activeTools);
-  const candidate = toolMap(candidateTools);
-  const added = [...candidate.keys()].filter((name) => !active.has(name)).sort();
-  const removed = [...active.keys()].filter((name) => !candidate.has(name)).sort();
-  const changed = [...candidate.keys()].filter((name) => active.has(name) && active.get(name) !== candidate.get(name)).sort();
-  return { added, removed, changed };
-}
-async function attestMcpToolManifest(params) {
-  const verified = verifySignedMcpToolManifest(params.candidate, params.verifier);
-  if (!verified.valid)
-    return { status: "rejected", reason: verified.reason };
-  const { signed, manifestHash, toolsetHash } = verified;
-  const { manifest } = signed;
-  const detectedAt = (params.verifier.now ?? /* @__PURE__ */ new Date()).toISOString();
-  try {
-    return await params.store.transact(manifest.server_id, (current) => {
-      if (current && manifest.sequence < current.highestSequence) {
-        return {
-          state: current,
-          result: { status: "rejected", reason: "sequence_replay" }
-        };
-      }
-      if (current && manifest.sequence === current.highestSequence && manifestHash !== current.highestManifestHash) {
-        return {
-          state: current,
-          result: { status: "rejected", reason: "sequence_conflict" }
-        };
-      }
-      const drift = diffMcpTools(current?.activeTools ?? [], manifest.tools);
-      const approved = current?.approvedToolsets.some((entry) => entry.toolsetHash === toolsetHash);
-      const alreadyActive = current?.activeToolsetHash === toolsetHash;
-      const shouldAccept = approved || alreadyActive;
-      const base = current ?? {
-        schemaVersion: 1,
-        serverId: manifest.server_id,
-        revision: 0,
-        highestSequence: manifest.sequence,
-        highestManifestHash: manifestHash,
-        activeTools: [],
-        approvedToolsets: []
-      };
-      const next = {
-        ...base,
-        revision: base.revision + 1,
-        highestSequence: manifest.sequence,
-        highestManifestHash: manifestHash
-      };
-      if (shouldAccept) {
-        next.activeToolsetHash = toolsetHash;
-        next.activeTools = normalizedManifest(manifest).tools;
-        delete next.quarantine;
-        return {
-          state: next,
-          result: { status: "accepted", manifestHash, toolsetHash, drift }
-        };
-      }
-      next.quarantine = {
-        manifestHash,
-        toolsetHash,
-        keyId: signed.key_id,
-        sequence: manifest.sequence,
-        detectedAt,
-        drift,
-        tools: normalizedManifest(manifest).tools
-      };
-      return {
-        state: next,
-        result: { status: "quarantined", manifestHash, toolsetHash, drift }
-      };
-    });
-  } catch {
-    return { status: "rejected", reason: "state_unavailable" };
-  }
-}
-async function approveQuarantinedMcpToolset(params) {
-  if (!SHA256_PATTERN2.test(params.toolsetHash))
-    throw new Error("invalid MCP toolset hash");
-  const approvedBy = params.approvedBy.trim();
-  const reason = params.reason.trim();
-  if (!approvedBy || approvedBy.length > 256)
-    throw new Error("invalid MCP approval actor");
-  if (!reason || reason.length > 2048)
-    throw new Error("invalid MCP approval reason");
-  return params.store.transact(params.serverId, (current) => {
-    if (!current?.quarantine) {
-      return { state: current, result: { approved: false, reason: "no_quarantine" } };
-    }
-    if (current.quarantine.toolsetHash !== params.toolsetHash) {
-      return {
-        state: current,
-        result: { approved: false, reason: "toolset_mismatch" }
-      };
-    }
-    const approval = {
-      toolsetHash: params.toolsetHash,
-      approvedAt: (params.now ?? /* @__PURE__ */ new Date()).toISOString(),
-      approvedBy,
-      reason
-    };
-    const approvals = current.approvedToolsets.filter((entry) => entry.toolsetHash !== params.toolsetHash);
-    approvals.push(approval);
-    const next = {
-      ...current,
-      revision: current.revision + 1,
-      activeToolsetHash: params.toolsetHash,
-      activeTools: current.quarantine.tools,
-      approvedToolsets: approvals.slice(-MAX_APPROVED_TOOLSETS)
-    };
-    delete next.quarantine;
-    return {
-      state: next,
-      result: { approved: true, toolsetHash: params.toolsetHash }
-    };
-  });
-}
-var import_node_crypto38, import_promises24, import_node_path39, import_promises25, SIGNING_DOMAIN, DEFAULT_CLOCK_SKEW_MS, DEFAULT_MAX_LIFETIME_MS, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_STALE_LOCK_MS, MAX_APPROVED_TOOLSETS, ID_PATTERN, TOOL_NAME_PATTERN, SHA256_PATTERN2, JsonObjectSchema, McpToolDefinitionSchema, McpToolManifestV1Schema, SignedMcpToolManifestV1Schema, McpToolDriftSchema, McpAttestationStateV1Schema, MemoryMcpAttestationStore, FileMcpAttestationStore;
-var init_mcp_attestation = __esm({
-  "../core/dist/mcp-attestation.js"() {
-    "use strict";
-    import_node_crypto38 = require("node:crypto");
-    import_promises24 = require("node:fs/promises");
-    import_node_path39 = require("node:path");
-    import_promises25 = require("node:timers/promises");
-    init_zod();
-    init_file_utils();
-    SIGNING_DOMAIN = "AIDR-MCP-TOOL-MANIFEST-V1\n";
-    DEFAULT_CLOCK_SKEW_MS = 5 * 60 * 1e3;
-    DEFAULT_MAX_LIFETIME_MS = 7 * 24 * 60 * 60 * 1e3;
-    DEFAULT_LOCK_TIMEOUT_MS = 5e3;
-    DEFAULT_STALE_LOCK_MS = 3e4;
-    MAX_APPROVED_TOOLSETS = 256;
-    ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
-    TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
-    SHA256_PATTERN2 = /^[0-9a-f]{64}$/;
-    JsonObjectSchema = external_exports.custom((value) => value !== null && !Array.isArray(value) && typeof value === "object" && isJsonValue(value), { message: "must be a JSON object with finite values and no cycles" });
-    McpToolDefinitionSchema = external_exports.object({
-      name: external_exports.string().regex(TOOL_NAME_PATTERN),
-      description: external_exports.string().max(65536),
-      input_schema: JsonObjectSchema,
-      output_schema: JsonObjectSchema.optional(),
-      annotations: JsonObjectSchema.optional()
-    }).strict();
-    McpToolManifestV1Schema = external_exports.object({
-      schema_version: external_exports.literal(1),
-      server_id: external_exports.string().regex(ID_PATTERN),
-      sequence: external_exports.number().int().nonnegative().safe(),
-      issued_at: external_exports.string().datetime({ offset: true }),
-      expires_at: external_exports.string().datetime({ offset: true }),
-      tools: external_exports.array(McpToolDefinitionSchema).max(4096)
-    }).strict().superRefine((manifest, context2) => {
-      const names = /* @__PURE__ */ new Set();
-      for (const [index, tool] of manifest.tools.entries()) {
-        if (names.has(tool.name)) {
-          context2.addIssue({
-            code: external_exports.ZodIssueCode.custom,
-            path: ["tools", index, "name"],
-            message: `duplicate MCP tool name: ${tool.name}`
-          });
-        }
-        names.add(tool.name);
-      }
-    });
-    SignedMcpToolManifestV1Schema = external_exports.object({
-      key_id: external_exports.string().regex(ID_PATTERN),
-      manifest: McpToolManifestV1Schema,
-      signature_b64: external_exports.string().min(1).max(512)
-    }).strict();
-    McpToolDriftSchema = external_exports.object({
-      added: external_exports.array(external_exports.string().regex(TOOL_NAME_PATTERN)),
-      removed: external_exports.array(external_exports.string().regex(TOOL_NAME_PATTERN)),
-      changed: external_exports.array(external_exports.string().regex(TOOL_NAME_PATTERN))
-    });
-    McpAttestationStateV1Schema = external_exports.object({
-      schemaVersion: external_exports.literal(1),
-      serverId: external_exports.string().regex(ID_PATTERN),
-      revision: external_exports.number().int().nonnegative().safe(),
-      highestSequence: external_exports.number().int().nonnegative().safe(),
-      highestManifestHash: external_exports.string().regex(SHA256_PATTERN2),
-      activeToolsetHash: external_exports.string().regex(SHA256_PATTERN2).optional(),
-      activeTools: external_exports.array(McpToolDefinitionSchema).max(4096),
-      approvedToolsets: external_exports.array(external_exports.object({
-        toolsetHash: external_exports.string().regex(SHA256_PATTERN2),
-        approvedAt: external_exports.string().datetime({ offset: true }),
-        approvedBy: external_exports.string().min(1).max(256),
-        reason: external_exports.string().min(1).max(2048)
-      })).max(MAX_APPROVED_TOOLSETS),
-      quarantine: external_exports.object({
-        manifestHash: external_exports.string().regex(SHA256_PATTERN2),
-        toolsetHash: external_exports.string().regex(SHA256_PATTERN2),
-        keyId: external_exports.string().regex(ID_PATTERN),
-        sequence: external_exports.number().int().nonnegative().safe(),
-        detectedAt: external_exports.string().datetime({ offset: true }),
-        drift: McpToolDriftSchema,
-        tools: external_exports.array(McpToolDefinitionSchema).max(4096)
-      }).optional()
-    });
-    MemoryMcpAttestationStore = class {
-      states = /* @__PURE__ */ new Map();
-      queue = Promise.resolve();
-      async transact(serverId, operation) {
-        let resolveResult = () => void 0;
-        let rejectResult = () => void 0;
-        const resultPromise = new Promise((resolve12, reject) => {
-          resolveResult = resolve12;
-          rejectResult = reject;
-        });
-        this.queue = this.queue.then(async () => {
-          try {
-            const current = this.states.get(serverId) ?? null;
-            const outcome = operation(current ? structuredClone(current) : null);
-            if (outcome.state)
-              this.states.set(serverId, structuredClone(outcome.state));
-            else
-              this.states.delete(serverId);
-            resolveResult(outcome.result);
-          } catch (error4) {
-            rejectResult(error4);
-          }
-        });
-        await this.queue;
-        return resultPromise;
-      }
-    };
-    FileMcpAttestationStore = class {
-      directory;
-      options;
-      constructor(directory, options = {}) {
-        this.directory = directory;
-        this.options = options;
-      }
-      statePath(serverId) {
-        const id = (0, import_node_crypto38.createHash)("sha256").update(serverId, "utf8").digest("hex");
-        return (0, import_node_path39.join)(this.directory, `${id}.json`);
-      }
-      async acquireLock(path3) {
-        const startedAt = Date.now();
-        const timeout = this.options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
-        const staleAfter = this.options.staleLockMs ?? DEFAULT_STALE_LOCK_MS;
-        for (; ; ) {
-          try {
-            const handle = await (0, import_promises24.open)(path3, "wx", 384);
-            await handle.writeFile(`${process.pid}
-`, "utf8");
-            await handle.close();
-            return async () => {
-              try {
-                await (0, import_promises24.unlink)(path3);
-              } catch (error4) {
-                if (errorCode2(error4) !== "ENOENT")
-                  throw error4;
-              }
-            };
-          } catch (error4) {
-            if (errorCode2(error4) !== "EEXIST")
-              throw error4;
-            await removeStaleLock(path3, staleAfter);
-            if (Date.now() - startedAt >= timeout) {
-              throw new Error("timed out acquiring MCP attestation state lock");
-            }
-            await (0, import_promises25.setTimeout)(20);
-          }
-        }
-      }
-      async read(serverId) {
-        try {
-          const parsed = McpAttestationStateV1Schema.parse(JSON.parse(await getFileContent(this.statePath(serverId))));
-          if (parsed.serverId !== serverId)
-            throw new Error("MCP attestation state server mismatch");
-          return parsed;
-        } catch (error4) {
-          if (errorCode2(error4) === "ENOENT")
-            return null;
-          throw error4;
-        }
-      }
-      async transact(serverId, operation) {
-        if (!ID_PATTERN.test(serverId))
-          throw new Error("invalid MCP server id");
-        await (0, import_promises24.mkdir)(this.directory, { recursive: true, mode: 448 });
-        const release3 = await this.acquireLock(`${this.statePath(serverId)}.lock`);
-        try {
-          const current = await this.read(serverId);
-          const outcome = operation(current);
-          if (!outcome.state) {
-            if (current)
-              throw new Error("persistent MCP state cannot be deleted through transact");
-            return outcome.result;
-          }
-          const state = McpAttestationStateV1Schema.parse(outcome.state);
-          if (state.serverId !== serverId)
-            throw new Error("MCP attestation state server mismatch");
-          await atomicWriteJson(this.statePath(serverId), state);
-          return outcome.result;
-        } finally {
-          await release3();
-        }
-      }
-    };
-  }
-});
-
 // ../core/dist/index.js
 var dist_exports = {};
 __export(dist_exports, {
@@ -114243,10 +115981,12 @@ __export(dist_exports, {
   AutoContain: () => AutoContain,
   AutoQuarantine: () => AutoQuarantine,
   AutoRollback: () => AutoRollback,
+  BEHAVIORAL_ORCHESTRATOR_BOUNDS: () => BEHAVIORAL_ORCHESTRATOR_BOUNDS,
   BehavioralDetectionOrchestrator: () => BehavioralDetectionOrchestrator,
   CAUSAL_CHAIN_ORDER: () => CAUSAL_CHAIN_ORDER,
   CAUSAL_CHAIN_SCHEMA_VERSION: () => CAUSAL_CHAIN_SCHEMA_VERSION,
   CONFIDENCE_THRESHOLD: () => CONFIDENCE_THRESHOLD,
+  CONNECTOR_TOOL_SURFACES: () => CONNECTOR_TOOL_SURFACES,
   CacheConfigSchema: () => CacheConfigSchema,
   CommunityRuleRegistry: () => CommunityRuleRegistry,
   ConfigSchema: () => ConfigSchema,
@@ -114262,6 +116002,7 @@ __export(dist_exports, {
   DELEGATED_CREDENTIAL_ALGORITHM: () => DELEGATED_CREDENTIAL_ALGORITHM,
   DELEGATED_CREDENTIAL_TYPE: () => DELEGATED_CREDENTIAL_TYPE,
   DELEGATED_CREDENTIAL_VERSION: () => DELEGATED_CREDENTIAL_VERSION,
+  DLP_EXPIRED_EXCEPTION_DOMINANCE: () => DLP_EXPIRED_EXCEPTION_DOMINANCE,
   DecisionEngine: () => DecisionEngine,
   DecisionSchema: () => DecisionSchema,
   DetectionLegUnavailableError: () => DetectionLegUnavailableError,
@@ -114287,6 +116028,7 @@ __export(dist_exports, {
   FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION: () => FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION,
   FALSE_POSITIVE_GENESIS_HASH: () => FALSE_POSITIVE_GENESIS_HASH,
   FederatedLearning: () => FederatedLearning,
+  FileBehavioralBaselineStore: () => FileBehavioralBaselineStore,
   FileCheckClient: () => FileCheckClient,
   FileCheckConfigSchema: () => FileCheckConfigSchema,
   FileMcpAttestationStore: () => FileMcpAttestationStore,
@@ -114297,6 +116039,7 @@ __export(dist_exports, {
   IntegrityConfigSchema: () => IntegrityConfigSchema,
   IntelConfigSchema: () => IntelConfigSchema,
   IntelPacksConfigSchema: () => IntelPacksConfigSchema,
+  LOCAL_EMBEDDER_MODEL_VERSION: () => LOCAL_EMBEDDER_MODEL_VERSION,
   LocalEmbeddingModel: () => LocalEmbeddingModel,
   LoggingConfigSchema: () => LoggingConfigSchema,
   MAX_DELEGATED_CREDENTIAL_SECONDS: () => MAX_DELEGATED_CREDENTIAL_SECONDS,
@@ -114353,6 +116096,7 @@ __export(dist_exports, {
   atomicWriteJson: () => atomicWriteJson,
   attestMcpToolManifest: () => attestMcpToolManifest,
   auditActionForMode: () => auditActionForMode,
+  behavioralBaselineDir: () => behavioralBaselineDir,
   boundArtifact: () => boundArtifact,
   buildAllowedResponseActionEntry: () => buildAllowedResponseActionEntry,
   buildResponseActionEntry: () => buildResponseActionEntry,
@@ -114360,6 +116104,7 @@ __export(dist_exports, {
   cacheKey: () => cacheKey,
   canonicalCausalChainJson: () => canonicalCausalChainJson,
   canonicalDelegatedCredentialJson: () => canonicalDelegatedCredentialJson,
+  canonicalDetectorPolicyPayload: () => canonicalDetectorPolicyPayload,
   canonicalExposureGraphJson: () => canonicalExposureGraphJson,
   canonicalFalsePositiveFeedbackJson: () => canonicalFalsePositiveFeedbackJson,
   canonicalMcpToolManifest: () => canonicalMcpToolManifest,
@@ -114385,6 +116130,7 @@ __export(dist_exports, {
   computeConfigHash: () => computeConfigHash,
   correlateIncidents: () => correlateIncidents,
   createAutoRollback: () => createAutoRollback,
+  createBehavioralBaselineStore: () => createBehavioralBaselineStore,
   createBehavioralDetectionOrchestrator: () => createBehavioralDetectionOrchestrator,
   createChildLogger: () => createChildLogger,
   createDefaultContainConfig: () => createDefaultContainConfig,
@@ -114409,6 +116155,7 @@ __export(dist_exports, {
   describeHttpFailure: () => describeHttpFailure,
   detectEvidenceTruncation: () => detectEvidenceTruncation,
   detectPII: () => detectPII,
+  detectorPolicyPath: () => detectorPolicyPath,
   diffMcpTools: () => diffMcpTools,
   discoverMcpServers: () => discoverMcpServers,
   discoverPlugins: () => discoverPlugins,
@@ -114438,6 +116185,7 @@ __export(dist_exports, {
   exposureSourcesFromFleetInventory: () => exposureSourcesFromFleetInventory,
   exposureStaleness: () => exposureStaleness,
   exposureStalenessReport: () => exposureStalenessReport,
+  extractDeclaredToolNames: () => extractDeclaredToolNames,
   extractDomain: () => extractDomain,
   extractFromBash: () => extractFromBash,
   extractFromDelete: () => extractFromDelete,
@@ -114460,6 +116208,7 @@ __export(dist_exports, {
   falsePositiveFeedbackSubmissionDigest: () => falsePositiveFeedbackSubmissionDigest,
   falsePositiveRateByPolicyRevision: () => falsePositiveRateByPolicyRevision,
   fileArtifacts: () => fileArtifacts,
+  findConnectorToolSurfaceViolations: () => findConnectorToolSurfaceViolations,
   fingerprintCount: () => fingerprintCount,
   fleetInventoryEntryId: () => fleetInventoryEntryId,
   foldExposureObservations: () => foldExposureObservations,
@@ -114481,6 +116230,7 @@ __export(dist_exports, {
   getAigScanResult: () => getAigScanResult,
   getAigSyncStatus: () => getSyncStatus,
   getAllCategories: () => getAllCategories,
+  getAuditLogLossState: () => getAuditLogLossState,
   getCached: () => getCached,
   getCurrentSpan: () => getCurrentSpan,
   getCveStats: () => getCveStats,
@@ -114509,7 +116259,9 @@ __export(dist_exports, {
   isAllowlisted: () => isAllowlisted,
   isAmsiSupported: () => isAmsiSupported,
   isCached: () => isCached,
+  isCanonicalToolAlias: () => isCanonicalToolAlias,
   isCommercialBuild: () => isCommercialBuild,
+  isDlpExceptionActive: () => isDlpExceptionActive,
   isEncrypted: () => isEncrypted,
   isEntitlementActive: () => isEntitlementActive,
   isHealthy: () => isHealthy,
@@ -114526,6 +116278,7 @@ __export(dist_exports, {
   loadFleetInventory: () => loadFleetInventory,
   loadManagedState: () => loadManagedState,
   loadMergedIntelFromDisk: () => loadMergedIntelFromDisk,
+  loadProvisionedDetectorContext: () => loadProvisionedDetectorContext,
   loadReputationFeed: () => loadReputationFeed,
   loadScanCache: () => loadScanCache,
   loadThreats: () => loadThreats,
@@ -114555,12 +116308,17 @@ __export(dist_exports, {
   nullLogger: () => nullLogger,
   parseDelegatedCredentialClaims: () => parseDelegatedCredentialClaims,
   parseEvidenceReceipt: () => parseEvidenceReceipt,
+  parseJsonc: () => parseJsonc,
   parsePolicyDocument: () => parsePolicyDocument,
   persistIncidentRecords: () => persistIncidentRecords,
   planResponseRollback: () => planResponseRollback,
   planResponseStep: () => planResponseStep,
   probeMatches: () => probeMatches,
+  pruneExpiredExceptions: () => pruneExpiredExceptions,
   pruneOrphanedTmpFiles: () => pruneOrphanedTmpFiles,
+  readTelemetryLossSummary: () => readTelemetryLossSummary,
+  recordAuditRotationDrop: () => recordAuditRotationDrop,
+  recordAuditWriteFailure: () => recordAuditWriteFailure,
   recordCausalChain: () => recordCausalChain,
   recordDetectionPhase: () => recordDetectionPhase,
   recordException: () => recordException,
@@ -114577,6 +116335,7 @@ __export(dist_exports, {
   reportWorkerCapabilities: () => reportWorkerCapabilities,
   requireAvailableReputationFeed: () => requireAvailableReputationFeed,
   resetAigScanCache: () => resetAigScanCache,
+  resetAuditLogLossState: () => resetAuditLogLossState,
   resetCategoryCache: () => resetCategoryCache,
   resetCveIndexCache: () => resetCveIndexCache,
   resolveDistDigest: () => resolveDistDigest,
@@ -114617,6 +116376,7 @@ __export(dist_exports, {
   startActiveSpan: () => startActiveSpan,
   startSpan: () => startSpan,
   storeResult: () => storeResult,
+  stripJsonComments: () => stripJsonComments,
   summarizeActionsForLog: () => summarizeActionsForLog,
   summarizeArtifacts: () => summarizeArtifacts,
   summarizeResponseActions: () => summarizeResponseActions,
@@ -114652,6 +116412,7 @@ var init_dist = __esm({
     init_approval_store();
     init_audit_log();
     init_behavioral_orchestrator();
+    init_behavioral_baseline_store();
     init_build_flavor();
     init_cache();
     init_causal_chain();
@@ -114692,9 +116453,11 @@ var init_dist = __esm({
     init_logger();
     init_mcp_aig_categories();
     init_mcp_discovery();
+    init_jsonc();
     init_metrics2();
     init_ml_model();
     init_novelty_detection();
+    init_connector_alias_contract();
     init_output_scanner();
     init_package_checker();
     init_package_extractor();
@@ -114723,6 +116486,7 @@ var init_dist = __esm({
     init_version();
     init_version_check();
     init_managed();
+    init_detector_provisioning();
     init_response_command_consumer_v6();
     init_response_command_worker_v6();
     init_response_worker_contract();
@@ -124898,8 +126662,8 @@ var import_pino3 = __toESM(require_pino(), 1);
 init_zod();
 
 // src/approval-tracker.ts
-var import_promises26 = require("node:fs/promises");
-var import_node_path40 = require("node:path");
+var import_promises28 = require("node:fs/promises");
+var import_node_path42 = require("node:path");
 init_dist();
 var PENDING_STALE_MS2 = 60 * 60 * 1e3;
 var CONSUMED_TTL_MS = 10 * 60 * 1e3;
@@ -124919,7 +126683,7 @@ async function saveOrDelete(path3, data) {
   const resolved = resolvePath(path3);
   if (Object.keys(data).length === 0) {
     try {
-      await (0, import_promises26.unlink)(resolved);
+      await (0, import_promises28.unlink)(resolved);
     } catch {
     }
   } else {
@@ -124941,7 +126705,7 @@ function consumedKey(artifactType, artifact) {
 }
 async function listSessionFiles(prefix) {
   try {
-    const entries = await (0, import_promises26.readdir)(resolvedAidrDir2());
+    const entries = await (0, import_promises28.readdir)(resolvedAidrDir2());
     return entries.filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
   } catch {
     return [];
@@ -124953,7 +126717,7 @@ async function findConsumedApprovalAcrossSessions(artifactType, artifact, _logge
   const dir = resolvedAidrDir2();
   for (const file of files) {
     try {
-      const path3 = (0, import_node_path40.join)(dir, file);
+      const path3 = (0, import_node_path42.join)(dir, file);
       let store = await loadJson2(path3) ?? {};
       store = pruneExpiredConsumed(store);
       await saveOrDelete(path3, store);
@@ -124970,7 +126734,7 @@ async function removeConsumedApprovalAcrossSessions(artifactType, artifact, _log
   const dir = resolvedAidrDir2();
   for (const file of files) {
     try {
-      const path3 = (0, import_node_path40.join)(dir, file);
+      const path3 = (0, import_node_path42.join)(dir, file);
       let store = await loadJson2(path3) ?? {};
       store = pruneExpiredConsumed(store);
       if (key in store) {
