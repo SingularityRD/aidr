@@ -34,82 +34,93 @@ async function boundedJson(req: Request): Promise<unknown> {
 	catch { throw new Error("invalid_json"); }
 }
 
-Deno.serve(async (req) => {
-	const preflight = handleCors(req);
-	if (preflight) return preflight;
-	if (req.method !== "GET" && req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
-	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
-	if (!config.ok) return configFailure("invoice-entitlement", config.error, (status, body) => corsJson(req, status, body));
+export interface InvoiceEntitlementDeps {
+	/** Overrides the service-role client; used by the contract suite. */
+	db?: ReturnType<typeof createClient>;
+}
 
-	let tenantId: string;
-	try { tenantId = parseTenantId(req.headers.get("X-AIDR-Tenant-ID")); }
-	catch { return corsJson(req, 400, { error: "invalid_tenant_id" }); }
-	const token = getBearerToken(req.headers.get("Authorization"));
-	if (!token) return corsJson(req, 401, { error: "missing_access_token" });
+/** Build the request handler. Exported so the contract suite can drive it. */
+export function createInvoiceEntitlementHandler(deps: InvoiceEntitlementDeps = {}) {
+	return async function handle(req: Request): Promise<Response> {
+		const preflight = handleCors(req);
+		if (preflight) return preflight;
+		if (req.method !== "GET" && req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
+		const config = loadConfig(runtimeEnv, REQUIRED_ENV);
+		if (!config.ok) return configFailure("invoice-entitlement", config.error, (status, body) => corsJson(req, status, body));
 
-	try {
-		const db = createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, {
-			auth: { persistSession: false },
-		});
-		const { data: auth, error: authError } = await db.auth.getUser(token);
-		if (authError || !auth.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
-		const userId = auth.user.id;
-		const identity = await checkIdentityBarrier(db, token, userId, tenantId);
-		if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
-		const { data: member, error: memberError } = await db.from("tenant_members")
-			.select("role,expires_at").eq("tenant_id", tenantId).eq("user_id", userId).maybeSingle();
-		if (memberError) return corsJson(req, 503, { error: "authorization_unavailable" });
-		if (!membershipActive(member) || !["owner", "admin"].includes(member?.role)) {
-			return corsJson(req, 403, { error: "billing_forbidden" });
-		}
-		const { data: tenant, error: tenantError } = await db.from("tenants")
-			.select("status").eq("id", tenantId).maybeSingle();
-		if (tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
-		if (tenant?.status !== "active") return corsJson(req, 403, { error: "tenant_inactive" });
+		let tenantId: string;
+		try { tenantId = parseTenantId(req.headers.get("X-AIDR-Tenant-ID")); }
+		catch { return corsJson(req, 400, { error: "invalid_tenant_id" }); }
+		const token = getBearerToken(req.headers.get("Authorization"));
+		if (!token) return corsJson(req, 401, { error: "missing_access_token" });
 
-		if (req.method === "GET") {
-			const { data, error } = await db.rpc("list_enterprise_invoice_orders", {
-				p_tenant_id: tenantId, p_actor_user_id: userId,
-			});
-			if (error?.code === "42501") return corsJson(req, 403, { error: "billing_forbidden" });
-			if (error || !Array.isArray(data)) return corsJson(req, 503, { error: "invoice_orders_unavailable" });
-			const orders = data.map((row) => projectInvoiceOrder(row, tenantId));
-			if (orders.some((row) => row === null)) return corsJson(req, 503, { error: "invalid_invoice_order_state" });
-			return corsJson(req, 200, { ok: true, orders });
-		}
-
-		let orderRequest: ReturnType<typeof parseInvoiceOrderRequest>;
-		try { orderRequest = parseInvoiceOrderRequest(await boundedJson(req)); }
-		catch (error) {
-			const code = error instanceof Error ? error.message : "invalid_invoice_order_request";
-			return corsJson(req, code === "request_too_large" ? 413 : 400, { error: code });
-		}
-		const { data: quota, error: quotaError } = await db.rpc("consume_tenant_rate_limit", {
-			p_tenant_id: tenantId, p_subject: userId, p_endpoint: "invoice-entitlement",
-			p_window_start: Math.floor(Date.now() / 60000), p_subject_limit: 10,
-			p_tenant_limit: 50, p_cost: 1,
-		});
-		if (quotaError || !Array.isArray(quota) || quota.length !== 1) return corsJson(req, 503, { error: "rate_limit_unavailable" });
-		if (quota[0]?.allowed !== true) return corsJson(req, 429, { error: "rate_limited" });
-		const { data: order, error: orderError } = await db.rpc("request_enterprise_invoice_order", {
-			p_tenant_id: tenantId,
-			p_actor_user_id: userId,
-			p_request_id: orderRequest.requestId,
-			p_requested_agents: orderRequest.requestedAgents,
-			p_quote_reference: orderRequest.quoteReference,
-		});
-		if (orderError) {
-			if (orderError.code === "23505" && orderError.message.includes("invoice_order_request_conflict")) {
-				return corsJson(req, 409, { error: "invoice_order_request_conflict" });
+		try {
+			const db = deps.db ??
+				createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, {
+					auth: { persistSession: false },
+				});
+			const { data: auth, error: authError } = await db.auth.getUser(token);
+			if (authError || !auth.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
+			const userId = auth.user.id;
+			const identity = await checkIdentityBarrier(db, token, userId, tenantId);
+			if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
+			const { data: member, error: memberError } = await db.from("tenant_members")
+				.select("role,expires_at").eq("tenant_id", tenantId).eq("user_id", userId).maybeSingle();
+			if (memberError) return corsJson(req, 503, { error: "authorization_unavailable" });
+			if (!membershipActive(member) || !["owner", "admin"].includes(member?.role)) {
+				return corsJson(req, 403, { error: "billing_forbidden" });
 			}
-			if (orderError.code === "42501") return corsJson(req, 403, { error: "billing_forbidden" });
-			if (orderError.code === "22023") return corsJson(req, 400, { error: "invalid_invoice_order_request" });
+			const { data: tenant, error: tenantError } = await db.from("tenants")
+				.select("status").eq("id", tenantId).maybeSingle();
+			if (tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
+			if (tenant?.status !== "active") return corsJson(req, 403, { error: "tenant_inactive" });
+
+			if (req.method === "GET") {
+				const { data, error } = await db.rpc("list_enterprise_invoice_orders", {
+					p_tenant_id: tenantId, p_actor_user_id: userId,
+				});
+				if (error?.code === "42501") return corsJson(req, 403, { error: "billing_forbidden" });
+				if (error || !Array.isArray(data)) return corsJson(req, 503, { error: "invoice_orders_unavailable" });
+				const orders = data.map((row) => projectInvoiceOrder(row, tenantId));
+				if (orders.some((row) => row === null)) return corsJson(req, 503, { error: "invalid_invoice_order_state" });
+				return corsJson(req, 200, { ok: true, orders });
+			}
+
+			let orderRequest: ReturnType<typeof parseInvoiceOrderRequest>;
+			try { orderRequest = parseInvoiceOrderRequest(await boundedJson(req)); }
+			catch (error) {
+				const code = error instanceof Error ? error.message : "invalid_invoice_order_request";
+				return corsJson(req, code === "request_too_large" ? 413 : 400, { error: code });
+			}
+			const { data: quota, error: quotaError } = await db.rpc("consume_tenant_rate_limit", {
+				p_tenant_id: tenantId, p_subject: userId, p_endpoint: "invoice-entitlement",
+				p_window_start: Math.floor(Date.now() / 60000), p_subject_limit: 10,
+				p_tenant_limit: 50, p_cost: 1,
+			});
+			if (quotaError || !Array.isArray(quota) || quota.length !== 1) return corsJson(req, 503, { error: "rate_limit_unavailable" });
+			if (quota[0]?.allowed !== true) return corsJson(req, 429, { error: "rate_limited" });
+			const { data: order, error: orderError } = await db.rpc("request_enterprise_invoice_order", {
+				p_tenant_id: tenantId,
+				p_actor_user_id: userId,
+				p_request_id: orderRequest.requestId,
+				p_requested_agents: orderRequest.requestedAgents,
+				p_quote_reference: orderRequest.quoteReference,
+			});
+			if (orderError) {
+				if (orderError.code === "23505" && orderError.message.includes("invoice_order_request_conflict")) {
+					return corsJson(req, 409, { error: "invoice_order_request_conflict" });
+				}
+				if (orderError.code === "42501") return corsJson(req, 403, { error: "billing_forbidden" });
+				if (orderError.code === "22023") return corsJson(req, 400, { error: "invalid_invoice_order_request" });
+				return corsJson(req, 503, { error: "invoice_order_unavailable" });
+			}
+			const responseOrder = projectRequestedInvoiceOrder(order, tenantId, orderRequest);
+			if (!responseOrder) return corsJson(req, 503, { error: "invalid_invoice_order_state" });
+			return corsJson(req, 200, { ok: true, order: responseOrder });
+		} catch {
 			return corsJson(req, 503, { error: "invoice_order_unavailable" });
 		}
-		const responseOrder = projectRequestedInvoiceOrder(order, tenantId, orderRequest);
-		if (!responseOrder) return corsJson(req, 503, { error: "invalid_invoice_order_state" });
-		return corsJson(req, 200, { ok: true, order: responseOrder });
-	} catch {
-		return corsJson(req, 503, { error: "invoice_order_unavailable" });
-	}
-});
+	};
+}
+
+Deno.serve(createInvoiceEntitlementHandler());
