@@ -57,8 +57,8 @@ function sourceOf(name: string): string {
 /**
  * The request path: the `Deno.serve(async (req) => { ... })` body, or the
  * exported handler factory it delegates to (`Deno.serve(createXHandler())`).
- * A function that moves its handler into a factory ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â so a contract suite can
- * drive it with an injected client ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â is still covered.
+ * A function that moves its handler into a factory — so a contract suite can
+ * drive it with an injected client — is still covered.
  */
 function handlerBody(source: string): string {
 	const start = source.indexOf("Deno.serve(");
