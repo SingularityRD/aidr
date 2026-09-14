@@ -1,928 +1,928 @@
-# AIDR ÃƒÂ¼retim ve satÃ„Â±Ã…Å¸ hazÃ„Â±rlÃ„Â±Ã„Å¸Ã„Â±: ayrÃ„Â±ntÃ„Â±lÃ„Â± eksik kaydÃ„Â±
+# AIDR üretim ve satış hazırlığı: ayrıntılı eksik kaydı
 
-13 EylÃƒÂ¼l 2026. **Karar: NO-GO.** Kurulabilir bir aday ve doÃ„Å¸rulanmÃ„Â±Ã…Å¸ yerel akÃ„Â±Ã…Å¸lar var; bÃƒÂ¼tÃƒÂ¼n ÃƒÂ¼rÃƒÂ¼nÃƒÂ¼n ÃƒÂ¼retim ve satÃ„Â±Ã…Å¸ kabulÃƒÂ¼ tamamlanmÃ„Â±Ã…Å¸ deÃ„Å¸il.
+13 Eylül 2026. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
 
-71 alt ÃƒÂ¶zellik: **41 baÃ„Å¸lÃ„Â±/ÃƒÂ§alÃ„Â±Ã…Å¸an, 28 kÃ„Â±smi, 0 eksik, 2 dÃ„Â±Ã…Å¸ kabule baÃ„Å¸lÃ„Â±**. Ãƒâ€¡alÃ„Â±Ã…Å¸an bir ÃƒÂ¶zellikte de saha veya iÃ…Å¸letim kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k olabilir. Bu raporda **46 teknik/operasyon iÃ…Å¸ paketi ve 13 ticari/dÃ„Â±Ã…Å¸ kanÃ„Â±t kapÃ„Â±sÃ„Â±** ayrÃ„Â±ntÃ„Â±landÃ„Â±rÃ„Â±ldÃ„Â±. Bunlar benzersiz yazÃ„Â±lÃ„Â±m hatasÃ„Â± sayÃ„Â±sÃ„Â± veya tamamlanma yÃƒÂ¼zdesi deÃ„Å¸ildir; ÃƒÂ¶rtÃƒÂ¼Ã…Å¸en gereksinimler kimliklerle iliÃ…Å¸kilidir. Makine kaydÃ„Â±: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
+71 alt özellik: **41 bağlı/çalışan, 28 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **46 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
 
-45 teknik iÃ…Å¸te yerel uygulama ilerlemiÃ…Å¸ ve saha kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k; 1 teknik iÃ…Å¸ uygulama/entegrasyon olarak aÃƒÂ§Ã„Â±k. BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u tarihsel karÃ…Å¸Ã„Â±laÃ…Å¸tÃ„Â±rma iÃƒÂ§in korunur; satÃ„Â±rÃ„Â±n gÃƒÂ¼ncel durumu ve kalan kabul koÃ…Å¸ulu esas alÃ„Â±nmalÃ„Â±dÃ„Â±r. ÃƒÅ“retim ve destekli satÃ„Â±Ã…Å¸ profillerinin her birinde **12 aÃƒÂ§Ã„Â±k zorunlu dÃ„Â±Ã…Å¸ kapÃ„Â±** var. MÃƒÂ¼Ã…Å¸teri ortamÃ„Â± henÃƒÂ¼z bilinmiyor; cloud ve self-hosted kapsamlarÃ„Â± korunmuÃ…Å¸tur.
+45 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 1 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
 
-## KanÃ„Â±t ve durum nasÃ„Â±l okunmalÃ„Â±?
+## Kanıt ve durum nasıl okunmalı?
 
-- **Yerel uygulama, saha kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k:** Kod ve hedefli yerel testler var; gerÃƒÂ§ek mÃƒÂ¼Ã…Å¸teri, native host, provider, SLA veya operatÃƒÂ¶r kabulÃƒÂ¼ ayrÃ„Â±ca gerekir.
-- **AÃƒÂ§Ã„Â±k:** BaÃ…Å¸langÃ„Â±ÃƒÂ§ bulgusu veya eksik ÃƒÂ¼rÃƒÂ¼n baÃ„Å¸lantÃ„Â±sÃ„Â± tamamlanmadÃ„Â±.
-- **P0/P1:** SatÃ„Â±lan kapsam ÃƒÂ¶nceliÃ„Å¸i. Ticari kapÃ„Â±lar kendi profilinde zorunludur.
+- **Yerel uygulama, saha kabulü açık:** Kod ve hedefli yerel testler var; gerçek müşteri, native host, provider, SLA veya operatör kabulü ayrıca gerekir.
+- **Açık:** Başlangıç bulgusu veya eksik ürün bağlantısı tamamlanmadı.
+- **P0/P1:** Satılan kapsam önceliği. Ticari kapılar kendi profilinde zorunludur.
 
-V7 birleÃ…Å¸ik test ÃƒÂ¶zeti [docs/production-readiness/2026-09-13-customer-candidate-v7.md](docs/production-readiness/2026-09-13-customer-candidate-v7.md) iÃƒÂ§indedir; ÃƒÂ¶nceki kurulum kaydÃ„Â± [docs/production-readiness/2026-09-13-customer-candidate-v6.md](docs/production-readiness/2026-09-13-customer-candidate-v6.md) altÃ„Â±nda saklanÃ„Â±r. Yerel test geÃƒÂ§iÃ…Å¸i native host, baÃ„Å¸Ã„Â±msÃ„Â±z gÃƒÂ¼venlik deÃ„Å¸erlendirmesi veya SLA kanÃ„Â±tÃ„Â±nÃ„Â±n yerini tutmaz.
+V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidate-v7.md](docs/production-readiness/2026-09-13-customer-candidate-v7.md) içindedir; önceki kurulum kaydı [docs/production-readiness/2026-09-13-customer-candidate-v6.md](docs/production-readiness/2026-09-13-customer-candidate-v6.md) altında saklanır. Yerel test geçişi native host, bağımsız güvenlik değerlendirmesi veya SLA kanıtının yerini tutmaz.
 
-## Ãƒâ€“ncelikli kalan iÃ…Å¸ler
+## Öncelikli kalan işler
 
-1. GerÃƒÂ§ek host/OS ve cloud/self-hosted altyapÃ„Â± kabulÃƒÂ¼; resmi yayÃ„Â±ncÃ„Â± imzasÃ„Â± ve ÃƒÂ¶zel daÃ„Å¸Ã„Â±tÃ„Â±m.
-2. MCP doÃ„Å¸rudan upstream bypass, binary/server-initiated kapsamÃ„Â± ve her connector iÃƒÂ§in pre-model/pre-side-effect kabulÃƒÂ¼.
-3. GerÃƒÂ§ek Entra/Okta, SMTP, MDM, cloud project, TLS public proxy ve iki tenantlÃ„Â± canlÃ„Â± negatif test.
-4. Kimlikli yÃƒÂ¼k, failover/soak, baÃ„Å¸Ã„Â±msÃ„Â±z offsite kurtarma, SIEM alÃ„Â±ndÃ„Â±sÃ„Â± ve alarm paging teslimi.
-5. Ticari teklif/sipariÃ…Å¸ten entitlement'a, veri iÃ…Å¸leme, destek kanallarÃ„Â±, baÃ„Å¸Ã„Â±msÃ„Â±z pentest ve isimli mÃƒÂ¼Ã…Å¸teri PoV.
+1. Gerçek host/OS ve cloud/self-hosted altyapı kabulü; resmi yayıncı imzası ve özel dağıtım.
+2. MCP doğrudan upstream bypass, binary/server-initiated kapsamı ve her connector için pre-model/pre-side-effect kabulü.
+3. Gerçek Entra/Okta, SMTP, MDM, cloud project, TLS public proxy ve iki tenantlı canlı negatif test.
+4. Kimlikli yük, failover/soak, bağımsız offsite kurtarma, SIEM alındısı ve alarm paging teslimi.
+5. Ticari teklif/siparişten entitlement'a, veri işleme, destek kanalları, bağımsız pentest ve isimli müşteri PoV.
 
 ## Teknik ve operasyon eksikleri
 
-### T01 Ã¢â‚¬â€ GerÃƒÂ§ek host ve iÃ…Å¸letim sistemi kapsamÃ„Â± (P0)
+### T01 — Gerçek host ve işletim sistemi kapsamı (P0)
 
 **Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** deploy/native/support-matrix.json satilan connector/OS/arch/context/interception matrisini ve bilinen bypass/unobserved listesini tanimliyor; deploy/native/run-support-matrix.mjs kurulu olmayan hostu HOST_UNAVAILABLE olarak NO-GO uretiyor, gercek host ve isimli kabul acik.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** DerlenmiÃ…Å¸ kanca ve SDK testleri var; mÃƒÂ¼Ã…Å¸terinin gerÃƒÂ§ek host/OS/sÃƒÂ¼rÃƒÂ¼m matrisi yok.
+**Başlangıç durumu:** Derlenmiş kanca ve SDK testleri var; müşterinin gerçek host/OS/sürüm matrisi yok.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Kanca kararÃ„Â± hostun eylemi durdurduÃ„Å¸unu tek baÃ…Å¸Ã„Â±na kanÃ„Â±tlamaz. Devre dÃ„Â±Ã…Å¸Ã„Â± eklenti, sÃƒÂ¼reÃƒÂ§ ÃƒÂ§ÃƒÂ¶kmesi, timeout ve yeni host sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼ kapsam dÃ„Â±Ã…Å¸Ã„Â±nda kalabilir.
+**Başlangıç boşluğu / müşteri etkisi:** Kanca kararı hostun eylemi durdurduğunu tek başına kanıtlamaz. Devre dışı eklenti, süreç çökmesi, timeout ve yeni host sürümü kapsam dışında kalabilir.
 
-**Tamamlanma hedefi:** SatÃ„Â±lacak her baÃ„Å¸layÃ„Â±cÃ„Â± iÃƒÂ§in OS/sÃƒÂ¼rÃƒÂ¼m destek tablosu, gerÃƒÂ§ek host testi, kurulum/kaldÃ„Â±rma ve destek sahibi belirle; gÃƒÂ¶rÃƒÂ¼nmeyen eylemleri aÃƒÂ§Ã„Â±kÃƒÂ§a listele.
+**Tamamlanma hedefi:** Satılacak her bağlayıcı için OS/sürüm destek tablosu, gerçek host testi, kurulum/kaldırma ve destek sahibi belirle; görünmeyen eylemleri açıkça listele.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Her zorunlu saldÃ„Â±rÃ„Â±da yan etkinin oluÃ…Å¸madÃ„Â±Ã„Å¸Ã„Â±nÃ„Â± baÃ„Å¸Ã„Â±msÃ„Â±z kaydet; zararsÃ„Â±z iÃ…Å¸lemler geÃƒÂ§sin; kanca kapalÃ„Â±/bozuk/aÃ„Å¸sÃ„Â±z durumlarÃ„Â± ve yeniden baÃ…Å¸latma ayrÃ„Â± sÃ„Â±nansÃ„Â±n.
+**Kalan kapanış testi:** Her zorunlu saldırıda yan etkinin oluşmadığını bağımsız kaydet; zararsız işlemler geçsin; kanca kapalı/bozuk/ağsız durumları ve yeniden başlatma ayrı sınansın.
 
-**Sorumlu:** QA + Endpoint Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** MÃƒÂ¼Ã…Å¸teri test cihazlarÃ„Â±, runtime eriÃ…Å¸imi ve sÃƒÂ¼rÃƒÂ¼m seÃƒÂ§imi.
+**Sorumlu:** QA + Endpoint Engineering. **Bağımlılık:** Müşteri test cihazları, runtime erişimi ve sürüm seçimi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** CON-01, CON-02, CON-03, CON-04, CON-05, CON-06, DET-01, DET-02, DET-03, DET-04, DET-05, RSP-01. **Kaynak:** [scripts/run-e2e-release.mjs](scripts/run-e2e-release.mjs), [packages/codex/README.md](packages/codex/README.md).
+**İlişkili özellikler:** CON-01, CON-02, CON-03, CON-04, CON-05, CON-06, DET-01, DET-02, DET-03, DET-04, DET-05, RSP-01. **Kaynak:** [scripts/run-e2e-release.mjs](scripts/run-e2e-release.mjs), [packages/codex/README.md](packages/codex/README.md).
 
-### T02 Ã¢â‚¬â€ BaÃ„Å¸layÃ„Â±cÃ„Â±lar arasÃ„Â±nda araÃƒÂ§ adÃ„Â± ve girdi normalizasyonu (P0)
+### T02 — Bağlayıcılar arasında araç adı ve girdi normalizasyonu (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ortak araÃƒÂ§/girdi normalizasyonu evaluator ÃƒÂ¶ncesinde; Codex ve OpenClaw boÃ…Å¸-artifact erken izin yolu kaldÃ„Â±rÃ„Â±ldÃ„Â±, named MCP ÃƒÂ§aÃ„Å¸rÃ„Â±larÃ„Â± politikaya ulaÃ…Å¸Ã„Â±yor.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ortak araç/girdi normalizasyonu evaluator öncesinde; Codex ve OpenClaw boş-artifact erken izin yolu kaldırıldı, named MCP çağrıları politikaya ulaşıyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** OpenCode ham bash/write/edit adlarÃ„Â±nÃ„Â± iletiyor; bazÃ„Â± ÃƒÂ§ekirdek denetimleri yalnÃ„Â±zca Bash/Write/Edit dallarÃ„Â±nda ÃƒÂ§alÃ„Â±Ã…Å¸Ã„Â±yor. Mevcut sÃƒÂ¶zleÃ…Å¸me testi bu paket boÃ…Å¸luÃ„Å¸unu allow olarak kaydediyor.
+**Başlangıç durumu:** OpenCode ham bash/write/edit adlarını iletiyor; bazı çekirdek denetimleri yalnızca Bash/Write/Edit dallarında çalışıyor. Mevcut sözleşme testi bu paket boşluğunu allow olarak kaydediyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Paket kurulumlarÃ„Â± ve bazÃ„Â± dosya/AMSI girdileri ilgili denetim koluna ulaÃ…Å¸mayabilir; birim testlerin yeÃ…Å¸il olmasÃ„Â± bu kapsamÃ„Â± kapatmÃ„Â±yor.
+**Başlangıç boşluğu / müşteri etkisi:** Paket kurulumları ve bazı dosya/AMSI girdileri ilgili denetim koluna ulaşmayabilir; birim testlerin yeşil olması bu kapsamı kapatmıyor.
 
-**Tamamlanma hedefi:** Ortak semantik araÃƒÂ§/girdi sÃƒÂ¶zleÃ…Å¸mesi tanÃ„Â±mla; tÃƒÂ¼m baÃ„Å¸layÃ„Â±cÃ„Â±larÃ„Â± eÃ…Å¸le; command, file_path/filePath, content/new_string alanlarÃ„Â±nÃ„Â± standartlaÃ…Å¸tÃ„Â±r. Bilinen boÃ…Å¸luÃ„Å¸u beklenen izin sonucu olarak sabitleyen testi deÃ„Å¸iÃ…Å¸tir.
+**Tamamlanma hedefi:** Ortak semantik araç/girdi sözleşmesi tanımla; tüm bağlayıcıları eşle; command, file_path/filePath, content/new_string alanlarını standartlaştır. Bilinen boşluğu beklenen izin sonucu olarak sabitleyen testi değiştir.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** AynÃ„Â± yasak paket, manifest ve dosya girdisi tÃƒÂ¼m baÃ„Å¸layÃ„Â±cÃ„Â±larda aynÃ„Â± denetime ulaÃ…Å¸sÃ„Â±n; denetleyici ÃƒÂ§aÃ„Å¸rÃ„Â±sÃ„Â± ve engellenen yan etki kanÃ„Â±tlansÃ„Â±n; boÃ…Å¸/alternatif alan adlarÃ„Â± negatif test edilsin.
+**Kalan kapanış testi:** Aynı yasak paket, manifest ve dosya girdisi tüm bağlayıcılarda aynı denetime ulaşsın; denetleyici çağrısı ve engellenen yan etki kanıtlansın; boş/alternatif alan adları negatif test edilsin.
 
-**Sorumlu:** Core + Connector Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** AIDR-060; native host matrisi.
+**Sorumlu:** Core + Connector Engineering. **Bağımlılık:** AIDR-060; native host matrisi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DET-12, DET-11, CON-04. **Kaynak:** [packages/core/src/evaluator.ts](packages/core/src/evaluator.ts), [packages/opencode/src/tool-handler.ts](packages/opencode/src/tool-handler.ts), [packages/opencode/src/__tests__/aidr-contract.test.ts](packages/opencode/src/__tests__/aidr-contract.test.ts).
+**İlişkili özellikler:** DET-12, DET-11, CON-04. **Kaynak:** [packages/core/src/evaluator.ts](packages/core/src/evaluator.ts), [packages/opencode/src/tool-handler.ts](packages/opencode/src/tool-handler.ts), [packages/opencode/src/__tests__/aidr-contract.test.ts](packages/opencode/src/__tests__/aidr-contract.test.ts).
 
-### T03 Ã¢â‚¬â€ Paket denetiminde hatanÃ„Â±n sessiz kaybolmasÃ„Â± (P0)
+### T03 — Paket denetiminde hatanın sessiz kaybolması (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Paket, registry ve file-reputation hata/bozuk-200 yollarÃ„Â± clean yerine unknown/unavailable ÃƒÂ¼retiyor; gerÃƒÂ§ek 404 ve doÃ„Å¸rulanmÃ„Â±Ã…Å¸ clean ayrÃ„Â±mÃ„Â± test edildi.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Paket, registry ve file-reputation hata/bozuk-200 yolları clean yerine unknown/unavailable üretiyor; gerçek 404 ve doğrulanmış clean ayrımı test edildi.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** checkPackages iÃƒÂ§inde genel catch boÃ…Å¸ sonuÃƒÂ§ dÃƒÂ¶ndÃƒÂ¼rÃƒÂ¼yor. DiÃ„Å¸er tespit kollarÃ„Â±nda aÃƒÂ§Ã„Â±k unavailable davranÃ„Â±Ã…Å¸larÃ„Â± bulunuyor.
+**Başlangıç durumu:** checkPackages içinde genel catch boş sonuç döndürüyor. Diğer tespit kollarında açık unavailable davranışları bulunuyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Paket denetleyicisi beklenmedik hata verdiÃ„Å¸inde ÃƒÂ¼st akÃ„Â±Ã…Å¸ baÃ…Å¸arÃ„Â±lÃ„Â± bir boÃ…Å¸ kontrol gibi devam edebilir; diÃ„Å¸er kurallar her vakayÃ„Â± yakalamaz.
+**Başlangıç boşluğu / müşteri etkisi:** Paket denetleyicisi beklenmedik hata verdiğinde üst akış başarılı bir boş kontrol gibi devam edebilir; diğer kurallar her vakayı yakalamaz.
 
-**Tamamlanma hedefi:** Hata tÃƒÂ¼rlerini unavailable olarak taÃ…Å¸Ã„Â±; zorunlu denetim politikasÃ„Â±nda deny/insan onayÃ„Â± ÃƒÂ¼ret; opsiyonel kolda gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r eksik tespit kaydÃ„Â± tut. HatalÃ„Â± politika/cache/intel durumlarÃ„Â±nÃ„Â± ayÃ„Â±r.
+**Tamamlanma hedefi:** Hata türlerini unavailable olarak taşı; zorunlu denetim politikasında deny/insan onayı üret; opsiyonel kolda görünür eksik tespit kaydı tut. Hatalı politika/cache/intel durumlarını ayır.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Registry timeout, bozuk cevap, cache/intel ayrÃ„Â±Ã…Å¸tÃ„Â±rma hatasÃ„Â± ve denetleyici exception enjekte et; zorunlu kontrol sessiz allow ÃƒÂ¼retmesin; benign ve iptal davranÃ„Â±Ã…Å¸larÃ„Â± korunsun.
+**Kalan kapanış testi:** Registry timeout, bozuk cevap, cache/intel ayrıştırma hatası ve denetleyici exception enjekte et; zorunlu kontrol sessiz allow üretmesin; benign ve iptal davranışları korunsun.
 
-**Sorumlu:** Detection Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** AIDR-061; desteklenen araÃƒÂ§ sÃƒÂ¶zleÃ…Å¸mesi.
+**Sorumlu:** Detection Engineering. **Bağımlılık:** AIDR-061; desteklenen araç sözleşmesi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DET-10, DET-11, DET-12. **Kaynak:** [packages/core/src/evaluator.ts](packages/core/src/evaluator.ts), [packages/core/src/package-checker.ts](packages/core/src/package-checker.ts).
+**İlişkili özellikler:** DET-10, DET-11, DET-12. **Kaynak:** [packages/core/src/evaluator.ts](packages/core/src/evaluator.ts), [packages/core/src/package-checker.ts](packages/core/src/package-checker.ts).
 
-### T04 Ã¢â‚¬â€ Model tÃƒÂ¼ketiminden ÃƒÂ¶nce ÃƒÂ§Ã„Â±ktÃ„Â± denetimi (P1)
+### T04 — Model tüketiminden önce çıktı denetimi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ãƒâ€¡Ã„Â±ktÃ„Â± tarayÃ„Â±cÃ„Â± 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sÃ„Â±nÃ„Â±rÃ„Â±nda inspection_incomplete/critical fail-closed ÃƒÂ¼retiyor; JSON/Unicode ve sÃ„Â±nÃ„Â±r payloadlarÃ„Â± test edildi. Her hostta aynÃ„Â±-tur blok kanÃ„Â±tÃ„Â± yok.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Çıktı tarayıcı 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sınırında inspection_incomplete/critical fail-closed üretiyor; JSON/Unicode ve sınır payloadları test edildi. Her hostta aynı-tur blok kanıtı yok.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Claude ÃƒÂ§Ã„Â±ktÃ„Â±sÃ„Â±nda sÃ„Â±nÃ„Â±rlÃ„Â± tarama var; PostToolUse ÃƒÂ§alÃ„Â±Ã…Å¸mÃ„Â±Ã…Å¸ eylemi geri alamaz. DiÃ„Å¸er tÃƒÂ¼ketim yollarÃ„Â±nÃ„Â±n tamamÃ„Â± baÃ„Å¸lÃ„Â± deÃ„Å¸il.
+**Başlangıç durumu:** Claude çıktısında sınırlı tarama var; PostToolUse çalışmış eylemi geri alamaz. Diğer tüketim yollarının tamamı bağlı değil.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Prompt injection veya sÃ„Â±r iÃƒÂ§eren ÃƒÂ§Ã„Â±ktÃ„Â± modele ulaÃ…Å¸abilir. Ã„Â°lk 262144 karakterden sonraki iÃƒÂ§erik ve desteklenmeyen biÃƒÂ§imler iÃƒÂ§in kapsam eksiktir.
+**Başlangıç boşluğu / müşteri etkisi:** Prompt injection veya sır içeren çıktı modele ulaşabilir. İlk 262144 karakterden sonraki içerik ve desteklenmeyen biçimler için kapsam eksiktir.
 
-**Tamamlanma hedefi:** Hostun izin verdiÃ„Å¸i yerlerde ÃƒÂ§Ã„Â±ktÃ„Â± tesliminden ÃƒÂ¶nce kontrol/karantina ekle; desteklenmeyen yollarda aÃƒÂ§Ã„Â±k coverage durumu gÃƒÂ¶ster; boyut sÃ„Â±nÃ„Â±rÃ„Â± aÃ…Å¸Ã„Â±mÃ„Â±nÃ„Â± sessiz temiz sayma.
+**Tamamlanma hedefi:** Hostun izin verdiği yerlerde çıktı tesliminden önce kontrol/karantina ekle; desteklenmeyen yollarda açık coverage durumu göster; boyut sınırı aşımını sessiz temiz sayma.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** ParÃƒÂ§alara bÃƒÂ¶lÃƒÂ¼nmÃƒÂ¼Ã…Å¸ saldÃ„Â±rÃ„Â±, sÃ„Â±nÃ„Â±rÃ„Â±n sonundaki payload, Unicode, JSON/text ve ÃƒÂ§ok bÃƒÂ¼yÃƒÂ¼k cevaplar sÃ„Â±nansÃ„Â±n; engellenen baytlar modele ulaÃ…Å¸masÃ„Â±n; zararsÃ„Â±z ÃƒÂ§ok parÃƒÂ§alÃ„Â± cevap bozulmasÃ„Â±n.
+**Kalan kapanış testi:** Parçalara bölünmüş saldırı, sınırın sonundaki payload, Unicode, JSON/text ve çok büyük cevaplar sınansın; engellenen baytlar modele ulaşmasın; zararsız çok parçalı cevap bozulmasın.
 
-**Sorumlu:** Connector + Detection Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Host API kabiliyeti; MCP gateway.
+**Sorumlu:** Connector + Detection Engineering. **Bağımlılık:** Host API kabiliyeti; MCP gateway.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DET-06, DET-07, MCP-07, CON-01, CON-02, CON-03, CON-04, CON-05, CON-06. **Kaynak:** [packages/claude-code/src/output-inspection.ts](packages/claude-code/src/output-inspection.ts), [packages/claude-code/src/post-tool-use.ts](packages/claude-code/src/post-tool-use.ts), [packages/core/src/output-scanner.ts](packages/core/src/output-scanner.ts).
+**İlişkili özellikler:** DET-06, DET-07, MCP-07, CON-01, CON-02, CON-03, CON-04, CON-05, CON-06. **Kaynak:** [packages/claude-code/src/output-inspection.ts](packages/claude-code/src/output-inspection.ts), [packages/claude-code/src/post-tool-use.ts](packages/claude-code/src/post-tool-use.ts), [packages/core/src/output-scanner.ts](packages/core/src/output-scanner.ts).
 
-### T05 Ã¢â‚¬â€ DavranÃ„Â±Ã…Å¸, novelty ve ML kararlarÃ„Â±nÃ„Â±n ÃƒÂ¼rÃƒÂ¼n akÃ„Â±Ã…Å¸Ã„Â±na baÃ„Å¸lanmasÃ„Â± (P1)
+### T05 — Davranış, novelty ve ML kararlarının ürün akışına bağlanması (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** BehavioralAnalyzer adayÃ„Â± kendi baseline'Ã„Â±na katmÃ„Â±yor ve tenant/session ayrÃ„Â±mÃ„Â± korunuyor; ÃƒÂ¼retim etkinliÃ„Å¸i ve kalÃ„Â±cÃ„Â± ÃƒÂ¶Ã„Å¸renme kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** BehavioralAnalyzer adayı kendi baseline'ına katmıyor ve tenant/session ayrımı korunuyor; üretim etkinliği ve kalıcı öğrenme kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** ModÃƒÂ¼ller ve testler var; sÃƒÂ¼rekli ÃƒÂ§alÃ„Â±Ã…Å¸an tÃƒÂ¼ketici, ÃƒÂ¶Ã„Å¸renme yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼ ve ÃƒÂ¼retim baÃ…Å¸arÃ„Â± ÃƒÂ¶lÃƒÂ§ÃƒÂ¼mÃƒÂ¼ kanÃ„Â±tÃ„Â± tamam deÃ„Å¸il.
+**Başlangıç durumu:** Modüller ve testler var; sürekli çalışan tüketici, öğrenme yaşam döngüsü ve üretim başarı ölçümü kanıtı tamam değil.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Ã„Â°hracat edilen sÃ„Â±nÃ„Â±f veya demo skor, ÃƒÂ§alÃ„Â±Ã…Å¸an anomali korumasÃ„Â± sayÃ„Â±lmaz. YanlÃ„Â±Ã…Å¸ ÃƒÂ¶Ã„Å¸renme ve tenantlar arasÃ„Â± veri karÃ„Â±Ã…Å¸masÃ„Â± riski deÃ„Å¸erlendirilmemiÃ…Å¸.
+**Başlangıç boşluğu / müşteri etkisi:** İhracat edilen sınıf veya demo skor, çalışan anomali koruması sayılmaz. Yanlış öğrenme ve tenantlar arası veri karışması riski değerlendirilmemiş.
 
-**Tamamlanma hedefi:** GerÃƒÂ§ek olay tÃƒÂ¼keticisi, tenant bazlÃ„Â± durum, cold-start, unutma/retention, model sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼, karar aÃƒÂ§Ã„Â±klamasÃ„Â± ve insan geri bildirimi akÃ„Â±Ã…Å¸larÃ„Â±nÃ„Â± baÃ„Å¸la.
+**Tamamlanma hedefi:** Gerçek olay tüketicisi, tenant bazlı durum, cold-start, unutma/retention, model sürümü, karar açıklaması ve insan geri bildirimi akışlarını bağla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** SoÃ„Å¸uk baÃ…Å¸langÃ„Â±ÃƒÂ§ ve model yenilemede kararlÃ„Â± sonuÃƒÂ§; tenant ayrÃ„Â±mÃ„Â±; veri zehirleme denemeleri; holdout saldÃ„Â±rÃ„Â± ve zararsÃ„Â±z iÃ…Å¸ yÃƒÂ¼kÃƒÂ¼nde yanlÃ„Â±Ã…Å¸ alarm ÃƒÂ¶lÃƒÂ§ÃƒÂ¼mÃƒÂ¼.
+**Kalan kapanış testi:** Soğuk başlangıç ve model yenilemede kararlı sonuç; tenant ayrımı; veri zehirleme denemeleri; holdout saldırı ve zararsız iş yükünde yanlış alarm ölçümü.
 
-**Sorumlu:** Detection + Data Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Etiketli mÃƒÂ¼Ã…Å¸teri verisi ve baÃ„Å¸Ã„Â±msÃ„Â±z ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m seti.
+**Sorumlu:** Detection + Data Engineering. **Bağımlılık:** Etiketli müşteri verisi ve bağımsız ölçüm seti.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DET-08, DET-09. **Kaynak:** [packages/core/src/behavioral-analyzer.ts](packages/core/src/behavioral-analyzer.ts), [packages/core/src/novelty-detection.ts](packages/core/src/novelty-detection.ts), [packages/core/src/ml-model.ts](packages/core/src/ml-model.ts).
+**İlişkili özellikler:** DET-08, DET-09. **Kaynak:** [packages/core/src/behavioral-analyzer.ts](packages/core/src/behavioral-analyzer.ts), [packages/core/src/novelty-detection.ts](packages/core/src/novelty-detection.ts), [packages/core/src/ml-model.ts](packages/core/src/ml-model.ts).
 
-### T06 Ã¢â‚¬â€ Reputation ve AI altyapÃ„Â± verisinin gÃƒÂ¼ncelliÃ„Å¸i (P1)
+### T06 — Reputation ve AI altyapı verisinin güncelliği (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ã„Â°mzalÃ„Â± offline feed iÃƒÂ§in publisher issued_at ve yerel fetched_at birlikte yaÃ…Å¸ sÃ„Â±nÃ„Â±rÃ„Â±na baÃ„Å¸landÃ„Â±; canlÃ„Â± provider, daÃ„Å¸Ã„Â±tÃ„Â±m ve gecikme kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İmzalı offline feed için publisher issued_at ve yerel fetched_at birlikte yaş sınırına bağlandı; canlı provider, dağıtım ve gecikme kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Yerel kurallar, derlenmiÃ…Å¸ veri ve kendine kurulabilen sorgu API'leri var.
+**Başlangıç durumu:** Yerel kurallar, derlenmiş veri ve kendine kurulabilen sorgu API'leri var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Feed kaynaÃ„Å¸Ã„Â±/gÃƒÂ¼ncelliÃ„Å¸i, saÃ„Å¸layÃ„Â±cÃ„Â± kesintisi, imzalÃ„Â± gÃƒÂ¼ncelleme, kapsanmayan format ve mÃƒÂ¼Ã…Å¸teri gecikme hedefleri doÃ„Å¸rulanmadÃ„Â±; canlÃ„Â± reputation testi atlanÃ„Â±yor.
+**Başlangıç boşluğu / müşteri etkisi:** Feed kaynağı/güncelliği, sağlayıcı kesintisi, imzalı güncelleme, kapsanmayan format ve müşteri gecikme hedefleri doğrulanmadı; canlı reputation testi atlanıyor.
 
-**Tamamlanma hedefi:** Feed sÃƒÂ¶zleÃ…Å¸mesi ve gÃƒÂ¼ncelleme iÃ…Å¸i, yaÃ…Å¸ sÃ„Â±nÃ„Â±rÃ„Â±, geri alma, eksik veri durumu ve mÃƒÂ¼Ã…Å¸teri veri/URL kategorisi kalibrasyonu kur.
+**Tamamlanma hedefi:** Feed sözleşmesi ve güncelleme işi, yaş sınırı, geri alma, eksik veri durumu ve müşteri veri/URL kategorisi kalibrasyonu kur.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Eski/bozuk/boÃ…Å¸ feed temiz verdict ÃƒÂ¼retmesin; gÃƒÂ¼ncelleme/geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ kanÃ„Â±tlansÃ„Â±n; gerÃƒÂ§ek endpoint ve AMSI desteklenen Windows hostunda ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lsÃƒÂ¼n.
+**Kalan kapanış testi:** Eski/bozuk/boş feed temiz verdict üretmesin; güncelleme/geri dönüş kanıtlansın; gerçek endpoint ve AMSI desteklenen Windows hostunda ölçülsün.
 
-**Sorumlu:** Detection + Operations. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** SaÃ„Å¸layÃ„Â±cÃ„Â±/feed eriÃ…Å¸imi, Windows host ve mÃƒÂ¼Ã…Å¸teri corpus'u.
+**Sorumlu:** Detection + Operations. **Bağımlılık:** Sağlayıcı/feed erişimi, Windows host ve müşteri corpus'u.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DET-10, DET-11, DET-12, INF-01, INF-02. **Kaynak:** [supabase/functions/url-check/index.ts](supabase/functions/url-check/index.ts), [supabase/functions/file-check/index.ts](supabase/functions/file-check/index.ts), [packages/core/src/generated/aig-data-manifest.json](packages/core/src/generated/aig-data-manifest.json), [packages/core/src/aig-policy.ts](packages/core/src/aig-policy.ts).
+**İlişkili özellikler:** DET-10, DET-11, DET-12, INF-01, INF-02. **Kaynak:** [supabase/functions/url-check/index.ts](supabase/functions/url-check/index.ts), [supabase/functions/file-check/index.ts](supabase/functions/file-check/index.ts), [packages/core/src/generated/aig-data-manifest.json](packages/core/src/generated/aig-data-manifest.json), [packages/core/src/aig-policy.ts](packages/core/src/aig-policy.ts).
 
-### T07 Ã¢â‚¬â€ MCP keÃ…Å¸fi ve kimlik normalizasyonunun kapsamÃ„Â± (P1)
+### T07 — MCP keşfi ve kimlik normalizasyonunun kapsamı (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yerel MCP keÃ…Å¸fi konum/alias bazlÃ„Â± kararlÃ„Â± inventory_id ve merkezi stale/partial kapsam raporu ÃƒÂ¼retiyor; ek host biÃƒÂ§imleri/native kabul aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yerel MCP keşfi konum/alias bazlı kararlı inventory_id ve merkezi stale/partial kapsam raporu üretiyor; ek host biçimleri/native kabul açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Yerel JSON konfigÃƒÂ¼rasyonlarÃ„Â± ve sunucu/araÃƒÂ§ listeleri denetleniyor.
+**Başlangıç durumu:** Yerel JSON konfigürasyonları ve sunucu/araç listeleri denetleniyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** JSONC, yeni runtime konumlarÃ„Â±, dinamik eklenen sunucular ve belirsiz server/tool kimlikleri iÃƒÂ§in tam kapsama yok; yerel tarama kurum ÃƒÂ§apÃ„Â± keÃ…Å¸if deÃ„Å¸ildir.
+**Başlangıç boşluğu / müşteri etkisi:** JSONC, yeni runtime konumları, dinamik eklenen sunucular ve belirsiz server/tool kimlikleri için tam kapsama yok; yerel tarama kurum çapı keşif değildir.
 
-**Tamamlanma hedefi:** Desteklenen konfigÃƒÂ¼rasyon adaptÃƒÂ¶rlerini ekle; okunamayan/kÃ„Â±smi keÃ…Å¸fi raporla; yeniden adlandÃ„Â±rma ve alias davranÃ„Â±Ã…Å¸Ã„Â±nÃ„Â± politikayla tutarlÃ„Â± yap.
+**Tamamlanma hedefi:** Desteklenen konfigürasyon adaptörlerini ekle; okunamayan/kısmi keşfi raporla; yeniden adlandırma ve alias davranışını politikayla tutarlı yap.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Bozuk/izin verilmeyen dosya, JSONC, boÃ…Å¸ argÃƒÂ¼man, alias ve aynÃ„Â± isimli farklÃ„Â± sunucu testleri; eksik tarama gÃƒÂ¼venli envanter gibi gÃƒÂ¶rÃƒÂ¼nmesin.
+**Kalan kapanış testi:** Bozuk/izin verilmeyen dosya, JSONC, boş argüman, alias ve aynı isimli farklı sunucu testleri; eksik tarama güvenli envanter gibi görünmesin.
 
-**Sorumlu:** Endpoint + MCP Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Host sÃƒÂ¼rÃƒÂ¼m ve konfigÃƒÂ¼rasyon matrisi.
+**Sorumlu:** Endpoint + MCP Engineering. **Bağımlılık:** Host sürüm ve konfigürasyon matrisi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** MCP-01, MCP-02, MCP-03, MCP-04. **Kaynak:** [packages/core/src/mcp-discovery.ts](packages/core/src/mcp-discovery.ts), [packages/core/src/mcp-inventory.ts](packages/core/src/mcp-inventory.ts), [packages/core/src/policy.ts](packages/core/src/policy.ts).
+**İlişkili özellikler:** MCP-01, MCP-02, MCP-03, MCP-04. **Kaynak:** [packages/core/src/mcp-discovery.ts](packages/core/src/mcp-discovery.ts), [packages/core/src/mcp-inventory.ts](packages/core/src/mcp-inventory.ts), [packages/core/src/policy.ts](packages/core/src/policy.ts).
 
-### T08 Ã¢â‚¬â€ Ã„Â°mzalÃ„Â± MCP araÃƒÂ§ tanÃ„Â±mÃ„Â± ve deÃ„Å¸iÃ…Å¸iklik onayÃ„Â± (P1)
+### T08 — İmzalı MCP araç tanımı ve değişiklik onayı (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ã„Â°mzalÃ„Â± MCP manifest key_id'yi imzaya baÃ„Å¸lÃ„Â±yor, geÃƒÂ§ersiz saat ve legacy imza fail-closed; eski manifestler gÃƒÂ¼venilir yayÃ„Â±ncÃ„Â± tarafÃ„Â±ndan yeniden imzalanmalÃ„Â±.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İmzalı MCP manifest key_id'yi imzaya bağlıyor, geçersiz saat ve legacy imza fail-closed; eski manifestler güvenilir yayıncı tarafından yeniden imzalanmalı.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** SÃƒÂ¼reÃƒÂ§ iÃƒÂ§i ilk Ã…Å¸ema referansÃ„Â± ve drift reddi var; tekrar ederek referansÃ„Â± deÃ„Å¸iÃ…Å¸tirme hatasÃ„Â± dÃƒÂ¼zeltildi.
+**Başlangıç durumu:** Süreç içi ilk şema referansı ve drift reddi var; tekrar ederek referansı değiştirme hatası düzeltildi.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Ã„Â°mzalÃ„Â± sunucu/araÃƒÂ§ description ve schema manifesti, kalÃ„Â±cÃ„Â± onay, sÃƒÂ¼rÃƒÂ¼m/expiry ve replay korumasÃ„Â± yok. SÃƒÂ¼reÃƒÂ§ yeniden baÃ…Å¸latÃ„Â±lmasÃ„Â± gÃƒÂ¼venilir onay deÃ„Å¸ildir.
+**Başlangıç boşluğu / müşteri etkisi:** İmzalı sunucu/araç description ve schema manifesti, kalıcı onay, sürüm/expiry ve replay koruması yok. Süreç yeniden başlatılması güvenilir onay değildir.
 
-**Tamamlanma hedefi:** AraÃƒÂ§ tanÃ„Â±mÃ„Â±nÃ„Â± sunucu kimliÃ„Å¸i ve sÃƒÂ¼rÃƒÂ¼me imzayla baÃ„Å¸la; deÃ„Å¸iÃ…Å¸en araÃƒÂ§larÃ„Â± karantinaya al; yalnÃ„Â±zca operatÃƒÂ¶rÃƒÂ¼n onaylayabildiÃ„Å¸i inceleme ve daÃ„Å¸Ã„Â±tÃ„Â±m akÃ„Â±Ã…Å¸Ã„Â± kur.
+**Tamamlanma hedefi:** Araç tanımını sunucu kimliği ve sürüme imzayla bağla; değişen araçları karantinaya al; yalnızca operatörün onaylayabildiği inceleme ve dağıtım akışı kur.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Description/schema deÃ„Å¸iÃ…Å¸imi, eski manifest, yanlÃ„Â±Ã…Å¸ signer, yeniden baÃ…Å¸latma, eÃ…Å¸ zamanlÃ„Â± deÃ„Å¸iÃ…Å¸iklik ve onaysÃ„Â±z retry reddedilsin; ajan kendi aracÃ„Â±nÃ„Â± onaylayamasÃ„Â±n.
+**Kalan kapanış testi:** Description/schema değişimi, eski manifest, yanlış signer, yeniden başlatma, eş zamanlı değişiklik ve onaysız retry reddedilsin; ajan kendi aracını onaylayamasın.
 
-**Sorumlu:** MCP + Security Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** AIDR-046; signer/key custody ve yÃƒÂ¶netim UI'sÃ„Â±.
+**Sorumlu:** MCP + Security Engineering. **Bağımlılık:** AIDR-046; signer/key custody ve yönetim UI'sı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** MCP-05. **Kaynak:** [packages/core/src/mcp-transport.ts](packages/core/src/mcp-transport.ts), [packages/core/src/mcp-discovery.ts](packages/core/src/mcp-discovery.ts).
+**İlişkili özellikler:** MCP-05. **Kaynak:** [packages/core/src/mcp-transport.ts](packages/core/src/mcp-transport.ts), [packages/core/src/mcp-discovery.ts](packages/core/src/mcp-discovery.ts).
 
-### T09 Ã¢â‚¬â€ KullanÃ„Â±cÃ„Â±Ã¢â‚¬â€œajanÃ¢â‚¬â€œaraÃƒÂ§Ã¢â‚¬â€œkaynak iliÃ…Å¸kisi ve delegasyon (P1)
+### T09 — Kullanıcı–ajan–araç–kaynak ilişkisi ve delegasyon (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ed25519 delegated lineage ve grant/introspection/revoke; geÃƒÂ§ersiz sayÃ„Â± ve Ed25519 olmayan EdDSA anahtarÃ„Â± reddediliyor. GerÃƒÂ§ek IdP/tool provider kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ed25519 delegated lineage ve grant/introspection/revoke; geçersiz sayı ve Ed25519 olmayan EdDSA anahtarı reddediliyor. Gerçek IdP/tool provider kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Ajan/ekip anahtarÃ„Â± baÃ„Å¸Ã„Â± ve yerel envanter var.
+**Başlangıç durumu:** Ajan/ekip anahtarı bağı ve yerel envanter var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Kimin hangi ajan ÃƒÂ¼zerinden hangi kaynaÃ„Å¸a hangi yetkiyle eriÃ…Å¸tiÃ„Å¸ini gÃƒÂ¶steren tam iliÃ…Å¸ki grafiÃ„Å¸i; araÃƒÂ§ bazlÃ„Â± kÃ„Â±sa ÃƒÂ¶mÃƒÂ¼rlÃƒÂ¼ delegasyon yok.
+**Başlangıç boşluğu / müşteri etkisi:** Kimin hangi ajan üzerinden hangi kaynağa hangi yetkiyle eriştiğini gösteren tam ilişki grafiği; araç bazlı kısa ömürlü delegasyon yok.
 
-**Tamamlanma hedefi:** Kaynak ve kimlik iliÃ…Å¸kileri, audience/scope/expiry taÃ…Å¸Ã„Â±yan kÃ„Â±sÃ„Â±tlÃ„Â± token, delegation depth ve credential broker uygula.
+**Tamamlanma hedefi:** Kaynak ve kimlik ilişkileri, audience/scope/expiry taşıyan kısıtlı token, delegation depth ve credential broker uygula.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** BaÃ…Å¸ka tool/resource/audience iÃƒÂ§in token kullanÃ„Â±mÃ„Â±, sÃƒÂ¼resi bitmiÃ…Å¸ delegasyon, kullanÃ„Â±cÃ„Â± ayrÃ„Â±lmasÃ„Â± ve zincir yetki bÃƒÂ¼yÃƒÂ¼tme reddedilsin; olaydan kaynaÃ„Å¸a iz sÃƒÂ¼rÃƒÂ¼lsÃƒÂ¼n.
+**Kalan kapanış testi:** Başka tool/resource/audience için token kullanımı, süresi bitmiş delegasyon, kullanıcı ayrılması ve zincir yetki büyütme reddedilsin; olaydan kaynağa iz sürülsün.
 
-**Sorumlu:** Identity + Backend Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** IdP ve araÃƒÂ§ saÃ„Å¸layÃ„Â±cÃ„Â±sÃ„Â± API'leri.
+**Sorumlu:** Identity + Backend Engineering. **Bağımlılık:** IdP ve araç sağlayıcısı API'leri.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** MCP-06, TEN-06, OBS-02. **Kaynak:** [packages/core/src/mcp-inventory.ts](packages/core/src/mcp-inventory.ts), [supabase/functions/enroll/index.ts](supabase/functions/enroll/index.ts), [supabase/functions/api-keys/index.ts](supabase/functions/api-keys/index.ts).
+**İlişkili özellikler:** MCP-06, TEN-06, OBS-02. **Kaynak:** [packages/core/src/mcp-inventory.ts](packages/core/src/mcp-inventory.ts), [supabase/functions/enroll/index.ts](supabase/functions/enroll/index.ts), [supabase/functions/api-keys/index.ts](supabase/functions/api-keys/index.ts).
 
-### T10 Ã¢â‚¬â€ MCP gateway ve taÃ…Å¸Ã„Â±ma gÃƒÂ¼venliÃ„Å¸i (P1)
+### T10 — MCP gateway ve taşıma güvenliği (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Loopback/stdio JSON-RPC geÃƒÂ§idi DNS pinleme, gerÃƒÂ§ek stream sÃ„Â±nÃ„Â±rÃ„Â±, tekil framing ve bozuk yanÃ„Â±t reddi uyguluyor; binary, server-initiated ve zorunlu routing kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Loopback/stdio JSON-RPC geçidi DNS pinleme, gerçek stream sınırı, tekil framing ve bozuk yanıt reddi uyguluyor; binary, server-initiated ve zorunlu routing kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Framing ve policy interception yardÃ„Â±mcÃ„Â±larÃ„Â± var; ÃƒÂ§alÃ„Â±Ã…Å¸an tam gateway tÃƒÂ¼keticisi yok. URL DNS kontrolÃƒÂ¼nden sonra fetch yeniden ÃƒÂ§ÃƒÂ¶zÃƒÂ¼mleme yapÃ„Â±yor; cevap sÃ„Â±nÃ„Â±rÃ„Â± Content-Length baÃ…Å¸lÃ„Â±Ã„Å¸Ã„Â±na bakÃ„Â±yor.
+**Başlangıç durumu:** Framing ve policy interception yardımcıları var; çalışan tam gateway tüketicisi yok. URL DNS kontrolünden sonra fetch yeniden çözümleme yapıyor; cevap sınırı Content-Length başlığına bakıyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** DNS rebinding, baÃ…Å¸lÃ„Â±ksÃ„Â±z/chunked bÃƒÂ¼yÃƒÂ¼k cevap, mapped IPv6 ve baÃ„Å¸lantÃ„Â± ÃƒÂ¶mrÃƒÂ¼ iÃƒÂ§in gerÃƒÂ§ek aÃ„Å¸ kabulÃƒÂ¼ eksik. Mevcut test adÃ„Â± DNS rebinding korumasÃ„Â±nÃ„Â± olduÃ„Å¸undan gÃƒÂ¼ÃƒÂ§lÃƒÂ¼ anlatÃ„Â±yor.
+**Başlangıç boşluğu / müşteri etkisi:** DNS rebinding, başlıksız/chunked büyük cevap, mapped IPv6 ve bağlantı ömrü için gerçek ağ kabulü eksik. Mevcut test adı DNS rebinding korumasını olduğundan güçlü anlatıyor.
 
-**Tamamlanma hedefi:** DoÃ„Å¸rulanan IP'yi baÃ„Å¸lantÃ„Â±ya sabitle; IP sÃ„Â±nÃ„Â±flamasÃ„Â±nÃ„Â± tamamla; gerÃƒÂ§ek okunan/decompress edilmiÃ…Å¸ baytlarÃ„Â± sÃ„Â±nÃ„Â±rla; authentication/session/stream ve bypass akÃ„Â±Ã…Å¸larÃ„Â±nÃ„Â± gateway'e baÃ„Å¸la.
+**Tamamlanma hedefi:** Doğrulanan IP'yi bağlantıya sabitle; IP sınıflamasını tamamla; gerçek okunan/decompress edilmiş baytları sınırla; authentication/session/stream ve bypass akışlarını gateway'e bağla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Kontrol ile baÃ„Å¸lantÃ„Â± arasÃ„Â±nda DNS deÃ„Å¸iÃ…Å¸sin; private/mapped IPv6, redirect, baÃ…Å¸lÃ„Â±ksÃ„Â±z sonsuz stream, sÃ„Â±nÃ„Â±r aÃ…Å¸Ã„Â±mÃ„Â±, disconnect ve bozuk JSON/SSE ile gerÃƒÂ§ek aÃ„Å¸ testi ÃƒÂ§alÃ„Â±Ã…Å¸sÃ„Â±n.
+**Kalan kapanış testi:** Kontrol ile bağlantı arasında DNS değişsin; private/mapped IPv6, redirect, başlıksız sonsuz stream, sınır aşımı, disconnect ve bozuk JSON/SSE ile gerçek ağ testi çalışsın.
 
-**Sorumlu:** MCP + Network Security. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** AIDR-062; stdio/HTTP/SSE kapsam kararÃ„Â±.
+**Sorumlu:** MCP + Network Security. **Bağımlılık:** AIDR-062; stdio/HTTP/SSE kapsam kararı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** MCP-07. **Kaynak:** [packages/core/src/mcp-transport.ts](packages/core/src/mcp-transport.ts), [packages/core/src/__tests__/mcp-transport.test.ts](packages/core/src/__tests__/mcp-transport.test.ts).
+**İlişkili özellikler:** MCP-07. **Kaynak:** [packages/core/src/mcp-transport.ts](packages/core/src/mcp-transport.ts), [packages/core/src/__tests__/mcp-transport.test.ts](packages/core/src/__tests__/mcp-transport.test.ts).
 
-### T11 Ã¢â‚¬â€ SÃƒÂ¼rekli kurum/filo keÃ…Å¸fi (P1)
+### T11 — Sürekli kurum/filo keşfi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Kimlikli merkezi discovery upload var; interval modu geÃƒÂ§ici upload hatasÃ„Â±nÃ„Â± gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r tutarak sonraki ÃƒÂ§evrime devam ediyor. Cloud/MDM scheduler ve saha kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Kimlikli merkezi discovery upload var; interval modu geçici upload hatasını görünür tutarak sonraki çevrime devam ediyor. Cloud/MDM scheduler ve saha kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Ã„Â°steÃ„Å¸e baÃ„Å¸lÃ„Â± yerel/altyapÃ„Â± taramasÃ„Â± mevcut.
+**Başlangıç durumu:** İsteğe bağlı yerel/altyapı taraması mevcut.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** ZamanlanmÃ„Â±Ã…Å¸ kolektÃƒÂ¶r, tenant envanteri, sahiplik, tekrar birleÃ…Å¸tirme, son gÃƒÂ¶rÃƒÂ¼lme ve stale alarmÃ„Â± yok.
+**Başlangıç boşluğu / müşteri etkisi:** Zamanlanmış kolektör, tenant envanteri, sahiplik, tekrar birleştirme, son görülme ve stale alarmı yok.
 
-**Tamamlanma hedefi:** Filo/cloud kolektÃƒÂ¶rleri, kapsam izinleri, zamanlama, retry, dedup, kimlik ve keÃ…Å¸if tazeliÃ„Å¸i ekranlarÃ„Â±nÃ„Â± kur.
+**Tamamlanma hedefi:** Filo/cloud kolektörleri, kapsam izinleri, zamanlama, retry, dedup, kimlik ve keşif tazeliği ekranlarını kur.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Kapanan veya yeni aÃƒÂ§Ã„Â±lan ajan gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r olsun; baÃ„Å¸lantÃ„Â±sÃ„Â±z kolektÃƒÂ¶r eski veriyi gÃƒÂ¼ncel gÃƒÂ¶stermesin; tenant ayrÃ„Â±mÃ„Â± ve keÃ…Å¸if yÃƒÂ¼k sÃ„Â±nÃ„Â±rlarÃ„Â± sÃ„Â±nansÃ„Â±n.
+**Kalan kapanış testi:** Kapanan veya yeni açılan ajan görünür olsun; bağlantısız kolektör eski veriyi güncel göstermesin; tenant ayrımı ve keşif yük sınırları sınansın.
 
-**Sorumlu:** Discovery + Backend Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** MÃƒÂ¼Ã…Å¸teri cloud/MDM API eriÃ…Å¸imi ve aÃ„Å¸ tarama kapsamÃ„Â±.
+**Sorumlu:** Discovery + Backend Engineering. **Bağımlılık:** Müşteri cloud/MDM API erişimi ve ağ tarama kapsamı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** INF-03. **Kaynak:** [packages/cli/src/commands/scan.ts](packages/cli/src/commands/scan.ts), [packages/core/src/aig-infra-scan.ts](packages/core/src/aig-infra-scan.ts).
+**İlişkili özellikler:** INF-03. **Kaynak:** [packages/cli/src/commands/scan.ts](packages/cli/src/commands/scan.ts), [packages/core/src/aig-infra-scan.ts](packages/core/src/aig-infra-scan.ts).
 
-### T12 Ã¢â‚¬â€ Filo mÃƒÂ¼dahalesi ve credential iptali (P1)
+### T12 — Filo müdahalesi ve credential iptali (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ã„Â°mzalÃ„Â± revocation feed tenant+global kapsamÃ„Â± 5000 sÃ„Â±nÃ„Â±rÃ„Â±ndan ÃƒÂ¶nce filtreliyor ve eksik/truncated seti imzalamÃ„Â±yor; native/provider iptali aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İmzalı revocation feed tenant+global kapsamı 5000 sınırından önce filtreliyor ve eksik/truncated seti imzalamıyor; native/provider iptali açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Yerel sÃƒÂ¼reÃƒÂ§ mÃƒÂ¼dahalesi ve iptal listesi temelleri var.
+**Başlangıç durumu:** Yerel süreç müdahalesi ve iptal listesi temelleri var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Kurumsal endpoint izolasyonu, tÃƒÂ¼m cloud saÃ„Å¸layÃ„Â±cÃ„Â±larda credential iptali ve ajandan sonuÃƒÂ§ alan komut altyapÃ„Â±sÃ„Â± yok.
+**Başlangıç boşluğu / müşteri etkisi:** Kurumsal endpoint izolasyonu, tüm cloud sağlayıcılarda credential iptali ve ajandan sonuç alan komut altyapısı yok.
 
-**Tamamlanma hedefi:** Yetkili komut kuyruÃ„Å¸u, TTL/idempotency, operatÃƒÂ¶r yetkisi, ajan sonuÃƒÂ§ bildirimi, geri alma ve saÃ„Å¸layÃ„Â±cÃ„Â± adaptÃƒÂ¶rleri ekle.
+**Tamamlanma hedefi:** Yetkili komut kuyruğu, TTL/idempotency, operatör yetkisi, ajan sonuç bildirimi, geri alma ve sağlayıcı adaptörleri ekle.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Offline ajana sÃƒÂ¼resi geÃƒÂ§miÃ…Å¸ komut uygulanmasÃ„Â±n; tekrar gelen komut tek etki ÃƒÂ¼retsin; baÃ…Å¸arÃ„Â±sÃ„Â±z izolasyon baÃ…Å¸arÃ„Â± gÃƒÂ¶rÃƒÂ¼nmesin; ilgili izinler ve geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ kanÃ„Â±tlansÃ„Â±n.
+**Kalan kapanış testi:** Offline ajana süresi geçmiş komut uygulanmasın; tekrar gelen komut tek etki üretsin; başarısız izolasyon başarı görünmesin; ilgili izinler ve geri dönüş kanıtlansın.
 
-**Sorumlu:** Response + Endpoint Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** OS yetkileri, saÃ„Å¸layÃ„Â±cÃ„Â± API'leri, mÃƒÂ¼Ã…Å¸teri mÃƒÂ¼dahale yetkisi.
+**Sorumlu:** Response + Endpoint Engineering. **Bağımlılık:** OS yetkileri, sağlayıcı API'leri, müşteri müdahale yetkisi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** RSP-04, RSP-06. **Kaynak:** [packages/core/src/contain.ts](packages/core/src/contain.ts), [supabase/functions/revocations/index.ts](supabase/functions/revocations/index.ts).
+**İlişkili özellikler:** RSP-04, RSP-06. **Kaynak:** [packages/core/src/contain.ts](packages/core/src/contain.ts), [supabase/functions/revocations/index.ts](supabase/functions/revocations/index.ts).
 
-### T13 Ã¢â‚¬â€ Response eylemlerinin gÃƒÂ¼venli uÃƒÂ§tan uca iÃ…Å¸letimi (P1)
+### T13 — Response eylemlerinin güvenli uçtan uca işletimi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yeni response-worker-contract.ts capability/onkosul/TTL/idempotency/rollback makbuzu sozlesmesini uyguluyor; desteklenmeyen action adapter tarafindan reddediliyor ve geri alinamayan adim partial olarak raporlaniyor. Native OS/provider adapter ve kurulu servis musteri tarafinda acik. Eski: Restart-safe worker resume sÃ„Â±rasÃ„Â±nda adapter destek listesini yeniden doÃ„Å¸ruluyor ve kaldÃ„Â±rÃ„Â±lmÃ„Â±Ã…Å¸ action'Ã„Â± ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±rmadan unsupported_action bildiriyor. Native OS/provider adapter ve kurulu servis aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yeni response-worker-contract.ts capability/onkosul/TTL/idempotency/rollback makbuzu sozlesmesini uyguluyor; desteklenmeyen action adapter tarafindan reddediliyor ve geri alinamayan adim partial olarak raporlaniyor. Native OS/provider adapter ve kurulu servis musteri tarafinda acik. Eski: Restart-safe worker resume sırasında adapter destek listesini yeniden doğruluyor ve kaldırılmış action'ı çalıştırmadan unsupported_action bildiriyor. Native OS/provider adapter ve kurulu servis açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Quarantine/restore, dosya snapshot/rollback ve imzalÃ„Â± olay zinciri yerel testli.
+**Başlangıç durumu:** Quarantine/restore, dosya snapshot/rollback ve imzalı olay zinciri yerel testli.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** GerÃƒÂ§ek mÃƒÂ¼Ã…Å¸teri dosya izinleri, aynÃ„Â± anda deÃ„Å¸iÃ…Å¸en dosya, dÃ„Â±Ã…Å¸ playbook etkileri, signer saklama ve baÃ„Å¸Ã„Â±msÃ„Â±z arÃ…Å¸iv kanÃ„Â±tÃ„Â± eksik.
+**Başlangıç boşluğu / müşteri etkisi:** Gerçek müşteri dosya izinleri, aynı anda değişen dosya, dış playbook etkileri, signer saklama ve bağımsız arşiv kanıtı eksik.
 
-**Tamamlanma hedefi:** Desteklenen eylem ve dosya kapsamÃ„Â±nÃ„Â± sabitle; ÃƒÂ¶nkoÃ…Å¸ul/sonuÃƒÂ§ doÃ„Å¸rulama, operatÃƒÂ¶r sÃ„Â±nÃ„Â±rlarÃ„Â±, dÃ„Â±Ã…Å¸ SOAR sonuÃƒÂ§larÃ„Â± ve baÃ„Å¸Ã„Â±msÃ„Â±z kanÃ„Â±t saklamayÃ„Â± tamamla.
+**Tamamlanma hedefi:** Desteklenen eylem ve dosya kapsamını sabitle; önkoşul/sonuç doğrulama, operatör sınırları, dış SOAR sonuçları ve bağımsız kanıt saklamayı tamamla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Dosya sonradan deÃ„Å¸iÃ…Å¸miÃ…Å¸ken yanlÃ„Â±Ã…Å¸ rollback yapÃ„Â±lmasÃ„Â±n; symlink/izin/disk hatasÃ„Â± aÃƒÂ§Ã„Â±k baÃ…Å¸arÃ„Â±sÃ„Â±z olsun; eylem ve geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ aynÃ„Â± incidentten izlenebilsin.
+**Kalan kapanış testi:** Dosya sonradan değişmişken yanlış rollback yapılmasın; symlink/izin/disk hatası açık başarısız olsun; eylem ve geri dönüş aynı incidentten izlenebilsin.
 
-**Sorumlu:** Response Engineering + Security Operations. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** MÃƒÂ¼Ã…Å¸teri dosya sistemi/EDR/SOAR izinleri.
+**Sorumlu:** Response Engineering + Security Operations. **Bağımlılık:** Müşteri dosya sistemi/EDR/SOAR izinleri.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** RSP-02, RSP-03, RSP-05, RSP-07. **Kaynak:** [packages/core/src/quarantine.ts](packages/core/src/quarantine.ts), [packages/core/src/rollback.ts](packages/core/src/rollback.ts), [packages/core/src/response-command-worker-v6.ts](packages/core/src/response-command-worker-v6.ts), [packages/core/src/response-audit.ts](packages/core/src/response-audit.ts), [supabase/functions/autosecops-runtime/index.ts](supabase/functions/autosecops-runtime/index.ts).
+**İlişkili özellikler:** RSP-02, RSP-03, RSP-05, RSP-07. **Kaynak:** [packages/core/src/quarantine.ts](packages/core/src/quarantine.ts), [packages/core/src/rollback.ts](packages/core/src/rollback.ts), [packages/core/src/response-command-worker-v6.ts](packages/core/src/response-command-worker-v6.ts), [packages/core/src/response-audit.ts](packages/core/src/response-audit.ts), [supabase/functions/autosecops-runtime/index.ts](supabase/functions/autosecops-runtime/index.ts).
 
-### T14 Ã¢â‚¬â€ YAML politika yazÃ„Â±mÃ„Â± ile gerÃƒÂ§ek runtime iliÃ…Å¸kisi (P1)
+### T14 — YAML politika yazımı ile gerçek runtime ilişkisi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Core/server dry-run unknown MCP fallback kararÃ„Â± runtime evaluator ile eÃ…Å¸lendi; YAML/JSON compiler, parity ve dashboard publish akÃ„Â±Ã…Å¸Ã„Â± baÃ„Å¸lÃ„Â±.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Core/server dry-run unknown MCP fallback kararı runtime evaluator ile eşlendi; YAML/JSON compiler, parity ve dashboard publish akışı bağlı.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** YAML belge kaydÃ„Â± var; ayrÃ„Â± runtime kontrolleri yayÃ„Â±nlanÃ„Â±yor.
+**Başlangıç durumu:** YAML belge kaydı var; ayrı runtime kontrolleri yayınlanıyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Kaydedilen YAML kurallarÃ„Â± runtime tarafÃ„Â±ndan tÃƒÂ¼ketilmiyor. KullanÃ„Â±cÃ„Â± belge kaydÃ„Â±nÃ„Â± etkin gÃƒÂ¼venlik politikasÃ„Â± sanabilir.
+**Başlangıç boşluğu / müşteri etkisi:** Kaydedilen YAML kuralları runtime tarafından tüketilmiyor. Kullanıcı belge kaydını etkin güvenlik politikası sanabilir.
 
-**Tamamlanma hedefi:** Desteklenen YAML Ã…Å¸emasÃ„Â±nÃ„Â± runtime modeline derle veya belge akÃ„Â±Ã…Å¸Ã„Â±nÃ„Â± aÃƒÂ§Ã„Â±kÃƒÂ§a ayÃ„Â±r; desteklenmeyen alanlarÃ„Â± reddet; ÃƒÂ¶ncelik ve etki simÃƒÂ¼lasyonu sun.
+**Tamamlanma hedefi:** Desteklenen YAML şemasını runtime modeline derle veya belge akışını açıkça ayır; desteklenmeyen alanları reddet; öncelik ve etki simülasyonu sun.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Kaydedilen/yayÃ„Â±nlanan politika gerÃƒÂ§ek ajan kararÃ„Â±nda deÃ„Å¸iÃ…Å¸iklik ÃƒÂ¼retsin; bilinmeyen alan sessiz atÃ„Â±lmasÃ„Â±n; allowlist ile aÃƒÂ§Ã„Â±k deny ÃƒÂ¶nceliÃ„Å¸i doÃ„Å¸rulansÃ„Â±n.
+**Kalan kapanış testi:** Kaydedilen/yayınlanan politika gerçek ajan kararında değişiklik üretsin; bilinmeyen alan sessiz atılmasın; allowlist ile açık deny önceliği doğrulansın.
 
-**Sorumlu:** Policy + Dashboard Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Politika sÃƒÂ¶zleÃ…Å¸mesi ve migration planÃ„Â±.
+**Sorumlu:** Policy + Dashboard Engineering. **Bağımlılık:** Politika sözleşmesi ve migration planı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** POL-01, POL-02. **Kaynak:** [packages/dashboard/src/enterprise/policy-editor.tsx](packages/dashboard/src/enterprise/policy-editor.tsx), [packages/dashboard/src/ui/pages/PolicyPage.tsx](packages/dashboard/src/ui/pages/PolicyPage.tsx), [packages/core/src/policy.ts](packages/core/src/policy.ts).
+**İlişkili özellikler:** POL-01, POL-02. **Kaynak:** [packages/dashboard/src/enterprise/policy-editor.tsx](packages/dashboard/src/enterprise/policy-editor.tsx), [packages/dashboard/src/ui/pages/PolicyPage.tsx](packages/dashboard/src/ui/pages/PolicyPage.tsx), [packages/core/src/policy.ts](packages/core/src/policy.ts).
 
-### T15 Ã¢â‚¬â€ Politika daÃ„Å¸Ã„Â±tÃ„Â±mÃ„Â± saha kabulÃƒÂ¼ ve ÃƒÂ¶lÃƒÂ§ek sÃ„Â±nÃ„Â±rlarÃ„Â± (P1)
+### T15 — Politika dağıtımı saha kabulü ve ölçek sınırları (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Hedefli stage iÃ…Å¸lemi atomik revision precondition ile eski eÃ…Å¸zamanlÃ„Â± gÃƒÂ¼ncellemeyi 409 reddediyor; gerÃƒÂ§ek filo/ÃƒÂ¶lÃƒÂ§ek kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Hedefli stage işlemi atomik revision precondition ile eski eşzamanlı güncellemeyi 409 reddediyor; gerçek filo/ölçek kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** SÃƒÂ¼rÃƒÂ¼m/geÃƒÂ§miÃ…Å¸, hedefli daÃ„Å¸Ã„Â±tÃ„Â±m, rollback, sayfalama ve sabit offline grace ÃƒÂ§alÃ„Â±Ã…Å¸Ã„Â±yor.
+**Başlangıç durumu:** Sürüm/geçmiş, hedefli dağıtım, rollback, sayfalama ve sabit offline grace çalışıyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Receipt yalnÃ„Â±zca ajanÃ„Â±n yÃƒÂ¼kleme bildirimi; host enforcement attestation deÃ„Å¸il. Eski baÃ„Å¸lÃ„Â± olmayan anahtarlar, bÃƒÂ¼yÃƒÂ¼k filo batch planÃ„Â± ve gerÃƒÂ§ek offline saha kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Başlangıç boşluğu / müşteri etkisi:** Receipt yalnızca ajanın yükleme bildirimi; host enforcement attestation değil. Eski bağlı olmayan anahtarlar, büyük filo batch planı ve gerçek offline saha kabulü açık.
 
-**Tamamlanma hedefi:** Eski ajanlarÃ„Â± yeniden kaydet; daÃ„Å¸Ã„Â±tÃ„Â±m batch/ring iÃ…Å¸letimini ve zorunlu politika sÃƒÂ¼relerini mÃƒÂ¼Ã…Å¸teriye gÃƒÂ¶re belirle; gÃƒÂ¶zlem/uyarÃ„Â± ve native canary kabulÃƒÂ¼ yap.
+**Tamamlanma hedefi:** Eski ajanları yeniden kaydet; dağıtım batch/ring işletimini ve zorunlu politika sürelerini müşteriye göre belirle; gözlem/uyarı ve native canary kabulü yap.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Yetkisiz/stale receipt, rollback, offline sÃƒÂ¼resi, 401/403, bozuk cache, yeniden baÃ…Å¸latma ve hedef deÃ„Å¸iÃ…Å¸tirmede yanlÃ„Â±Ã…Å¸ sÃƒÂ¼rÃƒÂ¼m uygulanmasÃ„Â±n; gerÃƒÂ§ek filoda yakÃ„Â±nsama ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lsÃƒÂ¼n.
+**Kalan kapanış testi:** Yetkisiz/stale receipt, rollback, offline süresi, 401/403, bozuk cache, yeniden başlatma ve hedef değiştirmede yanlış sürüm uygulanmasın; gerçek filoda yakınsama ölçülsün.
 
-**Sorumlu:** Policy + QA + Operations. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Ajan sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼, mÃƒÂ¼Ã…Å¸teri offline toleransÃ„Â±.
+**Sorumlu:** Policy + QA + Operations. **Bağımlılık:** Ajan sürümü, müşteri offline toleransı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** POL-03, POL-04, POL-05. **Kaynak:** [supabase/functions/policy-management/index.ts](supabase/functions/policy-management/index.ts), [supabase/functions/policy-ack/index.ts](supabase/functions/policy-ack/index.ts), [packages/core/src/remote-policy.ts](packages/core/src/remote-policy.ts).
+**İlişkili özellikler:** POL-03, POL-04, POL-05. **Kaynak:** [supabase/functions/policy-management/index.ts](supabase/functions/policy-management/index.ts), [supabase/functions/policy-ack/index.ts](supabase/functions/policy-ack/index.ts), [packages/core/src/remote-policy.ts](packages/core/src/remote-policy.ts).
 
-### T16 Ã¢â‚¬â€ Endpoint sÃ„Â±r saklama ve anahtar rotasyonu (P1)
+### T16 — Endpoint sır saklama ve anahtar rotasyonu (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Windows config create/update/reuse yolu owner+SYSTEM+Administrators DACL kuruyor ve ACL hatasÃ„Â±nda credential yazmÃ„Â±yor; OS vault ve server-side revocation aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Windows config create/update/reuse yolu owner+SYSTEM+Administrators DACL kuruyor ve ACL hatasında credential yazmıyor; OS vault ve server-side revocation açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Tipli/redakte config ve ÃƒÂ¶zel dosyalar mevcut.
+**Başlangıç durumu:** Tipli/redakte config ve özel dosyalar mevcut.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** OS credential vault entegrasyonu, kurumsal daÃ„Å¸Ã„Â±tÃ„Â±mda signer rotasyonu, kayÃ„Â±p cihaz/anahtar kurtarma ve minimum API-key kapsamÃ„Â± eksik.
+**Başlangıç boşluğu / müşteri etkisi:** OS credential vault entegrasyonu, kurumsal dağıtımda signer rotasyonu, kayıp cihaz/anahtar kurtarma ve minimum API-key kapsamı eksik.
 
-**Tamamlanma hedefi:** Windows/macOS/Linux iÃƒÂ§in sÃ„Â±r deposu adaptÃƒÂ¶rÃƒÂ¼; anahtar rotasyonu ve iptali; config/export/support bundle redaksiyonunu tamamla.
+**Tamamlanma hedefi:** Windows/macOS/Linux için sır deposu adaptörü; anahtar rotasyonu ve iptali; config/export/support bundle redaksiyonunu tamamla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Yetkisiz kullanÃ„Â±cÃ„Â± sÃ„Â±r okuyamasÃ„Â±n; eski anahtar zamanÃ„Â±nda reddedilsin; yenileme kesintisi gÃƒÂ¼venli olsun; log, argÃƒÂ¼man ve destek arÃ…Å¸ivi sÃ„Â±r sÃ„Â±zdÃ„Â±rmasÃ„Â±n.
+**Kalan kapanış testi:** Yetkisiz kullanıcı sır okuyamasın; eski anahtar zamanında reddedilsin; yenileme kesintisi güvenli olsun; log, argüman ve destek arşivi sır sızdırmasın.
 
-**Sorumlu:** Endpoint + Security Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Kurum secret manager'Ã„Â± ve OS depolarÃ„Â±.
+**Sorumlu:** Endpoint + Security Engineering. **Bağımlılık:** Kurum secret manager'ı ve OS depoları.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** CLI-02, TEN-06. **Kaynak:** [packages/cli/src/utils/config-manager.ts](packages/cli/src/utils/config-manager.ts), [packages/core/src/types.ts](packages/core/src/types.ts), [docs/runbooks/secrets-management.md](docs/runbooks/secrets-management.md).
+**İlişkili özellikler:** CLI-02, TEN-06. **Kaynak:** [packages/cli/src/utils/config-manager.ts](packages/cli/src/utils/config-manager.ts), [packages/core/src/types.ts](packages/core/src/types.ts), [docs/runbooks/secrets-management.md](docs/runbooks/secrets-management.md).
 
-### T17 Ã¢â‚¬â€ Ã„Â°mzalÃ„Â± filo kurulumu, gÃƒÂ¼ncelleme ve kaldÃ„Â±rma (P1)
+### T17 — İmzalı filo kurulumu, güncelleme ve kaldırma (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Installer ile Windows/Unix uninstall yalnÃ„Â±z AIDR iÃ…Å¸aretli nested hook'u kaldÃ„Â±rÃ„Â±yor, aynÃ„Â± entry'deki mÃƒÂ¼Ã…Å¸teri hook'larÃ„Â±nÃ„Â± koruyor; gerÃƒÂ§ek MDM/yayÃ„Â±ncÃ„Â± kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Installer ile Windows/Unix uninstall yalnız AIDR işaretli nested hook'u kaldırıyor, aynı entry'deki müşteri hook'larını koruyor; gerçek MDM/yayıncı kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Claude iÃƒÂ§in yerel kurucu ve deny canary var; diÃ„Å¸er paketler derleniyor.
+**Başlangıç durumu:** Claude için yerel kurucu ve deny canary var; diğer paketler derleniyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Intune/Jamf/SCCM teslimatÃ„Â±, tÃƒÂ¼m hostlarda upgrade/rollback/uninstall ve filo saÃ„Å¸lÃ„Â±k kanÃ„Â±tÃ„Â± tamam deÃ„Å¸il.
+**Başlangıç boşluğu / müşteri etkisi:** Intune/Jamf/SCCM teslimatı, tüm hostlarda upgrade/rollback/uninstall ve filo sağlık kanıtı tamam değil.
 
-**Tamamlanma hedefi:** Ã„Â°mzalÃ„Â± daÃ„Å¸Ã„Â±tÃ„Â±m paketleri, detect/remediate betikleri, yÃƒÂ¶netici/kullanÃ„Â±cÃ„Â± kurulumlarÃ„Â±, policy-preserving upgrade ve uninstall kurallarÃ„Â± ÃƒÂ¼ret.
+**Tamamlanma hedefi:** İmzalı dağıtım paketleri, detect/remediate betikleri, yönetici/kullanıcı kurulumları, policy-preserving upgrade ve uninstall kuralları üret.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Temiz kurulum, yarÃ„Â±m kalan upgrade, eski sÃƒÂ¼rÃƒÂ¼me dÃƒÂ¶nÃƒÂ¼Ã…Å¸, host gÃƒÂ¼ncellemesi ve uninstall sonrasÃ„Â±nda baÃ…Å¸ka kancalar/politika bozulmasÃ„Â±n; gerÃƒÂ§ek MDM'de kanÃ„Â±t topla.
+**Kalan kapanış testi:** Temiz kurulum, yarım kalan upgrade, eski sürüme dönüş, host güncellemesi ve uninstall sonrasında başka kancalar/politika bozulmasın; gerçek MDM'de kanıt topla.
 
-**Sorumlu:** Release + Endpoint Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** MDM test tenantÃ„Â±, signer, OS paketleme araÃƒÂ§larÃ„Â±.
+**Sorumlu:** Release + Endpoint Engineering. **Bağımlılık:** MDM test tenantı, signer, OS paketleme araçları.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** CLI-01, CLI-03, CLI-04. **Kaynak:** [scripts/endpoint-install.mjs](scripts/endpoint-install.mjs), [packages/extension/package.json](packages/extension/package.json), [packages/cli/src/commands/setup.ts](packages/cli/src/commands/setup.ts).
+**İlişkili özellikler:** CLI-01, CLI-03, CLI-04. **Kaynak:** [scripts/endpoint-install.mjs](scripts/endpoint-install.mjs), [packages/extension/package.json](packages/extension/package.json), [packages/cli/src/commands/setup.ts](packages/cli/src/commands/setup.ts).
 
-### T18 Ã¢â‚¬â€ Kurumsal giriÃ…Å¸, MFA ve hesap kurtarma (P0)
+### T18 — Kurumsal giriş, MFA ve hesap kurtarma (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Recovery URL yalnÃ„Â±z hosted HTTPS/loopback HTTP kabul ediyor, credential URL'yi reddediyor ve parola deÃ„Å¸iÃ…Å¸iminden ÃƒÂ¶nce global session barrier kuruyor; canlÃ„Â± IdP aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Recovery URL yalnız hosted HTTPS/loopback HTTP kabul ediyor, credential URL'yi reddediyor ve parola değişiminden önce global session barrier kuruyor; canlı IdP açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Ã„Â°lk yÃƒÂ¶netici ve parolalÃ„Â± giriÃ…Å¸ SMTP olmadan ÃƒÂ§alÃ„Â±Ã…Å¸Ã„Â±yor.
+**Başlangıç durumu:** İlk yönetici ve parolalı giriş SMTP olmadan çalışıyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** GerÃƒÂ§ek IdP/SSO, MFA, parola sÃ„Â±fÃ„Â±rlama, oturum sonlandÃ„Â±rma, break-glass ve kimlik sahipliÃ„Å¸i iÃ…Å¸letimi kabul edilmedi.
+**Başlangıç boşluğu / müşteri etkisi:** Gerçek IdP/SSO, MFA, parola sıfırlama, oturum sonlandırma, break-glass ve kimlik sahipliği işletimi kabul edilmedi.
 
-**Tamamlanma hedefi:** MÃƒÂ¼Ã…Å¸teri IdP'si, MFA ve kurtarma akÃ„Â±Ã…Å¸larÃ„Â±nÃ„Â± baÃ„Å¸la; bootstrap sahiplik prosedÃƒÂ¼rÃƒÂ¼, session sÃƒÂ¼releri ve acil yÃƒÂ¶netici eriÃ…Å¸imini tanÃ„Â±mla.
+**Tamamlanma hedefi:** Müşteri IdP'si, MFA ve kurtarma akışlarını bağla; bootstrap sahiplik prosedürü, session süreleri ve acil yönetici erişimini tanımla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** KayÃ„Â±p parola/MFA, kapatÃ„Â±lmÃ„Â±Ã…Å¸ kullanÃ„Â±cÃ„Â±, sÃƒÂ¼resi dolmuÃ…Å¸ oturum ve baÃ…Å¸arÃ„Â±sÃ„Â±z IdP durumlarÃ„Â±nÃ„Â± sÃ„Â±nayarak hesabÃ„Â±n hem geri alÃ„Â±nabilir hem yetkisiz eriÃ…Å¸ime kapalÃ„Â± olduÃ„Å¸unu kanÃ„Â±tla.
+**Kalan kapanış testi:** Kayıp parola/MFA, kapatılmış kullanıcı, süresi dolmuş oturum ve başarısız IdP durumlarını sınayarak hesabın hem geri alınabilir hem yetkisiz erişime kapalı olduğunu kanıtla.
 
-**Sorumlu:** Identity Engineering + Customer IT. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** IdP/SMTP/DNS ve kurum gÃƒÂ¼venlik politikasÃ„Â±.
+**Sorumlu:** Identity Engineering + Customer IT. **Bağımlılık:** IdP/SMTP/DNS ve kurum güvenlik politikası.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-01, TEN-04, TEN-07. **Kaynak:** [packages/dashboard/src/ui/pages/LoginPage.tsx](packages/dashboard/src/ui/pages/LoginPage.tsx), [packages/dashboard/src/enterprise/auth.tsx](packages/dashboard/src/enterprise/auth.tsx), [scripts/deployment-bootstrap.mjs](scripts/deployment-bootstrap.mjs).
+**İlişkili özellikler:** TEN-01, TEN-04, TEN-07. **Kaynak:** [packages/dashboard/src/ui/pages/LoginPage.tsx](packages/dashboard/src/ui/pages/LoginPage.tsx), [packages/dashboard/src/enterprise/auth.tsx](packages/dashboard/src/enterprise/auth.tsx), [scripts/deployment-bootstrap.mjs](scripts/deployment-bootstrap.mjs).
 
-### T19 Ã¢â‚¬â€ SCIM ve gÃƒÂ¼venilir directory grup eÃ…Å¸lemesi (P1)
+### T19 — SCIM ve güvenilir directory grup eşlemesi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SCIM stale PATCH'i reddediyor, Remove members tÃƒÂ¼m ÃƒÂ¼yeleri kaldÃ„Â±rÃ„Â±yor ve bÃƒÂ¼yÃƒÂ¼k grup ÃƒÂ¼yeliÃ„Å¸ini sayfalÃ„Â±yor; gerÃƒÂ§ek Entra/Okta kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SCIM stale PATCH'i reddediyor, Remove members tüm üyeleri kaldırıyor ve büyük grup üyeliğini sayfalıyor; gerçek Entra/Okta kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Azure yardÃ„Â±mcÃ„Â±larÃ„Â± mevcut; azure-ad-groups endpointi ve tam SCIM yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼ yok.
+**Başlangıç durumu:** Azure yardımcıları mevcut; azure-ad-groups endpointi ve tam SCIM yaşam döngüsü yok.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** YardÃ„Â±mcÃ„Â± kod user_metadata gruplarÃ„Â±nÃ„Â± ÃƒÂ¶nce okuyabiliyor ve isimde admin geÃƒÂ§mesine gÃƒÂ¶re rol eÃ…Å¸liyor. Bu, sunucu yetkilendirmesi iÃƒÂ§in gÃƒÂ¼venilir temel deÃ„Å¸ildir; aktif bir yetki yÃƒÂ¼kseltme kanÃ„Â±tÃ„Â± olarak sunulmuyor.
+**Başlangıç boşluğu / müşteri etkisi:** Yardımcı kod user_metadata gruplarını önce okuyabiliyor ve isimde admin geçmesine göre rol eşliyor. Bu, sunucu yetkilendirmesi için güvenilir temel değildir; aktif bir yetki yükseltme kanıtı olarak sunulmuyor.
 
-**Tamamlanma hedefi:** Sunucuda doÃ„Å¸rulanmÃ„Â±Ã…Å¸ immutable grup ID'leri, allowlist rol eÃ…Å¸lemesi ve SCIM create/update/deactivate/groups uygula; kullanÃ„Â±cÃ„Â± metadata'sÃ„Â±nÃ„Â± yetki kaynaÃ„Å¸Ã„Â± yapma.
+**Tamamlanma hedefi:** Sunucuda doğrulanmış immutable grup ID'leri, allowlist rol eşlemesi ve SCIM create/update/deactivate/groups uygula; kullanıcı metadata'sını yetki kaynağı yapma.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Sahte metadata, benzer grup adÃ„Â±, grup kaldÃ„Â±rma, hesap pasifleÃ…Å¸tirme, pagination/replay ve tenant karÃ„Â±Ã…Å¸tÃ„Â±rma testleri; eriÃ…Å¸im belirtilen sÃƒÂ¼re iÃƒÂ§inde kesilsin.
+**Kalan kapanış testi:** Sahte metadata, benzer grup adı, grup kaldırma, hesap pasifleştirme, pagination/replay ve tenant karıştırma testleri; erişim belirtilen süre içinde kesilsin.
 
-**Sorumlu:** Identity + Backend Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** AIDR-019/048; Entra/Okta test ortamÃ„Â±.
+**Sorumlu:** Identity + Backend Engineering. **Bağımlılık:** AIDR-019/048; Entra/Okta test ortamı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-02, TEN-04. **Kaynak:** [packages/dashboard/src/auth/azure-ad.ts](packages/dashboard/src/auth/azure-ad.ts), [packages/dashboard/src/enterprise/team-provider.tsx](packages/dashboard/src/enterprise/team-provider.tsx).
+**İlişkili özellikler:** TEN-02, TEN-04. **Kaynak:** [packages/dashboard/src/auth/azure-ad.ts](packages/dashboard/src/auth/azure-ad.ts), [packages/dashboard/src/enterprise/team-provider.tsx](packages/dashboard/src/enterprise/team-provider.tsx).
 
-### T20 Ã¢â‚¬â€ Davet ve cihaz kayÃ„Â±t yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼ (P1)
+### T20 — Davet ve cihaz kayıt yaşam döngüsü (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Tenant kapsamlÃ„Â± invite list/revoke/resend token rotasyonu ile device-start/exchange temeli var; SMTP, gerÃƒÂ§ek browser/IdP ve aÃ„Å¸ kesintisi kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Tenant kapsamlı invite list/revoke/resend token rotasyonu ile device-start/exchange temeli var; SMTP, gerçek browser/IdP ve ağ kesintisi kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Davet baÃ„Å¸lantÃ„Â±sÃ„Â± ve aÃƒÂ§Ã„Â±k ekip seÃƒÂ§imiyle cihaz kaydÃ„Â± yerel provadan geÃƒÂ§ti.
+**Başlangıç durumu:** Davet bağlantısı ve açık ekip seçimiyle cihaz kaydı yerel provadan geçti.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** SMTP davet teslimi, gerÃƒÂ§ek cihaz yeniden kaydÃ„Â±, ekipten ayrÃ„Â±lan ÃƒÂ§alÃ„Â±Ã…Å¸anÃ„Â±n eriÃ…Å¸im kapanmasÃ„Â± ve mÃƒÂ¼Ã…Å¸teri mail/link akÃ„Â±Ã…Å¸Ã„Â± tam kabul edilmedi.
+**Başlangıç boşluğu / müşteri etkisi:** SMTP davet teslimi, gerçek cihaz yeniden kaydı, ekipten ayrılan çalışanın erişim kapanması ve müşteri mail/link akışı tam kabul edilmedi.
 
-**Tamamlanma hedefi:** Davet daÃ„Å¸Ã„Â±tÃ„Â±mÃ„Â±nÃ„Â±, expiry/iptal/yeniden gÃƒÂ¶nderme, yanlÃ„Â±Ã…Å¸ ekip ve cihaz yenileme iÃ…Å¸letimini tamamla.
+**Tamamlanma hedefi:** Davet dağıtımını, expiry/iptal/yeniden gönderme, yanlış ekip ve cihaz yenileme işletimini tamamla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** KullanÃ„Â±lmÃ„Â±Ã…Å¸/iptal edilmiÃ…Å¸ davet, rol deÃ„Å¸iÃ…Å¸imi, baÃ…Å¸ka ekip, eski device code ve kimlik deÃ„Å¸iÃ…Å¸iminde kayÃ„Â±t reddedilsin; mail linki gerÃƒÂ§ek tarayÃ„Â±cÃ„Â±da doÃ„Å¸ru ekibe dÃƒÂ¶nsÃƒÂ¼n.
+**Kalan kapanış testi:** Kullanılmış/iptal edilmiş davet, rol değişimi, başka ekip, eski device code ve kimlik değişiminde kayıt reddedilsin; mail linki gerçek tarayıcıda doğru ekibe dönsün.
 
-**Sorumlu:** Identity + Customer Success. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** SMTP/IdP ve mÃƒÂ¼Ã…Å¸teri cihazlarÃ„Â±.
+**Sorumlu:** Identity + Customer Success. **Bağımlılık:** SMTP/IdP ve müşteri cihazları.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-03, TEN-05. **Kaynak:** [supabase/functions/team-invite/index.ts](supabase/functions/team-invite/index.ts), [supabase/functions/device-poll/index.ts](supabase/functions/device-poll/index.ts), [packages/dashboard/src/ui/pages/public/VerifyPage.tsx](packages/dashboard/src/ui/pages/public/VerifyPage.tsx).
+**İlişkili özellikler:** TEN-03, TEN-05. **Kaynak:** [supabase/functions/team-invite/index.ts](supabase/functions/team-invite/index.ts), [supabase/functions/device-poll/index.ts](supabase/functions/device-poll/index.ts), [packages/dashboard/src/ui/pages/public/VerifyPage.tsx](packages/dashboard/src/ui/pages/public/VerifyPage.tsx).
 
-### T21 Ã¢â‚¬â€ Mevcut API anahtarÃ„Â±nda ekip ve ÃƒÂ¼yelik iptali (P0)
+### T21 — Mevcut API anahtarında ekip ve üyelik iptali (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Packs manifest/download dahil anahtar kullanan yollar aktif tenant, ÃƒÂ¼yelik ve revocation doÃ„Å¸ruluyor; ÃƒÂ¶nceden ÃƒÂ¼retilmiÃ…Å¸ signed URL sÃƒÂ¼re sonuna dek geÃƒÂ§erli.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Packs manifest/download dahil anahtar kullanan yollar aktif tenant, üyelik ve revocation doğruluyor; önceden üretilmiş signed URL süre sonuna dek geçerli.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Anahtar yÃƒÂ¶netimi aktif ekip/ÃƒÂ¼yeliÃ„Å¸i denetliyor; reputation API'leri yalnÃ„Â±zca mevcut anahtarÃ„Â±n revoked deÃ„Å¸erini kontrol ediyor.
+**Başlangıç durumu:** Anahtar yönetimi aktif ekip/üyeliği denetliyor; reputation API'leri yalnızca mevcut anahtarın revoked değerini kontrol ediyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Ã„Â°zole gerÃƒÂ§ek HTTP provasÃ„Â±nda askÃ„Â±ya alÃ„Â±nmÃ„Â±Ã…Å¸ ekip ve sÃƒÂ¼resi bitmiÃ…Å¸ ÃƒÂ¼yelikle hem URL hem dosya sorgusu 200 dÃƒÂ¶ndÃƒÂ¼; dÃƒÂ¶rt kabul yeniden ÃƒÂ¼retildi. BaÃ…Å¸ka tenant verisi okunduÃ„Å¸u gÃƒÂ¶sterilmedi.
+**Başlangıç boşluğu / müşteri etkisi:** İzole gerçek HTTP provasında askıya alınmış ekip ve süresi bitmiş üyelikle hem URL hem dosya sorgusu 200 döndü; dört kabul yeniden üretildi. Başka tenant verisi okunduğu gösterilmedi.
 
-**Tamamlanma hedefi:** Ortak doÃ„Å¸rulanmÃ„Â±Ã…Å¸ anahtar/aktif tenant/aktif ÃƒÂ¼yelik sÃ„Â±nÃ„Â±rÃ„Â± uygula; iptal, kapanÃ„Â±Ã…Å¸ ve deprovisioning semantiÃ„Å¸ini tÃƒÂ¼m servislerde birleÃ…Å¸tir.
+**Tamamlanma hedefi:** Ortak doğrulanmış anahtar/aktif tenant/aktif üyelik sınırı uygula; iptal, kapanış ve deprovisioning semantiğini tüm servislerde birleştir.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Aktif kimlik 200; suspended/closing/closed tenant, expired/removed membership ve revoked key tÃƒÂ¼m tÃƒÂ¼keticilerde 401/403; stale cache ile eriÃ…Å¸im sÃƒÂ¼rmesin.
+**Kalan kapanış testi:** Aktif kimlik 200; suspended/closing/closed tenant, expired/removed membership ve revoked key tüm tüketicilerde 401/403; stale cache ile erişim sürmesin.
 
-**Sorumlu:** Backend Security. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** AIDR-063; yerel yeniden ÃƒÂ¼retim kanÃ„Â±tÃ„Â±.
+**Sorumlu:** Backend Security. **Bağımlılık:** AIDR-063; yerel yeniden üretim kanıtı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-01, TEN-06, DET-10, DET-11. **Kaynak:** [supabase/functions/url-check/index.ts](supabase/functions/url-check/index.ts), [supabase/functions/file-check/index.ts](supabase/functions/file-check/index.ts), [scripts/audit-reputation-lifecycle.mjs](scripts/audit-reputation-lifecycle.mjs).
+**İlişkili özellikler:** TEN-01, TEN-06, DET-10, DET-11. **Kaynak:** [supabase/functions/url-check/index.ts](supabase/functions/url-check/index.ts), [supabase/functions/file-check/index.ts](supabase/functions/file-check/index.ts), [scripts/audit-reputation-lifecycle.mjs](scripts/audit-reputation-lifecycle.mjs).
 
-### T22 Ã¢â‚¬â€ Tenant izolasyonu ve kaynak tÃƒÂ¼ketim sÃ„Â±nÃ„Â±rlarÃ„Â± (P0)
+### T22 — Tenant izolasyonu ve kaynak tüketim sınırları (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Edge byte/rate sÃ„Â±nÃ„Â±rÃ„Â± bozuk RPC'de 503 ve stalled stream'de 413 fail-closed ÃƒÂ¼retiyor; mÃƒÂ¼Ã…Å¸teri yÃƒÂ¼k/izolasyon kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Edge byte/rate sınırı bozuk RPC'de 503 ve stalled stream'de 413 fail-closed üretiyor; müşteri yük/izolasyon kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** RLS, rol ve bazÃ„Â± negatif uÃƒÂ§tan uca testler var.
+**Başlangıç durumu:** RLS, rol ve bazı negatif uçtan uca testler var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Her endpoint/rol/tenant kombinasyonu, body/stream sÃ„Â±nÃ„Â±rÃ„Â±, rate-limit kesintisi ve komÃ…Å¸u tenant kaynak tÃƒÂ¼ketimi tam ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lmedi.
+**Başlangıç boşluğu / müşteri etkisi:** Her endpoint/rol/tenant kombinasyonu, body/stream sınırı, rate-limit kesintisi ve komşu tenant kaynak tüketimi tam ölçülmedi.
 
-**Tamamlanma hedefi:** TÃƒÂ¼m endpointler iÃƒÂ§in auth/RBAC/RLS sÃƒÂ¶zleÃ…Å¸mesi; servis rolÃƒÂ¼ kullanan yollarda aÃƒÂ§Ã„Â±k tenant sÃ„Â±nÃ„Â±rÃ„Â±; kuyruk/iÃ…Å¸/istek/depoma kotalarÃ„Â± ekle ve denetle.
+**Tamamlanma hedefi:** Tüm endpointler için auth/RBAC/RLS sözleşmesi; servis rolü kullanan yollarda açık tenant sınırı; kuyruk/iş/istek/depoma kotaları ekle ve denetle.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** FarklÃ„Â± tenant, ÃƒÂ¼yelik kaybÃ„Â±, viewer, eski anahtar, bÃƒÂ¼yÃƒÂ¼k body ve paralel isteklerle negatif matris ÃƒÂ§alÃ„Â±Ã…Å¸sÃ„Â±n; tek tenant diÃ„Å¸erinin SLO'sunu tÃƒÂ¼ketemesin.
+**Kalan kapanış testi:** Farklı tenant, üyelik kaybı, viewer, eski anahtar, büyük body ve paralel isteklerle negatif matris çalışsın; tek tenant diğerinin SLO'sunu tüketemesin.
 
-**Sorumlu:** Security + Backend + SRE. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** BaÃ„Å¸Ã„Â±msÃ„Â±z deÃ„Å¸erlendirme ve tanÃ„Â±mlÃ„Â± yÃƒÂ¼k profili.
+**Sorumlu:** Security + Backend + SRE. **Bağımlılık:** Bağımsız değerlendirme ve tanımlı yük profili.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-01, OBS-01, DEP-07. **Kaynak:** [supabase/functions/_shared/auth.ts](supabase/functions/_shared/auth.ts), [supabase/migrations/20260805000000_hybrid_tenancy.sql](supabase/migrations/20260805000000_hybrid_tenancy.sql).
+**İlişkili özellikler:** TEN-01, OBS-01, DEP-07. **Kaynak:** [supabase/functions/_shared/auth.ts](supabase/functions/_shared/auth.ts), [supabase/migrations/20260805000000_hybrid_tenancy.sql](supabase/migrations/20260805000000_hybrid_tenancy.sql).
 
-### T23 Ã¢â‚¬â€ Telemetri dayanÃ„Â±klÃ„Â±lÃ„Â±Ã„Å¸Ã„Â± ve gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r veri kaybÃ„Â± (P0)
+### T23 — Telemetri dayanıklılığı ve görünür veri kaybı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Telemetry WAL bozuk/unknown/tampered committed kayÃ„Â±tlarÃ„Â± reddediyor, terminal drop sonrasÃ„Â± retry ve stale backlog readiness saÃ„Å¸lÃ„Â±yor; uzun kesinti saha testi aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Telemetry WAL bozuk/unknown/tampered committed kayıtları reddediyor, terminal drop sonrası retry ve stale backlog readiness sağlıyor; uzun kesinti saha testi açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Olay alÃ„Â±mÃ„Â± ve dashboard baÃ„Å¸lÃ„Â±.
+**Başlangıç durumu:** Olay alımı ve dashboard bağlı.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Filo yÃƒÂ¼kÃƒÂ¼nde teslim SLO'su, disk/kuyruk sÃ„Â±nÃ„Â±rÃ„Â±, offline retry/dedup ve uÃƒÂ§tan uca kayÃ„Â±p oranÃ„Â± iÃƒÂ§in kanÃ„Â±t eksik.
+**Başlangıç boşluğu / müşteri etkisi:** Filo yükünde teslim SLO'su, disk/kuyruk sınırı, offline retry/dedup ve uçtan uca kayıp oranı için kanıt eksik.
 
-**Tamamlanma hedefi:** Olay teslim sÃƒÂ¶zleÃ…Å¸mesi, kimlik/idempotency, retry/backpressure, kayÃ„Â±p sayaÃƒÂ§larÃ„Â± ve tenant bazlÃ„Â± retention bÃƒÂ¼tÃƒÂ§elerini doÃ„Å¸rula.
+**Tamamlanma hedefi:** Olay teslim sözleşmesi, kimlik/idempotency, retry/backpressure, kayıp sayaçları ve tenant bazlı retention bütçelerini doğrula.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** AÃ„Å¸/DB/storage kesintisi ve ajan yeniden baÃ…Å¸latmada kayÃ„Â±p/duplicate ÃƒÂ¶lÃƒÂ§; sessiz olay kaybÃ„Â± olmasÃ„Â±n; disk dolmasÃ„Â± ve gecikme kullanÃ„Â±cÃ„Â±ya gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r olsun.
+**Kalan kapanış testi:** Ağ/DB/storage kesintisi ve ajan yeniden başlatmada kayıp/duplicate ölç; sessiz olay kaybı olmasın; disk dolması ve gecikme kullanıcıya görünür olsun.
 
-**Sorumlu:** Telemetry Engineering + SRE. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** MÃƒÂ¼Ã…Å¸teri cihaz/olay hacmi ve saklama hedefi.
+**Sorumlu:** Telemetry Engineering + SRE. **Bağımlılık:** Müşteri cihaz/olay hacmi ve saklama hedefi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** OBS-01. **Kaynak:** [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts), [packages/core/src/audit-log.ts](packages/core/src/audit-log.ts).
+**İlişkili özellikler:** OBS-01. **Kaynak:** [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts), [packages/core/src/audit-log.ts](packages/core/src/audit-log.ts).
 
-### T24 Ã¢â‚¬â€ SIEM ve OpenTelemetry ÃƒÂ¼retim teslimi (P1)
+### T24 — SIEM ve OpenTelemetry üretim teslimi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SIEM durable state provider/endpoint/index routing fingerprint'e baÃ„Å¸lÃ„Â± ve farklÃ„Â± hedefte reopen'i reddediyor; gerÃƒÂ§ek SIEM alÃ„Â±ndÃ„Â±sÃ„Â±/zamanlayÃ„Â±cÃ„Â± aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SIEM durable state provider/endpoint/index routing fingerprint'e bağlı ve farklı hedefte reopen'i reddediyor; gerçek SIEM alındısı/zamanlayıcı açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** DÃ„Â±Ã…Å¸a aktarma/izleme bileÃ…Å¸enleri mevcut.
+**Başlangıç durumu:** Dışa aktarma/izleme bileşenleri mevcut.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Named SIEM transport, teslim bildirimi, kesinti tamponu, Ã…Å¸ema sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼ ve mÃƒÂ¼Ã…Å¸teri SIEM alan eÃ…Å¸lemesi kabul edilmedi.
+**Başlangıç boşluğu / müşteri etkisi:** Named SIEM transport, teslim bildirimi, kesinti tamponu, şema sürümü ve müşteri SIEM alan eşlemesi kabul edilmedi.
 
-**Tamamlanma hedefi:** SatÃ„Â±lacak Splunk/Sentinel/Elastic vb. adaptÃƒÂ¶rleri iÃƒÂ§in gerÃƒÂ§ek endpoint entegrasyonu, retry/dedup ve saÃ„Å¸lÃ„Â±k gÃƒÂ¶stergesi tamamla.
+**Tamamlanma hedefi:** Satılacak Splunk/Sentinel/Elastic vb. adaptörleri için gerçek endpoint entegrasyonu, retry/dedup ve sağlık göstergesi tamamla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** SIEM kesintisi/429/401, sertifika deÃ„Å¸iÃ…Å¸imi, yeniden gÃƒÂ¶nderim ve alan eÃ…Å¸lemesi gerÃƒÂ§ek SIEM'de doÃ„Å¸rulansÃ„Â±n; yanlÃ„Â±Ã…Å¸ baÃ…Å¸arÃ„Â± bildirimi olmasÃ„Â±n.
+**Kalan kapanış testi:** SIEM kesintisi/429/401, sertifika değişimi, yeniden gönderim ve alan eşlemesi gerçek SIEM'de doğrulansın; yanlış başarı bildirimi olmasın.
 
-**Sorumlu:** Integrations + Customer SOC. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** SIEM test hesabÃ„Â± ve event schema anlaÃ…Å¸masÃ„Â±.
+**Sorumlu:** Integrations + Customer SOC. **Bağımlılık:** SIEM test hesabı ve event schema anlaşması.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** OBS-04. **Kaynak:** [packages/core/src/siem-export.ts](packages/core/src/siem-export.ts), [packages/core/src/tracing.ts](packages/core/src/tracing.ts).
+**İlişkili özellikler:** OBS-04. **Kaynak:** [packages/core/src/siem-export.ts](packages/core/src/siem-export.ts), [packages/core/src/tracing.ts](packages/core/src/tracing.ts).
 
-### T25 Ã¢â‚¬â€ Olay araÃ…Å¸tÃ„Â±rmasÃ„Â± ve kanÃ„Â±t bÃƒÂ¼tÃƒÂ¼nlÃƒÂ¼Ã„Å¸ÃƒÂ¼ (P1)
+### T25 — Olay araştırması ve kanıt bütünlüğü (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** incidents/evidence-receipt.ts candidate/policy/device/actor/incident/action bagli append-only receipt, Lamport mantik saati ile offline/skew siralamasi, duplicate/tamper reddi ve fail-closed arsiv adapteri ekliyor. Dis arsiv sahibi ve key custody acik. Eski: Olay receipt head sÃ„Â±rasÃ„Â± deterministik UTF-16 ve legacy doÃ„Å¸rulama uyumlu; ayrÃ„Â± Ed25519 snapshot makbuzu var. DÃ„Â±Ã…Å¸ saklama, key custody ve gÃƒÂ¼venilir zaman aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** incidents/evidence-receipt.ts candidate/policy/device/actor/incident/action bagli append-only receipt, Lamport mantik saati ile offline/skew siralamasi, duplicate/tamper reddi ve fail-closed arsiv adapteri ekliyor. Dis arsiv sahibi ve key custody acik. Eski: Olay receipt head sırası deterministik UTF-16 ve legacy doğrulama uyumlu; ayrı Ed25519 snapshot makbuzu var. Dış saklama, key custody ve güvenilir zaman açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Yerel korelasyon ve imzalÃ„Â± response zinciri var.
+**Başlangıç durumu:** Yerel korelasyon ve imzalı response zinciri var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Tam cross-agent nedensellik, ayrÃ„Â±calÃ„Â±klÃ„Â± deÃ„Å¸iÃ…Å¸ikliklere karÃ…Å¸Ã„Â± baÃ„Å¸Ã„Â±msÃ„Â±z kanÃ„Â±t saklama ve olayÃ¢â€ â€™araÃƒÂ§Ã¢â€ â€™credential izi eksik.
+**Başlangıç boşluğu / müşteri etkisi:** Tam cross-agent nedensellik, ayrıcalıklı değişikliklere karşı bağımsız kanıt saklama ve olay→araç→credential izi eksik.
 
-**Tamamlanma hedefi:** Korelasyon kimlikleri, zaman sapmasÃ„Â±, iliÃ…Å¸kili ajan/kaynak gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼mÃƒÂ¼, zincir doÃ„Å¸rulama ve baÃ„Å¸Ã„Â±msÃ„Â±z arÃ…Å¸iv kur.
+**Tamamlanma hedefi:** Korelasyon kimlikleri, zaman sapması, ilişkili ajan/kaynak görünümü, zincir doğrulama ve bağımsız arşiv kur.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Saat kaymasÃ„Â±/duplicate/offline sÃ„Â±ralama, silinmiÃ…Å¸ veya deÃ„Å¸iÃ…Å¸tirilmiÃ…Å¸ zincir ve ÃƒÂ§ok ajanlÃ„Â± saldÃ„Â±rÃ„Â±da kanÃ„Â±t boÃ…Å¸luklarÃ„Â± gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r olsun.
+**Kalan kapanış testi:** Saat kayması/duplicate/offline sıralama, silinmiş veya değiştirilmiş zincir ve çok ajanlı saldırıda kanıt boşlukları görünür olsun.
 
-**Sorumlu:** Detection + SOC Product. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Kimlik grafiÃ„Å¸i, gÃƒÂ¼venilir zaman ve arÃ…Å¸iv sahibi.
+**Sorumlu:** Detection + SOC Product. **Bağımlılık:** Kimlik grafiği, güvenilir zaman ve arşiv sahibi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** OBS-02, RSP-05. **Kaynak:** [packages/core/src/incidents/correlate.ts](packages/core/src/incidents/correlate.ts), [packages/core/src/incidents/anchor.ts](packages/core/src/incidents/anchor.ts), [packages/core/src/response-audit.ts](packages/core/src/response-audit.ts).
+**İlişkili özellikler:** OBS-02, RSP-05. **Kaynak:** [packages/core/src/incidents/correlate.ts](packages/core/src/incidents/correlate.ts), [packages/core/src/incidents/anchor.ts](packages/core/src/incidents/anchor.ts), [packages/core/src/response-audit.ts](packages/core/src/response-audit.ts).
 
-### T26 Ã¢â‚¬â€ Saklama, legal hold ve mÃƒÂ¼Ã…Å¸teri ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸Ã„Â± (P0)
+### T26 — Saklama, legal hold ve müşteri çıkışı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Offboarding her Storage nesnesinin yokluÃ„Å¸unu doÃ„Å¸rulamadan ACK ÃƒÂ¼retmiyor; legal hold/resume var, harici backup silme kanÃ„Â±tÃ„Â± aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Offboarding her Storage nesnesinin yokluğunu doğrulamadan ACK üretmiyor; legal hold/resume var, harici backup silme kanıtı açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** SayfalÃ„Â± export ve geÃƒÂ§ici dosyalar iÃƒÂ§in silme komutu var; zamanlayÃ„Â±cÃ„Â± Ã…Å¸ablonu saÃ„Å¸lanÃ„Â±yor.
+**Başlangıç durumu:** Sayfalı export ve geçici dosyalar için silme komutu var; zamanlayıcı şablonu sağlanıyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** ZamanlayÃ„Â±cÃ„Â± mÃƒÂ¼Ã…Å¸teri ortamÃ„Â±nda aktif deÃ„Å¸il; tÃƒÂ¼m veri sÃ„Â±nÃ„Â±flarÃ„Â± iÃƒÂ§in retention/deletion, legal hold ve doÃ„Å¸rulanmÃ„Â±Ã…Å¸ offboarding yok.
+**Başlangıç boşluğu / müşteri etkisi:** Zamanlayıcı müşteri ortamında aktif değil; tüm veri sınıfları için retention/deletion, legal hold ve doğrulanmış offboarding yok.
 
-**Tamamlanma hedefi:** Tablo/nesne/log/cache/yedek bazÃ„Â±nda yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼; legal hold istisnasÃ„Â±; kullanÃ„Â±cÃ„Â±/tenant kapanÃ„Â±Ã…Å¸Ã„Â± ve silme makbuzu kur.
+**Tamamlanma hedefi:** Tablo/nesne/log/cache/yedek bazında yaşam döngüsü; legal hold istisnası; kullanıcı/tenant kapanışı ve silme makbuzu kur.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** SÃƒÂ¼re dolan verinin API, Storage, cache ve replikalardan yokluÃ„Å¸u; hold verisinin korunmasÃ„Â±; retry ve yarÃ„Â±m silme sonrasÃ„Â± tutarlÃ„Â±lÃ„Â±k kanÃ„Â±tlansÃ„Â±n.
+**Kalan kapanış testi:** Süre dolan verinin API, Storage, cache ve replikalardan yokluğu; hold verisinin korunması; retry ve yarım silme sonrası tutarlılık kanıtlansın.
 
-**Sorumlu:** Backend + Privacy + Operations. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** OnaylÃ„Â± saklama/silme politikasÃ„Â±; yedek istisnalarÃ„Â±.
+**Sorumlu:** Backend + Privacy + Operations. **Bağımlılık:** Onaylı saklama/silme politikası; yedek istisnaları.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** OBS-03, OBS-06. **Kaynak:** [scripts/deployment-maintenance.mjs](scripts/deployment-maintenance.mjs), [deploy/maintenance/aidr-export-retention.timer](deploy/maintenance/aidr-export-retention.timer), [supabase/functions/audit-export/index.ts](supabase/functions/audit-export/index.ts).
+**İlişkili özellikler:** OBS-03, OBS-06. **Kaynak:** [scripts/deployment-maintenance.mjs](scripts/deployment-maintenance.mjs), [deploy/maintenance/aidr-export-retention.timer](deploy/maintenance/aidr-export-retention.timer), [supabase/functions/audit-export/index.ts](supabase/functions/audit-export/index.ts).
 
-### T27 Ã¢â‚¬â€ Offsite yedekleme ve RPO/RTO (P0)
+### T27 — Offsite yedekleme ve RPO/RTO (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Offsite commit zamanÃ„Â± authenticated manifest'e baÃ„Å¸lÃ„Â± ve S3 lookup hatasÃ„Â± fail-closed; izole restore aracÃ„Â± var. BaÃ„Å¸Ã„Â±msÃ„Â±z host/provider ve RPO/RTO aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Offsite commit zamanı authenticated manifest'e bağlı ve S3 lookup hatası fail-closed; izole restore aracı var. Bağımsız host/provider ve RPO/RTO açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Ã…Âifreli soÃ„Å¸uk yedek ve baÃ„Å¸Ã„Â±msÃ„Â±z volume geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ÃƒÂ¼nde 18 karÃ…Å¸Ã„Â±laÃ…Å¸tÃ„Â±rma geÃƒÂ§ti.
+**Başlangıç durumu:** Şifreli soğuk yedek ve bağımsız volume geri dönüşünde 18 karşılaştırma geçti.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Off-host kopya, otomatik zamanlama/retention, ayrÃ„Â± anahtar kurtarma ve gerÃƒÂ§ek felaket RPO/RTO kanÃ„Â±tÃ„Â± yok; bakÃ„Â±m duruÃ…Å¸u gerekiyor.
+**Başlangıç boşluğu / müşteri etkisi:** Off-host kopya, otomatik zamanlama/retention, ayrı anahtar kurtarma ve gerçek felaket RPO/RTO kanıtı yok; bakım duruşu gerekiyor.
 
-**Tamamlanma hedefi:** Yedek hedefi/anahtar custody, zamanlama, eriÃ…Å¸im ayrÃ„Â±lÃ„Â±Ã„Å¸Ã„Â±, baÃ…Å¸arÃ„Â±sÃ„Â±zlÃ„Â±k alarmÃ„Â± ve kayÃ„Â±p-host geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ iÃ…Å¸letimini kur.
+**Tamamlanma hedefi:** Yedek hedefi/anahtar custody, zamanlama, erişim ayrılığı, başarısızlık alarmı ve kayıp-host geri dönüş işletimini kur.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Yeni hostta yalnÃ„Â±z offsite yedek ve ayrÃ„Â± anahtarla kurtar; tablo/nesne iÃƒÂ§erikleri eÃ…Å¸leÃ…Å¸sin; gerÃƒÂ§ek kayÃ„Â±p veri sÃƒÂ¼resi ve toparlanma sÃƒÂ¼resi ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lsÃƒÂ¼n.
+**Kalan kapanış testi:** Yeni hostta yalnız offsite yedek ve ayrı anahtarla kurtar; tablo/nesne içerikleri eşleşsin; gerçek kayıp veri süresi ve toparlanma süresi ölçülsün.
 
-**Sorumlu:** SRE + Customer Operations. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Offsite storage, key custodian, kabul edilmiÃ…Å¸ RPO/RTO.
+**Sorumlu:** SRE + Customer Operations. **Bağımlılık:** Offsite storage, key custodian, kabul edilmiş RPO/RTO.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DEP-06. **Kaynak:** [scripts/deployment-backup.mjs](scripts/deployment-backup.mjs), [scripts/verify-deployment-recovery.mjs](scripts/verify-deployment-recovery.mjs).
+**İlişkili özellikler:** DEP-06. **Kaynak:** [scripts/deployment-backup.mjs](scripts/deployment-backup.mjs), [scripts/verify-deployment-recovery.mjs](scripts/verify-deployment-recovery.mjs).
 
-### T28 Ã¢â‚¬â€ GerÃƒÂ§ek cloud ve self-hosted ÃƒÂ¼retim kurulumu (P0)
+### T28 — Gerçek cloud ve self-hosted üretim kurulumu (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 33 migrationlÃ„Â± self-hosted prova var; prepare inputlarÃ„Â± secret oluÃ…Å¸turmadan doÃ„Å¸ruluyor ve cloud public proxy/provider upstream loop'unu reddediyor. CanlÃ„Â± provider/TLS aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 33 migrationlı self-hosted prova var; prepare inputları secret oluşturmadan doğruluyor ve cloud public proxy/provider upstream loop'unu reddediyor. Canlı provider/TLS açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Ã„Â°ki model iÃƒÂ§in kurulum hazÃ„Â±rlama ve yerel Docker prova var.
+**Başlangıç durumu:** İki model için kurulum hazırlama ve yerel Docker prova var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Cloud hesabÃ„Â±/projesi, bÃƒÂ¶lge, DNS/TLS, reverse proxy, SMTP/IdP, secret installation ve gerÃƒÂ§ek internet eriÃ…Å¸imi bilinmiyor; cloud hazÃ„Â±rlama ÃƒÂ§alÃ„Â±Ã…Å¸an cloud demek deÃ„Å¸il.
+**Başlangıç boşluğu / müşteri etkisi:** Cloud hesabı/projesi, bölge, DNS/TLS, reverse proxy, SMTP/IdP, secret installation ve gerçek internet erişimi bilinmiyor; cloud hazırlama çalışan cloud demek değil.
 
-**Tamamlanma hedefi:** Her model iÃƒÂ§in hedef ortamÃ„Â± kur; TLS yenileme ve HTTP/WebSocket baÃ…Å¸lÃ„Â±klarÃ„Â±nÃ„Â± doÃ„Å¸rula; DB/Studio'yu ÃƒÂ¶zel aÃ„Å¸da tut; public endpoint ve onboarding'i kabul et.
+**Tamamlanma hedefi:** Her model için hedef ortamı kur; TLS yenileme ve HTTP/WebSocket başlıklarını doğrula; DB/Studio'yu özel ağda tut; public endpoint ve onboarding'i kabul et.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Temiz makinede mÃƒÂ¼Ã…Å¸teri kimliÃ„Å¸iyle giriÃ…Å¸Ã¢â€ â€™cihazÃ¢â€ â€™denyÃ¢â€ â€™olayÃ¢â€ â€™exportÃ¢â€ â€™rollback akÃ„Â±Ã…Å¸Ã„Â±; dÃ„Â±Ã…Å¸ port/izin kontrolleri ve sertifika yenileme tatbikatÃ„Â±.
+**Kalan kapanış testi:** Temiz makinede müşteri kimliğiyle giriş→cihaz→deny→olay→export→rollback akışı; dış port/izin kontrolleri ve sertifika yenileme tatbikatı.
 
-**Sorumlu:** SRE + Customer IT. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Alan adÃ„Â±, cloud hesabÃ„Â±/bÃƒÂ¶lge ve aÃ„Å¸ bilgisi.
+**Sorumlu:** SRE + Customer IT. **Bağımlılık:** Alan adı, cloud hesabı/bölge ve ağ bilgisi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DEP-01, DEP-02. **Kaynak:** [scripts/deployment-prepare.mjs](scripts/deployment-prepare.mjs), [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md).
+**İlişkili özellikler:** DEP-01, DEP-02. **Kaynak:** [scripts/deployment-prepare.mjs](scripts/deployment-prepare.mjs), [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md).
 
-### T29 Ã¢â‚¬â€ KimliÃ„Å¸i doÃ„Å¸rulanan daÃ„Å¸Ã„Â±tÃ„Â±m ve release provenance (P0)
+### T29 — Kimliği doğrulanan dağıtım ve release provenance (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Release verifier receipt hedefini mutation ÃƒÂ¶ncesi doÃ„Å¸ruluyor ve bundle/state/policy ÃƒÂ§akÃ„Â±Ã…Å¸masÃ„Â±nÃ„Â± reddediyor; resmi key custody/private registry aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Release verifier receipt hedefini mutation öncesi doğruluyor ve bundle/state/policy çakışmasını reddediyor; resmi key custody/private registry açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** TaÃ…Å¸Ã„Â±nabilir aday, SBOM, paket tÃƒÂ¼ketici ve SHA denetimleri var; yayÃ„Â±ncÃ„Â± imzasÃ„Â± yok.
+**Başlangıç durumu:** Taşınabilir aday, SBOM, paket tüketici ve SHA denetimleri var; yayıncı imzası yok.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Checksum yayÃ„Â±ncÃ„Â± kimliÃ„Å¸i deÃ„Å¸ildir. Private registry kurulumu, imza doÃ„Å¸rulama, key rotasyonu ve air-gap imaj teslimi kanÃ„Â±tÃ„Â± yok.
+**Başlangıç boşluğu / müşteri etkisi:** Checksum yayıncı kimliği değildir. Private registry kurulumu, imza doğrulama, key rotasyonu ve air-gap imaj teslimi kanıtı yok.
 
-**Tamamlanma hedefi:** AynÃ„Â± candidate'Ã„Â± imzala; auth kontrollÃƒÂ¼ registry/download, provenance ve sabit imaj digestleriyle teslim et; air-gap satÃ„Â±lÃ„Â±yorsa tÃƒÂ¼m baÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k/imajlarÃ„Â± dahil et.
+**Tamamlanma hedefi:** Aynı candidate'ı imzala; auth kontrollü registry/download, provenance ve sabit imaj digestleriyle teslim et; air-gap satılıyorsa tüm bağımlılık/imajları dahil et.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** YanlÃ„Â±Ã…Å¸ signer/deÃ„Å¸iÃ…Å¸miÃ…Å¸ arÃ…Å¸iv/eski sÃƒÂ¼rÃƒÂ¼m reddedilsin; mÃƒÂ¼Ã…Å¸teri temiz makinede internetsiz veya yetkili registry ile kurabilsin; imza/anahtar iptali sÃ„Â±nansÃ„Â±n.
+**Kalan kapanış testi:** Yanlış signer/değişmiş arşiv/eski sürüm reddedilsin; müşteri temiz makinede internetsiz veya yetkili registry ile kurabilsin; imza/anahtar iptali sınansın.
 
-**Sorumlu:** Release Engineering + Security. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Signer ve registry yetkisi; lisans onayÃ„Â±.
+**Sorumlu:** Release Engineering + Security. **Bağımlılık:** Signer ve registry yetkisi; lisans onayı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DEP-05, DEP-08, OBS-05. **Kaynak:** [scripts/customer-kit.mjs](scripts/customer-kit.mjs), [.github/scripts/build-release-bundle.mjs](.github/scripts/build-release-bundle.mjs), [scripts/release-artifact-manifests.mjs](scripts/release-artifact-manifests.mjs).
+**İlişkili özellikler:** DEP-05, DEP-08, OBS-05. **Kaynak:** [scripts/customer-kit.mjs](scripts/customer-kit.mjs), [.github/scripts/build-release-bundle.mjs](.github/scripts/build-release-bundle.mjs), [scripts/release-artifact-manifests.mjs](scripts/release-artifact-manifests.mjs).
 
-### T30 Ã¢â‚¬â€ HA, failover, kapasite ve SLA ÃƒÂ¶lÃƒÂ§ÃƒÂ¼mÃƒÂ¼ (P0)
+### T30 — HA, failover, kapasite ve SLA ölçümü (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Load harness her fault senaryosu iÃƒÂ§in son hatadan sonra ardÃ„Â±Ã…Å¸Ã„Â±k recovery ve tam gÃƒÂ¶zlem istiyor; gerÃƒÂ§ek HA, kapasite ve aylÃ„Â±k SLA aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Load harness her fault senaryosu için son hatadan sonra ardışık recovery ve tam gözlem istiyor; gerçek HA, kapasite ve aylık SLA açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Tek host Docker temel kurulumu var; 501 satÃ„Â±r sayfalama testi yÃƒÂ¼k testi deÃ„Å¸ildir.
+**Başlangıç durumu:** Tek host Docker temel kurulumu var; 501 satır sayfalama testi yük testi değildir.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** HA topology, DB failover, tenant noisy-neighbor ve aylÃ„Â±k availability SLI kanÃ„Â±tÃ„Â± yok; 99.9 ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lmÃƒÂ¼Ã…Å¸ sonuÃƒÂ§ deÃ„Å¸il.
+**Başlangıç boşluğu / müşteri etkisi:** HA topology, DB failover, tenant noisy-neighbor ve aylık availability SLI kanıtı yok; 99.9 ölçülmüş sonuç değil.
 
-**Tamamlanma hedefi:** Desteklenen kapasite ve region topology tanÃ„Â±mla; load/soak/failover, hata bÃƒÂ¼tÃƒÂ§esi ve ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m paydasÃ„Â± kur.
+**Tamamlanma hedefi:** Desteklenen kapasite ve region topology tanımla; load/soak/failover, hata bütçesi ve ölçüm paydası kur.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** GerÃƒÂ§ekÃƒÂ§i agent/event yÃƒÂ¼kÃƒÂ¼nde p50/p95/p99, hata/kayÃ„Â±p oranÃ„Â±, DB/servis/node arÃ„Â±zasÃ„Â± ve bakÃ„Â±m etkisi raporlansÃ„Â±n; kabul edilmiÃ…Å¸ gÃƒÂ¶zlem penceresi tamamlanmÃ„Â±Ã…Å¸ olsun.
+**Kalan kapanış testi:** Gerçekçi agent/event yükünde p50/p95/p99, hata/kayıp oranı, DB/servis/node arızası ve bakım etkisi raporlansın; kabul edilmiş gözlem penceresi tamamlanmış olsun.
 
-**Sorumlu:** SRE + Performance Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Host boyutlarÃ„Â±, filo/olay profili, SLA anlaÃ…Å¸masÃ„Â±.
+**Sorumlu:** SRE + Performance Engineering. **Bağımlılık:** Host boyutları, filo/olay profili, SLA anlaşması.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DEP-07. **Kaynak:** [deploy/dashboard/server.mjs](deploy/dashboard/server.mjs), [deploy/README.md](deploy/README.md).
+**İlişkili özellikler:** DEP-07. **Kaynak:** [deploy/dashboard/server.mjs](deploy/dashboard/server.mjs), [deploy/README.md](deploy/README.md).
 
-### T31 Ã¢â‚¬â€ Migration, upgrade ve geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ tatbikatÃ„Â± (P0)
+### T31 — Migration, upgrade ve geri dönüş tatbikatı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Kesilen rename resume yalnÃ„Â±z kaynak/staged iÃƒÂ§erik preflight hash'leriyle eÃ…Å¸leÃ…Å¸irse devam ediyor; gerÃƒÂ§ek trafik cutover/rollback kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Kesilen rename resume yalnız kaynak/staged içerik preflight hash'leriyle eşleşirse devam ediyor; gerçek trafik cutover/rollback kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** 18 migration checksum/transaction ile uygulanÃ„Â±yor; temiz kurulum smoke var.
+**Başlangıç durumu:** 18 migration checksum/transaction ile uygulanıyor; temiz kurulum smoke var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Ãƒâ€“nceki mÃƒÂ¼Ã…Å¸teri sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼nden upgrade, sÃƒÂ¼rÃƒÂ¼m karmaÃ…Å¸asÃ„Â± ve gerÃƒÂ§ek ÃƒÂ¼retim rollback tatbikatÃ„Â± aÃƒÂ§Ã„Â±k.
+**Başlangıç boşluğu / müşteri etkisi:** Önceki müşteri sürümünden upgrade, sürüm karmaşası ve gerçek üretim rollback tatbikatı açık.
 
-**Tamamlanma hedefi:** Desteklenen upgrade yollarÃ„Â±, ÃƒÂ¶n kontrol/yedek, kesinti planÃ„Â±, kompatibilite ve baÃ…Å¸arÃ„Â±sÃ„Â±z migration geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ prosedÃƒÂ¼rÃƒÂ¼ hazÃ„Â±rla.
+**Tamamlanma hedefi:** Desteklenen upgrade yolları, ön kontrol/yedek, kesinti planı, kompatibilite ve başarısız migration geri dönüş prosedürü hazırla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Eski veriyle upgrade, kesilen migration, checksum deÃ„Å¸iÃ…Å¸ikliÃ„Å¸i, uygulama/DB sÃƒÂ¼rÃƒÂ¼m uyuÃ…Å¸mazlÃ„Â±Ã„Å¸Ã„Â± ve kurtarma testi; veri kaybÃ„Â± ve sessiz schema drift olmasÃ„Â±n.
+**Kalan kapanış testi:** Eski veriyle upgrade, kesilen migration, checksum değişikliği, uygulama/DB sürüm uyuşmazlığı ve kurtarma testi; veri kaybı ve sessiz schema drift olmasın.
 
-**Sorumlu:** Backend + Release + SRE. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Ãƒâ€“nceki sÃƒÂ¼rÃƒÂ¼m snapshotlarÃ„Â± ve bakÃ„Â±m penceresi.
+**Sorumlu:** Backend + Release + SRE. **Bağımlılık:** Önceki sürüm snapshotları ve bakım penceresi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DEP-03, DEP-04. **Kaynak:** [scripts/deployment-migrate.mjs](scripts/deployment-migrate.mjs), [scripts/deployment-doctor.mjs](scripts/deployment-doctor.mjs).
+**İlişkili özellikler:** DEP-03, DEP-04. **Kaynak:** [scripts/deployment-migrate.mjs](scripts/deployment-migrate.mjs), [scripts/deployment-doctor.mjs](scripts/deployment-doctor.mjs).
 
-### T32 Ã¢â‚¬â€ Ã„Â°zleme, alarm ve iÃ…Å¸letim sahipliÃ„Å¸i (P0)
+### T32 — İzleme, alarm ve işletim sahipliği (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Per-instance scrape/readiness ve empty-discovery alertleri eklendi; kural YAML/testleri var. CanlÃ„Â± paging, isimli nÃƒÂ¶bet ve SLA aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Per-instance scrape/readiness ve empty-discovery alertleri eklendi; kural YAML/testleri var. Canlı paging, isimli nöbet ve SLA açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Runbook ve container saÃ„Å¸lÃ„Â±k kontrolleri var.
+**Başlangıç durumu:** Runbook ve container sağlık kontrolleri var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Production dashboard, nÃƒÂ¶betÃƒÂ§i, gerÃƒÂ§ek paging, sertifika/disk/kuyruk/feed/backup alarmÃ„Â± ve incident tatbikatÃ„Â± tamamlanmadÃ„Â±.
+**Başlangıç boşluğu / müşteri etkisi:** Production dashboard, nöbetçi, gerçek paging, sertifika/disk/kuyruk/feed/backup alarmı ve incident tatbikatı tamamlanmadı.
 
-**Tamamlanma hedefi:** SLI dashboard ve alarm eÃ…Å¸ikleri, sorumlu/nÃƒÂ¶bet takvimi, alarm sessizliÃ„Å¸i kontrolÃƒÂ¼, escalation ve olay sonrasÃ„Â± inceleme akÃ„Â±Ã…Å¸Ã„Â± kur.
+**Tamamlanma hedefi:** SLI dashboard ve alarm eşikleri, sorumlu/nöbet takvimi, alarm sessizliği kontrolü, escalation ve olay sonrası inceleme akışı kur.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Servis, DB, storage, signer, kuyruk ve yedek hatasÃ„Â± enjekte et; doÃ„Å¸ru kiÃ…Å¸iye zamanlÃ„Â± alarm ve ÃƒÂ§ÃƒÂ¶zÃƒÂ¼ldÃƒÂ¼ bildirimi gelsin; kayÃ„Â±tlÃ„Â± tatbikat tut.
+**Kalan kapanış testi:** Servis, DB, storage, signer, kuyruk ve yedek hatası enjekte et; doğru kişiye zamanlı alarm ve çözüldü bildirimi gelsin; kayıtlı tatbikat tut.
 
-**Sorumlu:** SRE + Support. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** GerÃƒÂ§ek izleme/paging kanallarÃ„Â± ve isimli sorumlular.
+**Sorumlu:** SRE + Support. **Bağımlılık:** Gerçek izleme/paging kanalları ve isimli sorumlular.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DEP-01, DEP-02, OBS-01. **Kaynak:** [docs/runbooks/alerting.md](docs/runbooks/alerting.md), [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md).
+**İlişkili özellikler:** DEP-01, DEP-02, OBS-01. **Kaynak:** [docs/runbooks/alerting.md](docs/runbooks/alerting.md), [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md).
 
-### T33 Ã¢â‚¬â€ SatÃ„Â±lan fatura ve entitlement yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼ (P0)
+### T33 — Satılan fatura ve entitlement yaşam döngüsü (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** billing-portal Edge Function provider-of-record durum makinesi, sunucu tarafi tenant/uyelik/rol/MFA cozumlemesi, istemci customer/tenant/subscription id reddi, TTL/idempotency, cancel/refund ve seat reconciliation uyguluyor; finance fixture ile test edildi, canli provider ve muhasebe onayi acik. Eski: Pending Finance sipariÃ…Å¸ sonucu tenant/request/quantity/quote alanlarÃ„Â±na fail-closed baÃ„Å¸lÃ„Â±; provider-of-record, ÃƒÂ¶deme makbuzu ve paid-to-entitlement yok.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** billing-portal Edge Function provider-of-record durum makinesi, sunucu tarafi tenant/uyelik/rol/MFA cozumlemesi, istemci customer/tenant/subscription id reddi, TTL/idempotency, cancel/refund ve seat reconciliation uyguluyor; finance fixture ile test edildi, canli provider ve muhasebe onayi acik. Eski: Pending Finance sipariş sonucu tenant/request/quantity/quote alanlarına fail-closed bağlı; provider-of-record, ödeme makbuzu ve paid-to-entitlement yok.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** VarsayÃ„Â±lan kurum faturasÃ„Â±; opsiyonel Stripe checkout/webhook kaynak kodu mevcut.
+**Başlangıç durumu:** Varsayılan kurum faturası; opsiyonel Stripe checkout/webhook kaynak kodu mevcut.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** OnaylÃ„Â± SKU/fiyat/teklif, tahsilat-mutabakat, quota deÃ„Å¸iÃ…Å¸imi, iptal ve ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸ provasÃ„Â± yok. Self-service portal uygulanmamÃ„Â±Ã…Å¸; yalnÃ„Â±z satÃ„Â±lan SKU'da gerekiyorsa blocker.
+**Başlangıç boşluğu / müşteri etkisi:** Onaylı SKU/fiyat/teklif, tahsilat-mutabakat, quota değişimi, iptal ve çıkış provası yok. Self-service portal uygulanmamış; yalnız satılan SKU'da gerekiyorsa blocker.
 
-**Tamamlanma hedefi:** Provider-of-record ve kurumsal sipariÃ…Å¸Ã¢â€ â€™quota iÃ…Å¸letimini tamamla; self-service satÃ„Â±lacaksa gerÃƒÂ§ek portal, invoice, cancel/refund/reconcile akÃ„Â±Ã…Å¸larÃ„Â±nÃ„Â± ekle.
+**Tamamlanma hedefi:** Provider-of-record ve kurumsal sipariş→quota işletimini tamamla; self-service satılacaksa gerçek portal, invoice, cancel/refund/reconcile akışlarını ekle.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** SipariÃ…Å¸/ek koltuk/azaltma/yenileme/ÃƒÂ¶deme hatasÃ„Â±/iptal ve mÃƒÂ¼kerrer webhook aynÃ„Â± entitlement sonucunu versin; finans mutabakatÃ„Â± ve mÃƒÂ¼Ã…Å¸teri makbuzu eÃ…Å¸leÃ…Å¸sin.
+**Kalan kapanış testi:** Sipariş/ek koltuk/azaltma/yenileme/ödeme hatası/iptal ve mükerrer webhook aynı entitlement sonucunu versin; finans mutabakatı ve müşteri makbuzu eşleşsin.
 
-**Sorumlu:** Finance + Billing Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Ticari karar, canlÃ„Â± provider anahtarlarÃ„Â± ve muhasebe onayÃ„Â±.
+**Sorumlu:** Finance + Billing Engineering. **Bağımlılık:** Ticari karar, canlı provider anahtarları ve muhasebe onayı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** BIL-01, BIL-02, BIL-03. **Kaynak:** [packages/dashboard/src/ui/pages/BillingPage.tsx](packages/dashboard/src/ui/pages/BillingPage.tsx), [supabase/functions/billing-checkout/index.ts](supabase/functions/billing-checkout/index.ts), [supabase/functions/stripe-webhook/index.ts](supabase/functions/stripe-webhook/index.ts).
+**İlişkili özellikler:** BIL-01, BIL-02, BIL-03. **Kaynak:** [packages/dashboard/src/ui/pages/BillingPage.tsx](packages/dashboard/src/ui/pages/BillingPage.tsx), [supabase/functions/billing-checkout/index.ts](supabase/functions/billing-checkout/index.ts), [supabase/functions/stripe-webhook/index.ts](supabase/functions/stripe-webhook/index.ts).
 
-### T34 Ã¢â‚¬â€ Readiness kayÃ„Â±tlarÃ„Â±nÃ„Â±n ve ÃƒÂ¼rÃƒÂ¼n iddialarÃ„Â±nÃ„Â±n tutarlÃ„Â±lÃ„Â±Ã„Å¸Ã„Â± (P1)
+### T34 — Readiness kayıtlarının ve ürün iddialarının tutarlılığı (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 71 ÃƒÂ¶zellik, 59 iÃ…Å¸ paketi, 10 release rootu ve claim candidate/expiry tutarlÃ„Â±lÃ„Â±Ã„Å¸Ã„Â± otomatik kontrol ediliyor; 13 dÃ„Â±Ã…Å¸ onay kapÃ„Â±sÃ„Â± aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 71 özellik, 59 iş paketi, 10 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Envanter gÃƒÂ¼ncel; eski denetim alanlarÃ„Â± tarihsel metinler iÃƒÂ§eriyor.
+**Başlangıç durumu:** Envanter güncel; eski denetim alanları tarihsel metinler içeriyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Ticari registry AÃ„Å¸ustos tarihli ve artifactRoots/connector listesi mevcut dokuz paketi tam yansÃ„Â±tmÃ„Â±yor; eski checkout/default endpoint ifadeleri yeni implementasyonu anlatmÃ„Â±yor.
+**Başlangıç boşluğu / müşteri etkisi:** Ticari registry Ağustos tarihli ve artifactRoots/connector listesi mevcut dokuz paketi tam yansıtmıyor; eski checkout/default endpoint ifadeleri yeni implementasyonu anlatmıyor.
 
-**Tamamlanma hedefi:** Tarihsel bulguyu korurken currentState alanlarÃ„Â±nÃ„Â± ayÃ„Â±r; beklenen paket/connector kapsamÃ„Â±nÃ„Â± release manifestinden tÃƒÂ¼ret; web, README, demo ve teklif metnini tek kanÃ„Â±t sÃƒÂ¶zlÃƒÂ¼Ã„Å¸ÃƒÂ¼ne baÃ„Å¸la.
+**Tamamlanma hedefi:** Tarihsel bulguyu korurken currentState alanlarını ayır; beklenen paket/connector kapsamını release manifestinden türet; web, README, demo ve teklif metnini tek kanıt sözlüğüne bağla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** AynÃ„Â± sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼n paket/ÃƒÂ¶zellik/claim sayÃ„Â±larÃ„Â± tutarlÃ„Â±; eksik paket zorunlu gate'i dÃƒÂ¼Ã…Å¸ÃƒÂ¼rsÃƒÂ¼n; sÃƒÂ¼resi dolmuÃ…Å¸/onaysÃ„Â±z iddia mÃƒÂ¼Ã…Å¸teri yÃƒÂ¼zÃƒÂ¼ne ÃƒÂ§Ã„Â±kmasÃ„Â±n.
+**Kalan kapanış testi:** Aynı sürümün paket/özellik/claim sayıları tutarlı; eksik paket zorunlu gate'i düşürsün; süresi dolmuş/onaysız iddia müşteri yüzüne çıkmasın.
 
-**Sorumlu:** Product + Release + Marketing. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** GÃƒÂ¼ncel release candidate ve ticari onay sahipleri.
+**Sorumlu:** Product + Release + Marketing. **Bağımlılık:** Güncel release candidate ve ticari onay sahipleri.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** EVAL-02, EVAL-03, DEP-05. **Kaynak:** [docs/production-readiness/commercial-go-evidence-registry.json](docs/production-readiness/commercial-go-evidence-registry.json), [READINESS_BACKLOG.json](READINESS_BACKLOG.json), [README.md](README.md).
+**İlişkili özellikler:** EVAL-02, EVAL-03, DEP-05. **Kaynak:** [docs/production-readiness/commercial-go-evidence-registry.json](docs/production-readiness/commercial-go-evidence-registry.json), [READINESS_BACKLOG.json](READINESS_BACKLOG.json), [README.md](README.md).
 
-### T35 Ã¢â‚¬â€ Test kapÃ„Â±larÃ„Â±nÃ„Â±n kapsamÃ„Â± ve baÃ…Å¸arÃ„Â±sÃ„Â±zlÃ„Â±Ã„Å¸Ã„Â±n saklanmamasÃ„Â± (P0)
+### T35 — Test kapılarının kapsamı ve başarısızlığın saklanmaması (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** v7 birleÃ…Å¸ik test 237 dosya/3326 geÃƒÂ§iÃ…Å¸/2 aÃƒÂ§Ã„Â±klanmÃ„Â±Ã…Å¸ skip, coverage eÃ…Å¸ikleri ve 10 paket release consumer geÃƒÂ§ti; native kÃƒÂ¶r corpus aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** v7 birleşik test 237 dosya/3326 geçiş/2 açıklanmış skip, coverage eşikleri ve 10 paket release consumer geçti; native kör corpus açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Binlerce yerel test ve derlenmiÃ…Å¸ kanca kontrolleri var; 1 canlÃ„Â± saÃ„Å¸layÃ„Â±cÃ„Â± senaryosu atlanÃ„Â±yor. Son koÃ…Å¸u hatasÃ„Â± ve dÃƒÂ¼zeltme kaydÃ„Â± tutuluyor.
+**Başlangıç durumu:** Binlerce yerel test ve derlenmiş kanca kontrolleri var; 1 canlı sağlayıcı senaryosu atlanıyor. Son koşu hatası ve düzeltme kaydı tutuluyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Test sayÃ„Â±sÃ„Â± ÃƒÂ¶zellik tamamlanmasÃ„Â± deÃ„Å¸ildir; bazÃ„Â± gÃƒÂ¶zlem testleri bilinen boÃ…Å¸luÃ„Å¸u allow olarak kabul ediyor. Native/soak/baÃ„Å¸Ã„Â±msÃ„Â±z corpus ve coverage kapanÃ„Â±Ã…Å¸Ã„Â± eksik; 132 lint uyarÃ„Â±sÃ„Â± var.
+**Başlangıç boşluğu / müşteri etkisi:** Test sayısı özellik tamamlanması değildir; bazı gözlem testleri bilinen boşluğu allow olarak kabul ediyor. Native/soak/bağımsız corpus ve coverage kapanışı eksik; 132 lint uyarısı var.
 
-**Tamamlanma hedefi:** Ãƒâ€“zellikÃ¢â€ â€™tÃƒÂ¼keticiÃ¢â€ â€™pozitif/negatifÃ¢â€ â€™artefact baÃ„Å¸Ã„Â±nÃ„Â± zorunlu kÃ„Â±l; bilinen aÃƒÂ§Ã„Â±klarÃ„Â± test hedefi yap; mandatory skip ve stale evidence gate'i dÃƒÂ¼Ã…Å¸ÃƒÂ¼rsÃƒÂ¼n; uyarÃ„Â±/dead-code borcunu sÃ„Â±nÃ„Â±flandÃ„Â±r.
+**Tamamlanma hedefi:** Özellik→tüketici→pozitif/negatif→artefact bağını zorunlu kıl; bilinen açıkları test hedefi yap; mandatory skip ve stale evidence gate'i düşürsün; uyarı/dead-code borcunu sınıflandır.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Her satÃ„Â±lan ÃƒÂ¶zellik iÃƒÂ§in gerÃƒÂ§ek tÃƒÂ¼keticide deny/allow/outage kanÃ„Â±tÃ„Â±; aynÃ„Â± candidate checksum; 0 aÃƒÂ§Ã„Â±klanmamÃ„Â±Ã…Å¸ zorunlu skip; deÃ„Å¸iÃ…Å¸meyen timeoutlarla tekrar koÃ…Å¸u ve aÃƒÂ§Ã„Â±k borÃƒÂ§ kaydÃ„Â±.
+**Kalan kapanış testi:** Her satılan özellik için gerçek tüketicide deny/allow/outage kanıtı; aynı candidate checksum; 0 açıklanmamış zorunlu skip; değişmeyen timeoutlarla tekrar koşu ve açık borç kaydı.
 
-**Sorumlu:** QA + Security Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Native ortam, baÃ„Å¸Ã„Â±msÃ„Â±z corpus ve CI kapasitesi.
+**Sorumlu:** QA + Security Engineering. **Bağımlılık:** Native ortam, bağımsız corpus ve CI kapasitesi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** EVAL-01, CON-05. **Kaynak:** [vitest.config.ts](vitest.config.ts), [packages/opencode/src/__tests__/aidr-contract.test.ts](packages/opencode/src/__tests__/aidr-contract.test.ts), [scripts/verify-enforcement.mjs](scripts/verify-enforcement.mjs).
+**İlişkili özellikler:** EVAL-01, CON-05. **Kaynak:** [vitest.config.ts](vitest.config.ts), [packages/opencode/src/__tests__/aidr-contract.test.ts](packages/opencode/src/__tests__/aidr-contract.test.ts), [scripts/verify-enforcement.mjs](scripts/verify-enforcement.mjs).
 
-### T36 Ã¢â‚¬â€ OperatÃƒÂ¶r UI ve ilk mÃƒÂ¼Ã…Å¸teri kullanÃ„Â±labilirliÃ„Å¸i (P1)
+### T36 — Operatör UI ve ilk müşteri kullanılabilirliği (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Onboarding stale token/tenant/error durumlarÃ„Â± fail-closed ve yapÃ„Â±landÃ„Â±rÃ„Â±lmÃ„Â±Ã…Å¸ Azure/Entra login gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r; gerÃƒÂ§ek browser/IdP/eriÃ…Å¸ilebilirlik kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Onboarding stale token/tenant/error durumları fail-closed ve yapılandırılmış Azure/Entra login görünür; gerçek browser/IdP/erişilebilirlik kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** GiriÃ…Å¸, ekip seÃƒÂ§imi, kayÃ„Â±t, politika ve export akÃ„Â±Ã…Å¸larÃ„Â± yerel testli.
+**Başlangıç durumu:** Giriş, ekip seçimi, kayıt, politika ve export akışları yerel testli.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** TÃƒÂ¼m desteklenen tarayÃ„Â±cÃ„Â±lar, klavye/eriÃ…Å¸ilebilirlik, aÃ„Å¸ hatalarÃ„Â±, ÃƒÂ§ok ekipli eÃ…Å¸ zamanlÃ„Â± kullanÃ„Â±m ve gerÃƒÂ§ek mÃƒÂ¼Ã…Å¸teri eÃ„Å¸itimi tamam deÃ„Å¸il.
+**Başlangıç boşluğu / müşteri etkisi:** Tüm desteklenen tarayıcılar, klavye/erişilebilirlik, ağ hataları, çok ekipli eş zamanlı kullanım ve gerçek müşteri eğitimi tamam değil.
 
-**Tamamlanma hedefi:** Ekran bazlÃ„Â± loading/empty/error/permission sÃƒÂ¶zleÃ…Å¸mesi, eriÃ…Å¸ilebilirlik ve tarayÃ„Â±cÃ„Â± matrisi; ilk mÃƒÂ¼Ã…Å¸teri kÃ„Â±lavuzunu gerÃƒÂ§ek operatÃƒÂ¶rle uygula.
+**Tamamlanma hedefi:** Ekran bazlı loading/empty/error/permission sözleşmesi, erişilebilirlik ve tarayıcı matrisi; ilk müşteri kılavuzunu gerçek operatörle uygula.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** YanlÃ„Â±Ã…Å¸ ekipte sÃ„Â±r/politika gÃƒÂ¶rÃƒÂ¼nmesin; timeout/409/401 sonrasÃ„Â± yanlÃ„Â±Ã…Å¸ baÃ…Å¸arÃ„Â± olmasÃ„Â±n; klavye ile kritik iÃ…Å¸ler tamamlansÃ„Â±n; bÃƒÂ¼yÃƒÂ¼k liste ve uzun deÃ„Å¸erlerde UI bozulmasÃ„Â±n.
+**Kalan kapanış testi:** Yanlış ekipte sır/politika görünmesin; timeout/409/401 sonrası yanlış başarı olmasın; klavye ile kritik işler tamamlansın; büyük liste ve uzun değerlerde UI bozulmasın.
 
-**Sorumlu:** Dashboard + Design + Customer Success. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Desteklenen browser ve mÃƒÂ¼Ã…Å¸teri kullanÃ„Â±cÃ„Â±larÃ„Â±.
+**Sorumlu:** Dashboard + Design + Customer Success. **Bağımlılık:** Desteklenen browser ve müşteri kullanıcıları.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** CLI-01, TEN-07, TEN-03, POL-02, OBS-03. **Kaynak:** [packages/dashboard/src/main.tsx](packages/dashboard/src/main.tsx), [packages/dashboard/src/ui/pages/OnboardingPage.tsx](packages/dashboard/src/ui/pages/OnboardingPage.tsx), [packages/dashboard/src/enterprise/audit-view.tsx](packages/dashboard/src/enterprise/audit-view.tsx).
+**İlişkili özellikler:** CLI-01, TEN-07, TEN-03, POL-02, OBS-03. **Kaynak:** [packages/dashboard/src/main.tsx](packages/dashboard/src/main.tsx), [packages/dashboard/src/ui/pages/OnboardingPage.tsx](packages/dashboard/src/ui/pages/OnboardingPage.tsx), [packages/dashboard/src/enterprise/audit-view.tsx](packages/dashboard/src/enterprise/audit-view.tsx).
 
-### T37 Ã¢â‚¬â€ GerÃƒÂ§ek veri akÃ„Â±Ã…Å¸Ã„Â±, redaksiyon ve gizlilik kanÃ„Â±tÃ„Â± (P0)
+### T37 — Gerçek veri akışı, redaksiyon ve gizlilik kanıtı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Privacy verifier canary boyunca source hash kararlÃ„Â±lÃ„Â±Ã„Å¸Ã„Â± ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolÃƒÂ¼ geÃƒÂ§ti, hukuk/saha aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti, hukuk/saha açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Redaksiyon ve tenant ayrÃ„Â±mÃ„Â± bileÃ…Å¸enleri var.
+**Başlangıç durumu:** Redaksiyon ve tenant ayrımı bileşenleri var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** TÃƒÂ¼m outbound alan/domain listesi, browser tracing, managed olaylar, AIG payloadlarÃ„Â±, region, subprocessors ve silme kanÃ„Â±tÃ„Â± mÃƒÂ¼Ã…Å¸teri metinleriyle onaylanmadÃ„Â±.
+**Başlangıç boşluğu / müşteri etkisi:** Tüm outbound alan/domain listesi, browser tracing, managed olaylar, AIG payloadları, region, subprocessors ve silme kanıtı müşteri metinleriyle onaylanmadı.
 
-**Tamamlanma hedefi:** Alan bazlÃ„Â± data-flow ve egress envanteri ÃƒÂ§Ã„Â±kar; ham prompt/komut/secret canary'leriyle paket/log/export/support bundle sÃƒÂ¶zleÃ…Å¸mesi kur; metinleri gerÃƒÂ§ek iÃ…Å¸leyiÃ…Å¸e eÃ…Å¸le.
+**Tamamlanma hedefi:** Alan bazlı data-flow ve egress envanteri çıkar; ham prompt/komut/secret canary'leriyle paket/log/export/support bundle sözleşmesi kur; metinleri gerçek işleyişe eşle.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Canary sÃ„Â±rlar izinsiz kanalda bulunmasÃ„Â±n; opt-out ve retention davranÃ„Â±Ã…Å¸Ã„Â± ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lsÃƒÂ¼n; bÃƒÂ¼tÃƒÂ¼n veri sÃ„Â±nÃ„Â±flarÃ„Â± iÃƒÂ§in bÃƒÂ¶lge/eriÃ…Å¸im/silme sahibi belli olsun.
+**Kalan kapanış testi:** Canary sırlar izinsiz kanalda bulunmasın; opt-out ve retention davranışı ölçülsün; bütün veri sınıfları için bölge/erişim/silme sahibi belli olsun.
 
-**Sorumlu:** Privacy + Security + Engineering. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** DPA ve mÃƒÂ¼Ã…Å¸teri veri sÃ„Â±nÃ„Â±flandÃ„Â±rmasÃ„Â±; hukuk incelemesi.
+**Sorumlu:** Privacy + Security + Engineering. **Bağımlılık:** DPA ve müşteri veri sınıflandırması; hukuk incelemesi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** OBS-01, OBS-03, OBS-06, TEN-01. **Kaynak:** [docs/privacy.md](docs/privacy.md), [packages/core/src/tracing.ts](packages/core/src/tracing.ts), [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts).
+**İlişkili özellikler:** OBS-01, OBS-03, OBS-06, TEN-01. **Kaynak:** [docs/privacy.md](docs/privacy.md), [packages/core/src/tracing.ts](packages/core/src/tracing.ts), [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts).
 
-### T38 Ã¢â‚¬â€ Kuruma ÃƒÂ¶zel DLP ve veri etiketleri (P1)
+### T38 — Kuruma özel DLP ve veri etiketleri (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DLP overlapping ve JSON Unicode-escaped secret spanlarÃ„Â±nÃ„Â± tam redact ediyor; malformed/mapping/oversize fail-closed. Attachment/diÃ„Å¸er connector/mÃƒÂ¼Ã…Å¸teri label kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Attachment/diğer connector/müşteri label kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** PII/DLP detektÃƒÂ¶rleri ve bazÃ„Â± ÃƒÂ§Ã„Â±ktÃ„Â± kontrolleri var.
+**Başlangıç durumu:** PII/DLP detektörleri ve bazı çıktı kontrolleri var.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** MÃƒÂ¼Ã…Å¸teri etiketleri, belge/attachment tÃƒÂ¼rleri, her baÃ„Å¸layÃ„Â±cÃ„Â±daki giriÃ…Å¸/ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸ yolu ve dÃƒÂ¼Ã…Å¸ÃƒÂ¼k yanlÃ„Â±Ã…Å¸ alarm kabulÃƒÂ¼ tamam deÃ„Å¸il.
+**Başlangıç boşluğu / müşteri etkisi:** Müşteri etiketleri, belge/attachment türleri, her bağlayıcıdaki giriş/çıkış yolu ve düşük yanlış alarm kabulü tamam değil.
 
-**Tamamlanma hedefi:** Kural/etiket yÃƒÂ¶netimi, kapsam hedefleri, maskeleme/engelleme/approval eylemleri ve exception yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼nÃƒÂ¼ baÃ„Å¸la.
+**Tamamlanma hedefi:** Kural/etiket yönetimi, kapsam hedefleri, maskeleme/engelleme/approval eylemleri ve exception yaşam döngüsünü bağla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Sentetik ve kuruma ÃƒÂ¶zgÃƒÂ¼ sÃ„Â±rlar tÃƒÂ¼m kapsanan giriÃ…Å¸/ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸larda yakalansÃ„Â±n; yetkili benign iÃ…Å¸lem geÃƒÂ§sin; ÃƒÂ¶rnek dÃ„Â±Ã…Å¸Ã„Â± format unavailable olarak raporlansÃ„Â±n.
+**Kalan kapanış testi:** Sentetik ve kuruma özgü sırlar tüm kapsanan giriş/çıkışlarda yakalansın; yetkili benign işlem geçsin; örnek dışı format unavailable olarak raporlansın.
 
-**Sorumlu:** Detection + Customer Security. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Etiket/kural sÃƒÂ¶zlÃƒÂ¼Ã„Å¸ÃƒÂ¼ ve maskelenmiÃ…Å¸ test verisi.
+**Sorumlu:** Detection + Customer Security. **Bağımlılık:** Etiket/kural sözlüğü ve maskelenmiş test verisi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DET-07. **Kaynak:** [packages/core/src/dlp/index.ts](packages/core/src/dlp/index.ts), [packages/core/src/pii-detector.ts](packages/core/src/pii-detector.ts).
+**İlişkili özellikler:** DET-07. **Kaynak:** [packages/core/src/dlp/index.ts](packages/core/src/dlp/index.ts), [packages/core/src/pii-detector.ts](packages/core/src/pii-detector.ts).
 
-### T39 Ã¢â‚¬â€ BaÃ„Å¸Ã„Â±msÃ„Â±z etkinlik, performans ve rakip kÃ„Â±yaslamasÃ„Â± (P1)
+### T39 — Bağımsız etkinlik, performans ve rakip kıyaslaması (P1)
 
-**Durum:** OPEN. **BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Pazar yetenek kategorileri ve ÃƒÂ¶nerilen benchmark protokolÃƒÂ¼ belgeli.
+**Durum:** OPEN. **Başlangıç durumu:** Pazar yetenek kategorileri ve önerilen benchmark protokolü belgeli.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** En iyi ÃƒÂ¼rÃƒÂ¼n, sÃ„Â±fÃ„Â±r false-positive, evasion dayanÃ„Â±klÃ„Â±lÃ„Â±Ã„Å¸Ã„Â± veya latency ÃƒÂ¼stÃƒÂ¼nlÃƒÂ¼Ã„Å¸ÃƒÂ¼nÃƒÂ¼ gÃƒÂ¶steren baÃ„Å¸Ã„Â±msÃ„Â±z kanÃ„Â±t yok.
+**Başlangıç boşluğu / müşteri etkisi:** En iyi ürün, sıfır false-positive, evasion dayanıklılığı veya latency üstünlüğünü gösteren bağımsız kanıt yok.
 
-**Tamamlanma hedefi:** GeliÃ…Å¸tirme ve blind holdout setlerini ayÃ„Â±r; saldÃ„Â±rÃ„Â± ailesi/baÃ„Å¸layÃ„Â±cÃ„Â± bazÃ„Â±nda coverage, false block/approval, p50/p95/p99 ve limitations ÃƒÂ¶lÃƒÂ§; eÃ…Å¸it koÃ…Å¸ullu karÃ…Å¸Ã„Â±laÃ…Å¸tÃ„Â±rma yap.
+**Tamamlanma hedefi:** Geliştirme ve blind holdout setlerini ayır; saldırı ailesi/bağlayıcı bazında coverage, false block/approval, p50/p95/p99 ve limitations ölç; eşit koşullu karşılaştırma yap.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** AynÃ„Â± workload/ortamda ham ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m, payda, sÃƒÂ¼rÃƒÂ¼m, ÃƒÂ¶rneklem ve baÃ„Å¸Ã„Â±msÃ„Â±z deÃ„Å¸erlendirici imzasÃ„Â±; gÃƒÂ¶rÃƒÂ¼nmeyen yÃƒÂ¼zeyler baÃ…Å¸arÃ„Â± ortalamasÃ„Â±na katÃ„Â±lmasÃ„Â±n.
+**Kalan kapanış testi:** Aynı workload/ortamda ham ölçüm, payda, sürüm, örneklem ve bağımsız değerlendirici imzası; görünmeyen yüzeyler başarı ortalamasına katılmasın.
 
-**Sorumlu:** Detection Research + QA + Independent Evaluator. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** MÃƒÂ¼Ã…Å¸teri benign corpus'u, rakip deÃ„Å¸erlendirme eriÃ…Å¸imi, ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m bÃƒÂ¼tÃƒÂ§esi.
+**Sorumlu:** Detection Research + QA + Independent Evaluator. **Bağımlılık:** Müşteri benign corpus'u, rakip değerlendirme erişimi, ölçüm bütçesi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** EVAL-01, EVAL-02, EVAL-03. **Kaynak:** [docs/production-readiness/agent-security-market-and-release-plan.md](docs/production-readiness/agent-security-market-and-release-plan.md), [docs/production-readiness/customer-investor-validation-master-plan.md](docs/production-readiness/customer-investor-validation-master-plan.md).
+**İlişkili özellikler:** EVAL-01, EVAL-02, EVAL-03. **Kaynak:** [docs/production-readiness/agent-security-market-and-release-plan.md](docs/production-readiness/agent-security-market-and-release-plan.md), [docs/production-readiness/customer-investor-validation-master-plan.md](docs/production-readiness/customer-investor-validation-master-plan.md).
 
-### T40 Ã¢â‚¬â€ GÃƒÂ¼venlik gÃƒÂ¼ncellemesi ve mÃƒÂ¼Ã…Å¸teri destek iÃ…Å¸letimi (P0)
+### T40 — Güvenlik güncellemesi ve müşteri destek işletimi (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Support v7 runbook, izinli/hashli bundle, escalation ve emergency update akÃ„Â±Ã…Å¸Ã„Â± hazÃ„Â±r; gerÃƒÂ§ek kanal, nÃƒÂ¶bet ve ticket tatbikatÃ„Â± aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Support v7 runbook, izinli/hashli bundle, escalation ve emergency update akışı hazır; gerçek kanal, nöbet ve ticket tatbikatı açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Runbook ve destek Ã…Å¸ablonlarÃ„Â± bulunuyor.
+**Başlangıç durumu:** Runbook ve destek şablonları bulunuyor.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Ãƒâ€¡alÃ„Â±Ã…Å¸an ticket/security contact, nÃƒÂ¶bet, CVE/incident bildirimi, imzalÃ„Â± acil gÃƒÂ¼ncelleme, EOL ve tanÃ„Â±lama izni iÃ…Å¸letimi onaylÃ„Â± deÃ„Å¸il.
+**Başlangıç boşluğu / müşteri etkisi:** Çalışan ticket/security contact, nöbet, CVE/incident bildirimi, imzalı acil güncelleme, EOL ve tanılama izni işletimi onaylı değil.
 
-**Tamamlanma hedefi:** Destek planÃ„Â±, severity/response hedefi, escalation, PSIRT/sorumlu, patch daÃ„Å¸Ã„Â±tÃ„Â±mÃ„Â±, EOL ve redakte tanÃ„Â±lama prosedÃƒÂ¼rÃƒÂ¼ kur.
+**Tamamlanma hedefi:** Destek planı, severity/response hedefi, escalation, PSIRT/sorumlu, patch dağıtımı, EOL ve redakte tanılama prosedürü kur.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** GerÃƒÂ§ek ticket aÃƒÂ§/kapat, kritik incident ve imza anahtarÃ„Â± kaybÃ„Â± tatbikatÃ„Â±; mÃƒÂ¼Ã…Å¸teri bildirim sÃƒÂ¼resi, rollback ve sÃ„Â±r iÃƒÂ§ermeyen tanÃ„Â±lama kanÃ„Â±tlansÃ„Â±n.
+**Kalan kapanış testi:** Gerçek ticket aç/kapat, kritik incident ve imza anahtarı kaybı tatbikatı; müşteri bildirim süresi, rollback ve sır içermeyen tanılama kanıtlansın.
 
-**Sorumlu:** Support + SRE + Security. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Ã„Â°simli ekip, iletiÃ…Å¸im kanallarÃ„Â±, sÃƒÂ¶zleÃ…Å¸me ve ÃƒÂ§alÃ„Â±Ã…Å¸ma saatleri.
+**Sorumlu:** Support + SRE + Security. **Bağımlılık:** İsimli ekip, iletişim kanalları, sözleşme ve çalışma saatleri.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** DEP-05, OBS-05. **Kaynak:** [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md), [docs/production-readiness/support-sla-template.md](docs/production-readiness/support-sla-template.md).
+**İlişkili özellikler:** DEP-05, OBS-05. **Kaynak:** [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md), [docs/production-readiness/support-sla-template.md](docs/production-readiness/support-sla-template.md).
 
-### T41 Ã¢â‚¬â€ Ã„Â°lk mÃƒÂ¼Ã…Å¸teri satÃ„Â±Ã…Å¸ ve satÃ„Â±n alma deÃ„Å¸erlendirme paketi (P1)
+### T41 — İlk müşteri satış ve satın alma değerlendirme paketi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** GÃƒÂ¼ncel ilk mÃƒÂ¼Ã…Å¸teri satÃ„Â±Ã…Å¸ paketi ve portable kit ÃƒÂ¼reticisi var; yeni v7 kit imzasÃ„Â± ile onaylÃ„Â± teklif/satÃ„Â±n alma kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Güncel ilk müşteri satış paketi ve portable kit üreticisi var; yeni v7 kit imzası ile onaylı teklif/satın alma kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** KontrollÃƒÂ¼ demo, deÃ„Å¸erlendirme planÃ„Â±, ilk kurulum ve sipariÃ…Å¸ Ã…Å¸ablonlarÃ„Â± mevcut.
+**Başlangıç durumu:** Kontrollü demo, değerlendirme planı, ilk kurulum ve sipariş şablonları mevcut.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** MÃƒÂ¼Ã…Å¸terinin satÃ„Â±n alma sÃƒÂ¼recine uygun onaylÃ„Â± ÃƒÂ¼rÃƒÂ¼n ÃƒÂ¶zeti, mimari/veri akÃ„Â±Ã…Å¸Ã„Â±, destek matrisi, gÃƒÂ¼venlik soru formu, kapsamlÃ„Â± teklif ve kanÃ„Â±ta dayalÃ„Â± demo/PoV paketi tek sÃƒÂ¼rÃƒÂ¼mde birleÃ…Å¸tirilmedi. Bu ÃƒÂ§alÃ„Â±Ã…Å¸ma ortamÃ„Â±ndaki static preflight satÃ„Â±Ã…Å¸ URL/e-posta ayarÃ„Â± bulamadÃ„Â±; ÃƒÂ¼retim satÃ„Â±Ã…Å¸ CTA hedefi ayrÃ„Â±ca doÃ„Å¸rulanmalÃ„Â±.
+**Başlangıç boşluğu / müşteri etkisi:** Müşterinin satın alma sürecine uygun onaylı ürün özeti, mimari/veri akışı, destek matrisi, güvenlik soru formu, kapsamlı teklif ve kanıta dayalı demo/PoV paketi tek sürümde birleştirilmedi. Bu çalışma ortamındaki static preflight satış URL/e-posta ayarı bulamadı; üretim satış CTA hedefi ayrıca doğrulanmalı.
 
-**Tamamlanma hedefi:** ÃƒÅ“rÃƒÂ¼n ÃƒÂ¶zeti, gereksinimler, deployment seÃƒÂ§enekleri, desteklenen araÃƒÂ§lar, aÃƒÂ§Ã„Â±k sÃ„Â±nÃ„Â±rlar, gÃƒÂ¼venlik/tedarikÃƒÂ§i soru yanÃ„Â±tlarÃ„Â±, teklif ve PoV baÃ…Å¸arÃ„Â± ÃƒÂ¶lÃƒÂ§ÃƒÂ¼tlerini satÃ„Â±Ã…Å¸ kitinde topla; ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lmemiÃ…Å¸ ROI veya sertifikasyon iddiasÃ„Â± ekleme.
+**Tamamlanma hedefi:** Ürün özeti, gereksinimler, deployment seçenekleri, desteklenen araçlar, açık sınırlar, güvenlik/tedarikçi soru yanıtları, teklif ve PoV başarı ölçütlerini satış kitinde topla; ölçülmemiş ROI veya sertifikasyon iddiası ekleme.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Bir operatÃƒÂ¶r kÃ„Â±lavuzdan demoyu tekrar edebilsin; procurement sorularÃ„Â± kaynak/kanÃ„Â±t/owner'a baÃ„Å¸lÃ„Â± olsun; teklif kapsamÃ„Â± ile kurulan ÃƒÂ¶zellik ve destek koÃ…Å¸ullarÃ„Â± eÃ…Å¸leÃ…Å¸sin; mÃƒÂ¼Ã…Å¸teri adÃ„Â± olmadan referans/baÃ…Å¸arÃ„Â± hikayesi uydurulmasÃ„Â±n.
+**Kalan kapanış testi:** Bir operatör kılavuzdan demoyu tekrar edebilsin; procurement soruları kaynak/kanıt/owner'a bağlı olsun; teklif kapsamı ile kurulan özellik ve destek koşulları eşleşsin; müşteri adı olmadan referans/başarı hikayesi uydurulmasın.
 
-**Sorumlu:** Sales Engineering + Product + Legal + Finance. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** MÃƒÂ¼Ã…Å¸teri satÃ„Â±n alma formu, teklif sahibi, onaylÃ„Â± ÃƒÂ¼rÃƒÂ¼n kapsamÃ„Â±.
+**Sorumlu:** Sales Engineering + Product + Legal + Finance. **Bağımlılık:** Müşteri satın alma formu, teklif sahibi, onaylı ürün kapsamı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** EVAL-02, EVAL-03, BIL-01. **Kaynak:** [docs/production-readiness/controlled-demo-runbook.md](docs/production-readiness/controlled-demo-runbook.md), [docs/production-readiness/customer-investor-validation-master-plan.md](docs/production-readiness/customer-investor-validation-master-plan.md), [docs/production-readiness/enterprise-order-entitlement-template.md](docs/production-readiness/enterprise-order-entitlement-template.md).
+**İlişkili özellikler:** EVAL-02, EVAL-03, BIL-01. **Kaynak:** [docs/production-readiness/controlled-demo-runbook.md](docs/production-readiness/controlled-demo-runbook.md), [docs/production-readiness/customer-investor-validation-master-plan.md](docs/production-readiness/customer-investor-validation-master-plan.md), [docs/production-readiness/enterprise-order-entitlement-template.md](docs/production-readiness/enterprise-order-entitlement-template.md).
 
-### T42 Ã¢â‚¬â€ Legacy RLS tenant yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼ ve itibar satÃ„Â±rÃ„Â± sahteciliÃ„Å¸i (P0)
+### T42 — Legacy RLS tenant yaşam döngüsü ve itibar satırı sahteciliği (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Eski izin verici RLS kaldÃ„Â±rÃ„Â±ldÃ„Â±; forged claim, expired member, suspended tenant ve service-role kontrolleri yerel PostgreSQL'de geÃƒÂ§ti. Saha migrationÃ„Â± aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Eski izin verici RLS kaldırıldı; forged claim, expired member, suspended tenant ve service-role kontrolleri yerel PostgreSQL'de geçti. Saha migrationı açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Eski izin verici RLS kurallarÃ„Â± yabancÃ„Â± tenant itibar satÃ„Â±rÃ„Â± ekleme ve ÃƒÂ¼yelik sonrasÃ„Â± eriÃ…Å¸ime izin veriyordu.
+**Başlangıç durumu:** Eski izin verici RLS kuralları yabancı tenant itibar satırı ekleme ve üyelik sonrası erişime izin veriyordu.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Yeni migration yetkiyi kapatÃ„Â±r; ÃƒÂ¶nceden yazÃ„Â±lmÃ„Â±Ã…Å¸ olabilecek sahte satÃ„Â±rlar otomatik temizlenmez ve kurulu mÃƒÂ¼Ã…Å¸teri verisi denetlenmedi.
+**Başlangıç boşluğu / müşteri etkisi:** Yeni migration yetkiyi kapatır; önceden yazılmış olabilecek sahte satırlar otomatik temizlenmez ve kurulu müşteri verisi denetlenmedi.
 
-**Tamamlanma hedefi:** MigrationÃ„Â± uygulamadan ÃƒÂ¶nce tenant itibar satÃ„Â±rlarÃ„Â±nÃ„Â± denetle; migrationÃ„Â± kontrollÃƒÂ¼ uygula, kalÃ„Â±cÃ„Â± rol matrisi ve PostgREST negatif testini ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±r.
+**Tamamlanma hedefi:** Migrationı uygulamadan önce tenant itibar satırlarını denetle; migrationı kontrollü uygula, kalıcı rol matrisi ve PostgREST negatif testini çalıştır.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Eski ÃƒÂ¼ye veya askÃ„Â±ya alÃ„Â±nmÃ„Â±Ã…Å¸ tenant okuyamasÃ„Â±n; baÃ…Å¸ka tenant iÃƒÂ§in insert reddedilsin; mevcut veride sahte kayÃ„Â±t kalmasÃ„Â±n ve servis rolÃƒÂ¼ iÃ…Å¸lemleri ÃƒÂ§alÃ„Â±Ã…Å¸sÃ„Â±n.
+**Kalan kapanış testi:** Eski üye veya askıya alınmış tenant okuyamasın; başka tenant için insert reddedilsin; mevcut veride sahte kayıt kalmasın ve servis rolü işlemleri çalışsın.
 
-**Sorumlu:** Database + Security. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Mevcut deployment verisi ve migration penceresi.
+**Sorumlu:** Database + Security. **Bağımlılık:** Mevcut deployment verisi ve migration penceresi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-01, DET-10, DET-11. **Kaynak:** [supabase/migrations/20260912000019_tenant_lifecycle_rls.sql](supabase/migrations/20260912000019_tenant_lifecycle_rls.sql), [scripts/tenant-lifecycle-rls-postgres.test.mjs](scripts/tenant-lifecycle-rls-postgres.test.mjs).
+**İlişkili özellikler:** TEN-01, DET-10, DET-11. **Kaynak:** [supabase/migrations/20260912000019_tenant_lifecycle_rls.sql](supabase/migrations/20260912000019_tenant_lifecycle_rls.sql), [scripts/tenant-lifecycle-rls-postgres.test.mjs](scripts/tenant-lifecycle-rls-postgres.test.mjs).
 
-### T43 Ã¢â‚¬â€ Enrollment exchange iÃ…Å¸lem bÃƒÂ¼tÃƒÂ¼nlÃƒÂ¼Ã„Å¸ÃƒÂ¼ (P1)
+### T43 — Enrollment exchange işlem bütünlüğü (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Atomik token/seat/key RPC ve lost-response sonucu unknown sÃƒÂ¶zleÃ…Å¸mesi var; plaintext-key recovery protokolÃƒÂ¼ ve canlÃ„Â± HTTP kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Atomik token/seat/key RPC ve lost-response sonucu unknown sözleşmesi var; plaintext-key recovery protokolü ve canlı HTTP kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Tek kullanÃ„Â±mlÃ„Â±k token ÃƒÂ¶nceden tÃƒÂ¼ketilip sonraki adÃ„Â±m hata verince kurulum kilitlenebiliyordu.
+**Başlangıç durumu:** Tek kullanımlık token önceden tüketilip sonraki adım hata verince kurulum kilitlenebiliyordu.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Yeni RPC atomik yazÃ„Â±yor; mÃƒÂ¼Ã…Å¸teri HTTP akÃ„Â±Ã…Å¸Ã„Â±nda kayÃ„Â±p yanÃ„Â±t, eski kayÃ„Â±t ve eÃ…Å¸zamanlÃ„Â± seat yarÃ„Â±Ã…Å¸Ã„Â± henÃƒÂ¼z sÃ„Â±nanmadÃ„Â±.
+**Başlangıç boşluğu / müşteri etkisi:** Yeni RPC atomik yazıyor; müşteri HTTP akışında kayıp yanıt, eski kayıt ve eşzamanlı seat yarışı henüz sınanmadı.
 
-**Tamamlanma hedefi:** MigrationÃ„Â± daÃ„Å¸Ã„Â±t, canlÃ„Â± HTTP hata enjeksiyonuyla token/seat/key durumunu doÃ„Å¸rula, belirsiz commit sonrasÃ„Â± yeniden kayÃ„Â±t operatÃƒÂ¶r prosedÃƒÂ¼rÃƒÂ¼nÃƒÂ¼ hazÃ„Â±rla.
+**Tamamlanma hedefi:** Migrationı dağıt, canlı HTTP hata enjeksiyonuyla token/seat/key durumunu doğrula, belirsiz commit sonrası yeniden kayıt operatör prosedürünü hazırla.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Hata rollback yaparken token yeniden kullanÃ„Â±labilsin; baÃ…Å¸arÃ„Â±da yalnÃ„Â±z bir kimlik oluÃ…Å¸sun; kayÃ„Â±p yanÃ„Â±t aÃƒÂ§Ã„Â±k unknown durumuna dÃƒÂ¼Ã…Å¸sÃƒÂ¼n.
+**Kalan kapanış testi:** Hata rollback yaparken token yeniden kullanılabilsin; başarıda yalnız bir kimlik oluşsun; kayıp yanıt açık unknown durumuna düşsün.
 
-**Sorumlu:** Identity + Backend. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** MÃƒÂ¼Ã…Å¸teri kurulum ortamÃ„Â± ve canlÃ„Â± DB.
+**Sorumlu:** Identity + Backend. **Bağımlılık:** Müşteri kurulum ortamı ve canlı DB.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-05, TEN-06. **Kaynak:** [supabase/migrations/20260912000017_enrollment_exchange_atomic.sql](supabase/migrations/20260912000017_enrollment_exchange_atomic.sql), [supabase/functions/enroll/index.ts](supabase/functions/enroll/index.ts).
+**İlişkili özellikler:** TEN-05, TEN-06. **Kaynak:** [supabase/migrations/20260912000017_enrollment_exchange_atomic.sql](supabase/migrations/20260912000017_enrollment_exchange_atomic.sql), [supabase/functions/enroll/index.ts](supabase/functions/enroll/index.ts).
 
-### T44 Ã¢â‚¬â€ Entitlement grace ve eski imzalÃ„Â± ÃƒÂ¶nbellek geÃƒÂ§iÃ…Å¸i (P1)
+### T44 — Entitlement grace ve eski imzalı önbellek geçişi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Cache unsigned/unknown/schema-invalid entitlement'Ã„Â± atÃ„Â±yor; kesin invalid_api_key signed state'i temizliyor, geÃƒÂ§ici hata grace'i koruyor. CanlÃ„Â± kabul aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Cache unsigned/unknown/schema-invalid entitlement'ı atıyor; kesin invalid_api_key signed state'i temizliyor, geçici hata grace'i koruyor. Canlı kabul açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Yedi gÃƒÂ¼nlÃƒÂ¼k entitlement bitiÃ…Å¸inden sonraki 72 saatlik grace yanlÃ„Â±Ã…Å¸ hesaplanÃ„Â±yordu.
+**Başlangıç durumu:** Yedi günlük entitlement bitişinden sonraki 72 saatlik grace yanlış hesaplanıyordu.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Kod dÃƒÂ¼zeltildi; ÃƒÂ¶nceki yanlÃ„Â±Ã…Å¸ imzalÃ„Â± snapshotlar ÃƒÂ§evrimdÃ„Â±Ã…Å¸Ã„Â± iken dÃƒÂ¼zelmez, canlÃ„Â± Deno ve zaman geÃƒÂ§iÃ…Å¸i kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Başlangıç boşluğu / müşteri etkisi:** Kod düzeltildi; önceki yanlış imzalı snapshotlar çevrimdışı iken düzelmez, canlı Deno ve zaman geçişi kabulü açık.
 
-**Tamamlanma hedefi:** Yeni entitlementlarÃ„Â± daÃ„Å¸Ã„Â±tÃ„Â±p ÃƒÂ¶nbelleÃ„Å¸i gÃƒÂ¼venli yenile; saat sÃ„Â±nÃ„Â±rÃ„Â± ve eski istemci geÃƒÂ§iÃ…Å¸i tatbikatÃ„Â± yap.
+**Tamamlanma hedefi:** Yeni entitlementları dağıtıp önbelleği güvenli yenile; saat sınırı ve eski istemci geçişi tatbikatı yap.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** 168 saat sonrasÃ„Â±nda 72 saat grace, ardÃ„Â±ndan deny; iptal edilen/bozuk anahtar her aÃ…Å¸amada reddedilsin.
+**Kalan kapanış testi:** 168 saat sonrasında 72 saat grace, ardından deny; iptal edilen/bozuk anahtar her aşamada reddedilsin.
 
-**Sorumlu:** Identity + Endpoint. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** Ã„Â°mzalÃ„Â± eski kayÃ„Â±tlar ve mÃƒÂ¼Ã…Å¸teri aÃ„Å¸ takvimi.
+**Sorumlu:** Identity + Endpoint. **Bağımlılık:** İmzalı eski kayıtlar ve müşteri ağ takvimi.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-05, POL-04. **Kaynak:** [supabase/functions/enroll/index.ts](supabase/functions/enroll/index.ts), [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts), [packages/core/src/managed.ts](packages/core/src/managed.ts).
+**İlişkili özellikler:** TEN-05, POL-04. **Kaynak:** [supabase/functions/enroll/index.ts](supabase/functions/enroll/index.ts), [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts), [packages/core/src/managed.ts](packages/core/src/managed.ts).
 
-### T45 Ã¢â‚¬â€ Device-start gÃƒÂ¼venilir IP ve giriÃ…Å¸ yÃƒÂ¶nlendirmesi (P1)
+### T45 — Device-start güvenilir IP ve giriş yönlendirmesi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Device-start signer placeholder/reused secret'i reddediyor; HMAC ingress/rate limit var. GerÃƒÂ§ek public proxy/TLS routing ve mÃƒÂ¼Ã…Å¸teri yÃƒÂ¼kÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Device-start signer placeholder/reused secret'i reddediyor; HMAC ingress/rate limit var. Gerçek public proxy/TLS routing ve müşteri yükü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Ã„Â°stemcinin verdiÃ„Å¸i IP baÃ…Å¸lÃ„Â±Ã„Å¸Ã„Â±yla 30/dakika sÃ„Â±nÃ„Â±rÃ„Â± aÃ…Å¸Ã„Â±labiliyordu.
+**Başlangıç durumu:** İstemcinin verdiği IP başlığıyla 30/dakika sınırı aşılabiliyordu.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Ã„Â°mzalÃ„Â± ingress ve kÃƒÂ¼resel sÃ„Â±nÃ„Â±r kodlandÃ„Â±; Nginx/TLS yÃƒÂ¶nlendirmesi ve iki ÃƒÂ¶zel anahtarÃ„Â±n mÃƒÂ¼Ã…Å¸teri ortamÃ„Â±nda kurulumu henÃƒÂ¼z kanÃ„Â±tlanmadÃ„Â±.
+**Başlangıç boşluğu / müşteri etkisi:** İmzalı ingress ve küresel sınır kodlandı; Nginx/TLS yönlendirmesi ve iki özel anahtarın müşteri ortamında kurulumu henüz kanıtlanmadı.
 
-**Tamamlanma hedefi:** Cloud ve self-hosted giriÃ…Å¸ini signer ÃƒÂ¼zerinden geÃƒÂ§ir; proxy baÃ…Å¸lÃ„Â±klarÃ„Â±nÃ„Â± temizle, doÃ„Å¸rudan Edge yolunu engelle ve yÃƒÂ¼k testini ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±r.
+**Tamamlanma hedefi:** Cloud ve self-hosted girişini signer üzerinden geçir; proxy başlıklarını temizle, doğrudan Edge yolunu engelle ve yük testini çalıştır.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Sahte baÃ…Å¸lÃ„Â±klar oranÃ„Â± deÃ„Å¸iÃ…Å¸tirmesin; imzasÃ„Â±z istek 401; meÃ…Å¸ru kayÃ„Â±t akÃ„Â±Ã…Å¸Ã„Â± iki daÃ„Å¸Ã„Â±tÃ„Â±m modelinde ÃƒÂ§alÃ„Â±Ã…Å¸sÃ„Â±n.
+**Kalan kapanış testi:** Sahte başlıklar oranı değiştirmesin; imzasız istek 401; meşru kayıt akışı iki dağıtım modelinde çalışsın.
 
-**Sorumlu:** Platform + Identity. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** TLS proxy, sÃ„Â±r yÃƒÂ¶netimi ve mÃƒÂ¼Ã…Å¸teri aÃ„Å¸Ã„Â±.
+**Sorumlu:** Platform + Identity. **Bağımlılık:** TLS proxy, sır yönetimi ve müşteri ağı.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-05, DEP-01, DEP-02. **Kaynak:** [supabase/functions/device-start/index.ts](supabase/functions/device-start/index.ts), [deploy/ingress/device-start.mjs](deploy/ingress/device-start.mjs).
+**İlişkili özellikler:** TEN-05, DEP-01, DEP-02. **Kaynak:** [supabase/functions/device-start/index.ts](supabase/functions/device-start/index.ts), [deploy/ingress/device-start.mjs](deploy/ingress/device-start.mjs).
 
-### T46 Ã¢â‚¬â€ Device-poll onaydan kayda atomik geÃƒÂ§iÃ…Å¸ (P1)
+### T46 — Device-poll onaydan kayda atomik geçiş (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Device-poll kayÃ„Â±p yanÃ„Â±t/eÃ…Å¸zamanlÃ„Â± poll'da aynÃ„Â± hash-only tokenÃ„Â± geri buluyor, lookup hatasÃ„Â±nda 503 unknown dÃƒÂ¶nÃƒÂ¼yor; canlÃ„Â± yarÃ„Â±Ã…Å¸ kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Device-poll kayıp yanıt/eşzamanlı poll'da aynı hash-only tokenı geri buluyor, lookup hatasında 503 unknown dönüyor; canlı yarış kabulü açık.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ durumu:** Onaylanan oturum token eklenmeden exchanged olabiliyor, geÃƒÂ§ici hata kullanÃ„Â±cÃ„Â±yÃ„Â± yeniden kurulum baÃ…Å¸latmaya zorluyordu.
+**Başlangıç durumu:** Onaylanan oturum token eklenmeden exchanged olabiliyor, geçici hata kullanıcıyı yeniden kurulum başlatmaya zorluyordu.
 
-**BaÃ…Å¸langÃ„Â±ÃƒÂ§ boÃ…Å¸luÃ„Å¸u / mÃƒÂ¼Ã…Å¸teri etkisi:** Yeni RPC atomik; canlÃ„Â± HTTP retry, yarÃ„Â±Ã…Å¸ ve mÃƒÂ¼Ã…Å¸teri tarayÃ„Â±cÃ„Â±sÃ„Â±/CLI kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.
+**Başlangıç boşluğu / müşteri etkisi:** Yeni RPC atomik; canlı HTTP retry, yarış ve müşteri tarayıcısı/CLI kabulü açık.
 
-**Tamamlanma hedefi:** MigrationÃ„Â± daÃ„Å¸Ã„Â±tÃ„Â±p onay, poll ve enroll tam akÃ„Â±Ã…Å¸Ã„Â±nÃ„Â± hata enjeksiyonu ile ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±r; eÃ…Å¸zamanlÃ„Â± poll ve kayÃ„Â±p yanÃ„Â±tÃ„Â± ÃƒÂ¶lÃƒÂ§.
+**Tamamlanma hedefi:** Migrationı dağıtıp onay, poll ve enroll tam akışını hata enjeksiyonu ile çalıştır; eşzamanlı poll ve kayıp yanıtı ölç.
 
-**Kalan kapanÃ„Â±Ã…Å¸ testi:** Bir onay en ÃƒÂ§ok bir token ÃƒÂ¼retir; insert hatasÃ„Â± oturumu tÃƒÂ¼ketmez; tekrar poll belirsiz durum olarak raporlanÃ„Â±r.
+**Kalan kapanış testi:** Bir onay en çok bir token üretir; insert hatası oturumu tüketmez; tekrar poll belirsiz durum olarak raporlanır.
 
-**Sorumlu:** Identity + QA. **BaÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k:** CanlÃ„Â± kurulum ve gerÃƒÂ§ek cihaz.
+**Sorumlu:** Identity + QA. **Bağımlılık:** Canlı kurulum ve gerçek cihaz.
 
-**Ã„Â°liÃ…Å¸kili ÃƒÂ¶zellikler:** TEN-05. **Kaynak:** [supabase/functions/device-poll/index.ts](supabase/functions/device-poll/index.ts), [supabase/migrations/20260912000017_enrollment_exchange_atomic.sql](supabase/migrations/20260912000017_enrollment_exchange_atomic.sql).
+**İlişkili özellikler:** TEN-05. **Kaynak:** [supabase/functions/device-poll/index.ts](supabase/functions/device-poll/index.ts), [supabase/migrations/20260912000017_enrollment_exchange_atomic.sql](supabase/migrations/20260912000017_enrollment_exchange_atomic.sql).
 
-## Ticari, dÃ„Â±Ã…Å¸ deÃ„Å¸erlendirme ve mÃƒÂ¼Ã…Å¸teri kabul kapÃ„Â±larÃ„Â±
+## Ticari, dış değerlendirme ve müşteri kabul kapıları
 
-AÃ…Å¸aÃ„Å¸Ã„Â±dakiler mevcut ticari registry'nin aÃƒÂ§Ã„Â±k kayÃ„Â±tlarÃ„Â±dÃ„Â±r. DokÃƒÂ¼man Ã…Å¸ablonu bulunmasÃ„Â±, yetkili onayÃ„Â± veya ÃƒÂ§alÃ„Â±Ã…Å¸an operasyon sayÃ„Â±lmaz. Hukuki metin ve sÃƒÂ¶zleÃ…Å¸melerin geÃƒÂ§erliliÃ„Å¸ini bu rapor onaylamaz; ilgili kurum sahipleri incelemelidir.
+Aşağıdakiler mevcut ticari registry'nin açık kayıtlarıdır. Doküman şablonu bulunması, yetkili onayı veya çalışan operasyon sayılmaz. Hukuki metin ve sözleşmelerin geçerliliğini bu rapor onaylamaz; ilgili kurum sahipleri incelemelidir.
 
-### COM-001 Ã¢â‚¬â€ OnaylÃ„Â± SKU, fiyat, teklif ve ticari sÃƒÂ¼rÃƒÂ¼m manifesti
+### COM-001 — Onaylı SKU, fiyat, teklif ve ticari sürüm manifesti
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** evaluation, assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** evaluation, assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** AynÃ„Â± sÃƒÂ¼rÃƒÂ¼me baÃ„Å¸lÃ„Â± SKU, fiyat, ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m birimi, para birimi/vergi, kurulum modeli, bÃƒÂ¶lge, saklama, SLA, destek, lisans hakkÃ„Â±, yenileme, iptal ve ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸ koÃ…Å¸ullarÃ„Â± onaylanmamÃ„Â±Ã…Å¸.
+**Eksik gereksinim:** Aynı sürüme bağlı SKU, fiyat, ölçüm birimi, para birimi/vergi, kurulum modeli, bölge, saklama, SLA, destek, lisans hakkı, yenileme, iptal ve çıkış koşulları onaylanmamış.
 
-**YapÃ„Â±lacak iÃ…Å¸:** SatÃ„Â±Ã…Å¸ ve finans tek ticari manifesti onaylasÃ„Â±n; ÃƒÂ¶rnek teklif/sipariÃ…Å¸ten mÃƒÂ¼Ã…Å¸teri ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸Ã„Â±na kadar prova yapÃ„Â±lsÃ„Â±n.
+**Yapılacak iş:** Satış ve finans tek ticari manifesti onaylasın; örnek teklif/siparişten müşteri çıkışına kadar prova yapılsın.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** Ã„Â°simli onaylÃ„Â± ticari manifest; Ãƒâ€“rnek teklif ve sipariÃ…Å¸; SipariÃ…Å¸ten offboarding'e prova; SÃƒÂ¼rÃƒÂ¼m ve deÃ„Å¸iÃ…Å¸tirilemeyen kanÃ„Â±t ÃƒÂ¶zeti.
+**Kapatmak için gerekli somut kanıt:** İsimli onaylı ticari manifest; Örnek teklif ve sipariş; Siparişten offboarding'e prova; Sürüm ve değiştirilemeyen kanıt özeti.
 
 **Sorumlu:** Commercial/Sales + Finance/Billing. **Kontrol:** claim-check --mode=gate plus signed-manifest verification.
 
-### COM-002 Ã¢â‚¬â€ Lisans, fikri mÃƒÂ¼lkiyet ve ÃƒÂ¼ÃƒÂ§ÃƒÂ¼ncÃƒÂ¼ taraf haklarÃ„Â±
+### COM-002 — Lisans, fikri mülkiyet ve üçüncü taraf hakları
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** evaluation, assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** evaluation, assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** Lisans dosyasÃ„Â± bulunmasÃ„Â± yeterli deÃ„Å¸il: daÃ„Å¸Ã„Â±tÃ„Â±lan kod/veri/model/ÃƒÂ¼ÃƒÂ§ÃƒÂ¼ncÃƒÂ¼ taraf bileÃ…Å¸en haklarÃ„Â±, atÃ„Â±flar ve fikri mÃƒÂ¼lkiyet zinciri hukukÃƒÂ§a onaylanmamÃ„Â±Ã…Å¸.
+**Eksik gereksinim:** Lisans dosyası bulunması yeterli değil: dağıtılan kod/veri/model/üçüncü taraf bileşen hakları, atıflar ve fikri mülkiyet zinciri hukukça onaylanmamış.
 
-**YapÃ„Â±lacak iÃ…Å¸:** SBOM ve kaynak kÃƒÂ¶kenini lisans/NOTICE/package metadata ile uzlaÃ…Å¸tÃ„Â±r; daÃ„Å¸Ã„Â±tÃ„Â±m haklarÃ„Â±nÃ„Â± ve sÃƒÂ¼reli istisnalarÃ„Â± yetkili hukuk incelemesine sun.
+**Yapılacak iş:** SBOM ve kaynak kökenini lisans/NOTICE/package metadata ile uzlaştır; dağıtım haklarını ve süreli istisnaları yetkili hukuk incelemesine sun.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** Hukuk onayÃ„Â±; Eksiksiz LICENSE/NOTICE ve ÃƒÂ¼ÃƒÂ§ÃƒÂ¼ncÃƒÂ¼ taraf lisans paketi; Paket lisanslarÃ„Â±nÃ„Â±n uzlaÃ…Å¸tÃ„Â±rÃ„Â±lmasÃ„Â±; Kaynak/vendor kÃƒÂ¶keni ve sÃƒÂ¼reli istisna kaydÃ„Â±.
+**Kapatmak için gerekli somut kanıt:** Hukuk onayı; Eksiksiz LICENSE/NOTICE ve üçüncü taraf lisans paketi; Paket lisanslarının uzlaştırılması; Kaynak/vendor kökeni ve süreli istisna kaydı.
 
 **Sorumlu:** Legal + Engineering. **Kontrol:** claim-check --mode=gate (license/NOTICE/package metadata check) plus licence inventory.
 
-### COM-003 Ã¢â‚¬â€ Veri iÃ…Å¸leme, DPA ve gizlilik onayÃ„Â±
+### COM-003 — Veri işleme, DPA ve gizlilik onayı
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** evaluation, assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** evaluation, assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** GerÃƒÂ§ek telemetri, browser tracing, managed olaylar, AIG payloadlarÃ„Â±, retention/silme, veri bÃƒÂ¶lgesi, alt iÃ…Å¸leyenler ve transferler mÃƒÂ¼Ã…Å¸teri belgeleriyle onaylÃ„Â± biÃƒÂ§imde eÃ…Å¸leÃ…Å¸tirilmemiÃ…Å¸.
+**Eksik gereksinim:** Gerçek telemetri, browser tracing, managed olaylar, AIG payloadları, retention/silme, veri bölgesi, alt işleyenler ve transferler müşteri belgeleriyle onaylı biçimde eşleştirilmemiş.
 
-**YapÃ„Â±lacak iÃ…Å¸:** Alan bazlÃ„Â± veri akÃ„Â±Ã…Å¸Ã„Â±nÃ„Â± ÃƒÂ¶lÃƒÂ§; mÃƒÂ¼Ã…Å¸teri bildirimi ve gerekli veri iÃ…Å¸leme/gÃƒÂ¼venlik eklerini Privacy/Legal sahipleriyle tamamla.
+**Yapılacak iş:** Alan bazlı veri akışını ölç; müşteri bildirimi ve gerekli veri işleme/güvenlik eklerini Privacy/Legal sahipleriyle tamamla.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** Alan bazlÃ„Â± veri akÃ„Â±Ã…Å¸ matrisi ve payload testleri; DPA/TOM/SCC kapsam inceleme ve onayÃ„Â±; Alt iÃ…Å¸leyen/bÃƒÂ¶lge listesi; GerÃƒÂ§ek export ve silme makbuzu.
+**Kapatmak için gerekli somut kanıt:** Alan bazlı veri akış matrisi ve payload testleri; DPA/TOM/SCC kapsam inceleme ve onayı; Alt işleyen/bölge listesi; Gerçek export ve silme makbuzu.
 
 **Sorumlu:** Privacy/DPO + Legal + Security. **Kontrol:** privacy-payload-contract and outbound-domain/redaction gates.
 
-### COM-004 Ã¢â‚¬â€ FaturaÃ¢â‚¬â€œÃƒÂ¶demeÃ¢â‚¬â€œentitlement mutabakatÃ„Â±
+### COM-004 — Fatura–ödeme–entitlement mutabakatı
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** SipariÃ…Å¸, koltuk deÃ„Å¸iÃ…Å¸imi, fatura/mutabakat, iptal, eriÃ…Å¸im iptali ve mÃƒÂ¼Ã…Å¸teri silme tek kayÃ„Â±t sistemine gÃƒÂ¶re uÃƒÂ§tan uca kabul edilmemiÃ…Å¸.
+**Eksik gereksinim:** Sipariş, koltuk değişimi, fatura/mutabakat, iptal, erişim iptali ve müşteri silme tek kayıt sistemine göre uçtan uca kabul edilmemiş.
 
-**YapÃ„Â±lacak iÃ…Å¸:** Tek provider-of-record belirle; finans iÃ…Å¸lemlerini sunucudaki entitlement ile baÃ„Å¸la; baÃ…Å¸arÃ„Â±sÃ„Â±z/tekrarlanan olay ve manuel mÃƒÂ¼dahale iÃ…Å¸letimini tanÃ„Â±mla.
+**Yapılacak iş:** Tek provider-of-record belirle; finans işlemlerini sunucudaki entitlement ile bağla; başarısız/tekrarlanan olay ve manuel müdahale işletimini tanımla.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** Provider ve SKU kararÃ„Â±; Quota/entitlement senaryolarÃ„Â±; Fatura ve mutabakat ÃƒÂ¶rneÃ„Å¸i; Ã„Â°ptal, eriÃ…Å¸im kesme ve silme makbuzu.
+**Kapatmak için gerekli somut kanıt:** Provider ve SKU kararı; Quota/entitlement senaryoları; Fatura ve mutabakat örneği; İptal, erişim kesme ve silme makbuzu.
 
 **Sorumlu:** Finance/Billing + Product. **Kontrol:** billing contract suite and quote-to-offboarding rehearsal.
 
-### COM-005 Ã¢â‚¬â€ Ãƒâ€¡alÃ„Â±Ã…Å¸an destek ve mÃƒÂ¼Ã…Å¸teri iletiÃ…Å¸im yollarÃ„Â±
+### COM-005 — Çalışan destek ve müşteri iletişim yolları
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** evaluation, assisted-sale, production-ga.
+**Durum:** open. **Geçerli profiller:** evaluation, assisted-sale, production-ga.
 
-**Eksik gereksinim:** MÃƒÂ¼Ã…Å¸terinin gerÃƒÂ§ekten ulaÃ…Å¸abildiÃ„Å¸i destek, durum sayfasÃ„Â±, gÃƒÂ¼venlik iletiÃ…Å¸imi, privacy/terms, escalation, severity hedefi ve tanÃ„Â±lama izni iÃ…Å¸letimi kanÃ„Â±tlanmamÃ„Â±Ã…Å¸.
+**Eksik gereksinim:** Müşterinin gerçekten ulaşabildiği destek, durum sayfası, güvenlik iletişimi, privacy/terms, escalation, severity hedefi ve tanılama izni işletimi kanıtlanmamış.
 
-**YapÃ„Â±lacak iÃ…Å¸:** KanallarÃ„Â± yayÃ„Â±nla; ÃƒÂ§alÃ„Â±Ã…Å¸ma saatleri ve isimli nÃƒÂ¶bet/escalation sorumlularÃ„Â±nÃ„Â± ata; gerÃƒÂ§ek ticket tatbikatÃ„Â± yap.
+**Yapılacak iş:** Kanalları yayınla; çalışma saatleri ve isimli nöbet/escalation sorumlularını ata; gerçek ticket tatbikatı yap.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** YayÃ„Â±nlanmÃ„Â±Ã…Å¸ destek/SLA planÃ„Â±; Zaman damgalÃ„Â± ticket tatbikatÃ„Â±; Ãƒâ€¡alÃ„Â±Ã…Å¸an status/security/privacy baÃ„Å¸lantÃ„Â±larÃ„Â±; NÃƒÂ¶bet ve escalation kaydÃ„Â±.
+**Kapatmak için gerekli somut kanıt:** Yayınlanmış destek/SLA planı; Zaman damgalı ticket tatbikatı; Çalışan status/security/privacy bağlantıları; Nöbet ve escalation kaydı.
 
 **Sorumlu:** Support/Customer Success + Operations. **Kontrol:** deployed route/link crawl; ticket drill is manual evidence.
 
-### COM-010 Ã¢â‚¬â€ ReklamÃ„Â± yapÃ„Â±lan tÃƒÂ¼m baÃ„Å¸layÃ„Â±cÃ„Â±larÃ„Â±n kabulÃƒÂ¼
+### COM-010 — Reklamı yapılan tüm bağlayıcıların kabulü
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** evaluation, assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** evaluation, assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** ReklamÃ„Â± yapÃ„Â±lan baÃ„Å¸layÃ„Â±cÃ„Â±larÃ„Â±n her biri iÃƒÂ§in gerÃƒÂ§ek host desteÃ„Å¸i, imzalÃ„Â± paket, ÃƒÂ¶zel registry kurulumu, geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ ve destek sahibi tamam deÃ„Å¸il. Registry'nin kapsam listesi ayrÃ„Â±ca gÃƒÂ¼ncellenmeli.
+**Eksik gereksinim:** Reklamı yapılan bağlayıcıların her biri için gerçek host desteği, imzalı paket, özel registry kurulumu, geri dönüş ve destek sahibi tamam değil. Registry'nin kapsam listesi ayrıca güncellenmeli.
 
-**YapÃ„Â±lacak iÃ…Å¸:** SatÃ„Â±lan connector manifestini sabitle; her connector/host/OS sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼nde aynÃ„Â± imzalÃ„Â± candidate iÃƒÂ§in kurulum, native E2E, rollback ve disable kabulÃƒÂ¼ topla.
+**Yapılacak iş:** Satılan connector manifestini sabitle; her connector/host/OS sürümünde aynı imzalı candidate için kurulum, native E2E, rollback ve disable kabulü topla.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** Tam destek matrisi; GerÃƒÂ§ek host test raporlarÃ„Â±; Private registry kurulum kayÃ„Â±tlarÃ„Â±; Rollback/disable tatbikatÃ„Â±; Ã„Â°simli sahip ve sÃ„Â±nÃ„Â±rlar.
+**Kapatmak için gerekli somut kanıt:** Tam destek matrisi; Gerçek host test raporları; Private registry kurulum kayıtları; Rollback/disable tatbikatı; İsimli sahip ve sınırlar.
 
 **Sorumlu:** Product + QA + Engineering + Support. **Kontrol:** expected connector manifest, package consumer tests, real-host E2E and claim-check.
 
-### COM-011 Ã¢â‚¬â€ BÃƒÂ¶lge ve veri yerleÃ…Å¸imi kanÃ„Â±tÃ„Â±
+### COM-011 — Bölge ve veri yerleşimi kanıtı
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** evaluation, assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** evaluation, assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** Registry'deki EU/US/APAC hedefleri ÃƒÂ§alÃ„Â±Ã…Å¸an ve onaylÃ„Â± bÃƒÂ¶lge hizmeti kanÃ„Â±tÃ„Â± deÃ„Å¸ildir; tenant yerleÃ…Å¸imi, routing, yedek/silme ve transfer modeli aÃƒÂ§Ã„Â±k.
+**Eksik gereksinim:** Registry'deki EU/US/APAC hedefleri çalışan ve onaylı bölge hizmeti kanıtı değildir; tenant yerleşimi, routing, yedek/silme ve transfer modeli açık.
 
-**YapÃ„Â±lacak iÃ…Å¸:** SatÃ„Â±lacak bÃƒÂ¶lgeleri provider ve veri iÃ…Å¸leme modeliyle eÃ…Å¸le; her bÃƒÂ¶lgede tenant yerleÃ…Å¸imi ve sÃ„Â±nÃ„Â±r dÃ„Â±Ã…Å¸Ã„Â± eriÃ…Å¸im negatif testlerini tamamla.
+**Yapılacak iş:** Satılacak bölgeleri provider ve veri işleme modeliyle eşle; her bölgede tenant yerleşimi ve sınır dışı erişim negatif testlerini tamamla.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** BÃƒÂ¶lge/provider matrisi; Tenant yerleÃ…Å¸im testi; Cross-region negatif test; Veri iÃ…Å¸leme onaylarÃ„Â±; BÃƒÂ¶lgeye baÃ„Å¸lÃ„Â± yedek/silme makbuzlarÃ„Â±.
+**Kapatmak için gerekli somut kanıt:** Bölge/provider matrisi; Tenant yerleşim testi; Cross-region negatif test; Veri işleme onayları; Bölgeye bağlı yedek/silme makbuzları.
 
 **Sorumlu:** Operations + Privacy/DPO + Legal. **Kontrol:** region manifest, outbound-domain/data-flow assertions and deployment smoke per region.
 
-### COM-012 Ã¢â‚¬â€ FaturalÃ„Â± ve kimliÃ„Å¸i doÃ„Å¸rulanan ÃƒÂ¶zel daÃ„Å¸Ã„Â±tÃ„Â±m
+### COM-012 — Faturalı ve kimliği doğrulanan özel dağıtım
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** Kurumsal fatura ile verilen eriÃ…Å¸imin kimliÃ„Å¸i doÃ„Å¸rulanan private registry ve imzalÃ„Â± artefact teslimiyle ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±Ã„Å¸Ã„Â± kanÃ„Â±tlanmamÃ„Â±Ã…Å¸; air-gap prosedÃƒÂ¼rÃƒÂ¼ de tamam deÃ„Å¸il.
+**Eksik gereksinim:** Kurumsal fatura ile verilen erişimin kimliği doğrulanan private registry ve imzalı artefact teslimiyle çalıştığı kanıtlanmamış; air-gap prosedürü de tamam değil.
 
-**YapÃ„Â±lacak iÃ…Å¸:** SipariÃ…Å¸Ã¢â€ â€™entitlementÃ¢â€ â€™downloadÃ¢â€ â€™installÃ¢â€ â€™revoke/offboard zincirini gerÃƒÂ§ek mÃƒÂ¼Ã…Å¸teri eriÃ…Å¸im modeliyle tamamla; offline satÃ„Â±lÃ„Â±yorsa imaj/baÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k teslimini ekle.
+**Yapılacak iş:** Sipariş→entitlement→download→install→revoke/offboard zincirini gerçek müşteri erişim modeliyle tamamla; offline satılıyorsa imaj/bağımlılık teslimini ekle.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** Provider ve registry kararÃ„Â±; Faturadan entitlement'a test; Ã„Â°mzalÃ„Â± paket kurulumu; Ã„Â°ptal/offboarding testi; DoÃ„Å¸rulanmÃ„Â±Ã…Å¸ air-gap prosedÃƒÂ¼rÃƒÂ¼.
+**Kapatmak için gerekli somut kanıt:** Provider ve registry kararı; Faturadan entitlement'a test; İmzalı paket kurulumu; İptal/offboarding testi; Doğrulanmış air-gap prosedürü.
 
 **Sorumlu:** Finance/Billing + Release Engineering + Support. **Kontrol:** private-registry consumer install and entitlement contract suite.
 
-### COM-013 Ã¢â‚¬â€ 99.9% SLA iÃƒÂ§in ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m ve sÃƒÂ¶zleÃ…Å¸me
+### COM-013 — 99.9% SLA için ölçüm ve sözleşme
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** 99.9% aylÃ„Â±k availability bir hedef; ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lmÃƒÂ¼Ã…Å¸ SLI, payda, kapsam dÃ„Â±Ã…Å¸Ã„Â± durumlar, bakÃ„Â±m politikasÃ„Â±, servis kredisi ve incident kanÃ„Â±tÃ„Â± tamam deÃ„Å¸il.
+**Eksik gereksinim:** 99.9% aylık availability bir hedef; ölçülmüş SLI, payda, kapsam dışı durumlar, bakım politikası, servis kredisi ve incident kanıtı tamam değil.
 
-**YapÃ„Â±lacak iÃ…Å¸:** SRE/Legal/Support/Finance ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m ve sÃƒÂ¶zleÃ…Å¸me kapsamÃ„Â±nÃ„Â± onaylasÃ„Â±n; kabul edilen gÃƒÂ¶zlem penceresinde veriyi topla ve incident tatbikatÃ„Â± yap.
+**Yapılacak iş:** SRE/Legal/Support/Finance ölçüm ve sözleşme kapsamını onaylasın; kabul edilen gözlem penceresinde veriyi topla ve incident tatbikatı yap.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** OnaylÃ„Â± SLA ve destek planÃ„Â±; SLI tanÃ„Â±mÃ„Â±, payda ve gÃƒÂ¶zlem penceresi; BakÃ„Â±m ve kapsam dÃ„Â±Ã…Å¸Ã„Â± durumlar; Servis kredisi koÃ…Å¸ullarÃ„Â±; Incident kanÃ„Â±tÃ„Â±.
+**Kapatmak için gerekli somut kanıt:** Onaylı SLA ve destek planı; SLI tanımı, payda ve gözlem penceresi; Bakım ve kapsam dışı durumlar; Servis kredisi koşulları; Incident kanıtı.
 
 **Sorumlu:** Operations + Legal + Support + Finance. **Kontrol:** monthly SLI/error-budget report and SLA manifest check.
 
-### SEC-EXT-001 Ã¢â‚¬â€ BaÃ„Å¸Ã„Â±msÃ„Â±z gÃƒÂ¼venlik deÃ„Å¸erlendirmesi ve yeniden test
+### SEC-EXT-001 — Bağımsız güvenlik değerlendirmesi ve yeniden test
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** SatÃ„Â±lan candidate iÃƒÂ§in baÃ„Å¸Ã„Â±msÃ„Â±z gÃƒÂ¼venlik deÃ„Å¸erlendirmesi, bulgu giderme ve yeniden test raporu yok.
+**Eksik gereksinim:** Satılan candidate için bağımsız güvenlik değerlendirmesi, bulgu giderme ve yeniden test raporu yok.
 
-**YapÃ„Â±lacak iÃ…Å¸:** BaÃ„Å¸Ã„Â±msÃ„Â±z deÃ„Å¸erlendiriciyle scope/tarih belirle; tenant, kimlik, runtime, daÃ„Å¸Ã„Â±tÃ„Â±m ve sÃ„Â±r sÃ„Â±nÃ„Â±rlarÃ„Â±nÃ„Â± kapsa; bulgularÃ„Â± kapat ve yeniden test ettir.
+**Yapılacak iş:** Bağımsız değerlendiriciyle scope/tarih belirle; tenant, kimlik, runtime, dağıtım ve sır sınırlarını kapsa; bulguları kapat ve yeniden test ettir.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** Ã„Â°mzalÃ„Â± baÃ„Å¸Ã„Â±msÃ„Â±z rapor ve kapsam; Remediation/retest mektubu; Ãƒâ€¡ÃƒÂ¶zÃƒÂ¼lmemiÃ…Å¸ kritik bulgu olmamasÃ„Â±; YÃƒÂ¼ksek bulgularda registry'nin gerektirdiÃ„Å¸i gerekÃƒÂ§eli isimli ve sÃƒÂ¼reli kabul.
+**Kapatmak için gerekli somut kanıt:** İmzalı bağımsız rapor ve kapsam; Remediation/retest mektubu; Çözülmemiş kritik bulgu olmaması; Yüksek bulgularda registry'nin gerektirdiği gerekçeli isimli ve süreli kabul.
 
 **Sorumlu:** Security Lead + independent assessor. **Kontrol:** assessment evidence expiry/RC match check.
 
-### POV-001 Ã¢â‚¬â€ Ã„Â°simli mÃƒÂ¼Ã…Å¸teri PoV ve kabul kaydÃ„Â±
+### POV-001 — İsimli müşteri PoV ve kabul kaydı
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** evaluation, assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** evaluation, assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** Ã„Â°simli mÃƒÂ¼Ã…Å¸teri/deÃ„Å¸erlendirici aynÃ„Â± candidate ÃƒÂ¼zerinde zorunlu senaryolarÃ„Â± ve sÃ„Â±nÃ„Â±rlarÃ„Â± inceleyerek kabul vermedi.
+**Eksik gereksinim:** İsimli müşteri/değerlendirici aynı candidate üzerinde zorunlu senaryoları ve sınırları inceleyerek kabul vermedi.
 
-**YapÃ„Â±lacak iÃ…Å¸:** DeÃ„Å¸erlendirme sÃƒÂ¶zleÃ…Å¸mesi/charter, baÃ„Å¸Ã„Â±msÃ„Â±z sandbox, zorunlu testler ve mÃƒÂ¼dahale/sapma kaydÃ„Â±nÃ„Â± tamamla; mÃƒÂ¼Ã…Å¸terinin kabul/ÃƒÂ§ekincelerini kaydet.
+**Yapılacak iş:** Değerlendirme sözleşmesi/charter, bağımsız sandbox, zorunlu testler ve müdahale/sapma kaydını tamamla; müşterinin kabul/çekincelerini kaydet.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** Ã„Â°mzalÃ„Â± charter; BaÃ„Å¸Ã„Â±msÃ„Â±z koÃ…Å¸u raporu; MÃƒÂ¼dahale ve sapma gÃƒÂ¼nlÃƒÂ¼Ã„Å¸ÃƒÂ¼; MÃƒÂ¼Ã…Å¸terinin kabul/ÃƒÂ§ekinceleri; DeÃ„Å¸iÃ…Å¸tirilemeyen kanÃ„Â±t indeksi.
+**Kapatmak için gerekli somut kanıt:** İmzalı charter; Bağımsız koşu raporu; Müdahale ve sapma günlüğü; Müşterinin kabul/çekinceleri; Değiştirilemeyen kanıt indeksi.
 
 **Sorumlu:** Customer Success + Product + evaluator. **Kontrol:** expected-suite manifest and evidence-index completeness; acceptance is manual.
 
-### INV-001 Ã¢â‚¬â€ YatÃ„Â±rÃ„Â±mcÃ„Â± metriklerinin kanÃ„Â±t ve onay sÃƒÂ¶zlÃƒÂ¼Ã„Å¸ÃƒÂ¼
+### INV-001 — Yatırımcı metriklerinin kanıt ve onay sözlüğü
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** investor.
+**Durum:** open. **Geçerli profiller:** investor.
 
-**Eksik gereksinim:** YatÃ„Â±rÃ„Â±mcÃ„Â±ya sunulan teknik baÃ…Å¸arÃ„Â±, mÃƒÂ¼Ã…Å¸teri, gÃƒÂ¼venlik, uyum, traction ve finans ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lerinin tamamÃ„Â± formÃƒÂ¼l/payda/kaynak/dÃƒÂ¶nem/sÃƒÂ¼rÃƒÂ¼m/onay sahibiyle kayÃ„Â±tlÃ„Â± deÃ„Å¸il. Bu kapÃ„Â± yatÃ„Â±rÃ„Â±mcÃ„Â± profili iÃƒÂ§indir.
+**Eksik gereksinim:** Yatırımcıya sunulan teknik başarı, müşteri, güvenlik, uyum, traction ve finans ölçülerinin tamamı formül/payda/kaynak/dönem/sürüm/onay sahibiyle kayıtlı değil. Bu kapı yatırımcı profili içindir.
 
-**YapÃ„Â±lacak iÃ…Å¸:** Her metriÃ„Å¸i veri sorgusuna veya imzalÃ„Â± kaynaÃ„Å¸a baÃ„Å¸la; ÃƒÂ¶rneklem, dÃƒÂ¶nem, sÃ„Â±nÃ„Â±r ve belirsizliÃ„Å¸i yaz; Product/Finance/Legal incelemesi al.
+**Yapılacak iş:** Her metriği veri sorgusuna veya imzalı kaynağa bağla; örneklem, dönem, sınır ve belirsizliği yaz; Product/Finance/Legal incelemesi al.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** OnaylÃ„Â± metrik sÃƒÂ¶zlÃƒÂ¼Ã„Å¸ÃƒÂ¼; Kaynak sorgu veya imzalÃ„Â± belge; DÃƒÂ¶nem/ÃƒÂ¶rneklem/payda; Ã„Â°nceleyen kiÃ…Å¸i onayÃ„Â±.
+**Kapatmak için gerekli somut kanıt:** Onaylı metrik sözlüğü; Kaynak sorgu veya imzalı belge; Dönem/örneklem/payda; İnceleyen kişi onayı.
 
 **Sorumlu:** Product + Finance + Legal. **Kontrol:** metric dictionary/evidence-index completeness.
 
-### CLM-001 Ã¢â‚¬â€ MÃƒÂ¼Ã…Å¸teri ve satÃ„Â±Ã…Å¸ iddialarÃ„Â±nÃ„Â±n kanÃ„Â±t onayÃ„Â±
+### CLM-001 — Müşteri ve satış iddialarının kanıt onayı
 
-**Durum:** open. **GeÃƒÂ§erli profiller:** evaluation, assisted-sale, production-ga, investor.
+**Durum:** open. **Geçerli profiller:** evaluation, assisted-sale, production-ga, investor.
 
-**Eksik gereksinim:** Landing, README, plugin, teklif, procurement ve yatÃ„Â±rÃ„Â±mcÃ„Â± metinlerinin tamamÃ„Â± onaylÃ„Â±, gÃƒÂ¼ncel ve aynÃ„Â± sÃƒÂ¼rÃƒÂ¼me baÃ„Å¸lÃ„Â± iddia kanÃ„Â±tÃ„Â±yla eÃ…Å¸lenmiÃ…Å¸ deÃ„Å¸il.
+**Eksik gereksinim:** Landing, README, plugin, teklif, procurement ve yatırımcı metinlerinin tamamı onaylı, güncel ve aynı sürüme bağlı iddia kanıtıyla eşlenmiş değil.
 
-**YapÃ„Â±lacak iÃ…Å¸:** Her iddiayÃ„Â± Claim Registry'ye baÃ„Å¸la; kaynak ve derlenmiÃ…Å¸ yÃƒÂ¼zeyleri tara; yalnÃ„Â±z sÃƒÂ¼resi geÃƒÂ§memiÃ…Å¸ Sales Approved ifadeleri yayÃ„Â±nla.
+**Yapılacak iş:** Her iddiayı Claim Registry'ye bağla; kaynak ve derlenmiş yüzeyleri tara; yalnız süresi geçmemiş Sales Approved ifadeleri yayınla.
 
-**Kapatmak iÃƒÂ§in gerekli somut kanÃ„Â±t:** Registry snapshot; DerlenmiÃ…Å¸ ÃƒÂ§Ã„Â±ktÃ„Â± tarama JSON'u; Ã„Â°ddiaÃ¢â€ â€™kanÃ„Â±t baÃ„Å¸lantÃ„Â±larÃ„Â±; Sales Approved incelemesi.
+**Kapatmak için gerekli somut kanıt:** Registry snapshot; Derlenmiş çıktı tarama JSON'u; İddia→kanıt bağlantıları; Sales Approved incelemesi.
 
 **Sorumlu:** Product/Marketing + Commercial + Legal. **Kontrol:** node docs/scripts/claim-check.mjs --mode=gate.
 
-## 71 alt ÃƒÂ¶zelliÃ„Å¸in eksik/kabul iÃ…Å¸leriyle eÃ…Å¸lemesi
+## 71 alt özelliğin eksik/kabul işleriyle eşlemesi
 
-Tabloda wired yalnÃ„Â±z ÃƒÂ§aÃ„Å¸rÃ„Â±labilen akÃ„Â±Ã…Å¸ demektir; ÃƒÂ¼retim kabulÃƒÂ¼ deÃ„Å¸ildir. Her ÃƒÂ¶zellik en az bir aÃƒÂ§Ã„Â±k kabul iÃ…Å¸ine baÃ„Å¸landÃ„Â±. AyrÃ„Â±ntÃ„Â±lÃ„Â± kaynak ve mevcut davranÃ„Â±Ã…Å¸ [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json) iÃƒÂ§indedir.
+Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir. Her özellik en az bir açık kabul işine bağlandı. Ayrıntılı kaynak ve mevcut davranış [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json) içindedir.
 
-| Ãƒâ€“zellik | Ad | Durum | Ã„Â°lgili aÃƒÂ§Ã„Â±k iÃ…Å¸ler |
+| Özellik | Ad | Durum | İlgili açık işler |
 |---|---|---|---|
 | DET-01 | Tool artifact extraction | wired | T01 |
 | DET-02 | Threat rules and confidence merge | wired | T01 |
@@ -996,15 +996,15 @@ Tabloda wired yalnÃ„Â±z ÃƒÂ§aÃ„Å¸rÃ„Â±labilen akÃ„Â±Ã�
 | EVAL-02 | Legal, privacy, residency and support | external | T34, T39, T41 |
 | EVAL-03 | Customer proof of value | external | T34, T39, T41 |
 
-## Uygulama sÃ„Â±rasÃ„Â± ve kapanÃ„Â±Ã…Å¸ kuralÃ„Â±
+## Uygulama sırası ve kapanış kuralı
 
-1. T01/T04/T10/T13 ile gerÃƒÂ§ek host interception, MCP forced-routing ve native response yan etkisini aynÃ„Â± aday hash'i ÃƒÂ¼zerinde kanÃ„Â±tla.
-2. T18/T19/T20/T28/T45 ile canlÃ„Â± IdP, SMTP, cloud project, public TLS proxy ve mÃƒÂ¼Ã…Å¸teri tarayÃ„Â±cÃ„Â±sÃ„Â± akÃ„Â±Ã…Å¸Ã„Â±nÃ„Â± iki tenantta ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±r.
-3. T24/T25/T27/T30/T32/T39 ile SIEM receipt, baÃ„Å¸Ã„Â±msÃ„Â±z kanÃ„Â±t saklama, offsite restore, HA/soak ve kÃƒÂ¶r benchmark ÃƒÂ¶lÃƒÂ§ÃƒÂ¼mÃƒÂ¼nÃƒÂ¼ tamamla.
-4. T29/T33/T40/T41 ile resmi signer custody, private registry, invoiceÃ¢â€ â€™paid entitlement ve ÃƒÂ§alÃ„Â±Ã…Å¸an destek kanalÃ„Â±nÃ„Â± aynÃ„Â± ticari candidate'a baÃ„Å¸la.
-5. Hukuk/Privacy/Finance/Security/Sales ve isimli mÃƒÂ¼Ã…Å¸teri PoV kayÃ„Â±tlarÃ„Â±nÃ„Â± 13 dÃ„Â±Ã…Å¸ kapÃ„Â±ya ekle.
-6. AynÃ„Â± imzalÃ„Â± candidate iÃƒÂ§in baÃ„Å¸Ã„Â±msÃ„Â±z test, mÃƒÂ¼Ã…Å¸teri PoV ve onaylÃ„Â± iddia kaydÃ„Â± tamamlandÃ„Â±ktan sonra GO kararÃ„Â± ver.
+1. T01/T04/T10/T13 ile gerçek host interception, MCP forced-routing ve native response yan etkisini aynı aday hash'i üzerinde kanıtla.
+2. T18/T19/T20/T28/T45 ile canlı IdP, SMTP, cloud project, public TLS proxy ve müşteri tarayıcısı akışını iki tenantta çalıştır.
+3. T24/T25/T27/T30/T32/T39 ile SIEM receipt, bağımsız kanıt saklama, offsite restore, HA/soak ve kör benchmark ölçümünü tamamla.
+4. T29/T33/T40/T41 ile resmi signer custody, private registry, invoice→paid entitlement ve çalışan destek kanalını aynı ticari candidate'a bağla.
+5. Hukuk/Privacy/Finance/Security/Sales ve isimli müşteri PoV kayıtlarını 13 dış kapıya ekle.
+6. Aynı imzalı candidate için bağımsız test, müşteri PoV ve onaylı iddia kaydı tamamlandıktan sonra GO kararı ver.
 
-Her kapanÃ„Â±Ã…Å¸ kaydÃ„Â± isimli sorumlu, gerÃƒÂ§ek sÃƒÂ¼rÃƒÂ¼m/artefact ÃƒÂ¶zeti, deÃ„Å¸iÃ…Å¸tirilemeyen test kanÃ„Â±tÃ„Â±, gÃƒÂ¶zlem tarihi, kabul eden kiÃ…Å¸i ve kalan sÃ„Â±nÃ„Â±ra sahip olmalÃ„Â±. Tahmini bitiÃ…Å¸ tarihi vermek iÃƒÂ§in ekip kapasitesi, mÃƒÂ¼Ã…Å¸teri kapsamÃ„Â± ve altyapÃ„Â± bilgisi gerekiyor; bilinmeyen baÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±Ã„Å¸a hayali tarih atanmadÃ„Â±.
+Her kapanış kaydı isimli sorumlu, gerçek sürüm/artefact özeti, değiştirilemeyen test kanıtı, gözlem tarihi, kabul eden kişi ve kalan sınıra sahip olmalı. Tahmini bitiş tarihi vermek için ekip kapasitesi, müşteri kapsamı ve altyapı bilgisi gerekiyor; bilinmeyen bağımlılığa hayali tarih atanmadı.
 
-Ã„Â°lk gÃƒÂ¶rÃƒÂ¼Ã…Å¸meye gÃƒÂ¶tÃƒÂ¼rÃƒÂ¼lebilecek mevcut materyal: [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md), [docs/production-readiness/first-customer-sales-packet-v7.md](docs/production-readiness/first-customer-sales-packet-v7.md), [docs/production-readiness/2026-09-13-customer-candidate-v7.md](docs/production-readiness/2026-09-13-customer-candidate-v7.md), [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md). Bunlar genel ÃƒÂ¼retim veya satÃ„Â±Ã…Å¸ onayÃ„Â± deÃ„Å¸ildir.
+İlk görüşmeye götürülebilecek mevcut materyal: [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md), [docs/production-readiness/first-customer-sales-packet-v7.md](docs/production-readiness/first-customer-sales-packet-v7.md), [docs/production-readiness/2026-09-13-customer-candidate-v7.md](docs/production-readiness/2026-09-13-customer-candidate-v7.md), [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md). Bunlar genel üretim veya satış onayı değildir.
