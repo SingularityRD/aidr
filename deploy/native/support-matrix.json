@@ -1,0 +1,181 @@
+{
+  "$schema": "./support-matrix.schema.json",
+  "schemaVersion": 1,
+  "kind": "aidr-native-support-matrix",
+  "reviewedAt": "2026-09-13",
+  "decision": "NO-GO",
+  "decisionMeaning": "This manifest records what the product is *permitted* to advertise and what has actually been accepted on a real host. It is not a claim that any row has passed. Every row carries `acceptanceEvidence`; a row whose evidence is empty is an open sales gate, and deploy/native/run-support-matrix.mjs fails closed on it.",
+  "soldConnectorScope": ["claude-code", "cursor", "vscode", "openclaw", "opencode", "codex"],
+  "soldPlatformScope": ["windows", "linux", "macos"],
+  "soldArchitectureScope": ["x64", "arm64"],
+  "soldDeploymentProfiles": [
+    "managed-cloud-control-plane",
+    "customer-self-hosted-control-plane"
+  ],
+  "interceptionPointVocabulary": [
+    "pre-tool-call",
+    "pre-prompt",
+    "pre-model-output",
+    "tool-output-inspection",
+    "network-egress",
+    "post-tool-call",
+    "none"
+  ],
+  "rows": [
+    {
+      "connector": "claude-code",
+      "hostBinary": "claude",
+      "hostBinaryEnvOverride": null,
+      "interceptionPoint": "pre-tool-call",
+      "outputInterceptionPoint": "pre-model-output",
+      "tamperResistance": "host-mediated-hook; a disabled or crashed hook is fail-closed by the connector, not by the host",
+      "supportedPlatforms": ["windows", "linux", "macos"],
+      "supportedArchitectures": ["x64", "arm64"],
+      "supportedContexts": ["user", "service"],
+      "installPath": ["pnpm dlx @singularityrd/aidr-cli setup", "claude plugin marketplace"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall"],
+      "supportOwnerRole": "Endpoint Engineering",
+      "knownBypasses": [
+        "Running the model against a file or shell channel the harness does not route through PreToolUse",
+        "Direct network access that never constructs a tool call"
+      ],
+      "unobservedActions": [
+        "Same-turn model blocking on a real Claude host",
+        "Behaviour when the host vendor ships a new hook schema"
+      ],
+      "acceptanceEvidence": []
+    },
+    {
+      "connector": "cursor",
+      "hostBinary": "cursor",
+      "hostBinaryEnvOverride": "AIDR_CURSOR_PATH",
+      "interceptionPoint": "pre-tool-call",
+      "outputInterceptionPoint": "tool-output-inspection",
+      "tamperResistance": "extension-host API boundary; the extension hook always exits 0 with a deny verdict so a killed hook cannot pass a call through",
+      "supportedPlatforms": ["windows", "linux", "macos"],
+      "supportedArchitectures": ["x64", "arm64"],
+      "supportedContexts": ["user"],
+      "installPath": [".vsix install via MDM or the extension gallery"],
+      "uninstallPath": ["extension uninstall"],
+      "supportOwnerRole": "Endpoint Engineering",
+      "knownBypasses": [
+        "Extension disabled by the operator",
+        "Tools executed outside the extension host (an external terminal)"
+      ],
+      "unobservedActions": [
+        "Headless agent enforcement coverage on a real Cursor host",
+        "A new Cursor version that changes the tool API"
+      ],
+      "acceptanceEvidence": []
+    },
+    {
+      "connector": "vscode",
+      "hostBinary": "code",
+      "hostBinaryEnvOverride": "AIDR_VSCODE_PATH",
+      "interceptionPoint": "pre-tool-call",
+      "outputInterceptionPoint": "tool-output-inspection",
+      "tamperResistance": "extension-host API boundary; the extension hook always exits 0 with a deny verdict",
+      "supportedPlatforms": ["windows", "linux", "macos"],
+      "supportedArchitectures": ["x64", "arm64"],
+      "supportedContexts": ["user"],
+      "installPath": [".vsix install via MDM or the extension gallery"],
+      "uninstallPath": ["extension uninstall"],
+      "supportOwnerRole": "Endpoint Engineering",
+      "knownBypasses": [
+        "Extension disabled by the operator",
+        "Tools executed outside the extension host (an external terminal)"
+      ],
+      "unobservedActions": [
+        "Enforcement coverage across the currently shipped VS Code minor versions"
+      ],
+      "acceptanceEvidence": []
+    },
+    {
+      "connector": "openclaw",
+      "hostBinary": "openclaw",
+      "hostBinaryEnvOverride": null,
+      "interceptionPoint": "pre-tool-call",
+      "outputInterceptionPoint": "post-tool-call",
+      "tamperResistance": "in-process plugin callback; a removed plugin means no interception at all",
+      "supportedPlatforms": ["windows", "linux", "macos"],
+      "supportedArchitectures": ["x64"],
+      "supportedContexts": ["user", "service"],
+      "installPath": ["openclaw plugin install"],
+      "uninstallPath": ["openclaw plugin uninstall"],
+      "supportOwnerRole": "Endpoint Engineering",
+      "knownBypasses": [
+        "Plugin removed or the gateway started without it",
+        "after_tool_call cannot prove same-turn model blocking"
+      ],
+      "unobservedActions": [
+        "Same-turn model blocking on a real gateway",
+        "Gateway version matrix"
+      ],
+      "acceptanceEvidence": []
+    },
+    {
+      "connector": "opencode",
+      "hostBinary": "opencode",
+      "hostBinaryEnvOverride": "OPENCODE_E2E_BIN",
+      "interceptionPoint": "pre-tool-call",
+      "outputInterceptionPoint": "pre-model-output",
+      "tamperResistance": "in-process plugin; a removed plugin means no interception at all",
+      "supportedPlatforms": ["windows", "linux", "macos"],
+      "supportedArchitectures": ["x64", "arm64"],
+      "supportedContexts": ["user", "service"],
+      "installPath": ["opencode plugin add"],
+      "uninstallPath": ["opencode plugin remove"],
+      "supportOwnerRole": "Endpoint Engineering",
+      "knownBypasses": [
+        "Plugin removed or the CLI invoked with the plugin path overridden",
+        "Provider streams that bypass the plugin's tool boundary"
+      ],
+      "unobservedActions": [
+        "Cases that require a live model provider credential",
+        "Same-turn output blocking on a real host"
+      ],
+      "acceptanceEvidence": []
+    },
+    {
+      "connector": "codex",
+      "hostBinary": "codex",
+      "hostBinaryEnvOverride": null,
+      "interceptionPoint": "pre-tool-call",
+      "outputInterceptionPoint": "none",
+      "tamperResistance": "native PreToolUse hook; the host fails open on a crashing or untrusted hook, so the connector maps ask to an explicit deny and denies its own internal errors",
+      "supportedPlatforms": ["windows", "linux", "macos"],
+      "supportedArchitectures": ["x64", "arm64"],
+      "supportedContexts": ["user"],
+      "installPath": ["codex hooks install"],
+      "uninstallPath": ["codex hooks uninstall"],
+      "supportOwnerRole": "Endpoint Engineering",
+      "knownBypasses": [
+        "Host fails open when hook execution is unavailable",
+        "No output-side (pre-model) interception exists for this host"
+      ],
+      "unobservedActions": [
+        "Verification against a Codex release newer than 0.141.0",
+        "Host-level tamper resistance (for example a patched host binary)"
+      ],
+      "acceptanceEvidence": []
+    }
+  ],
+  "residual": [
+    {
+      "id": "T01-NATIVE-SCENARIOS",
+      "description": "Per-host native scenario manifests that drive a real host binary through denied-side-effect, benign-twin, disabled-hook, crash, timeout, offline and restart cases.",
+      "ownerRole": "QA + Endpoint Engineering",
+      "requiredInput": "A licensed and installed copy of each sold host on a disposable Windows, Linux and macOS machine",
+      "acceptanceCommand": "node deploy/native/run-support-matrix.mjs --scenario-file deploy/native/scenarios/<host>.json --output .release-evidence/v8-native-<host>.json",
+      "acceptanceEvidence": []
+    },
+    {
+      "id": "T01-OS-VERSION-MATRIX",
+      "description": "Pinned operating-system build numbers for each sold platform row.",
+      "ownerRole": "Endpoint Engineering",
+      "requiredInput": "Customer-supported OS build list",
+      "acceptanceCommand": "node deploy/native/run-support-matrix.mjs",
+      "acceptanceEvidence": []
+    }
+  ]
+}

@@ -76,7 +76,7 @@
 			"capabilities": ["aig-bridge-schema", "aig-ssrf-guard", "aig-task-ownership", "aig-idempotency"],
 			"prerequisites": ["Python with services/aig-bridge/requirements-test.txt installed"],
 			"requiredCommands": ["python"],
-			"command": ["python", "-m", "pytest", "services/aig-bridge/tests", "-q", "--junitxml", "{junit}"],
+			"command": ["{python}", "-m", "pytest", "services/aig-bridge/tests", "-q", "--junitxml", "{junit}"],
 			"env": {"PYTHONPATH": "services/aig-bridge"}
 		},
 		{
