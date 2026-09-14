@@ -119,3 +119,9 @@ verify_jwt = false
 # Enterprise invoice orders require an authenticated operator session; the
 # function repeats identity, MFA and tenant-role checks before any SQL call.
 verify_jwt = true
+
+[functions.billing-portal]
+# Self-service subscription portal. Requires an authenticated operator session;
+# the handler re-resolves tenant, membership, role and MFA server-side and never
+# accepts a client-supplied tenant or provider customer id.
+verify_jwt = true
