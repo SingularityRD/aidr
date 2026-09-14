@@ -65,6 +65,17 @@ export function buildRuntimeVerdictEntry(
 		source: verdict.source,
 		matched_threat_id: verdict.matchedThreatId,
 		user_override: userOverride,
+		// Verified user -> agent -> tool -> resource lineage, present only when the
+		// call carried a delegated credential that verified. Without it an audited
+		// event cannot be traced back to the resource it touched.
+		//
+		// Deliberately not passed through the generic credential redactor: the
+		// lineage is a fixed projection of signed claims (never the bearer token,
+		// which is not copied into a verdict at all), and the redactor blanks any
+		// key containing "token" - which would erase `tokenId`, the join key to the
+		// broker's own lineage record. Remote telemetry drops this field entirely
+		// (see `redactRemoteEvent`), so nothing here reaches the control plane.
+		...(verdict.delegation ? { delegation: verdict.delegation } : {}),
 	};
 }
 
@@ -129,6 +140,9 @@ export function buildIncidentEntry(
 		source: params.verdict.source,
 		matched_threat_id: params.verdict.matchedThreatId,
 		recommended_actions: params.recommendedActions,
+		// Same lineage rule as the plain verdict entry: the incident is traceable to
+		// the resource only when a delegated credential verified for the call.
+		...(params.verdict.delegation ? { delegation: params.verdict.delegation } : {}),
 	};
 }
 

@@ -335,6 +335,7 @@ export {
 export {
 	allowVerdict,
 	evaluateToolCall,
+	type ToolDelegationContext,
 	type ToolEvaluationContext,
 	type ToolEvaluationRequest,
 } from "./evaluator.js";
@@ -805,6 +806,7 @@ export type {
 	Config,
 	ControlPlaneConfig,
 	Decision,
+	DelegationLineage,
 	FileCheckConfig,
 	HeuristicMatch,
 	IncidentConfig,

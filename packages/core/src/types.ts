@@ -105,6 +105,29 @@ export const VerdictSeveritySchema = z.enum(["info", "warning", "critical"]);
 export type Decision = z.infer<typeof DecisionSchema>;
 export type VerdictSeverity = z.infer<typeof VerdictSeveritySchema>;
 
+/**
+ * Verified `user -> agent -> tool -> resource` lineage carried by an
+ * `aidr-delegation+jwt` credential.
+ *
+ * Attached to a verdict only after the credential verified against this exact
+ * call, so its presence is itself the evidence that a delegated authorization
+ * was checked. The compact bearer token is deliberately not part of this shape.
+ */
+export interface DelegationLineage {
+	issuer: string;
+	tenantId: string;
+	subjectUserId: string;
+	agentId: string;
+	tool: { serverId: string; name: string };
+	resource: { type: string; id: string };
+	audience: string;
+	scopes: string[];
+	tokenId: string;
+	delegationDepth: number;
+	expiresAt: number;
+	parentTokenId?: string;
+}
+
 export interface Verdict {
 	decision: Decision;
 	category: string;
@@ -114,6 +137,8 @@ export interface Verdict {
 	artifacts: string[];
 	matchedThreatId: string | null;
 	reasons: string[];
+	/** Verified delegation lineage; absent when the call carried no credential. */
+	delegation?: DelegationLineage;
 }
 
 // ── Package check ──────────────────────────────────────────────────
