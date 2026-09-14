@@ -7,7 +7,7 @@
     "digest_source": ".release-evidence/customer-release-v8-local-20260913-r2/release-inventory.json",
     "digest_source_exists": true
   },
-  "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+  "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
   "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
   "environment": {
     "platform": "win32",
@@ -76,7 +76,7 @@
       "started_at_utc": "2026-09-13T19:06:30.286Z",
       "ended_at_utc": "2026-09-13T19:06:31.629Z",
       "duration_ms": 1343,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -100,7 +100,7 @@
       "limitations": [
         "Worktree-hygiene gate: it proves absence of whitespace errors and conflict markers in the working tree, not product behaviour.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/01-git-diff-check.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -127,7 +127,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -152,7 +152,7 @@
         "The generator's completion line proves the inventory was regenerated from declared sources; it is not production acceptance of any capability.",
         "Capability statuses remain wired/partial/missing/external and the recorded decision stays NO-GO.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -178,7 +178,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -203,7 +203,7 @@
         "Counts open work packages and external gates; it does not close any of them.",
         "Commercial, legal and customer evidence stays external and is not produced by this gate.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -228,7 +228,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -252,7 +252,7 @@
       "limitations": [
         "Validates that the execution prompt still carries every required section and task id; it does not execute the prompt's gates.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -280,7 +280,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -306,7 +306,7 @@
         "Biome reported 156 warnings and knip reported review debt (files=220, exports=131, duplicates=1); a warning-only lint result is not a clean static surface.",
         "demo-preflight warns that no sales URL/email, no DASHBOARD_SMOKE_BASE_URL and no DEMO_USER_* credentials are configured, so only the local static demo route is verified.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -332,7 +332,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -357,7 +357,7 @@
         "Advisory counts come from the local audit feed at run time; feed freshness and provider provenance are not recorded in the log.",
         "The summary line is printed before the failure check, so success is derived from the summary plus the absence of the explicit failure marker.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -382,7 +382,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -406,7 +406,7 @@
       "limitations": [
         "Static contract over migration text (ordering, uniqueness, critical grants); no database instance is contacted and no migration is applied.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -433,7 +433,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -463,7 +463,7 @@
         "Drives locally built bundles through connector entry points with fixture tool calls; it does not observe a native host intercepting a real agent process.",
         "Deny paths are asserted from the emitted verdict, not from a verified absence of file/process/network side effects on a host.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -489,7 +489,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -518,7 +518,7 @@
       "limitations": [
         "Contract test over the locally built Codex hook bundle for a named codex-cli version; real Codex host acceptance remains external.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -542,7 +542,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -575,7 +575,7 @@
         "Two skipped tests are recorded as skipped, not as passes.",
         "The declared artifact coverage/test-results.json is not present on disk, so artifact_sha256 is unknown.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -600,7 +600,7 @@
       "started_at_utc": "2026-09-13T19:29:31.909Z",
       "ended_at_utc": "2026-09-13T19:50:42.122Z",
       "duration_ms": 1270213,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -632,7 +632,7 @@
         "The captured log ends after a passing test line with no Vitest summary block, so the coverage run did not complete in this log; no coverage threshold result exists.",
         "Individually observed passing tests are not a coverage measurement and are not reported as one.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/12-test-coverage.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -660,7 +660,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -686,7 +686,7 @@
         "The log does show the build, artifact manifests, package contracts and 10 package consumer smokes completing; that is partial, not a verdict.",
         "Re-run this gate through `--run 13-build-release` (or `--record`) to capture an authoritative exit code.",
         "A log exists but no machine-readable result file and no decisive terminal marker were found, so exit_code and status are 'unknown' (fail closed).",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -722,7 +722,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -752,7 +752,7 @@
         "node --test contract suites for scripts, device-start ingress and monitoring; they run on this host against local fixtures.",
         "Failures are derived from `ℹ fail <n>`; a log without that summary stays unknown.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -777,7 +777,7 @@
       "started_at_utc": "2026-09-13T19:15:13.969Z",
       "ended_at_utc": "2026-09-13T19:15:24.525Z",
       "duration_ms": 10556,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -803,7 +803,7 @@
         "Dataset freshness and fingerprint coverage limits remain after a passing suite.",
         "Test counts are only accepted from pytest's own summary line; any other log shape stays unknown.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/15-aig-pytest.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -829,7 +829,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -854,7 +854,7 @@
         "Self-test and privacy canary cover the allowlist and identity/secret patterns; they do not prove a real customer bundle content review.",
         "The declared command is an `&&` chain of two verifiers; both halves must appear in the captured log before an exit status can be derived.",
         "A log exists but no machine-readable result file and no decisive terminal marker were found, so exit_code and status are 'unknown' (fail closed).",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -881,7 +881,7 @@
       "started_at_utc": "2026-09-13T19:06:41.700Z",
       "ended_at_utc": "2026-09-13T19:06:43.316Z",
       "duration_ms": 1616,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -905,7 +905,7 @@
       "limitations": [
         "`--mode=gate` is expected to FAIL while external gates are open and must not be bypassed; an inventory PASS is not an approved-claim result.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/17-claim-inventory.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -937,7 +937,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -962,7 +962,7 @@
         "A missing or unnamed host must be reported as HOST_UNAVAILABLE and NO-GO; skipping an absent host is not acceptable evidence.",
         "Protected status requires observing that a deny actually prevented the file/process/network side effect on the host.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -994,7 +994,7 @@
       "started_at_utc": "2026-09-13T19:07:53.010Z",
       "ended_at_utc": "2026-09-13T19:08:09.313Z",
       "duration_ms": 16303,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1020,7 +1020,7 @@
         "Runs the real local CLIs and editor hosts on this workstation, which is not a customer environment.",
         "A fail-closed result caused by absent prerequisites is recorded as FAIL for this declared command; it is never rewritten into a pass.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/19-release-e2e.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -1047,7 +1047,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1065,14 +1065,14 @@
         "os": "Windows_NT 10.0.19045 (x64)"
       },
       "test_counts": "unknown",
-      "observed_effect": "Terminal log marker for exit_code=0: Release bundle assembled in C:\\Users\\anıl\\Desktop\\aidr\\.release-evidence\\customer-release-v8-local-20260913-r2 (14 artifacts) Last non-empty log line: Release bundle assembled in C:\\Users\\anıl\\Desktop\\aidr\\.release-evidence\\customer-release-v8-local-20260913-r2 (14 artifacts)",
-      "log_sha256": "365c58e8dd8b4f76f27b0c80a2da23b88ebe863cdadeb9b85151112c3bc46564",
+      "observed_effect": "Terminal log marker for exit_code=0: Release bundle assembled in C:\\Users\\anıl\\Desktop\\aidr\\.release-evidence\\customer-release-v8-local-20260913-r3 (14 artifacts) Last non-empty log line: Release bundle assembled in C:\\Users\\anıl\\Desktop\\aidr\\.release-evidence\\customer-release-v8-local-20260913-r3 (14 artifacts)",
+      "log_sha256": "0bcf872fa53731a4e3ed3d1b2d9c44b774a22085eeab679c2ceb58eaa870348d",
       "artifact_sha256": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "limitations": [
         "Assembles 14 local artifacts; without an official publisher key custody and private registry publication the candidate stays unsigned (publisher_authenticated=false).",
         "Checksums prove content, not publisher identity.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -1099,7 +1099,7 @@
       "started_at_utc": "unknown",
       "ended_at_utc": "unknown",
       "duration_ms": "unknown",
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1124,7 +1124,7 @@
         "Portable candidate assembly only; the release envelope is unsigned and no customer host has installed it.",
         "Customer onboarding, empty-PATH installation and support workflows are separate gates and remain NOT_RUN.",
         "exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -1150,7 +1150,7 @@
       "started_at_utc": "2026-09-13T19:08:09.499Z",
       "ended_at_utc": "2026-09-13T19:08:11.693Z",
       "duration_ms": 2194,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1174,7 +1174,7 @@
       "limitations": [
         "Verifies the vendored AI-Infra-Guard source pin and corpus on the same commit as the isolated Python suite; submodule dirty state must be captured in the evidence.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/21-aig-verify.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -1204,7 +1204,7 @@
       "started_at_utc": "2026-09-14T04:40:21.297Z",
       "ended_at_utc": "2026-09-14T04:41:04.325Z",
       "duration_ms": 43028,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1228,7 +1228,7 @@
       "limitations": [
         "Exercises missing/wrong credentials, wrong tenant, replay and unavailable-dependency paths against local fixtures.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/22-e2e-negative.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -1254,7 +1254,7 @@
       "started_at_utc": "2026-09-13T19:06:43.475Z",
       "ended_at_utc": "2026-09-13T19:07:46.151Z",
       "duration_ms": 62676,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1279,7 +1279,7 @@
         "The verifiers' own declared scope is offline template and local lifecycle verification; no Jamf/MDM or host execution acceptance is claimed.",
         "An absent OS or MDM host must not be counted as a success; real Intune/SCCM/Jamf execution and publisher signing remain external.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/23-fleet.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -1314,7 +1314,7 @@
       "started_at_utc": "2026-09-14T04:41:04.464Z",
       "ended_at_utc": "2026-09-14T04:42:09.530Z",
       "duration_ms": 65066,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1339,7 +1339,7 @@
         "Local readiness/upgrade/backup/offboarding drills; real offsite provider, independent-host recovery and agreed RPO/RTO remain external.",
         "Seven chained commands whose success markers overlap (two of them are node --test runs), so no exit status is inferred from a combined log; run it with `--run` or `--record` to capture one authoritatively.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/24-monitoring-and-upgrade.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -1369,7 +1369,7 @@
       "started_at_utc": "2026-09-14T04:42:09.719Z",
       "ended_at_utc": "2026-09-14T04:42:12.046Z",
       "duration_ms": 2327,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1394,7 +1394,7 @@
         "This declared command is a local rehearsal (verify:customer-onboarding plus the local customer demo); it cannot produce customer_observed evidence.",
         "Real customer observation requires a named customer on a real host and is not produced by this gate.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/25-customer-onboarding.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -1420,7 +1420,7 @@
       "started_at_utc": "2026-09-13T19:08:11.884Z",
       "ended_at_utc": "2026-09-13T19:08:12.096Z",
       "duration_ms": 212,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1444,7 +1444,7 @@
       "limitations": [
         "Proves the four generators are byte-stable across two runs; it does not prove the generated content is correct or complete.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/26-generator-determinism.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -1472,7 +1472,7 @@
       "started_at_utc": "2026-09-14T04:29:41.737Z",
       "ended_at_utc": "2026-09-14T04:38:05.264Z",
       "duration_ms": 503527,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1498,7 +1498,7 @@
         "A package whose entry point needs an unbundled runtime dependency (for example `yaml`, `@opencode-ai/plugin`, `commander`, or the first-party core) is reported SKIPPED_WITH_REASON when a fresh offline resolve cannot complete; a skip is never counted as a pass.",
         "The extension host (`vscode`) cannot exist in a Node-only consumer process, so that package's runtime entry is UNSUPPORTED and only its syntax and shipped assets are checked.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/27-empty-path-package-install.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -1530,7 +1530,7 @@
       "started_at_utc": "2026-09-14T04:38:05.493Z",
       "ended_at_utc": "2026-09-14T04:38:07.044Z",
       "duration_ms": 1551,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1555,7 +1555,7 @@
         "Validity PASS with readiness NO-GO: every declared interception point is `declared-not-proven` or `unsupported` until a named real-host acceptance record exists, and the gate refuses an `enforced` row without one.",
         "Cross-checks each row against the connector's own source tree, so a row cannot claim a point the source does not implement or borrow another connector's module.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/28-interception-matrix.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -1580,7 +1580,7 @@
       "started_at_utc": "2026-09-14T04:38:27.802Z",
       "ended_at_utc": "2026-09-14T04:38:31.590Z",
       "duration_ms": 3788,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1605,7 +1605,7 @@
         "Enforces the AIDR-012 acceptance criteria over tracked files: no tracked root scratch output, and no personal absolute host path outside an explicitly reasoned allowlist.",
         "A bare Windows UNC rule is deliberately out of scope because `\\\\\\\\` is the normal spelling of a regex escape in tracked source; the script documents that decision.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/29-repo-hygiene.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
@@ -1631,7 +1631,7 @@
       "started_at_utc": "2026-09-14T04:38:31.750Z",
       "ended_at_utc": "2026-09-14T04:38:33.072Z",
       "duration_ms": 1322,
-      "commit_sha": "431673ab50712562435ab505c37a8f7deb2a7554",
+      "commit_sha": "f156aaedeb9a5a0a018401c873387113767eb54e",
       "candidate_digest": "0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4",
       "environment": {
         "platform": "win32",
@@ -1656,7 +1656,7 @@
         "Structural and consistency gate only: it exits 0 when all 13 hard gates are recorded as honestly open with their required external inputs named.",
         "It cannot close a gate. `node docs/scripts/claim-check.mjs --mode=gate` remains the gate that fails while any of them is open, and it is expected to fail.",
         "exit_code and timing were read from the machine-readable result file .release-evidence/v8-logs/30-commercial-gates.log.result.json written when the gate was run.",
-        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit 431673ab50712562435ab505c37a8f7deb2a7554 and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
+        "The log does not embed a commit SHA or candidate digest, so its correspondence to commit f156aaedeb9a5a0a018401c873387113767eb54e and candidate digest 0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4 is not proven.",
         "environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
         "task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
         "owner is a declared accountability role for the gate, not a named individual attestation."
