@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UrlCheckClient } from "../clients/url-check.js";
 import { DetectionLegUnavailableError } from "../detection-leg.js";
+import type { UrlCheckResult } from "../types.js";
 
 describe("UrlCheckClient", () => {
 	const originalFetch = globalThis.fetch;
@@ -129,6 +130,66 @@ describe("UrlCheckClient", () => {
 		await expect(client.checkUrls(["http://any.test"])).rejects.toBeInstanceOf(
 			DetectionLegUnavailableError,
 		);
+	});
+
+	it("reports a URL with no feed coverage as unknown instead of clean", async () => {
+		// The endpoint answers 200 for a URL the tenant's reputation store holds no
+		// row for, and marks it explicitly (`unknown` classification plus a
+		// `no_data` coverage indicator). Reading that as an empty classification is
+		// the false-clean: "we have no data about this URL" reached the caller as
+		// "this URL is clean".
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				coverage: "partial",
+				answers: [
+					{
+						key: "http://unknown.test",
+						coverage: "no_data",
+						result: {
+							success: {
+								classification: { result: { unknown: { reason: "no_reputation_row" } } },
+								flags: [],
+								coverage: "no_data",
+							},
+						},
+					},
+					{
+						key: "http://malware.test",
+						coverage: "covered",
+						result: {
+							success: {
+								classification: {
+									result: {
+										malicious: {
+											findings: [{ "severity-name": "malware", "type-name": "trojan" }],
+										},
+									},
+								},
+								flags: [],
+								coverage: "covered",
+							},
+						},
+					},
+				],
+			}),
+		});
+
+		const client = new UrlCheckClient();
+		const error = await client
+			.checkUrls(["http://unknown.test", "http://malware.test"])
+			.catch((e: unknown) => e);
+
+		expect(error).toBeInstanceOf(DetectionLegUnavailableError);
+		expect((error as DetectionLegUnavailableError).leg).toBe("url_reputation");
+		expect((error as DetectionLegUnavailableError).reason).toMatch(/no reputation feed coverage/i);
+		expect((error as DetectionLegUnavailableError).uncheckedCount).toBe(1);
+		// The URL the feed DID hold a row for keeps its real detection: the gap is
+		// reported without throwing away the evidence found alongside it.
+		const partial = (error as DetectionLegUnavailableError).partialResults as UrlCheckResult[];
+		expect(partial).toHaveLength(1);
+		expect(partial[0]?.url).toBe("http://malware.test");
+		expect(partial[0]?.isMalicious).toBe(true);
 	});
 
 	it("sends request payload with kebab-case field names", async () => {
