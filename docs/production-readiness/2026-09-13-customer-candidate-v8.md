@@ -114,19 +114,19 @@ Yeni test dosyaları (v8): `supabase/functions/__tests__/billing-portal.test.ts`
 
 ## 6. Teslimat yolları ve digestler
 
-- Aday kaydı: bu dosya. Donmuş kaynak commit: `02a0b3322b1ede17c31e67b94fbe1ada2cb5fe03` (`master` tipi `2d18fc4f`; üretici kayıtlar bir commit geriden damgalandığı için aile tipi `02a0b332`'dir).
-- Release çıktısı: `.release-evidence/customer-release-v8-local-20260913-r3/` (14 artefakt, `release-metadata.json` `git_sha=02a0b332…`, `release_version=0.6.0-rc.8`).
-- Release-inventory SHA-256 (candidate digest): `0d78abdece256237805792ca6b5339fba53e7018001eaa4a81ba73ae262539f4`.
-- Portable customer kit: `.release-evidence/aidr-customer-kit-v8-local-20260913-r3/` (344 dosya, kit verifier 6/6).
-- İmzasız dış zarf: `.release-evidence/aidr-envelope-v8-local-20260913-r3/` (`publisher_authenticated=false`).
+- Aday kaydı: bu dosya. Donmuş paket kaynak commit'i: `cdba3754d7f8d7a3096c9fb56eefb8ac75333823`; bu commit'in ardından yalnız yerel kapı kayıtları ve bu aday belgesi güncellendi.
+- Release çıktısı: `.release-evidence/customer-release-v8-local-20260914-r4/` (15 artefakt; onuncu paket manifestleri, SBOM ve yeni unsigned in-toto/SLSA-style provenance dahil; `release-metadata.json` `git_sha=cdba3754…`, `release_version=0.6.0-rc.8`).
+- Release-inventory SHA-256 (candidate digest): `0955ce9e188e0ed19380c8e67d8ee25a1e9fafccf9110bfaa35f04108fb09b6e`.
+- Portable customer kit: `.release-evidence/aidr-customer-kit-v8-local-20260914-r4/` (372 dosya, kit verifier PASS: 372 dosya + 15 release artefaktı).
+- İmzasız dış zarf: `.release-evidence/aidr-envelope-v8-local-20260914-r4/` (`publisher_authenticated=false`).
 - Native matris kaydı: `.release-evidence/v8-native-probe.json`, girdi `deploy/native/support-matrix.json`.
 - Ölçülen kaynak profili: `.release-evidence/v8-resource-profile-aidr-v6-local.json`, insan okunur özet `resource-sizing-v8.md`.
 - Makine okunur kanıt indeksi: `v8-evidence-index.json` + `v8-evidence-index.schema.json`.
 - Ticari kapı makbuzları: `commercial-gate-receipts.json` + `.schema.json` (13 kapının tamamı `open`).
 - Komut logları: `.release-evidence/v8-logs/`.
-- v7 klasörleri (`customer-release-v7-local-20260913`, `aidr-customer-kit-v7-local-20260913*`, `aidr-envelope-v7-local-20260913*`) değiştirilmedi. Önceki v8 paketleme denemeleri (`…-20260913`, `…-r2`) silinmedi; `…-r3` bunları supersede eder. `r2` ile aynı digest'e sahiptir çünkü aradaki commit yalnızca üretilmiş kayıtları yeniden pinler; paketlenen baytlar değişmez.
+- v7 ve önceki v8 klasörleri değiştirilmedi. `…-20260914-r4`, `…-20260913-r3` adayını supersede eder. r4 digest'i kasıtlı olarak farklıdır: pakete yeni unsigned provenance artefaktı eklendi ve kaynak uygulama yerel kapanışlarla değişti.
 
-> **Commit serisi notu.** Bu aday, `07a4fc4a` tabanı üzerindeki 13 commit'lik serinin tipidir (`master` = `2d18fc4f`). Seri, "her modül onu yeniden dışa aktaran barrel ile aynı commit'te iner" kuralını ve "hiçbir iki commit aynı değişikliği tekrarlamaz" kuralını sağlayacak şekilde yeniden oynatıldı: `T13`/`T25` modülleri ile barrel'ları aynı commit'te iner, `MKT-01/02/05` modülleri barrel'larını getiren commit'ten sonra gelir. Yeniden oynatma her commit'in kendi diff'ini uyguladığı için ürün ağacı değişmedi: kayıt dosyalarındaki commit kimlikleri geri alındığında tip ağacı, supersede edilen tip ağacıyla birebir aynı çıkar. Yalnızca dört kayıt dosyasının (`FEATURE_INVENTORY.json`, `PRODUCTION_SALES_GAPS.json`, `2026-09-13-customer-candidate-v8.md`, `v8-evidence-index.json`) andığı commit kimlikleri yeni seriye taşındı ve her kimlik yeni seride var olan bir commit'e çözülür. Bu yüzden `release-inventory` digesti ve paketlenen baytlar **değişmedi**; `r2`/`r3` digest eşitliği de bunu doğrular. Supersede edilen seri `backup/superseded-series` ref'inde durur.
+> **Commit serisi notu.** İlk 13 commit'lik v8 seri, her modül barrel'ı ve testiyle aynı atomik commit'te inecek şekilde yeniden oynatıldı; supersede edilen seri `backup/superseded-series` ref'inde tutulur. Ardından A/B/C yerel kapanış dalgaları ayrı atomik commit'ler olarak eklendi. r4 kaynak ağacının tam test, coverage, static quality, dependency audit, migration, enforcement, Codex, package-consumer ve release-build kapıları geçti. Kanıt indeksinde **27 PASS, 3 FAIL, 0 NOT_RUN, 0 unknown** bulunur; üç FAIL yerelde başarıya çevrilmeyen `18-native-host`, `19-release-e2e` ve `25-customer-onboarding` dış ortam kapılarıdır.
 >
 > **Kendine referans notu.** Üretici kayıtlar (`FEATURE_INVENTORY.json`, `PRODUCTION_SALES_GAPS.json`, `v8-evidence-index.json`) üretildikleri commit'i `source_commit` alanında taşır. Bu alanı içeren bir commit atıldığında değer bir sonraki commit'e kayar; bu yüzden "generator determinizmi" kapısı, commit edilmiş dosyayı değil **iki ardışık üretici koşusunun bayt-eşitliğini** esas alır. Kanıt: iki ardışık koşu 6 üretilmiş dosyada da aynı SHA-256'yı verir; `source_commit` dışındaki hiçbir satır değişmez.
 
@@ -136,9 +136,10 @@ Yeni test dosyaları (v8): `supabase/functions/__tests__/billing-portal.test.ts`
 
 | Ölçüm | Değer | Kanıt |
 | --- | --- | --- |
-| Tam test süresi | 239,1 s (246 dosya, Win32 seri) | `11-test-ci-final.log` |
-| Release bundle üretimi | 14 artefakt, exit 0 | `20-release-bundle.log` |
-| Customer kit | 342 dosya, exit 0 | `20-customer-kit.log` |
+| Tam test | 274 dosya, 3.876 PASS, 1 skip, 0 FAIL | `11-test-ci-final.log` |
+| Coverage | 77,65% statements, 70,33% branches, 80,61% functions, 81,14% lines; bütün eşikler geçti | `12-test-coverage.log` |
+| Release bundle üretimi | 15 artefakt, exit 0 | `20-release-bundle.log` |
+| Customer kit | 372 dosya + 15 release artefaktı doğrulandı, exit 0 | `20-customer-kit.log`; kit verifier çıktısı |
 | Enforcement | 72/72 | `09-verify-enforcement.log` |
 | Node sözleşmeleri | 57/57 | `14-node-contracts.log` |
 

@@ -25,7 +25,7 @@ Status key: `DONE` (committed and verified), `OPEN`, `EXTERNAL` (cannot be close
 | D12 | An empty `it.skip` could disappear with nothing noticing | `a08958c4`, `4bf0a8c4` |
 | D13 | Audit-write failures and telemetry loss were invisible | `dc4f6898` |
 
-## Wave A — bounded detection and tenancy safety (10 subagents)
+## Wave A — bounded detection and tenancy safety (10 subagents) — DONE
 
 | # | Gap | Where | Acceptance |
 |---|---|---|---|
@@ -40,7 +40,7 @@ Status key: `DONE` (committed and verified), `OPEN`, `EXTERNAL` (cannot be close
 | A9 | No finance-approval → entitlement transition, no TTL/pruning, no reconciliation view | new RPC + maintenance + dashboard | `billing-*` tests |
 | A10 | No incident/evidence view: correlation and receipt output is never rendered | `packages/dashboard/src/enterprise/evidence-view.tsx` | new suite |
 
-## Wave B — operator surface and remaining honesty gaps (10 subagents)
+## Wave B — operator surface and remaining honesty gaps (10 subagents) — DONE
 
 | # | Gap | Where | Acceptance |
 |---|---|---|---|
@@ -55,7 +55,7 @@ Status key: `DONE` (committed and verified), `OPEN`, `EXTERNAL` (cannot be close
 | B9 | Connector-scope claims disagree (README says four, registry five, matrix six) and claim surfaces are unscanned; stale scan digest is not gated | `check-commercial-readiness.mjs`, README | 3 new gate tests |
 | B10 | No offline/air-gap image bundle and no release provenance (SLSA/in-toto) | `scripts/build-airgap-images.mjs`, `generate-provenance.mjs` | new suites |
 
-## Wave C — T39 harness and the remaining evidence gates (10 subagents)
+## Wave C — T39 harness and the remaining evidence gates (10 subagents) — DONE LOCALLY
 
 | # | Gap | Where | Acceptance |
 |---|---|---|---|
