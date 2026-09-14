@@ -328,12 +328,41 @@
       "acceptanceCriteria": "No scratch output tracked at root; .gitignore prevents recurrence; no host-path strings in tracked text files outside vendored/generated content.",
       "plannedFix": "Delete the scratch files and add ignore rules.",
       "verificationMethod": "git ls-files re-check + repo-wide host-path scan.",
-      "status": "IMPLEMENTED_UNVERIFIED",
+      "status": "VERIFIED_CLOSED",
+      "closedAt": "2026-09-13",
       "evidence": [
         "git ls-files (root)",
         "Select-String host paths in tracked .txt",
-        "2026-09-12: root scratch-output deletions remain staged and root diagnostic patterns are ignored; git ls-files contains no root .txt files in the current index. git grep for C:\\\\Users outside vendor finds only intentional C:\\\\Users\\\\Public threat/test fixtures. git diff --check passes. A clean committed release snapshot is still required before verified closure."
+        "2026-09-12: root scratch-output deletions remain staged and root diagnostic patterns are ignored; git ls-files contains no root .txt files in the current index. git grep for C:\\\\Users outside vendor finds only intentional C:\\\\Users\\\\Public threat/test fixtures. git diff --check passes. A clean committed release snapshot is still required before verified closure.",
+        "2026-09-13: the finding is now an enforced gate rather than prose. scripts/verify-repo-hygiene.mjs enumerates tracked files with `git ls-files` and fails on (a) any .gitignore scratch pattern still tracked at the repository root and (b) any absolute host path in a tracked text file, with an allowlist whose every entry must carry a written reason. Verified on this worktree: 1150 tracked files, 877 text files scanned, 269 files covered by reasoned allowlist entries, 0 violations, 0 allowlist self-check problems, exit 0. Three real leaks were fixed: .sisyphus/boulder.json (personal `C:\\\\Users\\\\<user>\\\\...` plan path replaced by the relative .sisyphus/plans/... path), scripts/generate-next-agent-execution-prompt.mjs plus its generated docs/production-readiness/next-agent-execution-prompt-v8.md (hard-coded personal workspace path replaced by the portable `<repo-root>` reference), and CODEX_HOOKS_0.141.0_REFERENCE.md (personal AppData path replaced by `%LOCALAPPDATA%`). 184 tracked `.tmp-test/` scratch files that .gitignore already declared were removed from the index with `git rm -r --cached` (working-tree copies untouched; the unit tests recreate these paths). Completion is verified by the local gate on this worktree; the separate release-state requirement for an immutable committed candidate snapshot is tracked by the release/candidate records, not by this finding."
       ],
+      "localEvidence": [
+        {
+          "claim": "Root scratch check: the scratch-related patterns are parsed out of .gitignore (15 patterns) and every one of them must be genuinely untracked at the repository root, so the gate and .gitignore cannot drift; the repository root holds 43 tracked entries, none of them scratch.",
+          "evidencePath": "scripts/verify-repo-hygiene.mjs",
+          "command": "pnpm verify:repo-hygiene",
+          "verifiedBy": "this session, exit 0 (repo hygiene OK; 1150 tracked files, 43 root entries, 877 text files scanned, 0 violations)"
+        },
+        {
+          "claim": "Host-path scan: every tracked text file is scanned for C:\\\\Users\\\\<name>, /home/<name>/ and /Users/<name>/ absolute paths, reporting file, line, matched string and match kind; binaries are skipped by extension and by a NUL-byte probe; vendored/generated content is exempt only via an explicit allowlist entry with a written reason, and an entry whose reason is missing or trivial fails the gate's own self-check.",
+          "evidencePath": "scripts/verify-repo-hygiene.mjs",
+          "command": "pnpm verify:repo-hygiene",
+          "verifiedBy": "this session, exit 0 (877 text files scanned, 269 allowlisted, 0 host-path violations, 0 allowlist problems)"
+        },
+        {
+          "claim": "The gate is covered by node --test fixtures built in temporary repositories outside this repo: a clean tree passes; a tracked root *.log fails; a tracked file containing a personal C:\\\\Users path fails; a POSIX /home/ personal path fails; a vendored file listed with a written reason is exempt; an allowlist entry with an empty reason fails the self-check; a binary file is skipped without a false positive; and two runs over identical inputs produce identical reports.",
+          "evidencePath": "scripts/verify-repo-hygiene.test.mjs",
+          "command": "node --test scripts/verify-repo-hygiene.test.mjs",
+          "verifiedBy": "this session, exit 0 (23 tests, 23 pass, 0 fail)"
+        },
+        {
+          "claim": "All three acceptance clauses are now machine-checked on this working tree: the gate parses the scratch patterns out of .gitignore and asserts every one of them is genuinely untracked at the repository root, then scans every tracked text file for absolute Windows/POSIX host paths using a reasoned allowlist that self-checks each exemption.",
+          "evidencePath": "scripts/verify-repo-hygiene.mjs",
+          "command": "pnpm verify:repo-hygiene",
+          "verifiedBy": "this session, exit 0 (1150 tracked files, 877 text files scanned, 0 violations, 0 allowlist problems)"
+        }
+      ],
+      "remainingExternal": "None for this finding's own acceptance criteria. The gate, its test suite and the package.json script `verify:repo-hygiene` enforce them on every run, so closure no longer depends on anyone re-running the manual `git ls-files` + grep checks. Deliberately out of scope and documented in the script: a bare Windows UNC rule is not included, because in tracked source `\\\\` is the normal spelling of a regex escape (`\\\\bexport\\\\s`), which a UNC pattern matches several hundred times across threats/*.yaml and the bundled CJS. Two items stay visible but belong elsewhere: the untracked working-tree copies of the 184 former `.tmp-test/` scratch files (ignored by .gitignore, safe to delete locally) and the release-state requirement for an immutable committed candidate snapshot, which is a release record concern rather than a root-hygiene defect.",
       "owner": "engineering",
       "class": "in-repo-fixable"
     },
@@ -427,6 +456,21 @@
         "POST https://aidr.singularityrd.com/v1/device-start -> 404",
         "2026-09-11: empty default endpoint, correct /functions/v1 route composition and both deployment preparation modes implemented. Isolated Docker installation passes 29 checks including full device pairing/enrollment and signature verification. Production cloud/domains/IdP/SMTP remain external; no production acceptance claimed."
       ],
+      "localEvidence": [
+        {
+          "claim": "Acceptance 'or' branch: an un-enrolled install reports local-only protection ('Local protection ACTIVE (managed features unavailable: ...)') instead of a silent 'Disabled (auth_required)' dead end; only genuinely-stopped reasons render as Disabled.",
+          "evidencePath": "packages/core/src/format.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/format.test.ts",
+          "verifiedBy": "this session, targeted vitest run (exit 0)"
+        },
+        {
+          "claim": "The device-start / device-poll / device-verify Edge Functions exist in the repository with declared contract tests, so the missing half of enrollment is the reachable endpoint and not the local client surface.",
+          "evidencePath": "docs/production-readiness/edge-function-contract-manifest.json",
+          "command": "node scripts/check-supabase-edge-contracts.mjs",
+          "verifiedBy": "this session, exit 0 (16 functions + shared helper, 32/32 config-guarded)"
+        }
+      ],
+      "remainingExternal": "A reachable control-plane endpoint (DNS + TLS + a deployed device-start/device-poll/enroll/ingest/policy surface) so the documented device flow returns user_code/verification_url and polling writes managed.json. The finding's verificationMethod (POST {endpoint}/v1/device-start) cannot be executed from this workspace; managed features therefore still cannot activate, and no local change can satisfy the primary branch. Status stays BLOCKED_EXTERNAL.",
       "owner": "product + infrastructure",
       "class": "external-dependency",
       "currentState": "Both deployment generators and local pairing/enrollment work. Actual production cloud/DNS/HTTPS and customer host acceptance remain open; historical NXDOMAIN observations are not a current endpoint probe."
@@ -535,13 +579,28 @@
       "acceptanceCriteria": "No UI code invokes a non-existent function; device enrollment completes end-to-end from the browser; every invoked function has a contract test in the release manifest.",
       "plannedFix": "Resolve together with AIDR-016 (decide the control-plane surface), then implement or remove the calls and add contract tests.",
       "verificationMethod": "Contract test per function plus a browser onboarding run to completion.",
-      "status": "IN_PROGRESS",
+      "status": "BLOCKED_EXTERNAL",
       "evidence": [
         "grep for the eight function names finds no implementation",
         "packages/dashboard/src/enterprise/team-provider.tsx:250,321",
         "supabase/functions/device-poll/index.ts:80-88",
         "2026-09-11: device-code body precedence, policy/policy-management, team-invite, invitation acceptance and audit-export routes implemented; real tenant, role, replay and export checks pass. Azure directory-group sync remains incomplete."
       ],
+      "localEvidence": [
+        {
+          "claim": "Acceptance parts 1 and 3: every Edge Function invoked from dashboard browser code is discovered from the TypeScript AST and resolved to a real supabase/functions/<name>/index.ts, and each one is declared in the contract manifest with an existing contract test (16/16 declared, 0 recorded gaps). A dashboard call to a non-existent function fails the gate with 'dashboard calls missing Edge function'.",
+          "evidencePath": "docs/production-readiness/edge-function-contract-manifest.json",
+          "command": "node scripts/check-supabase-edge-contracts.mjs",
+          "verifiedBy": "this session, exit 0"
+        },
+        {
+          "claim": "The same gate fails on a dynamic (non-literal) function name, a missing supabase/config.toml deployment entry, a manifest entry whose declared test file does not exist, and a stale manifest entry, so the no-non-existent-function guarantee is enforced rather than described.",
+          "evidencePath": "scripts/check-supabase-edge-contracts.mjs",
+          "command": "node scripts/check-supabase-edge-contracts.mjs",
+          "verifiedBy": "this session, exit 0"
+        }
+      ],
+      "remainingExternal": "Acceptance part 2: device enrollment completing end-to-end from a real browser. That requires a browser session against a deployed control plane plus a live IdP and is blocked by AIDR-016's missing endpoint, so it cannot be produced from this repository. Contract tests alone are not accepted as evidence for it; therefore the finding moves from IN_PROGRESS to BLOCKED_EXTERNAL rather than VERIFIED_CLOSED.",
       "owner": "engineering",
       "class": "in-repo-fixable",
       "currentState": "Device-code precedence, policy routes, invitations, acceptance and export implemented; directory/SCIM contract remains incomplete. Earlier missing-function list is historical."
@@ -1128,7 +1187,7 @@
       "priority": "P0",
       "feature": "Encrypted backup and validated restore",
       "inventoryRef": "DEP-06",
-      "status": "IN_PROGRESS",
+      "status": "BLOCKED_EXTERNAL",
       "acceptanceCriteria": "Restore database and objects to an independent environment; prove retention, key recovery and agreed RPO/RTO.",
       "evidence": [
         "FEATURE_INVENTORY.json",
@@ -1137,6 +1196,21 @@
         "scripts/verify-deployment-recovery.mjs",
         "docs/production-readiness/evidence/2026-09-11-customer-recovery.json"
       ],
+      "localEvidence": [
+        {
+          "claim": "Acceptance 'restore to an independent environment' plus 'key recovery': the recorded local rehearsal passed encrypted-archive authentication, independent-volume recovery, PostgreSQL start from the recovered physical backup, per-table and per-object digest comparison, wrong-key refusal, modified-manifest rejection and the existing-installation destination guard. The record's own scope limits this to a same-machine isolated rehearsal.",
+          "evidencePath": "docs/production-readiness/evidence/2026-09-11-customer-recovery.json",
+          "command": "node scripts/verify-deployment-recovery.mjs --source <source-installation> --recovered <recovered-installation>",
+          "verifiedBy": "recorded artefact docs/production-readiness/evidence/2026-09-11-customer-recovery.json (passed: true; scope 'Same-machine isolated recovery rehearsal; not offsite RPO/RTO acceptance')"
+        },
+        {
+          "claim": "Offsite backup publication/retention and the recovery drill's fail-closed rules (key-custody separation, restore-workspace ACLs, fault-window requirements) are covered by passing node --test cases.",
+          "evidencePath": "scripts/deployment-restore-drill.test.mjs",
+          "command": "node --test scripts/deployment-restore-drill.test.mjs scripts/deployment-backup-offsite.test.mjs",
+          "verifiedBy": "this session, exit 0"
+        }
+      ],
+      "remainingExternal": "Acceptance 'independent environment' beyond one machine and 'agreed RPO/RTO': a real off-host/offsite storage target, an independent key custodian, scheduled retention that survives host loss, a restore performed on a separate machine, and customer-agreed RPO/RTO values. The recorded evidence explicitly excludes all of these. Local implementation is complete enough to record as evidence, so status moves to BLOCKED_EXTERNAL.",
       "implementationNote": "Authenticated encrypted cold backup and independent-volume recovery verified locally, including SQL state and every storage file digest. Off-host retention/scheduling and customer RPO/RTO acceptance remain open."
     },
     {
@@ -1205,38 +1279,89 @@
       "priority": "P0",
       "feature": "Production deployment and native host acceptance",
       "inventoryRef": "DEP-02",
-      "status": "CONFIRMED",
+      "status": "BLOCKED_EXTERNAL",
       "acceptanceCriteria": "Customer/cloud HTTPS onboarding, SMTP/IdP, supported host/OS canaries and failover evidence for the sold candidate.",
       "evidence": [
         "FEATURE_INVENTORY.json",
         "docs/production-readiness/agent-security-market-and-release-plan.md"
-      ]
+      ],
+      "localEvidence": [
+        {
+          "claim": "The sold connector/OS/arch/context matrix is declared, and the runner refuses to promote a version probe to PASS: it emits HOST_UNAVAILABLE and MISSING_NAMED_ACCEPTANCE_EVIDENCE per row instead of a green result (current local result: NO-GO).",
+          "evidencePath": "deploy/native/support-matrix.json",
+          "command": "node deploy/native/run-support-matrix.mjs --probe-only",
+          "verifiedBy": "this session, exit 1 = NO-GO by design (4 of the 6 sold hosts are HOST_UNAVAILABLE on this machine)"
+        },
+        {
+          "claim": "Recorded probe output for this candidate listing the open rows: HOST_UNAVAILABLE, MISSING_NAMED_ACCEPTANCE_EVIDENCE, UNOBSERVED_ACTIONS_REMAIN, T01-NATIVE-SCENARIOS:OPEN and T01-OS-VERSION-MATRIX:OPEN.",
+          "evidencePath": ".release-evidence/v8-native-probe.json",
+          "command": "node deploy/native/run-support-matrix.mjs --probe-only",
+          "verifiedBy": "recorded artefact .release-evidence/v8-native-probe.json"
+        }
+      ],
+      "remainingExternal": "Licensed installs of all six sold connectors on their real host/OS/arch matrix, an agreed OS build list, customer/cloud HTTPS onboarding, SMTP/IdP, and failover evidence with named acceptance per row (T01). One machine cannot produce any of it, and the local runner reports exactly that as NO-GO; the finding therefore moves from CONFIRMED to BLOCKED_EXTERNAL."
     },
     {
       "id": "AIDR-050",
       "priority": "P1",
       "feature": "Enterprise fleet installers and updates",
       "inventoryRef": "CLI-04",
-      "status": "IN_PROGRESS",
+      "status": "BLOCKED_EXTERNAL",
       "acceptanceCriteria": "MDM distribution, signed updates, policy-preserving rollback and uninstall across supported hosts.",
       "evidence": [
         "FEATURE_INVENTORY.json",
         "docs/production-readiness/agent-security-market-and-release-plan.md",
         "deploy/fleet Windows 17 and Unix 25 local signed-lifecycle checks passed; real MDM/publisher/native-host acceptance pending."
-      ]
+      ],
+      "localEvidence": [
+        {
+          "claim": "Windows fleet lifecycle: manifest signature verification, path-traversal rejection, filesystem-root TargetHome rejection, unapproved CMS signer fail-closed, credential-free structured logs, and install/upgrade/rollback/uninstall leaving only managed hooks are all exercised locally.",
+          "evidencePath": "scripts/verify-windows-fleet.mjs",
+          "command": "pnpm verify:fleet:windows",
+          "verifiedBy": "this session, exit 0"
+        },
+        {
+          "claim": "Unix fleet delivery: offline bundle template and local install/upgrade/rollback/uninstall lifecycle pass; the verifier's own scope line states 'Offline template and local lifecycle verification; no Jamf/MDM or host execution acceptance'.",
+          "evidencePath": "scripts/verify-unix-fleet-delivery.mjs",
+          "command": "pnpm verify:fleet:unix",
+          "verifiedBy": "this session, exit 0 (25 checks, passed: true)"
+        }
+      ],
+      "remainingExternal": "A real MDM test tenant (Intune/Jamf/SCCM) to distribute and drive the packages, an official publisher signing identity, and per-host execution acceptance on the supported OS matrix. The local verifiers cover templates and local lifecycle only and say so; the finding therefore moves from IN_PROGRESS to BLOCKED_EXTERNAL."
     },
     {
       "id": "AIDR-051",
       "priority": "P1",
       "feature": "Continuous agent discovery and delegated credential scope",
       "inventoryRef": "INF-03",
-      "status": "IN_PROGRESS",
+      "status": "BLOCKED_EXTERNAL",
       "acceptanceCriteria": "Scheduled fleet/cloud collectors with freshness and identity; short-lived least-privilege tool credentials.",
       "evidence": [
         "FEATURE_INVENTORY.json",
         "docs/production-readiness/agent-security-market-and-release-plan.md",
         "aidr collect tenant inventory and delegated-credentials broker added; central provider collectors and tool provider acceptance remain."
-      ]
+      ],
+      "localEvidence": [
+        {
+          "claim": "Acceptance 'scheduled fleet/cloud collectors with freshness and identity': `aidr collect` drives scheduled inventory cycles with an explicit interval and stale-after freshness window bound to the tenant and installation identity, and its focused tests pass.",
+          "evidencePath": "packages/cli/src/commands/collect.ts",
+          "command": "pnpm test -- packages/cli/src/__tests__/collect.test.ts",
+          "verifiedBy": "this session, targeted vitest run (exit 0)"
+        },
+        {
+          "claim": "Acceptance 'short-lived least-privilege tool credentials': the delegated-credential module issues Ed25519-signed, audience/resource/tool-bound credentials with a hard 900-second maximum lifetime, a bounded delegation depth and an explicit scope list, and its focused tests pass.",
+          "evidencePath": "packages/core/src/delegated-credential.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/delegated-credential.test.ts",
+          "verifiedBy": "this session, targeted vitest run (exit 0)"
+        },
+        {
+          "claim": "The collector-bound machine-credential ingest endpoint (discovery) keeps its two authentication branches and rejects unverified collector credentials under the repository gate, so the scheduled collector's identity is enforced by code and contract, not by configuration.",
+          "evidencePath": "scripts/check-supabase-edge-contracts.mjs",
+          "command": "node scripts/check-supabase-edge-contracts.mjs",
+          "verifiedBy": "this session, exit 0"
+        }
+      ],
+      "remainingExternal": "Customer cloud/MDM API access so the central provider collectors can run against real AWS/Azure/GCP/MDM inventories, plus live tool-provider acceptance for the delegated credentials and a production schedule with freshness alerting. The local collectors, freshness identity and credential broker exist and are tested, but no real provider has been collected from; status moves from IN_PROGRESS to BLOCKED_EXTERNAL on that basis."
     },
     {
       "id": "AIDR-052",
@@ -1249,7 +1374,22 @@
         "FEATURE_INVENTORY.json",
         "docs/production-readiness/agent-security-market-and-release-plan.md",
         ".release-evidence/load-dashboard-local-20260912.json: 10 RPS 30-second single-host attempt failed under contention, 144 dropped and 47 transport errors; no HA or SLA claim."
-      ]
+      ],
+      "localEvidence": [
+        {
+          "claim": "Acceptance 'defined workload and observation window': a workload id, profile digest, duration, rate, in-flight bound and threshold set exist, and the harness self-test passes (privacy of the credential, bounded concurrency, threshold enforcement, unstable-target fail-closed).",
+          "evidencePath": "scripts/verify-load-test.mjs",
+          "command": "pnpm verify:load",
+          "verifiedBy": "this session, exit 0 (9 load harness checks passed)"
+        },
+        {
+          "claim": "The only recorded local attempt did NOT satisfy its own thresholds: 10 RPS for 30 seconds on one contended host produced availability 0.363, 47 transport errors and 144 dropped requests, and the artefact claims no HA, SLA or production acceptance. This is recorded as a failing result, not as evidence of capacity.",
+          "evidencePath": ".release-evidence/load-dashboard-local-20260912.json",
+          "command": "pnpm load:test",
+          "verifiedBy": "recorded artefact .release-evidence/load-dashboard-local-20260912.json (passed: false; claims.production_accepted: false)"
+        }
+      ],
+      "remainingExternal": "Sized host allocation and a controlled environment for a defined workload, an observation window of at least 8 hours, HA/failover infrastructure, multi-tenant noisy-neighbour tests, and a customer-agreed availability SLI/SLA. Not complete locally either: the only recorded attempt failed its own thresholds, so local capacity work is not demonstrated done and the status remains IN_PROGRESS."
     },
     {
       "id": "AIDR-053",
@@ -1496,6 +1636,21 @@
       ]
     }
   ],
+  "closedWithoutLocalEvidence": {
+    "note": "Closures recorded before the localEvidence field existed. Their evidence is prose in `evidence` only; deriving a machine-checkable evidencePath/command for them out of that prose would be invention, so they are declared here instead of being silently exempted. Any new closure must carry its own localEvidence, and a finding listed here that later gains localEvidence must be removed from this list; scripts/validate-backlog.mjs enforces both directions.",
+    "declaredOn": "2026-09-13",
+    "findings": [
+        "AIDR-001", "AIDR-002", "AIDR-003", "AIDR-004", "AIDR-005", "AIDR-006", "AIDR-007",
+        "AIDR-008", "AIDR-009", "AIDR-010", "AIDR-011", "AIDR-013", "AIDR-015", "AIDR-017",
+        "AIDR-018", "AIDR-020", "AIDR-021", "AIDR-022", "AIDR-023", "AIDR-024", "AIDR-025",
+        "AIDR-026", "AIDR-027", "AIDR-028", "AIDR-029", "AIDR-030", "AIDR-014", "AIDR-031",
+        "AIDR-032", "AIDR-033", "AIDR-034", "AIDR-035", "AIDR-036", "AIDR-037", "AIDR-038",
+        "AIDR-039", "AIDR-040", "AIDR-041", "AIDR-042", "AIDR-043", "AIDR-045", "AIDR-046",
+        "AIDR-047", "AIDR-048", "AIDR-053", "AIDR-054", "AIDR-055", "AIDR-056", "AIDR-057",
+        "AIDR-058", "AIDR-059", "AIDR-060", "AIDR-061", "AIDR-062", "AIDR-063", "AIDR-064",
+        "AIDR-065", "AIDR-066", "AIDR-067", "AIDR-068"
+    ]
+  },
   "externalGatesUnchanged": {
     "note": "The hard commercial/legal/privacy/independent gates recorded in docs/production-readiness/commercial-go-evidence-registry.json (COM-001..COM-013, SEC-EXT-001, POV-001, INV-001, CLM-001) remain open and are NOT closeable from this workspace: they require counsel approval, customer credentials, deployed regional infrastructure, signing keys, and an independent assessor. No repository change can close them and none is claimed to.",
     "count": 13

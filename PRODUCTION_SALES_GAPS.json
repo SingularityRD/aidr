@@ -2,13 +2,13 @@
   "schema_version": 1,
   "reviewed_at": "2026-09-13",
   "decision": "NO-GO",
-  "source_commit": "b4361fa7d565e76f1604997b654a41e54c03db80",
+  "source_commit": "59be82e6df16e66c9298303a030fdf45e60820a5",
   "worktree_has_changes": true,
   "scope": "All 71 inventoried capabilities, both deployment models, current code and local verification, enterprise operations and sales acceptance. This is not a proof that no undiscovered defect exists.",
   "feature_status_counts": {
     "wired": 41,
-    "partial": 27,
-    "missing": 1,
+    "partial": 28,
+    "missing": 0,
     "external": 2
   },
   "work_package_count": 59,
@@ -16,9 +16,9 @@
     {
       "id": "T01",
       "priority": "P0",
-      "title": "Gerçek host ve işletim sistemi kapsamı",
-      "status": "OPEN",
-      "implementation_update": null,
+      "title": "GerÃƒÂ§ek host ve iÃ…Å¸letim sistemi kapsamÃ„Â±",
+      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
+      "implementation_update": "deploy/native/support-matrix.json satilan connector/OS/arch/context/interception matrisini ve bilinen bypass/unobserved listesini tanimliyor; deploy/native/run-support-matrix.mjs kurulu olmayan hostu HOST_UNAVAILABLE olarak NO-GO uretiyor, gercek host ve isimli kabul acik.",
       "feature_ids": [
         "CON-01",
         "CON-02",
@@ -37,20 +37,20 @@
         "scripts/run-e2e-release.mjs",
         "packages/codex/README.md"
       ],
-      "initial_current": "Derlenmiş kanca ve SDK testleri var; müşterinin gerçek host/OS/sürüm matrisi yok.",
-      "initial_gap": "Kanca kararı hostun eylemi durdurduğunu tek başına kanıtlamaz. Devre dışı eklenti, süreç çökmesi, timeout ve yeni host sürümü kapsam dışında kalabilir.",
-      "implementation": "Satılacak her bağlayıcı için OS/sürüm destek tablosu, gerçek host testi, kurulum/kaldırma ve destek sahibi belirle; görünmeyen eylemleri açıkça listele.",
-      "acceptance": "Her zorunlu saldırıda yan etkinin oluşmadığını bağımsız kaydet; zararsız işlemler geçsin; kanca kapalı/bozuk/ağsız durumları ve yeniden başlatma ayrı sınansın.",
+      "initial_current": "DerlenmiÃ…Å¸ kanca ve SDK testleri var; mÃƒÂ¼Ã…Å¸terinin gerÃƒÂ§ek host/OS/sÃƒÂ¼rÃƒÂ¼m matrisi yok.",
+      "initial_gap": "Kanca kararÃ„Â± hostun eylemi durdurduÃ„Å¸unu tek baÃ…Å¸Ã„Â±na kanÃ„Â±tlamaz. Devre dÃ„Â±Ã…Å¸Ã„Â± eklenti, sÃƒÂ¼reÃƒÂ§ ÃƒÂ§ÃƒÂ¶kmesi, timeout ve yeni host sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼ kapsam dÃ„Â±Ã…Å¸Ã„Â±nda kalabilir.",
+      "implementation": "SatÃ„Â±lacak her baÃ„Å¸layÃ„Â±cÃ„Â± iÃƒÂ§in OS/sÃƒÂ¼rÃƒÂ¼m destek tablosu, gerÃƒÂ§ek host testi, kurulum/kaldÃ„Â±rma ve destek sahibi belirle; gÃƒÂ¶rÃƒÂ¼nmeyen eylemleri aÃƒÂ§Ã„Â±kÃƒÂ§a listele.",
+      "acceptance": "Her zorunlu saldÃ„Â±rÃ„Â±da yan etkinin oluÃ…Å¸madÃ„Â±Ã„Å¸Ã„Â±nÃ„Â± baÃ„Å¸Ã„Â±msÃ„Â±z kaydet; zararsÃ„Â±z iÃ…Å¸lemler geÃƒÂ§sin; kanca kapalÃ„Â±/bozuk/aÃ„Å¸sÃ„Â±z durumlarÃ„Â± ve yeniden baÃ…Å¸latma ayrÃ„Â± sÃ„Â±nansÃ„Â±n.",
       "owner_role": "QA + Endpoint Engineering",
-      "dependencies": "Müşteri test cihazları, runtime erişimi ve sürüm seçimi",
+      "dependencies": "MÃƒÂ¼Ã…Å¸teri test cihazlarÃ„Â±, runtime eriÃ…Å¸imi ve sÃƒÂ¼rÃƒÂ¼m seÃƒÂ§imi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T02",
       "priority": "P0",
-      "title": "Bağlayıcılar arasında araç adı ve girdi normalizasyonu",
+      "title": "BaÃ„Å¸layÃ„Â±cÃ„Â±lar arasÃ„Â±nda araÃƒÂ§ adÃ„Â± ve girdi normalizasyonu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Ortak araç/girdi normalizasyonu evaluator öncesinde; Codex ve OpenClaw boş-artifact erken izin yolu kaldırıldı, named MCP çağrıları politikaya ulaşıyor.",
+      "implementation_update": "Ortak araÃƒÂ§/girdi normalizasyonu evaluator ÃƒÂ¶ncesinde; Codex ve OpenClaw boÃ…Å¸-artifact erken izin yolu kaldÃ„Â±rÃ„Â±ldÃ„Â±, named MCP ÃƒÂ§aÃ„Å¸rÃ„Â±larÃ„Â± politikaya ulaÃ…Å¸Ã„Â±yor.",
       "feature_ids": [
         "DET-12",
         "DET-11",
@@ -61,10 +61,10 @@
         "packages/opencode/src/tool-handler.ts",
         "packages/opencode/src/__tests__/aidr-contract.test.ts"
       ],
-      "initial_current": "OpenCode ham bash/write/edit adlarını iletiyor; bazı çekirdek denetimleri yalnızca Bash/Write/Edit dallarında çalışıyor. Mevcut sözleşme testi bu paket boşluğunu allow olarak kaydediyor.",
-      "initial_gap": "Paket kurulumları ve bazı dosya/AMSI girdileri ilgili denetim koluna ulaşmayabilir; birim testlerin yeşil olması bu kapsamı kapatmıyor.",
-      "implementation": "Ortak semantik araç/girdi sözleşmesi tanımla; tüm bağlayıcıları eşle; command, file_path/filePath, content/new_string alanlarını standartlaştır. Bilinen boşluğu beklenen izin sonucu olarak sabitleyen testi değiştir.",
-      "acceptance": "Aynı yasak paket, manifest ve dosya girdisi tüm bağlayıcılarda aynı denetime ulaşsın; denetleyici çağrısı ve engellenen yan etki kanıtlansın; boş/alternatif alan adları negatif test edilsin.",
+      "initial_current": "OpenCode ham bash/write/edit adlarÃ„Â±nÃ„Â± iletiyor; bazÃ„Â± ÃƒÂ§ekirdek denetimleri yalnÃ„Â±zca Bash/Write/Edit dallarÃ„Â±nda ÃƒÂ§alÃ„Â±Ã…Å¸Ã„Â±yor. Mevcut sÃƒÂ¶zleÃ…Å¸me testi bu paket boÃ…Å¸luÃ„Å¸unu allow olarak kaydediyor.",
+      "initial_gap": "Paket kurulumlarÃ„Â± ve bazÃ„Â± dosya/AMSI girdileri ilgili denetim koluna ulaÃ…Å¸mayabilir; birim testlerin yeÃ…Å¸il olmasÃ„Â± bu kapsamÃ„Â± kapatmÃ„Â±yor.",
+      "implementation": "Ortak semantik araÃƒÂ§/girdi sÃƒÂ¶zleÃ…Å¸mesi tanÃ„Â±mla; tÃƒÂ¼m baÃ„Å¸layÃ„Â±cÃ„Â±larÃ„Â± eÃ…Å¸le; command, file_path/filePath, content/new_string alanlarÃ„Â±nÃ„Â± standartlaÃ…Å¸tÃ„Â±r. Bilinen boÃ…Å¸luÃ„Å¸u beklenen izin sonucu olarak sabitleyen testi deÃ„Å¸iÃ…Å¸tir.",
+      "acceptance": "AynÃ„Â± yasak paket, manifest ve dosya girdisi tÃƒÂ¼m baÃ„Å¸layÃ„Â±cÃ„Â±larda aynÃ„Â± denetime ulaÃ…Å¸sÃ„Â±n; denetleyici ÃƒÂ§aÃ„Å¸rÃ„Â±sÃ„Â± ve engellenen yan etki kanÃ„Â±tlansÃ„Â±n; boÃ…Å¸/alternatif alan adlarÃ„Â± negatif test edilsin.",
       "owner_role": "Core + Connector Engineering",
       "dependencies": "AIDR-060; native host matrisi",
       "evidence_level": "code-and-local-reproduction"
@@ -72,9 +72,9 @@
     {
       "id": "T03",
       "priority": "P0",
-      "title": "Paket denetiminde hatanın sessiz kaybolması",
+      "title": "Paket denetiminde hatanÃ„Â±n sessiz kaybolmasÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Paket, registry ve file-reputation hata/bozuk-200 yolları clean yerine unknown/unavailable üretiyor; gerçek 404 ve doğrulanmış clean ayrımı test edildi.",
+      "implementation_update": "Paket, registry ve file-reputation hata/bozuk-200 yollarÃ„Â± clean yerine unknown/unavailable ÃƒÂ¼retiyor; gerÃƒÂ§ek 404 ve doÃ„Å¸rulanmÃ„Â±Ã…Å¸ clean ayrÃ„Â±mÃ„Â± test edildi.",
       "feature_ids": [
         "DET-10",
         "DET-11",
@@ -84,20 +84,20 @@
         "packages/core/src/evaluator.ts",
         "packages/core/src/package-checker.ts"
       ],
-      "initial_current": "checkPackages içinde genel catch boş sonuç döndürüyor. Diğer tespit kollarında açık unavailable davranışları bulunuyor.",
-      "initial_gap": "Paket denetleyicisi beklenmedik hata verdiğinde üst akış başarılı bir boş kontrol gibi devam edebilir; diğer kurallar her vakayı yakalamaz.",
-      "implementation": "Hata türlerini unavailable olarak taşı; zorunlu denetim politikasında deny/insan onayı üret; opsiyonel kolda görünür eksik tespit kaydı tut. Hatalı politika/cache/intel durumlarını ayır.",
-      "acceptance": "Registry timeout, bozuk cevap, cache/intel ayrıştırma hatası ve denetleyici exception enjekte et; zorunlu kontrol sessiz allow üretmesin; benign ve iptal davranışları korunsun.",
+      "initial_current": "checkPackages iÃƒÂ§inde genel catch boÃ…Å¸ sonuÃƒÂ§ dÃƒÂ¶ndÃƒÂ¼rÃƒÂ¼yor. DiÃ„Å¸er tespit kollarÃ„Â±nda aÃƒÂ§Ã„Â±k unavailable davranÃ„Â±Ã…Å¸larÃ„Â± bulunuyor.",
+      "initial_gap": "Paket denetleyicisi beklenmedik hata verdiÃ„Å¸inde ÃƒÂ¼st akÃ„Â±Ã…Å¸ baÃ…Å¸arÃ„Â±lÃ„Â± bir boÃ…Å¸ kontrol gibi devam edebilir; diÃ„Å¸er kurallar her vakayÃ„Â± yakalamaz.",
+      "implementation": "Hata tÃƒÂ¼rlerini unavailable olarak taÃ…Å¸Ã„Â±; zorunlu denetim politikasÃ„Â±nda deny/insan onayÃ„Â± ÃƒÂ¼ret; opsiyonel kolda gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r eksik tespit kaydÃ„Â± tut. HatalÃ„Â± politika/cache/intel durumlarÃ„Â±nÃ„Â± ayÃ„Â±r.",
+      "acceptance": "Registry timeout, bozuk cevap, cache/intel ayrÃ„Â±Ã…Å¸tÃ„Â±rma hatasÃ„Â± ve denetleyici exception enjekte et; zorunlu kontrol sessiz allow ÃƒÂ¼retmesin; benign ve iptal davranÃ„Â±Ã…Å¸larÃ„Â± korunsun.",
       "owner_role": "Detection Engineering",
-      "dependencies": "AIDR-061; desteklenen araç sözleşmesi",
+      "dependencies": "AIDR-061; desteklenen araÃƒÂ§ sÃƒÂ¶zleÃ…Å¸mesi",
       "evidence_level": "source-confirmed-gap; full exploit or field impact not asserted"
     },
     {
       "id": "T04",
       "priority": "P1",
-      "title": "Model tüketiminden önce çıktı denetimi",
+      "title": "Model tÃƒÂ¼ketiminden ÃƒÂ¶nce ÃƒÂ§Ã„Â±ktÃ„Â± denetimi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Çıktı tarayıcı 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sınırında inspection_incomplete/critical fail-closed üretiyor; JSON/Unicode ve sınır payloadları test edildi. Her hostta aynı-tur blok kanıtı yok.",
+      "implementation_update": "Ãƒâ€¡Ã„Â±ktÃ„Â± tarayÃ„Â±cÃ„Â± 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sÃ„Â±nÃ„Â±rÃ„Â±nda inspection_incomplete/critical fail-closed ÃƒÂ¼retiyor; JSON/Unicode ve sÃ„Â±nÃ„Â±r payloadlarÃ„Â± test edildi. Her hostta aynÃ„Â±-tur blok kanÃ„Â±tÃ„Â± yok.",
       "feature_ids": [
         "DET-06",
         "DET-07",
@@ -114,10 +114,10 @@
         "packages/claude-code/src/post-tool-use.ts",
         "packages/core/src/output-scanner.ts"
       ],
-      "initial_current": "Claude çıktısında sınırlı tarama var; PostToolUse çalışmış eylemi geri alamaz. Diğer tüketim yollarının tamamı bağlı değil.",
-      "initial_gap": "Prompt injection veya sır içeren çıktı modele ulaşabilir. İlk 262144 karakterden sonraki içerik ve desteklenmeyen biçimler için kapsam eksiktir.",
-      "implementation": "Hostun izin verdiği yerlerde çıktı tesliminden önce kontrol/karantina ekle; desteklenmeyen yollarda açık coverage durumu göster; boyut sınırı aşımını sessiz temiz sayma.",
-      "acceptance": "Parçalara bölünmüş saldırı, sınırın sonundaki payload, Unicode, JSON/text ve çok büyük cevaplar sınansın; engellenen baytlar modele ulaşmasın; zararsız çok parçalı cevap bozulmasın.",
+      "initial_current": "Claude ÃƒÂ§Ã„Â±ktÃ„Â±sÃ„Â±nda sÃ„Â±nÃ„Â±rlÃ„Â± tarama var; PostToolUse ÃƒÂ§alÃ„Â±Ã…Å¸mÃ„Â±Ã…Å¸ eylemi geri alamaz. DiÃ„Å¸er tÃƒÂ¼ketim yollarÃ„Â±nÃ„Â±n tamamÃ„Â± baÃ„Å¸lÃ„Â± deÃ„Å¸il.",
+      "initial_gap": "Prompt injection veya sÃ„Â±r iÃƒÂ§eren ÃƒÂ§Ã„Â±ktÃ„Â± modele ulaÃ…Å¸abilir. Ã„Â°lk 262144 karakterden sonraki iÃƒÂ§erik ve desteklenmeyen biÃƒÂ§imler iÃƒÂ§in kapsam eksiktir.",
+      "implementation": "Hostun izin verdiÃ„Å¸i yerlerde ÃƒÂ§Ã„Â±ktÃ„Â± tesliminden ÃƒÂ¶nce kontrol/karantina ekle; desteklenmeyen yollarda aÃƒÂ§Ã„Â±k coverage durumu gÃƒÂ¶ster; boyut sÃ„Â±nÃ„Â±rÃ„Â± aÃ…Å¸Ã„Â±mÃ„Â±nÃ„Â± sessiz temiz sayma.",
+      "acceptance": "ParÃƒÂ§alara bÃƒÂ¶lÃƒÂ¼nmÃƒÂ¼Ã…Å¸ saldÃ„Â±rÃ„Â±, sÃ„Â±nÃ„Â±rÃ„Â±n sonundaki payload, Unicode, JSON/text ve ÃƒÂ§ok bÃƒÂ¼yÃƒÂ¼k cevaplar sÃ„Â±nansÃ„Â±n; engellenen baytlar modele ulaÃ…Å¸masÃ„Â±n; zararsÃ„Â±z ÃƒÂ§ok parÃƒÂ§alÃ„Â± cevap bozulmasÃ„Â±n.",
       "owner_role": "Connector + Detection Engineering",
       "dependencies": "Host API kabiliyeti; MCP gateway",
       "evidence_level": "implementation-and-acceptance-review"
@@ -125,9 +125,9 @@
     {
       "id": "T05",
       "priority": "P1",
-      "title": "Davranış, novelty ve ML kararlarının ürün akışına bağlanması",
+      "title": "DavranÃ„Â±Ã…Å¸, novelty ve ML kararlarÃ„Â±nÃ„Â±n ÃƒÂ¼rÃƒÂ¼n akÃ„Â±Ã…Å¸Ã„Â±na baÃ„Å¸lanmasÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "BehavioralAnalyzer adayı kendi baseline'ına katmıyor ve tenant/session ayrımı korunuyor; üretim etkinliği ve kalıcı öğrenme kabulü açık.",
+      "implementation_update": "BehavioralAnalyzer adayÃ„Â± kendi baseline'Ã„Â±na katmÃ„Â±yor ve tenant/session ayrÃ„Â±mÃ„Â± korunuyor; ÃƒÂ¼retim etkinliÃ„Å¸i ve kalÃ„Â±cÃ„Â± ÃƒÂ¶Ã„Å¸renme kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DET-08",
         "DET-09"
@@ -137,20 +137,20 @@
         "packages/core/src/novelty-detection.ts",
         "packages/core/src/ml-model.ts"
       ],
-      "initial_current": "Modüller ve testler var; sürekli çalışan tüketici, öğrenme yaşam döngüsü ve üretim başarı ölçümü kanıtı tamam değil.",
-      "initial_gap": "İhracat edilen sınıf veya demo skor, çalışan anomali koruması sayılmaz. Yanlış öğrenme ve tenantlar arası veri karışması riski değerlendirilmemiş.",
-      "implementation": "Gerçek olay tüketicisi, tenant bazlı durum, cold-start, unutma/retention, model sürümü, karar açıklaması ve insan geri bildirimi akışlarını bağla.",
-      "acceptance": "Soğuk başlangıç ve model yenilemede kararlı sonuç; tenant ayrımı; veri zehirleme denemeleri; holdout saldırı ve zararsız iş yükünde yanlış alarm ölçümü.",
+      "initial_current": "ModÃƒÂ¼ller ve testler var; sÃƒÂ¼rekli ÃƒÂ§alÃ„Â±Ã…Å¸an tÃƒÂ¼ketici, ÃƒÂ¶Ã„Å¸renme yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼ ve ÃƒÂ¼retim baÃ…Å¸arÃ„Â± ÃƒÂ¶lÃƒÂ§ÃƒÂ¼mÃƒÂ¼ kanÃ„Â±tÃ„Â± tamam deÃ„Å¸il.",
+      "initial_gap": "Ã„Â°hracat edilen sÃ„Â±nÃ„Â±f veya demo skor, ÃƒÂ§alÃ„Â±Ã…Å¸an anomali korumasÃ„Â± sayÃ„Â±lmaz. YanlÃ„Â±Ã…Å¸ ÃƒÂ¶Ã„Å¸renme ve tenantlar arasÃ„Â± veri karÃ„Â±Ã…Å¸masÃ„Â± riski deÃ„Å¸erlendirilmemiÃ…Å¸.",
+      "implementation": "GerÃƒÂ§ek olay tÃƒÂ¼keticisi, tenant bazlÃ„Â± durum, cold-start, unutma/retention, model sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼, karar aÃƒÂ§Ã„Â±klamasÃ„Â± ve insan geri bildirimi akÃ„Â±Ã…Å¸larÃ„Â±nÃ„Â± baÃ„Å¸la.",
+      "acceptance": "SoÃ„Å¸uk baÃ…Å¸langÃ„Â±ÃƒÂ§ ve model yenilemede kararlÃ„Â± sonuÃƒÂ§; tenant ayrÃ„Â±mÃ„Â±; veri zehirleme denemeleri; holdout saldÃ„Â±rÃ„Â± ve zararsÃ„Â±z iÃ…Å¸ yÃƒÂ¼kÃƒÂ¼nde yanlÃ„Â±Ã…Å¸ alarm ÃƒÂ¶lÃƒÂ§ÃƒÂ¼mÃƒÂ¼.",
       "owner_role": "Detection + Data Engineering",
-      "dependencies": "Etiketli müşteri verisi ve bağımsız ölçüm seti",
+      "dependencies": "Etiketli mÃƒÂ¼Ã…Å¸teri verisi ve baÃ„Å¸Ã„Â±msÃ„Â±z ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m seti",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T06",
       "priority": "P1",
-      "title": "Reputation ve AI altyapı verisinin güncelliği",
+      "title": "Reputation ve AI altyapÃ„Â± verisinin gÃƒÂ¼ncelliÃ„Å¸i",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "İmzalı offline feed için publisher issued_at ve yerel fetched_at birlikte yaş sınırına bağlandı; canlı provider, dağıtım ve gecikme kabulü açık.",
+      "implementation_update": "Ã„Â°mzalÃ„Â± offline feed iÃƒÂ§in publisher issued_at ve yerel fetched_at birlikte yaÃ…Å¸ sÃ„Â±nÃ„Â±rÃ„Â±na baÃ„Å¸landÃ„Â±; canlÃ„Â± provider, daÃ„Å¸Ã„Â±tÃ„Â±m ve gecikme kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DET-10",
         "DET-11",
@@ -164,20 +164,20 @@
         "packages/core/src/generated/aig-data-manifest.json",
         "packages/core/src/aig-policy.ts"
       ],
-      "initial_current": "Yerel kurallar, derlenmiş veri ve kendine kurulabilen sorgu API'leri var.",
-      "initial_gap": "Feed kaynağı/güncelliği, sağlayıcı kesintisi, imzalı güncelleme, kapsanmayan format ve müşteri gecikme hedefleri doğrulanmadı; canlı reputation testi atlanıyor.",
-      "implementation": "Feed sözleşmesi ve güncelleme işi, yaş sınırı, geri alma, eksik veri durumu ve müşteri veri/URL kategorisi kalibrasyonu kur.",
-      "acceptance": "Eski/bozuk/boş feed temiz verdict üretmesin; güncelleme/geri dönüş kanıtlansın; gerçek endpoint ve AMSI desteklenen Windows hostunda ölçülsün.",
+      "initial_current": "Yerel kurallar, derlenmiÃ…Å¸ veri ve kendine kurulabilen sorgu API'leri var.",
+      "initial_gap": "Feed kaynaÃ„Å¸Ã„Â±/gÃƒÂ¼ncelliÃ„Å¸i, saÃ„Å¸layÃ„Â±cÃ„Â± kesintisi, imzalÃ„Â± gÃƒÂ¼ncelleme, kapsanmayan format ve mÃƒÂ¼Ã…Å¸teri gecikme hedefleri doÃ„Å¸rulanmadÃ„Â±; canlÃ„Â± reputation testi atlanÃ„Â±yor.",
+      "implementation": "Feed sÃƒÂ¶zleÃ…Å¸mesi ve gÃƒÂ¼ncelleme iÃ…Å¸i, yaÃ…Å¸ sÃ„Â±nÃ„Â±rÃ„Â±, geri alma, eksik veri durumu ve mÃƒÂ¼Ã…Å¸teri veri/URL kategorisi kalibrasyonu kur.",
+      "acceptance": "Eski/bozuk/boÃ…Å¸ feed temiz verdict ÃƒÂ¼retmesin; gÃƒÂ¼ncelleme/geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ kanÃ„Â±tlansÃ„Â±n; gerÃƒÂ§ek endpoint ve AMSI desteklenen Windows hostunda ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lsÃƒÂ¼n.",
       "owner_role": "Detection + Operations",
-      "dependencies": "Sağlayıcı/feed erişimi, Windows host ve müşteri corpus'u",
+      "dependencies": "SaÃ„Å¸layÃ„Â±cÃ„Â±/feed eriÃ…Å¸imi, Windows host ve mÃƒÂ¼Ã…Å¸teri corpus'u",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T07",
       "priority": "P1",
-      "title": "MCP keşfi ve kimlik normalizasyonunun kapsamı",
+      "title": "MCP keÃ…Å¸fi ve kimlik normalizasyonunun kapsamÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Yerel MCP keşfi konum/alias bazlı kararlı inventory_id ve merkezi stale/partial kapsam raporu üretiyor; ek host biçimleri/native kabul açık.",
+      "implementation_update": "Yerel MCP keÃ…Å¸fi konum/alias bazlÃ„Â± kararlÃ„Â± inventory_id ve merkezi stale/partial kapsam raporu ÃƒÂ¼retiyor; ek host biÃƒÂ§imleri/native kabul aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "MCP-01",
         "MCP-02",
@@ -189,20 +189,20 @@
         "packages/core/src/mcp-inventory.ts",
         "packages/core/src/policy.ts"
       ],
-      "initial_current": "Yerel JSON konfigürasyonları ve sunucu/araç listeleri denetleniyor.",
-      "initial_gap": "JSONC, yeni runtime konumları, dinamik eklenen sunucular ve belirsiz server/tool kimlikleri için tam kapsama yok; yerel tarama kurum çapı keşif değildir.",
-      "implementation": "Desteklenen konfigürasyon adaptörlerini ekle; okunamayan/kısmi keşfi raporla; yeniden adlandırma ve alias davranışını politikayla tutarlı yap.",
-      "acceptance": "Bozuk/izin verilmeyen dosya, JSONC, boş argüman, alias ve aynı isimli farklı sunucu testleri; eksik tarama güvenli envanter gibi görünmesin.",
+      "initial_current": "Yerel JSON konfigÃƒÂ¼rasyonlarÃ„Â± ve sunucu/araÃƒÂ§ listeleri denetleniyor.",
+      "initial_gap": "JSONC, yeni runtime konumlarÃ„Â±, dinamik eklenen sunucular ve belirsiz server/tool kimlikleri iÃƒÂ§in tam kapsama yok; yerel tarama kurum ÃƒÂ§apÃ„Â± keÃ…Å¸if deÃ„Å¸ildir.",
+      "implementation": "Desteklenen konfigÃƒÂ¼rasyon adaptÃƒÂ¶rlerini ekle; okunamayan/kÃ„Â±smi keÃ…Å¸fi raporla; yeniden adlandÃ„Â±rma ve alias davranÃ„Â±Ã…Å¸Ã„Â±nÃ„Â± politikayla tutarlÃ„Â± yap.",
+      "acceptance": "Bozuk/izin verilmeyen dosya, JSONC, boÃ…Å¸ argÃƒÂ¼man, alias ve aynÃ„Â± isimli farklÃ„Â± sunucu testleri; eksik tarama gÃƒÂ¼venli envanter gibi gÃƒÂ¶rÃƒÂ¼nmesin.",
       "owner_role": "Endpoint + MCP Engineering",
-      "dependencies": "Host sürüm ve konfigürasyon matrisi",
+      "dependencies": "Host sÃƒÂ¼rÃƒÂ¼m ve konfigÃƒÂ¼rasyon matrisi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T08",
       "priority": "P1",
-      "title": "İmzalı MCP araç tanımı ve değişiklik onayı",
+      "title": "Ã„Â°mzalÃ„Â± MCP araÃƒÂ§ tanÃ„Â±mÃ„Â± ve deÃ„Å¸iÃ…Å¸iklik onayÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "İmzalı MCP manifest key_id'yi imzaya bağlıyor, geçersiz saat ve legacy imza fail-closed; eski manifestler güvenilir yayıncı tarafından yeniden imzalanmalı.",
+      "implementation_update": "Ã„Â°mzalÃ„Â± MCP manifest key_id'yi imzaya baÃ„Å¸lÃ„Â±yor, geÃƒÂ§ersiz saat ve legacy imza fail-closed; eski manifestler gÃƒÂ¼venilir yayÃ„Â±ncÃ„Â± tarafÃ„Â±ndan yeniden imzalanmalÃ„Â±.",
       "feature_ids": [
         "MCP-05"
       ],
@@ -210,20 +210,20 @@
         "packages/core/src/mcp-transport.ts",
         "packages/core/src/mcp-discovery.ts"
       ],
-      "initial_current": "Süreç içi ilk şema referansı ve drift reddi var; tekrar ederek referansı değiştirme hatası düzeltildi.",
-      "initial_gap": "İmzalı sunucu/araç description ve schema manifesti, kalıcı onay, sürüm/expiry ve replay koruması yok. Süreç yeniden başlatılması güvenilir onay değildir.",
-      "implementation": "Araç tanımını sunucu kimliği ve sürüme imzayla bağla; değişen araçları karantinaya al; yalnızca operatörün onaylayabildiği inceleme ve dağıtım akışı kur.",
-      "acceptance": "Description/schema değişimi, eski manifest, yanlış signer, yeniden başlatma, eş zamanlı değişiklik ve onaysız retry reddedilsin; ajan kendi aracını onaylayamasın.",
+      "initial_current": "SÃƒÂ¼reÃƒÂ§ iÃƒÂ§i ilk Ã…Å¸ema referansÃ„Â± ve drift reddi var; tekrar ederek referansÃ„Â± deÃ„Å¸iÃ…Å¸tirme hatasÃ„Â± dÃƒÂ¼zeltildi.",
+      "initial_gap": "Ã„Â°mzalÃ„Â± sunucu/araÃƒÂ§ description ve schema manifesti, kalÃ„Â±cÃ„Â± onay, sÃƒÂ¼rÃƒÂ¼m/expiry ve replay korumasÃ„Â± yok. SÃƒÂ¼reÃƒÂ§ yeniden baÃ…Å¸latÃ„Â±lmasÃ„Â± gÃƒÂ¼venilir onay deÃ„Å¸ildir.",
+      "implementation": "AraÃƒÂ§ tanÃ„Â±mÃ„Â±nÃ„Â± sunucu kimliÃ„Å¸i ve sÃƒÂ¼rÃƒÂ¼me imzayla baÃ„Å¸la; deÃ„Å¸iÃ…Å¸en araÃƒÂ§larÃ„Â± karantinaya al; yalnÃ„Â±zca operatÃƒÂ¶rÃƒÂ¼n onaylayabildiÃ„Å¸i inceleme ve daÃ„Å¸Ã„Â±tÃ„Â±m akÃ„Â±Ã…Å¸Ã„Â± kur.",
+      "acceptance": "Description/schema deÃ„Å¸iÃ…Å¸imi, eski manifest, yanlÃ„Â±Ã…Å¸ signer, yeniden baÃ…Å¸latma, eÃ…Å¸ zamanlÃ„Â± deÃ„Å¸iÃ…Å¸iklik ve onaysÃ„Â±z retry reddedilsin; ajan kendi aracÃ„Â±nÃ„Â± onaylayamasÃ„Â±n.",
       "owner_role": "MCP + Security Engineering",
-      "dependencies": "AIDR-046; signer/key custody ve yönetim UI'sı",
+      "dependencies": "AIDR-046; signer/key custody ve yÃƒÂ¶netim UI'sÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T09",
       "priority": "P1",
-      "title": "Kullanıcı–ajan–araç–kaynak ilişkisi ve delegasyon",
+      "title": "KullanÃ„Â±cÃ„Â±Ã¢â‚¬â€œajanÃ¢â‚¬â€œaraÃƒÂ§Ã¢â‚¬â€œkaynak iliÃ…Å¸kisi ve delegasyon",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Ed25519 delegated lineage ve grant/introspection/revoke; geçersiz sayı ve Ed25519 olmayan EdDSA anahtarı reddediliyor. Gerçek IdP/tool provider kabulü açık.",
+      "implementation_update": "Ed25519 delegated lineage ve grant/introspection/revoke; geÃƒÂ§ersiz sayÃ„Â± ve Ed25519 olmayan EdDSA anahtarÃ„Â± reddediliyor. GerÃƒÂ§ek IdP/tool provider kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "MCP-06",
         "TEN-06",
@@ -234,20 +234,20 @@
         "supabase/functions/enroll/index.ts",
         "supabase/functions/api-keys/index.ts"
       ],
-      "initial_current": "Ajan/ekip anahtarı bağı ve yerel envanter var.",
-      "initial_gap": "Kimin hangi ajan üzerinden hangi kaynağa hangi yetkiyle eriştiğini gösteren tam ilişki grafiği; araç bazlı kısa ömürlü delegasyon yok.",
-      "implementation": "Kaynak ve kimlik ilişkileri, audience/scope/expiry taşıyan kısıtlı token, delegation depth ve credential broker uygula.",
-      "acceptance": "Başka tool/resource/audience için token kullanımı, süresi bitmiş delegasyon, kullanıcı ayrılması ve zincir yetki büyütme reddedilsin; olaydan kaynağa iz sürülsün.",
+      "initial_current": "Ajan/ekip anahtarÃ„Â± baÃ„Å¸Ã„Â± ve yerel envanter var.",
+      "initial_gap": "Kimin hangi ajan ÃƒÂ¼zerinden hangi kaynaÃ„Å¸a hangi yetkiyle eriÃ…Å¸tiÃ„Å¸ini gÃƒÂ¶steren tam iliÃ…Å¸ki grafiÃ„Å¸i; araÃƒÂ§ bazlÃ„Â± kÃ„Â±sa ÃƒÂ¶mÃƒÂ¼rlÃƒÂ¼ delegasyon yok.",
+      "implementation": "Kaynak ve kimlik iliÃ…Å¸kileri, audience/scope/expiry taÃ…Å¸Ã„Â±yan kÃ„Â±sÃ„Â±tlÃ„Â± token, delegation depth ve credential broker uygula.",
+      "acceptance": "BaÃ…Å¸ka tool/resource/audience iÃƒÂ§in token kullanÃ„Â±mÃ„Â±, sÃƒÂ¼resi bitmiÃ…Å¸ delegasyon, kullanÃ„Â±cÃ„Â± ayrÃ„Â±lmasÃ„Â± ve zincir yetki bÃƒÂ¼yÃƒÂ¼tme reddedilsin; olaydan kaynaÃ„Å¸a iz sÃƒÂ¼rÃƒÂ¼lsÃƒÂ¼n.",
       "owner_role": "Identity + Backend Engineering",
-      "dependencies": "IdP ve araç sağlayıcısı API'leri",
+      "dependencies": "IdP ve araÃƒÂ§ saÃ„Å¸layÃ„Â±cÃ„Â±sÃ„Â± API'leri",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T10",
       "priority": "P1",
-      "title": "MCP gateway ve taşıma güvenliği",
+      "title": "MCP gateway ve taÃ…Å¸Ã„Â±ma gÃƒÂ¼venliÃ„Å¸i",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Loopback/stdio JSON-RPC geçidi DNS pinleme, gerçek stream sınırı, tekil framing ve bozuk yanıt reddi uyguluyor; binary, server-initiated ve zorunlu routing kabulü açık.",
+      "implementation_update": "Loopback/stdio JSON-RPC geÃƒÂ§idi DNS pinleme, gerÃƒÂ§ek stream sÃ„Â±nÃ„Â±rÃ„Â±, tekil framing ve bozuk yanÃ„Â±t reddi uyguluyor; binary, server-initiated ve zorunlu routing kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "MCP-07"
       ],
@@ -255,20 +255,20 @@
         "packages/core/src/mcp-transport.ts",
         "packages/core/src/__tests__/mcp-transport.test.ts"
       ],
-      "initial_current": "Framing ve policy interception yardımcıları var; çalışan tam gateway tüketicisi yok. URL DNS kontrolünden sonra fetch yeniden çözümleme yapıyor; cevap sınırı Content-Length başlığına bakıyor.",
-      "initial_gap": "DNS rebinding, başlıksız/chunked büyük cevap, mapped IPv6 ve bağlantı ömrü için gerçek ağ kabulü eksik. Mevcut test adı DNS rebinding korumasını olduğundan güçlü anlatıyor.",
-      "implementation": "Doğrulanan IP'yi bağlantıya sabitle; IP sınıflamasını tamamla; gerçek okunan/decompress edilmiş baytları sınırla; authentication/session/stream ve bypass akışlarını gateway'e bağla.",
-      "acceptance": "Kontrol ile bağlantı arasında DNS değişsin; private/mapped IPv6, redirect, başlıksız sonsuz stream, sınır aşımı, disconnect ve bozuk JSON/SSE ile gerçek ağ testi çalışsın.",
+      "initial_current": "Framing ve policy interception yardÃ„Â±mcÃ„Â±larÃ„Â± var; ÃƒÂ§alÃ„Â±Ã…Å¸an tam gateway tÃƒÂ¼keticisi yok. URL DNS kontrolÃƒÂ¼nden sonra fetch yeniden ÃƒÂ§ÃƒÂ¶zÃƒÂ¼mleme yapÃ„Â±yor; cevap sÃ„Â±nÃ„Â±rÃ„Â± Content-Length baÃ…Å¸lÃ„Â±Ã„Å¸Ã„Â±na bakÃ„Â±yor.",
+      "initial_gap": "DNS rebinding, baÃ…Å¸lÃ„Â±ksÃ„Â±z/chunked bÃƒÂ¼yÃƒÂ¼k cevap, mapped IPv6 ve baÃ„Å¸lantÃ„Â± ÃƒÂ¶mrÃƒÂ¼ iÃƒÂ§in gerÃƒÂ§ek aÃ„Å¸ kabulÃƒÂ¼ eksik. Mevcut test adÃ„Â± DNS rebinding korumasÃ„Â±nÃ„Â± olduÃ„Å¸undan gÃƒÂ¼ÃƒÂ§lÃƒÂ¼ anlatÃ„Â±yor.",
+      "implementation": "DoÃ„Å¸rulanan IP'yi baÃ„Å¸lantÃ„Â±ya sabitle; IP sÃ„Â±nÃ„Â±flamasÃ„Â±nÃ„Â± tamamla; gerÃƒÂ§ek okunan/decompress edilmiÃ…Å¸ baytlarÃ„Â± sÃ„Â±nÃ„Â±rla; authentication/session/stream ve bypass akÃ„Â±Ã…Å¸larÃ„Â±nÃ„Â± gateway'e baÃ„Å¸la.",
+      "acceptance": "Kontrol ile baÃ„Å¸lantÃ„Â± arasÃ„Â±nda DNS deÃ„Å¸iÃ…Å¸sin; private/mapped IPv6, redirect, baÃ…Å¸lÃ„Â±ksÃ„Â±z sonsuz stream, sÃ„Â±nÃ„Â±r aÃ…Å¸Ã„Â±mÃ„Â±, disconnect ve bozuk JSON/SSE ile gerÃƒÂ§ek aÃ„Å¸ testi ÃƒÂ§alÃ„Â±Ã…Å¸sÃ„Â±n.",
       "owner_role": "MCP + Network Security",
-      "dependencies": "AIDR-062; stdio/HTTP/SSE kapsam kararı",
+      "dependencies": "AIDR-062; stdio/HTTP/SSE kapsam kararÃ„Â±",
       "evidence_level": "source-confirmed-gap; full exploit or field impact not asserted"
     },
     {
       "id": "T11",
       "priority": "P1",
-      "title": "Sürekli kurum/filo keşfi",
+      "title": "SÃƒÂ¼rekli kurum/filo keÃ…Å¸fi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Kimlikli merkezi discovery upload var; interval modu geçici upload hatasını görünür tutarak sonraki çevrime devam ediyor. Cloud/MDM scheduler ve saha kabulü açık.",
+      "implementation_update": "Kimlikli merkezi discovery upload var; interval modu geÃƒÂ§ici upload hatasÃ„Â±nÃ„Â± gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r tutarak sonraki ÃƒÂ§evrime devam ediyor. Cloud/MDM scheduler ve saha kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "INF-03"
       ],
@@ -276,20 +276,20 @@
         "packages/cli/src/commands/scan.ts",
         "packages/core/src/aig-infra-scan.ts"
       ],
-      "initial_current": "İsteğe bağlı yerel/altyapı taraması mevcut.",
-      "initial_gap": "Zamanlanmış kolektör, tenant envanteri, sahiplik, tekrar birleştirme, son görülme ve stale alarmı yok.",
-      "implementation": "Filo/cloud kolektörleri, kapsam izinleri, zamanlama, retry, dedup, kimlik ve keşif tazeliği ekranlarını kur.",
-      "acceptance": "Kapanan veya yeni açılan ajan görünür olsun; bağlantısız kolektör eski veriyi güncel göstermesin; tenant ayrımı ve keşif yük sınırları sınansın.",
+      "initial_current": "Ã„Â°steÃ„Å¸e baÃ„Å¸lÃ„Â± yerel/altyapÃ„Â± taramasÃ„Â± mevcut.",
+      "initial_gap": "ZamanlanmÃ„Â±Ã…Å¸ kolektÃƒÂ¶r, tenant envanteri, sahiplik, tekrar birleÃ…Å¸tirme, son gÃƒÂ¶rÃƒÂ¼lme ve stale alarmÃ„Â± yok.",
+      "implementation": "Filo/cloud kolektÃƒÂ¶rleri, kapsam izinleri, zamanlama, retry, dedup, kimlik ve keÃ…Å¸if tazeliÃ„Å¸i ekranlarÃ„Â±nÃ„Â± kur.",
+      "acceptance": "Kapanan veya yeni aÃƒÂ§Ã„Â±lan ajan gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r olsun; baÃ„Å¸lantÃ„Â±sÃ„Â±z kolektÃƒÂ¶r eski veriyi gÃƒÂ¼ncel gÃƒÂ¶stermesin; tenant ayrÃ„Â±mÃ„Â± ve keÃ…Å¸if yÃƒÂ¼k sÃ„Â±nÃ„Â±rlarÃ„Â± sÃ„Â±nansÃ„Â±n.",
       "owner_role": "Discovery + Backend Engineering",
-      "dependencies": "Müşteri cloud/MDM API erişimi ve ağ tarama kapsamı",
+      "dependencies": "MÃƒÂ¼Ã…Å¸teri cloud/MDM API eriÃ…Å¸imi ve aÃ„Å¸ tarama kapsamÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T12",
       "priority": "P1",
-      "title": "Filo müdahalesi ve credential iptali",
+      "title": "Filo mÃƒÂ¼dahalesi ve credential iptali",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "İmzalı revocation feed tenant+global kapsamı 5000 sınırından önce filtreliyor ve eksik/truncated seti imzalamıyor; native/provider iptali açık.",
+      "implementation_update": "Ã„Â°mzalÃ„Â± revocation feed tenant+global kapsamÃ„Â± 5000 sÃ„Â±nÃ„Â±rÃ„Â±ndan ÃƒÂ¶nce filtreliyor ve eksik/truncated seti imzalamÃ„Â±yor; native/provider iptali aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "RSP-04",
         "RSP-06"
@@ -298,20 +298,20 @@
         "packages/core/src/contain.ts",
         "supabase/functions/revocations/index.ts"
       ],
-      "initial_current": "Yerel süreç müdahalesi ve iptal listesi temelleri var.",
-      "initial_gap": "Kurumsal endpoint izolasyonu, tüm cloud sağlayıcılarda credential iptali ve ajandan sonuç alan komut altyapısı yok.",
-      "implementation": "Yetkili komut kuyruğu, TTL/idempotency, operatör yetkisi, ajan sonuç bildirimi, geri alma ve sağlayıcı adaptörleri ekle.",
-      "acceptance": "Offline ajana süresi geçmiş komut uygulanmasın; tekrar gelen komut tek etki üretsin; başarısız izolasyon başarı görünmesin; ilgili izinler ve geri dönüş kanıtlansın.",
+      "initial_current": "Yerel sÃƒÂ¼reÃƒÂ§ mÃƒÂ¼dahalesi ve iptal listesi temelleri var.",
+      "initial_gap": "Kurumsal endpoint izolasyonu, tÃƒÂ¼m cloud saÃ„Å¸layÃ„Â±cÃ„Â±larda credential iptali ve ajandan sonuÃƒÂ§ alan komut altyapÃ„Â±sÃ„Â± yok.",
+      "implementation": "Yetkili komut kuyruÃ„Å¸u, TTL/idempotency, operatÃƒÂ¶r yetkisi, ajan sonuÃƒÂ§ bildirimi, geri alma ve saÃ„Å¸layÃ„Â±cÃ„Â± adaptÃƒÂ¶rleri ekle.",
+      "acceptance": "Offline ajana sÃƒÂ¼resi geÃƒÂ§miÃ…Å¸ komut uygulanmasÃ„Â±n; tekrar gelen komut tek etki ÃƒÂ¼retsin; baÃ…Å¸arÃ„Â±sÃ„Â±z izolasyon baÃ…Å¸arÃ„Â± gÃƒÂ¶rÃƒÂ¼nmesin; ilgili izinler ve geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ kanÃ„Â±tlansÃ„Â±n.",
       "owner_role": "Response + Endpoint Engineering",
-      "dependencies": "OS yetkileri, sağlayıcı API'leri, müşteri müdahale yetkisi",
+      "dependencies": "OS yetkileri, saÃ„Å¸layÃ„Â±cÃ„Â± API'leri, mÃƒÂ¼Ã…Å¸teri mÃƒÂ¼dahale yetkisi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T13",
       "priority": "P1",
-      "title": "Response eylemlerinin güvenli uçtan uca işletimi",
-      "status": "OPEN",
-      "implementation_update": "Restart-safe worker resume sırasında adapter destek listesini yeniden doğruluyor ve kaldırılmış action'ı çalıştırmadan unsupported_action bildiriyor. Native OS/provider adapter ve kurulu servis açık.",
+      "title": "Response eylemlerinin gÃƒÂ¼venli uÃƒÂ§tan uca iÃ…Å¸letimi",
+      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
+      "implementation_update": "Yeni response-worker-contract.ts capability/onkosul/TTL/idempotency/rollback makbuzu sozlesmesini uyguluyor; desteklenmeyen action adapter tarafindan reddediliyor ve geri alinamayan adim partial olarak raporlaniyor. Native OS/provider adapter ve kurulu servis musteri tarafinda acik. Eski: Restart-safe worker resume sÃ„Â±rasÃ„Â±nda adapter destek listesini yeniden doÃ„Å¸ruluyor ve kaldÃ„Â±rÃ„Â±lmÃ„Â±Ã…Å¸ action'Ã„Â± ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±rmadan unsupported_action bildiriyor. Native OS/provider adapter ve kurulu servis aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "RSP-02",
         "RSP-03",
@@ -325,20 +325,20 @@
         "packages/core/src/response-audit.ts",
         "supabase/functions/autosecops-runtime/index.ts"
       ],
-      "initial_current": "Quarantine/restore, dosya snapshot/rollback ve imzalı olay zinciri yerel testli.",
-      "initial_gap": "Gerçek müşteri dosya izinleri, aynı anda değişen dosya, dış playbook etkileri, signer saklama ve bağımsız arşiv kanıtı eksik.",
-      "implementation": "Desteklenen eylem ve dosya kapsamını sabitle; önkoşul/sonuç doğrulama, operatör sınırları, dış SOAR sonuçları ve bağımsız kanıt saklamayı tamamla.",
-      "acceptance": "Dosya sonradan değişmişken yanlış rollback yapılmasın; symlink/izin/disk hatası açık başarısız olsun; eylem ve geri dönüş aynı incidentten izlenebilsin.",
+      "initial_current": "Quarantine/restore, dosya snapshot/rollback ve imzalÃ„Â± olay zinciri yerel testli.",
+      "initial_gap": "GerÃƒÂ§ek mÃƒÂ¼Ã…Å¸teri dosya izinleri, aynÃ„Â± anda deÃ„Å¸iÃ…Å¸en dosya, dÃ„Â±Ã…Å¸ playbook etkileri, signer saklama ve baÃ„Å¸Ã„Â±msÃ„Â±z arÃ…Å¸iv kanÃ„Â±tÃ„Â± eksik.",
+      "implementation": "Desteklenen eylem ve dosya kapsamÃ„Â±nÃ„Â± sabitle; ÃƒÂ¶nkoÃ…Å¸ul/sonuÃƒÂ§ doÃ„Å¸rulama, operatÃƒÂ¶r sÃ„Â±nÃ„Â±rlarÃ„Â±, dÃ„Â±Ã…Å¸ SOAR sonuÃƒÂ§larÃ„Â± ve baÃ„Å¸Ã„Â±msÃ„Â±z kanÃ„Â±t saklamayÃ„Â± tamamla.",
+      "acceptance": "Dosya sonradan deÃ„Å¸iÃ…Å¸miÃ…Å¸ken yanlÃ„Â±Ã…Å¸ rollback yapÃ„Â±lmasÃ„Â±n; symlink/izin/disk hatasÃ„Â± aÃƒÂ§Ã„Â±k baÃ…Å¸arÃ„Â±sÃ„Â±z olsun; eylem ve geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ aynÃ„Â± incidentten izlenebilsin.",
       "owner_role": "Response Engineering + Security Operations",
-      "dependencies": "Müşteri dosya sistemi/EDR/SOAR izinleri",
+      "dependencies": "MÃƒÂ¼Ã…Å¸teri dosya sistemi/EDR/SOAR izinleri",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T14",
       "priority": "P1",
-      "title": "YAML politika yazımı ile gerçek runtime ilişkisi",
+      "title": "YAML politika yazÃ„Â±mÃ„Â± ile gerÃƒÂ§ek runtime iliÃ…Å¸kisi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Core/server dry-run unknown MCP fallback kararı runtime evaluator ile eşlendi; YAML/JSON compiler, parity ve dashboard publish akışı bağlı.",
+      "implementation_update": "Core/server dry-run unknown MCP fallback kararÃ„Â± runtime evaluator ile eÃ…Å¸lendi; YAML/JSON compiler, parity ve dashboard publish akÃ„Â±Ã…Å¸Ã„Â± baÃ„Å¸lÃ„Â±.",
       "feature_ids": [
         "POL-01",
         "POL-02"
@@ -348,20 +348,20 @@
         "packages/dashboard/src/ui/pages/PolicyPage.tsx",
         "packages/core/src/policy.ts"
       ],
-      "initial_current": "YAML belge kaydı var; ayrı runtime kontrolleri yayınlanıyor.",
-      "initial_gap": "Kaydedilen YAML kuralları runtime tarafından tüketilmiyor. Kullanıcı belge kaydını etkin güvenlik politikası sanabilir.",
-      "implementation": "Desteklenen YAML şemasını runtime modeline derle veya belge akışını açıkça ayır; desteklenmeyen alanları reddet; öncelik ve etki simülasyonu sun.",
-      "acceptance": "Kaydedilen/yayınlanan politika gerçek ajan kararında değişiklik üretsin; bilinmeyen alan sessiz atılmasın; allowlist ile açık deny önceliği doğrulansın.",
+      "initial_current": "YAML belge kaydÃ„Â± var; ayrÃ„Â± runtime kontrolleri yayÃ„Â±nlanÃ„Â±yor.",
+      "initial_gap": "Kaydedilen YAML kurallarÃ„Â± runtime tarafÃ„Â±ndan tÃƒÂ¼ketilmiyor. KullanÃ„Â±cÃ„Â± belge kaydÃ„Â±nÃ„Â± etkin gÃƒÂ¼venlik politikasÃ„Â± sanabilir.",
+      "implementation": "Desteklenen YAML Ã…Å¸emasÃ„Â±nÃ„Â± runtime modeline derle veya belge akÃ„Â±Ã…Å¸Ã„Â±nÃ„Â± aÃƒÂ§Ã„Â±kÃƒÂ§a ayÃ„Â±r; desteklenmeyen alanlarÃ„Â± reddet; ÃƒÂ¶ncelik ve etki simÃƒÂ¼lasyonu sun.",
+      "acceptance": "Kaydedilen/yayÃ„Â±nlanan politika gerÃƒÂ§ek ajan kararÃ„Â±nda deÃ„Å¸iÃ…Å¸iklik ÃƒÂ¼retsin; bilinmeyen alan sessiz atÃ„Â±lmasÃ„Â±n; allowlist ile aÃƒÂ§Ã„Â±k deny ÃƒÂ¶nceliÃ„Å¸i doÃ„Å¸rulansÃ„Â±n.",
       "owner_role": "Policy + Dashboard Engineering",
-      "dependencies": "Politika sözleşmesi ve migration planı",
+      "dependencies": "Politika sÃƒÂ¶zleÃ…Å¸mesi ve migration planÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T15",
       "priority": "P1",
-      "title": "Politika dağıtımı saha kabulü ve ölçek sınırları",
+      "title": "Politika daÃ„Å¸Ã„Â±tÃ„Â±mÃ„Â± saha kabulÃƒÂ¼ ve ÃƒÂ¶lÃƒÂ§ek sÃ„Â±nÃ„Â±rlarÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Hedefli stage işlemi atomik revision precondition ile eski eşzamanlı güncellemeyi 409 reddediyor; gerçek filo/ölçek kabulü açık.",
+      "implementation_update": "Hedefli stage iÃ…Å¸lemi atomik revision precondition ile eski eÃ…Å¸zamanlÃ„Â± gÃƒÂ¼ncellemeyi 409 reddediyor; gerÃƒÂ§ek filo/ÃƒÂ¶lÃƒÂ§ek kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "POL-03",
         "POL-04",
@@ -372,20 +372,20 @@
         "supabase/functions/policy-ack/index.ts",
         "packages/core/src/remote-policy.ts"
       ],
-      "initial_current": "Sürüm/geçmiş, hedefli dağıtım, rollback, sayfalama ve sabit offline grace çalışıyor.",
-      "initial_gap": "Receipt yalnızca ajanın yükleme bildirimi; host enforcement attestation değil. Eski bağlı olmayan anahtarlar, büyük filo batch planı ve gerçek offline saha kabulü açık.",
-      "implementation": "Eski ajanları yeniden kaydet; dağıtım batch/ring işletimini ve zorunlu politika sürelerini müşteriye göre belirle; gözlem/uyarı ve native canary kabulü yap.",
-      "acceptance": "Yetkisiz/stale receipt, rollback, offline süresi, 401/403, bozuk cache, yeniden başlatma ve hedef değiştirmede yanlış sürüm uygulanmasın; gerçek filoda yakınsama ölçülsün.",
+      "initial_current": "SÃƒÂ¼rÃƒÂ¼m/geÃƒÂ§miÃ…Å¸, hedefli daÃ„Å¸Ã„Â±tÃ„Â±m, rollback, sayfalama ve sabit offline grace ÃƒÂ§alÃ„Â±Ã…Å¸Ã„Â±yor.",
+      "initial_gap": "Receipt yalnÃ„Â±zca ajanÃ„Â±n yÃƒÂ¼kleme bildirimi; host enforcement attestation deÃ„Å¸il. Eski baÃ„Å¸lÃ„Â± olmayan anahtarlar, bÃƒÂ¼yÃƒÂ¼k filo batch planÃ„Â± ve gerÃƒÂ§ek offline saha kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
+      "implementation": "Eski ajanlarÃ„Â± yeniden kaydet; daÃ„Å¸Ã„Â±tÃ„Â±m batch/ring iÃ…Å¸letimini ve zorunlu politika sÃƒÂ¼relerini mÃƒÂ¼Ã…Å¸teriye gÃƒÂ¶re belirle; gÃƒÂ¶zlem/uyarÃ„Â± ve native canary kabulÃƒÂ¼ yap.",
+      "acceptance": "Yetkisiz/stale receipt, rollback, offline sÃƒÂ¼resi, 401/403, bozuk cache, yeniden baÃ…Å¸latma ve hedef deÃ„Å¸iÃ…Å¸tirmede yanlÃ„Â±Ã…Å¸ sÃƒÂ¼rÃƒÂ¼m uygulanmasÃ„Â±n; gerÃƒÂ§ek filoda yakÃ„Â±nsama ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lsÃƒÂ¼n.",
       "owner_role": "Policy + QA + Operations",
-      "dependencies": "Ajan sürümü, müşteri offline toleransı",
+      "dependencies": "Ajan sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼, mÃƒÂ¼Ã…Å¸teri offline toleransÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T16",
       "priority": "P1",
-      "title": "Endpoint sır saklama ve anahtar rotasyonu",
+      "title": "Endpoint sÃ„Â±r saklama ve anahtar rotasyonu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Windows config create/update/reuse yolu owner+SYSTEM+Administrators DACL kuruyor ve ACL hatasında credential yazmıyor; OS vault ve server-side revocation açık.",
+      "implementation_update": "Windows config create/update/reuse yolu owner+SYSTEM+Administrators DACL kuruyor ve ACL hatasÃ„Â±nda credential yazmÃ„Â±yor; OS vault ve server-side revocation aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "CLI-02",
         "TEN-06"
@@ -395,20 +395,20 @@
         "packages/core/src/types.ts",
         "docs/runbooks/secrets-management.md"
       ],
-      "initial_current": "Tipli/redakte config ve özel dosyalar mevcut.",
-      "initial_gap": "OS credential vault entegrasyonu, kurumsal dağıtımda signer rotasyonu, kayıp cihaz/anahtar kurtarma ve minimum API-key kapsamı eksik.",
-      "implementation": "Windows/macOS/Linux için sır deposu adaptörü; anahtar rotasyonu ve iptali; config/export/support bundle redaksiyonunu tamamla.",
-      "acceptance": "Yetkisiz kullanıcı sır okuyamasın; eski anahtar zamanında reddedilsin; yenileme kesintisi güvenli olsun; log, argüman ve destek arşivi sır sızdırmasın.",
+      "initial_current": "Tipli/redakte config ve ÃƒÂ¶zel dosyalar mevcut.",
+      "initial_gap": "OS credential vault entegrasyonu, kurumsal daÃ„Å¸Ã„Â±tÃ„Â±mda signer rotasyonu, kayÃ„Â±p cihaz/anahtar kurtarma ve minimum API-key kapsamÃ„Â± eksik.",
+      "implementation": "Windows/macOS/Linux iÃƒÂ§in sÃ„Â±r deposu adaptÃƒÂ¶rÃƒÂ¼; anahtar rotasyonu ve iptali; config/export/support bundle redaksiyonunu tamamla.",
+      "acceptance": "Yetkisiz kullanÃ„Â±cÃ„Â± sÃ„Â±r okuyamasÃ„Â±n; eski anahtar zamanÃ„Â±nda reddedilsin; yenileme kesintisi gÃƒÂ¼venli olsun; log, argÃƒÂ¼man ve destek arÃ…Å¸ivi sÃ„Â±r sÃ„Â±zdÃ„Â±rmasÃ„Â±n.",
       "owner_role": "Endpoint + Security Engineering",
-      "dependencies": "Kurum secret manager'ı ve OS depoları",
+      "dependencies": "Kurum secret manager'Ã„Â± ve OS depolarÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T17",
       "priority": "P1",
-      "title": "İmzalı filo kurulumu, güncelleme ve kaldırma",
+      "title": "Ã„Â°mzalÃ„Â± filo kurulumu, gÃƒÂ¼ncelleme ve kaldÃ„Â±rma",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Installer ile Windows/Unix uninstall yalnız AIDR işaretli nested hook'u kaldırıyor, aynı entry'deki müşteri hook'larını koruyor; gerçek MDM/yayıncı kabulü açık.",
+      "implementation_update": "Installer ile Windows/Unix uninstall yalnÃ„Â±z AIDR iÃ…Å¸aretli nested hook'u kaldÃ„Â±rÃ„Â±yor, aynÃ„Â± entry'deki mÃƒÂ¼Ã…Å¸teri hook'larÃ„Â±nÃ„Â± koruyor; gerÃƒÂ§ek MDM/yayÃ„Â±ncÃ„Â± kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "CLI-01",
         "CLI-03",
@@ -419,20 +419,20 @@
         "packages/extension/package.json",
         "packages/cli/src/commands/setup.ts"
       ],
-      "initial_current": "Claude için yerel kurucu ve deny canary var; diğer paketler derleniyor.",
-      "initial_gap": "Intune/Jamf/SCCM teslimatı, tüm hostlarda upgrade/rollback/uninstall ve filo sağlık kanıtı tamam değil.",
-      "implementation": "İmzalı dağıtım paketleri, detect/remediate betikleri, yönetici/kullanıcı kurulumları, policy-preserving upgrade ve uninstall kuralları üret.",
-      "acceptance": "Temiz kurulum, yarım kalan upgrade, eski sürüme dönüş, host güncellemesi ve uninstall sonrasında başka kancalar/politika bozulmasın; gerçek MDM'de kanıt topla.",
+      "initial_current": "Claude iÃƒÂ§in yerel kurucu ve deny canary var; diÃ„Å¸er paketler derleniyor.",
+      "initial_gap": "Intune/Jamf/SCCM teslimatÃ„Â±, tÃƒÂ¼m hostlarda upgrade/rollback/uninstall ve filo saÃ„Å¸lÃ„Â±k kanÃ„Â±tÃ„Â± tamam deÃ„Å¸il.",
+      "implementation": "Ã„Â°mzalÃ„Â± daÃ„Å¸Ã„Â±tÃ„Â±m paketleri, detect/remediate betikleri, yÃƒÂ¶netici/kullanÃ„Â±cÃ„Â± kurulumlarÃ„Â±, policy-preserving upgrade ve uninstall kurallarÃ„Â± ÃƒÂ¼ret.",
+      "acceptance": "Temiz kurulum, yarÃ„Â±m kalan upgrade, eski sÃƒÂ¼rÃƒÂ¼me dÃƒÂ¶nÃƒÂ¼Ã…Å¸, host gÃƒÂ¼ncellemesi ve uninstall sonrasÃ„Â±nda baÃ…Å¸ka kancalar/politika bozulmasÃ„Â±n; gerÃƒÂ§ek MDM'de kanÃ„Â±t topla.",
       "owner_role": "Release + Endpoint Engineering",
-      "dependencies": "MDM test tenantı, signer, OS paketleme araçları",
+      "dependencies": "MDM test tenantÃ„Â±, signer, OS paketleme araÃƒÂ§larÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T18",
       "priority": "P0",
-      "title": "Kurumsal giriş, MFA ve hesap kurtarma",
+      "title": "Kurumsal giriÃ…Å¸, MFA ve hesap kurtarma",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Recovery URL yalnız hosted HTTPS/loopback HTTP kabul ediyor, credential URL'yi reddediyor ve parola değişiminden önce global session barrier kuruyor; canlı IdP açık.",
+      "implementation_update": "Recovery URL yalnÃ„Â±z hosted HTTPS/loopback HTTP kabul ediyor, credential URL'yi reddediyor ve parola deÃ„Å¸iÃ…Å¸iminden ÃƒÂ¶nce global session barrier kuruyor; canlÃ„Â± IdP aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "TEN-01",
         "TEN-04",
@@ -443,20 +443,20 @@
         "packages/dashboard/src/enterprise/auth.tsx",
         "scripts/deployment-bootstrap.mjs"
       ],
-      "initial_current": "İlk yönetici ve parolalı giriş SMTP olmadan çalışıyor.",
-      "initial_gap": "Gerçek IdP/SSO, MFA, parola sıfırlama, oturum sonlandırma, break-glass ve kimlik sahipliği işletimi kabul edilmedi.",
-      "implementation": "Müşteri IdP'si, MFA ve kurtarma akışlarını bağla; bootstrap sahiplik prosedürü, session süreleri ve acil yönetici erişimini tanımla.",
-      "acceptance": "Kayıp parola/MFA, kapatılmış kullanıcı, süresi dolmuş oturum ve başarısız IdP durumlarını sınayarak hesabın hem geri alınabilir hem yetkisiz erişime kapalı olduğunu kanıtla.",
+      "initial_current": "Ã„Â°lk yÃƒÂ¶netici ve parolalÃ„Â± giriÃ…Å¸ SMTP olmadan ÃƒÂ§alÃ„Â±Ã…Å¸Ã„Â±yor.",
+      "initial_gap": "GerÃƒÂ§ek IdP/SSO, MFA, parola sÃ„Â±fÃ„Â±rlama, oturum sonlandÃ„Â±rma, break-glass ve kimlik sahipliÃ„Å¸i iÃ…Å¸letimi kabul edilmedi.",
+      "implementation": "MÃƒÂ¼Ã…Å¸teri IdP'si, MFA ve kurtarma akÃ„Â±Ã…Å¸larÃ„Â±nÃ„Â± baÃ„Å¸la; bootstrap sahiplik prosedÃƒÂ¼rÃƒÂ¼, session sÃƒÂ¼releri ve acil yÃƒÂ¶netici eriÃ…Å¸imini tanÃ„Â±mla.",
+      "acceptance": "KayÃ„Â±p parola/MFA, kapatÃ„Â±lmÃ„Â±Ã…Å¸ kullanÃ„Â±cÃ„Â±, sÃƒÂ¼resi dolmuÃ…Å¸ oturum ve baÃ…Å¸arÃ„Â±sÃ„Â±z IdP durumlarÃ„Â±nÃ„Â± sÃ„Â±nayarak hesabÃ„Â±n hem geri alÃ„Â±nabilir hem yetkisiz eriÃ…Å¸ime kapalÃ„Â± olduÃ„Å¸unu kanÃ„Â±tla.",
       "owner_role": "Identity Engineering + Customer IT",
-      "dependencies": "IdP/SMTP/DNS ve kurum güvenlik politikası",
+      "dependencies": "IdP/SMTP/DNS ve kurum gÃƒÂ¼venlik politikasÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T19",
       "priority": "P1",
-      "title": "SCIM ve güvenilir directory grup eşlemesi",
+      "title": "SCIM ve gÃƒÂ¼venilir directory grup eÃ…Å¸lemesi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "SCIM stale PATCH'i reddediyor, Remove members tüm üyeleri kaldırıyor ve büyük grup üyeliğini sayfalıyor; gerçek Entra/Okta kabulü açık.",
+      "implementation_update": "SCIM stale PATCH'i reddediyor, Remove members tÃƒÂ¼m ÃƒÂ¼yeleri kaldÃ„Â±rÃ„Â±yor ve bÃƒÂ¼yÃƒÂ¼k grup ÃƒÂ¼yeliÃ„Å¸ini sayfalÃ„Â±yor; gerÃƒÂ§ek Entra/Okta kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "TEN-02",
         "TEN-04"
@@ -465,20 +465,20 @@
         "packages/dashboard/src/auth/azure-ad.ts",
         "packages/dashboard/src/enterprise/team-provider.tsx"
       ],
-      "initial_current": "Azure yardımcıları mevcut; azure-ad-groups endpointi ve tam SCIM yaşam döngüsü yok.",
-      "initial_gap": "Yardımcı kod user_metadata gruplarını önce okuyabiliyor ve isimde admin geçmesine göre rol eşliyor. Bu, sunucu yetkilendirmesi için güvenilir temel değildir; aktif bir yetki yükseltme kanıtı olarak sunulmuyor.",
-      "implementation": "Sunucuda doğrulanmış immutable grup ID'leri, allowlist rol eşlemesi ve SCIM create/update/deactivate/groups uygula; kullanıcı metadata'sını yetki kaynağı yapma.",
-      "acceptance": "Sahte metadata, benzer grup adı, grup kaldırma, hesap pasifleştirme, pagination/replay ve tenant karıştırma testleri; erişim belirtilen süre içinde kesilsin.",
+      "initial_current": "Azure yardÃ„Â±mcÃ„Â±larÃ„Â± mevcut; azure-ad-groups endpointi ve tam SCIM yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼ yok.",
+      "initial_gap": "YardÃ„Â±mcÃ„Â± kod user_metadata gruplarÃ„Â±nÃ„Â± ÃƒÂ¶nce okuyabiliyor ve isimde admin geÃƒÂ§mesine gÃƒÂ¶re rol eÃ…Å¸liyor. Bu, sunucu yetkilendirmesi iÃƒÂ§in gÃƒÂ¼venilir temel deÃ„Å¸ildir; aktif bir yetki yÃƒÂ¼kseltme kanÃ„Â±tÃ„Â± olarak sunulmuyor.",
+      "implementation": "Sunucuda doÃ„Å¸rulanmÃ„Â±Ã…Å¸ immutable grup ID'leri, allowlist rol eÃ…Å¸lemesi ve SCIM create/update/deactivate/groups uygula; kullanÃ„Â±cÃ„Â± metadata'sÃ„Â±nÃ„Â± yetki kaynaÃ„Å¸Ã„Â± yapma.",
+      "acceptance": "Sahte metadata, benzer grup adÃ„Â±, grup kaldÃ„Â±rma, hesap pasifleÃ…Å¸tirme, pagination/replay ve tenant karÃ„Â±Ã…Å¸tÃ„Â±rma testleri; eriÃ…Å¸im belirtilen sÃƒÂ¼re iÃƒÂ§inde kesilsin.",
       "owner_role": "Identity + Backend Engineering",
-      "dependencies": "AIDR-019/048; Entra/Okta test ortamı",
+      "dependencies": "AIDR-019/048; Entra/Okta test ortamÃ„Â±",
       "evidence_level": "source-confirmed-gap; full exploit or field impact not asserted"
     },
     {
       "id": "T20",
       "priority": "P1",
-      "title": "Davet ve cihaz kayıt yaşam döngüsü",
+      "title": "Davet ve cihaz kayÃ„Â±t yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Tenant kapsamlı invite list/revoke/resend token rotasyonu ile device-start/exchange temeli var; SMTP, gerçek browser/IdP ve ağ kesintisi kabulü açık.",
+      "implementation_update": "Tenant kapsamlÃ„Â± invite list/revoke/resend token rotasyonu ile device-start/exchange temeli var; SMTP, gerÃƒÂ§ek browser/IdP ve aÃ„Å¸ kesintisi kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "TEN-03",
         "TEN-05"
@@ -488,20 +488,20 @@
         "supabase/functions/device-poll/index.ts",
         "packages/dashboard/src/ui/pages/public/VerifyPage.tsx"
       ],
-      "initial_current": "Davet bağlantısı ve açık ekip seçimiyle cihaz kaydı yerel provadan geçti.",
-      "initial_gap": "SMTP davet teslimi, gerçek cihaz yeniden kaydı, ekipten ayrılan çalışanın erişim kapanması ve müşteri mail/link akışı tam kabul edilmedi.",
-      "implementation": "Davet dağıtımını, expiry/iptal/yeniden gönderme, yanlış ekip ve cihaz yenileme işletimini tamamla.",
-      "acceptance": "Kullanılmış/iptal edilmiş davet, rol değişimi, başka ekip, eski device code ve kimlik değişiminde kayıt reddedilsin; mail linki gerçek tarayıcıda doğru ekibe dönsün.",
+      "initial_current": "Davet baÃ„Å¸lantÃ„Â±sÃ„Â± ve aÃƒÂ§Ã„Â±k ekip seÃƒÂ§imiyle cihaz kaydÃ„Â± yerel provadan geÃƒÂ§ti.",
+      "initial_gap": "SMTP davet teslimi, gerÃƒÂ§ek cihaz yeniden kaydÃ„Â±, ekipten ayrÃ„Â±lan ÃƒÂ§alÃ„Â±Ã…Å¸anÃ„Â±n eriÃ…Å¸im kapanmasÃ„Â± ve mÃƒÂ¼Ã…Å¸teri mail/link akÃ„Â±Ã…Å¸Ã„Â± tam kabul edilmedi.",
+      "implementation": "Davet daÃ„Å¸Ã„Â±tÃ„Â±mÃ„Â±nÃ„Â±, expiry/iptal/yeniden gÃƒÂ¶nderme, yanlÃ„Â±Ã…Å¸ ekip ve cihaz yenileme iÃ…Å¸letimini tamamla.",
+      "acceptance": "KullanÃ„Â±lmÃ„Â±Ã…Å¸/iptal edilmiÃ…Å¸ davet, rol deÃ„Å¸iÃ…Å¸imi, baÃ…Å¸ka ekip, eski device code ve kimlik deÃ„Å¸iÃ…Å¸iminde kayÃ„Â±t reddedilsin; mail linki gerÃƒÂ§ek tarayÃ„Â±cÃ„Â±da doÃ„Å¸ru ekibe dÃƒÂ¶nsÃƒÂ¼n.",
       "owner_role": "Identity + Customer Success",
-      "dependencies": "SMTP/IdP ve müşteri cihazları",
+      "dependencies": "SMTP/IdP ve mÃƒÂ¼Ã…Å¸teri cihazlarÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T21",
       "priority": "P0",
-      "title": "Mevcut API anahtarında ekip ve üyelik iptali",
+      "title": "Mevcut API anahtarÃ„Â±nda ekip ve ÃƒÂ¼yelik iptali",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Packs manifest/download dahil anahtar kullanan yollar aktif tenant, üyelik ve revocation doğruluyor; önceden üretilmiş signed URL süre sonuna dek geçerli.",
+      "implementation_update": "Packs manifest/download dahil anahtar kullanan yollar aktif tenant, ÃƒÂ¼yelik ve revocation doÃ„Å¸ruluyor; ÃƒÂ¶nceden ÃƒÂ¼retilmiÃ…Å¸ signed URL sÃƒÂ¼re sonuna dek geÃƒÂ§erli.",
       "feature_ids": [
         "TEN-01",
         "TEN-06",
@@ -513,20 +513,20 @@
         "supabase/functions/file-check/index.ts",
         "scripts/audit-reputation-lifecycle.mjs"
       ],
-      "initial_current": "Anahtar yönetimi aktif ekip/üyeliği denetliyor; reputation API'leri yalnızca mevcut anahtarın revoked değerini kontrol ediyor.",
-      "initial_gap": "İzole gerçek HTTP provasında askıya alınmış ekip ve süresi bitmiş üyelikle hem URL hem dosya sorgusu 200 döndü; dört kabul yeniden üretildi. Başka tenant verisi okunduğu gösterilmedi.",
-      "implementation": "Ortak doğrulanmış anahtar/aktif tenant/aktif üyelik sınırı uygula; iptal, kapanış ve deprovisioning semantiğini tüm servislerde birleştir.",
-      "acceptance": "Aktif kimlik 200; suspended/closing/closed tenant, expired/removed membership ve revoked key tüm tüketicilerde 401/403; stale cache ile erişim sürmesin.",
+      "initial_current": "Anahtar yÃƒÂ¶netimi aktif ekip/ÃƒÂ¼yeliÃ„Å¸i denetliyor; reputation API'leri yalnÃ„Â±zca mevcut anahtarÃ„Â±n revoked deÃ„Å¸erini kontrol ediyor.",
+      "initial_gap": "Ã„Â°zole gerÃƒÂ§ek HTTP provasÃ„Â±nda askÃ„Â±ya alÃ„Â±nmÃ„Â±Ã…Å¸ ekip ve sÃƒÂ¼resi bitmiÃ…Å¸ ÃƒÂ¼yelikle hem URL hem dosya sorgusu 200 dÃƒÂ¶ndÃƒÂ¼; dÃƒÂ¶rt kabul yeniden ÃƒÂ¼retildi. BaÃ…Å¸ka tenant verisi okunduÃ„Å¸u gÃƒÂ¶sterilmedi.",
+      "implementation": "Ortak doÃ„Å¸rulanmÃ„Â±Ã…Å¸ anahtar/aktif tenant/aktif ÃƒÂ¼yelik sÃ„Â±nÃ„Â±rÃ„Â± uygula; iptal, kapanÃ„Â±Ã…Å¸ ve deprovisioning semantiÃ„Å¸ini tÃƒÂ¼m servislerde birleÃ…Å¸tir.",
+      "acceptance": "Aktif kimlik 200; suspended/closing/closed tenant, expired/removed membership ve revoked key tÃƒÂ¼m tÃƒÂ¼keticilerde 401/403; stale cache ile eriÃ…Å¸im sÃƒÂ¼rmesin.",
       "owner_role": "Backend Security",
-      "dependencies": "AIDR-063; yerel yeniden üretim kanıtı",
+      "dependencies": "AIDR-063; yerel yeniden ÃƒÂ¼retim kanÃ„Â±tÃ„Â±",
       "evidence_level": "code-and-local-reproduction"
     },
     {
       "id": "T22",
       "priority": "P0",
-      "title": "Tenant izolasyonu ve kaynak tüketim sınırları",
+      "title": "Tenant izolasyonu ve kaynak tÃƒÂ¼ketim sÃ„Â±nÃ„Â±rlarÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Edge byte/rate sınırı bozuk RPC'de 503 ve stalled stream'de 413 fail-closed üretiyor; müşteri yük/izolasyon kabulü açık.",
+      "implementation_update": "Edge byte/rate sÃ„Â±nÃ„Â±rÃ„Â± bozuk RPC'de 503 ve stalled stream'de 413 fail-closed ÃƒÂ¼retiyor; mÃƒÂ¼Ã…Å¸teri yÃƒÂ¼k/izolasyon kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "TEN-01",
         "OBS-01",
@@ -536,20 +536,20 @@
         "supabase/functions/_shared/auth.ts",
         "supabase/migrations/20260805000000_hybrid_tenancy.sql"
       ],
-      "initial_current": "RLS, rol ve bazı negatif uçtan uca testler var.",
-      "initial_gap": "Her endpoint/rol/tenant kombinasyonu, body/stream sınırı, rate-limit kesintisi ve komşu tenant kaynak tüketimi tam ölçülmedi.",
-      "implementation": "Tüm endpointler için auth/RBAC/RLS sözleşmesi; servis rolü kullanan yollarda açık tenant sınırı; kuyruk/iş/istek/depoma kotaları ekle ve denetle.",
-      "acceptance": "Farklı tenant, üyelik kaybı, viewer, eski anahtar, büyük body ve paralel isteklerle negatif matris çalışsın; tek tenant diğerinin SLO'sunu tüketemesin.",
+      "initial_current": "RLS, rol ve bazÃ„Â± negatif uÃƒÂ§tan uca testler var.",
+      "initial_gap": "Her endpoint/rol/tenant kombinasyonu, body/stream sÃ„Â±nÃ„Â±rÃ„Â±, rate-limit kesintisi ve komÃ…Å¸u tenant kaynak tÃƒÂ¼ketimi tam ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lmedi.",
+      "implementation": "TÃƒÂ¼m endpointler iÃƒÂ§in auth/RBAC/RLS sÃƒÂ¶zleÃ…Å¸mesi; servis rolÃƒÂ¼ kullanan yollarda aÃƒÂ§Ã„Â±k tenant sÃ„Â±nÃ„Â±rÃ„Â±; kuyruk/iÃ…Å¸/istek/depoma kotalarÃ„Â± ekle ve denetle.",
+      "acceptance": "FarklÃ„Â± tenant, ÃƒÂ¼yelik kaybÃ„Â±, viewer, eski anahtar, bÃƒÂ¼yÃƒÂ¼k body ve paralel isteklerle negatif matris ÃƒÂ§alÃ„Â±Ã…Å¸sÃ„Â±n; tek tenant diÃ„Å¸erinin SLO'sunu tÃƒÂ¼ketemesin.",
       "owner_role": "Security + Backend + SRE",
-      "dependencies": "Bağımsız değerlendirme ve tanımlı yük profili",
+      "dependencies": "BaÃ„Å¸Ã„Â±msÃ„Â±z deÃ„Å¸erlendirme ve tanÃ„Â±mlÃ„Â± yÃƒÂ¼k profili",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T23",
       "priority": "P0",
-      "title": "Telemetri dayanıklılığı ve görünür veri kaybı",
+      "title": "Telemetri dayanÃ„Â±klÃ„Â±lÃ„Â±Ã„Å¸Ã„Â± ve gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r veri kaybÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Telemetry WAL bozuk/unknown/tampered committed kayıtları reddediyor, terminal drop sonrası retry ve stale backlog readiness sağlıyor; uzun kesinti saha testi açık.",
+      "implementation_update": "Telemetry WAL bozuk/unknown/tampered committed kayÃ„Â±tlarÃ„Â± reddediyor, terminal drop sonrasÃ„Â± retry ve stale backlog readiness saÃ„Å¸lÃ„Â±yor; uzun kesinti saha testi aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "OBS-01"
       ],
@@ -557,20 +557,20 @@
         "supabase/functions/ingest/index.ts",
         "packages/core/src/audit-log.ts"
       ],
-      "initial_current": "Olay alımı ve dashboard bağlı.",
-      "initial_gap": "Filo yükünde teslim SLO'su, disk/kuyruk sınırı, offline retry/dedup ve uçtan uca kayıp oranı için kanıt eksik.",
-      "implementation": "Olay teslim sözleşmesi, kimlik/idempotency, retry/backpressure, kayıp sayaçları ve tenant bazlı retention bütçelerini doğrula.",
-      "acceptance": "Ağ/DB/storage kesintisi ve ajan yeniden başlatmada kayıp/duplicate ölç; sessiz olay kaybı olmasın; disk dolması ve gecikme kullanıcıya görünür olsun.",
+      "initial_current": "Olay alÃ„Â±mÃ„Â± ve dashboard baÃ„Å¸lÃ„Â±.",
+      "initial_gap": "Filo yÃƒÂ¼kÃƒÂ¼nde teslim SLO'su, disk/kuyruk sÃ„Â±nÃ„Â±rÃ„Â±, offline retry/dedup ve uÃƒÂ§tan uca kayÃ„Â±p oranÃ„Â± iÃƒÂ§in kanÃ„Â±t eksik.",
+      "implementation": "Olay teslim sÃƒÂ¶zleÃ…Å¸mesi, kimlik/idempotency, retry/backpressure, kayÃ„Â±p sayaÃƒÂ§larÃ„Â± ve tenant bazlÃ„Â± retention bÃƒÂ¼tÃƒÂ§elerini doÃ„Å¸rula.",
+      "acceptance": "AÃ„Å¸/DB/storage kesintisi ve ajan yeniden baÃ…Å¸latmada kayÃ„Â±p/duplicate ÃƒÂ¶lÃƒÂ§; sessiz olay kaybÃ„Â± olmasÃ„Â±n; disk dolmasÃ„Â± ve gecikme kullanÃ„Â±cÃ„Â±ya gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r olsun.",
       "owner_role": "Telemetry Engineering + SRE",
-      "dependencies": "Müşteri cihaz/olay hacmi ve saklama hedefi",
+      "dependencies": "MÃƒÂ¼Ã…Å¸teri cihaz/olay hacmi ve saklama hedefi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T24",
       "priority": "P1",
-      "title": "SIEM ve OpenTelemetry üretim teslimi",
+      "title": "SIEM ve OpenTelemetry ÃƒÂ¼retim teslimi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "SIEM durable state provider/endpoint/index routing fingerprint'e bağlı ve farklı hedefte reopen'i reddediyor; gerçek SIEM alındısı/zamanlayıcı açık.",
+      "implementation_update": "SIEM durable state provider/endpoint/index routing fingerprint'e baÃ„Å¸lÃ„Â± ve farklÃ„Â± hedefte reopen'i reddediyor; gerÃƒÂ§ek SIEM alÃ„Â±ndÃ„Â±sÃ„Â±/zamanlayÃ„Â±cÃ„Â± aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "OBS-04"
       ],
@@ -578,20 +578,20 @@
         "packages/core/src/siem-export.ts",
         "packages/core/src/tracing.ts"
       ],
-      "initial_current": "Dışa aktarma/izleme bileşenleri mevcut.",
-      "initial_gap": "Named SIEM transport, teslim bildirimi, kesinti tamponu, şema sürümü ve müşteri SIEM alan eşlemesi kabul edilmedi.",
-      "implementation": "Satılacak Splunk/Sentinel/Elastic vb. adaptörleri için gerçek endpoint entegrasyonu, retry/dedup ve sağlık göstergesi tamamla.",
-      "acceptance": "SIEM kesintisi/429/401, sertifika değişimi, yeniden gönderim ve alan eşlemesi gerçek SIEM'de doğrulansın; yanlış başarı bildirimi olmasın.",
+      "initial_current": "DÃ„Â±Ã…Å¸a aktarma/izleme bileÃ…Å¸enleri mevcut.",
+      "initial_gap": "Named SIEM transport, teslim bildirimi, kesinti tamponu, Ã…Å¸ema sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼ ve mÃƒÂ¼Ã…Å¸teri SIEM alan eÃ…Å¸lemesi kabul edilmedi.",
+      "implementation": "SatÃ„Â±lacak Splunk/Sentinel/Elastic vb. adaptÃƒÂ¶rleri iÃƒÂ§in gerÃƒÂ§ek endpoint entegrasyonu, retry/dedup ve saÃ„Å¸lÃ„Â±k gÃƒÂ¶stergesi tamamla.",
+      "acceptance": "SIEM kesintisi/429/401, sertifika deÃ„Å¸iÃ…Å¸imi, yeniden gÃƒÂ¶nderim ve alan eÃ…Å¸lemesi gerÃƒÂ§ek SIEM'de doÃ„Å¸rulansÃ„Â±n; yanlÃ„Â±Ã…Å¸ baÃ…Å¸arÃ„Â± bildirimi olmasÃ„Â±n.",
       "owner_role": "Integrations + Customer SOC",
-      "dependencies": "SIEM test hesabı ve event schema anlaşması",
+      "dependencies": "SIEM test hesabÃ„Â± ve event schema anlaÃ…Å¸masÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T25",
       "priority": "P1",
-      "title": "Olay araştırması ve kanıt bütünlüğü",
-      "status": "OPEN",
-      "implementation_update": "Olay receipt head sırası deterministik UTF-16 ve legacy doğrulama uyumlu; ayrı Ed25519 snapshot makbuzu var. Dış saklama, key custody ve güvenilir zaman açık.",
+      "title": "Olay araÃ…Å¸tÃ„Â±rmasÃ„Â± ve kanÃ„Â±t bÃƒÂ¼tÃƒÂ¼nlÃƒÂ¼Ã„Å¸ÃƒÂ¼",
+      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
+      "implementation_update": "incidents/evidence-receipt.ts candidate/policy/device/actor/incident/action bagli append-only receipt, Lamport mantik saati ile offline/skew siralamasi, duplicate/tamper reddi ve fail-closed arsiv adapteri ekliyor. Dis arsiv sahibi ve key custody acik. Eski: Olay receipt head sÃ„Â±rasÃ„Â± deterministik UTF-16 ve legacy doÃ„Å¸rulama uyumlu; ayrÃ„Â± Ed25519 snapshot makbuzu var. DÃ„Â±Ã…Å¸ saklama, key custody ve gÃƒÂ¼venilir zaman aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "OBS-02",
         "RSP-05"
@@ -601,20 +601,20 @@
         "packages/core/src/incidents/anchor.ts",
         "packages/core/src/response-audit.ts"
       ],
-      "initial_current": "Yerel korelasyon ve imzalı response zinciri var.",
-      "initial_gap": "Tam cross-agent nedensellik, ayrıcalıklı değişikliklere karşı bağımsız kanıt saklama ve olay→araç→credential izi eksik.",
-      "implementation": "Korelasyon kimlikleri, zaman sapması, ilişkili ajan/kaynak görünümü, zincir doğrulama ve bağımsız arşiv kur.",
-      "acceptance": "Saat kayması/duplicate/offline sıralama, silinmiş veya değiştirilmiş zincir ve çok ajanlı saldırıda kanıt boşlukları görünür olsun.",
+      "initial_current": "Yerel korelasyon ve imzalÃ„Â± response zinciri var.",
+      "initial_gap": "Tam cross-agent nedensellik, ayrÃ„Â±calÃ„Â±klÃ„Â± deÃ„Å¸iÃ…Å¸ikliklere karÃ…Å¸Ã„Â± baÃ„Å¸Ã„Â±msÃ„Â±z kanÃ„Â±t saklama ve olayÃ¢â€ â€™araÃƒÂ§Ã¢â€ â€™credential izi eksik.",
+      "implementation": "Korelasyon kimlikleri, zaman sapmasÃ„Â±, iliÃ…Å¸kili ajan/kaynak gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼mÃƒÂ¼, zincir doÃ„Å¸rulama ve baÃ„Å¸Ã„Â±msÃ„Â±z arÃ…Å¸iv kur.",
+      "acceptance": "Saat kaymasÃ„Â±/duplicate/offline sÃ„Â±ralama, silinmiÃ…Å¸ veya deÃ„Å¸iÃ…Å¸tirilmiÃ…Å¸ zincir ve ÃƒÂ§ok ajanlÃ„Â± saldÃ„Â±rÃ„Â±da kanÃ„Â±t boÃ…Å¸luklarÃ„Â± gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r olsun.",
       "owner_role": "Detection + SOC Product",
-      "dependencies": "Kimlik grafiği, güvenilir zaman ve arşiv sahibi",
+      "dependencies": "Kimlik grafiÃ„Å¸i, gÃƒÂ¼venilir zaman ve arÃ…Å¸iv sahibi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T26",
       "priority": "P0",
-      "title": "Saklama, legal hold ve müşteri çıkışı",
+      "title": "Saklama, legal hold ve mÃƒÂ¼Ã…Å¸teri ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸Ã„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Offboarding her Storage nesnesinin yokluğunu doğrulamadan ACK üretmiyor; legal hold/resume var, harici backup silme kanıtı açık.",
+      "implementation_update": "Offboarding her Storage nesnesinin yokluÃ„Å¸unu doÃ„Å¸rulamadan ACK ÃƒÂ¼retmiyor; legal hold/resume var, harici backup silme kanÃ„Â±tÃ„Â± aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "OBS-03",
         "OBS-06"
@@ -624,12 +624,12 @@
         "deploy/maintenance/aidr-export-retention.timer",
         "supabase/functions/audit-export/index.ts"
       ],
-      "initial_current": "Sayfalı export ve geçici dosyalar için silme komutu var; zamanlayıcı şablonu sağlanıyor.",
-      "initial_gap": "Zamanlayıcı müşteri ortamında aktif değil; tüm veri sınıfları için retention/deletion, legal hold ve doğrulanmış offboarding yok.",
-      "implementation": "Tablo/nesne/log/cache/yedek bazında yaşam döngüsü; legal hold istisnası; kullanıcı/tenant kapanışı ve silme makbuzu kur.",
-      "acceptance": "Süre dolan verinin API, Storage, cache ve replikalardan yokluğu; hold verisinin korunması; retry ve yarım silme sonrası tutarlılık kanıtlansın.",
+      "initial_current": "SayfalÃ„Â± export ve geÃƒÂ§ici dosyalar iÃƒÂ§in silme komutu var; zamanlayÃ„Â±cÃ„Â± Ã…Å¸ablonu saÃ„Å¸lanÃ„Â±yor.",
+      "initial_gap": "ZamanlayÃ„Â±cÃ„Â± mÃƒÂ¼Ã…Å¸teri ortamÃ„Â±nda aktif deÃ„Å¸il; tÃƒÂ¼m veri sÃ„Â±nÃ„Â±flarÃ„Â± iÃƒÂ§in retention/deletion, legal hold ve doÃ„Å¸rulanmÃ„Â±Ã…Å¸ offboarding yok.",
+      "implementation": "Tablo/nesne/log/cache/yedek bazÃ„Â±nda yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼; legal hold istisnasÃ„Â±; kullanÃ„Â±cÃ„Â±/tenant kapanÃ„Â±Ã…Å¸Ã„Â± ve silme makbuzu kur.",
+      "acceptance": "SÃƒÂ¼re dolan verinin API, Storage, cache ve replikalardan yokluÃ„Å¸u; hold verisinin korunmasÃ„Â±; retry ve yarÃ„Â±m silme sonrasÃ„Â± tutarlÃ„Â±lÃ„Â±k kanÃ„Â±tlansÃ„Â±n.",
       "owner_role": "Backend + Privacy + Operations",
-      "dependencies": "Onaylı saklama/silme politikası; yedek istisnaları",
+      "dependencies": "OnaylÃ„Â± saklama/silme politikasÃ„Â±; yedek istisnalarÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
@@ -637,7 +637,7 @@
       "priority": "P0",
       "title": "Offsite yedekleme ve RPO/RTO",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Offsite commit zamanı authenticated manifest'e bağlı ve S3 lookup hatası fail-closed; izole restore aracı var. Bağımsız host/provider ve RPO/RTO açık.",
+      "implementation_update": "Offsite commit zamanÃ„Â± authenticated manifest'e baÃ„Å¸lÃ„Â± ve S3 lookup hatasÃ„Â± fail-closed; izole restore aracÃ„Â± var. BaÃ„Å¸Ã„Â±msÃ„Â±z host/provider ve RPO/RTO aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DEP-06"
       ],
@@ -645,20 +645,20 @@
         "scripts/deployment-backup.mjs",
         "scripts/verify-deployment-recovery.mjs"
       ],
-      "initial_current": "Şifreli soğuk yedek ve bağımsız volume geri dönüşünde 18 karşılaştırma geçti.",
-      "initial_gap": "Off-host kopya, otomatik zamanlama/retention, ayrı anahtar kurtarma ve gerçek felaket RPO/RTO kanıtı yok; bakım duruşu gerekiyor.",
-      "implementation": "Yedek hedefi/anahtar custody, zamanlama, erişim ayrılığı, başarısızlık alarmı ve kayıp-host geri dönüş işletimini kur.",
-      "acceptance": "Yeni hostta yalnız offsite yedek ve ayrı anahtarla kurtar; tablo/nesne içerikleri eşleşsin; gerçek kayıp veri süresi ve toparlanma süresi ölçülsün.",
+      "initial_current": "Ã…Âifreli soÃ„Å¸uk yedek ve baÃ„Å¸Ã„Â±msÃ„Â±z volume geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ÃƒÂ¼nde 18 karÃ…Å¸Ã„Â±laÃ…Å¸tÃ„Â±rma geÃƒÂ§ti.",
+      "initial_gap": "Off-host kopya, otomatik zamanlama/retention, ayrÃ„Â± anahtar kurtarma ve gerÃƒÂ§ek felaket RPO/RTO kanÃ„Â±tÃ„Â± yok; bakÃ„Â±m duruÃ…Å¸u gerekiyor.",
+      "implementation": "Yedek hedefi/anahtar custody, zamanlama, eriÃ…Å¸im ayrÃ„Â±lÃ„Â±Ã„Å¸Ã„Â±, baÃ…Å¸arÃ„Â±sÃ„Â±zlÃ„Â±k alarmÃ„Â± ve kayÃ„Â±p-host geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ iÃ…Å¸letimini kur.",
+      "acceptance": "Yeni hostta yalnÃ„Â±z offsite yedek ve ayrÃ„Â± anahtarla kurtar; tablo/nesne iÃƒÂ§erikleri eÃ…Å¸leÃ…Å¸sin; gerÃƒÂ§ek kayÃ„Â±p veri sÃƒÂ¼resi ve toparlanma sÃƒÂ¼resi ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lsÃƒÂ¼n.",
       "owner_role": "SRE + Customer Operations",
-      "dependencies": "Offsite storage, key custodian, kabul edilmiş RPO/RTO",
+      "dependencies": "Offsite storage, key custodian, kabul edilmiÃ…Å¸ RPO/RTO",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T28",
       "priority": "P0",
-      "title": "Gerçek cloud ve self-hosted üretim kurulumu",
+      "title": "GerÃƒÂ§ek cloud ve self-hosted ÃƒÂ¼retim kurulumu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "33 migrationlı self-hosted prova var; prepare inputları secret oluşturmadan doğruluyor ve cloud public proxy/provider upstream loop'unu reddediyor. Canlı provider/TLS açık.",
+      "implementation_update": "33 migrationlÃ„Â± self-hosted prova var; prepare inputlarÃ„Â± secret oluÃ…Å¸turmadan doÃ„Å¸ruluyor ve cloud public proxy/provider upstream loop'unu reddediyor. CanlÃ„Â± provider/TLS aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DEP-01",
         "DEP-02"
@@ -667,20 +667,20 @@
         "scripts/deployment-prepare.mjs",
         "deploy/FIRST_CUSTOMER.md"
       ],
-      "initial_current": "İki model için kurulum hazırlama ve yerel Docker prova var.",
-      "initial_gap": "Cloud hesabı/projesi, bölge, DNS/TLS, reverse proxy, SMTP/IdP, secret installation ve gerçek internet erişimi bilinmiyor; cloud hazırlama çalışan cloud demek değil.",
-      "implementation": "Her model için hedef ortamı kur; TLS yenileme ve HTTP/WebSocket başlıklarını doğrula; DB/Studio'yu özel ağda tut; public endpoint ve onboarding'i kabul et.",
-      "acceptance": "Temiz makinede müşteri kimliğiyle giriş→cihaz→deny→olay→export→rollback akışı; dış port/izin kontrolleri ve sertifika yenileme tatbikatı.",
+      "initial_current": "Ã„Â°ki model iÃƒÂ§in kurulum hazÃ„Â±rlama ve yerel Docker prova var.",
+      "initial_gap": "Cloud hesabÃ„Â±/projesi, bÃƒÂ¶lge, DNS/TLS, reverse proxy, SMTP/IdP, secret installation ve gerÃƒÂ§ek internet eriÃ…Å¸imi bilinmiyor; cloud hazÃ„Â±rlama ÃƒÂ§alÃ„Â±Ã…Å¸an cloud demek deÃ„Å¸il.",
+      "implementation": "Her model iÃƒÂ§in hedef ortamÃ„Â± kur; TLS yenileme ve HTTP/WebSocket baÃ…Å¸lÃ„Â±klarÃ„Â±nÃ„Â± doÃ„Å¸rula; DB/Studio'yu ÃƒÂ¶zel aÃ„Å¸da tut; public endpoint ve onboarding'i kabul et.",
+      "acceptance": "Temiz makinede mÃƒÂ¼Ã…Å¸teri kimliÃ„Å¸iyle giriÃ…Å¸Ã¢â€ â€™cihazÃ¢â€ â€™denyÃ¢â€ â€™olayÃ¢â€ â€™exportÃ¢â€ â€™rollback akÃ„Â±Ã…Å¸Ã„Â±; dÃ„Â±Ã…Å¸ port/izin kontrolleri ve sertifika yenileme tatbikatÃ„Â±.",
       "owner_role": "SRE + Customer IT",
-      "dependencies": "Alan adı, cloud hesabı/bölge ve ağ bilgisi",
+      "dependencies": "Alan adÃ„Â±, cloud hesabÃ„Â±/bÃƒÂ¶lge ve aÃ„Å¸ bilgisi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T29",
       "priority": "P0",
-      "title": "Kimliği doğrulanan dağıtım ve release provenance",
+      "title": "KimliÃ„Å¸i doÃ„Å¸rulanan daÃ„Å¸Ã„Â±tÃ„Â±m ve release provenance",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Release verifier receipt hedefini mutation öncesi doğruluyor ve bundle/state/policy çakışmasını reddediyor; resmi key custody/private registry açık.",
+      "implementation_update": "Release verifier receipt hedefini mutation ÃƒÂ¶ncesi doÃ„Å¸ruluyor ve bundle/state/policy ÃƒÂ§akÃ„Â±Ã…Å¸masÃ„Â±nÃ„Â± reddediyor; resmi key custody/private registry aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DEP-05",
         "DEP-08",
@@ -691,20 +691,20 @@
         ".github/scripts/build-release-bundle.mjs",
         "scripts/release-artifact-manifests.mjs"
       ],
-      "initial_current": "Taşınabilir aday, SBOM, paket tüketici ve SHA denetimleri var; yayıncı imzası yok.",
-      "initial_gap": "Checksum yayıncı kimliği değildir. Private registry kurulumu, imza doğrulama, key rotasyonu ve air-gap imaj teslimi kanıtı yok.",
-      "implementation": "Aynı candidate'ı imzala; auth kontrollü registry/download, provenance ve sabit imaj digestleriyle teslim et; air-gap satılıyorsa tüm bağımlılık/imajları dahil et.",
-      "acceptance": "Yanlış signer/değişmiş arşiv/eski sürüm reddedilsin; müşteri temiz makinede internetsiz veya yetkili registry ile kurabilsin; imza/anahtar iptali sınansın.",
+      "initial_current": "TaÃ…Å¸Ã„Â±nabilir aday, SBOM, paket tÃƒÂ¼ketici ve SHA denetimleri var; yayÃ„Â±ncÃ„Â± imzasÃ„Â± yok.",
+      "initial_gap": "Checksum yayÃ„Â±ncÃ„Â± kimliÃ„Å¸i deÃ„Å¸ildir. Private registry kurulumu, imza doÃ„Å¸rulama, key rotasyonu ve air-gap imaj teslimi kanÃ„Â±tÃ„Â± yok.",
+      "implementation": "AynÃ„Â± candidate'Ã„Â± imzala; auth kontrollÃƒÂ¼ registry/download, provenance ve sabit imaj digestleriyle teslim et; air-gap satÃ„Â±lÃ„Â±yorsa tÃƒÂ¼m baÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k/imajlarÃ„Â± dahil et.",
+      "acceptance": "YanlÃ„Â±Ã…Å¸ signer/deÃ„Å¸iÃ…Å¸miÃ…Å¸ arÃ…Å¸iv/eski sÃƒÂ¼rÃƒÂ¼m reddedilsin; mÃƒÂ¼Ã…Å¸teri temiz makinede internetsiz veya yetkili registry ile kurabilsin; imza/anahtar iptali sÃ„Â±nansÃ„Â±n.",
       "owner_role": "Release Engineering + Security",
-      "dependencies": "Signer ve registry yetkisi; lisans onayı",
+      "dependencies": "Signer ve registry yetkisi; lisans onayÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T30",
       "priority": "P0",
-      "title": "HA, failover, kapasite ve SLA ölçümü",
+      "title": "HA, failover, kapasite ve SLA ÃƒÂ¶lÃƒÂ§ÃƒÂ¼mÃƒÂ¼",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Load harness her fault senaryosu için son hatadan sonra ardışık recovery ve tam gözlem istiyor; gerçek HA, kapasite ve aylık SLA açık.",
+      "implementation_update": "Load harness her fault senaryosu iÃƒÂ§in son hatadan sonra ardÃ„Â±Ã…Å¸Ã„Â±k recovery ve tam gÃƒÂ¶zlem istiyor; gerÃƒÂ§ek HA, kapasite ve aylÃ„Â±k SLA aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DEP-07"
       ],
@@ -712,20 +712,20 @@
         "deploy/dashboard/server.mjs",
         "deploy/README.md"
       ],
-      "initial_current": "Tek host Docker temel kurulumu var; 501 satır sayfalama testi yük testi değildir.",
-      "initial_gap": "HA topology, DB failover, tenant noisy-neighbor ve aylık availability SLI kanıtı yok; 99.9 ölçülmüş sonuç değil.",
-      "implementation": "Desteklenen kapasite ve region topology tanımla; load/soak/failover, hata bütçesi ve ölçüm paydası kur.",
-      "acceptance": "Gerçekçi agent/event yükünde p50/p95/p99, hata/kayıp oranı, DB/servis/node arızası ve bakım etkisi raporlansın; kabul edilmiş gözlem penceresi tamamlanmış olsun.",
+      "initial_current": "Tek host Docker temel kurulumu var; 501 satÃ„Â±r sayfalama testi yÃƒÂ¼k testi deÃ„Å¸ildir.",
+      "initial_gap": "HA topology, DB failover, tenant noisy-neighbor ve aylÃ„Â±k availability SLI kanÃ„Â±tÃ„Â± yok; 99.9 ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lmÃƒÂ¼Ã…Å¸ sonuÃƒÂ§ deÃ„Å¸il.",
+      "implementation": "Desteklenen kapasite ve region topology tanÃ„Â±mla; load/soak/failover, hata bÃƒÂ¼tÃƒÂ§esi ve ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m paydasÃ„Â± kur.",
+      "acceptance": "GerÃƒÂ§ekÃƒÂ§i agent/event yÃƒÂ¼kÃƒÂ¼nde p50/p95/p99, hata/kayÃ„Â±p oranÃ„Â±, DB/servis/node arÃ„Â±zasÃ„Â± ve bakÃ„Â±m etkisi raporlansÃ„Â±n; kabul edilmiÃ…Å¸ gÃƒÂ¶zlem penceresi tamamlanmÃ„Â±Ã…Å¸ olsun.",
       "owner_role": "SRE + Performance Engineering",
-      "dependencies": "Host boyutları, filo/olay profili, SLA anlaşması",
+      "dependencies": "Host boyutlarÃ„Â±, filo/olay profili, SLA anlaÃ…Å¸masÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T31",
       "priority": "P0",
-      "title": "Migration, upgrade ve geri dönüş tatbikatı",
+      "title": "Migration, upgrade ve geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ tatbikatÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Kesilen rename resume yalnız kaynak/staged içerik preflight hash'leriyle eşleşirse devam ediyor; gerçek trafik cutover/rollback kabulü açık.",
+      "implementation_update": "Kesilen rename resume yalnÃ„Â±z kaynak/staged iÃƒÂ§erik preflight hash'leriyle eÃ…Å¸leÃ…Å¸irse devam ediyor; gerÃƒÂ§ek trafik cutover/rollback kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DEP-03",
         "DEP-04"
@@ -734,20 +734,20 @@
         "scripts/deployment-migrate.mjs",
         "scripts/deployment-doctor.mjs"
       ],
-      "initial_current": "18 migration checksum/transaction ile uygulanıyor; temiz kurulum smoke var.",
-      "initial_gap": "Önceki müşteri sürümünden upgrade, sürüm karmaşası ve gerçek üretim rollback tatbikatı açık.",
-      "implementation": "Desteklenen upgrade yolları, ön kontrol/yedek, kesinti planı, kompatibilite ve başarısız migration geri dönüş prosedürü hazırla.",
-      "acceptance": "Eski veriyle upgrade, kesilen migration, checksum değişikliği, uygulama/DB sürüm uyuşmazlığı ve kurtarma testi; veri kaybı ve sessiz schema drift olmasın.",
+      "initial_current": "18 migration checksum/transaction ile uygulanÃ„Â±yor; temiz kurulum smoke var.",
+      "initial_gap": "Ãƒâ€“nceki mÃƒÂ¼Ã…Å¸teri sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼nden upgrade, sÃƒÂ¼rÃƒÂ¼m karmaÃ…Å¸asÃ„Â± ve gerÃƒÂ§ek ÃƒÂ¼retim rollback tatbikatÃ„Â± aÃƒÂ§Ã„Â±k.",
+      "implementation": "Desteklenen upgrade yollarÃ„Â±, ÃƒÂ¶n kontrol/yedek, kesinti planÃ„Â±, kompatibilite ve baÃ…Å¸arÃ„Â±sÃ„Â±z migration geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ prosedÃƒÂ¼rÃƒÂ¼ hazÃ„Â±rla.",
+      "acceptance": "Eski veriyle upgrade, kesilen migration, checksum deÃ„Å¸iÃ…Å¸ikliÃ„Å¸i, uygulama/DB sÃƒÂ¼rÃƒÂ¼m uyuÃ…Å¸mazlÃ„Â±Ã„Å¸Ã„Â± ve kurtarma testi; veri kaybÃ„Â± ve sessiz schema drift olmasÃ„Â±n.",
       "owner_role": "Backend + Release + SRE",
-      "dependencies": "Önceki sürüm snapshotları ve bakım penceresi",
+      "dependencies": "Ãƒâ€“nceki sÃƒÂ¼rÃƒÂ¼m snapshotlarÃ„Â± ve bakÃ„Â±m penceresi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T32",
       "priority": "P0",
-      "title": "İzleme, alarm ve işletim sahipliği",
+      "title": "Ã„Â°zleme, alarm ve iÃ…Å¸letim sahipliÃ„Å¸i",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Per-instance scrape/readiness ve empty-discovery alertleri eklendi; kural YAML/testleri var. Canlı paging, isimli nöbet ve SLA açık.",
+      "implementation_update": "Per-instance scrape/readiness ve empty-discovery alertleri eklendi; kural YAML/testleri var. CanlÃ„Â± paging, isimli nÃƒÂ¶bet ve SLA aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DEP-01",
         "DEP-02",
@@ -757,20 +757,20 @@
         "docs/runbooks/alerting.md",
         "docs/runbooks/incident-response.md"
       ],
-      "initial_current": "Runbook ve container sağlık kontrolleri var.",
-      "initial_gap": "Production dashboard, nöbetçi, gerçek paging, sertifika/disk/kuyruk/feed/backup alarmı ve incident tatbikatı tamamlanmadı.",
-      "implementation": "SLI dashboard ve alarm eşikleri, sorumlu/nöbet takvimi, alarm sessizliği kontrolü, escalation ve olay sonrası inceleme akışı kur.",
-      "acceptance": "Servis, DB, storage, signer, kuyruk ve yedek hatası enjekte et; doğru kişiye zamanlı alarm ve çözüldü bildirimi gelsin; kayıtlı tatbikat tut.",
+      "initial_current": "Runbook ve container saÃ„Å¸lÃ„Â±k kontrolleri var.",
+      "initial_gap": "Production dashboard, nÃƒÂ¶betÃƒÂ§i, gerÃƒÂ§ek paging, sertifika/disk/kuyruk/feed/backup alarmÃ„Â± ve incident tatbikatÃ„Â± tamamlanmadÃ„Â±.",
+      "implementation": "SLI dashboard ve alarm eÃ…Å¸ikleri, sorumlu/nÃƒÂ¶bet takvimi, alarm sessizliÃ„Å¸i kontrolÃƒÂ¼, escalation ve olay sonrasÃ„Â± inceleme akÃ„Â±Ã…Å¸Ã„Â± kur.",
+      "acceptance": "Servis, DB, storage, signer, kuyruk ve yedek hatasÃ„Â± enjekte et; doÃ„Å¸ru kiÃ…Å¸iye zamanlÃ„Â± alarm ve ÃƒÂ§ÃƒÂ¶zÃƒÂ¼ldÃƒÂ¼ bildirimi gelsin; kayÃ„Â±tlÃ„Â± tatbikat tut.",
       "owner_role": "SRE + Support",
-      "dependencies": "Gerçek izleme/paging kanalları ve isimli sorumlular",
+      "dependencies": "GerÃƒÂ§ek izleme/paging kanallarÃ„Â± ve isimli sorumlular",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T33",
       "priority": "P0",
-      "title": "Satılan fatura ve entitlement yaşam döngüsü",
-      "status": "OPEN",
-      "implementation_update": "Pending Finance sipariş sonucu tenant/request/quantity/quote alanlarına fail-closed bağlı; provider-of-record, ödeme makbuzu ve paid-to-entitlement yok.",
+      "title": "SatÃ„Â±lan fatura ve entitlement yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼",
+      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
+      "implementation_update": "billing-portal Edge Function provider-of-record durum makinesi, sunucu tarafi tenant/uyelik/rol/MFA cozumlemesi, istemci customer/tenant/subscription id reddi, TTL/idempotency, cancel/refund ve seat reconciliation uyguluyor; finance fixture ile test edildi, canli provider ve muhasebe onayi acik. Eski: Pending Finance sipariÃ…Å¸ sonucu tenant/request/quantity/quote alanlarÃ„Â±na fail-closed baÃ„Å¸lÃ„Â±; provider-of-record, ÃƒÂ¶deme makbuzu ve paid-to-entitlement yok.",
       "feature_ids": [
         "BIL-01",
         "BIL-02",
@@ -781,20 +781,20 @@
         "supabase/functions/billing-checkout/index.ts",
         "supabase/functions/stripe-webhook/index.ts"
       ],
-      "initial_current": "Varsayılan kurum faturası; opsiyonel Stripe checkout/webhook kaynak kodu mevcut.",
-      "initial_gap": "Onaylı SKU/fiyat/teklif, tahsilat-mutabakat, quota değişimi, iptal ve çıkış provası yok. Self-service portal uygulanmamış; yalnız satılan SKU'da gerekiyorsa blocker.",
-      "implementation": "Provider-of-record ve kurumsal sipariş→quota işletimini tamamla; self-service satılacaksa gerçek portal, invoice, cancel/refund/reconcile akışlarını ekle.",
-      "acceptance": "Sipariş/ek koltuk/azaltma/yenileme/ödeme hatası/iptal ve mükerrer webhook aynı entitlement sonucunu versin; finans mutabakatı ve müşteri makbuzu eşleşsin.",
+      "initial_current": "VarsayÃ„Â±lan kurum faturasÃ„Â±; opsiyonel Stripe checkout/webhook kaynak kodu mevcut.",
+      "initial_gap": "OnaylÃ„Â± SKU/fiyat/teklif, tahsilat-mutabakat, quota deÃ„Å¸iÃ…Å¸imi, iptal ve ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸ provasÃ„Â± yok. Self-service portal uygulanmamÃ„Â±Ã…Å¸; yalnÃ„Â±z satÃ„Â±lan SKU'da gerekiyorsa blocker.",
+      "implementation": "Provider-of-record ve kurumsal sipariÃ…Å¸Ã¢â€ â€™quota iÃ…Å¸letimini tamamla; self-service satÃ„Â±lacaksa gerÃƒÂ§ek portal, invoice, cancel/refund/reconcile akÃ„Â±Ã…Å¸larÃ„Â±nÃ„Â± ekle.",
+      "acceptance": "SipariÃ…Å¸/ek koltuk/azaltma/yenileme/ÃƒÂ¶deme hatasÃ„Â±/iptal ve mÃƒÂ¼kerrer webhook aynÃ„Â± entitlement sonucunu versin; finans mutabakatÃ„Â± ve mÃƒÂ¼Ã…Å¸teri makbuzu eÃ…Å¸leÃ…Å¸sin.",
       "owner_role": "Finance + Billing Engineering",
-      "dependencies": "Ticari karar, canlı provider anahtarları ve muhasebe onayı",
+      "dependencies": "Ticari karar, canlÃ„Â± provider anahtarlarÃ„Â± ve muhasebe onayÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T34",
       "priority": "P1",
-      "title": "Readiness kayıtlarının ve ürün iddialarının tutarlılığı",
+      "title": "Readiness kayÃ„Â±tlarÃ„Â±nÃ„Â±n ve ÃƒÂ¼rÃƒÂ¼n iddialarÃ„Â±nÃ„Â±n tutarlÃ„Â±lÃ„Â±Ã„Å¸Ã„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "71 özellik, 59 iş paketi, 10 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.",
+      "implementation_update": "71 ÃƒÂ¶zellik, 59 iÃ…Å¸ paketi, 10 release rootu ve claim candidate/expiry tutarlÃ„Â±lÃ„Â±Ã„Å¸Ã„Â± otomatik kontrol ediliyor; 13 dÃ„Â±Ã…Å¸ onay kapÃ„Â±sÃ„Â± aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "EVAL-02",
         "EVAL-03",
@@ -805,20 +805,20 @@
         "READINESS_BACKLOG.json",
         "README.md"
       ],
-      "initial_current": "Envanter güncel; eski denetim alanları tarihsel metinler içeriyor.",
-      "initial_gap": "Ticari registry Ağustos tarihli ve artifactRoots/connector listesi mevcut dokuz paketi tam yansıtmıyor; eski checkout/default endpoint ifadeleri yeni implementasyonu anlatmıyor.",
-      "implementation": "Tarihsel bulguyu korurken currentState alanlarını ayır; beklenen paket/connector kapsamını release manifestinden türet; web, README, demo ve teklif metnini tek kanıt sözlüğüne bağla.",
-      "acceptance": "Aynı sürümün paket/özellik/claim sayıları tutarlı; eksik paket zorunlu gate'i düşürsün; süresi dolmuş/onaysız iddia müşteri yüzüne çıkmasın.",
+      "initial_current": "Envanter gÃƒÂ¼ncel; eski denetim alanlarÃ„Â± tarihsel metinler iÃƒÂ§eriyor.",
+      "initial_gap": "Ticari registry AÃ„Å¸ustos tarihli ve artifactRoots/connector listesi mevcut dokuz paketi tam yansÃ„Â±tmÃ„Â±yor; eski checkout/default endpoint ifadeleri yeni implementasyonu anlatmÃ„Â±yor.",
+      "implementation": "Tarihsel bulguyu korurken currentState alanlarÃ„Â±nÃ„Â± ayÃ„Â±r; beklenen paket/connector kapsamÃ„Â±nÃ„Â± release manifestinden tÃƒÂ¼ret; web, README, demo ve teklif metnini tek kanÃ„Â±t sÃƒÂ¶zlÃƒÂ¼Ã„Å¸ÃƒÂ¼ne baÃ„Å¸la.",
+      "acceptance": "AynÃ„Â± sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼n paket/ÃƒÂ¶zellik/claim sayÃ„Â±larÃ„Â± tutarlÃ„Â±; eksik paket zorunlu gate'i dÃƒÂ¼Ã…Å¸ÃƒÂ¼rsÃƒÂ¼n; sÃƒÂ¼resi dolmuÃ…Å¸/onaysÃ„Â±z iddia mÃƒÂ¼Ã…Å¸teri yÃƒÂ¼zÃƒÂ¼ne ÃƒÂ§Ã„Â±kmasÃ„Â±n.",
       "owner_role": "Product + Release + Marketing",
-      "dependencies": "Güncel release candidate ve ticari onay sahipleri",
+      "dependencies": "GÃƒÂ¼ncel release candidate ve ticari onay sahipleri",
       "evidence_level": "source-confirmed-gap; full exploit or field impact not asserted"
     },
     {
       "id": "T35",
       "priority": "P0",
-      "title": "Test kapılarının kapsamı ve başarısızlığın saklanmaması",
+      "title": "Test kapÃ„Â±larÃ„Â±nÃ„Â±n kapsamÃ„Â± ve baÃ…Å¸arÃ„Â±sÃ„Â±zlÃ„Â±Ã„Å¸Ã„Â±n saklanmamasÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "v7 birleşik test 237 dosya/3326 geçiş/2 açıklanmış skip, coverage eşikleri ve 10 paket release consumer geçti; native kör corpus açık.",
+      "implementation_update": "v7 birleÃ…Å¸ik test 237 dosya/3326 geÃƒÂ§iÃ…Å¸/2 aÃƒÂ§Ã„Â±klanmÃ„Â±Ã…Å¸ skip, coverage eÃ…Å¸ikleri ve 10 paket release consumer geÃƒÂ§ti; native kÃƒÂ¶r corpus aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "EVAL-01",
         "CON-05"
@@ -828,20 +828,20 @@
         "packages/opencode/src/__tests__/aidr-contract.test.ts",
         "scripts/verify-enforcement.mjs"
       ],
-      "initial_current": "Binlerce yerel test ve derlenmiş kanca kontrolleri var; 1 canlı sağlayıcı senaryosu atlanıyor. Son koşu hatası ve düzeltme kaydı tutuluyor.",
-      "initial_gap": "Test sayısı özellik tamamlanması değildir; bazı gözlem testleri bilinen boşluğu allow olarak kabul ediyor. Native/soak/bağımsız corpus ve coverage kapanışı eksik; 132 lint uyarısı var.",
-      "implementation": "Özellik→tüketici→pozitif/negatif→artefact bağını zorunlu kıl; bilinen açıkları test hedefi yap; mandatory skip ve stale evidence gate'i düşürsün; uyarı/dead-code borcunu sınıflandır.",
-      "acceptance": "Her satılan özellik için gerçek tüketicide deny/allow/outage kanıtı; aynı candidate checksum; 0 açıklanmamış zorunlu skip; değişmeyen timeoutlarla tekrar koşu ve açık borç kaydı.",
+      "initial_current": "Binlerce yerel test ve derlenmiÃ…Å¸ kanca kontrolleri var; 1 canlÃ„Â± saÃ„Å¸layÃ„Â±cÃ„Â± senaryosu atlanÃ„Â±yor. Son koÃ…Å¸u hatasÃ„Â± ve dÃƒÂ¼zeltme kaydÃ„Â± tutuluyor.",
+      "initial_gap": "Test sayÃ„Â±sÃ„Â± ÃƒÂ¶zellik tamamlanmasÃ„Â± deÃ„Å¸ildir; bazÃ„Â± gÃƒÂ¶zlem testleri bilinen boÃ…Å¸luÃ„Å¸u allow olarak kabul ediyor. Native/soak/baÃ„Å¸Ã„Â±msÃ„Â±z corpus ve coverage kapanÃ„Â±Ã…Å¸Ã„Â± eksik; 132 lint uyarÃ„Â±sÃ„Â± var.",
+      "implementation": "Ãƒâ€“zellikÃ¢â€ â€™tÃƒÂ¼keticiÃ¢â€ â€™pozitif/negatifÃ¢â€ â€™artefact baÃ„Å¸Ã„Â±nÃ„Â± zorunlu kÃ„Â±l; bilinen aÃƒÂ§Ã„Â±klarÃ„Â± test hedefi yap; mandatory skip ve stale evidence gate'i dÃƒÂ¼Ã…Å¸ÃƒÂ¼rsÃƒÂ¼n; uyarÃ„Â±/dead-code borcunu sÃ„Â±nÃ„Â±flandÃ„Â±r.",
+      "acceptance": "Her satÃ„Â±lan ÃƒÂ¶zellik iÃƒÂ§in gerÃƒÂ§ek tÃƒÂ¼keticide deny/allow/outage kanÃ„Â±tÃ„Â±; aynÃ„Â± candidate checksum; 0 aÃƒÂ§Ã„Â±klanmamÃ„Â±Ã…Å¸ zorunlu skip; deÃ„Å¸iÃ…Å¸meyen timeoutlarla tekrar koÃ…Å¸u ve aÃƒÂ§Ã„Â±k borÃƒÂ§ kaydÃ„Â±.",
       "owner_role": "QA + Security Engineering",
-      "dependencies": "Native ortam, bağımsız corpus ve CI kapasitesi",
+      "dependencies": "Native ortam, baÃ„Å¸Ã„Â±msÃ„Â±z corpus ve CI kapasitesi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T36",
       "priority": "P1",
-      "title": "Operatör UI ve ilk müşteri kullanılabilirliği",
+      "title": "OperatÃƒÂ¶r UI ve ilk mÃƒÂ¼Ã…Å¸teri kullanÃ„Â±labilirliÃ„Å¸i",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Onboarding stale token/tenant/error durumları fail-closed ve yapılandırılmış Azure/Entra login görünür; gerçek browser/IdP/erişilebilirlik kabulü açık.",
+      "implementation_update": "Onboarding stale token/tenant/error durumlarÃ„Â± fail-closed ve yapÃ„Â±landÃ„Â±rÃ„Â±lmÃ„Â±Ã…Å¸ Azure/Entra login gÃƒÂ¶rÃƒÂ¼nÃƒÂ¼r; gerÃƒÂ§ek browser/IdP/eriÃ…Å¸ilebilirlik kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "CLI-01",
         "TEN-07",
@@ -854,20 +854,20 @@
         "packages/dashboard/src/ui/pages/OnboardingPage.tsx",
         "packages/dashboard/src/enterprise/audit-view.tsx"
       ],
-      "initial_current": "Giriş, ekip seçimi, kayıt, politika ve export akışları yerel testli.",
-      "initial_gap": "Tüm desteklenen tarayıcılar, klavye/erişilebilirlik, ağ hataları, çok ekipli eş zamanlı kullanım ve gerçek müşteri eğitimi tamam değil.",
-      "implementation": "Ekran bazlı loading/empty/error/permission sözleşmesi, erişilebilirlik ve tarayıcı matrisi; ilk müşteri kılavuzunu gerçek operatörle uygula.",
-      "acceptance": "Yanlış ekipte sır/politika görünmesin; timeout/409/401 sonrası yanlış başarı olmasın; klavye ile kritik işler tamamlansın; büyük liste ve uzun değerlerde UI bozulmasın.",
+      "initial_current": "GiriÃ…Å¸, ekip seÃƒÂ§imi, kayÃ„Â±t, politika ve export akÃ„Â±Ã…Å¸larÃ„Â± yerel testli.",
+      "initial_gap": "TÃƒÂ¼m desteklenen tarayÃ„Â±cÃ„Â±lar, klavye/eriÃ…Å¸ilebilirlik, aÃ„Å¸ hatalarÃ„Â±, ÃƒÂ§ok ekipli eÃ…Å¸ zamanlÃ„Â± kullanÃ„Â±m ve gerÃƒÂ§ek mÃƒÂ¼Ã…Å¸teri eÃ„Å¸itimi tamam deÃ„Å¸il.",
+      "implementation": "Ekran bazlÃ„Â± loading/empty/error/permission sÃƒÂ¶zleÃ…Å¸mesi, eriÃ…Å¸ilebilirlik ve tarayÃ„Â±cÃ„Â± matrisi; ilk mÃƒÂ¼Ã…Å¸teri kÃ„Â±lavuzunu gerÃƒÂ§ek operatÃƒÂ¶rle uygula.",
+      "acceptance": "YanlÃ„Â±Ã…Å¸ ekipte sÃ„Â±r/politika gÃƒÂ¶rÃƒÂ¼nmesin; timeout/409/401 sonrasÃ„Â± yanlÃ„Â±Ã…Å¸ baÃ…Å¸arÃ„Â± olmasÃ„Â±n; klavye ile kritik iÃ…Å¸ler tamamlansÃ„Â±n; bÃƒÂ¼yÃƒÂ¼k liste ve uzun deÃ„Å¸erlerde UI bozulmasÃ„Â±n.",
       "owner_role": "Dashboard + Design + Customer Success",
-      "dependencies": "Desteklenen browser ve müşteri kullanıcıları",
+      "dependencies": "Desteklenen browser ve mÃƒÂ¼Ã…Å¸teri kullanÃ„Â±cÃ„Â±larÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T37",
       "priority": "P0",
-      "title": "Gerçek veri akışı, redaksiyon ve gizlilik kanıtı",
+      "title": "GerÃƒÂ§ek veri akÃ„Â±Ã…Å¸Ã„Â±, redaksiyon ve gizlilik kanÃ„Â±tÃ„Â±",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti, hukuk/saha açık.",
+      "implementation_update": "Privacy verifier canary boyunca source hash kararlÃ„Â±lÃ„Â±Ã„Å¸Ã„Â± ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolÃƒÂ¼ geÃƒÂ§ti, hukuk/saha aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "OBS-01",
         "OBS-03",
@@ -879,20 +879,20 @@
         "packages/core/src/tracing.ts",
         "supabase/functions/ingest/index.ts"
       ],
-      "initial_current": "Redaksiyon ve tenant ayrımı bileşenleri var.",
-      "initial_gap": "Tüm outbound alan/domain listesi, browser tracing, managed olaylar, AIG payloadları, region, subprocessors ve silme kanıtı müşteri metinleriyle onaylanmadı.",
-      "implementation": "Alan bazlı data-flow ve egress envanteri çıkar; ham prompt/komut/secret canary'leriyle paket/log/export/support bundle sözleşmesi kur; metinleri gerçek işleyişe eşle.",
-      "acceptance": "Canary sırlar izinsiz kanalda bulunmasın; opt-out ve retention davranışı ölçülsün; bütün veri sınıfları için bölge/erişim/silme sahibi belli olsun.",
+      "initial_current": "Redaksiyon ve tenant ayrÃ„Â±mÃ„Â± bileÃ…Å¸enleri var.",
+      "initial_gap": "TÃƒÂ¼m outbound alan/domain listesi, browser tracing, managed olaylar, AIG payloadlarÃ„Â±, region, subprocessors ve silme kanÃ„Â±tÃ„Â± mÃƒÂ¼Ã…Å¸teri metinleriyle onaylanmadÃ„Â±.",
+      "implementation": "Alan bazlÃ„Â± data-flow ve egress envanteri ÃƒÂ§Ã„Â±kar; ham prompt/komut/secret canary'leriyle paket/log/export/support bundle sÃƒÂ¶zleÃ…Å¸mesi kur; metinleri gerÃƒÂ§ek iÃ…Å¸leyiÃ…Å¸e eÃ…Å¸le.",
+      "acceptance": "Canary sÃ„Â±rlar izinsiz kanalda bulunmasÃ„Â±n; opt-out ve retention davranÃ„Â±Ã…Å¸Ã„Â± ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lsÃƒÂ¼n; bÃƒÂ¼tÃƒÂ¼n veri sÃ„Â±nÃ„Â±flarÃ„Â± iÃƒÂ§in bÃƒÂ¶lge/eriÃ…Å¸im/silme sahibi belli olsun.",
       "owner_role": "Privacy + Security + Engineering",
-      "dependencies": "DPA ve müşteri veri sınıflandırması; hukuk incelemesi",
+      "dependencies": "DPA ve mÃƒÂ¼Ã…Å¸teri veri sÃ„Â±nÃ„Â±flandÃ„Â±rmasÃ„Â±; hukuk incelemesi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T38",
       "priority": "P1",
-      "title": "Kuruma özel DLP ve veri etiketleri",
+      "title": "Kuruma ÃƒÂ¶zel DLP ve veri etiketleri",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Attachment/diğer connector/müşteri label kabulü açık.",
+      "implementation_update": "DLP overlapping ve JSON Unicode-escaped secret spanlarÃ„Â±nÃ„Â± tam redact ediyor; malformed/mapping/oversize fail-closed. Attachment/diÃ„Å¸er connector/mÃƒÂ¼Ã…Å¸teri label kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DET-07"
       ],
@@ -900,18 +900,18 @@
         "packages/core/src/dlp/index.ts",
         "packages/core/src/pii-detector.ts"
       ],
-      "initial_current": "PII/DLP detektörleri ve bazı çıktı kontrolleri var.",
-      "initial_gap": "Müşteri etiketleri, belge/attachment türleri, her bağlayıcıdaki giriş/çıkış yolu ve düşük yanlış alarm kabulü tamam değil.",
-      "implementation": "Kural/etiket yönetimi, kapsam hedefleri, maskeleme/engelleme/approval eylemleri ve exception yaşam döngüsünü bağla.",
-      "acceptance": "Sentetik ve kuruma özgü sırlar tüm kapsanan giriş/çıkışlarda yakalansın; yetkili benign işlem geçsin; örnek dışı format unavailable olarak raporlansın.",
+      "initial_current": "PII/DLP detektÃƒÂ¶rleri ve bazÃ„Â± ÃƒÂ§Ã„Â±ktÃ„Â± kontrolleri var.",
+      "initial_gap": "MÃƒÂ¼Ã…Å¸teri etiketleri, belge/attachment tÃƒÂ¼rleri, her baÃ„Å¸layÃ„Â±cÃ„Â±daki giriÃ…Å¸/ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸ yolu ve dÃƒÂ¼Ã…Å¸ÃƒÂ¼k yanlÃ„Â±Ã…Å¸ alarm kabulÃƒÂ¼ tamam deÃ„Å¸il.",
+      "implementation": "Kural/etiket yÃƒÂ¶netimi, kapsam hedefleri, maskeleme/engelleme/approval eylemleri ve exception yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼nÃƒÂ¼ baÃ„Å¸la.",
+      "acceptance": "Sentetik ve kuruma ÃƒÂ¶zgÃƒÂ¼ sÃ„Â±rlar tÃƒÂ¼m kapsanan giriÃ…Å¸/ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸larda yakalansÃ„Â±n; yetkili benign iÃ…Å¸lem geÃƒÂ§sin; ÃƒÂ¶rnek dÃ„Â±Ã…Å¸Ã„Â± format unavailable olarak raporlansÃ„Â±n.",
       "owner_role": "Detection + Customer Security",
-      "dependencies": "Etiket/kural sözlüğü ve maskelenmiş test verisi",
+      "dependencies": "Etiket/kural sÃƒÂ¶zlÃƒÂ¼Ã„Å¸ÃƒÂ¼ ve maskelenmiÃ…Å¸ test verisi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T39",
       "priority": "P1",
-      "title": "Bağımsız etkinlik, performans ve rakip kıyaslaması",
+      "title": "BaÃ„Å¸Ã„Â±msÃ„Â±z etkinlik, performans ve rakip kÃ„Â±yaslamasÃ„Â±",
       "status": "OPEN",
       "implementation_update": null,
       "feature_ids": [
@@ -923,20 +923,20 @@
         "docs/production-readiness/agent-security-market-and-release-plan.md",
         "docs/production-readiness/customer-investor-validation-master-plan.md"
       ],
-      "initial_current": "Pazar yetenek kategorileri ve önerilen benchmark protokolü belgeli.",
-      "initial_gap": "En iyi ürün, sıfır false-positive, evasion dayanıklılığı veya latency üstünlüğünü gösteren bağımsız kanıt yok.",
-      "implementation": "Geliştirme ve blind holdout setlerini ayır; saldırı ailesi/bağlayıcı bazında coverage, false block/approval, p50/p95/p99 ve limitations ölç; eşit koşullu karşılaştırma yap.",
-      "acceptance": "Aynı workload/ortamda ham ölçüm, payda, sürüm, örneklem ve bağımsız değerlendirici imzası; görünmeyen yüzeyler başarı ortalamasına katılmasın.",
+      "initial_current": "Pazar yetenek kategorileri ve ÃƒÂ¶nerilen benchmark protokolÃƒÂ¼ belgeli.",
+      "initial_gap": "En iyi ÃƒÂ¼rÃƒÂ¼n, sÃ„Â±fÃ„Â±r false-positive, evasion dayanÃ„Â±klÃ„Â±lÃ„Â±Ã„Å¸Ã„Â± veya latency ÃƒÂ¼stÃƒÂ¼nlÃƒÂ¼Ã„Å¸ÃƒÂ¼nÃƒÂ¼ gÃƒÂ¶steren baÃ„Å¸Ã„Â±msÃ„Â±z kanÃ„Â±t yok.",
+      "implementation": "GeliÃ…Å¸tirme ve blind holdout setlerini ayÃ„Â±r; saldÃ„Â±rÃ„Â± ailesi/baÃ„Å¸layÃ„Â±cÃ„Â± bazÃ„Â±nda coverage, false block/approval, p50/p95/p99 ve limitations ÃƒÂ¶lÃƒÂ§; eÃ…Å¸it koÃ…Å¸ullu karÃ…Å¸Ã„Â±laÃ…Å¸tÃ„Â±rma yap.",
+      "acceptance": "AynÃ„Â± workload/ortamda ham ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m, payda, sÃƒÂ¼rÃƒÂ¼m, ÃƒÂ¶rneklem ve baÃ„Å¸Ã„Â±msÃ„Â±z deÃ„Å¸erlendirici imzasÃ„Â±; gÃƒÂ¶rÃƒÂ¼nmeyen yÃƒÂ¼zeyler baÃ…Å¸arÃ„Â± ortalamasÃ„Â±na katÃ„Â±lmasÃ„Â±n.",
       "owner_role": "Detection Research + QA + Independent Evaluator",
-      "dependencies": "Müşteri benign corpus'u, rakip değerlendirme erişimi, ölçüm bütçesi",
+      "dependencies": "MÃƒÂ¼Ã…Å¸teri benign corpus'u, rakip deÃ„Å¸erlendirme eriÃ…Å¸imi, ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m bÃƒÂ¼tÃƒÂ§esi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T40",
       "priority": "P0",
-      "title": "Güvenlik güncellemesi ve müşteri destek işletimi",
+      "title": "GÃƒÂ¼venlik gÃƒÂ¼ncellemesi ve mÃƒÂ¼Ã…Å¸teri destek iÃ…Å¸letimi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Support v7 runbook, izinli/hashli bundle, escalation ve emergency update akışı hazır; gerçek kanal, nöbet ve ticket tatbikatı açık.",
+      "implementation_update": "Support v7 runbook, izinli/hashli bundle, escalation ve emergency update akÃ„Â±Ã…Å¸Ã„Â± hazÃ„Â±r; gerÃƒÂ§ek kanal, nÃƒÂ¶bet ve ticket tatbikatÃ„Â± aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "DEP-05",
         "OBS-05"
@@ -945,20 +945,20 @@
         "docs/runbooks/incident-response.md",
         "docs/production-readiness/support-sla-template.md"
       ],
-      "initial_current": "Runbook ve destek şablonları bulunuyor.",
-      "initial_gap": "Çalışan ticket/security contact, nöbet, CVE/incident bildirimi, imzalı acil güncelleme, EOL ve tanılama izni işletimi onaylı değil.",
-      "implementation": "Destek planı, severity/response hedefi, escalation, PSIRT/sorumlu, patch dağıtımı, EOL ve redakte tanılama prosedürü kur.",
-      "acceptance": "Gerçek ticket aç/kapat, kritik incident ve imza anahtarı kaybı tatbikatı; müşteri bildirim süresi, rollback ve sır içermeyen tanılama kanıtlansın.",
+      "initial_current": "Runbook ve destek Ã…Å¸ablonlarÃ„Â± bulunuyor.",
+      "initial_gap": "Ãƒâ€¡alÃ„Â±Ã…Å¸an ticket/security contact, nÃƒÂ¶bet, CVE/incident bildirimi, imzalÃ„Â± acil gÃƒÂ¼ncelleme, EOL ve tanÃ„Â±lama izni iÃ…Å¸letimi onaylÃ„Â± deÃ„Å¸il.",
+      "implementation": "Destek planÃ„Â±, severity/response hedefi, escalation, PSIRT/sorumlu, patch daÃ„Å¸Ã„Â±tÃ„Â±mÃ„Â±, EOL ve redakte tanÃ„Â±lama prosedÃƒÂ¼rÃƒÂ¼ kur.",
+      "acceptance": "GerÃƒÂ§ek ticket aÃƒÂ§/kapat, kritik incident ve imza anahtarÃ„Â± kaybÃ„Â± tatbikatÃ„Â±; mÃƒÂ¼Ã…Å¸teri bildirim sÃƒÂ¼resi, rollback ve sÃ„Â±r iÃƒÂ§ermeyen tanÃ„Â±lama kanÃ„Â±tlansÃ„Â±n.",
       "owner_role": "Support + SRE + Security",
-      "dependencies": "İsimli ekip, iletişim kanalları, sözleşme ve çalışma saatleri",
+      "dependencies": "Ã„Â°simli ekip, iletiÃ…Å¸im kanallarÃ„Â±, sÃƒÂ¶zleÃ…Å¸me ve ÃƒÂ§alÃ„Â±Ã…Å¸ma saatleri",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T41",
       "priority": "P1",
-      "title": "İlk müşteri satış ve satın alma değerlendirme paketi",
+      "title": "Ã„Â°lk mÃƒÂ¼Ã…Å¸teri satÃ„Â±Ã…Å¸ ve satÃ„Â±n alma deÃ„Å¸erlendirme paketi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Güncel ilk müşteri satış paketi ve portable kit üreticisi var; yeni v7 kit imzası ile onaylı teklif/satın alma kabulü açık.",
+      "implementation_update": "GÃƒÂ¼ncel ilk mÃƒÂ¼Ã…Å¸teri satÃ„Â±Ã…Å¸ paketi ve portable kit ÃƒÂ¼reticisi var; yeni v7 kit imzasÃ„Â± ile onaylÃ„Â± teklif/satÃ„Â±n alma kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "EVAL-02",
         "EVAL-03",
@@ -969,20 +969,20 @@
         "docs/production-readiness/customer-investor-validation-master-plan.md",
         "docs/production-readiness/enterprise-order-entitlement-template.md"
       ],
-      "initial_current": "Kontrollü demo, değerlendirme planı, ilk kurulum ve sipariş şablonları mevcut.",
-      "initial_gap": "Müşterinin satın alma sürecine uygun onaylı ürün özeti, mimari/veri akışı, destek matrisi, güvenlik soru formu, kapsamlı teklif ve kanıta dayalı demo/PoV paketi tek sürümde birleştirilmedi. Bu çalışma ortamındaki static preflight satış URL/e-posta ayarı bulamadı; üretim satış CTA hedefi ayrıca doğrulanmalı.",
-      "implementation": "Ürün özeti, gereksinimler, deployment seçenekleri, desteklenen araçlar, açık sınırlar, güvenlik/tedarikçi soru yanıtları, teklif ve PoV başarı ölçütlerini satış kitinde topla; ölçülmemiş ROI veya sertifikasyon iddiası ekleme.",
-      "acceptance": "Bir operatör kılavuzdan demoyu tekrar edebilsin; procurement soruları kaynak/kanıt/owner'a bağlı olsun; teklif kapsamı ile kurulan özellik ve destek koşulları eşleşsin; müşteri adı olmadan referans/başarı hikayesi uydurulmasın.",
+      "initial_current": "KontrollÃƒÂ¼ demo, deÃ„Å¸erlendirme planÃ„Â±, ilk kurulum ve sipariÃ…Å¸ Ã…Å¸ablonlarÃ„Â± mevcut.",
+      "initial_gap": "MÃƒÂ¼Ã…Å¸terinin satÃ„Â±n alma sÃƒÂ¼recine uygun onaylÃ„Â± ÃƒÂ¼rÃƒÂ¼n ÃƒÂ¶zeti, mimari/veri akÃ„Â±Ã…Å¸Ã„Â±, destek matrisi, gÃƒÂ¼venlik soru formu, kapsamlÃ„Â± teklif ve kanÃ„Â±ta dayalÃ„Â± demo/PoV paketi tek sÃƒÂ¼rÃƒÂ¼mde birleÃ…Å¸tirilmedi. Bu ÃƒÂ§alÃ„Â±Ã…Å¸ma ortamÃ„Â±ndaki static preflight satÃ„Â±Ã…Å¸ URL/e-posta ayarÃ„Â± bulamadÃ„Â±; ÃƒÂ¼retim satÃ„Â±Ã…Å¸ CTA hedefi ayrÃ„Â±ca doÃ„Å¸rulanmalÃ„Â±.",
+      "implementation": "ÃƒÅ“rÃƒÂ¼n ÃƒÂ¶zeti, gereksinimler, deployment seÃƒÂ§enekleri, desteklenen araÃƒÂ§lar, aÃƒÂ§Ã„Â±k sÃ„Â±nÃ„Â±rlar, gÃƒÂ¼venlik/tedarikÃƒÂ§i soru yanÃ„Â±tlarÃ„Â±, teklif ve PoV baÃ…Å¸arÃ„Â± ÃƒÂ¶lÃƒÂ§ÃƒÂ¼tlerini satÃ„Â±Ã…Å¸ kitinde topla; ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lmemiÃ…Å¸ ROI veya sertifikasyon iddiasÃ„Â± ekleme.",
+      "acceptance": "Bir operatÃƒÂ¶r kÃ„Â±lavuzdan demoyu tekrar edebilsin; procurement sorularÃ„Â± kaynak/kanÃ„Â±t/owner'a baÃ„Å¸lÃ„Â± olsun; teklif kapsamÃ„Â± ile kurulan ÃƒÂ¶zellik ve destek koÃ…Å¸ullarÃ„Â± eÃ…Å¸leÃ…Å¸sin; mÃƒÂ¼Ã…Å¸teri adÃ„Â± olmadan referans/baÃ…Å¸arÃ„Â± hikayesi uydurulmasÃ„Â±n.",
       "owner_role": "Sales Engineering + Product + Legal + Finance",
-      "dependencies": "Müşteri satın alma formu, teklif sahibi, onaylı ürün kapsamı",
+      "dependencies": "MÃƒÂ¼Ã…Å¸teri satÃ„Â±n alma formu, teklif sahibi, onaylÃ„Â± ÃƒÂ¼rÃƒÂ¼n kapsamÃ„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T42",
       "priority": "P0",
-      "title": "Legacy RLS tenant yaşam döngüsü ve itibar satırı sahteciliği",
+      "title": "Legacy RLS tenant yaÃ…Å¸am dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼ ve itibar satÃ„Â±rÃ„Â± sahteciliÃ„Å¸i",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Eski izin verici RLS kaldırıldı; forged claim, expired member, suspended tenant ve service-role kontrolleri yerel PostgreSQL'de geçti. Saha migrationı açık.",
+      "implementation_update": "Eski izin verici RLS kaldÃ„Â±rÃ„Â±ldÃ„Â±; forged claim, expired member, suspended tenant ve service-role kontrolleri yerel PostgreSQL'de geÃƒÂ§ti. Saha migrationÃ„Â± aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "TEN-01",
         "DET-10",
@@ -992,10 +992,10 @@
         "supabase/migrations/20260912000019_tenant_lifecycle_rls.sql",
         "scripts/tenant-lifecycle-rls-postgres.test.mjs"
       ],
-      "initial_current": "Eski izin verici RLS kuralları yabancı tenant itibar satırı ekleme ve üyelik sonrası erişime izin veriyordu.",
-      "initial_gap": "Yeni migration yetkiyi kapatır; önceden yazılmış olabilecek sahte satırlar otomatik temizlenmez ve kurulu müşteri verisi denetlenmedi.",
-      "implementation": "Migrationı uygulamadan önce tenant itibar satırlarını denetle; migrationı kontrollü uygula, kalıcı rol matrisi ve PostgREST negatif testini çalıştır.",
-      "acceptance": "Eski üye veya askıya alınmış tenant okuyamasın; başka tenant için insert reddedilsin; mevcut veride sahte kayıt kalmasın ve servis rolü işlemleri çalışsın.",
+      "initial_current": "Eski izin verici RLS kurallarÃ„Â± yabancÃ„Â± tenant itibar satÃ„Â±rÃ„Â± ekleme ve ÃƒÂ¼yelik sonrasÃ„Â± eriÃ…Å¸ime izin veriyordu.",
+      "initial_gap": "Yeni migration yetkiyi kapatÃ„Â±r; ÃƒÂ¶nceden yazÃ„Â±lmÃ„Â±Ã…Å¸ olabilecek sahte satÃ„Â±rlar otomatik temizlenmez ve kurulu mÃƒÂ¼Ã…Å¸teri verisi denetlenmedi.",
+      "implementation": "MigrationÃ„Â± uygulamadan ÃƒÂ¶nce tenant itibar satÃ„Â±rlarÃ„Â±nÃ„Â± denetle; migrationÃ„Â± kontrollÃƒÂ¼ uygula, kalÃ„Â±cÃ„Â± rol matrisi ve PostgREST negatif testini ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±r.",
+      "acceptance": "Eski ÃƒÂ¼ye veya askÃ„Â±ya alÃ„Â±nmÃ„Â±Ã…Å¸ tenant okuyamasÃ„Â±n; baÃ…Å¸ka tenant iÃƒÂ§in insert reddedilsin; mevcut veride sahte kayÃ„Â±t kalmasÃ„Â±n ve servis rolÃƒÂ¼ iÃ…Å¸lemleri ÃƒÂ§alÃ„Â±Ã…Å¸sÃ„Â±n.",
       "owner_role": "Database + Security",
       "dependencies": "Mevcut deployment verisi ve migration penceresi",
       "evidence_level": "implementation-and-acceptance-review"
@@ -1003,9 +1003,9 @@
     {
       "id": "T43",
       "priority": "P1",
-      "title": "Enrollment exchange işlem bütünlüğü",
+      "title": "Enrollment exchange iÃ…Å¸lem bÃƒÂ¼tÃƒÂ¼nlÃƒÂ¼Ã„Å¸ÃƒÂ¼",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Atomik token/seat/key RPC ve lost-response sonucu unknown sözleşmesi var; plaintext-key recovery protokolü ve canlı HTTP kabulü açık.",
+      "implementation_update": "Atomik token/seat/key RPC ve lost-response sonucu unknown sÃƒÂ¶zleÃ…Å¸mesi var; plaintext-key recovery protokolÃƒÂ¼ ve canlÃ„Â± HTTP kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "TEN-05",
         "TEN-06"
@@ -1014,20 +1014,20 @@
         "supabase/migrations/20260912000017_enrollment_exchange_atomic.sql",
         "supabase/functions/enroll/index.ts"
       ],
-      "initial_current": "Tek kullanımlık token önceden tüketilip sonraki adım hata verince kurulum kilitlenebiliyordu.",
-      "initial_gap": "Yeni RPC atomik yazıyor; müşteri HTTP akışında kayıp yanıt, eski kayıt ve eşzamanlı seat yarışı henüz sınanmadı.",
-      "implementation": "Migrationı dağıt, canlı HTTP hata enjeksiyonuyla token/seat/key durumunu doğrula, belirsiz commit sonrası yeniden kayıt operatör prosedürünü hazırla.",
-      "acceptance": "Hata rollback yaparken token yeniden kullanılabilsin; başarıda yalnız bir kimlik oluşsun; kayıp yanıt açık unknown durumuna düşsün.",
+      "initial_current": "Tek kullanÃ„Â±mlÃ„Â±k token ÃƒÂ¶nceden tÃƒÂ¼ketilip sonraki adÃ„Â±m hata verince kurulum kilitlenebiliyordu.",
+      "initial_gap": "Yeni RPC atomik yazÃ„Â±yor; mÃƒÂ¼Ã…Å¸teri HTTP akÃ„Â±Ã…Å¸Ã„Â±nda kayÃ„Â±p yanÃ„Â±t, eski kayÃ„Â±t ve eÃ…Å¸zamanlÃ„Â± seat yarÃ„Â±Ã…Å¸Ã„Â± henÃƒÂ¼z sÃ„Â±nanmadÃ„Â±.",
+      "implementation": "MigrationÃ„Â± daÃ„Å¸Ã„Â±t, canlÃ„Â± HTTP hata enjeksiyonuyla token/seat/key durumunu doÃ„Å¸rula, belirsiz commit sonrasÃ„Â± yeniden kayÃ„Â±t operatÃƒÂ¶r prosedÃƒÂ¼rÃƒÂ¼nÃƒÂ¼ hazÃ„Â±rla.",
+      "acceptance": "Hata rollback yaparken token yeniden kullanÃ„Â±labilsin; baÃ…Å¸arÃ„Â±da yalnÃ„Â±z bir kimlik oluÃ…Å¸sun; kayÃ„Â±p yanÃ„Â±t aÃƒÂ§Ã„Â±k unknown durumuna dÃƒÂ¼Ã…Å¸sÃƒÂ¼n.",
       "owner_role": "Identity + Backend",
-      "dependencies": "Müşteri kurulum ortamı ve canlı DB",
+      "dependencies": "MÃƒÂ¼Ã…Å¸teri kurulum ortamÃ„Â± ve canlÃ„Â± DB",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T44",
       "priority": "P1",
-      "title": "Entitlement grace ve eski imzalı önbellek geçişi",
+      "title": "Entitlement grace ve eski imzalÃ„Â± ÃƒÂ¶nbellek geÃƒÂ§iÃ…Å¸i",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Cache unsigned/unknown/schema-invalid entitlement'ı atıyor; kesin invalid_api_key signed state'i temizliyor, geçici hata grace'i koruyor. Canlı kabul açık.",
+      "implementation_update": "Cache unsigned/unknown/schema-invalid entitlement'Ã„Â± atÃ„Â±yor; kesin invalid_api_key signed state'i temizliyor, geÃƒÂ§ici hata grace'i koruyor. CanlÃ„Â± kabul aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "TEN-05",
         "POL-04"
@@ -1037,20 +1037,20 @@
         "supabase/functions/ingest/index.ts",
         "packages/core/src/managed.ts"
       ],
-      "initial_current": "Yedi günlük entitlement bitişinden sonraki 72 saatlik grace yanlış hesaplanıyordu.",
-      "initial_gap": "Kod düzeltildi; önceki yanlış imzalı snapshotlar çevrimdışı iken düzelmez, canlı Deno ve zaman geçişi kabulü açık.",
-      "implementation": "Yeni entitlementları dağıtıp önbelleği güvenli yenile; saat sınırı ve eski istemci geçişi tatbikatı yap.",
-      "acceptance": "168 saat sonrasında 72 saat grace, ardından deny; iptal edilen/bozuk anahtar her aşamada reddedilsin.",
+      "initial_current": "Yedi gÃƒÂ¼nlÃƒÂ¼k entitlement bitiÃ…Å¸inden sonraki 72 saatlik grace yanlÃ„Â±Ã…Å¸ hesaplanÃ„Â±yordu.",
+      "initial_gap": "Kod dÃƒÂ¼zeltildi; ÃƒÂ¶nceki yanlÃ„Â±Ã…Å¸ imzalÃ„Â± snapshotlar ÃƒÂ§evrimdÃ„Â±Ã…Å¸Ã„Â± iken dÃƒÂ¼zelmez, canlÃ„Â± Deno ve zaman geÃƒÂ§iÃ…Å¸i kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
+      "implementation": "Yeni entitlementlarÃ„Â± daÃ„Å¸Ã„Â±tÃ„Â±p ÃƒÂ¶nbelleÃ„Å¸i gÃƒÂ¼venli yenile; saat sÃ„Â±nÃ„Â±rÃ„Â± ve eski istemci geÃƒÂ§iÃ…Å¸i tatbikatÃ„Â± yap.",
+      "acceptance": "168 saat sonrasÃ„Â±nda 72 saat grace, ardÃ„Â±ndan deny; iptal edilen/bozuk anahtar her aÃ…Å¸amada reddedilsin.",
       "owner_role": "Identity + Endpoint",
-      "dependencies": "İmzalı eski kayıtlar ve müşteri ağ takvimi",
+      "dependencies": "Ã„Â°mzalÃ„Â± eski kayÃ„Â±tlar ve mÃƒÂ¼Ã…Å¸teri aÃ„Å¸ takvimi",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T45",
       "priority": "P1",
-      "title": "Device-start güvenilir IP ve giriş yönlendirmesi",
+      "title": "Device-start gÃƒÂ¼venilir IP ve giriÃ…Å¸ yÃƒÂ¶nlendirmesi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Device-start signer placeholder/reused secret'i reddediyor; HMAC ingress/rate limit var. Gerçek public proxy/TLS routing ve müşteri yükü açık.",
+      "implementation_update": "Device-start signer placeholder/reused secret'i reddediyor; HMAC ingress/rate limit var. GerÃƒÂ§ek public proxy/TLS routing ve mÃƒÂ¼Ã…Å¸teri yÃƒÂ¼kÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "TEN-05",
         "DEP-01",
@@ -1060,20 +1060,20 @@
         "supabase/functions/device-start/index.ts",
         "deploy/ingress/device-start.mjs"
       ],
-      "initial_current": "İstemcinin verdiği IP başlığıyla 30/dakika sınırı aşılabiliyordu.",
-      "initial_gap": "İmzalı ingress ve küresel sınır kodlandı; Nginx/TLS yönlendirmesi ve iki özel anahtarın müşteri ortamında kurulumu henüz kanıtlanmadı.",
-      "implementation": "Cloud ve self-hosted girişini signer üzerinden geçir; proxy başlıklarını temizle, doğrudan Edge yolunu engelle ve yük testini çalıştır.",
-      "acceptance": "Sahte başlıklar oranı değiştirmesin; imzasız istek 401; meşru kayıt akışı iki dağıtım modelinde çalışsın.",
+      "initial_current": "Ã„Â°stemcinin verdiÃ„Å¸i IP baÃ…Å¸lÃ„Â±Ã„Å¸Ã„Â±yla 30/dakika sÃ„Â±nÃ„Â±rÃ„Â± aÃ…Å¸Ã„Â±labiliyordu.",
+      "initial_gap": "Ã„Â°mzalÃ„Â± ingress ve kÃƒÂ¼resel sÃ„Â±nÃ„Â±r kodlandÃ„Â±; Nginx/TLS yÃƒÂ¶nlendirmesi ve iki ÃƒÂ¶zel anahtarÃ„Â±n mÃƒÂ¼Ã…Å¸teri ortamÃ„Â±nda kurulumu henÃƒÂ¼z kanÃ„Â±tlanmadÃ„Â±.",
+      "implementation": "Cloud ve self-hosted giriÃ…Å¸ini signer ÃƒÂ¼zerinden geÃƒÂ§ir; proxy baÃ…Å¸lÃ„Â±klarÃ„Â±nÃ„Â± temizle, doÃ„Å¸rudan Edge yolunu engelle ve yÃƒÂ¼k testini ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±r.",
+      "acceptance": "Sahte baÃ…Å¸lÃ„Â±klar oranÃ„Â± deÃ„Å¸iÃ…Å¸tirmesin; imzasÃ„Â±z istek 401; meÃ…Å¸ru kayÃ„Â±t akÃ„Â±Ã…Å¸Ã„Â± iki daÃ„Å¸Ã„Â±tÃ„Â±m modelinde ÃƒÂ§alÃ„Â±Ã…Å¸sÃ„Â±n.",
       "owner_role": "Platform + Identity",
-      "dependencies": "TLS proxy, sır yönetimi ve müşteri ağı",
+      "dependencies": "TLS proxy, sÃ„Â±r yÃƒÂ¶netimi ve mÃƒÂ¼Ã…Å¸teri aÃ„Å¸Ã„Â±",
       "evidence_level": "implementation-and-acceptance-review"
     },
     {
       "id": "T46",
       "priority": "P1",
-      "title": "Device-poll onaydan kayda atomik geçiş",
+      "title": "Device-poll onaydan kayda atomik geÃƒÂ§iÃ…Å¸",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Device-poll kayıp yanıt/eşzamanlı poll'da aynı hash-only tokenı geri buluyor, lookup hatasında 503 unknown dönüyor; canlı yarış kabulü açık.",
+      "implementation_update": "Device-poll kayÃ„Â±p yanÃ„Â±t/eÃ…Å¸zamanlÃ„Â± poll'da aynÃ„Â± hash-only tokenÃ„Â± geri buluyor, lookup hatasÃ„Â±nda 503 unknown dÃƒÂ¶nÃƒÂ¼yor; canlÃ„Â± yarÃ„Â±Ã…Å¸ kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
       "feature_ids": [
         "TEN-05"
       ],
@@ -1081,19 +1081,19 @@
         "supabase/functions/device-poll/index.ts",
         "supabase/migrations/20260912000017_enrollment_exchange_atomic.sql"
       ],
-      "initial_current": "Onaylanan oturum token eklenmeden exchanged olabiliyor, geçici hata kullanıcıyı yeniden kurulum başlatmaya zorluyordu.",
-      "initial_gap": "Yeni RPC atomik; canlı HTTP retry, yarış ve müşteri tarayıcısı/CLI kabulü açık.",
-      "implementation": "Migrationı dağıtıp onay, poll ve enroll tam akışını hata enjeksiyonu ile çalıştır; eşzamanlı poll ve kayıp yanıtı ölç.",
-      "acceptance": "Bir onay en çok bir token üretir; insert hatası oturumu tüketmez; tekrar poll belirsiz durum olarak raporlanır.",
+      "initial_current": "Onaylanan oturum token eklenmeden exchanged olabiliyor, geÃƒÂ§ici hata kullanÃ„Â±cÃ„Â±yÃ„Â± yeniden kurulum baÃ…Å¸latmaya zorluyordu.",
+      "initial_gap": "Yeni RPC atomik; canlÃ„Â± HTTP retry, yarÃ„Â±Ã…Å¸ ve mÃƒÂ¼Ã…Å¸teri tarayÃ„Â±cÃ„Â±sÃ„Â±/CLI kabulÃƒÂ¼ aÃƒÂ§Ã„Â±k.",
+      "implementation": "MigrationÃ„Â± daÃ„Å¸Ã„Â±tÃ„Â±p onay, poll ve enroll tam akÃ„Â±Ã…Å¸Ã„Â±nÃ„Â± hata enjeksiyonu ile ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±r; eÃ…Å¸zamanlÃ„Â± poll ve kayÃ„Â±p yanÃ„Â±tÃ„Â± ÃƒÂ¶lÃƒÂ§.",
+      "acceptance": "Bir onay en ÃƒÂ§ok bir token ÃƒÂ¼retir; insert hatasÃ„Â± oturumu tÃƒÂ¼ketmez; tekrar poll belirsiz durum olarak raporlanÃ„Â±r.",
       "owner_role": "Identity + QA",
-      "dependencies": "Canlı kurulum ve gerçek cihaz",
+      "dependencies": "CanlÃ„Â± kurulum ve gerÃƒÂ§ek cihaz",
       "evidence_level": "implementation-and-acceptance-review"
     }
   ],
   "commercial_and_external": [
     {
       "id": "COM-001",
-      "title": "Onaylı SKU, fiyat, teklif ve ticari sürüm manifesti",
+      "title": "OnaylÃ„Â± SKU, fiyat, teklif ve ticari sÃƒÂ¼rÃƒÂ¼m manifesti",
       "status": "open",
       "applies_to": [
         "evaluation",
@@ -1102,14 +1102,14 @@
         "investor"
       ],
       "owner_role": "Commercial/Sales + Finance/Billing",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Aynı sürüme bağlı SKU, fiyat, ölçüm birimi, para birimi/vergi, kurulum modeli, bölge, saklama, SLA, destek, lisans hakkı, yenileme, iptal ve çıkış koşulları onaylanmamış.",
-      "implementation": "Satış ve finans tek ticari manifesti onaylasın; örnek teklif/siparişten müşteri çıkışına kadar prova yapılsın.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "AynÃ„Â± sÃƒÂ¼rÃƒÂ¼me baÃ„Å¸lÃ„Â± SKU, fiyat, ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m birimi, para birimi/vergi, kurulum modeli, bÃƒÂ¶lge, saklama, SLA, destek, lisans hakkÃ„Â±, yenileme, iptal ve ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸ koÃ…Å¸ullarÃ„Â± onaylanmamÃ„Â±Ã…Å¸.",
+      "implementation": "SatÃ„Â±Ã…Å¸ ve finans tek ticari manifesti onaylasÃ„Â±n; ÃƒÂ¶rnek teklif/sipariÃ…Å¸ten mÃƒÂ¼Ã…Å¸teri ÃƒÂ§Ã„Â±kÃ„Â±Ã…Å¸Ã„Â±na kadar prova yapÃ„Â±lsÃ„Â±n.",
       "acceptance": [
-        "İsimli onaylı ticari manifest",
-        "Örnek teklif ve sipariş",
-        "Siparişten offboarding'e prova",
-        "Sürüm ve değiştirilemeyen kanıt özeti"
+        "Ã„Â°simli onaylÃ„Â± ticari manifest",
+        "Ãƒâ€“rnek teklif ve sipariÃ…Å¸",
+        "SipariÃ…Å¸ten offboarding'e prova",
+        "SÃƒÂ¼rÃƒÂ¼m ve deÃ„Å¸iÃ…Å¸tirilemeyen kanÃ„Â±t ÃƒÂ¶zeti"
       ],
       "source_requirement": "Commercial Release Manifest fixes SKU, price, metering, currency/tax, deployment, region, retention, SLA, support, licence rights, renewal, cancellation, and offboarding for the same Release Candidate.",
       "source_evidence_required": [
@@ -1125,7 +1125,7 @@
     },
     {
       "id": "COM-002",
-      "title": "Lisans, fikri mülkiyet ve üçüncü taraf hakları",
+      "title": "Lisans, fikri mÃƒÂ¼lkiyet ve ÃƒÂ¼ÃƒÂ§ÃƒÂ¼ncÃƒÂ¼ taraf haklarÃ„Â±",
       "status": "open",
       "applies_to": [
         "evaluation",
@@ -1134,14 +1134,14 @@
         "investor"
       ],
       "owner_role": "Legal + Engineering",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Lisans dosyası bulunması yeterli değil: dağıtılan kod/veri/model/üçüncü taraf bileşen hakları, atıflar ve fikri mülkiyet zinciri hukukça onaylanmamış.",
-      "implementation": "SBOM ve kaynak kökenini lisans/NOTICE/package metadata ile uzlaştır; dağıtım haklarını ve süreli istisnaları yetkili hukuk incelemesine sun.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "Lisans dosyasÃ„Â± bulunmasÃ„Â± yeterli deÃ„Å¸il: daÃ„Å¸Ã„Â±tÃ„Â±lan kod/veri/model/ÃƒÂ¼ÃƒÂ§ÃƒÂ¼ncÃƒÂ¼ taraf bileÃ…Å¸en haklarÃ„Â±, atÃ„Â±flar ve fikri mÃƒÂ¼lkiyet zinciri hukukÃƒÂ§a onaylanmamÃ„Â±Ã…Å¸.",
+      "implementation": "SBOM ve kaynak kÃƒÂ¶kenini lisans/NOTICE/package metadata ile uzlaÃ…Å¸tÃ„Â±r; daÃ„Å¸Ã„Â±tÃ„Â±m haklarÃ„Â±nÃ„Â± ve sÃƒÂ¼reli istisnalarÃ„Â± yetkili hukuk incelemesine sun.",
       "acceptance": [
-        "Hukuk onayı",
-        "Eksiksiz LICENSE/NOTICE ve üçüncü taraf lisans paketi",
-        "Paket lisanslarının uzlaştırılması",
-        "Kaynak/vendor kökeni ve süreli istisna kaydı"
+        "Hukuk onayÃ„Â±",
+        "Eksiksiz LICENSE/NOTICE ve ÃƒÂ¼ÃƒÂ§ÃƒÂ¼ncÃƒÂ¼ taraf lisans paketi",
+        "Paket lisanslarÃ„Â±nÃ„Â±n uzlaÃ…Å¸tÃ„Â±rÃ„Â±lmasÃ„Â±",
+        "Kaynak/vendor kÃƒÂ¶keni ve sÃƒÂ¼reli istisna kaydÃ„Â±"
       ],
       "source_requirement": "Licences, notices, attribution, third-party source provenance, chain-of-title, and every shipped package license field are complete and counsel-approved; a non-empty LICENSE must reconcile with NOTICE and package metadata.",
       "source_evidence_required": [
@@ -1160,7 +1160,7 @@
     },
     {
       "id": "COM-003",
-      "title": "Veri işleme, DPA ve gizlilik onayı",
+      "title": "Veri iÃ…Å¸leme, DPA ve gizlilik onayÃ„Â±",
       "status": "open",
       "applies_to": [
         "evaluation",
@@ -1169,14 +1169,14 @@
         "investor"
       ],
       "owner_role": "Privacy/DPO + Legal + Security",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Gerçek telemetri, browser tracing, managed olaylar, AIG payloadları, retention/silme, veri bölgesi, alt işleyenler ve transferler müşteri belgeleriyle onaylı biçimde eşleştirilmemiş.",
-      "implementation": "Alan bazlı veri akışını ölç; müşteri bildirimi ve gerekli veri işleme/güvenlik eklerini Privacy/Legal sahipleriyle tamamla.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "GerÃƒÂ§ek telemetri, browser tracing, managed olaylar, AIG payloadlarÃ„Â±, retention/silme, veri bÃƒÂ¶lgesi, alt iÃ…Å¸leyenler ve transferler mÃƒÂ¼Ã…Å¸teri belgeleriyle onaylÃ„Â± biÃƒÂ§imde eÃ…Å¸leÃ…Å¸tirilmemiÃ…Å¸.",
+      "implementation": "Alan bazlÃ„Â± veri akÃ„Â±Ã…Å¸Ã„Â±nÃ„Â± ÃƒÂ¶lÃƒÂ§; mÃƒÂ¼Ã…Å¸teri bildirimi ve gerekli veri iÃ…Å¸leme/gÃƒÂ¼venlik eklerini Privacy/Legal sahipleriyle tamamla.",
       "acceptance": [
-        "Alan bazlı veri akış matrisi ve payload testleri",
-        "DPA/TOM/SCC kapsam inceleme ve onayı",
-        "Alt işleyen/bölge listesi",
-        "Gerçek export ve silme makbuzu"
+        "Alan bazlÃ„Â± veri akÃ„Â±Ã…Å¸ matrisi ve payload testleri",
+        "DPA/TOM/SCC kapsam inceleme ve onayÃ„Â±",
+        "Alt iÃ…Å¸leyen/bÃƒÂ¶lge listesi",
+        "GerÃƒÂ§ek export ve silme makbuzu"
       ],
       "source_requirement": "Actual telemetry, browser tracing, managed events, AIG payloads, retention, deletion, region, subprocessors, and transfer mechanisms match customer-facing notices and DPA/TOM/SCC terms.",
       "source_evidence_required": [
@@ -1193,7 +1193,7 @@
     },
     {
       "id": "COM-004",
-      "title": "Fatura–ödeme–entitlement mutabakatı",
+      "title": "FaturaÃ¢â‚¬â€œÃƒÂ¶demeÃ¢â‚¬â€œentitlement mutabakatÃ„Â±",
       "status": "open",
       "applies_to": [
         "assisted-sale",
@@ -1201,14 +1201,14 @@
         "investor"
       ],
       "owner_role": "Finance/Billing + Product",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Sipariş, koltuk değişimi, fatura/mutabakat, iptal, erişim iptali ve müşteri silme tek kayıt sistemine göre uçtan uca kabul edilmemiş.",
-      "implementation": "Tek provider-of-record belirle; finans işlemlerini sunucudaki entitlement ile bağla; başarısız/tekrarlanan olay ve manuel müdahale işletimini tanımla.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "SipariÃ…Å¸, koltuk deÃ„Å¸iÃ…Å¸imi, fatura/mutabakat, iptal, eriÃ…Å¸im iptali ve mÃƒÂ¼Ã…Å¸teri silme tek kayÃ„Â±t sistemine gÃƒÂ¶re uÃƒÂ§tan uca kabul edilmemiÃ…Å¸.",
+      "implementation": "Tek provider-of-record belirle; finans iÃ…Å¸lemlerini sunucudaki entitlement ile baÃ„Å¸la; baÃ…Å¸arÃ„Â±sÃ„Â±z/tekrarlanan olay ve manuel mÃƒÂ¼dahale iÃ…Å¸letimini tanÃ„Â±mla.",
       "acceptance": [
-        "Provider ve SKU kararı",
-        "Quota/entitlement senaryoları",
-        "Fatura ve mutabakat örneği",
-        "İptal, erişim kesme ve silme makbuzu"
+        "Provider ve SKU kararÃ„Â±",
+        "Quota/entitlement senaryolarÃ„Â±",
+        "Fatura ve mutabakat ÃƒÂ¶rneÃ„Å¸i",
+        "Ã„Â°ptal, eriÃ…Å¸im kesme ve silme makbuzu"
       ],
       "source_requirement": "Price and entitlements are enforced by one provider-of-record and survive order, seat change, invoice/reconciliation, cancellation, revocation, export, and deletion.",
       "source_evidence_required": [
@@ -1224,7 +1224,7 @@
     },
     {
       "id": "COM-005",
-      "title": "Çalışan destek ve müşteri iletişim yolları",
+      "title": "Ãƒâ€¡alÃ„Â±Ã…Å¸an destek ve mÃƒÂ¼Ã…Å¸teri iletiÃ…Å¸im yollarÃ„Â±",
       "status": "open",
       "applies_to": [
         "evaluation",
@@ -1232,14 +1232,14 @@
         "production-ga"
       ],
       "owner_role": "Support/Customer Success + Operations",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Müşterinin gerçekten ulaşabildiği destek, durum sayfası, güvenlik iletişimi, privacy/terms, escalation, severity hedefi ve tanılama izni işletimi kanıtlanmamış.",
-      "implementation": "Kanalları yayınla; çalışma saatleri ve isimli nöbet/escalation sorumlularını ata; gerçek ticket tatbikatı yap.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "MÃƒÂ¼Ã…Å¸terinin gerÃƒÂ§ekten ulaÃ…Å¸abildiÃ„Å¸i destek, durum sayfasÃ„Â±, gÃƒÂ¼venlik iletiÃ…Å¸imi, privacy/terms, escalation, severity hedefi ve tanÃ„Â±lama izni iÃ…Å¸letimi kanÃ„Â±tlanmamÃ„Â±Ã…Å¸.",
+      "implementation": "KanallarÃ„Â± yayÃ„Â±nla; ÃƒÂ§alÃ„Â±Ã…Å¸ma saatleri ve isimli nÃƒÂ¶bet/escalation sorumlularÃ„Â±nÃ„Â± ata; gerÃƒÂ§ek ticket tatbikatÃ„Â± yap.",
       "acceptance": [
-        "Yayınlanmış destek/SLA planı",
-        "Zaman damgalı ticket tatbikatı",
-        "Çalışan status/security/privacy bağlantıları",
-        "Nöbet ve escalation kaydı"
+        "YayÃ„Â±nlanmÃ„Â±Ã…Å¸ destek/SLA planÃ„Â±",
+        "Zaman damgalÃ„Â± ticket tatbikatÃ„Â±",
+        "Ãƒâ€¡alÃ„Â±Ã…Å¸an status/security/privacy baÃ„Å¸lantÃ„Â±larÃ„Â±",
+        "NÃƒÂ¶bet ve escalation kaydÃ„Â±"
       ],
       "source_requirement": "Customer-visible support, status, security contact, privacy/terms, escalation, severity SLA, diagnostic-consent, and reachable ticket paths operate for the sold scope.",
       "source_evidence_required": [
@@ -1255,7 +1255,7 @@
     },
     {
       "id": "COM-010",
-      "title": "Reklamı yapılan tüm bağlayıcıların kabulü",
+      "title": "ReklamÃ„Â± yapÃ„Â±lan tÃƒÂ¼m baÃ„Å¸layÃ„Â±cÃ„Â±larÃ„Â±n kabulÃƒÂ¼",
       "status": "open",
       "applies_to": [
         "evaluation",
@@ -1264,15 +1264,15 @@
         "investor"
       ],
       "owner_role": "Product + QA + Engineering + Support",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Reklamı yapılan bağlayıcıların her biri için gerçek host desteği, imzalı paket, özel registry kurulumu, geri dönüş ve destek sahibi tamam değil. Registry'nin kapsam listesi ayrıca güncellenmeli.",
-      "implementation": "Satılan connector manifestini sabitle; her connector/host/OS sürümünde aynı imzalı candidate için kurulum, native E2E, rollback ve disable kabulü topla.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "ReklamÃ„Â± yapÃ„Â±lan baÃ„Å¸layÃ„Â±cÃ„Â±larÃ„Â±n her biri iÃƒÂ§in gerÃƒÂ§ek host desteÃ„Å¸i, imzalÃ„Â± paket, ÃƒÂ¶zel registry kurulumu, geri dÃƒÂ¶nÃƒÂ¼Ã…Å¸ ve destek sahibi tamam deÃ„Å¸il. Registry'nin kapsam listesi ayrÃ„Â±ca gÃƒÂ¼ncellenmeli.",
+      "implementation": "SatÃ„Â±lan connector manifestini sabitle; her connector/host/OS sÃƒÂ¼rÃƒÂ¼mÃƒÂ¼nde aynÃ„Â± imzalÃ„Â± candidate iÃƒÂ§in kurulum, native E2E, rollback ve disable kabulÃƒÂ¼ topla.",
       "acceptance": [
         "Tam destek matrisi",
-        "Gerçek host test raporları",
-        "Private registry kurulum kayıtları",
-        "Rollback/disable tatbikatı",
-        "İsimli sahip ve sınırlar"
+        "GerÃƒÂ§ek host test raporlarÃ„Â±",
+        "Private registry kurulum kayÃ„Â±tlarÃ„Â±",
+        "Rollback/disable tatbikatÃ„Â±",
+        "Ã„Â°simli sahip ve sÃ„Â±nÃ„Â±rlar"
       ],
       "source_requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
       "source_evidence_required": [
@@ -1289,7 +1289,7 @@
     },
     {
       "id": "COM-011",
-      "title": "Bölge ve veri yerleşimi kanıtı",
+      "title": "BÃƒÂ¶lge ve veri yerleÃ…Å¸imi kanÃ„Â±tÃ„Â±",
       "status": "open",
       "applies_to": [
         "evaluation",
@@ -1298,15 +1298,15 @@
         "investor"
       ],
       "owner_role": "Operations + Privacy/DPO + Legal",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Registry'deki EU/US/APAC hedefleri çalışan ve onaylı bölge hizmeti kanıtı değildir; tenant yerleşimi, routing, yedek/silme ve transfer modeli açık.",
-      "implementation": "Satılacak bölgeleri provider ve veri işleme modeliyle eşle; her bölgede tenant yerleşimi ve sınır dışı erişim negatif testlerini tamamla.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "Registry'deki EU/US/APAC hedefleri ÃƒÂ§alÃ„Â±Ã…Å¸an ve onaylÃ„Â± bÃƒÂ¶lge hizmeti kanÃ„Â±tÃ„Â± deÃ„Å¸ildir; tenant yerleÃ…Å¸imi, routing, yedek/silme ve transfer modeli aÃƒÂ§Ã„Â±k.",
+      "implementation": "SatÃ„Â±lacak bÃƒÂ¶lgeleri provider ve veri iÃ…Å¸leme modeliyle eÃ…Å¸le; her bÃƒÂ¶lgede tenant yerleÃ…Å¸imi ve sÃ„Â±nÃ„Â±r dÃ„Â±Ã…Å¸Ã„Â± eriÃ…Å¸im negatif testlerini tamamla.",
       "acceptance": [
-        "Bölge/provider matrisi",
-        "Tenant yerleşim testi",
+        "BÃƒÂ¶lge/provider matrisi",
+        "Tenant yerleÃ…Å¸im testi",
         "Cross-region negatif test",
-        "Veri işleme onayları",
-        "Bölgeye bağlı yedek/silme makbuzları"
+        "Veri iÃ…Å¸leme onaylarÃ„Â±",
+        "BÃƒÂ¶lgeye baÃ„Å¸lÃ„Â± yedek/silme makbuzlarÃ„Â±"
       ],
       "source_requirement": "Hybrid deployment supports EU, US, and APAC tenant placement with an approved routing, residency, retention, subprocessors, transfer, backup, and deletion model.",
       "source_evidence_required": [
@@ -1323,7 +1323,7 @@
     },
     {
       "id": "COM-012",
-      "title": "Faturalı ve kimliği doğrulanan özel dağıtım",
+      "title": "FaturalÃ„Â± ve kimliÃ„Å¸i doÃ„Å¸rulanan ÃƒÂ¶zel daÃ„Å¸Ã„Â±tÃ„Â±m",
       "status": "open",
       "applies_to": [
         "assisted-sale",
@@ -1331,15 +1331,15 @@
         "investor"
       ],
       "owner_role": "Finance/Billing + Release Engineering + Support",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Kurumsal fatura ile verilen erişimin kimliği doğrulanan private registry ve imzalı artefact teslimiyle çalıştığı kanıtlanmamış; air-gap prosedürü de tamam değil.",
-      "implementation": "Sipariş→entitlement→download→install→revoke/offboard zincirini gerçek müşteri erişim modeliyle tamamla; offline satılıyorsa imaj/bağımlılık teslimini ekle.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "Kurumsal fatura ile verilen eriÃ…Å¸imin kimliÃ„Å¸i doÃ„Å¸rulanan private registry ve imzalÃ„Â± artefact teslimiyle ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±Ã„Å¸Ã„Â± kanÃ„Â±tlanmamÃ„Â±Ã…Å¸; air-gap prosedÃƒÂ¼rÃƒÂ¼ de tamam deÃ„Å¸il.",
+      "implementation": "SipariÃ…Å¸Ã¢â€ â€™entitlementÃ¢â€ â€™downloadÃ¢â€ â€™installÃ¢â€ â€™revoke/offboard zincirini gerÃƒÂ§ek mÃƒÂ¼Ã…Å¸teri eriÃ…Å¸im modeliyle tamamla; offline satÃ„Â±lÃ„Â±yorsa imaj/baÃ„Å¸Ã„Â±mlÃ„Â±lÃ„Â±k teslimini ekle.",
       "acceptance": [
-        "Provider ve registry kararı",
+        "Provider ve registry kararÃ„Â±",
         "Faturadan entitlement'a test",
-        "İmzalı paket kurulumu",
-        "İptal/offboarding testi",
-        "Doğrulanmış air-gap prosedürü"
+        "Ã„Â°mzalÃ„Â± paket kurulumu",
+        "Ã„Â°ptal/offboarding testi",
+        "DoÃ„Å¸rulanmÃ„Â±Ã…Å¸ air-gap prosedÃƒÂ¼rÃƒÂ¼"
       ],
       "source_requirement": "Enterprise customers receive invoice-based orders and signed artifacts/connectors through an authenticated private registry; entitlement, revocation, download, audit, and offline/air-gapped procedures are defined.",
       "source_evidence_required": [
@@ -1356,7 +1356,7 @@
     },
     {
       "id": "COM-013",
-      "title": "99.9% SLA için ölçüm ve sözleşme",
+      "title": "99.9% SLA iÃƒÂ§in ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m ve sÃƒÂ¶zleÃ…Å¸me",
       "status": "open",
       "applies_to": [
         "assisted-sale",
@@ -1364,15 +1364,15 @@
         "investor"
       ],
       "owner_role": "Operations + Legal + Support + Finance",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "99.9% aylık availability bir hedef; ölçülmüş SLI, payda, kapsam dışı durumlar, bakım politikası, servis kredisi ve incident kanıtı tamam değil.",
-      "implementation": "SRE/Legal/Support/Finance ölçüm ve sözleşme kapsamını onaylasın; kabul edilen gözlem penceresinde veriyi topla ve incident tatbikatı yap.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "99.9% aylÃ„Â±k availability bir hedef; ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lmÃƒÂ¼Ã…Å¸ SLI, payda, kapsam dÃ„Â±Ã…Å¸Ã„Â± durumlar, bakÃ„Â±m politikasÃ„Â±, servis kredisi ve incident kanÃ„Â±tÃ„Â± tamam deÃ„Å¸il.",
+      "implementation": "SRE/Legal/Support/Finance ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m ve sÃƒÂ¶zleÃ…Å¸me kapsamÃ„Â±nÃ„Â± onaylasÃ„Â±n; kabul edilen gÃƒÂ¶zlem penceresinde veriyi topla ve incident tatbikatÃ„Â± yap.",
       "acceptance": [
-        "Onaylı SLA ve destek planı",
-        "SLI tanımı, payda ve gözlem penceresi",
-        "Bakım ve kapsam dışı durumlar",
-        "Servis kredisi koşulları",
-        "Incident kanıtı"
+        "OnaylÃ„Â± SLA ve destek planÃ„Â±",
+        "SLI tanÃ„Â±mÃ„Â±, payda ve gÃƒÂ¶zlem penceresi",
+        "BakÃ„Â±m ve kapsam dÃ„Â±Ã…Å¸Ã„Â± durumlar",
+        "Servis kredisi koÃ…Å¸ullarÃ„Â±",
+        "Incident kanÃ„Â±tÃ„Â±"
       ],
       "source_requirement": "The managed control plane and dashboard API target a 99.9% monthly availability SLA with a measured SLI, exclusions, maintenance policy, service-credit terms, support escalation, and incident evidence.",
       "source_evidence_required": [
@@ -1389,7 +1389,7 @@
     },
     {
       "id": "SEC-EXT-001",
-      "title": "Bağımsız güvenlik değerlendirmesi ve yeniden test",
+      "title": "BaÃ„Å¸Ã„Â±msÃ„Â±z gÃƒÂ¼venlik deÃ„Å¸erlendirmesi ve yeniden test",
       "status": "open",
       "applies_to": [
         "assisted-sale",
@@ -1397,14 +1397,14 @@
         "investor"
       ],
       "owner_role": "Security Lead + independent assessor",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Satılan candidate için bağımsız güvenlik değerlendirmesi, bulgu giderme ve yeniden test raporu yok.",
-      "implementation": "Bağımsız değerlendiriciyle scope/tarih belirle; tenant, kimlik, runtime, dağıtım ve sır sınırlarını kapsa; bulguları kapat ve yeniden test ettir.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "SatÃ„Â±lan candidate iÃƒÂ§in baÃ„Å¸Ã„Â±msÃ„Â±z gÃƒÂ¼venlik deÃ„Å¸erlendirmesi, bulgu giderme ve yeniden test raporu yok.",
+      "implementation": "BaÃ„Å¸Ã„Â±msÃ„Â±z deÃ„Å¸erlendiriciyle scope/tarih belirle; tenant, kimlik, runtime, daÃ„Å¸Ã„Â±tÃ„Â±m ve sÃ„Â±r sÃ„Â±nÃ„Â±rlarÃ„Â±nÃ„Â± kapsa; bulgularÃ„Â± kapat ve yeniden test ettir.",
       "acceptance": [
-        "İmzalı bağımsız rapor ve kapsam",
+        "Ã„Â°mzalÃ„Â± baÃ„Å¸Ã„Â±msÃ„Â±z rapor ve kapsam",
         "Remediation/retest mektubu",
-        "Çözülmemiş kritik bulgu olmaması",
-        "Yüksek bulgularda registry'nin gerektirdiği gerekçeli isimli ve süreli kabul"
+        "Ãƒâ€¡ÃƒÂ¶zÃƒÂ¼lmemiÃ…Å¸ kritik bulgu olmamasÃ„Â±",
+        "YÃƒÂ¼ksek bulgularda registry'nin gerektirdiÃ„Å¸i gerekÃƒÂ§eli isimli ve sÃƒÂ¼reli kabul"
       ],
       "source_requirement": "Independent penetration test or equivalent assessment has no unresolved critical/high finding for the sold Release Candidate and scope.",
       "source_evidence_required": [
@@ -1420,7 +1420,7 @@
     },
     {
       "id": "POV-001",
-      "title": "İsimli müşteri PoV ve kabul kaydı",
+      "title": "Ã„Â°simli mÃƒÂ¼Ã…Å¸teri PoV ve kabul kaydÃ„Â±",
       "status": "open",
       "applies_to": [
         "evaluation",
@@ -1429,15 +1429,15 @@
         "investor"
       ],
       "owner_role": "Customer Success + Product + evaluator",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "İsimli müşteri/değerlendirici aynı candidate üzerinde zorunlu senaryoları ve sınırları inceleyerek kabul vermedi.",
-      "implementation": "Değerlendirme sözleşmesi/charter, bağımsız sandbox, zorunlu testler ve müdahale/sapma kaydını tamamla; müşterinin kabul/çekincelerini kaydet.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "Ã„Â°simli mÃƒÂ¼Ã…Å¸teri/deÃ„Å¸erlendirici aynÃ„Â± candidate ÃƒÂ¼zerinde zorunlu senaryolarÃ„Â± ve sÃ„Â±nÃ„Â±rlarÃ„Â± inceleyerek kabul vermedi.",
+      "implementation": "DeÃ„Å¸erlendirme sÃƒÂ¶zleÃ…Å¸mesi/charter, baÃ„Å¸Ã„Â±msÃ„Â±z sandbox, zorunlu testler ve mÃƒÂ¼dahale/sapma kaydÃ„Â±nÃ„Â± tamamla; mÃƒÂ¼Ã…Å¸terinin kabul/ÃƒÂ§ekincelerini kaydet.",
       "acceptance": [
-        "İmzalı charter",
-        "Bağımsız koşu raporu",
-        "Müdahale ve sapma günlüğü",
-        "Müşterinin kabul/çekinceleri",
-        "Değiştirilemeyen kanıt indeksi"
+        "Ã„Â°mzalÃ„Â± charter",
+        "BaÃ„Å¸Ã„Â±msÃ„Â±z koÃ…Å¸u raporu",
+        "MÃƒÂ¼dahale ve sapma gÃƒÂ¼nlÃƒÂ¼Ã„Å¸ÃƒÂ¼",
+        "MÃƒÂ¼Ã…Å¸terinin kabul/ÃƒÂ§ekinceleri",
+        "DeÃ„Å¸iÃ…Å¸tirilemeyen kanÃ„Â±t indeksi"
       ],
       "source_requirement": "A named customer or investor evaluator completes the signed Evaluation Charter, independent sandbox/PoV, mandatory scenarios, limitations review, and acceptance/reservations for the same Release Candidate.",
       "source_evidence_required": [
@@ -1454,20 +1454,20 @@
     },
     {
       "id": "INV-001",
-      "title": "Yatırımcı metriklerinin kanıt ve onay sözlüğü",
+      "title": "YatÃ„Â±rÃ„Â±mcÃ„Â± metriklerinin kanÃ„Â±t ve onay sÃƒÂ¶zlÃƒÂ¼Ã„Å¸ÃƒÂ¼",
       "status": "open",
       "applies_to": [
         "investor"
       ],
       "owner_role": "Product + Finance + Legal",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Yatırımcıya sunulan teknik başarı, müşteri, güvenlik, uyum, traction ve finans ölçülerinin tamamı formül/payda/kaynak/dönem/sürüm/onay sahibiyle kayıtlı değil. Bu kapı yatırımcı profili içindir.",
-      "implementation": "Her metriği veri sorgusuna veya imzalı kaynağa bağla; örneklem, dönem, sınır ve belirsizliği yaz; Product/Finance/Legal incelemesi al.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "YatÃ„Â±rÃ„Â±mcÃ„Â±ya sunulan teknik baÃ…Å¸arÃ„Â±, mÃƒÂ¼Ã…Å¸teri, gÃƒÂ¼venlik, uyum, traction ve finans ÃƒÂ¶lÃƒÂ§ÃƒÂ¼lerinin tamamÃ„Â± formÃƒÂ¼l/payda/kaynak/dÃƒÂ¶nem/sÃƒÂ¼rÃƒÂ¼m/onay sahibiyle kayÃ„Â±tlÃ„Â± deÃ„Å¸il. Bu kapÃ„Â± yatÃ„Â±rÃ„Â±mcÃ„Â± profili iÃƒÂ§indir.",
+      "implementation": "Her metriÃ„Å¸i veri sorgusuna veya imzalÃ„Â± kaynaÃ„Å¸a baÃ„Å¸la; ÃƒÂ¶rneklem, dÃƒÂ¶nem, sÃ„Â±nÃ„Â±r ve belirsizliÃ„Å¸i yaz; Product/Finance/Legal incelemesi al.",
       "acceptance": [
-        "Onaylı metrik sözlüğü",
-        "Kaynak sorgu veya imzalı belge",
-        "Dönem/örneklem/payda",
-        "İnceleyen kişi onayı"
+        "OnaylÃ„Â± metrik sÃƒÂ¶zlÃƒÂ¼Ã„Å¸ÃƒÂ¼",
+        "Kaynak sorgu veya imzalÃ„Â± belge",
+        "DÃƒÂ¶nem/ÃƒÂ¶rneklem/payda",
+        "Ã„Â°nceleyen kiÃ…Å¸i onayÃ„Â±"
       ],
       "source_requirement": "Every investor-facing technical, customer, security, compliance, traction, and financial metric has a formula, denominator, source, Release Candidate/environment, observation window, owner, reviewer, and limitation/confidence statement.",
       "source_evidence_required": [
@@ -1483,7 +1483,7 @@
     },
     {
       "id": "CLM-001",
-      "title": "Müşteri ve satış iddialarının kanıt onayı",
+      "title": "MÃƒÂ¼Ã…Å¸teri ve satÃ„Â±Ã…Å¸ iddialarÃ„Â±nÃ„Â±n kanÃ„Â±t onayÃ„Â±",
       "status": "open",
       "applies_to": [
         "evaluation",
@@ -1492,13 +1492,13 @@
         "investor"
       ],
       "owner_role": "Product/Marketing + Commercial + Legal",
-      "current": "Şablon veya karar kaydı mevcut; kapatılmış onaylı kanıt yok.",
-      "gap": "Landing, README, plugin, teklif, procurement ve yatırımcı metinlerinin tamamı onaylı, güncel ve aynı sürüme bağlı iddia kanıtıyla eşlenmiş değil.",
-      "implementation": "Her iddiayı Claim Registry'ye bağla; kaynak ve derlenmiş yüzeyleri tara; yalnız süresi geçmemiş Sales Approved ifadeleri yayınla.",
+      "current": "Ã…Âablon veya karar kaydÃ„Â± mevcut; kapatÃ„Â±lmÃ„Â±Ã…Å¸ onaylÃ„Â± kanÃ„Â±t yok.",
+      "gap": "Landing, README, plugin, teklif, procurement ve yatÃ„Â±rÃ„Â±mcÃ„Â± metinlerinin tamamÃ„Â± onaylÃ„Â±, gÃƒÂ¼ncel ve aynÃ„Â± sÃƒÂ¼rÃƒÂ¼me baÃ„Å¸lÃ„Â± iddia kanÃ„Â±tÃ„Â±yla eÃ…Å¸lenmiÃ…Å¸ deÃ„Å¸il.",
+      "implementation": "Her iddiayÃ„Â± Claim Registry'ye baÃ„Å¸la; kaynak ve derlenmiÃ…Å¸ yÃƒÂ¼zeyleri tara; yalnÃ„Â±z sÃƒÂ¼resi geÃƒÂ§memiÃ…Å¸ Sales Approved ifadeleri yayÃ„Â±nla.",
       "acceptance": [
         "Registry snapshot",
-        "Derlenmiş çıktı tarama JSON'u",
-        "İddia→kanıt bağlantıları",
+        "DerlenmiÃ…Å¸ ÃƒÂ§Ã„Â±ktÃ„Â± tarama JSON'u",
+        "Ã„Â°ddiaÃ¢â€ â€™kanÃ„Â±t baÃ„Å¸lantÃ„Â±larÃ„Â±",
         "Sales Approved incelemesi"
       ],
       "source_requirement": "All customer, investor, procurement, landing, README, plugin, and sales claims are mapped to the Claim Registry; only approved, unexpired claims appear on release-facing surfaces.",
@@ -2589,13 +2589,18 @@
       "id": "BIL-03",
       "area": "Commercial",
       "name": "Subscription self-service portal",
-      "status": "missing",
+      "status": "partial",
       "source_paths": [
-        "packages/dashboard/src/billing/stripe-client.ts"
+        "packages/dashboard/src/billing/billing-portal.ts",
+        "packages/dashboard/src/ui/pages/BillingPage.tsx",
+        "supabase/functions/billing-portal/index.ts",
+        "supabase/functions/billing-portal/settlement.ts",
+        "supabase/functions/billing-portal/provider.ts",
+        "supabase/migrations/20260913000004_billing_settlement_portal.sql"
       ],
-      "consumer": "Unsupported helpers explicitly fail",
-      "delivered": "Checkout surface only",
-      "remaining": "Implement verified billing portal and invoice lifecycle if offered in sold SKU",
+      "consumer": "Billing page and the billing-portal Edge route",
+      "delivered": "Server-resolved tenant/customer identity, provider-of-record settlement state machine, seat grant/revoke reconciliation, cancel/refund with idempotency and TTL, portal return-URL allowlist",
+      "remaining": "Live provider keys, approved price/SKU catalogue, finance reconciliation and accounting approval remain external",
       "production_accepted": false,
       "gap_ids": [
         "T33"
@@ -2801,7 +2806,6 @@
     }
   ],
   "unresolved_backlog_ids": [
-    "AIDR-012",
     "AIDR-016",
     "AIDR-019",
     "AIDR-044",
