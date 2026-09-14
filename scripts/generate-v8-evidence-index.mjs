@@ -32,7 +32,7 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const LOG_DIR = ".release-evidence/v8-logs";
 export const INDEX_FILE = "docs/production-readiness/v8-evidence-index.json";
 export const SCHEMA_FILE = "docs/production-readiness/v8-evidence-index.schema.json";
-export const CANDIDATE_RELEASE_DIR = ".release-evidence/customer-release-v8-local-20260913-r2";
+export const CANDIDATE_RELEASE_DIR = ".release-evidence/customer-release-v8-local-20260914-r4";
 export const CANDIDATE_DIGEST_SOURCE = `${CANDIDATE_RELEASE_DIR}/release-inventory.json`;
 export const GENERATOR_ID = "scripts/generate-v8-evidence-index.mjs";
 
@@ -451,7 +451,7 @@ export const GATES = Object.freeze([
 		evidence_level: "packaged_consumer",
 		evidence_level_ceiling: "packaged_consumer",
 		limitations: [
-			"Assembles 14 local artifacts; without an official publisher key custody and private registry publication the candidate stays unsigned (publisher_authenticated=false).",
+			"Assembles 15 local artifacts, including an unsigned offline-verifiable provenance statement; without official publisher key custody and private registry publication the candidate stays unsigned (publisher_authenticated=false).",
 			"Checksums prove content, not publisher identity.",
 		],
 	}),
@@ -459,7 +459,7 @@ export const GATES = Object.freeze([
 		gate_id: "20-customer-kit",
 		command: "node scripts/customer-kit.mjs",
 		log: "20-customer-kit.log",
-		artifact: ".release-evidence/aidr-envelope-v8-local-20260913/release-inventory.json",
+		artifact: ".release-evidence/aidr-envelope-v8-local-20260914-r4/release-inventory.json",
 		pass: /^Portable candidate assembled: \d+ files\./m,
 		task_ids: ["T36", "T41"],
 		feature_ids: ["DEP-08", "EVAL-02", "EVAL-03", "BIL-01"],
