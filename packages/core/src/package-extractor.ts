@@ -55,21 +55,35 @@ export function extractPackagesFromCommand(command: string): ParsedPackage[] {
 	return packages;
 }
 
+/** Manifest file names the extractor understands, independent of directory. */
+const PACKAGE_MANIFEST_SUFFIXES = ["package.json", "requirements.txt"] as const;
+
+function normalizeManifestPath(filePath: string): string {
+	return filePath.toLowerCase().replace(/\\/g, "/");
+}
+
+/**
+ * True when `filePath` names a manifest whose package entries this module can
+ * extract. Exported so callers that must *prefer* a manifest (e.g. picking the
+ * manifest section out of a multi-file patch) share one definition.
+ */
+export function isPackageManifestPath(filePath: string): boolean {
+	const lowerPath = normalizeManifestPath(filePath);
+	return PACKAGE_MANIFEST_SUFFIXES.some((suffix) => lowerPath.endsWith(suffix));
+}
+
 /**
  * Extract packages from manifest file content.
  * Supports package.json and requirements.txt.
  */
 export function extractPackagesFromManifest(filePath: string, content: string): ParsedPackage[] {
-	const lowerPath = filePath.toLowerCase().replace(/\\/g, "/");
+	if (!isPackageManifestPath(filePath)) return [];
 
+	const lowerPath = normalizeManifestPath(filePath);
 	if (lowerPath.endsWith("package.json")) {
 		return extractFromPackageJson(content);
 	}
-	if (lowerPath.endsWith("requirements.txt")) {
-		return extractFromRequirementsTxt(content);
-	}
-
-	return [];
+	return extractFromRequirementsTxt(content);
 }
 
 // ── Internal helpers ──────────────────────────────────────────────

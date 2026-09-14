@@ -606,6 +606,15 @@ export type {
 export { LocalEmbeddingModel } from "./ml-model.js";
 export type { AnomalyEvent, BehaviorProfile } from "./novelty-detection.js";
 export { createNoveltyDetector, NoveltyDetector } from "./novelty-detection.js";
+// Connector tool-name contract (aliases every connector's emitted tool names)
+export {
+	CONNECTOR_TOOL_SURFACES,
+	type ConnectorToolSurface,
+	type ConnectorToolSurfaceViolation,
+	extractDeclaredToolNames,
+	findConnectorToolSurfaceViolations,
+	isCanonicalToolAlias,
+} from "./connector-alias-contract.js";
 export { scanModelOutput } from "./output-scanner.js";
 export type { PackageCheckerConfig, PackageCheckInput } from "./package-checker.js";
 // Package checker

@@ -113,4 +113,78 @@ describe("normalized requests reach semantic evaluation legs", () => {
 		expect(verdict.decision).toBe("deny");
 		expect(verdict.source).toBe("package_check");
 	});
+
+	it("runs package intelligence for a Codex apply_patch manifest edit", async () => {
+		const { configPath, dir } = await packageConfig("synthetic-aidr-package", "1.0.0");
+		// Authentic Codex payload shape (packages/codex/src/extractors.ts): the
+		// patch text is sent in `command`, and the connector emits one `content`
+		// artifact for the body plus one `file_path` artifact per touched file.
+		const patch = [
+			"*** Begin Patch",
+			"*** Update File: package.json",
+			'-{"dependencies":{"left-pad":"1.3.0"}}',
+			'+{"dependencies":{"synthetic-aidr-package":"1.0.0"}}',
+			"*** End Patch",
+		].join("\n");
+
+		const verdict = await evaluateToolCall(
+			{
+				sessionId: "codex-apply-patch",
+				toolName: "apply_patch",
+				toolInput: { command: patch },
+				artifacts: [
+					{ type: "content", value: patch, context: "apply_patch" },
+					{ type: "file_path", value: "package.json" },
+				],
+			},
+			{ threatsDir: join(dir, "unused"), allowlistsDir: join(dir, "unused"), configPath },
+		);
+
+		expect(verdict.decision).toBe("deny");
+		expect(verdict.source).toBe("package_check");
+	});
+
+	it("runs package intelligence for an unknown connector alias carrying a manifest", async () => {
+		const { configPath, dir } = await packageConfig("synthetic-aidr-package", "1.0.0");
+		const verdict = await evaluateToolCall(
+			{
+				sessionId: "unknown-alias-manifest",
+				// Not a canonical tool name: core must not have to know a
+				// connector's edit-tool name to inspect the manifest it writes.
+				toolName: "manifest_writer_v2",
+				toolInput: {
+					filePath: "package.json",
+					content: '{"dependencies":{"synthetic-aidr-package":"1.0.0"}}',
+				},
+				artifacts: [],
+			},
+			{ threatsDir: join(dir, "unused"), allowlistsDir: join(dir, "unused"), configPath },
+		);
+
+		expect(verdict.decision).toBe("deny");
+		expect(verdict.source).toBe("package_check");
+	});
+
+	it("does not mistake reading a manifest for a supply-chain edit", async () => {
+		// The package leg is now payload-driven, so the exclusion of observation
+		// tools is load-bearing: a Read of a manifest must stay exactly what it
+		// was before, never a package verdict.
+		const { configPath, dir } = await packageConfig("synthetic-aidr-package", "1.0.0");
+		const content = '{"dependencies":{"synthetic-aidr-package":"1.0.0"}}';
+		const verdict = await evaluateToolCall(
+			{
+				sessionId: "read-manifest",
+				toolName: "Read",
+				toolInput: { file_path: "package.json", content },
+				artifacts: [
+					{ type: "file_path", value: "package.json", context: "read" },
+					{ type: "content", value: content, context: "read" },
+				],
+			},
+			{ threatsDir: join(dir, "unused"), allowlistsDir: join(dir, "unused"), configPath },
+		);
+
+		expect(verdict.source).not.toBe("package_check");
+		expect(verdict.decision).toBe("allow");
+	});
 });

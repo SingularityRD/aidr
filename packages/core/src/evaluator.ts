@@ -66,7 +66,7 @@ import { evaluatePolicy } from "./policy.js";
 import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { loadThreatsFromDirs } from "./threat-loader.js";
-import { normalizeToolEvaluationRequest } from "./tool-normalization.js";
+import { normalizeToolEvaluationRequest, readFileEditPayload } from "./tool-normalization.js";
 import {
 	initTracing,
 	recordDetectionPhase,
@@ -588,6 +588,10 @@ async function runEvaluationPipeline(
 	const logger = context.logger ?? nullLogger;
 	let config = await loadConfig(context.configPath, logger).catch(() => ConfigSchema.parse({}));
 	const commercial = isCommercialBuild();
+	// Computed once: the same manifest edits decide whether this request has
+	// anything for the package leg to inspect at all (see the empty-artifact
+	// fast path below) and what that leg then checks.
+	const manifestEdits = manifestEditInputs(request);
 
 	// Managed-only commercial behavior: without a valid auth token + signed entitlement (or offline grace),
 	// the runtime does not enforce and becomes inert (allow-only).
@@ -886,7 +890,9 @@ async function runEvaluationPipeline(
 	// MCP policy can produce verdicts even without artifacts (e.g., denying unknown servers)
 	if (request.artifacts.length === 0) {
 		const isMcpTool = request.toolName.startsWith("mcp__") || request.toolName === "MCP";
-		if (!isMcpTool) {
+		// A manifest edit is inspectable input even when the connector extracted
+		// no artifacts for the tool name, so it may not take this fast path.
+		if (!isMcpTool && manifestEdits.length === 0) {
 			const verdict = await applyRuntimeDetectors(request, context, allowVerdict("no_artifacts"), managedState);
 			if (verdict.decision !== "allow") {
 				await recordEarlyVerdict(request, context, config, verdict, logger);
@@ -1051,6 +1057,7 @@ async function runEvaluationPipeline(
 
 	const packageCheckResults = await checkPackages(
 		request,
+		manifestEdits,
 		config,
 		context.reputationFeed ? null : cache,
 		logger,
@@ -1431,8 +1438,73 @@ async function cacheUrlResults(
 	}
 }
 
+/** Artifact contexts whose `content` is text a write/edit operation introduces. */
+const EDIT_CONTENT_CONTEXTS = new Set(["write", "edit", "apply_patch"]);
+
+/**
+ * Canonical operations whose `content` is not an edit payload: `Bash` has its
+ * own command leg, and `Read`/`Delete`/`WebFetch` observe or remove existing
+ * bytes. Their package routing must stay exactly as it has always been — a
+ * command is handled by `extractPackagesFromCommand`, and reading a manifest is
+ * not a supply-chain event.
+ */
+const NON_EDIT_TOOL_NAMES = new Set(["Bash", "Read", "Delete", "WebFetch"]);
+
+interface ManifestEditInput {
+	filePath: string;
+	content: string;
+}
+
+/**
+ * Collect the package manifest edits a request carries, independent of its tool
+ * name.
+ *
+ * Supply-chain inspection used to be selected with `toolName === "Bash"`,
+ * `"Write"` or `"Edit"`, so a connector whose edit tool is named anything else
+ * — Codex's `apply_patch`, or an alias core has never seen — carried a manifest
+ * payload straight past the package leg. Routing is therefore decided from the
+ * payload: a `content` artifact produced by a write/edit operation, or the
+ * request's own edit fields, paired with a file path. Non-edit operations are
+ * excluded so that reading a manifest is never mistaken for editing one.
+ */
+function manifestEditInputs(request: ToolEvaluationRequest): ManifestEditInput[] {
+	if (NON_EDIT_TOOL_NAMES.has(request.toolName)) return [];
+
+	const inputs: ManifestEditInput[] = [];
+	const seen = new Set<string>();
+	const add = (filePath: unknown, content: unknown): void => {
+		if (typeof filePath !== "string" || typeof content !== "string") return;
+		if (filePath.trim() === "" || content.trim() === "") return;
+		const key = `${filePath}\u0000${content}`;
+		if (seen.has(key)) return;
+		seen.add(key);
+		inputs.push({ filePath, content });
+	};
+
+	// Connectors may extract before field normalization, or use a path field
+	// core does not know; prefer the request's own path, then any extracted one.
+	const payload = readFileEditPayload(request.toolInput);
+	const pathFromArtifacts = request.artifacts.find(
+		(artifact) => artifact.type === "file_path" && artifact.value.trim() !== "",
+	)?.value;
+	const filePath = payload.filePath ?? pathFromArtifacts;
+
+	for (const artifact of request.artifacts) {
+		if (artifact.type !== "content") continue;
+		if (!EDIT_CONTENT_CONTEXTS.has(artifact.context ?? "")) continue;
+		add(filePath, artifact.value);
+	}
+
+	// Artifacts are best-effort and a connector may omit them for an unfamiliar
+	// alias, so the payload itself must also route (the canonical Write/Edit
+	// case, widened to every non-observation tool name).
+	add(payload.filePath, payload.content);
+	return inputs;
+}
+
 async function checkPackages(
 	request: ToolEvaluationRequest,
+	manifestEdits: readonly ManifestEditInput[],
 	config: Config,
 	cache: VerdictCache | null,
 	logger: Logger,
@@ -1449,10 +1521,13 @@ async function checkPackages(
 		if (request.toolName === "Bash") {
 			const command = (request.toolInput.command ?? "") as string;
 			parsedPackages = extractPackagesFromCommand(command);
-		} else if (request.toolName === "Write" || request.toolName === "Edit") {
-			const filePath = (request.toolInput.file_path ?? "") as string;
-			const content = (request.toolInput.content ?? request.toolInput.new_string ?? "") as string;
-			parsedPackages = extractPackagesFromManifest(filePath, content);
+		} else {
+			// Payload-driven: the manifest edit is what selects this leg, not the
+			// name the connector happens to give its edit tool.
+			parsedPackages = [];
+			for (const input of manifestEdits) {
+				parsedPackages.push(...extractPackagesFromManifest(input.filePath, input.content));
+			}
 		}
 	} catch (error) {
 		logger.warn("Package input extraction failed", {
