@@ -7,7 +7,7 @@ through the seven native acceptance cases. It is consumed by two runners:
 | Runner | What it does | Manifest it looks for |
 | --- | --- | --- |
 | `scripts/verify-native-host-matrix-v6.mjs` | The native-host gate. Probes host binaries, runs the cases of a single manifest (`hosts` keyed by host id) and reports one record per host. | `--scenario-file <path>`, otherwise the committed default `deploy/native/scenarios/native-host-scenarios.json` |
-| `deploy/native/run-support-matrix.mjs` | Reads `deploy/native/support-matrix.json`, probes every advertised host and runs each connector's own manifest. | `deploy/native/scenarios/<connector>.json` (for example `codex.json`) |
+| `deploy/native/run-support-matrix.mjs` | Reads `deploy/native/support-matrix.json`, probes every advertised host and runs each connector's own manifest. | `deploy/native/scenarios/<connector>.json` (for example `codex.json`), or — with `--scenario-file <path>` — one explicit manifest for the rows whose connector it declares |
 
 ## This directory is not evidence
 
@@ -18,7 +18,8 @@ running a host, and **a template is never acceptance evidence** — not when
 `--validate-only` accepts it, not when the gate probes it, not when a reviewer
 reads it. Copying `TEMPLATE.json` into place and deleting `template`/`kind`
 changes the *validation severity* of its placeholders; it does not create a
-single observation, digest or owner name.
+single observation, digest or owner name. Both the gate and the support-matrix
+runner therefore refuse that copy with `SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE`.
 
 ## Commands
 
@@ -60,6 +61,22 @@ host. `status_vocabulary` in the JSON report always lists all six values.
 The gate never prints `PASS` for a host row and never exits `0` when no accepted
 host exists. A case-level `PASS` means only that the declared attempt, hook and
 side-effect observations matched for that one local case.
+
+## Runner refusal codes (`deploy/native/run-support-matrix.mjs`)
+
+The support-matrix runner refuses a manifest instead of launching it, and
+records the refusal as both the row's `scenarios.status` and a
+`<connector>:<code>` blocker:
+
+| Code | Meaning |
+| --- | --- |
+| `SCENARIO_MANIFEST_MISSING` | No `deploy/native/scenarios/<connector>.json` is committed and no explicit `--scenario-file` matched this row. |
+| `SCENARIO_MANIFEST_UNREADABLE` | The manifest exists but is not valid JSON, so nothing could be validated. |
+| `SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE` | The manifest is `TEMPLATE.json`, a copy of it, or any manifest still carrying its `REPLACE_WITH_*` placeholders — with or without the `kind`/`template` markers that make it a declared template. |
+
+A refused row stays `HOST_ACCEPTANCE_OPEN` and its `scenarios.exitCode` is
+absent: it never becomes `SCENARIOS_PASSED_REVIEW_OPEN`, and the runner's
+decision stays `NO-GO`.
 
 ## Manifest schema
 

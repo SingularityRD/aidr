@@ -66,6 +66,23 @@ const GATE_REASONS = {
 	LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN: "Local scenarios completed; independent trace collection and named acceptance still require external review.",
 };
 
+/**
+ * A blocker code for a manifest that is not acceptance evidence: either it
+ * declares itself the committed template, or it still carries that template's
+ * `REPLACE_WITH_*` placeholders after the markers were deleted. Both shapes are
+ * the same defect and are refused with this one code.
+ */
+export const SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE = "SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE";
+
+/**
+ * True when a validated manifest still carries `REPLACE_WITH_*` values. Inside a
+ * template those findings have `placeholder` severity and outside one they are
+ * `error`s, so the count alone cannot answer this: the code can.
+ */
+export function carriesTemplatePlaceholders(validation) {
+	return (validation?.failures ?? []).some((failure) => failure.code === "PLACEHOLDER_VALUE_UNREPLACED");
+}
+
 /** A value that must come from a real host run. Never a real digest, version or name. */
 const PLACEHOLDER = /REPLACE_WITH_[A-Z0-9_]+/u;
 const OBSERVATION_SOURCES = ["stdout", "stderr", "file"];
@@ -440,7 +457,12 @@ function gateStatus(manifestPresent, probeOnly, hosts) {
 function gateBlockers(manifestPresent, manifestPath, hosts, validation) {
 	const blockers = [];
 	if (!manifestPresent) blockers.push(`SCENARIO_MANIFEST_MISSING:${manifestPath}`);
-	if (validation?.template === true) blockers.push("SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE");
+	// A template is never acceptance evidence, and deleting its `template`/`kind`
+	// markers does not replace a single placeholder: both shapes are refused with
+	// the same code, so a copied template cannot look like an ordinary open run.
+	if (validation?.template === true || carriesTemplatePlaceholders(validation)) {
+		blockers.push(SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE);
+	}
 	for (const failure of validation?.errors ?? []) blockers.push(`SCENARIO_MANIFEST_INVALID:${failure.code}${failure.field ? `:${failure.field}` : ""}`);
 	for (const host of hosts) {
 		if (host.status === "HOST_UNAVAILABLE") blockers.push(`${host.id}:HOST_UNAVAILABLE`);
