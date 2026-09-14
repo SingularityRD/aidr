@@ -10,6 +10,8 @@ import {
 	DlpPolicySchema,
 	type DlpRule,
 	type DlpRuleAction,
+	isDlpExceptionActive,
+	pruneExpiredExceptions,
 } from "./policy.js";
 
 export const DlpScanRequestSchema = z
@@ -281,13 +283,6 @@ function maskedPreview(value: string): string {
 	return "*".repeat(Math.min(12, characterCount));
 }
 
-function isActive(exception: DlpException, scannedAt: Date): boolean {
-	return (
-		Date.parse(exception.expiresAt) > scannedAt.getTime() &&
-		(exception.createdAt === undefined || Date.parse(exception.createdAt) <= scannedAt.getTime())
-	);
-}
-
 function matchingException(
 	exceptions: DlpException[],
 	ruleId: string,
@@ -296,7 +291,7 @@ function matchingException(
 	scannedAt: Date,
 ): DlpException | undefined {
 	return exceptions.find((exception) => {
-		if (exception.ruleId !== ruleId || !isActive(exception, scannedAt)) return false;
+		if (exception.ruleId !== ruleId || !isDlpExceptionActive(exception, scannedAt)) return false;
 		if (exception.scope === "rule") return true;
 		if (exception.scope === "content") return exception.fingerprint === contentFingerprint;
 		return exception.fingerprint === matchFingerprint;
@@ -362,9 +357,16 @@ export function scanDlpContent(
 	policyInput: DlpPolicy,
 	requestInput: DlpScanRequest,
 ): DlpScanResult {
-	const policy = DlpPolicySchema.parse(policyInput);
+	const validatedPolicy = DlpPolicySchema.parse(policyInput);
 	const request = DlpScanRequestSchema.parse(requestInput);
-	if (request.tenantId !== policy.tenantId) throw new DlpTenantIsolationError();
+	if (request.tenantId !== validatedPolicy.tenantId) throw new DlpTenantIsolationError();
+
+	// Prune before anything is matched: an exception that is expired at the scan
+	// instant must never suppress a finding. Pruning and matching share this one
+	// instant, so the list the matcher consults is already free of dead records
+	// and the two decisions cannot disagree about time.
+	const scannedAt = new Date(request.scannedAt ?? Date.now());
+	const policy = pruneExpiredExceptions(validatedPolicy, scannedAt);
 
 	const contentType = normalizedContentType(request.contentType);
 	const byteLength = new TextEncoder().encode(request.content).byteLength;
@@ -414,7 +416,6 @@ export function scanDlpContent(
 		};
 	}
 
-	const scannedAt = new Date(request.scannedAt ?? Date.now());
 	const labels = new Map(policy.labels.map((label) => [label.id, label]));
 	const matchedFindings: MatchedFinding[] = [];
 	const appliedExceptionIds = new Set<string>();

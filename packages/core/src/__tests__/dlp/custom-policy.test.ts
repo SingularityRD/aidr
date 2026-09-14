@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+	createDlpContentFingerprint,
 	createDlpMatchFingerprint,
+	DLP_EXPIRED_EXCEPTION_DOMINANCE,
 	DlpExceptionSchema,
 	DlpPolicySchema,
 	DlpTenantIsolationError,
+	pruneExpiredExceptions,
 	scanDlpInput,
 	scanDlpOutput,
 } from "../../dlp/index.js";
@@ -55,6 +58,24 @@ function createPolicy(overrides: Record<string, unknown> = {}) {
 		exceptions: [],
 		...overrides,
 	});
+}
+
+/**
+ * Attributable exception fixture. Rule scope by default (which must carry no
+ * fingerprint); a content or match record binds its own SHA-256 explicitly.
+ */
+function createException(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "exception-fixture",
+		tenantId: "tenant-acme",
+		ruleId: "rule-employee-id",
+		ownerId: "security-owner-1",
+		justification: "Documented false-positive fixture",
+		scope: "rule",
+		createdAt: "2019-01-01T00:00:00.000Z",
+		expiresAt: "2999-01-01T00:00:00.000Z",
+		...overrides,
+	};
 }
 
 describe("tenant DLP policy", () => {
@@ -223,6 +244,166 @@ describe("tenant DLP policy", () => {
 				expiresAt: "2026-09-12T00:00:00.000Z",
 			}).success,
 		).toBe(false);
+	});
+
+	it("ignores and prunes an expired exception instead of letting it suppress a finding", () => {
+		const matchedValue = "EMP-000123";
+		const content = `fixture ${matchedValue}`;
+		const expiredAt = "2020-01-01T00:00:00.000Z";
+		// Three expired records against four live ones: the list is not dominated,
+		// so the policy itself is accepted and the scanner has to drop the dead
+		// records before it matches anything.
+		const policy = DlpPolicySchema.parse({
+			...createPolicy(),
+			exceptions: [
+				createException({ id: "exception-expired-rule", expiresAt: expiredAt }),
+				createException({
+					id: "exception-expired-content",
+					scope: "content",
+					fingerprint: createDlpContentFingerprint("tenant-acme", content),
+					expiresAt: expiredAt,
+				}),
+				createException({
+					id: "exception-expired-match",
+					scope: "match",
+					fingerprint: createDlpMatchFingerprint("tenant-acme", "rule-employee-id", matchedValue),
+					expiresAt: expiredAt,
+				}),
+				...Array.from({ length: 4 }, (_, index) =>
+					createException({
+						id: `exception-live-${index}`,
+						scope: "match",
+						fingerprint: createDlpMatchFingerprint(
+							"tenant-acme",
+							"rule-employee-id",
+							`EMP-9${String(index).padStart(5, "0")}`,
+						),
+					}),
+				),
+			],
+		});
+		const scannedAt = new Date("2026-06-01T00:00:00.000Z");
+		const request = {
+			tenantId: "tenant-acme",
+			content,
+			contentType: "text/plain",
+			scannedAt: scannedAt.toISOString(),
+		};
+
+		const scanned = scanDlpInput(policy, request);
+		const pruned = pruneExpiredExceptions(policy, scannedAt);
+
+		expect(scanned).toMatchObject({
+			status: "inspected",
+			action: "redact",
+			transformedContent: "fixture [EMPLOYEE-ID]",
+			appliedExceptionIds: [],
+		});
+		expect(scanned.findings).toHaveLength(1);
+		// Dead records are removed from the list, not merely skipped per match:
+		// they no longer sit in the exception set the scanner carries and can
+		// never be reported as applied.
+		expect(pruned.exceptions.map((exception) => exception.id)).toEqual([
+			"exception-live-0",
+			"exception-live-1",
+			"exception-live-2",
+			"exception-live-3",
+		]);
+		expect(pruned.tenantId).toBe("tenant-acme");
+		expect(pruned.rules).toEqual(policy.rules);
+		// Pruning is verdict-preserving: the pruned policy scans identically.
+		expect(scanDlpInput(pruned, request)).toEqual(scanned);
+	});
+
+	it("rejects a policy whose exception list is dominated by expired entries", () => {
+		const expiredAt = "2020-01-01T00:00:00.000Z";
+		const activeAt = "2999-01-01T00:00:00.000Z";
+		const exceptions = (expired: number, active: number) => [
+			...Array.from({ length: expired }, (_, index) =>
+				createException({ id: `exception-expired-${index}`, expiresAt: expiredAt }),
+			),
+			...Array.from({ length: active }, (_, index) =>
+				createException({ id: `exception-active-${index}`, expiresAt: activeAt }),
+			),
+		];
+
+		const dominated = DlpPolicySchema.safeParse({
+			...createPolicy(),
+			exceptions: exceptions(6, 4),
+		});
+
+		expect(dominated.success).toBe(false);
+		expect(dominated.error?.issues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					path: ["exceptions"],
+					message: expect.stringContaining(DLP_EXPIRED_EXCEPTION_DOMINANCE),
+				}),
+			]),
+		);
+
+		// An exactly half-expired list is churn, not dominance: the scanner prunes
+		// those records and the tenant keeps every rule in its policy.
+		expect(
+			DlpPolicySchema.safeParse({ ...createPolicy(), exceptions: exceptions(5, 5) }).success,
+		).toBe(true);
+		// A single expired record cannot dominate a list of one, and it is pruned
+		// rather than turned into a refusal of the whole policy.
+		expect(
+			DlpPolicySchema.safeParse({ ...createPolicy(), exceptions: exceptions(1, 0) }).success,
+		).toBe(true);
+	});
+
+	it("keeps suppressing a finding while an exception is still active", () => {
+		const matchedValue = "EMP-000321";
+		const policy = DlpPolicySchema.parse({
+			...createPolicy(),
+			exceptions: [
+				createException({
+					id: "exception-live",
+					scope: "match",
+					createdAt: "2026-01-01T00:00:00.000Z",
+					fingerprint: createDlpMatchFingerprint("tenant-acme", "rule-employee-id", matchedValue),
+				}),
+				createException({
+					id: "exception-stale",
+					scope: "match",
+					fingerprint: createDlpMatchFingerprint(
+						"tenant-acme",
+						"rule-employee-id",
+						"EMP-000322",
+					),
+					expiresAt: "2020-01-01T00:00:00.000Z",
+				}),
+			],
+		});
+		const scannedAt = new Date("2026-06-01T00:00:00.000Z");
+		const pruned = pruneExpiredExceptions(policy, scannedAt);
+
+		expect(pruned.exceptions.map((exception) => exception.id)).toEqual(["exception-live"]);
+		// Nothing left to prune: the caller gets the same policy back.
+		expect(pruneExpiredExceptions(pruned, scannedAt)).toBe(pruned);
+		expect(
+			scanDlpInput(pruned, {
+				tenantId: "tenant-acme",
+				content: `fixture ${matchedValue}`,
+				contentType: "text/plain",
+				scannedAt: scannedAt.toISOString(),
+			}),
+		).toMatchObject({
+			status: "inspected",
+			action: "allow",
+			appliedExceptionIds: ["exception-live"],
+		});
+		// The live record stays bound to its own fingerprint.
+		expect(
+			scanDlpInput(pruned, {
+				tenantId: "tenant-acme",
+				content: "fixture EMP-000323",
+				contentType: "text/plain",
+				scannedAt: scannedAt.toISOString(),
+			}).action,
+		).toBe("redact");
 	});
 
 	it("rejects high-risk custom regular expressions", () => {

@@ -31,6 +31,7 @@ export type {
 	DlpUnavailableAction,
 } from "./policy.js";
 export {
+	DLP_EXPIRED_EXCEPTION_DOMINANCE,
 	DlpDirectionSchema,
 	DlpExceptionSchema,
 	DlpExceptionScopeSchema,
@@ -41,6 +42,8 @@ export {
 	DlpRuleSchema,
 	DlpSensitivitySchema,
 	DlpUnavailableActionSchema,
+	isDlpExceptionActive,
+	pruneExpiredExceptions,
 } from "./policy.js";
 export type {
 	DlpFinding,

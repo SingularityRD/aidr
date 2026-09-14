@@ -185,6 +185,52 @@ export const DlpExceptionSchema = z
 		}
 	});
 
+/**
+ * A one-record exception list is exempt from the dominance refusal below. A
+ * single expired record is routine bookkeeping: the scanner prunes it, it can
+ * no longer suppress anything, and refusing the whole policy over it would deny
+ * every rule the tenant wrote. Dominance therefore starts at two records, where
+ * an expired majority means the list is being kept as an archive instead of a
+ * bounded set of live false-positive exceptions.
+ */
+const EXCEPTION_DOMINANCE_MINIMUM = 2;
+
+/**
+ * Machine-readable refusal code, in the module's existing `DLP_*` vocabulary
+ * (`DLP_TENANT_MISMATCH`). It is emitted as the prefix of the policy issue
+ * message so a caller or gate can branch on the code without parsing prose.
+ */
+export const DLP_EXPIRED_EXCEPTION_DOMINANCE = "DLP_EXPIRED_EXCEPTION_DOMINANCE";
+
+/**
+ * True while `now` sits inside the exception's `[createdAt, expiresAt)` window.
+ * Validation, pruning and matching all share this one predicate, so the
+ * decision to prune a record and the decision to suppress with it can never
+ * disagree about time.
+ */
+export function isDlpExceptionActive(exception: DlpException, now: Date): boolean {
+	return (
+		Date.parse(exception.expiresAt) > now.getTime() &&
+		(exception.createdAt === undefined || Date.parse(exception.createdAt) <= now.getTime())
+	);
+}
+
+/**
+ * Drop every exception that is not active at `now`.
+ *
+ * Expired records are removed from the list the scanner matches against rather
+ * than skipped per match: they are never reported in `appliedExceptionIds`, and
+ * a record that is expired at the scan instant can never suppress a finding. A
+ * caller that persists the pruned policy also stops carrying dead records
+ * against the 10,000-entry exception cap. A policy with nothing to prune is
+ * returned unchanged, so pruning on every scan does not churn objects.
+ */
+export function pruneExpiredExceptions(policy: DlpPolicy, now: Date): DlpPolicy {
+	const exceptions = policy.exceptions.filter((exception) => isDlpExceptionActive(exception, now));
+	if (exceptions.length === policy.exceptions.length) return policy;
+	return { ...policy, exceptions };
+}
+
 export const DlpPolicySchema = z
 	.object({
 		version: z.number().int().positive(),
@@ -219,6 +265,28 @@ export const DlpPolicySchema = z
 			"rule in this policy",
 			context,
 		);
+		// A list dominated by already-expired exceptions is refused rather than
+		// silently pruned: dead records are what fill the 10,000-entry exception
+		// cap, so a tenant that lets its list rot has to re-publish it instead of
+		// carrying the dead weight forever. "Dominated" is a strict majority: an
+		// exactly half-expired list is normal churn, and a single expired record
+		// is pruned by the scanner (see EXCEPTION_DOMINANCE_MINIMUM). Only records
+		// whose window has closed count here; an exception that is not yet in
+		// force is a different defect, and the scanner ignores it either way.
+		const now = Date.now();
+		const expiredExceptions = policy.exceptions.filter(
+			(exception) => Date.parse(exception.expiresAt) <= now,
+		).length;
+		if (
+			policy.exceptions.length >= EXCEPTION_DOMINANCE_MINIMUM &&
+			expiredExceptions * 2 > policy.exceptions.length
+		) {
+			addPolicyIssue(
+				context,
+				`${DLP_EXPIRED_EXCEPTION_DOMINANCE}: ${expiredExceptions} of ${policy.exceptions.length} exceptions have already expired; remove the expired records and re-publish the policy`,
+				["exceptions"],
+			);
+		}
 	});
 
 export type DlpSensitivity = z.infer<typeof DlpSensitivitySchema>;
