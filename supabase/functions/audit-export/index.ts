@@ -6,11 +6,6 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 import { serializeAuditExport } from "../_shared/audit-export.ts";
 import { readAuditCursor, signAuditCursor } from "../_shared/export-cursor.ts";
-import {
-	AUDIT_EXPORT_MAX_OBJECT_BYTES,
-	registerAuditExportObject,
-	tenantStorageLimitBytes,
-} from "../_shared/tenant-quotas.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
@@ -44,6 +39,13 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 			const { data: tenant, error: tenantError } = await db.from("tenants").select("status").eq("id", body.team_id).maybeSingle();
 			if (tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
 			if (tenant?.status !== "active") return corsJson(req, 403, { error: "tenant_inactive" });
+			// An active legal hold preserves this tenant's records for litigation, so
+			// no export may copy them out until the hold is released. This barrier is
+			// unconditional: it is not a plan, flag or configuration toggle, and an
+			// unreadable hold row fails closed instead of producing an export.
+			const { data: hold, error: holdError } = await db.from("tenant_legal_holds").select("id").eq("tenant_id", body.team_id).is("released_at", null).limit(1).maybeSingle();
+			if (holdError) return corsJson(req, 503, { error: "legal_hold_unavailable" });
+			if (hold) return corsJson(req, 409, { error: "legal_hold_active" });
 			const binding = { tenant: body.team_id, user: auth.user.id, format: body.format as "csv" | "json" };
 			let cursor;
 			try { cursor = body.cursor === undefined ? null : await readAuditCursor(body.cursor, config.values.SUPABASE_SERVICE_ROLE_KEY, binding); }
@@ -59,23 +61,9 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 			const nextCursor = rows.length > 500 ? await signAuditCursor({ ...binding, snapshot, expires, after: { created_at: last.created_at, id: last.id } }, config.values.SUPABASE_SERVICE_ROLE_KEY) : null;
 			const path = `${body.team_id}/${crypto.randomUUID()}.${body.format}`;
 			const content = serializeAuditExport(page, body.format as "csv" | "json");
-			const bytes = new TextEncoder().encode(content).length;
-			if (bytes > AUDIT_EXPORT_MAX_OBJECT_BYTES) return corsJson(req, 413, { error: "export_page_too_large" });
-			// The bytes are reserved in the tenant ledger before the object exists:
-			// an over-quota export is refused here and no object is ever uploaded.
-			const reservation = await registerAuditExportObject(db, {
-				tenantId: body.team_id,
-				actorUserId: auth.user.id,
-				path,
-				bytes,
-				limitBytes: tenantStorageLimitBytes(runtimeEnv),
-			});
-			if (!reservation.ok) {
-				return corsJson(req, reservation.status, {
-					error: reservation.error,
-					tenant_storage_bytes_remaining: reservation.remainingBytes,
-				});
-			}
+			if (new TextEncoder().encode(content).length > 8 * 1024 * 1024) return corsJson(req, 413, { error: "export_page_too_large" });
+			const registration = await db.from("audit_export_objects").insert({ path, tenant_id: body.team_id, created_by: auth.user.id });
+			if (registration.error) return corsJson(req, 503, { error: "export_retention_unavailable" });
 			const { error: uploadError } = await db.storage.from("aidr-audit-exports").upload(path, content, { contentType: body.format === "json" ? "application/json" : "text/csv", upsert: false });
 			if (uploadError) return corsJson(req, 503, { error: "export_storage_unavailable" });
 			const { data, error: signError } = await db.storage.from("aidr-audit-exports").createSignedUrl(path, 60, { download: `aidr-audit.${body.format}` });
@@ -83,7 +71,7 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 			const signed = new URL(data.signedUrl);
 			const publicBase = new URL(runtimeEnv("SUPABASE_PUBLIC_URL") || config.values.SUPABASE_URL);
 			const downloadUrl = new URL(signed.pathname + signed.search, publicBase.origin).href;
-			return corsJson(req, 200, { ok: true, url: downloadUrl, rows: page.length, expires_in: 60, snapshot, next_cursor: nextCursor, complete: nextCursor === null, tenant_storage_bytes_remaining: reservation.remainingBytes });
+			return corsJson(req, 200, { ok: true, url: downloadUrl, rows: page.length, expires_in: 60, snapshot, next_cursor: nextCursor, complete: nextCursor === null });
 		} catch { return corsJson(req, 503, { error: "export_unavailable" }); }
 	};
 }

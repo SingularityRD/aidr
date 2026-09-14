@@ -94,6 +94,27 @@ check(!!deploymentRegion, "deployment manifest declares a known deployment regio
 check(!!declaredRegion(manifest.tenant_region) && manifest.tenant_region === manifest.region, "tenant declared region matches the deployment region");
 check(!!deploymentRegion && (deploymentRegion.supabase_url === null || deploymentRegion.supabase_url === manifest.supabase_url), "declared region endpoint matches this deployment's public API origin");
 check(!!deploymentRegion && !/^REPLACE/i.test(deploymentRegion.residency.location), "declared region residency location is not a placeholder");
+// Nothing else in the repository verifies that the host armed the retention
+// reaper, so an expired private export can silently outlive its retention
+// window. Only the host's own scheduler can answer this: on a systemd host the
+// timer must be installed and enabled, and where the scheduler cannot be read
+// (non-systemd init, including Windows where the operator may register a
+// scheduled task under any name) the result is recorded as UNVERIFIED rather
+// than assumed installed.
+const retentionReaperTimer = "aidr-export-retention.timer";
+if (process.platform === "linux" && existsSync("/run/systemd/system")) {
+  const probe = spawnSync("systemctl", ["is-enabled", retentionReaperTimer], { encoding: "utf8", timeout: 15000 });
+  const state = (probe.stdout ?? "").trim().split(/\r?\n/)[0] ?? "";
+  if (probe.error) {
+    unverified.push({ check: `retention reaper timer state unreadable: ${retentionReaperTimer}`, reason: `systemctl ${probe.error.code ?? "unavailable"}` });
+    console.log(`UNVERIFIED retention reaper timer state unreadable: ${retentionReaperTimer}`);
+  } else {
+    check(probe.status === 0 && /^enabled/.test(state), `retention reaper timer installed and enabled: ${retentionReaperTimer}${probe.status === 0 ? "" : ` (${state || "not enabled"})`}`);
+  }
+} else {
+  unverified.push({ check: `retention reaper timer not verified: ${retentionReaperTimer}`, reason: `must be installed as a systemd timer or host scheduled task, which a ${process.platform} run cannot inspect` });
+  console.log(`UNVERIFIED retention reaper timer not verified: ${retentionReaperTimer}`);
+}
 if (manifest.mode === "self-hosted") {
   const config = spawnSync("docker", ["compose", "--project-directory", dir, "-f", join(dir, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 15000 });
   check(config.status === 0, "Docker Compose configuration resolves");
@@ -115,5 +136,5 @@ if (values.online) {
     check(response.ok && settings.disable_signup === true, "authentication service confirms signup is disabled");
   } catch { check(false, "authentication settings reachable"); }
 }
-writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed: failures.length === 0, mode: manifest.mode, online: values.online, checks, failures, unverified, scope: "Operational preflight only. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate. Entries under unverified could not be determined on this host and are not evidence of success." }, null, 2));
+writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed: failures.length === 0, mode: manifest.mode, online: values.online, checks, failures, unverified, scope: "Operational preflight only. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate. Entries under unverified could not be determined on this host and are not evidence of success. No unverified check is recorded as passed." }, null, 2));
 if (failures.length) process.exitCode = 1;

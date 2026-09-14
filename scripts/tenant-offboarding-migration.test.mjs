@@ -5,6 +5,12 @@ import { test } from "node:test";
 const migrationPath = "supabase/migrations/20260912140000_tenant_offboarding_retention.sql";
 const sql = await readFile(migrationPath, "utf8");
 
+// The cache-invalidation extension is a separate, append-only migration. Keeping
+// it out of `sql` is what lets the assertions below distinguish "the shipped
+// phase list was extended" from "the shipped migration was edited".
+const cacheMigrationPath = "supabase/migrations/20260913000005_tenant_cache_invalidation_offboarding.sql";
+const cacheSql = await readFile(cacheMigrationPath, "utf8");
+
 test("retention policy covers ten explicit data classes and excludes backups", () => {
 	const classes = [
 		"temporary_exports", "access_credentials", "telemetry", "endpoint_identity",
@@ -55,4 +61,43 @@ test("offboarding includes SCIM, delegated credentials and core tenant data", ()
 test("long-lived entitlement snapshots survive shorter endpoint identity deletion", () => {
 	assert.match(sql, /foreign key \(tenant_id, agent_id\) references public\.agents\(tenant_id, id\)[\s\S]+on delete set null \(agent_id\)/);
 	assert.match(sql, /if v_phase\.phase='delegated_credential_receipts' then v_order_by := 'delegation_depth desc, ctid'/);
+});
+
+test("a cache invalidation phase exists and records a receipt", () => {
+	// Append-only: the shipped phase list is extended by a new migration, so the
+	// cache phase (and its receipt column) must not appear in the old bytes.
+	assert.doesNotMatch(sql, /tenant_cache/);
+	assert.doesNotMatch(sql, /cache_invalidation_receipt/);
+
+	// The cache step is a real, ordered phase of the same shape as the others:
+	// phase order 41 follows the fleet-command phase 40, maps to one of the ten
+	// explicit data classes, and is seeded for new runs and backfilled for
+	// in-flight runs alike.
+	assert.match(cacheSql, /values \(new\.id, 41, 'tenant_cache', 'operational_ephemera', 'invalidate_cache'/);
+	assert.match(cacheSql, /select r\.id, 41, 'tenant_cache', 'operational_ephemera', 'invalidate_cache'/);
+	assert.match(cacheSql, /create trigger tenant_offboarding_cache_phase[\s\S]+after insert on public\.tenant_offboarding_runs/);
+	assert.match(cacheSql, /where r\.status <> 'completed'/);
+	assert.match(cacheSql, /on conflict \(run_id, phase\) do nothing/);
+
+	// The phase records its own receipt: a dedicated column, mandatory for a
+	// completed cache phase, written by an acknowledgement RPC that is blocked by
+	// an active legal hold and granted to service_role only.
+	assert.match(cacheSql, /add column cache_invalidation_receipt jsonb/);
+	assert.match(cacheSql, /operation <> 'invalidate_cache'[\s\S]+status <> 'completed'[\s\S]+cache_invalidation_receipt is not null/);
+	assert.match(cacheSql, /check \(operation in \('delete_records', 'delete_storage_objects', 'invalidate_cache'\)\)/);
+	assert.match(cacheSql, /tenant_legal_holds where tenant_id = v_run\.tenant_id and released_at is null/);
+	assert.match(cacheSql, /cache_invalidation_receipt = jsonb_build_object\([\s\S]+'invalidated', v_invalidated/);
+	assert.match(cacheSql, /revoke all on function public\.ack_tenant_offboarding_cache\(uuid, text\[\], bigint\) from public, anon, authenticated/);
+	assert.match(cacheSql, /grant execute on function public\.ack_tenant_offboarding_cache\(uuid, text\[\], bigint\) to service_role/);
+
+	// The batch RPC hands the cache phase out as its own action, and the
+	// extension refuses to apply against an unexpected definition.
+	assert.match(cacheSql, /''phase'',v_phase\.phase,''action'',''invalidate_cache'',''cache_scope'',v_run\.tenant_id/);
+	assert.match(cacheSql, /unexpected_offboarding_batch_definition/);
+
+	// The ten explicit data classes and the backup exclusion are untouched: no
+	// policy row is written, no class is added, and backups are never claimed.
+	assert.doesNotMatch(cacheSql, /insert into public\.tenant_data_retention_policies/);
+	assert.doesNotMatch(cacheSql, /data_class in \(/);
+	assert.doesNotMatch(cacheSql, /covers_backups\s*=\s*true/);
 });

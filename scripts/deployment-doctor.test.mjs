@@ -103,11 +103,15 @@ test("deployment doctor reports the SIEM delivery timer as shipped and never fak
 		"an unanswerable check must never be recorded as passed",
 	);
 	assert.equal(evidence.failures.includes(schedulerLabel), false);
-	assert.deepEqual(
-		(evidence.unverified ?? []).map((entry) => entry.check),
-		[schedulerLabel],
+	// recorded as a pass: the SIEM delivery timer and the retention reaper.
+	const unverifiedChecks = (evidence.unverified ?? []).map((entry) => entry.check);
+	assert.ok(unverifiedChecks.includes(schedulerLabel));
+	assert.ok(
+		unverifiedChecks.some((check) => check.startsWith("retention reaper timer not verified")),
+		"the retention reaper is a host-scheduler check too and must not be reported as verified",
 	);
-	assert.match(evidence.unverified[0].reason, /unavailable|not available/);
+	assert.equal(evidence.checks.includes(schedulerLabel), false);
+	assert.match(evidence.unverified[0].reason, /unavailable|not available|cannot inspect/);
 	assert.match(evidence.scope, /not evidence of success/);
 });
 
