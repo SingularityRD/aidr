@@ -7,6 +7,7 @@
 // this suite covers the handler that authenticates, authorizes, bounds and
 // persists whatever reaches that compiler.
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,7 +97,14 @@ const POLICY_DOCUMENT_LINES = [
 	"    priority: 20",
 ];
 
-const MUTATION_RPCS = new Set(["publish_runtime_policy", "stage_runtime_policy"]);
+const MUTATION_RPCS = new Set(["publish_runtime_policy", "stage_runtime_policy", "save_policy_document_draft"]);
+const DOCUMENT_ID = "55555555-5555-4555-8555-555555555555";
+const sourceHash = (content: string) => createHash("sha256").update(content, "utf8").digest("hex");
+const VALID_DRAFT = POLICY_DOCUMENT_LINES.join("\n");
+const EXPECTED_DOCUMENT = { id: DOCUMENT_ID, version: 7, source_sha256: sourceHash(VALID_DRAFT) };
+function draftBody(overrides: Row = {}): Row {
+	return { action: "save_document_draft", tenant_id: TENANT, content: VALID_DRAFT, expected_document: null, ...overrides };
+}
 /** Tables whose rows are a tenant's policy, fleet or receipts (never config). */
 const POLICY_SCOPED_TABLES = new Set([
 	"tenant_runtime_policies",
@@ -155,6 +163,8 @@ interface DbOptions {
 function database(options: DbOptions = {}) {
 	const rpcCalls: RpcRecord[] = [];
 	const queries: QueryRecord[] = [];
+	const draftRows = (options.teamPolicies ?? []).map((row) => ({ ...row }));
+	const draftWrites: Row[] = [];
 	const memberships = options.memberships ?? [{ tenant_id: TENANT, role: "owner", expires_at: null }];
 	const policies = options.policies ?? {
 		[TENANT]: { version: 3, policy: POLICY, updated_at: NOW },
@@ -281,13 +291,26 @@ function database(options: DbOptions = {}) {
 				return { data: { allowed: true, remaining: 599 }, error: null };
 			}
 			if (options.rpc) return options.rpc(name, args);
+			if (name === "save_policy_document_draft") {
+				const current = draftRows.find((row) => row.team_id === args.p_tenant_id);
+				if (current ? current.id !== args.p_expected_id || current.version !== args.p_expected_version || current.source_sha256 !== args.p_expected_source_sha256 : args.p_expected_id !== null) {
+					return { data: null, error: { code: "PT409" } };
+				}
+				const row = {
+					id: current?.id ?? DOCUMENT_ID, team_id: args.p_tenant_id, content: args.p_content,
+					version: Number(current?.version ?? 0) + 1, source_sha256: sourceHash(String(args.p_content)), updated_at: NOW,
+				};
+				if (current) Object.assign(current, row); else draftRows.push(row);
+				draftWrites.push(row);
+				return { data: row, error: null };
+			}
 			// The published RPC returns the stored row; a targeted stage returns
 			// only the new revision and its target count.
 			if (name === "stage_runtime_policy") return { data: { version: 4, target_count: 1 }, error: null };
 			return { data: { version: 4, policy: args.p_policy, updated_at: NOW }, error: null };
 		}),
 	};
-	return { db, rpcCalls, queries };
+	return { db, rpcCalls, queries, draftRows, draftWrites };
 }
 
 function mutations(calls: RpcRecord[]): RpcRecord[] {
@@ -317,13 +340,15 @@ function policyScopedTeams(queries: QueryRecord[]): string[] {
 }
 
 async function handlerWith(options: DbOptions = {}) {
-	const { db, rpcCalls, queries } = database(options);
+	const { db, rpcCalls, queries, draftRows, draftWrites } = database(options);
 	const mod = await import("../policy-management/index.ts");
 	return {
 		handle: mod.createPolicyManagementHandler({ db: db as never }),
 		db,
 		rpcCalls,
 		queries,
+		draftRows,
+		draftWrites,
 	};
 }
 
@@ -512,7 +537,7 @@ describe("policy-management handler - authorization", () => {
 	// published policy to any member while gating every control on
 	// `canManageTeam`, and the SQL publication RPCs repeat the owner/admin rule
 	// inside the writing transaction.
-	it("refuses every mutating action for a member whose role is below owner/admin", async () => {
+	it("refuses every runtime mutating action for a member whose role is below owner/admin", async () => {
 		const bodies: Row[] = [
 			publishBody(),
 			stageBody(),
@@ -806,6 +831,140 @@ describe("policy-management handler - optimistic concurrency", () => {
 	});
 });
 
+describe("policy-management handler - exact draft compile and save", () => {
+	const existing = () => [{ ...EXPECTED_DOCUMENT, team_id: TENANT, content: VALID_DRAFT, updated_at: NOW }];
+
+	it.each([false, true])("makes zero policy mutations for rejected drafts (existing=%s)", async (update) => {
+		const { handle, rpcCalls, draftRows, draftWrites } = await handlerWith({ teamPolicies: update ? existing() : [] });
+		const before = structuredClone(draftRows);
+		for (const content of [
+			"version: [broken",
+			`${VALID_DRAFT}\ndefault_action: allow`, // duplicate mapping keys
+			'version: "1.0"\ndefault_action: &mode ask\nunknown_action: *mode\nrules: []',
+			`${VALID_DRAFT}\ndlp: { enabled: true }`, // unsupported, not silently dropped
+			VALID_DRAFT.replace("priority: 20", "priority: 1001"),
+			VALID_DRAFT.replace("allow read", "a".repeat(161)),
+			"",
+			42,
+		]) {
+			const response = await handle(post(draftBody({ content, expected_document: update ? EXPECTED_DOCUMENT : null })));
+			expect(response.status, String(content)).toBe(400);
+			expect((await response.json()).ok).not.toBe(true);
+		}
+		expect(mutations(rpcCalls)).toEqual([]);
+		expect(draftWrites).toEqual([]);
+		expect(draftRows).toEqual(before);
+	});
+
+	it("compiles the submitted UTF-8 bytes rather than the stored row, then saves only those bytes", async () => {
+		const content = `# café 雪\r\n${VALID_DRAFT.replaceAll("\n", "\r\n")}\r\n`;
+		const { handle, rpcCalls, queries, draftRows } = await handlerWith({ teamPolicies: existing() });
+		const response = await handle(post(draftBody({ content, expected_document: EXPECTED_DOCUMENT, simulation: { kind: "command" } })));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body).toMatchObject({ ok: true, source: { id: DOCUMENT_ID, version: 8, source_sha256: sourceHash(content) }, runtime_policy: { command_default: "deny" }, simulation: { action: "deny" } });
+		expect(body.source.source_sha256).not.toBe(sourceHash(VALID_DRAFT));
+		expect(mutations(rpcCalls)).toEqual([{ name: "save_policy_document_draft", args: {
+			p_tenant_id: TENANT, p_user_id: USER, p_content: content, p_source_sha256: sourceHash(content),
+			p_expected_id: DOCUMENT_ID, p_expected_version: 7, p_expected_source_sha256: EXPECTED_DOCUMENT.source_sha256,
+		} }]);
+		expect(draftRows[0]?.content).toBe(content);
+		expect(queries.filter((query) => query.table === "team_policies")).toEqual([]);
+	});
+
+	it("dry-runs a first draft without requiring or mutating a stored row", async () => {
+		const { handle, rpcCalls } = await handlerWith();
+		const response = await handle(post(draftBody({ action: "compile_document_draft", simulation: { kind: "command" } })));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ ok: true, dry_run: true, source: { source_sha256: sourceHash(VALID_DRAFT) } });
+		expect(mutations(rpcCalls)).toEqual([]);
+	});
+
+	it.each([false, true])("allows just one competing save for the same loaded revision (existing=%s)", async (update) => {
+		const { handle, draftRows, draftWrites } = await handlerWith({ teamPolicies: update ? existing() : [] });
+		const drafts = [`# editor A\n${VALID_DRAFT}`, `# editor B\n${VALID_DRAFT}`];
+		const responses = await Promise.all(drafts.map((content) => handle(post(draftBody({ content, expected_document: update ? EXPECTED_DOCUMENT : null })))));
+		expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+		const winner = responses.findIndex((response) => response.status === 200);
+		expect(draftWrites).toHaveLength(1);
+		expect(draftRows).toHaveLength(1);
+		expect(draftRows[0]?.content).toBe(drafts[winner]);
+		expect(await responses[1 - winner].json()).toEqual({ error: "policy_document_conflict" });
+	});
+
+	it("refuses a stale source hash even when the row id and version match", async () => {
+		const { handle, draftWrites, draftRows } = await handlerWith({ teamPolicies: existing() });
+		const response = await handle(post(draftBody({ expected_document: { ...EXPECTED_DOCUMENT, source_sha256: "0".repeat(64) } })));
+		expect(response.status).toBe(409);
+		expect(draftWrites).toEqual([]);
+		expect(draftRows).toEqual(existing());
+	});
+
+	it("rejects missing/malformed preconditions and invalid simulation before the mutation RPC", async () => {
+		const { handle, rpcCalls } = await handlerWith();
+		for (const expected_document of [undefined, {}, [], { ...EXPECTED_DOCUMENT, id: "wrong" }, { ...EXPECTED_DOCUMENT, version: 0 }, { ...EXPECTED_DOCUMENT, version: 1.2 }, { ...EXPECTED_DOCUMENT, source_sha256: "bad" }]) {
+			const response = await handle(post(draftBody({ expected_document })));
+			expect(response.status).toBe(400);
+			expect(await response.json()).toEqual({ error: "invalid_document_precondition" });
+		}
+		const response = await handle(post(draftBody({ simulation: { kind: "dlp" } })));
+		expect(response.status).toBe(400);
+		expect(mutations(rpcCalls)).toEqual([]);
+	});
+
+	it("keeps request/source work bounded in UTF-8 bytes", async () => {
+		const { handle, rpcCalls } = await handlerWith();
+		const response = await handle(post(draftBody({ content: `# ${"雪".repeat(22_000)}\n${VALID_DRAFT}` })));
+		expect(response.status).toBe(413);
+		expect(mutations(rpcCalls)).toEqual([]);
+	});
+
+	it.each(["owner", "admin", "member"])("preserves %s draft authoring without granting runtime publication", async (role) => {
+		const { handle, rpcCalls } = await handlerWith({ memberships: [{ tenant_id: TENANT, role, expires_at: null }] });
+		const response = await handle(post(draftBody({ updated_by: OTHER_TENANT })));
+		expect(response.status).toBe(200);
+		expect(mutations(rpcCalls)[0]?.args.p_user_id).toBe(USER);
+		if (role === "member") expect((await handle(post(publishBody()))).status).toBe(403);
+	});
+
+	it("preserves viewer, expiry, tenant and MFA barriers for the new action", async () => {
+		for (const options of [
+			{ memberships: [{ tenant_id: TENANT, role: "viewer", expires_at: null }] },
+			{ memberships: [{ tenant_id: TENANT, role: "member", expires_at: "2000-01-01" }] },
+			{ memberships: [{ tenant_id: OTHER_TENANT, role: "owner", expires_at: null }] },
+			{ tenantStatus: "suspended" },
+			{ requireMfa: true, assuranceLevel: "aal1" },
+		] satisfies DbOptions[]) {
+			const { handle, rpcCalls } = await handlerWith(options);
+			expect((await handle(post(draftBody()))).status).toBe(403);
+			expect(mutations(rpcCalls)).toEqual([]);
+		}
+	});
+
+	it("never acknowledges RPC failure or an unconfirmed/mismatched stored source", async () => {
+		const valid = { id: DOCUMENT_ID, version: 1, source_sha256: sourceHash(VALID_DRAFT), updated_at: NOW };
+		for (const result of [
+			{ data: null, error: { code: "08006" } },
+			{ data: valid, error: { code: "08006" } },
+			{ data: null, error: null },
+			{ data: {}, error: null },
+			{ data: { ...valid, source_sha256: "0".repeat(64) }, error: null },
+			{ data: { ...valid, version: 2 }, error: null },
+			{ data: { ...valid, id: "not-a-uuid" }, error: null },
+			{ data: { ...valid, updated_at: "not-a-timestamp" }, error: null },
+		]) {
+			const { handle } = await handlerWith({ rpc: () => result });
+			const response = await handle(post(draftBody()));
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "policy_document_save_failed" });
+		}
+		const { handle } = await handlerWith({ rpc: () => { throw new Error("connection lost"); } });
+		const response = await handle(post(draftBody()));
+		expect(response.status).toBe(503);
+		expect((await response.json()).ok).not.toBe(true);
+	});
+});
+
 describe("policy-management handler - failure mapping", () => {
 	it("maps the recognised forbidden and invalid codes to 403 and 400", async () => {
 		for (const [code, status] of [["42501", 403], ["22023", 400]] as const) {
@@ -878,7 +1037,7 @@ describe("policy-management handler - tenant isolation", () => {
 			memberships: [{ tenant_id: TENANT, role: "owner", expires_at: null }],
 			teamPolicies: DOCUMENT_ROWS,
 		});
-		for (const action of ["read", "history", "adoption", "compile_document", "publish", "stage"]) {
+		for (const action of ["read", "history", "adoption", "compile_document", "compile_document_draft", "save_document_draft", "publish", "stage"]) {
 			const response = await handle(
 				post(stageBody({ action, tenant_id: OTHER_TENANT, target_version: 9 })),
 			);

@@ -11,6 +11,24 @@ export interface RuntimePolicyDocumentCompilation {
 	};
 }
 
+/** Compile and fingerprint the exact UTF-8 source, never a parsed/reserialized copy.
+ * The caller supplies the platform YAML parser (Deno's pinned npm parser at the
+ * Edge); the same source is passed unchanged to it and later to the CAS write.
+ */
+export async function compileRuntimePolicyDraft(
+	source: unknown,
+	parseYaml: (source: string) => unknown,
+): Promise<RuntimePolicyDocumentCompilation & { source_sha256: string }> {
+	if (typeof source !== "string") throw new Error("invalid_policy_document:content:must_be_string");
+	if (!source) throw new Error("policy_document_empty");
+	const bytes = new TextEncoder().encode(source);
+	if (bytes.byteLength > 65_536) throw new Error("policy_document_too_large");
+	const compilation = compileRuntimePolicyDocument(parseYaml(source));
+	const digest = await crypto.subtle.digest("SHA-256", bytes);
+	const source_sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+	return { ...compilation, source_sha256 };
+}
+
 type Rule = {
 	name: string;
 	condition: { mcp_server?: string; mcp_tool?: string };
