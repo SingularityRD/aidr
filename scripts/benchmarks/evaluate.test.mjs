@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import { MAX_ANALYSIS_MATRIX_CELLS, canonicalJson, evaluateBenchmark, validateCorpusStructure, validateSoldScope, assertSoldScopeCoverage } from "./evaluate.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
+const comparisonSpecPath = fileURLToPath(new URL("./comparison-spec.json", import.meta.url));
+const comparisonSpecBytes = readFileSync(comparisonSpecPath);
+const comparisonSpec = JSON.parse(comparisonSpecBytes.toString("utf8"));
 
 function fixture() {
 	const directory = mkdtempSync(join(tmpdir(), "aidr-benchmark-test-"));
@@ -55,6 +58,7 @@ function fixture() {
 		writeFileSync(observationsPath, observationBytes);
 		const payload = {
 			protocol_version: 1, corpus_sha256: hash(corpusBytes), observations_sha256: hash(observationBytes),
+			comparison_spec_sha256: hash(comparisonSpecBytes),
 			candidate_artifact_sha256: observations.products[0].artifact_sha256,
 			rule_author_id: corpus.rule_author_id, evaluator_id: "external-evaluator",
 			evaluator_role: "independent_evaluator", completed_at: "2026-09-13T00:00:00Z",
@@ -62,7 +66,7 @@ function fixture() {
 		};
 		const attestation = { schema_version: 1, payload, signature_base64: sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString("base64") };
 		if (evaluationOptions.signatureBase64 !== undefined) attestation.signature_base64 = evaluationOptions.signatureBase64;
-		return evaluateBenchmark({ corpus, observations, attestation, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }), corpusBytes, observationBytes, observationsPath, soldScope, trustedKeys: evaluationOptions.trustedKeys ?? null, splitManifest: evaluationOptions.splitManifest ?? null, splitManifestBytes: evaluationOptions.splitManifestBytes ?? null });
+		return evaluateBenchmark({ corpus, observations, attestation, comparisonSpec: evaluationOptions.comparisonSpec ?? comparisonSpec, comparisonSpecBytes: evaluationOptions.comparisonSpecBytes ?? comparisonSpecBytes, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }), corpusBytes, observationBytes, observationsPath, soldScope, trustedKeys: evaluationOptions.trustedKeys ?? null, splitManifest: evaluationOptions.splitManifest ?? null, splitManifestBytes: evaluationOptions.splitManifestBytes ?? null });
 	}
 	return { directory, corpus, observations, publicKey, privateKey, evaluate };
 }
@@ -187,11 +191,11 @@ test("attestation and analysis CLIs run end to end and reject changed signed inp
 		writeFileSync(privatePath, data.privateKey.export({ type: "pkcs8", format: "pem" }));
 		writeFileSync(publicPath, data.publicKey.export({ type: "spki", format: "pem" }));
 		const attest = spawnSync(process.execPath, [fileURLToPath(new URL("./attest.mjs", import.meta.url)),
-			"--corpus", corpusPath, "--observations", observationsPath,
+			"--corpus", corpusPath, "--observations", observationsPath, "--comparison-spec", comparisonSpecPath,
 			"--private-key", privatePath, "--evaluator-id", "external-evaluator", "--output", attestationPath], { encoding: "utf8" });
 		assert.equal(attest.status, 0, attest.stderr);
 		const command = [fileURLToPath(new URL("./evaluate.mjs", import.meta.url)),
-			"--corpus", corpusPath, "--observations", observationsPath,
+			"--corpus", corpusPath, "--observations", observationsPath, "--comparison-spec", comparisonSpecPath,
 			"--attestation", attestationPath, "--public-key", publicPath, "--output", reportPath];
 		const analyzed = spawnSync(process.execPath, command, { encoding: "utf8" });
 		assert.equal(analyzed.status, 0, analyzed.stderr);
@@ -567,9 +571,53 @@ test("competitor comparison cells are reason-coded unknown without fabricated va
 	const data = fixture();
 	try {
 		data.observations.products[1].comparison_unknown_reason = "not_authorized";
+		const accessEvidence = Buffer.from("synthetic evaluator access denial");
+		const accessEvidenceFile = "competitor-access-blockage.txt";
+		writeFileSync(join(data.directory, accessEvidenceFile), accessEvidence);
+		data.observations.products[1].comparison_access_blockage = { status: "blocked", reason: "not_authorized", evidence_path: accessEvidenceFile, evidence_sha256: hash(accessEvidence) };
 		data.observations.measurements = data.observations.measurements.filter((row) => row.product_id !== "competitor");
-		const cell = data.evaluate().comparison.competitor.malicious_prevention;
+		const report = data.evaluate();
+		const cell = report.comparison.competitor.malicious_prevention;
 		assert.deepEqual(cell, { status: "unknown", value: null, reason: "not_authorized" });
+		for (const metric of ["malicious_intervention", "benign_false_block", "benign_false_approval"]) assert.deepEqual(report.comparison.competitor.cells[metric], { status: "unknown", value: null, reason: "not_authorized" });
+		assert.deepEqual(report.comparison.competitor.access_blockage, { status: "blocked", reason: "not_authorized", evidence_path: accessEvidenceFile, evidence_sha256: hash(accessEvidence) });
+		assert.equal(report.comparison.competitor.complete_matrix, false);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("the frozen comparison specification is signed and tampering is rejected", () => {
+	const data = fixture();
+	try {
+		const report = data.evaluate();
+		assert.equal(report.comparison_spec.frozen, true);
+		assert.equal(report.comparison_spec.sha256, hash(comparisonSpecBytes));
+		const changed = { ...comparisonSpec, rule: `${comparisonSpec.rule} changed` };
+		const changedBytes = Buffer.from(JSON.stringify(changed));
+		assert.throws(() => data.evaluate(null, { comparisonSpec: changed, comparisonSpecBytes: changedBytes }), /comparison spec hash differs from signed attestation/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("an access-blocked competitor requires hash-bound evidence", () => {
+	const data = fixture();
+	try {
+		data.observations.products[1].comparison_unknown_reason = "not_available";
+		data.observations.measurements = data.observations.measurements.filter((row) => row.product_id !== "competitor");
+		assert.throws(() => data.evaluate(), /competitor access blockage evidence is required/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("complete_matrix counts every observed action but not absent cells", () => {
+	const data = fixture();
+	try {
+		data.observations.measurements = data.observations.measurements.filter((row) => !(row.case_id === "attack-dev" && row.product_id === "candidate" && row.trial === 1));
+		const report = data.evaluate();
+		assert.equal(report.matrix.expected_cells, 16);
+		assert.equal(report.matrix.observed_cells, 15);
+		assert.equal(report.matrix.missing_cells, 1);
+		assert.equal(report.matrix.all_cells_observed, false);
+		assert.equal(report.gates.complete_matrix, false);
+		assert.equal(report.coverage.candidate.overall.counts.missing, 1);
+		assert.deepEqual(report.comparison.competitor.malicious_prevention, { status: "measured", value: 1 });
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 

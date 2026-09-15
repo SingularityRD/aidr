@@ -3,11 +3,11 @@
   "$id": "https://singularityrd.example/schemas/benchmark-report-v1.json",
   "title": "AIDR T39 report (descriptive; evaluate.mjs is normative)",
   "type": "object",
-  "required": ["schema_version", "kind", "claim_status", "production_accepted", "corpus", "observations_sha256", "workload_id", "environment", "attestation", "coverage", "gates", "canonical_report_sha256"],
+  "required": ["schema_version", "kind", "claim_status", "production_accepted", "corpus", "comparison_spec", "observations_sha256", "workload_id", "environment", "attestation", "coverage", "gates", "canonical_report_sha256"],
   "properties": {
     "schema_version": { "const": 1 }, "kind": { "const": "aidr_independent_benchmark_analysis" },
     "claim_status": { "const": "EVIDENCE_REVIEW_REQUIRED" }, "production_accepted": { "const": false },
-    "corpus": { "type": "object" }, "observations_sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+    "corpus": { "type": "object" }, "comparison_spec": { "type": "object", "required": ["id", "schema_version", "frozen", "sha256"] }, "observations_sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
     "workload_id": { "type": "string" }, "environment": { "type": "object" }, "attestation": { "type": "object" },
     "coverage": { "type": "object" }, "gates": { "type": "object", "properties": { "independent_acceptance": { "const": false }, "attestation_trusted": { "type": "boolean" }, "holdout_frozen": { "type": "boolean" } } },
     "canonical_report_sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }

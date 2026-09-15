@@ -17,7 +17,10 @@ const SCOPE_DIMENSIONS = [
 	{ dimension: "surface", scopeField: "required_surfaces", caseField: "surface", label: "surface" },
 ];
 const SCOPE_POSTURES = new Set(["enforce", "observe", "unsupported"]);
-const COMPARISON_UNKNOWN_REASONS = new Set(["not_authorized", "not_available", "budget_blocked", "missing_measurements", "unsupported_product"]);
+const EXPECTED_COMPARISON_UNKNOWN_REASONS = ["not_authorized", "not_available", "budget_blocked", "missing_measurements", "unsupported_product"];
+const COMPARISON_UNKNOWN_REASONS = new Set(EXPECTED_COMPARISON_UNKNOWN_REASONS);
+const COMPARISON_ACCESS_BLOCKAGE_REASONS = new Set(["not_authorized", "not_available", "budget_blocked"]);
+const EXPECTED_COMPARISON_CELLS = ["malicious_prevention", "malicious_intervention", "benign_false_block", "benign_false_approval"];
 export const MAX_ANALYSIS_MATRIX_CELLS = 1_000_000;
 // Exactly one of these may appear on a case. They name the case it was derived from.
 const DERIVATION_FIELDS = ["derived_from_case_id", "development_derived_from"];
@@ -31,8 +34,8 @@ export const OBSERVATIONS_REQUIRED_FIELDS = ["schema_version", "workload_id", "e
 export const OBSERVATION_PRODUCT_REQUIRED_FIELDS = ["product_id", "version", "artifact_sha256"];
 export const MEASUREMENT_REQUIRED_FIELDS = ["case_id", "product_id", "trial", "action", "phase", "latency_ms", "raw_evidence_file", "raw_evidence_sha256"];
 export const ATTESTATION_REQUIRED_FIELDS = ["schema_version", "payload", "signature_base64"];
-export const ATTESTATION_PAYLOAD_REQUIRED_FIELDS = ["protocol_version", "corpus_sha256", "observations_sha256", "candidate_artifact_sha256", "rule_author_id", "evaluator_id", "evaluator_role", "completed_at"];
-export const REPORT_REQUIRED_FIELDS = ["schema_version", "kind", "claim_status", "production_accepted", "corpus", "observations_sha256", "workload_id", "environment", "attestation", "coverage", "gates", "canonical_report_sha256"];
+export const ATTESTATION_PAYLOAD_REQUIRED_FIELDS = ["protocol_version", "corpus_sha256", "observations_sha256", "comparison_spec_sha256", "candidate_artifact_sha256", "rule_author_id", "evaluator_id", "evaluator_role", "completed_at"];
+export const REPORT_REQUIRED_FIELDS = ["schema_version", "kind", "claim_status", "production_accepted", "corpus", "comparison_spec", "observations_sha256", "workload_id", "environment", "attestation", "coverage", "gates", "canonical_report_sha256"];
 
 function requireFields(value, fields, label) {
 	for (const field of fields) if (!(field in value)) fail(`${label}.${field} is required`);
@@ -78,6 +81,43 @@ export function canonicalJson(value) {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
 	if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 	return JSON.stringify(value);
+}
+
+export const COMPARISON_SPEC_REQUIRED_FIELDS = ["schema_version", "kind", "spec_id", "frozen", "cells", "unknown_reasons", "access_blockage", "rule"];
+
+// The comparison contract is a frozen allowlist, not evaluator-supplied metadata.  Its digest is
+// signed with the corpus and observations, while this structural check prevents a modified file
+// from silently adding a new metric or a new way to excuse an absent competitor result.
+export function validateComparisonSpec(value) {
+	object(value, "comparison spec");
+	requireFields(value, COMPARISON_SPEC_REQUIRED_FIELDS, "comparison spec");
+	if (value.schema_version !== 1) fail("unsupported comparison spec schema_version");
+	if (value.kind !== "aidr-benchmark-comparison-contract") fail("unsupported comparison spec kind");
+	const specId = safeId(value.spec_id, "comparison spec spec_id");
+	if (value.frozen !== true) fail("comparison spec must be frozen");
+	if (!Array.isArray(value.cells) || value.cells.length !== EXPECTED_COMPARISON_CELLS.length) fail("comparison spec cells must contain the frozen metric set");
+	const cells = value.cells.map((cell, index) => {
+		object(cell, `comparison spec cell ${index}`);
+		const id = safeId(cell.id, `comparison spec cell ${index} id`);
+		if (id !== EXPECTED_COMPARISON_CELLS[index]) fail(`comparison spec cell ${id} is not the frozen cell at position ${index}`);
+		if (cell.coverage_rate !== id) fail(`comparison spec cell ${id} must bind to its coverage rate`);
+		nonempty(cell.description, `comparison spec cell ${id} description`);
+		return id;
+	});
+	if (new Set(cells).size !== cells.length) fail("comparison spec contains duplicate cells");
+	const unknownReasons = object(value.unknown_reasons, "comparison spec unknown_reasons");
+	const reasonKeys = Object.keys(unknownReasons);
+	if (reasonKeys.length !== EXPECTED_COMPARISON_UNKNOWN_REASONS.length || reasonKeys.some((reason) => !COMPARISON_UNKNOWN_REASONS.has(reason)))
+		fail("comparison spec unknown_reasons differ from the frozen reason allowlist");
+	for (const reason of EXPECTED_COMPARISON_UNKNOWN_REASONS) nonempty(unknownReasons[reason], `comparison spec unknown reason ${reason}`);
+	const accessBlockage = object(value.access_blockage, "comparison spec access_blockage");
+	if (!Array.isArray(accessBlockage.required_for_reasons) || accessBlockage.required_for_reasons.length !== COMPARISON_ACCESS_BLOCKAGE_REASONS.size || accessBlockage.required_for_reasons.some((reason) => !COMPARISON_ACCESS_BLOCKAGE_REASONS.has(reason)))
+		fail("comparison spec access blockage reasons differ from the frozen reason allowlist");
+	nonempty(accessBlockage.evidence_path_field, "comparison spec access_blockage.evidence_path_field");
+	nonempty(accessBlockage.evidence_sha256_field, "comparison spec access_blockage.evidence_sha256_field");
+	nonempty(accessBlockage.rule, "comparison spec access_blockage.rule");
+	nonempty(value.rule, "comparison spec rule");
+	return { specId, cells, unknownReasons: new Set(reasonKeys), accessBlockageReasons: new Set(accessBlockage.required_for_reasons) };
 }
 
 function measuredMetric(value, observations) {
@@ -384,7 +424,38 @@ export function assertSoldScopeCoverage(corpus, soldScope) {
 	return scope;
 }
 
-function validateObservations(observations, cases, declaredTrials) {
+function validateComparisonAccessBlockage(product, id, comparisonSpec) {
+	const raw = product.comparison_access_blockage ?? product.competitor_access_blockage ?? product.access_blockage ?? product.comparison_access ?? product.comparison_access_blockage_evidence ?? product.access_blockage_evidence;
+	const declaredReason = product.comparison_unknown_reason;
+	if (declaredReason !== undefined && !comparisonSpec.unknownReasons.has(declaredReason)) fail(`invalid comparison_unknown_reason for ${id}`);
+	if (raw === undefined) {
+		if (declaredReason !== undefined && comparisonSpec.accessBlockageReasons.has(declaredReason))
+			fail(`competitor access blockage evidence is required for ${id} reason ${declaredReason}`);
+		return { reason: declaredReason ?? null, evidence: null };
+	}
+	const blockage = object(raw, `comparison access blockage for ${id}`);
+	if (blockage.status !== undefined && blockage.status !== "blocked") fail(`comparison access blockage for ${id} must have status blocked`);
+	const reason = blockage.reason ?? blockage.reason_code ?? declaredReason;
+	if (!comparisonSpec.unknownReasons.has(reason)) fail(`invalid comparison access blockage reason for ${id}`);
+	if (declaredReason !== undefined && declaredReason !== reason) fail(`comparison unknown reason does not match access blockage reason for ${id}`);
+	const evidencePath = blockage.evidence_path ?? blockage.evidence_file ?? blockage.path ?? blockage.file;
+	const evidenceSha = blockage.evidence_sha256 ?? blockage.evidence_hash ?? blockage.sha256;
+	if (comparisonSpec.accessBlockageReasons.has(reason) && (typeof evidencePath !== "string" || !evidencePath.trim())) fail(`competitor access blockage evidence_path is required for ${id}`);
+	if (evidencePath === undefined && evidenceSha === undefined) fail(`competitor access blockage evidence is required for ${id}`);
+	if (typeof evidencePath !== "string" || !evidencePath.trim()) fail(`comparison access blockage evidence_path for ${id} must be a nonempty string`);
+	const normalizedSha = assertSha(evidenceSha, `comparison access blockage evidence_sha256 for ${id}`);
+	return {
+		reason,
+		evidence: {
+			status: "blocked",
+			reason,
+			evidence_path: evidencePath.trim(),
+			evidence_sha256: normalizedSha,
+		},
+	};
+}
+
+function validateObservations(observations, cases, declaredTrials, comparisonSpec) {
 	object(observations, "observations");
 	requireFields(observations, OBSERVATIONS_REQUIRED_FIELDS, "observations");
 	if (observations.schema_version !== 1) fail("unsupported observations schema_version");
@@ -419,18 +490,22 @@ function validateObservations(observations, cases, declaredTrials) {
 	}
 	if (!Array.isArray(observations.products) || observations.products.length === 0) fail("products must be nonempty");
 	const products = new Map();
+	const accessBlockages = new Map();
 	for (const product of observations.products) {
 		object(product, "product");
 		requireFields(product, OBSERVATION_PRODUCT_REQUIRED_FIELDS, "product");
 		const id = safeId(product.product_id, "product_id");
 		if (products.has(id)) fail(`duplicate product_id: ${id}`);
-		if (product.comparison_unknown_reason !== undefined && !COMPARISON_UNKNOWN_REASONS.has(product.comparison_unknown_reason)) fail(`invalid comparison_unknown_reason for ${id}`);
+		const access = validateComparisonAccessBlockage(product, id, comparisonSpec);
 		nonempty(product.version, `version for ${id}`);
 		assertSha(product.artifact_sha256, `artifact_sha256 for ${id}`);
 		products.set(id, product);
+		accessBlockages.set(id, access);
 	}
 	const candidateId = safeId(observations.candidate_product_id, "candidate_product_id");
 	if (!products.has(candidateId)) fail("candidate_product_id is not in products");
+	const candidateAccess = accessBlockages.get(candidateId);
+	if (candidateAccess.reason !== null || candidateAccess.evidence !== null) fail("candidate product cannot declare a comparison unknown reason or access blockage");
 	let matrixCells = 0;
 	for (const entry of cases.values()) {
 		matrixCells += trialsByPartition[entry.partition] * products.size;
@@ -460,7 +535,7 @@ function validateObservations(observations, cases, declaredTrials) {
 		if (records.has(key)) fail(`duplicate measurement: ${caseId}/${productId}/${row.trial}`);
 		records.set(key, row);
 	}
-	return { products, candidateId, records, trialsByPartition, partitionTrialsDeclared, measurementBudget };
+	return { products, candidateId, records, trialsByPartition, partitionTrialsDeclared, measurementBudget, accessBlockages };
 }
 
 // A resource gate is true only when every completed candidate decision was measured for both fields.
@@ -486,6 +561,20 @@ function verifyEvidenceFiles(observations, observationsPath) {
 		if (seen.has(path)) fail("each measurement requires a distinct raw evidence file");
 		seen.add(path);
 		if (digest(readFileSync(path)) !== row.raw_evidence_sha256.toLowerCase()) fail(`raw evidence hash mismatch for ${row.case_id}/${row.product_id}/${row.trial}`);
+	}
+}
+
+function verifyAccessBlockageEvidence(accessBlockages, observationsPath) {
+	const base = realpathSync(dirname(observationsPath));
+	for (const [productId, blockage] of accessBlockages) {
+		if (blockage.evidence === null) continue;
+		const evidence = blockage.evidence;
+		if (isAbsolute(evidence.evidence_path)) fail(`comparison access blockage evidence path for ${productId} must be relative`);
+		const path = realpathSync(resolve(base, evidence.evidence_path));
+		const within = relative(base, path);
+		if (within === ".." || within.startsWith(`..${sep}`) || isAbsolute(within)) fail(`comparison access blockage evidence escapes observation directory for ${productId}`);
+		if (!statSync(path).isFile()) fail(`comparison access blockage evidence must be a regular file for ${productId}`);
+		if (digest(readFileSync(path)) !== evidence.evidence_sha256.toLowerCase()) fail(`comparison access blockage evidence hash mismatch for ${productId}`);
 	}
 }
 
@@ -522,7 +611,7 @@ function verifySplitManifest(splitManifest, splitManifestBytes, corpus, payload)
 	return true;
 }
 
-function verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, corpus, observations, trustedKeys = null) {
+function verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, comparisonSpecBytes, corpus, observations, trustedKeys = null) {
 	object(attestation, "attestation");
 	requireFields(attestation, ATTESTATION_REQUIRED_FIELDS, "attestation");
 	if (attestation.schema_version !== 1) fail("unsupported attestation schema_version");
@@ -531,6 +620,7 @@ function verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBy
 	if (payload.protocol_version !== 1) fail("unsupported benchmark protocol_version");
 	if (assertSha(payload.corpus_sha256, "attested corpus_sha256") !== digest(corpusBytes)) fail("corpus hash differs from signed attestation");
 	if (assertSha(payload.observations_sha256, "attested observations_sha256") !== digest(observationBytes)) fail("observations hash differs from signed attestation");
+	if (assertSha(payload.comparison_spec_sha256, "attested comparison_spec_sha256") !== digest(comparisonSpecBytes)) fail("comparison spec hash differs from signed attestation");
 	if (assertSha(payload.candidate_artifact_sha256, "attested candidate_artifact_sha256") !== observations.products.find((p) => p.product_id === observations.candidate_product_id).artifact_sha256.toLowerCase())
 		fail("candidate artifact differs from signed attestation");
 	if (nonempty(payload.rule_author_id, "attested rule_author_id") !== corpus.rule_author_id) fail("rule author mismatch");
@@ -554,7 +644,7 @@ function verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBy
 		trusted = true;
 	}
 	if (!verify(null, Buffer.from(JSON.stringify(payload)), key, signature)) fail("invalid evaluator signature");
-	return { evaluator_id: evaluatorId, completed_at: time, public_key_sha256: fingerprint, signing_key_id: payload.signing_key_id ?? null, trusted };
+	return { evaluator_id: evaluatorId, completed_at: time, public_key_sha256: fingerprint, signing_key_id: payload.signing_key_id ?? null, comparison_spec_sha256: payload.comparison_spec_sha256.toLowerCase(), trusted };
 }
 
 function classificationMetrics(rows, caseMap, allowRoc) {
@@ -659,16 +749,61 @@ function summarizeRows(rows, caseMap, allowRoc = false) {
 	};
 }
 
+function comparisonCell(metric, summary, explicitReason) {
+	const value = summary.rates[metric];
+	const reason = explicitReason ?? (summary.counts.missing > 0 || value === null ? "missing_measurements" : null);
+	if (reason !== null) return { status: "unknown", value: null, reason };
+	return { status: "measured", value };
+}
+
+function comparisonEntry(comparisonSpec, coverage, explicitReason, accessBlockage) {
+	const summaries = {
+		overall: coverage.overall,
+		by_partition: coverage.by_partition,
+		by_family: coverage.by_family,
+		by_connector: coverage.by_connector,
+		by_surface: coverage.by_surface,
+	};
+	const cells = Object.fromEntries(comparisonSpec.cells.map((metric) => [metric, comparisonCell(metric, coverage.overall, explicitReason)]));
+	const byDimension = Object.fromEntries(Object.entries(summaries).map(([dimension, summaryOrMap]) => {
+		if (dimension === "overall") return [dimension, cells];
+		return [dimension, Object.fromEntries(Object.entries(summaryOrMap).map(([name, summary]) => [name, Object.fromEntries(comparisonSpec.cells.map((metric) => [metric, comparisonCell(metric, summary, explicitReason)]))]))];
+	}));
+	const status = Object.values(cells).every((cell) => cell.status === "measured") ? "measured" : "unknown";
+	return {
+		status,
+		complete_matrix: coverage.overall.counts.missing === 0,
+		expected_cells: coverage.overall.counts.total,
+		observed_cells: coverage.overall.counts.total - coverage.overall.counts.missing,
+		access_blockage: accessBlockage,
+		cells,
+		by_dimension: byDimension,
+		by_partition: byDimension.by_partition,
+		by_family: byDimension.by_family,
+		by_connector: byDimension.by_connector,
+		by_surface: byDimension.by_surface,
+		// Keep the frozen cell ids addressable at the product level for consumers of v1.
+		...cells,
+	};
+}
+
 // soldScope is the validated sold scope from validateSoldScope, or null when no --scope-file was
 // supplied. Passing it asserts declared coverage and the per-item minimums before any report
 // exists; it never changes how an observation is scored.
-export function evaluateBenchmark({ corpus, observations, attestation, publicKeyPem, corpusBytes, observationBytes, observationsPath, soldScope = null, trustedKeys = null, splitManifest = null, splitManifestBytes = null, dutySeparationReceipt = null, dutySeparationReceiptBytes = null }) {
+export function evaluateBenchmark({ corpus, observations, attestation, publicKeyPem, corpusBytes, observationBytes, comparisonSpec, comparisonSpecBytes, observationsPath, soldScope = null, trustedKeys = null, splitManifest = null, splitManifestBytes = null, dutySeparationReceipt = null, dutySeparationReceiptBytes = null }) {
+	if (comparisonSpec === undefined || comparisonSpecBytes === undefined) fail("comparison spec and its bytes are required");
+	let parsedComparisonSpec;
+	try { parsedComparisonSpec = JSON.parse(Buffer.from(comparisonSpecBytes).toString("utf8")); } catch { fail("comparison spec bytes are not valid JSON"); }
+	if (canonicalJson(parsedComparisonSpec) !== canonicalJson(comparisonSpec)) fail("comparison spec object differs from its signed bytes");
+	const comparisonContract = validateComparisonSpec(parsedComparisonSpec);
+	const comparisonSpecSha256 = digest(comparisonSpecBytes);
 	if (soldScope !== null) assertSoldScopeCoverage(corpus, soldScope);
 	const { cases, declaredTrials, contamination, holdoutBlind } = validateCorpus(corpus);
-	const { products, candidateId, records, trialsByPartition, partitionTrialsDeclared, measurementBudget } = validateObservations(observations, cases, declaredTrials);
-	const signer = verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, corpus, observations, trustedKeys);
+	const { products, candidateId, records, trialsByPartition, partitionTrialsDeclared, measurementBudget, accessBlockages } = validateObservations(observations, cases, declaredTrials, comparisonContract);
+	const signer = verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, comparisonSpecBytes, corpus, observations, trustedKeys);
 	const holdoutFrozen = verifySplitManifest(splitManifest, splitManifestBytes, corpus, attestation.payload);
 	verifyEvidenceFiles(observations, observationsPath);
+	verifyAccessBlockageEvidence(accessBlockages, observationsPath);
 	// An evaluator cannot authorize its own spend. Budget authorization requires a separate
 	// externally verified budget-authority receipt, which is deliberately outside local execution.
 	const budgetAuthorized = false;
@@ -697,6 +832,7 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		claim_status: "EVIDENCE_REVIEW_REQUIRED",
 		production_accepted: false,
 		corpus: { id: corpus.corpus_id, version: corpus.version, provenance: corpus.provenance ?? null, sha256: digest(corpusBytes), cases: cases.size, partitions: [...new Set([...cases.values()].map((c) => c.partition))].sort() },
+		comparison_spec: { id: comparisonContract.specId, schema_version: parsedComparisonSpec.schema_version, frozen: parsedComparisonSpec.frozen, sha256: comparisonSpecSha256 },
 		scope: {
 			required_attack_families: corpus.scope.required_attack_families,
 			required_connectors: corpus.scope.required_connectors,
@@ -721,6 +857,7 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 			"A valid signature proves control of the evaluator key and input integrity; organizational independence and oracle quality require external review.",
 			"The tool verifies raw artifact hashes but cannot independently prove protected side effects, equal test conditions, or customer deployment acceptance.",
 			"Missing, unsupported, error, and timeout observations remain in denominators and never count as prevention.",
+			"A comparison cell is measured only when every case/product/trial matrix cell is observed; blocked competitor access remains null with its signed reason and evidence.",
 			"cpu_percent and rss_mb are optional per measurement; an absent value is reported as unmeasured (measured false, observations 0, null statistics) and is never reported as zero.",
 			"The holdout guard is fail-closed: a corpus with one case_id in both partitions, repeated normalized case content, a cross-partition derivation reference, an empty or single-oracle holdout, or an undeclared per-partition trial difference is rejected before any report exists.",
 		],
@@ -759,12 +896,19 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		};
 		if (productId !== candidateId) {
 			const missing = report.coverage[productId].overall.counts.missing;
-			const reason = product.comparison_unknown_reason ?? (missing > 0 ? "missing_measurements" : null);
-			report.comparison[productId] = reason === null
-				? { status: "measured", malicious_prevention: { status: "measured", value: report.coverage[productId].overall.rates.malicious_prevention } }
-				: { status: "unknown", malicious_prevention: { status: "unknown", value: null, reason } };
+			const access = accessBlockages.get(productId);
+			const reason = access.reason ?? (missing > 0 ? "missing_measurements" : null);
+			report.comparison[productId] = comparisonEntry(comparisonContract, report.coverage[productId], reason, access.evidence);
 		}
 	}
+	const expectedMatrixCells = [...cases.values()].reduce((total, entry) => total + trialsByPartition[entry.partition], 0) * products.size;
+	const observedMatrixCells = records.size;
+	report.matrix = {
+		expected_cells: expectedMatrixCells,
+		observed_cells: observedMatrixCells,
+		missing_cells: expectedMatrixCells - observedMatrixCells,
+		all_cells_observed: expectedMatrixCells === observedMatrixCells,
+	};
 	report.gates = {
 		development_and_holdout_present: report.corpus.partitions.includes("development") && report.corpus.partitions.includes("holdout"),
 		both_classes_in_each_partition: ["development", "holdout"].every((partition) => ["malicious", "benign"].every((oracle) => [...cases.values()].some((entry) => entry.partition === partition && entry.oracle === oracle))),
@@ -772,7 +916,8 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		// True means the sold-scope check ran and passed for this report; it is not a measurement.
 		sold_scope_checked: soldScope !== null,
 		competitor_in_same_record: products.size > 1,
-		complete_matrix: Object.values(report.coverage).every((p) => p.overall.counts.missing === 0),
+		complete_matrix: report.matrix.all_cells_observed,
+		all_matrix_cells_observed: report.matrix.all_cells_observed,
 		candidate_1000_measured_benign_calls_per_connector: [...new Set([...cases.values()].map((entry) => entry.connector))].every((connector) => {
 			let measured = 0;
 			for (const entry of cases.values()) if (entry.connector === connector && entry.oracle === "benign")
@@ -801,7 +946,7 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 
 function argsFromCli(argv) {
 	const args = {};
-	const valued = new Set(["--corpus", "--observations", "--attestation", "--public-key", "--scope-file", "--trusted-keys", "--split-manifest", "--duty-separation-receipt", "--reproduce", "--output"]);
+	const valued = new Set(["--corpus", "--observations", "--attestation", "--public-key", "--comparison-spec", "--scope-file", "--trusted-keys", "--split-manifest", "--duty-separation-receipt", "--reproduce", "--output"]);
 	for (let index = 0; index < argv.length; index += 1) {
 		const key = argv[index];
 		if (key === "--force") {
@@ -809,14 +954,14 @@ function argsFromCli(argv) {
 			args[key] = true;
 			continue;
 		}
-		if (!valued.has(key) || !argv[index + 1] || args[key]) fail("usage: node scripts/benchmarks/evaluate.mjs --corpus PATH --observations PATH --attestation PATH --public-key PATH [--scope-file PATH] [--trusted-keys PATH] [--split-manifest PATH] [--duty-separation-receipt PATH] [--reproduce REPORT] [--output PATH] [--force]");
+		if (!valued.has(key) || !argv[index + 1] || args[key]) fail("usage: node scripts/benchmarks/evaluate.mjs --corpus PATH --observations PATH --attestation PATH --public-key PATH --comparison-spec PATH [--scope-file PATH] [--trusted-keys PATH] [--split-manifest PATH] [--duty-separation-receipt PATH] [--reproduce REPORT] [--output PATH] [--force]");
 		args[key] = argv[++index];
 	}
 	if (!args["--corpus"]) fail("missing --corpus");
 	// With --scope-file the coverage verdict is reported before the signed inputs are needed, so a
 	// corpus that does not cover the sold scope fails with its real reason instead of "cases must
 	// be nonempty". Without --scope-file every flag behaves exactly as before.
-	if (!args["--scope-file"]) for (const key of ["--observations", "--attestation", "--public-key"]) if (!args[key]) fail(`missing ${key}`);
+	if (!args["--scope-file"]) for (const key of ["--observations", "--attestation", "--public-key", "--comparison-spec"]) if (!args[key]) fail(`missing ${key}`);
 	return args;
 }
 
@@ -831,15 +976,17 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 			// Coverage is asserted before anything else is read, so an empty or partial corpus
 			// fails closed naming the item it misses rather than reporting a structural error.
 			assertSoldScopeCoverage(corpus.value, soldScope);
-			for (const key of ["--observations", "--attestation", "--public-key"]) if (!args[key]) fail(`missing ${key}`);
+			for (const key of ["--observations", "--attestation", "--public-key", "--comparison-spec"]) if (!args[key]) fail(`missing ${key}`);
 		}
 		const observationsPath = resolve(args["--observations"]);
 		const observations = jsonFile(observationsPath);
+		const comparisonSpec = jsonFile(resolve(args["--comparison-spec"]));
 		const attestation = jsonFile(resolve(args["--attestation"])).value;
 		const split = args["--split-manifest"] ? jsonFile(resolve(args["--split-manifest"])) : null;
 		const receipt = args["--duty-separation-receipt"] ? jsonFile(resolve(args["--duty-separation-receipt"])) : null;
 		const report = evaluateBenchmark({
 			corpus: corpus.value, observations: observations.value, attestation,
+			comparisonSpec: comparisonSpec.value, comparisonSpecBytes: comparisonSpec.bytes,
 			publicKeyPem: readFileSync(resolve(args["--public-key"]), "utf8"),
 			corpusBytes: corpus.bytes, observationBytes: observations.bytes, observationsPath, soldScope,
 			trustedKeys: args["--trusted-keys"] ? jsonFile(resolve(args["--trusted-keys"])).value : null,

@@ -1,6 +1,30 @@
 {
   "schema_version": 1,
   "kind": "aidr-benchmark-comparison-contract",
+  "spec_id": "t39-comparison-v1",
+  "frozen": true,
+  "cells": [
+    {
+      "id": "malicious_prevention",
+      "description": "Blocked malicious calls with no observed protected side effect divided by all malicious calls.",
+      "coverage_rate": "malicious_prevention"
+    },
+    {
+      "id": "malicious_intervention",
+      "description": "Blocked or held malicious calls divided by all malicious calls.",
+      "coverage_rate": "malicious_intervention"
+    },
+    {
+      "id": "benign_false_block",
+      "description": "Blocked benign calls divided by all benign calls.",
+      "coverage_rate": "benign_false_block"
+    },
+    {
+      "id": "benign_false_approval",
+      "description": "Held benign calls divided by all benign calls.",
+      "coverage_rate": "benign_false_approval"
+    }
+  ],
   "unknown_reasons": {
     "not_authorized": "The evaluator lacks authorization to run the competitor.",
     "not_available": "The competitor artifact or service was unavailable.",
@@ -8,5 +32,11 @@
     "missing_measurements": "One or more required case/trial cells have no observation.",
     "unsupported_product": "The product does not support the measured connector or surface."
   },
-  "rule": "Unknown cells remain null and reason-coded; this harness never estimates or substitutes competitor results."
+  "access_blockage": {
+    "required_for_reasons": ["not_authorized", "not_available", "budget_blocked"],
+    "evidence_path_field": "evidence_path",
+    "evidence_sha256_field": "evidence_sha256",
+    "rule": "An access-blocked competitor cell remains unknown and requires a relative, hash-bound evidence file; the evaluator never fabricates a competitor result."
+  },
+  "rule": "Unknown cells remain null and reason-coded; this harness never estimates or substitutes competitor results. A comparison is measured only when every case/product/trial cell is observed and the corresponding product is not explicitly unknown."
 }
