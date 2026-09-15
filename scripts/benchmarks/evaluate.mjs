@@ -19,6 +19,8 @@ const SCOPE_DIMENSIONS = [
 const SCOPE_POSTURES = new Set(["enforce", "observe", "unsupported"]);
 const COMPARISON_UNKNOWN_REASONS = new Set(["not_authorized", "not_available", "budget_blocked", "missing_measurements", "unsupported_product"]);
 export const MAX_ANALYSIS_MATRIX_CELLS = 1_000_000;
+const MAX_SAFE_NONNEGATIVE = Number.MAX_SAFE_INTEGER;
+const MEASUREMENT_BUDGET_REFUSAL = "authorization_not_verified";
 // Exactly one of these may appear on a case. They name the case it was derived from.
 const DERIVATION_FIELDS = ["derived_from_case_id", "development_derived_from"];
 const RESOURCE_FIELDS = ["cpu_percent", "rss_mb"];
@@ -52,6 +54,14 @@ function guardFail(reason, subject, detail) {
 // dimension item that is missing or short, and the requirement it fails.
 function scopeFail(reason, subject, detail) {
 	fail(`sold scope check failed [${reason}] ${subject}: ${detail}`);
+}
+
+function budgetFail(reason, detail) {
+	fail(`measurement budget refused [${reason}] ${detail}`);
+}
+
+function analysisCapFail(detail) {
+	fail(`analysis matrix exceeds hard safety cap of ${MAX_ANALYSIS_MATRIX_CELLS} case/product/trial cells [analysis_matrix_cap_exceeded] ${detail}`);
 }
 
 function object(value, label) {
@@ -102,6 +112,34 @@ function finiteNonnegative(value, label) {
 function positiveInteger(value, label) {
 	if (!Number.isSafeInteger(value) || value < 1) fail(`${label} must be a positive integer`);
 	return value;
+}
+
+function safeBudgetNumber(value, label, reason = "measurement_budget_number_invalid") {
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > MAX_SAFE_NONNEGATIVE)
+		budgetFail(reason, `${label} must be a finite nonnegative number no greater than ${MAX_SAFE_NONNEGATIVE}`);
+	return value;
+}
+
+function safeBudgetInteger(value, label, reason = "measurement_budget_integer_invalid") {
+	if (!Number.isSafeInteger(value) || value < 1)
+		budgetFail(reason, `${label} must be a positive safe integer`);
+	return value;
+}
+
+function safeMultiply(left, right, label) {
+	if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right) || left < 0 || right < 0)
+		analysisCapFail(`${label} is not a nonnegative safe integer product`);
+	if (left !== 0 && right > Math.floor(MAX_ANALYSIS_MATRIX_CELLS / left))
+		analysisCapFail(`${label} would exceed the cap before analysis loops begin`);
+	return left * right;
+}
+
+function safeAdd(left, right, label) {
+	if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right) || left < 0 || right < 0)
+		analysisCapFail(`${label} is not a nonnegative safe integer sum`);
+	if (right > MAX_ANALYSIS_MATRIX_CELLS - left)
+		analysisCapFail(`${label} would exceed the cap before analysis loops begin`);
+	return left + right;
 }
 
 // Resource fields are optional per measurement. Absence is recorded as unmeasured, never as zero.
@@ -210,8 +248,11 @@ export function validateCorpusStructure(corpus) {
 export function validateCorpus(corpus) {
 	const scope = validateCorpusStructure(corpus);
 	if (!Array.isArray(corpus.cases) || corpus.cases.length === 0) fail("corpus.cases must be nonempty");
+	if (corpus.cases.length > MAX_ANALYSIS_MATRIX_CELLS)
+		analysisCapFail(`corpus declares ${corpus.cases.length} cases before analysis loops begin`);
 	const declaredTrials = corpus.trials_per_case_by_partition === undefined ? null : declaredPartitionTrials(corpus.trials_per_case_by_partition, "corpus.trials_per_case_by_partition");
 	const cases = new Map();
+	const caseCounts = { development: 0, holdout: 0 };
 	const contentShaById = new Map();
 	const contentOwner = new Map();
 	const derivedById = new Map();
@@ -238,6 +279,7 @@ export function validateCorpus(corpus) {
 		contentShaById.set(id, contentSha);
 		derivedById.set(id, derivationReference(entry));
 		cases.set(id, entry);
+		caseCounts[entry.partition] += 1;
 	}
 	// Recompute overlap and derivation from the raw case list so the reported gates stay honest
 	// even if a rejection above is ever relaxed.
@@ -269,6 +311,7 @@ export function validateCorpus(corpus) {
 		if (!holdout.some((entry) => entry.oracle === oracle)) guardFail("holdout_single_oracle_class", "partition holdout", `the holdout contains no ${oracle} case`);
 	return {
 		cases,
+		caseCounts,
 		declaredTrials,
 		contamination,
 		holdoutBlind: {
@@ -384,7 +427,58 @@ export function assertSoldScopeCoverage(corpus, soldScope) {
 	return scope;
 }
 
-function validateObservations(observations, cases, declaredTrials) {
+function validateMeasurementBudget(value) {
+	const budget = object(value, "measurement_budget");
+	if (typeof budget.authorization_ref !== "string" || !budget.authorization_ref.trim())
+		budgetFail("measurement_budget_authorization_ref_missing", "measurement_budget.authorization_ref is required");
+	const authorizationRef = budget.authorization_ref.trim();
+	if (authorizationRef !== budget.authorization_ref || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(authorizationRef))
+		budgetFail("measurement_budget_authorization_ref_invalid", "measurement_budget.authorization_ref must be an opaque ASCII identifier");
+	if (typeof budget.currency !== "string" || !budget.currency.trim())
+		budgetFail("measurement_budget_currency_invalid", "measurement_budget.currency must be a nonempty string");
+	const currency = budget.currency.trim();
+	if (currency !== budget.currency) budgetFail("measurement_budget_currency_invalid", "measurement_budget.currency must not have surrounding whitespace");
+
+	const hasAmount = budget.amount !== undefined;
+	const hasLegacyCeiling = budget.ceiling !== undefined;
+	if (!hasAmount && !hasLegacyCeiling)
+		budgetFail("measurement_budget_amount_missing", "measurement_budget.amount is required");
+	const amount = safeBudgetNumber(hasAmount ? budget.amount : budget.ceiling, "measurement_budget.amount", "measurement_budget_amount_invalid");
+	const ceiling = hasLegacyCeiling
+		? safeBudgetNumber(budget.ceiling, "measurement_budget.ceiling", "measurement_budget_ceiling_invalid")
+		: amount;
+	if (hasAmount && hasLegacyCeiling && amount !== ceiling)
+		budgetFail("measurement_budget_amount_mismatch", "measurement_budget.amount and measurement_budget.ceiling must agree");
+	const spent = budget.spent === undefined || budget.spent === null
+		? null
+		: safeBudgetNumber(budget.spent, "measurement_budget.spent", "measurement_budget_spent_invalid");
+	if (spent !== null && spent > amount)
+		fail("measurement budget spent exceeds ceiling [measurement_budget_spent_exceeds_ceiling]");
+
+	const hasNewCeilings = hasAmount || budget.trials !== undefined || budget.host_minutes !== undefined;
+	const trials = budget.trials === undefined
+		? null
+		: safeBudgetInteger(budget.trials, "measurement_budget.trials", "measurement_budget_trials_invalid");
+	const hostMinutes = budget.host_minutes === undefined
+		? null
+		: safeBudgetNumber(budget.host_minutes, "measurement_budget.host_minutes", "measurement_budget_host_minutes_invalid");
+	if (hasNewCeilings && trials === null)
+		budgetFail("measurement_budget_trials_missing", "measurement_budget.trials is required with amount and host_minutes");
+	if (hasNewCeilings && hostMinutes === null)
+		budgetFail("measurement_budget_host_minutes_missing", "measurement_budget.host_minutes is required with amount and trials");
+	return {
+		authorization_ref: authorizationRef,
+		currency,
+		amount,
+		trials,
+		host_minutes: hostMinutes,
+		// Legacy names remain in the normalized report for reproducibility with v1 records.
+		ceiling,
+		spent,
+	};
+}
+
+function validateObservations(observations, cases, caseCounts, declaredTrials) {
 	object(observations, "observations");
 	requireFields(observations, OBSERVATIONS_REQUIRED_FIELDS, "observations");
 	if (observations.schema_version !== 1) fail("unsupported observations schema_version");
@@ -393,17 +487,7 @@ function validateObservations(observations, cases, declaredTrials) {
 	for (const field of ["environment_id", "os", "hardware", "runtime", "region", "concurrency", "workload_description"])
 		nonempty(environment[field], `environment.${field}`);
 	if (!Number.isSafeInteger(observations.trials_per_case) || observations.trials_per_case < 1) fail("trials_per_case must be a positive integer");
-	let measurementBudget = null;
-	if (observations.measurement_budget !== undefined) {
-		const budget = object(observations.measurement_budget, "measurement_budget");
-		measurementBudget = {
-			currency: nonempty(budget.currency, "measurement_budget.currency"),
-			ceiling: finiteNonnegative(budget.ceiling, "measurement_budget.ceiling"),
-			spent: finiteNonnegative(budget.spent, "measurement_budget.spent"),
-			authorization_ref: budget.authorization_ref === null || budget.authorization_ref === undefined ? null : safeId(budget.authorization_ref, "measurement_budget.authorization_ref"),
-		};
-		if (measurementBudget.spent > measurementBudget.ceiling) fail("measurement budget spent exceeds ceiling");
-	}
+	const measurementBudget = observations.measurement_budget === undefined ? null : validateMeasurementBudget(observations.measurement_budget);
 	const trialsByPartition = observations.trials_per_case_by_partition === undefined
 		? { development: observations.trials_per_case, holdout: observations.trials_per_case }
 		: declaredPartitionTrials(observations.trials_per_case_by_partition, "observations.trials_per_case_by_partition");
@@ -418,6 +502,19 @@ function validateObservations(observations, cases, declaredTrials) {
 		}
 	}
 	if (!Array.isArray(observations.products) || observations.products.length === 0) fail("products must be nonempty");
+	if (measurementBudget !== null && measurementBudget.trials !== null)
+		for (const partition of PARTITIONS)
+			if (trialsByPartition[partition] > measurementBudget.trials)
+				budgetFail("measurement_budget_trials_exceeds_ceiling", `partition ${partition} uses ${trialsByPartition[partition]} trials but the authorized ceiling is ${measurementBudget.trials}`);
+	const potentialPerCaseCells = {
+		development: safeMultiply(trialsByPartition.development, observations.products.length, "development trials/products"),
+		holdout: safeMultiply(trialsByPartition.holdout, observations.products.length, "holdout trials/products"),
+	};
+	safeAdd(
+		safeMultiply(caseCounts.development, potentialPerCaseCells.development, "development cases/trials/products"),
+		safeMultiply(caseCounts.holdout, potentialPerCaseCells.holdout, "holdout cases/trials/products"),
+		"potential analysis matrix",
+	);
 	const products = new Map();
 	for (const product of observations.products) {
 		object(product, "product");
@@ -431,12 +528,20 @@ function validateObservations(observations, cases, declaredTrials) {
 	}
 	const candidateId = safeId(observations.candidate_product_id, "candidate_product_id");
 	if (!products.has(candidateId)) fail("candidate_product_id is not in products");
-	let matrixCells = 0;
-	for (const entry of cases.values()) {
-		matrixCells += trialsByPartition[entry.partition] * products.size;
-		if (!Number.isSafeInteger(matrixCells) || matrixCells > MAX_ANALYSIS_MATRIX_CELLS) fail(`analysis matrix exceeds hard safety cap of ${MAX_ANALYSIS_MATRIX_CELLS} case/product/trial cells`);
-	}
+	const perCaseCells = {
+		development: safeMultiply(trialsByPartition.development, products.size, "development trials/products"),
+		holdout: safeMultiply(trialsByPartition.holdout, products.size, "holdout trials/products"),
+	};
+	const matrixCells = safeAdd(
+		safeMultiply(caseCounts.development, perCaseCells.development, "development cases/trials/products"),
+		safeMultiply(caseCounts.holdout, perCaseCells.holdout, "holdout cases/trials/products"),
+		"total analysis matrix",
+	);
+	if (measurementBudget !== null && measurementBudget.trials !== null && matrixCells > measurementBudget.trials)
+		budgetFail("measurement_budget_trials_exceeds_ceiling", `analysis requires ${matrixCells} trial cells but the authorized ceiling is ${measurementBudget.trials}`);
 	if (!Array.isArray(observations.measurements)) fail("measurements must be an array");
+	if (observations.measurements.length > matrixCells)
+		analysisCapFail(`observations contain ${observations.measurements.length} rows for a ${matrixCells}-cell matrix`);
 	const records = new Map();
 	for (const row of observations.measurements) {
 		object(row, "measurement");
@@ -664,8 +769,8 @@ function summarizeRows(rows, caseMap, allowRoc = false) {
 // exists; it never changes how an observation is scored.
 export function evaluateBenchmark({ corpus, observations, attestation, publicKeyPem, corpusBytes, observationBytes, observationsPath, soldScope = null, trustedKeys = null, splitManifest = null, splitManifestBytes = null, dutySeparationReceipt = null, dutySeparationReceiptBytes = null }) {
 	if (soldScope !== null) assertSoldScopeCoverage(corpus, soldScope);
-	const { cases, declaredTrials, contamination, holdoutBlind } = validateCorpus(corpus);
-	const { products, candidateId, records, trialsByPartition, partitionTrialsDeclared, measurementBudget } = validateObservations(observations, cases, declaredTrials);
+	const { cases, caseCounts, declaredTrials, contamination, holdoutBlind } = validateCorpus(corpus);
+	const { products, candidateId, records, trialsByPartition, partitionTrialsDeclared, measurementBudget } = validateObservations(observations, cases, caseCounts, declaredTrials);
 	const signer = verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, corpus, observations, trustedKeys);
 	const holdoutFrozen = verifySplitManifest(splitManifest, splitManifestBytes, corpus, attestation.payload);
 	verifyEvidenceFiles(observations, observationsPath);
@@ -712,8 +817,8 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		trials_per_case_by_partition: trialsByPartition,
 		attestation: signer,
 		measurement_budget: measurementBudget === null
-			? { status: "BLOCKED_EXTERNAL", measured: false, authorized: false, authorization_ref: null, authorization_verified: false, ceiling: null, spent: null, currency: null }
-			: { status: "BLOCKED_EXTERNAL", measured: true, authorized: budgetAuthorized, authorization_ref: measurementBudget.authorization_ref, authorization_verified: false, ceiling: measurementBudget.ceiling, spent: measurementBudget.spent, currency: measurementBudget.currency },
+			? { status: "BLOCKED_EXTERNAL", refusal_reason: MEASUREMENT_BUDGET_REFUSAL, measured: false, authorized: false, authorization_ref: null, authorization_verified: false, amount: null, trials: null, host_minutes: null, ceiling: null, spent: null, currency: null }
+			: { status: "BLOCKED_EXTERNAL", refusal_reason: MEASUREMENT_BUDGET_REFUSAL, measured: true, authorized: budgetAuthorized, authorization_ref: measurementBudget.authorization_ref, authorization_verified: false, amount: measurementBudget.amount, trials: measurementBudget.trials, host_minutes: measurementBudget.host_minutes, ceiling: measurementBudget.ceiling, spent: measurementBudget.spent, currency: measurementBudget.currency },
 		duty_separation: { receipt_present: dutySeparationReceipt !== null, signed_and_bound: dutySeparationBound, independent: dutySeparationBound },
 		comparison: Object.create(null),
 		coverage: Object.create(null),
@@ -723,6 +828,7 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 			"Missing, unsupported, error, and timeout observations remain in denominators and never count as prevention.",
 			"cpu_percent and rss_mb are optional per measurement; an absent value is reported as unmeasured (measured false, observations 0, null statistics) and is never reported as zero.",
 			"The holdout guard is fail-closed: a corpus with one case_id in both partitions, repeated normalized case content, a cross-partition derivation reference, an empty or single-oracle holdout, or an undeclared per-partition trial difference is rejected before any report exists.",
+			"Measurement-budget authorization is an external boundary: authorization_ref is opaque evidence only, authorization_verified and production_accepted remain false, and the declared amount, trials, and host_minutes ceilings do not constitute customer approval.",
 		],
 	};
 	// Recorded only when a sold scope was supplied. `covered: true` means the declared coverage

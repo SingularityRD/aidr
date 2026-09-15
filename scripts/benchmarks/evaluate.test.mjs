@@ -555,11 +555,55 @@ test("trust, customer and budget gates default closed; unknown keys and malforme
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 
+test("measurement budgets validate all external ceilings and stay unverified", () => {
+	const data = fixture();
+	try {
+		data.observations.measurement_budget = {
+			authorization_ref: "budget-ticket-2026",
+			currency: "USD",
+			amount: 100,
+			trials: 16,
+			host_minutes: 15.5,
+		};
+		const report = data.evaluate();
+		assert.deepEqual(report.measurement_budget, {
+			status: "BLOCKED_EXTERNAL",
+			refusal_reason: "authorization_not_verified",
+			measured: true,
+			authorized: false,
+			authorization_ref: "budget-ticket-2026",
+			authorization_verified: false,
+			amount: 100,
+			trials: 16,
+			host_minutes: 15.5,
+			ceiling: 100,
+			spent: null,
+			currency: "USD",
+		});
+		assert.equal(report.production_accepted, false);
+		for (const [field, value, reason] of [
+			["authorization_ref", "", "measurement_budget_authorization_ref_missing"],
+			["currency", "", "measurement_budget_currency_invalid"],
+			["amount", Number.NaN, "measurement_budget_amount_invalid"],
+			["trials", Number.POSITIVE_INFINITY, "measurement_budget_trials_invalid"],
+			["host_minutes", -1, "measurement_budget_host_minutes_invalid"],
+		]) {
+			data.observations.measurement_budget[field] = value;
+			assert.throws(() => data.evaluate(), new RegExp(`\\[${reason}\\]`));
+			data.observations.measurement_budget[field] = { authorization_ref: "budget-ticket-2026", currency: "USD", amount: 100, trials: 16, host_minutes: 15.5 }[field];
+		}
+		data.observations.measurement_budget.trials = 1;
+		assert.throws(() => data.evaluate(), /\[measurement_budget_trials_exceeds_ceiling\]/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
 test("analysis matrix has a hard total-trial safety cap", () => {
 	const data = fixture();
 	try {
 		data.observations.trials_per_case = Math.floor(MAX_ANALYSIS_MATRIX_CELLS / (data.corpus.cases.length * data.observations.products.length)) + 1;
 		assert.throws(() => data.evaluate(), /analysis matrix exceeds hard safety cap/);
+		data.observations.trials_per_case = Number.MAX_SAFE_INTEGER;
+		assert.throws(() => data.evaluate(), /\[analysis_matrix_cap_exceeded\]/);
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 
