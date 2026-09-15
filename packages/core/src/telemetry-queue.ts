@@ -961,7 +961,12 @@ export interface TelemetryLossSummary {
 	/** `queued` when anything is pending, `idle` when nothing is, `unavailable` when unreadable. */
 	state: "idle" | "queued" | "unavailable";
 	/** Per-namespace detail, so a single broken queue cannot hide behind a total. */
-	namespaces: Array<{ namespace: string; pendingEvents: number; lostTotal: number; state: string }>;
+	namespaces: Array<{
+		namespace: string;
+		pendingEvents: number;
+		lostTotal: number;
+		state: "ok" | "degraded" | "unavailable";
+	}>;
 }
 
 /**
@@ -997,6 +1002,17 @@ export async function readTelemetryLossSummary(
 	for (const namespace of namespaces) {
 		try {
 			const queue = new DurableTelemetryQueue({ directory: join(root, namespace), now });
+			// `readinessEvidence()` deliberately collapses every non-healthy result
+			// into `degraded` for the deployment monitor contract. Status needs to
+			// retain the stronger distinction: a corrupt or locked WAL is unknown,
+			// not an empty queue.
+			const status = await queue.inspect();
+			if (status.state === "unavailable") {
+				unreadable = true;
+				detail.push({ namespace, pendingEvents: 0, lostTotal: 0, state: "unavailable" });
+				continue;
+			}
+
 			const evidence = await queue.readinessEvidence();
 			pendingEvents += evidence.depth;
 			lostTotal += evidence.failed_jobs;

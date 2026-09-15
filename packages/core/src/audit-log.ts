@@ -382,8 +382,10 @@ export async function logResponseActions(
 	if (!config.enabled || actions.length === 0) return;
 	try {
 		await appendEntry(config, buildResponseActionEntry(sessionId, toolName, verdict, actions));
-	} catch {
-		// Fail-open: a logging error must not turn into a hook failure.
+	} catch (error) {
+		// Fail-open: a logging error must not turn into a hook failure, but the
+		// dropped record must remain visible to `aidr status`.
+		recordAuditWriteFailure(error);
 	}
 }
 
@@ -406,8 +408,10 @@ export async function logAllowedResponseActions(
 			config,
 			buildAllowedResponseActionEntry(sessionId, toolName, verdict, actions),
 		);
-	} catch {
-		// Fail-open: a logging error must not turn into a hook failure.
+	} catch (error) {
+		// Fail-open: a logging error must not turn into a hook failure, but the
+		// dropped record must remain visible to `aidr status`.
+		recordAuditWriteFailure(error);
 	}
 }
 
@@ -430,8 +434,9 @@ export async function logPluginScan(
 
 	try {
 		await appendEntry(config, entry);
-	} catch {
-		// Fail-open
+	} catch (error) {
+		// Fail-open: preserve the scan result while exposing the dropped record.
+		recordAuditWriteFailure(error);
 	}
 }
 
@@ -443,8 +448,9 @@ export async function logIncident(
 
 	try {
 		await appendEntry(config, entry);
-	} catch {
-		// Fail-open
+	} catch (error) {
+		// Fail-open: preserve the incident handling path while exposing the loss.
+		recordAuditWriteFailure(error);
 	}
 }
 
