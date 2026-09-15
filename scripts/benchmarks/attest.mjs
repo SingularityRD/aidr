@@ -3,6 +3,7 @@
 import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { validateComparisonSpec } from "./evaluate.mjs";
 
 function fail(message) { throw new Error(message); }
 function sha(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
@@ -23,11 +24,11 @@ function optionMap(argv) {
 	const options = {};
 	for (let index = 0; index < argv.length; index += 2) {
 		const key = argv[index];
-		if (!["--corpus", "--observations", "--private-key", "--evaluator-id", "--split-manifest", "--signing-key-id", "--operating-point", "--output"].includes(key) || !argv[index + 1] || options[key])
-			fail("usage: node scripts/benchmarks/attest.mjs --corpus PATH --observations PATH --private-key PATH --evaluator-id ID [--split-manifest PATH] [--signing-key-id ID] [--operating-point 0..1] --output PATH");
+		if (!["--corpus", "--observations", "--comparison-spec", "--private-key", "--evaluator-id", "--split-manifest", "--signing-key-id", "--operating-point", "--output"].includes(key) || !argv[index + 1] || options[key])
+			fail("usage: node scripts/benchmarks/attest.mjs --corpus PATH --observations PATH --comparison-spec PATH --private-key PATH --evaluator-id ID [--split-manifest PATH] [--signing-key-id ID] [--operating-point 0..1] --output PATH");
 		options[key] = argv[index + 1];
 	}
-	for (const key of ["--corpus", "--observations", "--private-key", "--evaluator-id", "--output"]) if (!options[key]) fail(`missing ${key}`);
+	for (const key of ["--corpus", "--observations", "--comparison-spec", "--private-key", "--evaluator-id", "--output"]) if (!options[key]) fail(`missing ${key}`);
 	return options;
 }
 
@@ -35,6 +36,9 @@ try {
 	const options = optionMap(process.argv.slice(2));
 	const corpusBytes = readFileSync(resolve(options["--corpus"]));
 	const observationBytes = readFileSync(resolve(options["--observations"]));
+	const comparisonSpecBytes = readFileSync(resolve(options["--comparison-spec"]));
+	const comparisonSpec = JSON.parse(comparisonSpecBytes.toString("utf8"));
+	validateComparisonSpec(comparisonSpec);
 	const corpus = JSON.parse(corpusBytes.toString("utf8"));
 	const observations = JSON.parse(observationBytes.toString("utf8"));
 	const evaluatorId = safeId(options["--evaluator-id"], "evaluator identity");
@@ -48,6 +52,7 @@ try {
 		protocol_version: 1,
 		corpus_sha256: sha(corpusBytes),
 		observations_sha256: sha(observationBytes),
+		comparison_spec_sha256: sha(comparisonSpecBytes),
 		candidate_artifact_sha256: candidate.artifact_sha256.toLowerCase(),
 		rule_author_id: corpus.rule_author_id,
 		evaluator_id: evaluatorId,

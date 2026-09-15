@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-	ATTESTATION_PAYLOAD_REQUIRED_FIELDS, ATTESTATION_REQUIRED_FIELDS, CORPUS_CASE_REQUIRED_FIELDS,
-	CORPUS_REQUIRED_FIELDS, MEASUREMENT_REQUIRED_FIELDS, OBSERVATION_PRODUCT_REQUIRED_FIELDS,
-	OBSERVATIONS_REQUIRED_FIELDS, REPORT_REQUIRED_FIELDS, assertSoldScopeCoverage, validateCorpus,
-	validateSoldScope,
+	ATTESTATION_PAYLOAD_REQUIRED_FIELDS, ATTESTATION_REQUIRED_FIELDS, COMPARISON_SPEC_REQUIRED_FIELDS,
+	CORPUS_CASE_REQUIRED_FIELDS, CORPUS_REQUIRED_FIELDS, MEASUREMENT_REQUIRED_FIELDS,
+	OBSERVATION_PRODUCT_REQUIRED_FIELDS, OBSERVATIONS_REQUIRED_FIELDS, REPORT_REQUIRED_FIELDS,
+	assertSoldScopeCoverage, validateComparisonSpec, validateCorpus, validateSoldScope,
 } from "./evaluate.mjs";
 
 const directory = fileURLToPath(new URL(".", import.meta.url));
@@ -20,6 +20,7 @@ test("descriptive schemas mirror evaluator required-field constants", () => {
 	const corpus = json(join(directory, "schemas", "corpus.schema.json"));
 	const observations = json(join(directory, "schemas", "observations.schema.json"));
 	const attestation = json(join(directory, "schemas", "attestation.schema.json"));
+	const comparison = json(join(directory, "schemas", "comparison-spec.schema.json"));
 	const report = json(join(directory, "schemas", "report.schema.json"));
 	assert.deepEqual(corpus.required, CORPUS_REQUIRED_FIELDS);
 	assert.deepEqual(corpus.$defs.case.required, CORPUS_CASE_REQUIRED_FIELDS);
@@ -28,6 +29,7 @@ test("descriptive schemas mirror evaluator required-field constants", () => {
 	assert.deepEqual(observations.$defs.measurement.required, MEASUREMENT_REQUIRED_FIELDS);
 	assert.deepEqual(attestation.required, ATTESTATION_REQUIRED_FIELDS);
 	assert.deepEqual(attestation.properties.payload.required, ATTESTATION_PAYLOAD_REQUIRED_FIELDS);
+	assert.deepEqual(comparison.required, COMPARISON_SPEC_REQUIRED_FIELDS);
 	assert.deepEqual(report.required, REPORT_REQUIRED_FIELDS);
 });
 
@@ -96,5 +98,7 @@ test("content-digest split is deterministic and manifest mismatches fail corpus 
 test("committed trust store is intentionally empty and comparison unknown reasons are explicit", () => {
 	assert.deepEqual(json(join(directory, "trusted-keys.json")).keys, []);
 	const comparison = json(join(directory, "comparison-spec.json"));
+	assert.doesNotThrow(() => validateComparisonSpec(comparison));
+	assert.equal(comparison.frozen, true);
 	assert.deepEqual(Object.keys(comparison.unknown_reasons).sort(), ["budget_blocked", "missing_measurements", "not_authorized", "not_available", "unsupported_product"]);
 });

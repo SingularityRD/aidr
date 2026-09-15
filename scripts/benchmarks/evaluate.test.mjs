@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import { MAX_ANALYSIS_MATRIX_CELLS, canonicalJson, evaluateBenchmark, validateCorpusStructure, validateSoldScope, assertSoldScopeCoverage } from "./evaluate.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
+const comparisonSpecPath = fileURLToPath(new URL("./comparison-spec.json", import.meta.url));
+const comparisonSpecBytes = readFileSync(comparisonSpecPath);
+const comparisonSpec = JSON.parse(comparisonSpecBytes.toString("utf8"));
 
 function fixture() {
 	const directory = mkdtempSync(join(tmpdir(), "aidr-benchmark-test-"));
@@ -55,6 +58,7 @@ function fixture() {
 		writeFileSync(observationsPath, observationBytes);
 		const payload = {
 			protocol_version: 1, corpus_sha256: hash(corpusBytes), observations_sha256: hash(observationBytes),
+			comparison_spec_sha256: hash(comparisonSpecBytes),
 			candidate_artifact_sha256: observations.products[0].artifact_sha256,
 			rule_author_id: corpus.rule_author_id, evaluator_id: "external-evaluator",
 			evaluator_role: "independent_evaluator", completed_at: "2026-09-13T00:00:00Z",
@@ -62,7 +66,7 @@ function fixture() {
 		};
 		const attestation = { schema_version: 1, payload, signature_base64: sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString("base64") };
 		if (evaluationOptions.signatureBase64 !== undefined) attestation.signature_base64 = evaluationOptions.signatureBase64;
-		return evaluateBenchmark({ corpus, observations, attestation, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }), corpusBytes, observationBytes, observationsPath, soldScope, trustedKeys: evaluationOptions.trustedKeys ?? null, splitManifest: evaluationOptions.splitManifest ?? null, splitManifestBytes: evaluationOptions.splitManifestBytes ?? null });
+		return evaluateBenchmark({ corpus, observations, attestation, comparisonSpec: evaluationOptions.comparisonSpec ?? comparisonSpec, comparisonSpecBytes: evaluationOptions.comparisonSpecBytes ?? comparisonSpecBytes, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }), corpusBytes, observationBytes, observationsPath, soldScope, trustedKeys: evaluationOptions.trustedKeys ?? null, splitManifest: evaluationOptions.splitManifest ?? null, splitManifestBytes: evaluationOptions.splitManifestBytes ?? null, dutySeparationReceipt: evaluationOptions.dutySeparationReceipt ?? null, dutySeparationReceiptBytes: evaluationOptions.dutySeparationReceiptBytes ?? null });
 	}
 	return { directory, corpus, observations, publicKey, privateKey, evaluate };
 }
@@ -187,11 +191,11 @@ test("attestation and analysis CLIs run end to end and reject changed signed inp
 		writeFileSync(privatePath, data.privateKey.export({ type: "pkcs8", format: "pem" }));
 		writeFileSync(publicPath, data.publicKey.export({ type: "spki", format: "pem" }));
 		const attest = spawnSync(process.execPath, [fileURLToPath(new URL("./attest.mjs", import.meta.url)),
-			"--corpus", corpusPath, "--observations", observationsPath,
+			"--corpus", corpusPath, "--observations", observationsPath, "--comparison-spec", comparisonSpecPath,
 			"--private-key", privatePath, "--evaluator-id", "external-evaluator", "--output", attestationPath], { encoding: "utf8" });
 		assert.equal(attest.status, 0, attest.stderr);
 		const command = [fileURLToPath(new URL("./evaluate.mjs", import.meta.url)),
-			"--corpus", corpusPath, "--observations", observationsPath,
+			"--corpus", corpusPath, "--observations", observationsPath, "--comparison-spec", comparisonSpecPath,
 			"--attestation", attestationPath, "--public-key", publicPath, "--output", reportPath];
 		const analyzed = spawnSync(process.execPath, command, { encoding: "utf8" });
 		assert.equal(analyzed.status, 0, analyzed.stderr);
@@ -613,9 +617,152 @@ test("competitor comparison cells are reason-coded unknown without fabricated va
 	const data = fixture();
 	try {
 		data.observations.products[1].comparison_unknown_reason = "not_authorized";
+		const accessEvidence = Buffer.from("synthetic evaluator access denial");
+		const accessEvidenceFile = "competitor-access-blockage.txt";
+		writeFileSync(join(data.directory, accessEvidenceFile), accessEvidence);
+		data.observations.products[1].comparison_access_blockage = { status: "blocked", reason: "not_authorized", evidence_path: accessEvidenceFile, evidence_sha256: hash(accessEvidence) };
 		data.observations.measurements = data.observations.measurements.filter((row) => row.product_id !== "competitor");
-		const cell = data.evaluate().comparison.competitor.malicious_prevention;
+		const report = data.evaluate();
+		const cell = report.comparison.competitor.malicious_prevention;
 		assert.deepEqual(cell, { status: "unknown", value: null, reason: "not_authorized" });
+		for (const metric of ["malicious_intervention", "benign_false_block", "benign_false_approval"]) assert.deepEqual(report.comparison.competitor.cells[metric], { status: "unknown", value: null, reason: "not_authorized" });
+		assert.deepEqual(report.comparison.competitor.access_blockage, { status: "blocked", reason: "not_authorized", evidence_path: accessEvidenceFile, evidence_sha256: hash(accessEvidence) });
+		assert.equal(report.comparison.competitor.complete_matrix, false);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("the frozen comparison specification is signed and tampering is rejected", () => {
+	const data = fixture();
+	try {
+		const report = data.evaluate();
+		assert.equal(report.comparison_spec.frozen, true);
+		assert.equal(report.comparison_spec.sha256, hash(comparisonSpecBytes));
+		const changed = { ...comparisonSpec, rule: `${comparisonSpec.rule} changed` };
+		const changedBytes = Buffer.from(JSON.stringify(changed));
+		assert.throws(() => data.evaluate(null, { comparisonSpec: changed, comparisonSpecBytes: changedBytes }), /comparison spec hash differs from signed attestation/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("an access-blocked competitor requires hash-bound evidence", () => {
+	const data = fixture();
+	try {
+		data.observations.products[1].comparison_unknown_reason = "not_available";
+		data.observations.measurements = data.observations.measurements.filter((row) => row.product_id !== "competitor");
+		assert.throws(() => data.evaluate(), /competitor access blockage evidence is required/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("complete_matrix counts every observed action but not absent cells", () => {
+	const data = fixture();
+	try {
+		data.observations.measurements = data.observations.measurements.filter((row) => !(row.case_id === "attack-dev" && row.product_id === "candidate" && row.trial === 1));
+		const report = data.evaluate();
+		assert.equal(report.matrix.expected_cells, 16);
+		assert.equal(report.matrix.observed_cells, 15);
+		assert.equal(report.matrix.missing_cells, 1);
+		assert.equal(report.matrix.all_cells_observed, false);
+		assert.equal(report.gates.complete_matrix, false);
+		assert.equal(report.coverage.candidate.overall.counts.missing, 1);
+		assert.deepEqual(report.comparison.competitor.malicious_prevention, { status: "measured", value: 1 });
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("signed comparison contracts retain evaluator fingerprint, identity and role binding", () => {
+	const data = fixture();
+	try {
+		const fingerprint = hash(data.publicKey.export({ type: "spki", format: "der" }));
+		const trustedKey = { key_id: "evaluator-key", evaluator_id: "external-evaluator", public_key_sha256: fingerprint, roles: ["independent_evaluator"] };
+		const options = { payloadExtra: { signing_key_id: trustedKey.key_id }, trustedKeys: { schema_version: 1, keys: [trustedKey] } };
+		const report = data.evaluate(null, options);
+		assert.equal(report.gates.attestation_trusted, true);
+		assert.equal(report.attestation.signing_key_id, trustedKey.key_id);
+		assert.equal(report.attestation.comparison_spec_sha256, hash(comparisonSpecBytes));
+		assert.deepEqual(report.comparison.competitor.malicious_prevention, { status: "measured", value: 1 });
+		for (const mismatch of [
+			{ public_key_sha256: hash("different public key") },
+			{ evaluator_id: "other-evaluator" },
+			{ roles: ["budget_authority"] },
+		]) {
+			assert.throws(() => data.evaluate(null, { ...options, trustedKeys: { schema_version: 1, keys: [{ ...trustedKey, ...mismatch }] } }), /unknown, mismatched, or unauthorized attestation signing key/);
+		}
+		const changedSpec = { ...comparisonSpec, rule: `${comparisonSpec.rule} changed` };
+		assert.throws(() => data.evaluate(null, { ...options, comparisonSpec: changedSpec, comparisonSpecBytes: Buffer.from(JSON.stringify(changedSpec)) }), /comparison spec hash differs from signed attestation/);
+		assert.throws(() => data.evaluate(null, { ...options, comparisonSpec: changedSpec }), /comparison spec object differs from its signed bytes/);
+		assert.equal(report.gates.measurement_budget_authorized, false);
+		assert.equal(report.gates.customer_corpus_authorized, false);
+		assert.equal(report.production_accepted, false);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("comparison evaluation preserves independent duty authority identity and fingerprint checks", () => {
+	const data = fixture();
+	try {
+		const authority = generateKeyPairSync("ed25519");
+		const evaluatorFingerprint = hash(data.publicKey.export({ type: "spki", format: "der" }));
+		const authorityFingerprint = hash(authority.publicKey.export({ type: "spki", format: "der" }));
+		const evaluatorKey = { key_id: "evaluator-key", evaluator_id: "external-evaluator", public_key_sha256: evaluatorFingerprint, roles: ["independent_evaluator"] };
+		const authorityKey = { key_id: "authority-key", evaluator_id: "external-authority", public_key_sha256: authorityFingerprint, roles: ["duty_separation_authority"] };
+		const receiptPayload = {
+			corpus_sha256: hash(Buffer.from(JSON.stringify(data.corpus))),
+			rule_author_id: data.corpus.rule_author_id, oracle_reviewer_id: data.corpus.oracle_reviewer_id,
+			evaluator_id: "external-evaluator", authority_id: "external-authority", signing_key_id: "authority-key",
+		};
+		const evaluateReceipt = (payload = receiptPayload, pair = authority, trustedAuthority = authorityKey) => {
+			const receipt = {
+				payload, public_key_pem: pair.publicKey.export({ type: "spki", format: "pem" }),
+				signature_base64: sign(null, Buffer.from(JSON.stringify(payload)), pair.privateKey).toString("base64"),
+			};
+			const bytes = Buffer.from(JSON.stringify(receipt));
+			return data.evaluate(null, {
+				payloadExtra: { signing_key_id: "evaluator-key", duty_separation_receipt_sha256: hash(bytes) },
+				trustedKeys: { schema_version: 1, keys: [evaluatorKey, trustedAuthority] },
+				dutySeparationReceipt: receipt, dutySeparationReceiptBytes: bytes,
+			});
+		};
+		const report = evaluateReceipt();
+		assert.equal(report.gates.duty_separation_signed_and_bound, true);
+		assert.equal(report.attestation.comparison_spec_sha256, hash(comparisonSpecBytes));
+		assert.equal(report.production_accepted, false);
+		assert.throws(() => evaluateReceipt(receiptPayload, data, { ...authorityKey, public_key_sha256: evaluatorFingerprint }), /not an independent trusted authority/);
+		assert.throws(() => evaluateReceipt(receiptPayload, authority, { ...authorityKey, evaluator_id: "other-authority" }), /not an independent trusted authority/);
+		assert.throws(() => evaluateReceipt(receiptPayload, authority, { ...authorityKey, roles: ["independent_evaluator"] }), /not an independent trusted authority/);
+		assert.throws(() => evaluateReceipt({ ...receiptPayload, authority_id: "external-evaluator" }), /duty identities must be pairwise distinct/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("budget-blocked competitors still consume the full expected trial ceiling", () => {
+	const data = fixture();
+	try {
+		const evidence = Buffer.from("synthetic external competitor budget refusal");
+		writeFileSync(join(data.directory, "budget-refusal.txt"), evidence);
+		data.observations.products[1].comparison_access_blockage = { reason: "budget_blocked", evidence_path: "budget-refusal.txt", evidence_sha256: hash(evidence) };
+		data.observations.measurements = data.observations.measurements.filter((row) => row.product_id === "candidate");
+		data.observations.measurement_budget = { authorization_ref: "budget-ticket", currency: "USD", amount: 100, trials: 15, host_minutes: 10 };
+		assert.throws(() => data.evaluate(), /\[measurement_budget_trials_exceeds_ceiling\].*16 trial cells/);
+		data.observations.measurement_budget.trials = 16;
+		const report = data.evaluate();
+		assert.deepEqual(report.matrix, { expected_cells: 16, observed_cells: 8, missing_cells: 8, all_cells_observed: false });
+		assert.equal(report.comparison.competitor.expected_cells, 8);
+		assert.equal(report.comparison.competitor.observed_cells, 0);
+		assert.deepEqual(report.comparison.competitor.cells.malicious_prevention, { status: "unknown", value: null, reason: "budget_blocked" });
+		assert.equal(report.measurement_budget.authorization_verified, false);
+		assert.equal(report.gates.measurement_budget_authorized, false);
+		assert.equal(report.production_accepted, false);
+		writeFileSync(join(data.directory, "budget-refusal.txt"), "tampered refusal");
+		assert.throws(() => data.evaluate(), /comparison access blockage evidence hash mismatch/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("comparison exceptions cannot hide candidate results or weaken the frozen reason set", () => {
+	const data = fixture();
+	try {
+		data.observations.products[0].comparison_unknown_reason = "missing_measurements";
+		assert.throws(() => data.evaluate(), /candidate product cannot declare a comparison unknown reason/);
+		delete data.observations.products[0].comparison_unknown_reason;
+		const changedSpec = structuredClone(comparisonSpec);
+		changedSpec.access_blockage.required_for_reasons = ["not_authorized", "not_authorized", "not_available"];
+		const changedBytes = Buffer.from(JSON.stringify(changedSpec));
+		assert.throws(() => data.evaluate(null, { comparisonSpec: changedSpec, comparisonSpecBytes: changedBytes, payloadExtra: { comparison_spec_sha256: hash(changedBytes) } }), /access blockage reasons differ from the frozen reason allowlist/);
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 
