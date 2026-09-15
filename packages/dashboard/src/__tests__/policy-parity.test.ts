@@ -1,22 +1,15 @@
 // @vitest-environment jsdom
 
-// B1 — the YAML policy document editor must dry-run against the compiler that
-// actually enforces the document, not only against its own parser.
+// B1 — the YAML policy document editor must submit exact draft bytes to the
+// compiler that enforces them, not store locally validated bytes first.
 //
-// `packages/dashboard/src/enterprise/policy-editor.tsx` persists raw YAML with a
-// local validator, and its local rules are weaker than
-// `compileRuntimePolicyDocument` in
-// `supabase/functions/_shared/policy-document.ts`: the server also bounds a rule
-// name (160), a description (2000) and the rule count (200). A document the
-// editor accepts could therefore be compiled differently — or refused outright —
-// by the function that turns the stored document into runtime policy.
-//
-// The suite below never restates a compiler rule. It reads the fixtures, asks the
-// editor's local validator, and asks the *real* shared compiler for the same
-// document through the invocation seam the dashboard already uses
-// (`supabase.functions.invoke("policy-management", { action: "compile_document" })`),
-// which the double in this file forwards to the compiler module itself.
+// The local validator is weaker than `compileRuntimePolicyDocument`: the server
+// also bounds rule names, descriptions and rule counts. This suite compares the
+// local verdict with the real shared compiler through `save_document_draft`.
+// The invocation double compiles submitted bytes before changing serverStore;
+// refused drafts never become stored policy and need no client-side rollback.
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,7 +36,7 @@ vi.mock("../lib/supabase", () => ({
 	supabaseEnvError: null,
 }));
 
-import { dryRunStoredDocument, validateDocument } from "../enterprise/policy-editor";
+import { saveDocumentDraft, validateDocument } from "../enterprise/policy-editor";
 import { AppLayout } from "../ui/AppLayout";
 import { PolicyPage } from "../ui/pages/PolicyPage";
 import { installDashboardMocks, POLICY_ROW_ID, TEAM_ID } from "./helpers/dashboard-mocks";
@@ -92,8 +85,8 @@ async function loadServerCompiler(): Promise<ServerCompiler> {
 	return (await import(specifier)) as unknown as ServerCompiler;
 }
 
-/** The Deno `yaml` parser the handler parses a stored document with. */
-async function loadStoredDocumentParser(): Promise<{
+/** The Deno `yaml` parser the handler uses for submitted document bytes. */
+async function loadPolicyDocumentParser(): Promise<{
 	parseDocument: (source: string, options: Record<string, unknown>) => {
 		errors: Array<{ message?: string }>;
 		toJS: (options: Record<string, unknown>) => unknown;
@@ -106,11 +99,29 @@ async function loadStoredDocumentParser(): Promise<{
 	};
 	const parseDocument = loaded.parseDocument ?? loaded.default?.parseDocument;
 	if (typeof parseDocument !== "function") throw new Error("the server's yaml parser is unavailable");
-	return { parseDocument } as Awaited<ReturnType<typeof loadStoredDocumentParser>>;
+	return { parseDocument } as Awaited<ReturnType<typeof loadPolicyDocumentParser>>;
 }
 
-/** The document the server currently has stored for the team. */
-const serverStore: { content: string | null } = { content: null };
+interface ExpectedDocument {
+	id: string;
+	version: number;
+	source_sha256: string;
+}
+
+function sourceHash(content: string): string {
+	return createHash("sha256").update(content).digest("hex");
+}
+
+function expectedDocument(content: string, version = 1): ExpectedDocument {
+	return { id: POLICY_ROW_ID, version, source_sha256: sourceHash(content) };
+}
+
+/** Only a successful server-side compile may change the stored document. */
+const serverStore: { content: string | null; version: number; writes: number } = {
+	content: null,
+	version: 0,
+	writes: 0,
+};
 
 function refusedResponse(code: string, status = 400): { data: null; error: unknown } {
 	return {
@@ -125,18 +136,15 @@ function refusedResponse(code: string, status = 400): { data: null; error: unkno
 }
 
 /**
- * The handler's `compile_document` branch, with the compiler left alone.
- *
- * It performs exactly the steps `policy-management` performs around the shared
- * compiler — read the stored document, parse it with the Deno `yaml` parser,
- * compile it, simulate — and answers with the same bodies, so the editor's own
- * response handling is exercised without a second copy of any compiler rule.
+ * Compile and simulate submitted bytes with the real compiler, then save them.
+ * No compiler rules are duplicated here and refusals perform zero store writes.
  */
-async function compileStoredDocument(simulation: unknown): Promise<{ data: unknown; error: unknown }> {
-	const content = serverStore.content;
-	if (content === null) return refusedResponse("policy_document_not_found", 404);
+async function compileAndSaveDraft(
+	content: string,
+	simulation: unknown,
+): Promise<{ data: unknown; error: unknown }> {
 	const [{ parseDocument }, compiler] = await Promise.all([
-		loadStoredDocumentParser(),
+		loadPolicyDocumentParser(),
 		loadServerCompiler(),
 	]);
 	try {
@@ -150,11 +158,17 @@ async function compileStoredDocument(simulation: unknown): Promise<{ data: unkno
 			simulation === undefined
 				? null
 				: compiler.simulateCompiledRuntimePolicy(compilation.runtime_policy, simulation);
+		const source = {
+			...expectedDocument(content, serverStore.version + 1),
+			updated_at: STORED_AT,
+		};
+		serverStore.content = content;
+		serverStore.version = source.version;
+		serverStore.writes += 1;
 		return {
 			data: {
 				ok: true,
-				dry_run: true,
-				source: { id: POLICY_ROW_ID, updated_at: STORED_AT },
+				source,
 				...compilation,
 				...(result ? { simulation: result } : {}),
 			},
@@ -168,6 +182,8 @@ async function compileStoredDocument(simulation: unknown): Promise<{ data: unkno
 /** Point the invocation seam at a team whose stored document is `storedYaml`. */
 function installParityServer(storedYaml: string | null) {
 	serverStore.content = storedYaml;
+	serverStore.version = storedYaml === null ? 0 : 1;
+	serverStore.writes = 0;
 	const mocks = installDashboardMocks({
 		role: "admin",
 		policyRow:
@@ -179,7 +195,16 @@ function installParityServer(storedYaml: string | null) {
 		name: string, request?: unknown,
 	) => Promise<unknown>;
 	mocks.invoke.mockImplementation(
-		async (name: string, request?: { body?: { action?: string; simulation?: unknown } }) => {
+		async (
+			name: string,
+			request?: {
+				body?: {
+					action?: string;
+					content?: string;
+					simulation?: unknown;
+				};
+			},
+		) => {
 			if (name === "identity-security") return authenticatedIdentity(name, request);
 			if (name !== "policy-management") return { data: { ok: true }, error: null };
 			const body = request?.body ?? {};
@@ -190,36 +215,57 @@ function installParityServer(storedYaml: string | null) {
 			if (body.action === "adoption") {
 				return { data: { ok: true, agents: [], truncated: false }, error: null };
 			}
-			if (body.action === "compile_document") return compileStoredDocument(body.simulation);
-			return { data: { ok: true }, error: null };
+			if (body.action === "save_document_draft") {
+				if (typeof body.content !== "string") return refusedResponse("invalid_policy_document");
+				return compileAndSaveDraft(body.content, body.simulation);
+			}
+			return refusedResponse("unsupported_action");
 		},
 	);
 	return mocks;
 }
 
-/**
- * Mirror the editor's writes into `team_policies` onto the stored document the
- * compile branch reads, so the compile of a *written* draft is observable.
- */
-function mirrorWritesIntoServerStore(mocks: ReturnType<typeof installParityServer>) {
-	const writeChain = () => {
-		const written = async () => ({ data: [{ id: POLICY_ROW_ID }], error: null });
-		return { select: written, eq: () => ({ select: written }) };
-	};
-	mocks.teamPolicies.update.mockImplementation((row: { content?: string }) => {
-		if (typeof row?.content === "string") serverStore.content = row.content;
-		return writeChain();
-	});
-	mocks.teamPolicies.insert.mockImplementation((row: { content?: string }) => {
-		if (typeof row?.content === "string") serverStore.content = row.content;
-		return writeChain();
-	});
-	mocks.teamPolicies.delete.mockImplementation(() => ({
-		eq: async (column: string, value: unknown) => {
-			if (column === "id" && value === POLICY_ROW_ID) serverStore.content = null;
-			return { data: null, error: null };
-		},
-	}));
+function expectNoDirectWrites(mocks: ReturnType<typeof installParityServer>) {
+	expect(mocks.teamPolicies.insert).not.toHaveBeenCalled();
+	expect(mocks.teamPolicies.update).not.toHaveBeenCalled();
+	expect(mocks.teamPolicies.delete).not.toHaveBeenCalled();
+}
+
+function expectDraftRequest(
+	mocks: ReturnType<typeof installParityServer>,
+	content: string,
+	expected: ExpectedDocument | null,
+) {
+	const saveCalls = mocks.invoke.mock.calls.filter(
+		(call) =>
+			call[0] === "policy-management" &&
+			(call[1] as { body?: { action?: string } } | undefined)?.body?.action ===
+				"save_document_draft",
+	);
+	expect(saveCalls).toEqual([
+		[
+			"policy-management",
+			{
+				body: {
+					action: "save_document_draft",
+					tenant_id: TEAM_ID,
+					content,
+					expected_document: expected,
+					simulation: {
+						kind: "mcp",
+						server: "unregistered-preview",
+						tool: "call",
+						inventory: "unknown",
+					},
+				},
+			},
+		],
+	]);
+	const actions = mocks.invoke.mock.calls
+		.filter((call) => call[0] === "policy-management")
+		.map((call) => (call[1] as { body?: { action?: string } } | undefined)?.body?.action);
+	expect(actions).not.toContain("compile_document");
+	expect(actions).not.toContain("compile_document_draft");
 }
 
 function renderPolicyRoute() {
@@ -244,18 +290,6 @@ function renderPolicyRoute() {
 
 function saveButton(): HTMLElement {
 	return screen.getByRole("button", { name: /Save Policy|Saving/ });
-}
-
-/** Invocation order of every `compile_document` call the editor made. */
-function compileCallOrders(mocks: ReturnType<typeof installParityServer>): number[] {
-	return mocks.invoke.mock.calls
-		.map((call, index) => ({ call, index }))
-		.filter(
-			({ call }) =>
-				call[0] === "policy-management" &&
-				(call[1] as { body?: { action?: string } } | undefined)?.body?.action === "compile_document",
-		)
-		.map(({ index }) => mocks.invoke.mock.invocationCallOrder[index] as number);
 }
 
 function yamlEditor(): HTMLTextAreaElement {
@@ -318,11 +352,14 @@ const COMPILER_ONLY_REJECTIONS = [
 
 beforeEach(() => {
 	serverStore.content = null;
+	serverStore.version = 0;
+	serverStore.writes = 0;
 });
 
 afterEach(() => {
 	cleanup();
 	vi.resetAllMocks();
+	vi.unstubAllGlobals();
 });
 
 describe("Policy document parity (B1)", () => {
@@ -336,8 +373,12 @@ describe("Policy document parity (B1)", () => {
 			expect(local.message, testCase.file).toBe(testCase.local);
 
 			// ...and the server compiler, through the seam the editor invokes.
-			installParityServer(yaml);
-			const server = await dryRunStoredDocument(TEAM_ID);
+			const mocks = installParityServer(null);
+			const { verdict: server, source } = await saveDocumentDraft(TEAM_ID, yaml, null);
+			expectDraftRequest(mocks, yaml, null);
+			expectNoDirectWrites(mocks);
+			expect(source).toBeNull();
+			expect(serverStore).toEqual({ content: null, version: 0, writes: 0 });
 			expect(server.status, testCase.file).toBe("refused");
 			if (server.status !== "refused") continue;
 			expect(server.code, testCase.file).toBe(testCase.server);
@@ -349,8 +390,12 @@ describe("Policy document parity (B1)", () => {
 		// The same document is accepted by both, with no fields to report.
 		const accepted = fixture("valid-policy.yaml");
 		expect(localVerdict(accepted).ok).toBe(true);
-		installParityServer(accepted);
-		const compiled = await dryRunStoredDocument(TEAM_ID);
+		const mocks = installParityServer(null);
+		const { verdict: compiled, source } = await saveDocumentDraft(TEAM_ID, accepted, null);
+		expectDraftRequest(mocks, accepted, null);
+		expectNoDirectWrites(mocks);
+		expect(source).toEqual({ ...expectedDocument(accepted), updated_at: STORED_AT });
+		expect(serverStore).toEqual({ content: accepted, version: 1, writes: 1 });
 		expect(compiled.status).toBe("compiled");
 		if (compiled.status !== "compiled") return;
 		expect(compiled.unsupported).toEqual([]);
@@ -364,65 +409,49 @@ describe("Policy document parity (B1)", () => {
 			const label = "file" in testCase ? testCase.file : "documentWithRules(201)";
 			const yaml = "file" in testCase ? fixture(testCase.file) : testCase.generated;
 
-			// The local validator lets these through: the residual gap the editor's
-			// server dry run exists to close.
+			// Local acceptance must not bypass the server compiler before persistence.
 			expect(localVerdict(yaml).ok, label).toBe(true);
 
-			installParityServer(yaml);
-			const server = await dryRunStoredDocument(TEAM_ID);
+			const stored = fixture("valid-policy.yaml");
+			const mocks = installParityServer(stored);
+			const expected = expectedDocument(stored);
+			const { verdict: server, source } = await saveDocumentDraft(TEAM_ID, yaml, expected);
+			expectDraftRequest(mocks, yaml, expected);
+			expectNoDirectWrites(mocks);
+			expect(source).toBeNull();
+			expect(serverStore).toEqual({ content: stored, version: 1, writes: 0 });
 			expect(server.status, label).toBe("refused");
 			if (server.status !== "refused") continue;
 			expect(server.code, label).toBe(testCase.code);
 		}
 	});
 
-	it("surfaces the server dry run inside the document editor before save", async () => {
+	it("saves exact edited bytes atomically and surfaces the compiler verdict", async () => {
 		const stored = fixture("valid-policy.yaml");
+		const edited = `${stored}\n# Exact submitted draft bytes: café\n`;
 		const mocks = installParityServer(stored);
 
 		renderPolicyRoute();
 		await waitFor(() => expect(screen.getByText("✓ Valid policy")).toBeInTheDocument());
 
+		fireEvent.change(yamlEditor(), { target: { value: edited } });
 		fireEvent.click(saveButton());
 
 		await waitFor(() =>
 			expect(screen.getByText("Policy saved successfully")).toBeInTheDocument(),
 		);
 
-		// The dry run is the sibling runtime policy editor's call shape.
-		expect(mocks.invoke).toHaveBeenCalledWith("policy-management", {
-			body: {
-				action: "compile_document",
-				tenant_id: TEAM_ID,
-				simulation: {
-					kind: "mcp",
-					server: "unregistered-preview",
-					tool: "call",
-					inventory: "unknown",
-				},
-			},
-		});
-
-		// ...and it happens before the write it is gating, with a second compile of
-		// the document that was just written so the acceptance is the server's.
-		const compileOrders = compileCallOrders(mocks);
-		expect(compileOrders).toHaveLength(2);
-		const writeOrder = mocks.teamPolicies.update.mock.invocationCallOrder[0];
-		expect(writeOrder).toBeDefined();
-		expect(compileOrders[0]).toBeLessThan(Number(writeOrder));
-		expect(compileOrders[1]).toBeGreaterThan(Number(writeOrder));
+		expectDraftRequest(mocks, edited, expectedDocument(stored));
+		expectNoDirectWrites(mocks);
+		expect(serverStore).toEqual({ content: edited, version: 2, writes: 1 });
 
 		// The server's verdict is rendered in the document card.
 		expect(screen.getByText("Unsupported fields: none.")).toBeInTheDocument();
 		expect(screen.getByText(/Conflict precedence: deny > ask > allow/)).toBeInTheDocument();
 		expect(screen.getByText(/Simulated unknown MCP call: deny \(mcp_unknown\)/)).toBeInTheDocument();
-
-		expect(mocks.teamPolicies.update).toHaveBeenCalledWith(
-			expect.objectContaining({ content: stored, tenant_id: TEAM_ID }),
-		);
 	});
 
-	it("refuses the save when the dry run refuses the document", async () => {
+	it("refuses an invalid stored document without rewriting it", async () => {
 		const tooLong = fixture("rule-name-too-long.yaml");
 		// The local validator accepts this document; the runtime compiler does not.
 		expect(localVerdict(tooLong).ok).toBe(true);
@@ -437,8 +466,9 @@ describe("Policy document parity (B1)", () => {
 			expect(screen.getByRole("alert")).toHaveTextContent(/rules\.0\.name:invalid_string/),
 		);
 		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
-		expect(mocks.teamPolicies.insert).not.toHaveBeenCalled();
-		expect(mocks.teamPolicies.update).not.toHaveBeenCalled();
+		expectDraftRequest(mocks, tooLong, expectedDocument(tooLong));
+		expectNoDirectWrites(mocks);
+		expect(serverStore).toEqual({ content: tooLong, version: 1, writes: 0 });
 
 		// The card names what the server refused, next to the local verdict.
 		expect(
@@ -446,13 +476,10 @@ describe("Policy document parity (B1)", () => {
 		).toBeGreaterThan(0);
 	});
 
-	it("refuses a first document the compiler refuses and removes the rejected write", async () => {
+	it("refuses a first document with zero store writes", async () => {
 		const refused = fixture("description-too-long.yaml");
 		expect(localVerdict(refused).ok).toBe(true);
-		// No stored document yet: the pre-save dry run has nothing to compile, so
-		// the draft's own compile after the write is what decides the save.
 		const mocks = installParityServer(null);
-		mirrorWritesIntoServerStore(mocks);
 
 		renderPolicyRoute();
 		await waitFor(() => expect(screen.getByText("✓ Valid policy")).toBeInTheDocument());
@@ -464,20 +491,19 @@ describe("Policy document parity (B1)", () => {
 			expect(screen.getByRole("alert")).toHaveTextContent(/description:invalid_string/),
 		);
 		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
-		expect(mocks.teamPolicies.insert).toHaveBeenCalledTimes(1);
-		expect(mocks.teamPolicies.delete).toHaveBeenCalledTimes(1);
-		expect(serverStore.content).toBeNull();
+		expectDraftRequest(mocks, refused, null);
+		expectNoDirectWrites(mocks);
+		expect(serverStore).toEqual({ content: null, version: 0, writes: 0 });
 		expect(
 			screen.getAllByText(/invalid_policy_document:description:invalid_string/).length,
 		).toBeGreaterThan(0);
 	});
 
-	it("rolls back a draft the compiler refuses when it differs from the stored document", async () => {
+	it("refuses an edited document with zero store writes", async () => {
 		const stored = fixture("valid-policy.yaml");
 		const edited = fixture("rule-name-too-long.yaml");
 		expect(localVerdict(edited).ok).toBe(true);
 		const mocks = installParityServer(stored);
-		mirrorWritesIntoServerStore(mocks);
 
 		renderPolicyRoute();
 		await waitFor(() => expect(screen.getByText("✓ Valid policy")).toBeInTheDocument());
@@ -490,17 +516,8 @@ describe("Policy document parity (B1)", () => {
 			expect(screen.getByRole("alert")).toHaveTextContent(/rules\.0\.name:invalid_string/),
 		);
 		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
-		// The draft reached the compiler, was refused, and the previous document
-		// is what remains stored.
-		expect(serverStore.content).toBe(stored);
-		expect(mocks.teamPolicies.update).toHaveBeenNthCalledWith(
-			1,
-			expect.objectContaining({ content: edited }),
-		);
-		expect(mocks.teamPolicies.update).toHaveBeenNthCalledWith(
-			2,
-			expect.objectContaining({ content: stored }),
-		);
-		expect(mocks.teamPolicies.insert).not.toHaveBeenCalled();
+		expectDraftRequest(mocks, edited, expectedDocument(stored));
+		expectNoDirectWrites(mocks);
+		expect(serverStore).toEqual({ content: stored, version: 1, writes: 0 });
 	});
 });

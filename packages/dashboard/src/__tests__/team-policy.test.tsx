@@ -9,10 +9,9 @@
 //      sequence item, so `condition:` under a rule became the key "condition:"
 //      with an empty value and the preview crashed reading `rule.condition.mcp_tool`.
 //
-// It also pins the honest save contract: the write must match the schema that
-// actually exists (no `onConflict: "team_id"` — public.team_policies has no
-// unique constraint on team_id) and a rejected or unconfirmed write must never
-// be reported as "Policy saved successfully".
+// Saves submit exact bytes and the loaded revision to the server action. No
+// browser mutation or save-time read may bypass compilation or hide stale edits;
+// rejected and unconfirmed responses must never be reported as success.
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -42,8 +41,8 @@ vi.mock("../lib/supabase", () => ({
 import { AppLayout } from "../ui/AppLayout";
 import { PolicyPage } from "../ui/pages/PolicyPage";
 import {
-	ADMIN_USER_ID,
 	installDashboardMocks,
+	policySourceHash,
 	POLICY_ROW_ID,
 	TEAM_ID,
 } from "./helpers/dashboard-mocks";
@@ -81,7 +80,10 @@ function saveButton(): HTMLElement {
 }
 
 describe("Team policy editor is reachable (AIDR-009)", () => {
-	afterEach(cleanup);
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
 
 	it("registers /policies through the console shell behind the session loader", () => {
 		const start = MAIN_TSX.indexOf('path: "/policies"');
@@ -163,8 +165,8 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
 	});
 
-	it("saves a new policy row with the tenant and author the schema requires", async () => {
-		const mocks = installDashboardMocks({ role: "admin" });
+	it.each(["owner", "admin", "member"])("saves a first draft as %s through the tenant-scoped server action", async (role) => {
+		const mocks = installDashboardMocks({ role });
 
 		renderPolicyRoute();
 		await waitFor(() => expect(screen.getByText("✓ Valid policy")).toBeInTheDocument());
@@ -174,19 +176,22 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 		await waitFor(() =>
 			expect(screen.getByText("Policy saved successfully")).toBeInTheDocument(),
 		);
-		expect(mocks.teamPolicies.insert).toHaveBeenCalledTimes(1);
-		expect(mocks.teamPolicies.insert).toHaveBeenCalledWith(
-			expect.objectContaining({
-				team_id: TEAM_ID,
+		expect(mocks.invoke).toHaveBeenCalledWith("policy-management", {
+			body: {
+				action: "save_document_draft",
 				tenant_id: TEAM_ID,
-				updated_by: ADMIN_USER_ID,
-				content: expect.stringContaining("default_action"),
-			}),
-		);
+				content: (screen.getByRole("textbox", { name: /Policy \(YAML\)/ }) as HTMLTextAreaElement).value,
+				expected_document: null,
+				simulation: { kind: "mcp", server: "unregistered-preview", tool: "call", inventory: "unknown" },
+			},
+		});
+		expect(mocks.teamPolicies.select).toHaveBeenCalledTimes(1);
+		expect(mocks.teamPolicies.insert).not.toHaveBeenCalled();
 		expect(mocks.teamPolicies.update).not.toHaveBeenCalled();
+		expect(mocks.teamPolicies.delete).not.toHaveBeenCalled();
 	});
 
-	it("updates the existing policy row instead of upserting on a non-unique column", async () => {
+	it("updates with the initially loaded revision without a save-time refresh", async () => {
 		const mocks = installDashboardMocks({
 			role: "admin",
 			policyRow: { id: POLICY_ROW_ID, content: STORED_POLICY, updated_at: "2026-01-02T00:00:00.000Z" },
@@ -200,18 +205,24 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 		await waitFor(() =>
 			expect(screen.getByText("Policy saved successfully")).toBeInTheDocument(),
 		);
-		// public.team_policies has no unique constraint on team_id, so an upsert
-		// with onConflict: "team_id" fails with 42P10 on every save.
-		expect(mocks.teamPolicies.update).toHaveBeenCalledWith(
-			expect.objectContaining({ tenant_id: TEAM_ID, updated_by: ADMIN_USER_ID }),
-		);
+		expect(mocks.invoke).toHaveBeenCalledWith("policy-management", {
+			body: expect.objectContaining({
+				action: "save_document_draft",
+				tenant_id: TEAM_ID,
+				content: STORED_POLICY,
+				expected_document: { id: POLICY_ROW_ID, version: 1, source_sha256: policySourceHash(STORED_POLICY) },
+			}),
+		});
+		expect(mocks.teamPolicies.select).toHaveBeenCalledTimes(1);
+		expect(mocks.teamPolicies.update).not.toHaveBeenCalled();
 		expect(mocks.teamPolicies.insert).not.toHaveBeenCalled();
+		expect(mocks.teamPolicies.delete).not.toHaveBeenCalled();
 	});
 
 	it("reports a rejected write instead of a successful save", async () => {
 		installDashboardMocks({
 			role: "admin",
-			policyWriteError: { message: "new row violates row-level security policy" },
+			policySaveResponse: { data: { error: "policy_document_save_failed" }, error: null },
 		});
 
 		renderPolicyRoute();
@@ -221,14 +232,14 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 
 		await waitFor(() =>
 			expect(screen.getByRole("alert")).toHaveTextContent(
-				/Policy was not saved: new row violates row-level security policy/,
+				/Policy was not saved:.*policy_document_save_failed/,
 			),
 		);
 		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
 	});
 
-	it("does not claim a save when the database stored no row", async () => {
-		installDashboardMocks({ role: "admin", policyWriteRows: null });
+	it("does not claim a save when the server returns no source row", async () => {
+		installDashboardMocks({ role: "admin", policySaveResponse: { data: { ok: true }, error: null } });
 
 		renderPolicyRoute();
 		await waitFor(() => expect(screen.getByText("✓ Valid policy")).toBeInTheDocument());
@@ -237,9 +248,72 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 
 		await waitFor(() =>
 			expect(screen.getByRole("alert")).toHaveTextContent(
-				/Policy was not saved: the database did not store any policy row/,
+				/Policy was not saved:.*policy_document_save_unconfirmed/,
 			),
 		);
+		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
+	});
+
+	it("keeps the loaded revision and draft after a 409 conflict", async () => {
+		const mocks = installDashboardMocks({
+			policyRow: { id: POLICY_ROW_ID, content: STORED_POLICY, updated_at: "2026-01-02T00:00:00.000Z" },
+			policySaveResponse: {
+				data: null,
+				error: { context: { json: async () => ({ error: "policy_document_conflict" }) } },
+			},
+		});
+		renderPolicyRoute();
+		await waitFor(() => expect(screen.getByText("Block shell execution")).toBeInTheDocument());
+		const draft = `${STORED_POLICY}# Unsaved UTF-8: güvenli 🔒\n`;
+		fireEvent.change(screen.getByRole("textbox", { name: /Policy \(YAML\)/ }), { target: { value: draft } });
+		fireEvent.click(saveButton());
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/stored policy changed.*reload/));
+		expect(screen.getByRole("textbox", { name: /Policy \(YAML\)/ })).toHaveValue(draft);
+		fireEvent.click(saveButton());
+		await waitFor(() => expect(saveButton()).toBeEnabled());
+		const saves = mocks.invoke.mock.calls.filter(([, request]) => request?.body?.action === "save_document_draft");
+		expect(saves).toHaveLength(2);
+		for (const [, request] of saves) {
+			expect(request.body.content).toBe(draft);
+			expect(request.body.expected_document).toEqual({ id: POLICY_ROW_ID, version: 1, source_sha256: policySourceHash(STORED_POLICY) });
+		}
+		expect(mocks.teamPolicies.select).toHaveBeenCalledTimes(1);
+		for (const method of [mocks.teamPolicies.insert, mocks.teamPolicies.update, mocks.teamPolicies.delete]) expect(method).not.toHaveBeenCalled();
+		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
+	});
+
+	it.each([
+		{ label: "wrong content hash", source: { source_sha256: "a".repeat(64) } },
+		{ label: "uppercase hash", source: { source_sha256: policySourceHash(STORED_POLICY).toUpperCase() } },
+		{ label: "fractional version", source: { version: 1.5 } },
+		{ label: "zero version", source: { version: 0 } },
+		{ label: "string version", source: { version: "2" } },
+		{ label: "unchanged version", source: { version: 1 } },
+		{ label: "wrong row id", source: { id: "66666666-6666-4666-8666-666666666666" } },
+		{ label: "malformed row id", source: { id: "different-row" } },
+		{ label: "invalid update timestamp", source: { updated_at: "not-a-date" } },
+	])("rejects an unconfirmed save with $label", async ({ source }) => {
+		const mocks = installDashboardMocks({
+			policyRow: { id: POLICY_ROW_ID, content: STORED_POLICY, updated_at: "2026-01-02T00:00:00.000Z" },
+			policySaveResponse: {
+				data: { ok: true, source: { id: POLICY_ROW_ID, version: 2, source_sha256: policySourceHash(STORED_POLICY), updated_at: "2026-01-03T00:00:00.000Z", ...source } },
+				error: null,
+			},
+		});
+		renderPolicyRoute();
+		await waitFor(() => expect(screen.getByText("Block shell execution")).toBeInTheDocument());
+		fireEvent.click(saveButton());
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/policy_document_save_unconfirmed/));
+		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
+		for (const method of [mocks.teamPolicies.insert, mocks.teamPolicies.update, mocks.teamPolicies.delete]) expect(method).not.toHaveBeenCalled();
+	});
+
+	it("rejects an invocation error even when its data claims success", async () => {
+		installDashboardMocks({ policySaveResponse: { data: { ok: true }, error: new Error("policy_document_save_failed") } });
+		renderPolicyRoute();
+		await waitFor(() => expect(screen.getByText("✓ Valid policy")).toBeInTheDocument());
+		fireEvent.click(saveButton());
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/policy_document_save_failed/));
 		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
 	});
 
@@ -264,6 +338,29 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 
 		expect(mocks.teamPolicies.insert).not.toHaveBeenCalled();
 		expect(mocks.teamPolicies.update).not.toHaveBeenCalled();
+	});
+
+	it("does not turn a loaded row with missing revision metadata into a first draft", async () => {
+		const mocks = installDashboardMocks({
+			policyRow: { id: POLICY_ROW_ID, content: STORED_POLICY, version: undefined, source_sha256: undefined },
+		});
+		renderPolicyRoute();
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/Stored policy revision is invalid/));
+		expect(saveButton()).toBeDisabled();
+		fireEvent.click(saveButton());
+		expect(mocks.invoke.mock.calls.some(([, request]) => request?.body?.action === "save_document_draft")).toBe(false);
+		for (const method of [mocks.teamPolicies.insert, mocks.teamPolicies.update, mocks.teamPolicies.delete]) expect(method).not.toHaveBeenCalled();
+	});
+
+	it("does not issue a save when exact-byte hash verification is unavailable", async () => {
+		const mocks = installDashboardMocks();
+		vi.stubGlobal("crypto", {});
+		renderPolicyRoute();
+		await waitFor(() => expect(screen.getByText("✓ Valid policy")).toBeInTheDocument());
+		fireEvent.click(saveButton());
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/Policy was not saved/));
+		expect(mocks.invoke.mock.calls.some(([, request]) => request?.body?.action === "save_document_draft")).toBe(false);
+		expect(screen.queryByText("Policy saved successfully")).not.toBeInTheDocument();
 	});
 
 	it("shows a viewer the permission boundary instead of the editor", async () => {
@@ -332,21 +429,26 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 });
 
 describe("Policy editor wire contract", () => {
-	afterEach(cleanup);
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
 
-	it("does not use an upsert on team_id, which public.team_policies cannot satisfy", () => {
+	it("never directly mutates team_policies from the browser", () => {
 		const source = readFileSync(
 			resolve(REPO_ROOT, "packages/dashboard/src/enterprise/policy-editor.tsx"),
 			"utf8",
 		);
-		// Comments explaining the removal are fine; executable code must not
-		// reintroduce the upsert.
+		// Browser policy writes and compensating rollbacks must never return.
 		const code = source
 			.split("\n")
 			.filter((line) => !line.trim().startsWith("//"))
 			.map((line) => line.replace(/\s\/\/.*$/, ""))
 			.join("\n");
 		expect(code).not.toContain('onConflict: "team_id"');
-		expect(code).not.toContain(".upsert(");
+		for (const mutation of [".upsert(", ".insert(", ".update(", ".delete("]) {
+			expect(code).not.toContain(mutation);
+		}
+		expect(code).toContain('action: "save_document_draft"');
 	});
 });
