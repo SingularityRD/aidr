@@ -4,8 +4,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { checkClaimEvidenceFreshness, listClaimEvidenceFiles, main, sha256File } from "./check-claim-evidence-freshness.mjs";
+import { CANDIDATE_DIGEST_SOURCE } from "./generate-v8-evidence-index.mjs";
 
 const registrySha256 = sha256File("docs/production-readiness/commercial-go-evidence-registry.json");
+const sourceCommit = "a".repeat(40);
+const candidate = { digest: "b".repeat(64), source: CANDIDATE_DIGEST_SOURCE };
+
+function freshnessOptions(evidenceDir) {
+	return { root: process.cwd(), evidenceDir, source_commit: sourceCommit, candidate };
+}
 
 async function evidenceDirFor(t, records) {
 	const evidenceDir = await mkdtemp(join(tmpdir(), "aidr-claim-freshness-"));
@@ -26,14 +33,41 @@ test("a checkout with no recorded claim scan has nothing stale to gate", async (
 	assert.equal(main(["--evidence-dir", evidenceDir]), 0);
 });
 
-test("a recorded claim scan that matches the current registry digest passes", async (t) => {
+test("a recorded claim scan bound to the current registry, source and candidate passes", async (t) => {
 	const evidenceDir = await evidenceDirFor(t, {
-		"v9-claim-gate-final.json": JSON.stringify({ mode: "gate", registrySha256 }),
-		"v9-claim-inventory-final.json": JSON.stringify({ mode: "inventory", registrySha256: registrySha256.toUpperCase() }),
+		"v9-claim-gate-final.json": JSON.stringify({
+			mode: "gate",
+			registrySha256,
+			source_commit: sourceCommit,
+			candidate_digest: candidate.digest,
+			candidate_digest_source: candidate.source,
+		}),
+		"v9-claim-inventory-final.json": JSON.stringify({
+			mode: "inventory",
+			registrySha256: registrySha256.toUpperCase(),
+			source_commit: sourceCommit.toUpperCase(),
+			candidate_digest: candidate.digest.toUpperCase(),
+			candidate_digest_source: candidate.source,
+		}),
 	});
-	const result = checkClaimEvidenceFreshness({ root: process.cwd(), evidenceDir });
+	const result = checkClaimEvidenceFreshness(freshnessOptions(evidenceDir));
 	assert.deepEqual(result.failures, []);
 	assert.deepEqual(listClaimEvidenceFiles(evidenceDir), ["v9-claim-gate-final.json", "v9-claim-inventory-final.json"]);
+});
+
+test("a claim scan from another source commit or candidate cannot pass freshness", async (t) => {
+	const evidenceDir = await evidenceDirFor(t, {
+		"v9-claim-stale.json": JSON.stringify({
+			mode: "gate",
+			registrySha256,
+			source_commit: "c".repeat(40),
+			candidate_digest: "d".repeat(64),
+			candidate_digest_source: candidate.source,
+		}),
+	});
+	const result = checkClaimEvidenceFreshness(freshnessOptions(evidenceDir));
+	assert.match(result.failures.join("\n"), /recorded source_commit .*does not match/);
+	assert.match(result.failures.join("\n"), /recorded candidate_digest .*does not match/);
 });
 
 test("a recorded claim scan without a usable digest cannot prove freshness", async (t) => {
