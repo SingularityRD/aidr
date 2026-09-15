@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singularityrd.dev/schemas/investor-metric-dictionary.schema.json",
+  "title": "Singularity AIDR investor metric dictionary",
+  "description": "Machine-readable definitions for investor-facing metrics. A definition is not an observed metric: every missing formula, denominator, source, candidate, candidate reference, environment, observation window, owner, reviewer, source query, sample, target/actual status, fixture version, confidence, evidence reference, evidence hash, or review date is represented by the exact string unknown and leaves the metric NOT_HELD. No measured value is stored or inferred by this dictionary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "metrics"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": { "const": 1 },
+    "status": {
+      "description": "Overall approval status. It must remain NOT_HELD while any metric is incomplete or unapproved.",
+      "enum": ["NOT_HELD", "HELD"]
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/metric" }
+    }
+  },
+  "$defs": {
+    "known_text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "not": {
+        "enum": ["unknown", "UNKNOWN", "TBD", "TODO", "REQUIRED", "N/A", "NA", "NONE", "not held", "NOT_HELD", "NOT AVAILABLE", "UNAVAILABLE", "MISSING", "PENDING"]
+      }
+    },
+    "unknown_or_text": {
+      "oneOf": [
+        { "const": "unknown" },
+        { "$ref": "#/$defs/known_text" }
+      ]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "unknown_or_sha256": {
+      "oneOf": [
+        { "const": "unknown" },
+        { "$ref": "#/$defs/sha256" }
+      ]
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "unknown_or_timestamp": {
+      "oneOf": [
+        { "const": "unknown" },
+        { "$ref": "#/$defs/utc_timestamp" }
+      ]
+    },
+    "positive_integer_or_unknown": {
+      "oneOf": [
+        { "const": "unknown" },
+        { "type": "integer", "minimum": 1 }
+      ]
+    },
+    "target_actual_status": {
+      "oneOf": [
+        { "const": "unknown" },
+        { "enum": ["target_not_set", "target_met", "target_missed"] }
+      ]
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_id",
+        "name",
+        "formula",
+        "denominator",
+        "source",
+        "source_query",
+        "candidate",
+        "candidate_digest",
+        "candidate_ref",
+        "environment",
+        "fixture_version",
+        "window",
+        "sample_size",
+        "target_actual_status",
+        "confidence",
+        "owner",
+        "reviewer",
+        "evidence_ref",
+        "evidence_sha256",
+        "reviewed_at_utc",
+        "limitations",
+        "status"
+      ],
+      "properties": {
+        "metric_id": {
+          "type": "string",
+          "pattern": "^INV-M[0-9]{3}$"
+        },
+        "name": { "$ref": "#/$defs/known_text" },
+        "formula": { "$ref": "#/$defs/unknown_or_text" },
+        "denominator": { "$ref": "#/$defs/unknown_or_text" },
+        "source": { "$ref": "#/$defs/unknown_or_text" },
+        "source_query": { "$ref": "#/$defs/unknown_or_text" },
+        "candidate": {
+          "description": "Release Candidate identifier or unknown until candidate-bound evidence exists.",
+          "$ref": "#/$defs/unknown_or_text"
+        },
+        "candidate_digest": {
+          "description": "SHA-256 of the immutable candidate, or unknown until it is recorded.",
+          "$ref": "#/$defs/unknown_or_sha256"
+        },
+        "candidate_ref": {
+          "description": "Repository-relative immutable candidate manifest, or unknown until it is supplied.",
+          "$ref": "#/$defs/unknown_or_text"
+        },
+        "environment": {
+          "description": "Observed environment identifier or unknown until the environment is recorded.",
+          "$ref": "#/$defs/unknown_or_text"
+        },
+        "fixture_version": { "$ref": "#/$defs/unknown_or_text" },
+        "window": {
+          "description": "Observation period or unknown until a real sample window is recorded.",
+          "$ref": "#/$defs/unknown_or_text"
+        },
+        "sample_size": { "$ref": "#/$defs/positive_integer_or_unknown" },
+        "target_actual_status": { "$ref": "#/$defs/target_actual_status" },
+        "confidence": { "$ref": "#/$defs/unknown_or_text" },
+        "owner": { "$ref": "#/$defs/unknown_or_text" },
+        "reviewer": { "$ref": "#/$defs/unknown_or_text" },
+        "evidence_ref": {
+          "description": "Repository-relative immutable evidence path, or unknown until evidence is supplied.",
+          "$ref": "#/$defs/unknown_or_text"
+        },
+        "evidence_sha256": {
+          "description": "SHA-256 of evidence_ref, or unknown until evidence is supplied.",
+          "$ref": "#/$defs/unknown_or_sha256"
+        },
+        "reviewed_at_utc": { "$ref": "#/$defs/unknown_or_timestamp" },
+        "limitations": {
+          "description": "At least one explicit limitation is required even while the metric is not held.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/known_text" }
+        },
+        "status": {
+          "description": "A metric with any unknown required evidence field must remain NOT_HELD.",
+          "enum": ["NOT_HELD", "HELD"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "HELD" } }
+          },
+          "then": {
+            "properties": {
+              "formula": { "$ref": "#/$defs/known_text" },
+              "denominator": { "$ref": "#/$defs/known_text" },
+              "source": { "$ref": "#/$defs/known_text" },
+              "source_query": { "$ref": "#/$defs/known_text" },
+              "candidate": { "$ref": "#/$defs/known_text" },
+              "candidate_digest": { "$ref": "#/$defs/sha256" },
+              "candidate_ref": { "$ref": "#/$defs/known_text" },
+              "environment": { "$ref": "#/$defs/known_text" },
+              "fixture_version": { "$ref": "#/$defs/known_text" },
+              "window": { "$ref": "#/$defs/known_text" },
+              "sample_size": { "type": "integer", "minimum": 1 },
+              "target_actual_status": { "enum": ["target_not_set", "target_met", "target_missed"] },
+              "confidence": { "$ref": "#/$defs/known_text" },
+              "owner": { "$ref": "#/$defs/known_text" },
+              "reviewer": { "$ref": "#/$defs/known_text" },
+              "evidence_ref": { "$ref": "#/$defs/known_text" },
+              "evidence_sha256": { "$ref": "#/$defs/sha256" },
+              "reviewed_at_utc": { "$ref": "#/$defs/utc_timestamp" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

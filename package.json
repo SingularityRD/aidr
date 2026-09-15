@@ -1,4 +1,4 @@
-{
+﻿{
 	"private": true,
 	"license": "Proprietary",
 	"type": "module",
@@ -36,8 +36,8 @@
 		"build": "node scripts/build-workspace.mjs",
 		"build:release": "node scripts/build-workspace.mjs --release && node scripts/release-artifact-manifests.mjs && node scripts/check-package-contracts.mjs packages/core packages/claude-code packages/extension packages/openclaw packages/opencode packages/cli packages/sdk packages/dashboard packages/codex packages/mcp-gateway && node scripts/check-package-consumers.mjs && node scripts/check-no-sourcemaps.mjs packages && node scripts/check-no-leaky-paths.mjs packages/core/dist packages/claude-code/dist packages/extension/dist packages/openclaw/dist packages/opencode/dist packages/cli/dist packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist",
 		"quality:gate": "pnpm quality:static && pnpm audit:prod && pnpm check && pnpm test && pnpm test:coverage && pnpm build:release",
-		"test": "vitest run",
-		"test:ci": "node scripts/run-tests-ci.mjs",
+		"test": "pnpm test:investor-metrics && vitest run",
+		"test:ci": "pnpm test:investor-metrics && node scripts/run-tests-ci.mjs",
 		"verify:enforcement": "node scripts/verify-enforcement.mjs",
 		"verify:codex": "node scripts/verify-codex-hook.mjs",
 		"features:inventory": "node scripts/generate-feature-inventory.mjs",
@@ -57,13 +57,13 @@
 		"test:e2e:vscode": "vitest run --config vitest.e2e.config.ts packages/extension",
 		"test:customer-demo": "pnpm test:opencode:aidr && pnpm test -- packages/dashboard/src/__tests__/integration.test.tsx --run && pnpm -C packages/dashboard build && pnpm -C packages/dashboard run test:route-smoke:static",
 		"test:watch": "vitest",
+		"test:investor-metrics": "node --test scripts/validate-investor-metric-dictionary.test.mjs",
 		"test:perf": "vitest run --reporter=verbose --reporter=json --outputFile=coverage/test-results.json",
 		"test:perf:analyze": "node scripts/track-test-perf.mjs",
 		"audit:prod": "node scripts/audit-production-deps.mjs",
 		"package:consumers": "node scripts/check-package-consumers.mjs",
 		"verify:package-install": "node scripts/verify-package-install.mjs",
-		"quality:static": "pnpm lint && pnpm benchmark:test && pnpm knip && pnpm duplicates && node scripts/check-mandatory-skips.mjs && node scripts/check-commercial-surface.mjs && node scripts/check-supabase-edge-contracts.mjs && node scripts/demo-preflight.mjs --static && pnpm test:monthly-sli && pnpm verify:monthly-sli",
-		"demo:preflight": "node scripts/demo-preflight.mjs",
+\t\t"quality:static": "pnpm lint && pnpm benchmark:test && pnpm knip && pnpm duplicates && node scripts/check-mandatory-skips.mjs && pnpm verify:investor-metrics && node scripts/check-commercial-surface.mjs && node scripts/check-supabase-edge-contracts.mjs && node scripts/demo-preflight.mjs --static && pnpm test:monthly-sli && pnpm verify:monthly-sli",`r`n		"demo:preflight": "node scripts/demo-preflight.mjs",
 		"lint": "biome lint .",
 		"lint:fix": "biome check --write .",
 		"check": "pnpm --filter @singularityrd/aidr-core run build && pnpm -r --filter \"./packages/*\" --filter \"!@singularityrd/aidr-mcp-gateway\" exec tsc --noEmit && node --check packages/mcp-gateway/src/gateway.mjs && node --check packages/mcp-gateway/src/cli.mjs && node --check packages/mcp-gateway/src/approve.mjs && node --check packages/mcp-gateway/src/stdio.mjs && node --check packages/mcp-gateway/src/stdio-cli.mjs",
@@ -116,6 +116,7 @@
 		"verify:bootstrap": "node --test scripts/deployment-bootstrap.test.mjs",
 		"verify:endpoint-auth-matrix": "node --test scripts/verify-endpoint-auth-matrix.test.mjs",
 		"verify:commercial-gates": "node scripts/verify-commercial-gate-receipts.mjs",
+		"verify:investor-metrics": "node scripts/validate-investor-metric-dictionary.mjs",
 		"package:customer": "node scripts/customer-kit.mjs",
 		"evidence:index": "node scripts/generate-v8-evidence-index.mjs",
 		"evidence:index:verify": "node scripts/generate-v8-evidence-index.mjs --verify",
@@ -132,3 +133,4 @@
 		"vitest-teamcity-reporter": "^0.4.1"
 	}
 }
+
