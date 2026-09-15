@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singularityrd.dev/schemas/license-exception-register.schema.json",
+  "title": "Singularity AIDR local license exception register",
+  "description": "A local, machine-readable register for time-bounded licensing exceptions. The explicit string unknown records an input that is not available; it is not approval, ownership, evidence, or a release decision. Every exception carries an expiry field so a local validator can detect stale entries.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "register_id",
+    "status",
+    "updated_at",
+    "entries",
+    "unknowns",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "register_id": {
+      "const": "aidr-license-exception-register"
+    },
+    "status": {
+      "enum": ["open", "in_review", "closed"]
+    },
+    "updated_at": {
+      "$ref": "#/$defs/unknown_or_date"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/non_empty"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/non_empty"
+      }
+    }
+  },
+  "$defs": {
+    "non_empty": {
+      "type": "string",
+      "minLength": 1
+    },
+    "unknown_or_non_empty": {
+      "oneOf": [
+        {
+          "const": "unknown"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "const": "unknown"
+          }
+        }
+      ]
+    },
+    "unknown_or_date": {
+      "oneOf": [
+        {
+          "const": "unknown"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        }
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exception_id",
+        "component",
+        "version",
+        "declared_license",
+        "exception_type",
+        "scope",
+        "reason",
+        "risk",
+        "mitigations",
+        "owner",
+        "approver",
+        "approved_at",
+        "expires_at",
+        "status",
+        "evidence",
+        "unknowns"
+      ],
+      "properties": {
+        "exception_id": {
+          "type": "string",
+          "pattern": "^LIC-EX-[0-9]{3,}$"
+        },
+        "component": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "version": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "declared_license": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "exception_type": {
+          "enum": [
+            "temporary_distribution",
+            "license_metadata",
+            "dependency_policy",
+            "attribution",
+            "unknown"
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "reason": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "risk": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "mitigations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/non_empty"
+          }
+        },
+        "owner": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "approver": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "approved_at": {
+          "$ref": "#/$defs/unknown_or_date"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/unknown_or_date"
+        },
+        "status": {
+          "enum": ["open", "approved", "expired", "revoked", "unknown"]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/non_empty"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty"
+          }
+        }
+      }
+    }
+  }
+}

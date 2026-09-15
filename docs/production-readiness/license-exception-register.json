@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "register_id": "aidr-license-exception-register",
+  "status": "open",
+  "updated_at": "unknown",
+  "entries": [
+    {
+      "exception_id": "LIC-EX-001",
+      "component": "unknown",
+      "version": "unknown",
+      "declared_license": "unknown",
+      "exception_type": "unknown",
+      "scope": "unknown",
+      "reason": "unknown",
+      "risk": "unknown",
+      "mitigations": ["unknown"],
+      "owner": "unknown",
+      "approver": "unknown",
+      "approved_at": "unknown",
+      "expires_at": "unknown",
+      "status": "unknown",
+      "evidence": ["unknown"],
+      "unknowns": [
+        "component",
+        "version",
+        "declared_license",
+        "exception_type",
+        "scope",
+        "reason",
+        "risk",
+        "mitigations[0]",
+        "owner",
+        "approver",
+        "approved_at",
+        "expires_at",
+        "status",
+        "evidence[0]"
+      ]
+    }
+  ],
+  "unknowns": [
+    "updated_at",
+    "entries[0] is an unpopulated local template row",
+    "No exception owner, approval record, evidence, or expiry has been supplied"
+  ],
+  "limitations": [
+    "This file records a local workflow shape only; it does not grant permission to ship a component.",
+    "An open or unknown entry must remain unresolved until its scope, owner, evidence, and expiry are recorded.",
+    "The validator checks structure and expiry arithmetic only; it cannot verify provenance or an external decision."
+  ]
+}

@@ -42,7 +42,7 @@
     "limitations": [
       "The presence of LICENSE, NOTICE and THIRD_PARTY_NOTICES in the repository is inventory evidence only and is not a legal conclusion.",
       "Chain-of-title, contributor and vendor provenance records are not held.",
-      "The exception register with expiry dates is not held.",
+      "A completed exception register with recorded expiry dates is not held; the repository template remains open with expiry unknown.",
       "docs/production-readiness/privacy-legal-review-template.md records counsel approval as not held."
     ],
     "external_inputs": [
