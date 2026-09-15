@@ -4,7 +4,7 @@ import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
-import { compileRuntimePolicyDocument, simulateCompiledRuntimePolicy, type RuntimePolicyDocumentCompilation } from "../_shared/policy-document.ts";
+import { compileRuntimePolicyDocument, compileRuntimePolicyDraft, simulateCompiledRuntimePolicy, type RuntimePolicyDocumentCompilation } from "../_shared/policy-document.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive, validateRuntimePolicy } from "../_shared/runtime-policy.ts";
 
@@ -100,6 +100,48 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 					const receipt = receiptByAgent.get(agent.id); const target = assignmentByAgent.get(agent.id) ?? current.data?.version ?? 0;
 					return { ...agent, target_version: target, loaded_version: receipt?.version ?? null, received_at: receipt?.received_at ?? null, state: !receipt ? "unknown" : Date.parse(receipt.received_at) < Date.now() - 300000 ? "stale" : receipt.version === target ? "current" : "outdated" };
 				}) });
+			}
+			if (body.action === "compile_document_draft" || body.action === "save_document_draft") {
+				const save = body.action === "save_document_draft";
+				// Draft authors retain member access; publishing remains owner/admin-only.
+				if (save && (!member || !["owner", "admin", "member"].includes(member.role))) return corsJson(req, 403, { error: "policy_forbidden" });
+				const expected = body.expected_document as { id?: unknown; version?: unknown; source_sha256?: unknown } | null;
+				if (save && expected !== null && (
+					!expected || typeof expected !== "object" || Array.isArray(expected) ||
+					typeof expected.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(expected.id) ||
+					!Number.isSafeInteger(expected.version) || Number(expected.version) < 1 ||
+					typeof expected.source_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(expected.source_sha256)
+				)) return corsJson(req, 400, { error: "invalid_document_precondition" });
+				let compiled: Awaited<ReturnType<typeof compileRuntimePolicyDraft>>;
+				let simulation: ReturnType<typeof simulateCompiledRuntimePolicy> | null = null;
+				try {
+					compiled = await compileRuntimePolicyDraft(body.content, parseStoredDocument);
+					validateRuntimePolicy(compiled.runtime_policy);
+					if (body.simulation !== undefined) simulation = simulateCompiledRuntimePolicy(compiled.runtime_policy, body.simulation);
+				} catch (error) {
+					return corsJson(req, 400, { error: error instanceof Error ? error.message : "invalid_policy_document" });
+				}
+				const { source_sha256, ...compilation } = compiled;
+				if (!save) return corsJson(req, 200, { ok: true, dry_run: true, source: { source_sha256 }, ...compilation, ...(simulation ? { simulation } : {}) });
+				// No write (or browser compensation) precedes compilation. The RPC
+				// compares the originally loaded revision under one transaction lock.
+				const { data, error } = await db.rpc("save_policy_document_draft", {
+					p_tenant_id: tenant,
+					p_user_id: auth.user.id,
+					p_content: body.content,
+					p_source_sha256: source_sha256,
+					p_expected_id: expected?.id ?? null,
+					p_expected_version: expected?.version ?? null,
+					p_expected_source_sha256: expected?.source_sha256 ?? null,
+				});
+				if (error) return corsJson(req, error.code === "PT409" ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 503, { error: error.code === "PT409" ? "policy_document_conflict" : "policy_document_save_failed" });
+				if (!data || typeof data.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id) ||
+					typeof data.updated_at !== "string" || !Number.isFinite(Date.parse(data.updated_at)) ||
+					data.version !== (expected ? Number(expected.version) + 1 : 1) || !Number.isSafeInteger(data.version) ||
+					(expected && data.id !== expected.id) || data.source_sha256 !== source_sha256) {
+					return corsJson(req, 503, { error: "policy_document_save_failed" });
+				}
+				return corsJson(req, 200, { ok: true, source: { id: data.id, version: data.version, source_sha256, updated_at: data.updated_at }, ...compilation, ...(simulation ? { simulation } : {}) });
 			}
 			let documentCompilation: RuntimePolicyDocumentCompilation | null = null;
 			let documentSource: { id: string; updated_at: string } | null = null;

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
 import { compilePolicyDocument, simulateRuntimePolicy } from "../../../packages/core/src/policy-document.js";
-import { compileRuntimePolicyDocument, simulateCompiledRuntimePolicy } from "../_shared/policy-document.ts";
+import { compileRuntimePolicyDocument, compileRuntimePolicyDraft, simulateCompiledRuntimePolicy } from "../_shared/policy-document.ts";
 import { validateRuntimePolicy } from "../_shared/runtime-policy.ts";
 
 const document = {
@@ -17,6 +18,25 @@ const document = {
 };
 
 describe("server policy document compiler", () => {
+	it("fingerprints exact submitted UTF-8 rather than normalized compiler output", async () => {
+		const compact = JSON.stringify({ ...document, description: "café 雪" });
+		const source = ` \r\n${compact}\r\n`;
+		const parse = vi.fn(JSON.parse);
+		const compiled = await compileRuntimePolicyDraft(source, parse);
+		expect(parse).toHaveBeenCalledWith(source);
+		expect(compiled.source_sha256).toBe(createHash("sha256").update(source, "utf8").digest("hex"));
+		expect(compiled.source_sha256).not.toBe(createHash("sha256").update(compact, "utf8").digest("hex"));
+		expect(compiled.runtime_policy).toEqual(compileRuntimePolicyDocument(document).runtime_policy);
+	});
+
+	it("bounds UTF-8 source bytes before any parsing", async () => {
+		const parse = vi.fn();
+		await expect(compileRuntimePolicyDraft("雪".repeat(21_846), parse)).rejects.toThrow("policy_document_too_large");
+		await expect(compileRuntimePolicyDraft("", parse)).rejects.toThrow("policy_document_empty");
+		await expect(compileRuntimePolicyDraft({}, parse)).rejects.toThrow("must_be_string");
+		expect(parse).not.toHaveBeenCalled();
+	});
+
 	it("produces a runtime-validator compatible policy with deterministic diagnostics", () => {
 		const result = compileRuntimePolicyDocument(document);
 		expect(validateRuntimePolicy(result.runtime_policy)).toEqual(result.runtime_policy);
