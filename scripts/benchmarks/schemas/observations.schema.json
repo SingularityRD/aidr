@@ -10,7 +10,7 @@
     "trials_per_case": { "type": "integer", "minimum": 1 }, "candidate_product_id": { "type": "string", "minLength": 1 },
     "products": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/product" } },
     "measurements": { "type": "array", "items": { "$ref": "#/$defs/measurement" } },
-    "measurement_budget": { "type": "object", "required": ["currency", "ceiling", "spent"], "properties": { "currency": { "type": "string", "minLength": 1 }, "ceiling": { "type": "number", "minimum": 0 }, "spent": { "type": "number", "minimum": 0 }, "authorization_ref": { "type": ["string", "null"], "description": "Opaque external reference; presence is not verification or authorization." } } }
+    "measurement_budget": { "type": "object", "required": ["authorization_ref", "currency", "amount", "trials", "host_minutes"], "properties": { "authorization_ref": { "type": "string", "minLength": 1, "description": "Opaque external reference; presence is not verification or authorization." }, "currency": { "type": "string", "minLength": 1 }, "amount": { "type": "number", "minimum": 0 }, "trials": { "type": "integer", "minimum": 1 }, "host_minutes": { "type": "number", "minimum": 0 }, "ceiling": { "type": "number", "minimum": 0, "description": "Legacy alias for amount." }, "spent": { "type": "number", "minimum": 0, "description": "Legacy local spend observation; never proves authorization." } } }
   },
   "$defs": {
     "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
