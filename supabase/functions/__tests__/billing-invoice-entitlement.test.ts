@@ -81,7 +81,11 @@ const ORDER_ID = "55555555-5555-4555-8555-555555555555";
 const REQUEST_ID = "order_request_1234567890ab";
 const QUOTE = "QUOTE-2026-0001";
 const EVIDENCE = "a1b2c3d4".repeat(8);
-const APPROVER = "finance.operator@example.invalid";
+const FINANCE_USER = "44444444-4444-4444-8444-444444444444";
+const APPROVER = FINANCE_USER;
+// No customer role confers this independently provisioned authority.
+const FINANCE_OPERATOR = { user_id: FINANCE_USER, revoked_at: null, expires_at: null };
+const FINANCE_FIXTURE = { userId: FINANCE_USER, member: null, financeOperator: FINANCE_OPERATOR };
 
 /** The exact wire request the dashboard consumer sends for a new order. */
 const BODY = { request_id: REQUEST_ID, requested_agents: 25, quote_reference: QUOTE };
@@ -90,7 +94,6 @@ const BODY = { request_id: REQUEST_ID, requested_agents: 25, quote_reference: QU
 const APPROVAL_BODY = {
 	action: "record_invoice_approval",
 	order_id: ORDER_ID,
-	approver: APPROVER,
 	amount_minor: 125000,
 	currency: "USD",
 	evidence_sha256: EVIDENCE,
@@ -302,6 +305,9 @@ describe("invoice order projection", () => {
 describe("invoice-entitlement Edge handler", () => {
 	type RpcCall = { name: string; args: Record<string, unknown> };
 	interface DbOptions {
+		userId?: string;
+		financeOperator?: { user_id: string; revoked_at: string | null; expires_at: string | null } | null;
+		financeError?: boolean;
 		member?: { role: string; expires_at: string | null } | null;
 		memberError?: boolean;
 		tenantStatus?: string | null;
@@ -321,16 +327,20 @@ describe("invoice-entitlement Edge handler", () => {
 
 	function database(options: DbOptions = {}) {
 		const rpcCalls: RpcCall[] = [];
+		const filters: Array<{ table: string; column: string; value: unknown }> = [];
 		// Minimal PostgREST-shaped query builder: chainable and
 		// `.maybeSingle()`-terminated, which is how the handler reads the
 		// identity barrier, the membership and the tenant row.
 		const builder = (table: string) => {
 			const query = {
 				select: () => query,
-				eq: () => query,
+				eq: (column: string, value: unknown) => { filters.push({ table, column, value }); return query; },
 				maybeSingle: async () => {
 					if (table === "identity_user_session_state") return { data: { revoked_before: null }, error: null };
 					if (table === "tenant_identity_policies") return { data: { require_mfa: false }, error: null };
+					if (table === "invoice_finance_operators") {
+						return { data: options.financeOperator ?? null, error: options.financeError ? new Error("db_down") : null };
+					}
 					if (table === "tenant_members") {
 						return {
 							data: options.member === undefined
@@ -355,7 +365,7 @@ describe("invoice-entitlement Edge handler", () => {
 				auth: {
 					getUser: vi.fn(async (token: string) =>
 						token === "valid-token"
-							? { data: { user: { id: USER } }, error: null }
+							? { data: { user: { id: options.userId ?? USER } }, error: null }
 							: { data: { user: null }, error: new Error("invalid") },
 					),
 				},
@@ -399,6 +409,7 @@ describe("invoice-entitlement Edge handler", () => {
 				}),
 			},
 			rpcCalls,
+			filters,
 		};
 	}
 
@@ -412,12 +423,13 @@ describe("invoice-entitlement Edge handler", () => {
 	});
 
 	async function handlerWith(options: DbOptions = {}) {
-		const { db, rpcCalls } = database(options);
+		const { db, rpcCalls, filters } = database(options);
 		const mod = await import("../invoice-entitlement/index.ts");
 		return {
 			handle: mod.createInvoiceEntitlementHandler({ db: db as never }),
 			db,
 			rpcCalls,
+			filters,
 		};
 	}
 
@@ -676,8 +688,50 @@ describe("invoice-entitlement Edge handler", () => {
 		expect((await crossTenant.handle(get())).status).toBe(503);
 	});
 
+	it.each(["owner", "admin"])("rejects active customer %s self-approval before every RPC", async (role) => {
+		const { handle, rpcCalls } = await handlerWith({ member: { role, expires_at: null } });
+		const response = await handle(post(APPROVAL_BODY));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "billing_forbidden" });
+		expect(rpcCalls).toEqual([]);
+		const spoof = await handle(post({ ...APPROVAL_BODY, approver: FINANCE_USER }));
+		expect(spoof.status).toBe(400);
+		expect(rpcCalls).toEqual([]);
+	});
+
+	it("fails closed for revoked, expired, mismatched or unreadable finance grants before RPC", async () => {
+		for (const financeOperator of [
+			null,
+			{ ...FINANCE_OPERATOR, revoked_at: "2026-01-01T00:00:00Z" },
+			{ ...FINANCE_OPERATOR, expires_at: "2000-01-01T00:00:00Z" },
+			{ ...FINANCE_OPERATOR, expires_at: "not-a-date" },
+			{ ...FINANCE_OPERATOR, user_id: USER },
+		]) {
+			const { handle, rpcCalls } = await handlerWith({ ...FINANCE_FIXTURE, financeOperator });
+			expect((await handle(post(APPROVAL_BODY))).status).toBe(403);
+			expect(rpcCalls).toEqual([]);
+		}
+		const unavailable = await handlerWith({ ...FINANCE_FIXTURE, financeError: true });
+		expect((await unavailable.handle(post(APPROVAL_BODY))).status).toBe(503);
+		expect(unavailable.rpcCalls).toEqual([]);
+	});
+
+	it("honors revoked authority or tenant suspension at the transactional recheck", async () => {
+		const { handle, rpcCalls } = await handlerWith({
+			...FINANCE_FIXTURE,
+			approvalError: { code: "42501", message: "invoice_approval_forbidden" },
+		});
+		const response = await handle(post(APPROVAL_BODY));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "billing_forbidden" });
+		expect(rpcCalls.map((call) => call.name)).toEqual([
+			"get_enterprise_invoice_order_for_approval", "consume_tenant_rate_limit", "record_invoice_approval",
+		]);
+		expect(rpcCalls[2].args.p_actor_user_id).toBe(FINANCE_USER);
+	});
+
 	it("grants entitlement only through a recorded finance approval with an evidence digest", async () => {
-		const { handle, rpcCalls } = await handlerWith();
+		const { handle, rpcCalls, db, filters } = await handlerWith(FINANCE_FIXTURE);
 		const response = await handle(post(APPROVAL_BODY));
 		expect(response.status).toBe(200);
 		const body = (await response.json()) as Record<string, unknown>;
@@ -698,35 +752,55 @@ describe("invoice-entitlement Edge handler", () => {
 		// never present the recorded decision as externally validated.
 		expect(body.external_validation).toBe(false);
 
-		// The transition is driven with the operator's inputs plus server facts:
-		// the approver, the amount, the currency and the evidence digest come from
-		// the body, and nothing client-supplied decides the tenant.
+		// Only amount, currency and digest are body inputs. Tenant and finance
+		// actor UUID are server facts rechecked by the transaction, not labels.
 		const transition = rpcCalls.find((call) => call.name === "record_invoice_approval");
 		expect(transition?.args).toEqual({
+			p_tenant_id: TENANT,
+			p_actor_user_id: FINANCE_USER,
 			p_order_id: ORDER_ID,
-			p_approver: APPROVER,
 			p_amount_minor: 125000,
 			p_currency: "USD",
 			p_evidence_sha256: EVIDENCE,
 		});
-		expect(transition?.args).not.toHaveProperty("p_tenant_id");
-		expect(transition?.args).not.toHaveProperty("p_actor_user_id");
+		expect(transition?.args).not.toHaveProperty("p_approver");
+		expect(db.from).toHaveBeenCalledWith("invoice_finance_operators");
+		expect(filters.filter(({ table }) => table === "invoice_finance_operators")).toEqual([
+			{ table: "invoice_finance_operators", column: "tenant_id", value: TENANT },
+			{ table: "invoice_finance_operators", column: "user_id", value: FINANCE_USER },
+		]);
+		expect(db.auth.getUser).toHaveBeenCalledWith("valid-token");
+		expect(rpcCalls.map((call) => call.name)).toEqual([
+			"get_enterprise_invoice_order_for_approval", "consume_tenant_rate_limit", "record_invoice_approval",
+		]);
 
 		// The order is scoped to the authenticated tenant before the transition.
 		expect(
 			rpcCalls.find((call) => call.name === "get_enterprise_invoice_order_for_approval")?.args,
-		).toEqual({ p_tenant_id: TENANT, p_actor_user_id: USER, p_order_id: ORDER_ID });
+		).toEqual({ p_tenant_id: TENANT, p_actor_user_id: FINANCE_USER, p_order_id: ORDER_ID });
 		expect(rpcCalls.find((call) => call.name === "consume_tenant_rate_limit")?.args).toMatchObject({
 			p_tenant_id: TENANT,
-			p_subject: USER,
+			p_subject: FINANCE_USER,
 			p_endpoint: "invoice-approval",
 		});
 	});
 
-	it("refuses an approval that omits the approver, the amount, the currency or the evidence digest", async () => {
-		const { handle, rpcCalls } = await handlerWith();
+	it("rejects a transaction response with a claimed label or a different actor", async () => {
+		for (const approver of [USER, "finance.operator@example.invalid"]) {
+			const { handle } = await handlerWith({ ...FINANCE_FIXTURE, approval: approvalRow({ approver }) });
+			const response = await handle(post(APPROVAL_BODY));
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "invalid_invoice_approval_state" });
+		}
+	});
+
+	it("refuses claimed approvers or missing amount, currency or evidence digest", async () => {
+		const { handle, rpcCalls } = await handlerWith(FINANCE_FIXTURE);
 		for (const approval of [
-			{ ...APPROVAL_BODY, approver: undefined },
+			{ ...APPROVAL_BODY, approver: APPROVER },
+			{ ...APPROVAL_BODY, approver: null },
+			{ ...APPROVAL_BODY, approver_user_id: FINANCE_USER },
+			{ ...APPROVAL_BODY, actor_user_id: FINANCE_USER },
 			{ ...APPROVAL_BODY, approver: "   " },
 			{ ...APPROVAL_BODY, approver: `${APPROVER}\nX-Injected: 1` },
 			{ ...APPROVAL_BODY, approver: "x".repeat(201) },
@@ -756,6 +830,7 @@ describe("invoice-entitlement Edge handler", () => {
 
 	it("rejects a second approval for the same order", async () => {
 		const conflicted = await handlerWith({
+			...FINANCE_FIXTURE,
 			approvalError: { code: "23505", message: "invoice_approval_conflict" },
 		});
 		const response = await conflicted.handle(post(APPROVAL_BODY));
@@ -768,13 +843,14 @@ describe("invoice-entitlement Edge handler", () => {
 
 		// Any other failure is unavailable, never a second silent application.
 		const unrelated = await handlerWith({
+			...FINANCE_FIXTURE,
 			approvalError: { code: "23505", message: "duplicate key value violates unique constraint" },
 		});
 		const unrelatedResponse = await unrelated.handle(post(APPROVAL_BODY));
 		expect(unrelatedResponse.status).toBe(503);
 		expect(await unrelatedResponse.json()).toMatchObject({ error: "invoice_approval_unavailable" });
 
-		const missing = await handlerWith({ approvalError: { code: "P0002", message: "not found" } });
+		const missing = await handlerWith({ ...FINANCE_FIXTURE, approvalError: { code: "P0002", message: "not found" } });
 		expect((await missing.handle(post(APPROVAL_BODY))).status).toBe(404);
 	});
 
@@ -885,19 +961,18 @@ describe("invoice entitlement migration contract", () => {
 });
 
 describe("invoice approval contract", () => {
-	it("accepts only a complete operator decision and normalizes the approver", () => {
+	it("accepts only a complete operator decision with no body-supplied identity", () => {
 		expect(parseInvoiceApprovalRequest(APPROVAL_BODY)).toEqual({
 			orderId: ORDER_ID,
-			approver: APPROVER,
 			amountMinor: 125000,
 			currency: "USD",
 			evidenceSha256: EVIDENCE,
 		});
-		expect(parseInvoiceApprovalRequest({ ...APPROVAL_BODY, approver: `  ${APPROVER}  ` }).approver).toBe(
-			APPROVER,
-		);
+		for (const approver of [APPROVER, `  ${APPROVER}  `, undefined, null]) {
+			expect(() => parseInvoiceApprovalRequest({ ...APPROVAL_BODY, approver })).toThrow("unsupported_invoice_approval_field");
+		}
 		// An intake-shaped body is not an approval: the parser has no defaults,
-		// so a missing approver, amount, currency or digest cannot be fabricated.
+		// so a missing amount, currency or digest cannot be fabricated.
 		for (const value of [null, undefined, [], "approve", BODY, { action: "record_invoice_approval" }]) {
 			expect(() => parseInvoiceApprovalRequest(value)).toThrow();
 		}

@@ -3,8 +3,8 @@
 // This is deliberately a *second*, separate contract from `contract.ts`: the
 // intake ledger stays pending_finance-only and no field defined here may ever
 // be accepted by the intake body parser. The approval decision is human and
-// external; the operator supplies the approver identity, the approved amount,
-// the currency and the digest of the out-of-band payment evidence. Nothing in
+// external; the authenticated finance operator supplies the approved amount,
+// currency and digest, never the approver identity. Nothing in
 // this module derives a price, a tax figure or an approval.
 
 /** The only action that may enter the paid state. */
@@ -16,7 +16,6 @@ export type InvoiceApprovalCurrency = (typeof APPROVAL_CURRENCIES)[number];
 
 export type InvoiceApprovalRequest = {
 	orderId: string;
-	approver: string;
 	amountMinor: number;
 	currency: InvoiceApprovalCurrency;
 	evidenceSha256: string;
@@ -42,7 +41,6 @@ const EVIDENCE_SHA256 = /^[0-9a-f]{64}$/;
 const APPROVAL_FIELDS = new Set([
 	"action",
 	"order_id",
-	"approver",
 	"amount_minor",
 	"currency",
 	"evidence_sha256",
@@ -54,9 +52,9 @@ function validApprover(value: unknown): value is string {
 }
 
 /**
- * Parse the operator-supplied approval action. Every value that records *who*
- * approved and *what* they approved is required here: there is no default
- * approver, no default amount and no default evidence digest.
+ * Parse what the finance operator approved, with no default amount or evidence.
+ * The authenticated actor UUID is resolved by the Edge handler; claimed approver
+ * fields are rejected rather than accepted as labels or authorization inputs.
  */
 export function parseInvoiceApprovalRequest(value: unknown): InvoiceApprovalRequest {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_invoice_approval");
@@ -66,8 +64,6 @@ export function parseInvoiceApprovalRequest(value: unknown): InvoiceApprovalRequ
 	}
 	if (body.action !== APPROVAL_ACTION) throw new Error("unsupported_action");
 	if (typeof body.order_id !== "string" || !UUID.test(body.order_id)) throw new Error("invalid_order_id");
-	const approver = typeof body.approver === "string" ? body.approver.trim() : "";
-	if (!validApprover(approver)) throw new Error("invalid_approver");
 	if (!Number.isSafeInteger(body.amount_minor) || (body.amount_minor as number) < 1) {
 		throw new Error("invalid_amount_minor");
 	}
@@ -79,7 +75,6 @@ export function parseInvoiceApprovalRequest(value: unknown): InvoiceApprovalRequ
 	}
 	return {
 		orderId: body.order_id.toLowerCase(),
-		approver,
 		amountMinor: body.amount_minor as number,
 		currency: body.currency as InvoiceApprovalCurrency,
 		evidenceSha256: body.evidence_sha256,
