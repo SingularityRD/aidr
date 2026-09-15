@@ -32,7 +32,13 @@ export const OBSERVATION_PRODUCT_REQUIRED_FIELDS = ["product_id", "version", "ar
 export const MEASUREMENT_REQUIRED_FIELDS = ["case_id", "product_id", "trial", "action", "phase", "latency_ms", "raw_evidence_file", "raw_evidence_sha256"];
 export const ATTESTATION_REQUIRED_FIELDS = ["schema_version", "payload", "signature_base64"];
 export const ATTESTATION_PAYLOAD_REQUIRED_FIELDS = ["protocol_version", "corpus_sha256", "observations_sha256", "candidate_artifact_sha256", "rule_author_id", "evaluator_id", "evaluator_role", "completed_at"];
-export const REPORT_REQUIRED_FIELDS = ["schema_version", "kind", "claim_status", "production_accepted", "corpus", "observations_sha256", "workload_id", "environment", "attestation", "coverage", "gates", "canonical_report_sha256"];
+export const REPORT_REQUIRED_FIELDS = ["schema_version", "kind", "claim_status", "production_accepted", "corpus", "observations_sha256", "workload_id", "environment", "attestation", "coverage", "gates", "report_sha256", "canonical_report_sha256"];
+
+// Report digests are domain-separated from all other SHA-256 values in the
+// benchmark protocol. The NUL terminator is part of the digest input and
+// cannot occur in the UTF-8 JSON text produced by this evaluator.
+export const REPORT_DIGEST_DOMAIN = "aidr-benchmark-report-v1\u0000";
+const REPORT_DIGEST_FIELDS = new Set(["report_sha256", "canonical_report_sha256"]);
 
 function requireFields(value, fields, label) {
 	for (const field of fields) if (!(field in value)) fail(`${label}.${field} is required`);
@@ -78,6 +84,31 @@ export function canonicalJson(value) {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
 	if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 	return JSON.stringify(value);
+}
+
+/**
+ * Return the exact UTF-8 bytes covered by a report digest.
+ *
+ * The digest fields are deliberately removed before canonicalization. This
+ * makes the digest a commitment to the report payload rather than a recursive
+ * commitment to itself, while the explicit domain prevents cross-protocol
+ * hash confusion.
+ */
+export function canonicalReportBytes(report) {
+	const unsigned = { ...report };
+	for (const field of REPORT_DIGEST_FIELDS) delete unsigned[field];
+	return Buffer.from(`${REPORT_DIGEST_DOMAIN}${canonicalJson(unsigned)}`, "utf8");
+}
+
+export function reportSha256(report) {
+	return digest(canonicalReportBytes(report));
+}
+
+/** Serialize report output with an explicit LF terminator and UTF-8 encoding. */
+export function serializeReport(report) {
+	const text = `${JSON.stringify(report, null, 2)}\n`;
+	if (text.includes("\r")) fail("report output must use LF line endings");
+	return Buffer.from(text, "utf8");
 }
 
 function measuredMetric(value, observations) {
@@ -795,7 +826,11 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		candidate_id: candidateId,
 		independent_acceptance: false,
 	};
-	report.canonical_report_sha256 = digest(Buffer.from(canonicalJson(report), "utf8"));
+	const reportDigest = reportSha256(report);
+	report.report_sha256 = reportDigest;
+	// Keep the original field as a compatibility alias for existing benchmark
+	// consumers. Both names carry the same domain-separated report commitment.
+	report.canonical_report_sha256 = reportDigest;
 	return report;
 }
 
@@ -813,6 +848,7 @@ function argsFromCli(argv) {
 		args[key] = argv[++index];
 	}
 	if (!args["--corpus"]) fail("missing --corpus");
+	if (args["--force"] && !args["--output"]) fail("--force requires --output");
 	// With --scope-file the coverage verdict is reported before the signed inputs are needed, so a
 	// corpus that does not cover the sold scope fails with its real reason instead of "cases must
 	// be nonempty". Without --scope-file every flag behaves exactly as before.
@@ -846,10 +882,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 			splitManifest: split?.value ?? null, splitManifestBytes: split?.bytes ?? null,
 			dutySeparationReceipt: receipt?.value ?? null, dutySeparationReceiptBytes: receipt?.bytes ?? null,
 		});
-		const output = `${JSON.stringify(report, null, 2)}\n`;
+		const output = serializeReport(report);
 		if (args["--reproduce"]) {
-			const expected = readFileSync(resolve(args["--reproduce"]), "utf8");
-			if (expected !== output) fail("reproduced report bytes differ");
+			const expected = readFileSync(resolve(args["--reproduce"]));
+			if (!expected.equals(output)) fail("reproduced report bytes differ");
 		}
 		if (args["--output"]) writeFileSync(resolve(args["--output"]), output, { flag: args["--force"] ? "w" : "wx" });
 		else process.stdout.write(output);
