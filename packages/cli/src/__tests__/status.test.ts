@@ -11,7 +11,7 @@
  * an assumption that nothing was lost.
  */
 
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,10 +40,31 @@ async function runStatusJson(): Promise<Record<string, unknown>> {
 	const log = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
 		lines.push(args.map((value) => String(value)).join(" "));
 	});
-	const statusCommand = (await import("../commands/status.js")).default;
-	await statusCommand({ json: true });
-	log.mockRestore();
-	return JSON.parse(lines.join("\n")) as Record<string, unknown>;
+	const originalExitCode = process.exitCode;
+	try {
+		const statusCommand = (await import("../commands/status.js")).default;
+		await statusCommand({ json: true });
+		return JSON.parse(lines.join("\n")) as Record<string, unknown>;
+	} finally {
+		process.exitCode = originalExitCode;
+		log.mockRestore();
+	}
+}
+
+async function runStatusText(): Promise<string> {
+	const lines: string[] = [];
+	const log = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+		lines.push(args.map((value) => String(value)).join(" "));
+	});
+	const originalExitCode = process.exitCode;
+	try {
+		const statusCommand = (await import("../commands/status.js")).default;
+		await statusCommand();
+		return lines.join("\n");
+	} finally {
+		process.exitCode = originalExitCode;
+		log.mockRestore();
+	}
 }
 
 describe("aidr status loss reporting", () => {
@@ -73,13 +94,33 @@ describe("aidr status loss reporting", () => {
 		expect(audit.rotationDrops).toBe(0);
 	});
 
+	it("prints loss counters in text without claiming an unavailable queue", async () => {
+		const output = await runStatusText();
+		expect(output).toContain(
+			"Telemetry queue: idle; 0 event(s) undelivered, 0 lost.",
+		);
+		expect(output).not.toContain("at least one queue could not be read");
+		expect(output).toContain(
+			"Audit log: 0 append(s) could not be written, 0 rotation(s) dropped the oldest file.",
+		);
+	});
+
+	it("labels an unreadable telemetry root as unavailable in text output", async () => {
+		const home = process.env.HOME as string;
+		const root = join(home, ".singularity-aidr", "telemetry");
+		writeFileSync(root, "not a directory", "utf8");
+
+		const output = await runStatusText();
+		expect(output).toContain("Telemetry queue: unavailable;");
+		expect(output).toContain("at least one queue could not be read");
+	});
+
 	it("reports a queue it cannot read as unavailable rather than as empty", async () => {
 		// A file where the telemetry root belongs: the reader must not present an
 		// unreadable queue as a clean one.
 		const home = process.env.HOME as string;
 		const root = join(home, ".singularity-aidr", "telemetry");
 		mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
-		const { writeFileSync } = await import("node:fs");
 		writeFileSync(root, "not a directory", "utf8");
 
 		const report = (await runStatusJson()) as {

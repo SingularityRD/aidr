@@ -57,7 +57,7 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 		// Data loss is reported, never assumed away: an audit append that failed
 		// and a telemetry event that was dropped are both visible here.
 		data_loss: {
-			audit: getAuditLogLossState(),
+			audit: auditLoss,
 			telemetry: telemetryLoss,
 		},
 		connectors, configuration_ready: configurationReady, host_enforcement: "unverified",
@@ -69,22 +69,19 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 		console.log(`Configuration: ${configState}; mode: ${config.mode}`);
 		for (const connector of connectors) console.log(`  ${connector.label}: ${connector.state === "installed" ? "registration/package detected" : connector.state} — ${connector.detail}`);
 		console.log(`Managed: ${config.control_plane.enabled ? "enabled" : "disabled"}; endpoint ${config.control_plane.endpoint ? "configured" : "missing"}. Connectivity and fleet adoption have not been checked.`);
+		const unreadableTelemetryQueue =
+			telemetryLoss.state === "unavailable" ||
+			telemetryLoss.namespaces.some((entry: { state: string }) => entry.state === "unavailable");
 		console.log(
 			`Telemetry queue: ${telemetryLoss.state}; ${telemetryLoss.pendingEvents} event(s) undelivered, ${telemetryLoss.lostTotal} lost` +
 				(telemetryLoss.pendingEvents > 0 ? `, oldest ${telemetryLoss.oldestAgeSeconds}s` : "") +
-				telemetryLoss.namespaces.some((entry: { state: string }) => entry.state === "unavailable")
-					? " — at least one queue could not be read."
-					: ".",
+				(unreadableTelemetryQueue ? " — at least one queue could not be read." : "."),
 		);
-		if (auditLoss.writeFailures > 0 || auditLoss.rotationDrops > 0) {
-			console.log(
-				chalk.yellow(
-					`Audit log: ${auditLoss.writeFailures} append(s) could not be written, ${auditLoss.rotationDrops} rotation(s) dropped the oldest file. Last error: ${auditLoss.lastError ?? "unknown"}.`,
-				),
-			);
-		} else {
-			console.log("Audit log: no write failures recorded in this process.");
-		}
+		const auditSummary =
+			`Audit log: ${auditLoss.writeFailures} append(s) could not be written, ${auditLoss.rotationDrops} rotation(s) dropped the oldest file.` +
+			(auditLoss.lastError ? ` Last error: ${auditLoss.lastError}.` : "");
+		const hasAuditLoss = auditLoss.writeFailures > 0 || auditLoss.rotationDrops > 0;
+		console.log(hasAuditLoss ? chalk.yellow(auditSummary) : auditSummary);
 		console.log(configurationReady ? "Local installation checks passed. Run an agent-host canary to confirm actual enforcement." : "Installation requires attention. Check configuration and connector registration above.");
 		console.log("A package or hook registration does not prove that the host executes it.");
 	}

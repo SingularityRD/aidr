@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -19,7 +19,9 @@ describe("telemetry loss summary", () => {
 		rmSync(root, { recursive: true, force: true });
 	});
 
-	it("reports zero when no queue directory exists", async () => {
+	it("treats an absent queue root as idle with no loss", async () => {
+		// ENOENT means telemetry has never been queued on this machine, which is
+		// genuinely idle rather than an unavailable storage failure.
 		const summary = await readTelemetryLossSummary(join(root, "absent"));
 		expect(summary.queues).toBe(0);
 		expect(summary.pendingEvents).toBe(0);
@@ -42,12 +44,16 @@ describe("telemetry loss summary", () => {
 		expect(summary.state).toBe("queued");
 	});
 
-	it("reports unavailable storage instead of a clean queue", async () => {
-		// A file where a directory is expected: the queue cannot persist, which is
-		// a storage outage rather than an empty queue.
-		mkdirSync(join(root, "placeholder"), { recursive: true });
-		const summary = await readTelemetryLossSummary(join(root, "placeholder", "not-a-dir"));
-		expect(summary.state).toBe("idle");
-		expect(summary.pendingEvents).toBe(0);
+	it("reports a corrupt namespace as unavailable rather than degraded and idle", async () => {
+		const namespace = "a".repeat(8);
+		const directory = join(root, namespace);
+		mkdirSync(directory, { recursive: true });
+		writeFileSync(join(directory, "events.wal"), '{"v":1,"op":"unknown"}\n', "utf8");
+
+		const summary = await readTelemetryLossSummary(root);
+		expect(summary.state).toBe("unavailable");
+		expect(summary.namespaces).toEqual([
+			{ namespace, pendingEvents: 0, lostTotal: 0, state: "unavailable" },
+		]);
 	});
 });

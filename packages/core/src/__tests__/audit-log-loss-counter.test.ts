@@ -1,9 +1,13 @@
-﻿import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	getAuditLogLossState,
+	logAllowedResponseActions,
+	logIncident,
+	logPluginScan,
+	logResponseActions,
 	logVerdict,
 	recordAuditRotationDrop,
 	recordAuditWriteFailure,
@@ -18,6 +22,7 @@ import type { LoggingConfig, Verdict } from "../types.js";
  */
 const denial: Verdict = {
 	decision: "deny",
+	category: "test",
 	confidence: 1,
 	severity: "high",
 	source: "heuristic",
@@ -81,6 +86,33 @@ describe("audit log loss accounting", () => {
 			await expect(
 				logVerdict(config, "session-1", "Bash", { command: "rm -rf /" }, denial),
 			).resolves.toBeUndefined();
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("counts failures from every audit writer", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "aidr-audit-loss-"));
+		try {
+			const asDirectory = join(directory, "audit.jsonl");
+			mkdirSync(asDirectory);
+			const config: LoggingConfig = {
+				enabled: true,
+				path: asDirectory,
+				max_bytes: 5_000_000,
+				max_files: 3,
+				log_clean: true,
+			};
+			const actions = [
+				{ action: "snapshot" as const, outcome: "failure" as const, target: "file.txt" },
+			];
+
+			await logResponseActions(config, "session-1", "Write", denial, actions);
+			await logAllowedResponseActions(config, "session-1", "Write", denial, actions);
+			await logPluginScan(config, "plugin", "1.0.0", [{ threat_id: "T1" }]);
+			await logIncident(config, { type: "incident", incident_id: "incident-1" });
+
+			expect(getAuditLogLossState().writeFailures).toBe(4);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
