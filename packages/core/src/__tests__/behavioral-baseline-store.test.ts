@@ -85,6 +85,37 @@ async function setModifiedAt(path: string, timestamp: number): Promise<void> {
 }
 
 describe("FileBehavioralBaselineStore", () => {
+	it("binds corpus records without accumulating per-version stores or trusting legacy state", async () => {
+		const dir = await temporaryStoreDir();
+		const options = { storeDir: dir, now: () => NOW };
+		const legacy = new FileBehavioralBaselineStore(options);
+		const a = new FileBehavioralBaselineStore({ ...options, corpusDigest: "a".repeat(64) });
+		const b = new FileBehavioralBaselineStore({ ...options, corpusDigest: "b".repeat(64) });
+		const state = sessionState([observation(0)]);
+		await legacy.save("tenant-a", "session-a", state);
+		expect(await a.load("tenant-a", "session-a")).toBeNull();
+		await a.save("tenant-a", "session-a", state);
+		expect(await legacy.load("tenant-a", "session-a")).toBeNull();
+		expect(await b.load("tenant-a", "session-a")).toBeNull();
+		expect(await a.load("tenant-a", "session-a")).toEqual(state);
+		await b.save("tenant-a", "session-a", state);
+		expect(await a.load("tenant-a", "session-a")).toBeNull();
+		await a.save("tenant-a", "session-a", state);
+		expect(await b.load("tenant-a", "session-a")).toBeNull();
+		expect(await storedRecords(dir)).toHaveLength(1);
+		await b.clearSession("tenant-a", "session-a");
+		expect(await a.load("tenant-a", "session-a")).toBeNull();
+		await a.save("tenant-a", "session-a", state);
+		await b.clearTenant("tenant-a");
+		expect(await storedRecords(dir)).toHaveLength(0);
+	});
+
+	it("rejects an invalid corpus binding before reading or writing files", () => {
+		expect(() => new FileBehavioralBaselineStore({ corpusDigest: "../arbitrary" })).toThrow(
+			"digest is invalid",
+		);
+	});
+
 	it("round-trips observations and bounds the events it keeps per session", async () => {
 		const dir = await temporaryStoreDir();
 		const store = new FileBehavioralBaselineStore({

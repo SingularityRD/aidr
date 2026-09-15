@@ -13,6 +13,10 @@
  *   the session id, and the raw ids are stored inside the file and re-checked on
  *   load. A file that does not belong to the requested scope is discarded, so
  *   one tenant's observations can never be read into another tenant's baseline.
+ * - **Corpus bound when provisioned.** The constructor's verified corpus digest
+ *   is saved and checked on each record. Corpus rotation reuses the same session
+ *   slot, keeping aggregate quotas and tenant/session clearing intact. Concurrent
+ *   old/new contexts may replace progress, but cannot restore each other's data.
  * - **Bounded.** The store reuses the orchestrator's own bounds (`maxTenants`,
  *   `maxSessionsPerTenant`, `maxEventsPerSession`, `maxFingerprintsPerSession`)
  *   plus its declared event retention (`maxEventAgeMs`), and prunes on every
@@ -79,6 +83,8 @@ export interface BehavioralBaselineStoreBounds {
 export interface BehavioralBaselineStoreOptions extends Partial<BehavioralBaselineStoreBounds> {
 	/** Directory holding tenant/session state. Defaults to the product state dir. */
 	storeDir?: string;
+	/** Verified corpus identity; a changed corpus replaces, never inherits, this session slot. */
+	corpusDigest?: string;
 	now?: () => number;
 	logger?: Logger;
 }
@@ -167,11 +173,16 @@ function decodeFingerprintCounts(
  */
 export class FileBehavioralBaselineStore implements BehavioralBaselineStore {
 	private readonly storeDir: string;
+	private readonly corpusDigest: string | undefined;
 	private readonly bounds: BehavioralBaselineStoreBounds;
 	private readonly now: () => number;
 	private readonly logger: Logger;
 
 	constructor(options: BehavioralBaselineStoreOptions = {}) {
+		if (options.corpusDigest !== undefined && !/^[a-f0-9]{64}$/.test(options.corpusDigest)) {
+			throw new Error("Behavioral baseline corpus digest is invalid");
+		}
+		this.corpusDigest = options.corpusDigest;
 		const defaults = defaultBounds();
 		this.bounds = {
 			maxTenants: options.maxTenants ?? defaults.maxTenants,
@@ -224,6 +235,7 @@ export class FileBehavioralBaselineStore implements BehavioralBaselineStore {
 			await mkdir(join(this.storeDir, digest(tenantId)), { recursive: true, mode: 0o700 });
 			await atomicWriteJson(path, {
 				schema_version: SCHEMA_VERSION,
+				corpus_sha256: this.corpusDigest,
 				tenant_id: tenantId,
 				session_id: sessionId,
 				baseline_samples: normalized.baselineSamples,
@@ -319,6 +331,7 @@ export class FileBehavioralBaselineStore implements BehavioralBaselineStore {
 	): boolean {
 		return (
 			record.schema_version === SCHEMA_VERSION &&
+			record.corpus_sha256 === this.corpusDigest &&
 			record.tenant_id === tenantId &&
 			record.session_id === sessionId &&
 			isBoundedString(record.tenant_id, MAX_ID_LENGTH) &&

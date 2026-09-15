@@ -1,8 +1,9 @@
 /**
- * Local 300KB embedding model for threat detection.
+ * Deterministic local embedding model for threat similarity (not calibrated confidence).
  * Uses the TinyHash embedding engine from ml/embedder.ts for local inference.
  */
 
+import { BehavioralCorpusSchema } from "./behavioral-corpus.js";
 import { EMBEDDING_DIM, generateEmbedding } from "./ml/embedder.js";
 import { cosineSimilarity, findTopKSimilar, SIMILARITY_THRESHOLDS } from "./ml/similarity.js";
 
@@ -28,10 +29,7 @@ export class LocalEmbeddingModel {
 
 	constructor(private config: EmbeddingModelConfig) {}
 
-	/**
-	 * Load the 300KB model from disk and initialize embedding engine.
-	 * The model is lightweight and loads synchronously from in-memory structures.
-	 */
+	/** Initialize the embedder; this does not load or invent a threat database. */
 	async load(): Promise<void> {
 		// Initialize embedding engine (pre-loaded, no external dependencies)
 		this.isLoaded = true;
@@ -93,6 +91,17 @@ export class LocalEmbeddingModel {
 					metadata: threat.metadata,
 				};
 			});
+	}
+
+	/** Atomically import a bounded compatible corpus, copying all caller data.
+	 * Authentication belongs to the provisioning boundary, not this model API.
+	 */
+	async importThreatCorpus(entries: unknown): Promise<void> {
+		if (this.config.vectorSize !== EMBEDDING_DIM) {
+			throw new Error("Threat corpus model dimension is incompatible");
+		}
+		const validated = BehavioralCorpusSchema.shape.entries.parse(entries);
+		this.threats = validated;
 	}
 
 	/**

@@ -1,23 +1,84 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	detectorPolicyPath,
-	loadProvisionedDetectorContext,
-} from "../detector-provisioning.js";
+import type {
+	BehavioralDetectionInput,
+	BehavioralDetectionResult,
+} from "../behavioral-orchestrator.js";
+import { detectorPolicyPath, loadProvisionedDetectorContext } from "../detector-provisioning.js";
+import { evaluateToolCall } from "../evaluator.js";
+import { LocalEmbeddingModel } from "../ml-model.js";
 import type { AgentRuntime } from "../types.js";
 import {
-	detectorPolicyPayload,
+	behavioralPolicyPayload,
 	detectorPolicyPathFor,
+	detectorPolicyPayload,
 	entitlementSnapshot,
 	provisionTenantDetectorPolicy,
+	syntheticBehavioralInput,
 	syntheticDlpPolicy,
+	syntheticThreatCorpus,
 	TEST_DLP_MARKER,
+	TEST_SYNTHETIC_THREAT_ID,
+	TEST_SYNTHETIC_THREAT_TEXT,
 	TEST_TENANT_ID,
 } from "./detector-provisioning-fixtures.js";
 
 let home: string;
+
+function firstCorpusEntry(corpus = syntheticThreatCorpus()) {
+	const entry = corpus.entries[0];
+	if (!entry) throw new Error("Synthetic corpus fixture must have an entry");
+	return entry;
+}
+
+async function provisionBehavioral(payload = behavioralPolicyPayload()) {
+	return provisionTenantDetectorPolicy({
+		homeDir: home,
+		agentRuntime: "opencode",
+		payload,
+		entitlement: entitlementSnapshot({
+			premiumModules: ["runtime_detectors", "behavioral_learning_v1"],
+		}),
+	});
+}
+
+async function freshBehavioral() {
+	const context = await loadProvisionedDetectorContext("opencode");
+	const behavioral = context.runtimeDetectors?.behavioral;
+	expect(behavioral?.enabled).toBe(true);
+	if (!behavioral) throw new Error("Signed behavioral detector was not provisioned");
+	return behavioral;
+}
+
+async function evaluateFresh(input = syntheticBehavioralInput()) {
+	return (await freshBehavioral()).orchestrator.evaluate(input);
+}
+
+async function evaluateInSeparateProcess(input: BehavioralDetectionInput) {
+	const outputPath = join(home, "process-result.json");
+	execFileSync(
+		process.execPath,
+		[
+			fileURLToPath(new URL("./detector-provisioning-process.mjs", import.meta.url)),
+			JSON.stringify(input),
+			outputPath,
+		],
+		{
+			cwd: fileURLToPath(new URL("../../../../", import.meta.url)),
+			env: { ...process.env, HOME: home, USERPROFILE: home },
+			stdio: ["ignore", "inherit", "inherit"],
+			timeout: 15_000,
+		},
+	);
+	return JSON.parse(await readFile(outputPath, "utf8")) as {
+		pid: number;
+		result: BehavioralDetectionResult;
+	};
+}
 
 beforeEach(async () => {
 	home = await mkdtemp(join(tmpdir(), "aidr-detector-provisioning-"));
@@ -146,14 +207,433 @@ describe("shared tenant detector provisioning", () => {
 	});
 
 	it("refuses signed behavioral learning in a one-shot hook contract", async () => {
-		await provisionTenantDetectorPolicy({
-			homeDir: home,
-			agentRuntime: "opencode",
-			payload: detectorPolicyPayload(TEST_TENANT_ID, {
-				behavioral: { enabled: true, learning_allowed: true },
-			}),
+		// V1 remains invalid even with the premium entitlement and the new capability.
+		for (const behavioral of [
+			{ enabled: true, learning_allowed: true },
+			{ enabled: true, learning_allowed: true, learning_capability: "durable_baseline_v1" },
+		]) {
+			await provisionTenantDetectorPolicy({
+				homeDir: home,
+				agentRuntime: "opencode",
+				entitlement: entitlementSnapshot({
+					premiumModules: ["runtime_detectors", "behavioral_learning_v1"],
+				}),
+				payload: detectorPolicyPayload(TEST_TENANT_ID, { behavioral }),
+			});
+			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow("invalid");
+		}
+	});
+
+	describe("signed durable behavioral capability and corpus", () => {
+		it("learns ten diverse safe observations across fresh contexts and evaluates the next normally", async () => {
+			await provisionBehavioral();
+			expect((await freshBehavioral()).learningAllowed).toBe(true);
+			for (let index = 0; index < 10; index++) {
+				const result = await evaluateFresh(syntheticBehavioralInput(index));
+				expect(result).toMatchObject({
+					outcome: "learning",
+					modelVersion: "local-tinyhash-v1",
+					learning: {
+						accepted: true,
+						baselineSamplesBefore: index,
+						baselineSamplesAfter: index + 1,
+					},
+				});
+			}
+			const normal = await evaluateFresh(syntheticBehavioralInput(10));
+			expect(normal).toMatchObject({
+				outcome: "normal",
+				anomalyScore: 0,
+				modelVersion: "local-tinyhash-v1",
+				learning: { accepted: true, baselineSamplesBefore: 10, baselineSamplesAfter: 11 },
+			});
+			expect(normal.explanations).toHaveLength(3);
+			for (const explanation of normal.explanations) {
+				expect(explanation).toMatchObject({ status: "ready", score: 0 });
+			}
 		});
-		await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow("invalid");
+
+		it("recognizes the exact synthetic fixture using the signed real embedding, without seeding it", async () => {
+			await provisionBehavioral();
+			const result = await evaluateFresh(
+				syntheticBehavioralInput(0, {
+					classificationText: TEST_SYNTHETIC_THREAT_TEXT,
+				}),
+			);
+			expect(result).toMatchObject({
+				outcome: "anomalous",
+				anomalyScore: 100,
+				modelVersion: "local-tinyhash-v1",
+				learning: { accepted: false, reason: "anomaly_detected", baselineSamplesAfter: 0 },
+			});
+			expect(result.explanations).toContainEqual(
+				expect.objectContaining({
+					leg: "ml",
+					status: "ready",
+					score: 100,
+					summary: expect.stringContaining(TEST_SYNTHETIC_THREAT_ID),
+				}),
+			);
+			expect((await evaluateFresh()).learning.baselineSamplesBefore).toBe(0);
+		});
+
+		it.each([
+			false,
+			"omitted",
+		] as const)("pins signed learning %s off despite per-event true", async (setting) => {
+			const payload = behavioralPolicyPayload(TEST_TENANT_ID, { learning_allowed: false });
+			if (setting === "omitted")
+				delete (payload.behavioral as Record<string, unknown>).learning_allowed;
+			await provisionBehavioral(payload);
+			for (let index = 0; index < 11; index++) {
+				const detector = await freshBehavioral();
+				expect(detector.learningAllowed).toBe(false);
+				const result = await detector.orchestrator.evaluate(
+					syntheticBehavioralInput(index, {
+						learningAllowed: true,
+					}),
+				);
+				expect(result.learning).toMatchObject({
+					accepted: false,
+					reason: "explicitly_disabled",
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
+				});
+			}
+		});
+
+		it("requires affirmative per-event learning consent even when the signed capability allows it", async () => {
+			await provisionBehavioral();
+			const result = await evaluateFresh(
+				syntheticBehavioralInput(0, { learningAllowed: undefined }),
+			);
+			expect(result.learning).toMatchObject({
+				accepted: false,
+				reason: "explicitly_disabled",
+				baselineSamplesBefore: 0,
+				baselineSamplesAfter: 0,
+			});
+		});
+
+		it("rejects unsigned model replacement on a provisioned orchestrator", async () => {
+			await provisionBehavioral();
+			const detector = await freshBehavioral();
+			const unsignedModel = new LocalEmbeddingModel(LocalEmbeddingModel.createDefaultConfig());
+			await unsignedModel.addThreat(firstCorpusEntry());
+			// This is a rejection test, never a shortcut to provision the test model.
+			await expect(
+				detector.orchestrator.refreshModel(unsignedModel, "unsigned-model-v1"),
+			).rejects.toThrow(/newly verified policy context/i);
+			const result = await detector.orchestrator.evaluate(syntheticBehavioralInput());
+			expect(result.modelVersion).toBe("local-tinyhash-v1");
+		});
+
+		it("never seeds explicitly denied or high-risk events", async () => {
+			await provisionBehavioral();
+			for (const [overrides, reason] of [
+				[{ learningAllowed: false }, "explicitly_disabled"],
+				[{ riskScore: 90 }, "high_risk_event"],
+			] as const) {
+				const result = await evaluateFresh(syntheticBehavioralInput(0, overrides));
+				expect(result.learning).toMatchObject({
+					accepted: false,
+					reason,
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
+				});
+			}
+			const installed = await provisionBehavioral();
+			const context = await loadProvisionedDetectorContext("opencode");
+			const verdict = await evaluateToolCall(
+				{
+					sessionId: "synthetic-behavioral-session",
+					toolName: "Read",
+					toolInput: { body: TEST_DLP_MARKER },
+					artifacts: [],
+				},
+				{
+					...context,
+					configPath: installed.configPath,
+					threatsDir: join(home, "empty-threats"),
+					allowlistsDir: join(home, "empty-allowlists"),
+				},
+			);
+			expect(verdict).toMatchObject({ decision: "deny", source: "dlp" });
+			expect(
+				context.runtimeDetectors?.behavioral?.orchestrator.getStats().totalBaselineSamples,
+			).toBe(0);
+			expect((await evaluateFresh()).learning.baselineSamplesBefore).toBe(0);
+		});
+
+		it("persists cold-start fingerprint limits instead of letting duplicate events form a baseline", async () => {
+			await provisionBehavioral();
+			for (let index = 0; index < 5; index++) {
+				expect((await evaluateFresh()).learning.baselineSamplesAfter).toBe(index + 1);
+			}
+			for (let index = 0; index < 3; index++) {
+				expect((await evaluateFresh()).learning).toMatchObject({
+					accepted: false,
+					reason: "fingerprint_limit",
+					baselineSamplesBefore: 5,
+					baselineSamplesAfter: 5,
+				});
+			}
+		});
+
+		it("rejects evaluation for a different tenant before creating baseline state", async () => {
+			await provisionBehavioral();
+			const detector = await freshBehavioral();
+			await expect(
+				detector.orchestrator.evaluate(
+					syntheticBehavioralInput(0, {
+						tenantId: "tenant-b",
+					}),
+				),
+			).rejects.toThrow(/tenant/i);
+			expect(detector.orchestrator.getStats().totalBaselineSamples).toBe(0);
+			expect((await evaluateFresh()).learning.baselineSamplesBefore).toBe(0);
+		});
+
+		it("starts a separate baseline when the signed corpus digest changes", async () => {
+			const original = behavioralPolicyPayload();
+			await provisionBehavioral(original);
+			await evaluateFresh();
+			await evaluateFresh(syntheticBehavioralInput(1));
+			await provisionBehavioral(
+				behavioralPolicyPayload(TEST_TENANT_ID, {
+					threat_corpus: syntheticThreatCorpus(TEST_TENANT_ID, { corpus_version: 2 }),
+				}),
+			);
+			expect((await evaluateFresh()).learning).toMatchObject({
+				baselineSamplesBefore: 0,
+				baselineSamplesAfter: 1,
+			});
+			await provisionBehavioral(original);
+			expect(
+				(await evaluateFresh(syntheticBehavioralInput(2))).learning.baselineSamplesBefore,
+			).toBe(0);
+		});
+
+		it("requires both the signed capability and verified learning entitlement", async () => {
+			const noCapability = behavioralPolicyPayload();
+			delete (noCapability.behavioral as Record<string, unknown>).learning_capability;
+			await provisionBehavioral(noCapability);
+			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+			await provisionBehavioral(
+				behavioralPolicyPayload(TEST_TENANT_ID, { learning_capability: "future-v2" }),
+			);
+			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+			await provisionTenantDetectorPolicy({
+				homeDir: home,
+				agentRuntime: "opencode",
+				payload: behavioralPolicyPayload(),
+				entitlement: entitlementSnapshot({ premiumModules: ["runtime_detectors"] }),
+			});
+			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+			const installed = await provisionBehavioral();
+			const state = JSON.parse(await readFile(installed.managedPath, "utf8"));
+			state.entitlement.premium_modules.push("unsigned-extra-module");
+			await writeFile(installed.managedPath, JSON.stringify(state));
+			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+		});
+
+		it.each([1, 2])("keeps a missing corpus unavailable in schema v%s", async (schemaVersion) => {
+			const payload = detectorPolicyPayload(TEST_TENANT_ID, {
+				schema_version: schemaVersion,
+				behavioral:
+					schemaVersion === 2
+						? { enabled: true, learning_allowed: true, learning_capability: "durable_baseline_v1" }
+						: { enabled: true, learning_allowed: false },
+			});
+			await provisionBehavioral(payload);
+			const result = await evaluateFresh();
+			expect(result).toMatchObject({ outcome: "unavailable", modelVersion: null });
+			expect(result.learning).toMatchObject({
+				accepted: false,
+				reason: schemaVersion === 2 ? "detection_unavailable" : "explicitly_disabled",
+				baselineSamplesAfter: 0,
+			});
+			expect(result.explanations).toContainEqual(
+				expect.objectContaining({
+					leg: "ml",
+					status: "unavailable",
+					unavailableReason: "empty_corpus",
+				}),
+			);
+		});
+
+		it("requires schema v2 even for a valid corpus with learning disabled", async () => {
+			await provisionBehavioral({
+				...behavioralPolicyPayload(TEST_TENANT_ID, { learning_allowed: false }),
+				schema_version: 1,
+			});
+			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+		});
+
+		it.each([
+			["empty", () => syntheticThreatCorpus(TEST_TENANT_ID, { entries: [] })],
+			["wrong tenant", () => syntheticThreatCorpus("tenant-b")],
+			["wrong SHA", () => ({ ...syntheticThreatCorpus(), sha256: "0".repeat(64) })],
+			[
+				"uppercase SHA",
+				() => {
+					const corpus = syntheticThreatCorpus();
+					return { ...corpus, sha256: corpus.sha256.toUpperCase() };
+				},
+			],
+			[
+				"incompatible model",
+				() => syntheticThreatCorpus(TEST_TENANT_ID, { model_version: "other-model" }),
+			],
+			["incompatible dimension", () => syntheticThreatCorpus(TEST_TENANT_ID, { dimension: 99 })],
+			["unknown corpus schema", () => syntheticThreatCorpus(TEST_TENANT_ID, { schema_version: 2 })],
+			["zero version", () => syntheticThreatCorpus(TEST_TENANT_ID, { corpus_version: 0 })],
+			["fractional version", () => syntheticThreatCorpus(TEST_TENANT_ID, { corpus_version: 1.5 })],
+			[
+				"unsafe corpus ID",
+				() => syntheticThreatCorpus(TEST_TENANT_ID, { corpus_id: "../../escape" }),
+			],
+			[
+				"duplicate threat IDs",
+				() => {
+					const corpus = syntheticThreatCorpus();
+					return syntheticThreatCorpus(TEST_TENANT_ID, {
+						entries: [...corpus.entries, ...corpus.entries],
+					});
+				},
+			],
+			[
+				"oversized corpus",
+				() =>
+					syntheticThreatCorpus(TEST_TENANT_ID, {
+						entries: Array.from({ length: 1025 }, (_, index) => ({
+							...firstCorpusEntry(),
+							threatId: `fixture-${index}`,
+						})),
+					}),
+			],
+			[
+				"short embedding",
+				() => {
+					const corpus = syntheticThreatCorpus();
+					firstCorpusEntry(corpus).embedding.pop();
+					return syntheticThreatCorpus(TEST_TENANT_ID, { entries: corpus.entries });
+				},
+			],
+			[
+				"zero vector",
+				() => {
+					const corpus = syntheticThreatCorpus();
+					firstCorpusEntry(corpus).embedding.fill(0);
+					return syntheticThreatCorpus(TEST_TENANT_ID, { entries: corpus.entries });
+				},
+			],
+			[
+				"non-unit vector",
+				() => {
+					const corpus = syntheticThreatCorpus();
+					firstCorpusEntry(corpus).embedding = firstCorpusEntry(corpus).embedding.map(
+						(value) => value / 2,
+					);
+					return syntheticThreatCorpus(TEST_TENANT_ID, { entries: corpus.entries });
+				},
+			],
+			[
+				"out-of-range coordinate",
+				() => {
+					const corpus = syntheticThreatCorpus();
+					firstCorpusEntry(corpus).embedding[0] = 2;
+					return syntheticThreatCorpus(TEST_TENANT_ID, { entries: corpus.entries });
+				},
+			],
+			[
+				"snake-case entry",
+				() => ({
+					...syntheticThreatCorpus(),
+					entries: [{ threat_id: "wrong-shape", embedding: [] }],
+				}),
+			],
+			["malformed value", () => "not-a-corpus"],
+			["null", () => null],
+		] as const)("rejects a supplied %s corpus rather than activating or silently dropping it", async (_name, makeCorpus) => {
+			await provisionBehavioral(
+				behavioralPolicyPayload(TEST_TENANT_ID, { threat_corpus: makeCorpus() }),
+			);
+			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+		});
+
+		it("rejects a non-finite JSON coordinate before activating the corpus", async () => {
+			const installed = await provisionBehavioral();
+			const signed = await readFile(installed.policyPath, "utf8");
+			// JSON permits this numeric spelling, but JavaScript decodes it as Infinity.
+			const nonFinite = signed.replace(
+				/("embedding":\[)[^,]+/,
+				(_match, prefix: string) => `${prefix}1e999`,
+			);
+			expect(nonFinite).not.toBe(signed);
+			await writeFile(installed.policyPath, nonFinite);
+			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow("invalid");
+		});
+
+		it("rejects corpus bytes edited after signing, even if their digest is recomputed", async () => {
+			const installed = await provisionBehavioral();
+			const signed = JSON.parse(await readFile(installed.policyPath, "utf8"));
+			signed.payload.behavioral.threat_corpus = syntheticThreatCorpus(TEST_TENANT_ID, {
+				corpus_version: 2,
+			});
+			await writeFile(installed.policyPath, JSON.stringify(signed));
+			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow(
+				"trust or tenant binding failed",
+			);
+		});
+
+		it("persists the signed baseline through separate Node processes loading built core", async () => {
+			await provisionBehavioral();
+			for (let index = 0; index < 10; index++) {
+				const { pid, result } = await evaluateInSeparateProcess(syntheticBehavioralInput(index));
+				expect(pid).not.toBe(process.pid);
+				expect(result).toMatchObject({
+					outcome: "learning",
+					modelVersion: "local-tinyhash-v1",
+					learning: {
+						accepted: true,
+						baselineSamplesBefore: index,
+						baselineSamplesAfter: index + 1,
+					},
+				});
+			}
+			const { result } = await evaluateInSeparateProcess(syntheticBehavioralInput(10));
+			expect(result).toMatchObject({
+				outcome: "normal",
+				anomalyScore: 0,
+				modelVersion: "local-tinyhash-v1",
+				learning: { accepted: true, baselineSamplesBefore: 10, baselineSamplesAfter: 11 },
+			});
+			const matched = await evaluateInSeparateProcess(
+				syntheticBehavioralInput(0, {
+					classificationText: TEST_SYNTHETIC_THREAT_TEXT,
+				}),
+			);
+			expect(matched.result).toMatchObject({
+				outcome: "anomalous",
+				anomalyScore: 100,
+				modelVersion: "local-tinyhash-v1",
+				learning: {
+					accepted: false,
+					reason: "anomaly_detected",
+					baselineSamplesBefore: 11,
+					baselineSamplesAfter: 11,
+				},
+			});
+			expect(matched.result.explanations).toContainEqual(
+				expect.objectContaining({
+					leg: "ml",
+					status: "ready",
+					score: 100,
+					summary: expect.stringContaining(TEST_SYNTHETIC_THREAT_ID),
+				}),
+			);
+		}, 120_000);
 	});
 
 	it("fails closed when the signed entitlement requires a missing bundle", async () => {
@@ -169,8 +649,8 @@ describe("shared tenant detector provisioning", () => {
 		expect(() => detectorPolicyPath("../../evil" as AgentRuntime)).toThrow(
 			"agent runtime is not supported",
 		);
-		await expect(
-			loadProvisionedDetectorContext("../../evil" as AgentRuntime),
-		).rejects.toThrow("agent runtime is not supported");
+		await expect(loadProvisionedDetectorContext("../../evil" as AgentRuntime)).rejects.toThrow(
+			"agent runtime is not supported",
+		);
 	});
 });
