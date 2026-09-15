@@ -13,10 +13,11 @@
  * The Azure AD application must be registered in the Azure Portal and configured
  * as an OAuth provider in the Supabase dashboard under Authentication > Providers > Azure.
  *
- * ## Group Sync
+ * ## Verified Groups
  *
- * Group claims in browser session metadata are not authoritative. A verified
- * server-side directory mapping is required before this can be enabled.
+ * Group claims in browser session metadata are not authoritative. The dashboard
+ * reads a caller-scoped server projection; any returned role is display-only and
+ * protected actions must re-authorize server-side membership.
  *
  * @module
  */
@@ -40,14 +41,19 @@ export interface AzureADConfig {
 }
 
 /**
- * An Azure AD group retrieved from the ID token claims or Graph API.
+ * A directory group returned by the server-owned verified projection.
  */
 export interface AzureADGroup {
-	/** The unique object ID of the group in Azure AD. */
+	/** The immutable directory external ID. Never derive this from displayName. */
 	id: string;
-	/** The display name of the group (e.g. "Engineering", "Admins"). */
+	/** The same immutable external ID in the server response. */
+	externalId: string;
+	/** The display name returned by the verified server projection. */
 	displayName: string;
-	/** Optional description of the group's purpose. */
+	/** Optional display-only mapping; browser code must not use it for authorization. */
+	role?: "admin" | "member" | "viewer";
+	/** The control-plane tenant owning this verified group. */
+	tenantId: string;
 	description?: string;
 }
 
@@ -66,14 +72,14 @@ export interface AzureADUser {
 }
 
 /**
- * Represents the result of group membership synchronization.
+ * Represents a caller-scoped read of the server-owned group projection.
  */
 export interface GroupSyncResult {
-	/** The groups that were successfully synced. */
+	/** The groups returned by the verified projection. */
 	syncedGroups: AzureADGroup[];
-	/** The user ID the groups were synced for. */
+	/** The authenticated user ID the projection was returned for. */
 	userId: string;
-	/** Timestamp of when the sync completed. */
+	/** Projection-generation timestamp; this is not a directory sync claim. */
 	syncedAt: string;
 }
 
@@ -106,6 +112,8 @@ export class AzureADError extends Error {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_SCOPES: string[] = ["openid", "profile", "email"];
+const MAX_VERIFIED_GROUPS = 500;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const CALLBACK_PATH = "/auth/callback";
 
@@ -121,9 +129,11 @@ const CALLBACK_PATH = "/auth/callback";
  * for multi-tenant applications.
  */
 function readTenantId(): string {
+	const runtimeTenant =
+		typeof process !== "undefined" ? process.env.VITE_AZURE_AD_TENANT_ID : undefined;
 	return (
 		(import.meta.env as Record<string, string | undefined>).VITE_AZURE_AD_TENANT_ID ??
-		process.env.VITE_AZURE_AD_TENANT_ID ??
+		runtimeTenant ??
 		"common"
 	);
 }
@@ -187,6 +197,84 @@ function validateAzureADSession(
 	};
 }
 
+function invalidGroupsResponse(): never {
+	throw new AzureADError("The verified group response was invalid.", "GROUPS_RESPONSE_INVALID");
+}
+
+function canonicalString(item: Record<string, unknown>, key: string): string | null {
+	const value = item[key];
+	return typeof value === "string" && value.trim() === value ? value : null;
+}
+
+function verifiedRole(item: Record<string, unknown>): AzureADGroup["role"] {
+	if (item.role === undefined) return undefined;
+	if (item.role !== "admin" && item.role !== "member" && item.role !== "viewer")
+		return invalidGroupsResponse();
+	return item.role;
+}
+
+function verifiedGroup(raw: unknown): AzureADGroup {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return invalidGroupsResponse();
+	const item = raw as Record<string, unknown>;
+	if (["externalId", "displayName", "tenantId"].some((key) => Object.hasOwn(item, key)))
+		return invalidGroupsResponse();
+	const immutableId = canonicalString(item, "external_id");
+	const displayName = canonicalString(item, "display_name");
+	const resourceId = canonicalString(item, "id");
+	const tenantId = canonicalString(item, "tenant_id");
+	if (
+		!immutableId ||
+		immutableId.length > 255 ||
+		displayName === null ||
+		resourceId !== immutableId ||
+		tenantId === null ||
+		!UUID.test(tenantId)
+	)
+		return invalidGroupsResponse();
+	const role = verifiedRole(item);
+	return {
+		id: immutableId,
+		externalId: immutableId,
+		displayName,
+		tenantId,
+		...(role ? { role } : {}),
+	};
+}
+
+function parseVerifiedGroups(data: unknown, userId: string): GroupSyncResult {
+	if (!data || typeof data !== "object" || Array.isArray(data)) return invalidGroupsResponse();
+	const payload = data as {
+		ok?: unknown;
+		user_id?: unknown;
+		groups?: unknown;
+		synced_at?: unknown;
+	};
+	if (
+		payload.ok !== true ||
+		payload.user_id !== userId ||
+		!Array.isArray(payload.groups) ||
+		payload.groups.length > MAX_VERIFIED_GROUPS ||
+		typeof payload.synced_at !== "string" ||
+		Number.isNaN(Date.parse(payload.synced_at))
+	)
+		return invalidGroupsResponse();
+	const syncedGroups = payload.groups.map(verifiedGroup);
+	const groupKeys = syncedGroups.map((group) => `${group.tenantId}:${group.externalId}`);
+	if (new Set(groupKeys).size !== groupKeys.length) return invalidGroupsResponse();
+	return { syncedGroups, userId, syncedAt: payload.synced_at };
+}
+
+async function fetchVerifiedGroups() {
+	try {
+		return await supabase.functions.invoke<{ groups?: unknown; synced_at?: unknown }>(
+			"azure-ad-groups",
+			{ method: "GET" },
+		);
+	} catch {
+		throw new AzureADError("Failed to fetch verified directory groups.", "GROUPS_FETCH_FAILED");
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -241,7 +329,9 @@ export async function signInWithAzureAD(config?: Partial<AzureADConfig>): Promis
  * It validates that:
  * - The session was created via the Azure AD provider
  * - Required claims (email, tenant ID) are present
- * - Group membership information is available
+ *
+ * Directory groups are fetched separately through `getAzureADGroups`, which
+ * reads only the server-owned verified projection.
  *
  * @returns A validated `AzureADUser` with group information.
  *
@@ -282,16 +372,18 @@ export async function handleAzureADCallback(): Promise<AzureADUser> {
 }
 
 /**
- * Reports that trusted Azure AD group synchronization is unavailable.
- * Browser metadata and group display names cannot authorize tenant access.
+ * Fetches the read-only, server-verified directory groups for the session user.
  *
- * @param userId - The Supabase user ID to fetch groups for.
+ * The browser session is used only to authenticate the request and to guard
+ * against rendering a different user's response. Group membership, roles,
+ * display names, and immutable external IDs all come from the Edge response;
+ * user/app metadata is never consulted as an authority source.
  *
- * @throws {AzureADError} If the session is invalid, or because group sync is
- *                        unavailable until a server-side implementation exists.
+ * @param userId - The Supabase user ID expected in the current session.
+ * @returns A verified group projection. An empty array is a valid response.
+ * @throws {AzureADError} If the session or verified response cannot be trusted.
  */
 export async function getAzureADGroups(userId: string): Promise<GroupSyncResult> {
-	// Try to get groups from existing session metadata first.
 	const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
 	if (sessionError) {
@@ -306,8 +398,6 @@ export async function getAzureADGroups(userId: string): Promise<GroupSyncResult>
 	}
 
 	const { user } = sessionData.session;
-
-	// Verify we're fetching groups for the correct user.
 	if (user.id !== userId) {
 		throw new AzureADError(
 			"User ID mismatch: the authenticated user does not match the requested user ID.",
@@ -315,10 +405,21 @@ export async function getAzureADGroups(userId: string): Promise<GroupSyncResult>
 		);
 	}
 
-	throw new AzureADError(
-		"Azure AD group synchronization is unavailable until a verified server-side directory mapping is configured.",
-		"GROUP_SYNC_UNAVAILABLE",
-	);
+	const result = await fetchVerifiedGroups();
+	if (!result || typeof result !== "object") {
+		throw new AzureADError(
+			"The verified group response was unavailable.",
+			"GROUP_SYNC_UNAVAILABLE",
+		);
+	}
+	if (result.error) {
+		throw new AzureADError(
+			"Failed to fetch verified directory groups.",
+			"GROUPS_FETCH_FAILED",
+			result.error.status,
+		);
+	}
+	return parseVerifiedGroups(result.data, user.id);
 }
 
 /**

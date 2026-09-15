@@ -20,6 +20,10 @@
       "owner": "Response Engineering",
       "tests": ["supabase/functions/__tests__/autosecops-runtime-contract.test.ts"]
     },
+    "azure-ad-groups": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/azure-ad-groups-contract.test.ts"]
+    },
     "billing-checkout": {
       "owner": "Billing Engineering",
       "tests": ["supabase/functions/__tests__/stripe-checkout.test.ts"]

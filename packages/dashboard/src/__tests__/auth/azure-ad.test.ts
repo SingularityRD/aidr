@@ -4,7 +4,7 @@
  * Covers:
  * - signInWithAzureAD: OAuth initiation, error handling
  * - handleAzureADCallback: session validation without trusting metadata groups
- * - getAzureADGroups: explicit unsupported state and user mismatch
+ * - getAzureADGroups: server-verified groups, metadata rejection, and user mismatch
  * - mapGroupToRole: no role grant from unverified display names
  */
 
@@ -274,19 +274,37 @@ describe("handleAzureADCallback", () => {
 // ---------------------------------------------------------------------------
 
 describe("getAzureADGroups", () => {
-	it("rejects browser metadata groups, including an admin-like name, without calling an absent Edge function", async () => {
+	it("ignores browser metadata groups, including an admin-like name, and reads the server projection", async () => {
 		mockGetSession.mockResolvedValueOnce({
 			data: { session: createMockSession() },
 			error: null,
 		});
-
-		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({
-			code: "GROUP_SYNC_UNAVAILABLE",
+		mockFunctionsInvoke.mockResolvedValueOnce({
+			data: {
+				ok: true,
+				user_id: "user-123",
+				groups: [
+					{
+						id: "verified-id",
+						external_id: "verified-id",
+						display_name: "Verified Group",
+						tenant_id: "11111111-1111-4111-8111-111111111111",
+					},
+				],
+				synced_at: "2026-09-13T00:00:00.000Z",
+			},
+			error: null,
 		});
-		expect(mockFunctionsInvoke).not.toHaveBeenCalled();
+
+		await expect(getAzureADGroups("user-123")).resolves.toMatchObject({
+			syncedGroups: [
+				{ id: "verified-id", externalId: "verified-id", displayName: "Verified Group" },
+			],
+		});
+		expect(mockFunctionsInvoke).toHaveBeenCalledWith("azure-ad-groups", { method: "GET" });
 	});
 
-	it("rejects an app_metadata group as an authority source", async () => {
+	it("does not treat an app_metadata group as an authority source", async () => {
 		mockGetSession.mockResolvedValueOnce({
 			data: {
 				session: createMockSession({
@@ -300,10 +318,17 @@ describe("getAzureADGroups", () => {
 			},
 			error: null,
 		});
-		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({
-			code: "GROUP_SYNC_UNAVAILABLE",
+		mockFunctionsInvoke.mockResolvedValueOnce({
+			data: {
+				ok: true,
+				user_id: "user-123",
+				groups: [],
+				synced_at: "2026-09-13T00:00:00.000Z",
+			},
+			error: null,
 		});
-		expect(mockFunctionsInvoke).not.toHaveBeenCalled();
+		await expect(getAzureADGroups("user-123")).resolves.toMatchObject({ syncedGroups: [] });
+		expect(mockFunctionsInvoke).toHaveBeenCalledOnce();
 	});
 
 	it("rejects when no active session exists", async () => {
@@ -314,12 +339,162 @@ describe("getAzureADGroups", () => {
 		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({ code: "NO_SESSION" });
 	});
 
-	it("rejects user ID mismatch before reporting unsupported sync", async () => {
+	it("rejects user ID mismatch before fetching the server projection", async () => {
 		mockGetSession.mockResolvedValueOnce({
 			data: { session: createMockSession() },
 			error: null,
 		});
 		await expect(getAzureADGroups("user-456")).rejects.toMatchObject({ code: "USER_ID_MISMATCH" });
+	});
+});
+
+describe("verified getAzureADGroups response", () => {
+	it("uses the read-only Edge response and preserves immutable external ids", async () => {
+		mockGetSession.mockResolvedValueOnce({
+			data: { session: createMockSession({ user_metadata: {} }) },
+			error: null,
+		});
+		mockFunctionsInvoke.mockResolvedValueOnce({
+			data: {
+				ok: true,
+				user_id: "user-123",
+				groups: [
+					{
+						id: "immutable-group-id",
+						external_id: "immutable-group-id",
+						display_name: "Renamed Admins",
+						tenant_id: "11111111-1111-4111-8111-111111111111",
+						role: "admin",
+					},
+				],
+				synced_at: "2026-09-13T00:00:00.000Z",
+			},
+			error: null,
+		});
+
+		await expect(getAzureADGroups("user-123")).resolves.toEqual({
+			syncedGroups: [
+				{
+					id: "immutable-group-id",
+					externalId: "immutable-group-id",
+					displayName: "Renamed Admins",
+					tenantId: "11111111-1111-4111-8111-111111111111",
+					role: "admin",
+				},
+			],
+			userId: "user-123",
+			syncedAt: "2026-09-13T00:00:00.000Z",
+		});
+		expect(mockFunctionsInvoke).toHaveBeenCalledWith("azure-ad-groups", { method: "GET" });
+	});
+
+	it("rejects a server envelope bound to a different user", async () => {
+		mockGetSession.mockResolvedValueOnce({ data: { session: createMockSession() }, error: null });
+		mockFunctionsInvoke.mockResolvedValueOnce({
+			data: { ok: true, user_id: "other-user", groups: [], synced_at: "2026-09-13T00:00:00.000Z" },
+			error: null,
+		});
+		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({
+			code: "GROUPS_RESPONSE_INVALID",
+		});
+	});
+
+	it("does not return forged browser metadata when the server projection is empty", async () => {
+		mockGetSession.mockResolvedValueOnce({ data: { session: createMockSession() }, error: null });
+		mockFunctionsInvoke.mockResolvedValueOnce({
+			data: {
+				ok: true,
+				user_id: "user-123",
+				groups: [],
+				synced_at: "2026-09-13T00:00:00.000Z",
+			},
+			error: null,
+		});
+
+		await expect(getAzureADGroups("user-123")).resolves.toMatchObject({ syncedGroups: [] });
+		expect(mockFunctionsInvoke).toHaveBeenCalledOnce();
+	});
+
+	it("rejects a malformed server group instead of falling back to display name", async () => {
+		mockGetSession.mockResolvedValueOnce({
+			data: { session: createMockSession({ user_metadata: {} }) },
+			error: null,
+		});
+		mockFunctionsInvoke.mockResolvedValueOnce({
+			data: { groups: [{ display_name: "AIDR-Admins" }] },
+			error: null,
+		});
+		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({
+			code: "GROUPS_RESPONSE_INVALID",
+		});
+	});
+
+	it("rejects an internal resource id when the immutable external id is absent", async () => {
+		mockGetSession.mockResolvedValueOnce({
+			data: { session: createMockSession({ user_metadata: {} }) },
+			error: null,
+		});
+		mockFunctionsInvoke.mockResolvedValueOnce({
+			data: { groups: [{ id: "internal-row-id", display_name: "Verified" }] },
+			error: null,
+		});
+		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({
+			code: "GROUPS_RESPONSE_INVALID",
+		});
+	});
+
+	it.each([
+		{
+			external_id: "group-a",
+			externalId: "group-b",
+			display_name: "Conflict",
+			id: "group-a",
+			tenant_id: "11111111-1111-4111-8111-111111111111",
+		},
+		{
+			external_id: "",
+			externalId: "group-a",
+			display_name: "Empty alias",
+			id: "group-a",
+			tenant_id: "11111111-1111-4111-8111-111111111111",
+		},
+		{
+			external_id: "group-a",
+			display_name: "Conflict",
+			displayName: "Other",
+			id: "group-a",
+			tenant_id: "11111111-1111-4111-8111-111111111111",
+		},
+		{
+			external_id: "group-a",
+			display_name: "Invalid role",
+			role: "owner",
+			id: "group-a",
+			tenant_id: "11111111-1111-4111-8111-111111111111",
+		},
+		{
+			external_id: "group-a",
+			display_name: "Invalid tenant",
+			id: "group-a",
+			tenant_id: "not-a-uuid",
+		},
+	])("rejects an inconsistent verified group response", async (group) => {
+		mockGetSession.mockResolvedValueOnce({
+			data: { session: createMockSession({ user_metadata: {} }) },
+			error: null,
+		});
+		mockFunctionsInvoke.mockResolvedValueOnce({
+			data: {
+				ok: true,
+				user_id: "user-123",
+				groups: [group],
+				synced_at: "2026-09-13T00:00:00.000Z",
+			},
+			error: null,
+		});
+		await expect(getAzureADGroups("user-123")).rejects.toMatchObject({
+			code: "GROUPS_RESPONSE_INVALID",
+		});
 	});
 });
 

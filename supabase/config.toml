@@ -48,6 +48,9 @@ inspector_port = 8083
 verify_jwt = true
 [functions.autosecops-runtime]
 verify_jwt = true
+[functions.azure-ad-groups]
+# The handler repeats session revocation, tenant membership and MFA checks.
+verify_jwt = true
 [functions.billing-checkout]
 verify_jwt = true
 [functions.device-poll]
