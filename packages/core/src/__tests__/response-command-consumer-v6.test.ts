@@ -5,13 +5,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type FleetResponseActionAdapter,
 	type FleetResponseCommand,
+	type FleetResponseAuditEvent,
 	FleetResponseCommandConsumer,
 } from "../response-command-consumer-v6.js";
 import { FleetResponseJournal } from "../response-command-journal-v6.js";
 import { FleetResponseCommandWorker } from "../response-command-worker-v6.js";
+import { hashDeviceKey } from "../device-attestation.js";
 
 const tenantId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
+const installationId = "installation-test-001";
 const commandId = "33333333-3333-4333-8333-333333333333";
 const now = Date.parse("2026-09-13T12:00:00.000Z");
 const temporaryDirectories: string[] = [];
@@ -47,6 +50,7 @@ function worker(
 		developmentLoopback: true,
 		apiKey: "enrollment-secret",
 		identity: { tenantId, agentId },
+		installationId,
 		adapter: localAdapter,
 		statePath,
 		fetchImpl,
@@ -58,7 +62,7 @@ async function seedJournal(
 	statePath: string,
 	phase: "polled" | "acknowledged" | "execute_intent" | "result_pending",
 ) {
-	const journal = new FleetResponseJournal(statePath, { tenantId, agentId }, "enrollment-secret");
+	const journal = new FleetResponseJournal(statePath, { tenantId, agentId }, "enrollment-secret", installationId);
 	const state = await journal.load();
 	await journal.save({
 		...state,
@@ -113,13 +117,16 @@ function consumer(
 	fetchImpl: typeof fetch,
 	localAdapter?: FleetResponseActionAdapter,
 	clock = () => now,
+	audit?: (event: FleetResponseAuditEvent) => void | Promise<void>,
 ) {
 	return new FleetResponseCommandConsumer({
 		endpoint: "http://127.0.0.1:8000/functions",
 		developmentLoopback: true,
 		apiKey: "enrollment-secret",
 		identity: { tenantId, agentId },
+		installationId,
 		adapter: localAdapter,
+		audit,
 		fetchImpl,
 		now: clock,
 	});
@@ -133,6 +140,7 @@ describe("fleet response command consumer", () => {
 					endpoint: "http://customer.example/functions",
 					apiKey: "secret",
 					identity: { tenantId, agentId },
+					installationId,
 				}),
 		).toThrow("fleet_endpoint_requires_https");
 		expect(
@@ -141,6 +149,7 @@ describe("fleet response command consumer", () => {
 					endpoint: "https://customer.example/functions",
 					apiKey: "secret",
 					identity: { tenantId, agentId },
+					installationId,
 					adapter: adapter({ identity: { tenantId, agentId: tenantId } }),
 				}),
 		).toThrow("fleet_adapter_identity_mismatch");
@@ -167,16 +176,29 @@ describe("fleet response command consumer", () => {
 		expect(requests[0]?.url).toBe("http://127.0.0.1:8000/functions/v1/revocations");
 	});
 
+	it("emits an attestation audit event without allowing audit failure to change the result", async () => {
+		const { fetchImpl } = transport([
+			json({ ok: true, command: null }),
+		]);
+		const audit = vi.fn(async (event: FleetResponseAuditEvent) => {
+			expect(event.attestation.installationId).toBe(installationId);
+			expect(event.attestation.keyHash).toBe(hashDeviceKey("enrollment-secret"));
+			throw new Error("audit sink unavailable");
+		});
+		expect(await consumer(fetchImpl, undefined, () => now, audit).pollOnce()).toEqual({ status: "idle" });
+		expect(audit).toHaveBeenCalledOnce();
+	});
+
 	it("executes only after confirmed ACK and records success only after independent verification", async () => {
 		const order: string[] = [];
 		const localAdapter = adapter({
 			execute: vi.fn(async () => {
 				order.push("execute");
-				return { ok: true };
+				return { ok: true as const };
 			}),
 			verify: vi.fn(async () => {
 				order.push("verify");
-				return { observed: true };
+				return { observed: true as const };
 			}),
 		});
 		const { fetchImpl, requests } = transport([
@@ -192,6 +214,23 @@ describe("fleet response command consumer", () => {
 		expect(requests[1]?.body.outcome).toBe("accepted");
 		expect(requests[2]?.body.outcome).toBe("succeeded");
 		expect(order).toEqual(["execute", "verify"]);
+		expect(requests.map((request) => request.body.device_attestation)).toEqual([
+			{
+				schema_version: 1,
+				installation_id: installationId,
+				key_hash: hashDeviceKey("enrollment-secret"),
+			},
+			{
+				schema_version: 1,
+				installation_id: installationId,
+				key_hash: hashDeviceKey("enrollment-secret"),
+			},
+			{
+				schema_version: 1,
+				installation_id: installationId,
+				key_hash: hashDeviceKey("enrollment-secret"),
+			},
+		]);
 	});
 
 	it("never executes after an ambiguous ACK", async () => {
@@ -335,9 +374,26 @@ describe("durable fleet response worker", () => {
 			statePath,
 			{ tenantId, agentId },
 			"enrollment-secret",
+			installationId,
 		).load();
 		expect(saved.current).toBeNull();
 		expect(saved.recent_ids).toEqual([commandId]);
+	});
+
+	it("persists the device binding without the bearer and rejects another installation", async () => {
+		const statePath = await journalPath();
+		await seedJournal(statePath, "polled");
+		const raw = await readFile(`${statePath}.a`, "utf8");
+		expect(raw).toContain('"installation_id":"installation-test-001"');
+		expect(raw).toContain(`"key_hash":"${hashDeviceKey("enrollment-secret")}"`);
+		expect(raw).not.toContain("enrollment-secret");
+		const otherInstallation = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			"installation-other",
+		);
+		await expect(otherInstallation.load()).rejects.toThrow("invalid_fleet_journal_state");
 	});
 
 	it("resumes a saved result without polling or repeating the host action", async () => {
@@ -424,6 +480,7 @@ describe("durable fleet response worker", () => {
 			statePath,
 			{ tenantId, agentId },
 			"enrollment-secret",
+			installationId,
 		).load();
 		expect(saved.current?.phase).toBe("execute_intent");
 	});
@@ -478,7 +535,7 @@ describe("durable fleet response worker", () => {
 		await seedJournal(statePath, "polled");
 		const localAdapter = adapter();
 		const { fetchImpl, requests } = transport([]);
-		const journal = new FleetResponseJournal(statePath, { tenantId, agentId }, "enrollment-secret");
+		const journal = new FleetResponseJournal(statePath, { tenantId, agentId }, "enrollment-secret", installationId);
 		await journal.withLock(async () => {
 			expect(await worker(statePath, fetchImpl, localAdapter).tick()).toMatchObject({
 				status: "outcome_unknown",
@@ -512,7 +569,7 @@ describe("durable fleet response worker", () => {
 		]);
 		expect(await worker(statePath, fetchImpl).tick()).toEqual({ status: "succeeded", commandId });
 		expect(requests).toHaveLength(1);
-		const wrongKeyJournal = new FleetResponseJournal(statePath, { tenantId, agentId }, "other-key");
+		const wrongKeyJournal = new FleetResponseJournal(statePath, { tenantId, agentId }, "other-key", installationId);
 		await expect(wrongKeyJournal.load()).rejects.toThrow("fleet_journal_integrity_failed");
 	});
 
@@ -537,6 +594,7 @@ describe("durable fleet response worker", () => {
 			developmentLoopback: true,
 			apiKey: "enrollment-secret",
 			identity: { tenantId, agentId },
+			installationId,
 			adapter: adapter(),
 			statePath,
 			fetchImpl: transport([]).fetchImpl,

@@ -31,6 +31,7 @@ import {
 	reverseCommandType,
 	rpcStatus,
 } from "./commands.ts";
+import { deviceAttestationError } from "./attestation.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -109,7 +110,7 @@ function addHoursIso(hours: number): string {
 
 type DatabaseClient = ReturnType<typeof createClient>;
 type OperatorContext = { userId: string; tenantId: string };
-type AgentContext = { tenantId: string; agentId: string; keyHash: string };
+type AgentContext = { tenantId: string; agentId: string; installationId: string; keyHash: string };
 
 function commandError(req: Request, error: { code?: string }, fallback: string): Response {
 	// 54000 is the bounded queue's depth rejection: the tenant has reached its
@@ -182,7 +183,7 @@ async function agentContext(db: DatabaseClient, req: Request): Promise<AgentCont
 			db.from("tenant_members").select("role,expires_at")
 				.eq("tenant_id", key.tenant_id).eq("user_id", key.user_id).maybeSingle(),
 			db.from("tenants").select("status").eq("id", key.tenant_id).maybeSingle(),
-			db.from("agents").select("id").eq("tenant_id", key.tenant_id)
+			db.from("agents").select("id,tenant_id,iid").eq("tenant_id", key.tenant_id)
 				.eq("id", key.agent_id).maybeSingle(),
 		]);
 	if (memberError || tenantError || agentError) {
@@ -191,7 +192,10 @@ async function agentContext(db: DatabaseClient, req: Request): Promise<AgentCont
 	if (!membershipActive(member) || tenant?.status !== "active" || !agent) {
 		return corsJson(req, 403, { error: "agent_access_denied" });
 	}
-	return { tenantId: key.tenant_id, agentId: key.agent_id, keyHash };
+	if (typeof agent.iid !== "string" || agent.iid.trim().length === 0 || /[\u0000-\u001f\u007f\r\n]/.test(agent.iid)) {
+		return corsJson(req, 503, { error: "device_attestation_unavailable" });
+	}
+	return { tenantId: key.tenant_id, agentId: key.agent_id, installationId: agent.iid.trim(), keyHash };
 }
 
 export interface FleetCommandDeps {
@@ -235,6 +239,8 @@ async function handleFleetCommandRequest(req: Request, db: DatabaseClient): Prom
 			if (values.tenant_id !== undefined && values.tenant_id !== identity.tenantId) {
 				return corsJson(req, 403, { error: "tenant_mismatch" });
 			}
+			const attestationError = deviceAttestationError(values.device_attestation, identity);
+			if (attestationError) return corsJson(req, 403, { error: attestationError });
 			const rate = await consumeTenantRateLimit(db, {
 				tenantId: identity.tenantId,
 				subject: identity.agentId,

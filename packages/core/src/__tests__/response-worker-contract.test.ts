@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ResponseProviderRegistry } from "../response-provider-registry.js";
 import {
 	executeResponseStep,
 	MemoryResponseJournal,
@@ -65,7 +66,7 @@ function plan(overrides: Partial<Parameters<typeof planResponseStep>[0]> = {}) {
 
 function step(overrides: Partial<ResponseStep> = {}): ResponseStep {
 	const planned = plan();
-	if (!planned.ok) throw new Error(`fixture plan failed: ${planned.code}`);
+	if (planned.ok === false) throw new Error(`fixture plan failed: ${planned.code}`);
 	return { ...planned.step, ...overrides };
 }
 
@@ -127,6 +128,25 @@ describe("response step planning (preconditions, fail-closed)", () => {
 		).toMatchObject({ ok: false, code: "invalid_expected_digest" });
 	});
 
+	it("refuses provider-backed actions without a registered provider", () => {
+		const { adapter: instance } = adapter({ capabilities: ["revoke_credential"] });
+		expect(
+			planResponseStep({
+				adapter: instance,
+				capability: "revoke_credential",
+				binding: {
+					target: "credential-1",
+					providerId: "example-idp",
+					expectedSha256: null,
+					incidentId: "incident-1",
+					authorizedBy: "operator:on-call",
+				},
+				idempotencyKey: "command_0000000000000004",
+				hasPrivilege: true,
+			}),
+		).toMatchObject({ ok: false, code: "unsupported_action" });
+	});
+
 	it("requires the documented privilege for privilege-dependent actions", () => {
 		for (const capability of ["isolate_host", "terminate_process", "revoke_credential"] as const) {
 			const { adapter: instance } = adapter({ capabilities: RESPONSE_CAPABILITIES });
@@ -143,6 +163,80 @@ describe("response step planning (preconditions, fail-closed)", () => {
 });
 
 describe("response step execution (idempotency, TTL, receipts)", () => {
+	it("journals an unsupported provider result without invoking the adapter", async () => {
+		const { adapter: instance, calls } = adapter({ capabilities: ["contain"] });
+		const journal = new MemoryResponseJournal();
+		const planned = planResponseStep({
+			adapter: instance,
+			capability: "contain",
+			binding: {
+				target: "host-1",
+				expectedSha256: null,
+				incidentId: "incident-1",
+				authorizedBy: "operator:on-call",
+			},
+			idempotencyKey: "command_0000000000000005",
+			hasPrivilege: true,
+		});
+		expect(planned).toMatchObject({ ok: false, code: "unsupported_action" });
+		const manuallyReceived = step({
+			capability: "contain",
+			binding: { ...step().binding, target: "host-1" },
+			reversible: false,
+		});
+		const result = await executeResponseStep(manuallyReceived, {
+			adapter: instance,
+			journal,
+			now: () => 1_000_000,
+		});
+		expect(result.receipt).toMatchObject({ status: "refused", code: "unsupported_action", fullyReversible: false });
+		expect(calls).toEqual([]);
+		expect((await journal.get(manuallyReceived.idempotencyKey))?.receipt.code).toBe("unsupported_action");
+	});
+
+	it("routes registered provider actions with idempotency and no clean containment claim", async () => {
+		const calls: string[] = [];
+		const registry = new ResponseProviderRegistry([
+			{
+				providerId: "example-idp",
+				actions: ["contain"],
+				execute: async (request) => {
+					calls.push(request.idempotencyKey ?? "missing");
+					return { status: "applied", observed: "provider accepted", rollbackToken: "provider-token" };
+				},
+				verify: async () => ({ observed: true, evidence: "provider queried" }),
+			},
+		]);
+		const { adapter: instance } = adapter({ capabilities: ["contain"] });
+		const journal = new MemoryResponseJournal();
+		const providerStep = step({
+			capability: "contain",
+			binding: { ...step().binding, providerId: "example-idp", target: "host-1" },
+			reversible: false,
+		});
+		const first = await executeResponseStep(providerStep, {
+			adapter: instance,
+			providerRegistry: registry,
+			journal,
+			now: () => 1_000_000,
+		});
+		const second = await executeResponseStep(providerStep, {
+			adapter: instance,
+			providerRegistry: registry,
+			journal,
+			now: () => 1_001_000,
+		});
+		expect(first.receipt).toMatchObject({
+			status: "partial",
+			code: "provider_observed",
+			providerId: "example-idp",
+			rollbackPossible: false,
+			fullyReversible: false,
+		});
+		expect(second.replayed).toBe(true);
+		expect(calls).toEqual([providerStep.idempotencyKey]);
+	});
+
 	it("applies a step and records a reversible receipt with a rollback token", async () => {
 		const { adapter: instance, calls } = adapter();
 		const { receipt, replayed } = await executeResponseStep(step(), {
@@ -314,7 +408,7 @@ describe("installed worker capability report", () => {
 			"not_a_capability",
 		]);
 		expect(report.declared).toEqual(["quarantine_file", "restore_file"]);
-		expect(report.missing).toEqual(["terminate_process", "isolate_host", "revoke_credential"]);
+		expect(report.missing).toEqual(["terminate_process", "isolate_host", "revoke_credential", "contain"]);
 		expect(report.limitations.join(" ")).toContain("not_a_capability");
 		expect(report.limitations.join(" ")).toContain("host network isolation is not provided");
 	});

@@ -31,7 +31,12 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 
 	constructor(options: FleetResponseWorkerOptions) {
 		super(options);
-		this.journal = new FleetResponseJournal(options.statePath, options.identity, options.apiKey);
+		this.journal = new FleetResponseJournal(
+			options.statePath,
+			options.identity,
+			options.apiKey,
+			options.installationId,
+		);
 		this.actionAdapter = options.adapter;
 		this.onCycle = options.onCycle;
 	}
@@ -113,7 +118,7 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 			return { status: "outcome_unknown", stage: "ack", reason: "journal_missing_command" };
 		// A service upgrade may remove an action from the installed adapter while
 		// an acknowledged command is waiting in the journal. Never apply it then.
-		if (!this.actionAdapter.supportedCommands.includes(current.command.commandType)) {
+		if (!this.commandSupported(current.command, this.actionAdapter)) {
 			const pending = await this.saveCurrent(
 				state,
 				current.command,
@@ -138,7 +143,7 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 		const current = state.current;
 		if (!current)
 			return { status: "outcome_unknown", stage: "ack", reason: "journal_missing_command" };
-		if (!this.actionAdapter.supportedCommands.includes(current.command.commandType)) {
+		if (!this.commandSupported(current.command, this.actionAdapter)) {
 			const rejecting = await this.saveCurrent(state, current.command, "reject_intent");
 			return this.resumeRejection(rejecting);
 		}
@@ -183,11 +188,14 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 
 	/** One bounded cycle. Journal/lock failure leaves actions untouched. */
 	async tick(): Promise<FleetResponseCycleResult> {
+		let result: FleetResponseCycleResult;
 		try {
-			return await this.journal.withLock(() => this.tickLocked());
+			result = await this.journal.withLock(() => this.tickLocked());
 		} catch {
-			return { status: "outcome_unknown", stage: "poll", reason: "journal_unavailable" };
+			result = { status: "outcome_unknown", stage: "poll", reason: "journal_unavailable" };
 		}
+		await this.emitAudit(result);
+		return result;
 	}
 
 	/** Poll at a bounded cadence until the service supervisor aborts the worker. */

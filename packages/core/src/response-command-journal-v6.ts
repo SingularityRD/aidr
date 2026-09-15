@@ -1,6 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { link, lstat, mkdir, open, readFile, rename, rm, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
+import { createDeviceAttestation, type DeviceAttestation } from "./device-attestation.js";
 import type {
 	FleetResponseCommand,
 	FleetResponseIdentity,
@@ -24,6 +25,8 @@ export interface FleetJournalState {
 	sequence: number;
 	tenant_id: string;
 	agent_id: string;
+	installation_id: string;
+	key_hash: string;
 	current: FleetJournalCurrent | null;
 	recent_ids: string[];
 }
@@ -71,6 +74,7 @@ function assertCommand(value: unknown): asserts value is FleetResponseCommand {
 function assertState(
 	value: unknown,
 	identity: FleetResponseIdentity,
+	attestation: DeviceAttestation,
 ): asserts value is FleetJournalState {
 	if (
 		!isRecord(value) ||
@@ -79,6 +83,8 @@ function assertState(
 		(value.sequence as number) < 0 ||
 		value.tenant_id !== identity.tenantId ||
 		value.agent_id !== identity.agentId ||
+		value.installation_id !== attestation.installationId ||
+		value.key_hash !== attestation.keyHash ||
 		!Array.isArray(value.recent_ids) ||
 		value.recent_ids.length > MAX_RECENT_FLEET_COMMANDS ||
 		value.recent_ids.some((id) => typeof id !== "string" || !UUID.test(id)) ||
@@ -150,15 +156,20 @@ function pidAlive(pid: number): boolean {
 export class FleetResponseJournal {
 	private readonly path: string;
 	private readonly identity: FleetResponseIdentity;
+	private readonly attestation: DeviceAttestation;
 	private readonly key: string;
 	private slot: Slot | null = null;
 	private sequence = 0;
 
-	constructor(path: string, identity: FleetResponseIdentity, apiKey: string) {
+	constructor(path: string, identity: FleetResponseIdentity, apiKey: string, installationId: string) {
 		if (!isAbsolute(path)) throw new Error("fleet_journal_path_must_be_absolute");
 		if (!apiKey.trim()) throw new Error("invalid_fleet_journal_key");
 		this.path = resolve(path);
 		this.identity = { ...identity };
+		this.attestation = createDeviceAttestation(installationId, apiKey);
+		// Keep the raw enrollment key only in memory as the MAC secret. The persisted
+		// key hash binds the journal to this enrollment without making the journal
+		// forgeable by anyone who can read its public binding fields.
 		this.key = apiKey.trim();
 	}
 
@@ -190,10 +201,10 @@ export class FleetResponseJournal {
 			!/^[a-f0-9]{64}$/.test(envelope.mac)
 		)
 			throw new Error("invalid_fleet_journal_envelope");
-		assertState(envelope.payload, this.identity);
-		const expected = Buffer.from(macFor(envelope.payload, this.key), "hex");
+		const expected = Buffer.from(macFor(envelope.payload as unknown as FleetJournalState, this.key), "hex");
 		const actual = Buffer.from(envelope.mac, "hex");
 		if (!timingSafeEqual(expected, actual)) throw new Error("fleet_journal_integrity_failed");
+		assertState(envelope.payload, this.identity, this.attestation);
 		return envelope.payload;
 	}
 
@@ -210,6 +221,8 @@ export class FleetResponseJournal {
 				sequence: 0,
 				tenant_id: this.identity.tenantId,
 				agent_id: this.identity.agentId,
+				installation_id: this.attestation.installationId,
+				key_hash: this.attestation.keyHash,
 				current: null,
 				recent_ids: [],
 			}
@@ -217,7 +230,7 @@ export class FleetResponseJournal {
 	}
 
 	async save(state: FleetJournalState): Promise<FleetJournalState> {
-		assertState(state, this.identity);
+		assertState(state, this.identity, this.attestation);
 		const next = { ...state, sequence: this.sequence + 1 } satisfies FleetJournalState;
 		const envelope: Envelope = { payload: next, mac: macFor(next, this.key) };
 		const target: Slot = this.slot === "a" ? "b" : "a";

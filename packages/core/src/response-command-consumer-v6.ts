@@ -1,4 +1,9 @@
 import { controlPlaneUrl } from "./clients/control-plane-url.js";
+import {
+	createDeviceAttestation,
+	deviceAttestationPayload,
+	type DeviceAttestation,
+} from "./device-attestation.js";
 
 /**
  * One-shot fleet response consumer. It is deliberately inert without a
@@ -37,12 +42,22 @@ export interface FleetResponseActionAdapter {
 	): Promise<{ observed: true } | { observed: false; code: string }>;
 }
 
+export interface FleetResponseAuditEvent {
+	result: FleetResponseCycleResult;
+	/** The enrollment binding used for this cycle; keyHash is not the bearer. */
+	attestation: DeviceAttestation;
+}
+
 export interface FleetResponseConsumerOptions {
 	/** Supabase Functions base (e.g. https://api.example/functions) or /v1 base. */
 	endpoint: string;
 	apiKey: string;
 	identity: FleetResponseIdentity;
+	/** Installation identifier registered on the agent row during enrollment. */
+	installationId: string;
 	adapter?: FleetResponseActionAdapter;
+	/** Best-effort local audit hook; failures never turn an outcome into success. */
+	audit?: (event: FleetResponseAuditEvent) => void | Promise<void>;
 	timeoutMs?: number;
 	/** Explicitly opt into http://localhost for isolated development tests. */
 	developmentLoopback?: boolean;
@@ -192,9 +207,11 @@ export class FleetResponseCommandConsumer {
 	private readonly apiKey: string;
 	private readonly identity: FleetResponseIdentity;
 	private readonly adapter?: FleetResponseActionAdapter;
+	protected readonly audit?: FleetResponseConsumerOptions["audit"];
 	private readonly fetchImpl: typeof fetch;
 	private readonly timeoutMs: number;
 	protected readonly now: () => number;
+	protected readonly deviceAttestation: DeviceAttestation;
 
 	constructor(options: FleetResponseConsumerOptions) {
 		if (!isUuid(options.identity.tenantId) || !isUuid(options.identity.agentId)) {
@@ -210,8 +227,10 @@ export class FleetResponseCommandConsumer {
 			throw new Error("fleet_adapter_identity_mismatch");
 		this.url = responseEndpoint(options.endpoint, options.developmentLoopback === true);
 		this.apiKey = options.apiKey.trim();
+		this.deviceAttestation = createDeviceAttestation(options.installationId, this.apiKey);
 		this.identity = { ...options.identity };
 		this.adapter = options.adapter;
+		this.audit = options.audit;
 		this.fetchImpl = options.fetchImpl ?? fetch;
 		this.timeoutMs = Math.min(10_000, Math.max(100, options.timeoutMs ?? 3000));
 		this.now = options.now ?? Date.now;
@@ -225,7 +244,11 @@ export class FleetResponseCommandConsumer {
 				"Content-Type": "application/json",
 				Accept: "application/json",
 			},
-			body: JSON.stringify({ tenant_id: this.identity.tenantId, ...body }),
+			body: JSON.stringify({
+				tenant_id: this.identity.tenantId,
+				...body,
+				device_attestation: deviceAttestationPayload(this.deviceAttestation),
+			}),
 			signal: AbortSignal.timeout(this.timeoutMs),
 		});
 		if (!response.ok) throw new Error(`http_${response.status}`);
@@ -262,7 +285,7 @@ export class FleetResponseCommandConsumer {
 		}
 		if (polled.command === null) return { status: "idle" };
 		const parsed = commandFrom(polled.command, this.identity, this.now());
-		if (!parsed.ok) {
+		if (parsed.ok === false) {
 			if (parsed.expiredId) return { status: "expired", commandId: parsed.expiredId };
 			return { status: "invalid_command", reason: parsed.reason };
 		}
@@ -285,6 +308,13 @@ export class FleetResponseCommandConsumer {
 		}
 	}
 
+	protected commandSupported(
+		command: FleetResponseCommand,
+		adapter: FleetResponseActionAdapter,
+	): boolean {
+		return adapter.supportedCommands.includes(command.commandType);
+	}
+
 	protected async executeAndVerify(
 		command: FleetResponseCommand,
 		adapter: FleetResponseActionAdapter,
@@ -292,9 +322,9 @@ export class FleetResponseCommandConsumer {
 		if (Date.parse(command.expiresAt) <= this.now()) return "ttl_elapsed";
 		try {
 			const execution = await adapter.execute(command);
-			if (!execution.ok) return resultCode(execution.code, "execution_failed");
+			if (execution.ok === false) return resultCode(execution.code, "execution_failed");
 			const verification = await adapter.verify(command);
-			return verification.observed ? null : resultCode(verification.code, "verification_failed");
+			return verification.observed === true ? null : resultCode(verification.code, "verification_failed");
 		} catch {
 			return "execution_failed";
 		}
@@ -319,11 +349,11 @@ export class FleetResponseCommandConsumer {
 		return code ? { status: "failed", commandId, code } : { status: "succeeded", commandId };
 	}
 
-	async pollOnce(): Promise<FleetResponseCycleResult> {
+	private async pollOnceInternal(): Promise<FleetResponseCycleResult> {
 		const command = await this.pollCommand();
 		if ("status" in command) return command;
 		const adapter = this.adapter;
-		if (!adapter || !adapter.supportedCommands.includes(command.commandType)) {
+		if (!adapter || !this.commandSupported(command, adapter)) {
 			return this.rejectUnsupported(command.id);
 		}
 		// A lost ACK reply may have committed remotely. Never execute on ambiguity.
@@ -337,5 +367,19 @@ export class FleetResponseCommandConsumer {
 		}
 		const code = await this.executeAndVerify(command, adapter);
 		return this.report(command.id, code);
+	}
+
+	protected async emitAudit(result: FleetResponseCycleResult): Promise<void> {
+		try {
+			await this.audit?.({ result, attestation: this.deviceAttestation });
+		} catch {
+			// Audit observers cannot turn an uncertain or failed response into success.
+		}
+	}
+
+	async pollOnce(): Promise<FleetResponseCycleResult> {
+		const result = await this.pollOnceInternal();
+		await this.emitAudit(result);
+		return result;
 	}
 }
