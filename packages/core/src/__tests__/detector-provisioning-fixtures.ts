@@ -7,14 +7,100 @@
  * itself. Signing them here (instead of stubbing core internals) means the
  * connector tests exercise the real verification path.
  */
-import { generateKeyPairSync, type KeyObject, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, type KeyObject, sign } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { BehavioralDetectionInput } from "../behavioral-orchestrator.js";
 import { canonicalDetectorPolicyPayload } from "../detector-provisioning.js";
+import { generateEmbedding } from "../ml/embedder.js";
+import type { ThreatEmbedding } from "../ml-model.js";
 import type { AgentRuntime } from "../types.js";
 
 export const TEST_TENANT_ID = "tenant-a";
 export const TEST_DLP_MARKER = "TENANT-CONFIDENTIAL-MARKER";
+export const TEST_SYNTHETIC_THREAT_ID = "synthetic-fixture-only";
+/** Exact synthetic input, not a real threat or a production/customer corpus. */
+export const TEST_SYNTHETIC_THREAT_TEXT = JSON.stringify({
+	command: "aidr-synthetic-fixture-only violet zeppelin quartz marmalade",
+});
+
+export interface SyntheticThreatCorpus {
+	schema_version: number;
+	tenant_id: string;
+	corpus_id: string;
+	corpus_version: number;
+	model_version: string;
+	dimension: number;
+	entries: ThreatEmbedding[];
+	sha256: string;
+}
+
+/** Recomputes the digest after overrides, so negative tests still have a valid digest. */
+export function syntheticThreatCorpus(
+	tenantId: string = TEST_TENANT_ID,
+	overrides: Partial<Omit<SyntheticThreatCorpus, "sha256">> = {},
+): SyntheticThreatCorpus {
+	const corpus = {
+		schema_version: 1,
+		tenant_id: tenantId,
+		corpus_id: "synthetic-test-corpus",
+		corpus_version: 1,
+		model_version: "local-tinyhash-v1",
+		dimension: 100,
+		entries: [
+			{
+				threatId: TEST_SYNTHETIC_THREAT_ID,
+				embedding: Array.from(generateEmbedding(TEST_SYNTHETIC_THREAT_TEXT)),
+				metadata: {
+					category: "synthetic-test-only",
+					severity: "critical",
+					description: "Explicitly synthetic signed corpus fixture; not a production threat",
+				},
+			},
+		],
+		...overrides,
+	};
+	return {
+		...corpus,
+		sha256: createHash("sha256").update(canonicalDetectorPolicyPayload(corpus)).digest("hex"),
+	};
+}
+
+/** Signed v2 capability; callers must separately grant behavioral_learning_v1. */
+export function behavioralPolicyPayload(
+	tenantId: string = TEST_TENANT_ID,
+	behavioralOverrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+	return detectorPolicyPayload(tenantId, {
+		schema_version: 2,
+		behavioral: {
+			enabled: true,
+			learning_allowed: true,
+			learning_capability: "durable_baseline_v1",
+			threat_corpus: syntheticThreatCorpus(tenantId),
+			...behavioralOverrides,
+		},
+	});
+}
+
+/** Ten distinct harmless fingerprints; index ten revisits a known baseline path. */
+export function syntheticBehavioralInput(
+	index = 0,
+	overrides: Partial<BehavioralDetectionInput> = {},
+): BehavioralDetectionInput {
+	const path = `/synthetic-workspace/document-${index % 10}.txt`;
+	return {
+		tenantId: TEST_TENANT_ID,
+		sessionId: "synthetic-behavioral-session",
+		toolName: "Read",
+		riskScore: 0,
+		timestamp: Date.now(),
+		path,
+		classificationText: JSON.stringify({ file_path: path }),
+		learningAllowed: true,
+		...overrides,
+	};
+}
 
 export interface ProvisioningKeys {
 	publicKeyPem: string;
@@ -192,12 +278,12 @@ export async function provisionTenantDetectorPolicy(
 		const signature = sign(
 			null,
 			Buffer.from(canonicalDetectorPolicyPayload(payload)),
-			options.tamperPolicy === "signature" ? generateProvisioningKeys().privateKey : keys.privateKey,
+			options.tamperPolicy === "signature"
+				? generateProvisioningKeys().privateKey
+				: keys.privateKey,
 		).toString("base64");
 		const written =
-			options.tamperPolicy === "payload"
-				? { ...payload, tenant_id: "tenant-tampered" }
-				: payload;
+			options.tamperPolicy === "payload" ? { ...payload, tenant_id: "tenant-tampered" } : payload;
 		await mkdir(dirname(policyPath), { recursive: true });
 		await writeFile(
 			policyPath,

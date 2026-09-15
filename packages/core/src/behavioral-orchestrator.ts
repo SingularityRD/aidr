@@ -4,7 +4,11 @@ import type {
 	BehavioralBaselineObservation,
 	BehavioralBaselineStore,
 } from "./behavioral-baseline-store.js";
+import { LOCAL_EMBEDDER_MODEL_VERSION } from "./behavioral-corpus.js";
 import { LocalEmbeddingModel } from "./ml-model.js";
+
+export { LOCAL_EMBEDDER_MODEL_VERSION } from "./behavioral-corpus.js";
+
 import { NoveltyDetector } from "./novelty-detection.js";
 import type { Logger } from "./types.js";
 import { nullLogger } from "./types.js";
@@ -112,6 +116,8 @@ export interface BehavioralOrchestratorDependencies {
 	 * earlier process started; without it state lives only in this instance.
 	 */
 	baselineStore?: BehavioralBaselineStore;
+	/** Trusted provisioning ceiling: events cannot override signed consent or tenant. */
+	provisionedPolicy?: { tenantId: string; learningAllowed: boolean };
 	logger?: Logger;
 	now?: () => number;
 	createBehavioralAnalyzer?: () => BehavioralAnalyzer;
@@ -145,13 +151,6 @@ export const BEHAVIORAL_ORCHESTRATOR_BOUNDS = {
 	retentionMs: 30 * 24 * 60 * 60 * 1000,
 } as const;
 
-/**
- * Version reported for the built-in deterministic embedder. It is a real,
- * named version rather than `unversioned`, because the local TinyHash embedder
- * is a fixed algorithm and callers need to know which model produced a score.
- */
-export const LOCAL_EMBEDDER_MODEL_VERSION = "local-tinyhash-v1";
-
 const DEFAULT_CONFIG: BehavioralOrchestratorConfig = {
 	minBaselineSamples: 10,
 	maxTenants: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxTenants,
@@ -184,6 +183,9 @@ export class BehavioralDetectionOrchestrator {
 	private readonly createBehavioralAnalyzer: () => BehavioralAnalyzer;
 	private readonly createNoveltyDetector: () => NoveltyDetector;
 	private readonly baselineStore: BehavioralBaselineStore | undefined;
+	private readonly provisionedPolicy:
+		| Readonly<{ tenantId: string; learningAllowed: boolean }>
+		| undefined;
 	private readonly scopeQueues = new Map<string, Promise<void>>();
 	private mlModel: BehavioralEmbeddingModel | undefined;
 	private modelVersion: string | null;
@@ -202,6 +204,9 @@ export class BehavioralDetectionOrchestrator {
 		this.logger = dependencies.logger ?? nullLogger;
 		this.now = dependencies.now ?? Date.now;
 		this.baselineStore = dependencies.baselineStore;
+		this.provisionedPolicy = dependencies.provisionedPolicy
+			? Object.freeze({ ...dependencies.provisionedPolicy })
+			: undefined;
 		this.createBehavioralAnalyzer =
 			dependencies.createBehavioralAnalyzer ??
 			(() =>
@@ -216,9 +221,8 @@ export class BehavioralDetectionOrchestrator {
 				new NoveltyDetector({
 					minBaselineSamples: this.config.minBaselineSamples,
 				}));
-		// The ML leg must not be absent by accident: without a caller-supplied
-		// model it runs the deterministic local embedder instead of reporting
-		// "not configured" and forcing `ask` on every call.
+		// The embedder alone is not a threat database: the default stays
+		// unavailable until a trusted caller supplies a populated model.
 		const usesDefaultModel = dependencies.mlModel === undefined;
 		this.mlModel =
 			dependencies.mlModel ?? new LocalEmbeddingModel(LocalEmbeddingModel.createDefaultConfig());
@@ -251,6 +255,9 @@ export class BehavioralDetectionOrchestrator {
 
 	/** Load and validate a replacement before atomically making it active. */
 	async refreshModel(model: BehavioralEmbeddingModel, version: string): Promise<void> {
+		if (this.provisionedPolicy) {
+			throw new Error("Provisioned corpus replacement requires a newly verified policy context");
+		}
 		if (!version.trim() || version.length > MAX_ID_LENGTH) {
 			throw new Error("Model version must be a non-empty bounded string");
 		}
@@ -672,6 +679,9 @@ export class BehavioralDetectionOrchestrator {
 
 	private validateInput(input: BehavioralDetectionInput): ValidatedBehavioralInput {
 		const tenantId = validateIdentifier(input.tenantId, "tenantId");
+		if (this.provisionedPolicy && tenantId !== this.provisionedPolicy.tenantId) {
+			throw new Error("Provisioned behavioral policy belongs to a different tenant");
+		}
 		const sessionId = validateIdentifier(input.sessionId, "sessionId");
 		const toolName = validateValue(input.toolName, "toolName", MAX_TOOL_LENGTH, true);
 		if (!Number.isFinite(input.riskScore) || input.riskScore < 0 || input.riskScore > 100) {
@@ -711,7 +721,9 @@ export class BehavioralDetectionOrchestrator {
 			url,
 			durationMs: input.durationMs,
 			classificationText,
-			learningAllowed: input.learningAllowed,
+			learningAllowed: this.provisionedPolicy
+				? this.provisionedPolicy.learningAllowed && input.learningAllowed === true
+				: input.learningAllowed,
 		};
 	}
 }

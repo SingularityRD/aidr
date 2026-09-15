@@ -13,11 +13,12 @@
  * one) gets an empty context, so an unprovisioned connector behaves exactly as
  * it did before provisioning existed.
  */
-import { createPublicKey, verify } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { createBehavioralBaselineStore } from "./behavioral-baseline-store.js";
+import { BehavioralCorpusSchema, LOCAL_EMBEDDER_MODEL_VERSION } from "./behavioral-corpus.js";
 import { createBehavioralDetectionOrchestrator } from "./behavioral-orchestrator.js";
 import { loadConfig, resolvePath } from "./config.js";
 import { DlpPolicySchema } from "./dlp/index.js";
@@ -28,6 +29,7 @@ import {
 	type ManagedState,
 	managedStatePath,
 } from "./managed.js";
+import { LocalEmbeddingModel } from "./ml-model.js";
 import type { AgentRuntime, Config } from "./types.js";
 
 const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
@@ -37,7 +39,7 @@ const DateTime = z.string().datetime({ offset: true });
 
 const DetectorPolicyPayloadSchema = z
 	.object({
-		schema_version: z.literal(1),
+		schema_version: z.union([z.literal(1), z.literal(2)]),
 		tenant_id: z.string().regex(ID),
 		issued_at: DateTime,
 		expires_at: DateTime,
@@ -48,13 +50,11 @@ const DetectorPolicyPayloadSchema = z
 		behavioral: z
 			.object({
 				enabled: z.literal(true),
-				// Signed policy pins learning OFF, and this schema still refuses a
-				// policy that claims otherwise. A durable baseline store now exists
-				// (`behavioralBaselineDir`), so the original reason — a one-shot hook
-				// process cannot form a baseline — no longer applies technically;
-				// enabling learning is therefore a deliberate signed-policy/product
-				// decision that this contract has not taken (see detectorContext).
-				learning_allowed: z.literal(false).default(false),
+				// Old payloads remain no-learning. V2 opt-in needs an independently
+				// verified entitlement capability as well as this signed declaration.
+				learning_allowed: z.boolean().default(false),
+				learning_capability: z.literal("durable_baseline_v1").optional(),
+				threat_corpus: BehavioralCorpusSchema.optional(),
 			})
 			.strict()
 			.optional(),
@@ -73,6 +73,23 @@ const DetectorPolicyPayloadSchema = z
 			.optional(),
 	})
 	.strict()
+	.refine(
+		(value) => {
+			const behavioral = value.behavioral;
+			if (!behavioral) return true;
+			if (value.schema_version === 1) {
+				return (
+					!behavioral.learning_allowed &&
+					!behavioral.learning_capability &&
+					!behavioral.threat_corpus
+				);
+			}
+			return (
+				!behavioral.learning_allowed || behavioral.learning_capability === "durable_baseline_v1"
+			);
+		},
+		{ message: "Behavioral provisioning requires an explicit supported V2 workflow" },
+	)
 	.refine((value) => value.dlp || value.behavioral || value.reputation_feed, {
 		message: "At least one provisioned detector is required",
 	});
@@ -243,6 +260,23 @@ function validatePolicyTrust(
 		throw new Error("Provisioned detector policy trust or tenant binding failed");
 	}
 	if (
+		payload.behavioral?.learning_allowed &&
+		!state.entitlement.premium_modules.includes("behavioral_learning_v1")
+	) {
+		throw new Error("Provisioned behavioral learning capability is unavailable");
+	}
+	const corpus = payload.behavioral?.threat_corpus;
+	if (corpus) {
+		const { sha256, ...content } = corpus;
+		if (
+			corpus.tenant_id !== payload.tenant_id ||
+			createHash("sha256").update(canonicalDetectorPolicyPayload(content), "utf8").digest("hex") !==
+				sha256
+		) {
+			throw new Error("Provisioned behavioral corpus digest or tenant binding failed");
+		}
+	}
+	if (
 		payload.dlp?.policy.tenantId !== undefined &&
 		payload.dlp.policy.tenantId !== payload.tenant_id
 	) {
@@ -272,7 +306,9 @@ function validateFeedKeyring(feed: SignedDetectorPolicy["payload"]["reputation_f
 	}
 }
 
-function detectorContext(payload: SignedDetectorPolicy["payload"]): DetectorProvisionedContext {
+async function detectorContext(
+	payload: SignedDetectorPolicy["payload"],
+): Promise<DetectorProvisionedContext> {
 	const context: DetectorProvisionedContext = {};
 	if (payload.dlp || payload.behavioral) {
 		const runtimeDetectors: NonNullable<ToolEvaluationContext["runtimeDetectors"]> = {
@@ -280,19 +316,32 @@ function detectorContext(payload: SignedDetectorPolicy["payload"]): DetectorProv
 		};
 		if (payload.dlp) runtimeDetectors.dlp = { enabled: true, policy: payload.dlp.policy };
 		if (payload.behavioral) {
+			const corpus = payload.behavioral.threat_corpus;
+			// Import only after signature, entitlement, tenant, digest and model
+			// compatibility validation. Never fall back to a fabricated corpus.
+			const mlModel = new LocalEmbeddingModel(LocalEmbeddingModel.createDefaultConfig());
+			if (corpus) await mlModel.importThreatCorpus(corpus.entries);
 			runtimeDetectors.behavioral = {
 				enabled: true,
-				// The signed policy is the single source of truth for learning, so
-				// this wiring can no longer assert a policy the tenant did not
-				// receive. `DetectorPolicyPayloadSchema` currently pins
-				// `learning_allowed` to `false`, because a one-shot hook with no
-				// durable baseline could not act on it. The durable store below
-				// removes that limitation, so enabling learning is now purely a
-				// signed-policy decision and is deliberately not taken here.
 				learningAllowed: payload.behavioral.learning_allowed,
-				orchestrator: createBehavioralDetectionOrchestrator(undefined, {
-					baselineStore: createBehavioralBaselineStore({ storeDir: behavioralBaselineDir() }),
-				}),
+				orchestrator: createBehavioralDetectionOrchestrator(
+					{ modelVersion: LOCAL_EMBEDDER_MODEL_VERSION },
+					{
+						mlModel,
+						provisionedPolicy: {
+							tenantId: payload.tenant_id,
+							learningAllowed: payload.behavioral.learning_allowed,
+						},
+						// A different corpus/version must not inherit observations scored
+						// against the prior corpus. A missing corpus cannot restore a baseline.
+						baselineStore: corpus
+							? createBehavioralBaselineStore({
+									storeDir: behavioralBaselineDir(),
+									corpusDigest: corpus.sha256,
+								})
+							: undefined,
+					},
+				),
 			};
 		}
 		context.runtimeDetectors = runtimeDetectors;
