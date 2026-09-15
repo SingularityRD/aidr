@@ -2723,7 +2723,7 @@ Use the locked, filled-out version in Appendix F.1; this row is the minimum sche
 
 ### 32.10 Metric dictionary row
 
-Use the investor and technical metric dictionary in Appendix F.5. Every number remains **Not held** until its formula, denominator, source, RC, window and reviewer are attached.
+Use the canonical investor metric dictionary in Appendix F.5. Every number remains **NOT_HELD** until its formula, denominator, source query, candidate/environment, fixture, window, sample, owner/reviewer, limitation, and evidence binding are attached; missing fields remain **unknown**.
 
 | Field | Content |
 |---|---|
@@ -2769,6 +2769,8 @@ Use the investor and technical metric dictionary in Appendix F.5. Every number r
 - Support/SLA template: docs/production-readiness/support-sla-template.md
 - Privacy/legal review template: docs/production-readiness/privacy-legal-review-template.md
 - Investor metric dictionary template: docs/production-readiness/investor-metric-dictionary-template.md
+- Machine-readable investor metric dictionary and schema: docs/production-readiness/investor-metric-dictionary.json, docs/production-readiness/investor-metric-dictionary.schema.json
+- Investor metric completeness check: `node scripts/validate-investor-metric-dictionary.mjs` (also `pnpm verify:investor-metrics`)
 
 All historical audit claims must be revalidated against the target Release Candidate.
 
@@ -2803,6 +2805,7 @@ claim-registry-check
 node docs/scripts/claim-check.mjs --mode=gate
 license-notice-package-metadata-check
 commercial-go-evidence-registry-verify
+pnpm verify:investor-metrics
 privacy-payload-contract
 tenant-isolation-all-stores
 backup-restore-rto-rpo
@@ -3031,19 +3034,9 @@ Before contract use, the schedule must define: eligible endpoints, synthetic pro
 
 ### F.5 Investor technical and commercial metric dictionary
 
-No number is filled in below until the source, denominator, Release Candidate, observation window and reviewer are attached. “Not held” means no evidence has been supplied.
+No number is filled in until the source query, denominator, Release Candidate, environment, observation window, sample, owner, reviewer, limitation and evidence binding are attached. “Not held” means no evidence has been supplied.
 
-| Metric ID | Metric / formula | Source and denominator | RC / environment / window | Owner / reviewer | Status |
-|---|---|---|---|---|---|
-| INV-M001 | Protected-agent activation rate = activated enrolled agents / ordered agent entitlements | Entitlement ledger + device enrollment events | | Product + Finance | Not held |
-| INV-M002 | Connector E2E pass rate = mandatory scenarios passed / mandatory scenarios discovered | Expected-suite manifest + real-host reports for all five connectors | | QA + Product | Not held |
-| INV-M003 | Monthly managed availability = (eligible minutes − unavailability) / eligible minutes | SLI probe and incident timeline; denominator/exclusions must be signed | | Operations + Legal | Not held |
-| INV-M004 | Enrollment completion rate = successful enrollment / valid authorization attempts | Device-start, verify, enrollment events; exclude malformed/abusive requests explicitly | | Product + Security | Not held |
-| INV-M005 | Detection precision/recall by fixture class = TP/(TP+FP), TP/(TP+FN) | Versioned benign/malicious corpus and independent labels | | Security + QA | Not held |
-| INV-M006 | Customer PoV completion = mandatory cases passed / mandatory cases agreed in Charter | Signed Charter, immutable run report and intervention log | | Customer Success + customer | Not held |
-| INV-M007 | AIG dataset readiness = signed installed-consumer hash match and known-positive pass | Dataset manifest, packed artifact hash and fixture output | | Engineering + Security | Not held |
-| INV-M008 | Support SLA attainment = tickets meeting acknowledgement/update target / eligible tickets | Ticket system export with severity, consent and time zone | | Support + Operations | Not held |
-| INV-M009 | Net retention / revenue / pipeline metrics | Finance source of truth; formula, cohort, currency, period and audit trail required | | Finance + Legal | Not held |
+The single canonical dictionary is [investor-metric-dictionary.json](investor-metric-dictionary.json), constrained by [investor-metric-dictionary.schema.json](investor-metric-dictionary.schema.json) and checked by `pnpm verify:investor-metrics`. The presentation template mirrors that file and is checked for exact metric content. Incomplete fields remain `unknown` and every incomplete metric remains `NOT_HELD`; no measurement is inferred here.
 
 Any investor deck, data-room answer, customer case study or sales script must reference a metric ID and its evidence hash. Unverified “customers”, “compliance”, “availability”, “coverage”, “CVE count”, “speed”, “savings” or “market” numbers remain excluded from external material.
 
