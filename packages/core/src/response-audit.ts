@@ -25,6 +25,11 @@ export interface ResponseAuditEntry {
 		userNotified?: boolean;
 		/** Machine-readable reason a response was refused, when it was. */
 		reason?: string;
+		/** Provider/enrollment evidence only; never an OS or hardware claim. */
+		commandId?: string;
+		providerId?: string;
+		installationId?: string;
+		keyHash?: string;
 	};
 	outcome: "success" | "failure";
 	error?: string;

@@ -23,12 +23,15 @@
  *      adapter that cannot do the work fails loudly instead of silently.
  */
 
+import type { ResponseProviderRegistry } from "./response-provider-registry.js";
+
 export type ResponseCapability =
 	| "quarantine_file"
 	| "restore_file"
 	| "terminate_process"
 	| "isolate_host"
-	| "revoke_credential";
+	| "revoke_credential"
+	| "contain";
 
 export const RESPONSE_CAPABILITIES: readonly ResponseCapability[] = [
 	"quarantine_file",
@@ -36,6 +39,7 @@ export const RESPONSE_CAPABILITIES: readonly ResponseCapability[] = [
 	"terminate_process",
 	"isolate_host",
 	"revoke_credential",
+	"contain",
 ];
 
 /** What an installed worker or platform adapter is allowed to attempt. */
@@ -44,6 +48,8 @@ export interface ResponseAdapter {
 	readonly platform: string;
 	/** The complete set of capabilities this adapter implements on this host. */
 	capabilities(): readonly ResponseCapability[];
+	/** Provider registry required for credential or external containment actions. */
+	readonly providerRegistry?: ResponseProviderRegistry;
 	/**
 	 * Execute one primitive. Implementations must be idempotent for a repeated
 	 * `idempotencyKey` and must never report success they did not observe.
@@ -54,6 +60,8 @@ export interface ResponseAdapter {
 export interface ResponseTargetBinding {
 	/** Absolute host path for file actions, process id for process actions. */
 	target: string;
+	/** Explicit allowlisted provider for provider-backed actions. */
+	providerId?: string;
 	/** Expected digest of the target at planning time, when the action is file based. */
 	expectedSha256: string | null;
 	/** Incident/command identity this action belongs to. */
@@ -102,11 +110,14 @@ export type ResponsePlanDecision =
 const CAPABILITY_SET = new Set<string>(RESPONSE_CAPABILITIES);
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,200}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+const PROVIDER_ID = /^[a-z][a-z0-9_.:-]{1,63}$/;
 const MAX_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface PlanResponseRequest {
-	adapter: Pick<ResponseAdapter, "adapterId" | "platform" | "capabilities">;
+	adapter: Pick<ResponseAdapter, "adapterId" | "platform" | "capabilities" | "providerRegistry">;
 	capability: ResponseCapability;
+	/** Optional registry override for deterministic worker tests and wrappers. */
+	providerRegistry?: ResponseProviderRegistry;
 	binding: ResponseTargetBinding;
 	vaultPath?: string | null;
 	ttlMs?: number;
@@ -161,6 +172,11 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 	if (typeof binding.incidentId !== "string" || binding.incidentId.trim() === "") {
 		return { ok: false, code: "missing_incident", detail: "incidentId is required" };
 	}
+	const providerAction = request.capability === "revoke_credential" || request.capability === "contain";
+	if (binding.providerId !== undefined &&
+		(!providerAction || !PROVIDER_ID.test(binding.providerId))) {
+		return { ok: false, code: "invalid_provider_id", detail: "providerId is invalid for this capability" };
+	}
 	if (typeof binding.authorizedBy !== "string" || binding.authorizedBy.trim().length < 3) {
 		return { ok: false, code: "missing_authorization", detail: "authorizedBy is required" };
 	}
@@ -205,6 +221,19 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 			}
 		}
 	}
+	if (
+		(request.capability === "revoke_credential" || request.capability === "contain") &&
+		request.hasPrivilege !== false
+	) {
+		const registry = request.providerRegistry ?? request.adapter.providerRegistry;
+		if (!registry?.supports(request.capability, binding.providerId)) {
+			return {
+				ok: false,
+				code: "unsupported_action",
+				detail: `no registered provider supports ${request.capability}`,
+			};
+		}
+	}
 	if (request.capability === "isolate_host" && request.hasPrivilege !== true) {
 		return {
 			ok: false,
@@ -213,7 +242,9 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 		};
 	}
 	if (
-		(request.capability === "terminate_process" || request.capability === "revoke_credential") &&
+		(request.capability === "terminate_process" ||
+			request.capability === "revoke_credential" ||
+			request.capability === "contain") &&
 		request.hasPrivilege !== true
 	) {
 		return {
@@ -222,7 +253,6 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 			detail: `${request.capability} requires the documented privilege`,
 		};
 	}
-
 	return {
 		ok: true,
 		step: {
@@ -231,7 +261,10 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 			vaultPath: fileAction ? (request.vaultPath as string) : null,
 			ttlMs,
 			idempotencyKey: request.idempotencyKey,
-			reversible: request.capability !== "isolate_host",
+			reversible:
+				request.capability !== "isolate_host" &&
+				request.capability !== "revoke_credential" &&
+				request.capability !== "contain",
 		},
 	};
 }
@@ -245,6 +278,7 @@ export interface ResponseReceipt {
 	status: "applied" | "partial" | "failed" | "refused" | "noop";
 	code: string;
 	target: string;
+	providerId?: string;
 	observed: string | null;
 	rollbackToken: string | null;
 	rollbackPossible: boolean;
@@ -282,6 +316,8 @@ export class MemoryResponseJournal implements ResponseJournal {
 export interface ExecuteResponseOptions {
 	adapter: ResponseAdapter;
 	journal: ResponseJournal;
+	/** Optional registry override for provider-backed actions. */
+	providerRegistry?: ResponseProviderRegistry;
 	/** Injected clock, in epoch milliseconds. */
 	now?: () => number;
 }
@@ -320,6 +356,7 @@ export async function executeResponseStep(
 				status: "refused",
 				code: "stale_command",
 				target: step.binding.target,
+				providerId: step.binding.providerId,
 				observed: null,
 				rollbackToken: null,
 				rollbackPossible: false,
@@ -330,9 +367,65 @@ export async function executeResponseStep(
 		};
 	}
 
+	if (step.capability === "revoke_credential" || step.capability === "contain") {
+		const registry = options.providerRegistry ?? options.adapter.providerRegistry;
+		if (!registry?.supports(step.capability, step.binding.providerId)) {
+			const receipt: ResponseReceipt = {
+				commandId: step.idempotencyKey,
+				incidentId: step.binding.incidentId,
+				adapterId: options.adapter.adapterId,
+				platform: options.adapter.platform,
+				capability: step.capability,
+				status: "refused",
+				code: "unsupported_action",
+				target: step.binding.target,
+				providerId: step.binding.providerId,
+				observed: null,
+				rollbackToken: null,
+				rollbackPossible: false,
+				appliedAtUtc: new Date(startedAt).toISOString(),
+				fullyReversible: false,
+				idempotencyKey: step.idempotencyKey,
+			};
+			await options.journal.put({
+				idempotencyKey: step.idempotencyKey,
+				expiresAtMs: startedAt + step.ttlMs,
+				outcome: { status: "refused", code: "unsupported_action", detail: "no registered provider" },
+				receipt,
+			});
+			return { receipt, replayed: false };
+		}
+	}
+
 	let outcome: ResponseStepOutcome;
 	try {
-		outcome = await options.adapter.execute(step);
+		if (step.capability === "revoke_credential" || step.capability === "contain") {
+			const registry = options.providerRegistry ?? options.adapter.providerRegistry;
+			if (!registry) throw new Error("provider_registry_unavailable");
+			const providerOutcome = await registry.execute({
+				action: step.capability,
+				target: step.binding.target,
+				providerId: step.binding.providerId,
+				commandId: step.idempotencyKey,
+				idempotencyKey: step.idempotencyKey,
+				metadata: { incident_id: step.binding.incidentId },
+			});
+			if (providerOutcome.status === "unsupported") {
+				outcome = { status: "refused", code: "unsupported_action", detail: providerOutcome.detail };
+			} else if (providerOutcome.status === "failed") {
+				outcome = { status: "failed", code: providerOutcome.code, detail: providerOutcome.detail, rollbackToken: null };
+			} else if (providerOutcome.status === "noop") {
+				outcome = { status: "noop", observed: providerOutcome.observed, rollbackToken: null };
+			} else {
+				outcome = {
+					status: "applied",
+					observed: providerOutcome.observed,
+					rollbackToken: providerOutcome.rollbackToken,
+				};
+			}
+		} else {
+			outcome = await options.adapter.execute(step);
+		}
 	} catch (error) {
 		outcome = {
 			status: "failed",
@@ -364,16 +457,19 @@ export async function executeResponseStep(
 		status,
 		code:
 			outcome.status === "applied"
-				? status === "applied"
-					? "applied"
-					: "applied_without_rollback"
+				? step.capability === "revoke_credential" || step.capability === "contain"
+					? "provider_observed"
+					: status === "applied"
+						? "applied"
+						: "applied_without_rollback"
 				: outcome.status === "noop"
 					? "already_in_desired_state"
 					: outcome.code,
 		target: step.binding.target,
+		providerId: step.binding.providerId,
 		observed: outcome.status === "applied" || outcome.status === "noop" ? outcome.observed : null,
 		rollbackToken: outcome.status === "refused" ? null : outcome.rollbackToken,
-		rollbackPossible: outcome.status !== "refused" && outcome.rollbackToken !== null,
+		rollbackPossible: status === "applied" && outcome.status !== "refused" && outcome.rollbackToken !== null,
 		appliedAtUtc: new Date(startedAt).toISOString(),
 		fullyReversible: status === "applied",
 		idempotencyKey: step.idempotencyKey,
@@ -404,7 +500,7 @@ export interface ResponseRollbackRequest {
  */
 export function planResponseRollback(request: ResponseRollbackRequest): ResponsePlanDecision {
 	const { receipt } = request;
-	if (receipt.rollbackToken === null) {
+	if (receipt.rollbackToken === null || receipt.rollbackPossible !== true) {
 		return {
 			ok: false,
 			code: "no_rollback_token",
@@ -467,18 +563,29 @@ export interface WorkerCapabilityReport {
 }
 
 export function reportWorkerCapabilities(
-	adapter: Pick<ResponseAdapter, "adapterId" | "platform" | "capabilities">,
+	adapter: Pick<ResponseAdapter, "adapterId" | "platform" | "capabilities" | "providerRegistry">,
 	requested: readonly string[],
 ): WorkerCapabilityReport {
 	const declared = adapter.capabilities();
 	const known = requested.filter((entry): entry is ResponseCapability => CAPABILITY_SET.has(entry));
 	const requestedUnknown = requested.filter((entry) => !CAPABILITY_SET.has(entry));
-	const missing = known.filter((capability) => !declared.includes(capability));
+	const missing = known.filter(
+		(capability) =>
+			!declared.includes(capability) ||
+			((capability === "revoke_credential" || capability === "contain") &&
+				!adapter.providerRegistry?.supports(capability)),
+	);
 	const limitations = [
 		...(requestedUnknown.length
 			? [`unknown capability requested: ${requestedUnknown.join(", ")}`]
 			: []),
 		...(missing.length ? [`not implemented on this host: ${missing.join(", ")}`] : []),
+		...(missing.some((capability) => capability === "revoke_credential" || capability === "contain")
+			? ["no registered provider can attest credential revocation or containment"]
+			: []),
+		...(known.includes("contain")
+			? ["containment evidence is provider-reported; OS containment is not established"]
+			: []),
 		...(declared.includes("isolate_host")
 			? []
 			: ["host network isolation is not provided by this adapter"]),

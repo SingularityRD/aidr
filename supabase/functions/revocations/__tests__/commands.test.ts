@@ -90,8 +90,17 @@ describe("fleet response input contracts", () => {
 describe("fleet response database and Edge wiring", () => {
 	const functions = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 	const source = readFileSync(resolve(functions, "revocations/index.ts"), "utf8");
+	const attestationSource = readFileSync(resolve(functions, "revocations/attestation.ts"), "utf8");
 	const migration = readFileSync(resolve(functions, "../migrations/20260912000016_fleet_response_commands.sql"), "utf8");
 	const offboarding = readFileSync(resolve(functions, "../migrations/20260912140002_fleet_response_offboarding.sql"), "utf8");
+
+	it("requires an agent-bound installation/key attestation before command RPCs", () => {
+		expect(source).toContain("deviceAttestationError(values.device_attestation, identity)");
+		expect(attestationSource).toContain("device_attestation_required");
+		expect(source.indexOf("deviceAttestationError(values.device_attestation, identity)")).toBeLessThan(
+			source.indexOf('db.rpc("poll_fleet_response_command"'),
+	);
+	});
 
 	it("requires operator step-up and a service-side session barrier", () => {
 		expect(source).toContain("checkIdentityBarrier(db, accessToken, auth.user.id, tenantId)");

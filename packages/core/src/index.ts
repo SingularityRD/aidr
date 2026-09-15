@@ -930,6 +930,16 @@ export {
 	detectorPolicyPath,
 	loadProvisionedDetectorContext,
 } from "./detector-provisioning.js";
+// Device enrollment binding used by the fleet response transport. This is not
+// hardware or OS attestation; it is a server-verified installation/key pairing.
+export {
+	createDeviceAttestation,
+	deviceAttestationMatches,
+	deviceAttestationPayload,
+	hashDeviceKey,
+	parseDeviceAttestation,
+} from "./device-attestation.js";
+export type { DeviceAttestation, DeviceAttestationError } from "./device-attestation.js";
 export { FleetResponseCommandConsumer } from "./response-command-consumer-v6.js";
 export {
 	FleetResponseCommandWorker,
@@ -937,12 +947,29 @@ export {
 } from "./response-command-worker-v6.js";
 export type {
 	FleetResponseActionAdapter,
+	FleetResponseAuditEvent,
 	FleetResponseCommand,
 	FleetResponseCommandType,
 	FleetResponseConsumerOptions,
 	FleetResponseCycleResult,
 	FleetResponseIdentity,
 } from "./response-command-consumer-v6.js";
+// External response providers are explicit and empty by default. Without a
+// registered provider, credential revocation and containment are unsupported.
+export {
+	ResponseProviderRegistry,
+	RevocationProviderRegistry,
+} from "./response-provider-registry.js";
+export type {
+	ResponseProvider,
+	ResponseProviderAction,
+	ResponseProviderOutcome,
+	ResponseProviderRequest,
+	RevocationProvider,
+	RevocationProviderAction,
+	RevocationProviderOutcome,
+	RevocationProviderRequest,
+} from "./response-provider-registry.js";
 // Installed endpoint response-worker contract (capability, precondition, TTL,
 // rollback receipt).
 export {

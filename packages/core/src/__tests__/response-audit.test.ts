@@ -89,6 +89,37 @@ describe("ResponseAuditor", () => {
 		expect(queried).toEqual([logged]);
 	});
 
+	it("persists provider refusal evidence and enrollment binding without claiming containment", async () => {
+		const dir = await makeTmpDir();
+		const auditPath = join(dir, "response-audit.jsonl");
+		const auditor = new ResponseAuditor(auditPath);
+		await auditor.log(
+			makeEntry({
+				action: "contain",
+				responseTaken: "contain",
+				outcome: "failure",
+				metadata: {
+					reason: "unsupported_action",
+					commandId: "command-1",
+					providerId: "example-idp",
+					installationId: "installation-test-001",
+					keyHash: "a".repeat(64),
+				},
+			}),
+		);
+		const lines = await readJsonLines(auditPath);
+		expect(lines[0]).toMatchObject({
+			outcome: "failure",
+			metadata: {
+				reason: "unsupported_action",
+				commandId: "command-1",
+				providerId: "example-idp",
+				installationId: "installation-test-001",
+				keyHash: "a".repeat(64),
+			},
+		});
+	});
+
 	it("redacts credentials before persisting response evidence", async () => {
 		const dir = await makeTmpDir();
 		const auditPath = join(dir, "response-audit.jsonl");
