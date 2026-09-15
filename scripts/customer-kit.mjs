@@ -6,6 +6,11 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 import { loadReleaseBundle } from "./release-signing-lib.mjs";
+import {
+  CUSTOMER_KIT_BENCHMARK_FILES,
+  CUSTOMER_KIT_REQUIRED_FILES,
+  CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
+} from "./customer-kit-contract.mjs";
 
 const { values } = parseArgs({ options: { output: { type: "string" }, "upstream-dir": { type: "string" }, "release-dir": { type: "string" }, "envelope-output": { type: "string" } } });
 if (!values.output || !values["upstream-dir"]) throw new Error("--output and --upstream-dir required");
@@ -52,10 +57,17 @@ for (const file of [
   "endpoint-install.mjs",
   "deployment-doctor.mjs",
   "deployment-tls-renew.mjs",
+  "deployment-tls-renew.test.mjs",
+  "build-airgap-images.mjs",
+  "airgap-images.test.mjs",
+  "generate-provenance.mjs",
+  "provenance.test.mjs",
+  "customer-kit-contract.mjs",
   "load-test.mjs",
   "release-signing-lib.mjs",
   "release-verify.mjs",
   "customer-kit-verify.mjs",
+  "verify-customer-kit.mjs",
   "support-bundle.mjs",
   "verify-load-test.mjs",
 	"verify-native-host-matrix-v6.mjs",
@@ -97,10 +109,12 @@ for (const [source, target] of [
   ["docs/production-readiness/native-host-matrix-v6.md", "NATIVE-HOST-ACCEPTANCE.md"],
 	["docs/production-readiness/first-customer-sales-packet-v7.md", "FIRST-CUSTOMER-SALES-PACKET.md"],
   ["docs/production-readiness/2026-09-13-customer-candidate-v7.md", "CANDIDATE-STATUS.md"],
+  ["docs/release-evidence.md", "RELEASE-EVIDENCE.md"],
   ["FEATURE_INVENTORY.md", "FEATURE_INVENTORY.md"],
 ]) copy(join(root, source), join(output, target));
 for (const file of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES"]) copy(join(root, file), join(output, file));
 let releaseMetadata = null;
+let releaseArtifactNames = new Set();
 if (values["release-dir"]) {
   const release = resolve(values["release-dir"]);
   const manifestPath = join(release, "aidr-release.manifest.json");
@@ -110,9 +124,18 @@ if (values["release-dir"]) {
   const checkedRelease = await loadReleaseBundle(release, { allowSignedControlFiles: releaseSigned });
   releaseMetadata = checkedRelease.metadata;
   if (releaseMetadata.git_sha !== sourceCommit) throw new Error("Release artifacts and customer kit source must share the same commit");
-  const releaseFiles = [...checkedRelease.artifacts.map((item) => item.path), "release-inventory.json", "release-metadata.json"];
+  releaseArtifactNames = new Set(checkedRelease.artifacts.map((item) => item.path));
+  for (const required of CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS) {
+    if (!releaseArtifactNames.has(required)) throw new Error(`Release bundle is missing required provenance artifact: ${required}`);
+  }
+  const releaseFiles = [...releaseArtifactNames, "release-inventory.json", "release-metadata.json"];
   if (existsSync(manifestPath)) releaseFiles.push("aidr-release.manifest.json", "aidr-release.manifest.sig");
   for (const name of releaseFiles) copy(join(release, name), join(output, "artifacts", name));
+}
+for (const relative of CUSTOMER_KIT_REQUIRED_FILES) {
+  const target = join(output, relative);
+  const info = existsSync(target) ? lstatSync(target) : null;
+  if (!info?.isFile() || info.isSymbolicLink()) throw new Error(`Customer kit is missing required delivery artifact: ${relative}`);
 }
 writeFileSync(join(output, "release-source.json"), JSON.stringify({
   commit: sourceCommit,
@@ -121,6 +144,12 @@ writeFileSync(join(output, "release-source.json"), JSON.stringify({
   release_signed: releaseSigned,
   inline_mcp_gateway_bundled: gatewayBundled,
   device_start_ingress_bundled: true,
+  region_manifest_bundled: true,
+  tls_renewal_bundled: true,
+  provenance_tool_bundled: true,
+  airgap_tool_bundled: true,
+  benchmark_contract_bundled: CUSTOMER_KIT_BENCHMARK_FILES.every((relative) => existsSync(join(output, relative))),
+  provenance_statement_bundled: releaseArtifactNames.has("aidr-provenance.intoto.json"),
   assurance: releaseSigned
     ? "A detached release signature is present but unverified during kit assembly. Trust requires an independently distributed signer policy and successful release-verify execution."
     : "Unsigned customer installation candidate. Checksums detect changes; they do not authenticate the publisher.",
