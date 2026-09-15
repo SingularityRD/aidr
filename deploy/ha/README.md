@@ -72,6 +72,33 @@ treatment, minimum sample count, evidence retention, incident boundaries and
 service-credit schedule. Monthly availability must be calculated from that
 approved denominator over the entire observation period.
 
+## Local monthly SLI report (non-contractual)
+
+The repository includes a local, file-only report generator for an operator's
+already-collected interval observations. It does not probe a service and it does
+not convert a load-test result into monthly availability evidence:
+
+```powershell
+node scripts/monthly-sli-report.mjs --input observations.json --output monthly-sli.json
+node scripts/monthly-sli-report.mjs validate --report monthly-sli.json
+node scripts/verify-monthly-sli-report.mjs
+```
+
+The input and report contracts are
+[`monthly-sli-observations.schema.json`](monthly-sli-observations.schema.json)
+and [`monthly-sli-report.schema.json`](monthly-sli-report.schema.json). Every
+endpoint/region interval is accounted for. Omitted intervals become
+`NOT_RUN`; an explicitly ambiguous interval remains `unknown`. A report is
+`PASS` or `FAIL` only when every scoped series has a complete measured window;
+otherwise it remains `unknown` or `NOT_RUN`, and incomplete reports do not
+publish an error-budget duration. The report's claim flags are permanently
+false: a local result is not a contractual SLA or a 99.9% claim, and it does
+not close COM-013. Approved maintenance and customer-caused exclusions require
+a named reference and an explicit approval. The local CLI bounds an input file at
+16 MiB and a report file at 64 MiB; the schemas and validator also cap endpoint
+and region collections, observations, exclusions, incidents and intervals.
+These are local tooling limits, not production capacity or SLA guarantees.
+
 ## Topology decision gates
 
 Use exactly one starting template:

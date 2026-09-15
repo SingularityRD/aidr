@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singularity.example/schemas/aidr-monthly-sli-report-v1.json",
+  "title": "AIDR local monthly SLI and error-budget report",
+  "description": "A local, time-based observation report. PASS and FAIL describe the supplied complete observation window only. unknown and NOT_RUN are first-class states. The claims object is permanently non-contractual.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "generator",
+    "generated_at",
+    "month",
+    "scope",
+    "observation_window",
+    "target",
+    "status",
+    "coverage",
+    "sli",
+    "error_budget",
+    "series",
+    "exclusions",
+    "incidents",
+    "evidence",
+    "limitations",
+    "claims"
+  ],
+  "properties": {
+    "$schema": { "const": "https://singularity.example/schemas/aidr-monthly-sli-report-v1.json" },
+    "schema_version": { "const": 1 },
+    "kind": { "const": "aidr_monthly_sli_error_budget_report" },
+    "generator": { "$ref": "#/$defs/generator" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "month": { "type": "string", "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])$" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "observation_window": { "$ref": "#/$defs/report_window" },
+    "target": { "$ref": "#/$defs/target" },
+    "status": { "$ref": "#/$defs/status" },
+    "coverage": { "$ref": "#/$defs/coverage" },
+    "sli": { "$ref": "#/$defs/sli" },
+    "error_budget": { "$ref": "#/$defs/error_budget" },
+    "series": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/series" }
+    },
+    "exclusions": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/exclusion" }
+    },
+    "incidents": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/incident" }
+    },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "limitations": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 103,
+      "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" }
+    },
+    "claims": { "$ref": "#/$defs/claims" }
+  },
+  "$defs": {
+    "status": { "enum": ["PASS", "FAIL", "NOT_RUN", "unknown"] },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+    },
+    "non_negative": { "type": "number", "minimum": 0 },
+    "ratio_or_null": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "percent_or_null": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "scripts/monthly-sli-report.mjs" },
+        "version": { "const": 1 }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service", "endpoints", "regions"],
+      "properties": {
+        "service": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "endpoints": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        },
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        }
+      }
+    },
+    "report_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_at", "end_at", "duration_seconds", "series_count"],
+      "properties": {
+        "start_at": { "$ref": "#/$defs/timestamp" },
+        "end_at": { "$ref": "#/$defs/timestamp" },
+        "duration_seconds": { "type": "number", "minimum": 0, "maximum": 31622400 },
+        "series_count": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability_ratio", "contractual", "label"],
+      "properties": {
+        "availability_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "contractual": { "const": false },
+        "label": { "const": "internal_reference_only" }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_seconds", "observed_seconds", "measured_seconds", "excluded_seconds", "unknown_seconds", "not_run_seconds", "coverage_ratio", "complete", "status"],
+      "properties": {
+        "expected_seconds": { "$ref": "#/$defs/non_negative" },
+        "observed_seconds": { "$ref": "#/$defs/non_negative" },
+        "measured_seconds": { "$ref": "#/$defs/non_negative" },
+        "excluded_seconds": { "$ref": "#/$defs/non_negative" },
+        "unknown_seconds": { "$ref": "#/$defs/non_negative" },
+        "not_run_seconds": { "$ref": "#/$defs/non_negative" },
+        "coverage_ratio": { "$ref": "#/$defs/ratio_or_null" },
+        "complete": { "type": "boolean" },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    },
+    "sli": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "unit", "good_seconds", "unavailable_seconds", "eligible_seconds", "excluded_seconds", "unknown_seconds", "not_run_seconds", "availability_ratio", "availability_percent", "status"],
+      "properties": {
+        "name": { "const": "availability" },
+        "unit": { "const": "ratio" },
+        "good_seconds": { "$ref": "#/$defs/non_negative" },
+        "unavailable_seconds": { "$ref": "#/$defs/non_negative" },
+        "eligible_seconds": { "$ref": "#/$defs/non_negative" },
+        "excluded_seconds": { "$ref": "#/$defs/non_negative" },
+        "unknown_seconds": { "$ref": "#/$defs/non_negative" },
+        "not_run_seconds": { "$ref": "#/$defs/non_negative" },
+        "availability_ratio": { "$ref": "#/$defs/ratio_or_null" },
+        "availability_percent": { "$ref": "#/$defs/percent_or_null" },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    },
+    "error_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective_ratio", "allowed_error_ratio", "allowed_error_seconds", "consumed_error_seconds", "remaining_error_seconds", "consumed_ratio", "status", "basis"],
+      "properties": {
+        "objective_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "allowed_error_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "allowed_error_seconds": { "type": ["number", "null"], "minimum": 0 },
+        "consumed_error_seconds": { "type": ["number", "null"], "minimum": 0 },
+        "remaining_error_seconds": { "type": ["number", "null"] },
+        "consumed_ratio": { "type": ["number", "null"], "minimum": 0 },
+        "status": { "$ref": "#/$defs/status" },
+        "basis": { "const": "eligible_seconds" }
+      }
+    },
+    "series": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "endpoint", "region", "expected_seconds", "good_seconds", "unavailable_seconds", "excluded_seconds", "unknown_seconds", "not_run_seconds", "eligible_seconds", "availability_ratio", "availability_percent", "status", "intervals"],
+      "properties": {
+        "id": { "type": "string", "minLength": 3 },
+        "endpoint": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "region": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "expected_seconds": { "$ref": "#/$defs/non_negative" },
+        "good_seconds": { "$ref": "#/$defs/non_negative" },
+        "unavailable_seconds": { "$ref": "#/$defs/non_negative" },
+        "excluded_seconds": { "$ref": "#/$defs/non_negative" },
+        "unknown_seconds": { "$ref": "#/$defs/non_negative" },
+        "not_run_seconds": { "$ref": "#/$defs/non_negative" },
+        "eligible_seconds": { "$ref": "#/$defs/non_negative" },
+        "availability_ratio": { "$ref": "#/$defs/ratio_or_null" },
+        "availability_percent": { "$ref": "#/$defs/percent_or_null" },
+        "status": { "$ref": "#/$defs/status" },
+        "intervals": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 220001,
+          "items": { "$ref": "#/$defs/interval" }
+        }
+      }
+    },
+    "interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_at", "end_at", "status"],
+      "properties": {
+        "start_at": { "$ref": "#/$defs/timestamp" },
+        "end_at": { "$ref": "#/$defs/timestamp" },
+        "status": { "enum": ["good", "unavailable", "excluded", "NOT_RUN", "unknown"] },
+        "reason": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" }
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "region", "start_at", "end_at", "category", "approved", "reference"],
+      "properties": {
+        "endpoint": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "region": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "start_at": { "$ref": "#/$defs/timestamp" },
+        "end_at": { "$ref": "#/$defs/timestamp" },
+        "category": { "enum": ["approved_maintenance", "customer_caused"] },
+        "approved": { "const": true },
+        "reference": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" }
+      }
+    },
+    "incident": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "start_at", "end_at", "classification", "evidence_status", "reference"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "start_at": { "$ref": "#/$defs/timestamp" },
+        "end_at": { "$ref": "#/$defs/timestamp" },
+        "classification": { "enum": ["unavailable", "approved_maintenance", "customer_caused", "unknown"] },
+        "evidence_status": { "enum": ["observed", "NOT_RUN", "unknown"] },
+        "reference": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_file", "source_sha256", "collection"],
+      "properties": {
+        "source_file": { "type": "string", "minLength": 1, "pattern": "^(?:unknown|(?=.*\\S)[^/\\\\]+)$" },
+        "source_sha256": { "anyOf": [{ "const": "unknown" }, { "type": "string", "pattern": "^[a-f0-9]{64}$" }] },
+        "collection": { "const": "local_file" }
+      }
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractual_99_9_claim", "contractual_sla_claim", "production_sla_proven", "production_accepted"],
+      "properties": {
+        "contractual_99_9_claim": { "const": false },
+        "contractual_sla_claim": { "const": false },
+        "production_sla_proven": { "const": false },
+        "production_accepted": { "const": false }
+      }
+    }
+  }
+}
