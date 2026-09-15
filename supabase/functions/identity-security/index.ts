@@ -259,6 +259,93 @@ Deno.serve(async (req) => {
 		const identity = await authenticate(db, req);
 		if (identity instanceof Response) return identity;
 
+		if (body.action === "bootstrap") {
+			// AAL1 callers cannot read MFA-protected tenant/team rows through RLS.
+			// Discover only their active identifiers and step-up requirements here;
+			// this is not authorization to return names, roles, or business data.
+			const now = Date.now();
+			const { data: memberships, error: membershipError } = await db
+				.from("tenant_members")
+				.select("tenant_id,expires_at")
+				.eq("user_id", identity.user.id)
+				.or(`expires_at.is.null,expires_at.gt.${new Date(now).toISOString()}`);
+			if (membershipError || !memberships) {
+				return corsJson(req, 503, { error: "identity_bootstrap_unavailable" });
+			}
+			const memberTenantIds = memberships
+				.filter((membership) => membershipActive(membership, now))
+				.map((membership) => membership.tenant_id);
+			if (!memberTenantIds.length) return corsJson(req, 200, { ok: true, memberships: [] });
+
+			const { data: tenants, error: tenantError } = await db
+				.from("tenants")
+				.select("id")
+				.in("id", memberTenantIds)
+				.eq("status", "active")
+				.order("id");
+			if (tenantError || !tenants) {
+				return corsJson(req, 503, { error: "identity_bootstrap_unavailable" });
+			}
+			const tenantIds = tenants.map((tenant) => tenant.id);
+			if (!tenantIds.length) return corsJson(req, 200, { ok: true, memberships: [] });
+
+			const { data: teamMembers, error: teamMemberError } = await db
+				.from("team_members")
+				.select("team_id,tenant_id")
+				.eq("user_id", identity.user.id)
+				.in("tenant_id", tenantIds)
+				.order("joined_at", { ascending: false });
+			if (teamMemberError || !teamMembers) {
+				return corsJson(req, 503, { error: "identity_bootstrap_unavailable" });
+			}
+			const teamByTenant = new Map<string, string>();
+			if (teamMembers.length) {
+				const { data: teams, error: teamError } = await db
+					.from("teams")
+					.select("id,tenant_id")
+					.in("id", teamMembers.map((membership) => membership.team_id))
+					.in("tenant_id", tenantIds);
+				if (teamError || !teams) {
+					return corsJson(req, 503, { error: "identity_bootstrap_unavailable" });
+				}
+				// Preserve the dashboard's newest-team-first default without exposing
+				// joined_at or trusting the independent teams query's row order.
+				for (const membership of teamMembers) {
+					if (teams.some((team) =>
+						membership.team_id === team.id && membership.tenant_id === team.tenant_id
+					)) teamByTenant.set(membership.tenant_id, membership.team_id);
+				}
+			}
+
+			const { data: policies, error: policyError } = await db
+				.from("tenant_identity_policies")
+				.select("tenant_id,require_mfa")
+				.in("tenant_id", tenantIds);
+			if (policyError || !policies) {
+				return corsJson(req, 503, { error: "identity_bootstrap_unavailable" });
+			}
+			const orderedTenantIds = [
+				...teamByTenant.keys(),
+				...tenantIds.filter((tenantId) => !teamByTenant.has(tenantId)),
+			];
+			return corsJson(req, 200, {
+				ok: true,
+				memberships: orderedTenantIds.map((tenantId) => {
+					const requireMfa = policies.some((policy) =>
+						policy.tenant_id === tenantId && policy.require_mfa === true
+					);
+					return {
+						team_id: teamByTenant.get(tenantId) ?? null,
+						tenant_id: tenantId,
+						require_mfa: requireMfa,
+						current_assurance: identity.currentLevel,
+						next_assurance: identity.nextLevel,
+						access_allowed: policyAllowsAssurance(requireMfa, identity.currentLevel),
+					};
+				}),
+			});
+		}
+
 		if (body.action === "complete_password_recovery") {
 			const newPassword = validateNewPassword(body.new_password);
 			if (!newPassword) return corsJson(req, 400, { error: "password_does_not_meet_policy" });

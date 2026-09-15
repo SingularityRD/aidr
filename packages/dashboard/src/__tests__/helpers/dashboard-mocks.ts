@@ -169,11 +169,19 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 	mocked.auth.onAuthStateChange.mockReturnValue({
 		data: { subscription: { unsubscribe: vi.fn() } },
 	});
-	mocked.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string } }) => {
+	mocked.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string; tenant_id?: string } }) => {
+		if (name === "identity-security" && request?.body?.action === "bootstrap") {
+			return { data: { ok: true, memberships: [{
+				team_id: options.role === null ? null : TEAM_ID,
+				tenant_id: options.role === null ? (options.user?.id ?? ADMIN_USER_ID) : TEAM_ID,
+				require_mfa: true, current_assurance: "aal2", next_assurance: "aal2", access_allowed: true,
+			}] }, error: null };
+		}
 		if (name === "identity-security" && request?.body?.action === "status") {
 			return {
 				data: {
 					ok: true,
+					tenant_id: request.body.tenant_id,
 					require_mfa: true,
 					current_assurance: "aal2",
 					next_assurance: "aal2",
