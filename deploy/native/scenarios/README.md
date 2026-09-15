@@ -72,6 +72,7 @@ records the refusal as both the row's `scenarios.status` and a
 | --- | --- |
 | `SCENARIO_MANIFEST_MISSING` | No `deploy/native/scenarios/<connector>.json` is committed and no explicit `--scenario-file` matched this row. |
 | `SCENARIO_MANIFEST_UNREADABLE` | The manifest exists but is not valid JSON, so nothing could be validated. |
+| `SCENARIO_MANIFEST_NO_MATCH` | An explicit `--scenario-file` is readable but declares no host advertised by the support matrix. |
 | `SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE` | The manifest is `TEMPLATE.json`, a copy of it, or any manifest still carrying its `REPLACE_WITH_*` placeholders — with or without the `kind`/`template` markers that make it a declared template. |
 
 A refused row stays `HOST_ACCEPTANCE_OPEN` and its `scenarios.exitCode` is
