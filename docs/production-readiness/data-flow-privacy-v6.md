@@ -50,6 +50,21 @@ The 2026-09-13 local run passed all six synthetic boundary canaries and the
 13-check support-bundle self-test. The source hashes and timestamps are in the
 evidence JSON. Regenerate it after any relevant source change.
 
+## Machine-readable completion template
+
+The source-grounded rows above are also represented by the
+[`privacy-data-flow-matrix.json`](./privacy-data-flow-matrix.json) template and
+[`privacy-data-flow-matrix.schema.json`](./privacy-data-flow-matrix.schema.json).
+The dependency-free local validator checks the matrix shape, duplicate flow IDs,
+explicit `unknown` declarations and acceptance-state consistency:
+
+```sh
+pnpm verify:commercial-compliance
+```
+
+A valid run may remain `open`; unknown values are reported and are never treated
+as proof of a deployed destination, region, retention behavior or acceptance.
+
 ## Local fixes and remaining field acceptance
 
 1. **Server-side ingest minimization:** the current source now projects events

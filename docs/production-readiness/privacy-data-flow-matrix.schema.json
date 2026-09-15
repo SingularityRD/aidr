@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singularityrd.dev/schemas/privacy-data-flow-matrix.schema.json",
+  "title": "Singularity AIDR privacy data-flow matrix",
+  "description": "A local, source-grounded template for recording data-flow facts per deployment. The explicit string unknown records an input that is not available; it is not a statement that a destination, region, retention period, or processor has been verified. An accepted matrix must contain no unknown values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "matrix_id",
+    "status",
+    "updated_at",
+    "deployment_scope",
+    "flows",
+    "unknowns",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "matrix_id": {
+      "const": "aidr-privacy-data-flow-matrix"
+    },
+    "status": {
+      "enum": ["open", "in_review", "accepted"]
+    },
+    "updated_at": {
+      "$ref": "#/$defs/unknown_or_date"
+    },
+    "deployment_scope": {
+      "$ref": "#/$defs/unknown_or_non_empty"
+    },
+    "flows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/flow"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/non_empty"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/non_empty"
+      }
+    }
+  },
+  "$defs": {
+    "non_empty": {
+      "type": "string",
+      "minLength": 1
+    },
+    "unknown_or_non_empty": {
+      "oneOf": [
+        {
+          "const": "unknown"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "const": "unknown"
+          }
+        }
+      ]
+    },
+    "unknown_or_date": {
+      "oneOf": [
+        {
+          "const": "unknown"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        }
+      ]
+    },
+    "unknown_or_non_empty_array": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/non_empty"
+      }
+    },
+    "flow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "flow_id",
+        "data_class",
+        "fields",
+        "source",
+        "purpose",
+        "trigger",
+        "destination",
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "access",
+        "transfer_mechanism",
+        "evidence",
+        "status",
+        "unknowns"
+      ],
+      "properties": {
+        "flow_id": {
+          "type": "string",
+          "pattern": "^DF-[0-9]{3,}$"
+        },
+        "data_class": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/non_empty"
+          }
+        },
+        "source": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "purpose": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "trigger": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "destination": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "destination_domain": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "region": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "subprocessor": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "lawful_basis": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "retention": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "deletion": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "access": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "transfer_mechanism": {
+          "$ref": "#/$defs/unknown_or_non_empty"
+        },
+        "evidence": {
+          "$ref": "#/$defs/unknown_or_non_empty_array"
+        },
+        "status": {
+          "enum": ["unknown", "inventory", "measured", "accepted"]
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty"
+          }
+        }
+      }
+    }
+  }
+}
