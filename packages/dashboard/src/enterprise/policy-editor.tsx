@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
@@ -49,11 +49,33 @@ const DEFAULT_POLICY: PolicyDocument = {
 	],
 };
 
-interface PolicyRow {
+export interface PolicyDocumentRevision {
 	id: string;
-	content: string;
+	version: number;
+	source_sha256: string;
+}
+
+interface PolicySource extends PolicyDocumentRevision {
 	updated_at: string;
-	updated_by: string | null;
+}
+
+interface PolicyRow extends PolicySource {
+	content: string;
+}
+
+function readRevision(value: unknown): PolicyDocumentRevision | null {
+	if (!value || typeof value !== "object") return null;
+	const row = value as Partial<PolicyDocumentRevision>;
+	if (typeof row.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.id) ||
+		!Number.isSafeInteger(row.version) || Number(row.version) < 1 ||
+		typeof row.source_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(row.source_sha256)) return null;
+	return { id: row.id, version: row.version as number, source_sha256: row.source_sha256 };
+}
+
+async function sourceHash(content: string): Promise<string> {
+	if (!globalThis.crypto?.subtle) throw new Error("Secure browser SHA-256 verification is unavailable; no save was attempted.");
+	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
+	return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 interface SaveStatus {
@@ -375,7 +397,6 @@ export type PolicyDryRun =
 			diagnostics: number;
 	  }
 	| { status: "refused"; unsupported: UnsupportedField[]; code: string }
-	| { status: "absent" }
 	| { status: "unavailable"; code: string };
 
 /**
@@ -409,7 +430,7 @@ async function serverErrorCode(payload: { error?: unknown }, error: unknown): Pr
 		}
 	}
 	if (error instanceof Error && error.message) return error.message;
-	return "policy_compile_unavailable";
+	return "policy_document_save_failed";
 }
 
 function readSimulation(value: unknown): DryRunSimulation | null {
@@ -429,23 +450,23 @@ function readPrecedence(value: unknown): string[] {
 	return semantics.precedence.filter((entry): entry is string => typeof entry === "string");
 }
 
-/**
- * Dry-run the document the server compiler would enforce.
- *
- * `compile_document` compiles the newest `team_policies` row for the tenant —
- * the stored document — so this verdict describes stored bytes, never a draft
- * that has not reached the table. Callers must compare the stored content with
- * the document they are about to write before treating a verdict as that
- * document's.
- */
-export async function dryRunStoredDocument(teamId: string): Promise<PolicyDryRun> {
+/** Submit exact draft bytes for server compilation and an atomic revision-checked save. */
+export async function saveDocumentDraft(
+	teamId: string,
+	content: string,
+	expectedDocument: PolicyDocumentRevision | null,
+): Promise<{ verdict: PolicyDryRun; source: PolicySource | null }> {
+	// Hash before invoking: if verification is unavailable, do not initiate a save.
+	const submittedHash = await sourceHash(content);
 	let data: unknown = null;
 	let error: unknown = null;
 	try {
 		const response = await supabase.functions.invoke("policy-management", {
 			body: {
-				action: "compile_document",
+				action: "save_document_draft",
 				tenant_id: teamId,
+				content,
+				expected_document: expectedDocument,
 				simulation: { ...DRY_RUN_SIMULATION },
 			},
 		});
@@ -461,27 +482,38 @@ export async function dryRunStoredDocument(teamId: string): Promise<PolicyDryRun
 		simulation?: unknown;
 		semantics?: unknown;
 		diagnostics?: unknown;
+		source?: unknown;
 	};
-	if (payload.ok === true) {
+	if (!error && !payload.error && payload.ok === true) {
+		const revision = readRevision(payload.source);
+		const updatedAt = (payload.source as Partial<PolicySource> | null)?.updated_at;
+		if (!revision || revision.source_sha256 !== submittedHash ||
+			revision.version !== (expectedDocument?.version ?? 0) + 1 ||
+			(expectedDocument && revision.id !== expectedDocument.id) ||
+			typeof updatedAt !== "string" || !Number.isFinite(Date.parse(updatedAt))) {
+			return { verdict: { status: "unavailable", code: "policy_document_save_unconfirmed" }, source: null };
+		}
 		return {
-			status: "compiled",
-			unsupported: [],
-			simulation: readSimulation(payload.simulation),
-			precedence: readPrecedence(payload.semantics),
-			diagnostics: Array.isArray(payload.diagnostics) ? payload.diagnostics.length : 0,
+			source: { ...revision, updated_at: updatedAt },
+			verdict: {
+				status: "compiled",
+				unsupported: [],
+				simulation: readSimulation(payload.simulation),
+				precedence: readPrecedence(payload.semantics),
+				diagnostics: Array.isArray(payload.diagnostics) ? payload.diagnostics.length : 0,
+			},
 		};
 	}
 
 	const code = await serverErrorCode(payload, error);
-	if (code === "policy_document_not_found") return { status: "absent" };
 	if (
 		code.startsWith("invalid_policy") ||
 		code === "policy_document_empty" ||
 		code === "policy_document_too_large"
 	) {
-		return { status: "refused", unsupported: unsupportedFieldsFrom(code), code };
+		return { verdict: { status: "refused", unsupported: unsupportedFieldsFrom(code), code }, source: null };
 	}
-	return { status: "unavailable", code };
+	return { verdict: { status: "unavailable", code }, source: null };
 }
 
 /** One line naming exactly what the server said, for the save status. */
@@ -492,52 +524,16 @@ function describeDryRun(verdict: PolicyDryRun): string {
 			? `the runtime compiler rejected unsupported field(s): ${fields}.`
 			: `the runtime compiler rejected the document (${verdict.code}).`;
 	}
-	if (verdict.status === "absent") return "the server has no stored policy document to compile.";
 	if (verdict.status === "unavailable") {
-		return `the server could not compile the stored document (${verdict.code}).`;
+		if (verdict.code === "policy_document_conflict") {
+			return "the stored policy changed (policy_document_conflict). Keep a copy of your draft, then reload and review the latest revision before saving.";
+		}
+		if (verdict.code === "policy_document_save_unconfirmed") {
+			return "the server did not confirm the exact submitted content and revision (policy_document_save_unconfirmed). Reload and review the stored policy before retrying.";
+		}
+		return `the server could not save the draft (${verdict.code}).`;
 	}
 	return "the server compiled the document.";
-}
-
-/**
- * Put the previously stored document back after the compiler refused a draft.
- *
- * A draft reaches the compiler only once it is stored, so refusing it means
- * undoing the write. An update is restored from the content read before it; an
- * insert is removed. `updated_by` stays the caller, because the update policy
- * requires `updated_by = auth.uid()`. A member may author a policy but only an
- * admin may delete one, so a failed rollback is reported rather than hidden.
- */
-async function restoreStoredDocument(args: {
-	currentRowId: string | null;
-	storedRowId: string | null;
-	previousContent: string | null;
-	tenantId: string;
-	updatedBy: string | null;
-}): Promise<boolean> {
-	try {
-		if (args.currentRowId) {
-			const restored = await supabase
-				.from("team_policies")
-				.update({
-					content: args.previousContent ?? "",
-					tenant_id: args.tenantId,
-					updated_by: args.updatedBy,
-				})
-				.eq("id", args.currentRowId)
-				.select("id");
-			if (restored.error) throw restored.error;
-			if (!restored.data || (restored.data as unknown[]).length === 0) {
-				throw new Error("no stored policy row was restored");
-			}
-			return true;
-		}
-		if (!args.storedRowId) return false;
-		const removed = await supabase.from("team_policies").delete().eq("id", args.storedRowId);
-		return !removed.error;
-	} catch {
-		return false;
-	}
 }
 
 export function PolicyEditor() {
@@ -552,8 +548,14 @@ export function PolicyEditor() {
 	const [isSaving, setIsSaving] = useState(false);
 	const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
 	const [dryRun, setDryRun] = useState<PolicyDryRun | null>(null);
+	const [expectedDocument, setExpectedDocument] = useState<PolicyDocumentRevision | null>(null);
+	const saveGeneration = useRef(0);
+	const saving = useRef(false);
+	const editGeneration = useRef(0);
 
 	const teamId = currentTeam?.id ?? null;
+	const selectedTeam = useRef(teamId);
+	selectedTeam.current = teamId;
 	// The editor must not paint before the current team's stored policy has been
 	// read: an empty textarea looks like "this team has no policy" and would let
 	// a save overwrite a document the user never saw.
@@ -576,6 +578,15 @@ export function PolicyEditor() {
 	// Load existing policy
 	useEffect(() => {
 		let cancelled = false;
+		saving.current = false;
+		setIsSaving(false);
+		setSaveStatus(null);
+		setDryRun(null);
+		setExpectedDocument(null);
+		setPolicyYaml("");
+		setParsedPolicy(null);
+		setError(null);
+		setIsValid(false);
 
 		async function loadPolicy() {
 			if (!teamId) {
@@ -592,9 +603,10 @@ export function PolicyEditor() {
 			try {
 				const { data, error: loadFailure } = await supabase
 					.from("team_policies")
-					.select("id, content, updated_at, updated_by")
+					.select("id, content, version, source_sha256, updated_at")
 					.eq("team_id", teamId)
 					.order("updated_at", { ascending: false })
+					.order("id", { ascending: false })
 					.limit(1)
 					.maybeSingle();
 
@@ -602,7 +614,10 @@ export function PolicyEditor() {
 				if (cancelled) return;
 
 				const row = data as unknown as PolicyRow | null;
-				if (row?.content) {
+				const revision = row ? readRevision(row) : null;
+				if (row && !revision) throw new Error("Stored policy revision is invalid; reload before saving.");
+				setExpectedDocument(revision);
+				if (row) {
 					setPolicyYaml(row.content);
 					validateAndParse(row.content);
 				} else {
@@ -627,11 +642,12 @@ export function PolicyEditor() {
 		void loadPolicy();
 		return () => {
 			cancelled = true;
+			saveGeneration.current += 1;
 		};
 	}, [teamId, validateAndParse]);
 
 	async function handleSave() {
-		if (!currentTeam || !canEditPolicy) return;
+		if (!currentTeam || !canEditPolicy || awaitingPolicy || isLoading || loadError || saving.current) return;
 
 		const validation = validateDocument(policyYaml);
 		if (!validation.ok) {
@@ -643,115 +659,48 @@ export function PolicyEditor() {
 		setIsValid(true);
 		setError(null);
 
+		saving.current = true;
 		setIsSaving(true);
 		setSaveStatus(null);
 		setDryRun(null);
 
 		const requestedTeam = currentTeam.id;
+		const generation = ++saveGeneration.current;
+		const submittedEdit = editGeneration.current;
+		const isCurrentRequest = () => selectedTeam.current === requestedTeam && saveGeneration.current === generation;
 
 		try {
-			const { data: userData } = await supabase.auth.getUser();
-			const updatedBy = userData?.user?.id ?? null;
-
-			// public.team_policies has no unique constraint on team_id, so the
-			// previous `upsert(..., { onConflict: "team_id" })` could never
-			// succeed ("no unique or exclusion constraint matching the ON
-			// CONFLICT specification"). Read the newest row, then update it, or
-			// insert one when the team has no policy yet. The stored content is
-			// read too: it is the document the server compiler can see.
-			const existing = await supabase
-				.from("team_policies")
-				.select("id, content")
-				.eq("team_id", requestedTeam)
-				.order("updated_at", { ascending: false })
-				.limit(1);
-			if (existing.error) throw existing.error;
-
-			const currentRow = ((existing.data ?? []) as unknown as { id: string; content?: string }[])[0];
-			const previousContent = typeof currentRow?.content === "string" ? currentRow.content : null;
-
-			// Dry-run against the server compiler BEFORE the write, with the same
-			// call the runtime policy editor makes. It compiles the stored
-			// document, so when what is stored is exactly this document the
-			// verdict is this document's and a refusal blocks the write outright.
-			const before = await dryRunStoredDocument(requestedTeam);
-			if (previousContent !== null && previousContent === policyYaml && before.status === "refused") {
-				setDryRun(before);
-				setSaveStatus({ tone: "error", message: `Policy was not saved: ${describeDryRun(before)}` });
-				return;
-			}
-
-			// updated_at is maintained by the team_policies_touch_updated_at
-			// trigger on the server; tenant_id must equal team_id (enforced by the
-			// team_policies_tenant_matches_team check constraint).
-			const body = {
-				content: policyYaml,
-				tenant_id: requestedTeam,
-				updated_by: updatedBy,
-			};
-
-			let stored: { id: string }[] | null = null;
-			if (currentRow) {
-				const updated = await supabase
-					.from("team_policies")
-					.update(body)
-					.eq("id", currentRow.id)
-					.select("id");
-				if (updated.error) throw updated.error;
-				stored = (updated.data ?? []) as unknown as { id: string }[];
-			} else {
-				const inserted = await supabase
-					.from("team_policies")
-					.insert({ ...body, team_id: requestedTeam })
-					.select("id");
-				if (inserted.error) throw inserted.error;
-				stored = (inserted.data ?? []) as unknown as { id: string }[];
-			}
-
-			if (!stored || stored.length === 0) {
-				throw new Error(
-					"the database did not store any policy row (row-level security rejected the write)",
-				);
-			}
-
-			// An edited draft (or the team's first document) is not what the
-			// pre-write dry run compiled, so it cannot speak for the draft. The
-			// draft is stored now — that is the only way the compiler can see it —
-			// so compile what is stored and put the previous revision back when it
-			// refuses. This verdict is the one rendered, because it describes the
-			// document this save is accepting.
-			const verdict = await dryRunStoredDocument(requestedTeam);
-			if (verdict.status !== "compiled") {
-				const restored = await restoreStoredDocument({
-					currentRowId: currentRow?.id ?? null,
-					storedRowId: stored[0]?.id ?? null,
-					previousContent,
-					tenantId: requestedTeam,
-					updatedBy,
-				});
-				setDryRun(verdict);
-				setSaveStatus({
-					tone: "error",
-					message: restored
-						? `Policy was not saved: ${describeDryRun(verdict)} The stored policy was restored.`
-						: `Policy was not saved: ${describeDryRun(verdict)} The rejected draft could not be rolled back, so review the stored policy before it is published.`,
-				});
-				return;
-			}
-
+			// Never refresh the precondition at save time: it identifies the row the
+			// operator actually loaded, not someone else's intervening edit.
+			const { verdict, source } = await saveDocumentDraft(requestedTeam, policyYaml, expectedDocument);
+			if (!isCurrentRequest()) return;
+			if (source) setExpectedDocument(readRevision(source));
+			// A confirmed save advances our revision even if typing continued, but
+			// its verdict must not describe the newer, still-unsaved textarea.
+			if (editGeneration.current !== submittedEdit) return;
 			setDryRun(verdict);
+			if (verdict.status !== "compiled") {
+				setSaveStatus({ tone: "error", message: `Policy was not saved: ${describeDryRun(verdict)}` });
+				return;
+			}
 			setSaveStatus({ tone: "success", message: "Policy saved successfully" });
 		} catch (err) {
-			setSaveStatus({
-				tone: "error",
-				message: `Policy was not saved: ${readErrorMessage(err, "unknown error")}`,
-			});
+			if (isCurrentRequest() && editGeneration.current === submittedEdit) {
+				setSaveStatus({
+					tone: "error",
+					message: `Policy was not saved: ${readErrorMessage(err, "unknown error")}`,
+				});
+			}
 		} finally {
-			setIsSaving(false);
+			if (isCurrentRequest()) {
+				saving.current = false;
+				setIsSaving(false);
+			}
 		}
 	}
 
 	function handleReset() {
+		editGeneration.current += 1;
 		const defaultYaml = objectToYaml(DEFAULT_POLICY);
 		setPolicyYaml(defaultYaml);
 		setSaveStatus(null);
@@ -858,6 +807,7 @@ export function PolicyEditor() {
 							className="input"
 							value={policyYaml}
 							onChange={(e) => {
+								editGeneration.current += 1;
 								setPolicyYaml(e.target.value);
 								setSaveStatus(null);
 								setDryRun(null);
@@ -947,9 +897,9 @@ export function PolicyEditor() {
 						<h4 style={{ marginTop: 0 }}>Server dry run</h4>
 						{!dryRun ? (
 							<p className="muted small" style={{ margin: 0 }}>
-								Saving asks the <span className="mono">policy-management</span> compiler to dry-run
-								the document it has stored. Its unsupported fields and simulation appear here
-								before the write is accepted.
+								Saving asks <span className="mono">policy-management</span> to compile the exact
+								submitted draft before atomically saving it. Unsupported fields and simulation appear here;
+								an intervening edit causes a conflict, not an overwrite.
 							</p>
 						) : dryRun.status === "compiled" ? (
 							<div className="muted small">
@@ -972,7 +922,7 @@ export function PolicyEditor() {
 							</div>
 						) : dryRun.status === "refused" ? (
 							<div>
-								<strong>The runtime compiler refused the stored document.</strong>
+								<strong>The runtime compiler refused the submitted draft.</strong>
 								<div className="mono small" style={{ marginTop: 6 }}>
 									{dryRun.code}
 								</div>
@@ -993,9 +943,7 @@ export function PolicyEditor() {
 							</div>
 						) : (
 							<p className="muted small" style={{ margin: 0 }}>
-								{dryRun.status === "absent"
-									? "The server has no stored policy document to compile yet."
-									: `The server could not compile the stored document (${dryRun.code}).`}
+								{`The server could not confirm the draft save (${dryRun.code}).`}
 							</p>
 						)}
 					</div>

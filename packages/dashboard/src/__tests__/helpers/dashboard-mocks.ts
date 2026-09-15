@@ -8,8 +8,13 @@
  * row, which is what PostgREST does for a single-object request.
  */
 
+import { createHash, webcrypto } from "node:crypto";
 import { vi } from "vitest";
 import { supabase } from "../../lib/supabase";
+
+export function policySourceHash(content: string): string {
+	return createHash("sha256").update(content, "utf8").digest("hex");
+}
 
 export const TEAM_ID = "11111111-1111-4111-8111-111111111111";
 export const ADMIN_USER_ID = "22222222-2222-4222-8222-222222222222";
@@ -121,8 +126,7 @@ export interface MockOptions {
 	invite?: { data?: unknown; error?: QueryError | null };
 	policyRow?: (Record<string, unknown> & { id?: string }) | null;
 	policyReadError?: QueryError | null;
-	policyWriteRows?: unknown[] | null;
-	policyWriteError?: QueryError | null;
+	policySaveResponse?: { data: unknown; error: unknown };
 	user?: { id: string } | null;
 	/** Session returned to protected route layouts. Defaults to an authenticated AAL2 fixture. */
 	session?: Record<string, unknown> | null;
@@ -145,6 +149,7 @@ export interface InstalledMocks {
 export function installDashboardMocks(options: MockOptions = {}): InstalledMocks {
 	const mocked = mockedSupabase();
 	vi.resetAllMocks();
+	vi.stubGlobal("crypto", webcrypto);
 
 	// These helpers render routes that already passed `requireSessionLoader`, so
 	// the default fixture is an authenticated, server-confirmed AAL2 session. A
@@ -169,7 +174,7 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 	mocked.auth.onAuthStateChange.mockReturnValue({
 		data: { subscription: { unsubscribe: vi.fn() } },
 	});
-	mocked.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string } }) => {
+	mocked.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string; content?: string; expected_document?: { id: string; version: number } | null } }) => {
 		if (name === "identity-security" && request?.body?.action === "status") {
 			return {
 				data: {
@@ -184,6 +189,25 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 		}
 		if (name === "policy-management") {
 			const action = request?.body?.action;
+			if (action === "save_document_draft") {
+				if (options.policySaveResponse) return options.policySaveResponse;
+				return {
+					data: {
+						ok: true,
+						source: {
+							id: request?.body?.expected_document?.id ?? POLICY_ROW_ID,
+							version: (request?.body?.expected_document?.version ?? 0) + 1,
+							source_sha256: policySourceHash(request?.body?.content ?? ""),
+							updated_at: JOINED_AT,
+						},
+						runtime_policy: { mcp_unknown: "ask" },
+						diagnostics: [],
+						semantics: { precedence: ["deny", "ask", "allow"] },
+						simulation: { action: "ask", source: "mcp_unknown", matched: null },
+					},
+					error: null,
+				};
+			}
 			if (action === "history") return { data: { ok: true, revisions: [], truncated: false }, error: null };
 			if (action === "adoption") return { data: { ok: true, agents: [], truncated: false }, error: null };
 			if (action === "read") return { data: { ok: true, version: 0, policy: null }, error: null };
@@ -257,7 +281,11 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 		return chainFor(fallbackResult);
 	});
 
-	const policyRow = options.policyRow ?? null;
+	const policyRow = options.policyRow ? {
+		version: 1,
+		source_sha256: policySourceHash(String(options.policyRow.content ?? "")),
+		...options.policyRow,
+	} : null;
 	const policyLoad: QueryResult = {
 		data: policyRow ? [policyRow] : [],
 		error: options.policyReadError ?? null,
@@ -267,8 +295,8 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 		error: options.policyReadError ?? null,
 	};
 	const policyWrite: QueryResult = {
-		data: options.policyWriteRows === null ? [] : (options.policyWriteRows ?? [{ id: POLICY_ROW_ID }]),
-		error: options.policyWriteError ?? null,
+		data: null,
+		error: { message: "Direct policy mutations are forbidden; use save_document_draft." },
 	};
 	const teamPolicies = chainFor(policyLoad);
 	const policyWrites = chainFor(policyWrite);
