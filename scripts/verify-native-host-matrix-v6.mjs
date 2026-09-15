@@ -136,11 +136,21 @@ function probe(host, config) {
 	const binary = binaryFor(host, config);
 	if (!binary) return { id: host.id, ga: host.ga, status: "HOST_UNAVAILABLE", binary: null, version: null, cases: [] };
 	const versionArgs = config?.version_args ?? ["--version"];
-	if (!Array.isArray(versionArgs) || !versionArgs.every((arg) => typeof arg === "string" && arg.length < 100)) throw new Error(`${host.id}: invalid version_args`);
-	const result = runBinary(binary, versionArgs, { timeout: 30_000 });
+	const launcher_sha256 = digest(readFileSync(binary));
+	if (!Array.isArray(versionArgs) || !versionArgs.every((arg) => typeof arg === "string" && arg.length < 100)) {
+		return { id: host.id, ga: host.ga, status: "VERSION_PROBE_FAILED", binary, launcher_sha256, version: null, cases: [],
+			probe_error: "invalid version_args" };
+	}
+	let result;
+	try {
+		result = runBinary(binary, versionArgs, { timeout: 30_000 });
+	} catch (error) {
+		return { id: host.id, ga: host.ga, status: "VERSION_PROBE_FAILED", binary, launcher_sha256, version: null, cases: [],
+			probe_error: error instanceof Error ? error.message : String(error) };
+	}
 	const version = bounded(result.stdout || result.stderr);
 	return { id: host.id, ga: host.ga, status: result.status === 0 && !result.error && version ? "VERSION_PROBED" : "VERSION_PROBE_FAILED",
-		binary, launcher_sha256: digest(readFileSync(binary)), version: version || null, cases: [] };
+		binary, launcher_sha256, version: version || null, cases: [], ...(result.error ? { probe_error: String(result.error.message ?? result.error) } : {}) };
 }
 function observation(spec, result, vars) {
 	if (!spec || typeof spec !== "object" || !["stdout", "stderr", "file"].includes(spec.source) ||
@@ -421,10 +431,32 @@ export function validateScenarioManifest(spec) {
 		failures, errors, placeholders, error_count: errors.length, placeholder_count: placeholders.length };
 }
 
+function unreadableManifestReport(path, error, raw = null) {
+	const detail = error instanceof Error ? error.message : String(error);
+	const failure = { code: "SCENARIO_MANIFEST_UNREADABLE", severity: "error", host: null, case_id: null, case_index: null,
+		field: "scenario_file", path, detail };
+	return { schema_version: 1, kind: "aidr_native_host_scenario_validation", validated_at: new Date().toISOString(),
+		path, sha256: raw === null ? null : digest(raw), status: "SCENARIO_MANIFEST_UNREADABLE", ok: false, template: null,
+		error_count: 1, placeholder_count: 0, failures: [failure],
+		limitations: ["The scenario manifest could not be parsed, so no host behaviour was validated or exercised",
+			"A template is never acceptance evidence; every REPLACE_WITH_* value must be replaced from a real host run"] };
+}
+
 /** Validate a scenario file on disk and wrap the findings in a report. */
 export function validateScenarioFile(scenarioPath) {
-	const raw = readFileSync(scenarioPath, "utf8");
-	const validation = validateScenarioManifest(JSON.parse(raw));
+	let raw;
+	try {
+		raw = readFileSync(scenarioPath, "utf8");
+	} catch (error) {
+		return unreadableManifestReport(scenarioPath, error);
+	}
+	let spec;
+	try {
+		spec = JSON.parse(raw);
+	} catch (error) {
+		return unreadableManifestReport(scenarioPath, error, raw);
+	}
+	const validation = validateScenarioManifest(spec);
 	return { schema_version: 1, kind: "aidr_native_host_scenario_validation", validated_at: new Date().toISOString(),
 		path: scenarioPath, sha256: digest(raw), status: validation.status, ok: validation.ok, template: validation.template,
 		error_count: validation.error_count, placeholder_count: validation.placeholder_count, failures: validation.failures,
@@ -450,13 +482,14 @@ function gateStatus(manifestPresent, probeOnly, hosts) {
 	if (!manifestPresent) return "SCENARIO_MANIFEST_MISSING";
 	if (probeOnly) return "VERSION_PROBED";
 	if (hosts.filter((host) => host.ga).every((host) => host.status === "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN")) return "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN";
-	if (hosts.some((host) => host.status === "HOST_ACCEPTANCE_OPEN" || host.status === "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN")) return "HOST_ACCEPTANCE_OPEN";
+	if (hosts.some((host) => host.status === "HOST_ACCEPTANCE_OPEN" || host.status === "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN" || host.status === "VERSION_PROBE_FAILED")) return "HOST_ACCEPTANCE_OPEN";
 	return "HOST_UNAVAILABLE";
 }
 
-function gateBlockers(manifestPresent, manifestPath, hosts, validation) {
+function gateBlockers(manifestPresent, manifestPath, hosts, validation, manifestFailure = null) {
 	const blockers = [];
 	if (!manifestPresent) blockers.push(`SCENARIO_MANIFEST_MISSING:${manifestPath}`);
+	if (manifestFailure) blockers.push(`${manifestFailure.code}:${manifestPath}`);
 	// A template is never acceptance evidence, and deleting its `template`/`kind`
 	// markers does not replace a single placeholder: both shapes are refused with
 	// the same code, so a copied template cannot look like an ordinary open run.
@@ -504,6 +537,7 @@ function printValidationSummary(report) {
 function writeReport(outputPath, report, manifestPath) {
 	const output = resolve(outputPath);
 	if (manifestPath && output === manifestPath) throw new Error("Refusing to overwrite scenario manifest");
+	mkdirSync(dirname(output), { recursive: true });
 	writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
 }
 
@@ -529,41 +563,66 @@ function main(argv) {
 		return;
 	}
 
-	const spec = manifestPresent ? JSON.parse(readFileSync(manifestPath, "utf8")) : { schema_version: 1, hosts: {} };
-	if (spec.schema_version !== 1 || !spec.hosts || typeof spec.hosts !== "object" || Array.isArray(spec.hosts)) throw new Error("Invalid native scenario manifest");
-	for (const id of Object.keys(spec.hosts)) if (!HOSTS.some((host) => host.id === id)) throw new Error(`Unknown host: ${id}`);
-	const validation = manifestPresent ? validateScenarioManifest(spec) : null;
+	let rawManifest = null;
+	let spec = { schema_version: 1, hosts: {} };
+	let manifestFailure = null;
+	if (manifestPresent) {
+		try {
+			rawManifest = readFileSync(manifestPath, "utf8");
+			spec = JSON.parse(rawManifest);
+		} catch (error) {
+			manifestFailure = { code: "SCENARIO_MANIFEST_UNREADABLE", detail: error instanceof Error ? error.message : String(error) };
+		}
+	}
+	const validation = manifestPresent && !manifestFailure ? validateScenarioManifest(spec) : null;
+	const manifestRefused = validation?.template === true || carriesTemplatePlaceholders(validation);
+	const scenarioHosts = spec && typeof spec === "object" && !Array.isArray(spec) && spec.hosts &&
+		typeof spec.hosts === "object" && !Array.isArray(spec.hosts) ? spec.hosts : {};
 	const hosts = HOSTS.map((definition) => {
-		const host = probe(definition, spec.hosts[definition.id]);
+		const host = probe(definition, scenarioHosts[definition.id]);
 		// Without a manifest there is nothing to exercise: probing is all this
 		// machine can honestly report, so the host record stays VERSION_PROBED.
 		if (host.status === "VERSION_PROBED" && manifestPresent && !options["probe-only"]) {
-			const cases = spec.hosts[host.id]?.cases ?? [];
-			if (!Array.isArray(cases) || new Set(cases.map((entry) => `${entry?.id}:${entry?.attack_id ?? ""}`)).size !== cases.length) throw new Error(`${host.id}: duplicate or invalid cases`);
-			host.cases = cases.map((entry, index) => runCase(host, entry, index));
-			host.acceptance_blockers = acceptanceBlockers(host, spec.hosts[host.id]);
-			for (const entry of host.cases) if (!entry.correlated_file_observations) host.acceptance_blockers.push(`${entry.id}:CORRELATED_FILE_TRACES_MISSING`);
-			host.status = CASES.every((id) => host.cases.some((entry) => entry.id === id)) &&
-				host.cases.every((entry) => ["PASS", "BOUNDARY_CLAIM_RECORDED"].includes(entry.status)) &&
-				host.acceptance_blockers.length === 0 ? "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN" : "HOST_ACCEPTANCE_OPEN";
+			if (manifestFailure) {
+				host.cases = [];
+				host.acceptance_blockers = [manifestFailure.code];
+				host.status = "HOST_ACCEPTANCE_OPEN";
+			} else if (manifestRefused) {
+				host.cases = [];
+				host.acceptance_blockers = [SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE];
+				host.status = "HOST_ACCEPTANCE_OPEN";
+			} else {
+				const cases = scenarioHosts[host.id]?.cases ?? [];
+				if (!Array.isArray(cases) || new Set(cases.map((entry) => `${entry?.id}:${entry?.attack_id ?? ""}`)).size !== cases.length) throw new Error(`${host.id}: duplicate or invalid cases`);
+				host.cases = cases.map((entry, index) => runCase(host, entry, index));
+				host.acceptance_blockers = acceptanceBlockers(host, scenarioHosts[host.id]);
+				for (const entry of host.cases) if (!entry.correlated_file_observations) host.acceptance_blockers.push(`${entry.id}:CORRELATED_FILE_TRACES_MISSING`);
+				host.status = CASES.every((id) => host.cases.some((entry) => entry.id === id)) &&
+					host.cases.every((entry) => ["PASS", "BOUNDARY_CLAIM_RECORDED"].includes(entry.status)) &&
+					host.acceptance_blockers.length === 0 ? "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN" : "HOST_ACCEPTANCE_OPEN";
+			}
 		}
 		return host;
 	});
 	const status = gateStatus(manifestPresent, options["probe-only"] === true, hosts);
+	const manifestValidation = validation ? { status: validation.status, ok: validation.ok, template: validation.template,
+		error_count: validation.error_count, placeholder_count: validation.placeholder_count, failures: validation.failures } :
+		manifestFailure ? { status: manifestFailure.code, ok: false, template: null, error_count: 1, placeholder_count: 0,
+			failures: [{ code: manifestFailure.code, severity: "error", host: null, case_id: null, case_index: null,
+				field: "scenario_file", path: manifestPath, detail: manifestFailure.detail }] } : null;
 	const report = { schema_version: 1, kind: "aidr_native_host_matrix_v6", measured_at: new Date().toISOString(),
 		platform: process.platform, os_release: osRelease(), os_version: osVersion(), architecture: process.arch, node_version: process.version,
 		scenario_manifest_path: manifestPresent ? manifestPath : null,
 		scenario_manifest_expected_path: manifestPath,
 		scenario_manifest_present: manifestPresent,
-		scenario_manifest_sha256: manifestPresent ? digest(readFileSync(manifestPath)) : null,
+		scenario_manifest_sha256: manifestPresent && rawManifest !== null ? digest(rawManifest) : null,
 		status_vocabulary: GATE_STATUSES,
 		status,
 		gate: "NO_GO",
 		gate_reason: GATE_REASONS[status],
-		manifest_validation: validation ? { status: validation.status, ok: validation.ok, template: validation.template,
-			error_count: validation.error_count, placeholder_count: validation.placeholder_count, failures: validation.failures } : null,
+		manifest_validation: manifestValidation,
 		local_scenario_coverage: hosts.filter((host) => host.ga).every((host) => host.status === "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN") ? "COMPLETE_REVIEW_OPEN" : "INCOMPLETE",
-		blockers: gateBlockers(manifestPresent, manifestPath, hosts, validation),
+		blockers: gateBlockers(manifestPresent, manifestPath, hosts, validation, manifestFailure),
 		hosts,
 		limitations: ["A version probe does not prove hook registration, tool interception, or prevented side effects",
 			"SDK acceptance requires a named embedding application and cannot be inferred from an in-process unit test",

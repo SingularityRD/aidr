@@ -7,17 +7,24 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
 	CONNECTOR_HOST_IDS,
+	EVIDENCE_ALLOWED_FIELDS,
 	EVIDENCE_REQUIRED_FIELDS,
 	EVIDENCE_SHA256_PATTERN,
 	HOST_BINARY_ENV_PATTERN,
+	MATRIX_ALLOWED_FIELDS,
 	MATRIX_DECISION,
 	MATRIX_KIND,
 	MATRIX_REQUIRED_FIELDS,
 	MATRIX_REVIEWED_AT_PATTERN,
 	MATRIX_SCHEMA_VERSION,
+	NON_EMPTY_STRING_PATTERN,
+	RESIDUAL_ALLOWED_FIELDS,
 	RESIDUAL_REQUIRED_FIELDS,
+	ROW_ALLOWED_FIELDS,
 	ROW_ARRAY_FIELDS,
+	ROW_OPTIONAL_FIELDS,
 	ROW_REQUIRED_FIELDS,
+	ROW_STRING_ARRAY_FIELDS,
 	SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE,
 	SCENARIOS_OPEN,
 	SUPPORTED_ARCHITECTURES,
@@ -151,8 +158,12 @@ test("the support-matrix schema exists and agrees with the validator constants",
 	assert.equal(schema.additionalProperties, false);
 
 	assert.deepEqual(sorted(schema.required), sorted(MATRIX_REQUIRED_FIELDS));
+	assert.deepEqual(sorted(Object.keys(schema.properties)), sorted(MATRIX_ALLOWED_FIELDS));
 	for (const field of MATRIX_REQUIRED_FIELDS) {
 		assert.ok(Object.hasOwn(schema.properties, field), `schema.properties must describe ${field}`);
+	}
+	for (const field of ROW_OPTIONAL_FIELDS) {
+		assert.ok(Object.hasOwn(schema.$defs.row.properties, field), `schema row properties must describe optional ${field}`);
 	}
 	// additionalProperties:false means the committed manifest must be describable
 	// by its own published contract, key by key.
@@ -163,11 +174,14 @@ test("the support-matrix schema exists and agrees with the validator constants",
 	assert.equal(schema.properties.kind.const, MATRIX_KIND);
 	assert.equal(schema.properties.decision.const, MATRIX_DECISION);
 	assert.equal(schema.properties.reviewedAt.pattern, MATRIX_REVIEWED_AT_PATTERN);
+	assert.equal(schema.properties.decisionMeaning.pattern, NON_EMPTY_STRING_PATTERN);
 	assert.deepEqual(schema.properties.soldPlatformScope.items.enum, SUPPORTED_PLATFORMS);
 	assert.deepEqual(schema.properties.soldArchitectureScope.items.enum, SUPPORTED_ARCHITECTURES);
 	assert.equal(schema.$defs.sha256.pattern, EVIDENCE_SHA256_PATTERN);
 
 	const row = schema.$defs.row;
+	assert.equal(row.additionalProperties, false);
+	assert.deepEqual(sorted(Object.keys(row.properties)), sorted(ROW_ALLOWED_FIELDS));
 	assert.equal(schema.properties.rows.items.$ref, "#/$defs/row");
 	assert.deepEqual(sorted(row.required), sorted(ROW_REQUIRED_FIELDS));
 	for (const field of ROW_REQUIRED_FIELDS) {
@@ -179,15 +193,25 @@ test("the support-matrix schema exists and agrees with the validator constants",
 	for (const field of ROW_ARRAY_FIELDS) {
 		assert.equal(row.properties[field].type, "array", `schema.$defs.row.properties.${field} must be an array`);
 	}
+	for (const field of ROW_STRING_ARRAY_FIELDS) {
+		assert.equal(row.properties[field].items.pattern, NON_EMPTY_STRING_PATTERN, `schema.$defs.row.properties.${field} must reject whitespace-only items`);
+	}
 	assert.deepEqual(row.properties.supportedPlatforms.items.enum, SUPPORTED_PLATFORMS);
 	assert.deepEqual(row.properties.supportedArchitectures.items.enum, SUPPORTED_ARCHITECTURES);
 	assert.deepEqual(row.properties.supportedContexts.items.enum, SUPPORTED_CONTEXTS);
 	assert.equal(row.properties.hostBinaryEnvOverride.oneOf[0].pattern, HOST_BINARY_ENV_PATTERN);
+	assert.equal(row.properties.versionArgs.minItems, 1);
+	assert.equal(row.properties.versionArgs.items.pattern, NON_EMPTY_STRING_PATTERN);
 	assert.equal(row.properties.acceptanceEvidence.items.$ref, "#/$defs/evidence");
 	assert.deepEqual(schema.$defs.evidence.required, EVIDENCE_REQUIRED_FIELDS);
+	assert.equal(schema.$defs.evidence.additionalProperties, false);
+	assert.deepEqual(sorted(Object.keys(schema.$defs.evidence.properties)), sorted(EVIDENCE_ALLOWED_FIELDS));
+	assert.equal(schema.$defs.evidence.properties.path.pattern, NON_EMPTY_STRING_PATTERN);
 	assert.equal(schema.$defs.evidence.properties.sha256.$ref, "#/$defs/sha256");
 
 	const residual = schema.$defs.residual;
+	assert.equal(residual.additionalProperties, false);
+	assert.deepEqual(sorted(Object.keys(residual.properties)), sorted(RESIDUAL_ALLOWED_FIELDS));
 	assert.deepEqual(sorted(residual.required), sorted(RESIDUAL_REQUIRED_FIELDS));
 	for (const key of Object.keys(manifest.residual[0])) {
 		assert.ok(Object.hasOwn(residual.properties, key), `schema.$defs.residual.properties is missing committed residual field ${key}`);
@@ -229,6 +253,65 @@ test("the support-matrix schema exists and agrees with the validator constants",
 		assert.ok(Object.hasOwn(CONNECTOR_HOST_IDS, connector), `no scenario host id is declared for ${connector}`);
 	}
 	assert.equal(validateMatrix(committedMatrix()).rows.length, 6);
+});
+
+test("the validator rejects schema-disallowed and malformed matrix fields", () => {
+	const unknownRoot = fixtureMatrix();
+	unknownRoot.extra = true;
+	assert.throws(() => validateMatrix(unknownRoot), /support matrix: root has unknown field extra/u);
+
+	const unknownRow = fixtureMatrix();
+	unknownRow.rows[0].extra = true;
+	assert.throws(() => validateMatrix(unknownRow), /support matrix: row codex has unknown field extra/u);
+
+	const unknownConnector = fixtureMatrix();
+	unknownConnector.soldConnectorScope = ["future-host"];
+	unknownConnector.rows[0].connector = "future-host";
+	assert.throws(() => validateMatrix(unknownConnector), /support matrix: row future-host has no scenario host id/u);
+
+	const unknownEvidence = committedMatrix();
+	unknownEvidence.rows[0].acceptanceEvidence = [{ extra: true }];
+	assert.throws(() => validateMatrix(unknownEvidence), /support matrix: row claude-code\.acceptanceEvidence\[0\] has unknown field extra/u);
+
+	const unknownResidual = fixtureMatrix();
+	unknownResidual.residual = [{
+		id: "fixture",
+		description: "fixture",
+		ownerRole: "QA",
+		requiredInput: "fixture",
+		acceptanceCommand: "fixture",
+		acceptanceEvidence: [],
+		extra: true,
+	}];
+	assert.throws(() => validateMatrix(unknownResidual), /support matrix: residual fixture has unknown field extra/u);
+
+	const badSchemaPointer = fixtureMatrix();
+	badSchemaPointer.$schema = 42;
+	assert.throws(() => validateMatrix(badSchemaPointer), /support matrix: \$schema must be a string/u);
+
+	const withVersionArgs = fixtureMatrix();
+	withVersionArgs.rows[0].versionArgs = ["--version"];
+	assert.equal(validateMatrix(withVersionArgs).rows[0].versionArgs[0], "--version");
+	const badVersionArgs = fixtureMatrix();
+	badVersionArgs.rows[0].versionArgs = [""];
+	assert.throws(() => validateMatrix(badVersionArgs), /versionArgs entries must be non-empty strings/u);
+
+	for (const field of ["installPath", "uninstallPath", "knownBypasses", "unobservedActions"]) {
+		const broken = fixtureMatrix();
+		broken.rows[0][field] = [""];
+		assert.throws(() => validateMatrix(broken), new RegExp(`row codex\\.${field} entries must be non-empty strings`, "u"));
+	}
+
+	const badResidualEvidence = fixtureMatrix();
+	badResidualEvidence.residual = [{
+		id: "fixture",
+		description: "fixture",
+		ownerRole: "QA",
+		requiredInput: "fixture",
+		acceptanceCommand: "fixture",
+		acceptanceEvidence: [{}],
+	}];
+	assert.throws(() => validateMatrix(badResidualEvidence), /residual fixture\.acceptanceEvidence\[0\] is missing path/u);
 });
 
 test("a manifest that copies the template's placeholders is refused", async () => {
@@ -305,13 +388,75 @@ test("an absent host binary is still HOST_UNAVAILABLE", async () => {
 	});
 });
 
+test("a missing default scenario is a machine-readable row blocker", async () => {
+	await withTempDir(async (dir) => {
+		const { matrixPath } = writeFixture(dir, { matrix: fixtureMatrix({ envOverride: PRESENT_HOST_ENV }) });
+		const record = await presentHostRecord(dir, { matrixPath });
+		const host = record.hosts.find((entry) => entry.connector === "codex");
+		assert.equal(record.matrixPath, resolve(matrixPath));
+		assert.equal(host.status, "HOST_ACCEPTANCE_OPEN");
+		assert.equal(host.scenarios.status, "SCENARIO_MANIFEST_MISSING");
+		assert.ok(record.blockers.includes("codex:SCENARIO_MANIFEST_MISSING"), record.blockers.join("; "));
+		assert.equal(record.decision, "NO-GO");
+	});
+});
+
+test("an explicit unreadable scenario file produces a record and never launches a host", async () => {
+	await withTempDir(async (dir) => {
+		const scenarioPath = join(dir, "codex.json");
+		writeFileSync(scenarioPath, "{not-json");
+		const { matrixPath } = writeFixture(dir, { matrix: fixtureMatrix({ envOverride: PRESENT_HOST_ENV }) });
+		const record = await presentHostRecord(dir, { matrixPath, scenarioFile: scenarioPath });
+		const host = record.hosts.find((entry) => entry.connector === "codex");
+		assert.equal(host.status, "HOST_ACCEPTANCE_OPEN");
+		assert.equal(host.scenarios.status, "SCENARIO_MANIFEST_UNREADABLE");
+		assert.equal(host.scenarios.scenarioPath, resolve(scenarioPath));
+		assert.equal(host.scenarios.outputPath, undefined);
+		assert.ok(record.blockers.includes(`SCENARIO_MANIFEST_UNREADABLE:${resolve(scenarioPath)}`), record.blockers.join("; "));
+		assert.ok(record.blockers.includes("codex:SCENARIO_MANIFEST_UNREADABLE"), record.blockers.join("; "));
+		assert.equal(record.scenarioFile.issue.status, "SCENARIO_MANIFEST_UNREADABLE");
+		assert.equal(record.decision, "NO-GO");
+	});
+});
+
+test("a missing explicit scenario file produces a machine-readable record", async () => {
+	await withTempDir(async (dir) => {
+		const scenarioPath = join(dir, "missing.json");
+		const { matrixPath } = writeFixture(dir, { matrix: fixtureMatrix({ envOverride: PRESENT_HOST_ENV }) });
+		const record = await presentHostRecord(dir, { matrixPath, scenarioFile: scenarioPath });
+		const host = record.hosts.find((entry) => entry.connector === "codex");
+		assert.equal(host.status, "HOST_ACCEPTANCE_OPEN");
+		assert.equal(host.scenarios.status, "SCENARIO_MANIFEST_MISSING");
+		assert.equal(host.scenarios.scenarioPath, resolve(scenarioPath));
+		assert.ok(record.blockers.includes(`SCENARIO_MANIFEST_MISSING:${resolve(scenarioPath)}`), record.blockers.join("; "));
+		assert.ok(record.blockers.includes("codex:SCENARIO_MANIFEST_MISSING"), record.blockers.join("; "));
+		assert.equal(record.scenarioFile.issue.status, "SCENARIO_MANIFEST_MISSING");
+		assert.equal(record.decision, "NO-GO");
+	});
+});
+
+test("an explicit scenario file with no advertised host is a machine-readable blocker", async () => {
+	await withTempDir(async (dir) => {
+		const scenarioPath = join(dir, "empty.json");
+		writeFileSync(scenarioPath, JSON.stringify({ schema_version: 1, hosts: {} }));
+		const { matrixPath } = writeFixture(dir, { matrix: fixtureMatrix({ envOverride: PRESENT_HOST_ENV }) });
+		const record = await presentHostRecord(dir, { matrixPath, scenarioFile: scenarioPath });
+		const host = record.hosts.find((entry) => entry.connector === "codex");
+		assert.equal(host.status, "HOST_ACCEPTANCE_OPEN");
+		assert.equal(host.scenarios.status, "SCENARIO_MANIFEST_NO_MATCH");
+		assert.ok(record.blockers.includes(`SCENARIO_MANIFEST_NO_MATCH:${resolve(scenarioPath)}`), record.blockers.join("; "));
+		assert.ok(record.scenarioFile.issue.validation.failures.some((failure) => failure.code === "HOSTS_EMPTY"));
+		assert.equal(record.decision, "NO-GO");
+	});
+});
+
 test("the CLI refuses a template copy with the documented reason code", async () => {
 	await withTempDir(async (dir) => {
 		const { matrixPath, scenarioPath } = writeFixture(dir, {
 			matrix: fixtureMatrix({ envOverride: PRESENT_HOST_ENV }),
 			scenario: readFileSync(TEMPLATE_PATH, "utf8"),
 		});
-		const outputPath = join(dir, "record.json");
+		const outputPath = join(dir, "nested", "record.json");
 		const result = spawnSync(
 			process.execPath,
 			[RUNNER, "--matrix", matrixPath, "--scenario-file", scenarioPath, "--output", outputPath],
@@ -325,6 +470,20 @@ test("the CLI refuses a template copy with the documented reason code", async ()
 		assert.equal(host.scenarios.status, SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE);
 		assert.ok(record.blockers.includes(`codex:${SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE}`));
 		assert.equal(record.decision, "NO-GO");
+	});
+});
+
+test("the support runner refuses to overwrite a matrix input", async () => {
+	await withTempDir(async (dir) => {
+		const { matrixPath } = writeFixture(dir);
+		const before = readFileSync(matrixPath, "utf8");
+		const result = spawnSync(process.execPath, [RUNNER, "--matrix", matrixPath, "--probe-only", "--output", matrixPath], {
+			encoding: "utf8",
+			timeout: 120_000,
+		});
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /Refusing to overwrite native input manifest/u);
+		assert.equal(readFileSync(matrixPath, "utf8"), before);
 	});
 });
 

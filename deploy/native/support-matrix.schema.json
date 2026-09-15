@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singularityrd.example/schemas/aidr-native-support-matrix-v1.json",
   "title": "Singularity AIDR native host support matrix",
-  "description": "Published contract for deploy/native/support-matrix.json. The normative validator is validateMatrix() in deploy/native/run-support-matrix.mjs: this schema is never loaded at run time, never decides a release, and deploy/native/run-support-matrix.test.mjs asserts that every required/properties entry below agrees with the constants that validator uses.",
+  "description": "Published structural contract for deploy/native/support-matrix.json. The normative validator is validateMatrix() in deploy/native/run-support-matrix.mjs: this schema is never loaded at run time, never decides a release, and deploy/native/run-support-matrix.test.mjs asserts that its exact property sets and field constraints agree with the validator constants. Cross-row connector coverage, interception vocabulary membership, evidence file existence and digest checks remain runtime checks.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -32,11 +32,11 @@
       "const": "NO-GO",
       "description": "A support matrix records scope, not success: it stays NO-GO until every row has named real-host acceptance."
     },
-    "decisionMeaning": { "type": "string", "minLength": 1 },
+    "decisionMeaning": { "type": "string", "minLength": 1, "pattern": "\\S" },
     "soldConnectorScope": {
       "type": "array",
       "minItems": 1,
-      "items": { "type": "string", "minLength": 1 }
+      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
     },
     "soldPlatformScope": {
       "type": "array",
@@ -51,12 +51,12 @@
     "soldDeploymentProfiles": {
       "type": "array",
       "minItems": 1,
-      "items": { "type": "string", "minLength": 1 }
+      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
     },
     "interceptionPointVocabulary": {
       "type": "array",
       "minItems": 1,
-      "items": { "type": "string", "minLength": 1 }
+      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
     },
     "rows": {
       "type": "array",
@@ -75,7 +75,7 @@
       "additionalProperties": false,
       "required": ["path", "sha256"],
       "properties": {
-        "path": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "sha256": { "$ref": "#/$defs/sha256" }
       }
     },
@@ -100,18 +100,23 @@
         "acceptanceEvidence"
       ],
       "properties": {
-        "connector": { "type": "string", "minLength": 1 },
+        "connector": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "hostBinary": {
-          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+          "oneOf": [{ "type": "string", "minLength": 1, "pattern": "\\S" }, { "type": "null" }]
         },
         "hostBinaryEnvOverride": {
           "oneOf": [{ "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }, { "type": "null" }]
         },
-        "interceptionPoint": { "type": "string", "minLength": 1 },
-        "outputInterceptionPoint": {
-          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        "versionArgs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
         },
-        "tamperResistance": { "type": "string", "minLength": 1 },
+        "interceptionPoint": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "outputInterceptionPoint": {
+          "oneOf": [{ "type": "string", "minLength": 1, "pattern": "\\S" }, { "type": "null" }]
+        },
+        "tamperResistance": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "supportedPlatforms": {
           "type": "array",
           "minItems": 1,
@@ -129,20 +134,20 @@
         },
         "installPath": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
         },
         "uninstallPath": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
         },
-        "supportOwnerRole": { "type": "string", "minLength": 3 },
+        "supportOwnerRole": { "type": "string", "minLength": 3, "pattern": "\\S" },
         "knownBypasses": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
         },
         "unobservedActions": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
         },
         "acceptanceEvidence": {
           "type": "array",
@@ -155,11 +160,11 @@
       "additionalProperties": false,
       "required": ["id", "description", "ownerRole", "requiredInput", "acceptanceCommand", "acceptanceEvidence"],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "description": { "type": "string", "minLength": 1 },
-        "ownerRole": { "type": "string", "minLength": 1 },
-        "requiredInput": { "type": "string", "minLength": 1 },
-        "acceptanceCommand": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "description": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "ownerRole": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "requiredInput": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "acceptanceCommand": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "acceptanceEvidence": {
           "type": "array",
           "items": { "$ref": "#/$defs/evidence" }

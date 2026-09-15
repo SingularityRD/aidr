@@ -59,6 +59,7 @@ export const MATRIX_SCHEMA_VERSION = 1;
 export const MATRIX_KIND = "aidr-native-support-matrix";
 export const MATRIX_DECISION = "NO-GO";
 export const MATRIX_REVIEWED_AT_PATTERN = "^\\d{4}-\\d{2}-\\d{2}$";
+export const NON_EMPTY_STRING_PATTERN = "\\S";
 export const HOST_BINARY_ENV_PATTERN = "^[A-Z][A-Z0-9_]*$";
 export const SUPPORTED_PLATFORMS = ["windows", "linux", "macos"];
 export const SUPPORTED_ARCHITECTURES = ["x64", "arm64"];
@@ -104,6 +105,16 @@ export const EVIDENCE_SHA256_PATTERN = "^[0-9a-f]{64}$";
 export const RESIDUAL_REQUIRED_FIELDS = ["id", "description", "ownerRole", "requiredInput", "acceptanceCommand", "acceptanceEvidence"];
 /** Residual fields the validator requires to be non-empty strings. */
 export const RESIDUAL_STRING_FIELDS = ["id", "description", "ownerRole", "requiredInput", "acceptanceCommand"];
+/** Optional fields accepted by the published schema and validator. */
+export const MATRIX_OPTIONAL_FIELDS = ["$schema"];
+export const ROW_OPTIONAL_FIELDS = ["versionArgs"];
+/** Exact property sets paired with each `additionalProperties: false` schema. */
+export const MATRIX_ALLOWED_FIELDS = [...MATRIX_OPTIONAL_FIELDS, ...MATRIX_REQUIRED_FIELDS];
+export const ROW_ALLOWED_FIELDS = [...ROW_REQUIRED_FIELDS, ...ROW_OPTIONAL_FIELDS];
+export const EVIDENCE_ALLOWED_FIELDS = [...EVIDENCE_REQUIRED_FIELDS];
+export const RESIDUAL_ALLOWED_FIELDS = [...RESIDUAL_REQUIRED_FIELDS];
+/** String-array fields whose item constraints are part of the JSON schema. */
+export const ROW_STRING_ARRAY_FIELDS = ["installPath", "uninstallPath", "knownBypasses", "unobservedActions"];
 
 /** The host id each sold connector declares in a native scenario manifest. */
 export const CONNECTOR_HOST_IDS = {
@@ -118,10 +129,13 @@ export const CONNECTOR_HOST_IDS = {
 /** Scenario-manifest outcomes a host row may carry. */
 export const SCENARIO_MANIFEST_MISSING = "SCENARIO_MANIFEST_MISSING";
 export const SCENARIO_MANIFEST_UNREADABLE = "SCENARIO_MANIFEST_UNREADABLE";
+export const SCENARIO_MANIFEST_NO_MATCH = "SCENARIO_MANIFEST_NO_MATCH";
 export const SCENARIOS_PASSED = "SCENARIOS_PASSED";
 export const SCENARIOS_OPEN = "SCENARIOS_OPEN";
 /** Refusals: a manifest that cannot be evidence, or cannot be read, is never launched. */
 export const SCENARIO_REFUSAL_STATUSES = [SCENARIO_MANIFEST_UNREADABLE, SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE];
+/** Explicit scenario-file issues are surfaced as stable blockers even without a matching host binary. */
+export const SCENARIO_FILE_ISSUE_STATUSES = [SCENARIO_MANIFEST_MISSING, SCENARIO_MANIFEST_UNREADABLE, SCENARIO_MANIFEST_NO_MATCH];
 /** The template refusal code is defined by the native-host gate, which owns the vocabulary. */
 export { SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE };
 
@@ -155,10 +169,41 @@ export function validateMatrix(matrix) {
 	const fail = (message) => {
 		throw new Error(`support matrix: ${message}`);
 	};
+	const rejectUnknown = (value, allowed, location) => {
+		for (const key of Object.keys(value)) {
+			if (!allowed.includes(key)) fail(`${location} has unknown field ${key}`);
+		}
+	};
+	const requireStringArrayItems = (value, field, location) => {
+		if (!Array.isArray(value)) fail(`${location}.${field} must be an array`);
+		for (const entry of value) {
+			if (typeof entry !== "string" || entry.trim().length === 0) {
+				fail(`${location}.${field} entries must be non-empty strings`);
+			}
+		}
+	};
+	const validateEvidence = (evidence, location) => {
+		if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) fail(`${location} must be an object`);
+		rejectUnknown(evidence, EVIDENCE_ALLOWED_FIELDS, location);
+		for (const field of EVIDENCE_REQUIRED_FIELDS) {
+			if (!Object.hasOwn(evidence, field)) fail(`${location} is missing ${field}`);
+		}
+		if (typeof evidence.path !== "string" || evidence.path.trim().length === 0) fail(`${location}.path must be a non-empty string`);
+		if (typeof evidence.sha256 !== "string" || !SHA256.test(evidence.sha256)) {
+			fail(`${location}.sha256 must be a SHA-256`);
+		}
+		const evidencePath = resolve(evidence.path);
+		if (!existsSync(evidencePath)) fail(`${location}.path does not exist: ${evidence.path}`);
+		if (digest(readFileSync(evidencePath)) !== evidence.sha256) {
+			fail(`${location}.sha256 does not match: ${evidence.path}`);
+		}
+	};
 	if (!matrix || typeof matrix !== "object" || Array.isArray(matrix)) fail("must be an object");
+	rejectUnknown(matrix, MATRIX_ALLOWED_FIELDS, "root");
 	for (const field of MATRIX_REQUIRED_FIELDS) {
 		if (!Object.hasOwn(matrix, field)) fail(`${field} is required`);
 	}
+	if (Object.hasOwn(matrix, "$schema") && typeof matrix.$schema !== "string") fail("$schema must be a string");
 	if (matrix.schemaVersion !== MATRIX_SCHEMA_VERSION) fail("unsupported schemaVersion");
 	if (matrix.kind !== MATRIX_KIND) fail(`kind must be ${MATRIX_KIND}`);
 	if (typeof matrix.reviewedAt !== "string" || !REVIEWED_AT.test(matrix.reviewedAt)) {
@@ -186,10 +231,12 @@ export function validateMatrix(matrix) {
 	const seenConnectors = new Set();
 	for (const row of matrix.rows) {
 		if (!row || typeof row !== "object" || Array.isArray(row)) fail("rows must be objects");
+		rejectUnknown(row, ROW_ALLOWED_FIELDS, `row ${row.connector ?? "?"}`);
 		for (const field of ROW_REQUIRED_FIELDS) {
 			if (!Object.hasOwn(row, field)) fail(`row ${row.connector ?? "?"} is missing ${field}`);
 		}
-		if (typeof row.connector !== "string" || !row.connector) fail("row.connector is required");
+		if (typeof row.connector !== "string" || row.connector.trim().length === 0) fail("row.connector is required");
+		if (!Object.hasOwn(CONNECTOR_HOST_IDS, row.connector)) fail(`row ${row.connector} has no scenario host id`);
 		if (seenConnectors.has(row.connector)) fail(`duplicate connector ${row.connector}`);
 		seenConnectors.add(row.connector);
 		if (!matrix.soldConnectorScope.includes(row.connector)) {
@@ -234,21 +281,12 @@ export function validateMatrix(matrix) {
 		for (const field of ROW_ARRAY_FIELDS) {
 			if (!Array.isArray(row[field])) fail(`row ${row.connector}.${field} must be an array`);
 		}
-		for (const evidence of row.acceptanceEvidence) {
-			if (typeof evidence !== "object" || evidence === null) fail(`row ${row.connector} has a malformed evidence entry`);
-			for (const field of EVIDENCE_REQUIRED_FIELDS) {
-				if (!Object.hasOwn(evidence, field)) fail(`row ${row.connector} evidence is missing ${field}`);
-			}
-			if (typeof evidence.path !== "string" || !evidence.path) fail(`row ${row.connector} evidence needs a path`);
-			if (typeof evidence.sha256 !== "string" || !SHA256.test(evidence.sha256)) {
-				fail(`row ${row.connector} evidence needs a SHA-256`);
-			}
-			const evidencePath = resolve(evidence.path);
-			if (!existsSync(evidencePath)) fail(`row ${row.connector} evidence path does not exist: ${evidence.path}`);
-			if (digest(readFileSync(evidencePath)) !== evidence.sha256) {
-				fail(`row ${row.connector} evidence digest does not match: ${evidence.path}`);
-			}
+		for (const field of ROW_STRING_ARRAY_FIELDS) requireStringArrayItems(row[field], field, `row ${row.connector}`);
+		if (Object.hasOwn(row, "versionArgs")) {
+			requireStringArrayItems(row.versionArgs, "versionArgs", `row ${row.connector}`);
+			if (row.versionArgs.length === 0) fail(`row ${row.connector}.versionArgs must be a non-empty array`);
 		}
+		row.acceptanceEvidence.forEach((evidence, index) => validateEvidence(evidence, `row ${row.connector}.acceptanceEvidence[${index}]`));
 	}
 	for (const connector of matrix.soldConnectorScope) {
 		if (!seenConnectors.has(connector)) fail(`sold connector ${connector} has no support-matrix row`);
@@ -256,6 +294,7 @@ export function validateMatrix(matrix) {
 	if (!Array.isArray(matrix.residual)) fail("residual must be an array");
 	for (const item of matrix.residual) {
 		if (!item || typeof item !== "object" || Array.isArray(item)) fail("residual entries must be objects");
+		rejectUnknown(item, RESIDUAL_ALLOWED_FIELDS, `residual ${item.id ?? "?"}`);
 		for (const field of RESIDUAL_REQUIRED_FIELDS) {
 			if (!Object.hasOwn(item, field)) fail(`residual ${item.id ?? "?"} is missing ${field}`);
 		}
@@ -265,6 +304,7 @@ export function validateMatrix(matrix) {
 			}
 		}
 		if (!Array.isArray(item.acceptanceEvidence)) fail(`residual ${item.id}.acceptanceEvidence must be an array`);
+		item.acceptanceEvidence.forEach((evidence, index) => validateEvidence(evidence, `residual ${item.id}.acceptanceEvidence[${index}]`));
 	}
 	return matrix;
 }
@@ -291,15 +331,34 @@ function scenarioPathFor(row) {
 	return join(SCENARIOS_DIR, `${row.connector}.json`);
 }
 
-/** The host ids an explicit scenario manifest declares, or a hard error. */
+/** Read an explicit scenario manifest without losing a machine-readable issue. */
 function explicitScenarioHostIds(scenarioPath) {
+	if (!existsSync(scenarioPath)) {
+		return {
+			hostIds: new Set(),
+			issue: {
+				status: SCENARIO_MANIFEST_MISSING,
+				reason: "the requested explicit scenario manifest does not exist",
+				path: scenarioPath,
+			},
+		};
+	}
 	let spec;
 	try {
 		spec = JSON.parse(readFileSync(scenarioPath, "utf8"));
 	} catch (error) {
-		throw new Error(`native scenario manifest cannot be read: ${scenarioPath}: ${error instanceof Error ? error.message : String(error)}`);
+		return {
+			hostIds: new Set(),
+			issue: {
+				status: SCENARIO_MANIFEST_UNREADABLE,
+				reason: `scenario manifest is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+				path: scenarioPath,
+			},
+		};
 	}
-	return new Set(spec && typeof spec.hosts === "object" && !Array.isArray(spec.hosts) ? Object.keys(spec.hosts) : []);
+	const validation = validateScenarioManifest(spec);
+	const hostIds = new Set(spec && typeof spec.hosts === "object" && !Array.isArray(spec.hosts) ? Object.keys(spec.hosts) : []);
+	return { hostIds, validation, issue: null };
 }
 
 /**
@@ -318,23 +377,36 @@ function scenarioPathForRow(row, options = {}) {
  * `template`/`kind` does not turn a placeholder into an observation, so both
  * shapes are refused with the same documented reason code.
  */
-function refuseScenarioManifest(spec) {
-	const validation = validateScenarioManifest(spec);
+function refusalValidation(validation) {
+	return {
+		template: validation.template,
+		status: validation.status,
+		ok: validation.ok,
+		error_count: validation.error_count,
+		placeholder_count: validation.placeholder_count,
+		unreplaced_placeholder_count: validation.failures.filter((failure) => failure.code === "PLACEHOLDER_VALUE_UNREPLACED").length,
+		failures: validation.failures,
+	};
+}
+
+function refuseScenarioManifest(spec, validation = validateScenarioManifest(spec)) {
 	if (validation.template !== true && !carriesTemplatePlaceholders(validation)) return null;
 	return {
 		status: SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE,
 		reason: "the manifest still carries the committed template's REPLACE_WITH_* placeholders; only a real host run may replace them",
-		validation: {
-			template: validation.template,
-			error_count: validation.error_count,
-			placeholder_count: validation.placeholder_count,
-			unreplaced_placeholder_count: validation.failures.filter((failure) => failure.code === "PLACEHOLDER_VALUE_UNREPLACED").length,
-		},
+		validation: refusalValidation(validation),
 	};
 }
 
 function runScenarioManifest(row, binary, outputDir, options = {}) {
 	const scenarioPath = scenarioPathForRow(row, options);
+	if (options.scenarioFileIssue) {
+		return {
+			...options.scenarioFileIssue,
+			scenarioPath: options.scenarioFile ?? scenarioPath,
+			binary,
+		};
+	}
 	if (!existsSync(scenarioPath)) {
 		return {
 			status: SCENARIO_MANIFEST_MISSING,
@@ -353,7 +425,8 @@ function runScenarioManifest(row, binary, outputDir, options = {}) {
 			reason: `scenario manifest is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
 		};
 	}
-	const refusal = refuseScenarioManifest(spec);
+	const validation = validateScenarioManifest(spec);
+	const refusal = refuseScenarioManifest(spec, validation);
 	if (refusal) return { ...refusal, scenarioPath, binary };
 	mkdirSync(outputDir, { recursive: true });
 	const output = join(outputDir, `${row.connector}-scenarios.json`);
@@ -369,22 +442,32 @@ function runScenarioManifest(row, binary, outputDir, options = {}) {
 		exitCode: result.status,
 		stdout: String(result.stdout ?? "").slice(-4000),
 		stderr: String(result.stderr ?? "").slice(-4000),
+		validation: refusalValidation(validation),
 		binary,
 	};
 }
 
 export async function buildRecord(options = {}) {
-	const { matrix, sha256 } = loadMatrix(options.matrixPath);
+	const matrixPath = options.matrixPath ? resolve(options.matrixPath) : MATRIX_PATH;
+	const { matrix, sha256 } = loadMatrix(matrixPath);
 	const probeOnly = options.probeOnly === true;
 	const platform = currentPlatform();
 	const outputDir = options.outputDir ?? join(process.cwd(), ".release-evidence", "v8-native");
 	const scenarioFile = options.scenarioFile ? resolve(options.scenarioFile) : null;
-	if (scenarioFile && !existsSync(scenarioFile)) {
-		throw new Error(`native scenario manifest does not exist: ${scenarioFile}`);
-	}
-	const scenarioHostIds = scenarioFile ? explicitScenarioHostIds(scenarioFile) : null;
-	if (scenarioFile && !matrix.rows.some((row) => scenarioHostIds.has(CONNECTOR_HOST_IDS[row.connector]))) {
-		throw new Error(`native scenario manifest declares no host advertised by this support matrix: ${scenarioFile}`);
+	let scenarioHostIds = null;
+	let scenarioFileIssue = null;
+	if (scenarioFile) {
+		const explicit = explicitScenarioHostIds(scenarioFile);
+		scenarioHostIds = explicit.hostIds;
+		scenarioFileIssue = explicit.issue;
+		if (!scenarioFileIssue && !matrix.rows.some((row) => scenarioHostIds.has(CONNECTOR_HOST_IDS[row.connector]))) {
+			scenarioFileIssue = {
+				status: SCENARIO_MANIFEST_NO_MATCH,
+				reason: "the explicit scenario manifest declares no host advertised by this support matrix",
+				path: scenarioFile,
+				validation: explicit.validation ? refusalValidation(explicit.validation) : null,
+			};
+		}
 	}
 	const hosts = [];
 
@@ -441,7 +524,7 @@ export async function buildRecord(options = {}) {
 				host.status = "UNSUPPORTED_ON_THIS_MACHINE";
 				host.reason = `advertised for ${row.supportedPlatforms.join("/")} ${row.supportedArchitectures.join("/")}`;
 			} else if (!probeOnly) {
-				host.scenarios = runScenarioManifest(row, binary, outputDir, { scenarioFile, scenarioHostIds });
+				host.scenarios = runScenarioManifest(row, binary, outputDir, { scenarioFile, scenarioHostIds, scenarioFileIssue });
 				host.status =
 					host.scenarios.status === SCENARIOS_PASSED ? "SCENARIOS_PASSED_REVIEW_OPEN" : "HOST_ACCEPTANCE_OPEN";
 				host.reason = host.scenarios.reason ?? host.scenarios.status;
@@ -451,6 +534,7 @@ export async function buildRecord(options = {}) {
 	}
 
 	const blockers = [];
+	if (scenarioFileIssue) blockers.push(`${scenarioFileIssue.status}:${scenarioFileIssue.path ?? scenarioFile}`);
 	for (const host of hosts) {
 		if (host.acceptance !== "named_evidence_present_review_required") {
 			blockers.push(`${host.connector}:MISSING_NAMED_ACCEPTANCE_EVIDENCE`);
@@ -463,8 +547,11 @@ export async function buildRecord(options = {}) {
 		}
 		if (host.scenarios && host.scenarios.status !== SCENARIOS_PASSED) {
 			blockers.push(`${host.connector}:NATIVE_SCENARIOS_OPEN`);
-			if (SCENARIO_REFUSAL_STATUSES.includes(host.scenarios.status)) {
+			if (SCENARIO_FILE_ISSUE_STATUSES.includes(host.scenarios.status) || SCENARIO_REFUSAL_STATUSES.includes(host.scenarios.status)) {
 				blockers.push(`${host.connector}:${host.scenarios.status}`);
+			}
+			for (const failure of host.scenarios.validation?.errors ?? []) {
+				blockers.push(`${host.connector}:SCENARIO_MANIFEST_INVALID:${failure.code}${failure.field ? `:${failure.field}` : ""}`);
 			}
 		}
 		if (host.unobservedActions.length > 0) {
@@ -487,8 +574,13 @@ export async function buildRecord(options = {}) {
 		osVersion: osVersion(),
 		architecture: process.arch,
 		nodeVersion: process.version,
-		matrixPath: MATRIX_PATH,
+		matrixPath,
 		matrixSha256: sha256,
+		scenarioFile: scenarioFile ? {
+			path: scenarioFile,
+			hostIds: [...(scenarioHostIds ?? [])],
+			issue: scenarioFileIssue,
+		} : null,
 		soldConnectorScope: matrix.soldConnectorScope,
 		soldPlatformScope: matrix.soldPlatformScope,
 		soldArchitectureScope: matrix.soldArchitectureScope,
@@ -514,14 +606,18 @@ async function main(argv) {
 		},
 		strict: true,
 	});
+	const matrixPath = values.matrix ? resolve(values.matrix) : MATRIX_PATH;
+	const scenarioFile = values["scenario-file"] ? resolve(values["scenario-file"]) : null;
 	const record = await buildRecord({
 		probeOnly: values["probe-only"] === true,
-		matrixPath: values.matrix ? resolve(values.matrix) : undefined,
-		scenarioFile: values["scenario-file"] ? resolve(values["scenario-file"]) : undefined,
+		matrixPath,
+		scenarioFile: scenarioFile ?? undefined,
 	});
 	if (values.output) {
 		const output = resolve(values.output);
-		writeFileSync(output, `${JSON.stringify(record, null, 2)}\n`, { flag: "w" });
+		if (output === matrixPath || (scenarioFile && output === scenarioFile)) throw new Error("Refusing to overwrite native input manifest");
+		mkdirSync(dirname(output), { recursive: true });
+		writeFileSync(output, `${JSON.stringify(record, null, 2)}\n`, { flag: "wx" });
 	}
 	console.log(JSON.stringify(record, null, 2));
 	if (record.decision !== "GO") process.exitCode = 1;

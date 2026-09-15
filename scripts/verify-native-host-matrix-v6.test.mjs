@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { GATE_STATUSES, validateScenarioManifest } from "./verify-native-host-matrix-v6.mjs";
+import {
+	GATE_STATUSES,
+	SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE,
+	validateScenarioManifest,
+} from "./verify-native-host-matrix-v6.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const script = join(here, "verify-native-host-matrix-v6.mjs");
@@ -249,6 +253,60 @@ test("--validate-only fails an accepted manifest that still holds a placeholder"
 	assert.equal(result.status, 1);
 	assert.match(result.stdout, /validity\s+STRUCTURE_INVALID/u);
 	assert.match(result.stdout, /PLACEHOLDER_VALUE_UNREPLACED/u);
+}));
+
+test("normal execution refuses a template before launching its host", () => withFixture((dir) => {
+	const path = join(dir, "template.json");
+	const output = join(dir, "nested", "gate.json");
+	const spec = JSON.parse(readFileSync(templatePath, "utf8"));
+	spec.hosts.codex.binary = process.execPath;
+	spec.hosts.codex.version_args = ["--version"];
+	writeFileSync(path, JSON.stringify(spec));
+	const cliResult = runCli(dir, ["--scenario-file", path, "--output", output]);
+	assert.equal(cliResult.status, 1, cliResult.stderr);
+	assert.ok(existsSync(output));
+	const record = JSON.parse(readFileSync(output, "utf8"));
+	const host = record.hosts.find((entry) => entry.id === "codex");
+	assert.equal(host.status, "HOST_ACCEPTANCE_OPEN");
+	assert.deepEqual(host.cases, []);
+	assert.ok(record.blockers.includes(SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE), record.blockers.join("; "));
+	assert.equal(record.gate, "NO_GO");
+}));
+
+test("a malformed scenario manifest writes a machine-readable blocker", () => withFixture((dir) => {
+	const path = join(dir, "malformed.json");
+	const output = join(dir, "nested", "gate.json");
+	writeFileSync(path, "{not-json");
+	const result = runCli(dir, ["--scenario-file", path, "--output", output]);
+	assert.equal(result.status, 1, result.stderr);
+	assert.ok(existsSync(output));
+	const report = JSON.parse(readFileSync(output, "utf8"));
+	assert.equal(report.manifest_validation.status, "SCENARIO_MANIFEST_UNREADABLE");
+	assert.equal(report.manifest_validation.ok, false);
+	assert.ok(report.blockers.includes(`SCENARIO_MANIFEST_UNREADABLE:${resolve(path)}`), report.blockers.join("; "));
+	assert.equal(report.gate, "NO_GO");
+}));
+
+test("--validate-only reports malformed JSON without throwing", () => withFixture((dir) => {
+	const path = join(dir, "malformed.json");
+	const output = join(dir, "nested", "validation.json");
+	writeFileSync(path, "{not-json");
+	const result = runCli(dir, ["--scenario-file", path, "--validate-only", "--output", output]);
+	assert.equal(result.status, 1, result.stderr);
+	const report = JSON.parse(readFileSync(output, "utf8"));
+	assert.equal(report.status, "SCENARIO_MANIFEST_UNREADABLE");
+	assert.equal(report.ok, false);
+	assert.equal(report.failures[0].code, "SCENARIO_MANIFEST_UNREADABLE");
+}));
+
+test("invalid probe arguments remain a machine-readable open blocker", () => withFixture((dir) => {
+	const manifest = { schema_version: 1, hosts: { codex: { binary: process.execPath, version_args: "--version" } } };
+	const { result, report } = invoke(dir, manifest);
+	assert.equal(result.status, 1, result.stderr);
+	assert.equal(report.status, "HOST_ACCEPTANCE_OPEN");
+	assert.equal(report.hosts.find((host) => host.id === "codex").status, "VERSION_PROBE_FAILED");
+	assert.ok(report.blockers.some((blocker) => blocker.startsWith("SCENARIO_MANIFEST_INVALID:HOST_VERSION_ARGS_INVALID")), report.blockers.join("; "));
+	assert.equal(report.gate, "NO_GO");
 }));
 
 test("a missing scenario manifest reports SCENARIO_MANIFEST_MISSING and fails closed", () => withFixture((dir) => {
