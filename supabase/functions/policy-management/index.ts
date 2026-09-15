@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { parseDocument } from "npm:yaml@2.8.3";
 import { getBearerToken } from "../_shared/auth.ts";
+import { handleDlpPolicyAction } from "../_shared/dlp-policy-store.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
@@ -66,6 +67,9 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			});
 			if (!rate.ok) {
 				return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
+			}
+			if (action === "read_dlp_policy" || action === "publish_dlp_policy") {
+				return await handleDlpPolicyAction(req, db, body, { tenant, userId: auth.user.id, role: member.role, token });
 			}
 			if (body.action === "read") {
 				const { data, error } = await db.from("tenant_runtime_policies").select("version,policy,updated_at").eq("tenant_id", tenant).maybeSingle();

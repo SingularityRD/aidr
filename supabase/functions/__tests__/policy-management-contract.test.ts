@@ -22,6 +22,9 @@ vi.mock("npm:@supabase/supabase-js@2", () => ({
 	},
 }));
 
+// DLP uses a generated copy of the core schema with the same pinned Zod bytes.
+vi.mock("npm:zod@3.25.76", async () => import("../../../packages/core/node_modules/zod/index.js"));
+
 // Stored policy documents are parsed with Deno's `npm:yaml@2.8.3`. The
 // repository already vendors that exact version for `@singularityrd/aidr-core`,
 // so the suite binds the Deno-only specifier to those bytes: the parser stays
