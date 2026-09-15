@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useLayoutEffect } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -114,7 +115,13 @@ describe("AAL2 step-up before managed screens", () => {
 			data: { id: CHALLENGE_ID, type: "totp", expires_at: 4_102_444_800 },
 			error: null,
 		});
-		verify.mockResolvedValue({ data: { access_token: "access-token-aal2" }, error: null });
+		verify.mockImplementation(async () => {
+			getSession.mockResolvedValue({
+				data: { session: { access_token: "access-token-aal2", user: { id: USER_ID } } },
+				error: null,
+			});
+			return { data: { access_token: "access-token-aal2" }, error: null };
+		});
 		enroll.mockResolvedValue({
 			data: {
 				id: FACTOR_ID,
@@ -147,7 +154,10 @@ describe("AAL2 step-up before managed screens", () => {
 		);
 		// The pre-MFA session must not open the protected screen.
 		expect(screen.queryByText("Managed console")).not.toBeInTheDocument();
-		expect(invoke).toHaveBeenCalledWith("identity-security", { body: { action: "status" } });
+		expect(invoke).toHaveBeenCalledWith("identity-security", {
+			body: { action: "status" },
+			headers: { Authorization: "Bearer access-token-aal1" },
+		});
 
 		fireEvent.change(screen.getByLabelText("Authenticator code"), {
 			target: { value: "123456" },
@@ -192,6 +202,189 @@ describe("AAL2 step-up before managed screens", () => {
 		expect(screen.queryByText("Managed console")).not.toBeInTheDocument();
 		expect(screen.queryByLabelText("Authenticator code")).not.toBeInTheDocument();
 		expect(invoke).toHaveBeenCalledTimes(1);
+	});
+
+	it("never mounts B with A's clear state and ignores a delayed A response", async () => {
+		const a = "11111111-1111-4111-8111-111111111111";
+		const b = "55555555-5555-4555-8555-555555555555";
+		const mounts = vi.fn();
+		function Child({ tenant }: { tenant: string }) {
+			useLayoutEffect(() => {
+				mounts(tenant);
+			}, [tenant]);
+			return <div>Protected {tenant}</div>;
+		}
+		const pending: Array<(value: ReturnType<typeof aal2Report>) => void> = [];
+		invoke.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));
+		const view = (tenant: string) => (
+			<MemoryRouter>
+				<EnterpriseAuth tenantId={tenant}>
+					<Child tenant={tenant} />
+				</EnterpriseAuth>
+			</MemoryRouter>
+		);
+		const { rerender } = render(view(a));
+		await waitFor(() => expect(pending).toHaveLength(1));
+		await act(async () => pending[0]!(aal2Report()));
+		expect(mounts).toHaveBeenCalledExactlyOnceWith(a);
+		rerender(view(b));
+		expect(mounts).toHaveBeenCalledTimes(1); // Includes the render BEFORE effects.
+		await waitFor(() => expect(pending).toHaveLength(2));
+		rerender(view(a));
+		await waitFor(() => expect(pending).toHaveLength(3));
+		rerender(view(b));
+		await waitFor(() => expect(pending).toHaveLength(4));
+		await act(async () => pending[2]!(aal2Report())); // Old A completes after B starts.
+		await act(async () =>
+			pending[1]!({ ...aal2Report(), data: { ...aal2Report().data, tenant_id: b } }),
+		); // Old B generation, too.
+		expect(mounts).toHaveBeenCalledTimes(1);
+		await act(async () =>
+			pending[3]!({ ...aal2Report(), data: { ...aal2Report().data, tenant_id: b } }),
+		);
+		expect(mounts).toHaveBeenCalledTimes(2);
+		expect(mounts).toHaveBeenLastCalledWith(b);
+	});
+
+	it("withholds a cleared tenant immediately on token downgrade and user change", async () => {
+		invoke.mockResolvedValue(aal2Report());
+		renderManagedSurface();
+		await screen.findByText("Managed console");
+		let resolveStatus!: (value: ReturnType<typeof aal1Report>) => void;
+		invoke.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveStatus = resolve;
+				}),
+		);
+		const callback = onAuthStateChange.mock.calls[0]![0];
+		getSession.mockResolvedValue({
+			data: { session: { access_token: "downgraded-token", user: { id: USER_ID } } },
+			error: null,
+		});
+		act(() => callback("TOKEN_REFRESHED"));
+		expect(screen.queryByText("Managed console")).not.toBeInTheDocument();
+		await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+		expect(invoke.mock.calls[1]![1].headers.Authorization).toBe("Bearer downgraded-token");
+		await act(async () => resolveStatus(aal1Report()));
+		await screen.findByLabelText("Authenticator code");
+		fireEvent.change(screen.getByLabelText("Authenticator code"), { target: { value: "123456" } });
+		getSession.mockResolvedValue({
+			data: { session: { access_token: "other-user-token", user: { id: FACTOR_ID } } },
+			error: null,
+		});
+		act(() => callback("SIGNED_IN"));
+		await waitFor(() => expect(invoke).toHaveBeenCalledTimes(3));
+		await act(async () => resolveStatus(aal1Report()));
+		expect(screen.getByLabelText("Authenticator code")).toHaveValue("");
+		expect(screen.queryByText("Managed console")).not.toBeInTheDocument();
+	});
+
+	it("discards enrollment secrets and delayed factor operations on tenant switch", async () => {
+		const a = "11111111-1111-4111-8111-111111111111";
+		const b = "55555555-5555-4555-8555-555555555555";
+		invoke.mockImplementation(async (_name, options) => ({
+			...aal1Report(),
+			data: { ...aal1Report().data, tenant_id: options.body.tenant_id },
+		}));
+		let finishEnrollment!: (value: unknown) => void;
+		enroll.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					finishEnrollment = resolve;
+				}),
+		);
+		const view = (tenant: string) => (
+			<MemoryRouter>
+				<EnterpriseAuth tenantId={tenant}>
+					<div>Managed console</div>
+				</EnterpriseAuth>
+			</MemoryRouter>
+		);
+		const { rerender } = render(view(a));
+		fireEvent.click(await screen.findByText("Enroll a new authenticator app"));
+		rerender(view(b));
+		await screen.findByLabelText("Authenticator code");
+		await act(async () =>
+			finishEnrollment({
+				data: { id: FACTOR_ID, type: "totp", totp: { secret: "OLD-SECRET", uri: "old-uri" } },
+				error: null,
+			}),
+		);
+		expect(screen.queryByText("OLD-SECRET")).not.toBeInTheDocument();
+		expect(screen.getByLabelText("Authenticator code")).toHaveValue("");
+		expect(screen.queryByText("Managed console")).not.toBeInTheDocument();
+	});
+
+	it("does not continue a factor operation after an auth event invalidates its generation", async () => {
+		invoke.mockResolvedValue(aal1Report());
+		let finishFactors!: (value: unknown) => void;
+		listFactors.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					finishFactors = resolve;
+				}),
+		);
+		renderManagedSurface();
+		await screen.findByLabelText("Authenticator code");
+		fireEvent.change(screen.getByLabelText("Authenticator code"), { target: { value: "123456" } });
+		fireEvent.click(screen.getByText("Verify and continue"));
+		await waitFor(() => expect(listFactors).toHaveBeenCalledOnce());
+		await act(async () => {
+			onAuthStateChange.mock.calls[0]![0]("TOKEN_REFRESHED");
+			finishFactors({ data: { totp: [{ id: FACTOR_ID, status: "verified" }] }, error: null });
+			await Promise.resolve();
+		});
+		expect(challenge).not.toHaveBeenCalled();
+		expect(verify).not.toHaveBeenCalled();
+		expect(screen.queryByText("Managed console")).not.toBeInTheDocument();
+	});
+
+	it("ignores an older session read that resolves after a new auth generation", async () => {
+		let finishOldRead!: (value: unknown) => void;
+		getSession.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishOldRead = resolve;
+				}),
+		);
+		invoke.mockResolvedValue(aal1Report());
+		renderManagedSurface();
+		await waitFor(() => expect(getSession).toHaveBeenCalledOnce());
+		act(() => onAuthStateChange.mock.calls[0]![0]("TOKEN_REFRESHED"));
+		await screen.findByLabelText("Authenticator code");
+		await act(async () =>
+			finishOldRead({
+				data: { session: { access_token: "stale-aal2", user: { id: USER_ID } } },
+				error: null,
+			}),
+		);
+		expect(invoke).toHaveBeenCalledOnce();
+		expect(invoke.mock.calls[0]![1].headers.Authorization).toBe("Bearer access-token-aal1");
+		expect(screen.queryByText("Managed console")).not.toBeInTheDocument();
+	});
+
+	it("rejects revoked sessions and a mismatched tenant assurance response", async () => {
+		invoke.mockResolvedValue({ data: null, error: new Error("session_revoked") });
+		const { rerender } = render(
+			<MemoryRouter>
+				<EnterpriseAuth tenantId="tenant-a">
+					<div>Managed console</div>
+				</EnterpriseAuth>
+			</MemoryRouter>,
+		);
+		await screen.findByText("session_revoked");
+		expect(screen.queryByText("Managed console")).not.toBeInTheDocument();
+		invoke.mockResolvedValue(aal2Report());
+		rerender(
+			<MemoryRouter>
+				<EnterpriseAuth tenantId="tenant-b">
+					<div>Managed console</div>
+				</EnterpriseAuth>
+			</MemoryRouter>,
+		);
+		await screen.findByText(/report belongs to another tenant/);
+		expect(screen.queryByText("Managed console")).not.toBeInTheDocument();
 	});
 
 	it("withholds managed screens when the control plane report cannot be trusted", async () => {
