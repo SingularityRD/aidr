@@ -80,10 +80,37 @@ function createQueryBuilder(defaultData: unknown[] = []) {
 	return chain;
 }
 
+const AUTHENTICATED_USER_ID = "22222222-2222-4222-8222-222222222222";
+let bootstrapTeamId: string | null = null;
+
+function identityFixture(request?: { body?: { action?: string; tenant_id?: string } }) {
+	const assurance = {
+		require_mfa: true,
+		current_assurance: "aal2",
+		next_assurance: "aal2",
+		access_allowed: true,
+	};
+	if (request?.body?.action === "bootstrap") {
+		return { data: { ok: true, memberships: [{
+			team_id: bootstrapTeamId,
+			tenant_id: bootstrapTeamId ?? AUTHENTICATED_USER_ID,
+			...assurance,
+		}] }, error: null };
+	}
+	return { data: { ok: true, tenant_id: request?.body?.tenant_id, ...assurance }, error: null };
+}
+
 function resetSupabaseMocks() {
 	vi.resetAllMocks();
 	delete window.__AIDR_CONFIG__;
-	mockedSupabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+	window.localStorage.clear();
+	bootstrapTeamId = null;
+	// These protected page fixtures represent a signed-in caller whose token
+	// already satisfies the tenant's server-confirmed MFA policy.
+	mockedSupabase.auth.getSession.mockResolvedValue({
+		data: { session: { user: { id: AUTHENTICATED_USER_ID }, access_token: "integration-aal2-session" } },
+		error: null,
+	});
 	mockedSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "22222222-2222-4222-8222-222222222222" } }, error: null });
 	mockedSupabase.auth.signOut.mockResolvedValue({ error: null });
 	mockedSupabase.auth.signInWithOAuth.mockResolvedValue({ data: { url: null }, error: null });
@@ -91,7 +118,9 @@ function resetSupabaseMocks() {
 	mockedSupabase.auth.onAuthStateChange.mockReturnValue({
 		data: { subscription: { unsubscribe: vi.fn() } },
 	});
-	mockedSupabase.functions.invoke.mockResolvedValue({ data: {}, error: null });
+	mockedSupabase.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string; tenant_id?: string } }) =>
+		name === "identity-security" ? identityFixture(request) : { data: {}, error: null },
+	);
 	mockedSupabase.from.mockImplementation(() => createQueryBuilder());
 }
 
@@ -99,7 +128,7 @@ describe("Dashboard integration", () => {
 	beforeEach(resetSupabaseMocks);
 	afterEach(cleanup);
 
-	it("renders the authenticated navigation", () => {
+	it("renders the authenticated navigation", async () => {
 		render(
 			<MemoryRouter initialEntries={["/agents"]}>
 				<Routes>
@@ -110,7 +139,7 @@ describe("Dashboard integration", () => {
 			</MemoryRouter>,
 		);
 
-		expect(screen.getByText("Singularity AIDR")).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByText("Singularity AIDR")).toBeInTheDocument());
 		expect(screen.getByText("Agents")).toBeInTheDocument();
 		expect(screen.getByText("Billing")).toBeInTheDocument();
 		expect(screen.getByText("Sign out")).toBeInTheDocument();
@@ -201,13 +230,14 @@ describe("Dashboard integration", () => {
 			</MemoryRouter>,
 		);
 
-		expect(screen.getByRole("heading", { name: "AutoSecOps" })).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByRole("heading", { name: "AutoSecOps" })).toBeInTheDocument());
 		expect(screen.getByText("Not connected")).toBeInTheDocument();
 		expect(screen.getByText("No AutoSecOps runtime agents reported yet.")).toBeInTheDocument();
 	});
 
 	it("renders the AutoSecOps health and fleet returned by the authenticated bridge", async () => {
 		const teamId = "11111111-1111-4111-8111-111111111111";
+		bootstrapTeamId = teamId;
 		mockedSupabase.from.mockImplementation((table: string) =>
 			createQueryBuilder(
 				table === "team_members"
@@ -228,7 +258,8 @@ describe("Dashboard integration", () => {
 			),
 		);
 		mockedSupabase.functions.invoke.mockImplementation(
-			async (_name: string, options: { body?: { action?: string } }) => {
+			async (name: string, options: { body?: { action?: string; tenant_id?: string } }) => {
+				if (name === "identity-security") return identityFixture(options);
 				if (options.body?.action === "health") {
 					return {
 						data: {
@@ -285,6 +316,7 @@ describe("Dashboard integration", () => {
 
 	it("fails closed on a malformed successful AutoSecOps response", async () => {
 		const teamId = "11111111-1111-4111-8111-111111111111";
+		bootstrapTeamId = teamId;
 		mockedSupabase.from.mockImplementation((table: string) =>
 			createQueryBuilder(
 				table === "team_members"
@@ -292,10 +324,12 @@ describe("Dashboard integration", () => {
 					: [],
 			),
 		);
-		mockedSupabase.functions.invoke.mockResolvedValue({
-			data: { ok: true, provider: "unexpected", data: {} },
-			error: null,
-		});
+		mockedSupabase.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string; tenant_id?: string } }) =>
+			name === "identity-security" ? identityFixture(request) : {
+				data: { ok: true, provider: "unexpected", data: {} },
+				error: null,
+			},
+		);
 
 		render(
 			<MemoryRouter>
@@ -425,6 +459,7 @@ describe("Dashboard integration", () => {
 	});
 
 	it("propagates agent API errors to the visible UI", async () => {
+		bootstrapTeamId = "11111111-1111-4111-8111-111111111111";
 		mockedSupabase.from.mockImplementation((table: string) => {
 			if (table === "team_members") return createQueryBuilder([{ team_id: "11111111-1111-4111-8111-111111111111", role: "owner", teams: { id: "11111111-1111-4111-8111-111111111111", name: "Customer", plan: "enterprise" } }]);
 			const query = createQueryBuilder();

@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
 vi.mock("../lib/supabase", () => ({
 	supabase: {
@@ -180,7 +181,13 @@ function installDlpMocks(
 	options: { read?: InvokeResponse; publish?: InvokeResponse } = {},
 ): InstalledMocks {
 	const mocks = installDashboardMocks({ role: "admin" });
-	mocks.invoke.mockImplementation(
+	const identityInvoke = mocks.invoke.getMockImplementation() as
+		| ((name: string, request?: unknown) => Promise<InvokeResponse>)
+		| undefined;
+	// The observation spy excludes only identity bootstrap/status calls; every
+	// policy/non-identity call remains observable by the unchanged assertions.
+	// The real provider's gate receives the shared authenticated fixtures.
+	const editorInvoke = vi.fn(
 		async (name: string, request?: { body?: { action?: string } }) => {
 			if (name !== "policy-management") return { data: { ok: true }, error: null };
 			if (request?.body?.action === DLP_READ_ACTION) {
@@ -193,14 +200,23 @@ function installDlpMocks(
 			return { data: null, error: { message: "invalid_action" } };
 		},
 	);
-	return mocks;
+	mocks.invoke.mockImplementation((name: string, request?: { body?: { action?: string } }) => {
+		if (name === "identity-security" && ["bootstrap", "status"].includes(request?.body?.action ?? "")) {
+			if (!identityInvoke) throw new Error("Missing shared identity fixture");
+			return identityInvoke(name, request);
+		}
+		return editorInvoke(name, request);
+	});
+	return { ...mocks, invoke: editorInvoke };
 }
 
 function renderDlpEditor() {
 	return render(
-		<TeamProvider>
-			<DlpPolicyEditor />
-		</TeamProvider>,
+		<MemoryRouter>
+			<TeamProvider>
+				<DlpPolicyEditor />
+			</TeamProvider>
+		</MemoryRouter>,
 	);
 }
 

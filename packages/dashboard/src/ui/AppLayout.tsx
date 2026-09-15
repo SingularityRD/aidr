@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { EnterpriseAuth } from "../enterprise/auth";
 import { TeamProvider, useTeam } from "../enterprise/team-provider";
 import { supabaseEnvError } from "../lib/supabase";
 import { signOut } from "./session";
@@ -19,18 +18,12 @@ import { ThemeToggle } from "./ThemeToggle";
  * control.
  */
 function ManagedOutlet() {
-	const { currentTeam, isLoading } = useTeam();
+	const { currentTeam, isLoading, error } = useTeam();
 	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
-	// With no tenant there is no tenant assurance policy to ask the server for;
-	// the child page renders its own explicit no-team or membership-error boundary
-	// and no managed record can be read. Once a tenant exists, the server-confirmed
-	// AAL2 gate is mandatory for every managed route.
-	if (!currentTeam) return <Outlet />;
-	return (
-		<EnterpriseAuth tenantId={currentTeam.id}>
-			<Outlet />
-		</EnterpriseAuth>
-	);
+	if (!currentTeam && error) return <div role="alert"><p>Your team membership could not be loaded.</p><p>{error}</p></div>;
+	// TeamProvider now bootstraps identity and gates BEFORE any protected table
+	// read. Requiring currentTeam to discover the MFA policy deadlocked at AAL1.
+	return <Outlet />;
 }
 
 function TeamNavLinks() {
