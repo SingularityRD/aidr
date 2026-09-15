@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { MAX_ANALYSIS_MATRIX_CELLS, canonicalJson, evaluateBenchmark, validateCorpusStructure, validateSoldScope, assertSoldScopeCoverage } from "./evaluate.mjs";
+import { MAX_ANALYSIS_MATRIX_CELLS, REPORT_DIGEST_DOMAIN, canonicalJson, canonicalReportBytes, evaluateBenchmark, reportSha256, serializeReport, validateCorpusStructure, validateSoldScope, assertSoldScopeCoverage } from "./evaluate.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const comparisonSpecPath = fileURLToPath(new URL("./comparison-spec.json", import.meta.url));
@@ -149,6 +149,60 @@ test("signed fixture reports separate holdout, unsupported, false intervention a
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 
+test("report digest is domain-separated, self-excluding, and byte-stable", () => {
+	const data = fixture();
+	try {
+		const report = data.evaluate();
+		assert.match(report.report_sha256, /^[a-f0-9]{64}$/);
+		assert.equal(report.canonical_report_sha256, report.report_sha256);
+		const unsigned = { ...report };
+		delete unsigned.report_sha256;
+		delete unsigned.canonical_report_sha256;
+		const expectedBytes = Buffer.from(`${REPORT_DIGEST_DOMAIN}${canonicalJson(unsigned)}`, "utf8");
+		assert.deepEqual(canonicalReportBytes(report), expectedBytes);
+		assert.equal(reportSha256(report), hash(expectedBytes));
+		assert.notEqual(report.report_sha256, hash(Buffer.from(canonicalJson(unsigned), "utf8")));
+		const output = serializeReport(report);
+		assert.equal(output.at(-1), 0x0a);
+		assert.equal(output.includes(0x0d), false);
+		assert.deepEqual(Buffer.from(output.toString("utf8"), "utf8"), output);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("reproducible report digest binds trust, budget and comparison fields without hashing aliases", () => {
+	const data = fixture();
+	try {
+		data.observations.environment.workload_description = "UTF-8 ölçüm — signed comparison";
+		data.observations.measurement_budget = { authorization_ref: "budget-ticket", currency: "USD", amount: 100, trials: 16, host_minutes: 10 };
+		const fingerprint = hash(data.publicKey.export({ type: "spki", format: "der" }));
+		const options = {
+			payloadExtra: { signing_key_id: "evaluator-key" },
+			trustedKeys: { schema_version: 1, keys: [{ key_id: "evaluator-key", evaluator_id: "external-evaluator", public_key_sha256: fingerprint, roles: ["independent_evaluator"] }] },
+		};
+		const report = data.evaluate(null, options);
+		assert.equal(report.gates.attestation_trusted, true);
+		assert.equal(report.gates.measurement_budget_authorized, false);
+		assert.equal(report.production_accepted, false);
+		assert.equal(report.comparison_spec.sha256, hash(comparisonSpecBytes));
+		assert.equal(report.report_sha256, reportSha256(report));
+		assert.equal(report.report_sha256, report.canonical_report_sha256);
+		assert.deepEqual(serializeReport(data.evaluate(null, options)), serializeReport(report));
+		assert.equal(JSON.parse(serializeReport(report).toString("utf8")).environment.workload_description, data.observations.environment.workload_description);
+		assert.equal(reportSha256({ ...report, report_sha256: "ignored primary digest", canonical_report_sha256: "ignored alias" }), report.report_sha256);
+		for (const mutate of [
+			(changed) => { changed.attestation.public_key_sha256 = hash("different evaluator key"); },
+			(changed) => { changed.gates.attestation_trusted = false; },
+			(changed) => { changed.measurement_budget.trials += 1; },
+			(changed) => { changed.comparison_spec.sha256 = hash("different comparison spec"); },
+			(changed) => { changed.comparison.competitor.cells.malicious_prevention.value = 0; },
+		]) {
+			const changed = structuredClone(report);
+			mutate(changed);
+			assert.notEqual(reportSha256(changed), report.report_sha256);
+		}
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
 test("signed but incomplete competitor matrix stays visible as missing", () => {
 	const data = fixture();
 	try {
@@ -199,15 +253,40 @@ test("attestation and analysis CLIs run end to end and reject changed signed inp
 			"--attestation", attestationPath, "--public-key", publicPath, "--output", reportPath];
 		const analyzed = spawnSync(process.execPath, command, { encoding: "utf8" });
 		assert.equal(analyzed.status, 0, analyzed.stderr);
-		const writtenReport = JSON.parse(readFileSync(reportPath, "utf8"));
+		const reportBytes = readFileSync(reportPath);
+		const writtenReport = JSON.parse(reportBytes.toString("utf8"));
 		assert.equal(writtenReport.claim_status, "EVIDENCE_REVIEW_REQUIRED");
-		assert.match(writtenReport.canonical_report_sha256, /^[a-f0-9]{64}$/);
-		const reproduced = spawnSync(process.execPath, [...command.slice(0, -2), "--reproduce", reportPath], { encoding: "utf8" });
-		assert.equal(reproduced.status, 0, reproduced.stderr);
-		assert.equal(reproduced.stdout, readFileSync(reportPath, "utf8"));
+		assert.match(writtenReport.report_sha256, /^[a-f0-9]{64}$/);
+		assert.equal(writtenReport.canonical_report_sha256, writtenReport.report_sha256);
+		assert.equal(reportBytes.at(-1), 0x0a);
+		assert.equal(reportBytes.includes(0x0d), false);
+		assert.deepEqual(Buffer.from(reportBytes.toString("utf8"), "utf8"), reportBytes);
+		const reproduced = spawnSync(process.execPath, [...command.slice(0, -2), "--reproduce", reportPath], { encoding: null });
+		assert.equal(reproduced.status, 0, reproduced.stderr.toString("utf8"));
+		assert.deepEqual(reproduced.stdout, reportBytes);
 		const overwriteRefused = spawnSync(process.execPath, command, { encoding: "utf8" });
 		assert.equal(overwriteRefused.status, 1);
 		assert.match(overwriteRefused.stderr, /EEXIST/);
+		const forced = spawnSync(process.execPath, [...command, "--force"], { encoding: "utf8" });
+		assert.equal(forced.status, 0, forced.stderr);
+		assert.deepEqual(readFileSync(reportPath), reportBytes);
+		const forceWithoutOutput = spawnSync(process.execPath, [...command.slice(0, -2), "--force"], { encoding: "utf8" });
+		assert.equal(forceWithoutOutput.status, 1);
+		assert.match(forceWithoutOutput.stderr, /--force requires --output/);
+		const changedComparison = structuredClone(writtenReport);
+		changedComparison.comparison_spec.sha256 = hash("tampered comparison specification");
+		for (const mismatchedBytes of [
+			Buffer.from(reportBytes.toString("utf8").replaceAll("\n", "\r\n"), "utf8"),
+			serializeReport({ ...writtenReport, canonical_report_sha256: hash("tampered compatibility alias") }),
+			serializeReport(changedComparison),
+		]) {
+			writeFileSync(reportPath, mismatchedBytes);
+			const mismatch = spawnSync(process.execPath, [...command, "--reproduce", reportPath, "--force"], { encoding: "utf8" });
+			assert.equal(mismatch.status, 1);
+			assert.match(mismatch.stderr, /reproduced report bytes differ/);
+			assert.deepEqual(readFileSync(reportPath), mismatchedBytes, "failed reproduction must not overwrite its reference, even with --force");
+		}
+		writeFileSync(reportPath, reportBytes);
 		data.observations.workload_id = "changed-after-signature";
 		writeFileSync(observationsPath, JSON.stringify(data.observations));
 		const rejected = spawnSync(process.execPath, command, { encoding: "utf8" });
