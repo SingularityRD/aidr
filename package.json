@@ -1,4 +1,4 @@
-﻿{
+{
 	"private": true,
 	"license": "Proprietary",
 	"type": "module",
@@ -119,7 +119,7 @@
 		"verify:commercial-gates": "node scripts/verify-commercial-gate-receipts.mjs",
 		"verify:investor-metrics": "node scripts/validate-investor-metric-dictionary.mjs",
 		"verify:commercial-compliance": "node scripts/verify-commercial-compliance.mjs",
-		"test:commercial-compliance": "node --test scripts/verify-commercial-compliance.test.mjs"
+		"test:commercial-compliance": "node --test scripts/verify-commercial-compliance.test.mjs",
 		"package:customer": "node scripts/customer-kit.mjs",
 		"evidence:index": "node scripts/generate-v8-evidence-index.mjs",
 		"evidence:index:verify": "node scripts/generate-v8-evidence-index.mjs --verify",
