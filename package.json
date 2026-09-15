@@ -115,6 +115,7 @@
 		"verify:endpoint-auth": "node scripts/verify-endpoint-auth-matrix.mjs",
 		"verify:backup-offsite": "node --test scripts/deployment-backup-offsite.test.mjs",
 		"verify:offboarding": "node --test scripts/deployment-offboarding.test.mjs scripts/tenant-offboarding-migration.test.mjs",
+		"verify:retention": "node --test scripts/deployment-maintenance.test.mjs scripts/retention-holds-postgres.test.mjs",
 		"verify:bootstrap": "node --test scripts/deployment-bootstrap.test.mjs",
 		"verify:endpoint-auth-matrix": "node --test scripts/verify-endpoint-auth-matrix.test.mjs",
 		"verify:commercial-gates": "node scripts/verify-commercial-gate-receipts.mjs",
