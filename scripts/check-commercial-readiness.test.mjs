@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { checkClaimEvidenceFreshness, sha256File } from "./check-claim-evidence-freshness.mjs";
+import { CANDIDATE_DIGEST_SOURCE, gitCommitSha } from "./generate-v8-evidence-index.mjs";
 import { validateClaimSurfaces, validateCommercialReadiness, validateConnectorScope } from "./check-commercial-readiness.mjs";
 
 const [inventory, gaps, registry, releaseSource, supportMatrix, readme] = await Promise.all([
@@ -69,14 +70,22 @@ test("a recorded claim scan digest that differs from the current registry fails"
 	const evidenceDir = await mkdtemp(join(tmpdir(), "aidr-claim-evidence-"));
 	t.after(() => rm(evidenceDir, { recursive: true, force: true }));
 	const registrySha256 = sha256File("docs/production-readiness/commercial-go-evidence-registry.json");
+	const sourceCommit = gitCommitSha(process.cwd());
+	const candidate = { digest: "a".repeat(64), source: CANDIDATE_DIGEST_SOURCE };
 	const recordPath = join(evidenceDir, "v9-claim-gate-final.json");
-	await writeFile(recordPath, JSON.stringify({ mode: "gate", registrySha256: "0".repeat(64) }));
-	const stale = checkClaimEvidenceFreshness({ root: process.cwd(), evidenceDir });
+	const currentBinding = {
+		mode: "gate",
+		source_commit: sourceCommit,
+		candidate_digest: candidate.digest,
+		candidate_digest_source: candidate.source,
+	};
+	await writeFile(recordPath, JSON.stringify({ ...currentBinding, registrySha256: "0".repeat(64) }));
+	const stale = checkClaimEvidenceFreshness({ root: process.cwd(), evidenceDir, source_commit: sourceCommit, candidate });
 	assert.equal(stale.failures.length, 1);
 	assert.match(stale.failures.join("\n"), new RegExp(`v9-claim-gate-final\\.json: recorded registrySha256 0{64} does not match the current registry digest ${registrySha256}`));
 	assert.equal(stale.registrySha256, registrySha256);
-	await writeFile(recordPath, JSON.stringify({ mode: "gate", registrySha256 }));
-	assert.deepEqual(checkClaimEvidenceFreshness({ root: process.cwd(), evidenceDir }).failures, []);
+	await writeFile(recordPath, JSON.stringify({ ...currentBinding, registrySha256 }));
+	assert.deepEqual(checkClaimEvidenceFreshness({ root: process.cwd(), evidenceDir, source_commit: sourceCommit, candidate }).failures, []);
 });
 
 test("the advertised connector scope agrees across README, the support matrix and the claim registry", () => {

@@ -4,9 +4,10 @@
 // This generator derives every value from artefacts that already exist on disk.
 // It never invents a measurement, host, timestamp or customer fact:
 //
-//   * exit status   <- the gate's own machine-readable result file (written by
-//                      `--run` or `--record`), else a decisive terminal marker
+//   * exit status   <- a provenance-bound machine-readable result file (written
+//                      by `--run` or `--record`), else a decisive terminal marker
 //                      inside the captured log, else "unknown" (fail closed).
+//                      A stale/unbound result file can never create a PASS.
 //   * timing        <- a captured start marker plus the log mtime, else "unknown".
 //   * digests       <- SHA-256 of the log and of a declared artifact, else "unknown".
 //   * test counts   <- parsed from the log when the log format is known, else "unknown".
@@ -35,6 +36,7 @@ export const SCHEMA_FILE = "docs/production-readiness/v8-evidence-index.schema.j
 export const CANDIDATE_RELEASE_DIR = ".release-evidence/customer-release-v8-local-20260915-r5";
 export const CANDIDATE_DIGEST_SOURCE = `${CANDIDATE_RELEASE_DIR}/release-inventory.json`;
 export const GENERATOR_ID = "scripts/generate-v8-evidence-index.mjs";
+export const RESULT_PROVENANCE_VERSION = 1;
 
 export const UNKNOWN = "unknown";
 export const UNAVAILABLE = "unavailable";
@@ -699,6 +701,10 @@ export function candidateDigest(root = ROOT) {
 	return { source: CANDIDATE_DIGEST_SOURCE, digest_source_exists: existsSync(source), digest };
 }
 
+function declaredArtifactDigest(gateEntry, root = ROOT) {
+	return gateEntry.artifact == null ? UNKNOWN : sha256File(resolve(root, gateEntry.artifact));
+}
+
 export function readEnvironment() {
 	return {
 		platform: process.platform,
@@ -823,6 +829,87 @@ function readResultFile(absolutePath) {
 	}
 }
 
+function normalizedFingerprint(value) {
+	return typeof value === "string" ? value.trim().toLowerCase() : value;
+}
+
+/**
+ * A result sidecar is only authoritative when it describes the exact artefacts
+ * currently being indexed. The log hash catches a rewritten log; the declared
+ * artifact hash catches a generated output being replaced; the source commit
+ * and candidate digest keep a result from another checkout/release from
+ * producing a PASS in this index. Missing bindings are unprovable, not legacy
+ * compatibility.
+ */
+export function resultBindingFailures({
+	gateEntry,
+	resultFile,
+	logBytes,
+	artifact_sha256,
+	commit_sha,
+	candidate_digest,
+}) {
+	const failures = [];
+	if (resultFile === null || typeof resultFile !== "object") {
+		failures.push("result file is missing or is not valid JSON");
+		return failures;
+	}
+	if (resultFile.gate_id !== gateEntry.gate_id) {
+		failures.push(`gate_id ${JSON.stringify(resultFile.gate_id)} does not match ${gateEntry.gate_id}`);
+	}
+	if (resultFile.command !== gateEntry.command) {
+		failures.push("declared command does not match the result file command");
+	}
+	if (resultFile.provenance_version !== undefined && resultFile.provenance_version !== RESULT_PROVENANCE_VERSION) {
+		failures.push(`unsupported result provenance version ${JSON.stringify(resultFile.provenance_version)}`);
+	}
+	if (!Number.isInteger(resultFile.exit_code) || resultFile.exit_code < 0) {
+		failures.push("result file has no usable non-negative integer exit_code");
+	}
+
+	const recordedCommit = resultFile.commit_sha ?? resultFile.source_commit;
+	if (!/^[0-9a-f]{40}$/.test(normalizedFingerprint(commit_sha ?? ""))) {
+		failures.push("current source commit is unknown, so the result cannot be source-bound");
+	} else if (!/^[0-9a-f]{40}$/.test(normalizedFingerprint(recordedCommit ?? ""))) {
+		failures.push("result file has no valid source commit binding");
+	} else if (normalizedFingerprint(recordedCommit) !== normalizedFingerprint(commit_sha)) {
+		failures.push(`result source commit ${recordedCommit} does not match current commit ${commit_sha}`);
+	}
+	if (resultFile.commit_sha !== undefined && resultFile.source_commit !== undefined && normalizedFingerprint(resultFile.commit_sha) !== normalizedFingerprint(resultFile.source_commit)) {
+		failures.push("result commit_sha and source_commit bindings disagree");
+	}
+
+	if (!/^[0-9a-f]{64}$/.test(normalizedFingerprint(candidate_digest ?? ""))) {
+		failures.push("current candidate digest is unknown, so the result cannot be candidate-bound");
+	} else if (!/^[0-9a-f]{64}$/.test(normalizedFingerprint(resultFile.candidate_digest ?? ""))) {
+		failures.push("result file has no valid candidate digest binding");
+	} else if (normalizedFingerprint(resultFile.candidate_digest) !== normalizedFingerprint(candidate_digest)) {
+		failures.push(`result candidate digest ${resultFile.candidate_digest} does not match current candidate digest ${candidate_digest}`);
+	}
+	if (typeof resultFile.candidate_digest_source !== "string" || resultFile.candidate_digest_source.trim().length === 0) {
+		failures.push("result file has no candidate_digest_source binding");
+	} else if (resultFile.candidate_digest_source !== CANDIDATE_DIGEST_SOURCE) {
+		failures.push(`result candidate digest source ${JSON.stringify(resultFile.candidate_digest_source)} does not match ${CANDIDATE_DIGEST_SOURCE}`);
+	}
+
+	const recordedLog = normalizedFingerprint(resultFile.log_sha256);
+	if (logBytes === null) {
+		if (recordedLog !== UNKNOWN) failures.push("result file claims a log digest but the declared log is missing");
+	} else if (!/^[0-9a-f]{64}$/.test(recordedLog)) {
+		failures.push("result file has no valid log_sha256 binding");
+	} else if (recordedLog !== logBytes.sha256) {
+		failures.push(`result log_sha256 ${resultFile.log_sha256} does not match the current log ${logBytes.sha256}`);
+	}
+
+	const recordedArtifact = normalizedFingerprint(resultFile.artifact_sha256);
+	if (!/^[0-9a-f]{64}$/.test(recordedArtifact) && recordedArtifact !== UNKNOWN) {
+		failures.push("result file has no valid artifact_sha256 binding");
+	} else if (recordedArtifact !== artifact_sha256) {
+		failures.push(`result artifact_sha256 ${resultFile.artifact_sha256 ?? "missing"} does not match the current declared artifact ${artifact_sha256}`);
+	}
+	return failures;
+}
+
 function lineAt(text, index) {
 	const start = text.lastIndexOf("\n", index) + 1;
 	const end = text.indexOf("\n", index);
@@ -837,8 +924,8 @@ function lineAt(text, index) {
 	return forward === undefined ? text.slice(index, index + 80).trim() : forward.trim();
 }
 
-function deriveExit(gateEntry, logText, resultFile) {
-	if (resultFile && Number.isInteger(resultFile.exit_code)) {
+function deriveExit(gateEntry, logText, resultFile, resultFilePresent, bindingFailures) {
+	if (resultFile && bindingFailures.length === 0) {
 		return { exit_code: resultFile.exit_code, basis: "result_file", marker: null };
 	}
 	if (logText !== null) {
@@ -854,6 +941,15 @@ function deriveExit(gateEntry, logText, resultFile) {
 		if (lifeCycle) {
 			return { exit_code: Number(lifeCycle[1]), basis: "pnpm_lifecycle", marker: lifeCycle[0].trim() };
 		}
+		// A stale or malformed sidecar must never be allowed to turn a current
+		// log's incidental PASS marker into trusted evidence. Fail closed instead.
+		if (resultFilePresent) {
+			return {
+				exit_code: UNKNOWN,
+				basis: "stale_result",
+				marker: bindingFailures.join("; "),
+			};
+		}
 		if (gateEntry.pass && gateEntry.pass.test(logText)) {
 			const match = gateEntry.pass.exec(logText);
 			return {
@@ -863,11 +959,14 @@ function deriveExit(gateEntry, logText, resultFile) {
 			};
 		}
 	}
+	if (resultFilePresent) {
+		return { exit_code: UNKNOWN, basis: "stale_result", marker: bindingFailures.join("; ") };
+	}
 	return { exit_code: UNKNOWN, basis: "underivable", marker: null };
 }
 
-function statusFor(exitCode, logExists) {
-	if (!logExists && exitCode === UNKNOWN) return STATUS_NOT_RUN;
+function statusFor(exitCode, logExists, resultFilePresent = false) {
+	if (!logExists && exitCode === UNKNOWN) return resultFilePresent ? STATUS_UNKNOWN : STATUS_NOT_RUN;
 	if (exitCode === 0) return STATUS_PASS;
 	if (exitCode === UNKNOWN) return STATUS_UNKNOWN;
 	return STATUS_FAIL;
@@ -887,17 +986,30 @@ export function buildGateRecord(gateEntry, context) {
 	const logExists = logAbsolute !== null && existsSync(logAbsolute);
 	const logBytes = logExists ? readLogFile(logAbsolute) : null;
 	const logText = logBytes === null ? null : logBytes.text;
-	const resultFile = resultAbsolute === null ? null : readResultFile(resultAbsolute);
-	const { exit_code, basis, marker } = deriveExit(gateEntry, logText, resultFile);
-	const status = statusFor(exit_code, logExists);
+	const resultFileExists = resultAbsolute !== null && existsSync(resultAbsolute);
+	const resultFile = resultFileExists ? readResultFile(resultAbsolute) : null;
+	const artifact_sha256 = declaredArtifactDigest(gateEntry, root);
+	const bindingFailures = resultFileExists
+		? resultBindingFailures({
+				gateEntry,
+				resultFile,
+				logBytes,
+				artifact_sha256,
+				commit_sha,
+				candidate_digest: digest,
+			})
+		: [];
+	const trustedResultFile = resultFile !== null && bindingFailures.length === 0 ? resultFile : null;
+	const { exit_code, basis, marker } = deriveExit(gateEntry, logText, trustedResultFile, resultFileExists, bindingFailures);
+	const status = statusFor(exit_code, logExists, resultFileExists);
 
 	let started_at_utc = UNKNOWN;
 	let ended_at_utc = UNKNOWN;
 	let duration_ms = UNKNOWN;
-	if (resultFile && typeof resultFile.started_at_utc === "string" && typeof resultFile.ended_at_utc === "string") {
-		started_at_utc = isoUtc(resultFile.started_at_utc);
-		ended_at_utc = isoUtc(resultFile.ended_at_utc);
-		duration_ms = Number.isFinite(resultFile.duration_ms) && resultFile.duration_ms >= 0 ? resultFile.duration_ms : UNKNOWN;
+	if (trustedResultFile && typeof trustedResultFile.started_at_utc === "string" && typeof trustedResultFile.ended_at_utc === "string") {
+		started_at_utc = isoUtc(trustedResultFile.started_at_utc);
+		ended_at_utc = isoUtc(trustedResultFile.ended_at_utc);
+		duration_ms = Number.isFinite(trustedResultFile.duration_ms) && trustedResultFile.duration_ms >= 0 ? trustedResultFile.duration_ms : UNKNOWN;
 	} else if (logText !== null) {
 		const start = START_MARKER.exec(logText);
 		if (start) {
@@ -911,8 +1023,6 @@ export function buildGateRecord(gateEntry, context) {
 		}
 	}
 
-	const artifactRelative = gateEntry.artifact;
-	const artifact_sha256 = artifactRelative === null ? UNKNOWN : sha256File(resolve(root, artifactRelative));
 	const test_counts = logText === null ? UNKNOWN : parseTestCounts(gateEntry.counts, logText);
 
 	const observed_effect = describeEffect({
@@ -926,9 +1036,11 @@ export function buildGateRecord(gateEntry, context) {
 		exit_code,
 		counts: test_counts,
 		resultRelative,
+		resultFileExists,
+		bindingFailures,
 	});
 
-	const substantiated = logExists || resultFile !== null ? gateEntry.evidence_level : EVIDENCE_LEVEL_FLOOR;
+	const substantiated = logExists || trustedResultFile !== null ? gateEntry.evidence_level : EVIDENCE_LEVEL_FLOOR;
 	const evidence_level = failClosedEvidenceLevel(substantiated, gateEntry.evidence_level_ceiling);
 
 	return {
@@ -954,7 +1066,9 @@ export function buildGateRecord(gateEntry, context) {
 			logRelative,
 			resultRelative,
 			logExists,
-			hasResult: resultFile !== null,
+			resultFileExists,
+			hasTrustedResult: trustedResultFile !== null,
+			bindingFailures,
 			basis,
 			status,
 			commit_sha,
@@ -967,9 +1081,29 @@ export function buildGateRecord(gateEntry, context) {
 	};
 }
 
-function describeEffect({ gateEntry, logExists, logRelative, logText, basis, marker, status, exit_code, counts, resultRelative }) {
+function describeEffect({
+	gateEntry,
+	logExists,
+	logRelative,
+	logText,
+	basis,
+	marker,
+	status,
+	exit_code,
+	counts,
+	resultRelative,
+	resultFileExists,
+	bindingFailures,
+}) {
+	if (!logExists && basis === "result_file") {
+		return `Machine-readable result file recorded exit_code=${exit_code} for: ${gateEntry.command}; no log exists at ${logRelative}, so no log content was inspected.`;
+	}
 	if (!logExists) {
-		const resultNote = resultRelative === null ? "" : ` and no result file at ${resultRelative}`;
+		const resultNote = resultRelative === null
+			? ""
+			: resultFileExists
+				? `, but its result file at ${resultRelative} was ignored as stale or unprovable (${clip(bindingFailures.join("; "))})`
+				: ` and no result file at ${resultRelative}`;
 		return `none observed: no log at ${logRelative}${resultNote}, so this gate produced no evidence for this candidate (status ${status}, exit_code ${exit_code}).`;
 	}
 	const parts = [];
@@ -979,6 +1113,8 @@ function describeEffect({ gateEntry, logExists, logRelative, logText, basis, mar
 		parts.push(`Terminal log marker for exit_code=${exit_code}: ${clip(marker ?? "")}`);
 	} else if (basis === "pnpm_lifecycle") {
 		parts.push(`pnpm reported the failing command's own exit status, so exit_code=${exit_code}: ${clip(marker ?? "")}`);
+	} else if (basis === "stale_result") {
+		parts.push(`A result file was ignored as stale or unprovable (${clip(bindingFailures.join("; "))}); no PASS was derived from the log.`);
 	} else {
 		parts.push(`No decisive terminal marker was found for exit_code; status is ${status} (fail closed).`);
 	}
@@ -994,7 +1130,9 @@ function buildLimitations({
 	logRelative,
 	resultRelative,
 	logExists,
-	hasResult,
+	resultFileExists,
+	hasTrustedResult,
+	bindingFailures,
 	basis,
 	status,
 	commit_sha,
@@ -1002,37 +1140,47 @@ function buildLimitations({
 	siblings,
 }) {
 	const limitations = [...gateEntry.limitations];
-	if (!logExists && !hasResult) {
+	if (!logExists && !resultFileExists) {
 		limitations.push(
 			`Declared gate has no log at ${logRelative} and no result file at ${resultRelative}; status=NOT_RUN and exit_code=unknown are the honest recorded result.`,
 		);
 		limitations.push(
 			"evidence_level is the vocabulary floor because no evidence was substantiated for this gate; it is not a claim that source inspection happened.",
 		);
-	} else if (!logExists && hasResult) {
+	} else if (resultFileExists && !hasTrustedResult) {
+		limitations.push(
+			`The machine-readable result file ${resultRelative} was ignored because it is stale or unprovable: ${clip(bindingFailures.join("; "))}. It cannot supply an exit code or timing.`,
+		);
+	} else if (!logExists && hasTrustedResult) {
 		limitations.push(
 			`A machine-readable result file exists at ${resultRelative} but the log ${logRelative} is missing, so log_sha256 is unknown and no log content could be inspected.`,
 		);
 	} else if (basis === "result_file") {
 		limitations.push(
-			`exit_code and timing were read from the machine-readable result file ${resultRelative} written when the gate was run.`,
+			`exit_code and timing were read from the machine-readable result file ${resultRelative}; its source commit, candidate digest, log digest and declared-artifact digest match this index context.`,
 		);
 	} else if (basis === "log_marker") {
 		limitations.push(
-			"exit_code and status were derived from the gate's own decisive terminal log marker; no captured exit-status result file exists for this run.",
+			"exit_code and status were derived from the gate's own decisive terminal log marker; no current, provenance-bound result file supplied an exit status.",
 		);
 	} else if (basis === "pnpm_lifecycle") {
 		limitations.push(
 			"exit_code was taken from pnpm's own lifecycle report of the failing command's exit status; it is a failure signal only and can never produce a PASS.",
+		);
+	} else if (basis === "stale_result") {
+		limitations.push(
+			"The result sidecar was present but not current; the generator refused to infer PASS from a stale or unprovable result and recorded unknown (fail closed).",
 		);
 	} else {
 		limitations.push(
 			"A log exists but no machine-readable result file and no decisive terminal marker were found, so exit_code and status are 'unknown' (fail closed).",
 		);
 	}
-	limitations.push(
-		`The log does not embed a commit SHA or candidate digest, so its correspondence to commit ${commit_sha} and candidate digest ${digest} is not proven.`,
-	);
+	if (basis !== "result_file") {
+		limitations.push(
+			`The log does not embed a commit SHA or candidate digest, so its correspondence to commit ${commit_sha} and candidate digest ${digest} is not proven.`,
+		);
+	}
 	limitations.push(
 		"environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
 	);
@@ -1093,12 +1241,12 @@ export function buildEvidenceIndex(options = {}) {
 			PASS: "The gate's own exit status is 0.",
 			FAIL: "The gate failed with a non-zero exit status.",
 			NOT_RUN: "No log and no result file exist; the gate was not run for this candidate.",
-			unknown: "A log exists but the exit status could not be derived; never read as success.",
+			unknown: "Evidence exists but the exit status could not be derived or a result file was stale/unprovable; never read as success.",
 		},
 		determinism:
 			"This index contains no generation timestamp: per-gate timing comes only from captured start markers and log modification times, so repeated runs over unchanged artefacts are byte-identical.",
 		methodology:
-			"Every field is derived from artefacts on disk: exit status from a gate result file or a decisive terminal log marker, timing from a captured start marker plus the log mtime, digests from SHA-256 of the log and of a declared artifact, test counts from the log when the format is known. Any value that could not be derived is the explicit string 'unknown' and any gate without a log is reported as NOT_RUN; no gate is ever omitted and no measurement, host, timestamp or customer fact is invented.",
+			"Every field is derived from artefacts on disk: a result file supplies an exit status only when its gate id, command, source commit, candidate digest, log SHA-256 and declared-artifact SHA-256 bind to the current index context; otherwise stale or unprovable result files are ignored and a PASS marker is never inferred from that log. Without a trusted result file, exit status comes from a decisive terminal log marker, timing from a captured start marker plus the log mtime, digests from SHA-256 of the log and of a declared artifact, and test counts from the log when the format is known. Any value that could not be derived is the explicit string 'unknown' and any gate without a log is reported as NOT_RUN; no gate is ever omitted and no measurement, host, timestamp or customer fact is invented.",
 		status_counts,
 		gate_count: gates.length,
 		gates,
@@ -1259,6 +1407,12 @@ export function verifyEvidenceIndex(index, schema) {
 		}
 		if (seen.has(gateId)) errors.push(`${path}: duplicate gate_id ${gateId}`);
 		seen.add(gateId);
+		if (record.commit_sha !== index.commit_sha) {
+			errors.push(`${path} (${gateId}): commit_sha ${JSON.stringify(record.commit_sha)} does not match index commit_sha ${JSON.stringify(index.commit_sha)}`);
+		}
+		if (record.candidate_digest !== index.candidate_digest) {
+			errors.push(`${path} (${gateId}): candidate_digest ${JSON.stringify(record.candidate_digest)} does not match index candidate_digest ${JSON.stringify(index.candidate_digest)}`);
+		}
 		if (PASS_LIKE_STATUSES.includes(record.status) && record.exit_code !== 0) {
 			errors.push(
 				`${path} (${gateId}): status ${record.status} is pass-like but exit_code is ${JSON.stringify(record.exit_code)}`,
@@ -1305,12 +1459,30 @@ function resultFilePath(gateId) {
 	return { gateEntry, absolute: resolve(ROOT, `${LOG_DIR}/${gateEntry.log}`) };
 }
 
-export function writeResultFile({ gateEntry, absolute }, payload) {
+export function resultProvenance(gateEntry, root = ROOT, logAbsolute = null) {
+	const commit = gitCommitSha(root);
+	const candidate = candidateDigest(root);
+	return {
+		provenance_version: RESULT_PROVENANCE_VERSION,
+		commit_sha: commit,
+		source_commit: commit,
+		candidate_digest: candidate.digest,
+		candidate_digest_source: candidate.source,
+		log_sha256: logAbsolute !== null && existsSync(logAbsolute) ? sha256File(logAbsolute) : UNKNOWN,
+		artifact_sha256: declaredArtifactDigest(gateEntry, root),
+	};
+}
+
+export function writeResultFile({ gateEntry, absolute }, payload, { root = ROOT } = {}) {
 	const body = {
 		gate_id: gateEntry.gate_id,
 		command: gateEntry.command,
 		recorded_by: GENERATOR_ID,
 		...payload,
+		// These bindings are derived at write time and deliberately override any
+		// caller-supplied copies. A result file must not be able to self-assert a
+		// different source, candidate, log or declared-artifact identity.
+		...resultProvenance(gateEntry, root, absolute),
 	};
 	writeFileSync(`${absolute}.result.json`, `${JSON.stringify(body, null, 2)}\n`);
 	return body;

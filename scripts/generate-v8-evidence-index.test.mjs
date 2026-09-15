@@ -16,6 +16,7 @@ import { test } from "node:test";
 import {
 	buildEvidenceIndex,
 	buildGateRecord,
+	CANDIDATE_DIGEST_SOURCE,
 	countStatuses,
 	EVIDENCE_LEVEL_FLOOR,
 	EVIDENCE_LEVELS,
@@ -28,6 +29,8 @@ import {
 	ROOT,
 	SCHEMA_FILE,
 	serializeIndex,
+	sha256Hex,
+	resultBindingFailures,
 	STATUS_NOT_RUN,
 	UNKNOWN,
 	verifyEvidenceIndex,
@@ -143,10 +146,11 @@ test("a lower evidence level cannot be recorded as a higher one", () => {
 });
 
 test("a missing log produces NOT_RUN instead of an omission", () => {
+	const baseline = freshIndex();
 	const context = {
 		root: ROOT,
-		commit_sha: "0".repeat(40),
-		candidate_digest: UNKNOWN,
+		commit_sha: baseline.commit_sha,
+		candidate_digest: baseline.candidate_digest,
 		environment: {
 			platform: "test",
 			arch: "test",
@@ -184,7 +188,7 @@ test("a missing log produces NOT_RUN instead of an omission", () => {
 
 	// The record is still schema-valid, and the declared gate is never omitted:
 	// a full index always carries one record per declared gate.
-	const index = clone(freshIndex());
+	const index = clone(baseline);
 	index.gates.push(record);
 	index.gate_count = index.gates.length;
 	index.status_counts = countStatuses(index.gates);
@@ -211,6 +215,12 @@ test("a captured result file is read back as the authoritative exit status", () 
 	const sidecar = JSON.parse(readFileSync(`${target.absolute}.result.json`, "utf8"));
 	assert.equal(sidecar.exit_code, 0);
 	assert.equal(sidecar.duration_ms, 2000);
+	assert.equal(sidecar.provenance_version, 1);
+	assert.match(sidecar.commit_sha, /^[0-9a-f]{40}$/);
+	assert.equal(sidecar.source_commit, sidecar.commit_sha);
+	assert.equal(sidecar.candidate_digest, UNKNOWN);
+	assert.equal(sidecar.log_sha256, UNKNOWN);
+	assert.equal(sidecar.artifact_sha256, UNKNOWN);
 	assert.equal(existsSync(join(process.cwd(), "undefined.result.json")), false);
 });
 
@@ -219,8 +229,28 @@ test("a result file is preferred over a contradictory log marker", () => {
 	const logDirectory = join(root, LOG_DIR);
 	mkdirSync(logDirectory, { recursive: true });
 	const logPath = join(logDirectory, "fixture.log");
-	writeFileSync(logPath, "ALL PASS - 3/3 cases behaved correctly\n");
-	writeFileSync(`${logPath}.result.json`, `${JSON.stringify({ exit_code: 1, captured_by: "record" }, null, 2)}\n`);
+	const logText = "ALL PASS - 3/3 cases behaved correctly\n";
+	writeFileSync(logPath, logText);
+	writeFileSync(
+		`${logPath}.result.json`,
+		`${JSON.stringify(
+			{
+				gate_id: "fixture-authority",
+				command: "node scripts/fixture.mjs",
+				provenance_version: 1,
+				commit_sha: "0".repeat(40),
+				source_commit: "0".repeat(40),
+				candidate_digest: "1".repeat(64),
+				candidate_digest_source: CANDIDATE_DIGEST_SOURCE,
+				log_sha256: sha256Hex(Buffer.from(logText)),
+				artifact_sha256: UNKNOWN,
+				exit_code: 1,
+				captured_by: "record",
+			},
+			null,
+			2,
+		)}\n`,
+	);
 	const record = buildGateRecord(
 		{
 			gate_id: "fixture-authority",
@@ -240,7 +270,7 @@ test("a result file is preferred over a contradictory log marker", () => {
 		{
 			root,
 			commit_sha: "0".repeat(40),
-			candidate_digest: UNKNOWN,
+			candidate_digest: "1".repeat(64),
 			environment: {
 				platform: "test",
 				arch: "test",
@@ -254,6 +284,104 @@ test("a result file is preferred over a contradictory log marker", () => {
 	);
 	assert.equal(record.exit_code, 1);
 	assert.equal(record.status, "FAIL");
+});
+
+test("result provenance rejects source-commit and candidate drift", () => {
+	const failures = resultBindingFailures({
+		gateEntry: { gate_id: "fixture-binding", command: "node scripts/fixture.mjs", artifact: null },
+		resultFile: {
+			gate_id: "fixture-binding",
+			command: "node scripts/fixture.mjs",
+			provenance_version: 1,
+			commit_sha: "0".repeat(40),
+			source_commit: "0".repeat(40),
+			candidate_digest: "1".repeat(64),
+			candidate_digest_source: CANDIDATE_DIGEST_SOURCE,
+			log_sha256: "e".repeat(64),
+			artifact_sha256: UNKNOWN,
+			exit_code: 0,
+		},
+		logBytes: { sha256: "e".repeat(64) },
+		artifact_sha256: UNKNOWN,
+		commit_sha: "2".repeat(40),
+		candidate_digest: "3".repeat(64),
+	});
+	assert.match(failures.join("\n"), /result source commit .*does not match current commit/);
+	assert.match(failures.join("\n"), /result candidate digest .*does not match current candidate digest/);
+});
+
+test("a stale result sidecar cannot turn a PASS log into PASS evidence", () => {
+	const root = mkdtempSync(join(tmpdir(), "aidr-gate-stale-result-"));
+	const logDirectory = join(root, LOG_DIR);
+	mkdirSync(logDirectory, { recursive: true });
+	const logPath = join(logDirectory, "fixture.log");
+	const oldLog = "ALL PASS - 2/2 cases behaved correctly\n";
+	const currentLog = "ALL PASS - 3/3 cases behaved correctly\n";
+	writeFileSync(logPath, currentLog);
+	writeFileSync(
+		`${logPath}.result.json`,
+		`${JSON.stringify(
+			{
+				gate_id: "fixture-stale",
+				command: "node scripts/fixture.mjs",
+				provenance_version: 1,
+				commit_sha: "0".repeat(40),
+				source_commit: "0".repeat(40),
+				candidate_digest: "1".repeat(64),
+				candidate_digest_source: CANDIDATE_DIGEST_SOURCE,
+				log_sha256: sha256Hex(Buffer.from(oldLog)),
+				artifact_sha256: UNKNOWN,
+				exit_code: 0,
+			},
+			null,
+			2,
+		)}\n`,
+	);
+	const record = buildGateRecord(
+		{
+			gate_id: "fixture-stale",
+			command: "node scripts/fixture.mjs",
+			log: "fixture.log",
+			artifact: null,
+			counts: "cases",
+			pass: /ALL PASS - (\d+)\/(\d+) cases behaved correctly/,
+			fail: null,
+			task_ids: ["T35"],
+			feature_ids: ["EVAL-01"],
+			owner: "quality-engineering",
+			evidence_level: "unit_contract",
+			evidence_level_ceiling: "unit_contract",
+			limitations: ["fixture"],
+		},
+		{
+			root,
+			commit_sha: "0".repeat(40),
+			candidate_digest: "1".repeat(64),
+			environment: {
+				platform: "test",
+				arch: "test",
+				os_type: "test",
+				os_release: "test",
+				hostname: "test",
+				gate_host_provenance: UNKNOWN,
+			},
+			tool_versions: { node: "test", pnpm: "test", python: "test", docker: "test", os: "test" },
+		},
+	);
+	assert.equal(record.status, "unknown");
+	assert.equal(record.exit_code, UNKNOWN);
+	assert.match(record.observed_effect, /ignored as stale or unprovable/);
+	assert.ok(record.limitations.some((entry) => /ignored because it is stale or unprovable/.test(entry)));
+});
+
+test("every gate record stays bound to the index source and candidate", () => {
+	const index = clone(freshIndex());
+	index.gates[0].commit_sha = "0".repeat(40);
+	index.gates[0].candidate_digest = "1".repeat(64);
+	const result = verifyEvidenceIndex(index, schema);
+	assert.equal(result.ok, false);
+	assert.match(errorText(result), /commit_sha .*does not match index commit_sha/);
+	assert.match(errorText(result), /candidate_digest .*does not match index candidate_digest/);
 });
 
 test("a summary that disagrees with its records fails", () => {

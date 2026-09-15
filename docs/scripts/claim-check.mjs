@@ -8,8 +8,10 @@
  * proves only that every release-facing claim is registered, approved, and
  * backed by an immutable evidence record. It scans claim-facing surfaces and
  * hashes every configured release artifact, so binary/runtime strings are
- * inventory evidence without being mistaken for marketing copy. Missing or
- * unapproved evidence is a hard failure in --mode=gate.
+ * inventory evidence without being mistaken for marketing copy. Each JSON
+ * record also carries the source commit and candidate inventory digest so a
+ * later freshness gate can reject scans from another checkout or candidate.
+ * Missing or unapproved evidence is a hard failure in --mode=gate.
  *
  * Examples:
  *   node docs/scripts/claim-check.mjs --mode=inventory
@@ -21,6 +23,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CANDIDATE_DIGEST_SOURCE, candidateDigest, gitCommitSha } from "../../scripts/generate-v8-evidence-index.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDir, "../..");
@@ -356,9 +359,14 @@ function main() {
 	const unapprovedHits = hits.filter((hit) => !approvedPatternIds.has(hit.patternId));
 	const openHardGates = (registry.hardGates ?? []).filter((gate) => gate.class === "hard" && gate.status !== "closed");
 	const gateFailure = registryErrors.length > 0 || missingRoots.length > 0 || missingArtifactRoots.length > 0 || emptyArtifactRoots.length > 0 || unapprovedHits.length > 0 || openHardGates.length > 0 || licenseCheck.errors.length > 0;
+	const sourceCommit = gitCommitSha(repositoryRoot);
+	const candidate = candidateDigest(repositoryRoot);
 	const result = {
 		registry: relative(repositoryRoot, registryPath).replaceAll("\\", "/"),
 		registrySha256: sha256(readFileSync(registryPath)),
+		source_commit: sourceCommit,
+		candidate_digest: candidate.digest,
+		candidate_digest_source: CANDIDATE_DIGEST_SOURCE,
 		mode: args.mode,
 		decision: registry.decision,
 		roots: roots.map((root) => relative(repositoryRoot, root).replaceAll("\\", "/")),
@@ -383,6 +391,7 @@ function main() {
 	} else {
 		console.log(`Claim check (${args.mode}): ${result.result}`);
 		console.log(`Registry: ${result.registry} (${result.registrySha256})`);
+		console.log(`Source commit: ${result.source_commit}; candidate digest: ${result.candidate_digest} (${result.candidate_digest_source})`);
 		console.log(`Claim-facing files scanned: ${result.filesScanned}; release artifact files hashed: ${result.artifactFilesScanned}; pattern hits: ${result.hits.length}; unapproved hits: ${result.unapprovedHits.length}`);
 		if (result.missingRoots.length > 0) console.log(`Missing roots: ${result.missingRoots.join(", ")}`);
 		if (result.missingArtifactRoots.length > 0) console.log(`Missing artifact roots: ${result.missingArtifactRoots.join(", ")}`);
