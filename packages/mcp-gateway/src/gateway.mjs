@@ -11,6 +11,12 @@ import {
 import { fetchMcpEndpoint, McpTransportError } from "../../core/dist/mcp-transport.js";
 import { scanModelOutput } from "../../core/dist/output-scanner.js";
 import { authenticateBearer, validateGatewayConfig } from "./config.mjs";
+import {
+	coverageDescriptor,
+	McpGatewayRefusal,
+	makeMcpGatewayCoverageEvent,
+	refusalPayload,
+} from "./coverage.mjs";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const SESSION = /^[\x21-\x7e]{8,256}$/;
@@ -32,8 +38,12 @@ function upstreamHeaders(server, sessionId) {
 	};
 }
 
-function error(id, code, message) {
-	return { jsonrpc: "2.0", id, error: { code, message } };
+function error(id, code, message, data) {
+	return {
+		jsonrpc: "2.0",
+		id,
+		error: { code, message, ...(data ? { data } : {}) },
+	};
 }
 
 function rpcResponse(id, result) {
@@ -102,10 +112,22 @@ function parseSseEvent(event) {
 	return JSON.parse(data.join("\n"));
 }
 
+function serverInitiatedRefusal() {
+	return new McpGatewayRefusal(
+		"server_initiated_method",
+		"MCP server-initiated methods are outside the gateway response coverage and were refused",
+	);
+}
+
+function rejectServerInitiated(value) {
+	if (jsonObject(value) && typeof value.method === "string") throw serverInitiatedRefusal();
+	return value;
+}
+
 function parseSse(text) {
 	let response = null;
 	for (const event of text.replace(/\r\n/g, "\n").split(/\n\n+/)) {
-		const parsed = parseSseEvent(event);
+		const parsed = rejectServerInitiated(parseSseEvent(event));
 		if (parsed === null) continue;
 		if (response !== null) throw new Error("multiple_sse_responses");
 		response = parsed;
@@ -115,13 +137,12 @@ function parseSse(text) {
 }
 
 function parseUpstreamResponse(text, mode, expectedId) {
-	const rpc = mode === "sse" ? parseSse(text) : JSON.parse(text);
+	const rpc = rejectServerInitiated(mode === "sse" ? parseSse(text) : JSON.parse(text));
 	if (
 		!jsonObject(rpc) ||
 		rpc.jsonrpc !== "2.0" ||
 		rpc.id !== expectedId ||
-		"result" in rpc === "error" in rpc ||
-		"method" in rpc
+		"result" in rpc === "error" in rpc
 	) {
 		throw new Error("invalid_upstream_rpc");
 	}
@@ -202,6 +223,8 @@ const BLOCK_REASONS = new Set([
 	"scanner_unavailable",
 	"unsupported_tool_output",
 	"unsupported_structured_output",
+	"unsupported_binary_output",
+	"server_initiated_method",
 	"invalid_tool_result",
 	"invalid_initialize_result",
 	"invalid_tool_list",
@@ -218,10 +241,13 @@ const BLOCK_REASONS = new Set([
 ]);
 
 function safeReason(cause) {
+	if (cause instanceof McpGatewayRefusal && /^[a-z0-9_]{1,64}$/.test(cause.code)) return cause.code;
 	if (cause instanceof McpTransportError && /^[a-z0-9_]{1,64}$/.test(cause.code)) return cause.code;
 	if (cause instanceof Error && BLOCK_REASONS.has(cause.message)) return cause.message;
 	return "gateway_unavailable";
 }
+
+const BINARY_OUTPUT_TYPES = new Set(["image", "audio"]);
 
 function validateToolResult(result) {
 	if (
@@ -230,15 +256,36 @@ function validateToolResult(result) {
 		result.content.length > 4096 ||
 		(result.isError !== undefined && typeof result.isError !== "boolean")
 	) {
-		throw new Error("invalid_tool_result");
+		throw new McpGatewayRefusal(
+			"invalid_tool_result",
+			"MCP tool output has an invalid result envelope and was refused",
+		);
 	}
 	for (const item of result.content) {
-		if (!jsonObject(item) || item.type !== "text" || typeof item.text !== "string") {
-			throw new Error("unsupported_tool_output");
+		if (!jsonObject(item)) {
+			throw new McpGatewayRefusal(
+				"unsupported_tool_output",
+				"MCP tool output representation is unsupported and was refused",
+			);
+		}
+		if (BINARY_OUTPUT_TYPES.has(item.type)) {
+			throw new McpGatewayRefusal(
+				"unsupported_binary_output",
+				"MCP binary tool output is outside the gateway response coverage and was refused",
+			);
+		}
+		if (item.type !== "text" || typeof item.text !== "string") {
+			throw new McpGatewayRefusal(
+				"unsupported_tool_output",
+				"MCP tool output representation is unsupported and was refused",
+			);
 		}
 	}
 	if (result.structuredContent !== undefined && !jsonObject(result.structuredContent)) {
-		throw new Error("unsupported_structured_output");
+		throw new McpGatewayRefusal(
+			"unsupported_structured_output",
+			"MCP structured tool output is outside the gateway response coverage and was refused",
+		);
 	}
 }
 
@@ -303,6 +350,16 @@ export function createMcpGateway(input, dependencies = {}) {
 	const pinnedFetch = dependencies.pinnedFetch;
 	const now = dependencies.now ?? (() => new Date());
 	const onEvent = dependencies.onEvent ?? (() => undefined);
+	const directUpstreamCheck = dependencies.directUpstreamCheck ?? dependencies.checkDirectUpstream;
+	let startupCheckPromise;
+
+	async function emitEvent(event) {
+		try {
+			await onEvent(event);
+		} catch {
+			/* Coverage and audit sinks cannot weaken a refusal or startup result. */
+		}
+	}
 
 	function storeFor(tenantId) {
 		let store = stores.get(tenantId);
@@ -318,11 +375,118 @@ export function createMcpGateway(input, dependencies = {}) {
 	}
 
 	async function audit(tenantId, serverId, clientId, decision, reason) {
+		await emitEvent({ tenantId, serverId, clientId, decision, reason, at: now().toISOString() });
+	}
+
+	async function emitCoverageForRefusal(refusal, context) {
+		const descriptor = coverageDescriptor(refusal.code);
+		await emitEvent(
+			makeMcpGatewayCoverageEvent({
+				channel: "upstream_response",
+				surface: refusal.surface ?? descriptor.surface,
+				status: "refused",
+				coverageStatus: refusal.coverageStatus ?? descriptor.coverageStatus,
+				reasonCode: refusal.code,
+				decision: "deny",
+				enforcement: refusal.enforcement ?? descriptor.enforcement,
+				at: now().toISOString(),
+				tenantId: context.tenantId,
+				serverId: context.serverId,
+				clientId: context.clientId,
+				requestMethod: context.requestMethod,
+				outputType: refusal.outputType ?? descriptor.outputType,
+				refusal: refusalPayload(refusal),
+			}),
+		);
+	}
+
+	function normalizeDirectUpstreamCheck(result) {
+		if (
+			result === "bypass" ||
+			result?.status === "bypass" ||
+			result?.directAccess === true ||
+			result?.bypass === true
+		)
+			return "bypass";
+		if (
+			result === "routed" ||
+			result?.status === "routed" ||
+			result === false ||
+			result?.bypass === false
+		)
+			return "routed";
+		if (result === "unobservable" || result?.status === "unobservable" || result == null)
+			return "unobservable";
+		throw new Error("invalid_direct_upstream_check");
+	}
+
+	function startupReason(status) {
+		return status === "bypass"
+			? "direct_upstream_bypass_detected"
+			: status === "routed"
+				? "direct_upstream_bypass_not_observed"
+				: "direct_upstream_bypass_unobservable";
+	}
+
+	async function observeDirectUpstream(server, gatewayAddress) {
+		if (typeof directUpstreamCheck !== "function")
+			return { status: "unobservable", reasonCode: "direct_upstream_bypass_unobservable" };
 		try {
-			await onEvent({ tenantId, serverId, clientId, decision, reason, at: now().toISOString() });
+			const status = normalizeDirectUpstreamCheck(
+				await directUpstreamCheck({
+					tenantId: server.tenantId,
+					serverId: server.id,
+					upstreamUrl: server.url,
+					gatewayAddress,
+				}),
+			);
+			return { status, reasonCode: startupReason(status) };
 		} catch {
-			/* Audit sink cannot turn a deny into allow. */
+			return { status: "unobservable", reasonCode: "direct_upstream_check_failed" };
 		}
+	}
+
+	function startupBypassRefusal() {
+		return new McpGatewayRefusal(
+			"direct_upstream_bypass_detected",
+			"Direct upstream access was observed for an MCP server; gateway startup was refused",
+			{
+				surface: "direct_upstream",
+				coverageStatus: "limited",
+				enforcement: "startup_refusal",
+			},
+		);
+	}
+
+	async function runStartupSelfCheck(gatewayAddress) {
+		const results = [];
+		for (const server of config.servers) {
+			const observation = await observeDirectUpstream(server, gatewayAddress);
+			const refusal = observation.status === "bypass" ? startupBypassRefusal() : null;
+			await emitEvent(
+				makeMcpGatewayCoverageEvent({
+					channel: "startup",
+					surface: "direct_upstream",
+					status: refusal ? "refused" : observation.status,
+					coverageStatus: observation.status === "routed" ? "observed" : "limited",
+					reasonCode: observation.reasonCode,
+					decision: refusal ? "deny" : "unknown",
+					enforcement: refusal ? "startup_refusal" : "not_verified",
+					at: now().toISOString(),
+					tenantId: server.tenantId,
+					serverId: server.id,
+					refusal: refusal ? refusalPayload(refusal) : undefined,
+				}),
+			);
+			results.push({
+				tenantId: server.tenantId,
+				serverId: server.id,
+				status: observation.status,
+				reasonCode: observation.reasonCode,
+			});
+			if (refusal) throw refusal;
+		}
+		return results;
 	}
 
 	async function attest(server) {
@@ -497,12 +661,14 @@ export function createMcpGateway(input, dependencies = {}) {
 			if (!response.writableEnded) controller.abort();
 		});
 		let rpcId = null;
+		let rpcMethod;
 		try {
 			if (!/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")) {
 				throw new Error("invalid_content_type");
 			}
 			const rpc = parseRequest(await readBody(request, config.maxBodyBytes));
 			rpcId = rpc.id ?? null;
+			rpcMethod = rpc.method;
 			await attest(upstream);
 			const result = await processRpc(rpc, client, upstream, request, controller.signal);
 			await audit(client.tenantId, serverId, client.id, "allow", rpc.method);
@@ -510,8 +676,26 @@ export function createMcpGateway(input, dependencies = {}) {
 		} catch (cause) {
 			const reason = safeReason(cause);
 			await audit(client.tenantId, serverId, client.id, "deny", reason);
+			const refusal = cause instanceof McpGatewayRefusal ? cause : null;
+			if (refusal) {
+				await emitCoverageForRefusal(refusal, {
+					tenantId: client.tenantId,
+					serverId,
+					clientId: client.id,
+					requestMethod: rpcMethod,
+				});
+			}
 			const status = reason === "request_too_large" ? 413 : rpcId === null ? 400 : 200;
-			send(response, status, error(rpcId, -32001, `AIDR blocked MCP request: ${reason}`));
+			send(
+				response,
+				status,
+				error(
+					rpcId,
+					-32001,
+					`AIDR blocked MCP request: ${reason}`,
+					refusal ? refusalPayload(refusal) : undefined,
+				),
+			);
 		} finally {
 			clearTimeout(timeout);
 			inflight.set(client.tenantId, (inflight.get(client.tenantId) ?? 1) - 1);
@@ -595,12 +779,23 @@ export function createMcpGateway(input, dependencies = {}) {
 				now: now(),
 			});
 		},
+		startupSelfCheck(gatewayAddress = null) {
+			if (!startupCheckPromise) startupCheckPromise = runStartupSelfCheck(gatewayAddress);
+			return startupCheckPromise;
+		},
 		listen(port = config.port) {
 			return new Promise((resolve, reject) => {
 				server.once("error", reject);
-				server.listen(port, "127.0.0.1", () => {
+				server.listen(port, "127.0.0.1", async () => {
 					server.off("error", reject);
-					resolve(server.address());
+					const address = server.address();
+					try {
+						if (!startupCheckPromise) startupCheckPromise = runStartupSelfCheck(address);
+						await startupCheckPromise;
+						resolve(address);
+					} catch (cause) {
+						server.close(() => reject(cause));
+					}
 				});
 			});
 		},

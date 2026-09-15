@@ -2,6 +2,8 @@
 
 This loopback HTTP gateway inspects MCP tool results **before** they reach a model. It requires a high-entropy bearer token for every request, a tenant-specific explicit tool allowlist, an Ed25519 signed manifest with an operator-approved toolset, and live upstream tool-list agreement. Upstream connections use the core pinned-DNS transport with redirect, private-address and decoded-byte rejection. Text results are fully buffered and scanned; findings, unsupported output, drift, malformed/oversized streams and unavailable checks yield only a generic JSON-RPC error.
 
+Server-initiated methods and binary or unsupported tool output are refused with a machine-readable `error.data` (`type: "mcp_gateway_refusal"`) and a redacted `aidr.mcp_gateway.coverage` event through the optional `onEvent` dependency. Startup emits one typed direct-upstream coverage event per configured server. Without an injected `directUpstreamCheck`, that surface is explicitly `unobservable`; a supplied observer may report `routed`, `unobservable`, or `bypass`, and a detected bypass refuses startup. This self-check does not force host routing or establish host-level egress control.
+
 Build after building core, then start the self-contained bundle:
 
 ```sh

@@ -58,6 +58,7 @@ function fixture(overrides = {}) {
 		};
 	});
 	const stores = new Map();
+	const events = [];
 	let upstreamCalls = 0;
 	const dependencies = {
 		lookup: async () => overrides.addresses ?? ["8.8.8.8"],
@@ -66,6 +67,8 @@ function fixture(overrides = {}) {
 			return stores.get(tenantId);
 		},
 		scanner: overrides.scanner,
+		onEvent: overrides.onEvent ?? ((event) => events.push(event)),
+		directUpstreamCheck: overrides.directUpstreamCheck,
 		pinnedFetch: async (request) => {
 			upstreamCalls += 1;
 			if (overrides.pinnedFetch) return overrides.pinnedFetch(request);
@@ -88,7 +91,10 @@ function fixture(overrides = {}) {
 							capabilities: {},
 							serverInfo: { name: "test", version: "1" },
 						};
-			else result = { content: [{ type: "text", text: overrides.output ?? "Normal result" }] };
+			else
+				result = overrides.toolResult ?? {
+					content: [{ type: "text", text: overrides.output ?? "Normal result" }],
+				};
 			const responseBody = JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result });
 			return new Response(
 				overrides.transport === "sse" ? `event: message\ndata: ${responseBody}\n\n` : responseBody,
@@ -119,6 +125,9 @@ function fixture(overrides = {}) {
 		signedManifest,
 		get upstreamCalls() {
 			return upstreamCalls;
+		},
+		get events() {
+			return events;
 		},
 		async start() {
 			const address = await gateway.listen(0);
@@ -160,6 +169,40 @@ describe("inline MCP gateway", () => {
 		const result = await rpc(base, "invalid".repeat(8));
 		assert.equal(result.status, 401);
 		assert.equal(f.upstreamCalls, 0);
+	});
+
+	it("reports direct-upstream routing as unobservable unless a startup observer supplies evidence", async () => {
+		const unobserved = fixture();
+		await unobserved.start();
+		const unobservableEvent = unobserved.events.find(
+			(event) => event.channel === "startup" && event.surface === "direct_upstream",
+		);
+		assert.ok(unobservableEvent);
+		assert.equal(unobservableEvent.status, "unobservable");
+		assert.equal(unobservableEvent.reasonCode, "direct_upstream_bypass_unobservable");
+		assert.equal(unobservableEvent.hostRoutingEnforced, false);
+
+		const routed = fixture({ directUpstreamCheck: async () => "routed" });
+		await routed.start();
+		const routedEvent = routed.events.find(
+			(event) => event.channel === "startup" && event.surface === "direct_upstream",
+		);
+		assert.equal(routedEvent.status, "routed");
+		assert.equal(routedEvent.reasonCode, "direct_upstream_bypass_not_observed");
+		assert.equal(routedEvent.hostRoutingEnforced, false);
+	});
+
+	it("refuses startup when an injected observer detects a direct upstream bypass", async () => {
+		const f = fixture({ directUpstreamCheck: async () => "bypass" });
+		await assert.rejects(f.start(), (cause) => cause?.code === "direct_upstream_bypass_detected");
+		const event = f.events.find(
+			(candidate) => candidate.channel === "startup" && candidate.surface === "direct_upstream",
+		);
+		assert.equal(event.status, "refused");
+		assert.equal(event.reasonCode, "direct_upstream_bypass_detected");
+		assert.equal(event.decision, "deny");
+		assert.equal(event.refusal.code, "direct_upstream_bypass_detected");
+		assert.equal(event.hostRoutingEnforced, false);
 	});
 
 	it("quarantines first-seen manifest until out-of-band approval, then delivers clean text", async () => {
@@ -217,6 +260,57 @@ describe("inline MCP gateway", () => {
 		});
 		assert.match(initialized.body.error.message, /invalid_initialize_result/);
 		assert.equal(initialized.body.result, undefined);
+	});
+
+	it("refuses server-initiated methods with a typed coverage event and refusal", async () => {
+		const f = fixture({
+			pinnedFetch: async ({ init }) => {
+				const request = JSON.parse(init.body);
+				const result =
+					request.method === "tools/list"
+						? {
+								tools:
+									f?.tools?.map((tool) => ({
+										name: tool.name,
+										description: tool.description,
+										inputSchema: tool.input_schema,
+									})) ?? [],
+							}
+						: undefined;
+				if (result) {
+					return new Response(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }), {
+						headers: { "content-type": "application/json" },
+					});
+				}
+				return new Response(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id: request.id,
+						method: "notifications/progress",
+						params: { message: "hidden server request" },
+					}),
+					{ headers: { "content-type": "application/json" } },
+				);
+			},
+		});
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve();
+		const result = await rpc(base, f.tokenA);
+		assert.equal(result.body.result, undefined);
+		assert.equal(result.body.error.data.type, "mcp_gateway_refusal");
+		assert.equal(result.body.error.data.code, "server_initiated_method");
+		assert.equal(result.body.error.data.surface, "server_initiated_method");
+		assert.ok(!JSON.stringify(result.body).includes("hidden server request"));
+		const coverage = f.events.find(
+			(event) =>
+				event.type === "mcp_gateway_coverage" && event.reasonCode === "server_initiated_method",
+		);
+		assert.ok(coverage);
+		assert.equal(coverage.status, "refused");
+		assert.equal(coverage.decision, "deny");
+		assert.equal(coverage.refusal.code, "server_initiated_method");
+		assert.ok(!JSON.stringify(coverage).includes("hidden server request"));
 	});
 
 	it("keeps tenant approvals separate for the same server ID", async () => {
@@ -414,7 +508,40 @@ describe("inline MCP gateway", () => {
 			const base = await f.start();
 			await rpc(base, f.tokenA);
 			await f.approve();
-			assert.ok((await rpc(base, f.tokenA)).body.error);
+			const result = await rpc(base, f.tokenA);
+			assert.ok(result.body.error);
+			if (options.pinnedFetch) {
+				assert.equal(result.body.error.data.type, "mcp_gateway_refusal");
+				assert.equal(result.body.error.data.code, "unsupported_binary_output");
+				assert.equal(result.body.error.data.outputType, "binary");
+				const coverage = f.events.find((event) => event.reasonCode === "unsupported_binary_output");
+				assert.ok(coverage);
+				assert.equal(coverage.surface, "tool_output");
+				assert.ok(!JSON.stringify(f.events).includes("AAAA"));
+			}
+		}
+	});
+
+	it("refuses unsupported non-text output with a typed coverage reason", async () => {
+		for (const [toolResult, code] of [
+			[
+				{ content: [{ type: "resource_link", uri: "https://resource.example.test/item" }] },
+				"unsupported_tool_output",
+			],
+			[
+				{ content: [{ type: "text", text: "ok" }], structuredContent: "not-an-object" },
+				"unsupported_structured_output",
+			],
+		]) {
+			const f = fixture({ toolResult });
+			const base = await f.start();
+			await rpc(base, f.tokenA);
+			await f.approve();
+			const result = await rpc(base, f.tokenA);
+			assert.equal(result.body.error.data.code, code);
+			assert.equal(result.body.error.data.category, "coverage");
+			assert.ok(f.events.some((event) => event.reasonCode === code));
+			assert.ok(!JSON.stringify(result.body).includes("resource.example.test"));
 		}
 	});
 
