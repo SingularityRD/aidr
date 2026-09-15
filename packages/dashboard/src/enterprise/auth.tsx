@@ -1,8 +1,9 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
-import { type SessionSnapshot, readSession } from "../ui/session";
+import type { SessionSnapshot } from "../ui/session";
+import { useSessionSnapshot } from "../ui/use-session";
 import { setPostAuthReturnTo } from "../ui/return-to";
 
 /**
@@ -92,13 +93,43 @@ export interface EnterpriseAuthProps {
 	tenantId?: string;
 }
 
-export function EnterpriseAuth({ children, tenantId }: EnterpriseAuthProps = {}) {
+export function EnterpriseAuth(props: EnterpriseAuthProps = {}) {
+	const { snapshot, generation, refresh, isCurrent } = useSessionSnapshot();
+	// A key is an authorization boundary, not a cache key. React discards clear
+	// state AND factor secrets before rendering a different tenant/principal/token.
+	const binding = JSON.stringify([
+		props.tenantId ?? null,
+		snapshot?.session?.user.id ?? null,
+		snapshot?.session?.access_token ?? null,
+		generation,
+	]);
+	return (
+		<BoundEnterpriseAuth
+			key={binding}
+			{...props}
+			snapshot={snapshot}
+			refreshSession={refresh}
+			isCurrent={isCurrent}
+		/>
+	);
+}
+
+function BoundEnterpriseAuth({
+	children,
+	tenantId,
+	snapshot,
+	refreshSession,
+	isCurrent,
+}: EnterpriseAuthProps & {
+	snapshot: SessionSnapshot | null;
+	refreshSession: () => Promise<void>;
+	isCurrent: () => boolean;
+}) {
 	const navigate = useNavigate();
 	const routerLocation = useLocation();
 	const [searchParams] = useSearchParams();
 	const [status, setStatus] = useState<AuthStatus | null>(null);
 	const [busy, setBusy] = useState(false);
-	const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
 	const [stepUp, setStepUp] = useState<StepUpState>({ kind: "checking" });
 	const [code, setCode] = useState("");
 	const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
@@ -117,40 +148,27 @@ export function EnterpriseAuth({ children, tenantId }: EnterpriseAuthProps = {})
 
 	const session = snapshot?.session ?? null;
 
-	useEffect(() => {
-		let cancelled = false;
-		const apply = (next: SessionSnapshot) => {
-			if (!cancelled) setSnapshot(next);
-		};
-		readSession()
-			.then(apply)
-			.catch((cause: unknown) => {
-				if (cancelled) return;
-				setSnapshot(null);
-				setStatus({
-					tone: "error",
-					message: readErrorMessage(cause, "Your session could not be read. Sign in again."),
-				});
-			});
-		const { data } = supabase.auth.onAuthStateChange(() => {
-			readSession()
-				.then(apply)
-				.catch(() => {
-					if (!cancelled) setSnapshot(null);
-				});
-		});
+	const active = useRef(true);
+	const assuranceRequest = useRef(0);
+	const bindingIsCurrent = useCallback(() => active.current && isCurrent(), [isCurrent]);
+	useLayoutEffect(() => {
+		active.current = true;
 		return () => {
-			cancelled = true;
-			data.subscription.unsubscribe();
+			active.current = false;
+			++assuranceRequest.current;
 		};
 	}, []);
 
 	const checkAssurance = useCallback(async () => {
+		if (!bindingIsCurrent() || !session) return;
+		const request = ++assuranceRequest.current;
 		setStepUp({ kind: "checking" });
 		try {
 			const { data, error } = await supabase.functions.invoke("identity-security", {
 				body: { action: "status", ...(tenantId ? { tenant_id: tenantId } : {}) },
+				headers: { Authorization: `Bearer ${session.access_token}` },
 			});
+			if (!bindingIsCurrent() || request !== assuranceRequest.current) return;
 			if (error) throw error;
 			const assurance = parseAssurance(data);
 			if (!assurance) {
@@ -158,7 +176,9 @@ export function EnterpriseAuth({ children, tenantId }: EnterpriseAuthProps = {})
 					'the "identity-security" Edge Function did not report an assurance level (expected {"ok":true,"require_mfa":…,"access_allowed":…}). Access is withheld.',
 				);
 			}
-			if (assurance.accessAllowed) {
+			if (tenantId && data.tenant_id !== tenantId)
+				throw new Error("The assurance report belongs to another tenant. Access is withheld.");
+			if (assurance.accessAllowed && (!assurance.requireMfa || assurance.currentLevel === "aal2")) {
 				setStepUp({ kind: "clear" });
 				return;
 			}
@@ -166,6 +186,7 @@ export function EnterpriseAuth({ children, tenantId }: EnterpriseAuthProps = {})
 			// exists to challenge; anything else has to enroll one first.
 			setStepUp(assurance.nextLevel === "aal2" ? { kind: "challenge" } : { kind: "enroll" });
 		} catch (cause) {
+			if (!bindingIsCurrent() || request !== assuranceRequest.current) return;
 			setStepUp({ kind: "blocked" });
 			setStatus({
 				tone: "error",
@@ -175,7 +196,7 @@ export function EnterpriseAuth({ children, tenantId }: EnterpriseAuthProps = {})
 				),
 			});
 		}
-	}, [tenantId]);
+	}, [tenantId, session, bindingIsCurrent]);
 
 	useEffect(() => {
 		if (!gated || !snapshot) return;
@@ -277,6 +298,7 @@ export function EnterpriseAuth({ children, tenantId }: EnterpriseAuthProps = {})
 				factorType: "totp",
 				friendlyName: "AIDR control plane",
 			});
+			if (!bindingIsCurrent()) return;
 			if (error) throw error;
 			if (!data || data.type !== "totp") {
 				throw new Error("The authentication service did not start a TOTP enrollment.");
@@ -303,9 +325,11 @@ export function EnterpriseAuth({ children, tenantId }: EnterpriseAuthProps = {})
 		setStatus(null);
 		try {
 			const factorId = enrollment?.factorId ?? (await verifiedFactorId());
+			if (!bindingIsCurrent()) return;
 			const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
 				factorId,
 			});
+			if (!bindingIsCurrent()) return;
 			if (challengeError) throw challengeError;
 			const challengeId = challenge?.id;
 			if (!challengeId) {
@@ -316,12 +340,13 @@ export function EnterpriseAuth({ children, tenantId }: EnterpriseAuthProps = {})
 				challengeId,
 				code: code.trim(),
 			});
+			if (!bindingIsCurrent()) return;
 			if (verifyError) throw verifyError;
 			setCode("");
 			setEnrollment(null);
-			// Re-read the server's report: the client's own verify result is not
-			// evidence that the control plane now accepts this session.
-			await checkAssurance();
+			// Verification rotates the token. Discard this binding and check the
+			// new token server-side; a client verify result never grants access.
+			await refreshSession();
 		} catch (cause) {
 			setCode("");
 			setStatus({
@@ -337,6 +362,12 @@ export function EnterpriseAuth({ children, tenantId }: EnterpriseAuthProps = {})
 	}
 
 	async function cancelStepUp() {
+		// Close before awaiting sign-out, even if it fails or a status is delayed.
+		active.current = false;
+		++assuranceRequest.current;
+		setStepUp({ kind: "blocked" });
+		setEnrollment(null);
+		setCode("");
 		setBusy(true);
 		try {
 			const { error } = await supabase.auth.signOut();
