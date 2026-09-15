@@ -546,9 +546,11 @@ test("trust, customer and budget gates default closed; unknown keys and malforme
 		assert.equal(report.duty_separation.independent, false);
 		assert.throws(() => data.evaluate(null, { payloadExtra: { signing_key_id: "unknown" }, trustedKeys: { schema_version: 1, keys: [] } }), /unknown, mismatched, or unauthorized attestation signing key/);
 		const fingerprint = hash(data.publicKey.export({ type: "spki", format: "der" }));
-		report = data.evaluate(null, { payloadExtra: { signing_key_id: "test-key", customer_corpus_authorized: true }, trustedKeys: { schema_version: 1, keys: [{ key_id: "test-key", public_key_sha256: fingerprint, roles: ["independent_evaluator"] }] } });
+		assert.throws(() => data.evaluate(null, { payloadExtra: { signing_key_id: "test-key" }, trustedKeys: { schema_version: 1, keys: [{ key_id: "test-key", evaluator_id: "different-evaluator", public_key_sha256: fingerprint, roles: ["independent_evaluator"] }] } }), /unknown, mismatched, or unauthorized attestation signing key/);
+		report = data.evaluate(null, { payloadExtra: { signing_key_id: "test-key", customer_corpus_authorized: true }, trustedKeys: { schema_version: 1, keys: [{ key_id: "test-key", evaluator_id: "external-evaluator", public_key_sha256: fingerprint, roles: ["independent_evaluator"] }] } });
 		assert.equal(report.gates.attestation_trusted, true);
 		assert.equal(report.gates.customer_corpus_authorized, false);
+		assert.throws(() => data.evaluate(null, { signatureBase64: `${Buffer.alloc(64).toString("base64")} ` }), /canonical base64/);
 		assert.throws(() => data.evaluate(null, { signatureBase64: Buffer.alloc(63).toString("base64") }), /exactly 64 bytes/);
 		data.observations.measurement_budget.spent = 101;
 		assert.throws(() => data.evaluate(), /spent exceeds ceiling/);

@@ -14,7 +14,7 @@
         "observations_sha256": { "$ref": "#/$defs/sha256" }, "candidate_artifact_sha256": { "$ref": "#/$defs/sha256" },
         "rule_author_id": { "type": "string", "minLength": 1 }, "evaluator_id": { "type": "string", "minLength": 1 },
         "evaluator_role": { "const": "independent_evaluator" }, "completed_at": { "type": "string", "minLength": 1 },
-        "split_manifest_sha256": { "$ref": "#/$defs/sha256" }, "signing_key_id": { "type": "string", "minLength": 1 }
+        "split_manifest_sha256": { "$ref": "#/$defs/sha256" }, "duty_separation_receipt_sha256": { "$ref": "#/$defs/sha256" }, "signing_key_id": { "type": "string", "minLength": 1 }
       }
     },
     "signature_base64": { "type": "string", "description": "Canonical base64 encoding of a 64-byte Ed25519 signature." }

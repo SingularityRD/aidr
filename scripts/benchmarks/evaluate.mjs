@@ -18,6 +18,8 @@ const SCOPE_DIMENSIONS = [
 ];
 const SCOPE_POSTURES = new Set(["enforce", "observe", "unsupported"]);
 const COMPARISON_UNKNOWN_REASONS = new Set(["not_authorized", "not_available", "budget_blocked", "missing_measurements", "unsupported_product"]);
+const TRUSTED_KEY_ROLES = new Set(["independent_evaluator", "duty_separation_authority", "customer_authority", "budget_authority"]);
+const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 export const MAX_ANALYSIS_MATRIX_CELLS = 1_000_000;
 // Exactly one of these may appear on a case. They name the case it was derived from.
 const DERIVATION_FIELDS = ["derived_from_case_id", "development_derived_from"];
@@ -32,6 +34,8 @@ export const OBSERVATION_PRODUCT_REQUIRED_FIELDS = ["product_id", "version", "ar
 export const MEASUREMENT_REQUIRED_FIELDS = ["case_id", "product_id", "trial", "action", "phase", "latency_ms", "raw_evidence_file", "raw_evidence_sha256"];
 export const ATTESTATION_REQUIRED_FIELDS = ["schema_version", "payload", "signature_base64"];
 export const ATTESTATION_PAYLOAD_REQUIRED_FIELDS = ["protocol_version", "corpus_sha256", "observations_sha256", "candidate_artifact_sha256", "rule_author_id", "evaluator_id", "evaluator_role", "completed_at"];
+export const TRUSTED_KEY_REQUIRED_FIELDS = ["key_id", "evaluator_id", "public_key_sha256", "roles"];
+export const DUTY_SEPARATION_RECEIPT_PAYLOAD_REQUIRED_FIELDS = ["corpus_sha256", "rule_author_id", "oracle_reviewer_id", "evaluator_id", "authority_id", "signing_key_id"];
 export const REPORT_REQUIRED_FIELDS = ["schema_version", "kind", "claim_status", "production_accepted", "corpus", "observations_sha256", "workload_id", "environment", "attestation", "coverage", "gates", "canonical_report_sha256"];
 
 function requireFields(value, fields, label) {
@@ -72,6 +76,15 @@ function safeId(value, label) {
 
 function digest(bytes) {
 	return createHash("sha256").update(bytes).digest("hex");
+}
+
+function strictBase64(value, label, expectedBytes) {
+	const message = `${label} must be canonical base64 encoding of exactly ${expectedBytes} bytes`;
+	const expectedLength = Math.ceil(expectedBytes / 3) * 4;
+	if (typeof value !== "string" || value.length !== expectedLength || !CANONICAL_BASE64.test(value)) fail(message);
+	const decoded = Buffer.from(value, "base64");
+	if (decoded.length !== expectedBytes || decoded.toString("base64") !== value) fail(message);
+	return decoded;
 }
 
 export function canonicalJson(value) {
@@ -495,10 +508,17 @@ function validateTrustedKeys(value) {
 	const keys = new Map();
 	for (const entry of value.keys) {
 		object(entry, "trusted key");
+		requireFields(entry, TRUSTED_KEY_REQUIRED_FIELDS, "trusted key");
 		const id = safeId(entry.key_id, "trusted key key_id");
 		if (keys.has(id)) fail(`duplicate trusted key_id: ${id}`);
-		if (!Array.isArray(entry.roles) || entry.roles.length === 0 || entry.roles.some((role) => !["independent_evaluator", "duty_separation_authority", "customer_authority", "budget_authority"].includes(role))) fail(`trusted key ${id} must declare recognized roles`);
-		keys.set(id, { sha256: assertSha(entry.public_key_sha256, `public_key_sha256 for trusted key ${id}`), roles: new Set(entry.roles) });
+		const evaluatorId = safeId(entry.evaluator_id, `trusted key evaluator_id for ${id}`);
+		if (!Array.isArray(entry.roles) || entry.roles.length === 0 || entry.roles.some((role) => !TRUSTED_KEY_ROLES.has(role)) || new Set(entry.roles).size !== entry.roles.length)
+			fail(`trusted key ${id} must declare recognized roles without duplicates`);
+		keys.set(id, {
+			sha256: assertSha(entry.public_key_sha256, `public_key_sha256 for trusted key ${id}`),
+			evaluatorId,
+			roles: new Set(entry.roles),
+		});
 	}
 	return keys;
 }
@@ -534,27 +554,27 @@ function verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBy
 	if (assertSha(payload.candidate_artifact_sha256, "attested candidate_artifact_sha256") !== observations.products.find((p) => p.product_id === observations.candidate_product_id).artifact_sha256.toLowerCase())
 		fail("candidate artifact differs from signed attestation");
 	if (nonempty(payload.rule_author_id, "attested rule_author_id") !== corpus.rule_author_id) fail("rule author mismatch");
-	const evaluatorId = nonempty(payload.evaluator_id, "evaluator_id");
+	const evaluatorId = safeId(payload.evaluator_id, "evaluator_id");
 	if (evaluatorId === corpus.rule_author_id || evaluatorId === corpus.oracle_reviewer_id) fail("evaluator must differ from rule author and oracle reviewer");
 	if (payload.evaluator_role !== "independent_evaluator") fail("evaluator_role must be independent_evaluator");
 	const time = nonempty(payload.completed_at, "completed_at");
 	if (!/^\d{4}-\d{2}-\d{2}T/.test(time) || Number.isNaN(Date.parse(time))) fail("completed_at must be an ISO timestamp");
-	const signatureText = nonempty(attestation.signature_base64, "signature_base64");
-	const signature = Buffer.from(signatureText, "base64");
-	if (signature.length !== 64 || signature.toString("base64") !== signatureText) fail("attestation signature must be canonical base64 encoding of exactly 64 bytes");
+	const signature = strictBase64(attestation.signature_base64, "attestation signature", 64);
 	const key = createPublicKey(publicKeyPem);
 	if (key.asymmetricKeyType !== "ed25519") fail("attestation key must be Ed25519");
 	const fingerprint = digest(key.export({ type: "spki", format: "der" }));
+	const signingKeyId = payload.signing_key_id === undefined ? null : safeId(payload.signing_key_id, "attested signing_key_id");
 	let trusted = false;
 	if (trustedKeys !== null) {
 		const keys = validateTrustedKeys(trustedKeys);
-		const keyId = safeId(payload.signing_key_id, "attested signing_key_id");
-		const trustedKey = keys.get(keyId);
-		if (!trustedKey || trustedKey.sha256 !== fingerprint || !trustedKey.roles.has("independent_evaluator")) fail(`unknown, mismatched, or unauthorized attestation signing key: ${keyId}`);
+		if (signingKeyId === null) fail("trusted attestation requires signing_key_id");
+		const trustedKey = keys.get(signingKeyId);
+		if (!trustedKey || trustedKey.sha256 !== fingerprint || trustedKey.evaluatorId !== evaluatorId || !trustedKey.roles.has("independent_evaluator"))
+			fail(`unknown, mismatched, or unauthorized attestation signing key: ${signingKeyId}`);
 		trusted = true;
 	}
 	if (!verify(null, Buffer.from(JSON.stringify(payload)), key, signature)) fail("invalid evaluator signature");
-	return { evaluator_id: evaluatorId, completed_at: time, public_key_sha256: fingerprint, signing_key_id: payload.signing_key_id ?? null, trusted };
+	return { evaluator_id: evaluatorId, completed_at: time, public_key_sha256: fingerprint, signing_key_id: signingKeyId, trusted };
 }
 
 function classificationMetrics(rows, caseMap, allowRoc) {
@@ -676,17 +696,28 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 	if (dutySeparationReceipt !== null) {
 		object(dutySeparationReceipt, "duty separation receipt");
 		if (!signer.trusted || trustedKeys === null) fail("duty separation receipt requires trusted evaluator and authority keys");
+		if (!Buffer.isBuffer(dutySeparationReceiptBytes)) fail("duty separation receipt bytes are required");
 		if (assertSha(attestation.payload.duty_separation_receipt_sha256, "attested duty_separation_receipt_sha256") !== digest(dutySeparationReceiptBytes)) fail("duty separation receipt differs from signed attestation");
 		const receiptPayload = object(dutySeparationReceipt.payload, "duty separation receipt payload");
-		const receiptSignatureText = nonempty(dutySeparationReceipt.signature_base64, "duty separation receipt signature_base64");
-		const receiptSignature = Buffer.from(receiptSignatureText, "base64");
+		requireFields(receiptPayload, DUTY_SEPARATION_RECEIPT_PAYLOAD_REQUIRED_FIELDS, "duty separation receipt payload");
+		const receiptRuleAuthorId = safeId(receiptPayload.rule_author_id, "duty separation rule_author_id");
+		const receiptOracleReviewerId = safeId(receiptPayload.oracle_reviewer_id, "duty separation oracle_reviewer_id");
+		const receiptEvaluatorId = safeId(receiptPayload.evaluator_id, "duty separation evaluator_id");
+		const receiptAuthorityId = safeId(receiptPayload.authority_id, "duty separation authority_id");
+		const dutyIds = [receiptRuleAuthorId, receiptOracleReviewerId, receiptEvaluatorId, receiptAuthorityId];
+		if (new Set(dutyIds).size !== dutyIds.length) fail("duty separation receipt duty identities must be pairwise distinct");
+		if (assertSha(receiptPayload.corpus_sha256, "duty separation corpus_sha256") !== digest(corpusBytes) || receiptRuleAuthorId !== corpus.rule_author_id || receiptOracleReviewerId !== corpus.oracle_reviewer_id || receiptEvaluatorId !== signer.evaluator_id)
+			fail("duty separation receipt identities or corpus do not match benchmark inputs");
+		const receiptSignature = strictBase64(dutySeparationReceipt.signature_base64, "duty separation receipt signature", 64);
 		const authorityKey = createPublicKey(nonempty(dutySeparationReceipt.public_key_pem, "duty separation receipt public_key_pem"));
+		if (authorityKey.asymmetricKeyType !== "ed25519") fail("duty separation receipt key must be Ed25519");
 		const authorityFingerprint = digest(authorityKey.export({ type: "spki", format: "der" }));
-		const authority = validateTrustedKeys(trustedKeys).get(safeId(receiptPayload.signing_key_id, "duty separation signing_key_id"));
-		if (authorityKey.asymmetricKeyType !== "ed25519" || !authority || authority.sha256 !== authorityFingerprint || !authority.roles.has("duty_separation_authority") || authorityFingerprint === signer.public_key_sha256) fail("duty separation receipt key is not an independent trusted authority");
-		if (receiptSignature.length !== 64 || receiptSignature.toString("base64") !== receiptSignatureText || !verify(null, Buffer.from(JSON.stringify(receiptPayload)), authorityKey, receiptSignature)) fail("invalid duty separation receipt signature");
-		if (receiptPayload.corpus_sha256 !== digest(corpusBytes) || receiptPayload.rule_author_id !== corpus.rule_author_id || receiptPayload.oracle_reviewer_id !== corpus.oracle_reviewer_id || receiptPayload.evaluator_id !== signer.evaluator_id) fail("duty separation receipt identities or corpus do not match benchmark inputs");
-		dutySeparationBound = new Set([receiptPayload.rule_author_id, receiptPayload.oracle_reviewer_id, receiptPayload.evaluator_id, receiptPayload.authority_id]).size === 4;
+		const receiptSigningKeyId = safeId(receiptPayload.signing_key_id, "duty separation signing_key_id");
+		const authority = validateTrustedKeys(trustedKeys).get(receiptSigningKeyId);
+		if (!authority || authority.sha256 !== authorityFingerprint || authority.evaluatorId !== receiptAuthorityId || !authority.roles.has("duty_separation_authority") || authorityFingerprint === signer.public_key_sha256)
+			fail("duty separation receipt key is not an independent trusted authority");
+		if (!verify(null, Buffer.from(JSON.stringify(receiptPayload)), authorityKey, receiptSignature)) fail("invalid duty separation receipt signature");
+		dutySeparationBound = true;
 	}
 	const operatingPoint = attestation.payload.frozen_operating_point;
 	if (operatingPoint !== undefined && (operatingPoint?.frozen !== true || typeof operatingPoint.threshold !== "number" || !Number.isFinite(operatingPoint.threshold) || operatingPoint.threshold < 0 || operatingPoint.threshold > 1)) fail("frozen operating point must declare frozen true and a threshold between 0 and 1");
