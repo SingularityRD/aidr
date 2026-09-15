@@ -7,6 +7,12 @@ import { lstatSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { isWithin, loadReleaseBundle } from "./release-signing-lib.mjs";
+import {
+  CUSTOMER_KIT_BENCHMARK_FILES,
+  CUSTOMER_KIT_DELIVERY_FILES,
+  CUSTOMER_KIT_REQUIRED_FILES,
+  CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
+} from "./customer-kit-contract.mjs";
 
 try {
   const { values } = parseArgs({ options: {
@@ -57,11 +63,16 @@ try {
     if (digest !== expectedDigest) throw new Error(`Changed kit file: ${relative}`);
   }
   if (expected.some((entry) => /(^|\/)(?:\.env|\.env\.functions|node_modules)(?:\/|$)/.test(entry))) throw new Error("Private deployment data or dependencies found in kit");
-  for (const required of ["scripts/deployment-restore-drill.mjs", "RESTORE-DRILL.md", "scripts/verify-native-host-matrix-v6.mjs", "NATIVE-HOST-ACCEPTANCE.md", "SUPPORT-RUNBOOK.md", "FIRST-CUSTOMER-SALES-PACKET.md", "CANDIDATE-STATUS.md", "scripts/benchmarks/evaluate.mjs", "scripts/benchmarks/attest.mjs", "supabase/config.toml"]) {
+  for (const required of CUSTOMER_KIT_REQUIRED_FILES) {
     if (!inventory.has(required)) throw new Error(`Required customer acceptance artifact is missing: ${required}`);
   }
 
+  verifyRegionManifest(kit);
+  verifyTlsDelivery(kit);
+  verifyBenchmarkDelivery(kit);
+
   const source = JSON.parse(readFileSync(join(kit, "release-source.json"), "utf8"));
+  verifyDeliveryStatus(source, inventory);
   const gatewayRuntime = ["deploy/gateway/aidr-mcp-gateway.mjs", "deploy/gateway/aidr-mcp-approve.mjs", "deploy/gateway/aidr-mcp-stdio.mjs", "deploy/gateway/aidr-artifact.manifest.json", "deploy/gateway/README.md"];
   if (source.inline_mcp_gateway_bundled !== gatewayRuntime.every((path) => inventory.has(path))) {
     throw new Error("MCP gateway delivery status does not match bundled runtime");
@@ -90,6 +101,11 @@ try {
   let artifacts = 0;
   if (releasePresent) {
     const release = await loadReleaseBundle(artifactDir, { allowSignedControlFiles: signaturePresent });
+    const releaseArtifactNames = new Set(release.artifacts.map((entry) => entry.path));
+    for (const required of CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS) {
+      if (!releaseArtifactNames.has(required)) throw new Error(`Required release provenance artifact is missing: ${required}`);
+    }
+    verifyProvenanceArtifact(join(artifactDir, "aidr-provenance.intoto.json"));
     artifacts = release.artifacts.length;
   } else if (values["release-policy"] || signaturePresent) {
     throw new Error("Inner release inventory is missing");
@@ -114,4 +130,93 @@ try {
 } catch (error) {
   console.error(`Customer kit verification failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
+}
+
+function verifyRegionManifest(kit) {
+  const manifestPath = join(kit, CUSTOMER_KIT_DELIVERY_FILES.region_manifest);
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    throw new Error(`Deployment region manifest is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (manifest?.schema_version !== 1 || !manifest.regions || typeof manifest.regions !== "object" || Array.isArray(manifest.regions) || Object.keys(manifest.regions).length === 0) {
+    throw new Error("Deployment region manifest must declare schema_version 1 and a non-empty regions object");
+  }
+  for (const [id, entry] of Object.entries(manifest.regions)) {
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id) || !entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`Deployment region manifest contains an invalid region entry: ${id}`);
+    }
+    if (entry.supabase_url !== null) {
+      let parsed;
+      try { parsed = new URL(entry.supabase_url); } catch { parsed = null; }
+      if (!parsed || parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== "/") {
+        throw new Error(`Deployment region manifest contains an invalid HTTPS origin for ${id}`);
+      }
+    }
+    const residency = entry.residency;
+    if (!residency || typeof residency !== "object" || Array.isArray(residency) || typeof residency.declared !== "boolean" || typeof residency.location !== "string" || residency.location.length === 0) {
+      throw new Error(`Deployment region manifest is missing residency declaration for ${id}`);
+    }
+  }
+}
+
+function verifyTlsDelivery(kit) {
+  const service = readFileSync(join(kit, CUSTOMER_KIT_DELIVERY_FILES.tls_service), "utf8");
+  const timer = readFileSync(join(kit, CUSTOMER_KIT_DELIVERY_FILES.tls_timer), "utf8");
+  if (!/deployment-tls-renew\.mjs/.test(service)) throw new Error("TLS renewal service is not wired to deployment-tls-renew.mjs");
+  if (!/^\s*Unit=aidr-tls-renew\.service\s*$/m.test(timer)) throw new Error("TLS renewal timer is not wired to aidr-tls-renew.service");
+  const syntax = spawnSync(process.execPath, ["--check", join(kit, CUSTOMER_KIT_DELIVERY_FILES.tls_script)], { encoding: "utf8", windowsHide: true });
+  if (syntax.status !== 0) throw new Error(`TLS renewal script is not valid JavaScript: ${(syntax.stderr || "").trim()}`);
+}
+
+function verifyBenchmarkDelivery(kit) {
+  for (const relative of CUSTOMER_KIT_BENCHMARK_FILES.filter((entry) => entry.endsWith(".json"))) {
+    try {
+      JSON.parse(readFileSync(join(kit, relative), "utf8"));
+    } catch (error) {
+      throw new Error(`Benchmark contract is not valid JSON: ${relative} (${error instanceof Error ? error.message : String(error)})`);
+    }
+  }
+  for (const relative of [CUSTOMER_KIT_DELIVERY_FILES.provenance_script, CUSTOMER_KIT_DELIVERY_FILES.airgap_script]) {
+    const syntax = spawnSync(process.execPath, ["--check", join(kit, relative)], { encoding: "utf8", windowsHide: true });
+    if (syntax.status !== 0) throw new Error(`Customer kit script is not valid JavaScript: ${relative}`);
+  }
+}
+
+function verifyDeliveryStatus(source, inventory) {
+  const statuses = {
+    region_manifest_bundled: [CUSTOMER_KIT_DELIVERY_FILES.region_manifest],
+    tls_renewal_bundled: [CUSTOMER_KIT_DELIVERY_FILES.tls_service, CUSTOMER_KIT_DELIVERY_FILES.tls_timer, CUSTOMER_KIT_DELIVERY_FILES.tls_script],
+    provenance_tool_bundled: [CUSTOMER_KIT_DELIVERY_FILES.provenance_script],
+    airgap_tool_bundled: [CUSTOMER_KIT_DELIVERY_FILES.airgap_script],
+    benchmark_contract_bundled: CUSTOMER_KIT_BENCHMARK_FILES,
+    provenance_statement_bundled: ["artifacts/aidr-provenance.intoto.json"],
+  };
+  for (const [field, paths] of Object.entries(statuses)) {
+    if (source[field] !== undefined && source[field] !== paths.every((relative) => inventory.has(relative))) {
+      throw new Error(`release-source ${field} does not match the bundled artifact set`);
+    }
+  }
+}
+
+function verifyProvenanceArtifact(provenancePath) {
+  let statement;
+  try {
+    statement = JSON.parse(readFileSync(provenancePath, "utf8"));
+  } catch (error) {
+    throw new Error(`Bundled release provenance is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (statement?._type !== "https://in-toto.io/Statement/v0.1" || statement?.predicateType !== "https://slsa.dev/provenance/v0.2") {
+    throw new Error("Bundled release provenance has an unexpected statement or predicate type");
+  }
+  if (!Array.isArray(statement.subject) || statement.subject.length === 0) throw new Error("Bundled release provenance declares no artifact subjects");
+  for (const subject of statement.subject) {
+    if (!subject || typeof subject.name !== "string" || !/^[a-f0-9]{64}$/.test(subject.digest?.sha256 ?? "")) throw new Error("Bundled release provenance has an invalid subject digest");
+  }
+  const predicate = statement.predicate;
+  if (!predicate || typeof predicate.builder?.id !== "string" || !Array.isArray(predicate.materials) || predicate.materials.length === 0) throw new Error("Bundled release provenance is missing builder or materials");
+  if (!Array.isArray(predicate.byproducts) || !predicate.byproducts.some((entry) => typeof entry?.uri === "string" && entry.uri.endsWith("aidr-sbom.cdx.json"))) {
+    throw new Error("Bundled release provenance is missing the SBOM byproduct");
+  }
 }
