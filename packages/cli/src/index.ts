@@ -78,6 +78,7 @@ program
 	.command("collect")
 	.description("Continuously collect tenant-scoped AI infrastructure inventory")
 	.requiredOption("--tenant <id>", "Tenant identifier recorded in the inventory")
+	.option("--provider <id>", "Discovery provider (local is implemented; cloud/MDM require an adapter)", "local")
 	.option("-t, --target <url...>", "Target base URL (repeatable)")
 	.option("-f, --file <path>", "Read targets from a file, one URL per line")
 	.option(

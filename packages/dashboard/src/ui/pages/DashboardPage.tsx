@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { dashboardAgentFreshness } from "../dashboard-freshness";
 import { getSession } from "../session";
 
 type AgentRow = {
@@ -8,7 +9,7 @@ type AgentRow = {
 	iid: string;
 	display_name: string | null;
 	agent_runtime: string | null;
-	last_seen: string;
+	last_seen: string | null;
 };
 
 type EventRow = {
@@ -16,14 +17,47 @@ type EventRow = {
 	type: string;
 	created_at: string;
 	agent_id: string;
-	payload: Record<string, unknown>;
+	payload: Record<string, unknown> | null;
 };
 
-const CONNECTED_WINDOW_MS = 10 * 60 * 1000;
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
-function isConnected(agent: AgentRow): boolean {
-	const seen = Date.parse(agent.last_seen);
-	return Number.isFinite(seen) && Date.now() - seen <= CONNECTED_WINDOW_MS;
+function isNullableString(value: unknown): value is string | null {
+	return value === null || typeof value === "string";
+}
+
+function isAgentRow(value: unknown): value is AgentRow {
+	return (
+		isRecord(value) &&
+		typeof value.id === "string" &&
+		typeof value.iid === "string" &&
+		isNullableString(value.display_name) &&
+		isNullableString(value.agent_runtime) &&
+		isNullableString(value.last_seen)
+	);
+}
+
+function isEventRow(value: unknown): value is EventRow {
+	return (
+		isRecord(value) &&
+		typeof value.id === "number" && Number.isFinite(value.id) &&
+		typeof value.type === "string" &&
+		typeof value.created_at === "string" && Number.isFinite(Date.parse(value.created_at)) &&
+		typeof value.agent_id === "string" &&
+		(value.payload === null || isRecord(value.payload))
+	);
+}
+
+function queryRows<T>(result: unknown, isRow: (value: unknown) => value is T): T[] {
+	if (isRecord(result) && isRecord(result.error) && typeof result.error.message === "string") {
+		throw new Error(result.error.message);
+	}
+	if (!isRecord(result) || result.error !== null || !Array.isArray(result.data) || !result.data.every(isRow)) {
+		throw new Error("Malformed dashboard query response.");
+	}
+	return result.data;
 }
 
 function eventSummary(event: EventRow): string {
@@ -54,62 +88,89 @@ export function DashboardPage() {
 	const [agents, setAgents] = useState<AgentRow[] | null>(null);
 	const [events, setEvents] = useState<EventRow[] | null>(null);
 	const [pendingTokens, setPendingTokens] = useState<number | null>(null);
-	const [error, setError] = useState<string | null>(null);
+	const [agentError, setAgentError] = useState<string | null>(null);
+	const [eventError, setEventError] = useState<string | null>(null);
+	const [nowMs, setNowMs] = useState(() => Date.now());
+	const error = [agentError, eventError].filter(Boolean).join(" ");
 
 	useEffect(() => {
 		let cancelled = false;
+		const timers: ReturnType<typeof setInterval>[] = [];
+		const deadlines = new Set<ReturnType<typeof setTimeout>>();
 
-		async function load() {
-			const [agentsRes, eventsRes] = await Promise.all([
-				supabase
-					.from("agents")
-					.select("id,iid,display_name,agent_runtime,last_seen")
-					.order("last_seen", { ascending: false }),
-				supabase
-					.from("events")
-					.select("id,type,created_at,agent_id,payload")
-					.order("created_at", { ascending: false })
-					.limit(500),
-			]);
-
-			if (cancelled) return;
-
-			const problems: string[] = [];
-			if (agentsRes.error) {
-				problems.push(agentsRes.error.message);
-				setAgents(null);
-			} else {
-				setAgents((agentsRes.data ?? []) as AgentRow[]);
-			}
-
-			if (eventsRes.error) {
-				problems.push(eventsRes.error.message);
-				setEvents(null);
-			} else {
-				setEvents((eventsRes.data ?? []) as EventRow[]);
-			}
-
-			// Set the error once per cycle so a persistent failure keeps a stable
-			// alert instead of unmounting/remounting it on every poll tick.
-			setError(problems.length > 0 ? problems.join(" ") : null);
-
-			// Outstanding enrollment tokens require pilot approval; render a
-			// fail-closed "—" instead of inventing a number when unavailable.
-			try {
-				const enrollRes = await supabase.functions.invoke("enrollment-tokens", { method: "GET" });
-				if (cancelled) return;
-				if (enrollRes.error || enrollRes.data?.ok !== true || !Array.isArray(enrollRes.data?.tokens)) {
-					setPendingTokens(null);
-				} else {
-					const tokens = enrollRes.data.tokens as Array<{ consumed_at: string | null; expires_at: string }>;
-					setPendingTokens(
-						tokens.filter((t) => !t.consumed_at && Date.parse(t.expires_at) > Date.now()).length,
-					);
+		// Poll sources independently. A read has 15 seconds to settle before it
+		// becomes unavailable; late responses cannot overwrite a newer poll.
+		function poll<T>(
+			read: () => Promise<T>,
+			setData: (data: T | null) => void,
+			setProblem?: (problem: string | null) => void,
+		) {
+			let loading = false;
+			async function load() {
+				if (loading) return;
+				loading = true;
+				let deadline: ReturnType<typeof setTimeout> | undefined;
+				try {
+					const timeout = new Promise<never>((_resolve, reject) => {
+						deadline = setTimeout(() => reject(new Error("Dashboard query timed out.")), 15_000);
+						deadlines.add(deadline);
+					});
+					const data = await Promise.race([read(), timeout]);
+					if (!cancelled) {
+						setData(data);
+						setProblem?.(null);
+					}
+				} catch (cause) {
+					if (!cancelled) {
+						setData(null);
+						setProblem?.(cause instanceof Error ? cause.message : "Dashboard query failed.");
+					}
+				} finally {
+					if (deadline !== undefined) {
+						clearTimeout(deadline);
+						deadlines.delete(deadline);
+					}
+					loading = false;
 				}
-			} catch {
-				if (!cancelled) setPendingTokens(null);
 			}
+			void load();
+			timers.push(setInterval(() => void load(), 6000));
 		}
+
+		poll(async () => queryRows(
+			await supabase.from("agents").select("id,iid,display_name,agent_runtime,last_seen")
+				.order("last_seen", { ascending: false }),
+			isAgentRow,
+		), setAgents, setAgentError);
+		poll(async () => queryRows(
+			await supabase.from("events").select("id,type,created_at,agent_id,payload")
+				.order("created_at", { ascending: false }).limit(500),
+			isEventRow,
+		), setEvents, setEventError);
+
+		// Outstanding enrollment tokens require pilot approval; unavailable or
+		// malformed results must not become a made-up zero.
+		poll(async () => {
+			const result = await supabase.functions.invoke("enrollment-tokens", { method: "GET" });
+			if (!isRecord(result) || result.error !== null || !isRecord(result.data) ||
+				result.data.ok !== true || !Array.isArray(result.data.tokens)) {
+				throw new Error("Enrollment tokens are unavailable.");
+			}
+			const tokens = result.data.tokens;
+			const now = Date.now();
+			return tokens.filter((token: unknown) => {
+				if (
+					!isRecord(token) ||
+					!isNullableString(token.consumed_at) ||
+					(token.consumed_at !== null && !Number.isFinite(Date.parse(token.consumed_at))) ||
+					typeof token.expires_at !== "string" ||
+					!Number.isFinite(Date.parse(token.expires_at))
+				) {
+					throw new Error("Malformed enrollment token.");
+				}
+				return token.consumed_at === null && Date.parse(token.expires_at) > now;
+			}).length;
+		}, setPendingTokens);
 
 		async function loadSession() {
 			try {
@@ -120,16 +181,22 @@ export function DashboardPage() {
 			}
 		}
 
-		load();
-		loadSession();
-		const t = setInterval(load, 6000);
+		void loadSession();
+		// Age existing evidence even when polls return the same array or hang.
+		timers.push(setInterval(() => setNowMs(Date.now()), 1000));
 		return () => {
 			cancelled = true;
-			clearInterval(t);
+			for (const timer of timers) clearInterval(timer);
+			for (const deadline of deadlines) clearTimeout(deadline);
 		};
 	}, []);
 
-	const connectedCount = useMemo(() => (agents ?? []).filter(isConnected).length, [agents]);
+	// Counters and rows consume exactly the same clock-based classification.
+	const agentSnapshot = useMemo(() => (agents ?? []).map((agent) => ({
+		agent,
+		freshness: dashboardAgentFreshness(agent.last_seen, nowMs),
+	})), [agents, nowMs]);
+	const connectedCount = agentSnapshot.filter(({ freshness }) => freshness === "fresh").length;
 	const denyCount = useMemo(
 		() => (events ?? []).filter((e) => verdictOf(e) === "deny").length,
 		[events],
@@ -139,11 +206,13 @@ export function DashboardPage() {
 		[events],
 	);
 	const latestHeartbeat = useMemo(() => {
-		const stamps = (agents ?? []).map((a) => Date.parse(a.last_seen)).filter(Number.isFinite);
+		const stamps = (agents ?? [])
+			.map((agent) => typeof agent.last_seen === "string" ? Date.parse(agent.last_seen) : Number.NaN)
+			.filter((stamp) => Number.isFinite(stamp) && stamp <= nowMs);
 		return stamps.length > 0 ? new Date(Math.max(...stamps)) : null;
-	}, [agents]);
+	}, [agents, nowMs]);
 
-	const liveAgents = (agents ?? []).slice(0, 5);
+	const liveAgents = agentSnapshot.slice(0, 5);
 	const recentEvents = (events ?? []).slice(0, 6);
 
 	return (
@@ -181,9 +250,9 @@ export function DashboardPage() {
 							<div className="mono" style={{ marginTop: 2 }}>
 								{latestHeartbeat
 									? latestHeartbeat.toLocaleString()
-									: agents === null
-										? "unavailable"
-										: "no agents yet"}
+									: agents?.length === 0
+										? "no agents yet"
+										: "unavailable"}
 							</div>
 						</div>
 					</div>
@@ -249,7 +318,7 @@ export function DashboardPage() {
 								</tr>
 							</thead>
 							<tbody>
-								{liveAgents.map((agent) => (
+								{liveAgents.map(({ agent, freshness }) => (
 									<tr key={agent.id}>
 										<td>
 											<Link className="mono" to={`/agents/${agent.id}`}>
@@ -258,11 +327,9 @@ export function DashboardPage() {
 										</td>
 										<td className="muted">{agent.agent_runtime ?? "unknown"}</td>
 										<td>
-											{isConnected(agent) ? (
-												<span className="badge badge-success">connected</span>
-											) : (
-												<span className="badge badge-neutral">stale</span>
-											)}
+											<span className={`badge ${freshness === "fresh" ? "badge-success" : "badge-neutral"}`}>
+												{freshness === "fresh" ? "connected" : freshness}
+											</span>
 										</td>
 									</tr>
 								))}

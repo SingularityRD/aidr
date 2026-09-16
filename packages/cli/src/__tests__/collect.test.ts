@@ -1,8 +1,10 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as core from "@singularityrd/aidr-core";
 import type { FleetInventory } from "@singularityrd/aidr-core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import collectCommand from "../commands/collect.js";
 import {
 	collectTargetInputs,
 	discoveryIngestPayload,
@@ -82,6 +84,7 @@ describe("fleet collector CLI helpers", () => {
 		expect(fleetCollectionExitCode(inventory({ reachability: "unreachable" }))).toBe(1);
 		const healthyScan = inventory().items[0]?.scan;
 		if (!healthyScan) throw new Error("test inventory is missing its scan result");
+		expect(fleetCollectionExitCode(inventory({ scan: { ...healthyScan, error: "deadline_exceeded" } }))).toBe(1);
 		expect(
 			fleetCollectionExitCode(
 				inventory({
@@ -102,6 +105,81 @@ describe("fleet collector CLI helpers", () => {
 				}),
 			),
 		).toBe(2);
+	});
+
+	it.each(["cloud", "mdm", "vendor", ""])("fails closed before local target validation for unconfigured provider %s", async (provider) => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		const previousExitCode = process.exitCode;
+		try {
+			process.exitCode = 0;
+			await collectCommand({ tenant: "tenant-a", provider, file: "does-not-exist.txt" });
+			expect(process.exitCode).toBe(1);
+			expect(error.mock.calls.flat().join(" ")).toContain(`discovery_provider_not_configured:${provider || "unknown"}`);
+		} finally {
+			process.exitCode = previousExitCode;
+			error.mockRestore();
+		}
+	});
+});
+
+describe("provider collection command", () => {
+	let previousExitCode: typeof process.exitCode;
+	beforeEach(() => {
+		previousExitCode = process.exitCode;
+		process.exitCode = 0;
+		for (const name of ["AIDR_DISCOVERY_URL", "AIDR_DISCOVERY_ACCESS_TOKEN", "AIDR_DISCOVERY_COLLECTOR_CREDENTIAL", "AIDR_DISCOVERY_ANON_KEY"]) {
+			vi.stubEnv(name, "");
+		}
+		vi.spyOn(core, "getInstallationId").mockResolvedValue("collector-a");
+		vi.spyOn(core, "loadFleetInventory").mockResolvedValue(inventory());
+		vi.spyOn(core, "saveFleetInventory").mockResolvedValue(undefined);
+		vi.spyOn(console, "log").mockImplementation(() => {});
+		vi.spyOn(console, "error").mockImplementation(() => {});
+	});
+	afterEach(() => {
+		process.exitCode = previousExitCode;
+		vi.restoreAllMocks();
+		vi.unstubAllEnvs();
+	});
+
+	it("does not replace or publish old inventory when the provider fails", async () => {
+		vi.spyOn(core.LocalDiscoveryProvider.prototype, "collect").mockResolvedValue({
+			provider: "local", status: "unavailable", freshness: "unknown", inventory: null,
+			failClosed: true, reason: "collection_failed",
+		});
+		const fetchSpy = vi.spyOn(globalThis, "fetch");
+		await collectCommand({ tenant: "tenant-a", target: ["http://127.0.0.1:8080"], json: true });
+		expect(process.exitCode).toBe(1);
+		expect(core.saveFleetInventory).not.toHaveBeenCalled();
+		expect(fetchSpy).not.toHaveBeenCalled();
+		expect(console.log).not.toHaveBeenCalled();
+		expect(vi.mocked(console.error).mock.calls.flat().join(" ")).toContain("collection_failed");
+	});
+
+	it("prints degraded attempt status even when retained evidence is still fresh", async () => {
+		const entry = inventory().items[0];
+		if (!entry) throw new Error("test inventory is missing its entry");
+		const evidence = inventory({
+			reachability: "unreachable",
+			scan: { ...entry.scan, reachable: false, error: "timeout" },
+		});
+		vi.spyOn(core.LocalDiscoveryProvider.prototype, "collect").mockResolvedValue({
+			provider: "local", status: "degraded", freshness: "fresh", inventory: evidence,
+			failClosed: false, reason: "targets_unreachable",
+		});
+		await collectCommand({ tenant: "tenant-a", target: ["http://127.0.0.1:8080"], json: true });
+		expect(process.exitCode).toBe(1);
+		expect(core.saveFleetInventory).toHaveBeenCalledWith(expect.any(String), evidence);
+		const output = JSON.parse(String(vi.mocked(console.log).mock.calls[0]?.[0]));
+		expect(output).toMatchObject({ ...evidence, discovery: { provider: "local", status: "degraded", freshness: "fresh", reason: "targets_unreachable" } });
+	});
+
+	it("refuses a missing local target source without saving an empty inventory", async () => {
+		await collectCommand({ tenant: "tenant-a", json: true });
+		expect(process.exitCode).toBe(1);
+		expect(core.saveFleetInventory).not.toHaveBeenCalled();
+		expect(console.log).not.toHaveBeenCalled();
+		expect(vi.mocked(console.error).mock.calls.flat().join(" ")).toContain("collector_targets_required");
 	});
 });
 
