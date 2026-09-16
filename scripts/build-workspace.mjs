@@ -81,8 +81,28 @@ export function releaseCoreBuildLock(lock) {
 	unlinkSync(lock.path);
 }
 
-export function assertNoCoreSourceMaps(repoRoot) {
-	const dist = join(repoRoot, "packages", "core", "dist");
+/**
+ * Every workspace package whose `dist/` is published in a release artifact.
+ * Core is only the first one: the same contamination is possible in any package
+ * whenever a non-release build (a test run, `pnpm check`, another package's
+ * `build`) recompiles that package after release finalization has finished.
+ */
+const RELEASE_DIST_PACKAGES = [
+	"core",
+	"claude-code",
+	"extension",
+	"openclaw",
+	"opencode",
+	"cli",
+	"sdk",
+	"dashboard",
+	"codex",
+	"mcp-gateway",
+];
+
+/** Source-map files under one package's `dist/`, relative to that `dist/`. */
+export function sourceMapsInPackageDist(repoRoot, packageName) {
+	const dist = join(repoRoot, "packages", packageName, "dist");
 	const maps = [];
 	const walk = (dir) => {
 		if (!existsSync(dir)) return;
@@ -93,7 +113,30 @@ export function assertNoCoreSourceMaps(repoRoot) {
 		}
 	};
 	walk(dist);
+	return maps;
+}
+
+export function assertNoCoreSourceMaps(repoRoot) {
+	const maps = sourceMapsInPackageDist(repoRoot, "core");
 	if (maps.length > 0) throw new Error(`release core output was contaminated by source maps: ${maps.join(", ")}`);
+}
+
+/**
+ * Release artifacts are the published packages, so a source map left in ANY
+ * package's `dist/` is the same defect as one left in core. Checking only core
+ * let a concurrent non-release rebuild of another package (observed: 363 maps
+ * across cli, opencode, core, claude-code, extension, sdk, codex, openclaw)
+ * silently poison an assembled release candidate.
+ */
+export function assertNoReleaseSourceMaps(repoRoot) {
+	const contaminated = [];
+	for (const packageName of RELEASE_DIST_PACKAGES) {
+		const maps = sourceMapsInPackageDist(repoRoot, packageName);
+		if (maps.length > 0) contaminated.push(`${packageName}: ${maps.slice(0, 5).join(", ")}${maps.length > 5 ? ` (+${maps.length - 5} more)` : ""}`);
+	}
+	if (contaminated.length > 0) {
+		throw new Error(`release output was contaminated by source maps in ${contaminated.length} package(s) — ${contaminated.join(" | ")}`);
+	}
 }
 
 const releaseFinalization = [
@@ -127,19 +170,19 @@ export function runWorkspaceBuild({
 		console.log("[build] 1/2 building @singularityrd/aidr-core");
 		status = runPnpm(["--filter", "@singularityrd/aidr-core", "run", releaseMode ? "build:release" : "build"], workspaceEnv);
 		if (status !== 0) throw new Error(`core build failed with exit code ${status}`);
-		if (releaseMode) assertNoCoreSourceMaps(repoRoot);
+		if (releaseMode) assertNoReleaseSourceMaps(repoRoot);
 
 		console.log("[build] 2/2 building the remaining packages");
 		status = runPnpm(["-r", "--filter", "!@singularityrd/aidr-core", "run", releaseMode ? "build:release" : "build"], workspaceEnv);
 		if (status !== 0) throw new Error(`remaining package build failed with exit code ${status}`);
-		if (releaseMode) assertNoCoreSourceMaps(repoRoot);
+		if (releaseMode) assertNoReleaseSourceMaps(repoRoot);
 
 		if (releaseMode && finalizeRelease) {
 			console.log("[build] finalizing release artifacts while core remains locked");
 			for (const args of releaseFinalization) {
 				status = runNode(args, workspaceEnv);
 				if (status !== 0) throw new Error(`${args[0]} failed with exit code ${status}`);
-				assertNoCoreSourceMaps(repoRoot);
+				assertNoReleaseSourceMaps(repoRoot);
 			}
 		}
 		return 0;

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, utimesSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { runWorkspaceBuild } from "./build-workspace.mjs";
+import { assertNoReleaseSourceMaps, runWorkspaceBuild, sourceMapsInPackageDist } from "./build-workspace.mjs";
 import { ensureCoreBuild } from "./ensure-core-build.mjs";
 
 function fixture() {
@@ -111,6 +111,87 @@ test("release build fails closed if core output gains a map", () => {
 		});
 		assert.equal(status, 1);
 		assert.equal(existsSync(join(core, ".aidr-build.lock")), false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+// A release publishes every package's dist, not only core's. The original guard
+// inspected packages/core alone, so a concurrent non-release rebuild of another
+// package could drop maps into an already-finalized artifact and the release
+// would still assemble. Observed in production use: 363 maps across cli (56),
+// opencode (18), core (276), claude-code (5), extension (3), sdk (3), codex (1)
+// and openclaw (1).
+test("release build fails closed if ANY published package gains a map", () => {
+	const { root, core } = fixture();
+	try {
+		const status = runWorkspaceBuild({
+			releaseMode: true,
+			repoRoot: root,
+			finalizeRelease: false,
+			runPnpm(args) {
+				if (args.includes("@singularityrd/aidr-core")) emitReleaseCore(core);
+				if (args[0] === "-r") {
+					// A sibling package's own release build is not the only writer;
+					// a non-release rebuild contaminates its dist the same way.
+					mkdirSync(join(root, "packages", "cli", "dist", "commands"), { recursive: true });
+					writeFileSync(join(root, "packages", "cli", "dist", "commands", "collect.js.map"), "contamination\n");
+				}
+				return 0;
+			},
+		});
+		assert.equal(status, 1);
+		assert.equal(existsSync(join(core, ".aidr-build.lock")), false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("release source-map guard covers every published package, not only core", () => {
+	for (const packageName of ["core", "cli", "opencode", "claude-code", "extension", "sdk", "codex", "openclaw", "dashboard", "mcp-gateway"]) {
+		const root = mkdtempSync(join(tmpdir(), "aidr-release-maps-"));
+		try {
+			mkdirSync(join(root, "packages", packageName, "dist"), { recursive: true });
+			writeFileSync(join(root, "packages", packageName, "dist", "index.js"), "export {};\n");
+			assert.doesNotThrow(
+				() => assertNoReleaseSourceMaps(root),
+				`${packageName}: a clean dist must pass`,
+			);
+			writeFileSync(join(root, "packages", packageName, "dist", "index.js.map"), "{}");
+			assert.throws(
+				() => assertNoReleaseSourceMaps(root),
+				(error) => error.message.includes("source maps") && error.message.includes(packageName),
+				`${packageName}: a map in this package must fail the release`,
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
+});
+
+test("release source-map guard reports nested maps, tolerates absent dist, and lists every offender", () => {
+	const root = mkdtempSync(join(tmpdir(), "aidr-release-maps-"));
+	try {
+		// An absent dist is clean, not an error: not every package ships one.
+		assert.deepEqual(sourceMapsInPackageDist(root, "sdk"), []);
+		assert.doesNotThrow(() => assertNoReleaseSourceMaps(root));
+
+		const nested = Array.from({ length: 8 }, (_, index) => `commands/deep/command-${index}.d.ts.map`);
+		mkdirSync(join(root, "packages", "cli", "dist", "commands", "deep"), { recursive: true });
+		for (const relativePath of nested) writeFileSync(join(root, "packages", "cli", "dist", relativePath), "{}");
+		assert.equal(sourceMapsInPackageDist(root, "cli").length, 8);
+
+		mkdirSync(join(root, "packages", "codex", "dist"), { recursive: true });
+		writeFileSync(join(root, "packages", "codex", "dist", "pre-tool-use.cjs.map"), "{}");
+		assert.throws(() => assertNoReleaseSourceMaps(root), (error) => {
+			// Both offenders are named, and the detail is capped so the message stays readable.
+			return error.message.includes("cli") && error.message.includes("codex") &&
+				error.message.includes("(+3 more)") && error.message.includes("2 package(s)");
+		});
+
+		// A non-map file whose name merely mentions maps must not be treated as one.
+		writeFileSync(join(root, "packages", "codex", "dist", "sourcemap-notes.txt"), "{}");
+		assert.deepEqual(sourceMapsInPackageDist(root, "codex"), ["pre-tool-use.cjs.map"]);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
