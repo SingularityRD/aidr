@@ -136,5 +136,6 @@ if (values.online) {
     check(response.ok && settings.disable_signup === true, "authentication service confirms signup is disabled");
   } catch { check(false, "authentication settings reachable"); }
 }
-writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed: failures.length === 0, mode: manifest.mode, online: values.online, checks, failures, unverified, scope: "Operational preflight only. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate. Entries under unverified could not be determined on this host and are not evidence of success. No unverified check is recorded as passed." }, null, 2));
+if (unverified.length) console.log(`${unverified.length} check(s) UNVERIFIED on this host; none of them was reported as PASS`);
+writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed: failures.length === 0, mode: manifest.mode, online: values.online, checks, failures, unverified, scope: "Operational preflight only. Unverified checks were not confirmed on this host. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate. Entries under unverified could not be determined on this host and are not evidence of success. No unverified check is recorded as passed." }, null, 2));
 if (failures.length) process.exitCode = 1;

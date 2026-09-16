@@ -267,7 +267,10 @@ test("the doctor reports the retention reaper timer honestly instead of assuming
 	assert.ok(existsSync(path.join(directory, "doctor-evidence.json")), result.stderr);
 	const evidence = JSON.parse(await readFile(path.join(directory, "doctor-evidence.json"), "utf8"));
 	const verdicts = [...(evidence.checks ?? []), ...(evidence.failures ?? []), ...(evidence.unverified ?? [])]
-		.filter((label) => String(label).includes("aidr-export-retention.timer"));
+		// Unverified entries carry both a check label and a reason. Match the
+		// declared label rather than String(object), preserving the original
+		// entry so the assertions below still prove it belongs to that bucket.
+		.filter((entry) => String(typeof entry === "string" ? entry : entry?.check).includes("aidr-export-retention.timer"));
 	assert.equal(verdicts.length, 1, `expected exactly one retention reaper verdict: ${JSON.stringify(verdicts)}`);
 	const [verdict] = verdicts;
 	if (process.platform === "linux" && existsSync("/run/systemd/system")) {
