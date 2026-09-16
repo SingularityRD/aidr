@@ -219,6 +219,12 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 			if (action === "history") return { data: { ok: true, revisions: [], truncated: false }, error: null };
 			if (action === "adoption") return { data: { ok: true, agents: [], truncated: false }, error: null };
 			if (action === "read") return { data: { ok: true, version: 0, policy: null }, error: null };
+			if (action === "read_dlp_policy") {
+				return {
+					data: { ok: true, version: 0, policy: null, saved: false, delivered: false, delivery_status: "not_delivered" },
+					error: null,
+				};
+			}
 		}
 		return options.invite ?? { data: { ok: true }, error: null };
 	});

@@ -26,13 +26,11 @@
  *
  * ## Persistence is probed, never assumed
  *
- * The dashboard has no DLP store: no migration, no table, no edge function, and
- * `policy-management` rejects any action other than its own with
- * `invalid_action`. The editor therefore loads and publishes through that same
- * invoke seam the other enterprise editors use, and reports the outcome
- * honestly: when the seam does not accept a DLP action the surface says the
- * policy is *not available*, keeps publishing disabled and states that nothing
- * authored here is stored. It never reports a save that did not happen.
+ * `policy-management` authenticates, validates and stores tenant DLP policies.
+ * This editor requires a confirmed saved revision and explicitly reports that
+ * it has NOT been delivered through signed provisioning. Older deployments or
+ * refused reads keep saving disabled; a successful HTTP response alone is not
+ * proof of a save. Only tenant owners/admins can save, with MFA checked server-side.
  *
  * ## `ask` is resolved out of band — there is no approval control here
  *
@@ -44,7 +42,7 @@
  * anywhere — `dlp-editor.test.tsx` asserts that absence directly.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { useTeam } from "./team-provider";
@@ -732,6 +730,10 @@ function readTenantOwnedIds<Item extends { id: string; tenantId: string }>(
 	return seen;
 }
 
+function isExpiredExceptionDominance(issue: DlpValidationIssue): boolean {
+	return issue.path === "exceptions" && issue.message.startsWith(`${DLP_EXPIRED_EXCEPTION_DOMINANCE}:`);
+}
+
 function normalizePolicy(input: unknown): { policy: DlpPolicyDocument | null; issues: DlpValidationIssue[] } {
 	const issues: DlpValidationIssue[] = [];
 	const record = readStrictRecord(input, POLICY_KEYS, [], issues, "DLP policy");
@@ -858,7 +860,12 @@ function normalizePolicy(input: unknown): { policy: DlpPolicyDocument | null; is
 		});
 	}
 
-	if (issues.length > 0) return { policy: null, issues };
+	// Keep an otherwise valid stored document editable when only time has made
+	// its exception list stale. The public validator still rejects ANY issues;
+	// this candidate is for explicit repair, never an automatically valid save.
+	if (issues.some((issue) => !isExpiredExceptionDominance(issue))) {
+		return { policy: null, issues };
+	}
 	return {
 		policy: {
 			version: policyVersion,
@@ -1007,6 +1014,10 @@ interface DlpReadResponse {
 interface DlpPublishResponse {
 	ok?: unknown;
 	version?: unknown;
+	policy?: unknown;
+	saved?: unknown;
+	delivered?: unknown;
+	delivery_status?: unknown;
 }
 
 type StoreState =
@@ -1050,17 +1061,20 @@ function exceptionWithoutCreatedAt(exception: DlpExceptionDocument): DlpExceptio
 /* ── Component ──────────────────────────────────────────────────────────── */
 
 export function DlpPolicyEditor() {
-	const { currentTeam, canEditPolicy, isLoading: teamLoading, error: teamError } = useTeam();
+	const { currentTeam, canManageTeam, isLoading: teamLoading, error: teamError } = useTeam();
 	const teamId = currentTeam?.id ?? null;
 	const [draft, setDraft] = useState<DlpPolicyDocument | null>(null);
 	const [store, setStore] = useState<StoreState>({ kind: "loading" });
 	const [isPublishing, setIsPublishing] = useState(false);
 	const [outcome, setOutcome] = useState<Outcome | null>(null);
+	const tenantGeneration = useRef(0);
 
 	useEffect(() => {
+		tenantGeneration.current += 1;
 		let cancelled = false;
 		setOutcome(null);
 		setDraft(null);
+		setIsPublishing(false);
 		if (!teamId) {
 			setStore({ kind: "loading" });
 			return;
@@ -1091,24 +1105,27 @@ export function DlpPolicyEditor() {
 					});
 					return;
 				}
-				const version = Number.isSafeInteger(payload.version) ? (payload.version as number) : 0;
-				if (payload.policy === null || payload.policy === undefined) {
+				if (!Number.isSafeInteger(payload.version) || Number(payload.version) < 0) {
+					setStore({ kind: "unreadable", detail: "The stored version was not confirmed." });
+					return;
+				}
+				const version = payload.version as number;
+				if (payload.policy === null && version === 0) {
 					setDraft(createStarterDlpPolicy(teamId));
 					setStore({ kind: "loaded", version });
 					return;
 				}
-				const validation = validateDlpPolicyDocument(payload.policy);
-				if (!validation.ok) {
-					// Never paint an editable copy of a document the engine refuses:
-					// publishing it back would overwrite the stored policy with the
-					// editor's guess at what it meant.
+				const candidate = normalizePolicy(payload.policy);
+				if (!candidate.policy || candidate.policy.tenantId !== teamId || candidate.policy.version !== version) {
+					// Only an expired-majority document can be loaded for repair.
+					// Structural/reference/tenant errors never become an editable guess.
 					setStore({
 						kind: "unreadable",
-						detail: formatDlpIssues(validation.issues),
+						detail: formatDlpIssues(candidate.issues) || "The stored tenant or version does not match.",
 					});
 					return;
 				}
-				setDraft(validation.policy);
+				setDraft(candidate.policy);
 				setStore({ kind: "loaded", version });
 			} catch (error) {
 				if (!cancelled) {
@@ -1118,6 +1135,7 @@ export function DlpPolicyEditor() {
 		})();
 		return () => {
 			cancelled = true;
+			tenantGeneration.current += 1;
 		};
 	}, [teamId]);
 
@@ -1131,6 +1149,7 @@ export function DlpPolicyEditor() {
 	// ever published, and the issue list below is what makes an invalid field
 	// visible instead of silently unpublishable.
 	function editDraft(update: (current: DlpPolicyDocument) => DlpPolicyDocument) {
+		if (isPublishing || !canManageTeam) return;
 		setOutcome(null);
 		setDraft((current) => (current ? update(current) : current));
 	}
@@ -1163,13 +1182,14 @@ export function DlpPolicyEditor() {
 	}
 
 	async function publish() {
-		if (!teamId || !draft || !canEditPolicy || store.kind !== "loaded") return;
+		if (!teamId || !draft || !canManageTeam || store.kind !== "loaded" || isPublishing) return;
+		const generation = tenantGeneration.current;
 		const expectedVersion = store.version;
 		const validated = validateDlpPolicyDocument(draft);
 		if (!validated.ok) {
 			setOutcome({
 				tone: "error",
-				message: `DLP policy was not published: ${formatDlpIssues(validated.issues)}`,
+				message: `DLP policy save was not confirmed: ${formatDlpIssues(validated.issues)}`,
 			});
 			return;
 		}
@@ -1184,25 +1204,34 @@ export function DlpPolicyEditor() {
 					policy: validated.policy,
 				},
 			});
+			if (tenantGeneration.current !== generation) return;
 			if (error) throw error;
 			const payload = (data ?? null) as DlpPublishResponse | null;
-			// Fail closed on an unconfirmed response. A 200 without an echoed
-			// version is not a stored policy and must never be reported as one.
-			if (!payload || payload.ok !== true || !Number.isSafeInteger(payload.version)) {
-				throw new Error("the function did not confirm a stored DLP policy version");
+			// A 200 or an echoed version alone proves neither storage nor delivery.
+			// This endpoint saves only; reject missing or contradictory evidence.
+			const savedPolicy = validateDlpPolicyDocument(payload?.policy);
+			if (!payload || payload.ok !== true || payload.saved !== true ||
+				payload.delivered !== false || payload.delivery_status !== "not_delivered" ||
+				!Number.isSafeInteger(payload.version) || payload.version !== expectedVersion + 1 ||
+				!savedPolicy.ok || savedPolicy.policy.tenantId !== teamId ||
+				savedPolicy.policy.version !== payload.version ||
+				serializeDlpPolicy(savedPolicy.policy) !== serializeDlpPolicy({ ...validated.policy, version: expectedVersion + 1 })) {
+				throw new Error("the function did not confirm a stored DLP policy version and its not-delivered status");
 			}
+			setDraft(savedPolicy.policy);
 			setStore({ kind: "loaded", version: payload.version as number });
 			setOutcome({
 				tone: "success",
-				message: `DLP policy version ${payload.version} published for this tenant.`,
+				message: `DLP policy version ${payload.version} saved for this tenant. Not delivered: signed provisioning must distribute it separately.`,
 			});
 		} catch (error) {
+			if (tenantGeneration.current !== generation) return;
 			setOutcome({
 				tone: "error",
-				message: `DLP policy was not published: ${readErrorMessage(error, "unknown error")}`,
+				message: `DLP policy save was not confirmed: ${readErrorMessage(error, "unknown error")}`,
 			});
 		} finally {
-			setIsPublishing(false);
+			if (tenantGeneration.current === generation) setIsPublishing(false);
 		}
 	}
 
@@ -1213,10 +1242,11 @@ export function DlpPolicyEditor() {
 			<section className="card">
 				<h2 style={{ margin: 0 }}>DLP policy editor</h2>
 				<p className="muted" style={{ margin: "6px 0 0", maxWidth: 760 }}>
-					Author the tenant data-loss-prevention policy the engine enforces: labels and their
-					redaction token, the rules that match them (priority, directions, action, match mode,
-					matchers) and the time-bounded exceptions that suppress a known false positive. The
-					document is validated against the engine's policy schema before anything is published.
+					Author a tenant data-loss-prevention document: labels, matching rules and time-bounded
+					exceptions. The server validates the engine schema and tenant ownership before saving.
+					Saving is not delivery or enforcement: the existing signed provisioning path must
+					distribute a saved revision separately. Reads and saves require MFA (AAL2); only an
+					owner or administrator can save.
 				</p>
 			</section>
 
@@ -1255,13 +1285,27 @@ export function DlpPolicyEditor() {
 						</p>
 					)}
 				</section>
-			) : !canEditPolicy ? (
+			) : !canManageTeam ? (
 				<section className="card">
 					<p className="muted">
 						You don&apos;t have permission to manage tenant security policy. An owner or
-						administrator can author the DLP policy for {currentTeam.name}; members and viewers
-						have read-only access.
+						administrator can author and save the DLP policy for {currentTeam.name}; members and
+						viewers have read-only access.
 					</p>
+					{draft && store.kind === "loaded" && store.version > 0 ? (
+						<textarea
+							className="input mono"
+							rows={12}
+							readOnly
+							aria-label="DLP policy document (JSON)"
+							value={serializeDlpPolicy(draft)}
+						/>
+					) : (
+						<p className="muted">
+							{store.kind === "loading" ? "Loading DLP policy..." : store.kind === "loaded"
+								? "No DLP policy has been saved for this tenant." : "The DLP policy could not be loaded."}
+						</p>
+					)}
 				</section>
 			) : (
 				<>
@@ -1277,7 +1321,7 @@ export function DlpPolicyEditor() {
 								<b>DLP policy storage is not available in this deployment.</b>
 								<div className="muted small" style={{ marginTop: 6 }}>
 									The &quot;policy-management&quot; function did not confirm a DLP policy store ({store.detail}).
-									Nothing authored below is stored or published: publishing is disabled rather
+									Nothing authored below is stored or delivered: saving is disabled rather
 									than reporting a save that did not happen. The validated JSON document is the
 									only artifact this page can produce.
 								</div>
@@ -1294,14 +1338,33 @@ export function DlpPolicyEditor() {
 								</div>
 								<div className="muted small" style={{ marginTop: 6 }}>
 									The editor is not showing a draft because the stored document does not satisfy
-									the policy schema. Publishing stays disabled so this cannot overwrite it.
+									the policy schema. Saving stays disabled so this cannot overwrite it.
 								</div>
 							</div>
 						</section>
 					) : null}
 
+					{issues.some(isExpiredExceptionDominance) ? (
+						<section className="card">
+							<p className="muted">
+								The stored exception list has expired. This is an invalid draft for repair,
+								not a new save. Remove expired exceptions before saving; nothing is removed automatically.
+							</p>
+							<button
+								type="button"
+								className="btn"
+								onClick={() => editDraft((current) => ({
+									...current,
+									exceptions: current.exceptions.filter((exception) => Date.parse(exception.expiresAt) > Date.now()),
+								}))}
+							>
+								Remove expired exceptions
+							</button>
+						</section>
+					) : null}
+
 					{draft ? (
-						<>
+						<fieldset disabled={isPublishing} className="stack" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
 							<section className="card">
 								<div className="row space-between">
 									<div>
@@ -1322,25 +1385,20 @@ export function DlpPolicyEditor() {
 											onClick={() => void publish()}
 											disabled={!isPublishable || isPublishing}
 										>
-											{isPublishing ? "Publishing..." : "Publish DLP policy"}
+											{isPublishing ? "Saving..." : "Save DLP policy"}
 										</button>
 									</div>
 								</div>
 								<div className="grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
 									<label className="label">
-										Version
+										Document version (assigned on save)
 										<input
 											className="input"
 											type="number"
 											min={1}
 											value={draft.version}
 											aria-label="Policy version"
-											onChange={(event) =>
-												editDraft((current) => ({
-													...current,
-													version: Number(event.target.value),
-												}))
-											}
+											readOnly
 										/>
 									</label>
 									<label className="label">
@@ -2031,9 +2089,11 @@ export function DlpPolicyEditor() {
 							</section>
 
 							<section className="card">
-								<h3 style={{ marginTop: 0 }}>Validated policy document (JSON)</h3>
+								<h3 style={{ marginTop: 0 }}>{validation?.ok ? "Validated" : "Invalid draft"} policy document (JSON)</h3>
 								<p className="muted small">
-									This is the exact document the engine parses, after schema defaults are applied.
+									{validation?.ok
+										? "Schema defaults are applied. The server assigns the next version on save; this JSON is not signed delivery."
+										: "This draft does not satisfy the engine schema and cannot be saved until repaired."}
 								</p>
 								<textarea
 									className="input mono"
@@ -2045,13 +2105,13 @@ export function DlpPolicyEditor() {
 									)}
 								/>
 							</section>
-						</>
+						</fieldset>
 					) : null}
 
 					{issues.length > 0 ? (
 						<section className="card">
 							<div className="notice notice-danger" role="alert" aria-live="assertive">
-								<b>The DLP policy is not valid, so it cannot be published.</b>
+								<b>The DLP policy is not valid, so it cannot be saved.</b>
 								<ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
 									{issues.map((issue) => (
 										<li key={`${issue.path}:${issue.message}`} className="small">

@@ -18,16 +18,16 @@
 //      `packages/core/src/dlp/policy.ts` schema over the same documents and
 //      requires the same verdict and the same normalised output.
 //
-//   3. Honest persistence. The dashboard ships no DLP store: the
-//      `policy-management` seam rejects actions it does not implement. When that
-//      happens the editor says the policy is not available and disables
-//      publishing; it never reports a save the function did not confirm.
+//   3. Honest persistence. The backend confirms a stored revision, never signed
+//      delivery. The editor requires saved/not-delivered evidence and an exact
+//      versioned policy echo. Failed/unsupported requests never become success;
+//      only owners/admins can save, and expired documents need explicit repair.
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
@@ -58,6 +58,7 @@ import {
 	validateDlpPolicyDocument,
 } from "../enterprise/dlp-editor";
 import { TeamProvider } from "../enterprise/team-provider";
+import * as TeamProviderModule from "../enterprise/team-provider";
 import {
 	ADMIN_USER_ID,
 	installDashboardMocks,
@@ -94,7 +95,7 @@ interface CoreDlpModule {
 }
 
 async function loadCoreDlpModule(): Promise<CoreDlpModule> {
-	const specifier = "../../../core/src/dlp/policy.js";
+	const specifier = pathToFileURL(resolve(REPO_ROOT, "packages/core/src/dlp/policy.ts")).href;
 	return (await import(/* @vite-ignore */ specifier)) as CoreDlpModule;
 }
 
@@ -176,11 +177,29 @@ interface InvokeResponse {
 	error: { message: string } | null;
 }
 
+function deferredResponse() {
+	let resolve!: (response: InvokeResponse) => void;
+	let reject!: (error: Error) => void;
+	const promise = new Promise<InvokeResponse>((fulfill, fail) => { resolve = fulfill; reject = fail; });
+	return { promise, resolve, reject };
+}
+
+function savedInvoke(policy: Record<string, unknown>): InvokeResponse {
+	return {
+		data: {
+			ok: true, saved: true, delivered: false, delivery_status: "not_delivered",
+			policy, version: policy.version, updated_at: "2026-09-16T00:00:00Z",
+		},
+		error: null,
+	};
+}
+
 /** Install the shared dashboard mocks, then route the DLP seam explicitly. */
 function installDlpMocks(
-	options: { read?: InvokeResponse; publish?: InvokeResponse } = {},
+	options: { read?: InvokeResponse; publish?: InvokeResponse | Promise<InvokeResponse>; role?: string } = {},
 ): InstalledMocks {
-	const mocks = installDashboardMocks({ role: "admin" });
+	const mocks = installDashboardMocks({ role: options.role ?? "admin" });
+	let persisted: InvokeResponse | undefined;
 	const identityInvoke = mocks.invoke.getMockImplementation() as
 		| ((name: string, request?: unknown) => Promise<InvokeResponse>)
 		| undefined;
@@ -188,13 +207,17 @@ function installDlpMocks(
 	// policy/non-identity call remains observable by the unchanged assertions.
 	// The real provider's gate receives the shared authenticated fixtures.
 	const editorInvoke = vi.fn(
-		async (name: string, request?: { body?: { action?: string } }) => {
+		async (name: string, request?: { body?: { action?: string; expected_version?: number; policy?: unknown } }) => {
 			if (name !== "policy-management") return { data: { ok: true }, error: null };
 			if (request?.body?.action === DLP_READ_ACTION) {
-				return options.read ?? { data: { ok: true, policy: null, version: 0 }, error: null };
+				return persisted ?? options.read ?? { data: { ok: true, policy: null, version: 0 }, error: null };
 			}
 			if (request?.body?.action === DLP_PUBLISH_ACTION) {
-				return options.publish ?? { data: { ok: true, version: 4 }, error: null };
+				if (options.publish) return options.publish;
+				const validation = validateDlpPolicyDocument(request.body.policy);
+				if (!validation.ok) throw new Error("mock backend refused invalid schema");
+				persisted = savedInvoke({ ...validation.policy, version: Number(request.body.expected_version) + 1 });
+				return persisted;
 			}
 			// The real function refuses any action outside its own set.
 			return { data: null, error: { message: "invalid_action" } };
@@ -301,7 +324,7 @@ describe("DLP policy editor persistence", () => {
 				screen.getByText(/DLP policy storage is not available in this deployment/i),
 			).toBeInTheDocument(),
 		);
-		expect(screen.getByText(/Nothing authored below is stored or published/i)).toBeInTheDocument();
+		expect(screen.getByText(/Nothing authored below is stored or delivered/i)).toBeInTheDocument();
 
 		// Authoring and validation still work locally...
 		expect(screen.getByRole("button", { name: "Add label" })).toBeInTheDocument();
@@ -316,11 +339,11 @@ describe("DLP policy editor persistence", () => {
 		expect(DlpPolicySchema.safeParse(JSON.parse(json)).success).toBe(true);
 
 		// Publishing is disabled, and clicking it writes nothing.
-		const publish = screen.getByRole("button", { name: "Publish DLP policy" });
+		const publish = screen.getByRole("button", { name: "Save DLP policy" });
 		expect(publish).toBeDisabled();
 		fireEvent.click(publish);
 		expect(publishCalls(mocks)).toHaveLength(0);
-		expect(screen.queryByText(/published for this tenant/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/saved for this tenant/)).not.toBeInTheDocument();
 
 		// Exactly one read attempt; nothing was written.
 		expect(mocks.invoke.mock.calls.map(([, request]) => request?.body?.action)).toEqual([
@@ -343,12 +366,12 @@ describe("DLP policy editor persistence", () => {
 		);
 		expect(screen.getByRole("alert")).toHaveTextContent(/labels/);
 		expect(
-			screen.getByText(/Publishing stays disabled so this cannot overwrite it/i),
+			screen.getByText(/Saving stays disabled so this cannot overwrite it/i),
 		).toBeInTheDocument();
 		expect(
 			screen.queryByRole("textbox", { name: "DLP policy document (JSON)" }),
 		).not.toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: "Publish DLP policy" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Save DLP policy" })).not.toBeInTheDocument();
 		expect(publishCalls(mocks)).toHaveLength(0);
 	});
 
@@ -356,7 +379,6 @@ describe("DLP policy editor persistence", () => {
 		const stored = storedDlpPolicy();
 		const mocks = installDlpMocks({
 			read: { data: { ok: true, policy: stored, version: 3 }, error: null },
-			publish: { data: { ok: true, version: 4 }, error: null },
 		});
 
 		await renderLoadedEditor(mocks);
@@ -367,11 +389,11 @@ describe("DLP policy editor persistence", () => {
 		).value;
 		expect(JSON.parse(json)).toStrictEqual(stored);
 
-		fireEvent.click(screen.getByRole("button", { name: "Publish DLP policy" }));
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
 
 		await waitFor(() =>
 			expect(
-				screen.getByText("DLP policy version 4 published for this tenant."),
+				screen.getByText("DLP policy version 4 saved for this tenant. Not delivered: signed provisioning must distribute it separately."),
 			).toBeInTheDocument(),
 		);
 
@@ -392,6 +414,21 @@ describe("DLP policy editor persistence", () => {
 			DlpPolicySchema.safeParse(body.policy).success,
 			"the published document is refused by the engine's DlpPolicySchema",
 		).toBe(true);
+		expect(screen.queryByText(/published for this tenant/)).not.toBeInTheDocument();
+		expect(screen.getByLabelText("Policy version")).toHaveValue(4);
+		expect(screen.getByLabelText("Policy version")).toHaveAttribute("readonly");
+		expect(JSON.parse((screen.getByLabelText("DLP policy document (JSON)") as HTMLTextAreaElement).value))
+			.toStrictEqual({ ...stored, version: 4 });
+
+		// A reload observes the committed document, then the next save carries
+		// its CAS version rather than the pre-save draft's old version.
+		cleanup();
+		await renderLoadedEditor(mocks);
+		expect(screen.getByLabelText("Policy version")).toHaveValue(4);
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
+		await waitFor(() => expect(screen.getByText(/DLP policy version 5 saved for this tenant\. Not delivered/)).toBeInTheDocument());
+		expect(publishCalls(mocks)).toHaveLength(2);
+		expect(publishCalls(mocks)[1]?.[1]?.body).toMatchObject({ expected_version: 4, policy: { version: 4 } });
 	});
 
 	it("refuses an invalid label and refuses to publish it", async () => {
@@ -403,7 +440,7 @@ describe("DLP policy editor persistence", () => {
 
 		expect(screen.getByText("✗ Invalid DLP policy")).toBeInTheDocument();
 		expect(screen.getByRole("alert")).toHaveTextContent(/labels\.0\.id/);
-		const publish = screen.getByRole("button", { name: "Publish DLP policy" });
+		const publish = screen.getByRole("button", { name: "Save DLP policy" });
 		expect(publish).toBeDisabled();
 		fireEvent.click(publish);
 		expect(publishCalls(mocks)).toHaveLength(0);
@@ -416,7 +453,7 @@ describe("DLP policy editor persistence", () => {
 
 		expect(screen.getByText("✗ Invalid DLP policy")).toBeInTheDocument();
 		expect(screen.getByRole("alert")).toHaveTextContent(/rules\.0\.priority/);
-		fireEvent.click(screen.getByRole("button", { name: "Publish DLP policy" }));
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
 		expect(publishCalls(mocks)).toHaveLength(0);
 	});
 
@@ -430,7 +467,7 @@ describe("DLP policy editor persistence", () => {
 
 		expect(screen.getByText("✗ Invalid DLP policy")).toBeInTheDocument();
 		expect(screen.getByRole("alert")).toHaveTextContent(/exceptions\.0\.fingerprint/);
-		fireEvent.click(screen.getByRole("button", { name: "Publish DLP policy" }));
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
 		expect(publishCalls(mocks)).toHaveLength(0);
 
 		fireEvent.change(screen.getByLabelText("Exception 1 fingerprint"), {
@@ -446,14 +483,14 @@ describe("DLP policy editor persistence", () => {
 		});
 		await renderLoadedEditor(mocks);
 
-		fireEvent.click(screen.getByRole("button", { name: "Publish DLP policy" }));
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
 
 		await waitFor(() =>
 			expect(screen.getByRole("alert")).toHaveTextContent(
-				/DLP policy was not published: invalid_action/,
+				/DLP policy save was not confirmed: invalid_action/,
 			),
 		);
-		expect(screen.queryByText(/published for this tenant/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/saved for this tenant/)).not.toBeInTheDocument();
 	});
 
 	it("never reports a publish the function did not confirm", async () => {
@@ -463,14 +500,206 @@ describe("DLP policy editor persistence", () => {
 		});
 		await renderLoadedEditor(mocks);
 
-		fireEvent.click(screen.getByRole("button", { name: "Publish DLP policy" }));
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
 
 		await waitFor(() =>
 			expect(screen.getByRole("alert")).toHaveTextContent(
 				/did not confirm a stored DLP policy version/,
 			),
 		);
-		expect(screen.queryByText(/published for this tenant/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/saved for this tenant/)).not.toBeInTheDocument();
+	});
+});
+
+describe("DLP policy save authority and confirmation", () => {
+	afterEach(cleanup);
+
+	it.each(["member", "viewer"])("keeps %s access read-only despite the general policy edit affordance", async role => {
+		const mocks = installDlpMocks({ role, read: readInvoke() });
+		renderDlpEditor();
+		await waitFor(() => expect(screen.getByLabelText("DLP policy document (JSON)")).toBeInTheDocument());
+		expect(screen.getByText(/members and viewers have read-only access/)).toBeInTheDocument();
+		expect(screen.getByLabelText("DLP policy document (JSON)")).toHaveAttribute("readonly");
+		expect(JSON.parse((screen.getByLabelText("DLP policy document (JSON)") as HTMLTextAreaElement).value)).toStrictEqual(storedDlpPolicy());
+		expect(screen.queryByRole("button", { name: "Save DLP policy" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Add label" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Remove expired exceptions" })).not.toBeInTheDocument();
+		expect(publishCalls(mocks)).toHaveLength(0);
+	});
+
+	it.each(["member", "viewer"])("shows no saved policy rather than starter rules to an empty-store %s", async role => {
+		const mocks = installDlpMocks({ role });
+		renderDlpEditor();
+		await waitFor(() => expect(screen.getByText("No DLP policy has been saved for this tenant.")).toBeInTheDocument());
+		expect(screen.queryByLabelText("DLP policy document (JSON)")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Save DLP policy" })).not.toBeInTheDocument();
+		expect(publishCalls(mocks)).toHaveLength(0);
+	});
+
+	it.each(["owner", "admin"])("lets an %s save but never claims delivery or enforcement", async role => {
+		const mocks = await renderLoadedEditor(installDlpMocks({ role, read: readInvoke() }));
+		expect(screen.getByText(/Saving is not delivery or enforcement/)).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
+		await waitFor(() => expect(screen.getByText(/version 4 saved for this tenant\. Not delivered/)).toBeInTheDocument());
+		expect(publishCalls(mocks)).toHaveLength(1);
+	});
+
+	it.each([
+		["unconfirmed saved flag", { saved: undefined }],
+		["failed saved flag", { saved: false }],
+		["missing delivery flag", { delivered: undefined }],
+		["fabricated delivery", { delivered: true }],
+		["missing delivery status", { delivery_status: undefined }],
+		["fabricated delivery status", { delivery_status: "delivered" }],
+		["stale storage version", { version: 3 }],
+		["version jump", { version: 99 }],
+		["missing policy echo", { policy: undefined }],
+		["old document version", { policy: storedDlpPolicy() }],
+		["different document", { policy: storedDlpPolicy({ version: 4, maxContentBytes: 2048 }) }],
+	] as Array<[string, Record<string, unknown>]>)("rejects %s without acknowledging a save", async (_name, patch) => {
+		const confirmed = savedInvoke(storedDlpPolicy({ version: 4 }));
+		const mocks = installDlpMocks({
+			read: readInvoke(),
+			publish: { data: { ...(confirmed.data as Record<string, unknown>), ...patch }, error: null },
+		});
+		await renderLoadedEditor(mocks);
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/did not confirm a stored DLP policy version/));
+		expect(screen.queryByText(/saved for this tenant/)).not.toBeInTheDocument();
+		expect(screen.getByLabelText("Policy version")).toHaveValue(3);
+		expect(publishCalls(mocks)).toHaveLength(1);
+	});
+
+	it("surfaces a version conflict without advancing the local version", async () => {
+		const mocks = await renderLoadedEditor(installDlpMocks({
+			read: readInvoke(), publish: { data: null, error: { message: "policy_version_conflict (409)" } },
+		}));
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/save was not confirmed: policy_version_conflict \(409\)/));
+		expect(screen.getByLabelText("Policy version")).toHaveValue(3);
+		expect(publishCalls(mocks)).toHaveLength(1);
+	});
+});
+
+describe("DLP pending-save isolation", () => {
+	afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+	it("freezes authoring while saving so the committed echo cannot discard newer edits", async () => {
+		const pending = deferredResponse();
+		const mocks = await renderLoadedEditor(installDlpMocks({ read: readInvoke(), publish: pending.promise }));
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
+		expect(screen.getByLabelText("Max content bytes")).toBeDisabled();
+		expect(screen.getByLabelText("Rule 1 action")).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Add label" })).toBeDisabled();
+		fireEvent.change(screen.getByLabelText("Max content bytes"), { target: { value: "2048" } });
+		expect(screen.getByLabelText("Max content bytes")).toHaveValue(4096);
+		await act(async () => pending.resolve(savedInvoke(storedDlpPolicy({ version: 4 }))));
+		expect(screen.getByLabelText("Max content bytes")).toHaveValue(4096);
+		expect(screen.getByLabelText("Max content bytes")).not.toBeDisabled();
+		expect(screen.getByLabelText("Policy version")).toHaveValue(4);
+		expect(publishCalls(mocks)).toHaveLength(1);
+	});
+
+	it.each(["success", "error", "rejection"])("ignores a previous tenant's late %s, including its finally state", async outcome => {
+		const pendingA = deferredResponse();
+		const pendingB = deferredResponse();
+		const otherTenant = "tenant-other";
+		const policyB = JSON.parse(JSON.stringify(storedDlpPolicy()).replaceAll(TEAM_ID, otherTenant));
+		const mocks = installDlpMocks();
+		mocks.invoke.mockImplementation(async (_name: string, request: { body: { action: string; tenant_id: string } }) => {
+			if (request.body.action === DLP_READ_ACTION) return {
+				data: { ok: true, version: 3, policy: request.body.tenant_id === TEAM_ID ? storedDlpPolicy() : policyB }, error: null,
+			};
+			if (request.body.action === DLP_PUBLISH_ACTION) return request.body.tenant_id === TEAM_ID ? pendingA.promise : pendingB.promise;
+			throw new Error("unexpected editor action");
+		});
+		let selectedTenant = TEAM_ID;
+		vi.spyOn(TeamProviderModule, "useTeam").mockImplementation(() => ({
+			currentTeam: { id: selectedTenant, name: selectedTenant }, canManageTeam: true, isLoading: false, error: null,
+		}) as ReturnType<typeof TeamProviderModule.useTeam>);
+		const view = render(<DlpPolicyEditor />);
+		await waitFor(() => expect(screen.getByText("✓ Valid DLP policy")).toBeInTheDocument());
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
+		selectedTenant = otherTenant;
+		view.rerender(<DlpPolicyEditor />);
+		await waitFor(() => expect(JSON.parse((screen.getByLabelText("DLP policy document (JSON)") as HTMLTextAreaElement).value).tenantId).toBe(otherTenant));
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
+		await act(async () => {
+			if (outcome === "success") pendingA.resolve(savedInvoke(storedDlpPolicy({ version: 4 })));
+			else if (outcome === "error") pendingA.resolve({ data: null, error: { message: "old-tenant-error" } });
+			else pendingA.reject(new Error("old-tenant-rejection"));
+		});
+		expect(screen.getByRole("button", { name: "Saving..." })).toBeDisabled();
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(screen.queryByText(/saved for this tenant/)).not.toBeInTheDocument();
+		expect(JSON.parse((screen.getByLabelText("DLP policy document (JSON)") as HTMLTextAreaElement).value)).toStrictEqual(policyB);
+		await act(async () => pendingB.resolve(savedInvoke({ ...policyB, version: 4 })));
+		expect(screen.getByText(/version 4 saved for this tenant\. Not delivered/)).toBeInTheDocument();
+		expect(JSON.parse((screen.getByLabelText("DLP policy document (JSON)") as HTMLTextAreaElement).value)).toStrictEqual({ ...policyB, version: 4 });
+		expect(publishCalls(mocks).map(([, request]) => request.body.tenant_id)).toEqual([TEAM_ID, otherTenant]);
+	});
+});
+
+describe("DLP expired stored-document repair", () => {
+	afterEach(cleanup);
+	function agedPolicy(): Record<string, unknown> {
+		const active = (storedDlpPolicy().exceptions as Record<string, unknown>[])[0];
+		return storedDlpPolicy({ exceptions: [
+			{ ...active, id: "expired-a", expiresAt: PAST_EXPIRY },
+			{ ...active, id: "expired-b", expiresAt: PAST_EXPIRY },
+			active,
+		] });
+	}
+
+	it("loads an expired-majority document only for explicit repair and saves only the valid result", async () => {
+		const aged = agedPolicy();
+		const core = await loadCoreDlpModule();
+		expect(validateDlpPolicyDocument(aged).ok).toBe(false);
+		expect(core.DlpPolicySchema.safeParse(aged).success).toBe(false);
+		const mocks = installDlpMocks({ read: { data: { ok: true, version: 3, policy: aged }, error: null } });
+		renderDlpEditor();
+		await waitFor(() => expect(screen.getByRole("button", { name: "Remove expired exceptions" })).toBeInTheDocument());
+		expect(screen.getByText("✗ Invalid DLP policy")).toBeInTheDocument();
+		expect(screen.getByRole("alert")).toHaveTextContent(DLP_EXPIRED_EXCEPTION_DOMINANCE);
+		expect(screen.getByText(/nothing is removed automatically/)).toBeInTheDocument();
+		expect(JSON.parse((screen.getByLabelText("DLP policy document (JSON)") as HTMLTextAreaElement).value)).toStrictEqual(aged);
+		const save = screen.getByRole("button", { name: "Save DLP policy" });
+		expect(save).toBeDisabled();
+		fireEvent.click(save);
+		expect(publishCalls(mocks)).toHaveLength(0);
+
+		fireEvent.click(screen.getByRole("button", { name: "Remove expired exceptions" }));
+		expect(screen.getByText("✓ Valid DLP policy")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Remove expired exceptions" })).not.toBeInTheDocument();
+		const repaired = JSON.parse((screen.getByLabelText("DLP policy document (JSON)") as HTMLTextAreaElement).value);
+		expect(repaired.exceptions).toStrictEqual(storedDlpPolicy().exceptions);
+		expect(repaired.rules).toStrictEqual(aged.rules);
+		expect(repaired.labels).toStrictEqual(aged.labels);
+		expect(core.DlpPolicySchema.safeParse(repaired).success).toBe(true);
+		expect(publishCalls(mocks)).toHaveLength(0);
+		fireEvent.click(save);
+		await waitFor(() => expect(screen.getByText(/version 4 saved for this tenant\. Not delivered/)).toBeInTheDocument());
+		expect(publishCalls(mocks)[0]?.[1]?.body).toMatchObject({ expected_version: 3, policy: repaired });
+	});
+
+	it("does not turn an expiry issue into permission to repair structurally invalid data", async () => {
+		const invalid = { ...agedPolicy(), rules: ruleWith({ labelId: "missing-label" }) };
+		const mocks = installDlpMocks({ read: { data: { ok: true, version: 3, policy: invalid }, error: null } });
+		renderDlpEditor();
+		await waitFor(() => expect(screen.getByText(/The stored DLP policy could not be read/)).toBeInTheDocument());
+		expect(screen.queryByRole("button", { name: "Remove expired exceptions" })).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("DLP policy document (JSON)")).not.toBeInTheDocument();
+		expect(publishCalls(mocks)).toHaveLength(0);
+	});
+
+	it("refuses an engine-valid foreign-tenant stored document rather than offering repair", async () => {
+		const foreign = JSON.parse(JSON.stringify(storedDlpPolicy()).replaceAll(TEAM_ID, "tenant-other"));
+		expect((await loadCoreDlpModule()).DlpPolicySchema.safeParse(foreign).success).toBe(true);
+		const mocks = installDlpMocks({ read: { data: { ok: true, version: 3, policy: foreign }, error: null } });
+		renderDlpEditor();
+		await waitFor(() => expect(screen.getByText(/The stored DLP policy could not be read/)).toBeInTheDocument());
+		expect(screen.queryByLabelText("DLP policy document (JSON)")).not.toBeInTheDocument();
+		expect(publishCalls(mocks)).toHaveLength(0);
 	});
 });
 
