@@ -1,7 +1,7 @@
 /**
  * Singularity AIDR OpenClaw plugin entry point.
  * Registers tool-input enforcement, bounded post-execution/output protection,
- * allowlist tools, startup/session scan hooks, and before_agent_start handler.
+ * allowlist tools, startup/session scan hooks, and before_prompt_build handler.
  *
  * SECURITY: this plugin deliberately registers NO approval tool. An approval
  * tool callable by the model would let a prompt-injected agent approve its own
@@ -16,7 +16,7 @@ import { getBundledDataDirs } from "./bundled-dirs.js";
 import { createLogger, type PluginLogger } from "./logger-adapter.js";
 import { OpenClawOutputProtection } from "./output-protection.js";
 import {
-	createBeforeAgentStartHandler,
+	createBeforePromptBuildHandler,
 	createSessionScanHandler,
 	createStartupScanHandler,
 } from "./startup-scan.js";
@@ -113,8 +113,8 @@ export default {
 		api.on("gateway_start", createStartupScanHandler(logger, onFindings));
 		api.on("session_start", createSessionScanHandler(logger, onFindings));
 		api.on(
-			"before_agent_start",
-			createBeforeAgentStartHandler(
+			"before_prompt_build",
+			createBeforePromptBuildHandler(
 				() => pendingFindings,
 				() => {
 					pendingFindings = null;

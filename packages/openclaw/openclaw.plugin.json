@@ -6,6 +6,12 @@
   "skills": [
     "resources/skills/security-awareness"
   ],
+  "contracts": {
+    "tools": [
+      "aidr_allowlist_add",
+      "aidr_allowlist_remove"
+    ]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

@@ -263,11 +263,10 @@ importers:
         version: 0.25.12
 
   packages/openclaw:
-    dependencies:
+    devDependencies:
       '@singularityrd/aidr-core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.11

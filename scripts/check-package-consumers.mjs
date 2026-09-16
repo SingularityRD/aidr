@@ -163,6 +163,20 @@ async function checkExtension() {
 }
 
 async function checkOpenClaw() {
+	const packageDir = path.join(repoRoot, "packages", "openclaw");
+	const packageJson = JSON.parse(readFileSync(path.join(packageDir, "package.json"), "utf8"));
+	const manifest = JSON.parse(readFileSync(path.join(packageDir, "openclaw.plugin.json"), "utf8"));
+	if (JSON.stringify(packageJson.openclaw?.extensions) !== JSON.stringify(["./dist/index.cjs"])) {
+		throw new Error("package.json must declare openclaw.extensions for the bundled entry point");
+	}
+	if (packageJson.dependencies?.["@singularityrd/aidr-core"]) {
+		throw new Error("bundled core must not remain a runtime dependency of the OpenClaw package");
+	}
+	const expectedTools = ["aidr_allowlist_add", "aidr_allowlist_remove"];
+	if (JSON.stringify(manifest.contracts?.tools) !== JSON.stringify(expectedTools)) {
+		throw new Error("openclaw.plugin.json contracts.tools does not match registered tools");
+	}
+
 	const entry = artifact("packages/openclaw/dist/index.cjs");
 	const result = runNode([
 		"-e",
