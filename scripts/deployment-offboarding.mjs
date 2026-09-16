@@ -74,8 +74,8 @@ async function request(path, method = "GET", body) {
 	return data;
 }
 
-// A successful bulk remove does not itself prove every requested object is gone.
-// before the database receipt advances, including on a retry after partial work.
+// Even an exact bulk response requires an absence check before ACK. Neither
+// ambiguous deletion nor failed ACK may cause this worker to replay Storage HTTP.
 async function verifyStorageObjectsAbsent(paths) {
 	for (let offset = 0; offset < paths.length; offset += 20) {
 		await Promise.all(paths.slice(offset, offset + 20).map(async (path) => {
@@ -133,6 +133,13 @@ if (!apply) {
 	console.log(JSON.stringify(evidence));
 	return;
 } else {
+// Replace prior success BEFORE authorization/HTTP; crashes must not leave stale
+// completion evidence. Durable DB state, not this file, governs reconciliation.
+writeFileSync(evidencePath, JSON.stringify({
+	checked_at: checkedAt, action: "tenant-offboarding", applied: true,
+	tenant_id: tenantId, status: "incomplete", complete: false,
+	backup_scope: "excluded_external_retention", backup_exception: backupException,
+}, null, 2), { mode: 0o600 });
 const run = await request("/rest/v1/rpc/request_tenant_offboarding", "POST", {
 	p_tenant_id: tenantId,
 	p_requested_by: requestedBy,
@@ -162,18 +169,25 @@ while (batches < maxBatches && state.status !== "completed") {
 		if (state.paths.some((path) => typeof path !== "string" || !path.startsWith(prefix))) {
 			throw new Error("Offboarding returned a storage path outside the tenant prefix");
 		}
-		const activeHolds = await request(
-			`/rest/v1/tenant_legal_holds?tenant_id=eq.${tenantId}&released_at=is.null&select=id&limit=1`,
-		);
-		if (!Array.isArray(activeHolds) || activeHolds.length > 0) {
-			throw new Error("Legal-hold state is active or unreadable; refusing storage deletion");
+		// Tokens were committed under the SAME tenant lock as hold placement.
+		// Pending tokens prevent activation of a hold and are never reissued.
+		if (!Array.isArray(state.objects) || state.objects.length !== state.paths.length ||
+			new Set(state.paths).size !== state.paths.length ||
+			state.objects.some((object, index) => object?.path !== state.paths[index] || typeof object?.authorization_id !== "string" || !UUID.test(object.authorization_id)) ||
+			new Set(state.objects.map((object) => object.authorization_id)).size !== state.objects.length) {
+			throw new Error("Offboarding returned invalid storage deletion authorizations; refusing Storage DELETE");
 		}
 		const deleted = await request("/storage/v1/object/aidr-audit-exports", "DELETE", { prefixes: state.paths });
-		if (!Array.isArray(deleted)) throw new Error("Storage deletion returned an invalid result; durable receipts remain resumable");
+		const deletedPaths = Array.isArray(deleted) ? deleted.map((object) => object?.name) : [];
+		if (deletedPaths.length !== state.paths.length || new Set(deletedPaths).size !== state.paths.length ||
+			state.paths.some((path) => !deletedPaths.includes(path))) {
+			throw new Error("Storage deletion returned an inexact result; fence worker and reconcile pending authorizations, do not retry deletion");
+		}
 		await verifyStorageObjectsAbsent(state.paths);
 		state = await request("/rest/v1/rpc/ack_tenant_offboarding_objects", "POST", {
 			p_run_id: run.run_id,
 			p_paths: state.paths,
+			p_authorization_ids: state.objects.map((object) => object.authorization_id),
 		});
 		storageBatches += 1;
 	}
@@ -189,6 +203,7 @@ while (batches < maxBatches && state.status !== "completed") {
 		cacheInvalidationRequired = true;
 		break;
 	}
+	if (state.action === "reconcile_storage_authorizations") break;
 	if (["blocked_legal_hold", "waiting_retention"].includes(state.status)) break;
 }
 
@@ -209,6 +224,7 @@ const evidence = {
 	complete,
 	batches,
 	storage_batches: storageBatches,
+	storage_reconciliation_required: state.action === "reconcile_storage_authorizations",
 	phase_receipts: receipts,
 	cache_invalidation: {
 		phase: "tenant_cache",

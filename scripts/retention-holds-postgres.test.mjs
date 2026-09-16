@@ -8,6 +8,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { testOffboardingStorage } from "./offboarding-storage-postgres-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const container = `aidr-retention-test-${randomUUID()}`;
@@ -294,6 +295,10 @@ test("retention migration and tenant-serialized hold protocol on real PostgreSQL
       const result = await prune();
       assert.equal(result.unattributed_webhooks_retained, 1);
       assert.equal(result.webhook_events_deleted, 0);
+    });
+    await testOffboardingStorage(t, {
+      sql, denied, rpc, command, pgArgs, session, waitForAdvisoryWait,
+      tenant, hold, release, owner, count,
     });
   } finally {
     const removed = await command(["rm", "--force", container]);

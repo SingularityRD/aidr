@@ -10,6 +10,23 @@ import { afterEach, test } from "node:test";
 const tenantId = "11111111-1111-4111-8111-111111111111";
 const operatorId = "22222222-2222-4222-8222-222222222222";
 const runId = "33333333-3333-4333-8333-333333333333";
+const firstPath = `${tenantId}/44444444-4444-4444-8444-444444444444.json`;
+const secondPath = `${tenantId}/55555555-5555-4555-8555-555555555555.json`;
+const authorizationIds = [
+	"66666666-6666-4666-8666-666666666666",
+	"77777777-7777-4777-8777-777777777777",
+];
+
+function storageBatch(paths = [firstPath]) {
+	return {
+		run_id: runId,
+		status: "running",
+		complete: false,
+		action: "delete_storage_objects",
+		paths,
+		objects: paths.map((path, index) => ({ path, authorization_id: authorizationIds[index] })),
+	};
+}
 const temporaryDirectories = [];
 const servers = [];
 
@@ -94,12 +111,11 @@ test("apply deletes storage before acknowledging its ledger and completes resuma
 		}
 		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") {
 			runCalls += 1;
-			if (runCalls === 1) return json(response, 200, { run_id: runId, status: "running", action: "delete_storage_objects", paths: [`${tenantId}/44444444-4444-4444-8444-444444444444.json`] });
+			if (runCalls === 1) return json(response, 200, storageBatch([firstPath, secondPath]));
 			if (runCalls === 2) return json(response, 200, { run_id: runId, status: "running", phase: "events", rows_deleted: 100 });
 			return json(response, 200, { run_id: runId, status: "completed", complete: true });
 		}
-		if (request.url.startsWith("/rest/v1/tenant_legal_holds?")) return json(response, 200, []);
-		if (request.url === "/storage/v1/object/aidr-audit-exports" && request.method === "DELETE") return json(response, 200, [{ name: `${tenantId}/44444444-4444-4444-8444-444444444444.json` }]);
+		if (request.url === "/storage/v1/object/aidr-audit-exports" && request.method === "DELETE") return json(response, 200, [{ name: secondPath }, { name: firstPath }]);
 		if (request.url.startsWith("/storage/v1/object/info/aidr-audit-exports/")) return json(response, 404, { code: "not_found" });
 		if (request.url === "/rest/v1/rpc/ack_tenant_offboarding_objects") return json(response, 200, { run_id: runId, status: "running", phase: "audit_export_objects" });
 		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, [{ phase: "events", status: "completed", rows_deleted: 100 }]);
@@ -110,7 +126,22 @@ test("apply deletes storage before acknowledging its ledger and completes resuma
 	const storageIndex = calls.findIndex((call) => call.url === "/storage/v1/object/aidr-audit-exports");
 	const ackIndex = calls.findIndex((call) => call.url === "/rest/v1/rpc/ack_tenant_offboarding_objects");
 	assert.ok(storageIndex >= 0 && ackIndex > storageIndex);
-	assert.deepEqual(calls[storageIndex].body.prefixes, [`${tenantId}/44444444-4444-4444-8444-444444444444.json`]);
+	assert.deepEqual(calls[storageIndex].body.prefixes, [firstPath, secondPath]);
+	assert.equal(calls[storageIndex].method, "DELETE");
+	assert.equal(calls[ackIndex].method, "POST");
+	assert.deepEqual(calls[ackIndex].body, {
+		p_run_id: runId,
+		p_paths: [firstPath, secondPath],
+		p_authorization_ids: authorizationIds,
+	});
+	for (const objectPath of [firstPath, secondPath]) {
+		const verificationIndex = calls.findIndex((call) => call.url === `/storage/v1/object/info/aidr-audit-exports/${objectPath}`);
+		assert.ok(verificationIndex > storageIndex && verificationIndex < ackIndex, "every object must be verified absent before ACK");
+		assert.equal(calls[verificationIndex].method, "GET");
+	}
+	assert.equal(calls.filter((call) => call.url === "/rest/v1/rpc/ack_tenant_offboarding_objects").length, 1);
+	assert.equal(calls.some((call) => call.url.startsWith("/rest/v1/tenant_legal_holds?")), false, "durable authorization replaces the racy hold lookup");
+	assert.equal(runCalls, 3);
 	const evidence = JSON.parse(await readFile(path.join(directory, `offboarding-evidence-${tenantId}.json`), "utf8"));
 	assert.equal(evidence.complete, true);
 	assert.equal(evidence.storage_batches, 1);
@@ -123,9 +154,8 @@ test("partial successful storage deletion cannot acknowledge an object that rema
 	let acknowledged = false;
 	const directory = await fixture((request, response) => {
 		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "requested", backup_scope: "excluded_external_retention" });
-		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { run_id: runId, status: "running", action: "delete_storage_objects", paths: [firstPath, secondPath] });
-		if (request.url.startsWith("/rest/v1/tenant_legal_holds?")) return json(response, 200, []);
-		if (request.url === "/storage/v1/object/aidr-audit-exports") return json(response, 200, [{ name: firstPath }]);
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, storageBatch([firstPath, secondPath]));
+		if (request.url === "/storage/v1/object/aidr-audit-exports") return json(response, 200, [{ name: firstPath }, { name: secondPath }]);
 		if (request.url === `/storage/v1/object/info/aidr-audit-exports/${firstPath}`) return json(response, 404, { code: "not_found" });
 		if (request.url === `/storage/v1/object/info/aidr-audit-exports/${secondPath}`) return json(response, 200, { name: secondPath });
 		if (request.url === "/rest/v1/rpc/ack_tenant_offboarding_objects") acknowledged = true;
@@ -137,14 +167,13 @@ test("partial successful storage deletion cannot acknowledge an object that rema
 	assert.match(result.stderr, /Storage object remains after deletion/);
 });
 
-test("retry can acknowledge an object already absent from storage", async () => {
+test("an authorized exact deletion receipt can acknowledge an object verified absent from storage", async () => {
 	const objectPath = `${tenantId}/44444444-4444-4444-8444-444444444444.json`;
 	let acknowledged = false;
 	const directory = await fixture((request, response) => {
 		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "requested", backup_scope: "excluded_external_retention" });
-		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { run_id: runId, status: "running", action: "delete_storage_objects", paths: [objectPath] });
-		if (request.url.startsWith("/rest/v1/tenant_legal_holds?")) return json(response, 200, []);
-		if (request.url === "/storage/v1/object/aidr-audit-exports") return json(response, 200, []);
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, storageBatch([objectPath]));
+		if (request.url === "/storage/v1/object/aidr-audit-exports") return json(response, 200, [{ name: objectPath }]);
 		if (request.url === `/storage/v1/object/info/aidr-audit-exports/${objectPath}`) return json(response, 404, { code: "not_found" });
 		if (request.url === "/rest/v1/rpc/ack_tenant_offboarding_objects") {
 			acknowledged = true;
@@ -156,6 +185,154 @@ test("retry can acknowledge an object already absent from storage", async () => 
 	const result = await run(directory, ["--apply", "--requested-by", operatorId]);
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(acknowledged, true);
+});
+
+const invalidAuthorizationBatches = [
+	["missing objects", { ...storageBatch(), objects: undefined }],
+	["empty objects", { ...storageBatch(), objects: [] }],
+	["missing token", { ...storageBatch(), objects: [{ path: firstPath }] }],
+	["non-UUID token", { ...storageBatch(), objects: [{ path: firstPath, authorization_id: "not-a-uuid" }] }],
+	["coercible array token", { ...storageBatch(), objects: [{ path: firstPath, authorization_id: [authorizationIds[0]] }] }],
+	["missing authorized path", { ...storageBatch(), objects: [{ authorization_id: authorizationIds[0] }] }],
+	["mismatched authorized path", { ...storageBatch(), objects: [{ path: secondPath, authorization_id: authorizationIds[0] }] }],
+	["extra authorized object", { ...storageBatch([firstPath, secondPath]), paths: [firstPath] }],
+	["duplicate paths", storageBatch([firstPath, firstPath])],
+	["duplicate tokens", { ...storageBatch([firstPath, secondPath]), objects: [firstPath, secondPath].map((path) => ({ path, authorization_id: authorizationIds[0] })) }],
+	["cross-tenant path", storageBatch([`${operatorId}/44444444-4444-4444-8444-444444444444.json`])],
+];
+
+for (const [label, batch] of invalidAuthorizationBatches) {
+	test(`invalid storage authorization (${label}) refuses DELETE and ACK`, async () => {
+		const calls = [];
+		const directory = await fixture((request, response) => {
+			calls.push({ method: request.method, url: request.url });
+			if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "requested", backup_scope: "excluded_external_retention" });
+			if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, batch);
+			return json(response, 404, {});
+		});
+		const result = await run(directory, ["--apply", "--requested-by", operatorId]);
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /storage|authorization/i);
+		assert.equal(calls.some((call) => call.method === "DELETE" || call.url.startsWith("/storage/")), false);
+		assert.equal(calls.some((call) => call.url === "/rest/v1/rpc/ack_tenant_offboarding_objects"), false);
+		assert.equal(calls.filter((call) => call.url === "/rest/v1/rpc/run_tenant_offboarding_batch").length, 1);
+	});
+}
+
+const mismatchedStorageResponses = [
+	["empty array", []],
+	["partial receipt", [{ name: firstPath }]],
+	["same-size wrong path", [{ name: firstPath }, { name: `${tenantId}/88888888-8888-4888-8888-888888888888.json` }]],
+	["duplicate receipt", [{ name: firstPath }, { name: firstPath }]],
+	["extra receipt", [{ name: firstPath }, { name: secondPath }, { name: `${tenantId}/extra.json` }]],
+	["missing names", [{}, {}]],
+	["non-string names", [{ name: firstPath }, { name: 123 }]],
+	["null entry", [{ name: firstPath }, null]],
+	["non-array receipt", { name: firstPath }],
+];
+
+for (const [label, deletionResponse] of mismatchedStorageResponses) {
+	test(`storage DELETE response (${label}) cannot acknowledge even absent objects`, async () => {
+		let deletes = 0;
+		let acknowledgements = 0;
+		let verifications = 0;
+		let batches = 0;
+		const directory = await fixture((request, response) => {
+			if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "requested", backup_scope: "excluded_external_retention" });
+			if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") {
+				batches += 1;
+				return json(response, 200, storageBatch([firstPath, secondPath]));
+			}
+			if (request.url === "/storage/v1/object/aidr-audit-exports" && request.method === "DELETE") {
+				deletes += 1;
+				return json(response, 200, deletionResponse);
+			}
+			if (request.url.startsWith("/storage/v1/object/info/aidr-audit-exports/")) {
+				verifications += 1;
+				return json(response, 404, { code: "not_found" });
+			}
+			if (request.url === "/rest/v1/rpc/ack_tenant_offboarding_objects") {
+				acknowledgements += 1;
+				return json(response, 200, { run_id: runId, status: "completed", complete: true });
+			}
+			if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, []);
+			return json(response, 404, {});
+		});
+		const evidencePath = path.join(directory, `offboarding-evidence-${tenantId}.json`);
+		await writeFile(evidencePath, JSON.stringify({ tenant_id: tenantId, run_id: runId, status: "completed", complete: true }));
+		const result = await run(directory, ["--apply", "--requested-by", operatorId]);
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /storage/i);
+		const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+		assert.equal(evidence.complete, false, "a failed attempt must replace stale success evidence");
+		assert.equal(evidence.status, "incomplete");
+		assert.equal(deletes, 1);
+		assert.equal(acknowledgements, 0);
+		assert.equal(verifications, 0, "mismatched deletion receipts must fail before absence checks");
+		assert.equal(batches, 1, "an ambiguous storage result must not retry the batch");
+	});
+}
+
+test("ambiguous deletion cannot become a successful ACK on a later invocation", async () => {
+	let batches = 0;
+	let deletes = 0;
+	let acknowledgements = 0;
+	const directory = await fixture((request, response) => {
+		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "running", backup_scope: "excluded_external_retention" });
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") {
+			batches += 1;
+			return json(response, 200, batches === 1 ? storageBatch() : {
+				run_id: runId, status: "running", complete: false, action: "reconcile_storage_authorizations", phase: "audit_export_objects",
+			});
+		}
+		if (request.url === "/storage/v1/object/aidr-audit-exports" && request.method === "DELETE") {
+			deletes += 1;
+			return json(response, 200, []);
+		}
+		if (request.url.startsWith("/storage/v1/object/info/aidr-audit-exports/")) return json(response, 404, { code: "not_found" });
+		if (request.url === "/rest/v1/rpc/ack_tenant_offboarding_objects") {
+			acknowledgements += 1;
+			return json(response, 200, { run_id: runId, status: "completed", complete: true });
+		}
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, [{ phase: "audit_export_objects", status: "running", rows_deleted: 0 }]);
+		return json(response, 404, {});
+	});
+	const initial = await run(directory, ["--apply", "--requested-by", operatorId]);
+	assert.equal(initial.status, 1, initial.stderr);
+	assert.equal(batches, 1);
+	assert.equal(deletes, 1);
+	assert.equal(acknowledgements, 0);
+	const retry = await run(directory, ["--apply", "--requested-by", operatorId, "--max-batches", "5"]);
+	assert.equal(retry.status, 2, retry.stderr);
+	assert.equal(batches, 2, "pending durable authorization stops after one batch, without reissuing a token");
+	assert.equal(deletes, 1, "retry must not issue a second DELETE");
+	assert.equal(acknowledgements, 0, "absence alone cannot authorize an ACK");
+	const evidence = JSON.parse(await readFile(path.join(directory, `offboarding-evidence-${tenantId}.json`), "utf8"));
+	assert.equal(evidence.status, "running");
+	assert.equal(evidence.complete, false);
+	assert.equal(evidence.batches, 1);
+	assert.equal(evidence.storage_batches, 0);
+});
+
+test("pending storage authorizations stop apply without storage requests or ACK", async () => {
+	const calls = [];
+	const directory = await fixture((request, response) => {
+		calls.push(request.url);
+		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "running", backup_scope: "excluded_external_retention" });
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { run_id: runId, status: "running", complete: false, action: "reconcile_storage_authorizations", phase: "audit_export_objects" });
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, [{ phase: "audit_export_objects", status: "running", rows_deleted: 0 }]);
+		return json(response, 404, {});
+	});
+	const result = await run(directory, ["--apply", "--requested-by", operatorId, "--max-batches", "5"]);
+	assert.equal(result.status, 2, result.stderr);
+	assert.equal(calls.filter((url) => url === "/rest/v1/rpc/run_tenant_offboarding_batch").length, 1);
+	assert.equal(calls.some((url) => url.startsWith("/storage/")), false);
+	assert.equal(calls.includes("/rest/v1/rpc/ack_tenant_offboarding_objects"), false);
+	const evidence = JSON.parse(await readFile(path.join(directory, `offboarding-evidence-${tenantId}.json`), "utf8"));
+	assert.equal(evidence.status, "running");
+	assert.equal(evidence.complete, false);
+	assert.equal(evidence.batches, 1);
+	assert.equal(evidence.storage_batches, 0);
 });
 
 test("active legal hold stops apply with a durable non-success result", async () => {
@@ -179,8 +356,7 @@ test("storage failure never acknowledges deletion", async () => {
 	let acknowledged = false;
 	const directory = await fixture((request, response) => {
 		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "requested", backup_scope: "excluded_external_retention" });
-		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { run_id: runId, status: "running", action: "delete_storage_objects", paths: [`${tenantId}/44444444-4444-4444-8444-444444444444.json`] });
-		if (request.url.startsWith("/rest/v1/tenant_legal_holds?")) return json(response, 200, []);
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, storageBatch());
 		if (request.url === "/storage/v1/object/aidr-audit-exports") return json(response, 503, { code: "storage_unavailable" });
 		if (request.url === "/rest/v1/rpc/ack_tenant_offboarding_objects") acknowledged = true;
 		return json(response, 404, {});
