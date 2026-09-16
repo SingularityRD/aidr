@@ -20,6 +20,7 @@ type ApiKeyRow = {
 	user_id: string;
 	tenant_id: string;
 	revoked: boolean;
+	agent_id?: string | null;
 };
 
 type MembershipRow = {
@@ -27,7 +28,7 @@ type MembershipRow = {
 };
 
 export type TenantApiKeyAuthResult =
-	| { ok: true; userId: string; tenantId: string }
+	| { ok: true; userId: string; tenantId: string; agentId?: string | null }
 	| {
 		ok: false;
 		status: 401 | 403 | 503;
@@ -42,15 +43,18 @@ function apiKeyRow(value: unknown): ApiKeyRow | null {
 		!row.user_id ||
 		typeof row.tenant_id !== "string" ||
 		!row.tenant_id ||
-		typeof row.revoked !== "boolean"
+		typeof row.revoked !== "boolean" ||
+		("agent_id" in row && row.agent_id !== null && typeof row.agent_id !== "string")
 	) {
 		return null;
 	}
-	return {
+	const parsed: ApiKeyRow = {
 		user_id: row.user_id,
 		tenant_id: row.tenant_id,
 		revoked: row.revoked,
 	};
+	if ("agent_id" in row) parsed.agent_id = row.agent_id as string | null;
+	return parsed;
 }
 
 function membershipRow(value: unknown): MembershipRow | null {
@@ -88,7 +92,7 @@ export async function authenticateTenantApiKey(
 	try {
 		keyResult = await db
 			.from("api_keys")
-			.select("user_id,tenant_id,revoked")
+			.select("user_id,tenant_id,revoked,agent_id")
 			.eq("key_hash", presentedHash)
 			.maybeSingle();
 	} catch {
@@ -108,7 +112,7 @@ export async function authenticateTenantApiKey(
 		try {
 			previousResult = await db
 				.from("api_keys")
-				.select("user_id,tenant_id,revoked,previous_hash,previous_hash_expires_at")
+				.select("user_id,tenant_id,revoked,agent_id,previous_hash,previous_hash_expires_at")
 				.eq("previous_hash", presentedHash)
 				.maybeSingle();
 		} catch {
@@ -150,5 +154,10 @@ export async function authenticateTenantApiKey(
 		return { ok: false, status: 403, error: "tenant_access_denied" };
 	}
 
-	return { ok: true, userId: key.user_id, tenantId: key.tenant_id };
+	return {
+		ok: true,
+		userId: key.user_id,
+		tenantId: key.tenant_id,
+		...("agent_id" in key ? { agentId: key.agent_id ?? null } : {}),
+	};
 }
