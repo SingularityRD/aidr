@@ -99,6 +99,7 @@
 		"verify:fleet:windows": "node scripts/verify-windows-fleet.mjs",
 		"verify:fleet:unix": "node scripts/verify-unix-fleet-delivery.mjs",
 		"verify:native-host": "node scripts/verify-native-host-matrix-v6.mjs",
+		"verify:openclaw-release-host": "node scripts/verify-openclaw-release-host.mjs",
 		"verify:native-host:validate": "node scripts/verify-native-host-matrix-v6.mjs --scenario-file deploy/native/scenarios/TEMPLATE.json --validate-only",
 		"verify:interception-matrix": "node deploy/native/verify-interception-matrix.mjs",
 		"benchmark:test": "node --test scripts/benchmarks/*.test.mjs",

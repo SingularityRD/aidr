@@ -43,10 +43,10 @@ export function createSessionScanHandler(
 }
 
 /**
- * Creates a before_agent_start handler that surfaces plugin scan findings
+ * Creates a before_prompt_build handler that surfaces plugin scan findings
  * as prepended context. One-shot: clears findings after first delivery.
  */
-export function createBeforeAgentStartHandler(
+export function createBeforePromptBuildHandler(
 	getFindings: () => string | null,
 	clearFindings: () => void,
 	logger: Logger,
@@ -56,7 +56,7 @@ export function createBeforeAgentStartHandler(
 		if (!findings) return undefined;
 
 		clearFindings();
-		logger.info("AIDR: surfacing plugin scan findings via before_agent_start");
+		logger.info("AIDR: surfacing plugin scan findings via before_prompt_build");
 
 		const prependContext = [
 			'<security-alert source="aidr-plugin-scan">',
