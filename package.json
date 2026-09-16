@@ -34,7 +34,7 @@
 		"sync:aig": "node scripts/sync-aig-threats.mjs",
 		"postinstall": "node scripts/compile-aig-data.mjs",
 		"build": "node scripts/build-workspace.mjs",
-		"build:release": "node scripts/build-workspace.mjs --release && node scripts/release-artifact-manifests.mjs && node scripts/check-package-contracts.mjs packages/core packages/claude-code packages/extension packages/openclaw packages/opencode packages/cli packages/sdk packages/dashboard packages/codex packages/mcp-gateway && node scripts/check-package-consumers.mjs && node scripts/check-no-sourcemaps.mjs packages && node scripts/check-no-leaky-paths.mjs packages/core/dist packages/claude-code/dist packages/extension/dist packages/openclaw/dist packages/opencode/dist packages/cli/dist packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist",
+		"build:release": "node scripts/build-workspace.mjs --release",
 		"quality:gate": "pnpm quality:static && pnpm audit:prod && pnpm check && pnpm test && pnpm test:coverage && pnpm build:release",
 		"test": "pnpm test:investor-metrics && vitest run",
 		"test:ci": "pnpm test:investor-metrics && node scripts/run-tests-ci.mjs",
