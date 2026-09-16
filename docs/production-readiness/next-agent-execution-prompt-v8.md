@@ -8,7 +8,7 @@ Sen kıdemli bir endpoint security, detection engineering, identity, platform, S
 
 Amaç: AIDR ürünündeki bütün yerel olarak giderilebilir eksikleri uçtan uca uygula, mevcut uygulamaları denetle, yarım kalanları tamamla, regresyonları düzelt, cloud ve self-hosted müşteri kurulum paketini yeniden üret ve her iddiayı yerel kanıtla bağla. Yalnız rapor veya plan üretip durma. Bağımsız ilerleyebildiğin sürece kullanıcıya soru sorma. Bir engel gördüğünde önce bütün bağımsız işi tamamla.
 
-Mevcut kayıt kararı **NO-GO**. Envanter: 71 özellik = 41 wired, 28 partial, 0 missing, 2 external. Teknik kayıt: 46 iş = 1 OPEN, 45 yerel uygulaması bulunan fakat saha kabulü açık. Ticari/dış kayıt: 13 kapı. Backlog: 68 bulgudan 7 tanesi kapanmamış.
+Mevcut kayıt kararı **NO-GO**. Envanter: 71 özellik = 41 wired, 28 partial, 0 missing, 2 external. Teknik kayıt: 46 iş = 0 OPEN, 46 yerel uygulaması bulunan fakat saha kabulü açık. Ticari/dış kayıt: 13 kapı. Backlog: 68 bulgudan 7 tanesi kapanmamış.
 
 ## Kesin görev ve tamamlanma sözleşmesi
 
@@ -661,17 +661,17 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 
 - İlgili özellikler: DET-07
 - Kaynak: packages/core/src/dlp/index.ts, packages/core/src/pii-detector.ts
-- Güncel yerel durum: DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Attachment/diğer connector/müşteri label kabulü açık.
+- Güncel yerel durum: DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Versioned CAS storage/history/audit/offboarding ve owner/admin+MFA publish sınırı uygulandı; imzalı agent delivery ve müşteri label kabulü açık.
 - Başlangıç riski: Müşteri etiketleri, belge/attachment türleri, her bağlayıcıdaki giriş/çıkış yolu ve düşük yanlış alarm kabulü tamam değil.
 - Tamamlama hedefi: Kural/etiket yönetimi, kapsam hedefleri, maskeleme/engelleme/approval eylemleri ve exception yaşam döngüsünü bağla.
 - Zorunlu kapanış testi: Sentetik ve kuruma özgü sırlar tüm kapsanan giriş/çıkışlarda yakalansın; yetkili benign işlem geçsin; örnek dışı format unavailable olarak raporlansın.
 - Dış bağımlılık/sınır: Etiket/kural sözlüğü ve maskelenmiş test verisi
 
-#### T39 — Bağımsız etkinlik, performans ve rakip kıyaslaması [P1; OPEN]
+#### T39 — Bağımsız etkinlik, performans ve rakip kıyaslaması [P1; LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN]
 
 - İlgili özellikler: EVAL-01, EVAL-02, EVAL-03
 - Kaynak: docs/production-readiness/agent-security-market-and-release-plan.md, docs/production-readiness/customer-investor-validation-master-plan.md
-- Güncel yerel durum: Pazar yetenek kategorileri ve önerilen benchmark protokolü belgeli.
+- Güncel yerel durum: Deterministik sentetik corpus, içerik-digest holdout manifesti, sold-scope coverage, confusion/P-R-F1/ROC-AUC, reason-coded unknown competitor hücreleri, trusted-key/duty-separation binding, ölçüm bütçesi, canonical digest ve byte-exact reproduce harness'ı uygulanıp test edildi. Gerçek müşteri benign corpus'u, competitor erişimi, bağımsız evaluator/trust kaydı ve bütçe onayı dış kanıt olarak açık.
 - Başlangıç riski: En iyi ürün, sıfır false-positive, evasion dayanıklılığı veya latency üstünlüğünü gösteren bağımsız kanıt yok.
 - Tamamlama hedefi: Geliştirme ve blind holdout setlerini ayır; saldırı ailesi/bağlayıcı bazında coverage, false block/approval, p50/p95/p99 ve limitations ölç; eşit koşullu karşılaştırma yap.
 - Zorunlu kapanış testi: Aynı workload/ortamda ham ölçüm, payda, sürüm, örneklem ve bağımsız değerlendirici imzası; görünmeyen yüzeyler başarı ortalamasına katılmasın.

@@ -4,7 +4,7 @@
 
 71 alt özellik: **41 bağlı/çalışan, 28 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **46 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
 
-45 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 1 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
+46 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 0 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
 
 ## Kanıt ve durum nasıl okunmalı?
 
@@ -618,7 +618,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T38 — Kuruma özel DLP ve veri etiketleri (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Attachment/diğer connector/müşteri label kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Versioned CAS storage/history/audit/offboarding ve owner/admin+MFA publish sınırı uygulandı; imzalı agent delivery ve müşteri label kabulü açık.
 
 **Başlangıç durumu:** PII/DLP detektörleri ve bazı çıktı kontrolleri var.
 
@@ -634,7 +634,9 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T39 — Bağımsız etkinlik, performans ve rakip kıyaslaması (P1)
 
-**Durum:** OPEN. **Başlangıç durumu:** Pazar yetenek kategorileri ve önerilen benchmark protokolü belgeli.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Deterministik sentetik corpus, içerik-digest holdout manifesti, sold-scope coverage, confusion/P-R-F1/ROC-AUC, reason-coded unknown competitor hücreleri, trusted-key/duty-separation binding, ölçüm bütçesi, canonical digest ve byte-exact reproduce harness'ı uygulanıp test edildi. Gerçek müşteri benign corpus'u, competitor erişimi, bağımsız evaluator/trust kaydı ve bütçe onayı dış kanıt olarak açık.
+
+**Başlangıç durumu:** Pazar yetenek kategorileri ve önerilen benchmark protokolü belgeli.
 
 **Başlangıç boşluğu / müşteri etkisi:** En iyi ürün, sıfır false-positive, evasion dayanıklılığı veya latency üstünlüğünü gösteren bağımsız kanıt yok.
 

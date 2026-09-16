@@ -892,7 +892,7 @@
       "priority": "P1",
       "title": "Kuruma özel DLP ve veri etiketleri",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Attachment/diğer connector/müşteri label kabulü açık.",
+      "implementation_update": "DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Versioned CAS storage/history/audit/offboarding ve owner/admin+MFA publish sınırı uygulandı; imzalı agent delivery ve müşteri label kabulü açık.",
       "feature_ids": [
         "DET-07"
       ],
@@ -912,8 +912,8 @@
       "id": "T39",
       "priority": "P1",
       "title": "Bağımsız etkinlik, performans ve rakip kıyaslaması",
-      "status": "OPEN",
-      "implementation_update": null,
+      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
+      "implementation_update": "Deterministik sentetik corpus, içerik-digest holdout manifesti, sold-scope coverage, confusion/P-R-F1/ROC-AUC, reason-coded unknown competitor hücreleri, trusted-key/duty-separation binding, ölçüm bütçesi, canonical digest ve byte-exact reproduce harness'ı uygulanıp test edildi. Gerçek müşteri benign corpus'u, competitor erişimi, bağımsız evaluator/trust kaydı ve bütçe onayı dış kanıt olarak açık.",
       "feature_ids": [
         "EVAL-01",
         "EVAL-02",

@@ -91,7 +91,8 @@ const implementationUpdates = {
   T35: "v7 birleşik test 237 dosya/3326 geçiş/2 açıklanmış skip, coverage eşikleri ve 10 paket release consumer geçti; native kör corpus açık.",
   T36: "Onboarding stale token/tenant/error durumları fail-closed ve yapılandırılmış Azure/Entra login görünür; gerçek browser/IdP/erişilebilirlik kabulü açık.",
   T37: "Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti, hukuk/saha açık.",
-  T38: "DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Attachment/diğer connector/müşteri label kabulü açık.",
+  T38: "DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Versioned CAS storage/history/audit/offboarding ve owner/admin+MFA publish sınırı uygulandı; imzalı agent delivery ve müşteri label kabulü açık.",
+  T39: "Deterministik sentetik corpus, içerik-digest holdout manifesti, sold-scope coverage, confusion/P-R-F1/ROC-AUC, reason-coded unknown competitor hücreleri, trusted-key/duty-separation binding, ölçüm bütçesi, canonical digest ve byte-exact reproduce harness'ı uygulanıp test edildi. Gerçek müşteri benign corpus'u, competitor erişimi, bağımsız evaluator/trust kaydı ve bütçe onayı dış kanıt olarak açık.",
   T40: "Support v7 runbook, izinli/hashli bundle, escalation ve emergency update akışı hazır; gerçek kanal, nöbet ve ticket tatbikatı açık.",
   T41: "Güncel ilk müşteri satış paketi ve portable kit üreticisi var; yeni v7 kit imzası ile onaylı teklif/satın alma kabulü açık.",
   T42: "Eski izin verici RLS kaldırıldı; forged claim, expired member, suspended tenant ve service-role kontrolleri yerel PostgreSQL'de geçti. Saha migrationı açık.",
@@ -105,7 +106,7 @@ const work = definitions.map(line => {
   if (!dependencies) throw new Error(`Malformed ${id}`);
   const source_paths = sources.split(";");
   for (const path of source_paths) if (!existsSync(path)) throw new Error(`${id}: missing source ${path}`);
-  const stillOpen = new Set(["T39"]);
+  const stillOpen = new Set();
   return { id, priority, title, status: implementationUpdates[id] && !stillOpen.has(id) ? "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN" : "OPEN", implementation_update: implementationUpdates[id] ?? null, feature_ids: featureIds.split(","), source_paths, initial_current: current, initial_gap: gap, implementation, acceptance, owner_role: owner, dependencies, evidence_level: ["T02", "T21"].includes(id) ? "code-and-local-reproduction" : ["T03", "T10", "T19", "T34"].includes(id) ? "source-confirmed-gap; full exploit or field impact not asserted" : "implementation-and-acceptance-review" };
 });
 const salesTitles = {
