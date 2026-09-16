@@ -10789,7 +10789,8 @@ async function logResponseActions(config, sessionId, toolName, verdict, actions)
     return;
   try {
     await appendEntry(config, buildResponseActionEntry(sessionId, toolName, verdict, actions));
-  } catch {
+  } catch (error3) {
+    recordAuditWriteFailure(error3);
   }
 }
 async function logAllowedResponseActions(config, sessionId, toolName, verdict, actions) {
@@ -10797,7 +10798,8 @@ async function logAllowedResponseActions(config, sessionId, toolName, verdict, a
     return;
   try {
     await appendEntry(config, buildAllowedResponseActionEntry(sessionId, toolName, verdict, actions));
-  } catch {
+  } catch (error3) {
+    recordAuditWriteFailure(error3);
   }
 }
 async function logPluginScan(config, pluginKey, pluginVersion, findings) {
@@ -10813,7 +10815,8 @@ async function logPluginScan(config, pluginKey, pluginVersion, findings) {
   };
   try {
     await appendEntry(config, entry);
-  } catch {
+  } catch (error3) {
+    recordAuditWriteFailure(error3);
   }
 }
 async function logIncident(config, entry) {
@@ -10821,7 +10824,8 @@ async function logIncident(config, entry) {
     return;
   try {
     await appendEntry(config, entry);
-  } catch {
+  } catch (error3) {
+    recordAuditWriteFailure(error3);
   }
 }
 async function getRecentEntries(config, limit = 100) {
@@ -11120,6 +11124,41 @@ var init_embedder = __esm({
   }
 });
 
+// ../core/dist/behavioral-corpus.js
+var LOCAL_EMBEDDER_MODEL_VERSION, MAX_BEHAVIORAL_CORPUS_ENTRIES, Identifier, BoundedText, BehavioralCorpusSchema;
+var init_behavioral_corpus = __esm({
+  "../core/dist/behavioral-corpus.js"() {
+    "use strict";
+    init_zod();
+    init_embedder();
+    LOCAL_EMBEDDER_MODEL_VERSION = "local-tinyhash-v1";
+    MAX_BEHAVIORAL_CORPUS_ENTRIES = 1024;
+    Identifier = external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+    BoundedText = external_exports.string().min(1).max(1024).refine((value) => value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value));
+    BehavioralCorpusSchema = external_exports.object({
+      schema_version: external_exports.literal(1),
+      tenant_id: Identifier,
+      corpus_id: Identifier,
+      corpus_version: external_exports.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      model_version: external_exports.literal(LOCAL_EMBEDDER_MODEL_VERSION),
+      dimension: external_exports.literal(EMBEDDING_DIM),
+      sha256: external_exports.string().regex(/^[a-f0-9]{64}$/),
+      entries: external_exports.array(external_exports.object({
+        threatId: Identifier,
+        embedding: external_exports.array(external_exports.number().finite().min(-1).max(1)).length(EMBEDDING_DIM).refine((vector) => {
+          const normSquared = vector.reduce((sum2, value) => sum2 + value * value, 0);
+          return Math.abs(normSquared - 1) <= 0.01;
+        }, "Threat vector must be unit normalized"),
+        metadata: external_exports.object({
+          category: BoundedText,
+          severity: BoundedText,
+          description: BoundedText
+        }).strict()
+      }).strict()).min(1).max(MAX_BEHAVIORAL_CORPUS_ENTRIES).refine((entries) => new Set(entries.map((entry) => entry.threatId)).size === entries.length, "Duplicate threat identifiers")
+    }).strict();
+  }
+});
+
 // ../core/dist/ml/similarity.js
 function cosineSimilarity(a, b2) {
   if (a.length !== b2.length) {
@@ -11179,6 +11218,7 @@ var LocalEmbeddingModel;
 var init_ml_model = __esm({
   "../core/dist/ml-model.js"() {
     "use strict";
+    init_behavioral_corpus();
     init_embedder();
     init_similarity();
     LocalEmbeddingModel = class {
@@ -11188,10 +11228,7 @@ var init_ml_model = __esm({
       constructor(config) {
         this.config = config;
       }
-      /**
-       * Load the 300KB model from disk and initialize embedding engine.
-       * The model is lightweight and loads synchronously from in-memory structures.
-       */
+      /** Initialize the embedder; this does not load or invent a threat database. */
       async load() {
         this.isLoaded = true;
       }
@@ -11232,6 +11269,16 @@ var init_ml_model = __esm({
             metadata: threat.metadata
           };
         });
+      }
+      /** Atomically import a bounded compatible corpus, copying all caller data.
+       * Authentication belongs to the provisioning boundary, not this model API.
+       */
+      async importThreatCorpus(entries) {
+        if (this.config.vectorSize !== EMBEDDING_DIM) {
+          throw new Error("Threat corpus model dimension is incompatible");
+        }
+        const validated = BehavioralCorpusSchema.shape.entries.parse(entries);
+        this.threats = validated;
       }
       /**
        * Add a new threat to the local database.
@@ -11748,13 +11795,15 @@ function determineOutcome(explanations, anomalyDetected, detectionUnavailable) {
 function createBehavioralDetectionOrchestrator(config, dependencies) {
   return new BehavioralDetectionOrchestrator(config, dependencies);
 }
-var import_node_crypto5, BEHAVIORAL_ORCHESTRATOR_BOUNDS, LOCAL_EMBEDDER_MODEL_VERSION, DEFAULT_CONFIG, MAX_ID_LENGTH, MAX_TOOL_LENGTH, MAX_VALUE_LENGTH, BehavioralDetectionOrchestrator;
+var import_node_crypto5, BEHAVIORAL_ORCHESTRATOR_BOUNDS, DEFAULT_CONFIG, MAX_ID_LENGTH, MAX_TOOL_LENGTH, MAX_VALUE_LENGTH, BehavioralDetectionOrchestrator;
 var init_behavioral_orchestrator = __esm({
   "../core/dist/behavioral-orchestrator.js"() {
     "use strict";
     import_node_crypto5 = require("node:crypto");
     init_behavioral_analyzer();
+    init_behavioral_corpus();
     init_ml_model();
+    init_behavioral_corpus();
     init_novelty_detection();
     init_types2();
     BEHAVIORAL_ORCHESTRATOR_BOUNDS = {
@@ -11764,7 +11813,6 @@ var init_behavioral_orchestrator = __esm({
       maxFingerprintsPerSession: 256,
       retentionMs: 30 * 24 * 60 * 60 * 1e3
     };
-    LOCAL_EMBEDDER_MODEL_VERSION = "local-tinyhash-v1";
     DEFAULT_CONFIG = {
       minBaselineSamples: 10,
       maxTenants: BEHAVIORAL_ORCHESTRATOR_BOUNDS.maxTenants,
@@ -11789,6 +11837,7 @@ var init_behavioral_orchestrator = __esm({
       createBehavioralAnalyzer;
       createNoveltyDetector;
       baselineStore;
+      provisionedPolicy;
       scopeQueues = /* @__PURE__ */ new Map();
       mlModel;
       modelVersion;
@@ -11803,6 +11852,7 @@ var init_behavioral_orchestrator = __esm({
         this.logger = dependencies.logger ?? nullLogger;
         this.now = dependencies.now ?? Date.now;
         this.baselineStore = dependencies.baselineStore;
+        this.provisionedPolicy = dependencies.provisionedPolicy ? Object.freeze({ ...dependencies.provisionedPolicy }) : void 0;
         this.createBehavioralAnalyzer = dependencies.createBehavioralAnalyzer ?? (() => new BehavioralAnalyzer(this.config.maxEventsPerSession, this.config.behavioralAnomalyThreshold, this.logger));
         this.createNoveltyDetector = dependencies.createNoveltyDetector ?? (() => new NoveltyDetector({
           minBaselineSamples: this.config.minBaselineSamples
@@ -11829,6 +11879,9 @@ var init_behavioral_orchestrator = __esm({
       }
       /** Load and validate a replacement before atomically making it active. */
       async refreshModel(model, version) {
+        if (this.provisionedPolicy) {
+          throw new Error("Provisioned corpus replacement requires a newly verified policy context");
+        }
         if (!version.trim() || version.length > MAX_ID_LENGTH) {
           throw new Error("Model version must be a non-empty bounded string");
         }
@@ -12182,6 +12235,9 @@ var init_behavioral_orchestrator = __esm({
       }
       validateInput(input) {
         const tenantId = validateIdentifier(input.tenantId, "tenantId");
+        if (this.provisionedPolicy && tenantId !== this.provisionedPolicy.tenantId) {
+          throw new Error("Provisioned behavioral policy belongs to a different tenant");
+        }
         const sessionId = validateIdentifier(input.sessionId, "sessionId");
         const toolName = validateValue(input.toolName, "toolName", MAX_TOOL_LENGTH, true);
         if (!Number.isFinite(input.riskScore) || input.riskScore < 0 || input.riskScore > 100) {
@@ -12213,7 +12269,7 @@ var init_behavioral_orchestrator = __esm({
           url,
           durationMs: input.durationMs,
           classificationText,
-          learningAllowed: input.learningAllowed
+          learningAllowed: this.provisionedPolicy ? this.provisionedPolicy.learningAllowed && input.learningAllowed === true : input.learningAllowed
         };
       }
     };
@@ -12292,10 +12348,15 @@ var init_behavioral_baseline_store = __esm({
     DIGEST_LENGTH = 40;
     FileBehavioralBaselineStore = class {
       storeDir;
+      corpusDigest;
       bounds;
       now;
       logger;
       constructor(options = {}) {
+        if (options.corpusDigest !== void 0 && !/^[a-f0-9]{64}$/.test(options.corpusDigest)) {
+          throw new Error("Behavioral baseline corpus digest is invalid");
+        }
+        this.corpusDigest = options.corpusDigest;
         const defaults = defaultBounds();
         this.bounds = {
           maxTenants: options.maxTenants ?? defaults.maxTenants,
@@ -12337,6 +12398,7 @@ var init_behavioral_baseline_store = __esm({
           await (0, import_promises3.mkdir)((0, import_node_path7.join)(this.storeDir, digest(tenantId)), { recursive: true, mode: 448 });
           await atomicWriteJson(path3, {
             schema_version: SCHEMA_VERSION,
+            corpus_sha256: this.corpusDigest,
             tenant_id: tenantId,
             session_id: sessionId,
             baseline_samples: normalized.baselineSamples,
@@ -12405,7 +12467,7 @@ var init_behavioral_baseline_store = __esm({
       }
       /** A record belongs to exactly one scope; a renamed or forged file is inert. */
       decodeIdentity(record, tenantId, sessionId) {
-        return record.schema_version === SCHEMA_VERSION && record.tenant_id === tenantId && record.session_id === sessionId && isBoundedString(record.tenant_id, MAX_ID_LENGTH2) && isBoundedString(record.session_id, MAX_ID_LENGTH2);
+        return record.schema_version === SCHEMA_VERSION && record.corpus_sha256 === this.corpusDigest && record.tenant_id === tenantId && record.session_id === sessionId && isBoundedString(record.tenant_id, MAX_ID_LENGTH2) && isBoundedString(record.session_id, MAX_ID_LENGTH2);
       }
       decodeObservations(record, baselineSamples) {
         const rawObservations = record.observations;
@@ -14285,6 +14347,12 @@ async function readTelemetryLossSummary(root, options = {}) {
   for (const namespace of namespaces) {
     try {
       const queue = new DurableTelemetryQueue({ directory: (0, import_node_path9.join)(root, namespace), now });
+      const status = await queue.inspect();
+      if (status.state === "unavailable") {
+        unreadable = true;
+        detail.push({ namespace, pendingEvents: 0, lostTotal: 0, state: "unavailable" });
+        continue;
+      }
       const evidence = await queue.readinessEvidence();
       pendingEvents += evidence.depth;
       lostTotal += evidence.failed_jobs;
@@ -55503,7 +55571,7 @@ function freshnessFor(lastSeenAt, nowMs, staleAfterMs) {
   const lastSeenMs = parseEpoch(lastSeenAt);
   if (lastSeenMs === null)
     return "never_seen";
-  return nowMs - lastSeenMs <= staleAfterMs ? "fresh" : "stale";
+  return lastSeenMs <= nowMs && nowMs - lastSeenMs <= staleAfterMs ? "fresh" : "stale";
 }
 function refreshFleetInventoryFreshness(inventory, nowMs = Date.now()) {
   return {
@@ -55680,6 +55748,102 @@ var init_fleet_inventory = __esm({
     DEFAULT_MAX_ATTEMPTS2 = 3;
     DEFAULT_BASE_RETRY_DELAY_MS = 250;
     DEFAULT_MAX_RETRY_DELAY_MS = 5e3;
+  }
+});
+
+// ../core/dist/discovery-provider.js
+function discoveryFreshnessForInventory(inventory) {
+  if (inventory.items.length === 0 || inventory.items.some((item) => item.freshness === "never_seen")) {
+    return "never_seen";
+  }
+  return inventory.items.some((item) => item.freshness === "stale") ? "stale" : "fresh";
+}
+function safeReason(error3) {
+  const message = error3 instanceof Error ? error3.message : "";
+  return SAFE_FAILURE_REASONS.has(message) ? message : "collection_failed";
+}
+function normalizedProviderId(selected) {
+  const id = selected.trim().toLowerCase();
+  return PROVIDER_ID.test(id) ? id : "unknown";
+}
+function localResult(inventory) {
+  const unreachable = inventory.items.some((item) => item.reachability !== "reachable");
+  const incomplete = inventory.items.some((item) => item.scan.error !== null);
+  return {
+    provider: "local",
+    status: unreachable || incomplete ? "degraded" : "ready",
+    freshness: discoveryFreshnessForInventory(inventory),
+    inventory,
+    failClosed: false,
+    reason: unreachable ? "targets_unreachable" : incomplete ? "target_scan_incomplete" : null
+  };
+}
+function createDiscoveryProvider(selected) {
+  if (selected === void 0)
+    return new LocalDiscoveryProvider();
+  const id = normalizedProviderId(selected);
+  return id === "local" ? new LocalDiscoveryProvider() : new UnconfiguredDiscoveryProvider(id);
+}
+var PROVIDER_ID, SAFE_FAILURE_REASONS, LocalDiscoveryProvider, UnconfiguredDiscoveryProvider;
+var init_discovery_provider = __esm({
+  "../core/dist/discovery-provider.js"() {
+    "use strict";
+    init_fleet_inventory();
+    PROVIDER_ID = /^[a-z][a-z0-9._:-]{0,63}$/;
+    SAFE_FAILURE_REASONS = /* @__PURE__ */ new Set([
+      "tenant_id_invalid",
+      "collector_id_invalid",
+      "fleet_target_invalid",
+      "fleet_target_protocol_invalid",
+      "fleet_target_contains_private_components",
+      "fleet_inventory_scope_mismatch",
+      "fleet_retry_invariant_failed"
+    ]);
+    LocalDiscoveryProvider = class {
+      id = "local";
+      configured = true;
+      async collect(request2) {
+        if (request2.targets.length === 0) {
+          return {
+            provider: this.id,
+            status: "unconfigured",
+            freshness: "unknown",
+            inventory: null,
+            failClosed: true,
+            reason: "collector_targets_required"
+          };
+        }
+        try {
+          return localResult(await collectFleetInventory(request2.tenantId, request2.collectorId, [...request2.targets], request2.previous, request2.options));
+        } catch (error3) {
+          return {
+            provider: this.id,
+            status: "unavailable",
+            freshness: "unknown",
+            inventory: null,
+            failClosed: true,
+            reason: safeReason(error3)
+          };
+        }
+      }
+    };
+    UnconfiguredDiscoveryProvider = class {
+      configured = false;
+      id;
+      constructor(id = "unconfigured") {
+        this.id = normalizedProviderId(id);
+      }
+      collect(_request) {
+        return Promise.resolve({
+          provider: this.id,
+          status: "unconfigured",
+          freshness: "unknown",
+          inventory: null,
+          failClosed: true,
+          reason: "provider_not_configured"
+        });
+      }
+    };
   }
 });
 
@@ -55881,6 +56045,10 @@ function planResponseStep(request2) {
   if (typeof binding.incidentId !== "string" || binding.incidentId.trim() === "") {
     return { ok: false, code: "missing_incident", detail: "incidentId is required" };
   }
+  const providerAction = request2.capability === "revoke_credential" || request2.capability === "contain";
+  if (binding.providerId !== void 0 && (!providerAction || !PROVIDER_ID2.test(binding.providerId))) {
+    return { ok: false, code: "invalid_provider_id", detail: "providerId is invalid for this capability" };
+  }
   if (typeof binding.authorizedBy !== "string" || binding.authorizedBy.trim().length < 3) {
     return { ok: false, code: "missing_authorization", detail: "authorizedBy is required" };
   }
@@ -55923,6 +56091,16 @@ function planResponseStep(request2) {
       }
     }
   }
+  if ((request2.capability === "revoke_credential" || request2.capability === "contain") && request2.hasPrivilege !== false) {
+    const registry = request2.providerRegistry ?? request2.adapter.providerRegistry;
+    if (!registry?.supports(request2.capability, binding.providerId)) {
+      return {
+        ok: false,
+        code: "unsupported_action",
+        detail: `no registered provider supports ${request2.capability}`
+      };
+    }
+  }
   if (request2.capability === "isolate_host" && request2.hasPrivilege !== true) {
     return {
       ok: false,
@@ -55930,7 +56108,7 @@ function planResponseStep(request2) {
       detail: "host isolation requires an elevated platform adapter"
     };
   }
-  if ((request2.capability === "terminate_process" || request2.capability === "revoke_credential") && request2.hasPrivilege !== true) {
+  if ((request2.capability === "terminate_process" || request2.capability === "revoke_credential" || request2.capability === "contain") && request2.hasPrivilege !== true) {
     return {
       ok: false,
       code: "insufficient_privilege",
@@ -55945,7 +56123,7 @@ function planResponseStep(request2) {
       vaultPath: fileAction ? request2.vaultPath : null,
       ttlMs,
       idempotencyKey: request2.idempotencyKey,
-      reversible: request2.capability !== "isolate_host"
+      reversible: request2.capability !== "isolate_host" && request2.capability !== "revoke_credential" && request2.capability !== "contain"
     }
   };
 }
@@ -55967,6 +56145,7 @@ async function executeResponseStep(step, options) {
         status: "refused",
         code: "stale_command",
         target: step.binding.target,
+        providerId: step.binding.providerId,
         observed: null,
         rollbackToken: null,
         rollbackPossible: false,
@@ -55976,9 +56155,65 @@ async function executeResponseStep(step, options) {
       }
     };
   }
+  if (step.capability === "revoke_credential" || step.capability === "contain") {
+    const registry = options.providerRegistry ?? options.adapter.providerRegistry;
+    if (!registry?.supports(step.capability, step.binding.providerId)) {
+      const receipt2 = {
+        commandId: step.idempotencyKey,
+        incidentId: step.binding.incidentId,
+        adapterId: options.adapter.adapterId,
+        platform: options.adapter.platform,
+        capability: step.capability,
+        status: "refused",
+        code: "unsupported_action",
+        target: step.binding.target,
+        providerId: step.binding.providerId,
+        observed: null,
+        rollbackToken: null,
+        rollbackPossible: false,
+        appliedAtUtc: new Date(startedAt).toISOString(),
+        fullyReversible: false,
+        idempotencyKey: step.idempotencyKey
+      };
+      await options.journal.put({
+        idempotencyKey: step.idempotencyKey,
+        expiresAtMs: startedAt + step.ttlMs,
+        outcome: { status: "refused", code: "unsupported_action", detail: "no registered provider" },
+        receipt: receipt2
+      });
+      return { receipt: receipt2, replayed: false };
+    }
+  }
   let outcome;
   try {
-    outcome = await options.adapter.execute(step);
+    if (step.capability === "revoke_credential" || step.capability === "contain") {
+      const registry = options.providerRegistry ?? options.adapter.providerRegistry;
+      if (!registry)
+        throw new Error("provider_registry_unavailable");
+      const providerOutcome = await registry.execute({
+        action: step.capability,
+        target: step.binding.target,
+        providerId: step.binding.providerId,
+        commandId: step.idempotencyKey,
+        idempotencyKey: step.idempotencyKey,
+        metadata: { incident_id: step.binding.incidentId }
+      });
+      if (providerOutcome.status === "unsupported") {
+        outcome = { status: "refused", code: "unsupported_action", detail: providerOutcome.detail };
+      } else if (providerOutcome.status === "failed") {
+        outcome = { status: "failed", code: providerOutcome.code, detail: providerOutcome.detail, rollbackToken: null };
+      } else if (providerOutcome.status === "noop") {
+        outcome = { status: "noop", observed: providerOutcome.observed, rollbackToken: null };
+      } else {
+        outcome = {
+          status: "applied",
+          observed: providerOutcome.observed,
+          rollbackToken: providerOutcome.rollbackToken
+        };
+      }
+    } else {
+      outcome = await options.adapter.execute(step);
+    }
   } catch (error3) {
     outcome = {
       status: "failed",
@@ -55999,11 +56234,12 @@ async function executeResponseStep(step, options) {
     platform: options.adapter.platform,
     capability: step.capability,
     status,
-    code: outcome.status === "applied" ? status === "applied" ? "applied" : "applied_without_rollback" : outcome.status === "noop" ? "already_in_desired_state" : outcome.code,
+    code: outcome.status === "applied" ? step.capability === "revoke_credential" || step.capability === "contain" ? "provider_observed" : status === "applied" ? "applied" : "applied_without_rollback" : outcome.status === "noop" ? "already_in_desired_state" : outcome.code,
     target: step.binding.target,
+    providerId: step.binding.providerId,
     observed: outcome.status === "applied" || outcome.status === "noop" ? outcome.observed : null,
     rollbackToken: outcome.status === "refused" ? null : outcome.rollbackToken,
-    rollbackPossible: outcome.status !== "refused" && outcome.rollbackToken !== null,
+    rollbackPossible: status === "applied" && outcome.status !== "refused" && outcome.rollbackToken !== null,
     appliedAtUtc: new Date(startedAt).toISOString(),
     fullyReversible: status === "applied",
     idempotencyKey: step.idempotencyKey
@@ -56018,7 +56254,7 @@ async function executeResponseStep(step, options) {
 }
 function planResponseRollback(request2) {
   const { receipt } = request2;
-  if (receipt.rollbackToken === null) {
+  if (receipt.rollbackToken === null || receipt.rollbackPossible !== true) {
     return {
       ok: false,
       code: "no_rollback_token",
@@ -56065,10 +56301,12 @@ function reportWorkerCapabilities(adapter, requested) {
   const declared = adapter.capabilities();
   const known = requested.filter((entry) => CAPABILITY_SET.has(entry));
   const requestedUnknown = requested.filter((entry) => !CAPABILITY_SET.has(entry));
-  const missing = known.filter((capability) => !declared.includes(capability));
+  const missing = known.filter((capability) => !declared.includes(capability) || (capability === "revoke_credential" || capability === "contain") && !adapter.providerRegistry?.supports(capability));
   const limitations = [
     ...requestedUnknown.length ? [`unknown capability requested: ${requestedUnknown.join(", ")}`] : [],
     ...missing.length ? [`not implemented on this host: ${missing.join(", ")}`] : [],
+    ...missing.some((capability) => capability === "revoke_credential" || capability === "contain") ? ["no registered provider can attest credential revocation or containment"] : [],
+    ...known.includes("contain") ? ["containment evidence is provider-reported; OS containment is not established"] : [],
     ...declared.includes("isolate_host") ? [] : ["host network isolation is not provided by this adapter"]
   ];
   return {
@@ -56079,7 +56317,7 @@ function reportWorkerCapabilities(adapter, requested) {
     limitations
   };
 }
-var RESPONSE_CAPABILITIES, CAPABILITY_SET, IDEMPOTENCY_KEY, SHA2562, MAX_TTL_MS, MemoryResponseJournal;
+var RESPONSE_CAPABILITIES, CAPABILITY_SET, IDEMPOTENCY_KEY, SHA2562, PROVIDER_ID2, MAX_TTL_MS, MemoryResponseJournal;
 var init_response_worker_contract = __esm({
   "../core/dist/response-worker-contract.js"() {
     "use strict";
@@ -56088,11 +56326,13 @@ var init_response_worker_contract = __esm({
       "restore_file",
       "terminate_process",
       "isolate_host",
-      "revoke_credential"
+      "revoke_credential",
+      "contain"
     ];
     CAPABILITY_SET = new Set(RESPONSE_CAPABILITIES);
     IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,200}$/;
     SHA2562 = /^[0-9a-f]{64}$/;
+    PROVIDER_ID2 = /^[a-z][a-z0-9_.:-]{1,63}$/;
     MAX_TTL_MS = 24 * 60 * 60 * 1e3;
     MemoryResponseJournal = class {
       #entries = /* @__PURE__ */ new Map();
@@ -56140,8 +56380,8 @@ var init_rollback = __esm({
       code;
       refusals;
       restored;
-      constructor(refusals, restored, failed) {
-        super(`Rollback refused: ${refusals.map((refusal) => `${refusal.reason} (${refusal.path})`).join(", ")}. ${restored.length} file(s) restored, ${failed.length} failed.`);
+      constructor(refusals, restored, failed2) {
+        super(`Rollback refused: ${refusals.map((refusal) => `${refusal.reason} (${refusal.path})`).join(", ")}. ${restored.length} file(s) restored, ${failed2.length} failed.`);
         this.name = "RollbackRefusedError";
         this.code = refusals[0]?.reason ?? "rollback_refused";
         this.refusals = refusals;
@@ -56375,14 +56615,14 @@ var init_rollback = __esm({
         }
         this.logger.info("Rolling back to snapshot", { snapshotId: snapshot.id });
         const restored = [];
-        const failed = [];
+        const failed2 = [];
         const refusals = [];
         for (const [originalPath, backupPath] of Array.from(snapshot.files).reverse()) {
           let vaultDigest;
           try {
             const backupStats = await (0, import_promises18.lstat)(backupPath);
             if (!backupStats.isFile()) {
-              failed.push({
+              failed2.push({
                 path: originalPath,
                 error: `vault copy is not a regular file: ${backupPath}`
               });
@@ -56390,7 +56630,7 @@ var init_rollback = __esm({
             }
             vaultDigest = await this.hashFile(backupPath);
           } catch (err) {
-            failed.push({ path: originalPath, error: String(err) });
+            failed2.push({ path: originalPath, error: String(err) });
             this.logger.error("Failed to read the snapshot copy", {
               original: originalPath,
               backup: backupPath,
@@ -56444,7 +56684,7 @@ var init_rollback = __esm({
             restored.push(originalPath);
             this.logger.debug("Restored file", { original: originalPath });
           } catch (err) {
-            failed.push({ path: originalPath, error: String(err) });
+            failed2.push({ path: originalPath, error: String(err) });
             this.logger.error("Failed to restore file", {
               original: originalPath,
               error: String(err)
@@ -56454,16 +56694,16 @@ var init_rollback = __esm({
         this.logger.info("Rollback completed", {
           snapshotId: snapshot.id,
           restored: restored.length,
-          failed: failed.length,
+          failed: failed2.length,
           refused: refusals.length
         });
         if (refusals.length > 0) {
-          throw new RollbackRefusedError(refusals, restored, failed);
+          throw new RollbackRefusedError(refusals, restored, failed2);
         }
-        if (failed.length > 0) {
-          throw new Error(`Rollback partially failed. ${failed.length} file(s) could not be restored.`);
+        if (failed2.length > 0) {
+          throw new Error(`Rollback partially failed. ${failed2.length} file(s) could not be restored.`);
         }
-        return { snapshotId: snapshot.id, restored, failed };
+        return { snapshotId: snapshot.id, restored, failed: failed2 };
       }
       /**
        * Write a rollback record to the response auditor, if one is configured.
@@ -56989,10 +57229,10 @@ function chainOutcomeFor(records) {
   return records.some((record) => record.outcome === "success") ? "success" : "failure";
 }
 function chainErrorFor(records) {
-  const failed = records.filter((record) => record.outcome === "failure");
-  if (failed.length === 0)
+  const failed2 = records.filter((record) => record.outcome === "failure");
+  if (failed2.length === 0)
     return void 0;
-  return failed.map((record) => `${record.action} failed (${record.reason ?? "unknown"}): ${record.detail ?? ""}`).join("; ");
+  return failed2.map((record) => `${record.action} failed (${record.reason ?? "unknown"}): ${record.detail ?? ""}`).join("; ");
 }
 async function logResponseActionToChain(auditor, records, context2, logger2 = nullLogger) {
   if (records.length === 0) {
@@ -100570,9 +100810,9 @@ var init_aws_sdk2 = __esm({
               if (!normalizedRequest) {
                 return false;
               }
-              const failed = "error" in data;
+              const failed2 = "error" in data;
               safe(() => {
-                if (failed) {
+                if (failed2) {
                   const err = data.error;
                   const errMetadata = err?.$metadata;
                   setMetadataAttributes(span, {
@@ -100591,7 +100831,7 @@ var init_aws_sdk2 = __esm({
                 };
                 servicesExtensions.responseHook(normalizedResponse, span);
               });
-              if (requestMetadata?.isStream && !failed) {
+              if (requestMetadata?.isStream && !failed2) {
                 return true;
               }
               const region = data._sentryRegion;
@@ -108005,6 +108245,16 @@ function validatePolicyTrust(config, state, signed, rawPayload) {
   if (config.mode !== "managed" || config.licensing.public_keys_pem.length === 0 || state.entitlement_alg !== "ed25519" || !state.entitlement_sig || state.entitlement?.schema_version !== 2 || !isEntitlementActive(state) || state.entitlement.tenant_id !== payload.tenant_id || Date.parse(payload.issued_at) > now || Date.parse(payload.expires_at) <= now || Date.parse(payload.expires_at) <= Date.parse(payload.issued_at) || !verifySignature(rawPayload, signed.sig_b64, config.licensing.public_keys_pem)) {
     throw new Error("Provisioned detector policy trust or tenant binding failed");
   }
+  if (payload.behavioral?.learning_allowed && !state.entitlement.premium_modules.includes("behavioral_learning_v1")) {
+    throw new Error("Provisioned behavioral learning capability is unavailable");
+  }
+  const corpus = payload.behavioral?.threat_corpus;
+  if (corpus) {
+    const { sha256: sha2564, ...content } = corpus;
+    if (corpus.tenant_id !== payload.tenant_id || (0, import_node_crypto40.createHash)("sha256").update(canonicalDetectorPolicyPayload(content), "utf8").digest("hex") !== sha2564) {
+      throw new Error("Provisioned behavioral corpus digest or tenant binding failed");
+    }
+  }
   if (payload.dlp?.policy.tenantId !== void 0 && payload.dlp.policy.tenantId !== payload.tenant_id) {
     throw new Error("Provisioned DLP policy belongs to a different tenant");
   }
@@ -108025,7 +108275,7 @@ function validateFeedKeyring(feed) {
     throw new Error("Provisioned reputation feed keyring is invalid");
   }
 }
-function detectorContext(payload) {
+async function detectorContext(payload) {
   const context2 = {};
   if (payload.dlp || payload.behavioral) {
     const runtimeDetectors = {
@@ -108034,18 +108284,25 @@ function detectorContext(payload) {
     if (payload.dlp)
       runtimeDetectors.dlp = { enabled: true, policy: payload.dlp.policy };
     if (payload.behavioral) {
+      const corpus = payload.behavioral.threat_corpus;
+      const mlModel = new LocalEmbeddingModel(LocalEmbeddingModel.createDefaultConfig());
+      if (corpus)
+        await mlModel.importThreatCorpus(corpus.entries);
       runtimeDetectors.behavioral = {
         enabled: true,
-        // The signed policy is the single source of truth for learning, so
-        // this wiring can no longer assert a policy the tenant did not
-        // receive. `DetectorPolicyPayloadSchema` currently pins
-        // `learning_allowed` to `false`, because a one-shot hook with no
-        // durable baseline could not act on it. The durable store below
-        // removes that limitation, so enabling learning is now purely a
-        // signed-policy decision and is deliberately not taken here.
         learningAllowed: payload.behavioral.learning_allowed,
-        orchestrator: createBehavioralDetectionOrchestrator(void 0, {
-          baselineStore: createBehavioralBaselineStore({ storeDir: behavioralBaselineDir() })
+        orchestrator: createBehavioralDetectionOrchestrator({ modelVersion: LOCAL_EMBEDDER_MODEL_VERSION }, {
+          mlModel,
+          provisionedPolicy: {
+            tenantId: payload.tenant_id,
+            learningAllowed: payload.behavioral.learning_allowed
+          },
+          // A different corpus/version must not inherit observations scored
+          // against the prior corpus. A missing corpus cannot restore a baseline.
+          baselineStore: corpus ? createBehavioralBaselineStore({
+            storeDir: behavioralBaselineDir(),
+            corpusDigest: corpus.sha256
+          }) : void 0
         })
       };
     }
@@ -108084,36 +108341,44 @@ var init_detector_provisioning = __esm({
     import_node_path40 = require("node:path");
     init_zod();
     init_behavioral_baseline_store();
+    init_behavioral_corpus();
     init_behavioral_orchestrator();
     init_config();
     init_dlp();
     init_managed();
+    init_ml_model();
     MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
     ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
     FEED_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
     DateTime = external_exports.string().datetime({ offset: true });
     DetectorPolicyPayloadSchema = external_exports.object({
-      schema_version: external_exports.literal(1),
+      schema_version: external_exports.union([external_exports.literal(1), external_exports.literal(2)]),
       tenant_id: external_exports.string().regex(ID),
       issued_at: DateTime,
       expires_at: DateTime,
       dlp: external_exports.object({ enabled: external_exports.literal(true), policy: DlpPolicySchema }).strict().optional(),
       behavioral: external_exports.object({
         enabled: external_exports.literal(true),
-        // Signed policy pins learning OFF, and this schema still refuses a
-        // policy that claims otherwise. A durable baseline store now exists
-        // (`behavioralBaselineDir`), so the original reason — a one-shot hook
-        // process cannot form a baseline — no longer applies technically;
-        // enabling learning is therefore a deliberate signed-policy/product
-        // decision that this contract has not taken (see detectorContext).
-        learning_allowed: external_exports.literal(false).default(false)
+        // Old payloads remain no-learning. V2 opt-in needs an independently
+        // verified entitlement capability as well as this signed declaration.
+        learning_allowed: external_exports.boolean().default(false),
+        learning_capability: external_exports.literal("durable_baseline_v1").optional(),
+        threat_corpus: BehavioralCorpusSchema.optional()
       }).strict().optional(),
       reputation_feed: external_exports.object({
         feed_id: external_exports.string().regex(FEED_ID),
         trusted_keys: external_exports.record(external_exports.string().min(1)),
         max_age_ms: external_exports.number().int().positive().max(7 * 24 * 60 * 60 * 1e3).optional()
       }).strict().optional()
-    }).strict().refine((value) => value.dlp || value.behavioral || value.reputation_feed, {
+    }).strict().refine((value) => {
+      const behavioral = value.behavioral;
+      if (!behavioral)
+        return true;
+      if (value.schema_version === 1) {
+        return !behavioral.learning_allowed && !behavioral.learning_capability && !behavioral.threat_corpus;
+      }
+      return !behavioral.learning_allowed || behavioral.learning_capability === "durable_baseline_v1";
+    }, { message: "Behavioral provisioning requires an explicit supported V2 workflow" }).refine((value) => value.dlp || value.behavioral || value.reputation_feed, {
       message: "At least one provisioned detector is required"
     });
     SignedDetectorPolicySchema = external_exports.object({
@@ -108129,6 +108394,74 @@ var init_detector_provisioning = __esm({
       "opencode",
       "codex"
     ];
+  }
+});
+
+// ../core/dist/device-attestation.js
+function hashDeviceKey(apiKey) {
+  return (0, import_node_crypto41.createHash)("sha256").update(apiKey.trim(), "utf8").digest("hex");
+}
+function validInstallationId(value) {
+  return typeof value === "string" && value.trim().length > 0 && value.trim().length <= INSTALLATION_ID_MAX && !/[\u0000-\u001f\u007f\r\n]/.test(value);
+}
+function validKeyHash(value) {
+  return typeof value === "string" && KEY_HASH.test(value);
+}
+function parseDeviceAttestation(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "invalid_device_attestation" };
+  }
+  const candidate = value;
+  if (candidate.schema_version !== 1) {
+    return { ok: false, error: "invalid_device_attestation" };
+  }
+  if (!validInstallationId(candidate.installation_id)) {
+    return { ok: false, error: "invalid_installation_id" };
+  }
+  if (!validKeyHash(candidate.key_hash)) {
+    return { ok: false, error: "invalid_key_hash" };
+  }
+  if (Object.keys(candidate).some((key) => !["schema_version", "installation_id", "key_hash"].includes(key))) {
+    return { ok: false, error: "invalid_device_attestation" };
+  }
+  return {
+    ok: true,
+    attestation: {
+      schemaVersion: 1,
+      installationId: candidate.installation_id.trim(),
+      keyHash: candidate.key_hash
+    }
+  };
+}
+function createDeviceAttestation(installationId, apiKey) {
+  if (!validInstallationId(installationId))
+    throw new Error("invalid_installation_id");
+  const keyHash = hashDeviceKey(apiKey);
+  if (!apiKey.trim() || !KEY_HASH.test(keyHash))
+    throw new Error("invalid_key_hash");
+  return {
+    schemaVersion: 1,
+    installationId: installationId.trim(),
+    keyHash
+  };
+}
+function deviceAttestationPayload(attestation) {
+  return {
+    schema_version: 1,
+    installation_id: attestation.installationId,
+    key_hash: attestation.keyHash
+  };
+}
+function deviceAttestationMatches(actual, expected) {
+  return actual.schemaVersion === 1 && expected.schemaVersion === 1 && actual.installationId === expected.installationId && actual.keyHash === expected.keyHash;
+}
+var import_node_crypto41, KEY_HASH, INSTALLATION_ID_MAX;
+var init_device_attestation = __esm({
+  "../core/dist/device-attestation.js"() {
+    "use strict";
+    import_node_crypto41 = require("node:crypto");
+    KEY_HASH = /^[a-f0-9]{64}$/;
+    INSTALLATION_ID_MAX = 128;
   }
 });
 
@@ -108240,6 +108573,7 @@ var init_response_command_consumer_v6 = __esm({
   "../core/dist/response-command-consumer-v6.js"() {
     "use strict";
     init_control_plane_url();
+    init_device_attestation();
     UUID3 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     RESULT_CODE = /^[a-z][a-z0-9_]{0,63}$/;
     COMMAND_TYPES = [
@@ -108254,9 +108588,11 @@ var init_response_command_consumer_v6 = __esm({
       apiKey;
       identity;
       adapter;
+      audit;
       fetchImpl;
       timeoutMs;
       now;
+      deviceAttestation;
       constructor(options) {
         if (!isUuid(options.identity.tenantId) || !isUuid(options.identity.agentId)) {
           throw new Error("invalid_fleet_identity");
@@ -108267,8 +108603,10 @@ var init_response_command_consumer_v6 = __esm({
           throw new Error("fleet_adapter_identity_mismatch");
         this.url = responseEndpoint(options.endpoint, options.developmentLoopback === true);
         this.apiKey = options.apiKey.trim();
+        this.deviceAttestation = createDeviceAttestation(options.installationId, this.apiKey);
         this.identity = { ...options.identity };
         this.adapter = options.adapter;
+        this.audit = options.audit;
         this.fetchImpl = options.fetchImpl ?? fetch;
         this.timeoutMs = Math.min(1e4, Math.max(100, options.timeoutMs ?? 3e3));
         this.now = options.now ?? Date.now;
@@ -108281,7 +108619,11 @@ var init_response_command_consumer_v6 = __esm({
             "Content-Type": "application/json",
             Accept: "application/json"
           },
-          body: JSON.stringify({ tenant_id: this.identity.tenantId, ...body }),
+          body: JSON.stringify({
+            tenant_id: this.identity.tenantId,
+            ...body,
+            device_attestation: deviceAttestationPayload(this.deviceAttestation)
+          }),
           signal: AbortSignal.timeout(this.timeoutMs)
         });
         if (!response.ok)
@@ -108311,7 +108653,7 @@ var init_response_command_consumer_v6 = __esm({
         if (polled.command === null)
           return { status: "idle" };
         const parsed = commandFrom(polled.command, this.identity, this.now());
-        if (!parsed.ok) {
+        if (parsed.ok === false) {
           if (parsed.expiredId)
             return { status: "expired", commandId: parsed.expiredId };
           return { status: "invalid_command", reason: parsed.reason };
@@ -108334,15 +108676,18 @@ var init_response_command_consumer_v6 = __esm({
           return false;
         }
       }
+      commandSupported(command, adapter) {
+        return adapter.supportedCommands.includes(command.commandType);
+      }
       async executeAndVerify(command, adapter) {
         if (Date.parse(command.expiresAt) <= this.now())
           return "ttl_elapsed";
         try {
           const execution = await adapter.execute(command);
-          if (!execution.ok)
+          if (execution.ok === false)
             return resultCode(execution.code, "execution_failed");
           const verification = await adapter.verify(command);
-          return verification.observed ? null : resultCode(verification.code, "verification_failed");
+          return verification.observed === true ? null : resultCode(verification.code, "verification_failed");
         } catch {
           return "execution_failed";
         }
@@ -108363,12 +108708,12 @@ var init_response_command_consumer_v6 = __esm({
         }
         return code ? { status: "failed", commandId, code } : { status: "succeeded", commandId };
       }
-      async pollOnce() {
+      async pollOnceInternal() {
         const command = await this.pollCommand();
         if ("status" in command)
           return command;
         const adapter = this.adapter;
-        if (!adapter || !adapter.supportedCommands.includes(command.commandType)) {
+        if (!adapter || !this.commandSupported(command, adapter)) {
           return this.rejectUnsupported(command.id);
         }
         if (!await this.acknowledge(command.id)) {
@@ -108381,6 +108726,17 @@ var init_response_command_consumer_v6 = __esm({
         }
         const code = await this.executeAndVerify(command, adapter);
         return this.report(command.id, code);
+      }
+      async emitAudit(result) {
+        try {
+          await this.audit?.({ result, attestation: this.deviceAttestation });
+        } catch {
+        }
+      }
+      async pollOnce() {
+        const result = await this.pollOnceInternal();
+        await this.emitAudit(result);
+        return result;
       }
     };
   }
@@ -108398,8 +108754,8 @@ function assertCommand(value) {
   if (reverse !== (value.rollbackOf !== null))
     throw new Error("invalid_fleet_journal_rollback");
 }
-function assertState(value, identity) {
-  if (!isRecord5(value) || value.schema_version !== 1 || !Number.isSafeInteger(value.sequence) || value.sequence < 0 || value.tenant_id !== identity.tenantId || value.agent_id !== identity.agentId || !Array.isArray(value.recent_ids) || value.recent_ids.length > MAX_RECENT_FLEET_COMMANDS || value.recent_ids.some((id) => typeof id !== "string" || !UUID4.test(id)) || new Set(value.recent_ids).size !== value.recent_ids.length) {
+function assertState(value, identity, attestation) {
+  if (!isRecord5(value) || value.schema_version !== 1 || !Number.isSafeInteger(value.sequence) || value.sequence < 0 || value.tenant_id !== identity.tenantId || value.agent_id !== identity.agentId || value.installation_id !== attestation.installationId || value.key_hash !== attestation.keyHash || !Array.isArray(value.recent_ids) || value.recent_ids.length > MAX_RECENT_FLEET_COMMANDS || value.recent_ids.some((id) => typeof id !== "string" || !UUID4.test(id)) || new Set(value.recent_ids).size !== value.recent_ids.length) {
     throw new Error("invalid_fleet_journal_state");
   }
   if (value.current === null)
@@ -108424,7 +108780,7 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 function macFor(payload, key) {
-  return (0, import_node_crypto41.createHmac)("sha256", key).update(canonical(payload)).digest("hex");
+  return (0, import_node_crypto42.createHmac)("sha256", key).update(canonical(payload)).digest("hex");
 }
 async function regularFile(path3) {
   try {
@@ -108466,13 +108822,14 @@ function rememberCommand(state, commandId) {
     recent_ids: [...state.recent_ids.filter((id) => id !== commandId), commandId].slice(-MAX_RECENT_FLEET_COMMANDS)
   };
 }
-var import_node_crypto41, import_promises27, import_node_path41, UUID4, CODE, TYPES, PHASES, MAX_JOURNAL_BYTES, MAX_RECENT_FLEET_COMMANDS, FleetResponseJournal;
+var import_node_crypto42, import_promises27, import_node_path41, UUID4, CODE, TYPES, PHASES, MAX_JOURNAL_BYTES, MAX_RECENT_FLEET_COMMANDS, FleetResponseJournal;
 var init_response_command_journal_v6 = __esm({
   "../core/dist/response-command-journal-v6.js"() {
     "use strict";
-    import_node_crypto41 = require("node:crypto");
+    import_node_crypto42 = require("node:crypto");
     import_promises27 = require("node:fs/promises");
     import_node_path41 = require("node:path");
+    init_device_attestation();
     UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     CODE = /^[a-z][a-z0-9_]{0,63}$/;
     TYPES = /* @__PURE__ */ new Set(["agent_pause", "agent_resume", "network_isolate", "network_release"]);
@@ -108488,16 +108845,18 @@ var init_response_command_journal_v6 = __esm({
     FleetResponseJournal = class {
       path;
       identity;
+      attestation;
       key;
       slot = null;
       sequence = 0;
-      constructor(path3, identity, apiKey) {
+      constructor(path3, identity, apiKey, installationId) {
         if (!(0, import_node_path41.isAbsolute)(path3))
           throw new Error("fleet_journal_path_must_be_absolute");
         if (!apiKey.trim())
           throw new Error("invalid_fleet_journal_key");
         this.path = (0, import_node_path41.resolve)(path3);
         this.identity = { ...identity };
+        this.attestation = createDeviceAttestation(installationId, apiKey);
         this.key = apiKey.trim();
       }
       slotPath(slot) {
@@ -108520,11 +108879,11 @@ var init_response_command_journal_v6 = __esm({
         const envelope = JSON.parse(raw);
         if (!isRecord5(envelope) || !isRecord5(envelope.payload) || typeof envelope.mac !== "string" || !/^[a-f0-9]{64}$/.test(envelope.mac))
           throw new Error("invalid_fleet_journal_envelope");
-        assertState(envelope.payload, this.identity);
         const expected = Buffer.from(macFor(envelope.payload, this.key), "hex");
         const actual = Buffer.from(envelope.mac, "hex");
-        if (!(0, import_node_crypto41.timingSafeEqual)(expected, actual))
+        if (!(0, import_node_crypto42.timingSafeEqual)(expected, actual))
           throw new Error("fleet_journal_integrity_failed");
+        assertState(envelope.payload, this.identity, this.attestation);
         return envelope.payload;
       }
       async load() {
@@ -108540,17 +108899,19 @@ var init_response_command_journal_v6 = __esm({
           sequence: 0,
           tenant_id: this.identity.tenantId,
           agent_id: this.identity.agentId,
+          installation_id: this.attestation.installationId,
+          key_hash: this.attestation.keyHash,
           current: null,
           recent_ids: []
         };
       }
       async save(state) {
-        assertState(state, this.identity);
+        assertState(state, this.identity, this.attestation);
         const next = { ...state, sequence: this.sequence + 1 };
         const envelope = { payload: next, mac: macFor(next, this.key) };
         const target = this.slot === "a" ? "b" : "a";
         const targetPath = this.slotPath(target);
-        const temporary = `${targetPath}.${(0, import_node_crypto41.randomUUID)()}.tmp`;
+        const temporary = `${targetPath}.${(0, import_node_crypto42.randomUUID)()}.tmp`;
         await this.ensureDirectory();
         await writeSynced(temporary, JSON.stringify(envelope));
         try {
@@ -108566,7 +108927,7 @@ var init_response_command_journal_v6 = __esm({
       async acquireLock() {
         await this.ensureDirectory();
         const lockPath = `${this.path}.lock`;
-        const token = (0, import_node_crypto41.randomUUID)();
+        const token = (0, import_node_crypto42.randomUUID)();
         const temporary = `${lockPath}.${token}.tmp`;
         await writeSynced(temporary, JSON.stringify({ pid: process.pid, token }));
         try {
@@ -108586,7 +108947,7 @@ var init_response_command_journal_v6 = __esm({
       }
       async recoverDeadLock(lockPath) {
         const recoveryPath = `${lockPath}.recovery`;
-        const recoveryToken = (0, import_node_crypto41.randomUUID)();
+        const recoveryToken = (0, import_node_crypto42.randomUUID)();
         const temporary = `${recoveryPath}.${recoveryToken}.tmp`;
         await writeSynced(temporary, JSON.stringify({ pid: process.pid, token: recoveryToken }));
         try {
@@ -108643,7 +109004,7 @@ var init_response_command_worker_v6 = __esm({
       onCycle;
       constructor(options) {
         super(options);
-        this.journal = new FleetResponseJournal(options.statePath, options.identity, options.apiKey);
+        this.journal = new FleetResponseJournal(options.statePath, options.identity, options.apiKey, options.installationId);
         this.actionAdapter = options.adapter;
         this.onCycle = options.onCycle;
       }
@@ -108706,7 +109067,7 @@ var init_response_command_worker_v6 = __esm({
         const current = state.current;
         if (!current)
           return { status: "outcome_unknown", stage: "ack", reason: "journal_missing_command" };
-        if (!this.actionAdapter.supportedCommands.includes(current.command.commandType)) {
+        if (!this.commandSupported(current.command, this.actionAdapter)) {
           const pending = await this.saveCurrent(state, current.command, "result_pending", "unsupported_action");
           return this.resumeResult(pending);
         }
@@ -108720,7 +109081,7 @@ var init_response_command_worker_v6 = __esm({
         const current = state.current;
         if (!current)
           return { status: "outcome_unknown", stage: "ack", reason: "journal_missing_command" };
-        if (!this.actionAdapter.supportedCommands.includes(current.command.commandType)) {
+        if (!this.commandSupported(current.command, this.actionAdapter)) {
           const rejecting = await this.saveCurrent(state, current.command, "reject_intent");
           return this.resumeRejection(rejecting);
         }
@@ -108769,11 +109130,14 @@ var init_response_command_worker_v6 = __esm({
       }
       /** One bounded cycle. Journal/lock failure leaves actions untouched. */
       async tick() {
+        let result;
         try {
-          return await this.journal.withLock(() => this.tickLocked());
+          result = await this.journal.withLock(() => this.tickLocked());
         } catch {
-          return { status: "outcome_unknown", stage: "poll", reason: "journal_unavailable" };
+          result = { status: "outcome_unknown", stage: "poll", reason: "journal_unavailable" };
         }
+        await this.emitAudit(result);
+        return result;
       }
       /** Poll at a bounded cadence until the service supervisor aborts the worker. */
       async run(signal, intervalMs = 5e3) {
@@ -108796,6 +109160,141 @@ var init_response_command_worker_v6 = __esm({
             signal.addEventListener("abort", finish, { once: true });
           });
         }
+      }
+    };
+  }
+});
+
+// ../core/dist/response-provider-registry.js
+function safeText(value, fallback) {
+  if (typeof value !== "string" || value.trim() === "")
+    return fallback;
+  const bounded = value.trim().slice(0, MAX_DETAIL_LENGTH).replace(/[\r\n\u0000]/g, " ");
+  return bounded || fallback;
+}
+function validProvider(value) {
+  if (!value || typeof value !== "object")
+    return false;
+  const provider = value;
+  return typeof provider.providerId === "string" && PROVIDER_ID3.test(provider.providerId) && Array.isArray(provider.actions) && provider.actions.length > 0 && new Set(provider.actions).size === provider.actions.length && provider.actions.every((action) => typeof action === "string" && ACTIONS.has(action)) && typeof provider.execute === "function" && (provider.verify === void 0 || typeof provider.verify === "function");
+}
+function unsupported(action, providerId) {
+  const suffix = providerId !== void 0 && PROVIDER_ID3.test(providerId) ? ` for ${providerId}` : "";
+  return {
+    status: "unsupported",
+    code: "unsupported_action",
+    detail: `no registered provider supports ${action}${suffix}`
+  };
+}
+function failed(code, detail) {
+  return { status: "failed", code, detail: safeText(detail, "provider action failed") };
+}
+function validObservation(value) {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= MAX_DETAIL_LENGTH && !/[\r\n\u0000]/.test(value);
+}
+var ACTIONS, PROVIDER_ID3, RESULT_CODE2, MAX_TARGET_LENGTH, MAX_DETAIL_LENGTH, ResponseProviderRegistry;
+var init_response_provider_registry = __esm({
+  "../core/dist/response-provider-registry.js"() {
+    "use strict";
+    ACTIONS = /* @__PURE__ */ new Set(["revoke_credential", "contain"]);
+    PROVIDER_ID3 = /^[a-z][a-z0-9_.:-]{1,63}$/;
+    RESULT_CODE2 = /^[a-z][a-z0-9_]{0,63}$/;
+    MAX_TARGET_LENGTH = 512;
+    MAX_DETAIL_LENGTH = 256;
+    ResponseProviderRegistry = class {
+      providers = /* @__PURE__ */ new Map();
+      constructor(providers = []) {
+        for (const provider of providers)
+          this.register(provider);
+      }
+      register(provider) {
+        if (!validProvider(provider))
+          throw new Error("invalid_response_provider");
+        if (this.providers.has(provider.providerId))
+          throw new Error("duplicate_response_provider");
+        this.providers.set(provider.providerId, provider);
+      }
+      remove(providerId) {
+        return this.providers.delete(providerId);
+      }
+      list() {
+        return [...this.providers.keys()].sort();
+      }
+      supports(action, providerId) {
+        return this.resolve(action, providerId) !== void 0;
+      }
+      providerFor(action, providerId) {
+        return this.resolve(action, providerId);
+      }
+      async execute(request2) {
+        if (!ACTIONS.has(request2.action))
+          return unsupported(request2.action);
+        if (typeof request2.target !== "string" || request2.target.trim() === "" || request2.target.length > MAX_TARGET_LENGTH || /[\r\n\u0000]/.test(request2.target)) {
+          return failed("invalid_provider_target", "provider target is invalid");
+        }
+        const provider = this.resolve(request2.action, request2.providerId);
+        if (!provider)
+          return unsupported(request2.action, request2.providerId);
+        let raw;
+        try {
+          raw = await provider.execute({ ...request2, providerId: provider.providerId });
+        } catch {
+          return failed("provider_execution_failed", "provider execution failed");
+        }
+        if (!raw || typeof raw !== "object" || !("status" in raw)) {
+          return failed("provider_result_invalid", "provider returned an invalid result");
+        }
+        const outcome = raw;
+        if (outcome.status === "unsupported")
+          return unsupported(request2.action, provider.providerId);
+        if (outcome.status === "failed") {
+          const code = typeof outcome.code === "string" && RESULT_CODE2.test(outcome.code) ? outcome.code : "provider_execution_failed";
+          return failed(code, "provider action failed");
+        }
+        if (outcome.status !== "applied" && outcome.status !== "noop") {
+          return failed("provider_result_invalid", "provider returned an invalid result");
+        }
+        if (!validObservation(outcome.observed)) {
+          return failed("provider_observation_invalid", "provider returned invalid observation");
+        }
+        if (outcome.status === "applied" && outcome.rollbackToken !== null && typeof outcome.rollbackToken !== "string") {
+          return failed("provider_result_invalid", "provider returned an invalid rollback token");
+        }
+        const verification = await this.verify(request2);
+        if (verification.observed === false)
+          return failed(verification.code, "provider could not independently verify the action");
+        return outcome.status === "noop" ? { status: "noop", observed: safeText(verification.evidence, "provider state verified") } : {
+          status: "applied",
+          observed: safeText(verification.evidence, "provider state verified"),
+          rollbackToken: outcome.rollbackToken
+        };
+      }
+      /** Verify a previously persisted execute intent without replaying the action. */
+      async verify(request2) {
+        const provider = this.resolve(request2.action, request2.providerId);
+        if (!provider)
+          return { observed: false, code: "unsupported_action" };
+        if (!provider.verify)
+          return { observed: false, code: "provider_observation_unavailable" };
+        try {
+          const result = await provider.verify({ ...request2, providerId: provider.providerId });
+          if (!result || result.observed !== true || !validObservation(result.evidence)) {
+            return { observed: false, code: "provider_verification_failed" };
+          }
+          return { observed: true, evidence: safeText(result.evidence, "provider state verified") };
+        } catch {
+          return { observed: false, code: "provider_verification_failed" };
+        }
+      }
+      resolve(action, providerId) {
+        if (providerId !== void 0) {
+          if (!PROVIDER_ID3.test(providerId))
+            return void 0;
+          const provider = this.providers.get(providerId);
+          return provider?.actions.includes(action) ? provider : void 0;
+        }
+        const candidates = [...this.providers.values()].filter((provider) => provider.actions.includes(action));
+        return candidates.length === 1 ? candidates[0] : void 0;
       }
     };
   }
@@ -108876,6 +109375,7 @@ __export(dist_exports, {
   IntelConfigSchema: () => IntelConfigSchema,
   IntelPacksConfigSchema: () => IntelPacksConfigSchema,
   LOCAL_EMBEDDER_MODEL_VERSION: () => LOCAL_EMBEDDER_MODEL_VERSION,
+  LocalDiscoveryProvider: () => LocalDiscoveryProvider,
   LocalEmbeddingModel: () => LocalEmbeddingModel,
   LoggingConfigSchema: () => LoggingConfigSchema,
   MAX_DELEGATED_CREDENTIAL_SECONDS: () => MAX_DELEGATED_CREDENTIAL_SECONDS,
@@ -108902,6 +109402,8 @@ __export(dist_exports, {
   ReputationFeedUpdateError: () => ReputationFeedUpdateError,
   ResponseAuditor: () => ResponseAuditor,
   ResponseConfigurator: () => ResponseConfigurator,
+  ResponseProviderRegistry: () => ResponseProviderRegistry,
+  RevocationProviderRegistry: () => ResponseProviderRegistry,
   SEPARATOR_WIDTH: () => SEPARATOR_WIDTH,
   SIEM_EVENT_JSON_SCHEMA: () => SIEM_EVENT_JSON_SCHEMA,
   SIEM_EVENT_SCHEMA_VERSION: () => SIEM_EVENT_SCHEMA_VERSION,
@@ -108911,6 +109413,7 @@ __export(dist_exports, {
   SiemStateIntegrityError: () => SiemStateIntegrityError,
   SignedMcpToolManifestV1Schema: () => SignedMcpToolManifestV1Schema,
   ThreatSchema: () => ThreatSchema,
+  UnconfiguredDiscoveryProvider: () => UnconfiguredDiscoveryProvider,
   UrlCheckClient: () => UrlCheckClient,
   UrlCheckConfigSchema: () => UrlCheckConfigSchema,
   VERSION: () => VERSION,
@@ -108970,6 +109473,8 @@ __export(dist_exports, {
   createBehavioralDetectionOrchestrator: () => createBehavioralDetectionOrchestrator,
   createChildLogger: () => createChildLogger,
   createDefaultContainConfig: () => createDefaultContainConfig,
+  createDeviceAttestation: () => createDeviceAttestation,
+  createDiscoveryProvider: () => createDiscoveryProvider,
   createDlpContentFingerprint: () => createDlpContentFingerprint,
   createDlpMatchFingerprint: () => createDlpMatchFingerprint,
   createExposureHasherContext: () => createSha256HasherContext,
@@ -108992,9 +109497,12 @@ __export(dist_exports, {
   detectEvidenceTruncation: () => detectEvidenceTruncation,
   detectPII: () => detectPII,
   detectorPolicyPath: () => detectorPolicyPath,
+  deviceAttestationMatches: () => deviceAttestationMatches,
+  deviceAttestationPayload: () => deviceAttestationPayload,
   diffMcpTools: () => diffMcpTools,
   discoverMcpServers: () => discoverMcpServers,
   discoverPlugins: () => discoverPlugins,
+  discoveryFreshnessForInventory: () => discoveryFreshnessForInventory,
   downloadAigThreatUpdate: () => downloadUpdate,
   emptyAllowlist: () => emptyAllowlist,
   encryptBuffer: () => encryptBuffer,
@@ -109086,6 +109594,7 @@ __export(dist_exports, {
   guardInputSummary: () => guardInputSummary,
   guardToolCall: () => guardToolCall,
   hashCommand: () => hashCommand,
+  hashDeviceKey: () => hashDeviceKey,
   incidentToSiemRecord: () => incidentToSiemRecord,
   initSentry: () => initSentry,
   initTracing: () => initTracing,
@@ -109143,6 +109652,7 @@ __export(dist_exports, {
   normalizeUrl: () => normalizeUrl,
   nullLogger: () => nullLogger,
   parseDelegatedCredentialClaims: () => parseDelegatedCredentialClaims,
+  parseDeviceAttestation: () => parseDeviceAttestation,
   parseEvidenceReceipt: () => parseEvidenceReceipt,
   parseJsonc: () => parseJsonc,
   parsePolicyDocument: () => parsePolicyDocument,
@@ -109276,6 +109786,7 @@ var init_dist = __esm({
     init_federated();
     init_file_utils();
     init_fleet_inventory();
+    init_discovery_provider();
     init_format();
     init_guard();
     init_health();
@@ -109323,8 +109834,10 @@ var init_dist = __esm({
     init_version_check();
     init_managed();
     init_detector_provisioning();
+    init_device_attestation();
     init_response_command_consumer_v6();
     init_response_command_worker_v6();
+    init_response_provider_registry();
     init_response_worker_contract();
     init_mcp_attestation();
   }
