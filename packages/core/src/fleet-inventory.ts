@@ -133,7 +133,7 @@ function freshnessFor(
 ): FleetFreshness {
 	const lastSeenMs = parseEpoch(lastSeenAt);
 	if (lastSeenMs === null) return "never_seen";
-	return nowMs - lastSeenMs <= staleAfterMs ? "fresh" : "stale";
+	return lastSeenMs <= nowMs && nowMs - lastSeenMs <= staleAfterMs ? "fresh" : "stale";
 }
 
 export function refreshFleetInventoryFreshness(

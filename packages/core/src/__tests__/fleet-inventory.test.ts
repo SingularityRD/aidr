@@ -92,6 +92,32 @@ describe("tenant fleet inventory", () => {
 		expect(stale.items[0]?.freshness).toBe("stale");
 	});
 
+	it("keeps the exact freshness boundary fresh and rejects future or invalid evidence", async () => {
+		const inventory = await collectFleetInventory(
+			"tenant-a",
+			"collector-a",
+			["http://127.0.0.1:8080"],
+			null,
+			{ now: () => 1_000_000, staleAfterMs: 1_000, scanTargetImpl: async ({ url }) => result(url, true) },
+		);
+		const entry = inventory.items[0];
+		if (!entry) throw new Error("test inventory is missing its entry");
+		expect(refreshFleetInventoryFreshness(inventory, 1_001_000).items[0]?.freshness).toBe("fresh");
+		expect(refreshFleetInventoryFreshness(inventory, 1_001_001).items[0]?.freshness).toBe("stale");
+		expect(
+			refreshFleetInventoryFreshness(
+				{ ...inventory, items: [{ ...entry, lastSeenAt: new Date(1_001_000).toISOString() }] },
+				1_000_000,
+			).items[0]?.freshness,
+		).toBe("stale");
+		expect(
+			refreshFleetInventoryFreshness(
+				{ ...inventory, items: [{ ...entry, lastSeenAt: "not-a-timestamp" }] },
+				1_000_000,
+			).items[0]?.freshness,
+		).toBe("never_seen");
+	});
+
 	it("bounds transient retries and exponential delays", async () => {
 		const delays: number[] = [];
 		let calls = 0;

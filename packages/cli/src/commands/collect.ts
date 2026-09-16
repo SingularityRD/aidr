@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
-	collectFleetInventory,
+	createDiscoveryProvider,
 	defaultFleetInventoryPath,
+	type DiscoveryProviderResult,
 	type FleetInventory,
 	getInstallationId,
 	loadFleetInventory,
@@ -14,6 +15,8 @@ import chalk from "chalk";
 
 export interface CollectOptions {
 	tenant: string;
+	/** Provider selection is explicit; local is the only implemented provider. */
+	provider?: string;
 	target?: string[];
 	file?: string;
 	inventory?: string;
@@ -256,7 +259,9 @@ export function fleetCollectionExitCode(inventory: FleetInventory): number {
 	}
 	if (
 		inventory.items.length === 0 ||
-		inventory.items.some((item) => item.reachability !== "reachable" || item.freshness !== "fresh")
+		inventory.items.some((item) =>
+			item.reachability !== "reachable" || item.freshness !== "fresh" || item.scan.error !== null,
+		)
 	) {
 		return 1;
 	}
@@ -268,34 +273,46 @@ function printInventory(
 	path: string,
 	json: boolean,
 	streaming: boolean,
+	result: DiscoveryProviderResult,
 ): void {
+	const discovery = {
+		provider: result.provider,
+		status: result.status,
+		freshness: result.freshness,
+		reason: result.reason,
+	};
 	if (json) {
-		console.log(streaming ? JSON.stringify(inventory) : JSON.stringify(inventory, null, 2));
+		// Keep existing inventory fields while exposing attempt status separately.
+		const output = { ...inventory, discovery };
+		console.log(streaming ? JSON.stringify(output) : JSON.stringify(output, null, 2));
 		return;
 	}
 	const fresh = inventory.items.filter((item) => item.freshness === "fresh").length;
 	const stale = inventory.items.filter((item) => item.freshness === "stale").length;
 	const neverSeen = inventory.items.filter((item) => item.freshness === "never_seen").length;
 	const unreachable = inventory.items.filter((item) => item.reachability === "unreachable").length;
+	const scanErrors = inventory.items.filter((item) => item.scan.error !== null).length;
 	console.log(chalk.blue("\nAIDR tenant infrastructure collection\n"));
+	console.log(`Provider: ${result.provider}   Status: ${result.status}   Freshness: ${result.freshness}`);
 	console.log(`Tenant: ${inventory.tenantId}   Collector: ${inventory.collectorId}`);
 	console.log(`Inventory: ${path}`);
 	console.log(
-		`Targets: ${inventory.items.length}   Fresh: ${fresh}   Stale: ${stale}   Never seen: ${neverSeen}   Unreachable now: ${unreachable}`,
+		`Targets: ${inventory.items.length}   Fresh: ${fresh}   Stale: ${stale}   Never seen: ${neverSeen}   Unreachable now: ${unreachable}   Scan errors: ${scanErrors}`,
 	);
 	for (const item of inventory.items) {
 		const color =
-			item.freshness === "fresh" && item.reachability === "reachable" ? chalk.green : chalk.yellow;
+			item.freshness === "fresh" && item.reachability === "reachable" && item.scan.error === null
+				? chalk.green : chalk.yellow;
 		console.log(
 			color(
 				`  ${item.target}  ${item.freshness}/${item.reachability}  attempts=${item.attempts}  last_seen=${item.lastSeenAt ?? "never"}`,
 			),
 		);
 	}
-	if (stale > 0 || neverSeen > 0 || unreachable > 0) {
+	if (stale > 0 || neverSeen > 0 || unreachable > 0 || scanErrors > 0) {
 		console.error(
 			chalk.yellow(
-				"Discovery freshness alert: at least one target lacks current reachable evidence.",
+				"Discovery coverage alert: at least one target lacks current evidence or has an incomplete scan.",
 			),
 		);
 	}
@@ -326,6 +343,8 @@ async function waitForNextCycle(delayMs: number): Promise<boolean> {
  */
 export default async function collectCommand(options: CollectOptions): Promise<void> {
 	try {
+		const provider = createDiscoveryProvider(options.provider);
+		if (!provider.configured) throw new Error(`discovery_provider_not_configured:${provider.id}`);
 		const targets = collectTargetInputs(options);
 		if (targets.length === 0) throw new Error("collector_targets_required");
 		const upload = discoveryUploadConfig();
@@ -355,12 +374,12 @@ export default async function collectCommand(options: CollectOptions): Promise<v
 
 		let previous = await loadFleetInventory(inventoryPath);
 		while (true) {
-			const inventory = await collectFleetInventory(
-				options.tenant,
+			const result = await provider.collect({
+				tenantId: options.tenant,
 				collectorId,
 				targets,
 				previous,
-				{
+				options: {
 					staleAfterMs,
 					maxAttempts,
 					baseRetryDelayMs,
@@ -370,12 +389,22 @@ export default async function collectCommand(options: CollectOptions): Promise<v
 						allowPublicTargets: Boolean(options.allowPublic),
 					},
 				},
-			);
+			});
+			if (result.failClosed || result.status === "unconfigured" || result.status === "unavailable" || !result.inventory) {
+				throw new Error(result.reason ?? `discovery_provider_${result.status}`);
+			}
+			const inventory = result.inventory;
 			await saveFleetInventory(inventoryPath, inventory);
 			const uploaded = upload
 				? await publishDiscoveryCycle(inventory, upload, intervalSeconds !== null)
 				: true;
-			printInventory(inventory, inventoryPath, Boolean(options.json), intervalSeconds !== null);
+			printInventory(
+				inventory,
+				inventoryPath,
+				Boolean(options.json),
+				intervalSeconds !== null,
+				result,
+			);
 			process.exitCode = Math.max(uploaded ? 0 : 1, fleetCollectionExitCode(inventory));
 			previous = inventory;
 			if (intervalSeconds === null || !(await waitForNextCycle(intervalSeconds * 1_000))) break;

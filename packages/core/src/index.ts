@@ -435,6 +435,20 @@ export {
 	refreshFleetInventoryFreshness,
 	saveFleetInventory,
 } from "./fleet-inventory.js";
+// Discovery providers: local collection is available; cloud and MDM adapters
+// remain explicit unconfigured boundaries until customer integrations exist.
+export {
+	createDiscoveryProvider,
+	discoveryFreshnessForInventory,
+	LocalDiscoveryProvider,
+	UnconfiguredDiscoveryProvider,
+	type DiscoveryProvider,
+	type DiscoveryProviderFreshness,
+	type DiscoveryProviderRequest,
+	type DiscoveryProviderResult,
+	type DiscoveryProviderStatus,
+	type ExternalDiscoveryProvider,
+} from "./discovery-provider.js";
 // Format (shared alert formatting)
 export {
 	formatSessionStartMessage,
