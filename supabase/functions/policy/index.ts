@@ -24,11 +24,9 @@ Deno.serve(async (req) => {
 		const auth = await authenticateTenantApiKey(db, token);
 		if (!auth.ok) return json(auth.status, { error: auth.error });
 		const tenant = auth.tenantId;
-		// The key's agent binding is not part of the shared guard's result, so the
-		// key row is read once more for agent-bound revision selection.
-		const { data: binding, error: bindingError } = await db.from("api_keys").select("agent_id").eq("key_hash", await sha256(token)).maybeSingle();
-		if (bindingError) return json(503, { error: "authorization_unavailable" });
-		const agentId = typeof binding?.agent_id === "string" ? binding.agent_id : null;
+		// The shared guard returns the binding from the row that authenticated the
+		// presented hash, including a bounded retired-hash overlap.
+		const agentId = typeof auth.agentId === "string" ? auth.agentId : null;
 		const rate = await consumeTenantRateLimit(db, {
 			tenantId: tenant,
 			subject: auth.userId,

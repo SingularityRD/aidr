@@ -7,8 +7,10 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { compileRuntimePolicyDocument, simulateCompiledRuntimePolicy, type RuntimePolicyDocumentCompilation } from "../_shared/policy-document.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive, validateRuntimePolicy } from "../_shared/runtime-policy.ts";
+import { dispatchPolicyRollout, isPolicyRolloutAction, rolloutAdoptionEvidence } from "../_shared/policy-rollout.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function parseStoredDocument(source: string): unknown {
 	if (!source || source.length > 65_536) throw new Error(source ? "policy_document_too_large" : "policy_document_empty");
@@ -55,7 +57,7 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			if (state.error) return corsJson(req, 503, { error: "authorization_unavailable" });
 			if (state.data?.status !== "active") return corsJson(req, 403, { error: "tenant_access_denied" });
 			const action = typeof body.action === "string" ? body.action : "";
-			const workCost = action === "adoption" ? 5 : action === "history" ? 2 : 1;
+			const workCost = ["adoption", "rollout_progress", "rollout", "create_rollout"].includes(action) ? 5 : action === "history" ? 2 : 1;
 			const rate = await consumeTenantRateLimit(db, {
 				tenantId: tenant,
 				subject: auth.user.id,
@@ -77,6 +79,7 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			}
 			if (body.action === "adoption") {
 				if (body.after_agent !== undefined && (typeof body.after_agent !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.after_agent))) return corsJson(req, 400, { error: "invalid_agent_cursor" });
+				if (body.rollout_id !== undefined && (typeof body.rollout_id !== "string" || !UUID_PATTERN.test(body.rollout_id))) return corsJson(req, 400, { error: "invalid_rollout_id" });
 				let agentQuery = db.from("agents").select("id,iid,display_name,last_seen").eq("tenant_id", tenant).order("id").limit(501);
 				if (body.after_agent) agentQuery = agentQuery.gt("id", body.after_agent);
 				const [agents, current] = await Promise.all([
@@ -96,11 +99,13 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 				if ([...receiptPages, ...assignmentPages].some((page) => page.error)) return corsJson(req, 503, { error: "adoption_unavailable" });
 				const receiptByAgent = new Map(receiptPages.flatMap((page) => page.data ?? []).map((row) => [row.agent_id, row]));
 				const assignmentByAgent = new Map(assignmentPages.flatMap((page) => page.data ?? []).map((row) => [row.agent_id, row.version]));
-				return corsJson(req, 200, { ok: true, truncated: agents.data.length > 500, next_agent: agents.data.length > 500 ? page[page.length - 1].id : null, receipt_type: "agent_reported_policy_loaded", agents: page.map((agent) => {
+				const rolloutEvidence = await rolloutAdoptionEvidence(db, tenant, body.rollout_id);
+				return corsJson(req, 200, { ok: true, truncated: agents.data.length > 500, next_agent: agents.data.length > 500 ? page[page.length - 1].id : null, receipt_type: "agent_reported_policy_loaded", ...rolloutEvidence, agents: page.map((agent) => {
 					const receipt = receiptByAgent.get(agent.id); const target = assignmentByAgent.get(agent.id) ?? current.data?.version ?? 0;
 					return { ...agent, target_version: target, loaded_version: receipt?.version ?? null, received_at: receipt?.received_at ?? null, state: !receipt ? "unknown" : Date.parse(receipt.received_at) < Date.now() - 300000 ? "stale" : receipt.version === target ? "current" : "outdated" };
 				}) });
 			}
+			if (isPolicyRolloutAction(action)) return await dispatchPolicyRollout(req, db, body, tenant, auth.user.id, member.role);
 			let documentCompilation: RuntimePolicyDocumentCompilation | null = null;
 			let documentSource: { id: string; updated_at: string } | null = null;
 			if (["compile_document", "publish_document"].includes(String(body.action))) {

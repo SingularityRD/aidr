@@ -47,6 +47,8 @@ vi.mock("npm:yaml@2.8.3", async () => {
 };
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const { normalizeRolloutRings } = await import("../_shared/policy-rollout.ts");
+const ROLLOUT_SOURCE = readFileSync(join(ROOT, "supabase", "functions", "_shared", "policy-rollout.ts"), "utf8");
 const HANDLER_URL = "https://project.supabase.co/functions/v1/policy-management";
 const HANDLER_SOURCE = readFileSync(
 	join(ROOT, "supabase", "functions", "policy-management", "index.ts"),
@@ -60,11 +62,16 @@ const STAGE_CAS_MIGRATION = readFileSync(
 	join(ROOT, "supabase", "migrations", "20260913000002_policy_stage_cas.sql"),
 	"utf8",
 );
+const RINGS_MIGRATION = readFileSync(
+	join(ROOT, "supabase", "migrations", "20260916000000_policy_rollout_rings.sql"),
+	"utf8",
+);
 
 const TENANT = "22222222-2222-4222-8222-222222222222";
 const OTHER_TENANT = "33333333-3333-4333-8333-333333333333";
 const USER = "11111111-1111-4111-8111-111111111111";
 const AGENT = "44444444-4444-4444-8444-444444444444";
+const AGENT_TWO = "55555555-5555-4555-8555-555555555555";
 const NOW = "2026-09-13T00:00:00.000Z";
 
 /** A policy every shared validator accepts. */
@@ -96,7 +103,7 @@ const POLICY_DOCUMENT_LINES = [
 	"    priority: 20",
 ];
 
-const MUTATION_RPCS = new Set(["publish_runtime_policy", "stage_runtime_policy"]);
+const MUTATION_RPCS = new Set(["publish_runtime_policy", "stage_runtime_policy", "create_policy_rollout"]);
 /** Tables whose rows are a tenant's policy, fleet or receipts (never config). */
 const POLICY_SCOPED_TABLES = new Set([
 	"tenant_runtime_policies",
@@ -1025,5 +1032,140 @@ describe("policy-management source and SQL contract", () => {
 		expect(STAGE_CAS_MIGRATION).toContain(
 			"insert into public.runtime_policy_revisions(tenant_id,version,policy,updated_by) values(p_tenant_id,v_version,p_policy,p_user_id);",
 		);
+	});
+});
+
+describe("policy-management ordered rollout contract", () => {
+	const rolloutBody = (overrides: Row = {}) => ({ action: "rollout", tenant_id: TENANT, expected_version: 3, expected_revision_version: 3, policy: POLICY, rings: [{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: [AGENT] }] }], ...overrides });
+
+	it.each([
+		[{ memberships: [{ tenant_id: TENANT, role: "viewer", expires_at: null }] }, 403],
+		[{ memberships: [] }, 403],
+		[{ memberships: [{ tenant_id: TENANT, role: "admin", expires_at: "2000-01-01" }] }, 403],
+		[{ requireMfa: true, assuranceLevel: "aal1" }, 403],
+		[{ requireMfa: true, assuranceError: true }, 503],
+		[{ revokedBefore: "2100-01-01T00:00:00.000Z" }, 401],
+		[{ tenantStatus: "suspended" }, 403],
+	] as Array<[DbOptions, number]>)("guards rollout mutation identity and role %j", async (options, status) => {
+		const { handle, rpcCalls } = await handlerWith(options);
+		expect((await handle(post(rolloutBody()))).status).toBe(status);
+		expect(mutations(rpcCalls)).toEqual([]);
+	});
+
+	it("forwards administrator AAL2 authority and never a body-supplied actor", async () => {
+		const { handle, rpcCalls } = await handlerWith({ requireMfa: true, assuranceLevel: "aal2", memberships: [{ tenant_id: TENANT, role: "admin", expires_at: null }], rpc: () => ({ data: { rollout_id: AGENT_TWO, version: 4 }, error: null }) });
+		expect((await handle(post(rolloutBody({ user_id: OTHER_TENANT })))).status).toBe(200);
+		expect(mutations(rpcCalls)[0]?.args.p_user_id).toBe(USER);
+	});
+
+	it.each(["rollout", "create_rollout", "rollout_progress"])("denies foreign tenant access for %s", async (action) => {
+		const { handle, rpcCalls } = await handlerWith();
+		expect((await handle(post(rolloutBody({ action, tenant_id: OTHER_TENANT })))).status).toBe(403);
+		expect(rpcCalls).toEqual([]);
+	});
+
+	it.each([["PT409", 409], ["42501", 403], ["22023", 400], ["08006", 503]] as const)("maps rollout database error %s without fallback", async (code, status) => {
+		const { handle, rpcCalls } = await handlerWith({ rpc: () => ({ data: null, error: { code } }) });
+		expect((await handle(post(rolloutBody()))).status).toBe(status);
+		expect(mutations(rpcCalls).map(({ name }) => name)).toEqual(["create_policy_rollout"]);
+	});
+
+	it.each([null, {}, { rollout_id: AGENT_TWO }, { rollout_id: "invalid", version: 4 }])("rejects unconfirmed create payload %j", async (data) => {
+		const { handle } = await handlerWith({ rpc: () => ({ data, error: null }) });
+		expect((await handle(post(rolloutBody()))).status).toBe(503);
+	});
+
+	it("never invents adoption evidence when its optional RPC is unavailable", async () => {
+		const { handle } = await handlerWith({ rpc: () => ({ data: null, error: { code: "08006" } }) });
+		const result = await handle(post({ action: "adoption", tenant_id: TENANT }));
+		expect(result.status).toBe(200);
+		const body = await result.json();
+		expect(body.rollout_evidence).toBe("unavailable");
+		expect(body.rollout_progress).toBeUndefined();
+		expect((await handle(post({ action: "rollout_progress", tenant_id: TENANT }))).status).toBe(503);
+	});
+
+	it("rejects duplicate rings, overlapping cohorts and case-variant agents", () => {
+		const upper = "abcdefab-1234-4234-8234-abcdefabcdef";
+		for (const rings of [
+			[{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: [AGENT] }] }, { ring_order: 1, batches: [{ batch_order: 1, agent_ids: [AGENT_TWO] }] }],
+			[{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: [AGENT] }] }, { ring_order: 2, batches: [{ batch_order: 1, agent_ids: [AGENT] }] }],
+			[{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: [upper, upper.toUpperCase()] }] }],
+		]) expect(() => normalizeRolloutRings(rings)).toThrow();
+	});
+	it("requires contiguous ring and batch order and rejects an agent overlap", () => {
+		const valid = normalizeRolloutRings([
+			{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: [AGENT] }, { batch_order: 2, agent_ids: [AGENT_TWO] }] },
+			{ ring_order: 2, batches: [{ batch_order: 1, agent_ids: ["66666666-6666-4666-8666-666666666666"] }] },
+		]);
+		expect(valid).toHaveLength(2);
+		expect(valid[0]?.batches[1]?.agent_ids).toEqual([AGENT_TWO]);
+		for (const invalid of [
+			[{ ring_order: 2, batches: [{ batch_order: 1, agent_ids: [AGENT] }] }],
+			[{ ring_order: 1, batches: [{ batch_order: 2, agent_ids: [AGENT] }] }],
+			[{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: [AGENT, AGENT] }] }],
+		]) expect(() => normalizeRolloutRings(invalid)).toThrow();
+	});
+
+	it("reads rollout_progress through the tenant-scoped RPC without treating it as attestation", async () => {
+		const { handle, rpcCalls } = await handlerWith({
+			rpc: (name) => name === "read_policy_rollout_progress"
+				? { data: { rollout_id: "77777777-7777-4777-8777-777777777777", status: "running", receipt_type: "agent_reported_policy_loaded", rollout_progress: { targeted: 2, current: 1, stale: 0, unknown: 1 } }, error: null }
+				: { data: { allowed: true, remaining: 599 }, error: null },
+		});
+		const response = await handle(post({ action: "rollout_progress", tenant_id: TENANT }));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			ok: true,
+			rollout_progress: { targeted: 2, current: 1, unknown: 1 },
+		});
+		expect(rpcCalls.map((call) => call.name)).toEqual(["consume_tenant_rate_limit", "read_policy_rollout_progress"]);
+		expect(rpcCalls[1]?.args).toEqual({ p_tenant_id: TENANT, p_rollout_id: null });
+	});
+
+	it("validates and forwards an ordered rollout only after owner authorization", async () => {
+		const { handle, rpcCalls } = await handlerWith({
+			rpc: (name) => name === "create_policy_rollout"
+				? { data: { rollout_id: "77777777-7777-4777-8777-777777777777", version: 4, status: "running", rollout_progress: { targeted: 1, current: 0, unknown: 1 } }, error: null }
+				: { data: { allowed: true, remaining: 599 }, error: null },
+		});
+		const response = await handle(post({
+			action: "rollout", tenant_id: TENANT, expected_version: 3, expected_revision_version: 3, policy: POLICY,
+			rings: [{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: [AGENT] }] }],
+		}));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ ok: true, version: 4, status: "running" });
+		expect(rpcCalls.find((call) => call.name === "create_policy_rollout")?.args).toMatchObject({
+			p_tenant_id: TENANT, p_user_id: USER, p_expected_version: 3, p_expected_revision_version: 3,
+			p_rings: [{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: [AGENT] }] }],
+		});
+	});
+
+	it("keeps the rings model and progress endpoint out of browser grants", () => {
+		expect(HANDLER_SOURCE).toContain('dispatchPolicyRollout(req, db, body, tenant, auth.user.id, member.role)');
+		expect(ROLLOUT_SOURCE).toContain('body.action === "rollout_progress"');
+		expect(ROLLOUT_SOURCE).toContain('db.rpc("read_policy_rollout_progress"');
+		expect(RINGS_MIGRATION).toContain("unique (tenant_id, rollout_id, agent_id)");
+		expect(RINGS_MIGRATION).toContain("unique (tenant_id, id, rollout_id)");
+		expect(RINGS_MIGRATION).toContain("foreign key (tenant_id, batch_id, rollout_id) references public.policy_rollout_batches(tenant_id, id, rollout_id)");
+		expect(RINGS_MIGRATION).toContain("unique (tenant_id, rollout_id, ring_order, batch_order)");
+		expect(RINGS_MIGRATION).toContain("policy_rollout_order_conflict");
+		expect(RINGS_MIGRATION).toContain("status in ('running', 'paused')");
+		expect(RINGS_MIGRATION).toContain("previous_hash = p_key_hash and previous_hash_expires_at > now()");
+		expect(RINGS_MIGRATION).toContain("previous.id <> new.id");
+		expect(RINGS_MIGRATION).toContain("new.ring_order <> old.ring_order or new.batch_order <> old.batch_order");
+		expect(RINGS_MIGRATION).toContain("new.tenant_id <> old.tenant_id or new.rollout_id <> old.rollout_id");
+		expect(RINGS_MIGRATION).toContain("old.status = 'pending' and new.status in ('active', 'cancelled')");
+		expect(RINGS_MIGRATION).toContain("old.status = 'active' and new.status in ('completed', 'cancelled')");
+		expect(RINGS_MIGRATION).toContain("before insert or update on public.policy_rollout_batches");
+		expect(RINGS_MIGRATION).toContain("create function app.enforce_policy_rollout_status()");
+		expect(RINGS_MIGRATION).toContain("old.status = 'running' and new.status in ('paused', 'completed', 'cancelled')");
+		expect(RINGS_MIGRATION).toContain("old.status = 'paused' and new.status in ('running', 'cancelled')");
+		expect(RINGS_MIGRATION).toContain("before insert or update of status on public.policy_rollouts");
+		expect(RINGS_MIGRATION).toContain("create function public.create_policy_rollout(");
+		expect(RINGS_MIGRATION).toContain("create function public.read_policy_rollout_progress(");
+		expect(RINGS_MIGRATION).toContain("revoke all on public.policy_rollouts, public.policy_rollout_batches, public.policy_rollout_targets from anon, authenticated;");
+		expect(RINGS_MIGRATION).toContain("grant all on public.policy_rollouts, public.policy_rollout_batches, public.policy_rollout_targets to service_role;");
+		expect(RINGS_MIGRATION).not.toMatch(/grant[^;]*\bto\s+(?:public|anon|authenticated)\b/i);
 	});
 });
