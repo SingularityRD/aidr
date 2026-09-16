@@ -17,7 +17,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -39,7 +39,7 @@ vi.mock("../lib/supabase", () => ({
 }));
 
 import { EnterpriseAuth } from "../enterprise/auth";
-import { installDashboardMocks } from "./helpers/dashboard-mocks";
+import { ADMIN_USER_ID, installDashboardMocks, mockedSupabase } from "./helpers/dashboard-mocks";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const DASHBOARD_SRC = resolve(REPO_ROOT, "packages/dashboard/src");
@@ -183,7 +183,10 @@ describe("Dashboard module surface (AIDR-010)", () => {
 });
 
 describe("Team invitation acceptance (AIDR-008)", () => {
-	afterEach(cleanup);
+	afterEach(() => {
+		cleanup();
+		vi.useRealTimers();
+	});
 
 	it("renders the invitation panel for an invite link", () => {
 		installDashboardMocks();
@@ -209,12 +212,110 @@ describe("Team invitation acceptance (AIDR-008)", () => {
 		);
 	});
 
+	it("waits for a bound session before accepting and uses that session's token", async () => {
+		const { invoke } = installDashboardMocks({ invite: { data: { ok: true }, error: null } });
+		let completeSession!: (value: unknown) => void;
+		mockedSupabase().auth.getSession.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					completeSession = resolve;
+				}),
+		);
+		renderInviteRoute();
+		expect(screen.getByRole("button", { name: "Accept Invitation" })).toBeDisabled();
+		fireEvent.click(screen.getByRole("button", { name: "Accept Invitation" }));
+		expect(invoke).not.toHaveBeenCalled();
+		await act(async () =>
+			completeSession({
+				data: { session: { user: { id: ADMIN_USER_ID }, access_token: "resolved-session-token" } },
+				error: null,
+			}),
+		);
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Accept Invitation" })).toBeEnabled(),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Accept Invitation" }));
+		await screen.findByText("Team invitation accepted! Redirecting...");
+		expect(invoke).toHaveBeenCalledExactlyOnceWith("oauth-callback", {
+			body: { invite_token: "invite-token-123" },
+			headers: { Authorization: "Bearer resolved-session-token" },
+		});
+	});
+
+	it("does not accept an invitation while signed out", async () => {
+		const { invoke } = installDashboardMocks({ session: null });
+		await act(async () => {
+			renderInviteRoute();
+		});
+		expect(screen.getByRole("button", { name: "Accept Invitation" })).toBeDisabled();
+		fireEvent.click(screen.getByRole("button", { name: "Accept Invitation" }));
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it("ignores an acceptance response from a previous session generation", async () => {
+		const { invoke } = installDashboardMocks();
+		let completeAcceptance!: (value: unknown) => void;
+		invoke.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					completeAcceptance = resolve;
+				}),
+		);
+		renderInviteRoute();
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Accept Invitation" })).toBeEnabled(),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Accept Invitation" }));
+		const callback = mockedSupabase().auth.onAuthStateChange.mock.calls[0]?.[0];
+		expect(callback).toBeTypeOf("function");
+		vi.useFakeTimers();
+		await act(async () => {
+			callback("TOKEN_REFRESHED");
+			completeAcceptance({ data: { ok: true }, error: null });
+		});
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(1500);
+		});
+		expect(screen.queryByText(/invitation accepted!/i)).not.toBeInTheDocument();
+		expect(screen.queryByText("team-route-content")).not.toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Team Invitation" })).toBeInTheDocument();
+	});
+
+	it("does not redirect an accepted invitation after the session changes", async () => {
+		installDashboardMocks({ invite: { data: { ok: true }, error: null } });
+		renderInviteRoute();
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Accept Invitation" })).toBeEnabled(),
+		);
+		vi.useFakeTimers();
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: "Accept Invitation" }));
+		});
+		expect(screen.getByText("Team invitation accepted! Redirecting...")).toBeInTheDocument();
+		mockedSupabase().auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+		const callback = mockedSupabase().auth.onAuthStateChange.mock.calls[0]?.[0];
+		expect(callback).toBeTypeOf("function");
+		await act(async () => {
+			callback("SIGNED_OUT");
+		});
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(1500);
+		});
+		expect(screen.queryByText("team-route-content")).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Accept Invitation" })).toBeDisabled();
+	});
+
 	it("does not claim the invitation was accepted when oauth-callback is missing", async () => {
 		installDashboardMocks({
 			invite: { data: null, error: { message: "Failed to send a request to the Edge Function" } },
 		});
 
 		renderInviteRoute();
+		// Session resolution replaces the bound surface. Re-query the current
+		// element instead of retaining the pre-session instance across the remount.
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Accept Invitation" })).toBeEnabled(),
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Accept Invitation" }));
 
 		await waitFor(() =>
@@ -230,6 +331,11 @@ describe("Team invitation acceptance (AIDR-008)", () => {
 		installDashboardMocks({ invite: { data: null, error: null } });
 
 		renderInviteRoute();
+		// Session resolution replaces the bound surface. Re-query the current
+		// element instead of retaining the pre-session instance across the remount.
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Accept Invitation" })).toBeEnabled(),
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Accept Invitation" }));
 
 		await waitFor(() =>
@@ -242,15 +348,19 @@ describe("Team invitation acceptance (AIDR-008)", () => {
 		installDashboardMocks({ invite: { data: { ok: true }, error: null } });
 
 		renderInviteRoute();
+		// Session resolution replaces the bound surface. Re-query the current
+		// element instead of retaining the pre-session instance across the remount.
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Accept Invitation" })).toBeEnabled(),
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Accept Invitation" }));
 
 		await waitFor(() =>
 			expect(screen.getByText("Team invitation accepted! Redirecting...")).toBeInTheDocument(),
 		);
 		// The redirect used to target "/team", a route main.tsx never registered.
-		await waitFor(
-			() => expect(screen.getByText("team-route-content")).toBeInTheDocument(),
-			{ timeout: 4000 },
-		);
+		await waitFor(() => expect(screen.getByText("team-route-content")).toBeInTheDocument(), {
+			timeout: 4000,
+		});
 	});
 });

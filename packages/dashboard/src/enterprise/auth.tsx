@@ -237,13 +237,18 @@ function BoundEnterpriseAuth({
 	}
 
 	async function handleTeamInviteAccept(token: string) {
+		// Session resolution remounts this binding. Never start acceptance on the
+		// pre-session surface or let an old account's response redirect a new one.
+		if (busy || !session || !bindingIsCurrent()) return;
 		setBusy(true);
 		setStatus(null);
 
 		try {
 			const { data, error } = await supabase.functions.invoke("oauth-callback", {
 				body: { invite_token: token },
+				headers: { Authorization: `Bearer ${session.access_token}` },
 			});
+			if (!bindingIsCurrent()) return;
 
 			if (error) {
 				throw new Error(
@@ -263,11 +268,15 @@ function BoundEnterpriseAuth({
 			}
 
 			setStatus({ tone: "success", message: "Team invitation accepted! Redirecting..." });
-			setTimeout(() => navigate("/team"), 1500);
+			setTimeout(() => {
+				if (bindingIsCurrent()) navigate("/team");
+			}, 1500);
 		} catch (err) {
-			setStatus({ tone: "error", message: readErrorMessage(err, "Failed to accept invitation") });
+			if (bindingIsCurrent()) {
+				setStatus({ tone: "error", message: readErrorMessage(err, "Failed to accept invitation") });
+			}
 		} finally {
-			setBusy(false);
+			if (bindingIsCurrent()) setBusy(false);
 		}
 	}
 
@@ -579,7 +588,7 @@ function BoundEnterpriseAuth({
 						<button
 							className="button"
 							type="button"
-							disabled={busy}
+							disabled={busy || !session || !bindingIsCurrent()}
 							onClick={() => void handleTeamInviteAccept(inviteToken)}
 						>
 							Accept Invitation
