@@ -14,11 +14,21 @@ import path from "node:path";
 
 const options = parseArgs(process.argv.slice(2));
 if (options.help) {
-	console.log("Usage: node scripts/verify-openclaw-release-host.mjs --package <plugin.tgz> --openclaw-root <dir> [--node <node>] [--port <port>] [--keep]");
+	console.log("Usage: node scripts/verify-openclaw-release-host.mjs --package <plugin.tgz> --openclaw-root <dir> [--node <node>] [--port <port>] [--timeout-ms <ms>] [--keep]");
 	process.exit(0);
 }
 for (const key of ["package", "openclawRoot"]) {
 	if (!options[key]) fail(`missing --${key === "openclawRoot" ? "openclaw-root" : key}`);
+}
+// OpenClaw's CLI performs a first-run state migration and then stays slow on a
+// cold Windows profile: a no-op `health --json` measured ~100 s before and
+// ~200 s after migration on the machine this gate was developed on. A fixed
+// 120 s budget therefore reported ETIMEDOUT for a host that was working, which
+// is an environment mismatch rather than a plugin defect. Keep the default
+// strict, but let an operator raise it explicitly and say so in the output.
+const cliTimeoutMs = options.timeoutMs ?? 120_000;
+if (!Number.isSafeInteger(cliTimeoutMs) || cliTimeoutMs < 10_000 || cliTimeoutMs > 3_600_000) {
+	fail("--timeout-ms must be an integer between 10000 and 3600000");
 }
 const tarball = path.resolve(options.package);
 const openclawRoot = path.resolve(options.openclawRoot);
@@ -61,7 +71,7 @@ try {
 		plugins: { enabled: true, allow: ["aidr-openclaw"], load: { paths: [pluginRoot] }, entries: { "aidr-openclaw": { enabled: true } } },
 	}, null, 2)}\n`);
 
-	const inspect = runOpenClaw(["plugins", "inspect", "aidr-openclaw", "--runtime", "--json"], environment, 120_000);
+	const inspect = runOpenClaw(["plugins", "inspect", "aidr-openclaw", "--runtime", "--json"], environment, cliTimeoutMs);
 	assertSuccess(inspect, "OpenClaw runtime plugin inspection");
 	const inspection = parseJsonOutput(inspect.stdout);
 	assert(inspection?.plugin?.status === "loaded" || inspection?.status === "loaded", "OpenClaw did not report the plugin loaded");
@@ -81,7 +91,7 @@ try {
 	let health;
 	for (let attempt = 0; attempt < 60; attempt++) {
 		if (gateway.exitCode !== null) fail(`Gateway exited before becoming healthy (${gateway.exitCode}): ${tail(gatewayOutput)}`);
-		health = runOpenClaw(["health", "--json"], environment, 10_000);
+		health = runOpenClaw(["health", "--json"], environment, cliTimeoutMs);
 		if (health.status === 0) break;
 		wait(500);
 	}
@@ -98,7 +108,11 @@ try {
 		openclawVersion: JSON.parse(readFileSync(path.join(openclawRoot, "package.json"), "utf8")).version,
 		pluginVersion: pkg.version,
 		checks: ["packed contract", "isolated offline install", "runtime plugin inspect", "loopback gateway startup", "gateway health"],
-		limitations: ["No provider credentials configured.", "No model turn or native model-driven tool call was attempted."],
+		limitations: [
+			"No provider credentials configured.",
+			"No model turn or native model-driven tool call was attempted.",
+			`CLI timeout was ${cliTimeoutMs} ms; this host's OpenClaw CLI is slow enough to need raising it (see --timeout-ms).`,
+		],
 	}, null, 2));
 } finally {
 	if (gateway && gateway.exitCode === null) {
@@ -116,11 +130,11 @@ function parseArgs(argv) {
 		const value = argv[i];
 		if (value === "--keep") result.keep = true;
 		else if (value === "--help" || value === "-h") result.help = true;
-		else if (["--package", "--openclaw-root", "--node", "--port"].includes(value)) {
+		else if (["--package", "--openclaw-root", "--node", "--port", "--timeout-ms"].includes(value)) {
 			const next = argv[++i];
 			if (!next) fail(`${value} requires a value`);
-			const key = value === "--openclaw-root" ? "openclawRoot" : value.slice(2);
-			result[key] = value === "--port" ? Number(next) : next;
+			const key = value === "--openclaw-root" ? "openclawRoot" : value === "--timeout-ms" ? "timeoutMs" : value.slice(2);
+			result[key] = value === "--port" || value === "--timeout-ms" ? Number(next) : next;
 		} else fail(`unknown argument: ${value}`);
 	}
 	return result;
