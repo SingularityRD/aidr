@@ -278,18 +278,18 @@
       "connector": "openclaw",
       "point": "pre-prompt",
       "status": "declared-not-proven",
-      "hostBoundary": "before_agent_start",
+      "hostBoundary": "before_prompt_build",
       "reason": null,
       "evidence": [
         {
           "kind": "prompt-boundary",
           "path": "packages/openclaw/src/startup-scan.ts",
-          "contains": ["createBeforeAgentStartHandler", "prependContext"]
+          "contains": ["createBeforePromptBuildHandler", "prependContext"]
         },
         {
           "kind": "prompt-boundary",
           "path": "packages/openclaw/src/index.ts",
-          "contains": ["before_agent_start"]
+          "contains": ["before_prompt_build"]
         }
       ],
       "limitations": [
