@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 // validator. Self-hosted/customer-kit packages include functions/, not core/src.
 export function dlpEdgeSchemaSource() {
 	const core = new URL("../packages/core/src/dlp/policy.ts", import.meta.url);
-	const require = createRequire(core);
+	const require = createRequire(new URL("../packages/core/package.json", import.meta.url));
 	const version = require("zod/package.json").version;
 	const source = readFileSync(core, "utf8").replaceAll("\r\n", "\n");
 	const dependency = 'import { z } from "zod";';

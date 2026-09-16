@@ -9,6 +9,7 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,14 +24,18 @@ vi.mock("npm:@supabase/supabase-js@2", () => ({
 }));
 
 // DLP uses a generated copy of the core schema with the same pinned Zod bytes.
-vi.mock("npm:zod@3.25.76", async () => import("../../../packages/core/node_modules/zod/index.js"));
+vi.mock("npm:zod@3.25.76", () => {
+	const requireCore = createRequire(new URL("../../../packages/core/package.json", import.meta.url));
+	return requireCore("zod");
+});
 
 // Stored policy documents are parsed with Deno's `npm:yaml@2.8.3`. The
 // repository already vendors that exact version for `@singularityrd/aidr-core`,
 // so the suite binds the Deno-only specifier to those bytes: the parser stays
 // real, only the specifier is redirected.
 vi.mock("npm:yaml@2.8.3", async () => {
-	const real = (await import("../../../packages/core/node_modules/yaml/dist/index.js")) as {
+	const requireCore = createRequire(new URL("../../../packages/core/package.json", import.meta.url));
+	const real = requireCore("yaml") as {
 		parseDocument?: unknown;
 		default?: { parseDocument?: unknown };
 	};

@@ -1,14 +1,21 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DlpPolicySchema } from "../../../packages/core/src/dlp/policy.ts";
 import { dlpEdgeSchemaSource, edgeSchemaPath } from "../../../scripts/sync-dlp-edge-schema.mjs";
 
-vi.mock("npm:zod@3.25.76", async () => import("../../../packages/core/node_modules/zod/index.js"));
+vi.mock("npm:zod@3.25.76", () => {
+	const requireCore = createRequire(new URL("../../../packages/core/package.json", import.meta.url));
+	return requireCore("zod");
+});
 
 vi.mock("npm:@supabase/supabase-js@2", () => ({
 	createClient: () => { throw new Error("client must be injected"); },
 }));
-vi.mock("npm:yaml@2.8.3", async () => import("../../../packages/core/node_modules/yaml/dist/index.js"));
+vi.mock("npm:yaml@2.8.3", () => {
+	const requireCore = createRequire(new URL("../../../packages/core/package.json", import.meta.url));
+	return requireCore("yaml");
+});
 
 const TENANT = "22222222-2222-4222-8222-222222222222";
 const FOREIGN = "33333333-3333-4333-8333-333333333333";

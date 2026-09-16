@@ -10,6 +10,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { createDependencyAuditor, evaluateReport } from "./knip-dependency-audit.mjs";
 
 const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const result = spawnSync(command, ["exec", "knip", "--reporter", "json", "--no-exit-code"], {
@@ -18,8 +19,8 @@ const result = spawnSync(command, ["exec", "knip", "--reporter", "json", "--no-e
 	shell: process.platform === "win32",
 });
 
-if (result.error) {
-	console.error("Unable to run Knip:", result.error);
+if (result.error || result.status !== 0) {
+	console.error("Unable to run Knip:", result.error ?? result.stderr ?? `exit ${result.status}`);
 	process.exit(1);
 }
 
@@ -38,70 +39,7 @@ try {
 	process.exit(1);
 }
 
-const allowedReviewDebt = new Set(["files", "exports", "duplicates"]);
-const counts = Object.fromEntries([...allowedReviewDebt].map((type) => [type, 0]));
-counts.files = Array.isArray(report.files) ? report.files.length : 0;
-const blocking = [];
-
-function isApprovedWorkflowTool(issue, type, value) {
-	return (
-		type === "binaries" &&
-		value?.name === "typedoc" &&
-		String(issue.file ?? "").replaceAll("\\", "/") ===
-			".github/workflows/docs-generation.yml"
-	);
-}
-
-function isDenoTypeSpecifier(issue, type, value) {
-	// Knip parses Deno's `npm:` URL scheme as an npm package named "npm". The
-	// specifier is resolved by the Deno Edge runtime, not by Node or pnpm, so
-	// "unlisted" is a false positive for every Edge Function that imports it.
-	// The allowlist is enumerated by file on purpose: a new file must be added
-	// deliberately rather than inheriting a directory-wide exemption.
-	const denoSpecifierFiles = new Set([
-		"supabase/functions/_shared/identity-barrier.ts",
-		"supabase/functions/team-invite/lifecycle.ts",
-		"supabase/functions/audit-export/index.ts",
-		"supabase/functions/autosecops-runtime/index.ts",
-		"supabase/functions/billing-portal/index.ts",
-		"supabase/functions/invoice-entitlement/index.ts",
-		"supabase/functions/oauth-callback/index.ts",
-		"supabase/functions/pilot-apply/index.ts",
-		"supabase/functions/pilot-status/index.ts",
-		"supabase/functions/policy-management/index.ts",
-		"supabase/functions/revocations/index.ts",
-		"supabase/functions/team-invite/index.ts",
-		"supabase/functions/url-check/index.ts",
-	]);
-	const file = String(issue.file ?? "").replaceAll("\\", "/");
-	if (type !== "unlisted") return false;
-	if (value?.name === "npm") return denoSpecifierFiles.has(file);
-	// The policy contract suite redirects Deno's `npm:yaml@2.8.3` to the copy the
-	// repository already vendors for `@singularityrd/aidr-core`. The bare name is
-	// the mock specifier, not an import of an undeclared dependency.
-	if (value?.name === "yaml" && file === "supabase/functions/__tests__/policy-management-contract.test.ts") {
-		return true;
-	}
-	return false;
-}
-
-for (const issue of report.issues ?? []) {
-	for (const [type, values] of Object.entries(issue)) {
-		if (!Array.isArray(values) || values.length === 0 || type === "file" || type === "owners") {
-			continue;
-		}
-		if (values.every((value) => isApprovedWorkflowTool(issue, type, value) || isDenoTypeSpecifier(issue, type, value))) {
-			continue;
-		}
-		if (allowedReviewDebt.has(type)) {
-			counts[type] += values.length;
-			continue;
-		}
-		for (const value of values) {
-			blocking.push(`${issue.file ?? "<unknown>"}: ${type} ${JSON.stringify(value)}`);
-		}
-	}
-}
+const { counts, blocking } = evaluateReport(report, createDependencyAuditor(process.cwd()));
 
 console.log(
 	`Knip gate: review debt files=${counts.files}, exports=${counts.exports}, duplicates=${counts.duplicates}.`,
