@@ -42,6 +42,15 @@ const pruningMigration = readFileSync(
 	join(ROOT, "supabase", "migrations", "20260914000001_billing_retention_pruning.sql"),
 	"utf8",
 );
+const offboardingRetentionMigration = readFileSync(
+	join(
+		ROOT,
+		"supabase",
+		"migrations",
+		"20260916000008_billing_settlement_offboarding_retention.sql",
+	),
+	"utf8",
+);
 const maintenanceSource = readFileSync(
 	join(ROOT, "scripts", "deployment-maintenance.mjs"),
 	"utf8",
@@ -914,7 +923,7 @@ describe("billing settlement migration contract", () => {
 		expect(migration).toContain("external_validation boolean not null default false check (external_validation = false)");
 	});
 
-	it("purges settlement evidence on offboarding and tenant close", () => {
+	it("records the legacy purge hooks superseded by the retention follow-up", () => {
 		expect(migration).toContain("purge_billing_settlements_at_commercial_retention");
 		expect(migration).toContain("purge_billing_settlements_on_tenant_close");
 		expect(migration).toContain("delete from public.billing_settlements where tenant_id = new.id");
@@ -922,6 +931,30 @@ describe("billing settlement migration contract", () => {
 });
 
 describe("billing retention migration contract", () => {
+	it("retains immutable settlement evidence while removing operational access", () => {
+		expect(offboardingRetentionMigration).toContain("retain_immutable_evidence");
+		expect(offboardingRetentionMigration).toContain("settlement_rows_retained");
+		expect(offboardingRetentionMigration).toContain("settlement_retention_digest");
+		expect(offboardingRetentionMigration).toContain("settlement_retention_owner_requirement");
+		expect(offboardingRetentionMigration).toContain(
+			"revoke select, insert on public.billing_settlements from service_role",
+		);
+		expect(offboardingRetentionMigration).toContain(
+			"delete from public.billing_settlement_requests",
+		);
+		expect(offboardingRetentionMigration).toContain(
+			"delete from public.billing_entitlement_projections",
+		);
+		const replacement =
+			offboardingRetentionMigration
+				.split("create or replace function public.purge_billing_settlements_at_commercial_retention()")[1]
+				?.split("create trigger tenant_offboarding_retain_billing_settlements")[0] ?? "";
+		expect(replacement).not.toMatch(/delete from public\.billing_settlements/);
+		expect(offboardingRetentionMigration).not.toContain(
+			"drop trigger if exists billing_settlements_append_only",
+		);
+	});
+
 	it("prunes expired settlement requests without touching settled records", () => {
 		// Both idempotency stores get an explicit, bounded lifetime.
 		expect(pruningMigration).toMatch(
