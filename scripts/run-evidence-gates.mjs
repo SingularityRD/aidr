@@ -107,19 +107,13 @@ if (!skipBuild) {
 	console.log("[gates] the tree is settled; running gates");
 }
 
-// 2. Refresh the claim records. They are stamped with the commit and candidate
-//    digest they scanned, so they must be rebound before the gates that read
-//    them run, or `quality:static` fails on staleness rather than on a real
-//    finding. A non-zero exit here means the claim gate has open findings; that
-//    is recorded, not worked around.
-const refresh = spawnSync(process.execPath, ["scripts/refresh-claim-evidence.mjs"], { cwd: ROOT, env, encoding: "utf8" });
-process.stdout.write(refresh.stdout ?? "");
-if (refresh.status !== 0) console.log("[gates] claim records were rebound, but the claim gate reports open findings (expected)");
-
-// 3. Ensure the release candidate exists and matches this commit. The kit and
-//    envelope gates read it, and they refuse a candidate built from another
-//    revision, so a missing or stale candidate would block them for the wrong
-//    reason.
+// 2. Refresh the release candidate before anything that binds to its digest.
+//    Claim records are stamped with the candidate inventory digest they scanned,
+//    and `quality:static` refuses a record whose stamp does not match the current
+//    candidate. Rebuilding the candidate after the claim refresh therefore
+//    invalidates the records the refresh just wrote, which is what made
+//    `quality:static` fail with "no valid candidate_digest binding" even though
+//    the claims themselves were fine.
 const candidateDir = path.join(ROOT, ".release-evidence", "customer-release-v8-local-20260916-r9");
 let candidateMatches = false;
 try {
@@ -153,11 +147,29 @@ for (const stale of ["aidr-customer-kit-v8-local-20260916-r9", "aidr-envelope-v8
 	rmSync(path.join(ROOT, ".release-evidence", stale), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
+// 3. Rebind the claim records to the candidate that will be described. A non-zero
+//    exit here means the claim gate has open findings; that is recorded, not
+//    worked around.
+const refresh = spawnSync(process.execPath, ["scripts/refresh-claim-evidence.mjs"], { cwd: ROOT, env, encoding: "utf8" });
+process.stdout.write(refresh.stdout ?? "");
+if (refresh.status !== 0) console.log("[gates] claim records were rebound, but the claim gate reports open findings (expected)");
+
 // 4. Run every gate, sequentially. Running them together races on the core build
 //    lock and on the shared dist trees, which produces failures that look like
 //    product defects.
+//
+// The kit and envelope gates refuse an existing output directory by design: a
+// silent overwrite could mix two assemblies. Their output is derived, so clear
+// it immediately before those two gates run rather than at the start, where an
+// earlier gate could regenerate it.
+const KIT_GATES = new Set(["20-customer-kit"]);
 const gateIds = only.length > 0 ? only : declaredGateIds();
 for (const id of gateIds) {
+	if (KIT_GATES.has(id)) {
+		for (const stale of ["aidr-customer-kit-v8-local-20260916-r9", "aidr-envelope-v8-local-20260916-r9"]) {
+			rmSync(path.join(ROOT, ".release-evidence", stale), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+		}
+	}
 	const result = spawnSync(process.execPath, ["scripts/generate-v8-evidence-index.mjs", "--run", id], { cwd: ROOT, env, encoding: "utf8" });
 	const line = (result.stdout ?? "").split(/\r?\n/).find((entry) => entry.startsWith("Captured ")) ?? `Captured ${id}: no output`;
 	console.log(line.trim());
