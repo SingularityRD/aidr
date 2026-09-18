@@ -23,7 +23,7 @@
  *   node scripts/run-evidence-gates.mjs [--only <gate_id>...] [--skip-build]
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -129,7 +129,13 @@ try {
 }
 if (!candidateMatches) {
 	console.log("[gates] rebuilding the release candidate for this commit");
-	rmSync(candidateDir, { recursive: true, force: true });
+	// On Windows a directory delete can fail while an antivirus or indexer still
+	// holds a handle; maxRetries makes that a delay rather than a hard failure.
+	rmSync(candidateDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+	if (existsSync(candidateDir)) {
+		console.error(`ERROR: could not clear the previous candidate at ${path.relative(ROOT, candidateDir)}`);
+		process.exit(1);
+	}
 	const candidate = spawnSync(
 		process.execPath,
 		["scripts/build-release-candidate.mjs", "--output", ".release-evidence/customer-release-v8-local-20260916-r9", "--rc-version", env.AIDR_RELEASE_VERSION],
@@ -144,7 +150,7 @@ if (!candidateMatches) {
 // The kit and envelope gates refuse an existing output directory, so clear the
 // previous assembly. They are derived artifacts, regenerated below.
 for (const stale of ["aidr-customer-kit-v8-local-20260916-r9", "aidr-envelope-v8-local-20260916-r9"]) {
-	rmSync(path.join(ROOT, ".release-evidence", stale), { recursive: true, force: true });
+	rmSync(path.join(ROOT, ".release-evidence", stale), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
 // 4. Run every gate, sequentially. Running them together races on the core build
