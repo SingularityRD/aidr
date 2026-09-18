@@ -34,6 +34,8 @@ export const LOG_DIR = ".release-evidence/v8-logs";
 export const INDEX_FILE = "docs/production-readiness/v8-evidence-index.json";
 export const SCHEMA_FILE = "docs/production-readiness/v8-evidence-index.schema.json";
 export const CANDIDATE_RELEASE_DIR = ".release-evidence/customer-release-v8-local-20260916-r9";
+/** Candidate tag (e.g. `v8-local-20260916-r9`) used to name the kit and envelope. */
+export const CANDIDATE_SUFFIX = CANDIDATE_RELEASE_DIR.split("/").pop()?.replace(/^customer-release-/, "") ?? "";
 export const CANDIDATE_DIGEST_SOURCE = `${CANDIDATE_RELEASE_DIR}/release-inventory.json`;
 export const GENERATOR_ID = "scripts/generate-v8-evidence-index.mjs";
 export const RESULT_PROVENANCE_VERSION = 1;
@@ -459,9 +461,14 @@ export const GATES = Object.freeze([
 	}),
 	gate({
 		gate_id: "20-customer-kit",
-		command: "node scripts/customer-kit.mjs",
+		// The kit needs a release bundle, an upstream checkout and a destination,
+		// none of which the bare script name supplies; running it without them
+		// fails on argument parsing before it can prove anything. Derive every
+		// path from the candidate this index is bound to so the gate reproduces
+		// exactly what the index records.
+		command: `node scripts/customer-kit.mjs --output .release-evidence/aidr-customer-kit-${CANDIDATE_SUFFIX} --upstream-dir deploy/upstream --release-dir ${CANDIDATE_RELEASE_DIR} --envelope-output .release-evidence/aidr-envelope-${CANDIDATE_SUFFIX}`,
 		log: "20-customer-kit.log",
-		artifact: ".release-evidence/aidr-envelope-v8-local-20260916-r8/release-inventory.json",
+		artifact: `.release-evidence/aidr-envelope-${CANDIDATE_SUFFIX}/release-inventory.json`,
 		pass: /^Portable candidate assembled: \d+ files\./m,
 		task_ids: ["T36", "T41"],
 		feature_ids: ["DEP-08", "EVAL-02", "EVAL-03", "BIL-01"],

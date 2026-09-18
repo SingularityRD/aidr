@@ -5,8 +5,7 @@
 			"entry": ["src/index.ts"],
 			"project": ["src/**/*.ts"],
 			"ignore": ["src/__tests__/**"]
-		},
-		"packages/claude-code": {
+		},		"packages/claude-code": {
 			"entry": ["src/*.ts"],
 			"project": ["src/**/*.ts"],
 			"ignore": ["src/__tests__/**", "dist/**"]
@@ -44,6 +43,9 @@
 		"typescript",
 		"esbuild",
 		"@biomejs/biome"
+	],
+	"ignore": [
+		"deploy/upstream/**"
 	],
 	"ignoreBinaries": [
 		"bash",
