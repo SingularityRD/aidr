@@ -123,7 +123,14 @@ grant execute on function public.register_audit_export_object(uuid, uuid, text, 
 -- Reads are bound to the caller's own tenant folder. Writes stay service-role
 -- only: no permissive write policy exists for the bucket, and the restrictive
 -- policies below keep it that way even if a future migration adds one.
-alter table storage.objects enable row level security;
+--
+-- Do NOT add `alter table storage.objects enable row level security` here.
+-- Storage's own schema is owned by supabase_storage_admin, not by the role that
+-- runs migrations, so that statement fails with SQLSTATE 42501 ("must be owner
+-- of table objects") and aborts the whole migration chain - which means a fresh
+-- `supabase start` or `db reset` never completes. Storage already enables RLS
+-- on its tables, and Supabase's own documentation states the storage schema is
+-- to be treated as read-only. Creating policies on it, as below, is supported.
 
 drop policy if exists audit_exports_read_own_tenant on storage.objects;
 create policy audit_exports_read_own_tenant on storage.objects
