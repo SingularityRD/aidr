@@ -141,6 +141,8 @@ const dirtyEntries = git(["status", "--porcelain=v1"])
 	.filter((line) => {
 		const file = line.replace(/^[ MARC?]{1,2}\s+/, "");
 		return !/^\.release-evidence(?:[\\/]|$)/.test(file)
+			&& !/^\.e2e-artifacts(?:[\\/]|$)/.test(file)
+			&& !/^release-output(?:[\\/]|$)/.test(file)
 			&& !/^packages\/[^/]+\/dist(?:[\\/]|$)/.test(file)
 			// The AIG data indexes are compiled from the vendored corpus by
 			// `pnpm build:release`, so running a release build rewrites them. They
@@ -148,6 +150,12 @@ const dirtyEntries = git(["status", "--porcelain=v1"])
 			// treating them as dirt would make every candidate assembly depend on
 			// committing a build artefact first.
 			&& !/^packages\/core\/src\/generated\/aig-/.test(file)
+			// The inventories embed their own source_commit and are regenerated from
+			// tracked source by the release gates, so a gate run rewrites them. They
+			// are the same kind of derived output, and the orchestrator commits them
+			// before it builds a candidate; treating a mid-run rewrite as source dirt
+			// would block assembly for a reason that has nothing to do with provenance.
+			&& !/^(?:FEATURE_INVENTORY|PRODUCTION_SALES_GAPS)\.(?:json|md)$/.test(file)
 			&& file !== "vendor/ai-infra-guard";
 	});
 if (dirtyEntries.length > 0 && !options.allowDirty) {
