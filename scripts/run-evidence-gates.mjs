@@ -191,6 +191,14 @@ if (refresh.status !== 0) console.log("[gates] claim records were rebound, but t
 // it runs after them and after anything else that rewrites tracked output. It is
 // therefore ordered last rather than wherever it was declared.
 const ORDERING_LAST = ["26-generator-determinism"];
+// Gates that inspect the published `dist` trees must run while those trees are
+// in release state. The test gates perform a normal build as part of their own
+// global setup, which restores source maps and test folders, so any package
+// gate scheduled after them inspects a contaminated tree and reports
+// SOURCE_MAP_PRESENT - a real finding about the tree, but one this run created.
+// Rebuild in release mode immediately before the first such gate.
+const NEEDS_RELEASE_DIST = ["27-empty-path-package-install"];
+let releaseDistFresh = false;
 // The kit and envelope gates refuse an existing output directory by design: a
 // silent overwrite could mix two assemblies. Their output is derived, so clear
 // it immediately before the kit gate runs.
@@ -198,6 +206,15 @@ const KIT_GATES = new Set(["20-customer-kit"]);
 const declared = only.length > 0 ? only : declaredGateIds();
 const gateIds = [...declared.filter((id) => !ORDERING_LAST.includes(id)), ...declared.filter((id) => ORDERING_LAST.includes(id))];
 for (const id of gateIds) {
+	if (NEEDS_RELEASE_DIST.includes(id) && !releaseDistFresh) {
+		console.log("[gates] rebuilding release artifacts: an earlier test gate left normal-mode output");
+		const rebuild = spawnSync("pnpm", ["build:release"], { cwd: ROOT, env, stdio: "inherit", shell: process.platform === "win32" });
+		if (rebuild.status !== 0) {
+			console.error("ERROR: could not restore release dist state before a package gate");
+			process.exit(1);
+		}
+		releaseDistFresh = true;
+	}
 	if (KIT_GATES.has(id)) {
 		for (const stale of ["aidr-customer-kit-v8-local-20260916-r9", "aidr-envelope-v8-local-20260916-r9"]) {
 			if (!clearDirectory(path.join(ROOT, ".release-evidence", stale), stale)) process.exit(1);
