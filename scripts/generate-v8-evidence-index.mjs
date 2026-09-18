@@ -33,7 +33,7 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const LOG_DIR = ".release-evidence/v8-logs";
 export const INDEX_FILE = "docs/production-readiness/v8-evidence-index.json";
 export const SCHEMA_FILE = "docs/production-readiness/v8-evidence-index.schema.json";
-export const CANDIDATE_RELEASE_DIR = ".release-evidence/customer-release-v8-local-20260915-r5";
+export const CANDIDATE_RELEASE_DIR = ".release-evidence/customer-release-v8-local-20260916-r8";
 export const CANDIDATE_DIGEST_SOURCE = `${CANDIDATE_RELEASE_DIR}/release-inventory.json`;
 export const GENERATOR_ID = "scripts/generate-v8-evidence-index.mjs";
 export const RESULT_PROVENANCE_VERSION = 1;
@@ -461,7 +461,7 @@ export const GATES = Object.freeze([
 		gate_id: "20-customer-kit",
 		command: "node scripts/customer-kit.mjs",
 		log: "20-customer-kit.log",
-		artifact: ".release-evidence/aidr-envelope-v8-local-20260915-r5/release-inventory.json",
+		artifact: ".release-evidence/aidr-envelope-v8-local-20260916-r8/release-inventory.json",
 		pass: /^Portable candidate assembled: \d+ files\./m,
 		task_ids: ["T36", "T41"],
 		feature_ids: ["DEP-08", "EVAL-02", "EVAL-03", "BIL-01"],
