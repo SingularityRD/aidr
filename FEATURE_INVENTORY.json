@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "reviewed_at": "2026-09-13",
-  "source_commit": "8dad0aa3be39f99cf22640a4aed956df4de42204",
+  "source_commit": "cf320ba2bbd59174ac3a35782cfdb104556ab92d",
   "worktree_has_changes": true,
   "decision": "NO-GO",
   "methodology": "Reviewed capability/consumer inventory; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
