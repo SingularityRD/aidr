@@ -1,3 +1,10 @@
 [submodule "vendor/ai-infra-guard"]
 	path = vendor/ai-infra-guard
 	url = https://github.com/tencent/AI-Infra-Guard.git
+[submodule "deploy/upstream"]
+	path = deploy/upstream
+	url = https://github.com/supabase/supabase.git
+	# Only the self-hosted Docker deployment tree is consumed; a full checkout of
+	# the Supabase monorepo is never needed to assemble a customer kit.
+	shallow = true
+	sparseCheckout = docker

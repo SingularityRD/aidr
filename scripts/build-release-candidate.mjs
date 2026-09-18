@@ -250,20 +250,29 @@ try {
 		release_version: rcVersion,
 		git_sha: commitSha,
 		source_date_epoch: Number(git(["show", "-s", "--format=%ct", "HEAD"])),
-		worktree_dirty: dirtyEntries.length > 0,
-		assurance: dirtyEntries.length > 0
-			? "LOCAL REHEARSAL: the worktree had uncommitted source changes when this bundle was assembled, so these bytes are not bound to the recorded commit."
-			: "Unsigned release candidate: bytes are bound to the recorded commit, but no publisher signature is present.",
 		artifacts: metadataArtifacts,
 	};
 	writeFileSync(path.join(outputDir, "release-metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+
+	// The signed-bundle schema in release-signing-lib validates metadata with an
+	// exact key set, so the assurance wording cannot live there. It goes in a
+	// sidecar that downstream consumers and humans read instead.
+	writeFileSync(path.join(outputDir, "candidate-assurance.json"), `${JSON.stringify({
+		schema_version: 1,
+		git_sha: commitSha,
+		worktree_dirty: dirtyEntries.length > 0,
+		dirty_entries: dirtyEntries,
+		assurance: dirtyEntries.length > 0
+			? "LOCAL REHEARSAL: the worktree had uncommitted source changes when this bundle was assembled, so these bytes are not bound to the recorded commit."
+			: "Unsigned release candidate: bytes are bound to the recorded commit, but no publisher signature is present.",
+	}, null, 2)}\n`, "utf8");
 
 	console.log(JSON.stringify({
 		status: "PASS",
 		output: path.relative(ROOT, outputDir).replace(/\\/g, "/"),
 		git_sha: commitSha,
 		release_version: rcVersion,
-		worktree_dirty: metadata.worktree_dirty,
+		worktree_dirty: dirtyEntries.length > 0,
 		artifacts: metadataArtifacts.length,
 		inventory_digest: sha256File(path.join(outputDir, "release-inventory.json")),
 	}, null, 2));
