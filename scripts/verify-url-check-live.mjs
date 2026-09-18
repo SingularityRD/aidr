@@ -152,17 +152,51 @@ if (!["complete", "partial", "none"].includes(authorized.body?.coverage)) {
 if (!Array.isArray(authorized.body?.answers)) fail("response has no answers array");
 checks.push(`authenticated call answered with coverage=${authorized.body.coverage} and ${authorized.body.answers.length} answer(s)`);
 
-// 4. A URL matching a shipped threat pattern must be classified, not silently clean.
+// 4. A URL seeded as malicious must be classified malicious, not silently clean.
+//
+// This is the part that separates "the endpoint answers" from "the reputation
+// leg works". The table is tenant-scoped and customer-fed by design: there is no
+// external provider, so a classification only exists once a tenant has recorded
+// one. Seed a row through the installation's own table and require the endpoint
+// to reflect it.
+const seededUrl = "http://malware.example.test/payload.exe";
+psql(
+	`insert into public.url_reputation (user_id, tenant_id, url, domain, is_malicious, severity_name, type_name, flags, source)
+	 values ('${ownerId}', '${tenantId}', '${seededUrl}', 'malware.example.test', true, 'critical', 'malware', array['rehearsal'], 'url-check-live-rehearsal')
+	 on conflict do nothing`,
+);
+checks.push("tenant reputation row seeded for a known-malicious URL");
+
 const malicious = await request("/functions/v1/url-check", {
 	method: "POST",
 	headers: { "Content-Type": "application/json", Authorization: `Bearer ${keyPlaintext}` },
-	body: JSON.stringify({ queries: [{ key: { "url-like": "http://malware.example.test/payload.exe" } }] }),
+	body: JSON.stringify({ queries: [{ key: { "url-like": seededUrl } }] }),
 });
-if (malicious.status !== 200) fail(`threat-pattern call returned HTTP ${malicious.status}`);
+if (malicious.status !== 200) fail(`seeded threat call returned HTTP ${malicious.status}`);
 const answer = malicious.body?.answers?.[0];
-console.log(`threat-pattern query -> ${JSON.stringify(answer).slice(0, 240)}`);
-if (!answer) fail("threat-pattern call returned no answer");
-checks.push(`threat-pattern query answered (coverage ${malicious.body.coverage})`);
+console.log(`seeded malicious query -> ${JSON.stringify(answer).slice(0, 300)}`);
+if (!answer) fail("seeded threat call returned no answer");
+if (malicious.body.coverage !== "complete") {
+	fail(`expected coverage=complete once a reputation row exists, saw ${malicious.body.coverage}`);
+}
+const findings = answer?.result?.success?.classification?.result?.malicious?.findings;
+if (!Array.isArray(findings) || findings.length === 0) {
+	fail(`seeded malicious URL was not reported malicious: ${JSON.stringify(answer).slice(0, 300)}`);
+}
+checks.push(`seeded malicious URL classified with ${findings.length} finding(s) at coverage=complete`);
+
+// An unseeded URL in the same tenant must stay unknown rather than being called
+// clean: absence of a row is not evidence of safety.
+const unseeded = await request("/functions/v1/url-check", {
+	method: "POST",
+	headers: { "Content-Type": "application/json", Authorization: `Bearer ${keyPlaintext}` },
+	body: JSON.stringify({ queries: [{ key: { "url-like": "https://never-seeded.example.test/x" } }] }),
+});
+const unseededAnswer = unseeded.body?.answers?.[0];
+if (unseededAnswer?.result?.success?.classification?.result?.unknown?.reason !== "no_reputation_row") {
+	fail(`an unseeded URL must stay unknown, saw ${JSON.stringify(unseededAnswer).slice(0, 240)}`);
+}
+checks.push("unseeded URL stays unknown rather than being reported clean");
 
 // 5. Oversized batches must be refused rather than truncated silently.
 const tooMany = await request("/functions/v1/url-check", {
@@ -173,9 +207,10 @@ const tooMany = await request("/functions/v1/url-check", {
 if (tooMany.status === 200) fail("url-check accepted a batch beyond its declared maximum");
 checks.push(`oversized batch refused (HTTP ${tooMany.status})`);
 
-// Clean up the rehearsal key so the installation is left as it was found.
+// Clean up so the installation is left as it was found.
+psql(`delete from public.url_reputation where url = '${seededUrl}'`);
 psql(`delete from public.api_keys where key_hash = '${keyHash}'`);
-checks.push("rehearsal key removed; installation left as found");
+checks.push("rehearsal reputation row and key removed; installation left as found");
 
 const evidenceDir = resolve(ROOT, options.evidenceDir ?? ".release-evidence");
 mkdirSync(evidenceDir, { recursive: true });
