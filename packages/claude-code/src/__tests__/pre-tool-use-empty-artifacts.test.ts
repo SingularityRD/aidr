@@ -42,6 +42,13 @@ async function runHook(
 	const addPendingApproval = vi.fn();
 	const core = {
 		allowVerdict: () => verdict("allow"),
+		// The hook reads the native-host acceptance contract at module load. This
+		// sandbox runs an ordinary session, so the contract is absent and the hook
+		// must behave exactly as before: createHostObservation returns null and
+		// recordHostObservation is a no-op. Returning a real observation here would
+		// hide a regression in that inertness.
+		createHostObservation: () => null,
+		recordHostObservation: vi.fn(),
 		evaluateToolCall: evaluate,
 		extractFromToolCall: extract,
 		initSentry: vi.fn(),
