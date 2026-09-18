@@ -415,8 +415,52 @@ function corepackPnpm() {
 	return existsSync(candidate) ? candidate : null;
 }
 
+/**
+ * Path to the workspace's own package manager, or null to fall back to PATH.
+ *
+ * `packageManager` in the root manifest pins the version this repository is
+ * built and tested with. Corepack, when present, resolves that pin and may pick
+ * a different major than the one the operator has on PATH - and each major keeps
+ * its own content-addressable store and metadata cache. Running this gate under
+ * the wrong major makes every offline install fail with
+ * ERR_PNPM_NO_OFFLINE_TARBALL for packages that are already in the operator's
+ * store, which reads as a missing-dependency defect rather than a version
+ * mismatch. Prefer the pinned version when it is installed.
+ */
+function pinnedPnpm() {
+	let pinned;
+	try {
+		const manifest = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+		pinned = /\d+\.\d+\.\d+/.exec(String(manifest.packageManager ?? ""))?.[0];
+	} catch {
+		return null;
+	}
+	if (!pinned) return null;
+	// Corepack keeps each resolved version under its own cache directory, keyed
+	// by the exact version string. That copy is the reliable one: the shim on
+	// PATH resolves through corepack, and a bare `pnpm` on PATH can be a
+	// different major whose store and metadata cache do not contain what this
+	// repository installed.
+	const corepackCache = path.join(process.env.LOCALAPPDATA ?? "", "node", "corepack", "v1", "pnpm", pinned, "bin", "pnpm.cjs");
+	const candidates = [
+		corepackCache,
+		path.join(path.dirname(process.execPath), "node_modules", "pnpm", "bin", "pnpm.cjs"),
+		path.join(process.env.APPDATA ?? "", "npm", "node_modules", "pnpm", "bin", "pnpm.cjs"),
+		path.join(process.env.LOCALAPPDATA ?? "", "pnpm", "pnpm.cjs"),
+	];
+	for (const candidate of candidates) {
+		if (!existsSync(candidate)) continue;
+		// Only accept a candidate whose reported version matches the pin.
+		const probe = spawnSync(process.execPath, [candidate, "--version"], { encoding: "utf8", timeout: 30_000, windowsHide: true });
+		if (probe.status === 0 && String(probe.stdout ?? "").trim() === pinned) return candidate;
+	}
+	return null;
+}
+
 /** Invoke the workspace package manager without depending on shell quoting. */
 function runPnpm(args, { cwd, env, timeout }) {
+	const pinned = pinnedPnpm();
+	if (pinned) return spawnSync(process.execPath, [pinned, ...args], spawnOptions({ cwd, env, timeout }));
 	const corepack = corepackPnpm();
 	if (corepack) return spawnSync(process.execPath, [corepack, ...args], spawnOptions({ cwd, env, timeout }));
 	if (process.platform === "win32") {
