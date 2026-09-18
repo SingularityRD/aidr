@@ -551,7 +551,17 @@ export const GATES = Object.freeze([
 	}),
 	gate({
 		gate_id: "25-customer-onboarding",
-		command: "pnpm verify:customer-onboarding && pnpm test:customer-demo",
+		// The verifier needs an installed deployment directory and refuses to
+		// guess one, which is the right default but means the bare script name can
+		// only ever report CUSTOMER_DEPLOYMENT_REQUIRED. Point it at the local
+		// rehearsal installation this repository prepares, and fail closed with the
+		// same operator-facing message when that installation is absent.
+		//
+		// Pass the directory as an argument rather than relying on
+		// AIDR_DEPLOYMENT_DIR: the demo suite that follows inherits this
+		// environment, and a deployment directory in it changes test behaviour in
+		// unrelated packages.
+		command: `node -e "const fs=require('fs');const d='.release-evidence/aidr-local-deployment-r9';if(!fs.existsSync(d+'/deployment.json')){console.error('BLOCKED CUSTOMER_DEPLOYMENT_REQUIRED: prepare a local installation with node scripts/deployment-prepare.mjs --development --supabase-url http://127.0.0.1:8000 --dashboard-url http://127.0.0.1:8080 --region self-hosted --tenant-region self-hosted; then start it and apply migrations');process.exit(3)}" && pnpm verify:customer-onboarding --deployment .release-evidence/aidr-local-deployment-r9 && pnpm test:customer-demo`,
 		log: "25-customer-onboarding.log",
 		task_ids: ["T20", "T36", "T37"],
 		feature_ids: ["TEN-03", "TEN-05", "TEN-07", "CLI-01", "OBS-03"],
