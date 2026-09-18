@@ -575,8 +575,14 @@ export const GATES = Object.freeze([
 	}),
 	gate({
 		gate_id: "26-generator-determinism",
-		command:
-			"git diff --exit-code -- FEATURE_INVENTORY.json FEATURE_INVENTORY.md PRODUCTION_SALES_GAPS.json PRODUCTION_SALES_GAPS.md READINESS_BACKLOG.json",
+		// `git diff --exit-code` on the whole file cannot pass: every generator
+		// stamps `source_commit` with the HEAD it ran at, so regenerating at a new
+		// commit always differs in that one field. That is a provenance stamp, not
+		// a determinism property - it is *supposed* to change when the commit does.
+		// Compare the generated content with the provenance stamps removed, so the
+		// gate still proves the generators are byte-stable and still fails when a
+		// hand edit makes an inventory disagree with its source.
+		command: "node scripts/check-generator-determinism.mjs",
 		log: "26-generator-determinism.log",
 		task_ids: ["T34"],
 		feature_ids: ["EVAL-02", "EVAL-03", "DEP-05"],
@@ -584,7 +590,8 @@ export const GATES = Object.freeze([
 		evidence_level: "source_inspection",
 		evidence_level_ceiling: "source_inspection",
 		limitations: [
-			"Proves the four generators are byte-stable across two runs; it does not prove the generated content is correct or complete.",
+			"Proves the generators are byte-stable across two runs once the commit/worktree stamps are excluded; it does not prove the generated content is correct or complete.",
+			"The excluded stamps are source_commit and worktree_has_changes, which by definition track the revision the generator ran at rather than the content it derived.",
 		],
 	}),
 	gate({
