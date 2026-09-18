@@ -42,31 +42,63 @@ provenance inflation the binding exists to prevent.
 Order matters. Do the gate runs last, and do not commit anything after them.
 
 ```
-1. pnpm build:release                     # release artifacts, clears source maps
-2. node scripts/refresh-claim-evidence.mjs
-                                          # rebinds claim records to current HEAD;
-                                          # exits 1 when the claim gate has open
-                                          # findings — that is a finding, not a
-                                          # failure of the refresh
-3. commit FEATURE_INVENTORY.json, PRODUCTION_SALES_GAPS.json, and any
-   build-derived file the run touched
-                                          # this moves HEAD; that is expected
-4. run every gate at the NEW HEAD
-                                          # the stamps now match the tree that
-                                          # will be described
-5. node scripts/generate-v8-evidence-index.mjs --out <index>
-                                          # generate, and do NOT commit
-                                          # the index if you want the stamps
-                                          # inside it to stay valid
-6. leave the index uncommitted, or accept that committing it sets every
-   stamp back to unknown until step 4 runs again
+node scripts/run-evidence-gates.mjs
 ```
 
-Step 6 is the real choice. Committing the index gives a durable record of a
+That one command performs the whole sequence:
+
+```
+1. pnpm build:release                     # release artifacts, clears source maps;
+                                          # refuses to continue if it leaves
+                                          # non-generated source changes behind
+2. rebuild the release candidate if it does
+   not already match HEAD                 # claim records are stamped with its
+                                          # digest, so it must exist and match
+                                          # before anything binds to it
+3. node scripts/refresh-claim-evidence.mjs
+                                          # rebinds claim records to the candidate
+                                          # and commit that will be described;
+                                          # exits 1 when the claim gate has open
+                                          # findings — a finding, not a failure
+4. run every gate sequentially            # together they race on the core build
+                                          # lock and the shared dist trees
+5. node scripts/generate-v8-evidence-index.mjs --out <index>
+                                          # generate, and do NOT commit
+6. print the verdict and stop             # PASS/FAIL/unknown per gate
+```
+
+Step 5 is the real choice. Committing the index gives a durable record of a
 green run at a known commit, at the cost of the index no longer describing the
 tree it is committed into. Leaving it uncommitted keeps the stamps valid but the
 record lives only on this machine — and `docs/production-readiness/v8-evidence-index.json`
 is tracked, so "uncommitted" means "the working tree disagrees with the commit".
+
+### Ordering constraints the orchestrator encodes
+
+Three of these were discovered by getting them wrong, and each one produced a
+failure that looked like a product defect:
+
+- **The determinism gate runs last.** It asserts the inventories match what the
+  generators produce, and gates 02 and 03 regenerate those very files. Running it
+  in declaration order failed on drift an earlier gate in the same run had just
+  created.
+- **The candidate is rebuilt before the claim records are rebound.** Claim records
+  carry the candidate inventory digest they scanned; rebuilding the candidate
+  afterwards invalidates the records the refresh just wrote.
+- **The kit gate's output is cleared immediately before it runs**, not at the
+  start. That gate refuses an existing output directory by design, and an earlier
+  gate can regenerate it.
+
+### Guard agreement
+
+Two guards inspect the same derived files and must agree about which of them are
+"generated output" rather than source: `scripts/build-release-candidate.mjs`
+(refuses to assemble from a dirty tree) and this orchestrator (refuses to run on
+an unsettled tree). When they disagreed, a full rehearsal was impossible in either
+order — one demanded a commit the other had just called noise. The list they share
+is: `.release-evidence/`, `.e2e-artifacts/`, `release-output/`, every package
+`dist/`, `packages/core/src/generated/aig-*`, the two inventories, and the
+evidence index.
 
 ## What was chosen here, and why
 
