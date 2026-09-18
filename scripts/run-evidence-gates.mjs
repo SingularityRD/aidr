@@ -123,11 +123,13 @@ try {
 }
 if (!candidateMatches) {
 	console.log("[gates] rebuilding the release candidate for this commit");
-	// On Windows a directory delete can fail while an antivirus or indexer still
-	// holds a handle; maxRetries makes that a delay rather than a hard failure.
-	rmSync(candidateDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+	// On Windows a recursive delete can fail while an antivirus or indexer still
+	// holds a handle, and the handle is often held by a process that has already
+	// exited. Retry long enough for that to clear, and fail with the reason rather
+	// than a downstream "directory already exists".
+	rmSync(candidateDir, { recursive: true, force: true, maxRetries: 30, retryDelay: 500 });
 	if (existsSync(candidateDir)) {
-		console.error(`ERROR: could not clear the previous candidate at ${path.relative(ROOT, candidateDir)}`);
+		console.error(`ERROR: could not clear the previous candidate at ${path.relative(ROOT, candidateDir)}; a process is holding a handle on it`);
 		process.exit(1);
 	}
 	const candidate = spawnSync(
