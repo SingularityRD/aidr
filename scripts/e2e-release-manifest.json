@@ -45,27 +45,37 @@
 		},
 		{
 			"id": "cursor",
+			"kind": "command",
+			"target": "packages/extension",
+			"testFile": "packages/extension/src/__tests__/e2e-suite/index.js",
+			"expectedTests": 8,
+			"capabilities": ["cursor-extension-host", "cursor-hook-lifecycle"],
+			"prerequisites": ["Cursor with an installed unpacked extension in the acceptance sandbox", "AIDR_CURSOR_PATH"],
+			"command": ["node", "scripts/run-ide-host-e2e.mjs", "--host", "cursor", "--junit", "{junit}"],
+			"env": {"AIDR_E2E_ENABLE_IDE_HOST": "1"}
+		},
+		{
+			"id": "cursor-headless-agent",
 			"kind": "vitest",
 			"config": "vitest.e2e.config.ts",
 			"target": "packages/extension",
 			"testFile": "packages/extension/src/__tests__/e2e.test.ts",
-			"expectedTests": 9,
-			"capabilities": ["cursor-extension-host", "cursor-hook-lifecycle", "cursor-headless-agent"],
-			"prerequisites": ["Cursor executable", "AIDR_E2E_ENABLE_IDE_HOST=1", "authenticated agent CLI"],
+			"expectedTests": 1,
+			"capabilities": ["cursor-headless-agent"],
+			"prerequisites": ["agent CLI in PATH or AIDR_AGENT_PATH", "authenticated agent CLI"],
 			"requiredEnv": ["AIDR_E2E_ENABLE_IDE_HOST", "AIDR_CURSOR_PATH", "AIDR_AGENT_PATH"],
 			"env": {"AIDR_E2E_HOST": "cursor"}
 		},
 		{
 			"id": "vscode",
-			"kind": "vitest",
-			"config": "vitest.e2e.config.ts",
+			"kind": "command",
 			"target": "packages/extension",
-			"testFile": "packages/extension/src/__tests__/e2e.test.ts",
+			"testFile": "packages/extension/src/__tests__/e2e-suite/index.js",
 			"expectedTests": 8,
 			"capabilities": ["vscode-extension-host", "vscode-hook-lifecycle"],
-			"prerequisites": ["VS Code executable", "AIDR_E2E_ENABLE_IDE_HOST=1"],
-			"requiredEnv": ["AIDR_E2E_ENABLE_IDE_HOST", "AIDR_VSCODE_PATH"],
-			"env": {"AIDR_E2E_HOST": "vscode"}
+			"prerequisites": ["VS Code with an installed unpacked extension in the acceptance sandbox", "AIDR_VSCODE_PATH"],
+			"command": ["node", "scripts/run-ide-host-e2e.mjs", "--host", "vscode", "--junit", "{junit}"],
+			"env": {"AIDR_E2E_ENABLE_IDE_HOST": "1"}
 		},
 		{
 			"id": "aig-bridge-contract",
