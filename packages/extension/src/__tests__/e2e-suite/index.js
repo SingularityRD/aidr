@@ -86,8 +86,14 @@ async function run() {
 			await runCase(testCase, failures, results);
 		}
 	} finally {
-		cleanupWorkspaceArtifacts();
+		// Write the outcome before cleaning up. Cleanup can fail - on Windows a
+		// file watcher or antivirus holding a handle makes `rmSync` throw
+		// ENOTEMPTY - and when it ran first, that failure destroyed every result the
+		// run had just produced: the host reported a crash instead of 8/8, so a
+		// green suite looked like a broken one. A cleanup problem is worth
+		// reporting, but it must never be the reason the evidence disappears.
 		writeResults(results);
+		cleanupWorkspaceArtifacts();
 	}
 
 	if (failures.length > 0) {
@@ -411,7 +417,20 @@ function getWorkspacePath() {
 
 function cleanupWorkspaceArtifacts() {
 	for (const relativePath of [".cursor", ".claude", ".vscode"]) {
-		fs.rmSync(path.join(workspacePath, relativePath), { recursive: true, force: true });
+		// Retry: on Windows a host process or file watcher can still hold a handle on
+		// a file inside the directory for a moment after the host stops, which makes
+		// a recursive delete throw ENOTEMPTY. It is transient, and leaving test
+		// artifacts behind in the workspace is harmless compared with failing a run.
+		try {
+			fs.rmSync(path.join(workspacePath, relativePath), {
+				recursive: true,
+				force: true,
+				maxRetries: 10,
+				retryDelay: 100,
+			});
+		} catch {
+			// Best effort: the next run recreates whatever it needs.
+		}
 	}
 }
 

@@ -78,7 +78,7 @@ function parseArgs(argv) {
 		const arg = argv[i];
 		if (arg === "--help" || arg === "-h") values.help = true;
 		else if (arg === "--keep") values.keep = true;
-		else if (["--host", "--evidence-dir", "--exe"].includes(arg)) {
+		else if (["--host", "--evidence-dir", "--exe", "--junit", "--credentials"].includes(arg)) {
 			const next = argv[++i];
 			if (!next) fail(`${arg} requires a value`);
 			values[arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = next;
@@ -109,8 +109,21 @@ if (!existsSync(hookPath)) fail("the packaged Codex hook is missing; run pnpm bu
 // The credentials file is copied in because the host must be authenticated; it
 // is never printed or inspected.
 const isolatedHome = options.keep ? path.join(ROOT, ".release-evidence", "codex-live-home") : path.join(tmpdir(), `aidr-codex-live-${process.pid}`);
-const credentialsSource = path.join(process.env.USERPROFILE ?? "", ".codex", "auth.json");
-if (!existsSync(credentialsSource)) fail(`no Codex session at ${credentialsSource}; run 'codex login' first`, 3);
+// The host is given a disposable HOME so the operator's own Codex state is never
+// read or modified, which also means its session is not visible inside it. The
+// credential file must therefore be supplied explicitly: the gate sets an
+// isolated HOME of its own, and a runner that silently reached for the real
+// profile would authenticate as the operator without them choosing to.
+const credentialsSource =
+	options.credentials ??
+	process.env.AIDR_CODEX_CREDENTIALS ??
+	path.join(process.env.USERPROFILE ?? "", ".codex", "auth.json");
+if (!existsSync(credentialsSource)) {
+	fail(
+		`no Codex session at ${credentialsSource}; run 'codex login' first, or pass --credentials <auth.json> / AIDR_CODEX_CREDENTIALS`,
+		3,
+	);
+}
 
 rmSync(isolatedHome, { recursive: true, force: true });
 mkdirSync(path.join(isolatedHome, ".codex"), { recursive: true });
@@ -236,6 +249,28 @@ const record = {
 };
 const output = path.join(evidenceDir, "model-interception-live.json");
 writeFileSync(output, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+
+// The release gate consumes this through its `command` kind and reads the JUnit
+// file named by the `{junit}` placeholder. One testcase per case, so a reader can
+// see which detector class held rather than only an aggregate count.
+if (options.junit) {
+	const escape = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+	const cases = results
+		.map((entry) => {
+			const ok = entry.dangerous.verdict === "enforced" && entry.benign.verdict === "allowed";
+			const detail = escape(`dangerous=${entry.dangerous.verdict} benign=${entry.benign.verdict}`);
+			return ok
+				? `    <testcase name="${escape(entry.id)}" classname="model-interception-live" time="0"/>`
+				: `    <testcase name="${escape(entry.id)}" classname="model-interception-live"><failure message="${detail}">${detail}</failure></testcase>`;
+		})
+		.join("\n");
+	mkdirSync(path.dirname(options.junit), { recursive: true });
+	writeFileSync(
+		options.junit,
+		`<?xml version="1.0" encoding="UTF-8"?>\n<testsuites name="aidr-model-interception-live" tests="${results.length}" failures="${problems}">\n  <testsuite name="model-interception-live" tests="${results.length}" failures="${problems}">\n${cases}\n  </testsuite>\n</testsuites>\n`,
+		"utf8",
+	);
+}
 
 if (!options.keep) rmSync(isolatedHome, { recursive: true, force: true });
 

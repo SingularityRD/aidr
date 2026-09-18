@@ -67,6 +67,20 @@
 			"env": {"AIDR_E2E_HOST": "cursor"}
 		},
 		{
+			"id": "model-interception-live",
+			"kind": "command",
+			"target": "packages/codex",
+			"testFile": "scripts/verify-model-interception-live.mjs",
+			"expectedTests": 3,
+			"capabilities": ["live-model-turn-enforcement", "benign-control-allowed"],
+			"prerequisites": [
+				"authenticated Codex session",
+				"packaged Codex hook built with pnpm build:release"
+			],
+			"command": ["node", "scripts/verify-model-interception-live.mjs", "--host", "codex", "--junit", "{junit}"],
+			"env": {}
+		},
+		{
 			"id": "vscode",
 			"kind": "command",
 			"target": "packages/extension",
