@@ -142,6 +142,12 @@ const dirtyEntries = git(["status", "--porcelain=v1"])
 		const file = line.replace(/^[ MARC?]{1,2}\s+/, "");
 		return !/^\.release-evidence(?:[\\/]|$)/.test(file)
 			&& !/^packages\/[^/]+\/dist(?:[\\/]|$)/.test(file)
+			// The AIG data indexes are compiled from the vendored corpus by
+			// `pnpm build:release`, so running a release build rewrites them. They
+			// are generated output like any dist tree, not hand-edited source, and
+			// treating them as dirt would make every candidate assembly depend on
+			// committing a build artefact first.
+			&& !/^packages\/core\/src\/generated\/aig-/.test(file)
 			&& file !== "vendor/ai-infra-guard";
 	});
 if (dirtyEntries.length > 0 && !options.allowDirty) {
