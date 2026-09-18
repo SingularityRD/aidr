@@ -89,6 +89,15 @@ export {
 	summarizeActionsForLog,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
+// Native-host acceptance observations (inert outside a gate run)
+export {
+	createHostObservation,
+	HOST_OBSERVATION_ENV,
+	HOST_OBSERVATION_MARKER,
+	type HostObservation,
+	type HostObservationRecord,
+	recordHostObservation,
+} from "./host-observation.js";
 // Tenant/session-isolated behavioral, novelty and ML orchestration
 export {
 	type BehavioralDetectionInput,

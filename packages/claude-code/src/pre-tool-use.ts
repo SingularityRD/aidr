@@ -8,10 +8,12 @@
 import { readFileSync } from "node:fs";
 import {
 	type Artifact,
+	createHostObservation,
 	evaluateToolCall,
 	extractFromToolCall,
 	initSentry,
 	type Logger,
+	recordHostObservation,
 	type Verdict,
 } from "@singularityrd/aidr-core";
 import pino from "pino";
@@ -24,6 +26,9 @@ import { formatBlockReason } from "./format.js";
 initSentry({ name: "aidr-claude-code-pre-tool-use" });
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
+
+/** Gate observation contract, or null during an ordinary user session. */
+const hostObservation = createHostObservation();
 
 async function maybeVerifyIntegrity(): Promise<void> {
 	try {
@@ -161,6 +166,18 @@ async function main(): Promise<void> {
 	}
 
 	process.stdout.write(`${JSON.stringify(makeResponse(verdict))}\n`);
+
+	// Native-host acceptance observation. Outside a gate run this is a no-op:
+	// the gate's environment contract is absent, so nothing is written. Inside
+	// one it records that this connector handled the case, which is the second of
+	// the three observations the gate requires. It never writes the side-effect
+	// sentinel, because only the host's own action may create that.
+	recordHostObservation(hostObservation, {
+		connector: "claude-code",
+		event: "PreToolUse",
+		toolName,
+		decision: verdict.decision,
+	});
 }
 
 main().catch(() => {
