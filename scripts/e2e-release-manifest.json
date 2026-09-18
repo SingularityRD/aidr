@@ -145,7 +145,7 @@
 			"capabilities": ["deployed-route-crawl", "SPA-deep-links", "bundle-secret-scan", "security-headers"],
 			"prerequisites": ["deployed dashboard RC or explicit local preview", "Supabase anon configuration"],
 			"requiredEnv": ["DASHBOARD_SMOKE_BASE_URL"],
-			"command": ["node", "scripts/dashboard-route-smoke.mjs"],
+			"command": ["node", "scripts/dashboard-route-smoke.mjs", "--junit", "{junit}"],
 			"env": {}
 		},
 		{

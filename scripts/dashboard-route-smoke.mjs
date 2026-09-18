@@ -295,6 +295,22 @@ async function main() {
 	await mkdir(evidenceDir, { recursive: true });
 	const evidencePath = join(evidenceDir, "route-smoke.json");
 	await writeFile(evidencePath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+
+	// The release gate consumes this suite through its `command` kind and reads
+	// the JUnit file named by the `{junit}` placeholder. Without this the gate
+	// finds no report from this run and falls back to whatever stale artifact is
+	// already on disk, which is how a passing smoke test was recorded as 0/1.
+	const junitIndex = process.argv.indexOf("--junit");
+	if (junitIndex !== -1 && process.argv[junitIndex + 1]) {
+		const junitPath = process.argv[junitIndex + 1];
+		await mkdir(dirname(junitPath), { recursive: true });
+		await writeFile(
+			junitPath,
+			`<?xml version="1.0" encoding="UTF-8"?>\n<testsuites name="aidr-dashboard-route-smoke" tests="1" failures="0">\n  <testsuite name="dashboard-route-smoke" tests="1" failures="0">\n    <testcase name="dashboard routes and bundle contract" classname="dashboard-route-smoke" time="0"/>\n  </testsuite>\n</testsuites>\n`,
+			"utf8",
+		);
+	}
+
 	console.log(`Dashboard route smoke PASS (${report.mode}); evidence: ${evidencePath}`);
 }
 
