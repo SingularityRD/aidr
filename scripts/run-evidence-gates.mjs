@@ -160,16 +160,30 @@ if (refresh.status !== 0) console.log("[gates] claim records were rebound, but t
 //    lock and on the shared dist trees, which produces failures that look like
 //    product defects.
 //
+// The generator-determinism gate asserts that the inventories on disk match what
+// the generators produce, by running `git diff --exit-code` against them. Gates
+// 02 and 03 regenerate those very files, so the determinism gate only passes if
+// it runs after them and after anything else that rewrites tracked output. It is
+// therefore ordered last rather than wherever it was declared.
+const ORDERING_LAST = ["26-generator-determinism"];
 // The kit and envelope gates refuse an existing output directory by design: a
 // silent overwrite could mix two assemblies. Their output is derived, so clear
-// it immediately before those two gates run rather than at the start, where an
-// earlier gate could regenerate it.
+// it immediately before the kit gate runs.
 const KIT_GATES = new Set(["20-customer-kit"]);
-const gateIds = only.length > 0 ? only : declaredGateIds();
+const declared = only.length > 0 ? only : declaredGateIds();
+const gateIds = [...declared.filter((id) => !ORDERING_LAST.includes(id)), ...declared.filter((id) => ORDERING_LAST.includes(id))];
 for (const id of gateIds) {
 	if (KIT_GATES.has(id)) {
 		for (const stale of ["aidr-customer-kit-v8-local-20260916-r9", "aidr-envelope-v8-local-20260916-r9"]) {
-			rmSync(path.join(ROOT, ".release-evidence", stale), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+			const target = path.join(ROOT, ".release-evidence", stale);
+			rmSync(target, { recursive: true, force: true, maxRetries: 30, retryDelay: 500 });
+			// A silent failure here reports as "output already exists" from the kit
+			// gate, which reads like a repository-state problem rather than a locked
+			// directory. Say what actually happened.
+			if (existsSync(target)) {
+				console.error(`ERROR: could not clear ${stale}; a process is holding a handle on it`);
+				process.exit(1);
+			}
 		}
 	}
 	const result = spawnSync(process.execPath, ["scripts/generate-v8-evidence-index.mjs", "--run", id], { cwd: ROOT, env, encoding: "utf8" });
