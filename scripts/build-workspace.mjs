@@ -170,7 +170,12 @@ export function runWorkspaceBuild({
 		console.log("[build] 1/2 building @singularityrd/aidr-core");
 		status = runPnpm(["--filter", "@singularityrd/aidr-core", "run", releaseMode ? "build:release" : "build"], workspaceEnv);
 		if (status !== 0) throw new Error(`core build failed with exit code ${status}`);
-		if (releaseMode) assertNoReleaseSourceMaps(repoRoot);
+		// Only core has been rebuilt at this point. Checking every package here
+		// would fail a valid release build whenever another package's dist still
+		// held maps from an earlier normal build, because that package has not had
+		// its release rebuild yet. The all-package check belongs after the
+		// remaining packages have been rebuilt, below.
+		if (releaseMode) assertNoCoreSourceMaps(repoRoot);
 
 		console.log("[build] 2/2 building the remaining packages");
 		status = runPnpm(["-r", "--filter", "!@singularityrd/aidr-core", "run", releaseMode ? "build:release" : "build"], workspaceEnv);

@@ -147,6 +147,80 @@ test("release build fails closed if ANY published package gains a map", () => {
 	}
 });
 
+// A release build is expected to start from a checkout whose connector dists
+// hold maps from an ordinary `pnpm build` (which every test run performs via
+// globalSetup). Those packages are about to be rebuilt in release mode, so their
+// pre-existing maps must not abort the build before it can clean them. Checking
+// every package immediately after the core step did exactly that and made a
+// valid release fail with "contaminated in 7 package(s)" while naming packages
+// the build had not reached yet.
+test("release build tolerates pre-existing connector maps it is about to rebuild", () => {
+	const { root, core } = fixture();
+	let connectorRebuilt = false;
+	try {
+		// A previous normal build left maps in two connector dists.
+		for (const packageName of ["cli", "opencode"]) {
+			mkdirSync(join(root, "packages", packageName, "dist"), { recursive: true });
+			writeFileSync(join(root, "packages", packageName, "dist", "index.js.map"), "stale normal map\n");
+			writeFileSync(join(root, "packages", packageName, "dist", "index.js"), "export {};\n");
+		}
+
+		const status = runWorkspaceBuild({
+			releaseMode: true,
+			repoRoot: root,
+			finalizeRelease: false,
+			runPnpm(args) {
+				if (args.includes("@singularityrd/aidr-core")) {
+					emitReleaseCore(core);
+					return 0;
+				}
+				if (args[0] === "-r") {
+					// The connector release builds clean their own dists.
+					connectorRebuilt = true;
+					for (const packageName of ["cli", "opencode"]) {
+						rmSync(join(root, "packages", packageName, "dist"), { recursive: true, force: true });
+						mkdirSync(join(root, "packages", packageName, "dist"), { recursive: true });
+						writeFileSync(join(root, "packages", packageName, "dist", "index.js"), "export const release = true;\n");
+					}
+				}
+				return 0;
+			},
+		});
+
+		assert.equal(connectorRebuilt, true, "the connector build phase must be reached");
+		assert.equal(status, 0, "pre-existing connector maps must not abort a release build");
+		assert.deepEqual(mapsUnder(join(root, "packages", "cli", "dist")), []);
+		assert.deepEqual(mapsUnder(join(root, "packages", "opencode", "dist")), []);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("release build still fails when a connector leaves a map behind after its own rebuild", () => {
+	const { root, core } = fixture();
+	try {
+		mkdirSync(join(root, "packages", "cli", "dist"), { recursive: true });
+		writeFileSync(join(root, "packages", "cli", "dist", "index.js"), "export {};\n");
+		const status = runWorkspaceBuild({
+			releaseMode: true,
+			repoRoot: root,
+			finalizeRelease: false,
+			runPnpm(args) {
+				if (args.includes("@singularityrd/aidr-core")) emitReleaseCore(core);
+				if (args[0] === "-r") {
+					// The connector's own release build is the writer this time, so the
+					// map survives into the published artifact and must fail the build.
+					writeFileSync(join(root, "packages", "cli", "dist", "index.js.map"), "post-rebuild contamination\n");
+				}
+				return 0;
+			},
+		});
+		assert.equal(status, 1);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("release source-map guard covers every published package, not only core", () => {
 	for (const packageName of ["core", "cli", "opencode", "claude-code", "extension", "sdk", "codex", "openclaw", "dashboard", "mcp-gateway"]) {
 		const root = mkdtempSync(join(tmpdir(), "aidr-release-maps-"));
