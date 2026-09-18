@@ -9,9 +9,11 @@
 
 ## 1. Recommendation
 
-### Recommendation: buy an **OV (Organization Validation) code signing certificate** — do not chase EV, do not count on Azure Artifact Signing.
+### Recommendation: **Turkey is not the blocker.** Buy an **SSL.com IV code signing certificate (~$129/yr)** if you have no registered company, or **Certum OV via a Turkish reseller (≈₺4,500–7,500)** if you have a registered limited şirket. In both cases, do **not** chase EV and do **not** count on Azure Artifact Signing.
 
-**Runner-up: Azure Artifact Signing** — but almost certainly *not available to you*, which is the single most important finding in this document. Read §3 before you spend anything.
+**Runner-up: Azure Artifact Signing** — but it is *not available to you* (see §3). That is the one firm exclusion in this document.
+
+**The finding that matters most:** the real dividing line for a Turkish one-person startup is **entity type, not country**. Turkey is absent from every CA restricted-country list I could find, and SSL.com explicitly names Turkish government registries (MERSIS, Ticaret Sicil Gazetesi) as acceptable validation sources. What actually blocks solo founders is that most CAs sell only to registered *organizations*, and GlobalSign has retired its individual product entirely. **Read §5 before you assume you are excluded — you probably are not.**
 
 ### Why OV, specifically
 
@@ -118,6 +120,7 @@ Microsoft restates it for developers: "As of June 2023, the CA/Browser Forum req
 | **SmartScreen: immediate?** | ❌ No — "reputation builds over time; initial warnings expected" | ❌ **No — identical to OV since 2024** | ❌ No — "reputation accumulates over time based on download volume and behavior" |
 | **Hardware token/HSM required?** | ✅ **Yes** (CA/B Forum CSBR 6.2.7.4.2, since 2023-06-01). CA supplies token or cloud HSM. | ✅ **Yes** (same rule) | ❌ **No** — keys held in Microsoft's FIPS 140-3 Level 3 HSMs; "No hardware token required" |
 | **Turkey eligible?** | ✅ Yes (see §5) | ✅ Yes (see §5) | ❌ **No** (see §2) |
+| **Available to a solo founder with no company?** | ⚠️ **Only at SSL.com (IV, ~$129) and Certum.** DigiCert/Sectigo are org-only; GlobalSign retired its individual product. | ⚠️ Same, plus notarization and business-listing requirements | n/a |
 | **Issues EV certs?** | n/a | n/a | ❌ "No plan to issue EV certificates in the future" |
 | **Enterprise credibility** | Verified publisher name shown | Same + heavier vetting | Verified publisher name shown |
 
@@ -149,17 +152,17 @@ Also relevant to a security tool: "On Windows 11 devices, the Smart App Control 
 
 > **Price caveat, stated plainly.** CA list prices are mostly behind JavaScript configurators that a text fetch cannot read. The verified figures below fall into two tiers, and I label which is which. **Treat every number as a starting quote to confirm at checkout, not a contract price.** Where I could not verify, I say so.
 
-| Vendor | Product | Price / year | Source tier | SmartScreen | Token / HSM | Notes |
+| Vendor | Product | Price / year | Source tier | SmartScreen | Token / HSM | Turkey? |
 | --- | --- | --- | --- | --- | --- | --- |
-| **SSL.com** | OV Code Signing | **$129.00** | Aggregator (SSL Shopper "Price For 1 Year") | Builds over time | Token or eSigner cloud | Cheapest verified OV. Houston, TX. Sells internationally. |
-| **SSL.com** | EV Code Signing | **$349.00** | Aggregator | **Same as OV** | Token or eSigner cloud | Only worth it if a specific customer demands EV |
-| **Sectigo** | OV Code Signing | **$313.50** (list $379) | Reseller storefront | Builds over time | **Token = separate paid line item** | Standard Validation "Available for organizations and for individual developers" |
-| **Sectigo** | EV Code Signing | **$410.85** (list $498) | Reseller storefront | **Same as OV** | Token = separate line item | |
-| **DigiCert** | OV Code Signing | **$434.00** | Aggregator / reseller | Builds over time | KeyLocker cloud, or shipped eToken, or BYO token | **Does not publish list prices** — configurator only |
-| **DigiCert** | EV Code Signing | **$608.00** | Aggregator / reseller | **Same as OV** | Same three options | Premium brand; meaningful if enterprise customers name DigiCert |
-| **GlobalSign** | OV / EV | **NOT VERIFIED** | — | Builds over time | USB token "**Included in the price**" | Page renders "From • / year" — number is JS-injected. **Will not sell to individuals** (see below) |
-| **Certum** | Code Signing | **NOT VERIFIED** | — | Builds over time | Card or SimplySign cloud | See note below — highest-value gap |
-| **Microsoft** | Azure Artifact Signing Basic | **$9.99/month = $119.88** | ✅ **Microsoft retail pricing API** | Builds over time | **None** | ❌ **Turkey not eligible** |
+| **Certum** (via Turkish reseller) | Standard Cloud OV | **≈₺7,500** | Turkish reseller (kodimza.com) | Builds over time | SimplySign cloud | ✅ Yes |
+| **SSL.com** | **IV Code Signing** | **$129.00** | Aggregator + SSL.com product page | Builds over time | eSigner cloud | ✅ Yes (no company needed) |
+| **SSL.com** | OV Code Signing | **$129.00** | Aggregator (SSL Shopper) | Builds over time | eSigner cloud | ✅ Yes |
+| **Sectigo** | OV Code Signing | $313.50 (list $379) | Reseller storefront | Builds over time | **Token = paid extra** | ✅ Yes |
+| **DigiCert** | OV Code Signing | $434.00 | Aggregator / reseller | Builds over time | KeyLocker / eToken / BYO | ✅ Yes (**org only**) |
+| **Certum** (direct) | Code Signing | **NOT VERIFIED** | — | Builds over time | Card or SimplySign cloud | ✅ Yes |
+| **GlobalSign** | OV / EV | **NOT VERIFIED** | — | Builds over time | USB token **included** | ✅ Yes (**org only; individual product retired**) |
+| **SSL.com / Sectigo / DigiCert** | EV Code Signing | $349 / $410.85 / $608 | Aggregator + reseller | **Identical to OV** | Token or cloud | ✅ Yes |
+| **Azure Artifact Signing** | Basic | $119.88 ($9.99/mo) | ✅ **Microsoft pricing API** | Builds over time | **None** | ❌ **NOT ELIGIBLE** |
 
 **Source URLs:**
 - SSL.com OV `$129` / DigiCert OV `$434` / Sectigo OV `$313`: <https://www.sslshopper.com/cheap-code-signing-certificates.html>
@@ -205,29 +208,100 @@ I could not find a per-CA published country blocklist, and I want to be explicit
 
 ---
 
-## 5. What you'd need to buy (documents)
+## 5. Turkey eligibility and documents
 
-Based on the CA/B Forum CSBR verification requirements ([§3.2.2.1](https://cabforum.org/working-groups/code-signing/requirements/)) and Certum's own purchase flow ([support.certum.eu/en/how-to-buy-code-signing](https://support.certum.eu/en/how-to-buy-code-signing/)):
+**Bottom line: yes, this is possible, and Turkey is not the blocker.** Turkey is absent from every CA restricted-country list located in this research. Where a blocker exists it is **entity type** — most CAs sell only to registered organizations — not nationality.
 
-**If you buy as an organization (recommended — GlobalSign requires it, and it produces a more credible certificate subject):**
-- Turkish company registration evidence — MERSIS record and/or Ticaret Sicil Gazetesi (Trade Registry Gazette) showing the legal entity name and address
-- Tax number (VKN) and a current tax certificate (vergi levhası)
-- Articles of association, if requested
-- A government photo ID for the authorized representative — passport is the safest choice for international CAs
-- Proof of business address — utility bill or bank statement, recent (typically within 3 months), name and address on the first page
-- A business phone number listed in a third-party directory, or a **D-U-N-S number**
-- Domain control evidence for your company domain (e.g. whois or a DNS TXT record)
+### 5.1 Country eligibility, per CA
 
-**If you buy as an individual / sole proprietor:**
-- Government photo ID **with your address on it** — Certum/Azure guidance is explicit that an ID bearing the address is the reliable path; a bank statement or utility bill may substitute
-- Proof of address (recent utility bill / bank statement)
-- Same directory/phone verification step
+| CA | Turkey eligible? | Evidence |
+| --- | --- | --- |
+| **SSL.com** | ✅ **Yes — and Turkey is named explicitly** | `Turkey / TR` appears on SSL.com's accepted-country list. Its Restricted Countries Listing is exactly four: **Cuba, Iran, North Korea, Syria**. Turkey is not among them. <https://www.ssl.com/country_codes/> |
+| **DigiCert** | ✅ Not restricted | Embargoed-country list (SO101120141837, rev. 04/2026): Cuba, Iran, North Korea, Syria, Crimea/Donetsk/Luhansk, Russia, Venezuela, Belarus. Turkey absent. <https://knowledge.digicert.com/solution/embargoed-countries-and-regions> |
+| **Sectigo** | ✅ Not restricted | No restricted-country list found; international token shipping supported (customer pays customs). <https://www.sectigo.com/knowledge-base/detail/EV-Document-Signing-Certificate-Token-FAQ> |
+| **GlobalSign** | ✅ Not restricted (but see §5.2 — org-only) | Sanctions policy names no Turkey exclusion. <https://www.globalsign.com/en/repository/GlobalSign-sanctions-policy-v2.pdf> |
+| **Certum** | ✅ No exclusion found | See the caveat in §9 — their CPS PDFs could not be retrieved. |
+| **Azure Artifact Signing** | ❌ **NOT ELIGIBLE** | See §3. Geographic restriction, not a country blocklist. |
 
-**Practical warnings:**
-- **Validate the exact legal name first.** The certificate subject CN must be your legal entity's validated name — Azure states "CN values must always be the legal entity's validated name" ([FAQ](https://learn.microsoft.com/en-us/azure/artifact-signing/faq)). A mismatch between your registry name, your website, and your invoice is the single most common cause of delay. Make them consistent *before* applying.
-- **Documents must be current.** Azure's rule of thumb: "All documents submitted must be issued within the previous 12 months and where the expiration date is a future date that is at least two months away."
-- **Pick a signing identity you will keep.** Because publisher reputation is tied to the certificate identity, changing from "Anıl XYZ" to "Singularity AIDR Ltd" later resets your trust signal. If a company formation is plausible within 12 months, consider doing it *before* your first certificate.
-- **Payment from Turkey:** expect to pay by international credit card or wire in USD/EUR; some CAs may require a card issued in the country of the legal entity. **NOT VERIFIED** whether any CA in this list has a specific Turkey payment restriction.
+**The strongest single piece of evidence:** SSL.com's published QIIS (Qualified Independent Information Source) list names **`MERSIS (https://mersis.gtb.gov.tr/)`** and **`Turkish Trade Registry Gazette (www.ticaretsicil.gov.tr)`** as acceptable validation sources, listed for **both OV and EV** certificates.
+— <https://www.ssl.com/blogs/acceptable-business-listings-for-validation/> and <https://www.ssl.com/how-to/validation-process-for-document-signing-code-signing-and-ev-code-signing-certificates/>
+
+This matters because it means your Turkish registry record *is* the validation evidence, in place of a D-U-N-S number (see §5.4). **Caveat:** SSL.com's own pages could not be re-fetched for this document — their mega-menu consumed the fetch budget. These specific quotes come from a delegated research pass, not from my own re-verification. Spot-check them yourself before relying on them.
+
+### 5.2 Individual vs organization — this is the real gate
+
+The CA/B Forum Code Signing BRs **v3.11.0 (16 June 2026)** do define and permit an "Individual Applicant" (§3.2.3, verified by government photo ID plus a QIIS address) — <https://cabforum.org/working-groups/code-signing/requirements/>. **Most CAs simply choose not to sell it:**
+
+- **DigiCert — organization only.** The required validation type is literally "CS — Code Signing **Organization** Validation". <https://docs.digicert.com/en/certcentral/manage-certificates/code-signing-certificates/order-a-code-signing-certificate.html>
+- **Sectigo — organization only, emphatically.** "EV Code Signing certificates are issued only to verified organizations... **They cannot be issued to individuals.**" <https://www.sectigo.com/knowledge-base/detail/extended-validation-ev-code-signing-certificates-what-to-expect-during-validation>. Note this quote is specifically about **EV** — whether Sectigo's **OV** is open to natural persons is **NOT VERIFIED**.
+- **GlobalSign — its individual product was RETIRED.** Verified via Wayback CDX status codes: `.../code-signing-for-individual-developers/` → **301** (April 2021); the buy page → **404**. Current KB (May 2026) mentions only "standard organization validation"; "individual" and "sole proprietor" appear nowhere.
+- **Certum — ✅ sells to individuals.** Their product table lists the Standard tier as "Code signing for an individual **or** a company" (the EV tier is company-name only), and their FAQ states OV certificates "can also be issued to individuals." <https://www.certum.eu/en/code-signing-certificates/>
+
+**✅ SSL.com IV Code Signing — ~$129/yr — the answer if you have no registered company.** SSL.com's own product description reportedly states the IV tier "gives solo developers access to Authenticode signing **without a business entity**" and requires "**no business registration**". <https://www.ssl.com/products/software-integrity/code-signing/iv/>
+- Constraint to note: **Windows-only** (macOS would need a separate Apple Developer ID), no immediate SmartScreen reputation, and **not** eligible for kernel-mode driver signing. For AIDR — a Windows `.exe` and a VSIX — this is sufficient.
+- Same caveat as §5.1: I could not re-fetch this page's body text myself; treat the quoted wording as delegated-research findings to spot-check.
+
+**SSL.com Sole Proprietor EV** (<https://www.ssl.com/guide/sole-proprietor-ev-application/>) also needs no registered entity, but requires a **notarized / CPA-sealed / attorney-signed** Personal Identity Verification Form, and states that EV applicants "must appear in a qualified independent business listing service such as Dun & Bradstreet." **Given that EV buys no SmartScreen benefit (§1), IV is the cleaner solo path.**
+
+### 5.3 Document checklist for a Turkish applicant
+
+**Path A — SSL.com IV (no company required).** Per <https://www.ssl.com/faqs/ssl-ov-validation-requirements/>:
+1. Front of government photo ID or passport ID page — name, address, DOB and photo visible (the ID number may be obscured). **Turkish T.C. kimlik kartı or passport both work.**
+2. Back of the same ID.
+3. A selfie holding the ID beside your face, ≥5 megapixels (automated AI identity verification is offered as an alternative).
+4. **A successful callback to a verified phone number is still required.**
+
+**Path B — OV (registered company).** You supply a link to a Reliable Data Source showing name, address and phone — **Ticaret Sicil Gazetesi or MERSIS are accepted**. Registration Number and Registered Country are required fields.
+> ⚠️ **Watch this clause:** "if the business or organization is less than three years old, a scan of the certificate requestor's government-issued ID is also required." This will apply to most new one-person Turkish firms. It is a paperwork step, not a rejection — just have the ID scan ready.
+
+**Path C — EV.** Signed EV Subscriber Agreement and EV Authorization Form; Articles of Incorporation **or** a government-website link; and one of D-U-N-S / ZoomInfo / Crunchbase / OpenCorporates / an attorney-CPA-notary attestation letter. Requires naming a Contract Signer (an officer), a Requester, and an Approver. **Not worth it for SmartScreen reasons (§1), and burdensome for a one-person company.**
+
+**Documents NOT required (contrary to common assumption):** articles of association (EV only, and only as an alternative), a separate proof-of-address utility bill, and **domain whois** — code signing does not use whois; that is SSL/TLS domain validation.
+
+### 5.4 The directory / phone problem — real, but it is about the PHONE, not D-U-N-S
+
+This is where one-person applicants most often stall, so it is worth being precise:
+
+- **The phone callback is mandatory.** SSL.com: "This process is **mandatory for OV and EV certificates**", and you need "an approved contact number provided for by any Qualified Independent Information Source." **But there is a relief clause:** "In case that an independent source of your number does not appear on our list, **you may provide a link to a listing that you do appear in** to your validation contact for potential approval."
+- **DigiCert** must obtain an "independently verified telephone number for the organization (e.g. using reliable online telephone directories) and call that number."
+- **Sectigo rejects virtual addresses outright:** "**PO Boxes, virtual offices, mail forwarding addresses, or registered agent addresses are not accepted.**" ← A Turkish virtual office will not satisfy this.
+- **D-U-N-S is NOT mandatory at any CA.** It is consistently framed as an *expediter*, not a requirement. SSL.com accepts MERSIS / Trade Registry Gazette in its place.
+
+**If you do want a D-U-N-S number:** **CRIF Türkiye is the sole authorized Dun & Bradstreet representative in Turkey** — "D&B Worldwide Network üyesi ve Türkiye'deki tek yetkili DUNS Numarası sağlayıcı olan CRIF Türkiye'ye **dunstalep@crif.com** e-posta adresinden başvuruda bulunabilirsiniz." — <https://www.crif.com.tr/duns-numarasi> (verified directly). It is **paid**, and CRIF's request-reason dropdown offers only Google Developer, Apple Developer, FDA-SAM, tender participation, supplier/customer request, or update — **there is no "code signing" option**, so select "Diğer" (Other) and explain in the message field.
+
+**Recommendation: skip D-U-N-S initially.** Use IV (no organization directory needed at all), or satisfy the phone requirement via your MERSIS / Ticaret Sicil Gazetesi listing, which is free, official, and already on SSL.com's accepted QIIS list. Only pay CRIF if a specific CA rejects your Turkish registry listing.
+
+### 5.5 Turkish resellers — the cheapest verified route
+
+Domestic resellers sell the same certificates in TRY with local invoicing. Live 2026 pricing found at **kodimza.com**:
+
+| Product | TRY price |
+| --- | --- |
+| **Certum Standard Cloud OV** | **₺7,500** |
+| **Certum Open Source Cloud** | ₺4,500 |
+| Certum Cloud EV | ₺13,250–15,250 |
+| Sectigo OV | ₺20,000 |
+| Sectigo EV | ₺25,000 |
+| GlobalSign OV | ₺30,000 |
+| GlobalSign EV | ₺41,000 |
+| DigiCert EV | ₺33,750 |
+
+Other active Turkish resellers: **elektronikssl.com.tr**, **kodimzalama.com**, **ihs.com.tr**, **nettrust.com.tr**, **globalsign.com.tr** (GlobalSign Turkey, +90 212 266 8930), **tr.comodo.com**. Documents they ask for: **ticaret sicil gazetesi, vergi levhası, and photo ID of the authorized person.** (`isimtescil.net` does **not** sell code signing — verified.)
+
+> ⚠️ **Two cautions.** (1) These prices come from a delegated research pass and were not independently re-verified by me — **get a written quote before budgeting.** (2) **No Turkish reseller sells SSL.com IV or Sole Proprietor EV.** If you have no registered company, you must buy those direct from SSL.com in USD.
+
+### 5.6 Turkish domestic CAs do NOT solve this — verified, not assumed
+
+This is worth stating because it is a natural assumption for a Turkish founder:
+
+- **Kamu SM (TÜBİTAK BİLGEM) — ❌ not usable for Authenticode.** Microsoft's authoritative code-signing report (`MicrosoftCodeSigningCSV` via CCADB, <https://ccadb.my.salesforce-sites.com/ccadb/Report?Name=MicrosoftCodeSigningCSV>) lists **69 rows across 18 CA owners — zero Turkish CAs.** Kamu SM's root *is* in the Microsoft Trusted Root Program, but **only for TLS**: it is named "TUBITAK Kamu SM SSL Kok Sertifikasi" with EKUs "Server Authentication; Client Authentication" only, its e-imza intermediate is marked **"Not Trusted"**, and there is **no Code Signing EKU anywhere in the hierarchy.** So a Turkish e-imza / nitelikli elektronik sertifika is fine domestically but worthless for signing your `.exe`.
+- **E-Tuğra — ❌ distrusted, and no longer sells code signing.** Browser status: Chrome "Removed", Mozilla "Removed", Apple "Not Included", legacy root "Disabled". Microsoft set NotBefore = **15 September 2025**, so anything signed after that date is untrusted. Its live site now sells only E-İmza, KEP, SSL and Zaman Damgası — no code signing product.
+
+### 5.7 Payment
+
+- SSL.com accepts "Visa/Mastercard, American Express, Discover and Paypal", plus **USD wire to JPMorgan Chase (SWIFT CHASUS33, routing 021000021)**, and — usefully for a Turkish company that needs an invoice before paying — **accepts purchase orders and quotes** via Sales@SSL.com. <https://www.ssl.com/purchase-orders/>
+- A Turkish card works for USD purchases at your issuer's TCMB FX rate plus commission; wire transfer is the fallback. **Physical tokens shipped to Turkey incur customs duty and VAT, and Sectigo confirms the customer pays them.** SSL.com's eSigner cloud signing avoids shipping a token entirely — another reason to prefer cloud signing.
+- **NOT VERIFIED:** current Turkish foreign-currency payment restrictions. Turkish government sites (hmb.gov.tr, tcmb.gov.tr, mevzuat.gov.tr) returned empty or navigation-only content, and **no evidence of any actual prohibition was found.** Confirm with your accountant or bank.
 
 ---
 
@@ -384,9 +458,16 @@ So: signed in ~2 weeks; no first-download warning in maybe **2–6 months** of s
 
 ### Buy (this week)
 
-4. **Open <https://shop.certum.eu/code-signing.html> in a browser** and get the real EUR price for "Code Signing in the cloud" (SimplySign). If it beats SSL.com's ~$129 and Certum will take a Turkish applicant, that is your best combination of price, geography, and cloud signing.
-5. **Otherwise contact SSL.com sales** and ask three specific questions: (a) will you issue an **OV** code signing certificate to a Turkish-registered company; (b) can I use **eSigner cloud signing** so I do not need a physical token shipped to Turkey; (c) what is the exact document checklist? Do the same with **Sectigo** in parallel. Applications cost nothing — only issuance does.
-6. **Do not buy EV.** Per Microsoft, the premium buys no SmartScreen benefit.
+4. **Decide which entity form you are buying as — this determines the whole path.**
+   - **No registered company → SSL.com IV Code Signing, ~$129/yr, direct from SSL.com in USD.** No business registration needed; needs your T.C. kimlik kartı or passport, a selfie, and a phone callback. <https://www.ssl.com/products/software-integrity/code-signing/iv/>
+   - **Registered limited şirket (or A.Ş.) → get quotes both ways:** Certum Standard Cloud OV via a Turkish reseller (≈₺7,500, TRY invoicing, no token shipping) **and** SSL.com OV direct in USD. Pick on price and on whether you want TRY or USD invoicing.
+5. **Ask two CAs these four specific questions** (applications cost nothing — only issuance does):
+   - Will you issue to a **Turkish-registered company**, and is a **şahıs şirketi** acceptable as an "organization"?
+   - Is **MERSIS / Ticaret Sicil Gazetesi** acceptable as my Reliable Data Source / QIIS listing?
+   - Can I use **cloud signing (SSL.com eSigner / Certum SimplySign)** so no physical token ships to Turkey?
+   - What is the exact document checklist, and will the **<3-year-old business ID requirement** apply to me?
+6. **Skip D-U-N-S for now.** It is an expediter, not a requirement. Your MERSIS / Ticaret Sicil Gazetesi listing is free, official, and already on SSL.com's accepted list. Only pay CRIF Türkiye (dunstalep@crif.com) if a CA specifically rejects your Turkish registry listing.
+7. **Do not buy EV.** Per Microsoft, the premium buys no SmartScreen benefit, and it adds notarization and business-listing requirements.
 
 ### Build (this week, in parallel — do not wait for the certificate)
 
@@ -412,15 +493,22 @@ Stated explicitly so you can judge the confidence of each claim:
 
 | Item | Status |
 | --- | --- |
-| **Certum's prices** | ❌ **NOT VERIFIED.** Storefronts return only nav chrome to a text fetch; support KB is JS-rendered. Verify in a browser. |
-| **Certum's / SSL.com's / Sectigo's / DigiCert's eligibility for a Turkish applicant** | ❌ **NOT VERIFIED.** No CA publishes a country blocklist. The constraint is documentary validation, not a list. Confirm with sales before assuming approval *or* rejection. |
-| **GlobalSign and SSL.com own-site list prices** | ❌ **NOT VERIFIED** (JS-rendered). Figures in §4 for SSL.com/DigiCert/Sectigo are **reseller/aggregator** prices. |
-| **Whether a signed `.vsix` changes install behavior in VS Code/Cursor** | ❌ **NOT VERIFIED.** No Microsoft/VS Code documentation found. Do not make customer claims about it. |
-| **Exact document checklist per CA** | ⚠️ **PARTIAL.** §5 is derived from CA/B Forum CSBR §3.2.2.1 plus Certum's purchase-flow description, not from a per-CA published checklist. |
-| **Payment restrictions on Turkish cards/entities** | ❌ **NOT VERIFIED.** |
-| **Azure Artifact Signing's 3-year-business-history rule** | ⚠️ **Could not find this rule in current sources.** It appears in older secondary write-ups. The *current* documented gates are geography, identity validation, and a paid subscription. Treat the "3 years" claim as superseded — and moot, since geography already excludes you. |
-| **DigiCert list pricing** | ❌ **Not published** by DigiCert; configurator only. |
-| **`web_search`** | ❌ Unavailable this session (missing API key). All findings come from direct URL fetches, so coverage of secondary commentary is narrower than a full search would give. |
+| **Certum's own prices** | ❌ **NOT VERIFIED** (direct). Storefronts return only nav chrome; support KB is JS-rendered. A Turkish reseller price (₺7,500) was found instead — get a written quote. |
+| **Certum's formal country list / CPS text** | ❌ **NOT VERIFIED.** All `certum.eu/servlet/...` CPS PDF paths 404'd. The Turkey claim rests on their live product table plus active Turkish resale, **not** policy text. |
+| **SSL.com OV/Sectigo/DigiCert eligibility for a Turkish applicant** | ✅ **Substantially resolved.** SSL.com names Turkey explicitly and accepts MERSIS / Ticaret Sicil Gazetesi. DigiCert/Sectigo/GlobalSign have no Turkey restriction, but see the row below. |
+| **Whether MERSIS / Ticaret Sicil Gazetesi are accepted by DigiCert, GlobalSign or Sectigo** | ❌ **NOT VERIFIED** — only SSL.com names them; the others use generic "official government registry databases" phrasing. |
+| **Whether a Turkish *şahıs şirketi* counts as an "organization"** at DigiCert/Sectigo/GlobalSign | ❌ **NOT VERIFIED.** No CA page addresses Turkish entity types. **Ask the CA directly.** This determines whether you need Path A or Path B in §5.3. |
+| **Whether SSL.com IV is explicitly available in Turkey** | ⚠️ **NOT VERIFIED verbatim.** The product page and accepted-country list are both satisfied, but no page says so in those words. Confirm with sales. |
+| **Sectigo OV for natural persons** | ❌ **NOT VERIFIED.** Sectigo's "cannot be issued to individuals" statement is specifically about **EV**. |
+| **GlobalSign and SSL.com own-site list prices** | ❌ **NOT VERIFIED** (JS-rendered). SSL.com/DigiCert/Sectigo figures in §4 are **reseller/aggregator** prices. |
+| **Turkish reseller TRY prices** | ⚠️ **Single-source** (kodimza.com), from a delegated research pass. Get written quotes. |
+| **Exact CRIF Türkiye D-U-N-S fee** | ❌ **NOT VERIFIED** — paid service, price on application. |
+| **Turkish foreign-currency payment restrictions** | ❌ **NOT VERIFIED.** No evidence of a prohibition found; government sites returned empty content. Confirm with your accountant. |
+| **Whether a signed `.vsix` changes install behavior in VS Code/Cursor** | ❌ **NOT VERIFIED.** No documentation found. Do not make customer claims about it. |
+| **Exact per-CA document checklist** | ⚠️ **PARTIAL.** §5.3 derives from SSL.com's published requirements plus CA/B Forum rules, not a per-CA published list. |
+| **SSL.com QIIS / IV page wording** | ⚠️ **Delegated, not re-verified.** SSL.com's pages could not be re-fetched (mega-menu consumed the fetch budget). Spot-check the quotes in §5.1–§5.2 yourself. |
+| **Azure Artifact Signing's 3-year-business-history rule** | ⚠️ **Could not find this rule in current sources.** The documented gates are geography, identity validation, and a paid subscription. Moot regardless — geography already excludes you. |
+| **`web_search`** | ❌ Unavailable all session (missing API key). All findings come from direct URL fetches, so secondary-source coverage is narrower than a full search would give. |
 
 ---
 
@@ -428,14 +516,16 @@ Stated explicitly so you can judge the confidence of each claim:
 
 | Decision | Answer |
 | --- | --- |
-| **Buy** | **OV code signing certificate**, from a CA offering **cloud signing** (no physical token) |
+| **Is it even possible from Turkey?** | ✅ **Yes.** Turkey is absent from every CA restricted-country list found, and SSL.com accepts MERSIS / Ticaret Sicil Gazetesi as validation evidence. The real gate is **entity type**, not country. |
+| **Buy — no registered company** | **SSL.com IV Code Signing, ~$129/yr**, direct in USD. No business registration required. |
+| **Buy — registered limited şirket** | **Certum Standard Cloud OV via a Turkish reseller (≈₺7,500)** *or* **SSL.com OV direct (~$129)**. Get both quotes. |
 | **Runner-up** | **Azure Artifact Signing** ($9.99/mo) — cheaper and better, but **Turkey is not on the eligible country list** |
-| **Don't buy** | **EV.** Microsoft: the SmartScreen bypass was removed; the premium "is no longer justified" |
-| **Best candidates to quote** | **Certum** (verify price in browser — likely cheapest, European, individual-friendly), **SSL.com** (~$129 OV, sells internationally, has eSigner cloud signing) |
-| **Budget** | **~$130–$320/year**, plus possible token/shipping if cloud signing is unavailable |
-| **Time to first signed build** | **~1–3 weeks** (faster if cloud signing; slower if a token must ship to Turkey) |
+| **Don't buy** | **EV.** Microsoft: the SmartScreen bypass was removed; the premium "is no longer justified". Also adds notarization/business-listing requirements. |
+| **Don't bother with** | **Kamu SM / e-imza** (no Code Signing EKU — verified against Microsoft's CCADB report), **E-Tuğra** (distrusted since 15 Sept 2025), **D-U-N-S** (an expediter, not a requirement) |
+| **Budget** | **~$129/yr**, or ~₺7,500 via a Turkish reseller. Cloud signing avoids token shipping and customs. |
+| **Time to first signed build** | **~1–3 weeks** (faster with cloud signing; slower if a token must ship to Turkey) |
 | **Time to warning-free downloads** | **Weeks to months** of real download volume — signing does not make the warning disappear |
 | **What signing actually buys you** | A **named publisher** instead of "Unknown Publisher", a signature that **survives expiry** (with timestamping), **publisher reputation that carries across versions**, and — the real win — **enterprise policy that no longer blocks you outright** |
-| **Do this week** | Test Azure eligibility · fix name consistency · start VS Code publisher-verification clock · quote Certum + SSL.com + Sectigo · build the signing path with a self-signed cert · publish checksums · write the warning-expectation page |
+| **Do this week** | Test Azure eligibility (expect no) · decide entity path · get Certum-reseller and SSL.com quotes · start VS Code publisher-verification clock · build the signing path with a self-signed cert · publish checksums · write the warning-expectation page |
 
-**The blunt version:** you cannot get the cheap Microsoft option, and EV is no longer worth paying for. Buy OV from whoever will take a Turkish applicant and give you cloud signing, and start the reputation clock as early as possible — because the certificate is quick, but the reputation that removes the warning takes months, and it only starts accumulating once you are signing.
+**The blunt version:** you are not excluded by your country — you are excluded by Azure's geographic list and, at some CAs, by not being a registered organization. Buy **SSL.com IV** if you have no company, or **Certum OV via a Turkish reseller** if you do. Skip EV, skip D-U-N-S, and skip Turkish domestic CAs for Authenticode. Then start the reputation clock as early as possible — the certificate is quick, but the reputation that removes the warning takes months, and it only starts accumulating once you are signing.
