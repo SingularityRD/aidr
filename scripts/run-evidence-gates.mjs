@@ -23,7 +23,7 @@
  *   node scripts/run-evidence-gates.mjs [--only <gate_id>...] [--skip-build]
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,6 +54,39 @@ function rehearsalEnv() {
 function git(args) {
 	return spawnSync("git", args, { cwd: ROOT, encoding: "utf8" }).stdout.trim();
 }
+
+/**
+ * Remove a derived output directory, tolerating a Windows file handle.
+ *
+ * A recursive delete fails while any process holds a handle on a file inside the
+ * directory, and that happens routinely here because the gate run leaves many
+ * short-lived node processes behind. Deleting is retried, and if the handle
+ * persists the directory is renamed out of the way instead: a rename moves the
+ * entry without touching the locked file, which is enough for the caller, and the
+ * orphaned directory is swept on the next run. Failing outright on a transient
+ * handle made a full rehearsal impossible to complete.
+ */
+function clearDirectory(target, label) {
+	rmSync(target, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+	if (!existsSync(target)) return true;
+
+	const retired = `${target}.locked-${Date.now()}`;
+	try {
+		renameSync(target, retired);
+	} catch (error) {
+		console.error(`ERROR: could not clear or rename ${label} at ${path.relative(ROOT, target)}: ${error instanceof Error ? error.message : String(error)}`);
+		return false;
+	}
+	if (existsSync(target)) {
+		console.error(`ERROR: ${label} still exists at ${path.relative(ROOT, target)} after rename`);
+		return false;
+	}
+	console.warn(`[gates] ${label} was locked; moved it to ${path.basename(retired)} and continued`);
+	return true;
+}
+
+/** Directories left behind by {@link clearDirectory}; swept at the end of a run. */
+const retiredDirectories = [];
 
 /** Source paths the gate run itself rewrites; committing them is expected, not source drift. */
 const GENERATED = /^(?:FEATURE_INVENTORY\.(?:json|md)|PRODUCTION_SALES_GAPS\.(?:json|md)|READINESS_BACKLOG\.json|packages\/core\/src\/generated\/aig-.+|docs\/production-readiness\/v8-evidence-index\.json|packages\/[^/]+\/dist\/)$/;
@@ -123,15 +156,7 @@ try {
 }
 if (!candidateMatches) {
 	console.log("[gates] rebuilding the release candidate for this commit");
-	// On Windows a recursive delete can fail while an antivirus or indexer still
-	// holds a handle, and the handle is often held by a process that has already
-	// exited. Retry long enough for that to clear, and fail with the reason rather
-	// than a downstream "directory already exists".
-	rmSync(candidateDir, { recursive: true, force: true, maxRetries: 30, retryDelay: 500 });
-	if (existsSync(candidateDir)) {
-		console.error(`ERROR: could not clear the previous candidate at ${path.relative(ROOT, candidateDir)}; a process is holding a handle on it`);
-		process.exit(1);
-	}
+	if (!clearDirectory(candidateDir, "previous candidate")) process.exit(1);
 	const candidate = spawnSync(
 		process.execPath,
 		["scripts/build-release-candidate.mjs", "--output", ".release-evidence/customer-release-v8-local-20260916-r9", "--rc-version", env.AIDR_RELEASE_VERSION],
@@ -175,15 +200,7 @@ const gateIds = [...declared.filter((id) => !ORDERING_LAST.includes(id)), ...dec
 for (const id of gateIds) {
 	if (KIT_GATES.has(id)) {
 		for (const stale of ["aidr-customer-kit-v8-local-20260916-r9", "aidr-envelope-v8-local-20260916-r9"]) {
-			const target = path.join(ROOT, ".release-evidence", stale);
-			rmSync(target, { recursive: true, force: true, maxRetries: 30, retryDelay: 500 });
-			// A silent failure here reports as "output already exists" from the kit
-			// gate, which reads like a repository-state problem rather than a locked
-			// directory. Say what actually happened.
-			if (existsSync(target)) {
-				console.error(`ERROR: could not clear ${stale}; a process is holding a handle on it`);
-				process.exit(1);
-			}
+			if (!clearDirectory(path.join(ROOT, ".release-evidence", stale), stale)) process.exit(1);
 		}
 	}
 	const result = spawnSync(process.execPath, ["scripts/generate-v8-evidence-index.mjs", "--run", id], { cwd: ROOT, env, encoding: "utf8" });
@@ -208,6 +225,14 @@ for (const record of parsed.gates ?? []) {
 }
 console.log("[gates] the index is written but NOT committed: committing it moves HEAD and would stale every stamp inside it.");
 writeFileSync(path.join(ROOT, ".release-evidence", "gate-run-summary.json"), `${JSON.stringify({ commit_sha: parsed.commit_sha, candidate_digest: parsed.candidate_digest, counts }, null, 2)}\n`, "utf8");
+
+// Sweep any directory a locked handle forced us to rename aside earlier in this
+// run, and any left by a previous one. These are derived outputs, never source.
+const evidenceDir = path.join(ROOT, ".release-evidence");
+for (const name of readdirSync(evidenceDir)) {
+	if (!/\.locked-\d+$/.test(name)) continue;
+	rmSync(path.join(evidenceDir, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+}
 
 // A gate that did not pass is a finding, not a failure of this script: the index
 // records it and the operator reads it. Exit non-zero only when the index could
