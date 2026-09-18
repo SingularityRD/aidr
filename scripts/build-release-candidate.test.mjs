@@ -11,7 +11,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -107,8 +107,18 @@ describe("release candidate assembler", () => {
 				Object.keys(metadata).sort(),
 				["artifacts", "git_sha", "release_tag", "release_version", "schema_version", "source_date_epoch"],
 			);
+			// The bundle itself may contain only metadata, inventory and artifacts;
+			// the assurance report must sit outside it.
+			const bundleEntries = readdirSync(absolute).sort();
+			for (const entry of bundleEntries) {
+				assert.ok(
+					["release-metadata.json", "release-inventory.json"].includes(entry) || /\.(tgz|tar\.gz|json)$/.test(entry),
+					`unexpected file inside candidate bundle: ${entry}`,
+				);
+			}
+			assert.equal(bundleEntries.includes("candidate-assurance.json"), false);
 
-			const assurance = JSON.parse(readFileSync(join(absolute, "candidate-assurance.json"), "utf8"));
+			const assurance = JSON.parse(readFileSync(`${absolute}.assurance.json`, "utf8"));
 			assert.equal(assurance.worktree_dirty, true);
 			assert.match(assurance.assurance, /LOCAL REHEARSAL/);
 			assert.ok(Array.isArray(assurance.dirty_entries));
@@ -131,6 +141,7 @@ describe("release candidate assembler", () => {
 			}
 		} finally {
 			rmSync(absolute, { recursive: true, force: true });
+			rmSync(`${absolute}.assurance.json`, { force: true });
 		}
 	});
 });
