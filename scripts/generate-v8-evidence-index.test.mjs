@@ -17,6 +17,7 @@ import {
 	buildEvidenceIndex,
 	buildGateRecord,
 	CANDIDATE_DIGEST_SOURCE,
+	candidateDigest,
 	countStatuses,
 	EVIDENCE_LEVEL_FLOOR,
 	EVIDENCE_LEVELS,
@@ -210,6 +211,15 @@ test("a captured result file is read back as the authoritative exit status", () 
 		ended_at_utc: "2026-09-13T00:00:02.000Z",
 		duration_ms: 2000,
 		captured_by: "record",
+		// A result file must not be able to self-assert its own provenance, so the
+		// writer is asked to record values that contradict the tree and must
+		// replace every one of them.
+		commit_sha: "caller-supplied",
+		source_commit: "caller-supplied",
+		candidate_digest: "caller-supplied",
+		candidate_digest_source: "caller-supplied",
+		log_sha256: "caller-supplied",
+		artifact_sha256: "caller-supplied",
 	});
 	assert.equal(written.gate_id, "fixture-gate");
 	const sidecar = JSON.parse(readFileSync(`${target.absolute}.result.json`, "utf8"));
@@ -218,7 +228,15 @@ test("a captured result file is read back as the authoritative exit status", () 
 	assert.equal(sidecar.provenance_version, 1);
 	assert.match(sidecar.commit_sha, /^[0-9a-f]{40}$/);
 	assert.equal(sidecar.source_commit, sidecar.commit_sha);
-	assert.equal(sidecar.candidate_digest, UNKNOWN);
+	// The candidate inventory is a local build artefact: it is absent in a fresh
+	// clone and present once a rehearsal has run, so the binding is the digest of
+	// whatever is on disk here rather than a fixed value. Asserting UNKNOWN
+	// unconditionally made this test fail in exactly the tree that produces the
+	// index, which is why it now asserts the derivation instead.
+	assert.equal(sidecar.candidate_digest, candidateDigest(ROOT).digest);
+	assert.equal(sidecar.candidate_digest_source, CANDIDATE_DIGEST_SOURCE);
+	// No log was captured and the synthetic gate declares no artifact, so those
+	// two bindings are the only ones that stay unknown.
 	assert.equal(sidecar.log_sha256, UNKNOWN);
 	assert.equal(sidecar.artifact_sha256, UNKNOWN);
 	assert.equal(existsSync(join(process.cwd(), "undefined.result.json")), false);

@@ -38,6 +38,17 @@ export const CANDIDATE_RELEASE_DIR = ".release-evidence/customer-release-v8-loca
 export const CANDIDATE_SUFFIX = CANDIDATE_RELEASE_DIR.split("/").pop()?.replace(/^customer-release-/, "") ?? "";
 export const CANDIDATE_DIGEST_SOURCE = `${CANDIDATE_RELEASE_DIR}/release-inventory.json`;
 export const GENERATOR_ID = "scripts/generate-v8-evidence-index.mjs";
+/**
+ * Gate-owned snapshot of the vitest JSON report.
+ *
+ * `vitest.config.ts` writes `coverage/test-results.json` on every vitest run, so
+ * a gate that declared that path was rebound by any later test gate: the index
+ * could never confirm the binding and recorded `unknown` for the full suite even
+ * though it had passed. The gate now copies its own report here, immediately
+ * after the suite finishes, and declares this path instead - the same bytes,
+ * hashed at the same moment, at a path no other gate can overwrite.
+ */
+export const TEST_CI_ARTIFACT = `${LOG_DIR}/11-test-ci-final.test-results.json`;
 export const RESULT_PROVENANCE_VERSION = 1;
 
 export const UNKNOWN = "unknown";
@@ -290,9 +301,9 @@ export const GATES = Object.freeze([
 	}),
 	gate({
 		gate_id: "11-test-ci-final",
-		command: "pnpm test:ci",
+		command: `pnpm test:ci && node scripts/capture-gate-artifact.mjs coverage/test-results.json ${TEST_CI_ARTIFACT} --expect-json`,
 		log: "11-test-ci-final.log",
-		artifact: "coverage/test-results.json",
+		artifact: TEST_CI_ARTIFACT,
 		pass: VITEST_TESTS_PASS,
 		fail: VITEST_FAILED,
 		counts: "vitest",
@@ -303,8 +314,9 @@ export const GATES = Object.freeze([
 		evidence_level_ceiling: "isolated_integration",
 		limitations: [
 			"Vitest exit status is derived from the suite summary (0 failed => exit 0); the wrapper scripts/run-tests-ci.mjs exits with the suite's status.",
-			"Two skipped tests are recorded as skipped, not as passes.",
-			"The declared artifact coverage/test-results.json is not present on disk, so artifact_sha256 is unknown.",
+			"Skipped tests, when the suite reports any, are recorded as skipped rather than as passes.",
+			`The declared artifact is the gate-owned snapshot ${TEST_CI_ARTIFACT}, copied by the gate command itself from coverage/test-results.json, which every vitest run rewrites; a snapshot that is missing, empty or not parseable JSON is refused, and the copy exists only after this gate has run.`,
+			`A result file written before the snapshot exists binds artifact_sha256 to ${UNKNOWN}, which the index never reads as success.`,
 		],
 	}),
 	gate({
