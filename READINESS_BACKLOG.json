@@ -1646,6 +1646,38 @@
         "2026-09-12 independent source audit; transactional fault-injection tests in progress",
         "v5: atomic device-poll RPC rollback/replay tests and live approved-device exchange passed in isolated self-hosted rehearsal."
       ]
+    },
+    {
+      "id": "AIDR-069",
+      "priority": "P1",
+      "feature": "Team dashboard usage and invitation fabrication",
+      "status": "VERIFIED_CLOSED",
+      "component": "packages/sdk/src/team-dashboard.ts (published as @singularityrd/aidr-sdk)",
+      "impact": "Two methods on a published, publicly exported SDK class returned invented results. getUsageStats ignored its team argument and the database and resolved with hardcoded zeros, so a dashboard could render '0 threats blocked / 0 active agents' for a tenant that was never measured - indistinguishable from a genuinely clean tenant, which is the false-clean result the product must never show. inviteMember ignored the team, address and role, persisted nothing (TeamDatabase.addMember was never called), and still returned an inviteId plus an inviteUrl on aidr.singularityrd.com, a host the register records as NXDOMAIN/404, so callers were handed a working-looking invitation that did not exist.",
+      "observedBehavior": "getUsageStats(_teamId) returned {checksToday: 0, checksThisMonth: 0, threatsBlocked: 0, activeAgents: 0, topThreats: []} for every argument, with a TODO comment naming the missing aggregation. inviteMember(_teamId, _email, _role) generated a random UUID, built https://aidr.singularityrd.com/invite/<uuid> from a hardcoded base URL, and returned it; nothing was stored and no email was sent. Neither method had any test.",
+      "expectedBehavior": "A call whose data source is not configured must fail visibly instead of returning a plausible number or link, and a configured source must not be able to make the SDK report values it cannot render honestly.",
+      "rootCause": "The class was scaffolded with placeholder bodies and shipped unchanged; no caller in the repository exercises either method, so nothing surfaced the fabrication.",
+      "acceptanceCriteria": "Both methods raise TeamCapabilityUnavailableError, naming the missing capability, when no host-supplied source is configured; a configured source receives the real team, address, role and window; a source that returns NaN, Infinity, a negative count, a missing figure, an empty inviteId or a non-HTTP invite URL is rejected rather than rendered; reads that do not need a capability keep working.",
+      "verificationMethod": "Focused vitest suite covering the unconfigured, configured, unmeasured (null versus 0) and malformed-provider paths.",
+      "status": "VERIFIED_CLOSED",
+      "evidence": [
+        "2026-09-20 source audit for this session: TODO markers in a published package led to team-dashboard.ts, which is exported from packages/sdk/src/index.ts with no test file and no in-repository caller.",
+        "Fixed by requiring host-supplied capabilities (TeamDashboardCapabilities) for the two calls; the capability is host-supplied by design because the security-event log records threats, not tool volume, and invitation delivery belongs to a deployed service. The dashboard's own usage surface (packages/dashboard/src/components/usage-metering.tsx) already reads real RLS-protected data and renders an explicit error block, so no fabricated default remains on that path."
+      ],
+      "localEvidence": [
+        {
+          "claim": "Acceptance: with no capability configured both calls raise TeamCapabilityUnavailableError naming the capability, neither resolves with the previous fabricated values, and getUsageStats does not fall back to the security-event log to invent a figure.",
+          "evidencePath": "packages/sdk/src/__tests__/team-dashboard.test.ts",
+          "command": "pnpm test -- packages/sdk/src/__tests__/team-dashboard.test.ts",
+          "verifiedBy": "this session, targeted vitest run (exit 0, 14 tests passed)"
+        },
+        {
+          "claim": "Acceptance: a configured source receives the real team and a bounded window, an explicitly unmeasured count survives as null instead of becoming zero, and NaN/Infinity/negative/missing figures and empty or non-HTTP invite URLs are rejected with TypeError.",
+          "evidencePath": "packages/sdk/src/__tests__/team-dashboard.test.ts",
+          "command": "pnpm test -- packages/sdk/src/__tests__/team-dashboard.test.ts",
+          "verifiedBy": "this session, targeted vitest run (exit 0); the new symbols are re-exported from packages/sdk/src/index.ts and the SDK typecheck (tsc -p packages/sdk/tsconfig.json --noEmit) passes"
+        }
+      ]
     }
   ],
   "closedWithoutLocalEvidence": {

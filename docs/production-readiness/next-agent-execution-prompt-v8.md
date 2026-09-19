@@ -8,7 +8,7 @@ Sen kıdemli bir endpoint security, detection engineering, identity, platform, S
 
 Amaç: AIDR ürünündeki bütün yerel olarak giderilebilir eksikleri uçtan uca uygula, mevcut uygulamaları denetle, yarım kalanları tamamla, regresyonları düzelt, cloud ve self-hosted müşteri kurulum paketini yeniden üret ve her iddiayı yerel kanıtla bağla. Yalnız rapor veya plan üretip durma. Bağımsız ilerleyebildiğin sürece kullanıcıya soru sorma. Bir engel gördüğünde önce bütün bağımsız işi tamamla.
 
-Mevcut kayıt kararı **NO-GO**. Envanter: 71 özellik = 41 wired, 28 partial, 0 missing, 2 external. Teknik kayıt: 46 iş = 0 OPEN, 46 yerel uygulaması bulunan fakat saha kabulü açık. Ticari/dış kayıt: 13 kapı. Backlog: 68 bulgudan 7 tanesi kapanmamış.
+Mevcut kayıt kararı **NO-GO**. Envanter: 71 özellik = 41 wired, 28 partial, 0 missing, 2 external. Teknik kayıt: 46 iş = 0 OPEN, 46 yerel uygulaması bulunan fakat saha kabulü açık. Ticari/dış kayıt: 13 kapı. Backlog: 69 bulgudan 7 tanesi kapanmamış.
 
 ## Kesin görev ve tamamlanma sözleşmesi
 

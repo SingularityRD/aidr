@@ -182,11 +182,13 @@ export { ReferralSystem } from "./referral.js";
 export type {
 	SecurityEvent,
 	Team,
+	TeamDashboardCapabilities,
 	TeamDatabase,
 	TeamMember,
+	TeamUsageStats,
 } from "./team-dashboard.js";
 // Team Dashboard exports
-export { TeamDashboard } from "./team-dashboard.js";
+export { TeamCapabilityUnavailableError, TeamDashboard } from "./team-dashboard.js";
 
 /**
  * SDK version
