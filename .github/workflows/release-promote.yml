@@ -81,7 +81,7 @@ jobs:
           [[ "${RC_RUN_ID}" =~ ^[0-9]+$ ]] || { echo "A successful RC workflow run ID is required." >&2; exit 1; }
 
       - name: Checkout the exact RC tag (pinned)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
           fetch-depth: 0
@@ -260,7 +260,7 @@ jobs:
           [[ "${RC_RUN_ID}" =~ ^[0-9]+$ ]] || { echo "A successful RC workflow run ID is required." >&2; exit 1; }
 
       - name: Checkout the exact RC tag (pinned)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
           fetch-depth: 0
