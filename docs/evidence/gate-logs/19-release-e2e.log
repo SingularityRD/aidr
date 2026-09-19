@@ -1,0 +1,76 @@
+[aidr-gate] started_at_utc=2026-09-18T20:50:58.988Z command=pnpm test:e2e
+
+
+> @ test:e2e C:\Users\anıl\Desktop\aidr
+> node scripts/run-e2e-release.mjs
+
+[e2e] claude: blocked, 0/7 passed
+[e2e] openclaw: blocked, 0/5 passed
+[e2e] opencode: blocked, 0/13 passed
+[e2e] cursor: ready, 8/8 passed
+[e2e] cursor-headless-agent: blocked, 0/1 passed
+[e2e] model-interception-live: ready, 3/3 passed
+[e2e] vscode: ready, 8/8 passed
+[e2e] aig-bridge-contract: ready, 31/31 passed
+[e2e] aig-live-control-plane: blocked, 0/4 passed
+[e2e] supabase-migrations: ready, 1/1 passed
+[e2e] supabase-control-plane: ready, 9/9 passed
+[e2e] supabase-live-control-plane: blocked, 0/8 passed
+[e2e] dashboard-route-smoke: ready, 1/1 passed
+[e2e] dashboard-browser: blocked, 0/10 passed
+ ELIFECYCLE  Command failed with exit code 1.
+
+
+Release E2E gate failed closed:
+- claude: missing required environment: ANTHROPIC_API_KEY
+- claude: required command is not runnable: claude
+- claude: setup preflight blocked execution
+- claude: collected=0, expected=7
+- claude: passed=0, expected=7
+- claude: report success=false
+- openclaw: missing required environment: OPENCLAW_GATEWAY_TOKEN
+- openclaw: missing required environment: OPENCLAW_E2E_HOST
+- openclaw: setup preflight blocked execution
+- openclaw: collected=0, expected=5
+- openclaw: passed=0, expected=5
+- openclaw: report success=false
+- opencode: one of required environments is missing: OPENCODE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY
+- opencode: setup preflight blocked execution
+- opencode: collected=0, expected=13
+- opencode: passed=0, expected=13
+- opencode: report success=false
+- cursor: report success=false
+- cursor-headless-agent: missing required environment: AIDR_AGENT_PATH
+- cursor-headless-agent: setup preflight blocked execution
+- cursor-headless-agent: collected=0, expected=1
+- cursor-headless-agent: passed=0, expected=1
+- cursor-headless-agent: report success=false
+- model-interception-live: report success=false
+- vscode: report success=false
+- aig-live-control-plane: missing required environment: AIDR_AIG_E2E_EVIDENCE
+- aig-live-control-plane: external evidence path is missing: AIDR_AIG_E2E_EVIDENCE
+- aig-live-control-plane: AIDR_E2E_RC_DIGEST must be a SHA-256 candidate checksum for external evidence
+- aig-live-control-plane: setup preflight blocked execution
+- aig-live-control-plane: collected=0, expected=4
+- aig-live-control-plane: passed=0, expected=4
+- aig-live-control-plane: report success=false
+- supabase-live-control-plane: missing required environment: AIDR_SUPABASE_E2E_EVIDENCE
+- supabase-live-control-plane: external evidence path is missing: AIDR_SUPABASE_E2E_EVIDENCE
+- supabase-live-control-plane: AIDR_E2E_RC_DIGEST must be a SHA-256 candidate checksum for external evidence
+- supabase-live-control-plane: setup preflight blocked execution
+- supabase-live-control-plane: collected=0, expected=8
+- supabase-live-control-plane: passed=0, expected=8
+- supabase-live-control-plane: report success=false
+- dashboard-route-smoke: report success=false
+- dashboard-browser: missing required environment: AIDR_DASHBOARD_BROWSER_EVIDENCE
+- dashboard-browser: external evidence path is missing: AIDR_DASHBOARD_BROWSER_EVIDENCE
+- dashboard-browser: AIDR_E2E_RC_DIGEST must be a SHA-256 candidate checksum for external evidence
+- dashboard-browser: setup preflight blocked execution
+- dashboard-browser: collected=0, expected=10
+- dashboard-browser: passed=0, expected=10
+- dashboard-browser: report success=false
+Evidence: C:\Users\anıl\Desktop\aidr\.e2e-artifacts\release
+(node:39528) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+[aidr-gate] ended_at_utc=2026-09-18T20:52:27.576Z exit_code=1

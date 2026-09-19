@@ -1,0 +1,7 @@
+[aidr-gate] started_at_utc=2026-09-18T20:52:35.643Z command=node scripts/customer-kit.mjs --output .release-evidence/aidr-customer-kit-v8-local-20260916-r9 --upstream-dir deploy/upstream --release-dir .release-evidence/customer-release-v8-local-20260916-r9 --envelope-output .release-evidence/aidr-envelope-v8-local-20260916-r9
+
+Unsigned release envelope prepared at C:\Users\anıl\Desktop\aidr\.release-evidence\aidr-envelope-v8-local-20260916-r9; sign it offline with release-sign.mjs after review. The detached signature authenticates the complete kit archive.
+Portable candidate assembled: 394 files. Node 24, Docker Compose and tar required; no repository, Git, pnpm or build required on the customer's host.
+
+
+[aidr-gate] ended_at_utc=2026-09-18T20:52:42.790Z exit_code=0

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "gate": "verify-url-check-live",
+  "outcome": "passed",
+  "passed": true,
+  "checked_at": "2026-09-18T17:49:15.908Z",
+  "deployment": {
+    "mode": "self-hosted",
+    "development": true,
+    "supabase_url": "http://127.0.0.1:8000",
+    "source_commit": "d489d561b6523d80bd8fd3a556f6dc0df83f4679"
+  },
+  "checks": [
+    "anonymous caller refused (HTTP 401)",
+    "tenant API key issued through the installation's own key table",
+    "authenticated call answered with coverage=none and 1 answer(s)",
+    "tenant reputation row seeded for a known-malicious URL",
+    "seeded malicious URL classified with 1 finding(s) at coverage=complete",
+    "unseeded URL stays unknown rather than being reported clean",
+    "oversized batch refused (HTTP 413)",
+    "rehearsal reputation row and key removed; installation left as found"
+  ],
+  "classification": "isolated local rehearsal against a self-hosted control plane; not a third-party reputation provider test and not customer field acceptance",
+  "limitations": [
+    "No external reputation feed is configured, so any classification reflects the locally shipped threat rules.",
+    "Accuracy against real-world malware and behaviour under production load were not measured."
+  ]
+}

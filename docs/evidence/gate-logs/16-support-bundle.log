@@ -1,0 +1,18 @@
+[aidr-gate] started_at_utc=2026-09-18T20:49:52.142Z command=node scripts/verify-support-bundle.mjs --self-test && node scripts/privacy-verify.mjs
+
+{"passed":true,"checks":13,"evidence_path":"C:\\Users\\anıl\\Desktop\\aidr\\.release-evidence\\support-bundle-zWoKMo\\verification.json"}
+
+ RUN  v4.1.2 C:/Users/anıl/Desktop/aidr
+
+ ✓ scripts/privacy-canary.test.mjs (6 tests) 57ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  23:49:53
+   Duration  1.06s (transform 235ms, setup 0ms, import 799ms, tests 57ms, environment 0ms)
+
+{"passed":true,"checks":13,"evidence_path":"C:\\Users\\ANL~1\\AppData\\Local\\Temp\\aidr-privacy-support-2qFMbA\\.release-evidence\\support-bundle-GdFs4t\\verification.json"}
+Privacy evidence: C:\Users\anıl\Desktop\aidr\.release-evidence\privacy-canary-v6.json (LOCAL_PASS)
+
+
+[aidr-gate] ended_at_utc=2026-09-18T20:49:55.102Z exit_code=0

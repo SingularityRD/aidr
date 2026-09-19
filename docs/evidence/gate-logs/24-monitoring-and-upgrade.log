@@ -1,0 +1,137 @@
+[aidr-gate] started_at_utc=2026-09-18T20:54:36.816Z command=pnpm verify:monitoring && pnpm verify:upgrade && pnpm verify:support-bundle && pnpm verify:load && pnpm verify:release-signing && pnpm verify:backup-offsite && pnpm verify:offboarding
+
+
+> @ verify:monitoring C:\Users\anıl\Desktop\aidr
+> node --test deploy/monitoring/monitoring.test.mjs
+
+✔ all seven checks pass and fixed safe metrics are emitted (11.501ms)
+✔ missing configuration fails closed without invoking network probes (0.5038ms)
+✔ safe readiness output excludes causes, endpoints, paths, and credentials (4.4641ms)
+✔ stale backup, stale signer, queue failures, and expiring certificate fail readiness (4.5776ms)
+✔ malformed or oversized evidence fails closed (5.2258ms)
+✔ future-dated evidence cannot appear fresh (4.2853ms)
+✔ configuration rejects secret-bearing URLs and unknown checks (0.7553ms)
+✔ concurrent snapshots share a probe and completed snapshots use the cache (18.3307ms)
+✔ server wires liveness, fail-closed readiness, and safe metrics (119.8983ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 275.6514
+
+> @ verify:upgrade C:\Users\anıl\Desktop\aidr
+> node scripts/verify-deployment-upgrade.mjs
+
+23 deployment-upgrade checks passed. Evidence: C:\Users\ANL~1\AppData\Local\Temp\aidr-upgrade-tools-z48TIP\evidence.json
+
+> @ verify:support-bundle C:\Users\anıl\Desktop\aidr
+> node scripts/verify-support-bundle.mjs --self-test
+
+{"passed":true,"checks":13,"evidence_path":"C:\\Users\\anıl\\Desktop\\aidr\\.release-evidence\\support-bundle-1u2UkR\\verification.json"}
+
+> @ verify:load C:\Users\anıl\Desktop\aidr
+> node scripts/verify-load-test.mjs
+
+9 load harness checks passed. Evidence: C:\Users\anıl\Desktop\aidr\.release-evidence\load-harness-fRWM75\verification.json
+
+> @ verify:release-signing C:\Users\anıl\Desktop\aidr
+> node --test scripts/release-signing.test.mjs
+
+✔ signs an exact release and runs an installer only after verification (334.5764ms)
+✔ rejects artifact tampering before the installer can execute (160.9235ms)
+✔ rejects a modified detached Ed25519 signature (160.805ms)
+✔ enforces signer allowlists and revocation by key id or fingerprint (311.48ms)
+✔ rejects expired releases and validity windows longer than policy permits (422.926ms)
+✔ rejects rollback and same-sequence equivocation (390.6046ms)
+✔ keeps private keys and trust policy outside the signed bundle (242.0737ms)
+✔ does not advance anti-rollback state when the verified installer fails (230.5149ms)
+✔ rejects unsafe receipt destinations before running an installer (413.8342ms)
+✔ fails closed when another installation holds the anti-rollback lock (171.0151ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2914.2718
+
+> @ verify:backup-offsite C:\Users\anıl\Desktop\aidr
+> node --test scripts/deployment-backup-offsite.test.mjs
+
+✔ filesystem target publishes, verifies, downloads, and is idempotent (819.9334ms)
+✔ remote corruption fails before a readiness receipt can be written (407.5759ms)
+✔ forged commit freshness cannot publish RPO health (506.6753ms)
+✔ retention is dry-run by default, scoped, and apply is idempotent (595.2238ms)
+✔ S3-compatible transport stages, promotes, locks, and downloads before readiness (4326.9579ms)
+✔ S3 commit lookup failure stops publication (2175.3155ms)
+✔ target and custody validation reject broad or secret-bearing configuration (0.6674ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8904.9216
+
+> @ verify:offboarding C:\Users\anıl\Desktop\aidr
+> node --test scripts/deployment-offboarding.test.mjs scripts/tenant-offboarding-migration.test.mjs scripts/billing-offboarding-postgres.test.mjs
+
+▶ immutable settlement retention completes offboarding honestly on real PostgreSQL
+  ✔ nonempty ledger is retained, inaccessible and explicitly receipted without entitlement resurrection (8668.4845ms)
+  ✔ empty ledger still completes with an explicit zero-row digest (6917.0878ms)
+  ✔ settlement insertion and offboarding serialize in both lock orders (6880.1325ms)
+  ✔ legal hold serializes against offboarding and blocks before retention evidence (7361.8891ms)
+✔ immutable settlement retention completes offboarding honestly on real PostgreSQL (45391.9975ms)
+✔ dry run reads the complete policy and active hold without mutating customer data (172.3983ms)
+✔ apply deletes storage before acknowledging its ledger and completes resumable batches (238.7179ms)
+✔ partial successful storage deletion cannot acknowledge an object that remains (170.3617ms)
+✔ an authorized exact deletion receipt can acknowledge an object verified absent from storage (164.6478ms)
+✔ invalid storage authorization (missing objects) refuses DELETE and ACK (167.1619ms)
+✔ invalid storage authorization (empty objects) refuses DELETE and ACK (165.1264ms)
+✔ invalid storage authorization (missing token) refuses DELETE and ACK (168.8763ms)
+✔ invalid storage authorization (non-UUID token) refuses DELETE and ACK (160.4325ms)
+✔ invalid storage authorization (coercible array token) refuses DELETE and ACK (154.6473ms)
+✔ invalid storage authorization (missing authorized path) refuses DELETE and ACK (147.5072ms)
+✔ invalid storage authorization (mismatched authorized path) refuses DELETE and ACK (137.5958ms)
+✔ invalid storage authorization (extra authorized object) refuses DELETE and ACK (145.822ms)
+✔ invalid storage authorization (duplicate paths) refuses DELETE and ACK (144.9499ms)
+✔ invalid storage authorization (duplicate tokens) refuses DELETE and ACK (148.2761ms)
+✔ invalid storage authorization (cross-tenant path) refuses DELETE and ACK (148.025ms)
+✔ storage DELETE response (empty array) cannot acknowledge even absent objects (147.5823ms)
+✔ storage DELETE response (partial receipt) cannot acknowledge even absent objects (139.1141ms)
+✔ storage DELETE response (same-size wrong path) cannot acknowledge even absent objects (137.3507ms)
+✔ storage DELETE response (duplicate receipt) cannot acknowledge even absent objects (146.1117ms)
+✔ storage DELETE response (extra receipt) cannot acknowledge even absent objects (219.7707ms)
+✔ storage DELETE response (missing names) cannot acknowledge even absent objects (169.3585ms)
+✔ storage DELETE response (non-string names) cannot acknowledge even absent objects (137.4317ms)
+✔ storage DELETE response (null entry) cannot acknowledge even absent objects (163.8151ms)
+✔ storage DELETE response (non-array receipt) cannot acknowledge even absent objects (162.5641ms)
+✔ ambiguous deletion cannot become a successful ACK on a later invocation (296.6935ms)
+✔ pending storage authorizations stop apply without storage requests or ACK (163.0692ms)
+✔ active legal hold stops apply with a durable non-success result (157.2578ms)
+✔ storage failure never acknowledges deletion (154.7072ms)
+✔ an unacknowledged cache invalidation leaves the run explicitly incomplete (150.64ms)
+✔ a recorded cache receipt is visible in the offboarding evidence (140.0111ms)
+✔ the doctor reports the retention reaper timer honestly instead of assuming it is installed (86.1485ms)
+✔ retention policy covers ten explicit data classes and excludes backups (1.3838ms)
+✔ legal holds and deletion batches serialize on the same tenant lock (0.3688ms)
+✔ all mutating functions are service-only and batches are bounded (0.2305ms)
+✔ offboarding includes SCIM, delegated credentials and core tenant data (0.3285ms)
+✔ long-lived entitlement snapshots survive shorter endpoint identity deletion (0.2163ms)
+✔ a cache invalidation phase exists and records a receipt (0.4075ms)
+ℹ tests 42
+ℹ suites 0
+ℹ pass 42
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 45479.7555
+
+
+[aidr-gate] ended_at_utc=2026-09-18T20:55:46.453Z exit_code=0

@@ -1,0 +1,10 @@
+[aidr-gate] started_at_utc=2026-09-18T20:37:38.805Z command=pnpm audit:prod
+
+
+> @ audit:prod C:\Users\anıl\Desktop\aidr
+> node scripts/audit-production-deps.mjs
+
+Production dependency audit: 0 advisory(ies); critical=0, high=0, moderate=0, low=0.
+
+
+[aidr-gate] ended_at_utc=2026-09-18T20:37:40.094Z exit_code=0

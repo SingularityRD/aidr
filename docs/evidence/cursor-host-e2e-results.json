@@ -1,0 +1,54 @@
+{
+  "host": "cursor",
+  "generatedAt": "2026-09-16T16:50:13.628Z",
+  "cases": [
+    {
+      "id": "configure-workspace-scope",
+      "name": "configure workspace scope",
+      "status": "pass",
+      "durationMs": 2943
+    },
+    {
+      "id": "extension-activates",
+      "name": "extension activates",
+      "status": "pass",
+      "durationMs": 116
+    },
+    {
+      "id": "commands-registered",
+      "name": "aidr commands are registered",
+      "status": "pass",
+      "durationMs": 71
+    },
+    {
+      "id": "enable-protection-writes-hooks",
+      "name": "enable protection writes managed hooks",
+      "status": "pass",
+      "durationMs": 213
+    },
+    {
+      "id": "hook-health-command",
+      "name": "hook health command runs without error",
+      "status": "pass",
+      "durationMs": 7
+    },
+    {
+      "id": "dangerous-write-blocked",
+      "name": "managed hook blocks dangerous write",
+      "status": "pass",
+      "durationMs": 1587
+    },
+    {
+      "id": "hook-response-shape-consistent",
+      "name": "hook responses have consistent shape across event types",
+      "status": "pass",
+      "durationMs": 4341
+    },
+    {
+      "id": "disable-protection-removes-hooks",
+      "name": "disable protection removes managed hooks",
+      "status": "pass",
+      "durationMs": 145
+    }
+  ]
+}

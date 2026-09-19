@@ -1,0 +1,99 @@
+[aidr-gate] started_at_utc=2026-09-18T20:37:40.715Z command=pnpm verify:enforcement
+
+
+> @ verify:enforcement C:\Users\anıl\Desktop\aidr
+> node scripts/verify-enforcement.mjs
+
+
+=== default build / no config at all ===
+  PASS  deny   must-block pipe-to-shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block reverse shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block rm -rf /           🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block download-execute   🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block credential write   🛡️ Singularity AIDR: Threat Blocked
+  PASS  allow  must-allow list files        
+  PASS  allow  must-allow git status        
+  PASS  allow  must-allow run tests         
+  PASS  allow  must-allow read package.json 
+
+=== default build / mode:managed ===
+  PASS  deny   must-block pipe-to-shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block reverse shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block rm -rf /           🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block download-execute   🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block credential write   🛡️ Singularity AIDR: Threat Blocked
+  PASS  allow  must-allow list files        
+  PASS  allow  must-allow git status        
+  PASS  allow  must-allow run tests         
+  PASS  allow  must-allow read package.json 
+
+=== default build / mode:managed + empty api_key ===
+  PASS  deny   must-block pipe-to-shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block reverse shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block rm -rf /           🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block download-execute   🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block credential write   🛡️ Singularity AIDR: Threat Blocked
+  PASS  allow  must-allow list files        
+  PASS  allow  must-allow git status        
+  PASS  allow  must-allow run tests         
+  PASS  allow  must-allow read package.json 
+
+=== default build / mode:managed + bogus api_key ===
+  PASS  deny   must-block pipe-to-shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block reverse shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block rm -rf /           🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block download-execute   🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block credential write   🛡️ Singularity AIDR: Threat Blocked
+  PASS  allow  must-allow list files        
+  PASS  allow  must-allow git status        
+  PASS  allow  must-allow run tests         
+  PASS  allow  must-allow read package.json 
+
+=== default build / managed + require_signed_entitlements ===
+  PASS  deny   must-block pipe-to-shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block reverse shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block rm -rf /           🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block download-execute   🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block credential write   🛡️ Singularity AIDR: Threat Blocked
+  PASS  allow  must-allow list files        
+  PASS  allow  must-allow git status        
+  PASS  allow  must-allow run tests         
+  PASS  allow  must-allow read package.json 
+
+=== commercial build / no config at all ===
+  PASS  deny   must-block pipe-to-shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block reverse shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block rm -rf /           🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block download-execute   🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block credential write   🛡️ Singularity AIDR: Threat Blocked
+  PASS  allow  must-allow list files        
+  PASS  allow  must-allow git status        
+  PASS  allow  must-allow run tests         
+  PASS  allow  must-allow read package.json 
+
+=== commercial build / mode:managed ===
+  PASS  deny   must-block pipe-to-shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block reverse shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block rm -rf /           🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block download-execute   🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block credential write   🛡️ Singularity AIDR: Threat Blocked
+  PASS  allow  must-allow list files        
+  PASS  allow  must-allow git status        
+  PASS  allow  must-allow run tests         
+  PASS  allow  must-allow read package.json 
+
+=== commercial build / mode:managed + bogus api_key ===
+  PASS  deny   must-block pipe-to-shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block reverse shell      🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block rm -rf /           🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block download-execute   🛡️ Singularity AIDR: Threat Blocked
+  PASS  deny   must-block credential write   🛡️ Singularity AIDR: Threat Blocked
+  PASS  allow  must-allow list files        
+  PASS  allow  must-allow git status        
+  PASS  allow  must-allow run tests         
+  PASS  allow  must-allow read package.json 
+
+ALL PASS - 72/72 cases behaved correctly
+
+
+[aidr-gate] ended_at_utc=2026-09-18T20:38:09.465Z exit_code=0

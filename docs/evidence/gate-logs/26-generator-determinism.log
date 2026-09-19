@@ -1,0 +1,8 @@
+[aidr-gate] started_at_utc=2026-09-18T21:02:20.437Z command=node scripts/check-generator-determinism.mjs
+
+Generator determinism PASS (2 generator(s); source_commit and worktree_has_changes excluded as provenance stamps).
+- scripts/generate-feature-inventory.mjs -> 2 file(s), stable across two runs and matching the committed content
+- scripts/generate-production-sales-gap-audit.mjs -> 2 file(s), stable across two runs and matching the committed content
+
+
+[aidr-gate] ended_at_utc=2026-09-18T21:02:20.851Z exit_code=0

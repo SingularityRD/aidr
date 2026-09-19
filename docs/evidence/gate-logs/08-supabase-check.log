@@ -1,0 +1,10 @@
+[aidr-gate] started_at_utc=2026-09-18T20:37:40.189Z command=pnpm supabase:check
+
+
+> @ supabase:check C:\Users\anıl\Desktop\aidr
+> node scripts/check-supabase-migrations.mjs
+
+Supabase migration contract passed (47 migrations, unique ordered versions).
+
+
+[aidr-gate] ended_at_utc=2026-09-18T20:37:40.631Z exit_code=0

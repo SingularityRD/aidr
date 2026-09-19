@@ -1,0 +1,24 @@
+[aidr-gate] started_at_utc=2026-09-18T20:38:09.552Z command=pnpm verify:codex
+
+
+> @ verify:codex C:\Users\anıl\Desktop\aidr
+> node scripts/verify-codex-hook.mjs
+
+bundle: C:\Users\anıl\Desktop\aidr\packages\codex\dist\pre-tool-use.cjs
+
+PASS  must-BLOCK  pipe-to-shell                decision=deny reason=Singularity AIDR blocked this action.
+PASS  must-BLOCK  rm -rf /                     decision=deny reason=Singularity AIDR blocked this action.
+PASS  must-BLOCK  reverse shell                decision=deny reason=Singularity AIDR blocked this action.
+PASS  must-BLOCK  credential write via patch   decision=deny reason=Singularity AIDR blocked this action.
+PASS  must-ALLOW  list files                   decision=allow
+PASS  must-ALLOW  git status                   decision=allow
+PASS  must-ALLOW  run tests                    decision=allow
+PASS  must-ALLOW  ordinary patch               decision=allow
+PASS  malformed   unparseable stdin            decision=deny
+PASS  malformed   empty stdin                  decision=deny
+PASS  malformed   wrong event                  decision=allow
+
+ALL PASS - 11/11 cases behaved correctly
+
+
+[aidr-gate] ended_at_utc=2026-09-18T20:38:13.013Z exit_code=0

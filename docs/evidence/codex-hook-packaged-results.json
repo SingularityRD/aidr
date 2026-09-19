@@ -1,0 +1,20 @@
+{
+    "classification":  "packaged-consumer hook decision, NOT native host model turn",
+    "host":  "codex-cli 0.141.0",
+    "cases":  [
+                  {
+                      "input":  "rm -rf /",
+                      "decision":  "deny",
+                      "severity":  "critical",
+                      "reason":  "Recursive forced deletion from root",
+                      "exit":  0
+                  },
+                  {
+                      "input":  "ls -la",
+                      "decision":  "allow",
+                      "output":  "{}",
+                      "exit":  0
+                  }
+              ],
+    "hook":  "packages/codex/dist/pre-tool-use.cjs"
+}

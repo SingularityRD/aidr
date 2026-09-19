@@ -1,0 +1,27 @@
+[aidr-gate] started_at_utc=2026-09-18T21:02:19.823Z command=pnpm verify:commercial-gates
+
+
+> @ verify:commercial-gates C:\Users\anıl\Desktop\aidr
+> node scripts/verify-commercial-gate-receipts.mjs
+
+Commercial gate receipts: PASS
+Receipts: docs/production-readiness/commercial-gate-receipts.json (13/13 hard gates)
+Schema: docs/production-readiness/commercial-gate-receipts.schema.json
+Decisions: open=13
+Candidate digest: 986e404d5969af01ce70c8b93cf2e8b53a08b355888a40b0018b92073bcb67c5 from .release-evidence/customer-release-v8-local-20260913/release-inventory.json (present)
+- COM-001: open (6 external input(s) required)
+- COM-002: open (5 external input(s) required)
+- COM-003: open (6 external input(s) required)
+- COM-004: open (5 external input(s) required)
+- COM-005: open (5 external input(s) required)
+- COM-010: open (5 external input(s) required)
+- COM-011: open (5 external input(s) required)
+- COM-012: open (6 external input(s) required)
+- COM-013: open (6 external input(s) required)
+- SEC-EXT-001: open (4 external input(s) required)
+- POV-001: open (5 external input(s) required)
+- INV-001: open (5 external input(s) required)
+- CLM-001: open (5 external input(s) required)
+
+
+[aidr-gate] ended_at_utc=2026-09-18T21:02:20.351Z exit_code=0

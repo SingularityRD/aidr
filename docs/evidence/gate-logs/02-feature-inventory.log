@@ -1,0 +1,6 @@
+[aidr-gate] started_at_utc=2026-09-18T20:36:53.131Z command=node scripts/generate-feature-inventory.mjs
+
+Validated 71 capability records: {"wired":41,"partial":28,"missing":0,"external":2}
+
+
+[aidr-gate] ended_at_utc=2026-09-18T20:36:53.230Z exit_code=0

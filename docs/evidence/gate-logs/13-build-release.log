@@ -1,0 +1,157 @@
+[aidr-gate] started_at_utc=2026-09-18T20:48:58.090Z command=pnpm build:release
+
+
+> @ build:release C:\Users\anıl\Desktop\aidr
+> node scripts/build-workspace.mjs --release
+
+[build] 0/2 compiling AIG data indexes
+
+> @ compile:aig C:\Users\anıl\Desktop\aidr
+> node scripts/compile-aig-data.mjs
+
+[aig] Compiling CVE index...
+[aig]   Found 2043 CVEs across 115 frameworks
+[aig] Compiling fingerprint index...
+[aig]   Found 146 fingerprints (146 with HTTP detection, 40 with version extractors)
+[aig] Compiling MCP risk categories...
+[aig]   Compiled 14 MCP risk categories
+
+[aig] Done in 3657ms
+[aig]   aig-cve-index.json       395.8 KB (2043 CVEs)
+[aig]   aig-fingerprints.json     67.9 KB (146 fingerprints)
+[aig]   aig-mcp-categories.json   4.2 KB (14 categories)
+[aig]   aig-data-manifest.json       bundle=73ac5fbb59fdb12edb89cb5a2654e323a4e97747a8d60c1874fb3595a732701f signed=false
+[build] 1/2 building @singularityrd/aidr-core
+
+> @singularityrd/aidr-core@0.6.0 build:release C:\Users\anıl\Desktop\aidr\packages\core
+> node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo && tsc -p tsconfig.release.json && node scripts/copy-generated.mjs && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-core && node ../../scripts/check-no-sourcemaps.mjs .
+
+[core] copied 4 generated data file(s) to dist/generated/
+Wrote C:\Users\anıl\Desktop\aidr\packages\core\dist\aidr-artifact.manifest.json
+[build] 2/2 building the remaining packages
+Scope: 10 of 11 workspace projects
+packages/claude-code build:release$ pnpm run sync:assets && node ../../scripts/rmrf.mjs dist && node esbuild.config.js --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-claude-code && node ../../scripts/check-no-sourcemaps.mjs dist
+packages/cli build:release$ node ../../scripts/rmrf.mjs dist && node ../../scripts/rmrf.mjs tsconfig.tsbuildinfo && npm run sync:assets && tsc -p tsconfig.release.json && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-cli && node ../../scripts/check-no-sourcemaps.mjs dist
+packages/codex build:release$ pnpm run sync:assets && node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && node esbuild.config.js --release && tsc && node ../../scripts/check-no-sourcemaps.mjs dist
+packages/dashboard build:release$ node ../../scripts/rmrf.mjs dist .vite && vite build && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-dashboard && node ../../scripts/check-no-sourcemaps.mjs dist
+packages/cli build:release: npm warn Unknown env config "npm-globalconfig". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/cli build:release: npm warn Unknown env config "recursive". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/cli build:release: npm warn Unknown env config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/cli build:release: npm warn Unknown env config "_jsr-registry". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/cli build:release: npm warn Unknown env config "_singularityrd-registry". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/claude-code build:release: > @singularityrd/aidr-claude-code@0.6.0 sync:assets C:\Users\anıl\Desktop\aidr\packages\claude-code
+packages/claude-code build:release: > node scripts/sync-assets.mjs
+packages/cli build:release: > @singularityrd/aidr-cli@0.6.0 sync:assets
+packages/cli build:release: > node scripts/sync-assets.mjs
+packages/codex build:release: > @singularityrd/aidr-codex@0.6.0 sync:assets C:\Users\anıl\Desktop\aidr\packages\codex
+packages/codex build:release: > node scripts/sync-assets.mjs
+packages/dashboard build:release: vite v6.4.1 building for production...
+packages/claude-code build:release: Synced Claude connector assets (threats + allowlists).
+packages/dashboard build:release: transforming...
+packages/codex build:release: Synced Codex connector assets (threats + allowlists).
+packages/cli build:release: Synced CLI assets (threats + allowlists).
+packages/codex build:release: ▲ [WARNING] "import.meta" is not available with the "cjs" output format and will be empty [empty-import-meta]
+packages/codex build:release:     src/assets.ts:21:84:
+packages/codex build:release:       21 │ ...== "string" ? __dirname : dirname(fileURLToPath(import.meta.url));
+packages/codex build:release:          ╵                                                    ~~~~~~~~~~~
+packages/codex build:release:   You need to set the output format to "esm" for "import.meta" to work correctly.
+packages/codex build:release: Build complete.
+packages/claude-code build:release: Build complete.
+packages/dashboard build:release: ✓ 462 modules transformed.
+packages/cli build:release: Wrote C:\Users\anıl\Desktop\aidr\packages\cli\dist\aidr-artifact.manifest.json
+packages/cli build:release: Done
+packages/extension build:release$ npm run clean && npm run sync:assets && node esbuild.config.cjs --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id aidr-cursor && node ../../scripts/check-no-sourcemaps.mjs dist
+packages/extension build:release: npm warn Unknown env config "npm-globalconfig". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: npm warn Unknown env config "recursive". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: npm warn Unknown env config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: npm warn Unknown env config "_jsr-registry". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: npm warn Unknown env config "_singularityrd-registry". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: > aidr-cursor@0.6.0 clean
+packages/extension build:release: > node ../../scripts/rmrf.mjs dist resources .vsce
+packages/extension build:release: npm warn Unknown env config "npm-globalconfig". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: npm warn Unknown env config "recursive". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: npm warn Unknown env config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: npm warn Unknown env config "_jsr-registry". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: npm warn Unknown env config "_singularityrd-registry". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+packages/extension build:release: > aidr-cursor@0.6.0 sync:assets
+packages/extension build:release: > node scripts/sync-assets.mjs
+packages/extension build:release: Synced extension assets (threats + allowlists).
+packages/dashboard build:release: rendering chunks...
+packages/dashboard build:release: computing gzip size...
+packages/dashboard build:release: dist/index.html                   0.93 kB │ gzip:   0.55 kB
+packages/dashboard build:release: (!) Some chunks are larger than 500 kB after minification. Consider:
+packages/dashboard build:release: - Using dynamic import() to code-split the application
+packages/dashboard build:release: - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+packages/dashboard build:release: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+packages/dashboard build:release: dist/assets/index-D4pD-CzE.css   29.16 kB │ gzip:   6.66 kB
+packages/dashboard build:release: dist/assets/index-BunXRpHw.js   728.70 kB │ gzip: 206.85 kB
+packages/dashboard build:release: ✓ built in 5.76s
+packages/codex build:release: Done
+packages/mcp-gateway build:release$ node scripts/build.mjs
+packages/dashboard build:release: Wrote C:\Users\anıl\Desktop\aidr\packages\dashboard\dist\aidr-artifact.manifest.json
+packages/dashboard build:release: Done
+packages/openclaw build:release$ pnpm run clean && pnpm run sync:assets && node esbuild.config.js --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-openclaw && node ../../scripts/check-no-sourcemaps.mjs dist
+packages/mcp-gateway build:release: Wrote C:\Users\anıl\Desktop\aidr\packages\mcp-gateway\dist\aidr-artifact.manifest.json
+packages/mcp-gateway build:release: Done
+packages/opencode build:release$ pnpm run clean && pnpm run sync:assets && tsc -p tsconfig.release.json && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-opencode && node ../../scripts/check-no-sourcemaps.mjs dist
+packages/openclaw build:release: > @singularityrd/aidr-openclaw@0.6.0 clean C:\Users\anıl\Desktop\aidr\packages\openclaw
+packages/openclaw build:release: > node ../../scripts/rmrf.mjs dist resources
+packages/opencode build:release: > @singularityrd/aidr-opencode@0.6.0 clean C:\Users\anıl\Desktop\aidr\packages\opencode
+packages/opencode build:release: > node ../../scripts/rmrf.mjs dist resources tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo
+packages/claude-code build:release: Wrote C:\Users\anıl\Desktop\aidr\packages\claude-code\dist\aidr-artifact.manifest.json
+packages/claude-code build:release: Done
+packages/sdk build:release$ pnpm run clean && pnpm run sync:assets && node esbuild.config.js --release && tsc -p tsconfig.release.json --emitDeclarationOnly && node ../../scripts/copy-cjs-types.mjs dist/index.d.ts dist/index.d.cts && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-sdk && node ../../scripts/check-no-sourcemaps.mjs dist
+packages/openclaw build:release: > @singularityrd/aidr-openclaw@0.6.0 sync:assets C:\Users\anıl\Desktop\aidr\packages\openclaw
+packages/openclaw build:release: > node scripts/sync-assets.mjs
+packages/opencode build:release: > @singularityrd/aidr-opencode@0.6.0 sync:assets C:\Users\anıl\Desktop\aidr\packages\opencode
+packages/opencode build:release: > node scripts/sync-assets.mjs
+packages/openclaw build:release: Synced openclaw assets (threats + allowlists + skills).
+packages/opencode build:release: Synced opencode assets (threats + allowlists).
+packages/sdk build:release: > @singularityrd/aidr-sdk@0.6.0 clean C:\Users\anıl\Desktop\aidr\packages\sdk
+packages/sdk build:release: > node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo
+packages/extension build:release: Build complete.
+packages/sdk build:release: > @singularityrd/aidr-sdk@0.6.0 sync:assets C:\Users\anıl\Desktop\aidr\packages\sdk
+packages/sdk build:release: > node scripts/sync-assets.mjs
+packages/sdk build:release: Synced SDK assets (threats + allowlists).
+packages/extension build:release: Wrote C:\Users\anıl\Desktop\aidr\packages\extension\dist\aidr-artifact.manifest.json
+packages/extension build:release: Done
+packages/openclaw build:release: Build complete.
+packages/sdk build:release: Note: Type declarations not found - run 'tsc' to generate them
+packages/openclaw build:release: Wrote C:\Users\anıl\Desktop\aidr\packages\openclaw\dist\aidr-artifact.manifest.json
+packages/sdk build:release: Build complete.
+packages/openclaw build:release: Done
+packages/opencode build:release: Wrote C:\Users\anıl\Desktop\aidr\packages\opencode\dist\aidr-artifact.manifest.json
+packages/opencode build:release: Done
+packages/sdk build:release: Copied dist/index.d.ts -> dist/index.d.cts
+packages/sdk build:release: Wrote C:\Users\anıl\Desktop\aidr\packages\sdk\dist\aidr-artifact.manifest.json
+packages/sdk build:release: Done
+[build] finalizing release artifacts while core remains locked
+Wrote C:\Users\anıl\Desktop\aidr\.release-evidence\aidr-sbom.cdx.json (231 components, sha256 2415dcde024502bbe2d5fc9f58fce9af21087063098928babaab1ab18e5e6914)
+Wrote C:\Users\anıl\Desktop\aidr\packages\core\dist\aidr-artifact.manifest.json
+Wrote C:\Users\anıl\Desktop\aidr\packages\claude-code\dist\aidr-artifact.manifest.json
+Wrote C:\Users\anıl\Desktop\aidr\packages\extension\dist\aidr-artifact.manifest.json
+Wrote C:\Users\anıl\Desktop\aidr\packages\openclaw\dist\aidr-artifact.manifest.json
+Wrote C:\Users\anıl\Desktop\aidr\packages\opencode\dist\aidr-artifact.manifest.json
+Wrote C:\Users\anıl\Desktop\aidr\packages\cli\dist\aidr-artifact.manifest.json
+Wrote C:\Users\anıl\Desktop\aidr\packages\sdk\dist\aidr-artifact.manifest.json
+Wrote C:\Users\anıl\Desktop\aidr\packages\dashboard\dist\aidr-artifact.manifest.json
+Wrote C:\Users\anıl\Desktop\aidr\packages\codex\dist\aidr-artifact.manifest.json
+Wrote C:\Users\anıl\Desktop\aidr\packages\mcp-gateway\dist\aidr-artifact.manifest.json
+Developer release evidence: SBOM copied to 10 artifact(s); signatures remain optional.
+Package contract check passed for 10 package(s).
+PASS packages/core consumer smoke
+PASS packages/claude-code consumer smoke
+PASS packages/extension consumer smoke
+PASS packages/openclaw consumer smoke
+PASS packages/opencode consumer smoke
+PASS packages/cli consumer smoke
+PASS packages/sdk consumer smoke
+PASS packages/dashboard consumer smoke
+PASS packages/codex consumer smoke
+PASS packages/mcp-gateway consumer smoke
+Package consumer checks passed for 10 package(s).
+
+(node:37572) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+[aidr-gate] ended_at_utc=2026-09-18T20:49:37.258Z exit_code=0

@@ -1,0 +1,41 @@
+[aidr-gate] started_at_utc=2026-09-18T20:52:42.873Z command=pnpm aig:verify
+
+
+> @ aig:verify C:\Users\anıl\Desktop\aidr
+> node --test scripts/verify-aig-source.test.mjs && node scripts/verify-aig-source.mjs
+
+✔ verifier source pin matches the superproject gitlink (34.392ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 99.8513
+{
+  "source": {
+    "commit": "e68bc5d09a222a3d16b873ded93eb6d726028975",
+    "describe": "v4.6.1",
+    "expectedCommit": "e68bc5d09a222a3d16b873ded93eb6d726028975"
+  },
+  "sourceYamlFiles": 4018,
+  "gitYamlFiles": 4013,
+  "fingerprintSourceFiles": 146,
+  "gitFingerprintFiles": 146,
+  "caseCollisionGroups": 0,
+  "generated": {
+    "cves": 2043,
+    "fingerprints": 146,
+    "mcpCategories": 14,
+    "bundleId": "73ac5fbb59fdb12edb89cb5a2654e323a4e97747a8d60c1874fb3595a732701f",
+    "signed": false,
+    "cveSha256": "9eccd74dba0e88fef992a68592a31d311566df4447a91c990d086bf225deffb2",
+    "fingerprintSha256": "55d50ad44312984604e26e3eac615a0068b5541e0377ce9b82f364c64e5438e4",
+    "mcpSha256": "b9835ee307cada52155530baafc61a665dce3f7057fa728def1b0faf0de056a6"
+  }
+}
+
+WARN [aig] generated data manifest is unsigned; release mode requires a signature
+
+[aidr-gate] ended_at_utc=2026-09-18T20:52:43.654Z exit_code=0

@@ -1,0 +1,9 @@
+{
+  "commit_sha": "cf320ba2bbd59174ac3a35782cfdb104556ab92d",
+  "candidate_digest": "edf9d7afa20084ec17da19d5185dbe7bb9f28a678ff2bbe4f4f8f99eaf14097c",
+  "counts": {
+    "PASS": 27,
+    "unknown": 1,
+    "FAIL": 2
+  }
+}
