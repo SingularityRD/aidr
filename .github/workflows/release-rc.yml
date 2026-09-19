@@ -314,7 +314,7 @@ jobs:
           retention-days: 90
 
       - name: Publish draft prerelease evidence (pinned)
-        uses: softprops/action-gh-release@738f0c76948a84ff818b6e43c8b515cb27dbc559 # v2.2.2
+        uses: softprops/action-gh-release@a6c7483a42ee9d5daced968f6c217562cd680f7f # v2.2.2
         with:
           tag_name: ${{ steps.rc_meta.outputs.tag }}
           name: AIDR ${{ steps.rc_meta.outputs.tag }}
