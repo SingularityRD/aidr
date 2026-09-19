@@ -52,7 +52,11 @@
 		"gh",
 		"go",
 		"docker",
-		"wrangler"
+		"wrangler",
+		"pnpm",
+		"pnpm.cmd",
+		"icacls",
+		"icacls.exe"
 	],
 	"rules": {
 		"types": "off",

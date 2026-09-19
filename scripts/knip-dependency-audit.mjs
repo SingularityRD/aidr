@@ -146,8 +146,14 @@ export function createDependencyAuditor(root) {
 			}
 			if (audit.source.parseDiagnostics.length || !Number.isInteger(value.pos) || value.pos < 0 || value.pos >= audit.source.text.length) return false;
 			const location = audit.source.getLineAndCharacterOfPosition(value.pos);
-			// Knip uses zero-based pos and 1-based line; col is character + 2.
-			if (value.line !== location.line + 1 || value.col !== location.character + 2) return false;
+			// Both versions use zero-based pos and a one-based line. They disagree on
+			// the column: knip 5 reported `character + 2`, knip 6 reports
+			// `character + 1`. Accept either, because the position is not the proof -
+			// it only locates the literal, and the literal must still satisfy the
+			// Deno or core-anchored-require proof below. A tolerance of one column
+			// cannot approve a finding that is not there.
+			if (value.line !== location.line + 1 ||
+				(value.col !== location.character + 1 && value.col !== location.character + 2)) return false;
 			const literal = audit.literals.find((node) => matchesReportedPosition(node, value.pos, audit.source));
 			if (!literal) return false;
 			if (value.name === "npm") {
@@ -184,21 +190,30 @@ export function createDependencyAuditor(root) {
 }
 
 export function evaluateReport(report, approveDependency) {
-	if (!report || Array.isArray(report) || !Array.isArray(report.files) || !Array.isArray(report.issues) ||
+	// knip 5 put unused files in a top-level `files` array beside `issues`; knip 6
+	// moved them inside each issue and emits `issues` alone. Accept both shapes so
+	// the gate survives the upgrade, and keep the strictness identical: only
+	// `files`, `exports` and `duplicates` are review debt, everything else blocks
+	// unless the auditor proves it. A shape the gate does not recognise still
+	// throws rather than reporting a clean run.
+	if (!report || Array.isArray(report) || !Array.isArray(report.issues) ||
 		Object.keys(report).some((key) => key !== "files" && key !== "issues")) {
 		throw new Error("Invalid Knip report shape");
 	}
+	const legacyFiles = Array.isArray(report.files) ? report.files : null;
 	for (const issue of report.issues) {
 		if (!issue || typeof issue.file !== "string" || Object.entries(issue).some(([key, value]) => key !== "file" && !Array.isArray(value))) {
 			throw new Error("Invalid Knip issue shape");
 		}
 	}
 	const review = new Set(["files", "exports", "duplicates"]);
-	const counts = { files: Array.isArray(report.files) ? report.files.length : 0, exports: 0, duplicates: 0 };
+	// `owners` is authorship metadata, not a finding, in both report versions.
+	const metadata = new Set(["owners"]);
+	const counts = { files: legacyFiles ? legacyFiles.length : 0, exports: 0, duplicates: 0 };
 	const blocking = [];
 	for (const issue of report.issues ?? []) {
 		for (const [type, values] of Object.entries(issue)) {
-			if (!Array.isArray(values) || type === "owners") continue;
+			if (!Array.isArray(values) || metadata.has(type)) continue;
 			if (review.has(type)) {
 				counts[type] += values.length;
 				continue;
