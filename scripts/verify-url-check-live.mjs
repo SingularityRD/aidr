@@ -95,6 +95,29 @@ async function request(path, init) {
 
 const checks = [];
 
+/**
+ * Values the rehearsal creates and must remove again.
+ *
+ * Cleanup runs from an exit handler rather than at the end of the happy path,
+ * because `fail()` exits the process from anywhere: an early refusal - a missing
+ * tenant, an unseeded URL that answered clean, an oversized batch that was
+ * accepted - would otherwise return before the deletes ran and leave a live API
+ * key behind in the installation. That is exactly what happened once: a key
+ * labelled `url-check-live-rehearsal` was still present in the database after a
+ * failing run. spawnSync keeps this synchronous, so it is safe from an exit
+ * handler.
+ */
+let keyHash = "";
+let seededUrl = "";
+process.on("exit", () => {
+	try {
+		if (seededUrl) psql(`delete from public.url_reputation where url = '${seededUrl}'`);
+		if (keyHash) psql(`delete from public.api_keys where key_hash = '${keyHash}'`);
+	} catch {
+		// Best effort: the rehearsal is already reporting its own outcome.
+	}
+});
+
 // 1. The endpoint must exist and must not answer an anonymous caller with data.
 const anonymous = await request("/functions/v1/url-check", {
 	method: "POST",
@@ -126,7 +149,8 @@ const issued = spawnSync(
 	{ encoding: "utf8" },
 );
 if (issued.status !== 0) fail("could not mint an API key value");
-const [keyHash, keyPlaintext] = issued.stdout.trim().split(" ");
+const [mintedHash, keyPlaintext] = issued.stdout.trim().split(" ");
+keyHash = mintedHash;
 
 // The api_keys table stores only the hash; seed through the installation's own
 // database so the rehearsal does not depend on a dashboard session.
@@ -159,7 +183,7 @@ checks.push(`authenticated call answered with coverage=${authorized.body.coverag
 // external provider, so a classification only exists once a tenant has recorded
 // one. Seed a row through the installation's own table and require the endpoint
 // to reflect it.
-const seededUrl = "http://malware.example.test/payload.exe";
+seededUrl = "http://malware.example.test/payload.exe";
 psql(
 	`insert into public.url_reputation (user_id, tenant_id, url, domain, is_malicious, severity_name, type_name, flags, source)
 	 values ('${ownerId}', '${tenantId}', '${seededUrl}', 'malware.example.test', true, 'critical', 'malware', array['rehearsal'], 'url-check-live-rehearsal')
@@ -207,9 +231,13 @@ const tooMany = await request("/functions/v1/url-check", {
 if (tooMany.status === 200) fail("url-check accepted a batch beyond its declared maximum");
 checks.push(`oversized batch refused (HTTP ${tooMany.status})`);
 
-// Clean up so the installation is left as it was found.
-psql(`delete from public.url_reputation where url = '${seededUrl}'`);
-psql(`delete from public.api_keys where key_hash = '${keyHash}'`);
+// The exit handler performs the deletes; clearing the names here keeps it from
+// repeating them and lets the check below report what actually happened.
+const cleanedUp = { url: seededUrl, key: keyHash };
+seededUrl = "";
+keyHash = "";
+psql(`delete from public.url_reputation where url = '${cleanedUp.url}'`);
+psql(`delete from public.api_keys where key_hash = '${cleanedUp.key}'`);
 checks.push("rehearsal reputation row and key removed; installation left as found");
 
 const evidenceDir = resolve(ROOT, options.evidenceDir ?? ".release-evidence");

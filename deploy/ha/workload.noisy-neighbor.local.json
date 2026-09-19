@@ -1,0 +1,48 @@
+{
+  "$schema": "./workload-profile.schema.json",
+  "schema_version": 1,
+  "workload_id": "tenant-policy-noisy-neighbor-local-v1",
+  "workload_class": "noisy_neighbor",
+  "description": "Two independently enrolled tenant cohorts polling the policy endpoint on one contended developer host. The latency and error thresholds are the same as the staging template; only the duration, rate and request-count floor are scaled down, because a developer machine cannot produce the template's 100000 requests. A pass here says the endpoint isolates the two tenants at this scale, not that it meets a capacity target.",
+  "environment_label": "isolated-local-rehearsal",
+  "base_url_env": "AIDR_LOAD_BASE_URL",
+  "duration_seconds": 60,
+  "rate_per_second": 20,
+  "max_in_flight": 40,
+  "request_timeout_ms": 10000,
+  "max_response_bytes": 1048576,
+  "scenarios": [
+    {
+      "name": "baseline-tenant-policy",
+      "cohort": "baseline_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 1,
+      "headers_env": { "Authorization": "AIDR_LOAD_BASELINE_AUTHORIZATION" },
+      "expected_statuses": [200],
+      "thresholds": {
+        "min_requests": 200,
+        "max_error_ratio": 0.01,
+        "max_loss_ratio": 0.01,
+        "max_p95_ms": 500,
+        "max_p99_ms": 1000
+      }
+    },
+    {
+      "name": "noisy-tenant-policy",
+      "cohort": "noisy_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 4,
+      "headers_env": { "Authorization": "AIDR_LOAD_NOISY_AUTHORIZATION" },
+      "expected_statuses": [200]
+    }
+  ],
+  "thresholds": {
+    "min_requests": 1000,
+    "max_error_ratio": 0.01,
+    "max_loss_ratio": 0.01,
+    "max_p95_ms": 750,
+    "max_p99_ms": 1500
+  }
+}

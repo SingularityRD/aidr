@@ -1383,13 +1383,25 @@
           "verifiedBy": "this session, exit 0 (9 load harness checks passed)"
         },
         {
-          "claim": "The only recorded local attempt did NOT satisfy its own thresholds: 10 RPS for 30 seconds on one contended host produced availability 0.363, 47 transport errors and 144 dropped requests, and the artefact claims no HA, SLA or production acceptance. This is recorded as a failing result, not as evidence of capacity.",
+          "claim": "The first recorded local attempt did NOT satisfy its own thresholds: 10 RPS for 30 seconds produced availability 0.363, 47 transport errors, 144 dropped requests and p95 latency 5407 ms against a 500 ms threshold. That run executed while the full test suite, the build and eleven containers shared one host, so the result measures contention rather than the endpoint. Kept as history, not as evidence of capacity.",
           "evidencePath": ".release-evidence/load-dashboard-local-20260912.json",
           "command": "pnpm load:test",
-          "verifiedBy": "recorded artefact .release-evidence/load-dashboard-local-20260912.json (passed: false; claims.production_accepted: false)"
+          "verifiedBy": "recorded artefact (passed: false; claims.production_accepted: false)"
+        },
+        {
+          "claim": "The same workload passes on the same host once the host is not running the test suite: 300 of 300 requests completed, 0 dropped, 0 transport errors, availability 1.0, p95 11 ms and p99 21 ms against thresholds of 500 ms and 1000 ms. The failing and passing runs differ only in host contention, which is itself the finding: the earlier failure was an environment artefact, not an endpoint defect. Target supplied through AIDR_LOAD_BASE_URL=http://127.0.0.1:8080.",
+          "evidencePath": "docs/evidence/load-dashboard-local-rerun.json",
+          "command": "node scripts/load-test.mjs --profile deploy/ha/workload.local.example.json --output docs/evidence/load-dashboard-local-rerun.json",
+          "verifiedBy": "this session, exit 0 (PASS: 300 completed, 0 dropped; every threshold_check passed; artefact still claims production_accepted, production_sla_proven and ha_proven false)"
+        },
+        {
+          "claim": "Acceptance 'tenant noisy-neighbor tests' now has a reproducible local harness rather than only a staging template, and it produced a measurement. The policy endpoint kept the two tenants separated in identity but not in latency: the lightly loaded baseline cohort degraded from p95 35 ms alone to p95 5956 ms while a second tenant polled at four times its rate, over the same 240 scheduled requests, with availability falling from 1.000 to 0.742. Median latency was unchanged (21 ms to 22 ms), so the median request is healthy and the tail collapses. Recorded as a failing result, not as capacity evidence. The baseline-alone control is docs/evidence/load-control-local.json (240/240, 0 dropped).",
+          "evidencePath": "docs/evidence/load-noisy-neighbor-local.json",
+          "command": "node scripts/verify-noisy-neighbor-live.mjs --deployment .release-evidence/aidr-local-deployment-r9",
+          "verifiedBy": "this session, exit 1 as expected for a failing workload; the harness profile is deploy/ha/workload.noisy-neighbor.local.json and the staged tenants carry published runtime policies"
         }
       ],
-      "remainingExternal": "Sized host allocation and a controlled environment for a defined workload, an observation window of at least 8 hours, HA/failover infrastructure, multi-tenant noisy-neighbour tests, and a customer-agreed availability SLI/SLA. Not complete locally either: the only recorded attempt failed its own thresholds, so local capacity work is not demonstrated done and the status remains IN_PROGRESS."
+      "remainingExternal": "Sized host allocation and a controlled environment for a defined workload, an observation window of at least 8 hours, HA/failover infrastructure, multi-tenant noisy-neighbour tests on independent hosts, and a customer-agreed availability SLI/SLA. Local capacity work is now demonstrated rather than absent: the local harness passes on a quiet host, and the noisy-neighbour run shows a measured 170x p95 degradation for the baseline tenant when a second tenant is active. That degradation is consistent with deploy/ha/README.md's own statement that the single-host Compose baseline is not a highly available system, but it is now measured on this installation instead of assumed. The two tenants share one database and one edge-function process, so the result does not extend to cross-host isolation, and the status remains IN_PROGRESS pending a sized environment."
     },
     {
       "id": "AIDR-053",

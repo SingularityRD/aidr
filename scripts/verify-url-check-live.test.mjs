@@ -11,7 +11,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,5 +87,21 @@ describe("live url-check rehearsal", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+
+	it("removes its rehearsal key from every exit path, not only the happy one", () => {
+		// A leaked key was found in a live installation after a failing run: the
+		// deletes sat at the end of the happy path, and `fail()` exits the process
+		// from anywhere, so an early refusal returned before they ran. Cleanup must
+		// therefore be registered as an exit handler.
+		const source = readFileSync(SCRIPT, "utf8");
+		assert.match(source, /process\.on\("exit"/, "cleanup must be registered as an exit handler");
+		const handler = source.slice(source.indexOf('process.on("exit"'));
+		assert.match(handler, /delete from public\.api_keys where key_hash/, "the exit handler must delete the minted key");
+		assert.match(handler, /delete from public\.url_reputation where url/, "the exit handler must delete the seeded reputation row");
+		// The values must be assignable from inside the handler's scope, which means
+		// they cannot be consts bound where they are created.
+		assert.match(source, /let keyHash = ""/, "the key hash must be a mutable binding the handler can read");
+		assert.match(source, /let seededUrl = ""/, "the seeded URL must be a mutable binding the handler can read");
 	});
 });

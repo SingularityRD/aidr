@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "kind": "aidr_load_test_result",
+  "passed": true,
+  "started_at": "2026-09-19T21:41:34.648Z",
+  "completed_at": "2026-09-19T21:42:04.576Z",
+  "workload": {
+    "id": "dashboard-health-local-v1",
+    "class": "load",
+    "profile_sha256": "7179a845695a1c14f05fd1259d7a65671ca49879650e4069a7a24e29969edfcb",
+    "duration_seconds": 30,
+    "rate_per_second": 10,
+    "max_in_flight": 20,
+    "target_origin": "http://127.0.0.1:8080",
+    "environment_label": "isolated-local-rehearsal",
+    "candidate_id": null
+  },
+  "metrics": {
+    "overall": {
+      "scheduled": 300,
+      "started": 300,
+      "completed": 300,
+      "expected_responses": 300,
+      "unexpected_responses": 0,
+      "transport_errors": 0,
+      "dropped_requests": 0,
+      "availability_ratio": 1,
+      "error_ratio": 0,
+      "loss_ratio": 0,
+      "latency_ms": {
+        "p50": 2.186200000000099,
+        "p95": 11.072399999999107,
+        "p99": 20.735199999999168,
+        "max": 65.54759999999999,
+        "samples": 300,
+        "observations": 300,
+        "sampling": "complete"
+      },
+      "status_counts": {
+        "200": 300
+      }
+    },
+    "scenarios": {
+      "dashboard-health": {
+        "scheduled": 300,
+        "started": 300,
+        "completed": 300,
+        "expected_responses": 300,
+        "unexpected_responses": 0,
+        "transport_errors": 0,
+        "dropped_requests": 0,
+        "availability_ratio": 1,
+        "error_ratio": 0,
+        "loss_ratio": 0,
+        "latency_ms": {
+          "p50": 2.186200000000099,
+          "p95": 11.072399999999107,
+          "p99": 20.735199999999168,
+          "max": 65.54759999999999,
+          "samples": 300,
+          "observations": 300,
+          "sampling": "complete"
+        },
+        "status_counts": {
+          "200": 300
+        }
+      }
+    },
+    "cohorts": {
+      "platform": {
+        "scheduled": 300,
+        "started": 300,
+        "completed": 300,
+        "expected_responses": 300,
+        "unexpected_responses": 0,
+        "transport_errors": 0,
+        "dropped_requests": 0,
+        "availability_ratio": 1,
+        "error_ratio": 0,
+        "loss_ratio": 0,
+        "latency_ms": {
+          "p50": 2.186200000000099,
+          "p95": 11.072399999999107,
+          "p99": 20.735199999999168,
+          "max": 65.54759999999999,
+          "samples": 300,
+          "observations": 300,
+          "sampling": "complete"
+        },
+        "status_counts": {
+          "200": 300
+        }
+      }
+    }
+  },
+  "diagnostics": {
+    "generator": {
+      "schedule_lag_ms": {
+        "p50": 6.947199999998702,
+        "p95": 13.905400000001464,
+        "p99": 14.692000000000007,
+        "max": 15.297199999997247,
+        "samples": 300,
+        "observations": 300,
+        "sampling": "complete"
+      },
+      "peak_in_flight": 1,
+      "schedule_finished_at_ms": 29902.749799999998,
+      "drain_finished_at_ms": 29925.4813,
+      "completed_rate_per_second": 10.024901420716667
+    },
+    "failure_classes": {
+      "overall": {},
+      "scenarios": {
+        "dashboard-health": {}
+      },
+      "cohorts": {
+        "platform": {}
+      }
+    }
+  },
+  "fault_observations": [],
+  "threshold_checks": [
+    {
+      "label": "overall",
+      "metric": "completed",
+      "operator": ">=",
+      "actual": 300,
+      "expected": 250,
+      "passed": true
+    },
+    {
+      "label": "overall",
+      "metric": "error_ratio",
+      "operator": "<=",
+      "actual": 0,
+      "expected": 0,
+      "passed": true
+    },
+    {
+      "label": "overall",
+      "metric": "loss_ratio",
+      "operator": "<=",
+      "actual": 0,
+      "expected": 0,
+      "passed": true
+    },
+    {
+      "label": "overall",
+      "metric": "latency_ms.p95",
+      "operator": "<=",
+      "actual": 11.072399999999107,
+      "expected": 500,
+      "passed": true
+    },
+    {
+      "label": "overall",
+      "metric": "latency_ms.p99",
+      "operator": "<=",
+      "actual": 20.735199999999168,
+      "expected": 1000,
+      "passed": true
+    },
+    {
+      "label": "scenario:dashboard-health",
+      "metric": "completed",
+      "operator": ">=",
+      "actual": 300,
+      "expected": 250,
+      "passed": true
+    },
+    {
+      "label": "scenario:dashboard-health",
+      "metric": "error_ratio",
+      "operator": "<=",
+      "actual": 0,
+      "expected": 0,
+      "passed": true
+    },
+    {
+      "label": "scenario:dashboard-health",
+      "metric": "loss_ratio",
+      "operator": "<=",
+      "actual": 0,
+      "expected": 0,
+      "passed": true
+    },
+    {
+      "label": "scenario:dashboard-health",
+      "metric": "latency_ms.p95",
+      "operator": "<=",
+      "actual": 11.072399999999107,
+      "expected": 500,
+      "passed": true
+    },
+    {
+      "label": "generator",
+      "metric": "schedule_lag_ms.p95",
+      "operator": "<=",
+      "actual": 13.905400000001464,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "generator",
+      "metric": "schedule_lag_ms.max",
+      "operator": "<=",
+      "actual": 15.297199999997247,
+      "expected": 1000,
+      "passed": true
+    }
+  ],
+  "limitations": [
+    "A passing run applies only to this target, candidate, workload and observation window.",
+    "Fault observations require an independently controlled infrastructure fault during the declared window.",
+    "This artifact does not establish a monthly availability SLI or contractual SLA."
+  ],
+  "claims": {
+    "production_accepted": false,
+    "production_sla_proven": false,
+    "ha_proven": false
+  }
+}

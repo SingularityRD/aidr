@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "kind": "aidr_load_test_result",
+  "passed": true,
+  "started_at": "2026-09-19T21:45:15.526Z",
+  "completed_at": "2026-09-19T21:46:15.333Z",
+  "workload": {
+    "id": "tenant-policy-baseline-control-local-v1",
+    "class": "load",
+    "profile_sha256": "6500fd6c1492ed3c4b56b20209293b17d4498c5c6bddf87ff983db65a4d99a52",
+    "duration_seconds": 60,
+    "rate_per_second": 4,
+    "max_in_flight": 40,
+    "target_origin": "http://127.0.0.1:8000",
+    "environment_label": "isolated-local-rehearsal",
+    "candidate_id": null
+  },
+  "metrics": {
+    "overall": {
+      "scheduled": 240,
+      "started": 240,
+      "completed": 240,
+      "expected_responses": 240,
+      "unexpected_responses": 0,
+      "transport_errors": 0,
+      "dropped_requests": 0,
+      "availability_ratio": 1,
+      "error_ratio": 0,
+      "loss_ratio": 0,
+      "latency_ms": {
+        "p50": 20.938700000006065,
+        "p95": 34.78209999999672,
+        "p99": 60.532500000001164,
+        "max": 239.2169,
+        "samples": 240,
+        "observations": 240,
+        "sampling": "complete"
+      },
+      "status_counts": {
+        "200": 240
+      }
+    },
+    "scenarios": {
+      "baseline-tenant-policy": {
+        "scheduled": 240,
+        "started": 240,
+        "completed": 240,
+        "expected_responses": 240,
+        "unexpected_responses": 0,
+        "transport_errors": 0,
+        "dropped_requests": 0,
+        "availability_ratio": 1,
+        "error_ratio": 0,
+        "loss_ratio": 0,
+        "latency_ms": {
+          "p50": 20.938700000006065,
+          "p95": 34.78209999999672,
+          "p99": 60.532500000001164,
+          "max": 239.2169,
+          "samples": 240,
+          "observations": 240,
+          "sampling": "complete"
+        },
+        "status_counts": {
+          "200": 240
+        }
+      }
+    },
+    "cohorts": {
+      "baseline_tenant": {
+        "scheduled": 240,
+        "started": 240,
+        "completed": 240,
+        "expected_responses": 240,
+        "unexpected_responses": 0,
+        "transport_errors": 0,
+        "dropped_requests": 0,
+        "availability_ratio": 1,
+        "error_ratio": 0,
+        "loss_ratio": 0,
+        "latency_ms": {
+          "p50": 20.938700000006065,
+          "p95": 34.78209999999672,
+          "p99": 60.532500000001164,
+          "max": 239.2169,
+          "samples": 240,
+          "observations": 240,
+          "sampling": "complete"
+        },
+        "status_counts": {
+          "200": 240
+        }
+      }
+    }
+  },
+  "diagnostics": {
+    "generator": {
+      "schedule_lag_ms": {
+        "p50": 7.001400000001013,
+        "p95": 13.897899999999936,
+        "p99": 14.588299999995797,
+        "max": 15.10660000000098,
+        "samples": 240,
+        "observations": 240,
+        "sampling": "complete"
+      },
+      "peak_in_flight": 1,
+      "schedule_finished_at_ms": 59755.4144,
+      "drain_finished_at_ms": 59804.573899999996,
+      "completed_rate_per_second": 4.013070980177989
+    },
+    "failure_classes": {
+      "overall": {},
+      "scenarios": {
+        "baseline-tenant-policy": {}
+      },
+      "cohorts": {
+        "baseline_tenant": {}
+      }
+    }
+  },
+  "fault_observations": [],
+  "threshold_checks": [
+    {
+      "label": "overall",
+      "metric": "completed",
+      "operator": ">=",
+      "actual": 240,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "overall",
+      "metric": "error_ratio",
+      "operator": "<=",
+      "actual": 0,
+      "expected": 0.01,
+      "passed": true
+    },
+    {
+      "label": "overall",
+      "metric": "loss_ratio",
+      "operator": "<=",
+      "actual": 0,
+      "expected": 0.01,
+      "passed": true
+    },
+    {
+      "label": "overall",
+      "metric": "latency_ms.p95",
+      "operator": "<=",
+      "actual": 34.78209999999672,
+      "expected": 500,
+      "passed": true
+    },
+    {
+      "label": "overall",
+      "metric": "latency_ms.p99",
+      "operator": "<=",
+      "actual": 60.532500000001164,
+      "expected": 1000,
+      "passed": true
+    },
+    {
+      "label": "generator",
+      "metric": "schedule_lag_ms.p95",
+      "operator": "<=",
+      "actual": 13.897899999999936,
+      "expected": 500,
+      "passed": true
+    },
+    {
+      "label": "generator",
+      "metric": "schedule_lag_ms.max",
+      "operator": "<=",
+      "actual": 15.10660000000098,
+      "expected": 2500,
+      "passed": true
+    }
+  ],
+  "limitations": [
+    "A passing run applies only to this target, candidate, workload and observation window.",
+    "Fault observations require an independently controlled infrastructure fault during the declared window.",
+    "This artifact does not establish a monthly availability SLI or contractual SLA."
+  ],
+  "claims": {
+    "production_accepted": false,
+    "production_sla_proven": false,
+    "ha_proven": false
+  }
+}
