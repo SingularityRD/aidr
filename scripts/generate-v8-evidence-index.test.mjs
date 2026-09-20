@@ -289,6 +289,43 @@ test("normalized log text is recognised as anonymous by the hygiene rule", () =>
 	assert.equal(outside.includes("somebody"), false);
 });
 
+test("skipped package runs cannot be reported as PASS from exit_code 0", () => {
+	const root = mkdtempSync(join(tmpdir(), "aidr-gate-package-skip-"));
+	const logDirectory = join(root, LOG_DIR);
+	mkdirSync(logDirectory, { recursive: true });
+	const declaredGate = GATES.find((entry) => entry.gate_id === "27-empty-path-package-install");
+	assert.ok(declaredGate);
+	const gateEntry = { ...declaredGate, pass: /Package install verification:/m };
+	const context = {
+		root,
+		commit_sha: "0".repeat(40),
+		candidate_digest: "1".repeat(64),
+		environment: {
+			platform: "test",
+			arch: "test",
+			os_type: "test",
+			os_release: "test",
+			hostname: "test",
+			gate_host_provenance: UNKNOWN,
+		},
+		tool_versions: { node: "test", pnpm: "test", python: "test", docker: "test", os: "test" },
+	};
+	for (const [suffix, expectedStatus, logText] of [
+		["skipped", "unknown", "SKIPPED_WITH_REASON packages/core — 0/1 runs\nPackage install verification: 4/10 PASS, 6 SKIPPED_WITH_REASON, 0 FAIL\n"],
+		["complete", "PASS", "Package install verification: 10/10 PASS, 0 SKIPPED_WITH_REASON, 0 FAIL\n"],
+	]) {
+		const logPath = join(logDirectory, `27-empty-path-package-install-${suffix}.log`);
+		const declaredLogPath = join(logDirectory, gateEntry.log);
+		writeFileSync(declaredLogPath, logText);
+		const record = buildGateRecord(gateEntry, context);
+		assert.equal(record.status, expectedStatus);
+		assert.equal(record.exit_code, 0);
+		assert.match(record.observed_effect, expectedStatus === "PASS" ? /exit_code=0/ : /SKIPPED_WITH_REASON/);
+		// Keep the declared filename stable while replacing its contents for the next case.
+		void logPath;
+	}
+});
+
 test("a result file is preferred over a contradictory log marker", () => {
 	const root = mkdtempSync(join(tmpdir(), "aidr-gate-authority-"));
 	const logDirectory = join(root, LOG_DIR);

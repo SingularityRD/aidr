@@ -132,6 +132,7 @@ const START_MARKER = /^\[aidr-gate\] started_at_utc=(\S+)/m;
 const PNPM_LIFECYCLE_FAILURE = /ELIFECYCLE\s+Command failed with exit code (\d+)/;
 const PYTEST_PASS = /^\d+ passed(?:, \d+ \w+)* in \d+\.\d+s$/m;
 const PYTEST_FAIL = /^\d+ (?:failed|error[s]?)(?:, \d+ \w+)* in \d+\.\d+s$/m;
+const PACKAGE_RUN_SKIPPED = /^\s*SKIPPED_WITH_REASON\s+(?:packages\/|\[)/m;
 
 // ---------------------------------------------------------------------------
 // Gate registry. Every declared verification gate of the v8 execution prompt
@@ -1001,8 +1002,9 @@ function deriveExit(gateEntry, logText, resultFile, resultFilePresent, bindingFa
 	return { exit_code: UNKNOWN, basis: "underivable", marker: null };
 }
 
-function statusFor(exitCode, logExists, resultFilePresent = false) {
+function statusFor(exitCode, logExists, resultFilePresent = false, skippedPackageRuns = false) {
 	if (!logExists && exitCode === UNKNOWN) return resultFilePresent ? STATUS_UNKNOWN : STATUS_NOT_RUN;
+	if (skippedPackageRuns && exitCode === 0) return STATUS_UNKNOWN;
 	if (exitCode === 0) return STATUS_PASS;
 	if (exitCode === UNKNOWN) return STATUS_UNKNOWN;
 	return STATUS_FAIL;
@@ -1037,7 +1039,8 @@ export function buildGateRecord(gateEntry, context) {
 		: [];
 	const trustedResultFile = resultFile !== null && bindingFailures.length === 0 ? resultFile : null;
 	const { exit_code, basis, marker } = deriveExit(gateEntry, logText, trustedResultFile, resultFileExists, bindingFailures);
-	const status = statusFor(exit_code, logExists, resultFileExists);
+	const skippedPackageRuns = gateEntry.gate_id === "27-empty-path-package-install" && logText !== null && PACKAGE_RUN_SKIPPED.test(logText);
+	const status = statusFor(exit_code, logExists, resultFileExists, skippedPackageRuns);
 
 	let started_at_utc = UNKNOWN;
 	let ended_at_utc = UNKNOWN;
@@ -1074,6 +1077,7 @@ export function buildGateRecord(gateEntry, context) {
 		resultRelative,
 		resultFileExists,
 		bindingFailures,
+		skippedPackageRuns,
 	});
 
 	const substantiated = logExists || trustedResultFile !== null ? gateEntry.evidence_level : EVIDENCE_LEVEL_FLOOR;
@@ -1110,6 +1114,7 @@ export function buildGateRecord(gateEntry, context) {
 			commit_sha,
 			digest,
 			siblings: siblingLogFiles(gateEntry, root),
+			skippedPackageRuns,
 		}),
 		owner: gateEntry.owner,
 		evidence_level,
@@ -1130,6 +1135,7 @@ function describeEffect({
 	resultRelative,
 	resultFileExists,
 	bindingFailures,
+	skippedPackageRuns,
 }) {
 	if (!logExists && basis === "result_file") {
 		return `Machine-readable result file recorded exit_code=${exit_code} for: ${gateEntry.command}; no log exists at ${logRelative}, so no log content was inspected.`;
@@ -1154,6 +1160,9 @@ function describeEffect({
 	} else {
 		parts.push(`No decisive terminal marker was found for exit_code; status is ${status} (fail closed).`);
 	}
+	if (skippedPackageRuns) {
+		parts.push("The package-install log reports SKIPPED_WITH_REASON runs, so status is unknown rather than PASS despite exit_code=0.");
+	}
 	if (counts !== UNKNOWN) {
 		parts.push(`Parsed test counts: ${JSON.stringify(counts)}.`);
 	}
@@ -1174,6 +1183,7 @@ function buildLimitations({
 	commit_sha,
 	digest,
 	siblings,
+	skippedPackageRuns,
 }) {
 	const limitations = [...gateEntry.limitations];
 	if (!logExists && !resultFileExists) {
@@ -1210,6 +1220,11 @@ function buildLimitations({
 	} else {
 		limitations.push(
 			"A log exists but no machine-readable result file and no decisive terminal marker were found, so exit_code and status are 'unknown' (fail closed).",
+		);
+	}
+	if (skippedPackageRuns) {
+		limitations.push(
+			"The package-install log contains SKIPPED_WITH_REASON runs; exit_code=0 is retained as the command result, but status is unknown because skipped runs are not passing evidence.",
 		);
 	}
 	if (basis !== "result_file") {
