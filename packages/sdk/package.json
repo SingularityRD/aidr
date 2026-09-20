@@ -28,7 +28,9 @@
   },
   "files": [
     "dist/**",
-    "resources/**"
+    "resources/**",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "build": "pnpm run clean && pnpm run sync:assets && node esbuild.config.js",

@@ -1,0 +1,14 @@
+Singularity AIDR SDK
+Copyright 2026 SingularityRD.
+
+This package's source code and compiled artifacts are proprietary and governed
+by LICENSE and the applicable written commercial agreement. This notice grants
+no public license.
+
+The detection rules shipped under resources/threats/ are separately governed
+by the Detection Rule License (DRL) 1.1 in resources/threats/LICENSE. Rule
+attribution and rule-derived output requirements remain applicable. The DRL
+terms are not changed by this package notice.
+
+Third-party copyright, license, attribution, and notice obligations continue
+to apply to their respective components.
