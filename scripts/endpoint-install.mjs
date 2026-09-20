@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Installs a built Claude connector into a stable, digest-addressed local path.
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
+import { renameWithRetry } from "./lib/atomic-write.mjs";
 
 const { values } = parseArgs({ options: { "package-dir": { type: "string" }, home: { type: "string" }, config: { type: "string" } } });
 if (!values["package-dir"]) throw new Error("--package-dir must point to the extracted aidr-claude-code package");
@@ -113,9 +114,16 @@ const previous = existsSync(settingsPath) ? readFileSync(settingsPath) : null;
 const rendered = `${JSON.stringify(settings, null, 2)}\n`;
 if (!previous || previous.toString() !== rendered) {
 	if (previous) writeFileSync(`${settingsPath}.aidr-backup-${Date.now()}`, previous, { mode: 0o600, flag: "wx" });
-	const temporary = `${settingsPath}.aidr-${process.pid}.tmp`;
+	const temporary = `${settingsPath}.aidr-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
 	writeFileSync(temporary, rendered, { mode: 0o600, flag: "wx" });
-	renameSync(temporary, settingsPath);
+	try {
+		renameWithRetry(temporary, settingsPath);
+	} catch (error) {
+		// Never leave a misleading staged config behind after an unsuccessful
+		// atomic replacement; the existing settings file remains untouched.
+		rmSync(temporary, { force: true });
+		throw error;
+	}
 }
 if (config) writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600, flag: "wx" });
 const receipt = { schema_version: 1, installed_at: new Date().toISOString(), connector: "claude-code", artifact_sha256: digest, path: target, settings_path: settingsPath, local_canary: "deny", native_amsi_probe: nativeAmsiProbe, host_execution: "unverified" };

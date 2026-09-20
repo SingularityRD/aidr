@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { renameWithRetry } from "./lib/atomic-write.mjs";
 
 const repository = fileURLToPath(new URL("..", import.meta.url));
 const installer = join(repository, "scripts", "endpoint-install.mjs");
@@ -46,6 +47,26 @@ function assertCustomerHookPreserved(settingsPath, managedExpected) {
 	if (managedExpected) assert.equal(preToolUse[1].hooks[0].statusMessage, managedMarker);
 	else assert.ok(!JSON.stringify(settings).includes(managedMarker));
 }
+
+test("atomic settings replacement retries transient EPERM", () => {
+	let attempts = 0;
+	const sleeps = [];
+	assert.doesNotThrow(() => renameWithRetry("staged-settings", "settings.json", {
+		attempts: 4,
+		delayMs: 7,
+		rename: () => {
+			attempts++;
+			if (attempts < 3) {
+				const error = new Error("sharing violation");
+				error.code = "EPERM";
+				throw error;
+			}
+		},
+		sleep: (delay) => sleeps.push(delay),
+	}));
+	assert.equal(attempts, 3);
+	assert.deepEqual(sleeps, [7, 7]);
+});
 
 test("reinstall preserves a customer hook alongside a managed hook", (context) => {
 	const home = temporaryHome(context);
