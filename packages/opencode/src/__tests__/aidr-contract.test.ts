@@ -176,7 +176,7 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 			worktree: process.cwd(),
 			$: {},
 		});
-	});
+	}, 30_000);
 
 	afterAll(async () => {
 		if (previousHome === undefined) delete process.env.HOME;
