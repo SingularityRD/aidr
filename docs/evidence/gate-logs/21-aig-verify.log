@@ -1,10 +1,10 @@
-[aidr-gate] started_at_utc=2026-09-20T18:32:25.095Z command=pnpm aig:verify
+[aidr-gate] started_at_utc=2026-09-20T20:46:03.427Z command=pnpm aig:verify
 
 
 > @ aig:verify <repo>
 > node --test scripts/verify-aig-source.test.mjs && node scripts/verify-aig-source.mjs
 
-✔ verifier source pin matches the superproject gitlink (91.2788ms)
+✔ verifier source pin matches the superproject gitlink (51.9132ms)
 ℹ tests 1
 ℹ suites 0
 ℹ pass 1
@@ -12,30 +12,30 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 247.7436
+ℹ duration_ms 136.6438
 {
   "source": {
     "commit": "e68bc5d09a222a3d16b873ded93eb6d726028975",
     "describe": "v4.6.1",
     "expectedCommit": "e68bc5d09a222a3d16b873ded93eb6d726028975"
   },
-  "sourceYamlFiles": 4018,
+  "sourceYamlFiles": 4028,
   "gitYamlFiles": 4013,
   "fingerprintSourceFiles": 146,
   "gitFingerprintFiles": 146,
   "caseCollisionGroups": 0,
   "generated": {
-    "cves": 2043,
+    "cves": 2049,
     "fingerprints": 146,
     "mcpCategories": 14,
-    "bundleId": "cde3c3b3a7ee5f2f0bbf4816953a8d72328b484f4b2d2ca2bd233f1662c795bb",
+    "bundleId": "c2dfeab2071191f3e0b50adb5b364b3c4d20c7d5ecca6aec43e86a2d9ec92fdd",
     "signed": false,
-    "cveSha256": "093a339355e4b67e2109cd924f8250d7838c3f58220c78bbe1e565392e89d37a",
-    "fingerprintSha256": "5093e3fd0efd35ed0c9877fce33ca419399ad63605dbf6b15fc00704226293e7",
-    "mcpSha256": "22c0561af4da9bc1982c366da1f8222b487f8e32f985c302632cc0712c10462e"
+    "cveSha256": "2d3cc2a3dcdba5bc8471e91132af638d5059ed1e71bb199c51b4fa20c6850968",
+    "fingerprintSha256": "d7845d7dcde2463f23b2d5c861c5a7fd6efed87f7fe158553cf7ff19fe58136f",
+    "mcpSha256": "82dce1d059eda3637b613cc2c3c49a153c52a22d4788aae18c418cfc12a96005"
   }
 }
 
 WARN [aig] generated data manifest is unsigned; release mode requires a signature
 
-[aidr-gate] ended_at_utc=2026-09-20T18:32:26.833Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T20:46:04.318Z exit_code=0

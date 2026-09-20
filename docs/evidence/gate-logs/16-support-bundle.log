@@ -1,18 +1,18 @@
-[aidr-gate] started_at_utc=2026-09-20T18:28:40.105Z command=node scripts/verify-support-bundle.mjs --self-test && node scripts/privacy-verify.mjs
+[aidr-gate] started_at_utc=2026-09-20T20:44:05.210Z command=node scripts/verify-support-bundle.mjs --self-test && node scripts/privacy-verify.mjs
 
-{"passed":true,"checks":13,"evidence_path":"<repo>\\.release-evidence\\support-bundle-xJvChY\\verification.json"}
+{"passed":true,"checks":13,"evidence_path":"<repo>\\.release-evidence\\support-bundle-f40PPw\\verification.json"}
 
  RUN  v4.1.2 <repo>
 
- ✓ scripts/privacy-canary.test.mjs (6 tests) 98ms
+ ✓ scripts/privacy-canary.test.mjs (6 tests) 58ms
 
  Test Files  1 passed (1)
       Tests  6 passed (6)
-   Start at  21:28:46
-   Duration  12.74s (transform 568ms, setup 0ms, import 11.13s, tests 98ms, environment 0ms)
+   Start at  23:44:08
+   Duration  1.52s (transform 282ms, setup 0ms, import 1.09s, tests 58ms, environment 0ms)
 
-{"passed":true,"checks":13,"evidence_path":"C:\\Users\\user\\AppData\\Local\\Temp\\aidr-privacy-support-aIX0G7\\.release-evidence\\support-bundle-X9BKpb\\verification.json"}
+{"passed":true,"checks":13,"evidence_path":"C:\\Users\\user\\AppData\\Local\\Temp\\aidr-privacy-support-OjgZxG\\.release-evidence\\support-bundle-zv5kCt\\verification.json"}
 Privacy evidence: <repo>\.release-evidence\privacy-canary-v6.json (LOCAL_PASS)
 
 
-[aidr-gate] ended_at_utc=2026-09-20T18:29:00.817Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T20:44:10.907Z exit_code=0

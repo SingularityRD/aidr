@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T18:29:02.246Z command=pnpm verify:native-host
+[aidr-gate] started_at_utc=2026-09-20T20:44:11.801Z command=pnpm verify:native-host
 
 
 > @ verify:native-host <repo>
@@ -11,9 +11,10 @@ vocab    SCENARIO_MANIFEST_MISSING HOST_UNAVAILABLE VERSION_PROBED HOST_ACCEPTAN
 manifest <repo>\deploy\native\scenarios\native-host-scenarios.json (absent)
 coverage INCOMPLETE
   claude    HOST_UNAVAILABLE
-  cursor    VERSION_PROBE_FAILED
-  vscode    VERSION_PROBE_FAILED version=[main 2026-09-20T18:29:36.073Z] StorageMainService: creating application shared storage
-[main 2026-09-20T18:29:36.300Z] [shared storage] Creating shared storage database at 'c:\Users\user\.vscode-shar
+  cursor    VERSION_PROBE_FAILED version=[main 2026-09-20T20:44:35.498Z] [RendererPing] enabled (intervalMs=5000, blockThresholdMs=15000, stacks=true)
+[main 2026-09-20T20:44:35.711Z] updateURL https://api2.cursor.sh/updates/api/update/win32-
+  vscode    VERSION_PROBE_FAILED version=[main 2026-09-20T20:44:43.731Z] StorageMainService: creating application shared storage
+[main 2026-09-20T20:44:43.915Z] [shared storage] Creating shared storage database at 'c:\Users\user\.vscode-shar
   opencode  VERSION_PROBED version=1.18.30
   openclaw  HOST_UNAVAILABLE
   codex     VERSION_PROBED version=codex-cli 0.151.0
@@ -29,7 +30,7 @@ note     Only a real host run plus independently collected traces and named exte
 {
   "schema_version": 1,
   "kind": "aidr_native_host_matrix_v6",
-  "measured_at": "2026-09-20T18:30:11.578Z",
+  "measured_at": "2026-09-20T20:45:15.767Z",
   "platform": "win32",
   "os_release": "10.0.19045",
   "os_version": "Windows 10 Home",
@@ -74,7 +75,7 @@ note     Only a real host run plus independently collected traces and named exte
       "status": "VERSION_PROBE_FAILED",
       "binary": "C:\\Users\\user\\AppData\\Local\\Programs\\cursor\\Cursor.exe",
       "launcher_sha256": "9fe9867e4d697774d21a05e1d2216a79c02a24af1da64072c57c3a8ad1cf8bee",
-      "version": null,
+      "version": "[main 2026-09-20T20:44:35.498Z] [RendererPing] enabled (intervalMs=5000, blockThresholdMs=15000, stacks=true)\n[main 2026-09-20T20:44:35.711Z] updateURL https://api2.cursor.sh/updates/api/update/win32-",
       "cases": [],
       "probe_error": "spawnSync C:\\Users\\user\\AppData\\Local\\Programs\\cursor\\Cursor.exe ETIMEDOUT"
     },
@@ -84,7 +85,7 @@ note     Only a real host run plus independently collected traces and named exte
       "status": "VERSION_PROBE_FAILED",
       "binary": "C:\\Users\\user\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
       "launcher_sha256": "081417b5e8032c703cf9e25e4886ab10c417ad1b8b87cfd1244c67d15331a8a6",
-      "version": "[main 2026-09-20T18:29:36.073Z] StorageMainService: creating application shared storage\n[main 2026-09-20T18:29:36.300Z] [shared storage] Creating shared storage database at 'c:\\Users\\user\\.vscode-shar",
+      "version": "[main 2026-09-20T20:44:43.731Z] StorageMainService: creating application shared storage\n[main 2026-09-20T20:44:43.915Z] [shared storage] Creating shared storage database at 'c:\\Users\\user\\.vscode-shar",
       "cases": [],
       "probe_error": "spawnSync C:\\Users\\user\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe ETIMEDOUT"
     },
@@ -134,4 +135,4 @@ note     Only a real host run plus independently collected traces and named exte
  ELIFECYCLE  Command failed with exit code 1.
 
 
-[aidr-gate] ended_at_utc=2026-09-20T18:30:12.330Z exit_code=1
+[aidr-gate] ended_at_utc=2026-09-20T20:45:16.043Z exit_code=1

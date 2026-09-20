@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T18:30:12.593Z command=pnpm test:e2e
+[aidr-gate] started_at_utc=2026-09-20T20:45:16.133Z command=pnpm test:e2e
 
 
 > @ test:e2e <repo>
@@ -7,7 +7,7 @@
 [e2e] claude: blocked, 0/7 passed
 [e2e] openclaw: blocked, 0/5 passed
 [e2e] opencode: blocked, 0/13 passed
-[e2e] cursor: ready, 8/8 passed
+[e2e] cursor: ready, 6/8 passed
 [e2e] cursor-headless-agent: blocked, 0/1 passed
 [e2e] model-interception-live: ready, 3/3 passed
 [e2e] vscode: ready, 8/8 passed
@@ -39,6 +39,9 @@ Release E2E gate failed closed:
 - opencode: collected=0, expected=13
 - opencode: passed=0, expected=13
 - opencode: report success=false
+- cursor: process exit=1
+- cursor: passed=6, expected=8
+- cursor: failed=2
 - cursor: report success=false
 - cursor-headless-agent: missing required environment: AIDR_AGENT_PATH
 - cursor-headless-agent: setup preflight blocked execution
@@ -71,7 +74,7 @@ Release E2E gate failed closed:
 - dashboard-browser: passed=0, expected=10
 - dashboard-browser: report success=false
 Evidence: <repo>\.e2e-artifacts\release
-(node:2424) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:38892) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
-[aidr-gate] ended_at_utc=2026-09-20T18:31:49.548Z exit_code=1
+[aidr-gate] ended_at_utc=2026-09-20T20:45:47.116Z exit_code=1

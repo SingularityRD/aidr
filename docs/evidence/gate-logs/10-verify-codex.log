@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T17:56:15.916Z command=pnpm verify:codex
+[aidr-gate] started_at_utc=2026-09-20T20:16:39.467Z command=pnpm verify:codex
 
 
 > @ verify:codex <repo>
@@ -16,9 +16,9 @@ PASS  must-ALLOW  run tests                    decision=allow
 PASS  must-ALLOW  ordinary patch               decision=allow
 PASS  malformed   unparseable stdin            decision=deny
 PASS  malformed   empty stdin                  decision=deny
-PASS  malformed   wrong event                  decision=allow
+PASS  malformed   wrong event                  decision=deny
 
 ALL PASS - 11/11 cases behaved correctly
 
 
-[aidr-gate] ended_at_utc=2026-09-20T17:56:32.342Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T20:16:48.557Z exit_code=0
