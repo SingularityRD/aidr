@@ -9,6 +9,7 @@ type HealthMocks = {
 	remoteCache?: Record<string, unknown>;
 	remoteCacheError?: Error;
 	statError?: Error;
+	diskFreeMB?: number;
 	threats?: unknown[];
 	threatLoaderError?: Error;
 	version?: string;
@@ -35,9 +36,10 @@ async function importHealthWithMocks(options: HealthMocks = {}) {
 		const actual = await importOriginal<typeof import("node:fs")>();
 		return {
 			...actual,
-			statSync: vi.fn(() => {
+			statfsSync: vi.fn(() => {
 				if (options.statError) throw options.statError;
-				return {} as ReturnType<typeof actual.statSync>;
+				const freeMB = options.diskFreeMB ?? 1000;
+				return { bavail: freeMB, bsize: 1024 * 1024 } as ReturnType<typeof actual.statfsSync>;
 			}),
 		};
 	});
@@ -161,6 +163,45 @@ describe("health status reporting", () => {
 		});
 	});
 
+	it.each([401, 404])("degrades when the unauthenticated endpoint probe returns %s", async (statusCode) => {
+		const health = await importHealthWithMocks({
+			fetch: vi.fn().mockResolvedValue({ status: statusCode } as Response) as unknown as typeof fetch,
+		});
+
+		const status = await health.getExtendedHealthStatus();
+		const endpoint = status.checks.find((check) => check.name === "url_endpoint");
+
+		expect(endpoint).toMatchObject({
+			status: "degraded",
+			details: { status: statusCode },
+		});
+	});
+
+	it("uses measured disk space and degrades when it is below the warning threshold", async () => {
+		const health = await importHealthWithMocks({ diskFreeMB: 50 });
+
+		const status = await health.getExtendedHealthStatus();
+		const disk = status.checks.find((check) => check.name === "disk_space");
+
+		expect(disk).toMatchObject({
+			status: "degraded",
+			details: { freeMB: 50, warningThresholdMB: 100 },
+		});
+	});
+
+	it("reports disk space as degraded when measurement is unavailable", async () => {
+		const health = await importHealthWithMocks({ statError: new Error("filesystem unavailable") });
+
+		const status = await health.getExtendedHealthStatus();
+		const disk = status.checks.find((check) => check.name === "disk_space");
+
+		expect(disk).toMatchObject({
+			status: "degraded",
+			message: "Disk space unavailable: filesystem unavailable",
+			details: { measurement: "unavailable" },
+		});
+	});
+
 	it("includes extended dependency statuses and degrades on optional endpoint failures", async () => {
 		const health = await importHealthWithMocks({
 			fetch: vi.fn().mockResolvedValue({ status: 503 } as Response) as unknown as typeof fetch,
@@ -249,10 +290,9 @@ describe("health status reporting", () => {
 			},
 		});
 		expect(byName.disk_space).toMatchObject({
-			status: "healthy",
-			details: {
-				note: "Directory not yet created - will be created on first use",
-			},
+			status: "degraded",
+			message: "Disk space unavailable: missing directory",
+			details: { measurement: "unavailable" },
 		});
 	});
 

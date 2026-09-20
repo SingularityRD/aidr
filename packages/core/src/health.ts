@@ -3,7 +3,7 @@
  * Lightweight health monitoring for core, cache, threat rules, and system components
  */
 
-import { statSync } from "node:fs";
+import { statfsSync } from "node:fs";
 import { join } from "node:path";
 import { VerdictCache } from "./cache.js";
 import { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
@@ -191,7 +191,7 @@ async function checkEndpointHealth(): Promise<HealthCheck> {
 
 		return {
 			name: "url_endpoint",
-			status: response.status < 500 ? "healthy" : "degraded",
+			status: response.status >= 400 ? "degraded" : "healthy",
 			latencyMs,
 			details: { status: response.status, endpoint: urlCheckEndpoint },
 		};
@@ -213,30 +213,30 @@ async function checkDiskHealth(): Promise<HealthCheck> {
 	const start = Date.now();
 	try {
 		const aidrPath = resolvePath(AIDR_DIR);
-		const _stats = statSync(aidrPath);
-		const latencyMs = Date.now() - start;
+		const stats = statfsSync(aidrPath);
+		const freeBytes = Number(stats.bavail) * Number(stats.bsize);
+		if (!Number.isFinite(freeBytes) || freeBytes < 0) {
+			throw new Error("Filesystem returned an invalid free-space measurement");
+		}
 
-		// Estimate available space (rough approximation)
-		const estimatedFreeMB = 1000; // Placeholder
-		const healthy = estimatedFreeMB > 100;
+		const freeMB = freeBytes / (1024 * 1024);
+		const latencyMs = Date.now() - start;
+		const healthy = freeMB > 100;
 
 		return {
 			name: "disk_space",
 			status: healthy ? "healthy" : "degraded",
 			latencyMs,
-			message: healthy ? undefined : `Low disk space: ~${estimatedFreeMB}MB remaining`,
-			details: { aidrDir: AIDR_DIR, estimatedFreeMB, warningThresholdMB: 100 },
+			message: healthy ? undefined : `Low disk space: ~${Math.floor(freeMB)}MB remaining`,
+			details: { aidrDir: AIDR_DIR, freeMB, warningThresholdMB: 100 },
 		};
-	} catch (_error) {
-		// If directory doesn't exist yet, that's OK (will be created)
+	} catch (error) {
 		return {
 			name: "disk_space",
-			status: "healthy",
+			status: "degraded",
 			latencyMs: Date.now() - start,
-			details: {
-				aidrDir: AIDR_DIR,
-				note: "Directory not yet created - will be created on first use",
-			},
+			message: `Disk space unavailable: ${error instanceof Error ? error.message : String(error)}`,
+			details: { aidrDir: AIDR_DIR, warningThresholdMB: 100, measurement: "unavailable" },
 		};
 	}
 }
