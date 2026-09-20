@@ -79,7 +79,18 @@ function client(options: ClientOptions = {}) {
 			return chain;
 		},
 		limit: () => chain,
-		maybeSingle: async () => ({ data: options.membershipRow ?? null, error: null }),
+		maybeSingle: async () => {
+			if (currentTable === "identity_user_session_state") {
+				if (options.barrier && !options.barrier.ok) {
+					if (options.barrier.error === "session_revoked") {
+						return { data: { revoked_before: "2100-01-01T00:00:00.000Z" }, error: null };
+					}
+					return { data: null, error: new Error(options.barrier.error ?? "identity_barrier_unavailable") };
+				}
+				return { data: { revoked_before: null }, error: null };
+			}
+			return { data: options.membershipRow ?? null, error: null };
+		},
 		then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
 			Promise.resolve({
 				data: options.teams ?? [{ team_id: TENANT }],
@@ -258,7 +269,9 @@ describe("autosecops handler guards", () => {
 			clientOptions: { barrier: { ok: false, error: "session_revoked" } },
 		});
 		const response = await revoked.handle(request({ action: "health" }));
-		expect([401, 200, 503]).toContain(response.status);
+		expect(response.status).toBe(401);
+		expect(await response.json()).toEqual({ error: "session_revoked" });
+		expect(revoked.calls).toEqual([]);
 	});
 
 	it("refuses a team the caller cannot prove membership of", async () => {
