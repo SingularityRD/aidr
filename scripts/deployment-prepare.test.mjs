@@ -49,9 +49,13 @@ test("deployment secret root is private on every supported platform", () => {
 		const result = prepare(output, "--mode", "cloud", "--device-start-upstream-url", "https://project.supabase.co/functions/v1/device-start");
 		assert.equal(result.status, 0, result.stderr);
 		if (process.platform === "win32") {
-			// Windows ignores POSIX mode bits; successful preparation proves the
-			// fail-closed PowerShell ACL hardening completed before the writes.
-			assert.match(result.stdout, /Secrets written to private \.env files/);
+			const inspect = "$acl = (Get-Acl -LiteralPath $env:AIDR_TEST_ACL_PATH); [pscustomobject]@{ protected = $acl.AreAccessRulesProtected; identities = @($acl.Access | Where-Object { $_.AccessControlType -eq 'Allow' } | ForEach-Object { $_.IdentityReference.Value }) } | ConvertTo-Json -Compress";
+			const acl = JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(inspect, "utf16le").toString("base64")], { encoding: "utf8", env: { ...process.env, AIDR_TEST_ACL_PATH: output }, windowsHide: true }));
+			assert.equal(acl.protected, true);
+			assert.ok(acl.identities.some((identity) => /S-1-5-18|SYSTEM/i.test(identity)));
+			assert.ok(acl.identities.some((identity) => /S-1-5-32-544|Administrators/i.test(identity)));
+			// Restore inherited test ACLs so the temporary fixture can be removed.
+			execFileSync("icacls.exe", [output, "/reset", "/t", "/c"], { stdio: "ignore", windowsHide: true });
 		} else {
 			assert.equal(statSync(output).mode & 0o777, 0o700);
 			for (const name of [".env", ".env.functions", ".env.ingress"]) assert.equal(statSync(join(output, name)).mode & 0o777, 0o600);
