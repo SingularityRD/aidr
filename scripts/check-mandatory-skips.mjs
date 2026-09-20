@@ -37,7 +37,7 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(MODULE_DIR, "..");
 
 /** The globs `vitest.config.ts` collects, expressed as directory roots. */
-export const INCLUDED_ROOTS = ["packages", "supabase/functions"];
+export const INCLUDED_ROOTS = ["packages", "supabase/functions", "scripts"];
 
 /** Only files under a `__tests__` directory inside an included root are collected. */
 export const TEST_DIR_SEGMENT = "__tests__";
@@ -47,7 +47,7 @@ export const DECLARATION_PATTERN =
 	/\/\/\s*AIDR-SKIP:\s*([A-Z][A-Z0-9-]*-\d+)\s+(\S+)\s*[—:-]\s*(\S.{9,})/;
 
 /** A skip site: the call that skips, and the line index it sits on. */
-const SKIP_PATTERN = /\b(?:it|test|describe)\.(?:skip|todo)\s*\(/;
+const SKIP_PATTERN = /\b(?:it|test|describe)\.(?:skip|skipIf|todo)\s*\(/;
 
 const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
 
@@ -123,7 +123,9 @@ export function collectedTestFiles(repoRoot = REPO_ROOT) {
 			continue;
 		}
 		for (const file of walk(absolute, [])) {
-			if (file.split(/[\\/]/).includes(TEST_DIR_SEGMENT)) {
+			// The root scripts directory contains directly-collected test files, while
+			// package and Supabase tests live under their __tests__ directories.
+			if (root === "scripts" || file.split(/[\\/]/).includes(TEST_DIR_SEGMENT)) {
 				files.push(file);
 			}
 		}

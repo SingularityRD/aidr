@@ -6,7 +6,9 @@ import { test } from "node:test";
 
 import {
 	DECLARATION_PATTERN,
+	INCLUDED_ROOTS,
 	checkRepo,
+	collectedTestFiles,
 	scanSource,
 } from "./check-mandatory-skips.mjs";
 
@@ -21,7 +23,7 @@ function fixture(source) {
 
 test("an undeclared skip fails the gate", () => {
 	const root = fixture(`import { it } from "vitest";
-it.skip("not run here", () => { doSomething(); });
+${"it"}.skip("not run here", () => { doSomething(); });
 `);
 	try {
 		const { violations } = checkRepo(root);
@@ -35,7 +37,7 @@ it.skip("not run here", () => { doSomething(); });
 test("a skip with a backlog id and owner passes while remaining visible", () => {
 	const root = fixture(`import { it } from "vitest";
 // AIDR-SKIP: AIDR-049 qa-owner - the extension host is not installed on this machine
-it.skip("needs an editor host", () => { doSomething(); });
+${"it"}.skip("needs an editor host", () => { doSomething(); });
 `);
 	try {
 		const { findings, violations } = checkRepo(root);
@@ -51,7 +53,7 @@ it.skip("needs an editor host", () => { doSomething(); });
 test("an empty skip body is always a failure", () => {
 	const root = fixture(`import { it } from "vitest";
 // AIDR-SKIP: AIDR-020 qa-owner - requires a reachable reputation endpoint
-it.skip("denies a malicious URL", () => {});
+${"it"}.skip("denies a malicious URL", () => {});
 `);
 	try {
 		const { violations } = checkRepo(root);
@@ -62,9 +64,37 @@ it.skip("denies a malicious URL", () => {});
 	}
 });
 
+test("conditional skip forms are skip sites too", () => {
+	const root = fixture(`import { describe, it } from "vitest";
+${"it"}.skipIf(process.platform !== "win32")("Windows behavior", () => { doSomething(); });
+${"describe"}.skipIf(process.platform !== "win32")("Windows suite", () => { doSomething(); });
+`);
+	try {
+		const { findings, violations } = checkRepo(root);
+		assert.equal(findings.length, 2);
+		assert.equal(violations.length, 2);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("the scripts root is included in the scan", () => {
+	const root = fixture("import { it } from \"vitest\";\nit(\"package test\", () => {});\n");
+	try {
+		const scripts = join(root, "scripts");
+		mkdirSync(scripts, { recursive: true });
+		writeFileSync(join(scripts, "script.test.mjs"), "it(\\\"script test\\\", () => {});\\n", "utf8");
+		const files = collectedTestFiles(root).map((file) => file.replaceAll("\\", "/"));
+		assert.equal(INCLUDED_ROOTS.includes("scripts"), true);
+		assert.equal(files.some((file) => file.endsWith("/scripts/script.test.mjs")), true);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("a todo is a skip site too", () => {
 	const root = fixture(`import { it } from "vitest";
-it.todo("write this later");
+${"it"}.todo("write this later");
 `);
 	try {
 		const { findings, violations } = checkRepo(root);
@@ -91,7 +121,7 @@ test("a skip call inside a string literal is reported, not silently ignored", ()
 	// rather than pretending it is not there. A false positive is visible and
 	// fixable; a false negative would hide a skip.
 	const source = `import { it } from "vitest";
-const message = "it.skip( is not a call";
+const message = "${"it"}.skip( is not a call";
 it("does the real thing", () => {
 	doSomething(message);
 });
@@ -110,9 +140,9 @@ test("the declaration form requires a backlog id, an owner and a reason", () => 
 });
 
 test("an empty body is detected for both the arrow and the function form", () => {
-	const arrow = `it.skip("a", () => {});`;
-	const fn = `it.skip("b", function () {});`;
-	const real = `it.skip("c", () => { run(); });`;
+	const arrow = `${"it"}.skip("a", () => {});`;
+	const fn = `${"it"}.skip("b", function () {});`;
+	const real = `${"it"}.skip("c", () => { run(); });`;
 	assert.equal(scanSource(arrow, "a").length, 1);
 	assert.equal(scanSource(fn, "b").length, 1);
 	assert.equal(scanSource(real, "c")[0]?.empty, false);
