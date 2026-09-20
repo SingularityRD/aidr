@@ -1,0 +1,18 @@
+{
+  "gate_id": "14-node-contracts",
+  "command": "node --test scripts/endpoint-install.test.mjs scripts/deployment-prepare.test.mjs scripts/load-test.test.mjs scripts/release-signing.test.mjs scripts/run-e2e-release.test.mjs scripts/deployment-offboarding.test.mjs scripts/deployment-backup-offsite.test.mjs deploy/ingress/device-start.test.mjs deploy/monitoring/monitoring.test.mjs scripts/benchmarks/evaluate.test.mjs",
+  "recorded_by": "scripts/generate-v8-evidence-index.mjs",
+  "exit_code": 0,
+  "started_at_utc": "2026-09-20T18:28:12.273Z",
+  "ended_at_utc": "2026-09-20T18:28:32.312Z",
+  "duration_ms": 20039,
+  "log_path": ".release-evidence/v8-logs/14-node-contracts.log",
+  "log_sha256": "2fc4bc4e57676aaf9b62bd6199b8026b215fc45098f9e6e0c967ae5fb873df79",
+  "captured_by": "run",
+  "provenance_version": 1,
+  "commit_sha": "7e55c2456926cb62cbe35b2c2eb1ad7231d919df",
+  "source_commit": "7e55c2456926cb62cbe35b2c2eb1ad7231d919df",
+  "candidate_digest": "f7582e0b74f065b9a84baf8e38bf0b982cce131806ff147ad214e698be5a67f1",
+  "candidate_digest_source": ".release-evidence/customer-release-v8-local-20260916-r9/release-inventory.json",
+  "artifact_sha256": "unknown"
+}

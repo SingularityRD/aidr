@@ -1,7 +1,7 @@
-[aidr-gate] started_at_utc=2026-09-18T20:49:48.505Z command=C:\Users\anıl\Desktop\aidr\.release-evidence\aig-bridge-venv\Scripts\python.exe -m pytest services/aig-bridge/tests -q
+[aidr-gate] started_at_utc=2026-09-20T18:28:32.499Z command=<repo>\.release-evidence\aig-bridge-venv\Scripts\python.exe -m pytest services/aig-bridge/tests -q
 
 ...............................                                          [100%]
-31 passed in 2.92s
+31 passed in 5.68s
 
 
-[aidr-gate] ended_at_utc=2026-09-18T20:49:52.044Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T18:28:39.953Z exit_code=0

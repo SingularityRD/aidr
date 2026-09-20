@@ -1,7 +1,7 @@
-[aidr-gate] started_at_utc=2026-09-18T20:50:58.988Z command=pnpm test:e2e
+[aidr-gate] started_at_utc=2026-09-20T18:30:12.593Z command=pnpm test:e2e
 
 
-> @ test:e2e C:\Users\anıl\Desktop\aidr
+> @ test:e2e <repo>
 > node scripts/run-e2e-release.mjs
 
 [e2e] claude: blocked, 0/7 passed
@@ -45,6 +45,7 @@ Release E2E gate failed closed:
 - cursor-headless-agent: collected=0, expected=1
 - cursor-headless-agent: passed=0, expected=1
 - cursor-headless-agent: report success=false
+- model-interception-live: process exit=3
 - model-interception-live: report success=false
 - vscode: report success=false
 - aig-live-control-plane: missing required environment: AIDR_AIG_E2E_EVIDENCE
@@ -69,8 +70,8 @@ Release E2E gate failed closed:
 - dashboard-browser: collected=0, expected=10
 - dashboard-browser: passed=0, expected=10
 - dashboard-browser: report success=false
-Evidence: C:\Users\anıl\Desktop\aidr\.e2e-artifacts\release
-(node:39528) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+Evidence: <repo>\.e2e-artifacts\release
+(node:2424) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
-[aidr-gate] ended_at_utc=2026-09-18T20:52:27.576Z exit_code=1
+[aidr-gate] ended_at_utc=2026-09-20T18:31:49.548Z exit_code=1

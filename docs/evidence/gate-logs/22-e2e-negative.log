@@ -1,29 +1,29 @@
-[aidr-gate] started_at_utc=2026-09-18T20:52:43.736Z command=pnpm test:e2e:negative
+[aidr-gate] started_at_utc=2026-09-20T18:32:27.016Z command=pnpm test:e2e:negative
 
 
-> @ test:e2e:negative C:\Users\anıl\Desktop\aidr
+> @ test:e2e:negative <repo>
 > node scripts/run-e2e-negative-credentials.mjs
 
 
 --- claude-missing-api-key stdout ---
-JSON report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/claude-missing-api-key.json
-JUNIT report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/claude-missing-api-key.xml
+JSON report written to <repo>/.e2e-artifacts/negative-credentials/claude-missing-api-key.json
+JUNIT report written to <repo>/.e2e-artifacts/negative-credentials/claude-missing-api-key.xml
 
 --- openclaw-missing-gateway-token stdout ---
-JSON report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/openclaw-missing-gateway-token.json
-JUNIT report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/openclaw-missing-gateway-token.xml
+JSON report written to <repo>/.e2e-artifacts/negative-credentials/openclaw-missing-gateway-token.json
+JUNIT report written to <repo>/.e2e-artifacts/negative-credentials/openclaw-missing-gateway-token.xml
 
 --- opencode-missing-cli stdout ---
-JSON report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/opencode-missing-cli.json
-JUNIT report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/opencode-missing-cli.xml
+JSON report written to <repo>/.e2e-artifacts/negative-credentials/opencode-missing-cli.json
+JUNIT report written to <repo>/.e2e-artifacts/negative-credentials/opencode-missing-cli.xml
 
 --- cursor-missing-host-and-agent stdout ---
-JSON report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/cursor-missing-host-and-agent.json
-JUNIT report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/cursor-missing-host-and-agent.xml
+JSON report written to <repo>/.e2e-artifacts/negative-credentials/cursor-missing-host-and-agent.json
+JUNIT report written to <repo>/.e2e-artifacts/negative-credentials/cursor-missing-host-and-agent.xml
 
 --- vscode-missing-host stdout ---
-JSON report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/vscode-missing-host.json
-JUNIT report written to C:/Users/anıl/Desktop/aidr/.e2e-artifacts/negative-credentials/vscode-missing-host.xml
+JSON report written to <repo>/.e2e-artifacts/negative-credentials/vscode-missing-host.json
+JUNIT report written to <repo>/.e2e-artifacts/negative-credentials/vscode-missing-host.xml
 
 --- release-preflight stdout ---
 [e2e] claude: blocked, 0/7 passed
@@ -84,6 +84,7 @@ Release E2E gate failed closed:
 - cursor-headless-agent: collected=0, expected=1
 - cursor-headless-agent: passed=0, expected=1
 - cursor-headless-agent: report success=false
+- model-interception-live: process exit=3
 - model-interception-live: report success=false
 - vscode: report success=false
 - aig-live-control-plane: missing required environment: AIDR_AIG_E2E_EVIDENCE
@@ -112,8 +113,8 @@ Release E2E gate failed closed:
 - dashboard-browser: collected=0, expected=10
 - dashboard-browser: passed=0, expected=10
 - dashboard-browser: report success=false
-Evidence: C:\Users\anıl\Desktop\aidr\.e2e-artifacts\negative-release-preflight
-(node:31048) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+Evidence: <repo>\.e2e-artifacts\negative-release-preflight
+(node:12204) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
 Negative credential E2E control: NO-GO (blocked environment) - not a product failure.
@@ -129,8 +130,8 @@ External inputs missing:
 - CURSOR_API_KEY: not provided
 
 Blocked scenarios: claude-missing-api-key [HOST_UNAVAILABLE], openclaw-missing-gateway-token [BLOCKED_EXTERNAL], cursor-missing-host-and-agent [HOST_UNAVAILABLE]
-Evidence: C:\Users\anıl\Desktop\aidr\.e2e-artifacts\negative-credentials
-(node:23648) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+Evidence: <repo>\.e2e-artifacts\negative-credentials
+(node:37772) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
-[aidr-gate] ended_at_utc=2026-09-18T20:54:16.379Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T18:33:34.280Z exit_code=0

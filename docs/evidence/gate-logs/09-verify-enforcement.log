@@ -1,7 +1,7 @@
-[aidr-gate] started_at_utc=2026-09-18T20:37:40.715Z command=pnpm verify:enforcement
+[aidr-gate] started_at_utc=2026-09-20T17:54:19.720Z command=pnpm verify:enforcement
 
 
-> @ verify:enforcement C:\Users\anıl\Desktop\aidr
+> @ verify:enforcement <repo>
 > node scripts/verify-enforcement.mjs
 
 
@@ -96,4 +96,4 @@
 ALL PASS - 72/72 cases behaved correctly
 
 
-[aidr-gate] ended_at_utc=2026-09-18T20:38:09.465Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T17:56:15.661Z exit_code=0

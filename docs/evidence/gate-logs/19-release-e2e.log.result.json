@@ -1,0 +1,18 @@
+{
+  "gate_id": "19-release-e2e",
+  "command": "pnpm test:e2e",
+  "recorded_by": "scripts/generate-v8-evidence-index.mjs",
+  "exit_code": 1,
+  "started_at_utc": "2026-09-20T18:30:12.593Z",
+  "ended_at_utc": "2026-09-20T18:31:49.548Z",
+  "duration_ms": 96955,
+  "log_path": ".release-evidence/v8-logs/19-release-e2e.log",
+  "log_sha256": "5ea1994582e2ac8759f68ec807ed86007aad01471230f65b0755bcf057b60f5d",
+  "captured_by": "run",
+  "provenance_version": 1,
+  "commit_sha": "7e55c2456926cb62cbe35b2c2eb1ad7231d919df",
+  "source_commit": "7e55c2456926cb62cbe35b2c2eb1ad7231d919df",
+  "candidate_digest": "f7582e0b74f065b9a84baf8e38bf0b982cce131806ff147ad214e698be5a67f1",
+  "candidate_digest_source": ".release-evidence/customer-release-v8-local-20260916-r9/release-inventory.json",
+  "artifact_sha256": "unknown"
+}

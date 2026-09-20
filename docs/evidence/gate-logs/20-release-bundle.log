@@ -1,9 +1,9 @@
-[aidr-gate] started_at_utc=2026-09-18T20:52:27.657Z command=node .github/scripts/build-release-bundle.mjs
+[aidr-gate] started_at_utc=2026-09-20T18:31:49.806Z command=node .github/scripts/build-release-bundle.mjs
 
 {"status":"generated","output":"release-output/aidr-provenance.intoto.json","subjects":10,"materials":1,"byproducts":1}
 {"status":"verified","provenance":"release-output/aidr-provenance.intoto.json","subjects":10,"materials":1,"byproducts":1}
 
-> @singularityrd/aidr-core@0.6.0 prepack C:\Users\anıl\Desktop\aidr\packages\core
+> @singularityrd/aidr-core@0.6.0 prepack <repo>\packages\core
 > node ../../scripts/check-workspace-refs.mjs
 
 📦  @singularityrd/aidr-core@0.6.0
@@ -295,7 +295,7 @@ dist/version.d.ts
 dist/version.js
 package.json
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\singularityrd-aidr-core-0.6.0.tgz
+<repo>\release-output\singularityrd-aidr-core-0.6.0.tgz
 📦  @singularityrd/aidr-claude-code@0.6.0
 Tarball Contents
 CHANGELOG.md
@@ -342,7 +342,7 @@ resources/threats/win-obfuscation.yaml
 resources/threats/win-persistence.yaml
 resources/threats/win-supply-chain.yaml
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\singularityrd-aidr-claude-code-0.6.0.tgz
+<repo>\release-output\singularityrd-aidr-claude-code-0.6.0.tgz
 📦  aidr-cursor@0.6.0
 Tarball Contents
 aidr-icon.png
@@ -377,9 +377,9 @@ resources/threats/win-obfuscation.yaml
 resources/threats/win-persistence.yaml
 resources/threats/win-supply-chain.yaml
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\aidr-cursor-0.6.0.tgz
+<repo>\release-output\aidr-cursor-0.6.0.tgz
 
-> @singularityrd/aidr-openclaw@0.6.0 prepack C:\Users\anıl\Desktop\aidr\packages\openclaw
+> @singularityrd/aidr-openclaw@0.6.0 prepack <repo>\packages\openclaw
 > node ../../scripts/check-workspace-refs.mjs
 
 📦  @singularityrd/aidr-openclaw@0.6.0
@@ -419,9 +419,9 @@ resources/threats/win-obfuscation.yaml
 resources/threats/win-persistence.yaml
 resources/threats/win-supply-chain.yaml
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\singularityrd-aidr-openclaw-0.6.0.tgz
+<repo>\release-output\singularityrd-aidr-openclaw-0.6.0.tgz
 
-> @singularityrd/aidr-opencode@0.6.0 prepack C:\Users\anıl\Desktop\aidr\packages\opencode
+> @singularityrd/aidr-opencode@0.6.0 prepack <repo>\packages\opencode
 > node ../../scripts/check-workspace-refs.mjs
 
 📦  @singularityrd/aidr-opencode@0.6.0
@@ -476,9 +476,9 @@ resources/threats/win-obfuscation.yaml
 resources/threats/win-persistence.yaml
 resources/threats/win-supply-chain.yaml
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\singularityrd-aidr-opencode-0.6.0.tgz
+<repo>\release-output\singularityrd-aidr-opencode-0.6.0.tgz
 
-> @singularityrd/aidr-cli@0.6.0 prepack C:\Users\anıl\Desktop\aidr\packages\cli
+> @singularityrd/aidr-cli@0.6.0 prepack <repo>\packages\cli
 > node ../../scripts/check-workspace-refs.mjs
 
 📦  @singularityrd/aidr-cli@0.6.0
@@ -547,9 +547,9 @@ resources/threats/win-obfuscation.yaml
 resources/threats/win-persistence.yaml
 resources/threats/win-supply-chain.yaml
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\singularityrd-aidr-cli-0.6.0.tgz
+<repo>\release-output\singularityrd-aidr-cli-0.6.0.tgz
 
-> @singularityrd/aidr-sdk@0.6.0 prepack C:\Users\anıl\Desktop\aidr\packages\sdk
+> @singularityrd/aidr-sdk@0.6.0 prepack <repo>\packages\sdk
 > node ../../scripts/check-workspace-refs.mjs
 
 📦  @singularityrd/aidr-sdk@0.6.0
@@ -607,22 +607,22 @@ resources/threats/win-obfuscation.yaml
 resources/threats/win-persistence.yaml
 resources/threats/win-supply-chain.yaml
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\singularityrd-aidr-sdk-0.6.0.tgz
+<repo>\release-output\singularityrd-aidr-sdk-0.6.0.tgz
 📦  @singularityrd/aidr-dashboard@0.6.0
 Tarball Contents
 dist/aidr-artifact.manifest.json
 dist/aidr-sbom.cdx.json
 dist/aidr-sbom.cdx.json.sha256
-dist/assets/index-BunXRpHw.js
+dist/assets/index-BMC31Ei_.js
 dist/assets/index-D4pD-CzE.css
 dist/index.html
 dist/runtime-config.js
 package.json
 README.md
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\singularityrd-aidr-dashboard-0.6.0.tgz
+<repo>\release-output\singularityrd-aidr-dashboard-0.6.0.tgz
 
-> @singularityrd/aidr-codex@0.6.0 prepack C:\Users\anıl\Desktop\aidr\packages\codex
+> @singularityrd/aidr-codex@0.6.0 prepack <repo>\packages\codex
 > node ../../scripts/check-workspace-refs.mjs
 
 📦  @singularityrd/aidr-codex@0.6.0
@@ -688,7 +688,7 @@ resources/threats/win-obfuscation.yaml
 resources/threats/win-persistence.yaml
 resources/threats/win-supply-chain.yaml
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\singularityrd-aidr-codex-0.6.0.tgz
+<repo>\release-output\singularityrd-aidr-codex-0.6.0.tgz
 📦  @singularityrd/aidr-mcp-gateway@0.6.0
 Tarball Contents
 dist/aidr-artifact.manifest.json
@@ -700,10 +700,10 @@ dist/aidr-sbom.cdx.json.sha256
 package.json
 README.md
 Tarball Details
-C:\Users\anıl\Desktop\aidr\release-output\singularityrd-aidr-mcp-gateway-0.6.0.tgz
-Release bundle assembled in C:\Users\anıl\Desktop\aidr\release-output (15 artifacts)
+<repo>\release-output\singularityrd-aidr-mcp-gateway-0.6.0.tgz
+Release bundle assembled in <repo>\release-output (15 artifacts)
 
-(node:28300) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:37068) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
-[aidr-gate] ended_at_utc=2026-09-18T20:52:35.558Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T18:32:06.561Z exit_code=0

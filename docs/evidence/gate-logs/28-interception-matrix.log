@@ -1,12 +1,12 @@
-[aidr-gate] started_at_utc=2026-09-18T21:02:18.313Z command=pnpm verify:interception-matrix
+[aidr-gate] started_at_utc=2026-09-20T18:59:05.053Z command=pnpm verify:interception-matrix
 
 
-> @ verify:interception-matrix C:\Users\anıl\Desktop\aidr
+> @ verify:interception-matrix <repo>
 > node deploy/native/verify-interception-matrix.mjs
 
 MKT-03 interception matrix gate
-matrix   C:\Users\anıl\Desktop\aidr\deploy\native\interception-matrix.json sha256=7783d9997592e4e2
-support  C:\Users\anıl\Desktop\aidr\deploy\native\support-matrix.json sha256=dc5118373e540c01
+matrix   <repo>\deploy\native\interception-matrix.json sha256=7783d9997592e4e2
+support  <repo>\deploy\native\support-matrix.json sha256=dc5118373e540c01
 validity PASS  readiness NO-GO
 connectors 6  rows 30  enforced=0 declared-not-proven=13 tamper-evident-only=0 unsupported=17
   claude-code: pre-prompt=unsupported pre-tool=declared-not-proven pre-model-output=declared-not-proven model-stream=unsupported network=unsupported
@@ -20,4 +20,4 @@ connectors without a named real-host acceptance record 6
 failures 0
 
 
-[aidr-gate] ended_at_utc=2026-09-18T21:02:18.819Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T18:59:05.546Z exit_code=0

@@ -1,10 +1,10 @@
-[aidr-gate] started_at_utc=2026-09-18T20:52:42.873Z command=pnpm aig:verify
+[aidr-gate] started_at_utc=2026-09-20T18:32:25.095Z command=pnpm aig:verify
 
 
-> @ aig:verify C:\Users\anıl\Desktop\aidr
+> @ aig:verify <repo>
 > node --test scripts/verify-aig-source.test.mjs && node scripts/verify-aig-source.mjs
 
-✔ verifier source pin matches the superproject gitlink (34.392ms)
+✔ verifier source pin matches the superproject gitlink (91.2788ms)
 ℹ tests 1
 ℹ suites 0
 ℹ pass 1
@@ -12,7 +12,7 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 99.8513
+ℹ duration_ms 247.7436
 {
   "source": {
     "commit": "e68bc5d09a222a3d16b873ded93eb6d726028975",
@@ -28,14 +28,14 @@
     "cves": 2043,
     "fingerprints": 146,
     "mcpCategories": 14,
-    "bundleId": "73ac5fbb59fdb12edb89cb5a2654e323a4e97747a8d60c1874fb3595a732701f",
+    "bundleId": "cde3c3b3a7ee5f2f0bbf4816953a8d72328b484f4b2d2ca2bd233f1662c795bb",
     "signed": false,
-    "cveSha256": "9eccd74dba0e88fef992a68592a31d311566df4447a91c990d086bf225deffb2",
-    "fingerprintSha256": "55d50ad44312984604e26e3eac615a0068b5541e0377ce9b82f364c64e5438e4",
-    "mcpSha256": "b9835ee307cada52155530baafc61a665dce3f7057fa728def1b0faf0de056a6"
+    "cveSha256": "093a339355e4b67e2109cd924f8250d7838c3f58220c78bbe1e565392e89d37a",
+    "fingerprintSha256": "5093e3fd0efd35ed0c9877fce33ca419399ad63605dbf6b15fc00704226293e7",
+    "mcpSha256": "22c0561af4da9bc1982c366da1f8222b487f8e32f985c302632cc0712c10462e"
   }
 }
 
 WARN [aig] generated data manifest is unsigned; release mode requires a signature
 
-[aidr-gate] ended_at_utc=2026-09-18T20:52:43.654Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T18:32:26.833Z exit_code=0

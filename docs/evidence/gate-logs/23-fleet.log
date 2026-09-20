@@ -1,7 +1,7 @@
-[aidr-gate] started_at_utc=2026-09-18T20:54:16.461Z command=pnpm verify:fleet:windows && pnpm verify:fleet:unix
+[aidr-gate] started_at_utc=2026-09-20T18:33:34.456Z command=pnpm verify:fleet:windows && pnpm verify:fleet:unix
 
 
-> @ verify:fleet:windows C:\Users\anıl\Desktop\aidr
+> @ verify:fleet:windows <repo>
 > node scripts/verify-windows-fleet.mjs
 
 {
@@ -28,7 +28,7 @@
   ]
 }
 
-> @ verify:fleet:unix C:\Users\anıl\Desktop\aidr
+> @ verify:fleet:unix <repo>
 > node scripts/verify-unix-fleet-delivery.mjs
 
 {"passed":true,"checks":26,"scope":"Offline template and local lifecycle verification; no Jamf/MDM or host execution acceptance."}
@@ -40,4 +40,4 @@ fleet verifier: lifecycle install completed
 fleet verifier: lifecycle upgrade and rollback completed
 fleet verifier: lifecycle uninstall completed
 
-[aidr-gate] ended_at_utc=2026-09-18T20:54:36.732Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T18:34:20.212Z exit_code=0
