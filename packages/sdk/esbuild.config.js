@@ -51,8 +51,8 @@ await esbuild.build({
 	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
 });
 
-// The package exposes a separate executable through `bin.aidr`. Keep it as a
-// standalone CommonJS bundle so `npx aidr` works from a packed tarball.
+// The package exposes a separate executable through `bin.aidr-sdk`. Keep it as a
+// standalone CommonJS bundle so `npx aidr-sdk` works from a packed tarball.
 await esbuild.build({
 	bundle: true,
 	platform: "node",

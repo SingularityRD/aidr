@@ -135,7 +135,7 @@ export const RELEASE_PACKAGES = [
 			],
 		},
 		runs: [
-			{ id: "aidr health --json", kind: "bin", bin: "aidr", args: ["--json"], expect: "claude-health-json" },
+			{ id: "aidr-claude-code health --json", kind: "bin", bin: "aidr-claude-code", args: ["--json"], expect: "claude-health-json" },
 		],
 	},
 	{
@@ -176,7 +176,7 @@ export const RELEASE_PACKAGES = [
 		runs: [
 			{ id: "sdk CJS require", kind: "import", entry: { exports: "." }, format: "cjs", expected: { AIDRClient: "function" } },
 			{ id: "sdk ESM import", kind: "import", entry: { exports: "." }, format: "esm", expected: { AIDRClient: "function" } },
-			{ id: "sdk aidr --help", kind: "bin", bin: "aidr", args: ["--help"], expect: "aidr-usage" },
+			{ id: "sdk aidr-sdk --help", kind: "bin", bin: "aidr-sdk", args: ["--help"], expect: "aidr-sdk-usage" },
 		],
 	},
 	{
@@ -1061,6 +1061,9 @@ function applyExpectation(expect, result, label) {
 		}
 		case "aidr-usage":
 			if (!/Usage:\s+aidr\b/i.test(result.stdout ?? "")) return { status: FAIL, detail: `${label} output does not contain the aidr usage header` };
+			return { status: PASS };
+		case "aidr-sdk-usage":
+			if (!/Usage:\s+aidr-sdk\b/i.test(result.stdout ?? "")) return { status: FAIL, detail: `${label} output does not contain the aidr-sdk usage header` };
 			return { status: PASS };
 		case "gateway-usage":
 			if (result.status !== 2 || !/usage: aidr-mcp-gateway <config\.json>/.test(result.stderr ?? "")) {

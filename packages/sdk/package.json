@@ -9,7 +9,7 @@
   "description": "Singularity AIDR — Universal SDK for AI agent security integration",
   "type": "module",
   "bin": {
-    "aidr": "./dist/cli.cjs"
+    "aidr-sdk": "./dist/cli.cjs"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",

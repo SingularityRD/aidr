@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { duplicateBins, verifyWorkspaceBins } from "./check-publishable-bins.mjs";
 import {
 	FAIL,
 	PASS,
@@ -301,6 +302,21 @@ test("removePath reports success and leaves nothing behind", () => {
 	assert.equal(removePath(target), true);
 	assert.equal(existsSync(target), false);
 	workspace.dispose();
+});
+
+test("publishable packages cannot claim duplicate bin names", () => {
+	assert.deepEqual(
+		duplicateBins([
+			{ name: "@example/cli", package: { bin: { aidr: "dist/cli.js" } } },
+			{ name: "@example/sdk", package: { bin: { aidr: "dist/sdk.js" } } },
+		]),
+		[{ name: "aidr", packages: ["@example/cli", "@example/sdk"] }],
+	);
+	assert.deepEqual(duplicateBins([{ name: "@example/cli", package: { bin: { aidr: "dist/cli.js" } } }]), []);
+});
+
+test("the workspace's published bin names are unique", () => {
+	assert.equal(verifyWorkspaceBins(), true);
 });
 
 test("the repository's own packed layout is described by the same rules", () => {

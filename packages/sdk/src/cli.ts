@@ -63,7 +63,7 @@ function getFreemiumManager(): FreemiumManager | null {
 
 const program = new Command();
 
-program.name("aidr").description("AIDR SDK CLI - Security checks for AI agents").version(VERSION);
+program.name("aidr-sdk").description("AIDR SDK CLI - Security checks for AI agents").version(VERSION);
 
 program
 	.command("init")

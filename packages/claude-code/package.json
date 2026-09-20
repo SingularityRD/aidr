@@ -13,7 +13,7 @@
     "CHANGELOG.md"
   ],
   "bin": {
-    "aidr": "dist/health.cjs"
+    "aidr-claude-code": "dist/health.cjs"
   },
   "scripts": {
     "build": "node ../../scripts/ensure-core-build.mjs && pnpm run sync:assets && node ../../scripts/rmrf.mjs dist && node esbuild.config.js",

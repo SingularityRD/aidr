@@ -63,6 +63,7 @@
 		"audit:prod": "node scripts/audit-production-deps.mjs",
 		"package:consumers": "node scripts/check-package-consumers.mjs",
 		"verify:package-install": "node scripts/verify-package-install.mjs",
+		"verify:package-bins": "node scripts/check-publishable-bins.mjs",
 		"quality:static": "pnpm lint && pnpm benchmark:test && pnpm knip && pnpm duplicates && node scripts/check-mandatory-skips.mjs && pnpm verify:investor-metrics && node scripts/check-commercial-surface.mjs && node scripts/verify-commercial-compliance.mjs && node scripts/check-supabase-edge-contracts.mjs && node scripts/demo-preflight.mjs --static && pnpm test:monthly-sli && pnpm verify:monthly-sli",
 		"demo:preflight": "node scripts/demo-preflight.mjs",
 		"lint": "biome lint .",

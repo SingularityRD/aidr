@@ -42,7 +42,7 @@ features are an opt-in layer on top of local enforcement.
 | `dist/post-tool-use.cjs` | Tool-output inspection hook |
 | `dist/session-start.cjs` | Session scan and version check |
 | `dist/mcp-server.cjs` | Bundled MCP server |
-| `dist/health.cjs` | `aidr --json` health probe (declared `bin`) |
+| `dist/health.cjs` | `aidr-claude-code --json` health probe (declared `bin`) |
 
 ## Licence
 
