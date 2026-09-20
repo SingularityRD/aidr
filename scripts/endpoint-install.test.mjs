@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -66,6 +66,18 @@ test("atomic settings replacement retries transient EPERM", () => {
 	}));
 	assert.equal(attempts, 3);
 	assert.deepEqual(sleeps, [7, 7]);
+});
+
+test("fleet-staged installer runs without source-checkout sibling modules", (context) => {
+	const home = temporaryHome(context);
+	const stagedInstaller = join(home, "endpoint-install.mjs");
+	copyFileSync(installer, stagedInstaller);
+	const result = spawnSync(process.execPath, [stagedInstaller, "--package-dir", packageDir, "--home", home], {
+		encoding: "utf8", timeout: 120000, cwd: home,
+		env: { ...process.env, HOME: home, USERPROFILE: home },
+	});
+	assert.equal(result.status, 0, `staged installer failed: ${result.stderr || result.error?.message}`);
+	assert.match(readFileSync(join(home, ".singularity-aidr", "installation.json"), "utf8"), /local_canary/);
 });
 
 test("reinstall preserves a customer hook alongside a managed hook", (context) => {

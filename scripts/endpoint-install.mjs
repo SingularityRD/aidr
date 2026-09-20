@@ -1,12 +1,38 @@
 #!/usr/bin/env node
 // Installs a built Claude connector into a stable, digest-addressed local path.
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
-import { renameWithRetry } from "./lib/atomic-write.mjs";
+
+const sleepSync = (milliseconds) => {
+	if (milliseconds <= 0) return;
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+};
+
+// This installer is copied as a single manifest payload file for fleet deployment.
+// Keep the retry helper local so the staged endpoint installer does not depend on
+// an untracked sibling module from the source checkout.
+function renameWithRetry(source, destination, options = {}) {
+	const attempts = options.attempts ?? 8;
+	const delayMs = options.delayMs ?? 25;
+	const rename = options.rename ?? ((from, to) => renameSync(from, to));
+	const sleep = options.sleep ?? sleepSync;
+	let lastError;
+	for (let attempt = 0; attempt < attempts; attempt++) {
+		try {
+			rename(source, destination);
+			return;
+		} catch (error) {
+			lastError = error;
+			if (!["EPERM", "EACCES", "EBUSY"].includes(error?.code) || attempt === attempts - 1) throw error;
+			sleep(delayMs);
+		}
+	}
+	throw lastError;
+}
 
 const { values } = parseArgs({ options: { "package-dir": { type: "string" }, home: { type: "string" }, config: { type: "string" } } });
 if (!values["package-dir"]) throw new Error("--package-dir must point to the extracted aidr-claude-code package");
