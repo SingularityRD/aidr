@@ -352,6 +352,11 @@ describe("provisioned tenant detector policy at the connector entry points", () 
 
 		const outcome = await codexEntryPoint(`echo ${TEST_DLP_MARKER}`);
 		expect(outcome).toMatchObject({ decision: "allow", reasonCode: "allowed" });
-		expect(outcome.wire).toEqual({});
+		expect(outcome.wire).toMatchObject({
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "allow",
+			},
+		});
 	});
 });

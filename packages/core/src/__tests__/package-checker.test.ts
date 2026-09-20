@@ -124,7 +124,7 @@ describe("PackageChecker", () => {
 		expect(results[0]?.confidence).toBe(0.75);
 	});
 
-	it("returns clean for established package", async () => {
+	it("returns unknown when an established package is not verified", async () => {
 		const mockFetch = vi.fn();
 		mockFetch.mockResolvedValueOnce({
 			ok: true,
@@ -139,7 +139,8 @@ describe("PackageChecker", () => {
 
 		const checker = new PackageChecker();
 		const results = await checker.checkPackages([{ name: "express", registry: "npm" }]);
-		expect(results[0]?.verdict).toBe("clean");
+		expect(results[0]?.verdict).toBe("unknown");
+		expect(results[0]?.details).toContain("not verified clean");
 	});
 
 	it("returns unknown on registry 500 (not false not_found)", async () => {
@@ -198,7 +199,7 @@ describe("PackageChecker", () => {
 		]);
 		expect(results).toHaveLength(2);
 		const verdicts = results.map((r) => r.verdict).sort();
-		expect(verdicts).toContain("clean");
+		expect(verdicts).toContain("unknown");
 		expect(verdicts).toContain("not_found");
 	});
 

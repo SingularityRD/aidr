@@ -754,12 +754,12 @@ describe("billing-portal Edge handler", () => {
 		const { handle, db } = await handlerWith({
 			subscription: { provider_subscription_id: "sub_fixture_1", status: "active" },
 		});
-		const response = await handle(
+		const settledResponse = await handle(
 			post({
 				action: "apply_settlement",
 				receipt: {
 					settlementId: SETTLEMENT,
-					requestId: "request_1234567890abcdef",
+					requestId: "request_settled_rejected",
 					status: "settled",
 					currency: "USD",
 					lines: [{ sku: "aidr.agent.seat", quantity: 5, unitAmountMinor: 1000 }],
@@ -768,6 +768,26 @@ describe("billing-portal Edge handler", () => {
 					refundedAmountMinor: 0,
 					occurredAt: "2026-09-13T00:00:00.000Z",
 					sequence: 3,
+				},
+			}),
+		);
+		expect(settledResponse.status).toBe(409);
+		expect(await settledResponse.json()).toMatchObject({ error: "settlement_requires_provider_confirmation" });
+
+		const response = await handle(
+			post({
+				action: "apply_settlement",
+				receipt: {
+					settlementId: SETTLEMENT,
+					requestId: "request_1234567890abcdef",
+					status: "settlement_pending",
+					currency: "USD",
+					lines: [{ sku: "aidr.agent.seat", quantity: 5, unitAmountMinor: 1000 }],
+					quoteReference: "QUOTE-2026-0001",
+					settledAmountMinor: 0,
+					refundedAmountMinor: 0,
+					occurredAt: "2026-09-13T00:00:00.000Z",
+					sequence: 2,
 				},
 			}),
 		);
@@ -786,9 +806,10 @@ describe("billing-portal Edge handler", () => {
 			boundReceipt({
 				providerCustomerId: args.p_provider_customer_id as string,
 				requestId: "request_1234567890abcdef",
-				status: "settled",
+				status: "settlement_pending",
+				settledAmountMinor: 0,
 				currency: "USD",
-				sequence: 3,
+				sequence: 2,
 				quoteReference: "QUOTE-2026-0001",
 				refundedAmountMinor: 0,
 				occurredAt: "2026-09-13T00:00:00.000Z",
@@ -799,9 +820,10 @@ describe("billing-portal Edge handler", () => {
 			boundReceipt({
 				providerCustomerId: args.p_provider_customer_id as string,
 				requestId: "request_1234567890abcdef",
-				status: "settled",
+				status: "settlement_pending",
+				settledAmountMinor: 0,
 				currency: "USD",
-				sequence: 3,
+				sequence: 2,
 				quoteReference: "QUOTE-2026-0001",
 				refundedAmountMinor: 0,
 				occurredAt: "2026-09-13T00:00:00.000Z",
@@ -820,14 +842,14 @@ describe("billing-portal Edge handler", () => {
 				receipt: {
 					settlementId: SETTLEMENT,
 					requestId: "request_1234567890abcdef",
-					status: "settled",
+					status: "settlement_pending",
 					currency: "USD",
 					lines: [{ sku: "aidr.agent.seat", quantity: 1, unitAmountMinor: 1000 }],
 					quoteReference: "QUOTE-1",
-					settledAmountMinor: 1000,
+					settledAmountMinor: 0,
 					refundedAmountMinor: 0,
 					occurredAt: "2026-09-13T00:00:00.000Z",
-					sequence: 3,
+					sequence: 2,
 				},
 			}),
 		);
@@ -845,14 +867,14 @@ describe("billing-portal Edge handler", () => {
 				receipt: {
 					settlementId: SETTLEMENT,
 					requestId: "request_1234567890abcdef",
-					status: "settled",
+					status: "settlement_pending",
 					currency: "USD",
 					lines: [{ sku: "aidr.agent.seat", quantity: 1, unitAmountMinor: 1000 }],
 					quoteReference: "QUOTE-1",
-					settledAmountMinor: 1000,
+					settledAmountMinor: 0,
 					refundedAmountMinor: 0,
 					occurredAt: "2026-09-13T00:00:00.000Z",
-					sequence: 3,
+					sequence: 2,
 				},
 			}),
 		);

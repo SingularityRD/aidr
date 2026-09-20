@@ -53,7 +53,6 @@ describe("enrollment retry outcome", () => {
 		expect(response.status).toBe(401);
 		expect(await response.json()).toEqual({
 			error: "invalid_or_expired_enrollment_token",
-			enrollment_outcome: "unknown",
 		});
 	});
 
@@ -66,8 +65,7 @@ describe("enrollment retry outcome", () => {
 		}));
 		expect(response.status).toBe(503);
 		expect(await response.json()).toEqual({
-			error: "enrollment_exchange_failed",
-			enrollment_outcome: "unknown",
+			error: "enrollment_authorization_unavailable",
 		});
 	});
 });
