@@ -27,6 +27,7 @@ import {
 	INDEX_FILE,
 	levelsAreSubstituted,
 	LOG_DIR,
+	normalizeCapturedLog,
 	ROOT,
 	SCHEMA_FILE,
 	serializeIndex,
@@ -37,6 +38,7 @@ import {
 	verifyEvidenceIndex,
 	writeResultFile,
 } from "./generate-v8-evidence-index.mjs";
+import { PLACEHOLDER_IDENTITIES } from "./verify-repo-hygiene.mjs";
 
 const schema = JSON.parse(readFileSync(resolve(ROOT, SCHEMA_FILE), "utf8"));
 
@@ -240,6 +242,51 @@ test("a captured result file is read back as the authoritative exit status", () 
 	assert.equal(sidecar.log_sha256, UNKNOWN);
 	assert.equal(sidecar.artifact_sha256, UNKNOWN);
 	assert.equal(existsSync(join(process.cwd(), "undefined.result.json")), false);
+});
+
+test("captured logs are normalized so evidence never publishes a home directory", () => {
+	// Gate output prints the absolute working directory, and the hygiene gate exists
+	// to keep exactly those strings out of tracked files. Its allowlist cannot cover
+	// evidence logs without sanctioning the leak, so the capture normalizes instead.
+	const root = "C:\\Users\\somebody\\Desktop\\aidr";
+	const raw = [
+		"> @ quality:static C:\\Users\\somebody\\Desktop\\aidr",
+		"> @ lint C:/Users/somebody/Desktop/aidr",
+		'{"cwd":"C:\\\\Users\\\\somebody\\\\Desktop\\\\aidr"}',
+		"cache: C:\\Users\\somebody\\AppData\\Local\\node\\corepack",
+		"posix: /home/somebody/projects/aidr and /Users/somebody/src",
+		"[aidr-gate] ended_at_utc=2026-09-20T00:00:00.000Z exit_code=0",
+	].join("\n");
+
+	const normalized = normalizeCapturedLog(raw, root);
+
+	assert.equal(normalized.includes("somebody"), false, "the personal identity survived normalization");
+	assert.match(normalized, /> @ quality:static <repo>/);
+	assert.match(normalized, /> @ lint <repo>/);
+	assert.match(normalized, /"cwd":"<repo>"/);
+	assert.match(normalized, /cache: C:\\Users\\user\\AppData/);
+	assert.match(normalized, /posix: \/home\/user\/projects\/aidr and \/Users\/user\/src/);
+	// The markers the index parses must survive untouched.
+	assert.match(normalized, /exit_code=0$/);
+	// Nothing outside those prefixes is rewritten.
+	assert.equal(normalizeCapturedLog("plain output, no paths", root), "plain output, no paths");
+	assert.equal(normalizeCapturedLog("", root), "");
+});
+
+test("normalized log text is recognised as anonymous by the hygiene rule", () => {
+	// The placeholder the capture writes must be one the repository hygiene gate
+	// already treats as anonymous, otherwise the evidence would still be flagged.
+	const identities = new Set([...PLACEHOLDER_IDENTITIES].map((value) => value.toLowerCase()));
+	const root = "C:\\Users\\somebody\\Desktop\\aidr";
+	// A path under the root is replaced outright, so no drive path survives at all.
+	assert.equal(normalizeCapturedLog(`cwd ${root}\\packages`, root), "cwd <repo>\\packages");
+	// A path outside the root keeps its shape but loses the identity, and the
+	// segment left behind must be one the hygiene gate recognises as a placeholder.
+	const outside = normalizeCapturedLog("cache C:\\Users\\somebody\\AppData\\Local\\node", root);
+	const match = /[A-Za-z]:\\{1,2}Users\\{1,2}([^\\/\s"'<>|,;)\]]+)/.exec(outside);
+	assert.ok(match, "the normalized path no longer matches the drive-path pattern at all");
+	assert.ok(identities.has(match[1].toLowerCase()), `placeholder ${match[1]} is not in PLACEHOLDER_IDENTITIES`);
+	assert.equal(outside.includes("somebody"), false);
 });
 
 test("a result file is preferred over a contradictory log marker", () => {

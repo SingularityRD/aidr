@@ -1282,7 +1282,7 @@ export function buildEvidenceIndex(options = {}) {
 		determinism:
 			"This index contains no generation timestamp: per-gate timing comes only from captured start markers and log modification times, so repeated runs over unchanged artefacts are byte-identical.",
 		methodology:
-			"Every field is derived from artefacts on disk: a result file supplies an exit status only when its gate id, command, source commit, candidate digest, log SHA-256 and declared-artifact SHA-256 bind to the current index context; otherwise stale or unprovable result files are ignored and a PASS marker is never inferred from that log. Without a trusted result file, exit status comes from a decisive terminal log marker, timing from a captured start marker plus the log mtime, digests from SHA-256 of the log and of a declared artifact, and test counts from the log when the format is known. Any value that could not be derived is the explicit string 'unknown' and any gate without a log is reported as NOT_RUN; no gate is ever omitted and no measurement, host, timestamp or customer fact is invented.",
+			"Every field is derived from artefacts on disk: a result file supplies an exit status only when its gate id, command, source commit, candidate digest, log SHA-256 and declared-artifact SHA-256 bind to the current index context; otherwise stale or unprovable result files are ignored and a PASS marker is never inferred from that log. Without a trusted result file, exit status comes from a decisive terminal log marker, timing from a captured start marker plus the log mtime, digests from SHA-256 of the log and of a declared artifact, and test counts from the log when the format is known. Captured gate logs are normalized before their digest is recorded: the absolute repository root becomes <repo> and a personal home-directory segment becomes the anonymous placeholder user, so the evidence does not publish a contributor's home directory; the digest covers the normalized bytes and the transformation touches only those path prefixes. Any value that could not be derived is the explicit string 'unknown' and any gate without a log is reported as NOT_RUN; no gate is ever omitted and no measurement, host, timestamp or customer fact is invented.",
 		status_counts,
 		gate_count: gates.length,
 		gates,
@@ -1540,6 +1540,37 @@ export function expandGateCommand(command, env = process.env) {
 	});
 }
 
+/**
+ * Strip personal host identity out of a captured gate log before it is digested.
+ *
+ * Gate output routinely prints the absolute working directory (`> @
+ * quality:static C:\Users\<name>\Desktop\aidr`), and `scripts/verify-repo-hygiene.mjs`
+ * exists to keep exactly those strings out of tracked files. Its allowlist cannot
+ * cover evidence logs without sanctioning the leak, and the repository's own
+ * doctrine is to fix the generator rather than allowlist it, so the capture
+ * normalizes instead: the repository root becomes `<repo>` and a personal
+ * home-directory segment becomes the anonymous placeholder `user`, which the
+ * hygiene gate already recognises as anonymous.
+ *
+ * The substitution is applied before the digest is computed, so the recorded
+ * SHA-256 always describes the bytes on disk. Only these path prefixes change;
+ * exit markers, timings and test counts are untouched, which is what the index
+ * parses.
+ */
+export function normalizeCapturedLog(text, root = ROOT) {
+	if (typeof text !== "string" || text === "") return text;
+	let normalized = text;
+	// The repository root first, in every spelling a tool may print it in: native
+	// backslashes, forward slashes, and the JSON/TS-escaped double-backslash form.
+	for (const variant of [root, root.replace(/\\/g, "/"), root.replace(/\\/g, "\\\\")]) {
+		if (variant) normalized = normalized.split(variant).join("<repo>");
+	}
+	// Any other drive path or POSIX home path belonging to a real person.
+	normalized = normalized.replace(/([A-Za-z]:[\\/]{1,2}Users[\\/]{1,2})([^\\/\s"'<>|,;)\]]+)/gi, "$1user");
+	normalized = normalized.replace(/\/(home|Users)\/([^/\s"'<>|,;)\]]+)/g, "/$1/user");
+	return normalized;
+}
+
 function runGate(gateId) {
 	const target = resultFilePath(gateId);
 	if (target.gateEntry.command === UNKNOWN) {
@@ -1559,14 +1590,16 @@ function runGate(gateId) {
 	const ended = new Date();
 	const exitCode = Number.isInteger(result.status) ? result.status : 1;
 	mkdirSync(dirname(target.absolute), { recursive: true });
-	const log = [
-		`[aidr-gate] started_at_utc=${started.toISOString()} command=${command}`,
-		"",
-		result.stdout ?? "",
-		result.stderr ?? "",
-		`[aidr-gate] ended_at_utc=${ended.toISOString()} exit_code=${exitCode}`,
-		"",
-	].join("\n");
+	const log = normalizeCapturedLog(
+		[
+			`[aidr-gate] started_at_utc=${started.toISOString()} command=${command}`,
+			"",
+			result.stdout ?? "",
+			result.stderr ?? "",
+			`[aidr-gate] ended_at_utc=${ended.toISOString()} exit_code=${exitCode}`,
+			"",
+		].join("\n"),
+	);
 	writeFileSync(target.absolute, log);
 	const payload = {
 		exit_code: exitCode,
@@ -1592,8 +1625,14 @@ function recordGate(gateId, options) {
 	let duration = UNKNOWN;
 	let ended = options["ended-at"] ? isoUtc(options["ended-at"]) : null;
 	if (existsSync(absoluteLog)) {
-		const text = readLogFile(absoluteLog).text;
-		const marker = START_MARKER.exec(text);
+		// `--record` consumes a log captured elsewhere. Normalize it in place so the
+		// digest written below covers the same identity-free bytes a `--run` capture
+		// would have produced, rather than leaving an operator-captured host path in
+		// the artefact the index digests.
+		const raw = readLogFile(absoluteLog).text;
+		const normalized = normalizeCapturedLog(raw);
+		if (normalized !== raw) writeFileSync(absoluteLog, normalized);
+		const marker = START_MARKER.exec(normalized);
 		if (!started && marker) options["started-at"] = marker[1];
 		if (!ended) ended = statSync(absoluteLog).mtime.toISOString();
 	}
