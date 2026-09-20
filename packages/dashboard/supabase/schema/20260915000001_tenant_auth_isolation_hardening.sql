@@ -32,9 +32,16 @@ grant execute on function public.scim_user_id_by_email(uuid, text) to service_ro
 create or replace function public.scim_bind_user(p_tenant_id uuid, p_scim_user_id uuid, p_auth_user_id uuid)
 returns void language plpgsql security definer set search_path = public, pg_catalog as $$
 begin
-  if not exists (select 1 from public.tenant_members m join public.tenants t on t.id = m.tenant_id
+  -- A just-created auth user has no membership yet; allow that case, but
+  -- reject identities already belonging to a different tenant.
+  if exists (select 1 from public.tenant_members m where m.user_id = p_auth_user_id
+    and m.tenant_id <> p_tenant_id) then
+    raise exception 'scim_user_tenant_mismatch' using errcode = '42501';
+  end if;
+  if exists (select 1 from public.tenant_members m join public.tenants t on t.id = m.tenant_id
     where m.tenant_id = p_tenant_id and m.user_id = p_auth_user_id
-      and (m.expires_at is null or m.expires_at > now()) and t.status = 'active') then
+      and (m.expires_at is null or m.expires_at > now()) and t.status = 'active') is false
+     and exists (select 1 from public.tenant_members m where m.user_id = p_auth_user_id) then
     raise exception 'scim_user_tenant_mismatch' using errcode = '42501';
   end if;
   update public.scim_users set auth_user_id = p_auth_user_id, updated_at = now()
