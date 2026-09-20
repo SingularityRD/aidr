@@ -209,12 +209,20 @@ describe.each(FUNCTIONS)("%s configuration guard", (name) => {
 	});
 
 	it("still answers preflight and origin policy before configuration work", () => {
-		if (!source.includes('from "../_shared/cors.ts"')) return;
+		const corsImport = 'from "../_shared/cors.ts"';
+		const usesCors = source.includes(corsImport);
 		const handler = handlerBody(source);
 		const preflight = handler.indexOf("handleCors(req)");
 		const guard = handler.indexOf("loadConfig(runtimeEnv,");
-		expect(preflight, `${name}: missing handleCors`).toBeGreaterThanOrEqual(0);
-		expect(preflight).toBeLessThan(guard);
+
+		if (usesCors) {
+			expect(preflight, `${name}: missing handleCors`).toBeGreaterThanOrEqual(0);
+			expect(preflight).toBeLessThan(guard);
+		} else {
+			// Functions without the shared CORS import have no preflight contract;
+			// assert that this exception remains narrow rather than skipping coverage.
+			expect(preflight, `${name}: handleCors requires the shared CORS import`).toBe(-1);
+		}
 	});
 
 	it("answers a configuration failure with the shared structured body", () => {
@@ -305,36 +313,22 @@ describe("dashboard-owned Edge Function tree", () => {
 
 	it("carries a byte-identical copy of the shared helper", () => {
 		const canonical = readFileSync(join(FUNCTIONS_DIR, "_shared", "config.ts"), "utf8");
-		let copy: string;
-		try {
-			copy = readFileSync(join(DASHBOARD_FUNCTIONS, "_shared", "config.ts"), "utf8");
-		} catch {
-			// The dashboard tree is deployed independently and is being reworked
-			// separately (AIDR-019). An absent copy is reported, not failed.
-			return;
-		}
+		const dashboardShared = join(DASHBOARD_FUNCTIONS, "_shared");
+		expect(statSync(dashboardShared).isDirectory(), `${dashboardShared} must exist`).toBe(true);
+		const copy = readFileSync(join(dashboardShared, "config.ts"), "utf8");
 		expect(copy).toBe(canonical);
 	});
 
 	it("validates its own required configuration through the shared guard", () => {
-		let functionDirs: string[];
-		try {
-			functionDirs = readdirSync(DASHBOARD_FUNCTIONS).filter(
-				(entry) =>
-					!entry.startsWith("_") && statSync(join(DASHBOARD_FUNCTIONS, entry)).isDirectory(),
-			);
-		} catch {
-			return;
-		}
+		expect(statSync(DASHBOARD_FUNCTIONS).isDirectory(), `${DASHBOARD_FUNCTIONS} must exist`).toBe(true);
+		const functionDirs = readdirSync(DASHBOARD_FUNCTIONS).filter(
+			(entry) =>
+				!entry.startsWith("_") && statSync(join(DASHBOARD_FUNCTIONS, entry)).isDirectory(),
+		);
 		expect(functionDirs.length).toBeGreaterThan(0);
 		for (const name of functionDirs) {
 			const file = join(DASHBOARD_FUNCTIONS, name, "index.ts");
-			let functionSource: string;
-			try {
-				functionSource = readFileSync(file, "utf8");
-			} catch {
-				continue;
-			}
+			const functionSource = readFileSync(file, "utf8");
 			expect(functionSource, `${name}: missing shared configuration import`).toContain(
 				'from "../_shared/config.ts"',
 			);
