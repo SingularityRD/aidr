@@ -36,6 +36,7 @@ afterEach(() => {
 });
 afterAll(() => rmSync(testHome, { recursive: true, force: true }));
 
+// AIDR-SKIP: AIDR-063 qa-owner - Windows ACL boundary tests require Windows security semantics
 describe.skipIf(process.platform !== "win32")("Windows private config ACL boundary", () => {
 	it("hardens the directory before writing and never invokes PowerShell for reads", async () => {
 		await createConfig(env, false);

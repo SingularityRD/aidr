@@ -61,6 +61,7 @@ afterEach(() => {
 afterAll(() => rmSync(testHome, { recursive: true, force: true }));
 
 describe("private local config store", () => {
+	// AIDR-SKIP: AIDR-063 qa-owner - requires the Windows ACL utility and Windows security semantics
 	it.skipIf(process.platform !== "win32")("writes a config without inherited read ACLs on Windows", async () => {
 		await createConfig(env, false);
 		expect((await createConfig(env, false)).outcome).toBe("reused");
@@ -117,6 +118,7 @@ describe("private local config store", () => {
 		rmSync(target, { recursive: true, force: true });
 	});
 
+	// AIDR-SKIP: AIDR-063 qa-owner - POSIX symlink-file behavior is unavailable on Windows
 	it.skipIf(process.platform === "win32")(
 		"rejects a linked config file without reading the target",
 		async () => {
