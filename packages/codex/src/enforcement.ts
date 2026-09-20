@@ -57,13 +57,13 @@ export interface CodexEnforcementOptions {
 export interface CodexHookWireOutput {
 	hookSpecificOutput: {
 		hookEventName: "PreToolUse";
-		permissionDecision: "deny";
-		/** Must be non-empty: Codex fails open on an empty reason. */
-		permissionDecisionReason: string;
+		permissionDecision: "allow" | "deny";
+		/** Required for deny; omitted for allow. */
+		permissionDecisionReason?: string;
 	};
 }
 
-export type CodexWireResult = CodexHookWireOutput | Record<string, never>;
+export type CodexWireResult = CodexHookWireOutput;
 
 export interface CodexEnforcementResult {
 	/** What AIDR decided, before translation to Codex's dialect. */
@@ -78,11 +78,18 @@ export const DENY_HEADLINE = "🛡️ Singularity AIDR: Threat Blocked";
 /**
  * Convert a verdict into Codex's wire format.
  *
- * Returns `{}` for allow — Codex ignores an empty result and proceeds, which is
- * the intended meaning of allow.
+ * Always returns an explicit permission decision. Codex otherwise treats an
+ * empty or missing hook response as a silent pass-through.
  */
 export function toWireOutput(decision: "allow" | "deny" | "ask", message: string): CodexWireResult {
-	if (decision === "allow") return {};
+	if (decision === "allow") {
+		return {
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "allow",
+			},
+		};
+	}
 
 	// Both deny and ask become an explicit deny. Codex has no working `ask`
 	// verb: the documented "ask" enum value is rejected and fails open, so
@@ -141,7 +148,11 @@ export async function enforceCodexPreToolUse(
 		);
 
 		if (verdict.decision === "allow") {
-			return { decision: "allow", reasonCode: "allowed", wire: {} };
+			return {
+				decision: "allow",
+				reasonCode: "allowed",
+				wire: toWireOutput("allow", ""),
+			};
 		}
 
 		if (verdict.decision === "deny") {

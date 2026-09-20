@@ -188,10 +188,10 @@ describe("Codex hook entry point (built bundle)", () => {
 		}
 	});
 
-	it("emits no decision for a well-formed call that has nothing to inspect", () => {
+	it("emits an explicit allow decision for a well-formed call", () => {
 		// Positive control for the fail-closed checks above: a real PreToolUse
 		// payload whose tool input yields no artifact still follows the
-		// documented allow path -- no decision on stdout, so Codex proceeds.
+		// documented allow path, with an explicit decision on stdout.
 		// Without this the deny assertions could be satisfied by a hook that
 		// blocks everything.
 		const run = runHook(
@@ -203,8 +203,13 @@ describe("Codex hook entry point (built bundle)", () => {
 			}),
 		);
 
-		expect(run.stdout.trim()).toBe("{}");
-		expect(parseWire(run)).toEqual({});
+		expect(run.stdout.trim()).not.toBe("{}");
+		expect(parseWire(run)).toMatchObject({
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "allow",
+			},
+		});
 		expect(run.status).toBe(0);
 	});
 

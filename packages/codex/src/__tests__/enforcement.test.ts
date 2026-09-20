@@ -82,8 +82,13 @@ afterEach(async () => {
 });
 
 describe("Codex wire output translation", () => {
-	it("emits nothing for allow, so the call proceeds", () => {
-		expect(toWireOutput("allow", "")).toEqual({});
+	it("emits an explicit allow decision", () => {
+		expect(toWireOutput("allow", "")).toEqual({
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "allow",
+			},
+		});
 	});
 
 	it("emits an explicit deny for deny", () => {
@@ -216,7 +221,12 @@ describe("Codex local enforcement blocks real threats", () => {
 		it(`allows: ${label}`, async () => {
 			const outcome = await enforceCodexPreToolUse(preToolUse(toolName, toolInput), options());
 			expect(outcome.decision).toBe("allow");
-			expect(outcome.wire).toEqual({});
+			expect(outcome.wire).toEqual({
+				hookSpecificOutput: {
+					hookEventName: "PreToolUse",
+					permissionDecision: "allow",
+				},
+			});
 		});
 	}
 
@@ -292,7 +302,12 @@ describe("Codex provisioned tenant detector policy", () => {
 		);
 
 		expect(outcome.decision).toBe("allow");
-		expect(outcome.wire).toEqual({});
+		expect(outcome.wire).toEqual({
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "allow",
+			},
+		});
 	});
 
 	it("fails closed when the entitlement requires a bundle that is not installed", async () => {

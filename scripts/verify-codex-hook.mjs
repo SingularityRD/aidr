@@ -36,12 +36,19 @@ function payload(toolName, toolInput) {
 	});
 }
 
+// Codex's configured hook timeout is 10 seconds. Keep this rehearsal shorter
+// than the old two-minute child timeout: a stuck network/reputation leg must
+// become a named case failure, not turn the whole gate into a ten-minute wait.
+const CASE_TIMEOUT_MS = 10_000;
+
 function run(toolName, toolInput) {
 	const res = spawnSync(process.execPath, [BUNDLE], {
 		input: payload(toolName, toolInput),
 		encoding: "utf8",
-		timeout: 120_000,
+		timeout: CASE_TIMEOUT_MS,
+		killSignal: "SIGKILL",
 	});
+	const timedOut = res.error?.code === "ETIMEDOUT" || res.status === null;
 	let parsed = {};
 	try {
 		parsed = JSON.parse((res.stdout ?? "").trim() || "{}");
@@ -49,10 +56,13 @@ function run(toolName, toolInput) {
 		parsed = { __unparseable: (res.stdout ?? "").slice(0, 200) };
 	}
 	return {
-		decision: parsed?.hookSpecificOutput?.permissionDecision ?? "allow",
+		decision: timedOut ? "__timeout" : parsed?.hookSpecificOutput?.permissionDecision ?? "__missing",
 		reason: String(parsed?.hookSpecificOutput?.permissionDecisionReason ?? ""),
 		exit: res.status,
+		signal: res.signal,
 		stderr: (res.stderr ?? "").trim(),
+		error: res.error ? `${res.error.code ?? "spawn_error"}: ${res.error.message}` : "",
+		timedOut,
 	};
 }
 
@@ -85,8 +95,9 @@ for (const [label, tool, input] of SHOULD_BLOCK) {
 	// Codex fails OPEN, so anything other than an explicit deny is a failure.
 	const ok = r.decision === "deny" && r.reason.trim().length > 0;
 	if (!ok) failures++;
+	const detail = r.timedOut ? ` timeout=${CASE_TIMEOUT_MS}ms` : r.error ? ` error=${r.error}` : "";
 	console.log(
-		`${ok ? "PASS" : "FAIL"}  must-BLOCK  ${label.padEnd(28)} decision=${r.decision} reason=${r.reason.split("\n")[0].slice(0, 60)}`,
+		`${ok ? "PASS" : "FAIL"}  must-BLOCK  ${label.padEnd(28)} decision=${r.decision} reason=${r.reason.split("\n")[0].slice(0, 60)}${detail}`,
 	);
 }
 
@@ -95,7 +106,14 @@ for (const [label, tool, input] of SHOULD_ALLOW) {
 	checks++;
 	const ok = r.decision === "allow";
 	if (!ok) failures++;
-	console.log(`${ok ? "PASS" : "FAIL"}  must-ALLOW  ${label.padEnd(28)} decision=${r.decision}`);
+	const detail = r.timedOut
+		? ` timeout=${CASE_TIMEOUT_MS}ms`
+		: r.error
+			? ` error=${r.error}`
+			: r.decision === "__missing"
+				? ` no-decision status=${r.exit} signal=${r.signal ?? "none"}`
+				: "";
+	console.log(`${ok ? "PASS" : "FAIL"}  must-ALLOW  ${label.padEnd(28)} decision=${r.decision}${detail}`);
 }
 
 // Malformed input must also block: a hook that cannot decide must not pass.
@@ -107,21 +125,23 @@ for (const [label, raw] of [
 	const res = spawnSync(process.execPath, [BUNDLE], {
 		input: raw,
 		encoding: "utf8",
-		timeout: 60_000,
+		timeout: CASE_TIMEOUT_MS,
+		killSignal: "SIGKILL",
 	});
-	let decision = "allow";
+	const timedOut = res.error?.code === "ETIMEDOUT" || res.status === null;
+	let decision = timedOut ? "__timeout" : "__missing";
 	try {
-		decision = JSON.parse((res.stdout ?? "").trim() || "{}")?.hookSpecificOutput?.permissionDecision ?? "allow";
+		decision = JSON.parse((res.stdout ?? "").trim() || "{}")?.hookSpecificOutput?.permissionDecision ?? decision;
 	} catch {
-		decision = "__unparseable";
+		if (!timedOut) decision = "__unparseable";
 	}
 	checks++;
-	// PostToolUse carries no pre-execution decision, so an empty response is
-	// correct there; the other two must block.
-	const expectBlock = label !== "wrong event";
-	const ok = expectBlock ? decision === "deny" : decision === "allow";
+	// Every malformed or unsupported event must block: the hook cannot safely
+	// infer that a call is allowed when it cannot identify the event.
+	const ok = decision === "deny";
 	if (!ok) failures++;
-	console.log(`${ok ? "PASS" : "FAIL"}  malformed   ${label.padEnd(28)} decision=${decision}`);
+	const detail = timedOut ? ` timeout=${CASE_TIMEOUT_MS}ms` : "";
+	console.log(`${ok ? "PASS" : "FAIL"}  malformed   ${label.padEnd(28)} decision=${decision}${detail}`);
 }
 
 console.log(
