@@ -133,6 +133,12 @@ export const ALLOWLIST = [
 			"The `--self-test` fixture deliberately plants `C:\\Users\\Alice` as an absolute-path canary and then asserts support-bundle redaction removes it; the synthetic identity is what makes the redaction assertion meaningful.",
 	},
 	{
+		path: "scripts/generate-v8-evidence-index.test.mjs",
+		owner: "AIDR-012",
+		reason:
+			"The log-normalization tests must feed a synthetic personal home directory through `normalizeCapturedLog` to prove the capture replaces it with the anonymous placeholder `user`; `somebody` identifies no contributor, and without the fixture the redaction that keeps real home directories out of captured evidence would be untested.",
+	},
+	{
 		path: "threats/commands.yaml",
 		owner: "AIDR-012",
 		reason:
