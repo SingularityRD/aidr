@@ -27,6 +27,11 @@ const EXTRA_AGENT_PRICE_ID = (Deno.env.get("AIDR_PADDLE_EXTRA_AGENT_PRICE_ID") ?
 const LEGACY_SELF_SERVICE_ENABLED =
 	(Deno.env.get("AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING") ?? "").trim().toLowerCase() === "true";
 
+// Paddle may include the last active line items on cancellation events.  Those
+// items are not an entitlement signal once the provider has ended access.
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due", "paused"]);
+const TERMINAL_SUBSCRIPTION_STATUSES = new Set(["canceled", "cancelled", "deleted"]);
+
 function json(status: number, body: Record<string, unknown>) {
 	return new Response(JSON.stringify(body), {
 		status,
@@ -229,8 +234,20 @@ Deno.serve(async (req) => {
 	}
 
 	const subId = extractSubscriptionId(evt);
-	const status = extractStatus(evt);
-	const extraAgents = extractExtraAgents(evt);
+	const status = extractStatus(evt).toLowerCase();
+	// Paddle cancellation payloads can retain the last active line items. Never
+	// derive seats until status is classified, and fail closed on new statuses.
+	if (!ACTIVE_SUBSCRIPTION_STATUSES.has(status) && !TERMINAL_SUBSCRIPTION_STATUSES.has(status)) {
+		await supabase.from("admin_audit_logs").insert({
+			actor_user_id: userId,
+			tenant_id: tenantId,
+			action: "paddle.webhook.unhandled_status",
+			target_user_id: userId,
+			detail: { event_type: eventType, event_id: eventId, subscription_id: subId, status },
+		});
+		return json(422, { error: "unsupported_subscription_status" });
+	}
+	const extraAgents = ACTIVE_SUBSCRIPTION_STATUSES.has(status) ? extractExtraAgents(evt) : 0;
 	const periodEnd = extractPeriodEnd(evt);
 	const cancelAtPeriodEnd = extractCancelAtPeriodEnd(evt);
 

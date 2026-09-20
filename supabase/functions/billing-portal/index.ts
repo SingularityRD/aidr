@@ -311,6 +311,10 @@ async function applySettlement(
 	const subscriptionId = await linkedSubscriptionId(ctx);
 
 	const status = candidate.status;
+	// A browser can describe a pending order, but it cannot attest that money
+	// was captured. Only a signed provider webhook/reconciler may create a
+	// `settled` row; accepting this client field would grant seats for free.
+	if (status === "settled") return jsonError(req, 409, "settlement_requires_provider_confirmation");
 	const currency = candidate.currency;
 	const quoteReference =
 		typeof candidate.quoteReference === "string" ? candidate.quoteReference.trim() : null;
@@ -489,7 +493,9 @@ async function cancelOrRefund(
 				providerSubscriptionId: receipt.providerSubscriptionId,
 				amountMinor: decision.refundAmountMinor,
 				currency: receipt.currency,
-				idempotencyKey: await ctx.hash(`${ctx.tenantId}:${settlementId}:${requestId}`),
+				// Stable across browser retries and concurrent requests: request_id
+				// must not permit two provider refunds for one amount.
+				idempotencyKey: await ctx.hash(`${ctx.tenantId}:${settlementId}:${decision.refundAmountMinor}:${receipt.currency}`),
 			});
 		} catch (error) {
 			return jsonError(
@@ -498,7 +504,11 @@ async function cancelOrRefund(
 				error instanceof ProviderUnavailableError ? error.code : "provider_unavailable",
 			);
 		}
-		if (!refund.ok) return jsonError(req, 502, refund.reason);
+		// Provider adapters must return a real provider object id. Never turn an
+		// `ok: true`/null response into a locally successful refund.
+		if (!refund.ok || typeof refund.refundId !== "string" || refund.refundId.trim() === "") {
+			return jsonError(req, 502, refund.reason || "provider_refund_unconfirmed");
+		}
 		// The ledger only advances after the provider confirms. The refunded
 		// receipt is a *new* row, so the original settlement record stays intact.
 		const nextReceipt = {
