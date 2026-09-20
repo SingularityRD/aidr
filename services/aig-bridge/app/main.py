@@ -10,6 +10,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -26,6 +27,66 @@ logging.basicConfig(
 logger = logging.getLogger("aig-bridge")
 
 
+class _BodyTooLarge(Exception):
+    """Raised while receiving a request that exceeds the configured limit."""
+
+
+class BodySizeLimitMiddleware:
+    """Reject oversized requests while ASGI is still streaming their body."""
+
+    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max(1, max_bytes)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        content_length = next(
+            (value for name, value in scope.get("headers", []) if name.lower() == b"content-length"),
+            None,
+        )
+        if content_length is not None:
+            try:
+                if int(content_length) > self.max_bytes:
+                    await self._reject(send)
+                    return
+            except ValueError:
+                await self._reject(send)
+                return
+        received = 0
+
+        async def limited_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise _BodyTooLarge
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except _BodyTooLarge:
+            await self._reject(send)
+
+    async def _reject(self, send: Send) -> None:
+        body = b'{"detail":"request body exceeds configured limit"}'
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+
+def _max_body_bytes() -> int:
+    try:
+        return max(1, int(os.getenv("BRIDGE_MAX_BODY_BYTES", str(50 * 1024 * 1024))))
+    except ValueError:
+        return 50 * 1024 * 1024
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown hooks."""
@@ -35,6 +96,7 @@ async def lifespan(app: FastAPI):
     logger.info("AIG Bridge shutting down")
 
 
+docs_enabled = os.getenv("BRIDGE_DOCS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 app = FastAPI(
     title="AIG Bridge — AIDR × AI-Infra-Guard Integration",
     description=(
@@ -44,9 +106,15 @@ app = FastAPI(
     ),
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if docs_enabled else None,
+    redoc_url="/redoc" if docs_enabled else None,
+    openapi_url="/openapi.json" if docs_enabled else None,
 )
+
+# Reject oversized bodies before Starlette/FastAPI parses or buffers them.  The
+# upload helper has its own 50 MiB streaming limit; this outer limit also covers
+# JSON, multipart framing, and chunked requests.
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=_max_body_bytes())
 
 # ── CORS — allow AIDR dashboard and dev tools ──────────────────────────────
 configured_origins = [

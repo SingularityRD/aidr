@@ -61,6 +61,13 @@ export BRIDGE_ALLOW_PRIVATE_TARGETS=false
 export BRIDGE_VALIDATE_DNS=true
 export BRIDGE_SOURCE_ROOT=/app/uploads
 export BRIDGE_TASK_DB=/app/state/tasks.db
+# Runtime egress is submission-only by default. Set both values only when an
+# egress gateway/worker actually enforces the proxy policy.
+export BRIDGE_RUNTIME_EGRESS_REQUIRED=false
+export BRIDGE_EGRESS_PROXY_URL=''
+# API documentation is disabled by default; enable only on a protected ingress.
+export BRIDGE_DOCS_ENABLED=false
+export BRIDGE_MAX_BODY_BYTES=52428800
 export AIG_BRIDGE_API_KEY="$BRIDGE_API_KEY"
 export AIG_TENANT_ID='demo-tenant'
 
