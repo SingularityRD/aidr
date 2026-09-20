@@ -1,9 +1,9 @@
 {
-  "commit_sha": "735095047a03ef5da0c08aed6c09fa2aef0ae3ba",
-  "candidate_digest": "2f09641b1595ec360028fb26ada09a69c42d8f09c4490e3494cb414f3be2855e",
+  "commit_sha": "b9d2a1c2c67d5dd82f9881557872643a76f44fb8",
+  "candidate_digest": "94060247d5099588014cac8d2e837740b65bb0149b178f5ed5bab0f3c1c6f9a8",
   "counts": {
-    "PASS": 25,
-    "FAIL": 4,
+    "PASS": 27,
+    "FAIL": 2,
     "unknown": 1
   }
 }

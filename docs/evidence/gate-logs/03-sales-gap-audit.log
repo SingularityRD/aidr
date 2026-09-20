@@ -1,6 +1,6 @@
-[aidr-gate] started_at_utc=2026-09-20T21:54:03.755Z command=node scripts/generate-production-sales-gap-audit.mjs
+[aidr-gate] started_at_utc=2026-09-20T23:25:48.157Z command=node scripts/generate-production-sales-gap-audit.mjs
 
 {"work_packages":59,"features":71,"profile_gates":{"evaluation":8,"assisted-sale":12,"production-ga":12,"investor":12}}
 
 
-[aidr-gate] ended_at_utc=2026-09-20T21:54:03.901Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T23:25:48.370Z exit_code=0

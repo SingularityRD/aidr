@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T22:19:01.182Z command=pnpm verify:repo-hygiene
+[aidr-gate] started_at_utc=2026-09-20T23:58:17.190Z command=pnpm verify:repo-hygiene
 
 
 > @ verify:repo-hygiene <repo>
@@ -9,4 +9,4 @@ repo hygiene OK (AIDR-012)
   result: PASS
 
 
-[aidr-gate] ended_at_utc=2026-09-20T22:19:03.052Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T23:58:18.505Z exit_code=0

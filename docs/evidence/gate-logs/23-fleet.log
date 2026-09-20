@@ -1,31 +1,43 @@
-[aidr-gate] started_at_utc=2026-09-20T22:15:08.852Z command=pnpm verify:fleet:windows && pnpm verify:fleet:unix
+[aidr-gate] started_at_utc=2026-09-20T23:48:01.129Z command=pnpm verify:fleet:windows && pnpm verify:fleet:unix
 
 
 > @ verify:fleet:windows <repo>
 > node scripts/verify-windows-fleet.mjs
 
- ELIFECYCLE  Command failed with exit code 1.
+{
+  "passed": true,
+  "checks": 17,
+  "assertions": [
+    "all Windows fleet delivery files exist",
+    "all PowerShell entrypoints parse without errors",
+    "ephemeral offline CMS signer created for workflow verification",
+    "manifest generator pinned artifact, installer, configuration and signer identity",
+    "install and Intune/SCCM detection workflow passed with a local deny canary",
+    "upgrade accepted only a newer semantic version",
+    "rollback revalidated and restored the retained signed candidate",
+    "existing agent configuration and unrelated hooks were preserved",
+    "detection rejected modified installed connector bytes",
+    "incorrect command-line manifest digest failed closed",
+    "tampered artifact failed SHA-256 validation before extraction",
+    "unapproved CMS signer failed closed",
+    "manifest path traversal failed before filesystem access",
+    "filesystem-root TargetHome was rejected",
+    "structured fleet logs excluded configuration and credential material",
+    "uninstall removed only managed hooks and preserved configuration",
+    "documentation keeps real MDM and native-host acceptance external"
+  ]
+}
 
-file:///C:/Users/user/Desktop/aidr/scripts/verify-windows-fleet.mjs:233
-	if (success && result.status !== 0) throw new Error(`PowerShell fixture failed (${result.status}): ${sanitize(result.stderr || result.stdout)}`);
-	                                          ^
+> @ verify:fleet:unix <repo>
+> node scripts/verify-unix-fleet-delivery.mjs
 
-Error: PowerShell fixture failed (1): C:\Users\user\Desktop\aidr\deploy\fleet\windows\Install-Aidr.ps1 : AIDR fleet installation failed closed: node:internal
-/modules/esm/resolve:274
-At C:\Users\user\Desktop\aidr\deploy\fleet\windows\Install-Aidr.ps1:69 char:59
-+ ... rror "AIDR fleet installation failed closed: $($_.Exception.Message)"
-+                                                    ~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
-    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException,Install-Aidr.ps1
- 
+{"passed":true,"checks":26,"scope":"Offline template and local lifecycle verification; no Jamf/MDM or host execution acceptance."}
 
-    at runPs (file:///C:/Users/user/Desktop/aidr/scripts/verify-windows-fleet.mjs:233:44)
-    at runFleet (file:///C:/Users/user/Desktop/aidr/scripts/verify-windows-fleet.mjs:238:9)
-    at file:///C:/Users/user/Desktop/aidr/scripts/verify-windows-fleet.mjs:84:2
-    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
-    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
-    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+fleet verifier: syntax checked
+fleet verifier: static contracts checked
+fleet verifier: signed fixture checked
+fleet verifier: lifecycle install completed
+fleet verifier: lifecycle upgrade and rollback completed
+fleet verifier: lifecycle uninstall completed
 
-Node.js v24.12.0
-
-[aidr-gate] ended_at_utc=2026-09-20T22:15:13.491Z exit_code=1
+[aidr-gate] ended_at_utc=2026-09-20T23:48:25.933Z exit_code=0

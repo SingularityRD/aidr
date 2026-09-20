@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T22:12:53.279Z command=pnpm test:e2e
+[aidr-gate] started_at_utc=2026-09-20T23:46:31.954Z command=pnpm test:e2e
 
 
 > @ test:e2e <repo>
@@ -7,10 +7,10 @@
 [e2e] claude: blocked, 0/7 passed
 [e2e] openclaw: blocked, 0/5 passed
 [e2e] opencode: blocked, 0/13 passed
-[e2e] cursor: ready, 0/8 passed
+[e2e] cursor: ready, 8/8 passed
 [e2e] cursor-headless-agent: blocked, 0/1 passed
 [e2e] model-interception-live: ready, 3/3 passed
-[e2e] vscode: ready, 6/8 passed
+[e2e] vscode: ready, 8/8 passed
 [e2e] aig-bridge-contract: ready, 31/31 passed
 [e2e] aig-live-control-plane: blocked, 0/4 passed
 [e2e] supabase-migrations: ready, 1/1 passed
@@ -39,9 +39,6 @@ Release E2E gate failed closed:
 - opencode: collected=0, expected=13
 - opencode: passed=0, expected=13
 - opencode: report success=false
-- cursor: process exit=1
-- cursor: passed=0, expected=8
-- cursor: failed=8
 - cursor: report success=false
 - cursor-headless-agent: missing required environment: AIDR_AGENT_PATH
 - cursor-headless-agent: setup preflight blocked execution
@@ -50,9 +47,6 @@ Release E2E gate failed closed:
 - cursor-headless-agent: report success=false
 - model-interception-live: process exit=3
 - model-interception-live: report success=false
-- vscode: process exit=1
-- vscode: passed=6, expected=8
-- vscode: failed=2
 - vscode: report success=false
 - aig-live-control-plane: missing required environment: AIDR_AIG_E2E_EVIDENCE
 - aig-live-control-plane: external evidence path is missing: AIDR_AIG_E2E_EVIDENCE
@@ -77,7 +71,7 @@ Release E2E gate failed closed:
 - dashboard-browser: passed=0, expected=10
 - dashboard-browser: report success=false
 Evidence: <repo>\.e2e-artifacts\release
-(node:9936) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:45492) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
-[aidr-gate] ended_at_utc=2026-09-20T22:13:59.020Z exit_code=1
+[aidr-gate] ended_at_utc=2026-09-20T23:47:12.938Z exit_code=1

@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T22:19:03.165Z command=pnpm verify:commercial-gates
+[aidr-gate] started_at_utc=2026-09-20T23:58:18.601Z command=pnpm verify:commercial-gates
 
 
 > @ verify:commercial-gates <repo>
@@ -24,4 +24,4 @@ Candidate digest: 986e404d5969af01ce70c8b93cf2e8b53a08b355888a40b0018b92073bcb67
 - CLM-001: open (5 external input(s) required)
 
 
-[aidr-gate] ended_at_utc=2026-09-20T22:19:03.657Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T23:58:19.131Z exit_code=0

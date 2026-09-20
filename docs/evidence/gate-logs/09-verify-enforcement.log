@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T21:55:09.397Z command=pnpm verify:enforcement
+[aidr-gate] started_at_utc=2026-09-20T23:26:54.285Z command=pnpm verify:enforcement
 
 
 > @ verify:enforcement <repo>
@@ -96,4 +96,4 @@
 ALL PASS - 72/72 cases behaved correctly
 
 
-[aidr-gate] ended_at_utc=2026-09-20T21:55:48.674Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T23:27:29.628Z exit_code=0
