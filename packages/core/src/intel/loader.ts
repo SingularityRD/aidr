@@ -418,6 +418,8 @@ export async function loadMergedIntelFromDisk(
 	);
 
 	const packIds = await listDirs(packsDir);
+	let loadedPackCount = 0;
+	let failedPackCount = 0;
 	for (const packId of packIds) {
 		if (revokedPackIds.has(packId)) {
 			logger.warn("Intel pack id is revoked; skipping", { packId });
@@ -437,9 +439,29 @@ export async function loadMergedIntelFromDisk(
 			{ verificationMode, graceHours },
 			logger,
 		);
-		if (!single) continue;
+		if (!single) {
+			failedPackCount += 1;
+			continue;
+		}
+		loadedPackCount += 1;
 		mergeInto(merged, single);
 	}
+
+	// Keep the existing merged shape for consumers, while carrying measured
+	// coverage state out-of-band. An empty or rejected corpus is not clean intel.
+	Object.defineProperty(merged, "availability", {
+		value: loadedPackCount > 0 && failedPackCount === 0 ? "available" : "unavailable",
+		enumerable: false,
+		configurable: true,
+	});
+	Object.defineProperty(merged, "detail", {
+		value:
+			loadedPackCount > 0 && failedPackCount === 0
+				? `loaded ${loadedPackCount} signed intel pack(s)`
+				: `no complete signed intel pack was available (${loadedPackCount} loaded, ${failedPackCount} rejected)`,
+		enumerable: false,
+		configurable: true,
+	});
 
 	// Ensure the on-disk intel dir exists path-wise (not created here; read-only).
 	void intelDir;

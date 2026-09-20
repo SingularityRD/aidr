@@ -94,6 +94,15 @@ options:
 | CrewAI               | `withCrewAIDR(tool, client, options)`          | Throws `AIDRCrewSecurityError` unless `throwOnDeny: false` (then `{ blocked: true }`).    |
 | CrewAI delegation    | `wrapCrewAgentWithAIDR(agent, client, options)`| Throws `AIDRCrewSecurityError`.                                                           |
 
+## SDK command
+
+The SDK's optional command-line helper is installed as `aidr-sdk` (the documented
+`aidr` command belongs exclusively to `@singularityrd/aidr-cli`):
+
+```bash
+npx aidr-sdk --help
+```
+
 ## Tool output inspection before model consumption
 
 The Generic, LangChain, LlamaIndex, AutoGen, and CrewAI adapters inspect returned

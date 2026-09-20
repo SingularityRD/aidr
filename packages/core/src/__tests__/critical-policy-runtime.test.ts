@@ -459,11 +459,12 @@ describe("critical policy and runtime security branches", () => {
 			},
 		});
 
-		await expect(
-			evaluatePolicy("Write", [{ type: "file_path", value: "/tmp/file" }], config, {
+		const verdict = await evaluatePolicy("Write", [{ type: "file_path", value: "/tmp/file" }], config, {
 			file_path: "/tmp/file",
-			}),
-		).resolves.toBeNull();
+		});
+		expect(verdict?.category).toBe("detection_unavailable");
+		expect(verdict?.confidence).toBe(0);
+		expect(verdict?.reasons[0]).toMatch(/invalid/i);
 	});
 
 	it("supports reading a valid detached managed state after verification", async () => {

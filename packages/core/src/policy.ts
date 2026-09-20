@@ -192,6 +192,32 @@ export async function evaluatePolicy(
 	// Back-compat: if `intel.enabled` is on, we also consider signed packs on disk.
 	const packsEnabled = config.intel_packs?.enabled === true || config.intel?.enabled === true;
 	const merged = packsEnabled ? await getMergedIntelCached(config).catch(() => null) : null;
+	const signedPacksEnabled = config.intel_packs?.enabled === true;
+	if (signedPacksEnabled && !merged) {
+		return makeVerdict({
+			decision: "ask",
+			category: "detection_unavailable",
+			severity: "warning",
+			source: "intel",
+			artifact: "intel-packs",
+			threatId: "INTEL-UNAVAILABLE-001",
+			reasons: ["Signed intel pack loading failed; intel coverage is unavailable"],
+			confidence: 0,
+		});
+	}
+	const mergedState = merged as (typeof merged & { availability?: string; detail?: string }) | null;
+	if (signedPacksEnabled && mergedState?.availability !== "available") {
+		return makeVerdict({
+			decision: "ask",
+			category: "detection_unavailable",
+			severity: "warning",
+			source: "intel",
+			artifact: "intel-packs",
+			threatId: "INTEL-UNAVAILABLE-001",
+			reasons: [mergedState?.detail ?? "Signed intel pack coverage is unavailable"],
+			confidence: 0,
+		});
+	}
 	const denyHosts =
 		config.intel?.enabled === true
 			? await loadUrlDenylistHosts(resolvePath(config.intel.url_denylist_path))
@@ -378,7 +404,16 @@ export async function evaluatePolicy(
 						});
 					}
 				} catch {
-					// Ignore invalid patterns.
+					return makeVerdict({
+						decision: "ask",
+						category: "detection_unavailable",
+						severity: "warning",
+						source: "policy",
+						artifact: filePath,
+						threatId: "POL-FS-UNAVAILABLE-001",
+						reasons: ["Filesystem deny pattern is invalid and was skipped"],
+						confidence: 0,
+					});
 				}
 			}
 		}
@@ -405,7 +440,16 @@ export async function evaluatePolicy(
 						});
 					}
 				} catch {
-					// Ignore invalid patterns.
+					return makeVerdict({
+						decision: "ask",
+						category: "detection_unavailable",
+						severity: "warning",
+						source: "policy",
+						artifact: command.slice(0, 200),
+						threatId: "POL-SH-UNAVAILABLE-001",
+						reasons: ["Shell deny pattern is invalid and was skipped"],
+						confidence: 0,
+					});
 				}
 			}
 		}

@@ -298,13 +298,16 @@ export class PackageChecker {
 				ageDays,
 			};
 		}
-		if (feed && !fileReputationChecked) {
+		// Registry metadata and age are not a reputation verdict.  A package is
+		// clean only after a reputation leg actually measured it; unsupported
+		// hashes, disabled checks, and missing endpoints are unavailable states.
+		if (!fileReputationChecked) {
 			return {
 				packageName: pkg.name,
 				registry: pkg.registry,
 				verdict: "unknown",
 				confidence: 0,
-				details: `Package '${pkg.name}' exists, but no SHA-256 file reputation verdict was available; signed feed had no matching deny indicator`,
+				details: `Package '${pkg.name}' was not verified clean: file reputation was unavailable or not applicable${feed ? "; signed feed had no matching deny indicator" : ""}`,
 				ageDays,
 			};
 		}

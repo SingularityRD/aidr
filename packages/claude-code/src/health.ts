@@ -35,7 +35,7 @@ async function main(): Promise<void> {
 	const startTime = Date.now();
 
 	if (helpFlag) {
-		console.log(`Usage: aidr health [options]
+		console.log(`Usage: aidr-claude-code health [options]
 
 Options:
   -c, --check [name]  Run specific check only (core, cache, threat_rules, api)
@@ -47,10 +47,10 @@ Exit codes:
   1    At least one check is degraded or unhealthy
 
 Examples:
-  aidr health                      # Human-readable output for all checks
-  aidr health --json               # JSON output for all checks
-  aidr health --check core         # Check core module only
-  aidr health --check api --json   # Check API connectivity, JSON output`);
+  aidr-claude-code health                      # Human-readable output for all checks
+  aidr-claude-code health --json               # JSON output for all checks
+  aidr-claude-code health --check core         # Check core module only
+  aidr-claude-code health --check api --json   # Check API connectivity, JSON output`);
 		process.exit(0);
 	}
 

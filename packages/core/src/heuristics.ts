@@ -51,12 +51,17 @@ const TRUSTED_DOMAIN_SUPPRESSIBLE = new Set([
 	"CLT-CMD-001",
 	"CLT-CMD-002",
 	"CLT-SUPPLY-001",
-	"CLT-SUPPLY-004",
 ]);
 
 export class HeuristicsEngine {
 	private readonly threatMap: Map<string, Threat[]> = new Map();
 	private readonly trustedDomains: TrustedDomain[];
+	/** Regex failures are deliberate signal skips, never a clean evaluation. */
+	private _unavailableThreats: Array<{ threatId: string; reason: string }> = [];
+
+	get unavailableThreats(): ReadonlyArray<{ threatId: string; reason: string }> {
+		return this._unavailableThreats;
+	}
 
 	constructor(threats: Threat[], trustedDomains?: TrustedDomain[]) {
 		this.trustedDomains = trustedDomains ?? [];
@@ -95,6 +100,7 @@ export class HeuristicsEngine {
 
 	match(artifacts: Artifact[]): HeuristicMatch[] {
 		const matches: HeuristicMatch[] = [];
+		this._unavailableThreats = [];
 
 		for (const artifact of artifacts) {
 			// Match the retained prefix only. `boundArtifact` reports on stderr
@@ -121,11 +127,11 @@ export class HeuristicsEngine {
 						});
 					}
 				} catch (error) {
-					// A malformed user-supplied pattern must not break the scan -
-					// fail open for this one threat and say so.
-					console.warn(
-						`Regex execution failed for threat ${threat.id}: ${error instanceof Error ? error.message : String(error)}`,
-					);
+					// Preserve the deliberate per-rule skip, but expose it to callers so
+					// verdict/audit layers cannot mistake this for a clean scan.
+					const reason = error instanceof Error ? error.message : String(error);
+					this._unavailableThreats.push({ threatId: threat.id, reason });
+					console.warn(`Regex execution failed for threat ${threat.id}: ${reason}`);
 				}
 			}
 		}

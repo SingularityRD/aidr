@@ -135,7 +135,7 @@ export const RELEASE_PACKAGES = [
 			],
 		},
 		runs: [
-			{ id: "aidr-claude-code health --json", kind: "bin", bin: "aidr-claude-code", args: ["--json"], expect: "claude-health-json" },
+			{ id: "aidr-claude-code health --json", kind: "bin", bin: "aidr-claude-code", args: ["health", "--json"], expect: "claude-health-json" },
 		],
 	},
 	{
