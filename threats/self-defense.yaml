@@ -64,3 +64,16 @@
   expires_at: null
   revoked: false
 
+# Forge an approval by writing the agent-writable consumed-approvals store
+- id: "CLT-SELF-005"
+  category: self_defense
+  severity: critical
+  confidence: 0.95
+  action: require_approval
+  pattern: "(>|>>|tee|Set-Content|Out-File|writeFile(?:Sync)?|WriteAllText|cp|copy|mv|move)\\s.{0,300}consumed-approvals-[^\\s\\\"'<>|]+\\.json|consumed-approvals-[^\\s\\\"'<>|]+\\.json.{0,100}(>|>>)"
+  case_insensitive: true
+  match_on: command
+  title: "Attempt to forge a Singularity AIDR approval record"
+  expires_at: null
+  revoked: false
+

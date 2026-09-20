@@ -3,23 +3,18 @@
 /**
  * Singularity AIDR MCP server for Claude Code.
  * Provides two tools:
- * - aidr_allowlist_add: Add a URL, command, or file path to the allowlist (requires prior user approval)
+ * - aidr_allowlist_add: Disabled; allowlist changes must be operator-controlled and out-of-band
  * - aidr_allowlist_remove: Remove a URL, command, or file path from the allowlist (ungated)
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
-	addCommand,
-	addFilePath,
-	addUrl,
 	hashCommand,
 	initSentry,
 	type Logger,
 	loadAllowlist,
 	loadConfig,
-	normalizeFilePath,
-	normalizeUrl,
 	removeCommand,
 	removeFilePath,
 	removeUrl,
@@ -27,10 +22,6 @@ import {
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { z } from "zod";
-import {
-	findConsumedApprovalAcrossSessions,
-	removeConsumedApprovalAcrossSessions,
-} from "./approval-tracker.js";
 import { artifactTypeLabel } from "./format.js";
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
@@ -74,12 +65,6 @@ function textResult(text: string, isError?: boolean) {
 	return result;
 }
 
-function displayValue(type: "url" | "command" | "file_path", value: string): string {
-	if (type === "url") return normalizeUrl(value);
-	if (type === "command") return `command hash ${hashCommand(value).slice(0, 12)}...`;
-	return normalizeFilePath(value);
-}
-
 server.registerTool(
 	"aidr_allowlist_add",
 	{
@@ -93,38 +78,13 @@ server.registerTool(
 			reason: z.string().optional().describe("Why this is being allowlisted"),
 		}),
 	},
-	async ({ type, value, reason }) => {
-		try {
-			const consumed = await findConsumedApprovalAcrossSessions(type, value, logger);
-			if (!consumed) {
-				return textResult(
-					"Cannot add to allowlist: no recent user approval found for this artifact. The user must first encounter and approve this action through Singularity AIDR's security dialog, then you can permanently allowlist it.",
-					true,
-				);
-			}
-
-			const config = await loadConfig(undefined, logger);
-			const allowlist = await loadAllowlist(config.allowlist, logger);
-			const entryReason = reason ?? `Approved by user (threat: ${consumed.threatId})`;
-
-			if (type === "url") {
-				addUrl(allowlist, value, entryReason, "ask");
-			} else if (type === "command") {
-				addCommand(allowlist, value, entryReason, "ask");
-			} else {
-				addFilePath(allowlist, value, entryReason, "ask");
-			}
-
-			await saveAllowlist(allowlist, config.allowlist, logger);
-			await removeConsumedApprovalAcrossSessions(type, value, logger);
-
-			const label = artifactTypeLabel(type);
-			return textResult(
-				`Added ${label} to Singularity AIDR allowlist: ${displayValue(type, value)}. This ${label} will no longer trigger security alerts.`,
-			);
-		} catch (e) {
-			return textResult(`Failed to add to allowlist: ${e}`, true);
-		}
+	async () => {
+		// Approval records are intentionally agent-writable session artifacts. They
+		// must never authorize a persistent security-policy mutation.
+		return textResult(
+			"Cannot add to allowlist from an agent-callable tool. Ask the operator to update the AIDR allowlist through the out-of-band operator/CLI flow.",
+			true,
+		);
 	},
 );
 
