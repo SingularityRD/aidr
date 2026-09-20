@@ -12,6 +12,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const PLUGIN_DIST = resolve(__dirname, "..", "..", "dist", "index.js");
 
+// Windows can briefly keep recently-read config files open (notably through
+// antivirus/indexing hooks). Keep cleanup bounded and retry EBUSY/EPERM rather
+// than making the assertions weaker or leaking test state between runs.
+async function removeTestDir(path: string): Promise<void> {
+	await rm(path, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
+}
+
 interface Hooks {
 	"tool.execute.before"?: (
 		input: { tool: string; sessionID: string; callID: string },
@@ -113,7 +120,7 @@ describe("OpenCode integration: Singularity AIDR plugin pipeline", { timeout: 30
 		} else {
 			delete process.env.XDG_CACHE_HOME;
 		}
-		await rm(tmpHome, { recursive: true, force: true });
+		await removeTestDir(tmpHome);
 	});
 
 	it("blocks hard deny commands in tool.execute.before", async () => {
@@ -291,7 +298,7 @@ describe("OpenCode integration: Plugin scanning", { timeout: 30_000 }, () => {
 		} else {
 			delete process.env.XDG_CACHE_HOME;
 		}
-		await rm(tmpHome, { recursive: true, force: true });
+		await removeTestDir(tmpHome);
 	});
 
 	it("discovers NPM plugins from global config", async () => {
@@ -364,7 +371,7 @@ describe("OpenCode integration: Plugin scanning", { timeout: 30_000 }, () => {
 		const plugins = await discoverOpenCodePlugins(logger, projectDir);
 		expect(plugins.some((p) => p.key.includes("project-plugin"))).toBe(true);
 
-		await rm(projectDir, { recursive: true, force: true });
+		await removeTestDir(projectDir);
 	});
 
 	it("excludes @singularityrd/aidr-opencode from scanning", async () => {
@@ -606,7 +613,7 @@ describe("OpenCode integration: Plugin scanning", { timeout: 30_000 }, () => {
 		expect(pluginKeys.some((k) => k.includes("@global/plugin"))).toBe(true);
 		expect(pluginKeys.some((k) => k.includes("@project/plugin"))).toBe(true);
 
-		await rm(projectDir, { recursive: true, force: true });
+		await removeTestDir(projectDir);
 	});
 
 	it("handles missing config files gracefully", async () => {
@@ -623,7 +630,7 @@ describe("OpenCode integration: Plugin scanning", { timeout: 30_000 }, () => {
 		// Should not throw even with missing configs
 		await expect(discoverOpenCodePlugins(logger, projectDir)).resolves.toBeDefined();
 
-		await rm(projectDir, { recursive: true, force: true });
+		await removeTestDir(projectDir);
 	});
 
 	it("handles empty plugin directories gracefully", async () => {
@@ -642,6 +649,6 @@ describe("OpenCode integration: Plugin scanning", { timeout: 30_000 }, () => {
 		const plugins = await discoverOpenCodePlugins(logger, projectDir);
 		expect(Array.isArray(plugins)).toBe(true);
 
-		await rm(projectDir, { recursive: true, force: true });
+		await removeTestDir(projectDir);
 	});
 });

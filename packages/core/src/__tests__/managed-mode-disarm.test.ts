@@ -21,12 +21,13 @@
  * must still enforce locally.
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { evaluateToolCall, extractFromBash } from "../index.js";
+import { removeTmpDir } from "./test-utils.js";
 
 let home: string;
 let previousHome: string | undefined;
@@ -83,7 +84,7 @@ afterEach(async () => {
 	else process.env.HOME = previousHome;
 	if (previousUserProfile === undefined) delete process.env.USERPROFILE;
 	else process.env.USERPROFILE = previousUserProfile;
-	await rm(home, { recursive: true, force: true });
+	await removeTmpDir(home);
 });
 
 describe("managed mode never disarms local detection while un-enrolled", () => {
