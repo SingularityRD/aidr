@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash, createHmac, generateKeyPairSync, randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,54 @@ function cpSync(source, destination, options = {}) {
 		mkdirSync(destination, { recursive: true });
 		for (const entry of readdirSync(source)) cpSync(join(source, entry), join(destination, entry), options);
 	} else { mkdirSync(dirname(destination), { recursive: true }); copyFileSync(source, destination); }
+}
+
+// Node's 0o700/0o600 modes do not restrict Windows ACLs. Protect the
+// deployment root before copying or writing anything that may contain secrets.
+const WINDOWS_PRIVATE_DIRECTORY_ACL = `
+$ErrorActionPreference = 'Stop'
+$path = [Environment]::GetEnvironmentVariable('AIDR_PRIVATE_ACL_PATH')
+$item = [System.IO.DirectoryInfo]::new($path)
+$acl = $item.GetAccessControl()
+$owner = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$system = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+$administrators = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($entry in @($acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]))) {
+  $acl.PurgeAccessRules($entry.IdentityReference)
+}
+$inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+foreach ($sid in @($owner, $system, $administrators)) {
+  $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new(
+    $sid, [System.Security.AccessControl.FileSystemRights]::FullControl, $inheritance,
+    [System.Security.AccessControl.PropagationFlags]::None,
+    [System.Security.AccessControl.AccessControlType]::Allow))
+}
+$item.SetAccessControl($acl)
+$updated = $item.GetAccessControl()
+if (-not $updated.AreAccessRulesProtected) { throw 'ACL inheritance remains enabled' }
+foreach ($entry in $updated.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) {
+  if ($entry.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and
+      $entry.IdentityReference.Value -notin @($owner.Value, $system.Value, $administrators.Value)) {
+    throw 'ACL grants another identity access'
+  }
+}
+`;
+
+function hardenPrivateDirectory(directory) {
+	if (process.platform !== "win32") {
+		chmodSync(directory, 0o700);
+		if ((statSync(directory).mode & 0o077) !== 0) throw new Error("Deployment directory permits group or world access");
+		return "posix-owner-only";
+	}
+	try {
+		execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(WINDOWS_PRIVATE_DIRECTORY_ACL, "utf16le").toString("base64")], {
+			stdio: "ignore", windowsHide: true, env: { ...process.env, AIDR_PRIVATE_ACL_PATH: directory },
+		});
+	} catch (error) {
+		throw new Error(`Deployment directory Windows ACL could not be made private: ${error instanceof Error ? error.message : "unknown error"}`);
+	}
+	return "windows-current-user-system-administrators";
 }
 const { values } = parseArgs({ options: {
 	mode: { type: "string", default: "self-hosted" }, output: { type: "string", default: ".aidr-deploy" },
@@ -115,6 +163,8 @@ if (values.mode === "self-hosted" && bundledUpstream) {
 	if (execFileSync("git", ["-C", upstream, "status", "--porcelain", "--", "docker"], { encoding: "utf8" }).trim()) throw new Error("Upstream Docker configuration has local changes");
 }
 mkdirSync(output, { recursive: true, mode: 0o700 });
+// Fail closed before any copied or generated file can contain credentials.
+hardenPrivateDirectory(output);
 const compose = values.mode === "self-hosted" ? parse(readFileSync(join(upstream, "docker/docker-compose.yml"), "utf8")) : { services: {}, volumes: {} };
 compose.name = projectName;
 if (values.mode === "self-hosted") cpSync(join(upstream, "docker/volumes"), join(output, "volumes"), { recursive: true });

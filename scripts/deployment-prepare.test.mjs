@@ -1,6 +1,6 @@
-﻿import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -39,6 +39,22 @@ test("invalid cloud ingress and project inputs leave no partial installation or 
 			const result = prepare(output, ...options);
 			assert.notEqual(result.status, 0, `${label} unexpectedly succeeded`);
 			assert.equal(existsSync(output), false, `${label} left a partial installation`);
+		}
+	});
+});
+
+test("deployment secret root is private on every supported platform", () => {
+	inTemporaryDirectory((directory) => {
+		const output = join(directory, "private-root");
+		const result = prepare(output, "--mode", "cloud", "--device-start-upstream-url", "https://project.supabase.co/functions/v1/device-start");
+		assert.equal(result.status, 0, result.stderr);
+		if (process.platform === "win32") {
+			// Windows ignores POSIX mode bits; successful preparation proves the
+			// fail-closed PowerShell ACL hardening completed before the writes.
+			assert.match(result.stdout, /Secrets written to private \.env files/);
+		} else {
+			assert.equal(statSync(output).mode & 0o777, 0o700);
+			for (const name of [".env", ".env.functions", ".env.ingress"]) assert.equal(statSync(join(output, name)).mode & 0o777, 0o600);
 		}
 	});
 });
