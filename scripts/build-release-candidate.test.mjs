@@ -37,22 +37,34 @@ function run(args, options = {}) {
 }
 
 describe("release candidate cleanup", () => {
-	it("retries transient Windows EPERM and verifies the directory is gone", () => {
+	it("renames staging and retries transient Windows EPERM with increasing delays", () => {
 		let removeCalls = 0;
+		let renamed = false;
+		let removed = false;
 		const sleeps = [];
+		const renameCalls = [];
 		cleanupDirectory("C:\\Temp\\aidr-candidate-pack-test", {
 			platform: "win32",
 			attempts: 4,
+			rename: (from, to) => {
+				renameCalls.push([from, to]);
+				renamed = true;
+			},
 			remove: () => {
 				removeCalls++;
 				if (removeCalls < 3) throw Object.assign(new Error("sharing violation"), { code: "EPERM" });
+				removed = true;
 			},
-			exists: () => false,
+			exists: () => !removed,
 			sleep: (milliseconds) => sleeps.push(milliseconds),
 			warn: () => {},
 		});
 		assert.equal(removeCalls, 3);
-		assert.deepEqual(sleeps, [100, 100]);
+		assert.equal(renameCalls.length, 1);
+		assert.equal(renameCalls[0][0], "C:\\Temp\\aidr-candidate-pack-test");
+		assert.match(renameCalls[0][1], /candidate-pack-test\.cleanup-\d+-\d+-1$/);
+		assert.equal(renamed, true);
+		assert.deepEqual(sleeps, [100, 200]);
 	});
 
 	it("fails with actionable diagnostics when cleanup remains impossible", () => {
@@ -60,6 +72,7 @@ describe("release candidate cleanup", () => {
 			() => cleanupDirectory("C:\\Temp\\aidr-candidate-pack-stuck", {
 				platform: "win32",
 				attempts: 2,
+				rename: () => {},
 				remove: () => { throw Object.assign(new Error("sharing violation"), { code: "EPERM" }); },
 				exists: () => true,
 				sleep: () => {},
