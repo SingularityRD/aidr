@@ -95,6 +95,11 @@ describe("ingest signed entitlement timing", () => {
 		]) expect(issuer(env).entitlementTiming()).toBeNull();
 	});
 
+	it("does not expose raw database errors at agent registration", () => {
+		expect(source).toContain('error: "agent_registration_unavailable", retryable: true');
+		expect(source).not.toContain('detail: String(registrationErr.message');
+	});
+
 	it("uses the guarded helper in both success and seat-limit responses", () => {
 		expect(source.match(/buildEntitlementSnapshot\(\{/g)).toHaveLength(2);
 		expect(source.indexOf("const timing = entitlementTiming();")).toBeLessThan(source.indexOf("const apiKey = getBearerToken(req);"));

@@ -79,8 +79,8 @@ class SupabaseScimStore implements ScimStore {
 		return result.data ? asUser(result.data as Row) : null;
 	}
 
-	private async authUserByEmail(email: string): Promise<string | null> {
-		const result = await this.db.rpc("user_id_by_email", { p_email: email });
+	private async authUserByEmail(tenantId: string, email: string): Promise<string | null> {
+		const result = await this.db.rpc("scim_user_id_by_email", { p_tenant_id: tenantId, p_email: email });
 		if (result.error) throw new Error("SCIM identity lookup unavailable");
 		return typeof result.data === "string" && result.data ? result.data : null;
 	}
@@ -98,7 +98,7 @@ class SupabaseScimStore implements ScimStore {
 		if (rowResult.error || !rowResult.data) throw new Error("SCIM claimed user unavailable");
 		let row = rowResult.data as Row;
 		if (!row.auth_user_id) {
-			let authUserId = await this.authUserByEmail(input.userName);
+			let authUserId = await this.authUserByEmail(tenantId, input.userName);
 			if (!authUserId) {
 				const created = await this.db.auth.admin.createUser({
 					email: input.userName,

@@ -184,9 +184,19 @@ Deno.serve(async (req) => {
 		auth: { persistSession: false },
 	});
 
-	// Basic throttling by token hash (best-effort).
 	const tokenHash = await sha256Hex(enrollToken);
-	const ok = await rateLimitKey(supabase, `enroll:${tokenHash.slice(0, 16)}`, ENROLL_RATE_LIMIT_PER_MIN);
+	// Resolve the token before selecting a rate-limit bucket. Never let an
+	// attacker choose an arbitrary bucket with an unverified bearer value.
+	const { data: resolvedToken, error: resolveError } = await supabase.rpc("resolve_enrollment_token", {
+		p_token_hash: tokenHash,
+	});
+	const resolved = resolvedToken && typeof resolvedToken === "object" && !Array.isArray(resolvedToken)
+		? resolvedToken as Record<string, unknown> : null;
+	if (resolveError || !resolved || typeof resolved.tenant_id !== "string" || typeof resolved.user_id !== "string") {
+		if (resolveError) return json(503, { error: "enrollment_authorization_unavailable" });
+		return json(401, { error: "invalid_or_expired_enrollment_token" });
+	}
+	const ok = await rateLimitKey(supabase, `enroll:${resolved.tenant_id}:${resolved.user_id}`, ENROLL_RATE_LIMIT_PER_MIN);
 	if (!ok) return json(429, { error: "rate_limited" });
 
 	const parsed = await readBoundedJson(req, MAX_ENROLL_BODY_BYTES);

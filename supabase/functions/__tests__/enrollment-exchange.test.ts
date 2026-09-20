@@ -47,6 +47,9 @@ describe("atomic one-time exchanges", () => {
 		expect(enrollSource).toContain('supabase.rpc("exchange_enrollment_token"');
 		expect(enrollSource).not.toContain('supabase.rpc("consume_enrollment_token"');
 		expect(enrollSource).toContain("readBoundedJson(req, MAX_ENROLL_BODY_BYTES)");
+		expect(enrollSource).toContain('supabase.rpc("resolve_enrollment_token"');
+		expect(enrollSource).toContain("resolved.tenant_id");
+		expect(enrollSource).not.toContain('rateLimitKey(supabase, `enroll:${tokenHash');
 	});
 
 	it("persists the device enrollment token before consuming the session", () => {

@@ -102,6 +102,13 @@ describe("fleet response database and Edge wiring", () => {
 	);
 	});
 
+	it("requires an active tenant membership for the signed GET feed", () => {
+		expect(source).toContain('supabase.from("tenant_members").select("role,expires_at")');
+		expect(source).toContain('supabase.from("tenants").select("status")');
+		expect(source).toContain('tenant?.status !== "active"');
+		expect(source).not.toContain('(keyRow.tenant_id as string | null) ?? (keyRow.user_id as string)');
+	});
+
 	it("requires operator step-up and a service-side session barrier", () => {
 		expect(source).toContain("checkIdentityBarrier(db, accessToken, auth.user.id, tenantId)");
 		expect(source).toContain('assurance.currentLevel !== "aal2"');

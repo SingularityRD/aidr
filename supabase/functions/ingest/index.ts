@@ -322,7 +322,8 @@ Deno.serve(async (req) => {
 		},
 	);
 	if (registrationErr) {
-		return json(500, { error: "db_error", detail: String(registrationErr.message ?? registrationErr) });
+		// Never expose raw Postgres/Supabase errors to an untrusted ingest client.
+		return json(503, { error: "agent_registration_unavailable", retryable: true });
 	}
 	const registration = (Array.isArray(registrationRows) ? registrationRows[0] : null) as Record<
 		string,

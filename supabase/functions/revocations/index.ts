@@ -425,7 +425,15 @@ Deno.serve(async (req) => {
 	if (keyErr || !keyRow || keyRow.revoked) {
 		return json(401, { error: "invalid_api_key" });
 	}
-	const tenantId = (keyRow.tenant_id as string | null) ?? (keyRow.user_id as string);
+	const tenantId = typeof keyRow.tenant_id === "string" ? keyRow.tenant_id : "";
+	const userId = typeof keyRow.user_id === "string" ? keyRow.user_id : "";
+	if (!isUuid(tenantId) || !isUuid(userId)) return json(403, { error: "agent_access_denied" });
+	const [{ data: member, error: memberError }, { data: tenant, error: tenantError }] = await Promise.all([
+		supabase.from("tenant_members").select("role,expires_at").eq("tenant_id", tenantId).eq("user_id", userId).maybeSingle(),
+		supabase.from("tenants").select("status").eq("id", tenantId).maybeSingle(),
+	]);
+	if (memberError || tenantError) return json(503, { error: "authorization_unavailable" });
+	if (!membershipActive(member) || tenant?.status !== "active") return json(403, { error: "agent_access_denied" });
 
 	const loaded = await loadRevocationRows(supabase.from("revocations"), tenantId);
 	if (!loaded.ok) return json(503, { error: loaded.error });
