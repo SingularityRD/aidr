@@ -5159,30 +5159,40 @@ function sanitizeConfigPaths(config, logger) {
   }
   return next;
 }
+function safeConfigForInvalidFile(logger) {
+  return sanitizeConfigPaths(ConfigSchema.parse({ control_plane: { remote_policy_required: true } }), logger);
+}
+function isMissingFileError(error3) {
+  return typeof error3 === "object" && error3 !== null && "code" in error3 && error3.code === "ENOENT";
+}
 async function loadConfig(configPath, logger = nullLogger) {
   const path3 = configPath ?? defaultConfigPath();
   let raw;
   try {
     raw = await getFileContent(path3);
-  } catch {
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+  } catch (error3) {
+    if (isMissingFileError(error3)) {
+      return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+    }
+    logger.warn(`Failed to read config from ${path3}; requiring central policy`, { error: String(error3) });
+    return safeConfigForInvalidFile(logger);
   }
   let data;
   try {
     data = JSON.parse(raw);
   } catch (e) {
-    logger.warn(`Failed to parse config from ${path3}`, { error: String(e) });
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+    logger.warn(`Failed to parse config from ${path3}; requiring central policy`, { error: String(e) });
+    return safeConfigForInvalidFile(logger);
   }
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    logger.warn(`Config file ${path3} does not contain a JSON object`);
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+    logger.warn(`Config file ${path3} does not contain a JSON object; requiring central policy`);
+    return safeConfigForInvalidFile(logger);
   }
   try {
     return sanitizeConfigPaths(ConfigSchema.parse(data), logger);
   } catch (e) {
-    logger.warn(`Config validation failed, using defaults`, { error: String(e) });
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+    logger.warn(`Config validation failed; requiring central policy`, { error: String(e) });
+    return safeConfigForInvalidFile(logger);
   }
 }
 var import_node_os, import_node_path3, AIDR_DIR;
@@ -25869,12 +25879,16 @@ var init_heuristics = __esm({
     TRUSTED_DOMAIN_SUPPRESSIBLE = /* @__PURE__ */ new Set([
       "CLT-CMD-001",
       "CLT-CMD-002",
-      "CLT-SUPPLY-001",
-      "CLT-SUPPLY-004"
+      "CLT-SUPPLY-001"
     ]);
     HeuristicsEngine = class {
       threatMap = /* @__PURE__ */ new Map();
       trustedDomains;
+      /** Regex failures are deliberate signal skips, never a clean evaluation. */
+      _unavailableThreats = [];
+      get unavailableThreats() {
+        return this._unavailableThreats;
+      }
       constructor(threats, trustedDomains) {
         this.trustedDomains = trustedDomains ?? [];
         for (const threat of threats) {
@@ -25908,6 +25922,7 @@ var init_heuristics = __esm({
       }
       match(artifacts) {
         const matches = [];
+        this._unavailableThreats = [];
         for (const artifact of artifacts) {
           const value = boundArtifact(`${artifact.type} artifact`, artifact.value, MAX_MATCH_INPUT);
           const threats = this.threatMap.get(artifact.type) ?? [];
@@ -25923,7 +25938,9 @@ var init_heuristics = __esm({
                 });
               }
             } catch (error3) {
-              console.warn(`Regex execution failed for threat ${threat.id}: ${error3 instanceof Error ? error3.message : String(error3)}`);
+              const reason = error3 instanceof Error ? error3.message : String(error3);
+              this._unavailableThreats.push({ threatId: threat.id, reason });
+              console.warn(`Regex execution failed for threat ${threat.id}: ${reason}`);
             }
           }
         }
@@ -29509,6 +29526,8 @@ async function loadMergedIntelFromDisk(params = {}, logger = nullLogger) {
   const revokedPackIds = new Set((params.revocations?.pack_ids ?? []).filter((x) => typeof x === "string" && x.trim() !== ""));
   const revokedKeyIds = new Set((params.revocations?.key_ids ?? []).filter((x) => typeof x === "string" && x.trim() !== ""));
   const packIds = await listDirs(packsDir);
+  let loadedPackCount = 0;
+  let failedPackCount = 0;
   for (const packId of packIds) {
     if (revokedPackIds.has(packId)) {
       logger.warn("Intel pack id is revoked; skipping", { packId });
@@ -29520,10 +29539,23 @@ async function loadMergedIntelFromDisk(params = {}, logger = nullLogger) {
       continue;
     const packVersionDir = (0, import_node_path20.join)(packRoot, version);
     const single = await loadSinglePack(packId, packVersionDir, trustedKeys, keyring, revokedKeyIds, { verificationMode, graceHours }, logger);
-    if (!single)
+    if (!single) {
+      failedPackCount += 1;
       continue;
+    }
+    loadedPackCount += 1;
     mergeInto(merged, single);
   }
+  Object.defineProperty(merged, "availability", {
+    value: loadedPackCount > 0 && failedPackCount === 0 ? "available" : "unavailable",
+    enumerable: false,
+    configurable: true
+  });
+  Object.defineProperty(merged, "detail", {
+    value: loadedPackCount > 0 && failedPackCount === 0 ? `loaded ${loadedPackCount} signed intel pack(s)` : `no complete signed intel pack was available (${loadedPackCount} loaded, ${failedPackCount} rejected)`,
+    enumerable: false,
+    configurable: true
+  });
   void intelDir;
   return merged;
 }
@@ -29740,13 +29772,13 @@ var init_package_checker = __esm({
             ageDays
           };
         }
-        if (feed && !fileReputationChecked) {
+        if (!fileReputationChecked) {
           return {
             packageName: pkg.name,
             registry: pkg.registry,
             verdict: "unknown",
             confidence: 0,
-            details: `Package '${pkg.name}' exists, but no SHA-256 file reputation verdict was available; signed feed had no matching deny indicator`,
+            details: `Package '${pkg.name}' was not verified clean: file reputation was unavailable or not applicable${feed ? "; signed feed had no matching deny indicator" : ""}`,
             ageDays
           };
         }
@@ -30360,6 +30392,32 @@ async function evaluatePolicy(toolName, artifacts, config, toolInput) {
     return infrastructureVerdict;
   const packsEnabled = config.intel_packs?.enabled === true || config.intel?.enabled === true;
   const merged = packsEnabled ? await getMergedIntelCached(config).catch(() => null) : null;
+  const signedPacksEnabled = config.intel_packs?.enabled === true;
+  if (signedPacksEnabled && !merged) {
+    return makeVerdict({
+      decision: "ask",
+      category: "detection_unavailable",
+      severity: "warning",
+      source: "intel",
+      artifact: "intel-packs",
+      threatId: "INTEL-UNAVAILABLE-001",
+      reasons: ["Signed intel pack loading failed; intel coverage is unavailable"],
+      confidence: 0
+    });
+  }
+  const mergedState = merged;
+  if (signedPacksEnabled && mergedState?.availability !== "available") {
+    return makeVerdict({
+      decision: "ask",
+      category: "detection_unavailable",
+      severity: "warning",
+      source: "intel",
+      artifact: "intel-packs",
+      threatId: "INTEL-UNAVAILABLE-001",
+      reasons: [mergedState?.detail ?? "Signed intel pack coverage is unavailable"],
+      confidence: 0
+    });
+  }
   const denyHosts = config.intel?.enabled === true ? await loadUrlDenylistHosts(resolvePath(config.intel.url_denylist_path)) : /* @__PURE__ */ new Set();
   for (const a of artifacts) {
     if (a.type !== "url")
@@ -30528,6 +30586,16 @@ async function evaluatePolicy(toolName, artifacts, config, toolInput) {
             });
           }
         } catch {
+          return makeVerdict({
+            decision: "ask",
+            category: "detection_unavailable",
+            severity: "warning",
+            source: "policy",
+            artifact: filePath,
+            threatId: "POL-FS-UNAVAILABLE-001",
+            reasons: ["Filesystem deny pattern is invalid and was skipped"],
+            confidence: 0
+          });
         }
       }
     }
@@ -30552,6 +30620,16 @@ async function evaluatePolicy(toolName, artifacts, config, toolInput) {
             });
           }
         } catch {
+          return makeVerdict({
+            decision: "ask",
+            category: "detection_unavailable",
+            severity: "warning",
+            source: "policy",
+            artifact: command.slice(0, 200),
+            threatId: "POL-SH-UNAVAILABLE-001",
+            reasons: ["Shell deny pattern is invalid and was skipped"],
+            confidence: 0
+          });
         }
       }
     }
@@ -54009,7 +54087,7 @@ async function checkEndpointHealth() {
     const latencyMs = Date.now() - start;
     return {
       name: "url_endpoint",
-      status: response.status < 500 ? "healthy" : "degraded",
+      status: response.status >= 400 ? "degraded" : "healthy",
       latencyMs,
       details: { status: response.status, endpoint: urlCheckEndpoint }
     };
@@ -54027,26 +54105,28 @@ async function checkDiskHealth() {
   const start = Date.now();
   try {
     const aidrPath = resolvePath(AIDR_DIR);
-    const _stats = (0, import_node_fs7.statSync)(aidrPath);
+    const stats = (0, import_node_fs7.statfsSync)(aidrPath);
+    const freeBytes = Number(stats.bavail) * Number(stats.bsize);
+    if (!Number.isFinite(freeBytes) || freeBytes < 0) {
+      throw new Error("Filesystem returned an invalid free-space measurement");
+    }
+    const freeMB = freeBytes / (1024 * 1024);
     const latencyMs = Date.now() - start;
-    const estimatedFreeMB = 1e3;
-    const healthy = estimatedFreeMB > 100;
+    const healthy = freeMB > 100;
     return {
       name: "disk_space",
       status: healthy ? "healthy" : "degraded",
       latencyMs,
-      message: healthy ? void 0 : `Low disk space: ~${estimatedFreeMB}MB remaining`,
-      details: { aidrDir: AIDR_DIR, estimatedFreeMB, warningThresholdMB: 100 }
+      message: healthy ? void 0 : `Low disk space: ~${Math.floor(freeMB)}MB remaining`,
+      details: { aidrDir: AIDR_DIR, freeMB, warningThresholdMB: 100 }
     };
-  } catch (_error) {
+  } catch (error3) {
     return {
       name: "disk_space",
-      status: "healthy",
+      status: "degraded",
       latencyMs: Date.now() - start,
-      details: {
-        aidrDir: AIDR_DIR,
-        note: "Directory not yet created - will be created on first use"
-      }
+      message: `Disk space unavailable: ${error3 instanceof Error ? error3.message : String(error3)}`,
+      details: { aidrDir: AIDR_DIR, warningThresholdMB: 100, measurement: "unavailable" }
     };
   }
 }
@@ -109945,7 +110025,7 @@ if (!process.env.AIDR_THREATS_DIR) {
 async function main() {
   const startTime = Date.now();
   if (helpFlag) {
-    console.log(`Usage: aidr health [options]
+    console.log(`Usage: aidr-claude-code health [options]
 
 Options:
   -c, --check [name]  Run specific check only (core, cache, threat_rules, api)
@@ -109957,10 +110037,10 @@ Exit codes:
   1    At least one check is degraded or unhealthy
 
 Examples:
-  aidr health                      # Human-readable output for all checks
-  aidr health --json               # JSON output for all checks
-  aidr health --check core         # Check core module only
-  aidr health --check api --json   # Check API connectivity, JSON output`);
+  aidr-claude-code health                      # Human-readable output for all checks
+  aidr-claude-code health --json               # JSON output for all checks
+  aidr-claude-code health --check core         # Check core module only
+  aidr-claude-code health --check api --json   # Check API connectivity, JSON output`);
     process.exit(0);
   }
   if (specificCheck && !VALID_CHECKS.includes(specificCheck)) {

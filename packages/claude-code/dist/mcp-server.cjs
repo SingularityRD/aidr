@@ -12324,30 +12324,40 @@ function sanitizeConfigPaths(config2, logger2) {
   }
   return next;
 }
+function safeConfigForInvalidFile(logger2) {
+  return sanitizeConfigPaths(ConfigSchema.parse({ control_plane: { remote_policy_required: true } }), logger2);
+}
+function isMissingFileError(error4) {
+  return typeof error4 === "object" && error4 !== null && "code" in error4 && error4.code === "ENOENT";
+}
 async function loadConfig(configPath, logger2 = nullLogger) {
   const path3 = configPath ?? defaultConfigPath();
   let raw;
   try {
     raw = await getFileContent(path3);
-  } catch {
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+  } catch (error4) {
+    if (isMissingFileError(error4)) {
+      return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+    }
+    logger2.warn(`Failed to read config from ${path3}; requiring central policy`, { error: String(error4) });
+    return safeConfigForInvalidFile(logger2);
   }
   let data;
   try {
     data = JSON.parse(raw);
   } catch (e) {
-    logger2.warn(`Failed to parse config from ${path3}`, { error: String(e) });
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+    logger2.warn(`Failed to parse config from ${path3}; requiring central policy`, { error: String(e) });
+    return safeConfigForInvalidFile(logger2);
   }
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    logger2.warn(`Config file ${path3} does not contain a JSON object`);
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+    logger2.warn(`Config file ${path3} does not contain a JSON object; requiring central policy`);
+    return safeConfigForInvalidFile(logger2);
   }
   try {
     return sanitizeConfigPaths(ConfigSchema.parse(data), logger2);
   } catch (e) {
-    logger2.warn(`Config validation failed, using defaults`, { error: String(e) });
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+    logger2.warn(`Config validation failed; requiring central policy`, { error: String(e) });
+    return safeConfigForInvalidFile(logger2);
   }
 }
 var import_node_os, import_node_path3, AIDR_DIR;
@@ -33034,12 +33044,16 @@ var init_heuristics = __esm({
     TRUSTED_DOMAIN_SUPPRESSIBLE = /* @__PURE__ */ new Set([
       "CLT-CMD-001",
       "CLT-CMD-002",
-      "CLT-SUPPLY-001",
-      "CLT-SUPPLY-004"
+      "CLT-SUPPLY-001"
     ]);
     HeuristicsEngine = class {
       threatMap = /* @__PURE__ */ new Map();
       trustedDomains;
+      /** Regex failures are deliberate signal skips, never a clean evaluation. */
+      _unavailableThreats = [];
+      get unavailableThreats() {
+        return this._unavailableThreats;
+      }
       constructor(threats, trustedDomains) {
         this.trustedDomains = trustedDomains ?? [];
         for (const threat of threats) {
@@ -33073,6 +33087,7 @@ var init_heuristics = __esm({
       }
       match(artifacts) {
         const matches = [];
+        this._unavailableThreats = [];
         for (const artifact of artifacts) {
           const value = boundArtifact(`${artifact.type} artifact`, artifact.value, MAX_MATCH_INPUT);
           const threats = this.threatMap.get(artifact.type) ?? [];
@@ -33088,7 +33103,9 @@ var init_heuristics = __esm({
                 });
               }
             } catch (error4) {
-              console.warn(`Regex execution failed for threat ${threat.id}: ${error4 instanceof Error ? error4.message : String(error4)}`);
+              const reason = error4 instanceof Error ? error4.message : String(error4);
+              this._unavailableThreats.push({ threatId: threat.id, reason });
+              console.warn(`Regex execution failed for threat ${threat.id}: ${reason}`);
             }
           }
         }
@@ -36674,6 +36691,8 @@ async function loadMergedIntelFromDisk(params = {}, logger2 = nullLogger) {
   const revokedPackIds = new Set((params.revocations?.pack_ids ?? []).filter((x) => typeof x === "string" && x.trim() !== ""));
   const revokedKeyIds = new Set((params.revocations?.key_ids ?? []).filter((x) => typeof x === "string" && x.trim() !== ""));
   const packIds = await listDirs(packsDir);
+  let loadedPackCount = 0;
+  let failedPackCount = 0;
   for (const packId of packIds) {
     if (revokedPackIds.has(packId)) {
       logger2.warn("Intel pack id is revoked; skipping", { packId });
@@ -36685,10 +36704,23 @@ async function loadMergedIntelFromDisk(params = {}, logger2 = nullLogger) {
       continue;
     const packVersionDir = (0, import_node_path20.join)(packRoot, version2);
     const single = await loadSinglePack(packId, packVersionDir, trustedKeys, keyring, revokedKeyIds, { verificationMode, graceHours }, logger2);
-    if (!single)
+    if (!single) {
+      failedPackCount += 1;
       continue;
+    }
+    loadedPackCount += 1;
     mergeInto(merged, single);
   }
+  Object.defineProperty(merged, "availability", {
+    value: loadedPackCount > 0 && failedPackCount === 0 ? "available" : "unavailable",
+    enumerable: false,
+    configurable: true
+  });
+  Object.defineProperty(merged, "detail", {
+    value: loadedPackCount > 0 && failedPackCount === 0 ? `loaded ${loadedPackCount} signed intel pack(s)` : `no complete signed intel pack was available (${loadedPackCount} loaded, ${failedPackCount} rejected)`,
+    enumerable: false,
+    configurable: true
+  });
   void intelDir;
   return merged;
 }
@@ -36905,13 +36937,13 @@ var init_package_checker = __esm({
             ageDays
           };
         }
-        if (feed && !fileReputationChecked) {
+        if (!fileReputationChecked) {
           return {
             packageName: pkg.name,
             registry: pkg.registry,
             verdict: "unknown",
             confidence: 0,
-            details: `Package '${pkg.name}' exists, but no SHA-256 file reputation verdict was available; signed feed had no matching deny indicator`,
+            details: `Package '${pkg.name}' was not verified clean: file reputation was unavailable or not applicable${feed ? "; signed feed had no matching deny indicator" : ""}`,
             ageDays
           };
         }
@@ -37525,6 +37557,32 @@ async function evaluatePolicy(toolName, artifacts, config2, toolInput) {
     return infrastructureVerdict;
   const packsEnabled = config2.intel_packs?.enabled === true || config2.intel?.enabled === true;
   const merged = packsEnabled ? await getMergedIntelCached(config2).catch(() => null) : null;
+  const signedPacksEnabled = config2.intel_packs?.enabled === true;
+  if (signedPacksEnabled && !merged) {
+    return makeVerdict({
+      decision: "ask",
+      category: "detection_unavailable",
+      severity: "warning",
+      source: "intel",
+      artifact: "intel-packs",
+      threatId: "INTEL-UNAVAILABLE-001",
+      reasons: ["Signed intel pack loading failed; intel coverage is unavailable"],
+      confidence: 0
+    });
+  }
+  const mergedState = merged;
+  if (signedPacksEnabled && mergedState?.availability !== "available") {
+    return makeVerdict({
+      decision: "ask",
+      category: "detection_unavailable",
+      severity: "warning",
+      source: "intel",
+      artifact: "intel-packs",
+      threatId: "INTEL-UNAVAILABLE-001",
+      reasons: [mergedState?.detail ?? "Signed intel pack coverage is unavailable"],
+      confidence: 0
+    });
+  }
   const denyHosts = config2.intel?.enabled === true ? await loadUrlDenylistHosts(resolvePath(config2.intel.url_denylist_path)) : /* @__PURE__ */ new Set();
   for (const a of artifacts) {
     if (a.type !== "url")
@@ -37693,6 +37751,16 @@ async function evaluatePolicy(toolName, artifacts, config2, toolInput) {
             });
           }
         } catch {
+          return makeVerdict({
+            decision: "ask",
+            category: "detection_unavailable",
+            severity: "warning",
+            source: "policy",
+            artifact: filePath,
+            threatId: "POL-FS-UNAVAILABLE-001",
+            reasons: ["Filesystem deny pattern is invalid and was skipped"],
+            confidence: 0
+          });
         }
       }
     }
@@ -37717,6 +37785,16 @@ async function evaluatePolicy(toolName, artifacts, config2, toolInput) {
             });
           }
         } catch {
+          return makeVerdict({
+            decision: "ask",
+            category: "detection_unavailable",
+            severity: "warning",
+            source: "policy",
+            artifact: command.slice(0, 200),
+            threatId: "POL-SH-UNAVAILABLE-001",
+            reasons: ["Shell deny pattern is invalid and was skipped"],
+            confidence: 0
+          });
         }
       }
     }
@@ -61174,7 +61252,7 @@ async function checkEndpointHealth() {
     const latencyMs = Date.now() - start;
     return {
       name: "url_endpoint",
-      status: response.status < 500 ? "healthy" : "degraded",
+      status: response.status >= 400 ? "degraded" : "healthy",
       latencyMs,
       details: { status: response.status, endpoint: urlCheckEndpoint }
     };
@@ -61192,26 +61270,28 @@ async function checkDiskHealth() {
   const start = Date.now();
   try {
     const aidrPath = resolvePath(AIDR_DIR);
-    const _stats = (0, import_node_fs7.statSync)(aidrPath);
+    const stats = (0, import_node_fs7.statfsSync)(aidrPath);
+    const freeBytes = Number(stats.bavail) * Number(stats.bsize);
+    if (!Number.isFinite(freeBytes) || freeBytes < 0) {
+      throw new Error("Filesystem returned an invalid free-space measurement");
+    }
+    const freeMB = freeBytes / (1024 * 1024);
     const latencyMs = Date.now() - start;
-    const estimatedFreeMB = 1e3;
-    const healthy = estimatedFreeMB > 100;
+    const healthy = freeMB > 100;
     return {
       name: "disk_space",
       status: healthy ? "healthy" : "degraded",
       latencyMs,
-      message: healthy ? void 0 : `Low disk space: ~${estimatedFreeMB}MB remaining`,
-      details: { aidrDir: AIDR_DIR, estimatedFreeMB, warningThresholdMB: 100 }
+      message: healthy ? void 0 : `Low disk space: ~${Math.floor(freeMB)}MB remaining`,
+      details: { aidrDir: AIDR_DIR, freeMB, warningThresholdMB: 100 }
     };
-  } catch (_error) {
+  } catch (error4) {
     return {
       name: "disk_space",
-      status: "healthy",
+      status: "degraded",
       latencyMs: Date.now() - start,
-      details: {
-        aidrDir: AIDR_DIR,
-        note: "Directory not yet created - will be created on first use"
-      }
+      message: `Disk space unavailable: ${error4 instanceof Error ? error4.message : String(error4)}`,
+      details: { aidrDir: AIDR_DIR, warningThresholdMB: 100, measurement: "unavailable" }
     };
   }
 }
@@ -63409,7 +63489,7 @@ var require_thread_stream = __commonJS({
     var { version: version2 } = require_package();
     var { EventEmitter: EventEmitter4 } = require("events");
     var { Worker: Worker3 } = require("worker_threads");
-    var { join: join33 } = require("path");
+    var { join: join32 } = require("path");
     var { pathToFileURL: pathToFileURL3 } = require("url");
     var { wait } = require_wait();
     var {
@@ -63445,7 +63525,7 @@ var require_thread_stream = __commonJS({
     function createWorker(stream, opts) {
       const { filename, workerData } = opts;
       const bundlerOverrides = "__bundlerPathsOverrides" in globalThis ? globalThis.__bundlerPathsOverrides : {};
-      const toExecute = bundlerOverrides["thread-stream-worker"] || join33(__dirname, "lib", "worker.js");
+      const toExecute = bundlerOverrides["thread-stream-worker"] || join32(__dirname, "lib", "worker.js");
       const worker = new Worker3(toExecute, {
         ...opts.workerOpts,
         trackUnmanagedFds: false,
@@ -63831,7 +63911,7 @@ var require_transport = __commonJS({
     "use strict";
     var { createRequire: createRequire2 } = require("module");
     var getCallers = require_caller();
-    var { join: join33, isAbsolute: isAbsolute6, sep: sep4 } = require("node:path");
+    var { join: join32, isAbsolute: isAbsolute6, sep: sep4 } = require("node:path");
     var sleep2 = require_atomic_sleep();
     var onExit = require_on_exit_leak_free();
     var ThreadStream = require_thread_stream();
@@ -63894,7 +63974,7 @@ var require_transport = __commonJS({
         throw new Error("only one of target or targets can be specified");
       }
       if (targets) {
-        target = bundlerOverrides["pino-worker"] || join33(__dirname, "worker.js");
+        target = bundlerOverrides["pino-worker"] || join32(__dirname, "worker.js");
         options.targets = targets.filter((dest) => dest.target).map((dest) => {
           return {
             ...dest,
@@ -63912,7 +63992,7 @@ var require_transport = __commonJS({
           });
         });
       } else if (pipeline) {
-        target = bundlerOverrides["pino-worker"] || join33(__dirname, "worker.js");
+        target = bundlerOverrides["pino-worker"] || join32(__dirname, "worker.js");
         options.pipelines = [pipeline.map((dest) => {
           return {
             ...dest,
@@ -63934,7 +64014,7 @@ var require_transport = __commonJS({
           return origin2;
         }
         if (origin2 === "pino/file") {
-          return join33(__dirname, "..", "file.js");
+          return join32(__dirname, "..", "file.js");
         }
         let fixTarget2;
         for (const filePath of callers) {
@@ -64923,7 +65003,7 @@ var require_safe_stable_stringify = __commonJS({
               return circularValue;
             }
             let res = "";
-            let join33 = ",";
+            let join32 = ",";
             const originalIndentation = indentation;
             if (Array.isArray(value)) {
               if (value.length === 0) {
@@ -64937,7 +65017,7 @@ var require_safe_stable_stringify = __commonJS({
                 indentation += spacer;
                 res += `
 ${indentation}`;
-                join33 = `,
+                join32 = `,
 ${indentation}`;
               }
               const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
@@ -64945,13 +65025,13 @@ ${indentation}`;
               for (; i < maximumValuesToStringify - 1; i++) {
                 const tmp2 = stringifyFnReplacer(String(i), value, stack, replacer, spacer, indentation);
                 res += tmp2 !== void 0 ? tmp2 : "null";
-                res += join33;
+                res += join32;
               }
               const tmp = stringifyFnReplacer(String(i), value, stack, replacer, spacer, indentation);
               res += tmp !== void 0 ? tmp : "null";
               if (value.length - 1 > maximumBreadth) {
                 const removedKeys = value.length - maximumBreadth - 1;
-                res += `${join33}"... ${getItemCount(removedKeys)} not stringified"`;
+                res += `${join32}"... ${getItemCount(removedKeys)} not stringified"`;
               }
               if (spacer !== "") {
                 res += `
@@ -64972,7 +65052,7 @@ ${originalIndentation}`;
             let separator = "";
             if (spacer !== "") {
               indentation += spacer;
-              join33 = `,
+              join32 = `,
 ${indentation}`;
               whitespace = " ";
             }
@@ -64986,13 +65066,13 @@ ${indentation}`;
               const tmp = stringifyFnReplacer(key2, value, stack, replacer, spacer, indentation);
               if (tmp !== void 0) {
                 res += `${separator}${strEscape(key2)}:${whitespace}${tmp}`;
-                separator = join33;
+                separator = join32;
               }
             }
             if (keyLength > maximumBreadth) {
               const removedKeys = keyLength - maximumBreadth;
               res += `${separator}"...":${whitespace}"${getItemCount(removedKeys)} not stringified"`;
-              separator = join33;
+              separator = join32;
             }
             if (spacer !== "" && separator.length > 1) {
               res = `
@@ -65033,7 +65113,7 @@ ${originalIndentation}`;
             }
             const originalIndentation = indentation;
             let res = "";
-            let join33 = ",";
+            let join32 = ",";
             if (Array.isArray(value)) {
               if (value.length === 0) {
                 return "[]";
@@ -65046,7 +65126,7 @@ ${originalIndentation}`;
                 indentation += spacer;
                 res += `
 ${indentation}`;
-                join33 = `,
+                join32 = `,
 ${indentation}`;
               }
               const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
@@ -65054,13 +65134,13 @@ ${indentation}`;
               for (; i < maximumValuesToStringify - 1; i++) {
                 const tmp2 = stringifyArrayReplacer(String(i), value[i], stack, replacer, spacer, indentation);
                 res += tmp2 !== void 0 ? tmp2 : "null";
-                res += join33;
+                res += join32;
               }
               const tmp = stringifyArrayReplacer(String(i), value[i], stack, replacer, spacer, indentation);
               res += tmp !== void 0 ? tmp : "null";
               if (value.length - 1 > maximumBreadth) {
                 const removedKeys = value.length - maximumBreadth - 1;
-                res += `${join33}"... ${getItemCount(removedKeys)} not stringified"`;
+                res += `${join32}"... ${getItemCount(removedKeys)} not stringified"`;
               }
               if (spacer !== "") {
                 res += `
@@ -65073,7 +65153,7 @@ ${originalIndentation}`;
             let whitespace = "";
             if (spacer !== "") {
               indentation += spacer;
-              join33 = `,
+              join32 = `,
 ${indentation}`;
               whitespace = " ";
             }
@@ -65082,7 +65162,7 @@ ${indentation}`;
               const tmp = stringifyArrayReplacer(key2, value[key2], stack, replacer, spacer, indentation);
               if (tmp !== void 0) {
                 res += `${separator}${strEscape(key2)}:${whitespace}${tmp}`;
-                separator = join33;
+                separator = join32;
               }
             }
             if (spacer !== "" && separator.length > 1) {
@@ -65140,20 +65220,20 @@ ${originalIndentation}`;
               indentation += spacer;
               let res2 = `
 ${indentation}`;
-              const join34 = `,
+              const join33 = `,
 ${indentation}`;
               const maximumValuesToStringify = Math.min(value.length, maximumBreadth);
               let i = 0;
               for (; i < maximumValuesToStringify - 1; i++) {
                 const tmp2 = stringifyIndent(String(i), value[i], stack, spacer, indentation);
                 res2 += tmp2 !== void 0 ? tmp2 : "null";
-                res2 += join34;
+                res2 += join33;
               }
               const tmp = stringifyIndent(String(i), value[i], stack, spacer, indentation);
               res2 += tmp !== void 0 ? tmp : "null";
               if (value.length - 1 > maximumBreadth) {
                 const removedKeys = value.length - maximumBreadth - 1;
-                res2 += `${join34}"... ${getItemCount(removedKeys)} not stringified"`;
+                res2 += `${join33}"... ${getItemCount(removedKeys)} not stringified"`;
               }
               res2 += `
 ${originalIndentation}`;
@@ -65169,16 +65249,16 @@ ${originalIndentation}`;
               return '"[Object]"';
             }
             indentation += spacer;
-            const join33 = `,
+            const join32 = `,
 ${indentation}`;
             let res = "";
             let separator = "";
             let maximumPropertiesToStringify = Math.min(keyLength, maximumBreadth);
             if (isTypedArrayWithEntries(value)) {
-              res += stringifyTypedArray(value, join33, maximumBreadth);
+              res += stringifyTypedArray(value, join32, maximumBreadth);
               keys = keys.slice(value.length);
               maximumPropertiesToStringify -= value.length;
-              separator = join33;
+              separator = join32;
             }
             if (deterministic) {
               keys = sort(keys, comparator);
@@ -65189,13 +65269,13 @@ ${indentation}`;
               const tmp = stringifyIndent(key2, value[key2], stack, spacer, indentation);
               if (tmp !== void 0) {
                 res += `${separator}${strEscape(key2)}: ${tmp}`;
-                separator = join33;
+                separator = join32;
               }
             }
             if (keyLength > maximumBreadth) {
               const removedKeys = keyLength - maximumBreadth;
               res += `${separator}"...": "${getItemCount(removedKeys)} not stringified"`;
-              separator = join33;
+              separator = join32;
             }
             if (separator !== "") {
               res = `
@@ -89385,14 +89465,14 @@ var require_require_in_the_middle = __commonJS({
           moduleName = parsedPath.name;
           basedir = parsedPath.dir;
         } else {
-          const stat13 = moduleDetailsFromPath(filename);
-          if (stat13 === void 0) {
+          const stat12 = moduleDetailsFromPath(filename);
+          if (stat12 === void 0) {
             debug3("could not parse filename: %s", filename);
             return exports3;
           }
-          moduleName = stat13.name;
-          basedir = stat13.basedir;
-          const fullModuleName = resolveModuleName(stat13);
+          moduleName = stat12.name;
+          basedir = stat12.basedir;
+          const fullModuleName = resolveModuleName(stat12);
           debug3("resolved filename to module: %s (id: %s, resolved: %s, basedir: %s)", moduleName, id, fullModuleName, basedir);
           let matchFound = false;
           if (hasWhitelist) {
@@ -89454,9 +89534,9 @@ var require_require_in_the_middle = __commonJS({
         }
       }
     };
-    function resolveModuleName(stat13) {
-      const normalizedPath = path3.sep !== "/" ? stat13.path.split(path3.sep).join("/") : stat13.path;
-      return path3.posix.join(stat13.name, normalizedPath).replace(normalize5, "");
+    function resolveModuleName(stat12) {
+      const normalizedPath = path3.sep !== "/" ? stat12.path.split(path3.sep).join("/") : stat12.path;
+      return path3.posix.join(stat12.name, normalizedPath).replace(normalize5, "");
     }
   }
 });
@@ -127228,91 +127308,6 @@ init_dist();
 var import_pino3 = __toESM(require_pino(), 1);
 init_zod();
 
-// src/approval-tracker.ts
-var import_promises28 = require("node:fs/promises");
-var import_node_path42 = require("node:path");
-init_dist();
-var PENDING_STALE_MS2 = 60 * 60 * 1e3;
-var CONSUMED_TTL_MS = 10 * 60 * 1e3;
-var STALE_FILE_MS = 2 * 60 * 60 * 1e3;
-function resolvedAidrDir2() {
-  return resolvePath(AIDR_DIR);
-}
-async function loadJson2(path3) {
-  try {
-    const raw = await getFileContent(resolvePath(path3));
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-async function saveOrDelete(path3, data) {
-  const resolved = resolvePath(path3);
-  if (Object.keys(data).length === 0) {
-    try {
-      await (0, import_promises28.unlink)(resolved);
-    } catch {
-    }
-  } else {
-    await atomicWriteJson(resolved, data);
-  }
-}
-function pruneExpiredConsumed(store) {
-  const now = Date.now();
-  const result = {};
-  for (const [key, entry] of Object.entries(store)) {
-    if (new Date(entry.expiresAt).getTime() > now) {
-      result[key] = entry;
-    }
-  }
-  return result;
-}
-function consumedKey(artifactType, artifact) {
-  return `${artifactType}:${artifact}`;
-}
-async function listSessionFiles(prefix) {
-  try {
-    const entries = await (0, import_promises28.readdir)(resolvedAidrDir2());
-    return entries.filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
-  } catch {
-    return [];
-  }
-}
-async function findConsumedApprovalAcrossSessions(artifactType, artifact, _logger = nullLogger) {
-  const files = await listSessionFiles("consumed-approvals-");
-  const key = consumedKey(artifactType, artifact);
-  const dir = resolvedAidrDir2();
-  for (const file of files) {
-    try {
-      const path3 = (0, import_node_path42.join)(dir, file);
-      let store = await loadJson2(path3) ?? {};
-      store = pruneExpiredConsumed(store);
-      await saveOrDelete(path3, store);
-      const entry = store[key];
-      if (entry) return entry;
-    } catch {
-    }
-  }
-  return null;
-}
-async function removeConsumedApprovalAcrossSessions(artifactType, artifact, _logger = nullLogger) {
-  const files = await listSessionFiles("consumed-approvals-");
-  const key = consumedKey(artifactType, artifact);
-  const dir = resolvedAidrDir2();
-  for (const file of files) {
-    try {
-      const path3 = (0, import_node_path42.join)(dir, file);
-      let store = await loadJson2(path3) ?? {};
-      store = pruneExpiredConsumed(store);
-      if (key in store) {
-        delete store[key];
-        await saveOrDelete(path3, store);
-      }
-    } catch {
-    }
-  }
-}
-
 // src/format.ts
 init_dist();
 function artifactTypeLabel(type) {
@@ -127348,11 +127343,6 @@ function textResult(text, isError2) {
   if (isError2) result.isError = true;
   return result;
 }
-function displayValue(type, value) {
-  if (type === "url") return normalizeUrl(value);
-  if (type === "command") return `command hash ${hashCommand(value).slice(0, 12)}...`;
-  return normalizeFilePath(value);
-}
 server.registerTool(
   "aidr_allowlist_add",
   {
@@ -127364,34 +127354,11 @@ server.registerTool(
       reason: external_exports.string().optional().describe("Why this is being allowlisted")
     })
   },
-  async ({ type, value, reason }) => {
-    try {
-      const consumed = await findConsumedApprovalAcrossSessions(type, value, logger);
-      if (!consumed) {
-        return textResult(
-          "Cannot add to allowlist: no recent user approval found for this artifact. The user must first encounter and approve this action through Singularity AIDR's security dialog, then you can permanently allowlist it.",
-          true
-        );
-      }
-      const config2 = await loadConfig(void 0, logger);
-      const allowlist = await loadAllowlist(config2.allowlist, logger);
-      const entryReason = reason ?? `Approved by user (threat: ${consumed.threatId})`;
-      if (type === "url") {
-        addUrl(allowlist, value, entryReason, "ask");
-      } else if (type === "command") {
-        addCommand(allowlist, value, entryReason, "ask");
-      } else {
-        addFilePath(allowlist, value, entryReason, "ask");
-      }
-      await saveAllowlist(allowlist, config2.allowlist, logger);
-      await removeConsumedApprovalAcrossSessions(type, value, logger);
-      const label = artifactTypeLabel(type);
-      return textResult(
-        `Added ${label} to Singularity AIDR allowlist: ${displayValue(type, value)}. This ${label} will no longer trigger security alerts.`
-      );
-    } catch (e) {
-      return textResult(`Failed to add to allowlist: ${e}`, true);
-    }
+  async () => {
+    return textResult(
+      "Cannot add to allowlist from an agent-callable tool. Ask the operator to update the AIDR allowlist through the out-of-band operator/CLI flow.",
+      true
+    );
   }
 );
 server.registerTool(

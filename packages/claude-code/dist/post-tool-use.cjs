@@ -9464,30 +9464,40 @@ function sanitizeConfigPaths(config, logger2) {
   }
   return next;
 }
+function safeConfigForInvalidFile(logger2) {
+  return sanitizeConfigPaths(ConfigSchema.parse({ control_plane: { remote_policy_required: true } }), logger2);
+}
+function isMissingFileError(error3) {
+  return typeof error3 === "object" && error3 !== null && "code" in error3 && error3.code === "ENOENT";
+}
 async function loadConfig(configPath, logger2 = nullLogger) {
   const path3 = configPath ?? defaultConfigPath();
   let raw;
   try {
     raw = await getFileContent(path3);
-  } catch {
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+  } catch (error3) {
+    if (isMissingFileError(error3)) {
+      return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+    }
+    logger2.warn(`Failed to read config from ${path3}; requiring central policy`, { error: String(error3) });
+    return safeConfigForInvalidFile(logger2);
   }
   let data;
   try {
     data = JSON.parse(raw);
   } catch (e) {
-    logger2.warn(`Failed to parse config from ${path3}`, { error: String(e) });
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+    logger2.warn(`Failed to parse config from ${path3}; requiring central policy`, { error: String(e) });
+    return safeConfigForInvalidFile(logger2);
   }
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    logger2.warn(`Config file ${path3} does not contain a JSON object`);
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+    logger2.warn(`Config file ${path3} does not contain a JSON object; requiring central policy`);
+    return safeConfigForInvalidFile(logger2);
   }
   try {
     return sanitizeConfigPaths(ConfigSchema.parse(data), logger2);
   } catch (e) {
-    logger2.warn(`Config validation failed, using defaults`, { error: String(e) });
-    return sanitizeConfigPaths(ConfigSchema.parse({}), logger2);
+    logger2.warn(`Config validation failed; requiring central policy`, { error: String(e) });
+    return safeConfigForInvalidFile(logger2);
   }
 }
 var import_node_os, import_node_path3, AIDR_DIR;
@@ -30174,12 +30184,16 @@ var init_heuristics = __esm({
     TRUSTED_DOMAIN_SUPPRESSIBLE = /* @__PURE__ */ new Set([
       "CLT-CMD-001",
       "CLT-CMD-002",
-      "CLT-SUPPLY-001",
-      "CLT-SUPPLY-004"
+      "CLT-SUPPLY-001"
     ]);
     HeuristicsEngine = class {
       threatMap = /* @__PURE__ */ new Map();
       trustedDomains;
+      /** Regex failures are deliberate signal skips, never a clean evaluation. */
+      _unavailableThreats = [];
+      get unavailableThreats() {
+        return this._unavailableThreats;
+      }
       constructor(threats, trustedDomains) {
         this.trustedDomains = trustedDomains ?? [];
         for (const threat of threats) {
@@ -30213,6 +30227,7 @@ var init_heuristics = __esm({
       }
       match(artifacts) {
         const matches = [];
+        this._unavailableThreats = [];
         for (const artifact of artifacts) {
           const value = boundArtifact(`${artifact.type} artifact`, artifact.value, MAX_MATCH_INPUT);
           const threats = this.threatMap.get(artifact.type) ?? [];
@@ -30228,7 +30243,9 @@ var init_heuristics = __esm({
                 });
               }
             } catch (error3) {
-              console.warn(`Regex execution failed for threat ${threat.id}: ${error3 instanceof Error ? error3.message : String(error3)}`);
+              const reason = error3 instanceof Error ? error3.message : String(error3);
+              this._unavailableThreats.push({ threatId: threat.id, reason });
+              console.warn(`Regex execution failed for threat ${threat.id}: ${reason}`);
             }
           }
         }
@@ -33814,6 +33831,8 @@ async function loadMergedIntelFromDisk(params = {}, logger2 = nullLogger) {
   const revokedPackIds = new Set((params.revocations?.pack_ids ?? []).filter((x) => typeof x === "string" && x.trim() !== ""));
   const revokedKeyIds = new Set((params.revocations?.key_ids ?? []).filter((x) => typeof x === "string" && x.trim() !== ""));
   const packIds = await listDirs(packsDir);
+  let loadedPackCount = 0;
+  let failedPackCount = 0;
   for (const packId of packIds) {
     if (revokedPackIds.has(packId)) {
       logger2.warn("Intel pack id is revoked; skipping", { packId });
@@ -33825,10 +33844,23 @@ async function loadMergedIntelFromDisk(params = {}, logger2 = nullLogger) {
       continue;
     const packVersionDir = (0, import_node_path20.join)(packRoot, version);
     const single = await loadSinglePack(packId, packVersionDir, trustedKeys, keyring, revokedKeyIds, { verificationMode, graceHours }, logger2);
-    if (!single)
+    if (!single) {
+      failedPackCount += 1;
       continue;
+    }
+    loadedPackCount += 1;
     mergeInto(merged, single);
   }
+  Object.defineProperty(merged, "availability", {
+    value: loadedPackCount > 0 && failedPackCount === 0 ? "available" : "unavailable",
+    enumerable: false,
+    configurable: true
+  });
+  Object.defineProperty(merged, "detail", {
+    value: loadedPackCount > 0 && failedPackCount === 0 ? `loaded ${loadedPackCount} signed intel pack(s)` : `no complete signed intel pack was available (${loadedPackCount} loaded, ${failedPackCount} rejected)`,
+    enumerable: false,
+    configurable: true
+  });
   void intelDir;
   return merged;
 }
@@ -34045,13 +34077,13 @@ var init_package_checker = __esm({
             ageDays
           };
         }
-        if (feed && !fileReputationChecked) {
+        if (!fileReputationChecked) {
           return {
             packageName: pkg.name,
             registry: pkg.registry,
             verdict: "unknown",
             confidence: 0,
-            details: `Package '${pkg.name}' exists, but no SHA-256 file reputation verdict was available; signed feed had no matching deny indicator`,
+            details: `Package '${pkg.name}' was not verified clean: file reputation was unavailable or not applicable${feed ? "; signed feed had no matching deny indicator" : ""}`,
             ageDays
           };
         }
@@ -34665,6 +34697,32 @@ async function evaluatePolicy(toolName, artifacts, config, toolInput) {
     return infrastructureVerdict;
   const packsEnabled = config.intel_packs?.enabled === true || config.intel?.enabled === true;
   const merged = packsEnabled ? await getMergedIntelCached(config).catch(() => null) : null;
+  const signedPacksEnabled = config.intel_packs?.enabled === true;
+  if (signedPacksEnabled && !merged) {
+    return makeVerdict({
+      decision: "ask",
+      category: "detection_unavailable",
+      severity: "warning",
+      source: "intel",
+      artifact: "intel-packs",
+      threatId: "INTEL-UNAVAILABLE-001",
+      reasons: ["Signed intel pack loading failed; intel coverage is unavailable"],
+      confidence: 0
+    });
+  }
+  const mergedState = merged;
+  if (signedPacksEnabled && mergedState?.availability !== "available") {
+    return makeVerdict({
+      decision: "ask",
+      category: "detection_unavailable",
+      severity: "warning",
+      source: "intel",
+      artifact: "intel-packs",
+      threatId: "INTEL-UNAVAILABLE-001",
+      reasons: [mergedState?.detail ?? "Signed intel pack coverage is unavailable"],
+      confidence: 0
+    });
+  }
   const denyHosts = config.intel?.enabled === true ? await loadUrlDenylistHosts(resolvePath(config.intel.url_denylist_path)) : /* @__PURE__ */ new Set();
   for (const a of artifacts) {
     if (a.type !== "url")
@@ -34751,7 +34809,7 @@ async function evaluatePolicy(toolName, artifacts, config, toolInput) {
   }
   if (config.policy.network.enabled) {
     const allow = config.policy.network.allow_domains ?? [];
-    const deny = config.policy.network.deny_domains ?? [];
+    const deny2 = config.policy.network.deny_domains ?? [];
     for (const a of artifacts) {
       if (a.type !== "url")
         continue;
@@ -34771,7 +34829,7 @@ async function evaluatePolicy(toolName, artifacts, config, toolInput) {
           confidence: 0.95
         });
       }
-      if (deny.some((d) => isSubdomainOrExact(parsed.host, d))) {
+      if (deny2.some((d) => isSubdomainOrExact(parsed.host, d))) {
         const decision = config.policy.network.deny_action === "block" ? "deny" : "ask";
         return makeVerdict({
           decision,
@@ -34833,6 +34891,16 @@ async function evaluatePolicy(toolName, artifacts, config, toolInput) {
             });
           }
         } catch {
+          return makeVerdict({
+            decision: "ask",
+            category: "detection_unavailable",
+            severity: "warning",
+            source: "policy",
+            artifact: filePath,
+            threatId: "POL-FS-UNAVAILABLE-001",
+            reasons: ["Filesystem deny pattern is invalid and was skipped"],
+            confidence: 0
+          });
         }
       }
     }
@@ -34857,6 +34925,16 @@ async function evaluatePolicy(toolName, artifacts, config, toolInput) {
             });
           }
         } catch {
+          return makeVerdict({
+            decision: "ask",
+            category: "detection_unavailable",
+            severity: "warning",
+            source: "policy",
+            artifact: command.slice(0, 200),
+            threatId: "POL-SH-UNAVAILABLE-001",
+            reasons: ["Shell deny pattern is invalid and was skipped"],
+            confidence: 0
+          });
         }
       }
     }
@@ -58314,7 +58392,7 @@ async function checkEndpointHealth() {
     const latencyMs = Date.now() - start;
     return {
       name: "url_endpoint",
-      status: response.status < 500 ? "healthy" : "degraded",
+      status: response.status >= 400 ? "degraded" : "healthy",
       latencyMs,
       details: { status: response.status, endpoint: urlCheckEndpoint }
     };
@@ -58332,26 +58410,28 @@ async function checkDiskHealth() {
   const start = Date.now();
   try {
     const aidrPath = resolvePath(AIDR_DIR);
-    const _stats = (0, import_node_fs7.statSync)(aidrPath);
+    const stats = (0, import_node_fs7.statfsSync)(aidrPath);
+    const freeBytes = Number(stats.bavail) * Number(stats.bsize);
+    if (!Number.isFinite(freeBytes) || freeBytes < 0) {
+      throw new Error("Filesystem returned an invalid free-space measurement");
+    }
+    const freeMB = freeBytes / (1024 * 1024);
     const latencyMs = Date.now() - start;
-    const estimatedFreeMB = 1e3;
-    const healthy = estimatedFreeMB > 100;
+    const healthy = freeMB > 100;
     return {
       name: "disk_space",
       status: healthy ? "healthy" : "degraded",
       latencyMs,
-      message: healthy ? void 0 : `Low disk space: ~${estimatedFreeMB}MB remaining`,
-      details: { aidrDir: AIDR_DIR, estimatedFreeMB, warningThresholdMB: 100 }
+      message: healthy ? void 0 : `Low disk space: ~${Math.floor(freeMB)}MB remaining`,
+      details: { aidrDir: AIDR_DIR, freeMB, warningThresholdMB: 100 }
     };
-  } catch (_error) {
+  } catch (error3) {
     return {
       name: "disk_space",
-      status: "healthy",
+      status: "degraded",
       latencyMs: Date.now() - start,
-      details: {
-        aidrDir: AIDR_DIR,
-        note: "Directory not yet created - will be created on first use"
-      }
+      message: `Disk space unavailable: ${error3 instanceof Error ? error3.message : String(error3)}`,
+      details: { aidrDir: AIDR_DIR, warningThresholdMB: 100, measurement: "unavailable" }
     };
   }
 }
@@ -110119,7 +110199,9 @@ async function maybeVerifyIntegrity() {
     if (typeof fn === "function") {
       await fn({ artifactDir: __dirname, artifactId: "claude-code/dist", logger });
     }
+    return true;
   } catch {
+    return false;
   }
 }
 function approvedActionContext(entry) {
@@ -110127,22 +110209,46 @@ function approvedActionContext(entry) {
   const typeSet = [...new Set(entry.artifacts.map((artifact) => artifactTypeLabel(artifact.type)))];
   const typeStr = typeSet.join("/");
   const noun = typeStr === "URL" ? "these URLs" : typeStr === "command" ? "these commands" : `these ${typeStr}s`;
-  return `Singularity AIDR: The user approved a flagged action (threat ${entry.threatId}: ${entry.threatTitle}, artifacts: ${artifactList}). To permanently allow ${noun} in the future, you can use the aidr_allowlist_add MCP tool.`;
+  return `Singularity AIDR: The user approved a flagged action (threat ${entry.threatId}: ${entry.threatTitle}, artifacts: ${artifactList}). To permanently allow ${noun} in the future, an operator can use the CLI allowlist controls.`;
+}
+function deny(reason) {
+  process.stdout.write(`${JSON.stringify({ decision: "deny", reason })}
+`);
 }
 async function main() {
-  await maybeVerifyIntegrity();
+  if (!await maybeVerifyIntegrity()) {
+    deny("Singularity AIDR integrity verification failed; execution was denied.");
+    return;
+  }
   let rawInput;
   try {
     rawInput = (0, import_node_fs16.readFileSync)(0, "utf-8");
   } catch {
-    process.stdout.write("{}\n");
+    deny("Singularity AIDR could not read PostToolUse input; execution was denied.");
     return;
   }
-  let hookInput;
+  let parsed;
   try {
-    hookInput = JSON.parse(rawInput);
+    parsed = JSON.parse(rawInput);
   } catch {
-    process.stdout.write("{}\n");
+    deny("Singularity AIDR could not parse PostToolUse input; execution was denied.");
+    return;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    deny("Singularity AIDR received malformed PostToolUse input; execution was denied.");
+    return;
+  }
+  const hookInput = parsed;
+  if (!("tool_response" in hookInput)) {
+    deny("Singularity AIDR received malformed PostToolUse input without a tool response; execution was denied.");
+    return;
+  }
+  if (hookInput.tool_use_id !== void 0 && typeof hookInput.tool_use_id !== "string") {
+    deny("Singularity AIDR received malformed PostToolUse identity; execution was denied.");
+    return;
+  }
+  if (hookInput.session_id !== void 0 && typeof hookInput.session_id !== "string") {
+    deny("Singularity AIDR received malformed PostToolUse session; execution was denied.");
     return;
   }
   const toolUseId = hookInput.tool_use_id ?? "";
@@ -110170,5 +110276,5 @@ async function main() {
 `);
 }
 main().catch(() => {
-  process.stdout.write("{}\n");
+  deny("Singularity AIDR failed while processing PostToolUse input; execution was denied.");
 });
