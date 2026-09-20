@@ -19,6 +19,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
+import { cleanupDirectory } from "./release-candidate-cleanup.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -123,7 +124,7 @@ async function checkClaude() {
 		}
 	} finally {
 		rmSync(packRoot, { recursive: true, force: true });
-		rmSync(extractedRoot, { recursive: true, force: true });
+		cleanupDirectory(extractedRoot);
 	}
 }
 
