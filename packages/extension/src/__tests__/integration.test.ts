@@ -54,6 +54,31 @@ function permissionDecision(stdout: string): string | undefined {
 }
 
 describe("Cursor hook integration", () => {
+	it("denies unknown extension mode", async () => {
+		const { stdout, code } = await runHook("unknown" as HookMode, {});
+		expect(code).toBe(0);
+		expect(parseResponse(stdout).decision).toBe("deny");
+	});
+
+	it("denies unknown hook events", async () => {
+		const { stdout, code } = await runHook("cursor", {
+			hook_event_name: "UnknownEvent",
+			tool_name: "Bash",
+			tool_input: { command: "echo hi" },
+		});
+		expect(code).toBe(0);
+		expect(parseResponse(stdout).decision).toBe("deny");
+	});
+
+	it("denies malformed postToolUse output", async () => {
+		const { stdout, code } = await runHook("cursor", {
+			hook_event_name: "postToolUse",
+			tool_name: "Shell",
+		});
+		expect(code).toBe(0);
+		expect(parseResponse(stdout).decision).toBe("deny");
+	});
+
 	it("allows clean preToolUse write", async () => {
 		const { stdout, code } = await runHook("cursor", {
 			hook_event_name: "preToolUse",

@@ -395,27 +395,29 @@ describe("PostToolUse hook integration", () => {
 			tool_use_id: "toolu_nonexistent",
 			tool_name: "Bash",
 			tool_input: { command: "echo hi" },
+			tool_response: { stdout: "hi" },
 		});
 		expect(code).toBe(0);
 		expect(parseResponse(stdout)).toEqual({});
 	});
 
-	it("returns {} on empty stdin", async () => {
+	it("denies malformed empty stdin", async () => {
 		const { stdout, code } = await runHook(POST_TOOL_USE, "");
 		expect(code).toBe(0);
-		expect(parseResponse(stdout)).toEqual({});
+		expect(parseResponse(stdout).decision).toBe("deny");
 	});
 
-	it("returns {} on invalid JSON stdin", async () => {
+	it("denies malformed JSON stdin", async () => {
 		const { stdout, code } = await runHook(POST_TOOL_USE, "not json");
 		expect(code).toBe(0);
-		expect(parseResponse(stdout)).toEqual({});
+		expect(parseResponse(stdout).decision).toBe("deny");
 	});
 
-	it("returns {} when tool_use_id is missing", async () => {
+	it("returns {} when tool_use_id is missing from an otherwise valid result", async () => {
 		const { stdout, code } = await runHook(POST_TOOL_USE, {
 			tool_name: "Bash",
 			tool_input: { command: "echo hi" },
+			tool_response: { stdout: "hi" },
 		});
 		expect(code).toBe(0);
 		expect(parseResponse(stdout)).toEqual({});

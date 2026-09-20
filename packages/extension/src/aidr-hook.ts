@@ -81,7 +81,12 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
 		return;
 	}
 
-	writeJson({});
+	writeJson(
+		internalCursorResponse(
+			"deny",
+			"Singularity AIDR received an unknown extension mode; execution was denied.",
+		),
+	);
 }
 
 async function handleCursor(payload: unknown): Promise<void> {
@@ -116,6 +121,14 @@ async function handleCursor(payload: unknown): Promise<void> {
 }
 
 async function handleVsCode(payload: unknown): Promise<void> {
+	if (hasExplicitVsCodeEvent(payload) && !isVsCodePreToolUse(payload)) {
+		if (isVsCodePostToolUse(payload)) {
+			await handleVsCodeToolOutput(payload);
+			return;
+		}
+		writeJson(internalVsCodeResponse("Singularity AIDR received an unsupported hook event; execution was denied."));
+		return;
+	}
 	if (isVsCodePostToolUse(payload)) {
 		await handleVsCodeToolOutput(payload);
 		return;
@@ -135,8 +148,13 @@ async function handleVsCode(payload: unknown): Promise<void> {
 }
 
 async function handleCursorToolOutput(payload: unknown): Promise<void> {
-	if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-		writeJson(cursorOutputCoverageResponse("Singularity AIDR could not normalize tool output."));
+	if (
+		!payload ||
+		typeof payload !== "object" ||
+		Array.isArray(payload) ||
+		!("tool_output" in payload)
+	) {
+		writeJson(internalCursorResponse("deny", "Singularity AIDR could not normalize tool output; execution was denied."));
 		return;
 	}
 	const input = payload as Record<string, unknown>;
@@ -204,6 +222,15 @@ function cursorAssistantCoverageReason(result: OutputInspectionResult | null): s
 }
 
 async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
+	if (
+		!payload ||
+		typeof payload !== "object" ||
+		Array.isArray(payload) ||
+		!("tool_response" in payload)
+	) {
+		writeJson(internalVsCodeResponse("Singularity AIDR could not normalize tool output; execution was denied."));
+		return;
+	}
 	const input = payload as Record<string, unknown>;
 	const result = inspectOutput(input.tool_response);
 	if (result.status === "clean") {
@@ -230,10 +257,23 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 	});
 }
 
+function hasExplicitVsCodeEvent(payload: unknown): payload is Record<string, unknown> {
+	return Boolean(
+		payload &&
+		typeof payload === "object" &&
+		!Array.isArray(payload) &&
+		("hook_event_name" in payload || "hookEventName" in payload),
+	);
+}
+
+function isVsCodePreToolUse(payload: Record<string, unknown>): boolean {
+	return payload.hook_event_name === "PreToolUse" || payload.hookEventName === "PreToolUse";
+}
+
 function isVsCodePostToolUse(payload: unknown): payload is Record<string, unknown> {
 	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
 	const input = payload as Record<string, unknown>;
-	return input.hook_event_name === "PostToolUse" || "tool_response" in input;
+	return input.hook_event_name === "PostToolUse" || input.hookEventName === "PostToolUse" || "tool_response" in input;
 }
 
 function cursorSessionId(input: Record<string, unknown>): string {
@@ -327,8 +367,8 @@ function detectCursorEvent(payload: unknown): CursorEventName | undefined {
 	}
 	const input = payload as Record<string, unknown>;
 	const fromField = asString(input.hook_event_name) ?? asString(input.hookEventName);
-	if (fromField && isCursorEvent(fromField)) {
-		return fromField;
+	if (fromField) {
+		return isCursorEvent(fromField) ? fromField : undefined;
 	}
 	if (typeof input.command === "string" && input.tool_name === undefined) {
 		return "beforeShellExecution";

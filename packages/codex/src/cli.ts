@@ -91,7 +91,9 @@ async function main(): Promise<void> {
 	// means our configuration is wrong; blocking is the safe reading.
 	const event = typeof input.hook_event_name === "string" ? input.hook_event_name : "PreToolUse";
 	if (event !== "PreToolUse") {
-		write({});
+		blockUnconditionally(
+			`${DENY_HEADLINE}\nSingularity AIDR received an unsupported hook event, so the tool call was blocked.`,
+		);
 		return;
 	}
 

@@ -11,8 +11,8 @@
  * by reading the source: an unreadable stdin and malformed JSON both deny on
  * stdout AND set exit 2 with a non-empty stderr (Codex's secondary block
  * signal), a PreToolUse payload that cannot identify its tool denies rather
- * than falling through to an empty response, and a non-PreToolUse event gets
- * the documented `{}` (no decision).
+ * than falling through to an empty response, and a non-PreToolUse event denies
+ * rather than silently allowing an uninspected call.
  *
  * What is deliberately NOT claimed here: that a real `codex` host discovers,
  * trusts and invokes this hook. Codex will not run an untrusted hook at all, so
@@ -208,10 +208,7 @@ describe("Codex hook entry point (built bundle)", () => {
 		expect(run.status).toBe(0);
 	});
 
-	it("emits no decision for a non-PreToolUse event", () => {
-		// The documented `{}`: this hook is registered for PreToolUse only, and
-		// a PostToolUse event carries no pre-execution decision. Asserted
-		// positively -- "did not deny" on its own would also pass on a crash.
+	it("denies a non-PreToolUse event instead of allowing an uninspected call", () => {
 		const run = runHook(
 			JSON.stringify({
 				hook_event_name: "PostToolUse",
@@ -220,10 +217,8 @@ describe("Codex hook entry point (built bundle)", () => {
 			}),
 		);
 
-		expect(run.stdout.trim()).toBe("{}");
-		expect(parseWire(run)).toEqual({});
-		expect(parseWire(run).hookSpecificOutput).toBeUndefined();
-		expect(run.status).toBe(0);
+		expectDeny(run);
+		expect(run.status).toBe(2);
 	});
 
 	it("prints the coverage evidence for --health and --coverage without reading stdin", () => {

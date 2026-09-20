@@ -19,7 +19,7 @@ import {
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
 
-async function maybeVerifyIntegrity(): Promise<void> {
+async function maybeVerifyIntegrity(): Promise<boolean> {
 	try {
 		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
 		const core = (await import("@singularityrd/aidr-core")) as any;
@@ -29,8 +29,9 @@ async function maybeVerifyIntegrity(): Promise<void> {
 		if (typeof fn === "function") {
 			await fn({ artifactDir: __dirname, artifactId: "claude-code/dist", logger });
 		}
+		return true;
 	} catch {
-		// Fail open
+		return false;
 	}
 }
 
@@ -46,25 +47,49 @@ function approvedActionContext(entry: PendingApproval): string {
 			: typeStr === "command"
 				? "these commands"
 				: `these ${typeStr}s`;
-	return `Singularity AIDR: The user approved a flagged action (threat ${entry.threatId}: ${entry.threatTitle}, artifacts: ${artifactList}). To permanently allow ${noun} in the future, you can use the aidr_allowlist_add MCP tool.`;
+	return `Singularity AIDR: The user approved a flagged action (threat ${entry.threatId}: ${entry.threatTitle}, artifacts: ${artifactList}). To permanently allow ${noun} in the future, an operator can use the CLI allowlist controls.`;
+}
+
+function deny(reason: string): void {
+	process.stdout.write(`${JSON.stringify({ decision: "deny", reason })}\n`);
 }
 
 async function main(): Promise<void> {
-	await maybeVerifyIntegrity();
+	if (!(await maybeVerifyIntegrity())) {
+		deny("Singularity AIDR integrity verification failed; execution was denied.");
+		return;
+	}
 
 	let rawInput: string;
 	try {
 		rawInput = readFileSync(0, "utf-8");
 	} catch {
-		process.stdout.write("{}\n");
+		deny("Singularity AIDR could not read PostToolUse input; execution was denied.");
 		return;
 	}
 
-	let hookInput: Record<string, unknown>;
+	let parsed: unknown;
 	try {
-		hookInput = JSON.parse(rawInput) as Record<string, unknown>;
+		parsed = JSON.parse(rawInput);
 	} catch {
-		process.stdout.write("{}\n");
+		deny("Singularity AIDR could not parse PostToolUse input; execution was denied.");
+		return;
+	}
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		deny("Singularity AIDR received malformed PostToolUse input; execution was denied.");
+		return;
+	}
+	const hookInput = parsed as Record<string, unknown>;
+	if (!("tool_response" in hookInput)) {
+		deny("Singularity AIDR received malformed PostToolUse input without a tool response; execution was denied.");
+		return;
+	}
+	if (hookInput.tool_use_id !== undefined && typeof hookInput.tool_use_id !== "string") {
+		deny("Singularity AIDR received malformed PostToolUse identity; execution was denied.");
+		return;
+	}
+	if (hookInput.session_id !== undefined && typeof hookInput.session_id !== "string") {
+		deny("Singularity AIDR received malformed PostToolUse session; execution was denied.");
 		return;
 	}
 
@@ -95,5 +120,5 @@ async function main(): Promise<void> {
 }
 
 main().catch(() => {
-	process.stdout.write("{}\n");
+	deny("Singularity AIDR failed while processing PostToolUse input; execution was denied.");
 });
