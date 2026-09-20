@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { cleanupDirectory } from "./release-candidate-cleanup.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts", "build-release-candidate.mjs");
@@ -34,6 +35,40 @@ function run(args, options = {}) {
 		return { status: error.status ?? 1, output: `${error.stdout ?? ""}${error.stderr ?? ""}` };
 	}
 }
+
+describe("release candidate cleanup", () => {
+	it("retries transient Windows EPERM and verifies the directory is gone", () => {
+		let removeCalls = 0;
+		const sleeps = [];
+		cleanupDirectory("C:\\Temp\\aidr-candidate-pack-test", {
+			platform: "win32",
+			attempts: 4,
+			remove: () => {
+				removeCalls++;
+				if (removeCalls < 3) throw Object.assign(new Error("sharing violation"), { code: "EPERM" });
+			},
+			exists: () => false,
+			sleep: (milliseconds) => sleeps.push(milliseconds),
+			warn: () => {},
+		});
+		assert.equal(removeCalls, 3);
+		assert.deepEqual(sleeps, [100, 100]);
+	});
+
+	it("fails with actionable diagnostics when cleanup remains impossible", () => {
+		assert.throws(
+			() => cleanupDirectory("C:\\Temp\\aidr-candidate-pack-stuck", {
+				platform: "win32",
+				attempts: 2,
+				remove: () => { throw Object.assign(new Error("sharing violation"), { code: "EPERM" }); },
+				exists: () => true,
+				sleep: () => {},
+				warn: () => {},
+			}),
+			/Unable to remove temporary release staging directory after 2 attempt\(s\).*Close processes holding files/,
+		);
+	});
+});
 
 describe("release candidate assembler", () => {
 	it("documents its arguments", () => {

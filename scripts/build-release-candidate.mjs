@@ -22,11 +22,12 @@
  */
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { cleanupDirectory } from "./release-candidate-cleanup.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -172,7 +173,7 @@ for (const target of PACKAGE_TARGETS) {
 }
 
 const packRoot = path.join(tmpdir(), `aidr-candidate-pack-${process.pid}`);
-rmSync(packRoot, { recursive: true, force: true });
+cleanupDirectory(packRoot);
 mkdirSync(packRoot, { recursive: true });
 mkdirSync(outputDir, { recursive: true });
 
@@ -298,5 +299,5 @@ try {
 		}, null, 2)}\n`, "utf8");
 	}
 } finally {
-	rmSync(packRoot, { recursive: true, force: true });
+	cleanupDirectory(packRoot);
 }
