@@ -1,12 +1,12 @@
-[aidr-gate] started_at_utc=2026-09-20T20:56:04.013Z command=pnpm verify:repo-hygiene
+[aidr-gate] started_at_utc=2026-09-20T22:19:01.182Z command=pnpm verify:repo-hygiene
 
 
 > @ verify:repo-hygiene <repo>
 > node scripts/verify-repo-hygiene.mjs
 
 repo hygiene OK (AIDR-012)
-  tracked files: 1546 | root entries: 45 | text files scanned: 1138 | allowlisted: 403 | scratch patterns from .gitignore: 15
+  tracked files: 1548 | root entries: 45 | text files scanned: 1140 | allowlisted: 403 | scratch patterns from .gitignore: 15
   result: PASS
 
 
-[aidr-gate] ended_at_utc=2026-09-20T20:56:05.358Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T22:19:03.052Z exit_code=0

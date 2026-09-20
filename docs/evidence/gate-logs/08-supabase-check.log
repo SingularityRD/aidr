@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T20:15:29.271Z command=pnpm supabase:check
+[aidr-gate] started_at_utc=2026-09-20T21:55:08.601Z command=pnpm supabase:check
 
 
 > @ supabase:check <repo>
@@ -7,4 +7,4 @@
 Supabase migration contract passed (48 migrations, unique ordered versions).
 
 
-[aidr-gate] ended_at_utc=2026-09-20T20:15:30.299Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T21:55:09.226Z exit_code=0

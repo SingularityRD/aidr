@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T20:13:43.351Z command=pnpm quality:static
+[aidr-gate] started_at_utc=2026-09-20T21:54:04.310Z command=pnpm quality:static
 
 
 > @ quality:static <repo>
@@ -10,54 +10,54 @@
 
 The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
 Diagnostics not shown: 186.
-Checked 565 files in 7s. No fixes applied.
+Checked 565 files in 5s. No fixes applied.
 Found 204 warnings.
 Found 2 infos.
 
 > @ benchmark:test <repo>
 > node --test scripts/benchmarks/*.test.mjs
 
-✔ descriptive schemas mirror evaluator required-field constants (14.0138ms)
-✔ generator is byte deterministic, covers sold scope, and synthetic provenance is ineligible for customer gate (365.0934ms)
-✔ benign generated content does not match any shipped YAML threat pattern (394.7492ms)
-✔ content-digest split is deterministic and manifest mismatches fail corpus binding (700.6931ms)
-✔ committed trust store is intentionally empty and comparison unknown reasons are explicit (4.6209ms)
-✔ signed fixture reports separate holdout, unsupported, false intervention and latency denominators (84.1297ms)
-✔ report digest is domain-separated, self-excluding, and byte-stable (88.4476ms)
-✔ reproducible report digest binds trust, budget and comparison fields without hashing aliases (235.8549ms)
-✔ signed but incomplete competitor matrix stays visible as missing (105.7989ms)
-✔ raw evidence tampering and side-effect ambiguity fail closed (50.5623ms)
-✔ attestation and analysis CLIs run end to end and reject changed signed input (2071.966ms)
-✔ measured candidate cpu and rss roll up as p50/p95/peak with an observation count (77.0182ms)
-✔ absent resource fields report unmeasured and never zero (131.1675ms)
-✔ negative, NaN and infinite cpu or rss measurements fail closed (44.2891ms)
-✔ every case declares a real content digest and declared content is recomputed (74.4498ms)
-✔ the same case_id or the same normalized content cannot appear in both partitions (73.0174ms)
-✔ cross-partition, unknown, duplicate and self derivation references are rejected (47.9471ms)
-✔ an empty or single-oracle holdout is rejected (34.6717ms)
-✔ a per-partition trial difference must be declared and match the observations (36.4996ms)
-✔ declared per-partition trials drive the matrix and keep the holdout blind (75.6322ms)
-✔ a blind, correctly formed corpus passes and reports every holdout guard (81.5344ms)
-✔ the committed corpus scaffold is structurally valid, empty and outside the sold scope (131.8222ms)
-✔ a corpus that omits a sold family or declares it without cases fails the scope check (36.9414ms)
-✔ a sold family with malicious cases but no benign twin fails the scope check (23.1211ms)
-✔ a corpus that declares a dimension the sold scope does not fails the scope check (26.7315ms)
-✔ classification metrics expose indeterminate outcomes and never invent absent-score ROC (75.1171ms)
-✔ benign side-effect metadata cannot hide a false-positive intervention (78.8438ms)
-✔ scores measure development ROC only until a signed frozen holdout operating point exists (133.5485ms)
-✔ signed split manifest freezes holdout and any assignment mismatch fails closed (76.5836ms)
-✔ trust, customer and budget gates default closed; unknown keys and malformed signatures fail closed (110.0127ms)
-✔ measurement budgets validate all external ceilings and stay unverified (76.3868ms)
-✔ analysis matrix has a hard total-trial safety cap (23.5809ms)
-✔ competitor comparison cells are reason-coded unknown without fabricated values (47.8198ms)
-✔ the frozen comparison specification is signed and tampering is rejected (83.1143ms)
-✔ an access-blocked competitor requires hash-bound evidence (19.3772ms)
-✔ complete_matrix counts every observed action but not absent cells (50.165ms)
-✔ signed comparison contracts retain evaluator fingerprint, identity and role binding (75.336ms)
-✔ comparison evaluation preserves independent duty authority identity and fingerprint checks (190.1622ms)
-✔ budget-blocked competitors still consume the full expected trial ceiling (60.5277ms)
-✔ comparison exceptions cannot hide candidate results or weaken the frozen reason set (21.1335ms)
-✔ a fully scoped corpus passes the sold scope check and is reported as checked (37.2778ms)
+✔ descriptive schemas mirror evaluator required-field constants (6.3474ms)
+✔ generator is byte deterministic, covers sold scope, and synthetic provenance is ineligible for customer gate (207.9742ms)
+✔ benign generated content does not match any shipped YAML threat pattern (191.8144ms)
+✔ content-digest split is deterministic and manifest mismatches fail corpus binding (344.7847ms)
+✔ committed trust store is intentionally empty and comparison unknown reasons are explicit (5.194ms)
+✔ signed fixture reports separate holdout, unsupported, false intervention and latency denominators (56.2279ms)
+✔ report digest is domain-separated, self-excluding, and byte-stable (53.3968ms)
+✔ reproducible report digest binds trust, budget and comparison fields without hashing aliases (129.732ms)
+✔ signed but incomplete competitor matrix stays visible as missing (56.0412ms)
+✔ raw evidence tampering and side-effect ambiguity fail closed (25.1239ms)
+✔ attestation and analysis CLIs run end to end and reject changed signed input (1355.5638ms)
+✔ measured candidate cpu and rss roll up as p50/p95/peak with an observation count (30.7771ms)
+✔ absent resource fields report unmeasured and never zero (48.2818ms)
+✔ negative, NaN and infinite cpu or rss measurements fail closed (14.3265ms)
+✔ every case declares a real content digest and declared content is recomputed (31.0372ms)
+✔ the same case_id or the same normalized content cannot appear in both partitions (27.8854ms)
+✔ cross-partition, unknown, duplicate and self derivation references are rejected (16.0073ms)
+✔ an empty or single-oracle holdout is rejected (12.0684ms)
+✔ a per-partition trial difference must be declared and match the observations (13.9705ms)
+✔ declared per-partition trials drive the matrix and keep the holdout blind (24.3341ms)
+✔ a blind, correctly formed corpus passes and reports every holdout guard (29.503ms)
+✔ the committed corpus scaffold is structurally valid, empty and outside the sold scope (68.7893ms)
+✔ a corpus that omits a sold family or declares it without cases fails the scope check (14.7861ms)
+✔ a sold family with malicious cases but no benign twin fails the scope check (11.5289ms)
+✔ a corpus that declares a dimension the sold scope does not fails the scope check (13.0164ms)
+✔ classification metrics expose indeterminate outcomes and never invent absent-score ROC (33.8767ms)
+✔ benign side-effect metadata cannot hide a false-positive intervention (27.1903ms)
+✔ scores measure development ROC only until a signed frozen holdout operating point exists (43.2952ms)
+✔ signed split manifest freezes holdout and any assignment mismatch fails closed (28.2536ms)
+✔ trust, customer and budget gates default closed; unknown keys and malformed signatures fail closed (53.6643ms)
+✔ measurement budgets validate all external ceilings and stay unverified (32.2032ms)
+✔ analysis matrix has a hard total-trial safety cap (12.2022ms)
+✔ competitor comparison cells are reason-coded unknown without fabricated values (22.6155ms)
+✔ the frozen comparison specification is signed and tampering is rejected (27.975ms)
+✔ an access-blocked competitor requires hash-bound evidence (11.4574ms)
+✔ complete_matrix counts every observed action but not absent cells (24.8434ms)
+✔ signed comparison contracts retain evaluator fingerprint, identity and role binding (32.1808ms)
+✔ comparison evaluation preserves independent duty authority identity and fingerprint checks (91.5603ms)
+✔ budget-blocked competitors still consume the full expected trial ceiling (41.8589ms)
+✔ comparison exceptions cannot hide candidate results or weaken the frozen reason set (17.3559ms)
+✔ a fully scoped corpus passes the sold scope check and is reported as checked (22.0895ms)
 ℹ tests 41
 ℹ suites 0
 ℹ pass 41
@@ -65,7 +65,7 @@ Found 2 infos.
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 4958.5979
+ℹ duration_ms 2699.6299
 
 > @ knip <repo>
 > node scripts/run-knip-gate.mjs
@@ -75,7 +75,7 @@ Knip gate: review debt files=231, exports=171, duplicates=1.
 > @ duplicates <repo>
 > jscpd --threshold 10
 
-[3m[90mDetection time:[39m[23m: 0.41ms
+[3m[90mDetection time:[39m[23m: 0.29ms
 Mandatory-skip contract: 351 collected test file(s), 3 skip site(s), 0 violation(s).
   declared packages/cli/src/__tests__/config-manager-private-store.test.ts:65 it.skipIf(process.platform !== "win32")("writes a config without inherited read ACLs on Windows", async () => {
   declared packages/cli/src/__tests__/config-manager-private-store.test.ts:122 it.skipIf(process.platform === "win32")(
@@ -110,18 +110,18 @@ Demo preflight: PASS (static-only controlled evaluation surface)
 > @ test:monthly-sli <repo>
 > node --test scripts/monthly-sli-report.test.mjs
 
-✔ a complete local window computes availability and error budget without a contractual claim (12.6719ms)
-✔ empty observations are explicit NOT_RUN and do not publish an availability or budget duration (1.6049ms)
-✔ an explicit unknown and an uncovered interval remain distinguishable (2.791ms)
-✔ approved maintenance is excluded, while an unapproved exclusion is rejected (3.7134ms)
-✔ a scoped series with no eligible time keeps the overall report unknown (1.4469ms)
-✔ the validator rejects malformed schema markers, reversed or unlinked exclusions, and malformed intervals without throwing (7.7624ms)
-✔ the validator catches arithmetic drift and any attempt to make a contractual claim (2.0627ms)
-✔ the objective comparison does not round a just-below-target result up to PASS (1.4673ms)
-✔ the validator accepts a valid FAIL report but rejects a fake PASS status (1.9012ms)
-✔ the CLI generates and validates a report from local files without overwriting evidence (851.7322ms)
-✔ the report schemas keep unknown/NOT_RUN explicit, bounded collections and contractual claim flags false (4.8857ms)
-✔ the load-test schema limits remain the existing bounded harness limits (2.0598ms)
+✔ a complete local window computes availability and error budget without a contractual claim (9.1836ms)
+✔ empty observations are explicit NOT_RUN and do not publish an availability or budget duration (0.8846ms)
+✔ an explicit unknown and an uncovered interval remain distinguishable (1.7925ms)
+✔ approved maintenance is excluded, while an unapproved exclusion is rejected (1.7145ms)
+✔ a scoped series with no eligible time keeps the overall report unknown (0.8494ms)
+✔ the validator rejects malformed schema markers, reversed or unlinked exclusions, and malformed intervals without throwing (2.6014ms)
+✔ the validator catches arithmetic drift and any attempt to make a contractual claim (1.0412ms)
+✔ the objective comparison does not round a just-below-target result up to PASS (1.0446ms)
+✔ the validator accepts a valid FAIL report but rejects a fake PASS status (1.3513ms)
+✔ the CLI generates and validates a report from local files without overwriting evidence (448.0487ms)
+✔ the report schemas keep unknown/NOT_RUN explicit, bounded collections and contractual claim flags false (2.7775ms)
+✔ the load-test schema limits remain the existing bounded harness limits (1.1864ms)
 ℹ tests 12
 ℹ suites 0
 ℹ pass 12
@@ -129,7 +129,7 @@ Demo preflight: PASS (static-only controlled evaluation surface)
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 1070.1849
+ℹ duration_ms 595.7432
 
 > @ verify:monthly-sli <repo>
 > node scripts/verify-monthly-sli-report.mjs
@@ -416,4 +416,4 @@ packages\sdk\src\client.ts:239:16 lint/complexity/noExcessiveCognitiveComplexity
 WARN: no sales URL/email configured; the invoice CTA will fail closed
 WARN: DEMO_USER_EMAIL/DEMO_USER_PASSWORD are absent; credentialed browser onboarding is not ready
 
-[aidr-gate] ended_at_utc=2026-09-20T20:15:26.295Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-20T21:55:06.758Z exit_code=0
