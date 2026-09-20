@@ -234,6 +234,16 @@ Deno.serve(async (req) => {
 	}
 
 	const subId = extractSubscriptionId(evt);
+	if (!subId) {
+		await supabase.from("admin_audit_logs").insert({
+			actor_user_id: userId,
+			tenant_id: tenantId,
+			action: "paddle.webhook.missing_subscription",
+			target_user_id: userId,
+			detail: { event_type: eventType, event_id: eventId },
+		});
+		return json(422, { error: "missing_subscription_id" });
+	}
 	const status = extractStatus(evt).toLowerCase();
 	// Paddle cancellation payloads can retain the last active line items. Never
 	// derive seats until status is classified, and fail closed on new statuses.
@@ -251,27 +261,27 @@ Deno.serve(async (req) => {
 	const periodEnd = extractPeriodEnd(evt);
 	const cancelAtPeriodEnd = extractCancelAtPeriodEnd(evt);
 
-	if (subId) {
-		await supabase.from("subscriptions").upsert(
-			{
-				user_id: userId,
-				tenant_id: tenantId,
-				provider: "paddle",
-				provider_subscription_id: subId,
-				status,
-				extra_agents: extraAgents,
-				current_period_end: periodEnd,
-				cancel_at_period_end: cancelAtPeriodEnd,
-			},
-			{ onConflict: "provider_subscription_id" },
-		);
-	}
+	const { error: subscriptionError } = await supabase.from("subscriptions").upsert(
+		{
+			user_id: userId,
+			tenant_id: tenantId,
+			provider: "paddle",
+			provider_subscription_id: subId,
+			status,
+			extra_agents: extraAgents,
+			current_period_end: periodEnd,
+			cancel_at_period_end: cancelAtPeriodEnd,
+		},
+		{ onConflict: "provider_subscription_id" },
+	);
+	if (subscriptionError) return json(503, { error: "subscription_update_unavailable" });
 
 	// Update entitlements as the single source of seat enforcement.
-	await supabase
+	const { error: entitlementError } = await supabase
 		.from("entitlements")
 		.update({ extra_agents: extraAgents })
 		.eq("tenant_id", tenantId);
+	if (entitlementError) return json(503, { error: "entitlement_update_unavailable" });
 
 	await supabase.from("admin_audit_logs").insert({
 		actor_user_id: userId,
