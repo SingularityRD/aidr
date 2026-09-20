@@ -8,15 +8,27 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const PLUGIN_DIST = resolve(__dirname, "..", "..", "dist", "index.js");
 
 // Windows can briefly keep recently-read config files open (notably through
-// antivirus/indexing hooks). Keep cleanup bounded and retry EBUSY/EPERM rather
-// than making the assertions weaker or leaking test state between runs.
+// antivirus/indexing hooks). Keep cleanup bounded with exponential backoff
+// rather than making the assertions weaker or leaking test state between runs.
 async function removeTestDir(path: string): Promise<void> {
-	await rm(path, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
+	const maxRetries = 30;
+	let retryDelayMs = 100;
+	for (let attempt = 0; ; attempt += 1) {
+		try {
+			await rm(path, { recursive: true, force: true });
+			return;
+		} catch (error) {
+			if (attempt >= maxRetries) throw error;
+			await delay(retryDelayMs);
+			retryDelayMs = Math.min(retryDelayMs * 2, 1_000);
+		}
+	}
 }
 
 interface Hooks {
@@ -170,7 +182,10 @@ describe("OpenCode integration: Singularity AIDR plugin pipeline", { timeout: 30
 	it("passes through unmapped tools", async () => {
 		const beforeHook = hooks["tool.execute.before"];
 		await expect(
-			beforeHook?.({ tool: "lsp", sessionID: "s1", callID: "c4" }, { args: { query: "some symbol" } }),
+			beforeHook?.(
+				{ tool: "lsp", sessionID: "s1", callID: "c4" },
+				{ args: { query: "some symbol" } },
+			),
 		).resolves.toBeUndefined();
 	});
 

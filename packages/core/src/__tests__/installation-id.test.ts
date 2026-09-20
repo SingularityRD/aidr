@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getInstallationId } from "../installation-id.js";
+import { removeTmpDir } from "./test-utils.js";
 
 describe("getInstallationId", () => {
 	let testDir: string;
@@ -14,7 +15,7 @@ describe("getInstallationId", () => {
 	});
 
 	afterEach(async () => {
-		await rm(testDir, { recursive: true, force: true });
+		await removeTmpDir(testDir);
 	});
 
 	it("generates a new UUID when no file exists", async () => {
