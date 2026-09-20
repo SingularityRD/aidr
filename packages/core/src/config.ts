@@ -149,6 +149,19 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 	return next;
 }
 
+function safeConfigForInvalidFile(logger: Logger): Config {
+	// A present but malformed/unreadable config must not silently disable a
+	// centrally required policy by falling back to ordinary local defaults.
+	return sanitizeConfigPaths(
+		ConfigSchema.parse({ control_plane: { remote_policy_required: true } }),
+		logger,
+	);
+}
+
+function isMissingFileError(error: unknown): boolean {
+	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
 export async function loadConfig(
 	configPath?: string,
 	logger: Logger = nullLogger,
@@ -158,28 +171,32 @@ export async function loadConfig(
 	let raw: string;
 	try {
 		raw = await getFileContent(path);
-	} catch {
-		// Missing file → full defaults (fail-open)
-		return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+	} catch (error) {
+		if (isMissingFileError(error)) {
+			// Missing file is a deliberate fresh-install state: use local defaults.
+			return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+		}
+		logger.warn(`Failed to read config from ${path}; requiring central policy`, { error: String(error) });
+		return safeConfigForInvalidFile(logger);
 	}
 
 	let data: unknown;
 	try {
 		data = JSON.parse(raw);
 	} catch (e) {
-		logger.warn(`Failed to parse config from ${path}`, { error: String(e) });
-		return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+		logger.warn(`Failed to parse config from ${path}; requiring central policy`, { error: String(e) });
+		return safeConfigForInvalidFile(logger);
 	}
 
 	if (typeof data !== "object" || data === null || Array.isArray(data)) {
-		logger.warn(`Config file ${path} does not contain a JSON object`);
-		return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+		logger.warn(`Config file ${path} does not contain a JSON object; requiring central policy`);
+		return safeConfigForInvalidFile(logger);
 	}
 
 	try {
 		return sanitizeConfigPaths(ConfigSchema.parse(data), logger);
 	} catch (e) {
-		logger.warn(`Config validation failed, using defaults`, { error: String(e) });
-		return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+		logger.warn(`Config validation failed; requiring central policy`, { error: String(e) });
+		return safeConfigForInvalidFile(logger);
 	}
 }

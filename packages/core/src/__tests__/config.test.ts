@@ -48,6 +48,7 @@ describe("loadConfig", () => {
 		expect(config.cache.ttl_clean_seconds).toBe(86400);
 		expect(config.control_plane.grace_period_hours).toBe(72);
 		expect(config.control_plane.redact_mode).toBe("hash");
+		expect(config.control_plane.remote_policy_required).toBe(false);
 	});
 
 	it("loads valid config", async () => {
@@ -70,20 +71,22 @@ describe("loadConfig", () => {
 		expect(config.cache.enabled).toBe(true);
 	});
 
-	it("returns defaults for malformed JSON", async () => {
+	it("requires central policy for malformed JSON", async () => {
 		const dir = await makeTmpDir();
 		const configPath = join(dir, "config.json");
 		await writeFile(configPath, "not json");
 		const config = await loadConfig(configPath);
 		expect(config.sensitivity).toBe("balanced");
+		expect(config.control_plane.remote_policy_required).toBe(true);
 	});
 
-	it("returns defaults for non-object JSON", async () => {
+	it("returns fail-closed config for non-object JSON", async () => {
 		const dir = await makeTmpDir();
 		const configPath = join(dir, "config.json");
 		await writeFile(configPath, JSON.stringify([1, 2, 3]));
 		const config = await loadConfig(configPath);
 		expect(config.sensitivity).toBe("balanced");
+		expect(config.control_plane.remote_policy_required).toBe(true);
 	});
 
 	it("defaults disabled_threats to empty array when missing", async () => {
