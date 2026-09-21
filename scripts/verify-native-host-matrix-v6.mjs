@@ -32,7 +32,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { release as osRelease, tmpdir, version as osVersion } from "node:os";
-import { delimiter, dirname, join, resolve, sep } from "node:path";
+import { delimiter, dirname, join, resolve, sep, win32 as windowsPath } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
@@ -106,30 +106,54 @@ function withinWorkspace(path, workspace) {
 	return resolved;
 }
 function runBinary(binary, args, options = {}) {
+	const platform = options.platform ?? process.platform;
 	const defaults = { encoding: "utf8", timeout: options.timeout ?? 10_000, maxBuffer: 2_000_000, windowsHide: true,
 		cwd: options.cwd, env: options.env, input: options.input, stdio: ["pipe", "pipe", "pipe"] };
-	if (process.platform === "win32" && /\.ps1$/i.test(binary)) {
+	if (platform === "win32" && /\.ps1$/i.test(binary)) {
 		return spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", binary, ...args], defaults);
 	}
-	if (process.platform === "win32" && /\.cmd$/i.test(binary)) {
-		// cmd shims require a shell on Windows. All arguments are validated below.
-		if (args.some((arg) => /[\r\n&|<>^%!"]/u.test(arg))) throw new Error("Unsafe argument for Windows command shim");
-		return spawnSync(binary, args, { ...defaults, shell: true });
+	if (platform === "win32" && /\.cmd$/i.test(binary)) {
+		// Invoke cmd directly instead of Node's shell wrapper, which can corrupt Unicode paths.
+		// Every command component is quoted and checked: the binary path is command input too.
+		const unsafe = /[\0\r\n&|<>^%!"]/u;
+		if (![binary, ...args].every((value) => typeof value === "string") || [binary, ...args].some((value) => unsafe.test(value))) throw new Error("Unsafe argument for Windows command shim");
+		const quote = (value) => `"${value}"`;
+		const command = [quote(binary), ...args.map(quote)].join(" ");
+		const configuredComSpec = options.env?.ComSpec ?? process.env.ComSpec;
+		const comSpec = configuredComSpec || "cmd.exe";
+		if (typeof comSpec !== "string" || comSpec.length === 0 || unsafe.test(comSpec)) throw new Error("Unsafe ComSpec for Windows command shim");
+		return spawnSync(comSpec, ["/d", "/s", "/c", command], defaults);
 	}
 	return spawnSync(binary, args, defaults);
 }
-function pathCandidates(command) {
-	const suffixes = process.platform === "win32" ? [".exe", ".ps1", ".cmd", ""] : [""];
-	return (process.env.PATH ?? "").split(delimiter).flatMap((folder) =>
-		suffixes.map((suffix) => join(folder.replace(/^"|"$/gu, ""), `${command}${suffix}`)).filter((candidate) => existsSync(candidate)));
+const WINDOWS_DEFAULT_BINARIES = {
+	cursor: (env) => [env.LOCALAPPDATA && windowsPath.join(env.LOCALAPPDATA, "Programs", "Cursor", "Cursor.exe"), env.ProgramFiles && windowsPath.join(env.ProgramFiles, "Cursor", "Cursor.exe"), env["ProgramFiles(x86)"] && windowsPath.join(env["ProgramFiles(x86)"], "Cursor", "Cursor.exe")],
+	vscode: (env) => [env.LOCALAPPDATA && windowsPath.join(env.LOCALAPPDATA, "Programs", "Microsoft VS Code", "Code.exe"), env.LOCALAPPDATA && windowsPath.join(env.LOCALAPPDATA, "Programs", "Microsoft VS Code Insiders", "Code - Insiders.exe"), env.ProgramFiles && windowsPath.join(env.ProgramFiles, "Microsoft VS Code", "Code.exe"), env["ProgramFiles(x86)"] && windowsPath.join(env["ProgramFiles(x86)"], "Microsoft VS Code", "Code.exe")],
+};
+export function pathCandidates(command, options = {}) {
+	const platform = options.platform ?? process.platform;
+	const pathValue = options.pathValue ?? process.env.PATH ?? "";
+	const exists = options.exists ?? existsSync;
+	const pathJoin = platform === "win32" ? windowsPath.join : join;
+	const suffixes = platform === "win32" ? [".exe", ".ps1", ".cmd", ""] : [""];
+	return pathValue.split(platform === "win32" ? ";" : delimiter).flatMap((folder) =>
+		suffixes.map((suffix) => pathJoin(folder.replace(/^"|"$/gu, ""), `${command}${suffix}`)).filter((candidate) => exists(candidate)));
 }
-function binaryFor(host, config) {
-	const explicit = config?.binary || (host.env ? process.env[host.env] : undefined);
+export function binaryFor(host, config, options = {}) {
+	const platform = options.platform ?? process.platform;
+	const env = options.env ?? process.env;
+	const exists = options.exists ?? existsSync;
+	const explicit = config?.binary || (host.env ? env[host.env] : undefined);
 	if (explicit) {
-		const file = resolve(explicit);
-		return existsSync(file) ? file : null;
+		const pathResolve = platform === "win32" ? windowsPath.resolve : resolve;
+		const file = pathResolve(explicit);
+		return exists(file) ? file : null;
 	}
-	return pathCandidates(host.command).find((path) => existsSync(path)) ?? null;
+	if (platform === "win32") {
+		const real = WINDOWS_DEFAULT_BINARIES[host.id]?.(env)?.find((candidate) => candidate && exists(candidate));
+		if (real) return real;
+	}
+	return pathCandidates(host.command, { platform, pathValue: env.PATH, exists }).find((path) => exists(path)) ?? null;
 }
 function probe(host, config) {
 	if (host.id === "sdk") return { id: host.id, ga: false, status: "REQUIRES_EMBEDDED_APPLICATION_ACCEPTANCE", binary: null, version: null, cases: [] };
@@ -640,4 +664,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 	catch (error) { console.error(`Native host matrix error: ${error.message}`); process.exitCode = 2; }
 }
 
-export { CASES, DEFAULT_SCENARIO_PATH, GATE_STATUSES, main };
+export { CASES, DEFAULT_SCENARIO_PATH, GATE_STATUSES, main, runBinary };

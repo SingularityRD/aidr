@@ -9,6 +9,9 @@ import {
 	GATE_STATUSES,
 	SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE,
 	validateScenarioManifest,
+	binaryFor,
+	pathCandidates,
+	runBinary,
 } from "./verify-native-host-matrix-v6.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +38,32 @@ function invoke(dir, manifest, extra = []) {
 	assert.ok(existsSync(output), `matrix report missing: ${result.error?.message ?? "unknown"}; ${result.stderr}`);
 	return { result, report: JSON.parse(readFileSync(output, "utf8")) };
 }
+
+test("Windows resolver preserves Unicode paths and prefers real editor executables over PATH shims", () => {
+	const unicodeRoot = "C:\\Users\\测试用户\\AppData\\Local";
+	const realCode = `${unicodeRoot}\\Programs\\Microsoft VS Code\\Code.exe`;
+	const shim = `${unicodeRoot}\\bin\\code.cmd`;
+	const present = new Set([realCode, shim]);
+	const env = { LOCALAPPDATA: unicodeRoot, PATH: `${unicodeRoot}\\bin`, ProgramFiles: "C:\\Program Files" };
+	assert.equal(binaryFor({ id: "vscode", command: "code", env: "AIDR_VSCODE_PATH" }, undefined, {
+		platform: "win32", env, exists: (candidate) => present.has(candidate),
+	}), realCode);
+	assert.deepEqual(pathCandidates("code", { platform: "win32", pathValue: env.PATH, exists: (candidate) => present.has(candidate) }), [shim]);
+});
+
+test("Windows command shims reject metacharacters in binary paths and arguments", () => {
+	assert.throws(() => runBinary("C:\\Program Files\\bad&host.cmd", [], { platform: "win32", env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" } }), /Unsafe argument/u);
+	assert.throws(() => runBinary("C:\\Program Files\\host.cmd", ["safe", "bad|argument"], { platform: "win32", env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" } }), /Unsafe argument/u);
+	assert.throws(() => runBinary("C:\\Program Files\\host.cmd", [], { platform: "win32", env: { ComSpec: "C:\\Windows\\System32\\cmd.exe&bad" } }), /Unsafe ComSpec/u);
+	assert.throws(() => runBinary("C:\\Program Files\\host.cmd", [42], { platform: "win32", env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" } }), /Unsafe argument/u);
+});
+
+test("Windows explicit binary paths resolve with Windows semantics", () => {
+	const explicit = "C:\\Users\\测试用户\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe";
+	assert.equal(binaryFor({ id: "vscode", command: "code", env: "AIDR_VSCODE_PATH" }, { binary: explicit }, {
+		platform: "win32", env: {}, exists: (candidate) => candidate === explicit,
+	}), explicit);
+});
 
 test("inventory-only execution does not invent native acceptance", () => withFixture((dir) => {
 	const manifest = { schema_version: 1, hosts: { codex: { binary: process.execPath } } };
