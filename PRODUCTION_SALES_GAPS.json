@@ -2,7 +2,7 @@
   "schema_version": 1,
   "reviewed_at": "2026-09-13",
   "decision": "NO-GO",
-  "source_commit": "b9d2a1c2c67d5dd82f9881557872643a76f44fb8",
+  "source_commit": "30e54e9447bc88d63757bdf2fb41c7bc1b75c939",
   "worktree_has_changes": true,
   "scope": "All 71 inventoried capabilities, both deployment models, current code and local verification, enterprise operations and sales acceptance. This is not a proof that no undiscovered defect exists.",
   "feature_status_counts": {
