@@ -30,6 +30,7 @@
  */
 
 import { execFileSync, execSync } from "node:child_process";
+import { rm } from "node:fs/promises";
 import {
 	existsSync,
 	mkdirSync,
@@ -43,6 +44,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -168,6 +170,22 @@ function linkRuntimeDeps(sourceNodeModules: string, targetNodeModules: string): 
 	}
 }
 
+/** Remove a test directory with bounded retries for transient Windows file locks. */
+async function removeTestDir(path: string): Promise<void> {
+	const maxRetries = 30;
+	let retryDelayMs = 100;
+	for (let attempt = 0; ; attempt += 1) {
+		try {
+			await rm(path, { recursive: true, force: true });
+			return;
+		} catch (error) {
+			if (attempt >= maxRetries) throw error;
+			await delay(retryDelayMs);
+			retryDelayMs = Math.min(retryDelayMs * 2, 1_000);
+		}
+	}
+}
+
 function runConsumer(scriptPath: string, cwd: string): ConsumerResult {
 	const stdout = execFileSync(process.execPath, [scriptPath], {
 		cwd,
@@ -279,8 +297,8 @@ beforeAll(() => {
 	}
 }, 600_000);
 
-afterAll(() => {
-	if (workDir) rmSync(workDir, { recursive: true, force: true });
+afterAll(async () => {
+	if (workDir) await removeTestDir(workDir);
 });
 
 describe("packaged SDK tarball (installed outside the monorepo)", () => {

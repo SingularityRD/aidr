@@ -40,7 +40,7 @@ function invoke(dir, manifest, extra = []) {
 }
 
 test("Windows resolver preserves Unicode paths and prefers real editor executables over PATH shims", () => {
-	const unicodeRoot = "C:\\Users\\测试用户\\AppData\\Local";
+	const unicodeRoot = "C:\\unicode-test\\测试用户\\AppData\\Local";
 	const realCode = `${unicodeRoot}\\Programs\\Microsoft VS Code\\Code.exe`;
 	const shim = `${unicodeRoot}\\bin\\code.cmd`;
 	const present = new Set([realCode, shim]);
@@ -59,7 +59,7 @@ test("Windows command shims reject metacharacters in binary paths and arguments"
 });
 
 test("Windows explicit binary paths resolve with Windows semantics", () => {
-	const explicit = "C:\\Users\\测试用户\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe";
+	const explicit = "C:\\unicode-test\\测试用户\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe";
 	assert.equal(binaryFor({ id: "vscode", command: "code", env: "AIDR_VSCODE_PATH" }, { binary: explicit }, {
 		platform: "win32", env: {}, exists: (candidate) => candidate === explicit,
 	}), explicit);
