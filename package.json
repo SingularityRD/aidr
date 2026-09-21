@@ -127,6 +127,7 @@
 		"package:customer": "node scripts/customer-kit.mjs",
 		"evidence:index": "node scripts/generate-v8-evidence-index.mjs",
 		"evidence:index:verify": "node scripts/generate-v8-evidence-index.mjs --verify",
+		"external-gates:doctor": "node scripts/external-gates-doctor.mjs",
 		"verify:customer-onboarding": "node scripts/verify-customer-onboarding.mjs"
 	},
 	"devDependencies": {
