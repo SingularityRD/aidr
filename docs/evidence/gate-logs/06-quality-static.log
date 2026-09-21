@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T23:25:49.075Z command=pnpm quality:static
+[aidr-gate] started_at_utc=2026-09-21T09:20:17.028Z command=pnpm quality:static
 
 
 > @ quality:static <repo>
@@ -10,54 +10,54 @@
 
 The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
 Diagnostics not shown: 186.
-Checked 565 files in 6s. No fixes applied.
+Checked 565 files in 5s. No fixes applied.
 Found 204 warnings.
 Found 2 infos.
 
 > @ benchmark:test <repo>
 > node --test scripts/benchmarks/*.test.mjs
 
-✔ descriptive schemas mirror evaluator required-field constants (16.3916ms)
-✔ generator is byte deterministic, covers sold scope, and synthetic provenance is ineligible for customer gate (543.5939ms)
-✔ benign generated content does not match any shipped YAML threat pattern (469.3202ms)
-✔ content-digest split is deterministic and manifest mismatches fail corpus binding (753.4315ms)
-✔ committed trust store is intentionally empty and comparison unknown reasons are explicit (8.5237ms)
-✔ signed fixture reports separate holdout, unsupported, false intervention and latency denominators (121.6201ms)
-✔ report digest is domain-separated, self-excluding, and byte-stable (137.064ms)
-✔ reproducible report digest binds trust, budget and comparison fields without hashing aliases (246.345ms)
-✔ signed but incomplete competitor matrix stays visible as missing (83.7308ms)
-✔ raw evidence tampering and side-effect ambiguity fail closed (55.9041ms)
-✔ attestation and analysis CLIs run end to end and reject changed signed input (2362.16ms)
-✔ measured candidate cpu and rss roll up as p50/p95/peak with an observation count (41.6342ms)
-✔ absent resource fields report unmeasured and never zero (79.3541ms)
-✔ negative, NaN and infinite cpu or rss measurements fail closed (19.5358ms)
-✔ every case declares a real content digest and declared content is recomputed (48.643ms)
-✔ the same case_id or the same normalized content cannot appear in both partitions (51.3388ms)
-✔ cross-partition, unknown, duplicate and self derivation references are rejected (19.3907ms)
-✔ an empty or single-oracle holdout is rejected (15.9568ms)
-✔ a per-partition trial difference must be declared and match the observations (29.4373ms)
-✔ declared per-partition trials drive the matrix and keep the holdout blind (73.462ms)
-✔ a blind, correctly formed corpus passes and reports every holdout guard (42.5633ms)
-✔ the committed corpus scaffold is structurally valid, empty and outside the sold scope (177.2896ms)
-✔ a corpus that omits a sold family or declares it without cases fails the scope check (15.6156ms)
-✔ a sold family with malicious cases but no benign twin fails the scope check (12.6658ms)
-✔ a corpus that declares a dimension the sold scope does not fails the scope check (14.6403ms)
-✔ classification metrics expose indeterminate outcomes and never invent absent-score ROC (44.417ms)
-✔ benign side-effect metadata cannot hide a false-positive intervention (41.6853ms)
-✔ scores measure development ROC only until a signed frozen holdout operating point exists (83.7827ms)
-✔ signed split manifest freezes holdout and any assignment mismatch fails closed (72.2366ms)
-✔ trust, customer and budget gates default closed; unknown keys and malformed signatures fail closed (89.0135ms)
-✔ measurement budgets validate all external ceilings and stay unverified (56.5958ms)
-✔ analysis matrix has a hard total-trial safety cap (15.312ms)
-✔ competitor comparison cells are reason-coded unknown without fabricated values (41.0879ms)
-✔ the frozen comparison specification is signed and tampering is rejected (47.3955ms)
-✔ an access-blocked competitor requires hash-bound evidence (14.5975ms)
-✔ complete_matrix counts every observed action but not absent cells (50.0042ms)
-✔ signed comparison contracts retain evaluator fingerprint, identity and role binding (131.7067ms)
-✔ comparison evaluation preserves independent duty authority identity and fingerprint checks (273.0385ms)
-✔ budget-blocked competitors still consume the full expected trial ceiling (84.0663ms)
-✔ comparison exceptions cannot hide candidate results or weaken the frozen reason set (17.0222ms)
-✔ a fully scoped corpus passes the sold scope check and is reported as checked (24.0539ms)
+✔ descriptive schemas mirror evaluator required-field constants (9.9252ms)
+✔ generator is byte deterministic, covers sold scope, and synthetic provenance is ineligible for customer gate (251.6668ms)
+✔ benign generated content does not match any shipped YAML threat pattern (169.5257ms)
+✔ content-digest split is deterministic and manifest mismatches fail corpus binding (258.267ms)
+✔ committed trust store is intentionally empty and comparison unknown reasons are explicit (2.0848ms)
+✔ signed fixture reports separate holdout, unsupported, false intervention and latency denominators (57.699ms)
+✔ report digest is domain-separated, self-excluding, and byte-stable (61.3549ms)
+✔ reproducible report digest binds trust, budget and comparison fields without hashing aliases (106.5103ms)
+✔ signed but incomplete competitor matrix stays visible as missing (39.9777ms)
+✔ raw evidence tampering and side-effect ambiguity fail closed (22.9706ms)
+✔ attestation and analysis CLIs run end to end and reject changed signed input (947.9688ms)
+✔ measured candidate cpu and rss roll up as p50/p95/peak with an observation count (28.5876ms)
+✔ absent resource fields report unmeasured and never zero (47.2811ms)
+✔ negative, NaN and infinite cpu or rss measurements fail closed (13.1082ms)
+✔ every case declares a real content digest and declared content is recomputed (32.4198ms)
+✔ the same case_id or the same normalized content cannot appear in both partitions (32.813ms)
+✔ cross-partition, unknown, duplicate and self derivation references are rejected (16.8404ms)
+✔ an empty or single-oracle holdout is rejected (14.6393ms)
+✔ a per-partition trial difference must be declared and match the observations (15.3541ms)
+✔ declared per-partition trials drive the matrix and keep the holdout blind (25.2942ms)
+✔ a blind, correctly formed corpus passes and reports every holdout guard (30.6816ms)
+✔ the committed corpus scaffold is structurally valid, empty and outside the sold scope (66.2113ms)
+✔ a corpus that omits a sold family or declares it without cases fails the scope check (12.7765ms)
+✔ a sold family with malicious cases but no benign twin fails the scope check (11.0182ms)
+✔ a corpus that declares a dimension the sold scope does not fails the scope check (12.2103ms)
+✔ classification metrics expose indeterminate outcomes and never invent absent-score ROC (30.1757ms)
+✔ benign side-effect metadata cannot hide a false-positive intervention (31.3442ms)
+✔ scores measure development ROC only until a signed frozen holdout operating point exists (48.8192ms)
+✔ signed split manifest freezes holdout and any assignment mismatch fails closed (36.8348ms)
+✔ trust, customer and budget gates default closed; unknown keys and malformed signatures fail closed (57.1007ms)
+✔ measurement budgets validate all external ceilings and stay unverified (32.0867ms)
+✔ analysis matrix has a hard total-trial safety cap (11.4178ms)
+✔ competitor comparison cells are reason-coded unknown without fabricated values (24.2986ms)
+✔ the frozen comparison specification is signed and tampering is rejected (36.2365ms)
+✔ an access-blocked competitor requires hash-bound evidence (12.0969ms)
+✔ complete_matrix counts every observed action but not absent cells (28.6294ms)
+✔ signed comparison contracts retain evaluator fingerprint, identity and role binding (36.2867ms)
+✔ comparison evaluation preserves independent duty authority identity and fingerprint checks (163.4009ms)
+✔ budget-blocked competitors still consume the full expected trial ceiling (43.4814ms)
+✔ comparison exceptions cannot hide candidate results or weaken the frozen reason set (18.9857ms)
+✔ a fully scoped corpus passes the sold scope check and is reported as checked (26.1808ms)
 ℹ tests 41
 ℹ suites 0
 ℹ pass 41
@@ -65,7 +65,7 @@ Found 2 infos.
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 5164.8798
+ℹ duration_ms 2632.1585
 
 > @ knip <repo>
 > node scripts/run-knip-gate.mjs
@@ -75,8 +75,8 @@ Knip gate: review debt files=231, exports=171, duplicates=1.
 > @ duplicates <repo>
 > jscpd --threshold 10
 
-[3m[90mDetection time:[39m[23m: 0.154ms
-Mandatory-skip contract: 351 collected test file(s), 3 skip site(s), 0 violation(s).
+[3m[90mDetection time:[39m[23m: 0.161ms
+Mandatory-skip contract: 352 collected test file(s), 3 skip site(s), 0 violation(s).
   declared packages/cli/src/__tests__/config-manager-private-store.test.ts:65 it.skipIf(process.platform !== "win32")("writes a config without inherited read ACLs on Windows", async () => {
   declared packages/cli/src/__tests__/config-manager-private-store.test.ts:122 it.skipIf(process.platform === "win32")(
   declared packages/cli/src/__tests__/config-manager-windows-acl.test.ts:40 describe.skipIf(process.platform !== "win32")("Windows private config ACL boundary", () => {
@@ -110,18 +110,18 @@ Demo preflight: PASS (static-only controlled evaluation surface)
 > @ test:monthly-sli <repo>
 > node --test scripts/monthly-sli-report.test.mjs
 
-✔ a complete local window computes availability and error budget without a contractual claim (6.7944ms)
-✔ empty observations are explicit NOT_RUN and do not publish an availability or budget duration (0.8604ms)
-✔ an explicit unknown and an uncovered interval remain distinguishable (1.6352ms)
-✔ approved maintenance is excluded, while an unapproved exclusion is rejected (1.4245ms)
-✔ a scoped series with no eligible time keeps the overall report unknown (0.6779ms)
-✔ the validator rejects malformed schema markers, reversed or unlinked exclusions, and malformed intervals without throwing (2.2481ms)
-✔ the validator catches arithmetic drift and any attempt to make a contractual claim (0.6158ms)
-✔ the objective comparison does not round a just-below-target result up to PASS (0.4321ms)
-✔ the validator accepts a valid FAIL report but rejects a fake PASS status (0.4799ms)
-✔ the CLI generates and validates a report from local files without overwriting evidence (363.4418ms)
-✔ the report schemas keep unknown/NOT_RUN explicit, bounded collections and contractual claim flags false (3.372ms)
-✔ the load-test schema limits remain the existing bounded harness limits (1.0926ms)
+✔ a complete local window computes availability and error budget without a contractual claim (6.4721ms)
+✔ empty observations are explicit NOT_RUN and do not publish an availability or budget duration (0.6674ms)
+✔ an explicit unknown and an uncovered interval remain distinguishable (1.6987ms)
+✔ approved maintenance is excluded, while an unapproved exclusion is rejected (1.5177ms)
+✔ a scoped series with no eligible time keeps the overall report unknown (0.7149ms)
+✔ the validator rejects malformed schema markers, reversed or unlinked exclusions, and malformed intervals without throwing (2.3627ms)
+✔ the validator catches arithmetic drift and any attempt to make a contractual claim (0.6157ms)
+✔ the objective comparison does not round a just-below-target result up to PASS (0.4369ms)
+✔ the validator accepts a valid FAIL report but rejects a fake PASS status (0.4664ms)
+✔ the CLI generates and validates a report from local files without overwriting evidence (411.0704ms)
+✔ the report schemas keep unknown/NOT_RUN explicit, bounded collections and contractual claim flags false (1.7034ms)
+✔ the load-test schema limits remain the existing bounded harness limits (0.7133ms)
 ℹ tests 12
 ℹ suites 0
 ℹ pass 12
@@ -129,7 +129,7 @@ Demo preflight: PASS (static-only controlled evaluation surface)
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 473.8156
+ℹ duration_ms 525.0648
 
 > @ verify:monthly-sli <repo>
 > node scripts/verify-monthly-sli-report.mjs
@@ -248,6 +248,60 @@ packages\cli\src\__tests__\connector-status.test.ts:126:33 lint/style/noNonNullA
     128 │ 
   
 
+packages\cli\src\commands\collect.ts:46:17 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 16 detected (max: 15).
+  
+    45 │ /** Upload is opt-in; an incomplete configuration cannot silently fall back to local-only mode. */
+  > 46 │ export function discoveryUploadConfig(env: NodeJS.ProcessEnv = process.env): DiscoveryUploadConfig | null {
+       │                 ^^^^^^^^^^^^^^^^^^^^^
+    47 │ 	const url = env.AIDR_DISCOVERY_URL?.trim();
+    48 │ 	const accessToken = env.AIDR_DISCOVERY_ACCESS_TOKEN?.trim();
+  
+  i Please refactor this function to reduce its complexity score from 16 to the max allowed complexity 15.
+  
+
+packages\cli\src\commands\collect.ts:96:43 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 21 detected (max: 15).
+  
+    94 │ 	if (inventory.items.length < 1 || inventory.items.length > 100) throw new Error("discovery_upload_target_count_invalid");
+    95 │ 	const origins = new Set<string>();
+  > 96 │ 	const items = inventory.items.map((item) => {
+       │ 	                                         ^^^
+    97 │ 		let parsed: URL;
+    98 │ 		try {
+  
+  i Please refactor this function to reduce its complexity score from 21 to the max allowed complexity 15.
+  
+
+packages\cli\src\commands\collect.ts:156:23 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 24 detected (max: 15).
+  
+    155 │ /** Read the server cursor first so process restarts and clock changes cannot replay a cycle. */
+  > 156 │ export async function publishDiscoveryInventory(
+        │                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+    157 │ 	inventory: FleetInventory,
+    158 │ 	config: DiscoveryUploadConfig,
+  
+  i Please refactor this function to reduce its complexity score from 24 to the max allowed complexity 15.
+  
+
+packages\cli\src\commands\collect.ts:344:31 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 22 detected (max: 15).
+  
+    342 │  * collector alive for environments that do not provide an external scheduler.
+    343 │  */
+  > 344 │ export default async function collectCommand(options: CollectOptions): Promise<void> {
+        │                               ^^^^^^^^^^^^^^
+    345 │ 	try {
+    346 │ 		const provider = createDiscoveryProvider(options.provider);
+  
+  i Please refactor this function to reduce its complexity score from 22 to the max allowed complexity 15.
+  
+
 packages\cli\src\commands\scan.ts:114:10 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━━━
 
   ! Excessive complexity of 27 detected (max: 15).
@@ -260,19 +314,6 @@ packages\cli\src\commands\scan.ts:114:10 lint/complexity/noExcessiveCognitiveCom
     116 │ 	targetCount: number,
   
   i Please refactor this function to reduce its complexity score from 27 to the max allowed complexity 15.
-  
-
-packages\cli\src\commands\status.ts:13:31 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━━
-
-  ! Excessive complexity of 37 detected (max: 15).
-  
-    12 │ /** Registration, local evaluation and live host enforcement are separate facts. */
-  > 13 │ export default async function statusCommand(options: { json?: boolean } = {}): Promise<void> {
-       │                               ^^^^^^^^^^^^^
-    14 │ 	let ruleCount = 0;
-    15 │ 	let detectionOk = false;
-  
-  i Please refactor this function to reduce its complexity score from 37 to the max allowed complexity 15.
   
 
 packages\cli\src\commands\uninstall.ts:157:10 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
@@ -301,48 +342,6 @@ packages\cli\src\commands\uninstall.ts:308:23 lint/complexity/noExcessiveCogniti
     310 │ 	const home = resolve(requested);
   
   i Please refactor this function to reduce its complexity score from 30 to the max allowed complexity 15.
-  
-
-packages\sdk\src\adapters\generic.ts:191:82 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
-
-  ! Excessive complexity of 26 detected (max: 15).
-  
-    189 │ 	options: MiddlewareOptions = {},
-    190 │ ): MiddlewareFunction {
-  > 191 │ 	return async (context: MiddlewareContext, next: NextFunction): Promise<unknown> => {
-        │ 	                                                                                ^^^
-    192 │ 		// Call beforeCheck hook
-    193 │ 		if (options.beforeCheck) {
-  
-  i Please refactor this function to reduce its complexity score from 26 to the max allowed complexity 15.
-  
-
-packages\sdk\src\adapters\generic.ts:292:83 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
-
-  ! Excessive complexity of 25 detected (max: 15).
-  
-    290 │ 	return {
-    291 │ 		async: asyncMiddleware,
-  > 292 │ 		sync: async (context: MiddlewareContext, next: () => unknown): Promise<unknown> => {
-        │ 		                                                                                ^^^
-    293 │ 			// Call beforeCheck hook
-    294 │ 			if (options.beforeCheck) {
-  
-  i Please refactor this function to reduce its complexity score from 25 to the max allowed complexity 15.
-  
-
-packages\sdk\src\adapters\langchain.ts:171:8 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
-
-  ! Excessive complexity of 21 detected (max: 15).
-  
-    169 │ 	 * @returns Promise resolving to AIDRToolResult
-    170 │ 	 */
-  > 171 │ 	async invoke(input: unknown, config?: RunnableConfig): Promise<AIDRToolResult> {
-        │ 	      ^^^^^^
-    172 │ 		// Normalize input to object format
-    173 │ 		const args = typeof input === "string" ? { input } : (input as Record<string, unknown>);
-  
-  i Please refactor this function to reduce its complexity score from 21 to the max allowed complexity 15.
   
 
 packages\sdk\src\adapters\llamaindex.ts:129:8 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
@@ -418,4 +417,4 @@ packages\sdk\src\client.ts:239:16 lint/complexity/noExcessiveCognitiveComplexity
 WARN: no sales URL/email configured; the invoice CTA will fail closed
 WARN: DEMO_USER_EMAIL/DEMO_USER_PASSWORD are absent; credentialed browser onboarding is not ready
 
-[aidr-gate] ended_at_utc=2026-09-20T23:26:52.266Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-21T09:21:11.308Z exit_code=0

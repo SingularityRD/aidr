@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T23:58:16.566Z command=pnpm verify:interception-matrix
+[aidr-gate] started_at_utc=2026-09-21T09:59:29.863Z command=pnpm verify:interception-matrix
 
 
 > @ verify:interception-matrix <repo>
@@ -20,4 +20,4 @@ connectors without a named real-host acceptance record 6
 failures 0
 
 
-[aidr-gate] ended_at_utc=2026-09-20T23:58:17.086Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-21T09:59:31.443Z exit_code=0

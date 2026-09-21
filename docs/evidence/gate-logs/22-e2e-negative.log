@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T23:47:31.840Z command=pnpm test:e2e:negative
+[aidr-gate] started_at_utc=2026-09-21T09:37:39.434Z command=pnpm test:e2e:negative
 
 
 > @ test:e2e:negative <repo>
@@ -117,7 +117,7 @@ Release E2E gate failed closed:
 - dashboard-browser: passed=0, expected=10
 - dashboard-browser: report success=false
 Evidence: <repo>\.e2e-artifacts\negative-release-preflight
-(node:25668) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:36564) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
 Negative credential E2E control: NO-GO (blocked environment) - not a product failure.
@@ -134,7 +134,7 @@ External inputs missing:
 
 Blocked scenarios: claude-missing-api-key [HOST_UNAVAILABLE], openclaw-missing-gateway-token [BLOCKED_EXTERNAL], cursor-missing-host-and-agent [HOST_UNAVAILABLE]
 Evidence: <repo>\.e2e-artifacts\negative-credentials
-(node:41708) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:27260) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
-[aidr-gate] ended_at_utc=2026-09-20T23:48:01.027Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-21T09:38:11.228Z exit_code=0

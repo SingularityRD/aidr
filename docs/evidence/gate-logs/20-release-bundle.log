@@ -1,4 +1,4 @@
-[aidr-gate] started_at_utc=2026-09-20T23:47:13.033Z command=node .github/scripts/build-release-bundle.mjs
+[aidr-gate] started_at_utc=2026-09-21T09:37:21.470Z command=node .github/scripts/build-release-bundle.mjs
 
 {"status":"generated","output":"release-output/aidr-provenance.intoto.json","subjects":10,"materials":1,"byproducts":1}
 {"status":"verified","provenance":"release-output/aidr-provenance.intoto.json","subjects":10,"materials":1,"byproducts":1}
@@ -707,7 +707,7 @@ Tarball Details
 <repo>\release-output\singularityrd-aidr-mcp-gateway-0.6.0.tgz
 Release bundle assembled in <repo>\release-output (15 artifacts)
 
-(node:20272) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:27016) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
-[aidr-gate] ended_at_utc=2026-09-20T23:47:21.586Z exit_code=0
+[aidr-gate] ended_at_utc=2026-09-21T09:37:29.369Z exit_code=0
