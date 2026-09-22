@@ -216,7 +216,7 @@ jobs:
           done
 
       - name: Publish final GitHub release from the same bundle (pinned)
-        uses: softprops/action-gh-release@a6c7483a42ee9d5daced968f6c217562cd680f7f # v2.2.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v2.2.2
         with:
           tag_name: ${{ inputs.tag }}
           name: AIDR ${{ inputs.tag }}
