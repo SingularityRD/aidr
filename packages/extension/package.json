@@ -102,7 +102,7 @@
   "devDependencies": {
     "@sentry/browser": "^10.69.0",
     "@singularityrd/aidr-core": "workspace:*",
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.2",
     "@types/vscode": "^1.138.0",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.28.2",
