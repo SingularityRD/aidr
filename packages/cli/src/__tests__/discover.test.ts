@@ -47,7 +47,7 @@ describe("aidr discover", () => {
 			schema_version: 1,
 			scanned_at: "2026-09-24T00:00:00.000Z",
 			scope: "Local configuration discovery",
-			sources: [{ path: "/home/alice/.cursor/mcp.json", status: "read" }],
+			sources: [{ path: "/home/user/.cursor/mcp.json", status: "read" }],
 			coverage: {
 				status: "read",
 				total_sources: 1,
@@ -61,7 +61,7 @@ describe("aidr discover", () => {
 				{
 					inventory_id: "a".repeat(64),
 					name: "shell-runner",
-					source: "/home/alice/.cursor/mcp.json",
+					source: "/home/user/.cursor/mcp.json",
 					transport: "remote",
 					endpoint: "https://mcp.internal.example",
 					risk_hints: ["remote_mcp_url", "shell_wrapper_command"],
@@ -92,7 +92,7 @@ describe("aidr discover", () => {
 			expect.arrayContaining(["remote_mcp_url", "shell_wrapper_command"]),
 		);
 		const serialized = JSON.stringify(events);
-		expect(serialized).not.toContain("/home/alice");
+		expect(serialized).not.toContain("/home/user");
 		expect(serialized).not.toContain("mcp.internal.example");
 		expect(process.exitCode).not.toBe(1);
 	});
