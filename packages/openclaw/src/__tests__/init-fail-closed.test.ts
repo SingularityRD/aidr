@@ -22,7 +22,7 @@ vi.mock("../bundled-dirs.js", () => ({
 		if (failures.threatLoad) throw failures.threatLoad;
 		return { threatsDir: "/nonexistent/threats", allowlistsDir: "/nonexistent/allowlists" };
 	},
-	getSageVersion: () => "0.0.0",
+	getAidrVersion: () => "0.0.0",
 }));
 
 import { ArtifactIntegrityError } from "@singularityrd/aidr-core";
@@ -81,7 +81,9 @@ describe("OpenClaw plugin initialisation fails closed", () => {
 		failures.integrity = new ArtifactIntegrityError("openclaw/dist", {
 			status: "bad_signature",
 		});
-		const { handlers } = register();
+		const { handlers, errors } = register();
+		// Only the integrity gate fails: the rest of the plugin registered normally.
+		expect(errors).toEqual([]);
 		await expectBlocked(handlers, "integrity_bad_signature");
 	});
 

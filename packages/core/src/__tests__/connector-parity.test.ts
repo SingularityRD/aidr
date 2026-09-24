@@ -324,6 +324,12 @@ interface HostOutcome {
 	/** What the host was told: deny/ask/block all stop the tool call. */
 	hostDecision: "allow" | "deny" | "ask";
 	message: string;
+	/**
+	 * The tool input the host runs in place of the original when AIDR rewrote it
+	 * (Claude Code `updatedInput`, OpenCode's in-place `output.args`); undefined
+	 * when the host runs the call unchanged or does not run it.
+	 */
+	rewrittenInput?: Record<string, unknown>;
 }
 
 const NATIVE_GATE_ENV = [
@@ -380,6 +386,7 @@ async function runClaudeCode(payload: Record<string, unknown>, home: string) {
 	return {
 		hostDecision: asDecision(hso?.permissionDecision),
 		message: `${String(out.systemMessage ?? "")}\n${String(hso?.permissionDecisionReason ?? "")}`,
+		rewrittenInput: hso?.updatedInput as Record<string, unknown> | undefined,
 	};
 }
 
@@ -433,12 +440,15 @@ const plugin = mod.AidrPlugin ?? mod.default;
 const hooks = await plugin({ client: {}, directory: process.cwd(), worktree: process.cwd() });
 const results = [];
 for (const c of cases) {
+	const original = JSON.stringify(c.args);
+	const output = { args: c.args };
 	try {
 		await hooks["tool.execute.before"](
 			{ tool: c.tool, sessionID: c.sessionId, callID: c.sessionId },
-			{ args: c.args },
+			output,
 		);
-		results.push({ blocked: false, message: "" });
+		const rewritten = JSON.stringify(output.args) !== original ? output.args : undefined;
+		results.push({ blocked: false, message: "", rewritten });
 	} catch (error) {
 		results.push({ blocked: true, message: String(error && error.message) });
 	}
@@ -492,11 +502,16 @@ async function runBatch(
 	if (result.code !== 0) {
 		throw new Error(`${kind} driver exited ${result.code}: ${result.stderr.slice(0, 2000)}`);
 	}
-	const parsed = JSON.parse(result.stdout.trim()) as { blocked: boolean; message: string }[];
+	const parsed = JSON.parse(result.stdout.trim()) as {
+		blocked: boolean;
+		message: string;
+		rewritten?: Record<string, unknown>;
+	}[];
 	return parsed.map((r) => ({
 		// OpenCode and OpenClaw have a single block verb for both deny and ask.
 		hostDecision: r.blocked ? "deny" : "allow",
 		message: r.message,
+		rewrittenInput: r.rewritten,
 	}));
 }
 
@@ -823,8 +838,11 @@ const DLP_MATRIX: ParityCase[] = [
 		threatId: "tenant-restricted-rule",
 	},
 	{
-		// No connector can rewrite tool input in place, so a redact rule blocks
-		// the original rather than passing the sensitive value through.
+		// Connectors whose host executes a rewritten tool input
+		// (REDACTING_CONNECTORS) allow the call with the value redacted; every
+		// other connector blocks the original rather than passing the sensitive
+		// value through. `expect` here is for the non-rewriting connectors; see
+		// expectedDlpOutcome().
 		id: "dlp-redact-rule",
 		call: { kind: "shell", field: "command", command: `echo ${REDACT_MARKER}` },
 		expect: "blocked",
@@ -850,6 +868,25 @@ const EXPECTED_DLP_VERDICT: Record<string, "deny" | "ask" | "allow"> = {
 	"dlp-ask-rule": "ask",
 	"dlp-clean": "allow",
 };
+
+/**
+ * Connectors that declare `supportsInputRewrite`: their host executes the
+ * redacted input AIDR hands back (Claude Code PreToolUse `updatedInput`,
+ * OpenCode's in-place `output.args`). Codex keeps redact as deny because
+ * codex-cli runs the original input when it rejects or loses a rewrite.
+ */
+const REDACTING_CONNECTORS: ReadonlySet<Connector> = new Set(["claude-code", "opencode"]);
+
+/** Expected host class and core verdict for one DLP row on one connector. */
+function expectedDlpOutcome(
+	c: ParityCase,
+	connector: Connector,
+): { blocked: boolean; verdict: "deny" | "ask" | "allow" | undefined } {
+	if (c.id === "dlp-redact-rule" && REDACTING_CONNECTORS.has(connector)) {
+		return { blocked: false, verdict: "allow" };
+	}
+	return { blocked: c.expect === "blocked", verdict: EXPECTED_DLP_VERDICT[c.id] };
+}
 
 async function provisionHome(
 	home: string,
@@ -894,19 +931,37 @@ describe("signed tenant DLP bundle parity (built entry points)", () => {
 	});
 
 	for (const c of DLP_MATRIX) {
-		it(`${c.id}: every connector is ${c.expect} by rule ${c.threatId ?? "none"}`, () => {
+		it(`${c.id}: every connector enforces rule ${c.threatId ?? "none"}`, () => {
 			const rows = observations.filter((o) => o.caseId === c.id);
 			expect(rows).toHaveLength(CONNECTORS.length);
 			for (const o of rows) {
 				const label = `${c.id} via ${o.connector}`;
-				expect(isBlocked(o.host.hostDecision), label).toBe(c.expect === "blocked");
+				const expected = expectedDlpOutcome(c, o.connector);
+				expect(isBlocked(o.host.hostDecision), label).toBe(expected.blocked);
 				expect(o.audit, `${label}: no audit record`).toBeDefined();
-				expect(o.audit?.verdict, label).toBe(EXPECTED_DLP_VERDICT[c.id]);
+				expect(o.audit?.verdict, label).toBe(expected.verdict);
 				expect(o.audit?.matchedThreatId ?? null, label).toBe(c.threatId);
-				if (c.expect === "blocked") expect(o.audit?.source, label).toBe("dlp");
+				if (c.threatId !== null) expect(o.audit?.source, label).toBe("dlp");
 			}
 		});
 	}
+
+	it("runs a redact-rule call only with the value redacted, and only on hosts that execute the rewrite", () => {
+		for (const o of observations.filter((x) => x.caseId === "dlp-redact-rule")) {
+			if (REDACTING_CONNECTORS.has(o.connector)) {
+				// The allow is safe only because the host runs the rewritten input,
+				// which keeps the parameter name and no longer carries the value.
+				expect(o.host.rewrittenInput, o.connector).toBeDefined();
+				expect(Object.keys(o.host.rewrittenInput ?? {}), o.connector).toEqual(["command"]);
+				expect(JSON.stringify(o.host.rewrittenInput), o.connector).not.toContain(REDACT_MARKER);
+			} else {
+				expect(o.host.rewrittenInput, o.connector).toBeUndefined();
+			}
+		}
+		for (const o of observations.filter((x) => x.caseId !== "dlp-redact-rule")) {
+			expect(o.host.rewrittenInput, `${o.caseId} via ${o.connector}`).toBeUndefined();
+		}
+	});
 
 	it("never sends the redacted value back to the model in a block reason", () => {
 		for (const o of observations.filter((x) => x.caseId === "dlp-redact-rule")) {
