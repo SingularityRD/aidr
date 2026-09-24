@@ -141,6 +141,15 @@ export interface Verdict {
 	reasons: string[];
 	/** Verified delegation lineage; absent when the call carried no credential. */
 	delegation?: DelegationLineage;
+	/**
+	 * Replacement tool input produced by DLP redaction. Present only on an
+	 * `allow` verdict, and only when the caller declared that it can rewrite the
+	 * tool input (`ToolEvaluationContext.supportsInputRewrite`). A connector that
+	 * receives it MUST execute the tool with this input instead of the original,
+	 * or block the call; running the original input would disclose the redacted
+	 * values.
+	 */
+	transformedInput?: Record<string, unknown>;
 }
 
 // ── Package check ──────────────────────────────────────────────────
@@ -574,6 +583,20 @@ const AmsiCheckConfigSchema = z.object({
 	enabled: z.boolean().default(true),
 });
 
+export const PromptProtectionModeSchema = z.enum(["off", "warn", "block"]);
+
+/**
+ * Inspection of the user's own prompt before it reaches the model (Claude Code
+ * `UserPromptSubmit`). `block` stops the prompt, `warn` lets it through with a
+ * notice to the user and the model, `off` skips that category.
+ */
+export const PromptProtectionConfigSchema = z.object({
+	/** Credentials, tokens and private keys. */
+	secrets: PromptProtectionModeSchema.default("block"),
+	/** Personal data: email addresses, phone numbers, SSNs, payment card numbers. */
+	pii: PromptProtectionModeSchema.default("warn"),
+});
+
 /**
  * @deprecated NVD lookup is no longer wired into the runtime.
  * @public
@@ -626,6 +649,7 @@ export const ConfigSchema = z.object({
 	version_check: VersionCheckConfigSchema.default({}),
 	package_check: PackageCheckConfigSchema.default({}),
 	amsi_check: AmsiCheckConfigSchema.default({}),
+	prompt_protection: PromptProtectionConfigSchema.default({}),
 	/** @deprecated Accepted for configuration compatibility; not used at runtime. */
 	nvd_check: NvdConfigSchema.default({}),
 	heuristics_enabled: z.boolean().default(true),
@@ -666,6 +690,8 @@ export type UrlCheckConfig = OptionalUrlCheckDefaults<z.infer<typeof UrlCheckCon
 export type FileCheckConfig = OptionalInsecureLoopback<z.infer<typeof FileCheckConfigSchema>>;
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
+export type PromptProtectionMode = z.infer<typeof PromptProtectionModeSchema>;
+export type PromptProtectionConfig = z.infer<typeof PromptProtectionConfigSchema>;
 /**
  * @deprecated NVD lookup is no longer wired into the runtime.
  * @public

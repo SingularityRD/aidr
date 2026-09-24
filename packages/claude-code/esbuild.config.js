@@ -75,6 +75,7 @@ const outputs = [
 	"dist/mcp-server.cjs",
 	"dist/session-start.cjs",
 	"dist/health.cjs",
+	"dist/user-prompt-submit.cjs",
 ];
 
 /**
@@ -116,6 +117,7 @@ await Promise.all([
 	esbuild.build({ ...shared, entryPoints: ["src/mcp-server.ts"], outfile: outputs[2] }),
 	esbuild.build({ ...shared, entryPoints: ["src/session-start.ts"], outfile: outputs[3] }),
 	esbuild.build({ ...shared, entryPoints: ["src/health.ts"], outfile: outputs[4] }),
+	esbuild.build({ ...shared, entryPoints: ["src/user-prompt-submit.ts"], outfile: outputs[5] }),
 ]);
 
 stageWindowsKoffi();

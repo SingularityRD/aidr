@@ -85,6 +85,10 @@ flows](privacy.md) before enabling network features.
   "amsi_check": {
     "enabled": true
   },
+  "prompt_protection": {
+    "secrets": "block",
+    "pii": "warn"
+  },
   "version_check": {
     "enabled": false
   },
@@ -247,6 +251,47 @@ Example (Supabase Edge Function):
 | `enabled` | `true` | Enable AMSI (Antimalware Scan Interface) scanning on Windows and WSL |
 
 When enabled, Singularity AIDR scans tool inputs (commands, file content, edits) through the Windows AMSI API before execution. This integrates with any installed antimalware provider (Windows Defender, etc.) to detect malicious content. AMSI scanning is automatically skipped on unsupported platforms (macOS, non-WSL Linux). See [AMSI Scanning](amsi-scanning.md) for details.
+
+### `prompt_protection`
+
+Claude Code only (`UserPromptSubmit` hook, `packages/claude-code/dist/user-prompt-submit.cjs`).
+Inspects the user's prompt before Claude Code sends it to the model.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `secrets` | `"block"` | Tokens, API keys, AWS keys, private keys, password assignments. `"block"`, `"warn"` or `"off"`. |
+| `pii` | `"warn"` | Email addresses, formatted phone numbers and SSNs, Luhn-valid card numbers. `"block"`, `"warn"` or `"off"`. |
+
+- `block` stops the prompt; Claude Code shows the reason to the user only. The reason names
+  the kind of data found (for example "GitHub token"), never the value.
+- `warn` sends the prompt, shows the user a notice and gives the model a context note not to
+  repeat or copy the data.
+- An operator-provisioned tenant DLP policy is also applied to the prompt and cannot be
+  turned off here. A prompt cannot be rewritten, so any tenant action other than `allow`
+  (including `redact`, and an uninspectable prompt) blocks.
+- Audit entries (`tool_name: "UserPromptSubmit"`) record the kinds and counts found, never
+  the prompt.
+- Failure policy: if the hook cannot inspect the prompt (unreadable or oversized input over
+  2 MiB, or an internal error) it blocks only when `secrets` is `"block"`. With `"warn"` or
+  `"off"` the prompt is sent with a visible "not inspected" notice. A provisioned tenant
+  policy that cannot be verified always blocks. A hook process that is killed before it
+  writes a response cannot block; that is a Claude Code host limitation.
+
+#### DLP redaction of tool input
+
+When a tenant DLP rule's action is `redact`, the outcome depends on whether the connector
+can execute a rewritten tool input:
+
+| Connector | Redact outcome |
+|-----------|----------------|
+| Claude Code | Allowed with the redacted input via PreToolUse `updatedInput` (no `permissionDecision`, so the user's normal permission flow still applies). Verified against Claude Code 2.1.282. |
+| OpenCode | Allowed; `output.args` is rewritten in place before the tool runs. A failed rewrite blocks. |
+| Codex | Denied. Codex 0.141.0 runs the original input when it rejects a rewrite, and a competing hook's rewrite can replace ours. |
+| OpenClaw, Cursor / VS Code, CLI, SDK | Denied (no supported input-rewrite path). |
+
+A redaction is only applied when the redacted input keeps every parameter name and a
+rescan under the same policy finds nothing left to act on; otherwise the call is denied.
+The audit log records the rule and label (`category: "dlp_redacted"`), not the values.
 
 ### `heuristics_enabled`
 

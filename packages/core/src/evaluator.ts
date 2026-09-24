@@ -26,7 +26,7 @@ import {
 } from "./delegated-credential.js";
 import { DetectionLegUnavailableError } from "./detection-leg.js";
 import type { DlpPolicy } from "./dlp/policy.js";
-import { type DlpScanResult, scanDlpInput } from "./dlp/scanner.js";
+import { type DlpFinding, type DlpScanResult, scanDlpInput } from "./dlp/scanner.js";
 import { DecisionEngine } from "./engine.js";
 import { MAX_ARTIFACT_SIZE } from "./extractors.js";
 import { HeuristicsEngine } from "./heuristics.js";
@@ -208,6 +208,13 @@ export interface ToolEvaluationContext {
 	/** Verified, local signed feed configuration; absent means no feed claim. */
 	reputationFeed?: ReputationFeedLoadOptions;
 	/**
+	 * The caller can execute the tool with `Verdict.transformedInput` in place of
+	 * the original input. Only then may a DLP `redact` outcome become an allow
+	 * carrying the redacted input; otherwise redaction is enforced as a deny,
+	 * because passing the original payload through would disclose the value.
+	 */
+	supportsInputRewrite?: boolean;
+	/**
 	 * Delegated credential authorizing this exact call. Absent means the caller
 	 * makes no delegation claim, and the call is evaluated exactly as before.
 	 */
@@ -295,8 +302,91 @@ function isUrlCheckResult(value: unknown): value is UrlCheckResult {
 	);
 }
 
-/** The tenant rules' own outcome; null when the policy allows the content. */
-function tenantDlpVerdict(dlp: DlpScanResult): Verdict | null {
+type DlpDetectorContext = NonNullable<
+	NonNullable<ToolEvaluationContext["runtimeDetectors"]>["dlp"]
+>;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function sameKeys(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+	const leftKeys = Object.keys(left).sort();
+	const rightKeys = Object.keys(right).sort();
+	return (
+		leftKeys.length === rightKeys.length && leftKeys.every((key, index) => key === rightKeys[index])
+	);
+}
+
+/**
+ * Redact the connector's original tool input under the tenant policy.
+ *
+ * Returns the replacement input only when every check holds: the original
+ * payload itself scans to `redact`, the redacted text is a JSON object with the
+ * same top-level parameters (a rule may not rename or drop a parameter), and a
+ * rescan of the result under the same policy finds nothing left to act on and
+ * no common PII. Anything else returns null and the caller denies.
+ */
+function redactToolInput(
+	detector: DlpDetectorContext,
+	tenantId: string,
+	original: Record<string, unknown>,
+): Record<string, unknown> | null {
+	const contentType = detector.contentType ?? "application/json";
+	const scan = scanDlpInput(detector.policy, {
+		tenantId,
+		content: JSON.stringify(original),
+		contentType,
+	});
+	if (
+		scan.status !== "inspected" ||
+		scan.action !== "redact" ||
+		typeof scan.transformedContent !== "string"
+	) {
+		return null;
+	}
+	const transformed: unknown = JSON.parse(scan.transformedContent);
+	if (!isPlainObject(transformed) || !sameKeys(original, transformed)) return null;
+	const recheckContent = JSON.stringify(transformed);
+	const recheck = scanDlpInput(detector.policy, { tenantId, content: recheckContent, contentType });
+	if (recheck.status !== "inspected" || recheck.action !== "allow") return null;
+	if (evaluateCommonPiiBaseline(detector.policy, recheckContent).finding !== null) return null;
+	return transformed;
+}
+
+function dlpRedactedVerdict(
+	findings: DlpFinding[],
+	transformedInput: Record<string, unknown>,
+): Verdict {
+	const ruleIds = [...new Set(findings.map((finding) => finding.ruleId))];
+	const labels = [...new Set(findings.map((finding) => finding.labelName))];
+	return {
+		decision: "allow",
+		category: "dlp_redacted",
+		confidence: 1,
+		severity: "warning",
+		source: "dlp",
+		artifacts: [],
+		matchedThreatId: ruleIds[0] ?? null,
+		reasons: [
+			`DLP redaction applied: ${findings.length} value(s) matching ${labels.join(", ")} (rule ${ruleIds.join(", ")}) were replaced before the tool ran.`,
+		],
+		transformedInput,
+	};
+}
+
+/**
+ * The tenant rules' own outcome; null when the policy allows the content.
+ *
+ * `rewriteSource` is the connector's original tool input when the connector
+ * executes a rewritten payload (`supportsInputRewrite`); otherwise null.
+ */
+function tenantDlpVerdict(
+	dlp: DlpScanResult,
+	detector: DlpDetectorContext,
+	tenantId: string,
+	rewriteSource: Record<string, unknown> | null,
+): Verdict | null {
 	if (dlp.status === "unavailable") {
 		return detectorVerdict(
 			dlp.action === "block" ? "deny" : "ask",
@@ -306,23 +396,36 @@ function tenantDlpVerdict(dlp: DlpScanResult): Verdict | null {
 		);
 	}
 	if (dlp.action === "allow") return null;
-	// A hook returns a verdict, not a rewritten tool payload. Passing a
-	// redact result through would disclose the original value.
+	if (dlp.action === "redact") {
+		// Only a connector that executes the rewritten payload may receive an
+		// allow here. Passing a redact result through anywhere else would
+		// disclose the original value, so it is enforced as a deny.
+		const transformed = rewriteSource ? redactToolInput(detector, tenantId, rewriteSource) : null;
+		if (transformed) return dlpRedactedVerdict(dlp.findings, transformed);
+		return detectorVerdict(
+			"deny",
+			"dlp",
+			"dlp",
+			rewriteSource
+				? "DLP redaction required, but a safe redacted tool input could not be produced; the call was blocked."
+				: "DLP redaction required; this connector cannot rewrite tool input.",
+			dlp.findings[0]?.ruleId ?? null,
+		);
+	}
 	return detectorVerdict(
 		dlp.action === "ask" ? "ask" : "deny",
 		"dlp",
 		"dlp",
-		dlp.action === "redact"
-			? "DLP redaction required; this connector cannot rewrite tool input."
-			: `DLP policy requires ${dlp.action}.`,
+		`DLP policy requires ${dlp.action}.`,
 		dlp.findings[0]?.ruleId ?? null,
 	);
 }
 
 function evaluateDlpDetector(
-	detector: NonNullable<NonNullable<ToolEvaluationContext["runtimeDetectors"]>["dlp"]>,
+	detector: DlpDetectorContext,
 	tenantId: string,
 	content: string,
+	rewriteSource: Record<string, unknown> | null,
 ): Verdict | null {
 	try {
 		const dlp = scanDlpInput(detector.policy, {
@@ -349,7 +452,7 @@ function evaluateDlpDetector(
 				)
 			: null;
 		if (baselineVerdict?.decision === "deny") return baselineVerdict;
-		const tenantVerdict = tenantDlpVerdict(dlp);
+		const tenantVerdict = tenantDlpVerdict(dlp, detector, tenantId, rewriteSource);
 		return tenantVerdict?.decision === "deny" ? tenantVerdict : (baselineVerdict ?? tenantVerdict);
 	} catch {
 		return detectorVerdict(
@@ -491,6 +594,7 @@ async function applyRuntimeDetectors(
 	context: ToolEvaluationContext,
 	baseVerdict: Verdict,
 	managedState: ManagedState,
+	rewriteSource: Record<string, unknown> | null,
 ): Promise<Verdict> {
 	const delegationOutcome = context.delegation
 		? evaluateDelegation(context.delegation, request.toolName)
@@ -519,7 +623,13 @@ async function applyRuntimeDetectors(
 		};
 	}
 
-	const verdict = await applyConfiguredDetectors(request, context, baseVerdict, managedState);
+	const verdict = await applyConfiguredDetectors(
+		request,
+		context,
+		baseVerdict,
+		managedState,
+		rewriteSource,
+	);
 	return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
 }
 
@@ -528,6 +638,7 @@ async function applyConfiguredDetectors(
 	context: ToolEvaluationContext,
 	baseVerdict: Verdict,
 	managedState: ManagedState,
+	rewriteSource: Record<string, unknown> | null,
 ): Promise<Verdict> {
 	const detectors = context.runtimeDetectors;
 	if (!detectors || (detectors.dlp?.enabled !== true && detectors.behavioral?.enabled !== true)) {
@@ -572,7 +683,7 @@ async function applyConfiguredDetectors(
 	if (detectors.dlp?.enabled === true) {
 		result = mergeDetectorVerdict(
 			result,
-			evaluateDlpDetector(detectors.dlp, tenantId, content),
+			evaluateDlpDetector(detectors.dlp, tenantId, content, rewriteSource),
 			baseVerdict,
 		);
 	}
@@ -671,7 +782,10 @@ export async function evaluateToolCall(
 ): Promise<Verdict> {
 	const normalizedRequest = normalizeToolEvaluationRequest(request);
 	const startTime = performance.now();
-	return runEvaluationPipeline(normalizedRequest, context, startTime);
+	// Redaction must rewrite the payload the connector will actually execute,
+	// not the alias-expanded copy the detectors inspect.
+	const rewriteSource = context.supportsInputRewrite === true ? request.toolInput : null;
+	return runEvaluationPipeline(normalizedRequest, context, startTime, rewriteSource);
 }
 
 function invalidConfigVerdict(): Verdict {
@@ -748,6 +862,7 @@ async function runEvaluationPipeline(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
 	startTime: number,
+	rewriteSource: Record<string, unknown> | null,
 ): Promise<Verdict> {
 	const logger = context.logger ?? nullLogger;
 	let config: Config;
@@ -1099,11 +1214,21 @@ async function runEvaluationPipeline(
 		// no artifacts for the tool name, so it may not take this fast path.
 		if (!isMcpTool && manifestEdits.length === 0) {
 			const verdict = hostEffectiveVerdict(
-				await applyRuntimeDetectors(request, context, allowVerdict("no_artifacts"), managedState),
+				await applyRuntimeDetectors(
+					request,
+					context,
+					allowVerdict("no_artifacts"),
+					managedState,
+					rewriteSource,
+				),
 				config,
 				context,
 			);
-			if (verdict.decision !== "allow" || verdict.category === "behavioral_unavailable") {
+			if (
+				verdict.decision !== "allow" ||
+				verdict.category === "behavioral_unavailable" ||
+				verdict.transformedInput
+			) {
 				await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 			}
 			return verdict;
@@ -1130,7 +1255,7 @@ async function runEvaluationPipeline(
 
 	if (allowlisted) {
 		const finalVerdict = hostEffectiveVerdict(
-			await applyRuntimeDetectors(request, context, allowlisted, managedState),
+			await applyRuntimeDetectors(request, context, allowlisted, managedState, rewriteSource),
 			config,
 			context,
 		);
@@ -1148,7 +1273,7 @@ async function runEvaluationPipeline(
 
 	if (policyVerdict) {
 		const finalVerdict = hostEffectiveVerdict(
-			await applyRuntimeDetectors(request, context, policyVerdict, managedState),
+			await applyRuntimeDetectors(request, context, policyVerdict, managedState, rewriteSource),
 			config,
 			context,
 		);
@@ -1465,7 +1590,7 @@ async function runEvaluationPipeline(
 		);
 	}
 	verdict = hostEffectiveVerdict(
-		await applyRuntimeDetectors(request, context, verdict, managedState),
+		await applyRuntimeDetectors(request, context, verdict, managedState, rewriteSource),
 		config,
 		context,
 	);
@@ -1950,21 +2075,18 @@ function isCompletePackageManifest(content: string): boolean {
 		if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 		if (hasDuplicateJsonObjectKeys(content)) return false;
 		const manifest = value as Record<string, unknown>;
-		return [
-			"dependencies",
-			"devDependencies",
-			"optionalDependencies",
-			"peerDependencies",
-		].every((key) => {
-			const entries = manifest[key];
-			return (
-				entries === undefined ||
-				(typeof entries === "object" &&
-					entries !== null &&
-					!Array.isArray(entries) &&
-					Object.values(entries).every((version) => typeof version === "string"))
-			);
-		});
+		return ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].every(
+			(key) => {
+				const entries = manifest[key];
+				return (
+					entries === undefined ||
+					(typeof entries === "object" &&
+						entries !== null &&
+						!Array.isArray(entries) &&
+						Object.values(entries).every((version) => typeof version === "string"))
+				);
+			},
+		);
 	} catch {
 		return false;
 	}

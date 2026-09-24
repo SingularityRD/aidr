@@ -739,6 +739,16 @@ export {
 	redactPII,
 	validateNoPII,
 } from "./pii-detector.js";
+// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
+export {
+	DEFAULT_PROMPT_PROTECTION,
+	type PromptFindingCategory,
+	type PromptFindingSummary,
+	type PromptProtectionDecision,
+	type PromptProtectionResult,
+	type PromptTenantDlp,
+	scanPrompt,
+} from "./prompt-protection.js";
 // Plugin scan cache
 export {
 	cacheKey,
@@ -957,6 +967,8 @@ export type {
 	PluginInfo,
 	PluginScanCache,
 	PluginScanResult,
+	PromptProtectionConfig,
+	PromptProtectionMode,
 	SignalSources,
 	Threat,
 	ThreatData,
@@ -986,6 +998,8 @@ export {
 	LoggingConfigSchema,
 	nullLogger,
 	PackageCheckConfigSchema,
+	PromptProtectionConfigSchema,
+	PromptProtectionModeSchema,
 	SensitivitySchema,
 	SeveritySchema,
 	ThreatSchema,

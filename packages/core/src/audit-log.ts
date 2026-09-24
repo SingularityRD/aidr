@@ -80,6 +80,18 @@ export function toolInputSummaryForAudit(
 	return redactTelemetryString(summary, MAX_SUMMARY_LEN);
 }
 
+/**
+ * Categories whose audit record names them. An allow in one of these still
+ * describes an enforcement action (a redaction, a prompt warning) or an
+ * uninspected leg, so it is recorded even when clean allows are not.
+ */
+const AUDITED_ALLOW_CATEGORIES: ReadonlySet<string> = new Set([
+	"behavioral_unavailable",
+	"dlp_redacted",
+	"prompt_protection",
+	"prompt_protection_warning",
+]);
+
 function toolInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
 	return toolInputSummaryForAudit(toolName, toolInput);
 }
@@ -100,7 +112,7 @@ export function buildRuntimeVerdictEntry(
 		tool_input_summary: toolInputSummary(toolName, toolInput),
 		artifacts: redactTelemetryData(verdict.artifacts),
 		verdict: verdict.decision,
-		...(verdict.category === "behavioral_unavailable" ? { category: verdict.category } : {}),
+		...(AUDITED_ALLOW_CATEGORIES.has(verdict.category) ? { category: verdict.category } : {}),
 		severity: verdict.severity,
 		reasons: redactTelemetryData(verdict.reasons),
 		source: verdict.source,
@@ -283,7 +295,7 @@ export async function logVerdict(
 	// Skip clean verdicts unless log_clean is on or this is a user override
 	if (
 		verdict.decision === "allow" &&
-		verdict.category !== "behavioral_unavailable" &&
+		!AUDITED_ALLOW_CATEGORIES.has(verdict.category) &&
 		!config.log_clean &&
 		!userOverride
 	)
