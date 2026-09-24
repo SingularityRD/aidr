@@ -72,7 +72,7 @@ async function runScenario(h, scenario, data, { settingsOverride, artifactsDir }
 	const pages = [];
 	const row = { id: scenario.id, title: scenario.title, status: "pass", checks: checks.results };
 
-	const skipReason = scenario.skip?.(h);
+	const skipReason = scenario.skip?.(h, data);
 	if (skipReason) {
 		return { ...row, status: "skip", reason: skipReason, durationMs: 0 };
 	}

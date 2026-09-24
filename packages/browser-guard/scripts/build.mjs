@@ -65,14 +65,15 @@ export const TARGETS = Object.freeze({
 export const GECKO_ID = "browser-guard@singularityrd.com";
 
 /**
- * Page the background's declarativeNetRequest rules redirect blocked AI sites to
- * (src/background/dnr.ts). A redirect from a web page to an extension resource
- * only loads when the resource is web accessible to the initiating origin, so it
- * is exposed to web origins; the page itself is static and, like every extension
- * page, cannot be framed (`frame-ancestors 'none'`).
+ * Page a tab lands on when it navigates to an AI site blocked by policy
+ * (src/background/dnr.ts). The declarativeNetRequest rule blocks the request and the
+ * background worker then navigates the tab to this page itself (`tabs.update`), an
+ * extension-initiated navigation that needs no web_accessible_resources entry. The
+ * page is therefore not reachable from web pages at all, so it cannot be used to
+ * fingerprint the extension (a web-accessible page could be probed at the stable
+ * extension id, and Chrome refuses DNR redirects to `use_dynamic_url` resources).
  */
 export const BLOCKED_PAGE = "blocked.html";
-const BLOCKED_PAGE_INITIATORS = Object.freeze(["https://*/*", "http://*/*"]);
 
 /**
  * Extension-page CSP. `connect-src` allows HTTPS (the control-plane URL is
@@ -116,9 +117,9 @@ export function manifestVersion(packageVersion) {
 /**
  * Generates manifest.json for one target.
  * @param {"chrome" | "firefox"} target
- * @param {{ version: string; contentCss?: boolean; blockedPage?: boolean; matches?: readonly string[] }} options
+ * @param {{ version: string; contentCss?: boolean; matches?: readonly string[] }} options
  */
-export function createManifest(target, { version, contentCss = false, blockedPage = false, matches = SITE_MATCHES }) {
+export function createManifest(target, { version, contentCss = false, matches = SITE_MATCHES }) {
 	if (!TARGETS[target]) throw new Error(`BUILD_UNKNOWN_TARGET: ${target}`);
 	const { version: numeric, versionName } = manifestVersion(version);
 	const icons = Object.fromEntries(ICON_SIZES.map((size) => [String(size), `icons/icon-${size}.png`]));
@@ -149,9 +150,6 @@ export function createManifest(target, { version, contentCss = false, blockedPag
 		incognito: "not_allowed",
 		content_security_policy: { extension_pages: EXTENSION_CSP },
 	};
-	if (blockedPage) {
-		manifest.web_accessible_resources = [{ resources: [BLOCKED_PAGE], matches: [...BLOCKED_PAGE_INITIATORS] }];
-	}
 	if (target === "chrome") {
 		if (versionName) manifest.version_name = versionName;
 		manifest.minimum_chrome_version = "120";
@@ -536,7 +534,6 @@ export async function buildExtension(options = {}) {
 		const manifest = createManifest(target, {
 			version: inputs.version,
 			contentCss,
-			blockedPage: inputs.staticFiles.includes(BLOCKED_PAGE),
 			matches,
 		});
 		writeFile(join(targetDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

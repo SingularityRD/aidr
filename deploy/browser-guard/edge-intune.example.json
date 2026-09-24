@@ -107,6 +107,10 @@
       "language": {
         "type": "REG_SZ",
         "value": "auto"
+      },
+      "allowUserOverrides": {
+        "type": "REG_DWORD",
+        "value": 0
       }
     }
   }

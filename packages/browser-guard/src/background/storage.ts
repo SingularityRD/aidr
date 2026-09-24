@@ -79,7 +79,11 @@ export interface ChromeApi {
 	tabs: {
 		query(query: Record<string, unknown>): Promise<TabInfo[]>;
 		sendMessage(tabId: number, message: unknown, options?: { frameId?: number }): Promise<unknown>;
+		update?(tabId: number, properties: { url: string }): Promise<unknown>;
 		onRemoved: ChromeEvent<(tabId: number) => void>;
+		onUpdated?: ChromeEvent<
+			(tabId: number, changeInfo: { url?: string; status?: string }, tab: TabInfo) => void
+		>;
 	};
 	action: {
 		setBadgeText(details: { text: string; tabId?: number }): Promise<void>;

@@ -161,6 +161,8 @@
 			</dict>
 			<key>language</key>
 			<string>auto</string>
+			<key>allowUserOverrides</key>
+			<false/>
 		</dict>
 		<dict>
 			<key>PayloadType</key>
@@ -291,6 +293,8 @@
 			</dict>
 			<key>language</key>
 			<string>auto</string>
+			<key>allowUserOverrides</key>
+			<false/>
 		</dict>
 	</array>
 </dict>

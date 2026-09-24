@@ -13,6 +13,31 @@
  *   with it the page's own scripts (analytics, session replay, the chat app's copy and
  *   edit actions) keep reading the placeholder through textContent/innerText, while
  *   the user (and assistive technology) perceives only the restored value.
+ * - The restored value must not be OBSERVABLE by the page (it is the AI site: exactly
+ *   the party the value was masked from). A closed shadow root alone is not enough:
+ *     * inherited `font-family` lets page `@font-face` rules with one remote `src` per
+ *       `unicode-range` character fetch a font for every character that is rendered;
+ *     * the element's width reveals the value's length (and, per font, its glyphs);
+ *     * `window.find()` (and find-in-page based APIs) search shadow-tree TEXT, so a
+ *       page can confirm guesses character by character.
+ *   So the value is never a text node: it is CSS generated content
+ *   (`::before { content: attr(data-v) }`) of an element inside the closed root, which
+ *   find/selection/innerText do not see but the user and the accessibility tree do.
+ *   The host and that element reset every inherited property (`all: initial`, only
+ *   `font-size`, `line-height` and `color` - which do not depend on the value - are
+ *   inherited back), use generic font families only (`system-ui, sans-serif`: page
+ *   `@font-face` rules can shadow a named family such as Arial, never a generic
+ *   keyword), and render in a fixed-width box with an ellipsis, so the layout is the
+ *   same for every value. The styles come from a constructed stylesheet adopted by the
+ *   closed root (not subject to the page's CSP), with a `<style>` fallback. Proven in
+ *   Chromium by the `restore-side-channels` E2E scenario.
+ * - Restoration is limited to values the user actually sent from this tab (oracle
+ *   mitigation): the guard reports every send (`noteSent`) with the vault placeholders
+ *   that left the page, and a placeholder is restored only in content inserted into the
+ *   document AFTER the send that carried it (the element holding the text, or one of its
+ *   ancestors, was inserted after the send). Pre-existing containers, placeholders a page
+ *   script invents, and placeholders issued for pastes/files that were never sent stay
+ *   as placeholders.
  * - Framework-owned text nodes are never removed. The node keeps the text before the
  *   first placeholder and our nodes are inserted after it; when the framework later
  *   rewrites that node (streaming), our nodes are dropped and the node is re-processed.
@@ -43,12 +68,19 @@ export interface Unmasker {
 	flush(): void;
 	/** Number of text nodes currently carrying restored values. */
 	readonly restoredCount: number;
+	/**
+	 * Records a send that just left the page carrying `placeholders` (this tab's vault
+	 * placeholders). Only these become restorable, and only in content inserted after
+	 * this call. Call it BEFORE the send is dispatched to the page.
+	 */
+	noteSent(placeholders: Iterable<string>): void;
 }
 
 interface RestoredSpan {
 	readonly placeholder: string;
 	readonly original: string;
-	readonly shown: Text;
+	/** Element inside the closed root whose generated content shows the value. */
+	readonly shown: Element;
 }
 
 interface Entry {
@@ -79,7 +111,7 @@ export function placeholderRegex(): RegExp {
 
 /** What the user currently sees in a restored span (original or placeholder). */
 export function readRestored(span: Element): string | undefined {
-	return restoredSpans.get(span)?.shown.data;
+	return restoredSpans.get(span)?.shown.getAttribute(VALUE_ATTRIBUTE) ?? undefined;
 }
 
 /** Text as rendered to the user: restored spans contribute their shadow content. */
@@ -93,9 +125,64 @@ export function visibleText(node: Node): string {
 	return out;
 }
 
-const SPAN_STYLE =
-	":host{border-bottom:1px dotted #3862E8;background:rgba(56,98,232,.10);border-radius:3px;padding:0 1px}" +
-	".ph{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}";
+/** Attribute (inside the closed root) whose value the generated content renders. */
+const VALUE_ATTRIBUTE = "data-v";
+/** Width of every restored value box; longer values end in an ellipsis. */
+export const RESTORED_BOX_WIDTH_EM = 14;
+
+/**
+ * Closed-root styles. `!important` in the shadow tree beats the page's `!important`
+ * rules on the host (the inner context wins for important declarations).
+ */
+export const SPAN_STYLE =
+	":host{all:initial!important;display:inline!important;font-size:inherit!important;" +
+	"line-height:inherit!important;color:inherit!important}" +
+	".ph{all:initial!important;position:absolute!important;width:1px!important;height:1px!important;" +
+	"margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;" +
+	"white-space:nowrap!important}" +
+	".v{all:initial!important;display:inline-block!important;box-sizing:border-box!important;" +
+	`width:${RESTORED_BOX_WIDTH_EM}em!important;max-width:100%!important;` +
+	"overflow:hidden!important;white-space:pre!important;text-overflow:ellipsis!important;" +
+	"vertical-align:bottom!important;direction:ltr!important;unicode-bidi:isolate!important;" +
+	"text-align:start!important;font-family:system-ui,sans-serif!important;" +
+	"font-size:inherit!important;line-height:inherit!important;color:inherit!important;" +
+	"border-bottom:1px dotted #3862E8!important;background:rgba(56,98,232,.10)!important;" +
+	"border-radius:3px!important;padding:0 2px!important}" +
+	`.v::before{content:attr(${VALUE_ATTRIBUTE})!important}`;
+
+const sharedSheets = new WeakMap<Document, CSSStyleSheet | null>();
+
+/** One constructed stylesheet per document, or null where they are unsupported. */
+function sharedSheet(doc: Document): CSSStyleSheet | null {
+	if (sharedSheets.has(doc)) return sharedSheets.get(doc) ?? null;
+	let sheet: CSSStyleSheet | null = null;
+	try {
+		const Ctor = (doc.defaultView as (Window & typeof globalThis) | null)?.CSSStyleSheet;
+		if (Ctor) {
+			sheet = new Ctor();
+			sheet.replaceSync(SPAN_STYLE);
+		}
+	} catch {
+		sheet = null;
+	}
+	sharedSheets.set(doc, sheet);
+	return sheet;
+}
+
+function applyStyles(doc: Document, root: ShadowRoot): void {
+	const sheet = sharedSheet(doc);
+	if (sheet && "adoptedStyleSheets" in root) {
+		try {
+			root.adoptedStyleSheets = [sheet];
+			return;
+		} catch {
+			// e.g. a cross-compartment sheet in a Firefox content script: fall back.
+		}
+	}
+	const style = doc.createElement("style");
+	style.textContent = SPAN_STYLE;
+	root.append(style);
+}
 
 export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 	const { document: doc, adapter, vault } = deps;
@@ -104,6 +191,12 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 	const entries = new Map<Text, Entry>();
 	const ours = new WeakSet<Node>();
 	const queue = new Set<Node>();
+	/** Send counter; elements are stamped with its value when inserted. */
+	let epoch = 0;
+	/** Placeholder -> epoch of the first send that carried it. */
+	const sentAt = new Map<string, number>();
+	/** Element -> epoch at its (latest) insertion; absent = present before observation. */
+	const insertedAt = new WeakMap<Node, number>();
 	let visible = false;
 	let scheduled = false;
 	let observer: MutationObserver | null = null;
@@ -125,20 +218,45 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 		const light = doc.createTextNode(placeholder);
 		span.append(light);
 		const shadow = span.attachShadow({ mode: "closed" });
-		const style = doc.createElement("style");
-		style.textContent = SPAN_STYLE;
+		applyStyles(doc, shadow);
 		// Keeps the light-DOM placeholder in the rendered tree (so page innerText reads
 		// it) without showing it or exposing it to assistive technology.
 		const hidden = doc.createElement("span");
 		hidden.className = "ph";
 		hidden.setAttribute("aria-hidden", "true");
 		hidden.append(doc.createElement("slot"));
-		const shown = doc.createTextNode(visible ? original : placeholder);
-		shadow.append(style, hidden, shown);
+		// The value is generated content of this element (never a text node): see the
+		// module comment for the side channels this closes.
+		const shown = doc.createElement("span");
+		shown.className = "v";
+		shown.setAttribute(VALUE_ATTRIBUTE, visible ? original : placeholder);
+		shadow.append(hidden, shown);
 		restoredSpans.set(span, { placeholder, original, shown });
 		ours.add(span);
 		ours.add(light);
 		return span;
+	};
+
+	/** Latest insertion epoch of the text's element or any ancestor (-1: pre-existing). */
+	const insertionEpoch = (text: Text): number => {
+		let latest = -1;
+		for (let n: Node | null = text.parentNode; n; n = n.parentNode) {
+			const at = insertedAt.get(n);
+			if (at !== undefined && at > latest) latest = at;
+		}
+		return latest;
+	};
+
+	/**
+	 * Original for `placeholder` in `text`, or null. Restored only when the placeholder
+	 * was sent and the text's content was inserted after that send; unknown and
+	 * never-restore placeholders stay as they are.
+	 */
+	const restoredValue = (placeholder: string, text: Text): string | null => {
+		const sent = sentAt.get(placeholder);
+		if (sent === undefined || insertionEpoch(text) < sent) return null;
+		const original = vault.unmask(placeholder);
+		return original === placeholder ? null : original;
 	};
 
 	const processText = (text: Text): void => {
@@ -149,8 +267,8 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 		let last = 0;
 		for (const match of data.matchAll(placeholderRegex())) {
 			const placeholder = match[0];
-			const original = vault.unmask(placeholder);
-			if (original === placeholder) continue; // unknown or never-restore type
+			const original = restoredValue(placeholder, text);
+			if (original === null) continue;
 			pieces.push({ before: data.slice(last, match.index), placeholder, original });
 			last = match.index + placeholder.length;
 		}
@@ -230,6 +348,13 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 		}
 	};
 
+	/** Stamps an inserted element with the current send epoch and queues it. */
+	const noteAdded = (node: Node): void => {
+		if (ours.has(node)) return;
+		if (node.nodeType === 1) insertedAt.set(node, epoch);
+		enqueue(node);
+	};
+
 	const onMutations = (records: MutationRecord[]): void => {
 		for (const record of records) {
 			if (record.type === "characterData") {
@@ -247,9 +372,7 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 				const entry = removed.nodeType === 3 ? entries.get(removed as Text) : undefined;
 				if (entry) revert(removed as Text, entry, false);
 			}
-			for (const added of record.addedNodes) {
-				if (!ours.has(added)) enqueue(added);
-			}
+			for (const added of record.addedNodes) noteAdded(added);
 		}
 	};
 
@@ -257,7 +380,7 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 		for (const entry of entries.values()) {
 			for (const node of entry.extras) {
 				const info = restoredSpans.get(node as Element);
-				if (info) info.shown.data = show ? info.original : info.placeholder;
+				if (info) info.shown.setAttribute(VALUE_ATTRIBUTE, show ? info.original : info.placeholder);
 			}
 		}
 	};
@@ -292,6 +415,14 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 		flush,
 		get restoredCount() {
 			return entries.size;
+		},
+		noteSent(placeholders: Iterable<string>) {
+			// Stamp everything inserted so far with the pre-send epoch first.
+			if (observer) onMutations(observer.takeRecords());
+			epoch += 1;
+			for (const placeholder of placeholders) {
+				if (!sentAt.has(placeholder)) sentAt.set(placeholder, epoch);
+			}
 		},
 	};
 }

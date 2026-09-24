@@ -63,9 +63,21 @@ apart or use a key the extension does not accept.
 | `telemetry` | `{ "controlPlaneUrl", "apiKey" }` | counts-only telemetry; `https://` required (plain `http://` only for `localhost`/`127.0.0.1`) |
 | `language` | string | `auto`, `en`, `tr` |
 | `policyId` | string | reported with telemetry; `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` |
+| `allowUserOverrides` | boolean | default `false`; see below |
 
-The Chrome/Edge schema is `static/managed_schema.json` in the extension. Keys you
-leave out keep the user's setting (or the default).
+The Chrome/Edge schema is `static/managed_schema.json` in the extension.
+
+**User settings under a managed policy.** Every key you set is locked. In
+addition, as soon as *any* managed policy is present, the settings a user could
+use to weaken protection - `mode`, `enabledEntities`, `literals`, `maskPaste`,
+`restoreResponses` and `disabledSites` - are locked too: keys you leave out take
+the built-in default (for example `auto` mode, every entity type except
+`USERNAME`/`LOCATION`) and the extension rejects user changes to them
+(`SET_USER_SETTINGS` answers `LOCKED_KEYS`; the options page shows them
+read-only). A managed policy that fails validation still locks them. Set
+`allowUserOverrides: true` to let users keep changing the protection keys you
+do not set (a managed `mode` then still locks `disabledSites`). `language` and a
+user's own `telemetry` target are never locked unless you set them.
 
 ## Chrome and Edge on Windows (Group Policy)
 

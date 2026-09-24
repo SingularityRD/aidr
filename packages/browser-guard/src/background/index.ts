@@ -20,7 +20,7 @@ import type {
 	SiteId,
 	UserSettings,
 } from "../types.js";
-import { applyBlockedSites, siteForUrl } from "./dnr.js";
+import { applyBlockedSites, redirectBlockedTab, siteForUrl, updatedTabUrl } from "./dnr.js";
 import { createNativeBridge } from "./native.js";
 import { DEFAULT_POLICY, evaluatePolicy, validateUserSettings } from "./policy.js";
 import { badgeText, StatsStore } from "./stats.js";
@@ -376,6 +376,14 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	});
 	chrome.tabs.onRemoved.addListener((tabId) => {
 		void stats.removeTab(tabId);
+	});
+	chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => {
+		const url = updatedTabUrl(changeInfo, tab);
+		if (!isTabId(tabId) || url === undefined) return;
+		void (async () => {
+			await ready;
+			await redirectBlockedTab(chrome, tabId, url);
+		})().catch(() => log("dnr: could not show the blocked-site page"));
 	});
 
 	const ready: Promise<void> = (async () => {

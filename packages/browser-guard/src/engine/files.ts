@@ -12,9 +12,22 @@
  *      (UTF-8 BOM stripped; UTF-16 with a BOM is also accepted) and contains no NUL, AND
  *      either its extension is a known text/source extension, or its extension is unknown
  *      and its MIME type is not a binary media type. Known binary extensions (pdf, docx,
- *      xlsx, images, archives...) and text-named files whose content fails the sniff are
- *      binary. Scanning an extension-less text file is strictly safer than passing it
- *      through unscanned, so "unknown but decodable" is scanned rather than treated as binary.
+ *      xlsx, images, archives...) are binary. Scanning an extension-less text file is
+ *      strictly safer than passing it through unscanned, so "unknown but decodable" is
+ *      scanned rather than treated as binary.
+ *      A TEXT-NAMED file (known text extension or dotenv name) or a TEXT-MIME file
+ *      (`text/*`, JSON, XML, CSV, YAML...) that is not valid UTF-8 is never treated as
+ *      binary: Excel and most Windows tools write CSV/TXT in the ANSI code page, so the
+ *      content is decoded with a single-byte fallback - windows-1254 (Turkish), or
+ *      windows-1252 (Western) when that leaves fewer undefined C1 control characters
+ *      (the two differ only in six Turkish letters and Ž/ž) - and scanned like any text
+ *      file. A masked copy of such a file is re-encoded as UTF-8 (CSV/TSV with a UTF-8
+ *      BOM so spreadsheet tools detect the new encoding; a MIME `charset` parameter, if
+ *      any, is rewritten to utf-8); an unchanged file keeps its original bytes.
+ *      A text-named/text-MIME file that contains a NUL byte (e.g. UTF-16 without a BOM,
+ *      or binary content behind a text name) cannot be decoded safely: it is blocked with
+ *      `TEXT_FILE_NOT_DECODABLE` in auto/confirm/block mode (monitor mode, which never
+ *      blocks, allows it with that reason so the event is recorded).
  *   4. Binary files cannot be inspected in the browser:
  *        `policy.mode === "block"` -> block `BINARY_FILE_UNSCANNABLE`;
  *        any other mode            -> allow `BINARY_FILE_UNSCANNED` so the content script can
@@ -305,7 +318,16 @@ function extensionOf(base: string): string {
 interface DecodedText {
 	readonly text: string;
 	readonly bom: boolean;
+	/** Single-byte code page the text was decoded from (legacy fallback), if any. */
+	readonly legacy?: "windows-1254" | "windows-1252";
 }
+
+/** MIME types that declare text content (parameters such as `; charset=` are ignored). */
+const TEXT_MIME =
+	/^(?:text\/[\w.+-]+|application\/(?:json|x-ndjson|ndjson|jsonl|xml|csv|x-csv|yaml|x-yaml|toml|x-toml|javascript|x-javascript|ecmascript|x-sh|x-shellscript|sql|x-sql|graphql|[\w.-]+\+(?:json|xml)))\s*(?:;|$)/i;
+
+/** Legacy single-byte code pages tried, in order, for text files that are not UTF-8. */
+const LEGACY_ENCODINGS = ["windows-1254", "windows-1252"] as const;
 
 /** Strict decode: UTF-8 (BOM aware) or BOM-marked UTF-16. Null for invalid bytes or any NUL. */
 export function decodeTextFile(bytes: Uint8Array): DecodedText | null {
@@ -328,6 +350,53 @@ export function decodeTextFile(bytes: Uint8Array): DecodedText | null {
 	}
 	if (text.includes("\u0000")) return null;
 	return { text, bom };
+}
+
+const C1_CONTROL = /[\u0080-\u009f]/g;
+
+/**
+ * Single-byte fallback for text files that are not UTF-8: windows-1254, or windows-1252
+ * when it leaves fewer undefined bytes (decoded as C1 controls). Null when the bytes hold
+ * a NUL (not a single-byte text file) or no legacy decoder is available.
+ */
+export function decodeLegacyTextFile(bytes: Uint8Array): DecodedText | null {
+	if (bytes.includes(0)) return null;
+	let best: DecodedText | null = null;
+	let bestControls = Number.POSITIVE_INFINITY;
+	for (const encoding of LEGACY_ENCODINGS) {
+		let text: string;
+		try {
+			text = new TextDecoder(encoding, { fatal: true }).decode(bytes);
+		} catch {
+			continue; // decoder unavailable in this runtime (or it rejected the bytes)
+		}
+		const controls = text.match(C1_CONTROL)?.length ?? 0;
+		if (controls < bestControls) {
+			best = { text, bom: false, legacy: encoding };
+			bestControls = controls;
+		}
+	}
+	return best;
+}
+
+const UNDECODABLE_TEXT = Symbol("UNDECODABLE_TEXT");
+
+/**
+ * Strict UTF-8/UTF-16 decode; for a declared text file that fails it, the legacy
+ * single-byte fallback, or UNDECODABLE_TEXT. Null: not text (classified as binary).
+ */
+function decodeUpload(file: GuardFile): DecodedText | null | typeof UNDECODABLE_TEXT {
+	const strict = decodeTextFile(file.bytes);
+	if (strict || !isDeclaredText(file)) return strict;
+	return decodeLegacyTextFile(file.bytes) ?? UNDECODABLE_TEXT;
+}
+
+/** Known text extension, dotenv name, or a MIME type that declares text. */
+export function isDeclaredText(file: Pick<GuardFile, "name" | "type">): boolean {
+	const base = baseName(file.name);
+	const ext = extensionOf(base);
+	if (BINARY_EXTENSIONS.has(ext)) return false;
+	return isEnvFileName(base) || TEXT_EXTENSIONS[ext] !== undefined || TEXT_MIME.test(file.type);
 }
 
 function classify(file: GuardFile, decoded: DecodedText | null): TextKind | "binary" {
@@ -952,6 +1021,11 @@ function block(reasons: readonly string[], counts: Readonly<Counts> = {}): FileD
 	return { action: "block", counts, reasons };
 }
 
+/** MIME type of a re-encoded (UTF-8) copy: a declared charset parameter becomes utf-8. */
+function utf8MimeType(type: string): string {
+	return type.replace(/(;\s*charset\s*=\s*)(?:"[^"]*"|[^;\s]*)/i, "$1utf-8");
+}
+
 function encodeOutput(text: string, bom: boolean): Uint8Array {
 	const body = new TextEncoder().encode(text);
 	if (!bom) return body;
@@ -972,7 +1046,13 @@ export async function sanitizeFile(file: GuardFile, deps: SanitizeDeps): Promise
 		if (policy.fileHandling !== "scan") return block(["FILE_BLOCKED_BY_POLICY"]);
 		if (!(file.bytes.length <= policy.maxFileBytes)) return block(["FILE_TOO_LARGE"]);
 
-		const decoded = decodeTextFile(file.bytes);
+		const decoded = decodeUpload(file);
+		if (decoded === UNDECODABLE_TEXT) {
+			// A text file that cannot be decoded must never pass through unscanned.
+			return policy.mode === "monitor"
+				? { action: "allow", counts: {}, reasons: ["TEXT_FILE_NOT_DECODABLE"] }
+				: block(["TEXT_FILE_NOT_DECODABLE"]);
+		}
 		const kind = classify(file, decoded);
 		if (kind === "binary" || !decoded) {
 			return policy.mode === "block"
@@ -981,7 +1061,7 @@ export async function sanitizeFile(file: GuardFile, deps: SanitizeDeps): Promise
 		}
 		const ctx: Ctx = { engine, vault, enabled: new Set(policy.enabledEntities) };
 		const outcome = await runHandler(ctx, kind, decoded.text);
-		return decide(file, decoded, outcome, policy);
+		return decide(file, decoded, kind, outcome, policy);
 	} catch (error) {
 		return block([error instanceof ScanIncomplete ? "SCAN_INCOMPLETE" : "FILE_SCAN_ERROR"]);
 	}
@@ -1006,6 +1086,7 @@ function runHandler(ctx: Ctx, kind: TextKind, text: string): Promise<Outcome> {
 function decide(
 	file: GuardFile,
 	decoded: DecodedText,
+	kind: TextKind,
 	outcome: Outcome,
 	policy: GuardPolicy,
 ): FileDecision {
@@ -1019,9 +1100,17 @@ function decide(
 	if (outcome.formulaCells > 0) reasons.push("FORMULA_CELL");
 	reasons.push(...signalReasons);
 	if (!outcome.changed) return { action: "allow", counts: outcome.findingCounts, reasons };
+	// Legacy code-page input is re-encoded as UTF-8; delimited files get a BOM so that
+	// spreadsheet tools do not read the new encoding as the ANSI code page.
+	const legacy = decoded.legacy !== undefined;
+	const bom = decoded.bom || (legacy && (kind === "csv" || kind === "tsv"));
 	return {
 		action: "mask",
-		masked: { name: file.name, type: file.type, bytes: encodeOutput(outcome.output, decoded.bom) },
+		masked: {
+			name: file.name,
+			type: legacy ? utf8MimeType(file.type) : file.type,
+			bytes: encodeOutput(outcome.output, bom),
+		},
 		counts: outcome.counts,
 		reasons,
 	};

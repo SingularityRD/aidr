@@ -3,9 +3,9 @@ import type { Translate } from "./i18n.js";
 import { SUPPORTED_SITES } from "./model.js";
 
 /**
- * Reads the blocked site from the redirect URL. A declarativeNetRequest redirect
- * may append `?site=<SiteId>`; only known ids are used, so nothing from the URL
- * is ever echoed into the page.
+ * Reads the blocked site from the page URL. The background opens the page with
+ * `?site=<SiteId>` (src/background/dnr.ts); only known ids are used, so nothing
+ * from the URL is ever echoed into the page.
  */
 export function blockedSiteFromUrl(href: string): string | null {
 	try {

@@ -6,6 +6,11 @@
  * Everything is injected (`ContentGuardDeps`) so the guard is testable with fakes and
  * independent of the concrete engine/vault/adapter/editor implementations.
  *
+ * Every send that is let through is reported to the unmasker (`noteSent`) with the vault
+ * placeholders it carries (plus those of masked files attached since the previous send):
+ * only those are ever restored in the page, and only in content that appears after
+ * the send (see ./unmask.ts).
+ *
  * Failure policy (CLAUDE.md): this is a connector entry point, so it fails CLOSED.
  * A missing policy, a scan error or an incomplete scan blocks the send (except in
  * `monitor` mode, which never blocks). Telemetry (`RECORD`) is best-effort and
@@ -138,6 +143,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	let restoreVisible = true;
 	let prescanTimer: ReturnType<typeof setTimeout> | undefined;
 	let started = false;
+	/** Placeholders of masked files attached since the last send (they leave with it). */
+	const pendingAttachments = new Set<string>();
 
 	const siteDisabled = (p: GuardPolicy): boolean => p.disabledSites.includes(adapter.id);
 	const siteBlocked = (p: GuardPolicy): boolean => p.blockedSites.includes(adapter.id);
@@ -274,6 +281,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			ui.toast(strings().textChanged, "warn");
 			return;
 		}
+		noteSent(text);
 		if (origin.kind === "submit") {
 			const form = origin.form;
 			perform(text, () => {
@@ -455,7 +463,10 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			record("blocked", "prompt", {});
 			return;
 		}
-		if (siteDisabled(policy)) return;
+		if (siteDisabled(policy)) {
+			noteSent(text);
+			return;
+		}
 		if (siteBlocked(policy)) {
 			stopEvent(event);
 			showBlocked([s.siteBlocked]);
@@ -471,6 +482,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		}
 		if (normalizeText(text) === "") return;
 		if (policy.mode === "monitor") {
+			noteSent(text);
 			void monitorScan(text, "prompt", policy);
 			return;
 		}
@@ -487,6 +499,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			activeSignals(policy, hit).length === 0
 		) {
 			record("allowed", "prompt", {});
+			noteSent(text);
 			return; // pre-scanned clean: the original, trusted event goes through untouched
 		}
 		stopEvent(event);
@@ -689,11 +702,26 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 
 	// ---- files, unmasking, lifecycle ---------------------------------------------------
 
+	// Masked files go out when they are attached; their placeholders become restorable
+	// with the next send (the one the files are attached to).
+	const fileVault: PlaceholderVault = {
+		mask(text, findings) {
+			const result = vault.mask(text, findings);
+			for (const placeholder of result.placeholders) pendingAttachments.add(placeholder);
+			return result;
+		},
+		unmask: (text) => vault.unmask(text),
+		lookup: (placeholder) => vault.lookup(placeholder),
+		size: () => vault.size(),
+		clear: () => vault.clear(),
+		exportSession: () => vault.exportSession(),
+	};
+
 	const fileGuard = createFileGuard({
 		window: win,
 		adapter,
 		engine,
-		vault,
+		vault: fileVault,
 		ui,
 		sanitizeFile: deps.sanitizeFile,
 		getPolicy: deps.getPolicy,
@@ -711,6 +739,16 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		title: () => strings().restoredTitle,
 		schedule: deps.schedule,
 	});
+
+	/** Reports a send leaving the page: the vault placeholders it carries become restorable. */
+	function noteSent(text: string | null): void {
+		const sent = new Set(pendingAttachments);
+		pendingAttachments.clear();
+		for (const match of (text ?? "").matchAll(placeholderRegex())) {
+			if (vault.lookup(match[0]) !== undefined) sent.add(match[0]);
+		}
+		unmasker.noteSent(sent);
+	}
 
 	const applyRestore = (): void => {
 		const policy = deps.getPolicy();

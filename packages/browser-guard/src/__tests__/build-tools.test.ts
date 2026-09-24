@@ -256,6 +256,7 @@ const MANAGED_KEYS = [
 	"telemetry",
 	"language",
 	"policyId",
+	"allowUserOverrides",
 ];
 const SITE_IDS = [
 	"chatgpt",
