@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { readGatewayConfig, reportFailure, stage } from "./diagnostics.mjs";
 import { createMcpGateway } from "./gateway.mjs";
 import { requireGatewayIntegrity } from "./integrity.mjs";
 
@@ -20,21 +20,23 @@ if (
 	process.exitCode = 2;
 } else {
 	try {
-		await requireGatewayIntegrity();
-		const config = JSON.parse(await readFile(configPath, "utf8"));
-		const gateway = createMcpGateway(config);
-		const result = await gateway.approve({
-			tenantId,
-			serverId,
-			toolsetHash,
-			bindingSha256,
-			approvedBy,
-			reason: reasonParts.join(" "),
+		await stage("integrity_verification_failed", () => requireGatewayIntegrity());
+		const config = await readGatewayConfig(configPath);
+		const gateway = await stage("config_invalid", () => createMcpGateway(config));
+		const result = await stage("approval_failed", async () => {
+			const approval = await gateway.approve({
+				tenantId,
+				serverId,
+				toolsetHash,
+				bindingSha256,
+				approvedBy,
+				reason: reasonParts.join(" "),
+			});
+			if (!approval.approved) throw new Error("approval rejected");
+			return approval;
 		});
-		if (!result.approved) throw new Error("approval rejected");
 		process.stdout.write(`Approved MCP toolset ${result.toolsetHash}\n`);
-	} catch {
-		process.stderr.write("AIDR MCP toolset approval failed\n");
-		process.exitCode = 1;
+	} catch (error) {
+		process.exitCode = reportFailure("AIDR MCP toolset approval", error);
 	}
 }

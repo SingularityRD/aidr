@@ -6,11 +6,12 @@ import {
 	approveQuarantinedMcpToolset,
 	attestMcpToolManifest,
 	FileMcpAttestationStore,
+	fetchMcpEndpoint,
 	McpToolDefinitionSchema,
+	McpTransportError,
 	mcpToolsetHash,
-} from "../../core/dist/mcp-attestation.js";
-import { fetchMcpEndpoint, McpTransportError } from "../../core/dist/mcp-transport.js";
-import { scanModelOutput } from "../../core/dist/output-scanner.js";
+	scanModelOutput,
+} from "@singularityrd/aidr-core";
 import { authenticateBearer, validateGatewayConfig } from "./config.mjs";
 import {
 	coverageDescriptor,
@@ -18,6 +19,8 @@ import {
 	makeMcpGatewayCoverageEvent,
 	refusalPayload,
 } from "./coverage.mjs";
+import { createToolCallDetector, decisionPayload, McpToolCallBlocked } from "./detection.mjs";
+import { inspectToolResult } from "./output-inspection.mjs";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const SESSION = /^[\x21-\x7e]{8,256}$/;
@@ -542,32 +545,64 @@ function parseSseEvent(event) {
 	return JSON.parse(data.join("\n"));
 }
 
-function serverInitiatedRefusal() {
+/**
+ * Map a server-initiated method to a fixed category. The gateway relays only
+ * request/response pairs, so it can never answer these; it strips the matching
+ * client capabilities upstream and applies the operator policy to any the
+ * server sends anyway.
+ */
+function serverMethodCategory(method) {
+	if (method === "sampling/createMessage") return "sampling";
+	if (method === "elicitation/create") return "elicitation";
+	if (method === "roots/list") return "roots";
+	if (method.startsWith("notifications/")) return "notifications";
+	return "other";
+}
+
+function serverInitiatedRefusal(category) {
 	return new McpGatewayRefusal(
 		"server_initiated_method",
 		"MCP server-initiated methods are outside the gateway response coverage and were refused",
+		{ serverMethod: category },
 	);
 }
 
-function rejectServerInitiated(value) {
-	if (jsonObject(value) && typeof value.method === "string") throw serverInitiatedRefusal();
-	return value;
-}
+const MAX_SERVER_MESSAGES = 256;
 
 function parseSse(text) {
 	let response = null;
+	const serverMessages = [];
 	for (const event of text.replace(/\r\n/g, "\n").split(/\n\n+/)) {
-		const parsed = rejectServerInitiated(parseSseEvent(event));
+		const parsed = parseSseEvent(event);
 		if (parsed === null) continue;
+		if (jsonObject(parsed) && typeof parsed.method === "string") {
+			if (serverMessages.length >= MAX_SERVER_MESSAGES) throw serverInitiatedRefusal("other");
+			serverMessages.push(serverMethodCategory(parsed.method));
+			continue;
+		}
 		if (response !== null) throw new Error("multiple_sse_responses");
 		response = parsed;
 	}
-	if (response === null) throw new Error("missing_sse_response");
-	return response;
+	if (response === null) {
+		// A stream that carries only server-initiated messages ends without an
+		// answer; report the first message category instead of a generic error.
+		if (serverMessages.length > 0) throw serverInitiatedRefusal(serverMessages[0]);
+		throw new Error("missing_sse_response");
+	}
+	return { rpc: response, serverMessages };
 }
 
 function parseUpstreamResponse(text, mode, expectedId) {
-	const rpc = rejectServerInitiated(mode === "sse" ? parseSse(text) : JSON.parse(text));
+	let rpc;
+	let serverMessages = [];
+	if (mode === "sse") ({ rpc, serverMessages } = parseSse(text));
+	else {
+		rpc = JSON.parse(text);
+		// A JSON response body is the answer; a server request in its place
+		// leaves no result to deliver, whatever the policy says.
+		if (jsonObject(rpc) && typeof rpc.method === "string")
+			throw serverInitiatedRefusal(serverMethodCategory(rpc.method));
+	}
 	if (
 		!jsonObject(rpc) ||
 		rpc.jsonrpc !== "2.0" ||
@@ -577,7 +612,7 @@ function parseUpstreamResponse(text, mode, expectedId) {
 		throw new Error("invalid_upstream_rpc");
 	}
 	if ("error" in rpc) throw new Error("upstream_rpc_error");
-	return rpc.result;
+	return { result: rpc.result, serverMessages };
 }
 
 function normalizeToolSet(result) {
@@ -657,7 +692,13 @@ const BLOCK_REASONS = new Set([
 	"unsupported_tool_output",
 	"unsupported_structured_output",
 	"unsupported_binary_output",
+	"binary_output_oversize",
+	"invalid_binary_encoding",
+	"binary_content_mismatch",
 	"server_initiated_method",
+	"arguments_blocked",
+	"approval_required",
+	"detection_unavailable",
 	"invalid_tool_result",
 	"invalid_initialize_result",
 	"invalid_tool_list",
@@ -674,52 +715,11 @@ const BLOCK_REASONS = new Set([
 ]);
 
 function safeReason(cause) {
+	if (cause instanceof McpToolCallBlocked) return cause.code;
 	if (cause instanceof McpGatewayRefusal && /^[a-z0-9_]{1,64}$/.test(cause.code)) return cause.code;
 	if (cause instanceof McpTransportError && /^[a-z0-9_]{1,64}$/.test(cause.code)) return cause.code;
 	if (cause instanceof Error && BLOCK_REASONS.has(cause.message)) return cause.message;
 	return "gateway_unavailable";
-}
-
-const BINARY_OUTPUT_TYPES = new Set(["image", "audio"]);
-
-function validateToolResult(result) {
-	if (
-		!jsonObject(result) ||
-		!Array.isArray(result.content) ||
-		result.content.length > 4096 ||
-		(result.isError !== undefined && typeof result.isError !== "boolean")
-	) {
-		throw new McpGatewayRefusal(
-			"invalid_tool_result",
-			"MCP tool output has an invalid result envelope and was refused",
-		);
-	}
-	for (const item of result.content) {
-		if (!jsonObject(item)) {
-			throw new McpGatewayRefusal(
-				"unsupported_tool_output",
-				"MCP tool output representation is unsupported and was refused",
-			);
-		}
-		if (BINARY_OUTPUT_TYPES.has(item.type)) {
-			throw new McpGatewayRefusal(
-				"unsupported_binary_output",
-				"MCP binary tool output is outside the gateway response coverage and was refused",
-			);
-		}
-		if (item.type !== "text" || typeof item.text !== "string") {
-			throw new McpGatewayRefusal(
-				"unsupported_tool_output",
-				"MCP tool output representation is unsupported and was refused",
-			);
-		}
-	}
-	if (result.structuredContent !== undefined && !jsonObject(result.structuredContent)) {
-		throw new McpGatewayRefusal(
-			"unsupported_structured_output",
-			"MCP structured tool output is outside the gateway response coverage and was refused",
-		);
-	}
 }
 
 function clientInitializeResult(result) {
@@ -743,6 +743,22 @@ function clientInitializeResult(result) {
 		capabilities: { tools: {} },
 		serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version },
 	};
+}
+
+const SERVER_CAPABILITIES_GATEWAY_CANNOT_RELAY = ["sampling", "elicitation", "roots"];
+
+/**
+ * The gateway answers each client request with exactly one inspected response
+ * and has no channel to relay a server request back to the client. Advertising
+ * sampling, elicitation or roots upstream would invite requests that can only
+ * be refused, so those client capabilities are removed before forwarding.
+ */
+function upstreamInitializeRequest(rpc) {
+	const capabilities = rpc.params?.capabilities;
+	if (!jsonObject(capabilities)) return rpc;
+	const forwarded = { ...capabilities };
+	for (const key of SERVER_CAPABILITIES_GATEWAY_CANNOT_RELAY) delete forwarded[key];
+	return { ...rpc, params: { ...rpc.params, capabilities: forwarded } };
 }
 
 function send(response, status, body, extraHeaders = {}) {
@@ -784,6 +800,10 @@ export function createMcpGateway(input, dependencies = {}) {
 	const now = dependencies.now ?? (() => new Date());
 	const onEvent = dependencies.onEvent ?? (() => undefined);
 	const directUpstreamCheck = dependencies.directUpstreamCheck ?? dependencies.checkDirectUpstream;
+	const evaluateArguments = createToolCallDetector(
+		config,
+		dependencies.evaluateToolCall ? { evaluate: dependencies.evaluateToolCall } : {},
+	);
 	let startupCheckPromise;
 
 	async function emitEvent(event) {
@@ -807,8 +827,72 @@ export function createMcpGateway(input, dependencies = {}) {
 		return store;
 	}
 
-	async function audit(tenantId, serverId, clientId, decision, reason) {
-		await emitEvent({ tenantId, serverId, clientId, decision, reason, at: now().toISOString() });
+	async function audit(tenantId, serverId, clientId, decision, reason, detail = {}) {
+		await emitEvent({
+			tenantId,
+			serverId,
+			clientId,
+			decision,
+			reason,
+			...detail,
+			at: now().toISOString(),
+		});
+	}
+
+	async function applyServerInitiatedPolicy(server, serverMessages) {
+		let denied = null;
+		for (const category of serverMessages) {
+			const action = config.serverInitiated[category] ?? "deny";
+			if (action === "deny") {
+				denied ??= category;
+				continue;
+			}
+			// Ignored messages are never delivered to the client; record that they
+			// were dropped (category only, never the server's method or params).
+			await emitEvent(
+				makeMcpGatewayCoverageEvent({
+					channel: "upstream_response",
+					surface: "server_initiated_method",
+					status: "ignored",
+					coverageStatus: "limited",
+					reasonCode: "server_initiated_method_ignored",
+					decision: "deny",
+					enforcement: "dropped",
+					at: now().toISOString(),
+					tenantId: server.tenantId,
+					serverId: server.id,
+					clientId: server.requestContext?.clientId,
+					requestMethod: server.requestContext?.requestMethod,
+					serverMethod: category,
+				}),
+			);
+		}
+		if (denied) throw serverInitiatedRefusal(denied);
+	}
+
+	async function emitBinaryInspection(server, binaryItems) {
+		if (binaryItems === 0) return;
+		// Binary payloads pass only after type, size and encoding checks, and only
+		// their printable runs are scanned. Pixel/audio semantics are not
+		// interpreted, so coverage is reported as limited rather than full.
+		await emitEvent(
+			makeMcpGatewayCoverageEvent({
+				channel: "upstream_response",
+				surface: "tool_output",
+				status: "inspected",
+				coverageStatus: "limited",
+				reasonCode: "binary_output_bounded_inspection",
+				decision: "allow",
+				enforcement: "bounded_inspection",
+				at: now().toISOString(),
+				tenantId: server.tenantId,
+				serverId: server.id,
+				clientId: server.requestContext?.clientId,
+				requestMethod: server.requestContext?.requestMethod,
+				outputType: "binary",
+				itemCount: binaryItems,
+			}),
+		);
 	}
 
 	async function emitCoverageForRefusal(refusal, context) {
@@ -828,6 +912,7 @@ export function createMcpGateway(input, dependencies = {}) {
 				clientId: context.clientId,
 				requestMethod: context.requestMethod,
 				outputType: refusal.outputType ?? descriptor.outputType,
+				serverMethod: refusal.serverMethod,
 				refusal: refusalPayload(refusal),
 			}),
 		);
@@ -972,7 +1057,9 @@ export function createMcpGateway(input, dependencies = {}) {
 			return { result: undefined, sessionHeader };
 		}
 		const text = textDecoder.decode(new Uint8Array(await response.arrayBuffer()));
-		return { result: parseUpstreamResponse(text, server.transport, rpc.id), sessionHeader };
+		const { result, serverMessages } = parseUpstreamResponse(text, server.transport, rpc.id);
+		await applyServerInitiatedPolicy(server, serverMessages);
+		return { result, sessionHeader };
 	}
 
 	async function verifiedTools(server, sessionId, signal) {
@@ -1057,7 +1144,12 @@ export function createMcpGateway(input, dependencies = {}) {
 			pruneExpiredSessions();
 			if (!sessionCapacityAvailable(client.tenantId)) throw new Error("invalid_upstream_session");
 		}
-		const { result, sessionHeader } = await forward(server, rpc, undefined, signal);
+		const { result, sessionHeader } = await forward(
+			server,
+			upstreamInitializeRequest(rpc),
+			undefined,
+			signal,
+		);
 		const newSession =
 			typeof sessionHeader === "string" &&
 			SESSION.test(sessionHeader) &&
@@ -1102,7 +1194,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		return { body: rpcResponse(rpc.id, { tools }) };
 	}
 
-	async function callTool(rpc, server, observed, allowed, sessionId, signal) {
+	async function callTool(rpc, client, server, observed, allowed, sessionId, signal) {
 		const tool = observed.find((candidate) => candidate.name === rpc.params?.name);
 		if (
 			!jsonObject(rpc.params) ||
@@ -1122,6 +1214,16 @@ export function createMcpGateway(input, dependencies = {}) {
 		if (tool.output_schema !== undefined && !supportedJsonSchema(tool.output_schema)) {
 			throw new Error("output_schema_mismatch");
 		}
+		// Threat and DLP evaluation of the exact arguments that will be sent,
+		// before any upstream execution. A deny, an ask, or an evaluator failure
+		// blocks the call.
+		await evaluateArguments({
+			server,
+			client,
+			toolName: rpc.params.name,
+			args: structuredClone(rpc.params.arguments ?? {}),
+		});
+		signal.throwIfAborted();
 		const upstream = await forward(
 			server,
 			{
@@ -1133,7 +1235,7 @@ export function createMcpGateway(input, dependencies = {}) {
 			sessionId,
 			signal,
 		);
-		validateToolResult(upstream.result);
+		const { view, binaryItems } = inspectToolResult(upstream.result, config.binaryOutput);
 		if (tool.output_schema !== undefined) {
 			const structured = upstream.result.structuredContent;
 			if (
@@ -1143,7 +1245,8 @@ export function createMcpGateway(input, dependencies = {}) {
 				throw new Error("output_schema_mismatch");
 			}
 		}
-		inspect(upstream.result, scanner, config.maxBodyBytes);
+		inspect(view, scanner, config.maxBodyBytes);
+		await emitBinaryInspection(server, binaryItems);
 		return { body: rpcResponse(rpc.id, upstream.result) };
 	}
 
@@ -1159,7 +1262,28 @@ export function createMcpGateway(input, dependencies = {}) {
 		const allowed = new Set(client.allowedTools[server.id]);
 		return rpc.method === "tools/list"
 			? listTools(rpc, observed, allowed)
-			: callTool(rpc, server, observed, allowed, sessionId, signal);
+			: callTool(rpc, client, server, observed, allowed, sessionId, signal);
+	}
+
+	async function refuse(response, { client, serverId, rpcId, rpcMethod }, cause) {
+		const reason = safeReason(cause);
+		const blocked = cause instanceof McpToolCallBlocked ? cause : null;
+		const refusal = cause instanceof McpGatewayRefusal ? cause : null;
+		await audit(client.tenantId, serverId, client.id, "deny", reason, {
+			...(blocked?.category ? { category: blocked.category } : {}),
+			...(blocked?.threatId ? { threatId: blocked.threatId } : {}),
+		});
+		if (refusal) {
+			await emitCoverageForRefusal(refusal, {
+				tenantId: client.tenantId,
+				serverId,
+				clientId: client.id,
+				requestMethod: rpcMethod,
+			});
+		}
+		const status = reason === "request_too_large" ? 413 : rpcId === null ? 400 : 200;
+		const data = refusal ? refusalPayload(refusal) : blocked ? decisionPayload(blocked) : undefined;
+		send(response, status, error(rpcId, -32001, `AIDR blocked MCP request: ${reason}`, data));
 	}
 
 	async function handleAuthorized(request, response, client, upstream, serverId) {
@@ -1183,34 +1307,14 @@ export function createMcpGateway(input, dependencies = {}) {
 			const requestUpstream = {
 				...upstream,
 				resolvedUpstreamAuth: resolvedUpstreamAuth(upstream),
+				requestContext: { clientId: client.id, requestMethod: rpc.method },
 			};
 			await attest(requestUpstream);
 			const result = await processRpc(rpc, client, requestUpstream, request, controller.signal);
 			await audit(client.tenantId, serverId, client.id, "allow", rpc.method);
 			sendRpcResult(response, result);
 		} catch (cause) {
-			const reason = safeReason(cause);
-			await audit(client.tenantId, serverId, client.id, "deny", reason);
-			const refusal = cause instanceof McpGatewayRefusal ? cause : null;
-			if (refusal) {
-				await emitCoverageForRefusal(refusal, {
-					tenantId: client.tenantId,
-					serverId,
-					clientId: client.id,
-					requestMethod: rpcMethod,
-				});
-			}
-			const status = reason === "request_too_large" ? 413 : rpcId === null ? 400 : 200;
-			send(
-				response,
-				status,
-				error(
-					rpcId,
-					-32001,
-					`AIDR blocked MCP request: ${reason}`,
-					refusal ? refusalPayload(refusal) : undefined,
-				),
-			);
+			await refuse(response, { client, serverId, rpcId, rpcMethod }, cause);
 		} finally {
 			clearTimeout(timeout);
 			inflight.set(client.tenantId, (inflight.get(client.tenantId) ?? 1) - 1);
