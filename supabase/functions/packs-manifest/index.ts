@@ -8,6 +8,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-limits.ts";
 import { sha256 } from "../_shared/runtime-policy.ts";
 import {
 	boundedPackCandidates,
@@ -30,10 +31,15 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AIDR_PACK_DO
 
 const URL_TTL_SECONDS = packUrlTtlSeconds(Deno.env.get("AIDR_PACK_URL_TTL_SECONDS"));
 
-function json(status: number, body: Record<string, unknown>) {
+// Each signed manifest mints up to MAX_PACKS_PER_MANIFEST grants. A connector
+// refreshes it on a schedule, so the per-key budget is far above a compliant
+// client while still bounding grant minting by a leaked or looping key.
+const MANIFEST_RATE_LIMIT = { endpoint: "packs-manifest", perSubject: 60, perTenant: 30_000 } as const;
+
+function json(status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) {
 	return new Response(JSON.stringify(body), {
 		status,
-		headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+		headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
 	});
 }
 
@@ -72,6 +78,12 @@ Deno.serve(async (req) => {
 	if (!auth.ok) return json(auth.status, { error: auth.error });
 	if (!auth.apiKeyId) return json(503, { error: "authorization_unavailable" });
 	const { tenantId } = auth;
+	const rate = await consumeTenantRateLimit(supabase, {
+		tenantId,
+		subject: auth.apiKeyId,
+		...MANIFEST_RATE_LIMIT,
+	});
+	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
 	const keyFingerprint = await packKeyFingerprint(await sha256(apiKey), AIDR_PACK_DOWNLOAD_GRANT_SECRET);
 	const { data: entRow, error: entErr } = await supabase
 		.from("entitlements")

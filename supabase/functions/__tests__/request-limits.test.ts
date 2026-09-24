@@ -205,6 +205,8 @@ describe("resource-limit endpoint wiring", () => {
 		"policy",
 		"policy-ack",
 		"policy-management",
+		"packs-manifest",
+		"packs-download",
 	])("enforces a tenant rate limit in %s", (name) => {
 		const source = readFileSync(join(functionsDir, name, "index.ts"), "utf8");
 		expect(source).toContain('from "../_shared/request-limits.ts"');
