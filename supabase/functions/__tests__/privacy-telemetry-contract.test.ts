@@ -217,7 +217,7 @@ async function ingestHandler(registration: Record<string, unknown>) {
 	});
 	const insertedEvents = vi.fn(async () => ({ error: null }));
 	const rows: Record<string, Record<string, unknown>> = {
-		api_keys: { user_id: USER_ID, tenant_id: TENANT_ID, revoked: false, agent_id: null },
+		api_keys: { user_id: USER_ID, tenant_id: TENANT_ID, revoked: false, agent_id: null, scope: "tenant" },
 		tenant_members: { role: "member", expires_at: null },
 		tenants: { status: "active" },
 		entitlements: {

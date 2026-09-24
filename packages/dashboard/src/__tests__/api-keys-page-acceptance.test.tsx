@@ -5,8 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { supabase } from "../lib/supabase";
 import { ApiKeysPage } from "../ui/pages/ApiKeysPage";
 
+const team = vi.hoisted(() => ({ role: "owner" }));
 vi.mock("../enterprise/team-provider", () => ({
-	useTeam: () => ({ currentTeam: { id: "team-a", name: "Finance" }, currentRole: "owner" }),
+	useTeam: () => ({ currentTeam: { id: "team-a", name: "Finance" }, currentRole: team.role }),
 }));
 vi.mock("../lib/supabase", () => ({ supabase: { functions: { invoke: vi.fn() } } }));
 
@@ -20,7 +21,11 @@ const activeAdmission = {
 	trial_available: false,
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+	vi.clearAllMocks();
+	team.role = "owner";
+	window.history.replaceState({}, "", "/api-keys");
+});
 afterEach(cleanup);
 
 describe("API key customer journey", () => {
@@ -189,5 +194,95 @@ describe("API key customer journey", () => {
 		await screen.findByText("workstation");
 		fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 		await waitFor(() => expect(screen.queryByText("workstation")).not.toBeInTheDocument());
+	});
+});
+
+describe("Browser Guard ingest-only keys", () => {
+	function install(onCreate: (body: Record<string, unknown>) => Record<string, unknown>) {
+		const keys: Array<Record<string, unknown>> = [];
+		invoke.mockImplementation(async (name, options) => {
+			if (name === "pilot-status")
+				return { error: null, data: { ok: true, admission: activeAdmission } };
+			if (name === "api-keys" && options?.method === "POST") {
+				const body = options.body as Record<string, unknown>;
+				const result = onCreate(body);
+				keys.push({
+					id: `key-${keys.length + 1}`,
+					label: body.label,
+					revoked: false,
+					created_at: "2026-09-24T00:00:00Z",
+					scope: body.scope ?? "tenant",
+					install_limit: body.install_limit ?? null,
+				});
+				return { error: null, data: result };
+			}
+			return {
+				error: null,
+				data: name === "api-keys" ? { ok: true, keys: [...keys] } : { ok: true, tokens: [] },
+			};
+		});
+	}
+
+	it("issues an ingest-only key with an installation limit and labels it in the key list", async () => {
+		const secret = ["aidr", "ingest", "sample"].join("_");
+		const bodies: Array<Record<string, unknown>> = [];
+		install((body) => {
+			bodies.push(body);
+			return { ok: true, api_key: secret, scope: body.scope, install_limit: body.install_limit };
+		});
+		render(<ApiKeysPage />);
+		await waitFor(() => expect(screen.getByRole("button", { name: "Generate key" })).toBeEnabled());
+		fireEvent.change(screen.getByLabelText("Key type"), {
+			target: { value: "ingest:browser_guard" },
+		});
+		expect(screen.getByText(/Users of a managed browser can read this key/)).toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText("Installation limit"), { target: { value: "250" } });
+		fireEvent.change(screen.getByPlaceholderText("work-laptop, build-server, etc."), {
+			target: { value: " managed browsers " },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Generate key" }));
+		await screen.findByLabelText("New API key");
+		expect(bodies).toEqual([
+			{
+				action: "create",
+				label: "managed browsers",
+				scope: "ingest:browser_guard",
+				install_limit: 250,
+			},
+		]);
+		expect(
+			screen.getByText(/paste it into the managed policy's telemetry\.apiKey/),
+		).toBeInTheDocument();
+		expect(
+			await screen.findByText("Browser Guard ingest · up to 250 installs"),
+		).toBeInTheDocument();
+	});
+
+	it("preselects the ingest-only type from the Privacy Guard link and validates the limit", async () => {
+		window.history.replaceState({}, "", "/api-keys?type=browser_guard");
+		install(() => ({ ok: true, api_key: "unused" }));
+		render(<ApiKeysPage />);
+		await waitFor(() => expect(screen.getByRole("button", { name: "Generate key" })).toBeEnabled());
+		expect(screen.getByLabelText("Key type")).toHaveValue("ingest:browser_guard");
+		for (const value of ["0", "100001", "2.5", "", "ten"]) {
+			fireEvent.change(screen.getByLabelText("Installation limit"), { target: { value } });
+			expect(screen.getByRole("button", { name: "Generate key" })).toBeDisabled();
+		}
+		fireEvent.change(screen.getByLabelText("Installation limit"), { target: { value: "100000" } });
+		expect(screen.getByRole("button", { name: "Generate key" })).toBeEnabled();
+	});
+
+	it("lets a member create tenant keys but not ingest-only keys", async () => {
+		team.role = "member";
+		install(() => ({ ok: true, api_key: "unused" }));
+		render(<ApiKeysPage />);
+		await waitFor(() => expect(screen.getByRole("button", { name: "Generate key" })).toBeEnabled());
+		fireEvent.change(screen.getByLabelText("Key type"), {
+			target: { value: "ingest:browser_guard" },
+		});
+		expect(screen.getByRole("button", { name: "Generate key" })).toBeDisabled();
+		expect(
+			screen.getByText("Ask a workspace owner or admin to create this key."),
+		).toBeInTheDocument();
 	});
 });

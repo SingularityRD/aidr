@@ -53,7 +53,13 @@ the mode.
 ### 4. Connect the control plane (optional)
 
 Set `telemetry` to `{ "controlPlaneUrl": "https://<your control plane>",
-"apiKey": "<tenant API key>" }`. The extension then posts batches of
+"apiKey": "<Browser Guard ingest-only key>" }`. Create the key on the dashboard's
+API Keys page as a **Browser Guard ingest-only key** (owners and admins) with an
+installation limit that fits your fleet. Managed policy is readable by anyone
+using the browser profile (`chrome://policy`), so do not deploy a tenant key
+there: an ingest-only key can only report `privacy_scan` counts from the
+`browser_guard` runtime, for at most its installation limit, and every other
+API endpoint refuses it. The extension then posts batches of
 `privacy_scan` events to `<controlPlaneUrl>/functions/v1/ingest` about once a
 minute. Each event holds only the site id, what the guard did (masked, blocked,
 warned, allowed), the channel (prompt, paste, file), counts per entity type and

@@ -39,7 +39,7 @@ function database(options: {
 	} = {}) {
 	const rows: Record<string, unknown> = {
 		api_keys: options.key === undefined
-			? [{ id: "33333333-3333-4333-8333-333333333333", key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: false }]
+			? [{ id: "33333333-3333-4333-8333-333333333333", key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: false, scope: "tenant" }]
 			: options.key ? [options.key] : [],
 		tenant_members: options.membership === undefined
 			? [{ user_id: "user-1", tenant_id: TENANT, role: "member", expires_at: null }]

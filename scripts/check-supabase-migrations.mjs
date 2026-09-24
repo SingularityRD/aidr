@@ -5,6 +5,7 @@ import {
 	forbiddenMigrationControls,
 	MIGRATION_FILENAME_PATTERN,
 } from "./lib/migration-contract.mjs";
+import { analyzeIdentityBarrier } from "./lib/tenant-identity-barrier.mjs";
 
 const root = process.cwd();
 const migrationsDir = path.join(root, "supabase", "migrations");
@@ -128,6 +129,18 @@ if (teamCreateIdempotency) {
 	}
 } else {
 	errors.push("20260924000010_idempotent_team_creation.sql: missing durable team-create idempotency migration");
+}
+
+// Every RLS tenant table must end up with the restrictive identity barrier
+// (public.tenant_identity_access_allowed). See scripts/lib/tenant-identity-barrier.mjs.
+const identityBarrier = analyzeIdentityBarrier(parsed.map(({ name }) => ({ name, sql: contents.get(name) })));
+for (const { table, createdIn } of identityBarrier.missing) {
+	errors.push(
+		`public.${table} (created ${createdIn}): RLS tenant table lacks the restrictive tenant_identity_access_restrict policy`,
+	);
+}
+for (const table of identityBarrier.staleExceptions) {
+	errors.push(`IDENTITY_BARRIER_EXCEPTIONS.${table} is no longer needed; remove it`);
 }
 
 if (errors.length) {

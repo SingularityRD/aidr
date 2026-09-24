@@ -258,6 +258,7 @@ describe("bounded rotation window", () => {
 		tenant_id: "tenant-1",
 		agent_id: "agent-1",
 		revoked: false,
+		scope: "tenant",
 		previous_hash: retiredHash,
 		previous_hash_expires_at: retiredExpiry,
 	};
@@ -270,6 +271,8 @@ describe("bounded rotation window", () => {
 			userId: "user-1",
 			tenantId: "tenant-1",
 			agentId: "agent-1",
+			scope: "tenant",
+			installLimit: null,
 		});
 		// The window closes exactly at its recorded deadline.
 		await expect(

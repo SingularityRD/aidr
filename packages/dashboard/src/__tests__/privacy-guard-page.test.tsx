@@ -226,7 +226,7 @@ describe("Browser Privacy Guard page", () => {
 		expect(await screen.findByRole("alert")).toHaveTextContent("Malformed privacy summary.");
 	});
 
-	it("gives administrators an enrollment path with an API key link and managed policy JSON", async () => {
+	it("gives administrators an enrollment path with an ingest-only key link and managed policy JSON", async () => {
 		install();
 		const writeText = vi.fn(async (_text: string) => undefined);
 		Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
@@ -235,8 +235,10 @@ describe("Browser Privacy Guard page", () => {
 		const panel = screen.getByRole("region", { name: "Enroll browsers" });
 		expect(within(panel).getByRole("link", { name: "API Keys" })).toHaveAttribute(
 			"href",
-			"/api-keys",
+			"/api-keys?type=browser_guard",
 		);
+		expect(within(panel).getByText(/Create a Browser Guard ingest-only key/)).toBeInTheDocument();
+		expect(within(panel).getByText(/do not deploy a tenant key here/)).toBeInTheDocument();
 		const policy = JSON.parse(
 			within(panel).getByLabelText("Managed policy JSON").textContent ?? "",
 		);
@@ -246,7 +248,7 @@ describe("Browser Privacy Guard page", () => {
 			literals: [],
 			telemetry: {
 				controlPlaneUrl: "https://tenant-project.supabase.co",
-				apiKey: "<paste a tenant API key created on the API Keys page>",
+				apiKey: "<paste a Browser Guard ingest-only key created on the API Keys page>",
 			},
 		});
 

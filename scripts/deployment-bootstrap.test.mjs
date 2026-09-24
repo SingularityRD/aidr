@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { createServer } from "node:http";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -471,7 +471,7 @@ test("bootstrap derives seats, expiry and reference from a vendor-signed license
 	const { license, licensePath, keysPath } = await writeLicense(fresh.directory);
 	const result = await runScript(
 		fresh.directory,
-		["--email", PREVIOUS_OWNER_EMAIL, "--license-file", licensePath, "--license-public-keys", keysPath],
+		["--email", PREVIOUS_OWNER_EMAIL, "--license-file", licensePath, "--license-public-keys", keysPath, "--allow-custom-license-keys"],
 		"test-only-password-16\n",
 	);
 	assert.equal(result.status, 0, result.stderr);
@@ -490,7 +490,39 @@ test("bootstrap derives seats, expiry and reference from a vendor-signed license
 	assert.equal(receipt.license.deployment, "airgap");
 	assert.equal(receipt.license.trust_root, "override");
 	assert.match(receipt.license.document_sha256, /^[0-9a-f]{64}$/);
+	assert.equal(receipt.license.key_status, "active");
+	assert.equal(receipt.license.public_keys_path, keysPath);
+	assert.equal(
+		receipt.license.public_keys_sha256,
+		createHash("sha256").update(await readFile(keysPath)).digest("hex"),
+	);
+	assert.match(receipt.license.trust_root_warning, /custom registry .*--allow-custom-license-keys/);
 	assert.match(result.stderr, /not the shipped deploy\/onprem\/license-public-keys\.json/);
+});
+
+test("a custom license trust root needs --allow-custom-license-keys and is refused before any API call", async () => {
+	const fresh = await fixture({ receipt: false });
+	const { licensePath, keysPath } = await writeLicense(fresh.directory);
+	const refused = await runScript(
+		fresh.directory,
+		["--email", PREVIOUS_OWNER_EMAIL, "--license-file", licensePath, "--license-public-keys", keysPath],
+		"test-only-password-16\n",
+	);
+	assert.notEqual(refused.status, 0);
+	assert.match(refused.stderr, /replaces the vendor-published license trust root.*--allow-custom-license-keys/);
+	assert.deepEqual(fresh.state.calls, []);
+	assert.equal(existsSync(path.join(fresh.directory, "bootstrap-receipt.json")), false);
+
+	for (const args of [
+		["--email", PREVIOUS_OWNER_EMAIL, "--license-file", licensePath, "--allow-custom-license-keys"],
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2099-01-01T00:00:00.000Z", "--license-reference", "PILOT-1", "--unsigned-license-for-pilot", "--allow-custom-license-keys"],
+	]) {
+		const other = await fixture({ receipt: false });
+		const result = await runScript(other.directory, args, "test-only-password-16\n");
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /--allow-custom-license-keys only appl/);
+		assert.deepEqual(other.state.calls, []);
+	}
 });
 
 test("signed-license bootstrap refuses typed overrides, bad licenses and the empty shipped registry before any API call", async () => {
@@ -500,14 +532,14 @@ test("signed-license bootstrap refuses typed overrides, bad licenses and the emp
 		{ label: "tampered", mutate: (license) => ({ ...license, payload: { ...license.payload, seats: 5000 } }), expect: /License verification failed: .*does not verify/ },
 		{ label: "wrong key", privateKey: generateKeyPairSync("ed25519").privateKey, expect: /does not verify/ },
 		{ label: "expired", overrides: { issued_at: "2024-01-01T00:00:00Z", not_before: "2024-01-01T00:00:00Z", expires_at: "2025-01-01T00:00:00Z" }, expect: /grace period ended/ },
-		{ label: "not yet valid", overrides: { not_before: "2099-01-01T00:00:00Z", expires_at: "2099-06-01T00:00:00Z" }, expect: /is not valid before 2099/ },
+		{ label: "not yet valid", overrides: { issued_at: "2099-01-01T00:00:00Z", not_before: "2099-01-01T00:00:00Z", expires_at: "2099-06-01T00:00:00Z" }, expect: /is not valid before 2099/ },
 		{ label: "shipped registry", shipped: true, expect: /no license public keys are configured/ },
 	];
 	for (const item of cases) {
 		const fresh = await fixture({ receipt: false });
 		const written = await writeLicense(fresh.directory, item.overrides, item.privateKey);
 		if (item.mutate) await writeFile(written.licensePath, JSON.stringify(item.mutate(written.license)));
-		const args = ["--email", PREVIOUS_OWNER_EMAIL, "--license-file", written.licensePath, ...(item.shipped ? [] : ["--license-public-keys", written.keysPath]), ...(item.extra ?? [])];
+		const args = ["--email", PREVIOUS_OWNER_EMAIL, "--license-file", written.licensePath, ...(item.shipped ? [] : ["--license-public-keys", written.keysPath, "--allow-custom-license-keys"]), ...(item.extra ?? [])];
 		const result = await runScript(fresh.directory, args, "test-only-password-16\n");
 		assert.notEqual(result.status, 0, `${item.label} must be refused`);
 		assert.match(result.stderr, item.expect, item.label);
@@ -520,7 +552,7 @@ test("a license in its grace period still bootstraps, with a warning, until the 
 	const fresh = await fixture({ receipt: false });
 	const expiredYesterday = isoSeconds(Date.now() - 86_400_000);
 	const { licensePath, keysPath } = await writeLicense(fresh.directory, { issued_at: "2025-01-01T00:00:00Z", not_before: "2025-01-01T00:00:00Z", expires_at: expiredYesterday });
-	const result = await runScript(fresh.directory, ["--email", PREVIOUS_OWNER_EMAIL, "--license-file", licensePath, "--license-public-keys", keysPath], "test-only-password-16\n");
+	const result = await runScript(fresh.directory, ["--email", PREVIOUS_OWNER_EMAIL, "--license-file", licensePath, "--license-public-keys", keysPath, "--allow-custom-license-keys"], "test-only-password-16\n");
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stderr, /managed features stop at .*Local detection is not affected/);
 	assert.equal(fresh.state.bootstrap.p_license_expires_at, new Date(Date.parse(expiredYesterday) + 14 * 86_400_000).toISOString());

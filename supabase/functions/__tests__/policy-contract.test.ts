@@ -44,7 +44,7 @@ function database(options: Options = {}) {
 			maybeSingle: async () => {
 				queries.push({ table, filters: { ...filters } });
 				switch (table) {
-					case "api_keys": return { data: options.keyRevoked ? { user_id: USER, tenant_id: TENANT, agent_id: AGENT, revoked: true } : { user_id: USER, tenant_id: TENANT, agent_id: options.agentId === undefined ? AGENT : options.agentId, revoked: false }, error: null };
+					case "api_keys": return { data: options.keyRevoked ? { user_id: USER, tenant_id: TENANT, agent_id: AGENT, revoked: true, scope: "tenant" } : { user_id: USER, tenant_id: TENANT, agent_id: options.agentId === undefined ? AGENT : options.agentId, revoked: false, scope: "tenant" }, error: null };
 					case "tenant_members": return { data: { role: "member", expires_at: null }, error: null };
 					case "tenants": return { data: { status: options.tenantStatus ?? "active" }, error: null };
 					case "agent_policy_assignments": return { data: options.assignment === null ? null : { version: options.assignment ?? 4 }, error: options.assignmentError ? new Error("db_down") : null };

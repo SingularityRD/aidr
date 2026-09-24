@@ -16,6 +16,21 @@
  * how signing keys are rotated. An empty registry, an unknown or revoked key, a
  * malformed document or a bad signature is refused: verification fails closed.
  *
+ * Clock semantics: every time comparison uses the verifier's clock (`now`, the
+ * host clock or `--now`), never a time the signer chose. `issued_at` is chosen
+ * by whoever holds a signing key, so it only proves anything while that key is
+ * uncompromised. A `retired` key therefore carries a `retired_at` and verifies a
+ * license only while (a) the license claims `issued_at <= retired_at` and (b) the
+ * verifier's clock is before `retired_at` plus the longest possible license life
+ * (MAX_LICENSE_TERM_DAYS + MAX_GRACE_DAYS). Because every license is also capped
+ * at MAX_LICENSE_TERM_DAYS from its `issued_at`, a leaked retired key cannot mint
+ * a license that outlives that bound by back-dating `issued_at`.
+ *
+ * Enforcement is operator-side: the operator controls the host, its clock, the
+ * registry file and the database, and the database does not re-verify the
+ * signature. See docs/operations/licensing.md ("What the license can and cannot
+ * enforce").
+ *
  * Expiry is a managed-feature boundary, never a detection boundary. After
  * `expires_at` a license enters `grace` for `grace_days`; after that it is
  * `expired`, which degrades managed control-plane features (seat admission,
@@ -55,6 +70,10 @@ const PAYLOAD_KEYS = [
 ];
 export const DEPLOYMENTS = ["onprem", "airgap"];
 export const MAX_GRACE_DAYS = 90;
+/** Longest term (issued_at .. expires_at) any license may carry: five years. */
+export const MAX_LICENSE_TERM_DAYS = 1830;
+/** How long after `retired_at` a retired key can still verify anything. */
+export const RETIRED_KEY_ACCEPTANCE_DAYS = MAX_LICENSE_TERM_DAYS + MAX_GRACE_DAYS;
 
 export class LicenseError extends Error {
 	constructor(code, message) {
@@ -145,12 +164,16 @@ export function validateLicensePayload(payload) {
 	const expiresAt = timestamp(payload.expires_at, "expires_at");
 	if (expiresAt <= notBefore) throw new LicenseError("invalid_payload", "expires_at must be after not_before");
 	if (expiresAt <= issuedAt) throw new LicenseError("invalid_payload", "expires_at must be after issued_at");
+	if (expiresAt - issuedAt > MAX_LICENSE_TERM_DAYS * DAY_MS) {
+		throw new LicenseError("invalid_payload", `expires_at must be at most ${MAX_LICENSE_TERM_DAYS} days after issued_at`);
+	}
 	return { issuedAt, notBefore, expiresAt };
 }
 
 /**
  * Parse and structurally validate a public-key registry. Entries are
- * `{ key_id, algorithm: "ed25519", public_key_pem, not_before, not_after|null, status }`.
+ * `{ key_id, algorithm: "ed25519", public_key_pem, not_before, not_after|null, status }`,
+ * plus `retired_at` (required for, and only allowed on, a `retired` key).
  * An empty `keys` array is a valid file but verifies nothing (fail closed).
  */
 export function parsePublicKeyRegistry(registry) {
@@ -182,7 +205,16 @@ export function parsePublicKeyRegistry(registry) {
 		if (notAfter !== null && notAfter <= notBefore) {
 			throw new LicenseError("invalid_public_keys", `license public key ${entry.key_id} not_after must be after not_before`);
 		}
-		keys.set(entry.key_id, { keyId: entry.key_id, publicKey, status: entry.status, notBefore, notAfter });
+		let retiredAt = null;
+		if (entry.status === "retired") {
+			retiredAt = timestamp(entry.retired_at, `${entry.key_id}.retired_at`);
+			if (retiredAt < notBefore || (notAfter !== null && retiredAt > notAfter)) {
+				throw new LicenseError("invalid_public_keys", `license public key ${entry.key_id} retired_at must fall within its not_before..not_after window`);
+			}
+		} else if (entry.retired_at !== undefined && entry.retired_at !== null) {
+			throw new LicenseError("invalid_public_keys", `license public key ${entry.key_id} has retired_at but status ${entry.status}`);
+		}
+		keys.set(entry.key_id, { keyId: entry.key_id, publicKey, status: entry.status, notBefore, notAfter, retiredAt });
 	}
 	return keys;
 }
@@ -272,6 +304,19 @@ export function verifyLicense(document, { publicKeys, now = Date.now() } = {}) {
 	if (issuedAt < key.notBefore || (key.notAfter !== null && issuedAt > key.notAfter)) {
 		throw new LicenseError("key_window", `license issued_at is outside the validity window of signing key ${document.key_id}`);
 	}
+	if (key.status === "retired") {
+		// issued_at is signer-chosen; retirement bounds it, and the verifier's own
+		// clock bounds how long anything signed by the retired key is honoured.
+		if (issuedAt > key.retiredAt) {
+			throw new LicenseError("key_window", `license claims issuance after signing key ${document.key_id} was retired`);
+		}
+		if (now >= key.retiredAt + RETIRED_KEY_ACCEPTANCE_DAYS * DAY_MS) {
+			throw new LicenseError(
+				"retired_key_expired",
+				`signing key ${document.key_id} was retired at ${new Date(key.retiredAt).toISOString()}; it verifies nothing after ${new Date(key.retiredAt + RETIRED_KEY_ACCEPTANCE_DAYS * DAY_MS).toISOString()}`,
+			);
+		}
+	}
 
 	const graceEndsAt = expiresAt + document.payload.grace_days * DAY_MS;
 	let status;
@@ -284,6 +329,7 @@ export function verifyLicense(document, { publicKeys, now = Date.now() } = {}) {
 		payload: document.payload,
 		key_id: document.key_id,
 		key_status: key.status,
+		...(key.retiredAt === null ? {} : { key_retired_at: new Date(key.retiredAt).toISOString() }),
 		grace_ends_at: new Date(graceEndsAt).toISOString(),
 		managed_features: status === "valid" || status === "grace" ? "enabled" : "degraded",
 		local_detection: "enforced",
@@ -345,6 +391,7 @@ if (invoked) {
 			days_remaining: result.days_remaining,
 			key_id: result.key_id,
 			key_status: result.key_status,
+			...(result.key_retired_at ? { key_retired_at: result.key_retired_at } : {}),
 			managed_features: result.managed_features,
 			local_detection: result.local_detection,
 			document_sha256: result.document_sha256,

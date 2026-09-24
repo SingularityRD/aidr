@@ -4,7 +4,7 @@ export const MIGRATION_FILENAME_PATTERN =/^\d{14}_[a-z0-9][a-z0-9_]*\.sql$/;
 
 const lineNumberAt = (text, offset) => 1 + text.slice(0, offset).split("\n").length - 1;
 
-function maskNonExecutableSql(sql) {
+export function maskNonExecutableSql(sql) {
 	const masked = sql.split("");
 	let state = "normal";
 	let blockDepth = 0;

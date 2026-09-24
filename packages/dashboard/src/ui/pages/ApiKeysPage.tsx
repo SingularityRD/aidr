@@ -9,7 +9,62 @@ type ApiKeyRow = {
 	label: string | null;
 	revoked: boolean;
 	created_at: string;
+	scope?: string | null;
+	install_limit?: number | null;
 };
+
+/**
+ * Key types issued by /v1/api-keys. A Browser Guard key can only report
+ * counts-only privacy scans for up to `install_limit` browser installations;
+ * it is the key to put in browser management policy, which users can read.
+ */
+const BROWSER_GUARD_KEY_SCOPE = "ingest:browser_guard";
+const DEFAULT_INSTALL_LIMIT = 100;
+const MAX_INSTALL_LIMIT = 100_000;
+type KeyType = "tenant" | typeof BROWSER_GUARD_KEY_SCOPE;
+
+/** `/api-keys?type=browser_guard` preselects the Browser Guard key type. */
+function requestedKeyType(): KeyType {
+	try {
+		return new URLSearchParams(window.location.search).get("type") === "browser_guard"
+			? BROWSER_GUARD_KEY_SCOPE
+			: "tenant";
+	} catch {
+		return "tenant";
+	}
+}
+
+function parseInstallLimit(value: string): number | null {
+	if (!/^\d{1,6}$/.test(value.trim())) return null;
+	const limit = Number(value.trim());
+	return limit >= 1 && limit <= MAX_INSTALL_LIMIT ? limit : null;
+}
+
+function createKeyBody(
+	keyType: KeyType,
+	label: string,
+	installLimit: number | null,
+): Record<string, unknown> {
+	const body = { action: "create", label: label || null };
+	return keyType === BROWSER_GUARD_KEY_SCOPE
+		? { ...body, scope: BROWSER_GUARD_KEY_SCOPE, install_limit: installLimit }
+		: body;
+}
+
+const CREATED_KEY_NOTICE: Record<KeyType, string | null> = {
+	tenant: null,
+	[BROWSER_GUARD_KEY_SCOPE]:
+		"Copy this Browser Guard key now (shown once) and paste it into the managed policy's telemetry.apiKey.",
+};
+
+function keyTypeLabel(key: ApiKeyRow): string {
+	if (key.scope === BROWSER_GUARD_KEY_SCOPE) {
+		return typeof key.install_limit === "number"
+			? `Browser Guard ingest · up to ${key.install_limit.toLocaleString()} installs`
+			: "Browser Guard ingest";
+	}
+	return "Tenant";
+}
 
 type EnrollmentTokenRow = {
 	id: string;
@@ -37,6 +92,7 @@ export function ApiKeysPage() {
 			tenantId={currentTeam.id}
 			teamName={currentTeam.name}
 			canWrite={currentRole !== null && ["owner", "admin", "member"].includes(currentRole)}
+			canIssueIngestKey={currentRole === "owner" || currentRole === "admin"}
 		/>
 	);
 }
@@ -45,15 +101,19 @@ function TenantApiKeys({
 	tenantId,
 	teamName,
 	canWrite,
+	canIssueIngestKey,
 }: {
 	tenantId: string;
 	teamName: string;
 	canWrite: boolean;
+	canIssueIngestKey: boolean;
 }) {
 	const [admission, setAdmission] = useState<TenantAdmission | null>(null);
 	const [accessStatus, setAccessStatus] = useState<string>("loading");
 	const [keys, setKeys] = useState<ApiKeyRow[]>([]);
 	const [label, setLabel] = useState("");
+	const [keyType, setKeyType] = useState<KeyType>(requestedKeyType);
+	const [installLimitInput, setInstallLimitInput] = useState(String(DEFAULT_INSTALL_LIMIT));
 	const [createdKey, setCreatedKey] = useState<string | null>(null);
 	const [createdKeyNotice, setCreatedKeyNotice] = useState<string | null>(null);
 	const [showCreatedKey, setShowCreatedKey] = useState(false);
@@ -69,6 +129,9 @@ function TenantApiKeys({
 	const [busy, setBusy] = useState(false);
 
 	const trimmedLabel = useMemo(() => label.trim(), [label]);
+	const browserKey = keyType === BROWSER_GUARD_KEY_SCOPE;
+	const installLimit = useMemo(() => parseInstallLimit(installLimitInput), [installLimitInput]);
+	const createAllowed = browserKey ? canIssueIngestKey && installLimit !== null : canWrite;
 	const trimmedEnrollLabel = useMemo(() => enrollLabel.trim(), [enrollLabel]);
 
 	const load = useCallback(async () => {
@@ -195,6 +258,26 @@ function TenantApiKeys({
 				)}
 
 				<label className="label">
+					Key type
+					<select
+						className="input"
+						value={keyType}
+						onChange={(e) => setKeyType(e.target.value as KeyType)}
+					>
+						<option value="tenant">Tenant key (CLI, IDE and agent connectors)</option>
+						<option value={BROWSER_GUARD_KEY_SCOPE}>Browser Guard ingest-only key</option>
+					</select>
+				</label>
+				{browserKey ? (
+					<IngestKeyOptions
+						value={installLimitInput}
+						valid={installLimit !== null}
+						canIssue={canIssueIngestKey}
+						onChange={setInstallLimitInput}
+					/>
+				) : null}
+
+				<label className="label">
 					Label (optional)
 					<input
 						className="input"
@@ -208,7 +291,7 @@ function TenantApiKeys({
 					<button
 						className="button"
 						type="button"
-						disabled={busy || !approved || !canWrite || createdKey !== null}
+						disabled={busy || !approved || !createAllowed || createdKey !== null}
 						onClick={async () => {
 							setBusy(true);
 							setError(null);
@@ -220,7 +303,7 @@ function TenantApiKeys({
 								const res = await supabase.functions.invoke("api-keys", {
 									method: "POST",
 									headers: { "X-AIDR-Tenant-ID": tenantId },
-									body: { action: "create", label: trimmedLabel || null },
+									body: createKeyBody(keyType, trimmedLabel, installLimit),
 								});
 								if (res.error || res.data?.ok !== true) {
 									setError(readErrorMessage(res.error, "API key creation was not confirmed."));
@@ -232,6 +315,7 @@ function TenantApiKeys({
 									return;
 								}
 								setCreatedKey(data.api_key);
+								setCreatedKeyNotice(CREATED_KEY_NOTICE[keyType]);
 								setLabel("");
 								await load();
 							} catch (cause) {
@@ -436,6 +520,7 @@ function TenantApiKeys({
 						<thead>
 							<tr>
 								<th>Label</th>
+								<th>Type</th>
 								<th>Created</th>
 								<th>Status</th>
 								<th className="right">
@@ -447,6 +532,7 @@ function TenantApiKeys({
 							{keys.map((k) => (
 								<tr key={k.id}>
 									<td>{k.label ?? <span className="muted">(no label)</span>}</td>
+									<td className="small">{keyTypeLabel(k)}</td>
 									<td className="mono">{new Date(k.created_at).toLocaleString()}</td>
 									<td>
 										<span className={k.revoked ? "badge badge-error" : "badge badge-success"}>
@@ -495,7 +581,7 @@ function TenantApiKeys({
 							))}
 							{keys.length === 0 ? (
 								<tr>
-									<td colSpan={4} className="muted">
+									<td colSpan={5} className="muted">
 										No keys yet.
 									</td>
 								</tr>
@@ -586,6 +672,51 @@ function TenantApiKeys({
 					</table>
 				</div>
 			</div>
+		</div>
+	);
+}
+
+/** Options shown for an ingest-only Browser Guard key. */
+function IngestKeyOptions({
+	value,
+	valid,
+	canIssue,
+	onChange,
+}: {
+	value: string;
+	valid: boolean;
+	canIssue: boolean;
+	onChange: (value: string) => void;
+}) {
+	return (
+		<div className="notice">
+			<div className="muted small">
+				For Browser Guard managed policy. Users of a managed browser can read this key, so it can
+				only report counts-only privacy scans from Browser Guard, for at most the number of browser
+				installations below. It cannot read policy, packs or reputation data. Only owners and admins
+				can create one.
+			</div>
+			<label className="label" style={{ marginTop: 8 }}>
+				Installation limit
+				<input
+					className="input"
+					inputMode="numeric"
+					value={value}
+					onChange={(e) => onChange(e.target.value)}
+					aria-invalid={!valid}
+					style={{ maxWidth: 160 }}
+				/>
+			</label>
+			{valid ? null : (
+				<div className="muted small" role="status">
+					Enter a whole number from 1 to {MAX_INSTALL_LIMIT.toLocaleString()}.
+				</div>
+			)}
+			{canIssue ? null : (
+				<div className="muted small" role="status">
+					Ask a workspace owner or admin to create this key.
+				</div>
+			)}
 		</div>
 	);
 }

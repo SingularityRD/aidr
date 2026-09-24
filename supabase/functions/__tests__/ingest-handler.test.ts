@@ -34,7 +34,7 @@ async function ingest(
 	}));
 	const insertedSnapshot = vi.fn(async () => ({ error: null }));
 	const rows: Record<string, Record<string, unknown>> = {
-		api_keys: { user_id: USER_ID, tenant_id: TENANT_ID, revoked: false, agent_id: null },
+		api_keys: { user_id: USER_ID, tenant_id: TENANT_ID, revoked: false, agent_id: null, scope: "tenant" },
 		tenant_members: { role: "member", expires_at: null },
 		tenants: { status: "active" },
 		entitlements: { included_agents: 1, extra_agents: 0, premium_intel: false, premium_correlation: false, premium_pkg_plugin: false, revocation_epoch: 1 },

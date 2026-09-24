@@ -121,7 +121,7 @@ type RevocationsDatabase = {
 		Tables: {
 			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
 			tenants: ReadTable<{ id: string; status: string }>;
-			api_keys: ReadTable<{ tenant_id: string; user_id: string; agent_id: string | null; revoked: boolean; key_hash: string }>;
+			api_keys: ReadTable<{ tenant_id: string; user_id: string; agent_id: string | null; revoked: boolean; key_hash: string; scope: string }>;
 			agents: ReadTable<{ id: string; tenant_id: string; iid: string }>;
 			fleet_response_commands: ReadTable<FleetCommandRow>;
 			revocations: ReadTable<{ id: string; kind: string; value: string; tenant_id: string | null }>;
@@ -201,9 +201,11 @@ async function agentContext(db: DatabaseClient, req: Request): Promise<AgentCont
 	if (!token) return corsJson(req, 401, { error: "missing_api_key" });
 	const keyHash = await sha256Hex(token);
 	const { data: key, error: keyError } = await db.from("api_keys")
-		.select("tenant_id,user_id,agent_id,revoked").eq("key_hash", keyHash).maybeSingle();
+		.select("tenant_id,user_id,agent_id,revoked,scope").eq("key_hash", keyHash).maybeSingle();
 	if (keyError) return corsJson(req, 503, { error: "authorization_unavailable" });
 	if (!key || key.revoked) return corsJson(req, 401, { error: "invalid_api_key" });
+	// Fleet commands need a full, agent-bound tenant key; an ingest-only key never qualifies.
+	if (key.scope !== "tenant") return corsJson(req, 403, { error: "api_key_scope_denied" });
 	if (!isUuid(key.tenant_id) || !isUuid(key.agent_id)) {
 		return corsJson(req, 403, { error: "agent_bound_key_required" });
 	}
@@ -448,12 +450,13 @@ Deno.serve(async (req) => {
 	const keyHash = await sha256Hex(apiKey);
 	const { data: keyRow, error: keyErr } = await supabase
 		.from("api_keys")
-		.select("user_id, tenant_id, revoked")
+		.select("user_id, tenant_id, revoked, scope")
 		.eq("key_hash", keyHash)
 		.maybeSingle();
 	if (keyErr || !keyRow || keyRow.revoked) {
 		return json(401, { error: "invalid_api_key" });
 	}
+	if (keyRow.scope !== "tenant") return json(403, { error: "api_key_scope_denied" });
 	const tenantId = typeof keyRow.tenant_id === "string" ? keyRow.tenant_id : "";
 	const userId = typeof keyRow.user_id === "string" ? keyRow.user_id : "";
 	if (!isUuid(tenantId) || !isUuid(userId)) return json(403, { error: "agent_access_denied" });

@@ -242,7 +242,8 @@ export function privacyEventSummary(payload: Record<string, unknown> | null | un
 
 /**
  * Managed-policy template for Browser Guard. The API key is never known to the
- * dashboard (keys are stored hash-only), so the administrator pastes one.
+ * dashboard (keys are stored hash-only), so the administrator pastes one. It
+ * should be an `ingest:browser_guard` key: managed policy is user-readable.
  */
 export function managedPolicySnippet(options: {
 	controlPlaneUrl: string | null;
@@ -255,7 +256,7 @@ export function managedPolicySnippet(options: {
 			literals: [],
 			telemetry: {
 				controlPlaneUrl: options.controlPlaneUrl ?? "https://<your-project>.supabase.co",
-				apiKey: "<paste a tenant API key created on the API Keys page>",
+				apiKey: "<paste a Browser Guard ingest-only key created on the API Keys page>",
 			},
 		},
 		null,
