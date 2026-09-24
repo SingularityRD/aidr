@@ -162,6 +162,37 @@ hostname, and the tests for this unit inject a command runner with fixture chain
 files, so no real ACME challenge, domain, certificate authority or certificate
 was exercised in this repository.
 
+## On-prem ingress with customer-supplied certificates
+
+`nginx.onprem.reference.conf` is the reference for on-prem and air-gapped hosts:
+one vhost for the dashboard (`127.0.0.1:8080`) and one for the API gateway
+(`127.0.0.1:8000`, including the device-start signer route above), HSTS,
+`nosniff`, `Referrer-Policy` and related headers on both, TLS 1.2/1.3 only, no
+public `/metrics`, and a default server that drops unknown hostnames
+(`ssl_reject_handshake`, nginx 1.19.4 or newer). Certificates come from the
+customer's CA and are read from `/etc/aidr/tls/live/<host>/{fullchain,privkey}.pem`.
+
+Install or rotate a certificate with the static mode of the same script:
+
+```sh
+sudo node /srv/aidr/ingress/deployment-tls-renew.mjs --mode static \
+  --hostname api.aidr.customer.example \
+  --cert-file /secure-delivery/api-fullchain.pem --key-file /secure-delivery/api-key.pem \
+  [--tls-dir /etc/aidr/tls] [--min-days 14] [--receipt /var/lib/aidr/tls-renewal-receipt.json]
+```
+
+Before anything is written it requires a leaf plus its issuer, a leaf that
+covers the hostname and is currently valid with at least `--min-days` remaining,
+and a private key that belongs to the leaf and is owner-only (mode 0600). It then
+installs both files atomically (key 0600), runs `nginx -t` and reloads nginx; a
+failed test or reload restores the previously installed pair. An identical pair
+is recorded as `unchanged` without a reload. Every attempt writes the same kind
+of receipt as ACME mode with `mode: "static"` and `key_matches_certificate`.
+Static mode does not renew anything: schedule the replacement before
+`certificate_expires_at`, and confirm from a client that trusts the customer CA.
+The contract tests (`node --test scripts/deployment-tls-renew.test.mjs`) mint
+throwaway Ed25519 chains in memory; they do not run a real nginx.
+
 Run the local contract tests with:
 
 ```

@@ -82,6 +82,16 @@ onboarding before inviting customers. Signup is disabled in the generated
 self-hosted baseline. Team invitations create manually shared, expiring links;
 the application does not claim to send invitation emails.
 
+The first account is provisioned with the vendor-signed license:
+`node scripts/deployment-bootstrap.mjs --deployment /srv/aidr --email
+owner@customer.example --license-file /secure-delivery/aidr-license.json`
+(password on stdin). Seats, admission end and contract reference come from the
+signed license, which is verified against `deploy/onprem/license-public-keys.json`
+before any API call; the shipped registry is empty and refuses every license
+until the vendor-published registry is installed. Typed terms are accepted only
+with `--unsigned-license-for-pilot`. After expiry and grace, managed features
+degrade while local detection keeps enforcing. See [licensing](../docs/operations/licensing.md).
+
 ## Isolated installation rehearsal
 
 Use an empty destination and keep the stack isolated from customer data:
@@ -192,6 +202,15 @@ installed or enabled, and the doctor only asserts that both unit files are
 present. Enable the timer on the TLS host with the private environment file
 described in `deploy/ingress/README.md` so certificate renewal does not depend on
 an operator remembering it.
+
+On-prem and air-gapped hosts that cannot reach an ACME CA use customer-supplied
+certificates. `deploy/ingress/nginx.onprem.reference.conf` is the reference
+ingress with separate dashboard and API vhosts, HSTS and security headers, and
+`node scripts/deployment-tls-renew.mjs --mode static --hostname <host> --cert-file
+<fullchain.pem> --key-file <key.pem>` validates the chain, hostname, validity
+margin and key match, installs the pair under `/etc/aidr/tls/live/<host>/` and
+reloads nginx only after `nginx -t` passes (restoring the previous pair
+otherwise). Run it once per vhost and again before each certificate expires.
 
 ## Endpoint connector installation
 
@@ -317,6 +336,14 @@ tarballs together — a digest list without its bytes proves nothing. This
 procedure is delivery media integrity and plan completeness only; notarization,
 MDM distribution, registry publication and publisher key custody remain external
 and are not claimed here.
+
+Threat-intelligence packs reach a disconnected installation on the same approved
+media. `node scripts/import-offline-pack.mjs` verifies the vendor-signed pack
+(manifest signature, file hashes, expiry, rollback) before installing it into an
+endpoint packs directory or the private `aidr-packs` bucket of this deployment;
+see [air-gapped updates](../docs/operations/threat-sync.md#air-gapped-updates).
+The license for a disconnected installation is the same signed file described in
+[licensing](../docs/operations/licensing.md).
 
 ## Release boundary
 
