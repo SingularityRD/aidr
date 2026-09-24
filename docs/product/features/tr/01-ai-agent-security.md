@@ -1538,7 +1538,7 @@ döndürür ve sarmalanan fonksiyon hiç çağrılmaz.
 **Ne yapar**
 `@singularityrd/aidr-cli` (`aidr` komutu) yerel AIDR durumunu yapılandırır, kurulum sağlığını
 raporlar, operatör onaylarını ve allowlist'i yönetir, denetim kaydını okur ve yapay zekâ
-altyapısı ile skill taramaları çalıştırır.
+altyapısı, skill ve yerel gizlilik (kişisel veri) taramaları çalıştırır.
 
 **Neden önemli**
 Operatörlerin günlük sorular için tek bir araca ihtiyacı vardır: koruma açık mı, ne
@@ -1566,6 +1566,7 @@ allowlist'e eklerim.
 | `aidr scan` | `-t, --target <url...>`, `-f, --file <path>`, `--skill <path...>`, `--json`, `--allow-public`, `--timeout <ms>`, `--concurrency <n>`, `--save-report <path>`, `--upload` | Yapay zekâ altyapısı CVE taraması (varsayılan olarak yalnızca özel hedefler) ve T01–T09 skill taraması |
 | `aidr collect` | `--tenant <id>` (zorunlu), `--provider <id>`, `-t, --target`, `-f, --file`, `--inventory <path>`, `--interval <seconds>`, `--stale-after <minutes>`, `--retry-attempts <n>`, `--retry-base-ms <ms>`, `--timeout <ms>`, `--concurrency <n>`, `--allow-public`, `--json` | Kiracıya özel yapay zekâ altyapısı envanteri |
 | `aidr discover` | `--config <paths...>`, `--json`, `--upload` | Yerel MCP sunucularının risk göstergeleriyle envanteri |
+| `aidr privacy scan [file]` | `--json`, `--mask`, `--types <list>`, `--fail-on none\|any\|secret` (varsayılan `any`) | Bir dosyada veya stdin'de yerel TR/EN kişisel veri ve gizli bilgi taraması (TCKN, IBAN, telefon, e-posta, kart, gizli anahtarlar, ...); değeri asla yazdırmaz, yalnızca tür, sayı ve satır; `--mask` `[TYPE]` yer tutucularıyla maskelenmiş metni yazdırır; çıkış kodu `0` temiz, `2` bulgu, `3` eksik inceleme, `1` hata |
 | `aidr uninstall` | `--home <path>`, `--json` | Yalnızca AIDR'nin yönettiği hook'ları kaldırır (Claude Code uç nokta kurucusu makbuzu), sizin hook'larınızı korur |
 
 `--secret-store`, `windows-dpapi`, `macos-keychain`, `linux-secret-service` veya `file-acl`

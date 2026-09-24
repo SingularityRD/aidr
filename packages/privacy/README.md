@@ -32,7 +32,7 @@ code; it does not mean a customer has accepted it in production.
 | TR/EN text detection and masking (checksum-validated TCKN, IBAN mod-97, Luhn cards, phones, addresses, labelled fields, secrets) | `src/detectors.ts`, `src/engine.ts` | Tested (`pnpm test:privacy`) |
 | Browser-safe rule layer (no `node:` imports) | `src/{types,errors,normalize,detectors,validators,dictionary,spans,ip,json}.ts` | Tested; consumed by Browser Guard |
 | Core DLP TR/EN detectors | `packages/core/src/dlp/` (generated copy) | Integrated in 0.6.0; covered by core tests and a drift check |
-| CLI privacy scan | `packages/cli` | Integrated in 0.6.0; runs locally, no upload |
+| CLI privacy scan (`aidr privacy scan`) | `packages/cli/src/commands/privacy.ts` | Integrated in 0.6.0: core TR/EN detectors plus the output credential detector over one file or stdin (4 MiB cap); local only, values never printed, `--mask` redaction, exit `3` on incomplete inspection. Tested (`packages/cli/src/__tests__/privacy-scan.test.ts`) |
 | Screenshot OCR redaction (`/visual`) | `src/visual/`, `vision/` | Tested with fake workers; real OCR needs the optional Python/native stack |
 | Server gateway, review portal, durable state (`/platform`) | `src/platform/`, `portal/` | Tested locally; not wired into AIDR connectors; needs customer IdP/MDM/provider brokers ([status](docs/PLATFORM_FEATURE_STATUS.en.md)) |
 | Enterprise policy and tool controls (`/enterprise`) | `src/enterprise/` | Tested; integration building block |

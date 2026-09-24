@@ -196,8 +196,13 @@ patterns.
   in the browser and nothing is uploaded for inspection.
 - **Core DLP** uses a generated, drift-checked copy of the same rule files, so
   every agent connector applies the same TR/EN detectors locally.
-- **CLI privacy scan** (`packages/cli`) applies the same detectors to local
-  content on the operator's machine; it is not an upload path.
+- **CLI privacy scan** (`aidr privacy scan [file]`, `packages/cli`) applies the
+  same core detectors, plus the credential detector used for tool-output
+  quarantine, to one local file or standard input (up to 4 MiB of UTF-8 text).
+  It reports type, offsets and line numbers (never the matched value), can print
+  a `[TYPE]`-masked copy with `--mask`, and exits `3` rather than reporting an
+  incompletely inspected input as clean. It runs on the operator's machine and
+  is not an upload path.
 - The **enterprise gateway / control plane** (`/platform`), enterprise policy
   (`/enterprise`) and the Chrome native-messaging host are optional building
   blocks. They are not enabled by installing AIDR and need customer IdP/MDM and

