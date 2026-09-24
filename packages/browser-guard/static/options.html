@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title data-i18n="options_page_title">Browser Guard settings</title>
+		<link rel="stylesheet" href="ui.css" />
+		<script src="options.js" defer></script>
+	</head>
+	<body class="page page--options">
+		<a class="skip-link" href="#app" data-i18n="skip_to_content">Skip to settings</a>
+		<header class="brand brand--page">
+			<div class="brand__inner">
+				<span class="brand__logo" aria-hidden="true"></span>
+				<div class="brand__text">
+					<span class="brand__eyebrow">Singularity AIDR</span>
+					<h1 class="brand__title" data-i18n="options_heading">Browser Guard settings</h1>
+				</div>
+			</div>
+		</header>
+		<main id="app" class="app app--options" tabindex="-1">
+			<p class="placeholder" data-i18n="status_loading">Checking protection…</p>
+		</main>
+		<div id="live" class="notice notice--toast" role="status" aria-live="polite"></div>
+	</body>
+</html>

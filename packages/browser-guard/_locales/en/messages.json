@@ -1,0 +1,778 @@
+{
+	"extName": {
+		"message": "Singularity AIDR Browser Guard",
+		"description": "Extension name (manifest)."
+	},
+	"extDescription": {
+		"message": "Masks personal and confidential data before it reaches AI chat tools, and restores it locally in the answers.",
+		"description": "Extension description (manifest, max 132 chars)."
+	},
+	"actionTitle": {
+		"message": "Singularity AIDR Browser Guard",
+		"description": "Toolbar button tooltip."
+	},
+	"product_short": {
+		"message": "Browser Guard",
+		"description": "Short product name in the popup header."
+	},
+	"status_loading": {
+		"message": "Checking protection…",
+		"description": "Shown while the popup loads."
+	},
+	"status_protected": {
+		"message": "Protected",
+		"description": "Current tab is protected."
+	},
+	"status_protected_detail": {
+		"message": "Sensitive data you send to $SITE$ is checked before it leaves the browser.",
+		"description": "Protected detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_unsupported": {
+		"message": "Not a supported AI site",
+		"description": "Current tab is not a supported AI site."
+	},
+	"status_unsupported_detail": {
+		"message": "Browser Guard works on ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral and Grok.",
+		"description": "Unsupported detail."
+	},
+	"status_paused": {
+		"message": "Paused until $TIME$",
+		"description": "Protection paused by the user.",
+		"placeholders": {
+			"time": {
+				"content": "$1",
+				"example": "14:30"
+			}
+		}
+	},
+	"status_paused_detail": {
+		"message": "Messages to $SITE$ are only monitored until then. Nothing is masked.",
+		"description": "Paused detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_disabled_policy": {
+		"message": "Disabled by policy",
+		"description": "Site disabled by managed policy."
+	},
+	"status_disabled_policy_detail": {
+		"message": "Your organization turned off Browser Guard on $SITE$.",
+		"description": "Disabled by policy detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_disabled_user": {
+		"message": "Turned off for this site",
+		"description": "Site disabled by the user."
+	},
+	"status_disabled_user_detail": {
+		"message": "You turned off protection on $SITE$. Turn it back on in Settings › Sites.",
+		"description": "Disabled by user detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_blocked": {
+		"message": "Blocked by your organization",
+		"description": "Site blocked by managed policy."
+	},
+	"status_blocked_detail": {
+		"message": "Your organization does not allow $SITE$ in this browser.",
+		"description": "Blocked detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_monitoring": {
+		"message": "Monitoring only",
+		"description": "Mode is monitor."
+	},
+	"status_monitoring_detail": {
+		"message": "Sensitive data sent to $SITE$ is counted but not masked or blocked.",
+		"description": "Monitoring detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"mode_label": {
+		"message": "Protection mode",
+		"description": "Mode control legend."
+	},
+	"mode_auto": {
+		"message": "Auto-mask",
+		"description": "Mode: mask automatically."
+	},
+	"mode_auto_help": {
+		"message": "Sensitive data is replaced with placeholders such as [EMAIL_1] before sending.",
+		"description": "Auto mode help."
+	},
+	"mode_confirm": {
+		"message": "Confirm",
+		"description": "Mode: ask before sending."
+	},
+	"mode_confirm_help": {
+		"message": "You review what was found and choose to send it masked or edit your message.",
+		"description": "Confirm mode help."
+	},
+	"mode_block": {
+		"message": "Block",
+		"description": "Mode: block sending."
+	},
+	"mode_block_help": {
+		"message": "Messages that contain sensitive data are not sent.",
+		"description": "Block mode help."
+	},
+	"mode_monitor": {
+		"message": "Monitor",
+		"description": "Mode: count only."
+	},
+	"mode_monitor_help": {
+		"message": "Nothing is changed or blocked; findings are only counted.",
+		"description": "Monitor mode help."
+	},
+	"managed_by_org": {
+		"message": "Managed by your organization",
+		"description": "Locked setting explanation."
+	},
+	"managed_short": {
+		"message": "Managed",
+		"description": "Short badge label for a locked setting."
+	},
+	"managed_explanation": {
+		"message": "Your organization set this and it cannot be changed here.",
+		"description": "Locked section note."
+	},
+	"managed_banner": {
+		"message": "Some settings are managed by your organization and shown read-only.",
+		"description": "Options page banner when any key is managed."
+	},
+	"stats_title": {
+		"message": "This session",
+		"description": "Stats card title."
+	},
+	"stats_prompts": {
+		"message": "Protected messages",
+		"description": "Stat label."
+	},
+	"stats_masked": {
+		"message": "Items masked",
+		"description": "Stat label."
+	},
+	"stats_blocked": {
+		"message": "Sends blocked",
+		"description": "Stat label."
+	},
+	"stats_top_types": {
+		"message": "Most found",
+		"description": "Top entity types heading."
+	},
+	"stats_empty": {
+		"message": "No sensitive data found yet.",
+		"description": "Empty stats."
+	},
+	"restore_visible_label": {
+		"message": "Show original values in responses",
+		"description": "Popup toggle."
+	},
+	"restore_visible_help": {
+		"message": "Placeholders in answers are replaced with your original data, only on this device.",
+		"description": "Popup toggle help."
+	},
+	"restore_visible_off": {
+		"message": "Restoring responses is turned off in Settings.",
+		"description": "Popup toggle unavailable."
+	},
+	"restore_visible_off_managed": {
+		"message": "Your organization turned off restoring responses.",
+		"description": "Popup toggle unavailable (managed)."
+	},
+	"restore_visible_no_site": {
+		"message": "Available on supported AI sites.",
+		"description": "Popup toggle unavailable (no site)."
+	},
+	"pause_button": {
+		"message": "Pause for $MINUTES$ min",
+		"description": "Pause button.",
+		"placeholders": {
+			"minutes": {
+				"content": "$1",
+				"example": "15"
+			}
+		}
+	},
+	"resume_button": {
+		"message": "Resume protection",
+		"description": "Resume button."
+	},
+	"open_settings": {
+		"message": "Settings",
+		"description": "Open options button."
+	},
+	"retry_button": {
+		"message": "Try again",
+		"description": "Retry button."
+	},
+	"native_connected": {
+		"message": "Advanced detection is connected",
+		"description": "Native host connected."
+	},
+	"native_unavailable": {
+		"message": "Advanced detection is unavailable; built-in rules are active",
+		"description": "Native host unavailable."
+	},
+	"notice_saved": {
+		"message": "Saved",
+		"description": "Toast after a save."
+	},
+	"notice_paused": {
+		"message": "Protection paused",
+		"description": "Toast."
+	},
+	"notice_resumed": {
+		"message": "Protection resumed",
+		"description": "Toast."
+	},
+	"notice_restore_on": {
+		"message": "Original values are shown in responses",
+		"description": "Toast."
+	},
+	"notice_restore_off": {
+		"message": "Responses show placeholders",
+		"description": "Toast."
+	},
+	"notice_term_added": {
+		"message": "Term added",
+		"description": "Toast."
+	},
+	"notice_term_removed": {
+		"message": "Term removed",
+		"description": "Toast."
+	},
+	"notice_telemetry_saved": {
+		"message": "Organization connection saved",
+		"description": "Toast."
+	},
+	"notice_telemetry_removed": {
+		"message": "Organization connection removed",
+		"description": "Toast."
+	},
+	"error_title": {
+		"message": "Browser Guard is not responding",
+		"description": "Error title."
+	},
+	"error_background": {
+		"message": "Settings could not be loaded. Protection keeps running with the last known policy.",
+		"description": "Error body."
+	},
+	"error_save": {
+		"message": "The change could not be saved. Please try again.",
+		"description": "Save failed."
+	},
+	"error_locked": {
+		"message": "This setting is managed by your organization.",
+		"description": "Save rejected: locked."
+	},
+	"error_invalid": {
+		"message": "That value is not allowed. Please check it and try again.",
+		"description": "Save rejected: invalid."
+	},
+	"error_pause_disabled": {
+		"message": "Your organization does not allow pausing protection.",
+		"description": "Pause rejected."
+	},
+	"options_page_title": {
+		"message": "Browser Guard settings",
+		"description": "Options page <title>."
+	},
+	"options_heading": {
+		"message": "Browser Guard settings",
+		"description": "Options page heading."
+	},
+	"skip_to_content": {
+		"message": "Skip to settings",
+		"description": "Skip link."
+	},
+	"toc_label": {
+		"message": "Settings sections",
+		"description": "Section navigation label."
+	},
+	"section_protection": {
+		"message": "Protection",
+		"description": "Section title."
+	},
+	"section_terms": {
+		"message": "Custom terms",
+		"description": "Section title."
+	},
+	"section_sites": {
+		"message": "Sites",
+		"description": "Section title."
+	},
+	"section_organization": {
+		"message": "Organization connection",
+		"description": "Section title."
+	},
+	"section_language": {
+		"message": "Language",
+		"description": "Section title."
+	},
+	"section_about": {
+		"message": "About",
+		"description": "Section title."
+	},
+	"protection_intro": {
+		"message": "Choose how Browser Guard handles sensitive data in messages, pastes and files.",
+		"description": "Protection intro."
+	},
+	"entities_title": {
+		"message": "What to detect",
+		"description": "Entity toggles heading."
+	},
+	"entities_intro": {
+		"message": "Turn off a type to stop detecting it on every site.",
+		"description": "Entity toggles intro."
+	},
+	"group_identity": {
+		"message": "Identity",
+		"description": "Entity group."
+	},
+	"group_contact": {
+		"message": "Contact",
+		"description": "Entity group."
+	},
+	"group_financial": {
+		"message": "Financial",
+		"description": "Entity group."
+	},
+	"group_technical": {
+		"message": "Technical",
+		"description": "Entity group."
+	},
+	"group_organization": {
+		"message": "Organization",
+		"description": "Entity group."
+	},
+	"group_other": {
+		"message": "Other",
+		"description": "Entity group."
+	},
+	"never_restore_tag": {
+		"message": "Never shown",
+		"description": "Tag on types never restored."
+	},
+	"never_restore_help": {
+		"message": "Always stays masked, even in responses.",
+		"description": "Tooltip for never-restore tag."
+	},
+	"mask_paste_label": {
+		"message": "Mask pasted text",
+		"description": "Toggle."
+	},
+	"mask_paste_help": {
+		"message": "Check text as soon as you paste it into the message box.",
+		"description": "Toggle help."
+	},
+	"restore_responses_label": {
+		"message": "Restore original values in responses",
+		"description": "Toggle."
+	},
+	"restore_responses_help": {
+		"message": "Placeholders in AI answers are replaced with your data on this device only. The AI service never sees the originals.",
+		"description": "Toggle help."
+	},
+	"terms_intro": {
+		"message": "Words that are always masked, such as project code names, client names or internal hostnames.",
+		"description": "Terms intro."
+	},
+	"terms_value_label": {
+		"message": "Term",
+		"description": "Field label."
+	},
+	"terms_type_label": {
+		"message": "Type",
+		"description": "Field label."
+	},
+	"terms_add": {
+		"message": "Add term",
+		"description": "Button."
+	},
+	"terms_hint": {
+		"message": "$MIN$–$MAX$ characters, single line. Matching ignores upper and lower case.",
+		"description": "Field hint.",
+		"placeholders": {
+			"min": {
+				"content": "$1",
+				"example": "2"
+			},
+			"max": {
+				"content": "$2",
+				"example": "256"
+			}
+		}
+	},
+	"terms_count": {
+		"message": "$COUNT$ of $MAX$ terms",
+		"description": "Terms counter.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "12"
+			},
+			"max": {
+				"content": "$2",
+				"example": "256"
+			}
+		}
+	},
+	"terms_managed_count": {
+		"message": "Your organization defined $COUNT$ confidential terms. They are not listed here.",
+		"description": "Managed terms count.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "12"
+			}
+		}
+	},
+	"terms_caption": {
+		"message": "Custom terms",
+		"description": "Table caption."
+	},
+	"terms_col_value": {
+		"message": "Term",
+		"description": "Column."
+	},
+	"terms_col_type": {
+		"message": "Type",
+		"description": "Column."
+	},
+	"terms_col_actions": {
+		"message": "Actions",
+		"description": "Column."
+	},
+	"terms_empty": {
+		"message": "No custom terms yet.",
+		"description": "Empty table."
+	},
+	"terms_remove": {
+		"message": "Remove",
+		"description": "Button tooltip."
+	},
+	"terms_remove_label": {
+		"message": "Remove term $TERM$",
+		"description": "Accessible name of remove button.",
+		"placeholders": {
+			"term": {
+				"content": "$1",
+				"example": "Project Falcon"
+			}
+		}
+	},
+	"literal_error_too_short": {
+		"message": "A term needs at least 2 characters.",
+		"description": "Validation."
+	},
+	"literal_error_too_long": {
+		"message": "A term can have at most 256 characters.",
+		"description": "Validation."
+	},
+	"literal_error_multiline": {
+		"message": "A term must fit on one line.",
+		"description": "Validation."
+	},
+	"literal_error_duplicate": {
+		"message": "This term is already in the list.",
+		"description": "Validation."
+	},
+	"literal_error_limit": {
+		"message": "The list is full (1,024 terms). Remove a term first.",
+		"description": "Validation."
+	},
+	"sites_intro": {
+		"message": "Choose where Browser Guard checks your messages.",
+		"description": "Sites intro."
+	},
+	"site_blocked_tag": {
+		"message": "Blocked",
+		"description": "Tag on a blocked site."
+	},
+	"site_blocked_help": {
+		"message": "Blocked by your organization; the site does not open.",
+		"description": "Blocked site help."
+	},
+	"telemetry_intro": {
+		"message": "Connect to your organization's AIDR control plane to share protection statistics with your security team.",
+		"description": "Organization intro."
+	},
+	"telemetry_connected": {
+		"message": "Connected to $URL$",
+		"description": "Connection status.",
+		"placeholders": {
+			"url": {
+				"content": "$1",
+				"example": "https://aidr.example.com"
+			}
+		}
+	},
+	"telemetry_not_connected": {
+		"message": "Not connected. Nothing leaves this browser.",
+		"description": "Connection status."
+	},
+	"telemetry_url_label": {
+		"message": "Control plane URL",
+		"description": "Field label."
+	},
+	"telemetry_key_label": {
+		"message": "API key",
+		"description": "Field label."
+	},
+	"telemetry_key_saved_placeholder": {
+		"message": "Saved. Leave empty to keep it.",
+		"description": "Placeholder when a key is saved."
+	},
+	"telemetry_key_hint": {
+		"message": "Provided by your administrator. Stored only in this browser profile.",
+		"description": "Field hint."
+	},
+	"telemetry_save": {
+		"message": "Save connection",
+		"description": "Button."
+	},
+	"telemetry_disconnect": {
+		"message": "Disconnect",
+		"description": "Button."
+	},
+	"telemetry_test_note": {
+		"message": "Statistics are sent in small batches about once a minute.",
+		"description": "Note."
+	},
+	"telemetry_error_url_invalid": {
+		"message": "Enter a full address such as https://aidr.example.com, without a query or credentials.",
+		"description": "Validation."
+	},
+	"telemetry_error_url_insecure": {
+		"message": "Use an https:// address. Plain http:// is only allowed for localhost.",
+		"description": "Validation."
+	},
+	"telemetry_error_key_missing": {
+		"message": "Enter the API key from your administrator.",
+		"description": "Validation."
+	},
+	"telemetry_error_key_invalid": {
+		"message": "The API key must be 8–512 characters without spaces.",
+		"description": "Validation."
+	},
+	"telemetry_sent_title": {
+		"message": "What is shared",
+		"description": "Disclosure heading."
+	},
+	"telemetry_sent_counts": {
+		"message": "How many items of each type were found (for example 2 emails, 1 IBAN)",
+		"description": "Shared field."
+	},
+	"telemetry_sent_site": {
+		"message": "Which AI service was used (for example ChatGPT)",
+		"description": "Shared field."
+	},
+	"telemetry_sent_action": {
+		"message": "What Browser Guard did: masked, warned, blocked or allowed",
+		"description": "Shared field."
+	},
+	"telemetry_sent_policy": {
+		"message": "The policy identifier and extension version",
+		"description": "Shared field."
+	},
+	"telemetry_never_title": {
+		"message": "Never shared:",
+		"description": "Disclosure."
+	},
+	"telemetry_never_body": {
+		"message": "your messages, files, the sensitive values themselves or the pages you visit.",
+		"description": "Disclosure."
+	},
+	"language_label": {
+		"message": "Display language",
+		"description": "Field label."
+	},
+	"language_auto": {
+		"message": "Same as browser",
+		"description": "Option."
+	},
+	"language_en": {
+		"message": "English",
+		"description": "Option (endonym)."
+	},
+	"language_tr": {
+		"message": "Türkçe",
+		"description": "Option (endonym)."
+	},
+	"about_version": {
+		"message": "Version",
+		"description": "About."
+	},
+	"about_policy": {
+		"message": "Policy",
+		"description": "About."
+	},
+	"about_privacy_title": {
+		"message": "Privacy",
+		"description": "About."
+	},
+	"about_privacy_body": {
+		"message": "Detection runs entirely in your browser. Original values are kept in memory for the current session only and are never written to disk or sent anywhere. If your organization connects Browser Guard to its control plane, only counts are shared, never the content itself.",
+		"description": "About privacy statement."
+	},
+	"about_support_title": {
+		"message": "Support",
+		"description": "About."
+	},
+	"about_support_body": {
+		"message": "For help or to report a problem, contact your IT or security team.",
+		"description": "About support."
+	},
+	"blocked_page_title": {
+		"message": "Blocked by your organization",
+		"description": "Blocked page <title>."
+	},
+	"blocked_title": {
+		"message": "This AI service is blocked by your organization",
+		"description": "Blocked heading."
+	},
+	"blocked_title_site": {
+		"message": "$SITE$ is blocked by your organization",
+		"description": "Blocked heading with site.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"blocked_body": {
+		"message": "Your organization's policy does not allow this AI service in this browser, so Browser Guard stopped the page from loading.",
+		"description": "Blocked body."
+	},
+	"blocked_help": {
+		"message": "If you need it for your work, contact your IT or security team. They can review the policy or suggest an approved alternative.",
+		"description": "Blocked help."
+	},
+	"blocked_footer": {
+		"message": "This decision was made by a policy set by your organization, not by the website.",
+		"description": "Blocked footer."
+	},
+	"entity_PERSON": {
+		"message": "Person name",
+		"description": "Entity type PERSON."
+	},
+	"entity_EMAIL": {
+		"message": "Email address",
+		"description": "Entity type EMAIL."
+	},
+	"entity_PHONE": {
+		"message": "Phone number",
+		"description": "Entity type PHONE."
+	},
+	"entity_TC_KIMLIK": {
+		"message": "Turkish ID number (TCKN)",
+		"description": "Entity type TC_KIMLIK."
+	},
+	"entity_IBAN": {
+		"message": "IBAN",
+		"description": "Entity type IBAN."
+	},
+	"entity_CREDIT_CARD": {
+		"message": "Credit card number",
+		"description": "Entity type CREDIT_CARD."
+	},
+	"entity_ADDRESS": {
+		"message": "Postal address",
+		"description": "Entity type ADDRESS."
+	},
+	"entity_US_SSN": {
+		"message": "US Social Security number",
+		"description": "Entity type US_SSN."
+	},
+	"entity_DATE_OF_BIRTH": {
+		"message": "Date of birth",
+		"description": "Entity type DATE_OF_BIRTH."
+	},
+	"entity_PASSPORT": {
+		"message": "Passport number",
+		"description": "Entity type PASSPORT."
+	},
+	"entity_NATIONAL_ID": {
+		"message": "National ID number",
+		"description": "Entity type NATIONAL_ID."
+	},
+	"entity_TAX_ID": {
+		"message": "Tax ID",
+		"description": "Entity type TAX_ID."
+	},
+	"entity_BANK_ACCOUNT": {
+		"message": "Bank account number",
+		"description": "Entity type BANK_ACCOUNT."
+	},
+	"entity_IP_ADDRESS": {
+		"message": "IP address",
+		"description": "Entity type IP_ADDRESS."
+	},
+	"entity_MAC_ADDRESS": {
+		"message": "MAC address",
+		"description": "Entity type MAC_ADDRESS."
+	},
+	"entity_SECRET": {
+		"message": "API key, token or password",
+		"description": "Entity type SECRET."
+	},
+	"entity_PRIVATE_KEY": {
+		"message": "Private key",
+		"description": "Entity type PRIVATE_KEY."
+	},
+	"entity_INTERNAL": {
+		"message": "Internal information",
+		"description": "Entity type INTERNAL."
+	},
+	"entity_CLASSIFIED": {
+		"message": "Classification marking",
+		"description": "Entity type CLASSIFIED."
+	},
+	"entity_LOCATION": {
+		"message": "Location",
+		"description": "Entity type LOCATION."
+	},
+	"entity_USERNAME": {
+		"message": "Username",
+		"description": "Entity type USERNAME."
+	},
+	"entity_HEALTH_ID": {
+		"message": "Health record number",
+		"description": "Entity type HEALTH_ID."
+	},
+	"entity_LICENSE_PLATE": {
+		"message": "Vehicle license plate",
+		"description": "Entity type LICENSE_PLATE."
+	}
+}

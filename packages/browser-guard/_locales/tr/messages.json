@@ -1,0 +1,778 @@
+{
+	"extName": {
+		"message": "Singularity AIDR Browser Guard",
+		"description": "Extension name (manifest)."
+	},
+	"extDescription": {
+		"message": "Kişisel ve gizli verileri yapay zekâ sohbet araçlarına ulaşmadan maskeler, yanıtlarda yerel olarak geri getirir.",
+		"description": "Extension description (manifest, max 132 chars)."
+	},
+	"actionTitle": {
+		"message": "Singularity AIDR Browser Guard",
+		"description": "Toolbar button tooltip."
+	},
+	"product_short": {
+		"message": "Browser Guard",
+		"description": "Short product name in the popup header."
+	},
+	"status_loading": {
+		"message": "Koruma durumu denetleniyor…",
+		"description": "Shown while the popup loads."
+	},
+	"status_protected": {
+		"message": "Korunuyor",
+		"description": "Current tab is protected."
+	},
+	"status_protected_detail": {
+		"message": "$SITE$ hizmetine gönderdiğiniz hassas veriler tarayıcıdan çıkmadan önce denetlenir.",
+		"description": "Protected detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_unsupported": {
+		"message": "Desteklenen bir yapay zekâ sitesi değil",
+		"description": "Current tab is not a supported AI site."
+	},
+	"status_unsupported_detail": {
+		"message": "Browser Guard; ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral ve Grok üzerinde çalışır.",
+		"description": "Unsupported detail."
+	},
+	"status_paused": {
+		"message": "$TIME$ saatine kadar duraklatıldı",
+		"description": "Protection paused by the user.",
+		"placeholders": {
+			"time": {
+				"content": "$1",
+				"example": "14:30"
+			}
+		}
+	},
+	"status_paused_detail": {
+		"message": "O saate kadar $SITE$ hizmetine giden mesajlar yalnızca izlenir, hiçbir veri maskelenmez.",
+		"description": "Paused detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_disabled_policy": {
+		"message": "Politika tarafından devre dışı",
+		"description": "Site disabled by managed policy."
+	},
+	"status_disabled_policy_detail": {
+		"message": "Kuruluşunuz $SITE$ için Browser Guard'ı kapattı.",
+		"description": "Disabled by policy detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_disabled_user": {
+		"message": "Bu site için kapalı",
+		"description": "Site disabled by the user."
+	},
+	"status_disabled_user_detail": {
+		"message": "$SITE$ için korumayı kapattınız. Ayarlar › Siteler bölümünden yeniden açabilirsiniz.",
+		"description": "Disabled by user detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_blocked": {
+		"message": "Kuruluşunuz tarafından engellendi",
+		"description": "Site blocked by managed policy."
+	},
+	"status_blocked_detail": {
+		"message": "Kuruluşunuz bu tarayıcıda $SITE$ kullanımına izin vermiyor.",
+		"description": "Blocked detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"status_monitoring": {
+		"message": "Yalnızca izleniyor",
+		"description": "Mode is monitor."
+	},
+	"status_monitoring_detail": {
+		"message": "$SITE$ hizmetine gönderilen hassas veriler sayılır ancak maskelenmez veya engellenmez.",
+		"description": "Monitoring detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"mode_label": {
+		"message": "Koruma modu",
+		"description": "Mode control legend."
+	},
+	"mode_auto": {
+		"message": "Otomatik maskele",
+		"description": "Mode: mask automatically."
+	},
+	"mode_auto_help": {
+		"message": "Hassas veriler gönderilmeden önce [EMAIL_1] gibi yer tutucularla değiştirilir.",
+		"description": "Auto mode help."
+	},
+	"mode_confirm": {
+		"message": "Onayla",
+		"description": "Mode: ask before sending."
+	},
+	"mode_confirm_help": {
+		"message": "Bulunan verileri görür, mesajı maskeli göndermeyi ya da düzenlemeyi siz seçersiniz.",
+		"description": "Confirm mode help."
+	},
+	"mode_block": {
+		"message": "Engelle",
+		"description": "Mode: block sending."
+	},
+	"mode_block_help": {
+		"message": "Hassas veri içeren mesajlar gönderilmez.",
+		"description": "Block mode help."
+	},
+	"mode_monitor": {
+		"message": "İzle",
+		"description": "Mode: count only."
+	},
+	"mode_monitor_help": {
+		"message": "Hiçbir şey değiştirilmez veya engellenmez; bulgular yalnızca sayılır.",
+		"description": "Monitor mode help."
+	},
+	"managed_by_org": {
+		"message": "Kuruluşunuz tarafından yönetiliyor",
+		"description": "Locked setting explanation."
+	},
+	"managed_short": {
+		"message": "Yönetiliyor",
+		"description": "Short badge label for a locked setting."
+	},
+	"managed_explanation": {
+		"message": "Bu ayar kuruluşunuz tarafından belirlendi ve burada değiştirilemez.",
+		"description": "Locked section note."
+	},
+	"managed_banner": {
+		"message": "Bazı ayarlar kuruluşunuz tarafından yönetildiği için salt okunur gösterilir.",
+		"description": "Options page banner when any key is managed."
+	},
+	"stats_title": {
+		"message": "Bu oturum",
+		"description": "Stats card title."
+	},
+	"stats_prompts": {
+		"message": "Korunan mesajlar",
+		"description": "Stat label."
+	},
+	"stats_masked": {
+		"message": "Maskelenen öğeler",
+		"description": "Stat label."
+	},
+	"stats_blocked": {
+		"message": "Engellenen gönderimler",
+		"description": "Stat label."
+	},
+	"stats_top_types": {
+		"message": "En sık bulunanlar",
+		"description": "Top entity types heading."
+	},
+	"stats_empty": {
+		"message": "Henüz hassas veri bulunmadı.",
+		"description": "Empty stats."
+	},
+	"restore_visible_label": {
+		"message": "Yanıtlarda orijinal değerleri göster",
+		"description": "Popup toggle."
+	},
+	"restore_visible_help": {
+		"message": "Yanıtlardaki yer tutucular yalnızca bu cihazda orijinal verilerinizle değiştirilir.",
+		"description": "Popup toggle help."
+	},
+	"restore_visible_off": {
+		"message": "Yanıtları geri getirme Ayarlar'da kapalı.",
+		"description": "Popup toggle unavailable."
+	},
+	"restore_visible_off_managed": {
+		"message": "Kuruluşunuz yanıtları geri getirmeyi kapattı.",
+		"description": "Popup toggle unavailable (managed)."
+	},
+	"restore_visible_no_site": {
+		"message": "Desteklenen yapay zekâ sitelerinde kullanılabilir.",
+		"description": "Popup toggle unavailable (no site)."
+	},
+	"pause_button": {
+		"message": "$MINUTES$ dk duraklat",
+		"description": "Pause button.",
+		"placeholders": {
+			"minutes": {
+				"content": "$1",
+				"example": "15"
+			}
+		}
+	},
+	"resume_button": {
+		"message": "Korumayı sürdür",
+		"description": "Resume button."
+	},
+	"open_settings": {
+		"message": "Ayarlar",
+		"description": "Open options button."
+	},
+	"retry_button": {
+		"message": "Tekrar dene",
+		"description": "Retry button."
+	},
+	"native_connected": {
+		"message": "Gelişmiş algılama bağlı",
+		"description": "Native host connected."
+	},
+	"native_unavailable": {
+		"message": "Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin",
+		"description": "Native host unavailable."
+	},
+	"notice_saved": {
+		"message": "Kaydedildi",
+		"description": "Toast after a save."
+	},
+	"notice_paused": {
+		"message": "Koruma duraklatıldı",
+		"description": "Toast."
+	},
+	"notice_resumed": {
+		"message": "Koruma sürdürüldü",
+		"description": "Toast."
+	},
+	"notice_restore_on": {
+		"message": "Yanıtlarda orijinal değerler gösteriliyor",
+		"description": "Toast."
+	},
+	"notice_restore_off": {
+		"message": "Yanıtlarda yer tutucular gösteriliyor",
+		"description": "Toast."
+	},
+	"notice_term_added": {
+		"message": "Terim eklendi",
+		"description": "Toast."
+	},
+	"notice_term_removed": {
+		"message": "Terim kaldırıldı",
+		"description": "Toast."
+	},
+	"notice_telemetry_saved": {
+		"message": "Kuruluş bağlantısı kaydedildi",
+		"description": "Toast."
+	},
+	"notice_telemetry_removed": {
+		"message": "Kuruluş bağlantısı kaldırıldı",
+		"description": "Toast."
+	},
+	"error_title": {
+		"message": "Browser Guard yanıt vermiyor",
+		"description": "Error title."
+	},
+	"error_background": {
+		"message": "Ayarlar yüklenemedi. Koruma bilinen son politikayla çalışmaya devam ediyor.",
+		"description": "Error body."
+	},
+	"error_save": {
+		"message": "Değişiklik kaydedilemedi. Lütfen tekrar deneyin.",
+		"description": "Save failed."
+	},
+	"error_locked": {
+		"message": "Bu ayar kuruluşunuz tarafından yönetiliyor.",
+		"description": "Save rejected: locked."
+	},
+	"error_invalid": {
+		"message": "Bu değere izin verilmiyor. Lütfen kontrol edip tekrar deneyin.",
+		"description": "Save rejected: invalid."
+	},
+	"error_pause_disabled": {
+		"message": "Kuruluşunuz korumanın duraklatılmasına izin vermiyor.",
+		"description": "Pause rejected."
+	},
+	"options_page_title": {
+		"message": "Browser Guard ayarları",
+		"description": "Options page <title>."
+	},
+	"options_heading": {
+		"message": "Browser Guard ayarları",
+		"description": "Options page heading."
+	},
+	"skip_to_content": {
+		"message": "Ayarlara geç",
+		"description": "Skip link."
+	},
+	"toc_label": {
+		"message": "Ayar bölümleri",
+		"description": "Section navigation label."
+	},
+	"section_protection": {
+		"message": "Koruma",
+		"description": "Section title."
+	},
+	"section_terms": {
+		"message": "Özel terimler",
+		"description": "Section title."
+	},
+	"section_sites": {
+		"message": "Siteler",
+		"description": "Section title."
+	},
+	"section_organization": {
+		"message": "Kuruluş bağlantısı",
+		"description": "Section title."
+	},
+	"section_language": {
+		"message": "Dil",
+		"description": "Section title."
+	},
+	"section_about": {
+		"message": "Hakkında",
+		"description": "Section title."
+	},
+	"protection_intro": {
+		"message": "Browser Guard'ın mesajlardaki, yapıştırılan içerikteki ve dosyalardaki hassas verileri nasıl ele alacağını seçin.",
+		"description": "Protection intro."
+	},
+	"entities_title": {
+		"message": "Neler algılansın",
+		"description": "Entity toggles heading."
+	},
+	"entities_intro": {
+		"message": "Bir türü kapattığınızda hiçbir sitede algılanmaz.",
+		"description": "Entity toggles intro."
+	},
+	"group_identity": {
+		"message": "Kimlik",
+		"description": "Entity group."
+	},
+	"group_contact": {
+		"message": "İletişim",
+		"description": "Entity group."
+	},
+	"group_financial": {
+		"message": "Finansal",
+		"description": "Entity group."
+	},
+	"group_technical": {
+		"message": "Teknik",
+		"description": "Entity group."
+	},
+	"group_organization": {
+		"message": "Kurum",
+		"description": "Entity group."
+	},
+	"group_other": {
+		"message": "Diğer",
+		"description": "Entity group."
+	},
+	"never_restore_tag": {
+		"message": "Asla gösterilmez",
+		"description": "Tag on types never restored."
+	},
+	"never_restore_help": {
+		"message": "Yanıtlarda bile her zaman maskeli kalır.",
+		"description": "Tooltip for never-restore tag."
+	},
+	"mask_paste_label": {
+		"message": "Yapıştırılan metni maskele",
+		"description": "Toggle."
+	},
+	"mask_paste_help": {
+		"message": "Metni mesaj kutusuna yapıştırdığınız anda denetle.",
+		"description": "Toggle help."
+	},
+	"restore_responses_label": {
+		"message": "Yanıtlarda orijinal değerleri geri getir",
+		"description": "Toggle."
+	},
+	"restore_responses_help": {
+		"message": "Yapay zekâ yanıtlarındaki yer tutucular yalnızca bu cihazda verilerinizle değiştirilir. Yapay zekâ hizmeti orijinalleri hiçbir zaman görmez.",
+		"description": "Toggle help."
+	},
+	"terms_intro": {
+		"message": "Proje kod adları, müşteri adları veya iç sunucu adları gibi her zaman maskelenecek sözcükler.",
+		"description": "Terms intro."
+	},
+	"terms_value_label": {
+		"message": "Terim",
+		"description": "Field label."
+	},
+	"terms_type_label": {
+		"message": "Tür",
+		"description": "Field label."
+	},
+	"terms_add": {
+		"message": "Terim ekle",
+		"description": "Button."
+	},
+	"terms_hint": {
+		"message": "$MIN$–$MAX$ karakter, tek satır. Eşleştirmede büyük/küçük harf ayrımı yapılmaz.",
+		"description": "Field hint.",
+		"placeholders": {
+			"min": {
+				"content": "$1",
+				"example": "2"
+			},
+			"max": {
+				"content": "$2",
+				"example": "256"
+			}
+		}
+	},
+	"terms_count": {
+		"message": "$COUNT$ / $MAX$ terim",
+		"description": "Terms counter.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "12"
+			},
+			"max": {
+				"content": "$2",
+				"example": "256"
+			}
+		}
+	},
+	"terms_managed_count": {
+		"message": "Kuruluşunuz $COUNT$ gizli terim tanımladı. Bu terimler burada listelenmez.",
+		"description": "Managed terms count.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "12"
+			}
+		}
+	},
+	"terms_caption": {
+		"message": "Özel terimler",
+		"description": "Table caption."
+	},
+	"terms_col_value": {
+		"message": "Terim",
+		"description": "Column."
+	},
+	"terms_col_type": {
+		"message": "Tür",
+		"description": "Column."
+	},
+	"terms_col_actions": {
+		"message": "İşlemler",
+		"description": "Column."
+	},
+	"terms_empty": {
+		"message": "Henüz özel terim yok.",
+		"description": "Empty table."
+	},
+	"terms_remove": {
+		"message": "Kaldır",
+		"description": "Button tooltip."
+	},
+	"terms_remove_label": {
+		"message": "$TERM$ terimini kaldır",
+		"description": "Accessible name of remove button.",
+		"placeholders": {
+			"term": {
+				"content": "$1",
+				"example": "Project Falcon"
+			}
+		}
+	},
+	"literal_error_too_short": {
+		"message": "Bir terim en az 2 karakter olmalıdır.",
+		"description": "Validation."
+	},
+	"literal_error_too_long": {
+		"message": "Bir terim en fazla 256 karakter olabilir.",
+		"description": "Validation."
+	},
+	"literal_error_multiline": {
+		"message": "Bir terim tek satırda olmalıdır.",
+		"description": "Validation."
+	},
+	"literal_error_duplicate": {
+		"message": "Bu terim listede zaten var.",
+		"description": "Validation."
+	},
+	"literal_error_limit": {
+		"message": "Liste dolu (1.024 terim). Önce bir terimi kaldırın.",
+		"description": "Validation."
+	},
+	"sites_intro": {
+		"message": "Browser Guard'ın mesajlarınızı hangi sitelerde denetleyeceğini seçin.",
+		"description": "Sites intro."
+	},
+	"site_blocked_tag": {
+		"message": "Engelli",
+		"description": "Tag on a blocked site."
+	},
+	"site_blocked_help": {
+		"message": "Kuruluşunuz tarafından engellendi; site açılmaz.",
+		"description": "Blocked site help."
+	},
+	"telemetry_intro": {
+		"message": "Koruma istatistiklerini güvenlik ekibinizle paylaşmak için kuruluşunuzun AIDR kontrol düzlemine bağlanın.",
+		"description": "Organization intro."
+	},
+	"telemetry_connected": {
+		"message": "$URL$ adresine bağlı",
+		"description": "Connection status.",
+		"placeholders": {
+			"url": {
+				"content": "$1",
+				"example": "https://aidr.example.com"
+			}
+		}
+	},
+	"telemetry_not_connected": {
+		"message": "Bağlı değil. Bu tarayıcıdan hiçbir veri çıkmaz.",
+		"description": "Connection status."
+	},
+	"telemetry_url_label": {
+		"message": "Kontrol düzlemi adresi",
+		"description": "Field label."
+	},
+	"telemetry_key_label": {
+		"message": "API anahtarı",
+		"description": "Field label."
+	},
+	"telemetry_key_saved_placeholder": {
+		"message": "Kaydedildi. Korumak için boş bırakın.",
+		"description": "Placeholder when a key is saved."
+	},
+	"telemetry_key_hint": {
+		"message": "Yöneticiniz tarafından verilir. Yalnızca bu tarayıcı profilinde saklanır.",
+		"description": "Field hint."
+	},
+	"telemetry_save": {
+		"message": "Bağlantıyı kaydet",
+		"description": "Button."
+	},
+	"telemetry_disconnect": {
+		"message": "Bağlantıyı kes",
+		"description": "Button."
+	},
+	"telemetry_test_note": {
+		"message": "İstatistikler yaklaşık dakikada bir, küçük gruplar halinde gönderilir.",
+		"description": "Note."
+	},
+	"telemetry_error_url_invalid": {
+		"message": "https://aidr.example.com gibi, sorgu veya kimlik bilgisi içermeyen tam bir adres girin.",
+		"description": "Validation."
+	},
+	"telemetry_error_url_insecure": {
+		"message": "https:// ile başlayan bir adres kullanın. http:// yalnızca localhost için kullanılabilir.",
+		"description": "Validation."
+	},
+	"telemetry_error_key_missing": {
+		"message": "Yöneticinizden aldığınız API anahtarını girin.",
+		"description": "Validation."
+	},
+	"telemetry_error_key_invalid": {
+		"message": "API anahtarı boşluk içermeyen 8–512 karakter olmalıdır.",
+		"description": "Validation."
+	},
+	"telemetry_sent_title": {
+		"message": "Neler paylaşılır",
+		"description": "Disclosure heading."
+	},
+	"telemetry_sent_counts": {
+		"message": "Her türden kaç öğe bulunduğu (ör. 2 e-posta, 1 IBAN)",
+		"description": "Shared field."
+	},
+	"telemetry_sent_site": {
+		"message": "Hangi yapay zekâ hizmetinin kullanıldığı (ör. ChatGPT)",
+		"description": "Shared field."
+	},
+	"telemetry_sent_action": {
+		"message": "Browser Guard'ın ne yaptığı: maskeledi, uyardı, engelledi veya izin verdi",
+		"description": "Shared field."
+	},
+	"telemetry_sent_policy": {
+		"message": "Politika kimliği ve eklenti sürümü",
+		"description": "Shared field."
+	},
+	"telemetry_never_title": {
+		"message": "Asla paylaşılmaz:",
+		"description": "Disclosure."
+	},
+	"telemetry_never_body": {
+		"message": "mesajlarınız, dosyalarınız, hassas değerlerin kendisi veya ziyaret ettiğiniz sayfalar.",
+		"description": "Disclosure."
+	},
+	"language_label": {
+		"message": "Arayüz dili",
+		"description": "Field label."
+	},
+	"language_auto": {
+		"message": "Tarayıcıyla aynı",
+		"description": "Option."
+	},
+	"language_en": {
+		"message": "English",
+		"description": "Option (endonym)."
+	},
+	"language_tr": {
+		"message": "Türkçe",
+		"description": "Option (endonym)."
+	},
+	"about_version": {
+		"message": "Sürüm",
+		"description": "About."
+	},
+	"about_policy": {
+		"message": "Politika",
+		"description": "About."
+	},
+	"about_privacy_title": {
+		"message": "Gizlilik",
+		"description": "About."
+	},
+	"about_privacy_body": {
+		"message": "Algılama tamamen tarayıcınızda çalışır. Orijinal değerler yalnızca geçerli oturum boyunca bellekte tutulur; diske yazılmaz ve hiçbir yere gönderilmez. Kuruluşunuz Browser Guard'ı kontrol düzlemine bağlarsa yalnızca sayılar paylaşılır, içeriğin kendisi asla paylaşılmaz.",
+		"description": "About privacy statement."
+	},
+	"about_support_title": {
+		"message": "Destek",
+		"description": "About."
+	},
+	"about_support_body": {
+		"message": "Yardım almak veya bir sorun bildirmek için BT ya da güvenlik ekibinizle iletişime geçin.",
+		"description": "About support."
+	},
+	"blocked_page_title": {
+		"message": "Kuruluşunuz tarafından engellendi",
+		"description": "Blocked page <title>."
+	},
+	"blocked_title": {
+		"message": "Bu yapay zekâ hizmeti kuruluşunuz tarafından engellendi",
+		"description": "Blocked heading."
+	},
+	"blocked_title_site": {
+		"message": "$SITE$ kuruluşunuz tarafından engellendi",
+		"description": "Blocked heading with site.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"blocked_body": {
+		"message": "Kuruluşunuzun politikası bu tarayıcıda bu yapay zekâ hizmetine izin vermediği için Browser Guard sayfanın açılmasını durdurdu.",
+		"description": "Blocked body."
+	},
+	"blocked_help": {
+		"message": "İşiniz için gerekiyorsa BT veya güvenlik ekibinizle iletişime geçin. Politikayı gözden geçirebilir ya da onaylı bir alternatif önerebilirler.",
+		"description": "Blocked help."
+	},
+	"blocked_footer": {
+		"message": "Bu karar web sitesi tarafından değil, kuruluşunuzun belirlediği bir politika tarafından verildi.",
+		"description": "Blocked footer."
+	},
+	"entity_PERSON": {
+		"message": "Kişi adı",
+		"description": "Entity type PERSON."
+	},
+	"entity_EMAIL": {
+		"message": "E-posta adresi",
+		"description": "Entity type EMAIL."
+	},
+	"entity_PHONE": {
+		"message": "Telefon numarası",
+		"description": "Entity type PHONE."
+	},
+	"entity_TC_KIMLIK": {
+		"message": "T.C. kimlik numarası",
+		"description": "Entity type TC_KIMLIK."
+	},
+	"entity_IBAN": {
+		"message": "IBAN",
+		"description": "Entity type IBAN."
+	},
+	"entity_CREDIT_CARD": {
+		"message": "Kredi kartı numarası",
+		"description": "Entity type CREDIT_CARD."
+	},
+	"entity_ADDRESS": {
+		"message": "Posta adresi",
+		"description": "Entity type ADDRESS."
+	},
+	"entity_US_SSN": {
+		"message": "ABD sosyal güvenlik numarası",
+		"description": "Entity type US_SSN."
+	},
+	"entity_DATE_OF_BIRTH": {
+		"message": "Doğum tarihi",
+		"description": "Entity type DATE_OF_BIRTH."
+	},
+	"entity_PASSPORT": {
+		"message": "Pasaport numarası",
+		"description": "Entity type PASSPORT."
+	},
+	"entity_NATIONAL_ID": {
+		"message": "Ulusal kimlik numarası",
+		"description": "Entity type NATIONAL_ID."
+	},
+	"entity_TAX_ID": {
+		"message": "Vergi kimlik numarası",
+		"description": "Entity type TAX_ID."
+	},
+	"entity_BANK_ACCOUNT": {
+		"message": "Banka hesap numarası",
+		"description": "Entity type BANK_ACCOUNT."
+	},
+	"entity_IP_ADDRESS": {
+		"message": "IP adresi",
+		"description": "Entity type IP_ADDRESS."
+	},
+	"entity_MAC_ADDRESS": {
+		"message": "MAC adresi",
+		"description": "Entity type MAC_ADDRESS."
+	},
+	"entity_SECRET": {
+		"message": "API anahtarı, belirteç veya parola",
+		"description": "Entity type SECRET."
+	},
+	"entity_PRIVATE_KEY": {
+		"message": "Özel anahtar",
+		"description": "Entity type PRIVATE_KEY."
+	},
+	"entity_INTERNAL": {
+		"message": "Şirket içi bilgi",
+		"description": "Entity type INTERNAL."
+	},
+	"entity_CLASSIFIED": {
+		"message": "Gizlilik derecesi işareti",
+		"description": "Entity type CLASSIFIED."
+	},
+	"entity_LOCATION": {
+		"message": "Konum",
+		"description": "Entity type LOCATION."
+	},
+	"entity_USERNAME": {
+		"message": "Kullanıcı adı",
+		"description": "Entity type USERNAME."
+	},
+	"entity_HEALTH_ID": {
+		"message": "Sağlık kayıt numarası",
+		"description": "Entity type HEALTH_ID."
+	},
+	"entity_LICENSE_PLATE": {
+		"message": "Araç plakası",
+		"description": "Entity type LICENSE_PLATE."
+	}
+}
