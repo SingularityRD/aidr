@@ -4,10 +4,11 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
-import type {
-	ManagedHookHealth,
-	ManagedHookInstallOptions,
-	ManagedHookScope,
+import {
+	inRegistrationOrder,
+	type ManagedHookHealth,
+	type ManagedHookInstallOptions,
+	type ManagedHookScope,
 } from "./managedHooks.js";
 
 const MANAGED_MARKER = "--managed-by aidr-vscode";
@@ -246,10 +247,7 @@ function collectInstalledEvents(hooks: HookMap): string[] {
 			asCommandEntries(entry.hooks).some((hook) => isManagedCommandHook(hook)),
 		),
 	);
-	return [
-		...MANAGED_HOOK_EVENTS.filter((event) => managedEvents.includes(event)),
-		...managedEvents.filter((event) => !MANAGED_HOOK_EVENTS.includes(event)),
-	];
+	return inRegistrationOrder(managedEvents, MANAGED_HOOK_EVENTS);
 }
 
 function collectManagedCommands(hooks: HookMap): string[] {
