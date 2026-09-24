@@ -205,12 +205,12 @@ native with no runtime cost; three are LLM-driven by nature** and should be offe
 opt-in features that use the customer's own model, never as a hidden dependency. That
 keeps the product lightweight while still covering the feature suite.
 
-**Consequence for the shipped stack.** `services/aig-bridge`, `docker-compose.aig.yml`
-and the pinned `vendor/ai-infra-guard` submodule are no longer required for infra
-scanning or CVE matching. They remain only as the data source for the compiler. The
-submodule can stay as a build-time input (or be replaced by a pinned data download),
-but it no longer needs to be deployed, and the previous "bridge is permanently
-unhealthy / `scan_ready` is never emitted / MCP findings read from the wrong fields"
+**Consequence for the shipped stack.** `services/aig-bridge` and `docker-compose.aig.yml`
+are no longer required for infra scanning or CVE matching. The SingularityRD-owned
+`vendor/ai-infra-guard/` source is tracked directly in this repository and remains
+the pinned build-time data source for the compiler; it does not need to be deployed.
+The previous "bridge is permanently unhealthy / `scan_ready` is never emitted / MCP
+findings read from the wrong fields"
 defects stop mattering for the native path.
 
 ### 3.3 DLP / advanced detection

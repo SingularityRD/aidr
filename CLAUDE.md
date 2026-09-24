@@ -50,7 +50,7 @@ TypeScript monorepo. Connector packages and their shared core:
   or untrusted hook, so this connector translates `ask` into an explicit `deny` and turns
   internal errors into a deny as well — see `packages/codex/README.md`. Ships its own copy of
   the rules via `scripts/sync-assets.mjs`.
-- `services/aig-bridge/` — Python/FastAPI bridge for Tencent AI-Infra-Guard (vendored under `vendor/ai-infra-guard`, pinned submodule)
+- `services/aig-bridge/` — Python/FastAPI bridge for the SingularityRD-owned AI Infra Guard source, tracked directly under `vendor/ai-infra-guard/` (not a submodule)
 - `supabase/` — canonical migrations + Edge Functions; `packages/dashboard/supabase/functions/` contains dashboard-specific shared function code, not migration copies
 - `threats/` — YAML threat definitions (data, not code); 351 rules across 23 files
 - `allowlists/` — Trusted domain allowlists
@@ -145,5 +145,4 @@ OpenClaw, OpenCode and Codex; the CLI and SDK consume the same core.
 ## Pre-PR Checklist
 
 Before creating a pull request, run the @"code-simplifier:code-simplifier (agent)" subagent on all changed files to review for clarity, consistency, and maintainability improvements. Apply any suggested changes before opening the PR.
-
 

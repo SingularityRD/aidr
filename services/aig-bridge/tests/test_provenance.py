@@ -35,7 +35,7 @@ def _signed_fixture(tmp_path, monkeypatch):
         "generated": "2026-09-22T00:00:00.000Z",
         "release_sequence": 7,
         "source": {
-            "repository": "https://github.com/tencent/AI-Infra-Guard",
+            "repository": "https://github.com/SingularityRD/ai-infra-guard",
             "commit": source_commit,
             "tree_sha256": "c" * 64,
         },
