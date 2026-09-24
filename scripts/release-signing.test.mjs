@@ -80,6 +80,30 @@ test("signs an exact release and runs an installer only after verification", asy
 	assert.equal(repeated.status, 0, repeated.stderr);
 });
 
+test("refuses to sign a candidate recorded as a dirty local rehearsal", async () => {
+	const fixture = await createFixture();
+	const metadataPath = path.join(fixture.bundle, "release-metadata.json");
+	const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+	metadata.worktree_dirty = true;
+	await writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+	const result = sign(fixture, { sequence: 8 });
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /dirty or unproven worktree candidates cannot be signed/);
+	await assert.rejects(stat(path.join(fixture.bundle, "aidr-release.manifest.sig")), /ENOENT/);
+});
+
+test("refuses to sign a candidate with no worktree cleanliness proof", async () => {
+	const fixture = await createFixture();
+	const metadataPath = path.join(fixture.bundle, "release-metadata.json");
+	const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+	delete metadata.worktree_dirty;
+	await writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+	const result = sign(fixture, { sequence: 8 });
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /release worktree status is missing/);
+	await assert.rejects(stat(path.join(fixture.bundle, "aidr-release.manifest.sig")), /ENOENT/);
+});
+
 test("rejects artifact tampering before the installer can execute", async () => {
 	const fixture = await createFixture();
 	assert.equal(sign(fixture, { sequence: 8 }).status, 0);
@@ -156,6 +180,36 @@ test("rejects expired releases and validity windows longer than policy permits",
 	const tooLongResult = verify(tooLong);
 	assert.equal(tooLongResult.status, 1);
 	assert.match(tooLongResult.stderr, /validity exceeds signer policy maximum/);
+});
+
+test("allows an older rollback candidate only when protected policy permits its lifetime", async () => {
+	const fixture = await createFixture();
+	const day = 86_400_000;
+	const now = Date.now();
+	fixture.keys.signer.valid_from = new Date(now - 11 * day).toISOString();
+	fixture.keys.signer.valid_until = new Date(now + 2 * day).toISOString();
+	await writeFile(
+		fixture.policy,
+		JSON.stringify(buildPolicy(fixture.keys, { maximumSignatureLifetimeSeconds: 10 * 86_400 })),
+	);
+	assert.equal(
+		sign(fixture, {
+			sequence: 111,
+			issuedAt: new Date(now - 9 * day).toISOString(),
+			expiresAt: new Date(now + day).toISOString(),
+		}).status,
+		0,
+	);
+	const permitted = verify(fixture);
+	assert.equal(permitted.status, 0, permitted.stderr);
+
+	await writeFile(
+		fixture.policy,
+		JSON.stringify(buildPolicy(fixture.keys, { maximumSignatureLifetimeSeconds: 8 * 86_400 })),
+	);
+	const rejected = verify(fixture);
+	assert.equal(rejected.status, 1);
+	assert.match(rejected.stderr, /validity exceeds signer policy maximum/);
 });
 
 test("rejects rollback and same-sequence equivocation", async () => {
@@ -266,6 +320,7 @@ async function createFixture() {
 			release_version: "1.2.3",
 			git_sha: "1".repeat(40),
 			source_date_epoch: 1_789_167_600,
+			worktree_dirty: false,
 			artifacts: [{ path: "agent.tgz", size: artifact.byteLength, sha256: digest }],
 		}, null, 2)}\n`,
 	);
@@ -326,7 +381,7 @@ function buildPolicy(keys, overrides = {}) {
 		product_id: "singularity-aidr",
 		allowed_channels: ["stable"],
 		minimum_release_sequence: 1,
-		maximum_signature_lifetime_seconds: 7200,
+		maximum_signature_lifetime_seconds: overrides.maximumSignatureLifetimeSeconds ?? 7200,
 		trusted_signers: overrides.trustedSigners ?? [keys.signer],
 		revoked_key_ids: overrides.revokedKeyIds ?? [],
 		revoked_fingerprints: overrides.revokedFingerprints ?? [],

@@ -23,6 +23,16 @@ export function isSourceMapFile(fileName) {
 	return fileName.endsWith(".map");
 }
 
+/** Archives assembled for consumers and therefore subject to package hygiene checks. */
+export function isConsumerArchive(fileName) {
+	return fileName.endsWith(".tgz") || fileName.endsWith(".tar.gz");
+}
+
+/** True when a tar listing exposes source, test, dependency, or environment content. */
+export function hasForbiddenArchiveEntry(listing) {
+	return /\.map(?:\s|$)|node_modules|(?:^|\/)\.env(?:\.|$)|(?:^|\/)package\/(?:src|tests|__tests__)\/|(?:^|\/)__tests__\/|\.(?:test|spec)\.(?:[cm]?[jt]sx?|d\.ts)(?:\s|$)/im.test(listing);
+}
+
 /** True when the directory is the one release artifacts are emitted into. */
 export function isDistDir(dirPath) {
 	return path.basename(dirPath) === "dist";

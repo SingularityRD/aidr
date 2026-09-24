@@ -7,6 +7,7 @@
  */
 
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,16 +19,35 @@ import {
 	PASS,
 	RELEASE_PACKAGES,
 	SKIPPED_WITH_REASON,
+	applicableLifecycleDependencies,
+	applyInstallOutcome,
+	applyLifecycleInstallOutcome,
 	classifyRunFailure,
 	collectDeclaredArtifacts,
 	createTempWorkspace,
+	defaultRunner,
 	findForbiddenEntries,
+	gateExitCode,
 	listPackageEntries,
+	packageManagerEnvironment,
+	packageInstallArguments,
+	parseArguments,
+	installedBinShimPath,
+	lifecycleDependencySkips,
+	provisionNodeRuntime,
+	provisionArtifactTrust,
+	redactUrlCredentials,
+	releaseTarballPath,
 	removePath,
+	resolvePosixPnpmExecutable,
+	resolveWindowsPnpmExecutable,
+	runInstalledBin,
+	runPnpm,
 	sanitizedEnvironment,
 	verifyExtractedPackage,
 	verifyPackageInstall,
 } from "./verify-package-install.mjs";
+import { hasForbiddenArchiveEntry, isConsumerArchive } from "./lib/package-artifact-rules.mjs";
 
 function fixtureRoot(label) {
 	const root = path.join(tmpdir(), `aidr-install-test-${label}-${process.pid.toString(36)}-${Date.now().toString(36)}`);
@@ -59,6 +79,26 @@ function writePackage(root, options = {}) {
 	if (createFiles) writeFileSync(path.join(root, "dist", "asset.json"), '{"ok":true}\n', "utf8");
 	return manifest;
 }
+
+test("--tarball-dir selects immutable release inputs", () => {
+	const options = parseArguments(["--tarball-dir", "release-output", "packages/core"]);
+	assert.equal(options.tarballDir, path.resolve("release-output"));
+	assert.deepEqual(options.requested, ["packages/core"]);
+	assert.deepEqual(options.unknown, []);
+});
+
+test("release tarball lookup requires the exact package name and version", () => {
+	const root = fixtureRoot("exact-tarball");
+	try {
+		const spec = RELEASE_PACKAGES.find((entry) => entry.key === "packages/core");
+		const pkg = JSON.parse(readFileSync(path.resolve(spec.key, "package.json"), "utf8"));
+		const expected = path.join(root, `${pkg.name.replace(/^@/, "").replace("/", "-")}-${pkg.version}.tgz`);
+		writeFileSync(expected, "exact candidate bytes");
+		assert.equal(releaseTarballPath({ spec, tarballDir: root }), expected);
+	} finally {
+		removePath(root);
+	}
+});
 
 async function runFixture(label, options = {}, verification = {}) {
 	const root = fixtureRoot(label);
@@ -123,6 +163,17 @@ test("a package containing a *.map file fails", async () => {
 	assert.deepEqual(
 		result.failures.map((failure) => failure.code),
 		["SOURCE_MAP_PRESENT"],
+	);
+});
+
+test("packaged JavaScript rejects sourceMappingURL and sourceURL directives", async () => {
+	const result = await runFixture("source-directives", {
+		prepare: (root) => writeFileSync(path.join(root, "dist", "index.js"), "//# sourceMappingURL=index.js.map\n//# sourceURL=fixture.js\n", "utf8"),
+	});
+	assert.equal(result.status, FAIL);
+	assert.deepEqual(
+		result.failures.map((failure) => failure.code),
+		["SOURCE_MAPPING_URL_PRESENT", "SOURCE_URL_PRESENT"],
 	);
 });
 
@@ -245,9 +296,34 @@ test("an ordinary crash is classified as a failure", () => {
 	assert.equal(classified.status, FAIL);
 });
 
+test("a failed consumer install is fail-closed", () => {
+	const result = { status: PASS, failures: [] };
+	applyInstallOutcome(result, { ok: false, error: "registry unavailable" });
+	assert.equal(result.status, FAIL);
+	assert.deepEqual(result.failures, [{ code: "INSTALL_FAILED", detail: "registry unavailable" }]);
+});
+
+test("a failed lifecycle-enabled install is fail-closed", () => {
+	const result = { status: PASS, failures: [] };
+	applyLifecycleInstallOutcome(result, { ok: false, error: "koffi install failed" });
+	assert.equal(result.status, FAIL);
+	assert.deepEqual(result.failures, [{ code: "LIFECYCLE_INSTALL_FAILED", detail: "koffi install failed" }]);
+});
+
+test("the gate succeeds only when every package passes", () => {
+	assert.equal(gateExitCode([{ status: PASS }, { status: PASS }]), 0);
+	assert.equal(gateExitCode([{ status: PASS }, { status: SKIPPED_WITH_REASON }]), 1);
+	assert.equal(gateExitCode([{ status: PASS }, { status: FAIL }]), 1);
+	assert.equal(gateExitCode([]), 1);
+});
+
 test("the sanitised environment has an empty PATH and a private home", () => {
 	const home = path.join(tmpdir(), "aidr-install-test-home");
 	const emptyPath = path.join(tmpdir(), "aidr-install-test-empty-path");
+	const previousSecret = process.env.AWS_SECRET_ACCESS_KEY;
+	const previousToken = process.env.GITHUB_TOKEN;
+	process.env.AWS_SECRET_ACCESS_KEY = "must-not-leak";
+	process.env.GITHUB_TOKEN = "must-not-leak";
 	mkdirSync(emptyPath, { recursive: true });
 	try {
 		const environment = sanitizedEnvironment({ home, emptyPathDir: emptyPath });
@@ -257,10 +333,152 @@ test("the sanitised environment has an empty PATH and a private home", () => {
 		assert.equal(environment.AIDR_THREATS_DIR, undefined);
 		assert.equal(environment.NODE_PATH, undefined);
 		assert.equal(environment.npm_config_user_agent, undefined);
+		assert.equal(environment.AWS_SECRET_ACCESS_KEY, undefined);
+		assert.equal(environment.GITHUB_TOKEN, undefined);
 		assert.equal(environment.CI, "1");
 	} finally {
+		if (previousSecret === undefined) delete process.env.AWS_SECRET_ACCESS_KEY;
+		else process.env.AWS_SECRET_ACCESS_KEY = previousSecret;
+		if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+		else process.env.GITHUB_TOKEN = previousToken;
 		removePath(emptyPath);
 	}
+});
+
+test("credential-bearing proxy URLs are rejected without echoing credentials", () => {
+	const options = {
+		home: path.join(tmpdir(), "aidr-install-test-proxy-home"),
+		emptyPathDir: path.join(tmpdir(), "aidr-install-test-proxy-path"),
+		source: { HTTPS_PROXY: "http://alice:super-secret@proxy.example:8080" },
+	};
+	assert.throws(
+		() => packageManagerEnvironment(options),
+		(error) => {
+			assert.match(error.message, /Credential-bearing HTTPS_PROXY is not allowed/);
+			assert.doesNotMatch(error.message, /alice|super-secret/);
+			return true;
+		},
+	);
+});
+
+test("credential-bearing proxy URLs are redacted from package-manager logs", () => {
+	const output = redactUrlCredentials(
+		"fetch https://build-user:token-123@registry.example/pkg via socks5://proxy-user:proxy-pass@proxy.example:1080",
+	);
+	assert.equal(output, "fetch https://<redacted>@registry.example/pkg via socks5://<redacted>@proxy.example:1080");
+	assert.doesNotMatch(output, /build-user|token-123|proxy-user|proxy-pass/);
+});
+
+test("an absolute executable POSIX pnpm shim runs directly without a shell", () => {
+	const shim = path.resolve(path.parse(process.cwd()).root, "opt", "pnpm", "pnpm");
+	const executable = resolvePosixPnpmExecutable(shim, {
+		realpath: () => shim,
+		stat: () => ({ isFile: () => true, mode: 0o100755 }),
+	});
+	assert.deepEqual(executable, { file: shim, viaNode: false, commandDirectory: path.dirname(shim) });
+	assert.equal(
+		resolvePosixPnpmExecutable("relative/pnpm", {
+			realpath: () => "relative/pnpm",
+			stat: () => ({ isFile: () => true, mode: 0o100755 }),
+		}),
+		null,
+	);
+});
+
+test("Windows pnpm native and cmd shims resolve without executing cmd.exe", () => {
+	const metadata = { isFile: () => true, size: 1024 };
+	const options = {
+		pathApi: path.win32,
+		realpath: (value) => path.win32.normalize(value),
+		stat: () => metadata,
+		readFile: () => String.raw`@echo off
+"%~dp0\node.exe" "%~dp0\node_modules\pnpm\bin\pnpm.cjs" %*`,
+	};
+	assert.deepEqual(resolveWindowsPnpmExecutable("C:\\pnpm home\\pnpm.exe", options), {
+		file: "C:\\pnpm home\\pnpm.exe",
+		viaNode: false,
+		commandDirectory: "C:\\pnpm home",
+	});
+	assert.deepEqual(resolveWindowsPnpmExecutable("C:\\pnpm home\\pnpm.cmd", options), {
+		file: "C:\\pnpm home\\node_modules\\pnpm\\bin\\pnpm.cjs",
+		viaNode: true,
+		commandDirectory: "C:\\pnpm home",
+	});
+	assert.equal(resolveWindowsPnpmExecutable("relative\\pnpm.cmd", options), null);
+	assert.equal(resolveWindowsPnpmExecutable("C:\\pnpm home\\pnpm.cmd", { ...options, readFile: () => "@echo off & calc.exe" }), null);
+});
+
+test("pnpm lifecycle children resolve the trusted package manager from the sanitised PATH", () => {
+	const workspace = createTempWorkspace("aidr-install-test-pnpm-lifecycle-");
+	try {
+		const packageManager = JSON.parse(readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).packageManager;
+		const pinnedVersion = packageManager.replace(/^pnpm@/u, "");
+		const packageRoot = workspace.directory("package");
+		const home = workspace.directory("home");
+		const runtimeRoot = workspace.directory("runtime");
+		provisionNodeRuntime(runtimeRoot);
+		writeFileSync(
+			path.join(packageRoot, "package.json"),
+			`${JSON.stringify({ name: "pnpm-lifecycle-fixture", private: true, packageManager, scripts: { verify: `node -e "if (process.env.COREPACK_ENABLE_NETWORK !== '0') process.exit(1)" && pnpm --version` } }, null, 2)}\n`,
+			"utf8",
+		);
+		const environment = packageManagerEnvironment({ home, emptyPathDir: runtimeRoot, source: {} });
+		const result = runPnpm(["run", "verify"], { cwd: packageRoot, env: environment, timeout: 30_000 });
+		assert.equal(result.status, 0, [result.stdout, result.stderr].filter(Boolean).join("\n"));
+		assert.equal(result.stdout.trim().split(/\r?\n/u).at(-1), pinnedVersion);
+	} finally {
+		workspace.dispose();
+	}
+});
+
+test("consumer install arguments distinguish safe inspection from lifecycle acceptance", () => {
+	assert.ok(packageInstallArguments().includes("--ignore-scripts"));
+	assert.ok(!packageInstallArguments({ runLifecycleScripts: true }).includes("--ignore-scripts"));
+});
+
+test("installed bin shim paths are bounded and platform-specific", () => {
+	const root = path.resolve("consumer");
+	assert.equal(installedBinShimPath(root, "aidr", "win32"), path.join(root, "node_modules", ".bin", "aidr.cmd"));
+	assert.equal(installedBinShimPath(root, "aidr", "linux"), path.join(root, "node_modules", ".bin", "aidr"));
+	assert.equal(installedBinShimPath(root, "../escape", "linux"), null);
+});
+
+test("Windows installed bin shims execute through a trusted ComSpec without a command string", { skip: process.platform !== "win32" }, () => {
+	const workspace = createTempWorkspace("aidr-install-test-bin-shim-");
+	try {
+		const shimRoot = workspace.directory("shim path");
+		const runtimeRoot = workspace.directory("runtime path");
+		provisionNodeRuntime(runtimeRoot);
+		const shim = path.join(shimRoot, "fixture.cmd");
+		writeFileSync(path.join(shimRoot, "fixture.cjs"), 'if (process.argv[2] !== "--help") process.exit(3);\nconsole.log("fixture-ok");\n', "utf8");
+		writeFileSync(shim, '@echo off\r\nnode "%~dp0fixture.cjs" %*\r\n', "utf8");
+		const environment = sanitizedEnvironment({ home: workspace.root, emptyPathDir: runtimeRoot });
+		const result = runInstalledBin(shim, ["--help"], { cwd: workspace.root, env: environment, timeout: 30_000 });
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(result.stdout.trim(), "fixture-ok");
+	} finally {
+		workspace.dispose();
+	}
+});
+
+test("the clean consumer PATH contains only a runnable Node runtime", () => {
+	const workspace = createTempWorkspace("aidr-install-test-node-path-");
+	try {
+		const emptyPath = workspace.directory("path");
+		const runtime = provisionNodeRuntime(emptyPath);
+		assert.equal(existsSync(runtime), true);
+		assert.equal(path.dirname(runtime), emptyPath);
+	} finally {
+		workspace.dispose();
+	}
+});
+
+test("both npm tarballs and product tar.gz archives use the same hygiene policy", () => {
+	assert.equal(isConsumerArchive("package.tgz"), true);
+	assert.equal(isConsumerArchive("plugin.tar.gz"), true);
+	assert.equal(isConsumerArchive("notes.zip"), false);
+	assert.equal(hasForbiddenArchiveEntry("package/dist/index.js\npackage/dist/index.js.map\n"), true);
+	assert.equal(hasForbiddenArchiveEntry("packages/claude-code/dist/pre-tool-use.cjs\n"), false);
 });
 
 test("the declared artefact collector flattens bins, exports and files", () => {
@@ -394,6 +612,72 @@ test("another platform's native payload is reported as an unsupported host, not 
 	assert.match(result.skips[0].reason, new RegExp(process.platform));
 });
 
+test("Koffi lifecycle probing is limited to Windows AMSI hosts and skipped honestly elsewhere", () => {
+	const dependencies = [{ name: "koffi", platforms: ["win32"] }];
+	assert.deepEqual(applicableLifecycleDependencies(dependencies, "win32").map((item) => item.name), ["koffi"]);
+	assert.deepEqual(applicableLifecycleDependencies(dependencies, "linux"), []);
+	const skips = lifecycleDependencySkips(dependencies, "linux");
+	assert.equal(skips.length, 1);
+	assert.equal(skips[0].scope, "dependency");
+	assert.match(skips[0].reason, /UNSUPPORTED host.*win32.*linux/);
+});
+
+test("a signed clean install provisions an independent artifact public key", () => {
+	const workspace = createTempWorkspace("aidr-install-test-artifact-trust-");
+	try {
+		const packageDir = workspace.directory("package");
+		const home = workspace.directory("home");
+		mkdirSync(path.join(packageDir, "dist"), { recursive: true });
+		writeFileSync(path.join(packageDir, "dist", "aidr-artifact.manifest.sig"), "signature\n");
+		const { publicKey } = generateKeyPairSync("ed25519");
+		const pem = publicKey.export({ type: "spki", format: "pem" }).toString();
+		assert.deepEqual(provisionArtifactTrust({ packageDir, home, options: { artifactPublicKeyPem: pem } }), { signed: true });
+		const config = JSON.parse(readFileSync(path.join(home, ".singularity-aidr", "config.json"), "utf8"));
+		assert.equal(config.integrity.enabled, true);
+		assert.equal(config.integrity.verify_on_start, true);
+		assert.deepEqual(config.integrity.public_keys_pem, [pem]);
+	} finally {
+		workspace.dispose();
+	}
+});
+
+test("the signed OpenClaw clean-install run exercises register() and before_tool_call", async () => {
+	const workspace = createTempWorkspace("aidr-install-test-openclaw-hook-");
+	try {
+		const packageRoot = workspace.directory("package");
+		const runtimeRoot = workspace.directory("runtime");
+		const home = workspace.directory("home");
+		mkdirSync(path.join(packageRoot, "dist"), { recursive: true });
+		const pkg = writePackage(packageRoot, {
+			name: "@example/openclaw",
+			main: "dist/plugin.cjs",
+			bin: {},
+			exports: {},
+			createBin: false,
+			createExports: false,
+		});
+		writeFileSync(
+			path.join(packageRoot, "dist", "plugin.cjs"),
+			'module.exports = { register(api) { api.on("before_tool_call", async () => ({ block: true, blockReason: "fail closed" })); } };\n',
+		);
+		provisionNodeRuntime(runtimeRoot);
+		const result = await defaultRunner(
+			{ id: "plugin", kind: "import", entry: { main: true }, format: "cjs", pluginDefault: true },
+			{
+				pkg,
+				packageRoot,
+				consumerRoot: packageRoot,
+				installed: false,
+				exercisePlugin: true,
+				environment: sanitizedEnvironment({ home, emptyPathDir: runtimeRoot }),
+			},
+		);
+		assert.equal(result.status, PASS, result.detail);
+	} finally {
+		workspace.dispose();
+	}
+});
+
 test("the gate exports its per-package verification entry points for the ten release packages", () => {
 	assert.equal(typeof verifyPackageInstall, "function");
 	assert.equal(typeof verifyExtractedPackage, "function");
@@ -415,6 +699,17 @@ test("the gate exports its per-package verification entry points for the ten rel
 	for (const spec of RELEASE_PACKAGES) {
 		assert.ok(Array.isArray(spec.runs) && spec.runs.length > 0, `${spec.key} must declare at least one exercised entry point`);
 	}
+	assert.deepEqual(
+		RELEASE_PACKAGES.filter((spec) => spec.lifecycleDependencies?.length).map((spec) => spec.key),
+		["packages/core", "packages/claude-code", "packages/openclaw", "packages/codex"],
+	);
+	const extension = RELEASE_PACKAGES.find((spec) => spec.key === "packages/extension");
+	assert.ok(extension.runs.every((run) => run.host !== "vscode"), "the Node-only package gate must not claim to execute the VS Code host");
+	const codex = RELEASE_PACKAGES.find((spec) => spec.key === "packages/codex");
+	assert.ok(
+		codex.runs.some((run) => run.kind === "codex-signed-bin" && run.bin === "aidr-codex-hook"),
+		"the clean-consumer gate must execute the installed commercial Codex hook",
+	);
 });
 
 test("the packaged manifest is the one that is verified", async () => {

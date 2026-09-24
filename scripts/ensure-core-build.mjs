@@ -36,11 +36,19 @@ function newestMtime(dir, filter) {
 	return newest;
 }
 
-export function coreBuildReason(repoRoot = defaultRepoRoot) {
+export function coreBuildReason(repoRoot = defaultRepoRoot, expectedFlavor = null) {
 	const coreDir = join(repoRoot, "packages", "core");
 	const requiredOutputs = [join(coreDir, "dist", "index.js"), join(coreDir, "dist", "index.d.ts")];
 	for (const output of requiredOutputs) {
 		if (!existsSync(output)) return "a required output is missing";
+	}
+	if (expectedFlavor) {
+		const flavorOutput = join(coreDir, "dist", "build-flavor.js");
+		if (!existsSync(flavorOutput)) return "the embedded build flavor is missing";
+		const embedded = readFileSync(flavorOutput, "utf8");
+		if (!embedded.includes(`EMBEDDED_BUILD_FLAVOR = "${expectedFlavor}"`)) {
+			return `the embedded build flavor is not ${expectedFlavor}`;
+		}
 	}
 
 	const generatedSource = join(coreDir, "src", "generated");
@@ -78,14 +86,16 @@ function ownsWorkspaceLock(repoRoot, env) {
 export function ensureCoreBuild({
 	repoRoot = defaultRepoRoot,
 	env = process.env,
-	runBuild = (coreDir) =>
-		execFileSync("pnpm", ["run", "build"], {
+	release = false,
+	runBuild = (coreDir, script) =>
+		execFileSync("pnpm", ["run", script], {
 			cwd: coreDir,
 			stdio: "inherit",
 			shell: process.platform === "win32",
 		}),
 } = {}) {
-	let reason = coreBuildReason(repoRoot);
+	const expectedFlavor = release ? "commercial" : "development";
+	let reason = coreBuildReason(repoRoot, expectedFlavor);
 	if (reason === null) {
 		console.log("[core] up to date; skipping rebuild");
 		return 0;
@@ -106,13 +116,15 @@ export function ensureCoreBuild({
 		lock = acquireCoreBuildLock(repoRoot, "standalone connector core ensure");
 		// Another waiter may have completed the build before this process acquired
 		// the lock. Re-check under the lock to avoid an unnecessary rebuild.
-		reason = coreBuildReason(repoRoot);
+		reason = coreBuildReason(repoRoot, expectedFlavor);
 		if (reason === null) {
 			console.log("[core] up to date after waiting; skipping rebuild");
 			return 0;
 		}
 		console.log(`[core] building (${reason})`);
-		runBuild(join(repoRoot, "packages", "core"));
+		runBuild(join(repoRoot, "packages", "core"), release ? "build:release" : "build");
+		const verificationFailure = coreBuildReason(repoRoot, expectedFlavor);
+		if (verificationFailure !== null) throw new Error(`core build verification failed: ${verificationFailure}`);
 		return 0;
 	} catch (error) {
 		console.error(`[core] ${error.message}`);
@@ -123,4 +135,4 @@ export function ensureCoreBuild({
 }
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) process.exitCode = ensureCoreBuild();
+if (isMain) process.exitCode = ensureCoreBuild({ release: process.argv.slice(2).includes("--release") });

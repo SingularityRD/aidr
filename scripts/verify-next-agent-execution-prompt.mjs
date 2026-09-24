@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 
-const promptPath = process.env.AIDR_NEXT_AGENT_PROMPT ?? "docs/production-readiness/next-agent-execution-prompt-v8.md";
+const promptPath = process.env.AIDR_NEXT_AGENT_PROMPT ?? ".release-evidence/next-agent-execution-prompt-v8.md";
 const negativeSelfTest = process.argv.includes("--self-test-negative");
 const sourcePrompt = readFileSync(promptPath, "utf8");
 const prompt = negativeSelfTest
@@ -16,6 +16,8 @@ const verificationCommands = [
 	"git diff --check",
 	"node scripts/generate-feature-inventory.mjs",
 	"node scripts/generate-production-sales-gap-audit.mjs",
+	"node scripts/check-generator-determinism.mjs",
+	"node scripts/validate-backlog.mjs",
 	"node scripts/verify-next-agent-execution-prompt.mjs",
 	"pnpm check",
 	"pnpm quality:static",
@@ -155,7 +157,14 @@ for (const invariant of [
 	"Customer self-hosted control plane + customer endpoints",
 	"source inspection, unit/contract, packaged-consumer, isolated integration, native host, deployed environment, customer-observed ve externally-approved",
 	"Bir tur sonunda yerel OPEN/partial/backlog kaldıysa final cevap yazıp görevi bitirme",
+	"Tarihsel v6 adayında 33/33 migration ile self-hosted prova kaydı var",
+	"yeni canlı self-hosted ölçüm üretilmediğini açıkça söyler",
+	"manuel tutulan `READINESS_BACKLOG.json`",
 ]) requireText(invariant, `invariant ${invariant}`);
+
+if (/git diff --exit-code --[^`\n]*READINESS_BACKLOG\.json/.test(prompt)) {
+	failures.push("manually maintained READINESS_BACKLOG.json must not be presented as a generated output");
+}
 
 for (const field of [
 	"gate_id", "task_ids", "feature_ids", "status", "command", "exit_code",

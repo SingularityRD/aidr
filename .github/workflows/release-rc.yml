@@ -16,33 +16,28 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  attestations: write
-  id-token: write
+  contents: read
 
 env:
-  NODE_VERSION: 20.19.1
+  NODE_VERSION: 22.12.0
   PNPM_VERSION: 10.29.3
   VSCE_VERSION: 3.6.0
   AIDR_RELEASE_MODE: commercial
-  AIDR_REQUIRE_SIGNING: "1"
   AIDR_REQUIRE_SBOM: "1"
   AIDR_SIGNING_KEY_ID: ${{ vars.AIDR_SIGNING_KEY_ID }}
 
 jobs:
   build-rc:
-    name: Build and attest immutable RC
+    name: Build and test unsigned RC inputs
     runs-on: ubuntu-22.04
     environment: release-candidate
     env:
-      # Used by release-artifact-manifests and the independent verifier; keep
-      # it in the protected environment rather than deriving trust from a
-      # filename or a private key at runtime.
       AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
     outputs:
       tag: ${{ steps.rc_meta.outputs.tag }}
       sha: ${{ steps.rc_meta.outputs.sha }}
       version: ${{ steps.rc_meta.outputs.version }}
+      source_date_epoch: ${{ steps.rc_meta.outputs.source_date_epoch }}
     steps:
       - name: Checkout protected tag (pinned)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -77,8 +72,7 @@ jobs:
           # RC artifacts intentionally carry the stable package version so
           # promotion can retag the exact signed bytes. NPM cannot publish a
           # second tarball with that same version, therefore this workflow
-          # supports exactly one RC (rc.0) per base version. A subsequent
-          # candidate must use a new base version and a fresh signed build.
+          # supports exactly one RC (rc.0) per base version.
           [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.0$ ]] || {
             echo "Only vX.Y.Z-rc.0 is supported; repeated RCs would collide with the stable package version." >&2
             exit 1
@@ -100,6 +94,10 @@ jobs:
               exit 1
             }
             tag_sha="$(git rev-list -n 1 "${tag}^{commit}")"
+            [[ "${GITHUB_REF}" == "refs/tags/${tag}" && "${GITHUB_SHA}" == "${tag_sha}" ]] || {
+              echo "Manual RC workflow ref and commit must exactly match the requested protected tag." >&2
+              exit 1
+            }
           fi
 
           [[ "$(git cat-file -t "${tag}")" == "tag" ]] || {
@@ -111,12 +109,13 @@ jobs:
             exit 1
           }
           printf '%s\n' "${TAG_PGP_PUBLIC_KEY}" | gpg --batch --import
-          git tag -v "${tag}" >/tmp/aidr-tag-verification.txt 2>&1 || {
+          git verify-tag --raw "${tag}" >/tmp/aidr-tag-verification.txt 2>&1 || {
             cat /tmp/aidr-tag-verification.txt >&2
             exit 1
           }
-          actual_fingerprint="$(gpg --batch --with-colons --fingerprint | awk -F: '$1 == "fpr" {print $10; exit}')"
-          [[ "${actual_fingerprint}" == "${TAG_PGP_FINGERPRINT}" ]] || {
+          actual_fingerprint="$(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {print toupper($3); exit}' /tmp/aidr-tag-verification.txt)"
+          expected_fingerprint="$(printf '%s' "${TAG_PGP_FINGERPRINT}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          [[ -n "${actual_fingerprint}" && "${actual_fingerprint}" == "${expected_fingerprint}" ]] || {
             echo "RC tag signer fingerprint mismatch." >&2
             exit 1
           }
@@ -124,7 +123,7 @@ jobs:
           version="${tag#v}"
           version="${version%-rc.*}"
           [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid release version: ${version}" >&2; exit 1; }
-          for package_json in packages/core/package.json packages/claude-code/package.json packages/extension/package.json packages/openclaw/package.json packages/opencode/package.json packages/cli/package.json packages/sdk/package.json packages/dashboard/package.json; do
+          for package_json in packages/core/package.json packages/claude-code/package.json packages/extension/package.json packages/openclaw/package.json packages/opencode/package.json packages/cli/package.json packages/sdk/package.json packages/dashboard/package.json packages/codex/package.json packages/mcp-gateway/package.json; do
             package_version="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version' "${package_json}")"
             [[ "${package_version}" == "${version}" ]] || {
               echo "${package_json} must remain at stable base version ${version}; found ${package_version}." >&2
@@ -136,8 +135,7 @@ jobs:
             echo "AIDR_RELEASE_TAG=${tag}"
             echo "AIDR_RELEASE_VERSION=${version}"
             echo "AIDR_BUILD_ID=${tag_sha}"
-            # Keep the provenance pointer tied to the CI run, while the build
-            # ID remains the immutable commit digest used for artifact bytes.
+            echo "AIDR_GIT_SHA=${tag_sha}"
             echo "AIDR_CI_RUN_ID=${GITHUB_RUN_ID}"
             echo "AIDR_WATERMARK_ID=rc-${tag_sha}"
             echo "SOURCE_DATE_EPOCH=${source_date_epoch}"
@@ -146,46 +144,40 @@ jobs:
             echo "tag=${tag}"
             echo "sha=${tag_sha}"
             echo "version=${version}"
+            echo "source_date_epoch=${source_date_epoch}"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Prepare release signing keys
+      - name: Full-history secret scan (Gitleaks v8.30.1)
         shell: bash
-        env:
-          SIGNING_PRIVATE_KEY: ${{ secrets.AIDR_SIGNING_PRIVATE_KEY_PEM }}
-          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
         run: |
           set -euo pipefail
-          [[ -n "${SIGNING_PRIVATE_KEY}" && -n "${SIGNING_PUBLIC_KEY}" ]] || {
-            echo "Both private and independently distributed public signing keys are required." >&2
-            exit 1
-          }
-          key_path="${RUNNER_TEMP}/aidr-signing-key.pem"
-          public_path="${RUNNER_TEMP}/aidr-signing-public-key.pem"
-          umask 077
-          printf '%s\n' "${SIGNING_PRIVATE_KEY}" > "${key_path}"
-          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
-          {
-            echo "AIDR_SIGNING_PRIVATE_KEY_PEM_PATH=${key_path}"
-            echo "AIDR_SIGNING_PUBLIC_KEY_PEM_PATH=${public_path}"
-          } >> "${GITHUB_ENV}"
+          archive="${RUNNER_TEMP}/gitleaks.tar.gz"
+          curl --fail --silent --show-error --location \
+            --output "${archive}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  ${archive}" | sha256sum --check --strict
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}" gitleaks
+          [[ "$("${RUNNER_TEMP}/gitleaks" version)" == "8.30.1" ]]
+          PATH="${RUNNER_TEMP}:${PATH}" pnpm verify:secrets
 
       - name: Frozen dependency install (no lifecycle mutation)
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Cloudflare Worker contract
+        run: node --test deploy/cloudflare/worker.test.mjs deploy/cloudflare/verify-operational.test.mjs deploy/cloudflare/staging-deploy.test.mjs
 
       - name: Setup pinned Python for bridge E2E
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.8"
           cache: pip
-          cache-dependency-path: services/aig-bridge/requirements.txt
+          cache-dependency-path: services/aig-bridge/requirements-ci.lock
 
-      - name: Install pinned bridge E2E dependencies
+      - name: Install hash-locked bridge E2E dependencies
         working-directory: services/aig-bridge
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check --upgrade pip
-          python -m pip install --disable-pip-version-check pytest==8.4.1 pytest-asyncio==1.1.0
-          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements-ci.lock
           python -m pip check
 
       - name: Assert clean checkout and submodule gitlink
@@ -210,95 +202,984 @@ jobs:
           pnpm compile:aig
           git diff --exit-code -- packages/core/src/generated
 
-      - name: Supabase migration and local schema gate
+      - name: Install pinned Supabase CLI 2.114.0
         shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/supabase_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location \
+            --output "${archive}" \
+            "https://github.com/supabase/cli/releases/download/v2.114.0/supabase_linux_amd64.tar.gz"
+          echo "f36a33ca867f1cce9ba5efa705863fdc545d1465d3719a721793ea67eb692c5a  ${archive}" | sha256sum --check --strict
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}" supabase
+          chmod 0755 "${RUNNER_TEMP}/supabase"
+          echo "SUPABASE_BIN=${RUNNER_TEMP}/supabase" >> "${GITHUB_ENV}"
+
+      - name: Supabase migration, reset, lint and live boundary gate
+        shell: bash
+        env:
+          AIDR_RLS_TEST_DB_CONTAINER: supabase_db_aidr
+          AIDR_POSTGRES_DOCKER_CONTAINER: supabase_db_aidr
+          AIDR_TEST_DISPOSABLE_DB: "1"
         run: |
           set -euo pipefail
           pnpm supabase:check
-          pnpm dlx supabase@2.33.9 db lint --local
-          pnpm dlx supabase@2.33.9 db reset --local --no-seed
+          pnpm supabase:check:edge-typed-slice
+          "${SUPABASE_BIN}" start
+          "${SUPABASE_BIN}" db reset --local --no-seed
+          "${SUPABASE_BIN}" db lint --local --fail-on error
+          node scripts/database-boundary-hardening-postgres.mjs
+          node scripts/tenant-lifecycle-rls-postgres.test.mjs --installed
+          node scripts/team-resource-read-rls-postgres.mjs
+          node scripts/team-invitation-atomic-audit-postgres.mjs
+          node scripts/team-member-email-projection-postgres.mjs
+          node scripts/scim-saml-identity-postgres.mjs
+          node scripts/scim-canonical-membership-postgres.mjs
+          node scripts/owner-role-audit-postgres.mjs
+          node scripts/member-role-audit-postgres.mjs
+          node scripts/member-removal-audit-postgres.mjs
+          node scripts/member-authorization-race-postgres.mjs
+          node scripts/billing-channel-intent-postgres.mjs
+          node scripts/events-seat-admission-postgres.mjs
+          node scripts/pilot-approval-seat-postgres.mjs
+          node scripts/tenant-ga-admission-postgres.test.mjs --installed
+          node scripts/tenant-ga-admission-concurrency-postgres.test.mjs
+          node scripts/ga-trial-legal-consent-postgres.test.mjs --installed
+          node scripts/ga-trial-auth-delete-postgres.test.mjs --installed
+          node scripts/team-invitation-acceptance-postgres.mjs --installed
+          node scripts/member-api-key-revocation-postgres.mjs
+          node scripts/cloud-signup-workspace-name-postgres.mjs
+          node scripts/onprem-licensed-bootstrap-postgres.test.mjs
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/ingest-seat-reduction.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/provider-term-seat-expiry.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/events-seat-admission.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/seat-usage-effective-view.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/enrollment-rotation-resolution.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/device-membership-token.rollback.sql
+          pnpm verify:supabase-pilot-audit-live
+          pnpm verify:supabase-device-revocation-live
 
-      - name: Full deterministic quality gate
-        run: pnpm quality:gate
+      - name: Stop local Supabase
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${SUPABASE_BIN:-}" && -x "${SUPABASE_BIN}" ]]; then
+            "${SUPABASE_BIN}" stop --no-backup
+          fi
 
-      - name: Dashboard build and static route gate
+      - name: Blocking offboarding and retention PostgreSQL gates
         shell: bash
         run: |
           set -euo pipefail
-          pnpm -C packages/dashboard build
-          pnpm -C packages/dashboard test:route-smoke:static
+          docker pull supabase/postgres:17.6.1.136
+          pnpm verify:offboarding
+          pnpm verify:retention
+          node --test scripts/tenant-rate-limit-postgres.test.mjs
 
-      - name: Real-host connector E2E gate
+      - name: Full deterministic quality gate
+        run: pnpm quality:static && pnpm audit:prod && pnpm audit:build && pnpm check && pnpm test && pnpm test:coverage && pnpm test:coverage:core && pnpm verify:release-signing && pnpm verify:provenance
+
+      - name: Deterministic commercial release build
         env:
-          AIDR_E2E_REQUIRE_REAL: "1"
-        run: |
-          set -euo pipefail
-          pnpm test:e2e
-          pnpm test:e2e:negative
+          AIDR_BUILD_FLAVOR: commercial
+        run: pnpm build:release
 
-      - name: Clean-tree and diff gate after all builds
+      - name: Verify Windows and Unix fleet lifecycles
+        run: pnpm verify:fleet:windows && pnpm verify:fleet:unix
+
+      - name: Dashboard static route gate
+        run: pnpm -C packages/dashboard test:route-smoke:static
+
+      - name: Clean-source and diff gate after unsigned build
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          if [[ -n "$(git status --porcelain)" ]]; then
-            echo "Builds modified tracked source or generated files:" >&2
-            git status --short >&2
+          node scripts/lib/release-source-clean.mjs
+
+      - name: Archive unsigned release inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find packages/core/dist packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
+            packages/openclaw/dist packages/opencode/dist packages/cli/dist packages/sdk/dist \
+            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+            -name '.env*' -print -quit | grep -q .; then
+            echo "Release inputs contain a forbidden .env* path." >&2
             exit 1
           fi
+          tar -czf "${RUNNER_TEMP}/prepared-release.tgz" \
+            .release-evidence/aidr-sbom.cdx.json \
+            .release-evidence/aidr-sbom.cdx.json.sha256 \
+            packages/core/dist packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
+            packages/openclaw/dist packages/opencode/dist packages/cli/dist \
+            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
+
+      - name: Upload unsigned release inputs (pinned)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: aidr-prepared-${{ steps.rc_meta.outputs.tag }}
+          path: ${{ runner.temp }}/prepared-release.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  package-signing:
+    name: Sign AIG data and package manifests
+    needs: build-rc
+    runs-on: ubuntu-22.04
+    environment: release-candidate
+    permissions:
+      contents: read
+    env:
+      AIDR_RELEASE_TAG: ${{ needs.build-rc.outputs.tag }}
+      AIDR_RELEASE_VERSION: ${{ needs.build-rc.outputs.version }}
+      AIDR_BUILD_ID: ${{ needs.build-rc.outputs.sha }}
+      AIDR_GIT_SHA: ${{ needs.build-rc.outputs.sha }}
+      AIDR_CI_RUN_ID: ${{ github.run_id }}
+      AIDR_WATERMARK_ID: rc-${{ needs.build-rc.outputs.sha }}
+      SOURCE_DATE_EPOCH: ${{ needs.build-rc.outputs.source_date_epoch }}
+      AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+    steps:
+      - name: Checkout immutable RC commit (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-rc.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download unsigned release inputs (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-prepared-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/prepared-release
+
+      - name: Restore unsigned release inputs
+        shell: bash
+        run: tar -xzf "${RUNNER_TEMP}/prepared-release/prepared-release.tgz" -C "${GITHUB_WORKSPACE}"
+
+      - name: Sign and verify pinned AIG data only
+        shell: bash
+        env:
+          AIG_PRIVATE_KEY_PEM: ${{ secrets.AIG_DATA_SIGNING_PRIVATE_KEY_PEM }}
+          AIG_PUBLIC_KEY_PEM: ${{ secrets.AIG_DATA_SIGNING_PUBLIC_KEY_PEM }}
+          AIG_EXPECTED_PUBLIC_SHA256: ${{ secrets.AIG_DATA_SIGNING_PUBLIC_KEY_SHA256 }}
+          AIG_KEY_ID: ${{ vars.AIG_DATA_SIGNING_KEY_ID }}
+        run: |
+          set -euo pipefail
+          [[ -n "${AIG_PRIVATE_KEY_PEM}" && -n "${AIG_PUBLIC_KEY_PEM}" && -n "${AIG_EXPECTED_PUBLIC_SHA256}" && -n "${AIG_KEY_ID}" ]] || {
+            echo "AIG release signing key, public key, fingerprint and key id are required." >&2
+            exit 1
+          }
+          [[ "${AIG_EXPECTED_PUBLIC_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${AIG_KEY_ID}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
+          private_path="${RUNNER_TEMP}/aig-data-private.pem"
+          public_path="${RUNNER_TEMP}/aig-data-public.pem"
+          cleanup() { rm -f "${private_path}" "${public_path}"; }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' "${AIG_PRIVATE_KEY_PEM}" > "${private_path}"
+          printf '%s\n' "${AIG_PUBLIC_KEY_PEM}" > "${public_path}"
+          unset AIG_PRIVATE_KEY_PEM AIG_PUBLIC_KEY_PEM
+          node --input-type=module - "${private_path}" "${public_path}" "${AIG_EXPECTED_PUBLIC_SHA256}" <<'NODE'
+          import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
+          import { readFileSync } from "node:fs";
+          const privateKey = createPrivateKey(readFileSync(process.argv[2], "utf8"));
+          const suppliedPublic = createPublicKey(readFileSync(process.argv[3], "utf8"));
+          const derivedPublic = createPublicKey(privateKey);
+          if (privateKey.asymmetricKeyType !== "rsa" || suppliedPublic.asymmetricKeyType !== "rsa") throw new Error("AIG release keys must be RSA");
+          const suppliedDer = suppliedPublic.export({ type: "spki", format: "der" });
+          const derivedDer = derivedPublic.export({ type: "spki", format: "der" });
+          if (!suppliedDer.equals(derivedDer)) throw new Error("AIG private/public key mismatch");
+          const actual = createHash("sha256").update(suppliedDer).digest("hex");
+          if (actual !== process.argv[4]) throw new Error(`AIG public-key fingerprint mismatch: ${actual}`);
+          NODE
+          AIG_SIGNING_PRIVATE_KEY_PATH="${private_path}" AIG_SIGNING_KEY_ID="${AIG_KEY_ID}" node scripts/compile-aig-data.mjs
+          rm -f "${private_path}"
+          AIG_RELEASE=true AIG_REQUIRE_SIGNED=true \
+            AIG_SIGNING_PUBLIC_KEY_PATH="${public_path}" \
+            AIG_TRUSTED_SIGNING_KEY_ID="${AIG_KEY_ID}" \
+            AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256="${AIG_EXPECTED_PUBLIC_SHA256}" \
+            node scripts/verify-aig-source.mjs
+          node packages/core/scripts/copy-generated.mjs
+          AIG_RELEASE=true AIG_REQUIRE_SIGNED=true \
+            AIG_GENERATED_DIR="${GITHUB_WORKSPACE}/packages/core/dist/generated" \
+            AIG_SIGNING_PUBLIC_KEY_PATH="${public_path}" \
+            AIG_TRUSTED_SIGNING_KEY_ID="${AIG_KEY_ID}" \
+            AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256="${AIG_EXPECTED_PUBLIC_SHA256}" \
+            node scripts/verify-aig-source.mjs
+          signed_data_digest="$(node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { existsSync } from "node:fs";
+          import { readdir, readFile } from "node:fs/promises";
+          import path from "node:path";
+          const root = process.cwd();
+          const roots = ["packages/core/src/generated", "threats", "allowlists"].map((item) => path.join(root, item)).filter(existsSync);
+          const tuples = [];
+          for (const start of roots) {
+            const stack = [start];
+            while (stack.length) {
+              const current = stack.pop();
+              for (const entry of await readdir(current, { withFileTypes: true })) {
+                const file = path.join(current, entry.name);
+                if (entry.isDirectory()) stack.push(file);
+                else if (entry.isFile()) tuples.push({ path: path.relative(root, file).replaceAll("\\", "/"), sha256: createHash("sha256").update(await readFile(file)).digest("hex") });
+              }
+            }
+          }
+          tuples.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+          process.stdout.write(`sha256:${createHash("sha256").update(JSON.stringify(tuples)).digest("hex")}`);
+          NODE
+          )"
+          [[ "${signed_data_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "AIDR_DATA_DIGEST=${signed_data_digest}" >> "${GITHUB_ENV}"
+          git restore --source=HEAD --worktree -- packages/core/src/generated
+          git diff --exit-code -- packages/core/src/generated
+          cleanup
+          trap - EXIT
+
+      - name: Prepare final package manifests without private keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          AIDR_PREBUILT_SBOM_PATH="${GITHUB_WORKSPACE}/.release-evidence/aidr-sbom.cdx.json" \
+            node scripts/release-artifact-manifests.mjs
+
+      - name: Sign package manifests only
+        shell: bash
+        env:
+          SIGNING_PRIVATE_KEY: ${{ secrets.AIDR_SIGNING_PRIVATE_KEY_PEM }}
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PRIVATE_KEY}" && -n "${SIGNING_PUBLIC_KEY}" && -n "${AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT}" ]] || {
+            echo "Package signing key, public key and fingerprint are required." >&2
+            exit 1
+          }
+          private_path="${RUNNER_TEMP}/aidr-package-private.pem"
+          public_path="${RUNNER_TEMP}/aidr-package-public.pem"
+          cleanup() { rm -f "${private_path}" "${public_path}"; }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' "${SIGNING_PRIVATE_KEY}" > "${private_path}"
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
+          unset SIGNING_PRIVATE_KEY SIGNING_PUBLIC_KEY
+          node --input-type=module - "${private_path}" "${public_path}" "${AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT}" <<'NODE'
+          import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
+          import { readFileSync } from "node:fs";
+          const privateKey = createPrivateKey(readFileSync(process.argv[2], "utf8"));
+          const suppliedPublic = createPublicKey(readFileSync(process.argv[3], "utf8"));
+          const derivedPublic = createPublicKey(privateKey);
+          if (privateKey.asymmetricKeyType !== "ed25519" || suppliedPublic.asymmetricKeyType !== "ed25519") throw new Error("Package signing keys must be Ed25519");
+          const suppliedDer = suppliedPublic.export({ type: "spki", format: "der" });
+          if (!suppliedDer.equals(derivedPublic.export({ type: "spki", format: "der" }))) throw new Error("Package private/public key mismatch");
+          const expected = process.argv[4].toLowerCase().replace(/^sha256:/, "");
+          const actual = createHash("sha256").update(suppliedDer).digest("hex");
+          if (!/^[0-9a-f]{64}$/.test(expected) || actual !== expected) throw new Error(`Package public-key fingerprint mismatch: ${actual}`);
+          NODE
+          artifact_dirs=(
+            packages/core/dist packages/claude-code/dist packages/extension/dist
+            packages/openclaw/dist packages/opencode/dist packages/cli/dist
+            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
+          )
+          for artifact_dir in "${artifact_dirs[@]}"; do
+            node scripts/sign-artifact-manifest.mjs --dir "${artifact_dir}" --key "${private_path}"
+          done
+          node scripts/generate-artifact-manifest.mjs \
+            --dir packages/claude-code \
+            --id claude-code/package \
+            --version "${AIDR_RELEASE_VERSION}" \
+            --watermark-id "${AIDR_WATERMARK_ID}" \
+            --channel commercial
+          node scripts/sign-artifact-manifest.mjs --dir packages/claude-code --key "${private_path}"
+          rm -f "${private_path}"
+          node scripts/verify-release-evidence.mjs \
+            --public-key "${public_path}" \
+            --fingerprint "${AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT}" \
+            --dirs "${artifact_dirs[@]}" packages/claude-code
+          cleanup
+          trap - EXIT
+
+      - name: Archive signed package inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find packages/core/dist packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
+            packages/openclaw/dist packages/opencode/dist packages/cli/dist packages/sdk/dist \
+            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+            -name '.env*' -print -quit | grep -q .; then
+            echo "Release inputs contain a forbidden .env* path." >&2
+            exit 1
+          fi
+          tar -czf "${RUNNER_TEMP}/signed-package-inputs.tgz" \
+            .release-evidence/aidr-sbom.cdx.json \
+            .release-evidence/aidr-sbom.cdx.json.sha256 \
+            packages/core/dist packages/claude-code/package.json packages/claude-code/aidr-artifact.manifest.json packages/claude-code/aidr-artifact.manifest.sig packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
+            packages/openclaw/dist packages/opencode/dist packages/cli/dist \
+            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
+
+      - name: Upload signed package inputs (pinned)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: aidr-signed-packages-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/signed-package-inputs.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  assemble-e2e:
+    name: Assemble and verify exact RC candidate
+    needs: [build-rc, package-signing]
+    runs-on: ubuntu-22.04
+    environment: release-candidate
+    permissions:
+      contents: read
+    outputs:
+      candidate_digest: ${{ steps.candidate.outputs.digest }}
+      candidate_bound_at: ${{ steps.candidate.outputs.bound_at }}
+    env:
+      AIDR_RELEASE_TAG: ${{ needs.build-rc.outputs.tag }}
+      AIDR_RELEASE_VERSION: ${{ needs.build-rc.outputs.version }}
+      AIDR_BUILD_ID: ${{ needs.build-rc.outputs.sha }}
+      AIDR_GIT_SHA: ${{ needs.build-rc.outputs.sha }}
+      AIDR_CI_RUN_ID: ${{ github.run_id }}
+      AIDR_WATERMARK_ID: rc-${{ needs.build-rc.outputs.sha }}
+      SOURCE_DATE_EPOCH: ${{ needs.build-rc.outputs.source_date_epoch }}
+    steps:
+      - name: Checkout immutable RC commit (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-rc.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen dependency install (no lifecycle mutation)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Download signed package inputs (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-signed-packages-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/signed-packages
+
+      - name: Restore signed package inputs
+        run: tar -xzf "${RUNNER_TEMP}/signed-packages/signed-package-inputs.tgz" -C "${GITHUB_WORKSPACE}"
+
+      - name: Reverify signed packages across runner boundary
+        shell: bash
+        env:
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+          SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PUBLIC_KEY}" && -n "${SIGNING_PUBLIC_KEY_FINGERPRINT}" ]] || {
+            echo "Package public key and fingerprint are required." >&2
+            exit 1
+          }
+          public_path="${RUNNER_TEMP}/aidr-package-public.pem"
+          cleanup() { rm -f "${public_path}"; }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
+          unset SIGNING_PUBLIC_KEY
+          node scripts/verify-release-evidence.mjs \
+            --public-key "${public_path}" \
+            --fingerprint "${SIGNING_PUBLIC_KEY_FINGERPRINT}" \
+            --dirs \
+              packages/core/dist packages/claude-code/dist packages/extension/dist \
+              packages/openclaw/dist packages/opencode/dist packages/cli/dist \
+              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+              packages/claude-code
+          cleanup
+          trap - EXIT
+
+      - name: Verify restored Claude plugin payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import {
+            assertClaudePluginPackage,
+            assertClaudePluginResourcesCanonical,
+          } from "./scripts/lib/claude-plugin-package.mjs";
+          assertClaudePluginPackage(process.cwd());
+          assertClaudePluginResourcesCanonical(process.cwd());
+          NODE
 
       - name: Assemble exact consumer artifacts
         env:
           RELEASE_OUTPUT_DIR: ${{ github.workspace }}/release-output
-          AIDR_RELEASE_TAG: ${{ steps.rc_meta.outputs.tag }}
-          AIDR_RELEASE_VERSION: ${{ steps.rc_meta.outputs.version }}
-          AIDR_BUILD_ID: ${{ steps.rc_meta.outputs.sha }}
           AIDR_DETERMINISTIC_MANIFEST: "1"
           VSIX_OUTPUT_DIR: ${{ github.workspace }}/release-output
         run: |
           set -euo pipefail
           node .github/scripts/build-release-bundle.mjs
-          # build-release-bundle owns/clears release-output; package VSIX
-          # afterwards so the extension installers remain in the signed bundle.
           node .github/scripts/package-vsix.mjs
-          manifest_field() {
-            MANIFEST_FIELD="$1" node --input-type=module <<'NODE'
+
+      - name: Clean-consumer package install gate
+        shell: bash
+        env:
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PUBLIC_KEY}" ]] || { echo "Package public key is required for the signed clean-consumer gate." >&2; exit 1; }
+          public_path="${RUNNER_TEMP}/aidr-clean-consumer-public.pem"
+          cleanup() { rm -f "${public_path}"; }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
+          unset SIGNING_PUBLIC_KEY
+          AIDR_SIGNING_PUBLIC_KEY_PEM_PATH="${public_path}" \
+            node scripts/verify-package-install.mjs --tarball-dir release-output
+          cleanup
+          trap - EXIT
+
+      - name: Bind candidate identity and digest
+        id: candidate
+        shell: bash
+        env:
+          EXPECTED_TAG: ${{ needs.build-rc.outputs.tag }}
+          EXPECTED_VERSION: ${{ needs.build-rc.outputs.version }}
+          EXPECTED_SHA: ${{ needs.build-rc.outputs.sha }}
+          EXPECTED_SOURCE_DATE_EPOCH: ${{ needs.build-rc.outputs.source_date_epoch }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
           import { readFileSync } from "node:fs";
-          const manifest = JSON.parse(readFileSync("packages/core/dist/aidr-artifact.manifest.json", "utf8"));
-          const value = manifest.provenance?.[process.env.MANIFEST_FIELD];
-          if (typeof value !== "string" || value.length === 0) throw new Error(`core manifest is missing ${process.env.MANIFEST_FIELD}`);
-          process.stdout.write(value);
-          NODE
+          const metadata = JSON.parse(readFileSync("release-output/release-metadata.json", "utf8"));
+          const expected = {
+            release_tag: process.env.EXPECTED_TAG,
+            release_version: process.env.EXPECTED_VERSION,
+            git_sha: process.env.EXPECTED_SHA,
+            source_date_epoch: Number(process.env.EXPECTED_SOURCE_DATE_EPOCH),
+          };
+          for (const [field, value] of Object.entries(expected)) {
+            if (metadata[field] !== value) throw new Error(`candidate ${field} mismatch: ${metadata[field]} != ${value}`);
           }
-          export AIDR_SOURCE_DIGEST="$(manifest_field source_digest)"
-          export AIDR_DATA_DIGEST="$(manifest_field data_digest)"
-          export AIDR_LOCKFILE_DIGEST="$(manifest_field lockfile_digest)"
-          export AIDR_SBOM_DIGEST="$(manifest_field sbom_digest)"
-          export AIDR_PACKAGE_DIGEST="sha256:$(find release-output -maxdepth 1 -type f \( -name '*.tgz' -o -name '*.tar.gz' -o -name '*.vsix' \) -print0 | sort -z | while IFS= read -r -d '' file; do sha256sum "${file}"; done | sha256sum | awk '{print $1}')"
-          [[ "${AIDR_SOURCE_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid source digest" >&2; exit 1; }
-          [[ "${AIDR_DATA_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid data digest" >&2; exit 1; }
-          [[ "${AIDR_LOCKFILE_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid lockfile digest" >&2; exit 1; }
-          [[ "${AIDR_SBOM_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid SBOM digest" >&2; exit 1; }
-          [[ "${AIDR_PACKAGE_DIGEST}" =~ ^sha256:[0-9a-fA-F]{64}$ ]] || { echo "Invalid package digest" >&2; exit 1; }
-          export AIDR_FINAL_MANIFEST=1
-          node scripts/generate-artifact-manifest.mjs \
-            --dir release-output \
-            --id release/bundle \
-            --version "${AIDR_RELEASE_VERSION}" \
+          NODE
+          candidate_digest="$(sha256sum release-output/release-metadata.json release-output/release-inventory.json | sha256sum | awk '{print $1}')"
+          [[ "${candidate_digest}" =~ ^[0-9a-f]{64}$ ]] || { echo "Invalid candidate digest" >&2; exit 1; }
+          candidate_bound_at="$(node -p 'new Date().toISOString()')"
+          {
+            echo "digest=${candidate_digest}"
+            echo "bound_at=${candidate_bound_at}"
+          } >> "${GITHUB_OUTPUT}"
+          {
+            echo "AIDR_E2E_RC_DIGEST=${candidate_digest}"
+            echo "AIDR_E2E_CANDIDATE_BOUND_AT=${candidate_bound_at}"
+            echo "AIDR_CANDIDATE_SHA256=${candidate_digest}"
+            echo "AIDR_RELEASE_CANDIDATE_SHA256=${candidate_digest}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Clean-source and diff gate after candidate assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          node scripts/lib/release-source-clean.mjs
+
+      - name: Archive exact unsigned outer bundle
+        run: tar -czf "${RUNNER_TEMP}/exact-release-candidate.tgz" release-output
+
+      - name: Upload exact unsigned outer bundle (pinned)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: aidr-exact-candidate-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/exact-release-candidate.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  acceptance-windows-native:
+    name: Windows native Claude package acceptance of exact RC
+    needs: [build-rc, assemble-e2e]
+    runs-on: windows-2022
+    environment: release-candidate
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable RC commit (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-rc.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download exact unsigned outer bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-exact-candidate-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/exact-candidate
+
+      - name: Verify packaged native AMSI and hook decisions on Windows
+        shell: pwsh
+        env:
+          EXPECTED_CANDIDATE_DIGEST: ${{ needs.assemble-e2e.outputs.candidate_digest }}
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PUBLIC_KEY)) { throw "Package public key is required for native candidate acceptance" }
+          $archive = Join-Path $env:RUNNER_TEMP "exact-candidate/exact-release-candidate.tgz"
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw "Exact candidate archive is missing" }
+          & tar -xzf $archive -C $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw "Exact candidate extraction failed" }
+          $publicFile = New-TemporaryFile
+          try {
+            [System.IO.File]::WriteAllText($publicFile.FullName, $env:SIGNING_PUBLIC_KEY, [System.Text.UTF8Encoding]::new($false))
+            $result = & node scripts/verify-claude-native-candidate.mjs --candidate release-output --expected-candidate-digest $env:EXPECTED_CANDIDATE_DIGEST --public-key $publicFile.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Claude native candidate acceptance failed" }
+            $result | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "claude-native-candidate.json") -Encoding utf8NoBOM
+            $result
+          } finally {
+            Remove-Item -LiteralPath $publicFile.FullName -Force
+          }
+
+      - name: Upload Windows native package receipt (pinned)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: aidr-claude-native-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/claude-native-candidate.json
+          if-no-files-found: error
+          retention-days: 90
+
+  acceptance-e2e:
+    name: Protected real-host acceptance of exact RC
+    needs: [build-rc, assemble-e2e]
+    runs-on: ${{ vars.AIDR_ACCEPTANCE_RUNNER_LABEL || 'ubuntu-22.04' }}
+    environment: release-candidate
+    permissions:
+      contents: read
+    env:
+      AIDR_RELEASE_TAG: ${{ needs.build-rc.outputs.tag }}
+      AIDR_RELEASE_VERSION: ${{ needs.build-rc.outputs.version }}
+      AIDR_BUILD_ID: ${{ needs.build-rc.outputs.sha }}
+      AIDR_GIT_SHA: ${{ needs.build-rc.outputs.sha }}
+      AIDR_CI_RUN_ID: ${{ github.run_id }}
+      AIDR_WATERMARK_ID: rc-${{ needs.build-rc.outputs.sha }}
+      SOURCE_DATE_EPOCH: ${{ needs.build-rc.outputs.source_date_epoch }}
+      AIDR_E2E_RC_DIGEST: ${{ needs.assemble-e2e.outputs.candidate_digest }}
+      AIDR_E2E_CANDIDATE_BOUND_AT: ${{ needs.assemble-e2e.outputs.candidate_bound_at }}
+    steps:
+      - name: Fail early unless protected real-host prerequisites exist
+        shell: bash
+        env:
+          AIDR_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          AIDR_CURSOR_PATH: ${{ vars.AIDR_CURSOR_PATH }}
+          AIDR_VSCODE_PATH: ${{ vars.AIDR_VSCODE_PATH }}
+          AIDR_AGENT_PATH: ${{ vars.AIDR_AGENT_PATH }}
+          AIDR_CODEX_PATH: ${{ vars.AIDR_CODEX_PATH }}
+          AIDR_CODEX_CREDENTIALS: ${{ vars.AIDR_CODEX_CREDENTIALS }}
+          AIDR_AIG_PYTHON: ${{ vars.AIDR_AIG_PYTHON }}
+          AIDR_ACCEPTANCE_DEPLOYMENT_DIR: ${{ vars.AIDR_ACCEPTANCE_DEPLOYMENT_DIR }}
+          AIDR_AIG_E2E_EVIDENCE_SOURCE: ${{ vars.AIDR_AIG_E2E_EVIDENCE }}
+          AIDR_AIG_E2E_EVIDENCE_SIGNATURE_SOURCE: ${{ vars.AIDR_AIG_E2E_EVIDENCE_SIGNATURE }}
+          AIDR_SUPABASE_E2E_EVIDENCE_SOURCE: ${{ vars.AIDR_SUPABASE_E2E_EVIDENCE }}
+          AIDR_SUPABASE_E2E_EVIDENCE_SIGNATURE_SOURCE: ${{ vars.AIDR_SUPABASE_E2E_EVIDENCE_SIGNATURE }}
+          AIDR_DASHBOARD_BROWSER_EVIDENCE_SOURCE: ${{ vars.AIDR_DASHBOARD_BROWSER_EVIDENCE }}
+          AIDR_DASHBOARD_BROWSER_EVIDENCE_SIGNATURE_SOURCE: ${{ vars.AIDR_DASHBOARD_BROWSER_EVIDENCE_SIGNATURE }}
+          AIDR_OPENCLAW_HOST_EVIDENCE_SOURCE: ${{ vars.AIDR_OPENCLAW_HOST_EVIDENCE }}
+          AIDR_OPENCLAW_HOST_EVIDENCE_SIGNATURE_SOURCE: ${{ vars.AIDR_OPENCLAW_HOST_EVIDENCE_SIGNATURE }}
+          AIDR_OPENCLAW_HOST_EVIDENCE_PUBLIC_KEY: ${{ secrets.AIDR_OPENCLAW_HOST_EVIDENCE_PUBLIC_KEY_PEM }}
+          AIDR_EXTERNAL_E2E_EVIDENCE_PUBLIC_KEY: ${{ secrets.AIDR_EXTERNAL_E2E_EVIDENCE_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          [[ "${AIDR_RUNNER_ENVIRONMENT}" == "self-hosted" ]] || {
+            echo "Real-host acceptance requires a protected self-hosted runner. Configure AIDR_ACCEPTANCE_RUNNER_LABEL before approving this job." >&2
+            exit 1
+          }
+          for command_name in claude opencode; do
+            command -v "${command_name}" >/dev/null || {
+              echo "Required real-host command is unavailable: ${command_name}" >&2
+              exit 1
+            }
+          done
+          for path_name in AIDR_CURSOR_PATH AIDR_VSCODE_PATH AIDR_AGENT_PATH AIDR_CODEX_PATH AIDR_AIG_PYTHON; do
+            path_value="${!path_name:-}"
+            [[ -n "${path_value}" && -f "${path_value}" && -x "${path_value}" ]] || {
+              echo "Protected runner prerequisite ${path_name} must name an executable file." >&2
+              exit 1
+            }
+          done
+          [[ -n "${AIDR_CODEX_CREDENTIALS}" && -f "${AIDR_CODEX_CREDENTIALS}" ]] || {
+            echo "Protected runner prerequisite AIDR_CODEX_CREDENTIALS must name an existing file." >&2
+            exit 1
+          }
+          [[ -n "${AIDR_ACCEPTANCE_DEPLOYMENT_DIR}" && -f "${AIDR_ACCEPTANCE_DEPLOYMENT_DIR}/deployment.json" ]] || {
+            echo "AIDR_ACCEPTANCE_DEPLOYMENT_DIR must name an isolated, installed loopback control plane." >&2
+            exit 1
+          }
+          for evidence_name in AIDR_AIG_E2E_EVIDENCE_SOURCE AIDR_AIG_E2E_EVIDENCE_SIGNATURE_SOURCE AIDR_SUPABASE_E2E_EVIDENCE_SOURCE AIDR_SUPABASE_E2E_EVIDENCE_SIGNATURE_SOURCE AIDR_DASHBOARD_BROWSER_EVIDENCE_SOURCE AIDR_DASHBOARD_BROWSER_EVIDENCE_SIGNATURE_SOURCE AIDR_OPENCLAW_HOST_EVIDENCE_SOURCE AIDR_OPENCLAW_HOST_EVIDENCE_SIGNATURE_SOURCE; do
+            evidence_path="${!evidence_name:-}"
+            [[ -n "${evidence_path}" && -f "${evidence_path}" ]] || {
+              echo "${evidence_name} must name redacted external evidence generated after candidate ${AIDR_E2E_RC_DIGEST} was bound at ${AIDR_E2E_CANDIDATE_BOUND_AT}." >&2
+              exit 1
+            }
+          done
+          [[ -n "${AIDR_OPENCLAW_HOST_EVIDENCE_PUBLIC_KEY}" ]] || {
+            echo "AIDR_OPENCLAW_HOST_EVIDENCE_PUBLIC_KEY_PEM is required to authenticate the OpenClaw candidate receipt." >&2
+            exit 1
+          }
+          [[ -n "${AIDR_EXTERNAL_E2E_EVIDENCE_PUBLIC_KEY}" ]] || {
+            echo "AIDR_EXTERNAL_E2E_EVIDENCE_PUBLIC_KEY_PEM is required to authenticate AIG, Supabase and dashboard candidate receipts." >&2
+            exit 1
+          }
+          evidence_input_dir="${RUNNER_TEMP}/post-candidate-evidence"
+          mkdir -p "${evidence_input_dir}"
+          cp "${AIDR_AIG_E2E_EVIDENCE_SOURCE}" "${evidence_input_dir}/aig-live-control-plane.json"
+          cp "${AIDR_AIG_E2E_EVIDENCE_SIGNATURE_SOURCE}" "${evidence_input_dir}/aig-live-control-plane.json.sig"
+          cp "${AIDR_SUPABASE_E2E_EVIDENCE_SOURCE}" "${evidence_input_dir}/supabase-live-control-plane.json"
+          cp "${AIDR_SUPABASE_E2E_EVIDENCE_SIGNATURE_SOURCE}" "${evidence_input_dir}/supabase-live-control-plane.json.sig"
+          cp "${AIDR_DASHBOARD_BROWSER_EVIDENCE_SOURCE}" "${evidence_input_dir}/dashboard-browser.json"
+          cp "${AIDR_DASHBOARD_BROWSER_EVIDENCE_SIGNATURE_SOURCE}" "${evidence_input_dir}/dashboard-browser.json.sig"
+          cp "${AIDR_OPENCLAW_HOST_EVIDENCE_SOURCE}" "${evidence_input_dir}/openclaw-host.json"
+          cp "${AIDR_OPENCLAW_HOST_EVIDENCE_SIGNATURE_SOURCE}" "${evidence_input_dir}/openclaw-host.json.sig"
+          umask 077
+          printf '%s\n' "${AIDR_OPENCLAW_HOST_EVIDENCE_PUBLIC_KEY}" > "${evidence_input_dir}/openclaw-host-public.pem"
+          printf '%s\n' "${AIDR_EXTERNAL_E2E_EVIDENCE_PUBLIC_KEY}" > "${evidence_input_dir}/external-e2e-public.pem"
+          unset AIDR_OPENCLAW_HOST_EVIDENCE_PUBLIC_KEY AIDR_EXTERNAL_E2E_EVIDENCE_PUBLIC_KEY
+
+      - name: Checkout immutable RC commit (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-rc.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen dependency install (no lifecycle mutation)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Download signed package inputs (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-signed-packages-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/signed-packages
+
+      - name: Download exact unsigned outer bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-exact-candidate-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/exact-candidate
+
+      - name: Restore signed inputs and exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xzf "${RUNNER_TEMP}/signed-packages/signed-package-inputs.tgz" -C "${GITHUB_WORKSPACE}"
+          tar -xzf "${RUNNER_TEMP}/exact-candidate/exact-release-candidate.tgz" -C "${GITHUB_WORKSPACE}"
+
+      - name: Recheck exact candidate identity across runner boundary
+        shell: bash
+        env:
+          EXPECTED_TAG: ${{ needs.build-rc.outputs.tag }}
+          EXPECTED_VERSION: ${{ needs.build-rc.outputs.version }}
+          EXPECTED_SHA: ${{ needs.build-rc.outputs.sha }}
+          EXPECTED_SOURCE_DATE_EPOCH: ${{ needs.build-rc.outputs.source_date_epoch }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const metadata = JSON.parse(readFileSync("release-output/release-metadata.json", "utf8"));
+          const expected = {
+            release_tag: process.env.EXPECTED_TAG,
+            release_version: process.env.EXPECTED_VERSION,
+            git_sha: process.env.EXPECTED_SHA,
+            source_date_epoch: Number(process.env.EXPECTED_SOURCE_DATE_EPOCH),
+          };
+          for (const [field, value] of Object.entries(expected)) {
+            if (metadata[field] !== value) throw new Error(`candidate ${field} mismatch: ${metadata[field]} != ${value}`);
+          }
+          NODE
+          actual="$(sha256sum release-output/release-metadata.json release-output/release-inventory.json | sha256sum | awk '{print $1}')"
+          [[ "${actual}" == "${AIDR_E2E_RC_DIGEST}" ]] || {
+            echo "Candidate identity or inventory changed across runner boundary." >&2
+            exit 1
+          }
+          mapfile -t vsix_paths < <(find release-output -maxdepth 1 -type f -name '*.vsix' -print)
+          cursor_vsix_path="release-output/aidr-cursor.vsix"
+          vscode_vsix_path="release-output/aidr-vscode.vsix"
+          [[ "${#vsix_paths[@]}" -eq 2 && -f "${cursor_vsix_path}" && -f "${vscode_vsix_path}" ]] || {
+            echo "Exact candidate must contain only aidr-cursor.vsix and aidr-vscode.vsix." >&2
+            exit 1
+          }
+          cursor_vsix_sha256="$(sha256sum "${cursor_vsix_path}" | awk '{print $1}')"
+          vscode_vsix_sha256="$(sha256sum "${vscode_vsix_path}" | awk '{print $1}')"
+          CURSOR_VSIX_SHA256="${cursor_vsix_sha256}" VSCODE_VSIX_SHA256="${vscode_vsix_sha256}" node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const inventory = JSON.parse(readFileSync("release-output/release-inventory.json", "utf8"));
+          const expected = new Map([
+            ["aidr-cursor.vsix", process.env.CURSOR_VSIX_SHA256],
+            ["aidr-vscode.vsix", process.env.VSCODE_VSIX_SHA256],
+          ]);
+          for (const [name, sha256] of expected) {
+            const entry = inventory.artifacts?.find((item) => item.staged_path === name);
+            if (!entry || entry.sha256 !== sha256) throw new Error(`${name} digest does not match the exact-candidate inventory`);
+          }
+          NODE
+          {
+            echo "AIDR_E2E_CURSOR_VSIX_PATH=${GITHUB_WORKSPACE}/${cursor_vsix_path}"
+            echo "AIDR_E2E_CURSOR_VSIX_SHA256=${cursor_vsix_sha256}"
+            echo "AIDR_E2E_VSCODE_VSIX_PATH=${GITHUB_WORKSPACE}/${vscode_vsix_path}"
+            echo "AIDR_E2E_VSCODE_VSIX_SHA256=${vscode_vsix_sha256}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Reverify signed packages on acceptance runner
+        shell: bash
+        env:
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+          SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PUBLIC_KEY}" && -n "${SIGNING_PUBLIC_KEY_FINGERPRINT}" ]] || {
+            echo "Package public key and fingerprint are required." >&2
+            exit 1
+          }
+          public_path="${RUNNER_TEMP}/aidr-package-public.pem"
+          cleanup() { rm -f "${public_path}"; }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
+          unset SIGNING_PUBLIC_KEY
+          node scripts/verify-release-evidence.mjs \
+            --public-key "${public_path}" \
+            --fingerprint "${SIGNING_PUBLIC_KEY_FINGERPRINT}" \
+            --dirs \
+              packages/core/dist packages/claude-code/dist packages/extension/dist \
+              packages/openclaw/dist packages/opencode/dist packages/cli/dist \
+              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+              packages/claude-code
+          cleanup
+          trap - EXIT
+
+      - name: Candidate-bound isolated control-plane acceptance
+        shell: bash
+        env:
+          AIDR_ACCEPTANCE_DEPLOYMENT_DIR: ${{ vars.AIDR_ACCEPTANCE_DEPLOYMENT_DIR }}
+        run: |
+          set -euo pipefail
+          node scripts/deployment-smoke.mjs "${AIDR_ACCEPTANCE_DEPLOYMENT_DIR}" --candidate-inventory release-output/release-inventory.json
+
+      - name: Upload candidate-bound control-plane receipt (pinned)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: aidr-control-plane-${{ needs.build-rc.outputs.tag }}
+          path: ${{ vars.AIDR_ACCEPTANCE_DEPLOYMENT_DIR }}/smoke-evidence-${{ needs.assemble-e2e.outputs.candidate_digest }}.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Stage post-candidate external evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="${GITHUB_WORKSPACE}/.e2e-artifacts/external"
+          evidence_input_dir="${RUNNER_TEMP}/post-candidate-evidence"
+          mkdir -p "${evidence_dir}"
+          cp "${evidence_input_dir}/aig-live-control-plane.json" "${evidence_dir}/aig-live-control-plane.json"
+          cp "${evidence_input_dir}/aig-live-control-plane.json.sig" "${evidence_dir}/aig-live-control-plane.json.sig"
+          cp "${evidence_input_dir}/supabase-live-control-plane.json" "${evidence_dir}/supabase-live-control-plane.json"
+          cp "${evidence_input_dir}/supabase-live-control-plane.json.sig" "${evidence_dir}/supabase-live-control-plane.json.sig"
+          cp "${evidence_input_dir}/dashboard-browser.json" "${evidence_dir}/dashboard-browser.json"
+          cp "${evidence_input_dir}/dashboard-browser.json.sig" "${evidence_dir}/dashboard-browser.json.sig"
+          cp "${evidence_input_dir}/openclaw-host.json" "${evidence_dir}/openclaw-host.json"
+          cp "${evidence_input_dir}/openclaw-host.json.sig" "${evidence_dir}/openclaw-host.json.sig"
+          {
+            echo "AIDR_AIG_E2E_EVIDENCE=${evidence_dir}/aig-live-control-plane.json"
+            echo "AIDR_AIG_E2E_EVIDENCE_SIGNATURE=${evidence_dir}/aig-live-control-plane.json.sig"
+            echo "AIDR_SUPABASE_E2E_EVIDENCE=${evidence_dir}/supabase-live-control-plane.json"
+            echo "AIDR_SUPABASE_E2E_EVIDENCE_SIGNATURE=${evidence_dir}/supabase-live-control-plane.json.sig"
+            echo "AIDR_DASHBOARD_BROWSER_EVIDENCE=${evidence_dir}/dashboard-browser.json"
+            echo "AIDR_DASHBOARD_BROWSER_EVIDENCE_SIGNATURE=${evidence_dir}/dashboard-browser.json.sig"
+            echo "AIDR_OPENCLAW_HOST_EVIDENCE=${evidence_dir}/openclaw-host.json"
+            echo "AIDR_OPENCLAW_HOST_EVIDENCE_SIGNATURE=${evidence_dir}/openclaw-host.json.sig"
+            echo "AIDR_OPENCLAW_HOST_EVIDENCE_PUBLIC_KEY_PATH=${evidence_input_dir}/openclaw-host-public.pem"
+            echo "AIDR_EXTERNAL_E2E_EVIDENCE_PUBLIC_KEY_PATH=${evidence_input_dir}/external-e2e-public.pem"
+          } >> "${GITHUB_ENV}"
+
+      - name: Real-host connector E2E gate
+        env:
+          AIDR_E2E_REQUIRE_REAL: "1"
+          AIDR_E2E_ENABLE_IDE_HOST: "1"
+          AIDR_CURSOR_PATH: ${{ vars.AIDR_CURSOR_PATH }}
+          AIDR_VSCODE_PATH: ${{ vars.AIDR_VSCODE_PATH }}
+          AIDR_AGENT_PATH: ${{ vars.AIDR_AGENT_PATH }}
+          AIDR_CODEX_PATH: ${{ vars.AIDR_CODEX_PATH }}
+          AIDR_CODEX_CREDENTIALS: ${{ vars.AIDR_CODEX_CREDENTIALS }}
+          AIDR_AIG_PYTHON: ${{ vars.AIDR_AIG_PYTHON }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
+          OPENCLAW_E2E_HOST: ${{ vars.OPENCLAW_E2E_HOST }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DASHBOARD_SMOKE_BASE_URL: ${{ vars.DASHBOARD_SMOKE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          pnpm test:e2e
+          pnpm test:e2e:negative
+
+      - name: Clean-source and diff gate after acceptance tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          node scripts/lib/release-source-clean.mjs
+
+  final-sign-publish:
+    name: Canonically sign, attest and publish RC
+    needs: [build-rc, assemble-e2e, acceptance-e2e, acceptance-windows-native]
+    runs-on: ubuntu-22.04
+    environment: release-candidate
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      AIDR_GIT_SHA: ${{ needs.build-rc.outputs.sha }}
+    steps:
+      - name: Checkout immutable RC signing code (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-rc.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download exact unsigned outer bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-exact-candidate-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/exact-candidate
+
+      - name: Restore and recheck exact candidate
+        shell: bash
+        env:
+          EXPECTED_TAG: ${{ needs.build-rc.outputs.tag }}
+          EXPECTED_VERSION: ${{ needs.build-rc.outputs.version }}
+          EXPECTED_SHA: ${{ needs.build-rc.outputs.sha }}
+          EXPECTED_SOURCE_DATE_EPOCH: ${{ needs.build-rc.outputs.source_date_epoch }}
+          EXPECTED_CANDIDATE_DIGEST: ${{ needs.assemble-e2e.outputs.candidate_digest }}
+        run: |
+          set -euo pipefail
+          tar -xzf "${RUNNER_TEMP}/exact-candidate/exact-release-candidate.tgz" -C "${GITHUB_WORKSPACE}"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const metadata = JSON.parse(readFileSync("release-output/release-metadata.json", "utf8"));
+          const expected = {
+            release_tag: process.env.EXPECTED_TAG,
+            release_version: process.env.EXPECTED_VERSION,
+            git_sha: process.env.EXPECTED_SHA,
+            source_date_epoch: Number(process.env.EXPECTED_SOURCE_DATE_EPOCH),
+          };
+          for (const [field, value] of Object.entries(expected)) {
+            if (metadata[field] !== value) throw new Error(`candidate ${field} mismatch: ${metadata[field]} != ${value}`);
+          }
+          NODE
+          actual="$(sha256sum release-output/release-metadata.json release-output/release-inventory.json | sha256sum | awk '{print $1}')"
+          [[ "${actual}" == "${EXPECTED_CANDIDATE_DIGEST}" ]] || {
+            echo "Candidate identity or inventory changed across runner boundary." >&2
+            exit 1
+          }
+
+      - name: Canonically sign and independently verify exact bundle
+        shell: bash
+        env:
+          SIGNING_PRIVATE_KEY: ${{ secrets.AIDR_SIGNING_PRIVATE_KEY_PEM }}
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+          SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+          SIGNER_POLICY_JSON: ${{ secrets.AIDR_RELEASE_SIGNER_POLICY_JSON }}
+          RELEASE_SEQUENCE: ${{ vars.AIDR_RELEASE_SEQUENCE }}
+          SIGNATURE_LIFETIME_SECONDS: ${{ vars.AIDR_RELEASE_SIGNATURE_LIFETIME_SECONDS }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PRIVATE_KEY}" && -n "${SIGNING_PUBLIC_KEY}" && -n "${SIGNING_PUBLIC_KEY_FINGERPRINT}" && -n "${SIGNER_POLICY_JSON}" ]] || {
+            echo "Release private key, independently distributed public key, fingerprint and signer policy are required." >&2
+            exit 1
+          }
+          [[ "${RELEASE_SEQUENCE}" =~ ^[1-9][0-9]*$ ]] || { echo "AIDR_RELEASE_SEQUENCE must be a positive integer." >&2; exit 1; }
+          [[ "${SIGNATURE_LIFETIME_SECONDS}" =~ ^[1-9][0-9]*$ ]] || { echo "AIDR_RELEASE_SIGNATURE_LIFETIME_SECONDS must be a positive integer." >&2; exit 1; }
+          mapfile -t signing_times < <(SIGNATURE_LIFETIME_SECONDS="${SIGNATURE_LIFETIME_SECONDS}" node --input-type=module <<'NODE'
+          const issued = new Date();
+          const expires = new Date(issued.getTime() + Number(process.env.SIGNATURE_LIFETIME_SECONDS) * 1000);
+          console.log(issued.toISOString());
+          console.log(expires.toISOString());
+          NODE
+          )
+          issued_at="${signing_times[0]}"
+          expires_at="${signing_times[1]}"
+          private_path="${RUNNER_TEMP}/aidr-release-private.pem"
+          public_path="${RUNNER_TEMP}/aidr-release-public.pem"
+          policy_path="${RUNNER_TEMP}/aidr-release-signer-policy.json"
+          state_path="${RUNNER_TEMP}/aidr-release-verification-state.json"
+          cleanup() { rm -f "${private_path}" "${public_path}" "${policy_path}" "${state_path}" "${state_path}.lock"; }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' "${SIGNING_PRIVATE_KEY}" > "${private_path}"
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
+          printf '%s\n' "${SIGNER_POLICY_JSON}" > "${policy_path}"
+          unset SIGNING_PRIVATE_KEY SIGNING_PUBLIC_KEY SIGNER_POLICY_JSON
+          node --input-type=module - "${private_path}" "${public_path}" "${SIGNING_PUBLIC_KEY_FINGERPRINT}" <<'NODE'
+          import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
+          import { readFileSync } from "node:fs";
+          const privateKey = createPrivateKey(readFileSync(process.argv[2], "utf8"));
+          const suppliedPublic = createPublicKey(readFileSync(process.argv[3], "utf8"));
+          const derivedPublic = createPublicKey(privateKey);
+          if (privateKey.asymmetricKeyType !== "ed25519" || suppliedPublic.asymmetricKeyType !== "ed25519") throw new Error("Release signing keys must be Ed25519");
+          const suppliedDer = suppliedPublic.export({ type: "spki", format: "der" });
+          if (!suppliedDer.equals(derivedPublic.export({ type: "spki", format: "der" }))) throw new Error("Release private/public key mismatch");
+          const expected = process.argv[4].toLowerCase().replace(/^sha256:/, "");
+          const actual = createHash("sha256").update(suppliedDer).digest("hex");
+          if (!/^[0-9a-f]{64}$/.test(expected) || actual !== expected) throw new Error(`Release public-key fingerprint mismatch: ${actual}`);
+          NODE
+          node scripts/release-sign.mjs \
+            --bundle release-output \
+            --private-key "${private_path}" \
             --key-id "${AIDR_SIGNING_KEY_ID}" \
-            --watermark-id "${AIDR_WATERMARK_ID}" \
-            --channel commercial \
-            --build-id "${AIDR_BUILD_ID}" \
-            --git-sha "${AIDR_BUILD_ID}" \
-            --source-digest "${AIDR_SOURCE_DIGEST}" \
-            --data-digest "${AIDR_DATA_DIGEST}" \
-            --package-digest "${AIDR_PACKAGE_DIGEST}" \
-            --lockfile-digest "${AIDR_LOCKFILE_DIGEST}" \
-            --sbom-digest "${AIDR_SBOM_DIGEST}" \
-            --ci-provider github_actions \
-            --ci-run-id "${AIDR_CI_RUN_ID}"
-          node scripts/sign-artifact-manifest.mjs --dir release-output --key "${AIDR_SIGNING_PRIVATE_KEY_PEM_PATH}"
-          node scripts/verify-release-evidence.mjs --dirs release-output
+            --sequence "${RELEASE_SEQUENCE}" \
+            --issued-at "${issued_at}" \
+            --expires-at "${expires_at}" \
+            --channel stable
+          rm -f "${private_path}"
+          node scripts/release-verify.mjs \
+            --bundle release-output \
+            --policy "${policy_path}" \
+            --state "${state_path}"
+          cleanup
+          trap - EXIT
 
       - name: Attest the exact release bundle (pinned)
         uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
@@ -308,16 +1189,16 @@ jobs:
       - name: Upload immutable RC evidence (pinned)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: aidr-release-${{ steps.rc_meta.outputs.tag }}
+          name: aidr-release-${{ needs.build-rc.outputs.tag }}
           path: release-output/
           if-no-files-found: error
           retention-days: 90
 
       - name: Publish draft prerelease evidence (pinned)
-        uses: softprops/action-gh-release@a6c7483a42ee9d5daced968f6c217562cd680f7f # v2.2.2
+        uses: softprops/action-gh-release@a6c7483a42ee9d5daced968f6c217562cd680f7f # v2.0.0
         with:
-          tag_name: ${{ steps.rc_meta.outputs.tag }}
-          name: AIDR ${{ steps.rc_meta.outputs.tag }}
+          tag_name: ${{ needs.build-rc.outputs.tag }}
+          name: AIDR ${{ needs.build-rc.outputs.tag }}
           prerelease: true
           draft: true
           generate_release_notes: false

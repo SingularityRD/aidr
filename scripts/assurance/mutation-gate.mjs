@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { CRITICAL_EXCLUSION_REGISTRY } from "./source-ledger.mjs";
 
-export const DEFAULT_SEED = 424242;
+const DEFAULT_SEED = 424242;
 export const DEFAULT_MINIMUM_SCORE = 0.85;
 export const SECURITY_OPERATOR_CHECKS = Object.freeze([
 	"authorization-boundary",
@@ -16,7 +16,7 @@ export const SECURITY_OPERATOR_CHECKS = Object.freeze([
 	"secret-redaction",
 	"integrity-boundary",
 ]);
-export const DEFAULT_MUTATION_TARGETS = Object.freeze(Object.keys(CRITICAL_EXCLUSION_REGISTRY).sort(compareStrings));
+const DEFAULT_MUTATION_TARGETS = Object.freeze(Object.keys(CRITICAL_EXCLUSION_REGISTRY).sort(compareStrings));
 
 export function evaluateMutationReport(
 	report,

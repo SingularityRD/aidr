@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * Deterministic preflight for the controlled customer/investor demo.
+ * Deterministic preflight for customer access to a configured deployment.
  *
- * This command only checks the demo surface and writes a redacted local
+ * This command checks the customer entry points and writes a redacted local
  * receipt. It never creates a Supabase user, changes a tenant, or contacts a
  * production endpoint.
  */
@@ -34,31 +34,36 @@ async function requireText(relativePath, patterns) {
 		failures.push(`missing ${relativePath}`);
 		return;
 	}
-	for (const [pattern, label] of patterns) {
-		if (!pattern.test(source)) failures.push(`${relativePath}: missing ${label}`);
+	for (const [pattern, label, forbidden] of patterns) {
+		if (forbidden ? pattern.test(source) : !pattern.test(source)) {
+			failures.push(`${relativePath}: ${forbidden ? "contains" : "missing"} ${label}`);
+		}
 	}
 }
 
 await requireText("packages/dashboard/src/main.tsx", [
-	[/path: "demo"/, "demo route"],
-	[/isControlledDemoRoute/, "Supabase-free demo escape hatch"],
-	[/productionConfigMissing && !isControlledDemoRoute/, "configuration guard preserves demo route"],
-]);
-await requireText("packages/dashboard/src/ui/pages/public/DemoPage.tsx", [
-	[/Controlled evaluation demo/, "controlled evaluation banner"],
-	[/synthetic fixtures/, "synthetic-fixture boundary"],
-	[/No external command/, "no-external-request warning"],
-	[/demo-2026-08-04\.1/, "fixture version"],
+	[/path: "demo", loader: \(\) => redirect\("\/login\?returnTo=%2Fonboarding"\)/, "legacy demo redirects to sign-in"],
+	[/\{productionConfigMissing \? \(/, "production configuration guard covers every route"],
+	[/DemoPage|isControlledDemoRoute/, "synthetic demo app import or configuration exception", true],
 ]);
 await requireText("packages/dashboard/src/ui/PublicLayout.tsx", [
-	[/to="\/demo"/, "demo navigation link"],
-	[/location\.pathname !== "\/demo"/, "demo configuration warning boundary"],
+	[/<NavLink to="\/login">Dashboard<\/NavLink>/, "real dashboard navigation"],
+	[/to="\/demo"/, "synthetic demo navigation", true],
 ]);
-await requireText("scripts/dashboard-route-smoke.mjs", [[/"\/demo"/, "demo route smoke coverage"]]);
-await requireText("packages/dashboard/tests/browser-smoke.manifest.json", [[/"\/demo"/, "browser manifest demo route"]]);
+await requireText("packages/dashboard/src/ui/pages/public/LandingPage.tsx", [
+	[/to="\/login\?returnTo=%2Fonboarding"/, "onboarding sign-in link"],
+	[/to="\/demo"|href: "\/demo"/, "synthetic demo CTA", true],
+]);
+await requireText("scripts/dashboard-route-smoke.mjs", [[/legacyRoutes = \["\/demo"\]/, "legacy route smoke coverage"]]);
+await requireText("packages/dashboard/tests/browser-smoke.manifest.json", [[/legacy-demo-redirect/, "browser redirect scenario"]]);
 
-if (!staticOnly && !(await exists("packages/dashboard/dist/index.html"))) {
-	failures.push("packages/dashboard/dist/index.html is missing; run pnpm -C packages/dashboard build first");
+if (!staticOnly) {
+	if (!(await exists("packages/dashboard/dist/index.html"))) {
+		failures.push("packages/dashboard/dist/index.html is missing; run pnpm -C packages/dashboard build first");
+	}
+	for (const name of ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY", "DASHBOARD_SMOKE_BASE_URL", "DEMO_USER_EMAIL", "DEMO_USER_PASSWORD"]) {
+		if (!process.env[name]?.trim()) failures.push(`${name} is required for a live customer walkthrough`);
+	}
 }
 
 if (process.env.VITE_AIDR_COMMERCIAL_MODE?.trim() === "self-service") {
@@ -68,12 +73,7 @@ if (process.env.VITE_AIDR_COMMERCIAL_MODE?.trim() === "self-service") {
 if (!process.env.VITE_SALES_URL?.trim() && !process.env.VITE_SALES_EMAIL?.trim()) {
 	warnings.push("no sales URL/email configured; the invoice CTA will fail closed");
 }
-if (!process.env.DASHBOARD_SMOKE_BASE_URL?.trim()) {
-	warnings.push("DASHBOARD_SMOKE_BASE_URL is absent; only the local/static demo route is verified");
-}
-if (!process.env.DEMO_USER_EMAIL?.trim() || !process.env.DEMO_USER_PASSWORD?.trim()) {
-	warnings.push("DEMO_USER_EMAIL/DEMO_USER_PASSWORD are absent; credentialed browser onboarding is not ready");
-}
+if (staticOnly) warnings.push("source-contract check only; live sign-in and onboarding require a deployed browser test");
 
 if (failures.length) {
 	console.error("Demo preflight: NO-GO");
@@ -81,9 +81,8 @@ if (failures.length) {
 	process.exitCode = 1;
 } else {
 	const receipt = {
-		status: "ready-for-controlled-evaluation",
+		status: "ready-for-browser-validation",
 		mode: staticOnly ? "static-only" : "local-or-deployed",
-		fixture_version: "demo-2026-08-04.1",
 		generated_at: new Date().toISOString(),
 		production_claims_allowed: false,
 		live_supabase_configured: Boolean(process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_ANON_KEY),

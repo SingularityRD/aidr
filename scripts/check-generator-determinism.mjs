@@ -3,12 +3,10 @@
  * Prove the inventory generators are deterministic, ignoring provenance stamps.
  *
  * The previous check was `git diff --exit-code` on the generated files. That can
- * never pass, and the reason is worth stating plainly: every generator writes
- * `source_commit` from `git rev-parse HEAD` and `worktree_has_changes` from the
- * working tree state, so regenerating at a different commit always differs in
- * exactly those fields. They are stamps describing *when* the generator ran, not
- * content it derived, so comparing them measures the commit rather than the
- * generator.
+ * never pass because generators write source/worktree and current-generation
+ * stamps. Those fields describe which checkout/date the generator ran against,
+ * not content it derived, so comparing them measures the run context rather
+ * than the generator.
  *
  * What this checks instead: run each generator twice and require the two outputs
  * to be byte-identical apart from those stamps, and additionally require the
@@ -21,18 +19,22 @@
  *   node scripts/check-generator-determinism.mjs
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const COMMITTED_ROOT = process.env.AIDR_COMMITTED_OUTPUT_DIR ?? ROOT;
+const OUTPUT_ROOT = mkdtempSync(path.join(tmpdir(), "aidr-generator-check-"));
+process.on("exit", () => rmSync(OUTPUT_ROOT, { recursive: true, force: true }));
 
 /**
- * Fields that record which revision the generator ran at. Excluded from the
- * comparison, and each exclusion is named so a reader can audit the decision.
+ * Provenance fields excluded from comparisons, named so a reader can audit the
+ * decision. Dates are checked separately against the current local date.
  */
-const PROVENANCE_FIELDS = ["source_commit", "worktree_has_changes"];
+const PROVENANCE_FIELDS = ["source_commit", "worktree_has_changes", "generated_on"];
+const MARKDOWN_PROVENANCE_PREFIXES = ["Otomatik üretim tarihi:", "Otomatik rapor üretim tarihi:"];
 
 /** generator script -> the tracked files it owns. */
 const GENERATORS = [
@@ -72,13 +74,14 @@ function stripMarkdown(text) {
 	return text
 		.split(/\r?\n/)
 		.filter((line) => !PROVENANCE_FIELDS.some((field) => line.includes(field)))
+		.filter((line) => !MARKDOWN_PROVENANCE_PREFIXES.some((prefix) => line.trimStart().startsWith(prefix)))
 		.join("\n");
 }
 
-function snapshot(files) {
+function snapshot(files, root = ROOT) {
 	const out = {};
 	for (const relative of files) {
-		const full = path.join(ROOT, relative);
+		const full = path.join(root, relative);
 		let text;
 		try {
 			text = readFileSync(full, "utf8");
@@ -92,24 +95,25 @@ function snapshot(files) {
 
 const problems = [];
 const checked = [];
+let runNumber = 0;
 
 for (const generator of GENERATORS) {
 	const scriptPath = path.join(ROOT, generator.script);
-	// Back up the committed files so the run leaves the tree exactly as it found it.
-	const backups = new Map();
-	for (const relative of generator.outputs) {
-		backups.set(relative, readFileSync(path.join(ROOT, relative), "utf8"));
-	}
-
 	// The committed content, with stamps removed.
-	const committed = snapshot(generator.outputs);
+	const committed = snapshot(generator.outputs, COMMITTED_ROOT);
 
 	const runOnce = () => {
-		const result = spawnSync(process.execPath, [scriptPath], { cwd: ROOT, encoding: "utf8" });
+		const outputDir = path.join(OUTPUT_ROOT, `run-${runNumber++}`);
+		mkdirSync(outputDir);
+		const result = spawnSync(process.execPath, [scriptPath], {
+			cwd: ROOT,
+			encoding: "utf8",
+			env: { ...process.env, AIDR_GENERATOR_OUTPUT_DIR: outputDir },
+		});
 		if (result.status !== 0) {
 			fail(`${generator.script} failed with exit ${result.status}: ${(result.stderr ?? "").trim().slice(-300)}`);
 		}
-		return snapshot(generator.outputs);
+		return snapshot(generator.outputs, outputDir);
 	};
 
 	const first = runOnce();
@@ -124,12 +128,7 @@ for (const generator of GENERATORS) {
 		}
 	}
 	checked.push(`${generator.script} -> ${generator.outputs.length} file(s), stable across two runs and matching the committed content`);
-
-	// Restore, so a failing gate still leaves a clean tree for the next one.
-	for (const [relative, text] of backups) writeFileSync(path.join(ROOT, relative), text, "utf8");
 }
-
-rmSync(path.join(tmpdir(), "aidr-generator-determinism-unused"), { recursive: true, force: true });
 
 if (problems.length > 0) {
 	console.error("Generator determinism failed:");

@@ -28,7 +28,7 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** A refused capture. The CLI turns this into a non-zero exit and no writes. */
 export class CaptureError extends Error {}
@@ -104,7 +104,7 @@ export function parseArgs(argv) {
 	return args;
 }
 
-export function main(argv = process.argv.slice(2), { root = ROOT } = {}) {
+function main(argv = process.argv.slice(2), { root = ROOT } = {}) {
 	let args;
 	try {
 		args = parseArgs(argv);

@@ -85,8 +85,8 @@ test("shipped register and matrix are locally valid while remaining open", () =>
 	assert.ok(result.license.unknown_values > 0);
 	assert.ok(result.privacy.unknown_values > 0);
 	assert.equal(result.license.open_entries, 1);
-	assert.equal(result.privacy.flows, 12);
-	assert.equal(result.privacy.open_flows, 12);
+	assert.equal(result.privacy.flows, artifacts.privacyMatrix.flows.length);
+	assert.equal(result.privacy.open_flows, result.privacy.flows, "every shipped privacy flow must remain open until accepted evidence exists");
 });
 
 test("the shipped paths and schemas are the documented local artifacts", async () => {

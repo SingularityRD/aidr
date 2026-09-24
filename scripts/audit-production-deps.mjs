@@ -11,6 +11,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { assessProductionAuditReport } from "./audit-production-deps-report.mjs";
 
 const scriptDir = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const rootDir = resolve(scriptDir, "..");
@@ -40,7 +41,18 @@ try {
 	process.exit(1);
 }
 
-const advisories = Object.values(report.advisories ?? {});
+const { advisories, failures: reportFailures } = assessProductionAuditReport(report, {
+	status: audit.status,
+	error: audit.error,
+	signal: audit.signal,
+});
+if (reportFailures.length > 0) {
+	console.error("Production dependency audit failed closed:");
+	for (const failure of reportFailures) console.error(`- ${failure}`);
+	if (audit.stderr) console.error(audit.stderr.trim());
+	process.exit(1);
+}
+
 const allowedRscAdvisoryId = "1124282";
 
 function collectSourceText(directory) {

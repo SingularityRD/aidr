@@ -16,10 +16,10 @@
 //
 // Usage:
 //   node scripts/generate-v8-evidence-index.mjs                 # write the index
-//   node scripts/generate-v8-evidence-index.mjs --verify        # validate the index
+//   node scripts/generate-v8-evidence-index.mjs --verify        # validate schema and current evidence bindings
 //   node scripts/generate-v8-evidence-index.mjs --run <gate_id> # run a gate and capture
 //   node scripts/generate-v8-evidence-index.mjs --record <gate_id> --exit-code <n> \
-//        [--started-at <iso>] [--ended-at <iso>]                # record a gate run
+//        --log <external-log> [--started-at <iso>] [--ended-at <iso>] # copy and record
 //   node scripts/generate-v8-evidence-index.mjs --help
 
 import { spawnSync } from "node:child_process";
@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const LOG_DIR = ".release-evidence/v8-logs";
-export const INDEX_FILE = "docs/production-readiness/v8-evidence-index.json";
+export const INDEX_FILE = ".release-evidence/v8-evidence-index.json";
 export const SCHEMA_FILE = "docs/production-readiness/v8-evidence-index.schema.json";
 export const CANDIDATE_RELEASE_DIR = ".release-evidence/customer-release-v8-local-20260916-r9";
 /** Candidate tag (e.g. `v8-local-20260916-r9`) used to name the kit and envelope. */
@@ -138,7 +138,7 @@ const PACKAGE_RUN_SKIPPED = /^\s*SKIPPED_WITH_REASON\s+(?:packages\/|\[)/m;
 // Gate registry. Every declared verification gate of the v8 execution prompt
 // appears here exactly once; a gate can never be dropped from the index.
 // task_ids / feature_ids are gate-level bindings to the T-ids and capability
-// ids of docs/production-readiness/next-agent-execution-prompt-v8.md.
+// ids declared by the generated next-agent execution prompt artifact.
 // ---------------------------------------------------------------------------
 
 function gate(entry) {
@@ -204,9 +204,9 @@ export const GATES = Object.freeze([
 	}),
 	gate({
 		gate_id: "04-next-agent-prompt",
-		command: "node scripts/verify-next-agent-execution-prompt.mjs",
+		command: "node scripts/generate-next-agent-execution-prompt.mjs && node scripts/verify-next-agent-execution-prompt.mjs",
 		log: "04-next-agent-prompt.log",
-		artifact: "docs/production-readiness/next-agent-execution-prompt-v8.md",
+		artifact: ".release-evidence/next-agent-execution-prompt-v8.md",
 		pass: /^\{"passed":true,/m,
 		fail: /^Next-agent prompt verification failed:/m,
 		task_ids: ["T34"],
@@ -231,8 +231,8 @@ export const GATES = Object.freeze([
 		evidence_level_ceiling: "source_inspection",
 		limitations: [
 			"Composite `&&` chain: the PASS marker is emitted by the final command (node scripts/demo-preflight.mjs --static), which can only be reached when every earlier chained command exited 0.",
-			"Biome reported 156 warnings and knip reported review debt (files=220, exports=131, duplicates=1); a warning-only lint result is not a clean static surface.",
-			"demo-preflight warns that no sales URL/email, no DASHBOARD_SMOKE_BASE_URL and no DEMO_USER_* credentials are configured, so only the local static demo route is verified.",
+			"Warning-only lint results are not a clean static surface; inspect the current log for counts rather than carrying historical warning totals forward.",
+			"The static demo route does not prove a deployed dashboard or configured sales contact and demo-user credentials.",
 		],
 	}),
 	gate({
@@ -333,8 +333,7 @@ export const GATES = Object.freeze([
 		evidence_level: "unit_contract",
 		evidence_level_ceiling: "isolated_integration",
 		limitations: [
-			"The captured log ends after a passing test line with no Vitest summary block, so the coverage run did not complete in this log; no coverage threshold result exists.",
-			"Individually observed passing tests are not a coverage measurement and are not reported as one.",
+			"A passing test line alone is not a coverage measurement; use the captured command exit and current coverage report to establish the threshold result.",
 		],
 	}),
 	gate({
@@ -350,9 +349,7 @@ export const GATES = Object.freeze([
 		evidence_level: "packaged_consumer",
 		evidence_level_ceiling: "packaged_consumer",
 		limitations: [
-			"Composite `&&` chain whose final two commands (scripts/check-no-sourcemaps.mjs, scripts/check-no-leaky-paths.mjs) emit no success marker, so the chain's exit status cannot be proven from this log.",
-			"The log does show the build, artifact manifests, package contracts and 10 package consumer smokes completing; that is partial, not a verdict.",
-			"Re-run this gate through `--run 13-build-release` (or `--record`) to capture an authoritative exit code.",
+			"The build's final checks do not emit a unique success marker; only a provenance-bound `--run` or `--record` exit code can establish PASS.",
 		],
 	}),
 	gate({
@@ -364,12 +361,13 @@ export const GATES = Object.freeze([
 		fail: /^ℹ fail ([1-9]\d*)$/m,
 		counts: "node_test",
 		task_ids: ["T01", "T27", "T30", "T31", "T39", "T40", "T45"],
-		feature_ids: ["DEP-03", "DEP-04", "DEP-05", "DEP-06", "DEP-07", "TEN-05", "EVAL-01"],
+		feature_ids: ["DEP-01", "DEP-02", "DEP-03", "DEP-04", "DEP-05", "DEP-06", "DEP-07", "TEN-05", "EVAL-01"],
 		owner: "quality-engineering",
 		evidence_level: "unit_contract",
 		evidence_level_ceiling: "unit_contract",
 		limitations: [
 			"node --test contract suites for scripts, device-start ingress and monitoring; they run on this host against local fixtures.",
+			"DEP-01/DEP-02 bind only to deployment-prepare.test.mjs: generated self-hosted/cloud configuration and invalid-input cleanup, not a running deployment or cloud acceptance.",
 			"Failures are derived from `ℹ fail <n>`; a log without that summary stays unknown.",
 		],
 	}),
@@ -460,7 +458,9 @@ export const GATES = Object.freeze([
 		gate_id: "20-release-bundle",
 		command: "node .github/scripts/build-release-bundle.mjs",
 		log: "20-release-bundle.log",
-		artifact: `${CANDIDATE_RELEASE_DIR}/release-inventory.json`,
+		// Bind this gate to the inventory its own command actually writes. The
+		// candidate inventory is produced earlier by a different assembler.
+		artifact: "release-output/release-inventory.json",
 		pass: /^Release bundle assembled in .+ \(\d+ artifacts\)$/m,
 		task_ids: ["T29", "T34"],
 		feature_ids: ["DEP-05", "DEP-08", "OBS-05"],
@@ -470,6 +470,7 @@ export const GATES = Object.freeze([
 		limitations: [
 			"Assembles 15 local artifacts, including an unsigned offline-verifiable provenance statement; without official publisher key custody and private registry publication the candidate stays unsigned (publisher_authenticated=false).",
 			"Checksums prove content, not publisher identity.",
+			"The release-output inventory is produced by a separate assembler; this gate alone does not prove its bytes equal the earlier customer-release candidate.",
 		],
 	}),
 	gate({
@@ -490,7 +491,7 @@ export const GATES = Object.freeze([
 		evidence_level_ceiling: "packaged_consumer",
 		limitations: [
 			"Portable candidate assembly only; the release envelope is unsigned and no customer host has installed it.",
-			"Customer onboarding, empty-PATH installation and support workflows are separate gates and remain NOT_RUN.",
+			"Customer onboarding, empty-PATH installation and support workflows are separate gates; this assembly does not establish their status.",
 		],
 	}),
 	gate({
@@ -618,8 +619,9 @@ export const GATES = Object.freeze([
 		evidence_level_ceiling: "packaged_consumer",
 		limitations: [
 			"Requires a release-built dist: against a development dist the gate fails closed with SOURCE_MAP_PRESENT and TEST_DIRECTORY_PRESENT.",
-			"A package whose entry point needs an unbundled runtime dependency (for example `yaml`, `@opencode-ai/plugin`, `commander`, or the first-party core) is reported SKIPPED_WITH_REASON when a fresh offline resolve cannot complete; a skip is never counted as a pass.",
-			"The extension host (`vscode`) cannot exist in a Node-only consumer process, so that package's runtime entry is UNSUPPORTED and only its syntax and shipped assets are checked.",
+			"The consumer uses a fresh public-registry resolution with lifecycle scripts disabled. This proves package layout and installed entry-point behavior at the recorded run time, not private-registry availability, lifecycle behavior, publisher authentication or a timeless frozen dependency graph.",
+			"Declared bins are executed with the absolute Node interpreter rather than through package-manager shell shims; platform installer and shell-shim acceptance remain separate gates.",
+			"The extension host (`vscode`) cannot exist in a Node-only consumer process, so this package gate checks its syntax and shipped assets; runtime loading remains covered by the declared IDE-host gate.",
 		],
 	}),
 	gate({
@@ -903,6 +905,9 @@ export function resultBindingFailures({
 	if (!Number.isInteger(resultFile.exit_code) || resultFile.exit_code < 0) {
 		failures.push("result file has no usable non-negative integer exit_code");
 	}
+	if (resultFile.exit_code === 0 && logBytes === null) {
+		failures.push("a passing result requires its declared log to exist");
+	}
 
 	const recordedCommit = resultFile.commit_sha ?? resultFile.source_commit;
 	if (!/^[0-9a-f]{40}$/.test(normalizedFingerprint(commit_sha ?? ""))) {
@@ -943,6 +948,9 @@ export function resultBindingFailures({
 		failures.push("result file has no valid artifact_sha256 binding");
 	} else if (recordedArtifact !== artifact_sha256) {
 		failures.push(`result artifact_sha256 ${resultFile.artifact_sha256 ?? "missing"} does not match the current declared artifact ${artifact_sha256}`);
+	}
+	if (resultFile.exit_code === 0 && gateEntry.artifact !== null && artifact_sha256 === UNKNOWN) {
+		failures.push(`a passing result requires its declared artifact ${gateEntry.artifact} to exist`);
 	}
 	return failures;
 }
@@ -1005,6 +1013,10 @@ function deriveExit(gateEntry, logText, resultFile, resultFilePresent, bindingFa
 function statusFor(exitCode, logExists, resultFilePresent = false, skippedPackageRuns = false) {
 	if (!logExists && exitCode === UNKNOWN) return resultFilePresent ? STATUS_UNKNOWN : STATUS_NOT_RUN;
 	if (skippedPackageRuns && exitCode === 0) return STATUS_UNKNOWN;
+	// A terminal PASS marker can describe an old run, but it does not bind that
+	// run to the current source commit and release inventory. Only a valid result
+	// sidecar can establish candidate-bound PASS evidence.
+	if (exitCode === 0 && !resultFilePresent) return STATUS_UNKNOWN;
 	if (exitCode === 0) return STATUS_PASS;
 	if (exitCode === UNKNOWN) return STATUS_UNKNOWN;
 	return STATUS_FAIL;
@@ -1111,6 +1123,7 @@ export function buildGateRecord(gateEntry, context) {
 			bindingFailures,
 			basis,
 			status,
+			exit_code,
 			commit_sha,
 			digest,
 			siblings: siblingLogFiles(gateEntry, root),
@@ -1163,6 +1176,9 @@ function describeEffect({
 	if (skippedPackageRuns) {
 		parts.push("The package-install log reports SKIPPED_WITH_REASON runs, so status is unknown rather than PASS despite exit_code=0.");
 	}
+	if (exit_code === 0 && status === STATUS_UNKNOWN && !resultFileExists) {
+		parts.push("An unbound exit_code=0 log marker cannot establish candidate-bound PASS; capture with --run or --record.");
+	}
 	if (counts !== UNKNOWN) {
 		parts.push(`Parsed test counts: ${JSON.stringify(counts)}.`);
 	}
@@ -1180,6 +1196,7 @@ function buildLimitations({
 	bindingFailures,
 	basis,
 	status,
+	exit_code,
 	commit_sha,
 	digest,
 	siblings,
@@ -1209,6 +1226,9 @@ function buildLimitations({
 		limitations.push(
 			"exit_code and status were derived from the gate's own decisive terminal log marker; no current, provenance-bound result file supplied an exit status.",
 		);
+		if (exit_code === 0 && status === STATUS_UNKNOWN) {
+			limitations.push("The zero exit-code marker is not bound to the current source and candidate; use --run or --record before claiming PASS.");
+		}
 	} else if (basis === "pnpm_lifecycle") {
 		limitations.push(
 			"exit_code was taken from pnpm's own lifecycle report of the failing command's exit status; it is a failure signal only and can never produce a PASS.",
@@ -1236,7 +1256,7 @@ function buildLimitations({
 		"environment and tool_versions describe the host that generated this index, not necessarily the host that produced this log; see environment.gate_host_provenance.",
 	);
 	limitations.push(
-		"task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of docs/production-readiness/next-agent-execution-prompt-v8.md; they are not per-artifact proof.",
+		"task_ids and feature_ids are gate-level bindings declared in scripts/generate-v8-evidence-index.mjs from the verification steps and related-feature lines of the generated next-agent prompt artifact; they are not per-artifact proof.",
 	);
 	limitations.push(
 		"owner is a declared accountability role for the gate, not a named individual attestation.",
@@ -1271,7 +1291,7 @@ export function buildEvidenceIndex(options = {}) {
 	return {
 		schema_version: 1,
 		generator: GENERATOR_ID,
-		generator_version: 1,
+		generator_version: 2,
 		candidate: {
 			release_dir: CANDIDATE_RELEASE_DIR,
 			digest_source: digest.source,
@@ -1289,15 +1309,15 @@ export function buildEvidenceIndex(options = {}) {
 		},
 		status_vocabulary: [...STATUS_VOCABULARY],
 		status_semantics: {
-			PASS: "The gate's own exit status is 0.",
+			PASS: "A provenance-bound result file records exit_code 0 for the current source commit, candidate inventory, declared log, and any declared artifact.",
 			FAIL: "The gate failed with a non-zero exit status.",
 			NOT_RUN: "No log and no result file exist; the gate was not run for this candidate.",
-			unknown: "Evidence exists but the exit status could not be derived or a result file was stale/unprovable; never read as success.",
+			unknown: "Evidence exists but the exit status or its binding to this candidate could not be proven, the result was skipped, or its result file was stale/unprovable; never read as success.",
 		},
 		determinism:
 			"This index contains no generation timestamp: per-gate timing comes only from captured start markers and log modification times, so repeated runs over unchanged artefacts are byte-identical.",
 		methodology:
-			"Every field is derived from artefacts on disk: a result file supplies an exit status only when its gate id, command, source commit, candidate digest, log SHA-256 and declared-artifact SHA-256 bind to the current index context; otherwise stale or unprovable result files are ignored and a PASS marker is never inferred from that log. Without a trusted result file, exit status comes from a decisive terminal log marker, timing from a captured start marker plus the log mtime, digests from SHA-256 of the log and of a declared artifact, and test counts from the log when the format is known. Captured gate logs are normalized before their digest is recorded: the absolute repository root becomes <repo> and a personal home-directory segment becomes the anonymous placeholder user, so the evidence does not publish a contributor's home directory; the digest covers the normalized bytes and the transformation touches only those path prefixes. Any value that could not be derived is the explicit string 'unknown' and any gate without a log is reported as NOT_RUN; no gate is ever omitted and no measurement, host, timestamp or customer fact is invented.",
+			"Every field is derived from artefacts on disk: PASS is allowed only when a result file's gate id, command, source commit, candidate digest, declared log SHA-256 and any declared-artifact SHA-256 bind to the current index context. A stale, missing, or unprovable result file can never support PASS. Decisive terminal log markers can prove a failure or explain an unbound run, but an exit_code=0 log marker without a trusted result file is status unknown, not candidate-bound PASS. Timing comes from a trusted result file or a captured start marker plus log mtime, digests from SHA-256 of the log and declared artifact, and test counts from the log when the format is known. Captured gate logs are normalized before their digest is recorded: the absolute repository root becomes <repo> and a personal home-directory segment becomes the anonymous placeholder user, so the evidence does not publish a contributor's home directory; the digest covers the normalized bytes and the transformation touches only those path prefixes. Any value that could not be derived is the explicit string 'unknown' and any gate without a log is reported as NOT_RUN; no gate is ever omitted and no measurement, host, timestamp or customer fact is invented.",
 		status_counts,
 		gate_count: gates.length,
 		gates,
@@ -1435,16 +1455,42 @@ export function countStatuses(gates) {
 	return counts;
 }
 
-export function verifyEvidenceIndex(index, schema) {
+export function verifyEvidenceIndex(index, schema, { root = ROOT } = {}) {
 	const errors = [];
 	errors.push(...validateAgainstSchema(index, schema));
 	errors.push(...findEmptyStrings(index).map((entry) => `empty-string value at ${entry}`));
+	const currentCommit = gitCommitSha(root);
+	if (index?.commit_sha !== currentCommit) {
+		errors.push(`$.commit_sha: ${JSON.stringify(index?.commit_sha)} does not match current commit ${JSON.stringify(currentCommit)}`);
+	}
+	const currentCandidateInfo = candidateDigest(root);
+	const currentCandidate = currentCandidateInfo.digest;
+	if (index?.candidate_digest !== currentCandidate) {
+		errors.push(`$.candidate_digest: ${JSON.stringify(index?.candidate_digest)} does not match current candidate digest ${JSON.stringify(currentCandidate)}`);
+	}
+	if (index?.candidate?.release_dir !== CANDIDATE_RELEASE_DIR) {
+		errors.push(`$.candidate.release_dir: ${JSON.stringify(index?.candidate?.release_dir)} does not match declared candidate directory ${JSON.stringify(CANDIDATE_RELEASE_DIR)}`);
+	}
+	if (index?.candidate?.digest_source !== currentCandidateInfo.source) {
+		errors.push(`$.candidate.digest_source: ${JSON.stringify(index?.candidate?.digest_source)} does not match current digest source ${JSON.stringify(currentCandidateInfo.source)}`);
+	}
+	if (index?.candidate?.digest_source_exists !== currentCandidateInfo.digest_source_exists) {
+		errors.push(`$.candidate.digest_source_exists: ${JSON.stringify(index?.candidate?.digest_source_exists)} does not match current source existence ${JSON.stringify(currentCandidateInfo.digest_source_exists)}`);
+	}
 
 	if (!Array.isArray(index?.gates)) {
 		errors.push("$.gates: index has no gates array");
 		return { ok: false, errors };
 	}
 	const seen = new Set();
+	const declaredById = new Map(GATES.map((entry) => [entry.gate_id, entry]));
+	const derivedContext = {
+		root,
+		commit_sha: currentCommit,
+		candidate_digest: currentCandidate,
+		environment: index.environment ?? readEnvironment(),
+		tool_versions: index.tool_versions ?? readToolVersions(),
+	};
 	for (const [position, record] of index.gates.entries()) {
 		const path = `$.gates[${position}]`;
 		if (record === null || typeof record !== "object") {
@@ -1463,6 +1509,55 @@ export function verifyEvidenceIndex(index, schema) {
 		}
 		if (record.candidate_digest !== index.candidate_digest) {
 			errors.push(`${path} (${gateId}): candidate_digest ${JSON.stringify(record.candidate_digest)} does not match index candidate_digest ${JSON.stringify(index.candidate_digest)}`);
+		}
+		const gateEntry = declaredById.get(gateId);
+		if (!gateEntry) {
+			errors.push(`${path} (${gateId}): gate_id is not declared in the canonical gate registry`);
+			continue;
+		}
+		const currentArtifact = declaredArtifactDigest(gateEntry, root);
+		if (record.artifact_sha256 !== currentArtifact) {
+			errors.push(`${path} (${gateId}): artifact_sha256 ${JSON.stringify(record.artifact_sha256)} does not match current declared artifact ${JSON.stringify(currentArtifact)}`);
+		}
+		const currentLogPath = gateEntry.log === null ? null : resolve(root, `${LOG_DIR}/${gateEntry.log}`);
+		const currentLog = currentLogPath !== null && existsSync(currentLogPath) ? sha256File(currentLogPath) : UNKNOWN;
+		if (record.log_sha256 !== currentLog) {
+			errors.push(`${path} (${gateId}): log_sha256 ${JSON.stringify(record.log_sha256)} does not match current log ${JSON.stringify(currentLog)}`);
+		}
+		const derivedRecord = buildGateRecord(gateEntry, derivedContext);
+		if (record.status !== derivedRecord.status) {
+			errors.push(`${path} (${gateId}): status ${JSON.stringify(record.status)} does not match status derived from current evidence ${JSON.stringify(derivedRecord.status)}`);
+		}
+		if (record.exit_code !== derivedRecord.exit_code) {
+			errors.push(`${path} (${gateId}): exit_code ${JSON.stringify(record.exit_code)} does not match exit_code derived from current evidence ${JSON.stringify(derivedRecord.exit_code)}`);
+		}
+		if (record.status === STATUS_PASS) {
+			if (!/^[0-9a-f]{40}$/.test(currentCommit)) {
+				errors.push(`${path} (${gateId}): PASS requires a valid current source commit`);
+			}
+			if (!/^[0-9a-f]{64}$/.test(currentCandidate)) {
+				errors.push(`${path} (${gateId}): PASS requires an existing candidate inventory with a valid SHA-256 digest`);
+			}
+			if (gateEntry.log === null) {
+				errors.push(`${path} (${gateId}): PASS requires a declared gate log`);
+			} else {
+				const resultPath = `${currentLogPath}.result.json`;
+				if (!existsSync(resultPath)) {
+					errors.push(`${path} (${gateId}): PASS requires a candidate-bound result file; capture with --run or --record`);
+				} else {
+					const resultFailures = resultBindingFailures({
+						gateEntry,
+						resultFile: readResultFile(resultPath),
+						logBytes: currentLogPath !== null && existsSync(currentLogPath) ? readLogFile(currentLogPath) : null,
+						artifact_sha256: currentArtifact,
+						commit_sha: currentCommit,
+						candidate_digest: currentCandidate,
+					});
+					if (resultFailures.length > 0) {
+						errors.push(`${path} (${gateId}): PASS result file is stale or unprovable: ${resultFailures.join("; ")}`);
+					}
+				}
+			}
 		}
 		if (PASS_LIKE_STATUSES.includes(record.status) && record.exit_code !== 0) {
 			errors.push(
@@ -1483,8 +1578,7 @@ export function verifyEvidenceIndex(index, schema) {
 			}
 		}
 	}
-	const declared = GATES.map((entry) => entry.gate_id);
-	for (const gateId of declared) {
+	for (const gateId of declaredById.keys()) {
 		if (!seen.has(gateId)) errors.push(`$.gates: declared gate ${gateId} is missing from the index`);
 	}
 	// The summary must not be able to disagree with the records it summarises.
@@ -1535,7 +1629,7 @@ export function writeResultFile({ gateEntry, absolute }, payload, { root = ROOT 
 		// different source, candidate, log or declared-artifact identity.
 		...resultProvenance(gateEntry, root, absolute),
 	};
-	writeFileSync(`${absolute}.result.json`, `${JSON.stringify(body, null, 2)}\n`);
+	writeFileSync(`${absolute}.result.json`, `${JSON.stringify(body, null, 2)}\n`, { flag: "wx" });
 	return body;
 }
 
@@ -1588,6 +1682,9 @@ export function normalizeCapturedLog(text, root = ROOT) {
 
 function runGate(gateId) {
 	const target = resultFilePath(gateId);
+	if (existsSync(target.absolute) || existsSync(`${target.absolute}.result.json`)) {
+		throw new Error(`evidence output already exists for ${gateId}; use a fresh isolated worktree`);
+	}
 	if (target.gateEntry.command === UNKNOWN) {
 		throw new Error(`${gateId} declares no command; declare one before running it`);
 	}
@@ -1615,7 +1712,7 @@ function runGate(gateId) {
 			"",
 		].join("\n"),
 	);
-	writeFileSync(target.absolute, log);
+	writeFileSync(target.absolute, log, { flag: "wx" });
 	const payload = {
 		exit_code: exitCode,
 		started_at_utc: started.toISOString(),
@@ -1633,24 +1730,23 @@ function recordGate(gateId, options) {
 	const target = resultFilePath(gateId);
 	const exitCode = Number(options["exit-code"]);
 	if (!Number.isInteger(exitCode)) throw new Error("--record requires an integer --exit-code");
-	mkdirSync(dirname(target.absolute), { recursive: true });
+	if (!options.log) throw new Error("--record requires --log <external-log>");
+	if (existsSync(target.absolute) || existsSync(`${target.absolute}.result.json`)) {
+		throw new Error(`evidence output already exists for ${gateId}; use a fresh isolated worktree`);
+	}
+	const inputLog = resolve(ROOT, options.log);
+	if (inputLog === resolve(target.absolute)) throw new Error("--log must point to an external input file, not the evidence output path");
 	const log = `${LOG_DIR}/${target.gateEntry.log}`;
 	const absoluteLog = target.absolute;
-	const started = options["started-at"] ? new Date(options["started-at"]) : null;
 	let duration = UNKNOWN;
 	let ended = options["ended-at"] ? isoUtc(options["ended-at"]) : null;
-	if (existsSync(absoluteLog)) {
-		// `--record` consumes a log captured elsewhere. Normalize it in place so the
-		// digest written below covers the same identity-free bytes a `--run` capture
-		// would have produced, rather than leaving an operator-captured host path in
-		// the artefact the index digests.
-		const raw = readLogFile(absoluteLog).text;
-		const normalized = normalizeCapturedLog(raw);
-		if (normalized !== raw) writeFileSync(absoluteLog, normalized);
-		const marker = START_MARKER.exec(normalized);
-		if (!started && marker) options["started-at"] = marker[1];
-		if (!ended) ended = statSync(absoluteLog).mtime.toISOString();
-	}
+	const raw = readLogFile(inputLog).text;
+	const normalized = normalizeCapturedLog(raw);
+	mkdirSync(dirname(target.absolute), { recursive: true });
+	writeFileSync(absoluteLog, normalized, { flag: "wx" });
+	const marker = START_MARKER.exec(normalized);
+	if (!options["started-at"] && marker) options["started-at"] = marker[1];
+	if (!ended) ended = statSync(inputLog).mtime.toISOString();
 	const startedIso = options["started-at"] ? isoUtc(options["started-at"]) : UNKNOWN;
 	if (startedIso !== UNKNOWN && ended !== null && ended !== UNKNOWN) {
 		duration = Math.max(0, new Date(ended).getTime() - new Date(startedIso).getTime());
@@ -1660,8 +1756,8 @@ function recordGate(gateId, options) {
 		started_at_utc: startedIso,
 		ended_at_utc: ended ?? UNKNOWN,
 		duration_ms: duration,
-		log_path: existsSync(absoluteLog) ? log : UNKNOWN,
-		log_sha256: existsSync(absoluteLog) ? sha256File(absoluteLog) : UNKNOWN,
+		log_path: log,
+		log_sha256: sha256File(absoluteLog),
 		captured_by: "record",
 	});
 }
@@ -1698,7 +1794,7 @@ function usage() {
 		"  node scripts/generate-v8-evidence-index.mjs [--out <path>]",
 		"  node scripts/generate-v8-evidence-index.mjs --verify [--index <path>] [--schema <path>]",
 		"  node scripts/generate-v8-evidence-index.mjs --run <gate_id>",
-		"  node scripts/generate-v8-evidence-index.mjs --record <gate_id> --exit-code <n> [--started-at <iso>] [--ended-at <iso>]",
+		"  node scripts/generate-v8-evidence-index.mjs --record <gate_id> --exit-code <n> --log <external-log> [--started-at <iso>] [--ended-at <iso>]",
 		"",
 		"Declared gates:",
 		...GATES.map((entry) => `  ${entry.gate_id.padEnd(34)} ${entry.command}`),
@@ -1719,7 +1815,7 @@ function main(argv) {
 		const index = JSON.parse(readFileSync(resolve(ROOT, indexFile), "utf8"));
 		const { ok, errors } = verifyEvidenceIndex(index, schema);
 		if (ok) {
-			console.log(`${indexFile}: ${index.gates.length} gate record(s) validated against ${schemaFile}.`);
+			console.log(`${indexFile}: ${index.gates.length} fresh gate record(s) validated against current evidence and ${schemaFile}.`);
 			console.log(`status counts: ${JSON.stringify(index.status_counts)}`);
 			return 0;
 		}
@@ -1743,7 +1839,7 @@ function main(argv) {
 	const output = resolve(ROOT, options.out ?? INDEX_FILE);
 	mkdirSync(dirname(output), { recursive: true });
 	const serialized = serializeIndex(index);
-	writeFileSync(output, serialized);
+	writeFileSync(output, serialized, { flag: "wx" });
 	console.log(`Wrote ${options.out ?? INDEX_FILE} (${index.gate_count} gates, sha256=${sha256Hex(serialized)})`);
 	console.log(`status counts: ${JSON.stringify(index.status_counts)}`);
 	return 0;

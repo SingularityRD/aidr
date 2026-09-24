@@ -11,32 +11,70 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, it } from "node:test";
+import { tmpdir } from "node:os";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts", "check-generator-determinism.mjs");
 const INVENTORY = join(ROOT, "FEATURE_INVENTORY.json");
+const SALES_GAPS = join(ROOT, "PRODUCTION_SALES_GAPS.json");
 
-/** Files the checker rewrites and restores; every test must leave them as found. */
+/** Temporary committed-output fixtures; tests never write into the repository. */
 const guarded = ["FEATURE_INVENTORY.json", "FEATURE_INVENTORY.md", "PRODUCTION_SALES_GAPS.json", "PRODUCTION_SALES_GAPS.md"];
-const originals = new Map(guarded.map((relative) => [relative, readFileSync(join(ROOT, relative), "utf8")]));
+const fixtureDirs = new Set();
 
 afterEach(() => {
-	for (const [relative, text] of originals) writeFileSync(join(ROOT, relative), text, "utf8");
+	for (const directory of fixtureDirs) rmSync(directory, { recursive: true, force: true });
+	fixtureDirs.clear();
 });
 
-function run() {
+function makeFixture() {
+	const directory = mkdtempSync(join(tmpdir(), "aidr-generator-test-"));
+	fixtureDirs.add(directory);
+	for (const relative of guarded) {
+		const target = join(directory, relative);
+		mkdirSync(dirname(target), { recursive: true });
+		writeFileSync(target, readFileSync(join(ROOT, relative), "utf8"), "utf8");
+	}
+	return directory;
+}
+
+function run(committedOutputDir) {
 	try {
-		return { status: 0, output: execFileSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) };
+		return {
+			status: 0,
+			output: execFileSync(process.execPath, [SCRIPT], {
+				cwd: ROOT,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "pipe"],
+				env: { ...process.env, ...(committedOutputDir ? { AIDR_COMMITTED_OUTPUT_DIR: committedOutputDir } : {}) },
+			}),
+		};
 	} catch (error) {
 		return { status: error.status ?? 1, output: `${error.stdout ?? ""}${error.stderr ?? ""}` };
 	}
 }
 
 describe("generator determinism checker", () => {
+	it("records the actual Git worktree state in both generated registries", () => {
+		const actualChanges = execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], { cwd: ROOT, encoding: "utf8" }).trim().length > 0;
+		const generatedOn = new Intl.DateTimeFormat("en-CA", {
+			timeZone: "Europe/Istanbul",
+			year: "numeric",
+			month: "2-digit",
+			day: "2-digit",
+		}).format(new Date());
+		const inventory = JSON.parse(readFileSync(INVENTORY, "utf8"));
+		const salesGaps = JSON.parse(readFileSync(SALES_GAPS, "utf8"));
+		assert.equal(inventory.worktree_has_changes, actualChanges);
+		assert.equal(salesGaps.worktree_has_changes, actualChanges);
+		assert.equal(inventory.generated_on, generatedOn);
+		assert.equal(salesGaps.generated_on, generatedOn);
+	});
+
 	it("passes on a tree whose inventories match their generators", () => {
 		const result = run();
 		assert.equal(result.status, 0, result.output);
@@ -47,54 +85,57 @@ describe("generator determinism checker", () => {
 		const result = run();
 		assert.match(result.output, /source_commit/);
 		assert.match(result.output, /worktree_has_changes/);
+		assert.match(result.output, /generated_on/);
 	});
 
 	it("does not fail on the provenance stamps alone", () => {
-		// Rewrite only the stamps. A checker that compares whole files fails here,
-		// which is the defect this replaces: the stamps change with every commit by
-		// design, so a whole-file comparison can never pass in a healthy tree.
-		const parsed = JSON.parse(readFileSync(INVENTORY, "utf8"));
+		const fixture = makeFixture();
+		const parsed = JSON.parse(readFileSync(join(fixture, "FEATURE_INVENTORY.json"), "utf8"));
 		parsed.source_commit = "0".repeat(40);
 		parsed.worktree_has_changes = !parsed.worktree_has_changes;
-		writeFileSync(INVENTORY, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+		parsed.generated_on = "1900-01-01";
+		writeFileSync(join(fixture, "FEATURE_INVENTORY.json"), `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
 
-		const result = run();
+		const result = run(fixture);
 		assert.equal(result.status, 0, `provenance stamps must not fail the check:\n${result.output}`);
 	});
 
 	it("fails when a generated inventory is hand-edited", () => {
-		const parsed = JSON.parse(readFileSync(INVENTORY, "utf8"));
+		const fixture = makeFixture();
+		const parsed = JSON.parse(readFileSync(join(fixture, "FEATURE_INVENTORY.json"), "utf8"));
 		// Change content the generator derives, not a stamp.
 		parsed.decision = parsed.decision === "NO-GO" ? "GO" : "NO-GO";
-		writeFileSync(INVENTORY, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+		writeFileSync(join(fixture, "FEATURE_INVENTORY.json"), `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
 
-		const result = run();
+		const result = run(fixture);
 		assert.equal(result.status, 1, "a hand-edited inventory must be caught");
 		assert.match(result.output, /disagrees with a fresh generator run/);
 	});
 
 	it("leaves the tree as it found it, whether it passes or fails", () => {
-		const parsed = JSON.parse(readFileSync(INVENTORY, "utf8"));
+		const fixture = makeFixture();
+		const inventory = join(fixture, "FEATURE_INVENTORY.json");
+		const parsed = JSON.parse(readFileSync(inventory, "utf8"));
 		parsed.decision = "TAMPERED";
 		const tampered = `${JSON.stringify(parsed, null, 2)}\n`;
-		writeFileSync(INVENTORY, tampered, "utf8");
+		writeFileSync(inventory, tampered, "utf8");
 
-		const result = run();
+		const result = run(fixture);
 		assert.equal(result.status, 1, "a tampered inventory must be reported");
 
-		// The checker restores the files it rewrote from a backup taken before it
-		// ran. It must not silently repair the tampering: a gate that fixes the
-		// defect it was asked to report is worse than one that only reports it,
-		// because the next reader sees a clean tree and no record of the edit.
-		assert.equal(readFileSync(INVENTORY, "utf8"), tampered, "the checker must not silently rewrite the file it judged");
+		// The checker reads this fixture but only writes fresh generator output to
+		// a separate temporary directory. It must not silently repair the input it
+		// was asked to judge.
+		assert.equal(readFileSync(inventory, "utf8"), tampered, "the checker must not silently rewrite the file it judged");
 	});
 
 	it("reports mismatches for markdown output too, not only JSON", () => {
-		const markdown = join(ROOT, "FEATURE_INVENTORY.md");
+		const fixture = makeFixture();
+		const markdown = join(fixture, "FEATURE_INVENTORY.md");
 		const original = readFileSync(markdown, "utf8");
 		writeFileSync(markdown, `${original}\n<!-- hand edit -->\n`, "utf8");
 
-		const result = run();
+		const result = run(fixture);
 		assert.equal(result.status, 1, "a hand-edited markdown inventory must be caught");
 		assert.match(result.output, /FEATURE_INVENTORY\.md/);
 	});

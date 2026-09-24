@@ -110,7 +110,7 @@ async function generateProvenance() {
 					lockfile: relativeDisplay(lockfilePath),
 					sbom: byproducts.length > 0 ? relativeDisplay(sbomPath) : null,
 					release_version: process.env.AIDR_RELEASE_VERSION ?? process.env.AIDR_RC_VERSION ?? null,
-					git_sha: process.env.AIDR_BUILD_ID ?? process.env.GITHUB_SHA ?? null,
+					git_sha: process.env.AIDR_GIT_SHA ?? process.env.AIDR_BUILD_ID ?? process.env.GITHUB_SHA ?? null,
 					ci_run_id: process.env.GITHUB_RUN_ID ?? null,
 				},
 				environment: { build_host: process.env.GITHUB_ACTIONS ? "github_actions" : "local" },

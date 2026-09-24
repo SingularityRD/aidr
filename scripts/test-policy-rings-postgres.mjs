@@ -83,6 +83,12 @@ async function seed() {
       (${quote(f.tenant)},${quote(f.viewer)},'viewer',null),
       (${quote(f.tenant)},${quote(f.expired)},'admin',now()-interval '1 second'),
       (${quote(f.otherTenant)},${quote(f.outsider)},'owner',null);
+    insert into public.entitlements(tenant_id,user_id,included_agents) values
+      (${quote(f.tenant)},${quote(f.owner)},6),
+      (${quote(f.otherTenant)},${quote(f.outsider)},1);
+    insert into public.pilot_applications(tenant_id,user_id,status) values
+      (${quote(f.tenant)},${quote(f.owner)},'approved'),
+      (${quote(f.otherTenant)},${quote(f.outsider)},'approved');
     insert into public.agents(id,tenant_id,user_id,iid) values
       ${f.agents.map((id, i) => `(${quote(id)},${quote(f.tenant)},${quote(f.owner)},'agent-${i}')`).join(',')},
       (${quote(f.foreignAgent)},${quote(f.otherTenant)},${quote(f.outsider)},'foreign');

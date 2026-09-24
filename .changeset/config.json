@@ -11,7 +11,10 @@
       "@singularityrd/aidr-opencode",
       "aidr-cursor",
       "@singularityrd/aidr-cli",
-      "@singularityrd/aidr-sdk"
+      "@singularityrd/aidr-sdk",
+      "@singularityrd/aidr-codex",
+      "@singularityrd/aidr-dashboard",
+      "@singularityrd/aidr-mcp-gateway"
     ]
   ],
   "access": "restricted",

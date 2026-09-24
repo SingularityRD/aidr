@@ -70,10 +70,9 @@ function isPathShaped(surface) {
 }
 
 /**
- * Every connector-scope advertisement must agree with the sold native support
- * matrix: the README's connector sentence, the support matrix rows and the
- * registry's connector claim (CLAIM-010/COM-010) are one scope or the check
- * fails.
+ * The README/support matrix inventory may include implemented connectors that
+ * are not in the initial direct-GA order. Keep the two scopes explicit and
+ * require COM-010/CLAIM-010 to describe the direct-GA subset.
  */
 export function validateConnectorScope({ supportMatrix, readme, registry }) {
 	const failures = [];
@@ -83,11 +82,31 @@ export function validateConnectorScope({ supportMatrix, readme, registry }) {
 		return failures;
 	}
 	if (new Set(sold).size !== sold.length) failures.push("native support matrix soldConnectorScope contains duplicates");
-	const rows = Array.isArray(supportMatrix?.rows) ? supportMatrix.rows.map((row) => row?.connector) : [];
+	const matrixRows = Array.isArray(supportMatrix?.rows) ? supportMatrix.rows : [];
+	const rows = matrixRows.map((row) => row?.connector);
 	if (rows.length === 0) failures.push("native support matrix must declare connector rows");
 	if (new Set(rows).size !== rows.length) failures.push("native support matrix contains duplicate connector rows");
 	for (const connector of sold) if (!rows.includes(connector)) failures.push(`native support matrix has no row for sold connector ${connector}`);
 	for (const connector of rows) if (!sold.includes(connector)) failures.push(`native support matrix row ${connector} is absent from soldConnectorScope`);
+	const connectorGate = registry?.hardGates?.find((gate) => gate?.id === "COM-010");
+	const directGa = connectorGate?.directGaConnectorScope;
+	if (!Array.isArray(directGa) || directGa.length === 0) {
+		failures.push("COM-010 must declare a non-empty directGaConnectorScope");
+	} else {
+		if (new Set(directGa).size !== directGa.length) failures.push("COM-010 directGaConnectorScope contains duplicates");
+		for (const connector of directGa) {
+			if (!sold.includes(connector)) failures.push(`COM-010 direct-GA connector ${connector} is absent from soldConnectorScope`);
+			if (!rows.includes(connector)) failures.push(`COM-010 direct-GA connector ${connector} has no support-matrix row`);
+		}
+		if (connectorGate.status === "closed") {
+			if (supportMatrix.decision !== "GO") failures.push("COM-010 cannot close while native support matrix is not GO");
+			for (const connector of directGa) {
+				if (!matrixRows.find((row) => row?.connector === connector)?.acceptanceEvidence?.length) {
+					failures.push(`COM-010 cannot close without native acceptance evidence for ${connector}`);
+				}
+			}
+		}
+	}
 
 	if (typeof readme !== "string" || readme.trim() === "") {
 		failures.push("README must be readable to check the advertised connector scope");
@@ -119,7 +138,7 @@ export function validateConnectorScope({ supportMatrix, readme, registry }) {
 		const match = typeof text === "string" ? text.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b/i) : null;
 		const declared = match ? (CONNECTOR_COUNT_WORDS.get(match[1].toLowerCase()) ?? Number(match[1])) : Number.NaN;
 		if (!Number.isInteger(declared)) failures.push(`${scopeClaims[0].id}: connector-scope claim must declare how many connectors are sold`);
-		else if (declared !== sold.length) failures.push(`${scopeClaims[0].id}: declares ${declared} connectors but the support matrix sells ${sold.length}`);
+		else if (Array.isArray(directGa) && declared !== directGa.length) failures.push(`${scopeClaims[0].id}: declares ${declared} direct-GA connectors but COM-010 declares ${directGa.length}`);
 	}
 	return failures;
 }
@@ -138,6 +157,8 @@ export function validateClaimSurfaces({ registry, root = process.cwd(), exists =
 		return failures;
 	}
 	const normalizedRoots = scanRoots.map(normalizeRepoPath);
+	if (!normalizedRoots.includes("docs/sales")) failures.push("claim registry must scan docs/sales");
+	if (!normalizedRoots.includes("packages/dashboard/src/ui/pages/public")) failures.push("claim registry must scan dashboard public page sources");
 	const artifactRoots = (registry?.artifactRoots ?? []).map(normalizeRepoPath);
 	for (const scanRoot of normalizedRoots) {
 		if (!exists(scanRoot) && !artifactRoots.includes(scanRoot)) failures.push(`scan root ${scanRoot} does not exist and is not a build artifact root`);
@@ -221,13 +242,14 @@ export function validateCommercialReadiness({ inventory, gaps, registry, release
 
 // CLI entry point. Reads the real repository files so a stale claim scan or a
 // connector-scope disagreement fails the command instead of staying invisible.
-export function main({ root = process.cwd() } = {}) {
+function main({ root = process.cwd() } = {}) {
 	const readJson = (value) => JSON.parse(readFileSync(resolve(root, value), "utf8"));
 	const readText = (value) => readFileSync(resolve(root, value), "utf8");
+	const registry = readJson("docs/production-readiness/commercial-go-evidence-registry.json");
 	const failures = validateCommercialReadiness({
 		inventory: readJson("FEATURE_INVENTORY.json"),
 		gaps: readJson("PRODUCTION_SALES_GAPS.json"),
-		registry: readJson("docs/production-readiness/commercial-go-evidence-registry.json"),
+		registry,
 		releaseSource: readText("scripts/release-artifact-manifests.mjs"),
 		supportMatrix: readJson("deploy/native/support-matrix.json"),
 		readme: readText("README.md"),
@@ -240,8 +262,9 @@ export function main({ root = process.cwd() } = {}) {
 		for (const failure of failures) console.error(`- ${failure}`);
 		return 1;
 	}
+	const openHardGates = (registry.hardGates ?? []).filter((gate) => gate.status !== "closed").length;
 	console.log(
-		`Commercial readiness: PASS (release package scope, connector scope, claim surfaces, readiness counts, claim approval state and claim-evidence freshness across ${freshness.checked.length} recorded claim scan(s)).`,
+		`Commercial consistency checks: PASS (not a launch approval; registry decision=${registry.decision}, open hard gates=${openHardGates}, recorded claim scans=${freshness.checked.length}).`,
 	);
 	return 0;
 }

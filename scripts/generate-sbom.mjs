@@ -20,6 +20,23 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { cycloneDxHashFromSri } from "./lib/release-evidence-digests.mjs";
+import { parseHashLockedRequirements } from "./lib/python-requirements-sbom.mjs";
+
+const exposedSigningMaterial = [
+	"AIDR_SIGNING_PRIVATE_KEY_PEM_PATH",
+	"AIDR_SIGNING_PRIVATE_KEY_PEM",
+	"AIDR_RELEASE_SIGNING_PRIVATE_KEY_PATH",
+	"AIG_DATA_SIGNING_PRIVATE_KEY_PEM",
+	"AIG_PRIVATE_KEY_PEM",
+	"AIG_SIGNING_PRIVATE_KEY",
+	"AIG_SIGNING_PRIVATE_KEY_PATH",
+	"SIGNING_PRIVATE_KEY",
+].filter((name) => process.env[name]);
+if (exposedSigningMaterial.length > 0) {
+	console.error(`SBOM generation refuses private signing material: ${exposedSigningMaterial.join(", ")}`);
+	process.exit(2);
+}
 
 const repoRoot = path.resolve(process.cwd());
 const args = parseArgs(process.argv.slice(2));
@@ -30,6 +47,9 @@ const lockfilePath = path.join(repoRoot, "pnpm-lock.yaml");
 const lockfileBytes = readFileSync(lockfilePath);
 const lockfileDigest = createHash("sha256").update(lockfileBytes).digest("hex");
 const lockIntegrities = parseLockIntegrities(lockfileBytes.toString("utf8"));
+const pythonLockfileBytes = readFileSync(path.join(repoRoot, "services/aig-bridge/requirements-runtime.lock"));
+const pythonLockfileDigest = createHash("sha256").update(pythonLockfileBytes).digest("hex");
+const pythonPackages = parseHashLockedRequirements(pythonLockfileBytes.toString("utf8"));
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const pnpmArgs = ["list", "--json", "--prod", "--recursive", "--depth", "Infinity", "--lockfile-only"];
@@ -88,6 +108,41 @@ for (const workspace of workspaceGraph) {
 	visitNode(workspace, ref);
 }
 
+// The bridge image installs this exact hash-locked Python set. A flat edge
+// records package presence without inventing transitive dependency edges.
+const releaseVersion = process.env.AIDR_RELEASE_VERSION ?? "workspace";
+const bridgeRef = "urn:aidr:aig-bridge";
+components.set(bridgeRef, {
+	type: "application",
+	"bom-ref": bridgeRef,
+	name: "AIDR AIG Bridge",
+	version: releaseVersion,
+});
+const bridgeDependencies = new Set();
+for (const pkg of pythonPackages) {
+	const ref = `pkg:pypi/${pkg.name}@${encodeURIComponent(pkg.version)}`;
+	// The hash lock proves distribution identity, not licence terms. Do not let
+	// commercial generation succeed with an SBOM promotion will reject.
+	missingLicenses.push(`${pkg.name}@${pkg.version} (PyPI runtime)`);
+	components.set(ref, {
+		type: "library",
+		"bom-ref": ref,
+		name: pkg.name,
+		version: pkg.version,
+		purl: ref,
+		hashes: pkg.hashes.map((content) => ({ alg: "SHA-256", content })),
+		properties: [{ name: "aidr:source-lockfile", value: "services/aig-bridge/requirements-runtime.lock" }],
+	});
+	bridgeDependencies.add(ref);
+}
+dependencyEdges.set(bridgeRef, bridgeDependencies);
+dependencyEdges.set("urn:aidr:workspace", new Set([
+	bridgeRef,
+	...workspaceGraph
+		.filter((workspace) => workspace && typeof workspace.name === "string" && isVersion(workspace.version))
+		.map((workspace) => npmPurl(workspace.name, workspace.version)),
+]));
+
 if (unresolved.length > 0) {
 	const unique = [...new Set(unresolved)].sort(compareStrings);
 	console.error("Dependency graph contains packages without a locked identity:");
@@ -109,7 +164,6 @@ const dependencyList = [...dependencyEdges.entries()]
 	.map(([ref, dependsOn]) => ({ ref, dependsOn: [...dependsOn].sort(compareStrings) }))
 	.sort((a, b) => compareStrings(a.ref, b.ref));
 
-const releaseVersion = process.env.AIDR_RELEASE_VERSION ?? "workspace";
 const timestamp = new Date(sourceDateEpoch * 1000).toISOString();
 const payload = {
 	bomFormat: "CycloneDX",
@@ -119,6 +173,11 @@ const payload = {
 		timestamp,
 		properties: [
 			{ name: "aidr:lockfile-sha256", value: lockfileDigest },
+			{ name: "aidr:python-runtime-lockfile-sha256", value: pythonLockfileDigest },
+			{
+				name: "aidr:sbom-limitations",
+				value: "Container base/OS layers, upstream Supabase images, and AI-Infra-Guard server components are not included; image SBOM acceptance remains open",
+			},
 			...(process.env.AIDR_RC_VERSION ? [{ name: "aidr:rc-version", value: process.env.AIDR_RC_VERSION }] : []),
 			...(process.env.AIDR_SOURCE_DIGEST ? [{ name: "aidr:source-digest", value: process.env.AIDR_SOURCE_DIGEST }] : []),
 			...(process.env.AIDR_DATA_DIGEST ? [{ name: "aidr:data-digest", value: process.env.AIDR_DATA_DIGEST }] : []),
@@ -300,11 +359,7 @@ function findLockKey(name, version) {
 
 function resolveLockIntegrity(name, version) {
 	const value = lockIntegrities.get(findLockKey(name, version));
-	if (!value) return undefined;
-	const match = value.match(/^sha(256|384|512)-(.+)$/i);
-	if (!match) return undefined;
-	const algorithm = `SHA-${match[1]}`;
-	return { alg: algorithm, content: match[2] };
+	return cycloneDxHashFromSri(value);
 }
 
 function unquoteYaml(value) {

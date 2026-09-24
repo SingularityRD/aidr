@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
-import { assertNoReleaseSourceMaps, runWorkspaceBuild, sourceMapsInPackageDist } from "./build-workspace.mjs";
+import { assertNoReleaseSourceMaps, resolvePnpmEntry, runWorkspaceBuild, sourceMapsInPackageDist } from "./build-workspace.mjs";
 import { ensureCoreBuild } from "./ensure-core-build.mjs";
 
 function fixture() {
@@ -17,6 +17,7 @@ function fixture() {
 	writeFileSync(join(core, "dist", "generated", "data.json"), "{\"value\":1}\n");
 	writeFileSync(join(core, "dist", "index.js"), "export const stale = true;\n");
 	writeFileSync(join(core, "dist", "index.d.ts"), "export declare const stale: true;\n");
+	writeFileSync(join(core, "dist", "build-flavor.js"), 'const EMBEDDED_BUILD_FLAVOR = "development";\n');
 	writeFileSync(join(core, "dist", "aig-infra-scan.d.ts.map"), "stale declaration map\n");
 	return { root, core };
 }
@@ -27,10 +28,41 @@ function emitReleaseCore(core) {
 	writeFileSync(join(core, "dist", "generated", "data.json"), "{\"value\":1}\n");
 	writeFileSync(join(core, "dist", "index.js"), "export const release = true;\n");
 	writeFileSync(join(core, "dist", "index.d.ts"), "export declare const release: true;\n");
+	writeFileSync(join(core, "dist", "build-flavor.js"), 'const EMBEDDED_BUILD_FLAVOR = "commercial";\n');
 	const future = new Date(Date.now() + 2_000);
 	utimesSync(join(core, "dist", "index.js"), future, future);
 	utimesSync(join(core, "dist", "index.d.ts"), future, future);
 }
+
+test("Windows pnpm entry resolution prefers the absolute lifecycle entry and falls back to Node Corepack", () => {
+	const root = mkdtempSync(join(tmpdir(), "aidr-pnpm-entry-"));
+	try {
+		const nodePath = join(root, "node.exe");
+		const lifecycleEntry = join(root, "tools", "pnpm.cjs");
+		const corepackEntry = join(root, "node_modules", "corepack", "dist", "pnpm.js");
+		mkdirSync(dirname(lifecycleEntry), { recursive: true });
+		mkdirSync(dirname(corepackEntry), { recursive: true });
+		writeFileSync(lifecycleEntry, "// trusted pnpm entry fixture\n");
+		writeFileSync(corepackEntry, "// trusted Corepack entry fixture\n");
+
+		assert.equal(resolvePnpmEntry({ nodePath, env: { npm_execpath: lifecycleEntry } }), lifecycleEntry);
+		assert.equal(resolvePnpmEntry({ nodePath, env: { npm_execpath: "pnpm.cmd" } }), corepackEntry);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("Windows pnpm entry resolution fails closed when neither JavaScript entry exists", () => {
+	const root = mkdtempSync(join(tmpdir(), "aidr-pnpm-entry-"));
+	try {
+		assert.throws(
+			() => resolvePnpmEntry({ nodePath: join(root, "node.exe"), env: { npm_execpath: "pnpm.cmd" } }),
+			/could not resolve an absolute pnpm\/Corepack JavaScript entry/,
+		);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
 
 function mapsUnder(dir) {
 	const found = [];
@@ -63,7 +95,7 @@ test("release build removes stale maps and blocks normal connector core rebuilds
 					for (let index = 0; index < 3; index += 1) {
 						connectorEnsures += 1;
 						assert.equal(
-							ensureCoreBuild({ repoRoot: root, env, runBuild: () => (normalCoreBuilds += 1) }),
+							ensureCoreBuild({ repoRoot: root, env, release: true, runBuild: () => (normalCoreBuilds += 1) }),
 							0,
 						);
 					}

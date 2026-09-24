@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -88,7 +89,7 @@ test("a recorded claim scan digest that differs from the current registry fails"
 	assert.deepEqual(checkClaimEvidenceFreshness({ root: process.cwd(), evidenceDir, source_commit: sourceCommit, candidate }).failures, []);
 });
 
-test("the advertised connector scope agrees across README, the support matrix and the claim registry", () => {
+test("implemented and direct-GA connector scopes stay distinct and consistent", () => {
 	assert.deepEqual(validateConnectorScope(fixture()), []);
 	const { supportMatrix: matrix, registry: claimRegistry } = fixture();
 	const readmeScope = "... via hook systems in [Claude Code](a), [Cursor / VS Code](b), [OpenClaw](c), [OpenCode](d) and [Codex](e), and checks them against:";
@@ -100,16 +101,39 @@ test("the advertised connector scope agrees across README, the support matrix an
 		validateConnectorScope({ supportMatrix: matrix, registry: claimRegistry, readme: readmeScope.replace("[OpenCode](d)", "[Zed](d)") }).join("\n"),
 		/README connector scope sentence names an unknown connector: Zed/,
 	);
-	const narrowedClaim = fixture();
-	narrowedClaim.registry.claims.find((claim) => claim.id === "CLAIM-010").exactText = "All five connectors are directly GA-supported.";
-	assert.match(validateConnectorScope(narrowedClaim).join("\n"), /CLAIM-010: declares 5 connectors but the support matrix sells 6/);
+	assert.equal(matrix.soldConnectorScope.length, 6);
+	assert.equal(claimRegistry.hardGates.find((gate) => gate.id === "COM-010").directGaConnectorScope.length, 5);
+	const widenedClaim = fixture();
+	widenedClaim.registry.claims.find((claim) => claim.id === "CLAIM-010").exactText = "All six connectors are directly GA-supported.";
+	assert.match(validateConnectorScope(widenedClaim).join("\n"), /CLAIM-010: declares 6 direct-GA connectors but COM-010 declares 5/);
+	const unlistedDirectGa = fixture();
+	unlistedDirectGa.registry.hardGates.find((gate) => gate.id === "COM-010").directGaConnectorScope.push("zed");
+	assert.match(validateConnectorScope(unlistedDirectGa).join("\n"), /COM-010 direct-GA connector zed is absent from soldConnectorScope/);
 	const narrowedMatrix = fixture();
 	narrowedMatrix.supportMatrix.soldConnectorScope = narrowedMatrix.supportMatrix.soldConnectorScope.filter((connector) => connector !== "codex");
 	assert.match(validateConnectorScope(narrowedMatrix).join("\n"), /README advertises connector codex outside the sold support matrix/);
 });
 
+test("COM-010 cannot close ahead of all five native connector acceptances", () => {
+	const input = fixture();
+	input.registry.hardGates.find((gate) => gate.id === "COM-010").status = "closed";
+	const failures = validateConnectorScope(input).join("\n");
+	assert.match(failures, /COM-010 cannot close while native support matrix is not GO/);
+	for (const connector of ["claude-code", "cursor", "vscode", "openclaw", "opencode"]) {
+		assert.match(failures, new RegExp(`COM-010 cannot close without native acceptance evidence for ${connector}`));
+	}
+	input.supportMatrix.rows = null;
+	assert.match(validateConnectorScope(input).join("\n"), /native support matrix must declare connector rows/);
+});
+
 test("every claim surface is either scan-covered or absent", () => {
 	assert.deepEqual(validateClaimSurfaces({ registry: fixture().registry }), []);
+	const missingSales = fixture();
+	missingSales.registry.scanRoots = missingSales.registry.scanRoots.filter((root) => root !== "docs/sales");
+	assert.match(validateClaimSurfaces(missingSales).join("\n"), /claim registry must scan docs\/sales/);
+	const missingPublicPages = fixture();
+	missingPublicPages.registry.scanRoots = missingPublicPages.registry.scanRoots.filter((root) => root !== "packages/dashboard/src/ui/pages/public");
+	assert.match(validateClaimSurfaces(missingPublicPages).join("\n"), /claim registry must scan dashboard public page sources/);
 	const unscanned = fixture();
 	unscanned.registry.scanRoots = unscanned.registry.scanRoots.filter((root) => root !== "docs/configuration.md");
 	assert.match(validateClaimSurfaces(unscanned).join("\n"), /CLAIM-008: declared surface docs\/configuration\.md exists but no scan root covers it/);
@@ -119,4 +143,13 @@ test("every claim surface is either scan-covered or absent", () => {
 	const phantomRoot = fixture();
 	phantomRoot.registry.scanRoots = [...phantomRoot.registry.scanRoots, "sales"];
 	assert.match(validateClaimSurfaces(phantomRoot).join("\n"), /scan root sales does not exist and is not a build artifact root/);
+});
+
+test("the CLI labels its PASS as consistency-only and keeps the launch decision visible", () => {
+	const result = spawnSync(process.execPath, ["scripts/check-commercial-readiness.mjs"], { cwd: process.cwd(), encoding: "utf8" });
+	assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+	assert.match(result.stdout, /Commercial consistency checks: PASS \(not a launch approval;/);
+	assert.match(result.stdout, /registry decision=/);
+	assert.match(result.stdout, /open hard gates=/);
+	assert.match(result.stdout, /recorded claim scans=/);
 });

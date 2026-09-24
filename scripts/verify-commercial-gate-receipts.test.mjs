@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -30,6 +30,8 @@ const candidateDigest = createHash("sha256").update(inventoryBytes).digest("hex"
 const sha256OfFile = (path) => createHash("sha256").update(readFileSync(join(ROOT, path))).digest("hex");
 
 const EVIDENCE_PATH = SCHEMA_FILE;
+const ASSESSMENT_NOW = new Date("2026-09-23T12:00:00.000Z");
+const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function fixture() {
 	return {
@@ -63,6 +65,41 @@ function closeReceipt(input, gateId, overrides = {}) {
 		overrides,
 	);
 	return receipt;
+}
+
+function closedAssessment(t, changes = {}) {
+	const input = fixture();
+	const root = mkdtempSync(join(tmpdir(), "aidr-assessment-fixture-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const report = "synthetic fixture report, not an assessor signature";
+	const retest = "synthetic fixture retest, not an assessor signature";
+	writeFileSync(join(root, "report.pdf"), report);
+	writeFileSync(join(root, "retest.pdf"), retest);
+	const assessment = {
+		schema_version: 1,
+		candidate_digest: candidateDigest,
+		assessor_name: "fixture-assessor",
+		scope: ["tenant", "identity", "runtime", "distribution", "secrets"],
+		started_at_utc: "2026-09-18T00:00:00.000Z",
+		completed_at_utc: "2026-09-20T00:00:00.000Z",
+		retest_at_utc: "2026-09-21T00:00:00.000Z",
+		valid_until_utc: "2026-10-23T00:00:00.000Z",
+		unresolved_critical: 0,
+		unresolved_high: 0,
+		signed_report: { path: "report.pdf", sha256: hash(report) },
+		retest_letter: { path: "retest.pdf", sha256: hash(retest) },
+		...changes,
+	};
+	const manifest = JSON.stringify(assessment);
+	writeFileSync(join(root, "assessment.json"), manifest);
+	input.root = root;
+	input.now = ASSESSMENT_NOW;
+	closeReceipt(input, "SEC-EXT-001", {
+		evidence_path: "assessment.json",
+		evidence_sha256: hash(manifest),
+		recorded_at_utc: "2026-09-22T00:00:00.000Z",
+	});
+	return { input, root };
 }
 
 const failuresOf = (input) => validateCommercialGateReceipts(input).failures.join("\n");
@@ -146,6 +183,12 @@ test("no release inventory means no gate can close", () => {
 	assert.match(failuresOf(input), /COM-004: no release inventory exists to bind a candidate digest/);
 });
 
+test("INV-001 cannot close while its metric dictionary is NOT_HELD", () => {
+	const input = fixture();
+	closeReceipt(input, "INV-001");
+	assert.match(failuresOf(input), /INV-001: investor metric dictionary must validate with every metric HELD and bound to this release candidate/);
+});
+
 test("a registry/receipt status disagreement fails", () => {
 	const input = fixture();
 	input.registry.hardGates.find((gate) => gate.id === "COM-005").status = "in-review";
@@ -183,4 +226,51 @@ test("the schema rejects a closed record with no reviewer, hash or candidate bin
 	assert.ok(
 		validateReceiptRecord({ ...backed, reviewer_name: "REQUIRED", evidence_sha256: null, candidate_digest: "unknown" }, schema).length > 0,
 	);
+});
+
+test("SEC-EXT-001 accepts only a candidate-bound, current assessment manifest with intact report and retest", (t) => {
+	const { input } = closedAssessment(t);
+	assert.deepEqual(validateCommercialGateReceipts(input).failures, []);
+});
+
+test("SEC-EXT-001 rejects an expired or different-candidate assessment", async (t) => {
+	await t.test("expired", (sub) => {
+		const { input } = closedAssessment(sub, { valid_until_utc: "2026-09-23T11:59:59.000Z" });
+		assert.match(failuresOf(input), /assessment\/retest chronology is invalid or evidence has expired/);
+	});
+	await t.test("candidate mismatch", (sub) => {
+		const { input } = closedAssessment(sub, { candidate_digest: "a".repeat(64) });
+		assert.match(failuresOf(input), /assessment manifest version or candidate digest mismatch/);
+	});
+});
+
+test("SEC-EXT-001 rejects incomplete scope, unresolved severe findings and invalid retest chronology", async (t) => {
+	await t.test("scope", (sub) => {
+		const { input } = closedAssessment(sub, { scope: ["tenant", "identity"] });
+		assert.match(failuresOf(input), /assessment scope omits runtime/);
+	});
+	await t.test("finding", (sub) => {
+		const { input } = closedAssessment(sub, { unresolved_high: 1 });
+		assert.match(failuresOf(input), /unresolved critical\/high findings prevent closure/);
+	});
+	await t.test("retest before assessment", (sub) => {
+		const { input } = closedAssessment(sub, { retest_at_utc: "2026-09-19T00:00:00.000Z" });
+		assert.match(failuresOf(input), /assessment\/retest chronology is invalid/);
+	});
+});
+
+test("SEC-EXT-001 rejects report tampering and missing retest evidence", async (t) => {
+	await t.test("tampering", (sub) => {
+		const { input, root } = closedAssessment(sub);
+		writeFileSync(join(root, "report.pdf"), "changed after manifest hash");
+		assert.match(failuresOf(input), /signed report SHA-256 mismatch/);
+	});
+	await t.test("missing", (sub) => {
+		const { input } = closedAssessment(sub, { retest_letter: { path: "absent.pdf", sha256: "b".repeat(64) } });
+		assert.match(failuresOf(input), /retest letter file is absent/);
+	});
+	await t.test("external path", (sub) => {
+		const { input } = closedAssessment(sub, { signed_report: { path: join(ROOT, EVIDENCE_PATH), sha256: sha256OfFile(EVIDENCE_PATH) } });
+		assert.match(failuresOf(input), /signed report must stay inside the evidence root/);
+	});
 });

@@ -1,0 +1,4 @@
+title = "Singularity AIDR secret scanning"
+
+[extend]
+useDefault = true

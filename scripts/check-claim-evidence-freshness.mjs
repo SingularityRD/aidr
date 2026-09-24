@@ -34,10 +34,10 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CANDIDATE_DIGEST_SOURCE, candidateDigest, gitCommitSha } from "./generate-v8-evidence-index.mjs";
 
-export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const REGISTRY_FILE = "docs/production-readiness/commercial-go-evidence-registry.json";
-export const EVIDENCE_DIR = ".release-evidence";
-export const CLAIM_EVIDENCE_FILE = /claim[^/\\]*\.json$/i;
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const REGISTRY_FILE = "docs/production-readiness/commercial-go-evidence-registry.json";
+const EVIDENCE_DIR = ".release-evidence";
+const CLAIM_EVIDENCE_FILE = /claim[^/\\]*\.json$/i;
 
 export function sha256File(path) {
 	return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -142,7 +142,7 @@ export function checkClaimEvidenceFreshness({
 	};
 }
 
-export function parseArgs(argv) {
+function parseArgs(argv) {
 	const args = { evidenceDir: EVIDENCE_DIR, registryPath: REGISTRY_FILE, help: false };
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];

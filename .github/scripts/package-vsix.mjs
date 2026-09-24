@@ -1,17 +1,21 @@
 /**
  * Build both supported VS Code-family extension bundles from the already
- * built release dist.  This is intentionally a workflow helper: the version
- * of `@vscode/vsce` is supplied by the release workflow and must be exact.
+ * built release dist. The frozen workspace lock supplies `@vscode/vsce`; the
+ * workflow's exact version is checked before packaging.
  *
  * Required environment:
  *   VSCE_VERSION      exact @vscode/vsce version (x.y.z)
  *   VSIX_OUTPUT_DIR   output directory
  */
 
-import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { finalizeReleaseBundle } from "../../scripts/lib/finalize-release-bundle.mjs";
+import {
+	assertVsixIntegrityEvidence,
+	VSIX_PACKAGE_FILES,
+} from "../../scripts/lib/vsix-package-files.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const extensionRoot = join(repoRoot, "packages", "extension");
@@ -21,6 +25,7 @@ const vsceVersion = process.env.VSCE_VERSION;
 if (!/^\d+\.\d+\.\d+$/.test(vsceVersion ?? "")) {
 	fail("VSCE_VERSION must be an exact x.y.z version");
 }
+assertVsceVersion(vsceVersion);
 
 const baseManifest = JSON.parse(await readFile(join(extensionRoot, "package.json"), "utf8"));
 await mkdir(outputDir, { recursive: true });
@@ -54,20 +59,7 @@ for (const variant of variants) {
 		name: variant.name,
 		main: variant.main,
 		private: undefined,
-		files: [
-			"dist/cursor_extension.js",
-			"dist/vscode_extension.js",
-			"dist/aidr-hook.cjs",
-			"dist/aidr-artifact.manifest.json",
-			"dist/aidr-artifact.manifest.sig",
-			"dist/aidr-sbom.cdx.json",
-			"dist/aidr-sbom.cdx.json.sha256",
-			"resources/**",
-			"aidr-icon.png",
-			"package.json",
-			"README.md",
-			"LICENSE",
-		],
+		files: [...VSIX_PACKAGE_FILES],
 	};
 	delete manifest.private;
 	manifest.name = variant.name;
@@ -95,13 +87,22 @@ for (const variant of variants) {
 	}
 	await writeFile(join(stageDir, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 	await assertNoSourceMaps(join(stageDir, "dist"));
+	await assertVsixIntegrityEvidence(stageDir);
 
 	const outputPath = join(outputDir, variant.output);
-	await runVsce(stageDir, outputPath, vsceVersion);
+	await runVsce(stageDir, outputPath);
 	console.log(`Wrote ${outputPath}`);
 }
 
-await refreshReleaseInventory();
+let releaseBundle = true;
+try {
+	await readFile(join(outputDir, "release-inventory.json"), "utf8");
+} catch (error) {
+	if (error?.code !== "ENOENT") throw error;
+	releaseBundle = false;
+}
+// Standalone VSIX packaging has no release metadata to finalize.
+if (releaseBundle) await finalizeReleaseBundle(outputDir);
 
 async function assertNoSourceMaps(distDir) {
 	const offenders = [];
@@ -130,14 +131,14 @@ async function assertNoSourceMaps(distDir) {
 	if (offenders.length > 0) fail(`Refusing to package source maps:\n${offenders.join("\n")}`);
 }
 
-function runVsce(cwd, outputPath, version) {
+function runVsce(cwd, outputPath) {
 	return new Promise((resolveRun, rejectRun) => {
 		const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 		const child = spawn(
 			command,
 			[
-				"dlx",
-				`@vscode/vsce@${version}`,
+				"exec",
+				"vsce",
 				"package",
 				"-o",
 				outputPath,
@@ -159,28 +160,16 @@ function runVsce(cwd, outputPath, version) {
 	});
 }
 
-async function refreshReleaseInventory() {
-	const inventoryPath = join(outputDir, "release-inventory.json");
-	try {
-		await readFile(inventoryPath, "utf8");
-	} catch {
-		// The helper is also useful standalone; build-release-bundle creates the
-		// inventory in the release workflow, so there is nothing to refresh here.
-		return;
+function assertVsceVersion(expected) {
+	const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+	const result = spawnSync(command, ["exec", "vsce", "--version"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+		shell: process.platform === "win32",
+	});
+	if (result.error || result.status !== 0 || result.stdout.trim() !== expected) {
+		fail(`installed @vscode/vsce must be exactly ${expected}`);
 	}
-	const entries = [];
-	for (const entry of await readdir(outputDir, { withFileTypes: true })) {
-		if (!entry.isFile() || ["release-inventory.json", "aidr-artifact.manifest.json", "aidr-artifact.manifest.sig"].includes(entry.name)) continue;
-		const bytes = await readFile(join(outputDir, entry.name));
-		entries.push({
-			source_path: `release-output/${entry.name}`,
-			staged_path: entry.name,
-			kind: "release-artifact",
-			sha256: createHash("sha256").update(bytes).digest("hex"),
-		});
-	}
-	entries.sort((a, b) => (a.staged_path < b.staged_path ? -1 : a.staged_path > b.staged_path ? 1 : 0));
-	await writeFile(inventoryPath, `${JSON.stringify({ schema_version: 1, artifacts: entries }, null, 2)}\n`, "utf8");
 }
 
 function fail(message) {

@@ -1,27 +1,28 @@
 /**
- * Build the signed release-evidence set for all shipped AIDR artifacts.
+ * Build the unsigned release-evidence set for all shipped AIDR artifacts.
  *
- * Developer mode remains useful locally. Commercial/final mode is explicit
- * and fail-closed: it requires a private signing key, a separate public-key
- * file and fingerprint, a stable RC/git/source/data/package/lock/SBOM
- * provenance tuple, and an independent verification pass after signing.
+ * This preparation phase may execute the package manager while constructing
+ * the SBOM, so private signing material is deliberately forbidden here.
+ * Commercial/final mode emits complete manifests for a later isolated signing
+ * job and still requires the stable RC/git/source/data/package/lock/SBOM
+ * provenance tuple.
  */
 
-import { createHash, createPublicKey } from "node:crypto";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, rm, writeFile, lstat } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { resolveGitTreeSha256 } from "./lib/release-evidence-digests.mjs";
+import { assertReleaseSourceClean } from "./lib/release-source-clean.mjs";
 
 const repoRoot = process.cwd();
 const commercial = process.env.AIDR_RELEASE_MODE === "commercial" || process.env.AIDR_FINAL_RELEASE === "1";
-const requireSigning = commercial || process.env.AIDR_REQUIRE_SIGNING === "1";
 const requireSbom = commercial || process.env.AIDR_REQUIRE_SBOM === "1";
-const keyPath = process.env.AIDR_SIGNING_PRIVATE_KEY_PEM_PATH;
-const publicKeyPath = process.env.AIDR_SIGNING_PUBLIC_KEY_PEM_PATH;
 const keyId = process.env.AIDR_SIGNING_KEY_ID;
 const configuredFingerprint = process.env.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT;
 const watermarkId = process.env.AIDR_WATERMARK_ID;
+assertNoPrivateSigningMaterial();
 const targets = [
 	{ pkg: "packages/core/package.json", dir: "packages/core/dist", artifactId: "core/dist" },
 	{ pkg: "packages/claude-code/package.json", dir: "packages/claude-code/dist", artifactId: "claude-code/dist" },
@@ -36,26 +37,16 @@ const targets = [
 ];
 
 if (commercial) {
-	if (!keyPath) fail("Commercial release requires AIDR_SIGNING_PRIVATE_KEY_PEM_PATH.");
-	if (!publicKeyPath) fail("Commercial release requires AIDR_SIGNING_PUBLIC_KEY_PEM_PATH (private/public separation).");
 	if (!keyId) fail("Commercial release requires AIDR_SIGNING_KEY_ID.");
 	if (!configuredFingerprint) fail("Commercial release requires AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT.");
 	if (!watermarkId) fail("Commercial release requires AIDR_WATERMARK_ID.");
 	if (!process.env.AIDR_RC_VERSION && !process.env.AIDR_RELEASE_VERSION) fail("Commercial release requires AIDR_RC_VERSION (or AIDR_RELEASE_VERSION).");
 	if (!process.env.SOURCE_DATE_EPOCH) process.env.SOURCE_DATE_EPOCH = resolveGitTimestamp();
-	assertCleanGitTree();
+	assertReleaseSourceClean(repoRoot);
 }
-
-if (requireSigning && (!keyPath || !existsSync(path.resolve(keyPath)))) {
-	fail(`Signing key is missing: ${keyPath ?? "AIDR_SIGNING_PRIVATE_KEY_PEM_PATH is unset"}`);
-}
-if (commercial && (!publicKeyPath || !existsSync(path.resolve(publicKeyPath)))) {
-	fail(`Public signing key is missing: ${publicKeyPath ?? "AIDR_SIGNING_PUBLIC_KEY_PEM_PATH is unset"}`);
-}
-
-const keyFingerprint = publicKeyPath ? verifyPublicKeyFingerprint(publicKeyPath, configuredFingerprint) : configuredFingerprint;
-const gitSha = process.env.AIDR_GIT_SHA ?? process.env.GITHUB_SHA ?? process.env.CI_COMMIT_SHA ?? resolveGitSha();
-const sourceDigest = process.env.AIDR_SOURCE_DIGEST ?? resolveGitTreeDigest();
+const keyFingerprint = configuredFingerprint ? normalizeFingerprint(configuredFingerprint) : undefined;
+const gitSha = process.env.AIDR_GIT_SHA ?? process.env.AIDR_BUILD_ID ?? process.env.GITHUB_SHA ?? process.env.CI_COMMIT_SHA ?? resolveGitSha();
+const sourceDigest = process.env.AIDR_SOURCE_DIGEST ?? resolveGitTreeSha256(repoRoot);
 const dataDigest = process.env.AIDR_DATA_DIGEST ?? (await digestDataRoots());
 const lockfileDigest = `sha256:${sha256(await readFile(path.join(repoRoot, "pnpm-lock.yaml")))}`;
 
@@ -69,11 +60,18 @@ const evidenceDir = path.join(repoRoot, ".release-evidence");
 await mkdir(evidenceDir, { recursive: true });
 const sbomPath = path.join(evidenceDir, "aidr-sbom.cdx.json");
 const sbomChecksumPath = `${sbomPath}.sha256`;
-const sbomOk = run(
-	["scripts/generate-sbom.mjs", "--output", sbomPath],
-	finalEnv({ AIDR_SOURCE_DIGEST: sourceDigest, AIDR_DATA_DIGEST: dataDigest }),
-	{ allowFailure: !requireSbom },
-);
+const prebuiltSbom = process.env.AIDR_PREBUILT_SBOM_PATH?.trim();
+let sbomOk;
+if (prebuiltSbom) {
+	await reuseSbomEvidence(prebuiltSbom, sbomPath, { sourceDigest, dataDigest });
+	sbomOk = true;
+} else {
+	sbomOk = run(
+		["scripts/generate-sbom.mjs", "--output", sbomPath],
+		finalEnv({ AIDR_SOURCE_DIGEST: sourceDigest, AIDR_DATA_DIGEST: dataDigest }),
+		{ allowFailure: !requireSbom },
+	);
+}
 if (!sbomOk && !requireSbom) console.warn("WARN: SBOM unavailable in developer mode; no SBOM was copied.");
 if (sbomOk) {
 	for (const target of targets) {
@@ -109,7 +107,6 @@ for (const target of targets) {
 		],
 		finalEnv({ AIDR_PACKAGE_DIGEST: packageDigest, AIDR_SBOM_DIGEST: sbomDigest }),
 	);
-	if (keyPath) run(["scripts/sign-artifact-manifest.mjs", "--dir", distDir, "--key", path.resolve(keyPath)]);
 }
 
 let verificationDirs = targets.map((target) => path.join(repoRoot, target.dir));
@@ -125,11 +122,8 @@ if (commercial || process.env.AIDR_INCLUDE_RELEASE_BUNDLE === "1") {
 	verificationDirs = [...verificationDirs, bundle];
 }
 
-if (commercial) {
-	run(["scripts/verify-release-evidence.mjs", "--public-key", path.resolve(publicKeyPath), "--fingerprint", keyFingerprint, "--dirs", ...verificationDirs]);
-} else if (sbomOk) {
-	console.log(`Developer release evidence: SBOM copied to ${targets.length} artifact(s); signatures remain optional.`);
-}
+if (commercial) console.log(`Prepared ${verificationDirs.length} unsigned commercial release manifest(s) for isolated signing.`);
+else if (sbomOk) console.log(`Developer release evidence: SBOM copied to ${targets.length} artifact(s); signatures remain optional.`);
 
 function finalEnv(extra = {}) {
 	return {
@@ -204,8 +198,31 @@ async function prepareReleaseBundle(dir, packageDigestsValue, provenance) {
 		],
 		env,
 	);
-	if (keyPath) run(["scripts/sign-artifact-manifest.mjs", "--dir", dir, "--key", path.resolve(keyPath)]);
 	return dir;
+}
+
+async function reuseSbomEvidence(source, destination, bindings) {
+	const sourcePath = path.resolve(source);
+	if (!existsSync(sourcePath)) fail(`Prebuilt SBOM is missing: ${sourcePath}`);
+	let payload;
+	try {
+		payload = JSON.parse(await readFile(sourcePath, "utf8"));
+	} catch (error) {
+		fail(`Prebuilt SBOM is invalid: ${error instanceof Error ? error.message : String(error)}`);
+	}
+	if (payload?.bomFormat !== "CycloneDX" || payload?.specVersion !== "1.5" || !Array.isArray(payload?.components)) {
+		fail("Prebuilt SBOM is not a CycloneDX 1.5 document.");
+	}
+	const properties = Array.isArray(payload.metadata?.properties) ? payload.metadata.properties : [];
+	const rebound = properties.filter((entry) => entry?.name !== "aidr:source-digest" && entry?.name !== "aidr:data-digest");
+	rebound.push({ name: "aidr:source-digest", value: bindings.sourceDigest });
+	rebound.push({ name: "aidr:data-digest", value: bindings.dataDigest });
+	payload.metadata = { ...payload.metadata, properties: rebound };
+	delete payload.serialNumber;
+	payload.serialNumber = `urn:uuid:${toUuid(sha256(Buffer.from(JSON.stringify(payload))))}`;
+	const output = `${JSON.stringify(payload, null, 2)}\n`;
+	await writeFile(destination, output, "utf8");
+	await writeFile(`${destination}.sha256`, `${sha256(Buffer.from(output))}  aidr-sbom.cdx.json\n`, "utf8");
 }
 
 async function copySbomEvidence(sourcePath, destinationDir) {
@@ -286,19 +303,6 @@ async function digestDataRoots() {
 	return `sha256:${sha256(Buffer.from(JSON.stringify(tuples)))}`;
 }
 
-function verifyPublicKeyFingerprint(filePath, expected) {
-	try {
-		const key = createPublicKey(readFileSync(path.resolve(filePath), "utf8"));
-		if (key.asymmetricKeyType !== "ed25519") fail("AIDR signing key must be Ed25519.");
-		const der = key.export({ type: "spki", format: "der" });
-		const actual = `sha256:${sha256(der)}`;
-		if (normalizeFingerprint(expected) !== actual) fail(`Configured public-key fingerprint does not match ${filePath}.`);
-		return actual;
-	} catch (error) {
-		fail(`Unable to verify public signing key: ${error instanceof Error ? error.message : String(error)}`);
-	}
-}
-
 function normalizeFingerprint(value) {
 	const normalized = String(value).toLowerCase().replace(/^sha256:/, "");
 	if (!/^[0-9a-f]{64}$/.test(normalized)) fail("AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT must be SHA-256 hex.");
@@ -334,25 +338,6 @@ function resolveGitSha() {
 	return String(result.stdout).trim();
 }
 
-function assertCleanGitTree() {
-	const result = spawnSync("git", ["status", "--porcelain=v1"], { cwd: repoRoot, encoding: "utf8" });
-	if (result.status !== 0) fail("Unable to inspect git worktree for commercial release.");
-	const dirty = String(result.stdout ?? "")
-		.split(/\r?\n/)
-		.map((line) => line.trim())
-		.filter((line) => {
-			const file = line.replace(/^[ MARC?]{1,2}\s+/, "");
-			return line && !/^\.release-evidence(?:[\\/]|$)/.test(file) && !/^packages\/[^/]+\/dist(?:[\\/]|$)/.test(file);
-		});
-	if (dirty.length > 0) fail("Commercial release requires a clean git worktree; uncommitted changes are not provenance-bound.");
-}
-
-function resolveGitTreeDigest() {
-	const result = spawnSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: repoRoot, encoding: "utf8" });
-	if (result.status !== 0) fail("Unable to derive source tree digest.");
-	return `sha1:${String(result.stdout).trim()}`;
-}
-
 function resolveGitTimestamp() {
 	const result = spawnSync("git", ["show", "-s", "--format=%ct", "HEAD"], { cwd: repoRoot, encoding: "utf8" });
 	const value = Number(String(result.stdout ?? "").trim());
@@ -362,6 +347,27 @@ function resolveGitTimestamp() {
 
 function sha256(value) {
 	return createHash("sha256").update(value).digest("hex");
+}
+
+function toUuid(hex) {
+	const chars = hex.slice(0, 32).split("");
+	chars[12] = "5";
+	chars[16] = ((Number.parseInt(chars[16], 16) & 0x3) | 0x8).toString(16);
+	return `${chars.slice(0, 8).join("")}-${chars.slice(8, 12).join("")}-${chars.slice(12, 16).join("")}-${chars.slice(16, 20).join("")}-${chars.slice(20, 32).join("")}`;
+}
+
+function assertNoPrivateSigningMaterial() {
+	const names = [
+		"AIDR_SIGNING_PRIVATE_KEY_PEM_PATH",
+		"AIDR_SIGNING_PRIVATE_KEY_PEM",
+		"AIDR_RELEASE_SIGNING_PRIVATE_KEY_PATH",
+		"AIG_DATA_SIGNING_PRIVATE_KEY_PEM",
+		"AIG_PRIVATE_KEY_PEM",
+		"AIG_SIGNING_PRIVATE_KEY",
+		"AIG_SIGNING_PRIVATE_KEY_PATH",
+		"SIGNING_PRIVATE_KEY",
+	].filter((name) => process.env[name]);
+	if (names.length > 0) fail(`Artifact preparation refuses private signing material: ${names.join(", ")}`);
 }
 
 function compareStrings(a, b) {

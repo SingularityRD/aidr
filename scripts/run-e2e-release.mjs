@@ -14,14 +14,15 @@ import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	writeFileSync,
 	mkdtempSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { createHash } from "node:crypto";
+import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -32,14 +33,32 @@ const evidenceDir = resolve(
 );
 const summaryPath = resolve(evidenceDir, "summary.json");
 const runId = `${new Date().toISOString().replaceAll(/[^0-9A-Z]+/gi, "-")}-${process.pid}`;
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const pnpm = "pnpm";
 const DEFAULT_SUITE_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_EXTERNAL_EVIDENCE_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
+const args = process.argv.slice(2);
+if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
+	console.log("Usage: node scripts/run-e2e-release.mjs\nRun every release E2E suite and write evidence to AIDR_E2E_EVIDENCE_DIR (default: .e2e-artifacts/release).");
+	process.exit(0);
+}
+if (args.length > 0) {
+	console.error(`Unknown release E2E arguments: ${args.join(" ")}. Use --help for usage.`);
+	process.exit(2);
+}
+
 function sha256Digest(value) {
 	const match = /^(?:sha256:)?([a-f0-9]{64})$/i.exec(String(value ?? "").trim());
 	return match?.[1].toLowerCase() ?? null;
+}
+
+function candidateBoundAt(value) {
+	const text = String(value ?? "").trim();
+	const milliseconds = Date.parse(text);
+	return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === text
+		? milliseconds
+		: null;
 }
 
 function readJson(filePath) {
@@ -85,7 +104,8 @@ function redactText(text, env = {}) {
 	const secretValues = Object.entries(env)
 		.filter(
 			([name, value]) =>
-				/(KEY|TOKEN|SECRET|PASSWORD|PRIVATE|CREDENTIAL|AUTH)/i.test(name) &&
+				(/(KEY|TOKEN|SECRET|PASSWORD|PRIVATE|CREDENTIAL|AUTH|DSN)/i.test(name) ||
+					(/(URL|URI)/i.test(name) && /:\/\/[^\s/?#@]+@/.test(String(value)))) &&
 				typeof value === "string" &&
 				value.length >= 6,
 		)
@@ -95,6 +115,7 @@ function redactText(text, env = {}) {
 		output = output.split(value).join("[REDACTED]");
 	}
 	return output
+		.replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#]+@/gi, "$1[REDACTED]@")
 		.replace(/(Authorization\s*[:=]\s*Bearer\s+)[^\s,}]+/gi, "$1[REDACTED]")
 		.replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, "$1[REDACTED]")
 		.replace(/(api[_-]?key|token|secret|password)\s*[:=]\s*["']?[^\s,"'}]+/gi, "$1=[REDACTED]");
@@ -159,6 +180,24 @@ function validateManifest(manifest) {
 		if (suite.kind === "external" && typeof suite.externalEvidenceEnv !== "string") {
 			throw new Error(`${suite.id}: external suites require externalEvidenceEnv`);
 		}
+		for (const field of ["externalEvidenceEnv", "externalEvidenceSignatureEnv", "externalEvidencePublicKeyEnv", "externalEvidenceReleaseVersionEnv", "externalEvidenceHostEnv"]) {
+			if (suite[field] !== undefined && (typeof suite[field] !== "string" || !suite[field].trim())) {
+				throw new Error(`${suite.id}: ${field} must be a non-empty string`);
+			}
+		}
+		if (Boolean(suite.externalEvidenceSignatureEnv) !== Boolean(suite.externalEvidencePublicKeyEnv)) {
+			throw new Error(`${suite.id}: signed external evidence requires both signature and public-key environments`);
+		}
+		if (suite.kind === "external") {
+			for (const field of ["externalEvidenceEnv", "externalEvidenceSignatureEnv", "externalEvidencePublicKeyEnv"]) {
+				if (!suite[field] || !suite.requiredEnv?.includes(suite[field])) {
+					throw new Error(`${suite.id}: external evidence requires ${field} in requiredEnv`);
+				}
+			}
+		}
+		if (suite.externalEvidenceExpectedTests !== undefined && (!Number.isInteger(suite.externalEvidenceExpectedTests) || suite.externalEvidenceExpectedTests < 1)) {
+			throw new Error(`${suite.id}: externalEvidenceExpectedTests must be a positive integer`);
+		}
 		if (suite.env !== undefined && (!suite.env || typeof suite.env !== "object")) {
 			throw new Error(`${suite.id}: env must be an object when provided`);
 		}
@@ -166,20 +205,30 @@ function validateManifest(manifest) {
 }
 
 function commandAvailable(command, env) {
-	const result = spawnSync(command, ["--version"], {
+	const options = {
 		cwd: root,
 		encoding: "utf8",
 		env,
 		stdio: "ignore",
 		windowsHide: true,
-		shell: process.platform === "win32",
 		timeout: 10_000,
-	});
+	};
+	let result = spawnSync(command, ["--version"], options);
+	// npm-installed CLIs may only expose a .cmd shim on Windows. The manifest
+	// supplies simple command names; invoke that shim through cmd explicitly.
+	if (process.platform === "win32" && result.error && /^[a-z0-9_.-]+$/i.test(command)) {
+		result = spawnSync(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `${command} --version`], options);
+	}
 	return !result.error && result.status === 0;
 }
 
 function preflight(suite, env) {
 	const reasons = [];
+	if (!sha256Digest(env.AIDR_E2E_RC_DIGEST)) reasons.push("AIDR_E2E_RC_DIGEST must be a SHA-256 candidate checksum");
+	const boundAtMs = candidateBoundAt(env.AIDR_E2E_CANDIDATE_BOUND_AT);
+	if (boundAtMs === null || boundAtMs > Date.now()) {
+		reasons.push("AIDR_E2E_CANDIDATE_BOUND_AT must be the canonical, non-future candidate binding time");
+	}
 	for (const name of suite.requiredEnv ?? []) {
 		if (!String(env[name] ?? "").trim()) reasons.push(`missing required environment: ${name}`);
 	}
@@ -192,11 +241,8 @@ function preflight(suite, env) {
 		const resolved = command === "python" ? pythonInterpreter(env) : command;
 		if (!commandAvailable(resolved, env)) reasons.push(`required command is not runnable: ${resolved}`);
 	}
-	if (suite.kind === "external" && !String(env[suite.externalEvidenceEnv] ?? "").trim()) {
+	if (suite.externalEvidenceEnv && !String(env[suite.externalEvidenceEnv] ?? "").trim()) {
 		reasons.push(`external evidence path is missing: ${suite.externalEvidenceEnv}`);
-	}
-	if (suite.kind === "external" && !sha256Digest(env.AIDR_E2E_RC_DIGEST)) {
-		reasons.push("AIDR_E2E_RC_DIGEST must be a SHA-256 candidate checksum for external evidence");
 	}
 	return reasons;
 }
@@ -346,19 +392,40 @@ function parseJUnit(filePath, suite) {
 function validateExternalEvidence(suite, env) {
 	const configuredPath = String(env[suite.externalEvidenceEnv] ?? "").trim();
 	const evidencePath = configuredPath ? resolve(root, configuredPath) : "";
-	if (evidencePath && relative(root, evidencePath).startsWith("..")) {
+	const relativeEvidencePath = evidencePath ? relative(root, evidencePath) : "";
+	if (relativeEvidencePath.startsWith("..") || isAbsolute(relativeEvidencePath)) {
 		return { errors: ["external evidence path must remain inside the repository/evidence workspace"] };
 	}
 	if (!evidencePath || !existsSync(evidencePath)) {
 		return { errors: [`external evidence file missing: ${evidencePath || suite.externalEvidenceEnv}`] };
 	}
+	const canonicalRelativePath = relative(realpathSync(root), realpathSync(evidencePath));
+	if (canonicalRelativePath.startsWith("..") || isAbsolute(canonicalRelativePath)) {
+		return { errors: ["external evidence path must remain inside the repository/evidence workspace"] };
+	}
+	const evidenceBytes = readFileSync(evidencePath);
+	const errors = [];
+	let signatureVerified = null;
+	if (suite.externalEvidenceSignatureEnv) {
+		const signaturePath = resolve(root, String(env[suite.externalEvidenceSignatureEnv] ?? "").trim());
+		const publicKeyPath = resolve(root, String(env[suite.externalEvidencePublicKeyEnv] ?? "").trim());
+		try {
+			const publicKey = createPublicKey(readFileSync(publicKeyPath, "utf8"));
+			if (publicKey.asymmetricKeyType !== "ed25519") throw new Error("public key must be Ed25519");
+			const encoded = readFileSync(signaturePath, "utf8").trim();
+			if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error("signature must be base64");
+			signatureVerified = verifySignature(null, evidenceBytes, publicKey, Buffer.from(encoded, "base64"));
+			if (!signatureVerified) errors.push("external evidence signature is invalid");
+		} catch (error) {
+			errors.push(`external evidence signature verification failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
 	let external;
 	try {
-		external = readJson(evidencePath);
+		external = JSON.parse(evidenceBytes.toString("utf8"));
 	} catch (error) {
 		return { errors: [`external evidence is invalid: ${error instanceof Error ? error.message : String(error)}`] };
 	}
-	const errors = [];
 	if (external.schemaVersion !== "aidr-e2e-external-v1") errors.push("external evidence schemaVersion must be aidr-e2e-external-v1");
 	if (external.suiteId !== suite.id) errors.push(`external suiteId mismatch: expected ${suite.id}`);
 	if (external.status !== "passed") errors.push("external evidence status is not passed");
@@ -377,9 +444,24 @@ function validateExternalEvidence(suite, env) {
 	const receiptDigest = sha256Digest(external.rcDigest);
 	if (!receiptDigest) errors.push("external rcDigest must be a SHA-256 checksum");
 	else if (expectedDigest && receiptDigest !== expectedDigest) errors.push("external rcDigest does not match the release candidate checksum");
+	if (suite.externalEvidenceReleaseVersionEnv) {
+		const expectedVersion = String(env[suite.externalEvidenceReleaseVersionEnv] ?? "").trim();
+		if (!expectedVersion || external.releaseVersion !== expectedVersion) {
+			errors.push(`external releaseVersion does not match ${suite.externalEvidenceReleaseVersionEnv}`);
+		}
+	}
+	if (suite.externalEvidenceHostEnv) {
+		const expectedHost = String(env[suite.externalEvidenceHostEnv] ?? "").trim();
+		if (!expectedHost || external.host !== expectedHost) errors.push(`external host does not match ${suite.externalEvidenceHostEnv}`);
+	}
+	const boundAtMs = candidateBoundAt(env.AIDR_E2E_CANDIDATE_BOUND_AT);
+	if (Number.isFinite(generatedAtMs) && boundAtMs !== null && generatedAtMs < boundAtMs) {
+		errors.push("external evidence predates the bound release candidate digest");
+	}
 	if (!String(external.attestation ?? "").trim()) errors.push("external attestation is missing");
 	const assertions = Array.isArray(external.assertions) ? external.assertions : [];
-	if (assertions.length !== suite.expectedTests) errors.push(`external assertions=${assertions.length}, expected=${suite.expectedTests}`);
+	const expectedAssertions = suite.externalEvidenceExpectedTests ?? suite.expectedTests;
+	if (assertions.length !== expectedAssertions) errors.push(`external assertions=${assertions.length}, expected=${expectedAssertions}`);
 	if (assertions.some((assertion) => assertion?.status !== "passed")) errors.push("external assertions contain non-passed status");
 	const report = reportFromStatuses(suite, assertions.map(() => "passed"), errors.length === 0);
 	return {
@@ -389,6 +471,7 @@ function validateExternalEvidence(suite, env) {
 		externalMeta: {
 			generatedAt: Number.isFinite(generatedAtMs) ? new Date(generatedAtMs).toISOString() : null,
 			rcDigest: receiptDigest,
+			signatureVerified,
 		},
 	};
 }
@@ -421,18 +504,32 @@ function pythonInterpreter(env) {
 	return configured || "python";
 }
 
+function resolvePnpmEntry(env) {
+	const lifecycleEntry = env.npm_execpath;
+	if (lifecycleEntry && isAbsolute(lifecycleEntry) && /^pnpm\.(?:c?js)$/i.test(basename(lifecycleEntry)) && existsSync(lifecycleEntry)) {
+		return lifecycleEntry;
+	}
+	const corepackEntry = resolve(dirname(process.execPath), "node_modules", "corepack", "dist", "pnpm.js");
+	if (existsSync(corepackEntry)) return corepackEntry;
+	throw new Error("could not resolve an absolute pnpm/Corepack JavaScript entry on Windows");
+}
+
 function spawnProcess(command, args, env, timeoutMs) {
-	// A shell wrapper can outlive spawnSync's timeout on Windows and keep the
-	// suite HOME locked after the reported process has exited. Directly launch
-	// ordinary executables; only .cmd/.bat shims require cmd.exe resolution.
-	const shell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command);
+	// Direct execution avoids shell quoting and keeps timeout tied to the suite.
+	if (process.platform === "win32" && command === "pnpm") {
+		args = [resolvePnpmEntry(env), ...args];
+		command = process.execPath;
+	}
+	if (process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command)) {
+		throw new Error(`batch command requires a direct executable entry: ${command}`);
+	}
 	return spawnSync(command, args, {
 		cwd: root,
 		encoding: "utf8",
 		env,
 		stdio: ["ignore", "pipe", "pipe"],
 		windowsHide: true,
-		shell,
+		shell: false,
 		timeout: timeoutMs,
 	});
 }
@@ -469,6 +566,7 @@ function runSuite(suite, evidence) {
 		USERPROFILE: homeDir,
 		XDG_CONFIG_HOME: join(homeDir, ".config"),
 		AIDR_E2E_RC_DIGEST: process.env.AIDR_E2E_RC_DIGEST,
+		AIDR_E2E_CANDIDATE_BOUND_AT: process.env.AIDR_E2E_CANDIDATE_BOUND_AT,
 	};
 	writeLog(stdoutPath, "", env);
 	writeLog(stderrPath, "", env);
@@ -481,13 +579,15 @@ function runSuite(suite, evidence) {
 
 	try {
 		writeHomeFiles(homeDir, suite.homeFiles);
-		if (reasons.length === 0 && suite.kind === "external") {
+		if (reasons.length === 0 && suite.externalEvidenceEnv) {
 			const external = validateExternalEvidence(suite, env);
 			externalEvidence = { path: external.evidencePath, ...external.externalMeta };
 			reasons = [...reasons, ...(external.errors ?? [])];
-			report = external.report;
+			if (external.errors?.length) setupStatus = "blocked";
+			if (suite.kind === "external") report = external.report;
 			if (external.evidencePath) env.AIDR_EXTERNAL_EVIDENCE = external.evidencePath;
-		} else if (reasons.length === 0 && suite.kind === "vitest") {
+		}
+		if (reasons.length === 0 && suite.kind === "vitest") {
 			result = spawnProcess(pnpm, ["exec", "vitest", "run", "--config", suite.config ?? "vitest.e2e.config.ts", suite.target, "--reporter=json", "--reporter=junit", "--outputFile.json", reportPath, "--outputFile.junit", junitPath], env, timeoutMs);
 			writeLog(stdoutPath, result.stdout, env);
 			writeLog(stderrPath, result.stderr, env);
@@ -506,6 +606,7 @@ function runSuite(suite, evidence) {
 			if (!report && result.status !== 0) report = reportFromStatuses(suite, ["failed"], false, "command failed");
 		}
 	} catch (error) {
+		setupStatus = "blocked";
 		reasons.push(`runner error: ${error instanceof Error ? error.message : String(error)}`);
 	}
 
@@ -515,8 +616,10 @@ function runSuite(suite, evidence) {
 		writeJson(reportPath, report);
 		if (!existsSync(junitPath)) writeJunit(junitPath, suite, report);
 	}
+	if (existsSync(junitPath)) writeLog(junitPath, readFileSync(junitPath, "utf8"), env);
 	if (result.error) reasons.push(`process error: ${result.error.message ?? String(result.error)}`);
 	if (result.status !== null && result.status !== 0) reasons.push(`process exit=${result.status ?? "signal"}`);
+	if (result.signal) reasons.push(`process signal=${result.signal}`);
 	if (setupStatus === "blocked") reasons.push("setup preflight blocked execution");
 	if (report) reasons.push(...inspectReport(report, suite).reasons);
 	if (!existsSync(junitPath)) reasons.push("JUnit evidence missing or invalid");
@@ -554,7 +657,7 @@ function runSuite(suite, evidence) {
 	} catch {
 		entry.reasons.push("isolated HOME cleanup failed");
 	}
-	return entry;
+	return redactValue(entry, env);
 }
 
 mkdirSync(evidenceDir, { recursive: true });
@@ -581,6 +684,7 @@ const evidence = {
 		tenantIsolation: "fresh HOME and unique tenant per suite",
 		secrets: "not recorded",
 		candidateDigest: sha256Digest(process.env.AIDR_E2E_RC_DIGEST),
+		candidateBoundAt: process.env.AIDR_E2E_CANDIDATE_BOUND_AT ?? null,
 	},
 	suites: [],
 };

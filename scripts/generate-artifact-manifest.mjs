@@ -57,7 +57,7 @@ const buildId =
 	process.env.AIDR_BUILD_ID ??
 	process.env.GITHUB_RUN_ID ??
 	process.env.CI_PIPELINE_ID;
-const gitSha = args["--git-sha"] ?? process.env.GITHUB_SHA ?? process.env.CI_COMMIT_SHA;
+const gitSha = args["--git-sha"] ?? process.env.AIDR_GIT_SHA ?? process.env.GITHUB_SHA ?? process.env.CI_COMMIT_SHA;
 const ciProvider =
 	args["--ci-provider"] ??
 	(process.env.GITHUB_ACTIONS ? "github_actions" : process.env.CI ? "ci" : undefined);
@@ -71,7 +71,7 @@ if (!artifactId || !artifactVersion) {
 	process.exit(2);
 }
 
-const files = await listFilesRecursive(dir);
+const files = artifactId === "claude-code/package" ? await listEndpointPackageFiles(dir) : await listFilesRecursive(dir);
 const included = files
 	.map((abs) => path.relative(dir, abs).replace(/\\/g, "/"))
 	.filter((rel) => rel !== "aidr-artifact.manifest.json" && rel !== "aidr-artifact.manifest.sig");
@@ -169,6 +169,15 @@ async function listFilesRecursive(root) {
 		}
 	}
 	return out;
+}
+
+async function listEndpointPackageFiles(root) {
+	const packageJson = path.join(root, "package.json");
+	const packageInfo = await lstat(packageJson);
+	if (!packageInfo.isFile() || packageInfo.isSymbolicLink()) throw new Error("Claude endpoint package requires a regular package.json");
+	const files = [packageJson];
+	for (const name of ["dist", "resources"]) files.push(...(await listFilesRecursive(path.join(root, name))));
+	return files;
 }
 
 function validateFile(rel, bytes) {
@@ -325,6 +334,11 @@ function validateFinalProvenance(value) {
 	const required = ["rc_version", "git_sha", "source_digest", "data_digest", "package_digest", "lockfile_digest", "sbom_digest"];
 	for (const field of required) {
 		if (!value[field]) throw new Error(`Commercial manifest provenance is missing ${field}`);
+	}
+	for (const field of ["source_digest", "data_digest", "package_digest", "lockfile_digest", "sbom_digest"]) {
+		if (!/^sha256:[0-9a-f]{64}$/i.test(value[field])) {
+			throw new Error(`Commercial manifest provenance ${field} must be sha256:<64 hex>`);
+		}
 	}
 	if (!keyId) throw new Error("Commercial manifest requires AIDR_SIGNING_KEY_ID");
 	if (!keyFingerprint) throw new Error("Commercial manifest requires AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT");

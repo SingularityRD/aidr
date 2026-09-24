@@ -3,9 +3,10 @@
 -- 20260805000000_hybrid_tenancy.sql and API-key columns from
 -- 20260915000000_key_rotation_overlap.sql. Policy tables, FK constraints,
 -- triggers, grants and RPCs are installed by the ACTUAL policy migrations.
--- Limits: not a full Supabase bootstrap; auth.users is identity-only; unrelated
--- billing/enrollment/telemetry tables, tenant RLS, resource quotas and lifecycle
--- triggers are absent. No HTTP/JWT/Edge or host-enforcement claims are tested.
+-- Limits: not a full Supabase bootstrap; auth.users is identity-only;
+-- entitlement/pilot rows only satisfy the seed, not licensing; unrelated
+-- billing/enrollment/telemetry tables, tenant RLS, resource quotas and
+-- lifecycle triggers are absent. No HTTP/JWT/Edge or host claims are tested.
 -- service_role has Supabase's BYPASSRLS behavior; anon/authenticated do not.
 create role anon nologin;
 create role authenticated nologin;
@@ -25,6 +26,17 @@ create table public.tenant_members (
   role text not null check (role in ('owner','admin','member','viewer','support_jit')),
   expires_at timestamptz,
   primary key (tenant_id,user_id)
+);
+create table public.entitlements (
+  tenant_id uuid primary key references public.tenants(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  included_agents integer not null default 1
+);
+create table public.pilot_applications (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  status text not null default 'pending',
+  primary key (user_id,tenant_id)
 );
 create table public.agents (
   id uuid primary key default gen_random_uuid(),

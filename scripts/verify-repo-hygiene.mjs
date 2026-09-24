@@ -109,12 +109,6 @@ export const ALLOWLIST = [
 			"Cursor/VS Code extension fixtures assert behaviour on synthetic `/home/user/...` paths; the identity is a placeholder and no contributor path is present.",
 	},
 	{
-		path: ".factory/library/user-testing.md",
-		owner: "AIDR-012",
-		reason:
-			"The container test recipe mounts the connector at `/home/node/.openclaw/...`; `node` is the unprivileged account built into the official container image, not a contributor or host identity.",
-	},
-	{
 		path: "deploy/fleet/unix/aidr-fleet.sh",
 		owner: "AIDR-012",
 		reason:
@@ -149,6 +143,12 @@ export const ALLOWLIST = [
 		owner: "AIDR-012",
 		reason:
 			"Self-defense threat rule matches the installed-config path pattern; the documented example uses the anonymous placeholder `/home/user/.singularity-aidr`.",
+	},
+	{
+		path: "threats/mitre.yaml",
+		owner: "AIDR-012",
+		reason:
+			"The SSH credential detector deliberately matches any remote `/home/<account>/.ssh/` path with a regex character class; it does not contain a contributor's home directory.",
 	},
 ];
 

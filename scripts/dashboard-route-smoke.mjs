@@ -25,22 +25,49 @@ const staticOnly = process.argv.includes("--static");
 const configuredBaseUrl = process.env.DASHBOARD_SMOKE_BASE_URL?.trim();
 const timeoutMs = Number(process.env.DASHBOARD_SMOKE_TIMEOUT_MS ?? 10_000);
 
+const REQUIRED_SECURITY_HEADERS = [
+	"strict-transport-security",
+	"content-security-policy",
+	"x-content-type-options",
+	"x-frame-options",
+	"referrer-policy",
+	"permissions-policy",
+];
+
 const publicRoutes = [
 	"/",
-	"/demo",
 	"/pilot",
 	"/pricing",
 	"/verify",
 	"/login",
+	"/auth/callback",
 	"/auth/recover",
+	"/enterprise",
 	"/support",
 	"/status",
 	"/privacy",
 	"/security",
 	"/terms",
 ];
-const protectedRoutes = ["/onboarding", "/agents", "/autosecops", "/incidents", "/api-keys", "/billing", "/dashboard", "/events", "/settings"];
-const routes = [...publicRoutes, ...protectedRoutes];
+const legacyRoutes = ["/demo"];
+const protectedRoutes = [
+	"/auth/dlp-step-up",
+	"/onboarding",
+	"/dashboard",
+	"/events",
+	"/discovery",
+	"/settings",
+	"/agents",
+	"/autosecops",
+	"/agents/:agentId",
+	"/incidents",
+	"/api-keys",
+	"/billing",
+	"/team",
+	"/scim",
+	"/policies",
+];
+const routes = [...publicRoutes, ...protectedRoutes, ...legacyRoutes];
 
 function fail(message) {
 	throw new Error(`[dashboard-route-smoke] ${message}`);
@@ -62,8 +89,54 @@ function assertRegex(content, pattern, label) {
 	if (!pattern.test(content)) fail(`${label}: expected ${pattern}`);
 }
 
+/** Resolve same-origin scripts and styles exactly as a browser would. */
+export function resolveDocumentAssets(html, documentUrl) {
+	const document = new URL(documentUrl);
+	const assets = [];
+	const tags = html.matchAll(/<(script|link)\b[^>]*?\b(src|href)=["']([^"']+)["'][^>]*>/gi);
+	for (const match of tags) {
+		const tag = match[1].toLowerCase();
+		if (tag === "link" && !/\brel=["']stylesheet["']/i.test(match[0])) continue;
+		const raw = match[3];
+		let resolved;
+		try {
+			resolved = new URL(raw, document);
+		} catch {
+			continue;
+		}
+		if (!/^https?:$/.test(resolved.protocol) || resolved.origin !== document.origin) continue;
+		assets.push({
+			url: resolved.href,
+			kind: tag === "script" ? "script" : "style",
+		});
+	}
+	return assets;
+}
+
+export function assertSecurityHeaders(headers, label = "deployment response") {
+	for (const name of REQUIRED_SECURITY_HEADERS) {
+		if (!headers.get(name)?.trim()) fail(`${label} is missing ${name}`);
+	}
+	const hsts = headers.get("strict-transport-security") ?? "";
+	const maxAge = Number(hsts.match(/(?:^|;)\s*max-age=(\d+)/i)?.[1] ?? 0);
+	if (maxAge < 31_536_000) fail(`${label} has an insufficient Strict-Transport-Security max-age`);
+	const csp = headers.get("content-security-policy") ?? "";
+	for (const directive of ["default-src 'self'", "base-uri 'self'", "object-src 'none'", "frame-ancestors 'none'"]) {
+		if (!csp.includes(directive)) fail(`${label} Content-Security-Policy is missing ${directive}`);
+	}
+	if (!csp.includes("https://*.sentry.io") || !csp.includes("https://*.ingest.sentry.io")) {
+		fail(`${label} Content-Security-Policy blocks configured Sentry reporting`);
+	}
+	if ((headers.get("x-content-type-options") ?? "").toLowerCase() !== "nosniff") {
+		fail(`${label} must set X-Content-Type-Options: nosniff`);
+	}
+	if ((headers.get("x-frame-options") ?? "").toUpperCase() !== "DENY") {
+		fail(`${label} must set X-Frame-Options: DENY`);
+	}
+}
+
 async function structuralChecks() {
-	const [main, onboarding, apiKeys, agents, autoSecOps, login, billing, demo, commercial, publicLayout, publicInfo, routeError, returnTo, session, vercel, index, packageJson, browserManifest] = await Promise.all([
+	const [main, onboarding, apiKeys, agents, autoSecOps, login, billing, landing, commercial, publicLayout, publicInfo, routeError, returnTo, session, scim, vercel, index, packageJson, browserManifest] = await Promise.all([
 		read("packages/dashboard/src/main.tsx"),
 		read("packages/dashboard/src/ui/pages/OnboardingPage.tsx"),
 		read("packages/dashboard/src/ui/pages/ApiKeysPage.tsx"),
@@ -71,13 +144,14 @@ async function structuralChecks() {
 		read("packages/dashboard/src/ui/pages/AutoSecOpsPage.tsx"),
 		read("packages/dashboard/src/ui/pages/LoginPage.tsx"),
 		read("packages/dashboard/src/ui/pages/BillingPage.tsx"),
-		read("packages/dashboard/src/ui/pages/public/DemoPage.tsx"),
+		read("packages/dashboard/src/ui/pages/public/LandingPage.tsx"),
 		read("packages/dashboard/src/billing/commercial.ts"),
 		read("packages/dashboard/src/ui/PublicLayout.tsx"),
 		read("packages/dashboard/src/ui/pages/public/PublicInfoPage.tsx"),
 		read("packages/dashboard/src/ui/RouteErrorPage.tsx"),
 		read("packages/dashboard/src/ui/return-to.ts"),
 		read("packages/dashboard/src/ui/session.ts"),
+		read("packages/dashboard/src/ui/pages/ScimPage.tsx"),
 		read("packages/dashboard/vercel.json"),
 		read("packages/dashboard/index.html"),
 		read("packages/dashboard/package.json"),
@@ -87,9 +161,17 @@ async function structuralChecks() {
 	if (manifest.version !== 1 || !Array.isArray(manifest.scenarios) || manifest.scenarios.length < 5) {
 		fail("browser smoke manifest is missing required release scenarios");
 	}
-	const manifestRoutes = [...(manifest.routes?.public ?? []), ...(manifest.routes?.protected ?? [])];
+	const manifestRoutes = [...(manifest.routes?.public ?? []), ...(manifest.routes?.protected ?? []), ...(manifest.routes?.legacy ?? [])];
 	if (JSON.stringify(manifestRoutes) !== JSON.stringify(routes)) {
 		fail("browser smoke manifest routes drifted from the HTTP smoke route matrix");
+	}
+	const registeredRoutes = [...main.matchAll(/\bpath:\s*"([^"]+)"/g)]
+		.map((match) => match[1])
+		.filter((route) => route !== "*")
+		.map((route) => (route === "/" ? route : `/${route.replace(/^\/+/, "")}`));
+	const expectedRoutes = [...new Set(routes)].sort();
+	if (JSON.stringify([...new Set(registeredRoutes)].sort()) !== JSON.stringify(expectedRoutes)) {
+		fail("browser smoke manifest does not cover every registered dashboard route");
 	}
 
 	for (const route of publicRoutes.slice(1)) {
@@ -102,8 +184,13 @@ async function structuralChecks() {
 			`protected route ${route} must require a session`,
 		);
 	}
+	assertIncludes(main, 'path: "demo", loader: () => redirect("/login?returnTo=%2Fonboarding")', "legacy demo redirects to onboarding sign-in");
+	if (main.includes("DemoPage") || publicLayout.includes('to="/demo"') || landing.includes('to="/demo"')) {
+		fail("synthetic demo must not be reachable from the customer product");
+	}
 	assertIncludes(main, 'path: "*"', "404 fallback route");
 	assertIncludes(main, "const productionConfigMissing = Boolean(supabaseEnvError) && import.meta.env.PROD;", "production config fail-closed guard");
+	if (main.includes("!isControlledDemoRoute")) fail("production config must not exempt the legacy demo route");
 
 	// Device authorization must expire locally even if polling is delayed or the
 	// edge function is unavailable.  An incomplete response must never become a
@@ -136,8 +223,13 @@ async function structuralChecks() {
 	assertIncludes(commercial, 'VITE_AIDR_COMMERCIAL_MODE ?? "invoice"', "invoice-only commercial default");
 	assertIncludes(billing, "selfServiceCheckoutEnabled", "billing checkout gate");
 	assertIncludes(billing, "Enterprise / manual invoice", "enterprise invoice workflow");
-	assertIncludes(demo, "Controlled evaluation demo", "controlled demo boundary");
-	assertIncludes(demo, "No external command", "demo no-external-request notice");
+	assertRegex(
+		scim,
+		/supabase\.functions\.invoke<unknown>\(\s*query\s*\?\s*`scim-admin\?\$\{query\}`\s*:\s*"scim-admin"/,
+		"SCIM owner API integration",
+	);
+	assertIncludes(scim, "scim_token", "SCIM one-time credential handling");
+	assertIncludes(scim, "Group.externalId", "SCIM exact group identifier guidance");
 
 	// A public page must expose support/legal links and never open a new tab
 	// without an opener policy.
@@ -218,30 +310,61 @@ async function stopProcess(child) {
 async function routeCrawl(baseUrl) {
 	let child = null;
 	let base = baseUrl;
+	const remote = Boolean(baseUrl);
 	if (!base) {
 		const port = await reservePort();
 		child = spawn(
-			process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-			["preview", "--host", "127.0.0.1", "--port", String(port)],
+			process.execPath,
+			[join(dashboardRoot, "node_modules", "vite", "bin", "vite.js"), "preview", "--host", "127.0.0.1", "--port", String(port)],
 			{
 				cwd: dashboardRoot,
 				env: { ...process.env, CI: "1" },
 				stdio: ["ignore", "pipe", "pipe"],
-				shell: process.platform === "win32",
 			},
 		);
 		base = `http://127.0.0.1:${port}`;
 	}
 	base = base.replace(/\/$/, "");
+	const baseOrigin = new URL(base).origin;
+	if (remote) {
+		const parsed = new URL(base);
+		const localHost =
+			parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
+		if (parsed.protocol !== "https:" && !localHost) fail("remote dashboard smoke requires HTTPS");
+	}
 
 	const results = [];
+	const checkedAssets = new Set();
 	try {
 		for (const route of routes) {
 			const response = await waitForHttp(`${base}${route}`, child);
 			const body = await response.text();
 			if (!response.ok) fail(`${route} returned HTTP ${response.status}`);
+			if (new URL(response.url).origin !== baseOrigin) fail(`${route} redirected outside the dashboard origin`);
+			if (!response.headers.get("content-type")?.toLowerCase().includes("text/html")) {
+				fail(`${route} did not return HTML`);
+			}
+			if (remote) assertSecurityHeaders(response.headers, `${route} response`);
 			if (!/id=["']root["']/.test(body)) fail(`${route} did not return the dashboard SPA shell`);
 			if (!/type=["']module["'][^>]+src=/.test(body)) fail(`${route} missing module entrypoint`);
+			const documentAssets = resolveDocumentAssets(body, response.url);
+			if (!documentAssets.some((asset) => asset.kind === "script")) {
+				fail(`${route} did not reference a same-origin script`);
+			}
+			for (const asset of documentAssets) {
+				if (checkedAssets.has(asset.url)) continue;
+				checkedAssets.add(asset.url);
+				const assetResponse = await waitForHttp(asset.url, child);
+				if (!assetResponse.ok) fail(`${route} asset ${asset.url} returned HTTP ${assetResponse.status}`);
+				if (new URL(assetResponse.url).origin !== baseOrigin) fail(`${route} asset redirected outside the dashboard origin`);
+				const contentType = assetResponse.headers.get("content-type")?.toLowerCase() ?? "";
+				if (asset.kind === "script" && !contentType.includes("javascript")) {
+					fail(`${route} script ${asset.url} returned ${contentType || "no content type"}`);
+				}
+				if (asset.kind === "style" && !contentType.includes("text/css")) {
+					fail(`${route} stylesheet ${asset.url} returned ${contentType || "no content type"}`);
+				}
+			}
 			results.push({ route, status: response.status, contentType: response.headers.get("content-type") });
 		}
 	} finally {
@@ -253,9 +376,10 @@ async function routeCrawl(baseUrl) {
 async function checkDist() {
 	const html = await readFile(join(distRoot, "index.html"), "utf8").catch(() => null);
 	if (!html) fail("packages/dashboard/dist/index.html is missing; run pnpm -C packages/dashboard build first");
-	const entryMatches = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)].map((match) => match[1]);
-	for (const entry of entryMatches.filter((value) => value.startsWith("./assets/") || value.startsWith("/assets/"))) {
-		const assetPath = join(distRoot, entry.replace(/^\.\//, "").replace(/^\//, ""));
+	const documentAssets = resolveDocumentAssets(html, "https://dashboard.invalid/");
+	for (const asset of documentAssets) {
+		const entry = new URL(asset.url).pathname;
+		const assetPath = join(distRoot, entry.replace(/^\//, ""));
 		const relativeAsset = relative(distRoot, assetPath);
 		if (relativeAsset.startsWith("..")) fail(`dist asset escapes dashboard bundle: ${entry}`);
 		await readFile(assetPath).catch(() => fail(`dist entrypoint is missing: ${entry}`));
@@ -314,7 +438,10 @@ async function main() {
 	console.log(`Dashboard route smoke PASS (${report.mode}); evidence: ${evidencePath}`);
 }
 
-main().catch((error) => {
-	console.error(error instanceof Error ? error.message : String(error));
-	process.exitCode = 1;
-});
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
+if (invokedPath === fileURLToPath(import.meta.url)) {
+	main().catch((error) => {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exitCode = 1;
+	});
+}

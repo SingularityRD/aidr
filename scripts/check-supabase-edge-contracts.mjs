@@ -17,6 +17,17 @@ async function sourceFiles(directory) {
 
 function literalNames(argument, call) {
 	if (ts.isStringLiteralLike(argument)) return [argument.text];
+	if (ts.isTemplateExpression(argument)
+		&& argument.templateSpans.length === 1
+		&& argument.templateSpans[0].literal.text === ""
+		&& /^[a-z0-9-]+\?$/.test(argument.head.text)) {
+		return [argument.head.text.slice(0, -1)];
+	}
+	if (ts.isConditionalExpression(argument)) {
+		const yes = literalNames(argument.whenTrue, call);
+		const no = literalNames(argument.whenFalse, call);
+		return yes && no ? [...new Set([...yes, ...no])] : null;
+	}
 	if (!ts.isIdentifier(argument)) return null;
 	for (let parent = call.parent; parent; parent = parent.parent) {
 		if (!ts.isArrowFunction(parent) && !ts.isFunctionExpression(parent) && !ts.isFunctionDeclaration(parent)) continue;
@@ -159,7 +170,11 @@ for (const name of failClosedRateLimitFunctions) {
 	const file = path.join(root, "supabase", "functions", name, "index.ts");
 	const source = await readFile(file, "utf8");
 	if (/fail\s+open/i.test(source)) failures.push(`${name}: rate-limit path still contains a fail-open marker`);
-	if (!source.includes("if (error) return false") && !source.includes("if (updErr) return false")) {
+	const explicitEnrollGuard = name === "enroll"
+		&& source.includes("if (rateUpdateError) return json(503")
+		&& source.includes("if (rateReadError) return json(503")
+		&& source.includes("!Number.isSafeInteger(count)");
+	if (!explicitEnrollGuard && !source.includes("if (error) return false") && !source.includes("if (updErr) return false")) {
 		failures.push(`${name}: rate-limit storage failure is not fail-closed`);
 	}
 }
@@ -176,6 +191,18 @@ if (!origin.includes("Access-Control-Allow-Methods")) {
 // --- AIDR-011: fail-fast configuration validation -------------------------
 
 const functionsDir = path.join(root, "supabase", "functions");
+const edgeLock = JSON.parse(await readFile(path.join(functionsDir, "deno.lock"), "utf8"));
+const edgeSdkSpecifiers = Object.keys(edgeLock.specifiers ?? {}).filter((name) => name.startsWith("npm:@supabase/supabase-js@"));
+if (edgeSdkSpecifiers.length !== 1 || !/^npm:@supabase\/supabase-js@\d+\.\d+\.\d+$/.test(edgeSdkSpecifiers[0])) {
+	failures.push("Edge Supabase client must have one exact version in deno.lock");
+} else {
+	for (const file of await sourceFiles(functionsDir)) {
+		const source = await readFile(file, "utf8");
+		for (const match of source.matchAll(/npm:@supabase\/supabase-js@[^\s"'`]+/g)) {
+			if (match[0] !== edgeSdkSpecifiers[0]) failures.push(`${path.relative(root, file)}: Edge Supabase client import differs from deno.lock`);
+		}
+	}
+}
 const functionNames = (await readdir(functionsDir, { withFileTypes: true }))
 	.filter((entry) => entry.isDirectory() && !entry.name.startsWith("_"))
 	.map((entry) => entry.name)

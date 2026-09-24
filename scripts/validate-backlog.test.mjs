@@ -59,6 +59,23 @@ test("the shipped backlog satisfies every invariant", () => {
 	assert.equal(result.ok, true);
 });
 
+test("AIDR-019 separates verified local contracts from open live acceptance", () => {
+	const backlog = JSON.parse(readFileSync(path.join(repoRoot, "READINESS_BACKLOG.json"), "utf8"));
+	const finding = backlog.findings.find((item) => item.id === "AIDR-019");
+	assert.ok(finding);
+	assert.equal(finding.status, "IN_PROGRESS");
+	assert.equal(finding.localContractStatus, "VERIFIED_CLOSED");
+	assert.equal(finding.liveAcceptanceStatus, "BLOCKED_EXTERNAL");
+	assert.ok(
+		finding.localEvidence.some((entry) => entry.evidencePath === "docs/production-readiness/edge-function-contract-manifest.json"),
+	);
+	assert.match(finding.acceptanceCriteria, /Local acceptance \(verified\)/);
+	assert.match(finding.acceptanceCriteria, /Live acceptance \(open\)/);
+	assert.match(finding.remainingExternal, /Real browser device enrollment/);
+	assert.match(finding.remainingExternal, /live Entra\/Okta SCIM provisioning\/acceptance/);
+	assert.match(finding.currentState, /LIVE ACCEPTANCE OPEN/);
+});
+
 test("every previously-open finding is still present with its honesty fields", () => {
 	const backlog = JSON.parse(readFileSync(path.join(repoRoot, "READINESS_BACKLOG.json"), "utf8"));
 	for (const id of PREVIOUSLY_OPEN_FINDINGS) {

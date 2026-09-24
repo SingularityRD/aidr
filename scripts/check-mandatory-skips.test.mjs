@@ -78,6 +78,20 @@ ${"describe"}.skipIf(process.platform !== "win32")("Windows suite", () => { doSo
 	}
 });
 
+test("an empty conditional skip body fails the gate", () => {
+	const root = fixture(`import { it } from "vitest";
+// AIDR-SKIP: AIDR-049 qa-owner - this platform needs a provisioned host
+${"it"}.skipIf(process.platform !== "win32")("Windows behavior", () => {});
+`);
+	try {
+		const { violations } = checkRepo(root);
+		assert.equal(violations.length, 1);
+		assert.equal(violations[0].empty, true);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("the scripts root is included in the scan", () => {
 	const root = fixture("import { it } from \"vitest\";\nit(\"package test\", () => {});\n");
 	try {

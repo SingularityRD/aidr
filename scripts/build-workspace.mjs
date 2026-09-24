@@ -10,20 +10,58 @@
 
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = resolve(scriptDir, "..");
+const PRIVATE_SIGNING_ENV = [
+	"AIDR_SIGNING_PRIVATE_KEY_PEM_PATH",
+	"AIDR_SIGNING_PRIVATE_KEY_PEM",
+	"AIDR_RELEASE_SIGNING_PRIVATE_KEY_PATH",
+	"AIG_DATA_SIGNING_PRIVATE_KEY_PEM",
+	"AIG_PRIVATE_KEY_PEM",
+	"AIG_SIGNING_PRIVATE_KEY",
+	"AIG_SIGNING_PRIVATE_KEY_PATH",
+	"SIGNING_PRIVATE_KEY",
+];
+
+export function assertNoPrivateSigningMaterial(env = process.env) {
+	const exposed = PRIVATE_SIGNING_ENV.filter((name) => env[name]);
+	if (exposed.length > 0) {
+		throw new Error(`workspace build refuses private signing material: ${exposed.join(", ")}`);
+	}
+}
+
+export function resolvePnpmEntry({ nodePath = process.execPath, env = process.env } = {}) {
+	const lifecycleEntry = env.npm_execpath;
+	if (
+		lifecycleEntry &&
+		isAbsolute(lifecycleEntry) &&
+		/^pnpm\.(?:c?js)$/i.test(basename(lifecycleEntry)) &&
+		existsSync(lifecycleEntry)
+	) {
+		return lifecycleEntry;
+	}
+
+	const corepackEntry = resolve(dirname(nodePath), "node_modules", "corepack", "dist", "pnpm.js");
+	if (existsSync(corepackEntry)) return corepackEntry;
+	throw new Error("could not resolve an absolute pnpm/Corepack JavaScript entry on Windows");
+}
 
 function command(executable, args, extraEnv, cwd) {
-	const result = spawnSync(executable, args, {
-		cwd,
-		stdio: "inherit",
-		shell: process.platform === "win32" && executable === "pnpm",
-		env: { ...process.env, ...extraEnv },
-	});
+	const useWindowsPnpmEntry = process.platform === "win32" && executable === "pnpm";
+	const result = spawnSync(
+		useWindowsPnpmEntry ? process.execPath : executable,
+		useWindowsPnpmEntry ? [resolvePnpmEntry(), ...args] : args,
+		{
+			cwd,
+			stdio: "inherit",
+			shell: false,
+			env: { ...process.env, ...extraEnv },
+		},
+	);
 	if (result.error) {
 		console.error(`[build] failed to run ${executable} ${args.join(" ")}: ${result.error.message}`);
 		return 1;
@@ -156,6 +194,7 @@ export function runWorkspaceBuild({
 } = {}) {
 	let lock;
 	try {
+		assertNoPrivateSigningMaterial();
 		lock = acquireCoreBuildLock(repoRoot, releaseMode ? "release workspace build" : "workspace build");
 		const workspaceEnv = {
 			AIDR_WORKSPACE_BUILD: "1",

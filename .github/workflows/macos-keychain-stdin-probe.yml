@@ -1,0 +1,148 @@
+name: macOS Keychain stdin probe
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  keychain-stdin-probe:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create isolated temporary keychain
+        id: keychain
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe_dir="$(mktemp -d "$RUNNER_TEMP/aidr-keychain-probe.XXXXXX")"
+          keychain_path="$probe_dir/probe.keychain-db"
+          printf 'dir=%s\n' "$probe_dir" >> "$GITHUB_OUTPUT"
+          printf 'path=%s\n' "$keychain_path" >> "$GITHUB_OUTPUT"
+
+          # This password is synthetic and only unlocks this disposable CI keychain.
+          /usr/bin/security create-keychain -p 'aidr-temporary-probe' "$keychain_path" >/dev/null 2>&1
+          /usr/bin/security set-keychain-settings -lut 60 "$keychain_path" >/dev/null 2>&1
+          /usr/bin/security unlock-keychain -p 'aidr-temporary-probe' "$keychain_path" >/dev/null 2>&1
+
+      - name: Probe stdin handoff, argv redaction, and round trip
+        shell: bash
+        env:
+          PROBE_KEYCHAIN: ${{ steps.keychain.outputs.path }}
+        run: |
+          set -euo pipefail
+          python3 - "$PROBE_KEYCHAIN" <<'PY'
+          import shlex
+          import subprocess
+          import sys
+          import time
+
+          keychain = sys.argv[1]
+          account = "aidr-keychain-stdin-probe-account"
+          service = "singularity-aidr-cli-keychain-stdin-probe"
+          value = b"aidr-macos-keychain-stdin-probe-fixed-synthetic-value"
+          command = " ".join(
+              [
+                  "add-generic-password",
+                  "-a",
+                  shlex.quote(account),
+                  "-s",
+                  shlex.quote(service),
+                  "-U",
+                  "-w",
+                  shlex.quote(value.decode("ascii")),
+                  shlex.quote(keychain),
+              ]
+          )
+
+          child = None
+          try:
+              child = subprocess.Popen(
+                  ["/usr/bin/security", "-i"],
+                  stdin=subprocess.PIPE,
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+              )
+              assert child.stdin is not None
+              child.stdin.write((command + "\n").encode("utf-8"))
+              child.stdin.flush()
+
+              deadline = time.monotonic() + 15
+              while time.monotonic() < deadline:
+                  if child.poll() is not None:
+                      raise RuntimeError
+                  result = subprocess.run(
+                      [
+                          "/usr/bin/security",
+                          "find-generic-password",
+                          "-a",
+                          account,
+                          "-s",
+                          service,
+                          "-w",
+                          keychain,
+                      ],
+                      capture_output=True,
+                      timeout=5,
+                      check=False,
+                  )
+                  if result.returncode == 0:
+                      if result.stdout.rstrip(b"\r\n") != value:
+                          raise RuntimeError
+                      break
+                  time.sleep(0.1)
+              else:
+                  raise RuntimeError
+
+              args = subprocess.run(
+                  ["/bin/ps", "-o", "command=", "-p", str(child.pid)],
+                  capture_output=True,
+                  timeout=5,
+                  check=False,
+              )
+              if child.poll() is not None or args.returncode != 0 or not args.stdout.strip():
+                  raise RuntimeError
+              if value in args.stdout:
+                  raise RuntimeError
+
+              child.stdin.close()
+              if child.wait(timeout=5) != 0:
+                  raise RuntimeError
+          except Exception:
+              print("FAIL: macOS security stdin probe did not complete safely.", file=sys.stderr)
+              sys.exit(1)
+          finally:
+              if child is not None and child.poll() is None:
+                  child.terminate()
+                  try:
+                      child.wait(timeout=2)
+                  except subprocess.TimeoutExpired:
+                      child.kill()
+                      child.wait(timeout=2)
+
+          print("PASS: the synthetic item round-tripped and was absent from the security process arguments.")
+          PY
+
+      - name: Remove temporary keychain and item
+        if: always()
+        shell: bash
+        env:
+          PROBE_KEYCHAIN_DIR: ${{ steps.keychain.outputs.dir }}
+          PROBE_KEYCHAIN: ${{ steps.keychain.outputs.path }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$PROBE_KEYCHAIN_DIR" || -z "$PROBE_KEYCHAIN" ]]; then
+            exit 0
+          fi
+          case "$PROBE_KEYCHAIN_DIR" in
+            "$RUNNER_TEMP"/aidr-keychain-probe.*) ;;
+            *) echo "Cleanup refused an unexpected temporary path." >&2; exit 1 ;;
+          esac
+          [[ "$PROBE_KEYCHAIN" == "$PROBE_KEYCHAIN_DIR/probe.keychain-db" ]]
+
+          /usr/bin/security delete-generic-password \
+            -a aidr-keychain-stdin-probe-account \
+            -s singularity-aidr-cli-keychain-stdin-probe \
+            "$PROBE_KEYCHAIN" >/dev/null 2>&1 || true
+          /usr/bin/security delete-keychain "$PROBE_KEYCHAIN" >/dev/null 2>&1 || true
+          rm -rf -- "$PROBE_KEYCHAIN_DIR"

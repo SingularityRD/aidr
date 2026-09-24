@@ -141,22 +141,31 @@ function isAllowlisted(relativePath) {
 
 /** True when the call's argument list contains no executable body. */
 export function hasEmptyBody(source, callIndex) {
-	const open = source.indexOf("(", callIndex);
+	let open = source.indexOf("(", callIndex);
 	if (open === -1) return false;
-	let depth = 0;
+	const conditional = /\.skipIf\s*$/.test(source.slice(callIndex, open));
 	let close = -1;
-	for (let index = open; index < source.length; index += 1) {
-		const character = source[index];
-		if (character === "(") depth += 1;
-		else if (character === ")") {
-			depth -= 1;
-			if (depth === 0) {
-				close = index;
-				break;
+	for (let call = 0; call < (conditional ? 2 : 1); call += 1) {
+		let depth = 0;
+		close = -1;
+		for (let index = open; index < source.length; index += 1) {
+			const character = source[index];
+			if (character === "(") depth += 1;
+			else if (character === ")") {
+				depth -= 1;
+				if (depth === 0) {
+					close = index;
+					break;
+				}
 			}
 		}
+		if (close === -1) return false;
+		if (conditional && call === 0) {
+			const chainedCall = /^\s*\(/.exec(source.slice(close + 1));
+			if (!chainedCall) return false;
+			open = close + chainedCall[0].length;
+		}
 	}
-	if (close === -1) return false;
 	const args = source.slice(open + 1, close);
 	// The last argument is the body. `() => {}` and `function () {}` are empty.
 	const arrow = args.match(/=>\s*\{\s*\}\s*$/);

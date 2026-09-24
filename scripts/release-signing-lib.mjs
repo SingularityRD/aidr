@@ -22,8 +22,8 @@ import path from "node:path";
 
 export const RELEASE_MANIFEST_NAME = "aidr-release.manifest.json";
 export const RELEASE_SIGNATURE_NAME = "aidr-release.manifest.sig";
-export const RELEASE_METADATA_NAME = "release-metadata.json";
-export const RELEASE_INVENTORY_NAME = "release-inventory.json";
+const RELEASE_METADATA_NAME = "release-metadata.json";
+const RELEASE_INVENTORY_NAME = "release-inventory.json";
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const KEY_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -43,7 +43,7 @@ export function sha256(value) {
 	return createHash("sha256").update(value).digest("hex");
 }
 
-export function normalizeFingerprint(value, label = "signer fingerprint") {
+function normalizeFingerprint(value, label = "signer fingerprint") {
 	const normalized = String(value ?? "")
 		.toLowerCase()
 		.replace(/^sha256:/, "");
@@ -51,7 +51,7 @@ export function normalizeFingerprint(value, label = "signer fingerprint") {
 	return `sha256:${normalized}`;
 }
 
-export function parseInstant(value, label) {
+function parseInstant(value, label) {
 	if (typeof value !== "string") throw new Error(`${label} must be an ISO-8601 timestamp`);
 	const instant = new Date(value);
 	if (!Number.isFinite(instant.getTime()) || instant.toISOString() !== value) {
@@ -60,7 +60,7 @@ export function parseInstant(value, label) {
 	return instant;
 }
 
-export function normalizeSafePath(value, label = "artifact path") {
+function normalizeSafePath(value, label = "artifact path") {
 	if (typeof value !== "string" || value.length === 0 || value.length > 512) {
 		throw new Error(`${label} is invalid`);
 	}
@@ -80,23 +80,23 @@ export function normalizeSafePath(value, label = "artifact path") {
 	return value;
 }
 
-export function parsePositiveInteger(value, label) {
+function parsePositiveInteger(value, label) {
 	const number = Number(value);
 	if (!Number.isSafeInteger(number) || number < 1) throw new Error(`${label} must be a positive safe integer`);
 	return number;
 }
 
-export function assertKeyId(value) {
+function assertKeyId(value) {
 	if (!KEY_ID_RE.test(String(value ?? ""))) throw new Error("key id is invalid");
 	return String(value);
 }
 
-export function assertProductId(value) {
+function assertProductId(value) {
 	if (!PRODUCT_ID_RE.test(String(value ?? ""))) throw new Error("product id is invalid");
 	return String(value);
 }
 
-export function assertChannel(value) {
+function assertChannel(value) {
 	if (!CHANNEL_RE.test(String(value ?? ""))) throw new Error("release channel is invalid");
 	return String(value);
 }
@@ -196,6 +196,12 @@ export async function loadReleaseBundle(bundlePath, { allowSignedControlFiles = 
 }
 
 export function createReleaseManifest(bundle, options) {
+	// Defense in depth for accidental rehearsal signing only: this value comes
+	// from mutable bundle metadata. Production callers still need an authenticated
+	// CI attestation bound to these exact bytes before they expose a publisher key.
+	if (bundle.metadata.worktree_dirty !== false) {
+		throw new Error("dirty or unproven worktree candidates cannot be signed");
+	}
 	const productId = assertProductId(options.productId);
 	const channel = assertChannel(options.channel);
 	const keyId = assertKeyId(options.keyId);
@@ -525,7 +531,7 @@ export async function writeExclusive(filePath, value, mode = 0o644) {
 	await writeFile(filePath, value, { encoding: "utf8", mode, flag: "wx" });
 }
 
-export function resolveWithin(root, relativePath) {
+function resolveWithin(root, relativePath) {
 	const resolvedRoot = path.resolve(root);
 	const resolved = path.resolve(resolvedRoot, relativePath);
 	if (resolved === resolvedRoot || !resolved.startsWith(`${resolvedRoot}${path.sep}`)) {
@@ -569,9 +575,10 @@ function validateMetadata(value) {
 	if (!value || value.schema_version !== 1 || !Array.isArray(value.artifacts) || value.artifacts.length === 0) {
 		throw new Error("release metadata schema is invalid");
 	}
+	if (typeof value.worktree_dirty !== "boolean") throw new Error("release worktree status is missing");
 	assertExactKeys(
 		value,
-		["schema_version", "release_tag", "release_version", "git_sha", "source_date_epoch", "artifacts"],
+		["schema_version", "release_tag", "release_version", "git_sha", "source_date_epoch", "worktree_dirty", "artifacts"],
 		"release metadata",
 	);
 	if (!TAG_RE.test(String(value.release_tag ?? ""))) throw new Error("release tag is invalid");

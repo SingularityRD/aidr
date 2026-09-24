@@ -8,7 +8,7 @@ const TEST_DIRECTORY_NAMES = new Set(["__tests__", "__test__", "fixtures", "fixt
 const SKIPPED_DIRECTORY_NAMES = new Set([".git", ".next", "coverage", "dist", "node_modules", "resources"]);
 const TEST_FILE_PATTERN = /\.(?:e2e\.)?(?:spec|test)\.[^.]+$/i;
 
-export const DEFAULT_SOURCE_ROOTS = Object.freeze(["packages", "services/aig-bridge/app", "supabase/functions"]);
+const DEFAULT_SOURCE_ROOTS = Object.freeze(["packages", "services/aig-bridge/app", "supabase/functions"]);
 
 // These are deliberately explicit. A coverage exclusion is a release-risk
 // exception, not an implementation detail that can disappear unnoticed.
@@ -129,7 +129,7 @@ export async function buildLedger({
 	};
 }
 
-export function renderLedger(ledger) {
+function renderLedger(ledger) {
 	return `${JSON.stringify(ledger, null, "\t")}\n`;
 }
 

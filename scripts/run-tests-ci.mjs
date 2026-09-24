@@ -22,13 +22,19 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { resolvePnpmEntry } from "./build-workspace.mjs";
 
 function run(command, args, env) {
-	const result = spawnSync(command, args, {
-		stdio: "inherit",
-		shell: process.platform === "win32",
-		env: { ...process.env, ...env },
-	});
+	const useWindowsPnpmEntry = process.platform === "win32" && command === "pnpm";
+	const result = spawnSync(
+		useWindowsPnpmEntry ? process.execPath : command,
+		useWindowsPnpmEntry ? [resolvePnpmEntry(), ...args] : args,
+		{
+			stdio: "inherit",
+			shell: false,
+			env: { ...process.env, ...env },
+		},
+	);
 	if (result.error) {
 		console.error(`[test:ci] failed to run ${command}: ${result.error.message}`);
 		process.exit(1);

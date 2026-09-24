@@ -11,7 +11,7 @@
  */
 
 import { createPublicKey, createHash, verify as cryptoVerify } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 const SECRET_PATH_RE = /(^|\/)(?:\.env(?:\.|$)|[^/]+\.(?:pem|key|p12|pfx|jks|keystore|crt|csr|secret|token))$/i;
@@ -100,6 +100,17 @@ for (const rawDir of dirs) {
 		failures.push(`${dir}: invalid artifact manifest schema`);
 		continue;
 	}
+	const endpointPackage = manifest.artifact_id === "claude-code/package";
+	if (endpointPackage) {
+		try {
+			const pkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf8"));
+			if (pkg.name !== "@singularityrd/aidr-claude-code" || pkg.version !== manifest.artifact_version) {
+				failures.push(`${dir}: endpoint package identity/version does not match package.json`);
+			}
+		} catch (error) {
+			failures.push(`${dir}: cannot read endpoint package.json (${formatError(error)})`);
+		}
+	}
 	if (!/^(?:@[a-z0-9][a-z0-9._-]{0,63}\/)?[a-z0-9][a-z0-9._/-]{0,127}$/i.test(manifest.artifact_id)) {
 		failures.push(`${dir}: unsafe artifact_id ${manifest.artifact_id}`);
 	}
@@ -109,12 +120,14 @@ for (const rawDir of dirs) {
 	}
 	if (!manifest.lineage?.watermark_id) failures.push(`${dir}: missing commercial lineage.watermark_id`);
 	if (manifest.lineage?.channel !== "commercial") failures.push(`${dir}: lineage.channel is not commercial`);
-	validateProvenance(dir, manifest, failures);
-	for (const [field, expected] of Object.entries(expectedProvenance)) {
-		if (expected && manifest.provenance?.[field] !== expected) failures.push(`${dir}: provenance ${field} does not match the expected value`);
-	}
-	if (providedLockfileDigest && manifest.provenance?.lockfile_digest !== providedLockfileDigest) {
-		failures.push(`${dir}: lockfile digest does not match --lockfile`);
+	if (!endpointPackage) {
+		validateProvenance(dir, manifest, failures);
+		for (const [field, expected] of Object.entries(expectedProvenance)) {
+			if (expected && manifest.provenance?.[field] !== expected) failures.push(`${dir}: provenance ${field} does not match the expected value`);
+		}
+		if (providedLockfileDigest && manifest.provenance?.lockfile_digest !== providedLockfileDigest) {
+			failures.push(`${dir}: lockfile digest does not match --lockfile`);
+		}
 	}
 	if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
 		failures.push(`${dir}: manifest has no files`);
@@ -126,60 +139,63 @@ for (const rawDir of dirs) {
 			failures.push(`${dir}: manifest file entries are not sorted`);
 		}
 		for (const entry of manifest.files) await verifyEntry(dir, entry, failures);
+		await verifyExactFileSet(dir, manifest.files, failures, endpointPackage);
 	}
 
-	if (!manifest.files?.some((entry) => entry.path === "aidr-sbom.cdx.json")) {
+	if (!endpointPackage && !manifest.files?.some((entry) => entry.path === "aidr-sbom.cdx.json")) {
 		failures.push(`${dir}: manifest does not cover aidr-sbom.cdx.json`);
 	}
-	if (!manifest.files?.some((entry) => entry.path === "aidr-sbom.cdx.json.sha256")) {
+	if (!endpointPackage && !manifest.files?.some((entry) => entry.path === "aidr-sbom.cdx.json.sha256")) {
 		failures.push(`${dir}: manifest does not cover aidr-sbom.cdx.json.sha256`);
 	}
 
 	let sbomRaw;
-	try {
-		sbomRaw = await readFile(sbomPath, "utf8");
-		const sbom = JSON.parse(sbomRaw);
-		if (sbom.bomFormat !== "CycloneDX" || sbom.specVersion !== "1.5" || !Array.isArray(sbom.components)) {
-			failures.push(`${dir}: invalid CycloneDX SBOM shape`);
-		} else if (sbom.components.length === 0) {
-			failures.push(`${dir}: SBOM has no components`);
-		} else {
-			const refs = new Set();
-			for (const component of sbom.components) {
-				if (!component || typeof component["bom-ref"] !== "string" || refs.has(component["bom-ref"])) {
-					failures.push(`${dir}: SBOM has an invalid or duplicate component reference`);
-					continue;
+	if (!endpointPackage) {
+		try {
+			sbomRaw = await readFile(sbomPath, "utf8");
+			const sbom = JSON.parse(sbomRaw);
+			if (sbom.bomFormat !== "CycloneDX" || sbom.specVersion !== "1.5" || !Array.isArray(sbom.components)) {
+				failures.push(`${dir}: invalid CycloneDX SBOM shape`);
+			} else if (sbom.components.length === 0) {
+				failures.push(`${dir}: SBOM has no components`);
+			} else {
+				const refs = new Set();
+				for (const component of sbom.components) {
+					if (!component || typeof component["bom-ref"] !== "string" || refs.has(component["bom-ref"])) {
+						failures.push(`${dir}: SBOM has an invalid or duplicate component reference`);
+						continue;
+					}
+					refs.add(component["bom-ref"]);
+					if (component.type === "library" && (!Array.isArray(component.licenses) || component.licenses.length === 0)) {
+						failures.push(`${dir}: SBOM component ${component.name ?? component["bom-ref"]} has no license metadata`);
+					}
+					if (component.type === "library" && (!Array.isArray(component.hashes) || component.hashes.length === 0)) {
+						failures.push(`${dir}: SBOM component ${component.name ?? component["bom-ref"]} has no lock integrity hash`);
+					}
 				}
-				refs.add(component["bom-ref"]);
-				if (component.type === "library" && (!Array.isArray(component.licenses) || component.licenses.length === 0)) {
-					failures.push(`${dir}: SBOM component ${component.name ?? component["bom-ref"]} has no license metadata`);
-				}
-				if (component.type === "library" && (!Array.isArray(component.hashes) || component.hashes.length === 0)) {
-					failures.push(`${dir}: SBOM component ${component.name ?? component["bom-ref"]} has no lock integrity hash`);
+				for (const dependency of sbom.dependencies ?? []) {
+					if (!refs.has(dependency.ref)) failures.push(`${dir}: SBOM dependency references unknown component ${dependency.ref}`);
+					for (const child of dependency.dependsOn ?? []) if (!refs.has(child)) failures.push(`${dir}: SBOM dependency references unknown child ${child}`);
 				}
 			}
-			for (const dependency of sbom.dependencies ?? []) {
-				if (!refs.has(dependency.ref)) failures.push(`${dir}: SBOM dependency references unknown component ${dependency.ref}`);
-				for (const child of dependency.dependsOn ?? []) if (!refs.has(child)) failures.push(`${dir}: SBOM dependency references unknown child ${child}`);
+		} catch (error) {
+			failures.push(`${dir}: cannot read SBOM (${formatError(error)})`);
+		}
+		try {
+			const checksumRaw = (await readFile(sbomChecksumPath, "utf8")).trim();
+			const [expected, filename] = checksumRaw.split(/\s+/, 2);
+			if (!/^[0-9a-f]{64}$/i.test(expected ?? "") || filename !== "aidr-sbom.cdx.json") {
+				failures.push(`${dir}: malformed SBOM checksum sidecar`);
+			} else if (sbomRaw && createHash("sha256").update(sbomRaw, "utf8").digest("hex") !== expected.toLowerCase()) {
+				failures.push(`${dir}: SBOM checksum sidecar mismatch`);
 			}
+		} catch (error) {
+			failures.push(`${dir}: cannot read SBOM checksum sidecar (${formatError(error)})`);
 		}
-	} catch (error) {
-		failures.push(`${dir}: cannot read SBOM (${formatError(error)})`);
-	}
-	try {
-		const checksumRaw = (await readFile(sbomChecksumPath, "utf8")).trim();
-		const [expected, filename] = checksumRaw.split(/\s+/, 2);
-		if (!/^[0-9a-f]{64}$/i.test(expected ?? "") || filename !== "aidr-sbom.cdx.json") {
-			failures.push(`${dir}: malformed SBOM checksum sidecar`);
-		} else if (sbomRaw && createHash("sha256").update(sbomRaw, "utf8").digest("hex") !== expected.toLowerCase()) {
-			failures.push(`${dir}: SBOM checksum sidecar mismatch`);
+		if (manifest.provenance?.sbom_digest && sbomRaw) {
+			const actualSbomDigest = `sha256:${createHash("sha256").update(sbomRaw, "utf8").digest("hex")}`;
+			if (manifest.provenance.sbom_digest !== actualSbomDigest) failures.push(`${dir}: provenance sbom_digest mismatch`);
 		}
-	} catch (error) {
-		failures.push(`${dir}: cannot read SBOM checksum sidecar (${formatError(error)})`);
-	}
-	if (manifest.provenance?.sbom_digest && sbomRaw) {
-		const actualSbomDigest = `sha256:${createHash("sha256").update(sbomRaw, "utf8").digest("hex")}`;
-		if (manifest.provenance.sbom_digest !== actualSbomDigest) failures.push(`${dir}: provenance sbom_digest mismatch`);
 	}
 	if (manifest.artifact_id === "release/bundle") await verifyInventory(dir, failures);
 
@@ -193,6 +209,52 @@ for (const rawDir of dirs) {
 		}
 	} catch (error) {
 		failures.push(`${dir}: cannot verify signature (${formatError(error)})`);
+	}
+}
+
+async function verifyExactFileSet(dir, entries, failuresOut, endpointPackage = false) {
+	const actual = [];
+	const stack = endpointPackage ? [path.join(dir, "dist"), path.join(dir, "resources")] : [dir];
+	if (endpointPackage) {
+		const packageJson = path.join(dir, "package.json");
+		const info = await lstat(packageJson);
+		if (info.isSymbolicLink() || !info.isFile()) failuresOut.push(`${dir}: package.json is not a regular file`);
+		else actual.push("package.json");
+	}
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (endpointPackage) {
+			const rootInfo = await lstat(current);
+			if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
+				failuresOut.push(`${dir}: endpoint package input is not a regular directory: ${path.basename(current)}`);
+				continue;
+			}
+		}
+		for (const entry of await readdir(current, { withFileTypes: true })) {
+			const full = path.join(current, entry.name);
+			const info = await lstat(full);
+			const relative = path.relative(dir, full).replace(/\\/g, "/");
+			if (info.isSymbolicLink()) {
+				failuresOut.push(`${dir}: symlink is not allowed: ${relative}`);
+			} else if (info.isDirectory()) {
+				stack.push(full);
+			} else if (info.isFile()) {
+				if (!["aidr-artifact.manifest.json", "aidr-artifact.manifest.sig"].includes(relative)) actual.push(relative);
+			} else {
+				failuresOut.push(`${dir}: unsupported filesystem entry: ${relative}`);
+			}
+		}
+	}
+	const declared = entries
+		.map((entry) => (typeof entry?.path === "string" ? entry.path.replace(/\\/g, "/") : undefined))
+		.filter(Boolean);
+	const declaredSet = new Set(declared);
+	const actualSet = new Set(actual);
+	for (const file of actual.sort(compareStrings)) {
+		if (!declaredSet.has(file)) failuresOut.push(`${dir}: unexpected file is not covered by the signed manifest: ${file}`);
+	}
+	for (const file of declared.sort(compareStrings)) {
+		if (!actualSet.has(file)) failuresOut.push(`${dir}: signed manifest names a file absent from the artifact: ${file}`);
 	}
 }
 
@@ -400,9 +462,9 @@ function validateProvenance(dir, manifest, failuresOut) {
 	for (const field of ["rc_version", "git_sha", "source_digest", "data_digest", "package_digest", "lockfile_digest", "sbom_digest"]) {
 		if (typeof provenance[field] !== "string" || provenance[field].length === 0) failuresOut.push(`${dir}: provenance missing ${field}`);
 	}
-	for (const field of ["source_digest", "data_digest", "package_digest", "lockfile_digest", "sbom_digest", "image_digest"]) {
-		if (provenance[field] !== undefined && !/^(sha1|sha256|sha384|sha512):[A-Za-z0-9+/=_-]+$/.test(provenance[field])) {
-			failuresOut.push(`${dir}: malformed provenance ${field}`);
+	for (const field of ["source_digest", "data_digest", "package_digest", "lockfile_digest", "sbom_digest"]) {
+		if (provenance[field] !== undefined && !/^sha256:[0-9a-f]{64}$/i.test(provenance[field])) {
+			failuresOut.push(`${dir}: provenance ${field} must be sha256:<64 hex>`);
 		}
 	}
 	if (provenance.image_digest !== undefined && !/^sha256:[0-9a-f]{64}$/i.test(provenance.image_digest)) {

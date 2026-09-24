@@ -60,7 +60,7 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 		route: "supabase/functions/waitlist-signup/index.ts",
 		mechanism: "public intake",
 		justification:
-			"Public waitlist intake: it creates no account and writes no tenant data, is throttled per hashed caller IP, and echoes CORS headers only for allowlisted origins.",
+			"Public waitlist intake: it creates no account and writes no tenant data, is throttled by a fail-closed deployment-wide aggregate quota (not caller IP), and echoes CORS headers only for allowlisted origins.",
 	},
 	{
 		route: "supabase/functions/scim/index.ts",

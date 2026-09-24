@@ -12,11 +12,6 @@ on:
         required: false
         type: boolean
         default: false
-      run_supabase_local:
-        description: "Run the pinned local Supabase lint/reset contract"
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -26,7 +21,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: 20.19.1
+  NODE_VERSION: 22.12.0
   PNPM_VERSION: 10.29.3
 
 jobs:
@@ -52,8 +47,43 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
+      - name: Current-worktree secret scan (pinned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/gitleaks.tar.gz"
+          bin_dir="${RUNNER_TEMP}/gitleaks-bin"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${archive}" \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  ${archive}" | sha256sum --check --strict
+          mkdir -p "${bin_dir}"
+          tar -xzf "${archive}" -C "${bin_dir}" gitleaks
+          PATH="${bin_dir}:${PATH}" pnpm verify:secrets:current
+
+      - name: Prometheus alert contract (promtool 3.14.0, pinned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/prometheus-3.14.0.linux-amd64.tar.gz"
+          tool_dir="${RUNNER_TEMP}/promtool"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${archive}" \
+            https://github.com/prometheus/prometheus/releases/download/v3.14.0/prometheus-3.14.0.linux-amd64.tar.gz
+          echo "f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d  ${archive}" | sha256sum --check --strict
+          mkdir -p "${tool_dir}"
+          tar -xzf "${archive}" -C "${tool_dir}" --strip-components=1 prometheus-3.14.0.linux-amd64/promtool
+          (
+            cd deploy/monitoring
+            "${tool_dir}/promtool" check rules prometheus-alerts.yml
+            "${tool_dir}/promtool" test rules prometheus-alerts.test.yml
+          )
+
       - name: Frozen install without postinstall mutation
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Cloudflare Worker contract
+        run: node --test deploy/cloudflare/worker.test.mjs deploy/cloudflare/verify-operational.test.mjs deploy/cloudflare/staging-deploy.test.mjs
 
       - name: Verify clean checkout and AIG gitlink
         shell: bash
@@ -80,14 +110,84 @@ jobs:
       - name: Supabase migration contract
         run: pnpm supabase:check
 
-      - name: Pinned local Supabase schema contract (manual CI opt-in)
-        if: github.event_name == 'workflow_dispatch' && inputs.run_supabase_local
+      - name: Pinned Deno Edge typecheck (9-route security-critical slice)
+        run: pnpm supabase:check:edge-typed-slice
+
+      - name: Pinned local Supabase schema contract
+        env:
+          AIDR_RLS_TEST_DB_CONTAINER: supabase_db_aidr
+          AIDR_POSTGRES_DOCKER_CONTAINER: supabase_db_aidr
+          AIDR_TEST_DISPOSABLE_DB: "1"
         run: |
-          pnpm dlx supabase@2.33.9 db lint --local
-          pnpm dlx supabase@2.33.9 db reset --local --no-seed
+          set -euo pipefail
+          pnpm dlx supabase@2.114.0 start
+          pnpm dlx supabase@2.114.0 db reset --local --no-seed
+          pnpm dlx supabase@2.114.0 db lint --local --fail-on error
+          node scripts/database-boundary-hardening-postgres.mjs
+          node scripts/tenant-lifecycle-rls-postgres.test.mjs --installed
+          node scripts/team-resource-read-rls-postgres.mjs
+          node scripts/team-invitation-atomic-audit-postgres.mjs
+          node scripts/team-member-email-projection-postgres.mjs
+          node scripts/scim-saml-identity-postgres.mjs --with-claim-recovery-migration
+          node scripts/scim-canonical-membership-postgres.mjs --with-lock-order-migration
+          node scripts/owner-role-audit-postgres.mjs
+          node scripts/member-role-audit-postgres.mjs
+          node scripts/member-removal-audit-postgres.mjs
+          node scripts/member-authorization-race-postgres.mjs
+          node scripts/billing-channel-intent-postgres.mjs
+          node scripts/events-seat-admission-postgres.mjs
+          node scripts/pilot-approval-seat-postgres.mjs
+          node scripts/tenant-ga-admission-postgres.test.mjs --installed
+          node scripts/tenant-ga-admission-concurrency-postgres.test.mjs
+          node scripts/ga-trial-legal-consent-postgres.test.mjs --installed
+          node scripts/ga-trial-auth-delete-postgres.test.mjs --installed
+          node scripts/team-invitation-acceptance-postgres.mjs --installed
+          node scripts/member-api-key-revocation-postgres.mjs
+          node scripts/cloud-signup-workspace-name-postgres.mjs
+          node scripts/onprem-licensed-bootstrap-postgres.test.mjs
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/ingest-seat-reduction.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/provider-term-seat-expiry.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/events-seat-admission.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/seat-usage-effective-view.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/enrollment-rotation-resolution.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/device-membership-token.rollback.sql
+          pnpm verify:supabase-pilot-audit-live
+          pnpm verify:supabase-device-revocation-live
+
+      - name: Stop pinned local Supabase stack
+        if: always()
+        run: pnpm dlx supabase@2.114.0 stop --no-backup
+
+      - name: Blocking reputation, offboarding and retention PostgreSQL gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull postgres:17-alpine
+          node --test scripts/reputation-write-lockdown-postgres.test.mjs
+          node --test scripts/device-authorization-membership-race-postgres.test.mjs
+          node --test scripts/identity-recovery-cross-tenant-postgres.test.mjs
+          node --test scripts/billing-resubscription-postgres.test.mjs
+          node --test scripts/device-poll-membership-revocation-postgres.test.mjs
+          docker pull supabase/postgres:17.6.1.136
+          pnpm verify:offboarding
+          pnpm verify:retention
+          node --test scripts/tenant-rate-limit-postgres.test.mjs
 
       - name: Type, lint, audit, tests, coverage and release build
         run: pnpm quality:gate
+
+      - name: MCP gateway and dashboard auth callback tests
+        env:
+          AIDR_TEST_NO_BUILD: "1"
+        run: |
+          pnpm --filter @singularityrd/aidr-mcp-gateway test
+          pnpm exec vitest run --config vitest.config.ts packages/dashboard/supabase/functions/auth-callback/index.test.ts --reporter=dot
+
+      - name: Verify Windows and Unix fleet lifecycles
+        run: pnpm verify:fleet:windows && pnpm verify:fleet:unix
+
+      - name: Install every packed consumer artifact
+        run: pnpm verify:package-install
 
       - name: Dashboard static route smoke
         run: pnpm -C packages/dashboard test:route-smoke:static
@@ -103,15 +203,18 @@ jobs:
             exit 1
           fi
 
-      - name: Upload deterministic test evidence (pinned)
+      - name: Verify CI evidence upload boundary
         if: always()
+        id: evidence_boundary
+        run: node --test scripts/ci-evidence-upload.test.mjs scripts/run-e2e-release.test.mjs scripts/release-signing.test.mjs
+
+      - name: Upload deterministic test evidence (pinned)
+        if: always() && steps.evidence_boundary.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ci-evidence-${{ github.run_id }}
           path: |
             coverage/
-            .e2e-artifacts/
-            .release-evidence/
           if-no-files-found: ignore
           retention-days: 30
 
@@ -200,11 +303,19 @@ jobs:
           pnpm test:e2e
           pnpm test:e2e:negative
 
-      - name: Upload connector evidence (pinned)
+      - name: Verify connector evidence upload boundary
         if: always()
+        id: evidence_boundary
+        run: node --test scripts/ci-evidence-upload.test.mjs scripts/run-e2e-release.test.mjs scripts/release-signing.test.mjs
+
+      - name: Upload connector evidence (pinned)
+        if: always() && steps.evidence_boundary.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: connector-e2e-${{ github.run_id }}
-          path: .e2e-artifacts/
+          path: |
+            .e2e-artifacts/release/*.json
+            .e2e-artifacts/release/*.xml
+            .e2e-artifacts/release/*.log
           if-no-files-found: error
           retention-days: 90

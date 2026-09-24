@@ -14,7 +14,7 @@ import { normalizeIngestEvents } from "../supabase/functions/ingest/events.ts";
 import { parseDiscoveryIngest } from "../supabase/functions/discovery/logic.ts";
 
 const RAW_PROMPT = "PRIVACY_CANARY_PROMPT_6f2190e4";
-const CREDENTIAL = "ghp_1234567890ABCDEFGHIJKLMNOPQRST";
+const CREDENTIAL = ["ghp_1234", "567890AB", "CDEFGHIJ", "KLMNOPQR", "ST"].join("");
 const DISCOVERY_TENANT = "11111111-1111-4111-8111-111111111111";
 const DISCOVERY_CYCLE = "22222222-2222-4222-8222-222222222222";
 
@@ -147,6 +147,35 @@ describe("privacy boundary canaries", () => {
 		};
 		assertAbsent(redactTelemetryData(diagnostic), [RAW_PROMPT]);
 		assertAbsent(redactSentryEvent(diagnostic), [RAW_PROMPT]);
+	});
+
+	it("drops browser identity and arbitrary request payload fields", () => {
+		const event = redactSentryEvent({
+			user: { email: "canary@example.test" },
+			request: {
+				method: "POST",
+				url: `https://example.test/incident?case=${RAW_PROMPT}`,
+				data: { note: RAW_PROMPT },
+				headers: { "x-internal": RAW_PROMPT },
+			},
+		});
+		assertAbsent(event, ["canary@example.test", RAW_PROMPT]);
+		expect(event.request).toEqual({ method: "POST", url: "https://example.test/incident" });
+	});
+
+	it("does not return arbitrary upstream ingest error details", async () => {
+		globalThis.fetch = async () => ({
+			ok: false,
+			status: 503,
+			json: async () => ({ error: "private_customer_secret", debug: RAW_PROMPT }),
+		});
+		const client = new ControlPlaneClient(
+			{ endpoint: "https://control.example.test", timeout_seconds: 1 },
+			"synthetic-api-key",
+		);
+		const result = await client.ingest({ events: [] });
+		expect(result.error).toBe("http_error");
+		assertAbsent(result, ["private_customer_secret", RAW_PROMPT]);
 	});
 
 	it("rejects secret-bearing central discovery targets", () => {

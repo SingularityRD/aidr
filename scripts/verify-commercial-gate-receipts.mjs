@@ -29,9 +29,10 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { HELD, readInvestorMetricDictionary, validateMetricDictionary } from "./validate-investor-metric-dictionary.mjs";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const REGISTRY_FILE = "docs/production-readiness/commercial-go-evidence-registry.json";
@@ -81,6 +82,9 @@ export const MINIMUM_RECEIPT_FIELDS = Object.freeze([
 
 export const REQUIRED_SENTINEL = "REQUIRED";
 export const UNKNOWN = "unknown";
+const REQUIRED_ASSESSMENT_SCOPE = ["tenant", "identity", "runtime", "distribution", "secrets"];
+const SHA256 = /^[0-9a-f]{64}$/;
+const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 const ANNOTATION_KEYWORDS = new Set(["$schema", "$id", "$defs", "title", "description", "$comment", "examples", "default"]);
 const SUPPORTED_KEYWORDS = new Set([
@@ -406,6 +410,88 @@ function checkClosedReceipt(receipt, { root, digest }) {
 	} else if (receipt.candidate_digest !== digest) {
 		failures.push(`${gate}: candidate_digest does not match the current release-inventory digest`);
 	}
+	if (gate === "INV-001") {
+		try {
+			const loaded = readInvestorMetricDictionary({ root });
+			const result = validateMetricDictionary(loaded);
+			if (
+				result.failures.length > 0 ||
+				loaded.dictionary.status !== HELD ||
+				loaded.dictionary.metrics.some((metric) => metric.status !== HELD || metric.candidate_digest !== digest)
+			) {
+				failures.push(`${gate}: investor metric dictionary must validate with every metric HELD and bound to this release candidate`);
+			}
+		} catch {
+			failures.push(`${gate}: investor metric dictionary could not be validated`);
+		}
+	}
+	return failures;
+}
+
+function validUtc(value) {
+	return typeof value === "string" && UTC_TIMESTAMP.test(value) && !Number.isNaN(Date.parse(value))
+		&& new Date(value).toISOString() === value;
+}
+
+function checkAssessmentArtifact(root, artifact, label, failures) {
+	if (!artifact || typeof artifact.path !== "string" || !SHA256.test(artifact.sha256 ?? "")) {
+		failures.push(`SEC-EXT-001: ${label} needs a repository-local path and SHA-256`);
+		return;
+	}
+	const path = resolve(root, artifact.path);
+	if (!existsSync(path) || !statSync(path).isFile()) {
+		failures.push(`SEC-EXT-001: ${label} file is absent`);
+		return;
+	}
+	const inside = relative(realpathSync(root), realpathSync(path));
+	if (inside.startsWith("..") || isAbsolute(inside)) {
+		failures.push(`SEC-EXT-001: ${label} must stay inside the evidence root`);
+	} else if (sha256File(path) !== artifact.sha256) {
+		failures.push(`SEC-EXT-001: ${label} SHA-256 mismatch`);
+	}
+}
+
+function checkIndependentAssessment(receipt, { root, digest, now }) {
+	const failures = [];
+	let assessment;
+	try {
+		const path = resolve(root, receipt.evidence_path);
+		const inside = relative(realpathSync(root), realpathSync(path));
+		if (inside.startsWith("..") || isAbsolute(inside)) throw new Error("out-of-root assessment");
+		assessment = JSON.parse(readFileSync(path, "utf8"));
+	} catch {
+		return ["SEC-EXT-001: evidence must be a readable assessment JSON manifest"];
+	}
+	if (assessment?.schema_version !== 1 || assessment.candidate_digest !== digest) {
+		failures.push("SEC-EXT-001: assessment manifest version or candidate digest mismatch");
+	}
+	if (typeof assessment?.assessor_name !== "string" || !assessment.assessor_name.trim() || assessment.assessor_name === REQUIRED_SENTINEL) {
+		failures.push("SEC-EXT-001: independent assessor name is missing");
+	}
+	for (const scope of REQUIRED_ASSESSMENT_SCOPE) {
+		if (!Array.isArray(assessment?.scope) || !assessment.scope.includes(scope)) {
+			failures.push(`SEC-EXT-001: assessment scope omits ${scope}`);
+		}
+	}
+	const dates = ["started_at_utc", "completed_at_utc", "retest_at_utc", "valid_until_utc"];
+	for (const field of dates) if (!validUtc(assessment?.[field])) failures.push(`SEC-EXT-001: invalid ${field}`);
+	if (dates.every((field) => validUtc(assessment?.[field]))) {
+		const [started, completed, retest, expires] = dates.map((field) => Date.parse(assessment[field]));
+		if (!(started <= completed && completed <= retest && retest <= now.getTime() && now.getTime() < expires)) {
+			failures.push("SEC-EXT-001: assessment/retest chronology is invalid or evidence has expired");
+		}
+		if (!validUtc(receipt.recorded_at_utc) || Date.parse(receipt.recorded_at_utc) < retest || Date.parse(receipt.recorded_at_utc) > now.getTime()) {
+			failures.push("SEC-EXT-001: receipt must be recorded after retest and no later than now");
+		}
+	}
+	if (assessment?.unresolved_critical !== 0 || assessment?.unresolved_high !== 0) {
+		failures.push("SEC-EXT-001: unresolved critical/high findings prevent closure");
+	}
+	if (assessment?.signed_report?.path === assessment?.retest_letter?.path) {
+		failures.push("SEC-EXT-001: report and retest letter must be distinct artifacts");
+	}
+	checkAssessmentArtifact(root, assessment?.signed_report, "signed report", failures);
+	checkAssessmentArtifact(root, assessment?.retest_letter, "retest letter", failures);
 	return failures;
 }
 
@@ -422,6 +508,7 @@ export function validateCommercialGateReceipts({
 	receiptsPath = RECEIPTS_FILE,
 	schemaPath = SCHEMA_FILE,
 	releaseInventoryPath = RELEASE_INVENTORY_FILE,
+	now = new Date(),
 } = {}) {
 	const failures = [];
 	const gates = Array.isArray(registry?.hardGates) ? registry.hardGates : [];
@@ -502,6 +589,9 @@ export function validateCommercialGateReceipts({
 		}
 		if (CLOSED_DECISIONS.includes(receipt.decision)) {
 			failures.push(...checkClosedReceipt(receipt, { root, digest }));
+			if (receipt.gate_id === "SEC-EXT-001" && typeof receipt.evidence_path === "string") {
+				failures.push(...checkIndependentAssessment(receipt, { root, digest, now }));
+			}
 		}
 	}
 
@@ -547,7 +637,7 @@ export function readRegistryAndReceipts({ root = ROOT, registryPath = REGISTRY_F
 function report(result) {
 	const { failures, summary } = result;
 	const status = failures.length === 0 ? "PASS" : "FAIL";
-	console.log(`Commercial gate receipts: ${status}`);
+	console.log(`Commercial receipt registry validation: ${status} (not a production GO decision)`);
 	console.log(`Receipts: ${summary.receiptsPath} (${summary.receiptCount}/${summary.hardGateCount} hard gates)`);
 	console.log(`Schema: ${summary.schemaPath}`);
 	const decisions = Object.entries(summary.decisions ?? {})

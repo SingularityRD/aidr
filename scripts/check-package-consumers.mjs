@@ -14,12 +14,20 @@
  * package directories is useful when iterating on one package locally.
  */
 
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { cleanupDirectory } from "./release-candidate-cleanup.mjs";
+import { resolvePnpmEntry } from "./build-workspace.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -228,6 +236,8 @@ async function checkMcpGateway() {
 async function checkSdk() {
 	const cjsEntry = artifact("packages/sdk/dist/index.cjs");
 	const esmEntry = artifact("packages/sdk/dist/index.mjs");
+	artifact("packages/sdk/dist/index.d.ts");
+	artifact("packages/sdk/dist/index.d.cts");
 	const cjsResult = runNode([
 		"-e",
 		"const mod = require(process.argv[1]); if (typeof mod.AIDRClient !== 'function') throw new Error('AIDRClient export is missing'); if (typeof mod.SDK_VERSION !== 'string') throw new Error('SDK_VERSION export is missing');",
@@ -240,10 +250,72 @@ async function checkSdk() {
 	);
 	assertSuccess(esmResult, "SDK ESM import");
 
-	const cliResult = runNode([artifact("packages/sdk/dist/cli.cjs"), "--help"]);
-	assertSuccess(cliResult, "SDK CLI --help");
-	if (!/Usage:\s+aidr\b/i.test(cliResult.stdout)) {
-		throw new Error("SDK CLI help output does not contain the aidr usage header");
+	const typecheckDir = mkdtempSync(path.join(repoRoot, "packages", "sdk", ".consumer-types-"));
+	try {
+		const source = `
+import {
+  AIDRClient,
+  createGenericMiddleware,
+  createMiddleware,
+  createMiddlewarePipeline,
+  createSyncCompatibleMiddleware,
+  enforceToolOutput,
+  guardToolOutput,
+  scanToolOutput,
+  wrapToolWithMiddleware,
+} from "@singularityrd/aidr-sdk";
+import type {
+  CheckResult,
+  MiddlewareEnforcementOptions,
+  MiddlewareOptions,
+  SDKConfig,
+  ToolOutputGuardOptions,
+  ToolOutputGuardResult,
+} from "@singularityrd/aidr-sdk";
+
+void [
+  AIDRClient,
+  createGenericMiddleware,
+  createMiddleware,
+  createMiddlewarePipeline,
+  createSyncCompatibleMiddleware,
+  enforceToolOutput,
+  guardToolOutput,
+  scanToolOutput,
+  wrapToolWithMiddleware,
+];
+declare const retainedTypes: [
+  CheckResult,
+  MiddlewareEnforcementOptions,
+  MiddlewareOptions,
+  SDKConfig,
+  ToolOutputGuardOptions,
+  ToolOutputGuardResult<unknown>,
+];
+void retainedTypes;
+`;
+		const esmSource = path.join(typecheckDir, "consumer.mts");
+		const cjsSource = path.join(typecheckDir, "consumer.cts");
+		writeFileSync(esmSource, source);
+		writeFileSync(cjsSource, source);
+		const result = runNode([
+			artifact("node_modules/typescript/bin/tsc"),
+			"--noEmit",
+			"--strict",
+			"--target",
+			"ES2022",
+			"--module",
+			"NodeNext",
+			"--moduleResolution",
+			"NodeNext",
+			"--skipLibCheck",
+			"false",
+			esmSource,
+			cjsSource,
+		]);
+		assertSuccess(result, "SDK ESM/CommonJS declaration imports");
+	} finally {
+		rmSync(typecheckDir, { recursive: true, force: true });
 	}
 }
 
@@ -269,15 +341,12 @@ function runNode(args, options = {}) {
 }
 
 function runPnpm(args, cwd) {
-	if (process.platform === "win32") {
-		// Invoke Corepack's JS entry directly so the gate does not need shell
-		// quoting (and does not emit Node's shell-argument warning).
-		const corepackPnpm = path.join(path.dirname(process.execPath), "node_modules", "corepack", "dist", "pnpm.js");
-		if (existsSync(corepackPnpm)) return runCommand(process.execPath, [corepackPnpm, ...args], cwd);
-	}
-	return runCommand(process.platform === "win32" ? "pnpm.cmd" : "pnpm", args, cwd, {
-		shell: process.platform === "win32",
-	});
+	const useWindowsPnpmEntry = process.platform === "win32";
+	return runCommand(
+		useWindowsPnpmEntry ? process.execPath : "pnpm",
+		useWindowsPnpmEntry ? [resolvePnpmEntry(), ...args] : args,
+		cwd,
+	);
 }
 
 function runCommand(command, args, cwd, options = {}) {

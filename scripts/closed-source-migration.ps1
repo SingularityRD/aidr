@@ -94,8 +94,8 @@ Write-Host ""
 # ============================================================
 Write-Host "ADIM 7: VSIX Özel Dağıtım" -ForegroundColor Yellow
 Write-Host "  VS Code extension'ı private VSIX olarak dağıtın:"
-Write-Host "  pnpm -C packages/extension run package:vsix"
-Write-Host "  -> dist/aidr-cursor-*.vsix dosyasını özel bir URL'den dağıtın"
+Write-Host "  pnpm -C packages/extension run package:vsix:from-signed-dist  # requires signed RC dist"
+Write-Host "  -> repo kökündeki aidr-cursor.vsix ve aidr-vscode.vsix dosyalarını özel bir URL'den dağıtın"
 Write-Host ""
 
 Write-Host "=== Geçiş için gerekli tüm adımlar yukarıda listelenmiştir. ===" -ForegroundColor Cyan

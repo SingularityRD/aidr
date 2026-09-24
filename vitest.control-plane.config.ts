@@ -10,7 +10,10 @@ export default defineConfig({
 		environment: "node",
 		include: [
 			"supabase/functions/__tests__/security-flow.test.ts",
+			"supabase/functions/__tests__/identity-barrier.test.ts",
 			"supabase/functions/__tests__/identity-security.test.ts",
+			"supabase/functions/__tests__/identity-bootstrap-handler.test.ts",
+			"supabase/functions/__tests__/device-code.test.ts",
 		],
 		maxWorkers: 1,
 		pool: "forks",

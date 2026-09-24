@@ -149,12 +149,13 @@ describe("release candidate assembler", () => {
 			}
 			const metadata = JSON.parse(readFileSync(join(absolute, "release-metadata.json"), "utf8"));
 			assert.equal(metadata.release_version, "0.0.0-test");
-			// The signed-bundle schema validates metadata with an exact key set, so
-			// nothing beyond these six fields may appear there.
+			// The signed-bundle schema validates metadata with an exact key set.
 			assert.deepEqual(
 				Object.keys(metadata).sort(),
-				["artifacts", "git_sha", "release_tag", "release_version", "schema_version", "source_date_epoch"],
+				["artifacts", "git_sha", "release_tag", "release_version", "schema_version", "source_date_epoch", "worktree_dirty"],
 			);
+			assert.equal(metadata.worktree_dirty, true);
+			assert.equal(JSON.parse(result.stdout).status, "REHEARSAL");
 			// The bundle itself may contain only metadata, inventory and artifacts;
 			// the assurance report must sit outside it.
 			const bundleEntries = readdirSync(absolute).sort();

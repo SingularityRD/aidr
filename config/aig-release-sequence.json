@@ -1,0 +1,15 @@
+{
+	"schema": "aig-release-sequences/v1",
+	"releases": [
+		{
+			"release_sequence": 1,
+			"source_commit": "e68bc5d09a222a3d16b873ded93eb6d726028975",
+			"bundle_id": "ab362d097a9a9429e3088d6d8e7f2769b0ce50a1ac3f44569f59f89bf94e7b48"
+		},
+		{
+			"release_sequence": 2,
+			"source_commit": "e68bc5d09a222a3d16b873ded93eb6d726028975",
+			"bundle_id": "2fb61e95cae5e6730470736c77ae4229e10fe1dfe4a57fae9a186065d4a8d0cf"
+		}
+	]
+}

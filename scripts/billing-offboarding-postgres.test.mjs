@@ -121,6 +121,9 @@ test("immutable settlement retention completes offboarding honestly on real Post
     }
     assert.equal(await sql(`select operation || ':' || settlement_rows_retained from public.tenant_offboarding_phase_receipts
       where run_id=${literal(legacyRun)} and phase='billing_settlements';`), "retain_immutable_evidence:0");
+    assert.equal(await sql("select mode from app.tenant_admission_config where singleton;"), "unconfigured");
+    assert.deepEqual(await rpc("public.configure_tenant_admission_mode('pilot')"),
+      { status: "configured", mode: "pilot" });
     async function tenant(name) {
       const id = randomUUID();
       await sql(`insert into public.tenants(id,name,kind,created_by) values (${literal(id)},${literal(name)},'enterprise',${literal(owner)});
@@ -153,6 +156,51 @@ test("immutable settlement retention completes offboarding honestly on real Post
       assert.fail("offboarding did not complete within bounded batches");
     }
     const count = (table, id) => sql(`select count(*) from public.${table} where tenant_id=${literal(id)};`);
+
+    assert.equal(await sql(`select status <> 'completed' from public.tenant_offboarding_runs where id=${literal(legacyRun)};`), "t");
+    assert.equal(await sql(`select array_agg(phase || ':' || phase_order::text order by phase_order)::text
+      from public.tenant_offboarding_phase_receipts where run_id=${literal(legacyRun)} and phase_order between 40 and 45;`),
+      "{fleet_response_playbook_steps:40,fleet_response_playbook_runs:41,fleet_response_commands:42,tenant_cache:43,dlp_policy_revisions:44,tenant_dlp_policies:45}");
+
+    await t.test("playbook evidence is deleted in receipt order before fleet commands", async () => {
+      const target = await tenant("Playbook offboarding target"), neighbor = await tenant("Playbook neighbor");
+      const targetAgent = randomUUID(), neighborAgent = randomUUID();
+      await sql(`insert into public.pilot_applications(user_id,tenant_id,status,cohort) values
+        (${literal(owner)},${literal(target)},'approved','fixture'),
+        (${literal(owner)},${literal(neighbor)},'approved','fixture');
+        insert into public.entitlements(user_id,tenant_id,included_agents) values
+        (${literal(owner)},${literal(target)},1),
+        (${literal(owner)},${literal(neighbor)},1)
+        on conflict (tenant_id) do update set included_agents=1;`);
+      await sql(`insert into public.agents(id,user_id,tenant_id,iid) values
+        (${literal(targetAgent)},${literal(owner)},${literal(target)},'playbook-target'),
+        (${literal(neighborAgent)},${literal(owner)},${literal(neighbor)},'playbook-neighbor');`);
+      const targetPlaybook = await rpc(`public.start_fleet_response_playbook(
+        ${literal(target)},${literal(owner)},${literal(targetAgent)},gen_random_uuid(),
+        'agent_containment_v1','Containment validation fixture','pb-target-${randomUUID()}',300)`);
+      const neighborPlaybook = await rpc(`public.start_fleet_response_playbook(
+        ${literal(neighbor)},${literal(owner)},${literal(neighborAgent)},gen_random_uuid(),
+        'agent_containment_v1','Containment validation fixture','pb-neighbor-${randomUUID()}',300)`);
+      assert.equal(await count("fleet_response_playbook_runs", target), "1");
+      assert.equal(await count("fleet_response_playbook_steps", target), "1");
+      assert.equal(await count("fleet_response_commands", target), "1");
+      await denied(`delete from public.fleet_response_playbook_steps where tenant_id=${literal(target)};`, /fleet_response_playbook_delete_forbidden/);
+      const run = await request(target);
+      await denied(`update public.tenant_offboarding_phase_receipts set status='completed',completed_at=now()
+        where run_id=${literal(run.run_id)}
+          and phase='fleet_response_playbook_steps';`, /fleet_response_playbook_offboarding_residue/);
+
+      assert.equal((await complete(run.run_id)).status, "completed");
+      for (const table of ["fleet_response_playbook_steps", "fleet_response_playbook_runs", "fleet_response_commands"]) {
+        assert.equal(await count(table, target), "0", `${table} must be removed for the offboarded tenant`);
+        assert.equal(await count(table, neighbor), "1", `${table} must remain isolated to the neighbor tenant`);
+      }
+      assert.deepEqual(await sql(`select array_agg(phase || ':' || phase_order::text || ':' || rows_deleted::text order by phase_order)
+        from public.tenant_offboarding_phase_receipts where run_id=${literal(run.run_id)} and phase_order between 40 and 45;`),
+      "{fleet_response_playbook_steps:40:1,fleet_response_playbook_runs:41:1,fleet_response_commands:42:1,tenant_cache:43:0,dlp_policy_revisions:44:0,tenant_dlp_policies:45:0}");
+      assert.equal(targetPlaybook.steps.length, 1);
+      assert.equal(neighborPlaybook.steps.length, 1);
+    });
 
     await t.test("nonempty ledger is retained, inaccessible and explicitly receipted without entitlement resurrection", async () => {
       const id = await tenant("Retained ledger"), neighbor = await tenant("Neighbor");
@@ -190,6 +238,54 @@ test("immutable settlement retention completes offboarding honestly on real Post
         where run_id=${literal(run.run_id)} and phase='billing_settlements';`, /billing_settlement_retention_receipt_is_immutable/);
       await denied(`set role service_role; update public.tenant_offboarding_runs set tenant_id=${literal(neighbor)}
         where id=${literal(run.run_id)};`, /tenant_offboarding_run_identity_is_immutable/);
+    });
+
+    await t.test("paid provider evidence is receipted and cannot move across tenants after closure", async () => {
+      const id = await tenant("Finance evidence"), neighbor = await tenant("Finance neighbor");
+      const settlementId = randomUUID();
+      const requestId = "finance_guard_1234567890";
+      const paymentId = "pi_finance_guard_123";
+      await sql(`insert into public.billing_checkout_intents
+        (settlement_id,tenant_id,actor_user_id,request_id,request_hash,seats,billing_interval,price_id,status)
+        values (${literal(settlementId)},${literal(id)},${literal(owner)},${literal(requestId)},repeat('a',64),
+          1,'monthly','price_fixture','paid');
+        insert into public.billing_provider_payments
+        (provider,provider_payment_id,provider_payment_kind,settlement_id,tenant_id,request_id,user_id,
+         provider_customer_id,provider_subscription_id,provider_invoice_id,provider_event_id,
+         event_created_at,amount_minor,currency)
+        values ('stripe',${literal(paymentId)},'payment_intent',${literal(settlementId)},${literal(id)},
+          ${literal(requestId)},${literal(owner)},'cus_finance_guard','sub_finance_guard',
+          'in_finance_guard','evt_finance_guard',now(),5000,'usd');
+        insert into public.billing_provider_refunds
+        (tenant_id,settlement_id,request_id,request_hash,provider,provider_payment_id,provider_refund_id,amount_minor)
+        values (${literal(id)},${literal(settlementId)},'refund_guard_1234567890',repeat('b',64),
+          'stripe',${literal(paymentId)},'re_finance_guard',5000);
+        insert into public.billing_portal_operations
+        (tenant_id,request_id,action,resource_id,request_hash,request_payload,status,completed_at,result)
+        values (${literal(id)},'portal_guard_1234567890','cancel','sub_finance_guard',repeat('c',64),
+          '{}'::jsonb,'completed',now(),'{}'::jsonb);
+        insert into public.invoice_finance_operators(tenant_id,user_id)
+        values (${literal(id)},${literal(owner)});`);
+      const run = await request(id);
+      assert.equal(await sql(`select revoked_at is not null from public.invoice_finance_operators
+        where tenant_id=${literal(id)} and user_id=${literal(owner)};`), "t");
+      await denied(`update public.invoice_finance_operators set expires_at=now()+interval '1 year'
+        where tenant_id=${literal(id)};`, /billing_finance_operation_closed/);
+      await denied(`update public.invoice_finance_operators set tenant_id=${literal(neighbor)}
+        where tenant_id=${literal(id)};`, /billing_finance_operation_tenant_immutable/);
+      assert.equal((await complete(run.run_id)).status, "completed");
+      assert.equal(await count("billing_portal_operations", id), "0");
+      assert.equal(await count("invoice_finance_operators", id), "0");
+      for (const table of ["billing_checkout_intents", "billing_provider_payments", "billing_provider_refunds"])
+        assert.equal(await count(table, id), "1", `${table} must remain as receipted finance evidence`);
+      const receipt = JSON.parse(await sql(`select to_jsonb(p) from public.tenant_offboarding_phase_receipts p
+        where run_id=${literal(run.run_id)} and phase='billing_finance_evidence';`));
+      assert.equal(receipt.finance_rows_retained, 3);
+      assert.equal(receipt.finance_retention_digest,
+        await sql(`select app.billing_finance_evidence_digest(${literal(id)});`));
+      for (const table of ["billing_checkout_intents", "billing_provider_payments", "billing_provider_refunds"])
+        await denied(`update public.${table} set tenant_id=${literal(neighbor)}
+          where tenant_id=${literal(id)};`, /billing_finance_evidence_tenant_immutable/);
     });
 
     await t.test("empty ledger still completes with an explicit zero-row digest", async () => {
@@ -265,7 +361,8 @@ test("immutable settlement retention completes offboarding honestly on real Post
         assert.equal(await count("billing_settlements", id), "1");
         assert.equal(await sql(`select count(*) from public.tenant_offboarding_phase_receipts
           where run_id=${literal(run.run_id)} and phase='billing_settlements';`), "0");
-        await denied(`update public.tenants set status='closed',closed_at=now() where id=${literal(id)};`, /billing_settlement_retention_evidence_missing/);
+        await denied(`update public.tenants set status='closed',closed_at=now() where id=${literal(id)};`,
+          /admission_offboarding_residue|billing_settlement_retention_evidence_missing/);
         await sql(`set role service_role; update public.tenant_legal_holds
           set released_at=now(),released_by=${literal(owner)},release_reason='test release'
           where tenant_id=${literal(id)} and released_at is null;`);
@@ -276,6 +373,11 @@ test("immutable settlement retention completes offboarding honestly on real Post
         holder.close();
         if (worker) await worker;
       }
+    });
+
+    await t.test("rollback-only SQL offboarding inventory matches the canonical migration chain", async () => {
+      const result = await command(pgArgs, readFileSync(resolve(root, "scripts/tenant-offboarding-integration.sql"), "utf8"), 60_000);
+      assert.equal(result.code, 0, result.stderr);
     });
   } finally {
     const removed = await command(["rm", "--force", container]);

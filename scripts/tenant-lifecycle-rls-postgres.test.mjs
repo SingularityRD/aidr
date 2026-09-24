@@ -15,6 +15,8 @@ assert.ok(container, 'AIDR_RLS_TEST_DB_CONTAINER must name a disposable/self-hos
 assert.match(container, /^[A-Za-z0-9_.-]+$/, 'invalid Docker container name');
 
 const migration = readFileSync('supabase/migrations/20260912000019_tenant_lifecycle_rls.sql', 'utf8');
+const reputationWritesMigration = readFileSync('supabase/migrations/20260924000002_reputation_provenance_write_lockdown.sql', 'utf8');
+const reputationAudit = readFileSync('scripts/legacy-reputation-row-audit.sql', 'utf8').trim().replace(/;$/, '');
 const a = randomUUID();
 const b = randomUUID();
 const admin = randomUUID();
@@ -24,6 +26,7 @@ const marker = randomUUID().replaceAll('-', '');
 const url = `https://rls-${marker}.invalid/attack`;
 const ownUrl = `https://rls-${marker}.invalid/own`;
 const memberUrl = `https://rls-${marker}.invalid/member`;
+const cleanUrl = `https://rls-${marker}.invalid/member-clean`;
 const sha = marker.padEnd(64, 'a');
 const ownSha = marker.padEnd(64, 'b');
 const memberSha = marker.padEnd(64, 'c');
@@ -85,6 +88,10 @@ const scopedTables = [
   'file_reputation', 'enrollment_tokens', 'billing_customers',
   'subscriptions', 'pilot_applications', 'entitlement_snapshots',
 ];
+const directReadDenied = new Set(['api_keys', 'enrollment_tokens', 'billing_customers', 'pilot_applications']);
+const assertAuthenticatedReads = (expected) => scopedTables.map((table) => installed && directReadDenied.has(table)
+  ? assertStatementDenied(`select count(*) from public.${table}`, `direct ${table} read`)
+  : assertCount(table, expected)).join('\n');
 
 const sql = String.raw`
 \set ON_ERROR_STOP on
@@ -105,6 +112,8 @@ values ('${tenantA}', '${a}', 'owner'),
 ${installed ? `
 -- This mode verifies an already-upgraded database and seeds historical rows
 -- as the service owner so the authenticated role cannot manufacture them.
+-- The fixture's approved pilot is admitted only in explicit pilot mode.
+update app.tenant_admission_config set mode = 'pilot' where singleton;
 do $$ begin
   if not exists (
     select 1 from pg_policies where schemaname = 'public'
@@ -125,7 +134,14 @@ reset role;
 
 -- A legacy owner column can remain after removing a membership. Populate all
 -- pre-hybrid owned tables to exercise their actual RLS policies.
-insert into public.entitlements(tenant_id, user_id) values ('${tenantB}', '${a}');
+-- New credential admission requires a live member at issue time. Seed one,
+-- then remove it before testing whether old user_id grants foreign access.
+insert into public.tenant_members(tenant_id, user_id, role)
+values ('${tenantB}', '${a}', 'member');
+insert into public.entitlements(tenant_id, user_id, included_agents) values ('${tenantB}', '${a}', 1);
+-- Keep exactly one legacy cross-tenant row while satisfying the newer
+-- enrollment admission boundary for fixture credentials and agents.
+insert into public.pilot_applications(tenant_id, user_id, status) values ('${tenantB}', '${a}', 'approved');
 insert into public.api_keys(tenant_id, user_id, key_hash) values ('${tenantB}', '${a}', 'rls-key-${marker}');
 insert into public.agents(tenant_id, user_id, iid) values ('${tenantB}', '${a}', 'rls-agent-${marker}');
 insert into public.events(tenant_id, user_id, agent_id, type, payload, event_id)
@@ -136,9 +152,19 @@ values ('${tenantB}', '${a}', 'rls-token-${marker}', now() + interval '1 day');
 insert into public.billing_customers(tenant_id, user_id) values ('${tenantB}', '${a}');
 insert into public.subscriptions(tenant_id, user_id, provider_subscription_id, status)
 values ('${tenantB}', '${a}', 'rls-sub-${marker}', 'active');
-insert into public.pilot_applications(tenant_id, user_id) values ('${tenantB}', '${a}');
 insert into public.entitlement_snapshots(tenant_id, user_id, iid, entitlement)
 values ('${tenantB}', '${a}', 'rls-agent-${marker}', '{}'::jsonb);
+delete from public.tenant_members where tenant_id = '${tenantB}' and user_id = '${a}';
+
+-- The old policy left no trustworthy writer provenance. The field audit must
+-- surface both seeded cross-tenant rows, without deleting legitimate rows.
+do $$ begin
+  if (select count(*) from (${reputationAudit}) audited
+      where tenant_id = '${tenantB}' and user_id = '${a}'
+        and review_reason = 'no_current_membership_origin_unproven') <> 2 then
+    raise exception 'historical reputation audit missed cross-tenant rows';
+  end if;
+end $$;
 
 ${installed ? '' : `
 ${context(a, tenantA)}
@@ -150,6 +176,21 @@ ${installed ? '' : `
 -- Apply the actual candidate migration inside this rollback-only transaction.
 ${migration}
 `}
+
+${installed ? '' : `
+-- Before trusted-ingestion-only grants are applied, a normal tenant member can
+-- add a fresh clean URL row that downstream checks may mistake for feed data.
+${context(b, tenantB)}
+insert into public.url_reputation(tenant_id, user_id, url, is_malicious)
+  values ('${tenantB}', '${b}', '${cleanUrl}', false);
+${assertCount('url_reputation', 1, `tenant_id = '${tenantB}' and url = '${cleanUrl}' and is_malicious = false`)}
+reset role;
+delete from public.url_reputation where tenant_id = '${tenantB}' and url = '${cleanUrl}';
+`}
+
+-- Apply idempotently in both modes so the installed path also exercises the
+-- forward migration while preserving all fixtures through transaction rollback.
+${reputationWritesMigration}
 
 -- Catalog checks supplement the role-level behavior tests: all eleven
 -- exposed resource tables have an AND-ed guard and no legacy own-row OR path.
@@ -172,18 +213,53 @@ do $$ begin
     where schemaname = 'public' and tablename in ('api_keys', 'enrollment_tokens')
       and cmd in ('INSERT', 'UPDATE', 'DELETE') and permissive = 'PERMISSIVE'
   ) then raise exception 'direct credential write policy remains'; end if;
+  if exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename in ('url_reputation', 'file_reputation')
+      and cmd in ('INSERT', 'UPDATE', 'DELETE')
+  ) then raise exception 'browser reputation write policy remains'; end if;
+  if not has_table_privilege('authenticated', 'public.url_reputation', 'SELECT')
+    or not has_table_privilege('authenticated', 'public.file_reputation', 'SELECT')
+  then raise exception 'authenticated reputation SELECT was not preserved'; end if;
+  if has_table_privilege('anon', 'public.url_reputation', 'INSERT')
+    or has_table_privilege('anon', 'public.url_reputation', 'UPDATE')
+    or has_table_privilege('anon', 'public.url_reputation', 'DELETE')
+    or has_table_privilege('authenticated', 'public.url_reputation', 'INSERT')
+    or has_table_privilege('authenticated', 'public.url_reputation', 'UPDATE')
+    or has_table_privilege('authenticated', 'public.url_reputation', 'DELETE')
+    or has_table_privilege('anon', 'public.file_reputation', 'INSERT')
+    or has_table_privilege('anon', 'public.file_reputation', 'UPDATE')
+    or has_table_privilege('anon', 'public.file_reputation', 'DELETE')
+    or has_table_privilege('authenticated', 'public.file_reputation', 'INSERT')
+    or has_table_privilege('authenticated', 'public.file_reputation', 'UPDATE')
+    or has_table_privilege('authenticated', 'public.file_reputation', 'DELETE')
+  then raise exception 'browser role retains reputation DML privilege'; end if;
+  if not has_table_privilege('service_role', 'public.url_reputation', 'INSERT')
+    or not has_table_privilege('service_role', 'public.url_reputation', 'UPDATE')
+    or not has_table_privilege('service_role', 'public.url_reputation', 'DELETE')
+    or not has_table_privilege('service_role', 'public.file_reputation', 'INSERT')
+    or not has_table_privilege('service_role', 'public.file_reputation', 'UPDATE')
+    or not has_table_privilege('service_role', 'public.file_reputation', 'DELETE')
+  then raise exception 'service_role reputation DML grant is incomplete'; end if;
+  if has_sequence_privilege('anon', 'public.url_reputation_id_seq', 'USAGE')
+    or has_sequence_privilege('authenticated', 'public.url_reputation_id_seq', 'USAGE')
+    or has_sequence_privilege('anon', 'public.file_reputation_id_seq', 'USAGE')
+    or has_sequence_privilege('authenticated', 'public.file_reputation_id_seq', 'USAGE')
+    or not has_sequence_privilege('service_role', 'public.url_reputation_id_seq', 'USAGE')
+    or not has_sequence_privilege('service_role', 'public.file_reputation_id_seq', 'USAGE')
+  then raise exception 'reputation identity sequence privileges are unsafe'; end if;
 end $$;
 
 -- The attacker still has a valid JWT, but no victim membership. Every legacy
 -- own-row read is denied and both reputation poisoning inserts fail.
 ${context(a, tenantA)}
-${scopedTables.map((table) => assertCount(table, 0)).join('\n')}
+${assertAuthenticatedReads(0)}
 ${assertInsertDenied('url_reputation', `https://rls-${marker}.invalid/after`)}
 ${assertInsertDenied('file_reputation', marker.padEnd(64, 'd'))}
-${assertNoRowsChanged(`update public.url_reputation set severity_name = 'critical' where tenant_id = '${tenantB}' and url = '${url}'`, 'foreign URL update')}
-${assertNoRowsChanged(`delete from public.url_reputation where tenant_id = '${tenantB}' and url = '${url}'`, 'foreign URL delete')}
-${assertNoRowsChanged(`update public.file_reputation set severity = 'critical' where tenant_id = '${tenantB}' and sha256 = '${sha}'`, 'foreign file update')}
-${assertNoRowsChanged(`delete from public.file_reputation where tenant_id = '${tenantB}' and sha256 = '${sha}'`, 'foreign file delete')}
+${assertStatementDenied(`update public.url_reputation set severity_name = 'critical' where tenant_id = '${tenantB}' and url = '${url}'`, 'foreign URL update')}
+${assertStatementDenied(`delete from public.url_reputation where tenant_id = '${tenantB}' and url = '${url}'`, 'foreign URL delete')}
+${assertStatementDenied(`update public.file_reputation set severity = 'critical' where tenant_id = '${tenantB}' and sha256 = '${sha}'`, 'foreign file update')}
+${assertStatementDenied(`delete from public.file_reputation where tenant_id = '${tenantB}' and sha256 = '${sha}'`, 'foreign file delete')}
 ${assertStatementDenied(`update public.api_keys set revoked = true where tenant_id = '${tenantB}' and key_hash = 'rls-key-${marker}'`, 'direct API key update')}
 ${assertStatementDenied(`delete from public.api_keys where tenant_id = '${tenantB}' and key_hash = 'rls-key-${marker}'`, 'direct API key delete')}
 do $$ begin
@@ -207,49 +283,45 @@ reset role;
 -- A forged tenant claim must not grant access without a live membership.
 -- This isolates the membership predicate from the claim-mismatch predicate.
 ${context(a, tenantB)}
-${scopedTables.map((table) => assertCount(table, 0)).join('\n')}
+${assertAuthenticatedReads(0)}
 ${assertInsertDenied('url_reputation', `https://rls-${marker}.invalid/forged-claim`)}
 ${assertInsertDenied('file_reputation', marker.padEnd(64, 'e'))}
 reset role;
 
--- Victim owner and admin can still read their tenant's resources, even though
--- the legacy user_id field on the records belongs to another user.
+-- Tenant owners/admins retain tenant-scoped reads, but normal authenticated
+-- members cannot create or mutate trusted reputation feed rows.
 ${context(b, tenantB)}
-${scopedTables.map((table) => assertCount(table, 1)).join('\n')}
-insert into public.url_reputation(tenant_id, user_id, url) values ('${tenantB}', '${b}', '${ownUrl}');
-insert into public.file_reputation(tenant_id, user_id, sha256) values ('${tenantB}', '${b}', '${ownSha}');
-${assertOneRowChanged(`update public.url_reputation set severity_name = 'critical' where tenant_id = '${tenantB}' and url = '${ownUrl}'`, 'owner URL update')}
-${assertOneRowChanged(`update public.file_reputation set severity = 'critical' where tenant_id = '${tenantB}' and sha256 = '${ownSha}'`, 'owner file update')}
+${assertAuthenticatedReads(1)}
+${assertStatementDenied(`insert into public.url_reputation(tenant_id, user_id, url, is_malicious) values ('${tenantB}', '${b}', '${ownUrl}', false)`, 'owner clean URL insert')}
+${assertStatementDenied(`insert into public.file_reputation(tenant_id, user_id, sha256) values ('${tenantB}', '${b}', '${ownSha}')`, 'owner file insert')}
+${assertStatementDenied(`update public.url_reputation set severity_name = 'critical' where tenant_id = '${tenantB}' and url = '${url}'`, 'owner URL update')}
+${assertStatementDenied(`update public.file_reputation set severity = 'critical' where tenant_id = '${tenantB}' and sha256 = '${sha}'`, 'owner file update')}
 reset role;
 ${context(admin, tenantB)}
-${scopedTables.map((table) => assertCount(table, 1)).join('\n')}
-insert into public.url_reputation(tenant_id, user_id, url)
-  values ('${tenantB}', '${admin}', 'https://rls-${marker}.invalid/admin');
-${assertOneRowChanged(`delete from public.url_reputation where tenant_id = '${tenantB}' and user_id = '${admin}'`, 'admin own URL delete')}
+${assertAuthenticatedReads(1)}
+${assertStatementDenied(`delete from public.url_reputation where tenant_id = '${tenantB}' and url = '${url}'`, 'admin URL delete')}
 reset role;
 
 -- A personal tenant remains usable when no explicit tenant claim is selected.
 ${context(admin, '')}
-insert into public.url_reputation(tenant_id, user_id, url)
-  values ('${admin}', '${admin}', 'https://rls-${marker}.invalid/personal');
-${assertCount('url_reputation', 1, `tenant_id = '${admin}' and user_id = '${admin}'`)}
+${assertStatementDenied(`insert into public.url_reputation(tenant_id, user_id, url, is_malicious) values ('${admin}', '${admin}', 'https://rls-${marker}.invalid/personal', false)`, 'personal clean URL insert')}
 reset role;
 
--- A current member can access the selected tenant and own new records.
+-- A current member reads their tenant, but cannot add a fresh clean URL entry.
 insert into public.tenant_members(tenant_id, user_id, role) values ('${tenantB}', '${a}', 'member');
 ${context(a, tenantB)}
-${scopedTables.map((table) => assertCount(table, 1)).join('\n')}
-insert into public.url_reputation(tenant_id, user_id, url) values ('${tenantB}', '${a}', '${memberUrl}');
-insert into public.file_reputation(tenant_id, user_id, sha256) values ('${tenantB}', '${a}', '${memberSha}');
-${assertOneRowChanged(`delete from public.url_reputation where tenant_id = '${tenantB}' and url = '${memberUrl}'`, 'member own URL delete')}
-${assertOneRowChanged(`delete from public.file_reputation where tenant_id = '${tenantB}' and sha256 = '${memberSha}'`, 'member own file delete')}
+${assertAuthenticatedReads(1)}
+${assertStatementDenied(`insert into public.url_reputation(tenant_id, user_id, url, is_malicious) values ('${tenantB}', '${a}', '${memberUrl}', false)`, 'member clean URL insert')}
+${assertStatementDenied(`insert into public.file_reputation(tenant_id, user_id, sha256) values ('${tenantB}', '${a}', '${memberSha}')`, 'member file insert')}
+${assertStatementDenied(`delete from public.url_reputation where tenant_id = '${tenantB}' and url = '${url}'`, 'member URL delete')}
+${assertStatementDenied(`delete from public.file_reputation where tenant_id = '${tenantB}' and sha256 = '${sha}'`, 'member file delete')}
 reset role;
 
 -- An expired membership must fail immediately with the same JWT.
 update public.tenant_members set expires_at = now() - interval '1 second'
 where tenant_id = '${tenantB}' and user_id = '${a}';
 ${context(a, tenantB)}
-${scopedTables.map((table) => assertCount(table, 0)).join('\n')}
+${assertAuthenticatedReads(0)}
 ${assertInsertDenied('url_reputation', `https://rls-${marker}.invalid/expired`)}
 ${assertInsertDenied('file_reputation', marker.padEnd(64, 'f'))}
 reset role;
@@ -257,14 +329,14 @@ reset role;
 -- Deleting the membership is also immediate; no JWT refresh is needed.
 delete from public.tenant_members where tenant_id = '${tenantB}' and user_id = '${a}';
 ${context(a, tenantB)}
-${scopedTables.map((table) => assertCount(table, 0)).join('\n')}
+${assertAuthenticatedReads(0)}
 reset role;
 
 -- Tenant suspension blocks even its owner. The service role retains its
 -- operational access for controlled offboarding/recovery.
 update public.tenants set status = 'suspended' where id = '${tenantB}';
 ${context(b, tenantB)}
-${scopedTables.map((table) => assertCount(table, 0)).join('\n')}
+${assertAuthenticatedReads(0)}
 ${assertInsertDenied('url_reputation', `https://rls-${marker}.invalid/suspended`)}
 ${assertInsertDenied('file_reputation', marker.padEnd(64, '1'))}
 reset role;
@@ -272,7 +344,10 @@ set role service_role;
 ${scopedTables.map((table) => assertCount(table, 1)).join('\n')}
 insert into public.url_reputation(tenant_id, user_id, url)
   values ('${tenantB}', '${b}', 'https://rls-${marker}.invalid/service-role');
+insert into public.file_reputation(tenant_id, user_id, sha256)
+  values ('${tenantB}', '${b}', '${memberSha}');
 ${assertCount('url_reputation', 1, `tenant_id = '${tenantB}' and url = 'https://rls-${marker}.invalid/service-role'`)}
+${assertCount('file_reputation', 1, `tenant_id = '${tenantB}' and sha256 = '${memberSha}'`)}
 reset role;
 rollback;
 select 'RLS_TEST_ROLLBACK';
@@ -285,4 +360,4 @@ const result = spawnSync('docker', [
 if (result.error) throw result.error;
 assert.equal(result.status, 0, `PostgreSQL RLS regression failed:\n${result.stdout}\n${result.stderr}`);
 assert.match(result.stdout, /RLS_TEST_ROLLBACK/);
-console.log(`PostgreSQL RLS regression passed (${installed ? 'installed' : 'before/after'}): 11 table reads, cross-tenant and forged-claim reputation writes, API-key/enrollment writes, expired/removed members, tenant suspension, personal fallback, owner/admin/member, service_role read/write; transaction rolled back (${container}). Existing customer rows and PostgREST HTTP remain separate field acceptance checks.`);
+console.log(`PostgreSQL RLS regression passed (${installed ? 'installed' : 'before/after'}): 11 resource boundaries, cross-tenant and forged-claim reputation writes, API-key/enrollment writes, expired/removed members, tenant suspension, personal fallback, owner/admin/member, service_role read/write; transaction rolled back (${container}). Existing customer rows and PostgREST HTTP remain separate field acceptance checks.`);

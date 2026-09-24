@@ -10,6 +10,8 @@ const sql = await readFile(migrationPath, "utf8");
 // phase list was extended" from "the shipped migration was edited".
 const cacheMigrationPath = "supabase/migrations/20260913000006_tenant_cache_invalidation_offboarding.sql";
 const cacheSql = await readFile(cacheMigrationPath, "utf8");
+const playbookOffboardingMigrationPath = "supabase/migrations/20260923000012_fleet_response_playbook_offboarding.sql";
+const playbookOffboardingSql = await readFile(playbookOffboardingMigrationPath, "utf8");
 
 test("retention policy covers ten explicit data classes and excludes backups", () => {
 	const classes = [
@@ -102,3 +104,21 @@ test("a cache invalidation phase exists and records a receipt", () => {
 	assert.doesNotMatch(cacheSql, /covers_backups\s*=\s*true/);
 });
 
+test("playbook deletion is receipted before fleet commands without rewriting shipped migrations", () => {
+	assert.doesNotMatch(sql, /fleet_response_playbook/);
+	assert.match(playbookOffboardingSql, /values\s*\(new\.id,40,'fleet_response_playbook_steps','security_audit','delete_records'/);
+	assert.match(playbookOffboardingSql, /\(new\.id,41,'fleet_response_playbook_runs','security_audit','delete_records'/);
+	assert.match(playbookOffboardingSql, /\(40,'fleet_response_playbook_steps'\)[\s\S]+\(41,'fleet_response_playbook_runs'\)/);
+	assert.match(playbookOffboardingSql, /\(new\.id,42,'fleet_response_commands'/);
+	assert.match(playbookOffboardingSql, /values \(new\.id, 43, 'tenant_cache'/);
+	assert.match(playbookOffboardingSql, /\(new\.id, 44, 'dlp_policy_revisions'/);
+	assert.match(playbookOffboardingSql, /\(new\.id, 45, 'tenant_dlp_policies'/);
+	assert.match(playbookOffboardingSql, /where r\.status<>'completed'/);
+	assert.match(playbookOffboardingSql, /order by p\.run_id, p\.phase_order desc[\s\S]+set phase_order = phase_order \+ 2/);
+	assert.match(playbookOffboardingSql, /completed_offboarding_has_fleet_response_playbook_data/);
+	assert.match(playbookOffboardingSql, /completed_fleet_phase_has_playbook_data/);
+	assert.match(playbookOffboardingSql, /unexpected_inflight_offboarding_phase_order/);
+	assert.match(playbookOffboardingSql, /when ''fleet_response_playbook_steps'' then ''public\.fleet_response_playbook_steps''/);
+	assert.match(playbookOffboardingSql, /app\.aidr_playbook_offboarding_run_id/);
+	assert.match(playbookOffboardingSql, /fleet_response_playbook_offboarding_residue/);
+});

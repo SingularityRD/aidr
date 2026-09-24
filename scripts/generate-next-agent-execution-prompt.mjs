@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 const featureInventory = JSON.parse(readFileSync("FEATURE_INVENTORY.json", "utf8"));
 const gapRegistry = JSON.parse(readFileSync("PRODUCTION_SALES_GAPS.json", "utf8"));
 const backlog = JSON.parse(readFileSync("READINESS_BACKLOG.json", "utf8"));
-const output = "docs/production-readiness/next-agent-execution-prompt-v8.md";
+const output = process.env.AIDR_NEXT_AGENT_PROMPT ?? ".release-evidence/next-agent-execution-prompt-v8.md";
 
 const incompleteFeatures = featureInventory.features.filter((feature) => feature.status !== "wired");
 const unresolvedBacklog = backlog.findings.filter((finding) => finding.status !== "VERIFIED_CLOSED");
@@ -47,7 +48,7 @@ Bitmiş sayılmak için aynı anda şunlar doğru olmalıdır:
 
 ## Otorite ve çalışma kuralları
 
-1. Başlamadan önce şu dosyaları oku ve birbirleriyle uzlaştır: \`PRODUCTION_SALES_GAPS.json\`, \`FEATURE_INVENTORY.json\`, \`READINESS_BACKLOG.json\`, \`docs/production-readiness/commercial-go-evidence-registry.json\`, \`docs/production-readiness/2026-09-13-customer-candidate-v7.md\`, \`deploy/FIRST_CUSTOMER.md\`, \`deploy/RESOURCE_REQUIREMENTS.md\`, \`docs/production-readiness/market-capability-delta-2026-09-13.md\` ve \`package.json\` scripts.
+1. Başlamadan önce şu dosyaları oku ve birbirleriyle uzlaştır: \`PRODUCTION_SALES_GAPS.json\`, \`FEATURE_INVENTORY.json\`, \`READINESS_BACKLOG.json\`, \`docs/production-readiness/commercial-go-evidence-registry.json\`, \`deploy/FIRST_CUSTOMER.md\`, \`deploy/RESOURCE_REQUIREMENTS.md\`, \`docs/production-readiness/market-capability-delta-2026-09-13.md\` ve \`package.json\` scripts.
 2. Çalıştırılabilir kod ve test sonucu doküman iddiasından üstündür. Generated dosyaları doğrudan elle düzeltme; ilgili jeneratörü düzeltip yeniden üret.
 3. Çalışma ağacını ve bütün submodule'leri başlamadan kaydet. Başkasının değişikliğini geri alma. \`git reset --hard\`, \`git clean\`, toplu checkout, stash, rebase veya zorla silme yapma. Kullanıcı bu çalışma için atomik commitlere açıkça izin verdi: her doğrulanmış, tek amaçlı workstreami atomik commit et; ilgisiz/kirli dosyaları dahil etme. Push, merge, tag veya release publish için ayrıca açık yetki gerekir.
 4. Fail-closed davranışı koru. Hata, timeout, bozuk cevap, eksik telemetry, eski receipt veya doğrulanamayan kimliği clean/success/protected olarak gösterme.
@@ -159,16 +160,23 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 
 `;
 
-const taskSection = gapRegistry.engineering_and_operations.map((task) => `#### ${task.id} — ${task.title} [${task.priority}; ${task.status}]
+const taskSection = gapRegistry.engineering_and_operations.map((task) => {
+	const migrationEvidence = task.id === "T28"
+		? "Tarihsel v6 adayında 33/33 migration ile self-hosted prova kaydı var. v8 aday raporu migration kapısında 34 migrationın benzersiz/sıralı olduğunu kaydeder, ancak yeni canlı self-hosted ölçüm üretilmediğini açıkça söyler. Bu nedenle tarihsel prova güncel aday kanıtı değildir; FCR-03 uyarınca donmuş/imzalı adaydan hem self-hosted hem managed-cloud yollarda gerçek migration ve uçtan uca kurulum provasını yeniden yap."
+		: null;
+	const statusLabel = migrationEvidence ? "Kanıt sınırı" : "Güncel yerel durum";
+	const localStatus = migrationEvidence ?? task.implementation_update ?? task.initial_current;
+	return `#### ${task.id} — ${task.title} [${task.priority}; ${task.status}]
 
 - İlgili özellikler: ${task.feature_ids.join(", ")}
 - Kaynak: ${task.source_paths.join(", ")}
-- Güncel yerel durum: ${task.implementation_update ?? task.initial_current}
+- ${statusLabel}: ${localStatus}
 - Başlangıç riski: ${task.initial_gap}
 - Tamamlama hedefi: ${task.implementation}
 - Zorunlu kapanış testi: ${task.acceptance}
 - Dış bağımlılık/sınır: ${task.dependencies}
-`).join("\n");
+`;
+}).join("\n");
 
 const backlogHeader = `
 ### Faz 4 — Açık readiness backlog
@@ -271,7 +279,7 @@ Kapıları bu sırada ve ayrı loglarla çalıştır. Bir kapı başarısızsa k
 23. \`pnpm verify:fleet:windows\` ve \`pnpm verify:fleet:unix\` çalıştır; mevcut olmayan OS/MDM hostunu başarı sayma.
 24. \`pnpm verify:monitoring\`, \`pnpm verify:upgrade\`, \`pnpm verify:support-bundle\`, \`pnpm verify:load\`, \`pnpm verify:release-signing\`, \`pnpm verify:backup-offsite\` ve \`pnpm verify:offboarding\` kapılarını ayrı loglarla çalıştır.
 25. \`pnpm verify:customer-onboarding\` ve \`pnpm test:customer-demo\` ile ilk kullanıcının empty-state, install, policy, incident, response, export ve support yolunu doğrula.
-26. Generatorları ikinci kez çalıştır ve \`git diff --exit-code -- FEATURE_INVENTORY.json FEATURE_INVENTORY.md PRODUCTION_SALES_GAPS.json PRODUCTION_SALES_GAPS.md READINESS_BACKLOG.json\` ile deterministik olduklarını kanıtla.
+26. \`node scripts/check-generator-determinism.mjs\` ile feature inventory ve sales-gap generatorlarının ikişer koşuda aynı, generator-owned çıktılar verdiğini doğrula; \`node scripts/validate-backlog.mjs\` ile manuel tutulan \`READINESS_BACKLOG.json\` kanıt ve tutarlılık kurallarını denetle. Backlog dosyasını generated-output diff'ine dahil etme.
 27. Paketleri boş temporary dizin ve boş \`PATH\` senaryosunda kur; bütün declared \`bin\`/exports/assets, license, notice, version ve platform dosyalarının bulunduğunu doğrula.
 28. Candidate freeze sonrası bütün zorunlu kapıları yeniden çalıştır. Testten sonra source, lockfile, generated registry veya release içeriği değiştiyse digest'i yenile ve bütün candidate-bound kapıları tekrar çalıştır.
 
@@ -293,9 +301,9 @@ Sonuçları \`.release-evidence/v8-resource-profile-*.json\`, \`.release-evidenc
 ## Üretilecek teslimatlar
 
 1. Uygulama ve test değişiklikleri.
-2. Güncellenmiş generatorlar ve yeniden üretilmiş \`FEATURE_INVENTORY.json/.md\`, \`PRODUCTION_SALES_GAPS.json/.md\`, \`READINESS_BACKLOG.json\`.
-3. \`docs/production-readiness/2026-09-13-customer-candidate-v8.md\`: karar, değişiklikler, bütün komut/exit code/test sayıları, coverage, açık sınırlar, kaynak ölçümü ve candidate digest.
-4. Güncel \`first-customer-sales-packet-v8.md\`, destek/incident/runbook bağlantıları ve market capability delta.
+2. Güncellenmiş generatorlar ve yeniden üretilmiş \`FEATURE_INVENTORY.json/.md\` ile \`PRODUCTION_SALES_GAPS.json/.md\`; manuel kaynak olan \`READINESS_BACKLOG.json\`'ı yalnız kanıtlı olarak güncelle ve \`node scripts/validate-backlog.mjs\` ile doğrula.
+3. CI artifact olarak üretilen evidence index: karar, bütün komut/exit code/test sayıları, coverage, açık sınırlar, kaynak ölçümü ve candidate digest.
+4. Gerekiyorsa güncellenmiş \`first-customer-sales-packet-v8.md\`, destek/incident/runbook bağlantıları ve market capability delta.
 5. Benzersiz v8 release-output, portable customer kit ve outer envelope. Resmi key yoksa imzasız olduğu açıkça yazılmalı.
 6. Makine okunur evidence index: her gate için komut, start/end UTC, exit code, log hash'i, candidate digest, status ve limitation.
 
@@ -320,5 +328,6 @@ Final cevapta şu sırayı kullan:
 Başarı ölçütü daha çok dosya değiştirmek değil; satılan davranışın gerçek consumer'da çalışması, hatada güvenli kalması ve her iddianın doğru kanıt sınırıyla raporlanmasıdır.
 `;
 
+mkdirSync(dirname(output), { recursive: true });
 writeFileSync(output, `${header}${featureSection}${taskHeader}${taskSection}${backlogHeader}${backlogSection}${externalHeader}${externalSection}${footer}`, "utf8");
 console.log(`Wrote ${output}: ${incompleteFeatures.length} incomplete features, ${gapRegistry.engineering_and_operations.length} technical tasks, ${unresolvedBacklog.length} backlog findings, ${gapRegistry.commercial_and_external.length} external gates.`);
