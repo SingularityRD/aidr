@@ -134,6 +134,10 @@ verify_jwt = false
 verify_jwt = true
 [functions.team-invite]
 verify_jwt = true
+[functions.tenant-settings]
+# Workspace rename, retention and closure. The handler repeats session, identity
+# barrier, membership/role and AAL2 checks, and the RPCs re-check under locks.
+verify_jwt = true
 [functions.oauth-callback]
 verify_jwt = true
 [functions.audit-export]

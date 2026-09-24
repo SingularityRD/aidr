@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
-import { type TeamMember, type TeamRole, useTeam } from "./team-provider";
+import {
+	type InvitationDelivery,
+	readInvitationDelivery,
+	type TeamMember,
+	type TeamRole,
+	useTeam,
+} from "./team-provider";
 
 const ROLE_LABELS: Record<TeamRole, string> = {
 	owner: "Owner",
@@ -50,6 +56,28 @@ function isPendingInvitation(value: unknown): value is PendingInvitation {
 		typeof row.expires_at === "string" &&
 		Number.isFinite(Date.parse(row.expires_at))
 	);
+}
+
+/**
+ * Operator copy for a confirmed invitation. Email delivery is claimed only when
+ * the service reported that the mail provider accepted the message.
+ */
+function invitationStatus(
+	action: "create" | "resend",
+	email: string,
+	result: InvitationDelivery,
+): string {
+	const lead =
+		action === "create" ? `Invitation created for ${email}.` : `Link replaced for ${email}.`;
+	if (result.delivery === "email") {
+		return action === "create"
+			? `${lead} An invitation email with a single-use link was sent to that address.`
+			: `${lead} A new invitation email was sent; the previous link no longer works.`;
+	}
+	const share = action === "create" ? "Share the link below" : "Share the new link below";
+	return result.emailFailed
+		? `${lead} The invitation email could not be delivered. ${share}.`
+		: `${lead} ${share}; no email was sent.`;
 }
 
 function memberLabel(member: TeamMember): string {
@@ -163,11 +191,11 @@ export function AdminPanel() {
 		setInviteLink("");
 
 		try {
-			const link = await inviteMember(inviteEmail.trim(), inviteRole);
-			setInviteLink(link);
+			const result = await inviteMember(inviteEmail.trim(), inviteRole);
+			if (result.delivery === "manual") setInviteLink(result.inviteUrl);
 			setStatus({
 				tone: "success",
-				message: `Invitation created for ${inviteEmail}. Share the link below; no email was sent.`,
+				message: invitationStatus("create", inviteEmail, result),
 			});
 			setInviteEmail("");
 			void loadInvitations();
@@ -204,20 +232,11 @@ export function AdminPanel() {
 			if (error || data?.ok !== true || data.invitation_id !== invitation.id)
 				throw new Error("Invitation change was not confirmed.");
 			if (action === "resend") {
-				if (typeof data.invite_url !== "string")
-					throw new Error("The invitation service returned no shareable link.");
-				const link = new URL(data.invite_url);
-				if (
-					link.origin !== window.location.origin ||
-					link.pathname !== "/enterprise" ||
-					!link.searchParams.get("invite")
-				) {
-					throw new Error("The invitation service returned an invalid link.");
-				}
-				setInviteLink(link.toString());
+				const result = readInvitationDelivery(data);
+				if (result.delivery === "manual") setInviteLink(result.inviteUrl);
 				setStatus({
 					tone: "success",
-					message: `Link replaced for ${invitation.email}. Share the new link below; no email was sent.`,
+					message: invitationStatus("resend", invitation.email, result),
 				});
 			} else {
 				setStatus({ tone: "success", message: `Invitation revoked for ${invitation.email}.` });
@@ -505,6 +524,10 @@ export function AdminPanel() {
 							</button>
 						</div>
 						<p className="muted small">{ROLE_DESCRIPTIONS[inviteRole]}</p>
+						<p className="muted small">
+							When this deployment has invitation email configured, the invitee receives a
+							single-use link by email. Otherwise the link is shown here once for you to share.
+						</p>
 						{inviteLink && (
 							<label>
 								Invitation link

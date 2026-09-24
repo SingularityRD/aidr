@@ -840,6 +840,7 @@ describe("Dashboard integration", () => {
 	});
 
 	it("renders settings and signs out through the Supabase client", async () => {
+		mockSelectedTeam();
 		render(
 			<MemoryRouter>
 				<ThemeProvider>

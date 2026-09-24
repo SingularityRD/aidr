@@ -82,7 +82,11 @@
     },
     "team-invite": {
       "owner": "Identity Engineering",
-      "tests": ["supabase/functions/__tests__/team-invite-contract.test.ts"]
+      "tests": ["supabase/functions/__tests__/team-invite-contract.test.ts", "supabase/functions/__tests__/mailer.test.ts"]
+    },
+    "tenant-settings": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/tenant-settings-contract.test.ts"]
     }
   }
 }
