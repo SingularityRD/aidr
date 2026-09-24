@@ -39,7 +39,7 @@ vi.mock("../bundled-dirs.js", () => ({
 		threatsDir: resolve(import.meta.dirname, "..", "..", "..", "..", "threats"),
 		allowlistsDir: resolve(import.meta.dirname, "..", "..", "..", "..", "allowlists"),
 	}),
-	getSageVersion: () => "0.0.0",
+	getAidrVersion: () => "0.0.0",
 }));
 
 interface RegisteredTool {

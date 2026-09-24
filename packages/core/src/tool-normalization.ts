@@ -1,3 +1,4 @@
+import { commandFromValue } from "./command-argv.js";
 import type { ToolEvaluationRequest } from "./evaluator.js";
 import { extractFromToolCall } from "./extractors.js";
 import { isPackageManifestPath } from "./package-extractor.js";
@@ -83,6 +84,23 @@ const EDIT_CONTENT_ALIASES = [
 	"text",
 	"data",
 ] as const;
+
+/**
+ * Turn argv-array shell commands into the command string the core inspects,
+ * in place, for `command` and its aliases. Returns false when any present
+ * command field is neither a string nor a well-formed argv: the executed
+ * command is then unknowable and the evaluator must deny.
+ */
+function normalizeCommandFields(input: Record<string, unknown>): boolean {
+	let wellFormed = true;
+	for (const key of ["command", ...BASH_COMMAND_ALIASES]) {
+		if (input[key] === undefined) continue;
+		const result = commandFromValue(input[key]);
+		if (result.ok) input[key] = result.command;
+		else wellFormed = false;
+	}
+	return wellFormed;
+}
 
 /** Conflicting populated aliases make it unknowable which value the host executes. */
 function hasConflictingStringAliases(
@@ -518,6 +536,9 @@ export function normalizeToolEvaluationRequest(
 
 	switch (toolName) {
 		case "Bash":
+			if (!normalizeCommandFields(toolInput)) {
+				toolInput.__aidr_malformed_command = true;
+			}
 			if (hasConflictingStringAliases(toolInput, ["command", ...BASH_COMMAND_ALIASES])) {
 				toolInput.__aidr_input_normalization_failed = true;
 			}

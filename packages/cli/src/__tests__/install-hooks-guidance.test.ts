@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Environment } from "../utils/config-manager.js";
 
 const testHome = mkdtempSync(join(tmpdir(), "aidr-hook-guidance-"));
-vi.mock("@singularityrd/aidr-core", () => ({ resolvePath: () => testHome }));
+vi.mock("@singularityrd/aidr-core", () => ({ resolvePath: () => testHome, VERSION: "9.8.7" }));
 vi.mock("../utils/config-manager.js", () => ({ updateConfig: vi.fn() }));
 
 const { installHooks } = await import("../utils/install-hooks.js");
@@ -14,7 +14,7 @@ const { updateConfig } = await import("../utils/config-manager.js");
 afterAll(() => rmSync(testHome, { recursive: true, force: true }));
 
 describe("setup guidance for detected hosts", () => {
-	it.each(["opencode", "codex"] as const)(
+	it.each(["openclaw", "opencode", "codex"] as const)(
 		"keeps %s protection inactive until its connector is installed",
 		async (agent) => {
 			const env: Environment = {
@@ -33,10 +33,15 @@ describe("setup guidance for detected hosts", () => {
 			if (agent === "codex") {
 				expect(guidance).toMatch(/\[\[hooks\.PreToolUse\]\]\n\s+matcher =/);
 				expect(guidance).toMatch(/\[\[hooks\.PreToolUse\.hooks\]\]\n\s+type = "command"/);
+				expect(guidance).toContain("@singularityrd/aidr-codex@9.8.7");
+			} else if (agent === "openclaw") {
+				expect(guidance).toContain("npm:@singularityrd/aidr-openclaw@9.8.7");
 			} else {
-				expect(guidance).toContain('"dependencies":{"@singularityrd/aidr-opencode":"VERSION"}');
+				expect(guidance).toContain('"dependencies":{"@singularityrd/aidr-opencode":"9.8.7"}');
 				expect(guidance).toContain('"plugin":["@singularityrd/aidr-opencode"]');
 			}
+			// No literal placeholder may reach the user: the real version is printed.
+			expect(guidance).not.toMatch(/\bVERSION\b/);
 			expect(updateConfig).toHaveBeenCalledWith({ hooksInstalled: false });
 		},
 	);

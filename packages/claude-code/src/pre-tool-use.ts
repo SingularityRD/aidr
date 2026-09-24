@@ -2,10 +2,11 @@
 /**
  * Singularity AIDR PreToolUse hook entry point.
  * Reads tool call JSON from stdin, checks for threats, outputs verdict JSON to stdout.
- * Always exits 0. Input and hook failures emit a deny verdict.
+ * Always exits 0. Input and hook failures emit a deny verdict, and so does an
+ * evaluation that outlives the internal deadline (a host-side hook timeout
+ * would otherwise let the call through uninspected).
  */
 
-import { readFileSync } from "node:fs";
 import {
 	type Artifact,
 	createHostObservation,
@@ -22,6 +23,11 @@ import { addPendingApproval } from "./approval-tracker.js";
 import { resolveAssetDir } from "./assets.js";
 import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
 import { formatBlockReason } from "./format.js";
+import {
+	MAX_PRE_TOOL_INPUT_BYTES,
+	readBoundedJson,
+	resolvePreToolUseDeadlineMs,
+} from "./hook-input.js";
 
 // Initialize Sentry
 initSentry({ name: "aidr-claude-code-pre-tool-use" });
@@ -59,37 +65,80 @@ function makeResponse(verdict: Verdict): Record<string, unknown> {
 	};
 }
 
-/** Fixed protocol response: never echo malformed input or exception details. */
+/**
+ * The hook answers exactly once. After the deadline deny has been written, a
+ * late evaluation result must not append a second (possibly allowing) response.
+ */
+let responded = false;
+
+function respond(response: Record<string, unknown>, onWritten?: () => void): boolean {
+	if (responded) return false;
+	responded = true;
+	const line = `${JSON.stringify(response)}\n`;
+	if (onWritten) process.stdout.write(line, onWritten);
+	else process.stdout.write(line);
+	return true;
+}
+
+/** Fixed deny response: never echo malformed input or exception details. */
+function denyResponse(systemMessage: string, reason: string): Record<string, unknown> {
+	return {
+		systemMessage,
+		hookSpecificOutput: {
+			hookEventName: "PreToolUse",
+			permissionDecision: "deny",
+			permissionDecisionReason: reason,
+		},
+	};
+}
+
 function writeInspectionFailure(): void {
-	process.stdout.write(
-		`${JSON.stringify({
-			systemMessage: "Singularity AIDR could not inspect this tool call. The action was blocked.",
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason: "Singularity AIDR inspection unavailable",
-			},
-		})}\n`,
+	respond(
+		denyResponse(
+			"Singularity AIDR could not inspect this tool call. The action was blocked.",
+			"Singularity AIDR inspection unavailable",
+		),
 	);
 }
 
-function parseToolCall(rawInput: string): Record<string, unknown> | null {
-	try {
-		const parsed: unknown = JSON.parse(rawInput);
-		if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-		const fields = parsed as Record<string, unknown>;
-		if (
-			typeof fields.tool_name !== "string" ||
-			fields.tool_name.trim() === "" ||
-			(fields.tool_input != null &&
-				(typeof fields.tool_input !== "object" || Array.isArray(fields.tool_input)))
-		) {
-			return null;
-		}
-		return fields;
-	} catch {
+function parseToolCall(parsed: unknown): Record<string, unknown> | null {
+	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+	const fields = parsed as Record<string, unknown>;
+	if (
+		typeof fields.tool_name !== "string" ||
+		fields.tool_name.trim() === "" ||
+		(fields.tool_input != null &&
+			(typeof fields.tool_input !== "object" || Array.isArray(fields.tool_input)))
+	) {
 		return null;
 	}
+	return fields;
+}
+
+/**
+ * Read and validate the hook payload from stdin under the byte ceiling. On any
+ * failure the fixed deny response has already been written and null returned.
+ */
+function readToolCall(): Record<string, unknown> | null {
+	let input: ReturnType<typeof readBoundedJson>;
+	try {
+		input = readBoundedJson(0, MAX_PRE_TOOL_INPUT_BYTES);
+	} catch {
+		writeInspectionFailure();
+		return null;
+	}
+	if (input.status === "oversized") {
+		respond(
+			denyResponse(
+				`Singularity AIDR could not inspect this tool call: its input exceeded the ${MAX_PRE_TOOL_INPUT_BYTES}-byte inspection limit. The action was blocked.`,
+				"Singularity AIDR input too large to inspect",
+			),
+		);
+		return null;
+	}
+	const toolCall = input.status === "parsed" ? parseToolCall(input.value) : null;
+	if (!toolCall) writeInspectionFailure();
+	return toolCall;
 }
 
 async function main(): Promise<void> {
@@ -99,19 +148,8 @@ async function main(): Promise<void> {
 		logger,
 	});
 
-	let rawInput: string;
-	try {
-		rawInput = readFileSync(0, "utf-8");
-	} catch {
-		writeInspectionFailure();
-		return;
-	}
-
-	const toolCall = parseToolCall(rawInput);
-	if (!toolCall) {
-		writeInspectionFailure();
-		return;
-	}
+	const toolCall = readToolCall();
+	if (!toolCall) return;
 
 	const toolName = toolCall.tool_name as string;
 	const toolInput = (toolCall.tool_input ?? {}) as Record<string, unknown>;
@@ -131,6 +169,8 @@ async function main(): Promise<void> {
 			...provisionedDetectors,
 		},
 	);
+	// The deadline already denied this call; do not record approvals for it.
+	if (responded) return;
 
 	// Only track approvals for allowlistable types (content varies per call, not meaningful to allowlist)
 	if (verdict.decision === "ask" && toolUseId) {
@@ -155,7 +195,7 @@ async function main(): Promise<void> {
 		}
 	}
 
-	process.stdout.write(`${JSON.stringify(makeResponse(verdict))}\n`);
+	if (!respond(makeResponse(verdict))) return;
 
 	// Native-host acceptance observation. Outside a gate run this is a no-op:
 	// the gate's environment contract is absent, so nothing is written. Inside
@@ -170,6 +210,26 @@ async function main(): Promise<void> {
 	});
 }
 
-main().catch(() => {
-	writeInspectionFailure();
-});
+// Internal deadline, shorter than the host's hook timeout: a hung evaluation
+// (e.g. a stalled reputation lookup) is denied instead of being killed by the
+// host, which would let the call through uninspected.
+const deadline = setTimeout(() => {
+	const wrote = respond(
+		denyResponse(
+			"Singularity AIDR could not finish inspecting this tool call in time. The action was blocked.",
+			"Singularity AIDR inspection timed out",
+		),
+		// Pending evaluation work may keep the event loop alive past the host
+		// timeout; the deny is on stdout, so exit once it has been flushed.
+		() => process.exit(0),
+	);
+	if (!wrote) process.exit(0);
+}, resolvePreToolUseDeadlineMs(process.env));
+
+main()
+	.catch(() => {
+		writeInspectionFailure();
+	})
+	.finally(() => {
+		clearTimeout(deadline);
+	});

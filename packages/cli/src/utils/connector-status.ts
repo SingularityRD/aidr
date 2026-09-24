@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { resolvePath } from "@singularityrd/aidr-core";
+import { resolvePath, VERSION } from "@singularityrd/aidr-core";
 
 /**
  * Detect whether a connector is actually installed for each supported runtime.
@@ -224,7 +224,7 @@ function detectOpenClaw(home: string): ConnectorStatus {
 			state: "runtime_present_not_installed",
 			detail: "~/.openclaw/openclaw.json exists but does not list AIDR",
 			evidence,
-			remedy: "Install the approved version: openclaw plugins install npm:@singularityrd/aidr-openclaw@VERSION (replace VERSION with the exact approved release version)",
+			remedy: `Install the approved version: openclaw plugins install npm:@singularityrd/aidr-openclaw@${VERSION} (${VERSION} matches this CLI; confirm it against the approved release record)`,
 		};
 	}
 	return {

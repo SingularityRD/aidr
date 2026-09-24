@@ -110,12 +110,25 @@ server.registerTool(
 				return textResult(`${label} not found in the allowlist.`);
 			}
 
-			await saveAllowlist(allowlist, config.allowlist, logger);
+			// saveAllowlist reports a failed write by returning false; claiming the
+			// removal succeeded would tell the user checks are restored when the
+			// entry is still on disk and still bypassing them.
+			const saved = await saveAllowlist(allowlist, config.allowlist, logger);
+			if (!saved) {
+				return textResult(
+					`Failed to remove ${label} from the Singularity AIDR allowlist: the allowlist could not be saved. The entry is still allowlisted.`,
+					true,
+				);
+			}
 			return textResult(
 				`Removed ${label} from Singularity AIDR allowlist. Security checks will apply to this ${label} again.`,
 			);
 		} catch (e) {
-			return textResult(`Failed to remove from allowlist: ${e}`, true);
+			// Never echo the raw error: it can carry filesystem paths or input text.
+			logger.error("Allowlist removal failed", {
+				errorType: e instanceof Error ? e.name : typeof e,
+			});
+			return textResult("Failed to remove from allowlist: an internal error occurred.", true);
 		}
 	},
 );
