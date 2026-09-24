@@ -48,7 +48,7 @@ async function command(root, env = {}) {
 		migrations: [{ name: "20260922000000_fixture.sql", sha256: sha256("migrations/20260922000000_fixture.sql") }],
 		artifacts: ["auth-templates/recovery.html", "backup/timer.service", "dashboard/index.html", "ingress/proxy.conf", "maintenance/readiness.service", "volumes/functions/index.ts"].map((path) => ({ path, sha256: sha256(path) })),
 	}));
-	await writeFile(key, `${"ab".repeat(32)}\n`);
+	await writeFile(key, `${"ab".repeat(32)}\n`, { mode: 0o600 });
 	await hardenRecoveryKeyFile(key);
 	const fake = await fakeCommands(root);
 	const state = join(root, "docker.state");

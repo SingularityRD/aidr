@@ -211,6 +211,27 @@ aidr/
 | zod | ^3.24 | Schema validation |
 | yaml | ^2.7 | YAML parsing |
 
+### Node.js versions in CI
+
+`.github/workflows/ci.yml` pins every Node line it tests in its top-level `env`:
+
+| Line | Where it runs | Why |
+|------|---------------|-----|
+| `NODE_VERSION` 22.12.0 | Quality gate (lint, types, every unit/integration suite, release build), Browser Guard, Helm, workflow lint | Minimum supported engine (`engines.node` in the root `package.json`) |
+| `NODE_24_VERSION` 24.12.0 | Second leg of the core build + test matrix; the on-prem deployment job | On-prem runtime line: the dashboard image is `node:24.12.0`, esbuild targets `node24`, and `deployment-doctor.mjs` refuses hosts older than Node 24 |
+| `PRIVACY_NODE_VERSION` 22.16.0 | `packages/privacy` build/tests and the privacy rule drift gate | `engines.node` floor of `@singularityrd/aidr-privacy` |
+
+The core matrix (`core-node-matrix`) runs the same build and suite on 22.12.0 and
+24.12.0, so a change that only works on one line fails CI. Raise a floor by
+changing the `env` value, the matrix literal and the `engines` field together;
+`scripts/ci-workflows.test.mjs` fails when they disagree.
+
+Every job that runs tests records the agent configuration files an installer can
+write under the runner's real home (`~/.claude/settings.json`, `~/.cursor/hooks.json`,
+`~/.codex/*`, ...) before the tests and fails if any of them changed afterwards
+(`scripts/verify-real-home-untouched.mjs`). Tests must stub `HOME` and
+`USERPROFILE` to a temporary directory, as the hook-installer suites do.
+
 ## Conventions
 
 - **Naming split:** YAML/JSON data uses `snake_case` (`threat_id`, `source_file`). TypeScript uses `camelCase` (`threatId`, `sourceFile`). Conversion functions handle the boundary.
@@ -233,6 +254,16 @@ This project uses [Changesets](https://github.com/changesets/changesets) with **
 **Non-standard manifest sync:** Changesets only knows about `package.json` files. The `pnpm run version` script automatically runs `scripts/sync-manifests.mjs` after `changeset version` to propagate versions to `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `packages/openclaw/openclaw.plugin.json`.
 
 **Pre-commit hook:** A `changeset-check` pre-commit hook warns when staged files affect shipped artifacts (source code, threat definitions, allowlists, hooks, skills, plugin manifests) without a corresponding changeset. Bypass with `git commit --no-verify`.
+
+**Browser Guard releases** are versioned separately from the connector packages.
+Pushing a protected, PGP-signed annotated tag `browser-guard-vX.Y.Z` (matching
+`packages/browser-guard/package.json`) runs `.github/workflows/release-browser-guard.yml`:
+unit tests, the real-browser E2E, two release builds that must produce identical
+zips, `SHA256SUMS`, a build-provenance attestation and a **draft** GitHub release.
+The workflow reads only the tag-signing secrets (`RELEASE_TAG_PGP_PUBLIC_KEY`,
+`RELEASE_TAG_PGP_FINGERPRINT`) from the `browser-guard-release` environment; store
+submission (Chrome Web Store, Edge Add-ons, AMO) stays a manual step with no store
+credentials in CI.
 
 ## Building the Extension
 

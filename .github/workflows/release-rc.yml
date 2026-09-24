@@ -302,7 +302,7 @@ jobs:
           set -euo pipefail
           if find packages/core/dist packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
             packages/openclaw/dist packages/opencode/dist packages/cli/dist packages/sdk/dist \
-            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist \
             -name '.env*' -print -quit | grep -q .; then
             echo "Release inputs contain a forbidden .env* path." >&2
             exit 1
@@ -312,7 +312,7 @@ jobs:
             .release-evidence/aidr-sbom.cdx.json.sha256 \
             packages/core/dist packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
             packages/openclaw/dist packages/opencode/dist packages/cli/dist \
-            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
+            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist
 
       - name: Upload unsigned release inputs (pinned)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -484,7 +484,7 @@ jobs:
           artifact_dirs=(
             packages/core/dist packages/claude-code/dist packages/extension/dist
             packages/openclaw/dist packages/opencode/dist packages/cli/dist
-            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
+            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist
           )
           for artifact_dir in "${artifact_dirs[@]}"; do
             node scripts/sign-artifact-manifest.mjs --dir "${artifact_dir}" --key "${private_path}"
@@ -510,7 +510,7 @@ jobs:
           set -euo pipefail
           if find packages/core/dist packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
             packages/openclaw/dist packages/opencode/dist packages/cli/dist packages/sdk/dist \
-            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist \
             -name '.env*' -print -quit | grep -q .; then
             echo "Release inputs contain a forbidden .env* path." >&2
             exit 1
@@ -520,7 +520,7 @@ jobs:
             .release-evidence/aidr-sbom.cdx.json.sha256 \
             packages/core/dist packages/claude-code/package.json packages/claude-code/aidr-artifact.manifest.json packages/claude-code/aidr-artifact.manifest.sig packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
             packages/openclaw/dist packages/opencode/dist packages/cli/dist \
-            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
+            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist
 
       - name: Upload signed package inputs (pinned)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -603,7 +603,7 @@ jobs:
             --dirs \
               packages/core/dist packages/claude-code/dist packages/extension/dist \
               packages/openclaw/dist packages/opencode/dist packages/cli/dist \
-              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist \
               packages/claude-code
           cleanup
           trap - EXIT
@@ -976,7 +976,7 @@ jobs:
             --dirs \
               packages/core/dist packages/claude-code/dist packages/extension/dist \
               packages/openclaw/dist packages/opencode/dist packages/cli/dist \
-              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist \
               packages/claude-code
           cleanup
           trap - EXIT
