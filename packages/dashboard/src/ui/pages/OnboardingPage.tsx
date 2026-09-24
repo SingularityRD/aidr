@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { DownloadCenter } from "../../onboarding/DownloadCenter";
 import {
 	clearPendingTeamCreate,
 	type PendingTeamCreate,
@@ -688,7 +689,16 @@ function TeamOnboarding({
 				</div>
 
 				<div className="card">
-					<h2>2) Authorize</h2>
+					<h2>2) Download &amp; connect</h2>
+					<p className="muted">
+						Download the verified installer for this runtime, check its digest, install it and
+						connect it to this team. <Link to="/downloads">All downloads</Link>
+					</p>
+					<DownloadCenter teamId={teamId} only={[runtime]} headingLevel={3} />
+				</div>
+
+				<div className="card">
+					<h2>3) Authorize</h2>
 					<p className="muted">
 						Use the verify page for a code shown by your agent. Generate a code here only if you
 						need a manual enrollment token.

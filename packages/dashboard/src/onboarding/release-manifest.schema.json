@@ -1,0 +1,87 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://singularityrd.com/schemas/aidr/release-manifest.schema.json",
+	"title": "Singularity AIDR release manifest",
+	"description": "Download-center contract between the release pipeline (scripts/generate-release-manifest.mjs), the dashboard server (/release-manifest.json) and the dashboard download center. See docs/contracts/release-manifest.md.",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["version", "publishedAt", "artifacts"],
+	"properties": {
+		"version": {
+			"description": "Release version the manifest describes (semantic version).",
+			"type": "string",
+			"maxLength": 64,
+			"pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+		},
+		"publishedAt": {
+			"description": "RFC 3339 timestamp at which the release was published.",
+			"type": "string",
+			"format": "date-time",
+			"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
+		},
+		"artifacts": {
+			"type": "array",
+			"maxItems": 200,
+			"items": { "$ref": "#/$defs/artifact" }
+		}
+	},
+	"$defs": {
+		"artifact": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "version", "url", "sha256", "size", "platforms"],
+			"properties": {
+				"id": {
+					"type": "string",
+					"enum": [
+						"claude-code",
+						"cursor",
+						"vscode",
+						"openclaw",
+						"opencode",
+						"codex",
+						"cli",
+						"browser-guard-chrome",
+						"browser-guard-firefox",
+						"mcp-gateway"
+					]
+				},
+				"version": {
+					"type": "string",
+					"maxLength": 64,
+					"pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+				},
+				"url": { "$ref": "#/$defs/httpsUrl" },
+				"sha256": {
+					"description": "Lower-case hex SHA-256 digest of the exact bytes served at url.",
+					"type": "string",
+					"pattern": "^[0-9a-f]{64}$"
+				},
+				"signature": {
+					"description": "Optional HTTPS URL of a detached publisher signature for the artifact.",
+					"$ref": "#/$defs/httpsUrl"
+				},
+				"size": {
+					"description": "Artifact size in bytes.",
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 9007199254740991
+				},
+				"platforms": {
+					"description": "Platforms the artifact installs on, e.g. any, linux-x64, darwin-arm64, win32-x64, chrome, edge, firefox.",
+					"type": "array",
+					"minItems": 1,
+					"maxItems": 16,
+					"uniqueItems": true,
+					"items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$" }
+				}
+			}
+		},
+		"httpsUrl": {
+			"description": "Absolute https: URL without embedded credentials. http: and every other scheme are rejected.",
+			"type": "string",
+			"maxLength": 2048,
+			"pattern": "^https://[^\\s@/]+(?:/[^\\s]*)?$"
+		}
+	}
+}

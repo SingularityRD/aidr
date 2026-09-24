@@ -14,6 +14,8 @@ declare global {
 			sentryDsn?: string | null;
 			sentryEnvironment?: string;
 			sentryTracesSampleRate?: number;
+			/** Download-center manifest: same-origin path or HTTPS URL; null when not published. */
+			releaseManifestUrl?: string | null;
 		};
 	}
 }

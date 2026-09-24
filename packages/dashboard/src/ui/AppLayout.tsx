@@ -72,6 +72,7 @@ export function AppLayout() {
 				<main className="main">
 					<nav className="navcard" aria-label="Dashboard">
 						<NavLink to="/onboarding">Connect</NavLink>
+						<NavLink to="/downloads">Downloads</NavLink>
 						<NavLink to="/dashboard">Dashboard</NavLink>
 						<NavLink to="/billing">Billing</NavLink>
 						<NavLink to="/api-keys">API Keys</NavLink>
