@@ -32,13 +32,14 @@ async function runHook(
 		evaluateError?: Error;
 		provisionedContext?: Record<string, unknown>;
 		provisionError?: Error;
+		verdictOverride?: Record<string, unknown>;
 	} = {},
 ) {
 	const output: string[] = [];
 	const extract = vi.fn().mockReturnValue([]);
 	const evaluate = options.evaluateError
 		? vi.fn().mockRejectedValue(options.evaluateError)
-		: vi.fn().mockResolvedValue(verdict(decision));
+		: vi.fn().mockResolvedValue(options.verdictOverride ?? verdict(decision));
 	const addPendingApproval = vi.fn();
 	const core = {
 		allowVerdict: () => verdict("allow"),
@@ -164,6 +165,36 @@ describe("PreToolUse empty-artifact inspection", () => {
 			permissionDecisionReason: "Inspected tool input",
 		});
 		expect(addPendingApproval).not.toHaveBeenCalled();
+	});
+
+	it("declares input-rewrite support and maps a redacted allow to updatedInput only", async () => {
+		const transformedInput = { command: "echo [REDACTED]" };
+		const { response, evaluate } = await runHook(
+			JSON.stringify({ tool_name: "Bash", tool_input: { command: "echo secret-value" } }),
+			"allow",
+			{
+				verdictOverride: {
+					...verdict("allow"),
+					category: "dlp_redacted",
+					source: "dlp",
+					reasons: ["DLP redaction applied: 1 value(s)"],
+					transformedInput,
+				},
+			},
+		);
+		expect(evaluate).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ supportsInputRewrite: true }),
+		);
+		expect(response.hookSpecificOutput).toEqual({
+			hookEventName: "PreToolUse",
+			updatedInput: transformedInput,
+			additionalContext: expect.any(String),
+		});
+		// A permissionDecision would auto-approve and bypass the user's permission flow.
+		expect(response.hookSpecificOutput).not.toHaveProperty("permissionDecision");
+		expect(response.systemMessage).toContain("DLP redaction applied");
+		expect(JSON.stringify(response)).not.toContain("secret-value");
 	});
 
 	it("keeps the empty-artifact allow response empty after evaluation", async () => {

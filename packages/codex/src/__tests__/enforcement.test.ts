@@ -23,8 +23,10 @@ import { fileURLToPath } from "node:url";
 import type { Logger } from "@singularityrd/aidr-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	detectorPolicyPayload,
 	generateProvisioningKeys,
 	provisionTenantDetectorPolicy,
+	syntheticDlpPolicy,
 	TEST_DLP_MARKER,
 } from "../../../core/src/__tests__/detector-provisioning-fixtures.js";
 import { enforceCodexPreToolUse, toWireOutput } from "../enforcement.js";
@@ -301,6 +303,30 @@ describe("Codex provisioned tenant detector policy", () => {
 		expect(outcome.wire).toMatchObject({
 			hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny" },
 		});
+	});
+
+	it("denies a redact policy instead of emitting an updatedInput rewrite", async () => {
+		const policy = syntheticDlpPolicy() as { rules: Array<Record<string, unknown>> };
+		policy.rules = policy.rules.map((rule) => ({ ...rule, action: "redact" }));
+		await provisionTenantDetectorPolicy({
+			homeDir: home,
+			agentRuntime: "codex",
+			payload: detectorPolicyPayload(undefined, { dlp: { enabled: true, policy } }),
+		});
+
+		const outcome = await enforceCodexPreToolUse(
+			preToolUse("Bash", { command: `echo ${TEST_DLP_MARKER}` }),
+			options(),
+		);
+
+		// A rewrite Codex rejects or another hook supersedes runs the ORIGINAL
+		// input, so redaction is enforced as an explicit deny.
+		expect(outcome).toMatchObject({ decision: "deny", reasonCode: "dlp" });
+		expect(outcome.wire).toMatchObject({
+			hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny" },
+		});
+		expect(JSON.stringify(outcome.wire)).not.toContain("updatedInput");
+		expect(JSON.stringify(outcome.wire)).not.toContain(TEST_DLP_MARKER);
 	});
 
 	it("behaves exactly as before when no policy is provisioned", async () => {

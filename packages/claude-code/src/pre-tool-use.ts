@@ -31,8 +31,31 @@ const logger: Logger = pino({ level: "warn" }, pino.destination(2));
 /** Gate observation contract, or null during an ordinary user session. */
 const hostObservation = createHostObservation();
 
+/**
+ * DLP redaction: hand Claude Code the redacted input with no permissionDecision.
+ *
+ * Verified against Claude Code 2.1.282: a PreToolUse `updatedInput` without a
+ * `permissionDecision` replaces the tool input and the call then goes through
+ * the user's normal permission flow. Adding `permissionDecision: "allow"` would
+ * also auto-approve the call and bypass that flow, which a redaction must not do.
+ */
+function redactedResponse(verdict: Verdict, updatedInput: Record<string, unknown>) {
+	return {
+		systemMessage:
+			`🛡️ Singularity AIDR redacted sensitive data from this tool call before it ran. ${verdict.reasons[0] ?? ""}`.trim(),
+		hookSpecificOutput: {
+			hookEventName: "PreToolUse",
+			updatedInput,
+			additionalContext:
+				"Singularity AIDR data-loss prevention replaced sensitive values in this tool input with redaction markers before it ran. Do not try to recover or re-insert the original values.",
+		},
+	};
+}
+
 function makeResponse(verdict: Verdict): Record<string, unknown> {
-	if (verdict.decision === "allow") return {};
+	if (verdict.decision === "allow") {
+		return verdict.transformedInput ? redactedResponse(verdict, verdict.transformedInput) : {};
+	}
 
 	const banner = formatBlockReason(verdict);
 
@@ -128,6 +151,8 @@ async function main(): Promise<void> {
 			allowlistsDir: resolveAssetDir("allowlists"),
 			agentRuntime: "claude-code",
 			logger,
+			// Claude Code applies PreToolUse `updatedInput` (see redactedResponse).
+			supportsInputRewrite: true,
 			...provisionedDetectors,
 		},
 	);

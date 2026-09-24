@@ -11,6 +11,26 @@ import {
 import { AidrVerdictBlockError, AidrVerdictError } from "./error.js";
 import { extractFromOpenCodeTool } from "./extractors.js";
 
+/**
+ * Apply a DLP-redacted input to the args object OpenCode will execute.
+ *
+ * OpenCode passes `output.args` to the tool after `tool.execute.before`
+ * returns, so the object must be changed in place; assigning a new object to
+ * `output.args` would leave the original, unredacted args in the caller's hands.
+ * The rewrite is verified afterwards, and any failure blocks the call.
+ */
+function applyRedactedArgs(
+	output: { args: Record<string, unknown> },
+	transformedInput: Record<string, unknown>,
+): void {
+	const args = output.args;
+	for (const key of Object.keys(args)) delete args[key];
+	Object.assign(args, transformedInput);
+	if (JSON.stringify(args) !== JSON.stringify(transformedInput)) {
+		throw new Error("OpenCode tool args could not be rewritten");
+	}
+}
+
 export function createToolHandlers(
 	logger: Logger,
 	approvalStore: ApprovalStore,
@@ -47,6 +67,8 @@ export function createToolHandlers(
 					allowlistsDir,
 					logger,
 					agentRuntime: "opencode",
+					// tool.execute.before may rewrite output.args (see applyRedactedArgs).
+					supportsInputRewrite: true,
 					...provisioned,
 				},
 				approvalStore,
@@ -59,6 +81,11 @@ export function createToolHandlers(
 			});
 
 			if (verdict.decision === "allow") {
+				if (verdict.transformedInput) {
+					// Not an AidrVerdictError: a failed rewrite falls to the catch below
+					// and denies, so the unredacted args never run.
+					applyRedactedArgs(output, verdict.transformedInput);
+				}
 				return;
 			}
 
