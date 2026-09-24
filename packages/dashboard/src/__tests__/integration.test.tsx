@@ -479,9 +479,13 @@ describe("Dashboard integration", () => {
 		for (const plan of ["Free", "Team", "Business", "Enterprise"]) {
 			expect(screen.getByRole("heading", { name: plan })).toBeInTheDocument();
 		}
-		expect(screen.getByText("$20 / developer / month")).toBeInTheDocument();
-		expect(screen.getByText("$45 / developer / month")).toBeInTheDocument();
-		expect(screen.getByText(/List prices, subject to COM-001 approval\./)).toBeInTheDocument();
+		expect(screen.getByText("$24")).toBeInTheDocument();
+		expect(screen.getByText(/\$20 per developer \/ month billed annually/)).toBeInTheDocument();
+		expect(screen.getByText("$45")).toBeInTheDocument();
+		expect(screen.getByText("Minimum 25 developers")).toBeInTheDocument();
+		expect(screen.getByRole("note")).toHaveTextContent(
+			/List prices, subject to COM-001 approval\./,
+		);
 		expect(screen.getByText(/self-service checkout is not offered/)).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Request pilot review" })).toHaveAttribute(
 			"href",

@@ -74,7 +74,7 @@ interface Team {
 	name: string;
 	github_org?: string;
 	gitlab_group?: string;
-	plan: "free" | "pro" | "enterprise";
+	plan: "free" | "pro" | "team" | "business" | "enterprise";
 	created_at: string;
 	updated_at: string;
 }
@@ -259,7 +259,11 @@ function ProtectedTeamProvider({
 						if (!m.teams) continue;
 						const planValue = m.teams.plan;
 						const validPlan: Team["plan"] =
-							planValue === "free" || planValue === "pro" || planValue === "enterprise"
+							planValue === "free" ||
+							planValue === "pro" ||
+							planValue === "team" ||
+							planValue === "business" ||
+							planValue === "enterprise"
 								? planValue
 								: "free";
 						mappedTeams.push({

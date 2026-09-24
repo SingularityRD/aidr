@@ -5,6 +5,8 @@
  * leaving stale marketing copy.
  */
 
+import { LIST_PRICE_NOTICE, PLAN_CATALOG, type PlanDefinition } from "../../../billing/plans";
+
 /** `- id:` entries across `threats/*.yaml`. */
 export const SHIPPED_THREAT_RULES = 358;
 /** YAML files under `threats/`. */
@@ -37,54 +39,14 @@ export const BROWSER_GUARD_SITES = [
 
 export const BROWSER_GUARD_BROWSERS = ["Chrome", "Edge", "Firefox"] as const;
 
-export const LIST_PRICE_NOTE = "List prices, subject to COM-001 approval.";
+/**
+ * Plans and list prices are not restated here: the single source is the
+ * `public.plans` mirror in `src/billing/plans.ts`, which
+ * `plan-catalog-drift.test.ts` binds to the migration seed.
+ */
+export const LIST_PRICE_NOTE = LIST_PRICE_NOTICE;
 
-export interface PublicPlan {
-	readonly name: "Free" | "Team" | "Business" | "Enterprise";
-	readonly price: string;
-	readonly terms: string;
-	readonly features: readonly string[];
-}
-
-export const PUBLIC_PLANS: readonly PublicPlan[] = [
-	{
-		name: "Free",
-		price: "$0",
-		terms: "Local mode, no account",
-		features: [
-			`Agent connectors with ${SHIPPED_THREAT_RULES} local threat rules`,
-			"Browser Guard masking with local settings",
-			"Local allowlist and audit log",
-		],
-	},
-	{
-		name: "Team",
-		price: "$20 / developer / month",
-		terms: "Billed annually, or $24 monthly. Minimum 3 developers.",
-		features: [
-			"Cloud control plane and dashboard",
-			"Central policy for agents and Browser Guard",
-			"Audit export, SSO and MFA",
-		],
-	},
-	{
-		name: "Business",
-		price: "$45 / developer / month",
-		terms: "Billed annually. Minimum 25 developers.",
-		features: [
-			"Cloud or on-prem (Docker Compose)",
-			"Exact-data match, SIEM delivery, signed packs",
-			"AI Security Posture scans and named support",
-		],
-	},
-	{
-		name: "Enterprise",
-		price: "Custom",
-		terms: "Scoped by agreement",
-		features: [
-			"Kubernetes (Helm) and air-gapped installation",
-			"Signed offline license and packs, SCIM",
-			"Custom terms and support schedule",
-		],
-	},
-];
+/** Active catalog plans in display order. */
+export const PUBLIC_PLANS: readonly PlanDefinition[] = PLAN_CATALOG.filter(
+	(plan) => plan.active,
+).sort((a, b) => a.sortOrder - b.sortOrder);

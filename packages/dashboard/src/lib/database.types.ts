@@ -540,7 +540,7 @@ export interface Database {
 					name: string;
 					github_org: string | null;
 					gitlab_group: string | null;
-					plan: "free" | "pro" | "enterprise";
+					plan: "free" | "pro" | "team" | "business" | "enterprise";
 					created_at: string;
 					updated_at: string;
 				};
@@ -550,7 +550,7 @@ export interface Database {
 					name: string;
 					github_org?: string | null;
 					gitlab_group?: string | null;
-					plan?: "free" | "pro" | "enterprise";
+					plan?: "free" | "pro" | "team" | "business" | "enterprise";
 					created_at?: string;
 					updated_at?: string;
 				};
@@ -560,7 +560,7 @@ export interface Database {
 					name?: string;
 					github_org?: string | null;
 					gitlab_group?: string | null;
-					plan?: "free" | "pro" | "enterprise";
+					plan?: "free" | "pro" | "team" | "business" | "enterprise";
 					created_at?: string;
 					updated_at?: string;
 				};
@@ -708,6 +708,11 @@ export interface Database {
 			privacy_guard_summary: {
 				Args: { p_tenant_id: string; p_days: number };
 				Returns: Record<string, unknown>;
+			};
+			/** Member-only plan/admission/usage projection (20260925000012). */
+			get_tenant_plan: {
+				Args: { p_tenant_id: string };
+				Returns: unknown;
 			};
 		};
 	};
