@@ -257,9 +257,35 @@ export type GuardMessage =
 	  }
 	| { readonly type: "GET_STATS"; readonly tabId?: number }
 	| { readonly type: "SET_USER_SETTINGS"; readonly settings: Partial<UserSettings> }
+	/** minutes 1..60 pauses (only when policy.allowUserPause); 0 resumes. */
 	| { readonly type: "PAUSE"; readonly minutes: number }
 	| { readonly type: "NATIVE_SCAN"; readonly text: string }
 	| { readonly type: "SET_RESTORE_VISIBLE"; readonly visible: boolean };
+
+/**
+ * Background worker replies to GuardMessage (src/background/index.ts). Every reply is
+ * `{ ok: true, ... }` or a GuardError; callers must treat a missing/`ok: false` reply as
+ * a failure (fail closed). Content scripts receive the policy with `telemetry: null`.
+ */
+export interface GuardError {
+	readonly ok: false;
+	/** Stable code: SENDER_DENIED, BAD_MESSAGE, NOT_ALLOWED, LOCKED_KEYS, INVALID_SETTINGS, PAUSE_DISABLED, INTERNAL. */
+	readonly error: string;
+	/** Offending setting keys for LOCKED_KEYS / INVALID_SETTINGS. */
+	readonly keys?: readonly string[];
+}
+export interface GuardResponses {
+	readonly GET_POLICY: { readonly ok: true; readonly policy: GuardPolicy };
+	readonly RECORD: { readonly ok: true };
+	readonly GET_STATS: { readonly ok: true; readonly stats: GuardStats };
+	readonly SET_USER_SETTINGS: { readonly ok: true; readonly policy: GuardPolicy };
+	readonly PAUSE: { readonly ok: true; readonly pausedUntil: number | null };
+	readonly NATIVE_SCAN: { readonly ok: true; readonly findings: readonly Finding[] | null };
+	readonly SET_RESTORE_VISIBLE: { readonly ok: true };
+}
+export type GuardResponse<T extends keyof GuardResponses = keyof GuardResponses> =
+	| GuardResponses[T]
+	| GuardError;
 
 /** User-editable settings (stored in chrome.storage.local; no secrets except telemetry apiKey). */
 export interface UserSettings {
