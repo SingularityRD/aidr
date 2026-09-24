@@ -23,7 +23,7 @@ export function getBundledDataDirs(): {
 	};
 }
 
-export function getSageVersion(): string {
+export function getAidrVersion(): string {
 	try {
 		const { packageRoot } = getBundledDataDirs();
 		const pkgPath = join(packageRoot, "package.json");

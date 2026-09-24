@@ -16,6 +16,7 @@
 import {
 	type Artifact,
 	boundArtifact,
+	commandFromValue,
 	extractFromBash,
 	extractFromToolCall,
 } from "@singularityrd/aidr-core";
@@ -32,7 +33,8 @@ function asString(value: unknown): string {
  * shell command so a hostile caller cannot force unbounded matching work.
  */
 export function extractFromApplyPatch(toolInput: Record<string, unknown>): Artifact[] {
-	const patch = asString(toolInput.command) || asString(toolInput.patch) || asString(toolInput.input);
+	const patch =
+		asString(toolInput.command) || asString(toolInput.patch) || asString(toolInput.input);
 	if (!patch.trim()) return [];
 
 	const artifacts: Artifact[] = [
@@ -65,8 +67,14 @@ export function extractFromCodexTool(
 			return extractFromApplyPatch(toolInput);
 		case "shell":
 		case "local_shell":
-			// Codex has used lower-case shell tool names for the local exec tool.
-			return extractFromBash(asString(toolInput.command));
+		case "exec": {
+			// Codex has used lower-case shell tool names for the local exec tool,
+			// and sends `command` as an argv array (`["bash", "-lc", "…"]`). Both
+			// shapes are inspected; a malformed command yields no artifacts here
+			// and is denied as `malformed_command` by the core evaluator.
+			const result = commandFromValue(toolInput.command);
+			return result.ok ? extractFromBash(result.command) : [];
+		}
 		default:
 			return extractFromToolCall(toolName, toolInput);
 	}

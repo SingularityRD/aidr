@@ -41,3 +41,37 @@ export function readBoundedJson<T = unknown>(
 		return { status: "invalid" };
 	}
 }
+
+/**
+ * PreToolUse input ceiling. Larger than the PostToolUse one because a Write of
+ * a big file carries the whole file in `tool_input`; anything beyond it cannot
+ * be inspected in full and is denied rather than parsed without bound.
+ */
+export const MAX_PRE_TOOL_INPUT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Host timeout for the PreToolUse hook, in milliseconds (`hooks/hooks.json`
+ * sets 15 s). When Claude Code kills a hook for exceeding it the call proceeds
+ * uninspected, so the hook must answer — with a deny — before that happens.
+ */
+export const PRE_TOOL_USE_HOST_TIMEOUT_MS = 15_000;
+export const DEFAULT_PRE_TOOL_USE_DEADLINE_MS = 10_000;
+export const MIN_PRE_TOOL_USE_DEADLINE_MS = 100;
+/** Leave headroom for writing the deny and exiting before the host timeout. */
+export const MAX_PRE_TOOL_USE_DEADLINE_MS = PRE_TOOL_USE_HOST_TIMEOUT_MS - 1_000;
+export const PRE_TOOL_USE_DEADLINE_ENV = "AIDR_PRE_TOOL_USE_DEADLINE_MS";
+
+/**
+ * Internal PreToolUse deadline. Configurable through
+ * `AIDR_PRE_TOOL_USE_DEADLINE_MS`; a value that is not an integer within
+ * [MIN, MAX] falls back to the default so a typo can never push the deadline
+ * past the host timeout (which would fail open).
+ */
+export function resolvePreToolUseDeadlineMs(env: Record<string, string | undefined> = {}): number {
+	const raw = env[PRE_TOOL_USE_DEADLINE_ENV]?.trim();
+	if (!raw || !/^\d+$/.test(raw)) return DEFAULT_PRE_TOOL_USE_DEADLINE_MS;
+	const value = Number(raw);
+	return value >= MIN_PRE_TOOL_USE_DEADLINE_MS && value <= MAX_PRE_TOOL_USE_DEADLINE_MS
+		? value
+		: DEFAULT_PRE_TOOL_USE_DEADLINE_MS;
+}

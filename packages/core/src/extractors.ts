@@ -2,6 +2,7 @@
  * Extract security-relevant artifacts from tool inputs.
  */
 
+import { commandFromValue } from "./command-argv.js";
 import type { Artifact } from "./types.js";
 
 /** Regex for extracting URLs — matches http/https followed by non-whitespace, non-quote chars. */
@@ -353,10 +354,6 @@ export function extractFromDelete(toolInput: Record<string, unknown>): Artifact[
 	return [];
 }
 
-function asString(value: unknown): string | null {
-	return typeof value === "string" ? value : null;
-}
-
 function looksLikePath(value: string): boolean {
 	if (!value) return false;
 	if (value.startsWith("/") || value.startsWith("./") || value.startsWith("../")) return true;
@@ -493,8 +490,10 @@ export function extractFromToolCall(
 	switch (toolName) {
 		case "Bash":
 		case "Shell": {
-			const command = asString(toolInput.command) ?? "";
-			return command ? extractFromBash(command) : [];
+			// Hosts may send an argv array (`["bash", "-lc", "curl … | sh"]`)
+			// instead of a command line; both shapes are inspected.
+			const result = commandFromValue(toolInput.command);
+			return result.ok && result.command ? extractFromBash(result.command) : [];
 		}
 		case "WebFetch":
 			return extractFromWebFetch(toolInput);

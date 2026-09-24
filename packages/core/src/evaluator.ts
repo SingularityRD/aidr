@@ -707,6 +707,21 @@ function ambiguousToolInputVerdict(): Verdict {
 	};
 }
 
+function malformedCommandVerdict(): Verdict {
+	return {
+		decision: "deny",
+		category: "malformed_command",
+		confidence: 1,
+		severity: "critical",
+		source: "policy",
+		artifacts: [],
+		matchedThreatId: "POL-INPUT-002",
+		reasons: [
+			"Shell command was neither a string nor a well-formed argv array, so the executed command could not be inspected; execution was denied.",
+		],
+	};
+}
+
 function truncatedCommandVerdict(): Verdict {
 	return {
 		decision: "deny",
@@ -741,6 +756,11 @@ async function runEvaluationPipeline(
 	}
 	if (request.toolInput.__aidr_input_normalization_failed === true) {
 		const verdict = ambiguousToolInputVerdict();
+		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
+		return verdict;
+	}
+	if (request.toolInput.__aidr_malformed_command === true) {
+		const verdict = malformedCommandVerdict();
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 		return verdict;
 	}

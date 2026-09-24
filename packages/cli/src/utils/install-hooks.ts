@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { resolvePath } from "@singularityrd/aidr-core";
+import { resolvePath, VERSION } from "@singularityrd/aidr-core";
 import type { Environment } from "./config-manager.js";
 import { updateConfig } from "./config-manager.js";
 
@@ -61,21 +61,23 @@ export async function installHooks(env: Environment): Promise<HookInstallResult>
 		case "openclaw":
 			followUp.push(
 				"  OpenClaw:     install the approved package version with",
-				"                openclaw plugins install npm:@singularityrd/aidr-openclaw@VERSION",
-				"                (replace VERSION with the exact version in the approved release record).",
+				`                openclaw plugins install npm:@singularityrd/aidr-openclaw@${VERSION}`,
+				`                (${VERSION} matches this CLI; confirm it against the approved release record),`,
+				"                then run a host-side deny canary.",
 			);
 			break;
 		case "opencode":
 			followUp.push(
 				"  OpenCode:     install the approved version from private GitHub Packages.",
-				'                ~/.config/opencode/package.json: {"dependencies":{"@singularityrd/aidr-opencode":"VERSION"}}',
+				`                ~/.config/opencode/package.json: {"dependencies":{"@singularityrd/aidr-opencode":"${VERSION}"}}`,
 				'                ~/.config/opencode/opencode.json: {"plugin":["@singularityrd/aidr-opencode"]}',
-				"                Replace VERSION with the exact approved release version; run a host-side deny canary.",
+				`                ${VERSION} matches this CLI; confirm it against the approved release record,`,
+				"                then run a host-side deny canary.",
 			);
 			break;
 		case "codex":
 			followUp.push(
-				"  Codex:        install @singularityrd/aidr-codex@VERSION from private GitHub Packages.",
+				`  Codex:        install @singularityrd/aidr-codex@${VERSION} from private GitHub Packages.`,
 				"                Add to ~/.codex/config.toml:",
 				"                [[hooks.PreToolUse]]",
 				'                matcher = "^(Bash|apply_patch)$"',
@@ -83,8 +85,8 @@ export async function installHooks(env: Environment): Promise<HookInstallResult>
 				'                type = "command"',
 				'                command = "aidr-codex-hook"',
 				"                timeout = 10",
-				"                Replace VERSION with the exact approved release version, trust the hook,",
-				"                then run a host-side deny canary.",
+				`                ${VERSION} matches this CLI; confirm it against the approved release record,`,
+				"                trust the hook, then run a host-side deny canary.",
 			);
 			break;
 		default:

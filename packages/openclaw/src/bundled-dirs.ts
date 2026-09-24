@@ -18,7 +18,7 @@ export function getBundledDataDirs(): { threatsDir: string; allowlistsDir: strin
 
 let cachedVersion: string | undefined;
 
-export function getSageVersion(): string {
+export function getAidrVersion(): string {
 	if (cachedVersion) return cachedVersion;
 	try {
 		const pkg = JSON.parse(getFileContentSync(join(packageRoot, "package.json"), "utf-8"));

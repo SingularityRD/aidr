@@ -290,6 +290,7 @@ export async function guardToolCall(
 	const normalizedRequest = normalizeToolEvaluationRequest(request);
 	const responseRequest =
 		normalizedRequest.toolInput.__aidr_input_normalization_failed === true ||
+		normalizedRequest.toolInput.__aidr_malformed_command === true ||
 		normalizedRequest.toolInput.__aidr_patch_parse_failed === true
 			? { toolName: "unknown", toolInput: {} }
 			: normalizedRequest;

@@ -6,13 +6,19 @@
 import { statfsSync } from "node:fs";
 import { join } from "node:path";
 import { VerdictCache } from "./cache.js";
+import { resolveEndpoint } from "./clients/url-check.js";
 import { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
 import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import { loadThreats } from "./threat-loader.js";
 import { nullLogger } from "./types.js";
 import { VERSION } from "./version.js";
 
-export type HealthStatusValue = "healthy" | "degraded" | "unhealthy";
+/**
+ * `not_configured` marks an optional check whose subsystem is intentionally
+ * inert (e.g. the URL reputation leg in the default local mode). It is neither
+ * a clean result nor a failure, and does not affect the aggregate status.
+ */
+export type HealthStatusValue = "healthy" | "degraded" | "unhealthy" | "not_configured";
 
 export interface HealthCheck {
 	name: string;
@@ -170,12 +176,41 @@ async function checkThreatRulesHealth(): Promise<HealthCheck> {
 }
 
 /**
- * Check URL endpoint availability (optional - not critical for basic operation)
+ * Check URL endpoint availability (optional - not critical for basic operation).
+ *
+ * The probe targets the same endpoint the URL reputation leg would call
+ * (`url_check.endpoint`, else the operator override, else the shared
+ * resolver) and runs only when that leg is enabled. In the default local mode
+ * the leg is off, so no network request is made and the check reports
+ * `not_configured` rather than a misleading healthy or degraded result.
  */
 async function checkEndpointHealth(): Promise<HealthCheck> {
 	const start = Date.now();
-	const urlCheckEndpoint =
-		process.env.AIDR_URL_CHECK_ENDPOINT || "https://api.singularityrd.com/v1/url-check";
+	let urlCheckEndpoint: string;
+	try {
+		const config = await loadConfig();
+		const urlCheck = config.url_check as Partial<typeof config.url_check> | undefined;
+		if (urlCheck?.enabled !== true) {
+			return {
+				name: "url_endpoint",
+				status: "not_configured",
+				latencyMs: Date.now() - start,
+				message: "URL reputation checks are disabled; no endpoint was probed.",
+				details: { mode: config.mode ?? "local", urlCheckEnabled: false },
+			};
+		}
+		urlCheckEndpoint =
+			urlCheck.endpoint?.trim() ||
+			process.env.AIDR_URL_CHECK_ENDPOINT?.trim() ||
+			resolveEndpoint("/url-check");
+	} catch (error) {
+		return {
+			name: "url_endpoint",
+			status: "degraded",
+			latencyMs: Date.now() - start,
+			message: `Configuration unavailable: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	}
 
 	try {
 		const controller = new AbortController();
@@ -307,6 +342,7 @@ export async function runExtendedHealthChecks(): Promise<HealthCheck[]> {
  * Aggregate check statuses into overall status
  */
 function aggregateStatus(checks: HealthCheck[]): HealthStatusValue {
+	// `not_configured` checks are intentionally inert and do not affect the aggregate.
 	const hasUnhealthy = checks.some((c) => c.status === "unhealthy");
 	const hasDegraded = checks.some((c) => c.status === "degraded");
 
@@ -385,7 +421,14 @@ export function formatHealthStatus(status: HealthStatus): string {
 	lines.push("Checks:");
 
 	for (const check of status.checks) {
-		const emoji = check.status === "healthy" ? "✅" : check.status === "degraded" ? "⚠️" : "❌";
+		const emoji =
+			check.status === "healthy"
+				? "✅"
+				: check.status === "degraded"
+					? "⚠️"
+					: check.status === "not_configured"
+						? "➖"
+						: "❌";
 		lines.push(`  ${emoji} ${check.name}: ${check.status} (${check.latencyMs}ms)`);
 		if (check.message) {
 			lines.push(`     └─ ${check.message}`);

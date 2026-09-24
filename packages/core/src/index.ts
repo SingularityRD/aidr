@@ -163,6 +163,13 @@ export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
 export { RegistryClient, resolveDistDigest } from "./clients/package-registry.js";
 export { UrlCheckClient } from "./clients/url-check.js";
+// Shell argv normalization (argv arrays -> inspected command text)
+export {
+	type CommandValueResult,
+	commandFromArgv,
+	commandFromValue,
+	shellQuote,
+} from "./command-argv.js";
 export type {
 	CommunityRule,
 	CommunityRuleRegistryConfig,
