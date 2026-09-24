@@ -31,32 +31,44 @@ export function auditLogFiles(logging: Pick<LoggingConfig, "path" | "max_files">
 	return [...backups, path];
 }
 
+/** A log file's text; null when it is missing or not a regular file. */
+async function readLogFile(file: string): Promise<string | null> {
+	try {
+		const info = await lstat(file);
+		// The log is private evidence; never follow a planted link.
+		if (!info.isFile()) return null;
+		return await readFile(file, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+		throw error;
+	}
+}
+
+/** One JSONL line as an entry; null when it is not a JSON object. */
+function parseAuditLine(line: string): AuditEntry | null {
+	try {
+		const parsed: unknown = JSON.parse(line);
+		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+			? (parsed as AuditEntry)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
 export async function readAuditEntries(
 	files: string[],
 ): Promise<{ entries: AuditEntry[]; skipped: number }> {
 	const entries: AuditEntry[] = [];
 	let skipped = 0;
 	for (const file of files) {
-		let content: string;
-		try {
-			const info = await lstat(file);
-			// The log is private evidence; never follow a planted link.
-			if (!info.isFile()) continue;
-			content = await readFile(file, "utf8");
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-			throw error;
-		}
+		const content = await readLogFile(file);
+		if (content === null) continue;
 		for (const line of content.split("\n")) {
 			if (line.trim().length === 0) continue;
-			try {
-				const parsed: unknown = JSON.parse(line);
-				if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-					entries.push(parsed as AuditEntry);
-				} else skipped++;
-			} catch {
-				skipped++;
-			}
+			const entry = parseAuditLine(line);
+			if (entry) entries.push(entry);
+			else skipped++;
 		}
 	}
 	return { entries, skipped };
@@ -146,6 +158,23 @@ async function loadLogging(deps: AuditCommandDeps): Promise<LoggingConfig> {
 	return (await loadConfig(deps.configPath)).logging;
 }
 
+function errorText(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+/** Every entry of the active log and its backups; reports a failure and returns null. */
+async function tryReadAllEntries(
+	deps: AuditCommandDeps,
+): Promise<{ entries: AuditEntry[]; skipped: number } | null> {
+	try {
+		const logging = await loadLogging(deps);
+		return await readAuditEntries(auditLogFiles(logging));
+	} catch (error) {
+		fail(`Could not read the audit log: ${errorText(error)}`);
+		return null;
+	}
+}
+
 function formatLine(entry: AuditEntry): string {
 	const threat = field(entry, "matched_threat_id");
 	return [
@@ -170,15 +199,9 @@ export async function auditTailCommand(
 		fail(`-n must be a whole number between 1 and ${MAX_TAIL}.`);
 		return;
 	}
-	let entries: AuditEntry[];
-	try {
-		const logging = await loadLogging(deps);
-		entries = (await readAuditEntries(auditLogFiles(logging))).entries.slice(-count);
-	} catch (error) {
-		fail(`Could not read the audit log: ${error instanceof Error ? error.message : String(error)}`);
-		return;
-	}
-	const redacted = entries.map(redactAuditEntry);
+	const log = await tryReadAllEntries(deps);
+	if (!log) return;
+	const redacted = log.entries.slice(-count).map(redactAuditEntry);
 	if (options.json) {
 		for (const entry of redacted) console.log(JSON.stringify(entry));
 		return;
@@ -188,6 +211,27 @@ export async function auditTailCommand(
 		return;
 	}
 	for (const entry of redacted) console.log(formatLine(entry));
+}
+
+function exportBody(entries: AuditEntry[], format: "jsonl" | "csv"): string {
+	if (format === "csv") return toCsv(entries);
+	return entries.map((entry) => JSON.stringify(entry)).join("\n") + (entries.length ? "\n" : "");
+}
+
+/** Writes the export to a new private file; reports a failure and returns false. */
+async function writeExport(output: string, body: string, count: number): Promise<boolean> {
+	try {
+		await writeFile(output, body, { encoding: "utf8", mode: 0o600, flag: "wx" });
+	} catch (error) {
+		fail(
+			(error as NodeJS.ErrnoException).code === "EEXIST"
+				? `${output} already exists; choose a new file name.`
+				: `Could not write ${output}: ${errorText(error)}`,
+		);
+		return false;
+	}
+	console.error(`Exported ${count} redacted audit entr${count === 1 ? "y" : "ies"} to ${output}.`);
+	return true;
 }
 
 /** `aidr audit export [--since] [--format jsonl|csv] [--output file]` */
@@ -210,41 +254,19 @@ export async function auditExportCommand(
 		}
 	}
 
-	let entries: AuditEntry[];
-	let skipped: number;
-	try {
-		const logging = await loadLogging(deps);
-		({ entries, skipped } = await readAuditEntries(auditLogFiles(logging)));
-	} catch (error) {
-		fail(`Could not read the audit log: ${error instanceof Error ? error.message : String(error)}`);
-		return;
-	}
-	const selected = entries
+	const log = await tryReadAllEntries(deps);
+	if (!log) return;
+	const selected = log.entries
 		.filter((entry) => since === null || timestampOf(entry) >= since)
 		.map(redactAuditEntry);
-	const body =
-		format === "csv"
-			? toCsv(selected)
-			: selected.map((entry) => JSON.stringify(entry)).join("\n") + (selected.length ? "\n" : "");
+	const body = exportBody(selected, format);
 
 	if (options.output) {
-		try {
-			await writeFile(options.output, body, { encoding: "utf8", mode: 0o600, flag: "wx" });
-		} catch (error) {
-			fail(
-				(error as NodeJS.ErrnoException).code === "EEXIST"
-					? `${options.output} already exists; choose a new file name.`
-					: `Could not write ${options.output}: ${error instanceof Error ? error.message : String(error)}`,
-			);
-			return;
-		}
-		console.error(
-			`Exported ${selected.length} redacted audit entr${selected.length === 1 ? "y" : "ies"} to ${options.output}.`,
-		);
+		if (!(await writeExport(options.output, body, selected.length))) return;
 	} else {
 		process.stdout.write(body);
 	}
-	if (skipped > 0) {
-		console.error(`${skipped} unreadable audit line(s) were skipped.`);
+	if (log.skipped > 0) {
+		console.error(`${log.skipped} unreadable audit line(s) were skipped.`);
 	}
 }
