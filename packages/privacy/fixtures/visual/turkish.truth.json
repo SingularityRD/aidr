@@ -1,0 +1,56 @@
+[
+  {
+    "box": {
+      "x": 35,
+      "y": 115,
+      "width": 327,
+      "height": 32
+    },
+    "line": "Ad Soyad: Çağrı Öztürk"
+  },
+  {
+    "box": {
+      "x": 35,
+      "y": 185,
+      "width": 508,
+      "height": 27
+    },
+    "line": "E-posta: cagri.ozturk@example.com"
+  },
+  {
+    "box": {
+      "x": 34,
+      "y": 250,
+      "width": 341,
+      "height": 21
+    },
+    "line": "Telefon: 0532 123 45 67"
+  },
+  {
+    "box": {
+      "x": 34,
+      "y": 316,
+      "width": 290,
+      "height": 20
+    },
+    "line": "TCKN: 10000000146"
+  },
+  {
+    "box": {
+      "x": 35,
+      "y": 381,
+      "width": 603,
+      "height": 20
+    },
+    "line": "IBAN: TR33 0006 1005 1978 6457 8413 26"
+  },
+  {
+    "box": {
+      "x": 35,
+      "y": 445,
+      "width": 678,
+      "height": 21
+    },
+    "line": "Adres: Atatürk Mahallesi 25. Sokak No: 7 Ankara"
+  }
+]

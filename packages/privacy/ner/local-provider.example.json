@@ -1,0 +1,11 @@
+{
+  "command": "/opt/aidr-ner/bin/python3",
+  "args": [
+    "/opt/aidr-privacy/ner/ner_worker.py",
+    "--manifest", "/opt/aidr-models/manifest.json",
+    "--manifest-sha256", "REPLACE_WITH_REVIEWED_64_HEX_MANIFEST_DIGEST",
+    "--threads", "2"
+  ],
+  "startupTimeoutMs": 120000,
+  "maxResponseBytes": 1048576
+}

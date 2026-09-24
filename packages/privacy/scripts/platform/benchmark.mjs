@@ -1,0 +1,12 @@
+/** Warm sequential component benchmark; NOT whole-provider latency or a load/HA test. */
+import {readFileSync,writeFileSync} from 'node:fs';import {LinearRiskClassifier} from '../../dist/platform/classifier.js';import{PersistentAuditJournal}from'../../dist/platform/persistent-audit.js';import{EnterprisePrivacyGate}from'../../dist/enterprise/engine.js';import{PrivacyEngine}from'../../dist/index.js';import{fixture}from'../../tests/platform/helpers.mjs';import{registry,context,NOW}from'../../tests/enterprise/helpers.mjs';
+const classify=new LinearRiskClassifier(readFileSync('models/risk-baseline.json'),readFileSync('models/risk-baseline.sha256','utf8').trim());
+const text=('Public engineering documentation for an open source project. '.repeat(100)).slice(0,4030)+' Email: jane@example.com';
+const f=fixture(),key=Buffer.alloc(32,55),audit=new PersistentAuditJournal(f.state,'bench','audit1',key);
+const p=registry({schemaVersion:1,tenantId:'alpha',policyId:'bench',revision:1,notBefore:NOW-1000,expiresAt:NOW+60000,destinations:[{id:'api',origin:'https://api.example.com',accounts:['enterprise'],requireVerifiedAccount:true,requireManagedDevice:true,requireProvenance:false,maxClassification:'internal',groups:[]}],unknownDestination:'block',piiAction:'redact',injectionAction:'review',blockActiveContent:true,maxInputBytes:65536});
+const gate=new EnterprisePrivacyGate({registry:p,audit,textEngine:new PrivacyEngine({profile:'strict'}),clock:()=>NOW}),ctx=context({tenantId:'alpha',destination:'https://api.example.com'});
+const rows=[];
+try{for(const [name,fn] of [['linear-classifier-4k',()=>classify.classify(text)],['pii-enterprise-sqlite-fullsync-4k',()=>gate.protect(text,ctx)]]){
+ for(let i=0;i<20;i++)await fn();const times=[];for(let i=0;i<200;i++){const t=performance.now();await fn();times.push(performance.now()-t);}times.sort((a,b)=>a-b);rows.push({name,inputBytes:Buffer.byteLength(text),calls:200,medianMs:times[100],p95Ms:times[190],p99Ms:times[198]});}
+ const report={node:process.version,platform:process.platform,arch:process.arch,sampledEndNodeRssBytes:process.memoryUsage().rss,scope:'separate components, sequential, warm, synthetic input; DB DELETE journal + synchronous FULL on this local container filesystem; no model NER, network provider, HA, parallel traffic or peak native memory',rows};writeFileSync('reports/platform/benchmark.json',JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
+}finally{audit.dispose();f.close();}

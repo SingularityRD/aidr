@@ -24,3 +24,19 @@ paths = ['''^vendor/ai-infra-guard/(agent-scan/testcase/case3/main\.py|mcp-scan/
 description = "AIG private-key detection examples"
 targetRules = ["private-key"]
 paths = ['''^vendor/ai-infra-guard/(agent-scan/agent_scan/prompt/skills/hardcoded-secret-detection/SKILL\.md|data/mcp/mcp_hardcoded_secrets\.yaml)$''']
+
+[[allowlists]]
+description = "Privacy detector's two fixed synthetic Authorization-header fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''abcdefgh1234567890|dXNlcjpwYXNzd29yZA==''']
+paths = ['''^packages/privacy/tests/fixtures/cases\.mjs$''']
+
+[[allowlists]]
+description = "Privacy detector's short base64-only synthetic PEM fixture"
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''YWJjZGVm''']
+paths = ['''^packages/privacy/tests/fixtures/cases\.mjs$''']

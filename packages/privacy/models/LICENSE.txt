@@ -1,0 +1,1 @@
+Private integration work product for Singularity AIDR. The original synthetic examples and trained coefficients in this directory follow the parent package's UNLICENSED/private notice. This is not a license grant for unrelated third-party dependencies. Training tools retain their upstream licenses; no third-party pretrained weights are included.

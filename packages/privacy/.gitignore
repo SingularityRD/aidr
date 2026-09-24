@@ -1,0 +1,17 @@
+node_modules/
+__pycache__/
+*.pyc
+*.safetensors
+*.bin
+.env
+.env.*
+*.key
+*.pem
+*.tgz
+dist/
+extension/chrome/
+reports/**
+!reports/**/
+!reports/TEST_REPORT.md
+!reports/*/TEST_REPORT.md
+!reports/platform/COMPONENT-INVENTORY.json

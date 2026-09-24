@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "directory": "models/tr-approved",
+      "languages": ["tr"],
+      "revision": "REPLACE_WITH_APPROVED_IMMUTABLE_REVISION",
+      "max_length": 384,
+      "stride": 96,
+      "label_map": {"O": null, "PERSON": "PERSON", "ADDRESS": "ADDRESS", "EMAIL": "EMAIL", "PHONE": "PHONE", "TC_KIMLIK": "TC_KIMLIK", "IBAN": "IBAN", "CREDIT_CARD": "CREDIT_CARD"}
+    },
+    {
+      "directory": "models/en-approved",
+      "languages": ["en"],
+      "revision": "REPLACE_WITH_APPROVED_IMMUTABLE_REVISION",
+      "max_length": 384,
+      "stride": 96,
+      "label_map": {"O": null, "PERSON": "PERSON", "ADDRESS": "ADDRESS", "EMAIL": "EMAIL", "PHONE": "PHONE"}
+    }
+  ]
+}

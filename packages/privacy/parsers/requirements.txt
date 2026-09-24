@@ -1,0 +1,3 @@
+# Exact versions exercised here, NOT a vulnerability approval or full transitive lock.
+pypdf==5.9.0
+defusedxml==0.7.1

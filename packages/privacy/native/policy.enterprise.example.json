@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "aidr-enterprise-v1",
+  "mode": "secure-compose",
+  "textAction": "redact",
+  "requireNativeText": true,
+  "fileHandling": "sanitize",
+  "blockSites": [],
+  "maxTextBytes": 65536,
+  "maxFileBytes": 8388608,
+  "retentionDays": 7,
+  "literals": [
+    { "value": "PROJECT-ORION-TEST", "type": "INTERNAL" }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "format": "aidr-component-inventory-v1",
+  "capturedAt": "2026-09-24T10:44:24.392048+00:00",
+  "node": "v22.16.0",
+  "python": "3.13.5",
+  "os": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "components": [
+    {
+      "name": "pypdf",
+      "version": "5.9.0",
+      "usage": "optional parser / OCR / training or test fixture; see guide",
+      "licenseMetadata": "BSD-3-Clause"
+    },
+    {
+      "name": "defusedxml",
+      "version": "0.7.1",
+      "usage": "optional parser / OCR / training or test fixture; see guide",
+      "licenseMetadata": "PSFL"
+    },
+    {
+      "name": "Pillow",
+      "version": "12.3.0",
+      "usage": "optional parser / OCR / training or test fixture; see guide",
+      "licenseMetadata": "MIT-CMU"
+    },
+    {
+      "name": "pyzbar",
+      "version": "0.1.9",
+      "usage": "optional parser / OCR / training or test fixture; see guide",
+      "licenseMetadata": "MIT"
+    },
+    {
+      "name": "scikit-learn",
+      "version": "1.8.0",
+      "usage": "optional parser / OCR / training or test fixture; see guide",
+      "licenseMetadata": "BSD-3-Clause"
+    },
+    {
+      "name": "numpy",
+      "version": "2.3.5",
+      "usage": "optional parser / OCR / training or test fixture; see guide",
+      "licenseMetadata": "Copyright (c) 2005-2025, NumPy Developers."
+    },
+    {
+      "name": "python-docx",
+      "version": "1.2.0",
+      "usage": "optional parser / OCR / training or test fixture; see guide",
+      "licenseMetadata": "MIT"
+    },
+    {
+      "name": "reportlab",
+      "version": "4.4.9",
+      "usage": "optional parser / OCR / training or test fixture; see guide",
+      "licenseMetadata": "BSD license (see license.txt for details), Copyright (c) 2000-2025, ReportLab Inc."
+    },
+    {
+      "name": "@types/node",
+      "version": "24.0.4",
+      "usage": "development-only vendored npm tarball",
+      "licenseMetadata": "MIT"
+    },
+    {
+      "name": "typescript",
+      "version": "5.8.3",
+      "usage": "development-only vendored npm tarball",
+      "licenseMetadata": "Apache-2.0"
+    },
+    {
+      "name": "undici-types",
+      "version": "7.8.0",
+      "usage": "development-only vendored npm tarball",
+      "licenseMetadata": "MIT"
+    }
+  ],
+  "vulnerabilityDatabaseChecked": false,
+  "completeTransitiveInventory": false,
+  "scope": "Direct exercised components and build tarballs only. Not a full OS/image SBOM, license clearance, CVE scanner or statement of vulnerability absence."
+}

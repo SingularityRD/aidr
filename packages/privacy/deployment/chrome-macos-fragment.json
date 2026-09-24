@@ -1,0 +1,6 @@
+{
+  "PayloadType": "com.google.Chrome",
+  "ExtensionInstallForcelist": [
+    "hmcbdjjldiobifmolecnmalilknnapcb;https://updates.example.invalid/aidr/update.xml"
+  ]
+}

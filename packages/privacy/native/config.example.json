@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "allowedExtensionIds": ["hmcbdjjldiobifmolecnmalilknnapcb"],
+  "browserPolicyJSON": "{}",
+  "text": { "profile": "strict", "mask": "label", "maxInputBytes": 1048576 },
+  "visual": {
+    "backend": {
+      "python": "/opt/aidr/venv/bin/python3",
+      "tesseract": "/usr/bin/tesseract",
+      "tessdata": "/usr/share/tesseract-ocr/5/tessdata",
+      "manifest": "/etc/aidr/ocr-manifest.json",
+      "dualPass": true,
+      "processTimeoutMs": 30000
+    },
+    "policy": { "release": "manual", "mode": "pii", "uncertainText": "review", "barcodeAction": "block", "granularity": "line" }
+  }
+}

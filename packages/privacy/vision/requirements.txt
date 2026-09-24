@@ -1,0 +1,3 @@
+# Exact versions exercised in this release; native OS libraries need a pinned deployment image too.
+Pillow==12.3.0
+pyzbar==0.1.9

@@ -1,0 +1,47 @@
+[
+  {
+    "box": {
+      "x": 35,
+      "y": 120,
+      "width": 280,
+      "height": 27
+    },
+    "line": "Full name: Jane Doe"
+  },
+  {
+    "box": {
+      "x": 35,
+      "y": 185,
+      "width": 434,
+      "height": 27
+    },
+    "line": "Email: jane.doe@example.com"
+  },
+  {
+    "box": {
+      "x": 35,
+      "y": 250,
+      "width": 374,
+      "height": 25
+    },
+    "line": "Phone: +1 (415) 555-0123"
+  },
+  {
+    "box": {
+      "x": 35,
+      "y": 315,
+      "width": 485,
+      "height": 21
+    },
+    "line": "Credit card: 4111 1111 1111 1111"
+  },
+  {
+    "box": {
+      "x": 35,
+      "y": 380,
+      "width": 522,
+      "height": 27
+    },
+    "line": "Address: 123 Main Street, Springfield"
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "ExtensionSettings": {
+    "hmcbdjjldiobifmolecnmalilknnapcb": {
+      "installation_mode": "force_installed",
+      "update_url": "https://updates.example.invalid/aidr/update.xml"
+    }
+  },
+  "ExtensionInstallBlocklist": [
+    "*"
+  ],
+  "DeveloperToolsAvailability": 2,
+  "ExtensionDeveloperModeSettings": 1
+}

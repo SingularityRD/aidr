@@ -98,6 +98,7 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 | [Pricing](docs/pricing.md)                       | Historical proposal; no approved price or offer |
 | [FAQ](docs/faq.md)                               | Common questions                               |
 | [Privacy](docs/privacy.md)                       | What data is sent, what stays local            |
+| [Privacy RC source](packages/privacy/README.md)  | Imported candidate; not wired into agent enforcement |
 
 **Platform guides:** [Claude Code](docs/platform-guides/claude-code.md) · [Cursor / VS Code](docs/platform-guides/cursor.md) · [OpenClaw](docs/platform-guides/openclaw.md) · [OpenCode](docs/platform-guides/opencode.md) · [Codex](packages/codex/README.md)
 
@@ -115,6 +116,9 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 - The [Codex connector](packages/codex/README.md) is included in package, release
   and hook verification. Native host acceptance is still required: Codex can fail
   open when a hook process is unavailable. This is not endpoint isolation.
+- The [Privacy 0.5.0 release candidate](packages/privacy/README.md) is a private
+  workspace package, not an active AIDR hook, cloud gateway or customer release.
+  Provider upload paths and enterprise identity still require integration tests.
 
 ## Privacy
 

@@ -1,0 +1,5 @@
+{
+  "extensionId": "hmcbdjjldiobifmolecnmalilknnapcb",
+  "publicKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtCG082ZYJAmI107RciYuwoJliqokkijFoWlmDx005bkohgTybVwGj6Fz7NfHsK7vlYRRF+QoIGLKtkGTms6ZW6k8LwL+SsSKzG1HM1leDEhnpc6iGOM25fzqYMQbB/0QpQZH74GjP7SVgi9eTiySrSWMpVCUJognacLhAPQ3ih2JM00Fu8gSFCnyZ3j2cHACuks4c3l+T8WVEAtLidaB4OnvaqmCiL766/L9MVV0entjEctFBiiKmwzLI3gp//UUjMm+ttn1nDrhi+vD8hMIRZT4vidjLY/5Wg9cZ+oJqZGmj9bY+GytIQ9CQQlcWVrl67IF8aOZZ8VgozJgAE+9mQIDAQAB",
+  "note": "Public development identity only. No CRX signing private key is retained. Replace with your published extension identity for enterprise distribution."
+}

@@ -1,0 +1,5 @@
+{
+  "hmcbdjjldiobifmolecnmalilknnapcb": {
+    "PolicyJSON": "{\"version\":1,\"id\":\"aidr-quarantine-until-accepted\",\"mode\":\"block\",\"requireNativeText\":true,\"fileHandling\":\"block\"}"
+  }
+}

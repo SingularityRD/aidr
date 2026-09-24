@@ -108,6 +108,41 @@
 			"entry": ["src/index.ts"],
 			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
 		},
+		"packages/privacy": {
+			"entry": [
+				"src/index.ts",
+				"src/visual/index.ts",
+				"src/browser/index.ts",
+				"src/enterprise/index.ts",
+				"src/platform/index.ts",
+				"src/cli.ts",
+				"src/visual/cli.ts",
+				"src/native/host.ts",
+				"extension/src/service-worker.ts",
+				"extension/src/content-entry.ts",
+				"extension/src/compose.ts",
+				"portal/app.js",
+				"deployment/generate.mjs",
+				"native/prepare-host.mjs",
+				"examples/**/*.mjs",
+				"scripts/**/*.mjs",
+				"tests/extension/*.ts",
+				"tests/extension/dom-harness.js",
+				"tests/fixtures/mock-ner.mjs"
+			],
+			"project": [
+				"src/**/*.ts",
+				"extension/src/**/*.ts",
+				"extension/*.ts",
+				"portal/**/*.js",
+				"deployment/**/*.mjs",
+				"native/**/*.mjs",
+				"examples/**/*.mjs",
+				"scripts/**/*.mjs",
+				"tests/**/*.{mjs,js,ts}"
+			],
+			"ignoreBinaries": ["openssl"]
+		},
 		"packages/sdk": {
 			"entry": ["src/index.ts"],
 			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]

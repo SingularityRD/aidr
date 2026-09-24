@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {documents,rowGroups,spanBoxes,enclosing,padded,contains,checkBox,validatePages} from '../../dist/visual/geometry.js';
+import {words} from './helpers.mjs';
+test('UTF-16 spans map emoji and Turkish without codepoint drift',()=>{const page={words:words(['😀 Çağrı Öztürk jane@example.com'])};const d=documents(page)[0];const start=d.text.indexOf('jane');const boxes=spanBoxes(d,start,start+'jane@example.com'.length,'word');assert.equal(boxes.length,1);assert.equal(boxes[0].x,page.words[3].x);assert.equal(d.spans[1].start,3);});
+test('span across words expands entire tokens with no fractional geometry',()=>{const d=documents({words:words(['Jane Doe'])})[0];const boxes=spanBoxes(d,2,6,'word');assert.equal(boxes.length,2);assert.equal(boxes[0].width,28);});
+test('line masking spans all words on selected row',()=>{const d=documents({words:words(['Full name: Jane Doe'])})[0];const boxes=spanBoxes(d,11,15,'line');assert.deepEqual(boxes,[enclosing(d.rows[0])]);});
+test('separator-only span is rejected',()=>{const d=documents({words:words(['Jane Doe'])})[0];assert.throws(()=>spanBoxes(d,4,5,'word'),/IMAGE_GEOMETRY_INVALID/);});
+test('empty enclosing set rejected',()=>assert.throws(()=>enclosing([]),/IMAGE_GEOMETRY_INVALID/));
+test('padding clamps precisely at all four image edges',()=>{assert.deepEqual(padded({x:0,y:0,width:10,height:10},10,10,6),{x:0,y:0,width:10,height:10});});
+test('10000 generated rectangles: padding always contains originals and stays in canvas',()=>{let state=1234567;const rand=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state;};for(let i=0;i<10000;i++){const width=1+rand()%8192,height=1+rand()%8192,x=rand()%width,y=rand()%height;const b={x,y,width:1+rand()%(width-x),height:1+rand()%(height-y)};const p=padded(b,width,height,1+rand()%128);checkBox(p,width,height);assert.ok(contains(p,b));}});
+for(const invalid of [{x:-1,y:0,width:1,height:1},{x:0,y:0,width:0,height:1},{x:0,y:0,width:1,height:Infinity},{x:.2,y:0,width:1,height:1},{x:9,y:9,width:2,height:1}])test(`invalid rectangle ${JSON.stringify(invalid)}`,()=>assert.throws(()=>checkBox(invalid,10,10),/IMAGE_GEOMETRY_INVALID/));
+test('geometric row sorting corrects OCR block order',()=>{const w=words(['Name: Jane','Email: jane@example.com']);const rows=rowGroups([w[3],w[1],w[2],w[0]]);assert.equal(rows[0].map(w=>w.text).join(' '),'Name: Jane');assert.equal(rows[1].map(w=>w.text).join(' '),'Email: jane@example.com');});

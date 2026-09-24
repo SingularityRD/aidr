@@ -1,0 +1,6 @@
+/** Sequential warm Node execution of the browser-compatible rule core. Not an
+ * installed Chrome latency, NER, OCR or concurrent throughput benchmark. */
+import fs from'node:fs';import os from'node:os';import{BrowserPrivacyEngine}from'../../dist/browser/engine.js';
+const engine=new BrowserPrivacyEngine({maxScanMs:1000}),results=[];let peak=0;
+for(const bytes of[1024,4096,16384]){const suffix=' Email: synthetic@example.com. Phone: 0532 123 45 67.',text='Public meeting agenda. '.repeat(bytes).slice(0,bytes-suffix.length)+suffix;for(let i=0;i<100;i++)engine.protect(text);const samples=[];for(let i=0;i<1000;i++){const start=performance.now();const r=engine.protect(text);samples.push(performance.now()-start);if(r.output===null)throw Error('BENCHMARK_DENIED');peak=Math.max(peak,process.memoryUsage().rss);}samples.sort((a,b)=>a-b);results.push({inputBytes:Buffer.byteLength(text),iterations:1000,medianMs:samples[500],p95Ms:samples[950],p99Ms:samples[990]});}
+fs.writeFileSync('reports/browser/benchmark.json',JSON.stringify({scope:'Node warm sequential execution of browser-compatible rule core; excludes browser messaging, debounce, UI, native OCR/NER and concurrency',node:process.version,arch:process.arch,cpu:os.cpus()[0].model,results,peakSampledProcessRssBytes:peak},null,2)+'\n');console.log(JSON.stringify(results));

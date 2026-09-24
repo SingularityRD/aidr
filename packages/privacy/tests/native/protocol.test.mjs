@@ -1,0 +1,25 @@
+import test from'node:test';import assert from'node:assert/strict';import{createHash}from'node:crypto';
+import{FrameDecoder,encodeFrame,MAX_FRAME_BYTES}from'../../dist/native/framing.js';import{NativeSession}from'../../dist/native/session.js';
+import{BrowserPrivacyEngine}from'../../dist/browser/engine.js';
+const hash=b=>createHash('sha256').update(b).digest('hex'),pd='a'.repeat(64);let seq=0;
+const request=(op,p={})=>({v:1,id:'r'+(++seq),op,...p});
+const make=()=>new NativeSession({text:new BrowserPrivacyEngine({maxInputBytes:1048576}),policyId:'test',policyDigest:pd});
+async function prepare(s,text,kind='text'){const bytes=Buffer.from(text);await s.handle(request('begin',{kind,size:bytes.length,sha256:hash(bytes),policyDigest:pd}));for(let offset=0;offset<bytes.length;offset+=196608) await s.handle(request('write',{offset,data:bytes.subarray(offset,offset+196608).toString('base64')}));return s.handle(request('commit'));}
+test('native text transfer and exact output digest',async()=>{const s=make();const h=await s.handle(request('hello'));assert.equal(h.local,true);const m=await prepare(s,'Email: a@example.com');assert.equal(m.decision,'redact');const c=await s.handle(request('read',{offset:0}));const b=Buffer.from(c.data,'base64');assert.equal(b.toString(),'Email: [EMAIL]');assert.equal(hash(b),m.sha256);assert.equal(c.done,true);s.close();});
+test('native structured CSV masks header fields',async()=>{const s=make(),m=await prepare(s,'name,email\nJane Doe,jane@example.com','csv');assert.equal(m.decision,'redact');const r=await s.handle(request('read',{offset:0}));assert.ok(!Buffer.from(r.data,'base64').toString().includes('Jane Doe'));s.close();});
+test('native missing OCR has no bytes',async()=>{const s=make();const r=await prepare(s,'not-image','image');assert.equal(r.outputBytes,0);assert.equal(r.decision,'block');s.close();});
+test('native hello policy digest is host-bound',async()=>assert.equal((await make().handle(request('hello'))).policyDigest,pd));
+for(const fields of [{size:0},{size:8388609,kind:'image'},{size:1048577},{kind:'pdf'},{sha256:'bad'},{policyDigest:'b'.repeat(64)},{path:'/etc/passwd'}])test(`native begin reject ${JSON.stringify(fields)}`,async()=>{const s=make();await assert.rejects(s.handle(request('begin',{kind:'text',size:10,sha256:pd,policyDigest:pd,...fields})));s.close();});
+for(const op of ['write','read','commit','invalid'])test(`native rejects ${op} before begin`,async()=>{const s=make();await assert.rejects(s.handle(request(op)));s.close();});
+test('native rejects duplicate correlation IDs',async()=>{const s=make(),q=request('hello');await s.handle(q);await assert.rejects(s.handle(q));});
+test('native digest mismatch fails closed',async()=>{const s=make();await s.handle(request('begin',{kind:'text',size:1,sha256:pd,policyDigest:pd}));await s.handle(request('write',{offset:0,data:'YQ=='}));await assert.rejects(s.handle(request('commit')));s.close();});
+test('native write ordering and bounds',async()=>{const s=make();await s.handle(request('begin',{kind:'text',size:1,sha256:hash('a'),policyDigest:pd}));await assert.rejects(s.handle(request('write',{offset:1,data:'YQ=='})));await assert.rejects(s.handle(request('write',{offset:0,data:'YWJj'})));s.close();});
+test('native cancel erases pending transfer',async()=>{const s=make();await s.handle(request('begin',{kind:'text',size:1,sha256:hash('a'),policyDigest:pd}));await s.handle(request('cancel'));await assert.rejects(s.handle(request('write',{offset:0,data:'YQ=='})));});
+test('native output chunks pull at most 192 KiB',async()=>{const s=make(),text='hello '.repeat(45000);const m=await prepare(s,text);let offset=0;const chunks=[];while(offset<m.outputBytes){const c=await s.handle(request('read',{offset}));const b=Buffer.from(c.data,'base64');assert.ok(b.length<=196608);offset+=b.length;chunks.push(b);}assert.equal(Buffer.concat(chunks).toString(),text);s.close();});
+for(const boundary of [1,2,3,4,5,7,16,31,128])test(`native framing chunk boundary ${boundary}`,()=>{const d=new FrameDecoder(),q={v:1,id:'x',text:'Çağrı 🛡️'},frame=encodeFrame(q),out=[];for(let i=0;i<frame.length;i+=boundary)out.push(...d.push(frame.subarray(i,i+boundary)));d.finish();assert.equal(Object.getPrototypeOf(out[0]),null);assert.equal(JSON.stringify(out),JSON.stringify([q]));d.close();});
+test('native frame oversized header',()=>{const b=Buffer.alloc(4);b.writeUInt32LE(MAX_FRAME_BYTES+1);assert.throws(()=>new FrameDecoder().push(b));});
+test('native invalid UTF8',()=>{const b=Buffer.from([1,0,0,0,255]);assert.throws(()=>new FrameDecoder().push(b));});
+test('native duplicate JSON keys',()=>{const body=Buffer.from('{"v":1,"v":2}'),h=Buffer.alloc(4);h.writeUInt32LE(body.length);assert.throws(()=>new FrameDecoder().push(Buffer.concat([h,body])));});
+test('native trailing partial frame detected',()=>{const d=new FrameDecoder();d.push(Buffer.from([2,0,0]));assert.throws(()=>d.finish());});
+test('native zero length frame',()=>assert.throws(()=>new FrameDecoder().push(Buffer.alloc(4))));
+test('native outbound limit',()=>assert.throws(()=>encodeFrame({data:'x'.repeat(MAX_FRAME_BYTES)})));

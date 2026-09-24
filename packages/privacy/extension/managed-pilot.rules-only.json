@@ -1,0 +1,3 @@
+{
+  "PolicyJSON": "{\"id\":\"aidr-pilot-v04\",\"mode\":\"secure-compose\",\"injectionAction\":\"review\",\"sourceCodeAction\":\"block\",\"textAction\":\"redact\",\"requireNativeText\":false,\"fileHandling\":\"sanitize\"}"
+}

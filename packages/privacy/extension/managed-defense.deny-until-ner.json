@@ -1,0 +1,3 @@
+{
+  "PolicyJSON": "{\"id\":\"aidr-defense-v04\",\"mode\":\"secure-compose\",\"injectionAction\":\"block\",\"sourceCodeAction\":\"block\",\"textAction\":\"block\",\"requireNativeText\":true,\"fileHandling\":\"block\"}"
+}

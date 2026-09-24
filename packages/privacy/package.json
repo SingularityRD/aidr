@@ -1,0 +1,112 @@
+{
+  "name": "@singularity/aidr-privacy",
+  "version": "0.5.0-rc.1",
+  "description": "Local AI privacy controls, mTLS-bound identity, durable control plane, review portal, safe document reconstruction and enforced provider egress",
+  "type": "module",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./visual": {
+      "types": "./dist/visual/index.d.ts",
+      "import": "./dist/visual/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.js"
+    },
+    "./documents": {
+      "types": "./dist/browser/documents.d.ts",
+      "import": "./dist/browser/documents.js"
+    },
+    "./enterprise": {
+      "types": "./dist/enterprise/index.d.ts",
+      "import": "./dist/enterprise/index.js"
+    },
+    "./platform": {
+      "types": "./dist/platform/index.d.ts",
+      "import": "./dist/platform/index.js"
+    }
+  },
+  "bin": {
+    "aidr-privacy": "./dist/cli.js",
+    "aidr-visual": "./dist/visual/cli.js",
+    "aidr-native-host": "./dist/native/host.js"
+  },
+  "files": [
+    "dist",
+    "ner/*.py",
+    "ner/requirements*.txt",
+    "ner/*.md",
+    "docs",
+    "README.md",
+    "SECURITY.md",
+    "NOTICE.md",
+    "CHANGELOG.md",
+    "vision/worker.py",
+    "vision/build_manifest.py",
+    "vision/requirements.txt",
+    "vision/config.example.json",
+    "native",
+    "extension/chrome",
+    "extension/managed-schema.json",
+    "reports/browser/TEST_REPORT.md",
+    "examples/enterprise",
+    "reports/enterprise/TEST_REPORT.md",
+    "parsers/worker.py",
+    "parsers/requirements.txt",
+    "portal",
+    "models/risk-baseline.json",
+    "models/risk-baseline.sha256",
+    "models/MODEL_CARD.md",
+    "models/LICENSE.txt",
+    "examples/platform",
+    "reports/platform/TEST_REPORT.md",
+    "deployment/*.json",
+    "deployment/*.reg",
+    "deployment/README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p extension/tsconfig.json --noEmit && node scripts/build-extension.mjs",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p extension/tsconfig.json --noEmit",
+    "test": "node --test tests/*.test.mjs tests/visual/*.test.mjs",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-include=\"dist/**/*.js\" --test tests/*.test.mjs tests/visual/*.test.mjs tests/browser/*.test.mjs tests/native/*.test.mjs tests/enterprise/*.test.mjs tests/platform/*.test.mjs",
+    "test:python": "python3 -m unittest discover -s ner -p 'test_*.py' -v",
+    "benchmark": "node scripts/benchmark.mjs",
+    "evaluate": "node scripts/evaluate.mjs",
+    "demo": "node examples/demo.mjs",
+    "test:visual": "node --test tests/visual/*.test.mjs",
+    "test:vision-python": "python3 -m unittest discover -s vision -p 'test_*.py' -v",
+    "test:visual:e2e": "node scripts/visual/e2e.mjs",
+    "build:extension": "node scripts/build-extension.mjs",
+    "check:extension": "tsc -p extension/tsconfig.json --noEmit",
+    "test:browser": "node --test tests/browser/*.test.mjs tests/native/*.test.mjs",
+    "test:extension:e2e": "node scripts/extension/build-fixtures.mjs && python3 scripts/extension/e2e.py",
+    "build:all": "npm run build",
+    "test:all": "node --test tests/*.test.mjs tests/visual/*.test.mjs tests/browser/*.test.mjs tests/native/*.test.mjs tests/enterprise/*.test.mjs tests/platform/*.test.mjs",
+    "test:native:e2e": "node scripts/extension/build-fixtures.mjs && node scripts/extension/native-e2e.mjs",
+    "benchmark:browser": "node scripts/extension/benchmark.mjs",
+    "test:enterprise": "node --test tests/enterprise/*.test.mjs",
+    "demo:enterprise": "node examples/enterprise/demo.mjs",
+    "benchmark:enterprise": "node scripts/enterprise/benchmark.mjs",
+    "test:enterprise:visual": "node scripts/enterprise/visual-e2e.mjs",
+    "test:platform": "node --test tests/platform/*.test.mjs",
+    "test:parser": "python3 -m unittest discover -s parsers -p \"test_*.py\" -v",
+    "evaluate:platform": "node scripts/platform/evaluate-pii.mjs",
+    "demo:platform": "node examples/platform/demo.mjs",
+    "test:platform:visual": "node scripts/platform/visual-e2e.mjs",
+    "benchmark:platform": "node scripts/platform/benchmark.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^22.0.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

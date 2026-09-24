@@ -1,0 +1,19 @@
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Singularity AIDR · Güvenli Yaz</title><link rel="stylesheet" href="ui.css"></head>
+<body><main>
+<header><div><div class="eyebrow">SINGULARITY</div><h1>AIDR <span>Güvenli Yaz</span></h1></div><span id="health" class="chip">Başlatılıyor</span></header>
+<p class="lede">Ham metni AI sitesine değil, bu eklenti alanına yazın. Yalnız kontrol edilen çıktıyı aktarın.</p>
+<div class="target"><label for="target">Hedef sekme</label><select id="target" aria-label="Hedef AI sekmesi"></select><button id="refresh" class="small secondary">Yenile</button></div>
+<p id="coverage" class="note"></p>
+<section><div class="section-heading"><h2>01 <span>Metni kontrol et</span></h2><span id="byte-count" class="note">0 byte</span></div>
+<label class="sr-only" for="raw">Kontrol edilecek metin</label><textarea id="raw" placeholder="Türkçe veya İngilizce metni buraya yazın…" rows="7" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+<button id="scan" class="primary">Tara ve maskele</button></section>
+<section><h2>02 <span>Ekran görüntüsü veya dosya</span></h2><p class="note">PNG, JPEG, WebP için yerel OCR gerekir. TXT, JSON, CSV ve TSV tarayıcıda işlenebilir. Diğer biçimler engellenir.</p>
+<label for="file" class="file-label">Yerel dosya seç</label><input id="file" type="file" accept=".png,.jpg,.jpeg,.webp,.txt,.json,.csv,.tsv"><div class="actions"><button id="native-health" class="secondary small">Yerel OCR bağlantısını kontrol et</button></div></section>
+<section id="result-section" class="result" hidden><div class="section-heading"><h2>03 <span>Kontrol edilen çıktı</span></h2><span id="verdict" class="chip"></span></div>
+<textarea id="safe" readonly rows="5" aria-label="Maskelenmiş çıktı" spellcheck="false"></textarea><img id="image-preview" alt="Maskelenmiş görsel önizlemesi" hidden>
+<p id="findings" class="note"></p><div class="actions"><button id="apply" class="primary" disabled>Yalnız bu çıktıyı sekmeye aktar</button><button id="download" class="secondary" disabled>Temiz dosyayı kaydet</button></div>
+<p class="note">Aktarma, metni otomatik göndermez. Dosya aktarımı hedef sitenin yüklemesini başlatabilir; yalnız temizlenmiş byte’lar verilir.</p></section>
+<div id="status" role="status" aria-live="polite">AI sekmesini açıp Yenile düğmesine basın.</div>
+<details><summary>Kurum politikası ve kapsam</summary><pre id="policy"></pre><p class="note">Normal site editöründeki yazım kontrolü, sitenin ham taslağı okuyamayacağını garanti etmez. Güvenli Yaz ayrı eklenti kökeninde çalışır. Bu eklenti cihaz genelinde DLP veya ağ geçidi değildir.</p><button id="export-audit" class="secondary small">İçeriksiz sayaç raporunu kaydet</button></details>
+<footer>LOCAL PROCESSING <span>·</span> NO PROMPT STORAGE <span>·</span> 0.3.0-rc.1</footer>
+</main><script src="compose.js"></script></body></html>

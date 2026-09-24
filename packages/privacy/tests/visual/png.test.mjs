@@ -1,0 +1,15 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {verifiedPng,crc32} from '../../dist/visual/png.js';
+import {png,chunk} from './helpers.mjs';
+for(const filter of [0,1,2,3,4])for(const fill of [0,17,255])test(`PNG reconstruct filter ${filter}, fill ${fill}`,()=>{const b=png(8,8,fill,filter);const result=verifiedPng(b,8,8,fill===0?[{x:0,y:0,width:8,height:8}]:[]);assert.ok(result.length);assert.deepEqual(verifiedPng(result,8,8,[]),result);});
+test('CRC32 standard check vector',()=>assert.equal(crc32(Buffer.from('123456789')),0xcbf43926));
+test('non-black single pixel within promised mask rejects release',()=>assert.throws(()=>verifiedPng(png(2,2,1),2,2,[{x:0,y:0,width:1,height:1}]),/IMAGE_PIXEL_VERIFICATION_FAILED/));
+test('ancillary text chunks cannot sneak secrets into output',()=>{const b=png(8,8),withText=Buffer.concat([b.subarray(0,33),chunk('tEXt',Buffer.from('Comment\0synthetic@example.com')),b.subarray(33)]);assert.throws(()=>verifiedPng(withText,8,8,[]),/IMAGE_UNVERIFIED_OUTPUT/);});
+test('trailing original image bytes rejected',()=>assert.throws(()=>verifiedPng(Buffer.concat([png(8,8),Buffer.from('ORIGINAL SECRET')]),8,8,[]),/IMAGE_UNVERIFIED_OUTPUT/));
+test('metadata inside trailing zlib data is removed by fresh encoder',()=>{const b=png(8,8);const len=b.readUInt32BE(33);const idat=b.subarray(41,41+len);const contaminated=Buffer.concat([b.subarray(0,33),chunk('IDAT',Buffer.concat([idat,Buffer.from('ORIGINAL SECRET')])),chunk('IEND',Buffer.alloc(0))]);const cleaned=verifiedPng(contaminated,8,8,[]);assert.ok(!cleaned.includes(Buffer.from('ORIGINAL SECRET')));assert.deepEqual(cleaned,verifiedPng(b,8,8,[]));});
+test('wrong dimensions rejected',()=>assert.throws(()=>verifiedPng(png(8,8),9,8,[]),/IMAGE_UNVERIFIED_OUTPUT/));
+test('bad CRC rejected',()=>{const b=png(8,8);b[29]^=1;assert.throws(()=>verifiedPng(b,8,8,[]),/IMAGE_UNVERIFIED_OUTPUT/);});
+test('short binary never accepted',()=>assert.throws(()=>verifiedPng(Buffer.from('PNG'),1,1,[]),/IMAGE_UNVERIFIED_OUTPUT/));
+test('response bytes cap enforced',()=>assert.throws(()=>verifiedPng(png(8,8),8,8,[],10),/IMAGE_UNVERIFIED_OUTPUT/));
+for(const [field,value]of [[8,16],[9,6],[10,1],[11,1],[12,1]])test(`unsupported IHDR field ${field}`,()=>{const b=png(8,8);const ih=Buffer.from(b.subarray(16,29));ih[field]=value;const mutated=Buffer.concat([b.subarray(0,8),chunk('IHDR',ih),b.subarray(33)]);assert.throws(()=>verifiedPng(mutated,8,8,[]),/IMAGE_UNVERIFIED_OUTPUT/);});
+test('1000 deterministically corrupted/truncated PNGs fail or yield valid canonical pixels',()=>{const seed=png(4,4);for(let i=0;i<1000;i++){const b=Buffer.from(seed);const at=i%b.length;b[at]^=1+(i%255);try{const out=verifiedPng(b,4,4,[]);assert.deepEqual(verifiedPng(out,4,4,[]),out);}catch(error){assert.match(error.message,/IMAGE_UNVERIFIED_OUTPUT/);}}});

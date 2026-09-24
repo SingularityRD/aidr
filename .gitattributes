@@ -1,8 +1,12 @@
 * text=auto eol=lf
 # Preserve the owned AIG Git tree byte-for-byte, including upstream Markdown hardbreaks.
 vendor/ai-infra-guard/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
+# Imported privacy reports use Markdown hardbreaks; PDF fixtures are byte-sensitive.
+packages/privacy/**/*.md whitespace=-blank-at-eol
+packages/privacy/fixtures/**/*.pdf -text -diff
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+packages/privacy/deployment/*.reg -text -eol whitespace=-blank-at-eol
 # Generated connector bundles can contain intentional whitespace inside
 # embedded third-party documentation strings; source files remain strict.
 packages/claude-code/dist/*.cjs whitespace=-space-before-tab

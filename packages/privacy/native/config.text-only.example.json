@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "allowedExtensionIds": ["hmcbdjjldiobifmolecnmalilknnapcb"],
+  "browserPolicyJSON": "{}",
+  "text": { "profile": "strict", "mask": "label", "maxInputBytes": 1048576 }
+}

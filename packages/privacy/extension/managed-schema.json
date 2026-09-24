@@ -1,0 +1,1 @@
+{"type":"object","properties":{"PolicyJSON":{"title":"AIDR managed policy","description":"Strict JSON policy. Unknown keys, malformed input or unavailable policy storage fail closed.","type":"string"}},"additionalProperties":false}

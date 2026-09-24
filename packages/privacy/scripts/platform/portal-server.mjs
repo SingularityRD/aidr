@@ -1,0 +1,13 @@
+// Offline browser acceptance fixture. IdP exchange is synthetic; HTTP, TLS, JWT,
+// session storage, RBAC, CSRF, review transitions and DOM are real local components.
+import {createServer}from'node:https';import{readFileSync,writeFileSync}from'node:fs';import{join,resolve}from'node:path';import{execFileSync}from'node:child_process';import{generateKeyPairSync}from'node:crypto';
+import{fixture,authFixture,NOW}from'../../tests/platform/helpers.mjs';import{ReviewWorkflow,OidcSessionManager,PinnedJwtVerifier,issueJwt,createReviewHandler}from'../../dist/platform/index.js';
+const f=fixture(),a=authFixture(f),w=new ReviewWorkflow(f.state,a.resolver,()=>NOW),key=generateKeyPairSync('ed25519');
+const case1=w.open(a.user(),{actionDigest:'a'.repeat(64),policyRevision:5,reason:'DOCUMENT_REVIEW',destination:'kurumsal-ai',explanation:'Belge düz metne dönüştürüldü. Kaynak dosya gönderilmez; yalnız belirli işlem için iş gerekçesi değerlendiriliyor.'});
+w.open(a.user(),{actionDigest:'b'.repeat(64),policyRevision:5,reason:'SEMANTIC_REVIEW',destination:'kurumsal-ai',explanation:'Öğrenilmiş sınıflandırıcı kararsız kaldı. Otomatik yayınlama kapatıldı.'});
+let nonce;const sessions=new OidcSessionManager({state:f.state,identity:a.resolver,idTokenVerifier:new PinnedJwtVerifier({issuer:'https://idp.test.example',audience:'portal-test',idTokenProfile:true,keys:new Map([['idp',key.publicKey]])}),clientId:'portal-test',authorizationEndpoint:'https://idp.test.example/authorize',tokenEndpoint:'https://idp.test.example/token',redirectUri:'https://portal.test.example/oidc/callback',clock:()=>NOW,exchange:async()=>({id_token:issueJwt({iss:'https://idp.test.example',aud:'portal-test',sub:'idp-reviewer',iat:NOW/1000,exp:NOW/1000+300,nonce},'idp',key.privateKey)}),establishLocalSession:async()=>a.token('user',{},'bob','s2')});
+const begin=sessions.begin();const u=new URL(begin.location);nonce=u.searchParams.get('nonce');const login=await sessions.callback(u.searchParams.get('state'),'fixture-code',begin.browserCookie);
+const cert=join(f.root,'cert.pem'),priv=join(f.root,'tls-key.pem');execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',priv,'-out',cert,'-days','1','-subj','/CN=127.0.0.1','-addext','subjectAltName=IP:127.0.0.1'],{stdio:'ignore'});
+let handler;const server=createServer({key:readFileSync(priv),cert:readFileSync(cert)},(req,res)=>handler(req,res));await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`https://127.0.0.1:${server.address().port}`;handler=createReviewHandler({sessions,workflow:w,origin,assetsDirectory:resolve('portal')});
+console.log(JSON.stringify({origin,cookie:login.sessionCookie,caseId:case1.id}));
+process.on('SIGTERM',()=>{server.close(()=>{f.close();process.exit(0);});});
