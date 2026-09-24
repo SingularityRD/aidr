@@ -551,6 +551,8 @@ export {
 	type WriteIncidentAnchorOptions,
 	writeSignedIncidentAnchorReceipt,
 } from "./incidents/index.js";
+// Connector initialisation failure (fail-closed load)
+export { formatInitFailureMessage, initFailureCode } from "./init-failure.js";
 // Installation ID
 export { getInstallationId } from "./installation-id.js";
 // Integrity (signed artifact manifest verification)

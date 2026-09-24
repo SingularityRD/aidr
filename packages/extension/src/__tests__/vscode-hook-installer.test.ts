@@ -21,7 +21,11 @@ describe("VS Code Local managed hook configuration", () => {
 	beforeEach(async () => {
 		home = await mkdtemp(path.join(os.tmpdir(), "aidr-vscode-hooks-"));
 		tempHomes.push(home);
+		// os.homedir() reads HOME on POSIX and USERPROFILE on Windows; stub both so the
+		// installer never touches the real ~/.claude/settings.json of the machine running tests.
+		vi.stubEnv("HOME", home);
 		vi.stubEnv("USERPROFILE", home);
+		expect(os.homedir()).toBe(home);
 		vi.stubEnv("VSCODE_NODE_EXEC_PATH", process.execPath);
 		vscodeMocks.getConfiguration.mockReturnValue({ get: () => process.execPath });
 	});
@@ -38,7 +42,8 @@ describe("VS Code Local managed hook configuration", () => {
 		expect(settings.hooks.PreToolUse).toContainEqual(
 			expect.objectContaining({ matcher: "Bash|WebFetch|Write|Edit|Read|Delete|editFiles" }),
 		);
-		expect(health.installedEvents).toContain("PreToolUse");
+		expect(health.configPath).toBe(path.join(home, ".claude", "settings.json"));
+		expect(health.installedEvents).toEqual(["PreToolUse", "PostToolUse"]);
 	});
 
 	it("refuses malformed customer settings on install and removal without overwriting them", async () => {
@@ -48,7 +53,9 @@ describe("VS Code Local managed hook configuration", () => {
 
 		for (const original of ['{"hooks":', '{"hooks":{"PreToolUse":"customer-hook"}}']) {
 			await writeFile(configPath, original, "utf8");
-			await expect(installManagedHooks({ context: context as never, scope: "user" })).rejects.toThrow();
+			await expect(
+				installManagedHooks({ context: context as never, scope: "user" }),
+			).rejects.toThrow();
 			await expect(removeManagedHooks("user")).rejects.toThrow();
 			expect(await readFile(configPath, "utf8")).toBe(original);
 		}

@@ -12,7 +12,11 @@ vi.mock("vscode", () => ({
 	},
 }));
 
-import { installManagedHooks, removeManagedHooks } from "../cursor_hook_installer.js";
+import {
+	getHookHealth,
+	installManagedHooks,
+	removeManagedHooks,
+} from "../cursor_hook_installer.js";
 
 const tempHomes: string[] = [];
 let home: string;
@@ -22,7 +26,11 @@ describe("Cursor managed hook configuration", () => {
 		vi.clearAllMocks();
 		home = await mkdtemp(path.join(os.tmpdir(), "aidr-cursor-hooks-"));
 		tempHomes.push(home);
+		// os.homedir() reads HOME on POSIX and USERPROFILE on Windows; stub both so the
+		// installer never touches the real ~/.cursor/hooks.json of the machine running tests.
+		vi.stubEnv("HOME", home);
 		vi.stubEnv("USERPROFILE", home);
+		expect(os.homedir()).toBe(home);
 		vscodeMocks.getConfiguration.mockReturnValue({ get: () => process.execPath });
 	});
 
@@ -47,14 +55,21 @@ describe("Cursor managed hook configuration", () => {
 			.flat()
 			.filter((entry) => String(entry.command).includes("--managed-by aidr-cursor"));
 
-		expect(health.installedEvents).toEqual([
-			"preToolUse",
+		expect(health.configPath).toBe(path.join(cursorDir, "hooks.json"));
+		// Documented registration order, even though the customer's file lists preToolUse first.
+		const documentedOrder = [
 			"beforeShellExecution",
+			"preToolUse",
 			"postToolUse",
 			"afterAgentResponse",
 			"beforeMCPExecution",
 			"beforeReadFile",
-		]);
+		];
+		expect(Object.keys(hooksFile.hooks)[0]).toBe("preToolUse");
+		expect(health.installedEvents).toEqual(documentedOrder);
+		expect(
+			(await getHookHealth({ context: context as never, scope: "user" })).installedEvents,
+		).toEqual(documentedOrder);
 		expect(managed).toHaveLength(6);
 		expect(managed.every((entry) => entry.failClosed === true)).toBe(true);
 		expect(hooksFile.hooks.preToolUse).toContainEqual({
@@ -70,7 +85,9 @@ describe("Cursor managed hook configuration", () => {
 
 		for (const original of ['{"hooks":', '{"version":1,"hooks":[]}']) {
 			await writeFile(configPath, original, "utf8");
-			await expect(installManagedHooks({ context: context as never, scope: "user" })).rejects.toThrow();
+			await expect(
+				installManagedHooks({ context: context as never, scope: "user" }),
+			).rejects.toThrow();
 			await expect(removeManagedHooks("user")).rejects.toThrow();
 			expect(await readFile(configPath, "utf8")).toBe(original);
 		}
@@ -79,7 +96,10 @@ describe("Cursor managed hook configuration", () => {
 	it("keeps unrelated customer fields through enable and disable", async () => {
 		const configPath = path.join(home, ".cursor", "hooks.json");
 		await mkdir(path.dirname(configPath), { recursive: true });
-		await writeFile(configPath, JSON.stringify({ version: 1, hooks: {}, customerField: { enabled: true } }));
+		await writeFile(
+			configPath,
+			JSON.stringify({ version: 1, hooks: {}, customerField: { enabled: true } }),
+		);
 		const context = { asAbsolutePath: (relativePath: string) => relativePath };
 
 		await installManagedHooks({ context: context as never, scope: "user" });
