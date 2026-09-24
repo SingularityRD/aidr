@@ -1,0 +1,372 @@
+/**
+ * Effective Browser Guard policy: administrator-managed policy (chrome.storage.managed)
+ * merged over user settings (chrome.storage.local) merged over the built-in default.
+ *
+ * Validation is strict but never throws: an unknown key or a value of the wrong
+ * shape is ignored as a whole (mirroring how Chrome drops a managed policy that
+ * does not match static/managed_schema.json) and reported in a warning list.
+ * Warnings name keys only, never values (an apiKey must not reach a log line).
+ */
+import {
+	ENTITY_TYPES,
+	type EntityType,
+	type ExactDataSet,
+	type GuardMode,
+	type GuardPolicy,
+	type LiteralRule,
+	type SiteId,
+	type TelemetryConfig,
+	type UserSettings,
+} from "../types.js";
+
+const MIB = 1024 * 1024;
+
+export const GUARD_MODES: readonly GuardMode[] = Object.freeze([
+	"auto",
+	"confirm",
+	"block",
+	"monitor",
+]);
+
+/** Every SiteId (kept local so the background does not depend on the site adapters). */
+export const SITE_ID_LIST: readonly SiteId[] = Object.freeze([
+	"chatgpt",
+	"gemini",
+	"claude",
+	"copilot",
+	"perplexity",
+	"deepseek",
+	"mistral",
+	"grok",
+	"other",
+]);
+
+export const POLICY_LIMITS = Object.freeze({
+	maxLiterals: 1024,
+	literalMinChars: 2,
+	literalMaxChars: 256,
+	maxExactDataSets: 16,
+	maxFingerprintsTotal: 100_000,
+	maxFileBytes: 50 * MIB,
+	maxUrlChars: 2048,
+	apiKeyMinChars: 8,
+	apiKeyMaxChars: 512,
+});
+
+/** Identifier syntax shared with the telemetry contract (`policy_id`). */
+export const POLICY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const DATASET_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+const HEX64_PATTERN = /^[0-9a-fA-F]{64}$/;
+const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+const API_KEY_PATTERN = /^[\x21-\x7e]+$/;
+
+/** Entity types that are noisy on chat pages and therefore off by default. */
+const NOISY_BY_DEFAULT: readonly EntityType[] = ["USERNAME", "LOCATION"];
+
+export const DEFAULT_POLICY: GuardPolicy = deepFreeze({
+	version: 1,
+	mode: "auto",
+	enabledEntities: ENTITY_TYPES.filter((t) => !NOISY_BY_DEFAULT.includes(t)),
+	neverRestore: ["SECRET", "PRIVATE_KEY"],
+	literals: [],
+	exactData: [],
+	detectSignals: true,
+	signalAction: "warn",
+	blockedSites: [],
+	disabledSites: [],
+	allowUserPause: true,
+	allowSendAnyway: true,
+	maskPaste: true,
+	fileHandling: "scan",
+	maxFileBytes: 5 * MIB,
+	restoreResponses: true,
+	useNativeHost: false,
+	telemetry: null,
+	language: "auto",
+	managedKeys: [],
+	policyId: "aidr-browser-guard-default",
+} satisfies GuardPolicy);
+
+type Validator = (raw: unknown) => { ok: true; value: unknown } | { ok: false };
+
+const valid = (value: unknown) => ({ ok: true as const, value });
+const invalid = { ok: false as const };
+
+function oneOf<T extends string>(values: readonly T[]): Validator {
+	return (raw) => (typeof raw === "string" && values.includes(raw as T) ? valid(raw) : invalid);
+}
+
+const bool: Validator = (raw) => (typeof raw === "boolean" ? valid(raw) : invalid);
+
+function isPlainObject(raw: unknown): raw is Record<string, unknown> {
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return false;
+	const proto = Object.getPrototypeOf(raw);
+	return proto === Object.prototype || proto === null;
+}
+
+function hasExactKeys(raw: Record<string, unknown>, keys: readonly string[]): boolean {
+	const own = Object.keys(raw);
+	return own.length === keys.length && own.every((k) => keys.includes(k));
+}
+
+function isEntityType(raw: unknown): raw is EntityType {
+	return typeof raw === "string" && (ENTITY_TYPES as readonly string[]).includes(raw);
+}
+
+function enumList<T extends string>(values: readonly T[], maxItems: number): Validator {
+	return (raw) => {
+		if (!Array.isArray(raw) || raw.length > maxItems) return invalid;
+		if (!raw.every((v) => typeof v === "string" && values.includes(v as T))) return invalid;
+		return valid([...new Set(raw as T[])]);
+	};
+}
+
+const entityList = enumList(ENTITY_TYPES, ENTITY_TYPES.length * 4);
+const siteList = enumList(SITE_ID_LIST, SITE_ID_LIST.length * 4);
+
+const literals: Validator = (raw) => {
+	if (!Array.isArray(raw) || raw.length > POLICY_LIMITS.maxLiterals) return invalid;
+	const out: LiteralRule[] = [];
+	const seen = new Set<string>();
+	for (const item of raw) {
+		if (!isPlainObject(item) || !hasExactKeys(item, ["value", "type"])) return invalid;
+		const { value, type } = item;
+		if (typeof value !== "string" || !isEntityType(type)) return invalid;
+		if (value.length < POLICY_LIMITS.literalMinChars) return invalid;
+		if (value.length > POLICY_LIMITS.literalMaxChars) return invalid;
+		if (value.trim().length < POLICY_LIMITS.literalMinChars) return invalid;
+		const key = `${type}\u0000${value}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push({ value, type });
+	}
+	return valid(out);
+};
+
+const exactData: Validator = (raw) => {
+	if (!Array.isArray(raw) || raw.length > POLICY_LIMITS.maxExactDataSets) return invalid;
+	const out: ExactDataSet[] = [];
+	const ids = new Set<string>();
+	let total = 0;
+	for (const item of raw) {
+		if (
+			!isPlainObject(item) ||
+			!hasExactKeys(item, ["datasetId", "keyB64", "fingerprints", "type"])
+		)
+			return invalid;
+		const { datasetId, keyB64, fingerprints, type } = item;
+		if (typeof datasetId !== "string" || !DATASET_ID_PATTERN.test(datasetId)) return invalid;
+		if (ids.has(datasetId)) return invalid;
+		if (
+			typeof keyB64 !== "string" ||
+			keyB64.length < 16 ||
+			keyB64.length > 1024 ||
+			keyB64.length % 4 !== 0 ||
+			!BASE64_PATTERN.test(keyB64)
+		)
+			return invalid;
+		if (!isEntityType(type) || !Array.isArray(fingerprints)) return invalid;
+		total += fingerprints.length;
+		if (total > POLICY_LIMITS.maxFingerprintsTotal) return invalid;
+		if (!fingerprints.every((f) => typeof f === "string" && HEX64_PATTERN.test(f))) return invalid;
+		ids.add(datasetId);
+		out.push({
+			datasetId,
+			keyB64,
+			fingerprints: [...new Set((fingerprints as string[]).map((f) => f.toLowerCase()))],
+			type,
+		});
+	}
+	return valid(out);
+};
+
+const maxFileBytes: Validator = (raw) =>
+	Number.isSafeInteger(raw) && (raw as number) >= 1 && (raw as number) <= POLICY_LIMITS.maxFileBytes
+		? valid(raw)
+		: invalid;
+
+const policyId: Validator = (raw) =>
+	typeof raw === "string" && POLICY_ID_PATTERN.test(raw) ? valid(raw) : invalid;
+
+/**
+ * Control-plane base URL: https only, except plain http to localhost/127.0.0.1 for
+ * local development. No credentials, query or fragment. Returns the normalised URL
+ * without a trailing slash, or null.
+ */
+export function normalizeControlPlaneUrl(raw: unknown): string | null {
+	if (typeof raw !== "string" || raw.length === 0 || raw.length > POLICY_LIMITS.maxUrlChars)
+		return null;
+	let url: URL;
+	try {
+		url = new URL(raw);
+	} catch {
+		return null;
+	}
+	if (url.username || url.password || url.search || url.hash) return null;
+	const devHost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+	if (url.protocol !== "https:" && !(url.protocol === "http:" && devHost)) return null;
+	return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
+function telemetryValidator(allowNull: boolean): Validator {
+	return (raw) => {
+		if (raw === null) return allowNull ? valid(null) : invalid;
+		if (!isPlainObject(raw) || !hasExactKeys(raw, ["controlPlaneUrl", "apiKey"])) return invalid;
+		const controlPlaneUrl = normalizeControlPlaneUrl(raw.controlPlaneUrl);
+		const { apiKey } = raw;
+		if (!controlPlaneUrl || typeof apiKey !== "string") return invalid;
+		if (
+			apiKey.length < POLICY_LIMITS.apiKeyMinChars ||
+			apiKey.length > POLICY_LIMITS.apiKeyMaxChars
+		)
+			return invalid;
+		if (!API_KEY_PATTERN.test(apiKey)) return invalid;
+		return valid({ controlPlaneUrl, apiKey } satisfies TelemetryConfig);
+	};
+}
+
+type ManagedKey = Exclude<keyof GuardPolicy, "version" | "managedKeys">;
+
+const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
+	mode: oneOf(GUARD_MODES),
+	enabledEntities: entityList,
+	neverRestore: entityList,
+	literals,
+	exactData,
+	detectSignals: bool,
+	signalAction: oneOf(["off", "warn", "block"]),
+	blockedSites: siteList,
+	disabledSites: siteList,
+	allowUserPause: bool,
+	allowSendAnyway: bool,
+	maskPaste: bool,
+	fileHandling: oneOf(["scan", "block", "allow"]),
+	maxFileBytes,
+	restoreResponses: bool,
+	useNativeHost: bool,
+	telemetry: telemetryValidator(false),
+	language: oneOf(["auto", "en", "tr"]),
+	policyId,
+};
+
+const USER_VALIDATORS: Readonly<Record<keyof UserSettings, Validator>> = {
+	mode: MANAGED_VALIDATORS.mode,
+	enabledEntities: entityList,
+	literals,
+	disabledSites: siteList,
+	maskPaste: bool,
+	restoreResponses: bool,
+	language: MANAGED_VALIDATORS.language,
+	telemetry: telemetryValidator(true),
+};
+
+/** Keys an administrator may set in chrome.storage.managed (static/managed_schema.json). */
+export const MANAGED_POLICY_KEYS: readonly ManagedKey[] = Object.freeze(
+	Object.keys(MANAGED_VALIDATORS) as ManagedKey[],
+);
+
+/** Keys a user may change (options page / popup). */
+export const USER_SETTING_KEYS: readonly (keyof UserSettings)[] = Object.freeze(
+	Object.keys(USER_VALIDATORS) as (keyof UserSettings)[],
+);
+
+export interface UserSettingsValidation {
+	readonly settings: Partial<UserSettings>;
+	readonly unknownKeys: readonly string[];
+	readonly invalidKeys: readonly string[];
+}
+
+/** Validates user settings key by key; unknown and invalid keys are reported and dropped. */
+export function validateUserSettings(raw: unknown): UserSettingsValidation {
+	const settings: Record<string, unknown> = {};
+	const unknownKeys: string[] = [];
+	const invalidKeys: string[] = [];
+	if (raw === undefined || raw === null) return { settings, unknownKeys, invalidKeys };
+	if (!isPlainObject(raw)) return { settings, unknownKeys, invalidKeys: ["*"] };
+	for (const [key, value] of Object.entries(raw)) {
+		const validator = Object.hasOwn(USER_VALIDATORS, key)
+			? USER_VALIDATORS[key as keyof UserSettings]
+			: undefined;
+		if (!validator) {
+			unknownKeys.push(key);
+			continue;
+		}
+		const result = validator(value);
+		if (result.ok) settings[key] = result.value;
+		else invalidKeys.push(key);
+	}
+	return { settings: settings as Partial<UserSettings>, unknownKeys, invalidKeys };
+}
+
+export interface PolicyEvaluation {
+	readonly policy: GuardPolicy;
+	/** Human-readable, value-free notes about ignored input. */
+	readonly warnings: readonly string[];
+}
+
+/**
+ * Merges managed over user over default and reports everything that was ignored.
+ * Never throws. A managed `mode` also locks `disabledSites` (a user must not be able
+ * to switch off an administrator-mandated mode per site).
+ */
+export function evaluatePolicy(managed: unknown, user: unknown): PolicyEvaluation {
+	const warnings: string[] = [];
+	const merged: Record<string, unknown> = { ...DEFAULT_POLICY };
+	const managedKeys: string[] = [];
+
+	const userResult = validateUserSettings(user);
+	for (const key of userResult.unknownKeys) warnings.push(`user: unknown key "${key}" ignored`);
+	for (const key of userResult.invalidKeys)
+		warnings.push(`user: invalid value for "${key}" ignored`);
+	Object.assign(merged, userResult.settings);
+
+	if (managed !== undefined && managed !== null) {
+		if (!isPlainObject(managed)) {
+			warnings.push("managed: policy is not an object; ignored");
+		} else {
+			for (const [key, value] of Object.entries(managed)) {
+				const validator = Object.hasOwn(MANAGED_VALIDATORS, key)
+					? MANAGED_VALIDATORS[key as ManagedKey]
+					: undefined;
+				if (!validator) {
+					warnings.push(`managed: unknown key "${key}" ignored`);
+					continue;
+				}
+				const result = validator(value);
+				if (!result.ok) {
+					warnings.push(`managed: invalid value for "${key}" ignored`);
+					continue;
+				}
+				merged[key] = result.value;
+				managedKeys.push(key);
+			}
+		}
+	}
+
+	if (managedKeys.includes("mode") && !managedKeys.includes("disabledSites")) {
+		if ((merged.disabledSites as readonly SiteId[]).length > 0)
+			warnings.push('user: "disabledSites" ignored because "mode" is managed');
+		merged.disabledSites = [];
+		managedKeys.push("disabledSites");
+	}
+
+	merged.version = 1;
+	merged.managedKeys = managedKeys;
+	return { policy: deepFreeze(merged as unknown as GuardPolicy), warnings };
+}
+
+/** Contract entry point (see src/types.ts): managed keys override user settings. */
+export function mergePolicy(
+	managed: unknown,
+	user: Partial<UserSettings> | undefined,
+): GuardPolicy {
+	return evaluatePolicy(managed, user).policy;
+}
+
+function deepFreeze<T>(value: T): T {
+	if (value && typeof value === "object" && !Object.isFrozen(value)) {
+		Object.freeze(value);
+		for (const v of Object.values(value)) deepFreeze(v);
+	}
+	return value;
+}

@@ -1,0 +1,317 @@
+{
+	"type": "object",
+	"properties": {
+		"mode": {
+			"title": "Guard mode",
+			"description": "auto masks sensitive data automatically; confirm asks before sending; block stops sends containing sensitive data; monitor only records.",
+			"type": "string",
+			"enum": [
+				"auto",
+				"confirm",
+				"block",
+				"monitor"
+			]
+		},
+		"enabledEntities": {
+			"title": "Enabled entity types",
+			"description": "Entity types that are detected and masked.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": [
+					"PERSON",
+					"EMAIL",
+					"PHONE",
+					"TC_KIMLIK",
+					"IBAN",
+					"CREDIT_CARD",
+					"ADDRESS",
+					"US_SSN",
+					"DATE_OF_BIRTH",
+					"PASSPORT",
+					"NATIONAL_ID",
+					"TAX_ID",
+					"BANK_ACCOUNT",
+					"IP_ADDRESS",
+					"MAC_ADDRESS",
+					"SECRET",
+					"PRIVATE_KEY",
+					"INTERNAL",
+					"CLASSIFIED",
+					"LOCATION",
+					"USERNAME",
+					"HEALTH_ID",
+					"LICENSE_PLATE"
+				]
+			}
+		},
+		"neverRestore": {
+			"title": "Never-restore entity types",
+			"description": "Entity types that are masked but never restored in responses.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": [
+					"PERSON",
+					"EMAIL",
+					"PHONE",
+					"TC_KIMLIK",
+					"IBAN",
+					"CREDIT_CARD",
+					"ADDRESS",
+					"US_SSN",
+					"DATE_OF_BIRTH",
+					"PASSPORT",
+					"NATIONAL_ID",
+					"TAX_ID",
+					"BANK_ACCOUNT",
+					"IP_ADDRESS",
+					"MAC_ADDRESS",
+					"SECRET",
+					"PRIVATE_KEY",
+					"INTERNAL",
+					"CLASSIFIED",
+					"LOCATION",
+					"USERNAME",
+					"HEALTH_ID",
+					"LICENSE_PLATE"
+				]
+			}
+		},
+		"literals": {
+			"title": "Literal terms",
+			"description": "Organisation-specific terms to mask (at most 1024; each 2..256 characters).",
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"value": {
+						"type": "string",
+						"pattern": "^[\\s\\S]{2,256}$"
+					},
+					"type": {
+						"type": "string",
+						"enum": [
+							"PERSON",
+							"EMAIL",
+							"PHONE",
+							"TC_KIMLIK",
+							"IBAN",
+							"CREDIT_CARD",
+							"ADDRESS",
+							"US_SSN",
+							"DATE_OF_BIRTH",
+							"PASSPORT",
+							"NATIONAL_ID",
+							"TAX_ID",
+							"BANK_ACCOUNT",
+							"IP_ADDRESS",
+							"MAC_ADDRESS",
+							"SECRET",
+							"PRIVATE_KEY",
+							"INTERNAL",
+							"CLASSIFIED",
+							"LOCATION",
+							"USERNAME",
+							"HEALTH_ID",
+							"LICENSE_PLATE"
+						]
+					}
+				},
+				"required": [
+					"value",
+					"type"
+				]
+			}
+		},
+		"exactData": {
+			"title": "Exact data match datasets",
+			"description": "HMAC-SHA256 fingerprint datasets (at most 16 datasets and 100000 fingerprints in total).",
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"datasetId": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+					},
+					"keyB64": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9+/]{14,1022}={0,2}$"
+					},
+					"fingerprints": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^[0-9a-fA-F]{64}$"
+						}
+					},
+					"type": {
+						"type": "string",
+						"enum": [
+							"PERSON",
+							"EMAIL",
+							"PHONE",
+							"TC_KIMLIK",
+							"IBAN",
+							"CREDIT_CARD",
+							"ADDRESS",
+							"US_SSN",
+							"DATE_OF_BIRTH",
+							"PASSPORT",
+							"NATIONAL_ID",
+							"TAX_ID",
+							"BANK_ACCOUNT",
+							"IP_ADDRESS",
+							"MAC_ADDRESS",
+							"SECRET",
+							"PRIVATE_KEY",
+							"INTERNAL",
+							"CLASSIFIED",
+							"LOCATION",
+							"USERNAME",
+							"HEALTH_ID",
+							"LICENSE_PLATE"
+						]
+					}
+				},
+				"required": [
+					"datasetId",
+					"keyB64",
+					"fingerprints",
+					"type"
+				]
+			}
+		},
+		"detectSignals": {
+			"title": "Detect risk signals",
+			"description": "Detect prompt-injection and source-code signals.",
+			"type": "boolean"
+		},
+		"signalAction": {
+			"title": "Signal action",
+			"description": "off ignores signals, warn shows coaching, block stops the send.",
+			"type": "string",
+			"enum": [
+				"off",
+				"warn",
+				"block"
+			]
+		},
+		"blockedSites": {
+			"title": "Blocked sites",
+			"description": "AI chat sites whose pages are blocked from loading.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": [
+					"chatgpt",
+					"gemini",
+					"claude",
+					"copilot",
+					"perplexity",
+					"deepseek",
+					"mistral",
+					"grok",
+					"other"
+				]
+			}
+		},
+		"disabledSites": {
+			"title": "Disabled sites",
+			"description": "Sites where the guard only monitors.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": [
+					"chatgpt",
+					"gemini",
+					"claude",
+					"copilot",
+					"perplexity",
+					"deepseek",
+					"mistral",
+					"grok",
+					"other"
+				]
+			}
+		},
+		"allowUserPause": {
+			"title": "Allow user pause",
+			"description": "Allow users to pause protection for up to 60 minutes.",
+			"type": "boolean"
+		},
+		"allowSendAnyway": {
+			"title": "Allow send anyway",
+			"description": "Allow users to send a prompt unmasked after a warning.",
+			"type": "boolean"
+		},
+		"maskPaste": {
+			"title": "Mask pasted text",
+			"description": "Mask sensitive data as it is pasted.",
+			"type": "boolean"
+		},
+		"fileHandling": {
+			"title": "File handling",
+			"description": "scan sanitises uploaded files, block rejects them, allow passes them through.",
+			"type": "string",
+			"enum": [
+				"scan",
+				"block",
+				"allow"
+			]
+		},
+		"maxFileBytes": {
+			"title": "Maximum file size",
+			"description": "Largest file (bytes) that is scanned; at most 52428800 (50 MiB).",
+			"type": "integer",
+			"minimum": 1,
+			"maximum": 52428800
+		},
+		"restoreResponses": {
+			"title": "Restore responses",
+			"description": "Restore original values in responses locally.",
+			"type": "boolean"
+		},
+		"useNativeHost": {
+			"title": "Use native host",
+			"description": "Use the AIDR Privacy native host for NER and OCR.",
+			"type": "boolean"
+		},
+		"telemetry": {
+			"title": "Control-plane telemetry",
+			"description": "Privacy telemetry enrollment (counts only). controlPlaneUrl must be https (http only for localhost/127.0.0.1).",
+			"type": "object",
+			"properties": {
+				"controlPlaneUrl": {
+					"type": "string",
+					"pattern": "^(https://[^\\s]+|http://(localhost|127\\.0\\.0\\.1)([:/][^\\s]*)?)$"
+				},
+				"apiKey": {
+					"type": "string",
+					"pattern": "^[\\x21-\\x7e]{8,512}$"
+				}
+			},
+			"required": [
+				"controlPlaneUrl",
+				"apiKey"
+			]
+		},
+		"language": {
+			"title": "Language",
+			"description": "User interface language.",
+			"type": "string",
+			"enum": [
+				"auto",
+				"en",
+				"tr"
+			]
+		},
+		"policyId": {
+			"title": "Policy identifier",
+			"description": "Identifier reported with telemetry events.",
+			"type": "string",
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+		}
+	}
+}
