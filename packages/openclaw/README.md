@@ -129,8 +129,9 @@ the session: the model reports the `actionId`, the user approves it with the CLI
 and the user then asks the model to retry. The approval channel is not a boundary
 against code running as the same OS user with full shell access (see
 [docs/configuration.md](../../docs/configuration.md#operator-approvals)); the
-self-defense rule `CLT-SELF-007` blocks the agent from running `aidr approve` or
-touching the approval store itself. Blocking is the safe failure mode: a blocked
+self-defense rules `CLT-SELF-007`..`009` deny the agent running `aidr approve`
+(however it is quoted or wrapped) or touching the AIDR state directory and the
+approval key, which lives in the OS credential vault. Blocking is the safe failure mode: a blocked
 action is recoverable, a self-approved one is not.
 
 ## Configuration

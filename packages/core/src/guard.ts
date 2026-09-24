@@ -310,7 +310,13 @@ export async function guardToolCall(
 		effective = { ...verdict, decision: "deny" };
 	}
 	const operatorStore =
-		options.operatorApprovals === false ? null : { logger, ...options.operatorApprovals };
+		options.operatorApprovals === false
+			? null
+			: {
+					logger,
+					keyStorage: config.operator_approvals?.key_storage,
+					...options.operatorApprovals,
+				};
 	const approvable = effective.decision === "ask" && loadedConfig && !isInvalidConfig(loadedConfig);
 	let approvedBy: GuardResult["approvedBy"];
 	if (approvable && hasApproval) {
@@ -656,11 +662,18 @@ export function formatDenyMessage(verdict: Verdict, actions?: ResponseActionReco
 	return lines.join("\n");
 }
 
+/**
+ * The block message for an `ask`. Pass `pendingRecorded` from the
+ * {@link GuardResult}: when it is `false` the ask never reached the operator
+ * approval store (approvals disabled, or the store is broken), and the message
+ * says so instead of sending the user to `aidr approve`.
+ */
 export function formatAskMessage(
 	actionId: string,
 	verdict: Verdict,
 	artifacts: Artifact[],
 	actions?: ResponseActionRecord[],
+	pendingRecorded?: boolean,
 ): string {
 	const reasons =
 		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 3).join("; ") : verdict.category;
@@ -683,9 +696,19 @@ export function formatAskMessage(
 		"Approval is an out-of-band, human-only action. Report the reference above to the user and",
 		"stop here: do NOT retry this tool call and do NOT try to work around the block. The action",
 		"stays blocked until the user approves it out of band or permanently allowlists the artifact.",
-		"(For the user: review it with `aidr pending` and approve it with `aidr approve <actionId>`",
-		"in your own terminal; the approval covers one retry of this exact call for 15 minutes.)",
 	);
+	if (pendingRecorded === false) {
+		lines.push(
+			"(For the user: this ask could NOT be recorded for operator approval — operator approvals",
+			"are disabled or the approval store is unavailable, so `aidr approve` cannot release it.",
+			"Run `aidr doctor` in your own terminal to see why.)",
+		);
+	} else {
+		lines.push(
+			"(For the user: review it with `aidr pending` and approve it with `aidr approve <actionId>`",
+			"in your own terminal; the approval covers one retry of this exact call for 15 minutes.)",
+		);
+	}
 
 	return lines.join("\n");
 }
@@ -730,7 +753,16 @@ export async function addToAllowlist(
 	logger: Logger = nullLogger,
 	operatorApprovals: OperatorApprovalStoreOptions | false = {},
 ): Promise<string> {
-	const operatorStore = operatorApprovals === false ? null : { logger, ...operatorApprovals };
+	const config = await loadConfig(configPath, logger);
+	const operatorStore =
+		operatorApprovals === false
+			? null
+			: {
+					logger,
+					// Read defensively: a config read that yields nothing must not crash here.
+					keyStorage: (config as Config | undefined)?.operator_approvals?.key_storage,
+					...operatorApprovals,
+				};
 	const inProcess = store.hasApprovedArtifact(type, value);
 	const operatorGrant =
 		!inProcess && operatorStore
@@ -744,7 +776,6 @@ export async function addToAllowlist(
 		].join(" ");
 	}
 
-	const config = await loadConfig(configPath, logger);
 	const allowlist = await loadAllowlist(config.allowlist, logger);
 	const entryReason =
 		reason ??

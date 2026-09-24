@@ -4,6 +4,7 @@ import {
 	addCommand,
 	addFilePath,
 	addUrl,
+	escapeTerminalText,
 	hashCommand,
 	isInvalidConfig,
 	loadAllowlist,
@@ -60,10 +61,12 @@ function rows(allowlist: Allowlist) {
 		Object.entries(entries).map(([key, entry]) => ({
 			type,
 			// Commands are stored only as a hash of the normalized command text.
-			value: key,
-			added_at: entry.addedAt,
-			reason: entry.reason,
-			original_verdict: entry.originalVerdict,
+			// Reasons can come from the agent's allowlist tool, so every field is
+			// rendered terminal-safe (control and bidi characters escaped).
+			value: escapeTerminalText(key),
+			added_at: escapeTerminalText(String(entry.addedAt)),
+			reason: escapeTerminalText(String(entry.reason)),
+			original_verdict: escapeTerminalText(String(entry.originalVerdict)),
 		}));
 	return [
 		...section("url", allowlist.urls),
@@ -113,7 +116,9 @@ export async function allowlistAddCommand(
 ): Promise<void> {
 	const type = parseType(typeArg);
 	if (!type) {
-		fail(`Unknown allowlist type "${typeArg}". Use one of: ${TYPES.join(", ")}.`);
+		fail(
+			`Unknown allowlist type "${escapeTerminalText(typeArg)}". Use one of: ${TYPES.join(", ")}.`,
+		);
 		return;
 	}
 	if (value.trim().length === 0) {
@@ -127,8 +132,11 @@ export async function allowlistAddCommand(
 		fail(error instanceof Error ? error.message : String(error));
 		return;
 	}
-	const shown =
-		type === "url" ? normalizeUrl(value) : type === "file_path" ? normalizeFilePath(value) : value;
+	// The value may have been pasted from an agent's message: show it with control
+	// and bidi characters escaped, so what the operator confirms is what is added.
+	const shown = escapeTerminalText(
+		type === "url" ? normalizeUrl(value) : type === "file_path" ? normalizeFilePath(value) : value,
+	);
 
 	let mode: Awaited<ReturnType<typeof confirmOperatorAction>>;
 	try {
@@ -173,7 +181,9 @@ export async function allowlistRemoveCommand(
 ): Promise<void> {
 	const type = parseType(typeArg);
 	if (!type) {
-		fail(`Unknown allowlist type "${typeArg}". Use one of: ${TYPES.join(", ")}.`);
+		fail(
+			`Unknown allowlist type "${escapeTerminalText(typeArg)}". Use one of: ${TYPES.join(", ")}.`,
+		);
 		return;
 	}
 	let current: Awaited<ReturnType<typeof loadCurrent>>;

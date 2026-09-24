@@ -71,42 +71,6 @@ export {
 export type { ApprovedEntry, PendingEntry } from "./approval-store.js";
 // Approval store
 export { ApprovalStore } from "./approval-store.js";
-// Operator approval channel (file-backed, out-of-band; `aidr pending` / `aidr approve`)
-export {
-	artifactSetDigest,
-	artifactValueDigest,
-	type ConsumeOperatorApprovalInput,
-	clearOperatorApprovalKeyCache,
-	consumeOperatorApproval,
-	createDefaultOperatorKeyProvider,
-	describeOperatorApprovalKey,
-	findOperatorAllowlistGrant,
-	getPendingAsk,
-	type ListedPendingAsk,
-	listOperatorApprovals,
-	listPendingAsks,
-	markOperatorAllowlistGrantUsed,
-	OPERATOR_APPROVAL_DEFAULT_TTL_MS,
-	OPERATOR_APPROVAL_KEY_ID,
-	OPERATOR_APPROVAL_MAX_TTL_MS,
-	OPERATOR_APPROVAL_MIN_TTL_MS,
-	type OperatorApproval,
-	OperatorApprovalError,
-	type OperatorApprovalErrorCode,
-	type OperatorApprovalStoreOptions,
-	type OperatorConsumeReason,
-	type OperatorConsumeResult,
-	type OperatorKeyMaterial,
-	type OperatorKeyProvider,
-	operatorApprovalStorePath,
-	PENDING_ASK_TTL_MS,
-	type PendingAsk,
-	type PendingAskArtifact,
-	type RecordOperatorApprovalOptions,
-	type RecordPendingAskInput,
-	recordOperatorApproval,
-	recordPendingAsk,
-} from "./operator-approvals.js";
 // Audit log
 export {
 	type AuditLogLossState,
@@ -125,17 +89,19 @@ export {
 	summarizeActionsForLog,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
-// Native-host acceptance observations (inert outside a gate run)
+// Durable, bounded baseline for the behavioural detector
 export {
-	createHostObservation,
-	HOST_OBSERVATION_ENV,
-	HOST_OBSERVATION_MARKER,
-	type HostObservation,
-	type HostObservationRecord,
-	recordHostObservation,
-} from "./host-observation.js";
+	type BehavioralBaselineObservation,
+	type BehavioralBaselineSessionState,
+	type BehavioralBaselineStore,
+	type BehavioralBaselineStoreBounds,
+	type BehavioralBaselineStoreOptions,
+	createBehavioralBaselineStore,
+	FileBehavioralBaselineStore,
+} from "./behavioral-baseline-store.js";
 // Tenant/session-isolated behavioral, novelty and ML orchestration
 export {
+	BEHAVIORAL_ORCHESTRATOR_BOUNDS,
 	type BehavioralDetectionInput,
 	type BehavioralDetectionLeg,
 	type BehavioralDetectionLegStatus,
@@ -148,20 +114,9 @@ export {
 	type BehavioralOrchestratorConfig,
 	type BehavioralOrchestratorDependencies,
 	type BehavioralOrchestratorStats,
-	BEHAVIORAL_ORCHESTRATOR_BOUNDS,
 	createBehavioralDetectionOrchestrator,
 	LOCAL_EMBEDDER_MODEL_VERSION,
 } from "./behavioral-orchestrator.js";
-// Durable, bounded baseline for the behavioural detector
-export {
-	type BehavioralBaselineObservation,
-	type BehavioralBaselineSessionState,
-	type BehavioralBaselineStore,
-	type BehavioralBaselineStoreBounds,
-	type BehavioralBaselineStoreOptions,
-	createBehavioralBaselineStore,
-	FileBehavioralBaselineStore,
-} from "./behavioral-baseline-store.js";
 // Build flavor
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
@@ -171,22 +126,22 @@ export { VerdictCache } from "./cache.js";
 // missing link reported as `chain_gap` and tamper-evident binding through the
 // incident evidence receipts.
 export {
+	CAUSAL_CHAIN_ORDER,
+	CAUSAL_CHAIN_SCHEMA_VERSION,
 	type CausalChain,
 	type CausalChainFinding,
 	type CausalChainFindingCode,
-	CAUSAL_CHAIN_ORDER,
-	CAUSAL_CHAIN_SCHEMA_VERSION,
 	type CausalChainLink,
 	type CausalChainLinkInput,
 	type CausalChainOptions,
 	type CausalChainReceiptOutcome,
 	type CausalChainVerification,
 	type CausalCorrelationIds,
+	canonicalCausalChainJson,
 	causalKindRank,
 	causalLinkDigest,
 	causalLinkDigestInput,
 	causalLinkReceiptId,
-	canonicalCausalChainJson,
 	recordCausalChain,
 	verifyCausalChainEvidence,
 } from "./causal-chain.js";
@@ -232,7 +187,15 @@ export {
 } from "./compliance-report.js";
 // Config
 export { AIDR_DIR, isInvalidConfig, loadConfig, resolvePath } from "./config.js";
-export * from "./secret-store.js";
+// Connector tool-name contract (aliases every connector's emitted tool names)
+export {
+	CONNECTOR_TOOL_SURFACES,
+	type ConnectorToolSurface,
+	type ConnectorToolSurfaceViolation,
+	extractDeclaredToolNames,
+	findConnectorToolSurfaceViolations,
+	isCanonicalToolAlias,
+} from "./connector-alias-contract.js";
 export type { ContainConfig } from "./contain.js";
 // Auto-Contain
 export { AutoContain, createDefaultContainConfig } from "./contain.js";
@@ -276,6 +239,42 @@ export {
 } from "./delegated-credential.js";
 export type { DetectionLeg } from "./detection-leg.js";
 export { DetectionLegUnavailableError, describeHttpFailure } from "./detection-leg.js";
+// Signed tenant detector policy: the single provisioning implementation every
+// connector uses to build a `ToolEvaluationContext`. The policy file is fixed
+// per agent runtime under `~/.singularity-aidr/detectors/`, so an operator
+// delivers the same contract to Claude Code, OpenCode, OpenClaw, Codex and the
+// Cursor/VS Code extension.
+export {
+	behavioralBaselineDir,
+	canonicalDetectorPolicyPayload,
+	type DetectorProvisionedContext,
+	detectorPolicyPath,
+	loadProvisionedDetectorContext,
+} from "./detector-provisioning.js";
+export type { DeviceAttestation, DeviceAttestationError } from "./device-attestation.js";
+// Device enrollment binding used by the fleet response transport. This is not
+// hardware or OS attestation; it is a server-verified installation/key pairing.
+export {
+	createDeviceAttestation,
+	deviceAttestationMatches,
+	deviceAttestationPayload,
+	hashDeviceKey,
+	parseDeviceAttestation,
+} from "./device-attestation.js";
+// Discovery providers: local collection is available; cloud and MDM adapters
+// remain explicit unconfigured boundaries until customer integrations exist.
+export {
+	createDiscoveryProvider,
+	type DiscoveryProvider,
+	type DiscoveryProviderFreshness,
+	type DiscoveryProviderRequest,
+	type DiscoveryProviderResult,
+	type DiscoveryProviderStatus,
+	discoveryFreshnessForInventory,
+	type ExternalDiscoveryProvider,
+	LocalDiscoveryProvider,
+	UnconfiguredDiscoveryProvider,
+} from "./discovery-provider.js";
 // DLP (Data Loss Prevention)
 export type {
 	ContentClassification,
@@ -343,6 +342,14 @@ export {
 } from "./encryption.js";
 // Decision engine
 export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
+// Runtime evaluator
+export {
+	allowVerdict,
+	evaluateToolCall,
+	type ToolDelegationContext,
+	type ToolEvaluationContext,
+	type ToolEvaluationRequest,
+} from "./evaluator.js";
 // Tenant-scoped AI exposure graph: persistent identity for agents, hosts,
 // users, MCP servers, tools, credentials and data sources; cross-tenant
 // records refused; staleness computed from an injected clock; coverage gaps
@@ -397,29 +404,6 @@ export {
 	mcpServerNaturalKey,
 	mergeExposureObservationBatches,
 } from "./exposure-sources.js";
-// Strict policy-as-code compiler and dry-run evaluator.
-export {
-	compilePolicyDocument,
-	compilePolicyDocumentYaml,
-	type CompiledRuntimePolicy,
-	parsePolicyDocument,
-	type PolicyCompilationDiagnostic,
-	type PolicyCompilationResult,
-	type PolicyDocument,
-	POLICY_DOCUMENT_ACTIONS,
-	PolicyDocumentSchema,
-	type PolicySimulationInput,
-	type PolicySimulationResult,
-	simulateRuntimePolicy,
-} from "./policy-document.js";
-// Runtime evaluator
-export {
-	allowVerdict,
-	evaluateToolCall,
-	type ToolDelegationContext,
-	type ToolEvaluationContext,
-	type ToolEvaluationRequest,
-} from "./evaluator.js";
 // Extractors
 export {
 	boundArtifact,
@@ -496,20 +480,6 @@ export {
 	refreshFleetInventoryFreshness,
 	saveFleetInventory,
 } from "./fleet-inventory.js";
-// Discovery providers: local collection is available; cloud and MDM adapters
-// remain explicit unconfigured boundaries until customer integrations exist.
-export {
-	createDiscoveryProvider,
-	discoveryFreshnessForInventory,
-	LocalDiscoveryProvider,
-	UnconfiguredDiscoveryProvider,
-	type DiscoveryProvider,
-	type DiscoveryProviderFreshness,
-	type DiscoveryProviderRequest,
-	type DiscoveryProviderResult,
-	type DiscoveryProviderStatus,
-	type ExternalDiscoveryProvider,
-} from "./discovery-provider.js";
 // Format (shared alert formatting)
 export {
 	formatSessionStartMessage,
@@ -558,12 +528,21 @@ export {
 } from "./health.js";
 // Heuristics
 export { HeuristicsEngine } from "./heuristics.js";
+// Native-host acceptance observations (inert outside a gate run)
+export {
+	createHostObservation,
+	HOST_OBSERVATION_ENV,
+	HOST_OBSERVATION_MARKER,
+	type HostObservation,
+	type HostObservationRecord,
+	recordHostObservation,
+} from "./host-observation.js";
 // Incidents (normalized signals + correlation engine)
 export {
-	appendEvidenceReceipt,
 	anchorEvidenceHead,
-	compareEvidenceClock,
+	appendEvidenceReceipt,
 	type CorrelateOptions,
+	compareEvidenceClock,
 	correlateIncidents,
 	detectEvidenceTruncation,
 	EVIDENCE_GENESIS_HASH,
@@ -585,20 +564,20 @@ export {
 	type Incident,
 	type IncidentAnchorPayloadV1,
 	type IncidentAnchorVerification,
-	type IncidentStoreVerification,
 	type IncidentSeverity,
+	type IncidentStoreVerification,
 	type NormalizedSignal,
 	normalizeAuditEntriesToSignals,
 	normalizeAuditEntryToSignals,
+	type PersistIncidentRecordsOptions,
 	parseEvidenceReceipt,
 	persistIncidentRecords,
-	type PersistIncidentRecordsOptions,
-	type SignedIncidentAnchorReceiptV1,
 	type SignalType,
+	type SignedIncidentAnchorReceiptV1,
+	type VerifyIncidentAnchorOptions,
 	verifyEvidenceChain,
 	verifyEvidenceReceipt,
 	verifyIncidentSqliteStore,
-	type VerifyIncidentAnchorOptions,
 	verifySignedIncidentAnchorReceipt,
 	type WriteIncidentAnchorOptions,
 	writeSignedIncidentAnchorReceipt,
@@ -627,41 +606,26 @@ export type {
 } from "./intel/provider.js";
 export { createIntelReputationProvider } from "./intel/provider.js";
 export type { DomainRiskEntry, IntelMerged } from "./intel/types.js";
-// Signed, versioned reputation feed storage and fail-closed freshness state.
+// JSONC-tolerant config reader shared by the inventory and policy call sites
+export type { JsoncParseResult, JsoncParseStatus } from "./jsonc.js";
+export { parseJsonc, stripJsonComments } from "./jsonc.js";
+// Local-mode (unsigned, operator-written) DLP policy file.
 export {
-	canonicalReputationFeedManifest,
-	canonicalReputationFeedPayload,
-	createFileReputationFeedSource,
-	DEFAULT_REPUTATION_FEED_MAX_AGE_MS,
-	DEFAULT_REPUTATION_FEED_MAX_PAYLOAD_BYTES,
-	loadReputationFeed,
-	REPUTATION_FEED_SCHEMA_VERSION,
-	ReputationFeedManifestSchema,
-	ReputationFeedPayloadSchema,
-	ReputationFeedRecordSchema,
-	ReputationFeedUnavailableError,
-	ReputationFeedUpdateError,
-	requireAvailableReputationFeed,
-	rollbackReputationFeed,
-	updateReputationFeed,
-} from "./reputation-feed.js";
-export type {
-	ReputationFeedBundle,
-	ReputationFeedLoadOptions,
-	ReputationFeedLoadResult,
-	ReputationFeedManifest,
-	ReputationFeedPayload,
-	ReputationFeedRecord,
-	ReputationFeedSnapshot,
-	ReputationFeedSource,
-	ReputationFeedTransportProvenance,
-	ReputationFeedUnavailable,
-	ReputationFeedUnavailableReason,
-	ReputationFeedUpdateOptions,
-	ReputationIndicatorKind,
-} from "./reputation-feed.js";
+	DEFAULT_LOCAL_DLP_POLICY_PATH,
+	inspectLocalDlpPolicy,
+	LOCAL_DLP_POLICY_ENV,
+	type LocalDlpPolicyState,
+	localDlpPolicyPath,
+} from "./local-dlp-policy.js";
 // Logger
 export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.js";
+export type { ManagedState } from "./managed.js";
+// Verified managed identity and entitlement state for connector provisioning.
+export {
+	isEntitlementActive,
+	loadManagedState,
+	managedStatePath,
+} from "./managed.js";
 export type {
 	AigMcpCategory,
 	AigMcpDataStatus,
@@ -677,6 +641,40 @@ export {
 	loadAigMcpCategories,
 	resetCategoryCache,
 } from "./mcp-aig-categories.js";
+export type {
+	McpApprovalResult,
+	McpAttestationDecision,
+	McpAttestationStateStore,
+	McpAttestationStateV1,
+	McpCryptographicVerification,
+	McpJsonValue,
+	McpManifestRejectionReason,
+	McpManifestVerifierConfig,
+	McpQuarantinedManifest,
+	McpSignerHealthEvidenceV1,
+	McpToolDefinition,
+	McpToolDrift,
+	McpToolManifestV1,
+	McpToolsetApproval,
+	SignedMcpToolManifestV1,
+} from "./mcp-attestation.js";
+// MCP tool identity, signed schema attestation and drift quarantine.
+export {
+	approveQuarantinedMcpToolset,
+	attestMcpToolManifest,
+	canonicalMcpToolManifest,
+	diffMcpTools,
+	FileMcpAttestationStore,
+	McpToolDefinitionSchema,
+	McpToolManifestV1Schema,
+	MemoryMcpAttestationStore,
+	mcpManifestHash,
+	mcpToolsetHash,
+	SignedMcpToolManifestV1Schema,
+	signMcpToolManifest,
+	verifySignedMcpToolManifest,
+	writeMcpSignerHealthEvidence,
+} from "./mcp-attestation.js";
 export {
 	discoverMcpServers,
 	type McpDiscoveryAttestation,
@@ -686,15 +684,15 @@ export {
 	type McpDiscoveryServer,
 	type McpSignedManifestIndex,
 } from "./mcp-discovery.js";
-// JSONC-tolerant config reader shared by the inventory and policy call sites
-export type { JsoncParseResult, JsoncParseStatus } from "./jsonc.js";
-export { parseJsonc, stripJsonComments } from "./jsonc.js";
 export type {
 	McpInventoryCoverage,
 	McpInventoryCoverageStatus,
 	McpInventoryReport,
 	McpInventorySourceStatus,
 } from "./mcp-inventory.js";
+export type { McpFetchOptions } from "./mcp-transport.js";
+// Pinned-DNS MCP upstream transport used by the inline MCP gateway.
+export { fetchMcpEndpoint, McpTransportError } from "./mcp-transport.js";
 // Metrics
 export { getMetricsCollector, MetricsCollector, metrics } from "./metrics.js";
 export type {
@@ -705,15 +703,48 @@ export type {
 export { LocalEmbeddingModel } from "./ml-model.js";
 export type { AnomalyEvent, BehaviorProfile } from "./novelty-detection.js";
 export { createNoveltyDetector, NoveltyDetector } from "./novelty-detection.js";
-// Connector tool-name contract (aliases every connector's emitted tool names)
+// Operator approval channel (file-backed, out-of-band; `aidr pending` / `aidr approve`)
 export {
-	CONNECTOR_TOOL_SURFACES,
-	type ConnectorToolSurface,
-	type ConnectorToolSurfaceViolation,
-	extractDeclaredToolNames,
-	findConnectorToolSurfaceViolations,
-	isCanonicalToolAlias,
-} from "./connector-alias-contract.js";
+	artifactSetDigest,
+	artifactValueDigest,
+	type ConsumeOperatorApprovalInput,
+	clearOperatorApprovalKeyCache,
+	consumeOperatorApproval,
+	createDefaultOperatorKeyProvider,
+	describeOperatorApprovalKey,
+	findOperatorAllowlistGrant,
+	getPendingAsk,
+	type ListedPendingAsk,
+	listOperatorApprovals,
+	listPendingAsks,
+	markOperatorAllowlistGrantUsed,
+	OPERATOR_APPROVAL_DEFAULT_TTL_MS,
+	OPERATOR_APPROVAL_KEY_ID,
+	OPERATOR_APPROVAL_KEY_STORAGE_ENV,
+	OPERATOR_APPROVAL_LEDGER_ID,
+	OPERATOR_APPROVAL_MAX_TTL_MS,
+	OPERATOR_APPROVAL_MIN_TTL_MS,
+	type OperatorApproval,
+	OperatorApprovalError,
+	type OperatorApprovalErrorCode,
+	type OperatorApprovalKeyStatus,
+	type OperatorApprovalStoreOptions,
+	type OperatorConsumeReason,
+	type OperatorConsumeResult,
+	type OperatorConsumptionAnchor,
+	type OperatorKeyMaterial,
+	type OperatorKeyProvider,
+	type OperatorKeyStorage,
+	operatorApprovalStorePath,
+	PENDING_ASK_TTL_MS,
+	type PendingAsk,
+	type PendingAskArtifact,
+	type RecordOperatorApprovalOptions,
+	type RecordPendingAskInput,
+	recordOperatorApproval,
+	recordPendingAsk,
+	resolveOperatorKeyStorage,
+} from "./operator-approvals.js";
 export { scanModelOutput } from "./output-scanner.js";
 export type { PackageCheckerConfig, PackageCheckInput } from "./package-checker.js";
 // Package checker
@@ -739,16 +770,6 @@ export {
 	redactPII,
 	validateNoPII,
 } from "./pii-detector.js";
-// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
-export {
-	DEFAULT_PROMPT_PROTECTION,
-	type PromptFindingCategory,
-	type PromptFindingSummary,
-	type PromptProtectionDecision,
-	type PromptProtectionResult,
-	type PromptTenantDlp,
-	scanPrompt,
-} from "./prompt-protection.js";
 // Plugin scan cache
 export {
 	cacheKey,
@@ -767,6 +788,21 @@ export {
 	scanPlugin,
 	skillRiskTypeForThreatId,
 } from "./plugin-scanner.js";
+// Strict policy-as-code compiler and dry-run evaluator.
+export {
+	type CompiledRuntimePolicy,
+	compilePolicyDocument,
+	compilePolicyDocumentYaml,
+	POLICY_DOCUMENT_ACTIONS,
+	type PolicyCompilationDiagnostic,
+	type PolicyCompilationResult,
+	type PolicyDocument,
+	PolicyDocumentSchema,
+	type PolicySimulationInput,
+	type PolicySimulationResult,
+	parsePolicyDocument,
+	simulateRuntimePolicy,
+} from "./policy-document.js";
 // AI security posture findings (infra CVEs, MCP inventory, skill/plugin scan)
 export {
 	buildInfraScanFindingEvents,
@@ -787,6 +823,16 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
+export {
+	DEFAULT_PROMPT_PROTECTION,
+	type PromptFindingCategory,
+	type PromptFindingSummary,
+	type PromptProtectionDecision,
+	type PromptProtectionResult,
+	type PromptTenantDlp,
+	scanPrompt,
+} from "./prompt-protection.js";
 // Quarantine
 export {
 	AutoQuarantine,
@@ -795,6 +841,39 @@ export {
 	type QuarantineConfig,
 	type QuarantinedItem,
 } from "./quarantine.js";
+export type {
+	ReputationFeedBundle,
+	ReputationFeedLoadOptions,
+	ReputationFeedLoadResult,
+	ReputationFeedManifest,
+	ReputationFeedPayload,
+	ReputationFeedRecord,
+	ReputationFeedSnapshot,
+	ReputationFeedSource,
+	ReputationFeedTransportProvenance,
+	ReputationFeedUnavailable,
+	ReputationFeedUnavailableReason,
+	ReputationFeedUpdateOptions,
+	ReputationIndicatorKind,
+} from "./reputation-feed.js";
+// Signed, versioned reputation feed storage and fail-closed freshness state.
+export {
+	canonicalReputationFeedManifest,
+	canonicalReputationFeedPayload,
+	createFileReputationFeedSource,
+	DEFAULT_REPUTATION_FEED_MAX_AGE_MS,
+	DEFAULT_REPUTATION_FEED_MAX_PAYLOAD_BYTES,
+	loadReputationFeed,
+	REPUTATION_FEED_SCHEMA_VERSION,
+	ReputationFeedManifestSchema,
+	ReputationFeedPayloadSchema,
+	ReputationFeedRecordSchema,
+	ReputationFeedUnavailableError,
+	ReputationFeedUpdateError,
+	requireAvailableReputationFeed,
+	rollbackReputationFeed,
+	updateReputationFeed,
+} from "./reputation-feed.js";
 export type {
 	PreOperationSnapshot,
 	ResponseActionRecord,
@@ -833,6 +912,20 @@ export {
 	type ResponseChainWrite,
 	responseAuditorFromConfig,
 } from "./response-audit.js";
+export type {
+	FleetResponseActionAdapter,
+	FleetResponseAuditEvent,
+	FleetResponseCommand,
+	FleetResponseCommandType,
+	FleetResponseConsumerOptions,
+	FleetResponseCycleResult,
+	FleetResponseIdentity,
+} from "./response-command-consumer-v6.js";
+export { FleetResponseCommandConsumer } from "./response-command-consumer-v6.js";
+export {
+	FleetResponseCommandWorker,
+	type FleetResponseWorkerOptions,
+} from "./response-command-worker-v6.js";
 // Response config
 export {
 	auditActionForMode,
@@ -844,6 +937,48 @@ export {
 	type ResponseRule,
 	type ResponseSeverity,
 } from "./response-config.js";
+export type {
+	ResponseProvider,
+	ResponseProviderAction,
+	ResponseProviderOutcome,
+	ResponseProviderRequest,
+	RevocationProvider,
+	RevocationProviderAction,
+	RevocationProviderOutcome,
+	RevocationProviderRequest,
+} from "./response-provider-registry.js";
+// External response providers are explicit and empty by default. Without a
+// registered provider, credential revocation and containment are unsupported.
+export {
+	ResponseProviderRegistry,
+	RevocationProviderRegistry,
+} from "./response-provider-registry.js";
+export type {
+	ExecuteResponseOptions,
+	ExecuteResponseResult,
+	PlanResponseRequest,
+	ResponseAdapter,
+	ResponseCapability,
+	ResponseJournal,
+	ResponseJournalEntry,
+	ResponsePlanDecision,
+	ResponseReceipt,
+	ResponseRollbackRequest,
+	ResponseStep,
+	ResponseStepOutcome,
+	ResponseTargetBinding,
+	WorkerCapabilityReport,
+} from "./response-worker-contract.js";
+// Installed endpoint response-worker contract (capability, precondition, TTL,
+// rollback receipt).
+export {
+	executeResponseStep,
+	MemoryResponseJournal,
+	planResponseRollback,
+	planResponseStep,
+	RESPONSE_CAPABILITIES,
+	reportWorkerCapabilities,
+} from "./response-worker-contract.js";
 export type {
 	Snapshot,
 	SnapshotOptions,
@@ -863,6 +998,7 @@ export type { RuleSyncConfig } from "./rule-sync.js";
 export { RealTimeRuleSync } from "./rule-sync.js";
 // Scan handler
 export { createScanHandler, runPluginScan, type ScanHandlerOptions } from "./scan-handler.js";
+export * from "./secret-store.js";
 // Sentry
 export { initSentry } from "./sentry.js";
 // Session start orchestrator
@@ -880,6 +1016,7 @@ export {
 	toAuditFindingData,
 	toFindingData,
 } from "./session-start-scan.js";
+export { normalizeShellText } from "./shell-normalize.js";
 export {
 	createSiemEvent,
 	DurableSiemDelivery,
@@ -919,7 +1056,11 @@ export type {
 	TelemetryQueueReadinessEvidence,
 	TelemetryQueueStatus,
 } from "./telemetry-queue.js";
-export { DurableTelemetryQueue, readTelemetryLossSummary, type TelemetryLossSummary } from "./telemetry-queue.js";
+export {
+	DurableTelemetryQueue,
+	readTelemetryLossSummary,
+	type TelemetryLossSummary,
+} from "./telemetry-queue.js";
 // Telemetry privacy boundary
 export {
 	redactTelemetryAttributes,
@@ -927,6 +1068,12 @@ export {
 	redactTelemetryString,
 	sanitizeTelemetryEndpoint,
 } from "./telemetry-redaction.js";
+export {
+	boundTerminalText,
+	escapeTerminalText,
+	hasUnsafeTerminalCharacters,
+	TRUNCATION_MARKER,
+} from "./terminal-text.js";
 // Threat loader
 export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
 export type {
@@ -1039,133 +1186,3 @@ export { getVersion, VERSION } from "./version.js";
 export type { VersionCheckContext, VersionCheckResult } from "./version-check.js";
 // Version check
 export { checkForUpdate, isNewerVersion } from "./version-check.js";
-// Verified managed identity and entitlement state for connector provisioning.
-export {
-	isEntitlementActive,
-	loadManagedState,
-	managedStatePath,
-} from "./managed.js";
-export type { ManagedState } from "./managed.js";
-// Signed tenant detector policy: the single provisioning implementation every
-// connector uses to build a `ToolEvaluationContext`. The policy file is fixed
-// per agent runtime under `~/.singularity-aidr/detectors/`, so an operator
-// delivers the same contract to Claude Code, OpenCode, OpenClaw, Codex and the
-// Cursor/VS Code extension.
-export {
-	behavioralBaselineDir,
-	canonicalDetectorPolicyPayload,
-	type DetectorProvisionedContext,
-	detectorPolicyPath,
-	loadProvisionedDetectorContext,
-} from "./detector-provisioning.js";
-// Local-mode (unsigned, operator-written) DLP policy file.
-export {
-	DEFAULT_LOCAL_DLP_POLICY_PATH,
-	inspectLocalDlpPolicy,
-	LOCAL_DLP_POLICY_ENV,
-	type LocalDlpPolicyState,
-	localDlpPolicyPath,
-} from "./local-dlp-policy.js";
-// Device enrollment binding used by the fleet response transport. This is not
-// hardware or OS attestation; it is a server-verified installation/key pairing.
-export {
-	createDeviceAttestation,
-	deviceAttestationMatches,
-	deviceAttestationPayload,
-	hashDeviceKey,
-	parseDeviceAttestation,
-} from "./device-attestation.js";
-export type { DeviceAttestation, DeviceAttestationError } from "./device-attestation.js";
-export { FleetResponseCommandConsumer } from "./response-command-consumer-v6.js";
-export {
-	FleetResponseCommandWorker,
-	type FleetResponseWorkerOptions,
-} from "./response-command-worker-v6.js";
-export type {
-	FleetResponseActionAdapter,
-	FleetResponseAuditEvent,
-	FleetResponseCommand,
-	FleetResponseCommandType,
-	FleetResponseConsumerOptions,
-	FleetResponseCycleResult,
-	FleetResponseIdentity,
-} from "./response-command-consumer-v6.js";
-// External response providers are explicit and empty by default. Without a
-// registered provider, credential revocation and containment are unsupported.
-export {
-	ResponseProviderRegistry,
-	RevocationProviderRegistry,
-} from "./response-provider-registry.js";
-export type {
-	ResponseProvider,
-	ResponseProviderAction,
-	ResponseProviderOutcome,
-	ResponseProviderRequest,
-	RevocationProvider,
-	RevocationProviderAction,
-	RevocationProviderOutcome,
-	RevocationProviderRequest,
-} from "./response-provider-registry.js";
-// Installed endpoint response-worker contract (capability, precondition, TTL,
-// rollback receipt).
-export {
-	executeResponseStep,
-	MemoryResponseJournal,
-	planResponseRollback,
-	planResponseStep,
-	reportWorkerCapabilities,
-	RESPONSE_CAPABILITIES,
-} from "./response-worker-contract.js";
-export type {
-	ExecuteResponseOptions,
-	ExecuteResponseResult,
-	PlanResponseRequest,
-	ResponseAdapter,
-	ResponseCapability,
-	ResponseJournal,
-	ResponseJournalEntry,
-	ResponsePlanDecision,
-	ResponseReceipt,
-	ResponseRollbackRequest,
-	ResponseStep,
-	ResponseStepOutcome,
-	ResponseTargetBinding,
-	WorkerCapabilityReport,
-} from "./response-worker-contract.js";
-// MCP tool identity, signed schema attestation and drift quarantine.
-export {
-	approveQuarantinedMcpToolset,
-	attestMcpToolManifest,
-	canonicalMcpToolManifest,
-	diffMcpTools,
-	FileMcpAttestationStore,
-	mcpManifestHash,
-	mcpToolsetHash,
-	McpToolDefinitionSchema,
-	McpToolManifestV1Schema,
-	MemoryMcpAttestationStore,
-	signMcpToolManifest,
-	SignedMcpToolManifestV1Schema,
-	verifySignedMcpToolManifest,
-	writeMcpSignerHealthEvidence,
-} from "./mcp-attestation.js";
-export type {
-	McpApprovalResult,
-	McpAttestationDecision,
-	McpAttestationStateStore,
-	McpAttestationStateV1,
-	McpCryptographicVerification,
-	McpJsonValue,
-	McpManifestRejectionReason,
-	McpManifestVerifierConfig,
-	McpQuarantinedManifest,
-	McpSignerHealthEvidenceV1,
-	McpToolDefinition,
-	McpToolDrift,
-	McpToolManifestV1,
-	McpToolsetApproval,
-	SignedMcpToolManifestV1,
-} from "./mcp-attestation.js";
-// Pinned-DNS MCP upstream transport used by the inline MCP gateway.
-export { fetchMcpEndpoint, McpTransportError } from "./mcp-transport.js";
-export type { McpFetchOptions } from "./mcp-transport.js";

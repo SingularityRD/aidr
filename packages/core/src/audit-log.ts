@@ -62,22 +62,20 @@ export function toolInputSummaryForAudit(
 	toolName: string,
 	toolInput: Record<string, unknown>,
 ): string {
-	let summary: string;
-	if (toolName === "Bash") {
-		summary = String(toolInput.command ?? "");
-	} else if (toolName === "WebFetch") {
-		summary = String(toolInput.url ?? "");
-	} else if (
-		toolName === "Write" ||
-		toolName === "Edit" ||
-		toolName === "Read" ||
-		toolName === "Delete"
-	) {
-		summary = String(toolInput.file_path ?? "");
-	} else {
-		summary = JSON.stringify(toolInput);
+	return redactTelemetryString(toolInputSummaryText(toolName, toolInput), MAX_SUMMARY_LEN);
+}
+
+/**
+ * The unbounded, UNREDACTED text {@link toolInputSummaryForAudit} is built from.
+ * Callers must redact and bound it themselves before it leaves the process.
+ */
+export function toolInputSummaryText(toolName: string, toolInput: Record<string, unknown>): string {
+	if (toolName === "Bash") return String(toolInput.command ?? "");
+	if (toolName === "WebFetch") return String(toolInput.url ?? "");
+	if (toolName === "Write" || toolName === "Edit" || toolName === "Read" || toolName === "Delete") {
+		return String(toolInput.file_path ?? "");
 	}
-	return redactTelemetryString(summary, MAX_SUMMARY_LEN);
+	return JSON.stringify(toolInput) ?? "";
 }
 
 /**

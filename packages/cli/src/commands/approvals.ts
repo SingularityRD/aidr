@@ -1,7 +1,10 @@
 import {
+	describeOperatorApprovalKey,
+	escapeTerminalText,
 	getPendingAsk,
 	type ListedPendingAsk,
 	listPendingAsks,
+	loadConfig,
 	OPERATOR_APPROVAL_DEFAULT_TTL_MS,
 	OperatorApprovalError,
 	type OperatorApprovalStoreOptions,
@@ -22,7 +25,31 @@ export interface ApprovalCommandDeps {
 	streams?: ConfirmationStreams;
 }
 
-function describePending(p: ListedPendingAsk): string[] {
+/**
+ * Every string an agent could have influenced, with control, bidi and format
+ * characters rendered visibly (`\x1b`, `\u202e`). Records are escaped when they
+ * are stored; this second pass covers records from older versions and any
+ * record that fails verification, so the terminal never interprets agent text.
+ */
+function safePending(p: ListedPendingAsk): ListedPendingAsk {
+	const safe = escapeTerminalText;
+	return {
+		...p,
+		tool: safe(p.tool),
+		connector: safe(p.connector),
+		summary: safe(p.summary),
+		artifacts: p.artifacts.map((a) => ({ ...a, type: safe(a.type), preview: safe(a.preview) })),
+		severity: safe(p.severity),
+		category: safe(p.category),
+		reasons: p.reasons.map(safe),
+		threatId: p.threatId === null ? null : safe(p.threatId),
+		createdAt: safe(p.createdAt),
+		expiresAt: safe(p.expiresAt),
+	};
+}
+
+function describePending(pending: ListedPendingAsk): string[] {
+	const p = safePending(pending);
 	const lines = [
 		`actionId:   ${p.actionId}`,
 		`connector:  ${p.connector}   tool: ${p.tool}`,
@@ -31,10 +58,28 @@ function describePending(p: ListedPendingAsk): string[] {
 	];
 	for (const artifact of p.artifacts)
 		lines.push(`artifact:   ${artifact.type} ${artifact.preview}`);
+	if (p.artifactCount > p.artifacts.length) {
+		lines.push(
+			`artifacts:  showing ${p.artifacts.length} of ${p.artifactCount} (truncated); the approval covers all ${p.artifactCount}`,
+		);
+	}
 	for (const reason of p.reasons) lines.push(`reason:     ${reason}`);
 	lines.push(`asked:      ${p.createdAt} (approvable until ${p.expiresAt})`);
 	if (!p.verified) lines.push("integrity:  FAILED — this record cannot be approved");
 	return lines;
+}
+
+/** The store options with the configured key storage, unless a test injected a store. */
+async function storeOptions(deps: ApprovalCommandDeps): Promise<OperatorApprovalStoreOptions> {
+	if (deps.store) return deps.store;
+	const config = await loadConfig();
+	return { keyStorage: config.operator_approvals?.key_storage };
+}
+
+/** Say plainly when approvals cannot work, instead of an empty or confusing listing. */
+function disabledNotice(store: OperatorApprovalStoreOptions): string | null {
+	const status = describeOperatorApprovalKey(store);
+	return status.available ? null : (status.reason ?? "Operator approvals are disabled.");
 }
 
 function fail(message: string): void {
@@ -47,9 +92,11 @@ export async function pendingCommand(
 	options: { json?: boolean } = {},
 	deps: ApprovalCommandDeps = {},
 ): Promise<void> {
+	const store = await storeOptions(deps);
+	const disabled = disabledNotice(store);
 	let pending: ListedPendingAsk[];
 	try {
-		pending = await listPendingAsks(deps.store);
+		pending = await listPendingAsks(store);
 	} catch (error) {
 		fail(
 			`Could not read the approval store: ${error instanceof Error ? error.message : String(error)}`,
@@ -57,9 +104,21 @@ export async function pendingCommand(
 		return;
 	}
 	if (options.json) {
-		console.log(JSON.stringify({ store: operatorApprovalStorePath(deps.store), pending }, null, 2));
+		console.log(
+			JSON.stringify(
+				{
+					store: operatorApprovalStorePath(store),
+					approvals_available: disabled === null,
+					...(disabled ? { approvals_disabled_reason: disabled } : {}),
+					pending: pending.map(safePending),
+				},
+				null,
+				2,
+			),
+		);
 		return;
 	}
+	if (disabled) console.error(disabled);
 	if (pending.length === 0) {
 		console.log("No Singularity AIDR asks are waiting for approval.");
 		return;
@@ -104,10 +163,16 @@ export async function approveCommand(
 		return;
 	}
 	const normalizedId = actionId.trim().replace(/^"|"$/g, "").toLowerCase();
+	const store = await storeOptions(deps);
+	const disabled = disabledNotice(store);
+	if (disabled) {
+		fail(`Not approved: ${disabled}`);
+		return;
+	}
 
 	let pending: ListedPendingAsk | null;
 	try {
-		pending = await getPendingAsk(normalizedId, deps.store);
+		pending = await getPendingAsk(normalizedId, store);
 	} catch (error) {
 		fail(error instanceof Error ? error.message : String(error));
 		return;
@@ -156,7 +221,7 @@ export async function approveCommand(
 				singleUse: true,
 				permitAllowlist: options.permitAllowlist === true,
 			},
-			deps.store,
+			store,
 		);
 		if (options.json) {
 			console.log(JSON.stringify({ approved: true, approval }, null, 2));

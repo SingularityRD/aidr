@@ -16,6 +16,7 @@
  * detection core, and these tests pin the behaviours that matter for a customer.
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -399,8 +400,10 @@ describe("Codex operator approval channel", () => {
 	// carry an approval to the retry. The file-backed operator store can.
 	it("releases exactly one identical retry after `aidr approve`, never a different call", async () => {
 		const previousStore = process.env.AIDR_SECRET_STORE;
-		// Never touch a real OS vault from a test.
+		const previousStorage = process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE;
+		// Never touch a real OS vault from a test: opt into the file key storage.
 		process.env.AIDR_SECRET_STORE = "file-acl";
+		process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE = "file";
 		clearOperatorApprovalKeyCache();
 		try {
 			const call = preToolUse("Bash", { command: 'echo "DB_PASSWORD=synthetic-only" > .env.test' });
@@ -432,7 +435,48 @@ describe("Codex operator approval channel", () => {
 		} finally {
 			if (previousStore === undefined) delete process.env.AIDR_SECRET_STORE;
 			else process.env.AIDR_SECRET_STORE = previousStore;
+			if (previousStorage === undefined) delete process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE;
+			else process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE = previousStorage;
 			clearOperatorApprovalKeyCache();
+		}
+	});
+
+	it("keeps the ask blocked and says approvals are disabled without a vault or opt-in", async () => {
+		const previousStore = process.env.AIDR_SECRET_STORE;
+		const previousStorage = process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE;
+		// No OS vault (file-acl is not a vault) and no key-file opt-in.
+		process.env.AIDR_SECRET_STORE = "file-acl";
+		delete process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE;
+		clearOperatorApprovalKeyCache();
+		try {
+			const call = preToolUse("Bash", { command: 'echo "DB_PASSWORD=synthetic-only" > .env.test' });
+			const blocked = await enforceCodexPreToolUse(call, options());
+			expect(blocked.decision).toBe("ask");
+			expect(blocked.wire.hookSpecificOutput?.permissionDecision).toBe("deny");
+			const reason = blocked.wire.hookSpecificOutput?.permissionDecisionReason ?? "";
+			expect(reason).toContain("could NOT be recorded for operator approval");
+			expect(await listPendingAsks()).toEqual([]);
+			expect(existsSync(join(home, ".singularity-aidr", "operator-approval.key"))).toBe(false);
+		} finally {
+			if (previousStore === undefined) delete process.env.AIDR_SECRET_STORE;
+			else process.env.AIDR_SECRET_STORE = previousStore;
+			if (previousStorage !== undefined) {
+				process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE = previousStorage;
+			}
+			clearOperatorApprovalKeyCache();
+		}
+	});
+
+	it("denies (not asks) an agent command that would self-approve", async () => {
+		const id = "b".repeat(64);
+		for (const command of [
+			`aidr 'approve' ${id}`,
+			`printf 'approve\\n' | script -qc "aidr 'approve' ${id}" /dev/null`,
+			"cat ~/.singularity-aidr/*.key",
+		]) {
+			const outcome = await enforceCodexPreToolUse(preToolUse("Bash", { command }), options());
+			expect(outcome.decision, command).toBe("deny");
+			expect(outcome.wire.hookSpecificOutput?.permissionDecision).toBe("deny");
 		}
 	});
 });

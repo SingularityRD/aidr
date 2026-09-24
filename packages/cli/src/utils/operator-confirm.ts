@@ -12,9 +12,12 @@ import { createInterface } from "node:readline";
  * - `--yes` AND `AIDR_OPERATOR_NONINTERACTIVE=1`, for operator automation.
  *
  * Neither is an absolute boundary: code running as the same OS user can allocate
- * a pseudo-terminal or set the variable. Agent tool calls normally have no TTY,
- * and the self-defense rule CLT-SELF-007 turns an agent's attempt to run these
- * commands (or to set the variable) into a block. See docs/configuration.md.
+ * a pseudo-terminal (`script`, `expect`, `unbuffer`, a pty module) or set the
+ * variable. Agent tool calls normally have no TTY, and the self-defense rule
+ * CLT-SELF-007 DENIES an agent command that runs these commands (through quoting,
+ * executable lookups, package runners and pty wrappers alike, since it matches
+ * the shell-normalized command) or sets the variable. The approval key itself is
+ * kept in the OS credential vault. See docs/configuration.md.
  */
 
 export const OPERATOR_NONINTERACTIVE_ENV = "AIDR_OPERATOR_NONINTERACTIVE";

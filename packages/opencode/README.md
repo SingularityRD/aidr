@@ -111,8 +111,9 @@ outside the model's tool surface (tracked upstream in
 approval happens in a separate terminal rather than in the session. The channel
 is not a boundary against code running as the same OS user with full shell
 access (see [docs/configuration.md](../../docs/configuration.md#operator-approvals));
-the self-defense rule `CLT-SELF-007` blocks the agent from running `aidr approve`
-or touching the approval store itself. Blocking remains the safe failure mode — a
+the self-defense rules `CLT-SELF-007`..`009` deny the agent running `aidr approve`
+(however it is quoted or wrapped) or touching the AIDR state directory and the
+approval key, which lives in the OS credential vault. Blocking remains the safe failure mode — a
 blocked action is recoverable, a self-approved one is not.
 
 ## Session Startup Scanning

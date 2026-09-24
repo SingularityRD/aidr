@@ -45,9 +45,13 @@ out-of-band, human-only actions. They print what will be allowed and require the
 operator to type a confirmation word (`approve` / `allow`) in an interactive
 terminal. Automation may pass `--yes`, which is honoured only when
 `AIDR_OPERATOR_NONINTERACTIVE=1` is also set. Approvals are HMAC-protected with a
-per-install key kept in the OS credential vault where available. This stops a
-prompt-injected agent from approving its own block through its tools; it is not
-a boundary against code running as the same OS user with full shell access. The
-self-defense rule `CLT-SELF-007` blocks an agent that tries to run these commands.
+per-install key kept in the OS credential vault; without a vault, approvals are
+disabled (asks stay blocked) unless the operator explicitly opts into a key file
+with `operator_approvals.key_storage: "file"`. Single use is enforced through a
+ledger in the same vault, so restoring an old `approvals.json` does not replay an
+approval. This stops a prompt-injected agent from approving its own block through
+its tools; it is not a boundary against code running as the same OS user with
+full shell access. The self-defense rules `CLT-SELF-007`..`009` deny an agent
+that tries to run these commands or touch the AIDR state directory.
 See [Operator approvals](../../docs/configuration.md#operator-approvals) for the
 flow, the on-disk format and the residual risk.
