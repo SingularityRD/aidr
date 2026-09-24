@@ -43,6 +43,26 @@ additional_redirect_urls = [
 ]
 enable_signup = true
 
+# Email/password sign-ups must confirm the address before a session is issued.
+# Locally the confirmation mail is captured by Inbucket (http://localhost:54324),
+# so the sign-up flow still works without an SMTP provider.
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+
+# Cloudflare Turnstile bot protection for sign-up, sign-in and magic links.
+# Off for local development. A deployed project enables it through the Supabase
+# CLI environment overrides (never by editing this file):
+#   SUPABASE_AUTH_CAPTCHA_ENABLED=true
+#   SUPABASE_AUTH_CAPTCHA_SECRET=<Turnstile secret key>
+# and builds the dashboard with the matching VITE_TURNSTILE_SITE_KEY, which
+# makes LoginPage send a captchaToken with every Auth request.
+[auth.captcha]
+enabled = false
+provider = "turnstile"
+secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"
+
 [auth.email.template.recovery]
 subject = "Reset your AIDR password"
 content_path = "./supabase/templates/recovery.html"
@@ -84,6 +104,10 @@ verify_jwt = false
 verify_jwt = false
 [functions.paddle-webhook]
 verify_jwt = false
+[functions.operator-admin]
+# Platform-operator surface (admission mode, legal documents, licenses). The
+# handler repeats session revocation, operator allowlist and AAL2 checks.
+verify_jwt = true
 [functions.pilot-admin]
 verify_jwt = true
 [functions.pilot-apply]

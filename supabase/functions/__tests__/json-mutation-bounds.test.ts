@@ -21,6 +21,7 @@ const oauthCallback = await import("../oauth-callback/index.ts");
 const auditExport = await import("../audit-export/index.ts");
 await import("../device-verify/index.ts");
 const pilotAdmin = await import("../pilot-admin/index.ts");
+const operatorAdmin = await import("../operator-admin/index.ts");
 
 const TOKEN = `header.${btoa(JSON.stringify({ iat: Math.floor(Date.now() / 1000) }))}.signature`;
 const routes = [
@@ -29,6 +30,7 @@ const routes = [
 	["audit-export", auditExport.createAuditExportHandler()],
 	["device-verify", served[3]],
 	["pilot-admin", pilotAdmin.createPilotAdminHandler()],
+	["operator-admin", operatorAdmin.createOperatorAdminHandler()],
 ] as const;
 
 function database() {
@@ -43,7 +45,11 @@ function database() {
 				select: () => query,
 				eq: () => query,
 				maybeSingle: async () => ({
-					data: table === "pilot_admins" ? { user_id: USER } : table === "rate_limits" ? { count: 1 } : null,
+					data: table === "pilot_admins"
+						? { user_id: USER }
+						: table === "platform_operators"
+							? { user_id: USER, expires_at: "2999-01-01T00:00:00.000Z", revoked_at: null }
+							: table === "rate_limits" ? { count: 1 } : null,
 					error: null,
 				}),
 				insert: () => { mutations.push(`${table}.insert`); return query; },

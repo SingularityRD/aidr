@@ -7,6 +7,7 @@ type Route =
 	| "azure-ad-groups"
 	| "device-verify"
 	| "pilot-admin"
+	| "operator-admin"
 	| "response-playbooks"
 	| "audit-export";
 
@@ -64,6 +65,7 @@ async function loadHandler(route: Route) {
 		case "azure-ad-groups": await import("../azure-ad-groups/index.ts"); break;
 		case "device-verify": await import("../device-verify/index.ts"); break;
 		case "pilot-admin": await import("../pilot-admin/index.ts"); break;
+		case "operator-admin": await import("../operator-admin/index.ts"); break;
 		case "response-playbooks": await import("../response-playbooks/index.ts"); break;
 		case "audit-export": await import("../audit-export/index.ts"); break;
 	}
@@ -81,6 +83,7 @@ function request(route: Route, token?: string): Request {
 		"azure-ad-groups": undefined,
 		"device-verify": { user_code: "ABCD-EFGH" },
 		"pilot-admin": { action: "approve", user_id: USER },
+		"operator-admin": { action: "list_tenants" },
 		"response-playbooks": {
 			action: "start",
 			tenant_id: TENANT,
@@ -115,6 +118,7 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"azure-ad-groups",
 		"device-verify",
 		"pilot-admin",
+		"operator-admin",
 		"response-playbooks",
 		"audit-export",
 	] satisfies Route[])("%s rejects a missing bearer before privileged access", async (route) => {
@@ -133,6 +137,7 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"azure-ad-groups",
 		"device-verify",
 		"pilot-admin",
+		"operator-admin",
 		"response-playbooks",
 		"audit-export",
 	] satisfies Route[])("%s rejects an Auth-rejected bearer before privileged access", async (route) => {

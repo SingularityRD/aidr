@@ -29,6 +29,7 @@ This folder contains a reference **Supabase** schema + edge function for running
    - Enrollment exchange (agent bootstrap): `supabase/functions/enroll`
    - Device auth (prompt-install bootstrap): `supabase/functions/device-start`, `supabase/functions/device-poll`, `supabase/functions/device-verify`
    - Pilot gate: `supabase/functions/pilot-apply`, `supabase/functions/pilot-status`, `supabase/functions/pilot-admin`
+   - Platform operator administration (admission mode, legal documents, licenses): `supabase/functions/operator-admin` — see `docs/operations/operator-admin.md`
    - Waitlist intake: `supabase/functions/waitlist-signup`
    - Legacy billing functions (do not deploy or advertise for direct GA): `supabase/functions/billing-checkout`, `supabase/functions/paddle-webhook`, `supabase/functions/stripe-webhook`
    - Optional reputation: `supabase/functions/url-check`, `supabase/functions/file-check`

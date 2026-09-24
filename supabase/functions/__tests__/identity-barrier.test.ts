@@ -134,7 +134,7 @@ describe("canonical service-role user routes", () => {
 	it("calls the barrier in the enumerated JWT-authenticated routes", () => {
 		for (const route of [
 			"api-keys", "audit-export", "autosecops-runtime", "billing-checkout",
-			"device-verify", "enrollment-tokens", "oauth-callback", "pilot-admin",
+			"device-verify", "enrollment-tokens", "oauth-callback", "operator-admin", "pilot-admin",
 			"pilot-apply", "pilot-status", "policy-management", "team-invite",
 		]) {
 			const source = readFileSync(join(FUNCTIONS_DIR, route, "index.ts"), "utf8");
