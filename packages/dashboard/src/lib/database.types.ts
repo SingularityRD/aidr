@@ -646,6 +646,37 @@ export interface Database {
 					updated_by?: string | null;
 				};
 			};
+			// Read-only for the browser: rows are written only by the ingest projection.
+			posture_findings: {
+				Row: {
+					id: number;
+					tenant_id: string;
+					event_row_id: number;
+					agent_id: string;
+					source: "infra_scan" | "mcp_inventory" | "skill_scan";
+					finding_kind: "cve" | "advisory" | "exposed_component" | "mcp_server" | "skill_rule";
+					severity: "critical" | "high" | "medium" | "low" | "info" | "unknown";
+					cvss: number | string | null;
+					vuln_id: string | null;
+					component: string | null;
+					component_version: string | null;
+					applicability: "confirmed" | "unconfirmed" | null;
+					target_digest: string | null;
+					mcp_server_name: string | null;
+					mcp_transport: "remote" | "stdio" | null;
+					risk_categories: string[];
+					attestation_status: string | null;
+					subject_digest: string | null;
+					plugin_key: string | null;
+					rule_id: string | null;
+					skill_risk_type: string | null;
+					scan_id: string | null;
+					observed_at: string;
+					created_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
 		}>;
 		Views: AddRelationships<{
 			user_subscription_summary: {

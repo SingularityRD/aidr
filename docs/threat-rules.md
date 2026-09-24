@@ -46,7 +46,7 @@ Rules ship in the `threats/` directory at the repository root:
 | `confidence` | float | 0.0-1.0, used with sensitivity threshold |
 | `action` | enum | `block`, `require_approval`, or `log` |
 | `pattern` | string | Regex pattern |
-| `match_on` | string or list | `command`, `url`, `file_path`, `content`, or `domain` |
+| `match_on` | string or list | `command`, `url`, `file_path`, `content`, or `domain`; plugin/skill package scans only: `plugin_content`, `plugin_orphan_bytecode` (see [AI security posture](ai-security-posture.md)) |
 | `title` | string | Human-readable description |
 | `expires_at` | string or null | ISO 8601 expiration date, or `null` for permanent |
 | `revoked` | boolean | Set `true` to disable a rule without removing it |

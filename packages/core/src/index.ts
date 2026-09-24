@@ -687,7 +687,33 @@ export {
 	storeResult,
 } from "./plugin-scan-cache.js";
 // Plugin scanner
-export { discoverPlugins, scanPlugin } from "./plugin-scanner.js";
+export {
+	discoverPlugins,
+	matchPluginContent,
+	SKILL_RISK_TYPES,
+	scanPlugin,
+	skillRiskTypeForThreatId,
+} from "./plugin-scanner.js";
+// AI security posture findings (infra CVEs, MCP inventory, skill/plugin scan)
+export {
+	buildInfraScanFindingEvents,
+	buildMcpInventoryFindingEvents,
+	buildSkillScanFindingEvents,
+	INFRA_SCAN_FINDING_EVENT,
+	MCP_INVENTORY_FINDING_EVENT,
+	newPostureScanId,
+	normalizePostureSeverity,
+	PLUGIN_SCAN_FINDING_EVENT,
+	type PostureSeverity,
+	projectPostureFields,
+} from "./posture-events.js";
+export {
+	describePostureUploadError,
+	POSTURE_UPLOAD_BATCH_SIZE,
+	type PostureUploadOptions,
+	type PostureUploadResult,
+	uploadPostureEvents,
+} from "./posture-upload.js";
 // Quarantine
 export {
 	AutoQuarantine,

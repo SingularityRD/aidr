@@ -3,13 +3,18 @@ import { isCommercialBuild } from "./build-flavor.js";
 import type { ControlPlaneIngestResult } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
-import { redactTelemetryData } from "./telemetry-redaction.js";
+import {
+	INFRA_SCAN_FINDING_EVENT,
+	MCP_INVENTORY_FINDING_EVENT,
+	projectPostureFields,
+} from "./posture-events.js";
 import {
 	createSecretReferenceId,
-	resolveSecretStore,
 	type PlatformSecretStoreKind,
+	resolveSecretStore,
 	type SecretStore,
 } from "./secret-store.js";
+import { redactTelemetryData } from "./telemetry-redaction.js";
 import type { AuthConfig } from "./types.js";
 
 type ManagedSeatStatus = "ok" | "over_limit" | "unknown";
@@ -293,7 +298,11 @@ export function redactRemoteEvent(
 		"plugin_scan",
 		"plugin_scan_finding",
 		"runtime_policy_cache",
+		INFRA_SCAN_FINDING_EVENT,
+		MCP_INVENTORY_FINDING_EVENT,
 	]);
+	// Posture findings carry their own bounded, re-validated field set.
+	Object.assign(safeEntry, projectPostureFields(scrubbed));
 	for (const key of ["verdict", "decision"]) copyEnum(key, ["allow", "ask", "deny"]);
 	copyEnum("severity", ["info", "warning", "high", "critical"]);
 	copyEnum("status", ["open", "acknowledged", "contained", "resolved", "suppressed"]);

@@ -78,6 +78,7 @@ export function AppLayout() {
 						<NavLink to="/agents">Agents</NavLink>
 						<NavLink to="/events">Events</NavLink>
 						<NavLink to="/discovery">Discovery</NavLink>
+						<NavLink to="/posture">Posture</NavLink>
 						<NavLink to="/incidents">Incidents</NavLink>
 						<NavLink to="/autosecops">AutoSecOps</NavLink>
 						<NavLink to="/settings">Settings</NavLink>
