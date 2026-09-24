@@ -79,6 +79,7 @@ export function AppLayout() {
 						<NavLink to="/events">Events</NavLink>
 						<NavLink to="/discovery">Discovery</NavLink>
 						<NavLink to="/incidents">Incidents</NavLink>
+						<NavLink to="/privacy-guard">Browser Privacy</NavLink>
 						<NavLink to="/autosecops">AutoSecOps</NavLink>
 						<NavLink to="/settings">Settings</NavLink>
 						<TeamNavLinks />

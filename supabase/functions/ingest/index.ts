@@ -8,6 +8,10 @@
 // - upserts agent by (user_id, iid)
 // - enforces agent-seat limit: included_agents + extra_agents
 // - idempotently inserts stable event identities for the dashboard
+//
+// Browser Guard installs use agent_runtime "browser_guard" and send counts-only
+// "privacy_scan" events (docs/contracts/privacy-telemetry.md). Each install is
+// a protected agent seat like any other runtime; events.ts projects the scan.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";

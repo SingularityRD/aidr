@@ -704,6 +704,11 @@ export interface Database {
 				Args: Record<string, never>;
 				Returns: { url: string };
 			};
+			/** Browser Guard privacy telemetry aggregates (migration 20260925000001). */
+			privacy_guard_summary: {
+				Args: { p_tenant_id: string; p_days: number };
+				Returns: Record<string, unknown>;
+			};
 		};
 	};
 }

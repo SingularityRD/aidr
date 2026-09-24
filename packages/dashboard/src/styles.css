@@ -1756,6 +1756,65 @@ select.input {
 	transition: width var(--transition-slow);
 }
 
+/* Browser Privacy Guard page */
+.privacy-breakdown {
+	list-style: none;
+	margin: 10px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 10px;
+}
+
+.privacy-series {
+	display: flex;
+	align-items: flex-end;
+	gap: 2px;
+	height: 120px;
+	margin-top: 12px;
+	padding-bottom: 2px;
+	border-bottom: 1px solid var(--border-primary);
+}
+
+.privacy-series-day {
+	flex: 1 1 0;
+	min-width: 0;
+	height: 100%;
+	display: flex;
+	align-items: flex-end;
+}
+
+.privacy-series-stack {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	border-radius: 2px 2px 0 0;
+	overflow: hidden;
+}
+
+.privacy-series-masked {
+	background: var(--success-600);
+}
+
+.privacy-series-warned {
+	background: var(--warning-500);
+}
+
+.privacy-series-blocked {
+	background: var(--sev-critical);
+}
+
+.privacy-series-allowed {
+	background: var(--border-strong);
+}
+
+.privacy-key {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 2px;
+	vertical-align: middle;
+}
+
 .payment-provider-selector {
 	display: grid;
 	gap: 12px;

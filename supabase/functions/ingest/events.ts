@@ -17,6 +17,7 @@ const EVENT_TYPES = new Set([
 	"plugin_scan",
 	"plugin_scan_finding",
 	"runtime_policy_cache",
+	"privacy_scan",
 ]);
 const DECISIONS = new Set(["allow", "ask", "deny"]);
 const SEVERITIES = new Set(["info", "warning", "high", "critical"]);
@@ -30,6 +31,102 @@ const RECOMMENDED_ACTIONS = new Set([
 	"notify",
 ]);
 const REDACTED = "[Redacted]";
+
+/**
+ * Browser Guard privacy telemetry (docs/contracts/privacy-telemetry.md).
+ * Keys mirror packages/privacy/src/types.ts ENTITY_TYPES; the edge runtime
+ * cannot import that package, so the contract suite pins the two lists.
+ */
+export const PRIVACY_ENTITY_TYPES = [
+	"PERSON", "EMAIL", "PHONE", "TC_KIMLIK", "IBAN", "CREDIT_CARD", "ADDRESS",
+	"US_SSN", "DATE_OF_BIRTH", "PASSPORT", "NATIONAL_ID", "TAX_ID", "BANK_ACCOUNT",
+	"IP_ADDRESS", "MAC_ADDRESS", "SECRET", "PRIVATE_KEY", "INTERNAL", "CLASSIFIED",
+	"LOCATION", "USERNAME", "HEALTH_ID", "LICENSE_PLATE",
+] as const;
+export const PRIVACY_SITES = [
+	"chatgpt", "gemini", "claude", "copilot", "perplexity", "deepseek", "mistral", "grok", "other",
+] as const;
+export const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
+/** Generic decision for each guard action: a masked send left redacted, so it was allowed. */
+export const PRIVACY_ACTION_DECISIONS = {
+	masked: "allow",
+	warned: "ask",
+	blocked: "deny",
+	allowed: "allow",
+} as const;
+export const MAX_PRIVACY_ENTITY_KEYS = 32;
+export const MAX_PRIVACY_ENTITY_COUNT = 100_000;
+const PRIVACY_ENTITY_TYPE_SET = new Set<string>(PRIVACY_ENTITY_TYPES);
+const PRIVACY_SITE_SET = new Set<string>(PRIVACY_SITES);
+const PRIVACY_CHANNEL_SET = new Set<string>(PRIVACY_CHANNELS);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function privacyAction(value: unknown): keyof typeof PRIVACY_ACTION_DECISIONS | undefined {
+	return typeof value === "string" && Object.hasOwn(PRIVACY_ACTION_DECISIONS, value)
+		? (value as keyof typeof PRIVACY_ACTION_DECISIONS)
+		: undefined;
+}
+
+/**
+ * Resolve the event type from `type` or its contract alias `event_type`.
+ * Returns null when the two disagree or name an unknown type.
+ */
+function resolveEventType(event: Record<string, unknown>): string | null {
+	const declared = [event.type, event.event_type].filter((value) => value !== undefined);
+	if (declared.length === 0) return "runtime_verdict";
+	const type = safeEnum(declared[0], EVENT_TYPES);
+	if (!type || declared.some((value) => value !== type)) return null;
+	return type;
+}
+
+/** Reject a privacy event whose required fields cannot be projected faithfully. */
+function privacyEventProblem(event: Record<string, unknown>): string | undefined {
+	if (!privacyAction(event.action)) return "action";
+	if (safeEnum(event.channel, PRIVACY_CHANNEL_SET) === undefined) return "channel";
+	if (event.entity_counts !== undefined) {
+		if (!isPlainObject(event.entity_counts)) return "entity_counts";
+		if (Object.keys(event.entity_counts).length > MAX_PRIVACY_ENTITY_KEYS) return "entity_counts";
+	}
+	return undefined;
+}
+
+/**
+ * Counts-only projection of a Browser Guard scan. Nothing but enums, bounded
+ * integers and an optional policy identifier survives: raw prompt text, masked
+ * text, matched values and page URLs are dropped even when a client sends them.
+ */
+function projectPrivacyEvent(event: Record<string, unknown> & { event_id: string }) {
+	const action = privacyAction(event.action) ?? "allowed";
+	const projected: Record<string, unknown> & { event_id: string } = {
+		event_id: event.event_id,
+		type: "privacy_scan",
+	};
+	const timestamp = safeTimestamp(event.timestamp);
+	if (timestamp) projected.timestamp = timestamp;
+	// A site this server does not know yet is still a real send: keep it as "other".
+	projected.site = safeEnum(event.site, PRIVACY_SITE_SET) ?? "other";
+	projected.action = action;
+	projected.channel = safeEnum(event.channel, PRIVACY_CHANNEL_SET);
+	projected.decision = PRIVACY_ACTION_DECISIONS[action];
+	const counts: Record<string, number> = {};
+	if (isPlainObject(event.entity_counts)) {
+		for (const [key, value] of Object.entries(event.entity_counts)) {
+			if (!PRIVACY_ENTITY_TYPE_SET.has(key)) continue;
+			if (typeof value !== "number" || !Number.isInteger(value)) continue;
+			if (value < 1 || value > MAX_PRIVACY_ENTITY_COUNT) continue;
+			counts[key] = value;
+		}
+	}
+	projected.entity_counts = counts;
+	const findingsCount = safeBoundedCount(event.findings_count);
+	if (findingsCount !== undefined) projected.findings_count = findingsCount;
+	const policyId = safeIdentifier(event.policy_id);
+	if (policyId) projected.policy_id = policyId;
+	return projected;
+}
 
 function isSensitiveIdentifier(value: string): boolean {
 	return SENSITIVE_IDENTIFIER_PATTERN.test(value) ||
@@ -75,10 +172,11 @@ function safeDigestOrMarker(value: unknown): string {
  * nested copy of those values. Unknown fields are omitted, and the only
  * nested object we accept is the bounded runtime-policy-cache summary.
  */
-function projectEvent(event: Record<string, unknown> & { event_id: string }) {
+function projectEvent(event: Record<string, unknown> & { event_id: string }, type: string) {
+	if (type === "privacy_scan") return projectPrivacyEvent(event);
 	const projected: Record<string, unknown> & { event_id: string } = {
 		event_id: event.event_id,
-		type: safeEnum(event.type, EVENT_TYPES) ?? "runtime_verdict",
+		type,
 	};
 	const timestamp = safeTimestamp(event.timestamp);
 	if (timestamp) projected.timestamp = timestamp;
@@ -170,8 +268,18 @@ export function normalizeIngestEvents(value: unknown): NormalizedIngestEvents {
 		if (isSensitiveIdentifier(event.event_id)) {
 			return { ok: false, status: 400, error: "invalid_event", detail: `events[${index}].event_id` };
 		}
-		if (event.type !== undefined && safeEnum(event.type, EVENT_TYPES) === undefined) {
+		const type = resolveEventType(event);
+		if (type === null) {
 			return { ok: false, status: 400, error: "invalid_event", detail: `events[${index}].type` };
+		}
+		const privacyProblem = type === "privacy_scan" ? privacyEventProblem(event) : undefined;
+		if (privacyProblem) {
+			return {
+				ok: false,
+				status: 400,
+				error: "invalid_event",
+				detail: `events[${index}].${privacyProblem}`,
+			};
 		}
 		if (seen.has(event.event_id)) {
 			return {
@@ -202,7 +310,7 @@ export function normalizeIngestEvents(value: unknown): NormalizedIngestEvents {
 		if (batchBytes > MAX_INGEST_BATCH_BYTES) {
 			return { ok: false, status: 413, error: "events_batch_too_large" };
 		}
-		events.push(projectEvent(event as Record<string, unknown> & { event_id: string }));
+		events.push(projectEvent(event as Record<string, unknown> & { event_id: string }, type));
 	}
 	return { ok: true, events };
 }

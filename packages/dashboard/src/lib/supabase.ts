@@ -22,6 +22,9 @@ const url = runtime?.supabaseUrl ?? (import.meta.env.VITE_SUPABASE_URL as string
 const anonKey =
 	runtime?.supabaseAnonKey ?? (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined);
 
+/** Control-plane base URL (the Supabase project URL) shown in enrollment templates. */
+export const supabaseProjectUrl: string | null = url ? url.replace(/\/+$/, "") : null;
+
 export const supabaseEnvError =
 	!url || !anonKey
 		? "Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Set them in the deployment environment (or .env.local for local development)."
