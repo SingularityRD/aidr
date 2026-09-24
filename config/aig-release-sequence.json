@@ -10,6 +10,14 @@
 			"release_sequence": 2,
 			"source_commit": "e68bc5d09a222a3d16b873ded93eb6d726028975",
 			"bundle_id": "2fb61e95cae5e6730470736c77ae4229e10fe1dfe4a57fae9a186065d4a8d0cf"
+		},
+		{
+			"release_sequence": 3,
+			"source_commit": "809e23df94ff9a9dfe336e3d120abe9a20ea66bf",
+			"source_tree_oid": "2a024a74a5d3255cab7890e6673d8954980c6038",
+			"source_tag": "v4.6.1-aidr.1",
+			"source_date": "2026-09-24T15:01:03.000Z",
+			"bundle_id": "05d1b68b7ed46ca970af5738cded33214b807200fdfbb97f1225768dcbbbfac5"
 		}
 	]
 }

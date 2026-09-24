@@ -143,7 +143,7 @@ test("scans clean and finding reports while redacting secret fields", () => {
 					staging,
 					files,
 					gitleaks: "stub-gitleaks",
-					version: "8.30.0",
+					version: "8.30.1",
 					run,
 					log: { log: (message) => output.push(message), error: (message) => output.push(message) },
 				});

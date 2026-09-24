@@ -16,8 +16,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const REQUIRED_GITLEAKS_VERSION = "8.30.0";
-const WIN_X64_GITLEAKS_SHA256 = "9d08e3f5cfb35a98f230b97bcda24f8d3fc66363c91868ffc98dac0afebdcb72";
+const REQUIRED_GITLEAKS_VERSION = "8.30.1";
+const WIN_X64_GITLEAKS_SHA256 = "17157e2ee8b76fc8b1d8bee607a250e34b8a8023c8bc81822d4b5ee4d78fcb7c";
 const CANARY_RULE_ID = "github-pat";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 

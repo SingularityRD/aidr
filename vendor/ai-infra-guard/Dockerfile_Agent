@@ -1,0 +1,117 @@
+# Stage 1: Build stage
+FROM golang:1.23.2-alpine@sha256:9dd2625a1ff2859b8d8b01d8f7822c0f528942fe56cfe7a1e7c38d3b8d72d679 AS builder
+
+# Install necessary system dependencies
+RUN apk add --no-cache git ca-certificates
+
+# Set working directory
+WORKDIR /app
+
+COPY go.mod go.sum /app/
+
+RUN go mod download
+
+COPY . /app/
+
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -trimpath -buildvcs=false -o agent ./cmd/agent
+
+#
+# AIG-PromptSecurity + MCP-SCAN runtime
+#
+FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    DEEPEVAL_TELEMETRY_OPT_OUT=YES \
+    DEEPTEAM_TELEMETRY_OPT_OUT=YES
+
+WORKDIR /app/AIG-PromptSecurity
+
+RUN set -eux; \
+    apt-get update --allow-releaseinfo-change; \
+    apt-get install -y --no-install-recommends \
+        git \
+        curl \
+        nmap \
+        chromium \
+        chromium-sandbox \
+        fonts-wqy-microhei \
+        fonts-wqy-zenhei \
+        fontconfig \
+        tzdata \
+        build-essential \
+        vim \
+        gcc
+
+RUN fc-cache -fv
+
+COPY uv-bootstrap.lock /tmp/uv-bootstrap.lock
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: \
+        -r /tmp/uv-bootstrap.lock \
+    && rm /tmp/uv-bootstrap.lock
+COPY ./AIG-PromptSecurity /app/AIG-PromptSecurity/
+WORKDIR /app/AIG-PromptSecurity
+RUN uv sync --frozen
+
+
+
+COPY ./mcp-scan /app/mcp-scan/
+WORKDIR /app/mcp-scan
+RUN python -m pip install --no-cache-dir --require-hashes --only-binary=:all: \
+    -r requirements-runtime.lock
+
+COPY ./agent-scan /app/agent-scan/
+WORKDIR /app/agent-scan
+RUN uv sync --frozen --no-dev
+
+COPY ./skill-scan /app/skill-scan/
+WORKDIR /app/skill-scan
+RUN uv sync --frozen
+
+COPY ./services/api_checker/requirements-runtime.lock /tmp/api-checker-requirements.lock
+RUN python -m venv /app/api-checker-venv && \
+    /app/api-checker-venv/bin/pip install --no-cache-dir \
+        --require-hashes --only-binary=:all: \
+        -r /tmp/api-checker-requirements.lock && \
+    rm /tmp/api-checker-requirements.lock
+
+RUN set -eux; \
+    apt-get purge -y --auto-remove \
+        build-essential \
+        gcc
+
+COPY --from=builder /app/agent /app/agent
+COPY --from=builder /app/data /app/data
+COPY ./services/__init__.py /app/services/__init__.py
+COPY ./services/api_checker /app/services/api_checker
+COPY ./scripts/start_agent_container.sh /app/start_agent_container.sh
+
+# Create a non-root user
+RUN useradd -m -u 1000 agent && \
+    mkdir -p /api-checker-data && \
+    chown -R agent:agent /app /api-checker-data && \
+    chmod 755 /app/start_agent_container.sh
+
+RUN chmod 4755 /usr/lib/chromium/chrome-sandbox || \
+    chmod 4755 /usr/lib/chromium/chromium-sandbox || \
+    chmod 4755 /usr/lib/chromium-browser/chrome-sandbox || \
+    true
+
+# Both processes run directly as the non-root agent user. Named volumes must
+# retain UID/GID 1000 ownership during upgrades.
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    AIG_API_CHECKER_ROOT_PATH=/api-checker \
+    AIG_API_CHECKER_DATA_DIR=/api-checker-data \
+    AIG_API_CHECKER_LOG_LEVEL=INFO
+
+EXPOSE 8000
+
+USER agent
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/app/api-checker-venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).read()"]
+
+ENTRYPOINT ["/app/start_agent_container.sh"]

@@ -1,4 +1,6 @@
 * text=auto eol=lf
+# Preserve the owned AIG Git tree byte-for-byte, including upstream Markdown hardbreaks.
+vendor/ai-infra-guard/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 *.bat text eol=crlf
 *.ps1 text eol=crlf
 # Generated connector bundles can contain intentional whitespace inside

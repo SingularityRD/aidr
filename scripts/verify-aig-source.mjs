@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verify the pinned Tencent AI-Infra-Guard source and the generated consumer
+ * Verify the vendored AI-Infra-Guard source and the generated consumer
  * bundle before a demo/release.  This is dependency-free and intentionally
  * fail-closed for signed release mode.
  */
@@ -17,11 +17,12 @@ const aigRoot = join(root, "vendor", "ai-infra-guard");
 const generatedRoot = resolve(process.env.AIG_GENERATED_DIR || join(root, "packages", "core", "src", "generated"));
 const releaseRegistry = JSON.parse(readFileSync(join(root, "config", "aig-release-sequence.json"), "utf8"));
 const currentRelease = releaseRegistry.releases?.at(-1);
-const expectedCommit = "e68bc5d09a222a3d16b873ded93eb6d726028975";
+const expectedCommit = currentRelease.source_commit;
+const expectedTreeOid = currentRelease.source_tree_oid;
 const requireSignature = process.env.AIG_REQUIRE_SIGNED === "true" || process.env.AIG_RELEASE === "true";
 
 function git(args) {
-  return execFileSync("git", ["-c", "core.quotepath=false", "-C", aigRoot, ...args], {
+  return execFileSync("git", ["-c", "core.quotepath=false", "-C", root, ...args], {
     cwd: root,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -52,15 +53,13 @@ function fail(message) {
   process.exit(1);
 }
 
-if (!existsSync(join(aigRoot, ".git")) && !existsSync(join(aigRoot, "HEAD"))) {
-  fail("vendor/ai-infra-guard is not initialized as a git checkout");
+if (!existsSync(aigRoot)) fail("vendored AI-Infra-Guard source is missing");
+const actualTreeOid = git(["rev-parse", "HEAD:vendor/ai-infra-guard"]);
+if (!/^[a-f0-9]{40}$/.test(expectedCommit) || actualTreeOid !== expectedTreeOid) {
+  fail(`vendored AIG source tree mismatch: ${actualTreeOid} (expected ${expectedTreeOid})`);
 }
-
-const commit = git(["rev-parse", "HEAD"]);
-const describe = git(["describe", "--tags", "--always"]);
-if (commit !== expectedCommit) {
-  fail(`unexpected source commit: ${commit} (expected ${expectedCommit})`);
-}
+const commit = expectedCommit;
+const describe = currentRelease.source_tag;
 
 const sourceFiles = [
   ...walkFiles(join(aigRoot, "data", "vuln"), ".yaml"),
@@ -69,7 +68,7 @@ const sourceFiles = [
 const fingerprintSourceFiles = walkFiles(join(aigRoot, "data", "fingerprints"), ".yaml");
 let pinnedFiles;
 try {
-  pinnedFiles = readPinnedYamlFiles({ aigRoot, cwd: root, ref: commit });
+  pinnedFiles = readPinnedYamlFiles({ aigRoot, cwd: root, ref: "HEAD" });
 } catch (error) {
   fail(`unable to read pinned AIG Git blobs: ${error.message}`);
 }
@@ -124,11 +123,12 @@ if (
   fail("manifest does not match the committed AIG release sequence registry");
 }
 if (manifest.source?.commit !== commit) fail(`manifest source commit mismatch: ${manifest.source?.commit}`);
+if (manifest.source?.git_tree_oid !== expectedTreeOid) fail("manifest source Git tree mismatch");
 const expectedTreeDigest = pinnedSourceTreeDigest(pinnedFiles);
 if (manifest.source?.tree_sha256 !== expectedTreeDigest) {
   fail(`manifest source tree mismatch: ${manifest.source?.tree_sha256} (expected ${expectedTreeDigest})`);
 }
-const runtimeFiles = readPinnedDataFiles({ aigRoot, cwd: root, ref: commit });
+const runtimeFiles = readPinnedDataFiles({ aigRoot, cwd: root, ref: "HEAD" });
 const runtimeBytes = runtimeFiles.reduce((total, file) => total + file.contents.length, 0);
 if (
   manifest.runtime?.schema !== "aig-runtime-data/v1" ||

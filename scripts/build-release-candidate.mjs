@@ -144,8 +144,7 @@ const dirtyEntries = git(["status", "--porcelain=v1"])
 	.split(/\r?\n/)
 	.map((line) => line.trim())
 	.filter(Boolean)
-	// Build output and evidence are regenerated, not source; the vendored
-	// submodule's local state is not part of what this bundle publishes.
+	// Build output and evidence are regenerated, not source.
 	.filter((line) => {
 		const file = line.replace(/^[ MARC?]{1,2}\s+/, "");
 		return !/^\.release-evidence(?:[\\/]|$)/.test(file)
@@ -163,8 +162,7 @@ const dirtyEntries = git(["status", "--porcelain=v1"])
 			// are the same kind of derived output, and the orchestrator commits them
 			// before it builds a candidate; treating a mid-run rewrite as source dirt
 			// would block assembly for a reason that has nothing to do with provenance.
-			&& !/^(?:FEATURE_INVENTORY|PRODUCTION_SALES_GAPS)\.(?:json|md)$/.test(file)
-			&& file !== "vendor/ai-infra-guard";
+			&& !/^(?:FEATURE_INVENTORY|PRODUCTION_SALES_GAPS)\.(?:json|md)$/.test(file);
 	});
 if (dirtyEntries.length > 0 && !options.allowDirty) {
 	fail(`worktree has uncommitted source changes, so the bundle would not be provenance-bound:\n  ${dirtyEntries.join("\n  ")}\nCommit them, or pass --allow-dirty to record an explicitly local rehearsal.`);

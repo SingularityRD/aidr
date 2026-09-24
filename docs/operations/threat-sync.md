@@ -3,7 +3,8 @@
 ## Overview
 
 The sync pipeline keeps AIDR edge agents updated with the latest
-threat intelligence from [Tencent AI-Infra-Guard (AIG)](https://github.com/Tencent/AI-Infra-Guard).
+threat intelligence from the AIDR-owned AI-Infra-Guard source, based on
+[Tencent AI-Infra-Guard](https://github.com/Tencent/AI-Infra-Guard).
 
 ## How It Works
 
@@ -28,7 +29,7 @@ packages/core/src/aig-sync.ts       ← Edge client (checks/loads/applies update
 
 ### Pipeline Steps
 
-1. **AIG data** lives at `vendor/ai-infra-guard/data/` — cloned as a git submodule or vendored copy.
+1. **AIG data** lives at `vendor/ai-infra-guard/data/` in the AIDR Git tree.
 2. **compile-aig-data.mjs** parses YAML vulnerability definitions and compiles them into three compact JSON index files.
 3. **sync-aig-threats.mjs** runs the full pipeline:
    - Checks if AIG is installed (graceful if missing — no crash).
@@ -195,7 +196,7 @@ already installed an older signed bundle.
 
 | Symptom                     | Likely Cause                        | Fix                                      |
 |-----------------------------|-------------------------------------|------------------------------------------|
-| `AIG not found` warning     | AIG repo not cloned                 | `git submodule update --init vendor/ai-infra-guard` |
+| `AIG not found` warning     | Incomplete AIDR checkout            | Restore the committed `vendor/ai-infra-guard` directory from AIDR |
 | `Compilation failed` error  | Corrupt YAML or missing dependency  | Check `node version`, run `compile-aig-data.mjs` directly |
 | No changes detected         | AIG data hasn't changed             | Normal — use `--force` to re-test        |
 | Watch mode crashes          | `recursive` watcher unsupported     | Use polling cron instead                 |

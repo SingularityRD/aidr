@@ -85,15 +85,14 @@ jobs:
       - name: Cloudflare Worker contract
         run: node --test deploy/cloudflare/worker.test.mjs deploy/cloudflare/verify-operational.test.mjs deploy/cloudflare/staging-deploy.test.mjs
 
-      - name: Verify clean checkout and AIG gitlink
+      - name: Verify clean checkout and vendored AIG source
         shell: bash
         run: |
           set -euo pipefail
           [[ -z "$(git status --porcelain)" ]] || { git status --short; exit 1; }
-          expected="$(git ls-tree HEAD vendor/ai-infra-guard | awk '{print $3}')"
-          actual="$(git -C vendor/ai-infra-guard rev-parse HEAD)"
-          [[ -n "${expected}" && "${expected}" == "${actual}" ]] || {
-            echo "AIG submodule gitlink mismatch: expected=${expected} actual=${actual}" >&2
+          source_type="$(git ls-tree HEAD vendor/ai-infra-guard | awk '{print $2}')"
+          [[ "${source_type}" == "tree" ]] || {
+            echo "AIG source must be a committed directory" >&2
             exit 1
           }
 

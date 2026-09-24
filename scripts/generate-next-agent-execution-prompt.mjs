@@ -58,7 +58,7 @@ Bitmiş sayılmak için aynı anda şunlar doğru olmalıdır:
 8. Secret, token, parola, private key, müşteri verisi, ham prompt veya kişisel yol bilgisini kaynak ağacına, loglara, destek bundle'ına veya release paketine koyma. Test kimlikleri yalnız izole fixture olmalıdır.
 9. Windows'ta alt süreçleri shell üzerinden gereksiz çalıştırma; timeout sonrası süreç ağacının kapandığını ve geçici dizin kilidinin kalmadığını doğrula. Uzun kapıları ayrı çalıştır, exit code ve tam log kaydet; tool timeout'unu PASS sayma.
 10. Her kapanışta kod yolu, test, observable yan etki, candidate digest, tarih ve kalan sınır bulunmalıdır. Yerel olarak uygulanmış ama saha kanıtı isteyen satırın statüsünü production accepted yapma.
-11. \`vendor/ai-infra-guard\` superproject işaretçisi v4.6.1'e bağlıdır. Alt çalışma ağacındaki önceden var olan commitlenmemiş dosyaları kaydet, sahipliğini doğrulamadan geri alma veya commit etme; derleme ve evidence'in tam olarak hangi submodule HEAD ve dirty-state üzerinde üretildiğini yaz.
+11. \`vendor/ai-infra-guard\` AIDR Git ağacına doğrudan eklenmiştir. Kaynak ağacını release registry içindeki Git tree OID ve sahipli kaynak commit'iyle doğrula; derleme ve evidence'in aynı kaynağa bağlı olduğunu kanıtla.
 12. Yeni bağımlılık eklemeden önce lisans, bakım durumu, bilinen açık, lockfile etkisi ve paket boyutunu değerlendir. Version range ile lockfile uyuşmalı; production dependency audit'i temiz olmadan release üretme.
 13. Kullanıcıya yalnız gerçek credential, yetkili onay veya mevcut olmayan fiziksel/dış kaynak gerektiğinde soru sor. Bu sırada bağımsız workstreamleri durdurma.
 
@@ -274,7 +274,7 @@ Kapıları bu sırada ve ayrı loglarla çalıştır. Bir kapı başarısızsa k
 18. \`pnpm verify:native-host\` çalıştır. Gerçek host ve isimli kabul yoksa NO-GO beklenir.
 19. Release-inventory SHA-256'yı \`AIDR_E2E_RC_DIGEST\` olarak verip \`pnpm test:e2e\` çalıştır. Dış receipt/host yoksa fail-closed sonucu koru; local suite'lerin beklenmedik failure'larını düzelt.
 20. Yeni release output ve customer kit üret. Eski v7 klasörünü overwrite etme. Kit verifier, 14 release artefaktı, cloud/self-hosted empty-PATH preparation, secret leakage, gateway ve ingress dosyalarını doğrulamalı. Resmi signer yoksa unsigned/publisher_authenticated=false kalmalı.
-21. \`pnpm aig:verify\` ve izole Python AIG suite'i aynı vendored commit/corpus üzerinde geçmeli; submodule dirty-state evidence'e yazılmalı.
+21. \`pnpm aig:verify\` ve izole Python AIG suite'i aynı kayıtlı vendor ağacı/corpus üzerinde geçmeli; temiz AIDR çalışma ağacı evidence'e yazılmalı.
 22. \`pnpm test:e2e:negative\` ile eksik/yanlış credential, yanlış tenant, replay ve unavailable dependency yollarını doğrula.
 23. \`pnpm verify:fleet:windows\` ve \`pnpm verify:fleet:unix\` çalıştır; mevcut olmayan OS/MDM hostunu başarı sayma.
 24. \`pnpm verify:monitoring\`, \`pnpm verify:upgrade\`, \`pnpm verify:support-bundle\`, \`pnpm verify:load\`, \`pnpm verify:release-signing\`, \`pnpm verify:backup-offsite\` ve \`pnpm verify:offboarding\` kapılarını ayrı loglarla çalıştır.

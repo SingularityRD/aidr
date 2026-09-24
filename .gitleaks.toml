@@ -2,3 +2,25 @@ title = "Singularity AIDR secret scanning"
 
 [extend]
 useDefault = true
+
+# AIG's sealed_token examples are ciphertext samples, not bearer credentials.
+[[allowlists]]
+description = "AIG README sealed-token examples"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''sealed_token=''']
+paths = ['''^vendor/ai-infra-guard/(README\.md|readme/README_[A-Z]{2}\.md)$''']
+
+[[allowlists]]
+description = "AIG scanner's synthetic API-key test fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''(?i)API key is:|API Key:''']
+paths = ['''^vendor/ai-infra-guard/(agent-scan/testcase/case3/main\.py|mcp-scan/testcase/case1/main1\.py)$''']
+
+[[allowlists]]
+description = "AIG private-key detection examples"
+targetRules = ["private-key"]
+paths = ['''^vendor/ai-infra-guard/(agent-scan/agent_scan/prompt/skills/hardcoded-secret-detection/SKILL\.md|data/mcp/mcp_hardcoded_secrets\.yaml)$''']

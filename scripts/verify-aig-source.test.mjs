@@ -186,30 +186,26 @@ test("verifier rejects a different valid bundle without a registry sequence bump
 	assert.match(`${result.stdout}\n${result.stderr}`, /manifest does not match the committed AIG release sequence registry/);
 });
 
-test("verifier source pin matches the superproject gitlink", async () => {
-	const verifier = await readFile(verifierPath, "utf8");
-	const expectedCommit = verifier.match(/const expectedCommit = "([0-9a-f]{40})";/)?.[1];
-	assert.ok(expectedCommit, "verify-aig-source.mjs must declare a full expectedCommit SHA");
-
-	const gitlink = execFileSync(
+test("vendored source tree matches the registered AIG commit tree", async () => {
+	const registry = JSON.parse(await readFile(new URL("../config/aig-release-sequence.json", import.meta.url), "utf8"));
+	const expectedTree = registry.releases.at(-1).source_tree_oid;
+	const tree = execFileSync(
 		"git",
 		["ls-tree", "HEAD", "vendor/ai-infra-guard"],
 		{ cwd: root, encoding: "utf8" },
 	).trim();
-	const match = gitlink.match(/^160000 commit ([0-9a-f]{40})\tvendor\/ai-infra-guard$/);
-	assert.ok(match, "vendor/ai-infra-guard must be a checked-in gitlink");
-	assert.equal(expectedCommit, match[1]);
+	const match = tree.match(/^040000 tree ([0-9a-f]{40})\tvendor\/ai-infra-guard$/);
+	assert.ok(match, "vendor/ai-infra-guard must be a committed directory");
+	assert.equal(match[1], expectedTree);
 });
 
 test("Compose and its safe env example report the pinned AIG release tag", async () => {
-	const aigRoot = fileURLToPath(new URL("../vendor/ai-infra-guard/", import.meta.url));
-	const tag = execFileSync("git", ["-C", aigRoot, "describe", "--tags", "--exact-match", "HEAD"], {
-		cwd: root,
-		encoding: "utf8",
-	}).trim();
+	const registry = JSON.parse(await readFile(new URL("../config/aig-release-sequence.json", import.meta.url), "utf8"));
+	const source = registry.releases.at(-1);
+	const tag = source.source_tag;
 	const manifest = JSON.parse(await readFile(new URL("../packages/core/src/generated/aig-data-manifest.json", import.meta.url), "utf8"));
-	const head = execFileSync("git", ["-C", aigRoot, "rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-	assert.equal(head, manifest.source.commit);
+	assert.equal(source.source_commit, manifest.source.commit);
+	assert.equal(source.source_tree_oid, manifest.source.git_tree_oid);
 	const env = await readFile(new URL("../.env.aig.example", import.meta.url), "utf8");
 	const compose = await readFile(new URL("../docker-compose.aig.yml", import.meta.url), "utf8");
 	assert.match(env, new RegExp(`^AIG_SOURCE_VERSION=${tag.replaceAll(".", "\\.")}$`, "m"));

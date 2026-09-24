@@ -37,15 +37,21 @@ export function readPinnedDataFiles({ aigRoot, cwd, ref = "HEAD" }) {
 
 function readPinnedFiles({ aigRoot, cwd, ref, roots, accept }) {
 	if (!/^(?:HEAD|[a-f0-9]{40,64})$/i.test(ref)) throw new Error(`Invalid AIG Git ref: ${ref}`);
+	const repositoryRoot = execFileSync("git", ["-C", aigRoot, "rev-parse", "--show-toplevel"], {
+		cwd, encoding: "utf8", env: sanitizedAigChildEnv(), stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+	const relativeRoot = path.relative(repositoryRoot, aigRoot).replaceAll("\\", "/");
+	if (relativeRoot === ".." || relativeRoot.startsWith("../")) throw new Error("AIG source is outside its Git checkout");
+	const prefix = relativeRoot ? `${relativeRoot}/` : "";
 	const resolvedRef = execFileSync(
 		"git",
-		["-C", aigRoot, "rev-parse", "--verify", `${ref}^{commit}`],
+		["-C", repositoryRoot, "rev-parse", "--verify", `${ref}^{commit}`],
 		{ cwd, encoding: "utf8", env: sanitizedAigChildEnv(), stdio: ["ignore", "pipe", "ignore"] },
 	).trim();
 	if (!/^[a-f0-9]{40,64}$/i.test(resolvedRef)) throw new Error(`Invalid resolved AIG commit: ${resolvedRef}`);
 	const listing = execFileSync(
 		"git",
-		["-c", "core.quotepath=false", "-C", aigRoot, "ls-tree", "-rz", "--full-tree", resolvedRef, "--", ...roots],
+		["-c", "core.quotepath=false", "-C", repositoryRoot, "ls-tree", "-rz", "--full-tree", resolvedRef, "--", ...roots.map((root) => `${prefix}${root}`)],
 		{ cwd, env: sanitizedAigChildEnv(), stdio: ["ignore", "pipe", "ignore"], maxBuffer: 256 * 1024 * 1024 },
 	);
 	const entries = splitNulRecords(listing)
@@ -56,12 +62,13 @@ function readPinnedFiles({ aigRoot, cwd, ref, roots, accept }) {
 			const pathBytes = record.subarray(tab + 1);
 			const filePath = pathBytes.toString("utf8");
 			if (!Buffer.from(filePath, "utf8").equals(pathBytes)) throw new Error("AIG Git path is not valid UTF-8");
-			return { mode, type, object, path: filePath };
+			if (!filePath.startsWith(prefix)) throw new Error("AIG Git path is outside its source root");
+			return { mode, type, object, path: filePath.slice(prefix.length) };
 		})
 		.filter((entry) => entry.type === "blob" && accept(entry.path))
 		.sort((a, b) => compareText(a.path, b.path));
 	if (entries.length === 0) return [];
-	const batch = execFileSync("git", ["-C", aigRoot, "cat-file", "--batch"], {
+	const batch = execFileSync("git", ["-C", repositoryRoot, "cat-file", "--batch"], {
 		cwd,
 		env: sanitizedAigChildEnv(),
 		input: `${entries.map((entry) => entry.object).join("\n")}\n`,

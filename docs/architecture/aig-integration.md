@@ -1,17 +1,17 @@
 # AIG (AI-Infra-Guard) Integration Architecture
 
-> **Status:** First-customer acceptance open — source/data verify locally, but the
-> committed manifest is unsigned and the AIG submodule hardening patch is
-> uncommitted. The current source gitlink is Tencent `v4.6.1`
-> (`e68bc5d09a222a3d16b873ded93eb6d726028975`).
+> **Status:** First-customer acceptance open — the owned AIG source is committed
+> directly under `vendor/ai-infra-guard` and its data verifies locally, but the
+> committed manifest is unsigned. The pinned source is `v4.6.1-aidr.1`
+> (`809e23df94ff9a9dfe336e3d120abe9a20ea66bf`).
 > **Owners:** AIDR Core Team, AIG Integration Team
 
 The request/response examples below document the earlier `v4.5.1` design and
 are **not** current live-scan or production acceptance evidence. For the active
 security, readiness and release-signing contract, use the
 [bridge runbook](../../services/aig-bridge/README.md) and `pnpm aig:verify`.
-Do not present AIG as first-customer ready until the submodule patch is pinned,
-the data manifest is signed with a trusted release key, the runtime attests
+Do not present AIG as first-customer ready until the data manifest is signed
+with a trusted release key, the runtime attests
 the same bundle, and real scan/restore/host acceptance evidence exists.
 
 ## 1. Overview
@@ -35,15 +35,14 @@ This product includes software developed at Tencent Zhuque Lab. Based on
 
 ### 1.3 Current source pin and historical task contract
 
-The parent Git submodule pointer, release-sequence registry and generated
-manifest all reference Tencent `v4.6.1` at
-`e68bc5d09a222a3d16b873ded93eb6d726028975`. Local `pnpm aig:verify`
+The committed vendor tree, release-sequence registry and generated manifest
+all reference the owned `v4.6.1-aidr.1` source at
+`809e23df94ff9a9dfe336e3d120abe9a20ea66bf`. Local `pnpm aig:verify`
 checks that pin and reports 2,017 generated CVE entries, 146 fingerprints,
 14 local MCP categories and a 4,207-file runtime data tree. These are build
 counts, **not** a live AIG knowledge API count or detection-rate claim. The
 manifest has `signature: null`, so release-mode verification and bridge
-dataset readiness must fail closed. The uncommitted vendor hardening patch
-also prevents a reproducible release from this parent commit.
+dataset readiness must fail closed. A signed release and live acceptance remain open.
 
 Tencent's v4 task API uses `target` (singular), `timeout`, optional `headers`,
 and an optional `model` object. A model is required when the upstream has no
@@ -368,7 +367,7 @@ GET /api/v1/health
 ```
 
 This response is historical v4.5.1 evidence, not a current readiness example.
-The v4.6.1 AIDR hardening patch adds authenticated worker and dataset
+The v4.6.1-aidr.1 source adds authenticated worker and dataset
 attestation; current `/api/v1/readyz` must reject an unsigned manifest,
 missing worker, mismatched runtime tree, or unavailable knowledge API. A
 capability task must also complete before advertising a scan type as ready.
@@ -548,7 +547,7 @@ defined in the local `.env.aig`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AIG_SOURCE_VERSION` | Pinned source tag, checked against the Git submodule | `v4.6.1` |
+| `AIG_SOURCE_VERSION` | Pinned owned-source tag | `v4.6.1-aidr.1` |
 | `AIG_BIND_ADDRESS` | Authenticated bridge host bind | `127.0.0.1` |
 | `AIG_BRIDGE_PORT` | Authenticated bridge host port | `8099` |
 | `AIG_TZ` | Timezone | `Asia/Shanghai` |
@@ -590,7 +589,7 @@ aidr/
 │   └── sdk/                  @singularityrd/aidr-sdk (unchanged)
 │
 ├── vendor/
-│   └── ai-infra-guard/       # Cloned AIG repository (git submodule)
+│   └── ai-infra-guard/       # Owned source committed directly in AIDR
 │       ├── Dockerfile
 │       ├── Dockerfile_Agent
 │       ├── docker-compose.yml
@@ -687,8 +686,7 @@ To add a new scan type to the integration:
 ### 9.1 Development
 
 ```bash
-# Initialize the pinned AIG submodule
-git submodule update --init --recursive
+# AIG source is included directly in the AIDR checkout.
 pnpm compile:aig
 pnpm aig:verify
 

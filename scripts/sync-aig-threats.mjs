@@ -112,14 +112,22 @@ export function compilationEnvironment(environment = process.env) {
 
 export function validateSourceManifest(manifest, { sourceMode, aigRoot = AIG_DIR, cwd = ROOT } = {}) {
   if (!new Set(["pinned", "worktree"]).has(sourceMode)) throw new Error(`Invalid source mode: ${sourceMode}`);
-  const commit = execFileSync("git", ["-C", aigRoot, "rev-parse", "HEAD"], {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
+  const vendored = resolve(aigRoot) === resolve(AIG_DIR) && !existsSync(join(aigRoot, ".git"));
+  const release = vendored ? readJson(join(cwd, "config", "aig-release-sequence.json"))?.releases?.at(-1) : null;
+  const commit = vendored ? release?.source_commit : execFileSync("git", ["-C", aigRoot, "rev-parse", "HEAD"], {
+    cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
   }).trim();
+  if (vendored) {
+    const tree = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD:vendor/ai-infra-guard"], {
+      cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (tree !== release?.source_tree_oid || manifest?.source?.git_tree_oid !== tree) {
+      throw new Error("compiled manifest source Git tree mismatch");
+    }
+  }
   const files = sourceMode === "worktree"
     ? readWorktreeYamlFiles({ aigRoot })
-    : readPinnedYamlFiles({ aigRoot, cwd, ref: commit });
+    : readPinnedYamlFiles({ aigRoot, cwd, ref: vendored ? "HEAD" : commit });
   const treeSha256 = pinnedSourceTreeDigest(files);
   if (manifest?.source?.commit !== commit) {
     throw new Error(`compiled manifest source commit mismatch: ${manifest?.source?.commit ?? "missing"} (expected ${commit})`);
@@ -306,7 +314,7 @@ function syncPipeline(force, sourceMode) {
   // 1 — Check AIG installation
   if (!checkAigInstalled()) {
     warn("AI-Infra-Guard not found or has no data at:", AIG_DATA_DIR);
-    warn("  Clone/pull the AIG repository into vendor/ai-infra-guard/ to enable syncing.");
+    warn("  Restore the committed vendor/ai-infra-guard/ directory from the AIDR checkout.");
     warn("  Existing compiled indices will be used as-is (if any).");
     console.log("");
     info("Sync skipped — no upstream data to compile.");

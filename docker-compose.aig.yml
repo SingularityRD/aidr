@@ -104,7 +104,7 @@ services:
     environment:
       - TZ=${AIG_TZ:-Asia/Shanghai}
       - AIG_SERVER=aig-server:8088
-      - AIG_AGENT_VERSION=${AIG_SOURCE_VERSION:-v4.6.1}
+      - AIG_AGENT_VERSION=${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}
       - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:?set AIG_AGENT_SHARED_SECRET}
       - AIG_UPLOAD_ROOT=/app/uploads
       - AIG_WORK_DIR=/work
@@ -177,7 +177,7 @@ services:
       - BRIDGE_LOG_LEVEL=${BRIDGE_LOG_LEVEL:-INFO}
       - TZ=${AIG_TZ:-Asia/Shanghai}
       - BRIDGE_AIG_URL=http://aig-server:8088
-      - AIG_SOURCE_VERSION=${AIG_SOURCE_VERSION:-v4.6.1}
+      - AIG_SOURCE_VERSION=${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}
       - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:?set AIG_AGENT_SHARED_SECRET}
       - AIG_MIN_WORKERS=${AIG_MIN_WORKERS:-1}
       - AIG_DATA_MANIFEST_PATH=/app/aig-data/aig-data-manifest.json
