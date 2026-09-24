@@ -147,22 +147,29 @@ type GlobToken =
 	| { kind: "set"; negated: boolean; body: string }
 	| { kind: "char"; value: string };
 
+/** A `[…]` bracket expression; a leading `!` or `^` negates it. */
+function setToken(body: string): GlobToken {
+	const negated = body.startsWith("!") || body.startsWith("^");
+	return { kind: "set", negated, body: negated ? body.slice(1) : body };
+}
+
+function characterToken(character: string): GlobToken {
+	if (character === "*") return { kind: "star" };
+	if (character === "?") return { kind: "one" };
+	return { kind: "char", value: character.toLowerCase() };
+}
+
 function tokenizeGlob(glob: string): GlobToken[] {
 	const tokens: GlobToken[] = [];
 	for (let i = 0; i < glob.length; i++) {
 		const character = glob[i] as string;
 		const end = character === "[" ? glob.indexOf("]", i + 2) : -1;
-		if (character === "*") {
-			if (tokens.at(-1)?.kind !== "star") tokens.push({ kind: "star" });
-		} else if (character === "?") {
-			tokens.push({ kind: "one" });
-		} else if (end !== -1) {
-			const body = glob.slice(i + 1, end);
-			const negated = body.startsWith("!") || body.startsWith("^");
-			tokens.push({ kind: "set", negated, body: negated ? body.slice(1) : body });
+		if (end !== -1) {
+			tokens.push(setToken(glob.slice(i + 1, end)));
 			i = end;
-		} else {
-			tokens.push({ kind: "char", value: character.toLowerCase() });
+		} else if (character !== "*" || tokens.at(-1)?.kind !== "star") {
+			// Consecutive stars collapse into one.
+			tokens.push(characterToken(character));
 		}
 	}
 	return tokens;
