@@ -823,8 +823,9 @@ const DLP_MATRIX: ParityCase[] = [
 		threatId: "tenant-restricted-rule",
 	},
 	{
-		// No connector can rewrite tool input in place, so a redact rule blocks
-		// the original rather than passing the sensitive value through.
+		// Connectors that cannot rewrite tool input in place block the original
+		// rather than passing the sensitive value through; the ones in
+		// INPUT_REWRITING run the redacted input instead (asserted below).
 		id: "dlp-redact-rule",
 		call: { kind: "shell", field: "command", command: `echo ${REDACT_MARKER}` },
 		expect: "blocked",
@@ -843,6 +844,9 @@ const DLP_MATRIX: ParityCase[] = [
 		threatId: null,
 	},
 ];
+
+/** Connectors that declare `supportsInputRewrite` and execute `Verdict.transformedInput`. */
+const INPUT_REWRITING: ReadonlySet<Connector> = new Set<Connector>(["claude-code", "opencode"]);
 
 const EXPECTED_DLP_VERDICT: Record<string, "deny" | "ask" | "allow"> = {
 	"dlp-block-rule": "deny",
@@ -899,9 +903,12 @@ describe("signed tenant DLP bundle parity (built entry points)", () => {
 			expect(rows).toHaveLength(CONNECTORS.length);
 			for (const o of rows) {
 				const label = `${c.id} via ${o.connector}`;
-				expect(isBlocked(o.host.hostDecision), label).toBe(c.expect === "blocked");
+				// A connector that executes the redacted input is allowed to run it
+				// (audited as a DLP allow); every other connector blocks the original.
+				const rewritten = c.id === "dlp-redact-rule" && INPUT_REWRITING.has(o.connector);
+				expect(isBlocked(o.host.hostDecision), label).toBe(c.expect === "blocked" && !rewritten);
 				expect(o.audit, `${label}: no audit record`).toBeDefined();
-				expect(o.audit?.verdict, label).toBe(EXPECTED_DLP_VERDICT[c.id]);
+				expect(o.audit?.verdict, label).toBe(rewritten ? "allow" : EXPECTED_DLP_VERDICT[c.id]);
 				expect(o.audit?.matchedThreatId ?? null, label).toBe(c.threatId);
 				if (c.expect === "blocked") expect(o.audit?.source, label).toBe("dlp");
 			}

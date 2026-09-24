@@ -2,7 +2,11 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { evaluateToolCall, extractFromToolCall } from "@singularityrd/aidr-core";
+import {
+	evaluateToolCall,
+	extractFromToolCall,
+	INPUT_NOT_FULLY_INSPECTED,
+} from "@singularityrd/aidr-core";
 import { EMBEDDED_RULE_SETS } from "./embedded-rules.mjs";
 
 /**
@@ -201,6 +205,11 @@ export function createToolCallDetector(
 			throw new McpToolCallBlocked("detection_unavailable");
 		}
 		if (verdict?.decision === "allow") return verdict;
+		// Arguments beyond the extractor's inspection limits (nesting depth,
+		// string count, string size, total size) are denied by the core rather
+		// than forwarded half-inspected; the code tells the operator why.
+		if (verdict?.decision === "deny" && verdict.category === INPUT_NOT_FULLY_INSPECTED)
+			throw new McpToolCallBlocked(INPUT_NOT_FULLY_INSPECTED, verdict);
 		if (verdict?.decision === "deny") throw new McpToolCallBlocked("arguments_blocked", verdict);
 		if (verdict?.decision === "ask") throw new McpToolCallBlocked("approval_required", verdict);
 		throw new McpToolCallBlocked("detection_unavailable");

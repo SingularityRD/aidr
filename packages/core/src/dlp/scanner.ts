@@ -28,8 +28,29 @@ export const DlpScanRequestSchema = z
 		content: z.string(),
 		contentType: z.string().trim().min(1).max(255),
 		scannedAt: z.string().datetime({ offset: true }).optional(),
+		/**
+		 * `display` (default) keeps the configured placeholders, e.g. `[REDACTED]`.
+		 * `shell_inert` is for content that will be executed as a rewritten tool
+		 * input: every replacement becomes a `REDACTED_<TYPE>` word (see
+		 * {@link shellInertRedactionToken}).
+		 */
+		replacementStyle: z.enum(["display", "shell_inert"]).optional(),
 	})
 	.strict();
+
+/**
+ * Replacement token for text a tool will execute. A display placeholder such
+ * as `[REDACTED]` or `[TC_KIMLIK]` is a shell glob (`rm ./tmp/[REDACTED]`
+ * removes every file named `R`, `E`, `D`, `A`, `C` or `T`), and an operator
+ * token may carry spaces, quotes or a leading dash. The inert form keeps only
+ * `[A-Za-z0-9_]` and always starts with `REDACTED`, so it is one literal word
+ * in a shell, a path, a URL or a query string.
+ */
+export function shellInertRedactionToken(token: string): string {
+	const word = token.replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+	if (!word) return "REDACTED";
+	return /^REDACTED(?:_|$)/.test(word) ? word : `REDACTED_${word}`;
+}
 
 export type DlpScanRequest = z.infer<typeof DlpScanRequestSchema>;
 export type DlpScanAction = "allow" | DlpRuleAction;
@@ -576,12 +597,19 @@ function redact(content: string, matched: MatchedFinding[]): string {
 /**
  * An explicit rule replacement wins; detector matches otherwise get a constant type
  * placeholder such as [TC_KIMLIK]; else the label token. A JSON number replaced in
- * place becomes a JSON string so the redacted document stays valid.
+ * place becomes a JSON string so the redacted document stays valid. The
+ * `shell_inert` style rewrites whichever token applies to its inert form.
  */
-function replacementFor(rule: DlpRule, label: DlpLabel, match: InternalMatch): string {
-	const replacement =
+function replacementFor(
+	rule: DlpRule,
+	label: DlpLabel,
+	match: InternalMatch,
+	style: DlpScanRequest["replacementStyle"],
+): string {
+	const token =
 		rule.replacement ??
 		(match.detector ? privacyDetectorPlaceholder(match.detector) : label.redactionToken);
+	const replacement = style === "shell_inert" ? shellInertRedactionToken(token) : token;
 	return match.jsonLiteral ? JSON.stringify(replacement) : replacement;
 }
 
@@ -719,7 +747,7 @@ export function scanDlpContent(
 					maskedPreview: maskedPreview(match.value),
 				},
 				rule,
-				replacement: replacementFor(rule, label, match),
+				replacement: replacementFor(rule, label, match, request.replacementStyle),
 			});
 		}
 	}

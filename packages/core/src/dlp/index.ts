@@ -56,4 +56,5 @@ export {
 	scanDlpContent,
 	scanDlpInput,
 	scanDlpOutput,
+	shellInertRedactionToken,
 } from "./scanner.js";

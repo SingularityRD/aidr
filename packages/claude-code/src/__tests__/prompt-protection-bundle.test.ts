@@ -235,7 +235,7 @@ describe("PreToolUse bundle DLP redaction", () => {
 		const response = JSON.parse(result.stdout.trim());
 		expect(response.hookSpecificOutput).toEqual({
 			hookEventName: "PreToolUse",
-			updatedInput: { file_path: "notes.txt", content: "value=[REDACTED]" },
+			updatedInput: { file_path: "notes.txt", content: "value=REDACTED" },
 			additionalContext: expect.stringContaining("redaction markers"),
 		});
 		expect(response.hookSpecificOutput.permissionDecision).toBeUndefined();
