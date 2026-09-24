@@ -48,6 +48,9 @@ current context:
 {
   "action": "introspect",
   "context": {
+    "tenant_id": "...",
+    "subject_user_id": "...",
+    "agent_id": "...",
     "audience": "github-mcp.internal",
     "tool": { "server_id": "github-mcp", "name": "repository.write" },
     "resource": { "type": "repository", "id": "acme/payments" },
@@ -56,9 +59,10 @@ current context:
 }
 ```
 
-Introspection is the authoritative online authorization check: it rejects an
-expired or revoked grant and immediately rejects a subject whose tenant
-membership expired or was removed. Core signature verification provides the
+Introspection is the authoritative online authorization check: it binds the
+expected tenant, subject and agent to the signed lineage, rejects an expired or
+revoked grant, and immediately rejects a subject whose tenant membership expired
+or was removed. Core signature verification provides the
 cryptographic and context-binding check for offline consumers, but it cannot
 observe a later membership change; offline authority therefore ends at the
 signed expiry. Do not log, persist, or expose the returned `access_token` to an

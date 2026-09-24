@@ -8,10 +8,11 @@
 //
 // This is a self-hostable replacement for proprietary file hash reputation providers.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { isFreshReputationRow } from "../_shared/reputation-freshness.ts";
 import {
 	consumeTenantRateLimit,
 	rateLimitHeaders,
@@ -49,6 +50,8 @@ function extractSha256(reqEntry: unknown): string | null {
 
 type FileRepRow = {
 	sha256: string;
+	created_at: string | null;
+	provenance_verified: boolean | null;
 	severity: string | null;
 	malware_name: string[] | null;
 };
@@ -104,15 +107,49 @@ Deno.serve(async (req) => {
 		return json(200, { responses: [] }, rateLimitHeaders(rate));
 	}
 
-	const { data: rows } = await supabase
+	const { data: rows, error: lookupError } = await supabase
 		.from("file_reputation")
-		.select("sha256,severity,malware_name")
+		.select("sha256,created_at,provenance_verified,severity,malware_name")
 		.eq("tenant_id", tenantId)
+		.eq("provenance_verified", true)
 		.in("sha256", hashes);
+	if (lookupError || !Array.isArray(rows)) {
+		return json(503, { error: "reputation_lookup_unavailable" }, rateLimitHeaders(rate));
+	}
 
 	const byHash = new Map<string, FileRepRow>();
-	for (const row of (rows ?? []) as FileRepRow[]) {
-		byHash.set(row.sha256.toLowerCase(), row);
+	const conflictingHashes = new Set<string>();
+	const staleHashes = new Set<string>();
+	const nowMs = Date.now();
+	for (const row of rows as FileRepRow[]) {
+		const hash = row.sha256.toLowerCase();
+		if (!isFreshReputationRow(row.created_at, nowMs)) {
+			staleHashes.add(hash);
+			continue;
+		}
+		if (conflictingHashes.has(hash)) continue;
+		const previous = byHash.get(hash);
+		if (
+			previous &&
+			(previous.severity !== row.severity ||
+				JSON.stringify(previous.malware_name) !== JSON.stringify(row.malware_name))
+		) {
+			byHash.delete(hash);
+			conflictingHashes.add(hash);
+		} else if (!previous) {
+			byHash.set(hash, row);
+		}
+	}
+	// The table is unique per user, while this lookup reads the whole tenant.
+	// Contradictory rows must not be resolved by incidental database row order.
+	if (hashes.some((hash) => conflictingHashes.has(hash))) {
+		return json(503, { error: "reputation_conflict" }, rateLimitHeaders(rate));
+	}
+	if (hashes.some((hash) => staleHashes.has(hash) && !byHash.has(hash))) {
+		return json(503, { error: "reputation_stale" }, rateLimitHeaders(rate));
+	}
+	if (hashes.some((hash) => !byHash.has(hash))) {
+		return json(503, { error: "reputation_coverage_unavailable" }, rateLimitHeaders(rate));
 	}
 
 	const responses = hashes.map((h) => {

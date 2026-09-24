@@ -3,10 +3,8 @@ import { isRouteErrorResponse, Link, useRouteError } from "react-router-dom";
 function errorMessage(error: unknown): string {
 	if (isRouteErrorResponse(error)) {
 		if (error.status === 404) return "This dashboard page does not exist.";
-		if (typeof error.data === "string") return error.data;
-		return `${error.status} ${error.statusText}`.trim();
+		return "The dashboard could not complete this request.";
 	}
-	if (error instanceof Error && error.message) return error.message;
 	return "The dashboard could not complete this request.";
 }
 

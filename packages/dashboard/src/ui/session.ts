@@ -7,11 +7,11 @@ import { supabase } from "../lib/supabase";
  * The dashboard previously configured nothing here: `getSession()` handed back
  * whatever the Supabase client had in storage, so a signed-in browser kept a
  * usable session until the deployment's JWT expired. This constant is the
- * dashboard's own idle bound and only ends the local session; it complements —
- * and never replaces — the deployment's server-side JWT expiry, the
- * `identity_session_revocations` barrier and the tenant RLS policies, which stay
- * authoritative. Nothing in this repository proves the deployed Auth project has
- * a short JWT expiry, so the client must not rely on one.
+ * dashboard's own idle bound. Expiry and explicit sign-out first arm the
+ * server-side `identity_session_revocations` barrier, revoke refresh tokens,
+ * then clear local state. Tenant RLS and the barrier stay authoritative.
+ * Nothing in this repository proves the deployed Auth project has a short JWT
+ * expiry, so the client must not rely on one.
  */
 export const INACTIVITY_TIMEOUT_MS = 15 * 60_000;
 
@@ -25,7 +25,7 @@ const ACTIVITY_STORAGE_KEY = "aidr.session.activity.v1";
  * `enterprise/auth.tsx`: callers switch on `state`, and no code decides "signed
  * out" or "still allowed" by matching on a message string.
  */
-export type SessionState = "active" | "signed_out" | "expired";
+type SessionState = "active" | "signed_out" | "expired";
 
 export interface SessionStatus {
 	state: SessionState;
@@ -115,17 +115,40 @@ function clearActivity(): void {
 }
 
 /**
- * End an idle session. The activity record is only cleared once the sign-out is
- * acknowledged: if the client cannot sign out, the stale record must survive so
- * the next read expires the session again instead of treating it as freshly
- * used and handing back a pre-idle session.
+ * End an idle session. Remote revocation is best effort, but local credentials
+ * and activity state are always purged so an outage cannot resurrect the
+ * expired browser session.
  */
+async function revokeCurrentSession(): Promise<void> {
+	const { data, error } = await supabase.functions.invoke("identity-security", {
+		body: { action: "revoke_sessions", scope: "global" },
+	});
+	if (
+		error ||
+		!data ||
+		typeof data !== "object" ||
+		data.ok !== true ||
+		data.scope !== "global" ||
+		data.reauthentication_required !== true
+	) {
+		throw new Error("Session revocation could not be confirmed.");
+	}
+}
+
 async function endIdleSession(): Promise<void> {
 	try {
-		const { error } = await supabase.auth.signOut();
-		if (!error) clearActivity();
+		await revokeCurrentSession();
 	} catch {
-		// The caller still returns no session, and the stale record stays armed.
+		// The server barrier is best effort for an idle tab, but retaining the
+		// browser credential would make the expired session usable again.
+	} finally {
+		try {
+			await supabase.auth.signOut({ scope: "local" });
+		} catch {
+			// Local cleanup remains best effort when the Auth client itself fails.
+		} finally {
+			clearActivity();
+		}
 	}
 }
 
@@ -163,10 +186,29 @@ export async function getSession() {
 	return (await readSession()).session;
 }
 
-export async function signOut() {
-	const { error } = await supabase.auth.signOut();
-	clearActivity();
-	if (error) throw error;
+export async function signOut(): Promise<{ serverRevoked: boolean }> {
+	let serverRevoked = false;
+	try {
+		const current = await supabase.auth.getSession();
+		if (current.error) throw new Error("Session revocation could not be confirmed.");
+		if (current.data.session) await revokeCurrentSession();
+		serverRevoked = true;
+	} catch {
+		// Local sign-out still proceeds. The caller reports unconfirmed server revocation.
+	}
+
+	let localError: unknown = null;
+	try {
+		const { error } = await supabase.auth.signOut({ scope: "local" });
+		if (error) localError = error;
+	} catch (error) {
+		localError = error;
+	} finally {
+		clearActivity();
+	}
+
+	if (localError) throw localError;
+	return { serverRevoked };
 }
 
 /**

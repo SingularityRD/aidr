@@ -2,10 +2,10 @@
 //
 // Auth: none (device-code bootstrap)
 //
-// Polls the device session. Once authorized (and pilot-approved), returns an enrollment token
+// Polls the device session. Once authorized and tenant-admitted, returns an enrollment token
 // that can be exchanged via POST /v1/enroll.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { readDeviceCode } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
@@ -18,9 +18,8 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 const DEVICE_POLL_INTERVAL_SECONDS = Number(Deno.env.get("AIDR_DEVICE_POLL_INTERVAL_SECONDS") ?? "3");
 const ENROLLMENT_TOKEN_TTL_HOURS = Number(Deno.env.get("AIDR_DEVICE_ENROLLTOKEN_TTL_HOURS") ?? "24");
+const makeClient = (url: string, key: string) => createClient(url, key, { auth: { persistSession: false } });
 
-type PilotApplicationRow = { status: string | null };
-type PilotApproval = "approved" | "forbidden" | "unknown";
 type DeviceSessionRow = {
 	id: string;
 	user_id: string | null;
@@ -68,28 +67,23 @@ function addHoursIso(hours: number): string {
 	return new Date(Date.now() + safe * 60 * 60 * 1000).toISOString();
 }
 
-async function ensurePilotApproved(
-	supabase: ReturnType<typeof createClient>,
+async function ensureTenantAdmitted(
+	supabase: ReturnType<typeof makeClient>,
 	userId: string,
 	tenantId: string,
-): Promise<PilotApproval> {
-	const { data, error } = await supabase
-		.from("pilot_applications")
-		.select("status")
-		.eq("tenant_id", tenantId).eq("status", "approved")
-		.limit(1).maybeSingle();
-	if (error) return "unknown";
-	const row = data as PilotApplicationRow | null;
-	if (row?.status !== "approved") return "forbidden";
+): Promise<"active" | "forbidden" | "unknown"> {
+	const { data: capacity, error } = await supabase.rpc("tenant_admission_capacity", { p_tenant_id: tenantId });
+	if (error || !Number.isSafeInteger(capacity) || Number(capacity) < 0) return "unknown";
+	if (Number(capacity) === 0) return "forbidden";
 	const membership = await supabase.from("tenant_members").select("role,expires_at").eq("tenant_id", tenantId).eq("user_id", userId).maybeSingle();
 	const tenant = await supabase.from("tenants").select("status").eq("id", tenantId).maybeSingle();
 	if (membership.error || tenant.error) return "unknown";
 	return tenant.data?.status === "active" && membership.data && ["owner", "admin", "member"].includes(membership.data.role) && (!membership.data.expires_at || Date.parse(membership.data.expires_at) > Date.now())
-		? "approved" : "forbidden";
+		? "active" : "forbidden";
 }
 
 async function recoverIssuedToken(
-	supabase: ReturnType<typeof createClient>,
+	supabase: ReturnType<typeof makeClient>,
 	tokenHash: string,
 	userId: string,
 	tenantId: string,
@@ -121,9 +115,7 @@ Deno.serve(async (req) => {
 
 	if (!deviceCode) return corsJson(req, 401, { error: "missing_device_code" });
 
-	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-		auth: { persistSession: false },
-	});
+	const supabase = makeClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 	const deviceHash = await sha256Hex(deviceCode);
 	const { data: row, error } = await supabase
@@ -160,9 +152,9 @@ Deno.serve(async (req) => {
 
 	const userId = String(session.user_id);
 	const tenantId = session.tenant_id ?? userId;
-	const approval = await ensurePilotApproved(supabase, userId, tenantId);
-	if (approval === "unknown") return corsJson(req, 503, { error: "pilot_approval_lookup_failed", enrollment_outcome: "unknown" });
-	if (approval === "forbidden") return corsJson(req, 403, { error: "pilot_not_approved" });
+	const admission = await ensureTenantAdmitted(supabase, userId, tenantId);
+	if (admission === "unknown") return corsJson(req, 503, { error: "tenant_admission_unavailable", enrollment_outcome: "unknown" });
+	if (admission === "forbidden") return corsJson(req, 403, { error: "tenant_not_admitted" });
 
 	const token = await enrollmentTokenForDeviceCode(deviceCode);
 	const tokenHash = await sha256Hex(token);
@@ -172,6 +164,7 @@ Deno.serve(async (req) => {
 			return corsJson(req, 503, { error: "device_exchange_recovery_failed", enrollment_outcome: "unknown" });
 		}
 		if (recovered.status === "missing") return corsJson(req, 409, { error: "already_exchanged" });
+		if (recovered.status !== "available") return corsJson(req, 503, { error: "device_exchange_recovery_failed", enrollment_outcome: "unknown" });
 		return corsJson(req, 200, {
 			ok: true, status: "approved", enrollment_token: token, expires_at: recovered.expiresAt,
 		});
@@ -191,7 +184,7 @@ Deno.serve(async (req) => {
 	if (issueErr) return corsJson(req, 503, { error: "device_exchange_failed", enrollment_outcome: "unknown" });
 	const issued = issuedData && typeof issuedData === "object" && !Array.isArray(issuedData)
 		? issuedData as Record<string, unknown> : null;
-	if (issued?.status === "pilot_not_approved") return corsJson(req, 403, { error: "pilot_not_approved" });
+	if (issued?.status === "tenant_not_admitted") return corsJson(req, 403, { error: "tenant_not_admitted" });
 	if (issued?.status === "already_exchanged_or_invalid") return await recover();
 	if (issued?.status !== "issued") return corsJson(req, 503, { error: "device_exchange_result_invalid", enrollment_outcome: "unknown" });
 

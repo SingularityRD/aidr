@@ -7,8 +7,9 @@
 //
 // This is a minimal v1 implementation intended for self-serve go-live.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { readBoundedText } from "../_shared/request-limits.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -19,18 +20,38 @@ const REQUIRED_ENV = [
 	"SUPABASE_URL",
 	"SUPABASE_SERVICE_ROLE_KEY",
 	"AIDR_PADDLE_WEBHOOK_SECRET",
+	"AIDR_PADDLE_EXTRA_AGENT_PRICE_ID",
 ] as const;
 
 const PADDLE_SIGNATURE_HEADER = "Paddle-Signature";
-const PADDLE_TOLERANCE_SECONDS = Number(Deno.env.get("AIDR_PADDLE_WEBHOOK_TOLERANCE_SECONDS") ?? "300");
-const EXTRA_AGENT_PRICE_ID = (Deno.env.get("AIDR_PADDLE_EXTRA_AGENT_PRICE_ID") ?? "").trim();
+const PADDLE_TOLERANCE_RAW = Deno.env.get("AIDR_PADDLE_WEBHOOK_TOLERANCE_SECONDS") ?? "300";
+const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
 const LEGACY_SELF_SERVICE_ENABLED =
-	(Deno.env.get("AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING") ?? "").trim().toLowerCase() === "true";
+	Deno.env.get("AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING")?.trim().toLowerCase() === "true" &&
+	Deno.env.get("AIDR_BILLING_PROVIDER")?.trim().toLowerCase() === "paddle";
 
 // Paddle may include the last active line items on cancellation events.  Those
 // items are not an entitlement signal once the provider has ended access.
-const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due", "paused"]);
-const TERMINAL_SUBSCRIPTION_STATUSES = new Set(["canceled", "cancelled", "deleted"]);
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
+const REVOKED_SUBSCRIPTION_STATUSES = new Set([
+	"canceled",
+	"cancelled",
+	"deleted",
+	"paused",
+	"past_due",
+]);
+const HANDLED_EVENT_TYPES = new Set([
+	"subscription.created", "subscription.updated", "subscription.activated",
+	"subscription.trialing", "subscription.resumed", "subscription.paused",
+	"subscription.past_due", "subscription.canceled",
+]);
+const EVENT_ID = /^[A-Za-z0-9_-]{1,255}$/;
+
+function resolvePaddleToleranceSeconds(raw: string): number | null {
+	if (!/^\d+$/.test(raw.trim())) return null;
+	const parsed = Number(raw.trim());
+	return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 3600 ? parsed : null;
+}
 
 function json(status: number, body: Record<string, unknown>) {
 	return new Response(JSON.stringify(body), {
@@ -92,23 +113,14 @@ type PaddleEvent = {
 	data?: Record<string, unknown>;
 };
 
-function extractUserId(evt: PaddleEvent): string | null {
+function extractIdentifiers(evt: PaddleEvent): { userId: string | null; tenantId: string | null } {
 	const data = evt.data ?? {};
 	const cd = (data.custom_data ?? data.custom ?? null) as Record<string, unknown> | null;
 	const fromCustom = cd && typeof cd.user_id === "string" ? cd.user_id : null;
-	if (fromCustom && isUuid(fromCustom)) return fromCustom;
-	const direct = typeof (data as Record<string, unknown>).user_id === "string" ? (data as any).user_id : null;
-	if (direct && isUuid(direct)) return direct;
-	return null;
-}
-
-function extractCustomerEmail(evt: PaddleEvent): string | null {
-	const data = evt.data ?? {};
-	const customer = (data.customer ?? null) as Record<string, unknown> | null;
-	const email =
-		(customer && typeof customer.email === "string" ? customer.email : null) ??
-		(typeof (data as any).customer_email === "string" ? (data as any).customer_email : null);
-	return typeof email === "string" && email.includes("@") ? email.trim() : null;
+	const fromTenant = cd && typeof cd.tenant_id === "string" ? cd.tenant_id : null;
+	const userId = fromCustom && isUuid(fromCustom) ? fromCustom.trim() : null;
+	const tenantId = fromTenant && isUuid(fromTenant) ? fromTenant.trim() : null;
+	return { userId, tenantId };
 }
 
 function extractSubscriptionId(evt: PaddleEvent): string | null {
@@ -140,20 +152,22 @@ function extractCancelAtPeriodEnd(evt: PaddleEvent): boolean {
 	return Boolean((data as any).cancel_at_period_end ?? false);
 }
 
-function extractExtraAgents(evt: PaddleEvent): number {
+function extractExtraAgents(evt: PaddleEvent, extraAgentPriceId: string): number | null {
 	const data = evt.data ?? {};
-	const items = (data.items ?? data.line_items ?? []) as unknown[];
+	const items = data.items ?? data.line_items;
+	if (!extraAgentPriceId || !Array.isArray(items)) return null;
 	let sum = 0;
 	for (const it of items) {
 		if (!it || typeof it !== "object" || Array.isArray(it)) continue;
 		const obj = it as Record<string, unknown>;
-		const qty = Number(obj.quantity ?? 0);
-		if (!Number.isFinite(qty) || qty <= 0) continue;
 		const priceId =
 			(typeof obj.price_id === "string" ? obj.price_id : null) ??
 			(typeof (obj.price as any)?.id === "string" ? (obj.price as any).id : null);
-		if (EXTRA_AGENT_PRICE_ID && priceId && priceId !== EXTRA_AGENT_PRICE_ID) continue;
-		sum += Math.floor(qty);
+		if (priceId !== extraAgentPriceId) continue;
+		const qty = Number(obj.quantity);
+		if (!Number.isSafeInteger(qty) || qty <= 0 || qty > 100000) return null;
+		sum += qty;
+		if (!Number.isSafeInteger(sum) || sum > 100000) return null;
 	}
 	return Math.max(0, sum);
 }
@@ -164,17 +178,30 @@ Deno.serve(async (req) => {
 
 	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
 	if (!config.ok) return configFailure("paddle-webhook", config.error, json);
-	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AIDR_PADDLE_WEBHOOK_SECRET } = config.values;
+	const {
+		SUPABASE_URL,
+		SUPABASE_SERVICE_ROLE_KEY,
+		AIDR_PADDLE_WEBHOOK_SECRET,
+		AIDR_PADDLE_EXTRA_AGENT_PRICE_ID,
+	} = config.values;
+	const toleranceSeconds = resolvePaddleToleranceSeconds(PADDLE_TOLERANCE_RAW);
+	if (toleranceSeconds === null) return json(500, { error: "invalid_webhook_tolerance" });
 
 	const sigHeader = req.headers.get(PADDLE_SIGNATURE_HEADER) ?? "";
 	const sig = parseSignatureHeader(sigHeader);
 	if (!sig) return json(401, { error: "missing_or_invalid_signature" });
 
-	const rawBody = await req.text();
+	const rawResult = await readBoundedText(req, MAX_WEBHOOK_BODY_BYTES);
+	if (!rawResult.ok) {
+		return json(rawResult.status, {
+			error: rawResult.error === "request_too_large" ? rawResult.error : "invalid_json",
+		});
+	}
+	const rawBody = rawResult.value;
 	const tsNum = Number(sig.ts);
 	if (!Number.isFinite(tsNum)) return json(401, { error: "invalid_signature_timestamp" });
 	const now = Math.floor(Date.now() / 1000);
-	if (Math.abs(now - Math.floor(tsNum)) > Math.max(0, PADDLE_TOLERANCE_SECONDS)) {
+	if (Math.abs(now - Math.floor(tsNum)) > toleranceSeconds) {
 		return json(401, { error: "signature_timestamp_out_of_range" });
 	}
 
@@ -183,58 +210,62 @@ Deno.serve(async (req) => {
 	const b = new TextEncoder().encode(sig.h1.toLowerCase());
 	if (!timingSafeEqual(a, b)) return json(401, { error: "invalid_signature" });
 
-	let evt: PaddleEvent = {};
+	let evt: PaddleEvent;
 	try {
-		evt = JSON.parse(rawBody) as PaddleEvent;
+		const parsed: unknown = JSON.parse(rawBody);
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json(400, { error: "invalid_json" });
+		evt = parsed as PaddleEvent;
 	} catch {
 		return json(400, { error: "invalid_json" });
 	}
 
+	const eventId = typeof evt.event_id === "string" ? evt.event_id.trim() : "";
+	if (!EVENT_ID.test(eventId)) return json(400, { error: "invalid_event_id" });
+	const eventType = typeof evt.event_type === "string" ? evt.event_type.trim() : "";
+	if (!HANDLED_EVENT_TYPES.has(eventType)) return json(200, { ok: true, ignored: true });
+	const occurredAt = typeof evt.occurred_at === "string" && Number.isFinite(Date.parse(evt.occurred_at))
+		? new Date(evt.occurred_at).toISOString()
+		: null;
+	if (!occurredAt) return json(400, { error: "invalid_event_timestamp" });
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
 
-	const eventId = (evt.event_id ?? "").trim();
-	if (eventId) {
-		const { data: recorded, error: recordErr } = await supabase.rpc("record_billing_webhook_event", {
+	const { data: recorded, error: recordErr } = await supabase.rpc("record_billing_webhook_event", {
+		p_provider: "paddle",
+		p_event_id: eventId,
+		p_payload: evt,
+		p_tenant_id: null,
+	});
+	if (recordErr) return json(500, { error: "webhook_dedup_unavailable" });
+	if (recorded !== true) return json(200, { ok: true, dedup: true });
+	const finishClaim = async (status: "completed" | "failed") => {
+		const { data, error } = await supabase.rpc("finish_billing_webhook_event", {
 			p_provider: "paddle",
 			p_event_id: eventId,
-			p_payload: evt,
-			p_tenant_id: null,
+			p_status: status,
 		});
-		if (recordErr) return json(500, { error: "webhook_dedup_unavailable" });
-		if (recorded !== true) return json(200, { ok: true, dedup: true });
-	}
+		if (error || data !== true) throw new Error("webhook_claim_update_failed");
+	};
 
-	const eventType = (evt.event_type ?? "").trim();
-	const userIdFromCustom = extractUserId(evt);
-	let userId: string | null = userIdFromCustom;
+	const identifiers = extractIdentifiers(evt);
+	const userId = identifiers.userId;
+	const tenantId = identifiers.tenantId;
 
-	if (!userId) {
-		const email = extractCustomerEmail(evt);
-		if (email) {
-			const { data: mapped } = await supabase.rpc("user_id_by_email", { p_email: email });
-			if (typeof mapped === "string" && isUuid(mapped)) userId = mapped;
-		}
-	}
-
-	if (!userId) {
+	if (!userId || !tenantId) {
 		await supabase.from("admin_audit_logs").insert({
 			action: "paddle.webhook.unlinked",
 			detail: { event_type: eventType, event_id: eventId },
 		});
+		await finishClaim("completed");
 		return json(200, { ok: true, unlinked: true });
 	}
-	const tenantId = userId;
-	if (eventId) {
-		await supabase
-			.from("billing_webhook_events")
-			.update({ tenant_id: tenantId })
-			.eq("event_id", eventId);
-	}
+	await supabase.from("billing_webhook_events").update({ tenant_id: tenantId })
+		.eq("provider", "paddle").eq("event_id", eventId);
 
 	const subId = extractSubscriptionId(evt);
 	if (!subId) {
+		await finishClaim("failed");
 		await supabase.from("admin_audit_logs").insert({
 			actor_user_id: userId,
 			tenant_id: tenantId,
@@ -247,7 +278,8 @@ Deno.serve(async (req) => {
 	const status = extractStatus(evt).toLowerCase();
 	// Paddle cancellation payloads can retain the last active line items. Never
 	// derive seats until status is classified, and fail closed on new statuses.
-	if (!ACTIVE_SUBSCRIPTION_STATUSES.has(status) && !TERMINAL_SUBSCRIPTION_STATUSES.has(status)) {
+	if (!ACTIVE_SUBSCRIPTION_STATUSES.has(status) && !REVOKED_SUBSCRIPTION_STATUSES.has(status)) {
+		await finishClaim("failed");
 		await supabase.from("admin_audit_logs").insert({
 			actor_user_id: userId,
 			tenant_id: tenantId,
@@ -257,31 +289,42 @@ Deno.serve(async (req) => {
 		});
 		return json(422, { error: "unsupported_subscription_status" });
 	}
-	const extraAgents = ACTIVE_SUBSCRIPTION_STATUSES.has(status) ? extractExtraAgents(evt) : 0;
+	const extraAgents = ACTIVE_SUBSCRIPTION_STATUSES.has(status)
+		? extractExtraAgents(evt, AIDR_PADDLE_EXTRA_AGENT_PRICE_ID.trim())
+		: 0;
+	if (extraAgents === null) {
+		await finishClaim("failed");
+		return json(422, { error: "unattributable_subscription_items" });
+	}
 	const periodEnd = extractPeriodEnd(evt);
 	const cancelAtPeriodEnd = extractCancelAtPeriodEnd(evt);
 
-	const { error: subscriptionError } = await supabase.from("subscriptions").upsert(
+	const { data: transition, error: transitionError } = await supabase.rpc(
+		"apply_billing_subscription_event",
 		{
-			user_id: userId,
-			tenant_id: tenantId,
-			provider: "paddle",
-			provider_subscription_id: subId,
-			status,
-			extra_agents: extraAgents,
-			current_period_end: periodEnd,
-			cancel_at_period_end: cancelAtPeriodEnd,
+			p_provider: "paddle",
+			p_event_id: eventId,
+			p_event_created_at: occurredAt,
+			p_user_id: userId,
+			p_tenant_id: tenantId,
+			p_subscription_id: subId,
+			p_status: status,
+			p_extra_agents: extraAgents,
+			p_current_period_end: periodEnd,
+			p_cancel_at_period_end: cancelAtPeriodEnd,
 		},
-		{ onConflict: "provider_subscription_id" },
 	);
-	if (subscriptionError) return json(503, { error: "subscription_update_unavailable" });
-
-	// Update entitlements as the single source of seat enforcement.
-	const { error: entitlementError } = await supabase
-		.from("entitlements")
-		.update({ extra_agents: extraAgents })
-		.eq("tenant_id", tenantId);
-	if (entitlementError) return json(503, { error: "entitlement_update_unavailable" });
+	if (transitionError) {
+		await finishClaim("failed");
+		return json(503, { error: "subscription_transition_unavailable" });
+	}
+	const applied = transition && typeof transition === "object" && !Array.isArray(transition)
+		? (transition as Record<string, unknown>).applied
+		: null;
+	if (applied !== true) {
+		await finishClaim("completed");
+		return json(200, { ok: true, ignored: true });
+	}
 
 	await supabase.from("admin_audit_logs").insert({
 		actor_user_id: userId,
@@ -291,5 +334,6 @@ Deno.serve(async (req) => {
 		detail: { event_type: eventType, event_id: eventId, subscription_id: subId, extra_agents: extraAgents },
 	});
 
+	await finishClaim("completed");
 	return json(200, { ok: true });
 });

@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
 
 const launchLinks = [
-	{ name: "Run Demo", href: "/demo", desc: "Controlled synthetic evaluation." },
-	{ name: "Get Started", href: "/login", desc: "Managed control plane." },
-	{ name: "View Pricing", href: "/pricing", desc: "Pilot, Pro and enterprise paths." },
+	{ name: "Get started", href: "/login?returnTo=%2Fonboarding", desc: "Enroll a supported agent." },
+	{ name: "Sign in", href: "/login?returnTo=%2Fdashboard", desc: "Open your workspace." },
+	{ name: "View Pricing", href: "/pricing", desc: "Evaluation and scoped enterprise terms." },
 	{ name: "Request Pilot", href: "/pilot", desc: "Start with an approval-gated pilot." },
 ];
 
@@ -16,12 +16,12 @@ const _highlights = [
 
 const featurePillars = [
 	{
-		title: "Prompt-first setup",
-		desc: "Install by prompt, then finish auth in the browser with zero key copying.",
+		title: "Guided setup",
+		desc: "Set up a supported runtime; managed enrollment requires a deployed control plane.",
 	},
 	{
 		title: "Device authorization",
-		desc: "Short-lived codes bootstrap enrollment and unlock managed protection safely.",
+		desc: "Short-lived codes support enrollment in a configured managed deployment.",
 	},
 	{
 		title: "Incident correlation",
@@ -33,11 +33,11 @@ const featurePillars = [
 	},
 	{
 		title: "Dashboard sync",
-		desc: "Every protected agent reports health, incidents, and entitlement state centrally.",
+		desc: "Configured managed agents can send redacted verdicts to the dashboard.",
 	},
 	{
 		title: "Offline grace",
-		desc: "Enrolled agents keep working when the network drops, within the signed cache window.",
+		desc: "Enrolled agents can use signed cached state during a bounded outage.",
 	},
 ];
 
@@ -60,16 +60,16 @@ export function LandingPage() {
 					Security layer for AI agents.
 				</h1>
 				<p style={{ color: "var(--text-secondary)", maxWidth: 720, lineHeight: "27px" }}>
-					Singularity AIDR protects runtime actions, surfaces incidents, and gives managed
-					visibility without forcing cloud-only enforcement. Install by prompt, authorize in
-					browser, and review the guided setup for your supported runtime.
+					Singularity AIDR inspects supported agent actions locally. Managed visibility and browser
+					enrollment require a configured control plane. Sign in to begin onboarding or request an
+					assisted pilot for your runtime and deployment.
 				</p>
 				<div className="row" style={{ marginTop: 20 }}>
-					<Link className="button button-lg" to="/login">
-						Get Started
+					<Link className="button button-lg" to="/pilot">
+						Request a pilot
 					</Link>
-					<Link className="button button-secondary button-lg" to="/demo">
-						Run the demo
+					<Link className="button button-secondary button-lg" to="/login?returnTo=%2Fonboarding">
+						Get started
 					</Link>
 				</div>
 			</section>
@@ -101,16 +101,16 @@ export function LandingPage() {
 						Security controls your agent can feel.
 					</h2>
 					<p style={{ color: "var(--text-secondary)", lineHeight: "26px", marginBottom: 16 }}>
-						We keep the runtime lightweight, but the policy surface is deep. Singularity AIDR turns
-						a single prompt into a protected agent, then keeps that agent visible with device auth,
-						incident correlation, package and plugin guards, and seat-aware control.
+						Local detection, incident correlation, and package and plugin checks are available for
+						supported runtimes. Device enrollment and central visibility depend on the pilot
+						deployment.
 					</p>
 					<div className="bullet-list">
 						{[
-							"Prompt install in one shot, no manual key copying",
-							"Local enforcement with dashboard-backed visibility",
+							"Guided setup for supported runtimes",
+							"Local enforcement; optional managed visibility",
 							"Package, plugin, and prompt abuse detection",
-							"Seat-aware onboarding for pilot and paid expansion",
+							"Managed onboarding in configured pilot environments",
 						].map((item) => (
 							<div key={item} className="bullet-item">
 								<span className="bullet-dot" />
@@ -233,11 +233,11 @@ export function LandingPage() {
 			<section id="install" className="card hero-card" style={{ textAlign: "center" }}>
 				<h2 style={{ fontSize: 24, marginBottom: 10 }}>Ready to protect your AI agents?</h2>
 				<p className="muted" style={{ marginBottom: 18 }}>
-					Get started and secure your first agent in minutes.
+					Start with an assisted pilot and validate installation and data flows in your environment.
 				</p>
 				<div className="row" style={{ justifyContent: "center" }}>
-					<Link className="button button-lg" to="/login">
-						Get Started
+					<Link className="button button-lg" to="/pilot">
+						Request a pilot
 					</Link>
 				</div>
 			</section>

@@ -30,11 +30,17 @@ export interface BillingProvider {
 	/** Resolve (or create) the provider customer for a tenant. Never client-supplied. */
 	ensureCustomer(input: { tenantId: string; existingCustomerId: string | null }): Promise<string>;
 	readSubscription(subscriptionId: string): Promise<ProviderSubscription | null>;
-	updateQuantity(subscriptionId: string, quantity: number): Promise<ProviderSubscription | null>;
-	cancelSubscription(subscriptionId: string): Promise<boolean>;
+	updateQuantity(
+		subscriptionId: string,
+		quantity: number,
+		idempotencyKey: string,
+	): Promise<ProviderSubscription | null>;
+	cancelSubscription(subscriptionId: string, idempotencyKey: string): Promise<boolean>;
 	refund(input: {
 		providerCustomerId: string;
 		providerSubscriptionId: string | null;
+		providerPaymentKind?: "payment_intent" | "charge" | null;
+		providerPaymentId?: string | null;
 		amountMinor: number;
 		currency: string;
 		idempotencyKey: string;
@@ -95,7 +101,11 @@ export class FixtureBillingProvider implements BillingProvider {
 		return Promise.resolve(this.#subscriptions.get(subscriptionId) ?? null);
 	}
 
-	updateQuantity(subscriptionId: string, quantity: number): Promise<ProviderSubscription | null> {
+	updateQuantity(
+		subscriptionId: string,
+		quantity: number,
+		_idempotencyKey: string,
+	): Promise<ProviderSubscription | null> {
 		if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10000) {
 			throw new ProviderUnavailableError("invalid_fixture_quantity");
 		}
@@ -109,14 +119,22 @@ export class FixtureBillingProvider implements BillingProvider {
 		return Promise.resolve(next);
 	}
 
-	cancelSubscription(subscriptionId: string): Promise<boolean> {
+	cancelSubscription(subscriptionId: string, _idempotencyKey: string): Promise<boolean> {
 		const subscription = this.#subscriptions.get(subscriptionId);
 		if (!subscription) return Promise.resolve(false);
 		this.#subscriptions.set(subscriptionId, { ...subscription, status: "canceled" });
 		return Promise.resolve(true);
 	}
 
-	refund(input: { idempotencyKey: string; amountMinor: number }): Promise<ProviderRefundResult> {
+	refund(input: {
+		providerCustomerId: string;
+		providerSubscriptionId: string | null;
+		providerPaymentKind?: "payment_intent" | "charge" | null;
+		providerPaymentId?: string | null;
+		amountMinor: number;
+		currency: string;
+		idempotencyKey: string;
+	}): Promise<ProviderRefundResult> {
 		if (input.idempotencyKey.length < 16) {
 			return Promise.resolve({ ok: false, refundId: null, reason: "invalid_idempotency_key" });
 		}
@@ -137,6 +155,8 @@ export interface StripeProviderOptions {
 	secretKey: string;
 	/** `price_…` id of the per-seat line item. */
 	seatPriceId: string;
+	/** Optional yearly per-seat price; a subscription must contain exactly one matching line. */
+	yearlySeatPriceId?: string;
 	/** Injectable fetch, so tests can pin request shapes without network access. */
 	fetcher?: typeof fetch;
 }
@@ -145,14 +165,14 @@ export interface StripeProviderOptions {
  * Stripe provider adapter.
  *
  * Reads are unconditional; writes carry an `Idempotency-Key` derived from our
- * own request id so a retried portal action cannot double-charge or
+ * tenant-bound operation hash so a retried portal action cannot double-charge or
  * double-refund. The adapter deliberately refuses to guess: an unreadable
  * response becomes `null` or an explicit failure, never a default quantity.
  */
 export class StripeBillingProvider implements BillingProvider {
 	readonly id = "stripe" as const;
 	#secretKey: string;
-	#seatPriceId: string;
+	#seatPriceIds: readonly string[];
 	#fetch: typeof fetch;
 
 	constructor(options: StripeProviderOptions) {
@@ -160,8 +180,12 @@ export class StripeBillingProvider implements BillingProvider {
 		if (!/^price_[A-Za-z0-9]+$/.test(options.seatPriceId)) {
 			throw new ProviderNotConfiguredError("stripe", "AIDR_STRIPE_EXTRA_AGENT_PRICE_ID");
 		}
+		const yearlyPriceId = options.yearlySeatPriceId?.trim();
+		if (yearlyPriceId && (!/^price_[A-Za-z0-9]+$/.test(yearlyPriceId) || yearlyPriceId === options.seatPriceId)) {
+			throw new ProviderNotConfiguredError("stripe", "AIDR_STRIPE_EXTRA_AGENT_YEARLY_PRICE_ID");
+		}
 		this.#secretKey = options.secretKey;
-		this.#seatPriceId = options.seatPriceId;
+		this.#seatPriceIds = yearlyPriceId ? [options.seatPriceId, yearlyPriceId] : [options.seatPriceId];
 		this.#fetch = options.fetcher ?? fetch;
 	}
 
@@ -225,17 +249,24 @@ export class StripeBillingProvider implements BillingProvider {
 		const shaped = shapeSubscription({
 			id: body.id,
 			status: body.status,
-			quantity: quantityOf(body, this.#seatPriceId),
+			quantity: quantityOf(body, this.#seatPriceIds),
 		});
 		return shaped;
 	}
 
-	async updateQuantity(subscriptionId: string, quantity: number): Promise<ProviderSubscription | null> {
+	async updateQuantity(
+		subscriptionId: string,
+		quantity: number,
+		idempotencyKey: string,
+	): Promise<ProviderSubscription | null> {
 		if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10000) {
 			throw new ProviderUnavailableError("invalid_quantity");
 		}
+		if (!/^[0-9a-f]{64}$/.test(idempotencyKey)) {
+			throw new ProviderUnavailableError("invalid_idempotency_key");
+		}
 		const current = await this.#request(`subscriptions/${subscriptionId}`, { method: "GET" });
-		const itemId = firstItemId(current, this.#seatPriceId);
+		const itemId = firstItemId(current, this.#seatPriceIds);
 		if (!itemId) throw new ProviderUnavailableError("subscription_item_not_found");
 		const form = new URLSearchParams();
 		form.set("items[0][id]", itemId);
@@ -244,16 +275,19 @@ export class StripeBillingProvider implements BillingProvider {
 		const updated = await this.#request(`subscriptions/${subscriptionId}`, {
 			method: "POST",
 			form,
-			idempotencyKey: `aidr-seats-${subscriptionId}-${quantity}`,
+			idempotencyKey: `aidr-seats-${idempotencyKey}`,
 		});
 		return shapeSubscription({
 			id: updated.id,
 			status: updated.status,
-			quantity: quantityOf(updated, this.#seatPriceId),
+			quantity: quantityOf(updated, this.#seatPriceIds),
 		});
 	}
 
-	async cancelSubscription(subscriptionId: string): Promise<boolean> {
+	async cancelSubscription(subscriptionId: string, idempotencyKey: string): Promise<boolean> {
+		if (!/^[0-9a-f]{64}$/.test(idempotencyKey)) {
+			throw new ProviderUnavailableError("invalid_idempotency_key");
+		}
 		// Stripe deletes a subscription with DELETE, not POST. `#request` only
 		// advertises the two methods with a body; issue the delete explicitly so
 		// the wire method is never silently POSTed.
@@ -267,7 +301,7 @@ export class StripeBillingProvider implements BillingProvider {
 					signal: AbortSignal.timeout(10000),
 					headers: {
 						Authorization: `Bearer ${this.#secretKey}`,
-						"Idempotency-Key": `aidr-cancel-${subscriptionId}`,
+						"Idempotency-Key": `aidr-cancel-${idempotencyKey}`,
 					},
 				},
 			);
@@ -279,30 +313,47 @@ export class StripeBillingProvider implements BillingProvider {
 	}
 
 	async refund(input: {
+		providerCustomerId: string;
+		providerSubscriptionId: string | null;
+		providerPaymentKind?: "payment_intent" | "charge" | null;
+		providerPaymentId?: string | null;
 		amountMinor: number;
 		currency: string;
 		idempotencyKey: string;
 	}): Promise<ProviderRefundResult> {
-		const form = new URLSearchParams();
-		form.set("amount", String(input.amountMinor));
-		form.set("currency", input.currency.toLowerCase());
-		form.set("metadata[aidr_idempotency_key]", input.idempotencyKey);
-		const created = await this.#request("refunds", {
+		const paymentId = input.providerPaymentId;
+		if (typeof paymentId !== "string") {
+			return { ok: false, refundId: null, reason: "provider_payment_reference_required" };
+		}
+		if (
+			(input.providerPaymentKind === "payment_intent" && !/^pi_[A-Za-z0-9_]{1,252}$/.test(paymentId)) ||
+			(input.providerPaymentKind === "charge" && !/^ch_[A-Za-z0-9_]{1,252}$/.test(paymentId)) ||
+			(input.providerPaymentKind !== "payment_intent" && input.providerPaymentKind !== "charge")
+		) {
+			return { ok: false, refundId: null, reason: "provider_payment_reference_required" };
+		}
+		if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor < 1 || !/^[0-9a-f]{64}$/.test(input.idempotencyKey)) {
+			return { ok: false, refundId: null, reason: "invalid_refund_request" };
+		}
+		const form = new URLSearchParams({ amount: String(input.amountMinor) });
+		form.set(input.providerPaymentKind, paymentId);
+		const refund = await this.#request("refunds", {
 			method: "POST",
 			form,
-			idempotencyKey: input.idempotencyKey,
+			idempotencyKey: `aidr-refund-${input.idempotencyKey}`,
 		});
-		const id = created.id;
-		if (typeof id !== "string" || !/^re_[A-Za-z0-9_]{1,254}$/.test(id)) {
+		const refundId = refund.id;
+		if (typeof refundId !== "string" || !/^re_[A-Za-z0-9_]{1,252}$/.test(refundId)) {
 			throw new ProviderUnavailableError("stripe_refund_response_invalid");
 		}
-		return { ok: true, refundId: id, reason: "stripe_refund_recorded" };
+		return { ok: true, refundId, reason: "stripe_refund_confirmed" };
 	}
 }
 
 function itemsOf(body: Record<string, unknown>): Array<Record<string, unknown>> {
 	const container = body.items;
 	if (!container || typeof container !== "object" || Array.isArray(container)) return [];
+	if ((container as Record<string, unknown>).has_more === true) return [];
 	const data = (container as Record<string, unknown>).data;
 	if (!Array.isArray(data)) return [];
 	return data.filter(
@@ -321,15 +372,20 @@ function priceIdOf(item: Record<string, unknown>): string | null {
 	return null;
 }
 
-function quantityOf(body: Record<string, unknown>, seatPriceId: string): number | null {
-	const item = itemsOf(body).find((entry) => priceIdOf(entry) === seatPriceId);
+function seatItemOf(body: Record<string, unknown>, seatPriceIds: readonly string[]): Record<string, unknown> | null {
+	const matches = itemsOf(body).filter((entry) => seatPriceIds.includes(priceIdOf(entry) ?? ""));
+	return matches.length === 1 ? matches[0] : null;
+}
+
+function quantityOf(body: Record<string, unknown>, seatPriceIds: readonly string[]): number | null {
+	const item = seatItemOf(body, seatPriceIds);
 	if (!item) return null;
 	const quantity = item.quantity;
 	return typeof quantity === "number" && Number.isSafeInteger(quantity) && quantity >= 0 ? quantity : null;
 }
 
-function firstItemId(body: Record<string, unknown>, seatPriceId: string): string | null {
-	const item = itemsOf(body).find((entry) => priceIdOf(entry) === seatPriceId);
+function firstItemId(body: Record<string, unknown>, seatPriceIds: readonly string[]): string | null {
+	const item = seatItemOf(body, seatPriceIds);
 	if (!item) return null;
 	return typeof item.id === "string" && item.id !== "" ? item.id : null;
 }
@@ -353,6 +409,7 @@ export function createBillingProvider(
 	return new StripeBillingProvider({
 		secretKey: (env("STRIPE_SECRET_KEY") ?? "").trim(),
 		seatPriceId: (env("AIDR_STRIPE_EXTRA_AGENT_PRICE_ID") ?? "").trim(),
+		yearlySeatPriceId: (env("AIDR_STRIPE_EXTRA_AGENT_YEARLY_PRICE_ID") ?? "").trim(),
 		fetcher,
 	});
 }

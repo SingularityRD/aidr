@@ -9,7 +9,8 @@
 // - enforces agent-seat limit: included_agents + extra_agents
 // - idempotently inserts stable event identities for the dashboard
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
+import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
 import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import {
@@ -69,15 +70,6 @@ function getBearerToken(req: Request): string | null {
 	const header = req.headers.get("Authorization") ?? "";
 	const m = header.match(/^Bearer\s+(.+)$/i);
 	return m?.[1]?.trim() ? m[1].trim() : null;
-}
-
-async function sha256Hex(input: string): Promise<string> {
-	const data = new TextEncoder().encode(input);
-	const digest = await crypto.subtle.digest("SHA-256", data);
-	const bytes = new Uint8Array(digest);
-	return Array.from(bytes)
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("");
 }
 
 type IngestBody = {
@@ -156,10 +148,16 @@ function buildEntitlementSnapshot(params: {
 	tenantPackKey: string | null;
 	revocationEpoch: number;
 	timing: { ttlHours: number; graceHours: number };
+	providerValidUntilMs?: number | null;
 }) {
 	const issuedAt = new Date();
-	const expiresAt = new Date(issuedAt.getTime() + params.timing.ttlHours * 3_600_000);
-	const graceUntil = new Date(expiresAt.getTime() + params.timing.graceHours * 3_600_000);
+	const normalExpiresAt = new Date(issuedAt.getTime() + params.timing.ttlHours * 3_600_000);
+	const normalGraceUntil = new Date(normalExpiresAt.getTime() + params.timing.graceHours * 3_600_000);
+	const capped = capEntitlementTimes(
+		normalExpiresAt.toISOString(), normalGraceUntil.toISOString(),
+		params.providerValidUntilMs ?? null, issuedAt.getTime(),
+	);
+	if (!capped) return null;
 	return {
 		schema_version: 2,
 		tenant_id: params.tenantId,
@@ -177,13 +175,13 @@ function buildEntitlementSnapshot(params: {
 							key_b64: params.tenantPackKey,
 							// A pack key never outlives its signed entitlement. It remains
 							// usable during the explicitly configured offline grace window.
-							expires_at: graceUntil.toISOString(),
+							expires_at: capped.graceUntil,
 						},
 					]
 				: [],
 		issued_at: issuedAt.toISOString(),
-		expires_at: expiresAt.toISOString(),
-		grace_until: graceUntil.toISOString(),
+		expires_at: capped.expiresAt,
+		grace_until: capped.graceUntil,
 		serial: crypto.randomUUID(),
 		revocation_epoch: params.revocationEpoch,
 	};
@@ -268,30 +266,21 @@ Deno.serve(async (req) => {
 	});
 	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
 
-	// 1) api_key -> user_id
-	const keyHash = await sha256Hex(apiKey);
-	const { data: keyRow, error: keyErr } = await supabase
-		.from("api_keys")
-		.select("user_id, tenant_id, revoked, agent_id")
-		.eq("key_hash", keyHash)
-		.maybeSingle();
-
-	if (keyErr) return json(503, { error: "authorization_unavailable" });
-	if (!keyRow || keyRow.revoked) {
-		return json(401, { error: "invalid_api_key" });
-	}
-
+	// Shared auth supplies the binding for either the active key or a valid overlap key.
 	const userId = tenantAuth.userId;
 	const tenantId = tenantAuth.tenantId;
-	if (keyRow.user_id !== userId || keyRow.tenant_id !== tenantId) {
-		return json(503, { error: "authorization_unavailable" });
-	}
-	if (keyRow.agent_id) {
-		const { data: bound, error: boundError } = await supabase.from("agents").select("iid").eq("id", keyRow.agent_id).eq("tenant_id", tenantId).maybeSingle();
-		if (boundError || !bound || bound.iid !== iid) return json(403, { error: "agent_key_mismatch" });
+	if (tenantAuth.agentId) {
+		const { data: bound, error: boundError } = await supabase
+			.from("agents")
+			.select("iid")
+			.eq("id", tenantAuth.agentId)
+			.eq("tenant_id", tenantId)
+			.maybeSingle();
+		if (boundError || !bound || bound.iid !== iid)
+			return json(403, { error: "agent_key_mismatch" });
 	}
 
-	// 2) load entitlements (default row is created by trigger; still fail-open)
+	// 2) load the explicit entitlement row. An absent row is not a free grant.
 	const { data: ent, error: entErr } = await supabase
 		.from("entitlements")
 		.select(
@@ -299,13 +288,18 @@ Deno.serve(async (req) => {
 		)
 		.eq("tenant_id", tenantId)
 		.maybeSingle();
+	if (entErr) return json(503, { error: "entitlements_unavailable", retryable: true });
+	if (!ent) return json(403, { error: "entitlement_not_provisioned" });
 
-	const includedAgents = entErr || !ent ? 1 : Number(ent.included_agents ?? 1);
-	const extraAgents = entErr || !ent ? 0 : Number(ent.extra_agents ?? 0);
-	const allowedAgents = Math.max(0, includedAgents + extraAgents);
-	const premiumModules = buildPremiumModules((ent as unknown as Record<string, unknown>) ?? null);
-	const revocationEpoch =
-		entErr || !ent ? 1 : Number((ent as unknown as Record<string, unknown>).revocation_epoch ?? 1);
+	const includedAgents = Number(ent.included_agents);
+	const storedExtraAgents = Number(ent.extra_agents);
+	const revocationEpoch = Number((ent as unknown as Record<string, unknown>).revocation_epoch);
+	if (!Number.isSafeInteger(includedAgents) || includedAgents < 0 ||
+		!Number.isSafeInteger(storedExtraAgents) || storedExtraAgents < 0 ||
+		!Number.isSafeInteger(revocationEpoch) || revocationEpoch < 0) {
+		return json(503, { error: "entitlements_unavailable", retryable: true });
+	}
+	const premiumModules = buildPremiumModules(ent as unknown as Record<string, unknown>);
 
 	// 3) Register/touch the agent and enforce the seat limit atomically. The
 	// database function locks the tenant entitlement and agent namespace so two
@@ -322,6 +316,7 @@ Deno.serve(async (req) => {
 		},
 	);
 	if (registrationErr) {
+		if (registrationErr.code === "42501") return json(403, { error: "tenant_not_admitted" });
 		// Never expose raw Postgres/Supabase errors to an untrusted ingest client.
 		return json(503, { error: "agent_registration_unavailable", retryable: true });
 	}
@@ -330,8 +325,39 @@ Deno.serve(async (req) => {
 		unknown
 	> | null;
 	const agentId = typeof registration?.agent_id === "string" ? registration.agent_id : null;
-	if (!registration || !agentId) {
+	if (!registration) {
 		return json(500, { error: "agent_registration_failed" });
+	}
+	// Stored extra_agents is only a billing projection. Re-read authoritative
+	// provider term after registration, then never sign more seats than its cap.
+	const { data: effectiveRows, error: effectiveErr } = await supabase.rpc(
+		"effective_tenant_seats", { p_tenant_id: tenantId },
+	);
+	const effective = effectiveErr ? null : parseEffectiveSeats(effectiveRows);
+	const registeredAllowed = Number(registration.allowed_agents);
+	if (!effective || !Number.isSafeInteger(registeredAllowed) || registeredAllowed < includedAgents) {
+		return json(503, { error: "entitlements_unavailable", retryable: true });
+	}
+	const { data: admissionData, error: admissionError } = await supabase.rpc(
+		"get_tenant_admission", { p_tenant_id: tenantId, p_user_id: userId },
+	);
+	if (admissionError) return json(503, { error: "admission_unavailable", retryable: true });
+	if (admissionData && typeof admissionData === "object" && !Array.isArray(admissionData)
+		&& ["expired", "revoked", "none", "not_entitled", "unconfigured"].includes(String((admissionData as Record<string, unknown>).status))) {
+		return json(403, { error: "tenant_not_admitted" });
+	}
+	const admission = parseActiveAdmission(admissionData);
+	if (!admission) return json(503, { error: "admission_unavailable", retryable: true });
+	const allowedAgents = Math.min(includedAgents + effective.extraAgents, registeredAllowed, admission.allowedAgents);
+	const extraAgents = allowedAgents - includedAgents;
+	const providerUntil = extraAgents > 0 ? effective.providerValidUntilMs : null;
+	const providerValidUntilMs = admission.validUntilMs === null ? providerUntil
+		: providerUntil === null ? admission.validUntilMs
+			: Math.min(providerUntil, admission.validUntilMs);
+	if (registration.seat_exceeded !== true && registeredAllowed > allowedAgents) {
+		// The provider term or seat count changed between registration and this
+		// read. Retry registration under the new cap before acknowledging events.
+		return json(503, { error: "entitlements_changed", retryable: true });
 	}
 	if (registration.seat_exceeded === true) {
 		const current = Number(registration.current_agents ?? 0);
@@ -340,8 +366,9 @@ Deno.serve(async (req) => {
 			: null;
 		const entitlement = buildEntitlementSnapshot({
 			tenantId, includedAgents, extraAgents, allowedAgents, premiumModules,
-			tenantPackKey, revocationEpoch, timing,
+			tenantPackKey, revocationEpoch, timing, providerValidUntilMs,
 		});
+		if (!entitlement) return json(503, { error: "entitlements_unavailable", retryable: true });
 		const entitlementJson = canonicalJson(entitlement);
 		const sig = await signEd25519Detached(entitlementJson);
 		return json(402, {
@@ -362,6 +389,9 @@ Deno.serve(async (req) => {
 			entitlement_sig: sig,
 		});
 	}
+	if (!agentId) {
+		return json(500, { error: "agent_registration_failed" });
+	}
 
 	// 4) Insert events idempotently. A database failure is retryable and must be
 	// visible to the durable client queue; returning ok here would lose events.
@@ -379,6 +409,10 @@ Deno.serve(async (req) => {
 			.from("events")
 			.upsert(rows, { onConflict: "tenant_id,event_id", ignoreDuplicates: true });
 		if (evtErr) {
+			// The write-boundary guard can reject a seat reduction or revoked
+			// admission after registration. Retrying that durable batch forever
+			// cannot restore authorization; never acknowledge it as inserted.
+			if (evtErr.code === "42501") return json(403, { error: "agent_not_authorized" });
 			// Detection stays local/fail-open, while telemetry delivery remains explicitly unavailable.
 			return json(503, { error: "events_insert_failed", retryable: true });
 		}
@@ -390,8 +424,9 @@ Deno.serve(async (req) => {
 
 	const entitlement = buildEntitlementSnapshot({
 		tenantId, includedAgents, extraAgents, allowedAgents, premiumModules,
-		tenantPackKey, revocationEpoch, timing,
+		tenantPackKey, revocationEpoch, timing, providerValidUntilMs,
 	});
+	if (!entitlement) return json(503, { error: "entitlements_unavailable", retryable: true });
 	const entitlementJson = canonicalJson(entitlement);
 	const sig = await signEd25519Detached(entitlementJson);
 

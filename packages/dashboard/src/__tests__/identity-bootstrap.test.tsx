@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useLayoutEffect } from "react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -27,8 +27,9 @@ vi.mock("../lib/supabase", () => ({
 	},
 	supabaseEnvError: null,
 }));
-import { AppLayout } from "../ui/AppLayout";
+
 import { useTeam } from "../enterprise/team-provider";
+import { AppLayout } from "../ui/AppLayout";
 
 const USER = "22222222-2222-4222-8222-222222222222";
 // Deliberately NOT equal to team IDs: tenant policy must use canonical identity.
@@ -71,9 +72,18 @@ function ProtectedPage() {
 	}, [currentTeam?.id]);
 	return <div>Protected team {currentTeam?.id}</div>;
 }
-function renderRoute() {
+function TenantUrlSwitch() {
+	const navigate = useNavigate();
+	return (
+		<button type="button" onClick={() => navigate(`/team?tenant=${B.tenant_id}`)}>
+			Request team B
+		</button>
+	);
+}
+function renderRoute(path = "/team", withUrlSwitch = false) {
 	return render(
-		<MemoryRouter initialEntries={["/team"]}>
+		<MemoryRouter initialEntries={[path]}>
+			{withUrlSwitch ? <TenantUrlSwitch /> : null}
 			<Routes>
 				<Route element={<AppLayout />}>
 					<Route path="team" element={<ProtectedPage />} />
@@ -175,6 +185,35 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("managed route identity bootstrap before protected providers", () => {
+	it("selects the requested approved team from the server membership list", async () => {
+		memberships = [A, B];
+		requireMfa.clear();
+		renderRoute(`/team?tenant=${B.tenant_id}`);
+		await screen.findByText(`Protected team ${B.team_id}`);
+		expect(screen.getByLabelText("Managed tenant")).toHaveValue(B.tenant_id);
+		expect(mounts).not.toHaveBeenCalledWith(A.team_id);
+	});
+
+	it("withholds access when a requested team is not in the server membership list", async () => {
+		requireMfa.clear();
+		renderRoute(`/team?tenant=${B.tenant_id}`);
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"requested team workspace is not available",
+		);
+		expect(reads).toEqual([]);
+	});
+
+	it("removes the previous protected team immediately when the URL requests another team", async () => {
+		requireMfa.clear();
+		renderRoute("/team", true);
+		await screen.findByText(`Protected team ${A.team_id}`);
+		fireEvent.click(screen.getByRole("button", { name: "Request team B" }));
+		expect(screen.queryByText(`Protected team ${A.team_id}`)).not.toBeInTheDocument();
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"requested team workspace is not available",
+		);
+	});
+
 	it("discovers an AAL2-RLS-hidden team, challenges with zero table reads, then reloads after verification", async () => {
 		renderRoute();
 		await screen.findByLabelText("Authenticator code");
@@ -226,19 +265,18 @@ describe("managed route identity bootstrap before protected providers", () => {
 		expect(mounts).not.toHaveBeenCalled();
 	});
 
-	it.each([
-		"revoked",
-		"no membership",
-		"malformed",
-	])("fails closed during %s bootstrap", async (mode) => {
-		if (mode === "revoked") revoked = true;
-		if (mode === "no membership") memberships = [];
-		if (mode === "malformed") mocks.invoke.mockResolvedValue({ data: { ok: true }, error: null });
-		renderRoute();
-		await screen.findByRole("alert");
-		expect(reads).toEqual([]);
-		expect(mounts).not.toHaveBeenCalled();
-	});
+	it.each(["revoked", "no membership", "malformed"])(
+		"fails closed during %s bootstrap",
+		async (mode) => {
+			if (mode === "revoked") revoked = true;
+			if (mode === "no membership") memberships = [];
+			if (mode === "malformed") mocks.invoke.mockResolvedValue({ data: { ok: true }, error: null });
+			renderRoute();
+			await screen.findByRole("alert");
+			expect(reads).toEqual([]);
+			expect(mounts).not.toHaveBeenCalled();
+		},
+	);
 
 	it("mounts zero B children and performs zero new table queries while B assurance is delayed", async () => {
 		memberships = [A, B];

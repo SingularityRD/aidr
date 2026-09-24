@@ -23,15 +23,15 @@ export const VIEWER_USER_ID = "44444444-4444-4444-8444-444444444444";
 export const POLICY_ROW_ID = "55555555-5555-4555-8555-555555555555";
 const JOINED_AT = "2026-01-01T00:00:00.000Z";
 
-/** The PGRST200 error a deployment without a public.users relation returns. */
-const MISSING_USERS_RELATION: QueryError = {
-	code: "PGRST200",
-	message:
-		"Could not find a relationship between 'team_members' and 'users' in the schema cache",
+/** The PGRST202 error an older deployment without the directory RPC returns. */
+const MISSING_MEMBER_DIRECTORY: QueryError = {
+	code: "PGRST202",
+	message: "Could not find list_team_members_with_email in the schema cache",
 };
 
 const TEAM = {
 	id: TEAM_ID,
+	tenant_id: TEAM_ID,
 	name: "Runtime team",
 	github_org: null,
 	gitlab_group: null,
@@ -40,11 +40,11 @@ const TEAM = {
 	updated_at: JOINED_AT,
 };
 
-export type QueryError = { message: string; code?: string };
-export type QueryResult = { data: unknown; error: QueryError | null };
-export type MockFn = ReturnType<typeof vi.fn>;
+type QueryError = { message: string; code?: string };
+type QueryResult = { data: unknown; error: QueryError | null };
+type MockFn = ReturnType<typeof vi.fn>;
 
-export interface MockQueryChain {
+interface MockQueryChain {
 	select: MockFn;
 	insert: MockFn;
 	update: MockFn;
@@ -58,7 +58,10 @@ export interface MockQueryChain {
 	lte: MockFn;
 	maybeSingle: MockFn;
 	single: MockFn;
-	then: (resolve: (value: QueryResult) => unknown, reject?: (reason: unknown) => unknown) => unknown;
+	then: (
+		resolve: (value: QueryResult) => unknown,
+		reject?: (reason: unknown) => unknown,
+	) => unknown;
 }
 
 export interface MockedSupabase {
@@ -73,6 +76,7 @@ export interface MockedSupabase {
 	};
 	functions: { invoke: MockFn };
 	from: MockFn;
+	rpc: MockFn;
 }
 
 export function mockedSupabase(): MockedSupabase {
@@ -103,11 +107,12 @@ function chainFor(result: QueryResult): MockQueryChain {
 	return chain;
 }
 
-export interface MemberFixture {
+interface MemberFixture {
 	id?: string;
 	user_id: string;
 	role: string;
 	email?: string;
+	avatar_url?: string | null;
 	invited_by?: string | null;
 }
 
@@ -115,8 +120,8 @@ export interface MockOptions {
 	/** Role of the signed-in user in TEAM_ID. `null` means "no team at all". */
 	role?: string | null;
 	members?: MemberFixture[];
-	/** Whether the member query can read a users projection for emails. */
-	memberEmailProjection?: "missing" | "present" | QueryError;
+	/** Whether the tenant-scoped directory RPC can return member emails. */
+	memberDirectory?: "missing" | "present" | QueryError;
 	/** Error for the fallback membership select (used when projection is "missing"). */
 	fallbackMembersError?: QueryError | null;
 	membershipsError?: QueryError | null;
@@ -142,9 +147,8 @@ export interface InstalledMocks {
 /**
  * Install a complete Supabase double for the dashboard surfaces.
  *
- * Defaults describe a deployment where public.team_members exists but the
- * `public.users` relation the generated types advertise does not — the state
- * this repository's migrations actually produce.
+ * Defaults describe an older deployment without the member directory RPC,
+ * so the UI uses its explicit ID-only fallback.
  */
 export function installDashboardMocks(options: MockOptions = {}): InstalledMocks {
 	const mocked = mockedSupabase();
@@ -174,67 +178,110 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 	mocked.auth.onAuthStateChange.mockReturnValue({
 		data: { subscription: { unsubscribe: vi.fn() } },
 	});
-	mocked.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string; tenant_id?: string; content?: string; expected_document?: { id: string; version: number } | null } }) => {
-		if (name === "identity-security" && request?.body?.action === "bootstrap") {
-			return { data: { ok: true, memberships: [{
-				team_id: options.role === null ? null : TEAM_ID,
-				tenant_id: options.role === null ? (options.user?.id ?? ADMIN_USER_ID) : TEAM_ID,
-				require_mfa: true, current_assurance: "aal2", next_assurance: "aal2", access_allowed: true,
-			}] }, error: null };
-		}
-		if (name === "identity-security" && request?.body?.action === "status") {
-			return {
-				data: {
-					ok: true,
-					tenant_id: request.body.tenant_id,
-					require_mfa: true,
-					current_assurance: "aal2",
-					next_assurance: "aal2",
-					access_allowed: true,
-				},
-				error: null,
-			};
-		}
-		if (name === "policy-management") {
-			const action = request?.body?.action;
-			if (action === "save_document_draft") {
-				if (options.policySaveResponse) return options.policySaveResponse;
+	mocked.functions.invoke.mockImplementation(
+		async (
+			name: string,
+			request?: {
+				body?: {
+					action?: string;
+					tenant_id?: string;
+					content?: string;
+					expected_document?: { id: string; version: number; source_sha256?: string } | null;
+				};
+			},
+		) => {
+			if (name === "identity-security" && request?.body?.action === "bootstrap") {
 				return {
 					data: {
 						ok: true,
-						source: {
-							id: request?.body?.expected_document?.id ?? POLICY_ROW_ID,
-							version: (request?.body?.expected_document?.version ?? 0) + 1,
-							source_sha256: policySourceHash(request?.body?.content ?? ""),
-							updated_at: JOINED_AT,
-						},
-						runtime_policy: { mcp_unknown: "ask" },
-						diagnostics: [],
-						semantics: { precedence: ["deny", "ask", "allow"] },
-						simulation: { action: "ask", source: "mcp_unknown", matched: null },
+						memberships: [
+							{
+								team_id: options.role === null ? null : TEAM_ID,
+								tenant_id: options.role === null ? (options.user?.id ?? ADMIN_USER_ID) : TEAM_ID,
+								require_mfa: true,
+								current_assurance: "aal2",
+								next_assurance: "aal2",
+								access_allowed: true,
+							},
+						],
 					},
 					error: null,
 				};
 			}
-			if (action === "history") return { data: { ok: true, revisions: [], truncated: false }, error: null };
-			if (action === "adoption") return { data: { ok: true, agents: [], truncated: false }, error: null };
-			if (action === "read") return { data: { ok: true, version: 0, policy: null }, error: null };
-			if (action === "read_dlp_policy") {
+			if (name === "identity-security" && request?.body?.action === "status") {
 				return {
-					data: { ok: true, version: 0, policy: null, saved: false, delivered: false, delivery_status: "not_delivered" },
+					data: {
+						ok: true,
+						tenant_id: request.body.tenant_id,
+						require_mfa: true,
+						current_assurance: "aal2",
+						next_assurance: "aal2",
+						access_allowed: true,
+					},
 					error: null,
 				};
 			}
-		}
-		return options.invite ?? { data: { ok: true }, error: null };
-	});
+			if (name === "policy-management") {
+				const action = request?.body?.action;
+				if (action === "save_document_draft") {
+					if (options.policySaveResponse) return options.policySaveResponse;
+					return {
+						data: {
+							ok: true,
+							source: {
+								id: request?.body?.expected_document?.id ?? POLICY_ROW_ID,
+								version: (request?.body?.expected_document?.version ?? 0) + 1,
+								source_sha256: policySourceHash(request?.body?.content ?? ""),
+								updated_at: JOINED_AT,
+							},
+							runtime_policy: { mcp_unknown: "ask" },
+							diagnostics: [],
+							semantics: { precedence: ["deny", "ask", "allow"] },
+							simulation: { action: "ask", source: "mcp_unknown", matched: null },
+						},
+						error: null,
+					};
+				}
+				if (action === "history")
+					return { data: { ok: true, revisions: [], truncated: false }, error: null };
+				if (action === "adoption")
+					return { data: { ok: true, agents: [], truncated: false }, error: null };
+				if (action === "rollout_progress")
+					return {
+						data: {
+							ok: true,
+							status: "none",
+							version: null,
+							rollout_progress: { targeted: 0, current: 0, stale: 0, outdated: 0, unknown: 0 },
+						},
+						error: null,
+					};
+				if (action === "read") return { data: { ok: true, version: 0, policy: null }, error: null };
+				if (action === "read_dlp_policy") {
+					return {
+						data: {
+							ok: true,
+							version: 0,
+							policy: null,
+							saved: false,
+							delivered: false,
+							delivery_status: "not_delivered",
+						},
+						error: null,
+					};
+				}
+			}
+			if (name === "team-invite" && request?.body?.action === "list") {
+				return { data: { ok: true, invitations: [] }, error: null };
+			}
+			return options.invite ?? { data: { ok: true }, error: null };
+		},
+	);
 
 	const role = options.role === undefined ? "admin" : options.role;
 	const members: MemberFixture[] =
 		options.members ??
-		(role
-			? [{ id: "member-row-1", user_id: ADMIN_USER_ID, role, invited_by: null }]
-			: []);
+		(role ? [{ id: "member-row-1", user_id: ADMIN_USER_ID, role, invited_by: null }] : []);
 	const membershipRows = role
 		? [
 				{
@@ -257,26 +304,33 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 
 	const withEmailRows = members.map((member, index) => ({
 		...memberRows[index],
-		users: {
-			email: member.email ?? `${member.user_id}@company.invalid`,
-			raw_user_meta_data: {},
-		},
+		email: member.email ?? `${member.user_id}@company.invalid`,
+		avatar_url: member.avatar_url ?? null,
 	}));
 
-	const projection = options.memberEmailProjection ?? "missing";
+	const projection = options.memberDirectory ?? "missing";
 	const projectionResult: QueryResult =
 		typeof projection === "object"
 			? { data: null, error: projection }
 			: projection === "present"
 				? { data: withEmailRows, error: null }
-				: { data: null, error: MISSING_USERS_RELATION };
+				: { data: null, error: MISSING_MEMBER_DIRECTORY };
+	if (!mocked.rpc) mocked.rpc = vi.fn();
+	mocked.rpc.mockImplementation(async (name: string) =>
+		name === "list_team_members_with_email"
+			? projectionResult
+			: { data: null, error: { code: "PGRST202", message: "RPC not available" } },
+	);
 	const fallbackResult: QueryResult = {
 		data: memberRows,
 		error: options.fallbackMembersError ?? null,
 	};
 
 	const membershipWriteResult: QueryResult = {
-		data: options.memberWriteRows === null ? [] : (options.memberWriteRows ?? [{ user_id: ADMIN_USER_ID }]),
+		data:
+			options.memberWriteRows === null
+				? []
+				: (options.memberWriteRows ?? [{ user_id: ADMIN_USER_ID }]),
 		error: options.memberWriteError ?? null,
 	};
 
@@ -289,17 +343,16 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 		if (typeof columns === "string" && columns.includes("teams!")) {
 			return chainFor({ data: membershipRows, error: options.membershipsError ?? null });
 		}
-		if (typeof columns === "string" && columns.includes("users!")) {
-			return chainFor(projectionResult);
-		}
 		return chainFor(fallbackResult);
 	});
 
-	const policyRow = options.policyRow ? {
-		version: 1,
-		source_sha256: policySourceHash(String(options.policyRow.content ?? "")),
-		...options.policyRow,
-	} : null;
+	const policyRow = options.policyRow
+		? {
+				version: 1,
+				source_sha256: policySourceHash(String(options.policyRow.content ?? "")),
+				...options.policyRow,
+			}
+		: null;
 	const policyLoad: QueryResult = {
 		data: policyRow ? [policyRow] : [],
 		error: options.policyReadError ?? null,

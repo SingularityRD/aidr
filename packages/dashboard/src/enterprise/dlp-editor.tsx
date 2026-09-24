@@ -43,8 +43,10 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
+import { EnterpriseAuth } from "./auth";
 import { useTeam } from "./team-provider";
 
 /* ── Schema mirror ──────────────────────────────────────────────────────── */
@@ -84,11 +86,11 @@ export const DLP_EXPIRED_EXCEPTION_DOMINANCE = "DLP_EXPIRED_EXCEPTION_DOMINANCE"
  */
 const EXCEPTION_DOMINANCE_MINIMUM = 2;
 
-export type DlpSensitivity = (typeof SENSITIVITIES)[number];
-export type DlpDirection = (typeof DIRECTIONS)[number];
-export type DlpRuleAction = (typeof RULE_ACTIONS)[number];
-export type DlpUnavailableAction = (typeof UNAVAILABLE_ACTIONS)[number];
-export type DlpExceptionScope = (typeof EXCEPTION_SCOPES)[number];
+type DlpSensitivity = (typeof SENSITIVITIES)[number];
+type DlpDirection = (typeof DIRECTIONS)[number];
+type DlpRuleAction = (typeof RULE_ACTIONS)[number];
+type DlpUnavailableAction = (typeof UNAVAILABLE_ACTIONS)[number];
+type DlpExceptionScope = (typeof EXCEPTION_SCOPES)[number];
 
 export interface DlpLabelDocument {
 	id: string;
@@ -99,20 +101,20 @@ export interface DlpLabelDocument {
 	redactionToken: string;
 }
 
-export interface DlpKeywordMatcherDocument {
+interface DlpKeywordMatcherDocument {
 	type: "keyword";
 	values: string[];
 	caseSensitive: boolean;
 	wholeWord: boolean;
 }
 
-export interface DlpRegexMatcherDocument {
+interface DlpRegexMatcherDocument {
 	type: "regex";
 	pattern: string;
 	flags: string;
 }
 
-export type DlpMatcherDocument = DlpKeywordMatcherDocument | DlpRegexMatcherDocument;
+type DlpMatcherDocument = DlpKeywordMatcherDocument | DlpRegexMatcherDocument;
 
 export interface DlpRuleDocument {
 	id: string;
@@ -898,7 +900,7 @@ export function serializeDlpPolicy(policy: DlpPolicyDocument): string {
 	return JSON.stringify(policy, null, 2);
 }
 
-export function formatDlpIssues(issues: DlpValidationIssue[]): string {
+function formatDlpIssues(issues: DlpValidationIssue[]): string {
 	return issues.map((issue) => `${issue.path || "policy"}: ${issue.message}`).join("; ");
 }
 
@@ -908,7 +910,7 @@ function nextId(prefix: string, taken: readonly string[]): string {
 	return `${prefix}-${index}`;
 }
 
-export function newDlpLabel(tenantId: string, taken: readonly string[] = []): DlpLabelDocument {
+function newDlpLabel(tenantId: string, taken: readonly string[] = []): DlpLabelDocument {
 	return {
 		id: nextId("label", taken),
 		tenantId,
@@ -918,7 +920,7 @@ export function newDlpLabel(tenantId: string, taken: readonly string[] = []): Dl
 	};
 }
 
-export function newDlpRule(
+function newDlpRule(
 	tenantId: string,
 	labelId: string,
 	taken: readonly string[] = [],
@@ -937,7 +939,7 @@ export function newDlpRule(
 	};
 }
 
-export function newDlpException(
+function newDlpException(
 	tenantId: string,
 	ruleId: string,
 	ownerId: string,
@@ -1005,6 +1007,17 @@ export function createStarterDlpPolicy(tenantId: string): DlpPolicyDocument {
 export const DLP_READ_ACTION = "read_dlp_policy";
 export const DLP_PUBLISH_ACTION = "publish_dlp_policy";
 
+async function isMfaRequired(error: unknown): Promise<boolean> {
+	const context = (error as { context?: unknown } | null | undefined)?.context;
+	if (!(context instanceof Response) || context.status !== 403) return false;
+	try {
+		const body: unknown = await context.clone().json();
+		return Boolean(body && typeof body === "object" && "error" in body && body.error === "mfa_required");
+	} catch {
+		return false;
+	}
+}
+
 interface DlpReadResponse {
 	ok?: unknown;
 	policy?: unknown;
@@ -1022,6 +1035,7 @@ interface DlpPublishResponse {
 
 type StoreState =
 	| { kind: "loading" }
+	| { kind: "mfa_required" }
 	| { kind: "unavailable"; detail: string }
 	| { kind: "unreadable"; detail: string }
 	| { kind: "loaded"; version: number };
@@ -1087,6 +1101,14 @@ export function DlpPolicyEditor() {
 				});
 				if (cancelled) return;
 				if (error) {
+					if (await isMfaRequired(error)) {
+						if (!cancelled) {
+							setDraft(null);
+							setStore({ kind: "mfa_required" });
+						}
+						return;
+					}
+					if (cancelled) return;
 					// No DLP store in this deployment. Authoring and validation still
 					// work locally — the operator can build the document and hand the
 					// validated JSON to whatever channel does persist it — but the
@@ -1246,7 +1268,9 @@ export function DlpPolicyEditor() {
 					exceptions. The server validates the engine schema and tenant ownership before saving.
 					Saving is not delivery or enforcement: the existing signed provisioning path must
 					distribute a saved revision separately. Reads and saves require MFA (AAL2); only an
-					owner or administrator can save.
+					owner or administrator can save. Current managed connector hooks inspect tool input
+					before execution only; output-direction rules are not enforced there, and a redact
+					match is blocked rather than rewriting the original input.
 				</p>
 			</section>
 
@@ -1325,6 +1349,20 @@ export function DlpPolicyEditor() {
 									than reporting a save that did not happen. The validated JSON document is the
 									only artifact this page can produce.
 								</div>
+							</div>
+						</section>
+					) : null}
+
+					{store.kind === "mfa_required" ? (
+						<section className="card">
+							<div className="notice notice-warning" role="alert">
+								<b>Multi-factor authentication is required to read or save this DLP policy.</b>
+								<div className="muted small" style={{ marginTop: 6 }}>
+									No policy document was read or saved. Complete verification, then return to this team.
+								</div>
+								<Link className="button" to={`/auth/dlp-step-up?tenant=${encodeURIComponent(currentTeam.id)}`}>
+									Verify with authenticator
+								</Link>
 							</div>
 						</section>
 					) : null}
@@ -2137,5 +2175,27 @@ export function DlpPolicyEditor() {
 				</>
 			)}
 		</div>
+	);
+}
+
+/** AAL2 is obtained by the existing server-verified MFA flow, never by the DLP editor. */
+export function DlpStepUpPage() {
+	const [params] = useSearchParams();
+	const tenantId = params.get("tenant");
+	if (!tenantId || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(tenantId)) {
+		return <div role="alert">Select a team from <Link to="/policies">Policies</Link> before verifying.</div>;
+	}
+	return (
+		<main className="stack" style={{ maxWidth: 720, margin: "48px auto" }}>
+			<EnterpriseAuth tenantId={tenantId} forceMfa>
+				<div className="card">
+					<h1>Multi-factor authentication verified</h1>
+					<p>The control plane confirmed this session at AAL2 for the selected tenant.</p>
+					<Link className="button" to={`/policies?tenant=${encodeURIComponent(tenantId)}`}>
+						Return to DLP policy
+					</Link>
+				</div>
+			</EnterpriseAuth>
+		</main>
 	);
 }

@@ -5,12 +5,13 @@
   "private": true,
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "dist/LICENSE"
   ],
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "build:release": "node ../../scripts/rmrf.mjs dist .vite && vite build && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-dashboard && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "build": "vite build && node ../../scripts/copy-package-license.mjs .",
+    "build:release": "node ../../scripts/rmrf.mjs dist .vite && vite build && node ../../scripts/copy-package-license.mjs . && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-dashboard && node ../../scripts/check-no-sourcemaps.mjs dist",
     "preview": "vite preview",
     "test:route-smoke": "node ../../scripts/dashboard-route-smoke.mjs",
     "test:route-smoke:static": "node ../../scripts/dashboard-route-smoke.mjs --static",
@@ -32,9 +33,9 @@
     "@vitejs/plugin-react": "^4.6.0",
     "jsdom": "^26.1.0",
     "typescript": "^5.9.0",
-    "vite": "^6.3.0"
+    "vite": "^6.4.3"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.12.0"
   }
 }

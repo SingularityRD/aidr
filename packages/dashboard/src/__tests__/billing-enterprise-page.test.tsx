@@ -59,6 +59,30 @@ afterEach(() => {
 });
 
 describe("enterprise billing page", () => {
+	it.each(["PGRST205", "42P01"])(
+		"does not use stale entitlements when the seat view is unavailable (%s)",
+		async (code) => {
+			vi.mocked(supabase.from).mockImplementation((table) => {
+				const tableName = String(table);
+				const chain = query();
+				if (tableName === "seat_usage")
+					chain.maybeSingle.mockResolvedValue({
+						data: null,
+						error: { code, message: "seat_usage missing" },
+					});
+				return chain as never;
+			});
+			render(<BillingPage />);
+			await waitFor(() =>
+				expect(screen.getByRole("alert")).toHaveTextContent("Failed to load seat usage"),
+			);
+			for (const label of ["Included", "Extra", "Allowed", "Connected"])
+				expect(screen.getByText(label).parentElement).toHaveTextContent("Unavailable");
+			expect(supabase.from).not.toHaveBeenCalledWith("entitlements");
+			expect(supabase.from).not.toHaveBeenCalledWith("agents");
+		},
+	);
+
 	it("submits a pending Finance request without changing the displayed entitlement", async () => {
 		render(<BillingPage />);
 		await waitFor(() => expect(listEnterpriseOrders).toHaveBeenCalledWith(tenantId));
@@ -79,16 +103,17 @@ describe("enterprise billing page", () => {
 		await waitFor(() => expect(screen.getByText(/25 protected agents/)).toBeInTheDocument());
 		expect(screen.getByText(/A request enters Finance review/)).toBeInTheDocument();
 		expect(screen.getByText("Request pending Finance review")).toBeDisabled();
-		expect(screen.getByText("Allowed").parentElement).toHaveTextContent("1");
+		expect(screen.getByText("Allowed").parentElement).toHaveTextContent("Unavailable");
 	});
 
 	it("reuses the request ID after a failed submission", async () => {
 		vi.mocked(requestEnterpriseOrder).mockRejectedValueOnce(new Error("network"));
 		render(<BillingPage />);
-		fireEvent.click(screen.getByRole("button", { name: "Submit for Finance review" }));
 		await waitFor(() =>
-			expect(screen.getByRole("alert")).toHaveTextContent(/request was not accepted/i),
+			expect(screen.getByRole("button", { name: "Submit for Finance review" })).toBeEnabled(),
 		);
+		fireEvent.click(screen.getByRole("button", { name: "Submit for Finance review" }));
+		await screen.findByText(/Enterprise order request was not accepted/i);
 		fireEvent.click(screen.getByRole("button", { name: "Submit for Finance review" }));
 		await waitFor(() => expect(requestEnterpriseOrder).toHaveBeenCalledTimes(2));
 		expect(vi.mocked(requestEnterpriseOrder).mock.calls[0]?.[1]?.request_id).toBe(
@@ -97,17 +122,28 @@ describe("enterprise billing page", () => {
 	});
 
 	it("keeps a newly submitted order when an older list response arrives late", async () => {
+		vi.useFakeTimers();
 		let finishOldRead: ((rows: (typeof order)[]) => void) | undefined;
-		vi.mocked(listEnterpriseOrders).mockImplementationOnce(
-			() =>
-				new Promise((resolve) => {
-					finishOldRead = resolve;
-				}),
-		);
-		render(<BillingPage />);
-		await waitFor(() => expect(listEnterpriseOrders).toHaveBeenCalled());
-		fireEvent.click(screen.getByRole("button", { name: "Submit for Finance review" }));
-		await waitFor(() => expect(screen.getByText(/25 protected agents/)).toBeInTheDocument());
+		vi.mocked(listEnterpriseOrders)
+			.mockResolvedValueOnce([])
+			.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finishOldRead = resolve;
+					}),
+			);
+		await act(async () => {
+			render(<BillingPage />);
+		});
+		expect(screen.getByRole("button", { name: "Submit for Finance review" })).toBeEnabled();
+		await act(async () => {
+			vi.advanceTimersByTime(30_000);
+		});
+		expect(listEnterpriseOrders).toHaveBeenCalledTimes(2);
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: "Submit for Finance review" }));
+		});
+		expect(screen.getByText(/25 protected agents/)).toBeInTheDocument();
 		await act(async () => finishOldRead?.([]));
 		expect(screen.getByText(/25 protected agents/)).toBeInTheDocument();
 	});
@@ -134,6 +170,7 @@ describe("enterprise billing page", () => {
 			render(<BillingPage />);
 		});
 		expect(listEnterpriseOrders).toHaveBeenCalledTimes(1);
+		expect(screen.getByRole("button", { name: "Submit for Finance review" })).toBeEnabled();
 		fireEvent.click(screen.getByRole("button", { name: "Submit for Finance review" }));
 		await act(async () => {
 			vi.advanceTimersByTime(30_000);

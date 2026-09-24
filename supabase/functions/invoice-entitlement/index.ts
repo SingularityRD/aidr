@@ -8,11 +8,12 @@
 // evidence digest). Approver identity is never body-supplied. This route never decides an approval; it
 // records one that already happened out of band.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 import {
 	APPROVAL_ACTION,
@@ -26,25 +27,9 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 8192;
 
 async function boundedJson(req: Request): Promise<unknown> {
-	const reader = req.body?.getReader();
-	if (!reader) throw new Error("invalid_json");
-	const chunks: Uint8Array[] = [];
-	let size = 0;
-	while (true) {
-		const { value, done } = await reader.read();
-		if (done) break;
-		size += value.byteLength;
-		if (size > MAX_BODY_BYTES) {
-			await reader.cancel();
-			throw new Error("request_too_large");
-		}
-		chunks.push(value);
-	}
-	const bytes = new Uint8Array(size);
-	let offset = 0;
-	for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-	try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
-	catch { throw new Error("invalid_json"); }
+	const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+	if (!parsed.ok) throw new Error(parsed.error);
+	return parsed.value;
 }
 
 export interface InvoiceEntitlementDeps {

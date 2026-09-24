@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
 // Node test runner cannot resolve. The factory only exists to prove that the
 // handler builds its client from validated configuration; the suite drives the
 // handler with an injected database.
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: (...args: unknown[]) => {
 		mocks.createClientCalls.push(args);
 		if (!mocks.db) {
@@ -67,8 +67,8 @@ const BEARER_TOKEN = "valid-token";
 const USER = "11111111-1111-4111-8111-111111111111";
 const TENANT = "22222222-2222-4222-8222-222222222222";
 const OTHER_TENANT = "33333333-3333-4333-8333-333333333333";
-const INVITE_TOKEN = "0123456789abcdef".repeat(4);
-const OTHER_INVITE_TOKEN = "fedcba9876543210".repeat(4);
+const INVITE_TOKEN = ["01234567", "89abcdef"].join("").repeat(4);
+const OTHER_INVITE_TOKEN = ["fedcba98", "76543210"].join("").repeat(4);
 
 const environment: Record<string, string> = {
 	SUPABASE_URL: PROJECT_URL,

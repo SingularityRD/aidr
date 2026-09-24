@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "../../lib/supabase";
 import { useTeam } from "../../enterprise/team-provider";
+import { readErrorMessage } from "../../lib/errors";
+import { supabase } from "../../lib/supabase";
+import { readTenantAdmission, type TenantAdmission } from "../tenant-admission";
 
 type ApiKeyRow = {
 	id: string;
@@ -29,14 +31,31 @@ function maskSecret(secret: string): string {
 export function ApiKeysPage() {
 	const { currentTeam, currentRole } = useTeam();
 	if (!currentTeam) return <div className="card">Select a team to manage its credentials.</div>;
-	return <TenantApiKeys key={currentTeam.id} tenantId={currentTeam.id} teamName={currentTeam.name} canWrite={currentRole !== null && ["owner", "admin", "member"].includes(currentRole)} />;
+	return (
+		<TenantApiKeys
+			key={currentTeam.id}
+			tenantId={currentTeam.id}
+			teamName={currentTeam.name}
+			canWrite={currentRole !== null && ["owner", "admin", "member"].includes(currentRole)}
+		/>
+	);
 }
 
-function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; teamName: string; canWrite: boolean }) {
-	const [pilotStatus, setPilotStatus] = useState<string>("loading");
+function TenantApiKeys({
+	tenantId,
+	teamName,
+	canWrite,
+}: {
+	tenantId: string;
+	teamName: string;
+	canWrite: boolean;
+}) {
+	const [admission, setAdmission] = useState<TenantAdmission | null>(null);
+	const [accessStatus, setAccessStatus] = useState<string>("loading");
 	const [keys, setKeys] = useState<ApiKeyRow[]>([]);
 	const [label, setLabel] = useState("");
 	const [createdKey, setCreatedKey] = useState<string | null>(null);
+	const [createdKeyNotice, setCreatedKeyNotice] = useState<string | null>(null);
 	const [showCreatedKey, setShowCreatedKey] = useState(false);
 	const [copiedKey, setCopiedKey] = useState(false);
 
@@ -59,7 +78,10 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 			options: InvokeOptions,
 		) => {
 			try {
-				return await supabase.functions.invoke(name, { ...options, headers: { "X-AIDR-Tenant-ID": tenantId } });
+				return await supabase.functions.invoke(name, {
+					...options,
+					headers: { "X-AIDR-Tenant-ID": tenantId },
+				});
 			} catch (cause) {
 				return {
 					data: null,
@@ -75,16 +97,21 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 		]);
 
 		if (pilotRes.error || pilotRes.data?.ok !== true) {
-			setPilotStatus("unknown");
-			setError(pilotRes.error?.message ?? "Pilot status response is invalid.");
+			setAdmission(null);
+			setAccessStatus("unknown");
+			setError(readErrorMessage(pilotRes.error, "Workspace access response is invalid."));
 		} else {
 			const data = (pilotRes.data ?? {}) as Record<string, unknown>;
-			setPilotStatus(typeof data.status === "string" ? String(data.status) : "unknown");
+			const updated = readTenantAdmission(data.admission);
+			setAdmission(updated);
+			setAccessStatus(updated?.status ?? "unknown");
 		}
 
 		const pilotData = (pilotRes.data ?? {}) as Record<string, unknown>;
 		const approved =
-			!pilotRes.error && pilotData.ok === true && typeof pilotData.status === "string" && pilotData.status === "approved";
+			!pilotRes.error &&
+			pilotData.ok === true &&
+			readTenantAdmission(pilotData.admission)?.status === "active";
 		if (!approved) {
 			setKeys([]);
 			setEnrollTokens([]);
@@ -94,14 +121,14 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 		if (keysRes.error || keysRes.data?.ok !== true || !Array.isArray(keysRes.data?.keys)) {
 			setKeys([]);
 			setEnrollTokens([]);
-			setError(keysRes.error?.message ?? "API key list response is invalid.");
+			setError(readErrorMessage(keysRes.error, "API key list response is invalid."));
 			return;
 		}
 		setKeys(keysRes.data.keys as ApiKeyRow[]);
 
 		if (enrollRes.error || enrollRes.data?.ok !== true || !Array.isArray(enrollRes.data?.tokens)) {
 			setEnrollTokens([]);
-			setError(enrollRes.error?.message ?? "Enrollment token list response is invalid.");
+			setError(readErrorMessage(enrollRes.error, "Enrollment token list response is invalid."));
 			return;
 		}
 		setEnrollTokens(enrollRes.data.tokens as EnrollmentTokenRow[]);
@@ -111,7 +138,43 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 		load();
 	}, [load]);
 
-	const approved = pilotStatus === "approved";
+	const rotateKey = async (id: string) => {
+		setBusy(true);
+		setError(null);
+		try {
+			const res = await supabase.functions.invoke("api-keys", {
+				method: "POST",
+				headers: { "X-AIDR-Tenant-ID": tenantId },
+				body: { action: "renew", id },
+			});
+			if (res.error || res.data?.ok !== true) {
+				throw new Error(readErrorMessage(res.error, "API key rotation was not confirmed."));
+			}
+			const data = (res.data ?? {}) as {
+				api_key?: string;
+				previous_secret_valid_until?: string | null;
+			};
+			if (!data.api_key) throw new Error("API key rotation was not confirmed.");
+			setCreatedKey(data.api_key);
+			setShowCreatedKey(false);
+			setCopiedKey(false);
+			const overlapEnd = data.previous_secret_valid_until
+				? Date.parse(data.previous_secret_valid_until)
+				: Number.NaN;
+			setCreatedKeyNotice(
+				Number.isFinite(overlapEnd)
+					? `Copy this new key now (shown once). The previous key remains valid until ${new Date(overlapEnd).toLocaleString()}.`
+					: "Copy this new key now (shown once). The previous key is no longer valid.",
+			);
+			await load();
+		} catch (cause) {
+			setError(readErrorMessage(cause, "API key rotation is unavailable."));
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const approved = admission?.status === "active";
 
 	return (
 		<div className="stack">
@@ -122,11 +185,11 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 
 				{approved ? null : (
 					<div className="notice">
-						<div className="muted small">Pilot status</div>
-						<div className="mono">{pilotStatus}</div>
+						<div className="muted small">Workspace access</div>
+						<div className="mono">{accessStatus}</div>
 						<div className="muted small" style={{ marginTop: 8 }}>
-							You must be approved for the pilot before creating keys or enrolling devices. Use the
-							Onboarding flow instead.
+							Activate workspace access before creating keys or enrolling devices. Use the
+							Onboarding flow to check availability.
 						</div>
 					</div>
 				)}
@@ -145,11 +208,12 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 					<button
 						className="button"
 						type="button"
-						disabled={busy || !approved || !canWrite}
+						disabled={busy || !approved || !canWrite || createdKey !== null}
 						onClick={async () => {
 							setBusy(true);
 							setError(null);
 							setCreatedKey(null);
+							setCreatedKeyNotice(null);
 							setShowCreatedKey(false);
 							setCopiedKey(false);
 							try {
@@ -159,7 +223,7 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 									body: { action: "create", label: trimmedLabel || null },
 								});
 								if (res.error || res.data?.ok !== true) {
-									setError(res.error?.message ?? "API key creation was not confirmed.");
+									setError(readErrorMessage(res.error, "API key creation was not confirmed."));
 									return;
 								}
 								const data = (res.data ?? {}) as { api_key?: string };
@@ -171,11 +235,7 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 								setLabel("");
 								await load();
 							} catch (cause) {
-								setError(
-									cause instanceof Error
-										? cause.message
-										: "API key creation is unavailable. Please retry.",
-								);
+								setError(readErrorMessage(cause, "API key creation is unavailable. Please retry."));
 							} finally {
 								setBusy(false);
 							}
@@ -186,7 +246,7 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 					<button
 						className="button button-secondary"
 						type="button"
-						disabled={!approved}
+						disabled={busy}
 						onClick={async () => {
 							await load();
 						}}
@@ -197,7 +257,9 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 
 				{createdKey ? (
 					<div className="notice">
-						<div className="muted small">Copy this key now (shown once):</div>
+						<div className="muted small">
+							{createdKeyNotice ?? "Copy this key now (shown once):"}
+						</div>
 						<div className="row" style={{ marginTop: 6 }}>
 							<input
 								className="input mono"
@@ -271,7 +333,7 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 					<button
 						className="button"
 						type="button"
-						disabled={busy || !approved || !canWrite}
+						disabled={busy || !approved || !canWrite || createdEnrollToken !== null}
 						onClick={async () => {
 							setBusy(true);
 							setError(null);
@@ -285,7 +347,9 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 									body: { action: "create", label: trimmedEnrollLabel || null },
 								});
 								if (res.error || res.data?.ok !== true) {
-									setError(res.error?.message ?? "Enrollment token creation was not confirmed.");
+									setError(
+										readErrorMessage(res.error, "Enrollment token creation was not confirmed."),
+									);
 									return;
 								}
 								const data = (res.data ?? {}) as { enrollment_token?: string };
@@ -299,9 +363,10 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 								await load();
 							} catch (cause) {
 								setError(
-									cause instanceof Error
-										? cause.message
-										: "Enrollment token creation is unavailable. Please retry.",
+									readErrorMessage(
+										cause,
+										"Enrollment token creation is unavailable. Please retry.",
+									),
 								);
 							} finally {
 								setBusy(false);
@@ -392,6 +457,14 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 										<button
 											className="button button-secondary button-sm"
 											type="button"
+											disabled={k.revoked || busy || !canWrite || createdKey !== null}
+											onClick={() => rotateKey(k.id)}
+										>
+											Rotate
+										</button>
+										<button
+											className="button button-secondary button-sm"
+											type="button"
 											disabled={k.revoked || busy || !canWrite}
 											onClick={async () => {
 												setBusy(true);
@@ -402,16 +475,14 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 														headers: { "X-AIDR-Tenant-ID": tenantId },
 														body: { action: "revoke", id: k.id },
 													});
-												if (res.error || res.data?.ok !== true) {
-													throw new Error(res.error?.message ?? "API key revocation was not confirmed.");
-												}
-												await load();
+													if (res.error || res.data?.ok !== true) {
+														throw new Error(
+															readErrorMessage(res.error, "API key revocation was not confirmed."),
+														);
+													}
+													await load();
 												} catch (cause) {
-													setError(
-														cause instanceof Error
-															? cause.message
-															: "API key revocation is unavailable.",
-													);
+													setError(readErrorMessage(cause, "API key revocation is unavailable."));
 												} finally {
 													setBusy(false);
 												}
@@ -473,7 +544,7 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 												setBusy(true);
 												setError(null);
 												try {
-												const { data, error: delErr } = await supabase.functions.invoke(
+													const { data, error: delErr } = await supabase.functions.invoke(
 														"enrollment-tokens",
 														{
 															method: "POST",
@@ -481,15 +552,18 @@ function TenantApiKeys({ tenantId, teamName, canWrite }: { tenantId: string; tea
 															body: { action: "delete", id: t.id },
 														},
 													);
-												if (delErr || data?.ok !== true) {
-													throw new Error(delErr?.message ?? "Enrollment token deletion was not confirmed.");
-												}
-												await load();
+													if (delErr || data?.ok !== true) {
+														throw new Error(
+															readErrorMessage(
+																delErr,
+																"Enrollment token deletion was not confirmed.",
+															),
+														);
+													}
+													await load();
 												} catch (cause) {
 													setError(
-														cause instanceof Error
-															? cause.message
-															: "Enrollment token deletion is unavailable.",
+														readErrorMessage(cause, "Enrollment token deletion is unavailable."),
 													);
 												} finally {
 													setBusy(false);

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { readErrorMessage } from "../lib/errors";
+import { supabase } from "../lib/supabase";
 import { type TeamMember, type TeamRole, useTeam } from "./team-provider";
 
 const ROLE_LABELS: Record<TeamRole, string> = {
@@ -16,9 +17,8 @@ const ROLE_DESCRIPTIONS: Record<TeamRole, string> = {
 	viewer: "Read-only: view audit logs and team activity",
 };
 
-// Roles an administrator may hand out. Ownership is deliberately not offered
-// here: promoting a colleague to owner is a tenant-ownership transfer, not a
-// membership edit, and this panel cannot audit or reverse it.
+// Administrators cannot grant ownership. Owner changes require AAL2 and are
+// appended to the audit log atomically by the database owner-role guard.
 const ASSIGNABLE_ROLES: TeamRole[] = ["admin", "member", "viewer"];
 const CHANGEABLE_ROLES: TeamRole[] = ["owner", "admin", "member", "viewer"];
 
@@ -33,6 +33,25 @@ interface ActionStatus {
 	message: string;
 }
 
+interface PendingInvitation {
+	id: string;
+	email: string;
+	role: "admin" | "member" | "viewer";
+	expires_at: string;
+}
+
+function isPendingInvitation(value: unknown): value is PendingInvitation {
+	if (!value || typeof value !== "object") return false;
+	const row = value as Record<string, unknown>;
+	return (
+		typeof row.id === "string" &&
+		typeof row.email === "string" &&
+		(row.role === "admin" || row.role === "member" || row.role === "viewer") &&
+		typeof row.expires_at === "string" &&
+		Number.isFinite(Date.parse(row.expires_at))
+	);
+}
+
 function memberLabel(member: TeamMember): string {
 	return member.email || `user ${member.user_id}`;
 }
@@ -40,6 +59,7 @@ function memberLabel(member: TeamMember): string {
 export function AdminPanel() {
 	const {
 		currentTeam,
+		currentRole,
 		members,
 		isLoading,
 		error,
@@ -59,6 +79,80 @@ export function AdminPanel() {
 	const [busy, setBusy] = useState(false);
 	const [status, setStatus] = useState<ActionStatus | null>(null);
 	const [inviteLink, setInviteLink] = useState("");
+	const [invitations, setInvitations] = useState<PendingInvitation[]>([]);
+	const [invitationsError, setInvitationsError] = useState<string | null>(null);
+	const [loadingInvitations, setLoadingInvitations] = useState(false);
+	const [teamCreateAttempt, setTeamCreateAttempt] = useState<{
+		name: string;
+		requestId: string;
+	} | null>(null);
+	const teamCreateBusy = useRef(false);
+	const invitationRequest = useRef(0);
+	const teamId = currentTeam?.id;
+
+	function cancelTeamCreate() {
+		setShowCreateTeam(false);
+		setTeamCreateAttempt(null);
+		setNewTeamName("");
+	}
+
+	function startTeamCreate() {
+		setTeamCreateAttempt(null);
+		setNewTeamName("");
+		setShowCreateTeam(true);
+	}
+
+	function toggleTeamCreate() {
+		if (showCreateTeam) cancelTeamCreate();
+		else startTeamCreate();
+	}
+
+	const loadInvitations = useCallback(async () => {
+		if (!teamId || !canManageTeam) {
+			setInvitations([]);
+			setInvitationsError(null);
+			return;
+		}
+		const requestId = ++invitationRequest.current;
+		setLoadingInvitations(true);
+		setInvitationsError(null);
+		try {
+			const { data, error } = await supabase.functions.invoke("team-invite", {
+				body: { team_id: teamId, action: "list" },
+			});
+			if (
+				error ||
+				data?.ok !== true ||
+				!Array.isArray(data.invitations) ||
+				!data.invitations.every(isPendingInvitation)
+			) {
+				throw new Error("Pending invitations could not be loaded.");
+			}
+			if (requestId === invitationRequest.current) {
+				setInvitations(
+					data.invitations.filter(
+						(row: PendingInvitation) => Date.parse(row.expires_at) > Date.now(),
+					),
+				);
+			}
+		} catch {
+			if (requestId === invitationRequest.current) {
+				setInvitations([]);
+				setInvitationsError(
+					"Pending invitations could not be loaded. Try again before creating or replacing a link.",
+				);
+			}
+		} finally {
+			if (requestId === invitationRequest.current) setLoadingInvitations(false);
+		}
+	}, [teamId, canManageTeam]);
+
+	useEffect(() => {
+		void loadInvitations();
+		return () => {
+			invitationRequest.current++;
+		};
+	}, [loadInvitations]);
 
 	async function handleInvite(e: React.FormEvent) {
 		e.preventDefault();
@@ -71,8 +165,12 @@ export function AdminPanel() {
 		try {
 			const link = await inviteMember(inviteEmail.trim(), inviteRole);
 			setInviteLink(link);
-			setStatus({ tone: "success", message: `Invitation created for ${inviteEmail}. Share the link below; no email was sent.` });
+			setStatus({
+				tone: "success",
+				message: `Invitation created for ${inviteEmail}. Share the link below; no email was sent.`,
+			});
 			setInviteEmail("");
+			void loadInvitations();
 		} catch (err) {
 			setStatus({
 				tone: "error",
@@ -83,17 +181,73 @@ export function AdminPanel() {
 		}
 	}
 
+	async function handleInvitationAction(
+		invitation: PendingInvitation,
+		action: "resend" | "revoke",
+	) {
+		if (!teamId) return;
+		if (
+			!window.confirm(
+				action === "resend"
+					? `Replace the link for ${invitation.email}? The previous link will stop working.`
+					: `Revoke the invitation for ${invitation.email}?`,
+			)
+		)
+			return;
+		setBusy(true);
+		setStatus(null);
+		setInviteLink("");
+		try {
+			const { data, error } = await supabase.functions.invoke("team-invite", {
+				body: { team_id: teamId, action, invitation_id: invitation.id },
+			});
+			if (error || data?.ok !== true || data.invitation_id !== invitation.id)
+				throw new Error("Invitation change was not confirmed.");
+			if (action === "resend") {
+				if (typeof data.invite_url !== "string")
+					throw new Error("The invitation service returned no shareable link.");
+				const link = new URL(data.invite_url);
+				if (
+					link.origin !== window.location.origin ||
+					link.pathname !== "/enterprise" ||
+					!link.searchParams.get("invite")
+				) {
+					throw new Error("The invitation service returned an invalid link.");
+				}
+				setInviteLink(link.toString());
+				setStatus({
+					tone: "success",
+					message: `Link replaced for ${invitation.email}. Share the new link below; no email was sent.`,
+				});
+			} else {
+				setStatus({ tone: "success", message: `Invitation revoked for ${invitation.email}.` });
+			}
+			void loadInvitations();
+		} catch (err) {
+			setStatus({ tone: "error", message: readErrorMessage(err, "Failed to change invitation") });
+		} finally {
+			setBusy(false);
+		}
+	}
+
 	async function handleCreateTeam(e: React.FormEvent) {
 		e.preventDefault();
-		if (!newTeamName.trim()) return;
+		if (!newTeamName.trim() || teamCreateBusy.current) return;
+		teamCreateBusy.current = true;
 
 		setBusy(true);
 		setStatus(null);
 
+		const attempt = teamCreateAttempt ?? {
+			name: newTeamName.trim(),
+			requestId: crypto.randomUUID(),
+		};
+		setTeamCreateAttempt(attempt);
 		try {
-			await createTeam(newTeamName.trim());
-			setStatus({ tone: "success", message: `Team "${newTeamName}" created successfully` });
+			await createTeam(attempt.name, attempt.requestId);
+			setStatus({ tone: "success", message: `Team "${attempt.name}" created successfully` });
 			setNewTeamName("");
+			setTeamCreateAttempt(null);
 			setShowCreateTeam(false);
 		} catch (err) {
 			setStatus({
@@ -101,6 +255,7 @@ export function AdminPanel() {
 				message: readErrorMessage(err, "Failed to create team"),
 			});
 		} finally {
+			teamCreateBusy.current = false;
 			setBusy(false);
 		}
 	}
@@ -175,6 +330,7 @@ export function AdminPanel() {
 									<input
 										className="input"
 										type="text"
+										readOnly={Boolean(teamCreateAttempt)}
 										value={newTeamName}
 										onChange={(e) => setNewTeamName(e.target.value)}
 										placeholder="e.g., Acme Security"
@@ -183,19 +339,19 @@ export function AdminPanel() {
 								</label>
 								<div className="row">
 									<button className="button" type="submit" disabled={busy}>
-										Create Team
+										{teamCreateAttempt ? "Retry Team Creation" : "Create Team"}
 									</button>
 									<button
 										className="button button-secondary"
 										type="button"
-										onClick={() => setShowCreateTeam(false)}
+										onClick={cancelTeamCreate}
 									>
 										Cancel
 									</button>
 								</div>
 							</form>
 						) : (
-							<button className="button" onClick={() => setShowCreateTeam(true)}>
+							<button className="button" onClick={startTeamCreate}>
 								Create Your First Team
 							</button>
 						)}
@@ -235,10 +391,7 @@ export function AdminPanel() {
 						</p>
 					</div>
 					{canManageTeam && (
-						<button
-							className="button button-secondary"
-							onClick={() => setShowCreateTeam(!showCreateTeam)}
-						>
+						<button className="button button-secondary" onClick={toggleTeamCreate}>
 							+ New Team
 						</button>
 					)}
@@ -261,6 +414,7 @@ export function AdminPanel() {
 							<input
 								className="input"
 								type="text"
+								readOnly={Boolean(teamCreateAttempt)}
 								value={newTeamName}
 								onChange={(e) => setNewTeamName(e.target.value)}
 								placeholder="e.g., Security Team"
@@ -269,13 +423,9 @@ export function AdminPanel() {
 						</label>
 						<div className="row">
 							<button className="button" type="submit" disabled={busy}>
-								Create Team
+								{teamCreateAttempt ? "Retry Team Creation" : "Create Team"}
 							</button>
-							<button
-								className="button button-secondary"
-								type="button"
-								onClick={() => setShowCreateTeam(false)}
-							>
+							<button className="button button-secondary" type="button" onClick={cancelTeamCreate}>
 								Cancel
 							</button>
 						</div>
@@ -285,9 +435,7 @@ export function AdminPanel() {
 
 			{/* Members List */}
 			<div className="card">
-				<h3>
-					{membersError ? "Team Members" : `Team Members (${members.length})`}
-				</h3>
+				<h3>{membersError ? "Team Members" : `Team Members (${members.length})`}</h3>
 
 				{membersError ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
@@ -303,12 +451,15 @@ export function AdminPanel() {
 
 				{!membersError && !memberEmailsAvailable ? (
 					<div className="notice notice-warning" style={{ marginBottom: 14 }}>
-						<b>Member email addresses are unavailable in this deployment.</b>
+						<b>
+							{canManageTeam
+								? "Member email addresses are unavailable in this deployment."
+								: "Member email addresses are restricted to team owners and administrators."}
+						</b>
 						<div className="muted small" style={{ marginTop: 6 }}>
-							The dashboard reads public.team_members, whose user reference points at auth.users;
-							no public.users relation is created by the migrations, so the API cannot project
-							emails. Members are identified by user id; role changes and removal still apply to the
-							real rows.
+							{canManageTeam
+								? "The secure member directory is not available. Members are identified by user id; role changes and removal still apply to the real rows."
+								: "Members are identified by user id on this read-only view."}
 						</div>
 					</div>
 				) : null}
@@ -354,8 +505,82 @@ export function AdminPanel() {
 							</button>
 						</div>
 						<p className="muted small">{ROLE_DESCRIPTIONS[inviteRole]}</p>
-						{inviteLink && <label>Invitation link<input className="input" readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label>}
+						{inviteLink && (
+							<label>
+								Invitation link
+								<input
+									className="input"
+									readOnly
+									value={inviteLink}
+									onFocus={(event) => event.target.select()}
+								/>
+							</label>
+						)}
 					</form>
+				)}
+
+				{canManageTeam && (
+					<div style={{ marginBottom: 20 }}>
+						<div className="row space-between">
+							<h4>Pending invitations</h4>
+							<button
+								className="button button-secondary"
+								type="button"
+								disabled={busy || loadingInvitations}
+								onClick={() => void loadInvitations()}
+							>
+								Refresh invitations
+							</button>
+						</div>
+						{invitationsError ? (
+							<div className="notice notice-danger" role="alert">
+								{invitationsError}
+							</div>
+						) : null}
+						{loadingInvitations ? <p className="muted">Loading invitations...</p> : null}
+						{!loadingInvitations && !invitationsError && invitations.length === 0 ? (
+							<p className="muted">No pending invitations.</p>
+						) : null}
+						{!loadingInvitations && !invitationsError && invitations.length > 0 ? (
+							<table className="table">
+								<thead>
+									<tr>
+										<th>Recipient</th>
+										<th>Role</th>
+										<th>Expires</th>
+										<th className="right">Actions</th>
+									</tr>
+								</thead>
+								<tbody>
+									{invitations.map((invitation) => (
+										<tr key={invitation.id}>
+											<td>{invitation.email}</td>
+											<td>{ROLE_LABELS[invitation.role]}</td>
+											<td>{new Date(invitation.expires_at).toLocaleString()}</td>
+											<td className="right">
+												<button
+													className="button button-secondary"
+													type="button"
+													disabled={busy}
+													onClick={() => void handleInvitationAction(invitation, "resend")}
+												>
+													Replace link
+												</button>{" "}
+												<button
+													className="button button-secondary"
+													type="button"
+													disabled={busy}
+													onClick={() => void handleInvitationAction(invitation, "revoke")}
+												>
+													Revoke invitation
+												</button>
+											</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
+						) : null}
+					</div>
 				)}
 
 				{members.length > 0 ? (
@@ -372,13 +597,6 @@ export function AdminPanel() {
 								<tr key={member.id}>
 									<td>
 										<div className="row">
-											{member.avatar_url && (
-												<img
-													src={member.avatar_url}
-													alt=""
-													style={{ width: 32, height: 32, borderRadius: "50%" }}
-												/>
-											)}
 											<div>
 												<div>{memberLabel(member)}</div>
 												{member.invited_by && (
@@ -388,7 +606,7 @@ export function AdminPanel() {
 										</div>
 									</td>
 									<td>
-										{canManageTeam ? (
+										{canManageTeam && (currentRole === "owner" || member.role !== "owner") ? (
 											<select
 												className="input"
 												value={member.role}
@@ -398,11 +616,13 @@ export function AdminPanel() {
 												style={{ padding: "6px 10px", minWidth: "120px" }}
 												disabled={busy}
 											>
-												{CHANGEABLE_ROLES.map((role) => (
-													<option key={role} value={role}>
-														{ROLE_LABELS[role]}
-													</option>
-												))}
+												{(currentRole === "owner" ? CHANGEABLE_ROLES : ASSIGNABLE_ROLES).map(
+													(role) => (
+														<option key={role} value={role}>
+															{ROLE_LABELS[role]}
+														</option>
+													),
+												)}
 											</select>
 										) : (
 											<span className="pill">{ROLE_LABELS[member.role]}</span>
@@ -410,14 +630,16 @@ export function AdminPanel() {
 									</td>
 									{canManageTeam && (
 										<td className="right">
-											<button
-												className="button button-secondary"
-												style={{ padding: "6px 10px", fontSize: "12px" }}
-												onClick={() => void handleRemoveMember(member)}
-												disabled={busy}
-											>
-												Remove
-											</button>
+											{(currentRole === "owner" || member.role !== "owner") && (
+												<button
+													className="button button-secondary"
+													style={{ padding: "6px 10px", fontSize: "12px" }}
+													onClick={() => void handleRemoveMember(member)}
+													disabled={busy}
+												>
+													Remove
+												</button>
+											)}
 										</td>
 									)}
 								</tr>

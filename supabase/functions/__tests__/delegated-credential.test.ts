@@ -28,11 +28,18 @@ const claims = {
 	issuedAt: now,
 	notBefore: now,
 	expiresAt: now + 300,
+	authSessionIssuedAt: now - 60,
 	tokenId: "44444444-4444-4444-8444-444444444444",
 	delegationDepth: 0,
 };
 
 describe("Edge broker and core delegated credential contract", () => {
+	it("requires an authenticated-session binding before signing", async () => {
+		const legacyClaims: Record<string, unknown> = { ...claims };
+		delete legacyClaims.authSessionIssuedAt;
+		await expect(signDelegatedCredential({ claims: legacyClaims, keyId: "test-k1", privateKeyPkcs8Base64: privateKey })).rejects.toThrow("invalid_delegated_claims");
+	});
+
 	it("produces an Ed25519 token accepted by the core with exact context binding", async () => {
 		const signed = await signDelegatedCredential({
 			claims,
@@ -71,6 +78,9 @@ describe("Edge broker and core delegated credential contract", () => {
 
 	it("requires tool, resource, audience and every requested scope during introspection", () => {
 		const exact = {
+			tenant_id: claims.tenantId,
+			subject_user_id: claims.subjectUserId,
+			agent_id: claims.agentId,
 			audience: claims.audience,
 			tool: { server_id: claims.tool.serverId, name: claims.tool.name },
 			resource: claims.resource,
@@ -78,15 +88,22 @@ describe("Edge broker and core delegated credential contract", () => {
 		};
 		expect(matchesDelegatedContext(claims, exact)).toBe(true);
 		expect(matchesDelegatedContext(claims, { ...exact, audience: "https://other.example" })).toBe(false);
+		expect(matchesDelegatedContext(claims, { ...exact, tenant_id: "55555555-5555-4555-8555-555555555555" })).toBe(false);
+		expect(matchesDelegatedContext(claims, { ...exact, subject_user_id: "55555555-5555-4555-8555-555555555555" })).toBe(false);
+		expect(matchesDelegatedContext(claims, { ...exact, agent_id: "55555555-5555-4555-8555-555555555555" })).toBe(false);
 		expect(matchesDelegatedContext(claims, { ...exact, tool: { ...exact.tool, name: "repository.delete" } })).toBe(false);
 		expect(matchesDelegatedContext(claims, { ...exact, resource: { ...exact.resource, id: "acme/other" } })).toBe(false);
 		expect(matchesDelegatedContext(claims, { ...exact, required_scopes: ["administration:write"] })).toBe(false);
+		const { tenant_id: _tenantId, ...withoutTenant } = exact;
+		expect(matchesDelegatedContext(claims, withoutTenant)).toBe(false);
 	});
 });
 
 describe("delegated credential persistence boundary", () => {
 	const here = dirname(fileURLToPath(import.meta.url));
 	const migration = readFileSync(resolve(here, "../../migrations/20260912000010_delegated_credentials.sql"), "utf8");
+	const sessionBindingMigration = readFileSync(resolve(here, "../../migrations/20260923000002_delegated_identity_session_binding.sql"), "utf8");
+	const globalRevocationMigration = readFileSync(resolve(here, "../../migrations/20260922000006_identity_global_revocation_saga.sql"), "utf8");
 	const handler = readFileSync(resolve(here, "../delegated-credentials/index.ts"), "utf8");
 
 	it("keeps grants and receipts service-only", () => {
@@ -137,6 +154,36 @@ describe("delegated credential persistence boundary", () => {
 		expect(handler).toContain("if (!identity.ok) return corsJson(req, identity.status, { error: identity.error })");
 	});
 
+	it("authorizes the tenant subject before consuming quota or doing privileged work", () => {
+		expect(handler).toContain("await readBoundedText(req, 32_768)");
+		expect(handler.match(/await consumeTenantRateLimit\(db, \{/g)).toHaveLength(2);
+		const humanBarrier = handler.indexOf("await checkIdentityBarrier(db, bearer, auth.user.id, body.tenant_id)");
+		const humanAuthorization = handler.indexOf("await authorizeHumanQuota(db, auth.user.id, body)");
+		const humanRate = handler.indexOf("await consumeTenantRateLimit(db, {", humanBarrier);
+		expect(humanAuthorization).toBeGreaterThan(humanBarrier);
+		expect(humanRate).toBeGreaterThan(humanAuthorization);
+		expect(humanRate).toBeGreaterThan(humanBarrier);
+		expect(handler).toContain('.from("tenant_members")');
+		expect(handler).toContain('.eq("user_id", String(body.subject_user_id))');
+		expect(handler).toContain('.from("delegated_credential_grants")');
+		for (const rpc of [
+			'"create_delegated_credential_grant"',
+			'"revoke_delegated_credential_grant"',
+			'"read_delegated_credential_lineage"',
+			'"reserve_delegated_credential"',
+		]) expect(handler.indexOf(rpc)).toBeGreaterThan(humanRate);
+	});
+
+	it("validates signed-token context and active state before charging quota", () => {
+		const signedPath = handler.indexOf('body.action === "introspect" || body.action === "redelegate"');
+		const context = handler.indexOf("matchesDelegatedContext(verified.claims, body.context)", signedPath);
+		const active = handler.indexOf('db.rpc("validate_delegated_credential"', signedPath);
+		const rate = handler.indexOf("await consumeTenantRateLimit(db, {", signedPath);
+		expect(context).toBeGreaterThan(signedPath);
+		expect(active).toBeGreaterThan(context);
+		expect(rate).toBeGreaterThan(active);
+	});
+
 	it("keeps signed broker-token introspection and redelegation ahead of JWT session handling", () => {
 		const signedTokenPath = handler.indexOf('body.action === "introspect" || body.action === "redelegate"');
 		const signedVerification = handler.indexOf("await verifyDelegatedCredentialForBroker(");
@@ -145,5 +192,46 @@ describe("delegated credential persistence boundary", () => {
 		expect(signedVerification).toBeGreaterThan(signedTokenPath);
 		expect(humanSession).toBeGreaterThan(signedVerification);
 		expect(handler.slice(signedTokenPath, humanSession)).not.toContain("checkIdentityBarrier(");
+	});
+
+	it("binds issuance to the authenticated session, not a caller-supplied timestamp", () => {
+		const verifiedUser = handler.indexOf("await db.auth.getUser(bearer)");
+		const barrier = handler.indexOf("await checkIdentityBarrier(db, bearer, auth.user.id, body.tenant_id)");
+		const sessionIat = handler.indexOf("jwtIssuedAtMs(bearer)");
+		const reserve = handler.indexOf('db.rpc("reserve_delegated_credential"');
+		const issueValidator = handler.slice(handler.indexOf("function validIssue"), handler.indexOf("function validRedelegation"));
+
+		expect(verifiedUser).toBeGreaterThan(0);
+		expect(barrier).toBeGreaterThan(verifiedUser);
+		expect(sessionIat).toBeGreaterThan(barrier);
+		expect(reserve).toBeGreaterThan(sessionIat);
+		expect(issueValidator).not.toContain("validated_session_issued_at");
+		expect(handler).toContain("validated_session_issued_at: new Date(sessionIssuedAtMs).toISOString()");
+	});
+
+	it("rejects replay of a signed delegated token after global logout or password-reset revocation", () => {
+		const reserve = sessionBindingMigration.slice(
+			sessionBindingMigration.indexOf("create or replace function public.reserve_delegated_credential"),
+			sessionBindingMigration.indexOf("create or replace function public.reserve_child_delegated_credential"),
+		);
+		const child = sessionBindingMigration.slice(
+			sessionBindingMigration.indexOf("create or replace function public.reserve_child_delegated_credential"),
+			sessionBindingMigration.indexOf("create or replace function public.validate_delegated_credential"),
+		);
+		const validate = sessionBindingMigration.slice(
+			sessionBindingMigration.indexOf("create or replace function public.validate_delegated_credential"),
+		);
+		const perUserLock = "pg_advisory_xact_lock(hashtextextended(p_user_id::text, 2611))";
+
+		expect(globalRevocationMigration).toContain(perUserLock);
+		expect(reserve).toContain("pg_advisory_xact_lock(hashtextextended(p_actor_user_id::text, 2611))");
+		expect(child).toContain("pg_advisory_xact_lock(hashtextextended(v_user_id::text, 2611))");
+		expect(reserve).toContain("v_session_issued_at <= v_revoked_before");
+		expect(child).toContain("to_timestamp(v_session_issued_at) <= v_revoked_before");
+		expect(child).toContain("'authSessionIssuedAt',v_session_issued_at");
+		expect(validate).toContain("v_row.claims<>p_claims");
+		expect(validate).toContain("v_revoke_pending is not null");
+		expect(validate).toContain("to_timestamp(v_session_issued_at) <= v_revoked_before");
+		expect(handler).toContain('db.rpc("validate_delegated_credential"');
 	});
 });

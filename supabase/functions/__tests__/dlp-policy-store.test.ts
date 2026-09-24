@@ -9,7 +9,7 @@ vi.mock("npm:zod@3.25.76", () => {
 	return requireCore("zod");
 });
 
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => { throw new Error("client must be injected"); },
 }));
 vi.mock("npm:yaml@2.8.3", () => {
@@ -43,6 +43,7 @@ interface Options {
 	requireMfa?: boolean;
 	assuranceError?: boolean;
 	readError?: boolean;
+	readResult?: unknown;
 	authError?: boolean;
 	sessionError?: boolean;
 	revokedBefore?: string;
@@ -84,7 +85,9 @@ async function fixture(options: Options = {}) {
 					};
 					if (table === "tenants") return { data: { status: options.status ?? "active" }, error: null };
 					if (table === "tenant_dlp_policies") return {
-						data: filters.tenant_id === TENANT ? stored : { version: 99, policy: { tenantId: FOREIGN } },
+						data: filters.tenant_id === TENANT
+							? ("readResult" in options ? options.readResult : stored)
+							: { version: 99, policy: { tenantId: FOREIGN } },
 						error: options.readError ? {} : null,
 					};
 					throw new Error(`unexpected table ${table}`);
@@ -153,6 +156,17 @@ describe("DLP editor load/save protocol", () => {
 		expect(next.status).toBe(200);
 		expect(await next.json()).toMatchObject({ version: 2, policy: { version: 2 } });
 		expect(f.revisions.map(row => row.version)).toEqual([1, 2]);
+	});
+
+	it.each([
+		undefined,
+		{ version: 1, policy: { version: 1, tenantId: TENANT }, updated_at: "not-a-time" },
+		{ version: 1, policy: { version: 1, tenantId: TENANT } },
+	])("fails closed instead of acknowledging malformed saved-row data %j", async readResult => {
+		const f = await fixture({ readResult });
+		const response = await f.call(read);
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "dlp_policy_unavailable" });
 	});
 
 	it.each([undefined, null, -1, 1.5, "0", Number.MAX_SAFE_INTEGER])("refuses invalid expected_version %s", async expected_version => {
@@ -280,7 +294,7 @@ describe("storage failures are never successful saves", () => {
 		expect((await response.json()).ok).not.toBe(true);
 		expect(f.revisions).toHaveLength(0);
 	});
-	it.each([null, {}, { version: 1 }, { version: 0 }, { version: 1, policy: { version: 1, tenantId: FOREIGN }, updated_at: NOW }])("does not acknowledge malformed RPC payload %j", async writeResult => {
+	it.each([null, {}, { version: 1 }, { version: 0 }, { version: 1, policy: { version: 1, tenantId: FOREIGN }, updated_at: NOW }, { version: 1, policy: { version: 1, tenantId: TENANT }, updated_at: "not-a-time" }])("does not acknowledge malformed RPC payload %j", async writeResult => {
 		const f = await fixture({ writeResult });
 		const response = await f.call(publish());
 		expect(response.status).toBe(503);

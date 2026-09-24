@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The Edge Function imports Supabase through Deno's `npm:` specifier, which a
 // Node test runner cannot resolve. The injected client is the only client the
 // suite ever drives; `createClient` is a tripwire, not a fallback.
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => {
 		throw new Error("createClient must be injected through PolicyManagementDeps.db");
 	},
@@ -56,7 +56,12 @@ vi.mock("npm:yaml@2.8.3", async () => {
 };
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const { normalizeRolloutRings } = await import("../_shared/policy-rollout.ts");
+const {
+	MAX_POLICY_MANAGEMENT_BODY_BYTES,
+	MAX_POLICY_ROLLOUT_TARGETS,
+	dispatchPolicyRollout,
+	normalizeRolloutRings,
+} = await import("../_shared/policy-rollout.ts");
 const ROLLOUT_SOURCE = readFileSync(join(ROOT, "supabase", "functions", "_shared", "policy-rollout.ts"), "utf8");
 const HANDLER_URL = "https://project.supabase.co/functions/v1/policy-management";
 const HANDLER_SOURCE = readFileSync(
@@ -73,6 +78,14 @@ const STAGE_CAS_MIGRATION = readFileSync(
 );
 const RINGS_MIGRATION = readFileSync(
 	join(ROOT, "supabase", "migrations", "20260916000000_policy_rollout_rings.sql"),
+	"utf8",
+);
+const ROLLOUT_LIMIT_MIGRATION = readFileSync(
+	join(ROOT, "supabase", "migrations", "20260923000006_policy_rollout_target_limit.sql"),
+	"utf8",
+);
+const POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION = readFileSync(
+	join(ROOT, "supabase", "migrations", "20260923000003_policy_document_publish_cas.sql"),
 	"utf8",
 );
 
@@ -112,11 +125,13 @@ const POLICY_DOCUMENT_LINES = [
 	"    priority: 20",
 ];
 
-const MUTATION_RPCS = new Set(["publish_runtime_policy", "stage_runtime_policy", "save_policy_document_draft", "create_policy_rollout"]);
+const MUTATION_RPCS = new Set(["publish_runtime_policy", "publish_runtime_policy_document", "stage_runtime_policy", "save_policy_document_draft", "create_policy_rollout"]);
 const DOCUMENT_ID = "55555555-5555-4555-8555-555555555555";
+const OTHER_DOCUMENT_ID = "66666666-6666-4666-8666-666666666666";
 const sourceHash = (content: string) => createHash("sha256").update(content, "utf8").digest("hex");
 const VALID_DRAFT = POLICY_DOCUMENT_LINES.join("\n");
 const EXPECTED_DOCUMENT = { id: DOCUMENT_ID, version: 7, source_sha256: sourceHash(VALID_DRAFT) };
+const EXPECTED_STORED_DOCUMENT = { id: DOCUMENT_ID, version: 1, source_sha256: sourceHash(VALID_DRAFT) };
 function draftBody(overrides: Row = {}): Row {
 	return { action: "save_document_draft", tenant_id: TENANT, content: VALID_DRAFT, expected_document: null, ...overrides };
 }
@@ -392,15 +407,15 @@ function stageBody(overrides: Row = {}): Row {
 }
 
 function teamPolicyRow(tenantId: string, document: string, id: string, marker: string): Row {
-	return { team_id: tenantId, id, content: document, updated_at: NOW, marker };
+	return { team_id: tenantId, tenant_id: tenantId, id, content: document, version: 1, source_sha256: sourceHash(document), updated_at: NOW, marker };
 }
 
 const DOCUMENT_ROWS: Row[] = [
-	teamPolicyRow(TENANT, POLICY_DOCUMENT_LINES.join("\n"), "doc-tenant", "tenant-document"),
+	teamPolicyRow(TENANT, POLICY_DOCUMENT_LINES.join("\n"), DOCUMENT_ID, "tenant-document"),
 	teamPolicyRow(
 		OTHER_TENANT,
 		["version: 1", "default_action: deny", `description: ${OTHER_POLICY_MARKER}`].join("\n"),
-		"doc-other",
+		OTHER_DOCUMENT_ID,
 		OTHER_POLICY_MARKER,
 	),
 ];
@@ -557,7 +572,7 @@ describe("policy-management handler - authorization", () => {
 			publishBody(),
 			stageBody(),
 			{ action: "restore", tenant_id: TENANT, expected_version: 3, target_version: 3 },
-			{ action: "publish_document", tenant_id: TENANT, expected_version: 3 },
+			{ action: "publish_document", tenant_id: TENANT, expected_version: 3, expected_document: EXPECTED_STORED_DOCUMENT },
 		];
 		for (const body of bodies) {
 			const { handle, rpcCalls } = await handlerWith({
@@ -630,10 +645,10 @@ describe("policy-management handler - request and policy validation", () => {
 			...POLICY_DOCUMENT_LINES.slice(8),
 		].join("\n");
 		const rejected = await handlerWith({
-			teamPolicies: [teamPolicyRow(TENANT, unsupported, "doc-tenant", "tenant-document")],
+			teamPolicies: [teamPolicyRow(TENANT, unsupported, DOCUMENT_ID, "tenant-document")],
 		});
 		const rejectedResponse = await rejected.handle(
-			post({ action: "publish_document", tenant_id: TENANT, expected_version: 3 }),
+			post({ action: "publish_document", tenant_id: TENANT, expected_version: 3, expected_document: { id: DOCUMENT_ID, version: 1, source_sha256: sourceHash(unsupported) } }),
 		);
 		expect(rejectedResponse.status).toBe(400);
 		expect(await rejectedResponse.json()).toMatchObject({
@@ -653,7 +668,7 @@ describe("policy-management handler - request and policy validation", () => {
 		expect(await dryRun.json()).toMatchObject({
 			ok: true,
 			dry_run: true,
-			source: { id: "doc-tenant", updated_at: NOW },
+			source: { id: DOCUMENT_ID, version: 1, source_sha256: sourceHash(VALID_DRAFT), updated_at: NOW },
 			runtime_policy: { command_default: "deny", mcp_allow_tools: ["github.read"] },
 			semantics: { precedence: ["deny", "ask", "allow"], unknown_mcp: "deny" },
 			simulation: { action: "deny", source: "mcp_unknown" },
@@ -662,16 +677,65 @@ describe("policy-management handler - request and policy validation", () => {
 
 		const published = await handlerWith({ teamPolicies: DOCUMENT_ROWS });
 		const publishedResponse = await published.handle(
-			post({ action: "publish_document", tenant_id: TENANT, expected_version: 3 }),
+			post({ action: "publish_document", tenant_id: TENANT, expected_version: 3, expected_document: EXPECTED_STORED_DOCUMENT }),
 		);
 		expect(publishedResponse.status).toBe(200);
 		const body = (await publishedResponse.json()) as Row;
-		expect(body).toMatchObject({ ok: true, version: 4, compiled_from: { id: "doc-tenant", updated_at: NOW } });
+		expect(body).toMatchObject({ ok: true, version: 4, compiled_from: { ...EXPECTED_STORED_DOCUMENT, updated_at: NOW } });
 		expect(JSON.stringify(body)).not.toContain(OTHER_POLICY_MARKER);
 		expect(mutations(published.rpcCalls)[0]?.args.p_policy).toMatchObject({
 			command_default: "deny",
 			mcp_allow_tools: ["github.read"],
 		});
+		expect(mutations(published.rpcCalls)[0]).toEqual({
+			name: "publish_runtime_policy_document",
+			args: {
+				p_tenant_id: TENANT,
+				p_user_id: USER,
+				p_expected_version: 3,
+				p_policy: expect.objectContaining({ command_default: "deny" }),
+				p_expected_document_id: EXPECTED_STORED_DOCUMENT.id,
+				p_expected_document_version: EXPECTED_STORED_DOCUMENT.version,
+				p_expected_source_sha256: EXPECTED_STORED_DOCUMENT.source_sha256,
+			},
+		});
+	});
+
+	it("requires the reviewed draft precondition and rejects a stale source before publishing", async () => {
+		const missing = await handlerWith({ teamPolicies: DOCUMENT_ROWS });
+		const missingResponse = await missing.handle(post({ action: "publish_document", tenant_id: TENANT, expected_version: 3 }));
+		expect(missingResponse.status).toBe(400);
+		expect(await missingResponse.json()).toMatchObject({ error: "invalid_document_precondition" });
+		expect(mutations(missing.rpcCalls)).toHaveLength(0);
+
+		const stale = await handlerWith({ teamPolicies: DOCUMENT_ROWS });
+		const staleResponse = await stale.handle(post({
+			action: "publish_document",
+			tenant_id: TENANT,
+			expected_version: 3,
+			expected_document: { ...EXPECTED_STORED_DOCUMENT, source_sha256: "0".repeat(64) },
+		}));
+		expect(staleResponse.status).toBe(409);
+		expect(await staleResponse.json()).toMatchObject({ error: "policy_document_conflict" });
+		expect(mutations(stale.rpcCalls)).toHaveLength(0);
+	});
+
+	it("maps an atomic SQL draft-CAS conflict to a source conflict, not a runtime-version conflict", async () => {
+		const { handle, rpcCalls } = await handlerWith({
+			teamPolicies: DOCUMENT_ROWS,
+			rpc: (name) => name === "publish_runtime_policy_document"
+				? { data: null, error: { code: "PT409", message: "policy_document_conflict" } }
+				: { data: { version: 4, policy: POLICY, updated_at: NOW }, error: null },
+		});
+		const response = await handle(post({
+			action: "publish_document",
+			tenant_id: TENANT,
+			expected_version: 3,
+			expected_document: EXPECTED_STORED_DOCUMENT,
+		}));
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ error: "policy_document_conflict" });
+		expect(mutations(rpcCalls).map(({ name }) => name)).toEqual(["publish_runtime_policy_document"]);
 	});
 
 	it("answers 404 and 503 for an unreadable stored document instead of compiling nothing", async () => {
@@ -1146,7 +1210,7 @@ describe("policy-management source and SQL contract", () => {
 
 	it("exposes the factory the suite drives and still serves it from the Edge runtime", () => {
 		expect(HANDLER_SOURCE).toContain("export function createPolicyManagementHandler(");
-		expect(HANDLER_SOURCE).toContain("deps.db ?? createClient(");
+		expect(HANDLER_SOURCE).toMatch(/deps\.db \?\? createClient(?:<[^>]+>)?\(/);
 		expect(HANDLER_SOURCE).toContain("Deno.serve(createPolicyManagementHandler())");
 	});
 
@@ -1200,10 +1264,34 @@ describe("policy-management source and SQL contract", () => {
 			"insert into public.runtime_policy_revisions(tenant_id,version,policy,updated_by) values(p_tenant_id,v_version,p_policy,p_user_id);",
 		);
 	});
+
+	it("binds YAML publication to the exact source head under the draft-save lock", () => {
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("create function public.publish_runtime_policy_document(");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("p_expected_document_id uuid");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("p_expected_document_version bigint");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("p_expected_source_sha256 text");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("pg_advisory_xact_lock(hashtextextended(p_tenant_id::text, 912))");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("order by updated_at desc, id desc");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("limit 1\n   for update");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("document.id is distinct from p_expected_document_id");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("document.version is distinct from p_expected_document_version");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("document.source_sha256 is distinct from p_expected_source_sha256");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("return public.publish_runtime_policy(p_tenant_id, p_user_id, p_expected_version, p_policy)");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("revoke all on function public.publish_runtime_policy_document(uuid,uuid,bigint,jsonb,uuid,bigint,text) from public, anon, authenticated;");
+		expect(POLICY_DOCUMENT_PUBLISH_CAS_MIGRATION).toContain("grant execute on function public.publish_runtime_policy_document(uuid,uuid,bigint,jsonb,uuid,bigint,text) to service_role;");
+	});
 });
 
 describe("policy-management ordered rollout contract", () => {
 	const rolloutBody = (overrides: Row = {}) => ({ action: "rollout", tenant_id: TENANT, expected_version: 3, expected_revision_version: 3, policy: POLICY, rings: [{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: [AGENT] }] }], ...overrides });
+	const planFor = (targetCount: number) => [{
+		ring_order: 1,
+		batches: Array.from({ length: Math.ceil(targetCount / 200) }, (_, batchIndex) => ({
+			batch_order: batchIndex + 1,
+			agent_ids: Array.from({ length: Math.min(200, targetCount - batchIndex * 200) }, (_, agentIndex) =>
+				`00000000-0000-4000-8000-${(batchIndex * 200 + agentIndex + 1).toString(16).padStart(12, "0")}`),
+		})),
+	}];
 
 	it.each([
 		[{ memberships: [{ tenant_id: TENANT, role: "viewer", expires_at: null }] }, 403],
@@ -1274,6 +1362,52 @@ describe("policy-management ordered rollout contract", () => {
 		]) expect(() => normalizeRolloutRings(invalid)).toThrow();
 	});
 
+	it("caps ring targets at the largest UUID plan that fits the request limit", () => {
+		expect(MAX_POLICY_MANAGEMENT_BODY_BYTES).toBe(65_536);
+		expect(MAX_POLICY_ROLLOUT_TARGETS).toBe(1667);
+		expect(normalizeRolloutRings(planFor(MAX_POLICY_ROLLOUT_TARGETS))).toHaveLength(1);
+		expect(() => normalizeRolloutRings(planFor(MAX_POLICY_ROLLOUT_TARGETS + 1))).toThrow("rollout_too_large");
+	});
+
+	it("reports an oversized rollout plan with 413", async () => {
+		const response = await dispatchPolicyRollout(
+			new Request(HANDLER_URL, { method: "POST" }),
+			{} as never,
+			rolloutBody({ rings: planFor(MAX_POLICY_ROLLOUT_TARGETS + 1) }),
+			TENANT,
+			USER,
+			"admin",
+		);
+		expect(response.status).toBe(413);
+		expect(await response.json()).toMatchObject({ error: "rollout_too_large" });
+	});
+
+	it("accepts the largest parsable ring body and rejects the next UUID at the request limit", async () => {
+		const maxPlanBody = rolloutBody({
+			expected_version: Number.MAX_SAFE_INTEGER,
+			expected_revision_version: Number.MAX_SAFE_INTEGER,
+			policy: { mcp_unknown: "ask" },
+			rings: planFor(MAX_POLICY_ROLLOUT_TARGETS),
+		});
+		expect(new TextEncoder().encode(JSON.stringify(maxPlanBody)).length).toBeLessThanOrEqual(
+			MAX_POLICY_MANAGEMENT_BODY_BYTES,
+		);
+		const accepted = await handlerWith({
+			rpc: (name) => name === "create_policy_rollout"
+				? { data: { rollout_id: "77777777-7777-4777-8777-777777777777", version: 4 }, error: null }
+				: { data: { allowed: true, remaining: 599 }, error: null },
+		});
+		expect((await accepted.handle(post(maxPlanBody))).status).toBe(200);
+		expect(accepted.rpcCalls.find(({ name }) => name === "create_policy_rollout")?.args.p_rings)
+			.toEqual(planFor(MAX_POLICY_ROLLOUT_TARGETS));
+
+		const oversized = await handlerWith();
+		const response = await oversized.handle(post({ ...maxPlanBody, rings: planFor(MAX_POLICY_ROLLOUT_TARGETS + 1) }));
+		expect(response.status).toBe(413);
+		expect(await response.json()).toMatchObject({ error: "request_too_large" });
+		expect(mutations(oversized.rpcCalls)).toHaveLength(0);
+	});
+
 	it("reads rollout_progress through the tenant-scoped RPC without treating it as attestation", async () => {
 		const { handle, rpcCalls } = await handlerWith({
 			rpc: (name) => name === "read_policy_rollout_progress"
@@ -1331,6 +1465,7 @@ describe("policy-management ordered rollout contract", () => {
 		expect(RINGS_MIGRATION).toContain("before insert or update of status on public.policy_rollouts");
 		expect(RINGS_MIGRATION).toContain("create function public.create_policy_rollout(");
 		expect(RINGS_MIGRATION).toContain("create function public.read_policy_rollout_progress(");
+		expect(ROLLOUT_LIMIT_MIGRATION).toContain("replace(definition, '> 20000 then', '> 1667 then')");
 		expect(RINGS_MIGRATION).toContain("revoke all on public.policy_rollouts, public.policy_rollout_batches, public.policy_rollout_targets from anon, authenticated;");
 		expect(RINGS_MIGRATION).toContain("grant all on public.policy_rollouts, public.policy_rollout_batches, public.policy_rollout_targets to service_role;");
 		expect(RINGS_MIGRATION).not.toMatch(/grant[^;]*\bto\s+(?:public|anon|authenticated)\b/i);

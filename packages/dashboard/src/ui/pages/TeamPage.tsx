@@ -1,4 +1,5 @@
 import { AdminPanel } from "../../enterprise/admin-panel";
+import { TeamAuditPanel } from "../../enterprise/team-audit-panel";
 
 /**
  * Team administration surface (AIDR-008).
@@ -24,6 +25,7 @@ export function TeamPage() {
 				</p>
 			</div>
 			<AdminPanel />
+			<TeamAuditPanel />
 		</div>
 	);
 }

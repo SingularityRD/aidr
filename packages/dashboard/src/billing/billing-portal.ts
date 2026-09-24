@@ -14,6 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REQUEST_ID = /^[a-zA-Z0-9_-]{16,80}$/;
 const SKU = /^[a-z][a-z0-9_.-]{1,63}$/;
 const HASH = /^[0-9a-f]{64}$/;
+const CURRENCIES = new Set(["USD", "EUR", "GBP"]);
 const SETTLEMENT_STATUSES = [
 	"quote_issued",
 	"order_placed",
@@ -43,10 +44,10 @@ export interface PortalSettlement {
 	externalValidation: false;
 }
 
-export interface PortalProjection {
+interface PortalProjection {
 	sku: string;
 	seats: number;
-	sources: unknown;
+	sources: string[];
 }
 
 export interface PortalSnapshot {
@@ -62,8 +63,84 @@ export interface SeatChangeResult {
 	delta: number;
 }
 
+export class BillingRecoveryError extends Error {
+	constructor(
+		readonly requestId: string,
+		readonly action: string,
+		readonly detail: Readonly<Record<string, unknown>>,
+	) {
+		super(`Billing recovery required: retry ${action} request ${requestId}`);
+		this.name = "BillingRecoveryError";
+	}
+}
+
+async function throwRecovery(error: unknown, data: unknown): Promise<void> {
+	let body = data;
+	if ((!body || typeof body !== "object") && error && typeof error === "object") {
+		const context = (error as { context?: unknown }).context;
+		if (context instanceof Response) {
+			try {
+				body = await context.clone().json();
+			} catch {
+				// The generic caller error remains the safe fallback.
+			}
+		}
+	}
+	if (!body || typeof body !== "object" || Array.isArray(body)) return;
+	const recovery = body as Record<string, unknown>;
+	if (recovery.error === "billing_reconciliation_pending") {
+		throw new Error(
+			"Cancellation reconciliation is pending. The portal has not confirmed a final status; refresh or retry after reconciliation completes.",
+		);
+	}
+	if (
+		recovery.error === "billing_recovery_required" &&
+		typeof recovery.recovery_request_id === "string" &&
+		REQUEST_ID.test(recovery.recovery_request_id) &&
+		typeof recovery.recovery_action === "string"
+	)
+		throw new BillingRecoveryError(recovery.recovery_request_id, recovery.recovery_action, {
+			...recovery,
+		});
+}
+
 function assertTenant(tenantId: string): void {
 	if (!UUID.test(tenantId)) throw new Error("A valid tenant is required for the billing portal");
+}
+
+function nonnegativeSafeInteger(value: unknown): value is number {
+	return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function parseTimestamp(value: unknown): string {
+	if (
+		typeof value !== "string" ||
+		!/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?)(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+		!Number.isFinite(Date.parse(value))
+	) {
+		throw new Error("Invalid billing settlement timestamp");
+	}
+	return value;
+}
+
+function parseProjection(value: unknown): PortalProjection[] {
+	if (!Array.isArray(value)) throw new Error("Invalid billing projection response");
+	return value.map((item) => {
+		if (!item || typeof item !== "object" || Array.isArray(item)) {
+			throw new Error("Invalid billing projection response");
+		}
+		const row = item as Record<string, unknown>;
+		if (
+			typeof row.sku !== "string" ||
+			!SKU.test(row.sku) ||
+			!nonnegativeSafeInteger(row.seats) ||
+			!Array.isArray(row.sources) ||
+			!row.sources.every((source) => typeof source === "string" && UUID.test(source))
+		) {
+			throw new Error("Invalid billing projection response");
+		}
+		return { sku: row.sku, seats: row.seats, sources: row.sources as string[] };
+	});
 }
 
 function parseSettlement(value: unknown, tenantId: string): PortalSettlement {
@@ -79,36 +156,72 @@ function parseSettlement(value: unknown, tenantId: string): PortalSettlement {
 		typeof row.status !== "string" ||
 		!(SETTLEMENT_STATUSES as readonly string[]).includes(row.status) ||
 		typeof row.currency !== "string" ||
+		!CURRENCIES.has(row.currency) ||
+		(row.provider !== "stripe" && row.provider !== "provider_fixture") ||
 		!Array.isArray(row.lines) ||
 		typeof row.receiptHash !== "string" ||
 		!HASH.test(row.receiptHash) ||
 		row.externalValidation !== false ||
-		!Number.isSafeInteger(row.sequence)
+		!nonnegativeSafeInteger(row.sequence) ||
+		!nonnegativeSafeInteger(row.totalAmountMinor) ||
+		!nonnegativeSafeInteger(row.settledAmountMinor) ||
+		!nonnegativeSafeInteger(row.refundedAmountMinor) ||
+		(row.quoteReference !== null &&
+			(typeof row.quoteReference !== "string" || row.quoteReference.length > 120 || /[\x00-\x1f\x7f]/.test(row.quoteReference)))
 	) {
 		throw new Error("Invalid billing settlement response");
 	}
 	if (row.tenantId !== undefined && row.tenantId !== tenantId) {
 		throw new Error("Billing response belongs to a different tenant");
 	}
+	const lines = row.lines.map((line) => {
+		if (!line || typeof line !== "object" || Array.isArray(line)) {
+			throw new Error("Invalid billing settlement line");
+		}
+		const entry = line as Record<string, unknown>;
+		if (
+			typeof entry.sku !== "string" ||
+			!SKU.test(entry.sku) ||
+			!Number.isSafeInteger(entry.quantity) ||
+			(entry.quantity as number) < 1 ||
+			(entry.quantity as number) > 100000 ||
+			!nonnegativeSafeInteger(entry.unitAmountMinor) ||
+			(entry.unitAmountMinor as number) > 100_000_000
+		) {
+			throw new Error("Invalid billing settlement line");
+		}
+		return {
+			sku: entry.sku,
+			quantity: entry.quantity as number,
+			unitAmountMinor: entry.unitAmountMinor as number,
+		};
+	});
+	const expectedTotal = lines.reduce(
+		(total, line) => total + line.quantity * line.unitAmountMinor,
+		0,
+	);
+	if (
+		lines.length === 0 || lines.length > 32 ||
+		!Number.isSafeInteger(expectedTotal) ||
+		expectedTotal !== row.totalAmountMinor ||
+		(row.refundedAmountMinor as number) > (row.settledAmountMinor as number) ||
+		(row.status === "settled" && row.settledAmountMinor !== row.totalAmountMinor) ||
+		((row.status === "quote_issued" || row.status === "order_placed") && row.settledAmountMinor !== 0)
+	) {
+		throw new Error("Invalid billing settlement amounts");
+	}
 	return {
 		settlementId: row.settlementId,
 		requestId: row.requestId,
-		provider: typeof row.provider === "string" ? row.provider : "unknown",
+		provider: row.provider,
 		status: row.status as SettlementStatus,
 		currency: row.currency,
-		lines: (row.lines as unknown[]).map((line) => {
-			const entry = line as Record<string, unknown>;
-			return {
-				sku: String(entry?.sku ?? ""),
-				quantity: Number(entry?.quantity ?? 0),
-				unitAmountMinor: Number(entry?.unitAmountMinor ?? 0),
-			};
-		}),
-		totalAmountMinor: Number(row.totalAmountMinor ?? 0),
-		settledAmountMinor: Number(row.settledAmountMinor ?? 0),
-		refundedAmountMinor: Number(row.refundedAmountMinor ?? 0),
+		lines,
+		totalAmountMinor: row.totalAmountMinor as number,
+		settledAmountMinor: row.settledAmountMinor as number,
+		refundedAmountMinor: row.refundedAmountMinor as number,
 		quoteReference: typeof row.quoteReference === "string" ? row.quoteReference : null,
-		occurredAt: typeof row.occurredAt === "string" ? row.occurredAt : "",
+		occurredAt: parseTimestamp(row.occurredAt),
 		sequence: row.sequence as number,
 		receiptHash: row.receiptHash,
 		externalValidation: false,
@@ -121,19 +234,19 @@ export async function loadBillingPortal(tenantId: string): Promise<PortalSnapsho
 		method: "GET",
 		headers: { "X-AIDR-Tenant-ID": tenantId },
 	});
-	if (error || data?.ok !== true || data.tenant_id !== tenantId || !Array.isArray(data.settlements)) {
+	if (
+		error ||
+		data?.ok !== true ||
+		data.tenant_id !== tenantId ||
+		!Array.isArray(data.settlements) ||
+		!Array.isArray(data.projection)
+	) {
 		throw new Error("The billing portal is unavailable for this tenant");
 	}
 	return {
 		tenantId,
 		settlements: data.settlements.map((row: unknown) => parseSettlement(row, tenantId)),
-		projection: Array.isArray(data.projection)
-			? data.projection.map((row: Record<string, unknown>) => ({
-					sku: String(row?.sku ?? ""),
-					seats: Number(row?.seats ?? 0),
-					sources: row?.sources ?? [],
-				}))
-			: [],
+		projection: parseProjection(data.projection),
 		selfService: data.self_service === true,
 	};
 }
@@ -153,6 +266,7 @@ export async function requestSeats(
 	const { data, error } = await supabase.functions.invoke("billing-portal", {
 		body: { action: "request_seats", tenant_id: tenantId, request_id: requestId, seats, sku },
 	});
+	await throwRecovery(error, data);
 	if (error || data?.ok !== true || !Number.isSafeInteger(data.provider_quantity)) {
 		throw new Error("The seat change was not accepted");
 	}
@@ -179,11 +293,12 @@ export async function cancelSettlement(
 			settlement_id: settlementId,
 		},
 	});
+	await throwRecovery(error, data);
 	if (error || data?.ok !== true) throw new Error("The cancellation was not accepted");
 	if (data.status !== "cancelled") throw new Error("Unexpected cancellation status");
 }
 
-export async function refundSettlement(
+async function refundSettlement(
 	tenantId: string,
 	requestId: string,
 	settlementId: string,
@@ -204,6 +319,7 @@ export async function refundSettlement(
 			amount_minor: amountMinor,
 		},
 	});
+	await throwRecovery(error, data);
 	if (error || data?.ok !== true || !Number.isSafeInteger(data.refunded_amount_minor)) {
 		throw new Error("The refund was not accepted");
 	}
@@ -212,6 +328,5 @@ export async function refundSettlement(
 
 /** Total settled seats across the projected SKUs, or `null` when unknown. */
 export function projectedSeats(snapshot: PortalSnapshot, sku = "aidr.agent.seat"): number | null {
-	if (snapshot.settlements.length === 0) return null;
-	return snapshot.projection.find((row) => row.sku === sku)?.seats ?? 0;
+	return snapshot.projection.find((row) => row.sku === sku)?.seats ?? null;
 }

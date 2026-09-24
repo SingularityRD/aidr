@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
@@ -6,6 +6,7 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 import { serializeAuditExport } from "../_shared/audit-export.ts";
 import { readAuditCursor, signAuditCursor } from "../_shared/export-cursor.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
 import {
 	AUDIT_EXPORT_MAX_OBJECT_BYTES,
 	registerAuditExportObject,
@@ -13,6 +14,7 @@ import {
 } from "../_shared/tenant-quotas.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const MAX_BODY_BYTES = 8 * 1024;
 
 export interface AuditExportDeps {
 	/** Overrides the service-role client; used by the contract suite. */
@@ -33,8 +35,9 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 			if (!token) return corsJson(req, 401, { error: "missing_access_token" });
 			const { data: auth, error } = await db.auth.getUser(token);
 			if (error || !auth.user) return corsJson(req, 401, { error: "invalid_access_token" });
-			let body: Record<string, unknown>;
-			try { body = await req.json(); } catch { return corsJson(req, 400, { error: "invalid_json" }); }
+			const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+			if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
+			const body = parsed.value as Record<string, unknown>;
 			if (!body || typeof body.team_id !== "string" || !/^[0-9a-f-]{36}$/i.test(body.team_id) || !["json", "csv"].includes(String(body.format))) return corsJson(req, 400, { error: "invalid_export" });
 			const identity = await checkIdentityBarrier(db, token, auth.user.id, body.team_id);
 			if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
@@ -43,7 +46,7 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 			if (!membershipActive(member)) return corsJson(req, 403, { error: "team_forbidden" });
 			const { data: tenant, error: tenantError } = await db.from("tenants").select("status").eq("id", body.team_id).maybeSingle();
 			if (tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
-			if (tenant?.status !== "active") return corsJson(req, 403, { error: "tenant_inactive" });
+			if ((tenant as { status?: string } | null)?.status !== "active") return corsJson(req, 403, { error: "tenant_inactive" });
 			// An active legal hold preserves this tenant's records for litigation, so
 			// no export may copy them out until the hold is released. This barrier is
 			// unconditional: it is not a plan, flag or configuration toggle, and an
@@ -61,13 +64,16 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 			if (cursor) query = query.or(`created_at.gt.${cursor.after.created_at},and(created_at.eq.${cursor.after.created_at},id.gt.${cursor.after.id})`);
 			const { data: rows, error: rowsError } = await query;
 			if (rowsError || !rows) return corsJson(req, 503, { error: "export_unavailable" });
-			const page = rows.slice(0, 500);
+			const page = rows.slice(0, 500) as Array<{ created_at: string; id: string } & Record<string, unknown>>;
 			const last = page[page.length - 1];
 			const nextCursor = rows.length > 500 ? await signAuditCursor({ ...binding, snapshot, expires, after: { created_at: last.created_at, id: last.id } }, config.values.SUPABASE_SERVICE_ROLE_KEY) : null;
 			const path = `${body.team_id}/${crypto.randomUUID()}.${body.format}`;
 			const content = serializeAuditExport(page, body.format as "csv" | "json");
-			const bytes = new TextEncoder().encode(content).length;
+			const contentBytes = new TextEncoder().encode(content);
+			const bytes = contentBytes.byteLength;
 			if (bytes > AUDIT_EXPORT_MAX_OBJECT_BYTES) return corsJson(req, 413, { error: "export_page_too_large" });
+			const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", contentBytes));
+			const sha256 = Array.from(digest, (value) => value.toString(16).padStart(2, "0")).join("");
 			// The bytes are reserved in the tenant ledger before the object exists:
 			// an over-quota export is refused here and no object is ever uploaded.
 			const reservation = await registerAuditExportObject(db, {
@@ -83,14 +89,44 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 					tenant_storage_bytes_remaining: reservation.remainingBytes,
 				});
 			}
-			const { error: uploadError } = await db.storage.from("aidr-audit-exports").upload(path, content, { contentType: body.format === "json" ? "application/json" : "text/csv", upsert: false });
-			if (uploadError) return corsJson(req, 503, { error: "export_storage_unavailable" });
-			const { data, error: signError } = await db.storage.from("aidr-audit-exports").createSignedUrl(path, 60, { download: `aidr-audit.${body.format}` });
-			if (signError || !data?.signedUrl) return corsJson(req, 503, { error: "export_unavailable" });
-			const signed = new URL(data.signedUrl);
-			const publicBase = new URL(runtimeEnv("SUPABASE_PUBLIC_URL") || config.values.SUPABASE_URL);
-			const downloadUrl = new URL(signed.pathname + signed.search, publicBase.origin).href;
-			return corsJson(req, 200, { ok: true, url: downloadUrl, rows: page.length, expires_in: 60, snapshot, next_cursor: nextCursor, complete: nextCursor === null, tenant_storage_bytes_remaining: reservation.remainingBytes });
+			const exportRpc = db.rpc.bind(db) as (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
+			let published = false;
+			let uploadConfirmed = false;
+			try {
+				const { error: uploadError } = await db.storage.from("aidr-audit-exports").upload(path, content, { contentType: body.format === "json" ? "application/json" : "text/csv", upsert: false });
+				if (uploadError) return corsJson(req, 503, { error: "export_storage_unavailable" });
+				uploadConfirmed = true;
+				const { data, error: signError } = await db.storage.from("aidr-audit-exports").createSignedUrl(path, 60, { download: `aidr-audit.${body.format}` });
+				if (signError || !data?.signedUrl) return corsJson(req, 503, { error: "export_unavailable" });
+				const signed = new URL(data.signedUrl);
+				const publicBase = new URL(runtimeEnv("SUPABASE_PUBLIC_URL") || config.values.SUPABASE_URL);
+				const downloadUrl = new URL(signed.pathname + signed.search, publicBase.origin).href;
+				// Publication is the linearization point with hold placement. A hold
+				// placed during Storage HTTP wins and no signed URL leaves this route.
+				const { data: publication, error: publicationError } = await exportRpc("finalize_audit_export_object", {
+					p_tenant_id: body.team_id,
+					p_actor_user_id: auth.user.id,
+					p_path: path,
+				});
+				if (publicationError) return corsJson(req, 503, { error: "export_unavailable" });
+				if (publication === "legal_hold_active") return corsJson(req, 409, { error: "legal_hold_active" });
+				if (publication !== "published") return corsJson(req, 503, { error: "export_unavailable" });
+				const response = corsJson(req, 200, { ok: true, url: downloadUrl, rows: page.length, bytes, sha256, expires_in: 60, snapshot, next_cursor: nextCursor, complete: nextCursor === null, tenant_storage_bytes_remaining: reservation.remainingBytes });
+				published = true;
+				return response;
+			} finally {
+				if (!published && uploadConfirmed) {
+					// A confirmed upload can be cleaned immediately. Ambiguous upload
+					// failures retain the normal expiry before Storage reconciliation.
+					try {
+						await exportRpc("abandon_audit_export_object", {
+							p_tenant_id: body.team_id,
+							p_actor_user_id: auth.user.id,
+							p_path: path,
+						});
+					} catch { /* normal expiry remains the fail-safe */ }
+				}
+			}
 		} catch { return corsJson(req, 503, { error: "export_unavailable" }); }
 	};
 }

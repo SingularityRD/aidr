@@ -1,9 +1,30 @@
-export function parseAllowedOrigins(raw: string | undefined): Set<string> {
+function normalizeOrigin(value: string): string | null {
+	if (value !== value.trim() || value === "*") return null;
+	let parsed: URL;
+	try {
+		parsed = new URL(value);
+	} catch {
+		return null;
+	}
+	if (
+		parsed.username || parsed.password || parsed.pathname !== "/" ||
+		parsed.search || parsed.hash || !["http:", "https:"].includes(parsed.protocol)
+	) return null;
+	return parsed.origin;
+}
+
+export function parseAllowedOrigins(raw: string | undefined, localDevelopment = false): Set<string> {
 	const out = new Set<string>();
 	if (!raw) return out;
 	for (const entry of raw.split(",")) {
 		const trimmed = entry.trim();
-		if (trimmed) out.add(trimmed);
+		const origin = normalizeOrigin(trimmed);
+		if (!origin) continue;
+		const parsed = new URL(origin);
+		const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+		if (parsed.protocol === "https:" || (localDevelopment && loopback && parsed.protocol === "http:")) {
+			out.add(origin);
+		}
 	}
 	return out;
 }
@@ -13,8 +34,8 @@ export function resolveAllowedOrigin(
 	allowedOrigins: Set<string>,
 ): string | null {
 	if (!requestOrigin) return null;
-	if (allowedOrigins.has("*")) return requestOrigin;
-	return allowedOrigins.has(requestOrigin) ? requestOrigin : null;
+	const origin = normalizeOrigin(requestOrigin);
+	return origin && allowedOrigins.has(origin) ? origin : null;
 }
 
 export function buildCorsHeaders(

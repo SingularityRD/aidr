@@ -4,7 +4,7 @@
 //
 // Creates a short-lived device session. The client polls /v1/device/poll until authorized.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 
@@ -18,9 +18,9 @@ const REQUIRED_ENV = [
 	"SUPABASE_URL",
 	"SUPABASE_SERVICE_ROLE_KEY",
 	"AIDR_DEVICE_START_INGRESS_SECRET",
+	"AIDR_DASHBOARD_URL",
+	"AIDR_DASHBOARD_VERIFY_URL",
 ] as const;
-
-const DASHBOARD_VERIFY_URL = (Deno.env.get("AIDR_DASHBOARD_VERIFY_URL") ?? "/verify").trim();
 
 const DEVICE_TTL_MINUTES = Number(Deno.env.get("AIDR_DEVICE_TTL_MINUTES") ?? "10");
 const DEVICE_POLL_INTERVAL_SECONDS = Number(Deno.env.get("AIDR_DEVICE_POLL_INTERVAL_SECONDS") ?? "3");
@@ -32,6 +32,22 @@ const INGRESS_TIMESTAMP_HEADER = "x-aidr-client-timestamp";
 const INGRESS_SIGNATURE_HEADER = "x-aidr-client-signature";
 const INGRESS_CONTEXT = "device-start:v1";
 const MAX_CLOCK_SKEW_SECONDS = 60;
+
+function dashboardVerifyUrl(dashboardRaw: string, verifyRaw: string): URL | null {
+	try {
+		if (dashboardRaw !== dashboardRaw.trim() || verifyRaw !== verifyRaw.trim()) return null;
+		const dashboard = new URL(dashboardRaw);
+		const verify = new URL(verifyRaw);
+		const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(verify.hostname);
+		return (verify.protocol === "https:" || (loopback && verify.protocol === "http:")) &&
+			dashboard.origin === verify.origin && dashboard.pathname === "/" &&
+			!dashboard.search && !dashboard.hash && !dashboard.username && !dashboard.password &&
+			verify.pathname === "/verify" && !verify.search && !verify.hash &&
+			!verify.username && !verify.password ? verify : null;
+	} catch {
+		return null;
+	}
+}
 
 function canonicalIp(value: string | null): string | null {
 	if (!value || value.length > 45 || value !== value.trim()) return null;
@@ -121,7 +137,7 @@ function addMinutesIso(minutes: number): string {
 }
 
 async function rateLimitStart(
-	supabase: ReturnType<typeof createClient>,
+	supabase: ReturnType<typeof createClient<any>>,
 	ip: string,
 ): Promise<boolean> {
 	const nowMin = Math.floor(Date.now() / 60000);
@@ -135,7 +151,7 @@ async function rateLimitStart(
 }
 
 async function consumeRateLimit(
-	supabase: ReturnType<typeof createClient>,
+	supabase: ReturnType<typeof createClient<any>>,
 	key: string,
 	nowMin: number,
 	limit: number,
@@ -169,17 +185,19 @@ Deno.serve(async (req) => {
 	if (!config.ok) {
 		return configFailure("device-start", config.error, (status, body) => corsJson(req, status, body));
 	}
-	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AIDR_DEVICE_START_INGRESS_SECRET } = config.values;
+	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AIDR_DEVICE_START_INGRESS_SECRET, AIDR_DASHBOARD_URL, AIDR_DASHBOARD_VERIFY_URL } = config.values;
+	const verifyUrl = dashboardVerifyUrl(AIDR_DASHBOARD_URL, AIDR_DASHBOARD_VERIFY_URL);
 	const invalid: string[] = [];
 	if (new TextEncoder().encode(AIDR_DEVICE_START_INGRESS_SECRET).length < 32) invalid.push("AIDR_DEVICE_START_INGRESS_SECRET");
 	if (!Number.isSafeInteger(DEVICE_START_RL_PER_MIN) || DEVICE_START_RL_PER_MIN < 1 || DEVICE_START_RL_PER_MIN > 10000) invalid.push("AIDR_DEVICE_START_RL_PER_MIN");
 	if (!Number.isSafeInteger(DEVICE_START_GLOBAL_RL_PER_MIN) || DEVICE_START_GLOBAL_RL_PER_MIN < DEVICE_START_RL_PER_MIN || DEVICE_START_GLOBAL_RL_PER_MIN > 100000) invalid.push("AIDR_DEVICE_START_GLOBAL_RL_PER_MIN");
+	if (!verifyUrl) invalid.push("AIDR_DASHBOARD_VERIFY_URL");
 	if (invalid.length > 0) return corsJson(req, 500, { error: "server_misconfigured", invalid });
 
 	const ip = await verifiedIngressIp(req, AIDR_DEVICE_START_INGRESS_SECRET);
 	if (!ip) return corsJson(req, 403, { error: "trusted_ingress_required" });
 
-	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+	const supabase = createClient<any>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
 
@@ -209,14 +227,11 @@ Deno.serve(async (req) => {
 
 	if (!inserted) return corsJson(req, 500, { error: "device_session_issue_failed" });
 
-	const verificationUrl =
-		DASHBOARD_VERIFY_URL.includes("?")
-			? `${DASHBOARD_VERIFY_URL}&code=${encodeURIComponent(userCode)}`
-			: `${DASHBOARD_VERIFY_URL}?code=${encodeURIComponent(userCode)}`;
+	verifyUrl!.searchParams.set("code", userCode);
 
 	return corsJson(req, 200, {
 		ok: true,
-		verification_url: verificationUrl,
+		verification_url: verifyUrl!.toString(),
 		user_code: userCode,
 		device_code: deviceCode,
 		expires_at: expiresAt,

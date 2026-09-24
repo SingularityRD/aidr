@@ -8,9 +8,13 @@ import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
 type StoredResult = { data: unknown; error: unknown };
 type QueryCall = { table: string; filters: Record<string, unknown> };
 
-function database(results: Record<string, StoredResult>) {
+function database(results: Record<string, StoredResult>, admission: StoredResult = { data: 1, error: null }) {
 	const calls: QueryCall[] = [];
 	const client = {
+		rpc(name: string, args: Record<string, unknown>) {
+			calls.push({ table: name, filters: args });
+			return Promise.resolve(admission);
+		},
 		from(table: string) {
 			const filters: Record<string, unknown> = {};
 			const builder = {
@@ -44,7 +48,7 @@ const activeRows: Record<string, StoredResult> = {
 		data: { user_id: "user-1", tenant_id: "tenant-1", revoked: false },
 		error: null,
 	},
-	tenant_members: { data: { expires_at: null }, error: null },
+	tenant_members: { data: { role: "member", expires_at: null }, error: null },
 	tenants: { data: { status: "active" }, error: null },
 };
 
@@ -65,7 +69,28 @@ describe("tenant API key authorization", () => {
 				filters: { tenant_id: "tenant-1", user_id: "user-1" },
 			},
 			{ table: "tenants", filters: { id: "tenant-1" } },
+			{ table: "tenant_admission_capacity", filters: { p_tenant_id: "tenant-1" } },
 		]);
+	});
+
+	it("rejects an old key after trial expiry or licensed admission revocation", async () => {
+		const { client } = database(activeRows, { data: 0, error: null });
+		await expect(authenticateTenantApiKey(client, "key")).resolves.toEqual({
+			ok: false,
+			status: 403,
+			error: "tenant_access_denied",
+		});
+	});
+
+	it("fails closed when admission cannot be checked", async () => {
+		for (const admission of [{ data: null, error: { message: "offline" } }, { data: null, error: null }]) {
+			const { client } = database(activeRows, admission);
+			await expect(authenticateTenantApiKey(client, "key")).resolves.toEqual({
+				ok: false,
+				status: 503,
+				error: "authorization_unavailable",
+			});
+		}
 	});
 
 	it("preserves revoked and unknown keys as invalid credentials", async () => {
@@ -94,9 +119,10 @@ describe("tenant API key authorization", () => {
 	it("rejects missing, expired, and malformed memberships", async () => {
 		for (const data of [
 			null,
-			{ expires_at: "" },
-			{ expires_at: "2000-01-01T00:00:00.000Z" },
-			{ expires_at: "invalid" },
+			{ expires_at: null },
+			{ role: "member", expires_at: "" },
+			{ role: "member", expires_at: "2000-01-01T00:00:00.000Z" },
+			{ role: "member", expires_at: "invalid" },
 		]) {
 			const { client } = database({ ...activeRows, tenant_members: { data, error: null } });
 			await expect(authenticateTenantApiKey(client, "key", Date.parse("2026-01-01"))).resolves.toEqual({
@@ -105,6 +131,18 @@ describe("tenant API key authorization", () => {
 				error: "tenant_access_denied",
 			});
 		}
+	});
+
+	it.each(["viewer", "support_jit"])("rejects a key after its owner is demoted to %s", async (role) => {
+		const { client } = database({
+			...activeRows,
+			tenant_members: { data: { role, expires_at: null }, error: null },
+		});
+		await expect(authenticateTenantApiKey(client, "key")).resolves.toEqual({
+			ok: false,
+			status: 403,
+			error: "tenant_access_denied",
+		});
 	});
 
 	it("fails closed when any authorization lookup is unavailable", async () => {
@@ -124,7 +162,8 @@ describe("tenant API key authorization", () => {
 	it.each([
 		["revoked key", "api_keys", { user_id: "user-1", tenant_id: "tenant-1", revoked: true }, 401],
 		["removed membership", "tenant_members", null, 403],
-		["expired membership", "tenant_members", { expires_at: "2026-01-01T00:00:00.000Z" }, 403],
+		["expired membership", "tenant_members", { role: "member", expires_at: "2026-01-01T00:00:00.000Z" }, 403],
+		["demoted membership", "tenant_members", { role: "viewer", expires_at: null }, 403],
 		["suspended tenant", "tenants", { status: "suspended" }, 403],
 		["closing tenant", "tenants", { status: "closing" }, 403],
 		["closed tenant", "tenants", { status: "closed" }, 403],
@@ -162,20 +201,32 @@ describe("reputation endpoint authorization wiring", () => {
 	});
 
 	it.each(["packs-manifest", "packs-download"])(
-		"guards %s before reading entitlements or signing storage URLs",
+		"guards %s before reading entitlements or issuing/fetching pack URLs",
 		(name) => {
 			const source = readFileSync(join(functionsDir, name, "index.ts"), "utf8");
 			const handler = source.slice(source.indexOf("Deno.serve("));
 			const authorization = handler.indexOf("await authenticateTenantApiKey(");
 			const entitlementRead = handler.indexOf('.from("entitlements")');
-			const signing = handler.indexOf(".createSignedUrl(");
+			const grant = handler.indexOf("signPackDownloadGrant(");
 
 			expect(source).toContain('from "../_shared/api-key-auth.ts"');
 			expect(authorization).toBeGreaterThanOrEqual(0);
 			expect(entitlementRead).toBeGreaterThan(authorization);
-			expect(signing).toBeGreaterThan(authorization);
-			expect(source).not.toContain('.from("api_keys")');
+			expect(grant).toBeGreaterThan(entitlementRead);
+			if (name === "packs-manifest") expect(source).not.toContain('.from("api_keys")');
+			else expect(source).toContain('.from("api_keys")');
 			expect(source).toContain('"Cache-Control": "no-store"');
 		},
 	);
+
+	it("rechecks grants and current API-key state before proxying pack bytes", () => {
+		const source = readFileSync(join(functionsDir, "packs-download", "index.ts"), "utf8");
+		const proxy = source.slice(source.indexOf("async function streamGrantedPack"), source.indexOf("Deno.serve("));
+		expect(proxy.indexOf("readPackDownloadGrant(")).toBeGreaterThanOrEqual(0);
+		expect(proxy.indexOf('from("api_keys")')).toBeGreaterThan(proxy.indexOf("readPackDownloadGrant("));
+		expect(proxy.indexOf("authenticateTenantApiKeyHash(")).toBeGreaterThan(proxy.indexOf('from("api_keys")'));
+		expect(proxy.indexOf('from("entitlements")')).toBeGreaterThan(proxy.indexOf("authenticateTenantApiKeyHash("));
+		expect(proxy.indexOf('from("pack_versions")')).toBeGreaterThan(proxy.indexOf('from("entitlements")'));
+		expect(proxy.indexOf(".createSignedUrl(")).toBeGreaterThan(proxy.indexOf('from("pack_versions")'));
+	});
 });

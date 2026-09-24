@@ -1,11 +1,12 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive, sha256 } from "../_shared/runtime-policy.ts";
 import {
-	invitationExpiry,
+	createPendingInvitation,
 	invitationSecret,
 	invitationUrl,
 	parseInvitationCommand,
@@ -14,10 +15,38 @@ import {
 } from "./lifecycle.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AIDR_DASHBOARD_URL"] as const;
+const MAX_BODY_BYTES = 16 * 1024;
+
+// ponytail: keep this route-local until reset-DB generated types include Edge tables/RPCs.
+type ReadTable<Row extends Record<string, unknown>> = {
+	Row: Row;
+	Insert: never;
+	Update: never;
+	Relationships: [];
+};
+
+type InvitationResult = { id: string; expires_at?: string; email?: string; role?: string };
+type TeamInviteDatabase = {
+	public: {
+		Tables: {
+			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
+			tenants: ReadTable<{ id: string; status: string }>;
+			team_invitations: ReadTable<{ id: string; tenant_id: string; email: string; role: string; expires_at: string; accepted_at: string | null; created_at: string; created_by: string }>;
+			rate_limits: ReadTable<{ key: string; window_start: number; count: number }>;
+		};
+		Views: Record<string, never>;
+		Functions: {
+			increment_rate_limit: { Args: { p_key: string; p_window_start: number; p_delta: number }; Returns: undefined };
+			mutate_team_invitation: { Args: { p_action: string; p_tenant_id: string; p_actor_user_id: string; p_email: string | null; p_role: string | null; p_invitation_id: string | null; p_token_hash: string | null }; Returns: InvitationResult | null };
+		};
+		Enums: Record<string, never>;
+		CompositeTypes: Record<string, never>;
+	};
+};
 
 export interface TeamInviteDeps {
 	/** Overrides the service-role client; used by the contract suite. */
-	db?: ReturnType<typeof createClient>;
+	db?: SupabaseClient<TeamInviteDatabase>;
 }
 
 // The runtime entry point is declared above the factory on purpose: the
@@ -38,20 +67,20 @@ async function handleTeamInvite(req: Request, deps: TeamInviteDeps): Promise<Res
 	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
 	if (!config.ok) return configFailure("team-invite", config.error, (status, body) => corsJson(req, status, body));
 	try {
-		const db = deps.db ?? createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+		const db = deps.db ?? createClient<TeamInviteDatabase>(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 		const token = getBearerToken(req.headers.get("Authorization"));
 		if (!token) return corsJson(req, 401, { error: "missing_access_token" });
 		const { data: auth, error } = await db.auth.getUser(token);
 		if (error || !auth.user) return corsJson(req, 401, { error: "invalid_access_token" });
-		let body: unknown;
-		try { body = await req.json(); } catch { return corsJson(req, 400, { error: "invalid_json" }); }
-		const command = parseInvitationCommand(body);
+		const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+		if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
+		const command = parseInvitationCommand(parsed.value);
 		if (!command) return corsJson(req, 400, { error: "invalid_invitation" });
 		const identity = await checkIdentityBarrier(db, token, auth.user.id, command.teamId);
 		if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
 		const { data: member, error: memberError } = await db.from("tenant_members").select("role,expires_at").eq("tenant_id", command.teamId).eq("user_id", auth.user.id).maybeSingle();
 		if (memberError) return corsJson(req, 503, { error: "authorization_unavailable" });
-		if (!membershipActive(member) || !["owner", "admin"].includes(member?.role)) return corsJson(req, 403, { error: "team_forbidden" });
+		if (!membershipActive(member) || !["owner", "admin"].includes(member?.role ?? "")) return corsJson(req, 403, { error: "team_forbidden" });
 		const { data: tenant, error: tenantError } = await db.from("tenants").select("status").eq("id", command.teamId).maybeSingle();
 		if (tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
 		if (tenant?.status !== "active") return corsJson(req, 403, { error: "tenant_inactive" });
@@ -59,14 +88,17 @@ async function handleTeamInvite(req: Request, deps: TeamInviteDeps): Promise<Res
 			const { data, error: listError } = await db.from("team_invitations")
 				.select("id,email,role,expires_at,created_at,created_by")
 				.eq("tenant_id", command.teamId).is("accepted_at", null)
+				.gt("expires_at", new Date().toISOString())
 				.order("created_at", { ascending: false }).limit(100);
 			if (listError) return corsJson(req, 503, { error: "invitation_list_failed" });
 			return corsJson(req, 200, { ok: true, invitations: data ?? [] }, { "Cache-Control": "no-store" });
 		}
 		if (command.action === "revoke") {
-			const { data, error: revokeError } = await revokePendingInvitation(db, command.teamId, command.invitationId, new Date().toISOString());
+			const { data, error: revokeError } = await revokePendingInvitation(db, command.teamId, command.invitationId, auth.user.id);
+			if (revokeError?.code === "42501") return corsJson(req, 403, { error: "team_forbidden" });
 			if (revokeError) return corsJson(req, 503, { error: "invitation_revoke_failed" });
 			if (!data) return corsJson(req, 404, { error: "invitation_not_pending" });
+			if (typeof data.id !== "string" || data.id !== command.invitationId) return corsJson(req, 503, { error: "invitation_revoke_failed" });
 			return corsJson(req, 200, { ok: true, invitation_id: data.id });
 		}
 
@@ -80,25 +112,25 @@ async function handleTeamInvite(req: Request, deps: TeamInviteDeps): Promise<Res
 		const inviteUrl = invitationUrl(config.values.AIDR_DASHBOARD_URL, secret);
 		const tokenHash = await sha256(secret);
 		if (command.action === "resend") {
-			const { data, error: resendError } = await resendPendingInvitation(db, command.teamId, command.invitationId, tokenHash, auth.user.id, new Date());
+			const { data, error: resendError } = await resendPendingInvitation(db, command.teamId, command.invitationId, tokenHash, auth.user.id);
 			// `token_hash` is unique: a rotation that collides with a stored
 			// invitation is a caller-visible conflict, not a server outage.
 			if (resendError?.code === "23505") return corsJson(req, 409, { error: "invitation_conflict" });
+			if (resendError?.code === "42501") return corsJson(req, 403, { error: "team_forbidden" });
 			if (resendError) return corsJson(req, 503, { error: "invitation_resend_failed" });
 			if (!data) return corsJson(req, 404, { error: "invitation_not_pending" });
+			if (data.id !== command.invitationId || typeof data.email !== "string" || typeof data.role !== "string" || typeof data.expires_at !== "string") return corsJson(req, 503, { error: "invitation_resend_failed" });
 			return corsJson(req, 200, { ok: true, delivery: "manual", invitation_id: data.id, email: data.email, role: data.role, expires_at: data.expires_at, invite_url: inviteUrl }, { "Cache-Control": "no-store" });
 		}
-		// Replay-safe creation. A repeated identical request (same team, email
-		// and role) must never mint a second live invitation: the pending row is
-		// reused and its token rotated, so exactly one link stays usable and one
-		// response never carries two usable secrets.
+		if (command.action !== "create") return corsJson(req, 400, { error: "invalid_invitation" });
+		// A repeated create must not rotate a previously returned link. The
+		// operator must explicitly choose resend to invalidate the old link.
 		//
 		// The read is deliberately scoped to the recipient and NOT to the role.
 		// Scoping it by role would treat "same recipient, different role" as a
 		// brand-new invitation and leave the recipient holding two live links
-		// with two different grants. The newest live row decides the answer, so
-		// a duplicate left behind by a racing request cannot turn the check into
-		// an opaque failure.
+		// with two different grants. The newest live row decides whether the
+		// conflict is a role change.
 		const { data: pending, error: pendingError } = await db.from("team_invitations")
 			.select("id,role")
 			.eq("tenant_id", command.teamId)
@@ -117,19 +149,28 @@ async function handleTeamInvite(req: Request, deps: TeamInviteDeps): Promise<Res
 			// invitation's role requires revoking it first, which is an explicit
 			// operator action.
 			if (pending.role !== command.role) return corsJson(req, 409, { error: "invitation_role_conflict" });
-			const { data: rotated, error: rotateError } = await resendPendingInvitation(db, command.teamId, pending.id, tokenHash, auth.user.id, new Date());
-			if (rotateError?.code === "23505") return corsJson(req, 409, { error: "invitation_conflict" });
-			if (rotateError || !rotated) return corsJson(req, 503, { error: "invitation_create_failed" });
-			return corsJson(req, 200, { ok: true, delivery: "manual", invitation_id: rotated.id, expires_at: rotated.expires_at, invite_url: inviteUrl }, { "Cache-Control": "no-store" });
+			return corsJson(req, 409, { error: "invitation_conflict" });
 		}
-		const { data, error: insertError } = await db.from("team_invitations")
-			.insert({ tenant_id: command.teamId, email: command.email, role: command.role, token_hash: tokenHash, created_by: auth.user.id, expires_at: invitationExpiry() })
-			.select("id,expires_at").maybeSingle();
-		// `token_hash` is unique, so a duplicate key is a conflict on an existing
-		// invitation and maps to the documented 409 rather than a 503 that invites
-		// an endless retry.
-		if (insertError?.code === "23505") return corsJson(req, 409, { error: "invitation_conflict" });
-		if (insertError || !data) return corsJson(req, 503, { error: "invitation_create_failed" });
+		const { data, error: insertError } = await createPendingInvitation(db, command.teamId, command.email, command.role, tokenHash, auth.user.id);
+		if (insertError?.code === "23505") {
+			// A concurrent request can win the recipient slot after the read above.
+			// Never rotate its token: the winning response already gave out that link.
+			const { data: raced, error: racedError } = await db.from("team_invitations")
+				.select("id,role")
+				.eq("tenant_id", command.teamId)
+				.eq("email", command.email)
+				.is("accepted_at", null)
+				.gt("expires_at", new Date().toISOString())
+				.order("created_at", { ascending: false })
+				.limit(1)
+				.maybeSingle();
+			if (racedError) return corsJson(req, 503, { error: "invitation_create_failed" });
+			if (!raced) return corsJson(req, 409, { error: "invitation_conflict" });
+			if (raced.role !== command.role) return corsJson(req, 409, { error: "invitation_role_conflict" });
+			return corsJson(req, 409, { error: "invitation_conflict" });
+		}
+		if (insertError?.code === "42501") return corsJson(req, 403, { error: "team_forbidden" });
+		if (insertError || typeof data?.id !== "string" || typeof data.expires_at !== "string") return corsJson(req, 503, { error: "invitation_create_failed" });
 		return corsJson(req, 200, { ok: true, delivery: "manual", invitation_id: data.id, expires_at: data.expires_at, invite_url: inviteUrl }, { "Cache-Control": "no-store" });
 	} catch { return corsJson(req, 503, { error: "invitation_unavailable" }); }
 }

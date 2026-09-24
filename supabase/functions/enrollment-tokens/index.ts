@@ -4,17 +4,19 @@
 //
 // Creates/list/deletes enrollment tokens (plaintext shown once; hash-only at rest).
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
-import { boundedOverlapHours, rotationPlan } from "../_shared/key-rotation.ts";
+import { boundedOverlapHours } from "../_shared/key-rotation.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
 // failing later with an empty credential (AIDR-011).
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const MAX_BODY_BYTES = 8 * 1024;
 
 const CREATE_RL_PER_MIN = Number(Deno.env.get("AIDR_ENROLLTOKEN_CREATE_RL_PER_MIN") ?? "20");
 const DEFAULT_TTL_HOURS = Number(Deno.env.get("AIDR_ENROLLTOKEN_DEFAULT_TTL_HOURS") ?? "24");
@@ -55,11 +57,6 @@ function randomEnrollmentToken(): string {
 	const raw = new Uint8Array(32);
 	crypto.getRandomValues(raw);
 	return `aidr_enroll_${base64Url(raw)}`;
-}
-
-function addHoursIso(hours: number): string {
-	const safe = Number.isFinite(hours) ? Math.max(0, hours) : 0;
-	return new Date(Date.now() + safe * 60 * 60 * 1000).toISOString();
 }
 
 async function resolveTenantId(
@@ -103,8 +100,9 @@ async function rateLimitCreate(
 		.eq("window_start", nowMin)
 		.maybeSingle();
 	if (countError) return false;
-	const count = Number((data as any)?.count ?? 0);
-	return Number.isFinite(CREATE_RL_PER_MIN) && CREATE_RL_PER_MIN > 0 ? count <= CREATE_RL_PER_MIN : true;
+	const count = (data as { count?: unknown } | null)?.count;
+	return Number.isSafeInteger(CREATE_RL_PER_MIN) && CREATE_RL_PER_MIN > 0
+		&& typeof count === "number" && Number.isSafeInteger(count) && count > 0 && count <= CREATE_RL_PER_MIN;
 }
 
 Deno.serve(async (req) => {
@@ -136,24 +134,23 @@ Deno.serve(async (req) => {
 	if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
 
 	if (req.method === "GET") {
-		const { data, error } = await supabase
+		let query = supabase
 			.from("enrollment_tokens")
 			.select("id,label,expires_at,consumed_at,created_at")
-			.eq("tenant_id", tenantId)
-			.order("created_at", { ascending: false })
-			.limit(200);
+			.eq("tenant_id", tenantId);
+		if (!["owner", "admin"].includes(tenant.role)) query = query.eq("user_id", userId);
+		const { data, error } = await query.order("created_at", { ascending: false }).limit(200);
 		if (error) return corsJson(req, 500, { error: "db_error" });
 		return corsJson(req, 200, { ok: true, tokens: data ?? [] });
 	}
 
 	if (req.method === "POST") {
 		if (!["owner", "admin", "member"].includes(tenant.role)) return corsJson(req, 403, { error: "tenant_role_insufficient" });
-		let body: Record<string, unknown> = {};
-		try {
-			body = (await req.json()) as Record<string, unknown>;
-		} catch {
-			body = {};
-		}
+		const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+		if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
+		if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value))
+			return corsJson(req, 400, { error: "invalid_json" });
+		const body = parsed.value as Record<string, unknown>;
 
 		const action = typeof body.action === "string" ? body.action : "create";
 		if (!["create", "delete", "renew"].includes(action)) return corsJson(req, 400, { error: "invalid_action" });
@@ -161,22 +158,20 @@ Deno.serve(async (req) => {
 		if (action === "delete") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
 			if (!id) return corsJson(req, 400, { error: "missing_id" });
-			let query = supabase
-				.from("enrollment_tokens")
-				.delete()
-				.eq("id", id)
-				.eq("tenant_id", tenantId);
-			if (tenant.role === "member") query = query.eq("user_id", userId);
-			const { data: changed, error } = await query.select("id");
-			if (error) return corsJson(req, 500, { error: "db_error" });
-			if (!changed?.length) return corsJson(req, 404, { error: "token_not_found_or_not_owned" });
-			await supabase.from("admin_audit_logs").insert({
-				actor_user_id: userId,
-				tenant_id: tenantId,
-				action: "enrollment_token.delete",
-				target_user_id: userId,
-				detail: { id },
-			});
+			let mutation: { data: unknown; error: unknown | null } | null = null;
+			for (let attempt = 0; attempt < 2; attempt++) {
+				mutation = await supabase.rpc("delete_enrollment_token_with_audit", {
+					p_actor_user_id: userId,
+					p_tenant_id: tenantId,
+					p_id: id,
+				});
+				if (!mutation.error) break;
+			}
+			if (!mutation || mutation.error) return corsJson(req, 503, { error: "audit_unavailable" });
+			const result = mutation.data as { status?: string };
+			if (result?.status === "not_found") return corsJson(req, 404, { error: "token_not_found_or_not_owned" });
+			if (result?.status === "forbidden") return corsJson(req, 403, { error: "tenant_not_authorized" });
+			if (result?.status !== "deleted") return corsJson(req, 409, { error: "token_delete_conflict" });
 			return corsJson(req, 200, { ok: true });
 		}
 
@@ -203,54 +198,57 @@ Deno.serve(async (req) => {
 
 			const ttlHoursRaw = Number(body.ttl_hours ?? DEFAULT_TTL_HOURS);
 			const ttlHours = Number.isFinite(ttlHoursRaw) ? Math.max(1, Math.min(24 * 30, Math.floor(ttlHoursRaw))) : DEFAULT_TTL_HOURS;
-			const expiresAt = addHoursIso(ttlHours);
-			const plan = rotationPlan(
-				Date.now(),
-				boundedOverlapHours(RENEW_OVERLAP_HOURS),
-				typeof current.expires_at === "string" ? current.expires_at : null,
-			);
+			const overlapHours = boundedOverlapHours(RENEW_OVERLAP_HOURS);
 
 			let token = "";
 			let rotated = false;
+			let expiresAt: string | null = null;
+			let previousSecretValidUntil: string | null = null;
 			for (let i = 0; i < 5; i++) {
 				token = randomEnrollmentToken();
 				const tokenHash = await sha256Hex(token);
-				// Compare-and-swap on the hash that was read: a concurrent renewal
-				// loses the race instead of silently discarding a rotation.
-				const { data: changed, error } = await supabase
-					.from("enrollment_tokens")
-					.update({
-						token_hash: tokenHash,
-						expires_at: expiresAt,
-						previous_hash: plan.previousHashExpiresAt === null ? null : currentHash,
-						previous_hash_expires_at: plan.previousHashExpiresAt,
-						rotated_at: plan.rotatedAt,
-					})
-					.eq("id", id)
-					.eq("tenant_id", tenantId)
-					.eq("token_hash", currentHash)
-					.select("id");
-				if (error) continue;
-				if (!changed?.length) return corsJson(req, 409, { error: "token_rotation_conflict" });
+				let mutation: { data: unknown; error: unknown | null } | null = null;
+				for (let attempt = 0; attempt < 2; attempt++) {
+					mutation = await supabase.rpc("renew_enrollment_token_with_audit", {
+						p_actor_user_id: userId,
+						p_tenant_id: tenantId,
+						p_id: id,
+						p_expected_hash: currentHash,
+						p_new_hash: tokenHash,
+						p_ttl_hours: ttlHours,
+						p_overlap_hours: overlapHours,
+					});
+					if (!mutation.error) break;
+				}
+				if (mutation?.error && typeof mutation.error === "object" && "code" in mutation.error && mutation.error.code === "42501") {
+					return corsJson(req, 403, { error: "tenant_not_admitted" });
+				}
+				if (!mutation || mutation.error) return corsJson(req, 503, { error: "audit_unavailable" });
+				const result = mutation.data as {
+					status?: string;
+					expires_at?: string;
+					previous_secret_valid_until?: string | null;
+				};
+				if (result?.status === "hash_conflict") continue;
+				if (result?.status === "not_found") return corsJson(req, 404, { error: "token_not_found_or_not_owned" });
+				if (result?.status === "consumed") return corsJson(req, 409, { error: "token_already_consumed" });
+				if (result?.status === "forbidden") return corsJson(req, 403, { error: "tenant_not_authorized" });
+				if (result?.status !== "rotated" || !result.expires_at) {
+					return corsJson(req, 409, { error: "token_rotation_conflict" });
+				}
 				rotated = true;
+				expiresAt = result.expires_at;
+				previousSecretValidUntil = result.previous_secret_valid_until ?? null;
 				break;
 			}
 
 			if (!rotated) return corsJson(req, 500, { error: "token_rotation_failed" });
 
-			await supabase.from("admin_audit_logs").insert({
-				actor_user_id: userId,
-				tenant_id: tenantId,
-				action: "enrollment_token.renew",
-				target_user_id: userId,
-				detail: { id, ttl_hours: ttlHours, previous_secret_valid_until: plan.previousHashExpiresAt },
-			});
-
 			return corsJson(req, 200, {
 				ok: true,
 				enrollment_token: token,
 				expires_at: expiresAt,
-				previous_secret_valid_until: plan.previousHashExpiresAt,
+				previous_secret_valid_until: previousSecretValidUntil,
 			});
 		}
 
@@ -261,35 +259,39 @@ Deno.serve(async (req) => {
 		const label = typeof body.label === "string" ? body.label.trim() : null;
 		const ttlHoursRaw = Number(body.ttl_hours ?? DEFAULT_TTL_HOURS);
 		const ttlHours = Number.isFinite(ttlHoursRaw) ? Math.max(1, Math.min(24 * 30, Math.floor(ttlHoursRaw))) : DEFAULT_TTL_HOURS;
-		const expiresAt = addHoursIso(ttlHours);
-
 		let token = "";
 		let inserted = false;
+		let expiresAt: string | null = null;
 		for (let i = 0; i < 5; i++) {
 			token = randomEnrollmentToken();
 			const tokenHash = await sha256Hex(token);
-			const { error } = await supabase.from("enrollment_tokens").insert({
-				user_id: userId,
-				tenant_id: tenantId,
-				label,
-				token_hash: tokenHash,
-				expires_at: expiresAt,
-			});
-			if (!error) {
-				inserted = true;
-				break;
+			let mutation: { data: unknown; error: unknown | null } | null = null;
+			for (let attempt = 0; attempt < 2; attempt++) {
+				mutation = await supabase.rpc("issue_enrollment_token_with_audit", {
+					p_actor_user_id: userId,
+					p_tenant_id: tenantId,
+					p_label: label,
+					p_ttl_hours: ttlHours,
+					p_token_hash: tokenHash,
+				});
+				if (!mutation.error) break;
 			}
+			if (mutation?.error && typeof mutation.error === "object" && "code" in mutation.error && mutation.error.code === "42501") {
+				return corsJson(req, 403, { error: "tenant_not_admitted" });
+			}
+			if (!mutation || mutation.error) return corsJson(req, 503, { error: "audit_unavailable" });
+			const result = mutation.data as { status?: string; expires_at?: string };
+			if (result?.status === "hash_conflict") continue;
+			if (result?.status === "forbidden") return corsJson(req, 403, { error: "tenant_not_authorized" });
+			if (result?.status !== "issued" || !result.expires_at) {
+				return corsJson(req, 500, { error: "token_issue_failed" });
+			}
+			inserted = true;
+			expiresAt = result.expires_at;
+			break;
 		}
 
 		if (!inserted) return corsJson(req, 500, { error: "token_issue_failed" });
-
-		await supabase.from("admin_audit_logs").insert({
-			actor_user_id: userId,
-			tenant_id: tenantId,
-			action: "enrollment_token.create",
-			target_user_id: userId,
-			detail: { label, ttl_hours: ttlHours },
-		});
 
 		return corsJson(req, 200, { ok: true, enrollment_token: token, expires_at: expiresAt });
 	}

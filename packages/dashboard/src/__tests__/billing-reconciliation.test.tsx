@@ -9,7 +9,7 @@
 // invented to fill a gap — an unrecorded figure is rendered as absent.
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../enterprise/team-provider", () => ({ useTeam: vi.fn() }));
@@ -31,13 +31,11 @@ import {
 	loadBillingPortal,
 	type PortalSettlement,
 	projectedSeats,
+	requestSeats,
 } from "../billing/billing-portal";
 import { listEnterpriseOrders } from "../billing/enterprise-orders";
 import { type InvoiceApproval, listInvoiceApprovals } from "../billing/invoice-approvals";
-import {
-	type ReconciliationApproval,
-	reconcileApprovedOrders,
-} from "../billing/reconciliation";
+import { type ReconciliationApproval, reconcileApprovedOrders } from "../billing/reconciliation";
 import { useTeam } from "../enterprise/team-provider";
 import { supabase } from "../lib/supabase";
 import { BillingPage } from "../ui/pages/BillingPage";
@@ -58,7 +56,7 @@ function approval(overrides: Partial<InvoiceApproval> = {}): InvoiceApproval {
 		quoteReference: "QUOTE-2026-0001",
 		status: "paid",
 		approver: "finance.operator@example.invalid",
-		amountMinor: 125000,
+		amountMinor: 25000,
 		currency: "USD",
 		evidenceSha256: "a".repeat(64),
 		agentsGranted: 25,
@@ -184,6 +182,52 @@ describe("approved-order reconciliation", () => {
 		});
 	});
 
+	it("does not label under-settled approvals matched or double-claim duplicate quote references", () => {
+		const partial = reconcileApprovedOrders({
+			approvals: [approval()],
+			settlements: [
+				settlement({
+					settledAmountMinor: 10000,
+					lines: [{ sku: "aidr.agent.seat", quantity: 10, unitAmountMinor: 1000 }],
+				}),
+			],
+		});
+		expect(partial[0]).toMatchObject({
+			status: "partial",
+			reason: "settlement_below_approved_amount_or_agents",
+		});
+
+		const unrecordedSeats = reconcileApprovedOrders({
+			approvals: [approval()],
+			settlements: [
+				settlement({
+					lines: [{ sku: "aidr.audit.export", quantity: 1, unitAmountMinor: 25000 }],
+				}),
+			],
+		});
+		expect(unrecordedSeats[0]).toMatchObject({
+			status: "partial",
+			reason: "settled_seats_not_recorded",
+			settledSeats: null,
+		});
+
+		const duplicate = reconcileApprovedOrders({
+			approvals: [
+				approval(),
+				approval({ orderId: OVER_ORDER_ID, requestId: "order_request_0987654321ab" }),
+			],
+			settlements: [settlement()],
+		});
+		const approvalRows = duplicate.filter((row) => row.kind === "approved_order");
+		expect(approvalRows).toHaveLength(2);
+		expect(approvalRows.every((row) => row.status === "ambiguous")).toBe(true);
+		expect(approvalRows.every((row) => row.settlementIds.length === 0)).toBe(true);
+		expect(duplicate.find((row) => row.kind === "settlement")).toMatchObject({
+			status: "unmatched",
+			reason: "ambiguous_approved_order_quote_reference",
+		});
+	});
+
 	it("never turns an unrecorded approved figure into zero", () => {
 		// A partial record is representable in the type even though the Edge
 		// route refuses to write one; it must stay absent rather than become 0.
@@ -227,9 +271,76 @@ describe("approved-order reconciliation", () => {
 		expect(rows).toHaveLength(1);
 		expect(rows[0]).toMatchObject({ status: "matched", settledAmountMinor: 25000 });
 	});
+
+	it.each(["cancelled", "refunded"] as const)("does not match an approval to a later %s receipt", (status) => {
+		const rows = reconcileApprovedOrders({
+			approvals: [approval()],
+			settlements: [
+				settlement({ sequence: 3, status: "settled" }),
+				settlement({ sequence: 4, status }),
+			],
+		});
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			status: "unmatched",
+			reason: "no_settled_settlement",
+			settlementIds: [],
+		});
+	});
 });
 
 describe("billing reconciliation table", () => {
+	it("offers only the persisted exact retry when provider read-back is indeterminate", async () => {
+		vi.mocked(loadBillingPortal).mockResolvedValue({
+			tenantId,
+			settlements: [],
+			projection: [],
+			selfService: true,
+		});
+		const recovery = Object.assign(new Error("recovery required"), {
+			name: "BillingRecoveryError",
+			requestId: "original_1234567890",
+			action: "request_seats",
+			detail: {
+				recovery_payload: {
+					provider: "stripe",
+					subscription_id: "sub_live_1",
+					seats: 5,
+					sku: "aidr.agent.seat",
+				},
+			},
+		});
+		vi.mocked(requestSeats)
+			.mockRejectedValueOnce(recovery)
+			.mockResolvedValueOnce({ providerQuantity: 5, action: "noop", delta: 0 });
+
+		render(<BillingPage />);
+		const input = await screen.findByLabelText("Requested seats");
+		fireEvent.change(input, { target: { value: "6" } });
+		fireEvent.click(screen.getByRole("button", { name: "Apply seat change" }));
+
+		const retry = await screen.findByRole("button", {
+			name: "Retry original request: 5 seats",
+		});
+		expect(
+			screen.getByText(/Only its exact persisted request can be retried safely/),
+		).toBeInTheDocument();
+		fireEvent.click(retry);
+
+		await waitFor(() => expect(requestSeats).toHaveBeenCalledTimes(2));
+		expect(vi.mocked(requestSeats).mock.calls[1]).toEqual([
+			tenantId,
+			"original_1234567890",
+			5,
+			"aidr.agent.seat",
+		]);
+		await waitFor(() =>
+			expect(
+				screen.queryByRole("button", { name: /Retry original request/ }),
+			).not.toBeInTheDocument(),
+		);
+	});
+
 	it("renders matched, over-limit and unmatched rows and shows absent figures as not recorded", async () => {
 		vi.mocked(listInvoiceApprovals).mockResolvedValue([
 			approval(),

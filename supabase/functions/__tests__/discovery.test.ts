@@ -5,14 +5,15 @@ import { describe, expect, it } from "vitest";
 import {
 	canonicalDiscoveryOrigin,
 	discoveryAlertState,
+	discoveryCollectorState,
 	discoveryFreshness,
 	parseDiscoveryIngest,
 } from "../discovery/logic.ts";
 
 const FUNCTIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const REPO_ROOT = resolve(FUNCTIONS_DIR, "..", "..");
-const TENANT = "123e4567-e89b-42d3-a456-426614174000";
-const CYCLE = "123e4567-e89b-42d3-a456-426614174001";
+	const REPO_ROOT = resolve(FUNCTIONS_DIR, "..", "..");
+	const TENANT = "123e4567-e89b-42d3-a456-426614174000";
+	const CYCLE = "123e4567-e89b-42d3-a456-426614174001";
 
 function cycle(): Record<string, unknown> {
 	return {
@@ -85,6 +86,14 @@ describe("managed discovery freshness", () => {
 		expect(discoveryFreshness(new Date(100_001).toISOString(), 60_000, 100_000)).toBe("stale");
 	});
 
+	it("keeps collector coverage partial or stale until a complete fresh report exists", () => {
+		const recent = new Date(95_000).toISOString();
+		const old = new Date(39_999).toISOString();
+		expect(discoveryCollectorState(recent, true, 60_000, 100_000)).toBe("current");
+		expect(discoveryCollectorState(recent, false, 60_000, 100_000)).toBe("partial");
+		expect(discoveryCollectorState(old, true, 60_000, 100_000)).toBe("stale");
+	});
+
 	it("does not mark omitted or partial observations healthy", () => {
 		const base = { lastReachableAt: new Date(95_000).toISOString(), lastCycleId: CYCLE, cycleId: CYCLE, reachable: true, complete: true, staleAfterMs: 60_000 };
 		expect(discoveryAlertState(base, 100_000)).toBe("healthy");
@@ -98,6 +107,7 @@ describe("managed discovery server boundary", () => {
 	const source = readFileSync(join(FUNCTIONS_DIR, "discovery", "index.ts"), "utf8");
 	const migration = readFileSync(join(REPO_ROOT, "supabase", "migrations", "20260912000015_discovery_inventory.sql"), "utf8");
 	const offboarding = readFileSync(join(REPO_ROOT, "supabase", "migrations", "20260912140001_discovery_offboarding.sql"), "utf8");
+	const reconciliation = readFileSync(join(REPO_ROOT, "supabase", "migrations", "20260923000001_discovery_complete_cycle_reconciliation.sql"), "utf8");
 
 	it("checks JWT membership, revocation/MFA and tenant rate limits before service-role reads", () => {
 		const handler = source.slice(source.indexOf("Deno.serve("));
@@ -108,6 +118,24 @@ describe("managed discovery server boundary", () => {
 		expect(migration).toContain("to service_role");
 	});
 
+	it("lists only reported collectors through the authenticated tenant-scoped read branch", () => {
+		const handler = source.slice(source.indexOf("Deno.serve("));
+		const listStart = handler.indexOf('if (action === "list")');
+		const listBranch = handler.slice(listStart, handler.indexOf('if (!exactKeys(input, ["action", "tenant_id", "collector_id"]', listStart));
+		expect(listStart).toBeGreaterThan(handler.indexOf("checkIdentityBarrier(db, token"));
+		expect(listStart).toBeGreaterThan(handler.indexOf("membershipActive(membership.data)"));
+		expect(listStart).toBeGreaterThan(handler.indexOf('state.data?.status !== "active"'));
+		expect(listBranch).toContain('.from("tenant_discovery_collectors")');
+		expect(listBranch).toContain('.eq("tenant_id", tenant)');
+		expect(listBranch).toContain('.order("collector_id", { ascending: true })');
+		expect(listBranch).toContain('.limit(limit + 1)');
+		expect(listBranch).toContain('coverage_scope: "reported_collectors_only"');
+		expect(listBranch).toContain("next_collector:");
+		expect(listBranch).not.toMatch(/\.insert\(|\.update\(|\.delete\(|\.rpc\(/);
+		const machineAuth = handler.slice(handler.indexOf("if (hasCollectorCredentialPrefix(token))"), handler.indexOf("const { data: auth"));
+		expect(machineAuth).toContain('if (action !== "ingest" && action !== "cursor")');
+	});
+
 	it("keeps cycles atomic, replay-ordered and offboarding-bound", () => {
 		expect(migration).toContain("pg_advisory_xact_lock");
 		expect(migration).toContain("p_sequence <= v_previous_sequence");
@@ -116,5 +144,10 @@ describe("managed discovery server boundary", () => {
 		expect(offboarding).toContain("tenant_offboarding_purge_discovery");
 		expect(offboarding).toContain("new.phase <> 'agents'");
 		expect(offboarding).toContain("tenant_legal_holds");
+	});
+
+	it("removes omitted targets only after a complete cycle", () => {
+		expect(reconciliation).toMatch(/if p_complete then[\s\S]*delete from public\.tenant_discovery_items[\s\S]*not exists/i);
+		expect(reconciliation).toContain("grant execute on function public.ingest_tenant_discovery_cycle");
 	});
 });

@@ -6,45 +6,28 @@ export function PricingPage() {
 			<div className="card">
 				<h1>Pricing</h1>
 				<p className="muted">
-					Simple pricing aligned to the thing you actually protect: the number of connected agent
-					installations (<span className="mono">iid</span>).
+					Pricing and scope require an approved written quote. Agent installations (
+					<span className="mono">iid</span>) are counted for a scoped evaluation; no public price or
+					self-service checkout is offered.
 				</p>
 			</div>
 
 			<div className="cols">
 				<div className="card referral-card">
 					<div className="row space-between">
-						<h2>Free (Pilot)</h2>
-						<span className="badge recommended">Start here</span>
+						<h2>Pilot</h2>
+						<span className="badge recommended">Review required</span>
 					</div>
-					<div className="price">$0</div>
+					<div className="price">By approval</div>
 					<ul className="list">
-						<li>1 protected agent included</li>
-						<li>Dashboard access</li>
-						<li>Core detections and local enforcement</li>
-						<li>Offline grace after enrollment</li>
+						<li>Agent count and deployment scope agreed in writing</li>
+						<li>Dashboard access only within an accepted evaluation scope</li>
+						<li>Support and data-retention terms agreed before enrollment</li>
 					</ul>
 					<div className="row" style={{ marginTop: 12 }}>
 						<Link className="button" to="/pilot">
-							Get Pilot Access
+							Request pilot review
 						</Link>
-					</div>
-				</div>
-
-				<div className="card">
-					<h2>Pro (Soon)</h2>
-					<div className="price">By order</div>
-					<div className="muted small">
-						additional protected agents, subject to an approved order
-					</div>
-					<ul className="list" style={{ marginTop: 10 }}>
-						<li>Extra agents as quantity</li>
-						<li>Premium intel packs</li>
-						<li>Advanced correlation and visibility</li>
-					</ul>
-					<div className="notice">
-						We’re starting with a free pilot. Direct GA uses an enterprise invoice/order workflow;
-						self-service checkout is not offered.
 					</div>
 				</div>
 			</div>
@@ -52,11 +35,12 @@ export function PricingPage() {
 			<div className="card">
 				<h2>Enterprise</h2>
 				<p className="muted">
-					Need larger fleets, org-wide policy distribution, or dedicated support? Let’s talk.
+					Larger deployments require an agreed scope, Finance-approved quote, and written support
+					terms before a paid order.
 				</p>
 				<div className="row">
 					<Link className="button button-secondary" to="/pilot">
-						Request Access
+						Request scope review
 					</Link>
 				</div>
 			</div>

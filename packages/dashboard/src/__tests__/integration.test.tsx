@@ -23,6 +23,7 @@ vi.mock("../lib/supabase", () => ({
 	supabaseEnvError: null,
 }));
 
+import * as teamContext from "../enterprise/team-provider";
 import { TeamProvider } from "../enterprise/team-provider";
 import { supabase } from "../lib/supabase";
 import { AppLayout } from "../ui/AppLayout";
@@ -35,7 +36,6 @@ import { EventsPage } from "../ui/pages/EventsPage";
 import { IncidentsPage } from "../ui/pages/IncidentsPage";
 import { LoginPage } from "../ui/pages/LoginPage";
 import { OnboardingPage } from "../ui/pages/OnboardingPage";
-import { DemoPage } from "../ui/pages/public/DemoPage";
 import { LandingPage } from "../ui/pages/public/LandingPage";
 import { PricingPage } from "../ui/pages/public/PricingPage";
 import { SettingsPage } from "../ui/pages/SettingsPage";
@@ -91,11 +91,22 @@ function identityFixture(request?: { body?: { action?: string; tenant_id?: strin
 		access_allowed: true,
 	};
 	if (request?.body?.action === "bootstrap") {
-		return { data: { ok: true, memberships: [{
-			team_id: bootstrapTeamId,
-			tenant_id: bootstrapTeamId ?? AUTHENTICATED_USER_ID,
-			...assurance,
-		}] }, error: null };
+		return {
+			data: {
+				ok: true,
+				memberships: [
+					{
+						team_id: bootstrapTeamId,
+						tenant_id: bootstrapTeamId ?? AUTHENTICATED_USER_ID,
+						...assurance,
+					},
+				],
+			},
+			error: null,
+		};
+	}
+	if (request?.body?.action === "revoke_sessions") {
+		return { data: { ok: true, scope: "global", reauthentication_required: true }, error: null };
 	}
 	return { data: { ok: true, tenant_id: request?.body?.tenant_id, ...assurance }, error: null };
 }
@@ -108,25 +119,40 @@ function resetSupabaseMocks() {
 	// These protected page fixtures represent a signed-in caller whose token
 	// already satisfies the tenant's server-confirmed MFA policy.
 	mockedSupabase.auth.getSession.mockResolvedValue({
-		data: { session: { user: { id: AUTHENTICATED_USER_ID }, access_token: "integration-aal2-session" } },
+		data: {
+			session: { user: { id: AUTHENTICATED_USER_ID }, access_token: "integration-aal2-session" },
+		},
 		error: null,
 	});
-	mockedSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "22222222-2222-4222-8222-222222222222" } }, error: null });
+	mockedSupabase.auth.getUser.mockResolvedValue({
+		data: { user: { id: "22222222-2222-4222-8222-222222222222" } },
+		error: null,
+	});
 	mockedSupabase.auth.signOut.mockResolvedValue({ error: null });
 	mockedSupabase.auth.signInWithOAuth.mockResolvedValue({ data: { url: null }, error: null });
 	mockedSupabase.auth.signInWithOtp.mockResolvedValue({ data: {}, error: null });
 	mockedSupabase.auth.onAuthStateChange.mockReturnValue({
 		data: { subscription: { unsubscribe: vi.fn() } },
 	});
-	mockedSupabase.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string; tenant_id?: string } }) =>
-		name === "identity-security" ? identityFixture(request) : { data: {}, error: null },
+	mockedSupabase.functions.invoke.mockImplementation(
+		async (name: string, request?: { body?: { action?: string; tenant_id?: string } }) =>
+			name === "identity-security" ? identityFixture(request) : { data: {}, error: null },
 	);
 	mockedSupabase.from.mockImplementation(() => createQueryBuilder());
 }
 
+function mockSelectedTeam() {
+	vi.spyOn(teamContext, "useTeam").mockReturnValue({
+		currentTeam: { id: AUTHENTICATED_USER_ID },
+	} as never);
+}
+
 describe("Dashboard integration", () => {
 	beforeEach(resetSupabaseMocks);
-	afterEach(cleanup);
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+	});
 
 	it("renders the authenticated navigation", async () => {
 		render(
@@ -206,6 +232,24 @@ describe("Dashboard integration", () => {
 		expect(screen.queryByText("private backend detail")).not.toBeInTheDocument();
 	});
 
+	it("explains an email delivery rate limit without exposing provider details", async () => {
+		window.__AIDR_CONFIG__ = { authMethods: ["magic-link"] };
+		mockedSupabase.auth.signInWithOtp.mockResolvedValue({
+			error: { status: 429, message: "private SMTP quota detail" },
+		});
+		render(
+			<MemoryRouter>
+				<LoginPage />
+			</MemoryRouter>,
+		);
+		fireEvent.change(screen.getByLabelText("Email address"), {
+			target: { value: "owner@example.test" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Send magic link" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent("temporarily limited");
+		expect(screen.queryByText("private SMTP quota detail")).not.toBeInTheDocument();
+	});
+
 	it("renders agents and fail-closed entitlement status", async () => {
 		render(
 			<MemoryRouter>
@@ -217,7 +261,7 @@ describe("Dashboard integration", () => {
 
 		await waitFor(() => expect(screen.getByText("Agents")).toBeInTheDocument());
 		expect(screen.getByText(/Allowed:/)).toBeInTheDocument();
-		expect(screen.getByText("unavailable")).toBeInTheDocument();
+		expect(screen.getAllByText("unavailable").length).toBeGreaterThan(0);
 		expect(screen.getByText("Name")).toBeInTheDocument();
 	});
 
@@ -230,7 +274,9 @@ describe("Dashboard integration", () => {
 			</MemoryRouter>,
 		);
 
-		await waitFor(() => expect(screen.getByRole("heading", { name: "AutoSecOps" })).toBeInTheDocument());
+		await waitFor(() =>
+			expect(screen.getByRole("heading", { name: "AutoSecOps" })).toBeInTheDocument(),
+		);
 		expect(screen.getByText("Not connected")).toBeInTheDocument();
 		expect(screen.getByText("No AutoSecOps runtime agents reported yet.")).toBeInTheDocument();
 	});
@@ -266,6 +312,7 @@ describe("Dashboard integration", () => {
 							ok: true,
 							provider: "autosecops",
 							action: "health",
+							team_id: teamId,
 							data: { snapshot: { state: "healthy", active_agents: 1, open_degradations: 0 } },
 						},
 						error: null,
@@ -276,6 +323,7 @@ describe("Dashboard integration", () => {
 						ok: true,
 						provider: "autosecops",
 						action: "fleet",
+						team_id: teamId,
 						data: {
 							response: {
 								items: [
@@ -324,11 +372,14 @@ describe("Dashboard integration", () => {
 					: [],
 			),
 		);
-		mockedSupabase.functions.invoke.mockImplementation(async (name: string, request?: { body?: { action?: string; tenant_id?: string } }) =>
-			name === "identity-security" ? identityFixture(request) : {
-				data: { ok: true, provider: "unexpected", data: {} },
-				error: null,
-			},
+		mockedSupabase.functions.invoke.mockImplementation(
+			async (name: string, request?: { body?: { action?: string; tenant_id?: string } }) =>
+				name === "identity-security"
+					? identityFixture(request)
+					: {
+							data: { ok: true, provider: "unexpected", data: {} },
+							error: null,
+						},
 		);
 
 		render(
@@ -345,6 +396,42 @@ describe("Dashboard integration", () => {
 		expect(screen.getByRole("alert")).toHaveTextContent(
 			"No synthetic or cached AutoSecOps data is shown when the bridge is unavailable.",
 		);
+	});
+
+	it("explains an unconfigured AutoSecOps bridge without exposing the generic provider error", async () => {
+		bootstrapTeamId = "11111111-1111-4111-8111-111111111111";
+		mockedSupabase.from.mockImplementation((table: string) =>
+			createQueryBuilder(
+				table === "team_members"
+					? [{ team_id: bootstrapTeamId, role: "admin", teams: { id: bootstrapTeamId, name: "Runtime team" } }]
+					: [],
+			),
+		);
+		mockedSupabase.functions.invoke.mockImplementation(
+			async (name: string, request?: { body?: { action?: string; tenant_id?: string } }) =>
+				name === "identity-security"
+					? identityFixture(request)
+					: {
+						data: null,
+						error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+							context: new Response(JSON.stringify({ error: "integration_not_configured" }), { status: 503 }),
+						}),
+					},
+		);
+
+		render(
+			<MemoryRouter>
+				<TeamProvider>
+					<AutoSecOpsPage />
+				</TeamProvider>
+			</MemoryRouter>,
+		);
+
+		await waitFor(() =>
+			expect(screen.getByRole("alert")).toHaveTextContent("AutoSecOps is not configured for this deployment."),
+		);
+		expect(screen.getByRole("alert")).not.toHaveTextContent("Edge Function returned");
+		expect(screen.getByText("Fleet data is unavailable.")).toBeInTheDocument();
 	});
 
 	it("renders the invoice-only billing path without invoking checkout", async () => {
@@ -379,23 +466,39 @@ describe("Dashboard integration", () => {
 
 		expect(screen.getByRole("heading", { name: "Pricing" })).toBeInTheDocument();
 		expect(screen.getByText("Enterprise")).toBeInTheDocument();
+		expect(
+			screen.getByText(/no public price or self-service checkout is offered/),
+		).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Request pilot review" })).toHaveAttribute(
+			"href",
+			"/pilot",
+		);
+		expect(
+			screen.queryByText(/Pro \(Soon\)|Premium intel packs|Direct GA uses/),
+		).not.toBeInTheDocument();
+		expect(screen.queryByRole("link", { name: "Demo" })).not.toBeInTheDocument();
 	});
 
-	it("runs the controlled synthetic demo without invoking Supabase", async () => {
+	it("qualifies managed protection on the public landing", () => {
 		render(
 			<MemoryRouter>
-				<DemoPage />
+				<LandingPage />
 			</MemoryRouter>,
 		);
 
-		expect(screen.getByRole("heading", { name: /See the security workflow/ })).toBeInTheDocument();
-		expect(screen.getByText("demo-2026-08-04.1")).toBeInTheDocument();
-		fireEvent.click(screen.getByRole("button", { name: "Run synthetic fixture" }));
-		await waitFor(() => expect(screen.getByText(/No external command/)).toBeInTheDocument());
-		expect(mockedSupabase.functions.invoke).not.toHaveBeenCalled();
+		expect(
+			screen.getByText(/browser enrollment require a configured control plane/),
+		).toBeInTheDocument();
+		expect(screen.getAllByRole("link", { name: "Request a pilot" })).toHaveLength(2);
+		for (const link of screen.getAllByRole("link", { name: "Get started" })) {
+			expect(link).toHaveAttribute("href", "/login?returnTo=%2Fonboarding");
+		}
+		expect(screen.queryByRole("link", { name: /run (the )?demo/i })).not.toBeInTheDocument();
+		expect(screen.queryByText(/secure your first agent in minutes/i)).not.toBeInTheDocument();
 	});
 
 	it("renders blocked and approval-required AIDR events in the incidents dashboard", async () => {
+		mockSelectedTeam();
 		const agentId = "agent-demo-001";
 		mockedSupabase.from.mockImplementation((table: string) =>
 			createQueryBuilder(
@@ -451,6 +554,9 @@ describe("Dashboard integration", () => {
 		);
 
 		await waitFor(() => expect(screen.getByText("bash: deny (critical)")).toBeInTheDocument());
+		expect(
+			screen.getByText(/Potential incidents derived from received blocked/),
+		).toBeInTheDocument();
 		expect(screen.getAllByText("Demo OpenCode agent")).toHaveLength(2);
 		expect(screen.getByText("bash: deny (critical)")).toBeInTheDocument();
 		expect(screen.getByText("write: ask (warning)")).toBeInTheDocument();
@@ -461,7 +567,18 @@ describe("Dashboard integration", () => {
 	it("propagates agent API errors to the visible UI", async () => {
 		bootstrapTeamId = "11111111-1111-4111-8111-111111111111";
 		mockedSupabase.from.mockImplementation((table: string) => {
-			if (table === "team_members") return createQueryBuilder([{ team_id: "11111111-1111-4111-8111-111111111111", role: "owner", teams: { id: "11111111-1111-4111-8111-111111111111", name: "Customer", plan: "enterprise" } }]);
+			if (table === "team_members")
+				return createQueryBuilder([
+					{
+						team_id: "11111111-1111-4111-8111-111111111111",
+						role: "owner",
+						teams: {
+							id: "11111111-1111-4111-8111-111111111111",
+							name: "Customer",
+							plan: "enterprise",
+						},
+					},
+				]);
 			const query = createQueryBuilder();
 			query.order.mockResolvedValue({ data: null, error: { message: "Database error" } });
 			query.maybeSingle.mockResolvedValue({ data: null, error: { message: "Database error" } });
@@ -476,7 +593,10 @@ describe("Dashboard integration", () => {
 			</MemoryRouter>,
 		);
 
-		await waitFor(() => expect(screen.getAllByText("Database error").length).toBeGreaterThan(0));
+		await waitFor(() =>
+			expect(screen.getAllByText("Failed to load agents").length).toBeGreaterThan(0),
+		);
+		expect(screen.queryByText("Database error")).not.toBeInTheDocument();
 	});
 
 	it("invokes sign-out and session reads through the Supabase client", async () => {
@@ -487,6 +607,9 @@ describe("Dashboard integration", () => {
 	});
 
 	it("renders the control-plane overview from real fleet queries", async () => {
+		vi.spyOn(teamContext, "useTeam").mockReturnValue({
+			currentTeam: { id: AUTHENTICATED_USER_ID },
+		} as never);
 		const now = new Date().toISOString();
 		mockedSupabase.from.mockImplementation((table: string) =>
 			createQueryBuilder(
@@ -521,7 +644,7 @@ describe("Dashboard integration", () => {
 		);
 
 		expect(
-			screen.getByText("Observe every agent decision from one secure dashboard."),
+			screen.getByText("Review reported agent security decisions in one dashboard."),
 		).toBeInTheDocument();
 		await waitFor(() => expect(screen.getByText("overview-agent")).toBeInTheDocument());
 		expect(screen.getByText("Live agents")).toBeInTheDocument();
@@ -531,6 +654,9 @@ describe("Dashboard integration", () => {
 	});
 
 	it("keeps overview counters fail-closed when fleet queries fail", async () => {
+		vi.spyOn(teamContext, "useTeam").mockReturnValue({
+			currentTeam: { id: AUTHENTICATED_USER_ID },
+		} as never);
 		mockedSupabase.from.mockImplementation((table: string) => {
 			const query = createQueryBuilder();
 			if (table === "agents") {
@@ -555,10 +681,13 @@ describe("Dashboard integration", () => {
 		// honest "—" because the mocked enrollment response has no acknowledgement.
 		expect(screen.getAllByText("—")).toHaveLength(6);
 		expect(screen.getByText("unavailable")).toBeInTheDocument();
-		expect(screen.getByRole("alert")).toHaveTextContent("Agents down Events down");
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"Dashboard query failed. Dashboard query failed.",
+		);
 	});
 
 	it("keeps the events feed fail-closed when the events query fails", async () => {
+		mockSelectedTeam();
 		mockedSupabase.from.mockImplementation((table: string) => {
 			const query = createQueryBuilder();
 			if (table === "events") {
@@ -577,10 +706,11 @@ describe("Dashboard integration", () => {
 			expect(screen.getByText("Event data is unavailable right now.")).toBeInTheDocument(),
 		);
 		expect(screen.queryByText("0 deny")).not.toBeInTheDocument();
-		expect(screen.getByRole("alert")).toHaveTextContent("Events down");
+		expect(screen.getByRole("alert")).toHaveTextContent("Failed to load events");
 	});
 
 	it("renders the raw events feed with verdict badges", async () => {
+		mockSelectedTeam();
 		const now = new Date().toISOString();
 		mockedSupabase.from.mockImplementation((table: string) =>
 			createQueryBuilder(
@@ -621,10 +751,59 @@ describe("Dashboard integration", () => {
 		);
 
 		await waitFor(() => expect(screen.getByText("fetch (high)")).toBeInTheDocument());
+		expect(
+			screen.getByText(/The latest 500 events received from this team's agents/),
+		).toBeInTheDocument();
 		expect(screen.getByText("git (info)")).toBeInTheDocument();
 		expect(screen.getByText("1 deny")).toBeInTheDocument();
 		expect(screen.getByText("1 allow")).toBeInTheDocument();
 		expect(mockedSupabase.from).toHaveBeenCalledWith("events");
+	});
+
+	it("hides unknown event payloads while preserving safe row metadata", async () => {
+		mockSelectedTeam();
+		const createdAt = "2026-08-11T09:32:00.000Z";
+		const nestedSecret = "nested-secret-canary-5ea7";
+		const rawCommand = "echo raw-command-canary-84b1";
+		mockedSupabase.from.mockImplementation((table: string) => {
+			if (table === "events") {
+				return createQueryBuilder([
+					{
+						id: 903,
+						type: "future_event",
+						created_at: createdAt,
+						agent_id: "agent-privacy-001",
+						payload: {
+							metadata: { credential: nestedSecret, command: rawCommand },
+						},
+					},
+				]);
+			}
+			if (table === "agents") {
+				return createQueryBuilder([
+					{
+						id: "agent-privacy-001",
+						iid: "iid-privacy-001",
+						display_name: "privacy-test-agent",
+						agent_runtime: "cursor",
+					},
+				]);
+			}
+			return createQueryBuilder();
+		});
+
+		render(
+			<MemoryRouter>
+				<EventsPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() => expect(screen.getByText("future_event")).toBeInTheDocument());
+		expect(screen.getByText("privacy-test-agent")).toBeInTheDocument();
+		expect(screen.getByText(new Date(createdAt).toLocaleString())).toBeInTheDocument();
+		expect(screen.getByText("Additional event details are not shown.")).toBeInTheDocument();
+		expect(document.body.textContent).not.toContain(nestedSecret);
+		expect(document.body.textContent).not.toContain(rawCommand);
 	});
 
 	it("renders settings and signs out through the Supabase client", async () => {
@@ -644,11 +823,14 @@ describe("Dashboard integration", () => {
 	it("mounts onboarding and incidents without crashing", () => {
 		const onboarding = render(
 			<MemoryRouter>
-				<TeamProvider><OnboardingPage /></TeamProvider>
+				<TeamProvider>
+					<OnboardingPage />
+				</TeamProvider>
 			</MemoryRouter>,
 		);
 		expect(onboarding.container).toBeTruthy();
 		onboarding.unmount();
+		mockSelectedTeam();
 
 		const incidents = render(
 			<MemoryRouter>

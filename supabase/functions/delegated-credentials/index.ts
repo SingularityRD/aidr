@@ -1,13 +1,20 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson as sharedCorsJson, handleCors } from "../_shared/cors.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
+import { jwtIssuedAtMs } from "../identity-security/logic.ts";
+import {
+	consumeTenantRateLimit,
+	rateLimitHeaders,
+	readBoundedText,
+} from "../_shared/request-limits.ts";
 import {
 	matchesDelegatedContext,
 	signDelegatedCredential,
 	verifyDelegatedCredentialForBroker,
 } from "../_shared/delegated-credential.ts";
+import { membershipActive } from "../_shared/runtime-policy.ts";
 
 const REQUIRED_ENV = [
 	"SUPABASE_URL",
@@ -20,9 +27,15 @@ const REQUIRED_ENV = [
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/;
 const SCOPE = /^[a-z0-9][a-z0-9._:/-]{0,127}$/;
+type DatabaseClient = ReturnType<typeof createClient>;
 
-function corsJson(req: Request, status: number, body: Record<string, unknown>): Response {
-	const response = sharedCorsJson(req, status, body);
+function corsJson(
+	req: Request,
+	status: number,
+	body: Record<string, unknown>,
+	headers: Record<string, string> = {},
+): Response {
+	const response = sharedCorsJson(req, status, body, headers);
 	response.headers.set("Cache-Control", "no-store");
 	response.headers.set("Content-Type", "application/json");
 	return response;
@@ -84,14 +97,73 @@ function dbError(req: Request, error: { code?: string } | null): Response {
 	return corsJson(req, 503, { error: "delegation_unavailable" });
 }
 
+async function authorizeHumanQuota(
+	db: DatabaseClient,
+	userId: string,
+	body: Record<string, unknown>,
+): Promise<"authorized" | "forbidden" | "unavailable"> {
+	const tenantId = String(body.tenant_id);
+	const { data: member, error: memberError } = await db
+		.from("tenant_members")
+		.select("role,expires_at")
+		.eq("tenant_id", tenantId)
+		.eq("user_id", userId)
+		.maybeSingle();
+	if (memberError) return "unavailable";
+	if (!membershipActive(member)) return "forbidden";
+	const { data: tenant, error: tenantError } = await db
+		.from("tenants")
+		.select("status")
+		.eq("id", tenantId)
+		.maybeSingle();
+	if (tenantError) return "unavailable";
+	if (tenant?.status !== "active") return "forbidden";
+
+	const role = String(member?.role ?? "");
+	if (["grant", "revoke_grant"].includes(String(body.action)) && !["owner", "admin"].includes(role)) {
+		return "forbidden";
+	}
+	if (body.action === "lineage" && !["owner", "admin", "support_jit"].includes(role)) {
+		return "forbidden";
+	}
+	if (body.action === "grant") {
+		const { data: subject, error: subjectError } = await db
+			.from("tenant_members")
+			.select("role,expires_at")
+			.eq("tenant_id", tenantId)
+			.eq("user_id", String(body.subject_user_id))
+			.maybeSingle();
+		if (subjectError) return "unavailable";
+		if (!membershipActive(subject)) return "forbidden";
+	}
+	if (body.action === "issue") {
+		const { data: grant, error: grantError } = await db
+			.from("delegated_credential_grants")
+			.select("subject_user_id,revoked_at,expires_at")
+			.eq("tenant_id", tenantId)
+			.eq("id", String(body.grant_id))
+			.maybeSingle();
+		if (grantError) return "unavailable";
+		const expiresAt = typeof grant?.expires_at === "string" ? Date.parse(grant.expires_at) : Number.NaN;
+		if (
+			!grant || grant.subject_user_id !== userId || grant.revoked_at !== null ||
+			!Number.isFinite(expiresAt) || expiresAt <= Date.now()
+		) return "forbidden";
+	}
+	return "authorized";
+}
+
 Deno.serve(async (req) => {
 	const preflight = handleCors(req);
 	if (preflight) return preflight;
 	if (req.method !== "POST") return corsJson(req, 405, { error: "method_not_allowed" });
 	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
 	if (!config.ok) return configFailure("delegated-credentials", config.error, (status, body) => corsJson(req, status, body));
-	const raw = await req.text();
-	if (raw.length > 32_768) return corsJson(req, 413, { error: "request_too_large" });
+	const rawResult = await readBoundedText(req, 32_768);
+	if (!rawResult.ok) return corsJson(req, rawResult.status, {
+		error: rawResult.error === "request_too_large" ? rawResult.error : "invalid_json",
+	});
+	const raw = rawResult.value;
 	let body: Record<string, unknown>;
 	try {
 		body = JSON.parse(raw);
@@ -112,16 +184,28 @@ Deno.serve(async (req) => {
 				issuer: config.values.AIDR_DELEGATION_ISSUER,
 			});
 			if (!verified.ok) return corsJson(req, 401, { error: verified.error });
-
 			if (body.action === "introspect") {
 				if (!exactObject(body, ["action", "context"]) || !matchesDelegatedContext(verified.claims, body.context)) return corsJson(req, 403, { error: "delegation_context_mismatch" });
-				const { data, error } = await db.rpc("validate_delegated_credential", { p_claims: verified.claims, p_claims_sha256: verified.claimsSha256 });
-				if (error) return dbError(req, error);
-				if (!data?.active) return corsJson(req, 401, { error: "delegation_inactive" });
-				return corsJson(req, 200, { ok: true, active: true, lineage: data });
+			} else if (!validRedelegation(body)) {
+				return corsJson(req, 400, { error: "invalid_delegation_request" });
+			}
+			const { data: active, error: activeError } = await db.rpc("validate_delegated_credential", { p_claims: verified.claims, p_claims_sha256: verified.claimsSha256 });
+			if (activeError) return dbError(req, activeError);
+			if (!active?.active) return corsJson(req, 401, { error: "delegation_inactive" });
+			const rate = await consumeTenantRateLimit(db, {
+				tenantId: verified.claims.tenantId,
+				subject: verified.claims.subjectUserId,
+				endpoint: "delegated-credentials",
+				perSubject: 120,
+				perTenant: 10_000,
+				cost: body.action === "redelegate" ? 10 : 1,
+			});
+			if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
+
+			if (body.action === "introspect") {
+				return corsJson(req, 200, { ok: true, active: true, lineage: active });
 			}
 
-			if (!validRedelegation(body)) return corsJson(req, 400, { error: "invalid_delegation_request" });
 			const reserved = await db.rpc("reserve_child_delegated_credential", {
 				p_issuer: config.values.AIDR_DELEGATION_ISSUER,
 				p_parent_claims: verified.claims,
@@ -143,26 +227,49 @@ Deno.serve(async (req) => {
 		}
 		const identity = await checkIdentityBarrier(db, bearer, auth.user.id, body.tenant_id);
 		if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
+		// `auth.getUser` validated this bearer, and validIssue rejected caller extras;
+		// carry its signed iat only in the server-private reservation payload.
+		const sessionIssuedAtMs = jwtIssuedAtMs(bearer);
+		if (
+			sessionIssuedAtMs === null ||
+			!Number.isSafeInteger(sessionIssuedAtMs) ||
+			sessionIssuedAtMs <= 0 ||
+			sessionIssuedAtMs % 1000 !== 0
+		) {
+			return corsJson(req, 401, { error: "invalid_access_token" });
+		}
+		if (body.action === "grant" && !validGrant(body)) return corsJson(req, 400, { error: "invalid_grant" });
+		if (body.action === "revoke_grant" && !validRevoke(body)) return corsJson(req, 400, { error: "invalid_revoke_request" });
+		if (body.action === "lineage" && !validLineage(body)) return corsJson(req, 400, { error: "invalid_lineage_request" });
+		if (body.action === "issue" && !validIssue(body)) return corsJson(req, 400, { error: "invalid_delegation_request" });
+		const authorization = await authorizeHumanQuota(db, auth.user.id, body);
+		if (authorization === "unavailable") return corsJson(req, 503, { error: "delegation_unavailable" });
+		if (authorization === "forbidden") return corsJson(req, 403, { error: "delegation_forbidden" });
+		const rate = await consumeTenantRateLimit(db, {
+			tenantId: body.tenant_id,
+			subject: auth.user.id,
+			endpoint: "delegated-credentials",
+			perSubject: 120,
+			perTenant: 10_000,
+			cost: body.action === "lineage" ? 1 : body.action === "revoke_grant" ? 5 : 10,
+		});
+		if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
 
 		if (body.action === "grant") {
-			if (!validGrant(body)) return corsJson(req, 400, { error: "invalid_grant" });
 			const { data, error } = await db.rpc("create_delegated_credential_grant", { p_actor_user_id: auth.user.id, p_request: body });
 			return error ? dbError(req, error) : corsJson(req, 201, { ok: true, ...data });
 		}
 		if (body.action === "revoke_grant") {
-			if (!validRevoke(body)) return corsJson(req, 400, { error: "invalid_revoke_request" });
 			const { data, error } = await db.rpc("revoke_delegated_credential_grant", { p_actor_user_id: auth.user.id, p_tenant_id: body.tenant_id, p_grant_id: body.grant_id });
 			if (error) return dbError(req, error);
 			return data === true ? corsJson(req, 200, { ok: true }) : corsJson(req, 404, { error: "grant_not_found" });
 		}
 		if (body.action === "lineage") {
-			if (!validLineage(body)) return corsJson(req, 400, { error: "invalid_lineage_request" });
 			const { data, error } = await db.rpc("read_delegated_credential_lineage", { p_actor_user_id: auth.user.id, p_tenant_id: body.tenant_id, p_token_id: body.token_id });
 			if (error) return dbError(req, error);
 			return data?.found ? corsJson(req, 200, { ok: true, lineage: data.lineage }) : corsJson(req, 404, { error: "delegation_not_found" });
 		}
-		if (body.action !== "issue" || !validIssue(body)) return corsJson(req, 400, { error: "invalid_delegation_request" });
-		const reserved = await db.rpc("reserve_delegated_credential", { p_actor_user_id: auth.user.id, p_issuer: config.values.AIDR_DELEGATION_ISSUER, p_request: body });
+		const reserved = await db.rpc("reserve_delegated_credential", { p_actor_user_id: auth.user.id, p_issuer: config.values.AIDR_DELEGATION_ISSUER, p_request: { ...body, validated_session_issued_at: new Date(sessionIssuedAtMs).toISOString() } });
 		if (reserved.error) return dbError(req, reserved.error);
 		const signed = await signDelegatedCredential({ claims: reserved.data?.claims, keyId: config.values.AIDR_DELEGATION_SIGNING_KEY_ID, privateKeyPkcs8Base64: config.values.AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64 });
 		const finalized = await db.rpc("finalize_delegated_credential", { p_claims: signed.claims, p_claims_sha256: signed.claimsSha256 });

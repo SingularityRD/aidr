@@ -8,10 +8,11 @@
 //
 // This is a self-hostable replacement for proprietary URL reputation providers.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { isFreshReputationRow, reputationFreshUntil } from "../_shared/reputation-freshness.ts";
 import {
 	consumeTenantRateLimit,
 	rateLimitHeaders,
@@ -59,27 +60,47 @@ function domainFromUrl(raw: string): string | null {
 	}
 }
 
-function domainSuffixes(domain: string, maxParts = 4): string[] {
-	const parts = domain.split(".").filter(Boolean);
-	if (parts.length < 2) return [domain];
-	const suffixes: string[] = [];
-	for (let i = 0; i < parts.length - 1; i++) {
-		const suffix = parts.slice(i).join(".");
-		if (suffix.split(".").length >= 2 && suffix.split(".").length <= maxParts) {
-			suffixes.push(suffix);
-		}
-	}
-	return [...new Set(suffixes)];
-}
-
 type UrlRepRow = {
 	url: string | null;
 	domain: string | null;
+	created_at: string | null;
+	provenance_verified: boolean | null;
 	is_malicious: boolean | null;
 	severity_name: string | null;
 	type_name: string | null;
 	flags: string[] | null;
 };
+
+// Tenant reads can contain one row per user for the same target. Never let
+// PostgREST row order decide whether a conflicting target is clean.
+function mergeFreshRow(
+	rows: Map<string, UrlRepRow>,
+	conflicts: Set<string>,
+	target: string,
+	row: UrlRepRow,
+): void {
+	if (conflicts.has(target)) return;
+	if (typeof row.is_malicious !== "boolean") {
+		rows.delete(target);
+		conflicts.add(target);
+		return;
+	}
+	const previous = rows.get(target);
+	if (!previous) {
+		rows.set(target, row);
+		return;
+	}
+	const classification = (value: UrlRepRow) =>
+		JSON.stringify([value.is_malicious, value.severity_name, value.type_name, value.flags]);
+	if (classification(previous) !== classification(row)) {
+		rows.delete(target);
+		conflicts.add(target);
+		return;
+	}
+	// Identical classifications use the older source timestamp so a newer
+	// duplicate cannot extend the cache lifetime of older evidence.
+	if (Date.parse(row.created_at ?? "") < Date.parse(previous.created_at ?? "")) rows.set(target, row);
+}
 
 /**
  * Whether the tenant's reputation store holds a row for a queried URL.
@@ -107,6 +128,7 @@ type UrlCheckCoverage = typeof COVERED | typeof NO_COVERAGE;
 type UrlCheckAnswer = {
 	key: string;
 	coverage: UrlCheckCoverage;
+	cache_valid_until?: string;
 	result: {
 		success: {
 			classification: Record<string, unknown>;
@@ -183,48 +205,63 @@ export function createUrlCheckHandler(deps: UrlCheckDeps = {}) {
 		const domains = urls
 			.map((u) => domainFromUrl(u))
 			.filter((d): d is string => Boolean(d));
-		const domainCandidates = [...new Set(domains.flatMap((d) => domainSuffixes(d)))].slice(0, 200);
+		const domainCandidates = [...new Set(domains)].slice(0, 200);
 
-		const { data: urlRows } = await supabase
+		const urlLookup = await supabase
 			.from("url_reputation")
-			.select("url,domain,is_malicious,severity_name,type_name,flags")
+			.select("url,domain,created_at,provenance_verified,is_malicious,severity_name,type_name,flags")
 			.eq("tenant_id", tenantId)
+			.eq("provenance_verified", true)
 			.in("url", urls);
+		if (urlLookup.error) {
+			return json(503, { error: "reputation_lookup_unavailable" }, rateLimitHeaders(rate));
+		}
 
-		const { data: domainRows } =
-			domainCandidates.length > 0
-				? await supabase
-						.from("url_reputation")
-						.select("url,domain,is_malicious,severity_name,type_name,flags")
-						.eq("tenant_id", tenantId)
-						.in("domain", domainCandidates)
-				: { data: [] as UrlRepRow[] };
+		let domainRows: UrlRepRow[] = [];
+		if (domainCandidates.length > 0) {
+			const domainLookup = await supabase
+				.from("url_reputation")
+				.select("url,domain,created_at,provenance_verified,is_malicious,severity_name,type_name,flags")
+				.eq("tenant_id", tenantId)
+				.eq("provenance_verified", true)
+				.in("domain", domainCandidates);
+			if (domainLookup.error) {
+				return json(503, { error: "reputation_lookup_unavailable" }, rateLimitHeaders(rate));
+			}
+			domainRows = (domainLookup.data ?? []) as UrlRepRow[];
+		}
 
 		const byUrl = new Map<string, UrlRepRow>();
-		for (const row of (urlRows ?? []) as UrlRepRow[]) {
-			if (row.url) byUrl.set(row.url, row);
+		const conflictingUrls = new Set<string>();
+		const staleUrls = new Set<string>();
+		const nowMs = Date.now();
+		for (const row of (urlLookup.data ?? []) as UrlRepRow[]) {
+			if (!row.url) continue;
+			if (isFreshReputationRow(row.created_at, nowMs))
+				mergeFreshRow(byUrl, conflictingUrls, row.url, row);
+			else staleUrls.add(row.url);
 		}
 
 		const byDomain = new Map<string, UrlRepRow>();
-		for (const row of (domainRows ?? []) as UrlRepRow[]) {
-			if (row.domain) byDomain.set(row.domain, row);
+		const conflictingDomains = new Set<string>();
+		const staleDomains = new Set<string>();
+		for (const row of domainRows) {
+			if (!row.domain) continue;
+			if (isFreshReputationRow(row.created_at, nowMs))
+				mergeFreshRow(byDomain, conflictingDomains, row.domain, row);
+			else staleDomains.add(row.domain);
 		}
 
 		const answers: UrlCheckAnswer[] = urls.map((u) => {
 			const urlRow = byUrl.get(u);
 			const domain = domainFromUrl(u);
-			let domRow: UrlRepRow | undefined;
-			if (!urlRow && domain) {
-				for (const suffix of domainSuffixes(domain)) {
-					const hit = byDomain.get(suffix);
-					if (hit) {
-						domRow = hit;
-						break;
-					}
-				}
-			}
+			const domRow = domain ? byDomain.get(domain) : undefined;
+			const conflictingEvidence =
+				conflictingUrls.has(u) ||
+				Boolean(domain && conflictingDomains.has(domain)) ||
+				Boolean(urlRow && domRow && urlRow.is_malicious !== domRow.is_malicious);
 
-			const row = urlRow ?? domRow ?? null;
+			const row = conflictingEvidence ? null : urlRow ?? domRow ?? null;
 			const coverage: UrlCheckCoverage = row ? COVERED : NO_COVERAGE;
 			const isMalicious = Boolean(row?.is_malicious);
 			const flags = Array.isArray(row?.flags) ? row?.flags.filter((f) => typeof f === "string") : [];
@@ -247,11 +284,12 @@ export function createUrlCheckHandler(deps: UrlCheckDeps = {}) {
 					: // No row: no classification was performed. `unknown` is the
 						// machine-readable marker the client maps to an unavailable
 						// reputation leg rather than to `isMalicious: false`.
-						{ result: { unknown: { reason: "no_reputation_row" } } };
+						{ result: { unknown: { reason: conflictingEvidence ? "conflicting_reputation_rows" : staleUrls.has(u) || (domain && staleDomains.has(domain)) ? "stale_reputation_row" : "no_reputation_row" } } };
 
 			return {
 				key: u,
 				coverage,
+				...(row ? { cache_valid_until: reputationFreshUntil(row.created_at) ?? undefined } : {}),
 				result: {
 					success: {
 						classification,

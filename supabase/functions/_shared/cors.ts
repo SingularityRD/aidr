@@ -1,7 +1,10 @@
 import { buildCorsHeaders, parseAllowedOrigins, resolveAllowedOrigin } from "./origin.ts";
 import { getRequestId } from "./response.ts";
 
-const ALLOWED_ORIGINS = parseAllowedOrigins(Deno.env.get("AIDR_ALLOWED_ORIGINS"));
+const ALLOWED_ORIGINS = parseAllowedOrigins(
+	Deno.env.get("AIDR_ALLOWED_ORIGINS"),
+	Deno.env.get("AIDR_DEVELOPMENT_MODE") === "true",
+);
 
 /**
  * Return a browser-safe JSON response for dashboard-facing Edge Functions.

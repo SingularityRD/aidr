@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useTeam } from "../../enterprise/team-provider";
+import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 
 type AgentRow = {
@@ -38,52 +40,77 @@ function summarize(event: EventRow): string {
 		const count = Number(event.payload?.findings_count ?? 0);
 		return `${key}: ${count} finding(s)`;
 	}
-	return JSON.stringify(event.payload ?? {}).slice(0, 120);
+	return "Additional event details are not shown.";
 }
 
 export function EventsPage() {
+	const { currentTeam, isLoading } = useTeam();
+	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
+	if (!currentTeam) return <div role="alert">Select a team to view events.</div>;
+	return <TenantEventsPage key={currentTeam.id} tenantId={currentTeam.id} />;
+}
+
+function TenantEventsPage({ tenantId }: { tenantId: string }) {
 	const [agents, setAgents] = useState<Map<string, AgentRow>>(new Map());
 	// null = not loaded / unavailable (fail-closed); [] = a real, empty feed.
 	const [events, setEvents] = useState<EventRow[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [loaded, setLoaded] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
+		let inFlight = false;
 
 		async function load() {
-			const [eventsRes, agentsRes] = await Promise.all([
-				supabase
-					.from("events")
-					.select("id,type,created_at,agent_id,payload")
-					.order("created_at", { ascending: false })
-					.limit(500),
-				supabase
-					.from("agents")
-					.select("id,iid,display_name,agent_runtime")
-					.order("last_seen", { ascending: false }),
-			]);
+			if (inFlight) return;
+			inFlight = true;
+			try {
+				const [eventsRes, agentsRes] = await Promise.all([
+					supabase
+						.from("events")
+						.select("id,type,created_at,agent_id,payload")
+						.eq("tenant_id", tenantId)
+						.order("created_at", { ascending: false })
+						.limit(500),
+					supabase
+						.from("agents")
+						.select("id,iid,display_name,agent_runtime")
+						.eq("tenant_id", tenantId)
+						.order("last_seen", { ascending: false }),
+				]);
 
-			if (cancelled) return;
+				if (cancelled) return;
 
-			const problems: string[] = [];
-			if (eventsRes.error) {
-				problems.push(eventsRes.error.message);
-				setEvents(null);
-			} else {
-				setEvents((eventsRes.data ?? []) as EventRow[]);
-			}
-
-			if (agentsRes.error) problems.push(agentsRes.error.message);
-			else {
-				const map = new Map<string, AgentRow>();
-				for (const agent of (agentsRes.data ?? []) as AgentRow[]) {
-					map.set(agent.id, agent);
+				const problems: string[] = [];
+				if (eventsRes.error || !Array.isArray(eventsRes.data)) {
+					problems.push(readErrorMessage(eventsRes.error, "Failed to load events"));
+					setEvents(null);
+				} else {
+					setEvents(eventsRes.data as EventRow[]);
 				}
-				setAgents(map);
-			}
 
-			// One setError per cycle keeps the alert stable across poll ticks.
-			setError(problems.length > 0 ? problems.join(" ") : null);
+				if (agentsRes.error || !Array.isArray(agentsRes.data)) {
+					problems.push(readErrorMessage(agentsRes.error, "Failed to load agents"));
+					setAgents(new Map());
+				} else {
+					const map = new Map<string, AgentRow>();
+					for (const agent of agentsRes.data as AgentRow[]) {
+						map.set(agent.id, agent);
+					}
+					setAgents(map);
+				}
+
+				// One setError per cycle keeps the alert stable across poll ticks.
+				setError(problems.length > 0 ? problems.join(" ") : null);
+			} catch {
+				if (cancelled) return;
+				setEvents(null);
+				setAgents(new Map());
+				setError("Failed to load events");
+			} finally {
+				inFlight = false;
+				if (!cancelled) setLoaded(true);
+			}
 		}
 
 		load();
@@ -92,7 +119,7 @@ export function EventsPage() {
 			cancelled = true;
 			clearInterval(t);
 		};
-	}, []);
+	}, [tenantId]);
 
 	const verdictCounts = useMemo(() => {
 		const counts = { allow: 0, ask: 0, deny: 0 };
@@ -113,8 +140,8 @@ export function EventsPage() {
 					<div>
 						<h1>Events</h1>
 						<p className="muted">
-							The raw telemetry feed: every allow, ask, and deny decision plus plugin scan results
-							reported by your agents (latest 500).
+							The latest 500 events received from this team's agents. With default reporting, ask
+							and deny verdicts are uploaded; allow verdicts require clean-verdict reporting.
 						</p>
 					</div>
 					<button
@@ -192,8 +219,10 @@ export function EventsPage() {
 								<tr>
 									<td colSpan={5} className="muted">
 										{events === null
-											? "Event data is unavailable right now."
-											: "No events yet. Connected agents report decisions here as they happen."}
+											? loaded
+												? "Event data is unavailable right now."
+												: "Loading events…"
+											: "No events received yet. Check agent enrollment and telemetry delivery."}
 									</td>
 								</tr>
 							) : null}

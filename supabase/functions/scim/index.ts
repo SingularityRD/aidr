@@ -1,9 +1,10 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
-import { collectMemberPages } from "./member-pages.ts";
+import { collectMemberPages, MAX_SCIM_GROUP_MEMBERS, SCIM_MEMBER_PAGE_SIZE } from "./member-pages.ts";
 import {
 	createScimHandler,
 	ScimConflictError,
+	ScimInvalidValueError,
 	type ScimCreateGroup,
 	type ScimCreateUser,
 	type ScimFilter,
@@ -16,7 +17,7 @@ import {
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
-type Db = ReturnType<typeof createClient>;
+type Db = ReturnType<typeof createClient<any, "public">>;
 type Row = Record<string, unknown>;
 
 async function sha256(input: string): Promise<string> {
@@ -45,10 +46,12 @@ function conflictFrom(error: { code?: string; message?: string } | null): never 
 	const message = error?.message ?? "SCIM persistence failed";
 	if (error?.code === "40001" || message.includes("scim_version_mismatch")) throw new ScimConflictError("versionMismatch", "Resource version does not match");
 	if (error?.code === "23505" || message.includes("conflict")) throw new ScimConflictError("uniqueness", "Resource identity already exists with different attributes");
+	if (error?.code === "22023" || error?.code === "22P02") throw new ScimInvalidValueError("Invalid SCIM resource reference");
+	if (error?.code === "42501" && message.includes("scim_cannot_take_over_manual_membership")) throw new ScimConflictError("uniqueness", "Membership conflicts with an existing manual assignment");
 	throw new Error("SCIM persistence unavailable");
 }
 
-class SupabaseScimStore implements ScimStore {
+export class SupabaseScimStore implements ScimStore {
 	constructor(private readonly db: Db) {}
 
 	async authenticate(token: string): Promise<ScimTenant | null> {
@@ -85,6 +88,14 @@ class SupabaseScimStore implements ScimStore {
 		return typeof result.data === "string" && result.data ? result.data : null;
 	}
 
+	private async recoverUnboundAuthUser(tenantId: string, scimUserId: string, email: string): Promise<string | null> {
+		const result = await this.db.rpc("scim_recover_unbound_auth_user", {
+			p_tenant_id: tenantId, p_scim_user_id: scimUserId, p_email: email,
+		});
+		if (result.error) throw new Error("SCIM provisional identity lookup unavailable");
+		return typeof result.data === "string" && result.data ? result.data : null;
+	}
+
 	async createUser(tenantId: string, input: ScimCreateUser): Promise<{ user: ScimUser; created: boolean }> {
 		const claimed = await this.db.rpc("scim_claim_user", {
 			p_tenant_id: tenantId, p_external_id: input.externalId, p_user_name: input.userName,
@@ -97,17 +108,26 @@ class SupabaseScimStore implements ScimStore {
 		let rowResult = await this.db.from("scim_users").select("*").eq("tenant_id", tenantId).eq("id", scimId).single();
 		if (rowResult.error || !rowResult.data) throw new Error("SCIM claimed user unavailable");
 		let row = rowResult.data as Row;
+		const identityPolicy = await this.db.from("tenant_identity_policies")
+			.select("required_saml_provider_id").eq("tenant_id", tenantId).maybeSingle();
+		if (identityPolicy.error) throw new Error("SCIM identity policy unavailable");
+		if (identityPolicy.data?.required_saml_provider_id) {
+			// SAML creates a different Auth UUID; bind only after a verified provider/subject login.
+			return { user: asUser(row), created: claim.created === true };
+		}
 		if (!row.auth_user_id) {
 			let authUserId = await this.authUserByEmail(tenantId, input.userName);
+			if (!authUserId) authUserId = await this.recoverUnboundAuthUser(tenantId, scimId, input.userName);
 			if (!authUserId) {
 				const created = await this.db.auth.admin.createUser({
 					email: input.userName,
 					email_confirm: true,
-					app_metadata: { aidr_scim_provisioned: true },
+					app_metadata: { aidr_scim_provisioned: true, aidr_scim_tenant_id: tenantId, aidr_scim_user_id: scimId },
 					user_metadata: input.displayName ? { display_name: input.displayName } : {},
 				});
 				if (created.error || !created.data.user?.id) {
-					authUserId = await this.authUserByEmail(input.userName);
+					authUserId = await this.authUserByEmail(tenantId, input.userName);
+					if (!authUserId) authUserId = await this.recoverUnboundAuthUser(tenantId, scimId, input.userName);
 					if (!authUserId) throw new Error("SCIM auth user creation failed");
 				} else authUserId = created.data.user.id;
 			}
@@ -136,21 +156,26 @@ class SupabaseScimStore implements ScimStore {
 			if (expectedVersion !== null && expectedVersion !== current.version) throw new ScimConflictError("versionMismatch", "Resource version does not match");
 			return current;
 		}
-		return this.updateUser(tenantId, id, { externalId: current.externalId, userName: current.userName, displayName: current.displayName, active: false }, expectedVersion);
+		return this.updateUser(tenantId, id, { externalId: current.externalId, userName: current.userName, displayName: current.displayName, active: false }, expectedVersion ?? current.version);
 	}
 
 	private async hydrateGroups(rows: Row[]): Promise<ScimGroup[]> {
 		if (rows.length === 0) return [];
 		const tenantId = String(rows[0]?.tenant_id);
-		const groupIds = rows.map((row) => String(row.id));
-		const memberships = await collectMemberPages<Row>(async (offset, limit) => {
-			const result = await this.db.from("scim_group_memberships").select("group_id,user_id")
-				.eq("tenant_id", tenantId).in("group_id", groupIds)
-				.order("group_id", { ascending: true }).order("user_id", { ascending: true })
-				.range(offset, offset + limit - 1);
-			if (result.error) throw new Error("SCIM group membership lookup unavailable");
-			return (result.data ?? []) as Row[];
-		});
+		const membershipsByGroup = new Map<string, Row[]>();
+		for (const row of rows) {
+			const groupId = String(row.id);
+			const memberships = await collectMemberPages<Row>(async (offset, limit) => {
+				const result = await this.db.from("scim_group_memberships").select("group_id,user_id")
+					.eq("tenant_id", tenantId).eq("group_id", groupId)
+					.order("user_id", { ascending: true })
+					.range(offset, offset + limit - 1);
+				if (result.error) throw new Error("SCIM group membership lookup unavailable");
+				return (result.data ?? []) as Row[];
+			}, SCIM_MEMBER_PAGE_SIZE, MAX_SCIM_GROUP_MEMBERS);
+			membershipsByGroup.set(groupId, memberships);
+		}
+		const memberships = [...membershipsByGroup.values()].flat();
 		const userIds = [...new Set(memberships.map((member) => String(member.user_id)))];
 		const names = new Map<string, string>();
 		for (let offset = 0; offset < userIds.length; offset += 200) {
@@ -162,7 +187,7 @@ class SupabaseScimStore implements ScimStore {
 		return rows.map((row) => ({
 			id: String(row.id), externalId: String(row.external_id), displayName: String(row.display_name), version: Number(row.version),
 			createdAt: asIso(row.created_at), updatedAt: asIso(row.updated_at),
-			members: memberships.filter((member) => member.group_id === row.id).map((member) => ({ value: String(member.user_id), ...(names.has(String(member.user_id)) ? { display: names.get(String(member.user_id)) } : {}) })),
+			members: (membershipsByGroup.get(String(row.id)) ?? []).map((member) => ({ value: String(member.user_id), ...(names.has(String(member.user_id)) ? { display: names.get(String(member.user_id)) } : {}) })),
 		}));
 	}
 
@@ -213,6 +238,6 @@ class SupabaseScimStore implements ScimStore {
 Deno.serve(async (req) => {
 	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
 	if (config.ok === false) return configFailure("scim", config.error, (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/scim+json", "Cache-Control": "no-store" } }));
-	const db = createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+	const db = createClient<any, "public">(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 	return createScimHandler(new SupabaseScimStore(db))(req);
 });

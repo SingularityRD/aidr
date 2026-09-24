@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
-	getInvoiceContactHref,
+	cancelSettlement,
+	loadBillingPortal,
+	type PortalSnapshot,
+	projectedSeats,
+	requestSeats,
+	type SettlementStatus,
+} from "../../billing/billing-portal";
+import {
+	getSalesContactHref,
 	safeCommercialLink,
 	selfServiceCheckoutEnabled,
 } from "../../billing/commercial";
@@ -10,22 +18,15 @@ import {
 	newBillingRequestId,
 	requestEnterpriseOrder,
 } from "../../billing/enterprise-orders";
-import { createCheckout } from "../../billing/stripe-client";
-import {
-	cancelSettlement,
-	loadBillingPortal,
-	type PortalSnapshot,
-	projectedSeats,
-	requestSeats,
-	type SettlementStatus,
-} from "../../billing/billing-portal";
 import { type InvoiceApproval, listInvoiceApprovals } from "../../billing/invoice-approvals";
 import {
 	RECONCILIATION_LABELS,
-	reconcileApprovedOrders,
 	type ReconciliationRow,
+	reconcileApprovedOrders,
 } from "../../billing/reconciliation";
+import { CheckoutSessionExpiredError, createCheckout } from "../../billing/stripe-client";
 import { useTeam } from "../../enterprise/team-provider";
+import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 
 type EntitlementsRow = { included_agents: number; extra_agents: number };
@@ -56,6 +57,7 @@ export function BillingPage() {
 	const ordersRevision = useRef(0);
 	const [entitlements, setEntitlements] = useState<EntitlementsRow | null>(null);
 	const [agentCount, setAgentCount] = useState<number>(0);
+	const [seatUsageUnavailable, setSeatUsageUnavailable] = useState(true);
 	const [subscription, setSubscription] = useState<SubscriptionRow | null>(null);
 	const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,7 @@ export function BillingPage() {
 		setEntitlements(null);
 		setSubscription(null);
 		setAgentCount(0);
+		setSeatUsageUnavailable(true);
 		setCheckoutUrl(null);
 		setCheckoutBusy(false);
 		setCheckoutRequestId(newBillingRequestId());
@@ -89,46 +92,11 @@ export function BillingPage() {
 			setError(null);
 
 			const [seatRes, subRes] = await Promise.all([
-				(async () => {
-					const res = await supabase
-						.from("seat_usage")
-						.select("included_agents,extra_agents,allowed_agents,current_agents")
-						.eq("tenant_id", activeTenantId)
-						.maybeSingle();
-					if (!res.error) return res;
-					// Back-compat only when the view is genuinely absent. Network,
-					// permission, and data errors must stay visible instead of silently
-					// switching to an untrusted legacy calculation.
-					const legacyViewMissing =
-						res.error.code === "PGRST205" ||
-						res.error.code === "42P01" ||
-						/seat_usage[\s\S]*(?:not exist|missing)/i.test(res.error.message);
-					if (!legacyViewMissing) return res;
-					const [entRes, agentsRes] = await Promise.all([
-						supabase
-							.from("entitlements")
-							.select("included_agents,extra_agents")
-							.eq("tenant_id", activeTenantId)
-							.maybeSingle(),
-						supabase
-							.from("agents")
-							.select("id", { count: "exact", head: true })
-							.eq("tenant_id", activeTenantId),
-					]);
-					if (entRes.error) return { data: null, error: entRes.error } as typeof res;
-					const ent = (entRes.data ?? null) as EntitlementsRow | null;
-					const included = Number(ent?.included_agents ?? 1);
-					const extra = Number(ent?.extra_agents ?? 0);
-					return {
-						data: {
-							included_agents: included,
-							extra_agents: extra,
-							allowed_agents: included + extra,
-							current_agents: Number(agentsRes.count ?? 0),
-						},
-						error: null,
-					} as unknown as typeof res;
-				})(),
+				supabase
+					.from("seat_usage")
+					.select("included_agents,extra_agents,allowed_agents,current_agents")
+					.eq("tenant_id", activeTenantId)
+					.maybeSingle(),
 				supabase
 					.from("subscriptions")
 					.select(
@@ -143,23 +111,31 @@ export function BillingPage() {
 			if (cancelled) return;
 
 			if (seatRes.error) {
-				setError(seatRes.error.message);
+				setSeatUsageUnavailable(true);
+				setError(readErrorMessage(seatRes.error, "Failed to load seat usage"));
 				setEntitlements(null);
 				setAgentCount(0);
 			} else {
 				const row = (seatRes.data ?? null) as SeatUsageRow | null;
-				setEntitlements(
-					row
-						? {
-								included_agents: Number(row.included_agents ?? 1),
-								extra_agents: Number(row.extra_agents ?? 0),
-							}
-						: null,
-				);
-				setAgentCount(Number(row?.current_agents ?? 0));
+				if (
+					!row ||
+					![row.included_agents, row.extra_agents, row.allowed_agents, row.current_agents].every(
+						(value) => Number.isSafeInteger(value) && value >= 0,
+					) ||
+					row.allowed_agents !== row.included_agents + row.extra_agents
+				) {
+					setSeatUsageUnavailable(true);
+					setError("Seat usage is unavailable for this tenant");
+					setEntitlements(null);
+					setAgentCount(0);
+				} else {
+					setSeatUsageUnavailable(false);
+					setEntitlements({ included_agents: row.included_agents, extra_agents: row.extra_agents });
+					setAgentCount(row.current_agents);
+				}
 			}
 
-			if (subRes.error) setError(subRes.error.message);
+			if (subRes.error) setError(readErrorMessage(subRes.error, "Failed to load subscription"));
 			else setSubscription((subRes.data ?? null) as SubscriptionRow | null);
 		}
 
@@ -196,7 +172,7 @@ export function BillingPage() {
 				}
 			} catch {
 				if (current()) {
-					setOrdersLoaded(true);
+					setOrdersLoaded(false);
 					setOrderError(
 						"Enterprise order status is unavailable. Contact the approved sales channel.",
 					);
@@ -223,10 +199,18 @@ export function BillingPage() {
 	const included = Number(entitlements?.included_agents ?? 1);
 	const extra = Number(entitlements?.extra_agents ?? 0);
 	const allowed = Math.max(0, included + extra);
-	const overLimit = allowed > 0 && agentCount > allowed;
+	const overLimit = !seatUsageUnavailable && allowed > 0 && agentCount > allowed;
+	const providerTermEnd = subscription?.current_period_end
+		? Date.parse(subscription.current_period_end)
+		: Number.NaN;
+	const providerTermUnverified =
+		subscription !== null &&
+		(subscription.provider === "stripe" || subscription.provider === "paddle") &&
+		(subscription.status === "active" || subscription.status === "trialing") &&
+		(!Number.isFinite(providerTermEnd) || providerTermEnd <= Date.now());
 
 	const safeCheckoutUrl = selfServiceCheckoutEnabled ? safeCommercialLink(checkoutUrl) : null;
-	const invoiceUrl = getInvoiceContactHref();
+	const invoiceUrl = getSalesContactHref();
 	const alreadyPending = orders.some(
 		(order) =>
 			order.status === "pending_finance" &&
@@ -238,6 +222,7 @@ export function BillingPage() {
 			canManageBilling &&
 			invoiceUrl &&
 			orderRequestId &&
+			ordersLoaded &&
 			!alreadyPending &&
 			!orderBusy &&
 			Number.isSafeInteger(requestedAgents) &&
@@ -247,6 +232,8 @@ export function BillingPage() {
 	const canBeginCheckout = Boolean(
 		tenantId &&
 			canManageBilling &&
+			!seatUsageUnavailable &&
+			entitlements &&
 			checkoutRequestId &&
 			!checkoutBusy &&
 			Number.isSafeInteger(checkoutSeats) &&
@@ -256,7 +243,9 @@ export function BillingPage() {
 	// The intake ledger can only ever report `pending_finance`, so an order with
 	// a recorded finance decision is shown as paid from that decision instead of
 	// from a ledger status it is structurally unable to carry.
-	const approvalByOrderId = new Map((approvals ?? []).map((approval) => [approval.orderId, approval]));
+	const approvalByOrderId = new Map(
+		(approvals ?? []).map((approval) => [approval.orderId, approval]),
+	);
 	function isCurrentBillingTenant(expectedTenantId: string): boolean {
 		return activeTenantRef.current === expectedTenantId && activeBillingRoleRef.current;
 	}
@@ -307,7 +296,11 @@ export function BillingPage() {
 			setCheckoutRequestId(newBillingRequestId());
 		} catch (cause) {
 			if (!isCurrentBillingTenant(tenantId)) return;
-			setError(cause instanceof Error ? cause.message : "Checkout could not be created");
+			if (cause instanceof CheckoutSessionExpiredError) {
+				setCheckoutUrl(null);
+				setCheckoutRequestId(newBillingRequestId());
+			}
+			setError(readErrorMessage(cause, "Checkout could not be created"));
 		} finally {
 			if (isCurrentBillingTenant(tenantId)) setCheckoutBusy(false);
 		}
@@ -342,20 +335,30 @@ export function BillingPage() {
 								<div>
 									<span
 										className={
-											subscription.status === "active"
+											subscription.status === "active" && !providerTermUnverified
 												? "badge badge-success"
 												: "badge badge-warning"
 										}
 									>
-										{subscription.status}
+										{providerTermUnverified ? "Term expired or unverified" : subscription.status}
 									</span>
 								</div>
 							</div>
 							<div className="stat-card">
-								<div className="stat-label">Extra agents</div>
+								<div className="stat-label">Recorded extra agents</div>
 								<div className="mono">{subscription.extra_agents}</div>
 							</div>
 						</div>
+						<div className="muted small" style={{ marginTop: 8 }}>
+							The subscription quantity is a recorded provider value, not the current effective seat
+							allowance. See Seats below for the effective limit.
+						</div>
+						{providerTermUnverified ? (
+							<div className="notice notice-danger" style={{ marginTop: 8 }}>
+								The provider term has expired or cannot be verified. Recorded extra agents are not
+								included in the effective allowance shown under Seats.
+							</div>
+						) : null}
 						{subscription.current_period_end ? (
 							<div className="muted small" style={{ marginTop: 8 }}>
 								Period end:{" "}
@@ -532,19 +535,19 @@ export function BillingPage() {
 				<div className="grid" style={{ marginTop: 10 }}>
 					<div className="stat-card">
 						<div className="stat-label">Included</div>
-						<div className="stat-value">{included}</div>
+						<div className="stat-value">{seatUsageUnavailable ? "Unavailable" : included}</div>
 					</div>
 					<div className="stat-card">
 						<div className="stat-label">Extra</div>
-						<div className="stat-value">{extra}</div>
+						<div className="stat-value">{seatUsageUnavailable ? "Unavailable" : extra}</div>
 					</div>
 					<div className="stat-card">
 						<div className="stat-label">Allowed</div>
-						<div className="stat-value">{allowed}</div>
+						<div className="stat-value">{seatUsageUnavailable ? "Unavailable" : allowed}</div>
 					</div>
 					<div className="stat-card">
 						<div className="stat-label">Connected</div>
-						<div className="stat-value">{agentCount}</div>
+						<div className="stat-value">{seatUsageUnavailable ? "Unavailable" : agentCount}</div>
 					</div>
 				</div>
 
@@ -620,17 +623,15 @@ function ReconciliationTableRow({ row }: { row: ReconciliationRow }) {
 			<td className="mono">{row.quoteReference ?? "Not recorded"}</td>
 			<td>{row.approver ?? "Not recorded"}</td>
 			<td className="right mono">{row.approvedAgents ?? "Not recorded"}</td>
-			<td className="right mono">
-				{formatRecordedAmount(row.approvedAmountMinor, row.currency)}
-			</td>
+			<td className="right mono">{formatRecordedAmount(row.approvedAmountMinor, row.currency)}</td>
 			<td className="right muted">Not recorded</td>
 			<td className="mono small">
 				{row.settlementIds.length > 0 ? row.settlementIds.join(", ") : "None"}
 			</td>
+			<td className="right mono">{formatRecordedAmount(row.settledAmountMinor, row.currency)}</td>
 			<td className="right mono">
-				{formatRecordedAmount(row.settledAmountMinor, row.currency)}
+				{row.settledSeats === null ? "Not recorded" : row.settledSeats}
 			</td>
-			<td className="right mono">{row.settledSeats === null ? "Not recorded" : row.settledSeats}</td>
 			<td>
 				<span className={reconciliationBadgeClass(row.status)}>
 					{RECONCILIATION_LABELS[row.status]}
@@ -730,6 +731,54 @@ function SubscriptionPortalCard({
 	canManageBilling: boolean;
 	approvals: InvoiceApproval[] | null;
 }) {
+	type PortalRecovery =
+		| { action: "request_seats"; requestId: string; seats: number; sku: string }
+		| { action: "cancel"; requestId: string; settlementId: string };
+	const recoveryFromError = (error: unknown): PortalRecovery | null => {
+		if (
+			!error ||
+			typeof error !== "object" ||
+			(error as { name?: unknown }).name !== "BillingRecoveryError"
+		) {
+			return null;
+		}
+		const value = error as {
+			requestId?: unknown;
+			action?: unknown;
+			detail?: { recovery_payload?: unknown };
+		};
+		if (typeof value.requestId !== "string") return null;
+		const payload = value.detail?.recovery_payload;
+		if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+		const operation = payload as Record<string, unknown>;
+		if (
+			value.action === "request_seats" &&
+			Number.isSafeInteger(operation.seats) &&
+			(operation.seats as number) >= 1 &&
+			(operation.seats as number) <= 10000 &&
+			typeof operation.sku === "string" &&
+			/^[a-z][a-z0-9_.-]{1,63}$/.test(operation.sku)
+		)
+			return {
+				action: "request_seats",
+				requestId: value.requestId,
+				seats: operation.seats as number,
+				sku: operation.sku,
+			};
+		if (
+			value.action === "cancel" &&
+			typeof operation.settlement_id === "string" &&
+			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+				operation.settlement_id,
+			)
+		)
+			return {
+				action: "cancel",
+				requestId: value.requestId,
+				settlementId: operation.settlement_id,
+			};
+		return null;
+	};
 	const [snapshot, setSnapshot] = useState<PortalSnapshot | null>(null);
 	const [portalError, setPortalError] = useState<string | null>(null);
 	const [portalNotice, setPortalNotice] = useState<string | null>(null);
@@ -738,11 +787,23 @@ function SubscriptionPortalCard({
 	const [seats, setSeats] = useState(1);
 	const [seatRequestId, setSeatRequestId] = useState(newBillingRequestId);
 	const [cancelRequestId, setCancelRequestId] = useState(newBillingRequestId);
+	const [recovery, setRecovery] = useState<PortalRecovery | null>(null);
 	const activeTenantRef = useRef(tenantId);
 	activeTenantRef.current = tenantId;
 
 	const refresh = async (active: string): Promise<void> => {
-		setSnapshot(await loadBillingPortal(active));
+		try {
+			const next = await loadBillingPortal(active);
+			if (activeTenantRef.current !== active) return;
+			if (next.tenantId !== active) throw new Error("Unexpected billing tenant");
+			setSnapshot(next);
+		} catch {
+			if (activeTenantRef.current !== active) return;
+			setSnapshot(null);
+			setPortalError(
+				"The provider confirmed the change, but the settlement ledger could not be refreshed. Reload this page before another billing change.",
+			);
+		}
 	};
 
 	useEffect(() => {
@@ -751,6 +812,7 @@ function SubscriptionPortalCard({
 		setPortalError(null);
 		setPortalNotice(null);
 		setPortalLoaded(false);
+		setRecovery(null);
 		setSeatRequestId(newBillingRequestId());
 		setCancelRequestId(newBillingRequestId());
 		if (!tenantId || !canManageBilling) {
@@ -764,9 +826,7 @@ function SubscriptionPortalCard({
 				setSnapshot(next);
 			} catch (loadError) {
 				if (cancelled || activeTenantRef.current !== tenantId) return;
-				setPortalError(
-					loadError instanceof Error ? loadError.message : "The billing portal is unavailable",
-				);
+				setPortalError(readErrorMessage(loadError, "The billing portal is unavailable"));
 			} finally {
 				if (!cancelled) setPortalLoaded(true);
 			}
@@ -776,16 +836,31 @@ function SubscriptionPortalCard({
 		};
 	}, [tenantId, canManageBilling]);
 
-	async function applySeatChange() {
+	async function applySeatChange(
+		input = {
+			requestId: seatRequestId,
+			seats,
+			sku: "aidr.agent.seat",
+		},
+		retrying = false,
+	) {
 		const active = tenantId;
-		const requestId = seatRequestId;
-		if (typeof active !== "string" || typeof requestId !== "string" || busy) return;
+		const { requestId } = input;
+		if (
+			typeof active !== "string" ||
+			typeof requestId !== "string" ||
+			busy ||
+			(recovery && !retrying)
+		)
+			return;
 		setBusy(true);
 		setPortalNotice(null);
 		setPortalError(null);
 		try {
-			const result = await requestSeats(active, requestId, seats);
+			const result = await requestSeats(active, requestId, input.seats, input.sku);
 			if (activeTenantRef.current !== active) return;
+			setRecovery(null);
+			setSeats(input.seats);
 			setPortalNotice(
 				result.action === "noop"
 					? `Provider already reports ${result.providerQuantity} seats.`
@@ -795,32 +870,54 @@ function SubscriptionPortalCard({
 			await refresh(active);
 		} catch (changeError) {
 			if (activeTenantRef.current !== active) return;
-			setPortalError(
-				changeError instanceof Error ? changeError.message : "The seat change was not accepted",
-			);
+			const pending = recoveryFromError(changeError);
+			if (pending) {
+				setRecovery(pending);
+				setPortalError(
+					"The provider result is indeterminate. Retry the exact original request before making a different billing change.",
+				);
+			} else {
+				setPortalError(readErrorMessage(changeError, "The seat change was not accepted"));
+			}
 		} finally {
 			if (activeTenantRef.current === active) setBusy(false);
 		}
 	}
 
-	async function cancelOpenSettlement(settlementId: string) {
+	async function cancelOpenSettlement(
+		settlementId: string,
+		requestId = cancelRequestId,
+		retrying = false,
+	) {
 		const active = tenantId;
-		const requestId = cancelRequestId;
-		if (typeof active !== "string" || typeof requestId !== "string" || busy) return;
+		if (
+			typeof active !== "string" ||
+			typeof requestId !== "string" ||
+			busy ||
+			(recovery && !retrying)
+		)
+			return;
 		setBusy(true);
 		setPortalNotice(null);
 		setPortalError(null);
 		try {
 			await cancelSettlement(active, requestId, settlementId);
 			if (activeTenantRef.current !== active) return;
+			setRecovery(null);
 			setPortalNotice("The subscription was cancelled.");
 			setCancelRequestId(newBillingRequestId());
 			await refresh(active);
 		} catch (cancelError) {
 			if (activeTenantRef.current !== active) return;
-			setPortalError(
-				cancelError instanceof Error ? cancelError.message : "The cancellation was not accepted",
-			);
+			const pending = recoveryFromError(cancelError);
+			if (pending) {
+				setRecovery(pending);
+				setPortalError(
+					"The provider result is indeterminate. Retry the exact original request before making a different billing change.",
+				);
+			} else {
+				setPortalError(readErrorMessage(cancelError, "The cancellation was not accepted"));
+			}
 		} finally {
 			if (activeTenantRef.current === active) setBusy(false);
 		}
@@ -845,9 +942,9 @@ function SubscriptionPortalCard({
 		<div className="card">
 			<h2>Subscription portal</h2>
 			<p className="muted">
-				Seats are read from the settlement ledger, which the billing provider writes after a verified
-				event. Requesting a seat change here updates the provider first and only then reloads the
-				ledger.
+				Seats are read from the settlement ledger, which the billing provider writes after a
+				verified event. Requesting a seat change here updates the provider first and only then
+				reloads the ledger.
 			</p>
 			{!tenantId || !canManageBilling ? (
 				<div className="notice" style={{ marginTop: 12 }}>
@@ -877,6 +974,29 @@ function SubscriptionPortalCard({
 							{portalNotice}
 						</div>
 					) : null}
+					{recovery ? (
+						<div className="notice notice-danger" style={{ marginTop: 12 }}>
+							<div>
+								An earlier provider write could not be confirmed. Only its exact persisted request
+								can be retried safely.
+							</div>
+							<div className="muted small mono">Original request {recovery.requestId}</div>
+							<button
+								className="button button-secondary"
+								type="button"
+								disabled={busy}
+								onClick={() =>
+									void (recovery.action === "request_seats"
+										? applySeatChange(recovery, true)
+										: cancelOpenSettlement(recovery.settlementId, recovery.requestId, true))
+								}
+							>
+								{recovery.action === "request_seats"
+									? `Retry original request: ${recovery.seats} seats`
+									: "Retry original cancellation"}
+							</button>
+						</div>
+					) : null}
 					{snapshot && !snapshot.selfService ? (
 						<div className="notice notice-danger" style={{ marginTop: 12 }}>
 							Self-service billing is not enabled for this deployment. Seat changes require an
@@ -904,9 +1024,8 @@ function SubscriptionPortalCard({
 										</span>
 									</div>
 									<div className="muted small">
-										{row.lines
-											.map((line) => `${line.sku} × ${line.quantity}`)
-											.join(", ") || "No line items"}
+										{row.lines.map((line) => `${line.sku} × ${line.quantity}`).join(", ") ||
+											"No line items"}
 									</div>
 									<div className="muted small">
 										Occurred {row.occurredAt || "unknown"} · sequence {row.sequence}
@@ -914,14 +1033,14 @@ function SubscriptionPortalCard({
 									<div className="muted small mono" title={row.receiptHash}>
 										Receipt {row.receiptHash.slice(0, 16)}…
 									</div>
-									{row.status === "settled" && cancellable.some(
-										(entry) => entry.settlementId === row.settlementId,
-									) ? (
+									{snapshot.selfService &&
+									row.status === "settled" &&
+									cancellable.some((entry) => entry.settlementId === row.settlementId) ? (
 										<div className="row" style={{ marginTop: 8 }}>
 											<button
 												className="button button-secondary"
 												type="button"
-												disabled={busy}
+												disabled={busy || recovery !== null || !cancelRequestId}
 												onClick={() => void cancelOpenSettlement(row.settlementId)}
 											>
 												Cancel subscription
@@ -931,10 +1050,14 @@ function SubscriptionPortalCard({
 								</div>
 							))}
 						</div>
+					) : snapshot ? (
+						<div className="muted small" style={{ marginTop: 12 }}>
+							No settlement is on record for this tenant. A seat count is not zero until a settled
+							settlement exists.
+						</div>
 					) : (
 						<div className="muted small" style={{ marginTop: 12 }}>
-							No settlement is on record for this tenant. A seat count is not zero until a
-							settled settlement exists.
+							Settlement ledger is unavailable.
 						</div>
 					)}
 					<ReconciliationSection approvals={approvals} snapshot={snapshot} />
@@ -958,7 +1081,14 @@ function SubscriptionPortalCard({
 							<button
 								className="button"
 								type="button"
-								disabled={busy}
+								disabled={
+									busy ||
+									recovery !== null ||
+									!seatRequestId ||
+									!Number.isSafeInteger(seats) ||
+									seats < 1 ||
+									seats > 10000
+								}
 								onClick={() => void applySeatChange()}
 							>
 								{busy ? "Applying…" : "Apply seat change"}

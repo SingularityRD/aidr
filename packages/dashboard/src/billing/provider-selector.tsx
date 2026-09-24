@@ -15,7 +15,7 @@ interface PaymentProviderSelectorProps {
 	selectedProvider?: ProviderType;
 }
 
-export function PaymentProviderSelector({
+function PaymentProviderSelector({
 	userLocation,
 	onSelect,
 	selectedProvider,
@@ -69,7 +69,7 @@ function ProviderCard({ provider, isSelected, onClick }: ProviderCardProps) {
 	);
 }
 
-export function ProviderCards({
+function ProviderCards({
 	providers,
 	onSelect,
 	selectedProvider,
@@ -120,7 +120,7 @@ export function getPaymentButtonText(_provider: ProviderType, _userLocation: str
 /**
  * Get currency display symbol
  */
-export function getCurrencySymbol(currency: string): string {
+function getCurrencySymbol(currency: string): string {
 	const symbols: Record<string, string> = {
 		USD: "$",
 		EUR: "€",
@@ -134,7 +134,7 @@ export function getCurrencySymbol(currency: string): string {
 /**
  * Format price with psychological pricing (.99)
  */
-export function formatPrice(amount: number, currency: string): string {
+function formatPrice(amount: number, currency: string): string {
 	const symbol = getCurrencySymbol(currency);
 	const formatted = amount.toFixed(2);
 	return `${symbol}${formatted}`;

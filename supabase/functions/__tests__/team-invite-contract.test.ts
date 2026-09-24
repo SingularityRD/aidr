@@ -12,16 +12,16 @@
 //      MFA assurance) and the shared configuration guard, each failing closed;
 //   2. authorization: role, membership, tenant status and tenant scoping are
 //      all re-derived on the server, never taken from the request body;
-//   3. the invitation lifecycle: single-use secrets, token rotation on replay
-//      and resend, revoke, and pending-only operations;
+//   3. the invitation lifecycle: single-use secrets, explicit token rotation
+//      on resend, revoke, and pending-only operations;
 //   4. failure mapping: duplicate key -> 409, everything else -> 503, and no
 //      path that reports a delivery that did not happen;
-//   5. the SQL contract of `20260911000001_team_invitations.sql`.
+//   5. the invitation schema and latest acceptance SQL contract.
 //
 // The runtime acceptance path (consume, expiry, replay) lives behind
 // `oauth-callback` and is driven end-to-end by
 // `supabase/functions/__tests__/oauth-callback-contract.test.ts`; the SQL
-// guards that back it are asserted here.
+// guards that back it are asserted here and in the PostgreSQL rollback test.
 
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
@@ -33,7 +33,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The Edge Function imports Supabase through Deno's `npm:` specifier, which a
 // Node test runner cannot resolve. The client must always arrive through
 // `createTeamInviteHandler({ db })`; constructing a real one is a test bug.
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => {
 		throw new Error("createClient must be injected through TeamInviteDeps.db");
 	},
@@ -57,6 +57,9 @@ function repoFile(...segments: string[]): string {
 }
 
 const migration = repoFile("supabase", "migrations", "20260911000001_team_invitations.sql");
+const recipientGuardMigration = repoFile("supabase", "migrations", "20260923000004_team_invitation_recipient_uniqueness.sql");
+const atomicMutationMigration = repoFile("supabase", "migrations", "20260923000019_team_invitation_atomic_audit.sql");
+const acceptanceMigration = repoFile("supabase", "migrations", "20260923000046_team_invitation_acceptance_lock.sql");
 const handlerSource = repoFile("supabase", "functions", "team-invite", "index.ts");
 const lifecycleSource = repoFile("supabase", "functions", "team-invite", "lifecycle.ts");
 const consumerSource = repoFile("packages", "dashboard", "src", "enterprise", "team-provider.tsx");
@@ -110,10 +113,11 @@ interface InvitationRow {
 	expires_at: string;
 	accepted_at: string | null;
 	created_at: string;
+	live_slot: boolean;
 }
 
 function invitationRow(overrides: Partial<InvitationRow> = {}): InvitationRow {
-	return {
+	const row: InvitationRow = {
 		id: INVITE,
 		tenant_id: TEAM,
 		email: "existing@example.com",
@@ -123,8 +127,11 @@ function invitationRow(overrides: Partial<InvitationRow> = {}): InvitationRow {
 		expires_at: LATER,
 		accepted_at: null,
 		created_at: NOW,
+		live_slot: false,
 		...overrides,
 	};
+	row.live_slot = overrides.live_slot ?? (row.accepted_at === null && Date.parse(row.expires_at) > Date.now());
+	return row;
 }
 
 function rowById(rows: InvitationRow[], id: string): InvitationRow {
@@ -151,39 +158,49 @@ interface DbOptions {
 	insertError?: { code?: string; message?: string } | null;
 	insertThrows?: boolean;
 	updateError?: { code?: string; message?: string } | null;
+	auditError?: boolean;
+	tenantAuditError?: boolean;
+	mutationForbidden?: boolean;
+	synchronizePendingReads?: boolean;
 	rateCount?: number;
 	rateLimitError?: boolean;
 }
 
-type QueryOperation = "select" | "insert" | "update";
-
 interface QueryFilter {
 	column: string;
 	value: unknown;
-	compare?: boolean;
+	compare?: "gt" | "lte";
 }
 
 interface QueryCall {
 	table: string;
-	operation: QueryOperation;
 	filters: QueryFilter[];
 	order: { column: string; ascending: boolean } | null;
 	limit: number | null;
 }
 
 /**
- * A service-role client double shaped like the PostgREST builder the handler
- * chains. `team_invitations` is a real in-memory table with the migration's
- * unique `token_hash`, so token rotation, revocation and replay are observed
- * on stored state rather than on mock call arguments.
+ * A service-role client double with an in-memory invitation table. Reads go
+ * through the PostgREST-shaped builder; every write must use the atomic RPC.
  */
 function database(options: DbOptions = {}) {
 	const memberships = options.memberships ?? { [TEAM]: { role: "owner", expires_at: null } };
 	const invitations: InvitationRow[] = (options.invitations ?? []).map((row) => ({ ...row }));
 	const queries: QueryCall[] = [];
 	const rpcs: Array<{ name: string; args: Record<string, unknown> }> = [];
+	const auditLogs: Array<{ action: string; invitation_id: string; event_id: string }> = [];
+	const tenantAuditLogs: typeof auditLogs = [];
 	let generated = 0;
 	let rateCount = options.rateCount ?? 1;
+	let pendingReadCount = 0;
+	let releasePendingReads: () => void = () => {};
+	const pendingReadGate = new Promise<void>((resolve) => { releasePendingReads = resolve; });
+	function auditBoth(action: string, invitationId: string) {
+		const event_id = crypto.randomUUID();
+		const entry = { action, invitation_id: invitationId, event_id };
+		auditLogs.push(entry);
+		tenantAuditLogs.push({ ...entry });
+	}
 
 	// A structurally valid JWT authenticates; the identity barrier - not the
 	// token string - is what revokes a session.
@@ -205,7 +222,9 @@ function database(options: DbOptions = {}) {
 		return rows.filter((row) =>
 			call.filters.every((filter) => {
 				const candidate = value(row as unknown as Record<string, unknown>, filter.column);
-				return filter.compare === true ? String(candidate) > String(filter.value) : candidate === filter.value;
+				if (filter.compare === "gt") return String(candidate) > String(filter.value);
+				if (filter.compare === "lte") return String(candidate) <= String(filter.value);
+				return candidate === filter.value;
 			}),
 		);
 	}
@@ -241,35 +260,17 @@ function database(options: DbOptions = {}) {
 		return { data: null, error: null };
 	}
 
-	function invitationQuery(
+	async function invitationQuery(
 		call: QueryCall,
-		payload: Record<string, unknown>,
 		terminal: "single" | "all",
-	): { data: unknown; error: unknown } {
-		if (call.operation === "update") {
-			if (options.updateError) return { data: null, error: options.updateError };
-			const updated = matches(call, invitations);
-			for (const row of updated) Object.assign(row, payload);
-			return { data: terminal === "single" ? (updated[0] ?? null) : updated, error: null };
-		}
-		if (call.operation === "insert") {
-			if (options.insertThrows) throw new Error("connection reset by peer");
-			if (options.insertError) return { data: null, error: options.insertError };
-			const row: InvitationRow = {
-				accepted_at: null,
-				created_at: new Date().toISOString(),
-				// UUID-shaped, like the migration's `gen_random_uuid()` default.
-				id: `aaaaaaaa-0000-4000-8000-${String(++generated).padStart(12, "0")}`,
-				...(payload as unknown as InvitationRow),
-			};
-			if (invitations.some((existing) => existing.token_hash === row.token_hash)) {
-				return {
-					data: null,
-					error: { code: "23505", message: "duplicate key value violates unique constraint" },
-				};
-			}
-			invitations.push(row);
-			return { data: row, error: null };
+	): Promise<{ data: unknown; error: unknown }> {
+		const isPendingCreateRead = call.limit === 1 && call.order?.column === "created_at"
+			&& call.filters.some((filter) => filter.column === "email")
+			&& call.filters.some((filter) => filter.column === "expires_at" && filter.compare === "gt");
+		if (options.synchronizePendingReads && isPendingCreateRead && pendingReadCount < 2) {
+			pendingReadCount += 1;
+			if (pendingReadCount === 2) releasePendingReads();
+			await pendingReadGate;
 		}
 		// The ordered read is the `list` action; it is the only select that can
 		// report a list-specific failure.
@@ -290,28 +291,16 @@ function database(options: DbOptions = {}) {
 	function record(call: QueryCall): QueryCall {
 		return {
 			table: call.table,
-			operation: call.operation,
-			filters: call.filters.map((filter) => ({ column: filter.column, value: filter.value })),
+			filters: call.filters.map((filter) => ({ column: filter.column, value: filter.value, ...(filter.compare ? { compare: filter.compare } : {}) })),
 			order: call.order,
 			limit: call.limit,
 		};
 	}
 
 	function table(name: string) {
-		const call: QueryCall = { table: name, operation: "select", filters: [], order: null, limit: null };
-		let payload: Record<string, unknown> = {};
+		const call: QueryCall = { table: name, filters: [], order: null, limit: null };
 		const builder = {
 			select(_columns?: string) {
-				return builder;
-			},
-			insert(values: Record<string, unknown>) {
-				call.operation = "insert";
-				payload = values;
-				return builder;
-			},
-			update(values: Record<string, unknown>) {
-				call.operation = "update";
-				payload = values;
 				return builder;
 			},
 			eq(column: string, columnValue: unknown) {
@@ -323,7 +312,7 @@ function database(options: DbOptions = {}) {
 				return builder;
 			},
 			gt(column: string, columnValue: unknown) {
-				call.filters.push({ column, value: columnValue, compare: true });
+				call.filters.push({ column, value: columnValue, compare: "gt" });
 				return builder;
 			},
 			order(column: string, opts?: { ascending?: boolean }) {
@@ -336,11 +325,11 @@ function database(options: DbOptions = {}) {
 			},
 			async maybeSingle() {
 				queries.push(record(call));
-				return name === "team_invitations" ? invitationQuery(call, payload, "single") : singleRow(name, call);
+				return name === "team_invitations" ? invitationQuery(call, "single") : singleRow(name, call);
 			},
 			then(onFulfilled: (result: unknown) => unknown, onRejected?: (reason: unknown) => unknown) {
 				queries.push(record(call));
-				const result = name === "team_invitations" ? invitationQuery(call, payload, "all") : singleRow(name, call);
+				const result = name === "team_invitations" ? invitationQuery(call, "all") : singleRow(name, call);
 				return Promise.resolve(result).then(onFulfilled, onRejected);
 			},
 		};
@@ -357,11 +346,62 @@ function database(options: DbOptions = {}) {
 				rateCount += 1;
 				return { data: null, error: null };
 			}
+			if (name === "mutate_team_invitation") {
+				const action = String(args.p_action);
+				const tenantId = String(args.p_tenant_id);
+				const actorId = String(args.p_actor_user_id);
+				const now = new Date();
+				const error = action === "create" ? options.insertError : options.updateError;
+				if (options.mutationForbidden) return { data: null, error: { code: "42501", message: "invitation_forbidden" } };
+				if (action === "create" && options.insertThrows) throw new Error("connection reset by peer");
+				if (error) return { data: null, error };
+				const auditFailure = { data: null, error: { code: "23514", message: "audit_write_failed" } };
+				if (action === "create") {
+					const email = String(args.p_email).toLowerCase();
+					const duplicate = invitations.some((row) => row.tenant_id === tenantId && row.email.toLowerCase() === email
+						&& row.accepted_at === null && Date.parse(row.expires_at) > now.getTime());
+					if (duplicate || invitations.some((row) => row.token_hash === args.p_token_hash)) {
+						return { data: null, error: { code: "23505", message: "duplicate key value" } };
+					}
+					if (options.auditError || options.tenantAuditError) return auditFailure;
+					for (const row of invitations) {
+						if (row.tenant_id === tenantId && row.email.toLowerCase() === email && Date.parse(row.expires_at) <= now.getTime()) row.live_slot = false;
+					}
+					const row: InvitationRow = {
+						id: `aaaaaaaa-0000-4000-8000-${String(++generated).padStart(12, "0")}`,
+						tenant_id: tenantId, email, role: String(args.p_role), token_hash: String(args.p_token_hash),
+						created_by: actorId, expires_at: new Date(now.getTime() + 7 * 86_400_000).toISOString(),
+						accepted_at: null, created_at: now.toISOString(), live_slot: true,
+					};
+					invitations.push(row);
+					auditBoth("team.invitation_created", row.id);
+					return { data: { id: row.id, expires_at: row.expires_at }, error: null };
+				}
+				const row = invitations.find((candidate) => candidate.tenant_id === tenantId && candidate.id === args.p_invitation_id
+					&& candidate.accepted_at === null && Date.parse(candidate.expires_at) > now.getTime());
+				if (!row) return { data: null, error: null };
+				if (action === "resend" && invitations.some((candidate) => candidate !== row && candidate.token_hash === args.p_token_hash)) {
+					return { data: null, error: { code: "23505", message: "duplicate key value" } };
+				}
+				if (options.auditError || options.tenantAuditError) return auditFailure;
+				if (action === "resend") {
+					row.token_hash = String(args.p_token_hash);
+					row.expires_at = new Date(now.getTime() + 7 * 86_400_000).toISOString();
+					row.created_by = actorId;
+					row.live_slot = true;
+					auditBoth("team.invitation_link_replaced", row.id);
+					return { data: { id: row.id, email: row.email, role: row.role, expires_at: row.expires_at }, error: null };
+				}
+				row.expires_at = now.toISOString();
+				row.live_slot = false;
+				auditBoth("team.invitation_revoked", row.id);
+				return { data: { id: row.id }, error: null };
+			}
 			return { data: null, error: null };
 		}),
 	};
 
-	return { db, queries, rpcs, invitations, getUser, assurance };
+	return { db, queries, rpcs, invitations, auditLogs, tenantAuditLogs, getUser, assurance };
 }
 
 /** The exact lookup `accept_team_invitation(p_hash)` performs. */
@@ -594,11 +634,30 @@ describe("team-invite authorization", () => {
 		expect(listed.invitations.map((row) => row.id)).toEqual([INVITE]);
 
 		for (const call of inviteQueries(fake.queries)) {
-			expect(call.filters, `${call.operation} without tenant scope`).toContainEqual({
+			expect(call.filters, "invitation read without tenant scope").toContainEqual({
 				column: "tenant_id",
 				value: TEAM,
 			});
 		}
+		for (const rpc of fake.rpcs.filter((call) => call.name === "mutate_team_invitation")) {
+			expect(rpc.args.p_tenant_id).toBe(TEAM);
+			expect(rpc.args.p_actor_user_id).toBe(USER);
+		}
+	});
+
+	it("lists live invitations before applying the 100-row limit", async () => {
+		const live = invitationRow({ created_at: "2020-01-01T00:00:00.000Z" });
+		const historical = Array.from({ length: 101 }, (_, index) => invitationRow({
+			id: `aaaaaaaa-aaaa-4aaa-8aaa-${String(index).padStart(12, "0")}`,
+			email: `old-${index}@example.com`,
+			expires_at: EARLIER,
+			created_at: NOW,
+		}));
+		const fake = handlerWith({ invitations: [live, ...historical] });
+		const response = await fake.handle(post({ team_id: TEAM, action: "list" }));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { invitations: Array<{ id: string }> };
+		expect(body.invitations.map((row) => row.id)).toEqual([INVITE]);
 	});
 
 	it("refuses an unreadable membership or invitation list instead of inventing an answer", async () => {
@@ -646,37 +705,26 @@ describe("team invitation lifecycle", () => {
 		});
 		expect(Date.parse(row.expires_at)).toBeGreaterThan(Date.now());
 		expect(redeemable(fake.invitations, secret)).toHaveLength(1);
+		expect(fake.auditLogs).toMatchObject([{ action: "team.invitation_created", invitation_id: row.id }]);
+		expect(fake.tenantAuditLogs).toEqual(fake.auditLogs);
 		// The secret appears exactly once, inside the link, and the stored digest
 		// never travels back to the browser.
 		expect(JSON.stringify(body).split(secret)).toHaveLength(2);
 		expect(JSON.stringify(body)).not.toContain(row.token_hash);
 	});
 
-	it("is idempotent for a repeated identical request id: one pending row, one live link", async () => {
+	it("rejects a repeated create without invalidating the first returned link", async () => {
 		const fake = handlerWith();
 		const request = { ...CREATE, request_id: "req-4f21c8de01" };
 		const first = await fake.handle(post(request));
 		const second = await fake.handle(post(request));
-		expect([first.status, second.status]).toEqual([200, 200]);
+		expect([first.status, second.status]).toEqual([200, 409]);
 
 		const firstBody = (await first.json()) as Record<string, unknown>;
-		const secondBody = (await second.json()) as Record<string, unknown>;
-		expect(Object.keys(secondBody).sort()).toEqual([
-			"delivery",
-			"expires_at",
-			"invitation_id",
-			"invite_url",
-			"ok",
-		]);
-		expect(secondBody.invitation_id).toBe(firstBody.invitation_id);
+		expect(await second.json()).toEqual({ error: "invitation_conflict" });
 		expect(fake.invitations).toHaveLength(1);
-
 		const firstSecret = secretOf(firstBody.invite_url);
-		const secondSecret = secretOf(secondBody.invite_url);
-		expect(secondSecret).not.toBe(firstSecret);
-		expect(redeemable(fake.invitations, firstSecret)).toHaveLength(0);
-		expect(redeemable(fake.invitations, secondSecret)).toHaveLength(1);
-		expect(JSON.stringify(secondBody)).not.toContain(firstSecret);
+		expect(redeemable(fake.invitations, firstSecret)).toHaveLength(1);
 	});
 
 	it("rejects a role change for a recipient who already has a pending invitation and leaves exactly one row", async () => {
@@ -730,24 +778,44 @@ describe("team invitation lifecycle", () => {
 		expect(redeemable(fake.invitations, secretOf(secondBody.invite_url))).toHaveLength(1);
 	});
 
-	it("still resends rather than duplicating when the role is unchanged", async () => {
+	it("requires explicit resend even when the role is unchanged", async () => {
 		const fake = handlerWith();
 		const request = { ...CREATE, role: "admin" };
 		const first = await fake.handle(post(request));
 		const second = await fake.handle(post(request));
-		expect([first.status, second.status]).toEqual([200, 200]);
+		expect([first.status, second.status]).toEqual([200, 409]);
 
 		const firstBody = (await first.json()) as Record<string, unknown>;
-		const secondBody = (await second.json()) as Record<string, unknown>;
-		expect(secondBody.invitation_id).toBe(firstBody.invitation_id);
+		expect(await second.json()).toEqual({ error: "invitation_conflict" });
 		expect(fake.invitations).toHaveLength(1);
 		expect((fake.invitations[0] as InvitationRow).role).toBe("admin");
+		expect(redeemable(fake.invitations, secretOf(firstBody.invite_url))).toHaveLength(1);
+	});
 
-		const firstSecret = secretOf(firstBody.invite_url);
-		const secondSecret = secretOf(secondBody.invite_url);
-		expect(secondSecret).not.toBe(firstSecret);
-		expect(redeemable(fake.invitations, firstSecret)).toHaveLength(0);
-		expect(redeemable(fake.invitations, secondSecret)).toHaveLength(1);
+	it("lets only one concurrent same-recipient create succeed and preserves its link", async () => {
+		const fake = handlerWith({ synchronizePendingReads: true });
+		const responses = await Promise.all([fake.handle(post(CREATE)), fake.handle(post(CREATE))]);
+		expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+		const bodies = await Promise.all(responses.map((response) => response.json() as Promise<Record<string, unknown>>));
+		expect(fake.invitations).toHaveLength(1);
+		expect(fake.invitations.filter((row) => row.live_slot)).toHaveLength(1);
+		const success = bodies.find((body) => body.ok === true);
+		expect(success).toBeDefined();
+		expect(bodies.find((body) => body.error)).toEqual({ error: "invitation_conflict" });
+		expect(redeemable(fake.invitations, secretOf(success?.invite_url))).toHaveLength(1);
+	});
+
+	it("returns a role conflict when concurrent creates claim the same recipient with different roles", async () => {
+		const fake = handlerWith({ synchronizePendingReads: true });
+		const responses = await Promise.all([
+			fake.handle(post({ ...CREATE, role: "member" })),
+			fake.handle(post({ ...CREATE, role: "viewer" })),
+		]);
+		expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+		const bodies = await Promise.all(responses.map((response) => response.json() as Promise<Record<string, unknown>>));
+		expect(bodies.some((body) => body.error === "invitation_role_conflict")).toBe(true);
+		expect(fake.invitations).toHaveLength(1);
+		expect(fake.invitations.filter((row) => row.live_slot)).toHaveLength(1);
 	});
 
 	it("allows a new invitation after the previous one expired or was revoked", async () => {
@@ -834,6 +902,10 @@ describe("team invitation lifecycle", () => {
 		expect((fake.invitations[0] as InvitationRow).token_hash).toBe(sha256Hex(rotatedSecret));
 		expect(redeemable(fake.invitations, createdSecret)).toHaveLength(0);
 		expect(redeemable(fake.invitations, rotatedSecret)).toHaveLength(1);
+		expect(fake.auditLogs.map((entry) => entry.action)).toEqual([
+			"team.invitation_created", "team.invitation_link_replaced",
+		]);
+		expect(fake.tenantAuditLogs).toEqual(fake.auditLogs);
 	});
 
 	it("keeps resend and revoke pending-only and never reopens a dead link", async () => {
@@ -860,8 +932,8 @@ describe("team invitation lifecycle", () => {
 			expect(response.status, `revoke/${invitationId}`).toBe(404);
 			expect(await response.json()).toEqual({ error: "invitation_not_pending" });
 		}
-		// A consumed, foreign or unknown invitation cannot be re-issued either.
-		for (const invitationId of [CONSUMED_INVITE, FOREIGN_INVITE, INVITE]) {
+		// A consumed, expired, foreign or unknown invitation cannot be re-issued.
+		for (const invitationId of [CONSUMED_INVITE, EXPIRED_INVITE, FOREIGN_INVITE, INVITE]) {
 			const response = await fake.handle(post({ team_id: TEAM, action: "resend", invitation_id: invitationId }));
 			expect(response.status, `resend/${invitationId}`).toBe(404);
 			expect(await response.json()).toEqual({ error: "invitation_not_pending" });
@@ -874,18 +946,23 @@ describe("team invitation lifecycle", () => {
 		expect(foreign.token_hash).toBe(sha256Hex("foreign-secret"));
 		expect(foreign.expires_at).toBe(LATER);
 
-		// An expired but unaccepted row may still be re-issued; that rotates the
-		// token and moves the expiry forward, it does not reopen the old link.
-		const reissued = await fake.handle(
-			post({ team_id: TEAM, action: "resend", invitation_id: EXPIRED_INVITE }),
-		);
-		expect(reissued.status).toBe(200);
-		const body = (await reissued.json()) as Record<string, unknown>;
 		const expired = rowById(fake.invitations, EXPIRED_INVITE);
-		expect(expired.token_hash).toBe(sha256Hex(secretOf(body.invite_url)));
-		expect(expired.token_hash).not.toBe(sha256Hex("old-secret"));
-		expect(Date.parse(expired.expires_at)).toBeGreaterThan(Date.now());
+		expect(expired.token_hash).toBe(sha256Hex("old-secret"));
+		expect(expired.expires_at).toBe(EARLIER);
 		expect(redeemable(fake.invitations, "old-secret")).toHaveLength(0);
+	});
+
+	it("does not revive a specifically revoked invitation on resend", async () => {
+		const fake = handlerWith();
+		const created = (await (await fake.handle(post(CREATE))).json()) as Record<string, unknown>;
+		expect((await fake.handle(post({ team_id: TEAM, action: "revoke", invitation_id: created.invitation_id }))).status).toBe(200);
+		const row = fake.invitations[0] as InvitationRow;
+		const revokedHash = row.token_hash;
+		const revokedExpiry = row.expires_at;
+		const resend = await fake.handle(post({ team_id: TEAM, action: "resend", invitation_id: created.invitation_id }));
+		expect(resend.status).toBe(404);
+		expect(await resend.json()).toEqual({ error: "invitation_not_pending" });
+		expect(row).toMatchObject({ token_hash: revokedHash, expires_at: revokedExpiry, live_slot: false });
 	});
 
 	it("revokes an invitation once and refuses the replay without changing state", async () => {
@@ -911,6 +988,10 @@ describe("team invitation lifecycle", () => {
 		expect(await replay.json()).toEqual({ error: "invitation_not_pending" });
 		expect(fake.invitations).toHaveLength(1);
 		expect(row.expires_at).toBe(revokedAt);
+		expect(fake.auditLogs.map((entry) => entry.action)).toEqual([
+			"team.invitation_created", "team.invitation_revoked",
+		]);
+		expect(fake.tenantAuditLogs).toEqual(fake.auditLogs);
 	});
 });
 
@@ -921,15 +1002,10 @@ describe("team-invite failure mapping", () => {
 		expect(created.status).toBe(409);
 		expect(await created.json()).toEqual({ error: "invitation_conflict" });
 
-		const rotating = handlerWith({
-			invitations: [invitationRow({ email: "new.member@example.com" })],
+		const resending = handlerWith({
+			invitations: [invitationRow()],
 			updateError: { code: "23505", message: "duplicate key value" },
 		});
-		const replayed = await rotating.handle(post(CREATE));
-		expect(replayed.status).toBe(409);
-		expect(await replayed.json()).toEqual({ error: "invitation_conflict" });
-
-		const resending = handlerWith({ updateError: { code: "23505", message: "duplicate key value" } });
 		const resent = await resending.handle(
 			post({ team_id: TEAM, action: "resend", invitation_id: INVITE }),
 		);
@@ -949,6 +1025,35 @@ describe("team-invite failure mapping", () => {
 		const body = (await thrown.json()) as Record<string, unknown>;
 		expect(body).toEqual({ error: "invitation_unavailable" });
 		expect(body.ok).toBeUndefined();
+	});
+
+	it("rolls back each invitation mutation when either audit stream fails", async () => {
+		for (const failedStream of ["auditError", "tenantAuditError"] as const) {
+			for (const action of ["create", "resend", "revoke"] as const) {
+				const fake = handlerWith({ invitations: action === "create" ? [] : [invitationRow()], [failedStream]: true });
+				const before = structuredClone(fake.invitations);
+				const body = action === "create" ? CREATE : { team_id: TEAM, action, invitation_id: INVITE };
+				const response = await fake.handle(post(body));
+				expect(response.status, `${failedStream}/${action}`).toBe(503);
+				expect(await response.json()).toEqual({ error: `invitation_${action}_failed` });
+				expect(fake.invitations).toEqual(before);
+				expect(fake.auditLogs).toEqual([]);
+				expect(fake.tenantAuditLogs).toEqual([]);
+			}
+		}
+	});
+
+	it("rejects authorization lost between the handler check and the database mutation", async () => {
+		for (const action of ["create", "resend", "revoke"] as const) {
+			const fake = handlerWith({ invitations: [invitationRow()], mutationForbidden: true });
+			const before = structuredClone(fake.invitations);
+			const body = action === "create" ? CREATE : { team_id: TEAM, action, invitation_id: INVITE };
+			const response = await fake.handle(post(body));
+			expect(response.status, action).toBe(403);
+			expect(await response.json()).toEqual({ error: "team_forbidden" });
+			expect(fake.invitations).toEqual(before);
+			expect(fake.auditLogs).toEqual([]);
+		}
 	});
 
 	it("never reports a delivery that did not happen", async () => {
@@ -1016,6 +1121,38 @@ describe("team-invite failure mapping", () => {
 });
 
 describe("team invitation SQL contract", () => {
+	it("enforces one case-insensitive live recipient slot without deleting invitation history", () => {
+		expect(recipientGuardMigration).toContain("add column live_slot boolean not null default false");
+		expect(recipientGuardMigration).toContain("create unique index team_invitations_one_live_recipient_idx");
+		expect(recipientGuardMigration).toContain("on public.team_invitations (tenant_id, lower(email))");
+		expect(recipientGuardMigration).toContain("where live_slot");
+		expect(recipientGuardMigration).toContain("new.live_slot := new.accepted_at is null and new.expires_at > now()");
+		expect(recipientGuardMigration).toContain("team_invitation_live_recipient_duplicates_exist");
+		expect(recipientGuardMigration).not.toMatch(/\bdelete\s+from\s+public\.team_invitations/i);
+	});
+
+	it("makes mutation and privileged audit one restricted database transaction", () => {
+		expect(atomicMutationMigration).toContain("create or replace function public.sync_team_invitation_live_slot()");
+		expect(atomicMutationMigration).toContain("new.expires_at > clock_timestamp()");
+		expect(atomicMutationMigration).toContain("create function public.mutate_team_invitation(");
+		expect(atomicMutationMigration).toContain("security definer");
+		expect(atomicMutationMigration).toContain("join public.teams team on team.id = t.id");
+		expect(atomicMutationMigration).toContain("for share of m, t, team");
+		expect(atomicMutationMigration).toContain("raise exception 'invitation_forbidden' using errcode = '42501'");
+		for (const action of ["team.invitation_created", "team.invitation_link_replaced", "team.invitation_revoked"]) {
+			expect(atomicMutationMigration).toContain(`'${action}'`);
+		}
+		expect(atomicMutationMigration).toContain("insert into public.admin_audit_logs(");
+		expect(atomicMutationMigration).toContain("insert into public.audit_logs(");
+		expect(atomicMutationMigration).toContain("v_detail := jsonb_build_object('event_id', v_event_id,");
+		expect(atomicMutationMigration).toContain("values (p_actor_user_id, p_tenant_id, v_action, v_detail)");
+		expect(atomicMutationMigration).toContain("values (p_tenant_id, p_tenant_id, p_actor_user_id, v_action, v_detail)");
+		expect(atomicMutationMigration).toContain("revoke all on function public.mutate_team_invitation(");
+		expect(atomicMutationMigration).toContain("from public, anon, authenticated");
+		expect(atomicMutationMigration).toContain("to service_role");
+		expect(atomicMutationMigration).toContain("revoke insert, update, delete, truncate on public.team_invitations from service_role");
+	});
+
 	it("keeps invitation rows and the acceptance RPC out of every browser role's reach", () => {
 		expect(migration).toContain("alter table public.team_invitations enable row level security");
 		expect(migration).toContain("revoke all on public.team_invitations from anon, authenticated");
@@ -1035,21 +1172,25 @@ describe("team invitation SQL contract", () => {
 		expect(migration).not.toMatch(
 			/grant execute on function public\.accept_team_invitation[^;]*to (?:public|anon|authenticated)/,
 		);
+		expect(acceptanceMigration).toContain("revoke all on function public.accept_team_invitation(text, uuid) from public, anon, authenticated");
+		expect(acceptanceMigration).toContain("grant execute on function public.accept_team_invitation(text, uuid) to service_role");
 	});
 
 	it("re-checks the recipient, the issuing admin, the tenant and the row inside the accepting transaction", () => {
-		const rpc = migration.split("create function public.accept_team_invitation(")[1] ?? "";
+		const rpc = acceptanceMigration.split("create or replace function public.accept_team_invitation(")[1] ?? "";
 		expect(rpc).toContain("security definer");
-		expect(rpc).toContain("set search_path = public, pg_temp");
-		expect(rpc).toContain(
-			"select * into invite from public.team_invitations where token_hash = p_hash for update;",
-		);
+		expect(rpc).toContain("set search_path = pg_catalog, public, pg_temp");
+		expect(rpc).toContain("where id = v_invite_id and token_hash = p_hash");
+		expect(rpc).toContain("for share of m, t, team");
+		expect(rpc).toContain("for update");
+		expect(rpc).toContain("v_now := clock_timestamp()");
 		expect(rpc).toContain("email_confirmed_at is not null");
-		expect(rpc).toContain("verified_email <> invite.email");
-		expect(rpc).toContain("invite.accepted_at is not null or invite.expires_at <= now()");
+		expect(rpc).toContain("v_verified_email <> lower(v_invite.email)");
+		expect(rpc).toContain("v_invite.accepted_at is not null");
+		expect(rpc).toContain("v_invite.expires_at <= v_now");
 		expect(rpc).toContain("raise exception 'invalid_invitation'");
-		expect(rpc).toContain("m.role in ('owner','admin')");
-		expect(rpc).toContain("(m.expires_at is null or m.expires_at > now())");
+		expect(rpc).toContain("m.role in ('owner', 'admin')");
+		expect(rpc).toContain("(m.expires_at is null or m.expires_at > clock_timestamp())");
 		expect(rpc).toContain("t.status = 'active'");
 		expect(rpc).toContain("raise exception 'invitation_revoked'");
 	});
@@ -1063,12 +1204,12 @@ describe("team invitation SQL contract", () => {
 		expect(migration).toContain("expires_at timestamptz not null default now() + interval '7 days'");
 		expect(migration).toContain("accepted_at timestamptz");
 		// Acceptance consumes the row once and never upgrades an existing member.
-		expect(migration).toContain(
+		expect(acceptanceMigration).toContain(
 			"insert into public.team_members(team_id, tenant_id, user_id, role, invited_by)",
 		);
-		expect(migration).toContain("on conflict(team_id, user_id) do nothing");
-		expect(migration).toContain("update public.team_invitations set accepted_at = now() where id = invite.id");
-		expect(migration).toContain("'member.invitation_accepted'");
+		expect(acceptanceMigration).toContain("on conflict(team_id, user_id) do nothing");
+		expect(acceptanceMigration).toContain("update public.team_invitations set accepted_at = v_now where id = v_invite.id");
+		expect(acceptanceMigration).toContain("'member.invitation_accepted'");
 	});
 });
 
@@ -1082,7 +1223,7 @@ describe("team-invite handler source contract", () => {
 		expect(handlerSource).toContain('from "../_shared/identity-barrier.ts"');
 		expect(handlerSource).toContain("checkIdentityBarrier(db, token, auth.user.id, command.teamId)");
 		expect(handlerSource).not.toMatch(/Deno\.env\.get\(\s*"(?:SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY)"\s*\)/);
-		expect(handlerSource).not.toContain('?? ""');
+		expect(handlerSource).not.toMatch(/config\.values\.(?:SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|AIDR_DASHBOARD_URL)\s*\?\?\s*""/);
 		// The configuration guard runs at request time, before any client work.
 		const guard = handlerSource.indexOf("loadConfig(runtimeEnv,");
 		expect(guard).toBeGreaterThan(handlerSource.indexOf("handleCors(req)"));
@@ -1091,26 +1232,22 @@ describe("team-invite handler source contract", () => {
 
 	it("requires an owner/admin membership and hashes the secret before it is stored", () => {
 		expect(handlerSource).toContain('from("tenant_members")');
-		expect(handlerSource).toContain('["owner", "admin"].includes(member?.role)');
+		expect(handlerSource).toContain('["owner", "admin"].includes(member?.role ?? "")');
 		expect(handlerSource).toContain("membershipActive(member)");
 		expect(handlerSource).toContain('from("tenants")');
 		expect(handlerSource).toContain('tenant?.status !== "active"');
 		expect(handlerSource).toContain("invitationSecret()");
 		expect(handlerSource).toContain("await sha256(secret)");
-		expect(handlerSource).toContain("token_hash: tokenHash");
-		expect(handlerSource).not.toMatch(/token_hash:\s*secret\b/);
+		expect(handlerSource).toContain("await createPendingInvitation(db, command.teamId, command.email, command.role, tokenHash, auth.user.id)");
+		expect(lifecycleSource).toContain("p_token_hash: tokenHash");
+		expect(lifecycleSource).not.toMatch(/p_token_hash:\s*secret\b/);
 	});
 
-	it("rotates pending tokens instead of minting a second live link", () => {
-		// The rotation always rewrites the digest, so the previous link dies.
-		expect(lifecycleSource).toContain(
-			"update({ token_hash: tokenHash, expires_at: invitationExpiry(now), created_by: actorId })",
-		);
-		expect(lifecycleSource).toContain('.is("accepted_at", null)');
-		// Revocation is an expiry, which the acceptance RPC refuses.
-		expect(lifecycleSource).toContain("update({ expires_at: now })");
-		expect(lifecycleSource).toContain('.gt("expires_at", now)');
-		expect(lifecycleSource).toContain('.eq("tenant_id", teamId)');
+	it("uses only the atomic RPC for invitation writes", () => {
+		expect(lifecycleSource.match(/db\.rpc\("mutate_team_invitation"/g)).toHaveLength(3);
+		expect(lifecycleSource).not.toContain('from("team_invitations")');
+		expect(handlerSource).not.toMatch(/from\("team_invitations"\)[\s\S]{0,100}\.insert\(/);
+		expect(handlerSource).not.toMatch(/from\("team_invitations"\)[\s\S]{0,100}\.update\(/);
 	});
 });
 

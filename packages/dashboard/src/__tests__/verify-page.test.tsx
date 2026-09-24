@@ -52,15 +52,11 @@ describe("device verification page", () => {
 		from.mockImplementation(() => teamQuery());
 		invoke.mockImplementation(async (name: string) =>
 			name === "device-verify"
-				? { data: { ok: true, expires_at: new Date(Date.now() + 1_200).toISOString() }, error: null }
-				: {
-						data: {
-							ok: true,
-							user_code: "WXYZ2345",
-							expires_at: new Date(Date.now() + 600_000).toISOString(),
-						},
+				? {
+						data: { ok: true, expires_at: new Date(Date.now() + 1_200).toISOString() },
 						error: null,
-					},
+					}
+				: { data: null, error: new Error(`unexpected call: ${name}`) },
 		);
 	});
 	afterEach(cleanup);
@@ -79,38 +75,31 @@ describe("device verification page", () => {
 		expect(screen.queryByText(/Code expires in/)).not.toBeInTheDocument();
 	});
 
-	it("issues a replacement code without keeping the previous one usable", async () => {
+	it("requires a fresh code from the same agent after expiry", async () => {
 		renderPage();
 		await authorize();
 		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("expired"), {
 			timeout: 3_000,
 		});
-
-		fireEvent.click(screen.getByRole("button", { name: "Issue a replacement code" }));
-		await waitFor(() => expect(invoke).toHaveBeenCalledWith("device-start", { method: "POST" }));
-
-		// The expired code is gone from the page, and the replacement is the only
-		// code that a later authorization attempt can present.
-		await waitFor(() =>
-			expect(screen.getByLabelText("Code")).toHaveValue("WXYZ2345"),
+		expect(screen.getByRole("alert")).toHaveTextContent("Start authorization again in your agent");
+		expect(screen.getByRole("link", { name: "Return to onboarding" })).toHaveAttribute(
+			"href",
+			"/onboarding",
 		);
+		expect(screen.getByRole("link", { name: "Contact support" })).toHaveAttribute("href", "/support");
+		expect(screen.getByRole("alert")).not.toHaveTextContent("pilot");
+		expect(screen.getByLabelText("Code")).toHaveValue("");
 		expect(screen.queryByDisplayValue("ABCD2345")).not.toBeInTheDocument();
+		expect(invoke.mock.calls.filter(([name]) => name === "device-verify")).toHaveLength(1);
+		expect(invoke.mock.calls.filter(([name]) => name === "device-start")).toHaveLength(0);
+	});
 
-		const before = invoke.mock.calls.filter(([name]) => name === "device-verify").length;
-		fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
-		await waitFor(() =>
-			expect(invoke.mock.calls.filter(([name]) => name === "device-verify")).toHaveLength(
-				before + 1,
-			),
-		);
-
-		// Every authorization attempt after the replacement presents the new
-		// code; the retired code is never presented again.
-		const replacements = invoke.mock.calls
-			.filter(([name]) => name === "device-verify")
-			.slice(before);
-		expect(replacements).toHaveLength(1);
-		expect(replacements[0]?.[1]).toMatchObject({ body: { user_code: "WXYZ2345" } });
-		expect(JSON.stringify(replacements)).not.toContain("ABCD2345");
+	it("keeps a signed-in operator from authorizing when team lookup fails", async () => {
+		getUser.mockResolvedValue({ data: { user: null }, error: new Error("lookup failed") });
+		renderPage();
+		await screen.findByText("Your session could not be verified.");
+		expect(screen.getByRole("button", { name: "Authorize" })).toBeDisabled();
+		expect(screen.queryByRole("link", { name: "Sign in" })).not.toBeInTheDocument();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 });

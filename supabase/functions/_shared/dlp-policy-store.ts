@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 // Generated, byte-parity-checked artifact of the engine schema, packaged with
 // functions/ for self-hosted deployments; never the dashboard validation mirror.
 import { DlpPolicySchema } from "./dlp-policy-schema.ts";
@@ -32,10 +32,14 @@ export async function handleDlpPolicyAction(
 		const { data, error } = await db.from("tenant_dlp_policies")
 			.select("version,policy,updated_at").eq("tenant_id", tenant).maybeSingle();
 		if (error) return corsJson(req, 503, { error: "dlp_policy_unavailable" });
+		// PostgREST's maybeSingle contract is `row | null`. Do not turn a malformed
+		// response with missing `data` into `saved: true` (`undefined !== null`).
+		if (data === undefined) return corsJson(req, 503, { error: "dlp_policy_unavailable" });
 		// Do not revalidate time-sensitive exception expiry on reload: a saved
 		// document can age, and must remain readable so an operator can repair it.
 		if (data && (!Number.isSafeInteger(data.version) || data.version < 1 ||
-			data.policy?.tenantId !== tenant || data.policy?.version !== data.version)) {
+			data.policy?.tenantId !== tenant || data.policy?.version !== data.version ||
+			typeof data.updated_at !== "string" || !Number.isFinite(Date.parse(data.updated_at)))) {
 			return corsJson(req, 503, { error: "dlp_policy_unavailable" });
 		}
 		return corsJson(req, 200, {
@@ -69,7 +73,8 @@ export async function handleDlpPolicyAction(
 	}
 	// A successful RPC must confirm the committed row, not just a truthy payload.
 	if (!data || data.version !== policy.version || data.policy?.version !== policy.version ||
-		data.policy?.tenantId !== tenant || typeof data.updated_at !== "string") {
+		data.policy?.tenantId !== tenant || typeof data.updated_at !== "string" ||
+		!Number.isFinite(Date.parse(data.updated_at))) {
 		return corsJson(req, 503, { error: "dlp_policy_publish_failed" });
 	}
 	return corsJson(req, 200, {

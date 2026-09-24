@@ -8,7 +8,7 @@
 // COVERAGE BOUNDARY: nothing in this suite executes the deployed Deno runtime
 // or talks to Supabase. `__tests__/config-contract.test.ts` covers the wiring
 // inside each function file, which cannot be imported into vitest because those
-// files call `Deno.serve` and import `npm:@supabase/supabase-js@2`.
+// files call `Deno.serve` and import `npm:@supabase/supabase-js@2.116.0`.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {

@@ -2,11 +2,12 @@
 //
 // Auth: none
 //
-// Public waitlist intake. Best-effort rate limiting by IP.
+// Public waitlist intake. Fail-closed aggregate rate limiting.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
-import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
+import { ConfigurationError, configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { buildCorsHeaders, parseAllowedOrigins, resolveAllowedOrigin } from "../_shared/origin.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
 import { getRequestId } from "../_shared/response.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
@@ -14,8 +15,19 @@ import { getRequestId } from "../_shared/response.ts";
 // failing later with an empty credential (AIDR-011).
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
-const WAITLIST_RL_PER_MIN = Number(Deno.env.get("AIDR_WAITLIST_RL_PER_MIN") ?? "10");
-const ALLOWED_ORIGINS = parseAllowedOrigins(Deno.env.get("AIDR_ALLOWED_ORIGINS"));
+const MAX_WAITLIST_BODY_BYTES = 8 * 1024;
+// Use one fixed deployment-wide bucket. Proxy IP headers are caller-controlled
+// at this Edge Function boundary, and per-IP keys let attackers evade limits
+// while creating unbounded counter rows. This intentionally trades per-client
+// fairness for a hard aggregate cap; tune upward for legitimate launch traffic.
+const WAITLIST_RL_PER_MIN = Number(Deno.env.get("AIDR_WAITLIST_RL_PER_MIN") ?? "1000");
+const WAITLIST_RATE_LIMIT_ERROR = Number.isSafeInteger(WAITLIST_RL_PER_MIN) && WAITLIST_RL_PER_MIN > 0 && WAITLIST_RL_PER_MIN <= 100_000
+	? null
+	: new ConfigurationError({ invalid: ["AIDR_WAITLIST_RL_PER_MIN"] });
+const ALLOWED_ORIGINS = parseAllowedOrigins(
+	Deno.env.get("AIDR_ALLOWED_ORIGINS"),
+	Deno.env.get("AIDR_DEVELOPMENT_MODE") === "true",
+);
 
 function json(status: number, body: Record<string, unknown>, req: Request) {
 	return new Response(JSON.stringify(body), {
@@ -27,32 +39,11 @@ function json(status: number, body: Record<string, unknown>, req: Request) {
 	});
 }
 
-function getClientIp(req: Request): string {
-	const h =
-		req.headers.get("x-forwarded-for") ??
-		req.headers.get("cf-connecting-ip") ??
-		req.headers.get("x-real-ip") ??
-		"";
-	const first = h.split(",")[0]?.trim() ?? "";
-	return first || "unknown";
-}
-
-async function sha256Hex(input: string): Promise<string> {
-	const data = new TextEncoder().encode(input);
-	const digest = await crypto.subtle.digest("SHA-256", data);
-	const bytes = new Uint8Array(digest);
-	return Array.from(bytes)
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("");
-}
-
 async function rateLimitWaitlist(
-	supabase: ReturnType<typeof createClient>,
-	ip: string,
+	supabase: ReturnType<typeof createClient<any>>,
 ): Promise<boolean> {
 	const nowMin = Math.floor(Date.now() / 60000);
-	const ipHash = await sha256Hex(ip);
-	const key = `waitlist:${ipHash.slice(0, 16)}`;
+	const key = "waitlist:global:v1";
 	const { error } = await supabase.rpc("increment_rate_limit", {
 		p_key: key,
 		p_window_start: nowMin,
@@ -66,16 +57,11 @@ async function rateLimitWaitlist(
 		.eq("window_start", nowMin)
 		.maybeSingle();
 	if (countError) return false;
-	const count =
-		data && typeof data === "object" && "count" in data && typeof data.count === "number"
-			? data.count
-			: 0;
-	return Number.isFinite(WAITLIST_RL_PER_MIN) && WAITLIST_RL_PER_MIN > 0
-		? count <= WAITLIST_RL_PER_MIN
-		: true;
+	const count = data && typeof data === "object" && "count" in data ? data.count : null;
+	return typeof count === "number" && Number.isSafeInteger(count) && count > 0 && count <= WAITLIST_RL_PER_MIN;
 }
 
-Deno.serve(async (req) => {
+export async function handleWaitlistSignup(req: Request): Promise<Response> {
 	const origin = req.headers.get("Origin");
 	const allowedOrigin = resolveAllowedOrigin(origin, ALLOWED_ORIGINS);
 	if (origin && !allowedOrigin) return json(403, { error: "origin_not_allowed" }, req);
@@ -87,14 +73,17 @@ Deno.serve(async (req) => {
 	if (!config.ok) {
 		return configFailure("waitlist-signup", config.error, (status, body) => json(status, body, req));
 	}
+	if (WAITLIST_RATE_LIMIT_ERROR) {
+		return configFailure("waitlist-signup", WAITLIST_RATE_LIMIT_ERROR, (status, body) => json(status, body, req));
+	}
 	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = config.values;
 
-	let body: Record<string, unknown> = {};
-	try {
-		body = (await req.json()) as Record<string, unknown>;
-	} catch {
-		body = {};
+	const parsed = await readBoundedJson(req, MAX_WAITLIST_BODY_BYTES);
+	if (!parsed.ok) return json(parsed.status, { error: parsed.error }, req);
+	if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+		return json(400, { error: "invalid_json" }, req);
 	}
+	const body = parsed.value as Record<string, unknown>;
 
 	const email = typeof body.email === "string" ? body.email.trim() : "";
 	const name = typeof body.name === "string" ? body.name.trim() : null;
@@ -108,8 +97,7 @@ Deno.serve(async (req) => {
 		auth: { persistSession: false },
 	});
 
-	const ip = getClientIp(req);
-	const ok = await rateLimitWaitlist(supabase, ip);
+	const ok = await rateLimitWaitlist(supabase);
 	if (!ok) return json(429, { error: "rate_limited" }, req);
 
 	const { error } = await supabase
@@ -118,4 +106,6 @@ Deno.serve(async (req) => {
 	if (error) return json(500, { error: "db_error" }, req);
 
 	return json(200, { ok: true }, req);
-});
+}
+
+Deno.serve(handleWaitlistSignup);

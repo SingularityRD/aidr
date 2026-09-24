@@ -9,6 +9,7 @@ vi.mock("../lib/supabase", () => ({
 	supabase: { from: vi.fn(), functions: { invoke: vi.fn() } },
 }));
 vi.mock("../ui/session", () => ({ getSession: vi.fn().mockResolvedValue(null) }));
+vi.mock("../enterprise/team-provider", () => ({ useTeam: () => ({ currentTeam: { id: "tenant-1" } }) }));
 
 import { supabase } from "../lib/supabase";
 import { DASHBOARD_CONNECTED_WINDOW_MS } from "../ui/dashboard-freshness";
@@ -61,12 +62,12 @@ describe("Dashboard freshness and availability", () => {
 		});
 		vi.mocked(supabase.from).mockReset().mockImplementation((table: string) => {
 			const chain = {
-				select: vi.fn(), order: vi.fn(), limit: vi.fn(),
+				select: vi.fn(), eq: vi.fn(), order: vi.fn(), limit: vi.fn(),
 				then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
 					return Promise.resolve().then(() => responses(table)).then(resolve, reject);
 				},
 			};
-			for (const method of ["select", "order", "limit"] as const) chain[method].mockReturnValue(chain);
+			for (const method of ["select", "eq", "order", "limit"] as const) chain[method].mockReturnValue(chain);
 			return chain as unknown as ReturnType<typeof supabase.from>;
 		});
 	});
@@ -87,6 +88,16 @@ describe("Dashboard freshness and availability", () => {
 		expect(screen.getByText(/No agents yet\. Use/)).toBeInTheDocument();
 		expect(screen.getByText("No events recorded yet.")).toBeInTheDocument();
 		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+	});
+
+	it("does not expose arbitrary event payloads in the dashboard summary", async () => {
+		const canary = "private-payload-canary-4c08";
+		responses.mockImplementation((table) => success(table === "events" ? [{
+			...event, type: "future_event", payload: { nested: { secret: canary } },
+		}] : []));
+		await showDashboard();
+		expect(screen.getByText("Additional event details are not shown.")).toBeInTheDocument();
+		expect(document.body.textContent).not.toContain(canary);
 	});
 
 	it("does not show empty or healthy counts before queries settle", async () => {
@@ -229,7 +240,11 @@ describe("Dashboard freshness and availability", () => {
 		expect(screen.queryByText("connected")).not.toBeInTheDocument();
 		expect(screen.queryByText("bash: deny")).not.toBeInTheDocument();
 		expect(screen.getByRole("alert")).toHaveTextContent(
-			failure === "malformed response" ? "Malformed dashboard query response." : "Network unavailable",
+			failure === "malformed response"
+				? "Malformed dashboard query response."
+				: failure === "rejection"
+					? "Network unavailable"
+					: "Dashboard query failed.",
 		);
 
 		responses.mockReturnValue(success([]));
@@ -261,5 +276,12 @@ describe("Dashboard freshness and availability", () => {
 		await showDashboard();
 		expect(counter("Pending")).toHaveTextContent("—");
 		expect(counter("Agents")).toHaveTextContent(/^0$/);
+	});
+
+	it("reports when pending enrollment data is unavailable instead of leaving an unexplained dash", async () => {
+		vi.mocked(supabase.functions.invoke).mockRejectedValue(new Error("Dashboard query failed."));
+		await showDashboard();
+		expect(counter("Pending")).toHaveTextContent("—");
+		expect(screen.getByRole("alert")).toHaveTextContent("Dashboard query failed.");
 	});
 });

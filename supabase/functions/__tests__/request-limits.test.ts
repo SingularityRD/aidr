@@ -6,6 +6,7 @@ import {
 	consumeTenantRateLimit,
 	rateLimitHeaders,
 	readBoundedJson,
+	readBoundedText,
 } from "../_shared/request-limits.ts";
 
 describe("bounded request JSON", () => {
@@ -79,6 +80,36 @@ describe("bounded request JSON", () => {
 				10,
 			),
 		).resolves.toMatchObject({ ok: false, status: 400, error: "invalid_json" });
+	});
+});
+
+describe("bounded request text", () => {
+	it("preserves raw text and rejects a chunked body that understates Content-Length", async () => {
+		await expect(
+			readBoundedText(
+				new Request("https://aidr.test/webhook", { method: "POST", body: "ş\r\n" }),
+				8,
+			),
+		).resolves.toEqual({ ok: true, value: "ş\r\n", bytes: 4 });
+
+		const body = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode("123"));
+				controller.enqueue(new TextEncoder().encode("456"));
+				controller.close();
+			},
+		});
+		const request = new Request("https://aidr.test/webhook", {
+			method: "POST",
+			headers: { "content-length": "2" },
+			body,
+			duplex: "half",
+		} as RequestInit);
+		await expect(readBoundedText(request, 5)).resolves.toEqual({
+			ok: false,
+			status: 413,
+			error: "request_too_large",
+		});
 	});
 });
 
@@ -181,11 +212,48 @@ describe("resource-limit endpoint wiring", () => {
 		expect(source).toContain("if (!rate.ok)");
 	});
 
-	it.each(["ingest", "url-check", "file-check", "policy-ack", "policy-management"])(
+	it.each([
+		"ingest",
+		"url-check",
+		"file-check",
+		"policy-ack",
+		"policy-management",
+		"waitlist-signup",
+		"billing-portal",
+		"invoice-entitlement",
+	])(
 		"bounds the JSON body in %s",
 		(name) => {
 			const source = readFileSync(join(functionsDir, name, "index.ts"), "utf8");
 			expect(source).toContain("await readBoundedJson(");
 		},
 	);
+
+	it.each(["delegated-credentials", "paddle-webhook", "stripe-webhook"])(
+		"bounds raw request text in %s",
+		(name) => {
+			const source = readFileSync(join(functionsDir, name, "index.ts"), "utf8");
+			expect(source).toContain("await readBoundedText(");
+		},
+	);
+
+	it("fails Paddle billing closed on ambiguous replay, event, price, and claim inputs", () => {
+		const source = readFileSync(join(functionsDir, "paddle-webhook", "index.ts"), "utf8");
+		expect(source).toContain("resolvePaddleToleranceSeconds(PADDLE_TOLERANCE_RAW)");
+		expect(source).toContain("Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 3600");
+		expect(source).toContain("if (!EVENT_ID.test(eventId))");
+		expect(source).toContain("AIDR_PADDLE_EXTRA_AGENT_PRICE_ID.trim()");
+		expect(source).toContain('supabase.rpc("finish_billing_webhook_event"');
+		expect(source).toContain('"apply_billing_subscription_event"');
+		expect(source).not.toContain('from("billing_webhook_events").delete()');
+	});
+
+	it("bounds identity and device-code JSON through the shared reader", () => {
+		for (const path of [
+			join(functionsDir, "identity-security", "index.ts"),
+			join(functionsDir, "_shared", "auth.ts"),
+		]) {
+			expect(readFileSync(path, "utf8")).toContain("await readBoundedJson(");
+		}
+	});
 });

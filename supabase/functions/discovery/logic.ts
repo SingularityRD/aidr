@@ -1,4 +1,4 @@
-export type DiscoveryItem = {
+type DiscoveryItem = {
 	target: string;
 	reachable: boolean;
 	attempts: number;
@@ -87,6 +87,16 @@ export function discoveryFreshness(lastReachableAt: string | null, staleAfterMs:
 	const last = Date.parse(lastReachableAt);
 	if (!Number.isFinite(last)) return "never_seen";
 	return last <= now && now - last <= staleAfterMs ? "fresh" : "stale";
+}
+
+export function discoveryCollectorState(
+	reportedAt: string,
+	complete: boolean,
+	staleAfterMs: number,
+	now = Date.now(),
+): "current" | "partial" | "stale" {
+	if (!complete) return "partial";
+	return discoveryFreshness(reportedAt, staleAfterMs, now) === "fresh" ? "current" : "stale";
 }
 
 export function discoveryAlertState(input: { lastReachableAt: string | null; lastCycleId: string; cycleId: string; reachable: boolean; complete: boolean; staleAfterMs: number }, now = Date.now()): "healthy" | "unreachable" | "stale" | "never_seen" | "not_reported" | "collection_partial" {

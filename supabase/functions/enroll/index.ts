@@ -6,8 +6,9 @@
 // Exchanges a one-time enrollment token for an API key and (optionally) returns a signed entitlement.
 // This makes first-time setup easy while keeping API keys hash-only at rest.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
+import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { entitlementWindow, validateEnrollmentBody } from "./contract.ts";
 
@@ -120,30 +121,6 @@ async function deriveTenantPackKeyB64(userId: string): Promise<string | null> {
 	}
 }
 
-async function rateLimitKey(
-	supabase: ReturnType<typeof createClient>,
-	key: string,
-	limitPerMinute: number,
-): Promise<boolean> {
-	const nowMin = Math.floor(Date.now() / 60000);
-	const { error: updErr } = await supabase.rpc("increment_rate_limit", {
-		p_key: key,
-		p_window_start: nowMin,
-		p_delta: 1,
-	});
-	if (updErr) return false;
-
-	const { data: after, error: countErr } = await supabase
-		.from("rate_limits")
-		.select("count")
-		.eq("key", key)
-		.eq("window_start", nowMin)
-		.single();
-	if (countErr) return false;
-	const count = Number(after?.count ?? 0);
-	return Number.isFinite(limitPerMinute) && limitPerMinute > 0 ? count <= limitPerMinute : true;
-}
-
 function buildPremiumModules(entRow: Record<string, unknown> | null): string[] {
 	const out: string[] = [];
 	if (entRow && entRow.premium_intel === true) out.push("premium_intel");
@@ -196,8 +173,20 @@ Deno.serve(async (req) => {
 		if (resolveError) return json(503, { error: "enrollment_authorization_unavailable" });
 		return json(401, { error: "invalid_or_expired_enrollment_token" });
 	}
-	const ok = await rateLimitKey(supabase, `enroll:${resolved.tenant_id}:${resolved.user_id}`, ENROLL_RATE_LIMIT_PER_MIN);
-	if (!ok) return json(429, { error: "rate_limited" });
+	const nowMin = Math.floor(Date.now() / 60000);
+	const rateKey = `enroll:${resolved.tenant_id}:${resolved.user_id}`;
+	const { error: rateUpdateError } = await supabase.rpc("increment_rate_limit", {
+		p_key: rateKey, p_window_start: nowMin, p_delta: 1,
+	});
+	if (rateUpdateError) return json(503, { error: "enrollment_rate_limit_unavailable" });
+	const { data: rateCount, error: rateReadError } = await supabase.from("rate_limits").select("count")
+		.eq("key", rateKey).eq("window_start", nowMin).single();
+	if (rateReadError) return json(503, { error: "enrollment_rate_limit_unavailable" });
+	const count = Number(rateCount?.count);
+	if (!Number.isSafeInteger(count) || count < 1) {
+		return json(503, { error: "enrollment_rate_limit_unavailable" });
+	}
+	if (count > ENROLL_RATE_LIMIT_PER_MIN) return json(429, { error: "rate_limited" });
 
 	const parsed = await readBoundedJson(req, MAX_ENROLL_BODY_BYTES);
 	if (!parsed.ok) return json(parsed.status, { error: parsed.error });
@@ -217,6 +206,7 @@ Deno.serve(async (req) => {
 		p_agent_runtime_version: body.agent_runtime_version,
 		p_key_hash: keyHash,
 	});
+	if (exchangeErr?.code === "42501") return json(403, { error: "tenant_not_admitted" });
 	if (exchangeErr) return json(503, { error: "enrollment_exchange_failed", enrollment_outcome: "unknown" });
 	const exchange = exchangeData && typeof exchangeData === "object" && !Array.isArray(exchangeData)
 		? exchangeData as Record<string, unknown> : null;
@@ -243,11 +233,41 @@ Deno.serve(async (req) => {
 	const tenantId = exchange.tenant_id;
 	const agentId = exchange.agent_id;
 	const includedAgents = Number(exchange.included_agents);
-	const extraAgents = Number(exchange.extra_agents);
-	const allowedAgents = Number(exchange.allowed_agents);
+	const storedExtraAgents = Number(exchange.extra_agents);
+	const registeredAllowed = Number(exchange.allowed_agents);
 	const revocationEpoch = Number(exchange.revocation_epoch);
-	if (![includedAgents, extraAgents, allowedAgents, revocationEpoch].every(Number.isFinite)) {
+	if (![includedAgents, storedExtraAgents, registeredAllowed, revocationEpoch]
+		.every((value) => Number.isSafeInteger(value) && value >= 0)) {
 		return json(503, { error: "enrollment_exchange_result_invalid", enrollment_outcome: "committed" });
+	}
+	// Reconcile the committed registration against the provider's current term.
+	// A missed webhook cannot mint a paid offline entitlement past that date.
+	const { data: effectiveRows, error: effectiveErr } = await supabase.rpc(
+		"effective_tenant_seats", { p_tenant_id: tenantId },
+	);
+	const effective = effectiveErr ? null : parseEffectiveSeats(effectiveRows);
+	if (!effective || registeredAllowed < includedAgents ||
+		registeredAllowed > includedAgents + effective.extraAgents) {
+		return json(503, { error: "enrollment_committed_entitlement_unavailable", enrollment_outcome: "committed" });
+	}
+	const { data: admissionData, error: admissionError } = await supabase.rpc(
+		"get_tenant_admission", { p_tenant_id: tenantId, p_user_id: userId },
+	);
+	const admission = admissionError ? null : parseActiveAdmission(admissionData);
+	if (!admission || registeredAllowed > admission.allowedAgents) {
+		return json(503, { error: "enrollment_committed_admission_unavailable", enrollment_outcome: "committed" });
+	}
+	const allowedAgents = registeredAllowed;
+	const extraAgents = allowedAgents - includedAgents;
+	const providerUntil = extraAgents > 0 ? effective.providerValidUntilMs : null;
+	const cappedWindow = capEntitlementTimes(
+		window.expiresAt, window.graceUntil,
+		admission.validUntilMs === null ? providerUntil
+			: providerUntil === null ? admission.validUntilMs
+				: Math.min(providerUntil, admission.validUntilMs),
+	);
+	if (!cappedWindow) {
+		return json(503, { error: "enrollment_committed_entitlement_unavailable", enrollment_outcome: "committed" });
 	}
 
 	// 4) Return signed entitlement snapshot (same contract as ingest).
@@ -268,13 +288,13 @@ Deno.serve(async (req) => {
 							alg: "aes-256-gcm",
 							key_id: "aidr-pack-v1",
 							key_b64: tenantPackKey,
-							expires_at: window.graceUntil,
+							expires_at: cappedWindow.graceUntil,
 						},
 					]
 				: [],
 		issued_at: window.issuedAt,
-		expires_at: window.expiresAt,
-		grace_until: window.graceUntil,
+		expires_at: cappedWindow.expiresAt,
+		grace_until: cappedWindow.graceUntil,
 		serial: crypto.randomUUID(),
 		revocation_epoch: Number.isFinite(revocationEpoch) ? Math.max(1, Math.floor(revocationEpoch)) : 1,
 	};

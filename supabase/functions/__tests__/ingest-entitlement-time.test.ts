@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { capEntitlementTimes } from "../_shared/effective-seats.ts";
 
 // Deno's npm: imports and Deno.serve prevent importing the Edge entrypoint in
 // Vitest. Compile only its real, pure timing declarations and execute them;
@@ -42,11 +43,12 @@ type Snapshot = {
 
 function issuer(env: Record<string, string>) {
 	const exports: Record<string, unknown> = {};
-	const evaluate = new Function("exports", "Deno", "crypto", compiled);
+	const evaluate = new Function("exports", "Deno", "crypto", "capEntitlementTimes", compiled);
 	evaluate(
 		exports,
 		{ env: { get: (name: string) => env[name] ?? null } },
 		{ randomUUID },
+		capEntitlementTimes,
 	);
 	return exports as {
 		entitlementTiming: () => Timing;
@@ -59,7 +61,8 @@ function issuer(env: Record<string, string>) {
 			tenantPackKey: string | null;
 			revocationEpoch: number;
 			timing: NonNullable<Timing>;
-		}) => Snapshot;
+			providerValidUntilMs?: number | null;
+		}) => Snapshot | null;
 	};
 }
 
@@ -77,10 +80,31 @@ describe("ingest signed entitlement timing", () => {
 			premiumModules: ["premium_intel"], tenantPackKey: "test-pack-key", revocationEpoch: 1,
 			timing: timing!,
 		});
-		expect(snapshot.issued_at).toBe("2026-01-01T00:00:00.000Z");
-		expect(snapshot.expires_at).toBe("2026-01-08T00:00:00.000Z");
-		expect(snapshot.grace_until).toBe("2026-01-11T00:00:00.000Z");
-		expect(snapshot.pack_keys[0]?.expires_at).toBe(snapshot.grace_until);
+		expect(snapshot?.issued_at).toBe("2026-01-01T00:00:00.000Z");
+		expect(snapshot?.expires_at).toBe("2026-01-08T00:00:00.000Z");
+		expect(snapshot?.grace_until).toBe("2026-01-11T00:00:00.000Z");
+		expect(snapshot?.pack_keys[0]?.expires_at).toBe(snapshot?.grace_until);
+	});
+
+	it("caps paid expiry, offline grace and pack key at verified provider term", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+		const functions = issuer({});
+		const term = Date.parse("2026-01-03T00:00:00.000Z");
+		const snapshot = functions.buildEntitlementSnapshot({
+			tenantId: "tenant-1", includedAgents: 1, extraAgents: 2, allowedAgents: 3,
+			premiumModules: ["premium_intel"], tenantPackKey: "test-pack-key", revocationEpoch: 1,
+			timing: functions.entitlementTiming()!, providerValidUntilMs: term,
+		});
+		expect(snapshot?.expires_at).toBe("2026-01-03T00:00:00.000Z");
+		expect(snapshot?.grace_until).toBe("2026-01-03T00:00:00.000Z");
+		expect(snapshot?.pack_keys[0]?.expires_at).toBe(snapshot?.grace_until);
+		vi.setSystemTime(new Date("2026-01-03T00:00:00.000Z"));
+		expect(functions.buildEntitlementSnapshot({
+			tenantId: "tenant-1", includedAgents: 1, extraAgents: 2, allowedAgents: 3,
+			premiumModules: [], tenantPackKey: null, revocationEpoch: 1,
+			timing: functions.entitlementTiming()!, providerValidUntilMs: term,
+		})).toBeNull();
 	});
 
 	it("accepts zero grace and refuses malformed or out-of-range timing", () => {
@@ -103,5 +127,17 @@ describe("ingest signed entitlement timing", () => {
 	it("uses the guarded helper in both success and seat-limit responses", () => {
 		expect(source.match(/buildEntitlementSnapshot\(\{/g)).toHaveLength(2);
 		expect(source.indexOf("const timing = entitlementTiming();")).toBeLessThan(source.indexOf("const apiKey = getBearerToken(req);"));
+	});
+});
+
+describe("ingest API key binding", () => {
+	it("uses the active-or-overlap key returned by shared authentication", () => {
+		const authenticatedAt = source.indexOf(
+			"const tenantAuth = await authenticateTenantApiKey(supabase, apiKey);",
+		);
+		expect(authenticatedAt).toBeGreaterThanOrEqual(0);
+		const authorizedHandler = source.slice(authenticatedAt);
+		expect(authorizedHandler).toContain("if (tenantAuth.agentId)");
+		expect(authorizedHandler).not.toContain('.from("api_keys")');
 	});
 });

@@ -55,9 +55,11 @@ HTTP/1.1 500
 
 The response names the missing *variable*; a configured value is never echoed
 into a response or a log line. The same contract covers function-specific
-secrets: `AIDR_PADDLE_WEBHOOK_SECRET` (paddle-webhook) and
-`AIDR_PADDLE_CHECKOUT_URL` (billing-checkout, required only while the legacy
-self-service path is enabled). `stripe-webhook` keeps its own documented
+secrets: `AIDR_PADDLE_WEBHOOK_SECRET` (legacy paddle-webhook). The disabled-by-default
+Stripe `billing-checkout` path requires `STRIPE_SECRET_KEY`,
+`AIDR_STRIPE_EXTRA_AGENT_PRICE_ID`, and `AIDR_DASHBOARD_URL` when enabled;
+its yearly option additionally uses `AIDR_STRIPE_EXTRA_AGENT_YEARLY_PRICE_ID`.
+`stripe-webhook` keeps its own documented
 fail-closed path for an unprovisioned `STRIPE_WEBHOOK_SECRET`: `400`
 `invalid_signature` with no writes, because Stripe must not retry a delivery
 that could never be verified.
@@ -82,6 +84,12 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
 - `AIDR_REVOCATION_TTL_HOURS` (default `24`)
 - `AIDR_ENTITLEMENT_TTL_HOURS` (default `168`)
 - `AIDR_ENTITLEMENT_GRACE_HOURS` (default `72`)
+- `AIDR_PACK_URL_TTL_SECONDS` (default `600`; clamped to `60..3600`)
+- `AIDR_PACK_DOWNLOAD_GRANT_SECRET` (required by `packs-manifest` and `packs-download`; use an independently generated random secret of at least 32 bytes and set the same value on both functions)
+- `AIDR_PUBLIC_API_ORIGIN` (the customer/agent-reachable API origin for pack grant links; required when `SUPABASE_URL` is an internal HTTP service name; HTTPS except for explicit loopback development)
+
+The canonical migrations create a private `aidr-packs` Storage bucket; publish pack bytes through a service-role-only process. Pack manifests return at most 50 pack versions per request. Each `download_url` is a short-lived scoped AIDR URL, not a Storage URL; the Edge Function rechecks key, membership, entitlement and pack expiry on each GET/HEAD, then streams the object with range support. Treat the URL as a temporary bearer capability and redact its `grant` query parameter from any application/proxy logs. It contains neither the API key nor a Storage signed URL.
+SCIM collection pages contain at most 200 resources, and a group request or response contains at most 1,000 member references.
 
 Operationally:
 
@@ -184,7 +192,7 @@ Run these before opening a release PR:
 ```powershell
 pnpm supabase:check
 pnpm dlx supabase@latest db reset --local --yes
-pnpm dlx supabase@latest db lint --local
+pnpm dlx supabase@2.114.0 db lint --local --fail-on error
 pnpm exec vitest run supabase/functions/__tests__/security-flow.test.ts
 ```
 
@@ -209,13 +217,17 @@ all of the following:
 4. Deploy Edge Functions together with `SUPABASE_SERVICE_ROLE_KEY`, entitlement/
    revocation signing keys, pack master key, rate-limit settings, and an explicit
    `AIDR_ALLOWED_ORIGINS` list containing the deployed dashboard origin. The
+   allowlist accepts normalized HTTPS origins only; wildcard, malformed, and
+   path-bearing values are ignored. `AIDR_DEVELOPMENT_MODE=true` permits exact
+   loopback HTTP origins solely for the generated local `--development` stack.
    dashboard-facing device, pilot, key, enrollment, and billing functions reject
    browser origins that are not on this allowlist and answer `OPTIONS` preflight
    requests before any auth or database work. Direct-GA
    billing is invoice/order based; keep the legacy Paddle checkout/portal and the
    Paddle/Stripe webhook endpoints disabled unless a separately approved
    commercial decision enables them with
-   `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING=true`. The Lemon Squeezy webhook was
+   `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING=true` and
+   `AIDR_BILLING_PROVIDER=stripe`. The Lemon Squeezy webhook was
    removed (it performed no signature verification) and replaced by
    `supabase/functions/stripe-webhook`, which verifies the raw-body
    `Stripe-Signature` in constant time inside a replay window, deduplicates event

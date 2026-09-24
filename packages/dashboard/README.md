@@ -6,7 +6,7 @@ This is a minimal multi-tenant dashboard for:
 - API key generation (hash-only storage)
 - Agent inventory (per `iid`)
 - Incidents view (derived from `events` telemetry)
-- Billing / seat usage (1 agent free, invoice-based entitlement reconciliation for direct GA)
+- Billing / seat usage (order-scoped entitlements; production sale approval remains open)
 
 ## AutoSecOps integration
 
@@ -47,18 +47,37 @@ does not display fabricated runtime data.
    - Optional: enable Google provider and add a redirect URL for the SPA callback:
      - Local dev: `http://localhost:5173/auth/callback`
      - Production: `https://YOUR_DOMAIN/auth/callback`
+   - Optional SAML SSO: register the IdP in Supabase Auth, allowlist the exact
+     `/auth/callback` URL, then set exactly one of `AIDR_SAML_PROVIDER_ID` (the
+     Supabase SSO provider UUID) or `AIDR_SAML_DOMAIN` (a domain registered to
+     that provider) in the dashboard server or Cloudflare Worker environment.
+     The button is hidden when neither is set. Existing `AIDR_AUTH_METHODS`
+     options remain available. This setting only starts SP-initiated login;
+     tenant access requires server-side provider UUID binding and enforcement.
 3. Create `packages/dashboard/.env.local`:
 
 ```bash
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
-# Optional: invoice-only is the safe direct-GA default. Do not set this to
+# Optional: invoice-only is the proposed direct-sale default. Do not set this to
 # self-service for a production release without an approved commercial change.
 VITE_AIDR_COMMERCIAL_MODE=invoice
 # Optional approved sales channel used by the invoice CTA.
 VITE_SALES_URL=https://sales.example.invalid/request
 VITE_SALES_EMAIL=sales@example.invalid
 ```
+
+Both Microsoft Entra ID and Okta require separate live acceptance before SAML
+can be marked ready. For each provider, retain redacted evidence for the
+SP-initiated login and callback, the matching SAML provider UUID in the
+tenant's authenticated session, SCIM provision/update/deactivate bound to that
+same Auth user UUID, rejection of password or wrong-IdP access to the SSO
+tenant, and continued access for a tenant without an SSO requirement.
+
+| Provider | Live SAML + SCIM acceptance |
+| --- | --- |
+| Microsoft Entra ID | Pending |
+| Okta | Pending |
 
 ## Run
 
@@ -67,14 +86,15 @@ pnpm install
 pnpm -C packages/dashboard dev
 ```
 
-## Demo smoke gate
+## Customer access smoke gate
 
-The controlled evaluation surface is available at `/demo`. It is a
-read-only, synthetic fixture walkthrough and is intentionally labelled as
-non-production. Use the full operator sequence in
+The public product starts at `/login` and `/onboarding`. The old `/demo`
+address redirects to `/login?returnTo=%2Fonboarding`; no synthetic fixture
+page is reachable from the customer app. Use the operator sequence in
 [`docs/production-readiness/controlled-demo-runbook.md`](../../docs/production-readiness/controlled-demo-runbook.md).
 
-Run the deterministic surface preflight before sharing a URL:
+Run the customer access preflight before sharing a URL (the command name is
+retained for existing automation):
 
 ```bash
 pnpm demo:preflight
@@ -101,23 +121,29 @@ auth, enrollment, billing, accessibility, and console-error matrix. The
 repository intentionally does not install a browser runtime; execute that
 manifest with the organization's approved Playwright + axe-core runner against
 the deployed URL and retain redacted route/console/axe/screenshot evidence.
-The browser gate requires a real demo account in addition to the two public
-Supabase build variables. A missing Supabase build configuration renders an
-explicit production configuration error for live/credentialed routes; the
-isolated `/demo` route is the only intentional Supabase-free fallback and
-remains synthetic, read-only and non-sale.
+The browser gate requires a dedicated evaluation account in addition to the
+two public Supabase build variables. A missing Supabase build configuration
+renders an explicit production configuration error for every route, including
+the old `/demo` address. The live browser run must verify the redirect and
+complete sign-in and onboarding; the static preflight proves only source
+contracts.
 
 Deployment links are validated before rendering: `VITE_SUPPORT_URL`,
 `VITE_SUPPORT_EMAIL`, `VITE_STATUS_URL`, `VITE_PRIVACY_URL`,
 `VITE_SECURITY_URL`, `VITE_TERMS_URL`, `VITE_SALES_URL`, and
-`VITE_SALES_EMAIL`. Status, legal, and sales workflows show a visible
-fail-closed notice when their deployment-specific URL is absent or unsafe;
-publish privacy/security/terms URLs before accepting customer data or selling
-the deployment.
+`VITE_SALES_EMAIL`. Support is available only through a configured safe HTTPS
+URL or approved mailbox. Status, privacy, security, and terms require safe
+HTTPS URLs; sales requires a safe HTTPS URL or approved mailbox. Missing or
+unsafe destinations show a visible fail-closed notice. These build-time links
+are not required by the Cloudflare deploy command, so verify every destination
+in the deployed browser before customer onboarding; publish the
+privacy/security/terms URLs before accepting customer data or selling the
+deployment.
 
-The direct-GA commercial mode is invoice/order based. `VITE_AIDR_COMMERCIAL_MODE`
+The proposed direct-sale commercial mode is invoice/order based. `VITE_AIDR_COMMERCIAL_MODE`
 defaults to `invoice`; `self-service` is a legacy/staging opt-in and must not be
-enabled in a sale release. The dashboard never grants entitlements from a
+enabled in a sale release. This default does not make the release sale-ready.
+The dashboard never grants entitlements from a
 checkout link: Finance reconciliation and the tenant-scoped entitlement record
 remain authoritative.
 
@@ -150,7 +176,7 @@ explicitly non-production mode:
 pnpm -C packages/dashboard test:route-smoke:static
 ```
 
-The static result must never be presented as proof of a live Supabase demo.
+The static result must never be presented as proof of live customer access.
 
 ## Connect an agent
 

@@ -1,12 +1,13 @@
-export const RECOVERY_CODE_BYTES = 20;
-export const RECOVERY_CODE_COUNT = 8;
-export const MIN_PASSWORD_LENGTH = 14;
-export const MAX_PASSWORD_LENGTH = 128;
+const RECOVERY_CODE_BYTES = 20;
+const RECOVERY_CODE_COUNT = 8;
+const MIN_PASSWORD_LENGTH = 14;
+const MAX_PASSWORD_LENGTH = 128;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RECOVERY_TOKEN_HASH_RE = /^[0-9a-f]{64}$/i;
 
-export function dashboardRecoveryUrl(base: string, grantId?: string): URL {
+export function dashboardRecoveryUrl(base: string): URL {
 	const configured = new URL(base);
 	const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(configured.hostname);
 	if ((configured.protocol !== "https:" && !(configured.protocol === "http:" && loopback)) ||
@@ -14,7 +15,6 @@ export function dashboardRecoveryUrl(base: string, grantId?: string): URL {
 		throw new Error("invalid_dashboard_url");
 	}
 	const url = new URL("/auth/recover", configured.origin);
-	if (grantId) url.searchParams.set("grant", grantId);
 	return url;
 }
 
@@ -28,6 +28,12 @@ export function normalizeUuid(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const uuid = value.trim().toLowerCase();
 	return UUID_RE.test(uuid) ? uuid : null;
+}
+
+export function normalizeRecoveryTokenHash(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const tokenHash = value.trim().toLowerCase();
+	return RECOVERY_TOKEN_HASH_RE.test(tokenHash) ? tokenHash : null;
 }
 
 export function normalizeRecoveryCode(value: unknown): string | null {
@@ -107,6 +113,32 @@ export function jwtHasAuthenticationMethod(token: string, requiredMethod: string
 	});
 }
 
+export function jwtHasSamlProvider(token: string, providerId: string): boolean {
+	const entries = jwtPayload(token)?.amr;
+	if (!Array.isArray(entries)) return false;
+	return entries.some((entry) => Boolean(
+		entry &&
+			typeof entry === "object" &&
+			!Array.isArray(entry) &&
+			(entry as { method?: unknown }).method === "sso/saml" &&
+			(entry as { provider?: unknown }).provider === providerId,
+	));
+}
+
+export function jwtSamlProviderId(token: string): string | null {
+	const entries = jwtPayload(token)?.amr;
+	if (!Array.isArray(entries)) return null;
+	const providers = entries
+		.filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry) &&
+			(entry as { method?: unknown }).method === "sso/saml")
+		.map((entry) => normalizeUuid((entry as { provider?: unknown }).provider));
+	return providers.length === 1 ? providers[0] ?? null : null;
+}
+
+export function jwtSessionId(token: string): string | null {
+	return normalizeUuid(jwtPayload(token)?.session_id);
+}
+
 export function sessionPassesRevocationBarrier(
 	token: string,
 	revokedBefore: string | null | undefined,
@@ -119,4 +151,12 @@ export function sessionPassesRevocationBarrier(
 
 export function policyAllowsAssurance(requireMfa: boolean, assurance: string | null): boolean {
 	return !requireMfa || assurance === "aal2";
+}
+
+export function recoveryCodeIssueError(
+	actorUserId: string,
+	targetUserId: string,
+	): "recovery_code_issue_forbidden" | null {
+	if (actorUserId !== targetUserId) return "recovery_code_issue_forbidden";
+	return null;
 }

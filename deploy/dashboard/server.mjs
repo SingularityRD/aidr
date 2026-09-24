@@ -1,11 +1,14 @@
 import { createServer } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { extname, resolve, sep } from "node:path";
-import { createReadinessMonitor, loadReadinessConfig } from "./monitoring.mjs";
+import { extname, isAbsolute, resolve, sep } from "node:path";
+import { createHttpRequestMetrics, createReadinessMonitor, loadReadinessConfig } from "./monitoring.mjs";
+import { parseSamlRuntimeConfig } from "../saml-config.mjs";
 
 const root = resolve(process.env.AIDR_STATIC_DIR || "/app/public");
 const url = new URL(process.env.VITE_SUPABASE_URL);
-if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Invalid public Supabase URL");
+const loopback = url.hostname === "localhost" || url.hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(url.hostname);
+if ((url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) || url.username || url.password) throw new Error("Public Supabase URL must use HTTPS (HTTP is allowed only on loopback)");
 const publicKey = process.env.VITE_SUPABASE_ANON_KEY;
 if (!publicKey) throw new Error("VITE_SUPABASE_ANON_KEY is required");
 try {
@@ -14,17 +17,88 @@ try {
 } catch { if (!publicKey.startsWith("sb_publishable_")) throw new Error("Only an anonymous or publishable key may be exposed"); }
 const authMethods = (process.env.AIDR_AUTH_METHODS || "password").split(",").map((method) => method.trim());
 if (authMethods.some((method) => !["password", "magic-link", "google", "github", "azure"].includes(method))) throw new Error("Invalid AIDR_AUTH_METHODS");
-const config = { supabaseUrl: url.href.replace(/\/$/, ""), supabaseAnonKey: publicKey, authMethods: [...new Set(authMethods)] };
+const signupMode = process.env.AIDR_SIGNUP_MODE || "closed";
+if (!["closed", "cloud"].includes(signupMode)) throw new Error("Invalid AIDR_SIGNUP_MODE");
+if (signupMode === "cloud" && !authMethods.includes("password")) throw new Error("Cloud signup requires password auth");
+const samlConfig = parseSamlRuntimeConfig({
+	providers: process.env.AIDR_SAML_PROVIDERS,
+	providerId: process.env.AIDR_SAML_PROVIDER_ID,
+	domain: process.env.AIDR_SAML_DOMAIN,
+});
+
+let sentryDsn = null;
+const configuredSentryDsn = process.env.SENTRY_DSN?.trim();
+if (configuredSentryDsn) {
+	try {
+		sentryDsn = new URL(configuredSentryDsn);
+	} catch {
+		throw new Error("SENTRY_DSN must be a valid HTTPS Sentry DSN");
+	}
+	const projectId = sentryDsn.pathname.split("/").filter(Boolean).at(-1);
+	if (sentryDsn.protocol !== "https:" || !sentryDsn.username || sentryDsn.password || sentryDsn.search || sentryDsn.hash || !/^\d+$/.test(projectId || "")) {
+		throw new Error("SENTRY_DSN must be a valid HTTPS Sentry DSN");
+	}
+}
+const sentryEnvironment = process.env.SENTRY_ENVIRONMENT?.trim() || process.env.NODE_ENV?.trim() || "development";
+if (!/^[A-Za-z0-9._-]{1,64}$/.test(sentryEnvironment) || sentryEnvironment === "None") {
+	throw new Error("SENTRY_ENVIRONMENT must be a safe Sentry environment name");
+}
+const configuredSampleRate = process.env.SENTRY_TRACES_SAMPLE_RATE?.trim();
+const sentryTracesSampleRate = configuredSampleRate ? Number(configuredSampleRate) : 0;
+if (!Number.isFinite(sentryTracesSampleRate) || sentryTracesSampleRate < 0 || sentryTracesSampleRate > 1) {
+	throw new Error("SENTRY_TRACES_SAMPLE_RATE must be a number from 0 to 1");
+}
+
+let recoveryTemplate = null;
+const authTemplateDir = process.env.AIDR_AUTH_TEMPLATE_DIR?.trim();
+if (authTemplateDir) {
+	if (!isAbsolute(authTemplateDir) || authTemplateDir.includes("\0")) throw new Error("AIDR_AUTH_TEMPLATE_DIR must be an absolute path");
+	const templatePath = resolve(authTemplateDir, "recovery.html");
+	const templateStat = await stat(templatePath);
+	if (!templateStat.isFile()) throw new Error("AIDR recovery email template must be a regular file");
+	recoveryTemplate = await readFile(templatePath);
+}
+
+const config = {
+	supabaseUrl: url.href.replace(/\/$/, ""),
+	supabaseAnonKey: publicKey,
+	authMethods: [...new Set(authMethods)],
+	signupMode,
+	...samlConfig,
+	sentryDsn: sentryDsn?.href ?? null,
+	sentryEnvironment,
+	sentryTracesSampleRate,
+};
 await stat(resolve(root, "index.html"));
 const types = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 const port = Number(process.env.PORT || 8080);
 const socketOrigin = url.origin.replace(/^http/, "ws");
+const connectSources = [...new Set(["'self'", url.origin, socketOrigin, "https://challenges.cloudflare.com", sentryDsn?.origin].filter(Boolean))].join(" ");
+const metricsToken = process.env.AIDR_METRICS_TOKEN?.trim() || null;
 const readiness = createReadinessMonitor(loadReadinessConfig());
+const requestMetrics = createHttpRequestMetrics();
+const operationalPaths = new Set(["/livez", "/healthz", "/readyz", "/metrics"]);
+
+function metricsAuthorized(req) {
+	if (!metricsToken) return false;
+	const match = (req.headers.authorization ?? "").match(/^Bearer\s+(.+)$/i);
+	if (!match) return false;
+	const supplied = Buffer.from(match[1]);
+	const expected = Buffer.from(metricsToken);
+	return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+
 const server = createServer(async (req, res) => {
+	const startedAt = process.hrtime.bigint();
+	let observedPath = null;
+	try { observedPath = decodeURIComponent(new URL(req.url, "http://localhost").pathname); } catch { /* The request handler returns 400 below. */ }
+	if (!operationalPaths.has(observedPath)) {
+		res.once("finish", () => requestMetrics.observe(res.statusCode, Number(process.hrtime.bigint() - startedAt) / 1e9));
+	}
 	res.setHeader("X-Content-Type-Options", "nosniff");
 	res.setHeader("Referrer-Policy", "no-referrer");
 	res.setHeader("X-Frame-Options", "DENY");
-	res.setHeader("Content-Security-Policy", `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' ${url.origin} ${socketOrigin}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`);
+	res.setHeader("Content-Security-Policy", `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src ${connectSources}; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'`);
 	res.setHeader("Cache-Control", "no-store");
 	if (!["GET", "HEAD"].includes(req.method)) { res.writeHead(405); res.end(); return; }
 	try {
@@ -38,10 +112,23 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 		if (path === "/metrics") {
+			if (!metricsAuthorized(req)) {
+				res.setHeader("WWW-Authenticate", 'Bearer realm="metrics"');
+				res.writeHead(metricsToken ? 401 : 404);
+				res.end();
+				return;
+			}
 			res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
-			res.end(req.method === "HEAD" ? undefined : await readiness.metrics());
+			res.end(req.method === "HEAD" ? undefined : `${await readiness.metrics()}${requestMetrics.renderPrometheus()}`);
 			return;
 		}
+		if (path === "/auth-templates/recovery.html") {
+			if (!recoveryTemplate) { res.writeHead(404); res.end(); return; }
+			res.setHeader("Content-Type", "text/html; charset=utf-8");
+			res.end(req.method === "HEAD" ? undefined : recoveryTemplate);
+			return;
+		}
+		if (path.startsWith("/auth-templates/")) { res.writeHead(404); res.end(); return; }
 		if (path === "/runtime-config.js") { res.setHeader("Content-Type", "application/javascript"); res.end(req.method === "HEAD" ? undefined : `window.__AIDR_CONFIG__=${JSON.stringify(config)};`); return; }
 		const target = resolve(root, path === "/" ? "index.html" : `.${path}`);
 		if (!target.startsWith(root + sep) || path.endsWith(".map") || path.split("/").some((part) => part.startsWith("."))) { res.writeHead(404); res.end(); return; }

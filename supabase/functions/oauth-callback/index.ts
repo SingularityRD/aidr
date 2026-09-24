@@ -1,12 +1,14 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
 import { sha256 } from "../_shared/runtime-policy.ts";
 
 // Historical UI route name: this accepts an invitation for an ALREADY verified session.
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const MAX_BODY_BYTES = 16 * 1024;
 
 export interface OAuthCallbackDeps {
 	/** Overrides the service-role client; used by the contract suite. */
@@ -31,8 +33,10 @@ export function createOAuthCallbackHandler(deps: OAuthCallbackDeps = {}) {
 			if (error || !auth.user) return corsJson(req, 401, { error: "invalid_access_token" });
 			const identity = await checkIdentityBarrier(db, token, auth.user.id);
 			if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
-			let body: Record<string, unknown>;
-			try { body = await req.json(); } catch { return corsJson(req, 400, { error: "invalid_json" }); }
+			const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+			if (!parsed.ok && parsed.status === 413) return corsJson(req, 413, { error: "request_too_large" });
+			if (!parsed.ok) return corsJson(req, 400, { error: "invalid_json" });
+			const body = parsed.value as Record<string, unknown>;
 			if (!body || typeof body.invite_token !== "string" || !/^[a-f0-9]{64}$/.test(body.invite_token)) return corsJson(req, 400, { error: "invalid_invitation" });
 			const inviteHash = await sha256(body.invite_token);
 			const { data: invitation, error: invitationError } = await db.from("team_invitations").select("tenant_id").eq("token_hash", inviteHash).maybeSingle();

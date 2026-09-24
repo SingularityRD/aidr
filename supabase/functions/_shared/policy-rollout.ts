@@ -1,8 +1,11 @@
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { corsJson } from "./cors.ts";
 import { validateRuntimePolicy } from "./runtime-policy.ts";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const MAX_POLICY_MANAGEMENT_BODY_BYTES = 65_536;
+// A minimum policy and safe-integer versions leave room for at most 1,667 UUIDs.
+export const MAX_POLICY_ROLLOUT_TARGETS = 1_667;
 type RolloutBatch = { batch_order: number; agent_ids: string[] };
 type RolloutRing = { ring_order: number; batches: RolloutBatch[] };
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -26,7 +29,7 @@ export function normalizeRolloutRings(value: unknown): RolloutRing[] {
 			});
 			totalBatches += 1;
 			totalAgents += agentIds.length;
-			if (totalBatches > 1000 || totalAgents > 20_000) throw new Error("rollout_too_large");
+			if (totalBatches > 1000 || totalAgents > MAX_POLICY_ROLLOUT_TARGETS) throw new Error("rollout_too_large");
 			return { batch_order: batchIndex + 1, agent_ids: agentIds };
 		});
 		return { ring_order: ringIndex + 1, batches };
@@ -52,7 +55,8 @@ export async function dispatchPolicyRollout(req: Request, db: SupabaseClient, bo
 		policy = validateRuntimePolicy(body.policy);
 		rings = normalizeRolloutRings(body.rings);
 	} catch (error) {
-		return corsJson(req, 400, { error: error instanceof Error ? error.message : "invalid_rollout" });
+		const message = error instanceof Error ? error.message : "invalid_rollout";
+		return corsJson(req, message === "rollout_too_large" ? 413 : 400, { error: message });
 	}
 	const result = await db.rpc("create_policy_rollout", {
 		p_tenant_id: tenant, p_user_id: userId, p_expected_version: body.expected_version,

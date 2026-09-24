@@ -1,4 +1,6 @@
 import { getBearerToken } from "../_shared/auth.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
+import { MAX_SCIM_GROUP_MEMBERS, ScimMemberLimitError } from "./member-pages.ts";
 
 const SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User";
 const SCIM_GROUP_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:Group";
@@ -7,8 +9,8 @@ const SCIM_LIST_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
 const SCIM_PATCH_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_PAGE_SIZE = 200;
-
-export type ScimRole = "admin" | "member" | "viewer";
+export const MAX_SCIM_GROUP_PAGE_SIZE = 10;
+const SCIM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface ScimTenant {
 	tenantId: string;
@@ -26,7 +28,7 @@ export interface ScimUser {
 	updatedAt: string;
 }
 
-export interface ScimMember {
+interface ScimMember {
 	value: string;
 	display?: string;
 }
@@ -86,7 +88,7 @@ export class ScimConflictError extends Error {
 }
 
 export class ScimInvalidValueError extends Error {
-	constructor(message: string) {
+	constructor(message: string, readonly status: 400 | 413 = 400) {
 		super(message);
 		this.name = "ScimInvalidValueError";
 	}
@@ -113,11 +115,15 @@ function error(status: number, detail: string, scimType?: string): Response {
 	});
 }
 
-function location(req: Request, collection: "Users" | "Groups", id: string): string {
+function scimBase(req: Request): string {
 	const url = new URL(req.url);
 	const marker = "/scim/";
 	const prefix = url.pathname.includes(marker) ? url.pathname.slice(0, url.pathname.indexOf(marker) + marker.length - 1) : "";
-	return `${url.origin}${prefix}/v2/${collection}/${encodeURIComponent(id)}`;
+	return `${url.origin}${prefix}/v2`;
+}
+
+function location(req: Request, collection: "Users" | "Groups", id: string): string {
+	return `${scimBase(req)}/${collection}/${encodeURIComponent(id)}`;
 }
 
 function userResource(req: Request, user: ScimUser): Record<string, unknown> {
@@ -140,6 +146,7 @@ function userResource(req: Request, user: ScimUser): Record<string, unknown> {
 }
 
 function groupResource(req: Request, group: ScimGroup): Record<string, unknown> {
+	if (group.members.length > MAX_SCIM_GROUP_MEMBERS) throw new ScimMemberLimitError();
 	const resourceLocation = location(req, "Groups", group.id);
 	return {
 		schemas: [SCIM_GROUP_SCHEMA],
@@ -160,7 +167,9 @@ function groupResource(req: Request, group: ScimGroup): Record<string, unknown> 
 function parsePath(pathname: string): { resource: string; id: string | null } | null {
 	const marker = "/scim/";
 	const suffix = pathname.includes(marker) ? pathname.slice(pathname.lastIndexOf(marker) + marker.length) : pathname.replace(/^\/+/, "");
-	const parts = suffix.split("/").filter(Boolean).map(decodeURIComponent);
+	let parts: string[];
+	try { parts = suffix.split("/").filter(Boolean).map(decodeURIComponent); }
+	catch { throw new ScimInvalidValueError("invalid resource path"); }
 	if (parts[0]?.toLowerCase() !== "v2" || !parts[1] || parts.length > 3) return null;
 	return { resource: parts[1], id: parts[2] ?? null };
 }
@@ -195,30 +204,14 @@ function objectValue(value: unknown): Record<string, unknown> {
 }
 
 async function readJson(req: Request): Promise<Record<string, unknown>> {
-	const declared = Number(req.headers.get("content-length") ?? "0");
-	if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw new ScimInvalidValueError("request body is too large");
-	if (!req.body) throw new ScimInvalidValueError("request body is required");
-	const reader = req.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let size = 0;
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		size += value.byteLength;
-		if (size > MAX_BODY_BYTES) {
-			await reader.cancel();
-			throw new ScimInvalidValueError("request body is too large");
-		}
-		chunks.push(value);
+	const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+	if (!parsed.ok) {
+		throw new ScimInvalidValueError(
+			parsed.error === "request_too_large" ? "request body is too large" : "request body is not valid JSON",
+			parsed.status,
+		);
 	}
-	const bytes = new Uint8Array(size);
-	let offset = 0;
-	for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-	try { return objectValue(JSON.parse(new TextDecoder().decode(bytes))); }
-	catch (caught) {
-		if (caught instanceof ScimInvalidValueError) throw caught;
-		throw new ScimInvalidValueError("request body is not valid JSON");
-	}
+	return objectValue(parsed.value);
 }
 
 function parseUser(body: Record<string, unknown>): ScimCreateUser {
@@ -230,10 +223,12 @@ function parseUser(body: Record<string, unknown>): ScimCreateUser {
 	};
 }
 
-function memberIds(value: unknown): string[] {
+function memberIds(value: unknown, remaining = MAX_SCIM_GROUP_MEMBERS): string[] {
 	if (value === undefined) return [];
 	if (!Array.isArray(value)) throw new ScimInvalidValueError("members must be an array");
+	if (value.length > remaining) throw new ScimMemberLimitError();
 	const ids = value.map((item) => stringValue(objectValue(item).value, "members.value", { required: true, max: 64 }) ?? "");
+	if (ids.some((id) => !SCIM_ID.test(id))) throw new ScimInvalidValueError("members.value must be a SCIM user id");
 	return [...new Set(ids)];
 }
 
@@ -265,7 +260,11 @@ function pagination(url: URL): { startIndex: number; offset: number; count: numb
 	if (!Number.isSafeInteger(startIndex) || startIndex < 1 || !Number.isSafeInteger(count) || count < 0 || count > MAX_PAGE_SIZE) {
 		throw new ScimInvalidValueError(`startIndex must be positive and count must be between 0 and ${MAX_PAGE_SIZE}`);
 	}
-	return { startIndex, offset: startIndex - 1, count };
+	const offset = startIndex - 1;
+	if (count > 0 && offset > Number.MAX_SAFE_INTEGER - (count - 1)) {
+		throw new ScimInvalidValueError("pagination range exceeds the safe integer limit");
+	}
+	return { startIndex, offset, count };
 }
 
 function expectedVersion(req: Request): number | null {
@@ -281,9 +280,8 @@ function expectedVersion(req: Request): number | null {
 function patchOperations(body: Record<string, unknown>): Array<Record<string, unknown>> {
 	const schemas = body.schemas;
 	if (!Array.isArray(schemas) || !schemas.includes(SCIM_PATCH_SCHEMA)) throw new ScimInvalidValueError("PatchOp schema is required");
-	if (!Array.isArray(body.Operations) || body.Operations.length === 0 || body.Operations.length > 100) {
-		throw new ScimInvalidValueError("Operations must be a non-empty array");
-	}
+	if (!Array.isArray(body.Operations) || body.Operations.length === 0) throw new ScimInvalidValueError("Operations must be a non-empty array");
+	if (body.Operations.length > 100) throw new ScimInvalidValueError("Operations must contain at most 100 entries");
 	return body.Operations.map(objectValue);
 }
 
@@ -306,12 +304,10 @@ function applyUserPatch(current: ScimUser, operations: Array<Record<string, unkn
 	return next;
 }
 
-function operationMemberIds(value: unknown): string[] {
-	return memberIds(Array.isArray(value) ? value : [value]);
-}
-
 function applyGroupPatch(current: ScimGroup, operations: Array<Record<string, unknown>>): ScimCreateGroup {
+	if (current.members.length > MAX_SCIM_GROUP_MEMBERS) throw new ScimMemberLimitError();
 	const next: ScimCreateGroup = { externalId: current.externalId, displayName: current.displayName, members: current.members.map((member) => member.value) };
+	let memberInputs = 0;
 	for (const operation of operations) {
 		const op = String(operation.op ?? "").toLowerCase();
 		const path = String(operation.path ?? "");
@@ -327,15 +323,22 @@ function applyGroupPatch(current: ScimGroup, operations: Array<Record<string, un
 				next.members = [];
 				continue;
 			}
-			const ids = operationMemberIds(operation.value);
+			const values = Array.isArray(operation.value) ? operation.value : [operation.value];
+			const ids = memberIds(values, MAX_SCIM_GROUP_MEMBERS - memberInputs);
+			memberInputs += values.length;
 			if (op === "replace") next.members = ids;
 			else if (op === "add") next.members = [...new Set([...next.members, ...ids])];
-			else if (op === "remove") next.members = next.members.filter((id) => !ids.includes(id));
+			else if (op === "remove") {
+				const removed = new Set(ids);
+				next.members = next.members.filter((id) => !removed.has(id));
+			}
 			else throw new ScimInvalidValueError("unsupported group patch operation");
+			if (next.members.length > MAX_SCIM_GROUP_MEMBERS) throw new ScimMemberLimitError();
 			continue;
 		}
 		const selection = /^members\[value eq "([^"\\]+)"\]$/i.exec(path);
 		if (selection && op === "remove") {
+			if (!SCIM_ID.test(selection[1])) throw new ScimInvalidValueError("members.value must be a SCIM user id");
 			next.members = next.members.filter((id) => id !== selection[1]);
 			continue;
 		}
@@ -358,10 +361,10 @@ function serviceProviderConfig(): Record<string, unknown> {
 }
 
 function resourceTypes(req: Request): Record<string, unknown> {
-	const base = new URL(req.url).origin;
+	const base = scimBase(req);
 	return listResponse([
-		{ schemas: ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"], id: "User", name: "User", endpoint: "/Users", schema: SCIM_USER_SCHEMA, meta: { location: `${base}/v2/ResourceTypes/User` } },
-		{ schemas: ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"], id: "Group", name: "Group", endpoint: "/Groups", schema: SCIM_GROUP_SCHEMA, meta: { location: `${base}/v2/ResourceTypes/Group` } },
+		{ schemas: ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"], id: "User", name: "User", endpoint: "/Users", schema: SCIM_USER_SCHEMA, meta: { location: `${base}/ResourceTypes/User` } },
+		{ schemas: ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"], id: "Group", name: "Group", endpoint: "/Groups", schema: SCIM_GROUP_SCHEMA, meta: { location: `${base}/ResourceTypes/Group` } },
 	], 2, 1);
 }
 
@@ -385,9 +388,9 @@ async function userRoute(req: Request, store: ScimStore, tenant: ScimTenant, id:
 		const version = expectedVersion(req);
 		const input = method === "PUT" ? parseUser(await readJson(req)) : applyUserPatch(current, patchOperations(await readJson(req)));
 		if (input.userName !== current.userName || input.externalId !== current.externalId) throw new ScimConflictError("mutability", "userName and externalId are immutable");
-		// PATCH carries forward active from the resource just read. Preserve a
-		// concurrent deactivation even when the client omitted If-Match.
-		const updated = await store.updateUser(tenant.tenantId, id, input, method === "PATCH" ? version ?? current.version : version);
+		// Both replacements derive from the resource just read. Never overwrite
+		// a concurrent deactivation when the client omitted If-Match.
+		const updated = await store.updateUser(tenant.tenantId, id, input, version ?? current.version);
 		return updated ? json(200, userResource(req, updated), { ETag: `W/\"${updated.version}\"` }) : error(404, "User not found");
 	}
 	if (method === "DELETE" && id) {
@@ -401,8 +404,13 @@ async function groupRoute(req: Request, store: ScimStore, tenant: ScimTenant, id
 	const method = req.method.toUpperCase();
 	if (method === "GET" && !id) {
 		const url = new URL(req.url); const page = pagination(url); const filter = parseFilter(url.searchParams.get("filter"), "Groups");
-		const result = await store.listGroups(tenant.tenantId, page.offset, page.count, filter);
-		return json(200, listResponse(result.items.map((item) => groupResource(req, item)), result.total, page.startIndex));
+		// Bound aggregate member hydration and response size even when a directory
+		// requests the protocol maximum. itemsPerPage remains the actual count, so
+		// clients can continue at `startIndex + itemsPerPage` without skipped rows.
+		const pageSize = Math.min(page.count, MAX_SCIM_GROUP_PAGE_SIZE);
+		const result = await store.listGroups(tenant.tenantId, page.offset, pageSize, filter);
+		if (result.items.length > pageSize) throw new ScimInvalidValueError("group response exceeds the bounded page size");
+		return json(200, listResponse(result.items.map((group) => groupResource(req, group)), result.total, page.startIndex));
 	}
 	if (method === "GET" && id) {
 		const group = await store.getGroup(tenant.tenantId, id); return group ? json(200, groupResource(req, group), { ETag: `W/\"${group.version}\"` }) : error(404, "Group not found");
@@ -416,9 +424,9 @@ async function groupRoute(req: Request, store: ScimStore, tenant: ScimTenant, id
 		const version = expectedVersion(req);
 		const input = method === "PUT" ? parseGroup(await readJson(req)) : applyGroupPatch(current, patchOperations(await readJson(req)));
 		if (input.externalId !== current.externalId) throw new ScimConflictError("mutability", "externalId is immutable");
-		// PATCH derives the replacement member set from the version just read.
-		// Always compare that version so a concurrent directory update cannot be lost.
-		const updated = await store.updateGroup(tenant.tenantId, id, input, method === "PATCH" ? version ?? current.version : version);
+		// Both replacements read the current group. Compare its version so a
+		// concurrent membership update cannot be lost without If-Match.
+		const updated = await store.updateGroup(tenant.tenantId, id, input, version ?? current.version);
 		return updated ? json(200, groupResource(req, updated), { ETag: `W/\"${updated.version}\"` }) : error(404, "Group not found");
 	}
 	if (method === "DELETE" && id) return (await store.deleteGroup(tenant.tenantId, id, expectedVersion(req))) ? noContent() : error(404, "Group not found");
@@ -435,13 +443,19 @@ export function createScimHandler(store: ScimStore): (req: Request) => Promise<R
 			const parsed = parsePath(new URL(req.url).pathname);
 			if (!parsed) return error(404, "SCIM endpoint not found");
 			if (req.method === "GET" && parsed.resource.toLowerCase() === "serviceproviderconfig" && !parsed.id) return json(200, serviceProviderConfig());
-			if (req.method === "GET" && parsed.resource.toLowerCase() === "resourcetypes" && !parsed.id) return json(200, resourceTypes(req));
+			if (req.method === "GET" && parsed.resource.toLowerCase() === "resourcetypes") {
+				const resources = resourceTypes(req);
+				if (!parsed.id) return json(200, resources);
+				const resource = (resources.Resources as Array<Record<string, unknown>>).find((item) => item.id === parsed.id);
+				return resource ? json(200, resource) : error(404, "Resource type not found");
+			}
 			if (parsed.resource.toLowerCase() === "users") return await userRoute(req, store, tenant, parsed.id);
 			if (parsed.resource.toLowerCase() === "groups") return await groupRoute(req, store, tenant, parsed.id);
 			return error(404, "SCIM resource not found");
 		} catch (caught) {
 			if (caught instanceof ScimConflictError) return error(caught.scimType === "versionMismatch" ? 412 : 409, caught.message, caught.scimType);
-			if (caught instanceof ScimInvalidValueError) return error(400, caught.message, caught.message.includes("filter") ? "invalidFilter" : "invalidValue");
+			if (caught instanceof ScimMemberLimitError) return error(400, caught.message, "invalidValue");
+			if (caught instanceof ScimInvalidValueError) return error(caught.status, caught.message, caught.message.includes("filter") ? "invalidFilter" : "invalidValue");
 			console.error("[scim] request failed", caught instanceof Error ? caught.name : "unknown");
 			return error(503, "SCIM service unavailable");
 		}

@@ -29,7 +29,7 @@ export interface WebhookEventRecorder {
 	 * `false` for every later delivery of that same id.
 	 */
 	record(provider: string, eventId: string, payload: unknown): Promise<boolean>;
-	/** Release a failed claim so the provider's retry can be processed. */
+	/** Mark a failed claim retryable without deleting the replay record. */
 	release(eventId: string): Promise<void>;
 }
 
@@ -56,9 +56,8 @@ export async function claimStripeEvent(
 /**
  * Release a claim after a processing failure.
  *
- * Every write performed by the handler after the claim is an idempotent upsert,
- * so letting Stripe retry is safe; keeping the claim would drop the event
- * permanently.
+ * The database lifecycle keeps the event id while making a failed attempt
+ * retryable. Atomic provider-event ordering makes the retried transition safe.
  */
 export async function releaseStripeEvent(
 	recorder: WebhookEventRecorder,

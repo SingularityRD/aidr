@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 
 type HealthSnapshot = {
@@ -55,19 +56,28 @@ function stateClass(state: string | undefined): string {
 	return "notice notice-danger";
 }
 
-function resultMessage(error: unknown, fallback: string): string {
-	if (error && typeof error === "object" && "message" in error) {
-		const message = (error as { message?: unknown }).message;
-		if (typeof message === "string" && message.trim()) return message;
+async function resultMessage(error: unknown, fallback: string): Promise<string> {
+	const context = error && typeof error === "object" && "context" in error
+		? (error as { context?: unknown }).context
+		: null;
+	if (context instanceof Response && context.status === 503) {
+		try {
+			const body: unknown = await context.clone().json();
+			if (body && typeof body === "object" && "error" in body && body.error === "integration_not_configured") {
+				return "AutoSecOps is not configured for this deployment. Ask your administrator to configure the runtime integration.";
+			}
+		} catch {
+			// An unreadable response must not expose provider details in the UI.
+		}
 	}
-	return fallback;
+	return readErrorMessage(error, fallback);
 }
 
-function readHealthResult(result: { data: unknown; error: unknown }) {
+async function readHealthResult(result: { data: unknown; error: unknown }, teamId: string) {
 	if (result.error) {
 		return {
 			value: null,
-			message: resultMessage(result.error, "AutoSecOps health is unavailable."),
+			message: await resultMessage(result.error, "AutoSecOps health is unavailable."),
 		};
 	}
 	const response = asBridgeResponse(result.data);
@@ -75,6 +85,7 @@ function readHealthResult(result: { data: unknown; error: unknown }) {
 		response.ok !== true ||
 		response.provider !== "autosecops" ||
 		response.action !== "health" ||
+		response.team_id !== teamId ||
 		!response.data?.snapshot
 	) {
 		return { value: null, message: "AutoSecOps health response is invalid." };
@@ -82,15 +93,16 @@ function readHealthResult(result: { data: unknown; error: unknown }) {
 	return { value: response.data.snapshot, message: null };
 }
 
-function readFleetResult(result: { data: unknown; error: unknown }) {
+async function readFleetResult(result: { data: unknown; error: unknown }, teamId: string) {
 	if (result.error) {
-		return { value: [], message: resultMessage(result.error, "AutoSecOps fleet is unavailable.") };
+		return { value: [], message: await resultMessage(result.error, "AutoSecOps fleet is unavailable.") };
 	}
 	const response = asBridgeResponse(result.data);
 	if (
 		response.ok !== true ||
 		response.provider !== "autosecops" ||
 		response.action !== "fleet" ||
+		response.team_id !== teamId ||
 		!response.data?.response ||
 		!Array.isArray(response.data.response.items)
 	) {
@@ -105,11 +117,17 @@ function useAutoSecOpsRuntime(teamId: string | undefined, teamCount: number, tea
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
+	const [loadedTeamId, setLoadedTeamId] = useState<string | null>(null);
+	const requestId = useRef(0);
 
 	const load = useCallback(async () => {
-		if (teamLoading || (!teamId && teamCount > 1)) {
+		const currentRequest = ++requestId.current;
+		if (teamLoading || !teamId) {
+			setLoadedTeamId(null);
 			setHealth(null);
 			setFleet([]);
+			setLoading(false);
+			setLastLoadedAt(null);
 			setError(
 				!teamLoading && teamCount > 1 ? "Select a team to view its AutoSecOps runtime." : null,
 			);
@@ -131,6 +149,8 @@ function useAutoSecOpsRuntime(teamId: string | undefined, teamCount: number, tea
 				}),
 			]);
 		} catch {
+			if (currentRequest !== requestId.current) return;
+			setLoadedTeamId(teamId);
 			setHealth(null);
 			setFleet([]);
 			setError("AutoSecOps bridge is unavailable.");
@@ -138,12 +158,17 @@ function useAutoSecOpsRuntime(teamId: string | undefined, teamCount: number, tea
 			setLoading(false);
 			return;
 		}
+		if (currentRequest !== requestId.current) return;
 
-		const healthOutcome = readHealthResult(healthResult);
-		const fleetOutcome = readFleetResult(fleetResult);
+		const [healthOutcome, fleetOutcome] = await Promise.all([
+			readHealthResult(healthResult, teamId),
+			readFleetResult(fleetResult, teamId),
+		]);
+		if (currentRequest !== requestId.current) return;
+		setLoadedTeamId(teamId);
 		setHealth(healthOutcome.value);
 		setFleet(fleetOutcome.value);
-		setError([healthOutcome.message, fleetOutcome.message].filter(Boolean).join(" ") || null);
+		setError([...new Set([healthOutcome.message, fleetOutcome.message].filter(Boolean))].join(" ") || null);
 		setLastLoadedAt(new Date().toISOString());
 		setLoading(false);
 	}, [teamCount, teamId, teamLoading]);
@@ -151,10 +176,21 @@ function useAutoSecOpsRuntime(teamId: string | undefined, teamCount: number, tea
 	useEffect(() => {
 		void load();
 		const timer = window.setInterval(() => void load(), 15000);
-		return () => window.clearInterval(timer);
+		return () => {
+			requestId.current++;
+			window.clearInterval(timer);
+		};
 	}, [load]);
 
-	return { health, fleet, error, loading, lastLoadedAt, load };
+	const currentTeamLoaded = teamId !== undefined && loadedTeamId === teamId;
+	return {
+		health: currentTeamLoaded ? health : null,
+		fleet: currentTeamLoaded ? fleet : [],
+		error: currentTeamLoaded ? error : null,
+		loading,
+		lastLoadedAt: currentTeamLoaded ? lastLoadedAt : null,
+		load,
+	};
 }
 
 function TeamSelector({

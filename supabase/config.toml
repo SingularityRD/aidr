@@ -33,8 +33,19 @@ file_size_limit = "50MiB"
 [auth]
 enabled = true
 site_url = "http://localhost:5173"
-additional_redirect_urls = ["http://localhost:3000", "http://127.0.0.1:5173"]
+additional_redirect_urls = [
+  "http://localhost:3000/auth/callback",
+  "http://localhost:3000/auth/recover",
+  "http://localhost:5173/auth/callback",
+  "http://localhost:5173/auth/recover",
+  "http://127.0.0.1:5173/auth/callback",
+  "http://127.0.0.1:5173/auth/recover",
+]
 enable_signup = true
+
+[auth.email.template.recovery]
+subject = "Reset your AIDR password"
+content_path = "./supabase/templates/recovery.html"
 
 [edge_runtime]
 enabled = true
@@ -81,6 +92,9 @@ verify_jwt = true
 verify_jwt = true
 [functions.revocations]
 verify_jwt = false
+[functions.response-playbooks]
+# The handler also repeats session, owner/admin and AAL2 checks before SQL.
+verify_jwt = true
 [functions.url-check]
 verify_jwt = false
 [functions.waitlist-signup]
@@ -109,9 +123,13 @@ verify_jwt = false
 # each path verifies its own credential before any authorization decision.
 verify_jwt = false
 [functions.scim]
-# SCIM clients use tenant-scoped hash-only bearer tokens which the function
-# validates before resolving any directory object or role mapping.
-verify_jwt = false
+  # SCIM clients use tenant-scoped hash-only bearer tokens which the function
+  # validates before resolving any directory object or role mapping.
+  verify_jwt = false
+[functions.scim-admin]
+  # SCIM provisioning credentials and role mappings are managed only by an
+  # authenticated tenant owner; the handler repeats identity and MFA checks.
+  verify_jwt = true
 [functions.discovery]
 # The function validates JWTs for operator actions and separately validates
 # tenant/collector-bound machine credentials for ingest. Gateway JWT checking

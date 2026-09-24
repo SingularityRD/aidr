@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Node test runner cannot resolve. The factory only exists to prove that the
 // handler builds its client from validated configuration; the suite always
 // injects `deps.db`.
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => {
 		throw new Error("createClient must be injected through UrlCheckDeps.db");
 	},
@@ -60,6 +60,8 @@ const BENIGN = "https://benign.example/index.html";
 interface UrlRepRow {
 	url: string | null;
 	domain: string | null;
+	created_at: string | null;
+	provenance_verified: boolean;
 	is_malicious: boolean | null;
 	severity_name: string | null;
 	type_name: string | null;
@@ -70,6 +72,8 @@ function urlRow(overrides: Partial<UrlRepRow> = {}): UrlRepRow {
 	return {
 		url: null,
 		domain: null,
+		created_at: new Date().toISOString(),
+		provenance_verified: true,
 		is_malicious: false,
 		severity_name: null,
 		type_name: null,
@@ -86,24 +90,27 @@ interface QueryResult {
 interface DbOptions {
 	/** Rows the `.in("url", ...)` read answers with. */
 	urlRows?: UrlRepRow[];
+	urlLookupError?: unknown;
 	/** Rows the `.in("domain", ...)` read answers with. */
 	domainRows?: UrlRepRow[];
+	domainLookupError?: unknown;
 }
 
 function database(options: DbOptions = {}) {
 	const fromCalls: string[] = [];
 	const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 
-	function resultFor(table: string, column: string): QueryResult {
+	function resultFor(table: string, column: string, requireVerifiedProvenance: boolean): QueryResult {
 		if (table === "api_keys") {
 			return { data: { user_id: USER, tenant_id: TENANT, revoked: false }, error: null };
 		}
-		if (table === "tenant_members") return { data: { expires_at: null }, error: null };
+		if (table === "tenant_members") return { data: { role: "member", expires_at: null }, error: null };
 		if (table === "tenants") return { data: { status: "active" }, error: null };
 		if (table === "url_reputation") {
+			const rows = column === "url" ? (options.urlRows ?? []) : (options.domainRows ?? []);
 			return {
-				data: column === "url" ? (options.urlRows ?? []) : (options.domainRows ?? []),
-				error: null,
+				data: requireVerifiedProvenance ? rows.filter((row) => row.provenance_verified) : rows,
+				error: column === "url" ? (options.urlLookupError ?? null) : (options.domainLookupError ?? null),
 			};
 		}
 		return { data: null, error: null };
@@ -114,18 +121,22 @@ function database(options: DbOptions = {}) {
 	function from(table: string) {
 		fromCalls.push(table);
 		let column = "";
+		let requireVerifiedProvenance = false;
 		const query = {
 			select: () => query,
-			eq: () => query,
+			eq: (name: string, value: unknown) => {
+				if (name === "provenance_verified" && value === true) requireVerifiedProvenance = true;
+				return query;
+			},
 			in: (name: string) => {
 				column = name;
 				return query;
 			},
-			maybeSingle: async () => resultFor(table, column),
+			maybeSingle: async () => resultFor(table, column, requireVerifiedProvenance),
 			then: (
 				onFulfilled: (value: QueryResult) => unknown,
 				onRejected?: (reason: unknown) => unknown,
-			) => Promise.resolve(resultFor(table, column)).then(onFulfilled, onRejected),
+			) => Promise.resolve(resultFor(table, column, requireVerifiedProvenance)).then(onFulfilled, onRejected),
 		};
 		return query;
 	}
@@ -133,9 +144,12 @@ function database(options: DbOptions = {}) {
 	return {
 		db: {
 			from: vi.fn(from),
-			rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
-				rpcCalls.push({ name, args });
-				if (name === "consume_tenant_rate_limit") {
+				rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
+					rpcCalls.push({ name, args });
+					if (name === "tenant_admission_capacity") {
+						return { data: 1, error: null };
+					}
+					if (name === "consume_tenant_rate_limit") {
 					return { data: [{ allowed: true, remaining: 599 }], error: null };
 				}
 				return { data: null, error: null };
@@ -259,6 +273,148 @@ describe("url-check Edge handler", () => {
 		expect(benign?.coverage).toBe("covered");
 		expect(benign?.result.success.classification.result).toEqual({});
 		expect(benign?.result.success.flags).toEqual(["TRUSTED"]);
+	});
+
+	it("does not trust historical URL rows without verified provenance", async () => {
+		const { handle } = await handlerWith({
+			urlRows: [urlRow({ url: BENIGN, provenance_verified: false, is_malicious: false, flags: ["TRUSTED"] })],
+			domainRows: [],
+		});
+
+		const response = await handle(post([BENIGN]));
+		const body = (await response.json()) as { answers: Array<Record<string, unknown>> };
+		const answer = body.answers[0] as {
+			coverage: string;
+			result: { success: { classification: { result: { unknown?: { reason: string } } } } };
+		};
+		expect(answer.coverage).toBe("no_data");
+		expect(answer.result.success.classification.result.unknown?.reason).toBe("no_reputation_row");
+	});
+
+	it("returns stale or future-dated rows as unknown, never clean", async () => {
+		const { handle } = await handlerWith({
+			urlRows: [
+				urlRow({ url: BENIGN, created_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() }),
+				urlRow({ url: MALICIOUS, created_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }),
+			],
+		});
+		const response = await handle(post([BENIGN, MALICIOUS]));
+		const body = (await response.json()) as {
+			coverage: string;
+			answers: Array<{ coverage: string; result: { success: { classification: { result: { unknown?: { reason: string } } } } } }>;
+		};
+		expect(body.coverage).toBe("none");
+		for (const answer of body.answers) {
+			expect(answer.coverage).toBe("no_data");
+			expect(answer.result.success.classification.result.unknown?.reason).toBe("stale_reputation_row");
+		}
+	});
+
+	it("returns the source freshness deadline with a covered row", async () => {
+		const createdAt = new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString();
+		const { handle } = await handlerWith({
+			urlRows: [urlRow({ url: BENIGN, created_at: createdAt })],
+			domainRows: [],
+		});
+
+		const response = await handle(post([BENIGN]));
+		const body = (await response.json()) as { answers: Array<{ cache_valid_until?: string }> };
+
+		expect(body.answers[0]?.cache_valid_until).toBe(
+			new Date(Date.parse(createdAt) + 24 * 60 * 60 * 1000).toISOString(),
+		);
+	});
+
+	it("never treats conflicting tenant rows as clean, regardless of query order", async () => {
+		for (const reversed of [false, true]) {
+			const urlRows = [
+				urlRow({ url: BENIGN, is_malicious: true }),
+				urlRow({ url: BENIGN, is_malicious: false }),
+			];
+			const domainRows = [
+				urlRow({ domain: "benign.example", is_malicious: true }),
+				urlRow({ domain: "benign.example", is_malicious: false }),
+			];
+			if (reversed) { urlRows.reverse(); domainRows.reverse(); }
+			for (const rows of [{ urlRows }, { domainRows }]) {
+				const { handle } = await handlerWith(rows);
+				const response = await handle(post([BENIGN]));
+				const body = (await response.json()) as { answers: Array<{
+					coverage: string;
+					cache_valid_until?: string;
+					result: { success: { classification: { result: { unknown?: { reason: string } } } } };
+				}> };
+				expect(body.answers[0]?.coverage).toBe("no_data");
+				expect(body.answers[0]?.cache_valid_until).toBeUndefined();
+				expect(body.answers[0]?.result.success.classification.result.unknown?.reason).toBe("conflicting_reputation_rows");
+			}
+		}
+	});
+
+	it("treats disagreeing fresh exact-URL and domain evidence as unknown", async () => {
+		const { handle } = await handlerWith({
+			urlRows: [urlRow({ url: BENIGN, is_malicious: false })],
+			domainRows: [urlRow({ domain: "benign.example", is_malicious: true })],
+		});
+		const response = await handle(post([BENIGN]));
+		const body = (await response.json()) as { answers: Array<{
+			coverage: string;
+			result: { success: { classification: { result: { unknown?: { reason: string } } } } };
+		}> };
+		expect(body.answers[0]?.coverage).toBe("no_data");
+		expect(body.answers[0]?.result.success.classification.result.unknown?.reason).toBe("conflicting_reputation_rows");
+	});
+
+	it("same-verdict duplicate rows use the earliest source expiry", async () => {
+		const older = new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString();
+		const newer = new Date().toISOString();
+		for (const createdAts of [[older, newer], [newer, older]]) {
+			const { handle } = await handlerWith({
+				urlRows: createdAts.map((created_at) => urlRow({ url: BENIGN, created_at })),
+			});
+			const response = await handle(post([BENIGN]));
+			const body = (await response.json()) as { answers: Array<{ coverage: string; cache_valid_until?: string }> };
+			expect(body.answers[0]?.coverage).toBe("covered");
+			expect(body.answers[0]?.cache_valid_until).toBe(new Date(Date.parse(older) + 24 * 60 * 60 * 1000).toISOString());
+		}
+	});
+
+	it("uses a fresh domain row when the exact URL row is stale", async () => {
+		const { handle } = await handlerWith({
+			urlRows: [urlRow({ url: BENIGN, created_at: "2000-01-01T00:00:00.000Z" })],
+			domainRows: [urlRow({ domain: "benign.example", is_malicious: true })],
+		});
+		const response = await handle(post([BENIGN]));
+		const body = (await response.json()) as { answers: Array<{ coverage: string; result: { success: { classification: { result: Record<string, unknown> } } } }> };
+		expect(body.answers[0]?.coverage).toBe("covered");
+		expect(body.answers[0]?.result.success.classification.result).toHaveProperty("malicious");
+	});
+
+	it("does not use a clean domain row when the exact URL lookup fails", async () => {
+		const { handle } = await handlerWith({
+			urlLookupError: new Error("temporary lookup failure"),
+			domainRows: [urlRow({ domain: "example.test", is_malicious: false })],
+		});
+
+		const response = await handle(post(["https://example.test/path"]));
+
+		expect(response.status).toBe(503);
+		expect(await response.json()).toMatchObject({ error: "reputation_lookup_unavailable" });
+	});
+
+	it("does not let a co.uk reputation row cover unrelated hosts", async () => {
+		const { handle } = await handlerWith({
+			domainRows: [urlRow({ domain: "co.uk", is_malicious: false })],
+		});
+
+		const response = await handle(post(["https://example.co.uk/path"]));
+		const body = (await response.json()) as {
+			coverage: string;
+			answers: Array<{ coverage: string }>;
+		};
+
+		expect(body.coverage).toBe("none");
+		expect(body.answers[0]?.coverage).toBe("no_data");
 	});
 
 	it("reports partial coverage when only some queried URLs have a row", async () => {

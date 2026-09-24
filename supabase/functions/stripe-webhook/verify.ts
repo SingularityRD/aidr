@@ -23,7 +23,7 @@ const UNIX_SECONDS = /^\d{1,12}$/;
 /** Lower-case hexadecimal of even length. */
 const HEX = /^[0-9a-f]+$/;
 
-export type StripeSignatureFailure =
+type StripeSignatureFailure =
 	| "missing_secret"
 	| "missing_signature_header"
 	| "malformed_signature_header"
@@ -123,7 +123,7 @@ export function hexToBytes(hex: string): Uint8Array | null {
 	return bytes;
 }
 
-export function bytesToHex(bytes: Uint8Array): string {
+function bytesToHex(bytes: Uint8Array): string {
 	let out = "";
 	for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
 	return out;

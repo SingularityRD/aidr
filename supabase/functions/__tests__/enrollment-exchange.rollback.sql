@@ -1,4 +1,4 @@
--- Run after applying 20260912000017_enrollment_exchange_atomic.sql in a
+-- Run after applying the current enrollment migrations in a
 -- transaction that is rolled back. This uses a throwaway Auth user and all
 -- assertions are rolled back with that user.
 do $checks$
@@ -27,6 +27,7 @@ begin
 
   insert into auth.users(id,email) values(u,'enrollment-atomic-' || u || '@test.invalid');
   update public.entitlements set included_agents=2 where tenant_id=u;
+  insert into public.pilot_applications(user_id,tenant_id,status) values(u,u,'approved');
   insert into public.enrollment_tokens(user_id,tenant_id,token_hash,expires_at)
   values(u,u,th1,now()+interval '1 hour'),
         (u,u,th2,now()+interval '1 hour'),
@@ -65,7 +66,6 @@ begin
     raise exception 'seat failure consumed token';
   end if;
 
-  insert into public.pilot_applications(user_id,tenant_id,status) values(u,u,'approved');
   insert into public.device_sessions(device_code_hash,user_code,user_id,tenant_id,authorized_at,expires_at,status)
   values(dh1,code1,u,u,now(),now()+interval '10 minutes','authorized'),
         (dh2,code2,u,u,now(),now()+interval '10 minutes','authorized');

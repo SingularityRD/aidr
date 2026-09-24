@@ -43,7 +43,7 @@ export interface AzureADConfig {
 /**
  * A directory group returned by the server-owned verified projection.
  */
-export interface AzureADGroup {
+interface AzureADGroup {
 	/** The immutable directory external ID. Never derive this from displayName. */
 	id: string;
 	/** The same immutable external ID in the server response. */

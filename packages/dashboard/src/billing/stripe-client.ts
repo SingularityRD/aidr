@@ -22,6 +22,13 @@ export interface CheckoutResult {
 	checkoutId: string;
 }
 
+export class CheckoutSessionExpiredError extends Error {
+	constructor() {
+		super("The checkout session expired. Start a new checkout request.");
+		this.name = "CheckoutSessionExpiredError";
+	}
+}
+
 /**
  * Direct-GA is invoice/order based: self-service checkout is an explicit
  * non-default opt-in and stays fail-closed until the server-side Checkout
@@ -57,6 +64,20 @@ export async function createCheckout(
 	const { data, error } = await supabase.functions.invoke("billing-checkout", {
 		body: { tenant_id: tenantId, seats, plan, request_id: stableRequestId },
 	});
+	let failure = data;
+	if (error && (!failure || typeof failure !== "object")) {
+		const context = (error as { context?: unknown }).context;
+		if (context instanceof Response) {
+			try {
+				failure = await context.clone().json();
+			} catch {
+				// Preserve the generic checkout error when the response is unreadable.
+			}
+		}
+	}
+	if (failure?.error === "checkout_session_expired" && failure.new_request_required === true) {
+		throw new CheckoutSessionExpiredError();
+	}
 	if (
 		error ||
 		data?.ok !== true ||

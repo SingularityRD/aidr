@@ -1,7 +1,8 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { readErrorMessage } from "../lib/errors";
+import { supabase } from "../lib/supabase";
 import { useSessionSnapshot } from "../ui/use-session";
 import { EnterpriseAuth } from "./auth";
 
@@ -17,6 +18,7 @@ type Props = {
 		switchTeam: (teamId: string) => void,
 		refreshMemberships: (tenantId: string) => Promise<void>,
 		isCurrent: () => boolean,
+		userId: string,
 	) => ReactNode;
 };
 
@@ -46,6 +48,8 @@ function parseBootstrap(data: unknown): MembershipIdentity[] {
 
 /** Only identifiers cross this boundary. Protected table providers mount AFTER assurance. */
 export function IdentityBootstrap({ children }: Props) {
+	const [params] = useSearchParams();
+	const requestedTenant = params.get("tenant");
 	const { snapshot, generation, refresh, isCurrent } = useSessionSnapshot();
 	const preference = useRef<{ userId: string; tenantId: string } | null>(null);
 	const userId = snapshot?.session?.user.id;
@@ -65,12 +69,13 @@ export function IdentityBootstrap({ children }: Props) {
 	const session = snapshot.session;
 	return (
 		<BoundBootstrap
-			key={JSON.stringify([session.user.id, session.access_token, generation])}
+			key={JSON.stringify([session.user.id, session.access_token, generation, requestedTenant])}
 			session={session}
 			isCurrent={isCurrent}
 			preferredTenant={
 				preference.current?.userId === session.user.id ? preference.current.tenantId : null
 			}
+			requestedTenant={requestedTenant}
 			onSelect={remember}
 			refreshMemberships={async (tenantId) => {
 				remember(tenantId);
@@ -86,6 +91,7 @@ function BoundBootstrap({
 	session,
 	children,
 	preferredTenant,
+	requestedTenant,
 	onSelect,
 	refreshMemberships,
 	isCurrent,
@@ -93,6 +99,7 @@ function BoundBootstrap({
 	session: Session;
 	isCurrent: () => boolean;
 	preferredTenant: string | null;
+	requestedTenant: string | null;
 	onSelect: (tenantId: string) => void;
 	refreshMemberships: (tenantId: string) => Promise<void>;
 }) {
@@ -109,8 +116,16 @@ function BoundBootstrap({
 				if (cancelled || !isCurrent()) return;
 				if (error) throw error;
 				const memberships = parseBootstrap(data);
+				const requested = requestedTenant
+					? memberships.find((item) => item.tenant_id === requestedTenant && item.team_id)
+					: null;
+				if (requestedTenant && !requested)
+					throw new Error("The requested team workspace is not available. Access is withheld.");
 				const selected =
-					memberships.find((item) => item.tenant_id === preferredTenant) ?? memberships[0] ?? null;
+					requested ??
+					memberships.find((item) => item.tenant_id === preferredTenant) ??
+					memberships[0] ??
+					null;
 				setSelection(selected);
 				if (selected) onSelect(selected.tenant_id);
 				setState({ kind: "ready", memberships });
@@ -128,7 +143,7 @@ function BoundBootstrap({
 		return () => {
 			cancelled = true;
 		};
-	}, [session, preferredTenant, onSelect, isCurrent]);
+	}, [session, preferredTenant, requestedTenant, onSelect, isCurrent]);
 	if (state.kind === "checking") return <div role="status">Resolving the managed tenant…</div>;
 	if (state.kind === "blocked") return <div role="alert">{state.message}</div>;
 	if (!selection)
@@ -169,7 +184,7 @@ function BoundBootstrap({
 				</label>
 			)}
 			<EnterpriseAuth tenantId={selection.tenant_id}>
-				{children(selection.team_id, switchTeam, refreshMemberships, isCurrent)}
+				{children(selection.team_id, switchTeam, refreshMemberships, isCurrent, session.user.id)}
 			</EnterpriseAuth>
 		</>
 	);

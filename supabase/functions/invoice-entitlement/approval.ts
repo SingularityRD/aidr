@@ -10,9 +10,9 @@
 /** The only action that may enter the paid state. */
 export const APPROVAL_ACTION = "record_invoice_approval";
 
-export const APPROVAL_CURRENCIES = ["USD", "EUR", "GBP"] as const;
+const APPROVAL_CURRENCIES = ["USD", "EUR", "GBP"] as const;
 
-export type InvoiceApprovalCurrency = (typeof APPROVAL_CURRENCIES)[number];
+type InvoiceApprovalCurrency = (typeof APPROVAL_CURRENCIES)[number];
 
 export type InvoiceApprovalRequest = {
 	orderId: string;

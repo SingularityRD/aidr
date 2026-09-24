@@ -20,18 +20,25 @@ import { ThemeToggle } from "./ThemeToggle";
 function ManagedOutlet() {
 	const { currentTeam, isLoading, error } = useTeam();
 	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
-	if (!currentTeam && error) return <div role="alert"><p>Your team membership could not be loaded.</p><p>{error}</p></div>;
+	if (!currentTeam && error)
+		return (
+			<div role="alert">
+				<p>Your team membership could not be loaded.</p>
+				<p>{error}</p>
+			</div>
+		);
 	// TeamProvider now bootstraps identity and gates BEFORE any protected table
 	// read. Requiring currentTeam to discover the MFA policy deadlocked at AAL1.
 	return <Outlet />;
 }
 
 function TeamNavLinks() {
-	const { canEditPolicy, roleResolved } = useTeam();
+	const { canEditPolicy, currentRole, roleResolved } = useTeam();
 
 	return (
 		<>
 			<NavLink to="/team">Team</NavLink>
+			{currentRole === "owner" ? <NavLink to="/scim">Directory provisioning</NavLink> : null}
 			{!roleResolved || canEditPolicy ? <NavLink to="/policies">Policies</NavLink> : null}
 		</>
 	);
@@ -39,12 +46,13 @@ function TeamNavLinks() {
 
 export function AppLayout() {
 	const navigate = useNavigate();
-	const [signOutError, setSignOutError] = useState<string | null>(null);
+	const [signingOut, setSigningOut] = useState(false);
+	if (signingOut) return <div role="status">Ending this browser session…</div>;
 
 	return (
 		<TeamProvider>
 			<div className="app">
-				<a className="skip-link" href="#main-content">
+				<a className="skip-link" href="#page-content">
 					Skip to content
 				</a>
 				<header className="console-topbar">
@@ -61,7 +69,7 @@ export function AppLayout() {
 						<ThemeToggle />
 					</div>
 				</header>
-				<main className="main" id="main-content">
+				<main className="main">
 					<nav className="navcard" aria-label="Dashboard">
 						<NavLink to="/onboarding">Connect</NavLink>
 						<NavLink to="/dashboard">Dashboard</NavLink>
@@ -69,6 +77,7 @@ export function AppLayout() {
 						<NavLink to="/api-keys">API Keys</NavLink>
 						<NavLink to="/agents">Agents</NavLink>
 						<NavLink to="/events">Events</NavLink>
+						<NavLink to="/discovery">Discovery</NavLink>
 						<NavLink to="/incidents">Incidents</NavLink>
 						<NavLink to="/autosecops">AutoSecOps</NavLink>
 						<NavLink to="/settings">Settings</NavLink>
@@ -78,14 +87,15 @@ export function AppLayout() {
 								className="button button-secondary button-sm"
 								type="button"
 								onClick={async () => {
-									setSignOutError(null);
+									setSigningOut(true);
 									try {
-										await signOut();
-										navigate("/login");
-									} catch (cause) {
-										setSignOutError(
-											cause instanceof Error ? cause.message : "Sign out could not be completed.",
+										const result = await signOut();
+										navigate(
+											result.serverRevoked ? "/login" : "/login?signout=revocation-unconfirmed",
+											{ replace: true },
 										);
+									} catch {
+										navigate("/login?signout=local-failed", { replace: true });
 									}
 								}}
 							>
@@ -93,11 +103,6 @@ export function AppLayout() {
 							</button>
 						</span>
 					</nav>
-					{signOutError ? (
-						<div className="notice notice-danger" role="alert" style={{ marginBottom: 14 }}>
-							{signOutError}
-						</div>
-					) : null}
 					{supabaseEnvError ? (
 						<div className="notice notice-danger" style={{ marginBottom: 14 }}>
 							<b>Dashboard environment is incomplete.</b>
@@ -106,7 +111,9 @@ export function AppLayout() {
 							</div>
 						</div>
 					) : null}
-					<ManagedOutlet />
+					<div id="page-content" tabIndex={-1}>
+						<ManagedOutlet />
+					</div>
 				</main>
 			</div>
 		</TeamProvider>

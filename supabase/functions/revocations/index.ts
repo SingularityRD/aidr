@@ -13,7 +13,8 @@
 // The command transport records agent-reported outcomes. Actual OS or provider
 // containment requires a separately verified native consumer and field test.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
+import { apiKeyMembershipActive } from "../_shared/api-key-auth.ts";
 import { getBearerToken as getAccessToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
@@ -108,7 +109,35 @@ function addHoursIso(hours: number): string {
 	return new Date(Date.now() + safe * 60 * 60 * 1000).toISOString();
 }
 
-type DatabaseClient = ReturnType<typeof createClient>;
+type ReadTable<Row extends Record<string, unknown>> = { Row: Row; Insert: never; Update: never; Relationships: [] };
+type FleetCommandRow = {
+	id: string; tenant_id: string; agent_id: string; actor_user_id: string; command_type: string;
+	reason: string; rollback_of: string | null; state: string; attempts: number;
+	created_at: string; expires_at: string; delivered_at: string | null;
+	acknowledged_at: string | null; completed_at: string | null; result_code: string | null;
+};
+type RevocationsDatabase = {
+	public: {
+		Tables: {
+			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
+			tenants: ReadTable<{ id: string; status: string }>;
+			api_keys: ReadTable<{ tenant_id: string; user_id: string; agent_id: string | null; revoked: boolean; key_hash: string }>;
+			agents: ReadTable<{ id: string; tenant_id: string; iid: string }>;
+			fleet_response_commands: ReadTable<FleetCommandRow>;
+			revocations: ReadTable<{ id: string; kind: string; value: string; tenant_id: string | null }>;
+		};
+		Views: Record<string, never>;
+		Functions: {
+			poll_fleet_response_command: { Args: { p_key_hash: string; p_tenant_id: string; p_agent_id: string }; Returns: FleetCommandRow | null };
+			record_fleet_response_command: { Args: { p_key_hash: string; p_tenant_id: string; p_agent_id: string; p_command_id: string; p_stage: string; p_outcome: string; p_result_code: string | null }; Returns: FleetCommandRow };
+			cancel_fleet_response_command: { Args: { p_tenant_id: string; p_actor_user_id: string; p_command_id: string }; Returns: FleetCommandRow };
+			queue_bounded_fleet_response_command: { Args: { p_tenant_id: string; p_actor_user_id: string; p_agent_id: string; p_command_type: string; p_reason: string; p_idempotency_key: string; p_ttl_seconds: number; p_rollback_of: string | null }; Returns: FleetCommandRow };
+		};
+		Enums: Record<string, never>;
+		CompositeTypes: Record<string, never>;
+	};
+};
+type DatabaseClient = SupabaseClient<RevocationsDatabase>;
 type OperatorContext = { userId: string; tenantId: string };
 type AgentContext = { tenantId: string; agentId: string; installationId: string; keyHash: string };
 
@@ -189,7 +218,7 @@ async function agentContext(db: DatabaseClient, req: Request): Promise<AgentCont
 	if (memberError || tenantError || agentError) {
 		return corsJson(req, 503, { error: "authorization_unavailable" });
 	}
-	if (!membershipActive(member) || tenant?.status !== "active" || !agent) {
+	if (!apiKeyMembershipActive(member) || tenant?.status !== "active" || !agent) {
 		return corsJson(req, 403, { error: "agent_access_denied" });
 	}
 	if (typeof agent.iid !== "string" || agent.iid.trim().length === 0 || /[\u0000-\u001f\u007f\r\n]/.test(agent.iid)) {
@@ -215,7 +244,7 @@ export function createFleetCommandHandler(deps: FleetCommandDeps = {}) {
 			return configFailure("revocations", config.error, (status, body) =>
 				corsJson(req, status, body));
 		}
-		const db = deps.db ?? createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, {
+		const db = deps.db ?? createClient<RevocationsDatabase>(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, {
 			auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
 		});
 		return handleFleetCommandRequest(req, db);
@@ -411,7 +440,7 @@ Deno.serve(async (req) => {
 		return json(401, { error: "missing_api_key" });
 	}
 
-	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+	const supabase = createClient<RevocationsDatabase>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
 
@@ -433,7 +462,7 @@ Deno.serve(async (req) => {
 		supabase.from("tenants").select("status").eq("id", tenantId).maybeSingle(),
 	]);
 	if (memberError || tenantError) return json(503, { error: "authorization_unavailable" });
-	if (!membershipActive(member) || tenant?.status !== "active") return json(403, { error: "agent_access_denied" });
+	if (!apiKeyMembershipActive(member) || tenant?.status !== "active") return json(403, { error: "agent_access_denied" });
 
 	const loaded = await loadRevocationRows(supabase.from("revocations"), tenantId);
 	if (!loaded.ok) return json(503, { error: loaded.error });
@@ -470,6 +499,9 @@ Deno.serve(async (req) => {
 
 	const payloadJson = canonicalJson(payload);
 	const sig = await signEd25519Detached(payloadJson);
+	if (REVOCATION_SIGNING_KEY_ID && !sig) {
+		return json(503, { error: "revocation_signing_unavailable" });
+	}
 
 	return json(200, {
 		revocations_signed: sig

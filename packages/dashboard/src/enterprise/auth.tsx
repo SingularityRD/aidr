@@ -1,10 +1,10 @@
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
+import { setPostAuthReturnTo } from "../ui/return-to";
 import type { SessionSnapshot } from "../ui/session";
 import { useSessionSnapshot } from "../ui/use-session";
-import { setPostAuthReturnTo } from "../ui/return-to";
 
 /**
  * Outcome of the last action. Kept as a typed value rather than inferred from
@@ -91,6 +91,8 @@ export interface EnterpriseAuthProps {
 	 * specific team should pass its id.
 	 */
 	tenantId?: string;
+	/** Require AAL2 for a sensitive action even when the tenant-wide policy permits AAL1. */
+	forceMfa?: boolean;
 }
 
 export function EnterpriseAuth(props: EnterpriseAuthProps = {}) {
@@ -99,6 +101,7 @@ export function EnterpriseAuth(props: EnterpriseAuthProps = {}) {
 	// state AND factor secrets before rendering a different tenant/principal/token.
 	const binding = JSON.stringify([
 		props.tenantId ?? null,
+		props.forceMfa ?? false,
 		snapshot?.session?.user.id ?? null,
 		snapshot?.session?.access_token ?? null,
 		generation,
@@ -117,6 +120,7 @@ export function EnterpriseAuth(props: EnterpriseAuthProps = {}) {
 function BoundEnterpriseAuth({
 	children,
 	tenantId,
+	forceMfa = false,
 	snapshot,
 	refreshSession,
 	isCurrent,
@@ -178,25 +182,25 @@ function BoundEnterpriseAuth({
 			}
 			if (tenantId && data.tenant_id !== tenantId)
 				throw new Error("The assurance report belongs to another tenant. Access is withheld.");
-			if (assurance.accessAllowed && (!assurance.requireMfa || assurance.currentLevel === "aal2")) {
+			if (
+				assurance.accessAllowed &&
+				((!assurance.requireMfa && !forceMfa) || assurance.currentLevel === "aal2")
+			) {
 				setStepUp({ kind: "clear" });
 				return;
 			}
 			// `next_assurance: "aal2"` is the server telling us a verified factor
 			// exists to challenge; anything else has to enroll one first.
 			setStepUp(assurance.nextLevel === "aal2" ? { kind: "challenge" } : { kind: "enroll" });
-		} catch (cause) {
+		} catch {
 			if (!bindingIsCurrent() || request !== assuranceRequest.current) return;
 			setStepUp({ kind: "blocked" });
 			setStatus({
 				tone: "error",
-				message: readErrorMessage(
-					cause,
-					"Session assurance could not be verified. No protected screen was opened.",
-				),
+				message: "Session assurance could not be verified. No protected screen was opened.",
 			});
 		}
-	}, [tenantId, session, bindingIsCurrent]);
+	}, [tenantId, forceMfa, session, bindingIsCurrent]);
 
 	useEffect(() => {
 		if (!gated || !snapshot) return;
@@ -224,7 +228,10 @@ function BoundEnterpriseAuth({
 			});
 
 			if (error) {
-				setStatus({ tone: "error", message: error.message });
+				setStatus({
+					tone: "error",
+					message: readErrorMessage(error, "Sign-in could not be completed."),
+				});
 			}
 		} catch (cause) {
 			setStatus({
@@ -251,9 +258,7 @@ function BoundEnterpriseAuth({
 			if (!bindingIsCurrent()) return;
 
 			if (error) {
-				throw new Error(
-					`the "oauth-callback" Edge Function is unavailable (${error.message}). The invitation was not accepted.`,
-				);
+				throw new Error(readErrorMessage(error, "The invitation could not be accepted."));
 			}
 
 			const response = (data ?? null) as { ok?: unknown; error?: unknown } | null;
@@ -500,8 +505,10 @@ function BoundEnterpriseAuth({
 			<div className="card">
 				<h1>Multi-factor authentication required</h1>
 				<p className="muted">
-					This tenant requires a second factor before its managed screens can be opened. The control
-					plane reports the session at assurance level aal1.
+					{forceMfa
+						? "This action requires a second factor before it can be opened."
+						: "This tenant requires a second factor before its managed screens can be opened."}{" "}
+					The control plane reports the session at assurance level aal1.
 				</p>
 
 				{enrollment ? enrollmentSecret() : enrollmentPrompt(state)}
@@ -534,47 +541,72 @@ function BoundEnterpriseAuth({
 	}
 
 	function signInSurface() {
+		const configuredMethods = window.__AIDR_CONFIG__?.authMethods;
 		return (
 			<div className="card">
 				<h1>Enterprise Sign In</h1>
 				<p className="muted">
-					Sign in with your GitHub or GitLab account to access team features. Organization sync is
-					automatic.
+					Sign in with a configured method to access team features and accept invitations.
 				</p>
 
-				<div className="row" style={{ flexDirection: "column", gap: "12px", marginTop: "20px" }}>
-					<button
-						className="button"
-						type="button"
-						disabled={busy}
-						onClick={() => void signInWithProvider("github")}
-						style={{
-							background: "linear-gradient(180deg, #24292f, #1a1f24)",
-							borderColor: "rgba(36, 41, 47, 0.5)",
-						}}
-					>
-						<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-							<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-						</svg>
-						Continue with GitHub
-					</button>
+				{!session && configuredMethods?.length === 0 ? (
+					<p className="notice" role="status">
+						Enterprise sign-in is not configured for this deployment. Ask your administrator to
+						enable a supported sign-in method.
+					</p>
+				) : null}
 
-					<button
-						className="button"
-						type="button"
-						disabled={busy}
-						onClick={() => void signInWithProvider("gitlab")}
-						style={{
-							background: "linear-gradient(180deg, #fc6d26, #e24329)",
-							borderColor: "rgba(252, 109, 38, 0.5)",
-						}}
-					>
-						<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-							<path d="M15.97 9.058l-.895-2.756-.01-.024-1.8-5.552a.653.653 0 00-1.24 0l-1.8 5.552-.009.024-.895 2.756-.007.023-2.55 7.847a.653.653 0 001.043.74l3.045-2.344 3.044 2.344a.653.653 0 001.043-.74l-2.55-7.847-.007-.023zM11.9 6.303l1.115 3.434H10.77l1.13-3.434zm-3.8 0l1.13 3.434H6.97l1.13-3.434zm0-2.827l1.13 3.434H6.97l1.13-3.434zM5.052 9.737l.83-2.558.86 2.558H5.052zm3.111 4.713L5.527 11.42l2.636-2.03 2.636 2.03-2.636 2.03zm3.8-4.713l.86-2.558.83 2.558h-1.69z" />
-						</svg>
-						Continue with GitLab
-					</button>
-				</div>
+				{!session && configuredMethods?.length !== 0 ? (
+					<div className="row" style={{ flexDirection: "column", gap: "12px", marginTop: "20px" }}>
+						<Link className="button" to={`/login?returnTo=${encodeURIComponent(postAuthPath)}`}>
+							Sign in with a configured method
+						</Link>
+						{!configuredMethods || configuredMethods.includes("github") ? (
+							<button
+								className="button"
+								type="button"
+								disabled={busy}
+								onClick={() => void signInWithProvider("github")}
+								style={{
+									background: "linear-gradient(180deg, #24292f, #1a1f24)",
+									borderColor: "rgba(36, 41, 47, 0.5)",
+								}}
+							>
+								<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+									<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+								</svg>
+								Continue with GitHub
+							</button>
+						) : null}
+
+						{!configuredMethods || configuredMethods.includes("gitlab") ? (
+							<button
+								className="button"
+								type="button"
+								disabled={busy}
+								onClick={() => void signInWithProvider("gitlab")}
+								style={{
+									background: "linear-gradient(180deg, #fc6d26, #e24329)",
+									borderColor: "rgba(252, 109, 38, 0.5)",
+								}}
+							>
+								<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+									<path d="M15.97 9.058l-.895-2.756-.01-.024-1.8-5.552a.653.653 0 00-1.24 0l-1.8 5.552-.009.024-.895 2.756-.007.023-2.55 7.847a.653.653 0 001.043.74l3.045-2.344 3.044 2.344a.653.653 0 001.043-.74l-2.55-7.847-.007-.023zM11.9 6.303l1.115 3.434H10.77l1.13-3.434zm-3.8 0l1.13 3.434H6.97l1.13-3.434zm0-2.827l1.13 3.434H6.97l1.13-3.434zM5.052 9.737l.83-2.558.86 2.558H5.052zm3.111 4.713L5.527 11.42l2.636-2.03 2.636 2.03-2.636 2.03zm3.8-4.713l.86-2.558.83 2.558h-1.69z" />
+								</svg>
+								Continue with GitLab
+							</button>
+						) : null}
+					</div>
+				) : null}
+
+				{session && !inviteToken ? (
+					<div className="stack" style={{ marginTop: "20px" }}>
+						<p>You are signed in. Continue to your dashboard.</p>
+						<Link className="button" to="/dashboard">
+							Open dashboard
+						</Link>
+					</div>
+				) : null}
 
 				{/* Team invite acceptance */}
 				{inviteToken && (

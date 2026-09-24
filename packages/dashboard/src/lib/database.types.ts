@@ -680,9 +680,22 @@ export interface Database {
 			};
 		}>;
 		Functions: {
+			list_team_members_with_email: {
+				Args: { p_team_id: string };
+				Returns: Array<{
+					id: string;
+					user_id: string;
+					role: string;
+					email: string | null;
+					avatar_url: string | null;
+					invited_by: string | null;
+					joined_at: string;
+				}>;
+			};
 			create_team_tenant: {
 				Args: {
 					p_name: string;
+					p_request_id: string;
 					p_plan?: string;
 				};
 				Returns: Database["public"]["Tables"]["teams"]["Row"];
@@ -696,4 +709,4 @@ export interface Database {
 }
 
 // Helper type for typed Supabase client
-export type TypedSupabaseClient = import("@supabase/supabase-js").SupabaseClient<Database>;
+type TypedSupabaseClient = import("@supabase/supabase-js").SupabaseClient<Database>;

@@ -12,7 +12,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
@@ -81,24 +81,38 @@ interface ServerCompiler {
  * specifiers this package cannot resolve) as its own sources.
  */
 async function loadServerCompiler(): Promise<ServerCompiler> {
-	const specifier = "../../../../supabase/functions/_shared/policy-document.ts";
+	const specifier = pathToFileURL(
+		resolve(
+			dirname(fileURLToPath(import.meta.url)),
+			"../../../../supabase/functions/_shared/policy-document.ts",
+		),
+	).href;
 	return (await import(specifier)) as unknown as ServerCompiler;
 }
 
 /** The Deno `yaml` parser the handler uses for submitted document bytes. */
 async function loadPolicyDocumentParser(): Promise<{
-	parseDocument: (source: string, options: Record<string, unknown>) => {
+	parseDocument: (
+		source: string,
+		options: Record<string, unknown>,
+	) => {
 		errors: Array<{ message?: string }>;
 		toJS: (options: Record<string, unknown>) => unknown;
 	};
 }> {
-	const specifier = "../../../core/node_modules/yaml/dist/index.js";
+	const specifier = pathToFileURL(
+		resolve(
+			dirname(fileURLToPath(import.meta.url)),
+			"../../../core/node_modules/yaml/dist/index.js",
+		),
+	).href;
 	const loaded = (await import(specifier)) as unknown as {
 		parseDocument?: unknown;
 		default?: { parseDocument?: unknown };
 	};
 	const parseDocument = loaded.parseDocument ?? loaded.default?.parseDocument;
-	if (typeof parseDocument !== "function") throw new Error("the server's yaml parser is unavailable");
+	if (typeof parseDocument !== "function")
+		throw new Error("the server's yaml parser is unavailable");
 	return { parseDocument } as Awaited<ReturnType<typeof loadPolicyDocumentParser>>;
 }
 
@@ -148,7 +162,11 @@ async function compileAndSaveDraft(
 		loadServerCompiler(),
 	]);
 	try {
-		const parsed = parseDocument(content, { schema: "core", uniqueKeys: true, prettyErrors: false });
+		const parsed = parseDocument(content, {
+			schema: "core",
+			uniqueKeys: true,
+			prettyErrors: false,
+		});
 		if (parsed.errors.length > 0) {
 			throw new Error(`invalid_policy_yaml:${parsed.errors[0]?.message ?? "parse_error"}`);
 		}
@@ -180,6 +198,35 @@ async function compileAndSaveDraft(
 }
 
 /** Point the invocation seam at a team whose stored document is `storedYaml`. */
+function policyManagementResponse(request?: {
+	body?: { action?: string; content?: string; simulation?: unknown };
+}) {
+	const body = request?.body ?? {};
+	switch (body.action) {
+		case "read":
+			return { data: { ok: true, version: 0, policy: null }, error: null };
+		case "history":
+			return { data: { ok: true, revisions: [], truncated: false }, error: null };
+		case "adoption":
+			return { data: { ok: true, agents: [], truncated: false }, error: null };
+		case "rollout_progress":
+			return {
+				data: {
+					ok: true,
+					status: "none",
+					version: null,
+					rollout_progress: { targeted: 0, current: 0, stale: 0, outdated: 0, unknown: 0 },
+				},
+				error: null,
+			};
+		case "save_document_draft":
+			if (typeof body.content !== "string") return refusedResponse("invalid_policy_document");
+			return compileAndSaveDraft(body.content, body.simulation);
+		default:
+			return refusedResponse("unsupported_action");
+	}
+}
+
 function installParityServer(storedYaml: string | null) {
 	serverStore.content = storedYaml;
 	serverStore.version = storedYaml === null ? 0 : 1;
@@ -192,34 +239,19 @@ function installParityServer(storedYaml: string | null) {
 				: { id: POLICY_ROW_ID, content: storedYaml, updated_at: STORED_AT },
 	});
 	const authenticatedIdentity = mocks.invoke.getMockImplementation() as (
-		name: string, request?: unknown,
+		name: string,
+		request?: unknown,
 	) => Promise<unknown>;
 	mocks.invoke.mockImplementation(
 		async (
 			name: string,
 			request?: {
-				body?: {
-					action?: string;
-					content?: string;
-					simulation?: unknown;
-				};
+				body?: { action?: string; content?: string; simulation?: unknown };
 			},
 		) => {
 			if (name === "identity-security") return authenticatedIdentity(name, request);
-			if (name !== "policy-management") return { data: { ok: true }, error: null };
-			const body = request?.body ?? {};
-			if (body.action === "read") return { data: { ok: true, version: 0, policy: null }, error: null };
-			if (body.action === "history") {
-				return { data: { ok: true, revisions: [], truncated: false }, error: null };
-			}
-			if (body.action === "adoption") {
-				return { data: { ok: true, agents: [], truncated: false }, error: null };
-			}
-			if (body.action === "save_document_draft") {
-				if (typeof body.content !== "string") return refusedResponse("invalid_policy_document");
-				return compileAndSaveDraft(body.content, body.simulation);
-			}
-			return refusedResponse("unsupported_action");
+			if (name === "policy-management") return policyManagementResponse(request);
+			return { data: { ok: true }, error: null };
 		},
 	);
 	return mocks;
@@ -437,9 +469,7 @@ describe("Policy document parity (B1)", () => {
 		fireEvent.change(yamlEditor(), { target: { value: edited } });
 		fireEvent.click(saveButton());
 
-		await waitFor(() =>
-			expect(screen.getByText("Policy saved successfully")).toBeInTheDocument(),
-		);
+		await waitFor(() => expect(screen.getByText("Policy saved successfully")).toBeInTheDocument());
 
 		expectDraftRequest(mocks, edited, expectedDocument(stored));
 		expectNoDirectWrites(mocks);
@@ -448,7 +478,9 @@ describe("Policy document parity (B1)", () => {
 		// The server's verdict is rendered in the document card.
 		expect(screen.getByText("Unsupported fields: none.")).toBeInTheDocument();
 		expect(screen.getByText(/Conflict precedence: deny > ask > allow/)).toBeInTheDocument();
-		expect(screen.getByText(/Simulated unknown MCP call: deny \(mcp_unknown\)/)).toBeInTheDocument();
+		expect(
+			screen.getByText(/Simulated unknown MCP call: deny \(mcp_unknown\)/),
+		).toBeInTheDocument();
 	});
 
 	it("refuses an invalid stored document without rewriting it", async () => {

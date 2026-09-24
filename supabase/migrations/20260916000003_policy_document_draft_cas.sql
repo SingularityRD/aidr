@@ -1,8 +1,7 @@
--- Compile exact submitted YAML at the Edge before entering this transaction.
+-- Compile exact submitted YAML at the Edge before applying this migration.
 -- Keep legacy rows intact: the newest (updated_at, id) row is the draft head.
 -- Browser writers must use the authenticated/MFA-checked Edge action, not bypass
 -- compilation with direct table writes. Read/delete policies are unchanged.
-begin;
 
 alter table public.team_policies
   add column version bigint not null default 1 check (version between 1 and 9007199254740991),
@@ -100,5 +99,3 @@ end;
 $$;
 revoke all on function public.save_policy_document_draft(uuid,uuid,text,text,uuid,bigint,text) from public, anon, authenticated;
 grant execute on function public.save_policy_document_draft(uuid,uuid,text,text,uuid,bigint,text) to service_role;
-
-commit;

@@ -14,7 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => {
 		throw new Error("createClient must be injected through AuditExportDeps.db");
 	},
@@ -52,9 +52,14 @@ function auditRow(overrides: Record<string, unknown> = {}): Record<string, unkno
 describe("audit-export legal-hold barrier", () => {
 	interface DbOptions {
 		member?: { role: string; expires_at: string | null } | null;
+		memberError?: boolean;
 		/** The active hold row the route must find, or an explicit absence. */
 		hold?: { id: string } | null;
 		holdError?: boolean;
+		uploadError?: boolean;
+		signError?: boolean;
+		publication?: "published" | "legal_hold_active" | "reservation_unavailable";
+		publicationError?: boolean;
 		rows?: unknown[];
 	}
 
@@ -66,15 +71,20 @@ describe("audit-export legal-hold barrier", () => {
 	 */
 	function database(options: DbOptions = {}) {
 		const tables: string[] = [];
+		const filters: Array<{ table: string; column: string; value: unknown }> = [];
 		const inserts: Array<{ table: string; values: unknown }> = [];
 		const rpcs: Array<{ name: string; args: Record<string, unknown> }> = [];
 		const uploads: string[] = [];
+		const uploadContents: string[] = [];
 		const signedUrls: string[] = [];
 		const queryFor = (table: string) => {
 			tables.push(table);
 			const query = {
 				select: () => query,
-				eq: () => query,
+				eq: (column: string, value: unknown) => {
+					filters.push({ table, column, value });
+					return query;
+				},
 				lte: () => query,
 				is: () => query,
 				order: () => query,
@@ -84,6 +94,7 @@ describe("audit-export legal-hold barrier", () => {
 					if (table === "identity_user_session_state") return { data: { revoked_before: null }, error: null };
 					if (table === "tenant_identity_policies") return { data: { require_mfa: false }, error: null };
 					if (table === "tenant_members") {
+						if (options.memberError) return { data: null, error: { code: "08006" } };
 						return {
 							data: options.member === undefined ? { role: "owner", expires_at: null } : options.member,
 							error: null,
@@ -128,30 +139,39 @@ describe("audit-export legal-hold barrier", () => {
 					if (name === "register_audit_export_object") {
 						return { data: [{ allowed: true, remaining_bytes: 4096 }], error: null };
 					}
+					if (name === "finalize_audit_export_object") {
+						return options.publicationError
+							? { data: null, error: { code: "08006" } }
+							: { data: options.publication ?? "published", error: null };
+					}
+					if (name === "abandon_audit_export_object") return { data: true, error: null };
 					return { data: null, error: null };
 				},
 				storage: {
 					from: (bucket: string) => ({
-						upload: async (path: string) => {
+						upload: async (path: string, content: string) => {
 							uploads.push(`${bucket}/${path}`);
-							return { error: null };
+							uploadContents.push(content);
+							return { error: options.uploadError ? { message: "storage unavailable" } : null };
 						},
 						createSignedUrl: async (path: string) => {
 							signedUrls.push(`${bucket}/${path}`);
 							return {
-								data: {
+								data: options.signError ? null : {
 									signedUrl: `https://project.supabase.co/storage/v1/object/sign/${bucket}/${path}?token=test`,
 								},
-								error: null,
+								error: options.signError ? { message: "signing unavailable" } : null,
 							};
 						},
 					}),
 				},
 			},
 			tables,
+			filters,
 			inserts,
 			rpcs,
 			uploads,
+			uploadContents,
 			signedUrls,
 		};
 	}
@@ -201,7 +221,7 @@ describe("audit-export legal-hold barrier", () => {
 	});
 
 	it("proceeds with the export when no unreleased hold exists", async () => {
-		const { handle, tables, inserts, rpcs, uploads, signedUrls } = await handlerWith({ hold: null });
+		const { handle, tables, filters, inserts, rpcs, uploads, uploadContents, signedUrls } = await handlerWith({ hold: null });
 		const response = await handle(post());
 
 		expect(response.status).toBe(200);
@@ -209,13 +229,21 @@ describe("audit-export legal-hold barrier", () => {
 		expect(body.ok).toBe(true);
 		expect(body.rows).toBe(1);
 		expect(body.complete).toBe(true);
+		const uploadedBytes = new TextEncoder().encode(uploadContents[0]);
+		const uploadedDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", uploadedBytes));
+		expect(body.bytes).toBe(uploadedBytes.byteLength);
+		expect(body.sha256).toBe(Array.from(uploadedDigest, (value) => value.toString(16).padStart(2, "0")).join(""));
+		expect(response.headers.get("Cache-Control")).toContain("no-store");
 		expect(tables).toContain("tenant_legal_holds");
 		expect(tables).toContain("audit_logs");
+		expect(filters).toContainEqual({ table: "tenant_members", column: "tenant_id", value: TENANT });
+		expect(filters).toContainEqual({ table: "tenant_members", column: "user_id", value: USER });
+		expect(filters).toContainEqual({ table: "audit_logs", column: "tenant_id", value: TENANT });
 		// The retention ledger row is written by the reviewed byte-reservation RPC
 		// under the tenant advisory lock, not by a second client-side insert: `path`
 		// is the primary key, so a duplicate write would fail every export.
 		expect(inserts).toEqual([]);
-		expect(rpcs.map((entry) => entry.name)).toEqual(["register_audit_export_object"]);
+		expect(rpcs.map((entry) => entry.name)).toEqual(["register_audit_export_object", "finalize_audit_export_object"]);
 		expect(rpcs[0]?.args).toMatchObject({ p_tenant_id: TENANT, p_limit_bytes: 536870912 });
 		expect(rpcs[0]?.args.p_bytes).toBeGreaterThan(0);
 		expect(uploads).toHaveLength(1);
@@ -224,6 +252,67 @@ describe("audit-export legal-hold barrier", () => {
 		expect(rpcs[0]?.args.p_path).toBe(uploads[0]?.replace("aidr-audit-exports/", ""));
 		expect(signedUrls).toHaveLength(1);
 		expect(String(body.url)).toContain("/storage/v1/object/sign/aidr-audit-exports/");
+	});
+
+	it.each([
+		["missing", null],
+		["expired", { role: "owner", expires_at: "2000-01-01T00:00:00.000Z" }],
+	] as const)("refuses an export for a %s membership", async (_case, member) => {
+		const { handle, tables, rpcs, uploads, signedUrls } = await handlerWith({ member });
+		const response = await handle(post());
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "team_forbidden" });
+		expect(tables).not.toContain("audit_logs");
+		expect(rpcs).toEqual([]);
+		expect(uploads).toEqual([]);
+		expect(signedUrls).toEqual([]);
+	});
+
+	it("fails closed when membership authorization cannot be read", async () => {
+		const { handle, tables, rpcs, uploads } = await handlerWith({ memberError: true });
+		const response = await handle(post());
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "authorization_unavailable" });
+		expect(tables).not.toContain("audit_logs");
+		expect(rpcs).toEqual([]);
+		expect(uploads).toEqual([]);
+	});
+
+	it.each([
+		["upload", { uploadError: true }, "export_storage_unavailable", false],
+		["sign", { signError: true }, "export_unavailable", true],
+	] as const)("retains a bounded ledger after failed %s", async (_stage, options, error, immediatelyDue) => {
+		const { handle, rpcs, uploads, signedUrls } = await handlerWith(options);
+		const response = await handle(post());
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error });
+		expect(rpcs.map((entry) => entry.name)).toEqual(immediatelyDue
+			? ["register_audit_export_object", "abandon_audit_export_object"]
+			: ["register_audit_export_object"]);
+		if (immediatelyDue) expect(rpcs[1]?.args.p_path).toBe(rpcs[0]?.args.p_path);
+		expect(uploads).toHaveLength(1);
+		expect(signedUrls).toHaveLength(options.signError ? 1 : 0);
+	});
+
+	it("withholds the signed URL when a legal hold wins during Storage upload", async () => {
+		const { handle, rpcs, signedUrls } = await handlerWith({ publication: "legal_hold_active" });
+		const response = await handle(post());
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ error: "legal_hold_active" });
+		expect(signedUrls).toHaveLength(1);
+		expect(rpcs.map((entry) => entry.name)).toEqual([
+			"register_audit_export_object", "finalize_audit_export_object", "abandon_audit_export_object",
+		]);
+	});
+
+	it("fails closed and schedules cleanup when publication cannot be confirmed", async () => {
+		const { handle, rpcs } = await handlerWith({ publicationError: true });
+		const response = await handle(post());
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "export_unavailable" });
+		expect(rpcs.map((entry) => entry.name)).toEqual([
+			"register_audit_export_object", "finalize_audit_export_object", "abandon_audit_export_object",
+		]);
 	});
 
 	it("fails closed, never open, when the hold state cannot be read", async () => {

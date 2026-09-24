@@ -1,23 +1,7 @@
 import { Link } from "react-router-dom";
+import { safeExternalUrl } from "./external-url";
 
 type InfoKind = "support" | "status" | "privacy" | "security" | "terms";
-
-function safeExternalUrl(value: string | undefined, allowMailto = false): string | null {
-	if (!value || /[\u0000-\u001f\u007f]/.test(value)) return null;
-	try {
-		const parsed = new URL(value);
-		if (
-			!parsed.username &&
-			!parsed.password &&
-			(parsed.protocol === "https:" || (allowMailto && parsed.protocol === "mailto:"))
-		) {
-			return parsed.toString();
-		}
-	} catch {
-		// Invalid deployment configuration is rendered as a visible fail-closed notice.
-	}
-	return null;
-}
 
 function ExternalAction({ href, label }: { href: string; label: string }) {
 	return (
@@ -30,9 +14,7 @@ function ExternalAction({ href, label }: { href: string; label: string }) {
 export function PublicInfoPage({ kind }: { kind: InfoKind }) {
 	if (kind === "support") {
 		const configuredSupportUrl = import.meta.env.VITE_SUPPORT_URL;
-		const supportUrl = configuredSupportUrl
-			? safeExternalUrl(configuredSupportUrl)
-			: "https://github.com/SingularityRD/aidr/issues";
+		const supportUrl = safeExternalUrl(configuredSupportUrl);
 		const supportEmail = safeExternalUrl(
 			import.meta.env.VITE_SUPPORT_EMAIL
 				? `mailto:${import.meta.env.VITE_SUPPORT_EMAIL}`
@@ -49,14 +31,13 @@ export function PublicInfoPage({ kind }: { kind: InfoKind }) {
 						in a ticket.
 					</p>
 					<div className="row" style={{ marginTop: 16, flexWrap: "wrap" }}>
-						{supportUrl ? (
-							<ExternalAction href={supportUrl} label="Open support channel" />
-						) : (
+						{supportUrl ? <ExternalAction href={supportUrl} label="Open support channel" /> : null}
+						{!supportUrl && !supportEmail ? (
 							<div className="notice notice-danger" role="alert">
-								Support channel is not configured with a safe HTTPS URL. Do not promise a support
-								SLA.
+								No safe HTTPS support URL or approved support mailbox is configured. Do not promise
+								a support SLA.
 							</div>
-						)}
+						) : null}
 						{supportEmail ? (
 							<a className="button button-secondary" href={supportEmail}>
 								Email support
@@ -89,11 +70,11 @@ export function PublicInfoPage({ kind }: { kind: InfoKind }) {
 					{statusUrl ? (
 						<>
 							<p className="muted">
-								Open the deployment&apos;s canonical status feed for current incidents and
-								maintenance.
+								Open the configured status link for deployment updates. This page does not monitor
+								availability or verify when that destination was last updated.
 							</p>
 							<div className="row" style={{ marginTop: 16 }}>
-								<ExternalAction href={statusUrl} label="Open status feed" />
+								<ExternalAction href={statusUrl} label="Open status updates" />
 							</div>
 						</>
 					) : (
@@ -141,7 +122,7 @@ export function PublicInfoPage({ kind }: { kind: InfoKind }) {
 			<div className="card">
 				<h1>{label}</h1>
 				<p className="muted">
-					Review the canonical deployment document before sending managed telemetry, AIG scan data,
+					Review the configured deployment document before sending managed telemetry, AIG scan data,
 					or customer content to this service.
 				</p>
 				{externalLink ? (

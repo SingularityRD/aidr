@@ -115,7 +115,7 @@ describe("evidence view", () => {
 		expect(screen.getByText(/3 record\(s\), 2 response step\(s\)/)).toBeInTheDocument();
 
 		const steps = within(
-			screen.getByRole("list", { name: "Response steps for inc_alpha" }),
+			screen.getByRole("list", { name: /Response steps for inc_alpha/ }),
 		).getAllByRole("listitem");
 		expect(steps).toHaveLength(2);
 		expect(steps[0]).toHaveTextContent("Snapshot");
@@ -126,6 +126,44 @@ describe("evidence view", () => {
 		expect(screen.getByText(/restored \/workspace\/app\.py/)).toBeInTheDocument();
 		// The unrelated incident keeps its own group.
 		expect(screen.getAllByRole("list")).toHaveLength(1);
+	});
+
+	it.each([
+		["incident_id", "Incident", "inc_shared"],
+		["session_id", "Session", "unknown"],
+	] as const)("keeps matching %s values separate across agents", (scopeKey, label, id) => {
+		const rows: EvidenceAuditRow[] = [
+			{
+				id: "agent-a-row",
+				action: "runtime_verdict",
+				timestampMs: T0,
+				agentId: "agent-a",
+				payload: { [scopeKey]: id, decision: "deny" },
+			},
+			{
+				id: "agent-b-row",
+				action: "runtime_verdict",
+				timestampMs: T0,
+				agentId: "agent-b",
+				payload: { [scopeKey]: id, decision: "allow" },
+			},
+		];
+
+		render(<EvidenceView rows={rows} />);
+
+		const groups = screen
+			.getAllByRole("region")
+			.filter((group) => group.getAttribute("aria-label")?.startsWith(`${label} ${id}, agent`));
+		expect(groups).toHaveLength(2);
+		const agentA = groups.find((group) => within(group).queryByText(/agent agent-a/));
+		const agentB = groups.find((group) => within(group).queryByText(/agent agent-b/));
+		expect(agentA).toBeDefined();
+		expect(agentB).toBeDefined();
+		if (!agentA || !agentB) return;
+		expect(within(agentA).getByText("Deny")).toBeInTheDocument();
+		expect(within(agentA).queryByText("Allow")).not.toBeInTheDocument();
+		expect(within(agentB).getByText("Allow")).toBeInTheDocument();
+		expect(within(agentB).queryByText("Deny")).not.toBeInTheDocument();
 	});
 
 	it("reports an unanchored chain head instead of implying custody", () => {

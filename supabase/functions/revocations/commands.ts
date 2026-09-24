@@ -1,4 +1,4 @@
-export const FLEET_COMMAND_TYPES = [
+const FLEET_COMMAND_TYPES = [
 	"agent_pause",
 	"network_isolate",
 ] as const;

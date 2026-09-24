@@ -1,8 +1,7 @@
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const INVITATION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type InvitationCommand =
 	| { action: "create"; teamId: string; email: string; role: "admin" | "member" | "viewer" }
@@ -29,34 +28,30 @@ export function invitationSecret(): string {
 	return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export function invitationExpiry(now = new Date()): string {
-	return new Date(now.getTime() + INVITATION_LIFETIME_MS).toISOString();
-}
-
 export function invitationUrl(dashboardUrl: string, secret: string): string {
 	const url = new URL("/enterprise", dashboardUrl);
 	url.searchParams.set("invite", secret);
 	return url.toString();
 }
 
-/** Conditions stay on the database write so acceptance, revocation and resend races fail closed. */
-export async function revokePendingInvitation(db: Pick<SupabaseClient, "from">, teamId: string, invitationId: string, now: string) {
-	return db.from("team_invitations")
-		.update({ expires_at: now })
-		.eq("tenant_id", teamId)
-		.eq("id", invitationId)
-		.is("accepted_at", null)
-		.gt("expires_at", now)
-		.select("id")
-		.maybeSingle();
+/** Each RPC writes the invitation and privileged audit row in one DB transaction. */
+export function createPendingInvitation(db: Pick<SupabaseClient, "rpc">, teamId: string, email: string, role: "admin" | "member" | "viewer", tokenHash: string, actorId: string) {
+	return db.rpc("mutate_team_invitation", {
+		p_action: "create", p_tenant_id: teamId, p_actor_user_id: actorId,
+		p_email: email, p_role: role, p_invitation_id: null, p_token_hash: tokenHash,
+	});
 }
 
-export async function resendPendingInvitation(db: Pick<SupabaseClient, "from">, teamId: string, invitationId: string, tokenHash: string, actorId: string, now: Date) {
-	return db.from("team_invitations")
-		.update({ token_hash: tokenHash, expires_at: invitationExpiry(now), created_by: actorId })
-		.eq("tenant_id", teamId)
-		.eq("id", invitationId)
-		.is("accepted_at", null)
-		.select("id,email,role,expires_at")
-		.maybeSingle();
+export function revokePendingInvitation(db: Pick<SupabaseClient, "rpc">, teamId: string, invitationId: string, actorId: string) {
+	return db.rpc("mutate_team_invitation", {
+		p_action: "revoke", p_tenant_id: teamId, p_actor_user_id: actorId,
+		p_email: null, p_role: null, p_invitation_id: invitationId, p_token_hash: null,
+	});
+}
+
+export function resendPendingInvitation(db: Pick<SupabaseClient, "rpc">, teamId: string, invitationId: string, tokenHash: string, actorId: string) {
+	return db.rpc("mutate_team_invitation", {
+		p_action: "resend", p_tenant_id: teamId, p_actor_user_id: actorId,
+		p_email: null, p_role: null, p_invitation_id: invitationId, p_token_hash: tokenHash,
+	});
 }

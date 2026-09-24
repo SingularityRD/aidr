@@ -9,6 +9,11 @@ vi.mock("../../lib/supabase", () => ({
 	supabaseEnvError: null,
 }));
 
+const team = vi.hoisted(() => ({ id: "tenant-a" }));
+vi.mock("../../enterprise/team-provider", () => ({
+	useTeam: () => ({ currentTeam: team.id ? { id: team.id } : null }),
+}));
+
 import { UsageMetering } from "../../components/usage-metering";
 import { supabase } from "../../lib/supabase";
 
@@ -34,15 +39,21 @@ const defaultScenario: Scenario = {
 };
 
 function queryChain(result: unknown) {
+	let resolvedResult = result;
 	const chain = {
 		select: vi.fn(),
+		eq: vi.fn(),
 		order: vi.fn(),
 		limit: vi.fn(),
 		gte: vi.fn(),
 		maybeSingle: vi.fn(),
-		then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
+		then: (resolve: (value: unknown) => unknown) => Promise.resolve(resolvedResult).then(resolve),
+		setResult: (next: unknown) => {
+			resolvedResult = next;
+		},
 	};
 	chain.select.mockReturnValue(chain);
+	chain.eq.mockReturnValue(chain);
 	chain.order.mockReturnValue(chain);
 	chain.limit.mockReturnValue(chain);
 	chain.gte.mockReturnValue(chain);
@@ -60,7 +71,7 @@ function configure(partial: Partial<Scenario> = {}) {
 			const query = queryChain({ data: scenario.agents, error: null });
 			query.select.mockImplementation((_fields: string, options?: { count?: string }) => {
 				if (options?.count === "exact")
-					return Promise.resolve({ data: null, error: null, count: scenario.count });
+					query.setResult({ data: null, error: null, count: scenario.count });
 				return query;
 			});
 			return query;
@@ -72,6 +83,7 @@ function configure(partial: Partial<Scenario> = {}) {
 describe("UsageMetering", () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
+		team.id = "tenant-a";
 		configure();
 	});
 	afterEach(cleanup);
@@ -108,16 +120,32 @@ describe("UsageMetering", () => {
 		expect(screen.getByText("invoice")).toBeInTheDocument();
 	});
 
-	it("falls back to entitlements when seat_usage is unavailable", async () => {
+	it("does not label an expired provider term as an active entitlement", async () => {
+		configure({
+			seat: { data: { included_agents: 1, extra_agents: 0, allowed_agents: 1, current_agents: 1 }, error: null },
+			subscription: {
+				data: { status: "active", provider: "stripe", extra_agents: 4,
+					current_period_end: "2020-01-01T00:00:00Z", cancel_at_period_end: false },
+				error: null,
+			},
+		});
+		render(<UsageMetering />);
+		await waitFor(() => expect(screen.getByText("Term expired or unverified")).toBeInTheDocument());
+		expect(screen.queryByText("Active")).not.toBeInTheDocument();
+		expect(screen.getByRole("progressbar")).toHaveAttribute("aria-label", "1 of 1 agents used");
+	});
+
+	it("does not display stale persisted seats when the effective seat view is unavailable", async () => {
 		configure({
 			seat: { data: null, error: { message: "seat_usage missing" } },
-			entitlements: { data: { included_agents: 1, extra_agents: 0 }, error: null },
+			entitlements: { data: { included_agents: 1, extra_agents: 9 }, error: null },
 			count: 1,
 		});
 
 		render(<UsageMetering />);
-		await waitFor(() => expect(screen.getByText("Free tier")).toBeInTheDocument());
-		expect(screen.getByRole("progressbar")).toHaveAttribute("aria-label", "1 of 1 agents used");
+		await waitFor(() => expect(screen.getByText("Failed to load usage data")).toBeInTheDocument());
+		expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+		expect(mockedSupabase.from.mock.calls.some(([table]) => table === "entitlements")).toBe(false);
 	});
 
 	it("shows a warning at the entitlement threshold", async () => {
@@ -133,13 +161,90 @@ describe("UsageMetering", () => {
 		await waitFor(() => expect(screen.getByText("Approaching limit.")).toBeInTheDocument());
 	});
 
-	it("shows a visible error when entitlement fallback also fails", async () => {
+	it("rejects malformed effective seat rows without guessing an allowance", async () => {
 		configure({
-			seat: { data: null, error: { message: "seat_usage missing" } },
-			entitlements: { data: null, error: new Error("Database connection failed") },
+			seat: { data: { included_agents: 1, extra_agents: "9", allowed_agents: 10, current_agents: 1 }, error: null },
 		});
 
 		render(<UsageMetering />);
-		await waitFor(() => expect(screen.getByText("Database connection failed")).toBeInTheDocument());
+		await waitFor(() => expect(screen.getByText("Seat entitlement data is unavailable.")).toBeInTheDocument());
+		expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+	});
+
+	it("uses expired-provider effective seats instead of the persisted billing projection", async () => {
+		configure({
+			seat: { data: { included_agents: 1, extra_agents: 0, allowed_agents: 1, current_agents: 1 }, error: null },
+			entitlements: { data: { included_agents: 1, extra_agents: 9 }, error: null },
+		});
+		render(<UsageMetering />);
+		await waitFor(() => expect(screen.getByRole("progressbar")).toHaveAttribute("aria-label", "1 of 1 agents used"));
+		expect(mockedSupabase.from.mock.calls.some(([table]) => table === "entitlements")).toBe(false);
+	});
+
+	it("does not invent a free allowance when the selected team's seat row is absent", async () => {
+		configure({ seat: { data: null, error: null } });
+		render(<UsageMetering />);
+		await waitFor(() =>
+			expect(screen.getByText("Seat entitlement data is unavailable.")).toBeInTheDocument(),
+		);
+		expect(screen.queryByText("No subscription record")).not.toBeInTheDocument();
+		expect(mockedSupabase.from.mock.calls.some(([table]) => table === "entitlements")).toBe(false);
+	});
+
+	it("does not hide a seat query failure behind legacy fallback", async () => {
+		configure({
+			seat: { data: null, error: { code: "42501", message: "permission denied for seat_usage" } },
+		});
+		render(<UsageMetering />);
+		await waitFor(() => expect(screen.getByText("Failed to load usage data")).toBeInTheDocument());
+		expect(mockedSupabase.from.mock.calls.some(([table]) => table === "entitlements")).toBe(false);
+	});
+
+	it("filters every usage, trend and billing query to the selected team", async () => {
+		render(<UsageMetering />);
+		await waitFor(() => expect(screen.getByRole("progressbar")).toBeInTheDocument());
+		const tables = mockedSupabase.from.mock.calls.map(([table]) => table);
+		for (const table of ["seat_usage", "subscriptions"]) {
+			const index = tables.indexOf(table);
+			expect(index).toBeGreaterThanOrEqual(0);
+			expect(mockedSupabase.from.mock.results[index]?.value?.eq).toHaveBeenCalledWith(
+				"tenant_id",
+				"tenant-a",
+			);
+		}
+		for (const [index, table] of tables.entries()) {
+			if (table === "agents")
+				expect(mockedSupabase.from.mock.results[index]?.value?.eq).toHaveBeenCalledWith(
+					"tenant_id",
+					"tenant-a",
+				);
+		}
+	});
+
+	it("clears the prior team's usage synchronously when switching teams", async () => {
+		configure({
+			seat: {
+				data: { included_agents: 2, extra_agents: 0, allowed_agents: 2, current_agents: 2 },
+				error: null,
+			},
+		});
+		const view = render(<UsageMetering />);
+		await waitFor(() =>
+			expect(screen.getByRole("progressbar")).toHaveAttribute("aria-label", "2 of 2 agents used"),
+		);
+		team.id = "tenant-b";
+		configure({
+			seat: {
+				data: { included_agents: 4, extra_agents: 0, allowed_agents: 4, current_agents: 1 },
+				error: null,
+			},
+		});
+		view.rerender(<UsageMetering />);
+		expect(
+			screen.queryByRole("progressbar", { name: "2 of 2 agents used" }),
+		).not.toBeInTheDocument();
+		await waitFor(() =>
+			expect(screen.getByRole("progressbar")).toHaveAttribute("aria-label", "1 of 4 agents used"),
+		);
 	});
 });

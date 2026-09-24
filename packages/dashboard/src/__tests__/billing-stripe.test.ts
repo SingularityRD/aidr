@@ -116,6 +116,84 @@ describe("billing module exports", () => {
 			/disabled for the direct-GA release/i,
 		);
 	});
+
+	it("preserves the provider's expired-session signal so the browser can use a fresh request ID", async () => {
+		vi.resetModules();
+		vi.stubEnv("VITE_AIDR_COMMERCIAL_MODE", "self-service");
+		const client = await import("../billing/stripe-client");
+		const { supabase } = await import("../lib/supabase");
+		const invoke = supabase.functions.invoke as ReturnType<typeof vi.fn>;
+		invoke.mockResolvedValue({
+			data: null,
+			error: {
+				context: new Response(
+					JSON.stringify({ error: "checkout_session_expired", new_request_required: true }),
+					{
+						status: 409,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			},
+		});
+		await expect(
+			client.createCheckout(
+				"user",
+				"a@b.invalid",
+				1,
+				"monthly",
+				undefined,
+				"11111111-1111-4111-8111-111111111111",
+				"request_1234567890",
+			),
+		).rejects.toBeInstanceOf(client.CheckoutSessionExpiredError);
+	});
+});
+
+describe("billing portal recovery", () => {
+	it("preserves an actionable non-2xx recovery response from the Edge Function", async () => {
+		vi.resetModules();
+		const portal = await import("../billing/billing-portal");
+		const { supabase } = await import("../lib/supabase");
+		const invoke = supabase.functions.invoke as ReturnType<typeof vi.fn>;
+		invoke.mockResolvedValue({
+			data: null,
+			error: {
+				context: new Response(
+					JSON.stringify({
+						ok: false,
+						error: "billing_recovery_required",
+						recovery_request_id: "original_1234567890",
+						recovery_action: "request_seats",
+						recovery_request_hash: "a".repeat(64),
+						recovery_payload: {
+							provider: "stripe",
+							subscription_id: "sub_live_1",
+							seats: 5,
+							sku: "aidr.agent.seat",
+						},
+					}),
+					{ status: 409, headers: { "Content-Type": "application/json" } },
+				),
+			},
+		});
+
+		let caught: unknown;
+		try {
+			await portal.requestSeats("11111111-1111-4111-8111-111111111111", "replacement_1234567", 6);
+		} catch (error) {
+			caught = error;
+		}
+
+		expect(caught).toBeInstanceOf(portal.BillingRecoveryError);
+		expect(caught).toMatchObject({
+			requestId: "original_1234567890",
+			action: "request_seats",
+			detail: {
+				recovery_request_hash: "a".repeat(64),
+				recovery_payload: { subscription_id: "sub_live_1", seats: 5 },
+			},
+		});
+	});
 });
 
 describe("lemon squeezy removal", () => {

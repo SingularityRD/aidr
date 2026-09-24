@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => {
 		throw new Error("createClient must be injected through PolicyAckDeps.db");
 	},
@@ -75,7 +75,7 @@ function database(options: DbOptions = {}) {
 		}
 		if (table === "tenant_members") {
 			return {
-				data: options.membership === undefined ? { expires_at: null } : options.membership,
+				data: options.membership === undefined ? { role: "member", expires_at: null } : options.membership,
 				error: options.membershipError ? new Error("db_down") : null,
 			};
 		}
@@ -118,6 +118,7 @@ function database(options: DbOptions = {}) {
 		from: vi.fn(from),
 		rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
 			rpcCalls.push({ name, args });
+			if (name === "tenant_admission_capacity") return { data: 1, error: null };
 			if (name === "consume_tenant_rate_limit") {
 				if (options.rate === "unavailable") return { data: null, error: { code: "08006" } };
 				if (options.rate === "throwing") throw new Error("db_down");
@@ -232,7 +233,7 @@ describe("policy-ack authentication and receipt contract", () => {
 		const unboundResponse = await createPolicyAckHandler({ db: unbound.db as never })(post(receiptBody()));
 		expect(unboundResponse.status).toBe(403);
 		expect(await unboundResponse.json()).toMatchObject({ error: "agent_bound_key_required" });
-		expect(unbound.rpcCalls.map(({ name }) => name)).toEqual(["consume_tenant_rate_limit"]);
+		expect(unbound.rpcCalls.map(({ name }) => name)).toEqual(["tenant_admission_capacity", "consume_tenant_rate_limit"]);
 	});
 
 	it("fails closed on API-key, membership, tenant and revision storage errors", async () => {
@@ -263,7 +264,7 @@ describe("policy-ack authentication and receipt contract", () => {
 			const fake = database({ rate });
 			const response = await createPolicyAckHandler({ db: fake.db as never })(post(receiptBody()));
 			expect(response.status, rate).toBe(rate === "deny" ? 429 : 503);
-			expect(fake.rpcCalls.map(({ name }) => name)).toEqual(["consume_tenant_rate_limit"]);
+			expect(fake.rpcCalls.map(({ name }) => name)).toEqual(["tenant_admission_capacity", "consume_tenant_rate_limit"]);
 			if (rate === "deny") {
 				expect(response.headers.get("Retry-After")).toMatch(/^\d+$/);
 				expect(response.headers.get("RateLimit-Remaining")).toBe("0");
@@ -282,6 +283,17 @@ describe("policy-ack authentication and receipt contract", () => {
 		const mismatchResponse = await createPolicyAckHandler({ db: mismatch.db as never })(post(receiptBody({ policy_sha256: "0".repeat(64) })));
 		expect(mismatchResponse.status).toBe(409);
 		expect(mismatch.rpcCalls.some(({ name }) => name === "record_policy_receipt")).toBe(false);
+	});
+
+	it("does not record adoption for a malformed or unsupported stored policy", async () => {
+		for (const policy of [undefined, {}, { command_default: "permit" }, { typo: "deny" }]) {
+			const fake = database({ revision: { policy } });
+			const digest = await sha256(canonicalPolicy(policy));
+			const response = await createPolicyAckHandler({ db: fake.db as never })(post(receiptBody({ policy_sha256: digest })));
+			expect(response.status, JSON.stringify(policy)).toBe(503);
+			expect(await response.json()).toMatchObject({ error: "policy_unavailable" });
+			expect(fake.rpcCalls.some(({ name }) => name === "record_policy_receipt")).toBe(false);
+		}
 	});
 
 	it("records only the verified key hash, tenant revision and receipt hash", async () => {
@@ -317,6 +329,6 @@ describe("policy-ack authentication and receipt contract", () => {
 		const response = await createPolicyAckHandler({ db: fake.db as never })(post(receiptBody()));
 		expect(response.status).toBe(403);
 		expect(await response.json()).toMatchObject({ error: "agent_bound_key_required" });
-		expect(fake.rpcCalls.map(({ name }) => name)).toEqual(["consume_tenant_rate_limit"]);
+		expect(fake.rpcCalls.map(({ name }) => name)).toEqual(["tenant_admission_capacity", "consume_tenant_rate_limit"]);
 	});
 });

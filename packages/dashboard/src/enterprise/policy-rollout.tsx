@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { useTeam } from "./team-provider";
 
@@ -12,6 +13,32 @@ type Agent = {
 	state: "unknown" | "stale" | "current" | "outdated";
 };
 type Revision = { version: number; policy: Record<string, unknown>; created_at: string };
+type Rollout = {
+	status: string;
+	version: number | null;
+	targeted: number;
+	current: number;
+	stale: number;
+	outdated: number;
+	unknown: number;
+};
+function readRollout(value: unknown): Rollout | null {
+	if (!value || typeof value !== "object") return null;
+	const data = value as Record<string, unknown>;
+	const progress = data.rollout_progress as Record<string, unknown> | null;
+	if (data.ok !== true || !progress || typeof progress !== "object" || !["none", "running", "paused", "completed", "cancelled"].includes(String(data.status))) return null;
+	for (const key of ["targeted", "current", "stale", "unknown"]) {
+		if (!Number.isSafeInteger(progress[key]) || Number(progress[key]) < 0) return null;
+	}
+	if (progress.outdated !== undefined && (!Number.isSafeInteger(progress.outdated) || Number(progress.outdated) < 0)) return null;
+	if (Number(progress.current) + Number(progress.stale) + Number(progress.outdated ?? 0) + Number(progress.unknown) !== Number(progress.targeted)) return null;
+	return {
+		status: String(data.status),
+		version: typeof data.version === "number" && Number.isSafeInteger(data.version) ? data.version : null,
+		targeted: Number(progress.targeted), current: Number(progress.current), stale: Number(progress.stale),
+		outdated: Number(progress.outdated ?? 0), unknown: Number(progress.unknown),
+	};
+}
 export function PolicyRollout({
 	version,
 	draft,
@@ -29,6 +56,7 @@ export function PolicyRollout({
 	selectedTeam.current = team;
 	const [agents, setAgents] = useState<Agent[]>([]);
 	const [history, setHistory] = useState<Revision[]>([]);
+	const [rollout, setRollout] = useState<Rollout | null>(null);
 	const [selected, setSelected] = useState<string[]>([]);
 	const [error, setError] = useState("");
 	const [notice, setNotice] = useState("");
@@ -42,25 +70,35 @@ export function PolicyRollout({
 		if (!team) return;
 		const requestGeneration = ++generation.current;
 		try {
-			const [fleet, revisions] = await Promise.all([
+			const [fleet, revisions, progress] = await Promise.all([
 				supabase.functions.invoke("policy-management", {
-					body: { action: "adoption", tenant_id: team, ...(agentCursor ? { after_agent: agentCursor } : {}) },
+					body: {
+						action: "adoption",
+						tenant_id: team,
+						...(agentCursor ? { after_agent: agentCursor } : {}),
+					},
 				}),
 				supabase.functions.invoke("policy-management", {
 					body: { action: "history", tenant_id: team },
+				}),
+				supabase.functions.invoke("policy-management", {
+					body: { action: "rollout_progress", tenant_id: team },
 				}),
 			]);
 			if (selectedTeam.current !== team || generation.current !== requestGeneration) return;
 			if (
 				fleet.error ||
 				revisions.error ||
+				progress.error ||
 				fleet.data?.ok !== true ||
 				revisions.data?.ok !== true ||
 				!Array.isArray(fleet.data.agents) ||
-				!Array.isArray(revisions.data.revisions)
+				!Array.isArray(revisions.data.revisions) ||
+				!readRollout(progress.data)
 			)
 				throw new Error("Policy deployment status could not be loaded.");
 			setAgents(fleet.data.agents);
+			setRollout(readRollout(progress.data));
 			setNextAgent(typeof fleet.data.next_agent === "string" ? fleet.data.next_agent : null);
 			setHistory(revisions.data.revisions);
 			setTruncated(fleet.data.truncated || revisions.data.truncated);
@@ -68,6 +106,7 @@ export function PolicyRollout({
 		} catch {
 			if (selectedTeam.current === team && generation.current === requestGeneration) {
 				setAgents([]);
+				setRollout(null);
 				setNextAgent(null);
 				setHistory([]);
 				setError("Policy deployment status could not be loaded. Refresh to retry.");
@@ -77,6 +116,7 @@ export function PolicyRollout({
 	useEffect(() => {
 		setSelected([]);
 		setAgents([]);
+		setRollout(null);
 		setHistory([]);
 		setNotice("");
 		setBusy(false);
@@ -92,14 +132,23 @@ export function PolicyRollout({
 		};
 	}, [load, refresh, version]);
 
-	async function change(action: "stage" | "restore", targetVersion?: number) {
+	async function change(action: "stage" | "restore" | "rollout", targetVersion?: number) {
 		if (!team || !canManageTeam || version === null || busy) return;
 		setBusy(true);
 		setError("");
 		setNotice("");
 		try {
 			const body =
-				action === "stage"
+				action === "rollout"
+					? {
+							action, tenant_id: team, expected_version: version,
+							expected_revision_version: history[0]?.version, policy: JSON.parse(draft),
+							rings: [
+								{ ring_order: 1, batches: [{ batch_order: 1, agent_ids: selected.slice(0, 1) }] },
+								...(selected.length > 1 ? [{ ring_order: 2, batches: [{ batch_order: 1, agent_ids: selected.slice(1) }] }] : []),
+							],
+						}
+					: action === "stage"
 					? {
 							action,
 							tenant_id: team,
@@ -115,8 +164,12 @@ export function PolicyRollout({
 				throw new Error(
 					"Policy change failed. Refresh if another administrator published a version.",
 				);
+			if (action === "rollout" && (typeof result.data.rollout_id !== "string" || !Number.isSafeInteger(result.data.version)))
+				throw new Error("Ordered rollout was not confirmed. Refresh deployment status.");
 			setNotice(
-				action === "stage"
+				action === "rollout"
+					? `Ordered rollout version ${result.data.version} started. Waiting for agent-reported load receipts; host enforcement is not yet proven.`
+					: action === "stage"
 					? `Version ${result.data.version} assigned to ${result.data.target_count} selected agents. Other agents keep their current target.`
 					: `Revision ${targetVersion} republished as version ${result.data.version} for all enrolled agents.`,
 			);
@@ -124,8 +177,7 @@ export function PolicyRollout({
 			setRefresh((value) => value + 1);
 			onChanged();
 		} catch (cause) {
-			if (selectedTeam.current === team)
-				setError(cause instanceof Error ? cause.message : "Policy change failed.");
+			if (selectedTeam.current === team) setError(readErrorMessage(cause, "Policy change failed."));
 		} finally {
 			if (selectedTeam.current === team) setBusy(false);
 		}
@@ -139,6 +191,11 @@ export function PolicyRollout({
 				everyone. A loading receipt is reported by the agent; it does not prove the host enforced
 				every action. Receipts older than five minutes are marked stale.
 			</p>
+			<p className="muted">
+				Ordered rollout plans accept up to 1,667 agents per request and must fit within 64 KB.
+				Larger policies or many small batches can lower that limit; split larger fleets into smaller
+				plans. This screen stages up to 200 selected agents at a time.
+			</p>
 			<button
 				className="button button-secondary"
 				type="button"
@@ -150,9 +207,15 @@ export function PolicyRollout({
 				Refresh deployment status
 			</button>
 			{error && <p role="alert">{error}</p>}
+			{rollout && rollout.status !== "none" && (
+				<p role="status">
+					{`Latest ordered rollout: version ${rollout.version ?? "Unknown"}, ${rollout.status}; agent-reported loads ${rollout.current}/${rollout.targeted} current, ${rollout.stale} stale, ${rollout.outdated} outdated, ${rollout.unknown} unknown. This is not host-enforcement attestation.`}
+				</p>
+			)}
 			{truncated && (
 				<p role="status">
-					Showing up to 500 agents per page and the latest 100 revisions. Use Next agents to continue through the fleet.
+					Showing up to 500 agents per page and the latest 100 revisions. Use Next agents to
+					continue through the fleet.
 				</p>
 			)}
 			<div className="table-wrap">
@@ -199,8 +262,28 @@ export function PolicyRollout({
 				</table>
 			</div>
 			<div className="row">
-				<button className="button button-secondary" type="button" disabled={!agentCursor || busy} onClick={() => { setSelected([]); setAgentCursor(undefined); }}>First agents</button>
-				<button className="button button-secondary" type="button" disabled={!nextAgent || busy} onClick={() => { setSelected([]); setAgentCursor(nextAgent ?? undefined); }}>Next agents</button>
+				<button
+					className="button button-secondary"
+					type="button"
+					disabled={!agentCursor || busy}
+					onClick={() => {
+						setSelected([]);
+						setAgentCursor(undefined);
+					}}
+				>
+					First agents
+				</button>
+				<button
+					className="button button-secondary"
+					type="button"
+					disabled={!nextAgent || busy}
+					onClick={() => {
+						setSelected([]);
+						setAgentCursor(nextAgent ?? undefined);
+					}}
+				>
+					Next agents
+				</button>
 			</div>
 			<button
 				className="button"
@@ -217,10 +300,19 @@ export function PolicyRollout({
 			>
 				Stage current draft for {selected.length} selected agents
 			</button>
+			<button
+				className="button button-secondary"
+				type="button"
+				disabled={!canManageTeam || busy || version === null || history.length === 0 || selected.length === 0 || selected.length > 200}
+				onClick={() => void change("rollout")}
+			>
+				Start ordered canary rollout for {selected.length} selected agents
+			</button>
+			<p className="muted">The first selected agent is the canary. Remaining selected agents receive this revision only after its fresh load receipt.</p>
 			<h3>Revision history and rollback</h3>
 			<p className="muted">
-				Republishing a revision creates a new version and ends targeted stages. Review its controls
-				before applying it to everyone.
+				Staging a new policy or republishing a revision cancels any active ordered rollout. Review
+				controls before a tenant-wide publish.
 			</p>
 			{history.map((revision) => (
 				<div className="row" key={revision.version}>

@@ -1,7 +1,7 @@
 // Static wiring contract for Edge Function configuration validation (AIDR-011).
 //
 // Every `supabase/functions/<name>/index.ts` calls `Deno.serve` and imports
-// `npm:@supabase/supabase-js@2`, so a function file cannot be imported into
+// `npm:@supabase/supabase-js@2.116.0`, so a function file cannot be imported into
 // vitest. What can be verified here is the wiring contract that only exists in
 // those files: that each function validates its required configuration through
 // the shared guard, before it creates a client or performs any work, and that
@@ -38,9 +38,11 @@ const WORK_ANCHORS = [
 
 /** Function-specific required configuration, by function name. */
 const FUNCTION_ENV: Record<string, readonly string[]> = {
-	"paddle-webhook": ["AIDR_PADDLE_WEBHOOK_SECRET"],
+	"paddle-webhook": ["AIDR_PADDLE_WEBHOOK_SECRET", "AIDR_PADDLE_EXTRA_AGENT_PRICE_ID"],
 	"billing-checkout": ["STRIPE_SECRET_KEY", "AIDR_STRIPE_EXTRA_AGENT_PRICE_ID", "AIDR_DASHBOARD_URL"],
 	"team-invite": ["AIDR_DASHBOARD_URL"],
+	"packs-download": ["AIDR_PACK_DOWNLOAD_GRANT_SECRET"],
+	"packs-manifest": ["AIDR_PACK_DOWNLOAD_GRANT_SECRET"],
 };
 
 function functionNames(): string[] {
@@ -73,6 +75,13 @@ function handlerBody(source: string): string {
 		// anchor is bound to the call site rather than to the builder.
 		return source.slice(factory, start);
 	}
+	const directHandler = /Deno\.serve\(\s*([A-Za-z_$][\w$]*)\s*\)/.exec(source.slice(start))?.[1];
+	if (directHandler) {
+		const declaration = new RegExp(
+			`export\\s+(?:async\\s+)?function\\s+${directHandler}\\s*\\(`,
+		).exec(source)?.index;
+		if (declaration !== undefined && declaration < start) return source.slice(declaration, start);
+	}
 	return source.slice(start);
 }
 
@@ -90,7 +99,10 @@ function firstUnsafeIndex(source: string, anchor: string): number {
 	// Prefer a resolved binding (`makeClient = ...`) when the factory uses one;
 	// otherwise the declaration itself is the earliest reachable client work.
 	const bound = source.indexOf("makeClient =");
-	if (bound >= 0) return bound;
+	if (bound >= 0) {
+		const invocation = source.indexOf("makeClient(", bound);
+		if (invocation >= 0) return invocation;
+	}
 	const last = source.lastIndexOf(anchor);
 	return last < 0 ? -1 : last;
 }
@@ -148,7 +160,6 @@ const DOCUMENTED_EMPTY_FALLBACKS: Record<string, string> = {
 	// filter", never an empty credential.
 	AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING: "optional flag",
 	AIDR_STRIPE_EXTRA_AGENT_PRICE_ID: "optional pricing",
-	AIDR_PADDLE_EXTRA_AGENT_PRICE_ID: "optional pricing",
 };
 
 const FUNCTIONS = functionNames();

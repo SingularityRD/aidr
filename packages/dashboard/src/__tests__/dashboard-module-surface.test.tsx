@@ -13,7 +13,7 @@
 // records that decision as an executable guard, plus the reachability check
 // that would have caught AIDR-008/AIDR-009 in the first place.
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import "@testing-library/jest-dom/vitest";
@@ -186,6 +186,7 @@ describe("Team invitation acceptance (AIDR-008)", () => {
 	afterEach(() => {
 		cleanup();
 		vi.useRealTimers();
+		delete window.__AIDR_CONFIG__;
 	});
 
 	it("renders the invitation panel for an invite link", () => {
@@ -198,7 +199,7 @@ describe("Team invitation acceptance (AIDR-008)", () => {
 	});
 
 	it("keeps the invitation token across the sign-in redirect", async () => {
-		installDashboardMocks();
+		installDashboardMocks({ session: null });
 		localStorage.clear();
 
 		renderInviteRoute();
@@ -210,6 +211,18 @@ describe("Team invitation acceptance (AIDR-008)", () => {
 		expect(localStorage.getItem("aidr.postAuthReturnTo.v1")).toBe(
 			"/enterprise?invite=invite-token-123",
 		);
+	});
+
+	it("offers the deployed password or Entra login without unsupported providers", async () => {
+		window.__AIDR_CONFIG__ = { authMethods: ["password", "magic-link", "azure"] };
+		installDashboardMocks({ session: null });
+		renderInviteRoute();
+		expect(screen.getByRole("link", { name: "Sign in with a configured method" })).toHaveAttribute(
+			"href",
+			"/login?returnTo=%2Fenterprise%3Finvite%3Dinvite-token-123",
+		);
+		expect(screen.queryByRole("button", { name: "Continue with GitHub" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Continue with GitLab" })).not.toBeInTheDocument();
 	});
 
 	it("waits for a bound session before accepting and uses that session's token", async () => {
@@ -319,11 +332,9 @@ describe("Team invitation acceptance (AIDR-008)", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Accept Invitation" }));
 
 		await waitFor(() =>
-			expect(screen.getByRole("alert")).toHaveTextContent(
-				/the "oauth-callback" Edge Function is unavailable/,
-			),
+			expect(screen.getByRole("alert")).toHaveTextContent(/invitation could not be accepted/i),
 		);
-		expect(screen.getByRole("alert")).toHaveTextContent(/invitation was not accepted/);
+		expect(screen.getByRole("alert")).not.toHaveTextContent(/oauth-callback/);
 		expect(screen.queryByText(/invitation accepted!/i)).not.toBeInTheDocument();
 	});
 

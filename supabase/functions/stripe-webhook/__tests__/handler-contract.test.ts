@@ -1,6 +1,6 @@
 // Static contract tests for the Stripe Edge Function handler.
 //
-// ./index.ts calls Deno.serve and imports `npm:@supabase/supabase-js@2`, so it
+// ./index.ts calls Deno.serve and imports `npm:@supabase/supabase-js@2.116.0`, so it
 // cannot be imported into vitest. The pure decision logic lives in ./verify.ts,
 // ./events.ts and ./dedup.ts and is unit-tested directly; what remains here is
 // the wiring contract that only exists in the handler file - ordering of the
@@ -18,8 +18,15 @@ import { describe, expect, it } from "vitest";
 const FUNCTION_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = resolve(FUNCTION_DIR, "..", "..", "..");
 const HANDLER = join(FUNCTION_DIR, "index.ts");
+const CUSTOMER_LINKAGE_MIGRATION = join(
+	REPO_ROOT,
+	"supabase",
+	"migrations",
+	"20260923000007_stripe_customer_tenant_linkage.sql",
+);
 
 const source = readFileSync(HANDLER, "utf8");
+const customerLinkageMigration = readFileSync(CUSTOMER_LINKAGE_MIGRATION, "utf8");
 
 function indexOfOrFail(needle: string): number {
 	const index = source.indexOf(needle);
@@ -29,10 +36,11 @@ function indexOfOrFail(needle: string): number {
 
 describe("stripe webhook handler contract", () => {
 	it("reads the raw body before parsing it", () => {
-		const rawBodyRead = indexOfOrFail("await req.text()");
+		const rawBodyRead = indexOfOrFail("await readBoundedText(req, MAX_WEBHOOK_BODY_BYTES)");
 		const firstParse = indexOfOrFail("JSON.parse(rawBody)");
 
 		expect(rawBodyRead).toBeLessThan(firstParse);
+		expect(source).toContain('error: rawResult.error === "request_too_large"');
 	});
 
 	it("verifies the Stripe-Signature header over the raw body", () => {
@@ -69,21 +77,45 @@ describe("stripe webhook handler contract", () => {
 		const parse = indexOfOrFail("JSON.parse(rawBody)");
 		const claim = indexOfOrFail("await claimStripeEvent(recorder");
 		// Call sites, not the hoisted function declarations.
-		const subscriptionWrite = indexOfOrFail("await upsertSubscription(supabase");
+		const subscriptionWrite = indexOfOrFail("await applySubscriptionEvent(supabase");
 		const customerWrite = indexOfOrFail("await upsertBillingCustomer(supabase");
-		const entitlementWrite = indexOfOrFail("await writeExtraAgents(");
 
 		expect(verify).toBeLessThan(parse);
 		expect(parse).toBeLessThan(claim);
 		expect(claim).toBeLessThan(subscriptionWrite);
-		expect(claim).toBeLessThan(entitlementWrite);
 		expect(claim).toBeLessThan(customerWrite);
+		expect(source).toContain('supabase.rpc("apply_billing_subscription_event"');
+		expect(source).not.toContain('from("entitlements").upsert');
 	});
 
 	it("deduplicates through the same service-role RPC the Paddle handler uses", () => {
 		expect(source).toContain('supabase.rpc("record_billing_webhook_event"');
+		expect(source).toContain('supabase.rpc("finish_billing_webhook_event"');
 		expect(source).toContain('p_provider: provider');
 		expect(source).not.toContain("p_provider: \"paddle\"");
+	});
+
+	it("requires an exact tenant binding from signed metadata or stored customer linkage", () => {
+		expect(source).toMatch(/resolveCustomerLinkage\(supabase, evaluation\.customerId, evaluation\.userId, evaluation\.tenantId\)/);
+		expect(source).toContain('.eq("provider_customer_id", customerId)');
+		expect(source).toContain('query = query.eq("tenant_id", tenantIdHint)');
+		expect(source).toContain('.eq("tenant_id", tenantIdHint)');
+		expect(source).toContain('resolvedVia = "customer_metadata_binding_conflict"');
+		expect(source).not.toContain("evaluation.tenantId ?? userId");
+	});
+
+	it("scopes Stripe customer uniqueness to a tenant", () => {
+		expect(customerLinkageMigration).toContain("drop constraint billing_customers_provider_customer_id_key");
+		expect(customerLinkageMigration).toContain(
+			"unique (provider, provider_customer_id, tenant_id)",
+		);
+		expect(source).toContain('onConflict: "provider,provider_customer_id,tenant_id"');
+	});
+
+	it("permits only a recorded zero-seat transition after buyer offboarding", () => {
+		expect(source).toContain('from("subscriptions")');
+		expect(source).toContain('.eq("provider_subscription_id", evaluation.subscriptionId).maybeSingle()');
+		expect(source).toContain('isBoundZeroSeatTransition(evaluation, bound, userId, tenantId)');
 	});
 
 	it("keeps every caller-visible response body to a static error code", () => {
@@ -91,6 +123,7 @@ describe("stripe webhook handler contract", () => {
 			"method_not_allowed",
 			"disabled_for_direct_ga",
 			"invalid_signature",
+			"request_too_large",
 			"invalid_json",
 			"invalid_event",
 			"misconfigured_supabase_env",
@@ -127,7 +160,7 @@ describe("stripe webhook handler contract", () => {
 
 		const guard = indexOfOrFail("loadConfig(runtimeEnv, REQUIRED_ENV)");
 		expect(source).toContain(
-			'const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;',
+			'const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "STRIPE_SECRET_KEY"] as const;',
 		);
 
 		// No empty-credential fallback may come back for either variable.
@@ -135,7 +168,7 @@ describe("stripe webhook handler contract", () => {
 		expect(source).not.toContain('Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")');
 
 		// Validated before the raw body is read and before a client is built.
-		expect(guard).toBeLessThan(indexOfOrFail("await req.text()"));
+		expect(guard).toBeLessThan(indexOfOrFail("await readBoundedText(req, MAX_WEBHOOK_BODY_BYTES)"));
 		expect(guard).toBeLessThan(indexOfOrFail("createClient(SUPABASE_URL"));
 
 		// The only projection of a configuration error is the shared helper; no

@@ -12,19 +12,21 @@
  * - `subscriptions` table → status, provider, cancel_at_period_end, etc.
  * - `agents` table → created_at for daily trend computation
  *
- * Falls back to `entitlements` + `agents` tables if the `seat_usage` view is
- * not yet deployed (back-compat matching BillingPage behaviour).
+ * A missing `seat_usage` view is an unavailable allowance, not a reason to
+ * show persisted billing seats that may have passed their provider term.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useTeam } from "../enterprise/team-provider";
 import type { Database } from "../lib/database.types";
+import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/** Normalised usage data from seat_usage view or entitlements + agents. */
+/** Normalised usage data from the effective seat_usage view. */
 interface UsageData {
 	currentAgents: number;
 	allowedAgents: number;
@@ -114,6 +116,8 @@ function formatSubscriptionStatus(status: string): string {
 			return "Past due";
 		case "expired":
 			return "Expired";
+		case "term_unverified":
+			return "Term expired or unverified";
 		default:
 			return status.charAt(0).toUpperCase() + status.slice(1);
 	}
@@ -258,6 +262,7 @@ type BillingSetter = (b: BillingInfo | null) => void;
 type ErrorSetter = (e: string | null) => void;
 
 async function loadUsageData(
+	tenantId: string,
 	setUsage: UsageSetter,
 	setError: ErrorSetter,
 	cancelled: () => boolean,
@@ -265,48 +270,40 @@ async function loadUsageData(
 	const res = await supabase
 		.from("seat_usage")
 		.select("included_agents,extra_agents,allowed_agents,current_agents")
+		.eq("tenant_id", tenantId)
 		.maybeSingle();
 
 	if (!res.error && res.data) {
 		const row = res.data as Database["public"]["Tables"]["seat_usage"]["Row"];
+		const values = [row.included_agents, row.extra_agents, row.allowed_agents, row.current_agents];
+		if (!values.every((value) => Number.isSafeInteger(value) && value >= 0) ||
+			row.allowed_agents !== row.included_agents + row.extra_agents) {
+			if (!cancelled()) {
+				setUsage(null);
+				setError("Seat entitlement data is unavailable.");
+			}
+			return;
+		}
 		if (!cancelled()) {
 			setUsage({
-				currentAgents: Number(row.current_agents ?? 0),
-				allowedAgents: Number(row.allowed_agents ?? 1),
-				includedAgents: Number(row.included_agents ?? 1),
-				extraAgents: Number(row.extra_agents ?? 0),
+				currentAgents: row.current_agents,
+				allowedAgents: row.allowed_agents,
+				includedAgents: row.included_agents,
+				extraAgents: row.extra_agents,
 			});
 		}
 		return;
 	}
-
-	// Back-compat: fall back to entitlements + agents if the view
-	// hasn't been deployed yet (same pattern as BillingPage).
-	const [entRes, agentsRes] = await Promise.all([
-		supabase.from("entitlements").select("included_agents,extra_agents").maybeSingle(),
-		supabase.from("agents").select("id", { count: "exact", head: true }),
-	]);
-
-	if (entRes.error && !cancelled()) {
-		setError(entRes.error.message);
-		return;
-	}
-
-	const ent = entRes.data as Database["public"]["Tables"]["entitlements"]["Row"] | null;
-	const included = Number(ent?.included_agents ?? 1);
-	const extra = Number(ent?.extra_agents ?? 0);
-
 	if (!cancelled()) {
-		setUsage({
-			currentAgents: Number(agentsRes.count ?? 0),
-			allowedAgents: included + extra,
-			includedAgents: included,
-			extraAgents: extra,
-		});
+		setUsage(null);
+		setError(res.error
+			? readErrorMessage(res.error, "Failed to load usage data")
+			: "Seat entitlement data is unavailable.");
 	}
 }
 
 async function loadTrendData(
+	tenantId: string,
 	setTrend: TrendSetter,
 	setError: ErrorSetter,
 	cancelled: () => boolean,
@@ -317,6 +314,7 @@ async function loadTrendData(
 	const { data: agents, error: agentsError } = await supabase
 		.from("agents")
 		.select("first_seen")
+		.eq("tenant_id", tenantId)
 		.gte("first_seen", since.toISOString());
 
 	if (agentsError) {
@@ -345,6 +343,7 @@ async function loadTrendData(
 }
 
 async function loadBillingData(
+	tenantId: string,
 	setBilling: BillingSetter,
 	setError: ErrorSetter,
 	cancelled: () => boolean,
@@ -352,6 +351,7 @@ async function loadBillingData(
 	const { data: subData, error: subError } = await supabase
 		.from("subscriptions")
 		.select("status,provider,extra_agents,current_period_end,cancel_at_period_end")
+		.eq("tenant_id", tenantId)
 		.order("updated_at", { ascending: false })
 		.limit(1)
 		.maybeSingle();
@@ -363,9 +363,15 @@ async function loadBillingData(
 
 	if (subData) {
 		const row = subData as Database["public"]["Tables"]["subscriptions"]["Row"];
+		const providerTermRequired = row.provider === "stripe" || row.provider === "paddle";
+		const termEnd = row.current_period_end ? Date.parse(row.current_period_end) : Number.NaN;
+		const status = providerTermRequired &&
+			(row.status === "active" || row.status === "trialing") &&
+			(!Number.isFinite(termEnd) || termEnd <= Date.now())
+			? "term_unverified" : row.status;
 		if (!cancelled()) {
 			setBilling({
-				status: row.status,
+				status,
 				provider: row.provider,
 				currentPeriodEnd: row.current_period_end,
 				cancelAtPeriodEnd: row.cancel_at_period_end,
@@ -381,7 +387,7 @@ interface MeteringHeaderProps {
 	usage: UsageData | null;
 }
 
-function MeteringHeader({ billing }: MeteringHeaderProps) {
+function MeteringHeader({ billing, usage }: MeteringHeaderProps) {
 	if (billing) {
 		const isActive = billing.status === "active";
 		return (
@@ -409,7 +415,7 @@ function MeteringHeader({ billing }: MeteringHeaderProps) {
 
 	return (
 		<span className="pill" style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)" }}>
-			Free tier
+			{usage?.allowedAgents === 0 ? "No active access" : "No subscription record"}
 		</span>
 	);
 }
@@ -462,7 +468,8 @@ function BillingSection({ billing, usage }: BillingSectionProps) {
 		);
 	}
 
-	const included = usage?.includedAgents ?? 1;
+	const included = usage?.includedAgents ?? 0;
+	const allowed = usage?.allowedAgents ?? 0;
 	return (
 		<div
 			style={{
@@ -475,7 +482,9 @@ function BillingSection({ billing, usage }: BillingSectionProps) {
 		>
 			<div className="muted small">Plan</div>
 			<div className="mono" style={{ fontSize: "var(--text-xs)", marginTop: 2 }}>
-				Free — {included} agent{included === 1 ? "" : "s"} included
+				{allowed === 0
+					? "No active agent allocation"
+					: `Effective allocation — ${allowed} agent${allowed === 1 ? "" : "s"} (${included} included)`}
 			</div>
 		</div>
 	);
@@ -596,6 +605,7 @@ interface DataSetters {
 }
 
 async function loadAllData(
+	tenantId: string,
 	{ setUsage, setTrend, setBilling, setError, setIsLoading }: DataSetters,
 	isCancelled: () => boolean,
 ) {
@@ -603,9 +613,9 @@ async function loadAllData(
 	setError(null);
 
 	const promises = [
-		loadUsageData(setUsage, setError, isCancelled),
-		loadTrendData(setTrend, setError, isCancelled),
-		loadBillingData(setBilling, setError, isCancelled),
+		loadUsageData(tenantId, setUsage, setError, isCancelled),
+		loadTrendData(tenantId, setTrend, setError, isCancelled),
+		loadBillingData(tenantId, setBilling, setError, isCancelled),
 	];
 
 	const results = await Promise.allSettled(promises);
@@ -614,7 +624,7 @@ async function loadAllData(
 
 	for (const r of results) {
 		if (r.status === "rejected") {
-			setError(r.reason instanceof Error ? r.reason.message : "Failed to load usage data");
+			setError(readErrorMessage(r.reason, "Failed to load usage data"));
 			break;
 		}
 	}
@@ -625,27 +635,31 @@ async function loadAllData(
 // ── Main component ──────────────────────────────────────────────────────
 
 export function UsageMetering() {
+	const { currentTeam } = useTeam();
+	if (!currentTeam) return <div className="card">Select a team to view usage.</div>;
+	return <TenantUsageMetering key={currentTeam.id} tenantId={currentTeam.id} />;
+}
+
+function TenantUsageMetering({ tenantId }: { tenantId: string }) {
 	const [usage, setUsage] = useState<UsageData | null>(null);
 	const [trend, setTrend] = useState<DailyTrend[]>([]);
 	const [billing, setBilling] = useState<BillingInfo | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
-	const cancelledRef = useRef(false);
-
 	useEffect(() => {
-		cancelledRef.current = false;
-		const isCancelled = () => cancelledRef.current;
+		let cancelled = false;
+		const isCancelled = () => cancelled;
 
 		const setters: DataSetters = { setUsage, setTrend, setBilling, setError, setIsLoading };
-		loadAllData(setters, isCancelled);
+		loadAllData(tenantId, setters, isCancelled);
 
-		const interval = setInterval(() => loadAllData(setters, isCancelled), 30_000);
+		const interval = setInterval(() => loadAllData(tenantId, setters, isCancelled), 30_000);
 		return () => {
-			cancelledRef.current = true;
+			cancelled = true;
 			clearInterval(interval);
 		};
-	}, []);
+	}, [tenantId]);
 
 	const usageRatio = useMemo(() => {
 		if (!usage || usage.allowedAgents <= 0) return 0;

@@ -1,7 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "../../lib/supabase";
 import { useTeam } from "../../enterprise/team-provider";
+import { readErrorMessage } from "../../lib/errors";
+import { supabase } from "../../lib/supabase";
+import {
+	clearPendingTeamCreate,
+	type PendingTeamCreate,
+	readPendingTeamCreate,
+	savePendingTeamCreate,
+} from "../pending-team-create";
+import {
+	type GaLegal,
+	readGaLegal,
+	readTenantAdmission,
+	type TenantAdmission,
+} from "../tenant-admission";
 
 type Runtime = "claude-code" | "cursor" | "vscode" | "openclaw" | "opencode";
 
@@ -63,6 +76,7 @@ function promptForRuntime(runtime: Runtime): string {
 		"Rules:",
 		"- Do not exfiltrate secrets.",
 		"- Prefer the official install path for this runtime.",
+		"- Stop if the release operator has not supplied an approved exact version and independently verified publisher-signed release record; never install an unverified latest version.",
 		"- If you need authorization: show me the short code + verification URL and wait.",
 		"",
 	].join("\n");
@@ -72,6 +86,8 @@ function promptForRuntime(runtime: Runtime): string {
 			common,
 			"Runtime: Claude Code",
 			"Install:",
+			"- Extract the signed aidr-claude-plugin release artifact.",
+			"- /plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin",
 			"- /plugin install aidr@aidr",
 			"After install, start a session so AIDR can request authorization.",
 		].join("\n");
@@ -91,7 +107,10 @@ function promptForRuntime(runtime: Runtime): string {
 			common,
 			"Runtime: OpenCode",
 			"Install:",
-			"- Link the plugin directory in OpenCode config.",
+			"- Have the administrator configure private @singularityrd registry access through their secret manager; never ask for or display the token.",
+			"- Set ~/.config/opencode/package.json dependency @singularityrd/aidr-opencode to the exact approved version.",
+			"- Add @singularityrd/aidr-opencode to the plugin array in ~/.config/opencode/opencode.json.",
+			"- Restart OpenCode and confirm the installed plugin version before device authorization.",
 		].join("\n");
 	}
 
@@ -113,19 +132,162 @@ function promptForRuntime(runtime: Runtime): string {
 }
 
 export function OnboardingPage() {
-	const { currentTeam, currentRole, isLoading, roleResolved, error: teamError } = useTeam();
+	const {
+		currentTeam,
+		currentRole,
+		isLoading,
+		roleResolved,
+		error: teamError,
+		currentUserId,
+		createTeam,
+	} = useTeam();
 	if (isLoading || (currentTeam && !roleResolved)) {
-		return <div className="card" role="status">Checking team access…</div>;
+		return (
+			<div className="card" role="status">
+				Checking team access…
+			</div>
+		);
 	}
 	if (!currentTeam || !currentRole) {
-		return <div className="card" role="alert">{teamError ?? "Select a team to enroll an agent."}</div>;
+		if (!currentTeam && !teamError && window.__AIDR_CONFIG__?.signupMode === "cloud") {
+			return <CreateTrialTeam key={currentUserId} userId={currentUserId} createTeam={createTeam} />;
+		}
+		return (
+			<div className="card" role="alert">
+				{teamError ?? "Select a team to enroll an agent."}
+			</div>
+		);
 	}
-	return <TeamOnboarding key={currentTeam.id} teamId={currentTeam.id} teamName={currentTeam.name} canEnroll={["owner", "admin", "member"].includes(currentRole)} />;
+	return (
+		<TeamOnboarding
+			key={currentTeam.id}
+			teamId={currentTeam.id}
+			teamName={currentTeam.name}
+			canEnroll={["owner", "admin", "member"].includes(currentRole)}
+			isOwner={currentRole === "owner"}
+		/>
+	);
 }
-function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamName: string; canEnroll: boolean }) {
+
+function CreateTrialTeam({
+	userId,
+	createTeam,
+}: {
+	userId: string;
+	createTeam: (name: string, requestId: string) => Promise<void>;
+}) {
+	const [name, setName] = useState("");
+	const [busy, setBusy] = useState(false);
+	const [attempt, setAttempt] = useState<PendingTeamCreate | null>(null);
+	const [storageError, setStorageError] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const busyRef = useRef(false);
+	useEffect(() => {
+		try {
+			const pending = readPendingTeamCreate(userId, window.localStorage);
+			setAttempt(pending);
+			setName(pending?.name ?? "");
+			setStorageError(null);
+			setError(null);
+		} catch (cause) {
+			setAttempt(null);
+			setName("");
+			setStorageError(readErrorMessage(cause, "Saved workspace request could not be checked."));
+		}
+	}, [userId]);
+	const requestedName = attempt?.name ?? name.trim();
+	const validName = requestedName.length > 0 && requestedName.length <= 200;
+	return (
+		<div className="card">
+			<h1>Create your team workspace</h1>
+			<p className="muted">Create an owned team before starting your one-agent trial.</p>
+			<form
+				onSubmit={async (event) => {
+					event.preventDefault();
+					if (!validName || busyRef.current || busy || storageError) return;
+					busyRef.current = true;
+					setBusy(true);
+					setError(null);
+					try {
+						const storedRequest = readPendingTeamCreate(userId, window.localStorage);
+						const request = storedRequest ??
+							attempt ?? {
+								requestId: crypto.randomUUID(),
+								name: name.trim(),
+							};
+						if (!storedRequest) {
+							savePendingTeamCreate(userId, request, window.localStorage);
+							setAttempt(request);
+							setName(request.name);
+						} else if (storedRequest) {
+							setAttempt(storedRequest);
+							setName(storedRequest.name);
+						}
+						await createTeam(request.name, request.requestId);
+						clearPendingTeamCreate(userId, request.requestId, window.localStorage);
+						setAttempt(null);
+						setName("");
+					} catch {
+						setError(
+							"Workspace creation was not confirmed. Retry this saved request; it will return the same workspace rather than create another.",
+						);
+					} finally {
+						busyRef.current = false;
+						setBusy(false);
+					}
+				}}
+			>
+				<label className="label">
+					Team name
+					<input
+						className="input"
+						required
+						maxLength={200}
+						readOnly={Boolean(attempt)}
+						value={attempt?.name ?? name}
+						onChange={(event) => setName(event.target.value)}
+					/>
+				</label>
+				<button
+					className="button"
+					type="submit"
+					disabled={!validName || busy || Boolean(storageError)}
+				>
+					{busy ? "Creating team…" : attempt ? "Retry workspace creation" : "Create team"}
+				</button>
+			</form>
+			{storageError ? (
+				<div className="notice notice-danger" role="alert">
+					{storageError}
+				</div>
+			) : null}
+			{error ? (
+				<div className="notice notice-danger" role="alert">
+					{error}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function TeamOnboarding({
+	teamId,
+	teamName,
+	canEnroll,
+	isOwner,
+}: {
+	teamId: string;
+	teamName: string;
+	canEnroll: boolean;
+	isOwner: boolean;
+}) {
 	const [runtime, setRuntime] = useState<Runtime>("claude-code");
 	const [pilotStatus, setPilotStatus] = useState<string>("loading");
 	const [pilotReload, setPilotReload] = useState(0);
+	const [admission, setAdmission] = useState<TenantAdmission | null>(null);
+	const [legal, setLegal] = useState<GaLegal | null>(null);
+	const [acceptedLegal, setAcceptedLegal] = useState(false);
+	const [trialBusy, setTrialBusy] = useState(false);
 	const [device, setDevice] = useState<DeviceStartResult | null>(null);
 	const [poll, setPoll] = useState<DevicePollResult | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -136,23 +298,37 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 
 	const prompt = useMemo(() => promptForRuntime(runtime), [runtime]);
 	const requestedInterval = device?.interval_seconds;
-	const intervalSeconds = typeof requestedInterval === "number" && Number.isFinite(requestedInterval)
-		? Math.max(2, Math.min(10, requestedInterval)) : 5;
+	const intervalSeconds =
+		typeof requestedInterval === "number" && Number.isFinite(requestedInterval)
+			? Math.max(2, Math.min(10, requestedInterval))
+			: 5;
 
 	useEffect(() => {
 		let cancelled = false;
 		async function load() {
 			try {
-				const res = await supabase.functions.invoke("pilot-status", { method: "GET", headers: { "X-AIDR-Tenant-ID": teamId } });
+				const res = await supabase.functions.invoke("pilot-status", {
+					method: "GET",
+					headers: { "X-AIDR-Tenant-ID": teamId },
+				});
 				if (cancelled) return;
 				if (res.error || res.data?.ok !== true) {
 					setPilotStatus("unknown");
+					setAdmission(null);
+					setLegal(null);
 					return;
 				}
 				const data = (res.data ?? {}) as Record<string, unknown>;
 				setPilotStatus(typeof data.status === "string" ? String(data.status) : "unknown");
+				setAdmission(readTenantAdmission(data.admission));
+				setLegal(readGaLegal(data.legal));
+				setAcceptedLegal(false);
 			} catch {
-				if (!cancelled) setPilotStatus("unknown");
+				if (!cancelled) {
+					setPilotStatus("unknown");
+					setAdmission(null);
+					setLegal(null);
+				}
 			}
 		}
 		load();
@@ -188,7 +364,9 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 					const status = (res.error as { context?: { status?: number } } | null)?.context?.status;
 					if (status === 401 || status === 403 || status === 409) {
 						setDevice(null);
-						setError("Authorization could not continue. This code was rejected or already used. Generate a new code.");
+						setError(
+							"Authorization could not continue. This code was rejected or already used. Generate a new code.",
+						);
 						shouldRetry = false;
 					} else {
 						setError("We could not check authorization yet. Retrying automatically.");
@@ -200,13 +378,22 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 					// Back-compat: server may return "approved" for the final state.
 					if (status === "authorized" || status === "approved") {
 						const enrollmentToken =
-							typeof data.enrollment_token === "string" && data.enrollment_token.length > 0 ? data.enrollment_token : null;
+							typeof data.enrollment_token === "string" && data.enrollment_token.length > 0
+								? data.enrollment_token
+								: null;
 						const enrollmentTokenExpiresAt =
 							typeof data.expires_at === "string" ? data.expires_at : null;
-						if (!enrollmentToken || !enrollmentTokenExpiresAt || !Number.isFinite(Date.parse(enrollmentTokenExpiresAt)) || Date.parse(enrollmentTokenExpiresAt) <= Date.now()) {
+						if (
+							!enrollmentToken ||
+							!enrollmentTokenExpiresAt ||
+							!Number.isFinite(Date.parse(enrollmentTokenExpiresAt)) ||
+							Date.parse(enrollmentTokenExpiresAt) <= Date.now()
+						) {
 							setDevice(null);
 							setPoll(null);
-							setError("Authorization completed, but no usable enrollment token was returned. Generate a new code.");
+							setError(
+								"Authorization completed, but no usable enrollment token was returned. Generate a new code.",
+							);
 						} else {
 							setPoll({
 								status: "authorized",
@@ -225,7 +412,7 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 						setDevice(null);
 						setError("This authorization code expired. Generate a new code to continue.");
 						shouldRetry = false;
-						} else {
+					} else {
 						setDevice(null);
 						setPoll(null);
 						setError(
@@ -286,33 +473,151 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 		poll?.status === "authorized" ? poll.enrollment_token_expires_at : null,
 	]);
 
-	const canAuthorize = pilotStatus === "approved" && canEnroll;
+	const canAuthorize = admission?.status === "active" && canEnroll;
+	const accessUnknown = pilotStatus === "unknown" || (pilotStatus !== "loading" && !admission);
+
+	async function startTrial() {
+		if (
+			!isOwner ||
+			admission?.mode !== "cloud" ||
+			!admission.trial_available ||
+			!legal?.configured ||
+			!legal.terms ||
+			!legal.privacy ||
+			!acceptedLegal ||
+			trialBusy
+		)
+			return;
+		setTrialBusy(true);
+		setError(null);
+		try {
+			const res = await supabase.functions.invoke("pilot-status", {
+				method: "POST",
+				headers: { "X-AIDR-Tenant-ID": teamId },
+				body: {
+					action: "start_trial",
+					accepted: true,
+					terms: { version: legal.terms.version, sha256: legal.terms.sha256 },
+					privacy: { version: legal.privacy.version, sha256: legal.privacy.sha256 },
+				},
+			});
+			const updated = readTenantAdmission(res.data?.admission);
+			if (res.error || res.data?.ok !== true || updated?.status !== "active") {
+				throw new Error("Trial activation was not confirmed. Refresh status or contact support.");
+			}
+			setAdmission(updated);
+		} catch (cause) {
+			setError(readErrorMessage(cause, "Trial activation is unavailable."));
+			setAcceptedLegal(false);
+			setPilotStatus("loading");
+			setAdmission(null);
+			setLegal(null);
+			setPilotReload((count) => count + 1);
+		} finally {
+			setTrialBusy(false);
+		}
+	}
 
 	return (
 		<div className="stack">
 			<div className="card">
 				<h1>Onboarding</h1>
 				<p style={{ overflowWrap: "anywhere" }}>Team: {teamName}</p>
-				{!canEnroll ? <div className="notice notice-warning" role="alert">Your role cannot enroll agents for this team.</div> : null}
+				{!canEnroll ? (
+					<div className="notice notice-warning" role="alert">
+						Your role cannot enroll agents for this team.
+					</div>
+				) : null}
 				<p className="muted">
-					Choose your runtime and copy the install prompt. When your agent shows a code, verify it for this team.
+					Choose your runtime and copy the install prompt. When your agent shows a code, verify it
+					for this team.
 				</p>
-				{pilotStatus !== "approved" ? (
+				{admission?.status !== "active" ? (
 					<div className="notice notice-warning">
-						<div className="muted small">Pilot status</div>
+						<div className="muted small">Workspace access</div>
 						<div className="mono" style={{ marginTop: 4 }}>
-							{pilotStatus}
+							{admission?.status ?? (accessUnknown ? "unknown" : pilotStatus)}
 						</div>
-						{pilotStatus === "loading" ? <div role="status">Checking pilot access…</div> : null}
-						{pilotStatus === "unknown" ? <div role="alert">Pilot access could not be checked. Retry before generating a code.</div> : null}
-						{pilotStatus !== "loading" ? (
-							<div className="row" style={{ marginTop: 10 }}>
-								{pilotStatus === "unknown" ? <button className="button button-secondary button-sm" type="button" onClick={() => { setPilotStatus("loading"); setPilotReload((count) => count + 1); }}>Retry status</button> : null}
-								<Link className="button button-secondary button-sm" to="/pilot">
-									View / request pilot
-								</Link>
+						{pilotStatus === "loading" ? <div role="status">Checking workspace access…</div> : null}
+						{accessUnknown ? (
+							<div role="alert">
+								Workspace access could not be checked. Retry before generating a code.
 							</div>
 						) : null}
+						{admission?.mode === "cloud" && admission.trial_available && isOwner ? (
+							legal?.configured && legal.terms && legal.privacy ? (
+								<div style={{ marginTop: 10 }}>
+									<label>
+										<input
+											type="checkbox"
+											checked={acceptedLegal}
+											onChange={(event) => setAcceptedLegal(event.target.checked)}
+										/>{" "}
+										I have reviewed the{" "}
+										<a href={legal.terms.url} target="_blank" rel="noreferrer">
+											Terms ({legal.terms.version})
+										</a>{" "}
+										and{" "}
+										<a href={legal.privacy.url} target="_blank" rel="noreferrer">
+											Privacy Notice ({legal.privacy.version})
+										</a>
+										.
+									</label>
+									<div className="row" style={{ marginTop: 10 }}>
+										<button
+											className="button"
+											type="button"
+											disabled={trialBusy || !acceptedLegal}
+											onClick={startTrial}
+										>
+											{trialBusy ? "Starting trial…" : "Start 14-day trial · 1 agent"}
+										</button>
+									</div>
+								</div>
+							) : (
+								<div role="alert">
+									Trial activation is unavailable until Terms and Privacy are published.
+								</div>
+							)
+						) : null}
+						{admission?.mode === "cloud" && !admission.trial_available ? (
+							<div role="status">
+								{legal?.configured === false
+									? "Trial setup awaits published Terms and Privacy. Contact your administrator."
+									: "No self-service trial is available for this workspace. Contact your administrator or sales."}
+							</div>
+						) : null}
+						{pilotStatus !== "loading" ? (
+							<div className="row" style={{ marginTop: 10 }}>
+								{accessUnknown ? (
+									<button
+										className="button button-secondary button-sm"
+										type="button"
+										onClick={() => {
+											setPilotStatus("loading");
+											setAdmission(null);
+											setLegal(null);
+											setAcceptedLegal(false);
+											setPilotReload((count) => count + 1);
+										}}
+									>
+										Retry status
+									</button>
+								) : null}
+								{admission?.mode === "pilot" ? (
+									<Link className="button button-secondary button-sm" to="/pilot">
+										View / request pilot
+									</Link>
+								) : null}
+							</div>
+						) : null}
+					</div>
+				) : admission.access_kind === "trial" ? (
+					<div className="notice" role="status">
+						Trial active · {admission.allowed_agents} agent
+						{admission.expires_at
+							? ` · ends ${new Date(admission.expires_at).toLocaleString()}`
+							: ""}
 					</div>
 				) : null}
 			</div>
@@ -334,7 +639,10 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 								key={id}
 								className={`button ${runtime === id ? "" : "button-secondary"}`}
 								type="button"
-								onClick={() => { setRuntime(id); setPromptCopyStatus("idle"); }}
+								onClick={() => {
+									setRuntime(id);
+									setPromptCopyStatus("idle");
+								}}
 								aria-pressed={runtime === id}
 							>
 								{label}
@@ -343,7 +651,9 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 					</div>
 
 					<div className="notice" style={{ marginTop: 12 }}>
-						<label className="muted small" htmlFor="onboarding-agent-prompt">Prompt to give your agent</label>
+						<label className="muted small" htmlFor="onboarding-agent-prompt">
+							Prompt to give your agent
+						</label>
 						<textarea
 							id="onboarding-agent-prompt"
 							className="input mono"
@@ -351,11 +661,25 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 							readOnly
 							value={prompt}
 						/>
-						<button className="button button-secondary button-sm" type="button" onClick={async () => {
-							try { await navigator.clipboard.writeText(prompt); setPromptCopyStatus("copied"); }
-							catch { setPromptCopyStatus("error"); }
-						}}>{promptCopyStatus === "copied" ? "Prompt copied" : "Copy prompt"}</button>
-						{promptCopyStatus === "error" ? <div role="alert">Clipboard access was blocked. Select the prompt above and copy it manually.</div> : null}
+						<button
+							className="button button-secondary button-sm"
+							type="button"
+							onClick={async () => {
+								try {
+									await navigator.clipboard.writeText(prompt);
+									setPromptCopyStatus("copied");
+								} catch {
+									setPromptCopyStatus("error");
+								}
+							}}
+						>
+							{promptCopyStatus === "copied" ? "Prompt copied" : "Copy prompt"}
+						</button>
+						{promptCopyStatus === "error" ? (
+							<div role="alert">
+								Clipboard access was blocked. Select the prompt above and copy it manually.
+							</div>
+						) : null}
 						<div className="muted small" style={{ marginTop: 10 }}>
 							This prompt focuses the agent on install + authorization without asking you to
 							manually copy API keys.
@@ -366,7 +690,8 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 				<div className="card">
 					<h2>2) Authorize</h2>
 					<p className="muted">
-						Use the verify page for a code shown by your agent. Generate a code here only if you need a manual enrollment token.
+						Use the verify page for a code shown by your agent. Generate a code here only if you
+						need a manual enrollment token.
 					</p>
 
 					<div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
@@ -384,14 +709,21 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 								try {
 									const res = await supabase.functions.invoke("device-start", { method: "POST" });
 									if (res.error || res.data?.ok !== true) {
-										setError(res.error?.message ?? "The authorization service did not confirm a code.");
+										setError(
+											readErrorMessage(
+												res.error,
+												"The authorization service did not confirm a code.",
+											),
+										);
 										return;
 									}
 									const data = (res.data ?? {}) as Record<string, unknown>;
 									const userCode = String(data.user_code ?? "");
 									const result: DeviceStartResult = {
 										verification_url: safeVerificationUrl(
-											String(data.verification_url ?? "/verify"), userCode, teamId,
+											String(data.verification_url ?? "/verify"),
+											userCode,
+											teamId,
 										),
 										user_code: userCode,
 										device_code: String(data.device_code ?? ""),
@@ -412,11 +744,7 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 									}
 									setDevice(result);
 								} catch (cause) {
-									setError(
-										cause instanceof Error
-											? cause.message
-											: "Could not start authorization. Please retry.",
-									);
+									setError(readErrorMessage(cause, "Could not start authorization. Please retry."));
 								} finally {
 									setBusy(false);
 								}
@@ -424,7 +752,10 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 						>
 							{busy ? "Generating code…" : "Generate code"}
 						</button>
-						<Link className="button button-secondary" to={`/verify?team=${encodeURIComponent(teamId)}`}>
+						<Link
+							className="button button-secondary"
+							to={`/verify?team=${encodeURIComponent(teamId)}`}
+						>
 							Open verify page
 						</Link>
 						{device ? (
@@ -462,7 +793,9 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 							<div className="muted small" style={{ marginTop: 8 }}>
 								Verification URL
 							</div>
-							<div className="mono" style={{ overflowWrap: "anywhere" }}>{device.verification_url}</div>
+							<div className="mono" style={{ overflowWrap: "anywhere" }}>
+								{device.verification_url}
+							</div>
 							<div className="muted small" style={{ marginTop: 8 }}>
 								Expires:{" "}
 								<span className="mono">
@@ -487,7 +820,7 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 								</Link>
 							</div>
 
-						{poll?.status === "authorization_pending" ? (
+							{poll?.status === "authorization_pending" ? (
 								<div className="muted small" role="status" style={{ marginTop: 12 }}>
 									Waiting for authorization…
 								</div>
@@ -496,7 +829,8 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 							{poll?.status === "authorized" ? (
 								<div className="notice" style={{ marginTop: 12 }}>
 									<div>
-										<b>Authorized.</b> Use the enrollment token below in your local runtime setup, then check the Agents page to confirm protection.
+										<b>Authorized.</b> Use the enrollment token below in your local runtime setup,
+										then check the Agents page to confirm protection.
 									</div>
 									{poll.enrollment_token ? (
 										<div className="muted small" style={{ marginTop: 8 }}>
@@ -564,7 +898,8 @@ function TeamOnboarding({ teamId, teamName, canEnroll }: { teamId: string; teamN
 									) : null}
 									{poll.enrollment_token ? null : (
 										<div className="muted small" style={{ marginTop: 8 }}>
-											The enrollment token was cleared from this screen. Generate a new code if setup still needs one.
+											The enrollment token was cleared from this screen. Generate a new code if
+											setup still needs one.
 										</div>
 									)}
 									<div className="row" style={{ marginTop: 12 }}>

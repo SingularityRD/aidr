@@ -7,6 +7,7 @@ declare
   v_collector text := 'smoke-' || replace(gen_random_uuid()::text, '-', '');
   v_first uuid := gen_random_uuid();
   v_second uuid := gen_random_uuid();
+  v_third uuid := gen_random_uuid();
   v_result jsonb;
   v_complete boolean;
   v_count integer;
@@ -49,6 +50,29 @@ begin
     raise exception 'partial cycle hid an existing observation';
   end if;
 
+  v_result := public.read_tenant_discovery_summary(v_tenant, v_actor);
+  if v_result->>'reported_scope_state' <> 'attention'
+    or v_result->>'coverage_scope' <> 'reported_collectors_only'
+    or (v_result->>'partial_collector_count')::integer < 1 then
+    raise exception 'partial cycle was reported healthy';
+  end if;
+
+  v_result := public.ingest_tenant_discovery_cycle(
+    v_tenant, v_actor, v_collector, v_third, 3, 60000, true, 1,
+    '[{"target":"https://replacement.example.test/","reachable":true,"attempts":1,"error_code":null}]'::jsonb
+  );
+  select count(*) into v_count from public.tenant_discovery_items
+  where tenant_id = v_tenant and collector_id = v_collector;
+  if v_count <> 1 or exists (
+    select 1 from public.tenant_discovery_items
+    where tenant_id = v_tenant and collector_id = v_collector
+      and target = 'https://example.test/'
+  ) or not exists (
+    select 1 from public.tenant_discovery_items
+    where tenant_id = v_tenant and collector_id = v_collector
+      and target = 'https://replacement.example.test/'
+  ) then raise exception 'complete cycle did not reconcile omitted observations'; end if;
+
   begin
     perform public.ingest_tenant_discovery_cycle(
       v_tenant, v_actor, v_collector, v_first, 1, 60000, true, 1,
@@ -59,10 +83,10 @@ begin
   end;
 
   v_result := public.read_tenant_discovery_summary(v_tenant, v_actor);
-  if v_result->>'reported_scope_state' <> 'attention'
-    or v_result->>'coverage_scope' <> 'reported_collectors_only'
-    or (v_result->>'partial_collector_count')::integer < 1 then
-    raise exception 'partial cycle was reported healthy';
+  if v_result->>'reported_scope_state' <> 'current'
+    or (v_result->>'not_reported_count')::integer <> 0
+    or (v_result->>'observation_count')::integer <> 1 then
+    raise exception 'completed target reconciliation left stale observations';
   end if;
 
   begin

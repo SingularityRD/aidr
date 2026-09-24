@@ -21,7 +21,7 @@
  * locally-produced receipt is bookkeeping, not an audited payment record.
  */
 
-export const SETTLEMENT_STATUSES = [
+const SETTLEMENT_STATUSES = [
 	"quote_issued",
 	"order_placed",
 	"settlement_pending",
@@ -33,11 +33,11 @@ export const SETTLEMENT_STATUSES = [
 export type SettlementStatus = (typeof SETTLEMENT_STATUSES)[number];
 
 /** Terminal states that no transition may leave. */
-export const TERMINAL_SETTLEMENT_STATUSES: readonly SettlementStatus[] = ["refunded"];
+const TERMINAL_SETTLEMENT_STATUSES: readonly SettlementStatus[] = ["refunded"];
 
 /** Supported settlement currencies. Deliberately a closed set. */
-export const SETTLEMENT_CURRENCIES = ["USD", "EUR", "GBP"] as const;
-export type SettlementCurrency = (typeof SETTLEMENT_CURRENCIES)[number];
+const SETTLEMENT_CURRENCIES = ["USD", "EUR", "GBP"] as const;
+type SettlementCurrency = (typeof SETTLEMENT_CURRENCIES)[number];
 
 const TRANSITIONS: Readonly<Record<SettlementStatus, readonly SettlementStatus[]>> = {
 	quote_issued: ["order_placed", "cancelled"],
@@ -99,7 +99,7 @@ export interface SettlementLedgerInput {
 	tenantId: string;
 }
 
-export interface SeatGrant {
+interface SeatGrant {
 	sku: string;
 	seats: number;
 }
@@ -126,24 +126,20 @@ export function isUuid(value: unknown): value is string {
 	return typeof value === "string" && UUID.test(value);
 }
 
-export function isRequestId(value: unknown): value is string {
+function isRequestId(value: unknown): value is string {
 	return typeof value === "string" && REQUEST_ID.test(value);
 }
 
-export function isSettlementStatus(value: unknown): value is SettlementStatus {
+function isSettlementStatus(value: unknown): value is SettlementStatus {
 	return typeof value === "string" && (SETTLEMENT_STATUSES as readonly string[]).includes(value);
 }
 
-export function isSettlementCurrency(value: unknown): value is SettlementCurrency {
+function isSettlementCurrency(value: unknown): value is SettlementCurrency {
 	return typeof value === "string" && (SETTLEMENT_CURRENCIES as readonly string[]).includes(value);
 }
 
-export function mayTransition(from: SettlementStatus, to: SettlementStatus): boolean {
+function mayTransition(from: SettlementStatus, to: SettlementStatus): boolean {
 	return TRANSITIONS[from].includes(to);
-}
-
-export function allowedTransitions(from: SettlementStatus): readonly SettlementStatus[] {
-	return TRANSITIONS[from];
 }
 
 /** A monotonic ISO timestamp. Rejects unparseable and pre-epoch values. */
@@ -327,8 +323,9 @@ export function parseSettlementReceipt(value: unknown): ParseResult<SettlementRe
 /**
  * Fold a tenant's settlement ledger into a seat projection.
  *
- * Ordering is by `(occurredAt, sequence, settlementId)` so two events that
- * arrive out of order - or arrive twice - produce the same projection. A
+ * Ordering is by `(settlementId, sequence)` so a caller-supplied provider clock
+ * cannot reorder an authoritative ledger transition. Two rows that arrive out
+ * of order - or arrive twice - therefore produce the same projection. A
  * receipt belonging to another tenant, a currency mismatch against the ledger's
  * first receipt, a replayed row whose digest disagrees with the stored one, or a
  * transition the state machine forbids all collapse the projection to
@@ -365,9 +362,9 @@ export function projectEntitlement(input: SettlementLedgerInput): EntitlementPro
 		return { status: "unavailable", seats: [], sources: [], reason: "no_settlement_records" };
 	}
 	ordered.sort((a, b) => {
-		if (a.occurredAt !== b.occurredAt) return a.occurredAt < b.occurredAt ? -1 : 1;
+		if (a.settlementId !== b.settlementId) return a.settlementId < b.settlementId ? -1 : 1;
 		if (a.sequence !== b.sequence) return a.sequence - b.sequence;
-		return a.settlementId < b.settlementId ? -1 : 1;
+		return 0;
 	});
 
 	const currency = ordered[0]?.currency as SettlementCurrency;

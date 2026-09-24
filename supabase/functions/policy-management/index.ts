@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { parseDocument } from "npm:yaml@2.8.3";
 import { getBearerToken } from "../_shared/auth.ts";
 import { handleDlpPolicyAction } from "../_shared/dlp-policy-store.ts";
@@ -8,10 +8,51 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { compileRuntimePolicyDocument, compileRuntimePolicyDraft, simulateCompiledRuntimePolicy, type RuntimePolicyDocumentCompilation } from "../_shared/policy-document.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive, validateRuntimePolicy } from "../_shared/runtime-policy.ts";
-import { dispatchPolicyRollout, isPolicyRolloutAction, rolloutAdoptionEvidence } from "../_shared/policy-rollout.ts";
+import {
+	dispatchPolicyRollout,
+	isPolicyRolloutAction,
+	MAX_POLICY_MANAGEMENT_BODY_BYTES,
+	rolloutAdoptionEvidence,
+} from "../_shared/policy-rollout.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+type PolicyDocumentPrecondition = { id: string; version: number; source_sha256: string };
+type ReadTable<Row extends Record<string, unknown>> = { Row: Row; Insert: never; Update: never; Relationships: [] };
+type RuntimePolicyRow = { tenant_id: string; version: number; policy: Record<string, unknown>; updated_at: string };
+type PublishedPolicy = RuntimePolicyRow & { target_count?: number };
+type SavedDraft = { id: string; version: number; source_sha256: string; updated_at: string };
+type PolicyManagementDatabase = {
+	public: {
+		Tables: {
+			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
+			tenants: ReadTable<{ id: string; status: string }>;
+			tenant_runtime_policies: ReadTable<RuntimePolicyRow>;
+			runtime_policy_revisions: ReadTable<{ tenant_id: string; version: number; policy: Record<string, unknown>; created_at: string }>;
+			agents: ReadTable<{ id: string; tenant_id: string; iid: string; display_name: string | null; last_seen: string | null }>;
+			agent_policy_receipts: ReadTable<{ tenant_id: string; agent_id: string; version: number; received_at: string }>;
+			agent_policy_assignments: ReadTable<{ tenant_id: string; agent_id: string; version: number }>;
+			team_policies: ReadTable<{ id: string; team_id: string; content: string; version: number; source_sha256: string; updated_at: string }>;
+		};
+		Views: Record<string, never>;
+		Functions: {
+			save_policy_document_draft: { Args: { p_tenant_id: string; p_user_id: string; p_content: string; p_source_sha256: string; p_expected_id: string | null; p_expected_version: number | null; p_expected_source_sha256: string | null }; Returns: SavedDraft };
+			stage_runtime_policy: { Args: { p_tenant_id: string; p_user_id: string; p_expected_version: number; p_expected_revision_version: number; p_policy: Record<string, unknown>; p_agent_ids: string[] }; Returns: PublishedPolicy };
+			publish_runtime_policy_document: { Args: { p_tenant_id: string; p_user_id: string; p_expected_version: number; p_policy: Record<string, unknown>; p_expected_document_id: string; p_expected_document_version: number; p_expected_source_sha256: string }; Returns: PublishedPolicy };
+			publish_runtime_policy: { Args: { p_tenant_id: string; p_user_id: string; p_expected_version: number; p_policy: Record<string, unknown> }; Returns: PublishedPolicy };
+		};
+		Enums: Record<string, never>;
+		CompositeTypes: Record<string, never>;
+	};
+};
+
+function isPolicyDocumentPrecondition(value: unknown): value is PolicyDocumentPrecondition {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const source = value as Record<string, unknown>;
+	return typeof source.id === "string" && UUID_PATTERN.test(source.id) &&
+		Number.isSafeInteger(source.version) && Number(source.version) >= 1 &&
+		typeof source.source_sha256 === "string" && /^[0-9a-f]{64}$/.test(source.source_sha256);
+}
 
 function parseStoredDocument(source: string): unknown {
 	if (!source || source.length > 65_536) throw new Error(source ? "policy_document_too_large" : "policy_document_empty");
@@ -26,7 +67,7 @@ function parseStoredDocument(source: string): unknown {
 
 export interface PolicyManagementDeps {
 	/** Overrides the service-role client; used by the contract suite. */
-	db?: ReturnType<typeof createClient>;
+	db?: SupabaseClient<PolicyManagementDatabase>;
 }
 
 /** Build the request handler. Exported so the contract suite can drive it. */
@@ -40,10 +81,10 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 		const token = getBearerToken(req.headers.get("Authorization"));
 		if (!token) return corsJson(req, 401, { error: "missing_access_token" });
 		try {
-			const db = deps.db ?? createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+			const db = deps.db ?? createClient<PolicyManagementDatabase>(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 			const { data: auth, error: authError } = await db.auth.getUser(token);
 			if (authError || !auth.user) return corsJson(req, 401, { error: "invalid_access_token" });
-			const parsed = await readBoundedJson(req, 65536);
+			const parsed = await readBoundedJson(req, MAX_POLICY_MANAGEMENT_BODY_BYTES);
 			if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
 			const body = parsed.value as Record<string, unknown>;
 			if (!body || typeof body !== "object" || Array.isArray(body)) return corsJson(req, 400, { error: "invalid_request" });
@@ -53,11 +94,13 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
 			const { data: member, error: memberError } = await db.from("tenant_members").select("role,expires_at").eq("tenant_id", tenant).eq("user_id", auth.user.id).maybeSingle();
 			if (memberError) return corsJson(req, 503, { error: "authorization_unavailable" });
-			if (!membershipActive(member)) return corsJson(req, 403, { error: "tenant_access_denied" });
+			if (!member || !membershipActive(member)) return corsJson(req, 403, { error: "tenant_access_denied" });
 			const state = await db.from("tenants").select("status").eq("id", tenant).maybeSingle();
 			if (state.error) return corsJson(req, 503, { error: "authorization_unavailable" });
 			if (state.data?.status !== "active") return corsJson(req, 403, { error: "tenant_access_denied" });
 			const action = typeof body.action === "string" ? body.action : "";
+			const expectedDocument = isPolicyDocumentPrecondition(body.expected_document) ? body.expected_document : null;
+			if (action === "publish_document" && !expectedDocument) return corsJson(req, 400, { error: "invalid_document_precondition" });
 			const workCost = ["adoption", "rollout_progress", "rollout", "create_rollout"].includes(action) ? 5 : action === "history" ? 2 : 1;
 			const rate = await consumeTenantRateLimit(db, {
 				tenantId: tenant,
@@ -136,11 +179,11 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 				const { data, error } = await db.rpc("save_policy_document_draft", {
 					p_tenant_id: tenant,
 					p_user_id: auth.user.id,
-					p_content: body.content,
+					p_content: body.content as string,
 					p_source_sha256: source_sha256,
-					p_expected_id: expected?.id ?? null,
-					p_expected_version: expected?.version ?? null,
-					p_expected_source_sha256: expected?.source_sha256 ?? null,
+					p_expected_id: expectedDocument?.id ?? null,
+					p_expected_version: expectedDocument?.version ?? null,
+					p_expected_source_sha256: expectedDocument?.source_sha256 ?? null,
 				});
 				if (error) return corsJson(req, error.code === "PT409" ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 503, { error: error.code === "PT409" ? "policy_document_conflict" : "policy_document_save_failed" });
 				if (!data || typeof data.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id) ||
@@ -153,18 +196,24 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			}
 			if (isPolicyRolloutAction(action)) return await dispatchPolicyRollout(req, db, body, tenant, auth.user.id, member.role);
 			let documentCompilation: RuntimePolicyDocumentCompilation | null = null;
-			let documentSource: { id: string; updated_at: string } | null = null;
+			let documentSource: { id: string; version: number; source_sha256: string; updated_at: string } | null = null;
 			if (["compile_document", "publish_document"].includes(String(body.action))) {
-				const stored = await db.from("team_policies").select("id,content,updated_at").eq("team_id", tenant).order("updated_at", { ascending: false }).limit(1);
+				const stored = await db.from("team_policies").select("id,content,version,source_sha256,updated_at").eq("team_id", tenant).order("updated_at", { ascending: false }).order("id", { ascending: false }).limit(1);
 				if (stored.error) return corsJson(req, 503, { error: "policy_document_unavailable" });
 				const row = stored.data?.[0];
 				if (!row || typeof row.content !== "string") return corsJson(req, 404, { error: "policy_document_not_found" });
+				if (typeof row.id !== "string" || !UUID_PATTERN.test(row.id) || !Number.isSafeInteger(row.version) || Number(row.version) < 1 || typeof row.source_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(row.source_sha256) || typeof row.updated_at !== "string") return corsJson(req, 503, { error: "policy_document_unavailable" });
+				documentSource = { id: row.id, version: Number(row.version), source_sha256: row.source_sha256, updated_at: row.updated_at };
+				if (body.action === "publish_document" && (
+					documentSource.id !== expectedDocument?.id ||
+					documentSource.version !== expectedDocument.version ||
+					documentSource.source_sha256 !== expectedDocument.source_sha256
+				)) return corsJson(req, 409, { error: "policy_document_conflict" });
 				try {
 					documentCompilation = compileRuntimePolicyDocument(parseStoredDocument(row.content));
 				} catch (error) {
 					return corsJson(req, 400, { error: error instanceof Error ? error.message : "invalid_policy_document" });
 				}
-				documentSource = { id: row.id, updated_at: row.updated_at };
 				if (body.action === "compile_document") {
 					let simulation: ReturnType<typeof simulateCompiledRuntimePolicy> | null = null;
 					if (body.simulation !== undefined) {
@@ -180,7 +229,7 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			let policy: Record<string, unknown>;
 			if (body.action === "restore") {
 				if (!Number.isSafeInteger(body.target_version) || Number(body.target_version) < 1) return corsJson(req, 400, { error: "invalid_target_version" });
-				const revision = await db.from("runtime_policy_revisions").select("policy").eq("tenant_id", tenant).eq("version", body.target_version).maybeSingle();
+				const revision = await db.from("runtime_policy_revisions").select("policy").eq("tenant_id", tenant).eq("version", Number(body.target_version)).maybeSingle();
 				if (revision.error) return corsJson(req, 503, { error: "history_unavailable" });
 				if (!revision.data) return corsJson(req, 404, { error: "revision_not_found" });
 				body.policy = revision.data.policy;
@@ -190,8 +239,21 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 				if (!Array.isArray(body.agent_ids) || body.agent_ids.length < 1 || body.agent_ids.length > 200 || body.agent_ids.some((id) => typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id))) return corsJson(req, 400, { error: "invalid_stage_agents" });
 				if (!Number.isSafeInteger(body.expected_revision_version) || Number(body.expected_revision_version) < Number(body.expected_version)) return corsJson(req, 400, { error: "invalid_revision_version" });
 			}
-			const { data, error } = body.action === "stage" ? await db.rpc("stage_runtime_policy", { p_tenant_id: tenant, p_user_id: auth.user.id, p_expected_version: body.expected_version, p_expected_revision_version: body.expected_revision_version, p_policy: policy, p_agent_ids: body.agent_ids }) : await db.rpc("publish_runtime_policy", { p_tenant_id: tenant, p_user_id: auth.user.id, p_expected_version: body.expected_version, p_policy: policy });
-			if (error) return corsJson(req, error.code === "PT409" ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 503, { error: error.code === "PT409" ? "policy_version_conflict" : "policy_publish_failed" });
+			const { data, error } = body.action === "stage"
+				? await db.rpc("stage_runtime_policy", { p_tenant_id: tenant, p_user_id: auth.user.id, p_expected_version: Number(body.expected_version), p_expected_revision_version: Number(body.expected_revision_version), p_policy: policy, p_agent_ids: body.agent_ids as string[] })
+				: body.action === "publish_document"
+					? await db.rpc("publish_runtime_policy_document", {
+							p_tenant_id: tenant, p_user_id: auth.user.id, p_expected_version: Number(body.expected_version), p_policy: policy,
+							p_expected_document_id: expectedDocument!.id, p_expected_document_version: expectedDocument!.version,
+							p_expected_source_sha256: expectedDocument!.source_sha256,
+						})
+					: await db.rpc("publish_runtime_policy", { p_tenant_id: tenant, p_user_id: auth.user.id, p_expected_version: Number(body.expected_version), p_policy: policy });
+			if (error) {
+				const documentConflict = body.action === "publish_document" && error.code === "PT409" && String(error.message).includes("policy_document_conflict");
+				return corsJson(req, error.code === "PT409" ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 503, {
+					error: documentConflict ? "policy_document_conflict" : error.code === "PT409" ? "policy_version_conflict" : "policy_publish_failed",
+				});
+			}
 			// The RPC always returns the row it wrote. A payload without a stored
 			// version is a contract breach, never a publication to acknowledge.
 			if (!data || !Number.isSafeInteger(data.version)) return corsJson(req, 503, { error: "policy_publish_failed" });

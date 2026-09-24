@@ -2,24 +2,40 @@ import * as Sentry from "@sentry/browser";
 
 const REDACTED = "[Redacted]";
 const SENSITIVE_KEY_RE =
-	/(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|cookie|credential|password|passwd|private[_-]?key|secret|session[_-]?token|signature|sig|token|client[_-]?secret|dsn|prompt|tool[_-]?input|tool[_-]?output|completion|response[_-]?body|request[_-]?body|content)/i;
+	/(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|cookie|credential|password|passwd|private[_-]?key|secret|session[_-]?token|signature|sig|token|client[_-]?secret|invite|grant|state|dsn|prompt|tool[_-]?input|tool[_-]?output|completion|response[_-]?body|request[_-]?body|content)/i;
 const BEARER_RE = /(\bBearer\s+)[^\s,;"']+/gi;
 const KEY_VALUE_RE =
 	/(\b(?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|client[_-]?secret|cookie|password|passwd|private[_-]?key|refresh[_-]?token|id[_-]?token|secret|session[_-]?token|signature|sig|token)\b\s*[:=]\s*)(["']?)([^\s,;&"']+)\2/gi;
 const URL_CREDENTIAL_RE = /(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi;
 const URL_SECRET_QUERY_RE =
-	/([?&](?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|code|client[_-]?secret|password|passwd|refresh[_-]?token|id[_-]?token|secret|session[_-]?token|signature|sig|token)\s*=)[^&#\s]*/gi;
+	/([?&#](?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|code|client[_-]?secret|password|passwd|refresh[_-]?token|id[_-]?token|invite(?:[_-]?token)?|grant(?:[_-]?id)?|state|secret|session[_-]?token|signature|sig|token(?:[_-]?hash)?)\s*=)[^&#\s]*/gi;
 const KNOWN_SECRET_RE =
 	/\b(?:sk-[a-zA-Z0-9]{16,}|sk_live_[a-zA-Z0-9_-]{12,}|ghp_[a-zA-Z0-9]{20,}|github_pat_[a-zA-Z0-9_]{20,}|xox[baprs]-[a-zA-Z0-9-]{12,}|npm_[a-zA-Z0-9]{12,}|pypi-[a-zA-Z0-9_-]{12,}|AKIA[0-9A-Z]{16})\b/g;
+const ABSOLUTE_URL_DETAILS_RE = /(https?:\/\/[^\s?#"']+)[?#][^\s"']*/gi;
+const RELATIVE_URL_DETAILS_RE = /((?:\/|\.\/)[^\s?#"'()]*)[?#][^\s"'()]*/g;
 
 export function redactSentryString(value: string, maxLength = 2000): string {
 	const safe = value
+		.replace(ABSOLUTE_URL_DETAILS_RE, "$1")
+		.replace(RELATIVE_URL_DETAILS_RE, "$1")
 		.replace(BEARER_RE, `$1${REDACTED}`)
 		.replace(KEY_VALUE_RE, `$1${REDACTED}`)
 		.replace(URL_CREDENTIAL_RE, `$1$2:${REDACTED}@`)
 		.replace(URL_SECRET_QUERY_RE, `$1${REDACTED}`)
 		.replace(KNOWN_SECRET_RE, REDACTED);
 	return safe.length > maxLength ? `${safe.slice(0, maxLength)}…` : safe;
+}
+
+export function redactSentryUrl(value: string): string {
+	const redacted = redactSentryString(value);
+	try {
+		const parsed = new URL(redacted);
+		parsed.search = "";
+		parsed.hash = "";
+		return parsed.toString();
+	} catch {
+		return redacted.split(/[?#]/, 1)[0] ?? "";
+	}
 }
 
 function redactData(value: unknown, depth = 0): unknown {
@@ -41,15 +57,24 @@ export function redactSentryEvent<T extends Record<string, unknown>>(event: T): 
 	if (typeof mutable.transaction === "string") {
 		mutable.transaction = redactSentryString(mutable.transaction, 200);
 	}
+	// sendDefaultPii=false does not remove identity manually attached by an SDK integration.
+	delete mutable.user;
 	const request = mutable.request;
 	if (request && typeof request === "object" && !Array.isArray(request)) {
 		const requestRecord = request as Record<string, unknown>;
+		const publicRequest: Record<string, string> = {};
+		if (
+			typeof requestRecord.method === "string" &&
+			/^(?:GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$/.test(requestRecord.method)
+		) {
+			publicRequest.method = requestRecord.method;
+		}
 		if (typeof requestRecord.url === "string") {
-			requestRecord.url = redactSentryString(requestRecord.url);
+			publicRequest.url = redactSentryUrl(requestRecord.url);
 		}
-		if (typeof requestRecord.query_string === "string") {
-			requestRecord.query_string = redactSentryString(requestRecord.query_string);
-		}
+		mutable.request = publicRequest;
+	} else {
+		delete mutable.request;
 	}
 	return safe;
 }
@@ -60,15 +85,23 @@ function parseSampleRate(value: unknown, fallback: number): number {
 }
 
 export function initSentry(): void {
-	const dsn = String(import.meta.env.VITE_SENTRY_DSN ?? "").trim();
+	const runtime = typeof window !== "undefined" ? window.__AIDR_CONFIG__ : undefined;
+	const runtimeDsn = runtime?.sentryDsn;
+	const dsn = String(
+		runtimeDsn === undefined ? (import.meta.env.VITE_SENTRY_DSN ?? "") : (runtimeDsn ?? ""),
+	).trim();
 	if (!dsn) return;
 	Sentry.init({
 		dsn,
-		environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || "development",
+		environment:
+			runtime?.sentryEnvironment ?? (import.meta.env.VITE_SENTRY_ENVIRONMENT || "development"),
 		// Browser PII (cookies, IP, user-agent enrichment) is never required for
 		// the demo dashboard. Keep traces opt-in and bounded by environment.
 		sendDefaultPii: false,
-		tracesSampleRate: parseSampleRate(import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE, 0),
+		tracesSampleRate: parseSampleRate(
+			runtime?.sentryTracesSampleRate ?? import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE,
+			0,
+		),
 		integrations: [Sentry.browserTracingIntegration()],
 		beforeSend(event) {
 			return redactSentryEvent(

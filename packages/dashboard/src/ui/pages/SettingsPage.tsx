@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { readErrorMessage } from "../../lib/errors";
 import { supabaseEnvError } from "../../lib/supabase";
 import { getSession, signOut } from "../session";
 import { useTheme } from "../ThemeProvider";
@@ -9,6 +10,7 @@ export function SettingsPage() {
 	const { theme, toggleTheme } = useTheme();
 	const [email, setEmail] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [endingSession, setEndingSession] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -18,7 +20,7 @@ export function SettingsPage() {
 				if (!cancelled) setEmail(session?.user?.email ?? null);
 			} catch (cause) {
 				if (!cancelled) {
-					setError(cause instanceof Error ? cause.message : "Unable to load your session.");
+					setError(readErrorMessage(cause, "Unable to load your session."));
 				}
 			}
 		}
@@ -27,6 +29,8 @@ export function SettingsPage() {
 			cancelled = true;
 		};
 	}, []);
+
+	if (endingSession) return <div role="status">Ending this browser session…</div>;
 
 	return (
 		<div className="stack">
@@ -53,14 +57,15 @@ export function SettingsPage() {
 						className="button button-secondary"
 						type="button"
 						onClick={async () => {
-							setError(null);
+							setEndingSession(true);
 							try {
-								await signOut();
-								navigate("/login");
-							} catch (cause) {
-								setError(
-									cause instanceof Error ? cause.message : "Sign out could not be completed.",
+								const result = await signOut();
+								navigate(
+									result.serverRevoked ? "/login" : "/login?signout=revocation-unconfirmed",
+									{ replace: true },
 								);
+							} catch {
+								navigate("/login?signout=local-failed", { replace: true });
 							}
 						}}
 					>
@@ -99,8 +104,9 @@ export function SettingsPage() {
 			<div className="card">
 				<h2>Privacy &amp; data</h2>
 				<p className="muted">
-					AIDR performs local interception and redaction before telemetry leaves the device. Review
-					the canonical deployment documents for retention and scope.
+					Supported connectors evaluate intercepted actions locally against the effective policy.
+					Connector coverage, optional checks, and data sent to configured providers vary by
+					deployment; review the canonical documents for the exact scope and retention terms.
 				</p>
 				<div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
 					<Link className="button button-secondary button-sm" to="/privacy">

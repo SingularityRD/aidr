@@ -272,6 +272,9 @@ describe("DLP policy editor approval boundary", () => {
 		expect(
 			screen.getByText(/no approve, resolve, allow or dismiss control/i),
 		).toBeInTheDocument();
+		expect(screen.getByText(/Current managed connector hooks inspect tool input before execution only/i)).toBeInTheDocument();
+		expect(screen.getByText(/output-direction rules are not enforced there/i)).toBeInTheDocument();
+		expect(screen.getByText(/a redact match is blocked rather than rewriting the original input/i)).toBeInTheDocument();
 
 		// No control anywhere offers to approve or resolve a block.
 		const approvalControl = /approve|approval|resolve|grant|authorize|dismiss|waive|unblock|permit/i;
@@ -349,6 +352,28 @@ describe("DLP policy editor persistence", () => {
 		expect(mocks.invoke.mock.calls.map(([, request]) => request?.body?.action)).toEqual([
 			DLP_READ_ACTION,
 		]);
+	});
+
+	it("offers MFA step-up on mfa_required instead of misreporting missing storage", async () => {
+		const mocks = installDlpMocks({
+			read: {
+				data: null,
+				error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+					context: new Response(JSON.stringify({ error: "mfa_required" }), { status: 403 }),
+				}),
+			},
+		});
+		renderDlpEditor();
+		await waitFor(() =>
+			expect(screen.getByRole("alert")).toHaveTextContent("Multi-factor authentication is required"),
+		);
+		expect(screen.getByRole("link", { name: "Verify with authenticator" })).toHaveAttribute(
+			"href",
+			"/auth/dlp-step-up?tenant=11111111-1111-4111-8111-111111111111",
+		);
+		expect(screen.queryByText(/DLP policy storage is not available/)).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Save DLP policy" })).not.toBeInTheDocument();
+		expect(publishCalls(mocks)).toHaveLength(0);
 	});
 
 	it("refuses to author over a stored policy the engine rejects", async () => {

@@ -29,7 +29,7 @@ export function safeCommercialLink(
 	return null;
 }
 
-export function getInvoiceContactHref(): string | null {
+export function getSalesContactHref(): string | null {
 	const salesUrl = safeCommercialLink(import.meta.env.VITE_SALES_URL, true);
 	if (salesUrl) return salesUrl;
 

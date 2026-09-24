@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
+import { readDeviceCode } from "../_shared/auth.ts";
 import { evaluateDevicePollState } from "../_shared/device-auth.ts";
 
 type Session = {
@@ -43,6 +44,7 @@ function harness(options: {
 	const tokens: Token[] = [];
 	let rpcCalls = 0;
 	let sessionReads = 0;
+	let clientCreations = 0;
 	let releaseReads: (() => void) | undefined;
 	const bothReads = new Promise<void>((resolve) => { releaseReads = resolve; });
 	let handler: ((request: Request) => Promise<Response>) | undefined;
@@ -64,11 +66,6 @@ function harness(options: {
 						}
 						return { data: snapshot, error: null };
 					}
-					if (table === "pilot_applications") {
-						return options.approvalError
-							? { data: null, error: { message: "database unavailable" } }
-							: { data: { status: "approved" }, error: null };
-					}
 					if (table === "tenant_members") return { data: { role: "owner", expires_at: null }, error: null };
 					if (table === "tenants") return { data: { status: "active" }, error: null };
 					if (table === "enrollment_tokens") {
@@ -80,6 +77,9 @@ function harness(options: {
 			return query;
 		},
 		async rpc(name: string, args: Record<string, string>) {
+			if (name === "tenant_admission_capacity") return options.approvalError
+				? { data: null, error: { message: "database unavailable" } }
+				: { data: 1, error: null };
 			expect(name).toBe("issue_device_enrollment_token");
 			rpcCalls++;
 			if (session.exchanged_at) return { data: { status: "already_exchanged_or_invalid" }, error: null };
@@ -96,8 +96,8 @@ function harness(options: {
 	new Function("Deno", "createClient", "readDeviceCode", "configFailure", "loadConfig",
 		"runtimeEnv", "corsJson", "handleCors", "evaluateDevicePollState", compiled)(
 		{ env: { get: () => undefined }, serve: (fn: typeof handler) => { handler = fn; } },
-		() => client,
-		async () => "aidr_device_test-secret",
+		() => { clientCreations++; return client; },
+		readDeviceCode,
 		() => { throw new Error("unexpected config failure"); },
 		() => ({ ok: true, values: { SUPABASE_URL: "https://test.invalid", SUPABASE_SERVICE_ROLE_KEY: "test" } }),
 		{},
@@ -106,14 +106,25 @@ function harness(options: {
 		evaluateDevicePollState,
 	);
 	if (!handler) throw new Error("device-poll handler was not registered");
-	const poll = async () => {
-		const response = await handler!(new Request("https://test.invalid/device-poll", { method: "POST" }));
+	const poll = async (request = new Request("https://test.invalid/device-poll", {
+		method: "POST", headers: { Authorization: "Bearer aidr_device_test-secret" },
+	})) => {
+		const response = await handler!(request);
 		return { status: response.status, body: await response.json() as Record<string, unknown> };
 	};
-	return { poll, session, tokens, get rpcCalls() { return rpcCalls; } };
+	return { poll, session, tokens, get rpcCalls() { return rpcCalls; }, get clientCreations() { return clientCreations; } };
 }
 
 describe("device poll retry after an atomic issue", () => {
+	it("rejects an oversized bearer before creating a database client", async () => {
+		const app = harness();
+		const response = await app.poll(new Request("https://test.invalid/device-poll", {
+			method: "POST", headers: { Authorization: `Bearer ${"x".repeat(1025)}` }, body: "{}",
+		}));
+		expect(response).toMatchObject({ status: 401, body: { error: "missing_device_code" } });
+		expect(app.clientCreations).toBe(0);
+	});
+
 	it("recovers the same hash-only token after the RPC commits but its response is lost", async () => {
 		const app = harness({ lostFirstRpcResponse: true });
 		expect(await app.poll()).toMatchObject({ status: 503, body: { enrollment_outcome: "unknown" } });
@@ -170,7 +181,7 @@ describe("device poll retry after an atomic issue", () => {
 			status: 503, body: { error: "device_session_lookup_failed", enrollment_outcome: "unknown" },
 		});
 		expect(await harness({ approvalError: true }).poll()).toMatchObject({
-			status: 503, body: { error: "pilot_approval_lookup_failed", enrollment_outcome: "unknown" },
+			status: 503, body: { error: "tenant_admission_unavailable", enrollment_outcome: "unknown" },
 		});
 	});
 });

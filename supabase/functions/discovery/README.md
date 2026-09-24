@@ -32,8 +32,16 @@ cycle UUID. The tenant and credential are rechecked inside the ingest
 transaction, so a rotation or revocation between cursor and ingest denies the
 write. Both actions consume tenant and per-credential rate limits.
 
-Only human access tokens can call `read` and `summary`. All credentials are
-stored as SHA-256 digests, not raw bearers. Tenant deactivation revokes keys;
-offboarding removes their metadata at the endpoint-identity phase. This local
-contract still needs a customer-bound TLS, secret-store, scheduler and network
-failure drill before production acceptance.
+Only human access tokens can call `read`, `list`, and `summary`. `list` returns
+a bounded, cursor-paginated set of collector status rows for the authenticated
+tenant; it never accepts a tenant selector other than the already-authorized
+`tenant_id`, and labels its scope `reported_collectors_only`. `read` then returns
+the selected collector's bounded target page with current `freshness` and
+`alert_state`. These APIs report only collectors that have submitted data and
+must not be presented as complete cloud, MDM, or tenant-estate discovery.
+
+All credentials are stored as SHA-256 digests, not raw bearers. Tenant
+deactivation revokes keys; offboarding removes their metadata at the
+endpoint-identity phase. The local contract still needs customer-bound TLS,
+protected secret storage, an activated customer schedule, provider/tool
+acceptance and live alert-routing acceptance before production acceptance.

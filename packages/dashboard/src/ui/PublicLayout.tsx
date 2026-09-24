@@ -1,13 +1,15 @@
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { supabaseEnvError } from "../lib/supabase";
 import { ThemeToggle } from "./ThemeToggle";
 
 export function PublicLayout() {
-	const location = useLocation();
-	const showConfigWarning = Boolean(supabaseEnvError) && location.pathname !== "/demo";
+	const showConfigWarning = Boolean(supabaseEnvError);
 
 	return (
 		<div className="app">
+			<a className="skip-link" href="#page-content">
+				Skip to content
+			</a>
 			<header className="nav-bar">
 				<Link to="/" className="brand-link">
 					<span className="brand-word" aria-hidden="true">
@@ -19,7 +21,6 @@ export function PublicLayout() {
 					<span className="sr-only">Singularity AIDR</span>
 				</Link>
 				<nav className="nav" aria-label="Public">
-					<NavLink to="/demo">Demo</NavLink>
 					<NavLink to="/pricing">Pricing</NavLink>
 					<NavLink to="/pilot">Pilot</NavLink>
 					<NavLink to="/login">Dashboard</NavLink>
@@ -40,7 +41,9 @@ export function PublicLayout() {
 						</div>
 					</div>
 				) : null}
-				<Outlet />
+				<div id="page-content" tabIndex={-1}>
+					<Outlet />
+				</div>
 			</main>
 			<footer className="footer">
 				<div className="muted small">

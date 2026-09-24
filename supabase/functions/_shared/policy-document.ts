@@ -31,15 +31,15 @@ export async function compileRuntimePolicyDraft(
 
 type Rule = {
 	name: string;
-	condition: { mcp_server?: string; mcp_tool?: string };
+	condition: { mcp_server?: string; mcp_tool?: string | { server: string; tool: string } };
 	action: PolicyAction;
 	priority: number;
 };
 
 const ACTION_WEIGHT: Record<PolicyAction, number> = { allow: 1, ask: 2, deny: 3 };
 const ACTIONS = new Set(["allow", "ask", "deny"]);
-const SERVER = /^[a-z0-9][a-z0-9._-]{0,79}$/;
-const TOOL = /^[a-z0-9][a-z0-9._-]{0,79}\.[a-z0-9][a-z0-9_.-]{0,159}$/;
+const MCP_ID = /^[A-Za-z0-9][A-Za-z0-9._:/_-]{0,255}$/;
+const LEGACY_TOOL = /^[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}\.[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}$/;
 
 function object(value: unknown, field: string): Record<string, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`invalid_policy_document:${field}:must_be_object`);
@@ -72,12 +72,20 @@ function parseRule(value: unknown, index: number): Rule {
 	const server = condition.mcp_server;
 	const tool = condition.mcp_tool;
 	if (Number(server !== undefined) + Number(tool !== undefined) !== 1) throw new Error(`invalid_policy_document:${field}.condition:exactly_one_selector_required`);
-	if (server !== undefined && (typeof server !== "string" || !SERVER.test(server))) throw new Error(`invalid_policy_document:${field}.condition.mcp_server:invalid_server_id`);
-	if (tool !== undefined && (typeof tool !== "string" || !TOOL.test(tool))) throw new Error(`invalid_policy_document:${field}.condition.mcp_tool:invalid_tool_id`);
+	if (server !== undefined && (typeof server !== "string" || !MCP_ID.test(server))) throw new Error(`invalid_policy_document:${field}.condition.mcp_server:invalid_server_id`);
+	if (tool !== undefined) {
+		if (typeof tool === "string") {
+			if (!LEGACY_TOOL.test(tool)) throw new Error(`invalid_policy_document:${field}.condition.mcp_tool:invalid_tool_id`);
+		} else {
+			const identity = object(tool, `${field}.condition.mcp_tool`);
+			exactKeys(identity, ["server", "tool"], `${field}.condition.mcp_tool`);
+			if (typeof identity.server !== "string" || !MCP_ID.test(identity.server) || typeof identity.tool !== "string" || !MCP_ID.test(identity.tool)) throw new Error(`invalid_policy_document:${field}.condition.mcp_tool:invalid_tool_id`);
+		}
+	}
 	if (!Number.isInteger(row.priority) || Number(row.priority) < 0 || Number(row.priority) > 1_000) throw new Error(`invalid_policy_document:${field}.priority:invalid_priority`);
 	return {
 		name: boundedString(row.name, `${field}.name`, 160) as string,
-		condition: { ...(server !== undefined ? { mcp_server: server as string } : {}), ...(tool !== undefined ? { mcp_tool: tool as string } : {}) },
+		condition: { ...(server !== undefined ? { mcp_server: server as string } : {}), ...(tool !== undefined ? { mcp_tool: tool as Rule["condition"]["mcp_tool"] } : {}) },
 		action: action(row.action, `${field}.action`),
 		priority: Number(row.priority),
 	};
@@ -86,6 +94,19 @@ function parseRule(value: unknown, index: number): Rule {
 function listKey(scope: "server" | "tool", mode: PolicyAction): string {
 	if (scope === "server") return mode === "deny" ? "mcp_deny_servers" : mode === "ask" ? "mcp_require_approval_servers" : "mcp_allow_servers";
 	return mode === "deny" ? "mcp_deny_tools" : mode === "ask" ? "mcp_require_approval_tools" : "mcp_allow_tools";
+}
+
+function toolSelector(value: NonNullable<Rule["condition"]["mcp_tool"]>): string {
+	if (typeof value === "string") return value;
+	return JSON.stringify([value.server, value.tool]);
+}
+
+function diagnosticSelector(rule: Rule, target: string): string {
+	if (rule.condition.mcp_server) return `server:${target}`;
+	const tool = rule.condition.mcp_tool as NonNullable<Rule["condition"]["mcp_tool"]>;
+	if (typeof tool !== "string") return `tool:${target}`;
+	const separator = tool.indexOf(".");
+	return `tool:${JSON.stringify([tool.slice(0, separator), tool.slice(separator + 1)])}`;
 }
 
 /** Server-side mirror of the core compiler used before a stored draft can be published. */
@@ -118,8 +139,8 @@ export function compileRuntimePolicyDocument(value: unknown): RuntimePolicyDocum
 	const diagnostics: RuntimePolicyDocumentCompilation["diagnostics"] = [];
 	for (const candidate of indexed) {
 		const scope = candidate.rule.condition.mcp_server ? "server" : "tool";
-		const target = candidate.rule.condition.mcp_server ?? candidate.rule.condition.mcp_tool as string;
-		const selector = `${scope}:${target}`;
+		const target = candidate.rule.condition.mcp_server ?? toolSelector(candidate.rule.condition.mcp_tool as NonNullable<Rule["condition"]["mcp_tool"]>);
+		const selector = diagnosticSelector(candidate.rule, target);
 		const winner = winners.get(selector);
 		if (winner) {
 			diagnostics.push({ code: "shadowed_rule", rule: candidate.rule.name, selector, winner: winner.rule.name, message: `Rule "${candidate.rule.name}" is shadowed by "${winner.rule.name}" for ${selector}.` });
@@ -144,16 +165,17 @@ export function simulateCompiledRuntimePolicy(policy: Record<string, unknown>, v
 	}
 	if (input.kind !== "mcp") throw new Error("invalid_policy_document:simulation:invalid_kind");
 	exactKeys(input, ["kind", "server", "tool", "inventory"], "simulation");
-	if (typeof input.server !== "string" || !SERVER.test(input.server)) throw new Error("invalid_policy_document:simulation.server:invalid_server_id");
-	if (typeof input.tool !== "string" || !SERVER.test(input.tool)) throw new Error("invalid_policy_document:simulation.tool:invalid_tool_name");
+	if (typeof input.server !== "string" || !MCP_ID.test(input.server)) throw new Error("invalid_policy_document:simulation.server:invalid_server_id");
+	if (typeof input.tool !== "string" || !MCP_ID.test(input.tool)) throw new Error("invalid_policy_document:simulation.tool:invalid_tool_name");
 	if (!["known", "unknown", "risky"].includes(String(input.inventory))) throw new Error("invalid_policy_document:simulation.inventory:invalid_inventory");
-	const fullTool = `${input.server}.${input.tool}`;
+	const fullTool = JSON.stringify([input.server, input.tool]);
+	const legacyTool = input.server.includes(".") || input.tool.includes(".") ? null : `${input.server}.${input.tool}`;
 	for (const [mode, toolKey, serverKey] of [
 		["deny", "mcp_deny_tools", "mcp_deny_servers"],
 		["ask", "mcp_require_approval_tools", "mcp_require_approval_servers"],
 		["allow", "mcp_allow_tools", "mcp_allow_servers"],
 	] as const) {
-		if ((policy[toolKey] as string[]).includes(fullTool)) return { action: mode, source: "mcp_tool", matched: fullTool };
+		if ((policy[toolKey] as string[]).includes(fullTool) || (legacyTool !== null && (policy[toolKey] as string[]).includes(legacyTool))) return { action: mode, source: "mcp_tool", matched: fullTool };
 		if ((policy[serverKey] as string[]).includes(input.server)) return { action: mode, source: "mcp_server", matched: input.server };
 	}
 	if (input.inventory === "risky") return { action: action(policy.mcp_risky, "mcp_risky"), source: "mcp_risky", matched: null };

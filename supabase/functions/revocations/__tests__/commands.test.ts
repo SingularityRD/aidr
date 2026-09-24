@@ -106,6 +106,7 @@ describe("fleet response database and Edge wiring", () => {
 		expect(source).toContain('supabase.from("tenant_members").select("role,expires_at")');
 		expect(source).toContain('supabase.from("tenants").select("status")');
 		expect(source).toContain('tenant?.status !== "active"');
+		expect(source.match(/apiKeyMembershipActive\(member\)/g)).toHaveLength(2);
 		expect(source).not.toContain('(keyRow.tenant_id as string | null) ?? (keyRow.user_id as string)');
 	});
 

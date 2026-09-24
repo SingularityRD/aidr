@@ -14,9 +14,11 @@ type QueryBuilder = PromiseLike<QueryResult> & {
 
 type DatabaseClient = {
 	from(relation: string): QueryBuilder;
+	rpc(name: string, args: Record<string, unknown>): PromiseLike<QueryResult>;
 };
 
 type ApiKeyRow = {
+	id?: string;
 	user_id: string;
 	tenant_id: string;
 	revoked: boolean;
@@ -24,11 +26,14 @@ type ApiKeyRow = {
 };
 
 type MembershipRow = {
+	role: string;
 	expires_at: string | null;
 };
 
+const API_KEY_MEMBER_ROLES = new Set(["owner", "admin", "member"]);
+
 export type TenantApiKeyAuthResult =
-	| { ok: true; userId: string; tenantId: string; agentId?: string | null }
+	| { ok: true; userId: string; tenantId: string; apiKeyId?: string; agentId?: string | null }
 	| {
 		ok: false;
 		status: 401 | 403 | 503;
@@ -39,6 +44,7 @@ function apiKeyRow(value: unknown): ApiKeyRow | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 	const row = value as Record<string, unknown>;
 	if (
+		("id" in row && (typeof row.id !== "string" || !row.id)) ||
 		typeof row.user_id !== "string" ||
 		!row.user_id ||
 		typeof row.tenant_id !== "string" ||
@@ -53,15 +59,24 @@ function apiKeyRow(value: unknown): ApiKeyRow | null {
 		tenant_id: row.tenant_id,
 		revoked: row.revoked,
 	};
+	if (typeof row.id === "string") parsed.id = row.id;
 	if ("agent_id" in row) parsed.agent_id = row.agent_id as string | null;
 	return parsed;
 }
 
 function membershipRow(value: unknown): MembershipRow | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-	const expiresAt = (value as Record<string, unknown>).expires_at;
+	const row = value as Record<string, unknown>;
+	const expiresAt = row.expires_at;
+	if (typeof row.role !== "string") return null;
 	if (expiresAt !== null && (typeof expiresAt !== "string" || !expiresAt.trim())) return null;
-	return { expires_at: expiresAt };
+	return { role: row.role, expires_at: expiresAt };
+}
+
+/** API keys are write-capable tenant credentials, so read-only roles fail closed. */
+export function apiKeyMembershipActive(value: unknown, now = Date.now()): boolean {
+	const membership = membershipRow(value);
+	return membershipActive(membership, now) && API_KEY_MEMBER_ROLES.has(membership?.role ?? "");
 }
 
 function tenantIsActive(value: unknown): boolean {
@@ -74,7 +89,8 @@ function tenantIsActive(value: unknown): boolean {
 }
 
 /**
- * Authenticates a hash-only API key and binds it to an active tenant membership.
+ * Authenticates a hash-only API key and binds it to an active tenant membership
+ * whose role is allowed to create and operate write-capable keys.
  * Service-role callers must use this guard before reading tenant-scoped data.
  *
  * A renewed key keeps working through its retired hash only while the bounded
@@ -86,13 +102,25 @@ export async function authenticateTenantApiKey(
 	plaintextKey: string,
 	now = Date.now(),
 ): Promise<TenantApiKeyAuthResult> {
-	const db = database as DatabaseClient;
 	const presentedHash = await sha256(plaintextKey);
+	return authenticateTenantApiKeyHash(database, presentedHash, now);
+}
+
+/** Re-authenticate a hash held only in trusted server storage. */
+export async function authenticateTenantApiKeyHash(
+	database: unknown,
+	presentedHash: string,
+	now = Date.now(),
+): Promise<TenantApiKeyAuthResult> {
+	if (!/^[a-f0-9]{64}$/.test(presentedHash)) {
+		return { ok: false, status: 401, error: "invalid_api_key" };
+	}
+	const db = database as DatabaseClient;
 	let keyResult: QueryResult;
 	try {
 		keyResult = await db
 			.from("api_keys")
-			.select("user_id,tenant_id,revoked,agent_id")
+			.select("id,user_id,tenant_id,revoked,agent_id")
 			.eq("key_hash", presentedHash)
 			.maybeSingle();
 	} catch {
@@ -112,7 +140,7 @@ export async function authenticateTenantApiKey(
 		try {
 			previousResult = await db
 				.from("api_keys")
-				.select("user_id,tenant_id,revoked,agent_id,previous_hash,previous_hash_expires_at")
+				.select("id,user_id,tenant_id,revoked,agent_id,previous_hash,previous_hash_expires_at")
 				.eq("previous_hash", presentedHash)
 				.maybeSingle();
 		} catch {
@@ -137,7 +165,7 @@ export async function authenticateTenantApiKey(
 		[membershipResult, tenantResult] = await Promise.all([
 			db
 				.from("tenant_members")
-				.select("expires_at")
+				.select("role,expires_at")
 				.eq("tenant_id", key.tenant_id)
 				.eq("user_id", key.user_id)
 				.maybeSingle(),
@@ -150,7 +178,26 @@ export async function authenticateTenantApiKey(
 	if (membershipResult.error || tenantResult.error) {
 		return { ok: false, status: 503, error: "authorization_unavailable" };
 	}
-	if (!membershipActive(membershipRow(membershipResult.data), now) || !tenantIsActive(tenantResult.data)) {
+	if (
+		!apiKeyMembershipActive(membershipResult.data, now) ||
+		!tenantIsActive(tenantResult.data)
+	) {
+		return { ok: false, status: 403, error: "tenant_access_denied" };
+	}
+
+	// A previously issued key must stop working when its trial expires or an
+	// operator revokes its licensed admission. The database also enforces this at
+	// event write time, closing the race between this read and ingest.
+	let admission: QueryResult;
+	try {
+		admission = await db.rpc("tenant_admission_capacity", { p_tenant_id: key.tenant_id });
+	} catch {
+		return { ok: false, status: 503, error: "authorization_unavailable" };
+	}
+	if (admission.error || !Number.isSafeInteger(admission.data) || (admission.data as number) < 0) {
+		return { ok: false, status: 503, error: "authorization_unavailable" };
+	}
+	if (admission.data === 0) {
 		return { ok: false, status: 403, error: "tenant_access_denied" };
 	}
 
@@ -158,6 +205,7 @@ export async function authenticateTenantApiKey(
 		ok: true,
 		userId: key.user_id,
 		tenantId: key.tenant_id,
+		...(key.id ? { apiKeyId: key.id } : {}),
 		...("agent_id" in key ? { agentId: key.agent_id ?? null } : {}),
 	};
 }

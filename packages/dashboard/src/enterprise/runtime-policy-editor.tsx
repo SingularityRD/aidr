@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
-import { useTeam } from "./team-provider";
 import { PolicyRollout } from "./policy-rollout";
+import { useTeam } from "./team-provider";
 
 const INITIAL_POLICY = {
 	command_default: "allow",
@@ -14,10 +15,51 @@ const INITIAL_POLICY = {
 	mcp_risky: "deny",
 };
 
+type ReviewedPolicyDocument = { id: string; version: number; source_sha256: string };
+
+function isReviewedPolicyDocument(value: unknown): value is ReviewedPolicyDocument {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const source = value as Record<string, unknown>;
+	return (
+		typeof source.id === "string" &&
+		/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(source.id) &&
+		Number.isSafeInteger(source.version) &&
+		Number(source.version) >= 1 &&
+		typeof source.source_sha256 === "string" &&
+		/^[0-9a-f]{64}$/.test(source.source_sha256)
+	);
+}
+
+function sameReviewedPolicyDocument(left: unknown, right: ReviewedPolicyDocument): boolean {
+	return (
+		isReviewedPolicyDocument(left) &&
+		left.id === right.id &&
+		left.version === right.version &&
+		left.source_sha256 === right.source_sha256
+	);
+}
+
+async function isMissingSavedDocument(error: unknown): Promise<boolean> {
+	const context = (error as { context?: unknown } | null | undefined)?.context;
+	if (!(context instanceof Response) || context.status !== 404) return false;
+	try {
+		const body: unknown = await context.clone().json();
+		return (
+			body !== null &&
+			typeof body === "object" &&
+			!Array.isArray(body) &&
+			(body as { error?: unknown }).error === "policy_document_not_found"
+		);
+	} catch {
+		return false;
+	}
+}
+
 export function RuntimePolicyEditor() {
 	const { currentTeam, canManageTeam } = useTeam();
 	const [text, setText] = useState(JSON.stringify(INITIAL_POLICY, null, 2));
 	const [version, setVersion] = useState<number | null>(null);
+	const [reviewedDocument, setReviewedDocument] = useState<ReviewedPolicyDocument | null>(null);
 	const [message, setMessage] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [refresh, setRefresh] = useState(0);
@@ -26,6 +68,7 @@ export function RuntimePolicyEditor() {
 	useEffect(() => {
 		let cancelled = false;
 		setVersion(null);
+		setReviewedDocument(null);
 		setMessage("");
 		setBusy(false);
 		if (!currentTeam) return;
@@ -71,42 +114,104 @@ export function RuntimePolicyEditor() {
 			);
 		} catch (error) {
 			if (selectedTeamId.current === requestedTeam)
-				setMessage(error instanceof Error ? error.message : "Publication failed.");
+				setMessage(readErrorMessage(error, "Publication failed."));
 		} finally {
 			if (selectedTeamId.current === requestedTeam) setBusy(false);
 		}
 	}
 
-	async function compileSavedDocument(publishNow: boolean) {
-		if (!currentTeam || !canManageTeam || (publishNow && version === null)) return;
+	async function compileSavedDocument() {
+		if (!currentTeam || !canManageTeam) return;
 		const requestedTeam = currentTeam.id;
+		setReviewedDocument(null);
 		setBusy(true);
 		setMessage("");
 		try {
 			const { data, error } = await supabase.functions.invoke("policy-management", {
 				body: {
-					action: publishNow ? "publish_document" : "compile_document",
+					action: "compile_document",
 					tenant_id: currentTeam.id,
-					...(publishNow ? { expected_version: version } : {}),
-					...(!publishNow ? { simulation: { kind: "mcp", server: "unregistered-preview", tool: "call", inventory: "unknown" } } : {}),
+					simulation: {
+						kind: "mcp",
+						server: "unregistered-preview",
+						tool: "call",
+						inventory: "unknown",
+					},
 				},
 			});
 			if (selectedTeamId.current !== requestedTeam) return;
-			if (error || data?.ok !== true || (!data.policy && !data.runtime_policy)) throw new Error("Saved YAML could not be compiled. Review unsupported fields in the policy editor.");
-			const compiled = data.runtime_policy ?? data.policy;
-			setText(JSON.stringify(compiled, null, 2));
-			if (publishNow) {
-				if (!Number.isSafeInteger(data.version)) throw new Error("The compiled policy was not published.");
-				setVersion(data.version);
-				setMessage(`Saved YAML compiled and published as version ${data.version}. Check agent loading receipts below.`);
-			} else {
-				const precedence = Array.isArray(data.semantics?.precedence) ? data.semantics.precedence.join(" > ") : "deny > ask > allow";
-				const simulation = data.simulation ? ` Unknown MCP simulation: ${data.simulation.action} (${data.simulation.source}).` : "";
-				const warnings = Array.isArray(data.diagnostics) && data.diagnostics.length > 0 ? ` ${data.diagnostics.length} shadowed rule warning(s).` : "";
-				setMessage(`Dry run compiled. Conflict precedence: ${precedence}.${simulation}${warnings}`);
-			}
+			if (await isMissingSavedDocument(error))
+				throw new Error(
+					"Save a YAML draft in the Security Policy Editor first, then run the dry run.",
+				);
+			if (error || data?.ok !== true || (!data.policy && !data.runtime_policy))
+				throw new Error(
+					"Saved YAML could not be compiled. Review unsupported fields in the policy editor.",
+				);
+			if (!isReviewedPolicyDocument(data.source))
+				throw new Error(
+					"The dry run did not identify the exact saved YAML revision. Try again before publishing.",
+				);
+			setReviewedDocument({
+				id: data.source.id,
+				version: data.source.version,
+				source_sha256: data.source.source_sha256,
+			});
+			setText(JSON.stringify(data.runtime_policy ?? data.policy, null, 2));
+			const precedence = Array.isArray(data.semantics?.precedence)
+				? data.semantics.precedence.join(" > ")
+				: "deny > ask > allow";
+			const simulation = data.simulation
+				? ` Unknown MCP simulation: ${data.simulation.action} (${data.simulation.source}).`
+				: "";
+			const warnings =
+				Array.isArray(data.diagnostics) && data.diagnostics.length > 0
+					? ` ${data.diagnostics.length} shadowed rule warning(s).`
+					: "";
+			setMessage(`Dry run compiled. Conflict precedence: ${precedence}.${simulation}${warnings}`);
 		} catch (error) {
-			if (selectedTeamId.current === requestedTeam) setMessage(error instanceof Error ? error.message : "Saved YAML could not be compiled.");
+			if (selectedTeamId.current === requestedTeam)
+				setMessage(readErrorMessage(error, "Saved YAML could not be compiled."));
+		} finally {
+			if (selectedTeamId.current === requestedTeam) setBusy(false);
+		}
+	}
+
+	async function publishSavedDocument() {
+		if (!currentTeam || !canManageTeam || version === null || reviewedDocument === null) return;
+		const requestedTeam = currentTeam.id;
+		const reviewedSource = reviewedDocument;
+		setBusy(true);
+		setMessage("");
+		try {
+			const { data, error } = await supabase.functions.invoke("policy-management", {
+				body: {
+					action: "publish_document",
+					tenant_id: currentTeam.id,
+					expected_version: version,
+					expected_document: reviewedSource,
+				},
+			});
+			if (selectedTeamId.current !== requestedTeam) return;
+			if (error || data?.ok !== true || (!data.policy && !data.runtime_policy))
+				throw new Error(
+					"Saved YAML could not be compiled and published. Run a new dry run before retrying.",
+				);
+			if (!sameReviewedPolicyDocument(data.compiled_from, reviewedSource))
+				throw new Error(
+					"The saved YAML changed after review. Run a new dry run before publishing.",
+				);
+			if (!Number.isSafeInteger(data.version))
+				throw new Error("The compiled policy was not published.");
+			setText(JSON.stringify(data.runtime_policy ?? data.policy, null, 2));
+			setVersion(data.version);
+			setReviewedDocument(null);
+			setMessage(
+				`Saved YAML compiled and published as version ${data.version}. Check agent loading receipts below.`,
+			);
+		} catch (error) {
+			if (selectedTeamId.current === requestedTeam)
+				setMessage(readErrorMessage(error, "Saved YAML could not be published."));
 		} finally {
 			if (selectedTeamId.current === requestedTeam) setBusy(false);
 		}
@@ -139,14 +244,25 @@ export function RuntimePolicyEditor() {
 				/>
 				<p className="muted small">
 					Actions: command_default, file_default, url_default, package_default, output_default,
-					mcp_default, mcp_unknown, mcp_risky. MCP lists: mcp_allow_servers, mcp_require_approval_servers,
-					mcp_deny_servers and the corresponding *_tools lists. Unsupported fields are rejected.
+					mcp_default, mcp_unknown, mcp_risky. MCP lists: mcp_allow_servers,
+					mcp_require_approval_servers, mcp_deny_servers and the corresponding *_tools lists.
+					Unsupported fields are rejected.
 				</p>
 				<div className="row">
-					<button type="button" className="btn" disabled={!canManageTeam || busy} onClick={() => void compileSavedDocument(false)}>
+					<button
+						type="button"
+						className="btn"
+						disabled={!canManageTeam || busy}
+						onClick={() => void compileSavedDocument()}
+					>
 						Compile saved YAML (dry run)
 					</button>
-					<button type="button" className="btn" disabled={!canManageTeam || version === null || busy} onClick={() => void compileSavedDocument(true)}>
+					<button
+						type="button"
+						className="btn"
+						disabled={!canManageTeam || version === null || reviewedDocument === null || busy}
+						onClick={() => void publishSavedDocument()}
+					>
 						Compile and publish saved YAML
 					</button>
 					<button

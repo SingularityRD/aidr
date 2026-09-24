@@ -7,7 +7,7 @@ const FALLBACK_RETURN_TO = "/onboarding";
  * not accept protocol-relative URLs (`//host`) or backslash variants that a
  * browser may normalize into an external navigation.
  */
-export function isSafeReturnTo(value: unknown): value is string {
+function isSafeReturnTo(value: unknown): value is string {
 	if (typeof value !== "string") return false;
 	const candidate = value.trim();
 	if (
@@ -20,7 +20,8 @@ export function isSafeReturnTo(value: unknown): value is string {
 		return false;
 	try {
 		const decoded = decodeURIComponent(candidate);
-		if (decoded.startsWith("//") || decoded.includes("\\")) return false;
+		if (decoded.startsWith("//") || decoded.includes("\\") || /[\u0000-\u001f\u007f]/.test(decoded))
+			return false;
 		const parsed = new URL(candidate, "https://aidr.invalid");
 		return parsed.origin === "https://aidr.invalid";
 	} catch {

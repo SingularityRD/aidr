@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useTeam } from "../../enterprise/team-provider";
+import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { dashboardAgentFreshness } from "../dashboard-freshness";
 import { getSession } from "../session";
@@ -42,9 +44,11 @@ function isAgentRow(value: unknown): value is AgentRow {
 function isEventRow(value: unknown): value is EventRow {
 	return (
 		isRecord(value) &&
-		typeof value.id === "number" && Number.isFinite(value.id) &&
+		typeof value.id === "number" &&
+		Number.isFinite(value.id) &&
 		typeof value.type === "string" &&
-		typeof value.created_at === "string" && Number.isFinite(Date.parse(value.created_at)) &&
+		typeof value.created_at === "string" &&
+		Number.isFinite(Date.parse(value.created_at)) &&
 		typeof value.agent_id === "string" &&
 		(value.payload === null || isRecord(value.payload))
 	);
@@ -52,9 +56,14 @@ function isEventRow(value: unknown): value is EventRow {
 
 function queryRows<T>(result: unknown, isRow: (value: unknown) => value is T): T[] {
 	if (isRecord(result) && isRecord(result.error) && typeof result.error.message === "string") {
-		throw new Error(result.error.message);
+		throw new Error(readErrorMessage(result.error, "Dashboard query failed."));
 	}
-	if (!isRecord(result) || result.error !== null || !Array.isArray(result.data) || !result.data.every(isRow)) {
+	if (
+		!isRecord(result) ||
+		result.error !== null ||
+		!Array.isArray(result.data) ||
+		!result.data.every(isRow)
+	) {
 		throw new Error("Malformed dashboard query response.");
 	}
 	return result.data;
@@ -74,7 +83,7 @@ function eventSummary(event: EventRow): string {
 		const count = Number(event.payload?.findings_count ?? 0);
 		return `${key}: ${count} finding(s)`;
 	}
-	return JSON.stringify(event.payload ?? {}).slice(0, 80);
+	return "Additional event details are not shown.";
 }
 
 function verdictOf(event: EventRow): string | null {
@@ -83,6 +92,13 @@ function verdictOf(event: EventRow): string | null {
 }
 
 export function DashboardPage() {
+	const { currentTeam, isLoading } = useTeam();
+	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
+	if (!currentTeam) return <div role="alert">Select a team to view dashboard.</div>;
+	return <TenantDashboardPage key={currentTeam.id} tenantId={currentTeam.id} />;
+}
+
+function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 	const [email, setEmail] = useState<string | null>(null);
 	// null = not loaded / unavailable (fail-closed); [] = a real, empty result.
 	const [agents, setAgents] = useState<AgentRow[] | null>(null);
@@ -90,8 +106,9 @@ export function DashboardPage() {
 	const [pendingTokens, setPendingTokens] = useState<number | null>(null);
 	const [agentError, setAgentError] = useState<string | null>(null);
 	const [eventError, setEventError] = useState<string | null>(null);
+	const [pendingError, setPendingError] = useState<string | null>(null);
 	const [nowMs, setNowMs] = useState(() => Date.now());
-	const error = [agentError, eventError].filter(Boolean).join(" ");
+	const error = [agentError, eventError, pendingError].filter(Boolean).join(" ");
 
 	useEffect(() => {
 		let cancelled = false;
@@ -123,7 +140,7 @@ export function DashboardPage() {
 				} catch (cause) {
 					if (!cancelled) {
 						setData(null);
-						setProblem?.(cause instanceof Error ? cause.message : "Dashboard query failed.");
+						setProblem?.(readErrorMessage(cause, "Dashboard query failed."));
 					}
 				} finally {
 					if (deadline !== undefined) {
@@ -137,23 +154,48 @@ export function DashboardPage() {
 			timers.push(setInterval(() => void load(), 6000));
 		}
 
-		poll(async () => queryRows(
-			await supabase.from("agents").select("id,iid,display_name,agent_runtime,last_seen")
-				.order("last_seen", { ascending: false }),
-			isAgentRow,
-		), setAgents, setAgentError);
-		poll(async () => queryRows(
-			await supabase.from("events").select("id,type,created_at,agent_id,payload")
-				.order("created_at", { ascending: false }).limit(500),
-			isEventRow,
-		), setEvents, setEventError);
+		poll(
+			async () =>
+				queryRows(
+					await supabase
+						.from("agents")
+						.select("id,iid,display_name,agent_runtime,last_seen")
+						.eq("tenant_id", tenantId)
+						.order("last_seen", { ascending: false }),
+					isAgentRow,
+				),
+			setAgents,
+			setAgentError,
+		);
+		poll(
+			async () =>
+				queryRows(
+					await supabase
+						.from("events")
+						.select("id,type,created_at,agent_id,payload")
+						.eq("tenant_id", tenantId)
+						.order("created_at", { ascending: false })
+						.limit(500),
+					isEventRow,
+				),
+			setEvents,
+			setEventError,
+		);
 
 		// Outstanding enrollment tokens require pilot approval; unavailable or
 		// malformed results must not become a made-up zero.
 		poll(async () => {
-			const result = await supabase.functions.invoke("enrollment-tokens", { method: "GET" });
-			if (!isRecord(result) || result.error !== null || !isRecord(result.data) ||
-				result.data.ok !== true || !Array.isArray(result.data.tokens)) {
+			const result = await supabase.functions.invoke("enrollment-tokens", {
+				method: "GET",
+				headers: { "X-AIDR-Tenant-ID": tenantId },
+			});
+			if (
+				!isRecord(result) ||
+				result.error !== null ||
+				!isRecord(result.data) ||
+				result.data.ok !== true ||
+				!Array.isArray(result.data.tokens)
+			) {
 				throw new Error("Enrollment tokens are unavailable.");
 			}
 			const tokens = result.data.tokens;
@@ -170,7 +212,7 @@ export function DashboardPage() {
 				}
 				return token.consumed_at === null && Date.parse(token.expires_at) > now;
 			}).length;
-		}, setPendingTokens);
+		}, setPendingTokens, setPendingError);
 
 		async function loadSession() {
 			try {
@@ -189,13 +231,17 @@ export function DashboardPage() {
 			for (const timer of timers) clearInterval(timer);
 			for (const deadline of deadlines) clearTimeout(deadline);
 		};
-	}, []);
+	}, [tenantId]);
 
 	// Counters and rows consume exactly the same clock-based classification.
-	const agentSnapshot = useMemo(() => (agents ?? []).map((agent) => ({
-		agent,
-		freshness: dashboardAgentFreshness(agent.last_seen, nowMs),
-	})), [agents, nowMs]);
+	const agentSnapshot = useMemo(
+		() =>
+			(agents ?? []).map((agent) => ({
+				agent,
+				freshness: dashboardAgentFreshness(agent.last_seen, nowMs),
+			})),
+		[agents, nowMs],
+	);
 	const connectedCount = agentSnapshot.filter(({ freshness }) => freshness === "fresh").length;
 	const denyCount = useMemo(
 		() => (events ?? []).filter((e) => verdictOf(e) === "deny").length,
@@ -207,7 +253,9 @@ export function DashboardPage() {
 	);
 	const latestHeartbeat = useMemo(() => {
 		const stamps = (agents ?? [])
-			.map((agent) => typeof agent.last_seen === "string" ? Date.parse(agent.last_seen) : Number.NaN)
+			.map((agent) =>
+				typeof agent.last_seen === "string" ? Date.parse(agent.last_seen) : Number.NaN,
+			)
 			.filter((stamp) => Number.isFinite(stamp) && stamp <= nowMs);
 		return stamps.length > 0 ? new Date(Math.max(...stamps)) : null;
 	}, [agents, nowMs]);
@@ -221,10 +269,10 @@ export function DashboardPage() {
 				<div className="console-hero-grid">
 					<div>
 						<p className="eyebrow">AIDR control plane</p>
-						<h1>Observe every agent decision from one secure dashboard.</h1>
+						<h1>Review reported agent security decisions in one dashboard.</h1>
 						<p className="muted" style={{ marginTop: 8 }}>
-							Start with prompt-based onboarding, approve a device code once, then track agent
-							health, policy verdicts, and risky actions as they happen.
+							Start with prompt-based onboarding, approve a device code once, then review agent
+							check-ins and security events as they are reported.
 						</p>
 						<div className="row" style={{ marginTop: 16 }}>
 							<Link className="button" to="/onboarding">
@@ -327,7 +375,9 @@ export function DashboardPage() {
 										</td>
 										<td className="muted">{agent.agent_runtime ?? "unknown"}</td>
 										<td>
-											<span className={`badge ${freshness === "fresh" ? "badge-success" : "badge-neutral"}`}>
+											<span
+												className={`badge ${freshness === "fresh" ? "badge-success" : "badge-neutral"}`}
+											>
 												{freshness === "fresh" ? "connected" : freshness}
 											</span>
 										</td>
@@ -359,7 +409,7 @@ export function DashboardPage() {
 							View all
 						</Link>
 					</div>
-					<p className="muted small">The latest allow, ask, and deny decisions from your agents.</p>
+					<p className="muted small">The latest security events received from your agents.</p>
 					<div className="table-wrap">
 						<table className="table">
 							<thead>

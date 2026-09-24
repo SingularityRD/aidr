@@ -29,7 +29,7 @@ import {
 // The Edge Function imports Supabase through Deno's `npm:` specifier, which a
 // Node test runner cannot resolve. The runtime factory only needs to exist, and
 // it must never be reached: the suite always injects `deps.db`.
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => {
 		throw new Error("createClient must be injected through InvoiceEntitlementDeps.db");
 	},

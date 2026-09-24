@@ -5,8 +5,8 @@
  * The flat audit table renders one row per record, which loses the one thing the
  * stored payload already carries: the correlation id that ties a multi-step
  * response — including its rollback — to the incident that triggered it. This
- * view groups by that id, renders the response steps in the order they happened,
- * and reports the receipt clock state per device.
+ * view groups that id within the producing agent, renders response steps in the
+ * order they happened, and reports the receipt clock state per device.
  *
  * Two rules from the core's `incidents/evidence-receipt.ts` are load-bearing:
  *
@@ -36,9 +36,9 @@ import { useMemo } from "react";
  * notice. Nothing below inspects a message string.
  */
 
-export type EvidenceDecision = "allow" | "ask" | "deny" | "unrecorded";
+type EvidenceDecision = "allow" | "ask" | "deny" | "unrecorded";
 
-export type EvidenceResponseAction =
+type EvidenceResponseAction =
 	| "block"
 	| "contain"
 	| "quarantine"
@@ -47,9 +47,9 @@ export type EvidenceResponseAction =
 	| "rollback"
 	| "unrecorded";
 
-export type EvidenceResponseOutcome = "success" | "failure" | "skipped" | "unavailable" | "unrecorded";
+type EvidenceResponseOutcome = "success" | "failure" | "skipped" | "unavailable" | "unrecorded";
 
-export type EvidenceAnchorStatus = "anchored" | "unanchored";
+type EvidenceAnchorStatus = "anchored" | "unanchored";
 
 const DECISION_VALUES: readonly string[] = ["allow", "ask", "deny"];
 const RESPONSE_ACTION_VALUES: readonly string[] = [
@@ -123,7 +123,7 @@ const RESPONSE_OUTCOME_CLASS: Record<EvidenceResponseOutcome, string> = {
 /* ── Mirrors of the core's evidence-receipt types ─────────────────────────── */
 
 /** Mirror of the core's `EvidenceClock`. */
-export interface EvidenceClock {
+interface EvidenceClock {
 	/** Host wall clock, ISO-8601 UTC. Untrusted; used only as a tie-breaker. */
 	wallClockUtc: string;
 	/** Monotonic per-device counter. The authoritative ordering key. */
@@ -133,7 +133,7 @@ export interface EvidenceClock {
 }
 
 /** Mirror of the device summary inside the core's `EvidenceChainVerification`. */
-export interface EvidenceDeviceClock {
+interface EvidenceDeviceClock {
 	deviceId: string;
 	maxLogicalCounter: number;
 	receipts: number;
@@ -152,7 +152,7 @@ export interface EvidenceChainVerification {
 }
 
 /** Mirror of the core's `EvidenceAnchorOutcome`. */
-export interface EvidenceAnchorOutcome {
+interface EvidenceAnchorOutcome {
 	/** `anchored` only when an archive returned proof for this exact digest. */
 	status: EvidenceAnchorStatus;
 	reference: string | null;
@@ -337,7 +337,7 @@ function groupIncidents(rows: readonly EvidenceAuditRow[]): EvidenceIncidentGrou
 	const groups = new Map<string, EvidenceIncidentGroup>();
 	for (const row of rows) {
 		const scope = correlationScopeOf(row.payload);
-		const key = scope ? `${scope.kind}:${scope.id}` : "uncorrelated";
+		const key = JSON.stringify([row.agentId ?? null, scope?.kind ?? null, scope?.id ?? null]);
 		const group = groups.get(key) ?? {
 			key,
 			scope,
@@ -562,21 +562,22 @@ function StepItem({ step }: { step: ResponseStep }) {
 function IncidentGroup({ group }: { group: EvidenceIncidentGroup }) {
 	const scope = group.scope;
 	const heading = scope ? (scope.kind === "incident" ? "Incident " : "Session ") : "Uncorrelated — ";
+	const agents = [
+		...new Set(group.rows.map((row) => row.agentId).filter((id): id is string => Boolean(id))),
+	].sort();
+	const agentLabel = agents.length > 0 ? `agent ${agents.join(", ")}` : "agent not recorded";
 	const listLabel = scope
-		? `Response steps for ${scope.id}`
-		: "Response steps for records with no correlation id";
+		? `Response steps for ${scope.id} on ${agentLabel}`
+		: `Response steps for uncorrelated records on ${agentLabel}`;
 	const observed =
 		group.firstObservedAtMs === group.lastObservedAtMs
 			? formatObserved(group.firstObservedAtMs)
 			: `${formatObserved(group.firstObservedAtMs)} to ${formatObserved(group.lastObservedAtMs)}`;
 	// Provenance per record, not an identity graph: the agent ids the records
 	// themselves name, and nothing inferred from them.
-	const agents = [
-		...new Set(group.rows.map((row) => row.agentId).filter((id): id is string => Boolean(id))),
-	].sort();
 
 	return (
-		<section className="card" aria-label={`${heading}${scope ? scope.id : "records"}`}>
+		<section className="card" aria-label={`${heading}${scope ? scope.id : "records"}, ${agentLabel}`}>
 			<div className="row space-between" style={{ alignItems: "baseline" }}>
 				<h3 style={{ margin: 0, fontSize: "var(--text-base)" }}>
 					{heading}
@@ -633,8 +634,8 @@ export function EvidenceView({
 			<div className="card">
 				<h2 style={{ margin: 0 }}>Evidence chain</h2>
 				<p className="muted small">
-					Grouped by the correlation id each audit payload carries. Response steps are shown in
-					the order they were observed, including any rollback.
+					Grouped by the agent attached to each record and its payload correlation id. Response steps
+					are shown in the order they were observed, including any rollback.
 				</p>
 				<AnchorPanel anchor={anchor} />
 				<ClockPanel summary={summary} chain={chain} isLoading={isLoading} />

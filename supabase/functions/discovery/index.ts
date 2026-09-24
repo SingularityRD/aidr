@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
@@ -14,6 +14,7 @@ import {
 import {
 	canonicalDiscoveryOrigin,
 	discoveryAlertState,
+	discoveryCollectorState,
 	discoveryFreshness,
 	parseDiscoveryIngest,
 	validCollectorId,
@@ -72,7 +73,10 @@ Deno.serve(async (req) => {
 				p_token_hash: tokenHash,
 			});
 			if (cursor.error) return credentialError(req, cursor.error.code);
-			if (!cursor.data || typeof cursor.data !== "object" || !validUuid(cursor.data.credential_id)) return unavailable(req);
+			if (!cursor.data || typeof cursor.data !== "object" || Array.isArray(cursor.data)
+				|| !validUuid(cursor.data.credential_id) || cursor.data.collector_id !== input.collector_id
+				|| !Number.isSafeInteger(cursor.data.last_sequence) || cursor.data.last_sequence < 0
+				|| !Number.isSafeInteger(cursor.data.next_sequence) || cursor.data.next_sequence !== cursor.data.last_sequence + 1) return unavailable(req);
 			const rate = await consumeTenantRateLimit(db, {
 				tenantId: tenant,
 				subject: `collector:${cursor.data.credential_id}`,
@@ -89,6 +93,7 @@ Deno.serve(async (req) => {
 				next_sequence: cursor.data.next_sequence,
 			}, { ...rateLimitHeaders(rate), "Cache-Control": "no-store" });
 			if (!cycle) return corsJson(req, 400, { error: "invalid_discovery_cycle" });
+			if (cycle.sequence !== cursor.data.next_sequence) return corsJson(req, 409, { error: "discovery_sequence_conflict" });
 			const result = await db.rpc("ingest_tenant_discovery_cycle_machine", {
 				p_tenant_id: tenant,
 				p_collector_id: cycle.collector_id,
@@ -118,7 +123,7 @@ Deno.serve(async (req) => {
 		if (!membershipActive(membership.data) || state.data?.status !== "active") return corsJson(req, 403, { error: "tenant_access_denied" });
 		const barrier = await checkIdentityBarrier(db, token, auth.user.id, tenant);
 		if (!barrier.ok) return corsJson(req, barrier.status, { error: barrier.error });
-		if (action !== "ingest" && action !== "read" && action !== "summary"
+		if (action !== "ingest" && action !== "read" && action !== "list" && action !== "summary"
 			&& action !== "issue_credential" && action !== "revoke_credential") return corsJson(req, 400, { error: "invalid_action" });
 		if ((action === "ingest" || action === "issue_credential" || action === "revoke_credential")
 			&& !["owner", "admin"].includes(String(membership.data?.role))) return corsJson(req, 403, { error: "discovery_write_forbidden" });
@@ -128,7 +133,7 @@ Deno.serve(async (req) => {
 			endpoint: "discovery",
 			perSubject: 600,
 			perTenant: 30_000,
-			cost: action === "ingest" ? 5 : action === "summary" ? 2 : action === "issue_credential" || action === "revoke_credential" ? 10 : 1,
+			cost: action === "ingest" ? 5 : action === "summary" || action === "list" ? 2 : action === "issue_credential" || action === "revoke_credential" ? 10 : 1,
 		});
 		if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
 
@@ -197,6 +202,33 @@ Deno.serve(async (req) => {
 			return corsJson(req, 200, { ok: true, summary: result.data }, rateLimitHeaders(rate));
 		}
 
+		if (action === "list") {
+			if (!exactKeys(input, ["action", "tenant_id"], ["after_collector", "limit"])) return corsJson(req, 400, { error: "invalid_request" });
+			if (input.after_collector !== undefined && !validCollectorId(input.after_collector)) return corsJson(req, 400, { error: "invalid_cursor" });
+			if (input.limit !== undefined && (typeof input.limit !== "number" || !Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100)) return corsJson(req, 400, { error: "invalid_limit" });
+			const limit = (input.limit as number | undefined) ?? 50;
+			let query = db.from("tenant_discovery_collectors")
+				.select("collector_id,cycle_id,sequence,stale_after_ms,complete,expected_targets,observed_targets,reported_at")
+				.eq("tenant_id", tenant)
+				.order("collector_id", { ascending: true })
+				.limit(limit + 1);
+			if (typeof input.after_collector === "string") query = query.gt("collector_id", input.after_collector);
+			const result = await query;
+			if (result.error || !Array.isArray(result.data)) return unavailable(req);
+			const page = result.data.slice(0, limit);
+			const now = Date.now();
+			return corsJson(req, 200, {
+				ok: true,
+				coverage_scope: "reported_collectors_only",
+				collectors: page.map((collector) => ({
+					...collector,
+					state: discoveryCollectorState(collector.reported_at, collector.complete, collector.stale_after_ms, now),
+				})),
+				truncated: result.data.length > limit,
+				next_collector: result.data.length > limit ? page[page.length - 1]?.collector_id ?? null : null,
+			}, rateLimitHeaders(rate));
+		}
+
 		if (!exactKeys(input, ["action", "tenant_id", "collector_id"], ["after_target", "limit"]) || !validCollectorId(input.collector_id)) return corsJson(req, 400, { error: "invalid_request" });
 		if (input.limit !== undefined && (typeof input.limit !== "number" || !Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100)) return corsJson(req, 400, { error: "invalid_limit" });
 		const after = input.after_target === undefined ? null : canonicalDiscoveryOrigin(input.after_target);
@@ -206,7 +238,8 @@ Deno.serve(async (req) => {
 			.select("collector_id,cycle_id,sequence,stale_after_ms,complete,expected_targets,observed_targets,reported_at")
 			.eq("tenant_id", tenant).eq("collector_id", input.collector_id).maybeSingle();
 		if (collector.error) return unavailable(req);
-		if (!collector.data) return corsJson(req, 404, { error: "collector_not_found" });
+		const collectorRow = collector.data;
+		if (!collectorRow) return corsJson(req, 404, { error: "collector_not_found" });
 		let query = db.from("tenant_discovery_items")
 			.select("target,first_reported_at,last_reported_at,last_reachable_at,last_cycle_id,reachable,attempts,error_code")
 			.eq("tenant_id", tenant).eq("collector_id", input.collector_id)
@@ -214,23 +247,30 @@ Deno.serve(async (req) => {
 		if (after) query = query.gt("target", after);
 		const rows = await query;
 		if (rows.error || !Array.isArray(rows.data)) return unavailable(req);
+		const latestCollector = await db.from("tenant_discovery_collectors")
+			.select("cycle_id,sequence")
+			.eq("tenant_id", tenant).eq("collector_id", input.collector_id).maybeSingle();
+		if (latestCollector.error) return unavailable(req);
+		if (!latestCollector.data || latestCollector.data.cycle_id !== collectorRow.cycle_id
+			|| latestCollector.data.sequence !== collectorRow.sequence) {
+			return corsJson(req, 409, { error: "discovery_inventory_changed" });
+		}
 		const page = rows.data.slice(0, limit);
 		const now = Date.now();
-		const collectorState = !collector.data.complete ? "partial"
-			: discoveryFreshness(collector.data.reported_at, collector.data.stale_after_ms, now) === "fresh" ? "current" : "stale";
+		const collectorState = discoveryCollectorState(collectorRow.reported_at, collectorRow.complete, collectorRow.stale_after_ms, now);
 		return corsJson(req, 200, {
 			ok: true,
-			collector: { ...collector.data, state: collectorState },
+			collector: { ...collectorRow, state: collectorState },
 			items: page.map((item) => ({
 				...item,
-				freshness: discoveryFreshness(item.last_reachable_at, collector.data.stale_after_ms, now),
+				freshness: discoveryFreshness(item.last_reachable_at, collectorRow.stale_after_ms, now),
 				alert_state: discoveryAlertState({
 					lastReachableAt: item.last_reachable_at,
 					lastCycleId: item.last_cycle_id,
-					cycleId: collector.data.cycle_id,
+					cycleId: collectorRow.cycle_id,
 					reachable: item.reachable,
-					complete: collector.data.complete,
-					staleAfterMs: collector.data.stale_after_ms,
+					complete: collectorRow.complete,
+					staleAfterMs: collectorRow.stale_after_ms,
 				}, now),
 			})),
 			truncated: rows.data.length > limit,

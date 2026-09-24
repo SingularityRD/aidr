@@ -67,4 +67,38 @@ describe("server policy document compiler", () => {
 		expect(simulateCompiledRuntimePolicy(serverPolicy, input)).toEqual({ action: fallback, source: "mcp_default", matched: null });
 		expect(simulateCompiledRuntimePolicy(serverPolicy, input)).toEqual(simulateRuntimePolicy(corePolicy, input));
 	});
+
+	it("accepts the full MCP tool-name length allowed by the published document", () => {
+		const tool = "t".repeat(160);
+		const input = { kind: "mcp" as const, server: "github", tool, inventory: "known" as const };
+		const policyDocument = {
+			...document,
+			rules: [{ name: "deny long tool", condition: { mcp_tool: `github.${tool}` }, action: "deny", priority: 1 }],
+		};
+		const serverPolicy = compileRuntimePolicyDocument(policyDocument).runtime_policy;
+		const corePolicy = compilePolicyDocument(policyDocument).runtime_policy;
+		expect(simulateCompiledRuntimePolicy(serverPolicy, input)).toEqual(simulateRuntimePolicy(corePolicy, input));
+	});
+
+	it("keeps dotted MCP identities distinct from another pair with the same dotted spelling", () => {
+		const policyDocument = {
+			...document,
+			rules: [
+				{ name: "deny first pair", condition: { mcp_tool: { server: "a.b", tool: "c" } }, action: "deny", priority: 1 },
+			],
+		};
+		const server = compileRuntimePolicyDocument(policyDocument);
+		const core = compilePolicyDocument(policyDocument);
+		expect(server.runtime_policy).toEqual(core.runtime_policy);
+		expect(validateRuntimePolicy(server.runtime_policy)).toEqual(server.runtime_policy);
+		expect(server.runtime_policy.mcp_deny_tools).toEqual(['["a.b","c"]']);
+		for (const input of [
+			{ kind: "mcp", server: "a.b", tool: "c", inventory: "known" },
+			{ kind: "mcp", server: "a", tool: "b.c", inventory: "known" },
+		] as const) {
+			expect(simulateCompiledRuntimePolicy(server.runtime_policy, input)).toEqual(simulateRuntimePolicy(core.runtime_policy, input));
+		}
+		expect(simulateCompiledRuntimePolicy(server.runtime_policy, { kind: "mcp", server: "a.b", tool: "c", inventory: "known" }).action).toBe("deny");
+		expect(simulateCompiledRuntimePolicy(server.runtime_policy, { kind: "mcp", server: "a", tool: "b.c", inventory: "known" }).action).toBe("ask");
+	});
 });

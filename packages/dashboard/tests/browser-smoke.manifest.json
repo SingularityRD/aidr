@@ -1,6 +1,6 @@
 {
 	"version": 1,
-	"purpose": "Customer/investor demo release gate. Execute with a real browser runner (Playwright recommended) against a credentialed deployment.",
+	"purpose": "Customer product release gate. Execute with a real browser runner against a credentialed deployment.",
 	"requiredEnvironment": [
 		"DASHBOARD_SMOKE_BASE_URL",
 		"VITE_SUPABASE_URL",
@@ -9,13 +9,18 @@
 		"DEMO_USER_PASSWORD"
 	],
 	"routes": {
-		"public": ["/", "/demo", "/pilot", "/pricing", "/verify", "/login", "/auth/recover", "/support", "/status", "/privacy", "/security", "/terms"],
-		"protected": ["/onboarding", "/agents", "/autosecops", "/incidents", "/api-keys", "/billing", "/dashboard", "/events", "/settings"]
+		"public": ["/", "/pilot", "/pricing", "/verify", "/login", "/auth/callback", "/auth/recover", "/enterprise", "/support", "/status", "/privacy", "/security", "/terms"],
+		"protected": ["/auth/dlp-step-up", "/onboarding", "/dashboard", "/events", "/discovery", "/settings", "/agents", "/autosecops", "/agents/:agentId", "/incidents", "/api-keys", "/billing", "/team", "/scim", "/policies"],
+		"legacy": ["/demo"]
 	},
 	"scenarios": [
 		{
 			"id": "public-deep-links",
 			"steps": ["Open every public route directly", "Reload each route", "Confirm HTTP 200 and visible content", "Confirm no uncaught console error"]
+		},
+		{
+			"id": "legacy-demo-redirect",
+			"steps": ["Open /demo directly", "Confirm redirect to /login?returnTo=%2Fonboarding", "Confirm no synthetic demo content appears", "Complete sign-in with the dedicated evaluation account", "Confirm /onboarding opens"]
 		},
 		{
 			"id": "unauthenticated-guard",

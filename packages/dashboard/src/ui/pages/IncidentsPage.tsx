@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { type EvidenceAuditRow, EvidenceView } from "../../enterprise/evidence-view";
+import { useTeam } from "../../enterprise/team-provider";
+import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 
 type AgentRow = {
@@ -74,56 +76,85 @@ function summarize(e: EventRow): string {
 		const n = events.length;
 		return `correlated incident${severity ? ` (${severity})` : ""}${status ? ` [${status}]` : ""} — ${n} event(s)`;
 	}
-	return JSON.stringify(e.payload).slice(0, 120);
+	return "Additional incident details are not shown.";
 }
 
 export function IncidentsPage() {
+	const { currentTeam, isLoading } = useTeam();
+	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
+	if (!currentTeam) return <div role="alert">Select a team to view incidents.</div>;
+	return <TenantIncidentsPage key={currentTeam.id} tenantId={currentTeam.id} />;
+}
+
+function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 	const [agents, setAgents] = useState<Map<string, AgentRow>>(new Map());
-	const [events, setEvents] = useState<EventRow[]>([]);
+	const [events, setEvents] = useState<EventRow[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [loaded, setLoaded] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
+		let inFlight = false;
 
 		async function load() {
-			setError(null);
-			const [eventsRes, agentsRes] = await Promise.all([
-				(async () => {
-					const res = await supabase
-						.from("incident_events")
-						.select("id,type,created_at,agent_id,payload")
-						.order("created_at", { ascending: false })
-						.limit(500);
-					if (!res.error) return res;
+			if (inFlight) return;
+			inFlight = true;
+			try {
+				const [eventsRes, agentsRes] = await Promise.all([
+					(async () => {
+						const res = await supabase
+							.from("incident_events")
+							.select("id,type,created_at,agent_id,payload")
+							.eq("tenant_id", tenantId)
+							.order("created_at", { ascending: false })
+							.limit(500);
+						if (!res.error) return res;
 
-					// Back-compat only when the derived view is genuinely absent. Keep
-					// network/permission errors visible rather than showing incomplete data.
-					if (!isMissingTableError(res.error, "incident_events")) return res;
-					const fallback = await supabase
-						.from("events")
-						.select("id,type,created_at,agent_id,payload")
-						.order("created_at", { ascending: false })
-						.limit(500);
-					return fallback;
-				})(),
-				supabase
-					.from("agents")
-					.select("id,iid,display_name,agent_runtime")
-					.order("last_seen", { ascending: false }),
-			]);
+						// Back-compat only when the derived view is genuinely absent. Keep
+						// network/permission errors visible rather than showing incomplete data.
+						if (!isMissingTableError(res.error, "incident_events")) return res;
+						const fallback = await supabase
+							.from("events")
+							.select("id,type,created_at,agent_id,payload")
+							.eq("tenant_id", tenantId)
+							.order("created_at", { ascending: false })
+							.limit(500);
+						return fallback;
+					})(),
+					supabase
+						.from("agents")
+						.select("id,iid,display_name,agent_runtime")
+						.eq("tenant_id", tenantId)
+						.order("last_seen", { ascending: false }),
+				]);
 
-			if (cancelled) return;
+				if (cancelled) return;
+				const problems: string[] = [];
 
-			if (eventsRes.error) setError(eventsRes.error.message);
-			else setEvents((eventsRes.data ?? []) as EventRow[]);
+				if (eventsRes.error || !Array.isArray(eventsRes.data)) {
+					problems.push(readErrorMessage(eventsRes.error, "Failed to load incidents"));
+					setEvents(null);
+				} else setEvents(eventsRes.data as EventRow[]);
 
-			if (agentsRes.error) setError(agentsRes.error.message);
-			else {
-				const map = new Map<string, AgentRow>();
-				for (const a of (agentsRes.data ?? []) as AgentRow[]) {
-					map.set(a.id, a);
+				if (agentsRes.error || !Array.isArray(agentsRes.data)) {
+					problems.push(readErrorMessage(agentsRes.error, "Failed to load agents"));
+					setAgents(new Map());
+				} else {
+					const map = new Map<string, AgentRow>();
+					for (const a of agentsRes.data as AgentRow[]) {
+						map.set(a.id, a);
+					}
+					setAgents(map);
 				}
-				setAgents(map);
+				setError(problems.length > 0 ? problems.join(" ") : null);
+			} catch {
+				if (cancelled) return;
+				setEvents(null);
+				setAgents(new Map());
+				setError("Failed to load incidents");
+			} finally {
+				inFlight = false;
+				if (!cancelled) setLoaded(true);
 			}
 		}
 
@@ -133,12 +164,12 @@ export function IncidentsPage() {
 			cancelled = true;
 			clearInterval(t);
 		};
-	}, []);
+	}, [tenantId]);
 
-	const incidentEvents = useMemo(() => events.filter(isIncidentLikeEvent), [events]);
+	const incidentEvents = useMemo(() => (events ?? []).filter(isIncidentLikeEvent), [events]);
 
-	// The evidence view groups these records by the correlation id their payload
-	// already carries, so it is fed the same incident-like rows the table shows.
+	// The evidence view groups each payload correlation id within its producing
+	// agent, so it is fed the same incident-like rows the table shows.
 	// A record whose payload carries no id is reported as uncorrelated there
 	// rather than merged into a neighbouring incident.
 	const evidenceRows = useMemo<EvidenceAuditRow[]>(
@@ -182,8 +213,8 @@ export function IncidentsPage() {
 					<div>
 						<h1>Incidents</h1>
 						<p className="muted">
-							Derived from telemetry events (blocked/ask verdicts, plugin scan findings, and
-							explicit incident records when emitted). Counts cover the latest 500 events.
+							Potential incidents derived from received blocked and approval-required verdicts.
+							Counts cover the latest 500 events, not the complete local incident history.
 						</p>
 					</div>
 					<button
@@ -194,11 +225,13 @@ export function IncidentsPage() {
 						Refresh
 					</button>
 				</div>
-				<div className="row" style={{ marginTop: 14 }}>
-					<span className="badge badge-deny">{denyCount} blocked</span>
-					<span className="badge badge-ask">{askCount} approval required</span>
-					<span className="badge badge-info">{scanCount} scan findings</span>
-				</div>
+				{events !== null ? (
+					<div className="row" style={{ marginTop: 14 }}>
+						<span className="badge badge-deny">{denyCount} blocked</span>
+						<span className="badge badge-ask">{askCount} approval required</span>
+						<span className="badge badge-info">{scanCount} scan findings</span>
+					</div>
+				) : null}
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
 						{error}
@@ -246,7 +279,11 @@ export function IncidentsPage() {
 							{incidentEvents.length === 0 ? (
 								<tr>
 									<td colSpan={4} className="muted">
-										No incidents yet.
+										{events === null
+											? loaded
+												? "Incident data is unavailable right now."
+												: "Loading incidents…"
+											: "No incidents yet."}
 									</td>
 								</tr>
 							) : null}
@@ -255,7 +292,7 @@ export function IncidentsPage() {
 				</div>
 			</div>
 
-			<EvidenceView rows={evidenceRows} error={error} />
+			<EvidenceView rows={evidenceRows} error={error} isLoading={!loaded && error === null} />
 		</div>
 	);
 }

@@ -1,4 +1,12 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+	createContext,
+	type ReactNode,
+	useCallback,
+	useContext,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import type { Database } from "../lib/database.types";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
@@ -22,8 +30,9 @@ export interface TeamMember {
 	joined_at: string;
 }
 
-export interface Team {
+interface Team {
 	id: string;
+	tenant_id: string;
 	name: string;
 	github_org?: string;
 	gitlab_group?: string;
@@ -32,10 +41,10 @@ export interface Team {
 	updated_at: string;
 }
 
-export interface TeamAuditLog {
+interface TeamAuditLog {
 	id: string;
 	team_id: string;
-	user_id: string;
+	user_id: string | null;
 	user_email?: string;
 	action: string;
 	verdict?: {
@@ -54,6 +63,7 @@ interface MembershipWithTeam {
 	role: string;
 	teams: {
 		id: string;
+		tenant_id: string;
 		name: string;
 		github_org: string | null;
 		gitlab_group: string | null;
@@ -65,10 +75,13 @@ interface MembershipWithTeam {
 
 interface TeamContextType {
 	currentTeam: Team | null;
+	currentUserId: string;
 	currentRole: TeamRole | null;
 	teams: Team[];
 	members: TeamMember[];
 	auditLogs: TeamAuditLog[];
+	auditLoaded: boolean;
+	auditError: string | null;
 	isLoading: boolean;
 	error: string | null;
 	/**
@@ -78,14 +91,13 @@ interface TeamContextType {
 	 */
 	membersError: string | null;
 	/**
-	 * False when the membership rows loaded through the fallback path because
-	 * the database exposes no relation the dashboard can read member emails
-	 * from. Roles and removal stay usable; the UI says emails are unavailable.
+	 * False when this role cannot read emails or an older deployment lacks the
+	 * dedicated, tenant-scoped member directory RPC.
 	 */
 	memberEmailsAvailable: boolean;
 	/** True once the caller's role has been resolved (or proven absent). */
 	roleResolved: boolean;
-	createTeam: (name: string) => Promise<void>;
+	createTeam: (name: string, requestId: string) => Promise<void>;
 	inviteMember: (email: string, role: TeamRole) => Promise<string>;
 	removeMember: (userId: string) => Promise<void>;
 	updateMemberRole: (userId: string, role: TeamRole) => Promise<void>;
@@ -100,45 +112,54 @@ interface TeamContextType {
 const TeamContext = createContext<TeamContextType | null>(null);
 
 const MEMBER_COLUMNS = "id, user_id, role, invited_by, joined_at";
-// The generated types declare a `public.users` projection for this embed, but
-// no migration in this repository creates such a relation (public.team_members
-// references auth.users, which PostgREST does not expose). The embed is tried
-// first so a deployment that does provide the relation keeps showing emails.
-const MEMBER_COLUMNS_WITH_EMAIL = `${MEMBER_COLUMNS}, users!team_members_user_id_fkey!inner(email, raw_user_meta_data)`;
-
-function isMissingUsersProjection(error: { code?: string; message?: string }): boolean {
-	const code = error.code ?? "";
-	if (code === "PGRST200" || code === "PGRST205") return true;
-	return /relationship|schema cache|does not exist/i.test(error.message ?? "");
+function isMissingMemberDirectory(error: { code?: string }): boolean {
+	return error.code === "PGRST202" || error.code === "42883";
 }
 
 function mapMemberRow(row: Record<string, unknown>): TeamMember {
-	const userData = row.users as Record<string, unknown> | null | undefined;
-	const metaData = userData?.raw_user_meta_data as Record<string, unknown> | null | undefined;
 	return {
 		id: row.id as string,
 		user_id: row.user_id as string,
 		role: row.role as TeamRole,
-		email: (userData?.email as string) ?? "",
-		avatar_url: metaData?.avatar_url as string | undefined,
+		email: typeof row.email === "string" ? row.email : "",
+		avatar_url: typeof row.avatar_url === "string" ? row.avatar_url : undefined,
 		invited_by: row.invited_by as string | undefined,
 		joined_at: row.joined_at as string,
 	};
 }
 
 export function TeamProvider({ children }: { children: ReactNode }) {
-	return <IdentityBootstrap>{(teamId, switchTeam, refreshMemberships, isCurrent) => (
-		<ProtectedTeamProvider key={teamId} selectedTeamId={teamId} onSwitchTeam={switchTeam} refreshMemberships={refreshMemberships} isIdentityCurrent={isCurrent}>
-			{children}
-		</ProtectedTeamProvider>
-	)}</IdentityBootstrap>;
+	return (
+		<IdentityBootstrap>
+			{(teamId, switchTeam, refreshMemberships, isCurrent, userId) => (
+				<ProtectedTeamProvider
+					key={teamId}
+					selectedTeamId={teamId}
+					currentUserId={userId}
+					onSwitchTeam={switchTeam}
+					refreshMemberships={refreshMemberships}
+					isIdentityCurrent={isCurrent}
+				>
+					{children}
+				</ProtectedTeamProvider>
+			)}
+		</IdentityBootstrap>
+	);
 }
 
 /** Never mounted until the selected tenant and current token pass assurance. */
-function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refreshMemberships, isIdentityCurrent }: {
+function ProtectedTeamProvider({
+	children,
+	selectedTeamId,
+	currentUserId,
+	onSwitchTeam,
+	refreshMemberships,
+	isIdentityCurrent,
+}: {
 	children: ReactNode;
 	isIdentityCurrent: () => boolean;
 	selectedTeamId: string | null;
+	currentUserId: string;
 	onSwitchTeam: (teamId: string) => void;
 	refreshMemberships: (tenantId: string) => Promise<void>;
 }) {
@@ -146,6 +167,8 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 	const [teams, setTeams] = useState<Team[]>([]);
 	const [members, setMembers] = useState<TeamMember[]>([]);
 	const [auditLogs, setAuditLogs] = useState<TeamAuditLog[]>([]);
+	const [auditLoaded, setAuditLoaded] = useState(false);
+	const [auditError, setAuditError] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [membersError, setMembersError] = useState<string | null>(null);
@@ -171,7 +194,7 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 				const { data: memberships, error: membershipError } = await supabase
 					.from("team_members")
 					.select(
-						"team_id, role, teams!inner(id, name, github_org, gitlab_group, plan, created_at, updated_at)",
+						"team_id, role, teams!inner(id, tenant_id, name, github_org, gitlab_group, plan, created_at, updated_at)",
 					)
 					.eq("user_id", identity.user.id)
 					.order("joined_at", { ascending: false });
@@ -182,7 +205,11 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 				}
 
 				const typedMemberships = memberships as MembershipWithTeam[] | null;
-				if (!typedMemberships?.some((membership) => membership.team_id === selectedTeamId && membership.teams)) {
+				if (
+					!typedMemberships?.some(
+						(membership) => membership.team_id === selectedTeamId && membership.teams,
+					)
+				) {
 					throw new Error("The selected team is no longer accessible.");
 				}
 
@@ -197,6 +224,7 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 								: "free";
 						mappedTeams.push({
 							id: m.teams.id,
+							tenant_id: m.teams.tenant_id,
 							name: m.teams.name,
 							github_org: m.teams.github_org ?? undefined,
 							gitlab_group: m.teams.gitlab_group ?? undefined,
@@ -211,7 +239,9 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 						if (!selected) throw new Error("The selected team is no longer accessible.");
 						setTeams(mappedTeams);
 						setCurrentTeam(selected);
-						setCurrentRole(typedMemberships.find((m) => m.team_id === selected.id)?.role as TeamRole);
+						setCurrentRole(
+							typedMemberships.find((m) => m.team_id === selected.id)?.role as TeamRole,
+						);
 					}
 				}
 			} catch (err) {
@@ -225,7 +255,10 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 		}
 
 		void loadTeams();
-		return () => { cancelled = true; selectedTeam.current = undefined; };
+		return () => {
+			cancelled = true;
+			selectedTeam.current = undefined;
+		};
 	}, [selectedTeamId, isIdentityCurrent]);
 
 	// Load members when team changes
@@ -242,27 +275,25 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 			try {
 				setMembersError(null);
 
-				const withEmail = await supabase
-					.from("team_members")
-					.select(MEMBER_COLUMNS_WITH_EMAIL)
-					.eq("team_id", currentTeam.id);
-				if (!isIdentityCurrent() || selectedTeam.current !== currentTeam.id) return;
-
-				if (!withEmail.error) {
-					const rows = (withEmail.data ?? []) as unknown as Record<string, unknown>[];
-					setMembers(rows.map(mapMemberRow));
-					setMemberEmailsAvailable(true);
-					return;
-				}
-
-				// Only a genuinely absent users relation falls back. Network,
-				// permission and data errors stay visible instead of degrading
-				// into an empty member list that looks like a real answer.
-				if (!isMissingUsersProjection(withEmail.error)) {
-					setMembers([]);
-					setMemberEmailsAvailable(false);
-					setMembersError(withEmail.error.message);
-					return;
+				if (currentRole === "owner" || currentRole === "admin") {
+					const directory = await supabase.rpc("list_team_members_with_email", {
+						p_team_id: currentTeam.id,
+					});
+					if (!isIdentityCurrent() || selectedTeam.current !== currentTeam.id) return;
+					if (!directory.error) {
+						const rows = (directory.data ?? []) as Record<string, unknown>[];
+						setMembers(rows.map(mapMemberRow));
+						setMemberEmailsAvailable(true);
+						return;
+					}
+					// Only a genuinely absent RPC falls back. Denied or failed reads
+					// must not become a plausible, partially populated member list.
+					if (!isMissingMemberDirectory(directory.error)) {
+						setMembers([]);
+						setMemberEmailsAvailable(false);
+						setMembersError(readErrorMessage(directory.error, "Failed to load members"));
+						return;
+					}
 				}
 
 				const plain = await supabase
@@ -274,7 +305,7 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 				if (plain.error) {
 					setMembers([]);
 					setMemberEmailsAvailable(false);
-					setMembersError(plain.error.message);
+					setMembersError(readErrorMessage(plain.error, "Failed to load members"));
 					return;
 				}
 
@@ -290,26 +321,37 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 		}
 
 		void loadMembers();
-	}, [currentTeam?.id, currentTeam, isIdentityCurrent]);
+	}, [currentTeam?.id, currentTeam, currentRole, isIdentityCurrent]);
 
 	// Load audit logs when team changes
 	const refreshAuditLogs = useCallback(async () => {
 		if (!currentTeam || !isIdentityCurrent()) return;
+		const teamId = currentTeam.id;
+		setAuditLogs([]);
+		setAuditLoaded(false);
+		setAuditError(null);
 
 		try {
 			const { data, error } = await supabase
 				.from("audit_logs")
-				.select("*")
-				.eq("team_id", currentTeam.id)
+				.select("id,team_id,user_id,action,created_at")
+				.eq("tenant_id", teamId)
 				.order("created_at", { ascending: false })
 				.limit(1000);
 
-			if (!isIdentityCurrent() || selectedTeam.current !== currentTeam.id) return;
+			if (!isIdentityCurrent() || selectedTeam.current !== teamId) return;
 			if (error) throw error;
-			setAuditLogs(((data ?? []) as unknown as TeamAuditLog[]).map((row) => ({ ...row, timestamp: Date.parse(row.created_at) })));
+			setAuditLogs(
+				((data ?? []) as unknown as TeamAuditLog[]).map((row) => ({
+					...row,
+					timestamp: Date.parse(row.created_at),
+				})),
+			);
+			setAuditLoaded(true);
 		} catch (err) {
-			if (!isIdentityCurrent() || selectedTeam.current !== currentTeam.id) return;
-			setError(readErrorMessage(err, "Failed to load audit logs"));
+			if (!isIdentityCurrent() || selectedTeam.current !== teamId) return;
+			setAuditError(readErrorMessage(err, "Failed to load audit logs"));
+			setAuditLoaded(true);
 		}
 	}, [currentTeam, isIdentityCurrent]);
 
@@ -317,21 +359,24 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 		void refreshAuditLogs();
 	}, [refreshAuditLogs]);
 
-	async function createTeam(name: string) {
+	async function createTeam(name: string, requestId: string) {
 		try {
 			const {
 				data: { user },
 			} = await supabase.auth.getUser();
-			if (!user || !isIdentityCurrent()) throw new Error("Not authenticated");
+			if (!user || user.id !== currentUserId || !isIdentityCurrent())
+				throw new Error("The authenticated identity changed before team creation.");
 
 			// Create the tenant, team, and first membership atomically.  The RPC
 			// derives the creator from auth.uid() and keeps the tenant_id immutable.
 			const { data: team, error: teamError } = await supabase.rpc("create_team_tenant", {
 				p_name: name,
+				p_request_id: requestId,
 				p_plan: "free",
 			});
 
-			if (!isIdentityCurrent()) throw new Error("The session changed before team creation completed.");
+			if (!isIdentityCurrent())
+				throw new Error("The session changed before team creation completed.");
 			if (teamError) throw teamError;
 			if (!team) throw new Error("Failed to create team");
 
@@ -356,12 +401,14 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 			});
 
 			if (error) {
-				throw new Error(
-					`the "team-invite" Edge Function is unavailable (${error.message}). No invitation was sent and no member was added.`,
-				);
+				throw new Error(readErrorMessage(error, "The invitation service is unavailable."));
 			}
 
-			const response = (data ?? null) as { ok?: unknown; error?: unknown; invite_url?: unknown } | null;
+			const response = (data ?? null) as {
+				ok?: unknown;
+				error?: unknown;
+				invite_url?: unknown;
+			} | null;
 			if (response?.error) throw new Error(String(response.error));
 
 			// Fail closed on an unconfirmed response. An empty 200 (or any body
@@ -372,9 +419,11 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 					'the "team-invite" Edge Function did not confirm the invitation (expected {"ok":true}). No invitation was sent.',
 				);
 			}
-			if (typeof response.invite_url !== "string") throw new Error("The invitation service returned no shareable link.");
+			if (typeof response.invite_url !== "string")
+				throw new Error("The invitation service returned no shareable link.");
 			const inviteUrl = new URL(response.invite_url);
-			if (inviteUrl.origin !== window.location.origin || inviteUrl.pathname !== "/enterprise") throw new Error("The invitation service returned an invalid link.");
+			if (inviteUrl.origin !== window.location.origin || inviteUrl.pathname !== "/enterprise")
+				throw new Error("The invitation service returned an invalid link.");
 			return inviteUrl.toString();
 		} catch (err) {
 			const message = readErrorMessage(err, "Failed to invite member");
@@ -440,7 +489,8 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 	}
 
 	async function exportAuditLogs(format: "csv" | "json"): Promise<string> {
-		if (!currentTeam) throw new Error("No team selected");
+		if (!currentTeam || !currentRole || !isIdentityCurrent())
+			throw new Error("No accessible team selected");
 
 		try {
 			const teamId = currentTeam.id;
@@ -448,9 +498,15 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 				const { data, error } = await supabase.functions.invoke("audit-export", {
 					body: { team_id: teamId, format, ...(cursor ? { cursor } : {}) },
 				});
-				if (error || data?.error) throw new Error("Audit export failed. No partial file was produced.");
+				if (error || data?.error)
+					throw new Error("Audit export failed. No partial file was produced.");
 				return data;
 			});
+			if (!isIdentityCurrent() || selectedTeam.current !== teamId) {
+				throw new Error(
+					"The selected team changed during audit export. Retry for the current team.",
+				);
+			}
 			return URL.createObjectURL(file);
 		} catch (err) {
 			setError(readErrorMessage(err, "Failed to export audit logs"));
@@ -470,10 +526,13 @@ function ProtectedTeamProvider({ children, selectedTeamId, onSwitchTeam, refresh
 		<TeamContext.Provider
 			value={{
 				currentTeam,
+				currentUserId,
 				currentRole,
 				teams,
 				members,
 				auditLogs,
+				auditLoaded,
+				auditError,
 				isLoading,
 				error,
 				membersError,

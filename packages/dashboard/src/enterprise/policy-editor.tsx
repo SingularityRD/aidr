@@ -375,7 +375,7 @@ const DRY_RUN_SIMULATION = {
 	inventory: "unknown",
 } as const;
 
-export interface UnsupportedField {
+interface UnsupportedField {
 	/** Dotted document path the server named, e.g. `rules.0.condition`. */
 	path: string;
 	/** Field name the server refused, e.g. `pattern`. */
@@ -424,13 +424,14 @@ async function serverErrorCode(payload: { error?: unknown }, error: unknown): Pr
 	if (context && typeof (context as Response).json === "function") {
 		try {
 			const body = (await (context as Response).json()) as { error?: unknown };
-			if (typeof body.error === "string" && body.error) return body.error;
+			if (typeof body.error === "string" && body.error) {
+				return readErrorMessage({ message: body.error }, "policy_document_save_failed");
+			}
 		} catch {
 			// The body was already consumed; fall through to the error message.
 		}
 	}
-	if (error instanceof Error && error.message) return error.message;
-	return "policy_document_save_failed";
+	return readErrorMessage(error, "policy_document_save_failed");
 }
 
 function readSimulation(value: unknown): DryRunSimulation | null {
@@ -615,7 +616,7 @@ export function PolicyEditor() {
 
 				const row = data as unknown as PolicyRow | null;
 				const revision = row ? readRevision(row) : null;
-				if (row && !revision) throw new Error("Stored policy revision is invalid; reload before saving.");
+				if (row && !revision) throw new Error("stored_policy_revision_invalid");
 				setExpectedDocument(revision);
 				if (row) {
 					setPolicyYaml(row.content);
@@ -629,7 +630,12 @@ export function PolicyEditor() {
 				}
 			} catch (err) {
 				if (!cancelled) {
-					setLoadError(readErrorMessage(err, "Failed to load policy"));
+					const message = readErrorMessage(err, "Failed to load policy");
+					setLoadError(
+						message === "stored_policy_revision_invalid"
+							? "Stored policy revision is invalid; reload before saving."
+							: message,
+					);
 				}
 			} finally {
 				if (!cancelled) {

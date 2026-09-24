@@ -136,12 +136,12 @@ export function isConfiguredValue(value: string | undefined | null): boolean {
 	return typeof value === "string" && value.trim() !== "";
 }
 
-export interface LoadedConfig {
+interface LoadedConfig {
 	readonly ok: true;
 	readonly values: Readonly<Record<string, string>>;
 }
 
-export interface MissingConfig {
+interface MissingConfig {
 	readonly ok: false;
 	readonly error: ConfigurationError;
 }

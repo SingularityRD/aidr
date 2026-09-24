@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
-import { collectMemberPages } from "../member-pages.ts";
+import { collectMemberPages, MAX_SCIM_GROUP_MEMBERS, ScimMemberLimitError } from "../member-pages.ts";
 import {
 	createScimHandler,
+	MAX_SCIM_GROUP_PAGE_SIZE,
 	ScimConflictError,
 	ScimInvalidValueError,
 	type ScimCreateGroup,
@@ -25,6 +26,7 @@ class MemoryStore implements ScimStore {
 	tokens = new Map<string, ScimTenant>([["new-secret-with-at-least-thirty-two-bytes", { tenantId: tenantA, tokenId: "token-new" }], ["tenant-b-secret-with-at-least-32-bytes", { tenantId: tenantB, tokenId: "token-b" }]]);
 	users = new Map<string, ScimUser>();
 	groups = new Map<string, ScimGroup>();
+	groupListRequests: Array<{ offset: number; limit: number }> = [];
 	nextUser = 1;
 	nextGroup = 1;
 
@@ -65,6 +67,7 @@ class MemoryStore implements ScimStore {
 		return this.updateUser(tenant, id, { externalId: current.externalId, userName: current.userName, displayName: current.displayName, active: false }, expected);
 	}
 	listGroups(tenant: string, offset: number, limit: number, filter: ScimFilter | null): Promise<ScimList<ScimGroup>> {
+		this.groupListRequests.push({ offset, limit });
 		let rows = [...this.groups.entries()].filter(([key]) => key.startsWith(`${tenant}:`)).map(([, value]) => value);
 		if (filter?.attribute === "externalId") rows = rows.filter((row) => row.externalId === filter.value);
 		if (filter?.attribute === "displayName") rows = rows.filter((row) => row.displayName === filter.value);
@@ -117,12 +120,47 @@ describe("SCIM v2 request boundary", () => {
 		expect((await handle(new Request("https://control.example/functions/v1/scim/v2/Users", { headers: { Authorization: "Basic abc" } }))).status).toBe(401);
 	});
 
+	it("returns 413 promptly when an oversized stream never finishes cancellation", async () => {
+		const bodyStream = new ReadableStream<Uint8Array>({
+			start(controller) { controller.enqueue(new Uint8Array(1024 * 1024 + 1)); },
+			cancel() { return new Promise<void>(() => undefined); },
+		});
+		const oversized = new Request("https://control.example/functions/v1/scim/v2/Users", {
+			method: "POST",
+			headers: { Authorization: "Bearer new-secret-with-at-least-thirty-two-bytes", "Content-Type": "application/scim+json" },
+			body: bodyStream,
+			duplex: "half",
+		} as RequestInit);
+		let timeout: ReturnType<typeof setTimeout> | undefined;
+		const response = await Promise.race([
+			handle(oversized),
+			new Promise<Response>((resolve) => { timeout = setTimeout(() => resolve(new Response(null, { status: 599 })), 500); }),
+		]);
+		if (timeout !== undefined) clearTimeout(timeout);
+		expect(response.status).toBe(413);
+		expect(await body(response)).toMatchObject({ status: "413", detail: "request body is too large" });
+		expect(store.users.size).toBe(0);
+	});
+
 	it("accepts a rotated credential while the old credential is revoked", async () => {
 		store.tokens.set("old-secret-with-at-least-thirty-two-bytes", { tenantId: tenantA, tokenId: "old" });
 		expect((await handle(request("ServiceProviderConfig", {}, "old-secret-with-at-least-thirty-two-bytes"))).status).toBe(200);
 		store.tokens.delete("old-secret-with-at-least-thirty-two-bytes");
 		expect((await handle(request("ServiceProviderConfig", {}, "old-secret-with-at-least-thirty-two-bytes"))).status).toBe(401);
 		expect((await handle(request("ServiceProviderConfig"))).status).toBe(200);
+	});
+
+	it("advertises resource type URLs under the deployed SCIM base path", async () => {
+		const response = await handle(request("ResourceTypes"));
+		expect(response.status).toBe(200);
+		expect((await body(response)).Resources.map((resource: { meta: { location: string } }) => resource.meta.location)).toEqual([
+			"https://control.example/functions/v1/scim/v2/ResourceTypes/User",
+			"https://control.example/functions/v1/scim/v2/ResourceTypes/Group",
+		]);
+		const user = await handle(request("ResourceTypes/User"));
+		expect(user.status).toBe(200);
+		expect(await body(user)).toMatchObject({ id: "User", name: "User" });
+		expect((await handle(request("ResourceTypes/Unknown"))).status).toBe(404);
 	});
 
 	it("creates a user idempotently and ignores forged role/group metadata", async () => {
@@ -158,6 +196,30 @@ describe("SCIM v2 request boundary", () => {
 		expect((await handle(request("Users?count=201"))).status).toBe(400);
 	});
 
+	it("rejects pagination ranges whose derived last index is unsafe", async () => {
+		const unsafeStart = Number.MAX_SAFE_INTEGER;
+		const listUsers = store.listUsers.bind(store);
+		let userListCalls = 0;
+		store.listUsers = (tenant, offset, limit, filter) => {
+			userListCalls += 1;
+			return listUsers(tenant, offset, limit, filter);
+		};
+		for (const resource of ["Users", "Groups"]) {
+			const response = await handle(request(`${resource}?startIndex=${unsafeStart}&count=3`));
+			expect(response.status).toBe(400);
+			expect(await body(response)).toMatchObject({ scimType: "invalidValue", detail: "pagination range exceeds the safe integer limit" });
+		}
+		expect(userListCalls).toBe(0);
+		expect(store.groupListRequests).toEqual([]);
+	});
+
+	it("accepts the largest pagination range whose last index is safe", async () => {
+		const response = await handle(request(`Groups?startIndex=${Number.MAX_SAFE_INTEGER}&count=2`));
+		expect(response.status).toBe(200);
+		expect(await body(response)).toMatchObject({ startIndex: Number.MAX_SAFE_INTEGER, itemsPerPage: 0 });
+		expect(store.groupListRequests).toEqual([{ offset: Number.MAX_SAFE_INTEGER - 1, limit: 2 }]);
+	});
+
 	it("deactivates rather than globally deleting a user", async () => {
 		const created = await body(await handle(request("Users", { method: "POST", body: JSON.stringify({ externalId: "u-1", userName: "u1@example.com" }) })));
 		expect((await handle(request(`Users/${created.id}`, { method: "DELETE", headers: { "If-Match": 'W/"1"' } }))).status).toBe(204);
@@ -188,6 +250,19 @@ describe("SCIM v2 request boundary", () => {
 		expect(store.users.get(store.key(tenantA, created.id))?.active).toBe(false);
 	});
 
+	it("keeps a concurrent deactivation when a full user PUT reads an older user", async () => {
+		const created = await body(await handle(request("Users", { method: "POST", body: JSON.stringify({ externalId: "u-1", userName: "u1@example.com" }) })));
+		const getUser = store.getUser.bind(store);
+		store.getUser = async (tenant, id) => {
+			const current = await getUser(tenant, id);
+			if (current) store.users.set(store.key(tenant, id), { ...current, active: false, version: current.version + 1 });
+			return current;
+		};
+		const response = await handle(request(`Users/${created.id}`, { method: "PUT", body: JSON.stringify({ externalId: "u-1", userName: "u1@example.com", active: true }) }));
+		expect(response.status).toBe(412);
+		expect(store.users.get(store.key(tenantA, created.id))?.active).toBe(false);
+	});
+
 	it("applies group membership add/remove and rejects cross-tenant members", async () => {
 		const a = await body(await handle(request("Users", { method: "POST", body: JSON.stringify({ externalId: "a", userName: "a@example.com" }) })));
 		const b = await body(await handle(request("Users", { method: "POST", body: JSON.stringify({ externalId: "b", userName: "b@example.com" }) }, "tenant-b-secret-with-at-least-32-bytes")));
@@ -196,6 +271,18 @@ describe("SCIM v2 request boundary", () => {
 		expect(removed.status).toBe(200); expect((await body(removed)).members).toEqual([]);
 		const crossTenant = await handle(request(`Groups/${group.id}`, { method: "PATCH", body: JSON.stringify({ schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"], Operations: [{ op: "Add", path: "members", value: [{ value: b.id }] }] }) }));
 		expect(crossTenant.status).toBe(400);
+	});
+
+	it("rejects malformed member ids and resource paths as client errors", async () => {
+		const malformedMember = await handle(request("Groups", {
+			method: "POST",
+			body: JSON.stringify({ externalId: "directory-group", displayName: "Operators", members: [{ value: "not-a-uuid" }] }),
+		}));
+		expect(malformedMember.status).toBe(400);
+		expect(await body(malformedMember)).toMatchObject({ scimType: "invalidValue" });
+		expect(store.groups.size).toBe(0);
+		const malformedPath = await handle(request("Users/%ZZ"));
+		expect(malformedPath.status).toBe(400);
 	});
 
 	it("removes every group member when PATCH Remove targets members without a value", async () => {
@@ -222,18 +309,156 @@ describe("SCIM v2 request boundary", () => {
 		expect(response.status).toBe(412);
 		expect(store.groups.get(store.key(tenantA, group.id))?.members).toEqual([{ value: second.id }]);
 	});
+
+	it("rejects a full group PUT when its membership read races a directory update", async () => {
+		const first = await body(await handle(request("Users", { method: "POST", body: JSON.stringify({ externalId: "u-1", userName: "u1@example.com" }) })));
+		const second = await body(await handle(request("Users", { method: "POST", body: JSON.stringify({ externalId: "u-2", userName: "u2@example.com" }) })));
+		const group = await body(await handle(request("Groups", { method: "POST", body: JSON.stringify({ externalId: "directory-group-id", displayName: "Operators", members: [{ value: first.id }] }) })));
+		const getGroup = store.getGroup.bind(store);
+		store.getGroup = async (tenant, id) => {
+			const current = await getGroup(tenant, id);
+			if (current) store.groups.set(store.key(tenant, id), { ...current, version: current.version + 1, members: [{ value: second.id }] });
+			return current;
+		};
+		const response = await handle(request(`Groups/${group.id}`, { method: "PUT", body: JSON.stringify({ externalId: "directory-group-id", displayName: "Operators", members: [{ value: first.id }] }) }));
+		expect(response.status).toBe(412);
+		expect(store.groups.get(store.key(tenantA, group.id))?.members).toEqual([{ value: second.id }]);
+	});
+
+	it("rejects oversized group membership input before persistence", async () => {
+		const response = await handle(request("Groups", {
+			method: "POST",
+			body: JSON.stringify({
+				externalId: "oversized-directory-group",
+				displayName: "Oversized",
+				members: Array.from({ length: MAX_SCIM_GROUP_MEMBERS + 1 }, () => ({ value: "duplicate" })),
+			}),
+		}));
+		expect(response.status).toBe(400);
+		expect(await body(response)).toMatchObject({ scimType: "invalidValue", detail: `group membership exceeds the limit of ${MAX_SCIM_GROUP_MEMBERS}` });
+		expect(store.groups.size).toBe(0);
+	});
+
+	it("caps aggregate member references across group PATCH operations", async () => {
+		const groupId = "10000000-0000-4000-8000-000000000001";
+		store.groups.set(store.key(tenantA, groupId), {
+			id: groupId, externalId: "directory-group", displayName: "Operators", members: [], version: 1, createdAt: now, updatedAt: now,
+		});
+		const values = Array.from({ length: 101 }, () => ({ value: "22222222-2222-4222-8222-222222222222" }));
+		const response = await handle(request(`Groups/${groupId}`, {
+			method: "PATCH",
+			body: JSON.stringify({
+				schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+				Operations: Array.from({ length: 100 }, () => ({ op: "Add", path: "members", value: values })),
+			}),
+		}));
+		expect(response.status).toBe(400);
+		expect((await body(response)).detail).toBe(`group membership exceeds the limit of ${MAX_SCIM_GROUP_MEMBERS}`);
+		expect(store.groups.get(store.key(tenantA, groupId))?.version).toBe(1);
+	});
+
+	it("returns a clear client error when a PATCH has too many operations", async () => {
+		const groupId = "10000000-0000-4000-8000-000000000001";
+		store.groups.set(store.key(tenantA, groupId), {
+			id: groupId, externalId: "directory-group", displayName: "Operators", members: [], version: 1, createdAt: now, updatedAt: now,
+		});
+		const response = await handle(request(`Groups/${groupId}`, {
+			method: "PATCH",
+			body: JSON.stringify({
+				schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+				Operations: Array.from({ length: 101 }, () => ({ op: "Remove", path: "members" })),
+			}),
+		}));
+		expect(response.status).toBe(400);
+		expect((await body(response)).detail).toBe("Operations must contain at most 100 entries");
+	});
+
+	it("refuses an oversized stored membership instead of building an unbounded response", async () => {
+		const groupId = "10000000-0000-4000-8000-000000000001";
+		store.groups.set(store.key(tenantA, groupId), {
+			id: groupId,
+			externalId: "oversized-directory-group",
+			displayName: "Oversized",
+			members: Array.from({ length: MAX_SCIM_GROUP_MEMBERS + 1 }, () => ({ value: "duplicate" })),
+			version: 1,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const response = await handle(request(`Groups/${groupId}`));
+		expect(response.status).toBe(400);
+		expect((await body(response)).detail).toBe(`group membership exceeds the limit of ${MAX_SCIM_GROUP_MEMBERS}`);
+	});
+
+	it("bounds each group independently across a paginated group response", async () => {
+		const members = Array.from({ length: Math.floor(MAX_SCIM_GROUP_MEMBERS / 2) + 1 }, () => ({ value: "duplicate" }));
+		for (const suffix of ["1", "2"]) {
+			const groupId = `10000000-0000-4000-8000-00000000000${suffix}`;
+			store.groups.set(store.key(tenantA, groupId), {
+				id: groupId, externalId: `directory-group-${suffix}`, displayName: `Group ${suffix}`, members, version: 1, createdAt: now, updatedAt: now,
+			});
+		}
+		const response = await handle(request("Groups?count=2"));
+		expect(response.status).toBe(200);
+		const page = await body(response);
+		expect(page).toMatchObject({ totalResults: 2, itemsPerPage: 2 });
+		expect(page.Resources.map((group: { members: unknown[] }) => group.members.length)).toEqual([
+			members.length,
+			members.length,
+		]);
+	});
+
+	it("bounds aggregate group hydration and preserves startIndex pagination", async () => {
+		const memberId = "22222222-2222-4222-8222-222222222222";
+		for (let index = 1; index <= 12; index += 1) {
+			const groupId = `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+			store.groups.set(store.key(tenantA, groupId), {
+				id: groupId, externalId: `group-${index}`, displayName: `Group ${index}`,
+				members: Array.from({ length: MAX_SCIM_GROUP_MEMBERS }, () => ({ value: memberId })),
+				version: 1, createdAt: now, updatedAt: now,
+			});
+		}
+
+		const first = await body(await handle(request("Groups?startIndex=1&count=200")));
+		expect(store.groupListRequests[0]).toEqual({ offset: 0, limit: MAX_SCIM_GROUP_PAGE_SIZE });
+		expect(first).toMatchObject({ startIndex: 1, itemsPerPage: MAX_SCIM_GROUP_PAGE_SIZE, totalResults: 12 });
+		expect(first.Resources.reduce((sum: number, group: ScimGroup) => sum + group.members.length, 0))
+			.toBe(MAX_SCIM_GROUP_PAGE_SIZE * MAX_SCIM_GROUP_MEMBERS);
+
+		const nextStartIndex = first.startIndex + first.itemsPerPage;
+		const second = await body(await handle(request(`Groups?startIndex=${nextStartIndex}&count=200`)));
+		expect(store.groupListRequests[1]).toEqual({ offset: MAX_SCIM_GROUP_PAGE_SIZE, limit: MAX_SCIM_GROUP_PAGE_SIZE });
+		expect(second).toMatchObject({ startIndex: nextStartIndex, itemsPerPage: 2, totalResults: 12 });
+		expect(second.Resources).toHaveLength(2);
+	});
 });
 
 describe("SCIM group member pagination", () => {
-	it("hydrates every member despite a storage page cap below the requested size", async () => {
-		const expected = Array.from({ length: 1201 }, (_, index) => `member-${index}`);
+	it("hydrates members up to the cap despite a storage page cap below the requested size", async () => {
+		const expected = Array.from({ length: MAX_SCIM_GROUP_MEMBERS }, (_, index) => `member-${index}`);
 		const offsets: number[] = [];
 		const members = await collectMemberPages(async (offset, limit) => {
 			offsets.push(offset);
 			return expected.slice(offset, offset + Math.min(limit, 137));
 		});
 		expect(members).toEqual(expected);
-		expect(offsets).toEqual([0, 137, 274, 411, 548, 685, 822, 959, 1096, 1201]);
+		expect(offsets).toEqual([0, 137, 274, 411, 548, 685, 822, 959, 1000]);
+	});
+
+	it("bounds exact maximum group membership to six reads including the look-ahead", async () => {
+		const expected = Array.from({ length: MAX_SCIM_GROUP_MEMBERS }, (_, index) => `member-${index}`);
+		let calls = 0;
+		const members = await collectMemberPages(async (offset, limit) => {
+			calls += 1;
+			return expected.slice(offset, offset + limit);
+		});
+		expect(members).toHaveLength(MAX_SCIM_GROUP_MEMBERS);
+		expect(calls).toBe(6);
+	});
+
+	it("stops after one look-ahead row when the collection cap is exceeded", async () => {
+		const expected = Array.from({ length: 20 }, (_, index) => `member-${index}`);
+		await expect(collectMemberPages((offset, limit) => Promise.resolve(expected.slice(offset, offset + limit)), 3, 5))
+			.rejects.toEqual(new ScimMemberLimitError(5));
 	});
 });
 
@@ -256,5 +481,10 @@ describe("SCIM persistence authorization contract", () => {
 		expect(migration).toContain("foreign key (tenant_id, rotated_from) references public.scim_tokens(tenant_id, id)");
 		expect(migration).toContain("st.revoked_at is null");
 		expect(migration).toContain("st.expires_at is null or st.expires_at > now()");
+	});
+	it("paginates membership hydration independently for each group", () => {
+		const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../index.ts"), "utf8");
+		expect(source).toContain('.eq("tenant_id", tenantId).eq("group_id", groupId)');
+		expect(source).toContain("membershipsByGroup.set(groupId, memberships)");
 	});
 });

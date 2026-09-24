@@ -22,8 +22,11 @@ describe("auth callback security contract", () => {
 
   it("fails closed for auth and session failures", () => {
     expect(source).toContain('error: "authorization_failed"');
-    expect(source).toContain('status: 401');
-    expect(source).toContain('status: 500');
-    expect(source).not.toContain("success: true,\n      userId");
+    expect(source).toContain('return json(401,');
+    expect(source).toContain('return json(500,');
+    const tenantGuard = source.indexOf("if (membershipError || !membership || membership.tenant_id !== state.tenantId)");
+    const successResponse = source.indexOf("return json(200, {");
+    expect(tenantGuard).toBeGreaterThanOrEqual(0);
+    expect(successResponse).toBeGreaterThan(tenantGuard);
   });
 });

@@ -1,11 +1,15 @@
 export const MAX_INGEST_EVENTS = 200;
-export const MAX_INGEST_EVENT_BYTES = 256 * 1024;
-export const MAX_INGEST_BATCH_BYTES = 4 * 1024 * 1024;
+const MAX_INGEST_EVENT_BYTES = 256 * 1024;
+const MAX_INGEST_BATCH_BYTES = 4 * 1024 * 1024;
 
 const EVENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const HASH_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const SENSITIVE_IDENTIFIER_PATTERN = /(?:^|[._:-])(?:api[_-]?key|access[_-]?token|authorization|bearer|cookie|credential|password|passwd|private[_-]?key|secret|session[_-]?token|client[_-]?secret|refresh[_-]?token|signature)(?:[._:-]|$)|^(?:sk[_-]|ghp_|github_pat_|xox[baprs]-|npm_|pypi-|AKIA)/i;
+// Compact JWTs have base64url-encoded JSON objects in their first two segments.
+// Matching the high-signal `eyJ...eyJ...` shape avoids treating ordinary dotted
+// versions and event identifiers as credentials.
+const JWT_LIKE_IDENTIFIER_PATTERN = /^eyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.(?:[A-Za-z0-9_-]{8,})?$/;
 const PHONE_LIKE_IDENTIFIER_PATTERN = /^(?:\d[.:-]?){8,15}$/;
 const EVENT_TYPES = new Set([
 	"runtime_verdict",
@@ -27,11 +31,16 @@ const RECOMMENDED_ACTIONS = new Set([
 ]);
 const REDACTED = "[Redacted]";
 
+function isSensitiveIdentifier(value: string): boolean {
+	return SENSITIVE_IDENTIFIER_PATTERN.test(value) ||
+		JWT_LIKE_IDENTIFIER_PATTERN.test(value) ||
+		PHONE_LIKE_IDENTIFIER_PATTERN.test(value);
+}
+
 function safeIdentifier(value: unknown): string | undefined {
 	return typeof value === "string" &&
 		IDENTIFIER_PATTERN.test(value) &&
-		!SENSITIVE_IDENTIFIER_PATTERN.test(value) &&
-		!PHONE_LIKE_IDENTIFIER_PATTERN.test(value)
+		!isSensitiveIdentifier(value)
 			? value
 			: undefined;
 }
@@ -158,7 +167,7 @@ export function normalizeIngestEvents(value: unknown): NormalizedIngestEvents {
 				detail: `events[${index}].event_id`,
 			};
 		}
-		if (SENSITIVE_IDENTIFIER_PATTERN.test(event.event_id) || PHONE_LIKE_IDENTIFIER_PATTERN.test(event.event_id)) {
+		if (isSensitiveIdentifier(event.event_id)) {
 			return { ok: false, status: 400, error: "invalid_event", detail: `events[${index}].event_id` };
 		}
 		if (event.type !== undefined && safeEnum(event.type, EVENT_TYPES) === undefined) {

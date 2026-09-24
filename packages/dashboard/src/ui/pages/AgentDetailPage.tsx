@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useTeam } from "../../enterprise/team-provider";
+import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 
 type AgentRow = {
 	id: string;
+	tenant_id: string;
 	iid: string;
 	display_name: string | null;
 	agent_runtime: string | null;
@@ -41,67 +44,124 @@ function verdictBadgeClass(verdict: string): string {
 
 export function AgentDetailPage() {
 	const { agentId } = useParams();
+	const { currentTeam, isLoading } = useTeam();
+	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
+	const tenantId = currentTeam?.id;
+	return (
+		<AgentDetailForId
+			key={`${tenantId ?? ""}:${agentId ?? ""}`}
+			agentId={agentId}
+			tenantId={tenantId}
+		/>
+	);
+}
+
+function AgentDetailForId({
+	agentId,
+	tenantId,
+}: {
+	agentId: string | undefined;
+	tenantId: string | undefined;
+}) {
 	const [agent, setAgent] = useState<AgentRow | null>(null);
-	const [events, setEvents] = useState<EventRow[]>([]);
+	const [events, setEvents] = useState<EventRow[] | null>(null);
 	const [entitlementSnapshot, setEntitlementSnapshot] = useState<EntitlementSnapshotRow | null>(
 		null,
 	);
 	const [error, setError] = useState<string | null>(null);
+	const [loaded, setLoaded] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
-		if (typeof agentId !== "string" || agentId.length === 0) return;
+		if (typeof agentId !== "string" || agentId.length === 0) {
+			setError("Agent identifier is missing.");
+			setLoaded(true);
+			return;
+		}
+		if (!tenantId) {
+			setError("Select a team to view this agent.");
+			setLoaded(true);
+			return;
+		}
 		const currentAgentId: string = agentId;
+		const currentTenantId: string = tenantId;
+		let inFlight = false;
 
 		async function load() {
-			setError(null);
-			const [agentRes, eventsRes] = await Promise.all([
-				supabase
-					.from("agents")
-					.select("id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen")
-					.eq("id", currentAgentId)
-					.maybeSingle(),
-				supabase
-					.from("events")
-					.select("id,type,created_at,payload")
-					.eq("agent_id", currentAgentId)
-					.order("created_at", { ascending: false })
-					.limit(200),
-			]);
+			if (inFlight) return;
+			inFlight = true;
+			try {
+				const [agentRes, eventsRes] = await Promise.all([
+					supabase
+						.from("agents")
+						.select(
+							"id,tenant_id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen",
+						)
+						.eq("id", currentAgentId)
+						.eq("tenant_id", currentTenantId)
+						.maybeSingle(),
+					supabase
+						.from("events")
+						.select("id,type,created_at,payload")
+						.eq("agent_id", currentAgentId)
+						.eq("tenant_id", currentTenantId)
+						.order("created_at", { ascending: false })
+						.limit(200),
+				]);
 
-			if (cancelled) return;
-			if (agentRes.error) {
-				setError(agentRes.error.message);
-				setAgent(null);
-				setEntitlementSnapshot(null);
-			} else {
-				const a = (agentRes.data ?? null) as AgentRow | null;
-				setAgent(a);
-
-				// Optional: show the latest entitlement snapshot persisted by ingest/enroll (if deployed).
-				if (a?.iid) {
-					const snapRes = await supabase
-						.from("entitlement_snapshots")
-						.select("updated_at,entitlement")
-						.eq("iid", a.iid)
-						.maybeSingle();
-					if (snapRes.error) {
-						// Back-compat: ignore only when the optional table is genuinely absent.
-						if (!isMissingTableError(snapRes.error, "entitlement_snapshots")) {
-							setError(snapRes.error.message);
-						}
-						setEntitlementSnapshot(null);
-					} else {
-						setEntitlementSnapshot((snapRes.data ?? null) as EntitlementSnapshotRow | null);
-					}
-					if (cancelled) return;
-				} else {
+				if (cancelled) return;
+				const problems: string[] = [];
+				const returnedAgent = (agentRes.data ?? null) as AgentRow | null;
+				const scopedAgent = returnedAgent?.tenant_id === currentTenantId ? returnedAgent : null;
+				if (agentRes.error) {
+					problems.push(readErrorMessage(agentRes.error, "Failed to load agent"));
+					setAgent(null);
 					setEntitlementSnapshot(null);
-				}
-			}
+				} else {
+					const a = scopedAgent;
+					setAgent(a);
 
-			if (eventsRes.error) setError(eventsRes.error.message);
-			else setEvents((eventsRes.data ?? []) as EventRow[]);
+					// Optional: show the latest entitlement snapshot persisted by ingest/enroll (if deployed).
+					if (a?.iid && a.tenant_id) {
+						const snapRes = await supabase
+							.from("entitlement_snapshots")
+							.select("updated_at,entitlement")
+							.eq("tenant_id", currentTenantId)
+							.eq("iid", a.iid)
+							.maybeSingle();
+						if (snapRes.error) {
+							// Back-compat: ignore only when the optional table is genuinely absent.
+							if (!isMissingTableError(snapRes.error, "entitlement_snapshots")) {
+								problems.push(readErrorMessage(snapRes.error, "Failed to load agent entitlement"));
+							}
+							setEntitlementSnapshot(null);
+						} else {
+							setEntitlementSnapshot((snapRes.data ?? null) as EntitlementSnapshotRow | null);
+						}
+						if (cancelled) return;
+					} else {
+						setEntitlementSnapshot(null);
+					}
+				}
+
+				if (eventsRes.error || agentRes.error || (scopedAgent && !Array.isArray(eventsRes.data))) {
+					if (eventsRes.error)
+						problems.push(readErrorMessage(eventsRes.error, "Failed to load agent events"));
+					else if (scopedAgent && !Array.isArray(eventsRes.data))
+						problems.push("Failed to load agent events");
+					setEvents(null);
+				} else setEvents(scopedAgent ? (eventsRes.data as EventRow[]) : []);
+				setError(problems.length > 0 ? problems.join(" ") : null);
+			} catch {
+				if (cancelled) return;
+				setAgent(null);
+				setEvents(null);
+				setEntitlementSnapshot(null);
+				setError("Failed to load agent");
+			} finally {
+				inFlight = false;
+				if (!cancelled) setLoaded(true);
+			}
 		}
 
 		load();
@@ -110,7 +170,7 @@ export function AgentDetailPage() {
 			cancelled = true;
 			clearInterval(t);
 		};
-	}, [agentId]);
+	}, [agentId, tenantId]);
 
 	return (
 		<div className="stack">
@@ -188,10 +248,14 @@ export function AgentDetailPage() {
 							</div>
 						)}
 					</>
-				) : (
+				) : !loaded ? (
 					<div className="row" style={{ marginTop: 14 }}>
 						<span className="spinner" aria-hidden="true" />
 						<span className="muted">Loading…</span>
+					</div>
+				) : (
+					<div className="muted" style={{ marginTop: 14 }}>
+						{error ? "Agent data is unavailable right now." : "Agent not found."}
 					</div>
 				)}
 			</div>
@@ -208,7 +272,7 @@ export function AgentDetailPage() {
 							</tr>
 						</thead>
 						<tbody>
-							{events.map((e) => {
+							{(events ?? []).map((e) => {
 								const verdict = typeof e.payload?.verdict === "string" ? e.payload.verdict : null;
 								return (
 									<tr key={e.id}>
@@ -222,17 +286,21 @@ export function AgentDetailPage() {
 													{verdict}
 												</span>
 											) : null}
-											{typeof e.payload?.tool_name === "string"
+											{e.type === "runtime_verdict" && typeof e.payload?.tool_name === "string"
 												? `${String(e.payload.tool_name)}: ${String(e.payload.verdict ?? "")}`
-												: JSON.stringify(e.payload).slice(0, 120)}
+												: "Additional event details are not shown."}
 										</td>
 									</tr>
 								);
 							})}
-							{events.length === 0 ? (
+							{events === null || events.length === 0 ? (
 								<tr>
 									<td colSpan={3} className="muted">
-										No events yet.
+										{events === null
+											? loaded
+												? "Event data is unavailable right now."
+												: "Loading events…"
+											: "No events yet."}
 									</td>
 								</tr>
 							) : null}

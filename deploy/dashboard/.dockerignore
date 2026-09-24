@@ -1,0 +1,9 @@
+*
+!Dockerfile
+!server.mjs
+!monitoring.mjs
+!saml-config.mjs
+!public/
+!public/**
+!auth-templates/
+!auth-templates/**

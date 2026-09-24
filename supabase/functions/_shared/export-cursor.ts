@@ -27,7 +27,7 @@ export async function readAuditCursor(value: unknown, secret: string, binding: P
   try {
     if (typeof value !== "string" || value.length > 2048 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)) throw new Error();
     const [payload, mac] = value.split(".");
-    if (!await crypto.subtle.verify("HMAC", await key(secret), decode(mac), encoder.encode(`aidr-audit-export-v1:${payload}`))) throw new Error();
+    if (!await crypto.subtle.verify("HMAC", await key(secret), new Uint8Array(decode(mac)), encoder.encode(`aidr-audit-export-v1:${payload}`))) throw new Error();
     const cursor = JSON.parse(new TextDecoder().decode(decode(payload))) as AuditCursor;
     if (cursor.tenant !== binding.tenant || cursor.user !== binding.user || cursor.format !== binding.format || !Number.isSafeInteger(cursor.expires) || cursor.expires <= now || cursor.expires > now + 900000 || !timestamp.test(cursor.snapshot) || !timestamp.test(cursor.after?.created_at) || !uuid.test(cursor.after?.id) || !Number.isFinite(Date.parse(cursor.snapshot)) || !Number.isFinite(Date.parse(cursor.after.created_at)) || Date.parse(cursor.after.created_at) > Date.parse(cursor.snapshot)) throw new Error();
     return cursor;

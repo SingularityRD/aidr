@@ -1,5 +1,6 @@
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
+	jwtHasSamlProvider,
 	policyAllowsAssurance,
 	sessionPassesRevocationBarrier,
 } from "../identity-security/logic.ts";
@@ -11,7 +12,7 @@ export type IdentityBarrierResult =
 /**
  * Service-role Edge functions bypass tenant RLS. Check the user-session barrier
  * explicitly before any privileged tenant read or mutation. A missing policy row
- * means MFA is optional; an unreadable row never does.
+ * means MFA/SSO are optional; an unreadable row never does.
  */
 export async function checkIdentityBarrier(
 	db: Pick<SupabaseClient, "from" | "auth">,
@@ -22,21 +23,29 @@ export async function checkIdentityBarrier(
 	try {
 		const { data: state, error: stateError } = await db
 			.from("identity_user_session_state")
-			.select("revoked_before")
+			.select("revoked_before,global_revoke_pending_session_id")
 			.eq("user_id", userId)
 			.maybeSingle();
 		if (stateError) return { ok: false, status: 503, error: "identity_state_unavailable" };
-		if (!sessionPassesRevocationBarrier(token, state?.revoked_before)) {
+		if (
+			state?.global_revoke_pending_session_id ||
+			!sessionPassesRevocationBarrier(token, state?.revoked_before)
+		) {
 			return { ok: false, status: 401, error: "session_revoked" };
 		}
 		if (!tenantId) return { ok: true };
 
 		const { data: policy, error: policyError } = await db
 			.from("tenant_identity_policies")
-			.select("require_mfa")
+			.select("require_mfa,required_saml_provider_id")
 			.eq("tenant_id", tenantId)
 			.maybeSingle();
 		if (policyError) return { ok: false, status: 503, error: "identity_policy_unavailable" };
+		if (policy?.required_saml_provider_id !== null && policy?.required_saml_provider_id !== undefined &&
+			(typeof policy.required_saml_provider_id !== "string" ||
+				!jwtHasSamlProvider(token, policy.required_saml_provider_id))) {
+			return { ok: false, status: 403, error: "sso_required" };
+		}
 		if (policy?.require_mfa !== true) return { ok: true };
 
 		const { data: assurance, error: assuranceError } =

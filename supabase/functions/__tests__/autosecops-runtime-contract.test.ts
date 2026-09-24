@@ -7,7 +7,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => {
 		throw new Error("createClient must be injected through AutoSecOpsRuntimeDeps.client");
 	},
@@ -62,9 +62,11 @@ function applyEnvironment(overrides: Record<string, string | undefined> = {}) {
 interface ClientOptions {
 	user?: { id: string } | null;
 	authError?: boolean;
-	teams?: Array<{ team_id: string }>;
+	teams?: Array<{ tenant_id: string; role?: string; expires_at?: string | null }>;
 	teamError?: boolean;
-	membershipRow?: { team_id: string } | null;
+	membershipRow?: { tenant_id: string; role?: string; expires_at?: string | null } | null;
+	tenantStatus?: string | null;
+	tenantError?: boolean;
 	barrier?: { ok: boolean; error?: string };
 }
 
@@ -78,7 +80,14 @@ function client(options: ClientOptions = {}) {
 			calls.push({ table: currentTable, column, value });
 			return chain;
 		},
-		limit: () => chain,
+		or: (value: string) => {
+			calls.push({ table: currentTable, column: "or", value });
+			return chain;
+		},
+		limit: (value: number) => {
+			calls.push({ table: currentTable, column: "limit", value });
+			return chain;
+		},
 		maybeSingle: async () => {
 			if (currentTable === "identity_user_session_state") {
 				if (options.barrier && !options.barrier.ok) {
@@ -89,11 +98,25 @@ function client(options: ClientOptions = {}) {
 				}
 				return { data: { revoked_before: null }, error: null };
 			}
-			return { data: options.membershipRow ?? null, error: null };
+			if (currentTable === "tenants") {
+				return {
+					data: options.tenantStatus === null ? null : { status: options.tenantStatus ?? "active" },
+					error: options.tenantError ? new Error("db_down") : null,
+				};
+			}
+			if (currentTable === "tenant_members") {
+				return {
+					data: options.membershipRow === undefined
+						? { tenant_id: TENANT, role: "member", expires_at: null }
+						: options.membershipRow,
+					error: options.teamError ? new Error("db_down") : null,
+				};
+			}
+			return { data: null, error: null };
 		},
 		then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
 			Promise.resolve({
-				data: options.teams ?? [{ team_id: TENANT }],
+				data: options.teams ?? [{ tenant_id: TENANT, role: "member", expires_at: null }],
 				error: options.teamError ? new Error("db_down") : null,
 			}).then(resolve, reject),
 	};
@@ -126,7 +149,6 @@ function request(body: unknown, headers: Record<string, string> = {}): Request {
 describe("autosecops query and identity validation", () => {
 	it("accepts only the bounded read-only query fields", () => {
 		expect(parseQuery("health", { anything: true })).toEqual({});
-		expect(parseQuery("performance", { anything: true })).toEqual({});
 		expect(parseQuery("fleet", undefined)).toEqual({ limit: 100 });
 		expect(parseQuery("fleet", { runtime: "claude", limit: 10 })).toEqual({ runtime: "claude", limit: 10 });
 		for (const bad of [
@@ -162,6 +184,7 @@ describe("autosecops query and identity validation", () => {
 		expect(errorStatus(new Error("session_revoked"))).toBe(401);
 		expect(errorStatus(new Error("mfa_required"))).toBe(403);
 		expect(errorStatus(new Error("team_membership_required"))).toBe(403);
+		expect(errorStatus(new Error("tenant_inactive"))).toBe(403);
 		expect(errorStatus(new Error("invalid_query"))).toBe(400);
 		expect(errorStatus(new Error("invalid_team_id"))).toBe(400);
 		expect(errorStatus(new Error("team_membership_unavailable"))).toBe(503);
@@ -191,9 +214,13 @@ describe("autosecops handler guards", () => {
 				fetcher: (async (url: RequestInfo | URL, init?: RequestInit) => {
 					calls.push({ url: String(url), init });
 					if (typeof options.fetchResponse === "function") return options.fetchResponse();
-					return options.fetchResponse ?? new Response(JSON.stringify({ agents: [] }), { status: 200 });
+					return options.fetchResponse ?? new Response(JSON.stringify(
+						String(url).endsWith("/fleet")
+							? { response: { items: [] } }
+							: { snapshot: { state: "healthy", active_agents: 0, open_degradations: 0 } },
+					), { status: 200 });
 				}) as unknown as typeof fetch,
-				now: () => 0,
+				now: () => Date.parse("2026-09-22T00:00:00.000Z"),
 			}),
 			fakeClient,
 			calls,
@@ -234,6 +261,18 @@ describe("autosecops handler guards", () => {
 		expect(JSON.stringify(await response.json())).toContain("AUTOSECOPS_RUNTIME_URL");
 	});
 
+	it("rejects a URL path and normalizes a trailing slash", async () => {
+		const withPath = handler({ env: { AUTOSECOPS_RUNTIME_URL: "https://autosecops.example/api" } });
+		const rejected = await withPath.handle(request({ action: "health" }));
+		expect(rejected.status).toBe(500);
+		expect(withPath.calls).toEqual([]);
+
+		const withSlash = handler({ env: { AUTOSECOPS_RUNTIME_URL: "https://autosecops.example/" } });
+		const accepted = await withSlash.handle(request({ action: "health" }));
+		expect(accepted.status).toBe(200);
+		expect(withSlash.calls[0]?.url).toBe("https://autosecops.example/api/v1/aidr/runtime/health");
+	});
+
 	it("answers integration_not_configured when the bridge is entirely absent", async () => {
 		const { handle, calls } = handler({
 			env: {
@@ -251,10 +290,33 @@ describe("autosecops handler guards", () => {
 
 	it("rejects an unsupported action before authenticating", async () => {
 		const { handle, calls } = handler({});
-		const response = await handle(request({ action: "delete_everything" }));
-		expect(response.status).toBe(400);
-		expect(await response.json()).toMatchObject({ error: "invalid_query" });
+		for (const action of ["delete_everything", "performance"]) {
+			const response = await handle(request({ action }));
+			expect(response.status).toBe(400);
+			expect(await response.json()).toMatchObject({ error: "invalid_query" });
+		}
 		expect(calls).toEqual([]);
+	});
+
+	it("rejects a chunked request that exceeds 16 KiB without trusting headers", async () => {
+		const body = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(new Uint8Array(10 * 1024));
+				controller.enqueue(new Uint8Array(7 * 1024));
+				controller.close();
+			},
+		});
+		const oversized = new Request("https://project.supabase.co/functions/v1/autosecops-runtime", {
+			method: "POST",
+			headers: { Authorization: "Bearer valid-token", "Content-Type": "application/json" },
+			body,
+			duplex: "half",
+		} as RequestInit);
+		const guarded = handler({});
+		const response = await guarded.handle(oversized);
+		expect(response.status).toBe(413);
+		expect(await response.json()).toEqual({ error: "invalid_query" });
+		expect(guarded.calls).toEqual([]);
 	});
 
 	it("rejects an invalid access token and a revoked session", async () => {
@@ -285,6 +347,52 @@ describe("autosecops handler guards", () => {
 		expect(calls).toEqual([]);
 	});
 
+	it("requires a live canonical tenant membership and an active tenant", async () => {
+		for (const clientOptions of [
+			{ membershipRow: { tenant_id: TENANT, role: "member", expires_at: "2000-01-01T00:00:00.000Z" } },
+			{ membershipRow: { tenant_id: TENANT, role: "member", expires_at: "not-a-date" } },
+			{ tenantStatus: "suspended" },
+			{ tenantStatus: null },
+		]) {
+			const guarded = handler({ clientOptions });
+			const response = await guarded.handle(request({ action: "health", team_id: TENANT }));
+			expect(response.status).toBe(403);
+			expect(guarded.calls).toEqual([]);
+		}
+
+		const noMembership = handler({ clientOptions: { teams: [] } });
+		const response = await noMembership.handle(request({ action: "health" }));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toMatchObject({ error: "team_membership_required" });
+		expect(noMembership.calls).toEqual([]);
+	});
+
+	it("filters active memberships in storage and reads at most two candidates", async () => {
+		const guarded = handler({});
+		const response = await guarded.handle(request({ action: "health" }));
+		expect(response.status).toBe(200);
+		expect(guarded.fakeClient.calls).toContainEqual({
+			table: "tenant_members",
+			column: "or",
+			value: "expires_at.is.null,expires_at.gt.2026-09-22T00:00:00.000Z",
+		});
+		expect(guarded.fakeClient.calls).toContainEqual({
+			table: "tenant_members",
+			column: "limit",
+			value: 2,
+		});
+	});
+
+	it("fails closed when canonical membership or tenant state is unavailable", async () => {
+		for (const clientOptions of [{ teamError: true }, { tenantError: true }]) {
+			const guarded = handler({ clientOptions });
+			const response = await guarded.handle(request({ action: "health", team_id: TENANT }));
+			expect(response.status).toBe(503);
+			expect(await response.json()).toMatchObject({ error: "team_membership_unavailable" });
+			expect(guarded.calls).toEqual([]);
+		}
+	});
+
 	it("refuses a team id that is not a UUID", async () => {
 		const { handle, calls } = handler({});
 		const response = await handle(request({ action: "health", team_id: "not-a-team" }));
@@ -296,7 +404,12 @@ describe("autosecops handler guards", () => {
 
 	it("requires a team selection when the caller belongs to several teams", async () => {
 		const { handle } = handler({
-			clientOptions: { teams: [{ team_id: TENANT }, { team_id: "44444444-4444-4444-8444-444444444444" }] },
+			clientOptions: {
+				teams: [
+					{ tenant_id: TENANT, expires_at: null },
+					{ tenant_id: "44444444-4444-4444-8444-444444444444", expires_at: null },
+				],
+			},
 		});
 		const response = await handle(request({ action: "health" }));
 		expect(response.status).toBe(400);
@@ -323,8 +436,92 @@ describe("autosecops handler guards", () => {
 		expect((await aborted.handle(request({ action: "health" }))).status).toBe(504);
 	});
 
+	it("rejects a headerless provider response larger than 256 KiB", async () => {
+		const providerBody = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(new Uint8Array(600 * 1024));
+				controller.enqueue(new Uint8Array(500 * 1024));
+				controller.close();
+			},
+		});
+		const guarded = handler({ fetchResponse: new Response(providerBody, { status: 200 }) });
+		const response = await guarded.handle(request({ action: "health" }));
+		expect(response.status).toBe(502);
+		expect(await response.json()).toEqual({
+			error: "autosecops_invalid_response",
+			provider: "autosecops",
+		});
+	});
+
+	it("forwards only bounded health fields and never provider debug data", async () => {
+		const guarded = handler({ fetchResponse: new Response(JSON.stringify({
+			team_id: "77",
+			snapshot: {
+				state: "healthy", active_agents: 2, open_degradations: 0,
+				components: [{ name: "policy", state: "healthy", credential: "private" }],
+				credential: "private",
+			},
+			debug: { authorization: "private" },
+		})) });
+		const response = await guarded.handle(request({ action: "health" }));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			ok: true, provider: "autosecops", action: "health", team_id: "77",
+			data: { snapshot: {
+				state: "healthy", active_agents: 2, open_degradations: 0,
+				components: [{ name: "policy", state: "healthy" }],
+			} },
+		});
+	});
+
+	it("forwards only fleet display fields", async () => {
+		const guarded = handler({ fetchResponse: new Response(JSON.stringify({
+			response: { items: [{
+				agent_id: "agent-1", agent_name: "customer-agent", runtime: "codex",
+				state: "active", credential: "private",
+			}], next_cursor: "private" },
+			debug: "private",
+		})) });
+		const response = await guarded.handle(request({ action: "fleet" }));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			ok: true, provider: "autosecops", action: "fleet", team_id: "77",
+			data: { response: { items: [{
+				agent_id: "agent-1", agent_name: "customer-agent", runtime: "codex", state: "active",
+			}] } },
+		});
+	});
+
+	it("rejects malformed, cross-team and oversized provider records without reflecting them", async () => {
+		const badBodies = [
+			{ snapshot: {} },
+			{ snapshot: { state: "healthy", active_agents: -1 } },
+			{ snapshot: { state: "healthy", team_id: "other-team" } },
+			{ snapshot: { state: "healthy", components: Array.from({ length: 33 }, () => ({ name: "x", state: "healthy" })) } },
+			{ snapshot: { state: "healthy\nprivate" } },
+		];
+		for (const body of badBodies) {
+			const guarded = handler({ fetchResponse: new Response(JSON.stringify(body)) });
+			const response = await guarded.handle(request({ action: "health" }));
+			expect(response.status, JSON.stringify(body)).toBe(502);
+			expect(await response.json()).toEqual({ error: "autosecops_invalid_response", provider: "autosecops" });
+		}
+		for (const body of [
+			{ response: { items: "not-an-array" } },
+			{ response: { items: [{ agent_id: 7 }] } },
+			{ response: { items: [{ agent_id: "x", team_id: "other-team" }] } },
+			{ response: { items: Array.from({ length: 101 }, (_, i) => ({ agent_id: `agent-${i}` })) } },
+			{ response: { items: [{ agent_id: "x", agent_name: "x".repeat(129) }] } },
+		]) {
+			const guarded = handler({ fetchResponse: new Response(JSON.stringify(body)) });
+			const response = await guarded.handle(request({ action: "fleet" }));
+			expect(response.status, JSON.stringify(body)).toBe(502);
+			expect(await response.json()).toEqual({ error: "autosecops_invalid_response", provider: "autosecops" });
+		}
+	});
+
 	it("sends the provider credential server-side only and never echoes it", async () => {
-		const { handle, calls } = handler({});
+		const { handle, calls, fakeClient } = handler({});
 		const response = await handle(request({ action: "fleet", query: { runtime: "claude" } }));
 		expect(response.status).toBe(200);
 		const body = (await response.json()) as Record<string, unknown>;
@@ -340,6 +537,10 @@ describe("autosecops handler guards", () => {
 			scope: { tenant_id: "team:77", team_id: "77" },
 			query: { runtime: "claude", limit: 100 },
 		});
+		const authorizationTables = fakeClient.calls.map((entry) => entry.table);
+		expect(authorizationTables).toContain("tenant_members");
+		expect(authorizationTables).toContain("tenants");
+		expect(authorizationTables).not.toContain("team_members");
 	});
 
 	it("resolves the AutoSecOps team from the map and refuses an unmapped tenant", async () => {

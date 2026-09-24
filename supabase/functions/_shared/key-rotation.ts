@@ -8,8 +8,8 @@
 // never be longer than the retired secret's own remaining validity, so a
 // rotation never extends a credential's life.
 
-export const ROTATION_OVERLAP_DEFAULT_HOURS = 24;
-export const ROTATION_OVERLAP_MAX_HOURS = 24 * 7;
+const ROTATION_OVERLAP_DEFAULT_HOURS = 24;
+const ROTATION_OVERLAP_MAX_HOURS = 24 * 7;
 
 /** Clamp an operator-supplied overlap into the reviewed 1 hour .. 7 day range. */
 export function boundedOverlapHours(value: unknown): number {
@@ -54,7 +54,7 @@ export function rotationPlan(
 	return { rotatedAt, previousHashExpiresAt: new Date(deadline).toISOString() };
 }
 
-export interface StoredRotationRow {
+interface StoredRotationRow {
 	previous_hash?: unknown;
 	previous_hash_expires_at?: unknown;
 }

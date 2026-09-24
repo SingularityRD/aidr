@@ -23,6 +23,8 @@ function harness(overrides: Record<string, string> = {}, rpcUnavailable = false)
 		SUPABASE_URL: "https://test.supabase.co",
 		SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
 		AIDR_DEVICE_START_INGRESS_SECRET: SECRET,
+		AIDR_DASHBOARD_URL: "https://dashboard.test",
+		AIDR_DASHBOARD_VERIFY_URL: "https://dashboard.test/verify",
 		...overrides,
 	};
 	const counts = new Map<string, number>();
@@ -55,7 +57,7 @@ function harness(overrides: Record<string, string> = {}, rpcUnavailable = false)
 		},
 	};
 	const modules: Record<string, unknown> = {
-		"npm:@supabase/supabase-js@2": { createClient: () => { clientCreations++; return database; } },
+		"npm:@supabase/supabase-js@2.116.0": { createClient: () => { clientCreations++; return database; } },
 		"../_shared/config.ts": {
 			runtimeEnv: (name: string) => env[name],
 			loadConfig: (_reader: unknown, required: readonly string[]) => {
@@ -121,6 +123,30 @@ describe("anonymous device-start ingress and rate limits", () => {
 		expect(response.status).toBe(200);
 		expect(await response.json()).toMatchObject({ ok: true, user_code: expect.any(String), device_code: expect.stringMatching(/^aidr_device_/) });
 		expect(runtime.minted).toBe(1);
+	});
+
+	it("returns only a same-origin verification link and fails closed on an unsafe link", async () => {
+		const valid = harness();
+		const validResponse = await valid.handler(signedRequest("198.51.100.4"));
+		expect(validResponse.status).toBe(200);
+		expect((await validResponse.json()).verification_url).toMatch(/^https:\/\/dashboard\.test\/verify\?code=[A-Z2-9]{8}$/);
+		for (const unsafe of [
+			"https://attacker.test/verify",
+			"https://dashboard.test/verify#discard-code",
+			"https://dashboard.test@attacker.test/verify",
+			"http://dashboard.test/verify",
+		]) {
+			const runtime = harness({ AIDR_DASHBOARD_VERIFY_URL: unsafe });
+			const response = await runtime.handler(signedRequest("198.51.100.4"));
+			expect(response.status).toBe(500);
+			expect(await response.json()).toEqual({ error: "server_misconfigured", invalid: ["AIDR_DASHBOARD_VERIFY_URL"] });
+			expect(runtime.minted).toBe(0);
+		}
+		const missing = harness({ AIDR_DASHBOARD_VERIFY_URL: "" });
+		const missingResponse = await missing.handler(signedRequest("198.51.100.4"));
+		expect(missingResponse.status).toBe(500);
+		expect(await missingResponse.json()).toEqual({ error: "server_misconfigured", missing: ["AIDR_DASHBOARD_VERIFY_URL"] });
+		expect(missing.minted).toBe(0);
 	});
 
 	it("does not let rotating caller-controlled proxy headers evade the signed-client quota", async () => {

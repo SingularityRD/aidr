@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The Edge Functions import Supabase through Deno's `npm:` specifier, which a
 // Node test runner cannot resolve. The runtime factory only needs to exist and
 // must never be reached: every case injects `deps.db`.
-vi.mock("npm:@supabase/supabase-js@2", () => ({
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => {
 		throw new Error("createClient must be injected through the handler deps");
 	},
@@ -39,6 +39,10 @@ const REPO_ROOT = resolve(FUNCTIONS_DIR, "..", "..");
 // line endings.
 const MIGRATION = readFileSync(
 	join(REPO_ROOT, "supabase", "migrations", "20260913000005_tenant_storage_queue_quotas.sql"),
+	"utf8",
+).replace(/\r\n/g, "\n");
+const PUBLICATION_MIGRATION = readFileSync(
+	join(REPO_ROOT, "supabase", "migrations", "20260923000020_audit_export_publication.sql"),
 	"utf8",
 ).replace(/\r\n/g, "\n");
 
@@ -128,6 +132,8 @@ describe("tenant storage byte quota", () => {
 				if (name === "register_audit_export_object") {
 					return options.quota ?? { data: [{ allowed: true, remaining_bytes: 1024 }], error: null };
 				}
+				if (name === "finalize_audit_export_object") return { data: "published", error: null };
+				if (name === "abandon_audit_export_object") return { data: true, error: null };
 				return { data: null, error: null };
 			}),
 		};
@@ -156,6 +162,19 @@ describe("tenant storage byte quota", () => {
 			body: JSON.stringify({ team_id: teamId, format: "json" }),
 		});
 	}
+
+	it("rejects oversized export requests before reserving or uploading storage", async () => {
+		const { handle, rpcCalls, upload } = await handlerWith();
+		const response = await handle(new Request("https://project.supabase.co/functions/v1/audit-export", {
+			method: "POST",
+			headers: { Authorization: "Bearer valid-token", "Content-Type": "application/json" },
+			body: JSON.stringify({ team_id: TENANT, format: "json", filler: "x".repeat(8 * 1024) }),
+		}));
+		expect(response.status).toBe(413);
+		expect(await response.json()).toEqual({ error: "request_too_large" });
+		expect(rpcCalls).toHaveLength(0);
+		expect(upload).not.toHaveBeenCalled();
+	});
 
 	it("rejects a storage write that would exceed the tenant byte quota", async () => {
 		const refused = await handlerWith({
@@ -230,6 +249,15 @@ describe("tenant storage byte quota", () => {
 		expect(unreadable.upload).not.toHaveBeenCalled();
 	});
 
+	it("reports a hold that wins at the database insert barrier", async () => {
+		const raced = await handlerWith({ quota: { data: null, error: { code: "55000", message: "active_legal_hold" } } });
+		const response = await raced.handle(post());
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ error: "legal_hold_active" });
+		expect(raced.upload).not.toHaveBeenCalled();
+		expect(raced.rpcCalls.map(call => call.name)).toEqual(["register_audit_export_object"]);
+	});
+
 	it("keeps the byte budget tenant-scoped, bounded and ceiling-checked in SQL", () => {
 		expect(MIGRATION).toContain("alter table public.audit_export_objects\n  add column if not exists bytes bigint not null default 0");
 		// The usage read and the reservation insert share one tenant advisory lock.
@@ -262,6 +290,25 @@ describe("tenant storage byte quota", () => {
 				`as restrictive for ${command} to anon, authenticated\n  ` +
 					`${command === "insert" ? "with check" : "using"} (bucket_id <> 'aidr-audit-exports')`,
 			);
+		}
+	});
+
+	it("publishes only under the legal-hold lock and abandons without deleting ambiguous Storage", () => {
+		const registration = PUBLICATION_MIGRATION.split("create or replace function app.protect_export_registration_during_offboarding()")[1]?.split("\n$$;")[0] ?? "";
+		const publication = PUBLICATION_MIGRATION.split("create function public.finalize_audit_export_object(")[1]?.split("\n$$;")[0] ?? "";
+		const abandonment = PUBLICATION_MIGRATION.split("create function public.abandon_audit_export_object(")[1]?.split("\n$$;")[0] ?? "";
+		for (const source of [registration, publication]) {
+			const lock = source.indexOf("pg_advisory_xact_lock(hashtextextended(");
+			expect(lock).toBeGreaterThan(-1);
+			expect(source.indexOf("tenant_legal_holds"), source).toBeGreaterThan(lock);
+		}
+		expect(abandonment).toContain("pg_advisory_xact_lock(hashtextextended(");
+		expect(publication).toContain("set published_at = clock_timestamp()");
+		expect(publication).toContain("return 'legal_hold_active'");
+		expect(abandonment).toContain("set expires_at = least(expires_at, clock_timestamp())");
+		expect(abandonment).not.toContain("delete from public.audit_export_objects");
+		for (const name of ["finalize_audit_export_object", "abandon_audit_export_object"]) {
+			expect(PUBLICATION_MIGRATION).toContain(`grant execute on function public.${name}(uuid,uuid,text)\n  to service_role;`);
 		}
 	});
 });
@@ -431,6 +478,7 @@ describe("legacy caller-key rate limiter", () => {
 	const LEGACY_CALLERS = new Map<string, string[]>([
 		["api-keys", ["apikey_create"]],
 		["device-start", ["device_start"]],
+		["device-verify", ["device_start"]],
 		["enroll", ["enroll"]],
 		["enrollment-tokens", ["enrolltoken_create"]],
 		["identity-security", ["identity-reset", "identity-break-glass"]],

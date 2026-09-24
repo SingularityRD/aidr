@@ -11,8 +11,8 @@ export type TenantStorageQuotaResult =
 	| { ok: true; remainingBytes: number }
 	| {
 			ok: false;
-			status: 413 | 429 | 503;
-			error: "export_page_too_large" | "tenant_storage_quota_exceeded" | "export_retention_unavailable";
+			status: 409 | 413 | 429 | 503;
+			error: "legal_hold_active" | "export_page_too_large" | "tenant_storage_quota_exceeded" | "export_retention_unavailable";
 			remainingBytes: number;
 	  };
 
@@ -25,17 +25,17 @@ type RpcClient = {
 export const AUDIT_EXPORT_MAX_OBJECT_BYTES = 8 * 1024 * 1024;
 
 /** Default per-tenant byte budget for stored exports when the operator sets none. */
-export const AUDIT_EXPORT_TENANT_BYTES_DEFAULT = 512 * 1024 * 1024;
+const AUDIT_EXPORT_TENANT_BYTES_DEFAULT = 512 * 1024 * 1024;
 
 /** Hard ceiling the database enforces: a configured budget may not exceed it. */
-export const AUDIT_EXPORT_TENANT_BYTES_CEILING = 1024 * 1024 * 1024 * 1024;
+const AUDIT_EXPORT_TENANT_BYTES_CEILING = 1024 * 1024 * 1024 * 1024;
 
 /**
  * Reads the operator-configured tenant byte budget. An unset, malformed or
  * out-of-range value falls back to the documented default instead of disabling
  * the quota.
  */
-export function tenantStorageLimitBytes(readEnv: (name: string) => string | undefined): number {
+export function tenantStorageLimitBytes(readEnv: (name: string) => string | null | undefined): number {
 	const raw = (readEnv("AIDR_AUDIT_EXPORT_TENANT_BYTES") ?? "").trim();
 	if (!/^[0-9]{1,15}$/.test(raw)) return AUDIT_EXPORT_TENANT_BYTES_DEFAULT;
 	const parsed = Number(raw);
@@ -102,7 +102,13 @@ export async function registerAuditExportObject(
 	} catch {
 		return unavailable;
 	}
-	if (!result || typeof result !== "object" || result.error) return unavailable;
+	if (!result || typeof result !== "object") return unavailable;
+	if (result.error) {
+		const error = result.error as { code?: unknown; message?: unknown };
+		return error.code === "55000" && error.message === "active_legal_hold"
+			? { ok: false, status: 409, error: "legal_hold_active", remainingBytes: 0 }
+			: unavailable;
+	}
 
 	const row = rpcRow(result.data);
 	const remaining = row?.remaining_bytes;

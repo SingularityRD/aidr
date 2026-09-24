@@ -6,6 +6,7 @@ import { entitlementWindow, validateEnrollmentBody } from "../enroll/contract.ts
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const sql = readFileSync(join(ROOT, "supabase", "migrations", "20260912000017_enrollment_exchange_atomic.sql"), "utf8");
+const rotationResolver = readFileSync(join(ROOT, "supabase", "migrations", "20260923000050_enrollment_rotation_resolution.sql"), "utf8");
 const enrollSource = readFileSync(join(ROOT, "supabase", "functions", "enroll", "index.ts"), "utf8");
 const pollSource = readFileSync(join(ROOT, "supabase", "functions", "device-poll", "index.ts"), "utf8");
 
@@ -36,6 +37,15 @@ describe("bounded enrollment contract", () => {
 });
 
 describe("atomic one-time exchanges", () => {
+	it("resolves only active or bounded retired hashes before the atomic exchange", () => {
+		expect(rotationResolver).toContain("t.previous_hash = p_token_hash");
+		expect(rotationResolver).toContain("t.previous_hash_expires_at > now()");
+		expect(rotationResolver).toContain("v_token.consumed_at is not null");
+		expect(rotationResolver).toContain("v_token.expires_at <= now()");
+		expect(rotationResolver).toContain("t.status = 'active'");
+		expect(rotationResolver).toContain("grant execute on function public.resolve_enrollment_token(text) to service_role");
+	});
+
 	it("commits API-key hash and token consumption in one restricted RPC", () => {
 		const exchange = sql.split("create function public.exchange_enrollment_token(")[1]?.split("\nend;\n$$;")[0] ?? "";
 		expect(exchange).toContain("for update;");

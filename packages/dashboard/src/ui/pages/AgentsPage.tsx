@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 
 type AgentRow = {
@@ -13,54 +14,120 @@ type AgentRow = {
 	last_seen: string;
 };
 
-type EntitlementsRow = { included_agents: number; extra_agents: number };
+type SeatUsageRow = {
+	included_agents: number;
+	extra_agents: number;
+	allowed_agents: number;
+};
+
+function isAgentRow(value: unknown): value is AgentRow {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const row = value as Record<string, unknown>;
+	return (
+		typeof row.id === "string" &&
+		typeof row.iid === "string" &&
+		(row.display_name === null || typeof row.display_name === "string") &&
+		(row.agent_runtime === null || typeof row.agent_runtime === "string") &&
+		(row.agent_runtime_version === null || typeof row.agent_runtime_version === "string") &&
+		typeof row.first_seen === "string" &&
+		typeof row.last_seen === "string" &&
+		Number.isFinite(Date.parse(row.last_seen))
+	);
+}
+
+function isSeatUsageRow(value: unknown): value is SeatUsageRow {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const row = value as Record<string, unknown>;
+	return (
+		typeof row.included_agents === "number" &&
+		Number.isSafeInteger(row.included_agents) &&
+		row.included_agents >= 0 &&
+		typeof row.extra_agents === "number" &&
+		Number.isSafeInteger(row.extra_agents) &&
+		row.extra_agents >= 0 &&
+		typeof row.allowed_agents === "number" &&
+		Number.isSafeInteger(row.allowed_agents) &&
+		row.allowed_agents === row.included_agents + row.extra_agents
+	);
+}
 
 export function AgentsPage() {
 	const { currentTeam } = useTeam();
 	const tenantId = currentTeam?.id;
-	const [agents, setAgents] = useState<AgentRow[]>([]);
-	const [entitlements, setEntitlements] = useState<EntitlementsRow | null>(null);
-	const [entitlementsError, setEntitlementsError] = useState<string | null>(null);
+	const [agents, setAgents] = useState<AgentRow[] | null>(null);
+	const [seatUsage, setSeatUsage] = useState<SeatUsageRow | null>(null);
+	const [seatUsageError, setSeatUsageError] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [loadedTenantId, setLoadedTenantId] = useState<string | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
-		setAgents([]);
-		setEntitlements(null);
+		let requestId = 0;
+		setLoadedTenantId(null);
+		setAgents(null);
+		setSeatUsage(null);
+		setError(null);
+		setSeatUsageError(null);
 		if (!tenantId) return;
 		const activeTenantId = tenantId;
 
 		async function load() {
-			setError(null);
+			const currentRequest = ++requestId;
+			try {
+				const [agentsRes, seatRes] = await Promise.all([
+					supabase
+						.from("agents")
+						.select("id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen")
+						.eq("tenant_id", activeTenantId)
+						.order("last_seen", { ascending: false }),
+					supabase
+						.from("seat_usage")
+						.select("included_agents,extra_agents,allowed_agents")
+						.eq("tenant_id", activeTenantId)
+						.maybeSingle(),
+				]);
 
-			const [agentsRes, entRes] = await Promise.all([
-				supabase
-					.from("agents")
-					.select("id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen")
-					.eq("tenant_id", activeTenantId)
-					.order("last_seen", { ascending: false }),
-				supabase
-					.from("entitlements")
-					.select("included_agents,extra_agents")
-					.eq("tenant_id", activeTenantId)
-					.maybeSingle(),
-			]);
+				if (cancelled || currentRequest !== requestId) return;
+				setLoadedTenantId(activeTenantId);
 
-			if (cancelled) return;
+				if (
+					agentsRes.error ||
+					!Array.isArray(agentsRes.data) ||
+					!agentsRes.data.every(isAgentRow)
+				) {
+					setAgents(null);
+					setError(
+						agentsRes.error
+							? readErrorMessage(agentsRes.error, "Failed to load agents")
+							: "Agent data is unavailable.",
+					);
+				} else {
+					setAgents(agentsRes.data);
+					setError(null);
+				}
 
-			if (agentsRes.error) setError(agentsRes.error.message);
-			else setAgents((agentsRes.data ?? []) as AgentRow[]);
-
-			if (entRes.error) {
-				setEntitlements(null);
-				setEntitlementsError(entRes.error.message);
-			} else {
-				setEntitlementsError(null);
-				setEntitlements((entRes.data ?? null) as EntitlementsRow | null);
+				if (seatRes.error || !isSeatUsageRow(seatRes.data)) {
+					setSeatUsage(null);
+					setSeatUsageError(
+						seatRes.error
+							? readErrorMessage(seatRes.error, "Failed to load seat usage")
+							: "Seat usage data is unavailable.",
+					);
+				} else {
+					setSeatUsageError(null);
+					setSeatUsage(seatRes.data);
+				}
+			} catch (cause) {
+				if (cancelled || currentRequest !== requestId) return;
+				setLoadedTenantId(activeTenantId);
+				setAgents(null);
+				setSeatUsage(null);
+				setError(readErrorMessage(cause, "Failed to load agents"));
+				setSeatUsageError("Seat usage data is unavailable.");
 			}
 		}
 
-		load();
+		void load();
 		const t = setInterval(load, 5000);
 		return () => {
 			cancelled = true;
@@ -68,9 +135,9 @@ export function AgentsPage() {
 		};
 	}, [tenantId]);
 
-	const allowed = entitlements
-		? Number(entitlements.included_agents ?? 1) + Number(entitlements.extra_agents ?? 0)
-		: null;
+	const agentsForTeam = loadedTenantId === tenantId ? agents : null;
+	const seatUsageForTeam = loadedTenantId === tenantId ? seatUsage : null;
+	const allowed = seatUsageForTeam?.allowed_agents ?? null;
 
 	return (
 		<div className="stack">
@@ -80,23 +147,27 @@ export function AgentsPage() {
 						<h1>Agents</h1>
 						<p className="muted">{currentTeam?.name ?? "Select a team to view its agents."}</p>
 						<p className="muted">
-							Connected installations (unique <code>iid</code>). Allowed:{" "}
-							<b>{allowed ?? "unavailable"}</b>. Current: <b>{agents.length}</b>.
+							Known installations (unique <code>iid</code>). Allowed:{" "}
+							<b>{allowed ?? "unavailable"}</b>. Recorded:{" "}
+							<b>{agentsForTeam?.length ?? "unavailable"}</b>.
 						</p>
 					</div>
-					<span className={agents.length > 0 ? "badge badge-success" : "badge badge-neutral"}>
-						{agents.length > 0 ? "reporting" : "no agents"}
+					<span className="badge badge-neutral">
+						{agentsForTeam === null
+							? "unavailable"
+							: agentsForTeam.length > 0
+								? "agents recorded"
+								: "no agents"}
 					</span>
 				</div>
-				{error ? (
+				{loadedTenantId === tenantId && error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
 						{error}
 					</div>
 				) : null}
-				{entitlementsError ? (
+				{loadedTenantId === tenantId && seatUsageError ? (
 					<div className="notice notice-danger" role="alert" aria-live="polite">
-						Seat entitlement data is unavailable; do not infer the allowed-agent limit.{" "}
-						{entitlementsError}
+						Seat usage data is unavailable; do not infer the allowed-agent limit. {seatUsageError}
 					</div>
 				) : null}
 			</div>
@@ -115,7 +186,7 @@ export function AgentsPage() {
 							</tr>
 						</thead>
 						<tbody>
-							{agents.map((a) => (
+							{agentsForTeam?.map((a) => (
 								<tr key={a.id}>
 									<td>
 										<div className="mono">{a.display_name ?? a.iid.slice(0, 12)}</div>
@@ -137,7 +208,13 @@ export function AgentsPage() {
 									</td>
 								</tr>
 							))}
-							{agents.length === 0 ? (
+							{agentsForTeam === null ? (
+								<tr>
+									<td colSpan={4} className="muted">
+										Agent data is unavailable.
+									</td>
+								</tr>
+							) : agentsForTeam.length === 0 ? (
 								<tr>
 									<td colSpan={4} className="muted">
 										No agents yet. Go to <Link to="/onboarding">Onboarding</Link> to connect your

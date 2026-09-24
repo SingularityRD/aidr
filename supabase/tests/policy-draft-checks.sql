@@ -140,4 +140,53 @@ begin
  update public.tenant_members set expires_at=null
    where tenant_id=old_head.tenant_id and user_id='20000000-0000-0000-0000-000000000001';
 end; $$;
+
+-- Publication reviews an exact document tuple. The second call proves that a
+-- draft edit between review and publish cannot advance runtime policy.
+do $$
+declare
+ tenant uuid := '10000000-0000-0000-0000-000000000002';
+ actor uuid := '20000000-0000-0000-0000-000000000001';
+ old_head public.team_policies%rowtype;
+ first_publish public.tenant_runtime_policies%rowtype;
+ latest public.team_policies%rowtype;
+ published public.tenant_runtime_policies%rowtype;
+ new_source text := 'reviewed next source';
+ new_hash text := encode(sha256(convert_to(new_source,'UTF8')),'hex');
+begin
+ select * into old_head from public.team_policies
+   where tenant_id=tenant order by updated_at desc,id desc limit 1;
+ set local role service_role;
+ select * into first_publish from public.publish_runtime_policy_document(
+   tenant,actor,0,'{"command_default":"deny"}'::jsonb,
+   old_head.id,old_head.version,old_head.source_sha256);
+ reset role;
+ perform draft_test.check_result('publish succeeds for exact reviewed draft id, version and hash',
+   first_publish.version=1 and first_publish.policy='{"command_default":"deny"}'::jsonb
+   and exists(select 1 from public.runtime_policy_revisions where tenant_id=tenant and version=1));
+
+ set local role service_role;
+ perform public.save_policy_document_draft(tenant,actor,new_source,new_hash,
+   old_head.id,old_head.version,old_head.source_sha256);
+ reset role;
+ select * into latest from public.team_policies
+   where tenant_id=tenant order by updated_at desc,id desc limit 1;
+ perform draft_test.expect_state('publication conflicts when reviewed source hash/version is stale',
+   format('select * from public.publish_runtime_policy_document(%L,%L,1,%L,%L,%s,%L)',
+     tenant,actor,'{"command_default":"ask"}',old_head.id,old_head.version,old_head.source_sha256),'PT409');
+ perform draft_test.check_result('stale source publication leaves the runtime policy untouched',
+   latest.id=old_head.id and latest.version=old_head.version+1 and latest.source_sha256=new_hash
+   and exists(select 1 from public.tenant_runtime_policies where tenant_id=tenant and version=1
+     and policy='{"command_default":"deny"}'::jsonb)
+   and (select count(*)=1 from public.runtime_policy_revisions where tenant_id=tenant));
+
+ set local role service_role;
+ select * into published from public.publish_runtime_policy_document(
+   tenant,actor,1,'{"command_default":"ask"}'::jsonb,
+   latest.id,latest.version,latest.source_sha256);
+ reset role;
+ perform draft_test.check_result('publish succeeds after reviewing the new exact source head',
+   published.version=2 and published.policy='{"command_default":"ask"}'::jsonb
+   and (select count(*)=2 from public.runtime_policy_revisions where tenant_id=tenant));
+end; $$;
 select label, passed from draft_test.results order by label;

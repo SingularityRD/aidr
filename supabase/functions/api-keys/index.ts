@@ -4,18 +4,20 @@
 //
 // Provides an auditable API key create/revoke surface for the dashboard.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
-import { boundedOverlapHours, rotationPlan } from "../_shared/key-rotation.ts";
+import { boundedOverlapHours } from "../_shared/key-rotation.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
 // failing later with an empty credential (AIDR-011).
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const MAX_BODY_BYTES = 8 * 1024;
 
 const CREATE_RL_PER_MIN = Number(Deno.env.get("AIDR_APIKEY_CREATE_RL_PER_MIN") ?? "10");
 
@@ -91,8 +93,9 @@ async function rateLimitCreate(
 		.maybeSingle();
 	if (countError) return false;
 	const row = data as RateLimitRow | null;
-	const count = typeof row?.count === "number" ? row.count : 0;
-	return Number.isFinite(CREATE_RL_PER_MIN) && CREATE_RL_PER_MIN > 0 ? count <= CREATE_RL_PER_MIN : true;
+	const count = row?.count;
+	return Number.isSafeInteger(CREATE_RL_PER_MIN) && CREATE_RL_PER_MIN > 0
+		&& typeof count === "number" && Number.isSafeInteger(count) && count > 0 && count <= CREATE_RL_PER_MIN;
 }
 
 Deno.serve(async (req) => {
@@ -122,46 +125,43 @@ Deno.serve(async (req) => {
 	const canWrite = ["owner", "admin", "member"].includes(tenant.role);
 
 	if (req.method === "GET") {
-		const { data, error } = await supabase
+		let query = supabase
 			.from("api_keys")
 			.select("id,label,revoked,created_at")
-			.eq("tenant_id", tenant.id)
-			.order("created_at", { ascending: false })
-			.limit(200);
+			.eq("tenant_id", tenant.id);
+		if (!["owner", "admin"].includes(tenant.role)) query = query.eq("user_id", userId);
+		const { data, error } = await query.order("created_at", { ascending: false }).limit(200);
 		if (error) return corsJson(req, 500, { error: "db_error" });
 		return corsJson(req, 200, { ok: true, keys: data ?? [] });
 	}
 
 	if (req.method === "POST") {
 		if (!canWrite) return corsJson(req, 403, { error: "tenant_role_insufficient" });
-		let body: Record<string, unknown> = {};
-		try {
-			body = (await req.json()) as Record<string, unknown>;
-		} catch {
-			body = {};
-		}
+		const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+		if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
+		if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value))
+			return corsJson(req, 400, { error: "invalid_json" });
+		const body = parsed.value as Record<string, unknown>;
 		const action = typeof body.action === "string" ? body.action : "create";
 		if (!["create", "revoke", "renew"].includes(action)) return corsJson(req, 400, { error: "invalid_action" });
 
 		if (action === "revoke") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
 			if (!id) return corsJson(req, 400, { error: "missing_id" });
-			let query = supabase
-				.from("api_keys")
-				.update({ revoked: true })
-				.eq("id", id)
-				.eq("tenant_id", tenant.id);
-			if (tenant.role === "member") query = query.eq("user_id", userId);
-			const { data: changed, error } = await query.select("id");
-			if (error) return corsJson(req, 500, { error: "db_error" });
-			if (!changed?.length) return corsJson(req, 404, { error: "key_not_found_or_not_owned" });
-			await supabase.from("admin_audit_logs").insert({
-				actor_user_id: userId,
-				tenant_id: tenant.id,
-				action: "api_key.revoke",
-				target_user_id: userId,
-				detail: { id },
-			});
+			let mutation: { data: unknown; error: unknown | null } | null = null;
+			for (let attempt = 0; attempt < 2; attempt++) {
+				mutation = await supabase.rpc("revoke_api_key_with_audit", {
+					p_actor_user_id: userId,
+					p_tenant_id: tenant.id,
+					p_id: id,
+				});
+				if (!mutation.error) break;
+			}
+			if (!mutation || mutation.error) return corsJson(req, 503, { error: "audit_unavailable" });
+			const result = mutation.data as { status?: string };
+			if (result?.status === "not_found") return corsJson(req, 404, { error: "key_not_found_or_not_owned" });
+			if (result?.status === "forbidden") return corsJson(req, 403, { error: "tenant_not_authorized" });
+			if (result?.status !== "revoked") return corsJson(req, 409, { error: "key_revoke_conflict" });
 			return corsJson(req, 200, { ok: true });
 		}
 
@@ -186,44 +186,47 @@ Deno.serve(async (req) => {
 			const currentHash = typeof current.key_hash === "string" ? current.key_hash : "";
 			if (!/^[a-f0-9]{64}$/.test(currentHash)) return corsJson(req, 500, { error: "key_hash_unavailable" });
 
-			const plan = rotationPlan(Date.now(), boundedOverlapHours(RENEW_OVERLAP_HOURS), null);
+			const overlapHours = boundedOverlapHours(RENEW_OVERLAP_HOURS);
 			let apiKey = "";
 			let rotated = false;
+			let previousSecretValidUntil: string | null = null;
 			for (let i = 0; i < 5; i++) {
 				apiKey = randomApiKey();
 				const keyHash = await sha256Hex(apiKey);
-				// Compare-and-swap on the hash that was read: a concurrent renewal
-				// loses the race instead of silently discarding a rotation.
-				const { data: changed, error } = await supabase
-					.from("api_keys")
-					.update({
-						key_hash: keyHash,
-						previous_hash: currentHash,
-						previous_hash_expires_at: plan.previousHashExpiresAt,
-						rotated_at: plan.rotatedAt,
-					})
-					.eq("id", id)
-					.eq("tenant_id", tenant.id)
-					.eq("key_hash", currentHash)
-					.select("id");
-				if (error) continue;
-				if (!changed?.length) return corsJson(req, 409, { error: "key_rotation_conflict" });
+				let mutation: { data: unknown; error: unknown | null } | null = null;
+				for (let attempt = 0; attempt < 2; attempt++) {
+					mutation = await supabase.rpc("renew_api_key_with_audit", {
+						p_actor_user_id: userId,
+						p_tenant_id: tenant.id,
+						p_id: id,
+						p_expected_hash: currentHash,
+						p_new_hash: keyHash,
+						p_overlap_hours: overlapHours,
+					});
+					if (!mutation.error) break;
+				}
+				if (mutation?.error && typeof mutation.error === "object" && "code" in mutation.error && mutation.error.code === "42501") {
+					return corsJson(req, 403, { error: "tenant_not_admitted" });
+				}
+				if (!mutation || mutation.error) return corsJson(req, 503, { error: "audit_unavailable" });
+				const result = mutation.data as {
+					status?: string;
+					previous_secret_valid_until?: string | null;
+				};
+				if (result?.status === "hash_conflict") continue;
+				if (result?.status === "not_found") return corsJson(req, 404, { error: "key_not_found_or_not_owned" });
+				if (result?.status === "revoked") return corsJson(req, 409, { error: "key_revoked" });
+				if (result?.status === "forbidden") return corsJson(req, 403, { error: "tenant_not_authorized" });
+				if (result?.status !== "rotated") return corsJson(req, 409, { error: "key_rotation_conflict" });
 				rotated = true;
+				previousSecretValidUntil = result.previous_secret_valid_until ?? null;
 				break;
 			}
 			if (!rotated) return corsJson(req, 500, { error: "key_rotation_failed" });
-
-			await supabase.from("admin_audit_logs").insert({
-				actor_user_id: userId,
-				tenant_id: tenant.id,
-				action: "api_key.renew",
-				target_user_id: userId,
-				detail: { id, previous_secret_valid_until: plan.previousHashExpiresAt },
-			});
 			return corsJson(req, 200, {
 				ok: true,
 				api_key: apiKey,
-				previous_secret_valid_until: plan.previousHashExpiresAt,
+				previous_secret_valid_until: previousSecretValidUntil,
 			});
 		}
 
@@ -237,26 +240,28 @@ Deno.serve(async (req) => {
 		for (let i = 0; i < 5; i++) {
 			apiKey = randomApiKey();
 			const keyHash = await sha256Hex(apiKey);
-			const { error } = await supabase.from("api_keys").insert({
-				user_id: userId,
-				tenant_id: tenant.id,
-				label,
-				key_hash: keyHash,
-			});
-			if (!error) {
-				inserted = true;
-				break;
+			let mutation: { data: unknown; error: unknown | null } | null = null;
+			for (let attempt = 0; attempt < 2; attempt++) {
+				mutation = await supabase.rpc("issue_api_key_with_audit", {
+					p_actor_user_id: userId,
+					p_tenant_id: tenant.id,
+					p_label: label,
+					p_key_hash: keyHash,
+				});
+				if (!mutation.error) break;
 			}
+			if (mutation?.error && typeof mutation.error === "object" && "code" in mutation.error && mutation.error.code === "42501") {
+				return corsJson(req, 403, { error: "tenant_not_admitted" });
+			}
+			if (!mutation || mutation.error) return corsJson(req, 503, { error: "audit_unavailable" });
+			const result = mutation.data as { status?: string };
+			if (result?.status === "hash_conflict") continue;
+			if (result?.status === "forbidden") return corsJson(req, 403, { error: "tenant_not_authorized" });
+			if (result?.status !== "issued") return corsJson(req, 500, { error: "api_key_issue_failed" });
+			inserted = true;
+			break;
 		}
 		if (!inserted) return corsJson(req, 500, { error: "api_key_issue_failed" });
-
-		await supabase.from("admin_audit_logs").insert({
-			actor_user_id: userId,
-			tenant_id: tenant.id,
-			action: "api_key.create",
-			target_user_id: userId,
-			detail: { label },
-		});
 		return corsJson(req, 200, { ok: true, api_key: apiKey });
 	}
 

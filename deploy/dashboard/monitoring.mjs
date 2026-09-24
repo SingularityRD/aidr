@@ -3,7 +3,7 @@ import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
 import { connect as tlsConnect } from "node:tls";
 
-export const CHECK_NAMES = Object.freeze([
+const CHECK_NAMES = Object.freeze([
 	"database",
 	"storage",
 	"functions",
@@ -14,6 +14,45 @@ export const CHECK_NAMES = Object.freeze([
 ]);
 
 const MAX_EVIDENCE_BYTES = 16 * 1024;
+const MAX_FUNCTION_PROBE_BYTES = 1024;
+const REQUEST_DURATION_BUCKETS = Object.freeze([0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5]);
+const STATUS_CLASSES = Object.freeze(["1xx", "2xx", "3xx", "4xx", "5xx", "unknown"]);
+
+export function createHttpRequestMetrics() {
+	const requests = new Map(STATUS_CLASSES.map((name) => [name, 0]));
+	const buckets = REQUEST_DURATION_BUCKETS.map(() => 0);
+	let durationCount = 0;
+	let durationSum = 0;
+
+	return Object.freeze({
+		observe(statusCode, durationSeconds) {
+			const statusClass = Number.isInteger(statusCode) && statusCode >= 100 && statusCode <= 599
+				? `${Math.floor(statusCode / 100)}xx`
+				: "unknown";
+			requests.set(statusClass, (requests.get(statusClass) || 0) + 1);
+			if (!Number.isFinite(durationSeconds) || durationSeconds < 0) return;
+			durationCount += 1;
+			durationSum += durationSeconds;
+			for (let index = 0; index < REQUEST_DURATION_BUCKETS.length; index += 1) {
+				if (durationSeconds <= REQUEST_DURATION_BUCKETS[index]) buckets[index] += 1;
+			}
+		},
+		renderPrometheus() {
+			const lines = [
+				"# HELP aidr_dashboard_http_requests_total Completed dashboard HTTP requests by status class.",
+				"# TYPE aidr_dashboard_http_requests_total counter",
+				...STATUS_CLASSES.map((name) => `aidr_dashboard_http_requests_total{status_class="${name}"} ${requests.get(name)}`),
+				"# HELP aidr_dashboard_http_request_duration_seconds Dashboard HTTP request duration in seconds.",
+				"# TYPE aidr_dashboard_http_request_duration_seconds histogram",
+				...REQUEST_DURATION_BUCKETS.map((upperBound, index) => `aidr_dashboard_http_request_duration_seconds_bucket{le="${upperBound}"} ${buckets[index]}`),
+				`aidr_dashboard_http_request_duration_seconds_bucket{le="+Inf"} ${durationCount}`,
+				`aidr_dashboard_http_request_duration_seconds_sum ${durationSum}`,
+				`aidr_dashboard_http_request_duration_seconds_count ${durationCount}`,
+			];
+			return `${lines.join("\n")}\n`;
+		},
+	});
+}
 
 function integer(env, name, fallback, minimum, maximum) {
 	const raw = env[name];
@@ -55,13 +94,29 @@ export function loadReadinessConfig(env = process.env) {
 	if (required.length === 0 || new Set(required).size !== required.length || required.some((name) => !CHECK_NAMES.includes(name))) {
 		throw new Error("AIDR_READINESS_REQUIRED_CHECKS must contain unique supported check names");
 	}
+	if (env.AIDR_DEVELOPMENT_MODE !== undefined && !["true", "false"].includes(env.AIDR_DEVELOPMENT_MODE)) {
+		throw new Error("AIDR_DEVELOPMENT_MODE must be true or false");
+	}
+	const productionMode = env.NODE_ENV === "production" || env.AIDR_RELEASE_MODE === "commercial" || env.AIDR_FINAL_RELEASE === "1";
+	const developmentMode = env.AIDR_DEVELOPMENT_MODE === "true" && !productionMode;
+	if (!developmentMode && (required.length !== CHECK_NAMES.length || CHECK_NAMES.some((name) => !required.includes(name)))) {
+		throw new Error("AIDR_READINESS_REQUIRED_CHECKS must contain all seven checks outside explicit development mode");
+	}
+	const functionsUrl = endpoint(env.AIDR_HEALTH_FUNCTIONS_URL, "AIDR_HEALTH_FUNCTIONS_URL", undefined, "/functions/v1/");
+	const databaseUrl = endpoint(env.AIDR_HEALTH_DATABASE_URL, "AIDR_HEALTH_DATABASE_URL", undefined, "/rest/v1/");
+	if (databaseUrl && databaseUrl.pathname !== "/rest/v1/rpc/aidr_readiness_probe") {
+		throw new Error("AIDR_HEALTH_DATABASE_URL must address the exact /rest/v1/rpc/aidr_readiness_probe endpoint");
+	}
+	if (functionsUrl && functionsUrl.pathname !== "/functions/v1/packs-manifest") {
+		throw new Error("AIDR_HEALTH_FUNCTIONS_URL must address the exact /functions/v1/packs-manifest endpoint");
+	}
 	return Object.freeze({
 		required: Object.freeze(required),
 		requestTimeoutMs: integer(env, "AIDR_READINESS_TIMEOUT_MS", 3000, 100, 30000),
 		cacheMs: integer(env, "AIDR_READINESS_CACHE_MS", 5000, 0, 60000),
-		databaseUrl: endpoint(env.AIDR_HEALTH_DATABASE_URL, "AIDR_HEALTH_DATABASE_URL", undefined, "/rest/v1/"),
+		databaseUrl,
 		storageUrl: endpoint(env.AIDR_HEALTH_STORAGE_URL, "AIDR_HEALTH_STORAGE_URL", undefined, "/storage/v1/"),
-		functionsUrl: endpoint(env.AIDR_HEALTH_FUNCTIONS_URL, "AIDR_HEALTH_FUNCTIONS_URL", undefined, "/functions/v1/"),
+		functionsUrl,
 		publicKey: env.VITE_SUPABASE_ANON_KEY || "",
 		signingFile: evidencePath(env.AIDR_SIGNING_HEALTH_FILE, "AIDR_SIGNING_HEALTH_FILE"),
 		backupFile: evidencePath(env.AIDR_BACKUP_HEALTH_FILE, "AIDR_BACKUP_HEALTH_FILE"),
@@ -80,6 +135,12 @@ export function loadReadinessConfig(env = process.env) {
 
 function timestamp(value) {
 	if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)) return null;
+	const millis = Date.parse(value);
+	return Number.isFinite(millis) ? millis : null;
+}
+
+export function parseCertificateExpiry(value) {
+	if (typeof value !== "string" || value.length === 0) return null;
 	const millis = Date.parse(value);
 	return Number.isFinite(millis) ? millis : null;
 }
@@ -131,10 +192,89 @@ async function probeHttp(url, method, config, dependencies) {
 	}
 }
 
+async function readBoundedJson(response) {
+	const declaredLength = response.headers?.get?.("content-length");
+	if (/^\d+$/.test(declaredLength || "") && Number(declaredLength) > MAX_FUNCTION_PROBE_BYTES) {
+		await response.body?.cancel();
+		return null;
+	}
+	const reader = response.body?.getReader?.();
+	if (!reader) return null;
+	const decoder = new TextDecoder();
+	let bytes = 0;
+	let text = "";
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			bytes += value.byteLength;
+			if (bytes > MAX_FUNCTION_PROBE_BYTES) {
+				await reader.cancel();
+				return null;
+			}
+			text += decoder.decode(value, { stream: true });
+		}
+		text += decoder.decode();
+	} catch {
+		return null;
+	} finally {
+		reader.releaseLock();
+	}
+	try {
+		const document = JSON.parse(text);
+		return document && !Array.isArray(document) && typeof document === "object" ? document : null;
+	} catch {
+		return null;
+	}
+}
+
+async function probeDatabase(config, dependencies) {
+	if (!config.databaseUrl || !config.publicKey) return { ok: false, code: "unconfigured" };
+	try {
+		const response = await dependencies.fetch(config.databaseUrl, {
+			method: "GET",
+			headers: { apikey: config.publicKey },
+			redirect: "error",
+			signal: AbortSignal.timeout(config.requestTimeoutMs),
+		});
+		const document = await readBoundedJson(response);
+		const contentType = response.headers?.get?.("content-type") || "";
+		return response.status === 200 && contentType.toLowerCase().startsWith("application/json") &&
+			document && hasExactKeys(document, ["ok"]) && document.ok === true
+			? { ok: true, code: "ok" }
+			: { ok: false, code: "http" };
+	} catch {
+		return { ok: false, code: "unavailable" };
+	}
+}
+
+async function probeFunctions(config, dependencies) {
+	if (!config.functionsUrl || !config.publicKey) return { ok: false, code: "unconfigured" };
+	try {
+		const response = await dependencies.fetch(config.functionsUrl, {
+			method: "GET",
+			headers: { apikey: config.publicKey, authorization: `Bearer ${config.publicKey}` },
+			redirect: "error",
+			signal: AbortSignal.timeout(config.requestTimeoutMs),
+		});
+		const document = await readBoundedJson(response);
+		const contentType = response.headers?.get?.("content-type") || "";
+		return response.status === 401 && contentType.toLowerCase().startsWith("application/json") &&
+			document && hasExactKeys(document, ["error"]) && document.error === "invalid_api_key"
+			? { ok: true, code: "ok" }
+			: { ok: false, code: "http" };
+	} catch {
+		return { ok: false, code: "unavailable" };
+	}
+}
+
 async function probeSigning(config, dependencies, now) {
 	const evidence = await readEvidence(config.signingFile, dependencies);
 	if (!evidence.ok) return evidence;
 	const { document } = evidence;
+	if (hasExactKeys(document, ["schema_version", "status", "checked_at"]) && document.schema_version === 1 && document.status === "failed" && timestamp(document.checked_at) !== null) {
+		return { ok: false, code: "failed" };
+	}
 	const lastSuccess = timestamp(document.last_success_at);
 	const keyExpiry = timestamp(document.active_key_expires_at);
 	if (!hasExactKeys(document, ["schema_version", "status", "last_success_at", "active_key_expires_at"]) || document.schema_version !== 1 || document.status !== "ok" || lastSuccess === null || keyExpiry === null) {
@@ -153,15 +293,16 @@ async function probeBackup(config, dependencies, now) {
 	const evidence = await readEvidence(config.backupFile, dependencies);
 	if (!evidence.ok) return evidence;
 	const { document } = evidence;
+	const recoveryPoint = timestamp(document.recovery_point_at);
 	const completed = timestamp(document.completed_at);
 	const verified = timestamp(document.verified_at);
-	if (!hasExactKeys(document, ["schema_version", "status", "completed_at", "verified_at"]) || document.schema_version !== 1 || document.status !== "ok" || completed === null || verified === null) {
+	if (!hasExactKeys(document, ["schema_version", "status", "recovery_point_at", "completed_at", "verified_at"]) || document.schema_version !== 2 || document.status !== "ok" || recoveryPoint === null || completed === null || verified === null) {
 		return { ok: false, code: "invalid" };
 	}
-	const backupAge = ageSeconds(now, completed);
+	const backupAge = ageSeconds(now, recoveryPoint);
 	const verificationAge = ageSeconds(now, verified);
 	return {
-		ok: completed <= now && verified >= completed && verified <= now && backupAge <= config.backupMaxAgeSeconds,
+		ok: recoveryPoint <= completed && completed <= verified && verified <= now && backupAge <= config.backupMaxAgeSeconds,
 		code: "threshold",
 		metrics: { backupAgeSeconds: backupAge, backupVerificationAgeSeconds: verificationAge },
 	};
@@ -171,16 +312,20 @@ async function probeQueue(config, dependencies, now) {
 	const evidence = await readEvidence(config.queueFile, dependencies);
 	if (!evidence.ok) return evidence;
 	const { document } = evidence;
+	if (hasExactKeys(document, ["schema_version", "status", "checked_at"]) && document.schema_version === 1 && document.status === "failed" && timestamp(document.checked_at) !== null) {
+		return { ok: false, code: "failed" };
+	}
 	const checked = timestamp(document.checked_at);
 	const depth = nonNegativeInteger(document.depth);
 	const oldest = nonNegativeInteger(document.oldest_age_seconds);
 	const failed = nonNegativeInteger(document.failed_jobs);
-	if (!hasExactKeys(document, ["schema_version", "status", "checked_at", "depth", "oldest_age_seconds", "failed_jobs"]) || document.schema_version !== 1 || document.status !== "ok" || checked === null || depth === null || oldest === null || failed === null) {
+	if (!hasExactKeys(document, ["schema_version", "status", "checked_at", "depth", "oldest_age_seconds", "failed_jobs"]) || document.schema_version !== 1 || !["ok", "failed"].includes(document.status) || checked === null || depth === null || oldest === null || failed === null) {
 		return { ok: false, code: "invalid" };
 	}
 	const statusAge = ageSeconds(now, checked);
 	return {
 		ok:
+			document.status === "ok" &&
 			checked <= now &&
 			statusAge <= config.queueMaxAgeSeconds &&
 			depth <= config.queueMaxDepth &&
@@ -191,7 +336,7 @@ async function probeQueue(config, dependencies, now) {
 	};
 }
 
-export function defaultCertificateProbe(url, timeoutMs) {
+function defaultCertificateProbe(url, timeoutMs) {
 	if (!url) return Promise.resolve({ ok: false, code: "unconfigured" });
 	return new Promise((resolve) => {
 		let settled = false;
@@ -209,7 +354,7 @@ export function defaultCertificateProbe(url, timeoutMs) {
 			timeout: timeoutMs,
 		}, () => {
 			const certificate = socket.getPeerCertificate();
-			const validTo = timestamp(certificate?.valid_to);
+			const validTo = parseCertificateExpiry(certificate?.valid_to);
 			finish(socket.authorized && validTo !== null ? { ok: true, code: "ok", validTo } : { ok: false, code: "invalid" }, socket);
 		});
 		socket.once("timeout", () => finish({ ok: false, code: "unavailable" }, socket));
@@ -236,7 +381,7 @@ function safeResult(snapshot) {
 	};
 }
 
-export function renderPrometheus(snapshot) {
+function renderPrometheus(snapshot) {
 	const lines = [
 		"# HELP aidr_readiness Whether every required AIDR dependency is ready.",
 		"# TYPE aidr_readiness gauge",
@@ -279,9 +424,9 @@ export function createReadinessMonitor(config, overrides = {}) {
 	async function collect() {
 		const now = dependencies.now();
 		const results = await Promise.all([
-			probeHttp(config.databaseUrl, "GET", config, dependencies),
+			probeDatabase(config, dependencies),
 			probeHttp(config.storageUrl, "GET", config, dependencies),
-			probeHttp(config.functionsUrl, "OPTIONS", config, dependencies),
+			probeFunctions(config, dependencies),
 			probeSigning(config, dependencies, now),
 			probeBackup(config, dependencies, now),
 			probeQueue(config, dependencies, now),

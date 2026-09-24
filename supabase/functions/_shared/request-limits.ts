@@ -2,6 +2,10 @@ export type BoundedJsonResult =
 	| { ok: true; value: unknown; bytes: number }
 	| { ok: false; status: 400 | 413; error: "invalid_json" | "request_too_large" };
 
+export type BoundedTextResult =
+	| { ok: true; value: string; bytes: number }
+	| { ok: false; status: 400 | 413; error: "invalid_text" | "request_too_large" };
+
 export type RateLimitResult =
 	| { ok: true; remaining: number; retryAfterSeconds: number }
 	| {
@@ -19,8 +23,8 @@ type RpcClient = {
 
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
-function contentLength(req: Request): number | null {
-	const raw = req.headers.get("content-length");
+function contentLength(message: Request | Response): number | null {
+	const raw = message.headers.get("content-length");
 	if (raw === null) return null;
 	if (!/^\d+$/.test(raw)) return Number.POSITIVE_INFINITY;
 	const parsed = Number(raw);
@@ -28,24 +32,24 @@ function contentLength(req: Request): number | null {
 }
 
 /**
- * Reads a JSON request without ever retaining more than maxBytes of body data.
+ * Reads UTF-8 body text without ever retaining more than maxBytes of data.
  * Content-Length is only an early rejection hint; streamed bytes are always
- * counted because callers and proxies can omit or misstate that header.
+ * counted because peers and proxies can omit or misstate that header.
  */
-export async function readBoundedJson(
-	req: Request,
+export async function readBoundedText(
+	message: Request | Response,
 	maxBytes: number,
-): Promise<BoundedJsonResult> {
+): Promise<BoundedTextResult> {
 	if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
 		throw new TypeError("maxBytes must be a positive safe integer");
 	}
-	const declared = contentLength(req);
+	const declared = contentLength(message);
 	if (declared !== null && declared > maxBytes) {
 		return { ok: false, status: 413, error: "request_too_large" };
 	}
 
-	const reader = req.body?.getReader();
-	if (!reader) return { ok: false, status: 400, error: "invalid_json" };
+	const reader = message.body?.getReader();
+	if (!reader) return { ok: false, status: 400, error: "invalid_text" };
 	const chunks: Uint8Array[] = [];
 	let bytes = 0;
 	try {
@@ -62,7 +66,7 @@ export async function readBoundedJson(
 			chunks.push(part.value);
 		}
 	} catch {
-		return { ok: false, status: 400, error: "invalid_json" };
+		return { ok: false, status: 400, error: "invalid_text" };
 	} finally {
 		reader.releaseLock();
 	}
@@ -74,7 +78,26 @@ export async function readBoundedJson(
 		offset += chunk.byteLength;
 	}
 	try {
-		return { ok: true, value: JSON.parse(textDecoder.decode(joined)), bytes };
+		return { ok: true, value: textDecoder.decode(joined), bytes };
+	} catch {
+		return { ok: false, status: 400, error: "invalid_text" };
+	}
+}
+
+export async function readBoundedJson(
+	message: Request | Response,
+	maxBytes: number,
+): Promise<BoundedJsonResult> {
+	const text = await readBoundedText(message, maxBytes);
+	if (!text.ok) {
+		return {
+			ok: false,
+			status: text.status,
+			error: text.error === "request_too_large" ? text.error : "invalid_json",
+		};
+	}
+	try {
+		return { ok: true, value: JSON.parse(text.value), bytes: text.bytes };
 	} catch {
 		return { ok: false, status: 400, error: "invalid_json" };
 	}

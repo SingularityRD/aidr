@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const runtimePolicyMigration = resolve(here, '../migrations/20260911000000_runtime_policy.sql');
 const migration = resolve(here, '../migrations/20260916000003_policy_document_draft_cas.sql');
+const publishCasMigration = resolve(here, '../migrations/20260923000003_policy_document_publish_cas.sql');
 const name = `policy-draft-validation-${Date.now()}-${randomUUID().slice(0, 8)}`;
 const source = '# café 👋\r\nname: İstanbul\r\n';
 if (createHash('sha256').update(source, 'utf8').digest('hex') !==
@@ -41,7 +43,9 @@ const hash = text => createHash('sha256').update(text).digest('hex');
 let created = false;
 try {
   console.log(`Dedicated container: ${name}`);
-  console.log(`Real migration SHA256: ${createHash('sha256').update(readFileSync(migration)).digest('hex')}`);
+  console.log(`Runtime policy migration SHA256: ${createHash('sha256').update(readFileSync(runtimePolicyMigration)).digest('hex')}`);
+  console.log(`Draft migration SHA256: ${createHash('sha256').update(readFileSync(migration)).digest('hex')}`);
+  console.log(`Publish CAS migration SHA256: ${createHash('sha256').update(readFileSync(publishCasMigration)).digest('hex')}`);
   docker(['run', '--detach', '--pull', 'never', '--network', 'none', '--name', name,
     '--env', 'POSTGRES_PASSWORD=isolated-policy-draft-only',
     '--env', 'POSTGRES_INITDB_ARGS=--encoding=UTF8',
@@ -58,7 +62,9 @@ try {
   if (!ready) throw new Error('Dedicated PostgreSQL did not become ready');
   for (const [host, container] of [
     [resolve(here, 'policy-draft-fixture.sql'), '/tmp/policy-draft-fixture.sql'],
+    [runtimePolicyMigration, '/tmp/runtime-policy-migration.sql'],
     [migration, '/tmp/policy-draft-migration.sql'],
+    [publishCasMigration, '/tmp/policy-publish-cas-migration.sql'],
     [resolve(here, 'policy-draft-checks.sql'), '/tmp/policy-draft-checks.sql'],
   ]) {
     docker(['cp', host, `${name}:${container}`]);
@@ -140,7 +146,7 @@ try {
       end if;
       raise notice 'ALL % POLICY DRAFT CHECKS PASSED', (select count(*) from draft_test.results);
     end $$;`);
-  console.log(`PASS: migration, authorization, UTF8/CRLF, history, CAS concurrency, transaction rollback. Container: ${name}`);
+  console.log(`PASS: migration, authorization, UTF8/CRLF, history, draft and publish CAS, transaction rollback. Container: ${name}`);
 } finally {
   if (created) {
     docker(['stop', name]);

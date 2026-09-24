@@ -18,14 +18,22 @@
  */
 
 /** The only SKU whose quantity counts as protected-agent seats. */
-export const RECONCILIATION_SEAT_SKU = "aidr.agent.seat";
+const RECONCILIATION_SEAT_SKU = "aidr.agent.seat";
 
-export type ReconciliationStatus = "matched" | "unmatched" | "over_limit" | "currency_mismatch";
+export type ReconciliationStatus =
+	| "matched"
+	| "unmatched"
+	| "over_limit"
+	| "partial"
+	| "ambiguous"
+	| "currency_mismatch";
 
 export const RECONCILIATION_LABELS: Record<ReconciliationStatus, string> = {
 	matched: "Matched",
 	unmatched: "Unmatched",
 	over_limit: "Over limit",
+	partial: "Partial",
+	ambiguous: "Ambiguous",
 	currency_mismatch: "Currency mismatch",
 };
 
@@ -44,7 +52,7 @@ export interface ReconciliationApproval {
 }
 
 /** A settlement ledger row, as returned by the billing portal. */
-export interface ReconciliationSettlement {
+interface ReconciliationSettlement {
 	settlementId: string;
 	status: string;
 	currency: string;
@@ -92,20 +100,20 @@ function seatTotal(lines: ReconciliationSettlement["lines"]): number | null {
 	return total;
 }
 
-/** One row per settlement id: the latest settled receipt wins. */
+/** One row per settlement id: only a latest receipt that is settled counts. */
 function latestSettled(settlements: readonly ReconciliationSettlement[]): ReconciliationSettlement[] {
 	const byId = new Map<string, ReconciliationSettlement>();
 	for (const row of settlements) {
-		if (row.status !== "settled") continue;
 		const current = byId.get(row.settlementId);
 		if (!current || (row.sequence ?? 0) >= (current.sequence ?? 0)) byId.set(row.settlementId, row);
 	}
-	return [...byId.values()];
+	return [...byId.values()].filter((row) => row.status === "settled");
 }
 
 function approvedRow(
 	approval: ReconciliationApproval,
 	matches: ReconciliationSettlement[],
+	ambiguous = false,
 ): ReconciliationRow {
 	const settlementIds = [...new Set(matches.map((match) => match.settlementId))].sort();
 	const base = {
@@ -122,6 +130,15 @@ function approvedRow(
 		currency: approval.currency,
 		settlementIds,
 	};
+	if (ambiguous) {
+		return {
+			...base,
+			settledAmountMinor: null,
+			settledSeats: null,
+			status: "ambiguous",
+			reason: "duplicate_approved_order_quote_reference",
+		};
+	}
 
 	if (approval.quoteReference === null) {
 		return {
@@ -183,6 +200,22 @@ function approvedRow(
 			reason: "settled_amount_exceeds_approved_amount",
 		};
 	}
+	if (
+		(approval.agentsGranted !== null && settledSeats === null) ||
+		(approval.amountMinor !== null && settledAmountMinor < approval.amountMinor) ||
+		(approval.agentsGranted !== null && settledSeats !== null && settledSeats < approval.agentsGranted)
+	) {
+		return {
+			...base,
+			settledAmountMinor,
+			settledSeats,
+			status: "partial",
+			reason:
+				approval.agentsGranted !== null && settledSeats === null
+					? "settled_seats_not_recorded"
+					: "settlement_below_approved_amount_or_agents",
+		};
+	}
 	return {
 		...base,
 		settledAmountMinor,
@@ -201,8 +234,23 @@ export function reconcileApprovedOrders(input: ReconciliationInput): Reconciliat
 	const settled = latestSettled(input.settlements);
 	const claimed = new Set<string>();
 	const rows: ReconciliationRow[] = [];
+	const approvalCountByQuote = new Map<string, number>();
+	for (const approval of approvals) {
+		if (approval.quoteReference === null) continue;
+		approvalCountByQuote.set(
+			approval.quoteReference,
+			(approvalCountByQuote.get(approval.quoteReference) ?? 0) + 1,
+		);
+	}
 
 	for (const approval of approvals) {
+		if (
+			approval.quoteReference !== null &&
+			(approvalCountByQuote.get(approval.quoteReference) ?? 0) > 1
+		) {
+			rows.push(approvedRow(approval, [], true));
+			continue;
+		}
 		const matches =
 			approval.quoteReference === null
 				? []
@@ -233,7 +281,10 @@ export function reconcileApprovedOrders(input: ReconciliationInput): Reconciliat
 				: null,
 			settledSeats: seatTotal(orphan.lines),
 			status: "unmatched",
-			reason: "no_approved_order",
+			reason:
+				orphan.quoteReference !== null && (approvalCountByQuote.get(orphan.quoteReference) ?? 0) > 1
+					? "ambiguous_approved_order_quote_reference"
+					: "no_approved_order",
 		});
 	}
 

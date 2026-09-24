@@ -8,13 +8,13 @@ import { cancelSubscription } from "./stripe-client";
 
 export type ProviderType = "stripe";
 
-export interface PaymentResult {
+interface PaymentResult {
 	url: string;
 	provider: ProviderType;
 	checkoutId?: string;
 }
 
-export interface Invoice {
+interface Invoice {
 	id: string;
 	amount: number;
 	currency: string;
@@ -126,7 +126,7 @@ export async function convertCurrency(amount: number, from: string, to: string):
 /**
  * Detect user location from various signals
  */
-export function detectUserLocation(
+function detectUserLocation(
 	_ip?: string,
 	browserLocale?: string,
 	explicitCountry?: string,

@@ -1,6 +1,6 @@
-export const DELEGATED_CREDENTIAL_TYPE = "aidr-delegation+jwt";
-export const DELEGATED_CREDENTIAL_MAX_SECONDS = 900;
-export const DELEGATED_CREDENTIAL_MAX_DEPTH = 4;
+const DELEGATED_CREDENTIAL_TYPE = "aidr-delegation+jwt";
+const DELEGATED_CREDENTIAL_MAX_SECONDS = 900;
+const DELEGATED_CREDENTIAL_MAX_DEPTH = 4;
 
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -20,6 +20,7 @@ export interface BrokerDelegatedClaims {
 	issuedAt: number;
 	notBefore: number;
 	expiresAt: number;
+	authSessionIssuedAt: number;
 	tokenId: string;
 	delegationDepth: number;
 	parentTokenId?: string;
@@ -72,7 +73,7 @@ function safeName(value: unknown, max = 256): value is string {
 function validClaims(value: unknown): value is BrokerDelegatedClaims {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const claims = value as Record<string, unknown>;
-	if (!exactKeys(claims, ["version", "issuer", "subjectUserId", "tenantId", "agentId", "tool", "resource", "audience", "scopes", "issuedAt", "notBefore", "expiresAt", "tokenId", "delegationDepth"], ["parentTokenId"])) return false;
+	if (!exactKeys(claims, ["version", "issuer", "subjectUserId", "tenantId", "agentId", "tool", "resource", "audience", "scopes", "issuedAt", "notBefore", "expiresAt", "authSessionIssuedAt", "tokenId", "delegationDepth"], ["parentTokenId"])) return false;
 	if (claims.version !== 1 || !safeName(claims.issuer) || !safeName(claims.audience)) return false;
 	if (![claims.subjectUserId, claims.tenantId, claims.agentId, claims.tokenId].every((id) => typeof id === "string" && UUID.test(id))) return false;
 	if (!claims.tool || typeof claims.tool !== "object" || Array.isArray(claims.tool)) return false;
@@ -84,8 +85,8 @@ function validClaims(value: unknown): value is BrokerDelegatedClaims {
 	const claimScopes = claims.scopes;
 	if (!Array.isArray(claimScopes) || claimScopes.length < 1 || claimScopes.length > 32 || claimScopes.some((scope) => typeof scope !== "string" || !SCOPE.test(scope))) return false;
 	if (new Set(claimScopes).size !== claimScopes.length || ![...claimScopes].sort().every((scope, index) => scope === claimScopes[index])) return false;
-	if (typeof claims.issuedAt !== "number" || !Number.isSafeInteger(claims.issuedAt) || typeof claims.notBefore !== "number" || !Number.isSafeInteger(claims.notBefore) || typeof claims.expiresAt !== "number" || !Number.isSafeInteger(claims.expiresAt) || typeof claims.delegationDepth !== "number" || !Number.isSafeInteger(claims.delegationDepth)) return false;
-	if (claims.delegationDepth < 0 || claims.delegationDepth > DELEGATED_CREDENTIAL_MAX_DEPTH || claims.issuedAt > claims.notBefore || claims.notBefore >= claims.expiresAt) return false;
+	if (typeof claims.issuedAt !== "number" || !Number.isSafeInteger(claims.issuedAt) || typeof claims.notBefore !== "number" || !Number.isSafeInteger(claims.notBefore) || typeof claims.expiresAt !== "number" || !Number.isSafeInteger(claims.expiresAt) || typeof claims.authSessionIssuedAt !== "number" || !Number.isSafeInteger(claims.authSessionIssuedAt) || typeof claims.delegationDepth !== "number" || !Number.isSafeInteger(claims.delegationDepth)) return false;
+	if (claims.delegationDepth < 0 || claims.delegationDepth > DELEGATED_CREDENTIAL_MAX_DEPTH || claims.authSessionIssuedAt <= 0 || claims.authSessionIssuedAt > claims.issuedAt || claims.issuedAt > claims.notBefore || claims.notBefore >= claims.expiresAt) return false;
 	if (claims.parentTokenId !== undefined && (typeof claims.parentTokenId !== "string" || !UUID.test(claims.parentTokenId))) return false;
 	return (claims.delegationDepth === 0) === (claims.parentTokenId === undefined);
 }
@@ -100,7 +101,7 @@ async function importPublicKey(spkiBase64: string): Promise<CryptoKey> {
 	return crypto.subtle.importKey("spki", bytes, { name: "Ed25519" }, false, ["verify"]);
 }
 
-export async function sha256DelegatedClaims(claims: BrokerDelegatedClaims): Promise<string> {
+async function sha256DelegatedClaims(claims: BrokerDelegatedClaims): Promise<string> {
 	const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalDelegatedJson(claims))));
 	return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -171,7 +172,8 @@ export async function verifyDelegatedCredentialForBroker(params: {
 export function matchesDelegatedContext(claims: BrokerDelegatedClaims, expected: unknown): boolean {
 	if (!expected || typeof expected !== "object" || Array.isArray(expected)) return false;
 	const value = expected as Record<string, unknown>;
-	if (!exactKeys(value, ["audience", "tool", "resource", "required_scopes"])) return false;
+	if (!exactKeys(value, ["tenant_id", "subject_user_id", "agent_id", "audience", "tool", "resource", "required_scopes"])) return false;
+	if (value.tenant_id !== claims.tenantId || value.subject_user_id !== claims.subjectUserId || value.agent_id !== claims.agentId) return false;
 	if (typeof value.audience !== "string" || value.audience !== claims.audience) return false;
 	if (!value.tool || typeof value.tool !== "object" || Array.isArray(value.tool) || !value.resource || typeof value.resource !== "object" || Array.isArray(value.resource)) return false;
 	const tool = value.tool as Record<string, unknown>;
