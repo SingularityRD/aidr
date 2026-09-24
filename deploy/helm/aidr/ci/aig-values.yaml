@@ -1,0 +1,30 @@
+# Minimal install plus the AI-Infra-Guard scanning stack. The trust anchors
+# below are placeholders for rendering only; use your signed bundle's values.
+global:
+  imageRegistry: registry.example.internal
+publicUrls:
+  dashboard: https://aidr.example.com
+  api: https://api.aidr.example.com
+secrets:
+  existingSecret: aidr-platform
+  functionsExistingSecret: aidr-functions
+ingress:
+  className: nginx
+  tlsSecretName: aidr-tls
+aig:
+  enabled: true
+  existingSecret: aidr-aig
+  signingPublicKeySecret: aidr-aig-signing
+  dataConfigMap: aidr-aig-data
+  trustedSigningKeyId: aig-data-2026
+  trustedSigningPublicKeySha256: "3f2a9c1e0b7d4a6f8e5c2b1a0d9e8f7c6b5a4d3e2f1a0b9c8d7e6f5a4b3c2d1e"
+  expectedDataBundleId: aig-data-bundle-example
+  expectedSourceCommit: "8c7a4d9dbbaf8b552893822e89d7bf06f33f9221"
+  egressProxy:
+    url: http://egress-proxy.security.svc:3128
+    cidrs: ["10.60.0.0/24"]
+    port: 3128
+  bridge:
+    authMode: broker
+    jwtIssuer: https://api.aidr.example.com
+    jwtAudience: aidr-aig-bridge

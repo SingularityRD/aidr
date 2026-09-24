@@ -1,0 +1,123 @@
+{{- $component := "functions" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.functions -}}
+{{- $dashboardUrl := include "aidr.dashboardUrl" . -}}
+{{- $apiUrl := include "aidr.apiUrl" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  {{- if not $values.autoscaling.enabled }}
+  replicas: {{ $values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 8 }}
+      {{- with $values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" $values) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser "fsGroup" $values.runAsUser) | nindent 6 }}
+      containers:
+        - name: functions
+          image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "functions.image" "defaultTag" true) }}
+          imagePullPolicy: {{ $values.image.pullPolicy }}
+          # The image CMD starts the reviewed upstream router (edge-functions.Dockerfile).
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 9000
+              protocol: TCP
+          envFrom:
+            # Signing keys, pack master key and ingress secret (never in values).
+            - secretRef:
+                name: {{ include "aidr.functionsSecretName" . }}
+          env:
+            {{- include "aidr.postgresPasswordEnv" . | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "JWT_SECRET" "key" "jwt-secret") | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "SUPABASE_ANON_KEY" "key" "anon-key") | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "SUPABASE_SERVICE_ROLE_KEY" "key" "service-role-key") | nindent 12 }}
+            - name: SUPABASE_URL
+              value: {{ include "aidr.gatewayUrl" . | quote }}
+            - name: SUPABASE_PUBLIC_URL
+              value: {{ $apiUrl | quote }}
+            - name: SUPABASE_DB_URL
+              value: {{ include "aidr.dbUrl" (dict "root" . "user" "postgres" "scheme" "postgresql") | quote }}
+            # Functions verify callers themselves (device, API-key and user JWTs).
+            - name: VERIFY_JWT
+              value: "false"
+            - name: AIDR_ALLOWED_ORIGINS
+              value: {{ $dashboardUrl | quote }}
+            - name: AIDR_DASHBOARD_URL
+              value: {{ $dashboardUrl | quote }}
+            - name: AIDR_DASHBOARD_VERIFY_URL
+              value: {{ printf "%s/verify" $dashboardUrl | quote }}
+            - name: AIDR_PUBLIC_API_ORIGIN
+              value: {{ $apiUrl | quote }}
+            - name: AIDR_DELEGATION_ISSUER
+              value: {{ $apiUrl | quote }}
+            - name: AIDR_DEVELOPMENT_MODE
+              value: "false"
+            - name: AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING
+              value: "false"
+            - name: AIDR_BILLING_PROVIDER
+              value: {{ $values.billingProvider | quote }}
+            - name: HOME
+              value: /tmp
+            - name: DENO_DIR
+              value: /tmp/deno-cache
+            {{- with $values.npmRegistry }}
+            - name: NPM_CONFIG_REGISTRY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 15
+          {{- include "aidr.resources" (dict "root" . "component" "functions" "override" $values.resources) | nindent 10 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 9000
+      targetPort: http
+      protocol: TCP
+{{- include "aidr.pdbAndHpa" (dict "root" . "component" $component "values" $values) }}

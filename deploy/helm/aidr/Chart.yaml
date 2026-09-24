@@ -1,0 +1,22 @@
+apiVersion: v2
+name: aidr
+description: >-
+  Singularity AIDR self-hosted control plane for Kubernetes: dashboard, Supabase-compatible
+  API gateway, auth, REST, storage and edge functions, with optional in-cluster Postgres and
+  the optional AI-Infra-Guard (AIG) scanning stack.
+type: application
+version: 0.1.0
+appVersion: "0.6.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/SingularityRD/aidr
+keywords:
+  - aidr
+  - security
+  - ai-agents
+  - supabase
+maintainers:
+  - name: SingularityRD
+annotations:
+  # Upstream Supabase self-hosted release the component images are pinned to
+  # (the same reviewed commit scripts/deployment-prepare.mjs verifies).
+  aidr.singularity/supabase-self-hosted: "v0.8.1 (8c7a4d9dbbaf8b552893822e89d7bf06f33f9220)"

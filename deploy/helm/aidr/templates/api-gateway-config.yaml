@@ -1,0 +1,365 @@
+{{- $component := "api-gw" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.apiGateway -}}
+{{- $dashboardUrl := include "aidr.dashboardUrl" . -}}
+{{- $auth := include "aidr.component" (dict "root" . "component" "auth") -}}
+{{- $rest := include "aidr.component" (dict "root" . "component" "rest") -}}
+{{- $storage := include "aidr.component" (dict "root" . "component" "storage") -}}
+{{- $functions := include "aidr.component" (dict "root" . "component" "functions") -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+data:
+  # API keys are never stored here: entrypoint.sh substitutes __ANON_KEY__ and
+  # __SERVICE_ROLE_KEY__ from the platform Secret into an in-memory volume.
+  entrypoint.sh: |
+    #!/bin/sh
+    set -eu
+    : "${ANON_KEY:?ANON_KEY is required}"
+    : "${SERVICE_ROLE_KEY:?SERVICE_ROLE_KEY is required}"
+    for key in "$ANON_KEY" "$SERVICE_ROLE_KEY"; do
+      case "$key" in
+        *[!A-Za-z0-9._-]*) echo "API keys must be compact JWTs" >&2; exit 1 ;;
+      esac
+    done
+    sed -e "s|__ANON_KEY__|${ANON_KEY}|g" \
+        -e "s|__SERVICE_ROLE_KEY__|${SERVICE_ROLE_KEY}|g" \
+        /etc/envoy-template/lds.template.yaml > /etc/envoy-runtime/lds.yaml
+    exec envoy -c /etc/envoy-template/envoy.yaml --log-level info
+  envoy.yaml: |
+    dynamic_resources:
+      cds_config:
+        path_config_source:
+          path: /etc/envoy-template/cds.yaml
+        resource_api_version: V3
+      lds_config:
+        path_config_source:
+          path: /etc/envoy-runtime/lds.yaml
+        resource_api_version: V3
+    node:
+      cluster: aidr_gateway
+      id: aidr_gateway
+    overload_manager:
+      resource_monitors:
+        - name: envoy.resource_monitors.global_downstream_max_connections
+          typed_config:
+            '@type': type.googleapis.com/envoy.extensions.resource_monitors.downstream_connections.v3.DownstreamConnectionsConfig
+            max_active_downstream_connections: {{ int $values.maxDownstreamConnections }}
+    admin:
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 9901
+  cds.yaml: |
+    resources:
+    {{- range $cluster := list (list "auth" $auth 9999) (list "rest" $rest 3000) (list "storage" $storage 5000) (list "functions" $functions 9000) }}
+      - '@type': type.googleapis.com/envoy.config.cluster.v3.Cluster
+        name: {{ index $cluster 0 }}
+        connect_timeout: 5s
+        type: STRICT_DNS
+        dns_refresh_rate: 5s
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: {{ index $cluster 0 }}
+          endpoints:
+            - lb_endpoints:
+                - endpoint:
+                    address:
+                      socket_address:
+                        address: {{ index $cluster 1 }}
+                        port_value: {{ index $cluster 2 }}
+        circuit_breakers:
+          thresholds:
+            - priority: DEFAULT
+              max_connections: 10000
+              max_pending_requests: 10000
+              max_requests: 10000
+    {{- end }}
+  lds.template.yaml: |
+    resources:
+      - '@type': type.googleapis.com/envoy.config.listener.v3.Listener
+        name: aidr
+        per_connection_buffer_limit_bytes: 32768
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 8000
+        filter_chains:
+          - filters:
+              - name: envoy.filters.network.http_connection_manager
+                typed_config:
+                  '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                  stat_prefix: ingress_http
+                  normalize_path: true
+                  merge_slashes: true
+                  path_with_escaped_slashes_action: REJECT_REQUEST
+                  use_remote_address: true
+                  # The ingress controller is the one trusted hop in front of the gateway.
+                  xff_num_trusted_hops: 1
+                  common_http_protocol_options:
+                    headers_with_underscores_action: REJECT_REQUEST
+                  access_log:
+                    - name: envoy.access_loggers.stdout
+                      typed_config:
+                        '@type': type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                        log_format:
+                          # Route name instead of the path: query strings can carry apikey values.
+                          text_format_source:
+                            inline_string: "[%START_TIME%] %REQ(:METHOD)% %ROUTE_NAME% %RESPONSE_CODE% %BYTES_SENT% %DURATION%ms\n"
+                  route_config:
+                    name: aidr_route
+                    virtual_hosts:
+                      - name: aidr_api
+                        domains: ["*"]
+                        cors:
+                          allow_origin_string_match:
+                            - exact: {{ $dashboardUrl | quote }}
+                          allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD"
+                          allow_headers: "*"
+                          expose_headers: "*"
+                          max_age: "3600"
+                        request_headers_to_add:
+                          - header:
+                              key: X-Forwarded-Host
+                              value: "%REQ(:AUTHORITY)%"
+                            append_action: ADD_IF_ABSENT
+                        routes:
+                        {{- range $open := list "verify" "callback" "authorize" ".well-known/jwks.json" "sso/saml/acs" "sso/saml/metadata" }}
+                          - match:
+                              prefix: /auth/v1/{{ $open }}
+                            route:
+                              cluster: auth
+                              prefix_rewrite: /{{ $open }}
+                              timeout: 30s
+                            request_headers_to_add:
+                              - header:
+                                  key: X-Forwarded-Prefix
+                                  value: /auth/v1/{{ $open }}
+                                append_action: ADD_IF_ABSENT
+                            typed_per_filter_config:
+                              envoy.filters.http.rbac:
+                                '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+                                rbac:
+                                  rules:
+                                    action: ALLOW
+                                    policies:
+                                      open:
+                                        permissions: [{any: true}]
+                                        principals: [{any: true}]
+                        {{- end }}
+                          - match:
+                              prefix: /.well-known/oauth-authorization-server
+                            route:
+                              cluster: auth
+                              timeout: 30s
+                            typed_per_filter_config:
+                              envoy.filters.http.rbac:
+                                '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+                                rbac:
+                                  rules:
+                                    action: ALLOW
+                                    policies:
+                                      open:
+                                        permissions: [{any: true}]
+                                        principals: [{any: true}]
+                          # Edge functions authenticate every request themselves.
+                          - name: functions-v1-all
+                            match:
+                              prefix: /functions/v1/
+                            route:
+                              cluster: functions
+                              prefix_rewrite: /
+                              timeout: 150s
+                            request_headers_to_add:
+                              - header:
+                                  key: X-Forwarded-Prefix
+                                  value: /functions/v1/
+                                append_action: ADD_IF_ABSENT
+                            typed_per_filter_config:
+                              envoy.filters.http.rbac:
+                                '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+                                rbac:
+                                  rules:
+                                    action: ALLOW
+                                    policies:
+                                      open:
+                                        permissions: [{any: true}]
+                                        principals: [{any: true}]
+                          # Storage verifies the JWT on every object request.
+                          - match:
+                              prefix: /storage/v1/
+                            route:
+                              cluster: storage
+                              prefix_rewrite: /
+                              timeout: 30s
+                            request_headers_to_add:
+                              - header:
+                                  key: X-Forwarded-Prefix
+                                  value: /storage/v1
+                                append_action: ADD_IF_ABSENT
+                            typed_per_filter_config:
+                              envoy.filters.http.rbac:
+                                '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+                                rbac:
+                                  rules:
+                                    action: ALLOW
+                                    policies:
+                                      open:
+                                        permissions: [{any: true}]
+                                        principals: [{any: true}]
+                          - name: auth-v1-protected
+                            match:
+                              prefix: /auth/v1/
+                            route:
+                              cluster: auth
+                              prefix_rewrite: /
+                              timeout: 30s
+                            request_headers_to_add:
+                              - header:
+                                  key: X-Forwarded-Prefix
+                                  value: /auth/v1/
+                                append_action: ADD_IF_ABSENT
+                          # The OpenAPI document lists the whole schema: service role only.
+                          - name: rest-v1-openapi-protected
+                            match:
+                              path: /rest/v1/
+                            route:
+                              cluster: rest
+                              prefix_rewrite: /
+                              timeout: 30s
+                            typed_per_filter_config:
+                              envoy.filters.http.rbac:
+                                '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+                                rbac:
+                                  rules:
+                                    action: ALLOW
+                                    policies:
+                                      service_role:
+                                        permissions: [{any: true}]
+                                        principals:
+                                          - header:
+                                              name: apikey
+                                              string_match:
+                                                exact: '__SERVICE_ROLE_KEY__'
+                          - name: rest-v1-protected
+                            match:
+                              prefix: /rest/v1/
+                            route:
+                              cluster: rest
+                              prefix_rewrite: /
+                              timeout: 30s
+                            request_headers_to_add:
+                              - header:
+                                  key: X-Forwarded-Prefix
+                                  value: /rest/v1/
+                                append_action: ADD_IF_ABSENT
+                          # Everything else (Studio, pg-meta, realtime, graphql) is not deployed.
+                          - match:
+                              prefix: /
+                            direct_response:
+                              status: 404
+                            typed_per_filter_config:
+                              envoy.filters.http.rbac:
+                                '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+                                rbac:
+                                  rules:
+                                    action: ALLOW
+                                    policies:
+                                      open:
+                                        permissions: [{any: true}]
+                                        principals: [{any: true}]
+                  http_filters:
+                    - name: envoy.filters.http.cors
+                      typed_config:
+                        '@type': type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+                    # Copies ?apikey= into the apikey header when a client omits the header.
+                    - name: envoy.filters.http.lua
+                      typed_config:
+                        '@type': type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                        inline_code: |
+                          function envoy_on_request(request_handle)
+                            local headers = request_handle:headers()
+                            if request_handle:streamInfo():routeName() == "functions-v1-all" then
+                              return
+                            end
+                            if headers:get("apikey") ~= nil then
+                              return
+                            end
+                            local path = headers:get(":path")
+                            local query_start = path and string.find(path, "?", 1, true)
+                            if query_start == nil then
+                              return
+                            end
+                            for key, value in string.gmatch(string.sub(path, query_start + 1), "([^&]+)=([^&]*)") do
+                              if key == "apikey" and value ~= "" then
+                                headers:add("apikey", value)
+                                return
+                              end
+                            end
+                          end
+                    # 401 for a missing or unknown API key on protected routes.
+                    - name: envoy.filters.http.lua
+                      typed_config:
+                        '@type': type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                        inline_code: |
+                          local ANON_KEY = "__ANON_KEY__"
+                          local SERVICE_ROLE_KEY = "__SERVICE_ROLE_KEY__"
+                          local PROTECTED = {
+                            ["auth-v1-protected"] = true,
+                            ["rest-v1-openapi-protected"] = true,
+                            ["rest-v1-protected"] = true,
+                          }
+                          function envoy_on_request(request_handle)
+                            if not PROTECTED[request_handle:streamInfo():routeName()] then
+                              return
+                            end
+                            local apikey = request_handle:headers():get("apikey")
+                            if apikey ~= nil and apikey ~= "" and (apikey == ANON_KEY or apikey == SERVICE_ROLE_KEY) then
+                              return
+                            end
+                            request_handle:respond({[":status"] = "401", ["content-type"] = "text/plain"}, "Unauthorized")
+                          end
+                    # Synthesizes Authorization: Bearer <apikey> when no user JWT is supplied.
+                    - name: envoy.filters.http.lua
+                      typed_config:
+                        '@type': type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                        inline_code: |
+                          function envoy_on_request(request_handle)
+                            local headers = request_handle:headers()
+                            if request_handle:streamInfo():routeName() == "functions-v1-all" then
+                              return
+                            end
+                            local authorization = headers:get("authorization")
+                            if authorization ~= nil and string.sub(authorization, 1, 7) == "Bearer " then
+                              return
+                            end
+                            local apikey = headers:get("apikey")
+                            if apikey ~= nil and apikey ~= "" then
+                              headers:replace("authorization", "Bearer " .. apikey)
+                            end
+                          end
+                    - name: envoy.filters.http.rbac
+                      typed_config:
+                        '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC
+                        rules:
+                          action: ALLOW
+                          policies:
+                            apikey:
+                              permissions:
+                                - url_path: {path: {prefix: /auth/v1/}}
+                                - url_path: {path: {prefix: /rest/v1/}}
+                              principals:
+                                - header:
+                                    name: apikey
+                                    string_match:
+                                      exact: '__SERVICE_ROLE_KEY__'
+                                - header:
+                                    name: apikey
+                                    string_match:
+                                      exact: '__ANON_KEY__'
+                    - name: envoy.filters.http.router
+                      typed_config:
+                        '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router

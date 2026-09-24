@@ -1,0 +1,140 @@
+{{- $component := "dashboard" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.dashboard -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  {{- if not $values.autoscaling.enabled }}
+  replicas: {{ $values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 8 }}
+      {{- with $values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" $values) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser "fsGroup" $values.runAsUser) | nindent 6 }}
+      containers:
+        - name: dashboard
+          image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "dashboard.image" "defaultTag" true) }}
+          imagePullPolicy: {{ $values.image.pullPolicy }}
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "8080"
+            - name: VITE_SUPABASE_URL
+              value: {{ include "aidr.apiUrl" . | quote }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "VITE_SUPABASE_ANON_KEY" "key" "anon-key") | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "AIDR_METRICS_TOKEN" "key" "metrics-token") | nindent 12 }}
+            - name: SENTRY_DSN
+              value: {{ $values.sentry.dsn | quote }}
+            - name: SENTRY_ENVIRONMENT
+              value: {{ $values.sentry.environment | quote }}
+            - name: SENTRY_TRACES_SAMPLE_RATE
+              value: {{ $values.sentry.tracesSampleRate | quote }}
+            - name: AIDR_AUTH_METHODS
+              value: {{ $values.authMethods | quote }}
+            - name: AIDR_SIGNUP_MODE
+              value: closed
+            - name: AIDR_SAML_PROVIDERS
+              value: {{ $values.saml.providers | quote }}
+            - name: AIDR_SAML_PROVIDER_ID
+              value: {{ $values.saml.providerId | quote }}
+            - name: AIDR_SAML_DOMAIN
+              value: {{ $values.saml.domain | quote }}
+            - name: AIDR_AUTH_TEMPLATE_DIR
+              value: /app/auth-templates
+            - name: AIDR_DEVELOPMENT_MODE
+              value: "false"
+            - name: AIDR_HEALTH_DATABASE_URL
+              value: {{ printf "%s/rest/v1/rpc/aidr_readiness_probe" (include "aidr.gatewayUrl" .) | quote }}
+            - name: AIDR_HEALTH_STORAGE_URL
+              value: {{ printf "%s/storage/v1/status" (include "aidr.gatewayUrl" .) | quote }}
+            - name: AIDR_HEALTH_FUNCTIONS_URL
+              value: {{ printf "%s/functions/v1/packs-manifest" (include "aidr.gatewayUrl" .) | quote }}
+            - name: AIDR_SIGNING_HEALTH_FILE
+              value: /run/aidr-health/signing.json
+            - name: AIDR_BACKUP_HEALTH_FILE
+              value: /run/aidr-health/backup.json
+            - name: AIDR_QUEUE_HEALTH_FILE
+              value: /run/aidr-health/queue.json
+            - name: AIDR_PUBLIC_HTTPS_URL
+              value: {{ include "aidr.dashboardUrl" . | quote }}
+            - name: AIDR_READINESS_REQUIRED_CHECKS
+              value: database,storage,functions,signing,backup,queue,certificate
+            {{- with $values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: {{ $values.readinessProbePath }}
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          {{- include "aidr.resources" (dict "root" . "component" "dashboard" "override" $values.resources) | nindent 10 }}
+          volumeMounts:
+            - name: health
+              mountPath: /run/aidr-health
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: health
+          {{- if $values.healthEvidence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ $values.healthEvidence.existingClaim }}
+            readOnly: true
+          {{- else }}
+          emptyDir:
+            sizeLimit: 1Mi
+          {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+{{- include "aidr.pdbAndHpa" (dict "root" . "component" $component "values" $values) }}

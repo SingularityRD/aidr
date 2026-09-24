@@ -92,6 +92,14 @@ until the vendor-published registry is installed. Typed terms are accepted only
 with `--unsigned-license-for-pilot`. After expiry and grace, managed features
 degrade while local detection keeps enforcing. See [licensing](../docs/operations/licensing.md).
 
+### Kubernetes
+
+The Helm chart in `deploy/helm/aidr` installs the same control plane on Kubernetes
+(external HA Postgres recommended, secure defaults, NetworkPolicy, optional AIG stack).
+Images are built with `deploy/helm/build-images.mjs` and credentials generated once with
+`deploy/helm/generate-secrets.mjs`. See `docs/operations/kubernetes.md`; validate the
+chart with `pnpm verify:helm`.
+
 ## Isolated installation rehearsal
 
 Use an empty destination and keep the stack isolated from customer data:

@@ -1,0 +1,160 @@
+{{- $component := "storage" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.storage -}}
+{{- if not (has $values.backend (list "file" "s3")) -}}
+{{- fail "storage.backend must be file or s3" -}}
+{{- end -}}
+{{- if and (eq $values.backend "file") (gt (int $values.replicaCount) 1) (has "ReadWriteOnce" $values.persistence.accessModes) -}}
+{{- fail "storage.replicaCount > 1 needs storage.backend=s3 or a ReadWriteMany volume (storage.persistence.accessModes)" -}}
+{{- end -}}
+{{- if and (eq $values.backend "file") (not $values.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml $values.persistence.accessModes | nindent 4 }}
+  {{- with .Values.global.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $values.persistence.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ $values.replicaCount }}
+  revisionHistoryLimit: 5
+  {{- if eq $values.backend "file" }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 8 }}
+      {{- with $values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" $values) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser "fsGroup" $values.runAsUser) | nindent 6 }}
+      containers:
+        - name: storage
+          image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "storage.image") }}
+          imagePullPolicy: {{ $values.image.pullPolicy }}
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          env:
+            {{- include "aidr.postgresPasswordEnv" . | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "ANON_KEY" "key" "anon-key") | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "SERVICE_KEY" "key" "service-role-key") | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "AUTH_JWT_SECRET" "key" "jwt-secret") | nindent 12 }}
+            - name: POSTGREST_URL
+              value: {{ printf "http://%s:3000" (include "aidr.component" (dict "root" . "component" "rest")) | quote }}
+            - name: DATABASE_URL
+              value: {{ include "aidr.dbUrl" (dict "root" . "user" "supabase_storage_admin") | quote }}
+            - name: STORAGE_PUBLIC_URL
+              value: {{ include "aidr.apiUrl" . | quote }}
+            - name: REQUEST_ALLOW_X_FORWARDED_PATH
+              value: "true"
+            - name: FILE_SIZE_LIMIT
+              value: {{ $values.fileSizeLimit | quote }}
+            - name: TENANT_ID
+              value: stub
+            - name: REGION
+              value: {{ default "stub" $values.s3.region | quote }}
+            - name: ENABLE_IMAGE_TRANSFORMATION
+              value: "false"
+            - name: TMPDIR
+              value: /tmp
+            {{- if eq $values.backend "file" }}
+            - name: STORAGE_BACKEND
+              value: file
+            - name: GLOBAL_S3_BUCKET
+              value: stub
+            - name: FILE_STORAGE_BACKEND_PATH
+              value: /var/lib/storage
+            {{- else }}
+            {{- $s3Secret := required "storage.s3.existingSecret is required when storage.backend=s3" $values.s3.existingSecret }}
+            - name: STORAGE_BACKEND
+              value: s3
+            - name: GLOBAL_S3_BUCKET
+              value: {{ required "storage.s3.bucket is required when storage.backend=s3" $values.s3.bucket | quote }}
+            - name: GLOBAL_S3_ENDPOINT
+              value: {{ $values.s3.endpoint | quote }}
+            - name: GLOBAL_S3_FORCE_PATH_STYLE
+              value: {{ $values.s3.forcePathStyle | quote }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $s3Secret }}
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $s3Secret }}
+                  key: secret-access-key
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          {{- include "aidr.resources" (dict "root" . "component" "storage" "override" $values.resources) | nindent 10 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if eq $values.backend "file" }}
+            - name: data
+              mountPath: /var/lib/storage
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ printf "%dMi" (add1 (div (int $values.fileSizeLimit) 1048576) | mul 4) }}
+        {{- if eq $values.backend "file" }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ default $name $values.persistence.existingClaim }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 5000
+      targetPort: http
+      protocol: TCP
