@@ -282,3 +282,37 @@ export interface GuardStats {
 	readonly pausedUntil: number | null;
 	readonly nativeHost: "connected" | "unavailable" | "disabled";
 }
+
+/** Result of scanning an uploaded/dropped file (src/engine/files.ts `sanitizeFile`). */
+export interface FileDecision {
+	readonly action: "allow" | "mask" | "block";
+	/** Present when action === "mask": sanitized replacement file content. */
+	readonly masked?: { readonly name: string; readonly type: string; readonly bytes: Uint8Array };
+	readonly counts: Readonly<Partial<Record<EntityType, number>>>;
+	/** Stable reason codes, e.g. BINARY_FILE, FILE_TOO_LARGE, FORMULA_CELL, SENSITIVE_DATA. */
+	readonly reasons: readonly string[];
+}
+
+/** Optional native messaging bridge to the AIDR Privacy native host (NER + OCR). */
+export interface NativeBridge {
+	status(): "connected" | "unavailable" | "disabled";
+	/** NER findings for PERSON/ADDRESS etc.; null when the host is unavailable. */
+	scanText(text: string): Promise<readonly Finding[] | null>;
+}
+
+/*
+ * Factory names every module exports (fixed so modules can be built in parallel):
+ *   engine/detect.ts   export function createDetectionEngine(options: DetectionOptions): DetectionEngine
+ *   engine/coaching.ts export function coachingFor(code: SignalCode, lang: "en" | "tr"): string
+ *   engine/vault.ts    export function createVault(options: { neverRestore: readonly EntityType[]; ttlMs?: number; snapshot?: VaultSnapshot }): PlaceholderVault
+ *   engine/files.ts    export function sanitizeFile(file: { name: string; type: string; bytes: Uint8Array }, deps: { engine: DetectionEngine; vault: PlaceholderVault; policy: GuardPolicy }): Promise<FileDecision>
+ *   sites/index.ts     export const ADAPTERS: readonly SiteAdapter[]; export function adapterForUrl(url: string): SiteAdapter  // unknown host -> generic adapter with id "other"
+ *   dom/editor.ts      export function findEditor(adapter: SiteAdapter, root: Document, lastFocused?: Element | null): EditorAccess | null
+ *                      export function editorAccess(element: HTMLElement): EditorAccess
+ *                      export function findSendButton(adapter: SiteAdapter, root: Document, editor: EditorAccess | null): HTMLElement | null
+ *   background/policy.ts export const DEFAULT_POLICY: GuardPolicy; export function mergePolicy(managed: unknown, user: Partial<UserSettings> | undefined): GuardPolicy
+ *   background/native.ts export function createNativeBridge(enabled: boolean): NativeBridge
+ * Entry points bundled by scripts/build.mjs:
+ *   src/background/index.ts, src/content/index.ts, src/ui/popup.ts, src/ui/options.ts
+ * Static assets: static/*.html, static/*.css, static/managed_schema.json, static/icons/*, _locales/{en,tr}/messages.json
+ */
