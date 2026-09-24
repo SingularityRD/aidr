@@ -6,7 +6,7 @@
  */
 
 /** `- id:` entries across `threats/*.yaml`. */
-export const SHIPPED_THREAT_RULES = 357;
+export const SHIPPED_THREAT_RULES = 358;
 /** YAML files under `threats/`. */
 export const THREAT_RULE_FILES = 23;
 /** AIG CVE rule files (`vendor/ai-infra-guard/data/vuln`, recursive), shown as a lower bound. */

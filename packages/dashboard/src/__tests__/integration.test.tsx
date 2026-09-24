@@ -38,6 +38,7 @@ import { LoginPage } from "../ui/pages/LoginPage";
 import { OnboardingPage } from "../ui/pages/OnboardingPage";
 import { LandingPage } from "../ui/pages/public/LandingPage";
 import { PricingPage } from "../ui/pages/public/PricingPage";
+import { SHIPPED_THREAT_RULES } from "../ui/pages/public/product-facts";
 import { SettingsPage } from "../ui/pages/SettingsPage";
 import { getSession, signOut } from "../ui/session";
 import { ThemeProvider } from "../ui/ThemeProvider";
@@ -517,7 +518,7 @@ describe("Dashboard integration", () => {
 			screen.getByText(/ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral, Grok/),
 		).toBeInTheDocument();
 		expect(screen.getAllByText(/Codex CLI/).length).toBeGreaterThan(0);
-		expect(screen.getAllByText(/357/).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(new RegExp(String(SHIPPED_THREAT_RULES))).length).toBeGreaterThan(0);
 		for (const option of ["Local mode (free)", "Cloud", "On-premises"]) {
 			expect(screen.getByText(option)).toBeInTheDocument();
 		}
