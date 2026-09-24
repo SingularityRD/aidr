@@ -20,7 +20,12 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Logger } from "@singularityrd/aidr-core";
+import {
+	clearOperatorApprovalKeyCache,
+	type Logger,
+	listPendingAsks,
+	recordOperatorApproval,
+} from "@singularityrd/aidr-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	generateProvisioningKeys,
@@ -360,5 +365,48 @@ describe("Codex provisioned tenant detector policy", () => {
 		expect(outcome.wire).toMatchObject({
 			hookSpecificOutput: { permissionDecision: "deny" },
 		});
+	});
+});
+
+describe("Codex operator approval channel", () => {
+	// Codex runs every hook in a fresh process, so the in-memory store can never
+	// carry an approval to the retry. The file-backed operator store can.
+	it("releases exactly one identical retry after `aidr approve`, never a different call", async () => {
+		const previousStore = process.env.AIDR_SECRET_STORE;
+		// Never touch a real OS vault from a test.
+		process.env.AIDR_SECRET_STORE = "file-acl";
+		clearOperatorApprovalKeyCache();
+		try {
+			const call = preToolUse("Bash", { command: 'echo "DB_PASSWORD=synthetic-only" > .env.test' });
+			const blocked = await enforceCodexPreToolUse(call, options());
+			expect(blocked.decision).toBe("ask");
+			expect(blocked.wire.hookSpecificOutput?.permissionDecision).toBe("deny");
+
+			const [pending] = await listPendingAsks();
+			expect(pending?.connector).toBe("codex");
+			expect(blocked.wire.hookSpecificOutput?.permissionDecisionReason).toContain(
+				pending?.actionId,
+			);
+
+			await recordOperatorApproval(pending?.actionId as string, { approver: "test operator" });
+			clearOperatorApprovalKeyCache();
+
+			const otherSession = await enforceCodexPreToolUse(
+				{ ...call, session_id: "another-codex-session" },
+				options(),
+			);
+			expect(otherSession.decision).toBe("ask");
+
+			const released = await enforceCodexPreToolUse(call, options());
+			expect(released.decision).toBe("allow");
+			expect(released.wire).toEqual({});
+
+			const replay = await enforceCodexPreToolUse(call, options());
+			expect(replay.decision).toBe("ask");
+		} finally {
+			if (previousStore === undefined) delete process.env.AIDR_SECRET_STORE;
+			else process.env.AIDR_SECRET_STORE = previousStore;
+			clearOperatorApprovalKeyCache();
+		}
 	});
 });

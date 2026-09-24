@@ -86,30 +86,34 @@ re-issue it. That tool has been removed.
 
 Approval is an **out-of-band, human-only action**:
 
-1. Singularity AIDR blocks an `ask` verdict and returns an `actionId`
+1. Singularity AIDR blocks an `ask` verdict, returns an `actionId` and records the
+   ask in the operator approval store (`~/.singularity-aidr/approvals.json`)
 2. The model reports that reference to the user and stops
-3. The user approves out of band — either by permanently allowlisting the exact
-   artifact (`~/.singularity-aidr/allowlist.json`), or by having the host
-   process that owns the `ApprovalStore` record the approval
-   (`approveAction` in `@singularityrd/aidr-core`)
-4. Only then does a retry of the original tool call succeed
+3. In their own terminal the user runs `aidr pending` to review the call and
+   `aidr approve <actionId>` to approve it (interactive confirmation). The
+   approval is HMAC-protected, bound to the exact tool and artifact set, expires
+   after 15 minutes by default and is single-use. Alternatively the user
+   permanently allowlists the artifact with `aidr allowlist add`.
+4. Only then does a retry of the original tool call succeed — once
 
 Singularity AIDR also provides:
 
 - `aidr_allowlist_add` to permanently allow a URL/command/file path (**requires a
-  prior out-of-band approval**; knowing an `actionId` is not approval)
+  prior out-of-band approval** granted with `aidr approve <actionId>
+  --permit-allowlist`; knowing an `actionId` is not approval)
 - `aidr_allowlist_remove` to remove an allowlisted entry
 
 ### Honest limitation
 
 OpenCode has no host API this plugin can drive to ask the user a question from
 outside the model's tool surface (tracked upstream in
-[anomalyco/opencode#12046](https://github.com/anomalyco/opencode/pull/12046)).
-Until that exists, **an `ask` verdict cannot be approved mid-session**: the call
-stays blocked and the user must allowlist the artifact (or take another action)
-instead. That is the safe failure mode — a blocked action is recoverable, a
-self-approved one is not. When a host confirmation primitive is available, wire
-it to `ApprovalStore` **without** exposing it as a model-callable tool.
+[anomalyco/opencode#12046](https://github.com/anomalyco/opencode/pull/12046)), so
+approval happens in a separate terminal rather than in the session. The channel
+is not a boundary against code running as the same OS user with full shell
+access (see [docs/configuration.md](../../docs/configuration.md#operator-approvals));
+the self-defense rule `CLT-SELF-007` blocks the agent from running `aidr approve`
+or touching the approval store itself. Blocking remains the safe failure mode — a
+blocked action is recoverable, a self-approved one is not.
 
 ## Session Startup Scanning
 

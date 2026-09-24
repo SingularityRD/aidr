@@ -71,6 +71,42 @@ export {
 export type { ApprovedEntry, PendingEntry } from "./approval-store.js";
 // Approval store
 export { ApprovalStore } from "./approval-store.js";
+// Operator approval channel (file-backed, out-of-band; `aidr pending` / `aidr approve`)
+export {
+	artifactSetDigest,
+	artifactValueDigest,
+	type ConsumeOperatorApprovalInput,
+	clearOperatorApprovalKeyCache,
+	consumeOperatorApproval,
+	createDefaultOperatorKeyProvider,
+	describeOperatorApprovalKey,
+	findOperatorAllowlistGrant,
+	getPendingAsk,
+	type ListedPendingAsk,
+	listOperatorApprovals,
+	listPendingAsks,
+	markOperatorAllowlistGrantUsed,
+	OPERATOR_APPROVAL_DEFAULT_TTL_MS,
+	OPERATOR_APPROVAL_KEY_ID,
+	OPERATOR_APPROVAL_MAX_TTL_MS,
+	OPERATOR_APPROVAL_MIN_TTL_MS,
+	type OperatorApproval,
+	OperatorApprovalError,
+	type OperatorApprovalErrorCode,
+	type OperatorApprovalStoreOptions,
+	type OperatorConsumeReason,
+	type OperatorConsumeResult,
+	type OperatorKeyMaterial,
+	type OperatorKeyProvider,
+	operatorApprovalStorePath,
+	PENDING_ASK_TTL_MS,
+	type PendingAsk,
+	type PendingAskArtifact,
+	type RecordOperatorApprovalOptions,
+	type RecordPendingAskInput,
+	recordOperatorApproval,
+	recordPendingAsk,
+} from "./operator-approvals.js";
 // Audit log
 export {
 	type AuditLogLossState,
@@ -195,7 +231,7 @@ export {
 	type SOC2Report,
 } from "./compliance-report.js";
 // Config
-export { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
+export { AIDR_DIR, isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 export * from "./secret-store.js";
 export type { ContainConfig } from "./contain.js";
 // Auto-Contain
@@ -497,6 +533,7 @@ export {
 	executeWithRollback,
 	formatAskMessage,
 	formatDenyMessage,
+	type GuardOptions,
 	type GuardResponseSettings,
 	type GuardResult,
 	guardInputSummary,

@@ -42,7 +42,9 @@ import { extractFromCodexTool } from "./extractors.js";
  * survive from the blocked call to the retry. This store therefore exists for
  * API compatibility with `guardToolCall`; it is intentionally NOT a working
  * approval channel. The real, persistent, operator-controlled channel is the
- * allowlist, which the block message points at.
+ * file-backed operator approval store that `guardToolCall` writes every ask to:
+ * the operator runs `aidr approve <actionId>` in their own terminal and the
+ * next identical call (same tool, input and Codex session) is released once.
  */
 const EPHEMERAL_APPROVALS = new ApprovalStoreClass();
 

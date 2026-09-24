@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApprovalStore } from "../approval-store.js";
 import {
 	addToAllowlist,
@@ -53,6 +53,21 @@ const { loadConfig } = await import("../config.js");
 const { loadAllowlist, saveAllowlist, removeUrl, removeCommand, removeFilePath } = await import(
 	"../allowlist.js"
 );
+
+// Every `ask` is recorded in the operator approval store under $HOME; keep the
+// suite away from the real ~/.singularity-aidr.
+let isolatedHome: string;
+let originalHome: string | undefined;
+beforeAll(async () => {
+	originalHome = process.env.HOME;
+	isolatedHome = await mkdtemp(join(tmpdir(), "aidr-guard-home-"));
+	process.env.HOME = isolatedHome;
+});
+afterAll(async () => {
+	if (originalHome === undefined) delete process.env.HOME;
+	else process.env.HOME = originalHome;
+	await rm(isolatedHome, { recursive: true, force: true });
+});
 
 const mockEvaluate = vi.mocked(evaluateToolCall);
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -115,7 +130,11 @@ describe("guardToolCall", () => {
 			await writeFile(target, "original bytes", "utf8");
 			const store = new ApprovalStore();
 			const request = makeRequest("Delete", { file_path: target });
-			const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
+			const actionId = ApprovalStore.actionId(
+				request.toolName,
+				request.toolInput,
+				request.sessionId,
+			);
 			store.setPending(actionId, { artifacts: request.artifacts, createdAt: Date.now() });
 			store.approve(actionId);
 			mockEvaluate.mockResolvedValueOnce(makeVerdict({ decision: "ask" }));

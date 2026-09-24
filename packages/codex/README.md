@@ -136,9 +136,15 @@ Approval is **operator-held**. There is no agent-callable approval tool, by
 design: the model receives the approval reference in the block reason, so an
 agent-invokable approval would let a prompt-injected agent approve its own block.
 
-Note that Codex runs each hook in a **fresh process**, so an in-memory approval
-cannot survive from the blocked call to the retry. A blocked `ask` therefore
-stays blocked until an operator records the artifact in the allowlist.
+Codex runs each hook in a **fresh process**, so an in-memory approval cannot
+survive from the blocked call to the retry. The connector therefore records every
+`ask` in the file-backed operator approval store
+(`~/.singularity-aidr/approvals.json`). In their own terminal the operator runs
+`aidr pending` and `aidr approve <actionId>` (interactive confirmation); the next
+identical call — same tool, input and Codex session — is then released once,
+within 15 minutes by default. A permanent exception is `aidr allowlist add`.
+Residual risk and the key handling are described in
+[docs/configuration.md](../../docs/configuration.md#operator-approvals).
 
 ## Provisioned tenant detector policy
 

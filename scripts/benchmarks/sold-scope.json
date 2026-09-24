@@ -220,7 +220,7 @@
       "rule_files": ["threats/self-defense.yaml"],
       "verdict_actions": ["ask"],
       "source": "threats/self-defense.yaml",
-      "evidence": "threats/self-defense.yaml carries 6 shipped rules in category `self_defense` (deleting or disabling the AIDR configuration, disabling host controls, or disabling the AIDR agent service) with action require_approval."
+      "evidence": "threats/self-defense.yaml carries 7 shipped rules in category `self_defense` (deleting or disabling the AIDR configuration, disabling host controls, disabling the AIDR agent service, or self-approving a block through the operator approval CLI) with action require_approval."
     },
     {
       "id": "package-supply-chain-tampering",
