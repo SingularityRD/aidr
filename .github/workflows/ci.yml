@@ -387,10 +387,11 @@ jobs:
           deploy/ingress/device-start.test.mjs
           deploy/monitoring/monitoring.test.mjs
 
-      - name: Bootstrap, backup, restore-drill and config-reference gates
+      - name: Bootstrap, upgrade, backup, restore-drill and config-reference gates
         run: |
           set -euo pipefail
           pnpm verify:bootstrap
+          pnpm verify:upgrade
           pnpm verify:backup-offsite
           pnpm verify:onprem-config-reference
 
