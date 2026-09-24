@@ -2,6 +2,9 @@ scrape_configs:
   - job_name: aidr-control-plane
     scheme: http
     metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/aidr_metrics_token
     static_configs:
       - targets:
           - dashboard:8080
@@ -9,4 +12,4 @@ scrape_configs:
     scrape_timeout: 5s
 
 rule_files:
-  - /etc/prometheus/rules/aidr-control-plane.yml
+  - prometheus-alerts.yml

@@ -10,8 +10,8 @@ Run periodically from Task Scheduler, cron, or a systemd timer. Exit 0 means
 healthy/empty; exit 2 means queued, retrying, dead-lettered, or locked state;
 exit 3 means configuration or worker failure. --status reports lock age and PID.
 
-If a .lock directory remains after a crash, verify its owner PID is gone and
-no AIDR process is using the queue before manually removing that directory.
+The normal drain safely reclaims a same-host dead-owner lock. Ownerless locks
+require operator diagnosis; --status is read-only and never removes a lock.
 Never delete the SIEM state file to clear a lock or a delivery failure.
 `;
 

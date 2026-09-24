@@ -10,6 +10,7 @@ import {
   CUSTOMER_KIT_BENCHMARK_FILES,
   CUSTOMER_KIT_REQUIRED_FILES,
   CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
+  renderCustomerKitDoc,
 } from "./customer-kit-contract.mjs";
 
 const { values } = parseArgs({ options: { output: { type: "string" }, "upstream-dir": { type: "string" }, "release-dir": { type: "string" }, "envelope-output": { type: "string" } } });
@@ -21,18 +22,19 @@ let releaseSigned = false;
 let gatewayBundled = false;
 if (existsSync(output)) throw new Error("Customer kit output already exists; choose a new directory");
 if (envelope && (existsSync(envelope) || envelope === output || envelope.startsWith(`${output}${sep}`) || output.startsWith(`${envelope}${sep}`))) throw new Error("Envelope output must be a new, separate directory");
+const sourceCommit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+const sourceDirty = !!execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim();
+if (values["release-dir"] && sourceDirty) throw new Error("Release-bound customer kit requires a clean source tree; commit and review all changes before packaging");
 const gatewaySource = join(root, "packages/mcp-gateway");
 const gatewayDist = join(gatewaySource, "dist");
-if (existsSync(gatewaySource) && !["aidr-mcp-gateway.mjs", "aidr-mcp-approve.mjs", "aidr-mcp-stdio.mjs", "aidr-artifact.manifest.json"].every((name) => existsSync(join(gatewayDist, name)))) {
+if (existsSync(gatewaySource) && !["aidr-mcp-gateway.mjs", "aidr-mcp-approve.mjs", "aidr-mcp-stdio.mjs", "aidr-artifact.manifest.json", "aidr-artifact.manifest.sig"].every((name) => existsSync(join(gatewayDist, name)))) {
   throw new Error("MCP gateway source is present but its self-contained release build is missing");
 }
 if (!existsSync(join(root, "packages/core/dist/siem-incident-producer.js"))) {
   throw new Error("SIEM delivery worker requires the compiled core producer; build core before assembling the kit");
 }
 const commit = execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-if (commit !== "8c7a4d9dbbaf8b552893822e89d7bf06f33f9220" || execFileSync("git", ["-C", upstream, "status", "--porcelain", "--", "docker"], { encoding: "utf8" }).trim()) throw new Error("Upstream must match the clean reviewed commit");
-const sourceCommit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-const sourceDirty = !!execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim();
+if (commit !== "8c7a4d9dbbaf8b552893822e89d7bf06f33f9220" || execFileSync("git", ["-C", upstream, "status", "--porcelain", "--", "docker", "LICENSE"], { encoding: "utf8" }).trim()) throw new Error("Upstream must match the clean reviewed commit");
 function copy(source, target) {
 	if (lstatSync(source).isSymbolicLink()) throw new Error("Customer kits cannot contain symbolic links");
 	if ([".env", ".env.functions"].includes(source.split(/[\\/]/).pop())) throw new Error("Private deployment configuration cannot be packaged");
@@ -47,10 +49,14 @@ copy(join(root, "scripts/benchmarks"), join(output, "scripts/benchmarks"));
 for (const file of [
   "deployment-prepare.mjs",
   "deployment-migrate.mjs",
+	"lib/migration-contract.mjs",
+	"lib/migration-hash-compat.mjs",
+	"lib/atomic-write.mjs",
   "deployment-bootstrap.mjs",
-  "deployment-backup.mjs",
-  "deployment-backup-offsite.mjs",
+	"deployment-backup.mjs",
+	"deployment-backup-offsite.mjs",
 	"deployment-restore-drill.mjs",
+	"archive-boundary.mjs",
   "deployment-maintenance.mjs",
   "deployment-offboarding.mjs",
   "deployment-upgrade.mjs",
@@ -73,17 +79,36 @@ for (const file of [
 	"verify-native-host-matrix-v6.mjs",
   "verify-support-bundle.mjs",
 ]) copy(join(root, "scripts", file), join(output, "scripts", file));
-for (const file of ["package.json", "dist", "resources"]) copy(join(root, "packages/claude-code", file), join(output, "packages/claude-code", file));
+const claudePackage = join(root, "packages/claude-code");
+const claudePackageManifest = join(claudePackage, "aidr-artifact.manifest.json");
+const claudePackageSignature = join(claudePackage, "aidr-artifact.manifest.sig");
+const claudeDistSignature = join(claudePackage, "dist", "aidr-artifact.manifest.sig");
+const hasClaudePackageManifest = existsSync(claudePackageManifest);
+const hasClaudePackageSignature = existsSync(claudePackageSignature);
+const hasClaudeDistSignature = existsSync(claudeDistSignature);
+if (hasClaudePackageManifest !== hasClaudePackageSignature || hasClaudePackageManifest !== hasClaudeDistSignature) {
+  throw new Error("Claude Code package and dist must carry complete, matching signed evidence");
+}
+for (const file of ["package.json", "dist", "resources"]) copy(join(claudePackage, file), join(output, "packages/claude-code", file));
+if (hasClaudePackageManifest) {
+  for (const file of ["aidr-artifact.manifest.json", "aidr-artifact.manifest.sig"]) {
+    copy(join(claudePackage, file), join(output, "packages/claude-code", file));
+  }
+}
 copy(join(upstream, "docker"), join(output, "deploy/upstream/docker"));
 writeFileSync(join(output, "deploy/upstream-manifest.json"), JSON.stringify({ commit, files: files(join(output, "deploy/upstream")) }, null, 2));
 const requireCore = createRequire(join(root, "packages/core/package.json"));
 const requireClaude = createRequire(join(root, "packages/claude-code/package.json"));
 await requireClaude("esbuild").build({ entryPoints: [requireCore.resolve("yaml")], outfile: join(output, "deploy/vendor/yaml.cjs"), bundle: true, platform: "node", format: "cjs", sourcemap: false, legalComments: "inline" });
 await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/siem-delivery-worker.mjs")], outfile: join(output, "scripts/siem-delivery-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
+await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/readiness-evidence-worker.mjs")], outfile: join(output, "scripts/readiness-evidence-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
+await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/deployment-backup.mjs")], outfile: join(output, "scripts/deployment-backup.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
 copy(resolve(dirname(requireCore.resolve("yaml")), "../LICENSE"), join(output, "deploy/vendor/YAML-LICENSE"));
 if (existsSync(gatewaySource)) {
   const gatewayManifest = JSON.parse(readFileSync(join(gatewayDist, "aidr-artifact.manifest.json"), "utf8"));
   if (gatewayManifest.schema_version !== 1 || !Array.isArray(gatewayManifest.files)) throw new Error("Invalid MCP gateway artifact manifest");
+  const gatewaySignature = readFileSync(join(gatewayDist, "aidr-artifact.manifest.sig"), "utf8").trim();
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(gatewaySignature) || Buffer.from(gatewaySignature, "base64").length !== 64) throw new Error("Invalid MCP gateway artifact signature");
   const gatewayNames = new Set();
   for (const item of gatewayManifest.files) {
     if (!item || !/^[A-Za-z0-9_.-]+$/.test(item.path) || gatewayNames.has(item.path) || !/^[a-f0-9]{64}$/.test(item.sha256)) throw new Error("Invalid MCP gateway artifact entry");
@@ -94,6 +119,7 @@ if (existsSync(gatewaySource)) {
   }
   if (!["aidr-mcp-gateway.mjs", "aidr-mcp-approve.mjs", "aidr-mcp-stdio.mjs"].every((name) => gatewayNames.has(name))) throw new Error("MCP gateway binaries missing from artifact manifest");
   copy(join(gatewayDist, "aidr-artifact.manifest.json"), join(output, "deploy/gateway/aidr-artifact.manifest.json"));
+  copy(join(gatewayDist, "aidr-artifact.manifest.sig"), join(output, "deploy/gateway/aidr-artifact.manifest.sig"));
   copy(join(root, "packages/mcp-gateway/README.md"), join(output, "deploy/gateway/README.md"));
   gatewayBundled = true;
 }
@@ -104,14 +130,19 @@ for (const [source, target] of [
   ["deploy/UPGRADE.md", "UPGRADE.md"],
   ["deploy/RESOURCE_REQUIREMENTS.md", "RESOURCE-REQUIREMENTS.md"],
 	["docs/runbooks/support-v7.md", "SUPPORT-RUNBOOK.md"],
+	["docs/runbooks/secrets-management.md", "SECRETS-RUNBOOK.md"],
   ["docs/runbooks/support-bundle.md", "SUPPORT-BUNDLE.md"],
 	["docs/production-readiness/backup-restore-v6.md", "RESTORE-DRILL.md"],
   ["docs/production-readiness/native-host-matrix-v6.md", "NATIVE-HOST-ACCEPTANCE.md"],
-	["docs/production-readiness/first-customer-sales-packet-v7.md", "FIRST-CUSTOMER-SALES-PACKET.md"],
-  ["docs/production-readiness/2026-09-13-customer-candidate-v7.md", "CANDIDATE-STATUS.md"],
+	["docs/production-readiness/first-customer-buyer-handoff-2026-09-23.md", "FIRST-CUSTOMER-SALES-PACKET.md"],
+  ["docs/production-readiness/first-customer-ready.md", "CANDIDATE-STATUS.md"],
   ["docs/release-evidence.md", "RELEASE-EVIDENCE.md"],
   ["FEATURE_INVENTORY.md", "FEATURE_INVENTORY.md"],
 ]) copy(join(root, source), join(output, target));
+for (const name of ["START-HERE.md", "INSTALLATION.md"]) {
+  const path = join(output, name);
+  writeFileSync(path, renderCustomerKitDoc(name, readFileSync(path, "utf8")));
+}
 for (const file of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES"]) copy(join(root, file), join(output, file));
 let releaseMetadata = null;
 let releaseArtifactNames = new Set();
@@ -131,6 +162,9 @@ if (values["release-dir"]) {
   const releaseFiles = [...releaseArtifactNames, "release-inventory.json", "release-metadata.json"];
   if (existsSync(manifestPath)) releaseFiles.push("aidr-release.manifest.json", "aidr-release.manifest.sig");
   for (const name of releaseFiles) copy(join(release, name), join(output, "artifacts", name));
+}
+if (releaseSigned && !hasClaudePackageManifest) {
+  throw new Error("Signed customer kits require signed Claude Code package and dist manifests");
 }
 for (const relative of CUSTOMER_KIT_REQUIRED_FILES) {
   const target = join(output, relative);
@@ -169,6 +203,7 @@ if (envelope) {
     release_version: releaseMetadata.release_version,
     git_sha: releaseMetadata.git_sha,
     source_date_epoch: releaseMetadata.source_date_epoch,
+    worktree_dirty: releaseMetadata.worktree_dirty,
     artifacts: [artifact],
   }, null, 2)}\n`);
   writeFileSync(join(envelope, "release-inventory.json"), `${JSON.stringify({

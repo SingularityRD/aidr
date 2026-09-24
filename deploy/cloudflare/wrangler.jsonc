@@ -1,0 +1,58 @@
+{
+  "name": "aidr-pilot",
+  "main": "./worker.mjs",
+  "compatibility_date": "2026-09-22",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "AIDR_ENABLE_AZURE_AUTH": "false",
+    "AIDR_SIGNUP_MODE": "closed"
+  },
+  "assets": {
+    "directory": "../../packages/dashboard/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/runtime-config.js",
+      "/livez",
+      "/healthz",
+      "/readyz",
+      "/metrics",
+      "/version",
+      "/demo",
+      "/demo/",
+      "/auth/v1*",
+      "/rest/v1*",
+      "/storage/v1*",
+      "/realtime/v1*",
+      "/functions/v1*"
+    ]
+  },
+  "secrets": {
+    "required": [
+      "AIDR_PUBLIC_ORIGIN",
+      "AIDR_SUPABASE_ORIGIN",
+      "AIDR_SUPABASE_ANON_KEY",
+      "AIDR_DEVICE_START_INGRESS_SECRET"
+    ]
+  },
+  "env": {
+    "staging": {
+      "name": "aidr-pilot-staging",
+      "workers_dev": true,
+      "preview_urls": false,
+      "vars": {
+        "AIDR_ENABLE_AZURE_AUTH": "false",
+        "AIDR_SIGNUP_MODE": "closed"
+      },
+      "secrets": {
+        "required": [
+          "AIDR_PUBLIC_ORIGIN",
+          "AIDR_SUPABASE_ORIGIN",
+          "AIDR_SUPABASE_ANON_KEY",
+          "AIDR_DEVICE_START_INGRESS_SECRET"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly AIDR candidate-bound offsite restore drill
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=aidr-restore-drill.service
+
+[Install]
+WantedBy=timers.target

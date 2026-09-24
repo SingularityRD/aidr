@@ -1,0 +1,19 @@
+[Unit]
+Description=Invalidate AIDR backup readiness after service startup failure
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/aidr
+ExecStart=/usr/bin/node /srv/aidr/backup/deployment-backup-health-failed.mjs --health-file /srv/aidr/health/backup.json
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+ReadOnlyPaths=/srv/aidr
+ReadWritePaths=/srv/aidr/health
+UMask=0077

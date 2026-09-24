@@ -239,8 +239,8 @@ async function main() {
 		const run = spawnSync(process.execPath, [...args, ...extra], { input: password, encoding: "utf8", timeout: 60000 });
 		assert.equal(run.status, expected, run.stderr || run.error?.message || `bootstrap exited with ${run.status}`); assert.ok(!`${run.stdout}${run.stderr}`.includes(password));
 	}
-	async function request(path, token = env.SERVICE_ROLE_KEY, body) {
-		const response = await fetch(new URL(path, base), { method: body === undefined ? "GET" : "POST", headers: { apikey: env.ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) });
+	async function request(path, token = env.SERVICE_ROLE_KEY, body, extraHeaders = {}) {
+		const response = await fetch(new URL(path, base), { method: body === undefined ? "GET" : "POST", headers: { apikey: env.ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...extraHeaders }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) });
 		return { status: response.status, data: await response.json() };
 	}
 	async function signedDeviceStart() {
@@ -277,19 +277,19 @@ async function main() {
 	const login = await request("/auth/v1/token?grant_type=password", env.ANON_KEY, { email, password });
 	assert.equal(login.status, 200); const token = login.data.access_token;
 	checks.push("provisioned owner signs in without SMTP or OAuth");
-	const status = await request("/functions/v1/pilot-status", token);
+	const status = await request("/functions/v1/pilot-status", token, undefined, { "X-AIDR-Tenant-ID": receipt.tenant_id });
 	assert.equal(status.status, 200); assert.equal(status.data.status, "approved"); assert.equal(status.data.tenant_id, receipt.tenant_id);
 	checks.push("browser onboarding sees the enterprise enrollment approval");
 	const forbidden = await request("/rest/v1/rpc/bootstrap_customer", token, { p_user_id: receipt.user_id, p_bootstrap_id: receipt.bootstrap_id, p_name: receipt.name, p_seats: 100 });
 	assert.equal(forbidden.status, 403); checks.push("ordinary authenticated session cannot provision or increase seats");
-	const pilot = await request(`/rest/v1/pilot_applications?user_id=eq.${receipt.user_id}&select=tenant_id,status`);
+	const pilot = await request(`/rest/v1/pilot_applications?user_id=eq.${receipt.user_id}&tenant_id=eq.${receipt.tenant_id}&select=tenant_id,status`);
 	assert.equal(pilot.data[0].tenant_id, receipt.tenant_id);
 	const ent = await request(`/rest/v1/entitlements?tenant_id=eq.${receipt.tenant_id}&select=included_agents`);
 	assert.equal(ent.data[0].included_agents, 5); checks.push("approval and seat allocation bound to enterprise tenant");
 	const started = await signedDeviceStart();
 	assert.equal(started.status, 200, "signed ingress must bootstrap the customer's device");
 	const device = started.data;
-	assert.equal((await request("/functions/v1/device-verify", token, { user_code: device.user_code })).status, 200);
+	assert.equal((await request("/functions/v1/device-verify", token, { user_code: device.user_code }, { "X-AIDR-Tenant-ID": receipt.tenant_id })).status, 200);
 	await new Promise((done) => setTimeout(done, (device.interval_seconds + 1) * 1000));
 	const exchange = (await request("/functions/v1/device-poll", token, { device_code: device.device_code })).data;
 	const enrolled = await request("/functions/v1/enroll", exchange.enrollment_token, { iid: `customer-${randomBytes(8).toString("hex")}`, agent_runtime: "claude-code" });

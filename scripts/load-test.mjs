@@ -69,7 +69,7 @@ function validateProfile(profile) {
 		if (thresholds.min_requests !== undefined && (!Number.isInteger(thresholds.min_requests) || thresholds.min_requests < 0)) fail(`${label}.min_requests must be a non-negative integer`);
 		for (const key of ["max_error_ratio", "max_loss_ratio", "min_availability_ratio"]) if (thresholds[key] !== undefined) boundedNumber(thresholds[key], `${label}.${key}`, 0, 1);
 		for (const key of ["max_p95_ms", "max_p99_ms"]) if (thresholds[key] !== undefined) boundedNumber(thresholds[key], `${label}.${key}`, 0, 120000);
-		if (thresholds.min_requests === undefined || !["max_error_ratio", "max_loss_ratio", "min_availability_ratio"].some((key) => thresholds[key] !== undefined)) fail(`${label} requires min_requests and at least one error, loss or availability bound`);
+		if (thresholds.min_requests === undefined || !["max_loss_ratio", "min_availability_ratio"].some((key) => thresholds[key] !== undefined)) fail(`${label} requires min_requests and a generator-loss or end-to-end availability bound`);
 	};
 	validateThresholds(profile.thresholds, "thresholds");
 	if (!Array.isArray(profile.scenarios) || profile.scenarios.length === 0 || profile.scenarios.length > 100) fail("scenarios must contain 1..100 entries");
@@ -90,6 +90,7 @@ function validateProfile(profile) {
 	}
 	const windows = profile.fault_windows ?? [];
 	if (!Array.isArray(windows) || windows.length > 20) fail("fault_windows must be an array with at most 20 entries");
+	if (profile.workload_class === "failover" && windows.length === 0) fail("failover workloads require at least one fault window");
 	const windowNames = new Set();
 	for (const window of windows) {
 		if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{1,127}$/.test(window.name ?? "") || windowNames.has(window.name)) fail("Fault window names must be unique identifiers");
@@ -101,6 +102,7 @@ function validateProfile(profile) {
 		if (window.end_seconds === window.start_seconds) fail(`${window.name}.end_seconds must be after start_seconds`);
 		boundedInteger(window.recovery_confirmation_successes ?? 5, `${window.name}.recovery_confirmation_successes`, 1, 1000);
 		if (window.require_fault_observed !== undefined && typeof window.require_fault_observed !== "boolean") fail(`${window.name}.require_fault_observed must be a boolean`);
+		if (profile.workload_class === "failover" && window.require_fault_observed !== true) fail(`${window.name}.require_fault_observed must be true for failover workloads`);
 		if (window.max_rto_ms !== undefined) boundedNumber(window.max_rto_ms, `${window.name}.max_rto_ms`, 0, 604800000);
 	}
 	return profile;

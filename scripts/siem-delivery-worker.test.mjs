@@ -272,13 +272,10 @@ test("rejects unknown flags and a missing configuration as worker failures", asy
 	assert.ok(help.out.join("").includes("--max-items"));
 });
 
-test("keeps the shipped drain limit inside what the worker accepts", () => {
-	// The unit template and this contract must not drift apart: the worker rejects any
-	// limit outside 1..100, and a rejected limit is exit 3 on every scheduled run.
+test("the shipped maintenance unit uses the aggregate readiness worker", () => {
 	const unit = readFileSync(resolve(scriptDir, "..", "deploy", "maintenance", "aidr-siem-delivery.service"), "utf8");
-	const limit = unit.match(/siem-delivery-worker\.mjs --max-items (\d+)/);
-	assert.ok(limit, "the service must drain through the worker's supported flag syntax");
-	const parsed = Number(limit[1]);
-	assert.ok(parsed >= 1 && parsed <= 100, `unit limit ${parsed} is outside the worker's accepted range`);
+	assert.match(unit, /readiness-evidence-worker\.mjs/);
+	assert.doesNotMatch(unit, /^ConditionPathExists=/m);
+	assert.doesNotMatch(unit, /^LoadCredential=/m);
 	assert.doesNotMatch(unit, /^SuccessExitStatus=/m, "exit 2 and 3 must fail the unit instead of being masked");
 });

@@ -185,8 +185,8 @@ checks.push(`authenticated call answered with coverage=${authorized.body.coverag
 // to reflect it.
 seededUrl = "http://malware.example.test/payload.exe";
 psql(
-	`insert into public.url_reputation (user_id, tenant_id, url, domain, is_malicious, severity_name, type_name, flags, source)
-	 values ('${ownerId}', '${tenantId}', '${seededUrl}', 'malware.example.test', true, 'critical', 'malware', array['rehearsal'], 'url-check-live-rehearsal')
+	`insert into public.url_reputation (user_id, tenant_id, url, domain, is_malicious, severity_name, type_name, flags, source, provenance_verified)
+	 values ('${ownerId}', '${tenantId}', '${seededUrl}', 'malware.example.test', true, 'critical', 'malware', array['rehearsal'], 'url-check-live-rehearsal', true)
 	 on conflict do nothing`,
 );
 checks.push("tenant reputation row seeded for a known-malicious URL");

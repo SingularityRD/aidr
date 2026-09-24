@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Controlled self-hosted upgrade orchestration. Database rollback is deliberately
 // a restore into a new project; this tool never attempts destructive down-migrations.
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
 import {
 	closeSync,
 	copyFileSync,
@@ -20,6 +20,16 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import {
+	compatibleInstalledHashes,
+	isAuditedLegacyMigration,
+	migrationHashesMatch,
+} from "./lib/migration-hash-compat.mjs";
+import {
+	forbiddenMigrationControls,
+	MIGRATION_FILENAME_PATTERN,
+	migrationOrderError,
+} from "./lib/migration-contract.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const { values, positionals } = parseArgs({
@@ -31,19 +41,23 @@ const { values, positionals } = parseArgs({
 		"key-file": { type: "string" },
 		contract: { type: "string" },
 		"recovery-output": { type: "string" },
+		"recovery-runtime": { type: "string" },
 		"max-backup-age-hours": { type: "string", default: "24" },
 		maintenance: { type: "boolean", default: false },
 	},
 });
 const action = positionals[0];
 if (!["preflight", "apply", "resume", "rollback-plan", "recover"].includes(action)) {
-	throw new Error("Use preflight|apply|resume|rollback-plan|recover with --current, --target, --backup, --key-file and --contract");
+	throw new Error("Use preflight|apply|resume|rollback-plan|recover with --current, --target, --backup, --key-file and --contract; recover also requires --recovery-runtime");
 }
 for (const name of ["current", "target", "backup", "key-file", "contract"]) {
 	if (!values[name]) throw new Error(`--${name} is required`);
 }
 if (["apply", "resume", "recover"].includes(action) && !values.maintenance) {
 	throw new Error(`${action} requires --maintenance after the approved maintenance window has started`);
+}
+if (action === "recover" && !values["recovery-runtime"]) {
+	throw new Error("recover requires --recovery-runtime with a reviewed clean deployment matching the backup source commit");
 }
 
 const current = resolve(values.current);
@@ -56,6 +70,7 @@ const statePath = join(stateDir, "state.json");
 const planPath = join(stateDir, "rollback-plan.json");
 const lockPath = join(stateDir, "operation.lock");
 const recoveryOutput = resolve(values["recovery-output"] ?? join(dirname(current), `${current.split(sep).at(-1)}-recovery`));
+const recoveryRuntime = values["recovery-runtime"] ? resolve(values["recovery-runtime"]) : null;
 const maxBackupAgeHours = Number(values["max-backup-age-hours"]);
 if (!Number.isFinite(maxBackupAgeHours) || maxBackupAgeHours <= 0 || maxBackupAgeHours > 168) {
 	throw new Error("--max-backup-age-hours must be greater than zero and no more than 168");
@@ -65,6 +80,9 @@ if (current === target || target.startsWith(`${current}${sep}`) || current.start
 }
 if ([current, target, backup].some((path) => recoveryOutput === path || recoveryOutput.startsWith(`${path}${sep}`))) {
 	throw new Error("Recovery output must be outside the current, target and backup directories");
+}
+if (recoveryRuntime && [current, target, backup, recoveryOutput].some((path) => recoveryRuntime === path || recoveryRuntime.startsWith(`${path}${sep}`) || path.startsWith(`${recoveryRuntime}${sep}`))) {
+	throw new Error("Reviewed recovery runtime must be separate from current, target, backup and recovery output directories");
 }
 
 const digestBuffer = (value) => createHash("sha256").update(value).digest("hex");
@@ -79,6 +97,13 @@ const safeRelative = (path) =>
 	!path.split("/").includes("");
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 let writeSequence = 0;
+let pendingSignal = null;
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+	process.on(signal, () => {
+		pendingSignal ??= signal;
+	});
+}
 
 function writeJson(path, value) {
 	mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -107,6 +132,7 @@ function copyPath(source, destination) {
 
 function inventoryFiles(directory, prefix) {
 	const files = [];
+	if (!existsSync(directory)) return files;
 	function visit(path, relativePrefix) {
 		for (const name of readdirSync(path).sort()) {
 			const child = join(path, name);
@@ -154,12 +180,14 @@ function validateManifest(directory, label) {
 	if (!Array.isArray(manifest.migrations) || !Array.isArray(manifest.artifacts)) {
 		throw new Error(`${label} manifest must include migration and artifact inventories`);
 	}
+	const orderError = migrationOrderError(manifest.migrations);
+	if (orderError) throw new Error(`${label} ${orderError}`);
 	if (manifest.migrations.length === 0 || manifest.artifacts.length === 0 || !/^[a-f0-9]{40}$/.test(manifest.source_commit ?? "")) {
 		throw new Error(`${label} must identify a commit and non-empty migration/artifact inventories`);
 	}
 	const seenMigrations = new Set();
 	for (const entry of manifest.migrations) {
-		if (!entry || !/^\d{14}_[a-z0-9_]+\.sql$/.test(entry.name) || !/^[a-f0-9]{64}$/.test(entry.sha256)) {
+		if (!entry || !MIGRATION_FILENAME_PATTERN.test(entry.name) || !/^[a-f0-9]{64}$/.test(entry.sha256)) {
 			throw new Error(`${label} has an invalid migration inventory entry`);
 		}
 		if (seenMigrations.has(entry.name)) throw new Error(`${label} repeats migration ${entry.name}`);
@@ -168,6 +196,10 @@ function validateManifest(directory, label) {
 		if (!existsSync(migrationPath) || digestFile(migrationPath) !== entry.sha256) {
 			throw new Error(`${label} migration changed after preparation: ${entry.name}`);
 		}
+		const migrationSql = readFileSync(migrationPath, "utf8");
+		const forbidden = forbiddenMigrationControls(migrationSql);
+		const auditedLegacy = directory === current && isAuditedLegacyMigration(entry.name, entry.sha256, migrationSql);
+		if (forbidden.length && !auditedLegacy) throw new Error(`${label} ${entry.name}:${forbidden[0].line}: forbidden ${forbidden[0].control}`);
 	}
 	const seenArtifacts = new Set();
 	for (const entry of manifest.artifacts) {
@@ -183,6 +215,10 @@ function validateManifest(directory, label) {
 	}
 	const actualArtifacts = [
 		...inventoryFiles(join(directory, "dashboard"), "dashboard"),
+		...inventoryFiles(join(directory, "ingress"), "ingress"),
+		...inventoryFiles(join(directory, "backup"), "backup"),
+		...inventoryFiles(join(directory, "maintenance"), "maintenance"),
+		...inventoryFiles(join(directory, "auth-templates"), "auth-templates"),
 		...inventoryFiles(join(directory, "volumes", "functions"), "volumes/functions"),
 	].sort();
 	const declaredArtifacts = [...seenArtifacts].sort();
@@ -208,6 +244,43 @@ function envNames(path) {
 			.filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line))
 			.map((line) => line.slice(0, line.indexOf("="))),
 	);
+}
+
+function validateSigningContinuity(configPath) {
+	const required = [
+		"AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64", // gitleaks:allow: environment variable name only, not a credential
+		"AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64",
+	];
+	const values = new Map();
+	for (const line of readFileSync(join(current, ".env.functions"), "utf8").split(/\r?\n/)) {
+		const separator = line.indexOf("=");
+		if (separator < 0) continue;
+		const name = line.slice(0, separator);
+		if (!required.includes(name)) continue;
+		if (values.has(name)) throw new Error("Current signing credential is duplicated");
+		values.set(name, line.slice(separator + 1));
+	}
+	try {
+		const trusted = json(configPath)?.licensing?.public_keys_pem;
+		if (!Array.isArray(trusted) || trusted.length === 0) throw new Error("missing public keys");
+		const publicHashes = new Set(trusted.map((pem) => {
+			const key = createPublicKey(pem);
+			if (key.asymmetricKeyType !== "ed25519") throw new Error("invalid public key type");
+			return digestBuffer(key.export({ type: "spki", format: "der" }));
+		}));
+		for (const name of required) {
+			const raw = values.get(name);
+			if (typeof raw !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(raw) || raw.length % 4 !== 0) throw new Error("invalid private key encoding");
+			const bytes = Buffer.from(raw, "base64");
+			if (bytes.toString("base64") !== raw) throw new Error("invalid private key encoding");
+			const key = createPrivateKey({ key: bytes, type: "pkcs8", format: "der" });
+			if (key.asymmetricKeyType !== "ed25519" || !publicHashes.has(digestBuffer(createPublicKey(key).export({ type: "spki", format: "der" })))) {
+				throw new Error("signing key mismatch");
+			}
+		}
+	} catch {
+		throw new Error("Current entitlement/revocation signing keys do not match the approved agent configuration");
+	}
 }
 
 function validateContract(contract, currentInfo, targetInfo) {
@@ -244,7 +317,7 @@ function validateContract(contract, currentInfo, targetInfo) {
 			throw new Error(`Compatibility evidence is missing or changed: ${item.path}`);
 		}
 	}
-	for (const [field, file] of [["required_env_keys", ".env"], ["required_function_env_keys", ".env.functions"]]) {
+	for (const [field, file] of [["required_env_keys", ".env"], ["required_function_env_keys", ".env.functions"], ["required_ingress_env_keys", ".env.ingress"]]) {
 		if (!Array.isArray(contract[field]) || contract[field].some((name) => !/^[A-Z][A-Z0-9_]*$/.test(name))) {
 			throw new Error(`Compatibility contract must declare ${field}`);
 		}
@@ -283,7 +356,13 @@ function validateUpgradePath(currentInfo, targetInfo) {
 	for (let index = 0; index < before.migrations.length; index += 1) {
 		const oldEntry = before.migrations[index];
 		const newEntry = after.migrations[index];
-		if (oldEntry.name !== newEntry?.name || oldEntry.sha256 !== newEntry.sha256) {
+		const targetSql = newEntry
+			? readFileSync(join(target, "migrations", newEntry.name), "utf8")
+			: "";
+		if (
+			oldEntry.name !== newEntry?.name ||
+			!migrationHashesMatch(oldEntry.name, oldEntry.sha256, newEntry.sha256, targetSql)
+		) {
 			throw new Error(`Migration history is not append-only at ${oldEntry.name}`);
 		}
 	}
@@ -300,12 +379,19 @@ function verifyBackup(currentInfo) {
 	if (payload.type !== "aidr-cold-volumes" || payload.source_project !== currentInfo.manifest.project_name || payload.source_commit !== currentInfo.manifest.source_commit) {
 		throw new Error("Verified backup belongs to a different project or source commit");
 	}
+	const started = Date.parse(payload.started_at);
 	const completed = Date.parse(payload.completed_at);
-	const age = Date.now() - completed;
-	if (!Number.isFinite(completed) || age < -300_000 || age > maxBackupAgeHours * 3_600_000) {
+	const age = Date.now() - started;
+	if (
+		!Number.isFinite(started) || !Number.isFinite(completed) ||
+		new Date(started).toISOString() !== payload.started_at ||
+		new Date(completed).toISOString() !== payload.completed_at ||
+		started > completed || Date.now() - completed < -300_000 ||
+		age < -300_000 || age > maxBackupAgeHours * 3_600_000
+	) {
 		throw new Error(`Verified backup is outside the ${maxBackupAgeHours}-hour upgrade window`);
 	}
-	return { sha256: digestFile(join(backup, "backup.json")), completed_at: payload.completed_at, verified_at: new Date().toISOString() };
+	return { sha256: digestFile(join(backup, "backup.json")), recovery_point_at: payload.started_at, completed_at: payload.completed_at, verified_at: new Date().toISOString() };
 }
 
 function composeArgs(...tail) {
@@ -317,7 +403,10 @@ function migrationSql(currentInfo, targetInfo) {
 	let sql = "BEGIN;\nDO $aidr_upgrade_lock$ BEGIN IF NOT pg_try_advisory_xact_lock(9112026) THEN RAISE EXCEPTION 'upgrade advisory lock unavailable'; END IF; END $aidr_upgrade_lock$;\n";
 	sql += "CREATE TABLE IF NOT EXISTS public.aidr_schema_migrations(name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now());\n";
 	for (const entry of currentInfo.manifest.migrations) {
-		sql += `DO $check$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.aidr_schema_migrations WHERE name=${quote(entry.name)} AND sha256=${quote(entry.sha256)}) THEN RAISE EXCEPTION 'current schema ledger mismatch'; END IF; END $check$;\n`;
+		const currentSql = readFileSync(join(current, "migrations", entry.name), "utf8");
+		const compatibleHashes = compatibleInstalledHashes(entry.name, entry.sha256, currentSql)
+			.map((hash) => quote(hash)).join(",");
+		sql += `DO $check$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.aidr_schema_migrations WHERE name=${quote(entry.name)} AND sha256 IN (${compatibleHashes})) THEN RAISE EXCEPTION 'current schema ledger mismatch'; END IF; END $check$;\n`;
 	}
 	if (targetNames) {
 		sql += `DO $check$ BEGIN IF EXISTS(SELECT 1 FROM public.aidr_schema_migrations WHERE name NOT IN (${targetNames})) THEN RAISE EXCEPTION 'database contains a migration unknown to target'; END IF; END $check$;\n`;
@@ -376,13 +465,13 @@ function prepareComponents(currentInfo, targetInfo, binding) {
 	const payload = join(stateDir, "payload");
 	if (existsSync(payload)) rmSync(payload, { recursive: true, force: true });
 	mkdirSync(payload, { recursive: true, mode: 0o700 });
-	for (const name of ["dashboard", "volumes/functions", "migrations"]) copyPath(join(target, name), join(payload, name));
+	for (const name of ["dashboard", "ingress", "backup", "maintenance", "auth-templates", "volumes/functions", "migrations"]) copyPath(join(target, name), join(payload, name));
 	copyPath(join(target, "agent-config.json"), join(payload, "agent-config.json"));
 	const targetCompose = readFileSync(join(target, "compose.yml"), "utf8");
 	if (!/^name:\s*[^\r\n]+/m.test(targetCompose)) throw new Error("Target compose file has no explicit project name");
 	writeFileSync(join(payload, "compose.yml"), targetCompose.replace(/^name:\s*[^\r\n]+/m, `name: ${currentInfo.manifest.project_name}`));
 	writeJson(join(payload, "deployment.json"), desiredDeployment(currentInfo, targetInfo, binding));
-	return ["dashboard", "volumes/functions", "migrations", "agent-config.json", "compose.yml", "deployment.json"].map((name) => ({
+	return ["dashboard", "ingress", "backup", "maintenance", "auth-templates", "volumes/functions", "migrations", "agent-config.json", "compose.yml", "deployment.json"].map((name) => ({
 		name,
 		current_sha256: treeHash(join(current, name)),
 		target_sha256: treeHash(join(payload, name)),
@@ -395,8 +484,9 @@ function preflight() {
 	validateUpgradePath(currentInfo, targetInfo);
 	const contract = json(contractPath);
 	validateContract(contract, currentInfo, targetInfo);
+	validateSigningContinuity(join(current, "agent-config.json"));
+	validateSigningContinuity(join(target, "agent-config.json"));
 	const backupInfo = verifyBackup(currentInfo);
-	dryRunMigrations(currentInfo, targetInfo);
 	mkdirSync(stateDir, { recursive: true, mode: 0o700 });
 	const binding = {
 		current_manifest_sha256: currentInfo.sha256,
@@ -413,6 +503,7 @@ function preflight() {
 		updated_at: binding.installed_at,
 		...binding,
 		paths: { current, target, backup, key_file: keyFile, contract: contractPath, recovery_output: recoveryOutput },
+		max_backup_age_hours: maxBackupAgeHours,
 		components: prepareComponents(currentInfo, targetInfo, binding),
 		installed_components: [],
 		checks: [
@@ -420,7 +511,7 @@ function preflight() {
 			"append-only migration history",
 			"reviewed app/database compatibility contract and evidence",
 			"authenticated encrypted backup bound to source project/commit and freshness window",
-			"live database ledger and target migrations under advisory lock with rollback",
+			"migration dry-run required after writer drain and before schema commit",
 		],
 	};
 	writeJson(join(stateDir, "monitoring", "backup.json"), {
@@ -428,6 +519,7 @@ function preflight() {
 		status: "ok",
 		completed_at: backupInfo.completed_at,
 		verified_at: backupInfo.verified_at,
+		recovery_point_at: backupInfo.recovery_point_at,
 		manifest_sha256: backupInfo.sha256,
 		source_project: currentInfo.manifest.project_name,
 		source_commit: currentInfo.manifest.source_commit,
@@ -445,6 +537,7 @@ function loadState() {
 	for (const [name, expected] of Object.entries({ current, target, backup, key_file: keyFile, contract: contractPath, recovery_output: recoveryOutput })) {
 		if (state.paths[name] !== expected) throw new Error(`Upgrade argument changed after preflight: ${name}`);
 	}
+	if (state.max_backup_age_hours !== maxBackupAgeHours) throw new Error("Backup freshness window changed after preflight");
 	if (digestFile(join(target, "deployment.json")) !== state.target_manifest_sha256 || digestFile(contractPath) !== state.contract_sha256 || digestFile(join(backup, "backup.json")) !== state.backup.sha256) {
 		throw new Error("Target, compatibility contract or backup changed after preflight");
 	}
@@ -510,16 +603,59 @@ function currentRunningServices() {
 		.filter(Boolean);
 }
 
+const restartableWriterPhases = new Set(["writers_stopping", "writers_stopped", "migration_dry_run"]);
+
+function restartOriginalWriters(state, label) {
+	if (!restartableWriterPhases.has(state.last_completed_phase)) return false;
+	const services = (state.running_services ?? []).filter((name) => name !== "db");
+	if (services.length) docker(composeArgs("start", ...services), { label });
+	state.last_completed_phase = "preflight";
+	state.writers_restarted_at = new Date().toISOString();
+	state.updated_at = state.writers_restarted_at;
+	writeJson(statePath, state);
+	return true;
+}
+
+function throwIfInterrupted(state) {
+	if (!pendingSignal) return;
+	if (restartableWriterPhases.has(state.last_completed_phase)) {
+		restartOriginalWriters(state, `source service restart after ${pendingSignal}`);
+	}
+	const error = new Error(`Upgrade interrupted by ${pendingSignal}`);
+	error.signal = pendingSignal;
+	throw error;
+}
+
+function boundMigrationInputs(state) {
+	const currentInfo = validateManifest(current, "Current installation");
+	const targetInfo = validateManifest(target, "Target candidate");
+	if (currentInfo.sha256 !== state.current_manifest_sha256 || targetInfo.sha256 !== state.target_manifest_sha256) {
+		throw new Error("Current or target manifest changed after preflight");
+	}
+	validateUpgradePath(currentInfo, targetInfo);
+	return { currentInfo, targetInfo };
+}
+
+function recheckBeforeWriterDrain(state) {
+	const { currentInfo, targetInfo } = boundMigrationInputs(state);
+	validateContract(json(contractPath), currentInfo, targetInfo);
+	validateSigningContinuity(join(current, "agent-config.json"));
+	validateSigningContinuity(join(stateDir, "payload", "agent-config.json"));
+	const verified = verifyBackup(currentInfo);
+	if (verified.sha256 !== state.backup.sha256) throw new Error("Authenticated backup changed after preflight");
+}
+
 function stopWriters(state) {
 	const running = currentRunningServices();
 	if (!running.includes("db")) throw new Error("Current database must be running before upgrade");
 	state.running_services = running;
+	saveState(state, "writers_stopping");
 	const writers = running.filter((name) => name !== "db");
 	if (writers.length) {
 		try {
 			docker(composeArgs("stop", "--timeout", "60", ...writers), { label: "maintenance service stop" });
 		} catch (error) {
-			try { docker(composeArgs("start", ...writers), { label: "source service restart after incomplete stop" }); } catch { /* original stop error remains */ }
+			try { restartOriginalWriters(state, "source service restart after incomplete stop"); } catch { /* original stop error remains */ }
 			throw error;
 		}
 	}
@@ -549,7 +685,7 @@ function installComponents(state) {
 		if (!existsSync(staged) || treeHash(staged) !== component.target_sha256) throw new Error(`Staged target component is missing or changed: ${component.name}`);
 		if (existsSync(old)) {
 			if (treeHash(old) !== component.current_sha256) throw new Error(`Previous component copy changed: ${component.name}`);
-		} else {
+		} else if (component.current_sha256 !== null) {
 			mkdirSync(dirname(old), { recursive: true });
 			renameSync(destination, old);
 		}
@@ -572,7 +708,7 @@ function writeRollbackPlan(state, cause = state.last_error ?? "operator-requeste
 		recovery_output: recoveryOutput,
 		command: {
 			executable: process.execPath,
-			arguments: [join(scriptDir, "deployment-backup.mjs"), "recover", "--backup", backup, "--output", recoveryOutput, "--key-file", keyFile],
+			arguments: [join(scriptDir, "deployment-backup.mjs"), "recover", "--backup", backup, "--output", recoveryOutput, "--key-file", keyFile, "--runtime", recoveryRuntime ?? "<reviewed-runtime-matching-backup-source>"],
 		},
 		acceptance_before_cutover: [
 			"start the recovered project in isolation",
@@ -590,17 +726,36 @@ function failState(state, error) {
 	state.status = "failed";
 	state.updated_at = new Date().toISOString();
 	state.last_error = error.message;
-	state.requires_restore = ["database_migrated", "artifacts_installed", "services_started"].includes(state.last_completed_phase);
+	state.requires_restore = ["migration_running", "database_migrated", "artifacts_installed", "services_started"].includes(state.last_completed_phase);
 	writeJson(statePath, state);
 	writeRollbackPlan(state, error.message);
 }
 
 function runUpgrade(state) {
 	if (state.status === "complete") return state;
-	const phases = ["preflight", "writers_stopped", "database_migrated", "artifacts_installed", "services_started", "doctor_passed"];
+	if (state.last_completed_phase === "migration_running") {
+		throw new Error("Previous migration outcome is unknown; recover the verified backup into an isolated project before cutover");
+	}
+	const phases = ["preflight", "writers_stopping", "writers_stopped", "migration_dry_run", "migration_running", "database_migrated", "artifacts_installed", "services_started", "doctor_passed"];
 	const atLeast = (phase) => phases.indexOf(state.last_completed_phase) >= phases.indexOf(phase);
-	if (!atLeast("writers_stopped")) stopWriters(state);
+	if (state.last_completed_phase === "writers_stopping") restartOriginalWriters(state, "source service restart after interrupted stop");
+	throwIfInterrupted(state);
+	if (!atLeast("writers_stopped")) {
+		recheckBeforeWriterDrain(state);
+		stopWriters(state);
+	}
+	throwIfInterrupted(state);
+	if (!atLeast("migration_dry_run")) {
+		const { currentInfo, targetInfo } = boundMigrationInputs(state);
+		dryRunMigrations(currentInfo, targetInfo);
+		throwIfInterrupted(state);
+		saveState(state, "migration_dry_run");
+	}
+	throwIfInterrupted(state);
 	if (!atLeast("database_migrated")) {
+		saveState(state, "migration_running");
+		// A failed child can still have committed before it timed out or exited.
+		// Keep writers drained until isolated recovery proves the database state.
 		stageForMigration(state);
 		saveState(state, "database_migrated");
 	}
@@ -639,9 +794,16 @@ try {
 		let state;
 		if (action === "apply" && !existsSync(statePath)) state = preflight();
 		else state = loadState();
+		// A stopped-writer resume may be much later than preflight. Refuse stale
+		// recovery material or a changed signer before touching the schema, while
+		// leaving the recorded phase untouched for operator review.
+		if (["writers_stopped", "migration_dry_run"].includes(state.last_completed_phase)) {
+			recheckBeforeWriterDrain(state);
+		}
 		try {
 			runUpgrade(state);
 			console.log(`Upgrade completed and online doctor passed. Receipt: ${join(stateDir, "upgrade-receipt.json")}`);
+			if (pendingSignal) process.exitCode = pendingSignal === "SIGINT" ? 130 : 143;
 		} catch (error) {
 			failState(state, error);
 			if (state.requires_restore) {
@@ -655,17 +817,7 @@ try {
 					}
 				} catch { /* traffic must remain drained; rollback plan remains authoritative */ }
 			}
-			if (state.last_completed_phase === "writers_stopped") {
-				const services = (state.running_services ?? []).filter((name) => name !== "db");
-				if (services.length) {
-					try {
-						docker(composeArgs("start", ...services), { label: "source service restart" });
-						state.last_completed_phase = "preflight";
-						state.updated_at = new Date().toISOString();
-						writeJson(statePath, state);
-					} catch { /* rollback plan remains authoritative */ }
-				}
-			}
+			try { restartOriginalWriters(state, "source service restart after upgrade failure"); } catch { /* rollback plan remains authoritative */ }
 			throw error;
 		}
 	} else if (action === "rollback-plan") {
@@ -678,7 +830,7 @@ try {
 		writeJson(statePath, state);
 		command(
 			process.execPath,
-			[join(scriptDir, "deployment-backup.mjs"), "recover", "--backup", backup, "--output", recoveryOutput, "--key-file", keyFile],
+			[join(scriptDir, "deployment-backup.mjs"), "recover", "--backup", backup, "--output", recoveryOutput, "--key-file", keyFile, "--runtime", recoveryRuntime],
 			{ label: "isolated encrypted recovery", timeout: 600_000 },
 		);
 		state.status = "recovered";

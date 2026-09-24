@@ -1,0 +1,11 @@
+# Isolated Cloudflare/Supabase pilot. Do not use the local-development
+# supabase/config.toml when pushing hosted Auth settings.
+project_id = "aidr-pilot-eu"
+
+[auth]
+site_url = "https://aidr-pilot.anill-yagiz.workers.dev"
+additional_redirect_urls = [
+  "https://aidr-pilot.anill-yagiz.workers.dev/auth/callback",
+  "https://aidr-pilot.anill-yagiz.workers.dev/auth/recover",
+]
+enable_signup = false

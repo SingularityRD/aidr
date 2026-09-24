@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
@@ -64,6 +64,10 @@ function handlers(state) {
 				seats: state.bootstrap.p_seats,
 			});
 		}
+		if (url.pathname === "/rest/v1/rpc/configure_tenant_admission_mode") {
+			state.admissionMode = JSON.parse(body).p_mode;
+			return json(response, 200, { status: "configured", mode: state.admissionMode });
+		}
 		if (url.pathname !== "/rest/v1/team_members") return json(response, 404, {});
 
 		const rows = Object.entries(state.members).map(([user_id, role]) => ({ user_id, role }));
@@ -95,7 +99,7 @@ function handlers(state) {
 	};
 }
 
-async function fixture({ receipt = true, members = {}, transferReceipt = null } = {}) {
+async function fixture({ receipt = true, members = {}, transferReceipt = null, mode = "self-hosted" } = {}) {
 	const state = { accounts: [], members: { ...members }, writes: [], calls: [] };
 	const server = createServer(await handlers(state));
 	servers.push(server);
@@ -106,6 +110,7 @@ async function fixture({ receipt = true, members = {}, transferReceipt = null } 
 	await writeFile(
 		path.join(directory, "deployment.json"),
 		JSON.stringify({
+			mode,
 			supabase_url: `http://127.0.0.1:${address.port}`,
 			dashboard_url: `http://127.0.0.1:${address.port}`,
 			development: true,
@@ -147,10 +152,10 @@ async function fixture({ receipt = true, members = {}, transferReceipt = null } 
 	return { directory, state };
 }
 
-function runScript(directory, args, stdin = "") {
+function runScript(directory, args, stdin = "", preload = null) {
 	const child = spawn(
 		process.execPath,
-		[path.resolve("scripts/deployment-bootstrap.mjs"), "--deployment", directory, ...args],
+		[...(preload ? ["--require", preload] : []), path.resolve("scripts/deployment-bootstrap.mjs"), "--deployment", directory, ...args],
 		{ cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"] },
 	);
 	let stdout = "";
@@ -260,9 +265,10 @@ test("transfer refuses a caller that is not the current owner and an unconfirmed
 test("bootstrap still provisions the first owner from a piped password", async () => {
 	const fresh = await fixture({ receipt: false });
 	const password = "test-only-password-16";
+	const licenseExpiresAt = "2027-01-01T00:00:00.000Z";
 	const result = await runScript(
 		fresh.directory,
-		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5"],
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", licenseExpiresAt, "--license-reference", "TEST-CONTRACT-001"],
 		`${password}\n`,
 	);
 	assert.equal(result.status, 0, result.stderr);
@@ -274,7 +280,81 @@ test("bootstrap still provisions the first owner from a piped password", async (
 	assert.equal(receipt.tenant_id, TENANT_ID);
 	assert.equal(fresh.state.created.app_metadata.aidr_bootstrap_id, receipt.bootstrap_id);
 	assert.equal(fresh.state.bootstrap.p_seats, 5);
+	assert.equal(fresh.state.bootstrap.p_license_expires_at, licenseExpiresAt);
+	assert.equal(fresh.state.bootstrap.p_license_reference, "TEST-CONTRACT-001");
+	assert.equal(fresh.state.admissionMode, "onprem");
 	assert.ok(!result.stdout.includes(password), "the password must never reach stdout");
+});
+
+test("bootstrap refuses missing contract terms before creating an account or configuring admission", async () => {
+	const fresh = await fixture({ receipt: false });
+	const result = await runScript(fresh.directory,
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5"],
+		"test-only-password-16\n");
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /license-expires-at/);
+	assert.deepEqual(fresh.state.calls, [], "invalid contract input must be rejected before every API call");
+	assert.equal(fresh.state.created, undefined);
+	assert.equal(fresh.state.admissionMode, undefined);
+});
+
+test("bootstrap refuses an invalid password before creating a receipt or calling the API", async () => {
+	const fresh = await fixture({ receipt: false });
+	const result = await runScript(fresh.directory,
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2027-01-01T00:00:00.000Z", "--license-reference", "TEST-CONTRACT-001"],
+		"too-short\n");
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /Password must be 16/);
+	assert.deepEqual(fresh.state.calls, [], "invalid password must be rejected before every API call");
+	assert.equal(fresh.state.created, undefined);
+	assert.equal(fresh.state.admissionMode, undefined);
+	assert.equal(existsSync(path.join(fresh.directory, "bootstrap-receipt.json")), false);
+});
+
+test("bootstrap refuses cloud deployments before any API call", async () => {
+	const cloud = await fixture({ receipt: false, mode: "cloud" });
+	const result = await runScript(cloud.directory,
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2027-01-01T00:00:00.000Z", "--license-reference", "TEST-CONTRACT-001"],
+		"test-only-password-16\n");
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /only supported for self-hosted installations/);
+	assert.deepEqual(cloud.state.calls, [], "cloud mode must be rejected before even a health/read API request");
+	assert.equal(cloud.state.created, undefined);
+	assert.equal(cloud.state.admissionMode, undefined);
+});
+
+test("bootstrap receipt update failure before rename preserves the prior receipt", async () => {
+	const fresh = await fixture();
+	const receiptPath = path.join(fresh.directory, "bootstrap-receipt.json");
+	const before = await readFile(receiptPath);
+	const preload = path.join(fresh.directory, "fail-fsync.cjs");
+	await writeFile(preload, [
+		"const fs = require('node:fs');",
+		"fs.fsyncSync = () => { const error = new Error('simulated receipt fsync failure'); error.code = 'EIO'; throw error; };",
+		"require('node:module').syncBuiltinESMExports();",
+	].join("\n"));
+	const result = await runScript(fresh.directory,
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2027-01-01T00:00:00.000Z", "--license-reference", "TEST-CONTRACT-001", "--resume"],
+		"", preload);
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /simulated receipt fsync failure/);
+	assert.deepEqual(fresh.state.calls, [], "receipt must flush before any API request");
+	assert.deepEqual(await readFile(receiptPath), before, "failed staging must leave the old receipt byte-for-byte intact");
+	assert.deepEqual((await readdir(fresh.directory)).filter((name) => name.startsWith("bootstrap-receipt.json.") && name.endsWith(".tmp")), []);
+});
+
+test("bootstrap resume atomically updates an existing receipt and completes", async () => {
+	const fresh = await fixture();
+	const licenseExpiresAt = "2027-01-01T00:00:00.000Z";
+	const result = await runScript(fresh.directory,
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", licenseExpiresAt, "--license-reference", "TEST-CONTRACT-001", "--resume"]);
+	assert.equal(result.status, 0, result.stderr);
+	const receipt = JSON.parse(await readFile(path.join(fresh.directory, "bootstrap-receipt.json"), "utf8"));
+	assert.equal(receipt.state, "complete");
+	assert.equal(receipt.license_expires_at, licenseExpiresAt);
+	assert.equal(receipt.license_reference, "TEST-CONTRACT-001");
+	assert.equal(fresh.state.admissionMode, "onprem");
+	assert.ok(fresh.state.calls.some((call) => call.includes("/rest/v1/rpc/bootstrap_customer")));
 });
 
 const TRANSFER_RECEIPT_BASE = {
@@ -307,6 +387,7 @@ test("transfer completes an interrupted run and never transfers the same deploym
 	assert.equal(closed.state, "complete");
 	assert.equal(closed.previous_owner.user_id, PREVIOUS_OWNER_ID);
 	assert.equal(closed.new_owner.user_id, NEW_OWNER_ID);
+	assert.ok(Number.isFinite(Date.parse(closed.last_resume_attempted_at)), "a resumed transfer records its atomic preflight checkpoint");
 
 	const completed = await fixture({
 		members: { [PREVIOUS_OWNER_ID]: "owner" },
@@ -316,4 +397,27 @@ test("transfer completes an interrupted run and never transfers the same deploym
 	assert.notEqual(twice.status, 0);
 	assert.match(twice.stderr, /already exists/);
 	assert.equal(completed.state.writes.length, 0);
+});
+
+test("owner-transfer receipt write failure preserves the prior receipt before any API call", async () => {
+	const interrupted = await fixture({
+		members: { [PREVIOUS_OWNER_ID]: "admin", [NEW_OWNER_ID]: "owner" },
+		transferReceipt: { ...TRANSFER_RECEIPT_BASE, state: "in_progress" },
+	});
+	const receiptPath = path.join(interrupted.directory, "owner-transfer-receipt.json");
+	const before = await readFile(receiptPath);
+	const preload = path.join(interrupted.directory, "fail-fsync.cjs");
+	await writeFile(preload, [
+		"const fs = require('node:fs');",
+		"fs.fsyncSync = () => { const error = new Error('simulated receipt fsync failure'); error.code = 'EIO'; throw error; };",
+		"require('node:module').syncBuiltinESMExports();",
+	].join("\n"));
+	const result = await runScript(interrupted.directory,
+		["--transfer-owner", NEW_OWNER_EMAIL, "--requested-by", PREVIOUS_OWNER_ID],
+		`${NEW_OWNER_EMAIL}\n`, preload);
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /simulated receipt fsync failure/);
+	assert.deepEqual(interrupted.state.calls, [], "failed receipt checkpoint must stop before all ownership API reads and writes");
+	assert.deepEqual(await readFile(receiptPath), before, "failed staging must leave the prior transfer receipt byte-for-byte intact");
+	assert.deepEqual((await readdir(interrupted.directory)).filter((name) => name.startsWith("owner-transfer-receipt.json.") && name.endsWith(".tmp")), []);
 });

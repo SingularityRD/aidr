@@ -10,7 +10,7 @@ spec:
     replicas: 2
     crossZone: true
     tlsTermination: customer-approved
-    healthPath: /healthz
+    healthPath: /readyz
   statelessServices:
     dashboard:
       replicas: 3

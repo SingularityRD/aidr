@@ -3,7 +3,7 @@
   "schema_version": 1,
   "workload_id": "tenant-policy-noisy-neighbor-local-v1",
   "workload_class": "noisy_neighbor",
-  "description": "Two independently enrolled tenant cohorts polling the policy endpoint on one contended developer host. The latency and error thresholds are the same as the staging template; only the duration, rate and request-count floor are scaled down, because a developer machine cannot produce the template's 100000 requests. A pass here says the endpoint isolates the two tenants at this scale, not that it meets a capacity target.",
+  "description": "Two independently enrolled tenant cohorts polling the policy endpoint on one contended developer host. The baseline tenant must keep receiving HTTP 200 within the declared latency/error thresholds while the noisy tenant may receive the endpoint's designed HTTP 429 per-subject quota response. Only duration, rate and request-count floor are scaled down from staging. A pass here says the endpoint isolates the baseline tenant at this scale, not that it meets a capacity target.",
   "environment_label": "isolated-local-rehearsal",
   "base_url_env": "AIDR_LOAD_BASE_URL",
   "duration_seconds": 60,
@@ -35,7 +35,7 @@
       "path": "/functions/v1/policy",
       "weight": 4,
       "headers_env": { "Authorization": "AIDR_LOAD_NOISY_AUTHORIZATION" },
-      "expected_statuses": [200]
+      "expected_statuses": [200, 429]
     }
   ],
   "thresholds": {

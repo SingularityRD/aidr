@@ -1,0 +1,31 @@
+[Unit]
+Description=Restart AIDR services left stopped by an interrupted cold backup
+After=docker.service
+Requires=docker.service
+Before=aidr-backup-offsite.service
+OnFailure=aidr-backup-health-failed.service
+ConditionPathExists=/var/lib/aidr-backup/recovery-journal.json
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/aidr
+StateDirectory=aidr-backup
+StateDirectoryMode=0700
+ExecStart=/usr/bin/node /srv/aidr/backup/deployment-backup.mjs recover-services --deployment /srv/aidr --recovery-journal /var/lib/aidr-backup/recovery-journal.json
+ExecStartPost=/usr/bin/node /srv/aidr/backup/deployment-backup-health-failed.mjs --health-file /srv/aidr/health/backup.json
+TimeoutStartSec=3min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+ReadOnlyPaths=/srv/aidr
+ReadWritePaths=/srv/aidr/health /var/lib/aidr-backup
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -64,7 +64,11 @@ For a load result, `availability_ratio` is expected responses divided by all
 scheduled requests, so generator shedding is not hidden. `error_ratio` is
 unexpected and transport-failed requests divided by started requests;
 `loss_ratio` is requests dropped before start divided by scheduled requests.
-These are workload observations, not the contractual monthly SLI.
+Every profile-level or scenario-level threshold set must constrain shedding
+with `max_loss_ratio` or constrain end-to-end outcomes with
+`min_availability_ratio`; an error-ratio threshold alone cannot detect requests
+that the load generator never started. These are workload observations, not the
+contractual monthly SLI.
 
 The commercial SLI still needs an approved endpoint set, external probe
 locations, time buckets, maintenance and customer-caused exclusions, dependency
@@ -88,13 +92,13 @@ The input and report contracts are
 [`monthly-sli-observations.schema.json`](monthly-sli-observations.schema.json)
 and [`monthly-sli-report.schema.json`](monthly-sli-report.schema.json). Every
 endpoint/region interval is accounted for. Omitted intervals become
-`NOT_RUN`; an explicitly ambiguous interval remains `unknown`. A report is
-`PASS` or `FAIL` only when every scoped series has a complete measured window;
-otherwise it remains `unknown` or `NOT_RUN`, and incomplete reports do not
-publish an error-budget duration. The report's claim flags are permanently
-false: a local result is not a contractual SLA or a 99.9% claim, and it does
-not close COM-013. Approved maintenance and customer-caused exclusions require
-a named reference and an explicit approval. The local CLI bounds an input file at
+`NOT_RUN`; an explicitly ambiguous interval remains `unknown`. A monthly `PASS`
+requires every scoped series to cover the full named UTC calendar month. A `FAIL`
+may describe only the supplied measured window. Incomplete reports remain
+`unknown` or `NOT_RUN` and do not publish an error-budget duration. The report's
+claim flags are permanently false: a local result is not a contractual SLA or a
+99.9% claim, and it does not close COM-013. Approved maintenance and
+customer-caused exclusions require a named reference and explicit approval. The local CLI bounds an input file at
 16 MiB and a report file at 64 MiB; the schemas and validator also cap endpoint
 and region collections, observations, exclusions, incidents and intervals.
 These are local tooling limits, not production capacity or SLA guarantees.

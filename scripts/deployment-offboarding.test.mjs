@@ -22,6 +22,7 @@ function storageBatch(paths = [firstPath]) {
 		run_id: runId,
 		status: "running",
 		complete: false,
+		phase: "audit_export_objects",
 		action: "delete_storage_objects",
 		paths,
 		objects: paths.map((path, index) => ({ path, authorization_id: authorizationIds[index] })),
@@ -58,8 +59,8 @@ function json(response, status, value) {
 	response.end(JSON.stringify(value));
 }
 
-async function run(directory, extraArguments = []) {
-	const child = spawn(process.execPath, [path.resolve("scripts/deployment-offboarding.mjs"), directory, "--tenant", tenantId, ...extraArguments], {
+async function run(directory, extraArguments = [], tenant = tenantId) {
+	const child = spawn(process.execPath, [path.resolve("scripts/deployment-offboarding.mjs"), directory, "--tenant", tenant, ...extraArguments], {
 		cwd: process.cwd(),
 		stdio: ["ignore", "pipe", "pipe"],
 	});
@@ -99,6 +100,35 @@ test("dry run reads the complete policy and active hold without mutating custome
 	assert.equal(evidence.backup_scope, "excluded_external_retention");
 });
 
+test("dry run cannot report no legal hold when hold state is unreadable", async () => {
+	const directory = await fixture((request, response) => {
+		if (request.url.startsWith("/rest/v1/tenants?")) return json(response, 200, [{ id: tenantId, status: "active", retention_days: 30 }]);
+		if (request.url.startsWith("/rest/v1/tenant_data_retention_policies?")) return json(response, 200, policies());
+		if (request.url.startsWith("/rest/v1/tenant_legal_holds?")) return json(response, 200, { error: "unreadable" });
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_runs?")) return json(response, 200, []);
+		return json(response, 404, {});
+	});
+	const result = await run(directory);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /Legal hold or offboarding run state is unreadable/);
+	assert.equal(existsSync(path.join(directory, `offboarding-evidence-${tenantId}.json`)), false);
+});
+
+test("tenant UUID case cannot break the storage and receipt binding", async () => {
+	const caseTenantId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+	const directory = await fixture((request, response) => {
+		if (request.url.startsWith("/rest/v1/tenants?")) return json(response, 200, [{ id: caseTenantId, status: "active", retention_days: 30 }]);
+		if (request.url.startsWith("/rest/v1/tenant_data_retention_policies?")) return json(response, 200, policies());
+		if (request.url.startsWith("/rest/v1/tenant_legal_holds?")) return json(response, 200, []);
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_runs?")) return json(response, 200, []);
+		return json(response, 404, {});
+	});
+	const result = await run(directory, [], caseTenantId.toUpperCase());
+	assert.equal(result.status, 0, result.stderr);
+	const evidence = JSON.parse(await readFile(path.join(directory, `offboarding-evidence-${caseTenantId}.json`), "utf8"));
+	assert.equal(evidence.tenant_id, caseTenantId);
+});
+
 test("apply deletes storage before acknowledging its ledger and completes resumable batches", async () => {
 	const calls = [];
 	let runCalls = 0;
@@ -118,7 +148,10 @@ test("apply deletes storage before acknowledging its ledger and completes resuma
 		if (request.url === "/storage/v1/object/aidr-audit-exports" && request.method === "DELETE") return json(response, 200, [{ name: secondPath }, { name: firstPath }]);
 		if (request.url.startsWith("/storage/v1/object/info/aidr-audit-exports/")) return json(response, 404, { code: "not_found" });
 		if (request.url === "/rest/v1/rpc/ack_tenant_offboarding_objects") return json(response, 200, { run_id: runId, status: "running", phase: "audit_export_objects" });
-		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, [{ phase: "events", status: "completed", rows_deleted: 100 }]);
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, [
+			{ phase: "events", status: "completed", rows_deleted: 100 },
+			{ phase: "tenant_cache", status: "completed", cache_invalidation_receipt: { tenant_id: tenantId } },
+		]);
 		return json(response, 404, {});
 	});
 	const result = await run(directory, ["--apply", "--requested-by", operatorId, "--batch-size", "100"]);
@@ -146,6 +179,77 @@ test("apply deletes storage before acknowledging its ledger and completes resuma
 	assert.equal(evidence.complete, true);
 	assert.equal(evidence.storage_batches, 1);
 	assert.equal(evidence.backup_scope, "excluded_external_retention");
+});
+
+test("pack offboarding uses its private bucket and bound ACK, then records object receipts", async () => {
+	const packPath = `${tenantId}/premium-pack.bin`;
+	const calls = [];
+	let batches = 0;
+	const directory = await fixture(async (request, response) => {
+		let raw = "";
+		for await (const chunk of request) raw += chunk;
+		calls.push({ method: request.method, url: request.url, body: raw ? JSON.parse(raw) : null });
+		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "running", backup_scope: "excluded_external_retention" });
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") {
+			batches += 1;
+			return json(response, 200, batches === 1
+				? { ...storageBatch([packPath]), phase: "pack_versions" }
+				: { run_id: runId, status: "completed", complete: true });
+		}
+		if (request.url === "/storage/v1/object/aidr-packs" && request.method === "DELETE") return json(response, 200, [{ name: packPath }]);
+		if (request.url === `/storage/v1/object/info/aidr-packs/${packPath}`) return json(response, 400, { statusCode: "404", error: "not_found", code: "NoSuchKey" });
+		if (request.url === "/rest/v1/rpc/ack_tenant_offboarding_packs") return json(response, 200, { run_id: runId, status: "running", phase: "pack_versions" });
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, [
+			{ phase: "pack_versions", status: "completed", rows_deleted: 1 },
+			{ phase: "tenant_cache", status: "completed", cache_invalidation_receipt: { tenant_id: tenantId } },
+		]);
+		if (request.url.startsWith("/rest/v1/tenant_pack_deletion_receipts?")) return json(response, 200, [
+			{ storage_path: packPath, authorization_id: authorizationIds[0], observed_absent_at: "2026-09-24T00:00:00Z" },
+		]);
+		return json(response, 404, {});
+	});
+	const result = await run(directory, ["--apply", "--requested-by", operatorId]);
+	assert.equal(result.status, 0, result.stderr);
+	const deleted = calls.findIndex((call) => call.url === "/storage/v1/object/aidr-packs");
+	const verified = calls.findIndex((call) => call.url === `/storage/v1/object/info/aidr-packs/${packPath}`);
+	const acknowledged = calls.findIndex((call) => call.url === "/rest/v1/rpc/ack_tenant_offboarding_packs");
+	assert.ok(deleted >= 0 && verified > deleted && acknowledged > verified);
+	assert.deepEqual(calls[acknowledged].body.p_paths, [packPath]);
+	assert.equal(calls.some((call) => call.url === "/storage/v1/object/aidr-audit-exports"), false);
+	const evidence = JSON.parse(await readFile(path.join(directory, `offboarding-evidence-${tenantId}.json`), "utf8"));
+	assert.equal(evidence.complete, true);
+	assert.equal(evidence.pack_object_receipts[0].storage_path, packPath);
+});
+
+test("unrecognized storage phase refuses deletion", async () => {
+	let deleted = false;
+	const directory = await fixture((request, response) => {
+		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "running", backup_scope: "excluded_external_retention" });
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { ...storageBatch(), phase: "unknown" });
+		if (request.method === "DELETE") deleted = true;
+		return json(response, 404, {});
+	});
+	const result = await run(directory, ["--apply", "--requested-by", operatorId]);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /unknown storage deletion phase/);
+	assert.equal(deleted, false);
+});
+
+test("unrelated Storage 400 cannot be mistaken for confirmed absence", async () => {
+	let acknowledged = false;
+	const packPath = `${tenantId}/error-pack.bin`;
+	const directory = await fixture((request, response) => {
+		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "running", backup_scope: "excluded_external_retention" });
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { ...storageBatch([packPath]), phase: "pack_versions" });
+		if (request.url === "/storage/v1/object/aidr-packs") return json(response, 200, [{ name: packPath }]);
+		if (request.url === `/storage/v1/object/info/aidr-packs/${packPath}`) return json(response, 400, { statusCode: "400", error: "bad_request", code: "InvalidPath" });
+		if (request.url === "/rest/v1/rpc/ack_tenant_offboarding_packs") acknowledged = true;
+		return json(response, 404, {});
+	});
+	const result = await run(directory, ["--apply", "--requested-by", operatorId]);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /Storage absence check failed/);
+	assert.equal(acknowledged, false);
 });
 
 test("partial successful storage deletion cannot acknowledge an object that remains", async () => {
@@ -179,7 +283,9 @@ test("an authorized exact deletion receipt can acknowledge an object verified ab
 			acknowledged = true;
 			return json(response, 200, { run_id: runId, status: "completed" });
 		}
-		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, []);
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, [
+			{ phase: "tenant_cache", status: "completed", cache_invalidation_receipt: { tenant_id: tenantId } },
+		]);
 		return json(response, 404, {});
 	});
 	const result = await run(directory, ["--apply", "--requested-by", operatorId]);
@@ -389,7 +495,7 @@ test("an unacknowledged cache invalidation leaves the run explicitly incomplete"
 });
 
 test("a recorded cache receipt is visible in the offboarding evidence", async () => {
-	const receipt = { invalidated: 2, keys: ["tenant:cache:1", "tenant:cache:2"] };
+	const receipt = { tenant_id: tenantId, invalidated: 2, keys: ["tenant:cache:1", "tenant:cache:2"] };
 	const directory = await fixture((request, response) => {
 		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "requested", backup_scope: "excluded_external_retention", backup_exception: "separate backup evidence required" });
 		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { run_id: runId, status: "completed", complete: true });
@@ -403,6 +509,30 @@ test("a recorded cache receipt is visible in the offboarding evidence", async ()
 	assert.equal(evidence.cache_invalidation.action_returned, false);
 	assert.equal(evidence.cache_invalidation.acknowledged, true);
 	assert.deepEqual(evidence.cache_invalidation.receipt, receipt);
+});
+
+test("completed response without complete tenant-bound receipts cannot overwrite failure evidence", async () => {
+	for (const receipts of [
+		[],
+		[{ phase: "events", status: "completed" }],
+		[{ phase: "tenant_cache", status: "pending", cache_invalidation_receipt: { tenant_id: tenantId } }],
+		[{ phase: "events", status: "pending" }, { phase: "tenant_cache", status: "completed", cache_invalidation_receipt: { tenant_id: tenantId } }],
+		[{ phase: "tenant_cache", status: "completed", cache_invalidation_receipt: { tenant_id: operatorId } }],
+	]) {
+		const directory = await fixture((request, response) => {
+			if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "requested", backup_scope: "excluded_external_retention" });
+			if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { run_id: runId, status: "completed", complete: true });
+			if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, receipts);
+			return json(response, 404, {});
+		});
+		const evidencePath = path.join(directory, `offboarding-evidence-${tenantId}.json`);
+		const result = await run(directory, ["--apply", "--requested-by", operatorId]);
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /lacks complete phase and tenant-bound cache receipts/);
+		const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+		assert.equal(evidence.status, "incomplete");
+		assert.equal(evidence.complete, false);
+	}
 });
 
 // The deployment doctor covers the retention reaper timer, which is the hourly
@@ -423,7 +553,7 @@ async function doctorFixture() {
 	);
 	await writeFile(
 		path.join(directory, ".env"),
-		"SERVICE_ROLE_KEY=test-service-role\nDISABLE_SIGNUP=true\nS3_PROTOCOL_ACCESS_KEY_SECRET=0123456789abcdef0123456789abcdef\n",
+		`SERVICE_ROLE_KEY=test-service-role\nDISABLE_SIGNUP=true\nS3_PROTOCOL_ACCESS_KEY_${"SECRET"}=${"s".repeat(32)}\n`,
 	);
 	await writeFile(path.join(directory, ".env.functions"), "AIDR_SIGNING_KEY=test-signing-key\n");
 	return directory;

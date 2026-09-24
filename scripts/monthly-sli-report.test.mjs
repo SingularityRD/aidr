@@ -20,7 +20,8 @@ const ROOT = resolve(SCRIPT_DIR, "..");
 const SCRIPT = resolve(SCRIPT_DIR, "monthly-sli-report.mjs");
 const START = "2026-09-01T00:00:00.000Z";
 const END = "2026-09-01T00:00:10.000Z";
-const GENERATED = "2026-09-02T00:00:00.000Z";
+const MONTH_END = "2026-10-01T00:00:00.000Z";
+const GENERATED = "2026-10-02T00:00:00.000Z";
 
 function input(overrides = {}) {
 	return {
@@ -49,7 +50,10 @@ function observation(startAt, endAt, status, reason) {
 }
 
 function completeInput(status = "good") {
-	return input({ observations: [observation(START, END, status, status === "good" ? undefined : "fixture outcome")] });
+	return input({
+		observation_window: { start_at: START, end_at: MONTH_END },
+		observations: [observation(START, MONTH_END, status, status === "good" ? undefined : "fixture outcome")],
+	});
 }
 
 function assertValid(report) {
@@ -75,6 +79,14 @@ test("a complete local window computes availability and error budget without a c
 	assert.equal(report.claims.contractual_sla_claim, false);
 	assert.equal(report.evidence.source_sha256, "a".repeat(64));
 	assertValid(report);
+});
+
+test("a monthly PASS requires the full named UTC calendar month", () => {
+	assert.throws(() => generateMonthlyReport(input({ observations: [observation(START, END, "good")] }), { generatedAt: GENERATED }), /full named UTC calendar month/);
+	const report = generateMonthlyReport(completeInput(), { generatedAt: GENERATED });
+	const truncated = structuredClone(report);
+	truncated.observation_window.end_at = END;
+	assert.match(validateMonthlyReport(truncated).errors.join("\n"), /full named UTC calendar month/);
 });
 
 test("empty observations are explicit NOT_RUN and do not publish an availability or budget duration", () => {
@@ -106,27 +118,30 @@ test("an explicit unknown and an uncovered interval remain distinguishable", () 
 });
 
 test("approved maintenance is excluded, while an unapproved exclusion is rejected", () => {
+	const maintenanceStart = "2026-09-15T00:00:04.000Z";
+	const maintenanceEnd = "2026-09-15T00:00:06.000Z";
 	const maintenance = {
 		endpoint: "dashboard-api",
 		region: "local",
-		start_at: "2026-09-01T00:00:04.000Z",
-		end_at: "2026-09-01T00:00:06.000Z",
+		start_at: maintenanceStart,
+		end_at: maintenanceEnd,
 		category: "approved_maintenance",
 		approved: true,
 		reference: "maintenance-window-1",
 	};
 	const report = generateMonthlyReport(input({
+		observation_window: { start_at: START, end_at: MONTH_END },
 		observations: [
-			observation(START, "2026-09-01T00:00:04.000Z", "good"),
-			observation("2026-09-01T00:00:04Z", "2026-09-01T00:00:06Z", "excluded", "maintenance-window-1"),
-			observation("2026-09-01T00:00:06.000Z", END, "good"),
+			observation(START, maintenanceStart, "good"),
+			observation(maintenanceStart, maintenanceEnd, "excluded", "maintenance-window-1"),
+			observation(maintenanceEnd, MONTH_END, "good"),
 		],
 		exclusions: [maintenance],
 		incidents: [{ id: "incident-1", start_at: "2026-09-01T00:00:06.000Z", end_at: "2026-09-01T00:00:07.000Z", classification: "unavailable", evidence_status: "observed", reference: "local-incident-log" }],
 	}), { generatedAt: GENERATED });
 	assert.equal(report.status, STATUS_PASS);
 	assert.equal(report.sli.excluded_seconds, 2);
-	assert.equal(report.sli.eligible_seconds, 8);
+	assert.equal(report.sli.eligible_seconds, 30 * 24 * 60 * 60 - 2);
 	assert.equal(report.sli.availability_ratio, 1);
 	assert.equal(report.incidents.length, 1);
 	assertValid(report);
@@ -148,9 +163,25 @@ test("a scoped series with no eligible time keeps the overall report unknown", (
 	assertValid(report);
 });
 
+test("a healthy endpoint cannot mask a scoped endpoint below the objective", () => {
+	const report = generateMonthlyReport(input({
+		scope: { service: "managed-control-plane-and-dashboard-api", endpoints: ["dashboard-api", "worker-api"], regions: ["local"] },
+		observation_window: { start_at: START, end_at: MONTH_END },
+		observations: [
+			observation(START, MONTH_END, "good"),
+			{ ...observation(START, "2026-09-01T01:00:00.000Z", "unavailable"), endpoint: "worker-api" },
+			{ ...observation("2026-09-01T01:00:00.000Z", MONTH_END, "good"), endpoint: "worker-api" },
+		],
+	}), { generatedAt: GENERATED });
+	assert.ok(report.sli.availability_ratio > 0.999);
+	assert.equal(report.series.find((entry) => entry.endpoint === "worker-api").status, STATUS_FAIL);
+	assert.equal(report.status, STATUS_FAIL);
+	assertValid(report);
+});
+
 test("the validator rejects malformed schema markers, reversed or unlinked exclusions, and malformed intervals without throwing", () => {
 	const report = generateMonthlyReport(input({
-		observations: [observation(START, "2026-09-01T00:00:04.000Z", "good"), observation("2026-09-01T00:00:06.000Z", END, "good")],
+		observations: [observation(START, "2026-09-01T00:00:04.000Z", "good"), observation("2026-09-01T00:00:06.000Z", END, "unavailable")],
 		exclusions: [{ endpoint: "dashboard-api", region: "local", start_at: "2026-09-01T00:00:04.000Z", end_at: "2026-09-01T00:00:06.000Z", category: "approved_maintenance", approved: true, reference: "maintenance" }],
 	}), { generatedAt: GENERATED });
 	const badSchema = structuredClone(report);

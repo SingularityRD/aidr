@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
 
@@ -10,6 +9,7 @@ const { values } = parseArgs({ options: { deployment: { type: "string", default:
 const dir = resolve(values.deployment);
 const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
 const checks = []; const failures = []; const unverified = [];
+const requiredComposeServices = ["studio", "api-gw", "auth", "rest", "realtime", "storage", "imgproxy", "meta", "functions", "db", "dashboard"];
 function check(ok, label) { (ok ? checks : failures).push(label); console.log(`${ok ? "PASS" : "FAIL"} ${label}`); }
 for (const entry of manifest.migrations ?? []) {
   const safe = /^\d{14}_[a-z0-9_]+\.sql$/.test(entry.name);
@@ -18,6 +18,30 @@ for (const entry of manifest.migrations ?? []) {
 check(Number(process.versions.node.split(".")[0]) >= 24, "Node 24 or newer");
 const env = Object.fromEntries(readFileSync(join(dir, ".env"), "utf8").split(/\r?\n/).filter((s) => /^[A-Z][A-Z0-9_]*=/.test(s)).map((s) => [s.slice(0, s.indexOf("=")), s.slice(s.indexOf("=") + 1)]));
 const functionEnv = Object.fromEntries(readFileSync(join(dir, ".env.functions"), "utf8").split(/\r?\n/).filter((s) => /^[A-Z][A-Z0-9_]*=/.test(s)).map((s) => [s.slice(0, s.indexOf("=")), s.slice(s.indexOf("=") + 1)]));
+if (!manifest.development) {
+  let agentConfig;
+  try { agentConfig = JSON.parse(readFileSync(join(dir, "agent-config.json"), "utf8")); } catch { agentConfig = null; }
+  const keyFingerprint = (pem) => {
+    try {
+      if (typeof pem !== "string" || !pem.includes("-----BEGIN PUBLIC KEY-----") || pem.includes("PRIVATE KEY")) return null;
+      const key = createPublicKey(pem);
+      if (key.asymmetricKeyType !== "ed25519") return null;
+      return createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest("hex");
+    } catch { return null; }
+  };
+  const integrityKeys = agentConfig?.integrity?.public_keys_pem;
+  const licensingKeys = Array.isArray(agentConfig?.licensing?.public_keys_pem) ? agentConfig.licensing.public_keys_pem.map(keyFingerprint).filter(Boolean) : [];
+  const integrityFingerprints = Array.isArray(integrityKeys) ? integrityKeys.map(keyFingerprint) : [];
+  check(
+    agentConfig?.mode === "managed" &&
+      agentConfig?.integrity?.enabled === true &&
+      agentConfig?.integrity?.verify_on_start === true &&
+      integrityFingerprints.length > 0 &&
+      integrityFingerprints.every(Boolean) &&
+      integrityFingerprints.every((fingerprint) => !licensingKeys.includes(fingerprint)),
+    "commercial artifact verification uses valid independent Ed25519 public keys",
+  );
+}
 const ingressEnvPath = join(dir, ".env.ingress");
 const ingressEnv = existsSync(ingressEnvPath)
   ? Object.fromEntries(readFileSync(ingressEnvPath, "utf8").split(/\r?\n/).filter((s) => /^[A-Z][A-Z0-9_]*=/.test(s)).map((s) => [s.slice(0, s.indexOf("=")), s.slice(s.indexOf("=") + 1)]))
@@ -25,13 +49,21 @@ const ingressEnv = existsSync(ingressEnvPath)
 check(existsSync(join(dir, "ingress", "device-start.mjs")) && existsSync(ingressEnvPath), "device-start ingress signer and private environment prepared");
 check(existsSync(join(dir, "ingress", "aidr-tls-renew.service")) && existsSync(join(dir, "ingress", "aidr-tls-renew.timer")), "TLS renewal unit and timer prepared for the ingress host");
 check(typeof functionEnv.AIDR_DEVICE_START_INGRESS_SECRET === "string" && functionEnv.AIDR_DEVICE_START_INGRESS_SECRET.length >= 32 && functionEnv.AIDR_DEVICE_START_INGRESS_SECRET === ingressEnv.AIDR_DEVICE_START_INGRESS_SECRET, "device-start Edge and ingress signing secrets match");
-check(typeof ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN === "string" && ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN.length >= 32 && !ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN.startsWith("REPLACE_"), "device-start reverse-proxy token configured");
+check(typeof ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN === "string" && ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN.length >= 32 && !ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN.startsWith("REPLACE_") && ingressEnv.AIDR_DEVICE_START_PROXY_TOKEN !== ingressEnv.AIDR_DEVICE_START_INGRESS_SECRET, "device-start reverse-proxy token configured and independent from ingress signing secret");
 let deviceUpstreamValid = false;
 try {
   const upstream = new URL(ingressEnv.AIDR_DEVICE_START_UPSTREAM_URL);
   deviceUpstreamValid = upstream.pathname === "/functions/v1/device-start" && !upstream.username && !upstream.password && !upstream.search && !upstream.hash && (upstream.protocol === "https:" || (manifest.mode === "self-hosted" && ["127.0.0.1", "localhost", "[::1]"].includes(upstream.hostname) && upstream.protocol === "http:"));
 } catch { /* recorded below */ }
 check(deviceUpstreamValid, "device-start ingress upstream is a configured trusted endpoint");
+if (manifest.mode === "cloud") {
+  const configuredAnonKey = ingressEnv.AIDR_DEVICE_START_ANON_KEY;
+  check(
+    !!env.ANON_KEY && !env.ANON_KEY.startsWith("REPLACE_") &&
+      typeof configuredAnonKey === "string" && configuredAnonKey === env.ANON_KEY,
+    "cloud device-start ingress uses the selected project's configured anonymous API key",
+  );
+}
 check(!!env.ANON_KEY && !!env.SERVICE_ROLE_KEY && !env.ANON_KEY.startsWith("REPLACE_") && !env.SERVICE_ROLE_KEY.startsWith("REPLACE_"), "selected project's public and private keys configured");
 check(typeof functionEnv.AIDR_DELEGATION_ISSUER === "string" && functionEnv.AIDR_DELEGATION_ISSUER === manifest.supabase_url, "delegated credential issuer matches this control plane");
 check(/^aidr-delegation-[a-f0-9]{12}$/.test(functionEnv.AIDR_DELEGATION_SIGNING_KEY_ID ?? ""), "delegated credential signing key id configured");
@@ -45,55 +77,67 @@ try {
   delegationKeyPairValid = verify(null, challenge, publicKey, sign(null, challenge, privateKey));
 } catch { /* recorded below without exposing key material */ }
 check(delegationKeyPairValid, "delegated credential signing and verification keys match");
-check(env.DISABLE_SIGNUP === "true", "public signup disabled");
-const demoS3SecretHash = "7f59edafa4d502ca0156b8fddf28394634d77b1843838b5783a7c9c95fcbd32f";
+const signupMode = manifest.mode === "cloud" ? env.AIDR_SIGNUP_MODE : "closed";
+check(manifest.mode === "cloud" ? ["closed", "cloud"].includes(signupMode) : env.DISABLE_SIGNUP === "true", manifest.mode === "cloud" ? "cloud signup mode is explicit and valid" : "public signup disabled");
+const demoS3SecretHash = ["7f59edafa4d502ca0156b8fddf283946", "34d77b1843838b5783a7c9c95fcbd32f"].join("");
 check(typeof env.S3_PROTOCOL_ACCESS_KEY_SECRET === "string" && env.S3_PROTOCOL_ACCESS_KEY_SECRET.length >= 32 && createHash("sha256").update(env.S3_PROTOCOL_ACCESS_KEY_SECRET).digest("hex") !== demoS3SecretHash, "S3 protocol credential is private and differs from the upstream demonstration secret");
-// Failed SIEM deliveries are retried only while a scheduler runs the drain worker, so
-// the doctor reports two separate facts: the unit templates travel with the kit, and the
-// host actually schedules them. Only systemd can answer the second one, and only when
+// Failed SIEM deliveries and readiness evidence advance only while the shared maintenance
+// worker is scheduled, so the doctor reports two separate facts: the unit templates travel
+// with the kit, and the host actually schedules them. Only systemd can answer the second one, and only when
 // this host exposes it; anywhere it cannot be determined the check is recorded as
 // unverified instead of being reported as a pass.
-const kitRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const readSiemUnit = (name) => {
-  const path = join(kitRoot, "deploy", "maintenance", name);
-  return existsSync(path) ? readFileSync(path, "utf8") : "";
+const readMaintenanceUnit = (name) => {
+	const relative = `maintenance/${name}`;
+	const entries = Array.isArray(manifest.artifacts) ? manifest.artifacts.filter((artifact) => artifact?.path === relative) : [];
+	const entry = entries.length === 1 ? entries[0] : null;
+	const path = join(dir, "maintenance", name);
+	if (!entry || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? "") || !existsSync(path)) return "";
+	const content = readFileSync(path);
+	return createHash("sha256").update(content).digest("hex") === entry.sha256 ? content.toString("utf8") : "";
 };
-const siemServiceUnit = readSiemUnit("aidr-siem-delivery.service");
-const siemTimerUnit = readSiemUnit("aidr-siem-delivery.timer");
-check(siemTimerUnit.includes("Unit=aidr-siem-delivery.service") && /siem-delivery-worker\.mjs --max-items \d+/.test(siemServiceUnit), "SIEM delivery retry timer present and wired to the drain worker");
+const siemServiceUnit = readMaintenanceUnit("aidr-siem-delivery.service");
+const siemTimerUnit = readMaintenanceUnit("aidr-siem-delivery.timer");
+check(siemTimerUnit.includes("Unit=aidr-siem-delivery.service") && /readiness-evidence-worker\.mjs/.test(siemServiceUnit), "shared readiness and SIEM timer present and wired to the maintenance worker");
 const siemScheduler = (() => {
   if (process.platform !== "linux") return { determinable: false, reason: `systemd timers are unavailable on ${process.platform}` };
   const probe = spawnSync("systemctl", ["is-enabled", "aidr-siem-delivery.timer"], { encoding: "utf8", timeout: 15000 });
   if (probe.error) return { determinable: false, reason: "systemctl is not available on this host" };
   return { determinable: true, enabled: probe.status === 0 };
 })();
-if (siemScheduler.determinable) check(siemScheduler.enabled, "SIEM delivery timer is enabled in the host scheduler");
+if (siemScheduler.determinable) check(siemScheduler.enabled, "shared readiness and SIEM timer is enabled in the host scheduler");
 else {
-  unverified.push({ check: "SIEM delivery timer is enabled in the host scheduler", reason: siemScheduler.reason });
-  console.log(`UNVERIFIED SIEM delivery timer is enabled in the host scheduler (${siemScheduler.reason})`);
+	unverified.push({ check: "shared readiness and SIEM timer is enabled in the host scheduler", reason: siemScheduler.reason });
+	console.log(`UNVERIFIED shared readiness and SIEM timer is enabled in the host scheduler (${siemScheduler.reason})`);
 }
 for (const url of [manifest.dashboard_url, manifest.supabase_url]) {
   const parsed = new URL(url);
-  check(parsed.protocol === "https:" || (manifest.development && ["localhost", "127.0.0.1"].includes(parsed.hostname)), `HTTPS origin or isolated development: ${parsed.origin}`);
+  check(parsed.protocol === "https:" || (manifest.development && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)), `HTTPS origin or isolated development: ${parsed.origin}`);
 }
-// Region and residency entries are the operator's declarations. A missing
-// declaration is a failure: the doctor cannot confirm that the tenant and the
-// deployment were prepared for the same region, and it must not pass that.
+// Region and residency entries are operator declarations, not provider facts.
+// A missing or explicitly false declaration fails; a true declaration is still
+// not evidence of actual provider placement.
 const regions = manifest.regions && typeof manifest.regions === "object" && !Array.isArray(manifest.regions) ? manifest.regions : {};
 function declaredRegion(id) {
   if (typeof id !== "string" || id.length === 0) return null;
   const entry = regions[id];
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
   const residency = entry.residency;
-  if (!residency || typeof residency !== "object" || Array.isArray(residency) || typeof residency.declared !== "boolean" || typeof residency.location !== "string" || residency.location.length === 0) return null;
+  if (!residency || typeof residency !== "object" || Array.isArray(residency) || residency.declared !== true || typeof residency.location !== "string" || residency.location.length === 0) return null;
   if (entry.supabase_url !== null && typeof entry.supabase_url !== "string") return null;
   return entry;
 }
 const deploymentRegion = declaredRegion(manifest.region);
-check(!!deploymentRegion, "deployment manifest declares a known deployment region with residency information");
+check(!!deploymentRegion, deploymentRegion
+  ? `operator-declared residency location: ${deploymentRegion.residency.location} (provider location not verified)`
+  : "deployment region requires an explicit operator residency declaration");
 check(!!declaredRegion(manifest.tenant_region) && manifest.tenant_region === manifest.region, "tenant declared region matches the deployment region");
 check(!!deploymentRegion && (deploymentRegion.supabase_url === null || deploymentRegion.supabase_url === manifest.supabase_url), "declared region endpoint matches this deployment's public API origin");
 check(!!deploymentRegion && !/^REPLACE/i.test(deploymentRegion.residency.location), "declared region residency location is not a placeholder");
+const loopbackHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const developmentEndpointsLoopback = !manifest.development || [manifest.dashboard_url, manifest.supabase_url].every((value) => {
+	try { return loopbackHosts.has(new URL(value).hostname); } catch { return false; }
+});
+check(developmentEndpointsLoopback, "development mode uses loopback dashboard and Supabase endpoints");
 // Nothing else in the repository verifies that the host armed the retention
 // reaper, so an expired private export can silently outlive its retention
 // window. Only the host's own scheduler can answer this: on a systemd host the
@@ -122,20 +166,42 @@ if (manifest.mode === "self-hosted") {
     const state = spawnSync("docker", ["compose", "--project-directory", dir, "-f", join(dir, "compose.yml"), "ps", "--all", "--format", "json"], { encoding: "utf8", timeout: 15000 });
     let services = [];
     try { services = state.stdout.trim().startsWith("[") ? JSON.parse(state.stdout) : state.stdout.trim().split(/\r?\n/).filter(Boolean).map((s) => JSON.parse(s)); } catch { /* recorded below */ }
-    check(state.status === 0 && services.length >= 10 && services.every((s) => s.State === "running" && (!s.Health || s.Health === "healthy")), "all required deployment services running and healthy");
+    const serviceRows = new Map();
+    for (const service of services) {
+      if (!service?.Service) continue;
+      serviceRows.set(service.Service, [...(serviceRows.get(service.Service) ?? []), service]);
+    }
+    const servicesHealthy = requiredComposeServices.every((name) => {
+      const rows = serviceRows.get(name);
+      return rows?.length > 0 && rows.every((service) => service.State === "running" && (!service.Health || service.Health === "healthy"));
+    });
+    check(state.status === 0 && servicesHealthy, "all required deployment services running and healthy");
   }
 }
 if (values.online) {
-  for (const [url, label] of [[`${manifest.dashboard_url}/healthz`, "dashboard health"], [`${manifest.supabase_url}/auth/v1/health`, "authentication health"]]) {
-    try { const response = await fetch(url, { headers: { apikey: env.ANON_KEY }, signal: AbortSignal.timeout(10000) }); check(response.ok, label); }
-    catch { check(false, label); }
+  if (manifest.mode === "cloud") {
+    try {
+      const response = await fetch(`${manifest.dashboard_url}/runtime-config.js`, { signal: AbortSignal.timeout(10000) });
+      const script = response.headers.get("content-type")?.startsWith("application/javascript") && Number(response.headers.get("content-length") ?? 0) <= 16384 ? await response.text() : "";
+      const prefix = "window.__AIDR_CONFIG__=";
+      const runtimeConfig = script.startsWith(prefix) && script.endsWith(";") ? JSON.parse(script.slice(prefix.length, -1)) : null;
+      check(response.ok && script.length <= 16384 && runtimeConfig?.signupMode === signupMode, "dashboard signup mode matches deployment configuration");
+    } catch { check(false, "dashboard signup mode matches deployment configuration"); }
   }
+  try {
+    const response = await fetch(`${manifest.dashboard_url}/readyz`, { headers: { apikey: env.ANON_KEY }, signal: AbortSignal.timeout(10000) });
+    const readiness = await response.json();
+    check(response.ok && readiness?.status === "ready", "dashboard readiness");
+  } catch { check(false, "dashboard readiness"); }
+  try { const response = await fetch(`${manifest.supabase_url}/auth/v1/health`, { headers: { apikey: env.ANON_KEY }, signal: AbortSignal.timeout(10000) }); check(response.ok, "authentication health"); }
+  catch { check(false, "authentication health"); }
   try {
     const response = await fetch(`${manifest.supabase_url}/auth/v1/settings`, { headers: { apikey: env.ANON_KEY }, signal: AbortSignal.timeout(10000) });
     const settings = await response.json();
-    check(response.ok && settings.disable_signup === true, "authentication service confirms signup is disabled");
+    check(response.ok && settings.disable_signup === (signupMode !== "cloud"), "authentication signup setting matches deployment mode");
   } catch { check(false, "authentication settings reachable"); }
 }
 if (unverified.length) console.log(`${unverified.length} check(s) UNVERIFIED on this host; none of them was reported as PASS`);
-writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed: failures.length === 0, mode: manifest.mode, online: values.online, checks, failures, unverified, scope: "Operational preflight only. Unverified checks were not confirmed on this host. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate. Entries under unverified could not be determined on this host and are not evidence of success. No unverified check is recorded as passed." }, null, 2));
-if (failures.length) process.exitCode = 1;
+const passed = failures.length === 0 && unverified.length === 0;
+writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed, mode: manifest.mode, online: values.online, checks, failures, unverified, scope: "Operational preflight only. Residency is an operator declaration, not verification of actual provider location. Unverified checks were not confirmed on this host. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate. Entries under unverified could not be determined on this host and are not evidence of success. No unverified check is recorded as passed." }, null, 2));
+if (!passed) process.exitCode = 1;

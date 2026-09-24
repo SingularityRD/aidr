@@ -7,17 +7,20 @@
 // agent-callable surface, and both require the deployment's service-role
 // credential plus an accountable principal — an unauthenticated caller cannot
 // reach either path.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fchmodSync, fsyncSync, lstatSync, linkSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
+import { renameWithRetry } from "./lib/atomic-write.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, email: { type: "string" }, name: { type: "string" }, seats: { type: "string", default: "1" }, resume: { type: "boolean", default: false }, "transfer-owner": { type: "string" }, "requested-by": { type: "string" } } });
+const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, email: { type: "string" }, name: { type: "string" }, seats: { type: "string", default: "1" }, "license-expires-at": { type: "string" }, "license-reference": { type: "string" }, resume: { type: "boolean", default: false }, "transfer-owner": { type: "string" }, "requested-by": { type: "string" } } });
 const dir = resolve(values.deployment);
 const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
+if (manifest.mode !== "self-hosted") throw new Error("Deployment bootstrap is only supported for self-hosted installations");
 const env = Object.fromEntries(readFileSync(join(dir, ".env"), "utf8").split(/\r?\n/).filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line)).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
 const base = new URL(manifest.supabase_url);
 if (base.protocol !== "https:" && !(manifest.development && ["localhost", "127.0.0.1"].includes(base.hostname))) throw new Error("HTTPS required");
@@ -29,6 +32,79 @@ async function request(path, body, method = "POST", extraHeaders = {}) {
   const response = await fetch(new URL(path, base), { method, headers: { apikey: env.ANON_KEY, Authorization: `Bearer ${env.SERVICE_ROLE_KEY}`, "Content-Type": "application/json", ...extraHeaders }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw new Error(`Provisioning failed at ${path.split("?")[0]} (HTTP ${response.status}); review service logs, then resume. No credentials printed.`);
   return response.json();
+}
+
+function preserveWindowsAcl(source, destination) {
+  const script = `
+$ErrorActionPreference = 'Stop'
+$source = [System.IO.FileInfo]::new([Environment]::GetEnvironmentVariable('AIDR_BOOTSTRAP_ACL_SOURCE'))
+$destination = [System.IO.FileInfo]::new([Environment]::GetEnvironmentVariable('AIDR_BOOTSTRAP_ACL_DESTINATION'))
+$sourceAcl = $source.GetAccessControl()
+$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+if ($sourceAcl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $currentUser) { throw 'Receipt is not owned by the current user' }
+$destination.SetAccessControl($sourceAcl)
+$destinationAcl = $destination.GetAccessControl()
+$expected = $sourceAcl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)
+$actual = $destinationAcl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)
+if ($expected -ne $actual) { throw 'Receipt ACL was not preserved' }
+`;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], {
+    env: { ...process.env, AIDR_BOOTSTRAP_ACL_SOURCE: source, AIDR_BOOTSTRAP_ACL_DESTINATION: destination },
+    encoding: "utf8",
+    timeout: 30_000,
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0) throw new Error("Could not preserve bootstrap receipt ACL; the existing receipt was not replaced");
+}
+
+function writePrivateReceipt(path, receipt, { createOnly = false } = {}) {
+  let existing = null;
+  try {
+    existing = lstatSync(path);
+    if (existing.isSymbolicLink() || !existing.isFile()) throw new Error("Bootstrap receipt must be a regular file");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (createOnly && existing) throw new Error("Receipt already exists");
+  if (process.platform !== "win32" && existing && typeof process.getuid === "function" && existing.uid !== process.getuid()) {
+    throw new Error("Bootstrap receipt is not owned by the current user");
+  }
+
+  const mode = process.platform === "win32" || !existing ? 0o600 : existing.mode & 0o777;
+  if (process.platform !== "win32" && (mode & 0o077) !== 0) throw new Error("Receipt permissions are not private");
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  let descriptor;
+  let temporaryExists = false;
+  try {
+    descriptor = openSync(temporary, "wx", 0o600);
+    temporaryExists = true;
+    writeFileSync(descriptor, JSON.stringify(receipt, null, 2), "utf8");
+    if (process.platform !== "win32") fchmodSync(descriptor, mode);
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+
+    if (existing && process.platform === "win32") preserveWindowsAcl(path, temporary);
+    if (createOnly) {
+      // Linking is an atomic create-if-absent on the same filesystem; never
+      // replace a receipt created by a concurrent invocation.
+      linkSync(temporary, path);
+      try { unlinkSync(temporary); } catch {}
+    } else {
+      // The sibling temp keeps the replacement on one filesystem. A failed
+      // rename leaves the previous receipt in place on both POSIX and Windows.
+      renameWithRetry(temporary, path);
+    }
+    temporaryExists = false;
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try { closeSync(descriptor); } catch {}
+    }
+    if (temporaryExists) {
+      try { unlinkSync(temporary); } catch {}
+    }
+    throw error;
+  }
 }
 
 /**
@@ -99,6 +175,9 @@ async function transferOwnership() {
     receipt = JSON.parse(readFileSync(transferReceiptPath, "utf8"));
     if (receipt?.state !== "in_progress") throw new Error("An owner-transfer receipt already exists; ownership is never transferred twice by this command. Review owner-transfer-receipt.json.");
     if (receipt.tenant_id !== tenantId || receipt.previous_owner?.user_id !== previousOwnerId) throw new Error("The in-progress owner-transfer receipt does not match this deployment's current owner");
+    if (receipt.new_owner?.email?.toLowerCase() !== newOwnerEmail) throw new Error("The in-progress owner-transfer receipt names a different new owner");
+    receipt.last_resume_attempted_at = new Date().toISOString();
+    writePrivateReceipt(transferReceiptPath, receipt);
   }
 
   const target = await findAccountByEmail(newOwnerEmail);
@@ -127,7 +206,7 @@ async function transferOwnership() {
       previous_owner: { user_id: previousOwnerId, email: previousOwnerEmail, role_before: "owner", role_after: "admin" },
       new_owner: { user_id: target.id, email: newOwnerEmail, role: "owner" },
     };
-    writeFileSync(transferReceiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600, flag: "wx" });
+    writePrivateReceipt(transferReceiptPath, receipt, { createOnly: true });
   }
 
   if (!resuming) {
@@ -152,7 +231,7 @@ async function transferOwnership() {
 
   receipt.state = "complete";
   receipt.completed_at = new Date().toISOString();
-  writeFileSync(transferReceiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600 });
+  writePrivateReceipt(transferReceiptPath, receipt);
   console.log(`Ownership transferred from ${previousOwnerEmail} to ${newOwnerEmail} (tenant ${tenantId}). Private receipt saved; no password or token was printed.`);
 }
 
@@ -161,17 +240,41 @@ const email = values.email?.trim().toLowerCase();
 const name = values.name?.trim();
 const seats = Number(values.seats);
 if (!email || !EMAIL.test(email) || !name || name.length > 120 || !Number.isInteger(seats) || seats < 1 || seats > 100000) throw new Error("Valid --email, --name and --seats (1..100000) required");
+const licenseExpiresAtMs = Date.parse(values["license-expires-at"] ?? "");
+const licenseReference = values["license-reference"]?.trim() ?? "";
+if (!Number.isFinite(licenseExpiresAtMs) || licenseExpiresAtMs <= Date.now()
+  || !licenseReference || licenseReference.length > 200 || /[\x00-\x1f\x7f]/.test(licenseReference)) {
+  throw new Error("A future --license-expires-at and a 1..200 character --license-reference from the signed customer contract are required");
+}
+const licenseExpiresAt = new Date(licenseExpiresAtMs).toISOString();
 let receipt;
-if (existsSync(receiptPath)) {
+const receiptExists = existsSync(receiptPath);
+if (receiptExists) {
   if (!values.resume) throw new Error("Bootstrap receipt exists. Use --resume with identical parameters; existing passwords are never reset.");
   receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
   if (receipt.email !== email || receipt.name !== name || receipt.seats !== seats || receipt.supabase_url !== base.origin) throw new Error("Bootstrap resume parameters do not match");
+  if ((receipt.license_expires_at && receipt.license_expires_at !== licenseExpiresAt)
+    || (receipt.license_reference && receipt.license_reference !== licenseReference)) throw new Error("Bootstrap license terms do not match the saved receipt");
+  receipt.license_expires_at = licenseExpiresAt;
+  receipt.license_reference = licenseReference;
 } else {
   if (values.resume) throw new Error("No bootstrap receipt to resume");
-  receipt = { bootstrap_id: randomUUID(), email, name, seats, supabase_url: base.origin, state: "reserved" };
-  writeFileSync(receiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600, flag: "wx" });
+  receipt = { bootstrap_id: randomUUID(), email, name, seats, license_expires_at: licenseExpiresAt, license_reference: licenseReference, supabase_url: base.origin, state: "reserved" };
 }
-const save = () => writeFileSync(receiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600 });
+// Read and validate the only remaining operator input before recording a new
+// receipt or making any API request. This keeps bad/empty passwords from
+// partially configuring admission or stranding an unusable bootstrap receipt.
+let password;
+if (!receipt.user_id) {
+  if (process.stdin.isTTY) throw new Error("Supply a 16..128 character password on stdin from your secret manager or a hidden prompt. Do not put passwords in command arguments.");
+  const chunks = []; let size = 0;
+  for await (const chunk of process.stdin) { size += chunk.length; if (size > 1024) throw new Error("Password input too large"); chunks.push(chunk); }
+  password = Buffer.concat(chunks).toString("utf8").replace(/\r?\n$/, "");
+  if (password.length < 16 || password.length > 128 || /[\r\n\0]/.test(password)) throw new Error("Password must be 16..128 characters on one line");
+}
+writePrivateReceipt(receiptPath, receipt, { createOnly: !receiptExists });
+const save = () => writePrivateReceipt(receiptPath, receipt);
+await request("/rest/v1/rpc/configure_tenant_admission_mode", { p_mode: "onprem" });
 if (values.resume && !receipt.user_id) {
   // Recover an interrupted successful account creation without changing accounts
   // that predate this operation. Bind to server-only app_metadata, never email alone.
@@ -183,15 +286,10 @@ if (values.resume && !receipt.user_id) {
   }
 }
 if (!receipt.user_id) {
-  if (process.stdin.isTTY) throw new Error("Supply a 16..128 character password on stdin from your secret manager or a hidden prompt. Do not put passwords in command arguments.");
-  const chunks = []; let size = 0;
-  for await (const chunk of process.stdin) { size += chunk.length; if (size > 1024) throw new Error("Password input too large"); chunks.push(chunk); }
-  const password = Buffer.concat(chunks).toString("utf8").replace(/\r?\n$/, "");
-  if (password.length < 16 || password.length > 128 || /[\r\n\0]/.test(password)) throw new Error("Password must be 16..128 characters on one line");
   const user = await request("/auth/v1/admin/users", { email, password, email_confirm: true, app_metadata: { aidr_bootstrap_id: receipt.bootstrap_id } });
   receipt.user_id = user.id; receipt.state = "account_created"; save();
 }
-const completed = await request("/rest/v1/rpc/bootstrap_customer", { p_user_id: receipt.user_id, p_bootstrap_id: receipt.bootstrap_id, p_name: name, p_seats: seats });
+const completed = await request("/rest/v1/rpc/bootstrap_customer", { p_user_id: receipt.user_id, p_bootstrap_id: receipt.bootstrap_id, p_name: name, p_seats: seats, p_license_expires_at: licenseExpiresAt, p_license_reference: licenseReference });
 Object.assign(receipt, completed, { state: "complete", completed_at: new Date().toISOString() }); save();
 console.log(`Customer owner and ${seats} agent seats provisioned. Sign in at ${manifest.dashboard_url}/login. Private receipt saved; no password or token was printed.`);
 }

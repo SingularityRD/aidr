@@ -20,7 +20,7 @@ function boundedInteger(name, fallback, minimum, maximum) {
 	return value;
 }
 
-const tenantId = option("--tenant");
+const tenantId = option("--tenant")?.toLowerCase();
 const requestedBy = option("--requested-by");
 const apply = argv.includes("--apply");
 const batchSize = boundedInteger("--batch-size", 100, 1, 1000);
@@ -76,10 +76,11 @@ async function request(path, method = "GET", body) {
 
 // Even an exact bulk response requires an absence check before ACK. Neither
 // ambiguous deletion nor failed ACK may cause this worker to replay Storage HTTP.
-async function verifyStorageObjectsAbsent(paths) {
+async function verifyStorageObjectsAbsent(bucket, paths) {
 	for (let offset = 0; offset < paths.length; offset += 20) {
 		await Promise.all(paths.slice(offset, offset + 20).map(async (path) => {
-			const response = await fetch(new URL(`/storage/v1/object/info/aidr-audit-exports/${path}`, base), {
+			const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+			const response = await fetch(new URL(`/storage/v1/object/info/${bucket}/${encodedPath}`, base), {
 				headers: {
 					apikey: env.SERVICE_ROLE_KEY,
 					Authorization: `Bearer ${env.SERVICE_ROLE_KEY}`,
@@ -87,6 +88,11 @@ async function verifyStorageObjectsAbsent(paths) {
 				signal: AbortSignal.timeout(30_000),
 			});
 			if (response.status === 404) return;
+			if (response.status === 400) {
+				let failure;
+				try { failure = await response.json(); } catch { /* Not a provider absence response. */ }
+				if (failure?.statusCode === "404" && failure?.error === "not_found" && failure?.code === "NoSuchKey") return;
+			}
 			if (response.ok) throw new Error(`Storage object remains after deletion: ${path}`);
 			throw new Error(`Storage absence check failed (${response.status}); durable receipts remain resumable`);
 		}));
@@ -110,6 +116,9 @@ if (!apply) {
 		),
 	]);
 	if (!Array.isArray(tenantRows) || tenantRows.length !== 1) throw new Error("Tenant not found");
+	if (!Array.isArray(holds) || !Array.isArray(runs)) {
+		throw new Error("Legal hold or offboarding run state is unreadable; refusing to plan deletion");
+	}
 	if (!Array.isArray(policies) || policies.length !== 10) {
 		throw new Error("Tenant retention policy is incomplete; refusing to plan deletion");
 	}
@@ -122,9 +131,9 @@ if (!apply) {
 		applied: false,
 		tenant_id: tenantId,
 		tenant_status: tenantRows[0].status,
-		active_legal_hold: Array.isArray(holds) && holds.length > 0,
+		active_legal_hold: holds.length > 0,
 		retention_policy: policies,
-		latest_run: Array.isArray(runs) ? (runs[0] ?? null) : null,
+		latest_run: runs[0] ?? null,
 		complete: false,
 		backup_scope: "excluded_external_retention",
 		backup_exception: backupException,
@@ -162,11 +171,15 @@ while (batches < maxBatches && state.status !== "completed") {
 	});
 	batches += 1;
 	if (state.action === "delete_storage_objects") {
+		const bucket = state.phase === "audit_export_objects" ? "aidr-audit-exports"
+			: state.phase === "pack_versions" ? "aidr-packs" : null;
+		if (!bucket) throw new Error("Offboarding returned an unknown storage deletion phase");
 		if (!Array.isArray(state.paths) || state.paths.length < 1 || state.paths.length > batchSize) {
 			throw new Error("Offboarding returned an invalid storage deletion batch");
 		}
 		const prefix = `${tenantId}/`;
-		if (state.paths.some((path) => typeof path !== "string" || !path.startsWith(prefix))) {
+		if (state.paths.some((path) => typeof path !== "string" || !path.startsWith(prefix) ||
+			path.split("/").some((segment) => !segment || segment === "." || segment === ".."))) {
 			throw new Error("Offboarding returned a storage path outside the tenant prefix");
 		}
 		// Tokens were committed under the SAME tenant lock as hold placement.
@@ -177,14 +190,16 @@ while (batches < maxBatches && state.status !== "completed") {
 			new Set(state.objects.map((object) => object.authorization_id)).size !== state.objects.length) {
 			throw new Error("Offboarding returned invalid storage deletion authorizations; refusing Storage DELETE");
 		}
-		const deleted = await request("/storage/v1/object/aidr-audit-exports", "DELETE", { prefixes: state.paths });
+		const deleted = await request(`/storage/v1/object/${bucket}`, "DELETE", { prefixes: state.paths });
 		const deletedPaths = Array.isArray(deleted) ? deleted.map((object) => object?.name) : [];
 		if (deletedPaths.length !== state.paths.length || new Set(deletedPaths).size !== state.paths.length ||
 			state.paths.some((path) => !deletedPaths.includes(path))) {
 			throw new Error("Storage deletion returned an inexact result; fence worker and reconcile pending authorizations, do not retry deletion");
 		}
-		await verifyStorageObjectsAbsent(state.paths);
-		state = await request("/rest/v1/rpc/ack_tenant_offboarding_objects", "POST", {
+		await verifyStorageObjectsAbsent(bucket, state.paths);
+		state = await request(bucket === "aidr-packs"
+			? "/rest/v1/rpc/ack_tenant_offboarding_packs"
+			: "/rest/v1/rpc/ack_tenant_offboarding_objects", "POST", {
 			p_run_id: run.run_id,
 			p_paths: state.paths,
 			p_authorization_ids: state.objects.map((object) => object.authorization_id),
@@ -213,7 +228,16 @@ const receipts = await request(
 const cachePhase = Array.isArray(receipts)
 	? receipts.find((receipt) => receipt?.phase === "tenant_cache")
 	: undefined;
+const packObjectReceipts = Array.isArray(receipts) && receipts.some((receipt) => receipt?.phase === "pack_versions")
+	? await request(`/rest/v1/tenant_pack_deletion_receipts?offboarding_run_id=eq.${run.run_id}&select=storage_path,authorization_id,observed_absent_at&order=storage_path.asc`)
+	: [];
 const complete = state.status === "completed";
+if (complete && (!Array.isArray(receipts) || receipts.length === 0 ||
+	receipts.some((receipt) => receipt?.status !== "completed") ||
+	cachePhase?.cache_invalidation_receipt?.tenant_id !== tenantId ||
+	!Array.isArray(packObjectReceipts))) {
+	throw new Error("Completed offboarding lacks complete phase and tenant-bound cache receipts");
+}
 const evidence = {
 	checked_at: checkedAt,
 	action: "tenant-offboarding",
@@ -226,6 +250,7 @@ const evidence = {
 	storage_batches: storageBatches,
 	storage_reconciliation_required: state.action === "reconcile_storage_authorizations",
 	phase_receipts: receipts,
+	pack_object_receipts: packObjectReceipts,
 	cache_invalidation: {
 		phase: "tenant_cache",
 		required_for_completion: true,

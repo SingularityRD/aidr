@@ -143,6 +143,7 @@ function reportStatus({ good, unavailable, excluded = 0, unknown, notRun, object
 function overallStatusForSeries(series, totals, objectiveRatio) {
 	if (series.length > 0 && series.every((entry) => entry.status === STATUS_NOT_RUN)) return STATUS_NOT_RUN;
 	if (series.some((entry) => entry.status === STATUS_UNKNOWN || entry.status === STATUS_NOT_RUN)) return STATUS_UNKNOWN;
+	if (series.some((entry) => entry.status === STATUS_FAIL)) return STATUS_FAIL;
 	return reportStatus({
 		good: totals.good_seconds ?? totals.good,
 		unavailable: totals.unavailable_seconds ?? totals.unavailable,
@@ -170,6 +171,14 @@ function validateIdentifier(value, label, failures) {
 
 function validateMonth(value, label, failures) {
 	if (typeof value !== "string" || !MONTH_PATTERN.test(value)) failures.push(`${label} must be YYYY-MM`);
+}
+
+function isFullCalendarMonth(window, month) {
+	if (!isPlainObject(window) || typeof month !== "string" || !MONTH_PATTERN.test(month)) return false;
+	const start = Date.parse(`${month}-01T00:00:00.000Z`);
+	const end = new Date(start);
+	end.setUTCMonth(end.getUTCMonth() + 1);
+	return Date.parse(window.start_at) === start && Date.parse(window.end_at) === end.getTime();
 }
 
 function validateObjective(objective, failures, label = "objective") {
@@ -724,6 +733,9 @@ export function validateMonthlyReport(report, options = {}) {
 	}
 	const objectiveRatio = validateObjective(report.target, failures, "target");
 	if (!STATUS_VOCABULARY.includes(report.status)) failures.push(`report.status must be one of ${STATUS_VOCABULARY.join(", ")}`);
+	if (report.status === STATUS_PASS && !isFullCalendarMonth(report.observation_window, report.month)) {
+		failures.push("PASS requires observations covering the full named UTC calendar month");
+	}
 
 	if (!isPlainObject(report.coverage)) failures.push("coverage must be an object");
 	else {

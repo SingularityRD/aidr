@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, readdirSync, lstatSync, mkdtempSync } from "node:fs";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import { readFileSync, writeFileSync, readdirSync, lstatSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { gunzipSync } from "node:zlib";
@@ -10,6 +11,7 @@ import {
   CUSTOMER_KIT_DELIVERY_FILES,
   CUSTOMER_KIT_REQUIRED_FILES,
   CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
+  isMcpGatewayReleaseArtifact,
 } from "./customer-kit-contract.mjs";
 const kit=resolve(process.argv[2]||".aidr-customer-kit"), checks=[];
 const inventory=readFileSync(join(kit,"SHA256SUMS"),"utf8").trim().split(/\r?\n/).map(line=>{
@@ -40,6 +42,21 @@ verifyTlsDelivery();
 verifyBenchmarkDelivery();
 const source=JSON.parse(readFileSync(join(kit,"release-source.json"),"utf8"));
 verifyDeliveryStatus(source);
+const gatewayRuntime=["deploy/gateway/aidr-mcp-gateway.mjs","deploy/gateway/aidr-mcp-approve.mjs","deploy/gateway/aidr-mcp-stdio.mjs","deploy/gateway/aidr-artifact.manifest.json","deploy/gateway/aidr-artifact.manifest.sig","deploy/gateway/README.md"];
+const gatewayPaths=[...expected].filter((file)=>file.startsWith("deploy/gateway/"));
+assert.equal(typeof source.inline_mcp_gateway_bundled,"boolean","MCP gateway delivery status is invalid");
+assert.ok(source.inline_mcp_gateway_bundled?gatewayRuntime.every((file)=>expected.has(file)):gatewayPaths.length===0,"MCP gateway delivery status does not match bundled signed runtime");
+if(source.inline_mcp_gateway_bundled){
+ const signature=readFileSync(join(kit,"deploy/gateway/aidr-artifact.manifest.sig"),"utf8").trim();
+ assert.ok(/^[A-Za-z0-9+/]+={0,2}$/.test(signature)&&Buffer.from(signature,"base64").length===64,"Gateway artifact signature is invalid");
+ const manifest=JSON.parse(readFileSync(join(kit,"deploy/gateway/aidr-artifact.manifest.json"),"utf8"));
+ const names=new Set();
+ assert.equal(manifest.schema_version,1,"Gateway artifact manifest is invalid");assert.ok(Array.isArray(manifest.files)&&manifest.files.length>=3,"Gateway artifact manifest is invalid");
+ for(const item of manifest.files){assert.ok(item&&/^[A-Za-z0-9_.-]+$/.test(item.path)&&!names.has(item.path)&&/^[a-f0-9]{64}$/.test(item.sha256)&&expected.has(`deploy/gateway/${item.path}`),"Gateway artifact manifest entry is invalid");names.add(item.path);assert.equal(createHash("sha256").update(readFileSync(join(kit,"deploy/gateway",item.path))).digest("hex"),item.sha256,`Gateway artifact digest mismatch: ${item.path}`);}
+ assert.ok(["aidr-mcp-gateway.mjs","aidr-mcp-approve.mjs","aidr-mcp-stdio.mjs"].every((name)=>names.has(name)),"Gateway binaries absent from manifest");
+ const declared=new Set([...manifest.files.map((item)=>`deploy/gateway/${item.path}`),"deploy/gateway/aidr-artifact.manifest.json","deploy/gateway/aidr-artifact.manifest.sig","deploy/gateway/README.md"]);
+ assert.ok(gatewayPaths.length===declared.size&&gatewayPaths.every((file)=>declared.has(file)),"MCP gateway contains files outside its signed artifact manifest");
+}
 const hasSignedManifest=expected.has("artifacts/aidr-release.manifest.json");
 assert.equal(hasSignedManifest,expected.has("artifacts/aidr-release.manifest.sig"));
 assert.equal(source.release_signed,hasSignedManifest);
@@ -47,22 +64,29 @@ assert.ok(source.assurance.includes(hasSignedManifest?"independently distributed
 checks.push(hasSignedManifest?"signed candidate requires independent signer policy verification":"unsigned candidate provenance remains explicit");
 const release=JSON.parse(readFileSync(join(kit,"artifacts/release-inventory.json"),"utf8"));
 for(const row of release.artifacts)assert.equal(createHash("sha256").update(readFileSync(join(kit,"artifacts",row.staged_path))).digest("hex"),row.sha256);
+if(!source.inline_mcp_gateway_bundled)assert.ok(!release.artifacts.some((row)=>isMcpGatewayReleaseArtifact(row.staged_path)),"Gateway-free kit cannot contain an MCP gateway release artifact");
 const releaseArtifactNames=new Set(release.artifacts.map((row)=>row.staged_path));
 for(const required of CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS) assert.ok(releaseArtifactNames.has(required),`Required release provenance artifact is missing: ${required}`);
 verifyProvenanceArtifact(join(kit,"artifacts/aidr-provenance.intoto.json"));
 checks.push(`all ${release.artifacts.length} release artifacts preserve the checked release digests, including provenance`);
-const outputs=mkdtempSync(resolve(".release-evidence/kit-standalone-"));
+const outputs=mkdtempSync(join(tmpdir(),"aidr-kit-standalone-"));
+const artifactPublicKey=join(outputs,"artifact-verification-public.pem");
+writeFileSync(artifactPublicKey,generateKeyPairSync("ed25519").publicKey.export({type:"spki",format:"pem"}));
 const isolatedEnv={...Object.fromEntries(Object.entries(process.env).filter(([key])=>key.toLowerCase()!=="path")),PATH:""};
 const migrationCount=readdirSync(join(kit,"supabase/migrations")).filter(name=>name.endsWith(".sql")).length;
-for(const mode of["self-hosted","cloud"]){
- const output=join(outputs,mode);
- const result=spawnSync(process.execPath,[join(kit,"scripts/deployment-prepare.mjs"),"--mode",mode,"--output",output,"--dashboard-url","https://console.customer.example","--supabase-url","https://api.customer.example"],{cwd:kit,env:isolatedEnv,encoding:"utf8",timeout:60000});
- assert.equal(result.status,0,result.stderr);
- const deployment=JSON.parse(readFileSync(join(output,"deployment.json"),"utf8"));assert.equal(deployment.mode,mode);assert.equal(deployment.migrations.length,migrationCount);
- const config=JSON.parse(readFileSync(join(output,"agent-config.json"),"utf8"));assert.equal(config.control_plane.remote_policy_required,true);assert.equal(config.control_plane.remote_policy_offline_grace_seconds,3600);
- checks.push(`${mode} preparation works with empty PATH: no Git, package manager or build; ${migrationCount} migrations and required remote policy`);
-}
-const evidence={passed:true,checked_at:new Date().toISOString(),checks,scope:"Unsigned portable preparation and checksums; not cloud provisioning, image air-gap delivery or production acceptance."};
+try {
+ for(const mode of["self-hosted","cloud"]){
+  const output=join(outputs,mode);
+  try {
+   const result=spawnSync(process.execPath,[join(kit,"scripts/deployment-prepare.mjs"),"--mode",mode,"--output",output,"--dashboard-url","https://console.customer.example","--supabase-url","https://api.customer.example","--region","self-hosted","--tenant-region","self-hosted","--artifact-verification-public-key-file",artifactPublicKey,"--telemetry-queue-root","/var/lib/aidr-telemetry"],{cwd:kit,env:isolatedEnv,encoding:"utf8",timeout:60000});
+   assert.equal(result.status,0,result.stderr);
+   const deployment=JSON.parse(readFileSync(join(output,"deployment.json"),"utf8"));assert.equal(deployment.mode,mode);assert.equal(deployment.development,false,"customer-kit production rehearsal must not use development mode");assert.equal(deployment.migrations.length,migrationCount);
+   const config=JSON.parse(readFileSync(join(output,"agent-config.json"),"utf8"));assert.equal(config.control_plane.remote_policy_required,true);assert.equal(config.control_plane.remote_policy_offline_grace_seconds,3600);
+   checks.push(`${mode} preparation works with empty PATH: no Git, package manager or build; ${migrationCount} migrations and required remote policy`);
+  } finally { rmSync(output,{recursive:true,force:true}); }
+ }
+} finally { unlinkSync(artifactPublicKey); }
+const evidence={passed:true,checked_at:new Date().toISOString(),checks,scope:"Unsigned portable preparation and checksums; residency is an operator declaration, not proof of provider location; not cloud provisioning, image air-gap delivery or production acceptance."};
 writeFileSync(join(outputs,"kit-verification.json"),JSON.stringify(evidence,null,2));
 console.log(JSON.stringify({passed:true,checks:checks.length,evidence_path:join(outputs,"kit-verification.json")}));
 
@@ -80,7 +104,9 @@ function verifyRegionManifest() {
    try { parsed=new URL(entry.supabase_url); } catch { parsed=null; }
    assert.ok(parsed?.protocol === "https:" && !parsed.username && !parsed.password && !parsed.search && !parsed.hash && parsed.pathname === "/",`Deployment region endpoint is not a valid HTTPS origin: ${id}`);
   }
-  assert.ok(entry.residency && typeof entry.residency === "object" && !Array.isArray(entry.residency) && typeof entry.residency.declared === "boolean" && typeof entry.residency.location === "string" && entry.residency.location.length > 0,`Deployment region residency declaration is invalid: ${id}`);
+  const residency=entry.residency;
+  assert.ok(residency && typeof residency === "object" && !Array.isArray(residency) && typeof residency.declared === "boolean" && typeof residency.location === "string" && residency.location.length > 0,`Deployment region residency declaration is invalid: ${id}`);
+  assert.ok(residency.declared === true || id === "unassigned" && residency.declared === false && residency.location === "unassigned",`Deployment region "${id}" must have residency.declared=true; only the explicit unassigned sentinel may remain false`);
  }
 }
 

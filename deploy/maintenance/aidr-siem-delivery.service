@@ -1,32 +1,21 @@
-# Retries due SIEM delivery receipts from the durable queue. Nothing retries a failed
-# delivery without this unit (`deploy/FIRST_CUSTOMER.md`): the queue is only drained by
-# the worker's one-shot drain, never by an arriving incident.
-#
-# Exit codes are the operational contract and must stay visible as unit failures:
-# 2 = queued, retrying, dead-lettered or stale lock; 3 = configuration or worker
-# failure. Do not add SuccessExitStatus= to mask either one.
-#
-# The worker reads SINGULARITY_AIDR_SIEM_CONFIG_PATH: a mode-0600 JSON file outside this
-# kit holding the absolute state_file path, the adapter and its credential. This unit can
-# only write /var/lib/aidr-siem, so that state_file must live there; override the path with
-# a systemd drop-in rather than editing this template in place.
 [Unit]
-Description=AIDR SIEM delivery queue drain and retry
+Description=AIDR signing, durable queue and SIEM maintenance
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 User=root
-WorkingDirectory=/opt/aidr-kit
-Environment=SINGULARITY_AIDR_SIEM_CONFIG_PATH=/etc/aidr/siem-delivery.json
-ExecStart=/usr/bin/node /opt/aidr-kit/scripts/siem-delivery-worker.mjs --max-items 25
+WorkingDirectory=/srv/aidr
+EnvironmentFile=-/srv/aidr/.env.readiness
+ExecStart=/usr/bin/node /srv/aidr/maintenance/readiness-evidence-worker.mjs
 TimeoutStartSec=5min
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
 StateDirectory=aidr-siem
 StateDirectoryMode=0700
-ReadWritePaths=/var/lib/aidr-siem
-UMask=0077
+ReadOnlyPaths=/srv/aidr
+ReadWritePaths=/srv/aidr/health /var/lib/aidr-siem -/var/lib/aidr-telemetry
+UMask=0022

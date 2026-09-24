@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { renewCertificate } from "./deployment-tls-renew.mjs";
 
@@ -61,12 +61,29 @@ function failed(stderr, status = 1) {
 
 /** A complete, well-formed renewal request pointing at a throwaway directory. */
 function request(tlsDir, overrides = {}) {
-	return { hostname: HOSTNAME, email: EMAIL, tlsDir, acmeClient: ACME, webroot: join(tlsDir, "acme"), nginx: NGINX, ...overrides };
+	return { hostname: HOSTNAME, email: EMAIL, tlsDir, receipt: join(tlsDir, "renewal-receipt.json"), acmeClient: ACME, webroot: join(tlsDir, "acme"), nginx: NGINX, ...overrides };
+}
+
+function chainFile(tlsDir, hostname = HOSTNAME) {
+	const directory = join(tlsDir, "live", hostname);
+	mkdirSync(directory, { recursive: true });
+	return join(directory, "fullchain.pem");
 }
 
 function recorded(tlsDir) {
 	return JSON.parse(readFileSync(join(tlsDir, "renewal-receipt.json"), "utf8"));
 }
+
+test("reference ingress serves the HTTP-01 webroot and renews the same certificate Nginx serves", () => {
+	const ingress = resolve(import.meta.dirname, "../deploy/ingress");
+	const nginx = readFileSync(join(ingress, "nginx.device-start.reference.conf"), "utf8");
+	const service = readFileSync(join(ingress, "aidr-tls-renew.service"), "utf8");
+	assert.match(nginx, /location \^~ \/\.well-known\/acme-challenge\/\s*\{\s*root \/var\/www\/aidr-acme;\s*try_files \$uri =404;/);
+	assert.match(nginx, /ssl_certificate \/etc\/letsencrypt\/live\/api\.aidr\.customer\.example\/fullchain\.pem;/);
+	assert.match(nginx, /ssl_certificate_key \/etc\/letsencrypt\/live\/api\.aidr\.customer\.example\/privkey\.pem;/);
+	assert.match(service, /ExecStart=\/usr\/bin\/node \/srv\/aidr\/ingress\/deployment-tls-renew\.mjs/);
+	for (const path of ["/etc/letsencrypt", "/var/lib/letsencrypt", "/var/log/letsencrypt", "/var/www/aidr-acme"]) assert.ok(service.includes(path), `${path} must be writable to certbot`);
+});
 
 test("refuses to install without an explicit hostname and email", (t) => {
 	const tlsDir = workdir(t);
@@ -76,7 +93,7 @@ test("refuses to install without an explicit hostname and email", (t) => {
 		return succeeded();
 	};
 	assert.throws(
-		() => renewCertificate({ tlsDir, acmeClient: ACME }, { run }),
+		() => renewCertificate({ tlsDir, receipt: join(tlsDir, "renewal-receipt.json"), acmeClient: ACME }, { run }),
 		(error) => {
 			assert.match(error.message, /--hostname/);
 			assert.match(error.message, /--email/);
@@ -100,7 +117,7 @@ test("writes a renewal receipt and reloads only after a successful challenge", (
 		calls.push({ command, args });
 		if (command === ACME && args[0] === "--version") return succeeded("certbot 2.11.0");
 		if (command === ACME && args[0] === "certonly") {
-			writeFileSync(join(tlsDir, "fullchain.pem"), COMPLETE_CHAIN, { mode: 0o600 });
+			writeFileSync(chainFile(tlsDir), COMPLETE_CHAIN, { mode: 0o600 });
 			return succeeded("Successfully received certificate");
 		}
 		if (command === NGINX) return succeeded();
@@ -122,6 +139,8 @@ test("writes a renewal receipt and reloads only after a successful challenge", (
 	assert.ok(tested > challenge, "the ingress configuration is tested after the challenge");
 	assert.ok(reload > tested, "the ingress is reloaded only after a successful configuration test");
 	const challengeArgs = calls[challenge].args;
+	assert.equal(challengeArgs[challengeArgs.indexOf("--config-dir") + 1], tlsDir);
+	assert.equal(challengeArgs[challengeArgs.indexOf("--cert-name") + 1], HOSTNAME);
 	assert.equal(challengeArgs[challengeArgs.indexOf("-d") + 1], HOSTNAME);
 	assert.equal(challengeArgs[challengeArgs.indexOf("-m") + 1], EMAIL);
 	const written = recorded(tlsDir);
@@ -138,7 +157,7 @@ test("fails closed when the certificate chain is incomplete", (t) => {
 		calls.push({ command, args });
 		if (command === ACME && args[0] === "--version") return succeeded("certbot 2.11.0");
 		if (command === ACME && args[0] === "certonly") {
-			writeFileSync(join(tlsDir, "fullchain.pem"), `${LEAF}\n`, { mode: 0o600 });
+			writeFileSync(chainFile(tlsDir), `${LEAF}\n`, { mode: 0o600 });
 			return succeeded("Successfully received certificate");
 		}
 		if (command === NGINX) return succeeded();
@@ -208,7 +227,7 @@ test("refuses a chain that does not cover the requested hostname", (t) => {
 		calls.push({ command, args });
 		if (command === ACME && args[0] === "--version") return succeeded("certbot 2.11.0");
 		if (command === ACME && args[0] === "certonly") {
-			writeFileSync(join(tlsDir, "fullchain.pem"), COMPLETE_CHAIN, { mode: 0o600 });
+			writeFileSync(chainFile(tlsDir, "console.customer.example"), COMPLETE_CHAIN, { mode: 0o600 });
 			return succeeded("Successfully received certificate");
 		}
 		if (command === NGINX) return succeeded();
@@ -224,7 +243,7 @@ test("refuses a chain that does not cover the requested hostname", (t) => {
 
 test("does not reload when the ACME client reports no change", (t) => {
 	const tlsDir = workdir(t);
-	writeFileSync(join(tlsDir, "fullchain.pem"), COMPLETE_CHAIN, { mode: 0o600 });
+	writeFileSync(chainFile(tlsDir), COMPLETE_CHAIN, { mode: 0o600 });
 	const calls = [];
 	const run = (command, args) => {
 		calls.push({ command, args });

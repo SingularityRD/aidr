@@ -1,24 +1,22 @@
 [Unit]
 Description=AIDR encrypted offsite backup, remote verification and retention
 After=docker.service network-online.target
-Wants=network-online.target
-Requires=docker.service
-ConditionPathExists=/srv/aidr/deployment.json
-ConditionPathExists=/etc/aidr/backup-offsite.env
-ConditionPathExists=/etc/aidr/aidr-recovery.key
+After=aidr-backup-recover.service
+Requires=aidr-backup-recover.service
+Wants=docker.service network-online.target
+OnFailure=aidr-backup-health-failed.service
 
 [Service]
 Type=oneshot
 User=root
-WorkingDirectory=/opt/aidr-kit
-EnvironmentFile=/etc/aidr/backup-offsite.env
+WorkingDirectory=/srv/aidr
+EnvironmentFile=-/etc/aidr/backup-offsite.env
 LoadCredential=aidr-recovery.key:/etc/aidr/aidr-recovery.key
-RuntimeDirectory=aidr-health
-RuntimeDirectoryMode=0700
 StateDirectory=aidr-backup
 StateDirectoryMode=0700
-ExecStart=/usr/bin/node /opt/aidr-kit/scripts/deployment-backup-offsite.mjs cycle --deployment /srv/aidr --spool /var/lib/aidr-backup --key-file %d/aidr-recovery.key --health-file /run/aidr-health/backup.json --apply-retention
+ExecStart=/usr/bin/node /srv/aidr/backup/deployment-backup-offsite.mjs cycle --deployment /srv/aidr --spool /var/lib/aidr-backup --key-file ${CREDENTIALS_DIRECTORY}/aidr-recovery.key --key-source-file /etc/aidr/aidr-recovery.key --health-file /srv/aidr/health/backup.json
 TimeoutStartSec=6h
+TimeoutStopSec=1h
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -27,5 +25,6 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/srv/aidr /var/lib/aidr-backup /run/aidr-health
+ReadOnlyPaths=/srv/aidr
+ReadWritePaths=/srv/aidr/health /var/lib/aidr-backup -/mnt/aidr-offsite
 UMask=0077

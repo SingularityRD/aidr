@@ -1,0 +1,27 @@
+[Unit]
+Description=AIDR candidate-bound offsite restore drill
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/
+EnvironmentFile=-/etc/aidr/restore-drill.env
+LoadCredential=aidr-recovery.key:/etc/aidr/aidr-recovery.key
+StateDirectory=aidr-restore-drill
+StateDirectoryMode=0700
+ExecStart=/usr/bin/node ${AIDR_RESTORE_KIT_ROOT}/scripts/deployment-restore-drill.mjs --target ${AIDR_RESTORE_TARGET} --key-file ${CREDENTIALS_DIRECTORY}/aidr-recovery.key --key-source-file /etc/aidr/aidr-recovery.key --runtime ${AIDR_RESTORE_RUNTIME} --candidate-inventory ${AIDR_RESTORE_CANDIDATE_INVENTORY} --candidate-policy ${AIDR_RESTORE_CANDIDATE_POLICY} --work-root /var/lib/aidr-restore-drill --evidence-retention-days ${AIDR_RESTORE_EVIDENCE_RETENTION_DAYS} --rpo-target-minutes ${AIDR_RESTORE_RPO_TARGET_MINUTES} --rto-target-seconds ${AIDR_RESTORE_RTO_TARGET_SECONDS}
+ExecStopPost=/usr/bin/node ${AIDR_RESTORE_KIT_ROOT}/scripts/deployment-restore-drill.mjs --cleanup-only --work-root /var/lib/aidr-restore-drill --evidence-retention-days ${AIDR_RESTORE_EVIDENCE_RETENTION_DAYS}
+TimeoutStartSec=6h
+TimeoutStopSec=30min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/aidr-restore-drill -/mnt/aidr-offsite
+UMask=0077

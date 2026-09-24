@@ -103,5 +103,7 @@ describe("live url-check rehearsal", () => {
 		// they cannot be consts bound where they are created.
 		assert.match(source, /let keyHash = ""/, "the key hash must be a mutable binding the handler can read");
 		assert.match(source, /let seededUrl = ""/, "the seeded URL must be a mutable binding the handler can read");
+		assert.match(source, /source, provenance_verified\)[\s\S]*'url-check-live-rehearsal', true\)/,
+			"only this controlled server-side rehearsal fixture may be marked provenance-verified");
 	});
 });

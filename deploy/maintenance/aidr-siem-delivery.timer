@@ -1,13 +1,10 @@
-# One drain per retry window: the queue's backoff ceiling is five minutes, so a five
-# minute cadence picks up a due retry without waiting for the next incident. Persistent
-# catches up a single missed run after a host outage; a longer outage is reported by the
-# worker's own receipt ages, not by replaying every missed slot.
 [Unit]
-Description=Five-minute AIDR SIEM delivery retry drain
+Description=Minute AIDR operational readiness and SIEM drain
 
 [Timer]
-OnCalendar=*:0/5
-RandomizedDelaySec=1min
+OnBootSec=30s
+OnUnitActiveSec=1min
+AccuracySec=10s
 Persistent=true
 Unit=aidr-siem-delivery.service
 

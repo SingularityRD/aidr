@@ -11,6 +11,19 @@ groups:
           summary: AIDR target scraped successfully but readiness metric is absent
           action: Check the dashboard metrics handler and deployed version for this instance.
 
+      - alert: AIDRReadinessChecksIncomplete
+        expr: |
+          up{job="aidr-control-plane"} == 1
+          unless on (job, instance)
+          (count by (job, instance) (aidr_readiness_check{job="aidr-control-plane",check=~"database|storage|functions|signing|backup|queue|certificate"}) == 7)
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR instance is missing one or more required readiness check metrics
+          action: Check this instance's metrics handler and release configuration; do not infer readiness from another replica.
+
       - alert: AIDRScrapeFailed
         expr: up{job="aidr-control-plane"} == 0
         for: 2m
@@ -32,7 +45,7 @@ groups:
           action: Restore the configured targets and verify service discovery before admitting traffic.
 
       - alert: AIDRControlPlaneNotReady
-        expr: aidr_readiness == 0
+        expr: aidr_readiness{job="aidr-control-plane"} == 0
         for: 5m
         labels:
           severity: critical
@@ -42,7 +55,7 @@ groups:
           action: Remove the instance from traffic and inspect the failing fixed-name readiness check.
 
       - alert: AIDRDatabaseUnavailable
-        expr: aidr_readiness_check{check="database"} == 0 or absent(aidr_readiness_check{check="database"})
+        expr: aidr_readiness_check{job="aidr-control-plane",check="database"} == 0
         for: 2m
         labels:
           severity: critical
@@ -52,7 +65,7 @@ groups:
           action: Check PostgREST and PostgreSQL health, saturation, and recent changes.
 
       - alert: AIDRStorageUnavailable
-        expr: aidr_readiness_check{check="storage"} == 0 or absent(aidr_readiness_check{check="storage"})
+        expr: aidr_readiness_check{job="aidr-control-plane",check="storage"} == 0
         for: 2m
         labels:
           severity: critical
@@ -62,7 +75,7 @@ groups:
           action: Check storage API, backing volume or bucket, capacity, and permissions.
 
       - alert: AIDRFunctionsUnavailable
-        expr: aidr_readiness_check{check="functions"} == 0 or absent(aidr_readiness_check{check="functions"})
+        expr: aidr_readiness_check{job="aidr-control-plane",check="functions"} == 0
         for: 2m
         labels:
           severity: critical
@@ -72,7 +85,7 @@ groups:
           action: Check edge runtime health, gateway routing, deployment revision, and function logs.
 
       - alert: AIDRSigningUnhealthy
-        expr: aidr_readiness_check{check="signing"} == 0 or absent(aidr_readiness_check{check="signing"})
+        expr: aidr_readiness_check{job="aidr-control-plane",check="signing"} == 0
         for: 2m
         labels:
           severity: critical
@@ -82,7 +95,7 @@ groups:
           action: Stop enrollment changes and validate the signer, key access, and canary verification.
 
       - alert: AIDRSigningKeyExpiresSoon
-        expr: aidr_signing_key_remaining_seconds < 604800
+        expr: aidr_signing_key_remaining_seconds{job="aidr-control-plane"} < 604800
         for: 15m
         labels:
           severity: warning
@@ -92,7 +105,7 @@ groups:
           action: Execute the approved key rotation and client trust-bundle rollout.
 
       - alert: AIDRBackupUnhealthy
-        expr: aidr_readiness_check{check="backup"} == 0 or absent(aidr_readiness_check{check="backup"})
+        expr: aidr_readiness_check{job="aidr-control-plane",check="backup"} == 0
         for: 15m
         labels:
           severity: critical
@@ -102,7 +115,7 @@ groups:
           action: Check the backup job, separate-key verification, offsite copy, and available capacity.
 
       - alert: AIDRQueueUnhealthy
-        expr: aidr_readiness_check{check="queue"} == 0 or absent(aidr_readiness_check{check="queue"})
+        expr: aidr_readiness_check{job="aidr-control-plane",check="queue"} == 0
         for: 5m
         labels:
           severity: critical
@@ -112,7 +125,7 @@ groups:
           action: Check worker availability, downstream delivery, retries, dead letters, and saturation.
 
       - alert: AIDRQueueGrowing
-        expr: deriv(aidr_queue_depth[15m]) > 0 and aidr_queue_depth > 100
+        expr: deriv(aidr_queue_depth{job="aidr-control-plane"}[15m]) > 0 and aidr_queue_depth{job="aidr-control-plane"} > 100
         for: 15m
         labels:
           severity: warning
@@ -122,7 +135,7 @@ groups:
           action: Compare producer and consumer rates and add approved worker capacity.
 
       - alert: AIDRCertificateExpiresSoon
-        expr: aidr_certificate_remaining_seconds < 1209600
+        expr: aidr_certificate_remaining_seconds{job="aidr-control-plane"} < 1209600
         for: 30m
         labels:
           severity: warning
@@ -132,7 +145,7 @@ groups:
           action: Check the aidr-tls-renew.timer result and its renewal receipt, then verify the complete served chain from outside the ingress.
 
       - alert: AIDRCertificateProbeUnhealthy
-        expr: aidr_readiness_check{check="certificate"} == 0 or absent(aidr_readiness_check{check="certificate"})
+        expr: aidr_readiness_check{job="aidr-control-plane",check="certificate"} == 0
         for: 5m
         labels:
           severity: critical
@@ -142,7 +155,7 @@ groups:
           action: Check DNS, ingress reachability, trust chain, hostname match, and certificate validity.
 
       - alert: AIDRCertificateExpiryCritical
-        expr: aidr_certificate_remaining_seconds < 259200
+        expr: aidr_certificate_remaining_seconds{job="aidr-control-plane"} < 259200
         for: 5m
         labels:
           severity: critical
@@ -150,3 +163,26 @@ groups:
         annotations:
           summary: AIDR public TLS certificate expires in less than three days
           action: Page the certificate owner, run the aidr-tls-renew unit if the timer did not fire, and complete emergency renewal.
+
+      - alert: AIDRDashboardErrorBudgetBurn
+        expr: |
+          (
+            sum(rate(aidr_dashboard_http_requests_total{job="aidr-control-plane",status_class="5xx"}[5m]))
+            /
+            sum(rate(aidr_dashboard_http_requests_total{job="aidr-control-plane"}[5m]))
+          ) > 0.0144
+          and
+          (
+            sum(rate(aidr_dashboard_http_requests_total{job="aidr-control-plane",status_class="5xx"}[1h]))
+            /
+            sum(rate(aidr_dashboard_http_requests_total{job="aidr-control-plane"}[1h]))
+          ) > 0.0144
+          and
+          sum(increase(aidr_dashboard_http_requests_total{job="aidr-control-plane"}[1h])) >= 100
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR dashboard is rapidly consuming its internal availability error budget
+          action: Check the failing status class, recent deployment, instance logs, and dependency readiness before rollback or traffic removal.

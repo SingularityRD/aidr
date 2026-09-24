@@ -177,7 +177,7 @@ async function verifyBundle({ quiet = false } = {}) {
 		for (const planned of plan.images) {
 			const entry = seen.get(planned.ref);
 			if (!entry) throw new Error(`air-gapped bundle is incomplete: ${planned.ref} is required by the plan but not present`);
-			if (planned.digest && entry.repo_digest && !entry.repo_digest.endsWith(planned.digest) && entry.image_id !== planned.digest) {
+			if (planned.digest && !(typeof entry.repo_digest === "string" && entry.repo_digest.endsWith(planned.digest)) && entry.image_id !== planned.digest) {
 				throw new Error(`image ${planned.ref} does not match the digest pinned in the plan: expected ${planned.digest}`);
 			}
 		}

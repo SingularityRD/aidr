@@ -34,13 +34,22 @@
       "items": { "$ref": "#/$defs/faultWindow" }
     }
   },
+  "if": { "properties": { "workload_class": { "const": "failover" } }, "required": ["workload_class"] },
+  "then": {
+    "properties": {
+      "fault_windows": {
+        "minItems": 1,
+        "items": { "required": ["require_fault_observed"], "properties": { "require_fault_observed": { "const": true } } }
+      }
+    },
+    "required": ["fault_windows"]
+  },
   "$defs": {
     "thresholds": {
       "type": "object",
       "additionalProperties": false,
       "required": ["min_requests"],
       "anyOf": [
-        { "required": ["max_error_ratio"] },
         { "required": ["max_loss_ratio"] },
         { "required": ["min_availability_ratio"] }
       ],

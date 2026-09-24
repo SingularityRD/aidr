@@ -12,13 +12,14 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=root
-WorkingDirectory=/opt/aidr-kit
+WorkingDirectory=/srv/aidr
 EnvironmentFile=/etc/aidr/tls-renew.env
-ExecStart=/usr/bin/node /opt/aidr-kit/scripts/deployment-tls-renew.mjs
+ExecStart=/usr/bin/node /srv/aidr/ingress/deployment-tls-renew.mjs
 TimeoutStartSec=15min
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/etc/aidr/tls /var/log/aidr
+StateDirectory=aidr
+ReadWritePaths=/etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt /var/www/aidr-acme
 UMask=0077

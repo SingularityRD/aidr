@@ -15,7 +15,7 @@ async function request(path,token=env.SERVICE_ROLE_KEY,body,method=body===undefi
 }
 const login=await request("/auth/v1/token?grant_type=password",env.ANON_KEY,{email:credentials.email,password:credentials.password});assert.equal(login.status,200);
 const owner=login.data.user.id,jwt=login.data.access_token;
-const created=await request("/rest/v1/rpc/create_team_tenant",jwt,{p_name:`Operations ${randomBytes(6).toString("hex")}`,p_plan:"free"});assert.equal(created.status,200);
+const created=await request("/rest/v1/rpc/create_team_tenant",jwt,{p_name:`Operations ${randomBytes(6).toString("hex")}`,p_request_id:randomUUID(),p_plan:"free"});assert.equal(created.status,200);
 const tenant=created.data.id,headers={"X-AIDR-Tenant-ID":tenant};
 assert.equal((await request("/rest/v1/entitlements",undefined,{user_id:owner,tenant_id:tenant,included_agents:1,extra_agents:0})).status,201);
 const password=randomBytes(32).toString("hex"), email=`ops-${randomBytes(8).toString("hex")}@example.test`;

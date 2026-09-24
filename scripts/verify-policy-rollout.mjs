@@ -43,7 +43,7 @@ assert.equal(Number(pa.policy_version),stage.data.version); assert.equal(Number(
 assert.equal(pa.runtime_policy.command_default,"deny"); assert.deepEqual(pb.runtime_policy,baseline.policy);
 checks.push("targeted stage reaches only selected agent; baseline stays active for others");
 const endpoint=join(dir,`rollout-hook-${randomBytes(6).toString("hex")}`);mkdirSync(join(endpoint,".singularity-aidr"),{recursive:true,mode:0o700});
-writeFileSync(join(endpoint,".singularity-aidr/config.json"),JSON.stringify({mode:"local",auth:{api_key:a.key},control_plane:{enabled:true,endpoint:`${base.origin}/functions/v1`,remote_policy_required:true,timeout_seconds:2},logging:{enabled:false}}),{mode:0o600});
+writeFileSync(join(endpoint,".singularity-aidr/config.json"),JSON.stringify({mode:"local",auth:{api_key:a.key},control_plane:{enabled:true,endpoint:`${base.origin}/functions/v1`,allow_insecure_loopback:true,remote_policy_required:true,timeout_seconds:2},logging:{enabled:false}}),{mode:0o600});
 writeFileSync(join(endpoint,".singularity-aidr/installation-id"),a.iid,{mode:0o600});
 const hook=spawnSync(process.execPath,[resolve("packages/claude-code/dist/pre-tool-use.cjs")],{input:JSON.stringify({hook_event_name:"PreToolUse",session_id:"rollout-proof",cwd:endpoint,tool_name:"mcp__unknown__read",tool_input:{}}),encoding:"utf8",timeout:20000,env:{...process.env,HOME:endpoint,USERPROFILE:endpoint}});
 assert.equal(hook.status,0);assert.equal(JSON.parse(hook.stdout).hookSpecificOutput?.permissionDecision,"deny");

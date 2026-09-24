@@ -22,8 +22,15 @@ async function main() {
     if (!response.ok) throw new Error(`Maintenance request failed (${response.status}); reconcile outstanding authorizations before any Storage retry`);
     const text = await response.text(); return text ? JSON.parse(text) : null;
   }
+  async function verifyExportAbsent(path) {
+    const response = await fetch(new URL(`/storage/v1/object/info/aidr-audit-exports/${path}`, base), {
+      headers: { apikey: env.SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SERVICE_ROLE_KEY}` },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (response.status !== 404) throw new Error(`Storage did not confirm exact export absence (${response.status}); authorization retained`);
+  }
   let cutoff = new Date().toISOString();
-  let selected = 0, removed = 0, complete = false;
+  let selected = 0, removed = 0, exportsComplete = false;
   let exportRetention;
   for (let batch = 0; batch < 100; batch++) {
     const result = await request("/rest/v1/rpc/prepare_expired_audit_exports", "POST", { p_limit: 100, p_apply: apply, p_cutoff: cutoff });
@@ -35,7 +42,7 @@ async function main() {
     exportRetention = { held_exports: result.held_exports, pending_authorizations: result.pending_authorizations, contended_tenants: result.contended_tenants };
     const rows = result.objects;
     if (rows.length === 0) {
-      complete = result.pending_authorizations === 0 && result.contended_tenants === 0;
+      exportsComplete = result.pending_authorizations === 0 && result.contended_tenants === 0;
       break;
     }
     const paths = rows.map(row => row.path);
@@ -49,21 +56,22 @@ async function main() {
     // Never expire, retry or cancel it on timeout: the Storage outcome is unknown.
     // Storage API deletes bytes and metadata together, not via storage.objects SQL.
     const deleted = await request("/storage/v1/object/aidr-audit-exports", "DELETE", { prefixes: paths });
-    if (!Array.isArray(deleted) || deleted.length !== paths.length
-      || new Set(deleted.map(row => row.name)).size !== paths.length
-      || deleted.some(row => !paths.includes(row.name))) {
+    // An upload may have failed before creating an object. Its ledger row still
+    // needs an exact-path absence check before ACK and quota release.
+    if (!Array.isArray(deleted) || new Set(deleted.map(row => row?.name)).size !== deleted.length
+      || deleted.some(row => typeof row?.name !== "string" || !paths.includes(row.name))) {
       throw new Error("Storage did not confirm every authorized path; authorization and ledger retained for reconciliation");
     }
+    for (const path of paths) await verifyExportAbsent(path);
     for (const row of rows) {
       const ack = await request("/rest/v1/rpc/ack_expired_audit_export", "POST", { p_authorization_id: row.authorization_id });
       if (ack?.ledger_rows_deleted !== 1) throw new Error("Invalid export deletion acknowledgement");
       removed += 1;
     }
   }
-  // Billing retention: expired request-idempotency keys and processed webhook ids
-  // only. The settlement ledger (public.billing_settlements) is append-only
-  // financial evidence and this stage never selects, updates or deletes it, so a
-  // settled record cannot be reached by pruning. Dry runs count without deleting.
+  // Settlement request keys remain durable financial idempotency evidence.
+  // Routine billing retention removes only completed, attributed webhook ids
+  // for active tenants without legal holds. Dry runs count without deleting.
   const billing = { settlement_requests: 0, webhook_events: 0, eligible: 0, batches: 0, complete: false, contended_tenants: 0, unattributed_webhooks_retained: 0 };
   for (let batch = 0; batch < 100; batch++) {
     const result = await request("/rest/v1/rpc/prune_expired_billing_records", "POST", { p_limit: 100, p_apply: apply });
@@ -85,18 +93,145 @@ async function main() {
       break;
     }
   }
+  const telemetry = { eligible_observed: 0, events_deleted: 0, batches: 0, complete: false,
+    active_tenants_missing_policy: 0, missing_policy_tenants_truncated: false,
+    held_tenants: 0, held_tenants_truncated: false, hold_race_skips: 0, contended_tenants: 0 };
+  for (let batch = 0; batch < 100; batch++) {
+    const result = await request("/rest/v1/rpc/prune_expired_telemetry_events", "POST", {
+      p_limit: 100, p_apply: apply, p_cutoff: cutoff,
+    });
+    if (!result || typeof result !== "object"
+      || ![result.events_eligible, result.events_deleted, result.active_tenants_missing_policy, result.held_tenants,
+        result.hold_race_skips, result.contended_tenants].every(isCount)
+      || typeof result.missing_policy_tenants_truncated !== "boolean"
+      || typeof result.held_tenants_truncated !== "boolean"
+      || result.applied !== apply || result.events_deleted > result.events_eligible
+      || (!apply && result.events_deleted !== 0)
+      || typeof result.cutoff !== "string" || !Number.isFinite(Date.parse(result.cutoff))) {
+      throw new Error("Invalid telemetry retention response");
+    }
+    telemetry.eligible_observed += result.events_eligible;
+    telemetry.events_deleted += result.events_deleted;
+    telemetry.batches += 1;
+    telemetry.active_tenants_missing_policy = result.active_tenants_missing_policy;
+    telemetry.missing_policy_tenants_truncated = result.missing_policy_tenants_truncated;
+    telemetry.held_tenants = result.held_tenants;
+    telemetry.held_tenants_truncated = result.held_tenants_truncated;
+    telemetry.hold_race_skips += result.hold_race_skips;
+    telemetry.contended_tenants = result.contended_tenants;
+    if (!apply) {
+      telemetry.complete = result.events_eligible === 0 && result.contended_tenants === 0
+        && result.hold_race_skips === 0 && result.active_tenants_missing_policy === 0
+        && !result.missing_policy_tenants_truncated;
+      break;
+    }
+    if (result.events_deleted === 0) {
+      telemetry.complete = result.contended_tenants === 0 && result.hold_race_skips === 0
+        && result.active_tenants_missing_policy === 0 && !result.missing_policy_tenants_truncated;
+      break;
+    }
+  }
+  const trialSubjects = { eligible: 0, deleted: 0, remaining: 0, batches: 0, complete: false };
+  for (let batch = 0; batch < 100; batch++) {
+    const result = await request("/rest/v1/rpc/purge_expired_ga_trial_subjects", "POST", {
+      p_limit: 100, p_apply: apply,
+    });
+    if (!result || ![result.eligible, result.deleted, result.remaining].every(isCount)
+      || result.applied !== apply || result.deleted > result.eligible
+      || (!apply && result.deleted !== 0)) throw new Error("Invalid trial-subject retention response");
+    trialSubjects.eligible += result.eligible;
+    trialSubjects.deleted += result.deleted;
+    trialSubjects.remaining = result.remaining;
+    trialSubjects.batches += 1;
+    if (!apply || result.remaining === 0 || result.deleted === 0) {
+      trialSubjects.complete = result.remaining === 0;
+      break;
+    }
+  }
+  // Invitations contain recipient email/token hashes. Remove only expired,
+  // unaccepted invitations after the tenant's configured identity-membership
+  // retention window; the RPC enforces active-tenant and legal-hold semantics.
+  const invitations = { eligible_observed: 0, deleted: 0, remaining: 0, batches: 0, complete: false,
+    contended_tenants: 0, hold_race_skips: 0, active_tenants_missing_policy: 0,
+    missing_policy_tenants_truncated: false, held_tenants_present: 0, held_tenants_truncated: false,
+    inactive_tenant_rows_present: 0, inactive_tenant_rows_truncated: false };
+  for (let batch = 0; batch < 100; batch++) {
+    const result = await request("/rest/v1/rpc/prune_expired_team_invitations", "POST", {
+      p_limit: 100, p_apply: apply,
+    });
+    if (!result || ![result.eligible, result.deleted, result.remaining, result.contended_tenants,
+      result.hold_race_skips, result.active_tenants_missing_policy, result.held_tenants_present,
+      result.inactive_tenant_rows_present].every(isCount)
+      || typeof result.missing_policy_tenants_truncated !== "boolean"
+      || typeof result.held_tenants_truncated !== "boolean"
+      || typeof result.inactive_tenant_rows_truncated !== "boolean"
+      || result.applied !== apply || result.deleted > result.eligible || result.remaining > 1
+      || (!apply && result.deleted !== 0)
+      || typeof result.cutoff !== "string" || !Number.isFinite(Date.parse(result.cutoff))) {
+      throw new Error("Invalid team-invitation retention response");
+    }
+    invitations.eligible_observed += result.eligible;
+    invitations.deleted += result.deleted;
+    invitations.remaining = result.remaining;
+    invitations.batches += 1;
+    invitations.contended_tenants += result.contended_tenants;
+    invitations.hold_race_skips += result.hold_race_skips;
+    invitations.active_tenants_missing_policy = result.active_tenants_missing_policy;
+    invitations.missing_policy_tenants_truncated = result.missing_policy_tenants_truncated;
+    invitations.held_tenants_present = result.held_tenants_present;
+    invitations.held_tenants_truncated = result.held_tenants_truncated;
+    invitations.inactive_tenant_rows_present = result.inactive_tenant_rows_present;
+    invitations.inactive_tenant_rows_truncated = result.inactive_tenant_rows_truncated;
+    if (!apply || result.remaining === 0 || result.deleted === 0) {
+      invitations.complete = result.remaining === 0 && result.contended_tenants === 0
+        && result.hold_race_skips === 0 && result.active_tenants_missing_policy === 0
+        && !result.missing_policy_tenants_truncated;
+      break;
+    }
+  }
+  const rateLimits = { eligible: 0, deleted: 0, remaining: 0, batches: 0, complete: false,
+    contended_tenants: 0, held_tenants_present: 0, inactive_tenant_rows_present: 0 };
+  for (let batch = 0; batch < 100; batch++) {
+    const result = await request("/rest/v1/rpc/prune_expired_rate_limits", "POST", {
+      p_limit: 1000, p_apply: apply,
+    });
+    if (!result || ![result.eligible, result.deleted, result.remaining, result.contended_tenants,
+      result.held_tenants_present, result.inactive_tenant_rows_present].every(isCount)
+      || result.applied !== apply || result.deleted > result.eligible
+      || result.remaining > 1 || result.held_tenants_present > 1 || result.inactive_tenant_rows_present > 1
+      || (!apply && result.deleted !== 0)
+      || typeof result.cutoff !== "string" || !Number.isFinite(Date.parse(result.cutoff))) {
+      throw new Error("Invalid rate-limit pruning response");
+    }
+    rateLimits.eligible += result.eligible;
+    rateLimits.deleted += result.deleted;
+    rateLimits.remaining = result.remaining;
+    rateLimits.batches += 1;
+    rateLimits.contended_tenants += result.contended_tenants;
+    rateLimits.held_tenants_present = result.held_tenants_present;
+    rateLimits.inactive_tenant_rows_present = result.inactive_tenant_rows_present;
+    if (!apply || result.remaining === 0 || result.deleted === 0) {
+      rateLimits.complete = result.remaining === 0 && result.contended_tenants === 0;
+      break;
+    }
+  }
   const evidence = {
     checked_at: new Date().toISOString(),
-    action: "expire-private-audit-exports-and-billing-idempotency-keys",
-    applied: apply, selected, removed, complete, cutoff,
-    status: !apply ? "dry_run" : complete && billing.complete ? "completed" : "incomplete",
+    action: "expire-private-audit-exports-billing-webhooks-telemetry-trial-subjects-team-invitations-and-rate-limits",
+    applied: apply, selected, removed,
+    complete: exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete && invitations.complete && rateLimits.complete, cutoff,
+    status: !apply ? "dry_run" : exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete && invitations.complete && rateLimits.complete ? "completed" : "incomplete",
     export_retention: exportRetention,
     billing_retention: billing,
-    scope: "Deletes authorized expired temporary export objects and unheld expired billing request/webhook idempotency keys only; source audit records remain append-only and the append-only settlement ledger is never touched. Counts acknowledge Storage API responses, not an independent deletion receipt or backup erasure. Held data is excluded from completion.",
+    telemetry_retention: telemetry,
+    trial_subject_retention: trialSubjects,
+    team_invitation_retention: invitations,
+    rate_limit_pruning: rateLimits,
+    scope: "Deletes authorized expired temporary export objects, completed attributed billing webhooks for active unheld tenants, expired events for active tenants according to each tenant's telemetry retention policy, pseudonymous trial-subject digests at the original 14-day expiry, expired unaccepted team invitations only after each active tenant's existing identity_membership retention window, and operational rate-limit counters at least 15 minutes after their last update. Accepted and unexpired invitations are preserved; held and inactive-tenant invitation rows are retained. Active tenants missing identity_membership policy and contention/hold-race cases keep the run incomplete. Tenant rate-limit counters under legal hold or outside active tenancy are retained for the tenant lifecycle; global counters have no tenant association. Settlement request keys remain durable; unfinished, unattributed, held, and inactive-tenant webhooks are retained. Events without a telemetry policy and non-active tenants are not selected; legal-hold tenants are preserved. The append-only settlement ledger is never touched. Counts acknowledge Storage API responses, not an independent deletion receipt or backup erasure.",
   };
   writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence));
-  if (apply && (!complete || !billing.complete)) process.exitCode = 2;
+  if (apply && (!exportsComplete || !billing.complete || !telemetry.complete || !trialSubjects.complete || !invitations.complete || !rateLimits.complete)) process.exitCode = 2;
 }
 
 // Report failures without abrupt unhandled-rejection teardown of HTTP handles.

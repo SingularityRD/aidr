@@ -53,7 +53,7 @@ function profile(overrides = {}) {
 		duration_seconds: 1.2,
 		rate_per_second: 8,
 		max_in_flight: 8,
-		thresholds: { min_requests: 1, max_error_ratio: 1 },
+		thresholds: { min_requests: 1, max_error_ratio: 1, max_loss_ratio: 1 },
 		scenarios: [
 			{ name: "failing", cohort: "one", method: "GET", path: "/down", weight: 1, expected_statuses: [200] },
 			{ name: "healthy", cohort: "two", method: "GET", path: "/up", weight: 1, expected_statuses: [200] },
@@ -85,7 +85,7 @@ test("fault window without a sample from every scoped scenario fails closed", as
 		const candidate = profile({
 			duration_seconds: 0.3,
 			rate_per_second: 1,
-			fault_windows: [{ name: "node-failure", target: "isolated-fixture", scenario_names: ["failing", "healthy"], start_seconds: 0, end_seconds: 0.2 }],
+			fault_windows: [{ name: "node-failure", target: "isolated-fixture", scenario_names: ["failing", "healthy"], start_seconds: 0, end_seconds: 0.2, require_fault_observed: true }],
 		});
 		const { status, stderr, result } = await run(candidate);
 		assert.equal(status, 2, stderr);
@@ -106,5 +106,59 @@ test("fault windows reject empty targets, zero-width intervals and non-boolean r
 			assert.equal(status, 1);
 			assert.match(stderr, expected);
 		}
+	});
+});
+
+test("failover profiles cannot pass without a required observed fault", async () => {
+	await withFixture((_request, response) => { response.writeHead(200); response.end(); }, async (run) => {
+		for (const [faultWindows, expected] of [
+			[[], /require at least one fault window/],
+			[[{ ...profile().fault_windows[0], require_fault_observed: false }], /must be true for failover workloads/],
+			[[{ ...profile().fault_windows[0], require_fault_observed: undefined }], /must be true for failover workloads/],
+		]) {
+			const { status, stderr } = await run(profile({ fault_windows: faultWindows }), true);
+			assert.equal(status, 1);
+			assert.match(stderr, expected);
+		}
+	});
+});
+
+test("load-shed requests require an explicit loss/availability bound and fail the run", async () => {
+	await withFixture((_request, response) => {
+		setTimeout(() => { response.writeHead(200); response.end(); }, 120);
+	}, async (run) => {
+		const base = profile({
+			workload_class: "load",
+			duration_seconds: 0.5,
+			rate_per_second: 40,
+			max_in_flight: 1,
+			fault_windows: [],
+			scenarios: [{ name: "slow", cohort: "one", method: "GET", path: "/slow", weight: 1, expected_statuses: [200] }],
+			thresholds: { min_requests: 1, max_error_ratio: 0 },
+		});
+		const missingBound = await run(base, true);
+		assert.equal(missingBound.status, 1);
+		assert.match(missingBound.stderr, /generator-loss or end-to-end availability bound/);
+
+		const bounded = {
+			...base,
+			thresholds: { min_requests: 1, max_error_ratio: 0, max_loss_ratio: 0 },
+		};
+		const { status, stderr, result } = await run(bounded);
+		assert.equal(status, 2, stderr);
+		assert.ok(result.metrics.overall.dropped_requests > 0);
+		assert.ok(result.metrics.overall.loss_ratio > 0);
+		assert.ok(result.threshold_checks.some((check) => check.label === "overall" && check.metric === "loss_ratio" && !check.passed));
+	});
+});
+
+test("scenario thresholds also require a loss or end-to-end availability bound", async () => {
+	await withFixture((_request, response) => response.end(), async (run) => {
+		const candidate = profile({
+			scenarios: [{ ...profile().scenarios[0], thresholds: { min_requests: 1, max_error_ratio: 0 } }],
+		});
+		const { status, stderr } = await run(candidate, true);
+		assert.equal(status, 1);
+		assert.match(stderr, /failing\.thresholds requires min_requests and a generator-loss or end-to-end availability bound/);
 	});
 });

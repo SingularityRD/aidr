@@ -10,7 +10,6 @@ import {
 } from "node:fs";
 import {
 	access,
-	copyFile,
 	chmod,
 	lstat,
 	mkdir,
@@ -18,8 +17,10 @@ import {
 	opendir,
 	open,
 	readFile,
+	realpath,
 	rename,
 	rm,
+	rmdir,
 	stat,
 	writeFile,
 } from "node:fs/promises";
@@ -37,8 +38,13 @@ const REQUIRED_FILES = [
 ];
 const COMMIT_FILE = "COMMITTED.json";
 const BACKUP_ID = /^[a-f0-9]{64}$/;
+const SOURCE_COMMIT = /^[a-f0-9]{40,64}$/;
 const MAX_COMMAND_OUTPUT = 4 * 1024 * 1024;
 const RETRIES = 4;
+const ABANDONED_TEMP_AGE_MS = 24 * 60 * 60 * 1000;
+const SPOOL_BACKUP = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-f0-9]{10}$/;
+const FILESYSTEM_STAGING = /^\.staging-[a-f0-9]{64}-[a-f0-9]{12}$/;
+const TEMP_OWNER = "AIDR temporary backup v1\n";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 function sleep(milliseconds) {
@@ -46,7 +52,11 @@ function sleep(milliseconds) {
 }
 
 function within(child, parent) {
-	return child === parent || child.startsWith(`${parent}${sep}`);
+	const normalize = (value) => process.platform === "win32" ? value.toLowerCase() : value;
+	const normalizedChild = normalize(child);
+	const normalizedParent = normalize(parent);
+	const prefix = normalizedParent.endsWith(sep) ? normalizedParent : `${normalizedParent}${sep}`;
+	return normalizedChild === normalizedParent || normalizedChild.startsWith(prefix);
 }
 
 function assertSeparate(child, parent, message) {
@@ -63,6 +73,35 @@ async function regularFile(path) {
 	const info = await lstat(path);
 	if (!info.isFile() || info.isSymbolicLink()) throw new Error(`Expected a regular backup file: ${basename(path)}`);
 	return info;
+}
+
+async function canonicalExisting(path, label) {
+	const resolved = resolve(path);
+	const real = await realpath(resolved);
+	if (!within(resolved, real) || !within(real, resolved)) throw new Error(`${label} path contains a symbolic-link ancestor`);
+	return real;
+}
+
+async function canonicalNew(path, label) {
+	const resolved = resolve(path);
+	const parent = await canonicalExisting(dirname(resolved), `${label} parent`);
+	const candidate = join(parent, basename(resolved));
+	if (!within(candidate, parent) || candidate === parent) throw new Error(`${label} escaped its parent`);
+	return candidate;
+}
+
+export async function assertPrivateRecoveryKey(path, { source = false } = {}) {
+	const info = await lstat(path);
+	if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) throw new Error("Recovery key must be a regular non-linked file");
+	if (process.platform !== "win32") {
+		const credentialRoot = process.env.CREDENTIALS_DIRECTORY ? resolve(process.env.CREDENTIALS_DIRECTORY) : null;
+		const credentialCopy = !source && credentialRoot && within(path, credentialRoot);
+		const expectedMode = credentialCopy ? 0o400 : 0o600;
+		const expectedUid = source ? 0 : (typeof process.geteuid === "function" ? process.geteuid() : info.uid);
+		if ((info.mode & 0o777) !== expectedMode || info.uid !== expectedUid) {
+			throw new Error(`Recovery key must be owned by ${source ? "root" : "the service account"} with mode ${expectedMode.toString(8)}`);
+		}
+	}
 }
 
 function parseDate(value, field) {
@@ -93,7 +132,9 @@ function readBackupPayload(text) {
 	if (payload.schema_version !== 1 || payload.type !== "aidr-cold-volumes") {
 		throw new Error("Unsupported backup payload");
 	}
-	parseDate(payload.completed_at, "backup completed_at");
+	const started = parseDate(payload.started_at, "backup started_at");
+	const completed = parseDate(payload.completed_at, "backup completed_at");
+	if (started > completed) throw new Error("Backup recovery point is later than archive completion");
 	return payload;
 }
 
@@ -151,6 +192,55 @@ export function parseTarget(value) {
 	const root = resolve(path);
 	if (root === resolve(root, sep)) throw new Error("Filesystem target cannot be a volume root");
 	return { kind: "filesystem", root, display: root };
+}
+
+function parseFilesystemMountIdentity(value) {
+	if (typeof value !== "string" || value.length === 0 || value.trim() !== value) {
+		throw new Error("Filesystem targets require AIDR_BACKUP_FILESYSTEM_MOUNT_IDENTITY as UUID=<uuid> or SOURCE=<source>");
+	}
+	const match = value.match(/^(UUID|SOURCE)=(.+)$/);
+	if (!match || match[2].length > 500 || /[\r\n\0]/.test(match[2])) {
+		throw new Error("Filesystem mount identity must be UUID=<uuid> or SOURCE=<source>");
+	}
+	return { kind: match[1].toLowerCase(), value: match[2] };
+}
+
+async function findmnt(path) {
+	if (process.platform !== "linux") throw new Error("Filesystem offsite targets require Linux findmnt mount verification");
+	const output = await run("findmnt", ["--json", "--target", path, "--output", "TARGET,UUID,SOURCE,FSTYPE"]);
+	let document;
+	try { document = JSON.parse(output); } catch { throw new Error("findmnt returned invalid mount metadata"); }
+	if (!Array.isArray(document.filesystems) || document.filesystems.length !== 1) {
+		throw new Error("findmnt did not identify exactly one filesystem mount");
+	}
+	const mount = document.filesystems[0];
+	return {
+		target: mount.target,
+		uuid: mount.uuid ?? "",
+		source: mount.source ?? "",
+		fstype: mount.fstype ?? "",
+	};
+}
+
+export async function verifyFilesystemMountIdentity(root, configuredIdentity, probe = findmnt) {
+	const expected = parseFilesystemMountIdentity(configuredIdentity);
+	const [targetMount, hostRootMount] = await Promise.all([probe(root), probe(sep)]);
+	if (!targetMount || typeof targetMount.target !== "string" || !isAbsolute(targetMount.target)) {
+		throw new Error("findmnt did not return an absolute target mountpoint");
+	}
+	const mountpoint = resolve(targetMount.target);
+	if (!within(resolve(root), mountpoint)) throw new Error("Filesystem target is not on the reported mountpoint");
+	if (mountpoint === resolve(mountpoint, sep)) throw new Error("Filesystem target must not use the host root filesystem as offsite storage");
+	const actual = targetMount[expected.kind];
+	if (typeof actual !== "string" || actual.length === 0 || (expected.kind === "uuid" ? actual.toLowerCase() !== expected.value.toLowerCase() : actual !== expected.value)) {
+		throw new Error(`Filesystem mount ${expected.kind.toUpperCase()} does not match the configured offsite identity`);
+	}
+	if (!hostRootMount || typeof hostRootMount.source !== "string" || typeof hostRootMount.uuid !== "string" || (!hostRootMount.source && !hostRootMount.uuid)) {
+		throw new Error("findmnt could not verify the host root filesystem identity");
+	}
+	const sharesRootUuid = Boolean(targetMount.uuid && hostRootMount.uuid) && targetMount.uuid.toLowerCase() === hostRootMount.uuid.toLowerCase();
+	const sharesRootSource = Boolean(targetMount.source && hostRootMount.source) && targetMount.source === hostRootMount.source;
+	if (sharesRootUuid || sharesRootSource) throw new Error("Filesystem offsite target shares the host root filesystem failure domain");
 }
 
 function validateKeyReference(value) {
@@ -217,7 +307,7 @@ async function verifyEncryptedBackup(backup, keyFile) {
 	await run(process.execPath, [join(SCRIPT_DIR, "deployment-backup.mjs"), "verify", "--backup", backup, "--key-file", keyFile]);
 }
 
-async function atomicJson(path, value) {
+async function atomicJson(path, value, mode = 0o600) {
 	await mkdir(dirname(path), { recursive: true, mode: 0o700 });
 	const temporary = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
 	try {
@@ -228,6 +318,7 @@ async function atomicJson(path, value) {
 		} finally {
 			await handle.close();
 		}
+		await chmod(temporary, mode);
 		await rename(temporary, path);
 		await syncDirectory(dirname(path));
 	} catch (error) {
@@ -293,20 +384,75 @@ function makeCommit(inventory, target, keyReference, retention) {
 }
 
 async function copyAndSync(source, destination, expected) {
-	const sourceInfo = await regularFile(source);
-	if (sourceInfo.size !== expected.bytes) throw new Error("Filesystem copy verification failed: source size changed");
-	await copyFile(source, destination, fsConstants.COPYFILE_EXCL);
+	const sourceHandle = await open(source, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+	let destinationHandle;
+	try {
+		const opened = await sourceHandle.stat();
+		if (!opened.isFile() || opened.nlink !== 1 || opened.size !== expected.bytes) throw new Error("Filesystem copy verification failed: source changed");
+		destinationHandle = await open(destination, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
+		const buffer = Buffer.allocUnsafe(1024 * 1024);
+		let position = 0;
+		while (position < opened.size) {
+			const { bytesRead } = await sourceHandle.read(buffer, 0, Math.min(buffer.length, opened.size - position), position);
+			if (bytesRead === 0) throw new Error("Filesystem copy verification failed: source truncated");
+			let written = 0;
+			while (written < bytesRead) {
+				const result = await destinationHandle.write(buffer, written, bytesRead - written, position + written);
+				if (result.bytesWritten === 0) throw new Error("Filesystem copy verification failed: destination write stalled");
+				written += result.bytesWritten;
+			}
+			position += bytesRead;
+		}
+		await destinationHandle.sync();
+		const current = await lstat(source);
+		if (!current.isFile() || current.isSymbolicLink() || current.nlink !== 1 || current.dev !== opened.dev || current.ino !== opened.ino || current.size !== opened.size || current.mtimeMs !== opened.mtimeMs) {
+			throw new Error("Filesystem copy verification failed: source changed during copy");
+		}
+	} catch (error) {
+		await rm(destination, { force: true });
+		throw error;
+	} finally {
+		await destinationHandle?.close();
+		await sourceHandle.close();
+	}
 	await chmod(destination, 0o600);
-	const handle = await open(destination, "r+");
-	try { await handle.sync(); } finally { await handle.close(); }
 	const info = await stat(destination);
-	if (info.size !== expected.bytes || await sha256(destination) !== expected.sha256) throw new Error("Filesystem copy verification failed");
+	if (info.size !== expected.bytes || await sha256(destination) !== expected.sha256) {
+		await rm(destination, { force: true });
+		throw new Error("Filesystem copy verification failed");
+	}
 }
 
 async function checkedDirectory(path, create = false) {
 	if (create) await mkdir(path, { recursive: true, mode: 0o700 });
 	const info = await lstat(path);
 	if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Filesystem target contains a symbolic link or is not a directory");
+	await canonicalExisting(path, "Filesystem directory");
+}
+
+async function cleanupOldDirectories(root, pattern, now = Date.now()) {
+	if (!existsSync(root)) return 0;
+	await checkedDirectory(root);
+	let removed = 0;
+	const directory = await opendir(root);
+	for await (const entry of directory) {
+		if (!entry.isDirectory() || !pattern.test(entry.name)) continue;
+		const path = join(root, entry.name);
+		const info = await lstat(path);
+		if (!info.isDirectory() || info.isSymbolicLink() || info.mtimeMs > now - ABANDONED_TEMP_AGE_MS) continue;
+		const marker = `${path}.aidr-owned`;
+		let markerInfo;
+		try { markerInfo = await lstat(marker); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
+		if (!markerInfo.isFile() || markerInfo.isSymbolicLink() || markerInfo.nlink !== 1 || markerInfo.mtimeMs > now - ABANDONED_TEMP_AGE_MS || await readFile(marker, "utf8") !== TEMP_OWNER) continue;
+		await rm(path, { recursive: true });
+		await rm(marker);
+		removed += 1;
+	}
+	return removed;
+}
+
+export async function cleanupAbandonedSpool(root, now = Date.now()) {
+	return cleanupOldDirectories(resolve(root), SPOOL_BACKUP, now);
 }
 
 async function readFilesystemCommit(target, backupId) {
@@ -318,20 +464,30 @@ async function readFilesystemCommit(target, backupId) {
 	return validateCommit(JSON.parse(await readFile(path, "utf8")), backupId);
 }
 
-async function uploadFilesystem(target, inventory, commit) {
-	await checkedDirectory(target.root, true);
+async function uploadFilesystem(target, inventory, commit, guard = async () => {}) {
+	await guard();
+	await checkedDirectory(target.root);
+	await cleanupOldDirectories(target.root, FILESYSTEM_STAGING);
 	const final = join(target.root, inventory.backupId);
 	if (existsSync(final)) {
 		const existing = await readFilesystemCommit(target, inventory.backupId);
 		if (JSON.stringify(existing.objects) !== JSON.stringify(inventory.objects) || existing.key_reference !== commit.key_reference) {
 			throw new Error("Existing offsite backup does not match this source and key reference");
 		}
+		if (existing.retention.mode !== commit.retention.mode || existing.retention.days !== commit.retention.days) {
+			throw new Error("Existing offsite backup retention differs from the requested policy");
+		}
 		return existing;
 	}
 	const staging = join(target.root, `.staging-${inventory.backupId}-${randomBytes(6).toString("hex")}`);
 	await mkdir(staging, { mode: 0o700 });
+	const owner = `${staging}.aidr-owned`;
+	let ownerCreated = false;
 	try {
+		await writeFile(owner, TEMP_OWNER, { mode: 0o600, flag: "wx" });
+		ownerCreated = true;
 		for (const entry of inventory.objects) await copyAndSync(join(inventory.root, entry.name), join(staging, entry.name), entry);
+		await guard();
 		await atomicJson(join(staging, COMMIT_FILE), commit);
 		await syncDirectory(staging);
 		await rename(staging, final);
@@ -339,6 +495,8 @@ async function uploadFilesystem(target, inventory, commit) {
 	} catch (error) {
 		await rm(staging, { recursive: true, force: true });
 		throw error;
+	} finally {
+		if (ownerCreated) await rm(owner, { force: true });
 	}
 	return commit;
 }
@@ -387,7 +545,10 @@ async function s3Head(target, key, expected, options) {
 async function verifyS3Retention(target, key, retention, options) {
 	if (!retention.native_lock_requested) return;
 	const received = await aws(options, "get-object-retention", ["--bucket", target.bucket, "--key", key]);
-	if (received.Retention?.Mode !== retention.mode || Date.parse(received.Retention?.RetainUntilDate) < Date.parse(retention.retain_until)) {
+	const deadline = received.Retention?.RetainUntilDate;
+	const receivedUntil = typeof deadline === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(deadline)
+		? Date.parse(deadline) : NaN;
+	if (received.Retention?.Mode !== retention.mode || !Number.isFinite(receivedUntil) || receivedUntil < Date.parse(retention.retain_until)) {
 		throw new Error("S3 Object Lock retention verification failed");
 	}
 }
@@ -442,6 +603,7 @@ async function readS3Commit(target, backupId, options, destinationDirectory) {
 }
 
 async function uploadS3(target, inventory, commit, options) {
+	// Abandoned S3 staging requires operator-reviewed cleanup; no automatic deletion.
 	const markerKey = s3Key(target, inventory.backupId, COMMIT_FILE);
 	const matchingKeys = await listS3Keys(target, options, markerKey);
 	if (!matchingKeys.includes(markerKey)) {
@@ -452,6 +614,9 @@ async function uploadS3(target, inventory, commit, options) {
 		const existing = await readS3Commit(target, inventory.backupId, options, existingDirectory);
 		if (JSON.stringify(existing.objects) !== JSON.stringify(inventory.objects) || existing.key_reference !== commit.key_reference) {
 			throw new Error("Existing offsite backup does not match this source and key reference");
+		}
+		if (existing.retention.mode !== commit.retention.mode || existing.retention.days !== commit.retention.days) {
+			throw new Error("Existing offsite backup retention differs from the requested policy");
 		}
 		return existing;
 	} finally {
@@ -532,27 +697,75 @@ async function downloadTarget(target, backupId, output, options) {
 		: downloadS3(target, backupId, output, options);
 }
 
-async function writeHealth(path, commit) {
-	if (!path) return;
-	const resolved = resolve(path);
-	if (!isAbsolute(path)) throw new Error("--health-file must be an absolute path");
-	if (parseDate(commit.completed_at, "commit completed_at") > Date.now()) throw new Error("Future-dated backup cannot publish readiness");
-	await atomicJson(resolved, {
-		schema_version: 1,
-		status: "ok",
-		completed_at: commit.completed_at,
-		verified_at: new Date().toISOString(),
-	});
+async function downloadLatest(target, output, keyFile, expectedSourceCommit, maxAgeMinutes, options, guard = async () => {}) {
+	if (!SOURCE_COMMIT.test(expectedSourceCommit ?? "")) throw new Error("--expected-source-commit must be 40 to 64 lowercase hexadecimal characters");
+	const maxAge = Number(maxAgeMinutes);
+	if (!Number.isSafeInteger(maxAge) || maxAge < 1) throw new Error("--max-age-minutes must be a positive integer");
+	if (existsSync(output)) throw new Error("Download output must not already exist");
+	const commits = (target.kind === "filesystem" ? await listFilesystemCommits(target) : await listS3Commits(target, options))
+		.sort((left, right) => parseDate(right.completed_at, "commit completed_at") - parseDate(left.completed_at, "commit completed_at"));
+	const failures = [];
+	for (const commit of commits) {
+		const completionAge = (Date.now() - parseDate(commit.completed_at, "commit completed_at")) / 60000;
+		if (completionAge < 0 || completionAge > maxAge) continue;
+		const candidate = `${output}.candidate-${randomBytes(6).toString("hex")}`;
+		try {
+			await downloadTarget(target, commit.backup_id, candidate, options);
+			await verifyEncryptedBackup(candidate, keyFile);
+			const payload = await assertAuthenticatedCompletion(candidate, commit);
+			if (payload.source_commit !== expectedSourceCommit) throw new Error("Authenticated backup source commit differs from the reviewed candidate");
+			const age = (Date.now() - parseDate(payload.started_at, "backup started_at")) / 60000;
+			if (age < 0 || age > maxAge) throw new Error("Authenticated recovery point exceeds the required maximum age");
+			await guard();
+			if (existsSync(output)) throw new Error("Download output must not already exist");
+			await rename(candidate, output);
+			await syncDirectory(dirname(output));
+			return { commit, payload };
+		} catch (error) {
+			failures.push(`${commit.backup_id}: ${error.message}`);
+			await rm(candidate, { recursive: true, force: true });
+		}
+	}
+	throw new Error(`No eligible authenticated backup matched the reviewed candidate${failures.length ? ` (${failures.join("; ")})` : ""}`);
 }
 
-async function verifyRemote(target, backupId, keyFile, healthFile, options) {
+async function writeHealth(path, payload) {
+	if (!path) return;
+	if (parseDate(payload.completed_at, "backup completed_at") > Date.now()) throw new Error("Future-dated backup cannot publish readiness");
+	await atomicJson(resolve(path), {
+		schema_version: 2,
+		status: "ok",
+		recovery_point_at: payload.started_at,
+		completed_at: payload.completed_at,
+		verified_at: new Date().toISOString(),
+	}, 0o644);
+}
+
+async function writeHealthStatus(path, status, completedAt = new Date().toISOString()) {
+	if (!path) return;
+	if (!isAbsolute(path)) throw new Error("--health-file must be an absolute path");
+	await atomicJson(resolve(path), {
+		schema_version: 1,
+		status,
+		completed_at: completedAt,
+		verified_at: new Date().toISOString(),
+	}, 0o644);
+}
+
+async function verifyRemote(target, backupId, keyFile, healthFile, options, guard = async () => {}) {
 	const temporary = await mkdtemp(join(tmpdir(), "aidr-offsite-verify-"));
 	const output = join(temporary, "backup");
 	try {
 		const commit = await downloadTarget(target, backupId, output, options);
 		await verifyEncryptedBackup(output, keyFile);
-		await assertAuthenticatedCompletion(output, commit);
-		await writeHealth(healthFile, commit);
+		const payload = await assertAuthenticatedCompletion(output, commit);
+		if (target.kind === "s3" && commit.retention.native_lock_requested) {
+			for (const name of [...REQUIRED_FILES, COMMIT_FILE]) {
+				await verifyS3Retention(target, s3Key(target, backupId, name), commit.retention, options);
+			}
+		}
+		await guard();
+		await writeHealth(healthFile, payload);
 		return commit;
 	} finally {
 		await rm(temporary, { recursive: true, force: true });
@@ -567,6 +780,7 @@ async function assertAuthenticatedCompletion(backup, commit) {
 	if (payload.completed_at !== commit.completed_at) {
 		throw new Error("Offsite commit completion time does not match the authenticated backup manifest");
 	}
+	return payload;
 }
 
 async function listFilesystemCommits(target) {
@@ -581,8 +795,8 @@ async function listFilesystemCommits(target) {
 	return commits;
 }
 
-async function listS3Keys(target, options, prefix) {
-	const keys = [];
+async function listS3Objects(target, options, prefix) {
+	const objects = [];
 	let token;
 	do {
 		const page = await aws(options, "list-objects-v2", [
@@ -593,12 +807,68 @@ async function listS3Keys(target, options, prefix) {
 		]);
 		for (const object of page.Contents ?? []) {
 			if (typeof object.Key !== "string" || !object.Key.startsWith(prefix)) throw new Error("S3 listing escaped the requested prefix");
-			keys.push(object.Key);
+			objects.push({ key: object.Key, lastModified: typeof object.LastModified === "string" ? Date.parse(object.LastModified) : null });
 		}
 		token = page.IsTruncated === true ? page.NextContinuationToken : undefined;
 		if (page.IsTruncated === true && typeof token !== "string") throw new Error("S3 listing omitted its continuation token");
 	} while (token);
-	return keys;
+	return objects;
+}
+
+async function listS3Keys(target, options, prefix) {
+	return (await listS3Objects(target, options, prefix)).map((object) => object.key);
+}
+
+async function listS3Versions(target, options, prefix) {
+	const versions = [];
+	let keyMarker;
+	let versionMarker;
+	do {
+		const page = await aws(options, "list-object-versions", [
+			"--bucket", target.bucket,
+			"--prefix", prefix,
+			"--max-keys", "1000",
+			...(keyMarker ? ["--key-marker", keyMarker] : []),
+			...(versionMarker ? ["--version-id-marker", versionMarker] : []),
+		]);
+		for (const [items, deleteMarker] of [[page.Versions ?? [], false], [page.DeleteMarkers ?? [], true]]) {
+			for (const item of items) {
+				if (typeof item.Key !== "string" || !item.Key.startsWith(prefix) || typeof item.VersionId !== "string" || item.VersionId.length === 0) {
+					throw new Error("S3 version listing escaped the requested prefix or omitted a version ID");
+				}
+				versions.push({ key: item.Key, versionId: item.VersionId, deleteMarker, lastModified: Date.parse(item.LastModified) });
+			}
+		}
+		keyMarker = page.IsTruncated === true ? page.NextKeyMarker : undefined;
+		versionMarker = page.IsTruncated === true ? page.NextVersionIdMarker : undefined;
+		if (page.IsTruncated === true && (typeof keyMarker !== "string" || typeof versionMarker !== "string")) {
+			throw new Error("S3 version listing omitted continuation markers");
+		}
+	} while (keyMarker);
+	return versions;
+}
+
+async function s3VersionDisposition(target, version, options, now = Date.now()) {
+	if (version.deleteMarker) return { eligible: true, reason: "delete-marker" };
+	const head = await aws(options, "head-object", [
+		"--bucket", target.bucket,
+		"--key", version.key,
+		"--version-id", version.versionId,
+	]);
+	if (head.ObjectLockLegalHoldStatus === "ON") return { eligible: false, reason: "legal-hold" };
+	if (head.ObjectLockLegalHoldStatus && head.ObjectLockLegalHoldStatus !== "OFF") throw new Error("S3 returned an invalid legal-hold status");
+	const retainUntil = head.ObjectLockRetainUntilDate ? Date.parse(head.ObjectLockRetainUntilDate) : null;
+	if (head.ObjectLockRetainUntilDate && !Number.isFinite(retainUntil)) throw new Error("S3 returned an invalid Object Lock deadline");
+	if (Number.isFinite(retainUntil) && retainUntil > now) return { eligible: false, reason: "object-lock" };
+	return { eligible: true, reason: "expired-or-unlocked" };
+}
+
+async function deleteS3Version(target, version, options) {
+	await aws(options, "delete-object", [
+		"--bucket", target.bucket,
+		"--key", version.key,
+		"--version-id", version.versionId,
+	]);
 }
 
 async function listS3Commits(target, options) {
@@ -621,7 +891,7 @@ async function listS3Commits(target, options) {
 	}
 }
 
-async function prune(target, days, apply, options, now = Date.now()) {
+async function prune(target, days, apply, options, guard = async () => {}, now = Date.now()) {
 	const retention = retentionPolicy(days, "METADATA_ONLY", now);
 	const cutoff = now - retention.days * 86400 * 1000;
 	const commits = target.kind === "filesystem" ? await listFilesystemCommits(target) : await listS3Commits(target, options);
@@ -629,25 +899,84 @@ async function prune(target, days, apply, options, now = Date.now()) {
 		parseDate(commit.completed_at, "commit completed_at") < cutoff &&
 		parseDate(commit.retention.retain_until, "commit retention deadline") <= now,
 	);
+	const fullyRemoved = [];
+	const retained = [];
+	let versionsDeleted = 0;
 	for (const commit of expired) {
 		if (!apply) continue;
 		if (target.kind === "filesystem") {
+			await guard();
 			const candidate = resolve(target.root, commit.backup_id);
 			if (!within(candidate, target.root) || candidate === target.root || basename(candidate) !== commit.backup_id) throw new Error("Filesystem prune scope validation failed");
 			const info = await lstat(candidate);
 			if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Filesystem prune target is not a regular backup directory");
-			await rm(candidate, { recursive: true });
+			const names = [...commit.objects.map((entry) => entry.name), COMMIT_FILE];
+			const expected = new Set(names);
+			let found = 0;
+			for await (const entry of await opendir(candidate)) {
+				if (!expected.has(entry.name) || !entry.isFile() || entry.isSymbolicLink()) {
+					throw new Error("Filesystem prune refused an unlisted or non-regular backup entry");
+				}
+				found += 1;
+			}
+			if (found !== expected.size) throw new Error("Filesystem prune refused an incomplete backup directory");
+			for (const name of names) {
+				const entry = await lstat(join(candidate, name));
+				if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1) throw new Error("Filesystem prune refused a linked or non-regular backup entry");
+			}
+			for (const name of names) {
+				await guard();
+				await rm(join(candidate, name));
+			}
+			await guard();
+			await rmdir(candidate);
+			fullyRemoved.push(commit.backup_id);
 		} else {
 			const prefix = s3Key(target, commit.backup_id, "");
-			const keys = await listS3Keys(target, options, prefix);
-			if (!keys.includes(s3Key(target, commit.backup_id, COMMIT_FILE))) throw new Error("S3 prune refused a backup without its commit marker");
-			for (const key of keys) {
-				if (!key.startsWith(prefix)) throw new Error("S3 prune scope validation failed");
-				await aws(options, "delete-object", ["--bucket", target.bucket, "--key", key]);
+			const markerKey = s3Key(target, commit.backup_id, COMMIT_FILE);
+			const versions = await listS3Versions(target, options, prefix);
+			const committedKeys = new Set([...commit.objects.map((entry) => s3Key(target, commit.backup_id, entry.name)), markerKey]);
+			if (versions.some((version) => !committedKeys.has(version.key))) {
+				throw new Error("S3 prune refused an unlisted object version under the backup prefix");
 			}
+			if (!versions.some((version) => version.key === markerKey && !version.deleteMarker)) {
+				throw new Error("S3 prune refused a backup without a versioned commit marker");
+			}
+			const dispositions = [];
+			for (const version of versions) dispositions.push([version, await s3VersionDisposition(target, version, options, now)]);
+			const protectedVersions = dispositions.filter(([, disposition]) => !disposition.eligible);
+			if (protectedVersions.length > 0) {
+				retained.push({ backup_id: commit.backup_id, reasons: [...new Set(protectedVersions.map(([, item]) => item.reason))] });
+				continue;
+			}
+			// Keep the commit marker visible until payload absence is verified, so
+			// a silent or partial provider failure remains discoverable next run.
+			for (const [version] of dispositions.filter(([version]) => version.key !== markerKey)) {
+				await deleteS3Version(target, version, options);
+				versionsDeleted += 1;
+			}
+			if ((await listS3Versions(target, options, prefix)).some((version) => version.key !== markerKey)) {
+				throw new Error("S3 prune could not verify removal of every object version");
+			}
+			for (const [version] of dispositions.filter(([version]) => version.key === markerKey)) {
+				await deleteS3Version(target, version, options);
+				versionsDeleted += 1;
+			}
+			if ((await listS3Versions(target, options, prefix)).length > 0) {
+				throw new Error("S3 prune could not verify removal of every object version");
+			}
+			fullyRemoved.push(commit.backup_id);
 		}
 	}
-	return { apply, retention_days: retention.days, candidates: expired.map((commit) => commit.backup_id), deleted: apply ? expired.length : 0 };
+	return {
+		apply,
+		retention_days: retention.days,
+		candidates: expired.map((commit) => commit.backup_id),
+		fully_removed: fullyRemoved,
+		retained,
+		versions_deleted: versionsDeleted,
+		tombstoned: [],
+	};
 }
 
 function optionsFrom(argv, env) {
@@ -662,7 +991,9 @@ function optionsFrom(argv, env) {
 			spool: { type: "string" },
 			output: { type: "string" },
 			target: { type: "string" },
+			"filesystem-mount-identity": { type: "string" },
 			"key-file": { type: "string" },
+			"key-source-file": { type: "string" },
 			"key-reference": { type: "string" },
 			"health-file": { type: "string" },
 			"retention-days": { type: "string" },
@@ -671,6 +1002,8 @@ function optionsFrom(argv, env) {
 			"s3-region": { type: "string" },
 			"aws-cli": { type: "string" },
 			"aws-cli-argument": { type: "string", multiple: true },
+			"expected-source-commit": { type: "string" },
+			"max-age-minutes": { type: "string" },
 			apply: { type: "boolean", default: false },
 			"apply-retention": { type: "boolean", default: false },
 		},
@@ -683,7 +1016,9 @@ function optionsFrom(argv, env) {
 		spool: parsed.values.spool ?? env.AIDR_BACKUP_SPOOL,
 		output: parsed.values.output,
 		targetValue: parsed.values.target ?? env.AIDR_BACKUP_TARGET,
+		filesystemMountIdentity: parsed.values["filesystem-mount-identity"] ?? env.AIDR_BACKUP_FILESYSTEM_MOUNT_IDENTITY,
 		keyFile: parsed.values["key-file"] ?? env.AIDR_BACKUP_KEY_FILE,
+		keySourceFile: parsed.values["key-source-file"],
 		keyReference: parsed.values["key-reference"] ?? env.AIDR_BACKUP_KEY_REFERENCE,
 		healthFile: parsed.values["health-file"] ?? env.AIDR_BACKUP_HEALTH_FILE,
 		retentionDays: parsed.values["retention-days"] ?? env.AIDR_BACKUP_RETENTION_DAYS,
@@ -692,17 +1027,41 @@ function optionsFrom(argv, env) {
 		region: parsed.values["s3-region"] ?? env.AIDR_BACKUP_S3_REGION,
 		awsCli: parsed.values["aws-cli"] ?? env.AIDR_AWS_CLI ?? "aws",
 		awsCliArguments: parsed.values["aws-cli-argument"] ?? [],
+		expectedSourceCommit: parsed.values["expected-source-commit"],
+		maxAgeMinutes: parsed.values["max-age-minutes"],
 		apply: parsed.values.apply,
-		applyRetention: parsed.values["apply-retention"] || env.AIDR_BACKUP_APPLY_RETENTION === "true",
+		// Retention deletion must be an explicit command-line choice. An
+		// environment file must not silently turn a scheduled cycle into deletion.
+		applyRetention: parsed.values["apply-retention"],
 	};
 }
 
-async function main() {
-	const options = optionsFrom(process.argv.slice(2), process.env);
-	if (!["upload", "verify", "download", "prune", "cycle"].includes(options.action)) {
-		throw new Error("Use upload|verify|download|prune|cycle with --target, --key-file and the action-specific paths");
+export async function runOffsite(argv, env = process.env, dependencies = {}) {
+	const options = optionsFrom(argv, env);
+	if (!["upload", "verify", "download", "download-latest", "prune", "cycle"].includes(options.action)) {
+		throw new Error("Use upload|verify|download|download-latest|prune|cycle with --target, --key-file and the action-specific paths");
 	}
+	const reportsHealth = Boolean(options.healthFile) && ["upload", "verify", "download", "download-latest", "cycle"].includes(options.action);
+	const attemptStartedAt = new Date().toISOString();
+	if (reportsHealth) {
+		if (!isAbsolute(options.healthFile)) throw new Error("--health-file must be an absolute path");
+		try { await writeHealthStatus(options.healthFile, "running", attemptStartedAt); }
+		catch (error) {
+			try { await rm(resolve(options.healthFile), { force: true }); } catch { /* absence is safely not ready */ }
+			throw error;
+		}
+	}
+	try {
 	const target = parseTarget(options.targetValue);
+	if (target.kind === "filesystem") {
+		if (!existsSync(target.root)) throw new Error("Filesystem target must already exist before the backup job starts");
+		await checkedDirectory(target.root);
+		target.root = await canonicalExisting(target.root, "Filesystem target");
+		await verifyFilesystemMountIdentity(target.root, options.filesystemMountIdentity, dependencies.findmnt ?? findmnt);
+	}
+	const guardTargetMount = () => target.kind === "filesystem"
+		? verifyFilesystemMountIdentity(target.root, options.filesystemMountIdentity, dependencies.findmnt ?? findmnt)
+		: Promise.resolve();
 	if (target.kind === "s3") {
 		if (options.endpoint) {
 			let endpoint;
@@ -715,61 +1074,116 @@ async function main() {
 	} else if (options.objectLockMode) {
 		throw new Error("Native Object Lock mode is only available for S3-compatible targets");
 	}
-	const keyFile = options.keyFile ? resolve(options.keyFile) : null;
+	let keyFile = options.keyFile ? resolve(options.keyFile) : null;
 	if (!["prune"].includes(options.action)) {
 		if (!keyFile) throw new Error("--key-file is required to authenticate backups after transfer");
+		keyFile = await canonicalExisting(keyFile, "Recovery key");
 		await access(keyFile, fsConstants.R_OK);
+		await assertPrivateRecoveryKey(keyFile);
+		if (options.keySourceFile) {
+			const keySource = await canonicalExisting(options.keySourceFile, "Recovery key source");
+			await assertPrivateRecoveryKey(keySource, { source: true });
+		}
 	}
 	const s3Options = { ...options, keyReference: options.keyReference ? validateKeyReference(options.keyReference) : null };
 	if (["upload", "cycle"].includes(options.action)) {
 		if (!s3Options.keyReference) throw new Error("--key-reference is required and must refer to the recovery key held outside the backup target");
 		const retention = retentionPolicy(options.retentionDays, options.objectLockMode);
 		let backup = options.backup ? resolve(options.backup) : null;
-		if (options.action === "cycle") {
-			if (!options.deployment || !options.spool) throw new Error("cycle requires --deployment and --spool");
-			const deployment = resolve(options.deployment);
-			const spool = resolve(options.spool);
-			if (target.kind === "filesystem") assertSeparate(spool, target.root, "The local spool and offsite filesystem target must be separate");
-			assertSeparate(keyFile, deployment, "Keep the recovery key outside the deployment");
-			assertSeparate(keyFile, spool, "Keep the recovery key outside the local backup spool");
-			await mkdir(spool, { recursive: true, mode: 0o700 });
-			backup = join(spool, `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomBytes(5).toString("hex")}`);
-			await run(process.execPath, [join(SCRIPT_DIR, "deployment-backup.mjs"), "backup", "--deployment", deployment, "--output", backup, "--key-file", keyFile, "--maintenance"]);
+		let cycleBackup = null;
+		try {
+			if (options.action === "cycle") {
+				if (!options.deployment || !options.spool) throw new Error("cycle requires --deployment and --spool");
+				const deployment = await canonicalExisting(options.deployment, "Deployment");
+				await mkdir(resolve(options.spool), { recursive: true, mode: 0o700 });
+				const spool = await canonicalExisting(options.spool, "Backup spool");
+				if (target.kind === "filesystem") assertSeparate(spool, target.root, "The local spool and offsite filesystem target must be separate");
+				assertSeparate(keyFile, deployment, "Keep the recovery key outside the deployment");
+				assertSeparate(keyFile, spool, "Keep the recovery key outside the local backup spool");
+				await cleanupAbandonedSpool(spool);
+				backup = join(spool, `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomBytes(5).toString("hex")}`);
+				cycleBackup = backup;
+				await writeFile(`${backup}.aidr-owned`, TEMP_OWNER, { mode: 0o600, flag: "wx" });
+				await run(process.execPath, [join(SCRIPT_DIR, "deployment-backup.mjs"), "backup", "--deployment", deployment, "--output", backup, "--key-file", keyFile, "--recovery-journal", join(spool, "recovery-journal.json"), "--maintenance"]);
+			}
+			if (!backup) throw new Error("upload requires --backup");
+			backup = await canonicalExisting(backup, "Source backup");
+			if (target.kind === "filesystem") {
+				assertSeparate(backup, target.root, "Source backup and offsite filesystem target must be separate");
+				assertSeparate(keyFile, target.root, "Recovery key must be held outside the offsite target");
+			}
+			await verifyEncryptedBackup(backup, keyFile);
+			const inventory = await sourceInventory(backup);
+			const commit = makeCommit(inventory, target, s3Options.keyReference, retention);
+			await guardTargetMount();
+			const published = target.kind === "filesystem"
+				? await uploadFilesystem(target, inventory, commit, guardTargetMount)
+				: await uploadS3(target, inventory, commit, s3Options);
+			await guardTargetMount();
+			await verifyRemote(target, inventory.backupId, keyFile, options.healthFile, s3Options, guardTargetMount);
+			if (options.action === "cycle") await prune(target, retention.days, options.applyRetention, s3Options, guardTargetMount);
+			console.log(JSON.stringify({ status: "ok", backup_id: inventory.backupId, completed_at: published.completed_at, target_kind: target.kind, verified: true }));
+			return;
+		} finally {
+			if (cycleBackup) {
+				await rm(cycleBackup, { recursive: true, force: true });
+				await rm(`${cycleBackup}.aidr-owned`, { force: true });
+			}
 		}
-		if (!backup) throw new Error("upload requires --backup");
-		if (target.kind === "filesystem") {
-			assertSeparate(backup, target.root, "Source backup and offsite filesystem target must be separate");
-			assertSeparate(keyFile, target.root, "Recovery key must be held outside the offsite target");
-		}
-		await verifyEncryptedBackup(backup, keyFile);
-		const inventory = await sourceInventory(backup);
-		const commit = makeCommit(inventory, target, s3Options.keyReference, retention);
-		const published = target.kind === "filesystem"
-			? await uploadFilesystem(target, inventory, commit)
-			: await uploadS3(target, inventory, commit, s3Options);
-		await verifyRemote(target, inventory.backupId, keyFile, options.healthFile, s3Options);
-		if (options.action === "cycle") await prune(target, retention.days, options.applyRetention, s3Options);
-		console.log(JSON.stringify({ status: "ok", backup_id: inventory.backupId, completed_at: published.completed_at, target_kind: target.kind, verified: true }));
-		return;
 	}
 	if (options.action === "verify") {
-		const commit = await verifyRemote(target, options.backupId, keyFile, options.healthFile, s3Options);
+		await guardTargetMount();
+		const commit = await verifyRemote(target, options.backupId, keyFile, options.healthFile, s3Options, guardTargetMount);
 		console.log(JSON.stringify({ status: "ok", backup_id: commit.backup_id, completed_at: commit.completed_at, verified: true }));
 		return;
 	}
 	if (options.action === "download") {
+		await guardTargetMount();
 		if (!options.output) throw new Error("download requires a new --output directory");
-		const output = resolve(options.output);
+		const output = await canonicalNew(options.output, "Download output");
 		if (within(keyFile, output)) throw new Error("Recovery key must be held outside the downloaded backup");
-		const commit = await downloadTarget(target, options.backupId, output, s3Options);
-		await verifyEncryptedBackup(output, keyFile);
-		await assertAuthenticatedCompletion(output, commit);
-		await writeHealth(options.healthFile, commit);
+		if (existsSync(output)) throw new Error("Download output must not already exist");
+		const staging = `${output}.candidate-${randomBytes(6).toString("hex")}`;
+		try {
+			const commit = await downloadTarget(target, options.backupId, staging, s3Options);
+			await verifyEncryptedBackup(staging, keyFile);
+			const payload = await assertAuthenticatedCompletion(staging, commit);
+			await guardTargetMount();
+			if (existsSync(output)) throw new Error("Download output must not already exist");
+			await rename(staging, output);
+			await syncDirectory(dirname(output));
+			await writeHealth(options.healthFile, payload);
+			console.log(JSON.stringify({ status: "ok", backup_id: commit.backup_id, output, verified: true }));
+			return;
+		} finally {
+			await rm(staging, { recursive: true, force: true });
+		}
+	}
+	if (options.action === "download-latest") {
+		await guardTargetMount();
+		if (!options.output) throw new Error("download-latest requires a new --output directory");
+		const output = await canonicalNew(options.output, "Download output");
+		if (within(keyFile, output)) throw new Error("Recovery key must be held outside the downloaded backup");
+		const { commit, payload } = await downloadLatest(target, output, keyFile, options.expectedSourceCommit, options.maxAgeMinutes, s3Options, guardTargetMount);
+		await writeHealth(options.healthFile, payload);
 		console.log(JSON.stringify({ status: "ok", backup_id: commit.backup_id, output, verified: true }));
 		return;
 	}
-	const result = await prune(target, options.retentionDays, options.apply, s3Options);
+	const result = await prune(target, options.retentionDays, options.apply, s3Options, guardTargetMount);
 	console.log(JSON.stringify(result));
+	} catch (error) {
+		if (reportsHealth) {
+			try { await writeHealthStatus(options.healthFile, "failed", attemptStartedAt); }
+			catch {
+				try { await rm(resolve(options.healthFile), { force: true }); } catch { /* absence is safely not ready */ }
+			}
+		}
+		throw error;
+	}
+}
+
+async function main() {
+	await runOffsite(process.argv.slice(2), process.env);
 }
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;

@@ -13,7 +13,7 @@ separate platform migration.
 
 Before preparing a target from a customer kit, verify its signed outer envelope
 with the independently delivered verifier, signer policy and persistent
-anti-rollback state as described in `START-HERE.md`. Extract the exact verified
+anti-rollback state as described in the [first-customer guide](FIRST_CUSTOMER.md). Extract the exact verified
 tar artefact, run `scripts/customer-kit-verify.mjs`, and prepare the target in a
 new directory from that extracted kit. A checksum-only or merely present inner
 release signature is insufficient to authenticate the installation scripts.
@@ -43,7 +43,12 @@ The contract format is:
   "target_schema_accepts_existing_data": true,
   "migrations_transactional": true,
   "required_env_keys": ["ANON_KEY", "SERVICE_ROLE_KEY"],
-  "required_function_env_keys": ["AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64"],
+  "required_function_env_keys": [
+    "AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64",
+    "AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64",
+    "AIDR_PACK_DOWNLOAD_GRANT_SECRET"
+  ],
+  "required_ingress_env_keys": ["AIDR_DEVICE_START_INGRESS_SECRET"],
   "current_support_files": [
     { "path": "agent-config.json", "sha256": "64 lowercase hex characters" },
     { "path": "compose.yml", "sha256": "64 lowercase hex characters" }
@@ -85,6 +90,17 @@ default `unassigned` declaration), and prepare the target with the same
 `--region` and `--tenant-region`, before running the upgrade. An upgrade must not
 change the declared region of an existing installation.
 
+The GA admission cutover at migration `20260923000041` removes the old two-argument
+trial activation RPC. Stage the matching `pilot-status` Edge Function and
+dashboard consent UI in the same release as migrations `34`–`42`; rehearse the
+exact migration/function/UI combination before promotion. An old function
+against the new schema fails closed, but trial activation is unavailable until
+the new function is live. Do not set `AIDR_SIGNUP_MODE=cloud` merely because
+the UI exists: Supabase Auth registration, cloud admission mode, approved
+published Terms/Privacy documents, and a verified operator legal configuration
+are independent gates. Self-hosted deployments keep signup closed and use the
+finite-term licensed bootstrap instead.
+
 The rehearsal must cover existing customer-shaped rows and objects, the target
 application on the final target schema, authorization boundaries, login,
 enrollment, policy enforcement and audit export. If a new environment or function
@@ -97,9 +113,11 @@ Create and verify a fresh encrypted cold backup in the approved maintenance
 preparation window. Store the key separately from both installation and backup.
 
 ```sh
-node scripts/deployment-backup.mjs backup --deployment /srv/aidr --output /backups/aidr-pre-upgrade --key-file /secure/aidr-recovery.key --maintenance
+node scripts/deployment-backup.mjs backup --deployment /srv/aidr --output /backups/aidr-pre-upgrade --key-file /secure/aidr-recovery.key --recovery-journal /var/lib/aidr-backup/recovery-journal.json --maintenance
 node scripts/deployment-backup.mjs verify --backup /backups/aidr-pre-upgrade --key-file /secure/aidr-recovery.key
 ```
+
+The backup command requires a deployment-bound recovery journal at `/var/lib/aidr-backup/recovery-journal.json`. If the process or host stops unexpectedly after the Compose stop, the boot recovery unit starts only services recorded as running before the backup. Verify the journal is cleared and service health is restored before retrying or upgrading.
 
 Run preflight while the current database is online:
 
@@ -121,11 +139,12 @@ the current Compose project and source commit and defaults to a maximum age of 2
 hours. Use `--max-backup-age-hours N` only when the approved change record defines
 a different window; the maximum accepted value is 168 hours.
 
-The tool then runs all candidate migration SQL against the live database inside a
-transaction while holding the same advisory lock as the production migration
-runner, verifies the current migration ledger, rejects unknown schema entries and
-rolls the entire dry-run back. A successful preflight writes private state under
-`/srv/aidr/.aidr-upgrade/` and changes no application artifact or schema.
+The preflight does not execute migration SQL against the live database. It writes
+private state under `/srv/aidr/.aidr-upgrade/` and changes no application artifact
+or schema. After maintenance begins, the tool stops application writers, runs all
+candidate migration SQL inside a transaction while holding the production advisory
+lock, verifies the ledger, rejects unknown entries and rolls the dry-run back before
+the real atomic migration starts.
 Monitoring can consume `.aidr-upgrade/monitoring/backup.json`, which is atomically
 published with `schema_version`, `status`, `completed_at` and `verified_at` plus
 the verified backup digest and source binding.
@@ -147,7 +166,7 @@ node scripts/deployment-upgrade.mjs apply \
 
 The tool stops the current non-database services, delegates atomic schema
 application to `deployment-migrate.mjs`, installs hash-bound application files,
-preserves `.env`, `.env.functions`, public origins and the Compose project identity,
+preserves `.env`, `.env.functions`, `.env.ingress`, public origins and the Compose project identity,
 starts the target services, and requires the online deployment doctor to pass.
 The successful receipt is `.aidr-upgrade/upgrade-receipt.json`.
 
@@ -173,13 +192,16 @@ node scripts/deployment-upgrade.mjs recover \
   --backup /backups/aidr-pre-upgrade \
   --key-file /secure/aidr-recovery.key \
   --contract /secure/aidr-upgrade/upgrade-compatibility.json \
+  --recovery-runtime /srv/aidr-reviewed-current \
   --recovery-output /srv/aidr-recovery \
   --maintenance
 ```
 
-This delegates to `deployment-backup.mjs recover`, which refuses an existing
-destination and creates new volumes and a distinct Compose project. Services stay
-stopped. Resolve port and hostname conflicts, start it in isolation, run the
+This delegates to `deployment-backup.mjs recover`, which refuses archived runtime
+configuration and an existing destination. `--recovery-runtime` must be a separate,
+clean prepared deployment whose manifest inventory and source commit match the
+authenticated backup. Recovery creates new volumes and a distinct Compose project;
+services stay stopped. Resolve port and hostname conflicts, start it in isolation, run the
 online doctor, compare database/object evidence, and repeat administrator login,
 agent enrollment, policy deny and audit-export acceptance. Change traffic only
 after those checks pass. Retain the failed project and logs for investigation and

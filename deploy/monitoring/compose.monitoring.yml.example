@@ -1,13 +1,14 @@
 services:
   dashboard:
     environment:
-      AIDR_HEALTH_DATABASE_URL: http://api-gw:8000/rest/v1/
+      AIDR_HEALTH_DATABASE_URL: http://api-gw:8000/rest/v1/rpc/aidr_readiness_probe
       AIDR_HEALTH_STORAGE_URL: http://api-gw:8000/storage/v1/status
-      AIDR_HEALTH_FUNCTIONS_URL: http://api-gw:8000/functions/v1/api-keys
+      AIDR_HEALTH_FUNCTIONS_URL: http://api-gw:8000/functions/v1/packs-manifest
       AIDR_SIGNING_HEALTH_FILE: /run/aidr-health/signing.json
       AIDR_BACKUP_HEALTH_FILE: /run/aidr-health/backup.json
       AIDR_QUEUE_HEALTH_FILE: /run/aidr-health/queue.json
       AIDR_PUBLIC_HTTPS_URL: ${AIDR_PUBLIC_HTTPS_URL:?set the customer-facing HTTPS origin}
+      AIDR_METRICS_TOKEN: ${AIDR_METRICS_TOKEN:?set a random monitoring-only bearer token}
       AIDR_READINESS_REQUIRED_CHECKS: database,storage,functions,signing,backup,queue,certificate
     volumes:
       - type: bind

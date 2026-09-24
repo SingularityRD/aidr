@@ -10,6 +10,8 @@ const SIGNING_CONTEXT = "device-start:v1";
 const DEFAULT_MAX_BODY_BYTES = 4096;
 const MAX_RESPONSE_BYTES = 16384;
 const MAX_HEADER_BYTES = 8192;
+const PROXY_REQUEST_ID_TTL_MS = 60_000;
+const MAX_PROXY_REQUEST_IDS = 65_536;
 
 function canonicalIp(value) {
 	if (typeof value !== "string" || value.length > 45 || value !== value.trim()) return null;
@@ -132,8 +134,10 @@ export function createDeviceStartIngress(options) {
 	if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 0 || maxBodyBytes > 65536) throw new Error("Invalid request body limit");
 	const anonKey = options.anonKey;
 	if (anonKey !== undefined && (typeof anonKey !== "string" || !anonKey || /[\r\n]/.test(anonKey))) throw new Error("Invalid anonymous API key");
+	const proxyRequestIds = new Map();
 
 	const server = createServer({ maxHeaderSize: MAX_HEADER_BYTES }, async (req, res) => {
+		const now = Date.now();
 		const peer = canonicalIp(req.socket.remoteAddress);
 		if (!peer || !trustedPeers.has(peer)) return reply(res, 403, "untrusted_proxy_peer");
 		if (req.url !== REQUEST_PATH) return reply(res, 404, "not_found");
@@ -145,6 +149,16 @@ export function createDeviceStartIngress(options) {
 		if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return reply(res, 403, "untrusted_proxy");
 		const clientIp = canonicalIp(singleHeader(req, "x-aidr-proxy-client-ip"));
 		if (!clientIp) return reply(res, 403, "invalid_proxy_client_ip");
+		const requestIdHeader = singleHeader(req, "x-aidr-proxy-request-id");
+		if (typeof requestIdHeader !== "string" || !/^[a-f0-9]{32}$/i.test(requestIdHeader)) return reply(res, 403, "invalid_proxy_request_id");
+		const requestId = requestIdHeader.toLowerCase();
+		const requestIdExpiry = proxyRequestIds.get(requestId);
+		if (requestIdExpiry && requestIdExpiry > now) return reply(res, 409, "replayed_proxy_request");
+		if (proxyRequestIds.size >= MAX_PROXY_REQUEST_IDS) {
+			for (const [id, expiresAt] of proxyRequestIds) if (expiresAt <= now) proxyRequestIds.delete(id);
+			if (proxyRequestIds.size >= MAX_PROXY_REQUEST_IDS) return reply(res, 503, "proxy_replay_guard_full");
+		}
+		proxyRequestIds.set(requestId, now + PROXY_REQUEST_ID_TTL_MS);
 		if (req.headers["transfer-encoding"] && req.headers["content-length"]) return reply(res, 400, "ambiguous_request_length");
 		try {
 			const body = await readBounded(req, maxBodyBytes);

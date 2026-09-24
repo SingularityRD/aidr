@@ -121,12 +121,12 @@ export function renewCertificate(options = {}, dependencies = {}) {
 	const clock = dependencies.now ?? (() => Date.now());
 	const hostname = String(options.hostname ?? process.env.AIDR_TLS_HOSTNAME ?? "").trim().toLowerCase();
 	const email = String(options.email ?? process.env.AIDR_TLS_EMAIL ?? "").trim();
-	const tlsDir = resolve(String(options.tlsDir ?? process.env.AIDR_TLS_DIR ?? "/etc/aidr/tls"));
-	const receiptPath = resolve(String(options.receipt ?? process.env.AIDR_TLS_RECEIPT ?? join(tlsDir, "renewal-receipt.json")));
+	const tlsDir = resolve(String(options.tlsDir ?? process.env.AIDR_TLS_DIR ?? "/etc/letsencrypt"));
+	const receiptPath = resolve(String(options.receipt ?? process.env.AIDR_TLS_RECEIPT ?? "/var/lib/aidr/tls-renewal-receipt.json"));
 	const acmeClient = String(options.acmeClient ?? process.env.AIDR_ACME_CLIENT ?? "certbot");
 	const webroot = resolve(String(options.webroot ?? process.env.AIDR_TLS_WEBROOT ?? "/var/www/aidr-acme"));
 	const nginx = String(options.nginx ?? process.env.AIDR_NGINX ?? "nginx");
-	const chainPath = join(tlsDir, "fullchain.pem");
+	const chainPath = join(tlsDir, "live", hostname, "fullchain.pem");
 	const startedAt = new Date(clock()).toISOString();
 	const receipt = {
 		schema_version: 1,
@@ -181,7 +181,7 @@ export function renewCertificate(options = {}, dependencies = {}) {
 
 	const challenge = run(acmeClient, [
 		"certonly", "--non-interactive", "--agree-tos", "--keep-until-expiring",
-		"--webroot", "-w", webroot, "-d", hostname, "-m", email,
+		"--config-dir", tlsDir, "--cert-name", hostname, "--webroot", "-w", webroot, "-d", hostname, "-m", email,
 	]);
 	if (!challenge || challenge.status !== 0) {
 		fail(`ACME challenge for ${hostname} failed (${failureReason(challenge)}); the ingress was not reloaded`);

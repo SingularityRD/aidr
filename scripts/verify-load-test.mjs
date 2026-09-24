@@ -118,6 +118,12 @@ try {
 	checks.push("a passing harness result cannot claim HA, production acceptance or a monthly SLA");
 
 	const resultSchema = JSON.parse(readFileSync("deploy/ha/load-result.schema.json", "utf8"));
+	const workloadSchema = JSON.parse(readFileSync("deploy/ha/workload-profile.schema.json", "utf8"));
+	assert.deepEqual(workloadSchema.$defs.thresholds.anyOf, [
+		{ required: ["max_loss_ratio"] },
+		{ required: ["min_availability_ratio"] },
+	]);
+	checks.push("machine-readable workload schema requires loss or end-to-end availability bounds");
 	for (const required of resultSchema.required) assert.ok(Object.hasOwn(result, required), `missing schema field ${required}`);
 	assert.equal(resultSchema.properties.claims.properties.production_sla_proven.const, false);
 	assert.ok(resultSchema.properties.diagnostics.$ref);
@@ -145,7 +151,7 @@ try {
 		max_in_flight: 5,
 		request_timeout_ms: 100,
 		fault_windows: [],
-		thresholds: { min_requests: 1, max_error_ratio: 0 },
+		thresholds: { min_requests: 1, max_error_ratio: 0, max_loss_ratio: 1 },
 		scenarios: [{
 			...JSON.parse(readFileSync(profilePath, "utf8")).scenarios[0],
 			path: "/slow",

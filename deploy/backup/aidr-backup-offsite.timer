@@ -4,7 +4,7 @@ Description=Daily AIDR encrypted offsite backup
 [Timer]
 OnCalendar=*-*-* 02:15:00
 RandomizedDelaySec=15min
-Persistent=true
+Persistent=false
 Unit=aidr-backup-offsite.service
 
 [Install]

@@ -23,6 +23,10 @@ function clocks. The signer and function must share the same
 `AIDR_DEVICE_START_INGRESS_SECRET` (at least 32 UTF-8 bytes). The proxy token is
 a different 32-byte-or-longer secret shared only by Nginx and the signer. Keep
 both out of browser builds, logs, public environment files and source control.
+Nginx must set `X-AIDR-Proxy-Request-ID` to its per-request `$request_id`; the
+signer rejects a repeated ID for 60 seconds. The replay cache is in-memory and
+bounded, so a signer restart clears it; it supplements the loopback/token
+boundary and is not protection for a compromised host or secret.
 
 The prepared self-hosted deployment copies this directory to `ingress/` and
 writes a private `.env.ingress` beside `compose.yml`. Run the prepared sidecar
@@ -32,8 +36,10 @@ from that deployment directory:
 node --env-file=.env.ingress ingress/device-start.mjs
 ```
 
-For an independent/cloud ingress, create a private signer environment file
-with these keys, using values from your secret manager:
+For an independently managed or cloud ingress, save these values from your
+secret manager as `/etc/aidr/device-start-signer.env` on Linux. Restrict the
+file to the signer service account; it is separate from the generated
+deployment `.env.ingress` file:
 
 ```
 AIDR_DEVICE_START_INGRESS_SECRET=<shared-with-device-start-function>
@@ -45,19 +51,20 @@ AIDR_DEVICE_START_LISTEN_PORT=8191
 ```
 
 Set `AIDR_DEVICE_START_INGRESS_SECRET` in the Edge Function environment too,
-then restart/redeploy the function. If a managed Supabase upstream requires its
-public anonymous gateway key, set `AIDR_DEVICE_START_ANON_KEY` in the signer
-environment; the signer injects that key and ignores caller Authorization and
-`apikey` headers. The upstream may be a fixed HTTPS URL in cloud mode. Plain
-HTTP is accepted only for numeric loopback upstreams. An HTTPS upstream uses
-Node's standard certificate verification; this sidecar does not create a cloud
-project or provision its TLS/certificate trust.
+then restart/redeploy the function. For cloud mode, set
+`AIDR_DEVICE_START_ANON_KEY` in the signer environment to the selected project's
+public anonymous gateway key; preparation leaves it unset, and the deployment
+doctor fails its cloud preflight until it matches `ANON_KEY` in `.env`. The
+signer injects that key and ignores caller Authorization and `apikey` headers.
+The upstream may be a fixed HTTPS URL in cloud mode. Plain HTTP is accepted only
+for numeric loopback upstreams. An HTTPS upstream uses Node's standard
+certificate verification; this sidecar does not create a cloud project or
+provision its TLS/certificate trust.
 
-An independent launch from the repository root after preparing that private
-environment file is:
+For a manual Linux check from the repository root, use that same private file:
 
 ```
-node --env-file=.aidr-deploy/.env.device-start-signer deploy/ingress/device-start.mjs
+node --env-file=/etc/aidr/device-start-signer.env deploy/ingress/device-start.mjs
 ```
 
 For a Linux service, adapt `aidr-device-start.service.reference`, create the
@@ -74,6 +81,9 @@ the private Nginx configuration. Loopback plus a token does not provide a
 security boundary against a fully compromised host or an operator who can read
 both secrets. Never publish port 8191. Restrict direct API port 8000 to loopback
 or a private network; direct unsigned device-start calls fail at the function.
+The reference claims the 80/443 default-server slots and rejects other Host
+values; if integrating into an existing Nginx instance, preserve an equivalent
+default-deny host route rather than dropping the `default_server`/Host checks.
 Nginx's `$remote_addr` is the directly connected TCP/TLS peer. If a CDN or load
 balancer sits in front, it will be the bucketed peer until the operator
 explicitly configures trusted hop addresses and validates forwarding; do not
@@ -83,27 +93,60 @@ for the header replacement behavior used by the reference config.
 
 ## Public TLS renewal
 
-`aidr-tls-renew.service` and `aidr-tls-renew.timer` are a reference systemd pair
-prepared beside this signer into the deployment directory (`ingress/`). Preparing
-them does not install, enable or run them, and the doctor only asserts that both
-files are present. On the TLS host, place the private environment file at
-`/etc/aidr/tls-renew.env` with `AIDR_TLS_HOSTNAME`, `AIDR_TLS_EMAIL`,
-`AIDR_TLS_DIR` (default `/etc/aidr/tls`), `AIDR_TLS_WEBROOT` (the HTTP-01 webroot
-Nginx serves), `AIDR_TLS_RECEIPT`, `AIDR_ACME_CLIENT` (default `certbot`) and
-`AIDR_NGINX`, then enable the timer:
+`aidr-tls-renew.service`, `aidr-tls-renew.timer` and the renewal script are
+prepared in `/srv/aidr/ingress/`. They are not installed or enabled. The unit
+uses that exact path; adapt it if the prepared deployment lives elsewhere.
+The reference Nginx configuration serves HTTP-01 challenges from
+`/var/www/aidr-acme` on port 80 and presents Certbot's native
+`/etc/letsencrypt/live/<hostname>/` certificate on port 443. For a first
+certificate, before starting the TLS Nginx configuration, verify DNS and port
+80 reachability and issue it with Certbot's standalone authenticator while
+port 80 is free. Then install/test/start the adapted Nginx configuration. The
+timer uses the same Certbot lineage with the webroot authenticator thereafter.
+Do not try to start Nginx with a certificate path that does not exist yet.
+For the reference hostname (replace it, and the email, with values you control):
 
+```sh
+sudo install -d -m 0755 /var/www/aidr-acme /etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt
+sudo certbot certonly --standalone --non-interactive --agree-tos --config-dir /etc/letsencrypt --cert-name api.aidr.customer.example -d api.aidr.customer.example -m tls-owner@customer.example
 ```
-systemctl enable --now aidr-tls-renew.timer
+
+Install the adapted Nginx reference only after this command succeeds. Check
+`nginx -t`, start Nginx, and fetch an HTTP-01 test file through the public
+hostname before enabling the webroot renewal timer. Run
+`sudo certbot renew --cert-name api.aidr.customer.example --webroot-path
+/var/www/aidr-acme --dry-run` to exercise renewal against the staging ACME
+service; this does not replace a later real renewal receipt. A DNS record, port 80 and
+certificate authority access are required on the real host; this repository
+does not provide them.
+
+On the TLS host, create `/etc/aidr/tls-renew.env` privately with
+`AIDR_TLS_HOSTNAME`, `AIDR_TLS_EMAIL` and optionally `AIDR_TLS_DIR` (Certbot
+configuration root, default `/etc/letsencrypt`), `AIDR_TLS_WEBROOT` (default
+`/var/www/aidr-acme`), `AIDR_TLS_RECEIPT` (default
+`/var/lib/aidr/tls-renewal-receipt.json`), `AIDR_ACME_CLIENT` (default
+`certbot`) and `AIDR_NGINX` (default `nginx`). If any path changes, update the
+Nginx reference and the unit's writable paths together. Install the prepared
+units before enabling them:
+
+```sh
+sudo install -m 0644 /srv/aidr/ingress/aidr-tls-renew.service /etc/systemd/system/aidr-tls-renew.service
+sudo install -m 0644 /srv/aidr/ingress/aidr-tls-renew.timer /etc/systemd/system/aidr-tls-renew.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now aidr-tls-renew.timer
+sudo systemctl start aidr-tls-renew.service
 ```
 
 `scripts/deployment-tls-renew.mjs` drives the ACME client
-(`certbot certonly --keep-until-expiring --webroot -w <AIDR_TLS_WEBROOT>`), and
+(`certbot certonly --keep-until-expiring --config-dir <AIDR_TLS_DIR> --cert-name
+<AIDR_TLS_HOSTNAME> --webroot
+-w <AIDR_TLS_WEBROOT>`), and
 touches Nginx only after the challenge succeeded and the served chain file was
 inspected: the file must carry a leaf plus its issuer, the leaf must have been
 issued by that issuer, it must cover the requested hostname, its validity window
 must contain the current time, `nginx -t` must pass and the reload command must
-succeed. Every attempt writes `renewal-receipt.json` next to the certificate
-chain with the timestamp, hostname, ACME client, SHA-256 certificate
+succeed. Every attempt writes the private renewal receipt under
+`/var/lib/aidr` by default, with the timestamp, hostname, ACME client, SHA-256 certificate
 fingerprint, expiry, whether the challenge succeeded, whether the ingress was
 reloaded and the outcome. A missing ACME client, an incomplete chain, a chain for
 another hostname and a failed challenge all leave `reloaded: false`, write a
@@ -112,7 +155,8 @@ certificate the client reports as not due is recorded as `unchanged` and the
 ingress is not reloaded.
 
 Keep the certificate paths in `nginx.device-start.reference.conf` pointed at the
-same chain and key this unit renews. A receipt is a local attempt record: it is
+same Certbot lineage this unit renews, and actually probe the HTTP-01 webroot
+from outside before relying on the timer. A receipt is a local attempt record: it is
 not proof that a certificate authority issued a certificate for a public
 hostname, and the tests for this unit inject a command runner with fixture chain
 files, so no real ACME challenge, domain, certificate authority or certificate

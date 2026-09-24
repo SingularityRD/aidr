@@ -57,6 +57,18 @@ test("reads the required image set from a prepared compose file", async () => {
 	assert.match(refused.stderr, /image reference is not resolved/);
 });
 
+test("rejects a pinned image when the bundle has no matching digest", async () => {
+	const fixture = await createFixture();
+	await writeBundle(fixture, ["example/a:1", "example/b:2"]);
+	const plan = JSON.parse(await readFile(fixture.plan, "utf8"));
+	plan.images[0].digest = `sha256:${"a".repeat(64)}`;
+	await writeFile(fixture.plan, JSON.stringify(plan));
+
+	const result = run(["--verify", "--output", fixture.output, "--plan", fixture.plan]);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /does not match the digest pinned in the plan/);
+});
+
 test("refuses an incomplete image set and a tampered tarball", async () => {
 	const incomplete = await createFixture();
 	await writeBundle(incomplete, ["example/a:1"]);

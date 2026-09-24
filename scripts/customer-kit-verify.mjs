@@ -12,6 +12,7 @@ import {
   CUSTOMER_KIT_DELIVERY_FILES,
   CUSTOMER_KIT_REQUIRED_FILES,
   CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
+  isMcpGatewayReleaseArtifact,
 } from "./customer-kit-contract.mjs";
 
 try {
@@ -67,17 +68,22 @@ try {
     if (!inventory.has(required)) throw new Error(`Required customer acceptance artifact is missing: ${required}`);
   }
 
+  verifyGuideLinks(kit, inventory);
+
   verifyRegionManifest(kit);
   verifyTlsDelivery(kit);
   verifyBenchmarkDelivery(kit);
 
   const source = JSON.parse(readFileSync(join(kit, "release-source.json"), "utf8"));
   verifyDeliveryStatus(source, inventory);
-  const gatewayRuntime = ["deploy/gateway/aidr-mcp-gateway.mjs", "deploy/gateway/aidr-mcp-approve.mjs", "deploy/gateway/aidr-mcp-stdio.mjs", "deploy/gateway/aidr-artifact.manifest.json", "deploy/gateway/README.md"];
-  if (source.inline_mcp_gateway_bundled !== gatewayRuntime.every((path) => inventory.has(path))) {
+  const gatewayRuntime = ["deploy/gateway/aidr-mcp-gateway.mjs", "deploy/gateway/aidr-mcp-approve.mjs", "deploy/gateway/aidr-mcp-stdio.mjs", "deploy/gateway/aidr-artifact.manifest.json", "deploy/gateway/aidr-artifact.manifest.sig", "deploy/gateway/README.md"];
+  const gatewayPaths = [...inventory.keys()].filter((path) => path.startsWith("deploy/gateway/"));
+  if (typeof source.inline_mcp_gateway_bundled !== "boolean" || (source.inline_mcp_gateway_bundled ? !gatewayRuntime.every((path) => inventory.has(path)) : gatewayPaths.length !== 0)) {
     throw new Error("MCP gateway delivery status does not match bundled runtime");
   }
   if (source.inline_mcp_gateway_bundled) {
+    const signature = readFileSync(join(kit, "deploy/gateway/aidr-artifact.manifest.sig"), "utf8").trim();
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(signature) || Buffer.from(signature, "base64").length !== 64) throw new Error("Gateway artifact signature is invalid");
     const manifest = JSON.parse(readFileSync(join(kit, "deploy/gateway/aidr-artifact.manifest.json"), "utf8"));
     if (manifest.schema_version !== 1 || !Array.isArray(manifest.files) || manifest.files.length < 3) throw new Error("Gateway artifact manifest is invalid");
     const names = new Set();
@@ -88,6 +94,8 @@ try {
       if (digest !== item.sha256) throw new Error(`Gateway artifact digest mismatch: ${item.path}`);
     }
     if (!["aidr-mcp-gateway.mjs", "aidr-mcp-approve.mjs", "aidr-mcp-stdio.mjs"].every((name) => names.has(name))) throw new Error("Gateway binaries absent from manifest");
+    const declared = new Set([...manifest.files.map((item) => `deploy/gateway/${item.path}`), "deploy/gateway/aidr-artifact.manifest.json", "deploy/gateway/aidr-artifact.manifest.sig", "deploy/gateway/README.md"]);
+    if (gatewayPaths.length !== declared.size || gatewayPaths.some((path) => !declared.has(path))) throw new Error("MCP gateway contains files outside its signed artifact manifest");
   }
   const ingressFiles = ["deploy/ingress/device-start.mjs", "deploy/ingress/device-start.test.mjs", "deploy/ingress/nginx.device-start.reference.conf", "deploy/ingress/aidr-device-start.service.reference", "deploy/ingress/README.md"];
   if (source.device_start_ingress_bundled !== ingressFiles.every((path) => inventory.has(path))) {
@@ -101,6 +109,9 @@ try {
   let artifacts = 0;
   if (releasePresent) {
     const release = await loadReleaseBundle(artifactDir, { allowSignedControlFiles: signaturePresent });
+    if (!source.inline_mcp_gateway_bundled && release.artifacts.some((item) => isMcpGatewayReleaseArtifact(item.path))) {
+      throw new Error("Gateway-free kit cannot contain an MCP gateway release artifact");
+    }
     const releaseArtifactNames = new Set(release.artifacts.map((entry) => entry.path));
     for (const required of CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS) {
       if (!releaseArtifactNames.has(required)) throw new Error(`Required release provenance artifact is missing: ${required}`);
@@ -125,11 +136,24 @@ try {
     inline_mcp_gateway_bundled: source.inline_mcp_gateway_bundled,
     device_start_ingress_bundled: source.device_start_ingress_bundled,
     publisher_authenticated: false,
-    note: "This extracted-kit check cannot authenticate the publisher. Verify the signed outer envelope with an independently delivered policy before extraction.",
+    note: "This extracted-kit check cannot authenticate the publisher. Region residency is only an operator declaration, not proof of provider location. Verify the signed outer envelope with an independently delivered policy before extraction.",
   }));
 } catch (error) {
   console.error(`Customer kit verification failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
+}
+
+function verifyGuideLinks(kit, inventory) {
+  for (const name of ["START-HERE.md", "INSTALLATION.md"]) {
+    const content = readFileSync(join(kit, name), "utf8");
+    for (const [, destination] of content.matchAll(/\]\(([^)]+)\)/g)) {
+      if (/^[a-z][a-z0-9+.-]*:/i.test(destination) || destination.startsWith("#")) continue;
+      const local = destination.split("#", 1)[0];
+      if (!local || !isWithin(resolve(kit, local), kit) || !inventory.has(local)) {
+        throw new Error(`Customer kit guide has an unresolved local link: ${name} -> ${destination}`);
+      }
+    }
+  }
 }
 
 function verifyRegionManifest(kit) {
@@ -157,6 +181,9 @@ function verifyRegionManifest(kit) {
     const residency = entry.residency;
     if (!residency || typeof residency !== "object" || Array.isArray(residency) || typeof residency.declared !== "boolean" || typeof residency.location !== "string" || residency.location.length === 0) {
       throw new Error(`Deployment region manifest is missing residency declaration for ${id}`);
+    }
+    if (residency.declared !== true && !(id === "unassigned" && residency.declared === false && residency.location === "unassigned")) {
+      throw new Error(`Deployment region "${id}" must have residency.declared=true; only the explicit unassigned sentinel may remain false`);
     }
   }
 }

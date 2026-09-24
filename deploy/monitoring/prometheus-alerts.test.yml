@@ -59,3 +59,302 @@ tests:
             exp_annotations:
               summary: Prometheus has no AIDR control-plane monitoring targets
               action: Restore the configured targets and verify service discovery before admitting traffic.
+      - eval_time: 6m
+        alertname: AIDRDatabaseUnavailable
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AIDRStorageUnavailable
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AIDRFunctionsUnavailable
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AIDRSigningUnhealthy
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AIDRBackupUnhealthy
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AIDRQueueUnhealthy
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AIDRCertificateProbeUnhealthy
+        exp_alerts: []
+
+  - name: one replica missing a required check metric is not hidden by a healthy replica
+    interval: 1m
+    input_series:
+      - series: 'up{job="aidr-control-plane",instance="healthy:8080"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness{job="aidr-control-plane",instance="healthy:8080"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'up{job="aidr-control-plane",instance="missing-check:8080"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness{job="aidr-control-plane",instance="missing-check:8080"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="healthy:8080",check="database"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="healthy:8080",check="storage"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="healthy:8080",check="functions"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="healthy:8080",check="signing"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="healthy:8080",check="backup"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="healthy:8080",check="queue"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="healthy:8080",check="certificate"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="missing-check:8080",check="database"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="missing-check:8080",check="storage"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="missing-check:8080",check="functions"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="missing-check:8080",check="signing"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="missing-check:8080",check="backup"}'
+        values: '1 1 1 1 1 1 1'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="missing-check:8080",check="queue"}'
+        values: '1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: AIDRReadinessChecksIncomplete
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: missing-check:8080
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR instance is missing one or more required readiness check metrics
+              action: Check this instance's metrics handler and release configuration; do not infer readiness from another replica.
+
+  - name: sustained dashboard server errors burn the internal reference budget
+    interval: 1m
+    input_series:
+      - series: 'aidr_dashboard_http_requests_total{job="aidr-control-plane",instance="dashboard:8080",status_class="2xx"}'
+        values: '0+98x70'
+      - series: 'aidr_dashboard_http_requests_total{job="aidr-control-plane",instance="dashboard:8080",status_class="5xx"}'
+        values: '0+2x70'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: AIDRDashboardErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR dashboard is rapidly consuming its internal availability error budget
+              action: Check the failing status class, recent deployment, instance logs, and dependency readiness before rollback or traffic removal.
+
+  - name: healthy dashboard traffic does not burn the internal reference budget
+    interval: 1m
+    input_series:
+      - series: 'aidr_dashboard_http_requests_total{job="aidr-control-plane",instance="dashboard:8080",status_class="2xx"}'
+        values: '0+100x70'
+      - series: 'aidr_dashboard_http_requests_total{job="aidr-control-plane",instance="dashboard:8080",status_class="5xx"}'
+        values: '0+0x70'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: AIDRDashboardErrorBudgetBurn
+        exp_alerts: []
+
+  - name: only AIDR control-plane targets trigger its readiness and component alerts
+    interval: 1m
+    input_series:
+      - series: 'aidr_readiness{job="aidr-control-plane",instance="unready:8080"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness{job="other-service",instance="other:8080"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="unready:8080",check="database"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="unready:8080",check="storage"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="unready:8080",check="functions"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="unready:8080",check="signing"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="unready:8080",check="backup"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="unready:8080",check="queue"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="aidr-control-plane",instance="unready:8080",check="certificate"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="other-service",instance="other:8080",check="database"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="other-service",instance="other:8080",check="storage"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="other-service",instance="other:8080",check="functions"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="other-service",instance="other:8080",check="signing"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="other-service",instance="other:8080",check="backup"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="other-service",instance="other:8080",check="queue"}'
+        values: '0+0x35'
+      - series: 'aidr_readiness_check{job="other-service",instance="other:8080",check="certificate"}'
+        values: '0+0x35'
+      - series: 'aidr_signing_key_remaining_seconds{job="aidr-control-plane",instance="unready:8080"}'
+        values: '600000+0x35'
+      - series: 'aidr_signing_key_remaining_seconds{job="other-service",instance="other:8080"}'
+        values: '0+0x35'
+      - series: 'aidr_certificate_remaining_seconds{job="aidr-control-plane",instance="unready:8080"}'
+        values: '600000+0x35'
+      - series: 'aidr_certificate_remaining_seconds{job="other-service",instance="other:8080"}'
+        values: '0+0x35'
+      - series: 'aidr_queue_depth{job="aidr-control-plane",instance="unready:8080"}'
+        values: '0+10x35'
+      - series: 'aidr_queue_depth{job="other-service",instance="other:8080"}'
+        values: '0+10x35'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: AIDRControlPlaneNotReady
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR control plane is not ready for production traffic
+              action: Remove the instance from traffic and inspect the failing fixed-name readiness check.
+      - eval_time: 35m
+        alertname: AIDRDatabaseUnavailable
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              check: database
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR database readiness failed
+              action: Check PostgREST and PostgreSQL health, saturation, and recent changes.
+      - eval_time: 35m
+        alertname: AIDRStorageUnavailable
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              check: storage
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR object storage readiness failed
+              action: Check storage API, backing volume or bucket, capacity, and permissions.
+      - eval_time: 35m
+        alertname: AIDRFunctionsUnavailable
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              check: functions
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR Edge Functions readiness failed
+              action: Check edge runtime health, gateway routing, deployment revision, and function logs.
+      - eval_time: 35m
+        alertname: AIDRSigningUnhealthy
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              check: signing
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR signed entitlement canary is stale or invalid
+              action: Stop enrollment changes and validate the signer, key access, and canary verification.
+      - eval_time: 35m
+        alertname: AIDRSigningKeyExpiresSoon
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              severity: warning
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR active signing key expires in less than seven days
+              action: Execute the approved key rotation and client trust-bundle rollout.
+      - eval_time: 35m
+        alertname: AIDRBackupUnhealthy
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              check: backup
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR verified backup is missing or stale
+              action: Check the backup job, separate-key verification, offsite copy, and available capacity.
+      - eval_time: 35m
+        alertname: AIDRQueueUnhealthy
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              check: queue
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR durable delivery queue is stale or above its limit
+              action: Check worker availability, downstream delivery, retries, dead letters, and saturation.
+      - eval_time: 35m
+        alertname: AIDRQueueGrowing
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              severity: warning
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR durable delivery queue is continuously growing
+              action: Compare producer and consumer rates and add approved worker capacity.
+      - eval_time: 35m
+        alertname: AIDRCertificateExpiresSoon
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              severity: warning
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR public TLS certificate expires in less than fourteen days
+              action: Check the aidr-tls-renew.timer result and its renewal receipt, then verify the complete served chain from outside the ingress.
+      - eval_time: 35m
+        alertname: AIDRCertificateProbeUnhealthy
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: unready:8080
+              check: certificate
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR public TLS certificate probe failed
+              action: Check DNS, ingress reachability, trust chain, hostname match, and certificate validity.
+      - eval_time: 35m
+        alertname: AIDRCertificateExpiryCritical
+        exp_alerts: []
+
+  - name: near-expired certificate triggers the critical expiry rule
+    interval: 1m
+    input_series:
+      - series: 'aidr_certificate_remaining_seconds{job="aidr-control-plane",instance="expiring:8080"}'
+        values: '100000+0x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AIDRCertificateExpiryCritical
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: expiring:8080
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR public TLS certificate expires in less than three days
+              action: Page the certificate owner, run the aidr-tls-renew unit if the timer did not fire, and complete emergency renewal.

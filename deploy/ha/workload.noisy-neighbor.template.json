@@ -3,7 +3,7 @@
   "schema_version": 1,
   "workload_id": "tenant-policy-noisy-neighbor-v1",
   "workload_class": "noisy_neighbor",
-  "description": "Two independently enrolled tenant cohorts polling policy. Replace candidate and thresholds with the approved test plan.",
+  "description": "Two independently enrolled tenant cohorts polling policy. The baseline must remain healthy while the noisy cohort may receive the designed HTTP 429 per-subject quota response. Replace candidate and thresholds with the approved test plan.",
   "environment_label": "customer-staging",
   "candidate_id": "REPLACE_WITH_RELEASE_CANDIDATE_DIGEST",
   "base_url_env": "AIDR_LOAD_BASE_URL",
@@ -36,7 +36,7 @@
       "path": "/functions/v1/policy",
       "weight": 9,
       "headers_env": { "Authorization": "AIDR_LOAD_NOISY_AUTHORIZATION" },
-      "expected_statuses": [200]
+      "expected_statuses": [200, 429]
     }
   ],
   "thresholds": {
