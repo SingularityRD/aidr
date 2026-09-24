@@ -137,6 +137,7 @@ async function fixture({ receipt = true, members = {}, transferReceipt = null, m
 				null,
 				2,
 			),
+			{ mode: 0o600 },
 		);
 	}
 	state.accounts = [
@@ -147,6 +148,7 @@ async function fixture({ receipt = true, members = {}, transferReceipt = null, m
 		await writeFile(
 			path.join(directory, "owner-transfer-receipt.json"),
 			JSON.stringify(transferReceipt, null, 2),
+			{ mode: 0o600 },
 		);
 	}
 	return { directory, state };
