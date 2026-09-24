@@ -638,7 +638,7 @@ export const NvdConfigSchema = z.object({
  * file that every process of the same user can read. The
  * `AIDR_OPERATOR_APPROVAL_KEY_STORAGE` environment variable overrides it.
  */
-export const OperatorApprovalsConfigSchema = z.object({
+const OperatorApprovalsConfigSchema = z.object({
 	key_storage: z.enum(["os-vault", "file"]).default("os-vault"),
 });
 

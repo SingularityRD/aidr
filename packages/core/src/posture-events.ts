@@ -22,16 +22,16 @@ export const MCP_INVENTORY_FINDING_EVENT = "mcp_inventory_finding";
 /** Existing ingest type reused for skill/plugin package findings. */
 export const PLUGIN_SCAN_FINDING_EVENT = "plugin_scan_finding";
 
-export const POSTURE_SEVERITIES = ["critical", "high", "medium", "low", "info", "unknown"] as const;
+const POSTURE_SEVERITIES = ["critical", "high", "medium", "low", "info", "unknown"] as const;
 export type PostureSeverity = (typeof POSTURE_SEVERITIES)[number];
 
 /** MCP risk indicators produced by `inspectMcpServerInventory`. */
-export const MCP_RISK_HINTS = [
+const MCP_RISK_HINTS = [
 	"remote_mcp_url",
 	"shell_wrapper_command",
 	"broad_filesystem_access_arg",
 ] as const;
-export const MCP_ATTESTATION_STATUSES = [
+const MCP_ATTESTATION_STATUSES = [
 	"approved",
 	"unapproved",
 	"quarantined",
@@ -70,7 +70,7 @@ function digest(value: string): string {
 }
 
 /** An identifier safe to store: bounded charset and not credential- or phone-shaped. */
-export function safePostureIdentifier(value: unknown): string | undefined {
+function safePostureIdentifier(value: unknown): string | undefined {
 	return typeof value === "string" &&
 		IDENTIFIER_PATTERN.test(value) &&
 		!SENSITIVE_IDENTIFIER_PATTERN.test(value) &&

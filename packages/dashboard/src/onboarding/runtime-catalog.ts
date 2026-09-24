@@ -9,7 +9,7 @@
 
 import { artifactFileName, type ReleaseArtifact, type ReleaseArtifactId } from "./release-manifest";
 
-export type InstallStep = { text: string; command?: string };
+type InstallStep = { text: string; command?: string };
 
 /**
  * How an installation becomes visible to this tenant.
@@ -18,7 +18,7 @@ export type InstallStep = { text: string; command?: string };
  * - api-key: configured with a tenant API key (options page or managed policy).
  * - none: the component does not check in with the control plane.
  */
-export type EnrollmentKind = "device" | "managed-config" | "api-key" | "none";
+type EnrollmentKind = "device" | "managed-config" | "api-key" | "none";
 
 export type RuntimeCatalogEntry = {
 	id: ReleaseArtifactId;

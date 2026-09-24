@@ -16,9 +16,9 @@ import { type ConnectorStatus, detectConnectorStatuses } from "../utils/connecto
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 import { auditLogFiles, readAuditEntries, redactAuditEntry } from "./audit.js";
 
-export type CheckStatus = "ok" | "warn" | "fail";
+type CheckStatus = "ok" | "warn" | "fail";
 
-export interface DoctorCheck {
+interface DoctorCheck {
 	id: string;
 	status: CheckStatus;
 	summary: string;

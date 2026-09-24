@@ -29,7 +29,7 @@
  */
 
 /** The AIDR state directory name that the glob step resolves wildcards against. */
-export const AIDR_STATE_DIR_NAME = ".singularity-aidr";
+const AIDR_STATE_DIR_NAME = ".singularity-aidr";
 
 const MAX_VARIABLES = 32;
 const MAX_VARIABLE_VALUE = 256;

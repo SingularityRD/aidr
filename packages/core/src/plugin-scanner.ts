@@ -519,9 +519,9 @@ function extractArtifactsFromFile(filePath: string, content: string): Artifact[]
 export { SKILL_RISK_TYPES, skillRiskTypeForThreatId } from "./skill-risk-types.js";
 
 /** match_on value for rules evaluated against the whole text of a plugin file. */
-export const PLUGIN_CONTENT_MATCH = "plugin_content";
+const PLUGIN_CONTENT_MATCH = "plugin_content";
 /** match_on value for rules evaluated against bytecode shipped without source. */
-export const PLUGIN_ORPHAN_BYTECODE_MATCH = "plugin_orphan_bytecode";
+const PLUGIN_ORPHAN_BYTECODE_MATCH = "plugin_orphan_bytecode";
 
 /** Categories whose matched text is a credential and must never be echoed. */
 const SECRET_BEARING_CATEGORIES = new Set(["skill_hardcoded_secret"]);

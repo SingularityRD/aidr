@@ -36,10 +36,7 @@ function intervalsFor(plan: PlanDefinition): Interval[] {
  * opted into self-service checkout, the catalog marks the plan self-serve and
  * cloud-deployable, and the tenant is on the cloud admission mode.
  */
-export function selfServeCheckoutAvailable(
-	plan: PlanDefinition,
-	tenantPlan: TenantPlan | null,
-): boolean {
+function selfServeCheckoutAvailable(plan: PlanDefinition, tenantPlan: TenantPlan | null): boolean {
 	return (
 		selfServiceCheckoutEnabled &&
 		plan.selfServe &&

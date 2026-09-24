@@ -24,7 +24,7 @@ import {
 	operatorIdentity,
 } from "../utils/operator-confirm.js";
 
-export type AllowlistType = "url" | "command" | "file_path";
+type AllowlistType = "url" | "command" | "file_path";
 const TYPES: readonly AllowlistType[] = ["url", "command", "file_path"];
 
 /** Test seams; production callers pass nothing. */

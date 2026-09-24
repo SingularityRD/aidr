@@ -38,7 +38,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * A free-form value reads as a generated credential: long enough, mixes
  * letters and digits, is not a placeholder or UUID, and is not low-entropy.
  */
-export function isCredentialLike(value: string, minLength = 12): boolean {
+function isCredentialLike(value: string, minLength = 12): boolean {
 	return (
 		value.length >= minLength &&
 		value.length <= 512 &&

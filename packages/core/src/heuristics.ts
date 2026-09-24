@@ -51,7 +51,7 @@ const MAX_MATCH_INPUT = MAX_ARTIFACT_SIZE;
  * `match_on` suffix for rules evaluated against the shell-normalized view of an
  * artifact (`command_normalized`, `file_path_normalized`, `content_normalized`).
  */
-export const NORMALIZED_SUFFIX = "_normalized";
+const NORMALIZED_SUFFIX = "_normalized";
 
 /** Threat IDs where trusted installer domains suppress matches. */
 const TRUSTED_DOMAIN_SUPPRESSIBLE = new Set(["CLT-CMD-001", "CLT-CMD-002", "CLT-SUPPLY-001"]);
