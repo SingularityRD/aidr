@@ -39,3 +39,16 @@ Enforcement is intended to be **server-side**:
 
 - If the control plane sees a new `iid` over the entitlement limit, it should reject ingest (`402`/`403`) and optionally return a machine-readable error.
 - The client should keep running local protections and simply disable cloud-only features (fail-open).
+
+## Operator administration
+
+Platform operators fix the deployment admission mode, record the approved
+Terms and Privacy documents (URL and SHA-256), grant and revoke licensed tenant
+admission, and review a minimal tenant directory and per-tenant usage through
+the `operator-admin` Edge Function or its CLI wrapper `scripts/operator-admin.mjs`.
+Every action requires an allowlisted, MFA-verified (AAL2) operator and writes
+an actor-attributed audit receipt in the same transaction as the change. See
+[operations/operator-admin.md](operations/operator-admin.md) for provisioning,
+commands and error codes, and
+[operations/admission-operators.md](operations/admission-operators.md) for the
+tenant-scoped separation-of-duty rules that licensed grants still enforce.
