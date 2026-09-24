@@ -1,7 +1,14 @@
 # Singularity AIDR — Pricing Model (Proposal)
 
-**Status:** Superseded internal pricing hypothesis for founder review. The proposed developer-seat unit and dollar amounts below conflict with the current connected-agent metering decision; neither proposal is an offer, approved licence, published tier, quote, or entitlement schedule. The [Commercial Release Manifest](../production-readiness/commercial-release-manifest-template.md) is the approval template, and COM-001 remains open.
-**Last updated:** 2026-09-13
+**Status:** Internal pricing rationale for founder review. The list prices in
+§3 are now recorded in the plan catalog (`public.plans`, mirrored on the
+public `/pricing` page and documented in [docs/pricing.md](../pricing.md)):
+Free, Team, Business and Enterprise, priced per developer seat with one
+protected agent admitted per seat. They are **list prices; final SKU approval
+is COM-001**, which remains open. Nothing here is a quote, approved licence or
+entitlement schedule; the [Commercial Release Manifest](../production-readiness/commercial-release-manifest-template.md)
+is the approval template.
+**Last updated:** 2026-09-25
 **Owner:** Founder (single-person company)
 
 > **Read this first.** Every dollar figure below is a *proposal* based on public
@@ -62,12 +69,27 @@ with no support team. Seat-based pricing is also the norm our comparables use
 
 ---
 
-## 3. The three tiers
+## 3. The tiers
 
-### Tier 1 — Local (Free, forever)
+These list prices match the plan catalog (`supabase/migrations/20260925000010_plan_catalog.sql`,
+[docs/pricing.md](../pricing.md)). List prices; final SKU approval is COM-001.
 
-**Proposed $0.** No account, signup, or email for local evaluation; licence and
-distribution terms still require approval.
+| Plan | Price (USD per developer seat) | Minimum | Deployment | Retention | Catalog features |
+|---|---|---|---|---|---|
+| Free | $0 | 1 agent | Cloud | 7 days | Local detection + dashboard |
+| Team | $24/month monthly, $20/month billed annually | 3 developers | Cloud | 90 days | + Browser Privacy Guard, Entra SSO |
+| Business | $45/month billed annually | 25 developers | Cloud or on-premises | 365 days | + SIEM export, SCIM, AI security posture |
+| Enterprise | Custom | By agreement | On-premises or air-gapped | Contractual | + dedicated support |
+
+Each seat admits one protected agent installation (`iid`); the control plane
+enforces the admitted count. The tier notes below are the reasoning behind
+those numbers.
+
+### Tier 1 — Free ($0, one protected agent)
+
+**$0 list price.** Local detection needs no account, signup, or email; the Free
+plan adds a cloud dashboard for one protected agent with 7-day event retention.
+Licence and distribution terms still require approval.
 
 - Full local detection: all 351 shipped YAML threat rules, obfuscation and
   command-chain analysis, credential/supply-chain/persistence patterns.
@@ -84,9 +106,9 @@ license-check it locally would be both circumventable and a lie about how the
 product works. We give away the enforcement engine to create the population
 that later needs the dashboard.
 
-**What the proposed free tier excludes:** anything requiring a server — team
-dashboard, cross-fleet visibility, remote policy distribution, audit export,
-DLP label management, SSO, legal hold, support SLA.
+**What the Free plan excludes:** anything beyond one agent's dashboard — team
+fleet visibility, remote policy distribution, audit export, DLP label
+management, SSO, legal hold, support SLA.
 
 ### Tier 2 — Team (self-serve)
 
@@ -97,9 +119,12 @@ open.
 **$20 per protected developer / month, billed annually ($240/developer/year).
 Monthly billing at $24/developer/month.**
 
-Minimum: **3 developers** (~$60/month, ~$720/year entry point).
+Minimum: **3 developers** (~$60/month, ~$720/year entry point). Catalog terms:
+cloud deployment, 90-day event retention, Browser Privacy Guard and Microsoft
+Entra ID single sign-on; self-serve card checkout only in a build where online
+payment has been enabled, otherwise invoiced.
 
-Includes everything in Local, plus:
+Includes everything in Free, plus:
 
 - Control-plane tenant: multi-tenant isolated team dashboard.
 - Fleet visibility — which developers/agents are covered, what fired, on which
@@ -120,7 +145,9 @@ managers while still being real money at fleet scale.
 ### Tier 3 — Business (sales-assisted, founder-led)
 
 **$45 per protected developer / month, billed annually ($540/developer/year).**
-Minimum: **25 developers** (~$13,500/year).
+Minimum: **25 developers** (~$13,500/year). Catalog terms: cloud or
+on-premises deployment, 365-day event retention, SIEM export, SCIM
+provisioning and AI security posture; sales-assisted and invoiced.
 
 Everything in Team, plus:
 
@@ -137,6 +164,12 @@ help are unbounded time sinks, so the minimum exists to ensure the deal is
 worth the hours. Do not discount below the minimum — shrink the seat count
 instead, or move the customer to Team.
 
+### Tier 4 — Enterprise (custom)
+
+**Custom quote.** On-premises or air-gapped deployment, contractual retention
+and dedicated support, scoped per agreement and invoiced. Everything in
+Business is included.
+
 > **Do not sell any proposed paid tier yet.** See §7 — both deployment paths,
 > signed customer distribution, live billing and supported operations remain
 > unaccepted. Tier names and prices here are hypotheses only.
@@ -145,12 +178,12 @@ instead, or move the customer to Team.
 
 ## 4. Self-serve vs. sales-assisted
 
-| | Local | Team | Business |
-|---|---|---|---|
-| Proposed motion | None (approved download) | Self-serve target | Founder-led target |
-| Proposed purchase | — | Card only after live provider acceptance | Invoice / PO only after Finance approval |
-| Typical buyer | Individual dev | Eng manager / Head of Eng | CISO / VP Eng |
-| Sales cost we can afford | $0 | **$0** | A few hours |
+| | Free | Team | Business | Enterprise |
+|---|---|---|---|---|
+| Proposed motion | Sign up / approved download | Self-serve target | Founder-led target | Founder-led, scoped |
+| Proposed purchase | — | Card only after live provider acceptance; otherwise invoice | Invoice / PO only after Finance approval | Invoice / PO only after Finance approval |
+| Typical buyer | Individual dev | Eng manager / Head of Eng | CISO / VP Eng | CISO / procurement |
+| Sales cost we can afford | $0 | **$0** | A few hours | Per deal |
 
 **The single-founder constraint:** a deal that requires a demo, a security
 review, a legal redline, and a procurement cycle costs more calendar time than
@@ -229,8 +262,8 @@ Reasoning from those anchors:
    uncrippled because the architecture makes local enforcement free to
    operate — near-zero marginal cost to us, and real adoption value.
 
-6. **I did not price on agent instances, despite the existing
-   `docs/pricing.md`.** That earlier draft proposed $2/additional agent/month
+6. **I did not price on agent instances, despite the earlier
+   `docs/pricing.md` draft.** That draft (now replaced by the catalog) proposed $2/additional agent/month
    metered by `iid`. I recommend superseding it: per-agent metering produces
    invoice disputes (one dev, two hosts), penalizes the exact multi-tool
    behavior we want to encourage, and yields ~$24/dev/year — an order of

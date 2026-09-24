@@ -1,6 +1,9 @@
 export function checkoutParameters(input: {
 	userId: string; tenantId: string; settlementId: string; requestId: string; seats: number; plan: string; monthlyPrice: string; yearlyPrice?: string; dashboardUrl: string;
+	/** Informational only: the webhook derives the plan from the signed price, never from metadata. */
+	catalogPlan?: string;
 }): URLSearchParams {
+	if (input.catalogPlan !== undefined && !/^(team|business)$/.test(input.catalogPlan)) throw new Error("invalid_catalog_plan");
 	if (!Number.isSafeInteger(input.seats) || input.seats < 1 || input.seats > 10000) throw new Error("invalid_seat_count");
 	if (!["monthly", "yearly"].includes(input.plan)) throw new Error("invalid_billing_interval");
 	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.settlementId)) throw new Error("invalid_settlement_id");
@@ -16,6 +19,7 @@ export function checkoutParameters(input: {
 		form.set(`${prefix}[tenant_id]`, input.tenantId);
 		form.set(`${prefix}[settlement_id]`, input.settlementId);
 		form.set(`${prefix}[request_id]`, input.requestId);
+		if (input.catalogPlan) form.set(`${prefix}[catalog_plan]`, input.catalogPlan);
 	}
 	return form;
 }

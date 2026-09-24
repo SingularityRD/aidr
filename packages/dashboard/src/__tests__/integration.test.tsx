@@ -465,10 +465,8 @@ describe("Dashboard integration", () => {
 		);
 
 		expect(screen.getByRole("heading", { name: "Pricing" })).toBeInTheDocument();
-		expect(screen.getByText("Enterprise")).toBeInTheDocument();
-		expect(
-			screen.getByText(/no public price or self-service checkout is offered/),
-		).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Enterprise" })).toBeInTheDocument();
+		expect(screen.getByText(/Final SKU approval is pending \(COM-001\)/)).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Request pilot review" })).toHaveAttribute(
 			"href",
 			"/pilot",

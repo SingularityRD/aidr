@@ -5,6 +5,7 @@ import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive, sha256 } from "../_shared/runtime-policy.ts";
+import { PAID_CATALOG_PLANS, parseStripePriceMap, priceForPlan } from "../stripe-webhook/plans.ts";
 import { checkoutParameters } from "./checkout.ts";
 
 const LEGACY_SELF_SERVICE_ENABLED =
@@ -52,10 +53,37 @@ Deno.serve(async (req) => {
 		if (tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
 		if (tenantRow?.status !== "active") return corsJson(req, 403, { error: "tenant_inactive" });
 		const plan = body.plan as string;
-		const priceId = plan === "yearly"
+		let priceId = plan === "yearly"
 			? runtimeEnv("AIDR_STRIPE_EXTRA_AGENT_YEARLY_PRICE_ID") ?? ""
 			: config.values.AIDR_STRIPE_EXTRA_AGENT_PRICE_ID;
-		const checkoutInput = { userId: auth.user.id, tenantId: tenant, requestId: body.request_id, seats: body.seats as number, plan, monthlyPrice: config.values.AIDR_STRIPE_EXTRA_AGENT_PRICE_ID, yearlyPrice: runtimeEnv("AIDR_STRIPE_EXTRA_AGENT_YEARLY_PRICE_ID") ?? undefined, dashboardUrl: config.values.AIDR_DASHBOARD_URL };
+		let monthlyPrice = config.values.AIDR_STRIPE_EXTRA_AGENT_PRICE_ID;
+		let yearlyPrice = runtimeEnv("AIDR_STRIPE_EXTRA_AGENT_YEARLY_PRICE_ID") ?? undefined;
+		// Optional catalog plan purchase. The price comes only from the server's
+		// AIDR_STRIPE_PRICE_MAP and the plan terms only from public.plans; the
+		// webhook grants admission from the signed subscription, never from here.
+		const catalogPlan = body.catalog_plan;
+		if (catalogPlan !== undefined) {
+			if (typeof catalogPlan !== "string" || !(PAID_CATALOG_PLANS as readonly string[]).includes(catalogPlan)) {
+				return corsJson(req, 400, { error: "invalid_checkout_request" });
+			}
+			const priceMap = parseStripePriceMap(runtimeEnv("AIDR_STRIPE_PRICE_MAP"));
+			const planPrice = priceMap.ok ? priceForPlan(priceMap.map, catalogPlan, plan) : null;
+			if (!planPrice) return corsJson(req, 400, { error: "billing_price_not_configured" });
+			const { data: catalogRow, error: catalogError } = await db.from("plans")
+				.select("id,active,self_serve,min_seats,deployment").eq("id", catalogPlan).maybeSingle();
+			if (catalogError) return corsJson(req, 503, { error: "plan_catalog_unavailable" });
+			if (catalogRow?.id !== catalogPlan || catalogRow.active !== true || catalogRow.self_serve !== true ||
+				!Array.isArray(catalogRow.deployment) || !catalogRow.deployment.includes("cloud")) {
+				return corsJson(req, 400, { error: "plan_not_self_serve" });
+			}
+			if (!Number.isSafeInteger(body.seats) || (body.seats as number) < catalogRow.min_seats) {
+				return corsJson(req, 400, { error: "seats_below_plan_minimum" });
+			}
+			priceId = planPrice;
+			monthlyPrice = planPrice;
+			yearlyPrice = planPrice;
+		}
+		const checkoutInput = { userId: auth.user.id, tenantId: tenant, requestId: body.request_id, seats: body.seats as number, plan, monthlyPrice, yearlyPrice, dashboardUrl: config.values.AIDR_DASHBOARD_URL, catalogPlan: typeof catalogPlan === "string" ? catalogPlan : undefined };
 		try { checkoutParameters({ ...checkoutInput, settlementId: VALIDATION_SETTLEMENT_ID }); }
 		catch (error) { return corsJson(req, 400, { error: error instanceof Error ? error.message : "invalid_checkout" }); }
 		const rate = await consumeTenantRateLimit(db, {

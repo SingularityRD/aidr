@@ -19,6 +19,7 @@ import {
 	requestEnterpriseOrder,
 } from "../../billing/enterprise-orders";
 import { type InvoiceApproval, listInvoiceApprovals } from "../../billing/invoice-approvals";
+import { PlanCard } from "../../billing/plan-card";
 import {
 	RECONCILIATION_LABELS,
 	type ReconciliationRow,
@@ -311,8 +312,8 @@ export function BillingPage() {
 			<div className="card">
 				<h1>Billing</h1>
 				<p className="muted">
-					Seat allowances and price are fixed by the approved enterprise order; this dashboard does
-					not advertise a self-service price.
+					Seat allowances come from the tenant's admitted plan: a verified card subscription or an
+					approved enterprise order. Catalog prices are list prices; a quote or order governs.
 				</p>
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
@@ -320,6 +321,8 @@ export function BillingPage() {
 					</div>
 				) : null}
 			</div>
+
+			<PlanCard tenantId={tenantId} canManageBilling={canManageBilling} />
 
 			<div className="card">
 				<h2>Subscription</h2>
