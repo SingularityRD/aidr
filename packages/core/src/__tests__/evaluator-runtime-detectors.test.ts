@@ -176,6 +176,18 @@ describe("optional runtime detector wiring", () => {
 			match: "202-555-0100",
 			type: "phone",
 		},
+		{
+			label: "TC Kimlik (checksum, no label)",
+			content: "musteri 10000000146 kaydi",
+			match: "10000000146",
+			type: "tc_kimlik",
+		},
+		{
+			label: "IBAN (mod-97)",
+			content: "odeme TR33 0006 1005 1978 6457 8413 26 hesabina",
+			match: "TR33 0006 1005 1978 6457 8413 26",
+			type: "iban",
+		},
 	])(
 		"blocks $label in tool input without returning or auditing the match",
 		async ({ content, match, type }) => {

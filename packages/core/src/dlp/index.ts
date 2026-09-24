@@ -2,9 +2,9 @@ export type { ContentClassification, ContentClassifierConfig } from "./content-c
 export { ContentClassifier } from "./content-classifier.js";
 export type { EntropyMatch } from "./entropy-detector.js";
 export { EntropyDetector } from "./entropy-detector.js";
-;
-;
+
 export type {
+	DlpDetector,
 	DlpDirection,
 	DlpException,
 	DlpExceptionScope,
@@ -18,6 +18,7 @@ export type {
 } from "./policy.js";
 export {
 	DLP_EXPIRED_EXCEPTION_DOMINANCE,
+	DlpDetectorSchema,
 	DlpDirectionSchema,
 	DlpExceptionSchema,
 	DlpExceptionScopeSchema,
@@ -31,6 +32,13 @@ export {
 	isDlpExceptionActive,
 	pruneExpiredExceptions,
 } from "./policy.js";
+export type { PrivacyDetectorMatch, PrivacyDetectorScan } from "./privacy-detectors.js";
+export {
+	DLP_DETECTOR_ENTITY_TYPES,
+	PRIVACY_DETECTOR_MAX_CHARS,
+	privacyDetectorPlaceholder,
+	scanPrivacyDetectors,
+} from "./privacy-detectors.js";
 export type {
 	DlpFinding,
 	DlpInspectedResult,
@@ -49,5 +57,3 @@ export {
 	scanDlpInput,
 	scanDlpOutput,
 } from "./scanner.js";
-;
-;

@@ -244,6 +244,7 @@ export { DetectionLegUnavailableError, describeHttpFailure } from "./detection-l
 export type {
 	ContentClassification,
 	ContentClassifierConfig,
+	DlpDetector,
 	DlpDirection,
 	DlpException,
 	DlpExceptionScope,
@@ -262,12 +263,16 @@ export type {
 	DlpUnavailableReason,
 	DlpUnavailableResult,
 	EntropyMatch,
+	PrivacyDetectorMatch,
+	PrivacyDetectorScan,
 } from "./dlp/index.js";
 export {
 	ContentClassifier,
 	createDlpContentFingerprint,
 	createDlpMatchFingerprint,
+	DLP_DETECTOR_ENTITY_TYPES,
 	DLP_EXPIRED_EXCEPTION_DOMINANCE,
+	DlpDetectorSchema,
 	DlpDirectionSchema,
 	DlpExceptionSchema,
 	DlpExceptionScopeSchema,
@@ -282,10 +287,13 @@ export {
 	DlpUnavailableActionSchema,
 	EntropyDetector,
 	isDlpExceptionActive,
+	PRIVACY_DETECTOR_MAX_CHARS,
+	privacyDetectorPlaceholder,
 	pruneExpiredExceptions,
 	scanDlpContent,
 	scanDlpInput,
 	scanDlpOutput,
+	scanPrivacyDetectors,
 } from "./dlp/index.js";
 // Encryption
 export {

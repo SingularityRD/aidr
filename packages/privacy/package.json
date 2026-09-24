@@ -21,6 +21,10 @@
       "types": "./dist/browser/index.d.ts",
       "import": "./dist/browser/index.js"
     },
+    "./rules": {
+      "types": "./dist/rules.d.ts",
+      "import": "./dist/rules.js"
+    },
     "./documents": {
       "types": "./dist/browser/documents.d.ts",
       "import": "./dist/browser/documents.js"

@@ -43,6 +43,8 @@
 		"compile:aig": "node scripts/compile-aig-data.mjs",
 		"aig:verify": "node --test scripts/verify-aig-source.test.mjs && node scripts/verify-aig-source.mjs",
 		"sync:aig": "node scripts/sync-aig-threats.mjs",
+		"sync:privacy-rules": "node scripts/sync-privacy-rules.mjs",
+		"verify:privacy-rules": "node scripts/sync-privacy-rules.mjs --check",
 		"postinstall": "node scripts/compile-aig-data.mjs",
 		"build": "node scripts/build-workspace.mjs",
 		"build:release": "node scripts/build-workspace.mjs --release",

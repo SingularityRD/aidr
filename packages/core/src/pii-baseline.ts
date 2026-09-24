@@ -2,7 +2,8 @@
  * Built-in common-PII baseline for tenant DLP.
  *
  * When a tenant DLP policy is active, tool input is also checked for common
- * PII (SSN, payment card, email, phone) even if the tenant wrote no rule for
+ * PII (SSN, payment card, email, phone, and the checksum-validated TC Kimlik
+ * and IBAN from the AIDR Privacy rules) even if the tenant wrote no rule for
  * it. Each PII type is addressable by a reserved rule id, `pii-<type>`, so the
  * tenant policy stays the authority over the baseline:
  *
@@ -24,10 +25,18 @@ import {
 	type DlpRule,
 	isDlpExceptionActive,
 } from "./dlp/policy.js";
+import { scanPrivacyDetectors } from "./dlp/privacy-detectors.js";
 import { createDlpContentFingerprint, createDlpMatchFingerprint } from "./dlp/scanner.js";
 import { detectPreciseCommonPii } from "./pii-precision.js";
 
-export const COMMON_PII_TYPES = ["ssn", "credit_card", "email", "phone"] as const;
+export const COMMON_PII_TYPES = [
+	"ssn",
+	"credit_card",
+	"email",
+	"phone",
+	"tc_kimlik",
+	"iban",
+] as const;
 export type CommonPiiType = (typeof COMMON_PII_TYPES)[number];
 
 /** Reserved DLP rule id that governs one built-in PII type. */
@@ -90,6 +99,17 @@ function stronger(
 		: current;
 }
 
+/** Precise common PII plus checksum-validated TC Kimlik / IBAN (mod-97). */
+function commonPiiMatches(content: string): Array<{ type: string; value: string }> {
+	const matches: Array<{ type: string; value: string }> = detectPreciseCommonPii(content).map(
+		(match) => ({ type: match.type, value: match.value }),
+	);
+	for (const match of scanPrivacyDetectors(content, ["tc_kimlik", "iban"]).matches) {
+		matches.push({ type: match.detector, value: content.slice(match.start, match.end) });
+	}
+	return matches;
+}
+
 /**
  * Evaluate the common-PII baseline against one tenant policy. The raw match is
  * used only to compute a tenant- and rule-bound fingerprint; it is never
@@ -114,7 +134,7 @@ export function evaluateCommonPiiBaseline(
 	const applied = new Set<string>();
 	let strongest: CommonPiiBaselineFinding | null = null;
 
-	for (const match of detectPreciseCommonPii(content)) {
+	for (const match of commonPiiMatches(content)) {
 		if (!isCommonPiiType(match.type)) continue;
 		const ruleId = commonPiiRuleId(match.type);
 		const rule = rules.get(ruleId);
