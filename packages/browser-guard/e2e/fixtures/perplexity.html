@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Perplexity (E2E fixture)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; }
+	#answers { min-height: 200px; padding: 16px; }
+	.ask { display: flex; gap: 8px; padding: 16px; }
+	textarea { flex: 1; min-height: 40px; }
+</style>
+</head>
+<body>
+<div id="answers"></div>
+<div class="ask">
+	<textarea placeholder="Ask anything..." autocomplete="off"></textarea>
+	<button type="button" aria-label="Submit" data-testid="submit-button">Ask</button>
+	<input type="file" id="pplx-upload">
+</div>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	let n = 0;
+	FixtureChat.init({
+		site: "perplexity",
+		kind: "textarea",
+		editor: "textarea[placeholder]",
+		send: 'button[data-testid="submit-button"]',
+		thread: "#answers",
+		endpoint: "/rest/sse/perplexity_ask",
+		fileInput: "#pplx-upload",
+		renderUser(text) {
+			const h = document.createElement("h1");
+			h.className = "group/query";
+			h.textContent = text;
+			return h;
+		},
+		renderAssistant() {
+			n += 1;
+			const root = document.createElement("div");
+			root.id = `markdown-content-${n}`;
+			const body = document.createElement("div");
+			body.className = "prose";
+			root.appendChild(body);
+			return { root, body };
+		},
+	});
+</script>
+</body>
+</html>

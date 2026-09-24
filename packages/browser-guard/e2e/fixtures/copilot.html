@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Copilot (E2E fixture)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; }
+	#conversation { min-height: 200px; padding: 16px; }
+	.composer { display: flex; gap: 8px; padding: 16px; }
+	#userInput { flex: 1; min-height: 40px; }
+</style>
+</head>
+<body>
+<div id="conversation"></div>
+<div class="composer">
+	<textarea id="userInput" placeholder="Message Copilot" aria-label="Ask me anything..."></textarea>
+	<button type="button" data-testid="submit-button" aria-label="Submit message">Send</button>
+	<input type="file" id="copilot-upload">
+</div>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	FixtureChat.init({
+		site: "copilot",
+		kind: "textarea",
+		editor: "textarea#userInput",
+		send: 'button[data-testid="submit-button"]',
+		thread: "#conversation",
+		endpoint: "/c/api/chat",
+		fileInput: "#copilot-upload",
+		renderUser(text) {
+			const msg = document.createElement("div");
+			msg.setAttribute("data-content", "user-message");
+			msg.textContent = text;
+			return msg;
+		},
+		renderAssistant() {
+			const root = document.createElement("div");
+			root.setAttribute("data-content", "ai-message");
+			const body = document.createElement("div");
+			root.appendChild(body);
+			return { root, body };
+		},
+	});
+</script>
+</body>
+</html>

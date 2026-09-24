@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Claude (E2E fixture)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; }
+	#messages { min-height: 200px; padding: 16px; }
+	fieldset { display: flex; gap: 8px; margin: 16px; }
+	.ProseMirror { flex: 1; min-height: 40px; border: 1px solid #999; padding: 8px; }
+	.ProseMirror p { margin: 0; }
+</style>
+</head>
+<body>
+<div id="messages"></div>
+<fieldset>
+	<div contenteditable="true" class="ProseMirror break-words" translate="no" role="textbox"
+		aria-label="Write your prompt to Claude" data-placeholder="How can I help you today?"><p><br class="ProseMirror-trailingBreak"></p></div>
+	<button type="button" aria-label="Send message">Send</button>
+	<input type="file" data-testid="file-upload">
+</fieldset>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	FixtureChat.init({
+		site: "claude",
+		kind: "prosemirror",
+		editor: 'div.ProseMirror[contenteditable="true"]',
+		send: 'button[aria-label="Send message"]',
+		thread: "#messages",
+		endpoint: "/api/organizations/fixture-org/chat_conversations/fixture-conv/completion",
+		fileInput: 'input[data-testid="file-upload"]',
+		renderUser(text) {
+			const msg = document.createElement("div");
+			msg.setAttribute("data-testid", "user-message");
+			msg.textContent = text;
+			return msg;
+		},
+		renderAssistant() {
+			const root = document.createElement("div");
+			root.setAttribute("data-is-streaming", "false");
+			const body = document.createElement("div");
+			body.className = "font-claude-message";
+			root.appendChild(body);
+			return { root, body };
+		},
+	});
+</script>
+</body>
+</html>
