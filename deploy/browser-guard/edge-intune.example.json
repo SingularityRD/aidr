@@ -1,0 +1,113 @@
+{
+  "description": "Singularity AIDR Browser Guard for Microsoft Edge via Microsoft Intune. Part 1 installs and pins the extension (Settings Catalog, or the custom OMA-URI alternative). Part 2 delivers the managed configuration read through chrome.storage.managed; Intune has no Settings Catalog entry for per-extension policy, so deploy those registry values with a Win32 app, a PowerShell platform script or a Remediation. See deploy/browser-guard/README.md.",
+  "settingsCatalog": [
+    {
+      "setting": "Microsoft Edge > Extensions > Control which extensions are installed silently",
+      "policy": "ExtensionInstallForcelist",
+      "value": [
+        "REPLACE_WITH_EDGE_EXTENSION_ID;https://edge.microsoft.com/extensionwebstorebase/v1/crx"
+      ]
+    },
+    {
+      "setting": "Microsoft Edge > Extensions > Configure extension management settings",
+      "policy": "ExtensionSettings",
+      "value": {
+        "REPLACE_WITH_EDGE_EXTENSION_ID": {
+          "installation_mode": "force_installed",
+          "update_url": "https://edge.microsoft.com/extensionwebstorebase/v1/crx",
+          "toolbar_state": "force_shown"
+        }
+      }
+    }
+  ],
+  "customOmaUri": [
+    {
+      "name": "AIDR Browser Guard force-install",
+      "omaUri": "./Device/Vendor/MSFT/Policy/Config/microsoft_edge~Policy~microsoft_edge~Extensions/ExtensionInstallForcelist",
+      "dataType": "String",
+      "value": "<enabled/><data id=\"ExtensionInstallForcelistDesc\" value=\"1&#xF000;REPLACE_WITH_EDGE_EXTENSION_ID;https://edge.microsoft.com/extensionwebstorebase/v1/crx\"/>",
+      "requires": "Microsoft Edge ADMX ingested (msedge.admx)"
+    }
+  ],
+  "managedConfiguration": {
+    "registryKey": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\\3rdparty\\extensions\\REPLACE_WITH_EDGE_EXTENSION_ID\\policy",
+    "values": {
+      "policyId": {
+        "type": "REG_SZ",
+        "value": "acme-browser-guard-2026-09"
+      },
+      "mode": {
+        "type": "REG_SZ",
+        "value": "auto"
+      },
+      "enabledEntities": {
+        "type": "REG_SZ",
+        "value": "[\"PERSON\",\"EMAIL\",\"PHONE\",\"TC_KIMLIK\",\"IBAN\",\"CREDIT_CARD\",\"ADDRESS\",\"US_SSN\",\"DATE_OF_BIRTH\",\"PASSPORT\",\"NATIONAL_ID\",\"TAX_ID\",\"BANK_ACCOUNT\",\"IP_ADDRESS\",\"MAC_ADDRESS\",\"SECRET\",\"PRIVATE_KEY\",\"INTERNAL\",\"CLASSIFIED\",\"HEALTH_ID\",\"LICENSE_PLATE\"]"
+      },
+      "neverRestore": {
+        "type": "REG_SZ",
+        "value": "[\"SECRET\",\"PRIVATE_KEY\"]"
+      },
+      "literals": {
+        "type": "REG_SZ",
+        "value": "[{\"value\":\"Project Nightingale\",\"type\":\"INTERNAL\"},{\"value\":\"ACME-CONFIDENTIAL\",\"type\":\"CLASSIFIED\"}]"
+      },
+      "exactData": {
+        "type": "REG_SZ",
+        "value": "[{\"datasetId\":\"crm-customers-example\",\"keyB64\":\"o6J5dv/ZMVjrraODjOrMuCsIQzqswQczrGPSl/aB6bU=\",\"fingerprints\":[\"7284cb51429e3ff4e4d9b0cc1cee1276631d01aacc98cd83b3f39847a747fa36\",\"dace37df0e61d972ce461b5887cc8ef241df0749dd737adc7de1b118305d89b2\",\"fd5d74d29c57fd1c18a6d23aa82f83ea8211081ed570ae9ac60b90f7e4b71180\"],\"type\":\"PERSON\"}]"
+      },
+      "detectSignals": {
+        "type": "REG_DWORD",
+        "value": 1
+      },
+      "signalAction": {
+        "type": "REG_SZ",
+        "value": "warn"
+      },
+      "blockedSites": {
+        "type": "REG_SZ",
+        "value": "[\"deepseek\"]"
+      },
+      "disabledSites": {
+        "type": "REG_SZ",
+        "value": "[]"
+      },
+      "allowUserPause": {
+        "type": "REG_DWORD",
+        "value": 0
+      },
+      "allowSendAnyway": {
+        "type": "REG_DWORD",
+        "value": 0
+      },
+      "maskPaste": {
+        "type": "REG_DWORD",
+        "value": 1
+      },
+      "fileHandling": {
+        "type": "REG_SZ",
+        "value": "scan"
+      },
+      "maxFileBytes": {
+        "type": "REG_DWORD",
+        "value": 5242880
+      },
+      "restoreResponses": {
+        "type": "REG_DWORD",
+        "value": 1
+      },
+      "useNativeHost": {
+        "type": "REG_DWORD",
+        "value": 0
+      },
+      "telemetry": {
+        "type": "REG_SZ",
+        "value": "{\"controlPlaneUrl\":\"https://aidr.example.com\",\"apiKey\":\"REPLACE_WITH_TENANT_API_KEY\"}"
+      },
+      "language": {
+        "type": "REG_SZ",
+        "value": "auto"
+      }
+    }
+  }
+}
