@@ -4,25 +4,24 @@
 
 ### Cursor
 
-```bash
-pnpm install
-pnpm -C packages/extension run package:cursor:vsix
-```
-
-This produces `aidr-cursor.vsix` in the repo root. Install it via `Extensions > Install from VSIX`.
+Download the signed `aidr-cursor.vsix` from an approved release and install it
+via `Extensions > Install from VSIX`.
 
 ### VS Code
 
-```bash
-pnpm install
-pnpm -C packages/extension run package:vscode:vsix
-```
+Download the signed `aidr-vscode.vsix` from an approved release and install it
+via `Extensions > Install from VSIX`.
 
-This produces `aidr-vscode.vsix` in the repo root. Install it via `Extensions > Install from VSIX`.
-
-> **Tip:** To build both VSIX packages at once, use `pnpm -C packages/extension run package:vsix`.
+The repository does not provide a local signing shortcut. Distributable VSIX
+files come from the protected release-candidate pipeline so the archive is
+bound to its signed manifest, SBOM, checksum, and release inventory.
 
 ## Usage
+
+For VS Code Local agent hooks, first enable `chat.useClaudeHooks` in VS Code
+User Settings. The extension does not change this editor setting; its Enable
+Protection command checks the prerequisite, and Hook Health reports its state.
+Cursor does not require this VS Code setting.
 
 Open the command palette (`Ctrl+Shift+P`) and use:
 
@@ -36,7 +35,7 @@ Open the command palette (`Ctrl+Shift+P`) and use:
 
 ## How It Works
 
-The extension installs managed hooks into the Cursor/VS Code agent system. When a tool call is intercepted, the hook spawns `aidr-hook.cjs` as a subprocess, which runs the same detection pipeline as the Claude Code connector.
+The extension installs managed hooks into the Cursor/VS Code agent system. When a tool call is intercepted, the hook spawns `aidr-hook.cjs` as a subprocess, which runs the same detection pipeline as the Claude Code connector. Cursor `preToolUse` cannot enforce an approval (`ask`) response, so AIDR maps that verdict to an explicit deny.
 
 ## Scope
 
@@ -77,5 +76,3 @@ Extension hooks always exit with code `0`. The host reads the JSON response to d
 The extension bundles `threats/` and `allowlists/` from the repo root into `packages/extension/resources/` during build (via `sync-assets.mjs`). These are not checked into git.
 
 See [Building the Extension](../../doc/build_extension.md) for platform-specific build instructions.
-
-

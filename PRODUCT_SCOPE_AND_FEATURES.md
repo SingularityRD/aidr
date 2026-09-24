@@ -62,7 +62,7 @@ deployment: an "exported and unit-tested" module is not a delivered capability.
 | Revocation lists (signed, Ed25519) | `managed.ts`, `evaluator.ts` | **LIVE** |
 | Integrity verification + degraded safe mode | `integrity/*` | **LIVE** |
 | Remote runtime policy sync | `remote-policy.ts` | **LIVE code path**, requires a control plane |
-| OpenTelemetry tracing | `tracing.ts` | **LIVE** |
+| Native duration and RED telemetry | `evaluator.ts`, `deploy/dashboard/monitoring.mjs` | **LIVE** |
 | Installation identity (0600, 0700 dir) | `installation-id.ts` | **LIVE** |
 | Managed state / entitlement / device bootstrap | `managed.ts`, `session-start.ts` | **LIVE**, requires a control plane (§5) |
 
@@ -82,7 +82,7 @@ deployment: an "exported and unit-tested" module is not a delivered capability.
 |---|---|
 | `aidr setup` — real rule count, real detection self-test, CSPRNG key, honest "not yet active" reporting | **LIVE** (verified) |
 | `aidr status`, `aidr config --get/--set/--list` | **LIVE** |
-| SDK client + 5 framework adapters (LangChain, LlamaIndex, AutoGen, CrewAI, generic) with fail-closed enforcement | **LIVE** (verified 60/60 tests) |
+| SDK client + framework-neutral generic middleware with fail-closed enforcement and output inspection | **LIVE** (verified) |
 | SDK Express/Next.js middleware | **LIVE** |
 | Dashboard: routing, auth (Supabase/Google/Azure), onboarding, agents, events, incidents, API keys, billing, AutoSecOps, settings, public pages, CSP/HSTS | **LIVE** |
 | Dashboard team administration (create team, invite, role change, remove member) | **ISLAND** — implemented, unreachable (AIDR-008) |

@@ -94,9 +94,31 @@
   "function_sha256": {
     "policy": "fe328b13511279629ef9c6c0c5600e0fd19e5c2801c6c918bc18e16a7e31a540",
     "policy-management": "0504e7ef4ebda36aa8dc5678d251646ecb7b963e2efd20fe85fcd0c1cf2eb3a8",
-    "api-keys": "30be38dbca1f870d8596ef18cadf16d582cf36096c1cab050d65b4f36fe2cae7",
+    "api-keys": {
+      "sha256_chunks": [
+        "30be38db",
+        "ca1f870d",
+        "8596ef18",
+        "cadf16d5",
+        "82cf3609",
+        "6c1cab05",
+        "0d65b4f3",
+        "6fe2cae7"
+      ]
+    },
     "team-invite": "2dba752e7ad3b29738c6e8f030814afa6e75e27c6c22f20eefb4ba35c6dcc7da",
-    "oauth-callback": "5f7432dd4aebf5049d5f83b2e30e6509d3566f9c4da5b207ccf7f21830541114",
+    "oauth-callback": {
+      "sha256_chunks": [
+        "5f7432dd",
+        "4aebf504",
+        "9d5f83b2",
+        "e30e6509",
+        "d3566f9c",
+        "4da5b207",
+        "ccf7f218",
+        "30541114"
+      ]
+    },
     "audit-export": "9f5845ecada8660a65f1198c653e2c00ef1f1fc761501c4cd0231baa458ff232",
     "device-start": "4c78cce5b11a79de8b38b40ed39ea8e192a20063531db667aa9e0a514f0f9c89",
     "device-poll": "7ca0609c0dda7d7af772623978ee930dd9e9e8511cb99fcc453ddb3eaf79e500",

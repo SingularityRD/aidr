@@ -3,7 +3,7 @@
 ## Overview
 
 The sync pipeline keeps AIDR edge agents updated with the latest
-threat intelligence from [AI-Infra-Guard (AIG)](https://github.com/aliyun/ai-infra-guard).
+threat intelligence from [Tencent AI-Infra-Guard (AIG)](https://github.com/Tencent/AI-Infra-Guard).
 
 ## How It Works
 
@@ -93,7 +93,7 @@ spec:
         spec:
           containers:
           - name: sync
-            image: node:20
+            image: node:22.12.0
             workingDir: /app
             command: ["node", "scripts/sync-aig-threats.mjs", "--quiet"]
 ```
@@ -155,6 +155,41 @@ For managed (SaaS) deployments, the sync pipeline runs on the control plane:
 2. Compiled indices are published to a CDN / API endpoint.
 3. Edge agents poll the endpoint via `aig-sync.ts` in HTTP mode.
 4. Agents cache fetched indices locally and apply on next session start.
+
+## Signed production feed
+
+Production agents must enable the complete trust policy; a public key by itself
+is not an identity:
+
+```bash
+export AIG_REQUIRE_SIGNED=true
+export AIG_SIGNING_PUBLIC_KEY_PATH=/etc/aidr/aig-data-signing-public.pem
+export AIG_TRUSTED_SIGNING_KEY_ID=aig-data-production-1
+export AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=<64-lowercase-hex-SPKI-digest>
+```
+
+Compute the fingerprint from the independently distributed public key:
+
+```bash
+openssl pkey -pubin -in /etc/aidr/aig-data-signing-public.pem -outform DER \
+  | sha256sum
+```
+
+The key ID must match the signed manifest and the fingerprint must match the
+DER-encoded SPKI. HTTP-mode feeds require HTTPS, refuse redirects and oversized
+responses, and reject a bundle older than the active manifest. Keep
+`AIG_SIGNING_PRIVATE_KEY` / `AIG_SIGNING_PRIVATE_KEY_PATH` only in the isolated
+release-signing environment; endpoint agents need only the public key.
+
+### Publishing a new corpus
+
+Every published corpus has a monotonically increasing `release_sequence`.
+When the pinned AIG commit or compiled bundle changes, append exactly one entry
+to `config/aig-release-sequence.json` using the next contiguous sequence and the
+compiler-reported commit/bundle tuple. Never edit or reuse an existing mapping.
+The compiler fails before writing generated files when the tuple is missing or
+the registry is non-contiguous; this is the rollback boundary for agents that
+already installed an older signed bundle.
 
 ## Troubleshooting
 

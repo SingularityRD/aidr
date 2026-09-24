@@ -241,7 +241,7 @@ Eski Positioning:
 
 Yeni Positioning:
 "The professional runtime security platform for AI coding agents."
-"Your AI agents deserve enterprise-grade protection."
+"Your AI agents deserve professionally managed protection."
 ```
 
 ### 6.3 Hedef Kitle ve Mesaj
@@ -249,7 +249,7 @@ Yeni Positioning:
 | Kitle | Eski Mesaj | Yeni Mesaj |
 |-------|------------|------------|
 | **Developer** | "Free, open-source" | "5-minute setup, instant protection" |
-| **Security Team** | "Community-driven" | "Enterprise-grade, SOC2-ready" |
+| **Security Team** | "Community-driven" | "Organization controls; independent compliance review pending" |
 | **CTO/VPoE** | "Open source alternative" | "The professional standard for agent security" |
 
 ---
@@ -392,7 +392,7 @@ Apache 2.0 lisansı altında yayınlanmış kod **sonsuza kadar fork edilebilir*
 > - Local detection engine still runs on your machine
 >
 > **Why?**
-> Building enterprise-grade AI agent security requires significant investment in
+> Building AI agent security for larger organizations requires significant investment in
 > ML models, threat intelligence, and compliance. Going private lets us deliver
 > these capabilities sustainably.
 >

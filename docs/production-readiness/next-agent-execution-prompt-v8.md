@@ -8,7 +8,7 @@ Sen kıdemli bir endpoint security, detection engineering, identity, platform, S
 
 Amaç: AIDR ürünündeki bütün yerel olarak giderilebilir eksikleri uçtan uca uygula, mevcut uygulamaları denetle, yarım kalanları tamamla, regresyonları düzelt, cloud ve self-hosted müşteri kurulum paketini yeniden üret ve her iddiayı yerel kanıtla bağla. Yalnız rapor veya plan üretip durma. Bağımsız ilerleyebildiğin sürece kullanıcıya soru sorma. Bir engel gördüğünde önce bütün bağımsız işi tamamla.
 
-Mevcut kayıt kararı **NO-GO**. Envanter: 71 özellik = 41 wired, 28 partial, 0 missing, 2 external. Teknik kayıt: 46 iş = 0 OPEN, 46 yerel uygulaması bulunan fakat saha kabulü açık. Ticari/dış kayıt: 13 kapı. Backlog: 69 bulgudan 7 tanesi kapanmamış.
+Mevcut kayıt kararı **NO-GO**. Envanter: 71 özellik = 41 wired, 28 partial, 0 missing, 2 external. Teknik kayıt: 46 iş = 0 OPEN, 46 yerel uygulaması bulunan fakat saha kabulü açık. Ticari/dış kayıt: 13 kapı. Backlog: 70 bulgudan 8 tanesi kapanmamış.
 
 ## Kesin görev ve tamamlanma sözleşmesi
 
@@ -32,7 +32,7 @@ Bitmiş sayılmak için aynı anda şunlar doğru olmalıdır:
 
 ## Otorite ve çalışma kuralları
 
-1. Başlamadan önce şu dosyaları oku ve birbirleriyle uzlaştır: `PRODUCTION_SALES_GAPS.json`, `FEATURE_INVENTORY.json`, `READINESS_BACKLOG.json`, `docs/production-readiness/commercial-go-evidence-registry.json`, `docs/production-readiness/2026-09-13-customer-candidate-v7.md`, `deploy/FIRST_CUSTOMER.md`, `deploy/RESOURCE_REQUIREMENTS.md`, `docs/production-readiness/market-capability-delta-2026-09-13.md` ve `package.json` scripts.
+1. Başlamadan önce şu dosyaları oku ve birbirleriyle uzlaştır: `PRODUCTION_SALES_GAPS.json`, `FEATURE_INVENTORY.json`, `READINESS_BACKLOG.json`, `docs/production-readiness/commercial-go-evidence-registry.json`, `deploy/FIRST_CUSTOMER.md`, `deploy/RESOURCE_REQUIREMENTS.md`, `docs/production-readiness/market-capability-delta-2026-09-13.md` ve `package.json` scripts.
 2. Çalıştırılabilir kod ve test sonucu doküman iddiasından üstündür. Generated dosyaları doğrudan elle düzeltme; ilgili jeneratörü düzeltip yeniden üret.
 3. Çalışma ağacını ve bütün submodule'leri başlamadan kaydet. Başkasının değişikliğini geri alma. `git reset --hard`, `git clean`, toplu checkout, stash, rebase veya zorla silme yapma. Kullanıcı bu çalışma için atomik commitlere açıkça izin verdi: her doğrulanmış, tek amaçlı workstreami atomik commit et; ilgisiz/kirli dosyaları dahil etme. Push, merge, tag veya release publish için ayrıca açık yetki gerekir.
 4. Fail-closed davranışı koru. Hata, timeout, bozuk cevap, eksik telemetry, eski receipt veya doğrulanamayan kimliği clean/success/protected olarak gösterme.
@@ -144,9 +144,9 @@ Aşağıdaki her feature için delivered kodu gerçek consumer'a kadar izle. Sou
   - Kaynak: packages/core/src/dlp/scanner.ts, packages/core/src/dlp/policy.ts, packages/claude-code/src/detector-provisioning.ts
 - **DET-08 — Behavioral and novelty analysis (partial)**
   - Alan: Detection
-  - Mevcut: Cold start and bounded orchestrator configuration
-  - Kalan: Claude one-shot hook has no persistent learning baseline; other connector and customer efficacy acceptance remain open
-  - Kaynak: packages/core/src/behavioral-orchestrator.ts, packages/core/src/behavioral-analyzer.ts, packages/claude-code/src/detector-provisioning.ts
+  - Mevcut: Bounded behavior/novelty scoring and tenant/session-scoped baseline storage API; product preflight cannot promote candidates; cold baselines ask by default, signed policy can select visible degraded skip
+  - Kalan: No host supplies a trusted, call-ID/input-digest-bound successful-execution receipt. DET-08 is not production ready; callback wiring and independent efficacy acceptance remain required
+  - Kaynak: packages/core/src/behavioral-orchestrator.ts, packages/core/src/behavioral-analyzer.ts, packages/core/src/behavioral-baseline-store.ts, packages/core/src/detector-provisioning.ts, packages/core/src/evaluator.ts, packages/claude-code/src/detector-provisioning.ts, packages/claude-code/src/pre-tool-use.ts, packages/claude-code/src/post-tool-use.ts, packages/opencode/src/tool-handler.ts, packages/opencode/src/output-handler.ts
 - **DET-09 — ML classification and similarity (partial)**
   - Alan: Detection
   - Mevcut: Versioned local model leg with unavailable state
@@ -170,8 +170,8 @@ Aşağıdaki her feature için delivered kodu gerçek consumer'a kadar izle. Sou
 - **MCP-05 — Tool description attestation and drift (partial)**
   - Alan: MCP
   - Mevcut: Ed25519 tool manifest, signer allowlist, replay/drift quarantine and out-of-band approval
-  - Kalan: Host/gateway consumer and trusted publisher provisioning remain open
-  - Kaynak: packages/core/src/mcp-attestation.ts
+  - Kalan: Direct host paths outside the gateway and trusted publisher provisioning remain open
+  - Kaynak: packages/core/src/mcp-attestation.ts, packages/mcp-gateway/src/gateway.mjs
 - **MCP-06 — Identity graph and delegated privileges (partial)**
   - Alan: MCP
   - Mevcut: Bounded signed lineage, grant, introspection and revocation
@@ -184,9 +184,9 @@ Aşağıdaki her feature için delivered kodu gerçek consumer'a kadar izle. Sou
   - Kaynak: packages/mcp-gateway/src/gateway.mjs, packages/mcp-gateway/src/stdio.mjs, packages/core/src/mcp-transport.ts
 - **INF-03 — Continuous fleet discovery (partial)**
   - Alan: AI infrastructure
-  - Mevcut: Authenticated operator or collector upload, sequenced cycles, dedup and stale/partial coverage reporting
-  - Kalan: Cloud/MDM adapters, scheduler, dashboard alerts and customer field acceptance remain open
-  - Kaynak: packages/cli/src/commands/collect.ts, supabase/functions/discovery/index.ts
+  - Mevcut: Authenticated operator or collector upload, sequenced/deduplicated cycles, tenant-scoped listing, and reported-only per-item freshness/alert-state display
+  - Kalan: Cloud/MDM provider adapters, customer-approved scopes/credentials, customer-activated production scheduling and alert/paging delivery, and customer field acceptance remain open
+  - Kaynak: packages/cli/src/commands/collect.ts, supabase/functions/discovery/index.ts, packages/dashboard/src/ui/pages/DiscoveryPage.tsx
 - **RSP-04 — Process containment (partial)**
   - Alan: Response
   - Mevcut: Targeted process response with platform limits
@@ -199,9 +199,9 @@ Aşağıdaki her feature için delivered kodu gerçek consumer'a kadar izle. Sou
   - Kaynak: supabase/functions/revocations/index.ts, packages/core/src/response-command-consumer-v6.ts, packages/core/src/response-command-worker-v6.ts
 - **RSP-07 — SOAR playbook orchestration (partial)**
   - Alan: Response
-  - Mevcut: External runtime bridge
-  - Kalan: Customer authorization, connector matrix and success receipts need field integration
-  - Kaynak: supabase/functions/autosecops-runtime/index.ts
+  - Mevcut: One fixed typed, TTL-bound and idempotent run queues agent_pause then network_isolate only after the consumer records an adapter-verified succeeded receipt
+  - Kalan: Not production accepted or connected to an alert/AutoSecOps trigger. A separately installed endpoint worker and verified host adapter are not provisioned or customer-validated; host permissions and native acceptance, external SOAR/provider connectors, credential revocation and rollback remain unsupported or open
+  - Kaynak: supabase/functions/response-playbooks/index.ts, supabase/migrations/20260923000005_fleet_response_playbooks.sql, packages/core/src/response-command-consumer-v6.ts, supabase/functions/__tests__/response-playbooks-contract.test.ts, docs/operations/response-playbooks.md
 - **CLI-04 — Enterprise fleet rollout (partial)**
   - Alan: Endpoint
   - Mevcut: Install, detect, upgrade, rollback, uninstall and health with signed artifact checks
@@ -222,11 +222,11 @@ Aşağıdaki her feature için delivered kodu gerçek consumer'a kadar izle. Sou
   - Mevcut: Atomic single-use exchanges, signed entitlements, active tenant validation and spoof-resistant device-start limiter; isolated loopback HTTP smoke passed
   - Kalan: Customer TLS proxy routing and browser-to-host pairing acceptance remain pending; direct unsigned device-start is rejected
   - Kaynak: supabase/functions/device-poll/index.ts, supabase/functions/enroll/index.ts, deploy/ingress/device-start.mjs
-- **OBS-04 — SIEM export and OpenTelemetry (partial)**
+- **OBS-04 — SIEM delivery and native telemetry (partial)**
   - Alan: Operations
-  - Mevcut: Splunk, Sentinel, Elastic and HTTPS delivery queue/receipts/retry
+  - Mevcut: Splunk, Sentinel, Elastic and HTTPS delivery queue/receipts/retry; dependency-free evaluator timing and dashboard RED metrics
   - Kalan: Customer SIEM configuration, scheduled worker, native source coverage and delivery receipt remain open
-  - Kaynak: packages/core/src/siem-delivery.ts, packages/core/src/siem-incident-producer.ts, scripts/siem-delivery-worker.mjs
+  - Kaynak: packages/core/src/siem-delivery.ts, packages/core/src/siem-incident-producer.ts, scripts/siem-delivery-worker.mjs, packages/core/src/evaluator.ts, deploy/dashboard/monitoring.mjs
 - **OBS-06 — Retention and deletion (partial)**
   - Alan: Operations
   - Mevcut: Legal hold, bounded deletion phases and durable receipts across live data
@@ -390,12 +390,12 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 #### T11 — Sürekli kurum/filo keşfi [P1; LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN]
 
 - İlgili özellikler: INF-03
-- Kaynak: packages/cli/src/commands/scan.ts, packages/core/src/aig-infra-scan.ts
-- Güncel yerel durum: Kimlikli merkezi discovery upload var; interval modu geçici upload hatasını görünür tutarak sonraki çevrime devam ediyor. Cloud/MDM scheduler ve saha kabulü açık.
-- Başlangıç riski: Zamanlanmış kolektör, tenant envanteri, sahiplik, tekrar birleştirme, son görülme ve stale alarmı yok.
-- Tamamlama hedefi: Filo/cloud kolektörleri, kapsam izinleri, zamanlama, retry, dedup, kimlik ve keşif tazeliği ekranlarını kur.
-- Zorunlu kapanış testi: Kapanan veya yeni açılan ajan görünür olsun; bağlantısız kolektör eski veriyi güncel göstermesin; tenant ayrımı ve keşif yük sınırları sınansın.
-- Dış bağımlılık/sınır: Müşteri cloud/MDM API erişimi ve ağ tarama kapsamı
+- Kaynak: packages/cli/src/commands/collect.ts, supabase/functions/discovery/index.ts, packages/dashboard/src/ui/pages/DiscoveryPage.tsx
+- Güncel yerel durum: Yerel tamamlama: aidr collect tek-seferlik OS scheduler çağrısı ve çakışmayan --interval döngüsü destekliyor; kimlikli/sequenced upload dedup edilmiş tenant envanterine gidiyor; authenticated summary/list/read ve reported_collectors_only freshness/alert-state dashboard tüketicisi tamamlandı. Dış kabul: müşteri cloud/MDM adaptörleri, izinli kapsam/credentials, etkin production schedule ve alert/paging teslimi ile canlı tool-provider ve saha kabulü açık.
+- Başlangıç riski: AWS/Azure/GCP/MDM provider adaptörleri ve müşteri onaylı kapsam/kimlik bilgileri yok. CLI tek-seferlik OS scheduler çağrısı veya --interval döngüsü destekliyor; müşteri production schedule etkinleştirilip kabul edilmedi. Stale/partial alert paging teslimi ve canlı tool-provider kabulü açık.
+- Tamamlama hedefi: Yalnız müşteri onaylı kaynak kapsamlarında provider adaptörlerini ve kimlikleri kabul et; desteklenen müşteri schedule'ını etkinleştir/izle; stale/partial alert teslimini sahipli paging kanalına bağla; delegated credential akışını gerçek tool provider'da kabul ettir. Dashboard reported_collectors_only sınırını koru.
+- Zorunlu kapanış testi: Onaylı kaynak dışında envanter gösterilmesin; tenant dışı rapor okunamasın; eski/partial cycle healthy görünmesin; raporlanmayan estate kapsamı çıkarılmasın; gerçek provider API, schedule ve paging tatbikatı ile tool-provider credential kabulü kaydedilsin.
+- Dış bağımlılık/sınır: Müşteri onaylı cloud/MDM API kapsamı ve credentials; üretim scheduler/paging ortamı; tool-provider kabulü
 
 #### T12 — Filo müdahalesi ve credential iptali [P1; LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN]
 
@@ -410,8 +410,8 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 #### T13 — Response eylemlerinin güvenli uçtan uca işletimi [P1; LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN]
 
 - İlgili özellikler: RSP-02, RSP-03, RSP-05, RSP-07
-- Kaynak: packages/core/src/quarantine.ts, packages/core/src/rollback.ts, packages/core/src/response-command-worker-v6.ts, packages/core/src/response-audit.ts, supabase/functions/autosecops-runtime/index.ts
-- Güncel yerel durum: Yeni response-worker-contract.ts capability/onkosul/TTL/idempotency/rollback makbuzu sozlesmesini uyguluyor; desteklenmeyen action adapter tarafindan reddediliyor ve geri alinamayan adim partial olarak raporlaniyor. Native OS/provider adapter ve kurulu servis musteri tarafinda acik. Eski: Restart-safe worker resume sırasında adapter destek listesini yeniden doğruluyor ve kaldırılmış action'ı çalıştırmadan unsupported_action bildiriyor. Native OS/provider adapter ve kurulu servis açık.
+- Kaynak: packages/core/src/quarantine.ts, packages/core/src/rollback.ts, packages/core/src/response-command-worker-v6.ts, packages/core/src/response-audit.ts, supabase/functions/autosecops-runtime/index.ts, supabase/functions/response-playbooks/index.ts, supabase/migrations/20260923000005_fleet_response_playbooks.sql, packages/core/src/response-command-consumer-v6.ts, supabase/functions/__tests__/response-playbooks-contract.test.ts, docs/operations/response-playbooks.md
+- Güncel yerel durum: Response-worker capability/önkoşul/TTL/idempotency/rollback makbuzu sözleşmesini uyguluyor; desteklenmeyen eylem reddediliyor ve geri alınamayan adım partial raporlanıyor. RSP-07 için owner/admin + AAL2 yetkili API ve dayanıklı, sabit iki adımlı pause-agent → isolate-network playbook'u eklendi; çalışan adapter/worker ayrıca kurulup doğrulanmadıkça yürütme başlamaz. Native OS/provider adapter, alarm tetikleyicisi, harici SOAR bağlayıcısı ve kurulu servis saha kabulü açık.
 - Başlangıç riski: Gerçek müşteri dosya izinleri, aynı anda değişen dosya, dış playbook etkileri, signer saklama ve bağımsız arşiv kanıtı eksik.
 - Tamamlama hedefi: Desteklenen eylem ve dosya kapsamını sabitle; önkoşul/sonuç doğrulama, operatör sınırları, dış SOAR sonuçları ve bağımsız kanıt saklamayı tamamla.
 - Zorunlu kapanış testi: Dosya sonradan değişmişken yanlış rollback yapılmasın; symlink/izin/disk hatası açık başarısız olsun; eylem ve geri dönüş aynı incidentten izlenebilsin.
@@ -490,7 +490,7 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 #### T21 — Mevcut API anahtarında ekip ve üyelik iptali [P0; LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN]
 
 - İlgili özellikler: TEN-01, TEN-06, DET-10, DET-11
-- Kaynak: supabase/functions/url-check/index.ts, supabase/functions/file-check/index.ts, scripts/audit-reputation-lifecycle.mjs
+- Kaynak: supabase/functions/url-check/index.ts, supabase/functions/file-check/index.ts, supabase/functions/_shared/api-key-auth.ts
 - Güncel yerel durum: Packs manifest/download dahil anahtar kullanan yollar aktif tenant, üyelik ve revocation doğruluyor; önceden üretilmiş signed URL süre sonuna dek geçerli.
 - Başlangıç riski: İzole gerçek HTTP provasında askıya alınmış ekip ve süresi bitmiş üyelikle hem URL hem dosya sorgusu 200 döndü; dört kabul yeniden üretildi. Başka tenant verisi okunduğu gösterilmedi.
 - Tamamlama hedefi: Ortak doğrulanmış anahtar/aktif tenant/aktif üyelik sınırı uygula; iptal, kapanış ve deprovisioning semantiğini tüm servislerde birleştir.
@@ -517,10 +517,10 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 - Zorunlu kapanış testi: Ağ/DB/storage kesintisi ve ajan yeniden başlatmada kayıp/duplicate ölç; sessiz olay kaybı olmasın; disk dolması ve gecikme kullanıcıya görünür olsun.
 - Dış bağımlılık/sınır: Müşteri cihaz/olay hacmi ve saklama hedefi
 
-#### T24 — SIEM ve OpenTelemetry üretim teslimi [P1; LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN]
+#### T24 — SIEM ve yerel telemetry üretim teslimi [P1; LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN]
 
 - İlgili özellikler: OBS-04
-- Kaynak: packages/core/src/siem-export.ts, packages/core/src/tracing.ts
+- Kaynak: packages/core/src/siem-delivery.ts, packages/core/src/siem-incident-producer.ts, scripts/siem-delivery-worker.mjs, packages/core/src/evaluator.ts, deploy/dashboard/monitoring.mjs
 - Güncel yerel durum: SIEM durable state provider/endpoint/index routing fingerprint'e bağlı ve farklı hedefte reopen'i reddediyor; gerçek SIEM alındısı/zamanlayıcı açık.
 - Başlangıç riski: Named SIEM transport, teslim bildirimi, kesinti tamponu, şema sürümü ve müşteri SIEM alan eşlemesi kabul edilmedi.
 - Tamamlama hedefi: Satılacak Splunk/Sentinel/Elastic vb. adaptörleri için gerçek endpoint entegrasyonu, retry/dedup ve sağlık göstergesi tamamla.
@@ -561,7 +561,7 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 
 - İlgili özellikler: DEP-01, DEP-02
 - Kaynak: scripts/deployment-prepare.mjs, deploy/FIRST_CUSTOMER.md
-- Güncel yerel durum: 33 migrationlı self-hosted prova var; prepare inputları secret oluşturmadan doğruluyor ve cloud public proxy/provider upstream loop'unu reddediyor. Canlı provider/TLS açık.
+- Kanıt sınırı: Tarihsel v6 adayında 33/33 migration ile self-hosted prova kaydı var. v8 aday raporu migration kapısında 34 migrationın benzersiz/sıralı olduğunu kaydeder, ancak yeni canlı self-hosted ölçüm üretilmediğini açıkça söyler. Bu nedenle tarihsel prova güncel aday kanıtı değildir; FCR-03 uyarınca donmuş/imzalı adaydan hem self-hosted hem managed-cloud yollarda gerçek migration ve uçtan uca kurulum provasını yeniden yap.
 - Başlangıç riski: Cloud hesabı/projesi, bölge, DNS/TLS, reverse proxy, SMTP/IdP, secret installation ve gerçek internet erişimi bilinmiyor; cloud hazırlama çalışan cloud demek değil.
 - Tamamlama hedefi: Her model için hedef ortamı kur; TLS yenileme ve HTTP/WebSocket başlıklarını doğrula; DB/Studio'yu özel ağda tut; public endpoint ve onboarding'i kabul et.
 - Zorunlu kapanış testi: Temiz makinede müşteri kimliğiyle giriş→cihaz→deny→olay→export→rollback akışı; dış port/izin kontrolleri ve sertifika yenileme tatbikatı.
@@ -631,7 +631,7 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 
 - İlgili özellikler: EVAL-01, CON-05
 - Kaynak: vitest.config.ts, packages/opencode/src/__tests__/aidr-contract.test.ts, scripts/verify-enforcement.mjs
-- Güncel yerel durum: v7 birleşik test 237 dosya/3326 geçiş/2 açıklanmış skip, coverage eşikleri ve 10 paket release consumer geçti; native kör corpus açık.
+- Güncel yerel durum: Bu çalışma ağacında yerel test paketi geçti; ancak güncel ilk müşteri gate'i candidate digesti bulunmadığını ve release evidence indexindeki 30 kapının NOT_RUN olduğunu kaydediyor. Yerel test geçişi v8 adayını güncel/accepted yapmaz; native kör corpus açık.
 - Başlangıç riski: Test sayısı özellik tamamlanması değildir; bazı gözlem testleri bilinen boşluğu allow olarak kabul ediyor. Native/soak/bağımsız corpus ve coverage kapanışı eksik; 132 lint uyarısı var.
 - Tamamlama hedefi: Özellik→tüketici→pozitif/negatif→artefact bağını zorunlu kıl; bilinen açıkları test hedefi yap; mandatory skip ve stale evidence gate'i düşürsün; uyarı/dead-code borcunu sınıflandır.
 - Zorunlu kapanış testi: Her satılan özellik için gerçek tüketicide deny/allow/outage kanıtı; aynı candidate checksum; 0 açıklanmamış zorunlu skip; değişmeyen timeoutlarla tekrar koşu ve açık borç kaydı.
@@ -640,7 +640,7 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 #### T36 — Operatör UI ve ilk müşteri kullanılabilirliği [P1; LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN]
 
 - İlgili özellikler: CLI-01, TEN-07, TEN-03, POL-02, OBS-03
-- Kaynak: packages/dashboard/src/main.tsx, packages/dashboard/src/ui/pages/OnboardingPage.tsx, packages/dashboard/src/enterprise/audit-view.tsx
+- Kaynak: packages/dashboard/src/main.tsx, packages/dashboard/src/ui/pages/OnboardingPage.tsx, packages/dashboard/src/ui/pages/EventsPage.tsx, packages/dashboard/src/ui/pages/IncidentsPage.tsx, packages/dashboard/src/enterprise/evidence-view.tsx
 - Güncel yerel durum: Onboarding stale token/tenant/error durumları fail-closed ve yapılandırılmış Azure/Entra login görünür; gerçek browser/IdP/erişilebilirlik kabulü açık.
 - Başlangıç riski: Tüm desteklenen tarayıcılar, klavye/erişilebilirlik, ağ hataları, çok ekipli eş zamanlı kullanım ve gerçek müşteri eğitimi tamam değil.
 - Tamamlama hedefi: Ekran bazlı loading/empty/error/permission sözleşmesi, erişilebilirlik ve tarayıcı matrisi; ilk müşteri kılavuzunu gerçek operatörle uygula.
@@ -650,9 +650,9 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 #### T37 — Gerçek veri akışı, redaksiyon ve gizlilik kanıtı [P0; LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN]
 
 - İlgili özellikler: OBS-01, OBS-03, OBS-06, TEN-01
-- Kaynak: docs/privacy.md, packages/core/src/tracing.ts, supabase/functions/ingest/index.ts
+- Kaynak: docs/privacy.md, packages/core/src/telemetry-redaction.ts, supabase/functions/ingest/index.ts
 - Güncel yerel durum: Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti, hukuk/saha açık.
-- Başlangıç riski: Tüm outbound alan/domain listesi, browser tracing, managed olaylar, AIG payloadları, region, subprocessors ve silme kanıtı müşteri metinleriyle onaylanmadı.
+- Başlangıç riski: Tüm outbound alan/domain listesi, browser telemetry, managed olaylar, AIG payloadları, region, subprocessors ve silme kanıtı müşteri metinleriyle onaylanmadı.
 - Tamamlama hedefi: Alan bazlı data-flow ve egress envanteri çıkar; ham prompt/komut/secret canary'leriyle paket/log/export/support bundle sözleşmesi kur; metinleri gerçek işleyişe eşle.
 - Zorunlu kapanış testi: Canary sırlar izinsiz kanalda bulunmasın; opt-out ve retention davranışı ölçülsün; bütün veri sınıfları için bölge/erişim/silme sahibi belli olsun.
 - Dış bağımlılık/sınır: DPA ve müşteri veri sınıflandırması; hukuk incelemesi
@@ -681,7 +681,7 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 
 - İlgili özellikler: DEP-05, OBS-05
 - Kaynak: docs/runbooks/incident-response.md, docs/production-readiness/support-sla-template.md
-- Güncel yerel durum: Support v7 runbook, izinli/hashli bundle, escalation ve emergency update akışı hazır; gerçek kanal, nöbet ve ticket tatbikatı açık.
+- Güncel yerel durum: Destek runbook'u, izinli/hashli bundle, escalation ve emergency update akışı hazır; gerçek kanal, nöbet ve ticket tatbikatı açık.
 - Başlangıç riski: Çalışan ticket/security contact, nöbet, CVE/incident bildirimi, imzalı acil güncelleme, EOL ve tanılama izni işletimi onaylı değil.
 - Tamamlama hedefi: Destek planı, severity/response hedefi, escalation, PSIRT/sorumlu, patch dağıtımı, EOL ve redakte tanılama prosedürü kur.
 - Zorunlu kapanış testi: Gerçek ticket aç/kapat, kritik incident ve imza anahtarı kaybı tatbikatı; müşteri bildirim süresi, rollback ve sır içermeyen tanılama kanıtlansın.
@@ -691,7 +691,7 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 
 - İlgili özellikler: EVAL-02, EVAL-03, BIL-01
 - Kaynak: docs/production-readiness/controlled-demo-runbook.md, docs/production-readiness/customer-investor-validation-master-plan.md, docs/production-readiness/enterprise-order-entitlement-template.md
-- Güncel yerel durum: Güncel ilk müşteri satış paketi ve portable kit üreticisi var; yeni v7 kit imzası ile onaylı teklif/satın alma kabulü açık.
+- Güncel yerel durum: İlk müşteri readiness gate'i NO-GO; v8 satış paketi tarihsel iç buyer-review taslağıdır ve kabul/teklif yetkisi vermez. Portable kit üreticisi mevcut olsa da temiz imzalı candidate, onaylı teklif ve satın alma kabulü açık.
 - Başlangıç riski: Müşterinin satın alma sürecine uygun onaylı ürün özeti, mimari/veri akışı, destek matrisi, güvenlik soru formu, kapsamlı teklif ve kanıta dayalı demo/PoV paketi tek sürümde birleştirilmedi. Bu çalışma ortamındaki static preflight satış URL/e-posta ayarı bulamadı; üretim satış CTA hedefi ayrıca doğrulanmalı.
 - Tamamlama hedefi: Ürün özeti, gereksinimler, deployment seçenekleri, desteklenen araçlar, açık sınırlar, güvenlik/tedarikçi soru yanıtları, teklif ve PoV başarı ölçütlerini satış kitinde topla; ölçülmemiş ROI veya sertifikasyon iddiası ekleme.
 - Zorunlu kapanış testi: Bir operatör kılavuzdan demoyu tekrar edebilsin; procurement soruları kaynak/kanıt/owner'a bağlı olsun; teklif kapsamı ile kurulan özellik ve destek koşulları eşleşsin; müşteri adı olmadan referans/başarı hikayesi uydurulmasın.
@@ -752,12 +752,13 @@ Hiçbir satırı atlama. Her satır için: (a) mevcut uygulamayı yeniden üret,
 Bu kayıtlar teknik matrisle örtüşebilir. Yeni benzersiz task gibi iki kez sayma; ilgili T satırına bağla. Acceptance gerçekten karşılanırsa evidence ekleyip VERIFIED_CLOSED yap. Temiz commit, gerçek müşteri veya dış ortam isteyen kaydı local unit test ile kapatma.
 
 - **AIDR-016 — Enrollment / control-plane connectivity (default endpoint) [P0; BLOCKED_EXTERNAL]**: A fresh install either completes device enrollment against a reachable endpoint and shows the verification URL+code, or clearly reports local-only protection. No silent 'auth_required' dead end.
-- **AIDR-019 — Dashboard/Edge-Function contract completeness [P1; BLOCKED_EXTERNAL]**: No UI code invokes a non-existent function; device enrollment completes end-to-end from the browser; every invoked function has a contract test in the release manifest.
+- **AIDR-019 — Dashboard/Edge-Function contract completeness [P1; IN_PROGRESS]**: Local acceptance (verified): no UI code invokes a non-existent function and every invoked function has a contract test in the release manifest. Live acceptance (open): device enrollment completes end-to-end from a browser against the deployed control plane, and live Entra/Okta SCIM provisioning is accepted.
 - **AIDR-044 — Encrypted backup and validated restore [P0; BLOCKED_EXTERNAL]**: Restore database and objects to an independent environment; prove retention, key recovery and agreed RPO/RTO.
 - **AIDR-049 — Production deployment and native host acceptance [P0; BLOCKED_EXTERNAL]**: Customer/cloud HTTPS onboarding, SMTP/IdP, supported host/OS canaries and failover evidence for the sold candidate.
 - **AIDR-050 — Enterprise fleet installers and updates [P1; BLOCKED_EXTERNAL]**: MDM distribution, signed updates, policy-preserving rollback and uninstall across supported hosts.
 - **AIDR-051 — Continuous agent discovery and delegated credential scope [P1; BLOCKED_EXTERNAL]**: Scheduled fleet/cloud collectors with freshness and identity; short-lived least-privilege tool credentials.
-- **AIDR-052 — Measured availability, scale and isolation under load [P0; IN_PROGRESS]**: Defined workload and observation window, HA/failover, tenant noisy-neighbor tests and agreed availability evidence.
+- **AIDR-052 — Measured availability, scale and isolation under load [P0; BLOCKED_EXTERNAL]**: Defined workload and observation window, HA/failover, tenant noisy-neighbor tests and agreed availability evidence.
+- **AIDR-070 — Reproducible secret scanning and historical credential triage [P0; BLOCKED_EXTERNAL]**: The versioned scanner passes the current tree; every historical finding is classified by the Security owner; any live credential is revoked and rotated; approved fixtures receive exact fingerprint exceptions; the full-history release gate passes.
 
 ### Faz 5 — Ticari ve dış kanıt kapıları
 
@@ -953,7 +954,7 @@ Kapıları bu sırada ve ayrı loglarla çalıştır. Bir kapı başarısızsa k
 23. `pnpm verify:fleet:windows` ve `pnpm verify:fleet:unix` çalıştır; mevcut olmayan OS/MDM hostunu başarı sayma.
 24. `pnpm verify:monitoring`, `pnpm verify:upgrade`, `pnpm verify:support-bundle`, `pnpm verify:load`, `pnpm verify:release-signing`, `pnpm verify:backup-offsite` ve `pnpm verify:offboarding` kapılarını ayrı loglarla çalıştır.
 25. `pnpm verify:customer-onboarding` ve `pnpm test:customer-demo` ile ilk kullanıcının empty-state, install, policy, incident, response, export ve support yolunu doğrula.
-26. Generatorları ikinci kez çalıştır ve `git diff --exit-code -- FEATURE_INVENTORY.json FEATURE_INVENTORY.md PRODUCTION_SALES_GAPS.json PRODUCTION_SALES_GAPS.md READINESS_BACKLOG.json` ile deterministik olduklarını kanıtla.
+26. `node scripts/check-generator-determinism.mjs` ile feature inventory ve sales-gap generatorlarının ikişer koşuda aynı, generator-owned çıktılar verdiğini doğrula; `node scripts/validate-backlog.mjs` ile manuel tutulan `READINESS_BACKLOG.json` kanıt ve tutarlılık kurallarını denetle. Backlog dosyasını generated-output diff'ine dahil etme.
 27. Paketleri boş temporary dizin ve boş `PATH` senaryosunda kur; bütün declared `bin`/exports/assets, license, notice, version ve platform dosyalarının bulunduğunu doğrula.
 28. Candidate freeze sonrası bütün zorunlu kapıları yeniden çalıştır. Testten sonra source, lockfile, generated registry veya release içeriği değiştiyse digest'i yenile ve bütün candidate-bound kapıları tekrar çalıştır.
 
@@ -975,9 +976,9 @@ Sonuçları `.release-evidence/v8-resource-profile-*.json`, `.release-evidence/v
 ## Üretilecek teslimatlar
 
 1. Uygulama ve test değişiklikleri.
-2. Güncellenmiş generatorlar ve yeniden üretilmiş `FEATURE_INVENTORY.json/.md`, `PRODUCTION_SALES_GAPS.json/.md`, `READINESS_BACKLOG.json`.
-3. `docs/production-readiness/2026-09-13-customer-candidate-v8.md`: karar, değişiklikler, bütün komut/exit code/test sayıları, coverage, açık sınırlar, kaynak ölçümü ve candidate digest.
-4. Güncel `first-customer-sales-packet-v8.md`, destek/incident/runbook bağlantıları ve market capability delta.
+2. Güncellenmiş generatorlar ve yeniden üretilmiş `FEATURE_INVENTORY.json/.md` ile `PRODUCTION_SALES_GAPS.json/.md`; manuel kaynak olan `READINESS_BACKLOG.json`'ı yalnız kanıtlı olarak güncelle ve `node scripts/validate-backlog.mjs` ile doğrula.
+3. CI artifact olarak üretilen evidence index: karar, bütün komut/exit code/test sayıları, coverage, açık sınırlar, kaynak ölçümü ve candidate digest.
+4. Gerekiyorsa güncellenmiş `first-customer-sales-packet-v8.md`, destek/incident/runbook bağlantıları ve market capability delta.
 5. Benzersiz v8 release-output, portable customer kit ve outer envelope. Resmi key yoksa imzasız olduğu açıkça yazılmalı.
 6. Makine okunur evidence index: her gate için komut, start/end UTC, exit code, log hash'i, candidate digest, status ve limitation.
 

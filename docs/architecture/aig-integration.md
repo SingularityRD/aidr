@@ -1,13 +1,27 @@
 # AIG (AI-Infra-Guard) Integration Architecture
 
-> **Status:** Implementing — Tencent AIG v4.5.1 runtime verified locally | **Updated:** 2026-08-04
+> **Status:** First-customer acceptance open — source/data verify locally, but the
+> committed manifest is unsigned and the AIG submodule hardening patch is
+> uncommitted. The current source gitlink is Tencent `v4.6.1`
+> (`e68bc5d09a222a3d16b873ded93eb6d726028975`).
 > **Owners:** AIDR Core Team, AIG Integration Team
+
+The request/response examples below document the earlier `v4.5.1` design and
+are **not** current live-scan or production acceptance evidence. For the active
+security, readiness and release-signing contract, use the
+[bridge runbook](../../services/aig-bridge/README.md) and `pnpm aig:verify`.
+Do not present AIG as first-customer ready until the submodule patch is pinned,
+the data manifest is signed with a trusted release key, the runtime attests
+the same bundle, and real scan/restore/host acceptance evidence exists.
 
 ## 1. Overview
 
 This document defines the integration architecture between **Singularity AIDR** (TypeScript monorepo, runtime security layer for AI coding agents) and **Tencent AI-Infra-Guard (AIG)** (Python/Go scanning platform for AI infrastructure).
 
-The integration combines AIDR's local agent controls with optional AIG-backed infrastructure, MCP, Agent-Scan, and jailbreak evaluation. Any dataset size, platform coverage, or real-time claim must be tied to a versioned evidence record before it is used in customer or investor material.
+The integration combines AIDR's local agent controls with optional AIG-backed infrastructure, MCP, Agent-Scan, and jailbreak evaluation. Any dataset size, platform coverage, or latency claim must be tied to a versioned evidence record before it is used in customer or investor material.
+
+This product includes software developed at Tencent Zhuque Lab. Based on
+[Tencent Zhuque Lab AI-Infra-Guard](https://github.com/Tencent/AI-Infra-Guard).
 
 ### 1.1 Design Principles
 
@@ -19,23 +33,26 @@ The integration combines AIDR's local agent controls with optional AIG-backed in
 | **Async by default** | Long-running scans return a task ID; results are polled or pushed |
 | **Attribution required** | All integrations must attribute Tencent Zhuque Lab per AIG's NOTICE file |
 
-### 1.3 Verified upstream contract (2026-08-04)
+### 1.3 Current source pin and historical task contract
 
-The integration is pinned to the official Tencent repository at tag `v4.5.1`,
-commit `31c72a9799c8b19d89bcb331d4f8038f05462b8f`. The checkout is recorded as
-the `vendor/ai-infra-guard` submodule and is verified by `pnpm aig:verify`.
-The current compiler evidence is 1,925 CVE entries across 108 frameworks, 133
-fingerprints and 14 local MCP categories. The running AIG knowledge API reports
-1,891 vulnerability records and 15 MCP knowledge records; these are upstream
-runtime counts and must not be conflated with the generated consumer index.
+The parent Git submodule pointer, release-sequence registry and generated
+manifest all reference Tencent `v4.6.1` at
+`e68bc5d09a222a3d16b873ded93eb6d726028975`. Local `pnpm aig:verify`
+checks that pin and reports 2,017 generated CVE entries, 146 fingerprints,
+14 local MCP categories and a 4,207-file runtime data tree. These are build
+counts, **not** a live AIG knowledge API count or detection-rate claim. The
+manifest has `signature: null`, so release-mode verification and bridge
+dataset readiness must fail closed. The uncommitted vendor hardening patch
+also prevents a reproducible release from this parent commit.
 
 Tencent's v4 task API uses `target` (singular), `timeout`, optional `headers`,
 and an optional `model` object. A model is required when the upstream has no
 default model. The bridge translates its public `targets` request into this
 allow-listed payload, normalizes AIG's `doing`/`done` states to
 `running`/`completed`, and exposes non-secret fingerprint evidence in the
-result response. The v4.5.1 server has no authentication layer; it must remain
-on the private Docker network and its optional host bind defaults to loopback.
+result response. The raw AIG server has no user-facing authentication layer;
+Compose gives it no host port. Only the authenticated bridge binds to host
+loopback by default.
 
 The four task routes use the following v4.5.1 contracts: infrastructure sends
 `target`, `headers`, `timeout` and `model`; MCP sends the exact URL as
@@ -53,10 +70,9 @@ constructor, and reads `Tool.inputSchema` while SDK 2.x exposes
 `input_schema`. This shim is loaded only in the AIG worker and is covered by
 the MCP bridge contract test.
 
-The upstream data tree contains case-colliding paths (for example `Dify` and
-`dify`, `LiteLLM` and `litellm`). A Linux build worker is required for complete
-case-sensitive source reproducibility; the verification command emits an
-explicit warning when those groups are present.
+The compiler reads pinned Git blobs byte-for-byte, including paths that may
+collide on case-insensitive hosts. A Linux image build and live scan still need
+separate acceptance; a successful source compilation does not prove them.
 
 ### 1.2 Integration Model: Sidecar Service
 
@@ -127,7 +143,7 @@ Scans AI infrastructure components for known CVEs from the configured AIG vulner
 }
 ```
 
-**Response:**
+**Historical example response (not current runtime evidence):**
 ```json
 {
   "task_id": "aig-task-abc123",
@@ -202,7 +218,7 @@ worker evaluates its full rule set.
 }
 ```
 
-**Response:**
+**Historical example response (not current runtime evidence):**
 ```json
 {
   "task_id": "aig-task-mcp-456",
@@ -306,7 +322,7 @@ GET /api/v1/threats/latest
 
 Returns the latest threat intelligence and scanning rules for AIDR to sync.
 
-**Response:**
+**Historical example response (not current runtime evidence):**
 ```json
 {
   "rules_version": "v4.5.1",
@@ -351,10 +367,11 @@ GET /api/v1/health
 }
 ```
 
-Tencent v4.5.1 exposes no authenticated worker-list/health endpoint, so the
-bridge intentionally reports `aig_agent: "unknown"`; `/api/v1/readyz` proves
-the server/auth boundary only. A capability task must complete before that
-scan type is advertised as ready.
+This response is historical v4.5.1 evidence, not a current readiness example.
+The v4.6.1 AIDR hardening patch adds authenticated worker and dataset
+attestation; current `/api/v1/readyz` must reject an unsigned manifest,
+missing worker, mismatched runtime tree, or unavailable knowledge API. A
+capability task must also complete before advertising a scan type as ready.
 
 ---
 
@@ -519,33 +536,43 @@ docker-compose.aig.yml
 └── aig-agent       (Go agent, WebSocket connection to aig-server)
 ```
 
-All services share the `aidr-aig-network` bridge network.
+All services share the internal `aidr-aig-network` control network. A reviewed
+egress proxy must join this network and a separate external network; the raw
+AIG server has no host port.
 
 ### 5.2 Environment Configuration
 
-Defined in `.env.aig`:
+Copy `.env.aig.example` to a local `.env.aig`, then supply the required values.
+Keep credentials and signing material out of version control. Configuration is
+defined in the local `.env.aig`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AIG_SERVER_PORT` | AIG Go server port | `8088` |
-| `AIG_BRIDGE_PORT` | Python bridge port | `8099` |
-| `AIG_DB_PATH` | SQLite database path | `/app/db/tasks.db` |
-| `AIG_UPLOAD_DIR` | File upload directory | `/app/uploads` |
-| `AIG_LOG_DIR` | Log directory | `/app/logs` |
+| `AIG_SOURCE_VERSION` | Pinned source tag, checked against the Git submodule | `v4.6.1` |
+| `AIG_BIND_ADDRESS` | Authenticated bridge host bind | `127.0.0.1` |
+| `AIG_BRIDGE_PORT` | Authenticated bridge host port | `8099` |
 | `AIG_TZ` | Timezone | `Asia/Shanghai` |
-| `AIG_AGENT_COUNT` | Number of agent workers (v4.5.1 must remain `1` because registration ID is hard-coded) | `1` |
+| `AIG_AGENT_COUNT` | Worker replicas; keep one until distinct live identities are proved | `1` |
+| `AIG_AGENT_SHARED_SECRET` | Private server/worker readiness and registration secret | required |
+| `AIG_SIGNING_PUBLIC_KEY_HOST_PATH` | Reviewed release public key mounted read-only | required |
+| `AIG_TRUSTED_SIGNING_KEY_ID` / `AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256` | Independent signer identity and SPKI pin | required |
+| `AIG_EXPECTED_DATA_BUNDLE_ID` / `AIG_EXPECTED_SOURCE_COMMIT` | Release bundle and source pins | required |
+| `BRIDGE_AUTH_MODE` / `BRIDGE_JWT_SECRET` / `BRIDGE_JWT_ISSUER` / `BRIDGE_JWT_AUDIENCE` | Production broker authentication | required |
+| `BRIDGE_TASK_POSTGRES_DSN` | Migrated, shared task registry and JWT replay-protection store | required for HA |
+| `BRIDGE_EGRESS_PROXY_URL` | Reviewed, reachable scanning egress proxy | required |
 | `BRIDGE_LOG_LEVEL` | Bridge log level | `INFO` |
-| `BRIDGE_AIG_URL` | AIG server URL for bridge | `http://aig-server:8088` |
 
 ### 5.3 Volume Mounts
 
 | Volume | Container Path | Purpose |
 |--------|---------------|---------|
-| `aig-data` | `/app/data` | CVE database, fingerprints, rules |
 | `aig-db` | `/app/db` | SQLite task database |
 | `aig-logs` | `/app/logs` | Server logs |
 | `aig-uploads` | `/app/uploads` | Uploaded scan files |
-| `aig-agent-data` | `/app/data` | Agent scan data (read-only) |
+| `aig-checker-data` | `/api-checker-data` | Worker checker state |
+| `aig-bridge-state` | `/app/state` | Bridge replay/local state |
+| `./packages/core/src/generated` | Server `/app/aig-manifest`, bridge `/app/aig-data` | Signed release manifest (read-only bind) |
+| `AIG_SIGNING_PUBLIC_KEY_HOST_PATH` | `/run/secrets/aig-signing-public.pem` | Public verification key (read-only bind) |
 
 ---
 
@@ -595,7 +622,8 @@ aidr/
 │       └── README.md
 │
 ├── docker-compose.aig.yml    # NEW: Docker compose for AIG stack
-├── .env.aig                  # NEW: Environment variables for AIG
+├── .env.aig.example          # Safe template for local AIG configuration
+├── .env.aig                  # Local AIG configuration; do not commit
 │
 └── docs/
     └── architecture/
@@ -609,17 +637,19 @@ aidr/
 ### 7.1 Network Security
 
 - All inter-service communication occurs on an isolated Docker bridge network
-- The bridge and AIG server host binds default to `127.0.0.1`; set
-  `AIG_BIND_ADDRESS` only behind an authenticated private ingress
-- The upstream AIG server is unauthenticated, so a public `8088` bind is a
-  release blocker; the AIDR bridge remains the authenticated ingress
+- Only the authenticated bridge binds to host loopback by default. The raw
+  AIG server is internal-only and must never be published directly.
+- The worker and server receive egress only through a separately deployed,
+  policy-enforcing proxy; Compose does not include that proxy.
 
 ### 7.2 API Authentication
 
-- Tencent AIG v4.5.1 does not validate an API key. Treat the AIG server and
-  agent network as private infrastructure and never publish its UI/API.
-- AIDR-to-bridge calls use `BRIDGE_API_KEY` plus `X-AIDR-Tenant-ID`; polling is
-  tenant-scoped and `Idempotency-Key` retries are payload-bound.
+- The AIG server has no user-facing authentication layer. Its worker WebSocket
+  and internal readiness route require `AIG_AGENT_SHARED_SECRET`, but its
+  UI/API must remain private.
+- Production AIDR-to-bridge calls use broker tokens and `X-AIDR-Tenant-ID`;
+  isolated local mode may use `BRIDGE_API_KEY`. Polling is tenant-scoped and
+  `Idempotency-Key` retries are payload-bound.
 - All scan requests carry user context for audit logging
 
 ### 7.3 Data Isolation
@@ -663,6 +693,7 @@ pnpm compile:aig
 pnpm aig:verify
 
 # Start the AIG sidecar stack
+# Create .env.aig from .env.aig.example if no local file exists, then fill it.
 $env:BRIDGE_API_KEY='generate-a-long-random-secret'
 docker compose --env-file .env.aig -f docker-compose.aig.yml up -d --build
 

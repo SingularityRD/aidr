@@ -1,11 +1,28 @@
 # AIDR — remaining local gaps, step by step
 
+> **Historical execution log, not current readiness evidence.** The `DONE` tables
+> and commit IDs below describe work recorded in an earlier hardening session;
+> they do not assert that the current checkout or release candidate has passed
+> its gates. `READINESS_BACKLOG.json` is a manually maintained issue ledger;
+> its recorded baseline and latest-verification fields are historical and are
+> not proof for the current checkout. For current source/worktree mapping, use
+> [`FEATURE_INVENTORY.json`](../../FEATURE_INVENTORY.json) and
+> [`PRODUCTION_SALES_GAPS.json`](../../PRODUCTION_SALES_GAPS.json). For
+> candidate-bound release proof, use the generated index at
+> `.release-evidence/v8-evidence-index.json` and its schema
+> [`v8-evidence-index.schema.json`](./v8-evidence-index.schema.json). As
+> inspected on 24 September 2026, the index had an unknown candidate digest and
+> every gate was `NOT_RUN`; it did not authorize release.
+
 Decision at the start of this list: **NO-GO**. Everything below is a *local* gap —
 code, artifact or gate that this repository can provide without a customer, a
 signature key, a cloud account or a finance approval. Items that need those stay
 listed as external and are not attempted.
 
-Status key: `DONE` (committed and verified), `OPEN`, `EXTERNAL` (cannot be closed locally).
+Historical status key used by this log: `DONE` (committed and verified at the
+time recorded), `OPEN`, `EXTERNAL` (cannot be closed locally). The backlog's
+status vocabulary tracks issue triage, but its recorded snapshot must be
+reconciled before it is treated as current checkout status.
 
 ## DONE in this session
 
@@ -94,5 +111,12 @@ COM-011); finance approval and live provider keys (BIL-01/02/03, COM-004);
 competitor access and a measurement budget (T39); an MDM test tenant and
 notarization (CLI-04, AIDR-050); offsite storage with an independent key
 custodian and agreed RPO/RTO (DEP-06, AIDR-044); a live control plane with DNS and
-TLS (AIDR-016); IdP/SMTP configuration (TEN-04, T18); 8-hour soak and monthly SLI
-(AIDR-052, COM-013). `AIG_RELEASE=true` also needs a manifest signing key.
+TLS (AIDR-016); IdP/SMTP configuration (TEN-04, T18); directory-group sync and
+live browser/IdP acceptance (AIDR-019); real customer OS/architecture/host
+acceptance (AIDR-049); live cloud/MDM/tool-provider acceptance (AIDR-051); an
+8-hour multi-host soak, failover and approved monthly SLI/SLA (AIDR-052,
+COM-013); and security-owner triage of full-history secret findings (AIDR-070).
+`AIG_RELEASE=true` also needs a manifest signing key. These are historical notes.
+The backlog is an issue ledger whose snapshot must be reconciled before being
+treated as current checkout status; the commercial evidence registry is the
+release decision record.

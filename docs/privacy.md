@@ -7,10 +7,15 @@ lawful basis for every enabled sink.
 
 ## Default posture
 
-Detection and policy evaluation run locally. Source files, file contents and
-full prompts are not sent to a remote sink by the local evaluator. Optional
-network features are independently configurable and fail open when a remote
-service is unavailable.
+Detection and policy evaluation run locally. Local heuristics do not upload
+source files or full prompts. Enabled reputation checks, managed telemetry,
+deep scans, diagnostics and operator-configured notifications have separate
+outbound paths. An unavailable reputation check is reported as incomplete
+inspection and can require review; it is not treated as a clean result.
+In source/development defaults, URL, file and package reputation checks are
+disabled; enabling them opts into the separate outbound flows below. Automatic
+version checks are also disabled by default. See [Configuration](configuration.md)
+for the executable defaults and options.
 
 ```mermaid
 flowchart LR
@@ -20,8 +25,10 @@ flowchart LR
   Boundary -->|"hash (default) or full"| ControlPlane["Control-plane ingest"]
   Input -->|"optional URL reputation"| URLAPI["URL reputation API"]
   Input -->|"optional package/file hash"| FileAPI["File reputation API"]
-  Runtime["Runtime metadata"] --> Version["Version check"]
-  Error["Errors / spans (opt-in)"] --> Sinks["Sentry / OTLP with scrubbers"]
+  Input -->|"explicit deep scan"| AIG["Configured AIG bridge"]
+  Runtime["Runtime metadata"] -->|"opt-in update check"| Version["Version service"]
+  Error["Errors (explicit opt-in / browser DSN)"] --> Sinks["Runtime/browser Sentry with scrubbers"]
+  Response["Quarantine notice"] -->|"configured webhook"| Webhook["Webhook / Slack"]
 ```
 
 ## What can leave the process
@@ -29,10 +36,14 @@ flowchart LR
 1. **URL reputation** — when `url_check.enabled` is true, URLs extracted from
    tool calls are sent to the configured reputation API. Disable this feature
    for an offline or customer-controlled deployment.
-2. **File/package reputation** — package/file hashes (SHA-256) and registry
-   metadata may be sent for reputation checks; file contents are not uploaded.
-3. **Version check** — version, agent runtime/version, OS/architecture and a
-   random installation ID may be sent. The installation ID is persisted at
+2. **File/package reputation** — package names, versions, registry metadata
+   and file hashes (SHA-256) may be sent to package registries and the
+   configured reputation service; file contents are not uploaded by this leg.
+3. **Version check** — automatic startup/extension checks require
+   `version_check.enabled: true`. They send version, agent runtime/version,
+   OS/version/architecture and a random installation ID; an enrolled runtime
+   may also send its API key as an Authorization header. Direct callers of
+   `checkForUpdate()` are separate. The installation ID is persisted at
    `~/.singularity-aidr/installation-id`.
 4. **Managed control plane** — only when managed mode, control-plane sync and
    an API key are configured. Runtime verdict events cross a mandatory
@@ -41,24 +52,38 @@ flowchart LR
    configured `"none"` mode still strips bearer credentials, API keys, JWTs,
    URL credentials and secret query parameters, but is not recommended for
    production because ordinary command/URL text can remain.
-5. **Sentry** — only when `SENTRY_DSN` and `SENTRY_ENABLED` permit it. Event
-   messages, exception values/stacks, request URLs/query strings, context,
-   tags and user PII are scrubbed before send. An anonymous installation ID
-   may be used for event grouping; `sendDefaultPii` is not enabled.
-6. **OpenTelemetry/OTLP** — only when `TRACE_ENABLED=true` and an OTLP
-   endpoint is configured. Span attributes/events/exceptions are scrubbed;
-   endpoint credentials, query strings and fragments are removed before the
-   exporter is created. W3C trace context contains identifiers, not payloads.
+5. **Diagnostics** — Node runtimes that initialize core Sentry send events
+   only when `SENTRY_ENABLED=true` (or `1`) **and** a real `SENTRY_DSN` are set;
+   DSN alone does not opt in. Blank/placeholder DSNs do not enable default
+   runtime telemetry. The dashboard browser has a separate configuration: it
+   initializes Sentry only with a configured runtime/build-time DSN;
+   its tracing sample rate defaults to zero. Events, exceptions, URLs, context
+   and breadcrumbs are scrubbed, but arbitrary prose still needs customer
+   review. `sendDefaultPii` is false. The Cursor and VS Code extensions do
+   not initialize Sentry; their verdict evidence remains in the host UI/logs
+   and local audit trail.
+6. **AIG deep scan** — an explicit scan sends the target and options to the
+   configured AIG bridge (loopback by default). A target can contain full
+   user-controlled text; verify where that bridge runs before using it with
+   customer data.
+7. **Response notifications** — when configured, quarantine webhooks/Slack
+   alerts can send identifiers, original file paths, hashes and threat IDs to
+   the chosen destination.
 
 The outbound control-plane client also applies the redaction boundary itself,
 so callers cannot accidentally bypass it by constructing an event directly.
 
 ## What stays local
 
-- Source code, file contents and full tool input used by the detector.
+- Source code, file contents and full tool input used by local heuristics stay
+  in-process unless an explicit outbound feature sends a derived or selected
+  value as described above. Full URLs and AIG scan targets are not inherently
+  anonymous.
 - Heuristic/threat matching and policy decisions.
 - Verdict cache, allowlist and local audit/incident records.
-- Sentry/OTLP are disabled unless explicitly configured.
+- Node Sentry is disabled without explicit `SENTRY_ENABLED=true` (or `1`)
+  and a real DSN. Browser Sentry is disabled without its configured DSN; the
+  Cursor and VS Code extensions do not initialize it.
 
 Local logs can still contain security evidence. They are protected by local
 filesystem permissions, should be treated as confidential, and must not be
@@ -114,6 +139,8 @@ Disable optional reputation and managed telemetry for a fully local pilot:
 {
   "url_check": { "enabled": false },
   "file_check": { "enabled": false },
+  "package_check": { "enabled": false },
+  "version_check": { "enabled": false },
   "control_plane": {
     "enabled": false,
     "send_audit_logs": false
@@ -121,13 +148,16 @@ Disable optional reputation and managed telemetry for a fully local pilot:
 }
 ```
 
-Also leave `SENTRY_DSN` unset and `TRACE_ENABLED` unset/false. Verify the
-effective configuration and outbound network policy in the customer
-environment; this document does not replace that evidence.
+For a source/development build, leave `SENTRY_ENABLED` unset/false and
+`SENTRY_DSN` unset, and leave the dashboard's browser Sentry DSN unset; do not
+configure AIG remote scans or notification
+webhooks. Commercial builds force managed mode and cannot use this as an
+offline bypass. Verify the effective configuration and outbound network policy
+in the customer environment; this document does not replace that evidence.
 
 ## Pilot evidence still required
 
 Before a customer or investor demo, attach the destination inventory,
-Sentry/OTLP retention and access settings, DPA/subprocessor review, regional
+diagnostic retention and access settings, DPA/subprocessor review, regional
 routing, key-rotation/custody procedure, deletion/DSAR procedure and an
 independent restore test for signed audit evidence.

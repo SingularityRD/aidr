@@ -70,7 +70,7 @@ After the tree and candidate are settled, run the orchestrator once, sequentiall
 
 ```bash
 node scripts/run-evidence-gates.mjs
-node scripts/generate-v8-evidence-index.mjs --verify
+pnpm evidence:index:verify
 ```
 
 Do not modify or commit the generated evidence after this rehearsal; any change makes the candidate-bound stamps stale. Review the final index and logs, publish only the evidence for the exact candidate, and report any unavailable host, invalid credential, missing receipt, or failed gate as open.

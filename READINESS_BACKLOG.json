@@ -3,7 +3,8 @@
   "schemaVersion": 1,
   "registryKind": "aidr-readiness-backlog",
   "product": "Singularity AIDR",
-  "generated": "2026-09-12",
+  "generated": "2026-09-22",
+  "recordScope": "Manually maintained issue ledger, not candidate-bound release evidence. The generated, baseline, lastReviewed and latestVerification fields preserve the dates and state of their recorded snapshots; baseline.cleanTree applies only to baseline.commit and says nothing about the present worktree or any release candidate. Finding statuses support issue tracking, not candidate acceptance. The commercial registry is the release decision record.",
   "supersedes": "AIDR_PROJECT_AUDIT.md, FEATURE_MAP.md, IMPLEMENTATION_STATUS.md (stale, partially false)",
   "authoritativeDecisionRecord": "docs/production-readiness/commercial-go-evidence-registry.json",
   "statusVocabulary": [
@@ -279,7 +280,7 @@
         "DELETED (6 modules, each justified): billing/agent-seat-manager.tsx (writes agent_seats, created by no migration, invokes the absent billing-portal function, and duplicates the reachable BillingPage seat view); billing/seat-manager.tsx (users/agent_seats/referral_credits unmigrated, and subscriptions.plan_type/seats do not exist); billing/referral-section.tsx (users/referral_credits unmigrated); billing/index.ts (a barrel that only re-exported the deleted seat manager); auth/invite-system.tsx (referrals/users unmigrated plus three absent Edge Functions — and the clearest false-success path in the codebase: it printed 'Davet gönderildi!' with no table and no email); ui/DarkModeToggle.tsx (a duplicate of the reachable ui/ThemeToggle.tsx, which PublicLayout now uses).",
         "KEPT WITH REASON, and this is the part a naive dead-code sweep would have got wrong: billing/payment-router.ts and billing/provider-selector.tsx are NOT dead — billing-stripe.test.ts imports them and scripts/check-commercial-surface.mjs pattern-matches both, so deleting them would have broken the Lemon->Stripe commercial contract gate. A test now pins that they must stay.",
         "billing/lemon-client.ts was ALREADY absent before this work (the lemon-webhook Edge Function directory is gone and billing-stripe.test.ts already asserts its absence), so there was nothing left to do for it.",
-        "REPORTED BUT DELIBERATELY NOT TOUCHED (same class, outside this finding's scope): enterprise/audit-view.tsx is still unrouted and its export path needs the absent audit-export function (a good candidate for a future /audit route); auth/google-provider.tsx, auth/index.ts and lib/crypto.ts remain unreferenced. Recording these rather than quietly sweeping them keeps the dead-code backlog honest.",
+        "REMOVED AFTER THE CURRENT CONSOLIDATION (not a remaining task): enterprise/audit-view.tsx, auth/google-provider.tsx, auth/index.ts and lib/crypto.ts were deleted after repository-wide reference checks. Restore only if a supported route or consumer is added and covered.",
         "MUTATION EVIDENCE: a new dashboard-module-surface test (8 guards) pins both directions — that the six deleted modules are gone and that the two contract-referenced billing modules still exist.",
         "VERIFIED RUN: npx vitest run packages/dashboard -> exit 0, 7 files, 95 passed; tsc --noEmit exit 0; dashboard build exit 0; check-commercial-surface.mjs, check-supabase-edge-contracts.mjs and check-supabase-migrations.mjs all exit 0."
       ],
@@ -528,10 +529,10 @@
       "observedBehavior": "packages/sdk/src/client.ts:73-74 cwd-relative loads; packages/sdk/package.json files:['dist'] (no data shipped); client.ts:44-64 never parses config; middleware.ts:70 `if (!result.allowed && result.decision === \"deny\")`.",
       "expectedBehavior": "SDK init resolves bundled threat/allowlist data (via AIDR_THREATS_DIR or a packaged resource path, as core's connectors already do); config is validated so retries is defined; and an unresolved/indeterminate check must not be treated as approval.",
       "reproduction": "Consume the packed SDK tarball in a clean directory outside the monorepo and call init(); observe the throw. Static read for the retries and middleware defects.",
-      "component": "packages/sdk/src/client.ts, packages/sdk/src/middleware.ts, packages/sdk/adapters/autogen.ts, packages/sdk/adapters/crewai.ts, packages/sdk/package.json, packages/sdk/src/bundled-dirs.ts, packages/sdk/scripts/sync-assets.mjs, packages/sdk/src/__tests__/packaging.test.ts, packages/sdk/src/__tests__/data-dir-resolution.test.ts",
+      "component": "packages/sdk/src/client.ts, packages/sdk/src/middleware.ts, packages/sdk/src/adapters/generic.ts, packages/sdk/package.json, packages/sdk/src/bundled-dirs.ts, packages/sdk/scripts/sync-assets.mjs, packages/sdk/src/__tests__/packaging.test.ts, packages/sdk/src/__tests__/data-dir-resolution.test.ts",
       "rootCause": "SDK authored against monorepo-relative paths and never exercised from a packed consumer; enforcement semantics for the 'ask' decision were left inconsistent between the wrap() and express()/nextjs() APIs.",
       "dependencies": "None.",
-      "acceptanceCriteria": "A packed SDK initialises and evaluates in a directory outside the repo; an 'ask'/indeterminate result blocks (or explicitly requires approval) in every adapter, with a test per adapter.",
+      "acceptanceCriteria": "A packed SDK initialises and evaluates in a directory outside the repo; an 'ask'/indeterminate result blocks (or explicitly requires approval) in both retained middleware surfaces, with focused tests.",
       "plannedFix": "Bundle data dirs into the SDK (mirroring core's assets resolver), validate config in the constructor, and unify 'ask' handling so it never silently executes.",
       "verificationMethod": "Consumer smoke test from a packed tarball in a temp directory plus per-adapter tests for the ask/deny/allow matrix. Implemented as packages/sdk/src/__tests__/packaging.test.ts: pnpm pack -> extract into <tmp>/node_modules/@singularityrd/aidr-sdk -> run init() + check() through BOTH entry points from a cwd outside the repo (malicious=deny, benign=allow), plus a dist-only extraction proving the missing-data case fails loudly.",
       "status": "VERIFIED_CLOSED",
@@ -560,7 +561,8 @@
         "Fail-loud, not silent: init() wraps load failures and zero-rules in AIDRInitError naming every path it searched. There is no empty-rule-set fallback anywhere.",
         "THREE SITUATIONS TESTED: (a) monorepo source tree — resolves <sdk>/resources, cwd-independent (asserted with two different cwds); init()+check() give deny for a reverse shell and allow for `ls -la`. (b) INSTALLED PACKAGE, tested with a REAL tarball rather than a simulation — `pnpm pack` then extract into <tmp>/node_modules/@singularityrd/aidr-sdk, run a consumer with cwd outside the repo through BOTH the ESM and CJS entry points: init() succeeds, sources report {threats:'package',allowlists:'package'}, malicious -> deny, benign -> allow. (c) MISSING ASSETS — AIDRDataDirError listing every searched path; check() rejects and a wrapped middleware function never executes; the old dist-only tarball shape exits non-zero printing INIT_FAILED:AIDRDataDirError and never prints a check result.",
         "VERIFIED RUN: pnpm -C packages/sdk run build -> exit 0; AIDR_TEST_NO_BUILD=1 npx vitest run packages/sdk -> exit 0, 5 files, 89/89 passed (baseline was 3 files / 68); packaging test alone 6/6; cd packages/sdk && npx tsc --noEmit -> exit 0.",
-        "NOT VERIFIED, stated plainly: no install from the real restricted registry (unreachable here); core is substituted with its locally packed tarball of the same version plus junctioned workspace deps — that is what a registry install resolves to, but it is a substitution and is labelled as one in the test header. The ESM entry keeps @singularityrd/aidr-core external by design, so an ESM consumer needs core installed; the CJS entry bundles core and is self-contained (both tested). Zod strips unknown config keys when the constructor parses — no SDK code reads a non-schema key and all in-repo call sites pass schema-valid configs, but a JS caller relying on extra keys would now see them dropped."
+        "NOT VERIFIED, stated plainly: no install from the real restricted registry (unreachable here); core is substituted with its locally packed tarball of the same version plus junctioned workspace deps — that is what a registry install resolves to, but it is a substitution and is labelled as one in the test header. The ESM entry keeps @singularityrd/aidr-core external by design, so an ESM consumer needs core installed; the CJS entry bundles core and is self-contained (both tested). Zod strips unknown config keys when the constructor parses — no SDK code reads a non-schema key and all in-repo call sites pass schema-valid configs, but a JS caller relying on extra keys would now see them dropped.",
+        "LATER PONYTAIL CLEANUP: the four unconsumed framework-specific adapters and their @langchain/core dependency were deleted. The core and generic middleware fail-closed paths remain covered; SDK tests pass 47/47, typecheck and release build pass, and both packed CJS/ESM consumer imports pass."
       ],
       "owner": "engineering",
       "class": "in-repo-fixable"
@@ -576,10 +578,12 @@
       "component": "supabase/functions/** (missing), packages/dashboard/src/enterprise/team-provider.tsx, packages/dashboard/src/ui/pages/OnboardingPage.tsx",
       "rootCause": "Project merge combined a dashboard that calls a newer control-plane surface with a Supabase functions tree that only implements part of it.",
       "dependencies": "Depends on the AIDR-016 control-plane decision: these functions may be intended for the managed control plane rather than Supabase.",
-      "acceptanceCriteria": "No UI code invokes a non-existent function; device enrollment completes end-to-end from the browser; every invoked function has a contract test in the release manifest.",
-      "plannedFix": "Resolve together with AIDR-016 (decide the control-plane surface), then implement or remove the calls and add contract tests.",
+      "acceptanceCriteria": "Local acceptance (verified): no UI code invokes a non-existent function and every invoked function has a contract test in the release manifest. Live acceptance (open): device enrollment completes end-to-end from a browser against the deployed control plane, and live Entra/Okta SCIM provisioning is accepted.",
+      "plannedFix": "The local route/contract slice is verified. Deploy the chosen control-plane surface, then complete real browser device enrollment and live Entra/Okta provisioning acceptance; record that field evidence separately.",
       "verificationMethod": "Contract test per function plus a browser onboarding run to completion.",
-      "status": "BLOCKED_EXTERNAL",
+      "status": "IN_PROGRESS",
+      "localContractStatus": "VERIFIED_CLOSED",
+      "liveAcceptanceStatus": "BLOCKED_EXTERNAL",
       "evidence": [
         "grep for the eight function names finds no implementation",
         "packages/dashboard/src/enterprise/team-provider.tsx:250,321",
@@ -588,22 +592,28 @@
       ],
       "localEvidence": [
         {
-          "claim": "Acceptance parts 1 and 3: every Edge Function invoked from dashboard browser code is discovered from the TypeScript AST and resolved to a real supabase/functions/<name>/index.ts, and each one is declared in the contract manifest with an existing contract test (16/16 declared, 0 recorded gaps). A dashboard call to a non-existent function fails the gate with 'dashboard calls missing Edge function'.",
+        "claim": "Acceptance parts 1 and 3: every Edge Function invoked from dashboard browser code is discovered from the TypeScript AST and resolved to a real supabase/functions/<name>/index.ts, and each one is declared in the contract manifest with an existing contract test (18/18 declared, 0 recorded gaps). A dashboard call to a non-existent function fails the gate with 'dashboard calls missing Edge function'.",
           "evidencePath": "docs/production-readiness/edge-function-contract-manifest.json",
           "command": "node scripts/check-supabase-edge-contracts.mjs",
           "verifiedBy": "this session, exit 0"
         },
-        {
-          "claim": "The same gate fails on a dynamic (non-literal) function name, a missing supabase/config.toml deployment entry, a manifest entry whose declared test file does not exist, and a stale manifest entry, so the no-non-existent-function guarantee is enforced rather than described.",
-          "evidencePath": "scripts/check-supabase-edge-contracts.mjs",
-          "command": "node scripts/check-supabase-edge-contracts.mjs",
-          "verifiedBy": "this session, exit 0"
-        }
+      {
+        "claim": "The same gate fails on a dynamic (non-literal) function name, a missing supabase/config.toml deployment entry, a manifest entry whose declared test file does not exist, and a stale manifest entry, so the no-non-existent-function guarantee is enforced rather than described.",
+        "evidencePath": "scripts/check-supabase-edge-contracts.mjs",
+        "command": "node scripts/check-supabase-edge-contracts.mjs",
+        "verifiedBy": "this session, exit 0"
+      },
+      {
+        "claim": "The owner-only SCIM admin surface issues one-time raw tokens with no-store responses while persisting only SHA-256 hashes; it supports overlap rotation/revocation and exact external-group role mappings, with active-owner checks and audit changes in service-role-only RPCs. Stable keyset pagination keeps token and mapping listings usable beyond 100 tokens or 500 mappings.",
+        "evidencePath": "supabase/functions/scim-admin/index.ts",
+        "command": "pnpm test -- supabase/functions/__tests__/scim-admin-contract.test.ts supabase/functions/__tests__/scim.test.ts supabase/functions/__tests__/azure-ad-groups-contract.test.ts",
+        "verifiedBy": "this session, 63/63 focused tests; migration contract 57 migrations; Edge contract 18 functions and 34/34 config guards. Migration not applied to a live database."
+      }
       ],
-      "remainingExternal": "Acceptance part 2: device enrollment completing end-to-end from a real browser. That requires a browser session against a deployed control plane plus a live IdP and is blocked by AIDR-016's missing endpoint, so it cannot be produced from this repository. Contract tests alone are not accepted as evidence for it; therefore the finding moves from IN_PROGRESS to BLOCKED_EXTERNAL rather than VERIFIED_CLOSED.",
+      "remainingExternal": "Real browser device enrollment and live Entra/Okta SCIM provisioning/acceptance against a deployed control plane remain unverified; browser tests against a real tenant and live IdP cannot be produced from this repository and AIDR-016's production endpoint is absent. Contract tests prove local contracts only, not deployed identity-provider acceptance; this live field-acceptance slice remains open.",
       "owner": "engineering",
       "class": "in-repo-fixable",
-      "currentState": "Device-code precedence, policy routes, invitations, acceptance and export implemented; directory/SCIM contract remains incomplete. Earlier missing-function list is historical."
+      "currentState": "LOCAL CONTRACT SLICE VERIFIED: the browser contract gate resolves all 18 browser-invoked Edge functions to deployed function entries and named test files; the current run passed with 35/35 Edge functions configuration-guarded. LIVE ACCEPTANCE OPEN: this does not prove browser enrollment against a deployed control plane or live Entra/Okta provisioning. Earlier missing-function list is historical."
     },
     {
       "id": "AIDR-020",
@@ -1204,14 +1214,14 @@
           "verifiedBy": "recorded artefact docs/production-readiness/evidence/2026-09-11-customer-recovery.json (passed: true; scope 'Same-machine isolated recovery rehearsal; not offsite RPO/RTO acceptance')"
         },
         {
-          "claim": "Offsite backup publication/retention and the recovery drill's fail-closed rules (key-custody separation, restore-workspace ACLs, fault-window requirements) are covered by passing node --test cases.",
+          "claim": "Offsite backup publication/retention and the recovery drill's fail-closed rules (key-custody separation, restore-workspace ACLs, reviewed-runtime/candidate binding, and mandatory RPO/RTO target/result fields) are covered by passing node --test cases. A native periodic systemd service/timer template is present but is not field activation evidence.",
           "evidencePath": "scripts/deployment-restore-drill.test.mjs",
           "command": "node --test scripts/deployment-restore-drill.test.mjs scripts/deployment-backup-offsite.test.mjs",
           "verifiedBy": "this session, exit 0"
         }
       ],
-      "remainingExternal": "Acceptance 'independent environment' beyond one machine and 'agreed RPO/RTO': a real off-host/offsite storage target, an independent key custodian, scheduled retention that survives host loss, a restore performed on a separate machine, and customer-agreed RPO/RTO values. The recorded evidence explicitly excludes all of these. Local implementation is complete enough to record as evidence, so status moves to BLOCKED_EXTERNAL.",
-      "implementationNote": "Authenticated encrypted cold backup and independent-volume recovery verified locally, including SQL state and every storage file digest. Off-host retention/scheduling and customer RPO/RTO acceptance remain open."
+      "remainingExternal": "BLOCKED_EXTERNAL: a real off-host/offsite storage target, independent recovery-key custody, activated and monitored schedules that survive host loss, a restore performed on a second failure-domain machine, and customer-approved RPO/RTO targets plus acceptance. Repository templates and same-host evidence explicitly do not satisfy these conditions.",
+      "implementationNote": "Authenticated encrypted cold backup and independent-volume recovery mechanics are covered locally. The current drill requires a clean reviewed runtime and candidate digest, records explicit RPO/RTO targets/results, and ships a periodic systemd template; no offsite credentials, second-host receipt, key-custodian proof or field acceptance is fabricated."
     },
     {
       "id": "AIDR-045",
@@ -1287,19 +1297,43 @@
       ],
       "localEvidence": [
         {
-          "claim": "The sold connector/OS/arch/context matrix is declared, and the runner refuses to promote a version probe to PASS: it emits HOST_UNAVAILABLE and MISSING_NAMED_ACCEPTANCE_EVIDENCE per row instead of a green result (current local result: NO-GO).",
-          "evidencePath": "deploy/native/support-matrix.json",
+          "claim": "The historical native-host status records the real host checks that were completed and the still-open connector instrumentation, model-driven scenario, OS/architecture and named-acceptance requirements; it is not bound to the current candidate and the gate remains NO_GO.",
+          "evidencePath": "docs/evidence/native-host-status-20260916.md",
           "command": "node deploy/native/run-support-matrix.mjs --probe-only",
-          "verifiedBy": "this session, exit 1 = NO-GO by design (4 of the 6 sold hosts are HOST_UNAVAILABLE on this machine)"
+          "verifiedBy": "historical tracked status record; current candidate still requires a fresh persisted probe and named external acceptance"
         },
         {
-          "claim": "Recorded probe output for this candidate listing the open rows: HOST_UNAVAILABLE, MISSING_NAMED_ACCEPTANCE_EVIDENCE, UNOBSERVED_ACTIONS_REMAIN, T01-NATIVE-SCENARIOS:OPEN and T01-OS-VERSION-MATRIX:OPEN.",
-          "evidencePath": ".release-evidence/v8-native-probe.json",
-          "command": "node deploy/native/run-support-matrix.mjs --probe-only",
-          "verifiedBy": "recorded artefact .release-evidence/v8-native-probe.json"
+          "claim": "Cursor and VS Code execute the shared native observation path after real policy evaluation and emit connector/event/decision receipts without writing the attempt marker or side-effect sentinel.",
+          "evidencePath": "packages/extension/src/__tests__/integration.test.ts",
+          "command": "pnpm test",
+          "verifiedBy": "23/23 focused extension tests passed, including allow and deny receipt paths"
+        },
+        {
+          "claim": "OpenClaw executes its host-specific pre-action hook and emits nonce-bound allow/deny receipts through the shared core helper; incomplete observation contracts remain inert.",
+          "evidencePath": "packages/openclaw/src/__tests__/tool-handler.test.ts",
+          "command": "pnpm test",
+          "verifiedBy": "OpenClaw 11/11 focused tests passed; package TypeScript check passed"
+        },
+        {
+          "claim": "OpenCode executes its host-specific pre-action hook and emits nonce-bound allow/deny receipts through the shared core helper; incomplete observation contracts remain inert.",
+          "evidencePath": "packages/opencode/src/__tests__/tool-handler.test.ts",
+          "command": "pnpm test",
+          "verifiedBy": "OpenCode 5/5 focused tests passed; package TypeScript check passed"
+        },
+        {
+          "claim": "Codex executes its host-specific PreToolUse hook and emits nonce-bound allow/deny receipts through the shared core helper; test environments clear inherited native-test variables.",
+          "evidencePath": "packages/codex/src/__tests__/cli.test.ts",
+          "command": "pnpm test",
+          "verifiedBy": "Codex 8/8 focused tests passed; package TypeScript check passed"
+        },
+        {
+          "claim": "Claude Code's bundled PreToolUse path emits a nonce-bound deny receipt while leaving the side-effect sentinel absent; its child test environment clears inherited native-test variables.",
+          "evidencePath": "packages/claude-code/src/__tests__/integration.test.ts",
+          "command": "pnpm test",
+          "verifiedBy": "Claude Code integration 30/30 passed; package TypeScript check passed"
         }
       ],
-      "remainingExternal": "Licensed installs of all six sold connectors on their real host/OS/arch matrix, an agreed OS build list, customer/cloud HTTPS onboarding, SMTP/IdP, and failover evidence with named acceptance per row (T01). One machine cannot produce any of it, and the local runner reports exactly that as NO-GO; the finding therefore moves from CONFIRMED to BLOCKED_EXTERNAL."
+      "remainingExternal": "Repository-side connector observation instrumentation is complete. Closure still requires a clean candidate-bound persisted probe plus licensed installs on the real host/OS/architecture matrix, an agreed OS build list, customer/cloud HTTPS onboarding, SMTP/IdP, failover evidence and named acceptance per row (T01). Those systems, licenses and accountable approvers are outside this workspace, so the status is BLOCKED_EXTERNAL."
     },
     {
       "id": "AIDR-050",
@@ -1359,21 +1393,28 @@
           "evidencePath": "scripts/check-supabase-edge-contracts.mjs",
           "command": "node scripts/check-supabase-edge-contracts.mjs",
           "verifiedBy": "this session, exit 0"
+        },
+        {
+          "claim": "The authenticated Discovery page lists only reported collectors, renders freshness/alert-state without inferring unreported coverage, and its selected-tenant UI plus Edge list/read boundaries pass their focused tests.",
+          "evidencePath": "packages/dashboard/src/ui/pages/DiscoveryPage.tsx",
+          "command": "pnpm test -- packages/dashboard/src/__tests__/discovery-page.test.tsx supabase/functions/__tests__/discovery.test.ts",
+          "verifiedBy": "this session, targeted Vitest run (14/14 passed)"
         }
       ],
-      "remainingExternal": "Customer cloud/MDM API access so the central provider collectors can run against real AWS/Azure/GCP/MDM inventories, plus live tool-provider acceptance for the delegated credentials and a production schedule with freshness alerting. The local collectors, freshness identity and credential broker exist and are tested, but no real provider has been collected from; status moves from IN_PROGRESS to BLOCKED_EXTERNAL on that basis."
+      "implementationNote": "Local implementation is complete for a bounded read-only tenant Discovery dashboard: it uses the existing authenticated summary/read contracts plus a new cursor-paginated list action, displays collector and per-target freshness/alert state, and labels coverage as reported_collectors_only. The Edge list branch runs only after active membership, tenant, identity-barrier and rate-limit checks, scopes queries to the authorized tenant, and is unavailable to collector machine credentials. The CLI retains its one-shot OS-scheduler and non-overlapping --interval contract. This closes the local dashboard visibility gap only; it does not certify provider coverage or field operations.",
+      "remainingExternal": "Customer-approved AWS/Azure/GCP/MDM API scopes and credentials to collect real inventories; live tool-provider acceptance for delegated credentials; and an activated customer production schedule plus tested alert/paging delivery remain external. No real cloud/MDM provider has been collected from in this workspace."
     },
     {
       "id": "AIDR-052",
       "priority": "P0",
       "feature": "Measured availability, scale and isolation under load",
       "inventoryRef": "DEP-07",
-      "status": "IN_PROGRESS",
+      "status": "BLOCKED_EXTERNAL",
       "acceptanceCriteria": "Defined workload and observation window, HA/failover, tenant noisy-neighbor tests and agreed availability evidence.",
       "evidence": [
         "FEATURE_INVENTORY.json",
         "docs/production-readiness/agent-security-market-and-release-plan.md",
-        ".release-evidence/load-dashboard-local-20260912.json: 10 RPS 30-second single-host attempt failed under contention, 144 dropped and 47 transport errors; no HA or SLA claim."
+        "docs/production-readiness/load-capacity-v6.md: historical 10 RPS single-host failure summary; the raw derived artefact is no longer retained and is not candidate evidence."
       ],
       "localEvidence": [
         {
@@ -1383,25 +1424,25 @@
           "verifiedBy": "this session, exit 0 (9 load harness checks passed)"
         },
         {
-          "claim": "The first recorded local attempt did NOT satisfy its own thresholds: 10 RPS for 30 seconds produced availability 0.363, 47 transport errors, 144 dropped requests and p95 latency 5407 ms against a 500 ms threshold. That run executed while the full test suite, the build and eleven containers shared one host, so the result measures contention rather than the endpoint. Kept as history, not as evidence of capacity.",
-          "evidencePath": ".release-evidence/load-dashboard-local-20260912.json",
-          "command": "pnpm load:test",
-          "verifiedBy": "recorded artefact (passed: false; claims.production_accepted: false)"
-        },
-        {
-          "claim": "The same workload passes on the same host once the host is not running the test suite: 300 of 300 requests completed, 0 dropped, 0 transport errors, availability 1.0, p95 11 ms and p99 21 ms against thresholds of 500 ms and 1000 ms. The failing and passing runs differ only in host contention, which is itself the finding: the earlier failure was an environment artefact, not an endpoint defect. Target supplied through AIDR_LOAD_BASE_URL=http://127.0.0.1:8080.",
+          "claim": "A historical quiet-host workload completed 300 of 300 requests with 0 dropped, 0 transport errors, availability 1.0, p95 11 ms and p99 21 ms against thresholds of 500 ms and 1000 ms. This is consistent with host contention contributing to the earlier failure, but causality was not isolated. The artifact has no candidate_id and is not current-candidate capacity evidence.",
           "evidencePath": "docs/evidence/load-dashboard-local-rerun.json",
           "command": "node scripts/load-test.mjs --profile deploy/ha/workload.local.example.json --output docs/evidence/load-dashboard-local-rerun.json",
           "verifiedBy": "this session, exit 0 (PASS: 300 completed, 0 dropped; every threshold_check passed; artefact still claims production_accepted, production_sla_proven and ha_proven false)"
         },
         {
-          "claim": "Acceptance 'tenant noisy-neighbor tests' now has a reproducible local harness rather than only a staging template, and it produced a measurement. The policy endpoint kept the two tenants separated in identity but not in latency: the lightly loaded baseline cohort degraded from p95 35 ms alone to p95 5956 ms while a second tenant polled at four times its rate, over the same 240 scheduled requests, with availability falling from 1.000 to 0.742. Median latency was unchanged (21 ms to 22 ms), so the median request is healthy and the tail collapses. Recorded as a failing result, not as capacity evidence. The baseline-alone control is docs/evidence/load-control-local.json (240/240, 0 dropped).",
+          "claim": "A historical local noisy-neighbor measurement labels two cohorts and shows failed isolation: the lightly loaded baseline cohort degraded from p95 35 ms alone to p95 5956 ms while the second cohort polled at four times its rate, over the same 240 scheduled requests, with availability falling from 1.000 to 0.742. The tracked summary does not retain per-tenant execution identity or a candidate_id, so it is a failing historical signal rather than current-candidate capacity or tenant-provenance evidence. The baseline-alone control is docs/evidence/load-control-local.json (240/240, 0 dropped).",
           "evidencePath": "docs/evidence/load-noisy-neighbor-local.json",
           "command": "node scripts/verify-noisy-neighbor-live.mjs --deployment .release-evidence/aidr-local-deployment-r9",
-          "verifiedBy": "this session, exit 1 as expected for a failing workload; the harness profile is deploy/ha/workload.noisy-neighbor.local.json and the staged tenants carry published runtime policies"
+          "verifiedBy": "historical tracked summary, exit 1 for a failing workload; the command's candidate-bound raw output was not retained"
+        },
+        {
+          "claim": "The noisy-neighbor wrapper now binds a fresh run to the exact candidate inventory, source commit, deployment and profile hashes, host identity and two distinct tenant identities; evidence is write-once, per-run credential cleanup is exact, and dirty or shimmed runs cannot report candidate PASS.",
+          "evidencePath": "scripts/verify-noisy-neighbor-live.mjs",
+          "command": "node --test scripts/verify-noisy-neighbor-live.test.mjs",
+          "verifiedBy": "this session, exit 0 (16 tests passed, including candidate/evidence-dir integration, cleanup registration before INSERT, and fail-closed shim proof)"
         }
       ],
-      "remainingExternal": "Sized host allocation and a controlled environment for a defined workload, an observation window of at least 8 hours, HA/failover infrastructure, multi-tenant noisy-neighbour tests on independent hosts, and a customer-agreed availability SLI/SLA. Local capacity work is now demonstrated rather than absent: the local harness passes on a quiet host, and the noisy-neighbour run shows a measured 170x p95 degradation for the baseline tenant when a second tenant is active. That degradation is consistent with deploy/ha/README.md's own statement that the single-host Compose baseline is not a highly available system, but it is now measured on this installation instead of assumed. The two tenants share one database and one edge-function process, so the result does not extend to cross-host isolation, and the status remains IN_PROGRESS pending a sized environment."
+      "remainingExternal": "The repo-side candidate/provenance and cleanup harness is implemented and locally tested, but no fresh candidate-bound live run has replaced the failing historical signal. Closure still requires sized host allocation and a controlled environment for a defined workload, an observation window of at least 8 hours, HA/failover infrastructure, multi-tenant noisy-neighbour tests on independent hosts, and a customer-agreed availability SLI/SLA. The historical run measured roughly 170x p95 degradation for the baseline tenant; the two tenants shared one database and one edge-function process, so the result does not extend to cross-host isolation. Status is BLOCKED_EXTERNAL until real infrastructure and accepted candidate-bound evidence exist."
     },
     {
       "id": "AIDR-053",
@@ -1571,7 +1612,7 @@
       "impact": "An issued API key continues to receive HTTP 200 after its tenant is suspended or its membership expires. Four accepted requests were reproduced locally; cross-tenant data access was not demonstrated.",
       "acceptanceCriteria": "Active users retain legitimate access; suspended/closing/closed tenants and expired/removed memberships are rejected consistently at all API key consumers.",
       "evidence": [
-        "scripts/audit-reputation-lifecycle.mjs",
+        "supabase/functions/_shared/api-key-auth.ts",
         "docs/production-readiness/evidence/2026-09-12-reputation-lifecycle-audit.json",
         "supabase/functions/_shared/api-key-auth.ts and URL/file consumer tests 7/7 pass",
         "docs/production-readiness/evidence/2026-09-12-reputation-lifecycle-fix.json: fresh v4 local HTTP run accepts active key and rejects all four suspended/expired-member calls with 403"
@@ -1652,32 +1693,60 @@
       "priority": "P1",
       "feature": "Team dashboard usage and invitation fabrication",
       "status": "VERIFIED_CLOSED",
-      "component": "packages/sdk/src/team-dashboard.ts (published as @singularityrd/aidr-sdk)",
+      "component": "packages/sdk public API (obsolete team-dashboard scaffold removed)",
       "impact": "Two methods on a published, publicly exported SDK class returned invented results. getUsageStats ignored its team argument and the database and resolved with hardcoded zeros, so a dashboard could render '0 threats blocked / 0 active agents' for a tenant that was never measured - indistinguishable from a genuinely clean tenant, which is the false-clean result the product must never show. inviteMember ignored the team, address and role, persisted nothing (TeamDatabase.addMember was never called), and still returned an inviteId plus an inviteUrl on aidr.singularityrd.com, a host the register records as NXDOMAIN/404, so callers were handed a working-looking invitation that did not exist.",
       "observedBehavior": "getUsageStats(_teamId) returned {checksToday: 0, checksThisMonth: 0, threatsBlocked: 0, activeAgents: 0, topThreats: []} for every argument, with a TODO comment naming the missing aggregation. inviteMember(_teamId, _email, _role) generated a random UUID, built https://aidr.singularityrd.com/invite/<uuid> from a hardcoded base URL, and returned it; nothing was stored and no email was sent. Neither method had any test.",
-      "expectedBehavior": "A call whose data source is not configured must fail visibly instead of returning a plausible number or link, and a configured source must not be able to make the SDK report values it cannot render honestly.",
+      "expectedBehavior": "The SDK must not publish an unconsumed duplicate team dashboard. The deployed dashboard/control plane is the sole team-management implementation.",
       "rootCause": "The class was scaffolded with placeholder bodies and shipped unchanged; no caller in the repository exercises either method, so nothing surfaced the fabrication.",
-      "acceptanceCriteria": "Both methods raise TeamCapabilityUnavailableError, naming the missing capability, when no host-supplied source is configured; a configured source receives the real team, address, role and window; a source that returns NaN, Infinity, a negative count, a missing figure, an empty inviteId or a non-HTTP invite URL is rejected rather than rendered; reads that do not need a capability keep working.",
-      "verificationMethod": "Focused vitest suite covering the unconfigured, configured, unmeasured (null versus 0) and malformed-provider paths.",
+      "acceptanceCriteria": "The unconsumed TeamDashboard scaffold is absent from the published SDK and its public entry point; the real dashboard/control plane remains the sole team-management implementation; the retained SDK API typechecks, tests and builds.",
+      "verificationMethod": "Repository consumer search plus SDK regression test, typecheck and release build proving the removed subsystem is absent and the retained client/middleware API remains valid.",
       "status": "VERIFIED_CLOSED",
       "evidence": [
         "2026-09-20 source audit for this session: TODO markers in a published package led to team-dashboard.ts, which is exported from packages/sdk/src/index.ts with no test file and no in-repository caller.",
-        "Fixed by requiring host-supplied capabilities (TeamDashboardCapabilities) for the two calls; the capability is host-supplied by design because the security-event log records threats, not tool volume, and invitation delivery belongs to a deployed service. The dashboard's own usage surface (packages/dashboard/src/components/usage-metering.tsx) already reads real RLS-protected data and renders an explicit error block, so no fabricated default remains on that path."
+        "Fixed initially by requiring host-supplied capabilities instead of fabricating data.",
+        "The later Ponytail cleanup removed the entire unconsumed TeamDashboard scaffold, its exports and dedicated tests. Team management remains implemented by the real dashboard/control plane instead of a second in-memory SDK surface."
       ],
       "localEvidence": [
         {
-          "claim": "Acceptance: with no capability configured both calls raise TeamCapabilityUnavailableError naming the capability, neither resolves with the previous fabricated values, and getUsageStats does not fall back to the security-event log to invent a figure.",
-          "evidencePath": "packages/sdk/src/__tests__/team-dashboard.test.ts",
-          "command": "pnpm test -- packages/sdk/src/__tests__/team-dashboard.test.ts",
-          "verifiedBy": "this session, targeted vitest run (exit 0, 14 tests passed)"
+          "claim": "The SDK regression guard requires team-dashboard.ts, the in-memory freemium/referral modules and the second CLI to remain absent, and requires their public symbols to remain absent from src/index.ts.",
+          "evidencePath": "packages/sdk/src/__tests__/payment-provider-removal.test.ts",
+          "command": "pnpm test -- packages/sdk/src/__tests__/payment-provider-removal.test.ts",
+          "verifiedBy": "this session, targeted SDK regression test"
         },
         {
-          "claim": "Acceptance: a configured source receives the real team and a bounded window, an explicitly unmeasured count survives as null instead of becoming zero, and NaN/Infinity/negative/missing figures and empty or non-HTTP invite URLs are rejected with TypeError.",
-          "evidencePath": "packages/sdk/src/__tests__/team-dashboard.test.ts",
-          "command": "pnpm test -- packages/sdk/src/__tests__/team-dashboard.test.ts",
-          "verifiedBy": "this session, targeted vitest run (exit 0); the new symbols are re-exported from packages/sdk/src/index.ts and the SDK typecheck (tsc -p packages/sdk/tsconfig.json --noEmit) passes"
+          "claim": "The retained SDK public entry point contains only the client, generic/core middleware, enforcement, output guard, rule-data resolution and provider-agnostic licence types; it no longer exports a duplicate team dashboard.",
+          "evidencePath": "packages/sdk/src/index.ts",
+          "command": "pnpm build:release",
+          "verifiedBy": "this session, release build includes the SDK typecheck and package build"
         }
       ]
+    },
+    {
+      "id": "AIDR-070",
+      "priority": "P0",
+      "feature": "Reproducible secret scanning and historical credential triage",
+      "status": "BLOCKED_EXTERNAL",
+      "component": ".gitleaks.toml, scripts/pre-release-audit.sh and CI/release workflows",
+      "impact": "A release could otherwise ship from a repository whose current tree or reachable Git history contains an unreviewed credential. Historical findings cannot be declared harmless or rotated by repository automation.",
+      "acceptanceCriteria": "The versioned scanner passes the current tree; every historical finding is classified by the Security owner; any live credential is revoked and rotated; approved fixtures receive exact fingerprint exceptions; the full-history release gate passes.",
+      "evidence": [
+        "Gitleaks v8.30.1 current-tree scan passes with default rules only and no ignore/allowlist suppressions; the full-history scan remains fail-closed pending Security-owner triage."
+      ],
+      "localEvidence": [
+        {
+          "claim": "The current checkout is scanned with Gitleaks default rules and a versioned config with no suppressions; a fixed-path/fixed-line regression detects a replacement secret. The current-tree scan reports zero findings.",
+          "evidencePath": ".gitleaks.toml",
+          "command": "pnpm verify:secrets:current",
+          "verifiedBy": "this session with Gitleaks 8.30.1, exit 0; 1,528 files / 29.92 MB scanned; replacement-secret regression passed"
+        },
+        {
+          "claim": "The full-history scan is intentionally not bypassed: it reports 296 redacted findings and exits non-zero until a Security owner classifies them and rotates any credential that was live.",
+          "evidencePath": "scripts/pre-release-audit.sh",
+          "command": "pnpm verify:secrets",
+          "verifiedBy": "this session with checksum-verified Gitleaks 8.30.1; history phase exit 1 with 296 redacted findings; current-tree phase passed"
+        }
+      ],
+      "remainingExternal": "A named Security owner must classify the 296 redacted historical findings, identify whether any value was ever live, revoke and rotate live credentials, and approve only exact false-positive fingerprints. Rewriting published Git history, if chosen, requires repository-owner coordination and is not performed automatically."
     }
   ],
   "closedWithoutLocalEvidence": {

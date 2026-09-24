@@ -3,6 +3,10 @@
 > Last Updated: March 2026  
 > Scope: AI Agent Detection & Response (AIDR) Market Analysis
 
+> Historical strategy research, not a current vendor comparison or approved
+> customer claim. Competitor capabilities, prices, certifications, and AIDR
+> performance require fresh source checks and like-for-like measurements.
+
 ---
 
 ## Executive Summary
@@ -54,7 +58,7 @@ The AI agent security market is rapidly evolving with several established player
 | **Positioning** | LLM observability, tracing, prompt management |
 | **Core Features** | Traces/graphs, session tracking, token/cost tracking, prompt versioning, evals, datasets |
 | **Architecture** | Cloud-hosted or self-hosted (Docker) |
-| **Integration** | OpenTelemetry, LangChain, OpenAI SDK, LiteLLM |
+| **Integration** | Native RED/timing telemetry, LangChain, OpenAI SDK, LiteLLM |
 
 **Strengths:**
 - ✅ Excellent observability and tracing capabilities
@@ -62,11 +66,11 @@ The AI agent security market is rapidly evolving with several established player
 - ✅ Comprehensive evaluation framework (LLM-as-judge, human annotation)
 - ✅ Prompt management and versioning
 - ✅ Multi-modal support
-- ✅ SOC2 Type II & ISO27001 compliant
+- ✅ Vendor materials report independent controls attestations; verify current scope before use
 
 **Weaknesses:**
 - ❌ Not a security product (observability-focused)
-- ❌ No real-time threat detection
+- ❌ No inline threat detection documented in the reviewed product surface
 - ❌ No command/file protection for agents
 - ❌ No prevention/blocking capabilities
 - ❌ Requires cloud connectivity for most features
@@ -92,12 +96,12 @@ The AI agent security market is rapidly evolving with several established player
 | **Integration** | 200+ LLMs via unified API |
 
 **Strengths:**
-- ✅ Production-ready AI gateway (fast, reliable)
+- ✅ Marketed by the vendor for production gateway workloads; independently verify latency and reliability
 - ✅ Excellent cost optimization (caching, smart routing)
 - ✅ Simple 3-line integration
 - ✅ Open-source core available
 - ✅ Strong enterprise features (SSO, RBAC, VPC)
-- ✅ SOC2 Type 2, GDPR, HIPAA compliant
+- ✅ Vendor materials list controls, privacy, and healthcare programs; verify current scope and attestations
 
 **Weaknesses:**
 - ❌ Gateway-focused, not agent-aware
@@ -156,7 +160,7 @@ The AI agent security market is rapidly evolving with several established player
 | **Integration** | API-based, model serving platforms |
 
 **Strengths:**
-- ✅ Comprehensive AI security platform
+- ✅ Broad AI security product portfolio
 - ✅ ML-based threat detection (patented)
 - ✅ Runtime defense capabilities
 - ✅ Automated red teaming
@@ -178,7 +182,7 @@ The AI agent security market is rapidly evolving with several established player
 
 ### 6. Protect AI
 
-**Overview:** Comprehensive AI security platform (parent company of LLM Guard).
+**Overview:** Broad AI security product portfolio (parent company of LLM Guard).
 
 | Category | Assessment |
 |----------|------------|
@@ -219,10 +223,10 @@ The AI agent security market is rapidly evolving with several established player
 | **Local Processing** | ✅ | ⚠️ | ❌ | ⚠️ | ✅ | ❌ | ❌ |
 | **IDE Integration** | ✅ (3 platforms) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Privacy-First** | ✅ | ⚠️ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| **Lightweight** | ✅ (<1MB) | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| **Lightweight** | Measurement required | Unknown | Unknown | Unknown | Unknown | Unknown | Unknown |
 | **Behavioral Analysis** | 🔄 (Q2 2026) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | **Policy as Code** | 🔄 (Q2 2026) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Open Source** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ⚠️ |
+| **Open Source** | ❌ (current package metadata: `Proprietary`) | ✅ | ✅ | ✅ | ✅ | ❌ | ⚠️ |
 | **Self-Hostable** | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ |
 
 Legend: ✅ Available | ❌ Not Available | ⚠️ Partial | 🔄 Roadmap
@@ -234,16 +238,19 @@ Legend: ✅ Available | ❌ Not Available | ⚠️ Partial | 🔄 Roadmap
 ### Core Differentiators
 
 #### 1. Privacy-First Architecture
-- **Zero data exfiltration**: All detection runs locally
-- **No API keys required**: Optional URL check, no telemetry requirement
+- **Local evaluator**: Rules run in-process; enabled reputation and managed
+  features have outbound flows documented in [privacy](../privacy.md)
+- **No account for source/development local heuristics**: URL/file/package
+  lookups are independently configurable, not an offline guarantee
 - **Local embeddings**: 300KB lightweight models (Q1 2026)
-- **No cloud dependency**: Works fully offline
+- **Offline pilot**: Requires explicit opt-out of network checks and an
+  environment-specific egress verification; commercial mode is managed-only
 
 #### 2. Multi-Platform IDE Integration
 - **Claude Code**: Native hook integration
 - **Cursor**: VS Code extension
 - **OpenClaw**: Plugin connector
-- **Unified core**: Single detection engine across all platforms
+- **Unified core**: Single detection engine across the listed connector surfaces
 
 #### 3. Agent-Specific Protection
 - Command-level detection (shell, file, web requests)
@@ -252,8 +259,8 @@ Legend: ✅ Available | ❌ Not Available | ⚠️ Partial | 🔄 Roadmap
 - Deep IDE integration (not just API gateway)
 
 #### 4. Lightweight & Fast
-- **<1MB runtime**: Single-file esbuild bundles
-- **<50ms latency**: Rule-based heuristics + optional ML
+- **Package size**: Measure the exact signed artifacts before publication
+- **Latency**: Measure on supported hosts and the agreed workload
 - **No containers**: Native Node.js/TypeScript
 - **CPU-optimized**: No GPU required
 
@@ -295,7 +302,8 @@ Legend: ✅ Available | ❌ Not Available | ⚠️ Partial | 🔄 Roadmap
 ## Strategic Recommendations
 
 ### 1. Double Down on Privacy-First Positioning
-- Market heavily on "zero data exfiltration" guarantee
+- Explain local evaluation and configurable outbound flows precisely; do not
+  promise zero data transfer. See [privacy data flows](../privacy.md).
 - Competitive comparison: AIDR vs. cloud-only solutions
 - Target: Security-conscious enterprises, regulated industries
 

@@ -11,11 +11,11 @@ Threat detection rules in threats/ are governed by the Detection Rule License
 (DRL) 1.1 in threats/LICENSE. Rule attribution and rule-derived output
 requirements remain applicable when the rules are redistributed or used.
 
-Third-party copyright, licence and attribution notices are preserved in
-THIRD_PARTY_NOTICES. Third-party components are not relicensed as proprietary
-by this notice. Their original licence terms, source obligations and required
-notices continue to apply to the component and to any artifact that includes
-it.
+THIRD_PARTY_NOTICES contains a direct-dependency baseline, not the complete
+transitive notice bundle for a release. Third-party components are not
+relicensed as proprietary by this notice. Their original licence terms,
+source obligations and required notices continue to apply to the component
+and to any artifact that includes it.
 
 Cloud services and control-plane endpoints are available only to authorized
 customers and evaluators under the applicable written terms. Unauthorized

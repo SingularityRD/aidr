@@ -2,7 +2,7 @@
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"$id": "https://singularityrd.dev/schemas/v8-evidence-index.schema.json",
 	"title": "Singularity AIDR v8 evidence index",
-	"description": "Machine-readable index of every declared verification gate for the v8 release candidate. Each record must state a real, derived value or the explicit string \"unknown\"; no field may be an empty string that hides a gap, and a gate with no log must be present with status NOT_RUN rather than omitted. The record's evidence_level is the highest level its artefacts substantiate and can never exceed evidence_level_ceiling.",
+	"description": "Machine-readable index of every declared verification gate for the v8 release candidate. Each record must state a real, derived value or the explicit string \"unknown\"; no field may be an empty string that hides a gap, and a gate with no log must be present with status NOT_RUN rather than omitted. PASS requires a provenance-bound result file for the current source commit, candidate inventory, declared log, and any declared artifact; an unbound zero-exit log marker is status unknown. The record's evidence_level is the highest level its artefacts substantiate and can never exceed evidence_level_ceiling.",
 	"type": "object",
 	"additionalProperties": false,
 	"required": [
@@ -26,7 +26,7 @@
 	"properties": {
 		"schema_version": { "const": 1 },
 		"generator": { "const": "scripts/generate-v8-evidence-index.mjs" },
-		"generator_version": { "const": 1 },
+		"generator_version": { "const": 2 },
 		"candidate": { "$ref": "#/$defs/candidate" },
 		"commit_sha": { "$ref": "#/$defs/commit_sha" },
 		"candidate_digest": { "$ref": "#/$defs/sha256_or_unknown" },

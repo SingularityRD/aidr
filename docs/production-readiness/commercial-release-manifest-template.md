@@ -2,7 +2,7 @@
 
 Status: **DRAFT / NOT APPROVED**
 Registry: `commercial-go-evidence-registry.json`
-Decision: direct GA, all five connectors, hybrid deployment, EU/US/APAC, enterprise invoice, private registry, 99.9% monthly managed control-plane/dashboard API target.
+Decision: direct GA, five direct-GA connectors plus Codex in the engineering acceptance scope, hybrid deployment, EU/US/APAC, online cloud sales plus enterprise invoice, private registry, 99.9% monthly managed control-plane/dashboard API target. All launch evidence remains open.
 
 Complete this document for one immutable Release Candidate. Empty values are blockers, not defaults.
 
@@ -14,9 +14,10 @@ Complete this document for one immutable Release Candidate. Empty values are blo
 | Connectors | Claude Code, Cursor, VS Code, OpenClaw, OpenCode | Real-host support matrix and E2E reports |
 | Deployment | Hybrid edge/local enforcement + managed control plane + private AIG bridge where enabled | Architecture and outage evidence |
 | Tenant regions | EU / US / APAC | Residency and transfer matrix |
-| Billing | Enterprise invoice / quote-based; self-service checkout excluded | Finance provider-of-record |
+| Billing | Online cloud payment plus enterprise/on-prem invoice; both disabled until provider settlement, finite entitlement, tax/legal, and Finance acceptance. Cloud trial: 14 days / 1 agent; paid cloud has no trial cap. | Finance provider-of-record and settlement/revocation receipts |
 | Distribution | Authenticated private registry | Signed install, revoke and air-gap drill |
 | Metering unit | Connected protected-agent installation | Entitlement contract test |
+| Approved SKU IDs, included quantities and channel | **Not held** | Product + Finance price book bound to this Release Candidate |
 | Price/currency/tax/minimum term | **Not held** | Finance price book and approved quote |
 | Included GA capabilities/exclusions | | Claim Registry and limitations |
 | 99.9% availability scope | Managed control plane + dashboard API | Approved SLI/SLA and evidence window |

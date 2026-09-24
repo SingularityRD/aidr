@@ -4,6 +4,8 @@
 **Auditor**: Product Lead  
 **Scope**: Full feature audit across all packages, connectors, dashboard, threat rules, tests, and documentation.
 
+> **Historical snapshot:** This report records the repository as it existed on 2026-05-26 and is not a current feature inventory. File-presence, export, PASS, line-count, and follow-up claims below—including references to modules removed during later consolidation—must be read as historical observations. For the current canonical state, use [Product Scope and Features](../../PRODUCT_SCOPE_AND_FEATURES.md) and the generated [Feature Inventory](../../FEATURE_INVENTORY.md).
+
 ---
 
 ## Executive Summary
@@ -82,7 +84,7 @@ Singularity AIDR is a mature, well-architected AI Agent Detection & Response pla
 | **Command Chain Analyzer** | `command-chain-analyzer.ts` | 235 lines — Multi-tool attack chain detection. Interface-only — not integrated. |
 | **UX Engine** | `ux-engine.ts` | ~120 lines — Turkish-localized user messages. Exported but not used by any connector. |
 | **Metrics** | `metrics.ts` | ~200 lines — Counter/gauge/histogram with Prometheus format. Standalone. |
-| **Tracing** | `tracing.ts` | ~150 lines — OpenTelemetry spans for detection phases. Used lightly in evaluator. |
+| **Native telemetry** | `evaluator.ts`, `deploy/dashboard/monitoring.mjs` | Dependency-free evaluator duration plus bounded dashboard RED metrics. |
 
 ### 1.3 Known Issues
 
@@ -249,27 +251,20 @@ itself, alongside `plugin-discovery`, `skill-registration` and `tool-handler`.
 
 ### 3.6 SDK (`packages/sdk/`) — PROTOTYPE (3/10)
 
-**Connector type**: Universal integration SDK.
+**Connector type**: Lightweight integration SDK.
 
 **Files**:
 - `client.ts` — `AIDRClient` class wrapping core. ✅ (373 lines)
 - `config.ts` — Zod schemas for SDK config. ✅
 - `middleware.ts` — Express-style middleware wrapper. ✅
-- `billing.ts` — Billing API client. ✅
-- `cli.ts` — SDK CLI entry point. ✅
-- `freemium.ts` — Freemium tier logic. ✅
-- `referral.ts` — Referral tracking. ✅
-- `team-dashboard.ts` — Team dashboard integration. ✅
-- `adapters/` — Framework adapters. ✅
+- `adapters/generic.ts` — Framework-neutral middleware adapter. ✅
 - `sentry.ts` — Sentry init. ✅
 
-**Tests**: 1 integration test file.
+**Tests**: Focused client, middleware, output guard, package, and data-resolution suites.
 
-**Issues**:
-- **Massive scope for only 1 test file**. Billing, freemium, referral, team-dashboard are all untested.
-- `billing.ts`, `freemium.ts`, `referral.ts` are business logic files with zero test coverage.
-- SDK depends on `@langchain/core` — heavy dependency for what should be a lightweight SDK.
-- `middleware.ts` exports Express middleware but doesn't export generic HTTP middleware — limits use to Express only.
+The unused second CLI, in-memory product subsystems, and framework-specific
+adapters were removed. Add a typed framework adapter only when a real consumer
+requires it; the generic adapter remains the supported extension point.
 
 ---
 

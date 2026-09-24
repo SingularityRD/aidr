@@ -1,6 +1,12 @@
-# Customer-approved support bundle
+# Customer-consented support-bundle procedure
 
-The support bundle gives AIDR support a small, integrity-checkable deployment summary without collecting customer content. It is intentionally a directory of JSON metadata rather than a general log archive.
+This is a local collection procedure for a deployment summary. It does not
+establish an active AIDR support team, ticket channel, secure security-reporting
+route, response time, or transfer service. The current support field-acceptance
+gate is open; see [Support operations](support-v7.md). Do not present this
+procedure as an available customer support channel.
+
+The bundle is a directory of JSON metadata rather than a general log archive.
 
 ## Collection boundary
 
@@ -17,7 +23,13 @@ The collector never opens environment files, application logs, audit events, dat
 
 ## Record consent and collect
 
-Create or reference a support ticket before collection. Use an opaque ticket identifier containing only letters, digits, dots, underscores, or hyphens. Do not put a customer name, email address, hostname, incident description, or other personal data in the reference.
+Collect only after a named, customer-approved ticket route and diagnostic
+consent process are active for the same accepted release and evaluation. Create
+or reference the ticket through that approved route before collection. Use an
+opaque ticket identifier containing only letters, digits, dots, underscores,
+or hyphens. Do not put a customer name, email address, hostname, incident
+description, or other personal data in the reference. No ticket URL or contact
+details are available in this repository.
 
 ```bash
 node scripts/support-bundle.mjs \

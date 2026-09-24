@@ -2,7 +2,7 @@
 
 ## Reporting Vulnerabilities
 
-Please report security vulnerabilities privately via [GitHub Security Advisories](https://github.com/singularityrd/aidr/security/advisories/new). Do not open public issues for security bugs.
+The private repository advertises a [GitHub Security Advisories route](https://github.com/SingularityRD/aidr/security/advisories/new) for authorized collaborators. Do not open public issues for security bugs. External reporters cannot rely on that private-repository link; an approved, monitored external security-contact route is required before supported customer use.
 
 Include:
 
@@ -11,11 +11,11 @@ Include:
 - Affected versions
 - Potential impact
 
-We will acknowledge receipt within 10 business days and aim to provide a fix or mitigation plan within 30 days.
+Acknowledgement, update, and remediation targets are not yet approved or staffed. A customer-specific security response commitment must be established in an approved support schedule before sale; see [support operations](docs/runbooks/support-v7.md).
 
 ## Supported Versions
 
-Only the latest release receives security updates.
+Supported and security-only version ranges, maintenance end dates, and notice periods have not yet been approved. Do not infer support from the presence of a release; the versioned policy and customer agreement must specify it.
 
 ## Scope
 
@@ -37,11 +37,9 @@ recommended for high-sensitivity environments. A `none` setting still removes
 bearer credentials, API keys, JWTs, URL credentials and secret query values,
 but can retain ordinary command/URL text and is not a production default.
 
-Sentry and OpenTelemetry are opt-in. Sentry events, exception values/stacks,
-request URLs/query strings, context and user PII are scrubbed before send.
-OTLP span attributes/events/exceptions are scrubbed and endpoint credentials,
-queries and fragments are removed. Keep `SENTRY_DSN` unset and
-`TRACE_ENABLED=false` for an offline deployment.
+Sentry is opt-in. Sentry events, exception values/stacks, request URLs/query
+strings, context and user PII are scrubbed before send. Keep `SENTRY_DSN` unset
+for an offline deployment.
 
 Local JSONL audit records are sensitive and must be protected by filesystem
 permissions and an approved retention policy. For tamper-evident response

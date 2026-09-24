@@ -43,7 +43,7 @@ TypeScript monorepo. Connector packages and their shared core:
 - `packages/opencode/` — `@singularityrd/aidr-opencode`: OpenCode plugin connector
 - `packages/extension/` — `aidr-cursor`: Cursor and VS Code extensions
 - `packages/cli/` — `@singularityrd/aidr-cli`: local setup/status/config CLI. Ships its own copy of the rules via `scripts/sync-assets.mjs` (core publishes only `dist/`).
-- `packages/sdk/` — `@singularityrd/aidr-sdk`: integration SDK and framework adapters
+- `packages/sdk/` — `@singularityrd/aidr-sdk`: security client and framework-neutral generic middleware
 - `packages/dashboard/` — Next.js control-plane dashboard (Vite/React app plus its own `supabase/functions`)
 - `packages/codex/` — `@singularityrd/aidr-codex`: Codex CLI connector, implemented as a native
   `PreToolUse` hook (verified against `codex-cli 0.141.0`). Codex fails **open** on a crashing
@@ -51,7 +51,7 @@ TypeScript monorepo. Connector packages and their shared core:
   internal errors into a deny as well — see `packages/codex/README.md`. Ships its own copy of
   the rules via `scripts/sync-assets.mjs`.
 - `services/aig-bridge/` — Python/FastAPI bridge for Tencent AI-Infra-Guard (vendored under `vendor/ai-infra-guard`, pinned submodule)
-- `supabase/` — canonical migrations + Edge Functions; `packages/dashboard/supabase/` is the dashboard-owned copy
+- `supabase/` — canonical migrations + Edge Functions; `packages/dashboard/supabase/functions/` contains dashboard-specific shared function code, not migration copies
 - `threats/` — YAML threat definitions (data, not code); 351 rules across 23 files
 - `allowlists/` — Trusted domain allowlists
 - `hooks/` — `hooks.json` registering hooks with Claude Code
@@ -145,7 +145,5 @@ OpenClaw, OpenCode and Codex; the CLI and SDK consume the same core.
 ## Pre-PR Checklist
 
 Before creating a pull request, run the @"code-simplifier:code-simplifier (agent)" subagent on all changed files to review for clarity, consistency, and maintainability improvements. Apply any suggested changes before opening the PR.
-
-
 
 

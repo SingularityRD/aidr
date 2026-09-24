@@ -1,6 +1,6 @@
 # AIDR alt özellik envanteri
 
-13 Eylül 2026. 71 alt özellik ve teslimat gereksinimi incelendi: 41 çalışan kod akışına bağlı, 28 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
+Otomatik üretim tarihi: **2026-09-24**. 71 alt özellik ve teslimat gereksinimi eşlendi: 41 çalışan kod akışına bağlı, 28 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
 
 Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tüketen bileşenler ve her satırın kalan işi bu dosyada bulunur. Önceki PRODUCT_SCOPE_AND_FEATURES.md dosyasındaki modül erişilebilirlik sayıları tarihsel bir ara denetime aittir.
 
@@ -17,12 +17,12 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 |---|---|---|---|
 | DET-01 | [Tool artifact extraction](packages/core/src/extractors.ts) | wired | Unrecognized or host-hidden actions remain outside visibility |
 | DET-02 | [Threat rules and confidence merge](packages/core/src/engine.ts) | wired | Independent false-positive and evasion measurements remain required |
-| DET-03 | [Obfuscation and command chains](packages/core/src/command-chain-analyzer.ts) | wired | No universal shell-language semantic guarantee |
+| DET-03 | [Obfuscation and suspicious shell patterns](threats/obfuscation.yaml) | wired | Stateful multi-step command-chain analysis is not implemented |
 | DET-04 | [Credential access and exfiltration](threats/credentials.yaml) | wired | Customer secret types and benign workflow corpus need calibration |
 | DET-05 | [Cross-platform rules and mining](threats/mining.yaml) | wired | Native host matrix and mining workload acceptance remain external |
 | DET-06 | [Prompt injection inspection](packages/core/src/output-scanner.ts) | partial | Claude PostToolUse and OpenClaw after_tool_call cannot prove same-turn model blocking; provider streams and native host bypass need acceptance |
 | DET-07 | [Structured DLP and PII](packages/core/src/dlp/scanner.ts) | partial | Other connectors, trusted provisioning operations and customer label acceptance remain open |
-| DET-08 | [Behavioral and novelty analysis](packages/core/src/behavioral-orchestrator.ts) | partial | Claude one-shot hook has no persistent learning baseline; other connector and customer efficacy acceptance remain open |
+| DET-08 | [Behavioral and novelty analysis](packages/core/src/behavioral-orchestrator.ts) | partial | No host supplies a trusted, call-ID/input-digest-bound successful-execution receipt. DET-08 is not production ready; callback wiring and independent efficacy acceptance remain required |
 | DET-09 | [ML classification and similarity](packages/core/src/behavioral-orchestrator.ts) | partial | No independently validated production model efficacy or broad runtime adoption |
 | DET-10 | [URL reputation](packages/core/src/clients/url-check.ts) | partial | Provider feed, operational freshness and customer latency proof still required |
 | DET-11 | [File reputation and AMSI](packages/core/src/clients/file-check.ts) | partial | AMSI requires native Windows host acceptance; no clean verdict on unavailable leg |
@@ -32,11 +32,11 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 
 | Kimlik | Alt özellik | Durum | Kalan sınır / kabul işi |
 |---|---|---|---|
-| MCP-01 | [Local server discovery](packages/core/src/mcp-discovery.ts) | wired | Local JSON configuration discovery only; not cloud-wide shadow-agent discovery |
-| MCP-02 | [Discovery completeness reporting](packages/core/src/mcp-inventory.ts) | wired | JSONC and unlisted runtime-specific locations need adapters |
+| MCP-01 | [Local server discovery](packages/core/src/mcp-discovery.ts) | wired | Local configuration discovery only; not cloud-wide shadow-agent discovery |
+| MCP-02 | [Discovery completeness reporting](packages/core/src/mcp-inventory.ts) | wired | Unlisted runtime-specific locations need adapters and native host acceptance |
 | MCP-03 | [Server and tool policy lists](packages/core/src/policy.ts) | wired | Host must supply normalized server/tool identity |
 | MCP-04 | [Empty-argument tool enforcement](packages/claude-code/src/pre-tool-use.ts) | wired | Live host event delivery still requires acceptance |
-| MCP-05 | [Tool description attestation and drift](packages/core/src/mcp-attestation.ts) | partial | Host/gateway consumer and trusted publisher provisioning remain open |
+| MCP-05 | [Tool description attestation and drift](packages/core/src/mcp-attestation.ts) | partial | Direct host paths outside the gateway and trusted publisher provisioning remain open |
 | MCP-06 | [Identity graph and delegated privileges](packages/core/src/delegated-credential.ts) | partial | Real identity-provider and tool-provider integration remains external |
 | MCP-07 | [MCP gateway response blocking](packages/mcp-gateway/src/gateway.mjs) | partial | Binary output, server-initiated requests, forced routing of direct upstream access and customer native acceptance remain open |
 
@@ -46,7 +46,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 |---|---|---|---|
 | INF-01 | [Native fingerprint and CVE scanning](packages/core/src/aig-infra-scan.ts) | wired | Compiled dataset freshness and unsupported fingerprint rules constrain coverage |
 | INF-02 | [Scan report to runtime policy](packages/core/src/aig-policy.ts) | wired | Opt-in, scoped origins; report file is a trusted local administrative input |
-| INF-03 | [Continuous fleet discovery](packages/cli/src/commands/collect.ts) | partial | Cloud/MDM adapters, scheduler, dashboard alerts and customer field acceptance remain open |
+| INF-03 | [Continuous fleet discovery](packages/cli/src/commands/collect.ts) | partial | Cloud/MDM provider adapters, customer-approved scopes/credentials, customer-activated production scheduling and alert/paging delivery, and customer field acceptance remain open |
 
 ## Response
 
@@ -56,9 +56,9 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | RSP-02 | [Quarantine and restore](packages/core/src/quarantine.ts) | wired | Opt-in; does not quarantine a host or cloud account |
 | RSP-03 | [File snapshot and rollback](packages/core/src/rollback.ts) | wired | Filesystem scope and restore preconditions; native acceptance still required |
 | RSP-04 | [Process containment](packages/core/src/contain.ts) | partial | No enterprise endpoint isolation or universal process authority |
-| RSP-05 | [Signed response audit chain](packages/core/src/response-audit.ts) | wired | Key custody and independent storage/retention evidence remain external |
+| RSP-05 | [Signed response audit chain](packages/core/src/response-audit.ts) | wired | Disabled by default; independent key custody and storage/retention evidence remain external |
 | RSP-06 | [Fleet kill switch and credential revoke](supabase/functions/revocations/index.ts) | partial | No installed endpoint service, verified OS isolation adapter, device attestation or cross-provider credential revocation |
-| RSP-07 | [SOAR playbook orchestration](supabase/functions/autosecops-runtime/index.ts) | partial | Customer authorization, connector matrix and success receipts need field integration |
+| RSP-07 | [SOAR playbook orchestration](supabase/functions/response-playbooks/index.ts) | partial | Not production accepted or connected to an alert/AutoSecOps trigger. A separately installed endpoint worker and verified host adapter are not provisioned or customer-validated; host permissions and native acceptance, external SOAR/provider connectors, credential revocation and rollback remain unsupported or open |
 
 ## Policy
 
@@ -75,7 +75,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | Kimlik | Alt özellik | Durum | Kalan sınır / kabul işi |
 |---|---|---|---|
 | CLI-01 | [Setup and measured diagnostics](packages/cli/src/commands/setup.ts) | wired | Registration is not proof of host execution; setup alone does not install every connector |
-| CLI-02 | [Typed and redacted configuration](packages/cli/src/commands/config.ts) | wired | OS credential vault integration not implemented |
+| CLI-02 | [Typed and redacted configuration](packages/cli/src/commands/config.ts) | wired | Real macOS/Linux vault round trips and managed-host rotation/recovery acceptance remain open; file-ACL fallback requires explicit selection |
 | CLI-03 | [Claude local installer](scripts/endpoint-install.mjs) | wired | Host restart/acceptance and authenticated signed distribution still required |
 | CLI-04 | [Enterprise fleet rollout](deploy/fleet/windows/README.md) | partial | Actual Intune/SCCM/Jamf execution and publisher signing acceptance remain external |
 
@@ -88,7 +88,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | CON-03 | [OpenClaw](packages/openclaw/src/tool-handler.ts) | wired | Native version/event coverage acceptance required |
 | CON-04 | [OpenCode](packages/opencode/src/tool-handler.ts) | wired | Native plugin loading and host cancellation acceptance required |
 | CON-05 | [Codex](packages/codex/src/enforcement.ts) | partial | Host can fail open when hook execution is unavailable; not tamper-resistant isolation |
-| CON-06 | [SDK and framework adapters](packages/sdk/src/client.ts) | wired | Application must wrap every consequential tool path; package versions need integration matrix |
+| CON-06 | [SDK client and generic middleware](packages/sdk/src/client.ts) | wired | Application must wrap every consequential tool path; host integration still needs an acceptance matrix |
 
 ## Management
 
@@ -97,9 +97,9 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | TEN-01 | [Tenant isolation and RBAC](supabase/migrations/20260805000000_hybrid_tenancy.sql) | wired | Independent penetration test and full endpoint negative matrix remain required |
 | TEN-02 | [Team creation and member lifecycle](supabase/migrations/20260805000001_team_creation_rpc.sql) | wired | Field identity-provider lifecycle acceptance remains required |
 | TEN-03 | [Invitation issue and acceptance](supabase/functions/team-invite/index.ts) | wired | No SMTP invitation delivery; operator explicitly shares link |
-| TEN-04 | [SSO and directory group sync](supabase/functions/scim/index.ts) | partial | Real Entra/Okta configuration and tenant-wide MFA enforcement remain external/partial |
+| TEN-04 | [SSO and directory group sync](supabase/functions/scim/index.ts) | partial | Real Entra/Okta provisioning acceptance and the separately audited SAML enforcement/rollback operation remain open |
 | TEN-05 | [Device pairing and enrollment](supabase/functions/device-poll/index.ts) | partial | Customer TLS proxy routing and browser-to-host pairing acceptance remain pending; direct unsigned device-start is rejected |
-| TEN-06 | [API keys and revocation](supabase/functions/api-keys/index.ts) | wired | Scoped per-tool short-lived credentials are a separate missing capability |
+| TEN-06 | [API keys and revocation](supabase/functions/api-keys/index.ts) | wired | Per-tool short-lived delegation is tracked separately in MCP-06; live provider acceptance and endpoint secret-vault integration remain open |
 | TEN-07 | [First customer provisioning and login](scripts/deployment-bootstrap.mjs) | wired | SMTP/IdP delivery and full service-role Edge MFA barriers require customer integration |
 
 ## Operations
@@ -109,7 +109,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | OBS-01 | [Telemetry ingest and dashboard](supabase/functions/ingest/index.ts) | wired | Load, retention, delivery SLO, customer packet capture and multi-region tests remain external |
 | OBS-02 | [Incident correlation and investigation](packages/core/src/incidents/correlate.ts) | wired | No full cross-agent causal graph or independently anchored forensic chain |
 | OBS-03 | [Audit export](supabase/functions/audit-export/index.ts) | wired | 500-row keyset pages, user/tenant/format-bound signed cursor, bounded snapshot, browser 100000-row/64MB limit, 24-hour temporary object expiry and tested cleanup runner; operator must activate scheduling |
-| OBS-04 | [SIEM export and OpenTelemetry](packages/core/src/siem-delivery.ts) | partial | Customer SIEM configuration, scheduled worker, native source coverage and delivery receipt remain open |
+| OBS-04 | [SIEM delivery and native telemetry](packages/core/src/siem-delivery.ts) | partial | Customer SIEM configuration, scheduled worker, native source coverage and delivery receipt remain open |
 | OBS-05 | [Tamper and offline integrity](packages/core/src/integrity/verify.ts) | wired | External signer custody, distribution and adversarial host tests remain required |
 | OBS-06 | [Retention and deletion](supabase/migrations/20260912140000_tenant_offboarding_retention.sql) | partial | External backups and customer retention/offboarding acceptance remain outside live-data receipts |
 

@@ -1,22 +1,39 @@
 # Configuration
 
-Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`. All fields are optional - defaults are applied automatically.
+Singularity AIDR reads configuration from `~/.singularity-aidr/config.json`.
+Development builds apply defaults to omitted fields; signed commercial packages
+have the artifact-trust requirement described below.
 
-Singularity AIDR **enforces locally by default**. With no configuration file at all, a connector evaluates every tool call against the shipped threat rules and can block it. No account, API key, or network access is required for that.
+Source and development builds **enforce locally by default** against the shipped
+threat rules without requiring an account or network connection for the local
+heuristics. This does not mean they are offline by default: enabled URL, file,
+and package checks can make outbound requests. Signed
+commercial connector packages are intentionally stricter: before first start,
+provision `config.json` with the independently delivered Ed25519 artifact
+verification public key produced by the deployment flow. They fail closed when
+that trust configuration, signed manifest, or a covered runtime file is missing
+or changed. The release signing private key never belongs in this file.
 
-Managed mode is an **opt-in additive layer** (dashboard telemetry, signed intel packs, remote policy, seat enforcement). Enrollment never acts as a precondition for local protection: when a managed installation is not enrolled, the managed-only features are disabled and local detection continues.
+For source/development builds, managed mode is an **opt-in additive layer**
+(dashboard telemetry, signed intel packs, remote policy, seat enforcement).
+Commercial builds force managed mode and signed artifact/entitlement checks.
+Missing enrollment does not disable the local evaluator, but missing or invalid
+artifact trust can stop commercial startup. Do not describe an unenrolled
+commercial package as a ready managed installation.
 
-## Full Config
+## Example Config
+
+This example is not a list of defaults. Provider-backed URL, file, and package
+reputation checks are disabled by default; setting their `enabled` fields opts
+in to those external data flows. See the tables below and [privacy data
+flows](privacy.md) before enabling network features.
 
 ```json
 {
   "mode": "local",
-  "auth": {
-    "api_key": "aidr_live_..."
-  },
   "control_plane": {
     "enabled": true,
-    "endpoint": "https://aidr-control.svc.singularityrd.com",
+    "endpoint": "https://aidr.example.com",
     "timeout_seconds": 0.5,
     "send_audit_logs": false,
     "send_clean_verdicts": false,
@@ -68,6 +85,9 @@ Managed mode is an **opt-in additive layer** (dashboard telemetry, signed intel 
   "amsi_check": {
     "enabled": true
   },
+  "version_check": {
+    "enabled": false
+  },
   "heuristics_enabled": true,
   "cache": {
     "enabled": true,
@@ -96,18 +116,21 @@ Managed mode is an **opt-in additive layer** (dashboard telemetry, signed intel 
 
 One of `"local"` or `"managed"`. Default: `"local"`.
 
-- `local`: local enforcement only. All detection layers that do not need a server
-  run in-process: heuristics, policy, allowlist, cache, audit log, plugin scan,
-  integrity verification. This is the default and requires no account.
+- `local`: no managed control-plane enrollment or telemetry. Heuristics, policy,
+  allowlist, cache, audit log, plugin scan, and integrity verification run
+  in-process. This is the source/development default and requires no account;
+  URL, file, and package reputation checks can still contact external services.
 - `managed`: additionally enables the control plane (dashboard telemetry, agent
   seat enforcement), signed intel packs, remote policy and server-signed
   entitlements. Requires `control_plane.enabled` plus an `api_key` or
   `enrollment_token`, **and a deployed control plane**.
 
-If `mode` is `managed` but the installation is not enrolled (no key/token, or
-enrollment could not reach the control plane), the managed-only features stay
-disabled and **local detection still runs**. The runtime logs a warning that it is
-running in local-only mode rather than silently allowing tool calls.
+Commercial builds force `managed`; setting `local` does not bypass their
+artifact trust or entitlement requirements. If a managed installation has no
+valid enrollment credentials, managed-only features stay disabled and local
+detection continues. An enrolled commercial installation with invalid signed
+entitlement can instead return a blocking review verdict. The runtime reports
+these states rather than presenting an unverified check as clean.
 
 > **Deployment requirement:** no control plane is currently deployed, so `managed`
 > cannot complete enrollment. Leave `mode` at its `local` default unless your
@@ -125,10 +148,10 @@ running in local-only mode rather than silently allowing tool calls.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `false` | Enable control plane integration (telemetry + licensing) |
-| `endpoint` | (built-in) | Base URL for control plane API (self-host override) |
+| `enabled` | `true` | Allow control-plane integration in managed mode; local mode does not sync. A deployed endpoint is still required. |
+| `endpoint` | empty | Base URL for a deployed control plane; no built-in deployment is provided. |
 | `timeout_seconds` | `0.5` | Request timeout for control plane calls |
-| `send_audit_logs` | `false` | Send runtime verdict events for the dashboard |
+| `send_audit_logs` | `true` | In managed mode with enrollment, send runtime verdict events for the dashboard; local mode does not sync. |
 | `send_clean_verdicts` | `false` | Also send `allow` events (higher volume) |
 | `sync_incidents` | `false` | Also send incident events (when emitted) |
 | `grace_period_hours` | `72` | Offline grace window for managed mode |
@@ -141,6 +164,16 @@ Local policy engine to enforce workspace boundaries and basic egress/command res
 - Filesystem policy: allow write roots, deny write regexes, and outside-root action.
 - Network policy: allow/deny domains, private IP blocking, and outside-allow action.
 - Shell policy: deny regexes for commands (tool: `Bash`).
+- MCP server and tool identifiers are exact and case-sensitive. A simple tool rule may use the legacy `server.tool` string when neither name contains a period. For dotted names, use the structured selector so the pair cannot collide:
+
+  ```yaml
+  condition:
+    mcp_tool:
+      server: "com.example"
+      tool: "read.file"
+  ```
+
+  The compiled runtime selector is the JSON tuple `["com.example","read.file"]`; direct `allow_tools`, `deny_tools`, and `require_approval_tools` entries use that same JSON string. Do not lowercase MCP names: MCP tool names are case-sensitive.
 
 ### `intel`
 
@@ -161,8 +194,9 @@ Offline intel packs used by the policy layer.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `true` | Enable URL reputation lookups |
+| `enabled` | `false` | Explicit opt-in to send URLs without credentials, query, or fragment to the reputation provider. Withheld/disabled lookups require review; they are not reported clean. |
 | `endpoint` | (built-in) | Optional override for the URL reputation endpoint (use this for self-hosted deployments) |
+| `include_query_parameters` | `false` | Explicit opt-in to send URL query parameters. URLs containing queries are otherwise withheld and require review. User info and fragments are never sent. |
 | `timeout_seconds` | `5` | Request timeout |
 
 Example (Supabase Edge Function):
@@ -179,7 +213,7 @@ Example (Supabase Edge Function):
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `true` | Enable file reputation checks for packages |
+| `enabled` | `false` | Explicit opt-in to send file SHA-256 hashes to the reputation provider |
 | `endpoint` | (built-in) | Optional override for the file reputation endpoint (use this for self-hosted deployments) |
 | `timeout_seconds` | `5` | Request timeout |
 
@@ -197,8 +231,14 @@ Example (Supabase Edge Function):
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `true` | Enable package supply-chain checks |
+| `enabled` | `false` | Explicit opt-in to send package names to npm/PyPI. Disabled package operations are marked unverified and require review. |
 | `timeout_seconds` | `5` | Request timeout |
+
+### `version_check`
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Opt in to automatic startup/extension version checks. Sends version, runtime, OS/architecture, installation ID and, if enrolled, an Authorization bearer key to the update service. Direct API callers of `checkForUpdate()` are separate. |
 
 ### `amsi_check`
 
@@ -251,7 +291,7 @@ for checkpoint, deletion-manifest and external-archive requirements.
 
 One of `"paranoid"`, `"balanced"`, or `"relaxed"`. Default: `"balanced"`. See [How It Works](how-it-works.md#sensitivity-presets).
 
-In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw and OpenCode connectors. These connectors rely on the agent to relay approval prompts, making them vulnerable to prompt-injection attacks that could persuade the agent to auto-approve. Claude Code and Cursor are unaffected — they use modal dialogs that require direct user interaction.
+In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw and OpenCode. Those plugins cannot open a host-native approval dialog, so an `ask` verdict stays blocked until a human approves out of band; the agent cannot approve its own action. Claude Code supports a host approval UI. Cursor `preToolUse` does not support an enforceable `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.
 
 ### `disabled_threats`
 
@@ -279,4 +319,3 @@ Use this to permanently suppress specific rules that don't apply to your workflo
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |
 | `~/.singularity-aidr/consumed-approvals.json` | Consumed approvals for MCP allowlist flow (10-min TTL entries) |
 | `~/.singularity-aidr/intel/` | Optional offline intel packs |
-

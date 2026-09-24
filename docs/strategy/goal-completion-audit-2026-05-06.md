@@ -51,7 +51,7 @@ strengthening competitive positioning.
 | Make onboarding excellent | `aidr-landing/scripts/smoke-onboarding.mjs`, onboarding pages, device/auth APIs | Production smoke verified the guided demo/install path before latest team-assignment patch. Needs rerun after patch. |
 | Make MCP security stronger than competitors | Core MCP policy/inventory files and connector tests | Core enforcement, inventory breadth, Claude MCP hook coverage, and OpenClaw/OpenCode approval hardening are implemented and locally tested. |
 | Productize dashboard incidents/events | `aidr-landing/src/app/(app)/incidents/page.tsx`, events/policy/delivery pages, smoke | Root-cause timeline, case lifecycle, escalation notifications, assignment foundation, delivery failures, and security export flows are implemented. Latest assignment UI needs gate rerun. |
-| Validate security claims | Redaction, device auth, webhook signature, install code, audit integrity, delivery evidence tests | Mostly locally tested. Enterprise-grade audit anchoring and remote production evidence remain missing. |
+| Validate security claims | Redaction, device auth, webhook signature, install code, audit integrity, delivery evidence tests | Mostly locally tested. External audit anchoring and remote production evidence remain missing. |
 | Strengthen competitive position | Strategy docs, primary-source competitive links, and `/compare` smoke | Positioning is documented, source-backed in strategy docs, and demo-verified; public claims still need legal-approved citations and approval before launch copy. |
 | Report changes, tests, product score, competitors, next work | This audit plus final status notes | Current score remains release-candidate, not complete. Remaining work is listed below. |
 
@@ -86,7 +86,7 @@ Remaining gaps:
    or explicitly de-scope from release-critical coverage.
 8. Response audit tamper evidence now detects deletion and reordering locally,
    but it is still local-key based; external anchoring or server-side receipt
-   evidence is needed before marketing it as enterprise-grade audit integrity.
+   evidence is needed before marketing it as independently anchored audit integrity.
 9. Real customer/pilot telemetry is still needed to prove best-in-class
    onboarding and incident workflows outside demo mode.
 10. Incident assign/resolve/snooze, escalation notification plumbing, dashboard

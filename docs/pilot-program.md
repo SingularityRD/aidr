@@ -1,6 +1,13 @@
 # Pilot Program
 
-Singularity AIDR v1 launches as a **waitlist + approved pilot**.
+## Current availability
+
+The current first-customer readiness decision is **NO-GO for a live pilot offer
+or production deployment**. No customer-installable release is approved; the
+candidate-bound evidence index has no candidate digest and records all 30 gates
+as `NOT_RUN`. See the [current readiness profile](production-readiness/first-customer-ready.md).
+This page describes application behavior in a configured deployment; it is not
+an invitation to enroll or a promise that an application will be accepted.
 
 ## Why a pilot?
 
@@ -10,26 +17,28 @@ AI agent runtimes vary widely. The pilot phase lets us:
 - tune detections and reduce false positives
 - harden the managed control plane and incident visibility
 
-## How to join
+## Application path in a configured deployment
 
-1. Join the waitlist (public landing page).
-2. Sign in to the dashboard.
-3. Submit a pilot request.
-4. Once approved, you can authorize devices and enroll agents.
+The dashboard landing page links to a pilot request. The request form requires
+an existing signed-in account and configured HTTPS privacy and pilot-terms
+documents. A deployment must provide an approved way for applicants to obtain
+an account; the pilot deployment template disables public sign-up. The current
+repository does not provide an active applicant contact route or a waitlist
+form wired into the dashboard. Those deployment and contact details are not
+established here.
 
-## What "approved" enables
+Submitting a request does not grant access. Device authorization and enrollment
+remain unavailable until the current readiness gate passes, a specific release
+and deployment are accepted, the application is approved, and the required
+authentication, privacy, support, and legal routes are live.
 
-- Device authorization and enrollment
-- 1 protected agent included for free during pilot
-- Dashboard visibility (agents, incidents, health)
+Pilot scope, price, agent count, support, and retention must be agreed in an
+approved written order and evaluation terms. **No free agent, service level, or
+customer support channel is promised by this page.**
 
 ## Feedback loop
 
-If you hit a false positive:
-
-- capture the incident summary from the dashboard
-- include the runtime (Claude Code / Cursor / VS Code / OpenClaw / OpenCode)
-- describe what you were trying to do
-
-We use this to tune policies and ship safer defaults.
-
+There is no active customer-support or feedback channel established in this
+repository. Do not send incident summaries, prompts, commands, credentials, or
+customer content until an approved contact route, purpose, and transfer process
+are provided for the evaluation.

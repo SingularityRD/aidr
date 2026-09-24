@@ -5,6 +5,8 @@
 **Kapsam:** `packages/`, `supabase/functions/`, `threats/`, `allowlists/`, konfigürasyon dosyaları  
 **Metodoloji:** Kaynak kod incelemesi, mimari analiz, bağımlılık taraması, secret/konfig denetimi
 
+> **Tarihsel snapshot:** Bu rapor 26 Mayıs 2026 tarihli kaynak durumunu yansıtır; bazı bulgular sonradan giderildi ve bazı adı geçen modüller kaldırıldı. Güncel kapanış durumları için [production-readiness backlog](../../READINESS_BACKLOG.json) ve [local gap report](../production-readiness/remaining-local-gaps.md) kullanılmalıdır. Bu dosyadaki Sentry ve dosya-yolu referansları güncel dağıtım/telemetry kanıtı değildir.
+
 ---
 
 ## 1. Yönetici Özeti
@@ -257,7 +259,7 @@ URL ve file repütasyon kontrolleri kapatıldığında tamamen lokal çalışma 
 - `packages/dashboard/src/sentry.ts` — Sentry DSN env'den alınıyor
 - `packages/extension/src/sentry.ts` — Aynı pattern
 - **Risk:** Sentry DSN public (client-side) olduğundan, üretimde DSN'nin sızdırılması mümkün. Sentry rate limiting gereklidir.
-- `packages/core/src/tracing.ts` — OTel tracing yapılandırması
+- `packages/core/src/telemetry-redaction.ts` — yerel audit/telemetry redaksiyonu
 
 ---
 
@@ -453,6 +455,6 @@ CSP header'ları kontrol edilmelidir. Mevcut kodda:
 
 - **Threat definitions:** `threats/` (23 dosya, 60+ pattern)
 - **Configured tools:** Gitleaks, Biome, pre-commit, pnpm overrides
-- **Monitoring:** Sentry (dashboard + extension), OTel tracing
+- **Monitoring:** Sentry (dashboard) plus native RED/duration telemetry
 - **Auth systems:** Clerk (landing), Supabase Auth (dashboard), Device Auth (agent)
 - **Local storage:** `~/.singularity-aidr/` (config, cache, audit log, managed state)

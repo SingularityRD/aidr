@@ -3,6 +3,10 @@
 > Defensibility analysis and sustainable competitive advantages
 > Version: 1.0 | Last Updated: March 2026
 
+> Historical hypotheses, not implemented feature claims. Federated learning,
+> differential privacy and any sharing guarantees below are proposed designs;
+> current runtime data flows are described in [privacy](../privacy.md).
+
 ---
 
 ## Executive Summary
@@ -35,9 +39,9 @@ Each moat reinforces the others, creating a compound defense against competitors
 │  │   │                  │        │     AIDR         │        ││
 │  │   ├──────────────────┤        ├──────────────────┤        ││
 │  │   │ Cloud Processing │        │ Local Processing │        ││
-│  │   │ Data Exfiltration│   VS   │ Zero Data Leak   │        ││
+│  │   │ Remote data flows│   VS   │ Local evaluation │        ││
 │  │   │ API Dependency   │        │ Offline Capable  │        ││
-│  │   │ Higher Latency   │        │ <50ms Detection  │        ││
+│  │   │ Latency to test  │        │ Latency to test  │        ││
 │  │   │ SaaS Lock-in     │        │ Portable/FOSS    │        ││
 │  │   └──────────────────┘        └──────────────────┘        ││
 │  │                                                             ││
@@ -55,10 +59,10 @@ Each moat reinforces the others, creating a compound defense against competitors
 
 | Capability | Singularity AIDR | Competitors | Moat Depth |
 |------------|-----------------|-------------|------------|
-| **Data Processing** | 100% local | Cloud-based | Deep |
-| **Offline Operation** | Full functionality | Limited/none | Deep |
-| **Latency** | <50ms | 100-500ms | Medium |
-| **Memory Footprint** | <100MB | 500MB+ | Medium |
+| **Data Processing** | Local heuristics; optional outbound checks | Deployment-specific | To validate |
+| **Offline Operation** | Source/development pilot with explicit network opt-outs | Deployment-specific | To validate |
+| **Latency** | Measure on common workload | Unknown | To validate |
+| **Memory Footprint** | Measure signed package/runtime | Unknown | To validate |
 | **API Required** | Optional | Mandatory | Deep |
 | **Source Available** | Yes | Partial | Medium |
 
@@ -68,7 +72,7 @@ Each moat reinforces the others, creating a compound defense against competitors
 
 2. **Trust Premium**: Security products require trust. Privacy-first earns trust that cloud-first competitors struggle to match.
 
-3. **Regulatory Advantage**: GDPR, HIPAA, SOC2 compliance is easier with local processing (data never leaves premise).
+3. **Regulatory Design Goal**: Local processing can reduce data transfer, but actual payload flows, retention, regions, contracts, and independent attestations must be verified for each deployment.
 
 4. **Air-Gapped Deployments**: Unique capability for classified/high-security environments where competitors cannot operate.
 
@@ -205,8 +209,8 @@ Each moat reinforces the others, creating a compound defense against competitors
 │  │         │   (Improved Detection)│                            ││
 │  │         └──────────────────────┘                            ││
 │  │                                                             ││
-│  │   Privacy Guarantee:                                        ││
-│  │   • Raw data never leaves device                           ││
+│  │   Proposed privacy controls (unverified):                   ││
+│  │   • Planned design: share derived gradients, not raw events  ││
 │  │   • Only model gradients shared                          │
 │  │   • Differential privacy noise added                       ││
 │  │   • Opt-in only                                            ││
@@ -228,7 +232,7 @@ Each moat reinforces the others, creating a compound defense against competitors
 | **Anonymized Insights** | Learn from global patterns without seeing data | High |
 | **Rapid Threat Adaptation** | New threats detected across network instantly | High |
 | **Personalized Models** | Per-organization fine-tuning | Medium |
-| **Privacy Compliance** | No data sharing required | High |
+| **Privacy design** | Minimize shared data if this feature is built and verified | Hypothesis |
 
 ### Data Assets
 
@@ -416,7 +420,7 @@ Each moat reinforces the others, creating a compound defense against competitors
 
 | Moat | KPI | Target |
 |------|-----|--------|
-| **Technology** | Latency vs competitors | <50ms (always faster) |
+| **Technology** | Latency vs competitors | Proposed target; measure on common workload |
 | **Network** | Community threat rules | 1,000+ active rules |
 | **Network** | Monthly contributors | 50+ active |
 | **Data** | FL participants | 1,000+ opt-ins |

@@ -1,23 +1,23 @@
 # AIDR üretim ve satış hazırlığı: ayrıntılı eksik kaydı
 
-13 Eylül 2026. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
+Otomatik rapor üretim tarihi: **2026-09-24** (Europe/Istanbul). Rapor bu çalışma ağacının kaynaklarından üretildi; source_commit yalnızca taban commit'i gösterir, çalışma ağacının değişmiş olduğu ayrıca işaretlenir. Bu rapor candidate-bound release evidence değildir. READINESS_BACKLOG.json issue-ledger kaydının tarihsel baseline ve doğrulama tarihleri aşağıdaki makine kaydında yer alır; açık finding ID'leri güncel checkout doğrulaması sayılmaz. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
 
 71 alt özellik: **41 bağlı/çalışan, 28 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **46 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
 
-46 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 0 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
+44 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 2 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
 
 ## Kanıt ve durum nasıl okunmalı?
 
 - **Yerel uygulama, saha kabulü açık:** Kod ve hedefli yerel testler var; gerçek müşteri, native host, provider, SLA veya operatör kabulü ayrıca gerekir.
 - **Açık:** Başlangıç bulgusu veya eksik ürün bağlantısı tamamlanmadı.
-- **P0/P1:** Satılan kapsam önceliği. Ticari kapılar kendi profilinde zorunludur.
+- **P0/P1:** Satılan kapsam önceliği. Ticari kapılar kendi profillerinde zorunludur.
 
-V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidate-v7.md](docs/production-readiness/2026-09-13-customer-candidate-v7.md) içindedir; önceki kurulum kaydı [docs/production-readiness/2026-09-13-customer-candidate-v6.md](docs/production-readiness/2026-09-13-customer-candidate-v6.md) altında saklanır. Yerel test geçişi native host, bağımsız güvenlik değerlendirmesi veya SLA kanıtının yerini tutmaz.
+Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](docs/production-readiness/first-customer-ready.md) içindedir. Candidate-bound durum [.release-evidence/v8-evidence-index.json](.release-evidence/v8-evidence-index.json) tarafından izlenir; güncel index'te candidate digest bilinmiyor ve 30 gate NOT_RUN. v8 candidate raporu [docs/production-readiness/2026-09-13-customer-candidate-v8.md](docs/production-readiness/2026-09-13-customer-candidate-v8.md) yalnız tarihsel karşılaştırmadır ve güncel/accepted candidate değildir. Yerel test geçişi native host, bağımsız güvenlik değerlendirmesi veya SLA kanıtının yerini tutmaz.
 
 ## Öncelikli kalan işler
 
 1. Gerçek host/OS ve cloud/self-hosted altyapı kabulü; resmi yayıncı imzası ve özel dağıtım.
-2. MCP doğrudan upstream bypass, binary/server-initiated kapsamı ve her connector için pre-model/pre-side-effect kabulü.
+2. MCP doğrudan upstream bypass, binary/server-initiated kapsamı ve her connector için post-tool/pre-side-effect kabulü.
 3. Gerçek Entra/Okta, SMTP, MDM, cloud project, TLS public proxy ve iki tenantlı canlı negatif test.
 4. Kimlikli yük, failover/soak, bağımsız offsite kurtarma, SIEM alındısı ve alarm paging teslimi.
 5. Ticari teklif/siparişten entitlement'a, veri işleme, destek kanalları, bağımsız pentest ve isimli müşteri PoV.
@@ -90,7 +90,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T05 — Davranış, novelty ve ML kararlarının ürün akışına bağlanması (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** BehavioralAnalyzer adayı kendi baseline'ına katmıyor ve tenant/session ayrımı korunuyor; üretim etkinliği ve kalıcı öğrenme kabulü açık.
+**Durum:** OPEN. **Mevcut yerel uygulama:** No authenticated post-execution receipt reaches the evaluator; learningAllowed remains false, the runtime starts cold, and baseline restore/persistence are intentionally disabled. DET-08 must not be sold as learned/personalized behavior detection until an authoritative execution boundary, anti-replay receipt, and persistence/retention rules are defined.
 
 **Başlangıç durumu:** Modüller ve testler var; sürekli çalışan tüketici, öğrenme yaşam döngüsü ve üretim başarı ölçümü kanıtı tamam değil.
 
@@ -186,19 +186,19 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T11 — Sürekli kurum/filo keşfi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Kimlikli merkezi discovery upload var; interval modu geçici upload hatasını görünür tutarak sonraki çevrime devam ediyor. Cloud/MDM scheduler ve saha kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yerel tamamlama: aidr collect tek-seferlik OS scheduler çağrısı ve çakışmayan --interval döngüsü destekliyor; kimlikli/sequenced upload dedup edilmiş tenant envanterine gidiyor; authenticated summary/list/read ve reported_collectors_only freshness/alert-state dashboard tüketicisi tamamlandı. Dış kabul: müşteri cloud/MDM adaptörleri, izinli kapsam/credentials, etkin production schedule ve alert/paging teslimi ile canlı tool-provider ve saha kabulü açık.
 
-**Başlangıç durumu:** İsteğe bağlı yerel/altyapı taraması mevcut.
+**Başlangıç durumu:** Yerel kolektör, tenant kapsamlı sequenced/dedup upload ve kimlikli Discovery dashboard summary/list/read akışları var; raporlanan collector/target tazeliği gösteriliyor.
 
-**Başlangıç boşluğu / müşteri etkisi:** Zamanlanmış kolektör, tenant envanteri, sahiplik, tekrar birleştirme, son görülme ve stale alarmı yok.
+**Başlangıç boşluğu / müşteri etkisi:** AWS/Azure/GCP/MDM provider adaptörleri ve müşteri onaylı kapsam/kimlik bilgileri yok. CLI tek-seferlik OS scheduler çağrısı veya --interval döngüsü destekliyor; müşteri production schedule etkinleştirilip kabul edilmedi. Stale/partial alert paging teslimi ve canlı tool-provider kabulü açık.
 
-**Tamamlanma hedefi:** Filo/cloud kolektörleri, kapsam izinleri, zamanlama, retry, dedup, kimlik ve keşif tazeliği ekranlarını kur.
+**Tamamlanma hedefi:** Yalnız müşteri onaylı kaynak kapsamlarında provider adaptörlerini ve kimlikleri kabul et; desteklenen müşteri schedule'ını etkinleştir/izle; stale/partial alert teslimini sahipli paging kanalına bağla; delegated credential akışını gerçek tool provider'da kabul ettir. Dashboard reported_collectors_only sınırını koru.
 
-**Kalan kapanış testi:** Kapanan veya yeni açılan ajan görünür olsun; bağlantısız kolektör eski veriyi güncel göstermesin; tenant ayrımı ve keşif yük sınırları sınansın.
+**Kalan kapanış testi:** Onaylı kaynak dışında envanter gösterilmesin; tenant dışı rapor okunamasın; eski/partial cycle healthy görünmesin; raporlanmayan estate kapsamı çıkarılmasın; gerçek provider API, schedule ve paging tatbikatı ile tool-provider credential kabulü kaydedilsin.
 
-**Sorumlu:** Discovery + Backend Engineering. **Bağımlılık:** Müşteri cloud/MDM API erişimi ve ağ tarama kapsamı.
+**Sorumlu:** Discovery + Backend Engineering. **Bağımlılık:** Müşteri onaylı cloud/MDM API kapsamı ve credentials; üretim scheduler/paging ortamı; tool-provider kabulü.
 
-**İlişkili özellikler:** INF-03. **Kaynak:** [packages/cli/src/commands/scan.ts](packages/cli/src/commands/scan.ts), [packages/core/src/aig-infra-scan.ts](packages/core/src/aig-infra-scan.ts).
+**İlişkili özellikler:** INF-03. **Kaynak:** [packages/cli/src/commands/collect.ts](packages/cli/src/commands/collect.ts), [supabase/functions/discovery/index.ts](supabase/functions/discovery/index.ts), [packages/dashboard/src/ui/pages/DiscoveryPage.tsx](packages/dashboard/src/ui/pages/DiscoveryPage.tsx).
 
 ### T12 — Filo müdahalesi ve credential iptali (P1)
 
@@ -218,9 +218,9 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T13 — Response eylemlerinin güvenli uçtan uca işletimi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yeni response-worker-contract.ts capability/onkosul/TTL/idempotency/rollback makbuzu sozlesmesini uyguluyor; desteklenmeyen action adapter tarafindan reddediliyor ve geri alinamayan adim partial olarak raporlaniyor. Native OS/provider adapter ve kurulu servis musteri tarafinda acik. Eski: Restart-safe worker resume sırasında adapter destek listesini yeniden doğruluyor ve kaldırılmış action'ı çalıştırmadan unsupported_action bildiriyor. Native OS/provider adapter ve kurulu servis açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Response-worker capability/önkoşul/TTL/idempotency/rollback makbuzu sözleşmesini uyguluyor; desteklenmeyen eylem reddediliyor ve geri alınamayan adım partial raporlanıyor. RSP-07 için owner/admin + AAL2 yetkili API ve dayanıklı, sabit iki adımlı pause-agent → isolate-network playbook'u eklendi; çalışan adapter/worker ayrıca kurulup doğrulanmadıkça yürütme başlamaz. Native OS/provider adapter, alarm tetikleyicisi, harici SOAR bağlayıcısı ve kurulu servis saha kabulü açık.
 
-**Başlangıç durumu:** Quarantine/restore, dosya snapshot/rollback ve imzalı olay zinciri yerel testli.
+**Başlangıç durumu:** Quarantine/restore, dosya snapshot/rollback, imzalı olay zinciri ve sabit SOAR playbook yerel testli.
 
 **Başlangıç boşluğu / müşteri etkisi:** Gerçek müşteri dosya izinleri, aynı anda değişen dosya, dış playbook etkileri, signer saklama ve bağımsız arşiv kanıtı eksik.
 
@@ -230,7 +230,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 **Sorumlu:** Response Engineering + Security Operations. **Bağımlılık:** Müşteri dosya sistemi/EDR/SOAR izinleri.
 
-**İlişkili özellikler:** RSP-02, RSP-03, RSP-05, RSP-07. **Kaynak:** [packages/core/src/quarantine.ts](packages/core/src/quarantine.ts), [packages/core/src/rollback.ts](packages/core/src/rollback.ts), [packages/core/src/response-command-worker-v6.ts](packages/core/src/response-command-worker-v6.ts), [packages/core/src/response-audit.ts](packages/core/src/response-audit.ts), [supabase/functions/autosecops-runtime/index.ts](supabase/functions/autosecops-runtime/index.ts).
+**İlişkili özellikler:** RSP-02, RSP-03, RSP-05, RSP-07. **Kaynak:** [packages/core/src/quarantine.ts](packages/core/src/quarantine.ts), [packages/core/src/rollback.ts](packages/core/src/rollback.ts), [packages/core/src/response-command-worker-v6.ts](packages/core/src/response-command-worker-v6.ts), [packages/core/src/response-audit.ts](packages/core/src/response-audit.ts), [supabase/functions/autosecops-runtime/index.ts](supabase/functions/autosecops-runtime/index.ts), [supabase/functions/response-playbooks/index.ts](supabase/functions/response-playbooks/index.ts), [supabase/migrations/20260923000005_fleet_response_playbooks.sql](supabase/migrations/20260923000005_fleet_response_playbooks.sql), [packages/core/src/response-command-consumer-v6.ts](packages/core/src/response-command-consumer-v6.ts), [supabase/functions/__tests__/response-playbooks-contract.test.ts](supabase/functions/__tests__/response-playbooks-contract.test.ts), [docs/operations/response-playbooks.md](docs/operations/response-playbooks.md).
 
 ### T14 — YAML politika yazımı ile gerçek runtime ilişkisi (P1)
 
@@ -298,7 +298,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T18 — Kurumsal giriş, MFA ve hesap kurtarma (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Recovery URL yalnız hosted HTTPS/loopback HTTP kabul ediyor, credential URL'yi reddediyor ve parola değişiminden önce global session barrier kuruyor; canlı IdP açık.
+**Durum:** OPEN. **Mevcut yerel uygulama:** Recovery URL only accepts hosted HTTPS/loopback HTTP, rejects credential URLs and installs a global session barrier before password changes. Enterprise SAML policy administration is still absent: application code cannot set/clear required_saml_provider_id or perform the documented dual-approved cutover/rollback. The specification leaves approver identity/AAL2, rollback target, session-revocation scope, provider allowlist source, and approval expiry/replay rules undefined; do not invent these security semantics.
 
 **Başlangıç durumu:** İlk yönetici ve parolalı giriş SMTP olmadan çalışıyor.
 
@@ -314,7 +314,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T19 — SCIM ve güvenilir directory grup eşlemesi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SCIM stale PATCH'i reddediyor, Remove members tüm üyeleri kaldırıyor ve büyük grup üyeliğini sayfalıyor; gerçek Entra/Okta kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SCIM stale PATCH'i reddediyor, Remove members tüm üyeleri kaldırıyor ve büyük grup üyeliğini sayfalıyor. Dashboard scim-admin çağrısı sabit fonksiyon adı ve kodlanmış cursor sorgusuyla browser Edge sözleşme kapısına bağlı; gerçek Entra/Okta kabulü açık.
 
 **Başlangıç durumu:** Azure yardımcıları mevcut; azure-ad-groups endpointi ve tam SCIM yaşam döngüsü yok.
 
@@ -346,7 +346,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T21 — Mevcut API anahtarında ekip ve üyelik iptali (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Packs manifest/download dahil anahtar kullanan yollar aktif tenant, üyelik ve revocation doğruluyor; önceden üretilmiş signed URL süre sonuna dek geçerli.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** URL/file reputation ve pack manifest/issuance ortak API anahtarı sınırında aktif tenant, üyelik, admission ve revocation kontrol ediyor. Özel pack Storage bucket'ı migration ile oluşuyor; müşteri bağlantısı beyan edilen dış API kaynağını kullanıyor. İndirilen baytlar kısa ömürlü AIDR grant proxy üzerinden geliyor; her GET/HEAD isteğinde anahtar, üyelik, tenant ve entitlement yeniden doğrulanıyor. İzole self-hosted kurulumda gerçek paket baytlarıyla genişletilmiş HTTP smoke geçti; imzalı adayda cloud/self-hosted canlı negatif kabulü açık.
 
 **Başlangıç durumu:** Anahtar yönetimi aktif ekip/üyeliği denetliyor; reputation API'leri yalnızca mevcut anahtarın revoked değerini kontrol ediyor.
 
@@ -358,7 +358,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 **Sorumlu:** Backend Security. **Bağımlılık:** AIDR-063; yerel yeniden üretim kanıtı.
 
-**İlişkili özellikler:** TEN-01, TEN-06, DET-10, DET-11. **Kaynak:** [supabase/functions/url-check/index.ts](supabase/functions/url-check/index.ts), [supabase/functions/file-check/index.ts](supabase/functions/file-check/index.ts), [scripts/audit-reputation-lifecycle.mjs](scripts/audit-reputation-lifecycle.mjs).
+**İlişkili özellikler:** TEN-01, TEN-06, DET-10, DET-11. **Kaynak:** [supabase/functions/url-check/index.ts](supabase/functions/url-check/index.ts), [supabase/functions/file-check/index.ts](supabase/functions/file-check/index.ts), [supabase/functions/_shared/api-key-auth.ts](supabase/functions/_shared/api-key-auth.ts), [supabase/functions/packs-download/index.ts](supabase/functions/packs-download/index.ts), [supabase/functions/_shared/pack-download-grant.ts](supabase/functions/_shared/pack-download-grant.ts), [supabase/migrations/20260924000013_private_pack_bucket.sql](supabase/migrations/20260924000013_private_pack_bucket.sql).
 
 ### T22 — Tenant izolasyonu ve kaynak tüketim sınırları (P0)
 
@@ -378,7 +378,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T23 — Telemetri dayanıklılığı ve görünür veri kaybı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Telemetry WAL bozuk/unknown/tampered committed kayıtları reddediyor, terminal drop sonrası retry ve stale backlog readiness sağlıyor; uzun kesinti saha testi açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Telemetry namespace and WAL now enforce and verify private NTFS ACLs before writes; ACL failure fails closed. A terminally dropped event is checkpointed out of the WAL immediately while loss counters remain. Focused Windows tests took 51.43 seconds, so real hook latency/p95 and long-outage durability acceptance remain open.
 
 **Başlangıç durumu:** Olay alımı ve dashboard bağlı.
 
@@ -392,11 +392,11 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 **İlişkili özellikler:** OBS-01. **Kaynak:** [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts), [packages/core/src/audit-log.ts](packages/core/src/audit-log.ts).
 
-### T24 — SIEM ve OpenTelemetry üretim teslimi (P1)
+### T24 — SIEM ve yerel telemetry üretim teslimi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SIEM durable state provider/endpoint/index routing fingerprint'e bağlı ve farklı hedefte reopen'i reddediyor; gerçek SIEM alındısı/zamanlayıcı açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SIEM durable state provider/endpoint/index routing fingerprint'e bağlı ve farklı hedefte reopen'i reddediyor. Windows'ta state dizini ve yeni/değişen dosya veri yazılmadan/okunmadan önce özel NTFS ACL ile korunuyor; gerçek SIEM alındısı/zamanlayıcı açık.
 
-**Başlangıç durumu:** Dışa aktarma/izleme bileşenleri mevcut.
+**Başlangıç durumu:** Dayanıklı SIEM teslimi, dependency-free evaluator süre ölçümü ve dashboard RED metrikleri mevcut.
 
 **Başlangıç boşluğu / müşteri etkisi:** Named SIEM transport, teslim bildirimi, kesinti tamponu, şema sürümü ve müşteri SIEM alan eşlemesi kabul edilmedi.
 
@@ -406,7 +406,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 **Sorumlu:** Integrations + Customer SOC. **Bağımlılık:** SIEM test hesabı ve event schema anlaşması.
 
-**İlişkili özellikler:** OBS-04. **Kaynak:** [packages/core/src/siem-export.ts](packages/core/src/siem-export.ts), [packages/core/src/tracing.ts](packages/core/src/tracing.ts).
+**İlişkili özellikler:** OBS-04. **Kaynak:** [packages/core/src/siem-delivery.ts](packages/core/src/siem-delivery.ts), [packages/core/src/siem-incident-producer.ts](packages/core/src/siem-incident-producer.ts), [scripts/siem-delivery-worker.mjs](scripts/siem-delivery-worker.mjs), [packages/core/src/evaluator.ts](packages/core/src/evaluator.ts), [deploy/dashboard/monitoring.mjs](deploy/dashboard/monitoring.mjs).
 
 ### T25 — Olay araştırması ve kanıt bütünlüğü (P1)
 
@@ -426,7 +426,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T26 — Saklama, legal hold ve müşteri çıkışı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Offboarding her Storage nesnesinin yokluğunu doğrulamadan ACK üretmiyor; legal hold/resume var, harici backup silme kanıtı açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Audit export ve özel aidr-packs nesneleri için offboarding yetkili, tam-yol/token bağlı Storage silme, birebir yanıt/yokluk doğrulama ve ACK makbuzları uygulandı. Paketler mevcut policy_configuration retention fazında, tenant kilidi altında, bounded batch ile siliniyor; orphan prefix nesneleri kapsanıyor, legacy/paylaşılan yollar güvenli biçimde durduruluyor. Legal hold, yarım kalan silme, tekrar deneme, geç metadata/yükleme ve kapanış korumaları izole PostgreSQL/HTTP testlerinde doğrulandı. Sentetik self-hosted gerçek Storage API çıkışı paket baytı/metadata artığını sıfırlayıp bir makbuz bıraktı; diğer retention sınıfları için tenant haklı olarak waiting_retention durumunda kaldı. Cloud/provider erasure, backup expiry/key-destruction ve müşteri saha kabulü açık.
 
 **Başlangıç durumu:** Sayfalı export ve geçici dosyalar için silme komutu var; zamanlayıcı şablonu sağlanıyor.
 
@@ -438,7 +438,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 **Sorumlu:** Backend + Privacy + Operations. **Bağımlılık:** Onaylı saklama/silme politikası; yedek istisnaları.
 
-**İlişkili özellikler:** OBS-03, OBS-06. **Kaynak:** [scripts/deployment-maintenance.mjs](scripts/deployment-maintenance.mjs), [deploy/maintenance/aidr-export-retention.timer](deploy/maintenance/aidr-export-retention.timer), [supabase/functions/audit-export/index.ts](supabase/functions/audit-export/index.ts).
+**İlişkili özellikler:** OBS-03, OBS-06. **Kaynak:** [scripts/deployment-maintenance.mjs](scripts/deployment-maintenance.mjs), [deploy/maintenance/aidr-export-retention.timer](deploy/maintenance/aidr-export-retention.timer), [supabase/functions/audit-export/index.ts](supabase/functions/audit-export/index.ts), [supabase/migrations/20260924000014_pack_storage_offboarding_guard.sql](supabase/migrations/20260924000014_pack_storage_offboarding_guard.sql).
 
 ### T27 — Offsite yedekleme ve RPO/RTO (P0)
 
@@ -458,7 +458,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T28 — Gerçek cloud ve self-hosted üretim kurulumu (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 33 migrationlı self-hosted prova var; prepare inputları secret oluşturmadan doğruluyor ve cloud public proxy/provider upstream loop'unu reddediyor. Canlı provider/TLS açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 122 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. Live provider/TLS acceptance remains open.
 
 **Başlangıç durumu:** İki model için kurulum hazırlama ve yerel Docker prova var.
 
@@ -570,7 +570,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T35 — Test kapılarının kapsamı ve başarısızlığın saklanmaması (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** v7 birleşik test 237 dosya/3326 geçiş/2 açıklanmış skip, coverage eşikleri ve 10 paket release consumer geçti; native kör corpus açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Bu çalışma ağacında yerel test paketi geçti; ancak güncel ilk müşteri gate'i candidate digesti bulunmadığını ve release evidence indexindeki 30 kapının NOT_RUN olduğunu kaydediyor. Yerel test geçişi v8 adayını güncel/accepted yapmaz; native kör corpus açık.
 
 **Başlangıç durumu:** Binlerce yerel test ve derlenmiş kanca kontrolleri var; 1 canlı sağlayıcı senaryosu atlanıyor. Son koşu hatası ve düzeltme kaydı tutuluyor.
 
@@ -598,15 +598,15 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 **Sorumlu:** Dashboard + Design + Customer Success. **Bağımlılık:** Desteklenen browser ve müşteri kullanıcıları.
 
-**İlişkili özellikler:** CLI-01, TEN-07, TEN-03, POL-02, OBS-03. **Kaynak:** [packages/dashboard/src/main.tsx](packages/dashboard/src/main.tsx), [packages/dashboard/src/ui/pages/OnboardingPage.tsx](packages/dashboard/src/ui/pages/OnboardingPage.tsx), [packages/dashboard/src/enterprise/audit-view.tsx](packages/dashboard/src/enterprise/audit-view.tsx).
+**İlişkili özellikler:** CLI-01, TEN-07, TEN-03, POL-02, OBS-03. **Kaynak:** [packages/dashboard/src/main.tsx](packages/dashboard/src/main.tsx), [packages/dashboard/src/ui/pages/OnboardingPage.tsx](packages/dashboard/src/ui/pages/OnboardingPage.tsx), [packages/dashboard/src/ui/pages/EventsPage.tsx](packages/dashboard/src/ui/pages/EventsPage.tsx), [packages/dashboard/src/ui/pages/IncidentsPage.tsx](packages/dashboard/src/ui/pages/IncidentsPage.tsx), [packages/dashboard/src/enterprise/evidence-view.tsx](packages/dashboard/src/enterprise/evidence-view.tsx).
 
 ### T37 — Gerçek veri akışı, redaksiyon ve gizlilik kanıtı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti, hukuk/saha açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti. Ingest now omits JWT/credential-shaped projected identifiers and rejects credential-shaped event IDs (10 focused regressions); legal retention, data-flow, region, and live acceptance remain open.
 
 **Başlangıç durumu:** Redaksiyon ve tenant ayrımı bileşenleri var.
 
-**Başlangıç boşluğu / müşteri etkisi:** Tüm outbound alan/domain listesi, browser tracing, managed olaylar, AIG payloadları, region, subprocessors ve silme kanıtı müşteri metinleriyle onaylanmadı.
+**Başlangıç boşluğu / müşteri etkisi:** Tüm outbound alan/domain listesi, browser telemetry, managed olaylar, AIG payloadları, region, subprocessors ve silme kanıtı müşteri metinleriyle onaylanmadı.
 
 **Tamamlanma hedefi:** Alan bazlı data-flow ve egress envanteri çıkar; ham prompt/komut/secret canary'leriyle paket/log/export/support bundle sözleşmesi kur; metinleri gerçek işleyişe eşle.
 
@@ -614,7 +614,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 **Sorumlu:** Privacy + Security + Engineering. **Bağımlılık:** DPA ve müşteri veri sınıflandırması; hukuk incelemesi.
 
-**İlişkili özellikler:** OBS-01, OBS-03, OBS-06, TEN-01. **Kaynak:** [docs/privacy.md](docs/privacy.md), [packages/core/src/tracing.ts](packages/core/src/tracing.ts), [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts).
+**İlişkili özellikler:** OBS-01, OBS-03, OBS-06, TEN-01. **Kaynak:** [docs/privacy.md](docs/privacy.md), [packages/core/src/telemetry-redaction.ts](packages/core/src/telemetry-redaction.ts), [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts).
 
 ### T38 — Kuruma özel DLP ve veri etiketleri (P1)
 
@@ -650,7 +650,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T40 — Güvenlik güncellemesi ve müşteri destek işletimi (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Support v7 runbook, izinli/hashli bundle, escalation ve emergency update akışı hazır; gerçek kanal, nöbet ve ticket tatbikatı açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Destek runbook'u, izinli/hashli bundle, escalation ve emergency update akışı hazır; gerçek kanal, nöbet ve ticket tatbikatı açık.
 
 **Başlangıç durumu:** Runbook ve destek şablonları bulunuyor.
 
@@ -666,7 +666,7 @@ V7 birleşik test özeti [docs/production-readiness/2026-09-13-customer-candidat
 
 ### T41 — İlk müşteri satış ve satın alma değerlendirme paketi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Güncel ilk müşteri satış paketi ve portable kit üreticisi var; yeni v7 kit imzası ile onaylı teklif/satın alma kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İlk müşteri readiness gate'i NO-GO; v8 satış paketi tarihsel iç buyer-review taslağıdır ve kabul/teklif yetkisi vermez. Portable kit üreticisi mevcut olsa da temiz imzalı candidate, onaylı teklif ve satın alma kabulü açık.
 
 **Başlangıç durumu:** Kontrollü demo, değerlendirme planı, ilk kurulum ve sipariş şablonları mevcut.
 
@@ -928,7 +928,7 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 |---|---|---|---|
 | DET-01 | Tool artifact extraction | wired | T01 |
 | DET-02 | Threat rules and confidence merge | wired | T01 |
-| DET-03 | Obfuscation and command chains | wired | T01 |
+| DET-03 | Obfuscation and suspicious shell patterns | wired | T01 |
 | DET-04 | Credential access and exfiltration | wired | T01 |
 | DET-05 | Cross-platform rules and mining | wired | T01 |
 | DET-06 | Prompt injection inspection | partial | T04 |
@@ -969,7 +969,7 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | CON-03 | OpenClaw | wired | T01, T04 |
 | CON-04 | OpenCode | wired | T01, T02, T04 |
 | CON-05 | Codex | partial | T01, T04, T35 |
-| CON-06 | SDK and framework adapters | wired | T01, T04 |
+| CON-06 | SDK client and generic middleware | wired | T01, T04 |
 | TEN-01 | Tenant isolation and RBAC | wired | T18, T21, T22, T37, T42 |
 | TEN-02 | Team creation and member lifecycle | wired | T19 |
 | TEN-03 | Invitation issue and acceptance | wired | T20, T36 |
@@ -980,7 +980,7 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | OBS-01 | Telemetry ingest and dashboard | wired | T22, T23, T32, T37 |
 | OBS-02 | Incident correlation and investigation | wired | T09, T25 |
 | OBS-03 | Audit export | wired | T26, T36, T37 |
-| OBS-04 | SIEM export and OpenTelemetry | partial | T24 |
+| OBS-04 | SIEM delivery and native telemetry | partial | T24 |
 | OBS-05 | Tamper and offline integrity | wired | T29, T40 |
 | OBS-06 | Retention and deletion | partial | T26, T37 |
 | BIL-01 | Invoice-based sales model | partial | T33, T41 |
@@ -1009,4 +1009,4 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 
 Her kapanış kaydı isimli sorumlu, gerçek sürüm/artefact özeti, değiştirilemeyen test kanıtı, gözlem tarihi, kabul eden kişi ve kalan sınıra sahip olmalı. Tahmini bitiş tarihi vermek için ekip kapasitesi, müşteri kapsamı ve altyapı bilgisi gerekiyor; bilinmeyen bağımlılığa hayali tarih atanmadı.
 
-İlk görüşmeye götürülebilecek mevcut materyal: [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md), [docs/production-readiness/first-customer-sales-packet-v7.md](docs/production-readiness/first-customer-sales-packet-v7.md), [docs/production-readiness/2026-09-13-customer-candidate-v7.md](docs/production-readiness/2026-09-13-customer-candidate-v7.md), [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md). Bunlar genel üretim veya satış onayı değildir.
+Güncel pre-customer gate: [docs/production-readiness/first-customer-ready.md](docs/production-readiness/first-customer-ready.md). Satış görüşmesi için var olan packet [docs/production-readiness/first-customer-sales-packet-v8.md](docs/production-readiness/first-customer-sales-packet-v8.md) tarihsel bir iç buyer-review taslağıdır; production sale veya supported deployment için NO-GO ve onaylı satış paketi değildir. Candidate-bound durum [.release-evidence/v8-evidence-index.json](.release-evidence/v8-evidence-index.json) içindedir: candidate digesti unknown, 30 kapı NOT_RUN. [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md) ve [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md) kurulum/kapsam kaynaklarıdır; bu materyaller hiçbiri üretim veya satış onayı değildir.

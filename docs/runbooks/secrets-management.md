@@ -19,7 +19,8 @@ Complete guide for managing secrets across local development, CI/CD, and product
 
 | Variable | Purpose | Required In | Rotation Frequency |
 |----------|---------|-------------|-------------------|
-| `SENTRY_DSN` | Error reporting endpoint | All environments | On compromise |
+| `SENTRY_DSN` | Optional error reporting endpoint | Only approved telemetry deployments | On compromise |
+| `SENTRY_ENABLED` | Explicit opt-in for Node runtime diagnostics (`true`/`1`) | Only approved runtime telemetry deployments | Review with telemetry approval |
 | `SENTRY_AUTH_TOKEN` | Source map upload | CI/CD only | Quarterly |
 | `GITHUB_TOKEN` | Release creation | GitHub Actions | Auto-rotated |
 | `GITHUB_TOKEN` | GitHub Packages publishing and release creation | GitHub Actions | Auto-rotated |
@@ -45,19 +46,22 @@ not deployed and none of the Stripe secrets below are provisioned yet.**
 | `STRIPE_WEBHOOK_SECRET` | `Stripe-Signature` verification of webhook deliveries | Production (not provisioned) | On rotation |
 | `AIDR_STRIPE_EXTRA_AGENT_PRICE_ID` | Price id that may grant paid seats (non-secret config) | Production (not configured) | On price-book change |
 | `AIDR_STRIPE_WEBHOOK_TOLERANCE_SECONDS` | Replay-window seconds, default `300` (non-secret config) | Production (optional) | On review |
+| `AIDR_BILLING_PROVIDER` | Billing portal provider selector; set to `stripe` only when the shared self-service gate is enabled | Production (unset for direct GA) | On commercial decision |
 | `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING` | Fail-closed gate for Paddle/Stripe self-service endpoints; keep `false` for direct GA | Production | On commercial decision |
 | `IYZICO_SECRET_KEY` | TR payments | Production | Quarterly |
 | `COINBASE_WEBHOOK_SECRET` | Crypto payments | Production | On rotation |
 | `PAYPAL_SECRET` | PayPal payments | Production | Quarterly |
 
 Webhook secrets live in Supabase Edge Function secrets (never in `VITE_*`
-browser variables and never in this repository). Set them with:
+browser variables and never in this repository). Use the approved secret-entry
+workflow; do not put live values in shell history, command arguments, tickets,
+or chat. The values below are not provisioned, and the endpoint is not deployed;
+do not run a secret-setting command until the release owner records the selected
+project and approved secret-entry procedure:
 
-```bash
-supabase secrets set STRIPE_WEBHOOK_SECRET=<signing secret from the Stripe webhook endpoint>
-supabase secrets set STRIPE_SECRET_KEY=<restricted or secret key>
-supabase secrets set AIDR_STRIPE_EXTRA_AGENT_PRICE_ID=<price id>
-```
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_SECRET_KEY`
+- `AIDR_STRIPE_EXTRA_AGENT_PRICE_ID` (non-secret configuration)
 
 The endpoint returns `400` and writes nothing while `STRIPE_WEBHOOK_SECRET` is
 unset, and refuses to grant seats while the extra-agent price id is unset.
@@ -69,6 +73,9 @@ unset, and refuses to grant seats while the extra-agent price id is unset.
 | `SUPABASE_URL` | Dashboard database | Production | On compromise |
 | `SUPABASE_ANON_KEY` | Dashboard auth | Production | Quarterly |
 | `SUPABASE_SERVICE_ROLE_KEY` | Admin operations | Production only | Quarterly |
+| `AIDR_PACK_DOWNLOAD_GRANT_SECRET` | HMAC for scoped pack-download grants; at least 32 random bytes | `packs-manifest` + `packs-download` Edge Functions; self-hosted value stored in `.env.functions` | On compromise or deliberate link invalidation |
+
+`deployment-prepare` generates this pack-grant secret into the private `.env.functions` file. Self-hosted Compose supplies that value to the Edge Functions container; preserve it across upgrades and never copy it into browser or agent configuration. For managed Supabase, securely install the same generated value as a server-side Edge Function secret for both `packs-manifest` and `packs-download`; the local file does not configure the hosted project. Do not expose the value through command-line arguments, logs, tickets or chat. Scoped `download_url` grants are temporary bearer capabilities; redact their `grant` query parameter from request logs. The project `SERVICE_ROLE_KEY`/runtime `SUPABASE_SERVICE_ROLE_KEY` is also server-only and must never appear in `.env.functions` sent to a customer endpoint or any browser bundle.
 
 ### Local Development Only
 
@@ -85,13 +92,35 @@ unset, and refuses to grant seats while the extra-agent price id is unset.
 
 ### CLI Local Credential (`aidr config rotate-key`, `aidr config revoke-key`)
 
-The local CLI credential is kept in the OS credential vault — Windows DPAPI,
+These commands affect **only the CLI setup credential**. They do not rotate or
+revoke the managed endpoint API key used by the control plane. That separate
+credential currently comes from `auth.api_key` in the runtime config or the
+`api_key` field in `managed.json` after enrollment. For a compromised managed
+key, use the control-plane API Keys renewal/revocation workflow and verify the
+old key is rejected; do not use these CLI commands as evidence of server-side
+revocation. Automatic endpoint replacement and vault-backed runtime storage
+remain open production-acceptance work.
+The CLI setup credential is not used to authenticate managed runtime traffic.
+
+The local CLI setup credential is kept in the OS credential vault — Windows DPAPI,
 macOS Keychain or the Linux Secret Service — and `~/.singularity-aidr/config.json`
 stores only a `secret_ref` handle. The ACL-hardened plaintext file survives as a
 reduced-protection fallback and is used **only when it is selected explicitly**
 (`--secret-store file-acl` or `AIDR_SECRET_STORE=file-acl`); with no vault
 available and no explicit fallback the CLI fails closed instead of writing the
 credential in plaintext.
+
+Older installations created before vault-backed storage may still have an
+unmarked inline `apiKey`; rerunning `aidr setup` currently reuses that file rather
+than migrating it. Treat that credential as plaintext until it has been rotated
+or migrated deliberately. The macOS Keychain adapter passes the value as an
+argument to the native `security` command because that command has no pipe-based
+write interface; same-user processes may briefly observe it in the process list.
+The injected-runner tests verify command construction, not real macOS Keychain
+access. On uninstall, AIDR removes its verified hooks only and deliberately keeps
+the local configuration and vault item; run `aidr config revoke-key` separately
+if the local CLI setup credential should be removed. This does not revoke managed
+endpoint credentials.
 
 ```bash
 # Rotate. Order matters: the new credential is written to the store, then
@@ -140,58 +169,52 @@ gh workflow run "Release Promote, Rollback or Yank" \
 
 ### Sentry Auth Token Rotation
 
-**When:** Quarterly or when token is exposed
+**When:** On exposure; any proactive cadence must follow the approved internal
+credential policy.
 
 ```bash
 # 1. Generate new token on sentry.io
 # Visit: https://sentry.io/settings/account/api/auth-tokens/
 # Required scopes: project:write, org:read
 
-# 2. Update GitHub secret
-gh secret set SENTRY_AUTH_TOKEN --body "sntrys_xxxxx" --repo SingularityRD/aidr
+# 2. Update the GitHub secret from a short-lived, access-restricted file
+# outside the checkout. Do not pass the token through --body or a shell literal.
+gh secret set SENTRY_AUTH_TOKEN < /secure/path/sentry-auth-token.txt --repo SingularityRD/aidr
 
 # 3. Verify source map upload works on next release
 ```
 
-### Payment Provider Rotation (Stripe Example)
+### Payment Provider Rotation (Stripe; not operational yet)
 
-**When:** Quarterly
-
-```bash
-# 1. Generate new secret key in Stripe Dashboard
-# Visit: https://dashboard.stripe.com/apikeys
-# Roll: Create restricted key → Roll webhook secrets
-
-# 2. Update production environment
-# Vercel Dashboard / Environment Variables
-
-# 3. Deploy with new secrets
-vercel --prod
-
-# 4. Revoke old key after 24h monitoring
-```
+This procedure is **not executable today**: the Stripe webhook endpoint is not
+deployed and the Stripe secrets are not provisioned. Do not follow the stale
+Vercel deployment steps from older copies of this runbook. If Stripe is later
+approved and deployed, rotate the Edge Function secrets in the deployment that
+actually hosts `supabase/functions/stripe-webhook`, perform a signed test event,
+verify the resulting billing state, then revoke the old credential under the
+approved change record. The rotation cadence, overlap window, and customer
+notice policy are not currently approved; do not infer a quarterly or 24-hour
+commitment from this template.
 
 ### Generic GitHub Actions Secret Rotation
 
 ```bash
-# Set/update a secret
-gh secret set <NAME> --body "<value>" --repo SingularityRD/aidr
-
-# Set from file
-gh secret set <NAME> < secret.txt --repo SingularityRD/aidr
+# Replace SECRET_NAME with the actual GitHub secret name. Read from a short-lived,
+# access-restricted file outside the checkout, then delete it under local policy.
+gh secret set SECRET_NAME < /secure/path/secret.txt --repo SingularityRD/aidr
 
 # List secrets (names only)
 gh secret list --repo SingularityRD/aidr
 
 # Remove secret
-gh secret remove <NAME> --repo SingularityRD/aidr
+gh secret remove SECRET_NAME --repo SingularityRD/aidr
 ```
 
 ### GitHub Environment Secrets (for review deployments)
 
 ```bash
 # Set secret for specific environment
-gh secret set <NAME> --env production --body "<value>" --repo SingularityRD/aidr
+gh secret set SECRET_NAME < /secure/path/secret.txt --env production --repo SingularityRD/aidr
 ```
 
 ---
@@ -223,7 +246,7 @@ Set these secrets for `production`:
 
 | Secret Name | Purpose |
 |-------------|---------|
-| `SENTRY_DSN` | Production error reporting |
+| `SENTRY_DSN` | Optional dashboard error reporting; Node runtime also requires `SENTRY_ENABLED=true`/`1` |
 | `STRIPE_SECRET_KEY` | Live payments (not provisioned yet) |
 | `STRIPE_WEBHOOK_SECRET` | Webhook validation (not provisioned yet) |
 | `SUPABASE_URL` | Dashboard database |
@@ -288,12 +311,16 @@ AIDR_LOG_LEVEL=debug
 
 #### macOS Keychain
 
-```bash
-# Store secret
-security add-generic-password -s "aidr-anthropic-key" -a "$(whoami)" -w "sk-ant-..."
+Use Keychain Access or an approved interactive secret manager to add the real
+value. Do not pass a live secret as the `security -w` argument: command arguments
+can be exposed in process inspection and shell history. A retrieved value is
+shown only through the process environment in the example below; avoid shell
+tracing and clear the variable as soon as the dependent command finishes.
 
-# Retrieve in script
+```bash
+# Retrieve only for the shortest required process lifetime; do not echo it.
 export ANTHROPIC_API_KEY=$(security find-generic-password -s "aidr-anthropic-key" -w)
+unset ANTHROPIC_API_KEY
 ```
 
 #### 1Password CLI
@@ -304,6 +331,10 @@ export ANTHROPIC_API_KEY=$(op read "op://Private/Anthropic/credential")
 ```
 
 #### direnv (per-directory)
+
+Keep `.envrc` out of Git and verify it is ignored before adding any local secret.
+Prefer a vault-backed value; never commit the file or paste real values into
+example commands.
 
 ```bash
 # .envrc in project root
@@ -329,8 +360,8 @@ direnv allow
 | Variable | Value |
 |----------|-------|
 | `SENTRY_DSN` | https://...sentry.io/... |
-| `SENTRY_ENABLED` | true |
 | `SENTRY_ENVIRONMENT` | production |
+| `SENTRY_TRACES_SAMPLE_RATE` | 0.1 |
 | `STRIPE_PUBLISHABLE_KEY` | pk_live_... |
 | `NEXT_PUBLIC_URL` | https://your-domain.com |
 
@@ -402,13 +433,23 @@ az keyvault secret show \
    - Comment required vs optional variables
 
 3. **Scan for leaked secrets**
-   ```bash
-   # Using gitleaks (already in CI)
-   gitleaks detect --source . --verbose
-   
-   # Using trufflehog
-   trufflehog filesystem .
+   CI uses the checksum-pinned official Gitleaks v8.30.1 release. On Windows x64, download
+   [`gitleaks_8.30.1_windows_x64.zip`](https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_windows_x64.zip),
+   verify the archive SHA-256 is `D29144DEFF3A68AA93CED33DDDF84B7FDC26070ADD4AA0F4513094C8332AFC4E`
+   **before** extracting it, and point the local gate at the extracted executable. The gate
+   also verifies that executable's SHA-256 is
+   `17157E2EE8B76FC8B1D8BEE607A250E34B8A8023C8BC81822D4B5EE4D78FCB7C`:
+
+   ```powershell
+   $env:GITLEAKS_BIN = 'C:\path\to\verified\gitleaks.exe'
+   & $env:GITLEAKS_BIN version # must print 8.30.1
+   pnpm verify:secrets:current
    ```
+
+   The current-tree gate includes tracked and non-ignored untracked files and has a negative
+   control that must detect a fixture secret. A passing current-tree scan does **not** clear
+   historical findings. A named Security owner must triage historical findings, revoke or
+   rotate live credentials, and retain redacted evidence before first-customer acceptance.
 
 ### Detection
 
@@ -417,23 +458,19 @@ az keyvault secret show \
    - Monitor: https://github.com/SingularityRD/aidr/security/secret-scanning
 
 2. **CI/CD Detection**
-   ```yaml
-   # Already in .github/workflows/ci.yml
-   - name: Pre-release secrets audit
-     run: bash scripts/pre-release-audit.sh
-   ```
+   `.github/workflows/ci.yml` runs the current-tree gate with a checksum-pinned v8.30.1
+   archive. The release workflow also runs a full-history scan; locally,
+   `GITLEAKS_BIN=/path/to/verified/gitleaks bash scripts/pre-release-audit.sh` runs both.
 
 3. **Local pre-commit hooks**
-   ```yaml
-   # .pre-commit-config.yaml
-   repos:
-     - repo: https://github.com/gitleaks/gitleaks
-       rev: v8.18.0
-       hooks:
-         - id: gitleaks
-   ```
+   Hooks are optional convenience checks; they do not replace the pinned CI and release gates.
 
 ### Response to Exposed Secret
+
+The time bands below are suggested internal triage goals, not staffed coverage
+or a customer response commitment. The incident runbook and approved customer
+support schedule govern escalation; neither a clock nor an on-call route is
+established by this checklist.
 
 1. **Immediate (0-15 minutes)**:
    - Revoke the secret in the provider dashboard
@@ -456,8 +493,8 @@ az keyvault secret show \
 |-------------|----------------|----------------|
 | Local dev | Individual developers | Self-service via `.env` |
 | CI/CD | GitHub Actions | Via repository secrets |
-| Staging | DevOps team | GitHub environment secrets |
-| Production | SRE leads only | Ticket to #infrastructure |
+| Staging | Named access group **not held** | Approved request route **not held** |
+| Production | Named access group **not held** | Verified request route **not held**; do not rely on `#infrastructure` until its ownership and access are tested |
 
 ### Secret Naming Conventions
 

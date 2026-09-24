@@ -5,6 +5,32 @@
 Bu belge, "satışa hazır mı?" sorusunun kanıta dayalı cevabıdır. Her satır ya
 çalıştırılmış bir komuta ya da açıkça "yapılmadı" beyanına dayanır.
 
+> **Tarihsel snapshot — güncel aday kararı değildir.** Bu kayıt 18 Eylül 2026
+> tarihindeki çalışma ve kanıtları anlatır. Özellikle §§3.2 ve 5'teki
+> `AIDR_NATIVE_TEST_*` gözlem mekanizmasının hiçbir connector tarafından
+> okunmadığı ve bunun hâlâ yapılacak mühendislik işi olduğu ifadesi,
+> 22 Eylül 2026'da eklenen [`host-observation` yardımcısıyla](../../packages/core/src/host-observation.ts)
+> supersede edilmiştir. Yardımcı Claude Code, OpenClaw, OpenCode, Codex ve ortak
+> Cursor/VS Code extension hook'u tarafından kullanılır; yalnız connector
+> çağrısı/alınan verdict makbuzu yazar. Host'un eylemi denediğini veya yan
+> etkinin gerçekten engellendiğini tek başına kanıtlamaz. Güncel kabul durumu
+> [`deploy/native/support-matrix.json`](../../deploy/native/support-matrix.json)
+> içindedir: bütün `acceptanceEvidence` dizileri boştur ve tamamlanmış senaryo
+> manifestleri yoktur. Bu yüzden yerel gözlem instrumentasyonu native-host
+> kabulünü kapatmaz; bu snapshot'ın `PRODUCTION_SALES_GO` olmadığı kararı da
+> değişmez. Güncel checkout için `READINESS_BACKLOG.json` ve mevcut
+> `.release-evidence/v8-evidence-index.json` varsa onun candidate binding'ini
+> ayrıca kontrol edin.
+>
+> Bu snapshot'taki §§4 ve 5'in "model-driven interception kanıtlanmadı / provider
+> auth gerekiyor" ifadesi de daha sonra eklenen [Codex canlı-model kanıtıyla](../evidence/model-driven-interception-first-proof.md)
+> supersede edilmiştir: gerçek bir Windows Codex oturumunda üç tehlikeli durum
+> engellenmiş ve üç benign kontrol izin almıştır. Kanıt yalnızca o Codex/Windows
+> host kapsamındadır; `--dangerously-bypass-hook-trust` kullanılmış, hook'un
+> kalıcı host güven incelemesi kanıtlanmamış ve bu çalışma diğer connector'lar
+> için kabul kaydı ya da aday-bağlı release kanıtı oluşturmaz. Satış/native-host
+> kabul kararı bu yüzden değişmez.
+
 ---
 
 ## 1. Bu oturumda kapatılan gerçek hatalar

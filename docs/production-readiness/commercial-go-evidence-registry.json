@@ -4,14 +4,15 @@
   "registryKind": "commercial-go-evidence",
   "decision": "NO-GO",
   "releaseCandidate": null,
-  "lastReviewed": "2026-08-04",
+  "lastReviewed": "2026-09-23",
   "commercialDecision": {
     "status": "locked-product-decision-evidence-open",
     "launchModel": "direct-ga",
-    "connectorScope": "all-connectors",
+    "connectorScope": "five-direct-ga-connectors",
     "deploymentModel": "hybrid",
     "regions": ["EU", "US", "APAC"],
-    "billingModel": "enterprise-invoice",
+    "billingModel": "cloud-online-and-enterprise-invoice",
+    "cloudTrial": { "durationDays": 14, "agentLimit": 1, "paidCloudTrialCap": false },
     "distribution": "private-registry",
     "sla": {
       "target": "99.9% monthly availability",
@@ -57,14 +58,20 @@
   },
   "scanRoots": [
     "packages/dashboard/dist",
+    "packages/dashboard/src/ui/pages/public",
     "packages/dashboard/aidr-landing.html",
     "packages/dashboard/LANDING-WORKING.html",
     ".claude-plugin",
     "README.md",
+    "docs/sales",
     "docs/strategy",
     "docs/architecture/aig-integration.md",
     "docs/configuration.md",
     "services/aig-bridge/app/routers/scan.py"
+  ],
+  "historicalScanExclusions": [
+    "docs/sales/demo-script.md",
+    "docs/sales/readiness-status-20260918.md"
   ],
   "artifactRoots": [
     "packages/core/dist",
@@ -216,6 +223,7 @@
     {
       "id": "COM-010",
       "domain": "ga-connectors",
+      "directGaConnectorScope": ["claude-code", "cursor", "vscode", "openclaw", "opencode"],
       "requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
       "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
       "class": "hard",
@@ -420,7 +428,7 @@
     },
     {
       "id": "CLAIM-010",
-      "exactText": "All six connectors are directly GA-supported.",
+      "exactText": "Five connectors are intended for direct-GA; Codex remains outside this order scope unless Product expressly adds and accepts it.",
       "surfaces": ["Commercial Release Manifest", "Order Form", "investor and customer materials"],
       "decisionId": "COM-010",
       "status": "blocked",

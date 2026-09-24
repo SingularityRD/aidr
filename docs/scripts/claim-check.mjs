@@ -15,7 +15,8 @@
  *
  * Examples:
  *   node docs/scripts/claim-check.mjs --mode=inventory
- *   node docs/scripts/claim-check.mjs --mode=gate --root packages/dashboard/dist
+ *   node docs/scripts/claim-check.mjs --mode=gate --root extra/release-copy
+ *   --root adds a surface; it never replaces the required registry surfaces.
  *   node docs/scripts/claim-check.mjs --mode=gate --json > claim-check.json
  */
 
@@ -121,6 +122,24 @@ function sha256(value) {
 	return createHash("sha256").update(value).digest("hex");
 }
 
+function hasCurrentApproval(claim, registry) {
+	const expiry = typeof claim.expiresAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(claim.expiresAt)
+		? Date.parse(`${claim.expiresAt}T23:59:59.999Z`) : NaN;
+	const approval = claim.approvalEvidence;
+	const evidencePath = typeof approval?.path === "string" ? resolvePath(approval.path) : null;
+	const inside = evidencePath ? relative(repositoryRoot, evidencePath) : "";
+	const reviewedAt = typeof approval?.reviewedAt === "string" ? Date.parse(approval.reviewedAt) : NaN;
+	return claim.salesApproved === true && claim.status === "closed" && claim.maturity === "approved" &&
+		!!registry.releaseCandidate && claim.releaseCandidate === registry.releaseCandidate &&
+		Number.isFinite(expiry) && expiry >= Date.now() &&
+		typeof approval?.reviewer === "string" && approval.reviewer.trim() !== "" && approval.reviewer !== "REQUIRED" &&
+		Number.isFinite(reviewedAt) && reviewedAt <= Date.now() &&
+		approval.exactTextSha256 === sha256(claim.exactText ?? "") &&
+		evidencePath && inside !== "" && !inside.startsWith("..") && !isAbsolute(inside) &&
+		existsSync(evidencePath) && statSync(evidencePath).isFile() &&
+		approval.sha256 === sha256(readFileSync(evidencePath));
+}
+
 function validateRegistry(registry) {
 	const errors = [];
 	if (registry?.registryKind !== "commercial-go-evidence") {
@@ -134,6 +153,9 @@ function validateRegistry(registry) {
 	}
 	if (!Array.isArray(registry?.hardGates) || registry.hardGates.length === 0) {
 		errors.push("hardGates must be a non-empty array");
+	}
+	if (!(registry.scanRoots ?? []).includes("packages/dashboard/src/ui/pages/public")) {
+		errors.push("dashboard public page sources must be scanned");
 	}
 	const ids = new Set();
 	for (const collectionName of ["claimPatterns", "hardGates", "claims"]) {
@@ -157,8 +179,34 @@ function validateRegistry(registry) {
 			errors.push(`${pattern.id} has invalid regex: ${error.message}`);
 		}
 	}
+	for (const claim of registry.claims ?? []) {
+		if (claim.salesApproved !== true) continue;
+		if (!hasCurrentApproval(claim, registry)) {
+			errors.push(`${claim.id}: Sales Approved claim needs an unexpired exact-text approval, named reviewer, and matching in-repository evidence SHA-256 bound to this release candidate`);
+		}
+	}
 	for (const templatePath of registry.templatePaths ?? []) {
 		if (!existsSync(resolvePath(templatePath))) errors.push(`required commercial template is missing: ${templatePath}`);
+	}
+	const historicalPaths = registry.historicalScanExclusions ?? [];
+	if (!Array.isArray(historicalPaths) || new Set(historicalPaths).size !== historicalPaths.length) {
+		errors.push("historicalScanExclusions must be a list of unique file paths");
+	} else {
+		for (const path of historicalPaths) {
+			if (typeof path !== "string") {
+				errors.push("historical sales exclusion must be a file path");
+				continue;
+			}
+			const fullPath = resolvePath(path);
+			const normalized = relative(repositoryRoot, fullPath).replaceAll("\\", "/");
+			if (normalized !== path || !normalized.startsWith("docs/sales/") || !normalized.endsWith(".md") || !existsSync(fullPath) || !statSync(fullPath).isFile()) {
+				errors.push(`invalid historical sales exclusion: ${path}`);
+				continue;
+			}
+			if (!/^(?:# Historical\b|> \*\*Tarihsel snapshot\b)/im.test(readFileSync(fullPath, "utf8").slice(0, 1500))) {
+				errors.push(`historical sales exclusion is not visibly labelled: ${path}`);
+			}
+		}
 	}
 	return errors;
 }
@@ -166,9 +214,9 @@ function validateRegistry(registry) {
 function validateCommercialDecision(registry) {
 	const expected = {
 		launchModel: "direct-ga",
-		connectorScope: "all-connectors",
+		connectorScope: "five-direct-ga-connectors",
 		deploymentModel: "hybrid",
-		billingModel: "enterprise-invoice",
+		billingModel: "cloud-online-and-enterprise-invoice",
 		distribution: "private-registry",
 	};
 	const decision = registry.commercialDecision ?? {};
@@ -178,6 +226,9 @@ function validateCommercialDecision(registry) {
 	}
 	for (const [key, value] of Object.entries(expected)) {
 		if (decision[key] !== value) errors.push(`commercialDecision.${key} must be locked to ${value}`);
+	}
+	if (decision.cloudTrial?.durationDays !== 14 || decision.cloudTrial?.agentLimit !== 1 || decision.cloudTrial?.paidCloudTrialCap !== false) {
+		errors.push("commercialDecision.cloudTrial must remain 14 days / 1 agent without a paid-cloud trial cap");
 	}
 	const regions = Array.isArray(decision.regions) ? new Set(decision.regions) : new Set();
 	for (const region of ["EU", "US", "APAC"]) {
@@ -302,18 +353,25 @@ function inspectLicenseMetadata(registry) {
 	return result;
 }
 
-function scanFile(file, patterns) {
+function scanFile(file, patterns, approvedClaims) {
 	const text = readFileSync(file, "utf8");
+	const path = relative(repositoryRoot, file).replaceAll("\\", "/");
 	const hits = [];
 	for (const pattern of patterns) {
 		pattern.regex.lastIndex = 0;
 		let match;
 		while ((match = pattern.regex.exec(text)) !== null) {
 			const line = text.slice(0, match.index).split("\n").length;
+			const approved = approvedClaims.some((claim) => {
+				if (!claim.patternIds?.includes(pattern.id) || !claim.surfaces?.some((surface) => path === surface || path.startsWith(`${surface}/`))) return false;
+				const start = text.lastIndexOf(claim.exactText, match.index);
+				return start >= 0 && match.index + match[0].length <= start + claim.exactText.length;
+			});
 			hits.push({
 				patternId: pattern.id,
 				line,
 				match: match[0],
+				approved,
 				reason: pattern.reason,
 			});
 			if (match[0].length === 0) {
@@ -321,7 +379,7 @@ function scanFile(file, patterns) {
 			}
 		}
 	}
-	return { path: relative(repositoryRoot, file).replaceAll("\\", "/"), sha256: sha256(text), hits };
+	return { path, sha256: sha256(text), hits };
 }
 
 function main() {
@@ -332,11 +390,12 @@ function main() {
 	}
 	const registry = readJson(registryPath);
 	const registryErrors = [...validateRegistry(registry), ...validateCommercialDecision(registry)];
-	const roots = (args.roots.length > 0 ? args.roots : registry.scanRoots ?? []).map(resolvePath);
+	const roots = [...new Set([...(registry.scanRoots ?? []), ...args.roots])].map(resolvePath);
 	const artifactRoots = (registry.artifactRoots ?? []).map(resolvePath);
 	const missingRoots = roots.filter((root) => !existsSync(root)).map((root) => relative(repositoryRoot, root).replaceAll("\\", "/"));
 	const missingArtifactRoots = artifactRoots.filter((root) => !existsSync(root)).map((root) => relative(repositoryRoot, root).replaceAll("\\", "/"));
-	const files = roots.flatMap(collectFiles);
+	const historicalExclusions = new Set(Array.isArray(registry.historicalScanExclusions) ? registry.historicalScanExclusions : []);
+	const files = roots.flatMap(collectFiles).filter((file) => !historicalExclusions.has(relative(repositoryRoot, file).replaceAll("\\", "/")));
 	const uniqueFiles = [...new Set(files)].sort();
 	const artifactFileLists = artifactRoots.map((root) => ({ root, files: collectFiles(root) }));
 	const emptyArtifactRoots = artifactFileLists
@@ -344,19 +403,15 @@ function main() {
 		.map(({ root }) => relative(repositoryRoot, root).replaceAll("\\", "/"));
 	const artifactFiles = [...new Set(artifactFileLists.flatMap(({ files: artifactFilesForRoot }) => artifactFilesForRoot))].sort();
 	const patterns = buildPatternIndex(registry);
-	const scans = uniqueFiles.map((file) => scanFile(file, patterns));
+	const approvedClaims = (registry.claims ?? []).filter((claim) => hasCurrentApproval(claim, registry));
+	const scans = uniqueFiles.map((file) => scanFile(file, patterns, approvedClaims));
 	const artifactScans = artifactFiles.map((file) => {
 		const content = readFileSync(file);
 		return { path: relative(repositoryRoot, file).replaceAll("\\", "/"), sha256: sha256(content), bytes: content.length };
 	});
 	const hits = scans.flatMap((scan) => scan.hits.map((hit) => ({ ...hit, path: scan.path, sha256: scan.sha256 })));
 	const licenseCheck = inspectLicenseMetadata(registry);
-	const approvedPatternIds = new Set(
-		(registry.claims ?? [])
-			.filter((claim) => claim.salesApproved === true && claim.status === "closed")
-			.flatMap((claim) => claim.patternIds ?? []),
-	);
-	const unapprovedHits = hits.filter((hit) => !approvedPatternIds.has(hit.patternId));
+	const unapprovedHits = hits.filter((hit) => !hit.approved);
 	const openHardGates = (registry.hardGates ?? []).filter((gate) => gate.class === "hard" && gate.status !== "closed");
 	const gateFailure = registryErrors.length > 0 || missingRoots.length > 0 || missingArtifactRoots.length > 0 || emptyArtifactRoots.length > 0 || unapprovedHits.length > 0 || openHardGates.length > 0 || licenseCheck.errors.length > 0;
 	const sourceCommit = gitCommitSha(repositoryRoot);
@@ -370,6 +425,7 @@ function main() {
 		mode: args.mode,
 		decision: registry.decision,
 		roots: roots.map((root) => relative(repositoryRoot, root).replaceAll("\\", "/")),
+		historicalScanExclusions: [...historicalExclusions],
 		artifactRoots: artifactRoots.map((root) => relative(repositoryRoot, root).replaceAll("\\", "/")),
 		missingRoots,
 		missingArtifactRoots,

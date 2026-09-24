@@ -3,6 +3,10 @@
 > Comprehensive GTM plan for 2026 launch and growth
 > Version: 1.0 | Last Updated: March 2026
 
+> Historical planning assumptions, not an approved offer or measured product
+> comparison. Prices, deployment time, performance, customer claims, and market
+> estimates below require current evidence and commercial approval before use.
+
 ---
 
 ## Market Overview
@@ -44,7 +48,7 @@
 | **Pain Points** | Compliance requirements, audit trails, data exfiltration |
 | **Decision Maker** | CISO, Security Architect, DevSecOps Lead |
 | **Budget** | $10K-100K/year for security platforms |
-| **Use Case** | SOC2/ISO27001 compliance, insider threat detection |
+| **Use Case** | Audit-control evidence collection and insider threat detection; certification scope requires external approval |
 
 **Persona: Sarah - CISO at Series C fintech**
 > "SOC2 auditors are asking about our AI agent controls. We need a solution that provides audit logs and policy enforcement without adding friction."
@@ -178,9 +182,9 @@
 
 | Audience | Primary Message | Supporting Points |
 |----------|-----------------|-------------------|
-| Developers | "Secure AI coding without slowing down" | • Zero configuration • Privacy-first • <50ms latency |
-| Security Teams | "Finally, visibility into AI agent activity" | • Complete audit logs • Policy enforcement • Compliance ready |
-| Executives | "Protect your AI investment" | • Prevent incidents • Compliance • Cost-effective |
+| Developers | "Inspect supported AI coding actions locally" | • Guided setup • Configurable outbound checks • Latency to measure per host |
+| Security Teams | "Visibility into supported agent activity" | • Local audit logs • Configurable policy • Managed reporting after deployment |
+| Executives | "Evaluate AI agent controls" | • Scoped pilot • Documented limitations • Independent acceptance before claims |
 
 ### Content Strategy
 
@@ -283,9 +287,9 @@
 | Objection | Response |
 |-----------|----------|
 | "We already use LLM Guard" | "AIDR complements LLM Guard by adding IDE-level protection and behavioral analysis." |
-| "We don't have budget" | "Start with Free tier. Our 95% conversion to Pro happens when teams see the value." |
-| "Too much friction" | "AIDR adds <50ms latency and works silently. Developers won't notice it." |
-| "Privacy concerns" | "All processing is local. We can't see your code even if we wanted to." |
+| "We don't have budget" | "Scope an evaluation and agree commercial terms before promising a tier or conversion result." |
+| "Too much friction" | "Measure latency and interruptions on the customer's selected hosts and workload." |
+| "Privacy concerns" | "Local heuristics do not upload source files; enabled reputation, managed and diagnostic paths need a deployment-specific data-flow review." |
 
 ---
 
@@ -393,11 +397,11 @@
 
 | Advantage | Evidence |
 |-----------|----------|
-| **Privacy-First** | Local processing, no data exfiltration |
-| **Multi-Platform** | Only solution covering Claude, Cursor, OpenClaw |
-| **Lightweight** | <1MB vs 100MB+ for alternatives |
-| **Fast** | <50ms vs 200ms+ for cloud solutions |
-| **Affordable** | $10 vs $49+ starting prices |
+| **Local evaluation** | Source-level behavior; enabled reputation, managed telemetry and diagnostics can send data ([flow map](../privacy.md)) |
+| **Connector breadth** | Claude, Cursor and OpenClaw surfaces exist; direct-GA support requires real-host acceptance |
+| **Package size** | No current comparable packaged-artifact measurement held |
+| **Latency** | No current like-for-like deployed workload measurement held |
+| **Price** | No approved customer offer or current competitor price comparison held |
 
 ---
 
@@ -424,7 +428,7 @@
 | Month | Focus | Key Activities |
 |-------|-------|----------------|
 | Jul | TI Launch | Threat intel report, media coverage |
-| Aug | Automation | Auto-response case studies |
+| Aug | Automation | Policy-driven response case studies, after reversible-action validation |
 | Sep | CI/CD | GitLab partnership, CI/CD guide |
 
 ### Q4: Cloud

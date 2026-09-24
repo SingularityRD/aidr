@@ -1,10 +1,12 @@
 # Singularity AIDR Customer & Investor Validation / Sale-Readiness Master Plan
 
+> **Historical planning baseline (2026-08-04).** Its invoice-only and self-service-out-of-scope statements are superseded by the current [commercial decision registry](commercial-go-evidence-registry.json): both online cloud sales and enterprise/on-prem invoicing are in scope, but neither is approved for live selling. The cloud trial is 14 days / 1 agent; paid cloud is not trial-capped. Other historical targets below are not production acceptance.
+
 ## Document control
 
 | Field | Value |
 |---|---|
-| Document status | Active internal source of truth |
+| Document status | Historical planning baseline; current decision registry and candidate evidence govern release |
 | Current release decision | **NO-GO** |
 | Locked commercial profile | Direct GA; all connectors; hybrid; EU/US/APAC; enterprise invoice; private registry; 99.9% monthly managed control-plane/dashboard API target |
 | Baseline date | 2026-08-04 |
@@ -323,7 +325,7 @@ Not included in the direct-GA claim until completed:
 | P0-031 | Claude plugin/marketplace and missing workspace `landing` source have unclear artefact provenance | Customer may install stale or untested content from another source | Source/workspace consistency check plus atomic plugin/landing build, signature and consumer-install evidence |
 | P0-032 | Secret scanning depends on a missing/gitignored `.gitleaks.toml` symlink from hidden external state | Clean checkout cannot reproduce the security gate | Versioned sanitized config or immutable injected config/checksum plus full-history CI scan |
 | P0-033 | Privacy notices/configuration do not match raw URL, command, path and managed event payload behavior | Buyer may receive false “local-only” or anonymization claims | Field-level mode/payload assertions; omission/HMAC where possible; pseudonymization labelled accurately |
-| P0-034 | Sentry, browser tracing and OTLP paths are not uniformly redacted or destination-controlled | URLs, headers, breadcrumbs, reasons or request data may leave the tenant | Outbound allowlist, `sendDefaultPii=false`, complete beforeSend/breadcrumb/request scrubbing and retention/region/subprocessor proof |
+| P0-034 | Sentry and browser tracing paths are not uniformly redacted or destination-controlled | URLs, headers, breadcrumbs, reasons or request data may leave the tenant | Outbound allowlist, `sendDefaultPii=false`, complete beforeSend/breadcrumb/request scrubbing and retention/region/subprocessor proof; the deprecated core tracing shim emits no telemetry |
 | P0-035 | Audit log “immutable” claim conflicts with team-admin DELETE/UPDATE/CASCADE paths and denormalized identity data | Security evidence can be rewritten or erased without a controlled process | Append-only/WORM or signed hash-chain export, break-glass/legal-erasure workflow and verification test |
 | P0-036 | Production dashboard links `/pilot` and `/pricing` to routes absent from the live router | Onboarding/first-demo can 404 before protection starts | Deployed-RC browser route/link crawl, no 404/console error, auth returnTo preservation and wire/hide every route |
 | P0-037 | Built landing/dashboard UI contains “launch-ready/go live in minutes/central reporting” claims outside approved evidence | A customer sees a sale claim while the release is explicitly NO-GO | Scan built HTML/JS strings against Claim Registry and fail on unapproved launch/all/real-time/automatic copy |
@@ -444,7 +446,7 @@ Required:
 - SAST/SCA/secrets/container/DAST gates pass.
 - RLS and tenant isolation tests pass.
 - Tenant isolation passes across DB, object storage, AIG tasks/uploads/results, queues/caches, telemetry, exports, enrollment/API keys and JIT support access.
-- Privacy inventory, outbound-domain manifest, opt-in, retention, export/deletion and real-payload assertions match customer-facing notices; Sentry/OTLP and browser tracing are included.
+- Privacy inventory, outbound-domain manifest, opt-in, retention, export/deletion and real-payload assertions match customer-facing notices; Sentry and browser tracing are included.
 - Audit immutability, break-glass erasure, local-file ACLs, webhook/waitlist TTLs and all processor deletion/region receipts are verified.
 - External security assessment has no unresolved critical/high item.
 
@@ -473,6 +475,8 @@ Evidence:
 - Restore and rollback exercise reports.
 
 ### Gate G6 — Customer validation
+
+Use the current [`POV-001` run sheet](pov-001-customer-acceptance-run-sheet.md) to bind these historical scenarios to the actual candidate, sold channels and signed customer result.
 
 Required:
 
@@ -903,7 +907,7 @@ The assurance unit is not a raw line. It is a shipped file and decision path wit
 
 - [ ] Enable strict TypeScript checks consistently.
 - [ ] Resolve implicit any and unused-code warnings.
-- [ ] Consolidate policy.ts and policy-engine.ts or document distinct contracts.
+- [x] Consolidated on `policy.ts`; the duplicate `policy-engine.ts` implementation was removed.
 - [ ] Remove unsafe module-level mutable state in critical paths.
 - [ ] Validate all configuration schemas.
 - [ ] Validate all external responses before use.
@@ -1375,13 +1379,13 @@ Approvers: Engineering Lead, Legal/Privacy Owner
 - [ ] Prepare DPA and privacy notice.
 - [ ] Require explicit AIG opt-in and target authorization; use synthetic data until the governing Evaluation Agreement/DPA permits other data.
 - [ ] Assert actual outbound payload schemas and destination domains against the approved privacy matrix in CI/E2E.
-- [ ] Maintain an explicit outbound domain/region allowlist for reputation, OAuth/email, billing, Sentry and OTLP; reject arbitrary endpoints in production builds.
+- [ ] Maintain an explicit outbound domain/region allowlist for reputation, OAuth/email, billing and Sentry; reject arbitrary endpoints in production builds.
 - [ ] Set `sendDefaultPii=false` (or equivalent) and scrub Sentry beforeSend, breadcrumbs, request URLs/headers, exceptions, stack/tags and browser route/query data for core/dashboard/extension.
 - [ ] Test log/trace redaction with raw URL/tool/reason/token canaries; assert no secret, header, raw reason or session identifier crosses the approved boundary.
 - [ ] Inventory and bound event/webhook/waitlist payload JSON; add TTL/deletion jobs and minimize provider webhook retention.
 - [ ] Secure local audit/metrics files with restrictive permissions/encryption/retention and verify rotation/secure deletion.
 - [ ] Verify backups follow deletion/retention policy.
-- [ ] Include auth, object storage, AIG jobs/uploads/results, Sentry/OTLP, reputation, billing, OAuth/email and backups in deletion/region/subprocessor/transfer evidence; capture provider confirmations, key destruction and legal-hold behavior.
+- [ ] Include auth, object storage, AIG jobs/uploads/results, Sentry, reputation, billing, OAuth/email and backups in deletion/region/subprocessor/transfer evidence; capture provider confirmations, key destruction and legal-hold behavior.
 
 ### Independent assessment
 
@@ -1783,13 +1787,14 @@ Expected:
 
 ### VAL-013 — Billing/entitlement
 
-Run the enterprise-invoice provisioning flow for the direct-GA sale; self-service checkout is out of scope for this Release Candidate.
+Run each channel included in the approved candidate scope separately: enterprise order/invoice for on-prem or assisted cloud, and provider checkout for self-service cloud. Do not infer one channel's acceptance from the other.
 
 Expected:
 
-- Checkout and signed webhook update entitlement exactly once.
+- Enterprise: signed order, finance-approved settled invoice and restricted licensed-admission grant reconcile to the same tenant, SKU, seat count and finite term without ad-hoc SQL.
+- Self-service cloud: provider checkout, signed webhook, settlement/refund and reconciliation update entitlement exactly once; a payment event alone does not grant licensed admission.
 - Seat limit is enforced server-side.
-- Cancellation/refund/expiry transitions are correct.
+- Cancellation/refund/expiry revoke or adjust paid access according to the approved terms, with durable audit and no trial fallback.
 
 ### VAL-014 — Data export/deletion
 
@@ -2434,7 +2439,7 @@ Never waive:
 - [ ] Secret-scan configuration is present/reproducible from clean checkout and full-history scan evidence is archived.
 - [ ] Privacy/retention/export/deletion approved.
 - [ ] Actual telemetry/AIG payloads match field-level privacy matrix and approved outbound domains.
-- [ ] Sentry/OTLP/browser tracing redaction and retention/region/subprocessor evidence green.
+- [ ] Sentry/browser tracing redaction and retention/region/subprocessor evidence green.
 - [ ] Audit append-only/erasure policy, local file ACLs and webhook/waitlist TTL/deletion evidence green.
 
 ### Reliability
@@ -2865,7 +2870,7 @@ These facts are the 2026-08-04 baseline, not proof of a future release. Re-run t
 - The deployed dashboard router does not currently mount `/pilot` or `/pricing` although onboarding, verify, billing and landing UI link to them; onboarding polling has no bounded expiry/retry contract, and customer secrets/raw JSON can appear in DOM/screen-share paths.
 - Browser evidence currently relies on MemoryRouter/manual mounts without a deployed-RC route crawl/axe/console gate; incident/schema fallbacks and missing support/status/legal footer paths must be made visible or closed before sale.
 - Customer-facing privacy statements do not yet cover all managed telemetry and AIG payload flows; use synthetic data until the field-level matrix, opt-in, DPA and payload assertions pass.
-- Baseline privacy review also finds raw URL/tool payload paths, configuration/runtime default disagreement, incomplete Sentry/OTLP/browser redaction, public wildcard-CORS AIG handling, unbounded webhook/waitlist/event JSON and an audit immutability versus admin-delete/CASCADE conflict; these require exact RC evidence, not a generic privacy checklist.
+- Baseline privacy review also finds raw URL/tool payload paths, configuration/runtime default disagreement, incomplete Sentry/browser redaction, public wildcard-CORS AIG handling, unbounded webhook/waitlist/event JSON and an audit immutability versus admin-delete/CASCADE conflict; these require exact RC evidence, not a generic privacy checklist.
 
 ---
 

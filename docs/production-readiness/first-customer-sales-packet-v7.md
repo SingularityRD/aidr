@@ -1,8 +1,8 @@
 # AIDR first-customer sales and procurement packet v7
 
-**Status:** Internal buyer-review draft; **NO-GO for a production sale or supported deployment**. Prepared 13 September 2026 for work package T41. No customer, approved quote, signed order, or customer acceptance is attached. This document is a fillable packet, not a Commercial Release Manifest, contract, security attestation, or authorization to make a claim.
+**Status:** Historical internal buyer-review draft; **NO-GO for a production sale or supported deployment**. Prepared 13 September 2026 for work package T41. No customer, approved quote, signed order, or customer acceptance is attached. This document is not a current sales packet or authorization to make a claim; use the [first-customer-ready gate](./first-customer-ready.md) and a fresh candidate-bound packet.
 
-The current engineering reference is the [v7 customer candidate](./2026-09-13-customer-candidate-v7.md), built from commit `b4361fa7d565e76f1604997b654a41e54c03db80` with a **dirty working tree**. Its local checks and loopback installation rehearsal do not identify a signed release or prove behavior in a customer's AI host, network, region, or operations team. Refresh every evidence link and decision for the exact clean, signed candidate before external issue. The [commercial evidence registry](./commercial-go-evidence-registry.json) currently says `NO-GO`; its hard gates remain open.
+The historical engineering reference is the [v7 customer candidate](./2026-09-13-customer-candidate-v7.md), built from commit `b4361fa7d565e76f1604997b654a41e54c03db80` with a **dirty working tree**. Its local checks and loopback installation rehearsal do not identify a signed release or prove behavior in a customer's AI host, network, region, or operations team. Refresh every evidence link and decision for the exact clean, signed candidate before external issue. The [commercial evidence registry](./commercial-go-evidence-registry.json) currently says `NO-GO`; its hard gates remain open.
 
 ## Buyer overview and claim boundary
 

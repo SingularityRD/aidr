@@ -2,6 +2,12 @@
 
 Last updated: 2026-05-06
 
+> Historical planning snapshot, **not a current release assessment or approved
+> customer claim**. Its May 2026 stack, scores, test counts, and deployment
+> descriptions must not be reused as current evidence. For the present product
+> scope and limitations, use [the first-customer packet](../production-readiness/first-customer-sales-packet-v8.md),
+> [the privacy data flows](../privacy.md), and the candidate-bound release gates.
+
 ## Product Thesis
 
 AIDR should become the best local-first runtime security SaaS for AI coding agents.
@@ -9,11 +15,13 @@ The winning wedge is not a broad enterprise AI security suite. The winning wedge
 endpoint-native protection for developer agents that can run shell commands, edit
 files, call URLs, install packages, and connect to MCP servers.
 
-Primary positioning:
+Proposed positioning (not approved sales copy):
 
 > Local-first runtime security for AI coding agents. AIDR inspects Claude Code,
-> Cursor/VS Code, OpenCode, OpenClaw, and MCP tool calls before execution, blocks
-> dangerous actions, redacts secrets, and syncs incidents to a team dashboard.
+> Cursor/VS Code, OpenCode, OpenClaw, and MCP actions at supported interception
+> points. Pre-tool decisions can block the invoked action; post-tool findings
+> cannot undo completed actions. Managed incident sync requires an enrolled,
+> deployed control plane and configured telemetry.
 
 ## Target User
 
@@ -36,15 +44,14 @@ Primary positioning:
 
 ## Architecture Decision
 
-Until a new migration is deliberately chosen, the product target is:
+At the May 2026 snapshot, the proposed SaaS target was:
 
 - Auth: Clerk for user/session management in the SaaS app.
-- Database/control plane state: Firestore for current production flow.
-- Billing: Polar as the current implemented provider, with Paddle kept as a
+- Database/control plane state: Firestore for the then-planned flow.
+- Billing: Polar as the then-planned provider, with Paddle kept as a
   future global merchant-of-record option only if needed.
-- Local runtime: TypeScript core, local rules first, managed control plane
-  optional, fail-open for internal errors, signed/offline intelligence for paid
-  modules.
+- Local runtime: TypeScript core and local rules first; the failure behavior of
+  each detection leg must be checked against the current code and release tests.
 - Dashboard: Next.js SaaS dashboard in `aidr-landing`; legacy Vite dashboard
   code remains connector/admin reference until consolidated.
 
@@ -264,7 +271,9 @@ local cache paths:
 - Competitive differentiation: 9.1/10
 - Architecture clarity: 8.1/10
 
-Overall: 9.999/10. The product is no longer just a prototype after the P0 quality
+Historical, subjective May 2026 self-score: 9.999/10. This is **not** a
+measured production-readiness score or a customer-facing claim. The product was
+no longer just a prototype after the P0 quality
 cleanup, MCP has moved from visibility-only toward runtime enforcement, the
 install-code onboarding path now has single-use replay coverage, and the
 dashboard has an account-level runtime policy contract that enrolled agents can
@@ -314,7 +323,7 @@ Clerk key. Security export now sends deny and critical events to a configured
 webhook, signs payloads when `AIDR_EXPORT_WEBHOOK_SECRET` is set, and keeps raw
 payload export disabled unless explicitly enabled.
 Core SDK and runtime lint debt has also started moving down in the right way:
-the generic middleware adapter, CrewAI adapter, SDK client, containment helper,
+the generic middleware adapter, SDK client, containment helper,
 and behavioral similarity helpers now avoid broad `any`/non-null assertions in
 the deny/fail-open, agent-wrapper, containment, anomaly, and package registry
 metadata paths. Package/NVD metadata helpers have also been split into typed
@@ -324,8 +333,8 @@ policy engine rule matcher and package command extractor now follow the same
 helper-based style, with response-mode audit mapping now following the same
 pattern. Unknown-tool extraction, quarantine isolation, artifact integrity
 verification/runtime logging, and metrics export now follow that helper-based
-style too. Plugin scanning and SDK CLI billing/check/diagnose flows have also
-moved to helper-based structure. Session-start plugin scanning, managed
+style too. Plugin scanning and the main CLI check/diagnose flows have also moved
+to helper-based structure. Session-start plugin scanning, managed
 entitlement state handling, and dashboard payment-provider selection semantics
 are cleaner as well. Dashboard Google auth state construction now avoids non-null
 email assertions and unstable hook dependencies, while enterprise auth and
@@ -351,9 +360,9 @@ still pass.
 Claude Code pre/post tool hooks now keep stdin parsing, response writing, and
 pending approval tracking in smaller helpers while preserving fail-open JSON
 behavior. OpenCode plugin startup no longer carries an unused plugin client
-parameter. The LlamaIndex and AutoGen SDK adapters now split query/source URL
-validation, role/message/function checks, and deny handling into smaller helper
-paths without changing deny/throw semantics. OpenCode tool extraction now uses a
+parameter. The SDK now keeps the framework-neutral generic middleware as its
+supported extension point; the unused LangChain, LlamaIndex, AutoGen, and CrewAI
+adapters were removed. OpenCode tool extraction now uses a
 typed handler map, and the VS Code/Cursor extension onboarding command plus E2E
 helpers are easier to audit. Decision signal collection now preserves source
 ordering with an explicit engine test, intel pack loading separates manifest,
@@ -402,8 +411,9 @@ proven.
 Response audit integrity now signs and verifies all stored decision fields,
 including failure errors; malformed response-audit lines are isolated without
 dropping valid evidence; retention cleanup preserves signatures; logger and
-Sentry redaction cover camelCase secret keys; tracing disabled state no longer
-reinitializes accidentally; plugin scan discovery failures are privacy-safe; and
+Sentry redaction covers camelCase secret keys; the deprecated tracing API now
+uses an in-process compatibility shim that emits no telemetry; plugin scan
+discovery failures are privacy-safe; and
 OpenCode extractors now have direct coverage for shell, file, URL, and MCP-shaped
 fallback inputs. Landing Sentry build config now uses the current
 `webpack.treeshake.removeDebugLogging` and `webpack.automaticVercelMonitors`
@@ -429,5 +439,5 @@ current Biome warning count is 0.
 10. Add `smoke:onboarding` to CI once the runner can start Next and install
     Playwright browsers reliably.
 
-See `docs/strategy/goal-completion-audit-2026-05-06.md` for the current
-prompt-to-artifact completion audit and remaining gaps.
+See `docs/strategy/goal-completion-audit-2026-05-06.md` for the historical
+prompt-to-artifact audit; use current candidate-bound evidence for remaining gaps.

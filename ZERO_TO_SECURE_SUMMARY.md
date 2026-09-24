@@ -61,7 +61,8 @@ Implemented the complete user journey from "zero knowledge" to "secured AI agent
 ### Step 4: Agent Installation (Local)
 ```bash
 # Claude Code example
-/plugin marketplace add https://github.com/singularityrd/aidr.git
+# First extract the signed aidr-claude-plugin-<version>.tar.gz release artifact.
+/plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin
 /plugin install aidr@aidr
 ```
 - Plugin shows verification code
@@ -183,7 +184,7 @@ vercel --prod
 ### Environment Variables (Vercel)
 ```env
 VITE_SUPABASE_URL=https://qacrbrailtemkzgwrxrt.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
+# Set VITE_SUPABASE_ANON_KEY in Vercel from Supabase project Settings → API; never commit its value.
 VITE_TURNSTILE_SITE_KEY=0x4AAAAAA... (optional)
 ```
 

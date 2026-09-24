@@ -16,32 +16,31 @@ docs, a tool result — any of it can steer the agent. The agent is not
 compromised; it is *obeying*. And the only thing between that instruction and
 your filesystem is whether a human clicked "approve" fast enough.
 
-**Existing tooling does not cover this gap:**
+Different security layers observe different parts of this workflow:
 
 - **SAST/SCA (Snyk, Semgrep, Dependabot)** analyze code you already wrote.
   They are not in the execution path.
-- **EDR** watches the operating system, after the fact, with no understanding
-  of agent intent.
-- **Model guardrails** live in the model provider's boundary, not on your
-  endpoint, and do not see the tool call.
+- **EDR** observes operating-system behavior; its timing and agent context
+  depend on the product and configuration.
+- **Model guardrails** operate at a different boundary and may not observe an
+  endpoint tool action.
 
-Nothing asks *"should this specific command be allowed to run?"* before it runs.
+An agent-host hook can ask *"should this observed tool call be allowed?"* before the host acts, if that host invokes and honors the hook.
 
 ---
 
 ## What Singularity AIDR does
 
-AIDR is a **hook that sits inside the agent**. It intercepts the tool call —
-the shell command, the file write, the URL fetch — evaluates it against a local
-detection engine, and returns `allow`, `deny`, or `ask` **before execution**.
+AIDR provides connectors that pass observed tool calls to a shared local
+decision engine, which returns `allow`, `deny`, or `ask`. Enforcement depends
+on the host invoking and honoring the connector at its documented boundary.
 
-- A denied call **never runs**. It is not logged after the fact and not
-  sandboxed retroactively.
-- Every verdict carries the **matched rule and the artifact** that triggered it,
-  so the developer sees exactly what was blocked and why.
-- `ask` is a **block pending out-of-band human approval**. There is deliberately
-  no tool the agent can call to approve its own block — otherwise a
-  prompt-injected agent would simply approve itself.
+- A pre-action `deny` requests that the host prevent the observed call. A
+  returned verdict alone is not proof that a side effect was prevented.
+- A matched threat verdict can name the rule and inspected artifact; not every
+  `allow` or unavailable signal has a matched rule.
+- `ask` requests host-managed confirmation where the connector supports it;
+  it is not an independently verified human-approval workflow.
 
 ---
 
@@ -64,21 +63,24 @@ Agent is about to call a tool
   host enforces  ◀──  allow | deny | ask  (+ matched rule, artifact, severity)
 ```
 
-**Local-first by design.** The default mode is `local`: every tool call is
-evaluated with **no account and no network access**. AIDR does not send your
-source code or file contents. Depending on configuration it may send
-privacy-preserving indicators (for example URL or package hashes) to
-first-party reputation endpoints.
+**Local evaluation is available without an account.** The default mode is
+`local`. URL, file, and package reputation checks are disabled by default;
+an operator can enable them with configured endpoints. When enabled, requests
+can include URLs, package names/versions, and metadata. This is not a blanket
+no-egress or no-content promise: verify actual outbound traffic before
+describing a particular installation as offline. See the
+[privacy inventory](../privacy.md).
 
-**One engine, six hosts.** Claude Code, Cursor, VS Code, OpenClaw, OpenCode,
-and Codex CLI all consume the same detection core. Teams with mixed tooling do
-not need multiple security products.
+**One core, six implemented connectors.** Claude Code, Cursor, VS Code,
+OpenClaw, OpenCode, and Codex CLI have connector code. Supported host/OS/version
+rows, side-effect prevention and failure behavior remain subject to real-host
+acceptance; these are not six approved production integrations.
 
 **Failure behavior is per-layer, and we state it precisely rather than calling
 the product simply "fail-open" or "fail-closed":**
 
-- *Connector entry points* fail **closed** — an internal error returns a deny
-  rather than silently allowing the call.
+- *Invoked connector entry points* return a deny on internal error. A host that
+  never invokes the connector, or drops a crashed hook, can still proceed.
 - *Detection internals* skip a failing signal, log it, and continue. A skipped
   signal is **never** reported to the user as a clean result.
 - *Security controls* (auth, tenant isolation, approvals) fail closed.
@@ -105,14 +107,14 @@ control in place to stop it.
 
 | | AIDR | SAST/SCA | EDR |
 |---|---|---|---|
-| In the agent's execution path | **Yes** | No | No |
-| Blocks *before* the action runs | **Yes** | N/A | Sometimes, after |
-| Understands agent tool semantics | **Yes** | No | No |
-| Works with no account or network | **Yes** | No | Varies |
-| Same engine across agent hosts | **Yes** (6 hosts) | N/A | N/A |
+| Can receive an observed agent tool request | **Yes, when the host invokes its connector** | Product-dependent | Product-dependent |
+| Can request a pre-action deny | **Yes, for documented pre-action hooks** | Product-dependent | Product-dependent |
+| Shared local evaluation core | **Yes** (six implemented connectors; host acceptance open) | Product-dependent | Product-dependent |
 
-The honest differentiator is **position**, not raw detection volume: being
-inside the agent and in front of the call is a place no scanner occupies.
+The proposed differentiator is **position**, not raw detection volume: a
+connector can observe selected tool requests at agent hook boundaries. Actual
+coverage and side-effect prevention depend on host invocation and require the
+per-host acceptance described below.
 
 ---
 
@@ -124,11 +126,11 @@ real limitations:
 **Working today**
 
 - Local detection engine with 351 shipped YAML threat rules across 23 files.
-- Connectors for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI.
-- Verified enforcement: the repo's `verify-enforcement.mjs` suite passes all
-  72 cases — destructive commands blocked (`curl … | bash`, reverse shells,
-  `rm -rf /`, download-and-execute, credential writes) and benign commands
-  allowed, across default, managed-mode and commercial build configurations.
+- Connector implementations for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI; no six-host production acceptance claim.
+- The repo's `verify-enforcement.mjs` defines 72 destructive/benign command
+  checks across default, managed-mode and commercial configurations. It needs a
+  release bundle to run; no signed candidate-bound or real-host acceptance
+  record is held yet.
 - `aidr setup` self-tests detection and **refuses to report success** if zero
   rules load or nothing matches.
 - Local audit log, allowlist management, verdict caching.
@@ -142,11 +144,11 @@ real limitations:
 - **No verified efficacy measurement.** We have not measured detection rate,
   false-positive rate, or evasion resistance on any real workload. We quote
   rule counts because they are countable; we do not quote block percentages.
-- **Windows builds are unsigned.** Expect a SmartScreen warning on install.
-- **The team control plane is not deployed.** Team dashboard, remote policy
-  distribution, audit export, DLP, legal hold and billing are implemented but
-  require a live cloud deployment that does not yet exist. **Local enforcement
-  does not depend on it.**
+- **Publisher-authenticated release is not available.** The current portable engineering envelope has no approved publisher signature; Windows warnings or policy blocks depend on the customer device.
+- **The team control plane is not production-accepted.** A pilot deployment and
+  disposable-stack tests do not establish a signed cloud GA release or field
+  acceptance for dashboard, remote policy, audit export, DLP, legal hold, or
+  billing. **Local enforcement does not depend on it.**
 - **Real-host acceptance is open.** Correct behavior is verified against built
   artifacts locally; it has not been independently accepted on every supported
   host/OS/version combination.
@@ -154,30 +156,25 @@ real limitations:
   hook is disabled, unavailable, or its process is killed, the action proceeds —
   Codex in particular fails open when an untrusted or crashed hook is involved.
   This is a **strong guardrail, not endpoint isolation.** Reputation checks
-  require configured first-party feeds; with none deployed those checks are
-  inert and are reported as such, not as "clean."
+  require reachable configured feeds; unavailable checks must not be described
+  as "clean." Enabled lookups may still attempt outbound requests.
 
 ---
 
 ## Getting started
 
-**Local enforcement is free, requires no account, and needs no network.**
+**Local evaluation needs no account; a free-forever commercial licence and an
+offline installation are not yet approved promises.** A controlled evaluation
+must use an agreed scope and configuration.
 
-```bash
-# Claude Code
-/plugin marketplace add https://github.com/singularityrd/aidr.git
-/plugin install aidr@aidr
+No approved publisher-signed customer installer is available yet. Do not
+send a source-checkout or unsigned engineering bundle as a supported release.
+On a controlled internal candidate, `aidr status` can report the bundled rule
+count and detection self-test, but registration is not host enforcement proof.
 
-# Then verify your installation
-aidr status
-```
-
-`aidr status` reports the real bundled rule count, runs a detection self-test,
-and tells you which connectors are actually installed — and explicitly
-distinguishes *registered* from *enforced*.
-
-**Try to break it.** That is a more useful evaluation than a sales call, and
-the tool is built to be honest even when the news is bad.
+Use the [first-customer evaluation gate](../production-readiness/first-customer-ready.md)
+and [controlled demo runbook](../production-readiness/controlled-demo-runbook.md)
+before offering an installation or live trial. The current decision is NO-GO.
 
 **For a deeper look:** the architecture, threat-rule format, and full
 limitations are documented in the repository. Security reviews are welcome;

@@ -13,7 +13,7 @@ pnpm build
 pnpm test
 ```
 
-Requires Node.js >= 18 and pnpm >= 9. See [Development](docs/development.md) for the full command reference.
+Requires Node.js >= 22.12.0 and pnpm >= 9. See [Development](docs/development.md) for the full command reference.
 
 ## Making Changes
 
@@ -69,7 +69,10 @@ See [Threat Rules](docs/threat-rules.md) for the full format reference and examp
 
 ## Branch Policy
 
-- **`main`** is the release/distribution branch. It is what users install from the Claude Code marketplace. PRs should not target `main`.
+- **`main`** is the release source branch. Customer installs use the signed
+  `aidr-claude-plugin-<version>.tar.gz` release artifact; a repository checkout
+  does not contain generated connector bundles and is not a marketplace install
+  source. PRs should not target `main`.
 - **`pre-release`** is the contribution branch. All external PRs should target `pre-release`. After a further security review the contributions are then synced back to `main` in controlled releases.
 
 This separation ensures that code merged from PRs goes through a review and security audit cycle before reaching users.

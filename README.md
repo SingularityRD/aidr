@@ -15,8 +15,11 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 
 ## Quick Start
 
-For the portable customer candidate, start with the [first customer installation guide](deploy/FIRST_CUSTOMER.md)
-and [v8 candidate status and verification report](docs/production-readiness/2026-09-13-customer-candidate-v8.md).
+The current decision is **NO-GO for a customer or production release**. Start with
+the [current first-customer readiness profile](docs/production-readiness/first-customer-ready.md)
+and [first customer installation guide](deploy/FIRST_CUSTOMER.md); local test
+passes do not replace signed-candidate or live-host acceptance.
+For approved package installation, see [Package Installation](docs/package-installation.md).
 Deployment details cover both [self-hosted and cloud preparation](deploy/README.md).
 The current capability inventory is [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md),
 with the machine-readable record in [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json).
@@ -31,60 +34,46 @@ the host and must be checked on the customer's selected runtime and OS.
 
 1. Install the connector for your runtime.
 2. Local detection is active immediately.
-3. Managed features (dashboard telemetry, signed intel packs, remote policy) are an
-   **opt-in** second step: start the agent once and follow the verification URL it
-   prints, or configure an API key.
+3. Managed features (dashboard telemetry, signed intel packs, remote policy) are
+   available only after the control plane, an authentication method, and the
+   tenant's signed runtime configuration have passed live acceptance.
 
-> **Managed enrollment requires a deployed control plane.** If your deployment does
-> not have one, the product runs in local mode and the managed features are
+> **Managed enrollment requires a deployed and live-accepted control plane.** If
+> your deployment does not have one, or its authentication method has not passed
+> an end-to-end check, the product runs in local mode and managed features are
 > unavailable — local detection is unaffected. See
 > [Configuration](docs/configuration.md) for the `mode` setting
 > (`local` default, `managed` opt-in).
 
 ### Claude Code
 
-Requires [Node.js >= 18](https://nodejs.org/).
+Requires [Node.js >= 22.12.0](https://nodejs.org/).
+
+Download and extract the signed `aidr-claude-plugin-<version>.tar.gz` artifact
+from the approved release, then add that extracted directory:
 
 ```
-/plugin marketplace add https://github.com/singularityrd/aidr.git
+/plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin
 /plugin install aidr@aidr
 ```
 
 ### Cursor
 
-Build and install the extension, then run `Singularity AIDR: Enable protection` from the command palette.
-
-```bash
-pnpm install && pnpm -C packages/extension run package:cursor:vsix
-```
+Download the signed `aidr-cursor.vsix` from an approved release, install it
+through `Extensions > Install from VSIX`, then run `Singularity AIDR: Enable
+protection` from the command palette. Source builds are not release artifacts;
+the protected release-candidate pipeline produces and verifies the signed VSIX.
 
 ### OpenClaw
 
-```bash
-# From the configured private package registry (requires access)
-openclaw plugins install @singularityrd/aidr-openclaw
-
-# From source
-pnpm install && pnpm build
-cp -r packages/openclaw aidr && openclaw plugins install ./aidr
-```
+Install the exact version from the private registry only after the signed
+release is approved; see [Package Installation](docs/package-installation.md).
+Source checkout/builds are for development, not customer installation.
 
 ### OpenCode
 
-Use a local source checkout and add the plugin path in OpenCode config:
-
-```bash
-git clone https://github.com/singularityrd/aidr
-cd aidr
-pnpm install
-pnpm --filter @singularityrd/aidr-opencode run build
-```
-
-```json
-{
-  "plugin": ["/absolute/path/to/aidr/packages/opencode"]
-}
-```
+Install from the private registry after the signed release is approved. The
+versioned setup and configuration are in [Package Installation](docs/package-installation.md).
 
 See [Getting Started](docs/getting-started.md) for detailed instructions.
 
@@ -93,8 +82,9 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 | Document                                         | Description                                    |
 | ------------------------------------------------ | ---------------------------------------------- |
 | [Getting Started](docs/getting-started.md)       | Installation for supported runtimes            |
+| [Package Installation](docs/package-installation.md) | Private registry installs and prerequisites |
 | [Device Auth](docs/device-auth.md)               | Browser-based device authorization (v1)        |
-| [Pilot Program](docs/pilot-program.md)           | Waitlist, approval, and pilot expectations     |
+| [Pilot Program](docs/pilot-program.md)           | Current pilot status and application prerequisites |
 | [How It Works](docs/how-it-works.md)             | Detection layers, data flow, verdicts          |
 | [Configuration](docs/configuration.md)           | All config options and file paths              |
 | [Threat Rules](docs/threat-rules.md)             | YAML rule format and what gets checked         |
@@ -105,7 +95,7 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 | [Development](docs/development.md)               | Building, testing, tooling, conventions        |
 | [Control Plane](docs/control-plane.md)           | Auth, dashboard, and licensing                 |
 | [Billing](docs/billing.md)                       | Agent-seat enforcement + billing notes         |
-| [Pricing](docs/pricing.md)                       | Proposed pricing model                         |
+| [Pricing](docs/pricing.md)                       | Historical proposal; no approved price or offer |
 | [FAQ](docs/faq.md)                               | Common questions                               |
 | [Privacy](docs/privacy.md)                       | What data is sent, what stays local            |
 
@@ -128,7 +118,12 @@ See [Getting Started](docs/getting-started.md) for detailed instructions.
 
 ## Privacy
 
-Singularity AIDR does not send your source code or file contents. Depending on configuration, it may send privacy-preserving indicators (for example URL hashes and package hashes) to first-party reputation endpoints. See [Privacy](docs/privacy.md) for details.
+Local heuristics do not upload source code or file contents. If enabled, URL
+reputation sends each URL, including its host and path, to the configured
+endpoint; query parameters are sent only when explicitly enabled. Package
+checks may send package names, versions, and registry metadata, while file
+checks send SHA-256 hashes. These values are not all anonymous. See
+[Privacy](docs/privacy.md) for the other configured outbound data flows.
 
 ## Contributing
 

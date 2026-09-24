@@ -54,9 +54,13 @@ Tool call received
 
 When multiple signals fire, merge precedence is: `deny > ask > allow`.
 
-## Fail-Open Design
+## Failure behavior
 
-Singularity AIDR is designed to never break the agent. Every internal error path returns an `allow` verdict. Extension hooks (Cursor / VS Code) always exit with code `0`; the host uses the JSON response to decide whether to block the tool call. If the URL reputation API is down or times out, Singularity AIDR falls back to heuristics only.
+Not every error is an `allow`. An unavailable enabled URL or package reputation
+leg is surfaced as incomplete inspection and can require review; an invalid
+commercial artifact fails startup. Cursor/VS Code hooks use host responses to
+communicate decisions, so a process exit code alone does not prove that an
+action was allowed or blocked. Verify the installed host's interception path.
 
 ## Sensitivity Presets
 
@@ -70,6 +74,4 @@ The confidence threshold determines when a detection escalates from `ask` to `de
 
 Configure in `~/.singularity-aidr/config.json` with `"sensitivity": "paranoid"`.
 
-On text-based connectors (OpenClaw, OpenCode), `paranoid` mode also promotes all `ask` verdicts to `deny`. These connectors rely on the agent to relay approval prompts, which is susceptible to prompt-injection auto-approval. Claude Code and Cursor use modal dialogs and are unaffected.
-
-
+On OpenClaw and OpenCode, `ask` verdicts remain blocked until an operator approves out of band; these plugins cannot open a host-native approval dialog, and the agent cannot approve its own action. `paranoid` mode promotes `ask` to a hard `deny` on those connectors. Claude Code supports a host approval UI. Cursor `preToolUse` cannot enforce an `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.

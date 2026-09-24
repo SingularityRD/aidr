@@ -4,11 +4,19 @@
 > Kapsam: AI Agent Detection & Response (AIDR) Pazar Analizi
 > Dil: Türkçe
 
+> **Tarihsel araştırma taslağıdır; güncel rakip, pazar büyüklüğü, fiyat,
+> lisans, sertifika veya ürün üstünlüğü kanıtı değildir.** Mayıs 2026
+> hipotezleri müşteriye aktarılmadan önce birincil kaynaklarla ve aynı sürüm
+> adayında ölçümle doğrulanmalıdır. Mevcut AIDR paket metadata'sı
+> `Proprietary` lisanslıdır.
+
 ---
 
 ## 1. Yönetici Özeti
 
-AI ajan güvenliği pazarı patlama aşamasında. 2025'te $25.9B olan AI siber güvenlik pazarı, 2026'da $51.3B'ye ulaştı (Gartner). AI sistem güvenliği alt kategorisi ise 2030'a kadar $0'dan $8B'ye büyüyecek (Dell'Oro Group). Bu pazarda **Singularity AIDR**, AI kodlama ajanları için runtime güvenlik katmanı olarak konumlanıyor.
+Bu taslak, AI kodlama ajanları için çalışma anı güvenliği kategorisini
+araştırıyordu. Eski pazar büyüklüğü ve tahmin rakamlarının kaynak/kapsamı
+doğrulanmadığından burada güncel veri veya yatırımcı iddiası olarak kullanılmaz.
 
 **Mevcut Durum (Mayıs 2026):**
 - Kategori henüz oluşma aşamasında — tanımlayıcı ürün henüz belli değil
@@ -389,14 +397,17 @@ MCP standardı hızla yayıldıkça, MCP-specific güvenlik araçları çoğalı
 
 ### 4.5 Teknik Karşılaştırma
 
+Bu tablo Mart 2026 hipotezlerinin tarihsel kaydıdır; müşteri sunumunda güncel
+paket boyutu, yük, fiyat, rakip kapsamı ve bağımsız kaynaklarla yeniden kurulmalı.
+
 | Feature | AIDR | Rakipler |
 |---------|------|----------|
-| **Runtime Size** | <1MB | CrowdStrike: ~500MB+, HiddenLayer: ~200MB+ |
-| **Detection Latency** | <50ms | Straiker: ~100ms, CrowdStrike: ~200ms |
-| **Offline Mode** | ✅ Tam | Çoğu rakip: ❌ |
-| **Privacy-First** | ✅ Tam | Straiker: ❌, CrowdStrike: ❌, HiddenLayer: ❌ |
-| **Fail-Open** | ✅ | Çoğu rakip: ❌ (fail-close) |
-| **Open Source** | ✅ (Apache 2.0) | Straiker: ❌, CrowdStrike: ❌, Declaw: ⚠️ (open-core) |
+| **Runtime Size** | İmzalı aday pakette ölçülecek | Rakiplerle karşılaştırma doğrulanmadı |
+| **Detection Latency** | Seçilen yükte ölçülecek | Ortak yük karşılaştırması yok |
+| **Offline Mode** | Ağ özellikleri kapatılmış geliştirme pilotunda doğrulanacak | Rakip kapsamı doğrulanmadı |
+| **Privacy-First** | Veri akışı ve bölge onayı gerekli | Rakip kapsamı doğrulanmadı |
+| **Failure behavior** | Algılama koluna ve ticari moda göre değişir | Rakip kapsamı doğrulanmadı |
+| **License** | Mevcut paket metadata'sı `Proprietary`; haklar hukuk onayına bağlı | Rakip lisansları güncel kaynakla doğrulanmalı |
 | **YAML Threat Rules** | ✅ (topluluk) | Straiker: ❌ (kapalı), CrowdStrike: ❌ (kapalı) |
 
 ### 4.6 Topluluk ve Ekosistem
@@ -416,11 +427,11 @@ MCP standardı hızla yayıldıkça, MCP-specific güvenlik araçları çoğalı
 
 | # | Güçlü Yön | Rekabetçi Etki |
 |---|-----------|----------------|
-| S1 | **Privacy-first, local işleme** — Hiçbir veri sızmaz, API key gerektirmez | Çoğu rakip bulut zorunlu |
-| S2 | **Çoklu platform desteği** — Claude Code, Cursor, VS Code, OpenClaw, OpenCode | En geniş platform desteği |
-| S3 | **Hafif ve hızlı** — <1MB runtime, <50ms latency | CrowdStrike 500MB+ |
-| S4 | **Açık kaynak (Apache 2.0)** — Topluluk katkısına açık | Straiker kapalı, Declaw open-core |
-| S5 | **Fail-open tasarım** — Ajanı asla kırmaz | Çoğu rakip fail-close |
+| S1 | **Yerel değerlendirme** — İsteğe bağlı ağ akışları ayrıca incelenmeli | Gizlilik kanıtı gerekli |
+| S2 | **Bağlayıcı kapsamı** — Claude Code, Cursor, VS Code, OpenClaw, OpenCode için saha kabulü gerekli | Rakip karşılaştırması doğrulanmadı |
+| S3 | **Boyut/gecikme** — İmzalı paket ve ortak yükte ölçülecek | Rakip karşılaştırması doğrulanmadı |
+| S4 | **Lisans** — Mevcut paket metadata'sı `Proprietary` | Hukuk onayı gerekli |
+| S5 | **Açık başarısızlık durumu** — Bazı arızalar inceleme/blok gerektirir; fail-open garantisi yok | Matris testi gerekli |
 | S6 | **Agent-aware mimari** — LLM değil, ajan aksiyonlarını anlar | LLM Guard agent-aware değil |
 | S7 | **Offline çalışabilme** — İnternet olmadan tam koruma | CrowdStrike/Microsoft bulut gerektirir |
 | S8 | **YAML topluluk threat rule'ları** — Şeffaf, genişletilebilir | Rakiplerde kapalı kutu |
@@ -517,11 +528,14 @@ AIDR: **Basit, geliştirici odaklı, çoklu platform** köşesinde konumlanıyor
 | **Benzersiz Değer** | Kodlama ajanlarını çalıştıkları yerde, göndermeden önce korur |
 | **Hedef Müşteri** | AI kodlama ajanı kullanan geliştiriciler ve onların güvenlik ekipleri |
 | **Kullanım Senaryosu** | Geliştirici agent'ı zararlı komut çalıştırmadan, dosya yazmadan, URL fetch yapmadan önce durdurur |
-| **Farklılaştırıcı** | Privacy-first, multi-platform, open source, <1MB |
+| **Farklılaştırıcı hipotezi** | Yerel değerlendirme ve çoklu bağlayıcı; lisans/boyut/saha kapsamı doğrulanacak |
 
 ### 6.3 Niche Tanımı
 
-> **"AIDR, AI kodlama ajanları için çalıştırma anı güvenlik katmanıdır. Ajanınızın her aksiyonunu — bash komutları, dosya yazmaları, URL çağrıları, paket yüklemeleri — çalıştırılmadan önce denetler. Privacy-first, multi-platform ve açık kaynaktır."**
+> **Öneri (onaysız):** "AIDR, desteklenen AI kodlama ajanı kancalarında
+> komut, dosya, URL ve paket işlemlerini değerlendiren bir güvenlik katmanıdır.
+> Engelleme, yalnız pre-tool yolunun çağrıldığı desteklenen aksiyonlarda
+> geçerlidir; kurulum ve veri akışları pilotta doğrulanır."
 
 ---
 
@@ -664,7 +678,7 @@ Enterprise AI security vendor'ları yukarıdan aşağı (top-down) satarken, AID
 | # | Aksiyon | Neden |
 |---|---------|-------|
 | 1 | **Global satış kanalı** — AWS Marketplace, partner programı | Scale |
-| 2 | **SOC2 Type II** — Tam compliance | Enterprise |
+| 2 | **Bağımsız Type II kontrol denetimi** — Planlanan dış doğrulama | Enterprise |
 | 3 | **Managed cloud service** — Kontrol düzlemi SaaS (mevcut dashboard'ı productize) | MRR büyümesi |
 | 4 | **Mobile agent support** — AI mobile agent güvenliği | Yeni pazar |
 | 5 | **Advanced analytics** — Threat intelligence, trend raporları | Enterprise |
@@ -676,7 +690,9 @@ Enterprise AI security vendor'ları yukarıdan aşağı (top-down) satarken, AID
 
 ### 10.1 Genel Değerlendirme
 
-Singularity AIDR, AI ajan runtime güvenliği kategorisinde **doğru ürün, doğru zamanda, doğru yaklaşımla** konumlanıyor. Privacy-first, multi-platform, hafif mimari, açık kaynak — bunlar stratejik olarak doğru kararlar.
+Mayıs 2026 değerlendirmesi, yerel değerlendirme ve çoklu bağlayıcıyı olası
+farklılaştırıcılar olarak görüyordu. Bugünkü destek, performans, veri akışı ve
+lisans sınırları ayrı kanıt ve onay gerektirir; açık kaynak statüsü vaat edilmez.
 
 Ancak AIDR'in üç kritik sorunu var:
 1. **Bilinirlik sıfır** — Mükemmel ürün, kimse bilmiyor

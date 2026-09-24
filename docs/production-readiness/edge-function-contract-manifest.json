@@ -44,6 +44,10 @@
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/security-flow.test.ts"]
     },
+    "discovery": {
+      "owner": "Discovery and Dashboard Engineering",
+      "tests": ["supabase/functions/__tests__/discovery.test.ts"]
+    },
     "enrollment-tokens": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/enrollment-exchange.test.ts"]
@@ -71,6 +75,10 @@
     "policy-management": {
       "owner": "Detection Engineering",
       "tests": ["supabase/functions/__tests__/policy-document.test.ts", "supabase/functions/__tests__/policy-management-contract.test.ts"]
+    },
+    "scim-admin": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/scim-admin-contract.test.ts"]
     },
     "team-invite": {
       "owner": "Identity Engineering",

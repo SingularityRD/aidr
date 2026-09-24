@@ -3,13 +3,18 @@
 > Technical architecture blueprint for 2026 product evolution
 > Version: 2.0 | Last Updated: March 2026
 
+> Historical blueprint, not the current architecture contract. Deployment,
+> data-flow, failure-mode and performance claims below require current code and
+> candidate-bound evidence; see [privacy](../privacy.md) and the
+> [first-customer packet](../production-readiness/first-customer-sales-packet-v8.md).
+
 ---
 
 ## Architecture Principles
 
-1. **Privacy by Design**: All sensitive data processed locally; no exfiltration
-2. **Fail Open**: Any internal error returns `allow` verdict; no blocking failures
-3. **Lightweight**: Sub-50ms latency, <1MB runtime, no GPU required
+1. **Privacy by Design**: Local heuristics plus explicitly inventoried outbound flows
+2. **Failure behavior**: Detection-leg outages can require review; never label an unrun check clean
+3. **Performance**: Set latency and package-size targets against a defined workload and signed artifact
 4. **Multi-Platform**: Single core, multiple connector implementations
 5. **Zero Trust**: Optional sandboxing, strict least-privilege
 
@@ -374,7 +379,7 @@ interface Verdict {
 | CPU | 1 core | 2 cores |
 | RAM | 512MB | 1GB |
 | Disk | 100MB | 500MB |
-| OS | Any (Node.js 18+) | Latest LTS |
+| OS | Any (Node.js >= 22.12.0) | Latest LTS |
 
 ### Cloud Deployment (AIDR Cloud)
 

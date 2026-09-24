@@ -3,7 +3,7 @@
 > **Sürüm:** 1.0 | **Son Güncelleme:** Mayıs 2026
 > **Kapsam:** AI Agent Detection & Response (AIDR) — Tam Kapsamlı Ürün Stratejisi
 > **Dil:** Türkçe
-> **Durum:** Yürürlükte
+> **Durum:** Tarihsel strateji taslağı; güncel release kararı veya onaylı satış iddiası değil
 
 ---
 
@@ -28,6 +28,8 @@
 
 ## 1. Ürün Vizyonu (12 Ay)
 
+> **Kanıt sınırı:** Aşağıdaki Mayıs 2026 kullanıcı, gelir, ekip, pazar benimsemesi ve olgunluk sayıları ölçülmüş veya Finance tarafından doğrulanmış metrikler değildir; tarihsel plan varsayımlarıdır. Yatırımcıya güncel gerçek/çekiş göstergesi olarak aktarılmamalıdır. Onaylı ölçüm ve kaynak durumu için [yatırımcı metrik sözlüğüne](../production-readiness/investor-metric-dictionary.json) ve açık [INV-001 kapısına](../production-readiness/commercial-go-evidence-registry.json) bakın.
+
 ### 1.1 Vizyon Beyanı
 
 > **Singularity AIDR, AI kodlama ajanları için dünyanın en kapsamlı runtime güvenlik katmanı olacak. Her Claude Code, Cursor, VS Code, OpenCode ve OpenClaw kullanıcısının çalıştırdığı her komutu, yazdığı her dosyayı, çağırdığı her URL'yi ve bağlandığı her MCP sunucusunu koruyan, sıfır güven (zero-trust) prensibiyle çalışan bir platform.**
@@ -41,7 +43,7 @@
 | **Pazar Konumu** | AI ajan güvenliği kategorisinde tanınan lider | Kategori henüz tanımlanmamış |
 | **Ekip** | 8-12 kişi (mühendislik, satış, pazarlama) | ~2-3 kişi (kurucu ekibi) |
 | **Müşteri** | 20+ kurumsal referans müşterisi | 0 referans müşterisi |
-| **Enterprise** | SOC 2 Type II sertifikalı | SOC 2 yok |
+| **Enterprise** | Hedef: bağımsız Type II kontrol denetimi | Bağımsız denetim yok |
 | **Detection** | ML destekli + rule-based hibrit | Sadece rule-based |
 | **Kapsam** | Claude Code, Cursor, VS Code, OpenCode, OpenClaw + MCP | 4 platform (MCP yeni başlıyor) |
 
@@ -55,15 +57,15 @@ AI kodlama ajanları pazarı patlıyor — 2024'te %40 olan kurumsal benimseme, 
 
 ### 1.4 En Güçlü Farklılaşma Noktası
 
-**Privacy-first, local-first, real-time runtime security.**
+**Privacy-first, local-first, low-latency runtime security hedefi.**
 
-AIDR, AI ajanının her aksiyonunu — komut çalıştırmadan önce, dosya yazmadan önce, URL çağırmadan önce — cihazın kendisinde, buluta hiçbir veri göndermeden denetler. Bu, rakiplerin yapamadığı bir şeydir çünkü:
-- CrowdStrike cloud-based analizle çalışır
-- HiddenLayer enterprise gateway üzerinden denetler
-- Straiker endpoint'te çalışır ama bulut bağımlılığı var
-- Declaw fork'tur, kendi altyapısı yok
-
-AIDR, **veri sızdırmayan tek AI ajan güvenlik ürünü** olarak konumlanacak.
+AIDR, desteklenen ajan kancalarında yerel değerlendirme yapar. Pre-tool yolu
+çağrıldığında bazı işlemler başlamadan engellenebilir; post-tool bulguları
+tamamlanmış bir işlemi geri alamaz. Etkin URL/dosya/paket sorguları, yönetilen
+telemetri ve tanılama ayrı dış akışlar oluşturabilir. Bunların kapsamı
+[gizlilik açıklamasında](../privacy.md) ve gerçek kurulumda doğrulanmalıdır.
+Rakiplerin mimarisi veya benzersizlik iddiası güncel birincil kaynak ve bağımsız
+karşılaştırma olmadan müşteri konumlandırmasına alınmamalıdır.
 
 ---
 
@@ -183,7 +185,7 @@ AIDR, **veri sızdırmayan tek AI ajan güvenlik ürünü** olarak konumlanacak.
 
 | Segment | Neden Hedeflenmemeli |
 |---------|---------------------|
-| **Fortune 500 çok uluslu** | Enterprise satış döngüsü 12+ ay, SOC 2 Type II zorunlu, kaynak yetmez |
+| **Fortune 500 çok uluslu** | Enterprise satış döngüsü 12+ ay, bağımsız Type II kontrol raporu beklentisi, kaynak yetmez |
 | **Devlet/kamu** | Uzun satış döngüsü, güvenlik clearances, düşük öncelik |
 | **AI ajanı kullanmayan şirketler** | Eğitim maliyeti yüksek, hemen değer alamazlar |
 | **Sadece ChatGPT kullanan şirketler** | AIDR kodlama ajanları için, genel AI kullanımı için değil |
@@ -364,7 +366,7 @@ TEK GELİŞTİRİCİ → TAKIM → ORGANİZASYON → ENTERPRISE
 
 Enterprise satış için olmazsa olmazlar:
 
-1. **SOC 2 Type II** — İlk adım. Hemen başlamalı.
+1. **Bağımsız Type II kontrol denetimi** — Dış denetçi ve onaylı kapsam gerektiren hedef.
 2. **SSO/SAML** — Okta, Azure AD, Google Workspace
 3. **RBAC** — Admin, viewer, editor rolleri
 4. **Audit Log** — Kim ne zaman ne yaptı, 1 yıl retention
@@ -433,7 +435,7 @@ Sprint 7-8: Behavioral Baselines + VS Code v2
 
 | # | Özellik | Neden Gerekli | Karmaşıklık | Etki |
 |---|---------|--------------|------------|------|
-| 1 | **SOC 2 Type II Sertifikasyonu** | Enterprise satış için | Yüksek (süreç) | Çok Yüksek |
+| 1 | **Bağımsız Type II kontrol denetimi** | Enterprise satış için planlanan dış kanıt | Yüksek (süreç) | Çok Yüksek |
 | 2 | **GitHub Action/CI/CD Integration** | CI pipeline'ında güvenlik | Düşük | Orta |
 | 3 | **Custom Detection Rules** | Kullanıcıların kendi rule'larını yazması | Orta | Yüksek |
 | 4 | **Monthly Security Reports** | Yöneticilere göndermelik PDF | Düşük | Orta |
@@ -455,7 +457,7 @@ Sprint 7-8: Behavioral Baselines + VS Code v2
 | 5 | **Cross-Platform Correlation** | Farklı IDE'ler ve CI/CD arasında tehdit korelasyonu |
 | 6 | **Automated Incident Response Playbooks** | SOAR benzeri otomatik müdahale senaryoları |
 | 7 | **AI Agent Bill of Materials (ABOM)** | Her AI oturumu için malzeme listesi çıkarma |
-| 8 | **Real-time Threat Graph** | Tüm ajan aktivitelerini grafik olarak görselleştirme |
+| 8 | **Low-latency Threat Graph** | Ölçülmüş gecikme hedefiyle ajan aktivitelerini grafik olarak görselleştirme |
 
 ---
 
@@ -610,7 +612,7 @@ P3 öncelikli. Minimal MVP:
 |---------|------|-------|
 | Logging | Pino | Yapılandırılmış JSON log, log levels |
 | Metrics | Prometheus + Grafana | Detection latency, error rates, active users |
-| Tracing | OpenTelemetry | Distributed tracing (SaaS + local) |
+| Telemetry | Native RED metrics and duration fields | Bounded operational telemetry (SaaS + local) |
 | Error Tracking | Sentry | Production hata takibi |
 | Uptime Monitoring | Better Stack | SaaS dashboard uptime |
 | Usage Analytics | PostHog | Product analytics (opt-in) |
@@ -725,7 +727,7 @@ Bölümler:
 
 | Sinyal | Hedef Tarih | Nasıl Kazanılır |
 |--------|------------|----------------|
-| SOC 2 Type II | Ay 6-9 | SOC 2 audit firmasıyla anlaşma, süreç başlatma |
+| Bağımsız Type II kontrol raporu | Ay 6-9 hedefi | Dış denetim firmasıyla kapsam belirleme; tamamlanmış rapor henüz yok |
 | Müşteri Referansı | Ay 2-3 | Pilot programdan ilk başarı hikayesi |
 | Case Study | Ay 3-4 | Pilot müşteri ile ortak yayın |
 | G2/TrustRadius | Ay 6+ | Ücretsiz kullanıcılardan review toplama |
@@ -967,7 +969,7 @@ Bu hafta yapılacaklar — ürünü satılabilir hale getiren minimum değişikl
 
 | Özellik | Neden Erken | Ne Zaman |
 |---------|------------|----------|
-| **Autonomous Response (auto-quarantine)** | Kullanıcı güveni yok, false positive felaket olur | P3 (12+ ay) |
+| **Autonomous Response (policy-driven quarantine)** | Kullanıcı güveni ve geri alınabilirlik kanıtı yok; false positive felaket olur | P3 (12+ ay) |
 | **Federated Threat Intelligence** | Yeterli kullanıcı tabanı yok, ağ etkisi sağlanamaz | P3 (18+ ay) |
 | **Bug Bounty Programı** | Yönetim maliyeti yüksek, henüz gerekli değil | P3 (12+ ay) |
 | **On-prem Enterprise Appliance** | Pazar talebi doğrulanmadı, kaynak yoğun | P2 (6+ ay) |
@@ -982,7 +984,7 @@ Bu hafta yapılacaklar — ürünü satılabilir hale getiren minimum değişikl
 | **Kubernetes orchestration** | 10K kullanıcıdan önce gereksiz | Docker Compose + basit VM |
 | **Custom LLM fine-tuning** | ML detection için gereksiz pahalı | TinyBERT/ONNX embedding yeterli |
 | **Multi-region HA** | 100K kullanıcıdan önce gerekli değil | Single region + DR planı |
-| **Real-time threat graph** | Görsel olarak etkileyici ama ticari değeri düşük | Simple timeline + event list |
+| **Low-latency threat graph** | Görsel olarak etkileyici ama ticari değeri düşük | Simple timeline + event list |
 
 ### 13.3 Düşük ROI Geliştirme
 
@@ -1002,8 +1004,8 @@ Singularity AIDR'in "dünya klasında" sayılması için aşağıdaki kriterleri
 
 ### 14.1 Ürün Kriterleri
 
-- [ ] **Tam Kapsamlı Detection**: AI ajanının her aksiyonunu (komut, dosya, URL, paket, MCP, output, PII) gerçek zamanlı denetler
-- [ ] **Zero False Positive**: Kullanıcı raporladığı her false positive 24 saat içinde düzeltilir
+- [ ] **Kapsam matrisi**: Satılan her bağlayıcı/aksiyon için pre/post-tool sınırı, engelleme ve gözlem kanıtı tutulur; her aksiyon veya gerçek zaman garantisi verilmez
+- [ ] **False-positive remediation target**: Kullanıcının raporladığı her false positive için 24 saatlik inceleme hedefi tanımlanır; sıfır hata iddiası yapılmaz
 - [ ] **Sıfır Gecikme**: Detection latency ortalaması <5ms, hiçbir kullanıcı fark etmez
 - [ ] **Çoklu Platform**: 7+ AI ajan platformunu (Claude Code, Cursor, VS Code, OpenCode, OpenClaw, Copilot, Codeium) destekler
 - [ ] **ML Destekli**: Rule-based + ML hibrit detection, yeni tehditleri %95+ doğrulukla tanır
@@ -1011,9 +1013,9 @@ Singularity AIDR'in "dünya klasında" sayılması için aşağıdaki kriterleri
 
 ### 14.2 Enterprise Kriterleri
 
-- [ ] **SOC 2 Type II Sertifikalı**: Her yıl güncellenen bağımsız denetim
+- [ ] **Bağımsız Type II kontrol denetimi**: Kapsamı onaylı ve her yıl güncellenen dış rapor hedefi
 - [ ] **SSO + RBAC + Audit Log**: Enterprise satış için üçlü olmazsa olmaz
-- [ ] **99.9% Uptime SLA**: SaaS kontrol düzlemi için garanti
+- [ ] **99.9% Uptime SLA hedefi**: Önce canlı aylık SLI, istisna ve sözleşme onayı gerekli
 - [ ] **Data Residency**: AB, ABD, Asya bölgesel veri depolama
 - [ ] **On-prem Opsiyonu**: Hava boşluklu ortamlar için dağıtılabilir
 - [ ] **Vendor Assessment Package**: SOC 2, pentest, BCP dokümanları hazır

@@ -1,10 +1,11 @@
 {
   "schema_version": 1,
-  "reviewed_at": "2026-09-13",
-  "source_commit": "30e54e9447bc88d63757bdf2fb41c7bc1b75c939",
+  "generated_on": "2026-09-24",
+  "generation_timezone": "Europe/Istanbul",
+  "source_commit": "0db9af4fb0b6d737eff8533f2f1a37743a1d6b7a",
   "worktree_has_changes": true,
   "decision": "NO-GO",
-  "methodology": "Reviewed capability/consumer inventory; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
+  "methodology": "Generated capability/consumer mapping; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
   "status_counts": {
     "wired": 41,
     "partial": 28,
@@ -42,15 +43,14 @@
     {
       "id": "DET-03",
       "area": "Detection",
-      "name": "Obfuscation and command chains",
+      "name": "Obfuscation and suspicious shell patterns",
       "status": "wired",
       "source_paths": [
-        "packages/core/src/command-chain-analyzer.ts",
         "threats/obfuscation.yaml"
       ],
       "consumer": "Evaluator heuristics",
-      "delivered": "Encoded command patterns and multi-step shell analysis",
-      "remaining": "No universal shell-language semantic guarantee",
+      "delivered": "Encoded and suspicious shell command patterns",
+      "remaining": "Stateful multi-step command-chain analysis is not implemented",
       "production_accepted": false
     },
     {
@@ -123,11 +123,18 @@
       "source_paths": [
         "packages/core/src/behavioral-orchestrator.ts",
         "packages/core/src/behavioral-analyzer.ts",
-        "packages/claude-code/src/detector-provisioning.ts"
+        "packages/core/src/behavioral-baseline-store.ts",
+        "packages/core/src/detector-provisioning.ts",
+        "packages/core/src/evaluator.ts",
+        "packages/claude-code/src/detector-provisioning.ts",
+        "packages/claude-code/src/pre-tool-use.ts",
+        "packages/claude-code/src/post-tool-use.ts",
+        "packages/opencode/src/tool-handler.ts",
+        "packages/opencode/src/output-handler.ts"
       ],
-      "consumer": "Core evaluator and provisioned Claude hook",
-      "delivered": "Cold start and bounded orchestrator configuration",
-      "remaining": "Claude one-shot hook has no persistent learning baseline; other connector and customer efficacy acceptance remain open",
+      "consumer": "Core evaluator and provisioned Claude/OpenCode preflight hooks",
+      "delivered": "Bounded behavior/novelty scoring and tenant/session-scoped baseline storage API; product preflight cannot promote candidates; cold baselines ask by default, signed policy can select visible degraded skip",
+      "remaining": "No host supplies a trusted, call-ID/input-digest-bound successful-execution receipt. DET-08 is not production ready; callback wiring and independent efficacy acceptance remain required",
       "production_accepted": false
     },
     {
@@ -199,8 +206,8 @@
         "packages/cli/src/commands/discover.ts"
       ],
       "consumer": "aidr discover and SessionStart",
-      "delivered": "Config sources, redacted origins, configuration fingerprints, risk hints",
-      "remaining": "Local JSON configuration discovery only; not cloud-wide shadow-agent discovery",
+      "delivered": "JSON/JSONC config sources, redacted origins, configuration fingerprints, risk hints",
+      "remaining": "Local configuration discovery only; not cloud-wide shadow-agent discovery",
       "production_accepted": false
     },
     {
@@ -212,8 +219,8 @@
         "packages/core/src/mcp-inventory.ts"
       ],
       "consumer": "Discovery report",
-      "delivered": "Missing, read and invalid configuration sources",
-      "remaining": "JSONC and unlisted runtime-specific locations need adapters",
+      "delivered": "Missing, read and invalid configuration sources; JSONC comments and trailing commas are supported",
+      "remaining": "Unlisted runtime-specific locations need adapters and native host acceptance",
       "production_accepted": false
     },
     {
@@ -251,11 +258,12 @@
       "name": "Tool description attestation and drift",
       "status": "partial",
       "source_paths": [
-        "packages/core/src/mcp-attestation.ts"
+        "packages/core/src/mcp-attestation.ts",
+        "packages/mcp-gateway/src/gateway.mjs"
       ],
-      "consumer": "Core attestation and quarantine API",
+      "consumer": "Core attestation and opt-in gateway quarantine",
       "delivered": "Ed25519 tool manifest, signer allowlist, replay/drift quarantine and out-of-band approval",
-      "remaining": "Host/gateway consumer and trusted publisher provisioning remain open",
+      "remaining": "Direct host paths outside the gateway and trusted publisher provisioning remain open",
       "production_accepted": false
     },
     {
@@ -322,11 +330,12 @@
       "status": "partial",
       "source_paths": [
         "packages/cli/src/commands/collect.ts",
-        "supabase/functions/discovery/index.ts"
+        "supabase/functions/discovery/index.ts",
+        "packages/dashboard/src/ui/pages/DiscoveryPage.tsx"
       ],
-      "consumer": "Local collector and tenant scoped central inventory API",
-      "delivered": "Authenticated operator or collector upload, sequenced cycles, dedup and stale/partial coverage reporting",
-      "remaining": "Cloud/MDM adapters, scheduler, dashboard alerts and customer field acceptance remain open",
+      "consumer": "Local collector, tenant-scoped central inventory API, and authenticated Discovery dashboard",
+      "delivered": "Authenticated operator or collector upload, sequenced/deduplicated cycles, tenant-scoped listing, and reported-only per-item freshness/alert-state display",
+      "remaining": "Cloud/MDM provider adapters, customer-approved scopes/credentials, customer-activated production scheduling and alert/paging delivery, and customer field acceptance remain open",
       "production_accepted": false
     },
     {
@@ -394,9 +403,9 @@
         "packages/core/src/response-audit.ts",
         "packages/core/src/guard.ts"
       ],
-      "consumer": "Guard response receipts",
-      "delivered": "Tamper-evident local chain and action results",
-      "remaining": "Key custody and independent storage/retention evidence remain external",
+      "consumer": "Opt-in guard response receipts",
+      "delivered": "Ed25519-signed tamper-evident local chain and action results when enabled",
+      "remaining": "Disabled by default; independent key custody and storage/retention evidence remain external",
       "production_accepted": false
     },
     {
@@ -420,11 +429,15 @@
       "name": "SOAR playbook orchestration",
       "status": "partial",
       "source_paths": [
-        "supabase/functions/autosecops-runtime/index.ts"
+        "supabase/functions/response-playbooks/index.ts",
+        "supabase/migrations/20260923000005_fleet_response_playbooks.sql",
+        "packages/core/src/response-command-consumer-v6.ts",
+        "supabase/functions/__tests__/response-playbooks-contract.test.ts",
+        "docs/operations/response-playbooks.md"
       ],
-      "consumer": "AutoSecOps integration",
-      "delivered": "External runtime bridge",
-      "remaining": "Customer authorization, connector matrix and success receipts need field integration",
+      "consumer": "Standalone owner/admin+AAL2 playbook API; not wired to AutoSecOps or an alert trigger",
+      "delivered": "One fixed typed, TTL-bound and idempotent run queues agent_pause then network_isolate only after the consumer records an adapter-verified succeeded receipt",
+      "remaining": "Not production accepted or connected to an alert/AutoSecOps trigger. A separately installed endpoint worker and verified host adapter are not provisioned or customer-validated; host permissions and native acceptance, external SOAR/provider connectors, credential revocation and rollback remain unsupported or open",
       "production_accepted": false
     },
     {
@@ -520,11 +533,13 @@
       "status": "wired",
       "source_paths": [
         "packages/cli/src/commands/config.ts",
-        "packages/cli/src/utils/config-values.ts"
+        "packages/cli/src/utils/config-values.ts",
+        "packages/cli/src/utils/config-manager.ts",
+        "packages/cli/src/utils/secret-store.ts"
       ],
-      "consumer": "CLI config get/set/list",
-      "delivered": "Typed booleans/numbers, schema checks, secret redaction and prototype-key rejection",
-      "remaining": "OS credential vault integration not implemented",
+      "consumer": "CLI config get/set/list and local credential storage",
+      "delivered": "Typed booleans/numbers, schema checks, secret redaction, prototype-key rejection and fail-closed DPAPI/Keychain/Secret Service adapters",
+      "remaining": "Real macOS/Linux vault round trips and managed-host rotation/recovery acceptance remain open; file-ACL fallback requires explicit selection",
       "production_accepted": false
     },
     {
@@ -626,15 +641,18 @@
     {
       "id": "CON-06",
       "area": "Connectors",
-      "name": "SDK and framework adapters",
+      "name": "SDK client and generic middleware",
       "status": "wired",
       "source_paths": [
         "packages/sdk/src/client.ts",
-        "packages/sdk/src/enforcement.ts"
+        "packages/sdk/src/adapters/generic.ts",
+        "packages/sdk/src/middleware.ts",
+        "packages/sdk/src/enforcement.ts",
+        "packages/sdk/src/output-guard.ts"
       ],
-      "consumer": "Generic, LangChain, LlamaIndex, AutoGen, CrewAI",
-      "delivered": "Fail-closed wrappers and middleware",
-      "remaining": "Application must wrap every consequential tool path; package versions need integration matrix",
+      "consumer": "Framework-neutral middleware, Express and Next.js",
+      "delivered": "Fail-closed wrappers, middleware and bounded tool-output inspection",
+      "remaining": "Application must wrap every consequential tool path; host integration still needs an acceptance matrix",
       "production_accepted": false
     },
     {
@@ -686,11 +704,12 @@
       "source_paths": [
         "supabase/functions/scim/index.ts",
         "supabase/migrations/20260912000012_scim_directory.sql",
-        "packages/dashboard/src/enterprise/auth.tsx"
+        "packages/dashboard/src/enterprise/auth.tsx",
+        "packages/dashboard/src/ui/pages/ScimPage.tsx"
       ],
-      "consumer": "SCIM v2 backend and SSO login surface",
-      "delivered": "Tenant token rotation, Users/Groups and immutable external-ID role mapping",
-      "remaining": "Real Entra/Okta configuration and tenant-wide MFA enforcement remain external/partial",
+      "consumer": "Owner-only SCIM administration dashboard and tenant-scoped SCIM v2 backend",
+      "delivered": "One-time credential creation/rotation/revocation, paginated credentials, and exact immutable external-ID role mapping; backend rechecks owner authorization",
+      "remaining": "Real Entra/Okta provisioning acceptance and the separately audited SAML enforcement/rollback operation remain open",
       "production_accepted": false
     },
     {
@@ -719,7 +738,7 @@
       ],
       "consumer": "Dashboard and native callers",
       "delivered": "Hash-only storage, selected-team UI, active membership, server-only mutations, member ownership and revocation",
-      "remaining": "Scoped per-tool short-lived credentials are a separate missing capability",
+      "remaining": "Per-tool short-lived delegation is tracked separately in MCP-06; live provider acceptance and endpoint secret-vault integration remain open",
       "production_accepted": false
     },
     {
@@ -784,15 +803,17 @@
     {
       "id": "OBS-04",
       "area": "Operations",
-      "name": "SIEM export and OpenTelemetry",
+      "name": "SIEM delivery and native telemetry",
       "status": "partial",
       "source_paths": [
         "packages/core/src/siem-delivery.ts",
         "packages/core/src/siem-incident-producer.ts",
-        "scripts/siem-delivery-worker.mjs"
+        "scripts/siem-delivery-worker.mjs",
+        "packages/core/src/evaluator.ts",
+        "deploy/dashboard/monitoring.mjs"
       ],
-      "consumer": "Opt-in incident producer and durable SIEM worker",
-      "delivered": "Splunk, Sentinel, Elastic and HTTPS delivery queue/receipts/retry",
+      "consumer": "Opt-in durable SIEM worker plus native duration and RED telemetry",
+      "delivered": "Splunk, Sentinel, Elastic and HTTPS delivery queue/receipts/retry; private NTFS ACLs on durable state before write/read; dependency-free evaluator timing and dashboard RED metrics",
       "remaining": "Customer SIEM configuration, scheduled worker, native source coverage and delivery receipt remain open",
       "production_accepted": false
     },

@@ -4,14 +4,15 @@ Singularity AIDR — Third-Party Notices
 Copyright 2026 SingularityRD for this inventory document.
 
 The Singularity AIDR first-party product is proprietary under LICENSE. This
-file preserves the notices for third-party components that may be included in
-source, development, packaged, or hosted artifacts. A package's own licence
+file indexes known third-party components that may be included in source,
+development, packaged, or hosted artifacts. A package's own licence
 file and copyright notice control where they provide more specific terms.
 
 The release evidence process must regenerate the complete transitive notice
 bundle from the locked dependency graph and attach it to the signed SBOM. The
-entries below are the direct dependency baseline declared by the workspace;
-they are not a substitute for that generated release artifact.
+entries below describe current direct runtime dependency families declared by
+the workspace. They are not a locked-version or transitive inventory and are
+not a substitute for that generated release artifact.
 
 Direct runtime dependency baseline
 ----------------------------------
@@ -22,19 +23,22 @@ Direct runtime dependency baseline
 | Schema validation | `zod@^3.24.0` | MIT | https://github.com/colinhacks/zod |
 | Structured logging | `pino@^9.6.0` | MIT | https://github.com/pinojs/pino |
 | Model Context Protocol SDK | `@modelcontextprotocol/sdk@^1.28.0` | MIT | https://github.com/modelcontextprotocol/typescript-sdk |
-| Sentry Node/browser clients | `@sentry/node@^10.69.0`, `@sentry/browser@^10.69.0`, `@sentry/react@^10.69.0` | MIT | https://github.com/getsentry/sentry-javascript |
-| OpenTelemetry APIs/SDK/exporters | `@opentelemetry/*` | Apache-2.0 | https://github.com/open-telemetry/opentelemetry-js |
+| Sentry Node/browser clients | `@sentry/node@^10.69.0`, `@sentry/browser@^10.69.0` | MIT | https://github.com/getsentry/sentry-javascript |
 | Semantic versioning | `semver@^7.7.4` | ISC | https://github.com/npm/node-semver |
-| CLI interaction | `commander`, `chalk`, `ora`, `inquirer` | MIT | Respective upstream package repositories |
-| Local SQLite binding | `better-sqlite3@^9.4.3` | MIT | https://github.com/WiseLibs/better-sqlite3 |
+| CLI parsing | `commander@^15.0.0` | MIT | https://github.com/tj/commander.js |
 | Windows native AMSI binding | `koffi@^2.15.2` | MIT | Native binary, JavaScript loader and `dist/vendor/koffi/LICENSE.txt` are shipped with the Claude connector |
 | React runtime/router | `react`, `react-dom`, `react-router-dom` | MIT | https://github.com/facebook/react and https://github.com/remix-run/react-router |
-| Supabase client | `@supabase/supabase-js@^2.56.0` | MIT | https://github.com/supabase/supabase-js |
-| LangChain core | `@langchain/core@^0.3.0` | MIT | https://github.com/langchain-ai/langchainjs |
+| Supabase client | `@supabase/supabase-js@^2.108.2` | MIT | https://github.com/supabase/supabase-js |
 | OpenCode plugin API | `@opencode-ai/plugin@^1.2.10` | MIT | Upstream package repository and published package metadata |
 
-Existing notices preserved from the project baseline
------------------------------------------------------
+The AIG bridge separately installs 31 hash-locked PyPI runtime packages.
+Their distribution hashes are in `services/aig-bridge/requirements-runtime.lock`,
+but this file does not yet contain their exact distribution licence metadata
+or licence texts. Commercial SBOM generation must stop until those are
+collected and reviewed for the shipped wheels and container image.
+
+Existing direct-component references from the project baseline
+--------------------------------------------------------------
 
 - `yaml` — ISC License — https://github.com/eemeli/yaml
 - `zod` — MIT License — https://github.com/colinhacks/zod

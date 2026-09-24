@@ -82,7 +82,7 @@ Yeni test dosyaları (v8): `supabase/functions/__tests__/billing-portal.test.ts`
 
 ### Makine okunur kanıt indeksi
 
-`docs/production-readiness/v8-evidence-index.json` (28 kapı, şema `v8-evidence-index.schema.json`, doğrulayıcı `node scripts/generate-v8-evidence-index.mjs --verify`) her kapı için komut, exit code, UTC başlangıç/bitiş, süre, commit, candidate digest, ortam, araç sürümleri, test sayıları, gözlenen etki, log SHA-256, artefakt SHA-256, sınırlar, sahip ve kanıt seviyesi taşır. Türetilemeyen her alan açıkça `"unknown"`, logu olmayan her kapı `NOT_RUN`'dır; hiçbir kapı atlanmaz. Bu turda: **17 PASS, 6 FAIL, 3 NOT_RUN, 2 unknown**. FAIL'lerin tamamı fail-closed dış bağımlılıktır (§4); hiçbiri yerel test hatası değildir.
+`.release-evidence/v8-evidence-index.json` (28 kapı, şema `v8-evidence-index.schema.json`, doğrulayıcı `pnpm evidence:index:verify`) her kapı için komut, exit code, UTC başlangıç/bitiş, süre, commit, candidate digest, ortam, araç sürümleri, test sayıları, gözlenen etki, log SHA-256, artefakt SHA-256, sınırlar, sahip ve kanıt seviyesi taşır. Türetilemeyen her alan açıkça `"unknown"`, logu olmayan her kapı `NOT_RUN`'dır; hiçbir kapı atlanmaz. Bu turda: **17 PASS, 6 FAIL, 3 NOT_RUN, 2 unknown**. FAIL'lerin tamamı fail-closed dış bağımlılıktır (§4); hiçbiri yerel test hatası değildir.
 
 ## 4. Fail-closed native / E2E / claim-gate sonuçları ve tam nedenleri
 
@@ -121,7 +121,7 @@ Yeni test dosyaları (v8): `supabase/functions/__tests__/billing-portal.test.ts`
 - İmzasız dış zarf: `.release-evidence/aidr-envelope-v8-local-20260916-r8/` (`publisher_authenticated=false`).
 - Native matris kaydı: `.release-evidence/v8-native-probe.json`, girdi `deploy/native/support-matrix.json`.
 - Ölçülen kaynak profili: `.release-evidence/v8-resource-profile-aidr-v6-local.json`, insan okunur özet `resource-sizing-v8.md`.
-- Makine okunur kanıt indeksi: `v8-evidence-index.json` + `v8-evidence-index.schema.json`.
+- Makine okunur kanıt indeksi: `.release-evidence/v8-evidence-index.json` + `docs/production-readiness/v8-evidence-index.schema.json`.
 - Ticari kapı makbuzları: `commercial-gate-receipts.json` + `.schema.json` (13 kapının tamamı `open`).
 - Komut logları: `.release-evidence/v8-logs/`.
 - v7 ve önceki v8 klasörleri değiştirilmedi. `…-20260915-r5`, `…-20260914-r4` ve daha eski adayları supersede eder. r5 digest'i kasıtlı olarak farklıdır: son dashboard MFA/DLP ulaşılabilirliği ve snapshot-collision düzeltmeleri paketlenmiştir.

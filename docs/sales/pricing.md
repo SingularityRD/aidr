@@ -1,6 +1,6 @@
 # Singularity AIDR — Pricing Model (Proposal)
 
-**Status:** Draft for founder review. Not yet published, quoted, or approved.
+**Status:** Superseded internal pricing hypothesis for founder review. The proposed developer-seat unit and dollar amounts below conflict with the current connected-agent metering decision; neither proposal is an offer, approved licence, published tier, quote, or entitlement schedule. The [Commercial Release Manifest](../production-readiness/commercial-release-manifest-template.md) is the approval template, and COM-001 remains open.
 **Last updated:** 2026-09-13
 **Owner:** Founder (single-person company)
 
@@ -25,9 +25,11 @@ URL reputation checks, and a local decision engine returning `allow` / `deny` /
 
 The structural fact that drives the entire pricing model:
 
-**Local enforcement is free to run, permanently, with no account and no
-network.** `ConfigSchema.mode` defaults to `"local"`. A fresh install evaluates
-every tool call with no cloud dependency. "Managed" mode is an *opt-in* layer
+**Local evaluation can run without an account or control-plane dependency;
+"free forever" is a proposed commercial decision, not an approved licence.**
+`ConfigSchema.mode` defaults to `"local"`, but enabled URL/file reputation
+checks can make outbound requests. An offline pilot must disable optional
+egress and verify traffic. "Managed" mode is a separately configured layer
 that adds a control plane, team dashboard, entitlement/licensing, audit logs,
 DLP, legal hold, and billing.
 
@@ -64,16 +66,17 @@ with no support team. Seat-based pricing is also the norm our comparables use
 
 ### Tier 1 — Local (Free, forever)
 
-**$0.** No account, no signup, no email required.
+**Proposed $0.** No account, signup, or email for local evaluation; licence and
+distribution terms still require approval.
 
 - Full local detection: all 351 shipped YAML threat rules, obfuscation and
   command-chain analysis, credential/supply-chain/persistence patterns.
 - Full local decision engine: `allow` / `deny` / `ask` with confidence scoring.
 - Write interception (file writes/edits) and URL analysis of tool calls.
 - Local allowlist management and local JSONL audit log.
-- One connector, any supported host.
+- One connector from an explicitly accepted host/OS/version scope.
 
-**Why free, and why uncrippled:** the free tier is the distribution strategy.
+**Why propose free, and why uncrippled:** the free tier would be the distribution strategy.
 A local-first security tool is adopted bottom-up by an individual developer who
 is curious and skeptical; a paywall before they see a block destroys that. It
 is also honest — the engine genuinely runs offline, so any attempt to
@@ -81,11 +84,15 @@ license-check it locally would be both circumventable and a lie about how the
 product works. We give away the enforcement engine to create the population
 that later needs the dashboard.
 
-**What is explicitly NOT in free:** anything requiring a server — team
+**What the proposed free tier excludes:** anything requiring a server — team
 dashboard, cross-fleet visibility, remote policy distribution, audit export,
 DLP label management, SSO, legal hold, support SLA.
 
 ### Tier 2 — Team (self-serve)
+
+**Proposal only; not purchasable or deployable today.** The managed control
+plane, payment provider, distribution, support and commercial approvals remain
+open.
 
 **$20 per protected developer / month, billed annually ($240/developer/year).
 Monthly billing at $24/developer/month.**
@@ -104,7 +111,7 @@ Includes everything in Local, plus:
 - DLP and legal hold (subject to the caveats in §7).
 - Email support, best-effort, no SLA.
 
-**Why self-serve:** the founder cannot run a sales team. This tier must be
+**Why consider self-serve:** the founder cannot run a sales team. This tier would need to be
 buyable with a credit card, priced below the threshold where a VP needs to
 attend a procurement meeting, and installable without a call. $20/developer/
 month sits under the "expense it on a personal card" line for most engineering
@@ -119,7 +126,7 @@ Everything in Team, plus:
 
 - Self-hosted / private-cloud deployment option.
 - Signed policy and intel pack distribution for the customer's tenant.
-- SIEM/OpenTelemetry export to Splunk / Sentinel / Elastic.
+- Durable SIEM export to Splunk / Sentinel / Elastic plus native RED and duration telemetry.
 - Named support contact and a response-time commitment.
 - Security questionnaire support and architecture review calls.
 - Deployment assistance for rollout.
@@ -130,9 +137,9 @@ help are unbounded time sinks, so the minimum exists to ensure the deal is
 worth the hours. Do not discount below the minimum — shrink the seat count
 instead, or move the customer to Team.
 
-> **Do not sell Tier 3 yet.** See §7 — the self-hosted path and signed artifacts
-> are not ready, and selling them now would mean promising capability the
-> product cannot currently deliver.
+> **Do not sell any proposed paid tier yet.** See §7 — both deployment paths,
+> signed customer distribution, live billing and supported operations remain
+> unaccepted. Tier names and prices here are hypotheses only.
 
 ---
 
@@ -140,8 +147,8 @@ instead, or move the customer to Team.
 
 | | Local | Team | Business |
 |---|---|---|---|
-| Motion | None (download) | **Self-serve** | Founder-led call |
-| Purchase | — | Credit card | Invoice / PO |
+| Proposed motion | None (approved download) | Self-serve target | Founder-led target |
+| Proposed purchase | — | Card only after live provider acceptance | Invoice / PO only after Finance approval |
 | Typical buyer | Individual dev | Eng manager / Head of Eng | CISO / VP Eng |
 | Sales cost we can afford | $0 | **$0** | A few hours |
 
@@ -153,7 +160,7 @@ individual developer adopts → their manager buys Team on a card. Only
 exceptional deals escalate to Tier 3, and only once the founder has spare
 capacity.
 
-**Annual-only for Team is intentional.** Monthly self-serve billing creates
+**The proposed annual-first Team term is a hypothesis.** Monthly self-serve billing creates
 churn-handling and dunning work that a solo founder cannot absorb. Annual
 upfront also generates the cash that funds the next year of building.
 
@@ -257,9 +264,10 @@ These are binding on any quote, deck, or email:
 - **Do not describe the product as blanket "fail-open" or "fail-closed."**
   The real behavior is per-layer: detection internals skip a failing signal and
   log it; connector entry points fail closed; security controls fail closed.
-- **Do not present reputation checks as active.** URL/package reputation
-  requires a deployed first-party endpoint. With none configured, those legs
-  are inert and must never be described as "clean."
+- **Do not present reputation checks as verified protection.** Enabled
+  URL/file/package lookups can make outbound requests by default; unavailable
+  endpoints or stale evidence must not be described as "clean." Disclose the
+  configured destinations and verify them for each candidate.
 
 ---
 
@@ -285,17 +293,19 @@ artifacts):**
 
 | Gap | Impact on pricing |
 |---|---|
-| **No code-signing certificate** for Windows binaries | SmartScreen warnings on install. Must be disclosed to every Windows prospect. Budget line, not a blocker for Team. |
-| **No live cloud deployment.** Managed mode requires a deployed control plane that does not currently exist. | **Blocks selling Team and Business today.** The paid tiers are specified here but not deliverable until the control plane is live. |
-| **Signed release artifacts / private registry install not performed** | Blocks Business (self-hosted) entirely. |
+| **No approved publisher signature** for a customer release | Do not offer the unsigned engineering bundle as a supported Windows or Team installation. Device warnings or blocks vary by policy. |
+| **No accepted cloud production deployment.** A Free pilot exists, but it is not a signed, supported GA candidate. | **Blocks selling Team and Business today.** A live pilot does not establish paid-service acceptance. |
+| **Signed release artifacts / trusted delivery not performed** | Blocks a supported customer installation in either deployment path. Private-registry acceptance remains open for a paid production offer. |
 | **Real-host E2E acceptance open** for each connector; Codex can fail open if the hook process is unavailable | Limits what we can promise about coverage; disclose per-connector. |
 | **No real-host side-effect acceptance** for advertised connectors | Cannot claim verified enforcement on a customer's specific OS/host combination. |
 | **Reputation intel feed freshness/latency unvalidated** | Do not sell reputation as a working feature yet. |
 
-**Net position: the free Local tier is sellable/adoptable now. Team and
-Business are specified but gated on the control plane.** Until that gate
-clears, the correct commercial motion is free-tier adoption and design-partner
-conversations, not invoicing.
+**Net position: none of these tiers is approved for a supported customer
+release.** Local component evaluation and design-partner conversations can be
+discussed with explicit limitations, but customer installation requires the
+[first-customer-ready gate](../production-readiness/first-customer-ready.md).
+Team and Business additionally need a deployed, accepted control plane and
+the applicable commercial gates; this draft cannot authorize invoicing.
 
 **TODO (founder):**
 1. Confirm Socket.dev / Invariant Labs / Pillar Security pricing from rendered

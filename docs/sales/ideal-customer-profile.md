@@ -1,9 +1,17 @@
 # Ideal Customer Profile (Beachhead)
 
-**Status:** Working hypothesis. Zero customers have validated this. Every claim
-about buyer behavior below is reasoning from the product's shape and the
-market, not from won deals.
-**Last updated:** 2026-09-13
+> **Historical snapshot — not current sales qualification (archived 2026-09-23).**
+> This 2026-09-13 small-team hypothesis predates the BMC enterprise/on-prem
+> objective and the cloud pilot. Its enterprise/defense exclusions, free-tier
+> language and pricing assumptions are not current policy or a readiness
+> decision. A BMC conversation may be limitations-first; a supported PoC or
+> sale still needs the [current buyer handoff](../production-readiness/first-customer-buyer-handoff-2026-09-23.md)
+> and its open technical, security, legal and commercial gates. This snapshot
+> does not assert certification or defense-sector acceptance.
+
+**Status:** Superseded working hypothesis. Zero customers validated it. Every
+claim about buyer behavior below was reasoning, not a won-deal finding.
+**Snapshot date:** 2026-09-13
 **Owner:** Founder
 
 > **The honest framing:** a one-person company cannot pursue a market. It can

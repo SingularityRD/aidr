@@ -2,10 +2,11 @@
 
 ## Positioning
 
-This runbook prepares a **controlled evaluation**, not an unrestricted
-production or sale release. The demo page is deliberately synthetic and
-read-only. It demonstrates the interaction model, policy evidence path,
-incident review surface, tenant boundary and invoice-only commercial path.
+This runbook prepares a **controlled live evaluation** with a dedicated
+account, tenant, and enrolled test agent. The customer app has no synthetic
+`/demo` page; the old address redirects to the onboarding sign-in path.
+Use disposable test inputs and show only verdicts and incidents actually
+observed in the connected deployment.
 
 Do not describe the demo as production-ready, sale-ready, compliant, real-time,
 zero-false-positive, 99.9% SLA, or proof of AIG detection recall. Those claims
@@ -47,7 +48,7 @@ pnpm demo:preflight
 pnpm -C packages/dashboard test:route-smoke
 ```
 
-If credentials or a deployed base URL are not available, the safe structural
+If credentials or a deployed base URL are not available, the structural
 check is:
 
 ```bash
@@ -55,40 +56,33 @@ pnpm demo:preflight -- --static
 pnpm -C packages/dashboard test:route-smoke:static
 ```
 
-The isolated `/demo` route is allowed to render in this no-Supabase mode and
-does not import a live tenant, invoke an Edge Function or execute an external
-command. Other dashboard routes remain fail-closed until the public Supabase
-variables are configured; this is intentional and must be stated to the
-audience.
+All production routes, including `/demo`, show the configuration error until
+the public Supabase variables are configured. A structural pass cannot confirm
+sign-in, enrollment, telemetry, or enforcement.
 
 The static result is not a live demo proof. A successful non-static preflight
 writes a redacted receipt to `.e2e-artifacts/demo/preflight.json`.
 
 ## 3. Twelve-minute golden path
 
-1. Open `/demo` and read the evaluation-boundary banner aloud.
-2. Show the synthetic tenant ID and fixture version; explain that no customer
-   content or production endpoint is used.
-3. Select **Suspicious command** and run the synthetic fixture. Show the BLOCK
-   decision, reason and “no external request” statement.
-4. Select **Package integrity** and run it. Explain the difference between an
-   automatic block and an explicit reviewer decision.
-5. Select **MCP tool request** and show the protected-resource decision.
-6. Review the synthetic agent inventory and incident timeline.
-7. Explain the evidence path: input → decision → redacted, tenant-scoped
-   record. Do not claim this is recall or benchmark evidence.
-8. Open `/pricing` and show **By order / invoice**. Do not show a checkout
-   button or quote an unapproved price.
-9. Open `/support`, `/status`, `/privacy`, `/security` and `/terms`. Any
-   missing deployment URL must remain visibly fail-closed.
-10. If a real evaluation is requested, click **Start real evaluation** and use
-    the dedicated demo account at `/onboarding`. Keep the synthetic `/demo`
-    page and live account clearly separated.
-11. Generate a device code only on the dedicated account. Mask enrollment
-    tokens during screen share and clear them immediately after the walkthrough.
-12. End with limitations and the next evidence step: hosted browser trace,
-    real connector matrix, customer Evaluation Charter and security/legal
-    review.
+1. Open `/demo`; confirm the browser lands at `/login?returnTo=%2Fonboarding`
+   and no synthetic fixture appears.
+2. Sign in with the dedicated evaluation account and confirm `/onboarding`
+   opens for the isolated tenant.
+3. Generate a device code, enroll a disposable test agent on an available lab
+   test host (not an accepted customer-supported host/OS/version row),
+   and confirm that agent appears in `/agents` with its actual runtime and
+   connection state.
+4. Run the approved harmless threat probes from
+   [`docs/demo/customer-threat-demo-matrix.md`](../demo/customer-threat-demo-matrix.md)
+   through the enrolled host. Record the local deny/ask result and timestamp.
+5. Open `/events` and `/incidents`; match the received redacted verdicts to the
+   host, agent, tenant, and timestamp. If delivery is delayed or absent, state
+   that result instead of substituting a fixture.
+6. Open `/pricing` and show **By order / invoice**; then check `/support`,
+   `/status`, `/privacy`, `/security`, and `/terms` for approved destinations.
+7. Mask enrollment tokens during screen share and clear them after the
+   walkthrough. Finish with the remaining acceptance evidence and owner.
 
 ## 4. Stop conditions
 
@@ -110,10 +104,10 @@ Retain, with secrets redacted:
 - `.e2e-artifacts/demo/preflight.json`;
 - `.e2e-artifacts/dashboard/route-smoke.json`;
 - the exact dashboard build digest and deployment revision;
-- screenshots/video of `/demo`, the live onboarding path (if used), invoice
-  page and fail-closed legal/support pages;
+- screenshots/video of the `/demo` redirect, authenticated onboarding, actual
+  agent/events/incidents, invoice page, and legal/support pages;
 - the signed Evaluation Charter and limitations log.
 
-The operator must record the date, evaluator, environment, fixture version,
+The operator must record the date, evaluator, environment, test agent,
 deployment revision, deviations and follow-up owner. Do not edit the registry
-to close a hard gate from a demo screenshot.
+to close a hard gate from a walkthrough screenshot.

@@ -12,7 +12,7 @@ pnpm build
 
 Development happens on the `pre-release` branch. The `main` branch is the distribution channel (what users install). See [CONTRIBUTING.md](../CONTRIBUTING.md#branch-policy) for details.
 
-Requires Node.js >= 18 and pnpm >= 9.
+Requires Node.js >= 22.12.0 and pnpm >= 9.
 
 ## Commands
 
@@ -24,6 +24,8 @@ Requires Node.js >= 18 and pnpm >= 9.
 | `pnpm test -- --reporter=verbose` | Verbose test output |
 | `pnpm test -- <file>` | Run a single test file |
 | `pnpm test -- -t "name"` | Run tests matching name |
+| `pnpm test:types:core-changed` | Type-check the core tests changed in the current hardening pass |
+| `pnpm test:coverage:core` | Run the isolated core suite and enforce its package coverage floor |
 | `pnpm test:e2e` | All E2E tests (Claude Code + OpenClaw + OpenCode + Cursor + VS Code) |
 | `pnpm test:e2e:negative` | Negative credential control: proves missing credentials cannot produce a green E2E run |
 | `pnpm test:e2e:claude` | Claude Code E2E tests only |
@@ -52,6 +54,8 @@ Requires Node.js >= 18 and pnpm >= 9.
 | E2E (VS Code extension) | Singularity AIDR extension in VS Code Extension Host | `packages/extension/src/__tests__/e2e.test.ts` | Installed VS Code executable |
 
 `pnpm test` runs unit and integration tests. E2E is excluded — run separately with `pnpm test:e2e` (all), `pnpm test:e2e:claude`, `pnpm test:e2e:openclaw`, `pnpm test:e2e:opencode`, `pnpm test:e2e:cursor`, or `pnpm test:e2e:vscode`.
+
+The isolated core coverage gate currently prevents regression below 83% lines, 80% statements, 72% branches, and 84% functions. On the current tree the isolated run measures about 83.7% lines, 80.2% statements, 72.6% branches, and 84.7% functions; raise the enforced floors as coverage improves rather than lowering or bypassing the gate.
 
 **Claude Code E2E prerequisites:** `claude` CLI in PATH, valid `ANTHROPIC_API_KEY`, and Singularity AIDR must **not** be installed via the Claude Code marketplace (duplicate-plugin conflict with `--plugin-dir`).
 
@@ -198,7 +202,7 @@ aidr/
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Node.js | >= 18 | Runtime |
+| Node.js | >= 22.12.0 | Runtime |
 | pnpm | >= 9 | Workspace management |
 | TypeScript | ^5.9 | Type checking |
 | esbuild | ^0.25 | Bundle hooks into single CJS files |

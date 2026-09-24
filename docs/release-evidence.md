@@ -21,6 +21,14 @@ Commercial mode also creates `.release-evidence/` with a signed
 Supabase function sources and configured container image digests are staged
 there with `release-inventory.json`.
 
+The Claude Code endpoint additionally has a signed package-root manifest at
+`packages/claude-code/aidr-artifact.manifest.json` and its detached signature.
+That exact file set covers `package.json`, `dist/`, and `resources/`; the
+endpoint installer checks it before and after copying. Extract the Claude
+plugin archive only from a publisher-verified release bundle, which also
+authenticates plugin metadata and hook registration files outside the endpoint
+package.
+
 ## In-toto/SLSA-style provenance
 
 `scripts/generate-provenance.mjs` binds the released artifacts into one in-toto
@@ -70,7 +78,7 @@ node scripts/verify-release-evidence.mjs `
   --public-key C:\secure\aidr-release-2026.pub.pem `
   --fingerprint sha256:<64-hex-fingerprint> `
   --lockfile pnpm-lock.yaml `
-  --dirs packages/core/dist packages/cli/dist .release-evidence
+  --dirs packages/core/dist packages/claude-code/dist packages/claude-code packages/cli/dist .release-evidence
 ```
 
 The verifier rejects missing or duplicate entries, manifest self-reference,

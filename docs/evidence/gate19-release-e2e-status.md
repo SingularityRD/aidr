@@ -1,34 +1,52 @@
-# Gate 19 — release E2E status after the live work
+# Gate 19 — release E2E status
 
-**Date:** 2026-09-18
-**Gate:** `19-release-e2e`
-**Decision:** `FAIL` — correctly. Two of twelve suites now pass on their own
-merit; the rest are blocked on credentials, deployed services, or a runner
-limitation that is described below rather than hidden.
+**Current decision:** `NO-GO`. The current contract in
+`scripts/e2e-release-manifest.json` declares **14 suites and 155 exact
+assertions**. No run of that updated contract is bound to an immutable release
+candidate. The current release decision is `.release-evidence/v8-evidence-index.json`;
+this page is an explanation, not an acceptance receipt.
 
-## Suite-by-suite
+The latest stored diagnostic run in `.e2e-artifacts/release/summary.json` ended
+**2026-09-22T21:38:43Z** with `candidateDigest=null` and
+`candidateBoundAt=null`. Only `supabase-migrations` passed in that run. It used
+the previous assertion counts (109 total, including 9 for the Supabase contract
+and 31 for the AIG bridge), so it **cannot** be reused as a result for today's
+manifest. A separate focused Supabase test subsequently passed 19/19; that is
+not a candidate-bound release E2E pass.
 
-| Suite | Expected | State | Why |
-|---|---|---|---|
-| `supabase-migrations` | 1 | **PASS 1/1** | Runs against the local installation |
-| `supabase-control-plane` | 9 | **PASS 9/9** | Runs against the local installation |
-| `cursor` | 8 | **PASS 8/8** | Runs the extension host directly; see below |
-| `vscode` | 8 | **PASS 8/8** | Runs the extension host directly; see below |
-| `aig-bridge-contract` | 31 | **PASS 31/31** | Passes once `AIDR_AIG_PYTHON` points at the isolated venv |
-| `dashboard-route-smoke` | 1 | **PASS 1/1** | Crawls the locally running dashboard over real HTTP |
-| `cursor-headless-agent` | 1 | blocked | Needs `AIDR_AGENT_PATH` and agent auth |
-| `claude` | 7 | blocked | Needs `ANTHROPIC_API_KEY` |
-| `opencode` | 13 | blocked | Needs one of `OPENCODE_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` |
-| `openclaw` | 5 | blocked | Needs `OPENCLAW_GATEWAY_TOKEN` and `OPENCLAW_E2E_HOST` |
-| `aig-live-control-plane` | 4 | blocked | Needs `AIDR_AIG_E2E_EVIDENCE` |
-| `supabase-live-control-plane` | 8 | blocked | Needs `AIDR_SUPABASE_E2E_EVIDENCE` |
-| `dashboard-browser` | 10 | blocked | Needs `AIDR_DASHBOARD_BROWSER_EVIDENCE` |
+## Current suite contract and next evidence
 
-**58 of 65 declared assertions across the twelve runnable suites now pass**, up
-from 10 before this work. The seven that remain are blocked on credentials,
-deployed services, or a named external attestation — not on repository state.
+| Suite | Exact tests | Latest stored diagnostic / next requirement |
+|---|---:|---|
+| `claude` | 7 | Blocked: runnable Claude CLI and authorized model credential. |
+| `openclaw` | 5 | Blocked: live gateway, token and signed host receipt for the exact candidate. |
+| `opencode` | 13 | Blocked: authenticated model provider and native plugin execution. |
+| `cursor` | 8 | Blocked: Cursor executable, candidate VSIX and matching SHA-256. |
+| `cursor-headless-agent` | 1 | Blocked: authenticated agent CLI and Cursor host. |
+| `model-interception-live` | 3 | Stored run exited 2: configured Codex executable did not exist; rerun with a real authenticated host. |
+| `vscode` | 8 | Blocked: VS Code executable, candidate VSIX and matching SHA-256. |
+| `aig-bridge-contract` | 67 | Stored run's Python lacked pytest; current contract also requires `AIG_BRIDGE_TEST_POSTGRES_DSN` for the live cross-instance race. |
+| `aig-live-control-plane` | 4 | Blocked: deployed server/worker, signed dataset and fresh candidate-bound receipt. |
+| `supabase-migrations` | 1 | Passed only in the unbound diagnostic run; repeat for the exact candidate. |
+| `supabase-control-plane` | 19 | Stored run collected/passed 19 but old manifest expected 9; focused rerun passed 19/19, not a release pass. |
+| `supabase-live-control-plane` | 8 | Blocked: isolated deployed control plane, two disposable tenants and fresh candidate-bound receipt. |
+| `dashboard-route-smoke` | 1 | Blocked: running candidate dashboard URL and Supabase browser configuration. |
+| `dashboard-browser` | 10 | Blocked: deployed candidate, clean browser/accessibility run and fresh receipt. |
 
-## The Vitest wrapper problem, resolved
+External receipts require a matching `AIDR_E2E_RC_DIGEST`, a canonical
+`AIDR_E2E_CANDIDATE_BOUND_AT`, fresh timestamps, every declared assertion
+passed, redaction and an attestation. A local fixture or a historical host
+observation is not a substitute. In particular, this workspace has no AIDR
+cloud project, test domain/TLS or independent restore host yet; neither cloud
+nor self-hosted deployment acceptance is claimed here.
+
+## Historical engineering observations (2026-09-18)
+
+The previous notes described a narrower, unbound execution. They are retained
+for root-cause context only; none of the old pass counts below should be read
+as today's Gate 19 decision.
+
+### The Vitest wrapper problem, resolved
 
 Five suites were previously unusable for a reason that was easy to misread. The
 Vitest worker fork dies before any test body executes for the extension suites,
@@ -44,10 +62,13 @@ Two changes fixed it without weakening anything:
 1. **`cursor` and `vscode` run through `scripts/run-ide-host-e2e.mjs`** as
    `command`-kind suites. It drives the vendor's extension host the way the
    Vitest suite does — same suite file, same `AIDR_E2E_*` metadata, same launch
-   arguments — reads the per-case JSON, and emits JUnit. A missing case is a
-   failure, a host that exits 0 without writing results is eight failures, and a
-   missing host binary exits blocked. Seven regressions pin those refusals,
-   because a silent green report is precisely the failure being replaced.
+   arguments — reads the per-case JSON, and emits JUnit. Before launch it
+   verifies the inventory-bound VSIX digest, installs that exact archive into a
+   fresh profile, and verifies every installed `dist` file against its signed
+   artifact manifest. A missing case is a failure, a host that exits 0 without
+   writing results is eight failures, and a missing host binary exits blocked.
+   Eleven regressions pin those refusals, because a silent or stale green report
+   is precisely the failure being replaced.
 2. **`dashboard-route-smoke` writes its own JUnit** when the gate asks for one
    via `--junit {junit}`, instead of leaving the gate to find a stale report.
 

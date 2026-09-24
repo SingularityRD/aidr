@@ -5,6 +5,21 @@
 **Decision:** `NO_GO` — and it stays `NO_GO` until a person outside this
 repository signs a record. Nothing below changes that.
 
+> **Historical record; instrumentation statements superseded 2026-09-22.** This
+> 2026-09-18 snapshot's statement that no connector reads `AIDR_NATIVE_TEST_*`
+> and its recommendation to implement that reader are no longer current. The
+> shared receipt helper is [`packages/core/src/host-observation.ts`](../../packages/core/src/host-observation.ts);
+> it is consumed by Claude Code, OpenClaw, OpenCode, Codex, and the shared
+> Cursor/VS Code extension hook. It records connector invocation/outcome only;
+> it does not create the host-side sentinel or prove a real host attempted an
+> action or that a side effect was prevented. The current
+> [`support matrix`](../../deploy/native/support-matrix.json) still has empty
+> `acceptanceEvidence` for every connector, and
+> [`deploy/native/scenarios`](../../deploy/native/scenarios/README.md) contains
+> only the schema/template instructions, not completed per-host manifests. No
+> candidate-bound acceptance pass is established by this instrumentation;
+> `NO_GO` remains the decision.
+
 ## What was actually run
 
 Real installed hosts, real packaged artifacts, isolated profiles. Not fixtures.

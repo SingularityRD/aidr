@@ -1,5 +1,22 @@
 # Native host/OS kabul matrisi v6
 
+## 23 Eylül 2026 yerel tekrar ölçüm
+
+Windows 11 Pro for Workstations `10.0.26200` x64, Node `v24.18.1` üzerinde iki `--probe-only` aracı tekrar çalıştırıldı. Windows Cursor çözümleyicisi grafik `Cursor.exe` yerine sürüm veren resmi `resources/app/bin/cursor.cmd` başlatıcısını seçiyor; boşluklu `.cmd` yolunun güvenli çağrısı gerçek yerel fixture ile doğrulandı. `node --test scripts/verify-native-host-matrix-v6.test.mjs deploy/native/run-support-matrix.test.mjs` sonucu **42/42 PASS**. Bu testler hostun saldırıyı engellediği anlamına gelmez.
+
+| Destek matrisi satırı | Bu makinedeki sonuç | Gerçek host engelleme kabulü |
+| --- | --- | --- |
+| Claude Code | `HOST_UNAVAILABLE` | Yok |
+| Cursor | `VERSION_PROBED`, `3.21.18` | Yok |
+| VS Code | `HOST_UNAVAILABLE` | Yok |
+| OpenClaw | `HOST_UNAVAILABLE` | Yok |
+| OpenCode | `VERSION_PROBED`, `1.18.32` | Yok |
+| Codex | `VERSION_PROBED`, `0.153.2` | Yok |
+
+Altı satırın `acceptanceEvidence` alanı da boş; yedi vakalık gerçek host senaryoları, imzalı aday ve Windows/Linux/macOS x64/arm64 sürüm kabulü tamamlanmadı. Karar değişmedi: **T01 NO-GO**. Aşağıdaki 13 Eylül kaydı tarihsel ilk ölçümdür.
+
+Ek yerel OpenCode denemesi `1.18.32` gerçek ikilisini izole geçici profil ve localhost sahte modelle çalıştırdı: `.env` ve sentetik AWS anahtarı içeren yazımlar engellendi, zararsız yazım tamamlandı (iki kararlı koşuda 3/3). Sonraki kontrollü koşuda imzalı sentetik kiracı DLP bundle'ı da test edildi: entitlement yokken sıradan yazım kapalı kaldı, aynı kiracıya imzalı entitlement verildiğinde DLP işaretli yazım engellendi ve zararsız ikizi yazıldı (toplam 6/6). Altı kritik core/OpenCode `dist` dosyasının SHA-256'sı bu koşu öncesi/sonrası aynıydı. Önceki bir koşuda kimlik bilgisi yazımı diske ulaşmıştı; o sırada paylaşılan `dist` dosyaları başka derlemelerle eşzamanlı değişiyordu. Açık `heuristics_enabled: true` ayarı kaldırıldığında da kararlı koşu geçti. İlk hatayı kesin olarak yalnız derleme yarışına bağlayacak bağımsız iz yoktur; bu yüzden bu deneme imzalı aday veya müşteri host kabulü değildir ve T01'i kapatmaz.
+
 13 Eylül 2026. **T01 ve COM-010 açık; üretim/satış kararı NO-GO.** Bu kayıt yalnızca mevcut Windows geliştirici makinesindeki host keşfini ve tekrar kullanılabilir kabul aracını kapsar. Kanca alt sürecinin `deny` yanıtı, hostun eylemi gerçekten durdurduğunun kanıtı değildir.
 
 ## Bu makinede ölçülen durum

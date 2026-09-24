@@ -85,8 +85,8 @@ Status vocabulary: `CONFIRMED` (reproduced, not fixed), `IMPLEMENTED_UNVERIFIED`
 
 ### 4.1 Confirmed defects not yet closed
 
-`READINESS_BACKLOG.json` is authoritative. Reproduce this list with
-`node scripts/list-open-findings.mjs`. At the time of writing **25 of 30 findings are
+`READINESS_BACKLOG.json` is authoritative. Validate the current backlog and print its
+status and priority summary with `node scripts/validate-backlog.mjs`. At the time of writing **25 of 30 findings are
 `VERIFIED_CLOSED` and 5 remain open — 3 × P0, 1 × P1, 1 × P2**:
 
 | Finding | Priority | Status | Subject |

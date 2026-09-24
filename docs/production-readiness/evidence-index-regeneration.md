@@ -1,6 +1,6 @@
 # The evidence index self-reference loop
 
-**Audience:** whoever regenerates `docs/production-readiness/v8-evidence-index.json` next.
+**Audience:** whoever regenerates `.release-evidence/v8-evidence-index.json` next.
 
 ## The symptom
 
@@ -51,8 +51,8 @@ That one command performs the whole sequence:
 1. pnpm build:release                     # release artifacts, clears source maps;
                                           # refuses to continue if it leaves
                                           # non-generated source changes behind
-2. rebuild the release candidate if it does
-   not already match HEAD                 # claim records are stamped with its
+2. rebuild the release candidate from the
+   settled release dist                   # claim records are stamped with its
                                           # digest, so it must exist and match
                                           # before anything binds to it
 3. node scripts/refresh-claim-evidence.mjs
@@ -62,16 +62,17 @@ That one command performs the whole sequence:
                                           # findings — a finding, not a failure
 4. run every gate sequentially            # together they race on the core build
                                           # lock and the shared dist trees
-5. node scripts/generate-v8-evidence-index.mjs --out <index>
+5. node scripts/generate-v8-evidence-index.mjs --out .release-evidence/v8-evidence-index.json
                                           # generate, and do NOT commit
 6. print the verdict and stop             # PASS/FAIL/unknown per gate
 ```
 
-Step 5 is the real choice. Committing the index gives a durable record of a
-green run at a known commit, at the cost of the index no longer describing the
-tree it is committed into. Leaving it uncommitted keeps the stamps valid but the
-record lives only on this machine — and `docs/production-readiness/v8-evidence-index.json`
-is tracked, so "uncommitted" means "the working tree disagrees with the commit".
+Step 5 writes the canonical index under `.release-evidence/`. It stays bound to
+the commit it describes, and CI uploads that directory as the durable run
+artifact. `pnpm evidence:index:verify` does not rewrite the index: it validates
+the schema and checks the recorded commit, candidate, declared-artifact hashes,
+and captured-log hashes against the current checkout. It fails if any bound
+evidence is missing or stale.
 
 ### Ordering constraints the orchestrator encodes
 
@@ -102,10 +103,9 @@ evidence index.
 
 ## What was chosen here, and why
 
-The index is committed, and it therefore reads `unknown` when regenerated against
-a later `HEAD`. That is honest: the stamps in it describe `ab55e2ba`, which is
-recorded, and a reader who regenerates at a different commit is told the
-difference rather than shown a stale `PASS`.
+The index is generated under `.release-evidence/` and is never committed. This
+keeps one candidate-bound authority instead of a live run artifact plus a stale
+tracked duplicate.
 
 The alternative — removing `source_commit` from the generated inventories so
 committing them does not move `HEAD` — would break the property that matters

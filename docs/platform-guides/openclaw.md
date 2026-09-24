@@ -2,27 +2,26 @@
 
 ## Installation
 
-Install from npm or build from source:
-
-```bash
-# From npm (recommended)
-openclaw plugins install @singularityrd/aidr-openclaw
-
-# From source
-pnpm install && pnpm build
-cp -r packages/openclaw aidr
-openclaw plugins install ./aidr
-```
-
-The build copies threat definitions, allowlists, and skills into `packages/openclaw/resources/`.
+Install an approved signed version from the private registry using the
+[package installation guide](../package-installation.md). Local source builds
+are for development only; do not copy a workspace package directory as a
+customer installation.
 
 ## How It Works
 
 The OpenClaw connector runs in-process using the OpenClaw plugin API:
 
 - **`before_tool_call`** - Intercepts `exec`, `web_fetch`, `write`, `edit`, `read`, and `apply_patch`. Runs the full detection pipeline.
+- **`after_tool_call`** - Inspects tool output after execution and records risky or incomplete results; carrying that observation forward depends on OpenClaw providing matching tool-call, run, or session identifiers. It is observation-only and cannot undo the action or prove the same-turn model did not see the original result.
+- **`tool_result_persist`** - Synchronously replaces risky or incompletely inspected output before it is written to the transcript. This is still a post-execution boundary.
+- **`message_sending` / `reply_payload_sending`** - Inspect and replace risky or incompletely inspected generated responses before channel delivery. A correlated finding from opaque binary tool output is marked unsupported/incomplete and routes through this protection path rather than being treated as clean.
+- **`before_prompt_build`** - Adds plugin-scan findings as advisory context; it does not inspect or block the user's prompt.
 - **`aidr_allowlist_add` / `aidr_allowlist_remove`** - Manage the on-disk allowlist. `aidr_allowlist_add` refuses unless a genuine approval was already recorded, so it cannot be used to approve a blocked action.
 - **`gateway_start` / `session_start`** - Scans installed plugins for threats.
+
+The post-execution hooks do not prevent the tool side effect, and no provider
+token-stream interception is implemented. Same-turn model isolation from an
+original tool result remains a real-host acceptance question.
 
 ## Intercepted Tools
 
@@ -63,7 +62,9 @@ The skill is registered in `openclaw.plugin.json` and bundled into `resources/sk
 
 ## Code Safety Warning
 
-OpenClaw's `plugins.code_safety` audit will flag Singularity AIDR with a `potential-exfiltration` warning. This is a false positive - `readFile` and `fetch` coexist in the same bundle because Singularity AIDR reads local config/cache files and separately sends URL hashes to a reputation API. No file content is transmitted.
-
-
-
+OpenClaw's `plugins.code_safety` audit may flag Singularity AIDR with a
+`potential-exfiltration` warning because local file reads and network requests
+coexist in the bundle. The URL reputation leg sends extracted full URLs (not
+hashes); package checks may send names, versions and hashes. This is not
+evidence that file contents are uploaded by those legs. Review the actual
+configuration and outbound traffic before dismissing the warning.

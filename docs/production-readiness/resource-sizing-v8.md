@@ -2,11 +2,11 @@
 
 Bu belge, 13 Eylül 2026'da `07a4fc4ad3b0cad1c2ff84c93082e66a27bf3fa0` çalışma ağacında **gerçekten çalıştırılan** ölçümleri ve bunlardan türetilen **tahsisleri** ayrı ayrı taşır. Ölçülmüş bir sayı hiçbir yerde tahsis gibi sunulmaz.
 
-Makine kaydı: `.release-evidence/v8-resource-profile-aidr-v6-local.json`.
+Bu tarihsel ölçümün ham `.release-evidence` makine kaydı artık tutulmuyor; aşağıdaki özet mevcut tek izlenen kayıttır ve güncel adaya yeniden bağlanamaz.
 
 ## 1. Ölçülmüş değerler
 
-Kapsam: tek Windows Docker Desktop geliştirme hostu, izole loopback self-hosted fixture (`.release-evidence/aidr-install-v6/compose.yml`), 11 servis çalışır durumda, başka 1 container paylaşımlı hostta koşuyor. Müşteri yükü, TLS, ters proxy, HA ve yedek **dahil değildir**.
+Kapsam: tek Windows Docker Desktop geliştirme hostu, artık tutulmayan izole loopback self-hosted fixture, 11 servis çalışır durumda, başka 1 container paylaşımlı hostta koşuyor. Müşteri yükü, TLS, ters proxy, HA ve yedek **dahil değildir**.
 
 | Ölçüm | Değer | Not |
 | --- | --- | --- |
@@ -21,7 +21,7 @@ Kapsam: tek Windows Docker Desktop geliştirme hostu, izole loopback self-hosted
 
 Görüntü boyutları servis bazında kayıtta `images.by_service` altındadır (örneğin `db` sanal açılmış 367.224.458 bayt, `functions` 391.296.005 bayt). Bunlar **sanal açılmış** boyutlardır; ortak katmanlar birden çok servis için tekrar sayılır, bu yüzden toplamları disk kullanımı olarak okunamaz.
 
-Ölçülmemiş ve ölçülmüş sayılmayan şeyler (kayıttaki `limitations` alanıyla aynı): Docker Desktop VM/kernel/cache, ters proxy, TLS, otomatik yedek ve offsite transfer, HA/failover, noisy-neighbor, kimlikli policy+ingest yükü, uzun soak, native host yan etkisi, müşteri kabulü.
+Bu 13 Eylül kaynak ölçümüne dahil olmayanlar: Docker Desktop VM/kernel/cache, ters proxy, TLS, otomatik yedek ve offsite transfer, HA/failover, noisy-neighbor, kimlikli policy+ingest yükü, uzun soak, native host yan etkisi ve müşteri kabulü. Sonraki tarihsel noisy-neighbor koşusu ayrı bir başarısız yerel sinyaldir; bu kaynak ölçümünü veya aday bağını geriye dönük değiştirmez.
 
 ## 2. Tahsis (ölçüm değil)
 
@@ -39,9 +39,9 @@ Başlangıç donanım tahsisi (ölçüm değil): pilot/100 cihaz **4 vCPU / 8 Gi
 
 ## 3. Bu ölçümle kapanmayan kapılar
 
-- **T30 / AIDR-052:** kimlikli yük, noisy-neighbor, HA/failover, aylık SLI ve en az 8 saatlik soak hâlâ koşulmadı. Yukarıdaki idle ölçümü bunların yerine geçmez.
+- **T30 / AIDR-052:** yerel yük harness'i geçti ve tek-host noisy-neighbor koşusu kuyruk gecikmesi/erişilebilirlik eşiğini başarısız kıldı; HA/failover, bağımsız çok-host izolasyon, aday-bağlı aylık SLI ve en az 8 saatlik soak hâlâ koşulmadı. Yukarıdaki idle ölçümü bunların yerine geçmez.
 - **T27 / AIDR-044:** offsite storage, bağımsız host kurtarma ve kabul edilmiş RPO/RTO yok.
-- **T01:** gerçek host ve OS matrisi (bkz. `.release-evidence/v8-native-probe.json`).
+- **T01:** gerçek host ve OS matrisi ile isimli kabul hâlâ açık (bkz. `docs/evidence/native-host-status-20260916.md`).
 - **T39:** bağımsız imzalı etkinlik ölçümü yok.
 
 Kapasite iddiası içeren hiçbir satış metni bu belgeye dayandırılamaz; ölçüm tek bir geliştirici hostunda, tek bir izole fixture üzerinde alınmıştır.

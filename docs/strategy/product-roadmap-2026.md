@@ -3,6 +3,10 @@
 > Strategic product roadmap for AI Agent Detection & Response platform
 > Version: 1.0 | Last Updated: March 2026
 
+> Historical targets, not shipped capabilities, contractual dates, SLA,
+> certifications, or approved prices. Treat every item below as a proposal
+> until candidate-bound technical and external acceptance exists.
+
 ---
 
 ## Roadmap Overview
@@ -11,7 +15,7 @@
 |---------|-------|------------------|
 | Q1 2026 | Intelligence Foundation | Local ML detection, behavioral baselines, CI/CD integration |
 | Q2 2026 | Enterprise Readiness | SSO, team dashboards, policy as code |
-| Q3 2026 | Autonomous Response | Real-time threat intel, automated quarantine, CI/CD native |
+| Q3 2026 | Autonomous Response | Rapid threat-intel updates, policy-driven quarantine, CI/CD native |
 | Q4 2026 | Cloud Scale | Managed service, advanced analytics, compliance reporting |
 
 ---
@@ -54,7 +58,7 @@
 | Tracking | Command patterns, file access, network requests |
 | Detection | Simple statistical anomaly detection (z-score) |
 | Retention | 30 days rolling history |
-| Privacy | All data stays local, encrypted at rest |
+| Privacy goal | Keep behavioral baselines local; verify storage encryption and every enabled outbound flow before claiming it |
 
 **Features:**
 - Per-user behavioral baseline establishment
@@ -101,7 +105,7 @@ March:
 
 ### Theme: Team Scale & Governance
 
-**Strategic Goal:** Enable team collaboration with enterprise-grade security controls and policy management.
+**Strategic Goal:** Enable team collaboration with organization-scale security controls and policy management.
 
 ### Key Deliverables
 
@@ -133,7 +137,7 @@ March:
 - Top threats by severity and frequency
 
 **Dashboard Components:**
-- Real-time threat feed
+- Low-latency threat feed, subject to a measured workload SLI
 - Risk score by team/individual
 - Policy violation trends
 - False positive reporting
@@ -183,7 +187,7 @@ April:
 
 May:
 ├── Week 1-2: Dashboard backend (API)
-├── Week 3-4: Dashboard UI + real-time feeds
+├── Week 3-4: Dashboard UI + low-latency feeds
 
 June:
 ├── Week 1-2: Policy YAML schema + validation
@@ -196,11 +200,11 @@ June:
 
 ### Theme: Self-Protecting Systems
 
-**Strategic Goal:** Enable automated threat response with real-time intelligence and CI/CD native protection.
+**Strategic Goal:** Enable automated threat response with rapidly updated intelligence and CI/CD native protection.
 
 ### Key Deliverables
 
-#### 1. Real-Time Threat Intelligence (Priority: Critical)
+#### 1. Rapid Threat Intelligence Updates (Priority: Critical)
 **Target Release: July 2026**
 
 **Architecture:**
@@ -247,7 +251,7 @@ June:
 - **Ask**: Require human approval
 
 **Features:**
-- Configurable auto-response policies
+- Configurable policy-driven response, enabled only after reversible-action validation
 - Integration with Slack, PagerDuty, Opsgenie
 - Rollback capability for git-based changes
 - Quarantine vault for suspicious files
@@ -308,7 +312,7 @@ September:
 │  • Cross-org threat intelligence         │
 │  • Advanced analytics                    │
 │  • Zero local infrastructure             │
-│  • SOC2 Type II compliant                │
+│  • Independent controls attestation planned │
 │  • Multi-region deployment               │
 └──────────────────────────────────────────┘
 ```
@@ -318,7 +322,7 @@ September:
 - Centralized policy management
 - Cross-organization threat intelligence
 - No local installation required
-- 99.9% uptime SLA
+- Proposed 99.9% monthly availability SLA, subject to measured service evidence and legal approval
 - Data residency options (US, EU, APAC)
 
 **Pricing Tiers:**
@@ -345,12 +349,12 @@ September:
 #### 3. Compliance Reporting (Priority: High)
 **Target Release: December 2026**
 
-**Supported Frameworks:**
-- SOC2 Type II
-- ISO27001
-- GDPR
-- HIPAA (BAA available)
-- PCI DSS
+**Proposed reporting/assurance topics (not current certifications):**
+- Independent Type II controls attestation (planned; external audit required)
+- ISO 27001 control mapping, subject to independent review
+- GDPR data-flow/legal review
+- HIPAA/BAA feasibility, subject to legal and operational review
+- PCI DSS applicability review
 
 **Features:**
 - Automated compliance reports
@@ -413,7 +417,7 @@ December:
 |---------|-------------|--------|
 | Q1 | ML detection coverage | 95% rule parity |
 | Q2 | Enterprise customer activations | 10+ teams |
-| Q3 | Auto-response accuracy | 99%+ correct actions |
+| Q3 | Policy-driven response accuracy | Target: 99%+ after reversible-action validation |
 | Q4 | Cloud service MRR | $10K+ |
 
 ### Annual Goals

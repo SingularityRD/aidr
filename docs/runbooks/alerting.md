@@ -1,6 +1,14 @@
 # Alerting Runbook
 
-Complete guide for configuring and managing alerts for Singularity AIDR production systems using PagerDuty, OpsGenie, and Sentry.
+**Status: configuration template only — production paging is not proven.** This
+document describes possible PagerDuty, OpsGenie, and Sentry setup; it does not
+mean those services, routes, alert rules, credentials, responders, or an on-call
+rotation are configured. The repository has Sentry client hooks and a scheduled
+Sentry-to-GitHub issue-sync workflow with an optional Slack notification, but
+no PagerDuty or OpsGenie delivery integration. Before production GO, an owner
+must configure the chosen service, verify credentials and routing, trigger a
+real test event, and record responder acknowledgement. Do not treat this
+runbook, CI success, or a local test as evidence of delivered pages or an SLA.
 
 ## Table of Contents
 
@@ -23,12 +31,19 @@ Complete guide for configuring and managing alerts for Singularity AIDR producti
 - Release health (crash-free rate)
 - Custom business logic alerts
 
-**Integration:** Already configured in code via `@sentry/node` and `@sentry/browser`
+**Code hooks:** Sentry clients exist in `packages/core/src/sentry.ts` and
+`packages/dashboard/src/sentry.ts`. Node runtime delivery additionally requires
+`SENTRY_ENABLED=true` (or `1`) and a real `SENTRY_DSN`; browser delivery uses
+its separately configured DSN. Provider-side project/rule configuration is
+also required; these files do not prove that either
+is present or that an alert reaches an operator.
 
-**Key Projects:**
+**Proposed project names (verify against the configured DSNs; repository code
+does not establish that these projects exist):**
 - `aidr-core` — Core library errors
 - `aidr-claude-code` — Claude Code hook errors
-- `aidr-extension` — VS Code/Cursor extension errors
+- VS Code/Cursor extension crash telemetry is not initialized; no extension
+  Sentry project is implied by the current code
 - `aidr-dashboard` — Dashboard React errors
 
 ### 2. CI/CD Failures (GitHub Actions)
@@ -42,9 +57,12 @@ Complete guide for configuring and managing alerts for Singularity AIDR producti
 
 **Workflows monitored:**
 - `ci.yml` — Launch gate (PR checks)
-- `release.yml` — Production releases
+- `release-version.yml` — version PR only (does not publish)
+- `release-rc.yml` — protected release-candidate build
+- `release-promote.yml` — manually dispatched promotion/rollback/yank
 - `codeql.yml` — Security scanning
 - `semgrep.yml` — Static analysis
+- `error-to-insight.yml` — scheduled Sentry issue sync; its optional Slack step is not an on-call paging route
 
 ### 3. Infrastructure (Optional)
 
@@ -76,18 +94,11 @@ After creating the service:
 
 ### Step 3: Configure GitHub Actions
 
-Add to `.github/workflows/ci.yml`:
-
-```yaml
-- name: Notify PagerDuty on Failure
-  if: failure() && github.ref == 'refs/heads/main'
-  uses: Entle/action-pagerduty-alert@0.2.0
-  with:
-    pagerduty-integration-key: ${{ secrets.PAGERDUTY_INTEGRATION_KEY }}
-    pagerduty-dedup-key: github-actions-${{ github.run_id }}
-    incident-summary: "CI Failure: ${{ github.workflow }}"
-    incident-severity: critical
-```
+There is no PagerDuty step in the current workflows. Do not paste an unpinned
+third-party action into CI. If PagerDuty is selected, add a reviewed integration
+that references an immutable action commit (or a separately reviewed API
+client), keeps the integration key in an approved secret store, limits workflow
+permissions, and has an end-to-end test receipt before relying on it.
 
 ### Step 4: Sentry Integration
 
@@ -137,23 +148,10 @@ Add to `.github/workflows/ci.yml`:
 
 ### Step 4: GitHub Actions Integration
 
-Add to `.github/workflows/ci.yml`:
-
-```yaml
-- name: Notify OpsGenie on Critical Failure
-  if: failure() && github.ref == 'refs/heads/main'
-  uses: opsgenie/opsgenie-action@v1.0
-  with:
-    api_key: ${{ secrets.OPSGENIE_API_KEY }}
-    message: "AIDR Production CI Failure"
-    priority: P2
-    description: |
-      Workflow: ${{ github.workflow }}
-      Run: ${{ github.run_id }}
-      Commit: ${{ github.sha }}
-      Author: ${{ github.actor }}
-    tags: ci,production,aidr
-```
+There is no OpsGenie step in the current workflows. If OpsGenie is selected,
+use an owner-reviewed, immutable integration, keep its key in an approved secret
+store, restrict workflow permissions, and prove delivery and acknowledgement
+before treating it as an operational alert path.
 
 ### Step 5: Sentry Integration
 
@@ -167,6 +165,11 @@ Add to `.github/workflows/ci.yml`:
 ---
 
 ## On-Call Rotation Setup
+
+The schedules, example participants, severities, and response times in this
+section are planning examples, not assigned people or an approved support SLA.
+Replace them with named, available responders and obtain approval before using
+any timing as a customer commitment.
 
 ### PagerDuty Schedule
 
@@ -252,6 +255,12 @@ Add to `.github/workflows/ci.yml`:
 
 ## Escalation Procedures
 
+The table and flow below are illustrative configuration examples only. Their
+severity labels, response times, and escalation roles are not assigned,
+staffed, measured, or approved customer commitments. Do not page or promise
+these routes until the selected provider, named responders, and customer
+schedule have passed the acceptance test at the top of this document.
+
 ### Severity Levels
 
 | Level | Definition | Response Time | Escalation Path |
@@ -307,18 +316,21 @@ If on-call needs help:
 
 ### War Room Protocol
 
-For P1 incidents requiring immediate response:
+Template only. For an actual security incident, use the approved restricted
+incident channel and bridge from the customer-specific plan. No Slack channel,
+all-hands policy, or bridge URL is established by this repository.
 
-1. **Create Slack channel:** `#incident-YYYY-MM-DD-brief-description`
-2. **Page all hands:**
+If those routes have been configured and tested, the incident commander may:
+
+1. **Open the restricted incident channel** using the approved incident ID.
+2. **Page assigned responders** using the tested escalation policy:
    ```bash
    # PagerDuty: Trigger "All Hands" escalation policy
    # OpsGenie: Use "Incident Command" feature
    ```
-3. **Bridge call:**
-   - Zoom: https://zoom.us/j/incident-bridge
-   - Or Google Meet: Meet link
-4. **Roles:**
+3. **Bridge call:** use the customer-approved, access-controlled bridge; no
+   working bridge URL is stored in this repository.
+4. **Roles (assign named people in the incident record):**
    - **Incident Commander:** Senior on-call engineer
    - **Scribe:** Document timeline in Slack
    - **Comms:** Engineering manager (stakeholder updates)
@@ -331,7 +343,9 @@ For P1 incidents requiring immediate response:
 
 When you receive a Sentry alert:
 
-1. **Acknowledge within 5 minutes**
+1. Acknowledge through the configured route within the approved support target.
+   The 5-minute value formerly shown here was an example, not an approved or
+   measured response target.
 
 2. **Classify severity:**
    - **P1:** Crash loop, data corruption, security breach
@@ -378,9 +392,10 @@ When CI fails on main/master:
 # 1. Check CI logs
 curl -s https://api.github.com/repos/SingularityRD/aidr/actions/runs/<run-id>/logs
 
-# 2. Reproduce locally
-git checkout <failing-commit>
-pnpm install
+# 2. Reproduce in a disposable worktree so the active checkout stays untouched
+git worktree add --detach <temporary-path> <failing-commit>
+cd <temporary-path>
+pnpm install --frozen-lockfile
 pnpm test
 
 # 3. Fix and merge
@@ -389,7 +404,9 @@ pnpm test
 
 ### Custom Alert Examples
 
-Add to codebase for business-critical alerts:
+Illustrative only; these events are not currently emitted by this example code.
+Before adding them, agree the signal/threshold and verify privacy redaction,
+sampling, duplicate suppression, and delivery to an acknowledged responder.
 
 ```typescript
 // packages/core/src/engine.ts
@@ -423,7 +440,13 @@ if (suspiciousPatternDetected) {
 
 ### Sentry Alert Rules
 
-Configure in Sentry: https://sentry.io/settings/singularityrd/projects/aidr-core/alerts/
+The rows below are proposed examples, not existing Sentry alert rules or
+verified thresholds. Configure and test them in the real project before relying
+on them.
+
+In Sentry, open the project identified by the configured runtime or browser DSN,
+then configure and test the proposed rules there. The repository does not prove
+that an `aidr-core` project exists.
 
 | Rule Name | Condition | Action | Severity |
 |-----------|-----------|--------|----------|
@@ -440,7 +463,7 @@ Add to workflows for Slack notifications:
 ```yaml
 - name: Slack Notification on Failure
   if: failure()
-  uses: 8398a7/action-slack@v3
+  uses: 8398a7/action-slack@1750b5085f3ec60384090fb7c52965ef822e869e # v3.18.0
   with:
     status: ${{ job.status }}
     channel: '#aidr-alerts'
@@ -517,7 +540,8 @@ Sentry.captureMessage("Test alert", { level: "warning" });
 
 ### During Shift
 
-- [ ] Acknowledge alerts within SLA (5 min for P1, 15 min for P2)
+- [ ] Acknowledge alerts within the approved support target (the 5/15-minute
+  examples above are not an approved or measured SLA)
 - [ ] Update incident timeline with actions taken
 - [ ] Escalate if stuck for >30 minutes
 - [ ] Document all incidents in incident log
