@@ -20,7 +20,7 @@ import {
 export const SIEM_CONFIG_PATH_ENV = "SINGULARITY_AIDR_SIEM_CONFIG_PATH";
 const MAX_CONFIG_BYTES = 64 * 1024;
 const LOCK_WAIT_MS = 3_000;
-const LIVE_OWNER_LOCK_WAIT_MS = 15_000;
+const LIVE_OWNER_LOCK_WAIT_MS = 30_000;
 const LOCK_POLL_MS = 25;
 const PROCESS_STARTED_AT_MS = Math.max(0, Math.trunc(Date.now() - process.uptime() * 1000));
 

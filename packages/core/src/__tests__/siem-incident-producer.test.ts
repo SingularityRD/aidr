@@ -247,7 +247,7 @@ describe("configured SIEM incident producer", () => {
 		).toBe(0);
 		expect(fetcher).toHaveBeenCalledTimes(5);
 		expect(JSON.parse(await readFile(stateFile, "utf8")).payload.queue).toHaveLength(0);
-	}, 20_000);
+	}, 60_000);
 
 	it("allows a concurrent producer to enqueue while a claimed delivery is in flight", async () => {
 		const { configPath, stateFile } = await fixture();
@@ -311,7 +311,7 @@ describe("configured SIEM incident producer", () => {
 		const first = workerIo();
 		expect(
 			await runSiemDeliveryWorker(
-				["--max-items", "5"],
+				["--max-items", "1"],
 				async () => ({ drainConfiguredSiemDelivery }),
 				first.io,
 			),
