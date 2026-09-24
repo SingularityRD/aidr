@@ -14,6 +14,7 @@ import {
 	type ManagedKey,
 	policyFromResponse,
 	removeLiteral,
+	statsFromResponse,
 	toggleEntity,
 	toggleSite,
 	validateLiteral,
@@ -22,10 +23,16 @@ import {
 import { renderNotice } from "./render-common.js";
 import {
 	emptyDraft,
+	type NativeState,
 	type OptionsDraft,
 	type OptionsState,
 	renderOptions,
 } from "./render-options.js";
+
+const NATIVE_PERMISSION = "nativeMessaging";
+
+const isNativeToggle = (target: EventTarget | null): target is HTMLInputElement =>
+	target instanceof HTMLInputElement && target.dataset.action === "toggle-native-host";
 
 export interface OptionsElements {
 	readonly app: HTMLElement;
@@ -71,6 +78,8 @@ export function settingsForChange(
 			return { maskPaste: checked };
 		case "toggle-restore":
 			return { restoreResponses: checked };
+		case "toggle-native-host":
+			return checked === policy.useNativeHost ? null : { useNativeHost: checked };
 		case "toggle-site": {
 			const site = control.dataset.site;
 			if (!isSupportedSite(site) || policy.blockedSites.includes(site)) return null;
@@ -114,11 +123,40 @@ export function startOptions(
 		return policyFromResponse(await env.send({ type: "GET_POLICY" }));
 	};
 
+	/** Permission + bridge status for the native host subsection; never rejects. */
+	const readNative = async (): Promise<NativeState> => {
+		let granted: boolean | null = null;
+		try {
+			granted = env.hasPermission ? await env.hasPermission(NATIVE_PERMISSION) : null;
+		} catch {
+			granted = null;
+		}
+		let host: NativeState["host"] = null;
+		try {
+			host = statsFromResponse(await env.send({ type: "GET_STATS" })).nativeHost;
+		} catch {
+			host = null;
+		}
+		return { permission: granted === null ? "unsupported" : granted ? "granted" : "missing", host };
+	};
+
+	const refreshNative = async () => {
+		const native = await readNative();
+		if (state.phase === "ready") state = { ...state, native };
+	};
+
 	const load = async () => {
 		try {
 			const policy = await fetchPolicy();
 			await relocalize(policy.language);
-			state = { phase: "ready", policy, version: env.getVersion(), draft: emptyDraft(policy) };
+			const native = await readNative();
+			state = {
+				phase: "ready",
+				policy,
+				version: env.getVersion(),
+				draft: emptyDraft(policy),
+				native,
+			};
 		} catch {
 			state = { phase: "error" };
 		}
@@ -181,9 +219,54 @@ export function startOptions(
 		return errorKey === null;
 	};
 
+	/**
+	 * Asks the browser for the optional nativeMessaging permission. Browsers only prompt
+	 * inside a user gesture, so handlers call this synchronously, before any await.
+	 */
+	const requestNativePermission = (): Promise<boolean> =>
+		env.requestPermission
+			? env.requestPermission(NATIVE_PERMISSION).catch(() => false)
+			: Promise.resolve(false);
+
+	const afterPermissionRequest = async (granted: boolean, focusId: string) => {
+		await refreshNative();
+		render(focusId);
+		notify(
+			granted ? msg("notice_native_permission_granted") : msg("native_permission_denied"),
+			granted ? "ok" : "error",
+		);
+	};
+
+	/** Turning the native host on first obtains the permission it needs. */
+	const onNativeToggle = (target: HTMLInputElement) => {
+		if (state.phase !== "ready") return;
+		if (!target.checked || state.native.permission !== "missing") {
+			const settings = settingsForChange(state.policy, target);
+			if (!settings) return;
+			void save(settings, { focusId: target.id }).then(async () => {
+				await refreshNative(); // the bridge status follows the new setting
+				render(target.id);
+			});
+			return;
+		}
+		const request = requestNativePermission();
+		void request.then(async (granted) => {
+			if (!granted) {
+				await afterPermissionRequest(false, target.id);
+				return;
+			}
+			await refreshNative();
+			await save({ useNativeHost: true }, { focusId: target.id });
+		});
+	};
+
 	const onChange = (event: Event) => {
 		const target = event.target;
 		if (state.phase !== "ready") return;
+		if (isNativeToggle(target)) {
+			onNativeToggle(target);
+			return;
+		}
 		if (target instanceof HTMLSelectElement && target.dataset.draft === "literalType") {
 			if (isEntityType(target.value)) updateDraft({ literalType: target.value });
 			return;
@@ -277,6 +360,11 @@ export function startOptions(
 				return;
 			case "remove-literal":
 				removeLiteralAt(Number(target.dataset.index));
+				return;
+			case "request-native-permission":
+				void requestNativePermission().then((granted) =>
+					afterPermissionRequest(granted, "native-host-toggle"),
+				);
 				return;
 			case "disconnect-telemetry":
 				void save(

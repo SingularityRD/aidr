@@ -66,7 +66,7 @@
 		"description": "Site disabled by managed policy."
 	},
 	"status_disabled_policy_detail": {
-		"message": "Kuruluşunuz $SITE$ için Browser Guard'ı kapattı.",
+		"message": "Kuruluşunuz $SITE$ için maskelemeyi kapattı. Orada hiçbir şey maskelenmez; yalnızca hassas öğe sayıları kaydedilir.",
 		"description": "Disabled by policy detail.",
 		"placeholders": {
 			"site": {
@@ -80,7 +80,7 @@
 		"description": "Site disabled by the user."
 	},
 	"status_disabled_user_detail": {
-		"message": "$SITE$ için korumayı kapattınız. Ayarlar › Siteler bölümünden yeniden açabilirsiniz.",
+		"message": "$SITE$ için maskelemeyi kapattınız: orada hiçbir şey maskelenmez, yalnızca hassas öğe sayıları kaydedilir. Ayarlar › Siteler bölümünden yeniden açabilirsiniz.",
 		"description": "Disabled by user detail.",
 		"placeholders": {
 			"site": {
@@ -512,7 +512,7 @@
 		"description": "Validation."
 	},
 	"sites_intro": {
-		"message": "Browser Guard'ın mesajlarınızı hangi sitelerde denetleyeceğini seçin.",
+		"message": "Browser Guard'ın mesajlarınızı hangi sitelerde maskeleyeceğini seçin. Kapattığınız sitelerde hiçbir şey maskelenmez veya engellenmez; Browser Guard yalnızca hassas verinin ne sıklıkla gönderildiğini sayar.",
 		"description": "Sites intro."
 	},
 	"site_blocked_tag": {
@@ -774,5 +774,49 @@
 	"entity_LICENSE_PLATE": {
 		"message": "Araç plakası",
 		"description": "Entity type LICENSE_PLATE."
+	},
+	"native_title": {
+		"message": "Gelişmiş ad ve adres algılama",
+		"description": "Options: native host subsection title."
+	},
+	"native_intro": {
+		"message": "İsteğe bağlı. BT ekibinizin bu bilgisayara kurduğu AIDR Privacy yardımcı uygulaması, serbest metindeki ad, adres ve yer adlarını yerleşik kuralların tanıyamadığı durumlarda da tanır. Metin tarayıcının yerel mesajlaşma kanalı üzerinden yerel olarak kontrol edilir ve bu bilgisayardan çıkmaz. Yardımcı uygulama olmadan yerleşik kurallar çalışmaya devam eder.",
+		"description": "Options: native host explanation."
+	},
+	"native_toggle_label": {
+		"message": "AIDR Privacy yardımcı uygulamasını kullan",
+		"description": "Options: native host switch label."
+	},
+	"native_toggle_help": {
+		"message": "Yerel uygulamalarla iletişim izni gerekir; bu seçeneği açtığınızda izin istenir.",
+		"description": "Options: native host switch help."
+	},
+	"native_permission_granted": {
+		"message": "Yardımcı uygulamayla iletişim izni verildi.",
+		"description": "Options: nativeMessaging permission granted."
+	},
+	"native_permission_missing": {
+		"message": "Yardımcı uygulamayla iletişim izni henüz verilmedi.",
+		"description": "Options: nativeMessaging permission missing."
+	},
+	"native_permission_unsupported": {
+		"message": "Bu tarayıcı bu sayfadan izin veremiyor.",
+		"description": "Options: permissions API unavailable."
+	},
+	"native_permission_button": {
+		"message": "İzin ver",
+		"description": "Options: button requesting the nativeMessaging permission."
+	},
+	"native_permission_denied": {
+		"message": "İzin verilmedi. Yerleşik kurallar etkin kalır.",
+		"description": "Notice: nativeMessaging permission request declined."
+	},
+	"notice_native_permission_granted": {
+		"message": "İzin verildi.",
+		"description": "Notice: nativeMessaging permission granted."
+	},
+	"native_status_disabled": {
+		"message": "Gelişmiş algılama kapalı; yerleşik kurallar etkin",
+		"description": "Options: native host not in use."
 	}
 }

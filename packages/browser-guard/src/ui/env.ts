@@ -46,7 +46,18 @@ export interface UiEnv {
 	 */
 	onInvalidate(areas: readonly StorageAreaName[], listener: () => void): void;
 	now(): number;
+	/** Whether an optional API permission is granted; null when the API is unavailable. */
+	hasPermission?(permission: OptionalPermission): Promise<boolean | null>;
+	/**
+	 * Requests an optional API permission. Browsers only show the prompt when this is
+	 * called synchronously from a user gesture (click/change handler), so callers must not
+	 * await anything before it.
+	 */
+	requestPermission?(permission: OptionalPermission): Promise<boolean>;
 }
+
+/** Optional permissions the pages may request (manifest `optional_permissions`). */
+export type OptionalPermission = "nativeMessaging";
 
 export type StorageAreaName = "local" | "managed" | "session" | "sync";
 
@@ -83,6 +94,10 @@ interface ChromeLike {
 		onChanged?: {
 			addListener(listener: (changes: Record<string, unknown>, areaName: string) => void): void;
 		};
+	};
+	permissions?: {
+		contains(permissions: { permissions: string[] }, callback: Callback<boolean>): void;
+		request(permissions: { permissions: string[] }, callback: Callback<boolean>): void;
 	};
 }
 
@@ -184,6 +199,33 @@ export function chromeEnv(chrome: ChromeLike | undefined = getChrome()): UiEnv {
 		},
 		now() {
 			return Date.now();
+		},
+		hasPermission(permission) {
+			const permissions = chrome.permissions;
+			if (!permissions) return Promise.resolve(null);
+			return new Promise((resolve) => {
+				try {
+					permissions.contains({ permissions: [permission] }, (granted) => {
+						resolve(lastErrorOf(chrome) ? null : granted === true);
+					});
+				} catch {
+					resolve(null);
+				}
+			});
+		},
+		requestPermission(permission) {
+			const permissions = chrome.permissions;
+			if (!permissions) return Promise.resolve(false);
+			// The executor runs synchronously, so the request stays inside the user gesture.
+			return new Promise((resolve) => {
+				try {
+					permissions.request({ permissions: [permission] }, (granted) => {
+						resolve(!lastErrorOf(chrome) && granted === true);
+					});
+				} catch {
+					resolve(false);
+				}
+			});
 		},
 	};
 }

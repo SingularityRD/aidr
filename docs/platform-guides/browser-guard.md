@@ -86,9 +86,16 @@ treat the dataset as confidential and deliver it only through managed policy.
 ### 6. Optional: better name and address detection
 
 Names and addresses written without a label are detected by the AIDR Privacy
-native host (on-device NER). Install it on the machines
-(`packages/privacy/deployment`) and set `useNativeHost: true`; the extension
-then asks for the `nativeMessaging` permission. See
+native host (on-device NER), which you install on the machines
+(`packages/privacy/deployment`) together with an NER model you have approved (no
+model ships with it). Set `useNativeHost: true` (users can also opt in on the
+options page when you do not manage the key). Browsers do not let policy grant the
+optional `nativeMessaging` permission, so each user accepts it once on the options
+page (**Protection** → **Advanced name and address detection** → **Grant
+permission**). Prompts and pastes are then scanned by the host and the rules in
+parallel; when the host is not reachable the check is rules-only and the user sees
+"Advanced detection is unavailable; built-in rules are active" in the popup and a
+"checked with built-in rules only" note in the page. See
 [`packages/browser-guard/docs/native-host.md`](../../packages/browser-guard/docs/native-host.md).
 
 ### 7. Verify
@@ -105,7 +112,8 @@ then asks for the `nativeMessaging` permission. See
 |---|---|
 | Extension not installed | The ID/update URL in the forcelist; Firefox: the XPI must be Mozilla-signed |
 | Settings not locked | The policy is under the right extension ID; values have the right type (`REG_DWORD` for booleans/integers, JSON text for arrays/objects on Windows). Any managed policy also locks `mode`, `enabledEntities`, `literals`, `maskPaste`, `restoreResponses` and `disabledSites` unless it sets `allowUserOverrides: true` |
-| Nothing masked on a site | The site is in the supported list and not in `disabledSites`; `mode` is not `monitor`; the entity type is in `enabledEntities` |
+| Nothing masked on a site | The site is in the supported list and not in `disabledSites` (a disabled site is only monitored: sends are counted, nothing is masked); `mode` is not `monitor`; the entity type is in `enabledEntities` |
+| Names in running text not masked | `useNativeHost` is on, the user granted `nativeMessaging`, the popup says "Advanced detection is connected", and the host config has an approved `ner` block (without one it runs rules-only) |
 | No telemetry | `controlPlaneUrl` is `https://`; the API key is valid; the machine can reach the control plane |
 | Works in a normal window only | Expected: the extension is not allowed in private/incognito windows |
 
@@ -146,15 +154,20 @@ Open the options page from the popup:
   whether original values are shown in answers.
 - **Custom terms:** words or names you want masked, such as a project code
   name (2 to 256 characters each).
-- **Sites:** turn protection on or off per site.
+- **Protection → Advanced name and address detection:** if your IT team installed
+  the AIDR Privacy helper app, turn it on here and accept the browser's permission
+  prompt.
+- **Sites:** turn masking on or off per site. On a site you turn off nothing is
+  masked, but how often sensitive data is sent is still counted.
 - **Language:** automatic, English or Turkish.
 - **Pause:** if allowed, pause protection for 15 minutes from the popup.
 
 ### Your privacy
 
 Browser Guard scans on your computer. The original values are kept in memory
-only for the current browser session so they can be shown in answers, and are
-cleared when you close the browser. If your organisation has connected the AIDR
+only for the current browser session so they can be shown in answers (also
+after you reload the page), and are cleared when you close the tab or the
+browser. If your organisation has connected the AIDR
 control plane, only counts (for example "2 email addresses masked on ChatGPT")
 are reported, never what you typed.
 

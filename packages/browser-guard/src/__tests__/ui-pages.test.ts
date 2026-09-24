@@ -62,6 +62,11 @@ interface FakeEnv extends UiEnv {
 	/** Per-message-type override of the worker reply. */
 	readonly replies: Partial<Record<GuardMessage["type"], Reply>>;
 	optionsOpened: number;
+	/** nativeMessaging granted? null: the permissions API is unavailable. */
+	permission: boolean | null;
+	/** Answer the user gives to the next permission prompt. */
+	grant: boolean;
+	permissionRequests: number;
 	invalidate(area: StorageAreaName): void;
 }
 
@@ -140,6 +145,18 @@ function fakeEnv(
 			listeners.push({ areas, listener });
 		},
 		now: () => NOW,
+		permission: false,
+		grant: true,
+		permissionRequests: 0,
+		async hasPermission() {
+			return env.permission;
+		},
+		requestPermission() {
+			// Counted synchronously: the real API only prompts inside the user gesture.
+			env.permissionRequests++;
+			if (env.grant) env.permission = true;
+			return Promise.resolve(env.grant);
+		},
 		invalidate(area) {
 			for (const entry of listeners) if (entry.areas.includes(area)) entry.listener();
 		},
@@ -479,6 +496,77 @@ describe("options page", () => {
 		expect(input("#entity-EMAIL").checked).toBe(false);
 		expect(input("#site-claude").checked).toBe(false);
 		expect(document.activeElement?.id).toBe("site-claude");
+	});
+
+	it("explains the native host and asks for nativeMessaging before turning it on", async () => {
+		const env = fakeEnv();
+		await openOptions(env);
+		expect(text("#native-host")).toContain("never leaves this computer");
+		expect(text("#native-permission")).toBe(
+			"Permission to talk to the helper app has not been granted yet.",
+		);
+		expect(text("#native-status")).toContain("Advanced detection is off");
+		expect(input("#native-host-toggle").checked).toBe(false);
+
+		// Declined: nothing is saved and the switch stays off.
+		env.grant = false;
+		change(input("#native-host-toggle"), true);
+		expect(env.permissionRequests).toBe(1); // requested synchronously, inside the gesture
+		await settle();
+		expect(mutations(env)).toEqual([]);
+		expect(input("#native-host-toggle").checked).toBe(false);
+		expect(text("#live")).toContain("Permission was not granted");
+
+		// Granted: the setting is saved and the host status is shown.
+		env.grant = true;
+		env.stats = { ...env.stats, nativeHost: "connected" };
+		change(input("#native-host-toggle"), true);
+		expect(env.permissionRequests).toBe(2);
+		await settle();
+		expect(mutations(env)).toEqual([
+			{ type: "SET_USER_SETTINGS", settings: { useNativeHost: true } },
+		]);
+		expect(input("#native-host-toggle").checked).toBe(true);
+		expect(text("#native-permission")).toBe("Permission to talk to the helper app is granted.");
+		expect(document.getElementById("native-grant")).toBeNull();
+		expect(text("#native-status")).toBe("Advanced detection is connected");
+
+		// Turning it off needs no prompt.
+		change(input("#native-host-toggle"), false);
+		await settle();
+		expect(env.permissionRequests).toBe(2);
+		expect(mutations(env).at(-1)).toEqual({
+			type: "SET_USER_SETTINGS",
+			settings: { useNativeHost: false },
+		});
+	});
+
+	it("offers a grant button when an administrator enabled the native host", async () => {
+		const env = fakeEnv({
+			policy: { useNativeHost: true, managedKeys: ["useNativeHost"] },
+			stats: { nativeHost: "unavailable" },
+		});
+		await openOptions(env);
+		expect(input("#native-host-toggle").disabled).toBe(true);
+		expect(text("#native-status")).toBe(
+			"Advanced detection is unavailable; built-in rules are active",
+		);
+		click("#native-grant");
+		expect(env.permissionRequests).toBe(1);
+		await settle();
+		expect(text("#native-permission")).toBe("Permission to talk to the helper app is granted.");
+		expect(text("#live")).toContain("Permission granted.");
+		expect(mutations(env)).toEqual([]);
+	});
+
+	it("says when the browser cannot grant the permission from the page", async () => {
+		const env = fakeEnv();
+		env.permission = null;
+		await openOptions(env);
+		expect(text("#native-permission")).toBe(
+			"This browser cannot grant the permission from this page.",
+		);
+		expect(document.getElementById("native-grant")).toBeNull();
 	});
 
 	it("validates custom terms before sending them", async () => {

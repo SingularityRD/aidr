@@ -501,6 +501,7 @@ describe("background: NATIVE_SCAN and SET_RESTORE_VISIBLE", () => {
 		expect(await t.send({ type: "NATIVE_SCAN", text: "Ada Lovelace" }, t.content())).toEqual({
 			ok: true,
 			findings: null,
+			status: "disabled",
 		});
 		expect(await t.send({ type: "NATIVE_SCAN", text: 42 }, t.content())).toEqual({
 			ok: false,
@@ -520,6 +521,7 @@ describe("background: NATIVE_SCAN and SET_RESTORE_VISIBLE", () => {
 		expect(await t.send({ type: "NATIVE_SCAN", text: "Ada Lovelace" }, t.content())).toEqual({
 			ok: true,
 			findings,
+			status: "connected",
 		});
 		expect(scanText).toHaveBeenCalledWith("Ada Lovelace");
 		const stats = (await t.send({ type: "GET_STATS" })).stats as GuardStats;
@@ -528,7 +530,141 @@ describe("background: NATIVE_SCAN and SET_RESTORE_VISIBLE", () => {
 		expect(await t.send({ type: "NATIVE_SCAN", text: "x" }, t.content())).toEqual({
 			ok: true,
 			findings: null,
+			status: "connected",
 		});
+	});
+
+	it("honours a user opt-in and recreates the bridge when nativeMessaging is granted", async () => {
+		const fake = createChromeFake();
+		fake.local.data.set(STORAGE_KEYS.userSettings, { useNativeHost: true });
+		const onAdded: ((p: { permissions?: string[] }) => void)[] = [];
+		fake.chrome.permissions = {
+			onAdded: { addListener: (l) => onAdded.push(l), removeListener: () => {} },
+		};
+		const factory = vi.fn(
+			(_enabled: boolean): NativeBridge => ({
+				status: () => "unavailable",
+				scanText: async () => null,
+			}),
+		);
+		const bg = startBackground({ chrome: fake.chrome, createNativeBridge: factory, log: () => {} });
+		await bg.ready;
+		expect(factory.mock.calls).toEqual([[true]]);
+		onAdded[0]?.({ permissions: ["tabs"] });
+		await bg.ready;
+		expect(factory).toHaveBeenCalledTimes(1);
+		onAdded[0]?.({ permissions: ["nativeMessaging"] });
+		await expect.poll(() => factory.mock.calls).toEqual([[true], [true]]);
+	});
+});
+
+describe("background: per-tab vault persistence (VAULT_SAVE / VAULT_LOAD)", () => {
+	const EMAIL_ENTRY = { placeholder: "[EMAIL_1]", value: "ayse@example.com", type: "EMAIL" };
+	const PHONE_ENTRY = { placeholder: "[PHONE_1]", value: "+90 532 000 00 00", type: "PHONE" };
+	const snapshot = (createdAt: number, entries: unknown[] = [EMAIL_ENTRY]) => ({
+		version: 1,
+		createdAt,
+		entries,
+	});
+
+	it("stores the vault in session storage only, keyed by the sender's tab and origin", async () => {
+		const t = await setup();
+		const save = {
+			type: "VAULT_SAVE",
+			snapshot: snapshot(t.now(), [EMAIL_ENTRY, PHONE_ENTRY]),
+			sent: ["[EMAIL_1]", "[NOT_OURS_1]", "[EMAIL_1]"],
+		};
+		expect(await t.send(save, t.content(1, CHATGPT))).toEqual({ ok: true });
+		expect([...t.fake.session.data.keys()]).toContain("vault:1:https://chatgpt.com");
+		expect(JSON.stringify([...t.fake.local.data.values()])).not.toContain("ayse@example.com");
+		expect(t.fake.session.accessLevel).toBe("TRUSTED_CONTEXTS");
+
+		const loaded = await t.send({ type: "VAULT_LOAD" }, t.content(1, "https://chatgpt.com/c/9"));
+		expect(loaded.ok).toBe(true);
+		expect((loaded.snapshot as { entries: unknown[] }).entries).toEqual([EMAIL_ENTRY, PHONE_ENTRY]);
+		expect(loaded.sent).toEqual(["[EMAIL_1]"]); // unknown and duplicate placeholders dropped
+
+		// Another tab, or another site in the same tab, sees nothing.
+		expect(await t.send({ type: "VAULT_LOAD" }, t.content(2, GEMINI))).toEqual({
+			ok: true,
+			snapshot: null,
+			sent: [],
+		});
+		expect(await t.send({ type: "VAULT_LOAD" }, t.content(1, "https://chat.openai.com/"))).toEqual({
+			ok: true,
+			snapshot: null,
+			sent: [],
+		});
+	});
+
+	it("refuses extension pages, sub-frames and malformed or oversized snapshots", async () => {
+		const t = await setup();
+		const save = { type: "VAULT_SAVE", snapshot: snapshot(t.now()), sent: [] };
+		expect(await t.send(save)).toEqual({ ok: false, error: "NOT_ALLOWED" });
+		expect(await t.send({ type: "VAULT_LOAD" })).toEqual({ ok: false, error: "NOT_ALLOWED" });
+		expect(await t.send(save, { ...t.content(), frameId: 3 })).toEqual({
+			ok: false,
+			error: "NOT_ALLOWED",
+		});
+		const bad = (s: unknown, sent: unknown = []) =>
+			t.send({ type: "VAULT_SAVE", snapshot: s, sent }, t.content());
+		expect(await bad({ ...snapshot(t.now()), extra: 1 })).toEqual({
+			ok: false,
+			error: "BAD_MESSAGE",
+		});
+		expect(
+			await bad(snapshot(t.now(), [{ placeholder: "[PHONE_1]", value: "x@y.z", type: "EMAIL" }])),
+		).toEqual({ ok: false, error: "BAD_MESSAGE" });
+		expect(await bad(snapshot(t.now()), "[EMAIL_1]")).toEqual({ ok: false, error: "BAD_MESSAGE" });
+		const huge = Array.from({ length: 40 }, (_, i) => ({
+			placeholder: `[SECRET_${i + 1}]`,
+			value: `${i}`.padEnd(60_000, "x"),
+			type: "SECRET",
+		}));
+		expect(await bad(snapshot(t.now(), huge))).toEqual({ ok: false, error: "TOO_LARGE" });
+		expect([...t.fake.session.data.keys()].some((k) => k.startsWith("vault:"))).toBe(false);
+	});
+
+	it("forgets a tab's vault when the tab closes, and every vault after the TTL", async () => {
+		const t = await setup();
+		const save = { type: "VAULT_SAVE", snapshot: snapshot(t.now()), sent: ["[EMAIL_1]"] };
+		await t.send(save, t.content(1, CHATGPT));
+		await t.send(save, t.content(2, GEMINI));
+		t.fake.events.onRemoved.dispatch(1);
+		await expect
+			.poll(() => [...t.fake.session.data.keys()].filter((k) => k.startsWith("vault:")))
+			.toEqual(["vault:2:https://gemini.google.com"]);
+
+		t.advance(4 * 60 * 60 * 1000 + 1);
+		expect(await t.send({ type: "VAULT_LOAD" }, t.content(2, GEMINI))).toEqual({
+			ok: true,
+			snapshot: null,
+			sent: [],
+		});
+		expect(t.fake.session.data.has("vault:2:https://gemini.google.com")).toBe(false);
+
+		await t.send({ ...save, snapshot: snapshot(t.now()) }, t.content(1, CHATGPT));
+		t.advance(4 * 60 * 60 * 1000 + 1);
+		t.fake.fireAlarm(TELEMETRY_ALARM);
+		await expect
+			.poll(() => [...t.fake.session.data.keys()].some((k) => k.startsWith("vault:")))
+			.toBe(false);
+	});
+
+	it("an empty snapshot removes the stored vault", async () => {
+		const t = await setup();
+		await t.send(
+			{ type: "VAULT_SAVE", snapshot: snapshot(t.now()), sent: [] },
+			t.content(1, CHATGPT),
+		);
+		expect(t.fake.session.data.has("vault:1:https://chatgpt.com")).toBe(true);
+		expect(
+			await t.send(
+				{ type: "VAULT_SAVE", snapshot: snapshot(t.now(), []), sent: [] },
+				t.content(1, CHATGPT),
+			),
+		).toEqual({ ok: true });
+		expect(t.fake.session.data.has("vault:1:https://chatgpt.com")).toBe(false);
 	});
 
 	it("routes SET_RESTORE_VISIBLE to the sender's tab or the active site tab", async () => {

@@ -29,8 +29,11 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    button/Enter key. Before the site gets the text, the text is scanned.
 2. **Detects.** Rule detectors with checksums (Luhn, IBAN mod-97, TC Kimlik No,
    and others), organisation literals, exact-data fingerprints and, when the
-   optional native host is installed, NER for names and addresses. Risk signals
-   such as prompt-injection phrasing are reported by code.
+   optional native host is enabled (`useNativeHost`) and reachable, its NER
+   findings for names, addresses and places, requested in parallel and merged
+   before masking. If the host does not answer, the scan is rules-only and the
+   in-page message says so ([`docs/native-host.md`](docs/native-host.md)). Risk
+   signals such as prompt-injection phrasing are reported by code.
 3. **Acts according to the mode.**
 
    | Mode | Behaviour |
@@ -40,11 +43,21 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    | `block` | Stops the send while sensitive data is present. |
    | `monitor` | Sends the original text and only counts what it found. |
 
+   A site in `disabledSites` (or any site while the user has paused protection)
+   behaves as `monitor`: nothing is masked or held back, but sends, pastes and
+   files are still scanned and recorded as `allowed` with their counts. Site blocks
+   (`blockedSites`) and `fileHandling: "block"` still apply there.
+
 4. **Restores locally.** Placeholders in responses and in your own sent messages
    are replaced with the originals in the page. Types listed in `neverRestore`
-   (by default `SECRET` and `PRIVATE_KEY`) stay masked. The mapping lives in
-   memory (`chrome.storage.session`) and is never written to disk or sent over
-   the network. The AI site must not be able to read a restored value back, so:
+   (by default `SECRET` and `PRIVATE_KEY`) stay masked. The mapping lives in the
+   content script's memory; a copy is kept by the background worker in
+   `chrome.storage.session` (memory-backed, `TRUSTED_CONTEXTS` only) under the tab
+   id and page origin, so a reload of the tab keeps restoring answers. The copy
+   holds no `neverRestore` values and is deleted when the tab closes, after 4 hours
+   without a save, or when the browser exits. Nothing is written to disk or
+   `storage.local`, or sent over the network. The AI site must not be able to read
+   a restored value back, so:
    - the value is shown from a closed shadow root as CSS generated content (not a
      text node, so `window.find()`, selection and `innerText` never see it), with
      every inherited style reset, generic system fonts only (page `@font-face`
@@ -53,8 +66,11 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    - only placeholders that were in a prompt you actually sent from this tab (or in
      a masked file attached to it) are restored, and only in messages that appeared
      after that send; a page script that plants a placeholder elsewhere gets the
-     placeholder back, not the value.
-   The `restore-side-channels` E2E scenario attacks all of this from the page.
+     placeholder back, not the value. The set of sent placeholders is persisted
+     with the vault: after a reload, exactly those are restorable again (anywhere
+     in the re-rendered conversation), and nothing else.
+   The `restore-side-channels` E2E scenario attacks all of this from the page;
+   `reload-restore` covers the reload, per-tab isolation and cleanup.
 5. **Pastes and files.** Pasted text is masked as it is pasted (`maskPaste`).
    Uploaded text files (CSV, TXT, JSON and similar) are scanned and replaced with
    a sanitised copy, blocked, or allowed according to `fileHandling` and
@@ -143,7 +159,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 |---|---|---|
 | `permissions` | `storage`, `alarms`, `declarativeNetRequestWithHostAccess` | settings and the in-memory vault; telemetry batching; blocking sites an admin lists in `blockedSites` |
 | `host_permissions` | the ten HTTPS hosts above | content script injection on supported sites only |
-| `optional_permissions` | `nativeMessaging` | requested only when the optional native NER host is turned on |
+| `optional_permissions` | `nativeMessaging` | requested on the options page (from the click that turns the native NER host on, or the **Grant permission** button when an administrator enabled it); never at install |
 | `optional_host_permissions` | `https://*/*` | never requested at install; available for an admin-approved generic site |
 | `content_scripts` | `run_at: document_start`, `all_frames: false` | intercept before the page's own handlers; top frame only |
 | `web_accessible_resources` | none | nothing is exposed to web pages, so a page cannot fingerprint the extension by probing its resources. A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
@@ -181,7 +197,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `maskPaste` | boolean | `true` |
 | `fileHandling` / `maxFileBytes` | `scan` \| `block` \| `allow` / bytes (max 50 MiB) | `scan` / 5 MiB |
 | `restoreResponses` | boolean | `true` |
-| `useNativeHost` | boolean | `false` |
+| `useNativeHost` | boolean | `false` (also a user setting unless managed) |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
 | `policyId` | string reported with telemetry | `aidr-browser-guard-default` |
@@ -224,7 +240,8 @@ to regenerate the dataset with stable fingerprints.
 ## Privacy
 
 - Detection, masking and restoring run entirely in the browser.
-- The placeholder-to-value mapping is held in memory and cleared when the
+- The placeholder-to-value mapping is held in memory (the page, plus a per-tab
+  copy in `chrome.storage.session`) and cleared when the tab closes or the
   browser session ends; it is never sent anywhere.
 - With no `telemetry` configured, the extension makes no network requests of
   its own.
@@ -244,8 +261,13 @@ to regenerate the dataset with stable fingerprints.
   interception until the adapter is updated; the real-browser suite in `e2e/`
   guards against regressions on recorded page structures.
 - Free-form names and addresses without a label ("Name:", "Adres:") need the
-  optional native host (NER). Without it, rule detection covers structured
-  identifiers, labelled fields, organisation literals and exact-data sets.
+  optional native host (NER), which ships without model weights or accuracy
+  evidence. Without it, rule detection covers structured identifiers, labelled
+  fields, organisation literals and exact-data sets. NER is applied to prompts
+  and pastes, not to uploaded files.
+- The restore mapping survives a reload of the same tab, but not a browser
+  restart, another tab, or 4 hours without a save; if the worker does not answer
+  within 1.5 s while the page loads, earlier placeholders stay placeholders.
 - Images and PDFs are not OCR'd in the browser. Set `fileHandling: block` if
   such uploads must not reach AI sites at all.
 - Restoring works on text the site renders in the page. Content the site

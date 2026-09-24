@@ -7,7 +7,8 @@
  *
  * Storage layout:
  *   local   userSettings, installationId, telemetryQueue, telemetryState
- *   session guardStats, pausedUntil
+ *   session guardStats, pausedUntil, `vault:<tabId>:<origin>` (per-tab placeholder vault,
+ *           see ./vault-store.ts; TRUSTED_CONTEXTS only, so page scripts cannot read it)
  *   managed administrator policy keys (static/managed_schema.json)
  */
 import type { UserSettings } from "../types.js";
@@ -98,6 +99,11 @@ export interface ChromeApi {
 	declarativeNetRequest: {
 		updateDynamicRules(options: { addRules?: DnrRule[]; removeRuleIds?: number[] }): Promise<void>;
 		getDynamicRules?(): Promise<DnrRule[]>;
+	};
+	/** Optional-permission grants (the options page requests `nativeMessaging`). */
+	permissions?: {
+		onAdded?: ChromeEvent<(permissions: { permissions?: string[] }) => void>;
+		onRemoved?: ChromeEvent<(permissions: { permissions?: string[] }) => void>;
 	};
 }
 
@@ -217,6 +223,31 @@ export class GuardStorage {
 			await area.set({ [key]: value });
 		} catch {
 			this.log(`storage: session write failed for "${key}"`);
+		}
+	}
+
+	/** Session keys starting with `prefix` (memory fallback included). */
+	async sessionKeys(prefix: string): Promise<string[]> {
+		const keys = new Set([...this.memorySession.keys()].filter((k) => k.startsWith(prefix)));
+		const area = this.chrome.storage.session;
+		if (area) {
+			try {
+				for (const key of Object.keys((await area.get(null)) ?? {}))
+					if (key.startsWith(prefix)) keys.add(key);
+			} catch {
+				this.log("storage: session listing failed");
+			}
+		}
+		return [...keys];
+	}
+
+	async removeSession(keys: readonly string[]): Promise<void> {
+		if (keys.length === 0) return;
+		for (const key of keys) this.memorySession.delete(key);
+		try {
+			await this.chrome.storage.session?.remove([...keys]);
+		} catch {
+			this.log("storage: session remove failed");
 		}
 	}
 

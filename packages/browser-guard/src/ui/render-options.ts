@@ -2,7 +2,12 @@
  * Options page renderer: a pure function from OptionsState to a DOM subtree.
  * Interactive elements carry `data-action` attributes; options-app.ts wires them.
  */
-import { ENTITY_TYPES, type EntityType, type GuardPolicy } from "../types.js";
+import {
+	ENTITY_TYPES,
+	type EntityType,
+	type GuardPolicy,
+	type NativeHostStatus,
+} from "../types.js";
 import { h, icon } from "./dom.js";
 import { entityLabel, formatNumber, msg, type Translate } from "./i18n.js";
 import {
@@ -30,6 +35,14 @@ export interface OptionsDraft {
 	readonly telemetryError: TelemetryError | null;
 }
 
+/** Native host (NER) state shown in the Protection section. */
+export interface NativeState {
+	/** Optional `nativeMessaging` permission; "unsupported" when the page cannot query it. */
+	readonly permission: "granted" | "missing" | "unsupported";
+	/** Bridge status from GET_STATS, or null when the worker did not report it. */
+	readonly host: NativeHostStatus | null;
+}
+
 export type OptionsState =
 	| { readonly phase: "loading" }
 	| { readonly phase: "error" }
@@ -38,6 +51,7 @@ export type OptionsState =
 			readonly policy: GuardPolicy;
 			readonly version: string;
 			readonly draft: OptionsDraft;
+			readonly native: NativeState;
 	  };
 
 export function emptyDraft(policy: GuardPolicy | null): OptionsDraft {
@@ -133,7 +147,80 @@ function renderEntityGroups(doc: Document, policy: GuardPolicy, t: Translate): H
 	]);
 }
 
-function renderProtection(doc: Document, policy: GuardPolicy, t: Translate): HTMLElement {
+const NATIVE_HOST_KEYS: Readonly<Record<NativeHostStatus, string>> = {
+	connected: msg("native_connected"),
+	unavailable: msg("native_unavailable"),
+	disabled: msg("native_status_disabled"),
+};
+
+const NATIVE_PERMISSION_KEYS: Readonly<Record<NativeState["permission"], string>> = {
+	granted: msg("native_permission_granted"),
+	missing: msg("native_permission_missing"),
+	unsupported: msg("native_permission_unsupported"),
+};
+
+/** Optional native host (NER): explanation, opt-in switch, permission and live status. */
+function renderNative(
+	doc: Document,
+	policy: GuardPolicy,
+	native: NativeState,
+	t: Translate,
+): HTMLElement {
+	const locked = isLocked(policy, "useNativeHost");
+	const host = policy.useNativeHost ? (native.host ?? "unavailable") : "disabled";
+	return h(doc, "div", { className: "native-host", id: "native-host" }, [
+		h(doc, "div", { className: "subsection__header" }, [
+			h(doc, "h3", { className: "subsection__title" }, [t("native_title")]),
+		]),
+		h(doc, "p", { className: "section__intro" }, [t("native_intro")]),
+		h(doc, "div", { className: "switch-list" }, [
+			switchRow(doc, {
+				id: "native-host-toggle",
+				label: t("native_toggle_label"),
+				description: t("native_toggle_help"),
+				checked: policy.useNativeHost,
+				disabled: locked,
+				action: "toggle-native-host",
+				trailing: locked ? managedBadge(doc, t) : null,
+			}),
+		]),
+		h(doc, "p", { className: "field__hint", id: "native-permission" }, [
+			t(NATIVE_PERMISSION_KEYS[native.permission]),
+		]),
+		native.permission === "missing"
+			? h(
+					doc,
+					"button",
+					{
+						type: "button",
+						className: "btn btn--secondary",
+						id: "native-grant",
+						"data-action": "request-native-permission",
+					},
+					[t("native_permission_button")],
+				)
+			: null,
+		h(
+			doc,
+			"p",
+			{
+				className: `native native--${host === "connected" ? "on" : "off"}`,
+				id: "native-status",
+			},
+			[
+				h(doc, "span", { className: "native__dot", "aria-hidden": "true" }),
+				t(NATIVE_HOST_KEYS[host]),
+			],
+		),
+	]);
+}
+
+function renderProtection(
+	doc: Document,
+	policy: GuardPolicy,
+	native: NativeState,
+	t: Translate,
+): HTMLElement {
 	const pasteLocked = isLocked(policy, "maskPaste");
 	const restoreLocked = isLocked(policy, "restoreResponses");
 	return section(doc, "protection", t, { intro: t("protection_intro") }, [
@@ -159,6 +246,7 @@ function renderProtection(doc: Document, policy: GuardPolicy, t: Translate): HTM
 				trailing: restoreLocked ? managedBadge(doc, t) : null,
 			}),
 		]),
+		renderNative(doc, policy, native, t),
 	]);
 }
 
@@ -511,6 +599,7 @@ export function managedKeysPresent(policy: GuardPolicy): readonly ManagedKey[] {
 		"disabledSites",
 		"maskPaste",
 		"restoreResponses",
+		"useNativeHost",
 		"language",
 		"telemetry",
 	];
@@ -545,7 +634,7 @@ export function renderOptions(
 			]),
 		]);
 	}
-	const { policy, draft } = state;
+	const { policy, draft, native } = state;
 	const managed = managedKeysPresent(policy).length > 0;
 	return h(doc, "div", { className: "options" }, [
 		h(doc, "nav", { className: "toc", "aria-label": t("toc_label") }, [
@@ -564,7 +653,7 @@ export function renderOptions(
 					t("managed_banner"),
 				])
 			: null,
-		renderProtection(doc, policy, t),
+		renderProtection(doc, policy, native, t),
 		renderTerms(doc, policy, draft, t, locale),
 		renderSites(doc, policy, t),
 		renderOrganization(doc, policy, draft, t),

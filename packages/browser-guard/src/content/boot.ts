@@ -4,10 +4,15 @@
  * (GET_POLICY), follows POLICY_CHANGED / SET_RESTORE_VISIBLE, and keeps one
  * placeholder vault per page.
  *
- * The vault lives only in this page's content-script memory: content scripts cannot
- * use chrome.storage.session by default, and originals must never be written to
- * storage.local or sent over the network. A reload therefore forgets the mapping
- * (placeholders already in the conversation then stay as placeholders).
+ * Vault persistence: the vault lives in this content script's memory and is mirrored to
+ * the worker (VAULT_SAVE after every mask and every send), which keeps it in
+ * chrome.storage.session keyed by this tab's id + origin (TRUSTED_CONTEXTS: page scripts
+ * cannot read it; never storage.local, never the network). On boot the vault and the set
+ * of placeholders already sent from this tab are rehydrated (VAULT_LOAD) before the first
+ * policy is applied, so a reload keeps restoring answers to prompts sent earlier. Entity
+ * types in `neverRestore` (secrets) are never persisted. If the worker does not answer
+ * within VAULT_LOAD_TIMEOUT_MS the page starts with an empty vault (earlier placeholders
+ * then stay as placeholders).
  *
  * Until a valid policy arrives the guard fails closed (sends are blocked with a
  * message); policy fetches are retried with capped backoff for as long as the page lives.
@@ -49,6 +54,19 @@ const ARRAY_KEYS = [
 
 const POLICY_RETRY_BASE_MS = 200;
 const POLICY_RETRY_MAX_MS = 10_000;
+/** How long boot waits for the persisted vault before starting with an empty one. */
+export const VAULT_LOAD_TIMEOUT_MS = 1_500;
+
+/** The persisted vault from a VAULT_LOAD reply, or null (nothing saved / malformed). */
+export function extractVault(
+	response: unknown,
+): { snapshot: VaultSnapshot; sent: readonly string[] } | null {
+	if (!response || typeof response !== "object") return null;
+	const r = response as { ok?: unknown; snapshot?: unknown; sent?: unknown };
+	if (r.ok !== true || !r.snapshot || typeof r.snapshot !== "object") return null;
+	const sent = Array.isArray(r.sent) ? r.sent.filter((p) => typeof p === "string") : [];
+	return { snapshot: r.snapshot as VaultSnapshot, sent };
+}
 
 /**
  * Accepts either a bare policy or `{ policy }` from the background worker. Anything
@@ -134,7 +152,11 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 		scan: (text) => (engine ? engine.scan(text) : Promise.reject(new Error("POLICY_NOT_LOADED"))),
 	};
 	const vaultFacade: PlaceholderVault = {
-		mask: (text, findings) => vault.mask(text, findings),
+		mask: (text, findings) => {
+			const result = vault.mask(text, findings);
+			saveVault();
+			return result;
+		},
 		unmask: (text) => vault.unmask(text),
 		lookup: (placeholder) => vault.lookup(placeholder),
 		size: () => vault.size(),
@@ -149,7 +171,81 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 		vault: vaultFacade,
 		getPolicy: () => policy,
 		send: (message) => runtime.sendMessage(message),
+		onSent: () => saveVault(),
 	});
+
+	// ---- vault persistence (see the module comment) ----------------------------------
+
+	let saving = false;
+	let saveAgain = false;
+	let savedOnce = false;
+
+	/** Restorable entries (never `neverRestore` types) and the placeholders sent so far. */
+	const persistable = (): { snapshot: VaultSnapshot; sent: string[] } => {
+		const full = vault.exportSession();
+		const locked = new Set<string>(policy?.neverRestore ?? []);
+		const entries = full.entries.filter((e) => !locked.has(e.type));
+		const known = new Set(entries.map((e) => e.placeholder));
+		const sent = guard.unmasker.sentPlaceholders().filter((p) => known.has(p));
+		return { snapshot: { version: 1, createdAt: full.createdAt, entries }, sent };
+	};
+
+	/** Mirrors the vault to the worker; calls made while a save is in flight coalesce. */
+	function saveVault(): void {
+		if (saving) {
+			saveAgain = true;
+			return;
+		}
+		let payload: { snapshot: VaultSnapshot; sent: string[] };
+		try {
+			payload = persistable();
+		} catch {
+			return;
+		}
+		if (payload.snapshot.entries.length === 0 && !savedOnce) return;
+		saving = true;
+		saveAgain = false;
+		savedOnce = true;
+		void Promise.resolve()
+			.then(() => runtime.sendMessage({ type: "VAULT_SAVE", ...payload }))
+			.catch(() => undefined)
+			.finally(() => {
+				saving = false;
+				if (saveAgain) saveVault();
+			});
+	}
+
+	const withTimeout = <T>(task: Promise<T>, ms: number): Promise<T | undefined> => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		return Promise.race([
+			task,
+			new Promise<undefined>((resolve) => {
+				timer = deps.window.setTimeout(() => resolve(undefined), ms);
+			}),
+		]).finally(() => deps.window.clearTimeout(timer));
+	};
+
+	let restored = false;
+	/** Rehydrates the vault saved for this tab + origin; never rejects. */
+	const restoring: Promise<void> = (async () => {
+		try {
+			const saved = extractVault(
+				await withTimeout(
+					Promise.resolve(runtime.sendMessage({ type: "VAULT_LOAD" })),
+					VAULT_LOAD_TIMEOUT_MS,
+				),
+			);
+			if (!saved) return;
+			// Strict import: a malformed snapshot throws and the page starts empty.
+			vault = deps.createVault({ neverRestore: [], snapshot: saved.snapshot });
+			savedOnce = vault.size() > 0;
+			guard.unmasker.rehydrateSent(saved.sent.filter((p) => vault.lookup(p) !== undefined));
+		} catch {
+			// Worker asleep or no saved vault: start with an empty vault.
+		} finally {
+			restored = true;
+		}
+	})();
 
 	let markReady: () => void = () => undefined;
 	const ready = new Promise<void>((resolve) => {
@@ -176,6 +272,9 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 	};
 
 	const load = async (): Promise<void> => {
+		// The first policy is applied only after the vault was rehydrated (the guard stays
+		// fail-closed meanwhile), so nothing can be masked into a vault about to be replaced.
+		await restoring;
 		for (let attempt = 0; policy === null; attempt++) {
 			try {
 				const next = extractPolicy(await runtime.sendMessage({ type: "GET_POLICY" }));
@@ -197,7 +296,8 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 		const msg = message as { type?: unknown; policy?: unknown; visible?: unknown };
 		if (msg.type === "POLICY_CHANGED") {
 			const next = extractPolicy(msg.policy);
-			if (next) apply(next);
+			if (next && restored) apply(next);
+			else if (next) void restoring.then(() => apply(next));
 		} else if (msg.type === "SET_RESTORE_VISIBLE" && typeof msg.visible === "boolean") {
 			guard.setRestoreVisible(msg.visible);
 		}

@@ -219,7 +219,7 @@
 		},
 		"disabledSites": {
 			"title": "Disabled sites",
-			"description": "Sites where the guard only monitors.",
+			"description": "Sites where the guard only monitors: prompts, pastes and files are scanned and counted (reported as 'allowed' with entity counts) but nothing is masked, held back for confirmation or blocked by the guard. Organisation blocks (blockedSites, fileHandling 'block') still apply.",
 			"type": "array",
 			"items": {
 				"type": "string",
@@ -275,7 +275,7 @@
 		},
 		"useNativeHost": {
 			"title": "Use native host",
-			"description": "Use the AIDR Privacy native host for NER and OCR.",
+			"description": "Use the locally installed AIDR Privacy native host for NER (PERSON, ADDRESS, LOCATION in free text) on prompts and pastes, merged with the built-in rules. Also needs the optional 'nativeMessaging' permission, which the user grants on the options page; without it (or without the host) scans run rules-only and the user is told so.",
 			"type": "boolean"
 		},
 		"telemetry": {

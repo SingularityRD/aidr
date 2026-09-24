@@ -256,6 +256,8 @@ const USER_VALIDATORS: Readonly<Record<keyof UserSettings, Validator>> = {
 	disabledSites: siteList,
 	maskPaste: bool,
 	restoreResponses: bool,
+	// Adds detection only (NER on top of the rules), so it is not a protection-reducing key.
+	useNativeHost: bool,
 	language: MANAGED_VALIDATORS.language,
 	telemetry: telemetryValidator(true),
 };

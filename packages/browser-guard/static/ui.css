@@ -874,6 +874,19 @@ a:hover {
 	border-top: 1px solid var(--border);
 }
 
+.native-host {
+	display: grid;
+	justify-items: start;
+	gap: 8px;
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 1px solid var(--border);
+}
+
+.native-host > .switch-list {
+	justify-self: stretch;
+}
+
 .entity-groups .section__intro {
 	margin-bottom: 12px;
 }

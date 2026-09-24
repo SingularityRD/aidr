@@ -259,12 +259,12 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 			deps.record("blocked", "file", {});
 			return "blocked";
 		}
-		if (siteDisabled(policy)) return null;
-		// Site blocks and file blocks are organisation rules: enforced in every mode.
+		// Site blocks and file blocks are organisation rules: enforced in every mode, and
+		// on sites the user disabled (which are monitored, see ./guard.ts).
 		const blocked = siteBlocked(policy) || policy.fileHandling === "block";
 		if (!blocked) {
 			if (policy.fileHandling === "allow") return null;
-			if (policy.mode === "monitor") {
+			if (policy.mode === "monitor" || siteDisabled(policy)) {
 				// input and change both fire for one selection: record it once.
 				if (event.type !== "input") monitor(files, policy);
 				return null;

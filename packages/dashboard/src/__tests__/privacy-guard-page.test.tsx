@@ -31,6 +31,7 @@ vi.mock("../enterprise/team-provider", () => ({ useTeam: vi.fn() }));
 import { useTeam } from "../enterprise/team-provider";
 import { PrivacyGuardPage } from "../ui/pages/PrivacyGuardPage";
 import {
+	BROWSER_GUARD_DEFAULT_ENTITIES,
 	managedPolicySnippet,
 	PRIVACY_ENTITY_TYPES,
 	parsePrivacyEventRow,
@@ -244,7 +245,7 @@ describe("Browser Privacy Guard page", () => {
 		);
 		expect(policy).toEqual({
 			mode: "auto",
-			enabledEntities: PRIVACY_ENTITY_TYPES,
+			enabledEntities: BROWSER_GUARD_DEFAULT_ENTITIES,
 			literals: [],
 			telemetry: {
 				controlPlaneUrl: "https://tenant-project.supabase.co",
@@ -270,6 +271,19 @@ describe("Browser Privacy Guard read model", () => {
 		expect(PRIVACY_ENTITY_TYPES).toEqual(
 			[...list.matchAll(/'([A-Z_]+)'/g)].map((match) => match[1]),
 		);
+	});
+
+	it("offers exactly the extension's default entity types in the managed-policy snippet", async () => {
+		// Imported by path: the extension package is outside this package's tsc rootDir.
+		const policyModule = resolve(REPO_ROOT, "packages/browser-guard/src/background/policy.ts");
+		const { DEFAULT_POLICY } = (await import(/* @vite-ignore */ policyModule)) as {
+			DEFAULT_POLICY: { enabledEntities: readonly string[] };
+		};
+		expect(BROWSER_GUARD_DEFAULT_ENTITIES).toEqual(DEFAULT_POLICY.enabledEntities);
+		expect(BROWSER_GUARD_DEFAULT_ENTITIES).not.toContain("USERNAME");
+		expect(BROWSER_GUARD_DEFAULT_ENTITIES).not.toContain("LOCATION");
+		const snippet = JSON.parse(managedPolicySnippet({ controlPlaneUrl: null, mode: "auto" }));
+		expect(snippet.enabledEntities).toEqual([...DEFAULT_POLICY.enabledEntities]);
 	});
 
 	it("rejects summaries for the wrong window or with negative counts", () => {

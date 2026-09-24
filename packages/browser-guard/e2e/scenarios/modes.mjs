@@ -36,6 +36,41 @@ const monitor = {
 	},
 };
 
+const disabledSite = {
+	id: "mode-disabled-site",
+	title: "a site the user turned off is monitored: sent unchanged, still counted",
+	settings: { mode: "auto", disabledSites: [SITE] },
+	skip: (_h, data) =>
+		(data?.items ?? []).length > 1
+			? null
+			: "product feature (disabledSites) not implemented by the self-test extension",
+	async run({ h, checks, data, open }) {
+		try {
+			const before = (await h.getStats())?.byType?.EMAIL ?? 0;
+			const page = await open(SITE);
+			const mark = h.recorder.mark();
+			await typePrompt(page, SITE, data.prompt);
+			await page.keyboard.press("Enter");
+			const sent = await waitForPrompt(h, SITE, mark);
+			const body = sent.json?.prompt ?? sent.raw;
+			checks.equal("sent prompt equals what the user typed", body, data.prompt);
+			const counted = await waitFor(
+				async () => {
+					const n = (await h.getStats())?.byType?.EMAIL ?? 0;
+					return n > before ? n : null;
+				},
+				{ timeout: 4000, message: "the send to be counted" },
+			).catch(() => null);
+			checks.check("the send was still counted (RECORD allowed with entity counts)", counted, {
+				before,
+			});
+		} finally {
+			// Settings persist across scenarios: switch the site back on.
+			await h.setUserSettings({ disabledSites: [] });
+		}
+	},
+};
+
 const block = {
 	id: "mode-block",
 	title: "block mode: nothing is sent and a bubble explains why",
@@ -154,4 +189,4 @@ const confirm = {
 	},
 };
 
-export default [monitor, block, confirm];
+export default [monitor, disabledSite, block, confirm];

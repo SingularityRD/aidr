@@ -41,6 +41,8 @@ export interface Strings {
 	readonly fileBlockedByPolicy: string;
 	readonly fileScanFailed: string;
 	readonly fileReplaceUnsupported: string;
+	/** Native NER was enabled but gave no usable answer: this check was rules-only. */
+	readonly nativeUnavailable: string;
 }
 
 const EN: Strings = {
@@ -85,6 +87,8 @@ const EN: Strings = {
 	fileScanFailed: "AIDR could not check the file, so it was not uploaded.",
 	fileReplaceUnsupported:
 		"This browser cannot replace the file with a sanitized copy, so it was not uploaded.",
+	nativeUnavailable:
+		"Advanced name and address detection (native host) is unavailable: checked with built-in rules only.",
 };
 
 const TR: Strings = {
@@ -127,6 +131,8 @@ const TR: Strings = {
 	fileScanFailed: "AIDR dosyayı kontrol edemedi; dosya yüklenmedi.",
 	fileReplaceUnsupported:
 		"Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi.",
+	nativeUnavailable:
+		"Gelişmiş ad ve adres algılama (yerel yardımcı uygulama) kullanılamıyor: yalnızca yerleşik kurallarla kontrol edildi.",
 };
 
 export const STRINGS: Readonly<Record<Lang, Strings>> = { en: EN, tr: TR };
