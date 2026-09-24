@@ -2,12 +2,15 @@
 
 **Status:** list prices, subject to COM-001 approval. This page is the sales reference
 for plan names, list prices and proposed packaging. It is not a quote, licence or
-entitlement schedule. Orders go through an approved written quote and invoice;
-self-service checkout stays disabled until the payment provider, entitlement
-reconciliation and Finance approval are accepted (COM-001, COM-004). The
+entitlement schedule. The list prices are recorded in the plan catalog
+(`public.plans`, seeded by `supabase/migrations/20260925000010_plan_catalog.sql`,
+mirrored on the public `/pricing` page and documented in [docs/pricing.md](../pricing.md)).
+Orders go through an approved written quote and invoice; self-service checkout stays
+disabled until the payment provider, entitlement reconciliation and Finance approval
+are accepted (COM-001, COM-004). The
 [Commercial Release Manifest](../production-readiness/commercial-release-manifest-template.md)
 is the approval template.
-**Last updated:** 2026-09-24
+**Last updated:** 2026-09-25
 **Owner:** Founder
 
 ---
@@ -37,28 +40,39 @@ not meter the detection engine. We charge for what needs a server and a relation
 | Unit | Definition | Used for |
 | --- | --- | --- |
 | **Protected developer / user (seat)** | One person whose agent hosts or browser run AIDR under team policy | Primary paid unit |
-| **Agent instance** | One enrolled installation id (`iid`) | Fair-use ceiling and the cloud trial limit, not the headline price |
+| **Agent instance** | One enrolled installation id (`iid`) | Admission count (one per seat in the catalog) and the cloud trial limit, not the headline price |
 | **Organization** | One tenant in the control plane | Minimums and feature gating |
 
-One seat covers the same person's agent hosts and browser. Pricing per person avoids
-charging twice for a developer who runs Claude Code and Cursor on two machines.
+One seat covers the same person's browser and one protected agent installation; the
+catalog admits one `iid` per seat today. Pricing per person keeps the headline price on
+a unit the buyer thinks in. Whether a seat should admit more than one agent host (for a
+developer who runs Claude Code and Cursor on two machines) is an open question for
+COM-001.
 
 ## 3. Plans
+
+These list prices match the plan catalog. Prices are USD per developer seat, and each
+seat admits one protected agent installation (`iid`); the control plane enforces the
+admitted count.
 
 | | **Free** | **Team** | **Business** | **Enterprise** |
 | --- | --- | --- | --- | --- |
 | List price | $0 | **$20** per developer / month billed annually; **$24** monthly | **$45** per developer / month, billed annually | Custom |
-| Minimum | — | 3 developers | 25 developers | By agreement |
-| Deployment | Local mode | Cloud | Cloud or on-prem (Docker Compose) | Cloud, on-prem (Docker Compose or Helm), air-gapped |
+| Minimum | 1 protected agent | 3 developers | 25 developers | By agreement |
+| Deployment | Local mode; cloud dashboard | Cloud | Cloud or on-prem (Docker Compose) | On-prem (Docker Compose or Helm) or air-gapped |
+| Event retention | 7 days | 90 days | 365 days | Contractual |
+| Catalog features | Local detection, dashboard | + Browser Privacy Guard, Entra ID SSO | + SIEM export, SCIM, AI security posture | + air-gapped deployment, dedicated support |
 | Motion | Download | Quote now; self-serve once checkout is accepted | Founder-led | Founder-led |
 
-### Free — local mode
+### Free — $0, one protected agent
 
 - Agent connectors with the full local engine: 384 threat rules, obfuscation and
   command-chain analysis, package and plugin checks, local allowlist and JSONL audit log.
+  Local detection needs no account, signup or email.
 - Browser Guard with local settings: masking and local restore on the supported AI
   sites.
-- No account, no dashboard, no central policy, no support commitment.
+- The Free catalog plan adds a cloud dashboard for one protected agent with 7-day event
+  retention. No central policy, no team fleet view, no support commitment.
 
 ### Team
 
@@ -69,17 +83,19 @@ Everything in Free, plus:
   installed agents are **not** covered.
 - Central policy for agent connectors and Browser Guard managed policy (custom terms,
   modes, sites).
-- Counts-only Browser Guard telemetry and redacted agent verdict events.
-- Audit export (JSONL/CSV), SSO (OIDC/SAML), MFA, roles, offboarding.
+- Counts-only Browser Guard telemetry and redacted agent verdict events; 90-day event
+  retention.
+- Audit export (JSONL/CSV), SSO (Microsoft Entra ID, OIDC/SAML), MFA, roles, offboarding.
 - Email support in business hours, no SLA.
 
 ### Business
 
 Everything in Team, plus:
 
-- On-prem control plane on Docker Compose.
+- On-prem control plane on Docker Compose; 365-day event retention.
 - Exact-data-match datasets for Browser Guard, tenant DLP detector policy.
 - Signed policy and intel packs, SIEM delivery (Splunk / Sentinel / Elastic formats).
+- SCIM provisioning and IdP group mapping.
 - AI Security Posture scans (AIG CVE rules, MCP risk categories).
 - MCP Gateway deployment assistance.
 - Named support contact with published response targets; security questionnaire and
@@ -91,7 +107,7 @@ Everything in Business, plus:
 
 - Kubernetes (Helm) and air-gapped installation with a signed offline license and
   signed offline rule/intel packs.
-- SCIM provisioning and IdP group mapping.
+- Contractual event retention and dedicated support.
 - Optional AIDR Privacy native host (NER/OCR) and enterprise gateway integration.
 - Custom terms, data-processing agreement and support schedule.
 

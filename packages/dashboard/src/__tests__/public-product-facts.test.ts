@@ -6,6 +6,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { headlinePrice, priceTerms } from "../billing/plans";
 import {
 	AGENT_CONNECTORS,
 	AIG_AI_COMPONENTS,
@@ -62,20 +63,31 @@ describe("public product facts", () => {
 		expect(shown.sort()).toEqual([...matrix.soldConnectorScope].sort());
 	});
 
-	it("publishes the approved plan ladder with the approval caveat", () => {
-		expect(PUBLIC_PLANS.map((plan) => plan.name)).toEqual([
+	it("publishes the plan ladder from the catalog mirror with the approval caveat", () => {
+		expect(PUBLIC_PLANS.map((plan) => plan.displayName)).toEqual([
 			"Free",
 			"Team",
 			"Business",
 			"Enterprise",
 		]);
-		const team = PUBLIC_PLANS.find((plan) => plan.name === "Team");
-		const business = PUBLIC_PLANS.find((plan) => plan.name === "Business");
-		expect(team?.price).toContain("$20");
-		expect(team?.terms).toMatch(/\$24 monthly/);
-		expect(team?.terms).toMatch(/Minimum 3/);
-		expect(business?.price).toContain("$45");
-		expect(business?.terms).toMatch(/Minimum 25/);
+		const plan = (name: string) => {
+			const found = PUBLIC_PLANS.find((candidate) => candidate.displayName === name);
+			if (!found) throw new Error(`missing plan ${name}`);
+			return found;
+		};
+		const free = plan("Free");
+		const team = plan("Team");
+		const business = plan("Business");
+		const enterprise = plan("Enterprise");
+		expect(headlinePrice(free)).toBe("$0");
+		expect(free.includedAgents).toBe(1);
+		expect(headlinePrice(team)).toBe("$24");
+		expect(priceTerms(team)).toMatch(/\$20 per developer \/ month billed annually/);
+		expect(team.minSeats).toBe(3);
+		expect(headlinePrice(business)).toBe("$45");
+		expect(priceTerms(business)).toMatch(/billed annually/);
+		expect(business.minSeats).toBe(25);
+		expect(headlinePrice(enterprise)).toBe("Custom");
 		expect(LIST_PRICE_NOTE).toMatch(/subject to COM-001 approval/);
 	});
 });

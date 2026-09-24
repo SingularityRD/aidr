@@ -39,9 +39,11 @@ customer pay for" must be answered in one sentence before any price is quoted.
 
 ## Block B — Price, currency, tax, term
 
-`docs/sales/pricing.md` proposes $20/developer/month annual and $45 for Business,
-anchored below Snyk and Semgrep. Those numbers are a proposal with cited
-comparables, not measured willingness-to-pay.
+`docs/sales/pricing.md` proposes $20/developer/month annual ($24 monthly) for
+Team and $45 for Business, anchored below Snyk and Semgrep. Those numbers are
+now recorded as list prices in the plan catalog (`docs/pricing.md`), but they
+remain a proposal with cited comparables, not measured willingness-to-pay;
+final SKU approval is COM-001.
 
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
