@@ -81,6 +81,12 @@ export const PiiDetectorConfigSchema = z.object({
 	enablePerson: z.boolean().optional().default(false),
 	/** Labelled TR/EN fields: date of birth, passport, national ID, tax ID, bank account. */
 	enableLabelledFields: z.boolean().optional().default(false),
+	/**
+	 * false limits detection to the core patterns above and skips the vendored AIDR
+	 * Privacy rules entirely, whatever the per-type flags say. For callers that run the
+	 * privacy rules themselves (e.g. prompt protection scans them in bounded windows).
+	 */
+	enablePrivacyRules: z.boolean().optional().default(true),
 	minConfidence: z.number().min(0).max(1).optional().default(0.5),
 	entropyThreshold: z.number().min(0).max(8).optional().default(4.5),
 });
@@ -464,7 +470,9 @@ export class PiiDetectorImpl implements PiiDetector {
 		this.config = PiiDetectorConfigSchema.parse(config);
 		this.logger = logger;
 		this.enabledPatterns = this.buildEnabledPatterns();
-		this.enabledPrivacyTypes = PRIVACY_TYPES.filter((def) => this.config[def.flag] === true);
+		this.enabledPrivacyTypes = this.config.enablePrivacyRules
+			? PRIVACY_TYPES.filter((def) => this.config[def.flag] === true)
+			: [];
 	}
 
 	/** Filter PATTERNS down to those the user has enabled. */

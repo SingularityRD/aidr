@@ -781,6 +781,7 @@ export {
 	DEFAULT_PROMPT_PROTECTION,
 	type PromptFindingCategory,
 	type PromptFindingSummary,
+	type PromptIncompleteInspection,
 	type PromptProtectionDecision,
 	type PromptProtectionResult,
 	PromptScanDeadlineError,

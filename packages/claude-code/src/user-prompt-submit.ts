@@ -4,7 +4,10 @@
  *
  * Inspects the user's prompt before Claude Code sends it to the model:
  *   - secrets and private keys: `prompt_protection.secrets` (default `block`)
- *   - personal data: `prompt_protection.pii` (default `warn`)
+ *   - personal data: `prompt_protection.pii` (default `warn`), including Turkish
+ *     ID numbers, IBANs and TR phone numbers. A personal-data scan that could not
+ *     inspect the whole prompt is never treated as clean: `block` blocks the
+ *     prompt, `warn` sends it with a notice to the user and the model.
  *   - an operator-provisioned tenant DLP policy, when present: any non-allow
  *     outcome blocks (a prompt cannot be rewritten by this hook).
  *
@@ -140,10 +143,15 @@ function writeResult(result: PromptProtectionResult): void {
 	}
 }
 
-/** Audit record: kinds and counts only; the prompt itself is never stored. */
+/** Audit record: kinds, counts and static reason codes only; the prompt itself is never stored. */
 function auditVerdict(result: PromptProtectionResult): Verdict {
 	const blocked = result.decision === "block";
-	const counts = result.findings.map((finding) => `${finding.kind} x${finding.count}`).join(", ");
+	const counts = [
+		...result.findings.map((finding) => `${finding.kind} x${finding.count}`),
+		...(result.incomplete
+			? [`personal-data inspection incomplete (${result.incomplete.reasons.join(", ")})`]
+			: []),
+	].join(", ");
 	return {
 		decision: blocked ? "deny" : "allow",
 		category: blocked ? "prompt_protection" : "prompt_protection_warning",
