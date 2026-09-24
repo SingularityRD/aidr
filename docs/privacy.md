@@ -73,6 +73,33 @@ flowchart LR
 The outbound control-plane client also applies the redaction boundary itself,
 so callers cannot accidentally bypass it by constructing an event directly.
 
+### Browser Guard privacy telemetry
+
+Browser Guard (the browser extension that masks sensitive data before it
+reaches AI chat products) reports to the control plane only after it is enrolled
+with a control-plane URL and tenant API key. It sends one `privacy_scan` event
+per guarded send, as defined in
+[`docs/contracts/privacy-telemetry.md`](contracts/privacy-telemetry.md):
+
+- the AI site as an enum (`chatgpt`, `gemini`, `claude`, `copilot`,
+  `perplexity`, `deepseek`, `mistral`, `grok`, `other`), never a URL;
+- what the guard did (`masked`, `warned`, `blocked`, `allowed`) and the channel
+  (`prompt`, `paste`, `file`);
+- per-entity-type counts (for example `{"EMAIL": 2, "TC_KIMLIK": 1}`), the total
+  findings count and an optional policy identifier;
+- a random per-install ID, the browser family/major version and the extension
+  version.
+
+No prompt text, masked text, placeholder values or matched values are sent.
+The server does not rely on the client for this: the ingest projection keeps
+only the fields above, drops unknown entity types and out-of-range counts, and
+discards any other field. Placeholder originals stay in the browser tab's
+memory-only vault. Privacy scans are stored as tenant telemetry
+(`public.events`), so they follow the tenant's telemetry retention policy, legal
+holds and offboarding deletion. Masking works without enrollment; an
+unreachable control plane only delays reporting (the extension keeps a bounded
+local queue of at most 500 counts-only events and drops the oldest).
+
 ## What stays local
 
 - Source code, file contents and full tool input used by local heuristics stay

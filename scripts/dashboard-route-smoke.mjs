@@ -66,6 +66,7 @@ const protectedRoutes = [
 	"/team",
 	"/scim",
 	"/policies",
+	"/privacy-guard",
 ];
 const routes = [...publicRoutes, ...protectedRoutes, ...legacyRoutes];
 

@@ -135,6 +135,10 @@ export interface MockOptions {
 	user?: { id: string } | null;
 	/** Session returned to protected route layouts. Defaults to an authenticated AAL2 fixture. */
 	session?: Record<string, unknown> | null;
+	/** Results for additional RPCs, keyed by function name (e.g. privacy_guard_summary). */
+	rpcResults?: Record<string, QueryResult>;
+	/** Results for reads of additional tables, keyed by table name. */
+	tableResults?: Record<string, QueryResult>;
 }
 
 export interface InstalledMocks {
@@ -316,11 +320,12 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 				? { data: withEmailRows, error: null }
 				: { data: null, error: MISSING_MEMBER_DIRECTORY };
 	if (!mocked.rpc) mocked.rpc = vi.fn();
-	mocked.rpc.mockImplementation(async (name: string) =>
-		name === "list_team_members_with_email"
-			? projectionResult
-			: { data: null, error: { code: "PGRST202", message: "RPC not available" } },
-	);
+	mocked.rpc.mockImplementation(async (name: string) => {
+		if (name === "list_team_members_with_email") return projectionResult;
+		const configured = options.rpcResults?.[name];
+		if (configured) return configured;
+		return { data: null, error: { code: "PGRST202", message: "RPC not available" } };
+	});
 	const fallbackResult: QueryResult = {
 		data: memberRows,
 		error: options.fallbackMembersError ?? null,
@@ -379,6 +384,8 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 	mocked.from.mockImplementation((table: string) => {
 		if (table === "team_members") return teamMembers;
 		if (table === "team_policies") return teamPolicies;
+		const configured = options.tableResults?.[table];
+		if (configured) return chainFor(configured);
 		return chainFor({ data: [], error: null });
 	});
 

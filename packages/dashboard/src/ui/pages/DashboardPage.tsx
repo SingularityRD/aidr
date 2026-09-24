@@ -4,6 +4,7 @@ import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { dashboardAgentFreshness } from "../dashboard-freshness";
+import { privacyEventSummary } from "../privacy-guard";
 import { getSession } from "../session";
 
 type AgentRow = {
@@ -83,6 +84,7 @@ function eventSummary(event: EventRow): string {
 		const count = Number(event.payload?.findings_count ?? 0);
 		return `${key}: ${count} finding(s)`;
 	}
+	if (event.type === "privacy_scan") return privacyEventSummary(event.payload);
 	return "Additional event details are not shown.";
 }
 

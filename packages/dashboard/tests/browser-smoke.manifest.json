@@ -10,7 +10,7 @@
 	],
 	"routes": {
 		"public": ["/", "/pilot", "/pricing", "/verify", "/login", "/auth/callback", "/auth/recover", "/enterprise", "/support", "/status", "/privacy", "/security", "/terms"],
-		"protected": ["/auth/dlp-step-up", "/onboarding", "/dashboard", "/events", "/discovery", "/settings", "/agents", "/autosecops", "/agents/:agentId", "/incidents", "/api-keys", "/billing", "/team", "/scim", "/policies"],
+		"protected": ["/auth/dlp-step-up", "/onboarding", "/dashboard", "/events", "/discovery", "/settings", "/agents", "/autosecops", "/agents/:agentId", "/incidents", "/api-keys", "/billing", "/team", "/scim", "/policies", "/privacy-guard"],
 		"legacy": ["/demo"]
 	},
 	"scenarios": [
