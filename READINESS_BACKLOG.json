@@ -469,6 +469,12 @@
           "evidencePath": "docs/production-readiness/edge-function-contract-manifest.json",
           "command": "node scripts/check-supabase-edge-contracts.mjs",
           "verifiedBy": "this session, exit 0 (16 functions + shared helper, 32/32 config-guarded)"
+        },
+        {
+          "claim": "The public device-poll endpoint spends a per-device-code poll budget through the reviewed increment_rate_limit RPC, answers RFC 8628 slow_down (interval +5 s, Retry-After) and fails closed with 503 when the budget cannot be read; pending/expired/denied answers are unchanged. This hardens the device flow locally; it does not provide the reachable control-plane endpoint this finding is blocked on.",
+          "evidencePath": "supabase/functions/device-poll/index.ts",
+          "command": "pnpm test -- supabase/functions/__tests__/device-poll-contract.test.ts",
+          "verifiedBy": "2026-09-24 records review: targeted Vitest run 22/22 passed against the prebuilt workspace"
         }
       ],
       "remainingExternal": "A reachable control-plane endpoint (DNS + TLS + a deployed device-start/device-poll/enroll/ingest/policy surface) so the documented device flow returns user_code/verification_url and polling writes managed.json. The finding's verificationMethod (POST {endpoint}/v1/device-start) cannot be executed from this workspace; managed features therefore still cannot activate, and no local change can satisfy the primary branch. Status stays BLOCKED_EXTERNAL.",
@@ -592,23 +598,29 @@
       ],
       "localEvidence": [
         {
-        "claim": "Acceptance parts 1 and 3: every Edge Function invoked from dashboard browser code is discovered from the TypeScript AST and resolved to a real supabase/functions/<name>/index.ts, and each one is declared in the contract manifest with an existing contract test (18/18 declared, 0 recorded gaps). A dashboard call to a non-existent function fails the gate with 'dashboard calls missing Edge function'.",
+          "claim": "Acceptance parts 1 and 3: every Edge Function invoked from dashboard browser code is discovered from the TypeScript AST and resolved to a real supabase/functions/<name>/index.ts, and each one is declared in the contract manifest with an existing contract test (18/18 declared, 0 recorded gaps). A dashboard call to a non-existent function fails the gate with 'dashboard calls missing Edge function'.",
           "evidencePath": "docs/production-readiness/edge-function-contract-manifest.json",
           "command": "node scripts/check-supabase-edge-contracts.mjs",
           "verifiedBy": "this session, exit 0"
         },
-      {
-        "claim": "The same gate fails on a dynamic (non-literal) function name, a missing supabase/config.toml deployment entry, a manifest entry whose declared test file does not exist, and a stale manifest entry, so the no-non-existent-function guarantee is enforced rather than described.",
-        "evidencePath": "scripts/check-supabase-edge-contracts.mjs",
-        "command": "node scripts/check-supabase-edge-contracts.mjs",
-        "verifiedBy": "this session, exit 0"
-      },
-      {
-        "claim": "The owner-only SCIM admin surface issues one-time raw tokens with no-store responses while persisting only SHA-256 hashes; it supports overlap rotation/revocation and exact external-group role mappings, with active-owner checks and audit changes in service-role-only RPCs. Stable keyset pagination keeps token and mapping listings usable beyond 100 tokens or 500 mappings.",
-        "evidencePath": "supabase/functions/scim-admin/index.ts",
-        "command": "pnpm test -- supabase/functions/__tests__/scim-admin-contract.test.ts supabase/functions/__tests__/scim.test.ts supabase/functions/__tests__/azure-ad-groups-contract.test.ts",
-        "verifiedBy": "this session, 63/63 focused tests; migration contract 57 migrations; Edge contract 18 functions and 34/34 config guards. Migration not applied to a live database."
-      }
+        {
+          "claim": "The same gate fails on a dynamic (non-literal) function name, a missing supabase/config.toml deployment entry, a manifest entry whose declared test file does not exist, and a stale manifest entry, so the no-non-existent-function guarantee is enforced rather than described.",
+          "evidencePath": "scripts/check-supabase-edge-contracts.mjs",
+          "command": "node scripts/check-supabase-edge-contracts.mjs",
+          "verifiedBy": "this session, exit 0"
+        },
+        {
+          "claim": "The owner-only SCIM admin surface issues one-time raw tokens with no-store responses while persisting only SHA-256 hashes; it supports overlap rotation/revocation and exact external-group role mappings, with active-owner checks and audit changes in service-role-only RPCs. Stable keyset pagination keeps token and mapping listings usable beyond 100 tokens or 500 mappings.",
+          "evidencePath": "supabase/functions/scim-admin/index.ts",
+          "command": "pnpm test -- supabase/functions/__tests__/scim-admin-contract.test.ts supabase/functions/__tests__/scim.test.ts supabase/functions/__tests__/azure-ad-groups-contract.test.ts",
+          "verifiedBy": "this session, 63/63 focused tests; migration contract 57 migrations; Edge contract 18 functions and 34/34 config guards. Migration not applied to a live database."
+        },
+        {
+          "claim": "The operator-admin and tenant-settings Edge Functions added on this branch are registered in supabase/config.toml and the Edge contract manifest; their contract suites cover bearer/identity-barrier/AAL2 gating, rate limits, input validation before SQL and fail-closed handling of drifted RPC results, and the Edge browser contract gate passes with 20 functions and 37/37 config guards.",
+          "evidencePath": "supabase/functions/tenant-settings/index.ts",
+          "command": "pnpm test -- supabase/functions/__tests__/operator-admin-contract.test.ts supabase/functions/__tests__/tenant-settings-contract.test.ts",
+          "verifiedBy": "2026-09-24 records review: 94/94 focused tests (72 operator-admin, 22 tenant-settings); node scripts/check-supabase-edge-contracts.mjs exit 0. Not deployed to a live control plane."
+        }
       ],
       "remainingExternal": "Real browser device enrollment and live Entra/Okta SCIM provisioning/acceptance against a deployed control plane remain unverified; browser tests against a real tenant and live IdP cannot be produced from this repository and AIDR-016's production endpoint is absent. Contract tests prove local contracts only, not deployed identity-provider acceptance; this live field-acceptance slice remains open.",
       "owner": "engineering",
@@ -1331,6 +1343,24 @@
           "evidencePath": "packages/claude-code/src/__tests__/integration.test.ts",
           "command": "pnpm test",
           "verifiedBy": "Claude Code integration 30/30 passed; package TypeScript check passed"
+        },
+        {
+          "claim": "The cross-connector parity suite drives the built entry points of Claude Code, Codex, OpenCode, OpenClaw, Cursor and VS Code with one payload matrix and asserts the same blocked class and threat id; the signed tenant DLP bundle block/ask rows and the untrusted/edited/missing-bundle fail-closed rows pass. The DLP redact row still expects a block and fails because Claude Code now rewrites redacted input, so the suite is not fully green and this is built-bundle evidence, not native host acceptance.",
+          "evidencePath": "packages/core/src/__tests__/connector-parity.test.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/connector-parity.test.ts",
+          "verifiedBy": "2026-09-24 records review: 25/26 passed, 1 failed (dlp-redact-rule via claude-code)"
+        },
+        {
+          "claim": "OpenCode and OpenClaw register a deny-all tool gate when plugin initialisation fails instead of registering no hooks. OpenCode's suite passes; OpenClaw still blocks every call on an integrity failure but reports init_error instead of the expected integrity_bad_signature code, so its suite has one failing case.",
+          "evidencePath": "packages/opencode/src/__tests__/init-fail-closed.test.ts",
+          "command": "pnpm test -- packages/opencode/src/__tests__/init-fail-closed.test.ts packages/openclaw/src/__tests__/init-fail-closed.test.ts",
+          "verifiedBy": "2026-09-24 records review: OpenCode 3/3 passed; OpenClaw 1/2 passed (reason-code mismatch; the gate still blocked)"
+        },
+        {
+          "claim": "The on-prem bundle (resource profiles, restart/log-rotation overlay, AIG sidecar behind a digest-pinned deny-by-default egress proxy) renders a fail-closed AIG compose and a drift-checked configuration reference. No Kubernetes/Helm chart exists in this source tree.",
+          "evidencePath": "deploy/onprem/README.md",
+          "command": "node --test scripts/onprem-aig-compose.test.mjs scripts/onprem-config-reference.test.mjs",
+          "verifiedBy": "2026-09-24 records review: 8/8 node tests passed; no customer-host install"
         }
       ],
       "remainingExternal": "Repository-side connector observation instrumentation is complete. Closure still requires a clean candidate-bound persisted probe plus licensed installs on the real host/OS/architecture matrix, an agreed OS build list, customer/cloud HTTPS onboarding, SMTP/IdP, failover evidence and named acceptance per row (T01). Those systems, licenses and accountable approvers are outside this workspace, so the status is BLOCKED_EXTERNAL."
@@ -1359,6 +1389,18 @@
           "evidencePath": "scripts/verify-unix-fleet-delivery.mjs",
           "command": "pnpm verify:fleet:unix",
           "verifiedBy": "this session, exit 0 (25 checks, passed: true)"
+        },
+        {
+          "claim": "Browser Guard ships one managed policy as Chrome/Linux JSON, a Windows .reg (Chrome + Edge), an Edge Intune profile, Firefox policies.json and a macOS Jamf profile; the build-tools suite checks those examples for consistency and covers the deterministic zip writer and dataset fingerprinting, and the policy suite checks managed-over-user precedence and locked keys.",
+          "evidencePath": "deploy/browser-guard/README.md",
+          "command": "pnpm test -- packages/browser-guard/src/__tests__/build-tools.test.ts packages/browser-guard/src/__tests__/background-policy.test.ts",
+          "verifiedBy": "2026-09-24 records review: 40/40 focused tests; no real GPO/Intune/Jamf rollout"
+        },
+        {
+          "claim": "Vendor-signed aidr-license-v1 licences and signed offline intel packs are verified offline (signature, key id, expiry, hashes, rollback/equivocation, unsafe paths) before bootstrap admission or pack install; the shipped public-key registry is empty and fails closed until a vendor key is custodied.",
+          "evidencePath": "scripts/license-verify.mjs",
+          "command": "node --test scripts/license.test.mjs scripts/import-offline-pack.test.mjs",
+          "verifiedBy": "2026-09-24 records review: 12/12 node tests passed; no vendor key custody or customer air-gap drill"
         }
       ],
       "remainingExternal": "A real MDM test tenant (Intune/Jamf/SCCM) to distribute and drive the packages, an official publisher signing identity, and per-host execution acceptance on the supported OS matrix. The local verifiers cover templates and local lifecycle only and say so; the finding therefore moves from IN_PROGRESS to BLOCKED_EXTERNAL."
@@ -1399,6 +1441,12 @@
           "evidencePath": "packages/dashboard/src/ui/pages/DiscoveryPage.tsx",
           "command": "pnpm test -- packages/dashboard/src/__tests__/discovery-page.test.tsx supabase/functions/__tests__/discovery.test.ts",
           "verifiedBy": "this session, targeted Vitest run (14/14 passed)"
+        },
+        {
+          "claim": "Posture findings (infra CVEs, MCP inventory risks, skill/plugin scan results) are built as ids/enums/CVSS/digests only, uploaded with the enrolled key, strictly projected by ingest and rendered on /posture with explicit empty and error states.",
+          "evidencePath": "packages/core/src/posture-upload.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/posture-events.test.ts supabase/functions/__tests__/ingest-posture-events.test.ts packages/dashboard/src/__tests__/posture-page.test.tsx",
+          "verifiedBy": "2026-09-24 records review: 20/20 focused tests; the PostgreSQL posture_findings RLS test was not run here"
         }
       ],
       "implementationNote": "Local implementation is complete for a bounded read-only tenant Discovery dashboard: it uses the existing authenticated summary/read contracts plus a new cursor-paginated list action, displays collector and per-target freshness/alert state, and labels coverage as reported_collectors_only. The Edge list branch runs only after active membership, tenant, identity-barrier and rate-limit checks, scopes queries to the authorized tenant, and is unavailable to collector machine credentials. The CLI retains its one-shot OS-scheduler and non-overlapping --interval contract. This closes the local dashboard visibility gap only; it does not certify provider coverage or field operations.",
@@ -1440,6 +1488,12 @@
           "evidencePath": "scripts/verify-noisy-neighbor-live.mjs",
           "command": "node --test scripts/verify-noisy-neighbor-live.test.mjs",
           "verifiedBy": "this session, exit 0 (16 tests passed, including candidate/evidence-dir integration, cleanup registration before INSERT, and fail-closed shim proof)"
+        },
+        {
+          "claim": "Pack manifest and download endpoints spend per-API-key and per-tenant rate-limit budgets before entitlement reads or Storage signing, bounding one tenant's pack traffic at the edge.",
+          "evidencePath": "supabase/functions/packs-download/index.ts",
+          "command": "pnpm test -- supabase/functions/__tests__/pack-delivery-limits.test.ts supabase/functions/__tests__/packs-manifest-handler.test.ts",
+          "verifiedBy": "2026-09-24 records review: 15/15 focused tests; no load or noisy-neighbour measurement"
         }
       ],
       "remainingExternal": "The repo-side candidate/provenance and cleanup harness is implemented and locally tested, but no fresh candidate-bound live run has replaced the failing historical signal. Closure still requires sized host allocation and a controlled environment for a defined workload, an observation window of at least 8 hours, HA/failover infrastructure, multi-tenant noisy-neighbour tests on independent hosts, and a customer-agreed availability SLI/SLA. The historical run measured roughly 170x p95 degradation for the baseline tenant; the two tenants shared one database and one edge-function process, so the result does not extend to cross-host isolation. Status is BLOCKED_EXTERNAL until real infrastructure and accepted candidate-bound evidence exist."
@@ -1700,7 +1754,6 @@
       "rootCause": "The class was scaffolded with placeholder bodies and shipped unchanged; no caller in the repository exercises either method, so nothing surfaced the fabrication.",
       "acceptanceCriteria": "The unconsumed TeamDashboard scaffold is absent from the published SDK and its public entry point; the real dashboard/control plane remains the sole team-management implementation; the retained SDK API typechecks, tests and builds.",
       "verificationMethod": "Repository consumer search plus SDK regression test, typecheck and release build proving the removed subsystem is absent and the retained client/middleware API remains valid.",
-      "status": "VERIFIED_CLOSED",
       "evidence": [
         "2026-09-20 source audit for this session: TODO markers in a published package led to team-dashboard.ts, which is exported from packages/sdk/src/index.ts with no test file and no in-repository caller.",
         "Fixed initially by requiring host-supplied capabilities instead of fabricating data.",
@@ -1753,22 +1806,73 @@
     "note": "Closures recorded before the localEvidence field existed. Their evidence is prose in `evidence` only; deriving a machine-checkable evidencePath/command for them out of that prose would be invention, so they are declared here instead of being silently exempted. Any new closure must carry its own localEvidence, and a finding listed here that later gains localEvidence must be removed from this list; scripts/validate-backlog.mjs enforces both directions.",
     "declaredOn": "2026-09-13",
     "findings": [
-        "AIDR-001", "AIDR-002", "AIDR-003", "AIDR-004", "AIDR-005", "AIDR-006", "AIDR-007",
-        "AIDR-008", "AIDR-009", "AIDR-010", "AIDR-011", "AIDR-013", "AIDR-015", "AIDR-017",
-        "AIDR-018", "AIDR-020", "AIDR-021", "AIDR-022", "AIDR-023", "AIDR-024", "AIDR-025",
-        "AIDR-026", "AIDR-027", "AIDR-028", "AIDR-029", "AIDR-030", "AIDR-014", "AIDR-031",
-        "AIDR-032", "AIDR-033", "AIDR-034", "AIDR-035", "AIDR-036", "AIDR-037", "AIDR-038",
-        "AIDR-039", "AIDR-040", "AIDR-041", "AIDR-042", "AIDR-043", "AIDR-045", "AIDR-046",
-        "AIDR-047", "AIDR-048", "AIDR-053", "AIDR-054", "AIDR-055", "AIDR-056", "AIDR-057",
-        "AIDR-058", "AIDR-059", "AIDR-060", "AIDR-061", "AIDR-062", "AIDR-063", "AIDR-064",
-        "AIDR-065", "AIDR-066", "AIDR-067", "AIDR-068"
+      "AIDR-001",
+      "AIDR-002",
+      "AIDR-003",
+      "AIDR-004",
+      "AIDR-005",
+      "AIDR-006",
+      "AIDR-007",
+      "AIDR-008",
+      "AIDR-009",
+      "AIDR-010",
+      "AIDR-011",
+      "AIDR-013",
+      "AIDR-015",
+      "AIDR-017",
+      "AIDR-018",
+      "AIDR-020",
+      "AIDR-021",
+      "AIDR-022",
+      "AIDR-023",
+      "AIDR-024",
+      "AIDR-025",
+      "AIDR-026",
+      "AIDR-027",
+      "AIDR-028",
+      "AIDR-029",
+      "AIDR-030",
+      "AIDR-014",
+      "AIDR-031",
+      "AIDR-032",
+      "AIDR-033",
+      "AIDR-034",
+      "AIDR-035",
+      "AIDR-036",
+      "AIDR-037",
+      "AIDR-038",
+      "AIDR-039",
+      "AIDR-040",
+      "AIDR-041",
+      "AIDR-042",
+      "AIDR-043",
+      "AIDR-045",
+      "AIDR-046",
+      "AIDR-047",
+      "AIDR-048",
+      "AIDR-053",
+      "AIDR-054",
+      "AIDR-055",
+      "AIDR-056",
+      "AIDR-057",
+      "AIDR-058",
+      "AIDR-059",
+      "AIDR-060",
+      "AIDR-061",
+      "AIDR-062",
+      "AIDR-063",
+      "AIDR-064",
+      "AIDR-065",
+      "AIDR-066",
+      "AIDR-067",
+      "AIDR-068"
     ]
   },
   "externalGatesUnchanged": {
     "note": "The hard commercial/legal/privacy/independent gates recorded in docs/production-readiness/commercial-go-evidence-registry.json (COM-001..COM-013, SEC-EXT-001, POV-001, INV-001, CLM-001) remain open and are NOT closeable from this workspace: they require counsel approval, customer credentials, deployed regional infrastructure, signing keys, and an independent assessor. No repository change can close them and none is claimed to.",
     "count": 13
   },
-  "lastReviewed": "2026-09-12",
+  "lastReviewed": "2026-09-24",
   "currentFeatureInventory": "FEATURE_INVENTORY.json",
   "latestVerification": {
     "date": "2026-09-12",

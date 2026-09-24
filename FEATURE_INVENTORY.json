@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-09-24",
+  "generated_on": "2026-09-25",
   "generation_timezone": "Europe/Istanbul",
-  "source_commit": "0db9af4fb0b6d737eff8533f2f1a37743a1d6b7a",
-  "worktree_has_changes": true,
+  "source_commit": "b094b6b534b0a1959fd77337aa0c505ddd0d00d5",
+  "worktree_has_changes": false,
   "decision": "NO-GO",
   "methodology": "Generated capability/consumer mapping; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
   "status_counts": {
-    "wired": 41,
-    "partial": 28,
+    "wired": 50,
+    "partial": 36,
     "missing": 0,
     "external": 2
   },
@@ -89,6 +89,7 @@
       "status": "partial",
       "source_paths": [
         "packages/core/src/output-scanner.ts",
+        "packages/core/src/output-sensitive-data.ts",
         "packages/claude-code/src/output-inspection.ts",
         "packages/extension/src/output-inspection.ts",
         "packages/opencode/src/output-handler.ts",
@@ -96,8 +97,8 @@
         "packages/sdk/src/output-guard.ts"
       ],
       "consumer": "Connector-specific result boundaries",
-      "delivered": "Bounded pre-model tool-result inspection in OpenCode, VS Code and SDK; Claude/Cursor/OpenClaw use host-specific later boundaries",
-      "remaining": "Claude PostToolUse and OpenClaw after_tool_call cannot prove same-turn model blocking; provider streams and native host bypass need acceptance",
+      "delivered": "Bounded pre-model tool-result inspection in OpenCode, VS Code and SDK; Claude/Cursor/OpenClaw use host-specific later boundaries. Sensitive-output quarantine now fires only on high-precision findings (verified key/token formats, PEM key material, Luhn cards, labelled SSNs), so timestamps, hashes, UUIDs and git emails no longer quarantine output",
+      "remaining": "Claude PostToolUse and OpenClaw after_tool_call cannot prove same-turn model blocking; provider streams and native host bypass need acceptance; the precision filter trades recall on unlabelled formats and needs customer benign/attack corpus calibration",
       "production_accepted": false
     },
     {
@@ -108,11 +109,14 @@
       "source_paths": [
         "packages/core/src/dlp/scanner.ts",
         "packages/core/src/dlp/policy.ts",
+        "packages/core/src/detector-provisioning.ts",
+        "packages/core/src/local-dlp-policy.ts",
+        "packages/core/src/pii-baseline.ts",
         "packages/claude-code/src/detector-provisioning.ts"
       ],
-      "consumer": "Core evaluator and provisioned Claude hook",
-      "delivered": "Tenant labels, rules, owner-bound exceptions, redact/ask/block and signed tenant bundle verification",
-      "remaining": "Other connectors, trusted provisioning operations and customer label acceptance remain open",
+      "consumer": "Core evaluator; signed per-runtime tenant bundle loaded by every connector; optional local-mode policy file",
+      "delivered": "Tenant labels, rules, owner-bound exceptions, redact/ask/block, tenant-governed PII baseline and signed tenant bundle verification. The cross-connector parity suite provisions one signed bundle in Claude Code, Codex, OpenCode, OpenClaw, Cursor and VS Code: block and ask rules match, and an untrusted, edited or missing required bundle fails closed before evaluation in every connector. Local mode accepts an unsigned ~/.singularity-aidr/dlp-policy.json (invalid = skipped + degraded health)",
+      "remaining": "Bundles are operator-placed files: no control-plane push/rotation operation is accepted in the field. The local-mode policy file is unsigned and user-editable, so it is a convenience, not a managed control. The parity suite's redact row still expects a block and failed on 2026-09-24 (25 of 26 cases passed) because Claude Code now rewrites redacted input (DET-14); that expectation is unreconciled. Customer label/false-positive acceptance remains open",
       "production_accepted": false
     },
     {
@@ -194,6 +198,38 @@
       "consumer": "Normalized tool evaluation and SessionStart",
       "delivered": "OpenCode aliases and package-check exceptions now surface ask/unavailable instead of false-clean",
       "remaining": "Registry/provider provenance and customer dependency corpus still need acceptance",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-13",
+      "area": "Detection",
+      "name": "TR/EN privacy detectors in core DLP",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/dlp/privacy-detectors.ts",
+        "packages/core/src/dlp/privacy-rules/rules.ts",
+        "packages/core/src/dlp/privacy-rules/validators.ts",
+        "scripts/sync-privacy-rules.mjs"
+      ],
+      "consumer": "Core DLP detector matcher and PII baseline",
+      "delivered": "Checksum-validated TC Kimlik, full-registry IBAN mod-97, TR phones and private keys by default; secrets, addresses, person names and labelled fields opt-in; JSON-aware scanning and fail-closed incomplete_inspection; generated copy of the AIDR Privacy rules with a --check drift gate",
+      "remaining": "Address/person detectors are heuristic and opt-in; Turkish/English customer corpus calibration and false-positive acceptance remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "DET-14",
+      "area": "Detection",
+      "name": "Prompt protection and DLP input redaction",
+      "status": "partial",
+      "source_paths": [
+        "packages/core/src/prompt-protection.ts",
+        "packages/claude-code/src/user-prompt-submit.ts",
+        "packages/core/src/evaluator.ts",
+        "packages/opencode/src/tool-handler.ts"
+      ],
+      "consumer": "Claude Code UserPromptSubmit and connectors that declare input rewrite",
+      "delivered": "Prompts are scanned for secrets (block by default) and PII (warn) plus tenant DLP, with kinds/counts only; a DLP redact becomes an allow with rewritten input only where the host supports rewrite (Claude Code updatedInput, OpenCode args) and only if every parameter survives and the result rescans clean, otherwise deny",
+      "remaining": "Prompt protection exists only for Claude Code; Codex, Cursor, VS Code and OpenClaw keep redact as deny; the rewrite contract is verified locally against one Claude Code version and still needs native host-version acceptance",
       "production_accepted": false
     },
     {
@@ -288,11 +324,13 @@
       "source_paths": [
         "packages/mcp-gateway/src/gateway.mjs",
         "packages/mcp-gateway/src/stdio.mjs",
+        "packages/mcp-gateway/src/output-inspection.mjs",
+        "packages/mcp-gateway/src/detection.mjs",
         "packages/core/src/mcp-transport.ts"
       ],
       "consumer": "Opt-in loopback HTTP and stdio JSON-RPC gateway",
-      "delivered": "Signed tool approval, tenant-bound auth, initialized notifications, DNS pinning and bounded inline output inspection",
-      "remaining": "Binary output, server-initiated requests, forced routing of direct upstream access and customer native acceptance remain open",
+      "delivered": "Signed tool approval, tenant-bound auth, initialized notifications, DNS pinning and bounded inline output inspection. tools/call arguments run through the core evaluator before upstream execution (deny, ask = blocked pending operator action, evaluator failure = detection_unavailable). Image/audio/resource blobs are inspected within bounds (MIME allowlist, canonical base64, size limit, magic bytes, printable-run scan); server-initiated sampling/elicitation/roots follow a deny-by-default policy and those client capabilities are stripped from the forwarded initialize",
+      "remaining": "Forced routing of direct upstream access (a host can still reach the MCP server without the gateway), media formats outside the byte-verifiable allowlist and customer native acceptance remain open",
       "production_accepted": false
     },
     {
@@ -339,16 +377,36 @@
       "production_accepted": false
     },
     {
+      "id": "INF-04",
+      "area": "AI infrastructure",
+      "name": "AI security posture findings",
+      "status": "wired",
+      "source_paths": [
+        "threats/skill-scan.yaml",
+        "packages/core/src/plugin-scanner.ts",
+        "packages/core/src/posture-events.ts",
+        "packages/core/src/posture-upload.ts",
+        "supabase/functions/ingest/posture.ts",
+        "supabase/migrations/20260925000050_posture_findings.sql",
+        "packages/dashboard/src/ui/pages/PosturePage.tsx"
+      ],
+      "consumer": "aidr scan --skill/--upload, aidr discover --upload, ingest and /posture dashboard",
+      "delivered": "26 deterministic skill-scan rules (AIG T01-T09 taxonomy), infra CVE, MCP inventory and skill findings uploaded as ids/enums/CVSS/digests only, strict server-side projection, member-read RLS posture_findings table with retention/offboarding cascade, and a dashboard with explicit empty/error states",
+      "remaining": "A deterministic pattern port of the AIG taxonomy, not AIG's model-driven scanner; coverage is limited to what an enrolled collector uploads, and detection efficacy on real customer skills/plugins is unmeasured",
+      "production_accepted": false
+    },
+    {
       "id": "RSP-01",
       "area": "Response",
       "name": "Pre-execution block and approval",
       "status": "wired",
       "source_paths": [
         "packages/core/src/guard.ts",
-        "packages/core/src/evaluator.ts"
+        "packages/core/src/evaluator.ts",
+        "packages/core/src/operator-approvals.ts"
       ],
       "consumer": "Supported connector boundaries",
-      "delivered": "Deny and operator approval handling",
+      "delivered": "Deny and ask verdicts; an ask is recorded as a signed pending action and only an out-of-band operator approval (RSP-08) releases the identical retry once",
       "remaining": "Host bypass, disabled plugins and unavailable hook processes need platform-specific controls",
       "production_accepted": false
     },
@@ -438,6 +496,24 @@
       "consumer": "Standalone owner/admin+AAL2 playbook API; not wired to AutoSecOps or an alert trigger",
       "delivered": "One fixed typed, TTL-bound and idempotent run queues agent_pause then network_isolate only after the consumer records an adapter-verified succeeded receipt",
       "remaining": "Not production accepted or connected to an alert/AutoSecOps trigger. A separately installed endpoint worker and verified host adapter are not provisioned or customer-validated; host permissions and native acceptance, external SOAR/provider connectors, credential revocation and rollback remain unsupported or open",
+      "production_accepted": false
+    },
+    {
+      "id": "RSP-08",
+      "area": "Response",
+      "name": "Out-of-band operator approvals and operator CLI",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/operator-approvals.ts",
+        "packages/core/src/guard.ts",
+        "packages/cli/src/commands/approvals.ts",
+        "packages/cli/src/commands/allowlist.ts",
+        "packages/cli/src/commands/audit.ts",
+        "packages/cli/src/commands/doctor.ts"
+      ],
+      "consumer": "aidr pending/approve/allowlist/audit/doctor and guardToolCall in OpenClaw, OpenCode and Codex",
+      "delivered": "File-backed 0600 store of HMAC-signed pending asks and single-use, tool- and artifact-bound approvals (15-minute default expiry); tampered, expired or mismatched records keep the block; interactive TTY confirmation or explicit non-interactive opt-in; audit tail/export re-redacted; no agent-callable approval tool",
+      "remaining": "Approval is local to one host and OS user: there is no central/multi-approver workflow, and an agent running as the same OS user is only deterred by the CLT-SELF-007/CLT-SELF-002 self-defense rules, not isolated from the store. Operator usability and native host acceptance remain open",
       "production_accepted": false
     },
     {
@@ -634,7 +710,7 @@
         "packages/codex/src/cli.ts"
       ],
       "consumer": "PreToolUse connector",
-      "delivered": "Built connector and policy decisions",
+      "delivered": "Built connector and policy decisions; argv shell/local_shell/exec commands are extracted instead of yielding an uninspected allow; ask and DLP redact are converted to an explicit deny; operator approvals release an identical retry",
       "remaining": "Host can fail open when hook execution is unavailable; not tamper-resistant isolation",
       "production_accepted": false
     },
@@ -653,6 +729,23 @@
       "consumer": "Framework-neutral middleware, Express and Next.js",
       "delivered": "Fail-closed wrappers, middleware and bounded tool-output inspection",
       "remaining": "Application must wrap every consequential tool path; host integration still needs an acceptance matrix",
+      "production_accepted": false
+    },
+    {
+      "id": "CON-07",
+      "area": "Connectors",
+      "name": "Cross-connector parity and fail-closed initialisation",
+      "status": "wired",
+      "source_paths": [
+        "packages/core/src/tool-normalization.ts",
+        "packages/core/src/command-argv.ts",
+        "packages/core/src/init-failure.ts",
+        "packages/openclaw/src/tool-handler.ts",
+        "packages/opencode/src/tool-handler.ts"
+      ],
+      "consumer": "Built entry points of all six connectors",
+      "delivered": "One payload matrix (download-to-shell, home-directory deletion, credential reads, malicious package, MCP injection, field aliases, clean controls) reaches the same blocked class and threat id in every connector; argv-array shell commands are normalised and malformed commands denied; OpenClaw/OpenCode register a deny-all gate when initialisation fails instead of registering no hooks",
+      "remaining": "Parity is proven against built bundles in-process and over stdin, not against installed native hosts; documented host-verb differences (ask becomes block in Codex/OpenCode/OpenClaw, deny in Cursor) remain. On 2026-09-24 the OpenClaw integrity-failure test still blocked every call but reported init_error instead of integrity_bad_signature (1 of 2 cases failed), and the DLP redact parity row is stale (DET-07)",
       "production_accepted": false
     },
     {
@@ -689,11 +782,13 @@
       "status": "wired",
       "source_paths": [
         "supabase/functions/team-invite/index.ts",
+        "supabase/functions/team-invite/email.ts",
+        "supabase/functions/_shared/mailer.ts",
         "supabase/functions/oauth-callback/index.ts"
       ],
       "consumer": "Dashboard enterprise route",
-      "delivered": "Manual link sharing, verified email binding, expiry, one-time acceptance and audit",
-      "remaining": "No SMTP invitation delivery; operator explicitly shares link",
+      "delivered": "Verified email binding, expiry, one-time acceptance and audit; after the atomic invite RPC an HTML+text invitation email is sent through an injectable mailer (Resend) that never logs recipient, body, link or key, with manual link sharing as the fallback when mail is unconfigured or fails",
+      "remaining": "Live mail-provider account, sender-domain SPF/DKIM/DMARC, deliverability and customer mail-flow acceptance remain open; with AIDR_MAIL_PROVIDER=none the operator still shares the link manually",
       "production_accepted": false
     },
     {
@@ -720,10 +815,11 @@
       "source_paths": [
         "supabase/functions/device-poll/index.ts",
         "supabase/functions/enroll/index.ts",
-        "deploy/ingress/device-start.mjs"
+        "deploy/ingress/device-start.mjs",
+        "supabase/functions/_shared/trusted-ingress.ts"
       ],
       "consumer": "Dashboard verify and signed-ingress native session bootstrap",
-      "delivered": "Atomic single-use exchanges, signed entitlements, active tenant validation and spoof-resistant device-start limiter; isolated loopback HTTP smoke passed",
+      "delivered": "Atomic single-use exchanges, signed entitlements, active tenant validation, spoof-resistant device-start limiter and a per-device-code poll budget with RFC 8628 slow_down that fails closed (503) when the budget cannot be read; isolated loopback HTTP smoke passed",
       "remaining": "Customer TLS proxy routing and browser-to-host pairing acceptance remain pending; direct unsigned device-start is rejected",
       "production_accepted": false
     },
@@ -754,6 +850,36 @@
       "consumer": "Operator CLI, dashboard and recovery API",
       "delivered": "Bootstrap, recovery, session revoke and break-glass controls",
       "remaining": "SMTP/IdP delivery and full service-role Edge MFA barriers require customer integration",
+      "production_accepted": false
+    },
+    {
+      "id": "TEN-08",
+      "area": "Management",
+      "name": "Platform operator administration",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/operator-admin/index.ts",
+        "supabase/migrations/20260925000030_platform_operator_admin.sql",
+        "scripts/operator-admin.mjs"
+      ],
+      "consumer": "POST-only Edge Function and operator CLI",
+      "delivered": "Allowlisted, expiring platform operators with AAL2; admission mode, legal document digests, licence grant/revoke, paged tenant list and aggregate usage, each re-checked in the transaction and written to an actor-attributed audit receipt; separation-of-duty checks on licensed grants are preserved",
+      "remaining": "Named operator provisioning, operator credential custody and a live deployment run remain open; the surface is not independently penetration-tested (SEC-EXT-001)",
+      "production_accepted": false
+    },
+    {
+      "id": "TEN-09",
+      "area": "Management",
+      "name": "Workspace settings and closure request",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/tenant-settings/index.ts",
+        "supabase/migrations/20260925000040_tenant_workspace_settings.sql",
+        "packages/dashboard/src/ui/pages/SettingsPage.tsx"
+      ],
+      "consumer": "Dashboard Settings (Workspace and Profile sections)",
+      "delivered": "Member read; owner/admin update with identity barrier, AAL2, rate limit and retention-reduction confirmation; owner-only typed-name closure that delegates to the existing tenant offboarding request",
+      "remaining": "Closure only requests offboarding; completion still depends on the operator-run offboarding and the external backup/retention acceptance tracked in OBS-06",
       "production_accepted": false
     },
     {
@@ -893,6 +1019,24 @@
       "production_accepted": false
     },
     {
+      "id": "BIL-04",
+      "area": "Commercial",
+      "name": "Plan catalog, pricing and Stripe plan admission",
+      "status": "partial",
+      "source_paths": [
+        "supabase/migrations/20260925000010_plan_catalog.sql",
+        "supabase/migrations/20260925000011_stripe_plan_admission.sql",
+        "supabase/migrations/20260925000012_get_tenant_plan.sql",
+        "supabase/functions/stripe-webhook/plans.ts",
+        "packages/dashboard/src/ui/pages/public/PricingPage.tsx",
+        "packages/dashboard/src/ui/pages/BillingPage.tsx"
+      ],
+      "consumer": "Pricing page, Billing plan picker and env-gated Stripe webhook",
+      "delivered": "Free/Team/Business/Enterprise catalog with authenticated-read RLS; price-map driven, service-role-only plan admission under the tenant admission lock that rejects stale/replayed events, never replaces another licence or undoes an operator revocation, and audits every decision; pricing page mirrors the catalog with a drift test",
+      "remaining": "List prices are not an approved SKU/price manifest (COM-001); self-service remains env-gated and off by default; live Stripe keys/prices, tax, reconciliation and finance approval remain external",
+      "production_accepted": false
+    },
+    {
       "id": "DEP-01",
       "area": "Deployment",
       "name": "Self-hosted preparation",
@@ -1006,6 +1150,56 @@
       "production_accepted": false
     },
     {
+      "id": "DEP-09",
+      "area": "Deployment",
+      "name": "On-prem bundle, resource profiles, AIG sidecar and egress proxy",
+      "status": "partial",
+      "source_paths": [
+        "deploy/onprem/README.md",
+        "deploy/onprem/compose.onprem.overlay.yml",
+        "deploy/onprem/resource-profile.json",
+        "deploy/onprem/egress/squid.conf",
+        "deploy/ingress/nginx.onprem.reference.conf",
+        "scripts/generate-onprem-config-reference.mjs"
+      ],
+      "consumer": "deployment-prepare --profile/--with-aig, doctor and customer kit",
+      "delivered": "Small/medium/large resource budgets, restart/log-rotation overlay, AIG bridge under a digest-pinned deny-by-default Squid egress gateway, air-gap base-image planning, generated configuration reference with drift check, BYO-certificate nginx vhosts and static TLS renewal with restore on failure",
+      "remaining": "No Kubernetes/Helm chart exists in this source tree; customer-host install, air-gap media transfer drill, sizing validation and customer TLS acceptance remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-10",
+      "area": "Deployment",
+      "name": "Vendor-signed offline licence and offline pack import",
+      "status": "partial",
+      "source_paths": [
+        "scripts/license-issue.mjs",
+        "scripts/license-verify.mjs",
+        "deploy/onprem/license-public-keys.json",
+        "scripts/import-offline-pack.mjs",
+        "scripts/deployment-bootstrap.mjs"
+      ],
+      "consumer": "Offline bootstrap and air-gapped intel updates",
+      "delivered": "aidr-license-v1 Ed25519 licences with key-id rotation; bootstrap derives seats/admission end from a verified licence (expiry degrades managed admission only, local detection continues); signed intel packs verified for hashes, expiry, rollback/equivocation and unsafe paths before install",
+      "remaining": "The shipped public-key registry is intentionally empty and fails closed until a vendor signing key is generated and custodied; vendor key custody, licence issuance operations and a customer air-gap update drill remain external",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-11",
+      "area": "Deployment",
+      "name": "Download center and release manifest",
+      "status": "partial",
+      "source_paths": [
+        "packages/dashboard/src/ui/pages/DownloadsPage.tsx",
+        "deploy/dashboard/release-manifest.mjs",
+        "scripts/generate-release-manifest.mjs"
+      ],
+      "consumer": "Dashboard /downloads and onboarding step",
+      "delivered": "Schema-validated manifest (https-only links, sha256, optional detached signature, no unknown ids), per-OS verify commands, server-side manifest validation with ETag, and a generator that fails closed on http: URLs, symlinks and mixed versions; with no manifest configured the page shows no links",
+      "remaining": "No published release host or signed manifest exists yet; signatures depend on publisher key custody (DEP-05) and private registry delivery (COM-012)",
+      "production_accepted": false
+    },
+    {
       "id": "EVAL-01",
       "area": "Assurance",
       "name": "Independent attack and benign benchmarks",
@@ -1043,6 +1237,97 @@
       "consumer": "Customer acceptance gate",
       "delivered": "Charter and evidence requirements exist",
       "remaining": "Customer-run host matrix, observations and signed acceptance outstanding",
+      "production_accepted": false
+    },
+    {
+      "id": "PRV-01",
+      "area": "Browser privacy",
+      "name": "Browser Guard prompt masking on AI chat sites",
+      "status": "partial",
+      "source_paths": [
+        "packages/browser-guard/src/content/guard.ts",
+        "packages/browser-guard/src/engine/detect.ts",
+        "packages/browser-guard/src/engine/vault.ts",
+        "packages/browser-guard/src/content/unmask.ts",
+        "packages/browser-guard/src/sites/index.ts"
+      ],
+      "consumer": "Chrome/Edge/Firefox MV3 content script on ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral, Grok and a generic adapter",
+      "delivered": "Capture-phase send interception with reversible per-type placeholders, response unmasking, auto/confirm/block/monitor modes and fail-closed handling of scan errors or incomplete scans; the recorded hermetic Chromium E2E run against simulated site fixtures passed 18 of 19 scenarios",
+      "remaining": "Fixture pages are not the live sites: real-site DOM drift, store publication/review and customer browser acceptance remain open; text typed outside a recognised editor or sent by site-internal paths is not visible",
+      "production_accepted": false
+    },
+    {
+      "id": "PRV-02",
+      "area": "Browser privacy",
+      "name": "Paste and file-upload sanitisation",
+      "status": "wired",
+      "source_paths": [
+        "packages/browser-guard/src/content/file-guard.ts",
+        "packages/browser-guard/src/engine/files.ts"
+      ],
+      "consumer": "Browser Guard content script (input, drop and paste)",
+      "delivered": "CSV/TSV cell masking with formula neutralisation, JSON/JSONL leaf rewriting, .env value masking; incomplete scans and internal errors block",
+      "remaining": "Binary and office/PDF/image formats are not inspected (blocked only in block mode, otherwise allowed with a marker); large-file and real-site upload acceptance remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "PRV-03",
+      "area": "Browser privacy",
+      "name": "Exact-data match on customer datasets",
+      "status": "wired",
+      "source_paths": [
+        "packages/browser-guard/src/engine/exact-data.ts",
+        "packages/browser-guard/scripts/fingerprint-dataset.mjs"
+      ],
+      "consumer": "Managed policy exactData fingerprints",
+      "delivered": "HMAC-SHA256 token-window fingerprints (normalisation identical to the privacy data index), bounded per scan; admin CSV fingerprint tool",
+      "remaining": "Customer dataset onboarding, HMAC key custody/rotation and false-positive calibration remain open",
+      "production_accepted": false
+    },
+    {
+      "id": "PRV-04",
+      "area": "Browser privacy",
+      "name": "Managed browser policy and fleet deployment",
+      "status": "partial",
+      "source_paths": [
+        "packages/browser-guard/src/background/policy.ts",
+        "packages/browser-guard/src/background/index.ts",
+        "deploy/browser-guard/README.md"
+      ],
+      "consumer": "Browser managed storage and deployment examples",
+      "delivered": "Managed-over-user-over-default policy with locked keys, RE2-compatible managed schema checked at build, sender-validated message router, DNR site blocking; Chrome/Edge (JSON, .reg, Intune), Firefox policies and macOS Jamf examples; reproducible release zips with SHA256SUMS",
+      "remaining": "Real GPO/Intune/Jamf rollout, store or self-hosted signed distribution and a customer fleet run remain external",
+      "production_accepted": false
+    },
+    {
+      "id": "PRV-05",
+      "area": "Browser privacy",
+      "name": "Counts-only privacy telemetry and Privacy Guard dashboard",
+      "status": "wired",
+      "source_paths": [
+        "packages/browser-guard/src/background/telemetry.ts",
+        "supabase/functions/ingest/events.ts",
+        "supabase/migrations/20260925000001_browser_privacy_telemetry.sql",
+        "packages/dashboard/src/ui/pages/PrivacyGuardPage.tsx"
+      ],
+      "consumer": "Browser Guard worker to ingest and /privacy-guard",
+      "delivered": "privacy_scan events carry only site/action/channel enums, entity-type counts, findings count and policy id; strict server projection drops unknown fields; events reuse tenant RLS, seat guard, retention and offboarding; dashboard KPIs, breakdowns and series",
+      "remaining": "No live browser fleet has reported into a deployed control plane; the data-flow/DPA approval for this telemetry (COM-003) remains open",
+      "production_accepted": false
+    },
+    {
+      "id": "PRV-06",
+      "area": "Browser privacy",
+      "name": "AIDR Privacy engine and optional native NER host",
+      "status": "partial",
+      "source_paths": [
+        "packages/privacy/src/rules.ts",
+        "packages/browser-guard/src/background/native.ts",
+        "packages/browser-guard/docs/native-host.md"
+      ],
+      "consumer": "Browser Guard detection and optional native messaging host",
+      "delivered": "@singularityrd/aidr-privacy 0.6.0 browser-safe rule layer reused by Browser Guard and core; privacy dist signed into release artifacts; bounded native NER bridge (2 s, 1 MiB, strict validation, back-off) that is off unless permitted",
+      "remaining": "Native host installation, NER/OCR accuracy and platform acceptance are unmeasured; privacy suites run separately via test:privacy with named optional-dependency skips",
       "production_accepted": false
     }
   ]
