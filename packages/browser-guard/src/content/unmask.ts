@@ -8,9 +8,11 @@
  * - Only TEXT NODES are touched; markup is never parsed or assigned (no innerHTML).
  * - The original value is rendered inside a CLOSED shadow root on a
  *   `<span class="aidr-restored">` whose light DOM still holds the placeholder. The
- *   page's own scripts (analytics, session replay, the chat app itself) therefore
- *   keep reading the placeholder through textContent/innerText; only the user sees
- *   the restored value.
+ *   light DOM is slotted into a visually hidden, aria-hidden wrapper: without a slot
+ *   Chromium's innerText skips the unrendered light text (the page would read ""),
+ *   with it the page's own scripts (analytics, session replay, the chat app's copy and
+ *   edit actions) keep reading the placeholder through textContent/innerText, while
+ *   the user (and assistive technology) perceives only the restored value.
  * - Framework-owned text nodes are never removed. The node keeps the text before the
  *   first placeholder and our nodes are inserted after it; when the framework later
  *   rewrites that node (streaming), our nodes are dropped and the node is re-processed.
@@ -92,7 +94,8 @@ export function visibleText(node: Node): string {
 }
 
 const SPAN_STYLE =
-	":host{border-bottom:1px dotted #3862E8;background:rgba(56,98,232,.10);border-radius:3px;padding:0 1px}";
+	":host{border-bottom:1px dotted #3862E8;background:rgba(56,98,232,.10);border-radius:3px;padding:0 1px}" +
+	".ph{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}";
 
 export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 	const { document: doc, adapter, vault } = deps;
@@ -124,8 +127,14 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 		const shadow = span.attachShadow({ mode: "closed" });
 		const style = doc.createElement("style");
 		style.textContent = SPAN_STYLE;
+		// Keeps the light-DOM placeholder in the rendered tree (so page innerText reads
+		// it) without showing it or exposing it to assistive technology.
+		const hidden = doc.createElement("span");
+		hidden.className = "ph";
+		hidden.setAttribute("aria-hidden", "true");
+		hidden.append(doc.createElement("slot"));
 		const shown = doc.createTextNode(visible ? original : placeholder);
-		shadow.append(style, shown);
+		shadow.append(style, hidden, shown);
 		restoredSpans.set(span, { placeholder, original, shown });
 		ours.add(span);
 		ours.add(light);

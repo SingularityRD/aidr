@@ -235,7 +235,8 @@ describe("release build with --zip (stub entries)", () => {
 			background: { scripts: ["background.js"] },
 			options_ui: { page: "options.html", open_in_tab: true },
 			browser_specific_settings: {
-				gecko: { id: "browser-guard@singularityrd.com", strict_min_version: "128.0" },
+				gecko: { id: "browser-guard@singularityrd.com", strict_min_version: "140.0" },
+				gecko_android: { strict_min_version: "142.0" },
 			},
 			incognito: "not_allowed",
 			content_security_policy: { extension_pages: EXPECTED_CSP },
@@ -343,6 +344,59 @@ describe("blocked-site page", () => {
 	});
 });
 
+describe("managed schema RE2 compatibility", () => {
+	it("flags repetition counts and nested repetition products above 1000", () => {
+		expect(build.re2PatternProblems("^[A-Za-z0-9+/]{14,1022}={0,2}$")).toEqual([
+			expect.stringMatching(/repeats 1022 times/),
+		]);
+		expect(build.re2PatternProblems("^(?:[A-Za-z0-9+/]{4}){3,255}$")).toEqual([
+			expect.stringMatching(/nests repetitions to 1020/),
+		]);
+		expect(build.re2PatternProblems("^(?=a)b$")).toEqual([expect.stringMatching(/lookaround/)]);
+		expect(build.re2PatternProblems("^(a)\\1$")).toEqual([expect.stringMatching(/backreference/)]);
+		expect(build.re2PatternProblems("^[a{]{2000}")).toEqual([
+			expect.stringMatching(/repeats 2000 times/),
+		]);
+	});
+
+	it("accepts RE2-compatible patterns", () => {
+		for (const pattern of [
+			"^[A-Za-z0-9+/]{14,1000}[A-Za-z0-9+/]{0,22}={0,2}$",
+			"^(?:ab){10}(?:cd{2}){3,100}$",
+			"^[\\s\\S]{2,256}$",
+			"^[\\]{]{1000}$",
+			"a\\{5000\\}",
+		]) {
+			expect(build.re2PatternProblems(pattern)).toEqual([]);
+		}
+	});
+
+	it("walks nested properties, items and patternProperties", () => {
+		const schema = {
+			type: "object",
+			properties: {
+				list: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: { v: { type: "string", pattern: "x{1001}" } },
+					},
+				},
+			},
+			patternProperties: { "(?!x)": { type: "string" } },
+		};
+		expect(build.managedSchemaProblems(schema)).toEqual([
+			expect.stringMatching(/^\$\.properties\.list\.items\.properties\.v\.pattern: .*1001/),
+			expect.stringMatching(/^\$\.patternProperties: .*lookaround/),
+		]);
+	});
+
+	it("the shipped static/managed_schema.json is RE2-compatible", () => {
+		const schema = readJson(join(PACKAGE_ROOT, "static", "managed_schema.json"));
+		expect(build.managedSchemaProblems(schema)).toEqual([]);
+	});
+});
+
 describe("build fails closed", () => {
 	async function buildWith(options: {
 		entries?: Record<string, string>;
@@ -425,6 +479,20 @@ describe("build fails closed", () => {
 				assets: { "_locales/tr/messages.json": JSON.stringify({ extName: { message: "AIDR" } }) },
 			}),
 		).rejects.toThrow(/_locales\/tr\/messages\.json lacks the "extDescription" message/);
+	});
+
+	it("rejects a managed schema pattern RE2 cannot compile (Chrome would not load the extension)", async () => {
+		const schema = {
+			type: "object",
+			properties: {
+				key: { type: "string", pattern: "^[A-Za-z0-9+/]{14,1022}={0,2}$" },
+			},
+		};
+		await expect(
+			buildWith({ assets: { "static/managed_schema.json": JSON.stringify(schema) } }),
+		).rejects.toThrow(
+			/managed_schema\.json would make Chrome refuse[\s\S]*properties\.key\.pattern/,
+		);
 	});
 
 	it("reports esbuild compile errors with the entry name", async () => {

@@ -2,6 +2,7 @@
 // e.g. `--only auto` runs every auto-* scenario).
 
 import autoMask from "./auto-mask.mjs";
+import blockedSite from "./blocked-site.mjs";
 import editing from "./editing.mjs";
 import fileUpload from "./file-upload.mjs";
 import modes from "./modes.mjs";
@@ -17,6 +18,7 @@ export const SCENARIOS = [
 	...fileUpload,
 	...popup,
 	...editing,
+	...blockedSite,
 ];
 
 /** Selects scenarios by comma-separated ids or id prefixes (`auto` matches `auto-chatgpt`). */

@@ -47,7 +47,10 @@ The extension id is taken from the service worker URL
 (`chrome-extension://<id>/...`). The worker is found by listening for the
 `serviceworker` event and polling `context.serviceWorkers()`; the first start of
 a fresh profile on a loaded machine can take a while, so the deadline is 30s
-(`BG_E2E_WORKER_TIMEOUT_MS`). The report records which launch mode was used.
+(`BG_E2E_WORKER_TIMEOUT_MS`). If no worker has shown up after 5s, the harness
+opens the extension's popup (the unpacked extension id is the first 128 bits of
+SHA-256 of its absolute path, hex digits mapped to `a`-`p`), which messages and
+so starts the worker. The report records which launch mode was used.
 
 ## How the harness talks to the extension
 
@@ -60,8 +63,16 @@ a fresh profile on a loaded machine can take a while, so the deadline is 30s
   `storage.onChanged`. If `GET_POLICY` does not reflect the change within 2s the
   documented `SET_USER_SETTINGS` message is used instead. Each scenario waits
   until the effective policy shows its settings before opening a page.
-- **Overlays:** bubbles/toasts are found by `aidr|browser-guard|privacy-guard` in
-  tag/id/class/`data-*`, piercing open shadow roots; buttons via `getByRole`.
+- **Overlays:** the product renders its bubble/toast in a CLOSED shadow root (the
+  host page must not read it), which page scripts and Playwright locators cannot
+  enter. Overlays are found over CDP (`DOM.getDocument` with `pierce: true`) by
+  `aidr|browser-guard|privacy-guard` in tag/id/class/`data-*`; bubble buttons are
+  found in Chromium's accessibility tree by role and name and clicked with the mouse.
+- **What the user sees vs. what the page reads:** restored values are also shown
+  from a closed shadow root. `lastResponseText` reads the reply from the CDP
+  accessibility tree (rendered flat tree: closed shadow content in, aria-hidden
+  out) - the user's view; `lastResponsePageText` reads `innerText` in the page -
+  what the chat app's own scripts see, which must still be the placeholder.
 
 ## Fixtures
 
@@ -87,15 +98,16 @@ placeholders it received (`I will follow up with [EMAIL_1] and [IBAN_1] ...`).
 | Id | What it proves |
 |----|----------------|
 | `preflight` | extension worker running, fixtures routed, bodies recorded, leak detector works, non-fixture origins refused (always runs first; a failure stops the run) |
-| `auto-<site>` | auto mode masks email, TCKN `10000000146`, TR IBAN and an `sk-proj-` key on every site; the recorded body has placeholders only; the reply shows the original email locally; nothing leaks |
+| `auto-<site>` | auto mode masks email, TCKN `10000000146`, TR IBAN and an `sk-proj-` key on every site; the recorded body has placeholders only; the reply shows the original email to the user while the page's own `innerText` still reads the placeholder; nothing leaks |
 | `paste-chatgpt`, `paste-copilot` | pasted text lands in the editor as placeholders |
 | `mode-monitor` | monitor mode sends the original prompt |
 | `mode-block` | block mode: no request, the page's send never runs, a bubble is shown |
 | `mode-confirm` | confirm mode: bubble first, "Send masked" sends placeholders |
 | `file-upload-csv` | a CSV with emails reaches the page's upload handler masked |
-| `popup-status` | local settings drive the policy (nothing locked), popup renders mode and non-zero stats |
+| `popup-status` | local settings drive the policy (nothing locked); the popup, loaded while the ChatGPT tab is active (as a toolbar click would), reports that tab as protected with its mode and non-zero stats |
 | `clean-*` | text without findings is sent byte-for-byte |
 | `shift-enter-*` | Shift+Enter inserts a newline and does not send |
+| `blocked-site` | a navigation matching the redirect rule `src/background/dnr.ts` builds for `blockedSites: ["gemini"]` lands on `blocked.html` (web accessible), which loads its `ui.css` and `popup.js`, names the site, and no request reaches the site. The rule is installed from the worker (managed storage cannot be written from a test); the policy-to-rule mapping is unit-tested |
 
 Test data (`lib/data.mjs`) is synthetic and checksum-valid; TCKN and IBAN are
 re-verified at import time. Scenarios whose site is not in the manifest's

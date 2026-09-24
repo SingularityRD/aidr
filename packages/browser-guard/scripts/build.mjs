@@ -59,7 +59,7 @@ export const ICON_SIZES = Object.freeze([16, 32, 48, 128]);
 
 export const TARGETS = Object.freeze({
 	chrome: { esbuildTarget: "chrome120" },
-	firefox: { esbuildTarget: "firefox128" },
+	firefox: { esbuildTarget: "firefox140" },
 });
 
 export const GECKO_ID = "browser-guard@singularityrd.com";
@@ -165,13 +165,16 @@ export function createManifest(target, { version, contentCss = false, blockedPag
 		manifest.background = { scripts: ["background.js"] };
 		manifest.options_ui = { page: "options.html", open_in_tab: true };
 		manifest.browser_specific_settings = {
+			// 140 (ESR) / Android 142 are the first releases that understand
+			// data_collection_permissions, which addons.mozilla.org requires.
 			gecko: {
 				id: GECKO_ID,
-				strict_min_version: "128.0",
+				strict_min_version: "140.0",
 				// No data is sent to the publisher. Optional telemetry (entity counts only)
 				// goes to the organisation's own control plane when an admin configures it.
 				data_collection_permissions: { required: ["none"] },
 			},
+			gecko_android: { strict_min_version: "142.0" },
 		};
 	}
 	return manifest;
@@ -243,6 +246,93 @@ function fail(message) {
 	throw new Error(`[browser-guard build] ${message}`);
 }
 
+/** RE2 (Chrome's policy-schema regex engine) caps every repetition count, nested ones multiplied. */
+export const RE2_MAX_REPEAT = 1000;
+
+/**
+ * Returns why `pattern` cannot be compiled by RE2, or [] when it can. Chrome
+ * validates `pattern` / `patternProperties` of storage.managed_schema with RE2
+ * when the extension loads, and an invalid schema makes Chrome refuse to load
+ * the whole extension (no service worker, no content scripts).
+ */
+export function re2PatternProblems(pattern) {
+	const problems = [];
+	try {
+		new RegExp(pattern);
+	} catch (error) {
+		return [`${JSON.stringify(pattern)} is not a valid regular expression (${error.message})`];
+	}
+	if (/\(\?<?[=!]/.test(pattern)) problems.push(`${JSON.stringify(pattern)} uses lookaround (unsupported by RE2)`);
+	if (/(?<!\\)\\[1-9]/.test(pattern)) problems.push(`${JSON.stringify(pattern)} uses a backreference (unsupported by RE2)`);
+	// Track the largest repetition product per group: RE2 rejects `x{1001}` and
+	// also `(x{4}){3,255}` (4 * 255 > 1000).
+	const stack = [{ max: 1, last: 1 }];
+	for (let i = 0; i < pattern.length; i++) {
+		const frame = stack[stack.length - 1];
+		const ch = pattern[i];
+		if (ch === "\\") {
+			i++;
+			frame.last = 1;
+		} else if (ch === "[") {
+			i++;
+			if (pattern[i] === "^") i++;
+			if (pattern[i] === "]") i++;
+			while (i < pattern.length && pattern[i] !== "]") i += pattern[i] === "\\" ? 2 : 1;
+			frame.last = 1;
+		} else if (ch === "(") {
+			stack.push({ max: 1, last: 1 });
+		} else if (ch === ")") {
+			const inner = stack.length > 1 ? stack.pop() : { max: 1 };
+			stack[stack.length - 1].last = inner.max;
+		} else if (ch === "|") {
+			frame.last = 1;
+		} else if (ch === "{") {
+			const m = /^\{(\d+)(?:,(\d*))?\}/.exec(pattern.slice(i));
+			if (!m) {
+				frame.last = 1;
+			} else {
+				const count = Math.max(Number(m[1]), m[2] ? Number(m[2]) : 0);
+				if (count > RE2_MAX_REPEAT) {
+					problems.push(`${JSON.stringify(pattern)} repeats ${count} times (RE2 limit ${RE2_MAX_REPEAT})`);
+				}
+				frame.last *= Math.max(count, 1);
+				if (frame.last > RE2_MAX_REPEAT && count <= RE2_MAX_REPEAT) {
+					problems.push(
+						`${JSON.stringify(pattern)} nests repetitions to ${frame.last} (RE2 limit ${RE2_MAX_REPEAT})`,
+					);
+				}
+				i += m[0].length - 1;
+			}
+		} else if (!"*+?".includes(ch)) {
+			frame.last = 1;
+		}
+		const top = stack[stack.length - 1];
+		top.max = Math.max(top.max, top.last);
+	}
+	return problems;
+}
+
+/** Walks a managed-storage schema and returns every problem Chrome would reject it for. */
+export function managedSchemaProblems(schema, path = "$") {
+	const problems = [];
+	if (schema === null || typeof schema !== "object" || Array.isArray(schema)) return problems;
+	if (typeof schema.pattern === "string") {
+		for (const p of re2PatternProblems(schema.pattern)) problems.push(`${path}.pattern: ${p}`);
+	}
+	for (const [key, child] of Object.entries(schema.properties ?? {})) {
+		problems.push(...managedSchemaProblems(child, `${path}.properties.${key}`));
+	}
+	for (const [key, child] of Object.entries(schema.patternProperties ?? {})) {
+		for (const p of re2PatternProblems(key)) problems.push(`${path}.patternProperties: ${p}`);
+		problems.push(...managedSchemaProblems(child, `${path}.patternProperties[${JSON.stringify(key)}]`));
+	}
+	if (schema.items) problems.push(...managedSchemaProblems(schema.items, `${path}.items`));
+	if (typeof schema.additionalProperties === "object") {
+		problems.push(...managedSchemaProblems(schema.additionalProperties, `${path}.additionalProperties`));
+	}
+	return problems;
+}
+
 function readJson(file, label) {
 	try {
 		return JSON.parse(readFileSync(file, "utf8"));
@@ -308,6 +398,12 @@ function collectInputs(root, entriesRoot) {
 	const schema = readJson(join(root, "static", "managed_schema.json"), "static/managed_schema.json");
 	if (schema?.type !== "object" || typeof schema.properties !== "object") {
 		fail("static/managed_schema.json must be a JSON schema with type object and properties");
+	}
+	const schemaProblems = managedSchemaProblems(schema);
+	if (schemaProblems.length > 0) {
+		fail(
+			`static/managed_schema.json would make Chrome refuse to load the extension:\n  - ${schemaProblems.join("\n  - ")}`,
+		);
 	}
 
 	return { version: String(packageJson.version), staticFiles, locales };

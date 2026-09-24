@@ -122,20 +122,17 @@ const confirm = {
 		});
 		checks.check("nothing is sent before the user decides", quiet, h.recorder.apiSince(mark));
 
-		// getByRole pierces open shadow roots; English UI is forced with --lang=en-US.
-		const button = page.getByRole("button", {
-			name: /send masked|mask(ed)? and send|maskeli g[öo]nder/i,
-		});
-		const found = await waitFor(() => button.count(), {
-			timeout: 3000,
-			message: '"Send masked" button',
-		}).catch(() => 0);
+		// The bubble is in a closed shadow root: the button is found in the
+		// accessibility tree and clicked with the mouse. English UI (--lang=en-US).
+		const clicked = await waitFor(
+			() => h.clickOverlayButton(page, /^(send masked|maskeli g[öo]nder)$/i),
+			{ timeout: 3000, message: '"Send masked" button' },
+		).catch(() => false);
 		checks.must(
 			'the bubble offers a "Send masked" button',
-			found > 0,
+			clicked,
 			await h.overlays(page, SITE),
 		);
-		await button.first().click();
 
 		const sent = await waitForPrompt(h, SITE, mark);
 		const body = sent.json?.prompt ?? sent.raw;

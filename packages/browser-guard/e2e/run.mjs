@@ -146,6 +146,19 @@ async function negativeControl(h, data) {
 	};
 }
 
+/** Manifest name with a `__MSG_key__` reference resolved from the default locale. */
+function extensionName(h) {
+	const name = String(h.manifest.name ?? "");
+	const key = /^__MSG_(\w+)__$/.exec(name)?.[1];
+	if (!key) return name;
+	try {
+		const file = path.join(h.extDir, "_locales", h.manifest.default_locale ?? "en", "messages.json");
+		return JSON.parse(fs.readFileSync(file, "utf8"))[key]?.message ?? name;
+	} catch {
+		return name;
+	}
+}
+
 function pad(text, width) {
 	const s = String(text);
 	return s.length >= width ? `${s.slice(0, width - 1)}…` : s + " ".repeat(width - s.length);
@@ -236,7 +249,7 @@ async function main() {
 		return 2;
 	}
 	log(`browser: Chromium ${h.browserVersion} via ${h.launchMode}`);
-	log(`extension id: ${h.extensionId} (${h.manifest.name} ${h.manifest.version})`);
+	log(`extension id: ${h.extensionId} (${extensionName(h)} ${h.manifest.version})`);
 
 	const rows = [];
 	try {
