@@ -26,6 +26,7 @@ function harness(options: {
 	signValue?: unknown;
 	fetch?: typeof fetch;
 	env?: Record<string, string | undefined>;
+	rate?: "allowed" | "denied" | "error";
 } = {}) {
 	const rows: Record<string, Row | null> = {
 		api_keys: options.key === undefined ? { id: API_KEY_ID, key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: false } : options.key,
@@ -42,8 +43,14 @@ function harness(options: {
 		status: 200,
 		headers: { "Content-Type": "application/vnd.aidr.pack", "Content-Length": "10", "Accept-Ranges": "bytes" },
 	}));
+	const rateCalls: Row[] = [];
 	const db = {
-		async rpc(name: string) {
+		async rpc(name: string, args: Row = {}) {
+			if (name === "consume_tenant_rate_limit") {
+				rateCalls.push(args);
+				if (options.rate === "error") return { data: null, error: { message: "rate storage unavailable" } };
+				return { data: [{ allowed: options.rate !== "denied", remaining: options.rate === "denied" ? 0 : 10 }], error: null };
+			}
 			if (name !== "tenant_admission_capacity") throw new Error(`Unexpected RPC: ${name}`);
 			return { data: 1, error: null };
 		},
@@ -92,7 +99,7 @@ function harness(options: {
 	}
 	load(ENTRY);
 	if (!handler) throw new Error("packs-download did not register a handler");
-	return { handler, queries, sign, fetch: fetchMock, rows };
+	return { handler, queries, sign, fetch: fetchMock, rows, rateCalls };
 }
 
 function request(token: string | null = "customer-key", search = "pack_id=intel&version=1", method = "GET") {
@@ -107,6 +114,43 @@ function grantRequest(downloadUrl: string, method = "GET") {
 }
 
 describe("packs-download customer contract", () => {
+	it("budgets grant minting and byte streaming per API key and tenant", async () => {
+		const runtime = harness();
+		const issued = await runtime.handler(request());
+		const { download_url: downloadUrl } = await issued.json() as { download_url: string };
+		expect((await runtime.handler(grantRequest(downloadUrl))).status).toBe(200);
+		expect(runtime.rateCalls.map((call) => [call.p_tenant_id, call.p_subject, call.p_endpoint])).toEqual([
+			[TENANT, API_KEY_ID, "packs-download"],
+			[TENANT, API_KEY_ID, "packs-download:stream"],
+		]);
+	});
+
+	it.each([
+		["denied", 429, "rate_limited"],
+		["error", 503, "rate_limit_unavailable"],
+	] as const)("refuses a %s grant-mint budget before reading entitlements", async (rate, status, error) => {
+		const runtime = harness({ rate });
+		const response = await runtime.handler(request());
+		expect(response.status).toBe(status);
+		expect(await response.json()).toEqual({ error });
+		expect(response.headers.get("Retry-After")).toMatch(/^\d+$/);
+		expect(runtime.queries.some((query) => query.table === "entitlements")).toBe(false);
+	});
+
+	it.each([
+		["denied", 429, "rate_limited"],
+		["error", 503, "rate_limit_unavailable"],
+	] as const)("refuses a %s stream budget before signing a Storage URL", async (rate, status, error) => {
+		const issuer = harness();
+		const { download_url: downloadUrl } = await (await issuer.handler(request())).json() as { download_url: string };
+		const runtime = harness({ rate });
+		const response = await runtime.handler(grantRequest(downloadUrl));
+		expect(response.status).toBe(status);
+		expect(await response.json()).toEqual({ error });
+		expect(runtime.sign).not.toHaveBeenCalled();
+		expect(runtime.fetch).not.toHaveBeenCalled();
+	});
+
 	it("issues an externally reachable proxy URL when database access uses an internal origin", async () => {
 		const runtime = harness({ env: { SUPABASE_URL: "http://api-gw:8000", AIDR_PUBLIC_API_ORIGIN: "https://api.customer.example" } });
 		const response = await runtime.handler(request());

@@ -60,7 +60,12 @@ use [STAGING.md](STAGING.md). It does not route the existing landing page.
    (`https://PROJECT.supabase.co`), while `AIDR_PUBLIC_ORIGIN` is the **Worker**
    origin. `AIDR_SUPABASE_ANON_KEY` is public by design. Generate an independent
    random 32-byte-or-longer `AIDR_DEVICE_START_INGRESS_SECRET` and set the same
-   value only in the Supabase `device-start` function environment. Do not commit
+   value only in the Supabase `device-start` function environment. The Worker
+   also signs `waitlist-signup` POSTs with the route-bound context
+   `waitlist-signup:v1`; setting `AIDR_WAITLIST_INGRESS_SECRET` to the same value
+   in the `waitlist-signup` function enables its per-client quota and makes the
+   proof mandatory. Set `TURNSTILE_SECRET_KEY` there to require server-side
+   Cloudflare Turnstile verification. Do not commit
    or print secrets. In the same Cloudflare environment, set the non-secret
    Worker variables `AIDR_RELEASE_VERSION` and `AIDR_RELEASE_SHA` from the exact
    approved release tag and its 40-character source commit. `/version` returns
