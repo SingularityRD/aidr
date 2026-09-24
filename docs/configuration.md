@@ -355,6 +355,14 @@ One of `"paranoid"`, `"balanced"`, or `"relaxed"`. Default: `"balanced"`. See [H
 
 In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw, OpenCode and Codex, and a deny can never be released by an operator approval. Those connectors cannot open a host-native approval dialog, so an `ask` verdict stays blocked until a human approves it out of band with `aidr approve` (see [Operator approvals](#operator-approvals)); the agent cannot approve its own action. Claude Code supports a host approval UI. Cursor `preToolUse` does not support an enforceable `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.
 
+### `operator_approvals`
+
+`key_storage`: `"os-vault"` (default) or `"file"`. Where the operator approval
+key and the single-use ledger live. With `"os-vault"` and no OS credential vault,
+operator approvals are disabled and asks stay blocked; `"file"` is an explicit,
+reduced-protection opt-in that `aidr doctor` warns about. Overridden by
+`AIDR_OPERATOR_APPROVAL_KEY_STORAGE`. See [Key custody](#key-custody).
+
 ### `disabled_threats`
 
 Array of threat IDs to skip during heuristic matching. Default: `[]`.
@@ -476,7 +484,13 @@ their `ask` verdicts go through a file-backed, operator-only approval channel:
    `~/.singularity-aidr/approvals.json`: the `actionId` (a SHA-256 of tool, input
    and session), a digest of the exact artifact set, the tool, the connector, a
    redacted summary and a one-hour expiry. Raw artifact values and the session id
-   are not stored — only digests and redacted previews.
+   are not stored — only digests and redacted previews. Every text field the
+   agent could influence is stored with C0/C1 control characters and Unicode
+   bidi/format controls (U+200B–U+200F, U+202A–U+202E, U+2066–U+2069, U+FEFF, …)
+   rendered as visible escapes (`\x1b`, `‮`), and a cut field ends with
+   `…(truncated)`. The record also keeps the total artifact count, so
+   `aidr pending` says "showing 16 of 40 (truncated)" when a call had more
+   artifacts than are previewed. The CLI escapes again at display time.
 2. The operator reviews open asks with `aidr pending` and approves one with
    `aidr approve <actionId>`. The CLI prints what will be released and requires
    the operator to type `approve` in an interactive terminal. For automation it
@@ -493,37 +507,127 @@ their `ask` verdicts go through a file-backed, operator-only approval channel:
 
 | CLI | Purpose |
 |-----|---------|
-| `aidr pending [--json]` | List asks waiting for a decision |
+| `aidr pending [--json]` | List asks waiting for a decision (and say so when approvals are disabled) |
 | `aidr approve <actionId> [--ttl <min>] [--permit-allowlist] [--yes]` | Approve one retry (operator only) |
 | `aidr allowlist list\|add\|remove` | Manage permanent exceptions (`add` is operator only) |
 | `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Export redacted entries, including rotated files; the session id is replaced by a digest and CSV cells are neutralised against spreadsheet formulas |
-| `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, the approval store and the last verdict; exits non-zero on problems |
+| `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, the approval store and key custody, and the last verdict; exits non-zero on problems |
 
-**Integrity.** Every pending ask and approval carries an HMAC-SHA256 under a
-per-install key. The key lives in the OS credential vault when one is available
-(Windows DPAPI, macOS Keychain, or libsecret `secret-tool`) under the id
-`aidr-operator-approval-key`; otherwise — or when `AIDR_SECRET_STORE=file-acl` —
-in the owner-only file `~/.singularity-aidr/operator-approval.key`.
-`~/.singularity-aidr/operator-approval-key.json` records which of the two is in
-use. A hand-edited record (later expiry, reset use counter, different digest) or
-one signed with another key fails verification and is refused. The store is
-written atomically with mode `0600` under an exclusive lock, bounded to 200
-pending asks and 200 approvals, and a symlinked or oversized store is not used.
-Any store or key failure keeps the call blocked.
+### Key custody
 
-**Residual risk.** This channel is designed to stop a prompt-injected agent from
-approving its own block through the tools it is given. It is **not** a boundary
-against code that already runs as the same OS user with unrestricted shell
-access: such code can read the key file (or query the vault as that user), mint
-a valid record, allocate a pseudo-terminal to satisfy the TTY check, or set
-`AIDR_OPERATOR_NONINTERACTIVE`. The mitigations are layered, not absolute: agent
-tool calls normally have no TTY; self-defense rule `CLT-SELF-007` turns an agent
-command that runs `aidr approve` / `aidr allowlist add`, sets
-`AIDR_OPERATOR_NONINTERACTIVE`, or touches the approval store or key into a
-block, and `CLT-SELF-002` does the same for file tools touching those files; and
-every release is written to the audit log as a user override. Rotating the key
-(deleting the key file or vault entry) invalidates every outstanding record.
+Every pending ask and approval carries an HMAC-SHA256 under a per-install key.
+Where that key lives is set by `operator_approvals.key_storage`:
+
+```json
+{
+  "operator_approvals": { "key_storage": "os-vault" }
+}
+```
+
+| `key_storage` | Key and single-use ledger | Without it |
+|---------------|---------------------------|------------|
+| `"os-vault"` (default) | OS credential vault only — Windows DPAPI, macOS Keychain, or libsecret `secret-tool` — under the ids `aidr-operator-approval-key` and `aidr-operator-approval-ledger` | **Approvals are disabled.** Asks stay blocked (fail closed), the block message tells the user the ask could not be recorded, and `aidr pending`, `aidr approve` and `aidr doctor` say why. There is no silent fallback to a file. |
+| `"file"` (explicit opt-in) | Owner-only files `~/.singularity-aidr/operator-approval.key` and `operator-approval-ledger.json` | — |
+
+`AIDR_OPERATOR_APPROVAL_KEY_STORAGE=os-vault|file` overrides the config.
+Anything other than an explicit `file` means the vault; `AIDR_SECRET_STORE=file-acl`
+does **not** opt approvals into the key file — it only means "no vault", which
+disables approvals. `aidr doctor` warns loudly whenever the file storage is in use:
+any process running as the same user — including a compromised agent with shell
+access — can read a key file and forge approvals.
+
+Under the vault storage the provider never reads a key file, whatever
+`operator-approval-key.json` (an informational record of where the key lives)
+says: planting `{"store":"file"}` plus a key of one's choosing does not create a
+signing key. A key file left over from an earlier file-storage install is removed
+when the vault key is created.
+
+A hand-edited record (later expiry, different digest, reset use counter) or one
+signed with another key fails verification and is refused. The store is written
+atomically with mode `0600` under an exclusive lock, bounded to 200 pending asks
+and 200 approvals, and a symlinked or oversized store is not used. Any store, key
+or ledger failure keeps the call blocked. Rotating the key (deleting the vault
+entry or key file) invalidates every outstanding record.
+
+### Single use against rollback
+
+The HMAC proves that a record was written by a key holder, not that it is the
+latest one: restoring an earlier copy of the whole `approvals.json` (taken before
+an approval was spent) brings back a validly signed, unspent approval. Single use
+is therefore anchored outside the store: every spend is written to the
+**consumption ledger** (`aidr-operator-approval-ledger` in the same OS vault as
+the key), read back to confirm it persisted, and checked on every consume. A
+restored store then yields `already_used`. Allowlist grants
+(`--permit-allowlist`) are spent through the same ledger. If the ledger cannot be
+read or written — no vault, a corrupt entry, a write that does not persist, or
+more than 1024 unexpired spends — nothing is released and `aidr approve` refuses
+to create approvals that could not be spent. Entries expire with the approval they
+record. Under the `file` storage the ledger is a file in the same directory, so it
+stops a rollback of `approvals.json` alone but not a rollback of both files; on
+Windows the DPAPI-sealed vault entry is itself a file under
+`~/.singularity-aidr/secrets`, so sealing prevents forging it but not restoring an
+older copy of it.
+
+### Self-defense rules
+
+The approval channel is protected by hard-deny rules (never `ask`, which would
+hand the agent an actionId to have approved):
+
+- `CLT-SELF-007` — an agent command that runs `aidr approve`, `aidr pending`,
+  `aidr allowlist add`, or sets `AIDR_OPERATOR_NONINTERACTIVE`.
+- `CLT-SELF-008` — any agent reference to the AIDR state directory
+  `.singularity-aidr`, in a shell command, a file-tool path, a Write/Edit body or
+  an MCP argument.
+- `CLT-SELF-009` — the vault entries and key/ledger file names
+  (`singularity-aidr-cli`, `aidr-operator-approval-*`, `operator-approval*.key|json`).
+
+They match the **shell-normalized** view of the text (`match_on:
+command_normalized`, `file_path_normalized`, `content_normalized`), in which
+quotes and backslash escapes are removed (including nested ones), `$'…'` is
+decoded, `$(which aidr)` / `` `command -v aidr` `` become `aidr`, variables
+assigned in the same command are substituted, literal string concatenations
+(`'/.singular' + 'ity-aidr'`) are joined, and globs that would expand to the
+state directory (`~/.singul*`, `.s?ngularity-aidr`, `~/.{singularity-aidr,x}`,
+`~/.*`) are resolved to its name. So `aidr 'approve' <id>`, `"aidr" approve`,
+`aidr ap\prove`, `$(which aidr) approve`, `npx @singularityrd/aidr-cli approve`,
+`script -qc "aidr 'approve' <id>" /dev/null`, `expect`/`unbuffer` wrappers,
+`pty.spawn(['aidr','approve',…])`, `cat ~/.singularity-aidr/*.key` and
+`cd ~ && cat .s*/operator-approval.key` are all denied. AIDR's read-only
+diagnostics — `aidr doctor`, `aidr status`, `aidr audit tail`,
+`aidr allowlist list` — are not matched; there is no agent-facing exception for
+reading the directory itself. Because these rules deny any mention of
+`.singularity-aidr`, an agent editing files or docs that contain that path (for
+example, while developing AIDR itself) is blocked too; that is deliberate.
+
+### Residual risk
+
+This channel is designed to stop a prompt-injected agent from approving its own
+block through the tools it is given. It is **not** a boundary against code that
+already runs as the same OS user with unrestricted shell access. The normalized
+view cannot see a path computed at run time (assembled by arithmetic, decoded
+from base64, fetched, or read from another file), and such code can:
+
+- query the OS vault as that user — macOS Keychain and libsecret release an item
+  to any process of the user once the keychain is unlocked, unless the item's
+  access control requires a per-access prompt;
+- mint a valid record with the key it read, or write the ledger;
+- allocate a pseudo-terminal to satisfy the TTY check, or set
+  `AIDR_OPERATOR_NONINTERACTIVE`.
+
+The mitigations are layered, not absolute: vault custody keeps the key out of
+files the agent's file tools can read; agent tool calls normally have no TTY; the
+self-defense rules above deny the direct and obfuscated routes; and every release
+is written to the audit log as a user override.
+
+**Recommended deployment:** keep `key_storage` at `"os-vault"` and configure the
+vault item to prompt on every access (Keychain Access → the
+`singularity-aidr-cli` item → Access Control → "Ask for Keychain password"; each
+recorded ask and each approval then shows a prompt), or run the agent under a
+separate OS account from the operator, so its shell cannot open the operator's
+vault at all. Where approvals must hold against same-user code, those are the
+options today: an approval channel through the managed-mode dashboard, which
+would remove the local same-user path entirely, is not part of this release.
 
 ## Files on Disk
 
@@ -535,8 +639,9 @@ every release is written to the audit log as a user override. Rotating the key
 | `~/.singularity-aidr/allowlist.json` | User allowlist |
 | `~/.singularity-aidr/audit.jsonl` | Audit log |
 | `~/.singularity-aidr/approvals.json` | Operator approval store: pending asks and `aidr approve` approvals (HMAC-protected, `0600`) |
-| `~/.singularity-aidr/operator-approval.key` | Approval HMAC key when no OS vault is used (`0600`) |
-| `~/.singularity-aidr/operator-approval-key.json` | Records whether the approval key is in the OS vault or the key file |
+| `~/.singularity-aidr/operator-approval.key` | Approval HMAC key, only with the explicit `operator_approvals.key_storage: "file"` opt-in (`0600`) |
+| `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives in the OS vault |
+| `~/.singularity-aidr/operator-approval-key.json` | Informational record of where the approval key lives; never makes AIDR read a key file |
 | `~/.singularity-aidr/installation-id` | Random UUID identifying this installation |
 | `~/.singularity-aidr/managed.json` | Managed-mode state (seat status, backoff windows) |
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |

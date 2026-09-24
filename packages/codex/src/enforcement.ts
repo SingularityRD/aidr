@@ -145,7 +145,13 @@ function resultForGuard(guard: GuardResult, artifacts: Artifact[]): CodexEnforce
 		reasonCode: "aidr_requires_approval",
 		wire: toWireOutput(
 			"ask",
-			formatAskMessage(actionId as string, verdict, artifacts, responseActions),
+			formatAskMessage(
+				actionId as string,
+				verdict,
+				artifacts,
+				responseActions,
+				guard.pendingRecorded,
+			),
 		),
 	};
 }

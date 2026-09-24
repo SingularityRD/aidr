@@ -103,7 +103,7 @@ export function createToolCallHandler(
 			// call instead of evaluating it without the tenant's policy.
 			const provisioned = await loadProvisionedDetectorContext("openclaw");
 
-			const { verdict, actionId, responseActions } = await guardToolCall(
+			const { verdict, actionId, responseActions, pendingRecorded } = await guardToolCall(
 				{ sessionId, toolName, toolInput: params, artifacts },
 				{ threatsDir, allowlistsDir, logger, agentRuntime: "openclaw", ...provisioned },
 				approvalStore,
@@ -127,7 +127,13 @@ export function createToolCallHandler(
 			// ask — actionId is always set for ask verdicts
 			return {
 				block: true,
-				blockReason: formatAskMessage(actionId as string, verdict, artifacts, responseActions),
+				blockReason: formatAskMessage(
+					actionId as string,
+					verdict,
+					artifacts,
+					responseActions,
+					pendingRecorded,
+				),
 			};
 		} catch (e) {
 			// Evaluation failures must never authorize execution.

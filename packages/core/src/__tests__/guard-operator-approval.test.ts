@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApprovalStore } from "../approval-store.js";
-import { addToAllowlist, guardToolCall } from "../guard.js";
+import { addToAllowlist, formatAskMessage, guardToolCall } from "../guard.js";
 import {
 	clearOperatorApprovalKeyCache,
 	listPendingAsks,
@@ -70,9 +70,20 @@ beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "aidr-guard-operator-"));
 	clearOperatorApprovalKeyCache();
 	const key = randomBytes(32);
+	// Stands in for the OS vault entry holding the single-use ledger.
+	let ledger: string | null = null;
 	operatorApprovals = {
 		path: join(dir, "approvals.json"),
-		keyProvider: { load: () => ({ key, location: "file", store: "file" }) },
+		keyProvider: {
+			load: () => ({ key, location: "os-vault", store: "macos-keychain" }),
+			anchor: () => ({
+				location: "os-vault",
+				read: () => ledger,
+				write: (value) => {
+					ledger = value;
+				},
+			}),
+		},
 	};
 	vi.mocked(evaluateToolCall).mockResolvedValue(ASK);
 	vi.mocked(loadConfig).mockResolvedValue({
@@ -151,6 +162,57 @@ describe("guardToolCall with the operator approval channel", () => {
 		});
 		expect(result.verdict.decision).toBe("ask");
 		expect(result.pendingRecorded).toBe(false);
+		// The block message must not send the user to an `aidr approve` that cannot work.
+		const message = formatAskMessage(
+			result.actionId as string,
+			result.verdict,
+			request.artifacts,
+			result.responseActions,
+			result.pendingRecorded,
+		);
+		expect(message).toContain("could NOT be recorded for operator approval");
+		expect(message).toContain("aidr doctor");
+		expect(message).not.toContain("approve it with `aidr approve");
+	});
+
+	it("keeps the block when approvals are disabled (no OS vault, no opt-in)", async () => {
+		const result = await guardToolCall(request, context, new ApprovalStore(), {
+			operatorApprovals: {
+				...operatorApprovals,
+				keyProvider: {
+					load: () => {
+						throw new Error("no vault");
+					},
+				},
+			},
+		});
+		expect(result.verdict.decision).toBe("ask");
+		expect(result.pendingRecorded).toBe(false);
+		expect(await listPendingAsks(operatorApprovals)).toEqual([]);
+	});
+
+	it("passes the configured key storage to the approval store", async () => {
+		vi.mocked(loadConfig).mockResolvedValue({
+			sensitivity: "balanced",
+			allowlist: { path: join(dir, "allowlist.json") },
+			operator_approvals: { key_storage: "file" },
+		} as unknown as Awaited<ReturnType<typeof loadConfig>>);
+		// No injected provider: the default one reads the storage from the config.
+		// With the file storage selected it writes its key into the AIDR directory,
+		// so point HOME at the test directory.
+		const previousHome = process.env.HOME;
+		process.env.HOME = dir;
+		clearOperatorApprovalKeyCache();
+		try {
+			const result = await guardToolCall(request, context, new ApprovalStore(), {
+				operatorApprovals: { path: join(dir, "approvals.json") },
+			});
+			expect(result.pendingRecorded).toBe(true);
+		} finally {
+			if (previousHome === undefined) delete process.env.HOME;
+			else process.env.HOME = previousHome;
+			clearOperatorApprovalKeyCache();
+		}
 	});
 
 	it("can be disabled", async () => {

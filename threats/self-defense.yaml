@@ -1,8 +1,11 @@
 ﻿# Self-defense patterns â€” protect Singularity AIDR and Claude Code configuration
 # Author: SingularityRD
 # License: DRL-1.1 (see threats/LICENSE)
-# These flag when the AI agent may be manipulated into disabling its own guardrails
-# Using require_approval (not block) to allow legitimate plugin dev and config changes
+# These flag when the AI agent may be manipulated into disabling its own guardrails.
+# CLT-SELF-001..006 use require_approval (not block) to allow legitimate plugin dev
+# and config changes. CLT-SELF-007..009 guard the operator approval channel itself
+# and are hard blocks: an ask there would let the agent ask the operator to
+# approve the agent's own access to the approval machinery.
 
 # Delete .singularity-aidr directory
 # Perf (linear-time rewrite): `\s.*` between the verb and the target was
@@ -90,17 +93,71 @@
   expires_at: null
   revoked: false
 
-# Self-approval: the agent invoking the operator-only approval CLI, forcing its
-# non-interactive mode, or touching the approval store / key from a shell.
-# `aidr approve` and `aidr allowlist add` are human-only, out-of-band actions.
+# Self-approval: the agent invoking the operator-only approval CLI or forcing its
+# non-interactive mode. `aidr approve`, `aidr pending` and `aidr allowlist add`
+# are human-only, out-of-band actions, so this is a hard block (deny), never an
+# ask: an ask would hand the agent an actionId the operator might approve.
+# It matches the shell-normalized view (`command_normalized`, see
+# packages/core/src/shell-normalize.ts), so quoting (`aidr 'approve'`,
+# `"aidr" approve`, `aidr ap\prove`), executable lookups (`$(which aidr)`),
+# variables, package runners (`npx @singularityrd/aidr-cli approve`), interpreter
+# argv lists (`spawn('aidr', ['approve', id])`) and pty wrappers (`script -qc`,
+# `expect`, `unbuffer`, which all carry the inner command) do not hide it.
+# Read-only diagnostics (`aidr doctor`, `aidr status`, `aidr audit tail`,
+# `aidr allowlist list|remove`) are not matched.
 - id: "CLT-SELF-007"
   category: self_defense
   severity: critical
-  confidence: 0.95
-  action: require_approval
-  pattern: "\\baidr(-setup)?(\\.exe|\\.cmd|\\.js)?[\"']?\\s{1,20}(approve|allowlist\\s{1,20}add)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\.singularity-aidr[\\\\/](approvals\\.json|operator-approval)"
+  confidence: 0.99
+  action: block
+  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|allowlist[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add)\\b|AIDR_OPERATOR_NONINTERACTIVE"
   case_insensitive: true
-  match_on: command
+  match_on: command_normalized
   title: "Attempt to self-approve a Singularity AIDR block or forge an operator approval"
+  expires_at: null
+  revoked: false
+
+# Any agent reference to the AIDR state directory. It holds the approval store,
+# the allowlist, the config and — when the operator opted into file key storage —
+# the approval key, so reading, copying, listing or rewriting anything in it is a
+# hard block, whatever the tool: a shell command (`~`, `$HOME`, absolute,
+# quoted, `cd` then relative access, globs such as `~/.singul*` or `~/.*`
+# resolved by the normalized view), a file tool path, a Write/Edit body that
+# would put the path into a script, or an MCP argument. The literal is matched
+# after shell normalization, which also joins string concatenations in
+# interpreter one-liners (`'/.singular' + 'ity-aidr'`).
+# There is no agent-facing read-only exception: AIDR's diagnostics are CLI
+# commands (`aidr doctor`, `aidr status`) that do not name the directory.
+- id: "CLT-SELF-008"
+  category: self_defense
+  severity: critical
+  confidence: 0.99
+  action: block
+  pattern: "\\.singularity-aidr"
+  case_insensitive: true
+  match_on:
+    - command_normalized
+    - file_path_normalized
+    - content_normalized
+  title: "Agent access to the Singularity AIDR state directory"
+  expires_at: null
+  revoked: false
+
+# The approval key, the consumption ledger and the credential vault entries by
+# name: `secret-tool lookup service singularity-aidr-cli id aidr-operator-approval-key`,
+# `security find-generic-password -s singularity-aidr-cli`, or a file named after
+# them, wherever it is.
+- id: "CLT-SELF-009"
+  category: self_defense
+  severity: critical
+  confidence: 0.99
+  action: block
+  pattern: "singularity-aidr-cli\\b|aidr-operator-approval|operator-approval(?:-key|-ledger)?\\.(?:key|json)"
+  case_insensitive: true
+  match_on:
+    - command_normalized
+    - file_path_normalized
+    - content_normalized
+  title: "Agent access to the Singularity AIDR approval key or vault entries"
   expires_at: null
   revoked: false

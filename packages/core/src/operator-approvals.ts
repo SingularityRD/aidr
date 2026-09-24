@@ -15,7 +15,8 @@
  *
  * 1. At ask time the connector calls {@link recordPendingAsk}. The record binds the
  *    `actionId` (a digest of tool, input and session) to a digest of the exact
- *    artifacts and the tool name, plus a redacted summary for the operator.
+ *    artifacts and the tool name, plus a redacted, control-character-escaped
+ *    summary for the operator.
  * 2. The operator runs `aidr approve <actionId>`. The CLI reads the pending record,
  *    shows it, asks for interactive confirmation and calls
  *    {@link recordOperatorApproval}.
@@ -24,36 +25,58 @@
  *    approval whose action id, tool and artifact digest all match — and, by
  *    default, only once.
  *
- * ## Integrity and the honest residual risk
+ * ## Key custody (fail closed)
  *
- * Every record carries an HMAC-SHA256 under a per-install key kept in the OS
- * credential vault when one is available (see `secret-store.ts`), else in an
- * owner-only key file. A record edited by hand — a later expiry, a different
- * digest, a reset use counter — fails verification and is rejected.
+ * Every record carries an HMAC-SHA256 under a per-install key. By default the key
+ * lives ONLY in the OS credential vault (Windows DPAPI, macOS Keychain, libsecret);
+ * when no vault is available, operator approvals are DISABLED — asks stay blocked
+ * and `aidr approve` / `aidr doctor` say why. A plain key file is used only when
+ * the operator opts in explicitly (`operator_approvals.key_storage: "file"` in the
+ * config, or `AIDR_OPERATOR_APPROVAL_KEY_STORAGE=file`); `aidr doctor` warns about
+ * it. There is no silent fallback: an agent that can read a file in the AIDR
+ * directory must not thereby be able to mint approvals.
+ *
+ * ## What the HMAC does and does not prove
+ *
+ * The HMAC proves a record was written by a holder of the key, so a record edited
+ * by hand (a later expiry, a different digest, a reset use counter) or forged
+ * without the key fails verification. It does NOT prove a record is the latest
+ * one: restoring an earlier copy of the whole store (taken before an approval was
+ * spent) brings back a validly signed, unspent approval. Single-use is therefore
+ * enforced by a consumption ledger kept next to the key in the OS vault (the
+ * "anchor", see {@link OperatorConsumptionAnchor}): every spend is recorded there
+ * and checked on every consume, and without a working anchor nothing is released.
+ *
+ * ## Residual risk
  *
  * This is NOT a boundary against code that runs as the same OS user with full
- * shell access: such code can read the vault entry or key file and mint a valid
- * record, or run `aidr approve` inside a pseudo-terminal. The HMAC, the TTY
- * requirement in the CLI, and the self-defense threat rules that block an agent
- * from touching these files or invoking `aidr approve` raise the bar; they do not
- * make the channel agent-proof. See `docs/configuration.md`.
+ * shell access: such code can query the vault as that user (unless the vault
+ * prompts per access), mint a valid record, or run `aidr approve` inside a
+ * pseudo-terminal. The vault custody, the TTY requirement in the CLI and the
+ * self-defense rules (CLT-SELF-007..009 deny any agent reference to the AIDR
+ * state directory, the vault entries or the approval CLI) raise the bar; they do
+ * not make the channel agent-proof. See `docs/configuration.md`.
  */
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { closeSync, lstatSync, mkdirSync, openSync, renameSync, writeSync } from "node:fs";
+import {
+	closeSync,
+	lstatSync,
+	mkdirSync,
+	openSync,
+	renameSync,
+	unlinkSync,
+	writeSync,
+} from "node:fs";
 import { lstat, mkdir, open, stat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { toolInputSummaryForAudit } from "./audit-log.js";
+import { toolInputSummaryText } from "./audit-log.js";
 import { AIDR_DIR, resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent, getFileContentSync } from "./file-utils.js";
-import {
-	resolveSecretStore,
-	SECRET_STORE_ENV,
-	type SecretStore,
-	type SecretStoreKind,
-} from "./secret-store.js";
+import { resolveSecretStore, type SecretStore, type SecretStoreKind } from "./secret-store.js";
 import { redactTelemetryString } from "./telemetry-redaction.js";
+import { boundTerminalText } from "./terminal-text.js";
 import type { Artifact, Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -80,8 +103,25 @@ const DIGEST = /^[a-f0-9]{64}$/;
 
 /** Vault account/id under which the per-install approval key is stored. */
 export const OPERATOR_APPROVAL_KEY_ID = "aidr-operator-approval-key";
+/** Vault account/id of the consumption ledger (the single-use anchor). */
+export const OPERATOR_APPROVAL_LEDGER_ID = "aidr-operator-approval-ledger";
+/** Selects the key storage explicitly: `os-vault` (default) or `file` (opt-in). */
+export const OPERATOR_APPROVAL_KEY_STORAGE_ENV = "AIDR_OPERATOR_APPROVAL_KEY_STORAGE";
 const KEY_FILE = "operator-approval.key";
 const KEY_META_FILE = "operator-approval-key.json";
+const LEDGER_FILE = "operator-approval-ledger.json";
+/** Spent single-use approvals remembered by the ledger (until their expiry). */
+const MAX_LEDGER_ENTRIES = 1024;
+const LEDGER_ID = /^[a-f0-9]{32}$/;
+
+/**
+ * Where the approval key lives.
+ * - `os-vault` (default): the platform vault only. No vault means approvals are
+ *   disabled — never a silent fallback to a file.
+ * - `file`: an owner-only key file in the AIDR directory. Explicit opt-in only;
+ *   any process running as the same user can read it.
+ */
+export type OperatorKeyStorage = "os-vault" | "file";
 
 // ── Errors ─────────────────────────────────────────────────────────
 
@@ -91,6 +131,8 @@ export type OperatorApprovalErrorCode =
 	| "pending_expired"
 	| "tampered"
 	| "key_unavailable"
+	| "approvals_disabled"
+	| "anchor_unavailable"
 	| "lock_timeout"
 	| "unsafe_store"
 	| "invalid_ttl";
@@ -122,8 +164,12 @@ export interface PendingAsk {
 	connector: string;
 	/** Truncated digest of the session id, for correlation only. */
 	sessionDigest: string;
+	/** Redacted, control-character-escaped, bounded; ends with "…(truncated)" when cut. */
 	summary: string;
+	/** Previews of the first {@link MAX_ARTIFACTS_PER_RECORD} artifacts. */
 	artifacts: PendingAskArtifact[];
+	/** How many artifacts the call had in total (may exceed `artifacts.length`). */
+	artifactCount: number;
 	severity: string;
 	category: string;
 	reasons: string[];
@@ -158,6 +204,7 @@ export type OperatorConsumeReason =
 	| "tool_mismatch"
 	| "already_used"
 	| "key_unavailable"
+	| "anchor_unavailable"
 	| "unavailable";
 
 export interface OperatorConsumeResult {
@@ -172,15 +219,42 @@ export interface OperatorKeyMaterial {
 	store: SecretStoreKind | "file";
 }
 
+/**
+ * Where spent single-use approvals are recorded, outside the approval store.
+ *
+ * The store file can be rolled back by anything that can write it; the anchor is
+ * what makes "single use" survive that. The default provider keeps it in the same
+ * OS vault as the key. `read` returns null when nothing was recorded yet; both
+ * methods throw when the anchor cannot be used, which keeps the call blocked.
+ */
+export interface OperatorConsumptionAnchor {
+	readonly location: "os-vault" | "file";
+	read(): string | null;
+	write(value: string): void;
+}
+
 /** Supplies the per-install HMAC key. `create` is false for read-only callers. */
 export interface OperatorKeyProvider {
+	/** Throws {@link OperatorApprovalError} (`approvals_disabled`) when the storage is unusable. */
 	load(options: { create: boolean }): OperatorKeyMaterial | null;
+	/**
+	 * The consumption anchor. A provider without one (or returning null) cannot
+	 * release anything: approvals are disabled, fail closed.
+	 */
+	anchor?(): OperatorConsumptionAnchor | null;
+	/** The configured key storage, when the provider knows it (for `aidr doctor`). */
+	readonly storage?: OperatorKeyStorage;
 }
 
 export interface OperatorApprovalStoreOptions {
 	/** Store file; defaults to `~/.singularity-aidr/approvals.json`. */
 	path?: string;
 	keyProvider?: OperatorKeyProvider;
+	/**
+	 * Key storage for the default provider; the config's
+	 * `operator_approvals.key_storage`. Ignored when `keyProvider` is given.
+	 */
+	keyStorage?: OperatorKeyStorage;
 	now?: () => number;
 	logger?: Logger;
 }
@@ -203,6 +277,8 @@ const PendingDiskSchema = z.object({
 			}),
 		)
 		.max(MAX_ARTIFACTS_PER_RECORD),
+	// Optional so records written before the count was stored still verify.
+	artifact_count: z.number().int().min(0).optional(),
 	severity: z.string().max(32),
 	category: z.string().max(100),
 	reasons: z.array(z.string().max(400)).max(5),
@@ -246,6 +322,7 @@ function pendingFromDisk(record: PendingDisk): PendingAsk {
 		sessionDigest: record.session_digest,
 		summary: record.summary,
 		artifacts: record.artifacts.map((a) => ({ ...a })),
+		artifactCount: Math.max(record.artifact_count ?? 0, record.artifacts.length),
 		severity: record.severity,
 		category: record.category,
 		reasons: [...record.reasons],
@@ -313,16 +390,13 @@ function macMatches(key: Buffer, kind: "pending" | "approval", record: { mac: st
 
 // ── Key provider ─────────────────────────────────────────────────────
 
-const KeyMetaSchema = z.object({
-	version: z.literal(1),
-	store: z.string(),
-});
-
 interface DefaultKeyProviderOptions {
 	directory?: string;
 	env?: NodeJS.ProcessEnv;
 	/** Vault resolver; injectable so tests never touch a real OS vault. */
 	resolveVault?: (selection?: string) => SecretStore;
+	/** The config's `operator_approvals.key_storage`; the env variable overrides it. */
+	keyStorage?: OperatorKeyStorage;
 }
 
 function writePrivateFileExclusive(path: string, content: string): void {
@@ -332,6 +406,14 @@ function writePrivateFileExclusive(path: string, content: string): void {
 	} finally {
 		closeSync(handle);
 	}
+}
+
+/** Write an owner-only file atomically (exclusive temp file, then rename). */
+function writePrivateFileAtomic(path: string, content: string): void {
+	const tmp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
+	writePrivateFileExclusive(tmp, content);
+	// Synchronous rename keeps the provider synchronous like the vault backends.
+	renameSync(tmp, path);
 }
 
 function assertRegularFile(path: string): boolean {
@@ -347,10 +429,76 @@ function assertRegularFile(path: string): boolean {
 	}
 }
 
+function parseKeyStorage(value: unknown): OperatorKeyStorage | undefined {
+	if (typeof value !== "string") return undefined;
+	const normalized = value.trim().toLowerCase();
+	if (normalized === "file") return "file";
+	if (normalized === "os-vault") return "os-vault";
+	return undefined;
+}
+
+/** `operator_approvals.key_storage` from the config file in `directory`, if set. */
+function keyStorageFromConfig(directory: string): OperatorKeyStorage | undefined {
+	try {
+		const path = join(directory, "config.json");
+		if (!assertRegularFile(path)) return undefined;
+		const config = JSON.parse(getFileContentSync(path)) as {
+			operator_approvals?: { key_storage?: unknown };
+		};
+		return parseKeyStorage(config?.operator_approvals?.key_storage);
+	} catch {
+		// An unreadable config never opts into the weaker file storage.
+		return undefined;
+	}
+}
+
 /**
- * The default key provider: the OS vault when one is available, else an
- * owner-only key file. The choice is recorded next to the store so the CLI and
- * every connector process use the same key.
+ * The effective key storage. The env variable wins over the config, and anything
+ * but an explicit `file` means the OS vault: the weaker storage is never chosen
+ * by default or by a malformed setting.
+ */
+export function resolveOperatorKeyStorage(
+	options: { keyStorage?: OperatorKeyStorage; env?: NodeJS.ProcessEnv; directory?: string } = {},
+): OperatorKeyStorage {
+	const env = options.env ?? process.env;
+	return (
+		parseKeyStorage(env[OPERATOR_APPROVAL_KEY_STORAGE_ENV]) ??
+		options.keyStorage ??
+		keyStorageFromConfig(options.directory ?? resolvePath(AIDR_DIR)) ??
+		"os-vault"
+	);
+}
+
+function approvalsDisabled(detail: string): OperatorApprovalError {
+	return new OperatorApprovalError(
+		"approvals_disabled",
+		`Operator approvals are disabled: ${detail} Asks stay blocked until this is fixed. ` +
+			"Install or unlock an OS credential vault (Windows DPAPI, macOS Keychain, or libsecret's " +
+			"secret-tool), or explicitly accept a plain key file readable by every process of this " +
+			'user with operator_approvals.key_storage = "file" in the config (or ' +
+			`${OPERATOR_APPROVAL_KEY_STORAGE_ENV}=file).`,
+	);
+}
+
+function fileAnchor(dir: string): OperatorConsumptionAnchor {
+	const path = join(dir, LEDGER_FILE);
+	return {
+		location: "file",
+		read: () => (assertRegularFile(path) ? getFileContentSync(path) : null),
+		write: (value) => writePrivateFileAtomic(path, value),
+	};
+}
+
+/**
+ * The default key provider.
+ *
+ * With the default `os-vault` storage the key and the consumption ledger live in
+ * the platform vault only; if there is none, `load` throws `approvals_disabled`
+ * and nothing can be approved. The key file is used only under the explicit
+ * `file` storage. `operator-approval-key.json` records where the key lives for
+ * `aidr doctor`; it is informational and never makes the provider read a key
+ * file under the vault storage (a hand-written `{"store":"file"}` plus a key file
+ * of the agent's choosing must not become a signing key).
  */
 export function createDefaultOperatorKeyProvider(
 	options: DefaultKeyProviderOptions = {},
@@ -359,6 +507,8 @@ export function createDefaultOperatorKeyProvider(
 	const resolveVault =
 		options.resolveVault ?? ((selection?: string) => resolveSecretStore({ selection, env }));
 	const directory = () => options.directory ?? resolvePath(AIDR_DIR);
+	const storage = () =>
+		resolveOperatorKeyStorage({ keyStorage: options.keyStorage, env, directory: directory() });
 
 	const readKeyFile = (dir: string): OperatorKeyMaterial | null => {
 		const path = join(dir, KEY_FILE);
@@ -368,98 +518,101 @@ export function createDefaultOperatorKeyProvider(
 		return { key: Buffer.from(hex, "hex"), location: "file", store: "file" };
 	};
 
-	const createKeyFile = (dir: string, hex: string): OperatorKeyMaterial => {
+	const writeMeta = (dir: string, store: string) => {
+		writePrivateFileAtomic(join(dir, KEY_META_FILE), `${JSON.stringify({ version: 1, store })}\n`);
+	};
+
+	const vault = (): SecretStore => {
+		let store: SecretStore;
+		try {
+			store = resolveVault();
+		} catch (error) {
+			throw approvalsDisabled(
+				`no OS credential vault is available for the approval key (${error instanceof Error ? error.message : String(error)}).`,
+			);
+		}
+		if (!store.osProtected) {
+			throw approvalsDisabled(
+				`the selected secret store (${store.kind}) is not an OS credential vault.`,
+			);
+		}
+		return store;
+	};
+
+	const loadFromFile = (dir: string, create: boolean): OperatorKeyMaterial | null => {
+		const existing = readKeyFile(dir);
+		if (existing || !create) return existing;
 		const path = join(dir, KEY_FILE);
 		if (assertRegularFile(path)) {
-			// A key file without metadata (or with unreadable content) is replaced,
-			// which invalidates every record signed with the previous key.
-			const existing = readKeyFile(dir);
-			if (existing) return existing;
 			throw new OperatorApprovalError(
 				"key_unavailable",
 				`${path} exists but does not hold a valid approval key; remove it to regenerate.`,
 			);
 		}
+		const hex = randomBytes(32).toString("hex");
 		writePrivateFileExclusive(path, `${hex}\n`);
+		writeMeta(dir, "file");
 		return { key: Buffer.from(hex, "hex"), location: "file", store: "file" };
 	};
 
-	const writeMeta = (dir: string, store: string) => {
-		const path = join(dir, KEY_META_FILE);
-		const tmp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
-		writePrivateFileExclusive(tmp, `${JSON.stringify({ version: 1, store })}\n`);
-		// Synchronous rename keeps the provider synchronous like the vault backends.
-		renameSync(tmp, path);
+	const loadFromVault = (dir: string, create: boolean): OperatorKeyMaterial | null => {
+		const store = vault();
+		const hex = store.get(OPERATOR_APPROVAL_KEY_ID);
+		if (hex && /^[a-f0-9]{64}$/.test(hex)) {
+			return { key: Buffer.from(hex, "hex"), location: "os-vault", store: store.kind };
+		}
+		if (!create) return null;
+		const fresh = randomBytes(32).toString("hex");
+		store.put(OPERATOR_APPROVAL_KEY_ID, fresh);
+		writeMeta(dir, store.kind);
+		// A key file left by an earlier file-storage install is never read under
+		// the vault storage and only exposes an old key; remove it.
+		try {
+			unlinkSync(join(dir, KEY_FILE));
+		} catch {
+			// Absent, or not removable: either way it is not used.
+		}
+		return { key: Buffer.from(fresh, "hex"), location: "os-vault", store: store.kind };
 	};
 
 	return {
+		get storage() {
+			return storage();
+		},
 		load({ create }) {
 			const dir = directory();
 			mkdirSync(dir, { recursive: true, mode: 0o700 });
-			const metaPath = join(dir, KEY_META_FILE);
-			let meta: z.infer<typeof KeyMetaSchema> | null = null;
-			if (assertRegularFile(metaPath)) {
-				try {
-					meta = KeyMetaSchema.parse(JSON.parse(getFileContentSync(metaPath)));
-				} catch {
-					meta = null;
-				}
-			}
-
-			if (meta) {
-				if (meta.store === "file") {
-					const material = readKeyFile(dir);
-					if (material || !create) return material;
-				} else {
-					try {
-						const vault = resolveVault(meta.store);
-						const hex = vault.get(OPERATOR_APPROVAL_KEY_ID);
-						if (hex && /^[a-f0-9]{64}$/.test(hex)) {
-							return { key: Buffer.from(hex, "hex"), location: "os-vault", store: vault.kind };
-						}
-					} catch {
-						// The recorded vault is gone; records signed with it cannot verify.
-					}
-					if (!create) return null;
-				}
-			} else if (!create) {
-				return null;
-			}
-
-			const hex = randomBytes(32).toString("hex");
-			const selection = (env[SECRET_STORE_ENV] ?? "").trim().toLowerCase();
-			if (selection !== "file-acl") {
-				try {
-					const vault = resolveVault();
-					if (vault.osProtected) {
-						vault.put(OPERATOR_APPROVAL_KEY_ID, hex);
-						writeMeta(dir, vault.kind);
-						return { key: Buffer.from(hex, "hex"), location: "os-vault", store: vault.kind };
-					}
-				} catch {
-					// No usable vault: fall back to the owner-only key file below.
-				}
-			}
-			const material = createKeyFile(dir, hex);
-			writeMeta(dir, "file");
-			return material;
+			return storage() === "file" ? loadFromFile(dir, create) : loadFromVault(dir, create);
+		},
+		anchor() {
+			const dir = directory();
+			if (storage() === "file") return fileAnchor(dir);
+			const store = vault();
+			return {
+				location: "os-vault",
+				read: () => store.get(OPERATOR_APPROVAL_LEDGER_ID),
+				write: (value) => store.put(OPERATOR_APPROVAL_LEDGER_ID, value),
+			};
 		},
 	};
 }
 
 const keyCache = new Map<OperatorKeyProvider, { material: OperatorKeyMaterial; at: number }>();
-let defaultProvider: OperatorKeyProvider | null = null;
+const defaultProviders = new Map<string, OperatorKeyProvider>();
 
 function providerFor(options: OperatorApprovalStoreOptions): OperatorKeyProvider {
 	if (options.keyProvider) return options.keyProvider;
-	defaultProvider ??= createDefaultOperatorKeyProvider();
-	return defaultProvider;
+	const slot = options.keyStorage ?? "auto";
+	let provider = defaultProviders.get(slot);
+	if (!provider) {
+		provider = createDefaultOperatorKeyProvider({ keyStorage: options.keyStorage });
+		defaultProviders.set(slot, provider);
+	}
+	return provider;
 }
 
-function loadKey(
-	options: OperatorApprovalStoreOptions,
-	create: boolean,
-): OperatorKeyMaterial | null {
+/** Load the key or throw an {@link OperatorApprovalError} that says why. */
+function requireKey(options: OperatorApprovalStoreOptions, create: boolean): OperatorKeyMaterial {
 	const provider = providerFor(options);
 	const cached = keyCache.get(provider);
 	if (cached && Date.now() - cached.at < KEY_CACHE_MS) return cached.material;
@@ -467,30 +620,199 @@ function loadKey(
 	try {
 		material = provider.load({ create });
 	} catch (error) {
+		if (error instanceof OperatorApprovalError) throw error;
+		throw new OperatorApprovalError(
+			"key_unavailable",
+			`The operator approval key could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+	if (!material) {
+		throw new OperatorApprovalError(
+			"key_unavailable",
+			"No operator approval key exists yet; one is created when a connector records its first ask.",
+		);
+	}
+	keyCache.set(provider, { material, at: Date.now() });
+	return material;
+}
+
+/** Load the key, or null (logged) when it is unavailable for any reason. */
+function loadKey(
+	options: OperatorApprovalStoreOptions,
+	create: boolean,
+): OperatorKeyMaterial | null {
+	try {
+		return requireKey(options, create);
+	} catch (error) {
 		(options.logger ?? nullLogger).warn("Operator approval key unavailable", {
-			error: String(error),
+			error: error instanceof Error ? error.message : String(error),
 		});
 		return null;
 	}
-	if (material) keyCache.set(provider, { material, at: Date.now() });
-	return material;
+}
+
+/** The consumption anchor, or an {@link OperatorApprovalError} that says why not. */
+function requireAnchor(options: OperatorApprovalStoreOptions): OperatorConsumptionAnchor {
+	const provider = providerFor(options);
+	let anchor: OperatorConsumptionAnchor | null | undefined;
+	try {
+		anchor = provider.anchor?.();
+	} catch (error) {
+		if (error instanceof OperatorApprovalError) throw error;
+		throw new OperatorApprovalError(
+			"anchor_unavailable",
+			`The approval consumption ledger is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+	if (!anchor) {
+		throw new OperatorApprovalError(
+			"anchor_unavailable",
+			"No approval consumption ledger is available, so single-use approvals cannot be enforced.",
+		);
+	}
+	return anchor;
 }
 
 /** Forget cached key material (tests, key rotation). */
 export function clearOperatorApprovalKeyCache(): void {
 	keyCache.clear();
-	defaultProvider = null;
+	defaultProviders.clear();
 }
 
-/** Where the key currently lives, for `aidr doctor`; never returns the key. */
-export function describeOperatorApprovalKey(options: OperatorApprovalStoreOptions = {}): {
+export interface OperatorApprovalKeyStatus {
+	/** Whether a key exists (never the key itself). */
 	present: boolean;
 	location?: "os-vault" | "file";
 	store?: string;
-} {
-	const material = loadKey(options, false);
-	if (!material) return { present: false };
-	return { present: true, location: material.location, store: material.store };
+	/** Configured storage; undefined for an injected provider that does not say. */
+	storage?: OperatorKeyStorage;
+	/** False when operator approvals cannot work at all (asks stay blocked). */
+	available: boolean;
+	/** Why approvals are unavailable. */
+	reason?: string;
+	/** Where the single-use ledger lives, when it is usable. */
+	anchor?: "os-vault" | "file";
+}
+
+/**
+ * Where the key and the ledger live and whether approvals can work, for
+ * `aidr doctor` and the CLI; never returns the key.
+ */
+export function describeOperatorApprovalKey(
+	options: OperatorApprovalStoreOptions = {},
+): OperatorApprovalKeyStatus {
+	const provider = providerFor(options);
+	let storage: OperatorKeyStorage | undefined;
+	try {
+		storage = provider.storage;
+	} catch {
+		storage = undefined;
+	}
+	const status: OperatorApprovalKeyStatus = { present: false, storage, available: true };
+	try {
+		const material = requireKey(options, false);
+		status.present = true;
+		status.location = material.location;
+		status.store = material.store;
+	} catch (error) {
+		// No key yet is normal before the first ask; anything else disables approvals.
+		if (!(error instanceof OperatorApprovalError) || error.code !== "key_unavailable") {
+			status.available = false;
+			status.reason = error instanceof Error ? error.message : String(error);
+			return status;
+		}
+	}
+	try {
+		const anchor = requireAnchor(options);
+		readLedger(anchor);
+		status.anchor = anchor.location;
+	} catch (error) {
+		status.available = false;
+		status.reason = error instanceof Error ? error.message : String(error);
+	}
+	return status;
+}
+
+// ── Consumption ledger (the single-use anchor) ───────────────────────
+
+const LedgerSchema = z.object({
+	version: z.literal(1),
+	/** Monotonic write counter; every spend increments it. */
+	seq: z.number().int().min(0),
+	/** Consumption id → expiry (epoch seconds) of the approval it spent. */
+	consumed: z.record(z.string().regex(LEDGER_ID), z.number().int().min(0)),
+});
+
+type Ledger = z.infer<typeof LedgerSchema>;
+
+function readLedger(anchor: OperatorConsumptionAnchor): Ledger {
+	const raw = anchor.read();
+	if (raw === null || raw.trim() === "") return { version: 1, seq: 0, consumed: {} };
+	let parsed: ReturnType<typeof LedgerSchema.safeParse>;
+	try {
+		parsed = LedgerSchema.safeParse(JSON.parse(raw));
+	} catch {
+		parsed = { success: false } as ReturnType<typeof LedgerSchema.safeParse>;
+	}
+	if (!parsed.success) {
+		// A ledger that does not parse cannot say what was spent: refuse, never reset.
+		throw new OperatorApprovalError(
+			"anchor_unavailable",
+			"The approval consumption ledger is corrupt; single-use approvals cannot be verified.",
+		);
+	}
+	return parsed.data;
+}
+
+/** Stable identity of an approval: the same in every copy of the store it appears in. */
+function approvalConsumptionId(record: ApprovalDisk): string {
+	return sha256(
+		`approval\n${record.action_id}\n${record.approved_at}\n${record.expires_at}\n${record.artifact_digest}`,
+	).slice(0, 32);
+}
+
+function grantConsumptionId(record: ApprovalDisk, digest: string): string {
+	return sha256(`grant\n${approvalConsumptionId(record)}\n${digest}`).slice(0, 32);
+}
+
+/**
+ * Record one spend in the anchor, or report that it was already spent.
+ *
+ * Must be called under the store lock, which serialises every ledger writer. The
+ * write is read back and checked, so an anchor that silently drops a write cannot
+ * turn a single-use approval into a reusable one. Throws when the ledger cannot
+ * be read, is full of unexpired entries, or does not persist the spend.
+ */
+function spendInLedger(
+	anchor: OperatorConsumptionAnchor,
+	id: string,
+	expiresAtMs: number,
+	now: number,
+): "spent" | "already_used" {
+	const ledger = readLedger(anchor);
+	if (Object.hasOwn(ledger.consumed, id)) return "already_used";
+	const nowSeconds = Math.floor(now / 1000);
+	const consumed: Record<string, number> = {};
+	for (const [entry, expiry] of Object.entries(ledger.consumed)) {
+		if (expiry > nowSeconds) consumed[entry] = expiry;
+	}
+	if (Object.keys(consumed).length >= MAX_LEDGER_ENTRIES) {
+		throw new OperatorApprovalError(
+			"anchor_unavailable",
+			"The approval consumption ledger is full of unexpired entries; refusing to evict any.",
+		);
+	}
+	consumed[id] = Math.ceil(expiresAtMs / 1000);
+	const next: Ledger = { version: 1, seq: ledger.seq + 1, consumed };
+	anchor.write(JSON.stringify(next));
+	const check = readLedger(anchor);
+	if (check.seq !== next.seq || !Object.hasOwn(check.consumed, id)) {
+		throw new OperatorApprovalError(
+			"anchor_unavailable",
+			"The approval consumption ledger did not persist the spend.",
+		);
+	}
+	return "spent";
 }
 
 // ── Store I/O ────────────────────────────────────────────────────────
@@ -635,10 +957,27 @@ export interface RecordPendingAskInput {
 	connector?: string;
 }
 
+/** Longest raw text redacted for a display field; everything after it is cut anyway. */
+const MAX_DISPLAY_SOURCE = 8 * 1024;
+
+/**
+ * Operator-facing text: credential-redacted, every control / bidi / format
+ * character rendered as a visible escape (so `\x1b[2K\r` cannot repaint the
+ * operator's terminal), and bounded with an explicit "(truncated)" marker.
+ */
+function operatorText(value: string, max: number): string {
+	const redacted = redactTelemetryString(
+		value.slice(0, MAX_DISPLAY_SOURCE),
+		Number.MAX_SAFE_INTEGER,
+	);
+	return boundTerminalText(redacted, max).text;
+}
+
 /**
  * Record an `ask` so an operator can approve it by id. Called by the connector at
- * block time; the stored summary is redacted and raw artifact values are kept
- * only as digests plus a redacted preview.
+ * block time; the stored summary is redacted and escaped, and raw artifact values
+ * are kept only as digests plus a redacted, escaped preview. Throws (the call
+ * stays blocked, but cannot be approved) when approvals are disabled.
  */
 export async function recordPendingAsk(
 	input: RecordPendingAskInput,
@@ -647,34 +986,31 @@ export async function recordPendingAsk(
 	assertActionId(input.actionId);
 	const path = operatorApprovalStorePath(options);
 	return withStoreLock(path, async () => {
-		const key = loadKey(options, true);
-		if (!key) {
-			throw new OperatorApprovalError(
-				"key_unavailable",
-				"No operator approval key could be loaded or created.",
-			);
-		}
+		const key = requireKey(options, true);
+		// Without a consumption anchor nothing could ever be released; say so now
+		// rather than letting the operator approve something that cannot be spent.
+		requireAnchor(options);
 		const now = nowMs(options);
 		const artifacts = input.artifacts.slice(0, MAX_ARTIFACTS_PER_RECORD);
 		const unsigned: Omit<PendingDisk, "mac"> = {
 			action_id: input.actionId,
 			artifact_digest: artifactSetDigest(input.artifacts),
 			tool: input.toolName.slice(0, 200),
-			connector: (input.connector ?? "unknown").slice(0, 64),
+			connector: operatorText(input.connector ?? "unknown", 64),
 			session_digest: sha256(input.sessionId).slice(0, 16),
-			summary: redactTelemetryString(
-				toolInputSummaryForAudit(input.toolName, input.toolInput),
-				400,
-			),
+			summary: operatorText(toolInputSummaryText(input.toolName, input.toolInput), 300),
 			artifacts: artifacts.map((a) => ({
-				type: String(a.type).slice(0, 32),
+				type: operatorText(String(a.type), 32),
 				digest: artifactValueDigest(a.type, a.value),
-				preview: redactTelemetryString(a.value.replaceAll("\n", "\\n"), 160),
+				preview: operatorText(a.value, 160),
 			})),
-			severity: String(input.verdict.severity).slice(0, 32),
-			category: String(input.verdict.category).slice(0, 100),
-			reasons: input.verdict.reasons.slice(0, 3).map((r) => redactTelemetryString(r, 300)),
-			threat_id: input.verdict.matchedThreatId ? input.verdict.matchedThreatId.slice(0, 100) : null,
+			artifact_count: input.artifacts.length,
+			severity: operatorText(String(input.verdict.severity), 32),
+			category: operatorText(String(input.verdict.category), 100),
+			reasons: input.verdict.reasons.slice(0, 3).map((r) => operatorText(r, 300)),
+			threat_id: input.verdict.matchedThreatId
+				? operatorText(input.verdict.matchedThreatId, 100)
+				: null,
 			created_at: new Date(now).toISOString(),
 			expires_at: new Date(now + PENDING_ASK_TTL_MS).toISOString(),
 		};
@@ -766,13 +1102,10 @@ export async function recordOperatorApproval(
 				"The pending ask has expired; have the agent retry to record a fresh one.",
 			);
 		}
-		const key = loadKey(options, false);
-		if (!key) {
-			throw new OperatorApprovalError(
-				"key_unavailable",
-				"The operator approval key is unavailable, so the pending record cannot be verified.",
-			);
-		}
+		const key = requireKey(options, false);
+		// An approval that could never be spent (no working ledger) is refused here,
+		// where the operator sees why, instead of silently never releasing the call.
+		readLedger(requireAnchor(options));
 		if (!macMatches(key.key, "pending", pending)) {
 			throw new OperatorApprovalError(
 				"tampered",
@@ -787,7 +1120,7 @@ export async function recordOperatorApproval(
 			approved_at: new Date(now).toISOString(),
 			expires_at: new Date(now + ttlMs).toISOString(),
 			single_use: approval.singleUse ?? true,
-			approver: approval.approver.slice(0, 200),
+			approver: operatorText(approval.approver, 200),
 			permit_allowlist: approval.permitAllowlist ?? false,
 			uses: 0,
 			consumed_at: null,
@@ -841,10 +1174,51 @@ function checkApproval(
 }
 
 /**
+ * Check the consumption ledger for this approval and, for a single-use one, spend
+ * it there. Called under the store lock after every other check passed.
+ */
+function spendApproval(
+	record: ApprovalDisk,
+	options: OperatorApprovalStoreOptions,
+	now: number,
+): OperatorConsumeReason {
+	try {
+		const anchor = requireAnchor(options);
+		if (!record.single_use) {
+			// Multi-use approvals are not counted, but still need a working anchor:
+			// without one, approvals are disabled as a whole.
+			readLedger(anchor);
+			return "approved";
+		}
+		const outcome = spendInLedger(
+			anchor,
+			approvalConsumptionId(record),
+			Date.parse(record.expires_at),
+			now,
+		);
+		return outcome === "spent" ? "approved" : "already_used";
+	} catch (error) {
+		(options.logger ?? nullLogger).warn(
+			"Approval consumption ledger unavailable; ask stays blocked",
+			{
+				error: error instanceof Error ? error.message : String(error),
+			},
+		);
+		return "anchor_unavailable";
+	}
+}
+
+/**
  * Atomically spend an operator approval for this exact call.
  *
- * Never throws: every failure (missing, expired, edited, mismatched, store or key
- * unavailable) is a refusal, so the `ask` stays blocked.
+ * Single use holds even against a rollback of the store file: the spend is
+ * recorded in the consumption ledger (the OS vault by default) and checked there,
+ * so restoring an older copy of `approvals.json` with `uses: 0` does not release
+ * the call again.
+ *
+ * Never throws: every failure (missing, expired, edited, mismatched, already
+ * spent, store, key or ledger unavailable) is a refusal, so the `ask` stays
+ * blocked.
  */
 export async function consumeOperatorApproval(
 	input: ConsumeOperatorApprovalInput,
@@ -865,8 +1239,10 @@ export async function consumeOperatorApproval(
 			if (!record) return { approved: false, reason: "not_found" as const };
 			const key = loadKey(options, false);
 			if (!key) return { approved: false, reason: "key_unavailable" as const };
-			const reason = checkApproval(record, key, input, now);
-			if (reason !== "approved") return { approved: false, reason };
+			const checked = checkApproval(record, key, input, now);
+			if (checked !== "approved") return { approved: false, reason: checked };
+			const spent = spendApproval(record, options, now);
+			if (spent !== "approved") return { approved: false, reason: spent };
 			const { mac: _old, ...rest } = record;
 			const updatedUnsigned: Omit<ApprovalDisk, "mac"> = {
 				...rest,
@@ -941,6 +1317,15 @@ export async function markOperatorAllowlistGrantUsed(
 			if (!record.artifact_digests.includes(digest) || record.allowlisted.includes(digest)) {
 				return false;
 			}
+			// Like approvals, a grant is spent in the ledger too, so restoring an older
+			// store cannot turn one grant into repeated allowlist entries.
+			const spent = spendInLedger(
+				requireAnchor(options),
+				grantConsumptionId(record, digest),
+				Date.parse(record.expires_at),
+				now,
+			);
+			if (spent !== "spent") return false;
 			const { mac: _old, ...rest } = record;
 			const unsigned: Omit<ApprovalDisk, "mac"> = {
 				...rest,

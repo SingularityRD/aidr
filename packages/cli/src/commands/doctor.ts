@@ -175,19 +175,39 @@ async function checkDlp(connectors: ConnectorStatus[], deps: DoctorDeps): Promis
 	};
 }
 
-async function checkApprovals(deps: DoctorDeps): Promise<DoctorCheck> {
-	const store = deps.operatorApprovals;
+/** Loud, on purpose: a plain key file lets same-user code mint approvals. */
+const FILE_KEY_WARNING =
+	"WARNING: the approval key is a PLAIN FILE (explicit key_storage=file opt-in). Any process of " +
+	"this user, including a compromised agent with shell access, can read it and forge approvals, " +
+	"and the single-use ledger is a file too. Prefer the OS credential vault (remove the opt-in).";
+
+async function checkApprovals(deps: DoctorDeps, config: Config): Promise<DoctorCheck> {
+	const store: OperatorApprovalStoreOptions = deps.operatorApprovals ?? {
+		keyStorage: config.operator_approvals?.key_storage,
+	};
 	try {
 		const pending = await listPendingAsks(store);
-		const key = describeOperatorApprovalKey(store ?? {});
+		const key = describeOperatorApprovalKey(store);
 		const unverified = pending.filter((p) => !p.verified).length;
+		const where = key.present
+			? key.location === "os-vault"
+				? `in the OS vault (${key.store})`
+				: "in a plain key file"
+			: "not created yet";
+		const notes: string[] = [];
+		if (!key.available) {
+			notes.push(`DISABLED: asks stay blocked and cannot be approved. ${key.reason ?? ""}`.trim());
+		}
+		if (key.location === "file" || key.storage === "file") notes.push(FILE_KEY_WARNING);
 		return {
 			id: "operator_approvals",
-			status: unverified > 0 ? "warn" : "ok",
-			summary:
+			status: unverified > 0 || notes.length > 0 ? "warn" : "ok",
+			summary: [
 				`${pending.length} ask(s) pending operator approval` +
-				(unverified > 0 ? `, ${unverified} failing integrity verification` : "") +
-				`; approval key ${key.present ? `in ${key.location === "os-vault" ? `OS vault (${key.store})` : "owner-only key file"}` : "not created yet"}.`,
+					(unverified > 0 ? `, ${unverified} failing integrity verification` : "") +
+					`; approval key ${where}.`,
+				...notes,
+			].join(" "),
 			detail: {
 				store: operatorApprovalStorePath(store),
 				pending: pending.length,
@@ -257,7 +277,7 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 		: detectConnectorStatuses(deps.home ?? resolvePath("~"));
 	checks.push(checkConnectors(connectors));
 	checks.push(await checkDlp(connectors, deps));
-	checks.push(await checkApprovals(deps));
+	checks.push(await checkApprovals(deps, config));
 	checks.push(await checkLastVerdict(config));
 	return {
 		schema_version: 1,

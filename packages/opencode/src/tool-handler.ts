@@ -55,7 +55,7 @@ export function createToolHandlers(
 			// fails closed rather than evaluating without it.
 			const provisioned = await loadProvisionedDetectorContext("opencode");
 
-			const { verdict, actionId, responseActions } = await guardToolCall(
+			const { verdict, actionId, responseActions, pendingRecorded } = await guardToolCall(
 				{
 					sessionId: input.sessionID,
 					toolName: input.tool,
@@ -95,7 +95,7 @@ export function createToolHandlers(
 
 			// ask — actionId is always set for ask verdicts
 			throw new AidrVerdictBlockError(
-				formatAskMessage(actionId as string, verdict, artifacts, responseActions),
+				formatAskMessage(actionId as string, verdict, artifacts, responseActions, pendingRecorded),
 			);
 		} catch (error) {
 			// Verdict errors are expected (blocks and asks); internal errors deny execution.

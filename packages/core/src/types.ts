@@ -629,6 +629,19 @@ export const NvdConfigSchema = z.object({
 		]),
 });
 
+/**
+ * The operator approval channel (`aidr pending` / `aidr approve`).
+ *
+ * `key_storage` is where the approval HMAC key and the single-use ledger live:
+ * `os-vault` (default) keeps them in the OS credential vault and DISABLES
+ * approvals when there is none; `file` is an explicit opt-in to an owner-only key
+ * file that every process of the same user can read. The
+ * `AIDR_OPERATOR_APPROVAL_KEY_STORAGE` environment variable overrides it.
+ */
+export const OperatorApprovalsConfigSchema = z.object({
+	key_storage: z.enum(["os-vault", "file"]).default("os-vault"),
+});
+
 export const ConfigSchema = z.object({
 	// Default to local enforcement so a fresh install protects on the first tool
 	// call. Managed mode adds the control plane, signed entitlements and premium
@@ -658,6 +671,7 @@ export const ConfigSchema = z.object({
 	logging: LoggingConfigSchema.default({}),
 	sensitivity: SensitivitySchema.default("balanced"),
 	disabled_threats: z.array(z.string()).default([]),
+	operator_approvals: OperatorApprovalsConfigSchema.default({}),
 });
 
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
