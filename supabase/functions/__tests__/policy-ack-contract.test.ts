@@ -62,6 +62,7 @@ function database(options: DbOptions = {}) {
 			tenant_id: TENANT,
 			agent_id: AGENT,
 			revoked: false,
+			scope: "tenant",
 			...(options.rotated ? { previous_hash: API_KEY_HASH, previous_hash_expires_at: "2099-01-01T00:00:00.000Z" } : {}),
 		}
 		: options.key;
@@ -229,7 +230,7 @@ describe("policy-ack authentication and receipt contract", () => {
 		expect(revokedResponse.status).toBe(401);
 		expect(revoked.rpcCalls).toHaveLength(0);
 
-		const unbound = database({ key: { user_id: USER, tenant_id: TENANT, agent_id: null, revoked: false } });
+		const unbound = database({ key: { user_id: USER, tenant_id: TENANT, agent_id: null, revoked: false, scope: "tenant" } });
 		const unboundResponse = await createPolicyAckHandler({ db: unbound.db as never })(post(receiptBody()));
 		expect(unboundResponse.status).toBe(403);
 		expect(await unboundResponse.json()).toMatchObject({ error: "agent_bound_key_required" });
@@ -246,7 +247,7 @@ describe("policy-ack authentication and receipt contract", () => {
 	});
 
 	it("uses the binding from the hash that authenticated the request", async () => {
-		const fake = database({ key: { user_id: USER, tenant_id: OTHER_TENANT, agent_id: AGENT, revoked: false } });
+		const fake = database({ key: { user_id: USER, tenant_id: OTHER_TENANT, agent_id: AGENT, revoked: false, scope: "tenant" } });
 		const response = await createPolicyAckHandler({ db: fake.db as never })(post(receiptBody()));
 		expect(response.status).toBe(200);
 		expect(fake.rpcCalls.some(({ name }) => name === "record_policy_receipt")).toBe(true);
@@ -325,7 +326,7 @@ describe("policy-ack authentication and receipt contract", () => {
 	});
 
 	it("does not accept a malformed bound-agent identifier", async () => {
-		const fake = database({ key: { user_id: USER, tenant_id: TENANT, agent_id: "not-an-agent", revoked: false } });
+		const fake = database({ key: { user_id: USER, tenant_id: TENANT, agent_id: "not-an-agent", revoked: false, scope: "tenant" } });
 		const response = await createPolicyAckHandler({ db: fake.db as never })(post(receiptBody()));
 		expect(response.status).toBe(403);
 		expect(await response.json()).toMatchObject({ error: "agent_bound_key_required" });

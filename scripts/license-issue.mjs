@@ -70,7 +70,7 @@ export function signLicense(payload, { privateKey, keyId }) {
 }
 
 /** The registry entry a vendor publishes for the public half of a signing key. */
-export function publicKeyEntry(privateKey, { keyId, notBefore, notAfter = null, status = "active" }) {
+export function publicKeyEntry(privateKey, { keyId, notBefore, notAfter = null, status = "active", retiredAt = null }) {
 	return {
 		key_id: keyId,
 		algorithm: "ed25519",
@@ -78,6 +78,8 @@ export function publicKeyEntry(privateKey, { keyId, notBefore, notAfter = null, 
 		not_before: notBefore,
 		not_after: notAfter,
 		status,
+		// A retired key records when it stopped signing; verifiers cap its use by it.
+		...(status === "retired" ? { retired_at: retiredAt } : {}),
 	};
 }
 

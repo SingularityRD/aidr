@@ -467,9 +467,13 @@ function EnrollBrowsersPanel() {
 					browser management policy.
 				</li>
 				<li>
-					<b>Create a tenant API key.</b> Create a write-capable key on the{" "}
-					<Link to="/api-keys">API Keys</Link> page. The key is shown once; paste it into the policy
-					below or into the extension's options page.
+					<b>Create a Browser Guard ingest-only key.</b> On the{" "}
+					<Link to="/api-keys?type=browser_guard">API Keys</Link> page, choose{" "}
+					<i>Browser Guard ingest-only key</i> and set an installation limit that fits your fleet.
+					Anyone using a managed browser can read its policy, so do not deploy a tenant key here: an
+					ingest-only key can only report counts-only privacy scans, from at most that many
+					browsers, and cannot read policy, packs or reputation data. The key is shown once; paste
+					it into the policy below. Owners and admins can create it.
 				</li>
 				<li>
 					<b>Push the managed policy.</b> Managed values override the user's settings and lock those

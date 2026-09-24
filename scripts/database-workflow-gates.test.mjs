@@ -34,6 +34,7 @@ test("CI and RC block on the isolated offboarding and retention PostgreSQL suite
 test("the workflow contract is itself part of the required migration check", () => {
 	const scripts = JSON.parse(read("package.json")).scripts;
 	assert.match(scripts["supabase:check"], /scripts\/database-workflow-gates\.test\.mjs/);
+	assert.match(scripts["supabase:check"], /scripts\/tenant-identity-barrier\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/billing-offboarding-postgres\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/pack-offboarding-guard-postgres\.test\.mjs/);
 	assert.match(scripts["verify:retention"], /scripts\/retention-holds-postgres\.test\.mjs/);

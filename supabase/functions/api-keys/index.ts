@@ -3,6 +3,11 @@
 // Auth: Authorization: Bearer <supabase_access_token>
 //
 // Provides an auditable API key create/revoke surface for the dashboard.
+//
+// Two key types (supabase/migrations/20260925000061_browser_guard_ingest_keys.sql):
+//   tenant                full tenant credential for endpoint connectors (default)
+//   ingest:browser_guard  Browser Guard telemetry only; owners/admins issue it
+//                         with an explicit installation limit.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
@@ -12,6 +17,32 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { boundedOverlapHours } from "../_shared/key-rotation.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
+
+const BROWSER_GUARD_INGEST_SCOPE = "ingest:browser_guard";
+// Same bounds as the api_keys_scope_check constraint.
+const MAX_INSTALL_LIMIT = 100_000;
+
+type CreateRequest =
+	| { scope: "tenant" }
+	| { scope: typeof BROWSER_GUARD_INGEST_SCOPE; installLimit: number };
+
+/** Validate the requested key type; an unknown type is refused, never widened. */
+function parseCreateRequest(
+	body: Record<string, unknown>,
+): { ok: true; value: CreateRequest } | { ok: false; error: string } {
+	const scope = body.scope ?? "tenant";
+	if (scope === "tenant") {
+		return body.install_limit === undefined || body.install_limit === null
+			? { ok: true, value: { scope } }
+			: { ok: false, error: "invalid_install_limit" };
+	}
+	if (scope !== BROWSER_GUARD_INGEST_SCOPE) return { ok: false, error: "invalid_scope" };
+	const limit = body.install_limit;
+	if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 1 || limit > MAX_INSTALL_LIMIT) {
+		return { ok: false, error: "invalid_install_limit" };
+	}
+	return { ok: true, value: { scope, installLimit: limit } };
+}
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -48,10 +79,11 @@ function base64Url(bytes: Uint8Array): string {
 	return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function randomApiKey(): string {
+function randomApiKey(scope: CreateRequest["scope"] = "tenant"): string {
 	const raw = new Uint8Array(32);
 	crypto.getRandomValues(raw);
-	return `aidr_live_${base64Url(raw)}`;
+	// The prefix makes an ingest key recognisable where it is deployed (browser policy).
+	return `${scope === "tenant" ? "aidr_live_" : "aidr_ingest_"}${base64Url(raw)}`;
 }
 
 async function resolveTenant(
@@ -127,7 +159,7 @@ Deno.serve(async (req) => {
 	if (req.method === "GET") {
 		let query = supabase
 			.from("api_keys")
-			.select("id,label,revoked,created_at")
+			.select("id,label,revoked,created_at,scope,install_limit")
 			.eq("tenant_id", tenant.id);
 		if (!["owner", "admin"].includes(tenant.role)) query = query.eq("user_id", userId);
 		const { data, error } = await query.order("created_at", { ascending: false }).limit(200);
@@ -231,6 +263,13 @@ Deno.serve(async (req) => {
 		}
 
 		// create
+		const request = parseCreateRequest(body);
+		if (!request.ok) return corsJson(req, 400, { error: request.error });
+		const createRequest = request.value;
+		// An ingest key is an organisation deployment credential.
+		if (createRequest.scope !== "tenant" && !["owner", "admin"].includes(tenant.role)) {
+			return corsJson(req, 403, { error: "tenant_role_insufficient" });
+		}
 		const ok = await rateLimitCreate(supabase, `${tenant.id}:${userId}`);
 		if (!ok) return corsJson(req, 429, { error: "rate_limited" });
 
@@ -238,16 +277,25 @@ Deno.serve(async (req) => {
 		let apiKey = "";
 		let inserted = false;
 		for (let i = 0; i < 5; i++) {
-			apiKey = randomApiKey();
+			apiKey = randomApiKey(createRequest.scope);
 			const keyHash = await sha256Hex(apiKey);
 			let mutation: { data: unknown; error: unknown | null } | null = null;
 			for (let attempt = 0; attempt < 2; attempt++) {
-				mutation = await supabase.rpc("issue_api_key_with_audit", {
-					p_actor_user_id: userId,
-					p_tenant_id: tenant.id,
-					p_label: label,
-					p_key_hash: keyHash,
-				});
+				mutation = createRequest.scope === "tenant"
+					? await supabase.rpc("issue_api_key_with_audit", {
+						p_actor_user_id: userId,
+						p_tenant_id: tenant.id,
+						p_label: label,
+						p_key_hash: keyHash,
+					})
+					: await supabase.rpc("issue_scoped_api_key_with_audit", {
+						p_actor_user_id: userId,
+						p_tenant_id: tenant.id,
+						p_label: label,
+						p_key_hash: keyHash,
+						p_scope: createRequest.scope,
+						p_install_limit: createRequest.installLimit,
+					});
 				if (!mutation.error) break;
 			}
 			if (mutation?.error && typeof mutation.error === "object" && "code" in mutation.error && mutation.error.code === "42501") {
@@ -262,7 +310,12 @@ Deno.serve(async (req) => {
 			break;
 		}
 		if (!inserted) return corsJson(req, 500, { error: "api_key_issue_failed" });
-		return corsJson(req, 200, { ok: true, api_key: apiKey });
+		return corsJson(req, 200, {
+			ok: true,
+			api_key: apiKey,
+			scope: createRequest.scope,
+			...(createRequest.scope === "tenant" ? {} : { install_limit: createRequest.installLimit }),
+		});
 	}
 
 	return corsJson(req, 405, { error: "method_not_allowed" });

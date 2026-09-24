@@ -12,8 +12,10 @@ import {
 	DEFAULT_PUBLIC_KEYS_PATH,
 	LicenseError,
 	loadPublicKeyRegistry,
+	MAX_LICENSE_TERM_DAYS,
 	parsePublicKeyRegistry,
 	PUBLIC_KEYS_FORMAT,
+	RETIRED_KEY_ACCEPTANCE_DAYS,
 	verifyLicense,
 } from "./license-verify.mjs";
 
@@ -123,7 +125,7 @@ test("expired, not-yet-valid and grace states are reported, never as valid", () 
 test("key rotation: retired keys verify licenses from their window, revoked keys verify nothing", () => {
 	const old = signLicense(payload(), { privateKey: devKey, keyId: "aidr-license-dev-1" });
 	const rotated = registry([
-		devEntry({ status: "retired", not_after: "2026-12-31T00:00:00Z" }),
+		devEntry({ status: "retired", not_after: "2026-12-31T00:00:00Z", retired_at: "2026-12-31T00:00:00Z" }),
 		publicKeyEntry(otherKey, { keyId: "aidr-license-dev-2", notBefore: "2026-12-01T00:00:00Z" }),
 	]);
 	assert.equal(verifyLicense(old, { publicKeys: rotated, now: inTerm }).status, "valid");
@@ -133,6 +135,55 @@ test("key rotation: retired keys verify licenses from their window, revoked keys
 	assert.equal(verifyLicense(fresh, { publicKeys: rotated, now: inTerm }).status, "valid");
 	const revoked = registry([devEntry({ status: "revoked" })]);
 	assert.throws(() => verifyLicense(old, { publicKeys: revoked, now: inTerm }), (error) => error.code === "revoked_key");
+});
+
+test("a retired key is capped by its retired_at, on the verifier's clock, not by signer-chosen issued_at", () => {
+	const retiredAt = "2026-11-01T00:00:00Z";
+	const keys = registry([
+		publicKeyEntry(devKey, { keyId: "aidr-license-dev-1", notBefore: "2026-01-01T00:00:00Z", status: "retired", retiredAt }),
+	]);
+	const beforeRetirement = signLicense(payload(), { privateKey: devKey, keyId: "aidr-license-dev-1" });
+	const result = verifyLicense(beforeRetirement, { publicKeys: keys, now: inTerm });
+	assert.equal(result.status, "valid");
+	assert.equal(result.key_status, "retired");
+	assert.equal(result.key_retired_at, "2026-11-01T00:00:00.000Z");
+
+	// A license claiming issuance after retirement was signed by a key that no longer signs.
+	const afterRetirement = signLicense(payload({ issued_at: "2026-11-02T00:00:00Z", not_before: "2026-11-02T00:00:00Z" }), { privateKey: devKey, keyId: "aidr-license-dev-1" });
+	assert.throws(() => verifyLicense(afterRetirement, { publicKeys: keys, now: inTerm }), (error) => error.code === "key_window");
+
+	// A leaked retired key cannot back-date issued_at into a license that outlives
+	// retired_at + the longest license life: the term cap refuses it at signing and
+	// at verification, and the verifier's clock ends the key's acceptance.
+	assert.throws(
+		() => signLicense(payload({ issued_at: "2026-10-01T00:00:00Z", not_before: "2026-10-01T00:00:00Z", expires_at: "2099-01-01T00:00:00Z" }), { privateKey: devKey, keyId: "k" }),
+		/at most 1830 days after issued_at/,
+	);
+	const longest = signLicense(
+		payload({
+			issued_at: "2026-10-01T00:00:00Z",
+			not_before: "2026-10-01T00:00:00Z",
+			expires_at: new Date(Date.parse("2026-10-01T00:00:00Z") + MAX_LICENSE_TERM_DAYS * DAY).toISOString().replace(".000Z", "Z"),
+			grace_days: 90,
+		}),
+		{ privateKey: devKey, keyId: "aidr-license-dev-1" },
+	);
+	const cutoff = Date.parse(retiredAt) + RETIRED_KEY_ACCEPTANCE_DAYS * DAY;
+	assert.equal(verifyLicense(longest, { publicKeys: keys, now: cutoff - DAY }).status, "expired");
+	assert.throws(() => verifyLicense(longest, { publicKeys: keys, now: cutoff }), (error) => error.code === "retired_key_expired");
+	// The same license under an active key is judged by its own terms only.
+	assert.equal(verifyLicense(longest, { publicKeys: registry([devEntry()]), now: cutoff }).status, "expired");
+});
+
+test("a retired key must record retired_at inside its window, and only a retired key may", () => {
+	assert.throws(() => registry([devEntry({ status: "retired" })]), /retired_at must be an ISO-8601/);
+	assert.throws(() => registry([devEntry({ status: "retired", retired_at: "2025-06-01T00:00:00Z" })]), /within its not_before\.\.not_after window/);
+	assert.throws(
+		() => registry([devEntry({ status: "retired", not_after: "2026-06-01T00:00:00Z", retired_at: "2026-07-01T00:00:00Z" })]),
+		/within its not_before\.\.not_after window/,
+	);
+	assert.throws(() => registry([devEntry({ retired_at: "2026-07-01T00:00:00Z" })]), /has retired_at but status active/);
+	assert.equal(registry([devEntry({ status: "revoked", retired_at: null })]).get("aidr-license-dev-1").status, "revoked");
 });
 
 test("the shipped registry is a placeholder that refuses every license", () => {

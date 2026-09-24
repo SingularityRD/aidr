@@ -126,8 +126,10 @@ describe("download center", () => {
 			within(card("Claude Code")).getByRole("link", { name: "Verify a device code" }),
 		).toHaveAttribute("href", "/verify?team=team-downloads");
 		expect(
-			within(card("Browser Guard for Firefox")).getByRole("link", { name: "Create an API key" }),
-		).toHaveAttribute("href", "/api-keys");
+			within(card("Browser Guard for Firefox")).getByRole("link", {
+				name: "Create a Browser Guard key",
+			}),
+		).toHaveAttribute("href", "/api-keys?type=browser_guard");
 		await waitFor(() =>
 			expect(within(card("Claude Code")).getByText("Not detected yet")).toBeInTheDocument(),
 		);

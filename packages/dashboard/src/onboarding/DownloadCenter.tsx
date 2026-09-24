@@ -230,13 +230,14 @@ function Enrollment({ entry, teamId }: { entry: RuntimeCatalogEntry; teamId: str
 		return (
 			<>
 				<p className="small">
-					Open the extension options and enter this control plane's URL and a tenant API key, or set
-					the managed policy keys controlPlaneUrl and apiKey. Managed policy wins. Only counts are
-					sent, never prompt text.
+					Create a Browser Guard ingest-only key, then set the managed policy keys controlPlaneUrl
+					and apiKey (or enter them in the extension options). Managed policy wins. The key can only
+					report counts, never prompt text, for a capped number of browsers; do not use a tenant key
+					here, because users of a managed browser can read its policy.
 				</p>
 				<div className="row" style={{ flexWrap: "wrap" }}>
-					<Link className="button button-secondary button-sm" to="/api-keys">
-						Create an API key
+					<Link className="button button-secondary button-sm" to="/api-keys?type=browser_guard">
+						Create a Browser Guard key
 					</Link>
 				</div>
 			</>

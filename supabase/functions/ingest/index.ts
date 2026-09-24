@@ -12,10 +12,20 @@
 // Browser Guard installs use agent_runtime "browser_guard" and send counts-only
 // "privacy_scan" events (docs/contracts/privacy-telemetry.md). Each install is
 // a protected agent seat like any other runtime; events.ts projects the scan.
+//
+// Browser Guard should authenticate with an `ingest:browser_guard` key, not a
+// tenant key: its credential sits in browser management policy where any user
+// of the profile can read it. That key may only send privacy_scan events as
+// the browser_guard runtime, is rate limited per key, registers at most its
+// `install_limit` installations, and never receives the signed entitlement
+// (which can carry the tenant pack key).
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
-import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import {
+	authenticateTenantApiKey,
+	BROWSER_GUARD_INGEST_SCOPE,
+} from "../_shared/api-key-auth.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import {
 	consumeTenantRateLimit,
@@ -29,6 +39,19 @@ import { normalizeIngestEvents } from "./events.ts";
 // failing later with an empty credential (AIDR-011).
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
+
+const BROWSER_GUARD_RUNTIME = "browser_guard";
+const BROWSER_GUARD_EVENT_TYPE = "privacy_scan";
+const TENANT_INGEST_EVENTS_PER_MIN = 50_000;
+// Events per minute one `ingest:browser_guard` key may deliver across all of
+// its installations. A malformed value fails closed (rate_limit_unavailable).
+const BROWSER_KEY_EVENTS_PER_MIN_RAW = (Deno.env.get("AIDR_BROWSER_KEY_INGEST_RL_PER_MIN") ?? "6000").trim();
+
+function browserKeyEventsPerMinute(): number {
+	if (!/^\d{1,6}$/.test(BROWSER_KEY_EVENTS_PER_MIN_RAW)) return Number.NaN;
+	const value = Number(BROWSER_KEY_EVENTS_PER_MIN_RAW);
+	return value >= 1 && value <= TENANT_INGEST_EVENTS_PER_MIN ? value : Number.NaN;
+}
 
 // Commercial v1: signed entitlements (Ed25519).
 // Key material should be provided via environment variables in the Edge Functions runtime.
@@ -226,8 +249,13 @@ Deno.serve(async (req) => {
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
-	const tenantAuth = await authenticateTenantApiKey(supabase, apiKey);
+	const tenantAuth = await authenticateTenantApiKey(supabase, apiKey, Date.now(), {
+		allowedScopes: ["tenant", BROWSER_GUARD_INGEST_SCOPE],
+	});
 	if (!tenantAuth.ok) return json(tenantAuth.status, { error: tenantAuth.error });
+	const browserKey = tenantAuth.scope === BROWSER_GUARD_INGEST_SCOPE;
+	const browserKeyId = browserKey ? tenantAuth.apiKeyId ?? "" : "";
+	if (browserKey && !browserKeyId) return json(403, { error: "api_key_scope_denied" });
 
 	const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
 	if (!parsed.ok) return json(parsed.status, { error: parsed.error });
@@ -247,6 +275,9 @@ Deno.serve(async (req) => {
 	) {
 		return json(400, { error: "invalid_agent_metadata" });
 	}
+	if (browserKey && body.agent_runtime !== BROWSER_GUARD_RUNTIME) {
+		return json(403, { error: "api_key_scope_denied" });
+	}
 
 	const normalizedEvents = normalizeIngestEvents(body.events);
 	if (!normalizedEvents.ok) {
@@ -255,17 +286,19 @@ Deno.serve(async (req) => {
 			...(normalizedEvents.detail ? { detail: normalizedEvents.detail } : {}),
 		});
 	}
+	// An empty batch is a heartbeat that only updates last_seen.
 	const events = normalizedEvents.events;
-	if (events.length === 0) {
-		// Allow heartbeat-style calls to update last_seen.
+	if (browserKey && events.some((event) => event.type !== BROWSER_GUARD_EVENT_TYPE)) {
+		return json(403, { error: "event_type_not_permitted" });
 	}
 
+	// An ingest key is budgeted as one subject however many installs share it.
 	const rate = await consumeTenantRateLimit(supabase, {
 		tenantId: tenantAuth.tenantId,
-		subject: tenantAuth.userId,
-		endpoint: "ingest",
-		perSubject: 1_200,
-		perTenant: 50_000,
+		subject: browserKey ? `api_key:${browserKeyId}` : tenantAuth.userId,
+		endpoint: browserKey ? "ingest:browser_guard" : "ingest",
+		perSubject: browserKey ? browserKeyEventsPerMinute() : 1_200,
+		perTenant: TENANT_INGEST_EVENTS_PER_MIN,
 		cost: Math.max(1, events.length),
 	});
 	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
@@ -308,19 +341,34 @@ Deno.serve(async (req) => {
 	// 3) Register/touch the agent and enforce the seat limit atomically. The
 	// database function locks the tenant entitlement and agent namespace so two
 	// first-seen requests cannot oversubscribe the tenant.
-	const { data: registrationRows, error: registrationErr } = await supabase.rpc(
-		"register_agent_for_ingest",
-		{
+	// An ingest key registers through its own RPC, which also enforces the
+	// runtime, the key's installation cap and the key-to-install binding.
+	const runtimeVersion =
+		typeof body.agent_runtime_version === "string" ? body.agent_runtime_version : null;
+	const { data: registrationRows, error: registrationErr } = browserKey
+		? await supabase.rpc("register_browser_guard_agent_for_ingest", {
+			p_api_key_id: browserKeyId,
+			p_iid: iid,
+			p_agent_runtime_version: runtimeVersion,
+		})
+		: await supabase.rpc("register_agent_for_ingest", {
 			p_user_id: userId,
 			p_tenant_id: tenantId,
 			p_iid: iid,
 			p_agent_runtime: typeof body.agent_runtime === "string" ? body.agent_runtime : null,
-			p_agent_runtime_version:
-				typeof body.agent_runtime_version === "string" ? body.agent_runtime_version : null,
-		},
-	);
+			p_agent_runtime_version: runtimeVersion,
+		});
 	if (registrationErr) {
-		if (registrationErr.code === "42501") return json(403, { error: "tenant_not_admitted" });
+		if (registrationErr.code === "42501") {
+			const reason = String(registrationErr.message ?? "");
+			if (browserKey && reason.includes("agent_runtime_mismatch")) {
+				return json(403, { error: "agent_runtime_mismatch" });
+			}
+			if (browserKey && reason.includes("api_key_scope_denied")) {
+				return json(403, { error: "api_key_scope_denied" });
+			}
+			return json(403, { error: "tenant_not_admitted" });
+		}
 		// Never expose raw Postgres/Supabase errors to an untrusted ingest client.
 		return json(503, { error: "agent_registration_unavailable", retryable: true });
 	}
@@ -331,6 +379,12 @@ Deno.serve(async (req) => {
 	const agentId = typeof registration?.agent_id === "string" ? registration.agent_id : null;
 	if (!registration) {
 		return json(500, { error: "agent_registration_failed" });
+	}
+	if (browserKey && registration.install_limit_exceeded === true) {
+		return json(403, {
+			error: "install_limit_exceeded",
+			install_limit: tenantAuth.installLimit,
+		});
 	}
 	// Stored extra_agents is only a billing projection. Re-read authoritative
 	// provider term after registration, then never sign more seats than its cap.
@@ -365,6 +419,13 @@ Deno.serve(async (req) => {
 	}
 	if (registration.seat_exceeded === true) {
 		const current = Number(registration.current_agents ?? 0);
+		if (browserKey) {
+			return json(402, {
+				error: "agent_limit_exceeded",
+				allowed_agents: Number(registration.allowed_agents ?? allowedAgents),
+				current_agents: current,
+			});
+		}
 		const tenantPackKey = premiumModules.includes("premium_intel")
 			? await deriveTenantPackKeyB64(tenantId)
 			: null;
@@ -420,6 +481,16 @@ Deno.serve(async (req) => {
 			// Detection stays local/fail-open, while telemetry delivery remains explicitly unavailable.
 			return json(503, { error: "events_insert_failed", retryable: true });
 		}
+	}
+
+	if (browserKey) {
+		// Delivery acknowledgement only: an ingest key never receives the signed
+		// entitlement, which can carry the tenant's premium pack key.
+		return json(200, {
+			ok: true,
+			acknowledged_event_ids: events.map((event) => event.event_id),
+			agent_id: agentId,
+		}, rateLimitHeaders(rate));
 	}
 
 	const tenantPackKey = premiumModules.includes("premium_intel")

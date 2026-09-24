@@ -9,7 +9,7 @@
 // reach either path.
 import { closeSync, existsSync, fchmodSync, fsyncSync, lstatSync, linkSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { renameWithRetry } from "./lib/atomic-write.mjs";
@@ -18,7 +18,7 @@ import { DEFAULT_PUBLIC_KEYS_PATH, verifyLicenseFile } from "./license-verify.mj
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, email: { type: "string" }, name: { type: "string" }, seats: { type: "string" }, "license-expires-at": { type: "string" }, "license-reference": { type: "string" }, "license-file": { type: "string" }, "license-public-keys": { type: "string" }, "unsigned-license-for-pilot": { type: "boolean", default: false }, resume: { type: "boolean", default: false }, "transfer-owner": { type: "string" }, "requested-by": { type: "string" } } });
+const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, email: { type: "string" }, name: { type: "string" }, seats: { type: "string" }, "license-expires-at": { type: "string" }, "license-reference": { type: "string" }, "license-file": { type: "string" }, "license-public-keys": { type: "string" }, "allow-custom-license-keys": { type: "boolean", default: false }, "unsigned-license-for-pilot": { type: "boolean", default: false }, resume: { type: "boolean", default: false }, "transfer-owner": { type: "string" }, "requested-by": { type: "string" } } });
 const dir = resolve(values.deployment);
 const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
 if (manifest.mode !== "self-hosted") throw new Error("Deployment bootstrap is only supported for self-hosted installations");
@@ -255,6 +255,24 @@ function resolveLicenseTerms() {
     }
     const publicKeysPath = resolve(values["license-public-keys"] ?? DEFAULT_PUBLIC_KEYS_PATH);
     const trustRoot = publicKeysPath === resolve(DEFAULT_PUBLIC_KEYS_PATH) ? "shipped" : "override";
+    // A registry override replaces the vendor trust root: whoever writes that
+    // file can sign any seat count. Require an explicit acknowledgement and keep
+    // the evidence (path, digest, warning) in the receipt.
+    if (trustRoot === "override" && !values["allow-custom-license-keys"]) {
+      throw new Error(`--license-public-keys replaces the vendor-published license trust root (${DEFAULT_PUBLIC_KEYS_PATH}); pass --allow-custom-license-keys to accept a custom registry. The receipt records the override.`);
+    }
+    if (trustRoot === "shipped" && values["allow-custom-license-keys"]) {
+      throw new Error("--allow-custom-license-keys only applies together with a custom --license-public-keys registry");
+    }
+    let publicKeysSha256;
+    try {
+      publicKeysSha256 = createHash("sha256").update(readFileSync(publicKeysPath)).digest("hex");
+    } catch {
+      throw new Error(`License verification failed: license public-key registry ${publicKeysPath} is not readable`);
+    }
+    const trustRootWarning = trustRoot === "override"
+      ? `License verified against the custom registry ${publicKeysPath} (sha256 ${publicKeysSha256}), not the shipped deploy/onprem/license-public-keys.json; the operator accepted it with --allow-custom-license-keys.`
+      : null;
     let verified;
     try {
       verified = verifyLicenseFile(values["license-file"], { publicKeysPath });
@@ -265,7 +283,7 @@ function resolveLicenseTerms() {
     if (verified.status === "not_yet_valid") throw new Error(`License ${terms.license_id} is not valid before ${terms.not_before}; bootstrap refused`);
     if (verified.status === "expired") throw new Error(`License ${terms.license_id} expired at ${terms.expires_at} and its grace period ended at ${verified.grace_ends_at}; obtain a renewed license`);
     if (verified.status === "grace") console.error(`WARNING: license ${terms.license_id} expired at ${terms.expires_at}; managed features stop at ${verified.grace_ends_at}. Local detection is not affected.`);
-    if (trustRoot === "override") console.error(`WARNING: license verified against ${publicKeysPath}, not the shipped deploy/onprem/license-public-keys.json. The receipt records this override.`);
+    if (trustRoot === "override") console.error(`WARNING: ${trustRootWarning} The receipt records this override.`);
     return {
       seats: terms.seats,
       admissionExpiresAtMs: Date.parse(verified.grace_ends_at),
@@ -285,11 +303,16 @@ function resolveLicenseTerms() {
         grace_days: terms.grace_days,
         managed_until: verified.grace_ends_at,
         document_sha256: verified.document_sha256,
+        key_status: verified.key_status,
         trust_root: trustRoot,
+        public_keys_sha256: publicKeysSha256,
+        ...(trustRoot === "override" ? { public_keys_path: publicKeysPath, trust_root_warning: trustRootWarning } : {}),
       },
     };
   }
-  if (values["license-public-keys"] !== undefined) throw new Error("--license-public-keys only applies together with --license-file");
+  if (values["license-public-keys"] !== undefined || values["allow-custom-license-keys"]) {
+    throw new Error("--license-public-keys and --allow-custom-license-keys only apply together with --license-file");
+  }
   if (!values["unsigned-license-for-pilot"]) {
     throw new Error("A vendor-signed --license-file is required. Typed --seats, --license-expires-at and --license-reference are accepted only for a pilot together with --unsigned-license-for-pilot");
   }

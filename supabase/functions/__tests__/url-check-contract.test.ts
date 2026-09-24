@@ -102,7 +102,7 @@ function database(options: DbOptions = {}) {
 
 	function resultFor(table: string, column: string, requireVerifiedProvenance: boolean): QueryResult {
 		if (table === "api_keys") {
-			return { data: { user_id: USER, tenant_id: TENANT, revoked: false }, error: null };
+			return { data: { user_id: USER, tenant_id: TENANT, revoked: false, scope: "tenant" }, error: null };
 		}
 		if (table === "tenant_members") return { data: { role: "member", expires_at: null }, error: null };
 		if (table === "tenants") return { data: { status: "active" }, error: null };

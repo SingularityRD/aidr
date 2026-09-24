@@ -16,6 +16,36 @@ What the license controls, and what it never controls:
 This follows the product's enforcement default: a connector evaluates every tool
 call locally, and managed features are an opt-in layer on top.
 
+## What the license can and cannot enforce
+
+License enforcement on a self-hosted or air-gapped installation is
+**operator-side**. The customer's operator controls the deployment: the hosts,
+their clocks, the files in the deployment directory (including the trust
+registry) and the database. Nothing in this design can stop that operator from
+running more seats than they bought; it makes doing so deliberate, visible and
+attributable instead.
+
+What is checked, and where:
+
+| Check | Where it runs | Who can bypass it |
+|-------|---------------|-------------------|
+| Signature, key status and window, term cap | `license-verify.mjs` and `deployment-bootstrap.mjs --license-file`, on the operator's host | The operator (replace the registry, edit the scripts, set the clock) |
+| Trust root = the vendor-published registry | `deployment-bootstrap.mjs`; a custom `--license-public-keys` is refused unless `--allow-custom-license-keys` is passed, and the receipt records it | The operator, with an explicit, recorded flag |
+| Seats and admission end | The database (`tenant_admissions`, `tenant_admission_capacity`) enforces the terms **as written by the bootstrap or an admission operator** | Anyone with database or service-role access |
+| Validity dates | The verifier's clock (host clock, or `--now`) | Whoever sets the host clock |
+
+The database does **not** re-verify the license signature: it stores the seats,
+admission end and license reference it was given. An admission operator who
+calls `grant_licensed_tenant_admission` directly, or anyone with the service-role
+credential, can write different terms. What the signed license gives the vendor
+and the customer is evidence, not DRM: the license file and its SHA-256, the
+bootstrap receipt (trust root, registry digest, any override warning), and the
+admission audit log show which terms were applied and by whom. Commercial
+remedies (true-up, audit rights) rest on that evidence and on the contract.
+
+In the SaaS deployment Singularity R&D operates the control plane, so the same
+database checks are vendor-operated there.
+
 ## License format
 
 ```json
@@ -66,15 +96,36 @@ Each entry is `{ key_id, algorithm: "ed25519", public_key_pem, not_before,
 not_after, status }`:
 
 - `active`: signs new licenses.
-- `retired`: no longer signs; still verifies licenses whose `issued_at` falls in
-  its `not_before`..`not_after` window, so a rotation does not invalidate
-  licenses already delivered.
+- `retired`: no longer signs. The entry must carry `retired_at` (inside the
+  key's `not_before`..`not_after` window). It still verifies licenses that claim
+  `issued_at <= retired_at`, so a rotation does not invalidate licenses already
+  delivered, but only until `retired_at + 1920 days` on the verifier's clock
+  (the longest possible license life: 1830-day term + 90 grace days). After
+  that it verifies nothing (`retired_key_expired`).
 - `revoked`: verifies nothing (use after a key compromise, then reissue).
 
 A license names its `key_id`; a key that is unknown, revoked or outside its
 window is refused. The registry never holds private keys, and the development
 test keys used by the automated tests are generated in memory and never placed
 in this file.
+
+### Clock semantics
+
+- `issued_at`, `not_before` and `expires_at` are **signed but signer-chosen**.
+  They prove what the vendor issued only while the signing key is uncompromised.
+- Every comparison uses the **verifier's clock**: the host clock of the machine
+  running `license-verify.mjs` or the bootstrap, or `--now` for audits and
+  rehearsals. Nothing is compared against a time the license asserts about
+  itself.
+- Every license term is capped: `expires_at` is at most **1830 days** after
+  `issued_at`, at signing and at verification.
+- Together these bound what a leaked **retired** key can do: it can only sign
+  licenses that claim issuance before `retired_at`, each such license ends
+  within 1830 + 90 days of that claim, and the verifier stops honouring the key
+  entirely at `retired_at + 1920 days`. A key known to be compromised must be
+  marked `revoked`, which takes effect immediately.
+- An operator who controls the host clock controls these checks (see
+  [What the license can and cannot enforce](#what-the-license-can-and-cannot-enforce)).
 
 ## Verifying a license (customer operator)
 
@@ -107,8 +158,17 @@ not yet valid or past its grace period, and it refuses `--seats`,
 `--license-expires-at` and `--license-reference` next to `--license-file`. A
 license in its grace period still bootstraps, with a warning. The private
 `bootstrap-receipt.json` records `license.source = "signed"`, the license id,
-signing key, terms, `managed_until`, the license file's SHA-256 and whether the
-shipped registry or an override (`--license-public-keys`) was the trust root.
+signing key and its status, terms, `managed_until`, the license file's SHA-256,
+the trust registry's SHA-256 and whether the shipped registry or an override was
+the trust root.
+
+The trust root is `deploy/onprem/license-public-keys.json`. A different
+registry (`--license-public-keys <file>`) replaces the vendor trust root, so
+whoever writes that file can sign any seat count. The bootstrap refuses it
+unless `--allow-custom-license-keys` is also passed; it then prints a warning
+and records `trust_root = "override"`, the registry path and SHA-256 and the
+warning text (`trust_root_warning`) in the receipt. Use it only for rehearsals
+and vendor-supervised recoveries.
 
 ### Unsigned pilot terms
 
@@ -161,10 +221,13 @@ overwrites an existing output file.
 
 ## Limits
 
-- A license is a commercial control, not DRM. An administrator with root on the
-  deployment host can replace the registry or the database row; the signature
-  proves what the vendor issued, and the receipt and admission audit log show
-  which license was applied.
+- A license is a commercial control, not DRM, and enforcement is operator-side
+  (see [What the license can and cannot enforce](#what-the-license-can-and-cannot-enforce)).
+  An administrator with root on the deployment host can replace the registry,
+  change the clock or edit the database row; the signature proves what the
+  vendor issued, and the receipt and admission audit log show which license was
+  applied.
+- The database does not re-verify license signatures.
 - Revoking a license before its expiry is done by the admission operator
   (`revoke_licensed_tenant_admission`), not by the file.
 - Disconnected endpoints learn about admission changes only when they reconnect;
