@@ -49,6 +49,7 @@
 		"build": "node scripts/build-workspace.mjs",
 		"build:release": "node scripts/build-workspace.mjs --release",
 		"build:browser-guard": "pnpm --filter @singularityrd/aidr-browser-guard run build",
+		"brochure:render": "node scripts/render-brochure.mjs",
 		"package:browser-guard": "pnpm --filter @singularityrd/aidr-browser-guard run build:release",
 		"quality:gate": "pnpm quality:static && pnpm audit:prod && pnpm audit:build && pnpm check && pnpm test && pnpm test:coverage && pnpm test:coverage:core && pnpm build:release",
 		"test": "pnpm test:investor-metrics && vitest run",
