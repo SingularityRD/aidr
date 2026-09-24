@@ -64,10 +64,11 @@ Bulut kayıt ekranı varsayılan olarak kapalıdır. `AIDR_SIGNUP_MODE=cloud` ya
 
 ## İlk yönetici
 
-Şirket içi kurulumda kullanıcı kaydı kapalıdır. İlk hesabı yönetici aracı oluşturur; parola stdin üzerinden alınır, komut argümanına veya günlük dosyasına yazılmaz. Müşterinin seçtiği 16–128 karakter parolayı gizli bir terminal isteminden ya da secret manager'dan aktarın. Aşağıdaki lisans bitiş tarihi yalnız örnektir: gerçek, gelecekteki UTC tarihi ve sözleşme referansını onaylı müşteri anlaşmasından alın; bunlar olmadan kurulum erişimi açılmaz.
+Şirket içi kurulumda kullanıcı kaydı kapalıdır. İlk hesabı yönetici aracı oluşturur; parola stdin üzerinden alınır, komut argümanına veya günlük dosyasına yazılmaz. Müşterinin seçtiği 16–128 karakter parolayı gizli bir terminal isteminden ya da secret manager'dan aktarın. Koltuk sayısı, lisans bitişi ve sözleşme referansı elle yazılmaz; Singularity R&D tarafından imzalanan `aidr-license-v1` lisans dosyasından (`--license-file`) okunur ve herhangi bir API çağrısından önce `deploy/onprem/license-public-keys.json` kayıt dosyasına karşı doğrulanır. Kitle gelen kayıt dosyası boştur ve üretici tarafından yayımlanan kayıt kurulana kadar her lisansı reddeder. Lisans süresi ve ek süre (grace) dolduğunda yönetilen özellikler (koltuk kabulü, cihaz kaydı, olay alımı) durur; uç cihazlardaki yerel tespit çalışmaya devam eder. Ayrıntılar: `docs/operations/licensing.md` (müşteri kitinde `LICENSING.md`). Elle yazılan `--seats`/`--license-expires-at`/`--license-reference` yalnız `--unsigned-license-for-pilot` ile ve yalnız pilot için kabul edilir.
 
 ```sh
-node scripts/deployment-bootstrap.mjs --deployment /srv/aidr --email owner@customer.example --name "Customer" --seats 5 --license-expires-at 2027-09-23T00:00:00Z --license-reference '<approved-contract-reference>'
+node scripts/license-verify.mjs --license-file /secure-delivery/aidr-license.json
+node scripts/deployment-bootstrap.mjs --deployment /srv/aidr --email owner@customer.example --license-file /secure-delivery/aidr-license.json
 ```
 
 Komut TTY'de açık parola istemez; parola 16–128 karakterlik tek satır UTF-8 olarak stdin'den verilmelidir. POSIX örneği: `read -r -s AIDR_PASSWORD; printf '%s' "$AIDR_PASSWORD" | node scripts/deployment-bootstrap.mjs ...; unset AIDR_PASSWORD`. Tercihen kurumsal secret manager'ın secret'ı doğrudan stdout'a yazan stdin entegrasyonunu kullanın. PowerShell 7.4+ ile gizli etkileşimli örnek:
@@ -81,7 +82,7 @@ try {
     $OutputEncoding = [Text.UTF8Encoding]::new($false)
     $passwordBuffer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
     $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordBuffer)
-    $plainPassword | & node scripts/deployment-bootstrap.mjs --deployment C:\aidr --email owner@customer.example --name "Customer" --seats 5 --license-expires-at 2027-09-23T00:00:00Z --license-reference '<approved-contract-reference>'
+    $plainPassword | & node scripts/deployment-bootstrap.mjs --deployment C:\aidr --email owner@customer.example --license-file C:\secure-delivery\aidr-license.json
     if ($LASTEXITCODE -ne 0) { throw "Customer bootstrap failed." }
 } finally {
     $plainPassword = $null

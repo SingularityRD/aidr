@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { createServer } from "node:http";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
+import { publicKeyEntry, signLicense } from "./license-issue.mjs";
+import { PUBLIC_KEYS_FORMAT } from "./license-verify.mjs";
 
 const TENANT_ID = "11111111-1111-4111-8111-111111111111";
 const PREVIOUS_OWNER_ID = "22222222-2222-4222-8222-222222222222";
@@ -137,6 +140,8 @@ async function fixture({ receipt = true, members = {}, transferReceipt = null, m
 				null,
 				2,
 			),
+			// The bootstrap refuses to rewrite a receipt that is not owner-only.
+			{ mode: 0o600 },
 		);
 	}
 	state.accounts = [
@@ -147,6 +152,7 @@ async function fixture({ receipt = true, members = {}, transferReceipt = null, m
 		await writeFile(
 			path.join(directory, "owner-transfer-receipt.json"),
 			JSON.stringify(transferReceipt, null, 2),
+			{ mode: 0o600 },
 		);
 	}
 	return { directory, state };
@@ -268,7 +274,7 @@ test("bootstrap still provisions the first owner from a piped password", async (
 	const licenseExpiresAt = "2027-01-01T00:00:00.000Z";
 	const result = await runScript(
 		fresh.directory,
-		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", licenseExpiresAt, "--license-reference", "TEST-CONTRACT-001"],
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", licenseExpiresAt, "--license-reference", "TEST-CONTRACT-001", "--unsigned-license-for-pilot"],
 		`${password}\n`,
 	);
 	assert.equal(result.status, 0, result.stderr);
@@ -301,7 +307,7 @@ test("bootstrap refuses missing contract terms before creating an account or con
 test("bootstrap refuses an invalid password before creating a receipt or calling the API", async () => {
 	const fresh = await fixture({ receipt: false });
 	const result = await runScript(fresh.directory,
-		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2027-01-01T00:00:00.000Z", "--license-reference", "TEST-CONTRACT-001"],
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2027-01-01T00:00:00.000Z", "--license-reference", "TEST-CONTRACT-001", "--unsigned-license-for-pilot"],
 		"too-short\n");
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /Password must be 16/);
@@ -314,7 +320,7 @@ test("bootstrap refuses an invalid password before creating a receipt or calling
 test("bootstrap refuses cloud deployments before any API call", async () => {
 	const cloud = await fixture({ receipt: false, mode: "cloud" });
 	const result = await runScript(cloud.directory,
-		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2027-01-01T00:00:00.000Z", "--license-reference", "TEST-CONTRACT-001"],
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2027-01-01T00:00:00.000Z", "--license-reference", "TEST-CONTRACT-001", "--unsigned-license-for-pilot"],
 		"test-only-password-16\n");
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /only supported for self-hosted installations/);
@@ -334,7 +340,7 @@ test("bootstrap receipt update failure before rename preserves the prior receipt
 		"require('node:module').syncBuiltinESMExports();",
 	].join("\n"));
 	const result = await runScript(fresh.directory,
-		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2027-01-01T00:00:00.000Z", "--license-reference", "TEST-CONTRACT-001", "--resume"],
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2027-01-01T00:00:00.000Z", "--license-reference", "TEST-CONTRACT-001", "--unsigned-license-for-pilot", "--resume"],
 		"", preload);
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /simulated receipt fsync failure/);
@@ -347,7 +353,7 @@ test("bootstrap resume atomically updates an existing receipt and completes", as
 	const fresh = await fixture();
 	const licenseExpiresAt = "2027-01-01T00:00:00.000Z";
 	const result = await runScript(fresh.directory,
-		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", licenseExpiresAt, "--license-reference", "TEST-CONTRACT-001", "--resume"]);
+		["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", licenseExpiresAt, "--license-reference", "TEST-CONTRACT-001", "--unsigned-license-for-pilot", "--resume"]);
 	assert.equal(result.status, 0, result.stderr);
 	const receipt = JSON.parse(await readFile(path.join(fresh.directory, "bootstrap-receipt.json"), "utf8"));
 	assert.equal(receipt.state, "complete");
@@ -420,4 +426,119 @@ test("owner-transfer receipt write failure preserves the prior receipt before an
 	assert.deepEqual(interrupted.state.calls, [], "failed receipt checkpoint must stop before all ownership API reads and writes");
 	assert.deepEqual(await readFile(receiptPath), before, "failed staging must leave the prior transfer receipt byte-for-byte intact");
 	assert.deepEqual((await readdir(interrupted.directory)).filter((name) => name.startsWith("owner-transfer-receipt.json.") && name.endsWith(".tmp")), []);
+});
+
+// ── Vendor-signed license (--license-file) ─────────────────────────────────
+// DEV test key only: generated in memory per run; the shipped registry stays empty.
+const licenseSigningKey = generateKeyPairSync("ed25519").privateKey;
+const LICENSE_KEY_ID = "aidr-license-dev-test";
+const isoSeconds = (ms) => new Date(Math.floor(ms / 1000) * 1000).toISOString().replace(".000Z", "Z");
+
+async function writeLicense(directory, overrides = {}, privateKey = licenseSigningKey) {
+	const now = Date.now();
+	const license = signLicense(
+		{
+			license_id: "LIC-TEST-0042",
+			customer: "Licensed Customer",
+			plan_id: "enterprise",
+			seats: 25,
+			features: ["managed_policy"],
+			deployment: "airgap",
+			issued_at: isoSeconds(now - 86_400_000),
+			not_before: isoSeconds(now - 86_400_000),
+			expires_at: isoSeconds(now + 365 * 86_400_000),
+			grace_days: 14,
+			...overrides,
+		},
+		{ privateKey, keyId: LICENSE_KEY_ID },
+	);
+	const licensePath = path.join(directory, "license.json");
+	await writeFile(licensePath, JSON.stringify(license, null, 2));
+	const keysPath = path.join(directory, "license-public-keys.json");
+	await writeFile(
+		keysPath,
+		JSON.stringify({
+			format: PUBLIC_KEYS_FORMAT,
+			schema_version: 1,
+			keys: [publicKeyEntry(licenseSigningKey, { keyId: LICENSE_KEY_ID, notBefore: "2020-01-01T00:00:00Z" })],
+		}),
+	);
+	return { license, licensePath, keysPath };
+}
+
+test("bootstrap derives seats, expiry and reference from a vendor-signed license file", async () => {
+	const fresh = await fixture({ receipt: false });
+	const { license, licensePath, keysPath } = await writeLicense(fresh.directory);
+	const result = await runScript(
+		fresh.directory,
+		["--email", PREVIOUS_OWNER_EMAIL, "--license-file", licensePath, "--license-public-keys", keysPath],
+		"test-only-password-16\n",
+	);
+	assert.equal(result.status, 0, result.stderr);
+	const graceEnd = new Date(Date.parse(license.payload.expires_at) + 14 * 86_400_000).toISOString();
+	assert.equal(fresh.state.bootstrap.p_seats, 25);
+	assert.equal(fresh.state.bootstrap.p_name, "Licensed Customer", "the tenant name defaults to the licensed customer");
+	assert.equal(fresh.state.bootstrap.p_license_reference, "LIC-TEST-0042");
+	assert.equal(fresh.state.bootstrap.p_license_expires_at, graceEnd, "the admission ends when the grace period ends");
+	const receipt = JSON.parse(await readFile(path.join(fresh.directory, "bootstrap-receipt.json"), "utf8"));
+	assert.equal(receipt.state, "complete");
+	assert.equal(receipt.license.source, "signed");
+	assert.equal(receipt.license.license_id, "LIC-TEST-0042");
+	assert.equal(receipt.license.key_id, LICENSE_KEY_ID);
+	assert.equal(receipt.license.expires_at, license.payload.expires_at);
+	assert.equal(receipt.license.managed_until, graceEnd);
+	assert.equal(receipt.license.deployment, "airgap");
+	assert.equal(receipt.license.trust_root, "override");
+	assert.match(receipt.license.document_sha256, /^[0-9a-f]{64}$/);
+	assert.match(result.stderr, /not the shipped deploy\/onprem\/license-public-keys\.json/);
+});
+
+test("signed-license bootstrap refuses typed overrides, bad licenses and the empty shipped registry before any API call", async () => {
+	const cases = [
+		{ label: "typed seats", extra: ["--seats", "500"], expect: /derives seats, expiry and reference/ },
+		{ label: "pilot flag", extra: ["--unsigned-license-for-pilot"], expect: /remove --unsigned-license-for-pilot/ },
+		{ label: "tampered", mutate: (license) => ({ ...license, payload: { ...license.payload, seats: 5000 } }), expect: /License verification failed: .*does not verify/ },
+		{ label: "wrong key", privateKey: generateKeyPairSync("ed25519").privateKey, expect: /does not verify/ },
+		{ label: "expired", overrides: { issued_at: "2024-01-01T00:00:00Z", not_before: "2024-01-01T00:00:00Z", expires_at: "2025-01-01T00:00:00Z" }, expect: /grace period ended/ },
+		{ label: "not yet valid", overrides: { not_before: "2099-01-01T00:00:00Z", expires_at: "2099-06-01T00:00:00Z" }, expect: /is not valid before 2099/ },
+		{ label: "shipped registry", shipped: true, expect: /no license public keys are configured/ },
+	];
+	for (const item of cases) {
+		const fresh = await fixture({ receipt: false });
+		const written = await writeLicense(fresh.directory, item.overrides, item.privateKey);
+		if (item.mutate) await writeFile(written.licensePath, JSON.stringify(item.mutate(written.license)));
+		const args = ["--email", PREVIOUS_OWNER_EMAIL, "--license-file", written.licensePath, ...(item.shipped ? [] : ["--license-public-keys", written.keysPath]), ...(item.extra ?? [])];
+		const result = await runScript(fresh.directory, args, "test-only-password-16\n");
+		assert.notEqual(result.status, 0, `${item.label} must be refused`);
+		assert.match(result.stderr, item.expect, item.label);
+		assert.deepEqual(fresh.state.calls, [], `${item.label}: refused before every API call`);
+		assert.equal(existsSync(path.join(fresh.directory, "bootstrap-receipt.json")), false, `${item.label}: no receipt`);
+	}
+});
+
+test("a license in its grace period still bootstraps, with a warning, until the grace end", async () => {
+	const fresh = await fixture({ receipt: false });
+	const expiredYesterday = isoSeconds(Date.now() - 86_400_000);
+	const { licensePath, keysPath } = await writeLicense(fresh.directory, { issued_at: "2025-01-01T00:00:00Z", not_before: "2025-01-01T00:00:00Z", expires_at: expiredYesterday });
+	const result = await runScript(fresh.directory, ["--email", PREVIOUS_OWNER_EMAIL, "--license-file", licensePath, "--license-public-keys", keysPath], "test-only-password-16\n");
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stderr, /managed features stop at .*Local detection is not affected/);
+	assert.equal(fresh.state.bootstrap.p_license_expires_at, new Date(Date.parse(expiredYesterday) + 14 * 86_400_000).toISOString());
+});
+
+test("typed license terms require the explicit unsigned pilot flag and are recorded as unsigned", async () => {
+	const refused = await fixture({ receipt: false });
+	const terms = ["--email", PREVIOUS_OWNER_EMAIL, "--name", "Customer", "--seats", "5", "--license-expires-at", "2099-01-01T00:00:00.000Z", "--license-reference", "PILOT-1"];
+	const withoutFlag = await runScript(refused.directory, terms, "test-only-password-16\n");
+	assert.notEqual(withoutFlag.status, 0);
+	assert.match(withoutFlag.stderr, /vendor-signed --license-file is required/);
+	assert.deepEqual(refused.state.calls, []);
+
+	const pilot = await fixture({ receipt: false });
+	const accepted = await runScript(pilot.directory, [...terms, "--unsigned-license-for-pilot"], "test-only-password-16\n");
+	assert.equal(accepted.status, 0, accepted.stderr);
+	assert.match(accepted.stderr, /WARNING: UNSIGNED PILOT LICENSE/);
+	const receipt = JSON.parse(await readFile(path.join(pilot.directory, "bootstrap-receipt.json"), "utf8"));
+	assert.deepEqual(receipt.license, { source: "unsigned-pilot" });
+	assert.equal(pilot.state.bootstrap.p_license_reference, "PILOT-1");
 });

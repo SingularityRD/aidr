@@ -192,6 +192,71 @@ The compiler fails before writing generated files when the tuple is missing or
 the registry is non-contiguous; this is the rollback boundary for agents that
 already installed an older signed bundle.
 
+## Air-gapped updates
+
+A disconnected installation cannot poll a feed. Signed intel packs are carried
+in on approved media and imported with `scripts/import-offline-pack.mjs`, which
+verifies everything before it writes anything and never contacts the network.
+
+**What the vendor delivers.** A signed pack directory in the format the release
+tooling already produces: `manifest.json` (`pack_id`, `version`, `issued_at`,
+optional `expires_at`, `key_id`, `files[]` with SHA-256 or ciphertext SHA-256),
+the `manifest.sig` written by `scripts/sign-intel-pack-manifest.mjs` over the
+exact manifest bytes, and every listed file. For single-file transfer the same
+bytes can be wrapped in an `aidr-intel-pack-bundle-v1` JSON (`--export-bundle`).
+The publisher's public key is delivered separately (for example with the signed
+customer kit) as a trusted-keys file in the core loader format:
+`{ "<key_id>": "<Ed25519 public key PEM>" }`.
+
+**Verification** (identical for every target, using the core
+`IntelPackManifestSchema` and `verifyEd25519Signature`):
+
+- the manifest matches the schema and `pack_id`/`version` are path-safe;
+- its exact bytes carry a valid Ed25519 signature from a key in the trusted-keys
+  file (`--revoked-key-id` refuses a withdrawn key);
+- every listed file is present and matches its SHA-256 (ciphertext SHA-256 for
+  encrypted files; those are decrypted later by the endpoint keyring);
+- no unlisted file, symlink, absolute or `..` path is present;
+- the pack has not expired;
+- the version is not older than the installed or registered one (rollback) and a
+  different pack under an already installed version is refused (equivocation).
+
+**Install for endpoints / a shared intel directory** — the layout the endpoint
+loader reads (`~/.singularity-aidr/intel/packs/<pack_id>/<version>/` plus
+`active.json`):
+
+```sh
+node scripts/import-offline-pack.mjs --pack /media/aidr/aidr-intel-2026.09 \
+  --trusted-keys /etc/aidr/intel-trusted-keys.json --target local \
+  [--packs-dir /srv/aidr-intel/packs]
+```
+
+Files are staged, re-verified from disk, renamed into place and activated; a
+re-import of identical bytes reports `already_installed`. Endpoints still verify
+the signature and hashes themselves each time they load the pack.
+
+**Install into the self-hosted control plane** so the authenticated
+`packs-manifest` / `packs-download` functions serve it to entitled tenants:
+
+```sh
+node scripts/import-offline-pack.mjs --pack /media/aidr/aidr-intel-2026.09.aidrpack.json \
+  --trusted-keys /etc/aidr/intel-trusted-keys.json --target storage \
+  --deployment /srv/aidr [--tenant-id <tenant uuid>]
+```
+
+The verified bundle is uploaded without overwrite to the private `aidr-packs`
+bucket (migration `20260924000013`) at `<tenant_id|shared>/<pack_id>/<version>.aidrpack.json`
+and registered in `pack_versions` with the signed manifest, signature and key id.
+The service-role credential is read from the deployment's private `.env`, never
+from arguments. If registration fails after the upload, re-run the same command:
+an identical object is accepted and registration completes; a different object
+or row is refused.
+
+The command prints a JSON receipt (`outcome`, `pack_id`, `version`, `key_id`,
+`manifest_sha256`, file count). A pack that fails any check exits non-zero and
+leaves the installation unchanged. Local detection rules shipped with the
+connectors are unaffected by pack imports; packs only add intelligence.
+
 ## Troubleshooting
 
 | Symptom                     | Likely Cause                        | Fix                                      |

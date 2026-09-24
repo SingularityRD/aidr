@@ -44,7 +44,7 @@ function copy(source, target) {
 function files(path, prefix = "") {
   return readdirSync(path).sort().flatMap((name) => { const relative = prefix ? `${prefix}/${name}` : name; return statSync(join(path, name)).isDirectory() ? files(join(path, name), relative) : [{ path: relative, sha256: createHash("sha256").update(readFileSync(join(path, name))).digest("hex") }]; });
 }
-for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy/ha", "deploy/ingress", "deploy/maintenance", "deploy/monitoring", "deploy/regions.manifest.json", "packages/dashboard/dist", "supabase/config.toml", "supabase/functions", "supabase/migrations"]) copy(join(root, path), join(output, path));
+for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy/ha", "deploy/ingress", "deploy/maintenance", "deploy/monitoring", "deploy/onprem/license-public-keys.json", "deploy/regions.manifest.json", "packages/dashboard/dist", "supabase/config.toml", "supabase/functions", "supabase/migrations"]) copy(join(root, path), join(output, path));
 copy(join(root, "scripts/benchmarks"), join(output, "scripts/benchmarks"));
 for (const file of [
   "deployment-prepare.mjs",
@@ -53,6 +53,7 @@ for (const file of [
 	"lib/migration-hash-compat.mjs",
 	"lib/atomic-write.mjs",
   "deployment-bootstrap.mjs",
+  "license-verify.mjs",
 	"deployment-backup.mjs",
 	"deployment-backup-offsite.mjs",
 	"deployment-restore-drill.mjs",
@@ -102,6 +103,7 @@ const requireClaude = createRequire(join(root, "packages/claude-code/package.jso
 await requireClaude("esbuild").build({ entryPoints: [requireCore.resolve("yaml")], outfile: join(output, "deploy/vendor/yaml.cjs"), bundle: true, platform: "node", format: "cjs", sourcemap: false, legalComments: "inline" });
 await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/siem-delivery-worker.mjs")], outfile: join(output, "scripts/siem-delivery-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
 await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/readiness-evidence-worker.mjs")], outfile: join(output, "scripts/readiness-evidence-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
+await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/import-offline-pack.mjs")], outfile: join(output, "scripts/import-offline-pack.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
 await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/deployment-backup.mjs")], outfile: join(output, "scripts/deployment-backup.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
 copy(resolve(dirname(requireCore.resolve("yaml")), "../LICENSE"), join(output, "deploy/vendor/YAML-LICENSE"));
 if (existsSync(gatewaySource)) {
@@ -131,6 +133,8 @@ for (const [source, target] of [
   ["deploy/RESOURCE_REQUIREMENTS.md", "RESOURCE-REQUIREMENTS.md"],
 	["docs/runbooks/support-v7.md", "SUPPORT-RUNBOOK.md"],
 	["docs/runbooks/secrets-management.md", "SECRETS-RUNBOOK.md"],
+	["docs/operations/licensing.md", "LICENSING.md"],
+	["docs/operations/threat-sync.md", "THREAT-SYNC.md"],
   ["docs/runbooks/support-bundle.md", "SUPPORT-BUNDLE.md"],
 	["docs/production-readiness/backup-restore-v6.md", "RESTORE-DRILL.md"],
   ["docs/production-readiness/native-host-matrix-v6.md", "NATIVE-HOST-ACCEPTANCE.md"],
