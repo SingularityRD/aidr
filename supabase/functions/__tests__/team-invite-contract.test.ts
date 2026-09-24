@@ -65,6 +65,9 @@ const lifecycleSource = repoFile("supabase", "functions", "team-invite", "lifecy
 const consumerSource = repoFile("packages", "dashboard", "src", "enterprise", "team-provider.tsx");
 
 const mod = await import("../team-invite/index.ts");
+const { createResendMailer, RESEND_API_URL } = await import("../_shared/mailer.ts");
+type Mailer = import("../_shared/mailer.ts").Mailer;
+type MailMessage = import("../_shared/mailer.ts").MailMessage;
 
 const TEAM = "11111111-1111-4111-8111-111111111111";
 const OTHER_TEAM = "22222222-2222-4222-8222-222222222222";
@@ -250,7 +253,7 @@ function database(options: DbOptions = {}) {
 		if (table === "tenants") {
 			return options.tenantError
 				? { data: null, error: new Error("db_down") }
-				: { data: { status: options.tenantStatus ?? "active" }, error: null };
+				: { data: { status: options.tenantStatus ?? "active", name: "Acme <Security>" }, error: null };
 		}
 		if (table === "rate_limits") {
 			return options.rateLimitError
@@ -417,11 +420,11 @@ function inviteQueries(queries: QueryCall[]): QueryCall[] {
 }
 
 /** Build a handler bound to a fresh database double. */
-function handlerWith(options: DbOptions = {}) {
+function handlerWith(options: DbOptions = {}, mailer?: Mailer) {
 	const fake = database(options);
 	return {
 		...fake,
-		handle: mod.createTeamInviteHandler({ db: fake.db as never }),
+		handle: mod.createTeamInviteHandler({ db: fake.db as never, ...(mailer ? { mailer } : {}) }),
 	};
 }
 
@@ -1213,6 +1216,170 @@ describe("team invitation SQL contract", () => {
 	});
 });
 
+const RESEND_KEY = "re_synthetic_key_must_never_be_logged";
+
+function resendTransport(respond: () => Response | Promise<Response> = () =>
+	new Response(JSON.stringify({ id: "msg_1" }), { status: 200 })) {
+	const calls: Array<{ url: string; headers: Record<string, string>; body: Record<string, unknown> }> = [];
+	const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+		calls.push({
+			url: String(url),
+			headers: init?.headers as Record<string, string>,
+			body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+		});
+		return respond();
+	});
+	return {
+		calls,
+		fetchMock,
+		mailer: createResendMailer(RESEND_KEY, "AIDR <no-reply@aidr.example>", { fetch: fetchMock as unknown as typeof fetch }),
+	};
+}
+
+function recordingMailer(): { mailer: Mailer; sent: MailMessage[] } {
+	const sent: MailMessage[] = [];
+	return {
+		sent,
+		mailer: {
+			provider: "resend",
+			send: vi.fn(async (message: MailMessage) => {
+				sent.push(message);
+				return { ok: true as const, provider: "resend" as const, messageId: `msg_${sent.length}` };
+			}),
+		},
+	};
+}
+
+function logged(...spies: Array<ReturnType<typeof vi.spyOn>>): string {
+	return JSON.stringify(spies.flatMap((spy) => spy.mock.calls));
+}
+
+describe("team-invite email delivery", () => {
+	it("mails the single-use link through Resend and does not return it to the operator", async () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+		const transport = resendTransport();
+		const fake = handlerWith({}, transport.mailer);
+		const response = await fake.handle(post(CREATE));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as Record<string, unknown>;
+		expect(Object.keys(body).sort()).toEqual(["delivery", "expires_at", "invitation_id", "ok"]);
+		expect(body).toMatchObject({ ok: true, delivery: "email" });
+
+		expect(transport.calls).toHaveLength(1);
+		const [call] = transport.calls;
+		expect(call?.url).toBe(RESEND_API_URL);
+		expect(call?.headers.Authorization).toBe(`Bearer ${RESEND_KEY}`);
+		expect(call?.body.to).toEqual(["new.member@example.com"]);
+		expect(call?.body.from).toBe("AIDR <no-reply@aidr.example>");
+		const html = String(call?.body.html);
+		const text = String(call?.body.text);
+		// Workspace names are customer-controlled; they are escaped in HTML.
+		expect(html).toContain("Acme &lt;Security&gt;");
+		expect(html).not.toContain("Acme <Security>");
+		const link = /https:\/\/app\.aidr\.example\/enterprise\?invite=([0-9a-f]{64})/.exec(text);
+		expect(link).not.toBeNull();
+		const secret = link?.[1] ?? "";
+		expect(html).toContain(`${DASHBOARD}/enterprise?invite=${secret}`);
+		expect(fake.invitations[0]?.token_hash).toBe(sha256Hex(secret));
+		expect(redeemable(fake.invitations, secret)).toHaveLength(1);
+		// The de-duplication key carries a digest prefix, never the secret.
+		expect(call?.headers["Idempotency-Key"]).toMatch(/^team-invite\/[0-9a-f-]{36}\/[0-9a-f]{16}$/);
+		expect(call?.headers["Idempotency-Key"]).not.toContain(secret);
+		expect(JSON.stringify(body)).not.toContain(secret);
+		const logs = logged(error, log);
+		expect(logs).not.toContain(secret);
+		expect(logs).not.toContain(RESEND_KEY);
+	});
+
+	it("mails a rotated link on resend and never re-sends the superseded one", async () => {
+		const recorder = recordingMailer();
+		const fake = handlerWith({}, recorder.mailer);
+		const created = (await (await fake.handle(post(CREATE))).json()) as Record<string, unknown>;
+		const response = await fake.handle(post({ team_id: TEAM, action: "resend", invitation_id: created.invitation_id }));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as Record<string, unknown>;
+		expect(body).toMatchObject({ ok: true, delivery: "email", invitation_id: created.invitation_id, role: "member" });
+		expect(body).not.toHaveProperty("invite_url");
+		expect(recorder.sent).toHaveLength(2);
+		const first = /invite=([0-9a-f]{64})/.exec(recorder.sent[0]?.text ?? "")?.[1];
+		const second = /invite=([0-9a-f]{64})/.exec(recorder.sent[1]?.text ?? "")?.[1];
+		expect(first).toBeTruthy();
+		expect(second).toBeTruthy();
+		expect(second).not.toBe(first);
+		expect(redeemable(fake.invitations, first ?? "")).toEqual([]);
+		expect(redeemable(fake.invitations, second ?? "")).toHaveLength(1);
+		expect(recorder.sent[1]?.to).toBe("new.member@example.com");
+		expect(recorder.sent[1]?.idempotencyKey).not.toBe(recorder.sent[0]?.idempotencyKey);
+	});
+
+	it("sends nothing for revoked, consumed, expired or conflicting invitations", async () => {
+		const recorder = recordingMailer();
+		const fake = handlerWith({
+			invitations: [
+				invitationRow(),
+				invitationRow({ id: CONSUMED_INVITE, email: "used@example.com", accepted_at: EARLIER }),
+				invitationRow({ id: EXPIRED_INVITE, email: "old@example.com", expires_at: EARLIER }),
+			],
+		}, recorder.mailer);
+
+		const revoked = await fake.handle(post({ team_id: TEAM, action: "revoke", invitation_id: INVITE }));
+		expect(revoked.status).toBe(200);
+		for (const invitationId of [INVITE, CONSUMED_INVITE, EXPIRED_INVITE]) {
+			const resent = await fake.handle(post({ team_id: TEAM, action: "resend", invitation_id: invitationId }));
+			expect(resent.status, invitationId).toBe(404);
+		}
+		const conflict = await handlerWith({ invitations: [invitationRow({ email: "new.member@example.com" })] }, recorder.mailer)
+			.handle(post(CREATE));
+		expect(conflict.status).toBe(409);
+		const failing = await handlerWith({ insertThrows: true }, recorder.mailer).handle(post(CREATE));
+		expect(failing.status).toBe(503);
+		const forbidden = await handlerWith({ tenantStatus: "closing" }, recorder.mailer).handle(post(CREATE));
+		expect(forbidden.status).toBe(403);
+		expect(recorder.sent).toEqual([]);
+	});
+
+	it("falls back to a manual link and says so when the provider rejects or is unreachable", async () => {
+		const responses: Array<() => Response | Promise<Response>> = [
+			() => new Response(JSON.stringify({ message: "invalid from" }), { status: 422 }),
+			() => new Response("upstream", { status: 503 }),
+			() => new Response(JSON.stringify({}), { status: 200 }),
+			() => { throw new TypeError("network down"); },
+		];
+		for (const respond of responses) {
+			const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+			const transport = resendTransport(respond);
+			const fake = handlerWith({}, transport.mailer);
+			const response = await fake.handle(post(CREATE));
+			expect(response.status).toBe(200);
+			const body = (await response.json()) as Record<string, unknown>;
+			expect(body).toMatchObject({ ok: true, delivery: "manual", email_delivery: "failed" });
+			const secret = secretOf(body.invite_url);
+			expect(secret).toMatch(/^[0-9a-f]{64}$/);
+			expect(fake.invitations[0]?.token_hash).toBe(sha256Hex(secret));
+			const logs = logged(error);
+			expect(logs).not.toContain(secret);
+			expect(logs).not.toContain(RESEND_KEY);
+			expect(logs).not.toContain("new.member@example.com");
+			error.mockRestore();
+		}
+	});
+
+	it("uses the manual path without any network call when no mail provider is configured", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		try {
+			const fake = handlerWith();
+			const body = (await (await fake.handle(post(CREATE))).json()) as Record<string, unknown>;
+			expect(body).toMatchObject({ ok: true, delivery: "manual" });
+			expect(body).not.toHaveProperty("email_delivery");
+			expect(fetchMock).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+});
+
 describe("team-invite handler source contract", () => {
 	it("validates configuration through the shared helper and never reads platform secrets itself", () => {
 		expect(handlerSource).toContain('from "../_shared/config.ts"');
@@ -1259,15 +1426,21 @@ describe("dashboard consumer contract", () => {
 		expect(consumerSource).toContain("did not confirm the invitation");
 		expect(consumerSource).toContain("No invitation was sent");
 		const confirmation = consumerSource.indexOf("if (response?.ok !== true)");
-		const returned = consumerSource.indexOf("return inviteUrl.toString();");
+		const returned = consumerSource.indexOf("return readInvitationDelivery(response);");
 		expect(confirmation).toBeGreaterThan(-1);
 		expect(returned).toBeGreaterThan(confirmation);
 	});
 
 	it("only ever surfaces a link this deployment issued for the enterprise route", () => {
-		expect(consumerSource).toContain('if (typeof response.invite_url !== "string")');
+		expect(consumerSource).toMatch(
+			/if \(typeof value !== "string"\)\s+throw new Error\("The invitation service returned no shareable link\."\);/,
+		);
 		expect(consumerSource).toContain("inviteUrl.origin !== window.location.origin");
 		expect(consumerSource).toContain('inviteUrl.pathname !== "/enterprise"');
+		// Email delivery is claimed only on the service's explicit `delivery: "email"`;
+		// every other confirmed answer must carry a verifiable link.
+		expect(consumerSource).toContain('if (response.delivery === "email") return { delivery: "email" };');
+		expect(consumerSource).toContain("inviteUrl: readInvitationLink(response.invite_url)");
 	});
 
 	it("never renders a delivery claim the service never made", () => {

@@ -67,7 +67,13 @@ that could never be verified.
 A *half*-configured secret pair (a `*_KEY_ID` without its
 `*_PRIVATE_KEY_PKCS8_B64`, or an AutoSecOps endpoint without its token) is also
 reported instead of silently degrading to an unsigned or "not configured"
-answer. Variables with documented defaults (`AIDR_PACKS_BUCKET`,
+answer. Invitation email is optional: `team-invite` sends the single-use link
+through Resend when `RESEND_API_KEY` and `AIDR_MAIL_FROM` are both set (or
+`AIDR_MAIL_PROVIDER=resend`) and reports `delivery: "email"` without returning
+the link; with `AIDR_MAIL_PROVIDER=none`, no credentials, a half-configured pair
+or a failed send it reports `delivery: "manual"` and returns `invite_url` for the
+operator to share (`email_delivery: "failed"` marks a failed attempt). Mail
+misconfiguration is logged by variable name only. Variables with documented defaults (`AIDR_PACKS_BUCKET`,
 `AIDR_*_TTL_HOURS`, `AIDR_*_RL_PER_MIN`, `AIDR_ALLOWED_ORIGINS`, ...) stay
 optional.
 

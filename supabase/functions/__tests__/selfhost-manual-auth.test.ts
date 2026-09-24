@@ -8,7 +8,8 @@ type Route =
 	| "device-verify"
 	| "pilot-admin"
 	| "response-playbooks"
-	| "audit-export";
+	| "audit-export"
+	| "tenant-settings";
 
 const TENANT = "22222222-2222-4222-8222-222222222222";
 const USER = "11111111-1111-4111-8111-111111111111";
@@ -66,6 +67,7 @@ async function loadHandler(route: Route) {
 		case "pilot-admin": await import("../pilot-admin/index.ts"); break;
 		case "response-playbooks": await import("../response-playbooks/index.ts"); break;
 		case "audit-export": await import("../audit-export/index.ts"); break;
+		case "tenant-settings": await import("../tenant-settings/index.ts"); break;
 	}
 	const handler = served[0];
 	if (!handler) throw new Error(`${route} did not register its Edge handler`);
@@ -92,12 +94,13 @@ function request(route: Route, token?: string): Request {
 			ttl_seconds: 300,
 		},
 		"audit-export": { team_id: TENANT, format: "json" },
+		"tenant-settings": { tenant_id: TENANT, action: "close", confirm_name: "Acme" },
 	};
-	const method = route === "azure-ad-groups" ? "GET" : "POST";
+	const method = route === "azure-ad-groups" ? "GET" : route === "tenant-settings" ? "PATCH" : "POST";
 	return new Request(`https://project.supabase.co/functions/v1/${route}`, {
 		method,
 		headers,
-		...(method === "POST" ? { body: JSON.stringify(bodies[route]) } : {}),
+		...(method !== "GET" ? { body: JSON.stringify(bodies[route]) } : {}),
 	});
 }
 
@@ -117,6 +120,7 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"pilot-admin",
 		"response-playbooks",
 		"audit-export",
+		"tenant-settings",
 	] satisfies Route[])("%s rejects a missing bearer before privileged access", async (route) => {
 		const { handler, getUser, privilegedCalls } = await loadHandler(route);
 		const response = await handler(request(route));
@@ -135,6 +139,7 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"pilot-admin",
 		"response-playbooks",
 		"audit-export",
+		"tenant-settings",
 	] satisfies Route[])("%s rejects an Auth-rejected bearer before privileged access", async (route) => {
 		const { handler, getUser, privilegedCalls } = await loadHandler(route);
 		const response = await handler(request(route, "not-a-valid-supabase-jwt"));

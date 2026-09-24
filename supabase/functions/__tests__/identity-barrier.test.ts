@@ -136,6 +136,7 @@ describe("canonical service-role user routes", () => {
 			"api-keys", "audit-export", "autosecops-runtime", "billing-checkout",
 			"device-verify", "enrollment-tokens", "oauth-callback", "pilot-admin",
 			"pilot-apply", "pilot-status", "policy-management", "team-invite",
+			"tenant-settings",
 		]) {
 			const source = readFileSync(join(FUNCTIONS_DIR, route, "index.ts"), "utf8");
 			expect(source, route).toContain("checkIdentityBarrier(");

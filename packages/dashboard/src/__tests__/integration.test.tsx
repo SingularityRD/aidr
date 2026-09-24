@@ -403,7 +403,13 @@ describe("Dashboard integration", () => {
 		mockedSupabase.from.mockImplementation((table: string) =>
 			createQueryBuilder(
 				table === "team_members"
-					? [{ team_id: bootstrapTeamId, role: "admin", teams: { id: bootstrapTeamId, name: "Runtime team" } }]
+					? [
+							{
+								team_id: bootstrapTeamId,
+								role: "admin",
+								teams: { id: bootstrapTeamId, name: "Runtime team" },
+							},
+						]
 					: [],
 			),
 		);
@@ -412,11 +418,13 @@ describe("Dashboard integration", () => {
 				name === "identity-security"
 					? identityFixture(request)
 					: {
-						data: null,
-						error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
-							context: new Response(JSON.stringify({ error: "integration_not_configured" }), { status: 503 }),
-						}),
-					},
+							data: null,
+							error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+								context: new Response(JSON.stringify({ error: "integration_not_configured" }), {
+									status: 503,
+								}),
+							}),
+						},
 		);
 
 		render(
@@ -428,7 +436,9 @@ describe("Dashboard integration", () => {
 		);
 
 		await waitFor(() =>
-			expect(screen.getByRole("alert")).toHaveTextContent("AutoSecOps is not configured for this deployment."),
+			expect(screen.getByRole("alert")).toHaveTextContent(
+				"AutoSecOps is not configured for this deployment.",
+			),
 		);
 		expect(screen.getByRole("alert")).not.toHaveTextContent("Edge Function returned");
 		expect(screen.getByText("Fleet data is unavailable.")).toBeInTheDocument();
@@ -807,6 +817,7 @@ describe("Dashboard integration", () => {
 	});
 
 	it("renders settings and signs out through the Supabase client", async () => {
+		mockSelectedTeam();
 		render(
 			<MemoryRouter>
 				<ThemeProvider>

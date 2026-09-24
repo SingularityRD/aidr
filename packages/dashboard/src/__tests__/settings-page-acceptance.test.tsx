@@ -1,25 +1,134 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "../ui/pages/SettingsPage";
 import { ThemeProvider } from "../ui/ThemeProvider";
 
+const TENANT = "11111111-1111-4111-8111-111111111111";
+
 const session = vi.hoisted(() => ({ getSession: vi.fn(), signOut: vi.fn() }));
+const invoke = vi.hoisted(() => vi.fn());
+const team = vi.hoisted(() => ({
+	currentTeam: { id: "11111111-1111-4111-8111-111111111111", name: "Acme Security" } as {
+		id: string;
+		name: string;
+	} | null,
+	applyWorkspaceName: vi.fn(),
+}));
 vi.mock("../ui/session", () => session);
-vi.mock("../lib/supabase", () => ({ supabaseEnvError: null }));
+vi.mock("../lib/supabase", () => ({ supabase: { functions: { invoke } }, supabaseEnvError: null }));
+vi.mock("../enterprise/team-provider", () => ({ useTeam: () => team }));
 
-beforeEach(() => {
-	vi.clearAllMocks();
-	localStorage.clear();
-	session.getSession.mockResolvedValue({ user: { email: "operator@example.test" } });
-	session.signOut.mockResolvedValue({ serverRevoked: true });
-});
-afterEach(cleanup);
+interface Fixture {
+	role?: string;
+	status?: string;
+	retentionDays?: number;
+	assurance?: "aal1" | "aal2";
+	requireMfa?: boolean;
+	loadError?: boolean;
+	updateError?: string;
+	closeError?: string;
+}
 
-it("shows the account, persists appearance, exposes legal links and completes sign-out", async () => {
-	render(
+function httpError(status: number, error: string) {
+	return {
+		data: null,
+		error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+			context: new Response(JSON.stringify({ error }), { status }),
+		}),
+	};
+}
+
+function install(fixture: Fixture = {}) {
+	const role = fixture.role ?? "owner";
+	const status = fixture.status ?? "active";
+	let name = "Acme Security";
+	let retentionDays = fixture.retentionDays ?? 90;
+	invoke.mockImplementation(
+		async (
+			fn: string,
+			options: {
+				method?: string;
+				headers?: Record<string, string>;
+				body?: Record<string, unknown>;
+			},
+		) => {
+			if (fn === "identity-security") {
+				return {
+					data: {
+						ok: true,
+						tenant_id: TENANT,
+						current_assurance: fixture.assurance ?? "aal2",
+						require_mfa: fixture.requireMfa ?? false,
+					},
+					error: null,
+				};
+			}
+			if (fn !== "tenant-settings") throw new Error(`unexpected function ${fn}`);
+			const workspace = () => ({
+				id: TENANT,
+				name,
+				kind: "team",
+				status,
+				retention_days: retentionDays,
+				created_at: "2026-01-01T00:00:00.000Z",
+			});
+			if (options.method === "GET") {
+				if (fixture.loadError) return httpError(503, "authorization_unavailable");
+				expect(options.headers).toEqual({ "X-AIDR-Tenant-ID": TENANT });
+				const active = status === "active";
+				return {
+					data: {
+						ok: true,
+						workspace: workspace(),
+						role,
+						permissions: {
+							can_edit: active && (role === "owner" || role === "admin"),
+							can_close: active && role === "owner",
+							requires_aal2: true,
+						},
+						retention_bounds: { min: 1, max: 3650 },
+					},
+					error: null,
+				};
+			}
+			if (options.body?.action === "update") {
+				if (fixture.updateError) return httpError(403, fixture.updateError);
+				if (typeof options.body.name === "string") name = options.body.name;
+				if (typeof options.body.retention_days === "number")
+					retentionDays = options.body.retention_days;
+				return { data: { ok: true, workspace: workspace(), changed: [] }, error: null };
+			}
+			if (options.body?.action === "close") {
+				if (fixture.closeError) return httpError(400, fixture.closeError);
+				return {
+					data: {
+						ok: true,
+						closure: {
+							run_id: "55555555-5555-4555-8555-555555555555",
+							status: "requested",
+							backup_scope: "excluded_external_retention",
+							backup_exception: "Backup copies are excluded from this live-data receipt.",
+						},
+					},
+					error: null,
+				};
+			}
+			throw new Error("unexpected tenant-settings request");
+		},
+	);
+}
+
+function patches() {
+	return invoke.mock.calls
+		.filter(([fn, options]) => fn === "tenant-settings" && options?.method === "PATCH")
+		.map(([, options]) => options.body);
+}
+
+function renderSettings() {
+	return render(
 		<MemoryRouter initialEntries={["/settings"]}>
 			<ThemeProvider>
 				<Routes>
@@ -29,6 +138,20 @@ it("shows the account, persists appearance, exposes legal links and completes si
 			</ThemeProvider>
 		</MemoryRouter>,
 	);
+}
+
+beforeEach(() => {
+	vi.clearAllMocks();
+	localStorage.clear();
+	team.currentTeam = { id: TENANT, name: "Acme Security" };
+	session.getSession.mockResolvedValue({ user: { email: "operator@example.test" } });
+	session.signOut.mockResolvedValue({ serverRevoked: true });
+	install();
+});
+afterEach(cleanup);
+
+it("shows the account, persists appearance, exposes legal links and completes sign-out", async () => {
+	renderSettings();
 	expect(await screen.findByText("operator@example.test")).toBeInTheDocument();
 	fireEvent.click(screen.getByRole("button", { name: "Dark" }));
 	await waitFor(() => expect(localStorage.getItem("theme")).toBe("dark"));
@@ -71,4 +194,170 @@ it("hides settings while ending the session and reports unconfirmed server revoc
 	expect(
 		await screen.findByText("Login destination: ?signout=revocation-unconfirmed"),
 	).toBeInTheDocument();
+});
+
+describe("workspace section", () => {
+	it("renames the workspace only after the service confirms it", async () => {
+		renderSettings();
+		const input = await screen.findByLabelText("Workspace name");
+		expect(input).toHaveValue("Acme Security");
+		const save = screen.getByRole("button", { name: "Save workspace settings" });
+		expect(save).toBeDisabled();
+		fireEvent.change(input, { target: { value: "  Acme Platform " } });
+		fireEvent.click(save);
+		expect(await screen.findByText("Workspace settings saved.")).toBeInTheDocument();
+		expect(patches()).toEqual([{ tenant_id: TENANT, action: "update", name: "Acme Platform" }]);
+		expect(screen.getByTestId("workspace-name")).toHaveTextContent("Acme Platform");
+		expect(team.applyWorkspaceName).toHaveBeenCalledWith(TENANT, "Acme Platform");
+	});
+
+	it("requires explicit confirmation before shortening retention", async () => {
+		renderSettings();
+		const retention = await screen.findByLabelText("Telemetry retention (days)");
+		fireEvent.change(retention, { target: { value: "30" } });
+		const save = screen.getByRole("button", { name: "Save workspace settings" });
+		expect(save).toBeDisabled();
+		const confirm = screen.getByRole("checkbox");
+		expect(confirm.closest("label")).toHaveTextContent("from 90 to 30 days");
+		fireEvent.click(confirm);
+		fireEvent.click(save);
+		expect(await screen.findByText("Workspace settings saved.")).toBeInTheDocument();
+		expect(patches()).toEqual([
+			{
+				tenant_id: TENANT,
+				action: "update",
+				retention_days: 30,
+				confirm_retention_reduction: true,
+			},
+		]);
+		expect(screen.getByText("30 days")).toBeInTheDocument();
+		expect(team.applyWorkspaceName).not.toHaveBeenCalled();
+	});
+
+	it("extends retention without a reduction prompt and rejects out-of-range values", async () => {
+		renderSettings();
+		const retention = await screen.findByLabelText("Telemetry retention (days)");
+		const save = screen.getByRole("button", { name: "Save workspace settings" });
+		for (const invalid of ["0", "3651", "12.5"]) {
+			fireEvent.change(retention, { target: { value: invalid } });
+			expect(save, invalid).toBeDisabled();
+		}
+		fireEvent.change(retention, { target: { value: "365" } });
+		expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+		fireEvent.click(save);
+		await screen.findByText("Workspace settings saved.");
+		expect(patches()).toEqual([{ tenant_id: TENANT, action: "update", retention_days: 365 }]);
+	});
+
+	it("routes an AAL1 session to MFA verification when a change needs step-up", async () => {
+		install({ updateError: "mfa_required" });
+		renderSettings();
+		fireEvent.change(await screen.findByLabelText("Workspace name"), {
+			target: { value: "Renamed" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Save workspace settings" }));
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("Multi-factor verification is required");
+		expect(within(alert).getByRole("link", { name: "Verify with authenticator" })).toHaveAttribute(
+			"href",
+			`/auth/dlp-step-up?tenant=${TENANT}&return=settings`,
+		);
+		expect(screen.getByTestId("workspace-name")).toHaveTextContent("Acme Security");
+		expect(team.applyWorkspaceName).not.toHaveBeenCalled();
+	});
+
+	it("is read-only for members and viewers", async () => {
+		for (const role of ["member", "viewer"]) {
+			install({ role });
+			const view = renderSettings();
+			expect(await screen.findByTestId("workspace-name")).toHaveTextContent("Acme Security");
+			expect(
+				screen.getByText("Only an owner or administrator can change workspace settings."),
+			).toBeInTheDocument();
+			expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Close workspace" })).not.toBeInTheDocument();
+			view.unmount();
+		}
+	});
+
+	it("lets administrators edit but not close the workspace", async () => {
+		install({ role: "admin" });
+		renderSettings();
+		expect(await screen.findByLabelText("Workspace name")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Close workspace" })).not.toBeInTheDocument();
+	});
+
+	it("closes the workspace only after the owner types its exact name", async () => {
+		renderSettings();
+		const confirm = await screen.findByLabelText(/to confirm/);
+		const close = screen.getByRole("button", { name: "Close workspace" });
+		expect(close).toBeDisabled();
+		fireEvent.change(confirm, { target: { value: "acme security" } });
+		expect(close).toBeDisabled();
+		fireEvent.change(confirm, { target: { value: "Acme Security" } });
+		expect(close).toBeEnabled();
+		fireEvent.click(close);
+		expect(
+			await screen.findByText(/Workspace closure requested \(offboarding status: requested\)/),
+		).toBeInTheDocument();
+		expect(patches()).toEqual([
+			{ tenant_id: TENANT, action: "close", confirm_name: "Acme Security" },
+		]);
+		expect(screen.getByText("Closing (offboarding in progress)")).toBeInTheDocument();
+		expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Close workspace" })).not.toBeInTheDocument();
+	});
+
+	it("reports a refused closure without claiming it happened", async () => {
+		install({ closeError: "confirmation_mismatch" });
+		renderSettings();
+		fireEvent.change(await screen.findByLabelText(/to confirm/), {
+			target: { value: "Acme Security" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Close workspace" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent("does not match the workspace name");
+		expect(screen.queryByText(/closure requested/)).not.toBeInTheDocument();
+		expect(screen.getByText("Active")).toBeInTheDocument();
+	});
+
+	it("shows an unreadable workspace as an error, not as empty settings", async () => {
+		install({ loadError: true });
+		renderSettings();
+		expect(await screen.findByRole("alert")).toHaveTextContent("did not confirm the request");
+		expect(screen.queryByTestId("workspace-name")).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+	});
+
+	it("omits the workspace section when no workspace is selected", async () => {
+		team.currentTeam = null;
+		renderSettings();
+		expect(await screen.findByText("operator@example.test")).toBeInTheDocument();
+		expect(screen.queryByRole("heading", { name: "Workspace" })).not.toBeInTheDocument();
+		expect(invoke).not.toHaveBeenCalled();
+	});
+});
+
+describe("profile section", () => {
+	it("reports a verified AAL2 session", async () => {
+		renderSettings();
+		expect(await screen.findByTestId("mfa-status")).toHaveTextContent(
+			"Verified for this session (AAL2).",
+		);
+		expect(invoke).toHaveBeenCalledWith("identity-security", {
+			body: { action: "status", tenant_id: TENANT },
+		});
+	});
+
+	it("links an AAL1 session to MFA setup and verification", async () => {
+		install({ assurance: "aal1", requireMfa: true });
+		renderSettings();
+		const status = await screen.findByTestId("mfa-status");
+		expect(status).toHaveTextContent(
+			"Not verified for this session (AAL1). This workspace requires MFA.",
+		);
+		expect(within(status).getByRole("link", { name: "Set up or verify MFA" })).toHaveAttribute(
+			"href",
+			`/auth/dlp-step-up?tenant=${TENANT}&return=settings`,
+		);
+	});
 });
