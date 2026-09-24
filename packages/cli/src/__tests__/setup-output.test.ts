@@ -37,7 +37,7 @@ beforeEach(() => {
 		projectRoot: "/workspace",
 	});
 	vi.mocked(createConfig).mockResolvedValue({
-		path: "/home/test/.singularity-aidr/config.json",
+		path: "/workspace/test/.singularity-aidr/config.json",
 		outcome: "created",
 	});
 	vi.mocked(installHooks).mockResolvedValue({
@@ -64,7 +64,7 @@ describe("aidr setup output streams", () => {
 		expect(progress).toContain("Detecting environment...");
 		expect(progress).toContain("✓ claude detected");
 		expect(progress).toContain("Creating config...");
-		expect(progress).toContain("✓ Config: /home/test/.singularity-aidr/config.json");
+		expect(progress).toContain("✓ Config: /workspace/test/.singularity-aidr/config.json");
 		expect(progress).toContain("Preparing connector setup guidance...");
 		expect(progress).toContain("✓ claude detected - connector install required");
 		expect(progress).toContain("Loading threat database...");
