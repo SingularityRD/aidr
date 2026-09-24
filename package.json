@@ -68,6 +68,7 @@
 		"test:e2e:opencode": "vitest run --config vitest.e2e.config.ts packages/opencode",
 		"test:opencode:aidr": "pnpm --filter @singularityrd/aidr-opencode run test:aidr-contract",
 		"verify:opencode-host-offline": "node scripts/verify-opencode-host-offline.mjs",
+		"test:e2e:browser-guard": "pnpm -C packages/browser-guard test:e2e",
 		"test:e2e:cursor": "vitest run --config vitest.e2e.config.ts packages/extension",
 		"test:e2e:vscode": "vitest run --config vitest.e2e.config.ts packages/extension",
 		"test:customer-demo": "pnpm test:opencode:aidr && pnpm test -- packages/dashboard/src/__tests__/integration.test.tsx --run && pnpm -C packages/dashboard build && pnpm -C packages/dashboard run test:route-smoke:static",

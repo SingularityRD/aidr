@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gemini (E2E fixture)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; }
+	#chat-history { min-height: 200px; padding: 16px; }
+	.input-area { display: flex; gap: 8px; padding: 16px; }
+	rich-textarea { display: block; flex: 1; border: 1px solid #999; }
+	.ql-editor { min-height: 40px; padding: 8px; outline: none; }
+	.ql-editor p { margin: 0; }
+</style>
+</head>
+<body>
+<div id="chat-history"></div>
+<div class="input-area">
+	<rich-textarea>
+		<div class="ql-editor textarea new-input-ui" contenteditable="true" role="textbox"
+			aria-multiline="true" aria-label="Enter a prompt here" data-placeholder="Ask Gemini"><p><br></p></div>
+	</rich-textarea>
+	<div class="send-button-container">
+		<button type="button" class="send-button" aria-label="Send message">Send</button>
+	</div>
+	<input type="file" id="gemini-upload">
+</div>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	FixtureChat.init({
+		site: "gemini",
+		kind: "quill",
+		editor: "rich-textarea .ql-editor",
+		send: "button.send-button",
+		thread: "#chat-history",
+		endpoint: "/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate",
+		fileInput: "#gemini-upload",
+		renderUser(text) {
+			const q = document.createElement("user-query");
+			const body = document.createElement("div");
+			body.className = "query-text";
+			body.textContent = text;
+			q.appendChild(body);
+			return q;
+		},
+		renderAssistant() {
+			const root = document.createElement("model-response");
+			const content = document.createElement("message-content");
+			const body = document.createElement("div");
+			body.className = "markdown";
+			content.appendChild(body);
+			root.appendChild(content);
+			return { root, body };
+		},
+	});
+</script>
+</body>
+</html>
