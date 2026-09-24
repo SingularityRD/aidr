@@ -7,7 +7,11 @@
 	"type": "module",
 	"scripts": {
 		"build": "node scripts/build.mjs",
+		"build:release": "node scripts/build.mjs --release --zip",
 		"check": "tsc -p tsconfig.json --noEmit",
+		"icons": "node scripts/icons.mjs",
+		"icons:check": "node scripts/icons.mjs --check",
+		"fingerprint": "node scripts/fingerprint-dataset.mjs",
 		"test:e2e": "node scripts/build.mjs && node e2e/run.mjs"
 	},
 	"devDependencies": {
