@@ -7,7 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Singularity AIDR — an AI Agent Detection & Response layer that guards the commands,
 files and web requests of AI coding agents. Connectors: Claude Code, Cursor, VS Code,
 OpenClaw, OpenCode, Codex. The detection engine is a shared core; every connector and
-the CLI consume it. See `docs/architecture.md` for the design and
+the CLI consume it. Alongside it: an MCP gateway, **Browser Guard** (a Chrome/Edge/Firefox
+extension that masks TR/EN personal data and secrets before prompts reach AI chat sites)
+and the **AIDR Privacy** engine that Browser Guard's detection reuses. See
+`docs/architecture.md` and `docs/product/overview.md` for the design and
 `READINESS_BACKLOG.json` for the current defect/readiness record.
 
 ## Commands
@@ -23,7 +26,13 @@ pnpm test:e2e:claude                         # Claude Code E2E only
 pnpm test:e2e:openclaw                       # OpenClaw E2E only (requires gateway + token)
 pnpm test:e2e:cursor                         # Cursor extension E2E only
 pnpm test:e2e:vscode                         # VS Code extension E2E only
+pnpm test:e2e:browser-guard                  # Browser Guard real-browser E2E (Playwright + fixtures)
+pnpm test:privacy                            # Build @singularityrd/aidr-privacy and run its node --test suites (not part of `pnpm test`)
 pnpm build                                  # Build all packages (tsc + esbuild bundle)
+pnpm build:browser-guard                    # Build the Browser Guard extension bundles
+pnpm verify:privacy-rules                   # Drift check: privacy rule files copied into other packages match packages/privacy
+pnpm verify:helm                            # Render/validate the on-prem Helm chart (deploy/helm)
+pnpm onprem:config-reference                # Regenerate / drift-check the on-prem configuration reference
 pnpm build:sea                              # Build standalone SEA binaries (requires official Node.js, not Homebrew)
 pnpm lint                                   # Lint with Biome
 pnpm lint:fix                               # Lint + auto-fix
@@ -50,9 +59,22 @@ TypeScript monorepo. Connector packages and their shared core:
   or untrusted hook, so this connector translates `ask` into an explicit `deny` and turns
   internal errors into a deny as well — see `packages/codex/README.md`. Ships its own copy of
   the rules via `scripts/sync-assets.mjs`.
+- `packages/mcp-gateway/` — `@singularityrd/aidr-mcp-gateway`: loopback MCP gateway (HTTP + stdio
+  bridge) that inspects MCP tool results before they reach the model; signed manifests and
+  operator-only approval (`aidr-mcp-approve`), never an MCP tool.
+- `packages/browser-guard/` — `@singularityrd/aidr-browser-guard`: Chrome/Edge/Firefox MV3
+  extension. Contracts in `src/types.ts`; `src/engine/` (detection, reversible placeholder vault,
+  exact-data match, file sanitisation), `src/sites/` (ChatGPT, Gemini, Claude, Copilot,
+  Perplexity, DeepSeek, Mistral, Grok + generic), `src/dom/`, `src/content/`, `src/background/`
+  (managed policy, counts-only telemetry per `docs/contracts/privacy-telemetry.md`, native host
+  bridge). Detection reuses browser-safe `packages/privacy/src` modules via relative imports;
+  browser code must not import `node:` modules. E2E harness in `e2e/`.
+- `packages/privacy/` — `@singularityrd/aidr-privacy` 0.6.0: TR/EN privacy engine (checksum
+  TCKN/IBAN/Luhn, phones, addresses, secrets), optional native host (NER/OCR) and enterprise
+  gateway (`/platform`). Tests run with `node --test` via `pnpm test:privacy`, not vitest.
 - `services/aig-bridge/` — Python/FastAPI bridge for the SingularityRD-owned AI Infra Guard source, tracked directly under `vendor/ai-infra-guard/` (not a submodule)
 - `supabase/` — canonical migrations + Edge Functions; `packages/dashboard/supabase/functions/` contains dashboard-specific shared function code, not migration copies
-- `threats/` — YAML threat definitions (data, not code); 351 rules across 23 files
+- `threats/` — YAML threat definitions (data, not code); 357 rules across 23 files (`grep -h '^- id:' threats/*.yaml | wc -l`)
 - `allowlists/` — Trusted domain allowlists
 - `hooks/` — `hooks.json` registering hooks with Claude Code
 - `skills/` — `security-awareness/SKILL.md`, synced into connector `resources/`
@@ -70,8 +92,11 @@ Readiness and defect tracking live in `READINESS_BACKLOG.json` (authoritative),
 | 3 — E2E (OpenClaw) | Full plugin in OpenClaw gateway | `packages/openclaw/src/__tests__/e2e.test.ts` | OpenClaw gateway (token read from `~/.openclaw/openclaw.json`) |
 | 3 — E2E (Cursor extension) | Singularity AIDR extension in Cursor Extension Host | `packages/extension/src/__tests__/e2e.test.ts` | Installed Cursor executable |
 | 3 — E2E (VS Code extension) | Singularity AIDR extension in VS Code Extension Host | `packages/extension/src/__tests__/e2e.test.ts` | Installed VS Code executable |
+| 1 — Unit (Browser Guard) | Engine, vault, sites, editor, content, background | `packages/browser-guard/src/__tests__/*.test.ts` (jsdom where marked) | pnpm dev deps |
+| 3 — E2E (Browser Guard) | Built extension in Chromium against hermetic AI-site fixtures | `packages/browser-guard/e2e/` | `playwright-core` Chromium build |
+| Privacy (node --test) | `@singularityrd/aidr-privacy` suites | `packages/privacy/tests/**/*.test.mjs` | Node >= 22.16; optional Python/libseccomp/OpenSSL (named skips) |
 
-`pnpm test` runs tiers 1–2 automatically (builds via `globalSetup` before running). Tier 3 (E2E) is excluded — run with `pnpm test:e2e` (all), `pnpm test:e2e:claude`, `pnpm test:e2e:openclaw`, `pnpm test:e2e:cursor`, or `pnpm test:e2e:vscode`.
+`pnpm test` runs tiers 1–2 automatically (builds via `globalSetup` before running). Tier 3 (E2E) is excluded — run with `pnpm test:e2e` (all), `pnpm test:e2e:claude`, `pnpm test:e2e:openclaw`, `pnpm test:e2e:cursor`, `pnpm test:e2e:vscode`, or `pnpm test:e2e:browser-guard`. The privacy package is run separately with `pnpm test:privacy`.
 
 **Claude Code E2E prerequisites:** `claude` CLI in PATH, valid `ANTHROPIC_API_KEY`, and AIDR must **not** be installed via the Claude Code marketplace (duplicate-plugin conflict with `--plugin-dir`).
 
