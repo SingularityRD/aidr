@@ -1,8 +1,9 @@
 import { createServer } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { extname, isAbsolute, resolve, sep } from "node:path";
 import { createHttpRequestMetrics, createReadinessMonitor, loadReadinessConfig } from "./monitoring.mjs";
+import { assertHttpsUrl, parseReleaseManifestBytes } from "./release-manifest.mjs";
 import { parseSamlRuntimeConfig } from "../saml-config.mjs";
 
 const root = resolve(process.env.AIDR_STATIC_DIR || "/app/public");
@@ -59,6 +60,31 @@ if (authTemplateDir) {
 	recoveryTemplate = await readFile(templatePath);
 }
 
+// Download center. Either serve a signed-off manifest file from this host
+// (AIDR_RELEASE_MANIFEST_PATH, validated at startup and on every request) or
+// point the browser at an external HTTPS manifest (VITE_AIDR_RELEASE_MANIFEST_URL).
+// Neither configured is a supported state: the dashboard then shows that no
+// release manifest is published instead of inventing download links.
+let releaseManifestPath = null;
+const configuredManifestPath = process.env.AIDR_RELEASE_MANIFEST_PATH?.trim();
+if (configuredManifestPath) {
+	if (!isAbsolute(configuredManifestPath) || configuredManifestPath.includes("\0")) throw new Error("AIDR_RELEASE_MANIFEST_PATH must be an absolute path");
+	const manifestStat = await stat(configuredManifestPath);
+	if (!manifestStat.isFile()) throw new Error("AIDR_RELEASE_MANIFEST_PATH must be a regular file");
+	parseReleaseManifestBytes(await readFile(configuredManifestPath));
+	releaseManifestPath = configuredManifestPath;
+}
+let externalReleaseManifestUrl = null;
+const configuredManifestUrl = process.env.VITE_AIDR_RELEASE_MANIFEST_URL?.trim();
+if (configuredManifestUrl) {
+	if (releaseManifestPath) throw new Error("Configure only one of AIDR_RELEASE_MANIFEST_PATH or VITE_AIDR_RELEASE_MANIFEST_URL");
+	try {
+		externalReleaseManifestUrl = new URL(assertHttpsUrl(configuredManifestUrl, "VITE_AIDR_RELEASE_MANIFEST_URL"));
+	} catch {
+		throw new Error("VITE_AIDR_RELEASE_MANIFEST_URL must be an absolute https: URL without credentials");
+	}
+}
+
 const config = {
 	supabaseUrl: url.href.replace(/\/$/, ""),
 	supabaseAnonKey: publicKey,
@@ -68,12 +94,13 @@ const config = {
 	sentryDsn: sentryDsn?.href ?? null,
 	sentryEnvironment,
 	sentryTracesSampleRate,
+	releaseManifestUrl: releaseManifestPath ? "/release-manifest.json" : (externalReleaseManifestUrl?.href ?? null),
 };
 await stat(resolve(root, "index.html"));
 const types = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 const port = Number(process.env.PORT || 8080);
 const socketOrigin = url.origin.replace(/^http/, "ws");
-const connectSources = [...new Set(["'self'", url.origin, socketOrigin, "https://challenges.cloudflare.com", sentryDsn?.origin].filter(Boolean))].join(" ");
+const connectSources = [...new Set(["'self'", url.origin, socketOrigin, "https://challenges.cloudflare.com", sentryDsn?.origin, externalReleaseManifestUrl?.origin].filter(Boolean))].join(" ");
 const metricsToken = process.env.AIDR_METRICS_TOKEN?.trim() || null;
 const readiness = createReadinessMonitor(loadReadinessConfig());
 const requestMetrics = createHttpRequestMetrics();
@@ -129,6 +156,32 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 		if (path.startsWith("/auth-templates/")) { res.writeHead(404); res.end(); return; }
+		if (path === "/release-manifest.json") {
+			if (!releaseManifestPath) { res.writeHead(404); res.end(); return; }
+			let manifestBytes;
+			try {
+				manifestBytes = await readFile(releaseManifestPath);
+				parseReleaseManifestBytes(manifestBytes);
+			} catch {
+				// A manifest replaced with invalid content is withheld, never served.
+				res.writeHead(503);
+				res.end();
+				return;
+			}
+			const etag = `"sha256-${createHash("sha256").update(manifestBytes).digest("base64url")}"`;
+			res.setHeader("Content-Type", "application/json; charset=utf-8");
+			res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
+			res.setHeader("ETag", etag);
+			const ifNoneMatch = req.headers["if-none-match"] ?? "";
+			if (ifNoneMatch.split(",").some((candidate) => candidate.trim().replace(/^W\//, "") === etag)) {
+				res.writeHead(304);
+				res.end();
+				return;
+			}
+			res.setHeader("Content-Length", manifestBytes.byteLength);
+			res.end(req.method === "HEAD" ? undefined : manifestBytes);
+			return;
+		}
 		if (path === "/runtime-config.js") { res.setHeader("Content-Type", "application/javascript"); res.end(req.method === "HEAD" ? undefined : `window.__AIDR_CONFIG__=${JSON.stringify(config)};`); return; }
 		const target = resolve(root, path === "/" ? "index.html" : `.${path}`);
 		if (!target.startsWith(root + sep) || path.endsWith(".map") || path.split("/").some((part) => part.startsWith("."))) { res.writeHead(404); res.end(); return; }

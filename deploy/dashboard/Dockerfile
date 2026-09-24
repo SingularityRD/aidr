@@ -4,6 +4,7 @@ COPY --chown=node:node public ./public
 COPY --chown=node:node auth-templates ./auth-templates
 COPY --chown=node:node server.mjs ./server.mjs
 COPY --chown=node:node monitoring.mjs ./monitoring.mjs
+COPY --chown=node:node release-manifest.mjs ./release-manifest.mjs
 COPY --chown=node:node saml-config.mjs /saml-config.mjs
 USER node
 ENV NODE_ENV=production

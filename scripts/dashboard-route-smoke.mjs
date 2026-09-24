@@ -53,6 +53,7 @@ const legacyRoutes = ["/demo"];
 const protectedRoutes = [
 	"/auth/dlp-step-up",
 	"/onboarding",
+	"/downloads",
 	"/dashboard",
 	"/events",
 	"/discovery",

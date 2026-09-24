@@ -96,6 +96,13 @@ const router = createBrowserRouter([
 		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/OnboardingPage")).OnboardingPage }) }],
 	},
 	{
+		path: "/downloads",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/DownloadsPage")).DownloadsPage }) }],
+	},
+	{
 		path: "/dashboard",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
