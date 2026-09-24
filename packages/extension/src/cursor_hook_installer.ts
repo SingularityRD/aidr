@@ -35,14 +35,10 @@ export async function installManagedHooks(
 	const updated = upsertManagedHooks(hooksFile, command);
 	await writeHooksFile(configPath, updated);
 
-	const installedEvents = Object.keys(updated.hooks).filter((name) =>
-		(updated.hooks[name] ?? []).some((entry) => isManagedEntry(entry)),
-	);
-
 	return {
 		configPath,
 		runnerPath,
-		installedEvents,
+		installedEvents: collectInstalledEvents(updated.hooks),
 		managedCommands: collectManagedCommands(updated.hooks),
 	};
 }
@@ -62,14 +58,10 @@ export async function getHookHealth(
 	const hooksFile = await readHooksFile(configPath);
 	const runnerPath = await resolveRunnerPath(options.context).catch(() => undefined);
 
-	const installedEvents = Object.keys(hooksFile.hooks).filter((eventName) =>
-		(hooksFile.hooks[eventName] ?? []).some((entry) => isManagedEntry(entry)),
-	);
-
 	return {
 		configPath,
 		runnerPath,
-		installedEvents,
+		installedEvents: collectInstalledEvents(hooksFile.hooks),
 		managedCommands: collectManagedCommands(hooksFile.hooks),
 	};
 }
@@ -168,46 +160,48 @@ function assertSafePathForShim(pathValue: string, label: string): void {
 	}
 }
 
+/**
+ * Managed Cursor hook events in their documented registration order
+ * (docs/how-it-works.md, deploy/native/interception-matrix.json). `installedEvents` is
+ * always reported in this order, independent of the key order already present in the
+ * customer's hooks.json.
+ */
+const MANAGED_HOOK_EVENTS: ReadonlyArray<{ event: string; matcher?: string }> = [
+	{ event: "beforeShellExecution" },
+	{ event: "preToolUse", matcher: "Write|Delete|Edit|WebFetch" },
+	{ event: "postToolUse" },
+	{ event: "afterAgentResponse" },
+	{ event: "beforeMCPExecution" },
+	{ event: "beforeReadFile" },
+];
+
 function upsertManagedHooks(existing: CursorHooksFile, command: string): CursorHooksFile {
 	const hooks = { ...existing.hooks };
-
-	hooks.beforeShellExecution = appendManaged(hooks.beforeShellExecution, {
-		command,
-		timeout: 30,
-		failClosed: true,
-	});
-	hooks.preToolUse = appendManaged(hooks.preToolUse, {
-		matcher: "Write|Delete|Edit|WebFetch",
-		command,
-		timeout: 30,
-		failClosed: true,
-	});
-	hooks.postToolUse = appendManaged(hooks.postToolUse, {
-		command,
-		timeout: 30,
-		failClosed: true,
-	});
-	hooks.afterAgentResponse = appendManaged(hooks.afterAgentResponse, {
-		command,
-		timeout: 30,
-		failClosed: true,
-	});
-	hooks.beforeMCPExecution = appendManaged(hooks.beforeMCPExecution, {
-		command,
-		timeout: 30,
-		failClosed: true,
-	});
-	hooks.beforeReadFile = appendManaged(hooks.beforeReadFile, {
-		command,
-		timeout: 30,
-		failClosed: true,
-	});
+	for (const { event, matcher } of MANAGED_HOOK_EVENTS) {
+		hooks[event] = appendManaged(hooks[event], {
+			...(matcher ? { matcher } : {}),
+			command,
+			timeout: 30,
+			failClosed: true,
+		});
+	}
 
 	return {
 		...existing,
 		version: 1,
 		hooks,
 	};
+}
+
+function collectInstalledEvents(hooks: HookMap): string[] {
+	const managedEvents = Object.keys(hooks).filter((eventName) =>
+		(hooks[eventName] ?? []).some((entry) => isManagedEntry(entry)),
+	);
+	const documentedOrder = MANAGED_HOOK_EVENTS.map(({ event }) => event);
+	return [
+		...documentedOrder.filter((event) => managedEvents.includes(event)),
+		...managedEvents.filter((event) => !documentedOrder.includes(event)),
+	];
 }
 
 function removeManagedEntries(existing: CursorHooksFile): CursorHooksFile {

@@ -15,23 +15,61 @@ import {
 	ApprovalStore,
 	addToAllowlist,
 	createChildLogger,
+	formatInitFailureMessage,
 	getLogger,
+	initFailureCode,
 	initSentry,
 	removeFromAllowlist,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { getBundledDataDirs } from "./bundled-dirs.js";
+import { AidrVerdictBlockError } from "./error.js";
 import { createOutputHandlers, reportOpenCodeOutputCoverage } from "./output-handler.js";
 import { createSessionScanHandler } from "./startup-scan.js";
 import { createToolHandlers } from "./tool-handler.js";
 
 const APPROVAL_STORE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
-export const AidrPlugin: Plugin = async ({ client, directory }) => {
-	// Initialize Sentry
-	initSentry({ name: "aidr-opencode" });
+type PluginHooks = Awaited<ReturnType<Plugin>>;
+type OpenCodeLogger = ReturnType<typeof createChildLogger>;
 
-	const logger = createChildLogger(getLogger(), "opencode");
+/**
+ * SECURITY: OpenCode loads this plugin in-process. If initialisation throws, OpenCode never
+ * registers the hooks and every tool call runs uninspected (fail-open). Any initialisation
+ * failure — a failed integrity check, an unreadable bundle, a logger/Sentry crash — therefore
+ * still registers `tool.execute.before`, which denies every tool call until fixed.
+ */
+export const AidrPlugin: Plugin = async () => {
+	let logger: OpenCodeLogger | undefined;
+	try {
+		// Initialize Sentry
+		initSentry({ name: "aidr-opencode" });
+		logger = createChildLogger(getLogger(), "opencode");
+		return await initialisePlugin(logger);
+	} catch (error) {
+		return createInitFailureHooks(error, logger);
+	}
+};
+
+function createInitFailureHooks(error: unknown, logger: OpenCodeLogger | undefined): PluginHooks {
+	const code = initFailureCode(error);
+	const message = formatInitFailureMessage(code);
+	try {
+		(logger ?? getLogger()).error(
+			{ code, error: String(error) },
+			"Singularity AIDR opencode initialisation failed closed",
+		);
+	} catch {
+		// Logging must never undo the fail-closed registration below.
+	}
+	return {
+		"tool.execute.before": async () => {
+			throw new AidrVerdictBlockError(message);
+		},
+	};
+}
+
+async function initialisePlugin(logger: OpenCodeLogger): Promise<PluginHooks> {
 	await verifyArtifactIntegrityAndLog({
 		artifactDir: dirname(fileURLToPath(import.meta.url)),
 		artifactId: "opencode/dist",
@@ -169,6 +207,6 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 			}),
 		},
 	};
-};
+}
 
 export default AidrPlugin;

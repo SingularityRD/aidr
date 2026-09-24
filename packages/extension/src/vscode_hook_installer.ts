@@ -237,18 +237,19 @@ function filterManagedMatcherEntries(entries: HookMatcherEntry[]): HookMatcherEn
 	return retained;
 }
 
+/** Managed events in registration order; `installedEvents` is reported in this order. */
+const MANAGED_HOOK_EVENTS = ["PreToolUse", "PostToolUse"];
+
 function collectInstalledEvents(hooks: HookMap): string[] {
-	const events: string[] = [];
-	for (const [eventName, entries] of Object.entries(hooks)) {
-		if (
-			entries.some((entry) =>
-				asCommandEntries(entry.hooks).some((hook) => isManagedCommandHook(hook)),
-			)
-		) {
-			events.push(eventName);
-		}
-	}
-	return events;
+	const managedEvents = Object.keys(hooks).filter((eventName) =>
+		(hooks[eventName] ?? []).some((entry) =>
+			asCommandEntries(entry.hooks).some((hook) => isManagedCommandHook(hook)),
+		),
+	);
+	return [
+		...MANAGED_HOOK_EVENTS.filter((event) => managedEvents.includes(event)),
+		...managedEvents.filter((event) => !MANAGED_HOOK_EVENTS.includes(event)),
+	];
 }
 
 function collectManagedCommands(hooks: HookMap): string[] {
