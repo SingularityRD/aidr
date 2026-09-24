@@ -12,6 +12,50 @@ afterEach(async () => {
 	await Promise.all(running.splice(0).map((gateway) => gateway.close()));
 });
 
+/** What the fake upstream MCP server answers to one JSON-RPC request. */
+function fakeRpcResult(rpc, tools, overrides) {
+	if (rpc.method === "tools/list") {
+		return {
+			tools: tools.map((tool) => ({
+				name: tool.name,
+				description: tool.description,
+				inputSchema: tool.input_schema,
+				...(tool.output_schema !== undefined ? { outputSchema: tool.output_schema } : {}),
+			})),
+		};
+	}
+	if (rpc.method === "initialize") {
+		return Object.hasOwn(overrides, "initializeResult")
+			? overrides.initializeResult
+			: {
+					protocolVersion: "2025-03-26",
+					capabilities: {},
+					serverInfo: { name: "test", version: "1" },
+				};
+	}
+	return (
+		overrides.toolResult ?? {
+			content: [{ type: "text", text: overrides.output ?? "Normal result" }],
+		}
+	);
+}
+
+/** The fake upstream's HTTP response (JSON or SSE), with a session id on initialize if asked. */
+function fakeUpstreamResponse(rpc, result, overrides, nextSessionId) {
+	const responseBody = JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result });
+	const sse = overrides.transport === "sse";
+	const hasSessionHeader =
+		(overrides.sessionMode === "required" || overrides.unexpectedSession) &&
+		rpc.method === "initialize";
+	return new Response(sse ? `event: message\ndata: ${responseBody}\n\n` : responseBody, {
+		status: 200,
+		headers: {
+			"content-type": sse ? "text/event-stream" : "application/json",
+			...(hasSessionHeader ? { "mcp-session-id": nextSessionId() } : {}),
+		},
+	});
+}
+
 export function fixture(overrides = {}) {
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const tools = overrides.tools ?? [
@@ -89,48 +133,15 @@ export function fixture(overrides = {}) {
 			await overrides.beforeUpstream?.(request, rpc);
 			if (rpc.method === "notifications/initialized") return new Response(null, { status: 202 });
 			if (rpc.method === "tools/call") toolCalls += 1;
-			let result;
-			if (rpc.method === "tools/list") {
-				result = {
-					tools: tools.map((tool) => ({
-						name: tool.name,
-						description: tool.description,
-						inputSchema: tool.input_schema,
-						...(tool.output_schema !== undefined ? { outputSchema: tool.output_schema } : {}),
-					})),
-				};
-			} else if (rpc.method === "initialize")
-				result = Object.hasOwn(overrides, "initializeResult")
-					? overrides.initializeResult
-					: {
-							protocolVersion: "2025-03-26",
-							capabilities: {},
-							serverInfo: { name: "test", version: "1" },
-						};
-			else
-				result = overrides.toolResult ?? {
-					content: [{ type: "text", text: overrides.output ?? "Normal result" }],
-				};
-			const responseBody = JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result });
-			const hasSessionHeader =
-				(overrides.sessionMode === "required" || overrides.unexpectedSession) &&
-				rpc.method === "initialize";
-			return new Response(
-				overrides.transport === "sse" ? `event: message\ndata: ${responseBody}\n\n` : responseBody,
-				{
-					status: 200,
-					headers: {
-						"content-type":
-							overrides.transport === "sse" ? "text/event-stream" : "application/json",
-						...(hasSessionHeader
-							? {
-									"mcp-session-id": overrides.uniqueSessions
-										? `session-${String(++upstreamSessions).padStart(8, "0")}`
-										: "session-12345678",
-								}
-							: {}),
-					},
-				},
+			const nextSessionId = () =>
+				overrides.uniqueSessions
+					? `session-${String(++upstreamSessions).padStart(8, "0")}`
+					: "session-12345678";
+			return fakeUpstreamResponse(
+				rpc,
+				fakeRpcResult(rpc, tools, overrides),
+				overrides,
+				nextSessionId,
 			);
 		},
 	};

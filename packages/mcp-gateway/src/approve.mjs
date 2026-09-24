@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-import { readGatewayConfig, reportFailure, stage } from "./diagnostics.mjs";
-import { createMcpGateway } from "./gateway.mjs";
-import { requireGatewayIntegrity } from "./integrity.mjs";
+import { reportFailure, stage } from "./diagnostics.mjs";
+import { openVerifiedGateway } from "./operator-startup.mjs";
 
 const [configPath, tenantId, serverId, toolsetHash, bindingSha256, approvedBy, ...reasonParts] =
 	process.argv.slice(2);
@@ -20,9 +19,7 @@ if (
 	process.exitCode = 2;
 } else {
 	try {
-		await stage("integrity_verification_failed", () => requireGatewayIntegrity());
-		const config = await readGatewayConfig(configPath);
-		const gateway = await stage("config_invalid", () => createMcpGateway(config));
+		const gateway = await openVerifiedGateway(configPath);
 		const result = await stage("approval_failed", async () => {
 			const approval = await gateway.approve({
 				tenantId,

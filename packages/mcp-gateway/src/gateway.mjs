@@ -716,6 +716,62 @@ const BLOCK_REASONS = new Set([
 	"invalid_notification_ack",
 ]);
 
+/**
+ * The observed tool a `tools/call` names, once the call is allowed for this
+ * client and its arguments match the tool's input schema; throws otherwise.
+ */
+function callableTool(rpc, observed, allowed) {
+	const tool = observed.find((candidate) => candidate.name === rpc.params?.name);
+	if (
+		!jsonObject(rpc.params) ||
+		typeof rpc.params.name !== "string" ||
+		!allowed.has(rpc.params.name) ||
+		!tool ||
+		(rpc.params.arguments !== undefined && !jsonObject(rpc.params.arguments))
+	) {
+		throw new Error("tool_not_allowed");
+	}
+	if (
+		!supportedJsonSchema(tool.input_schema) ||
+		!matchesJsonSchema(rpc.params.arguments ?? {}, tool.input_schema)
+	) {
+		throw new Error("arguments_schema_mismatch");
+	}
+	if (tool.output_schema !== undefined && !supportedJsonSchema(tool.output_schema)) {
+		throw new Error("output_schema_mismatch");
+	}
+	return tool;
+}
+
+/** A tool with an output schema must return matching structuredContent (unless it errored). */
+function assertOutputMatchesSchema(tool, result) {
+	if (tool.output_schema === undefined) return;
+	const structured = result.structuredContent;
+	if (
+		(structured === undefined && result.isError !== true) ||
+		(structured !== undefined && !matchesJsonSchema(structured, tool.output_schema))
+	) {
+		throw new Error("output_schema_mismatch");
+	}
+}
+
+function blockedAuditFields(blocked) {
+	return {
+		...(blocked?.category ? { category: blocked.category } : {}),
+		...(blocked?.threatId ? { threatId: blocked.threatId } : {}),
+	};
+}
+
+function refusalStatus(reason, rpcId) {
+	if (reason === "request_too_large") return 413;
+	return rpcId === null ? 400 : 200;
+}
+
+function refusalData(refusal, blocked) {
+	if (refusal) return refusalPayload(refusal);
+	return blocked ? decisionPayload(blocked) : undefined;
+}
+
 function safeReason(cause) {
 	if (cause instanceof McpToolCallBlocked) return cause.code;
 	if (cause instanceof McpGatewayRefusal && /^[a-z0-9_]{1,64}$/.test(cause.code)) return cause.code;
@@ -1197,25 +1253,7 @@ export function createMcpGateway(input, dependencies = {}) {
 	}
 
 	async function callTool(rpc, client, server, observed, allowed, sessionId, signal) {
-		const tool = observed.find((candidate) => candidate.name === rpc.params?.name);
-		if (
-			!jsonObject(rpc.params) ||
-			typeof rpc.params.name !== "string" ||
-			!allowed.has(rpc.params.name) ||
-			!tool ||
-			(rpc.params.arguments !== undefined && !jsonObject(rpc.params.arguments))
-		) {
-			throw new Error("tool_not_allowed");
-		}
-		if (
-			!supportedJsonSchema(tool.input_schema) ||
-			!matchesJsonSchema(rpc.params.arguments ?? {}, tool.input_schema)
-		) {
-			throw new Error("arguments_schema_mismatch");
-		}
-		if (tool.output_schema !== undefined && !supportedJsonSchema(tool.output_schema)) {
-			throw new Error("output_schema_mismatch");
-		}
+		const tool = callableTool(rpc, observed, allowed);
 		// Threat and DLP evaluation of the exact arguments that will be sent,
 		// before any upstream execution. A deny, an ask, or an evaluator failure
 		// blocks the call.
@@ -1238,15 +1276,7 @@ export function createMcpGateway(input, dependencies = {}) {
 			signal,
 		);
 		const { view, binaryItems } = inspectToolResult(upstream.result, config.binaryOutput);
-		if (tool.output_schema !== undefined) {
-			const structured = upstream.result.structuredContent;
-			if (
-				(structured === undefined && upstream.result.isError !== true) ||
-				(structured !== undefined && !matchesJsonSchema(structured, tool.output_schema))
-			) {
-				throw new Error("output_schema_mismatch");
-			}
-		}
+		assertOutputMatchesSchema(tool, upstream.result);
 		inspect(view, scanner, config.maxBodyBytes);
 		await emitBinaryInspection(server, binaryItems);
 		return { body: rpcResponse(rpc.id, upstream.result) };
@@ -1271,10 +1301,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		const reason = safeReason(cause);
 		const blocked = cause instanceof McpToolCallBlocked ? cause : null;
 		const refusal = cause instanceof McpGatewayRefusal ? cause : null;
-		await audit(client.tenantId, serverId, client.id, "deny", reason, {
-			...(blocked?.category ? { category: blocked.category } : {}),
-			...(blocked?.threatId ? { threatId: blocked.threatId } : {}),
-		});
+		await audit(client.tenantId, serverId, client.id, "deny", reason, blockedAuditFields(blocked));
 		if (refusal) {
 			await emitCoverageForRefusal(refusal, {
 				tenantId: client.tenantId,
@@ -1283,9 +1310,11 @@ export function createMcpGateway(input, dependencies = {}) {
 				requestMethod: rpcMethod,
 			});
 		}
-		const status = reason === "request_too_large" ? 413 : rpcId === null ? 400 : 200;
-		const data = refusal ? refusalPayload(refusal) : blocked ? decisionPayload(blocked) : undefined;
-		send(response, status, error(rpcId, -32001, `AIDR blocked MCP request: ${reason}`, data));
+		send(
+			response,
+			refusalStatus(reason, rpcId),
+			error(rpcId, -32001, `AIDR blocked MCP request: ${reason}`, refusalData(refusal, blocked)),
+		);
 	}
 
 	async function handleAuthorized(request, response, client, upstream, serverId) {
