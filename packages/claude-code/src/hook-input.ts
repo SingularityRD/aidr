@@ -68,10 +68,50 @@ export const PRE_TOOL_USE_DEADLINE_ENV = "AIDR_PRE_TOOL_USE_DEADLINE_MS";
  * past the host timeout (which would fail open).
  */
 export function resolvePreToolUseDeadlineMs(env: Record<string, string | undefined> = {}): number {
-	const raw = env[PRE_TOOL_USE_DEADLINE_ENV]?.trim();
-	if (!raw || !/^\d+$/.test(raw)) return DEFAULT_PRE_TOOL_USE_DEADLINE_MS;
+	return resolveDeadlineMs(
+		env[PRE_TOOL_USE_DEADLINE_ENV],
+		DEFAULT_PRE_TOOL_USE_DEADLINE_MS,
+		MIN_PRE_TOOL_USE_DEADLINE_MS,
+		MAX_PRE_TOOL_USE_DEADLINE_MS,
+	);
+}
+
+/**
+ * Host timeout for the UserPromptSubmit hook, in milliseconds
+ * (`hooks/hooks.json` sets 10 s). A killed prompt hook cannot block, so the
+ * prompt would be sent uninspected; the hook must answer before this.
+ */
+export const USER_PROMPT_SUBMIT_HOST_TIMEOUT_MS = 10_000;
+export const DEFAULT_USER_PROMPT_SUBMIT_DEADLINE_MS = 7_000;
+export const MIN_USER_PROMPT_SUBMIT_DEADLINE_MS = 100;
+/** Leave headroom for writing the response and exiting before the host timeout. */
+export const MAX_USER_PROMPT_SUBMIT_DEADLINE_MS = USER_PROMPT_SUBMIT_HOST_TIMEOUT_MS - 1_000;
+export const USER_PROMPT_SUBMIT_DEADLINE_ENV = "AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS";
+
+/**
+ * Internal UserPromptSubmit deadline. Configurable through
+ * `AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS` with the same fallback rules as the
+ * PreToolUse deadline.
+ */
+export function resolveUserPromptSubmitDeadlineMs(
+	env: Record<string, string | undefined> = {},
+): number {
+	return resolveDeadlineMs(
+		env[USER_PROMPT_SUBMIT_DEADLINE_ENV],
+		DEFAULT_USER_PROMPT_SUBMIT_DEADLINE_MS,
+		MIN_USER_PROMPT_SUBMIT_DEADLINE_MS,
+		MAX_USER_PROMPT_SUBMIT_DEADLINE_MS,
+	);
+}
+
+function resolveDeadlineMs(
+	rawValue: string | undefined,
+	fallback: number,
+	min: number,
+	max: number,
+): number {
+	const raw = rawValue?.trim();
+	if (!raw || !/^\d+$/.test(raw)) return fallback;
 	const value = Number(raw);
-	return value >= MIN_PRE_TOOL_USE_DEADLINE_MS && value <= MAX_PRE_TOOL_USE_DEADLINE_MS
-		? value
-		: DEFAULT_PRE_TOOL_USE_DEADLINE_MS;
+	return value >= min && value <= max ? value : fallback;
 }

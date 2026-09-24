@@ -20,8 +20,14 @@
  * (the default). With secrets set to `warn` or `off` the prompt proceeds with a
  * visible "not inspected" notice rather than a silent clean result. A tenant DLP
  * policy that is provisioned but cannot be verified always blocks: that is a
- * configured security control. The hook always exits 0; a hook killed before it
- * writes anything cannot block, which is a host limitation.
+ * configured security control. The hook always exits 0.
+ *
+ * Deadline: Claude Code kills this hook after 10 s and then sends the prompt,
+ * so the hook answers itself first (default 7 s, `AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS`).
+ * A prompt not fully inspected by then is blocked when secrets are `block` or a
+ * tenant DLP policy applies, and otherwise sent with a "not fully inspected"
+ * notice. The scan checks the same deadline between detector passes, so a
+ * slow synchronous scan cannot hold the answer past it.
  */
 
 import {
@@ -32,6 +38,7 @@ import {
 	logVerdict,
 	type PromptProtectionConfig,
 	type PromptProtectionResult,
+	PromptScanDeadlineError,
 	type PromptTenantDlp,
 	scanPrompt,
 	type Verdict,
@@ -39,7 +46,10 @@ import {
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
-import { readBoundedJson } from "./hook-input.js";
+import { readBoundedJson, resolveUserPromptSubmitDeadlineMs } from "./hook-input.js";
+
+/** Measured from module start: the host's timeout runs from process launch. */
+const deadlineAt = Date.now() + resolveUserPromptSubmitDeadlineMs(process.env);
 
 initSentry({ name: "aidr-claude-code-user-prompt-submit" });
 
@@ -50,13 +60,33 @@ const MAX_PROMPT_HOOK_INPUT_BYTES = 2 * 1024 * 1024;
 
 const HOOK_EVENT = "UserPromptSubmit";
 
-function write(output: Record<string, unknown>): void {
-	process.stdout.write(`${JSON.stringify(output)}\n`);
+/**
+ * What an unfinished inspection falls back to. Starts fail-closed (the default
+ * secrets mode) and is updated as the config and tenant policy load.
+ */
+const fallback: {
+	secretsMode: PromptProtectionConfig["secrets"];
+	tenantPolicy: boolean;
+} = { secretsMode: DEFAULT_PROMPT_PROTECTION.secrets, tenantPolicy: false };
+
+/**
+ * The hook answers exactly once: after the deadline response has been
+ * written, a late scan result must not append a second (possibly allowing) one.
+ */
+let responded = false;
+
+function write(output: Record<string, unknown>, onWritten?: () => void): boolean {
+	if (responded) return false;
+	responded = true;
+	const line = `${JSON.stringify(output)}\n`;
+	if (onWritten) process.stdout.write(line, onWritten);
+	else process.stdout.write(line);
+	return true;
 }
 
 /** Fixed response for an uninspected prompt; never echoes input or error text. */
-function writeInspectionFailure(secretsMode: PromptProtectionConfig["secrets"]): void {
-	if (secretsMode === "block") {
+function writeInspectionFailure(): void {
+	if (fallback.secretsMode === "block") {
 		write({
 			decision: "block",
 			reason:
@@ -68,6 +98,27 @@ function writeInspectionFailure(secretsMode: PromptProtectionConfig["secrets"]):
 		systemMessage:
 			"Singularity AIDR could not inspect this prompt for secrets; it was sent without prompt protection.",
 	});
+}
+
+/** Fixed response for a prompt whose inspection did not finish before the deadline. */
+function writeDeadlineResponse(onWritten?: () => void): boolean {
+	if (fallback.secretsMode === "block" || fallback.tenantPolicy) {
+		return write(
+			{
+				decision: "block",
+				reason:
+					"🛡️ Singularity AIDR could not finish inspecting this prompt in time, so it was not sent. Shorten the prompt or split it up and try again.",
+			},
+			onWritten,
+		);
+	}
+	return write(
+		{
+			systemMessage:
+				"Singularity AIDR could not finish inspecting this prompt in time; it was sent without being fully inspected for secrets or personal data.",
+		},
+		onWritten,
+	);
 }
 
 function writeTenantPolicyFailure(): void {
@@ -92,6 +143,7 @@ function writeResult(result: PromptProtectionResult): void {
 /** Audit record: kinds and counts only; the prompt itself is never stored. */
 function auditVerdict(result: PromptProtectionResult): Verdict {
 	const blocked = result.decision === "block";
+	const counts = result.findings.map((finding) => `${finding.kind} x${finding.count}`).join(", ");
 	return {
 		decision: blocked ? "deny" : "allow",
 		category: blocked ? "prompt_protection" : "prompt_protection_warning",
@@ -101,9 +153,11 @@ function auditVerdict(result: PromptProtectionResult): Verdict {
 		artifacts: [],
 		matchedThreatId: null,
 		reasons: [
-			`Prompt ${blocked ? "blocked" : "warning"}: ${result.findings
-				.map((finding) => `${finding.kind} x${finding.count}`)
-				.join(", ")}`,
+			`Prompt ${blocked ? "blocked" : "warning"}: ${counts}${
+				result.partial
+					? " (scan stopped at the first blocking finding; counts are lower bounds)"
+					: ""
+			}`,
 		],
 	};
 }
@@ -130,7 +184,6 @@ async function tenantDlp(): Promise<PromptTenantDlp | undefined> {
 }
 
 async function main(): Promise<void> {
-	let secretsMode: PromptProtectionConfig["secrets"] = DEFAULT_PROMPT_PROTECTION.secrets;
 	try {
 		await verifyArtifactIntegrityAndLog({
 			artifactDir: __dirname,
@@ -139,11 +192,11 @@ async function main(): Promise<void> {
 		});
 		const config = await loadConfig(undefined, logger);
 		const policy = config.prompt_protection ?? DEFAULT_PROMPT_PROTECTION;
-		secretsMode = policy.secrets;
+		fallback.secretsMode = policy.secrets;
 
 		const input = readPrompt();
 		if (!input) {
-			writeInspectionFailure(secretsMode);
+			writeInspectionFailure();
 			return;
 		}
 
@@ -154,8 +207,20 @@ async function main(): Promise<void> {
 			writeTenantPolicyFailure();
 			return;
 		}
+		if (tenant) fallback.tenantPolicy = true;
+		// The deadline may have answered while the policy loaded.
+		if (responded) return;
 
-		const result = scanPrompt(input.prompt, policy, tenant);
+		let result: PromptProtectionResult;
+		try {
+			result = scanPrompt(input.prompt, policy, tenant, { deadlineAt });
+		} catch (error) {
+			if (error instanceof PromptScanDeadlineError) {
+				writeDeadlineResponse();
+				return;
+			}
+			throw error;
+		}
 		if (result.decision !== "allow") {
 			try {
 				await logVerdict(
@@ -171,10 +236,26 @@ async function main(): Promise<void> {
 		}
 		writeResult(result);
 	} catch {
-		writeInspectionFailure(secretsMode);
+		writeInspectionFailure();
 	}
 }
 
-main().catch(() => {
-	writeInspectionFailure(DEFAULT_PROMPT_PROTECTION.secrets);
-});
+// Internal deadline, shorter than the host's hook timeout. It covers the
+// asynchronous phases (integrity check, config and policy loading); the scan
+// itself checks `deadlineAt` between passes.
+const deadline = setTimeout(
+	() => {
+		// Pending work may keep the event loop alive past the host timeout; the
+		// response is on stdout, so exit once it has been flushed.
+		if (!writeDeadlineResponse(() => process.exit(0))) process.exit(0);
+	},
+	Math.max(0, deadlineAt - Date.now()),
+);
+
+main()
+	.catch(() => {
+		writeInspectionFailure();
+	})
+	.finally(() => {
+		clearTimeout(deadline);
+	});

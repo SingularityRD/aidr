@@ -178,11 +178,56 @@ const EQUIVALENT_TYPES: Partial<Record<PiiType, readonly PiiType[]>> = {
 	secret: ["secret", "api_key", "aws_key"],
 };
 
-function overlapsEquivalent(matches: readonly PiiMatch[], candidate: PiiMatch): boolean {
+/**
+ * Spans of one type sorted by start, with the running maximum end, so "does
+ * any span overlap [start, end)" is a binary search instead of a full scan.
+ */
+interface SpanIndex {
+	readonly starts: number[];
+	readonly maxEnds: number[];
+}
+
+function indexSpansByType(matches: readonly PiiMatch[]): Map<PiiType, SpanIndex> {
+	const byType = new Map<PiiType, PiiMatch[]>();
+	for (const match of matches) {
+		const list = byType.get(match.type);
+		if (list) list.push(match);
+		else byType.set(match.type, [match]);
+	}
+	const index = new Map<PiiType, SpanIndex>();
+	for (const [type, list] of byType) {
+		list.sort((a, b) => a.start - b.start);
+		const starts: number[] = [];
+		const maxEnds: number[] = [];
+		let maxEnd = Number.NEGATIVE_INFINITY;
+		for (const match of list) {
+			maxEnd = Math.max(maxEnd, match.end);
+			starts.push(match.start);
+			maxEnds.push(maxEnd);
+		}
+		index.set(type, { starts, maxEnds });
+	}
+	return index;
+}
+
+/** true when a span that starts before `end` reaches past `start`. */
+function spanIndexOverlaps(index: SpanIndex, start: number, end: number): boolean {
+	let low = 0;
+	let high = index.starts.length;
+	while (low < high) {
+		const mid = (low + high) >>> 1;
+		if ((index.starts[mid] ?? 0) < end) low = mid + 1;
+		else high = mid;
+	}
+	return low > 0 && (index.maxEnds[low - 1] ?? 0) > start;
+}
+
+function overlapsEquivalent(index: ReadonlyMap<PiiType, SpanIndex>, candidate: PiiMatch): boolean {
 	const equivalent = EQUIVALENT_TYPES[candidate.type] ?? [candidate.type];
-	return matches.some(
-		(m) => equivalent.includes(m.type) && m.start < candidate.end && candidate.start < m.end,
-	);
+	return equivalent.some((type) => {
+		const spans = index.get(type);
+		return spans !== undefined && spanIndexOverlaps(spans, candidate.start, candidate.end);
+	});
 }
 
 /** Result of {@link PiiDetectorImpl.detectWithCoverage}. */
@@ -230,7 +275,10 @@ const PATTERNS: readonly PatternDef[] = Object.freeze([
 	{
 		type: "email",
 		// RFC 5322 simplified — covers the vast majority of real-world addresses.
-		regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+		// RFC 5321 length limits (64-char local part, 253-char domain, 63-char
+		// label) keep every attempt bounded: with unbounded runs a long `a.a.a…`
+		// or `%41%41…` text is rescanned from every word boundary (quadratic).
+		regex: /\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b/g,
 		severity: "high",
 		confidenceBase: 0.9,
 	},
@@ -470,6 +518,7 @@ export class PiiDetectorImpl implements PiiDetector {
 		}
 
 		const matches: PiiMatch[] = [];
+		const seen = new Set<string>();
 		const { minConfidence, entropyThreshold } = this.config;
 
 		for (const def of this.enabledPatterns) {
@@ -487,11 +536,10 @@ export class PiiDetectorImpl implements PiiDetector {
 
 				if (confidence < minConfidence) continue;
 
-				// Deduplicate by exact position span
-				const isDuplicate = matches.some(
-					(m) => m.start === start && m.end === end && m.type === def.type,
-				);
-				if (isDuplicate) continue;
+				// Deduplicate by exact position span (a set: a linear scan per match is quadratic)
+				const key = `${def.type}:${start}:${end}`;
+				if (seen.has(key)) continue;
+				seen.add(key);
 
 				matches.push({
 					type: def.type,
@@ -521,7 +569,7 @@ export class PiiDetectorImpl implements PiiDetector {
 		if (this.enabledPrivacyTypes.length === 0) return { incomplete: false, reasons: [] };
 		const byDetector = new Map(this.enabledPrivacyTypes.map((def) => [def.detector, def]));
 		const scan = scanPrivacyDetectors(input, [...byDetector.keys()]);
-		const existing = [...matches];
+		const existing = indexSpansByType(matches);
 		for (const found of scan.matches) {
 			const def = byDetector.get(found.detector);
 			if (!def || found.score < this.config.minConfidence) continue;

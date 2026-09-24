@@ -746,6 +746,8 @@ export {
 	type PromptFindingSummary,
 	type PromptProtectionDecision,
 	type PromptProtectionResult,
+	PromptScanDeadlineError,
+	type PromptScanOptions,
 	type PromptTenantDlp,
 	scanPrompt,
 } from "./prompt-protection.js";

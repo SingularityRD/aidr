@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DlpPolicySchema } from "../dlp/policy.js";
-import { DEFAULT_PROMPT_PROTECTION, scanPrompt } from "../prompt-protection.js";
+import {
+	DEFAULT_PROMPT_PROTECTION,
+	PromptScanDeadlineError,
+	scanPrompt,
+} from "../prompt-protection.js";
 import { ConfigSchema } from "../types.js";
 
 // Synthetic values built at runtime so no literal credential sits in the source.
@@ -110,9 +114,55 @@ describe("scanPrompt", () => {
 		const blocked = scanPrompt(prompt, { secrets: "off", pii: "block" });
 		expect(blocked.decision).toBe("block");
 		expect(blocked.findings).toEqual([{ category: "pii", kind: "email address", count: 1 }]);
+		// A blocking secret ends the scan: the PII warning is not collected.
 		const both = scanPrompt(prompt, DEFAULT_PROMPT_PROTECTION);
 		expect(both.decision).toBe("block");
-		expect(both.findings.map((finding) => finding.category)).toEqual(["secret", "pii"]);
+		expect(both.partial).toBe(true);
+		expect(both.findings.map((finding) => finding.category)).toEqual(["secret"]);
+		const warned = scanPrompt(prompt, { secrets: "warn", pii: "warn" });
+		expect(warned.findings.map((finding) => finding.category)).toEqual(["secret", "pii"]);
+		expect(warned.partial).toBeUndefined();
+	});
+
+	it("counts a value matched by several detectors once, and every separate value", () => {
+		// Each token is matched by both the secret detector and the legacy credential patterns.
+		const prompt = `a ${GITHUB_TOKEN} b ${GITHUB_TOKEN} c ${GITHUB_TOKEN} and ${AWS_SECRET} ok`;
+		expect(scanPrompt(prompt, { secrets: "warn", pii: "off" }).findings).toEqual([
+			{ category: "secret", kind: "AWS secret key", count: 1 },
+			{ category: "secret", kind: "GitHub token", count: 3 },
+		]);
+	});
+
+	it("stops a blocking scan at the first secret and marks the counts partial", () => {
+		const prompt = `${GITHUB_TOKEN} `.repeat(50) + "jane.doe@example.com";
+		const blocked = scanPrompt(prompt);
+		expect(blocked).toMatchObject({ decision: "block", partial: true });
+		expect(blocked.findings).toEqual([{ category: "secret", kind: "GitHub token", count: 1 }]);
+		expect(scanPrompt(prompt, { secrets: "warn", pii: "warn" }).findings).toEqual([
+			{ category: "secret", kind: "GitHub token", count: 50 },
+			{ category: "pii", kind: "email address", count: 1 },
+		]);
+	});
+
+	it("skips the tenant policy once the local policy has blocked", () => {
+		const result = scanPrompt(
+			"ship BLUEFALCON to jane.doe@example.com",
+			{ secrets: "off", pii: "block" },
+			{ tenantId: "tenant-a", policy: tenantPolicy("block") },
+		);
+		expect(result).toMatchObject({ decision: "block", partial: true });
+		expect(result.findings).toEqual([{ category: "pii", kind: "email address", count: 1 }]);
+	});
+
+	it("throws PromptScanDeadlineError once the deadline has passed", () => {
+		expect(() =>
+			scanPrompt("hello", DEFAULT_PROMPT_PROTECTION, undefined, { deadlineAt: 0 }),
+		).toThrow(PromptScanDeadlineError);
+		expect(
+			scanPrompt("hello", DEFAULT_PROMPT_PROTECTION, undefined, {
+				deadlineAt: Date.now() + 60_000,
+			}),
+		).toEqual({ decision: "allow", findings: [] });
 	});
 
 	it("applies a tenant DLP policy regardless of local modes and blocks every non-allow action", () => {
@@ -144,4 +194,65 @@ describe("scanPrompt", () => {
 		expect(result.decision).toBe("block");
 		expect(result.findings[0]?.category).toBe("tenant_dlp");
 	});
+});
+
+/**
+ * Regression for a fail-open: Claude Code kills the prompt hook after 10 s and
+ * then sends the prompt. Overlap checks used to be quadratic (a 1.47 MB prompt
+ * of 88k emails plus one token took ~30 s) and several patterns rescanned long
+ * runs from every word boundary. Each prompt here is ~1.5 MB of adversarial
+ * text; the full (non-short-circuited) scan must finish well inside the budget.
+ */
+describe("scanPrompt cost on large adversarial prompts", () => {
+	const MAX_SCAN_MS = 2_000;
+	const TARGET_CHARS = 1_500_000;
+	const fill = (unit: string): string => unit.repeat(Math.ceil(TARGET_CHARS / unit.length));
+	const emails = (count: number): string =>
+		Array.from({ length: count }, (_, i) => `u${i}@c${i}.io `).join("");
+	const adversarial: Record<string, () => string> = {
+		"emails then a token": () => `${emails(110_000)} my token ${GITHUB_TOKEN}`,
+		"a token then emails": () => `my token ${GITHUB_TOKEN} ${emails(110_000)}`,
+		"dotted local part": () => fill("a."),
+		"dotted domain": () => `x@${fill("a.")}`,
+		"percent-encoded run": () => fill("%41"),
+		"dash-joined JWT prefixes": () => fill("eyJ-"),
+		"many tokens": () => fill(`${GITHUB_TOKEN} `),
+		"dash-separated digits": () => fill("123-"),
+		"spaced digits": () => fill("1 "),
+		"base64 run": () => fill("QUJD"),
+	};
+
+	function bestOfThree(run: () => void): number {
+		let best = Number.POSITIVE_INFINITY;
+		for (let attempt = 0; attempt < 3; attempt++) {
+			const started = performance.now();
+			run();
+			best = Math.min(best, performance.now() - started);
+		}
+		return best;
+	}
+
+	it.each(Object.keys(adversarial))(
+		"scans %s in under 2 s",
+		(name) => {
+			const prompt = adversarial[name]?.() ?? "";
+			expect(prompt.length).toBeGreaterThanOrEqual(TARGET_CHARS);
+			const fullScan = { secrets: "warn", pii: "warn" } as const;
+			expect(bestOfThree(() => scanPrompt(prompt, fullScan))).toBeLessThan(MAX_SCAN_MS);
+			expect(bestOfThree(() => scanPrompt(prompt))).toBeLessThan(MAX_SCAN_MS);
+		},
+		60_000,
+	);
+
+	it("still reports every email and the token in the original repro prompt", () => {
+		const prompt = `${emails(88_000)} my token ${GITHUB_TOKEN}`;
+		expect(scanPrompt(prompt, { secrets: "warn", pii: "warn" }).findings).toEqual([
+			{ category: "secret", kind: "GitHub token", count: 1 },
+			{ category: "pii", kind: "email address", count: 88_000 },
+		]);
+		expect(scanPrompt(prompt)).toMatchObject({
+			decision: "block",
+			findings: [{ category: "secret", kind: "GitHub token", count: 1 }],
+		});
+	}, 60_000);
 });
