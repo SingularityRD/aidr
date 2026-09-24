@@ -4,6 +4,7 @@ import {
 	type McpAttestationStateStore,
 	type McpAttestationStateV1,
 	type McpManifestRejectionReason,
+	mcpApprovalBindingHash,
 	type SignedMcpToolManifestV1,
 	verifySignedMcpToolManifest,
 } from "./mcp-attestation.js";
@@ -24,6 +25,8 @@ export type McpSignedManifestIndex =
 	| Readonly<Record<string, SignedMcpToolManifestV1>>;
 
 export interface McpDiscoveryAttestationOptions {
+	/** Tenant identity that owns this local inventory and approval state. */
+	tenantId?: string;
 	/**
 	 * Tenant keyring: trusted MCP publisher key ids mapped to Ed25519 public keys.
 	 * Trusted-publisher provisioning and signer key custody are external to this
@@ -150,6 +153,7 @@ async function attestDiscoveredServer(
 
 	const verified = verifySignedMcpToolManifest(signed, {
 		trustedSigners: options.keyring,
+		expectedServerId: item.name,
 		...(options.revokedKeyIds ? { revokedKeyIds: new Set(options.revokedKeyIds) } : {}),
 		...(options.now ? { now: options.now } : {}),
 	});
@@ -180,6 +184,20 @@ async function attestDiscoveredServer(
 			reason: "approval_state_unavailable",
 		};
 	}
+	if (!options.tenantId) {
+		return {
+			...verifiedEvidence,
+			status: "unverifiable",
+			approval_state: "unavailable",
+			reason: "tenant_binding_unavailable",
+		};
+	}
+	const bindingSha256 = mcpApprovalBindingHash({
+		serverId: verified.signed.manifest.server_id,
+		keyId: verified.signed.key_id,
+		signerKeySha256: verified.signerKeySha256,
+		connection: ["discovery-v1", options.tenantId, id, item.configurationSha256],
+	});
 
 	let state: McpAttestationStateV1 | null;
 	try {
@@ -202,11 +220,32 @@ async function attestDiscoveredServer(
 			reason: "not_approved",
 		};
 	}
-	const approved =
-		state.activeToolsetHash === verified.toolsetHash ||
-		state.approvedToolsets.some((entry) => entry.toolsetHash === verified.toolsetHash);
-	if (approved) {
-		return { ...verifiedEvidence, status: "approved", approval_state: "available" };
+	if (verified.signed.manifest.sequence < state.highestSequence) {
+		return {
+			...verifiedEvidence,
+			status: "rejected",
+			approval_state: "available",
+			reason: "sequence_replay",
+		};
+	}
+	if (
+		verified.signed.manifest.sequence === state.highestSequence &&
+		verified.manifestHash !== state.highestManifestHash
+	) {
+		return {
+			...verifiedEvidence,
+			status: "rejected",
+			approval_state: "available",
+			reason: "sequence_conflict",
+		};
+	}
+	if (verified.signed.manifest.sequence > state.highestSequence) {
+		return {
+			...verifiedEvidence,
+			status: "unapproved",
+			approval_state: "available",
+			reason: "manifest_not_observed",
+		};
 	}
 	if (state.quarantine) {
 		return {
@@ -216,6 +255,17 @@ async function attestDiscoveredServer(
 			quarantined_toolset_hash: state.quarantine.toolsetHash,
 			reason: "quarantined_pending_operator_approval",
 		};
+	}
+	const approved = state.approvedToolsets.some(
+		(entry) =>
+			state.activeToolsetHash === verified.toolsetHash &&
+			entry.toolsetHash === verified.toolsetHash &&
+			entry.keyId === verified.signed.key_id &&
+			entry.signerKeySha256 === verified.signerKeySha256 &&
+			entry.bindingSha256 === bindingSha256,
+	);
+	if (approved) {
+		return { ...verifiedEvidence, status: "approved", approval_state: "available" };
 	}
 	return {
 		...verifiedEvidence,
@@ -250,9 +300,7 @@ export async function discoverMcpServers(paths?: string[], options: McpDiscovery
 				transport: item.url ? ("remote" as const) : ("stdio" as const),
 				endpoint,
 				risk_hints: item.riskHints,
-				configuration_sha256: createHash("sha256")
-					.update(JSON.stringify([item.command, item.args, item.url]))
-					.digest("hex"),
+				configuration_sha256: item.configurationSha256,
 				attestation: await attestDiscoveredServer(item, id, attestationOptions),
 			};
 		}),

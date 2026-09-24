@@ -1,24 +1,33 @@
 import { parseDocument } from "yaml";
 import { z } from "zod";
+import {
+	matchesMcpToolSelector,
+	mcpToolSelector,
+	parseLegacyMcpToolSelector,
+} from "./mcp-tool-identity.js";
 
 export const POLICY_DOCUMENT_ACTIONS = ["allow", "ask", "deny"] as const;
-export type PolicyDocumentAction = (typeof POLICY_DOCUMENT_ACTIONS)[number];
-export type RuntimePolicyCategory = "command" | "file" | "url" | "package" | "output";
+type PolicyDocumentAction = (typeof POLICY_DOCUMENT_ACTIONS)[number];
+type RuntimePolicyCategory = "command" | "file" | "url" | "package" | "output";
 
 const actionSchema = z.enum(POLICY_DOCUMENT_ACTIONS);
-const serverIdSchema = z
+const mcpIdentitySchema = z
 	.string()
 	.min(1)
-	.max(80)
-	.regex(/^[a-z0-9][a-z0-9._-]{0,79}$/, "must be a lowercase MCP server id");
-const toolIdSchema = z
+	.max(256)
+	.regex(/^[A-Za-z0-9][A-Za-z0-9._:/_-]{0,255}$/, "must be an MCP identifier");
+const legacyToolIdSchema = z
 	.string()
 	.min(3)
-	.max(240)
+	.max(513)
 	.regex(
-		/^[a-z0-9][a-z0-9._-]{0,79}\.[a-z0-9][a-z0-9_.-]{0,159}$/,
-		"must be a lowercase server.tool id",
+		/^[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}\.[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}$/,
+		"legacy selectors must use server.tool with no dots inside either name",
 	);
+const structuredToolIdSchema = z
+	.object({ server: mcpIdentitySchema, tool: mcpIdentitySchema })
+	.strict();
+const toolIdSchema = z.union([legacyToolIdSchema, structuredToolIdSchema]);
 
 const categoryDefaultsSchema = z
 	.object({
@@ -32,7 +41,7 @@ const categoryDefaultsSchema = z
 
 const conditionSchema = z
 	.object({
-		mcp_server: serverIdSchema.optional(),
+		mcp_server: mcpIdentitySchema.optional(),
 		mcp_tool: toolIdSchema.optional(),
 	})
 	.strict()
@@ -135,10 +144,25 @@ const CATEGORY_KEYS: Record<RuntimePolicyCategory, keyof CompiledRuntimePolicy> 
 	output: "output_default",
 };
 
+function compiledMcpTarget(condition: PolicyDocument["rules"][number]["condition"]): {
+	scope: "server" | "tool";
+	target: string;
+} {
+	if (condition.mcp_server) return { scope: "server", target: condition.mcp_server };
+	const tool = condition.mcp_tool;
+	if (typeof tool === "string") return { scope: "tool", target: tool };
+	if (tool) return { scope: "tool", target: mcpToolSelector(tool.server, tool.tool) };
+	throw new Error("invalid_policy_document:missing MCP selector");
+}
+
 function selectorFor(rule: PolicyDocument["rules"][number]): string {
-	return rule.condition.mcp_server
-		? `server:${rule.condition.mcp_server}`
-		: `tool:${rule.condition.mcp_tool}`;
+	const { scope, target } = compiledMcpTarget(rule.condition);
+	if (scope === "tool" && typeof rule.condition.mcp_tool === "string") {
+		const identity = parseLegacyMcpToolSelector(rule.condition.mcp_tool);
+		if (!identity) throw new Error("invalid_policy_document:ambiguous MCP tool selector");
+		return `tool:${mcpToolSelector(...identity)}`;
+	}
+	return `${scope}:${target}`;
 }
 
 function listKey(
@@ -232,9 +256,8 @@ export function compilePolicyDocument(value: unknown): PolicyCompilationResult {
 			continue;
 		}
 		winners.set(selector, candidate);
-		const scope = candidate.rule.condition.mcp_server ? "server" : "tool";
-		const target = candidate.rule.condition.mcp_server ?? candidate.rule.condition.mcp_tool;
-		(runtimePolicy[listKey(scope, candidate.rule.action)] as string[]).push(target as string);
+		const { scope, target } = compiledMcpTarget(candidate.rule.condition);
+		(runtimePolicy[listKey(scope, candidate.rule.action)] as string[]).push(target);
 	}
 	for (const key of [
 		"mcp_allow_servers",
@@ -284,14 +307,15 @@ export function simulateRuntimePolicy(
 			matched: input.kind,
 		};
 	}
-	const server = serverIdSchema.parse(input.server);
-	const tool = toolIdSchema.parse(`${server}.${input.tool}`);
+	const server = mcpIdentitySchema.parse(input.server);
+	const tool = mcpIdentitySchema.parse(input.tool);
 	for (const [action, toolKey, serverKey] of [
 		["deny", "mcp_deny_tools", "mcp_deny_servers"],
 		["ask", "mcp_require_approval_tools", "mcp_require_approval_servers"],
 		["allow", "mcp_allow_tools", "mcp_allow_servers"],
 	] as const) {
-		if (includes(policy, toolKey, tool)) return { action, source: "mcp_tool", matched: tool };
+		if (matchesMcpToolSelector(policy[toolKey], server, tool))
+			return { action, source: "mcp_tool", matched: mcpToolSelector(server, tool) };
 		if (includes(policy, serverKey, server))
 			return { action, source: "mcp_server", matched: server };
 	}

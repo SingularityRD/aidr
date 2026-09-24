@@ -12,32 +12,31 @@ function remote(runtimePolicy: Record<string, unknown>) {
 }
 
 describe("compiled MCP runtime controls", () => {
-	it.each([
-		"deny",
-		"ask",
-		"allow",
-	] as const)("uses mcp_default=%s after unknown_action=allow", async (fallback) => {
-		const compiled = compilePolicyDocument({
-			version: "1.0",
-			default_action: fallback,
-			unknown_action: "allow",
-			rules: [],
-		});
-		const simulated = simulateRuntimePolicy(compiled.runtime_policy, {
-			kind: "mcp",
-			server: "unknown",
-			tool: "read",
-			inventory: "unknown",
-		});
-		const verdict = await evaluatePolicy(
-			"mcp__unknown__read",
-			[],
-			remote(compiled.runtime_policy),
-			{},
-		);
-		expect(simulated).toEqual({ action: fallback, source: "mcp_default", matched: null });
-		expect(verdict?.decision ?? "allow").toBe(fallback);
-	});
+	it.each(["deny", "ask", "allow"] as const)(
+		"uses mcp_default=%s after unknown_action=allow",
+		async (fallback) => {
+			const compiled = compilePolicyDocument({
+				version: "1.0",
+				default_action: fallback,
+				unknown_action: "allow",
+				rules: [],
+			});
+			const simulated = simulateRuntimePolicy(compiled.runtime_policy, {
+				kind: "mcp",
+				server: "unknown",
+				tool: "read",
+				inventory: "unknown",
+			});
+			const verdict = await evaluatePolicy(
+				"mcp__unknown__read",
+				[],
+				remote(compiled.runtime_policy),
+				{},
+			);
+			expect(simulated).toEqual({ action: fallback, source: "mcp_default", matched: null });
+			expect(verdict?.decision ?? "allow").toBe(fallback);
+		},
+	);
 
 	it("enforces deny > ask > allow across tool and server lists", async () => {
 		const config = remote({
@@ -48,7 +47,7 @@ describe("compiled MCP runtime controls", () => {
 			mcp_deny_servers: ["github"],
 			mcp_allow_tools: ["github.delete_repository"],
 		});
-		const verdict = await evaluatePolicy("mcp__GitHub__DELETE_REPOSITORY", [], config, {});
+		const verdict = await evaluatePolicy("mcp__github__delete_repository", [], config, {});
 		expect(verdict?.decision).toBe("deny");
 		expect(verdict?.matchedThreatId).toBe("POL-MCP-006");
 	});
@@ -61,10 +60,20 @@ describe("compiled MCP runtime controls", () => {
 		});
 		expect((await evaluatePolicy("mcp__vault__read", [], approval, {}))?.decision).toBe("ask");
 
-		const allow = remote({
+		const dir = await mkdtemp(join(tmpdir(), "aidr-policy-document-allow-"));
+		const inventory = join(dir, "mcp.json");
+		await writeFile(inventory, JSON.stringify({ mcpServers: { vault: { command: "node" } } }));
+		const allowBase = remote({
 			mcp_default: "deny",
 			mcp_unknown: "deny",
 			mcp_allow_tools: ["vault.read"],
+		});
+		const allow = ConfigSchema.parse({
+			...allowBase,
+			policy: {
+				...allowBase.policy,
+				mcp: { ...allowBase.policy.mcp, inventory_paths: [inventory] },
+			},
 		});
 		expect(await evaluatePolicy("mcp__vault__read", [], allow, {})).toBeNull();
 	});

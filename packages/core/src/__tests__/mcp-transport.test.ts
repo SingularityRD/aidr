@@ -1,5 +1,8 @@
+import { PassThrough, type Readable } from "node:stream";
+import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	decodedIncomingBody,
 	encodeMcpStdioFrame,
 	fetchMcpEndpoint,
 	hashMcpSchema,
@@ -13,6 +16,23 @@ import {
 } from "../mcp-transport.js";
 
 describe("MCP transport framing", () => {
+	it("caps encoded bytes before decompressing a smaller gzip response", async () => {
+		const incoming = new PassThrough();
+		const decoded = decodedIncomingBody(
+			incoming as unknown as import("node:http").IncomingMessage,
+			["gzip"],
+			20,
+		);
+		const consume = async () => {
+			for await (const _chunk of decoded as Readable) {
+				// Drain the bounded stream.
+			}
+		};
+		const consumed = consume();
+		incoming.end(gzipSync(Buffer.alloc(1024, 0x61)));
+		await expect(consumed).rejects.toMatchObject({ code: "body_too_large" });
+	});
+
 	it("parses bounded newline and Content-Length frames incrementally", () => {
 		const framer = new JsonRpcStdioFramer({ maxFrameBytes: 256 });
 		const newline = encodeMcpStdioFrame({ jsonrpc: "2.0", id: 1, method: "tools/list" });
@@ -95,6 +115,9 @@ describe("MCP HTTP and SSRF controls", () => {
 		expect(isPrivateIpAddress("64:ff9b::10.0.0.1")).toBe(true);
 		expect(isPrivateIpAddress("2002:0a00:0001::1")).toBe(true);
 		expect(isPrivateIpAddress("2001:db8::1")).toBe(true);
+		expect(isPrivateIpAddress("64:ff9b:1::a00:1")).toBe(true);
+		expect(isPrivateIpAddress("100:0:0:1::1")).toBe(true);
+		expect(isPrivateIpAddress("5f00::1")).toBe(true);
 		expect(isPrivateIpAddress("2606:4700:4700::1111")).toBe(false);
 		expect(isPrivateIpAddress("::ffff:8.8.8.8")).toBe(false);
 		expect(
@@ -171,23 +194,26 @@ describe("MCP HTTP and SSRF controls", () => {
 		["{", "invalid_json"],
 		["{}", "invalid_json_rpc"],
 		['{"jsonrpc":"2.0","id":1,"result":{},"error":{}}', "invalid_json_rpc"],
-	])("rejects malformed upstream JSON-RPC before returning it to the caller", async (body, code) => {
-		await expect(
-			fetchMcpEndpoint(
-				"https://mcp.example.test/message",
-				{
-					method: "POST",
-					headers: { "content-type": "application/json", accept: "application/json" },
-					body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}',
-				},
-				{
-					lookup: async () => ["93.184.216.34"],
-					pinnedFetch: async () =>
-						new Response(body, { status: 200, headers: { "content-type": "application/json" } }),
-				},
-			),
-		).rejects.toMatchObject({ code });
-	});
+	])(
+		"rejects malformed upstream JSON-RPC before returning it to the caller",
+		async (body, code) => {
+			await expect(
+				fetchMcpEndpoint(
+					"https://mcp.example.test/message",
+					{
+						method: "POST",
+						headers: { "content-type": "application/json", accept: "application/json" },
+						body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}',
+					},
+					{
+						lookup: async () => ["93.184.216.34"],
+						pinnedFetch: async () =>
+							new Response(body, { status: 200, headers: { "content-type": "application/json" } }),
+					},
+				),
+			).rejects.toMatchObject({ code });
+		},
+	);
 
 	it("accepts only an explicitly opted-in empty 202 notification acknowledgement", async () => {
 		const request = {
@@ -240,6 +266,37 @@ describe("MCP HTTP and SSRF controls", () => {
 				{ ...options, acceptNotificationResponse: true },
 			),
 		).rejects.toMatchObject({ code: "invalid_notification_request" });
+	});
+
+	it("permits session termination only as an explicitly opted-in bounded DELETE", async () => {
+		const request = {
+			url: "https://mcp.example.test/mcp",
+			method: "DELETE",
+			headers: { "mcp-session-id": "session-12345678" },
+		};
+		expect(validateMcpHttpRequest(request)).toEqual({ ok: false, error: "method_not_allowed" });
+		expect(validateMcpHttpRequest(request, { acceptSessionTerminationResponse: true })).toEqual({
+			ok: true,
+		});
+		const pinnedFetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+		const response = await fetchMcpEndpoint("https://mcp.example.test/mcp", request, {
+			lookup: async () => ["93.184.216.34"],
+			pinnedFetch,
+			acceptSessionTerminationResponse: true,
+		});
+		expect(response.status).toBe(204);
+		expect(pinnedFetch).toHaveBeenCalledWith(
+			expect.objectContaining({
+				init: expect.objectContaining({ method: "DELETE", redirect: "error" }),
+			}),
+		);
+		await expect(
+			fetchMcpEndpoint("https://mcp.example.test/mcp", request, {
+				lookup: async () => ["93.184.216.34"],
+				pinnedFetch: async () => new Response(null, { status: 405 }),
+				acceptSessionTerminationResponse: true,
+			}),
+		).rejects.toMatchObject({ code: "upstream_http_error" });
 	});
 
 	it.each([
@@ -316,7 +373,9 @@ describe("MCP policy interception", () => {
 			},
 			{ evaluateToolCall },
 			{
-				eventSink: async (event) => events.push(event),
+				eventSink: async (event) => {
+					events.push(event);
+				},
 				now: () => new Date("2026-08-08T00:00:00.000Z"),
 			},
 		);
@@ -369,6 +428,17 @@ describe("MCP policy interception", () => {
 		expect(reordered.allowed).toBe(true);
 		expect(drifted).toMatchObject({ allowed: false, reason: "schema_drift" });
 		expect(hashMcpSchema({ a: 1, b: 2 })).toBe(hashMcpSchema({ b: 2, a: 1 }));
+	});
+
+	it("keeps case-sensitive MCP tool names in separate schema baselines", () => {
+		const registry = new McpSchemaRegistry();
+		const lower = registry.observe("server", "read_file", { type: "object" });
+		const upper = registry.observe("server", "READ_FILE", { type: "string" });
+
+		expect(lower.drift).toBe(false);
+		expect(upper.drift).toBe(false);
+		expect(registry.observe("server", "read_file", { type: "object" }).drift).toBe(false);
+		expect(registry.observe("server", "READ_FILE", { type: "number" }).drift).toBe(true);
 	});
 
 	it("keeps rejecting a changed schema on retries without calling the policy service", async () => {

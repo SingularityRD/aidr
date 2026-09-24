@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.auth import auth_is_configured, auth_is_required, replay_store_ready
+from app.provenance import DatasetProvenance, verify_dataset_provenance
 from app.task_registry import task_registry
 from app.utils.aig_client import AIGClient, get_aig_client
 from app.validation import runtime_egress_ready
@@ -16,65 +16,83 @@ from app.validation import runtime_egress_ready
 logger = logging.getLogger("aig-bridge.health")
 router = APIRouter()
 _CAPABILITIES = ("infra", "mcp", "agent", "jailbreak")
+_UPSTREAM_CAPABILITIES = {
+    "infra": "ai_infra_scan",
+    "mcp": "mcp_scan",
+    "agent": "agent_scan",
+    "jailbreak": "model_redteam_report",
+}
 
 
-def _env_true(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+def _dataset_ready(
+    threats: dict[str, object] | None,
+    provenance: DatasetProvenance,
+) -> tuple[bool, str]:
+    if not threats:
+        return False, "AIG knowledge registry is unavailable"
+    cve_count = threats.get("cve_count")
+    categories = threats.get("mcp_risk_categories")
+    if not isinstance(cve_count, int) or cve_count <= 0:
+        return False, "AIG vulnerability dataset is empty"
+    if not isinstance(categories, list) or not categories:
+        return False, "AIG MCP dataset is empty"
+    return provenance.ready, provenance.reason
 
 
-def _slug(value: str) -> str:
-    return re.sub(r"[^A-Z0-9]+", "_", value.upper()).strip("_")
-
-
-def _dataset_ready() -> tuple[bool, str]:
-    if not _env_true("AIG_DATASET_READINESS_REQUIRED", False):
-        return True, "dataset manifest check disabled"
-    manifest = os.getenv("AIG_DATASET_MANIFEST_SHA256", "").strip().lower()
-    loaded = os.getenv("AIG_DATASET_LOADED_SHA256", "").strip().lower()
-    if not manifest or not loaded or len(manifest) != 64 or manifest != loaded:
-        return False, "signed dataset manifest is missing or not loaded"
-    return True, "signed dataset manifest loaded"
-
-
-def _worker_ready() -> tuple[bool, str]:
-    if not _env_true("AIG_WORKER_HEALTH_REQUIRED", True):
-        return True, "worker health check disabled"
-    if not _env_true("AIG_WORKER_READY", False):
-        return False, "worker health/attestation is not proven"
+def _worker_ready(runtime: dict[str, object] | None) -> tuple[bool, str]:
+    if not runtime:
+        return False, "authenticated AIG worker registry is unavailable"
+    active_agents = runtime.get("active_agents")
     try:
-        min_workers = max(1, int(os.getenv("AIG_MIN_WORKERS", "1")))
-        configured_workers = int(os.getenv("AIG_AGENT_COUNT", "0"))
+        minimum = max(1, int(os.getenv("AIG_MIN_WORKERS", "1")))
     except ValueError:
-        min_workers = 1
-        configured_workers = 0
-    if configured_workers < min_workers:
-        return False, "configured worker count is below the capability minimum"
-    return True, "worker readiness asserted by the orchestrator"
+        return False, "AIG_MIN_WORKERS is invalid"
+    if isinstance(active_agents, bool) or not isinstance(active_agents, int):
+        return False, "AIG worker registry returned invalid evidence"
+    if active_agents < minimum:
+        return False, f"active AIG workers {active_agents}/{minimum}"
+    return True, f"active AIG workers {active_agents}/{minimum}"
 
 
-def _capability_ready(capability: str) -> tuple[bool, str]:
+def _capability_ready(capability: str, runtime: dict[str, object] | None) -> tuple[bool, str]:
     if capability not in _CAPABILITIES:
         return False, "unknown capability"
-    name = f"AIG_CAPABILITY_{_slug(capability)}_READY"
-    if os.getenv(name) is not None and not _env_true(name):
-        return False, f"{capability} capability is disabled or not ready"
-    worker, reason = _worker_ready()
-    return worker, reason
+    worker, reason = _worker_ready(runtime)
+    if not worker:
+        return False, reason
+    counts = runtime.get("capabilities") if runtime else None
+    upstream_name = _UPSTREAM_CAPABILITIES[capability]
+    if not isinstance(counts, dict) or not isinstance(counts.get(upstream_name), int) or counts[upstream_name] < 1:
+        return False, f"no live worker advertises {upstream_name}"
+    return True, f"live worker advertises {upstream_name}"
 
 
 async def _readiness_report(aig: AIGClient, capability: str | None = None) -> dict[str, object]:
     upstream_ready = await aig.health_check()
+    runtime = None
+    threats = None
+    if upstream_ready:
+        try:
+            runtime = await aig.get_runtime_readiness()
+        except Exception as exc:
+            logger.warning("AIG worker readiness probe failed: %s", type(exc).__name__)
+        try:
+            threats = await aig.get_latest_threats()
+        except Exception as exc:
+            logger.warning("AIG dataset readiness probe failed: %s", type(exc).__name__)
     auth_ready = (not auth_is_required()) or auth_is_configured()
     replay_ready = replay_store_ready()
     registry_ready, registry_reason = task_registry.readiness()
     egress_ready, egress_reason = runtime_egress_ready()
-    dataset_ready, dataset_reason = _dataset_ready()
-    worker_ready, worker_reason = _worker_ready()
+    upstream_provenance = runtime.get("dataset_provenance") if runtime else None
+    provenance = verify_dataset_provenance(
+        threats,
+        upstream_provenance if isinstance(upstream_provenance, dict) else None,
+    )
+    dataset_ready, dataset_reason = _dataset_ready(threats, provenance)
+    worker_ready, worker_reason = _worker_ready(runtime)
     requested = [capability] if capability else list(_CAPABILITIES)
-    capabilities = {name: _capability_ready(name)[0] for name in requested}
+    capabilities = {name: _capability_ready(name, runtime)[0] for name in requested}
     ready = all(
         [
             upstream_ready,
@@ -99,8 +117,13 @@ async def _readiness_report(aig: AIGClient, capability: str | None = None) -> di
         "egress_reason": egress_reason,
         "dataset_ready": dataset_ready,
         "dataset_reason": dataset_reason,
+        "dataset_bundle_id": provenance.bundle_id,
+        "dataset_source_commit": provenance.source_commit,
+        "dataset_release_sequence": provenance.release_sequence,
         "worker_reason": worker_reason,
         "capabilities": capabilities,
+        "cve_count": threats.get("cve_count") if threats else None,
+        "threat_intel_ready": dataset_ready,
     }
 
 @router.get("/health")
@@ -108,18 +131,6 @@ async def health_check(response: Response, aig: AIGClient = Depends(get_aig_clie
     """Return dependency health without exposing upstream payloads."""
 
     report = await _readiness_report(aig)
-    cve_count = None
-    threat_intel_ready = False
-    try:
-        threats = await aig.get_latest_threats()
-        candidate_count = threats.get("cve_count")
-        categories = threats.get("mcp_risk_categories")
-        if isinstance(candidate_count, int) and candidate_count > 0:
-            cve_count = candidate_count
-            threat_intel_ready = isinstance(categories, list) and len(categories) > 0
-    except Exception as exc:
-        logger.warning("AIG threat readiness probe failed: %s", type(exc).__name__)
-    report.update({"cve_count": cve_count, "threat_intel_ready": threat_intel_ready})
     # Health is intentionally 503 when a scan dependency is not ready.  /livez
     # remains the process-only endpoint for orchestrator restart decisions.
     if not report["ready"]:

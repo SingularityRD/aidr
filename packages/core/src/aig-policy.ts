@@ -16,10 +16,28 @@ export async function inspectInfrastructurePolicy(config: Config, now = Date.now
 		const report = JSON.parse(text) as AigInfraScanSummary;
 		const scanned = Date.parse(report.scannedAt);
 		if (!Number.isFinite(scanned) || scanned > now + 60_000 || !Array.isArray(report.targets)) return { state: "invalid" as const, report: null };
-		if (report.targets.some((target) => !target || typeof target.url !== "string" || !origin(target.url)
-			|| typeof target.reachable !== "boolean" || !Array.isArray(target.cves)
-			|| (target.error !== null && typeof target.error !== "string")
-			|| target.cves.some((cve) => !cve || typeof cve.cveId !== "string" || typeof cve.severity !== "string" || typeof cve.evaluated !== "boolean"))) {
+		if (
+			report.targets.some(
+				(target) =>
+					!target ||
+					typeof target.url !== "string" ||
+					!origin(target.url) ||
+					typeof target.reachable !== "boolean" ||
+					!Array.isArray(target.matched) ||
+					target.matched.some(
+						(match) => !match || typeof match.product !== "string" || !match.product.trim()
+					) ||
+					!Array.isArray(target.cves) ||
+					(target.error !== null && typeof target.error !== "string") ||
+					target.cves.some(
+						(cve) =>
+							!cve ||
+							typeof cve.cveId !== "string" ||
+							typeof cve.severity !== "string" ||
+							typeof cve.evaluated !== "boolean"
+					)
+			)
+		) {
 			return { state: "invalid" as const, report: null };
 		}
 		if (now - scanned > policy.max_age_seconds * 1000) return { state: "expired" as const, report: null };
@@ -39,7 +57,15 @@ export async function evaluateInfrastructurePolicy(artifacts: Artifact[], config
 	for (const artifact of urls) {
 		const target = report?.targets.find((t) => origin(t.url) === origin(artifact.value));
 		const critical = target?.cves?.filter((cve) => cve.evaluated === true && cve.severity?.toLowerCase() === "critical") ?? [];
-		const unconfirmed = !target || target.error || !target.reachable || !Array.isArray(target.cves) || target.cves.some((cve) => !cve.evaluated && cve.severity?.toLowerCase() === "critical");
+		const unconfirmed =
+			!target ||
+			target.error ||
+			!target.reachable ||
+			!target.matched.length ||
+			!Array.isArray(target.cves) ||
+			target.cves.some(
+				(cve) => !cve.evaluated && cve.severity?.toLowerCase() === "critical",
+			);
 		if (!critical.length && !unconfirmed) continue;
 		const action = critical.length ? policy.critical_action : policy.unverified_action;
 		if (action === "allow") continue;

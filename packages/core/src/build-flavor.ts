@@ -1,9 +1,5 @@
-/**
- * Build flavor flags.
- *
- * We keep this runtime-configurable (env) so the same codebase can be used for
- * dev/open builds and for commercial distributions without changing build configs.
- */
+/** Release builds replace this marker in dist after TypeScript compilation. */
+const EMBEDDED_BUILD_FLAVOR: string = "__AIDR_EMBEDDED_BUILD_FLAVOR__";
 
 function envTrue(v: string | undefined): boolean {
 	const t = (v ?? "").trim().toLowerCase();
@@ -11,6 +7,10 @@ function envTrue(v: string | undefined): boolean {
 }
 
 export function isCommercialBuild(): boolean {
+	// A commercial artifact cannot be demoted by changing its runtime environment.
+	if (EMBEDDED_BUILD_FLAVOR === "commercial") return true;
+
+	// Source/development builds retain the opt-in used by local commercial-mode tests.
 	return (
 		envTrue(process.env.AIDR_COMMERCIAL) ||
 		envTrue(process.env.AIDR_BUILD) ||

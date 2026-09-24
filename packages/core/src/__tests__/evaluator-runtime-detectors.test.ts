@@ -156,6 +156,60 @@ describe("optional runtime detector wiring", () => {
 		expect(verdict.reasons.join(" ")).toContain("cannot rewrite");
 	});
 
+	it.each([
+		{ label: "SSN", content: "SSN: 123-45-6789", match: "123-45-6789", type: "ssn" },
+		{
+			label: "credit card",
+			content: "Card: 4111 1111 1111 1111",
+			match: "4111 1111 1111 1111",
+			type: "credit_card",
+		},
+		{
+			label: "email",
+			content: "Email: synthetic.user@example.com",
+			match: "synthetic.user@example.com",
+			type: "email",
+		},
+		{
+			label: "phone",
+			content: "Phone: 202-555-0100",
+			match: "202-555-0100",
+			type: "phone",
+		},
+	])(
+		"blocks $label in tool input without returning or auditing the match",
+		async ({ content, match, type }) => {
+			const verdict = await evaluateToolCall(
+				request(content),
+				context({
+					runtimeDetectors: { tenantId: "tenant-a", dlp: { enabled: true, policy: policy() } },
+				}),
+			);
+
+			expect(verdict).toMatchObject({
+				decision: "deny",
+				category: "dlp",
+				source: "dlp",
+				matchedThreatId: `pii-${type}`,
+			});
+			expect(JSON.stringify(verdict)).not.toContain(match);
+			const audit = await readFile(join(homeDir, ".singularity-aidr", "audit.jsonl"), "utf8");
+			expect(audit).toContain("content_omitted");
+			expect(audit).not.toContain(match);
+		},
+	);
+
+	it("does not scan common PII unless tenant DLP is enabled", async () => {
+		const verdict = await evaluateToolCall(
+			request("Email: synthetic.user@example.com"),
+			context({
+				runtimeDetectors: { tenantId: "tenant-a", dlp: { enabled: false, policy: policy() } },
+			}),
+		);
+
+		expect(verdict).toMatchObject({ decision: "allow", source: "no_artifacts" });
+	});
+
 	it("does not let a URL allowlist bypass enabled tenant DLP", async () => {
 		await writeFile(
 			join(homeDir, ".singularity-aidr", "allowlist.json"),
@@ -207,10 +261,23 @@ describe("optional runtime detector wiring", () => {
 		expect(audit).not.toContain("COMPANY-SECRET-123");
 	});
 
-	it("requires explicit baseline learning and keeps tenant/session state scoped", async () => {
+	it("fails closed by default for a cold baseline and permits only explicit degraded skip", async () => {
 		const model: BehavioralEmbeddingModel = {
 			load: async () => undefined,
-			findSimilarThreats: async () => [],
+			findSimilarThreats: async (text) =>
+				text.includes("known-malware")
+					? [
+							{
+								threatId: "known-threat",
+								similarity: 0.99,
+								metadata: {
+									category: "execution",
+									severity: "critical",
+									description: "known threat",
+								},
+							},
+						]
+					: [],
 			getStats: async () => ({
 				isLoaded: true,
 				threatCount: 1,
@@ -225,30 +292,72 @@ describe("optional runtime detector wiring", () => {
 		const detector = (
 			tenantId: string,
 			learningAllowed = false,
+			unavailableAction: "ask" | "deny" | "skip" | undefined = undefined,
 		): ToolEvaluationContext["runtimeDetectors"] => ({
 			tenantId,
-			behavioral: { enabled: true, orchestrator, learningAllowed },
+			behavioral: { enabled: true, orchestrator, learningAllowed, unavailableAction },
 		});
 
 		const cold = await evaluateToolCall(
 			request("npm test"),
 			context({ runtimeDetectors: detector("tenant-a") }),
 		);
-		expect(cold).toMatchObject({ decision: "ask", category: "behavioral_unavailable" });
+		expect(cold).toMatchObject({
+			decision: "ask",
+			category: "behavioral_unavailable",
+			source: "behavioral",
+		});
 		expect(orchestrator.getStats().totalBaselineSamples).toBe(0);
 
-		await evaluateToolCall(
+		const configuredLearning = await evaluateToolCall(
 			request("npm test"),
 			context({ runtimeDetectors: detector("tenant-a", true) }),
 		);
-		await evaluateToolCall(
+		expect(configuredLearning).toMatchObject({ decision: "ask", category: "behavioral_unavailable" });
+
+		const skipped = await evaluateToolCall(
+			request("npm test"),
+			context({ runtimeDetectors: detector("tenant-a", false, "skip") }),
+		);
+		expect(skipped).toMatchObject({
+			decision: "allow",
+			category: "behavioral_unavailable",
+			severity: "warning",
+			source: "behavioral",
+		});
+		expect(skipped.source).not.toBe("no_artifacts");
+		expect(skipped.reasons.join(" ")).toContain("not ready");
+		const audit = await readFile(join(homeDir, ".singularity-aidr", "audit.jsonl"), "utf8");
+		expect(audit).toContain("behavioral_unavailable");
+
+		const otherTenant = await evaluateToolCall(
 			request("npm test"),
 			context({ runtimeDetectors: detector("tenant-b", true) }),
 		);
+		expect(otherTenant).toMatchObject({ decision: "ask", category: "behavioral_unavailable" });
+
+		const knownThreat = await evaluateToolCall(
+			request("known-malware"),
+			context({ runtimeDetectors: detector("tenant-a", true, "skip") }),
+		);
+		expect(knownThreat).toMatchObject({ decision: "ask", category: "behavioral_anomaly" });
+		expect(orchestrator.getStats().totalBaselineSamples).toBe(0);
+
+		const denied = await evaluateToolCall(
+			request("COMPANY-SECRET-123"),
+			context({
+				runtimeDetectors: {
+					tenantId: "tenant-a",
+					behavioral: { enabled: true, orchestrator, learningAllowed: true },
+					dlp: { enabled: true, policy: policy() },
+				},
+			}),
+		);
+		expect(denied.decision).toBe("deny");
 		expect(orchestrator.getStats()).toMatchObject({
 			tenantCount: 2,
 			sessionCount: 2,
-			totalBaselineSamples: 2,
+			totalBaselineSamples: 0,
 		});
 	});
 
@@ -352,11 +461,8 @@ describe("provisioned tenant detector policy at the connector entry points", () 
 
 		const outcome = await codexEntryPoint(`echo ${TEST_DLP_MARKER}`);
 		expect(outcome).toMatchObject({ decision: "allow", reasonCode: "allowed" });
-		expect(outcome.wire).toMatchObject({
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "allow",
-			},
-		});
+		// Codex 0.141.0 accepts empty stdout as a no-op allow; a bare
+		// permissionDecision:"allow" is unsupported and fails open.
+		expect(outcome.wire).toEqual({});
 	});
 });

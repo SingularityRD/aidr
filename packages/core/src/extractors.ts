@@ -64,6 +64,11 @@ const VAR_INTERPOLATION_URL =
 /** Shell names used as pipe targets */
 const SHELLS = "bash|sh|zsh|ksh|dash";
 
+const EXECUTABLE_HEREDOC_CONSUMER = new RegExp(
+	`(?:^|[|;&]\\s*)(?:(?:sudo|timeout|xargs|env|command)\\s+(?:\\S+\\s+){0,2})?(?:/\\S+/)?(?:${SHELLS}|python(?:\\d+(?:\\.\\d+)*)?|perl|ruby|node(?:js)?)\\b`,
+	"i",
+);
+
 export function extractUrls(text: string): string[] {
 	const seen = new Set<string>();
 	const urls: string[] = [];
@@ -90,7 +95,7 @@ function escapeRegExp(str: string): string {
  * be silent: a partial evaluation that reports "allow" would otherwise be
  * indistinguishable from a full clean result.
  */
-export function warnTruncatedInput(
+function warnTruncatedInput(
 	source: string,
 	originalLength: number,
 	evaluatedLength: number,
@@ -219,6 +224,14 @@ function stripHeredocs(command: string): string {
 			// is exactly how the global regex advanced on a failed attempt.
 			scanFrom = opener.index + 1;
 			continue;
+		}
+
+		// A heredoc can be source code for an interpreter, not just inline data.
+		// Keep the full command whenever one is fed to a shell or script runtime.
+		const lineStart = command.lastIndexOf("\n", opener.index - 1) + 1;
+		const lineEnd = command.indexOf("\n", opener.index);
+		if (EXECUTABLE_HEREDOC_CONSUMER.test(command.slice(lineStart, lineEnd))) {
+			return command;
 		}
 
 		// The whole heredoc (dash and quotes included) collapses to `<<word`.

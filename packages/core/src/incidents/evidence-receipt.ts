@@ -84,11 +84,12 @@ function accept<T>(value: T): EvidenceParseResult<T> {
 	return { ok: true, value };
 }
 
-function parseIso(value: unknown): string | null {
-	if (typeof value !== "string") return null;
+function parseIso(value: unknown, requireCanonicalUtc = false): string | null {
+	if (typeof value !== "string" || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return null;
 	const parsed = Date.parse(value);
 	if (!Number.isFinite(parsed) || parsed <= 0) return null;
-	return new Date(parsed).toISOString();
+	const normalized = new Date(parsed).toISOString();
+	return requireCanonicalUtc && value !== normalized ? null : normalized;
 }
 
 function parseBinding(value: unknown): EvidenceParseResult<EvidenceBinding> {
@@ -116,7 +117,7 @@ function parseBinding(value: unknown): EvidenceParseResult<EvidenceBinding> {
 function parseClock(value: unknown): EvidenceParseResult<EvidenceClock> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return fail("invalid_clock");
 	const raw = value as Record<string, unknown>;
-	const wallClockUtc = parseIso(raw.wallClockUtc);
+	const wallClockUtc = parseIso(raw.wallClockUtc, true);
 	if (!wallClockUtc) return fail("invalid_wall_clock");
 	if (!Number.isSafeInteger(raw.logicalCounter) || (raw.logicalCounter as number) < 0) {
 		return fail("invalid_logical_counter");
@@ -260,6 +261,8 @@ export interface EvidenceChainVerification {
 	/** The chain head, present only when the chain verified. */
 	head: { receiptId: string; receiptHash: string; logicalCounter: number } | null;
 	findings: EvidenceChainFinding[];
+	/** Receipt identities and hashes in the verified chain, for truncation comparison. */
+	verifiedReceipts: Array<{ receiptId: string; receiptHash: string; logicalCounter: number }>;
 	/** Devices seen in the chain, with their highest logical counter. */
 	devices: Array<{ deviceId: string; maxLogicalCounter: number; receipts: number }>;
 	/** Largest observed clock skew among receipts that reported one. */
@@ -283,6 +286,7 @@ export function verifyEvidenceChain(
 		checked: 0,
 		head: null,
 		findings: [],
+		verifiedReceipts: [],
 		devices: [],
 		maxObservedSkewMs: null,
 	};
@@ -344,6 +348,11 @@ export function verifyEvidenceChain(
 		if (byClock !== 0) return byClock;
 		return a.receiptId < b.receiptId ? -1 : a.receiptId > b.receiptId ? 1 : 0;
 	});
+	result.verifiedReceipts = unique.map((receipt) => ({
+		receiptId: receipt.receiptId,
+		receiptHash: receipt.receiptHash,
+		logicalCounter: receipt.clock.logicalCounter,
+	}));
 
 	let expectedPrevious = EVIDENCE_GENESIS_HASH;
 	for (const receipt of unique) {
@@ -408,10 +417,10 @@ export function detectEvidenceTruncation(
 	if (verification.head.logicalCounter < previousHead.logicalCounter) {
 		return { truncated: true, reason: "logical_counter_regressed" };
 	}
-	const present = verification.head.receiptId === previousHead.receiptId;
-	if (!present && verification.head.logicalCounter === previousHead.logicalCounter) {
-		return { truncated: true, reason: "head_replaced_at_same_counter" };
-	}
+	const previousPresent = verification.verifiedReceipts.some(
+		(receipt) => receipt.receiptId === previousHead.receiptId && receipt.receiptHash === previousHead.receiptHash,
+	);
+	if (!previousPresent) return { truncated: true, reason: "previous_head_missing_or_replaced" };
 	return { truncated: false, reason: "head_advanced" };
 }
 
@@ -470,6 +479,40 @@ export interface EvidenceArchiveRequest {
 	receipts: readonly EvidenceReceiptV1[];
 }
 
+function validateArchiveRequest(request: EvidenceArchiveRequest, context: EvidenceHashContext): string | null {
+	if (!HASH.test(request.headReceiptHash)) return "invalid_head_hash";
+	if (!HASH.test(request.candidateDigest)) return "invalid_candidate_digest";
+	if (!REF.test(request.incidentId)) return "invalid_incident_id";
+	if (!UUID.test(request.headReceiptId) || !Array.isArray(request.receipts) || request.receipts.length === 0) {
+		return "invalid_receipt_chain";
+	}
+	let previousHash = EVIDENCE_GENESIS_HASH;
+	let head: EvidenceReceiptV1 | null = null;
+	let policyRevision: string | null = null;
+	const receiptIds = new Set<string>();
+	for (const value of request.receipts) {
+		const parsed = parseEvidenceReceipt(value);
+		if (!parsed.ok) return "invalid_receipt_chain";
+		const receipt = parsed.value;
+		if (verifyEvidenceReceipt(receipt, context).status !== "intact") return "receipt_integrity_unverified";
+		if (receiptIds.has(receipt.receiptId)) return "duplicate_receipt_id";
+		receiptIds.add(receipt.receiptId);
+		if (
+			receipt.binding.incidentId !== request.incidentId ||
+			receipt.binding.candidateDigest !== request.candidateDigest ||
+			(policyRevision !== null && receipt.binding.policyRevision !== policyRevision) ||
+			receipt.previousHash !== previousHash
+		) return "receipt_chain_binding_mismatch";
+		policyRevision = receipt.binding.policyRevision;
+		previousHash = receipt.receiptHash;
+		head = receipt;
+	}
+	if (!head || head.receiptId !== request.headReceiptId || head.receiptHash !== request.headReceiptHash) {
+		return "archive_head_mismatch";
+	}
+	return null;
+}
+
 export type EvidenceArchiveResult =
 	| {
 			status: "anchored";
@@ -512,11 +555,13 @@ export interface EvidenceAnchorOutcome {
 export async function anchorEvidenceHead(
 	sink: EvidenceArchiveSink | null,
 	request: EvidenceArchiveRequest,
+	context: EvidenceHashContext,
 	options: { timeoutMs?: number; now?: () => number } = {},
 ): Promise<EvidenceAnchorOutcome> {
 	if (!sink) return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "no_archive_sink" };
-	if (!HASH.test(request.headReceiptHash)) {
-		return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "invalid_head_hash" };
+	const requestFailure = validateArchiveRequest(request, context);
+	if (requestFailure) {
+		return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: requestFailure };
 	}
 	const timeoutMs = options.timeoutMs ?? 15_000;
 	const now = options.now ?? Date.now;

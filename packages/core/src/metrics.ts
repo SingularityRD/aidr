@@ -4,11 +4,12 @@
  * Zero external dependencies
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { AIDR_DIR } from "./config.js";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { AIDR_DIR, resolvePath } from "./config.js";
+import { preparePrivateLocalFile } from "./private-local-file.js";
+import { redactTelemetryData } from "./telemetry-redaction.js";
 
-export interface MetricRecord {
+interface MetricRecord {
 	timestamp: string;
 	name: string;
 	value: number;
@@ -16,7 +17,7 @@ export interface MetricRecord {
 	type: "counter" | "gauge" | "histogram";
 }
 
-export interface MetricsSnapshot {
+interface MetricsSnapshot {
 	detection_latency_ms: number;
 	verdict_count: number;
 	cache_hit_rate: number;
@@ -469,24 +470,27 @@ class MetricsCollector {
 	private enabled: boolean;
 
 	constructor() {
-		this.metricsFilePath = process.env.AIDR_METRICS_FILE || `${AIDR_DIR}/metrics.jsonl`;
+		this.metricsFilePath = resolvePath(
+			process.env.AIDR_METRICS_FILE || `${AIDR_DIR}/metrics.jsonl`,
+		);
 		this.enabled =
 			process.env.AIDR_DISABLE_METRICS !== "true" && process.env.AIDR_DISABLE_METRICS !== "1";
-		this.ensureMetricsDir();
-	}
-
-	private ensureMetricsDir(): void {
-		try {
-			mkdirSync(dirname(this.metricsFilePath), { recursive: true });
-		} catch {
-			// Fail silently - metrics are best-effort
+		if (this.enabled) {
+			try {
+				preparePrivateLocalFile(this.metricsFilePath);
+			} catch {
+				// Local metrics are best-effort; never write to an unprotected file.
+				this.enabled = false;
+			}
 		}
 	}
 
 	private writeRecord(record: MetricRecord): void {
 		if (!this.enabled) return;
 		try {
-			appendFileSync(this.metricsFilePath, `${JSON.stringify(record)}\n`);
+			appendFileSync(this.metricsFilePath, `${JSON.stringify(redactTelemetryData(record))}\n`, {
+				mode: 0o600,
+			});
 		} catch {
 			// Fail silently
 		}
@@ -622,10 +626,6 @@ let instance: MetricsCollector | null = null;
 export function getMetricsCollector(): MetricsCollector {
 	if (!instance) instance = new MetricsCollector();
 	return instance;
-}
-
-export function createMetricsCollector(): MetricsCollector {
-	return new MetricsCollector();
 }
 
 export const metrics = {

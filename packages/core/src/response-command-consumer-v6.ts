@@ -1,8 +1,8 @@
 import { controlPlaneUrl } from "./clients/control-plane-url.js";
 import {
 	createDeviceAttestation,
-	deviceAttestationPayload,
 	type DeviceAttestation,
+	deviceAttestationPayload,
 } from "./device-attestation.js";
 
 /**
@@ -35,10 +35,14 @@ export interface FleetResponseActionAdapter {
 	/** A narrow, explicit allowlist; the consumer never executes arbitrary code. */
 	readonly supportedCommands: readonly FleetResponseCommandType[];
 	/** Apply the requested local OS or host action. */
-	execute(command: FleetResponseCommand): Promise<{ ok: true } | { ok: false; code: string }>;
+	execute(
+		command: FleetResponseCommand,
+		signal?: AbortSignal,
+	): Promise<{ ok: true } | { ok: false; code: string }>;
 	/** Observe the resulting host state independently of execute's return value. */
 	verify(
 		command: FleetResponseCommand,
+		signal?: AbortSignal,
 	): Promise<{ observed: true } | { observed: false; code: string }>;
 }
 
@@ -59,6 +63,8 @@ export interface FleetResponseConsumerOptions {
 	/** Best-effort local audit hook; failures never turn an outcome into success. */
 	audit?: (event: FleetResponseAuditEvent) => void | Promise<void>;
 	timeoutMs?: number;
+	/** Maximum time allowed for each local execute or verify call. */
+	actionTimeoutMs?: number;
 	/** Explicitly opt into http://localhost for isolated development tests. */
 	developmentLoopback?: boolean;
 	fetchImpl?: typeof fetch;
@@ -67,6 +73,7 @@ export interface FleetResponseConsumerOptions {
 
 export type FleetResponseCycleResult =
 	| { status: "idle" }
+	| { status: "access_rejected"; stage: "poll" | "ack"; code: "http_401" | "http_403" }
 	| { status: "invalid_command"; reason: string }
 	| { status: "expired"; commandId: string }
 	| { status: "rejected"; commandId: string; code: string }
@@ -88,6 +95,13 @@ const COMMAND_TYPES: readonly FleetResponseCommandType[] = [
 	"network_release",
 ];
 const MAX_RESPONSE_BYTES = 8192;
+
+class FleetResponseActionInterrupted extends Error {}
+class FleetResponseAccessRejected extends Error {
+	constructor(readonly status: 401 | 403) {
+		super(`http_${status}`);
+	}
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -204,12 +218,14 @@ function responseEndpoint(endpoint: string, developmentLoopback: boolean): strin
 
 export class FleetResponseCommandConsumer {
 	private readonly url: string;
-	private readonly apiKey: string;
+	private apiKey: string;
+	private accessRejectionStatus: 401 | 403 | null = null;
 	private readonly identity: FleetResponseIdentity;
 	private readonly adapter?: FleetResponseActionAdapter;
 	protected readonly audit?: FleetResponseConsumerOptions["audit"];
 	private readonly fetchImpl: typeof fetch;
 	private readonly timeoutMs: number;
+	private readonly actionTimeoutMs: number;
 	protected readonly now: () => number;
 	protected readonly deviceAttestation: DeviceAttestation;
 
@@ -233,10 +249,47 @@ export class FleetResponseCommandConsumer {
 		this.audit = options.audit;
 		this.fetchImpl = options.fetchImpl ?? fetch;
 		this.timeoutMs = Math.min(10_000, Math.max(100, options.timeoutMs ?? 3000));
+		this.actionTimeoutMs = Math.min(60_000, Math.max(100, options.actionTimeoutMs ?? 30_000));
 		this.now = options.now ?? Date.now;
 	}
 
+	protected isActionInterrupted(error: unknown): boolean {
+		return error instanceof FleetResponseActionInterrupted;
+	}
+
+	protected async runBoundedAction<T>(
+		operation: (signal: AbortSignal) => Promise<T>,
+		parentSignal?: AbortSignal,
+	): Promise<T> {
+		if (parentSignal?.aborted) {
+			throw new FleetResponseActionInterrupted("fleet_response_action_interrupted");
+		}
+		const controller = new AbortController();
+		let rejectInterrupted: (error: FleetResponseActionInterrupted) => void = () => {};
+		const interrupted = new Promise<never>((_resolve, reject) => {
+			rejectInterrupted = reject;
+		});
+		let finished = false;
+		const interrupt = () => {
+			if (finished) return;
+			rejectInterrupted(new FleetResponseActionInterrupted("fleet_response_action_interrupted"));
+			controller.abort();
+		};
+		const timeout = setTimeout(interrupt, this.actionTimeoutMs);
+		parentSignal?.addEventListener("abort", interrupt, { once: true });
+		try {
+			return await Promise.race([operation(controller.signal), interrupted]);
+		} finally {
+			finished = true;
+			clearTimeout(timeout);
+			parentSignal?.removeEventListener("abort", interrupt);
+		}
+	}
+
 	private async post(body: Record<string, unknown>): Promise<unknown> {
+		if (this.accessRejectionStatus !== null) {
+			throw new FleetResponseAccessRejected(this.accessRejectionStatus);
+		}
 		const response = await this.fetchImpl(this.url, {
 			method: "POST",
 			headers: {
@@ -251,8 +304,23 @@ export class FleetResponseCommandConsumer {
 			}),
 			signal: AbortSignal.timeout(this.timeoutMs),
 		});
+		if (response.status === 401 || response.status === 403) {
+			this.accessRejectionStatus = response.status;
+			// The credential has been invalidated by the control plane; do not retain
+			// or reuse it through this consumer instance after a definitive 401.
+			if (response.status === 401) this.apiKey = "";
+			throw new FleetResponseAccessRejected(response.status);
+		}
 		if (!response.ok) throw new Error(`http_${response.status}`);
 		return boundedJson(response);
+	}
+
+	protected hasAccessRejection(): boolean {
+		return this.accessRejectionStatus !== null;
+	}
+
+	protected accessRejectionCode(): "http_401" | "http_403" {
+		return this.accessRejectionStatus === 403 ? "http_403" : "http_401";
 	}
 
 	protected async record(
@@ -277,7 +345,14 @@ export class FleetResponseCommandConsumer {
 		let polled: unknown;
 		try {
 			polled = await this.post({ action: "poll" });
-		} catch {
+		} catch (error) {
+			if (error instanceof FleetResponseAccessRejected) {
+				return {
+					status: "access_rejected",
+					stage: "poll",
+					code: error.status === 401 ? "http_401" : "http_403",
+				};
+			}
 			return { status: "outcome_unknown", stage: "poll", reason: "poll_unavailable" };
 		}
 		if (!isRecord(polled) || polled.ok !== true || !("command" in polled)) {
@@ -296,14 +371,23 @@ export class FleetResponseCommandConsumer {
 		try {
 			const recorded = await this.record(commandId, "ack", "rejected", "unsupported_action");
 			if (recorded) return { status: "rejected", commandId, code: "unsupported_action" };
-		} catch {}
+		} catch (error) {
+			if (error instanceof FleetResponseAccessRejected) {
+				return {
+					status: "access_rejected",
+					stage: "ack",
+					code: error.status === 401 ? "http_401" : "http_403",
+				};
+			}
+		}
 		return { status: "outcome_unknown", commandId, stage: "ack", reason: "rejection_unconfirmed" };
 	}
 
 	protected async acknowledge(commandId: string): Promise<boolean> {
 		try {
 			return await this.record(commandId, "ack", "accepted");
-		} catch {
+		} catch (error) {
+			if (error instanceof FleetResponseAccessRejected) return false;
 			return false;
 		}
 	}
@@ -318,14 +402,24 @@ export class FleetResponseCommandConsumer {
 	protected async executeAndVerify(
 		command: FleetResponseCommand,
 		adapter: FleetResponseActionAdapter,
+		signal?: AbortSignal,
 	): Promise<string | null> {
 		if (Date.parse(command.expiresAt) <= this.now()) return "ttl_elapsed";
 		try {
-			const execution = await adapter.execute(command);
+			const execution = await this.runBoundedAction(
+				(actionSignal) => adapter.execute(command, actionSignal),
+				signal,
+			);
 			if (execution.ok === false) return resultCode(execution.code, "execution_failed");
-			const verification = await adapter.verify(command);
-			return verification.observed === true ? null : resultCode(verification.code, "verification_failed");
-		} catch {
+			const verification = await this.runBoundedAction(
+				(actionSignal) => adapter.verify(command, actionSignal),
+				signal,
+			);
+			return verification.observed === true
+				? null
+				: resultCode(verification.code, "verification_failed");
+		} catch (error) {
+			if (this.isActionInterrupted(error)) throw error;
 			return "execution_failed";
 		}
 	}
@@ -343,13 +437,15 @@ export class FleetResponseCommandConsumer {
 				status: "outcome_unknown",
 				commandId,
 				stage: "result",
-				reason: "result_unconfirmed",
+				reason: this.hasAccessRejection()
+					? "access_rejected_after_execution"
+					: "result_unconfirmed",
 			};
 		}
 		return code ? { status: "failed", commandId, code } : { status: "succeeded", commandId };
 	}
 
-	private async pollOnceInternal(): Promise<FleetResponseCycleResult> {
+	private async pollOnceInternal(signal?: AbortSignal): Promise<FleetResponseCycleResult> {
 		const command = await this.pollCommand();
 		if ("status" in command) return command;
 		const adapter = this.adapter;
@@ -358,6 +454,13 @@ export class FleetResponseCommandConsumer {
 		}
 		// A lost ACK reply may have committed remotely. Never execute on ambiguity.
 		if (!(await this.acknowledge(command.id))) {
+			if (this.hasAccessRejection()) {
+				return {
+					status: "access_rejected",
+					stage: "ack",
+					code: this.accessRejectionCode(),
+				};
+			}
 			return {
 				status: "outcome_unknown",
 				commandId: command.id,
@@ -365,7 +468,18 @@ export class FleetResponseCommandConsumer {
 				reason: "ack_unconfirmed",
 			};
 		}
-		const code = await this.executeAndVerify(command, adapter);
+		let code: string | null;
+		try {
+			code = await this.executeAndVerify(command, adapter, signal);
+		} catch (error) {
+			if (!this.isActionInterrupted(error)) throw error;
+			return {
+				status: "outcome_unknown",
+				commandId: command.id,
+				stage: "result",
+				reason: "execution_state_unverified",
+			};
+		}
 		return this.report(command.id, code);
 	}
 
@@ -377,8 +491,8 @@ export class FleetResponseCommandConsumer {
 		}
 	}
 
-	async pollOnce(): Promise<FleetResponseCycleResult> {
-		const result = await this.pollOnceInternal();
+	async pollOnce(signal?: AbortSignal): Promise<FleetResponseCycleResult> {
+		const result = await this.pollOnceInternal(signal);
 		await this.emitAudit(result);
 		return result;
 	}

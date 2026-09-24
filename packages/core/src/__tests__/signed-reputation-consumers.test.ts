@@ -79,7 +79,19 @@ describe("signed reputation feed consumers", () => {
 	});
 
 	it("blocks an exact domain and subdomain while allowing remote check of lookalikes", async () => {
-		globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ answers: [] }) });
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				answers: [
+					{
+						key: "https://notmalicious.example/z",
+						coverage: "covered",
+						cache_valid_until: new Date(Date.now() + 60_000).toISOString(),
+						result: { success: { coverage: "covered", classification: { result: {} }, flags: [] } },
+					},
+				],
+			}),
+		});
 		const client = new UrlCheckClient({ reputationFeed: loadOptions });
 		const urls = ["https://malicious.example/x", "https://sub.malicious.example/y", "https://notmalicious.example/z"];
 		const results = await client.checkUrls(urls);
@@ -162,7 +174,7 @@ describe("signed reputation feed consumers", () => {
 		expect(globalThis.fetch).not.toHaveBeenCalled();
 	});
 
-	it("a benign package gets clean only after an actual SHA-256 provider verdict", async () => {
+	it("a SHA-256 provider response with unknown severity does not claim a clean package", async () => {
 		const benignHash = "c".repeat(64);
 		globalThis.fetch = vi.fn()
 			.mockResolvedValueOnce({
@@ -175,10 +187,13 @@ describe("signed reputation feed consumers", () => {
 			})
 			.mockResolvedValueOnce({
 				ok: true,
-				json: async () => ({ responses: [{ severity: "SEVERITY_UNKNOWN" }] }),
+				json: async () => ({
+					responses: [{ key: { sha256: benignHash }, severity: "SEVERITY_UNKNOWN" }],
+				}),
 			});
 		const result = await new PackageChecker({ reputationFeed: loadOptions }).checkSinglePackage({ name: "benign-pkg", registry: "npm" });
-		expect(result.verdict).toBe("clean");
+		expect(result.verdict).toBe("unknown");
+		expect(result.details).toMatch(/not verified clean/i);
 		expect(globalThis.fetch).toHaveBeenCalledTimes(2);
 	});
 });

@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
 	aidrMetrics,
@@ -6,9 +9,78 @@ import {
 	getMetricsCollector,
 	getMetricsRegistry,
 	Histogram,
+	MetricsCollector,
 	MetricsRegistry,
 	metrics,
 } from "../metrics.js";
+
+describe("metrics file location", () => {
+	it("uses the home directory with private permissions, not a literal repo-local tilde", () => {
+		const root = mkdtempSync(join(tmpdir(), "aidr-metrics-path-"));
+		const home = join(root, "home");
+		mkdirSync(home);
+		const previousCwd = process.cwd();
+		const previousHome = process.env.HOME;
+		const previousFile = process.env.AIDR_METRICS_FILE;
+		const previousDisabled = process.env.AIDR_DISABLE_METRICS;
+		try {
+			process.chdir(root);
+			process.env.HOME = home;
+			delete process.env.AIDR_METRICS_FILE;
+			delete process.env.AIDR_DISABLE_METRICS;
+			const collector = new MetricsCollector();
+			collector.counter("test_counter");
+			collector.counter("token=raw-secret", 1, {
+				token: "raw-secret",
+				prompt: "private prompt text",
+				detail: "Authorization: Bearer raw-secret",
+			});
+			const directory = join(home, ".singularity-aidr");
+			const file = join(directory, "metrics.jsonl");
+			const content = readFileSync(file, "utf8");
+			expect(content).toContain('"name":"test_counter"');
+			expect(content).toContain("[Redacted]");
+			expect(content).not.toContain("raw-secret");
+			expect(content).not.toContain("private prompt text");
+			expect(existsSync(join(root, "~"))).toBe(false);
+			if (process.platform !== "win32") {
+				expect(statSync(directory).mode & 0o777).toBe(0o700);
+				expect(statSync(file).mode & 0o777).toBe(0o600);
+			}
+		} finally {
+			process.chdir(previousCwd);
+			if (previousHome === undefined) delete process.env.HOME;
+			else process.env.HOME = previousHome;
+			if (previousFile === undefined) delete process.env.AIDR_METRICS_FILE;
+			else process.env.AIDR_METRICS_FILE = previousFile;
+			if (previousDisabled === undefined) delete process.env.AIDR_DISABLE_METRICS;
+			else process.env.AIDR_DISABLE_METRICS = previousDisabled;
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("does not create directories when disabled", () => {
+		const root = mkdtempSync(join(tmpdir(), "aidr-metrics-disabled-"));
+		const previousHome = process.env.HOME;
+		const previousFile = process.env.AIDR_METRICS_FILE;
+		const previousDisabled = process.env.AIDR_DISABLE_METRICS;
+		try {
+			process.env.HOME = root;
+			delete process.env.AIDR_METRICS_FILE;
+			process.env.AIDR_DISABLE_METRICS = "true";
+			new MetricsCollector().counter("disabled");
+			expect(existsSync(join(root, ".singularity-aidr"))).toBe(false);
+		} finally {
+			if (previousHome === undefined) delete process.env.HOME;
+			else process.env.HOME = previousHome;
+			if (previousFile === undefined) delete process.env.AIDR_METRICS_FILE;
+			else process.env.AIDR_METRICS_FILE = previousFile;
+			if (previousDisabled === undefined) delete process.env.AIDR_DISABLE_METRICS;
+			else process.env.AIDR_DISABLE_METRICS = previousDisabled;
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
 
 describe("Counter", () => {
 	it("should start at 0", () => {

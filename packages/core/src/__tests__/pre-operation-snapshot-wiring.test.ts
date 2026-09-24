@@ -222,6 +222,83 @@ describe("an allowed destructive operation is snapshotted and can be rolled back
 		await writeConfig({ snapshot_before_destructive: true, protect_paths: [protectDir] }, true);
 	});
 
+	it("records no rollback promise for a multi-file patch", async () => {
+		const second = join(protectDir, "second.bin");
+		await writeFile(second, "second original\n", "utf8");
+		const patch = [
+			"*** Begin Patch",
+			`*** Update File: ${target.replaceAll("\\", "/")}`,
+			"@@",
+			"-irreplaceable source of truth",
+			"+first changed",
+			`*** Update File: ${second.replaceAll("\\", "/")}`,
+			"@@",
+			"-second original",
+			"+second changed",
+			"*** End Patch",
+		].join("\n");
+		const result = await guardToolCall(
+			{ sessionId: "s-rollback", toolName: "apply_patch", toolInput: { patch }, artifacts: [] },
+			{ configPath, threatsDir, allowlistsDir },
+			new ApprovalStore(),
+		);
+
+		expect(result.verdict.decision).toBe("allow");
+		expect(result.snapshot).toBeUndefined();
+		expect(result.responseActions?.[0]).toMatchObject({
+			outcome: "failure",
+			reason: "multi_file_patch_not_snapshot_safe",
+		});
+		expect(result.signedChain?.written).toBe(true);
+		expect((await jsonl(chainPath))[0]).toMatchObject({ action: "snapshot", outcome: "failure" });
+	});
+
+	it("uses canonical tool and input names for connector aliases", async () => {
+		const result = await guardToolCall(
+			{
+				sessionId: "s-rollback",
+				toolName: "write_file",
+				toolInput: { filePath: target, content: "replacement" },
+				artifacts: [],
+			},
+			{ configPath, threatsDir, allowlistsDir },
+			new ApprovalStore(),
+		);
+
+		expect(result.verdict.decision).toBe("allow");
+		expect(result.snapshot?.target).toBe(target);
+		expect(result.responseActions?.[0]).toMatchObject({
+			action: "snapshot",
+			outcome: "success",
+			target,
+		});
+	});
+
+	it("denies conflicting paths instead of selecting one for protected-file handling", async () => {
+		const result = await guardToolCall(
+			{
+				sessionId: "conflicting-paths",
+				toolName: "Write",
+				toolInput: {
+					file_path: join(home, "elsewhere", "notes.txt"),
+					filePath: target,
+					content: "replacement",
+				},
+				artifacts: [],
+			},
+			{ configPath, threatsDir, allowlistsDir },
+			new ApprovalStore(),
+		);
+
+		expect(result.verdict).toMatchObject({
+			decision: "deny",
+			category: "input_ambiguous",
+			matchedThreatId: "POL-INPUT-001",
+		});
+		expect(result.snapshot).toBeUndefined();
+		expect(await readFile(target, "utf8")).toBe(PRIOR_CONTENT);
+	});
+
 	it("snapshots the target, records it in the signed chain and restores it", async () => {
 		const result = await guard();
 
@@ -254,6 +331,31 @@ describe("an allowed destructive operation is snapshotted and can be rolled back
 		});
 		expect(record).toMatchObject({ action: "rollback", outcome: "success", target });
 		expect(await readFile(target, "utf8")).toBe(PRIOR_CONTENT);
+	});
+
+	it("does not claim a failed rollback succeeded and permits a safe retry", async () => {
+		const result = await guard();
+		const vaultPath = result.responseActions?.[0]?.vaultPath;
+		if (!vaultPath || !result.finalizeSnapshot) throw new Error("Expected a restorable snapshot");
+		await unlink(target);
+		await unlink(vaultPath);
+
+		expect(await result.finalizeSnapshot("failure")).toEqual({ rolledBack: false });
+		expect(existsSync(target)).toBe(false);
+		await writeFile(vaultPath, PRIOR_CONTENT, "utf8");
+		expect(await result.finalizeSnapshot("failure")).toEqual({ rolledBack: true });
+		expect(await readFile(target, "utf8")).toBe(PRIOR_CONTENT);
+		expect(await result.finalizeSnapshot("failure")).toEqual({ rolledBack: false });
+	});
+
+	it("does not roll back a successful allowed operation", async () => {
+		const result = await guard();
+		if (!result.finalizeSnapshot) throw new Error("Expected a restorable snapshot");
+		await unlink(target);
+
+		expect(await result.finalizeSnapshot("success")).toEqual({ rolledBack: false });
+		expect(existsSync(target)).toBe(false);
+		expect(await result.finalizeSnapshot("failure")).toEqual({ rolledBack: false });
 	});
 
 	it("writes both the plain audit entry and the signed chain entry for the snapshot", async () => {

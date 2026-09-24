@@ -124,6 +124,25 @@ describe("scanPlugin reports reputation legs that did not run", () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
+	it("keeps URL and file reputation opt-in by default", async () => {
+		await writeFile(
+			join(tempDir, "plugin.js"),
+			'const url = "https://private.example/path?token=secret";\n',
+			"utf8",
+		);
+		const mockFetch = vi.fn();
+		globalThis.fetch = mockFetch;
+
+		const result = await scanPlugin(plugin, emptyThreats);
+
+		expect(mockFetch).not.toHaveBeenCalled();
+		expect(result.unavailableChecks?.map((check) => check.check)).toEqual([
+			"url_reputation",
+			"file_reputation",
+		]);
+		expect(result.unavailableChecks?.map((check) => check.reason).join(" ")).not.toContain("secret");
+	});
+
 	it("marks the URL leg unavailable instead of reporting the plugin clean", async () => {
 		await writeFile(
 			join(tempDir, "plugin.js"),
@@ -173,7 +192,15 @@ describe("scanPlugin reports reputation legs that did not run", () => {
 		);
 		globalThis.fetch = vi.fn().mockResolvedValue({
 			ok: true,
-			json: async () => ({ answers: [] }),
+			json: async () => ({
+			answers: [
+				{
+					key: "https://benign.test/a",
+					cache_valid_until: new Date(Date.now() + 60_000).toISOString(),
+					result: { success: { coverage: "covered", classification: { result: {} }, flags: [] } },
+				},
+				],
+			}),
 		});
 
 		const { logger, warnings } = recordingLogger();
@@ -183,10 +210,10 @@ describe("scanPlugin reports reputation legs that did not run", () => {
 			logger,
 		});
 
-		// A genuinely clean check must stay silent, or the new reporting becomes
-		// noise the operator learns to ignore.
-		expect(result.unavailableChecks ?? []).toEqual([]);
-		expect(warnings.join(" ")).not.toMatch(/did not run/i);
+		// A genuinely clean URL check stays distinct from the deliberately disabled
+		// file check, so the operator sees exactly which coverage is missing.
+		expect(result.unavailableChecks?.map((check) => check.check)).toEqual(["file_reputation"]);
+		expect(warnings.join(" ")).not.toMatch(/URL reputation leg did not run/i);
 		expect(result.findings).toEqual([]);
 	});
 

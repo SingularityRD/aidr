@@ -2,12 +2,14 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { VerdictCache } from "../cache.js";
 import { AmsiClient } from "../clients/amsi.js";
 import { DetectionLegUnavailableError } from "../detection-leg.js";
 import { evaluateToolCall } from "../evaluator.js";
 import { extractFromBash } from "../extractors.js";
 import { PackageChecker } from "../package-checker.js";
 import type { PackageCheckResult } from "../types.js";
+import { VERSION } from "../version.js";
 
 // The AMSI leg only runs on a Windows/WSL host. The cases below are about what
 // the evaluator does when the leg is enabled and cannot run, so it is forced on
@@ -72,6 +74,18 @@ function request(command: string) {
 	};
 }
 
+function manifestRequest(filePath: string, content: string) {
+	return {
+		sessionId: "unsupported-package-manifest",
+		toolName: "Write",
+		toolInput: { file_path: filePath, content },
+		artifacts: [
+			{ type: "file_path" as const, value: filePath },
+			{ type: "content" as const, value: content, context: "write" },
+		],
+	};
+}
+
 /** A request whose only artifact is a URL, so the URL reputation leg decides. */
 function urlRequest(url = "https://unlisted.example/payload.sh") {
 	return {
@@ -101,6 +115,148 @@ async function writeUrlCheckConfig(): Promise<void> {
 }
 
 describe("package check availability is fail-closed", () => {
+	it.each([
+		"uv add requests",
+		"uv sync",
+		"poetry add requests",
+		"pipenv install requests",
+		"go get example.com/module",
+	])("requires review without registry calls for unsupported manager command %s", async (command) => {
+		const fetch = vi.spyOn(globalThis, "fetch");
+
+		const verdict = await evaluateToolCall(request(command), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(fetch).not.toHaveBeenCalled();
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "supply_chain",
+			source: "package_check",
+		});
+		expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
+	});
+
+	it("requires review when an unsupported ecosystem manifest is written", async () => {
+		const fetch = vi.spyOn(globalThis, "fetch");
+
+		const verdict = await evaluateToolCall(
+			manifestRequest("services/api/pyproject.toml", "[project]\ndependencies = ['requests']"),
+			{ configPath, threatsDir: root, allowlistsDir: root },
+		);
+
+		expect(fetch).not.toHaveBeenCalled();
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "supply_chain",
+			source: "package_check",
+		});
+		expect(verdict.artifacts.join(" ")).toContain("pyproject.toml");
+		expect(verdict.reasons.join(" ")).toContain("unsupported dependency manifest");
+	});
+
+	it.each([
+		["registry timeout", () => Promise.reject(new Error("simulated timeout"))],
+		[
+			"malformed registry HTTP 200",
+			() =>
+				Promise.resolve(
+					new Response(JSON.stringify({ "dist-tags": { latest: "1.0.0" }, versions: {} }), {
+						status: 200,
+					}),
+				),
+		],
+	])("requires review after %s through the real checker", async (_case, response) => {
+		vi.spyOn(globalThis, "fetch").mockImplementation(response);
+
+		const verdict = await evaluateToolCall(request("npm install unchecked-package"), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "supply_chain",
+			source: "package_check",
+		});
+		expect(verdict.artifacts).toContain("unchecked-package");
+		expect(verdict.reasons.join(" ")).toContain("unavailable");
+	});
+
+	it("rechecks when the package cache read fails instead of treating it as clean", async () => {
+		vi.spyOn(VerdictCache.prototype, "getPackage").mockImplementation(() => {
+			throw new Error("simulated cache failure");
+		});
+		const checker = vi.spyOn(PackageChecker.prototype, "checkPackages").mockResolvedValueOnce([
+			{
+				packageName: "unchecked-package",
+				registry: "npm",
+				verdict: "unknown",
+				confidence: 0,
+				details: "package was not verified clean",
+			},
+		]);
+
+		const verdict = await evaluateToolCall(request("npm install unchecked-package"), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(checker).toHaveBeenCalledOnce();
+		expect(verdict).toMatchObject({ decision: "ask", source: "package_check" });
+	});
+
+	it("rechecks a malformed cached package row instead of throwing or trusting it", async () => {
+		const cachePath = join(root, "malformed-package-cache.json");
+		await writeFile(
+			cachePath,
+			JSON.stringify({
+				urls: {},
+				commands: {},
+				packages: {
+					"npm:unchecked-package": {
+						verdict: "deny",
+					severity: "critical",
+						reasons: null,
+						source: "package_check",
+						checkedAt: new Date().toISOString(),
+						expiresAt: "9999-12-31T23:59:59+00:00",
+						aidrVersion: VERSION,
+					},
+				},
+			}),
+			"utf8",
+		);
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				mode: "local",
+				heuristics_enabled: false,
+				package_check: { enabled: true, timeout_seconds: 0.1 },
+				file_check: { enabled: false },
+				url_check: { enabled: false },
+				amsi_check: { enabled: false },
+				cache: { enabled: true, path: cachePath },
+				logging: { enabled: false },
+			}),
+			"utf8",
+		);
+		vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("simulated registry outage"));
+
+		const verdict = await evaluateToolCall(request("npm install unchecked-package"), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(verdict).toMatchObject({ decision: "ask", category: "supply_chain", source: "package_check" });
+		expect(verdict.reasons.join(" ")).toContain("unavailable");
+	});
+
 	it("turns an unexpected checker exception into an explicit blocking review", async () => {
 		vi.spyOn(PackageChecker.prototype, "checkPackages").mockRejectedValueOnce(
 			new Error("simulated checker outage"),
@@ -121,6 +277,55 @@ describe("package check availability is fail-closed", () => {
 		expect(verdict.artifacts).toContain("left-pad");
 		expect(verdict.reasons.join(" ")).toContain("unavailable");
 		expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
+	});
+
+	it("marks malformed checker result rows unavailable instead of throwing", async () => {
+		vi.spyOn(PackageChecker.prototype, "checkPackages").mockResolvedValueOnce([
+			null,
+		] as unknown as PackageCheckResult[]);
+
+		const verdict = await evaluateToolCall(request("npm install unchecked-package"), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(verdict).toMatchObject({ decision: "ask", category: "supply_chain", source: "package_check" });
+		expect(verdict.artifacts).toContain("unchecked-package");
+		expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
+	});
+
+	it.each([
+		["clean then malicious", false],
+		["malicious then clean", true],
+	])("preserves a malicious duplicate when rows are %s", async (_order, maliciousFirst) => {
+		const clean: PackageCheckResult = {
+			packageName: "unchecked-package",
+			registry: "npm",
+			verdict: "clean",
+			confidence: 1,
+			details: "verified clean",
+		};
+		const malicious: PackageCheckResult = {
+			packageName: "unchecked-package",
+			registry: "npm",
+			verdict: "malicious",
+			confidence: 1,
+			details: "malicious duplicate",
+		};
+		vi.spyOn(PackageChecker.prototype, "checkPackages").mockResolvedValueOnce(
+			maliciousFirst ? [malicious, clean] : [clean, malicious],
+		);
+
+		const verdict = await evaluateToolCall(request("npm install unchecked-package"), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(verdict).toMatchObject({ decision: "deny", category: "supply_chain", source: "package_check" });
+		expect(verdict.artifacts).toContain("unchecked-package");
+		expect(verdict.reasons.join(" ")).toContain("malicious duplicate");
 	});
 
 	it("keeps a managed but unenrolled endpoint blocked pending review on checker outage", async () => {
@@ -186,9 +391,49 @@ describe("package check availability is fail-closed", () => {
 		expect(verdict.source).toBe("none");
 	});
 
-	it("does not invoke or degrade a package leg disabled by the operator", async () => {
+	it("propagates the explicit loopback HTTP opt-in to package file checks", async () => {
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				mode: "local",
+				heuristics_enabled: false,
+				package_check: { enabled: true, timeout_seconds: 0.1 },
+				file_check: {
+					enabled: true,
+					endpoint: "http://127.0.0.1:3000/file-check",
+					allow_insecure_loopback: true,
+				},
+				url_check: { enabled: false },
+				amsi_check: { enabled: false },
+				cache: { enabled: false },
+				logging: { enabled: false },
+			}),
+			"utf8",
+		);
+		const checker = vi.spyOn(PackageChecker.prototype, "checkPackages").mockResolvedValueOnce([
+			{
+				packageName: "known-good",
+				registry: "npm",
+				verdict: "clean",
+				confidence: 1,
+				details: "verified",
+			},
+		]);
+
+		const verdict = await evaluateToolCall(request("npm install known-good"), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(checker).toHaveBeenCalledOnce();
+		expect(verdict.decision).toBe("allow");
+	});
+
+	it("does not send package names when disabled and requires review instead of a clean result", async () => {
 		await writeConfig(false);
 		const checker = vi.spyOn(PackageChecker.prototype, "checkPackages");
+		const fetch = vi.spyOn(globalThis, "fetch");
 
 		const verdict = await evaluateToolCall(request("npm install unchecked-package"), {
 			configPath,
@@ -197,7 +442,14 @@ describe("package check availability is fail-closed", () => {
 		});
 
 		expect(checker).not.toHaveBeenCalled();
-		expect(verdict.decision).toBe("allow");
+		expect(fetch).not.toHaveBeenCalled();
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "supply_chain",
+			source: "package_check",
+		});
+		expect(verdict.reasons.join(" ")).toContain("disabled to avoid sharing package names");
+		expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
 	});
 
 	it("turns a URL reputation outage into an explicit blocking review when no signed feed is configured", async () => {
@@ -227,10 +479,9 @@ describe("package check availability is fail-closed", () => {
 		expect(verdict.reasons.join(" ")).toContain("simulated URL reputation endpoint outage");
 	});
 
-	it("keeps a URL leg the operator disabled from degrading the verdict", async () => {
-		// The shared config leaves `url_check` disabled. The leg must not run, and
-		// a no-coverage answer - which would be a blocking review if the leg were
-		// enabled - must not change the verdict of a switched-off leg.
+	it("reports disabled URL reputation as unavailable without sending the URL", async () => {
+		// The shared config leaves `url_check` disabled to avoid external URL
+		// sharing. Local rules still run; an unverified URL is not silently clean.
 		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
 			new Response(
 				JSON.stringify({
@@ -260,9 +511,12 @@ describe("package check availability is fail-closed", () => {
 		});
 
 		expect(fetchSpy.mock.calls.some(([input]) => String(input).includes("url-check"))).toBe(false);
-		expect(verdict.decision).toBe("allow");
-		expect(verdict.category).not.toBe("url_reputation_unavailable");
-		expect(verdict.source).not.toBe("url_check");
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "url_reputation_unavailable",
+			source: "url_check",
+		});
+		expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
 	});
 });
 
@@ -275,7 +529,7 @@ describe("AMSI leg availability is fail-closed", () => {
 			new DetectionLegUnavailableError("amsi", "simulated AMSI backend outage"),
 		);
 
-		const verdict = await evaluateToolCall(request("npm install left-pad"), {
+		const verdict = await evaluateToolCall(request("echo harmless"), {
 			configPath,
 			threatsDir: root,
 			allowlistsDir: root,
@@ -297,7 +551,7 @@ describe("AMSI leg availability is fail-closed", () => {
 		// fallback both failed. Before this guard the call was allowed anyway.
 		vi.spyOn(AmsiClient.prototype, "init").mockResolvedValue(undefined);
 
-		const verdict = await evaluateToolCall(request("npm install left-pad"), {
+		const verdict = await evaluateToolCall(request("echo harmless"), {
 			configPath,
 			threatsDir: root,
 			allowlistsDir: root,
@@ -316,7 +570,7 @@ describe("AMSI leg availability is fail-closed", () => {
 		vi.spyOn(AmsiClient.prototype, "isAvailable", "get").mockReturnValue(true);
 		vi.spyOn(AmsiClient.prototype, "scanString").mockResolvedValue(null);
 
-		const verdict = await evaluateToolCall(request("npm install left-pad"), {
+		const verdict = await evaluateToolCall(request("echo harmless"), {
 			configPath,
 			threatsDir: root,
 			allowlistsDir: root,
@@ -335,7 +589,7 @@ describe("AMSI leg availability is fail-closed", () => {
 		const init = vi.spyOn(AmsiClient.prototype, "init");
 		const scan = vi.spyOn(AmsiClient.prototype, "scanString");
 
-		const verdict = await evaluateToolCall(request("npm install left-pad"), {
+		const verdict = await evaluateToolCall(request("echo harmless"), {
 			configPath,
 			threatsDir: root,
 			allowlistsDir: root,
@@ -353,14 +607,14 @@ describe("AMSI leg availability is fail-closed", () => {
 		vi.spyOn(AmsiClient.prototype, "init").mockResolvedValue(undefined);
 		vi.spyOn(AmsiClient.prototype, "isAvailable", "get").mockReturnValue(true);
 		vi.spyOn(AmsiClient.prototype, "scanString").mockResolvedValue({
-			content: "npm install left-pad",
+			content: "echo harmless",
 			contentName: "Bash:command",
 			amsiResult: 0,
 			isDetected: false,
 			isBlockedByAdmin: false,
 		});
 
-		const verdict = await evaluateToolCall(request("npm install left-pad"), {
+		const verdict = await evaluateToolCall(request("echo harmless"), {
 			configPath,
 			threatsDir: root,
 			allowlistsDir: root,

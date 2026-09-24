@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { MAX_ANALYSIS_MATRIX_CELLS, REPORT_DIGEST_DOMAIN, canonicalJson, canonicalReportBytes, evaluateBenchmark, reportSha256, serializeReport, validateCorpusStructure, validateSoldScope, assertSoldScopeCoverage } from "./evaluate.mjs";
+import { MAX_ANALYSIS_MATRIX_CELLS, REPORT_DIGEST_DOMAIN, candidateBenignSampleGate, canonicalJson, canonicalReportBytes, evaluateBenchmark, reportSha256, serializeReport, validateCorpusStructure, validateSoldScope, assertSoldScopeCoverage } from "./evaluate.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const comparisonSpecPath = fileURLToPath(new URL("./comparison-spec.json", import.meta.url));
@@ -66,7 +66,7 @@ function fixture() {
 		};
 		const attestation = { schema_version: 1, payload, signature_base64: sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString("base64") };
 		if (evaluationOptions.signatureBase64 !== undefined) attestation.signature_base64 = evaluationOptions.signatureBase64;
-		return evaluateBenchmark({ corpus, observations, attestation, comparisonSpec: evaluationOptions.comparisonSpec ?? comparisonSpec, comparisonSpecBytes: evaluationOptions.comparisonSpecBytes ?? comparisonSpecBytes, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }), corpusBytes, observationBytes, observationsPath, soldScope, trustedKeys: evaluationOptions.trustedKeys ?? null, splitManifest: evaluationOptions.splitManifest ?? null, splitManifestBytes: evaluationOptions.splitManifestBytes ?? null, dutySeparationReceipt: evaluationOptions.dutySeparationReceipt ?? null, dutySeparationReceiptBytes: evaluationOptions.dutySeparationReceiptBytes ?? null });
+		return evaluateBenchmark({ corpus: evaluationOptions.corpusObject ?? corpus, observations: evaluationOptions.observationsObject ?? observations, attestation, comparisonSpec: evaluationOptions.comparisonSpec ?? comparisonSpec, comparisonSpecBytes: evaluationOptions.comparisonSpecBytes ?? comparisonSpecBytes, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }), corpusBytes, observationBytes, observationsPath, soldScope, trustedKeys: evaluationOptions.trustedKeys ?? null, splitManifest: evaluationOptions.splitManifest ?? null, splitManifestBytes: evaluationOptions.splitManifestBytes ?? null, dutySeparationReceipt: evaluationOptions.dutySeparationReceipt ?? null, dutySeparationReceiptBytes: evaluationOptions.dutySeparationReceiptBytes ?? null });
 	}
 	return { directory, corpus, observations, publicKey, privateKey, evaluate };
 }
@@ -146,6 +146,28 @@ test("signed fixture reports separate holdout, unsupported, false intervention a
 		assert.equal(report.gates.candidate_1000_measured_benign_calls_per_connector, false);
 		assert.ok(result.overall.confidence_intervals.benign_false_approval.high > result.overall.rates.benign_false_approval);
 		assert.equal(report.production_accepted, false);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("benign sample gate includes every declared connector, even one with no cases", () => {
+	const measured = { counts: { benign_allowed: 998, false_blocks: 1, false_approvals: 1 } };
+	assert.equal(candidateBenignSampleGate({ "tool-a": measured }, ["tool-a"]), true);
+	assert.equal(candidateBenignSampleGate({ "tool-a": measured }, ["tool-a", "tool-b"]), false);
+	assert.equal(candidateBenignSampleGate({ "tool-a": { counts: { ...measured.counts, benign_allowed: 997 } } }, ["tool-a"]), false);
+});
+
+test("benign scenario metrics deduplicate repeated trials instead of inflating scenario diversity", () => {
+	const data = fixture();
+	try {
+		const repeatedScenarioRows = data.observations.measurements.filter((row) => row.case_id === "benign-dev" && row.product_id === "candidate");
+		repeatedScenarioRows[0].action = "block";
+		const report = data.evaluate();
+		const byConnector = report.coverage.candidate.by_connector["tool-a"].benign_scenario_metrics;
+		assert.equal(repeatedScenarioRows.length, 2);
+		assert.equal(byConnector.unique_content_cases, 1);
+		assert.equal(byConnector.false_block_cases, 1);
+		assert.equal(byConnector.false_block_rate, 1);
+		assert.equal(report.gates.candidate_2_distinct_holdout_benign_scenarios_per_connector, false);
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 
@@ -345,9 +367,14 @@ test("negative, NaN and infinite cpu or rss measurements fail closed", () => {
 	try {
 		const row = data.observations.measurements[0];
 		assert.equal(row.case_id, "attack-dev");
-		for (const [field, value] of [["cpu_percent", -1], ["cpu_percent", Number.NaN], ["cpu_percent", Number.POSITIVE_INFINITY], ["rss_mb", -0.5], ["rss_mb", Number.NaN]]) {
+		for (const [field, value] of [["cpu_percent", -1], ["rss_mb", -0.5]]) {
 			row[field] = value;
 			assert.throws(() => data.evaluate(), new RegExp(`${field} for attack-dev/candidate must be a finite nonnegative number`));
+			delete row[field];
+		}
+		for (const [field, value] of [["cpu_percent", Number.NaN], ["cpu_percent", Number.POSITIVE_INFINITY], ["rss_mb", Number.NaN]]) {
+			row[field] = value;
+			assert.throws(() => data.evaluate(), /observations object differs from its signed bytes/);
 			delete row[field];
 		}
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
@@ -366,7 +393,8 @@ test("every case declares a real content digest and declared content is recomput
 		entry.derived_from_case_id = "benign-dev";
 		const report = data.evaluate();
 		assert.equal(report.gates.holdout_no_case_overlap, true);
-		assert.equal(report.gates.holdout_partition_blind, true);
+		assert.equal(report.gates.holdout_partition_blind, false);
+		assert.equal(report.gates.holdout_partition_structure_valid, true);
 		entry.content = "tampered after hashing";
 		assert.throws(() => data.evaluate(), /\[content_sha256_mismatch\] case attack-dev: declared content_sha256 .* does not match the normalized content digest/);
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
@@ -442,7 +470,7 @@ test("a per-partition trial difference must be declared and match the observatio
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 
-test("declared per-partition trials drive the matrix and keep the holdout blind", () => {
+test("declared per-partition trials drive the matrix without claiming holdout blindness", () => {
 	const data = fixture();
 	try {
 		data.corpus.trials_per_case_by_partition = { development: 2, holdout: 1 };
@@ -453,27 +481,32 @@ test("declared per-partition trials drive the matrix and keep the holdout blind"
 		assert.equal(report.coverage.candidate.by_partition.holdout.counts.total, 2);
 		assert.equal(report.coverage.candidate.by_partition.development.counts.total, 4);
 		assert.equal(report.gates.complete_matrix, true);
-		assert.equal(report.gates.holdout_partition_blind, true);
+		assert.equal(report.gates.holdout_partition_blind, false);
+		assert.equal(report.gates.holdout_partition_structure_valid, true);
 		assert.equal(report.gates.holdout_no_case_overlap, true);
 		assert.equal(report.gates.resource_measured, true);
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 
-test("a blind, correctly formed corpus passes and reports every holdout guard", () => {
+test("a structurally valid corpus does not claim holdout blindness without external evidence", () => {
 	const data = fixture();
 	try {
 		const report = data.evaluate();
 		assert.equal(report.gates.development_and_holdout_present, true);
 		assert.equal(report.gates.both_classes_in_each_partition, true);
 		assert.equal(report.gates.complete_matrix, true);
-		assert.equal(report.gates.holdout_partition_blind, true);
+		assert.equal(report.gates.holdout_partition_blind, false);
+		assert.equal(report.gates.holdout_partition_structure_valid, true);
 		assert.equal(report.gates.holdout_no_case_overlap, true);
+		assert.equal(report.gates.holdout_scope_covered, false);
+		assert.deepEqual(report.scope.holdout_coverage.uncovered_attack_families, ["injection", "exfiltration"]);
+		assert.equal(report.coverage.candidate.by_holdout_family.injection.counts.malicious, 0);
 		assert.equal(report.gates.resource_measured, true);
 		assert.equal(report.gates.independent_acceptance, false);
 		assert.equal(report.production_accepted, false);
 		assert.equal(report.claim_status, "EVIDENCE_REVIEW_REQUIRED");
 		assert.ok(report.limitations.some((line) => /absent value is reported as unmeasured/.test(line)));
-		assert.ok(report.limitations.some((line) => /holdout guard is fail-closed/.test(line)));
+		assert.ok(report.limitations.some((line) => /cannot prove that holdout content was hidden/.test(line)));
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 
@@ -566,6 +599,63 @@ test("classification metrics expose indeterminate outcomes and never invent abse
 		assert.equal(classification.precision.value, 1);
 		assert.equal(classification.recall.value, 1);
 		assert.equal(classification.f1.value, 1);
+		assert.deepEqual(classification.f1, { measured: true, value: 1, observations: 3 });
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("F1 is zero when every malicious case is missed and no positives are predicted", () => {
+	const data = fixture();
+	try {
+		for (const row of data.observations.measurements.filter((entry) => entry.product_id === "candidate" && data.corpus.cases.find((item) => item.case_id === entry.case_id).oracle === "malicious"))
+			row.action = "allow";
+		const classification = data.evaluate().coverage.candidate.overall.classification;
+		assert.deepEqual(classification.confusion_matrix, { true_positive: 0, false_positive: 0, true_negative: 4, false_negative: 4, indeterminate: 0 });
+		assert.deepEqual(classification.precision, { measured: false, value: null, observations: 0 });
+		assert.deepEqual(classification.f1, { measured: true, value: 0, observations: 4 });
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("exported evaluation rejects corpus and observations that differ from attested bytes", () => {
+	const data = fixture();
+	try {
+		const changedCorpus = structuredClone(data.corpus);
+		changedCorpus.cases[0].oracle = "benign";
+		assert.throws(() => data.evaluate(null, { corpusObject: changedCorpus }), /corpus object differs from its signed bytes/);
+
+		const changedObservations = structuredClone(data.observations);
+		changedObservations.measurements[0].latency_ms += 1;
+		assert.throws(() => data.evaluate(null, { observationsObject: changedObservations }), /observations object differs from its signed bytes/);
+	} finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("bypass rate uses only observed malicious side effects and never infers zero", () => {
+	const data = fixture();
+	try {
+		const unsupported = data.observations.measurements.find((row) => row.case_id === "attack-holdout" && row.product_id === "candidate" && row.trial === 1);
+		unsupported.action = "unsupported";
+		unsupported.latency_ms = null;
+		unsupported.side_effect_occurred = true;
+		unsupported.side_effect_occurred = "true";
+		assert.throws(() => data.evaluate(), /side_effect_occurred must be boolean/);
+		unsupported.side_effect_occurred = true;
+		const unobserved = data.observations.measurements.find((row) => row.case_id === "attack-holdout" && row.product_id === "candidate" && row.trial === 2);
+		unobserved.action = "timeout";
+		unobserved.latency_ms = null;
+		delete unobserved.side_effect_occurred;
+		let result = data.evaluate().coverage.candidate.overall.bypass_rate;
+		assert.deepEqual(result, { status: "MEASURED", value: 1 / 3, numerator: 1, denominator: 3 });
+
+		unsupported.side_effect_occurred = false;
+		result = data.evaluate().coverage.candidate.overall.bypass_rate;
+		assert.deepEqual(result, { status: "MEASURED", value: 0, numerator: 0, denominator: 3 });
+
+		for (const row of data.observations.measurements.filter((entry) => entry.product_id === "candidate" && data.corpus.cases.find((item) => item.case_id === entry.case_id).oracle === "malicious")) {
+			row.action = "unsupported";
+			row.latency_ms = null;
+			delete row.side_effect_occurred;
+		}
+		result = data.evaluate().coverage.candidate.overall.bypass_rate;
+		assert.deepEqual(result, { status: "NOT_MEASURED", value: null, numerator: null, denominator: 0 });
 	} finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
 
@@ -607,6 +697,7 @@ test("signed split manifest freezes holdout and any assignment mismatch fails cl
 		let manifestBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
 		let report = data.evaluate(null, { payloadExtra: { split_manifest_sha256: hash(manifestBytes), frozen_operating_point: { frozen: true, threshold: 0.5 } }, splitManifest: manifest, splitManifestBytes: manifestBytes });
 		assert.equal(report.gates.holdout_frozen, true);
+		assert.equal(report.gates.holdout_partition_blind, false);
 		assert.deepEqual(report.coverage.candidate.by_partition.holdout.classification.roc_auc, { measured: true, value: 1, observations: 4 });
 		manifest.assignments[0].partition = manifest.assignments[0].partition === "holdout" ? "development" : "holdout";
 		manifestBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
@@ -669,8 +760,8 @@ test("measurement budgets validate all external ceilings and stay unverified", (
 		for (const [field, value, reason] of [
 			["authorization_ref", "", "measurement_budget_authorization_ref_missing"],
 			["currency", "", "measurement_budget_currency_invalid"],
-			["amount", Number.NaN, "measurement_budget_amount_invalid"],
-			["trials", Number.POSITIVE_INFINITY, "measurement_budget_trials_invalid"],
+			["amount", null, "measurement_budget_amount_invalid"],
+			["trials", null, "measurement_budget_trials_invalid"],
 			["host_minutes", -1, "measurement_budget_host_minutes_invalid"],
 		]) {
 			data.observations.measurement_budget[field] = value;

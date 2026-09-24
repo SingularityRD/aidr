@@ -16,7 +16,7 @@ const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const DateTimeSchema = z.string().datetime({ offset: true });
 const SafeIdSchema = z.string().regex(SAFE_ID);
 
-export const ReputationIndicatorKindSchema = z.enum([
+const ReputationIndicatorKindSchema = z.enum([
 	"url",
 	"domain",
 	"file_sha256",

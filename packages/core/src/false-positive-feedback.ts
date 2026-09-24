@@ -33,7 +33,7 @@ import { createHash } from "node:crypto";
 
 export const FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION = 1;
 
-export type FalsePositiveFeedbackKind = "false_positive" | "confirmed";
+type FalsePositiveFeedbackKind = "false_positive" | "confirmed";
 
 /** Bounded, machine-readable reasons. Free text lives in `rationale`. */
 export type FalsePositiveReasonCode =
@@ -311,7 +311,7 @@ function parseInput(value: unknown): FalsePositiveParseResult<FalsePositiveFeedb
 }
 
 /** Validate a persisted record, including that no field was dropped or retyped. */
-export function parseFalsePositiveFeedbackRecord(
+function parseFalsePositiveFeedbackRecord(
 	value: unknown,
 ): FalsePositiveParseResult<FalsePositiveFeedbackRecordV1> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return fail("not_a_record");

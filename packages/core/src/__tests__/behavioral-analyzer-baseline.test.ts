@@ -33,6 +33,39 @@ describe("BehavioralAnalyzer candidate baseline", () => {
 		});
 	});
 
+	it("keeps one session's baseline when another session exceeds the analysis window", () => {
+		const analyzer = new BehavioralAnalyzer(3);
+		for (let timestamp = 1; timestamp <= 3; timestamp++) {
+			analyzer.recordEvent({
+				toolName: "Read",
+				timestamp,
+				sessionId: "target",
+				riskScore: 10,
+			});
+		}
+		for (let timestamp = 4; timestamp <= 6; timestamp++) {
+			analyzer.recordEvent({
+				toolName: "Bash",
+				timestamp,
+				sessionId: "other",
+				riskScore: 10,
+			});
+		}
+		analyzer.recordEvent({
+			toolName: "Read",
+			timestamp: 7,
+			sessionId: "target",
+			riskScore: 70,
+		});
+
+		expect(analyzer.detectAnomaly("target")).toMatchObject({ isAnomaly: true });
+		expect(analyzer.getSessionStats()).toEqual({
+			totalEvents: 6,
+			uniqueSessions: 2,
+			averageSessionLength: 3,
+		});
+	});
+
 	it("does not invent a risk baseline for a single cold-start observation", () => {
 		const analyzer = new BehavioralAnalyzer();
 		analyzer.recordEvent({
@@ -70,6 +103,7 @@ describe("BehavioralAnalyzer candidate baseline", () => {
 			riskScore: 10,
 			timestamp: now,
 			command: "npm test",
+			learningAllowed: true,
 		};
 		await detector.evaluate(event);
 		await detector.evaluate(event);

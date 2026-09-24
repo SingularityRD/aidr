@@ -53,14 +53,14 @@ async function writeArtifact(params: {
 	await writeFile(join(params.dir, "aidr-artifact.manifest.sig"), signature, "utf8");
 }
 
-async function writeIntegrityConfig(configPath: string, publicKeyPem: string): Promise<void> {
+async function writeIntegrityConfig(configPath: string, publicKeyPem?: string): Promise<void> {
 	await writeFile(
 		configPath,
 		JSON.stringify({
 			integrity: {
 				enabled: true,
 				verify_on_start: true,
-				public_keys_pem: [publicKeyPem],
+				public_keys_pem: publicKeyPem ? [publicKeyPem] : [],
 			},
 			logging: { enabled: false },
 		}),
@@ -174,6 +174,52 @@ describe("critical integrity and semver behavior", () => {
 				expectedArtifactId: ARTIFACT_ID,
 			}),
 		).resolves.toMatchObject({ status: "bad_signature" });
+	});
+
+	it("fails commercial startup on missing manifests, missing keys, and tampered files", async () => {
+		const previousCommercial = process.env.AIDR_COMMERCIAL;
+		process.env.AIDR_COMMERCIAL = "1";
+		try {
+			const root = await makeTmpDir();
+			const noKeyConfigPath = join(root, "no-key-config.json");
+			await writeIntegrityConfig(noKeyConfigPath);
+
+			await expect(
+				verifyArtifactIntegrityAndLog({
+					artifactDir: join(root, "missing-manifest"),
+					artifactId: ARTIFACT_ID,
+					configPath: noKeyConfigPath,
+				}),
+			).rejects.toThrow(`${ARTIFACT_ID}: missing_manifest`);
+
+			const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+			const noKeyDir = join(root, "no-key");
+			await writeArtifact({ dir: noKeyDir, privateKey, signature: "valid" });
+			await expect(
+				verifyArtifactIntegrityAndLog({
+					artifactDir: noKeyDir,
+					artifactId: ARTIFACT_ID,
+					configPath: noKeyConfigPath,
+				}),
+			).rejects.toThrow(`${ARTIFACT_ID}: no_public_keys`);
+
+			const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+			const keyedConfigPath = join(root, "keyed-config.json");
+			await writeIntegrityConfig(keyedConfigPath, publicKeyPem);
+			const tamperedDir = join(root, "tampered-commercial");
+			await writeArtifact({ dir: tamperedDir, privateKey, signature: "valid" });
+			await writeFile(join(tamperedDir, ARTIFACT_FILE), "tampered artifact payload\n", "utf8");
+			await expect(
+				verifyArtifactIntegrityAndLog({
+					artifactDir: tamperedDir,
+					artifactId: ARTIFACT_ID,
+					configPath: keyedConfigPath,
+				}),
+			).rejects.toThrow(`${ARTIFACT_ID}: hash_mismatch`);
+		} finally {
+			if (previousCommercial === undefined) delete process.env.AIDR_COMMERCIAL;
+			else process.env.AIDR_COMMERCIAL = previousCommercial;
+		}
 	});
 
 	it("compares supported versions and handles unsupported or invalid semver inputs deterministically", () => {

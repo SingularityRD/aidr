@@ -76,6 +76,7 @@ function mockContainerRuntime(
 	handlers: Partial<{
 		version: (proc: MockProcess, call: SpawnCall) => void;
 		create: (proc: MockProcess, call: SpawnCall) => void;
+		start: (proc: MockProcess, call: SpawnCall) => void;
 		exec: (proc: MockProcess, call: SpawnCall) => void;
 		rm: (proc: MockProcess, call: SpawnCall) => void;
 	}> = {},
@@ -86,15 +87,22 @@ function mockContainerRuntime(
 			const proc = createMockProcess();
 			const call = { command, args, options };
 			calls.push(call);
-
-			if (args[0] === "--version") {
-				handlers.version?.(proc, call) ?? finish(proc, "exit", 0);
-			} else if (args[0] === "create") {
-				handlers.create?.(proc, call) ?? finish(proc, "exit", 0);
-			} else if (args[0] === "exec") {
-				handlers.exec?.(proc, call) ?? finish(proc, "exit", 0);
-			} else if (args[0] === "rm") {
-				handlers.rm?.(proc, call) ?? finish(proc, "exit", 0);
+			const runtimeHandlers: Record<
+				string,
+				((proc: MockProcess, call: SpawnCall) => void) | undefined
+			> = {
+				"--version": handlers.version,
+				create: handlers.create,
+				start: handlers.start,
+				exec: handlers.exec,
+				rm: handlers.rm,
+			};
+			const runtimeCommand = args[0] ?? "";
+			const handler = runtimeHandlers[runtimeCommand];
+			if (handler) {
+				handler(proc, call);
+			} else if (Object.hasOwn(runtimeHandlers, runtimeCommand)) {
+				finish(proc, "exit", 0);
 			} else {
 				finish(proc, "error", new Error(`unexpected spawn: ${command} ${args.join(" ")}`));
 			}
@@ -209,6 +217,17 @@ describe("AutoContain containment regressions", () => {
 			isolated: true,
 		});
 		expect(result.containerId).toMatch(/^aidr-[a-f0-9]{16}$/);
+		expect(calls.map((call) => call.args[0])).toEqual([
+			"--version",
+			"create",
+			"start",
+			"exec",
+			"rm",
+		]);
+		expect(calls.find((call) => call.args[0] === "start")?.args).toEqual([
+			"start",
+			result.containerId,
+		]);
 
 		const createCall = calls.find((call) => call.args[0] === "create");
 		expect(createCall?.options).toMatchObject({ shell: false });
@@ -217,7 +236,7 @@ describe("AutoContain containment regressions", () => {
 				"create",
 				"--rm",
 				"--network",
-				"bridge",
+				"none",
 				"--read-only",
 				"--cpus",
 				"0.5",
@@ -252,6 +271,43 @@ describe("AutoContain containment regressions", () => {
 		]);
 
 		expect(calls.at(-1)?.args).toEqual(["rm", "-f", result.containerId]);
+	});
+
+	it("removes a created container when startup fails", async () => {
+		const calls = mockContainerRuntime({
+			start: (proc) => {
+				proc.stderr.write("daemon refused start");
+				finish(proc, "exit", 1);
+			},
+		});
+		const contain = new AutoContain(containConfig());
+
+		await expect(contain.isolateCommand("aidr-tool", ["scan"])).rejects.toThrow(
+			"Failed to start container: daemon refused start",
+		);
+		expect(calls.map((call) => call.args[0])).toEqual(["--version", "create", "start", "rm"]);
+	});
+
+	it("records nonzero command exits as containment failures", async () => {
+		const tmpDir = await makeTmpDir();
+		const auditLogPath = join(tmpDir, `response-audit-${randomUUID()}.jsonl`);
+		const auditor = new ResponseAuditor(auditLogPath);
+		mockContainerRuntime({
+			exec: (proc) => {
+				proc.stderr.write("command rejected");
+				finish(proc, "exit", 7);
+			},
+		});
+		const contain = new AutoContain(containConfig(), undefined, auditor);
+
+		const result = await contain.isolateCommand("aidr-tool", ["scan"], {
+			verdict: testVerdict(),
+			threatId: "TEST-CONTAIN-001",
+		});
+
+		expect(result).toMatchObject({ success: false, exitCode: 7, isolated: true });
+		const [entry] = await readAuditEntries(auditLogPath);
+		expect(entry).toMatchObject({ outcome: "failure", error: "command rejected" });
 	});
 
 	it("destroys the container when command execution fails before an exit code", async () => {

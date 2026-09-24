@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,44 @@ import {
 } from "./detector-provisioning-fixtures.js";
 
 let home: string;
+let subprocessModulePath: string | null = null;
+
+async function buildSubprocessModule(): Promise<string> {
+	if (subprocessModulePath) return subprocessModulePath;
+	const buildDir = join(home, "core-subprocess-build");
+	await mkdir(buildDir, { recursive: true });
+	await writeFile(join(buildDir, "package.json"), '{"type":"module"}\n', "utf8");
+	await symlink(
+		fileURLToPath(new URL("../../node_modules", import.meta.url)),
+		join(buildDir, "node_modules"),
+		"junction",
+	);
+	const compiler = fileURLToPath(
+		new URL("../../../../node_modules/typescript/lib/tsc.js", import.meta.url),
+	);
+	const tsconfig = fileURLToPath(new URL("../../tsconfig.json", import.meta.url));
+	execFileSync(
+		process.execPath,
+		[
+			compiler,
+			"-p",
+			tsconfig,
+			"--outDir",
+			buildDir,
+			"--composite",
+			"false",
+			"--declaration",
+			"false",
+			"--declarationMap",
+			"false",
+			"--sourceMap",
+			"false",
+		],
+		{ cwd: fileURLToPath(new URL("../../../../", import.meta.url)), stdio: "inherit" },
+	);
+	subprocessModulePath = join(buildDir, "detector-provisioning.js");
+	return subprocessModulePath;
+}
 
 function firstCorpusEntry(corpus = syntheticThreatCorpus()) {
 	const entry = corpus.entries[0];
@@ -60,12 +98,14 @@ async function evaluateFresh(input = syntheticBehavioralInput()) {
 
 async function evaluateInSeparateProcess(input: BehavioralDetectionInput) {
 	const outputPath = join(home, "process-result.json");
+	const detectorModulePath = await buildSubprocessModule();
 	execFileSync(
 		process.execPath,
 		[
 			fileURLToPath(new URL("./detector-provisioning-process.mjs", import.meta.url)),
 			JSON.stringify(input),
 			outputPath,
+			detectorModulePath,
 		],
 		{
 			cwd: fileURLToPath(new URL("../../../../", import.meta.url)),
@@ -82,6 +122,7 @@ async function evaluateInSeparateProcess(input: BehavioralDetectionInput) {
 
 beforeEach(async () => {
 	home = await mkdtemp(join(tmpdir(), "aidr-detector-provisioning-"));
+	subprocessModulePath = null;
 	vi.stubEnv("HOME", home);
 });
 
@@ -211,6 +252,7 @@ describe("shared tenant detector provisioning", () => {
 		for (const behavioral of [
 			{ enabled: true, learning_allowed: true },
 			{ enabled: true, learning_allowed: true, learning_capability: "durable_baseline_v1" },
+			{ enabled: true, unavailable_action: "skip" },
 		]) {
 			await provisionTenantDetectorPolicy({
 				homeDir: home,
@@ -225,11 +267,93 @@ describe("shared tenant detector provisioning", () => {
 	});
 
 	describe("signed durable behavioral capability and corpus", () => {
-		it("learns ten diverse safe observations across fresh contexts and evaluates the next normally", async () => {
+		it("defaults baseline absence to ask and allows only a signed, visible skip", async () => {
+			const defaultInstalled = await provisionBehavioral();
+			const defaultContext = await loadProvisionedDetectorContext("opencode");
+			expect(defaultContext.runtimeDetectors?.behavioral?.unavailableAction).toBe("ask");
+			const defaultVerdict = await evaluateToolCall(
+				{
+					sessionId: "cold-behavior-session",
+					toolName: "Read",
+					toolInput: { file_path: "/synthetic-workspace/ordinary.txt" },
+					artifacts: [],
+				},
+				{
+					...defaultContext,
+					configPath: defaultInstalled.configPath,
+					threatsDir: join(home, "empty-threats"),
+					allowlistsDir: join(home, "empty-allowlists"),
+				},
+			);
+			expect(defaultVerdict).toMatchObject({
+				decision: "ask",
+				category: "behavioral_unavailable",
+				source: "behavioral",
+			});
+
+			const skipPayload = {
+				...behavioralPolicyPayload(TEST_TENANT_ID, { unavailable_action: "skip" }),
+				dlp: { enabled: true, policy: syntheticDlpPolicy() },
+			};
+			const installed = await provisionBehavioral(skipPayload);
+			const signedContext = await loadProvisionedDetectorContext("opencode");
+			const behavioral = signedContext.runtimeDetectors?.behavioral;
+			expect(behavioral?.unavailableAction).toBe("skip");
+			const evalContext = {
+				...signedContext,
+				configPath: installed.configPath,
+				threatsDir: join(home, "empty-threats"),
+				allowlistsDir: join(home, "empty-allowlists"),
+			};
+			const skipped = await evaluateToolCall(
+				{
+					sessionId: "cold-behavior-session",
+					toolName: "Read",
+					toolInput: { file_path: "/synthetic-workspace/ordinary.txt" },
+					artifacts: [],
+				},
+				evalContext,
+			);
+			expect(skipped).toMatchObject({
+				decision: "allow",
+				category: "behavioral_unavailable",
+				severity: "warning",
+				source: "behavioral",
+			});
+			expect(skipped.reasons.join(" ")).toContain("not ready");
+			expect(skipped.source).not.toBe("no_artifacts");
+
+			const dlp = await evaluateToolCall(
+				{
+					sessionId: "cold-behavior-session",
+					toolName: "Read",
+					toolInput: { body: TEST_DLP_MARKER },
+					artifacts: [],
+				},
+				evalContext,
+			);
+			expect(dlp).toMatchObject({ decision: "deny", source: "dlp" });
+
+			const knownThreatInput = JSON.parse(TEST_SYNTHETIC_THREAT_TEXT) as Record<string, unknown>;
+			const knownThreat = await evaluateToolCall(
+				{
+					sessionId: "cold-behavior-session",
+					toolName: "Read",
+					toolInput: knownThreatInput,
+					artifacts: [],
+				},
+				evalContext,
+			);
+			expect(knownThreat).toMatchObject({ decision: "ask", category: "behavioral_anomaly" });
+			expect(behavioral?.orchestrator.getStats().totalBaselineSamples).toBe(0);
+		});
+
+		it("learns within one context but does not restore persisted samples into a fresh context", async () => {
 			await provisionBehavioral();
-			expect((await freshBehavioral()).learningAllowed).toBe(true);
+			const detector = await freshBehavioral();
+			expect(detector.learningAllowed).toBe(true);
 			for (let index = 0; index < 10; index++) {
-				const result = await evaluateFresh(syntheticBehavioralInput(index));
+				const result = await detector.orchestrator.evaluate(syntheticBehavioralInput(index));
 				expect(result).toMatchObject({
 					outcome: "learning",
 					modelVersion: "local-tinyhash-v1",
@@ -240,7 +364,7 @@ describe("shared tenant detector provisioning", () => {
 					},
 				});
 			}
-			const normal = await evaluateFresh(syntheticBehavioralInput(10));
+			const normal = await detector.orchestrator.evaluate(syntheticBehavioralInput(10));
 			expect(normal).toMatchObject({
 				outcome: "normal",
 				anomalyScore: 0,
@@ -251,6 +375,13 @@ describe("shared tenant detector provisioning", () => {
 			for (const explanation of normal.explanations) {
 				expect(explanation).toMatchObject({ status: "ready", score: 0 });
 			}
+
+			const freshContext = await freshBehavioral();
+			expect(freshContext.orchestrator.getStats().totalBaselineSamples).toBe(0);
+			expect(await freshContext.orchestrator.evaluate(syntheticBehavioralInput(11))).toMatchObject({
+				outcome: "learning",
+				learning: { accepted: true, baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
+			});
 		});
 
 		it("recognizes the exact synthetic fixture using the signed real embedding, without seeding it", async () => {
@@ -365,19 +496,34 @@ describe("shared tenant detector provisioning", () => {
 			expect((await evaluateFresh()).learning.baselineSamplesBefore).toBe(0);
 		});
 
-		it("persists cold-start fingerprint limits instead of letting duplicate events form a baseline", async () => {
+		it("limits duplicate fingerprints within a session without restoring persisted counts", async () => {
 			await provisionBehavioral();
+			const detector = await freshBehavioral();
 			for (let index = 0; index < 5; index++) {
-				expect((await evaluateFresh()).learning.baselineSamplesAfter).toBe(index + 1);
+				expect(
+					await detector.orchestrator.evaluate(syntheticBehavioralInput()),
+				).toMatchObject({
+					learning: { accepted: true, baselineSamplesAfter: index + 1 },
+				});
 			}
 			for (let index = 0; index < 3; index++) {
-				expect((await evaluateFresh()).learning).toMatchObject({
+				expect(
+					(await detector.orchestrator.evaluate(syntheticBehavioralInput())).learning,
+				).toMatchObject({
 					accepted: false,
 					reason: "fingerprint_limit",
 					baselineSamplesBefore: 5,
 					baselineSamplesAfter: 5,
 				});
 			}
+
+			const freshContext = await freshBehavioral();
+			expect(freshContext.orchestrator.getStats().totalBaselineSamples).toBe(0);
+			expect(
+				await freshContext.orchestrator.evaluate(syntheticBehavioralInput()),
+			).toMatchObject({
+				learning: { accepted: true, reason: "accepted", baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
+			});
 		});
 
 		it("rejects evaluation for a different tenant before creating baseline state", async () => {
@@ -471,7 +617,7 @@ describe("shared tenant detector provisioning", () => {
 		});
 
 		it.each([
-			["empty", () => syntheticThreatCorpus(TEST_TENANT_ID, { entries: [] })],
+			["empty", (): unknown => syntheticThreatCorpus(TEST_TENANT_ID, { entries: [] })],
 			["wrong tenant", () => syntheticThreatCorpus("tenant-b")],
 			["wrong SHA", () => ({ ...syntheticThreatCorpus(), sha256: "0".repeat(64) })],
 			[
@@ -553,8 +699,8 @@ describe("shared tenant detector provisioning", () => {
 					entries: [{ threat_id: "wrong-shape", embedding: [] }],
 				}),
 			],
-			["malformed value", () => "not-a-corpus"],
-			["null", () => null],
+			["malformed value", (): unknown => "not-a-corpus"],
+			["null", (): unknown => null],
 		] as const)("rejects a supplied %s corpus rather than activating or silently dropping it", async (_name, makeCorpus) => {
 			await provisionBehavioral(
 				behavioralPolicyPayload(TEST_TENANT_ID, { threat_corpus: makeCorpus() }),
@@ -587,7 +733,7 @@ describe("shared tenant detector provisioning", () => {
 			);
 		});
 
-		it("persists the signed baseline through separate Node processes loading built core", async () => {
+		it("does not restore persisted baselines across separate Node processes", async () => {
 			await provisionBehavioral();
 			for (let index = 0; index < 10; index++) {
 				const { pid, result } = await evaluateInSeparateProcess(syntheticBehavioralInput(index));
@@ -597,17 +743,17 @@ describe("shared tenant detector provisioning", () => {
 					modelVersion: "local-tinyhash-v1",
 					learning: {
 						accepted: true,
-						baselineSamplesBefore: index,
-						baselineSamplesAfter: index + 1,
+						baselineSamplesBefore: 0,
+						baselineSamplesAfter: 1,
 					},
 				});
 			}
 			const { result } = await evaluateInSeparateProcess(syntheticBehavioralInput(10));
 			expect(result).toMatchObject({
-				outcome: "normal",
+				outcome: "learning",
 				anomalyScore: 0,
 				modelVersion: "local-tinyhash-v1",
-				learning: { accepted: true, baselineSamplesBefore: 10, baselineSamplesAfter: 11 },
+				learning: { accepted: true, baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
 			});
 			const matched = await evaluateInSeparateProcess(
 				syntheticBehavioralInput(0, {
@@ -621,8 +767,8 @@ describe("shared tenant detector provisioning", () => {
 				learning: {
 					accepted: false,
 					reason: "anomaly_detected",
-					baselineSamplesBefore: 11,
-					baselineSamplesAfter: 11,
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
 				},
 			});
 			expect(matched.result.explanations).toContainEqual(

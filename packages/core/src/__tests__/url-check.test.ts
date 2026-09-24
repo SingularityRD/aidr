@@ -5,6 +5,23 @@ import type { UrlCheckResult } from "../types.js";
 
 describe("UrlCheckClient", () => {
 	const originalFetch = globalThis.fetch;
+	const cleanAnswers = (init: RequestInit) => {
+		const payload = JSON.parse(String(init.body));
+		return {
+			answers: payload.queries.map((query: { key: { "url-like": string } }) => ({
+				key: query.key["url-like"],
+				coverage: "covered",
+				cache_valid_until: new Date(Date.now() + 60_000).toISOString(),
+				result: {
+					success: {
+						classification: { result: {} },
+						flags: [],
+						coverage: "covered",
+					},
+				},
+			})),
+		};
+	};
 
 	afterEach(() => {
 		globalThis.fetch = originalFetch;
@@ -54,18 +71,22 @@ describe("UrlCheckClient", () => {
 	});
 
 	it("parses clean URL response", async () => {
+		const cacheValidUntil = new Date(Date.now() + 60_000).toISOString();
 		globalThis.fetch = vi.fn().mockResolvedValue({
 			ok: true,
 			json: async () => ({
 				answers: [
 					{
 						key: "http://safe.test",
+						coverage: "covered",
+						cache_valid_until: cacheValidUntil,
 						result: {
 							success: {
 								classification: {
 									result: {},
 								},
 								flags: [],
+								coverage: "covered",
 							},
 						},
 					},
@@ -78,6 +99,71 @@ describe("UrlCheckClient", () => {
 		expect(results).toHaveLength(1);
 		expect(results[0]?.isMalicious).toBe(false);
 		expect(results[0]?.findings).toHaveLength(0);
+		expect(results[0]?.cacheValidUntil).toBe(Date.parse(cacheValidUntil));
+	});
+
+	it.each([
+		["missing", undefined],
+		["expired", "2020-01-01T00:00:00.000Z"],
+	])("treats a covered clean response with %s source freshness as unavailable", async (_label, deadline) => {
+		const url = "https://stale-safe.test";
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				answers: [
+					{
+						key: url,
+						coverage: "covered",
+						...(deadline ? { cache_valid_until: deadline } : {}),
+						result: {
+							success: {
+								classification: { result: {} },
+								flags: [],
+								coverage: "covered",
+							},
+						},
+					},
+				],
+			}),
+		});
+
+		await expect(new UrlCheckClient().checkUrls([url])).rejects.toBeInstanceOf(
+			DetectionLegUnavailableError,
+		);
+	});
+
+	it("treats a clean response expiring in transit as unavailable at the deadline", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			const now = new Date("2026-09-24T00:00:00.000Z");
+			vi.setSystemTime(now);
+			const url = "https://expires-now.test";
+			globalThis.fetch = vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({
+					answers: [
+						{
+							key: url,
+							coverage: "covered",
+							cache_valid_until: now.toISOString(),
+							result: {
+								success: {
+									classification: { result: {} },
+									flags: [],
+									coverage: "covered",
+								},
+							},
+						},
+					],
+				}),
+			});
+
+			await expect(new UrlCheckClient().checkUrls([url])).rejects.toBeInstanceOf(
+				DetectionLegUnavailableError,
+			);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("parses flagged URL response", async () => {
@@ -87,10 +173,12 @@ describe("UrlCheckClient", () => {
 				answers: [
 					{
 						key: "http://suspicious.test",
+						coverage: "covered",
 						result: {
 							success: {
 								classification: { result: {} },
 								flags: ["TYPOSQUATTING"],
+								coverage: "covered",
 							},
 						},
 					},
@@ -192,18 +280,120 @@ describe("UrlCheckClient", () => {
 		expect(partial[0]?.isMalicious).toBe(true);
 	});
 
-	it("sends request payload with kebab-case field names", async () => {
-		const mockFetch = vi.fn().mockResolvedValue({
+	it("does not treat an empty classification without positive coverage as clean", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				coverage: "complete",
+				answers: [
+					{
+						key: "https://legacy.test",
+						result: {
+							success: {
+								classification: { result: {} },
+								flags: [],
+							},
+						},
+					},
+				],
+			}),
+		});
+
+		const error = await new UrlCheckClient()
+			.checkUrls(["https://legacy.test"])
+			.catch((cause: unknown) => cause);
+
+		expect(error).toBeInstanceOf(DetectionLegUnavailableError);
+		expect((error as DetectionLegUnavailableError).uncheckedCount).toBe(1);
+		expect((error as DetectionLegUnavailableError).partialResults).toEqual([]);
+	});
+
+	it("rejects an empty or partial successful response instead of treating it as complete", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue({
 			ok: true,
 			json: async () => ({ answers: [] }),
 		});
+		const client = new UrlCheckClient();
+		await expect(client.checkUrls(["https://missing.test"])).rejects.toMatchObject({
+			leg: "url_reputation",
+			uncheckedCount: 1,
+		});
+	});
+
+	it("keeps valid results from a malformed batch without double-counting unchecked URLs", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				answers: [
+					{
+						key: "https://covered.test",
+						coverage: "covered",
+						cache_valid_until: new Date(Date.now() + 60_000).toISOString(),
+						result: {
+							success: {
+								classification: { result: {} },
+								flags: [],
+								coverage: "covered",
+							},
+						},
+					},
+					{ key: "https://missing.test", result: "invalid" },
+				],
+			}),
+		});
+		const requested = ["https://covered.test", "https://missing.test"];
+		const error = await new UrlCheckClient().checkUrls(requested).catch((cause: unknown) => cause);
+
+		expect(error).toBeInstanceOf(DetectionLegUnavailableError);
+		const legError = error as DetectionLegUnavailableError;
+		expect(legError.partialResults).toHaveLength(1);
+		expect(legError.uncheckedCount).toBe(1);
+		expect(legError.partialResults.length + legError.uncheckedCount).toBeLessThanOrEqual(
+			requested.length,
+		);
+	});
+
+	it("bounds the response before parsing JSON", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response("{}", {
+				headers: { "content-length": String(1024 * 1024 + 1) },
+			}),
+		);
+		const client = new UrlCheckClient();
+		await expect(client.checkUrls(["https://example.test"])).rejects.toBeInstanceOf(
+			DetectionLegUnavailableError,
+		);
+	});
+
+	it("requires HTTPS unless loopback HTTP is explicitly enabled", () => {
+		expect(() => new UrlCheckClient({ endpoint: "http://reputation.example.test" })).toThrow(
+			/HTTPS/,
+		);
+		expect(
+			() => new UrlCheckClient({ endpoint: "https://user:secret@example.test/url-check" }),
+		).toThrow(/credentials/);
+		expect(
+			() =>
+				new UrlCheckClient({
+					endpoint: "http://127.0.0.1:3000/url-check",
+					allow_insecure_loopback: true,
+				}),
+		).not.toThrow();
+	});
+
+	it("sends request payload with kebab-case field names", async () => {
+		const mockFetch = vi.fn().mockImplementation(async (_url, init) => ({
+			ok: true,
+			json: async () => cleanAnswers(init),
+		}));
 		globalThis.fetch = mockFetch;
 
 		const client = new UrlCheckClient();
 		await client.checkUrls(["http://example.test"]);
 
 		expect(mockFetch).toHaveBeenCalledTimes(1);
-		const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+		const requestInit = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+		const body = JSON.parse(String(requestInit?.body));
 
 		// Backend uses #[serde(rename_all = "kebab-case")] — snake_case fields are silently ignored.
 		expect(body).toHaveProperty("client-info");
@@ -213,10 +403,10 @@ describe("UrlCheckClient", () => {
 	});
 
 	it("batches URLs in groups of 50", async () => {
-		const mockFetch = vi.fn().mockResolvedValue({
+		const mockFetch = vi.fn().mockImplementation(async (_url, init) => ({
 			ok: true,
-			json: async () => ({ answers: [] }),
-		});
+			json: async () => cleanAnswers(init),
+		}));
 		globalThis.fetch = mockFetch;
 
 		const urls = Array.from({ length: 120 }, (_, i) => `http://url${i}.test`);
@@ -225,5 +415,99 @@ describe("UrlCheckClient", () => {
 
 		// 120 URLs → 3 batches (50, 50, 20)
 		expect(mockFetch).toHaveBeenCalledTimes(3);
+	});
+
+	it("deduplicates provider work while preserving duplicate result order", async () => {
+		const mockFetch = vi.fn().mockImplementation(async (_url, init) => ({
+			ok: true,
+			json: async () => cleanAnswers(init),
+		}));
+		globalThis.fetch = mockFetch;
+		const urls = ["https://one.test", "https://two.test", "https://one.test"];
+
+		const results = await new UrlCheckClient().checkUrls(urls);
+
+		expect(JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body)).queries).toHaveLength(2);
+		expect(results.map((result) => result.url)).toEqual(urls);
+	});
+
+	it("withholds URLs with query, fragment, or user info and reports incomplete coverage", async () => {
+		const mockFetch = vi.fn().mockImplementation(async (_url, init) => ({
+			ok: true,
+			json: async () => cleanAnswers(init),
+		}));
+		globalThis.fetch = mockFetch;
+		const withheld = [
+			"https://example.test/path?access_token=private-value",
+			"https://example.test/path#private-fragment",
+			"https://private-user:private-password@example.test/path",
+		];
+		const safe = "https://example.test/public";
+
+		const error = await new UrlCheckClient()
+			.checkUrls([...withheld, safe])
+			.catch((cause: unknown) => cause);
+
+		expect(mockFetch).toHaveBeenCalledTimes(1);
+		const requestBody = String(mockFetch.mock.calls[0]?.[1]?.body);
+		for (const secret of ["access_token", "private-value", "private-fragment", "private-user", "private-password"]) {
+			expect(requestBody).not.toContain(secret);
+		}
+		expect(requestBody).toContain(safe);
+		expect(error).toBeInstanceOf(DetectionLegUnavailableError);
+		expect((error as DetectionLegUnavailableError).uncheckedCount).toBe(withheld.length);
+		expect((error as DetectionLegUnavailableError).partialResults).toEqual([
+			expect.objectContaining({ url: safe, isMalicious: false }),
+		]);
+	});
+
+	it("sends query parameters only after explicit opt-in and never sends user info or fragments", async () => {
+		const mockFetch = vi.fn().mockImplementation(async (_url, init) => ({
+			ok: true,
+			json: async () => cleanAnswers(init),
+		}));
+		globalThis.fetch = mockFetch;
+		const url = "https://example.test/path?campaign=demo";
+
+		await expect(
+			new UrlCheckClient({ include_query_parameters: true }).checkUrls([url]),
+		).resolves.toEqual([expect.objectContaining({ url, isMalicious: false })]);
+		expect(String(mockFetch.mock.calls[0]?.[1]?.body)).toContain("campaign=demo");
+
+		mockFetch.mockClear();
+		const privateUrl = "https://user:password@example.test/path?campaign=demo#fragment-secret";
+		const error = await new UrlCheckClient({ include_query_parameters: true })
+			.checkUrls([privateUrl])
+			.catch((cause: unknown) => cause);
+		expect(mockFetch).not.toHaveBeenCalled();
+		expect(error).toBeInstanceOf(DetectionLegUnavailableError);
+		expect((error as DetectionLegUnavailableError).uncheckedCount).toBe(1);
+	});
+
+	it("limits concurrent batches and preserves result order", async () => {
+		const releases: Array<() => void> = [];
+		let active = 0;
+		let peak = 0;
+		const mockFetch = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+			active++;
+			peak = Math.max(peak, active);
+			await new Promise<void>((resolve) => releases.push(resolve));
+			active--;
+			return { ok: true, json: async () => cleanAnswers(init) };
+		});
+		globalThis.fetch = mockFetch;
+
+		const urls = Array.from({ length: 201 }, (_, i) => `http://url${i}.test`);
+		const pending = new UrlCheckClient().checkUrls(urls);
+		await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(4));
+		expect(peak).toBe(4);
+
+		releases[3]?.();
+		await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(5));
+		for (const release of releases) release();
+
+		const results = await pending;
+		expect(peak).toBe(4);
+		expect(results.map((result) => result.url)).toEqual(urls);
 	});
 });

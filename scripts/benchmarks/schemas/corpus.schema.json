@@ -33,7 +33,9 @@
         "case_id": { "$ref": "#/$defs/nonempty" }, "partition": { "enum": ["development", "holdout"] },
         "oracle": { "enum": ["malicious", "benign"] }, "family": { "$ref": "#/$defs/nonempty" },
         "connector": { "$ref": "#/$defs/nonempty" }, "surface": { "$ref": "#/$defs/nonempty" },
-        "content_sha256": { "$ref": "#/$defs/sha256" }, "content": { "type": "string", "minLength": 1 }
+        "content_sha256": { "$ref": "#/$defs/sha256" }, "content": { "type": "string", "minLength": 1 },
+        "expected_decision": { "enum": ["allow", "ask", "deny"], "description": "Optional local regression-fixture label; not a measured product observation." },
+        "expected_threat_id": { "oneOf": [{ "$ref": "#/$defs/nonempty" }, { "type": "null" }] }
       }
     }
   }

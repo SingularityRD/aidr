@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ApprovalStore } from "../approval-store.js";
 import {
@@ -95,10 +98,92 @@ describe("guardToolCall", () => {
 		// Pre-approve the action
 		store.setPending(actionId, { artifacts: request.artifacts, createdAt: Date.now() });
 		store.approve(actionId);
+		mockEvaluate.mockResolvedValueOnce(makeVerdict({ decision: "ask" }));
+		mockLoadConfig.mockResolvedValueOnce({} as Awaited<ReturnType<typeof loadConfig>>);
 
 		const { verdict } = await guardToolCall(request, makeContext(), store);
 		expect(verdict.decision).toBe("allow");
 		expect(verdict.source).toBe("approved");
+		expect(mockEvaluate).toHaveBeenCalledOnce();
+	});
+
+	it("runs the snapshot and signed audit path for an approved destructive retry", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-approved-response-"));
+		try {
+			const target = join(dir, "protected.txt");
+			const chain = join(dir, "response-audit.jsonl");
+			await writeFile(target, "original bytes", "utf8");
+			const store = new ApprovalStore();
+			const request = makeRequest("Delete", { file_path: target });
+			const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
+			store.setPending(actionId, { artifacts: request.artifacts, createdAt: Date.now() });
+			store.approve(actionId);
+			mockEvaluate.mockResolvedValueOnce(makeVerdict({ decision: "ask" }));
+			mockLoadConfig.mockResolvedValueOnce({
+				response: {
+					actions: {
+						snapshot_before_destructive: true,
+						protect_paths: [dir],
+						snapshot_root_dir: join(dir, "snapshots"),
+					},
+					audit: { signed_chain: true, path: chain },
+				},
+			} as Awaited<ReturnType<typeof loadConfig>>);
+
+			const result = await guardToolCall(request, makeContext(), store);
+			expect(result.verdict).toMatchObject({ decision: "allow", source: "approved" });
+			expect(result.responseActions?.[0]).toMatchObject({ action: "snapshot", outcome: "success" });
+			expect(result.snapshot?.target).toBe(target);
+			expect(result.signedChain?.written).toBe(true);
+			expect(await readFile(target, "utf8")).toBe("original bytes");
+			expect(await readFile(chain, "utf8")).toContain('"action":"snapshot"');
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("consumes an approval after one matching retry", async () => {
+		mockEvaluate.mockClear();
+		const store = new ApprovalStore();
+		const request = makeRequest();
+		const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
+		store.setPending(actionId, { artifacts: request.artifacts, createdAt: Date.now() });
+		store.approve(actionId);
+		mockEvaluate
+			.mockResolvedValueOnce(makeVerdict({ decision: "ask" }))
+			.mockResolvedValueOnce(makeVerdict({ decision: "ask" }));
+		mockLoadConfig
+			.mockResolvedValueOnce({} as Awaited<ReturnType<typeof loadConfig>>)
+			.mockResolvedValueOnce({} as Awaited<ReturnType<typeof loadConfig>>);
+
+		const approvedRetry = await guardToolCall(request, makeContext(), store);
+		const replay = await guardToolCall(request, makeContext(), store);
+
+		expect(approvedRetry.verdict).toMatchObject({ decision: "allow", source: "approved" });
+		expect(replay.verdict.decision).toBe("ask");
+		expect(mockEvaluate).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not let a prior approval override or survive a changed deny verdict", async () => {
+		mockEvaluate.mockClear();
+		const store = new ApprovalStore();
+		const request = makeRequest();
+		const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
+		store.setPending(actionId, { artifacts: request.artifacts, createdAt: Date.now() });
+		store.approve(actionId);
+		mockEvaluate
+			.mockResolvedValueOnce(makeVerdict({ decision: "deny" }))
+			.mockResolvedValueOnce(makeVerdict({ decision: "ask" }));
+		mockLoadConfig
+			.mockResolvedValueOnce({} as Awaited<ReturnType<typeof loadConfig>>)
+			.mockResolvedValueOnce({} as Awaited<ReturnType<typeof loadConfig>>);
+
+		const changedPolicy = await guardToolCall(request, makeContext(), store);
+		const laterAsk = await guardToolCall(request, makeContext(), store);
+
+		expect(changedPolicy.verdict.decision).toBe("deny");
+		expect(laterAsk.verdict.decision).toBe("ask");
+		expect(mockEvaluate).toHaveBeenCalledTimes(2);
 	});
 
 	it("delegates to evaluateToolCall and returns allow verdict", async () => {

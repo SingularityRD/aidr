@@ -16,6 +16,19 @@ describe("ApprovalStore", () => {
 		expect(store.isApproved("a1")).toBe(true);
 	});
 
+	it("consumeApproval authorizes only one matching action", () => {
+		const store = new ApprovalStore();
+		store.setPending("a1", {
+			artifacts: [{ type: "command", value: "chmod 777 ./x.sh" }],
+			createdAt: Date.now(),
+		});
+		store.approve("a1");
+
+		expect(store.consumeApproval("a1")).toBe(true);
+		expect(store.consumeApproval("a1")).toBe(false);
+		expect(store.isApproved("a1")).toBe(false);
+	});
+
 	it("approve returns null for unknown actionId", () => {
 		const store = new ApprovalStore();
 		expect(store.approve("nonexistent")).toBeNull();

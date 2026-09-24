@@ -228,12 +228,9 @@ function hasBinaryContent(content: string): boolean {
 	const sample = content.slice(0, 4096);
 	for (let i = 0; i < sample.length; i++) {
 		const code = sample.charCodeAt(i);
-		// Allow common printable ASCII, whitespace, and common control chars
-		const isAscii = code >= 0x20 && code <= 0x7e;
+		// Unicode text is printable; only binary control characters indicate binary data.
 		const isWhitespace = code === 0x09 || code === 0x0a || code === 0x0d;
-		const isNull = code === 0x00;
-		if (isNull) return true;
-		if (!isAscii && !isWhitespace && code > 0x7e) return true;
+		if ((code < 0x20 || code === 0x7f) && !isWhitespace) return true;
 	}
 	return false;
 }

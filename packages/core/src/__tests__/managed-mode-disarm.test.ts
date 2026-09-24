@@ -157,11 +157,8 @@ describe("managed mode never disarms local detection while un-enrolled", () => {
 		});
 	}
 
-	it("fails closed with an explanatory ask when an enrolled commercial install cannot reach its control plane", async () => {
-		// Documented, deliberate behaviour: the licensing gate is a commercial control,
-		// so it is allowed to stop work - but it must say why, and it must not be a
-		// silent pass. It is NOT local-only enforcement; the reason below is the
-		// evidence, and that distinction is exactly what the old code hid.
+	it("refuses a plaintext commercial endpoint credential", async () => {
+		// A commercial release must not accept an endpoint key from config.json.
 		const previous = process.env.AIDR_COMMERCIAL;
 		process.env.AIDR_COMMERCIAL = "1";
 		try {
@@ -172,8 +169,8 @@ describe("managed mode never disarms local detection while un-enrolled", () => {
 			});
 			const verdict = await evaluateToolCall(request(BENIGN), context());
 
-			expect(verdict.decision).toBe("ask");
-			expect(verdict.reasons.join(" ")).toContain("control_plane.enabled=false");
+			expect(verdict.decision).toBe("deny");
+			expect(verdict.reasons.length).toBeGreaterThan(0);
 		} finally {
 			if (previous === undefined) delete process.env.AIDR_COMMERCIAL;
 			else process.env.AIDR_COMMERCIAL = previous;

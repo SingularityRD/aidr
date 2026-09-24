@@ -14,21 +14,16 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "dist/LICENSE"
   ],
   "scripts": {
-    "build": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && tsc && node scripts/copy-generated.mjs",
-    "build:release": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo && tsc -p tsconfig.release.json && node scripts/copy-generated.mjs && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-core && node ../../scripts/check-no-sourcemaps.mjs .",
+    "build": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && tsc && node scripts/embed-build-flavor.mjs development && node scripts/copy-generated.mjs && node ../../scripts/copy-package-license.mjs .",
+    "build:release": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo && tsc -p tsconfig.release.json && node scripts/embed-build-flavor.mjs commercial && node scripts/copy-generated.mjs && node ../../scripts/copy-package-license.mjs . && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-core && node ../../scripts/check-no-sourcemaps.mjs .",
     "clean": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo",
     "prepack": "node ../../scripts/check-workspace-refs.mjs"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
-    "@opentelemetry/resources": "^2.9.0",
-    "@opentelemetry/sdk-trace-base": "^2.9.0",
-    "@opentelemetry/sdk-trace-node": "^2.9.0",
-    "@opentelemetry/semantic-conventions": "^1.43.0",
     "@sentry/node": "^10.69.0",
     "pino": "^9.6.0",
     "semver": "^7.7.4",
@@ -42,9 +37,9 @@
     "@types/node": "^22.0.0",
     "@types/semver": "^7.7.1",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.11"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.12.0"
   }
 }

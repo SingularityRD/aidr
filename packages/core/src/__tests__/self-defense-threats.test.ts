@@ -86,4 +86,21 @@ describe("Self-defense threats", () => {
 		const ids = matchContent(engine, '{"heuristics_enabled": true}');
 		expect(ids.filter((id) => id === "CLT-SELF-004")).toEqual([]);
 	});
+
+	// --- Disable the AIDR agent service (SELF-006) ---
+
+	it("asks before disabling the AIDR system service (SELF-006)", () => {
+		expect(matchCommand(engine, "systemctl disable --now aidr-agent.service")).toContain(
+			"CLT-SELF-006",
+		);
+	});
+
+	it("does not match service status or restart (SELF-006 FP twins)", () => {
+		expect(matchCommand(engine, "systemctl status aidr-agent.service")).not.toContain(
+			"CLT-SELF-006",
+		);
+		expect(matchCommand(engine, "systemctl restart aidr-agent.service")).not.toContain(
+			"CLT-SELF-006",
+		);
+	});
 });

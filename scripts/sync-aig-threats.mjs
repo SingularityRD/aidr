@@ -14,6 +14,8 @@
  *   --force   Force recompile and overwrite even if hashes match
  *   --watch   Watch AIG data directory for changes and recompile on-the-fly
  *   --quiet   Suppress info-level logging (warnings/errors still shown)
+ *   --source-mode=pinned|worktree  Compile the pinned Git tree (default) or
+ *                                  deliberately compile and verify the worktree
  *
  * Exit codes:
  *   0  Success (no changes or changes applied)
@@ -30,9 +32,10 @@ import {
   statSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { pinnedSourceTreeDigest, readPinnedYamlFiles, readWorktreeYamlFiles } from "./lib/aig-source-tree.mjs";
 
 // ─── Paths ───────────────────────────────────────────────────────────────────
 
@@ -43,11 +46,18 @@ const AIG_DIR = join(ROOT, "vendor", "ai-infra-guard");
 const AIG_DATA_DIR = join(AIG_DIR, "data");
 const GENERATED_DIR = join(ROOT, "packages", "core", "src", "generated");
 
-const GENERATED_FILES = [
+export const GENERATED_FILES = [
   "aig-cve-index.json",
   "aig-fingerprints.json",
   "aig-mcp-categories.json",
+  "aig-data-manifest.json",
 ];
+
+const SIGNING_ENVIRONMENT = new Set([
+  "AIG_SIGNING_PRIVATE_KEY",
+  "AIG_SIGNING_PRIVATE_KEY_PATH",
+  "AIG_SIGNING_KEY_ID",
+]);
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +93,41 @@ function readJson(filePath) {
   } catch {
     return null;
   }
+}
+
+export function parseSourceMode(args) {
+  const values = args
+    .filter((arg) => arg.startsWith("--source-mode="))
+    .map((arg) => arg.slice("--source-mode=".length));
+  if (values.length > 1 || (values[0] && !new Set(["pinned", "worktree"]).has(values[0]))) {
+    throw new Error("--source-mode must be exactly one of: pinned, worktree");
+  }
+  return values[0] ?? "pinned";
+}
+
+export function compilationEnvironment(environment = process.env) {
+  return Object.fromEntries(Object.entries(environment).filter(([name]) =>
+    !SIGNING_ENVIRONMENT.has(name.toUpperCase())));
+}
+
+export function validateSourceManifest(manifest, { sourceMode, aigRoot = AIG_DIR, cwd = ROOT } = {}) {
+  if (!new Set(["pinned", "worktree"]).has(sourceMode)) throw new Error(`Invalid source mode: ${sourceMode}`);
+  const commit = execFileSync("git", ["-C", aigRoot, "rev-parse", "HEAD"], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
+  const files = sourceMode === "worktree"
+    ? readWorktreeYamlFiles({ aigRoot })
+    : readPinnedYamlFiles({ aigRoot, cwd, ref: commit });
+  const treeSha256 = pinnedSourceTreeDigest(files);
+  if (manifest?.source?.commit !== commit) {
+    throw new Error(`compiled manifest source commit mismatch: ${manifest?.source?.commit ?? "missing"} (expected ${commit})`);
+  }
+  if (manifest?.source?.tree_sha256 !== treeSha256) {
+    throw new Error(`compiled manifest source tree mismatch: ${manifest?.source?.tree_sha256 ?? "missing"} (expected ${treeSha256})`);
+  }
+  return { commit, treeSha256, fileCount: files.length };
 }
 
 /** Format byte size for human readability. */
@@ -186,12 +231,15 @@ function readAllGenerated() {
 }
 
 /** Run compile-aig-data.mjs as a child process. */
-function runCompilation() {
+function runCompilation(sourceMode) {
   info("Running compile-aig-data.mjs ...");
   const start = performance.now();
 
-  const result = execSync(`node "${COMPILE_SCRIPT}"`, {
+  const result = execFileSync(process.execPath, [COMPILE_SCRIPT, `--source-mode=${sourceMode}`], {
     cwd: ROOT,
+    // A reviewed worktree may be compiled explicitly, but never inherits signing
+    // material merely because the caller's shell contains it.
+    env: compilationEnvironment(),
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 60_000,
@@ -202,6 +250,9 @@ function runCompilation() {
   for (const line of lines) {
     if (!QUIET) console.log(`  ${line}`);
   }
+
+  const source = validateSourceManifest(readJson(join(GENERATED_DIR, "aig-data-manifest.json")), { sourceMode });
+  info(`Validated ${sourceMode} source (${source.fileCount} YAML files; ${source.treeSha256.slice(0, 12)}…).`);
 
   const elapsed = Math.round(performance.now() - start);
   info(`Compilation finished in ${elapsed}ms`);
@@ -251,7 +302,7 @@ function reportChanges(oldContents, newContents) {
  * Run the full sync pipeline.
  * Returns 0 for success, 1 for failure.
  */
-function syncPipeline(force) {
+function syncPipeline(force, sourceMode) {
   // 1 — Check AIG installation
   if (!checkAigInstalled()) {
     warn("AI-Infra-Guard not found or has no data at:", AIG_DATA_DIR);
@@ -269,7 +320,7 @@ function syncPipeline(force) {
 
   // 3 — Compile
   try {
-    runCompilation();
+    runCompilation(sourceMode);
   } catch (err) {
     error("Compilation step failed:", err.message);
     if (err.stderr) {
@@ -322,7 +373,7 @@ function syncPipeline(force) {
 let watchTimer = null;
 const WATCH_DEBOUNCE_MS = 2000;
 
-function startWatch() {
+function startWatch(sourceMode) {
   if (!existsSync(AIG_DATA_DIR)) {
     warn("Cannot start watch: AIG data directory missing:", AIG_DATA_DIR);
     process.exit(1);
@@ -338,7 +389,7 @@ function startWatch() {
     watchTimer = setTimeout(() => {
       console.log("");
       info("📡 Change detected, recompiling...");
-      syncPipeline(false);
+      syncPipeline(false, sourceMode);
     }, WATCH_DEBOUNCE_MS);
   };
 
@@ -377,6 +428,17 @@ function startWatch() {
 function main() {
   const force = process.argv.includes("--force");
   const watch = process.argv.includes("--watch");
+  let sourceMode;
+  try {
+    sourceMode = parseSourceMode(process.argv.slice(2));
+  } catch (err) {
+    error(err.message);
+    process.exit(1);
+  }
+  if (watch && sourceMode !== "worktree") {
+    error("--watch requires the deliberate --source-mode=worktree opt-in");
+    process.exit(1);
+  }
 
   console.log("");
   info("AIG Threat Intel Sync Pipeline");
@@ -389,14 +451,14 @@ function main() {
   }
 
   if (watch) {
-    const code = syncPipeline(force);
+    const code = syncPipeline(force, sourceMode);
     if (code !== 0) process.exit(code);
-    startWatch();
+    startWatch(sourceMode);
     return; // keep alive
   }
 
-  const code = syncPipeline(force);
+  const code = syncPipeline(force, sourceMode);
   process.exit(code);
 }
 
-main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

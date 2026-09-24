@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
 import { parseJsonc } from "./jsonc.js";
@@ -9,6 +10,7 @@ export interface McpInventoryItem {
 	args: string[];
 	sourcePath: string;
 	riskHints: string[];
+	configurationSha256: string;
 	status: "known" | "unknown";
 }
 
@@ -20,7 +22,7 @@ function riskHintsFor(entry: { command?: unknown; url?: unknown; args?: unknown 
 		? entry.args.filter((x): x is string => typeof x === "string")
 		: [];
 
-	if (url && /^https?:\/\//i.test(url) && !/^(https:\/\/(localhost|127\.0\.0\.1))/i.test(url)) {
+	if (url && /^https?:\/\//i.test(url) && !isTrustedLoopbackUrl(url)) {
 		hints.push("remote_mcp_url");
 	}
 	if (/(^|\\|\/)(cmd|sh|bash|pwsh|powershell)(\.exe)?$/i.test(command)) {
@@ -29,17 +31,40 @@ function riskHintsFor(entry: { command?: unknown; url?: unknown; args?: unknown 
 	if (args.some((a) => /(--allow-all|--unsafe|--dangerous|\/$|^[A-Za-z]:\\$)/i.test(a))) {
 		hints.push("broad_filesystem_access_arg");
 	}
-	if (!command && !url) hints.push("missing_command_or_url");
-
 	return hints;
 }
 
+function isTrustedLoopbackUrl(value: string): boolean {
+	try {
+		const parsed = new URL(value);
+		const hostname = parsed.hostname
+			.toLowerCase()
+			.replace(/^\[|\]$/g, "")
+			.replace(/\.$/, "");
+		return parsed.protocol === "https:" && ["localhost", "127.0.0.1", "::1"].includes(hostname);
+	} catch {
+		return false;
+	}
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
-	return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
 }
 
 function stringArray(value: unknown): string[] {
 	return Array.isArray(value) ? value.filter((x): x is string => typeof x === "string") : [];
+}
+
+function isMcpUrl(value: unknown): value is string {
+	if (typeof value !== "string") return false;
+	try {
+		const url = new URL(value);
+		return url.protocol === "http:" || url.protocol === "https:";
+	} catch {
+		return false;
+	}
 }
 
 function inventoryItemFromEntry(
@@ -50,9 +75,24 @@ function inventoryItemFromEntry(
 	const rec = asRecord(raw);
 	if (!rec) return null;
 	const commandParts = stringArray(rec.command);
-	const command = typeof rec.command === "string" ? rec.command : commandParts[0] ?? null;
+	const command = typeof rec.command === "string" ? rec.command : (commandParts[0] ?? null);
 	const url = typeof rec.url === "string" ? rec.url : null;
-	const args = [...commandParts.slice(1), ...stringArray(rec.args)];
+	const explicitArgs = stringArray(rec.args);
+	const invalidCommandArray =
+		Array.isArray(rec.command) && commandParts.length !== rec.command.length;
+	const invalidArgs =
+		rec.args !== undefined && (!Array.isArray(rec.args) || explicitArgs.length !== rec.args.length);
+	// An unusable endpoint must remain a coverage gap, not a trusted inventory hit.
+	if (
+		(!command && !url) ||
+		(rec.command !== undefined && !command?.trim()) ||
+		invalidCommandArray ||
+		(rec.url !== undefined && !isMcpUrl(rec.url)) ||
+		invalidArgs
+	) {
+		return null;
+	}
+	const args = [...commandParts.slice(1), ...explicitArgs];
 	const riskHints = riskHintsFor({ command, url, args });
 	return {
 		name,
@@ -61,6 +101,7 @@ function inventoryItemFromEntry(
 		args,
 		sourcePath,
 		riskHints,
+		configurationSha256: createHash("sha256").update(JSON.stringify(rec)).digest("hex"),
 		status: riskHints.length > 0 ? "unknown" : "known",
 	};
 }
@@ -69,12 +110,16 @@ interface ParsedServers {
 	items: McpInventoryItem[];
 	/** Names present in the file that are not usable server records. */
 	skippedNames: string[];
+	/** A supported MCP server-map shape was present, including an empty map. */
+	supportedShape: boolean;
 }
+
+type ParsedServerRecords = Pick<ParsedServers, "items" | "skippedNames">;
 
 function parseServerRecord(
 	servers: Record<string, unknown> | null | undefined,
 	sourcePath: string,
-): ParsedServers {
+): ParsedServerRecords {
 	if (!servers) return { items: [], skippedNames: [] };
 	const items: McpInventoryItem[] = [];
 	const skippedNames: string[] = [];
@@ -88,34 +133,53 @@ function parseServerRecord(
 
 function parseMcpServers(data: unknown, sourcePath: string): ParsedServers {
 	const root = asRecord(data);
-	if (!root) return { items: [], skippedNames: [] };
+	if (!root) return { items: [], skippedNames: [], supportedShape: false };
 
 	const nestedMcp = asRecord(root.mcp);
+	if (
+		(Object.hasOwn(root, "mcpServers") && !asRecord(root.mcpServers)) ||
+		(Object.hasOwn(root, "servers") && !asRecord(root.servers)) ||
+		(Object.hasOwn(root, "mcp") && !nestedMcp) ||
+		(nestedMcp && Object.hasOwn(nestedMcp, "servers") && !asRecord(nestedMcp.servers))
+	) throw new Error("invalid_mcp_server_map");
 	const nestedMcpServers = asRecord(nestedMcp?.servers);
+	const hasNestedMcpServers = nestedMcp !== null && Object.hasOwn(nestedMcp, "servers");
 	const candidates = [
 		asRecord(root.mcpServers),
 		nestedMcpServers,
 		asRecord(root.servers),
-		nestedMcpServers ? null : nestedMcp,
+		hasNestedMcpServers ? null : nestedMcp,
 	];
 
-	const items: McpInventoryItem[] = [];
-	const seen = new Set<string>();
+	const byName = new Map<string, McpInventoryItem>();
+	const conflictingNames = new Set<string>();
 	const skippedNames = new Set<string>();
 	for (const servers of candidates) {
 		const parsed = parseServerRecord(servers, sourcePath);
-		for (const name of parsed.skippedNames) skippedNames.add(name);
+		// A valid declaration elsewhere cannot resolve a malformed declaration
+		// of the same alias; the host's effective config is ambiguous.
+		for (const name of parsed.skippedNames) {
+			skippedNames.add(name);
+			byName.delete(name);
+			conflictingNames.add(name);
+		}
 		for (const item of parsed.items) {
-			const key = `${item.sourcePath}\0${item.name}`;
-			if (seen.has(key)) continue;
-			seen.add(key);
-			items.push(item);
+			if (conflictingNames.has(item.name)) continue;
+			const existing = byName.get(item.name);
+			if (existing && existing.configurationSha256 !== item.configurationSha256) {
+				byName.delete(item.name);
+				conflictingNames.add(item.name);
+				continue;
+			}
+			byName.set(item.name, item);
 		}
 	}
-	// A name that was unusable in one config shape but enumerated in another is
-	// not a gap.
-	for (const item of items) skippedNames.delete(item.name);
-	return { items, skippedNames: [...skippedNames] };
+	for (const name of conflictingNames) skippedNames.add(name);
+	return {
+		items: [...byName.values()],
+		skippedNames: [...skippedNames],
+		supportedShape: candidates.some((servers) => servers !== null),
+	};
 }
 
 export type McpInventorySourceStatus = "read" | "missing" | "invalid";
@@ -182,7 +246,12 @@ async function readInventorySource(path: string): Promise<InventorySourceRead> {
 			throw new Error("invalid_inventory_root");
 		}
 		const servers = parseMcpServers(parsed.value, path);
-		return { status: "read", items: servers.items, serversNotEnumerated: servers.skippedNames.length };
+		if (!servers.supportedShape) throw new Error("unsupported_inventory_shape");
+		return {
+			status: "read",
+			items: servers.items,
+			serversNotEnumerated: servers.skippedNames.length,
+		};
 	} catch (error) {
 		return {
 			status: (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "invalid",
@@ -195,12 +264,16 @@ async function readInventorySource(path: string): Promise<InventorySourceRead> {
 function coverageStatus(
 	readSources: number,
 	invalidSources: number,
+	serversNotEnumerated: number,
 ): McpInventoryCoverageStatus {
 	if (invalidSources > 0) return readSources > 0 ? "partial" : "invalid";
+	if (serversNotEnumerated > 0) return "partial";
 	return readSources > 0 ? "read" : "missing";
 }
 
-export async function inspectMcpServerInventory(configPaths?: string[]): Promise<McpInventoryReport> {
+export async function inspectMcpServerInventory(
+	configPaths?: string[],
+): Promise<McpInventoryReport> {
 	const defaultPaths = [
 		"~/.claude.json",
 		".mcp.json",
@@ -237,7 +310,7 @@ export async function inspectMcpServerInventory(configPaths?: string[]): Promise
 		items: all,
 		sources,
 		coverage: {
-			status: coverageStatus(readSources, invalidSources),
+			status: coverageStatus(readSources, invalidSources, serversNotEnumerated),
 			totalSources: sources.length,
 			readSources,
 			missingSources,

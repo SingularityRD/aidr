@@ -54,6 +54,9 @@ const DetectorPolicyPayloadSchema = z
 				// verified entitlement capability as well as this signed declaration.
 				learning_allowed: z.boolean().default(false),
 				learning_capability: z.literal("durable_baseline_v1").optional(),
+				// Missing or cold baseline is fail-closed unless the signed tenant policy
+				// explicitly selects the degraded skip behavior.
+				unavailable_action: z.enum(["ask", "deny", "skip"]).default("ask"),
 				threat_corpus: BehavioralCorpusSchema.optional(),
 			})
 			.strict()
@@ -81,6 +84,7 @@ const DetectorPolicyPayloadSchema = z
 				return (
 					!behavioral.learning_allowed &&
 					!behavioral.learning_capability &&
+					behavioral.unavailable_action === "ask" &&
 					!behavioral.threat_corpus
 				);
 			}
@@ -324,6 +328,7 @@ async function detectorContext(
 			runtimeDetectors.behavioral = {
 				enabled: true,
 				learningAllowed: payload.behavioral.learning_allowed,
+				unavailableAction: payload.behavioral.unavailable_action,
 				orchestrator: createBehavioralDetectionOrchestrator(
 					{ modelVersion: LOCAL_EMBEDDER_MODEL_VERSION },
 					{

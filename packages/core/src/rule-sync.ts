@@ -14,6 +14,7 @@ export interface RuleSyncConfig {
 	emergencyPollIntervalSeconds: number;
 	localCachePath: string;
 	maxCacheAgeHours: number;
+	requestTimeoutMs?: number;
 }
 
 interface RemoteRule {
@@ -43,12 +44,14 @@ interface CachedRules {
 
 export class RealTimeRuleSync {
 	private lastSync: Date | null = null;
-	private emergencyRules: string[] = [];
 	private timer: NodeJS.Timeout | null = null;
 	private currentRules = new Map<string, RemoteRule>();
 	private readonly localCachePath: string;
 	private isEmergencyMode = false;
 	private readonly logger: Logger;
+	private readonly requestTimeoutMs: number;
+	private syncPromise: Promise<SyncStats> | null = null;
+	private operationTail: Promise<void> = Promise.resolve();
 
 	constructor(
 		private config: RuleSyncConfig,
@@ -56,6 +59,10 @@ export class RealTimeRuleSync {
 	) {
 		this.localCachePath = resolvePath(config.localCachePath);
 		this.logger = logger;
+		const configuredTimeout = Number.isFinite(config.requestTimeoutMs)
+			? (config.requestTimeoutMs ?? 10_000)
+			: 10_000;
+		this.requestTimeoutMs = Math.max(1, Math.min(Math.trunc(configuredTimeout), 60_000));
 	}
 
 	/**
@@ -94,7 +101,21 @@ export class RealTimeRuleSync {
 	 * Perform a sync operation.
 	 * Fetches rules from CDN, compares with local cache, and applies updates.
 	 */
-	async sync(): Promise<SyncStats> {
+	sync(): Promise<SyncStats> {
+		if (this.syncPromise) {
+			return this.syncPromise;
+		}
+
+		const operation = this.runExclusive(() => this.runSync()).finally(() => {
+			if (this.syncPromise === operation) {
+				this.syncPromise = null;
+			}
+		});
+		this.syncPromise = operation;
+		return operation;
+	}
+
+	private async runSync(): Promise<SyncStats> {
 		try {
 			const stats = await this.performSync();
 			this.lastSync = new Date();
@@ -126,13 +147,13 @@ export class RealTimeRuleSync {
 	 * Immediately downloads specified rules and temporarily increases poll frequency.
 	 */
 	async emergencyPush(ruleIds: string[]): Promise<void> {
-		this.emergencyRules = ruleIds;
+		const requestedRules = [...ruleIds];
 		this.isEmergencyMode = true;
 
 		this.logger.warn("Emergency push triggered", { ruleIds });
 
 		// Immediate sync for emergency rules
-		await this.performEmergencySync();
+		await this.runExclusive(() => this.performEmergencySync(requestedRules));
 
 		// Restart polling with emergency interval
 		this.startPolling(true);
@@ -179,6 +200,15 @@ export class RealTimeRuleSync {
 				});
 			});
 		}, interval);
+	}
+
+	private runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.operationTail.then(operation, operation);
+		this.operationTail = result.then(
+			() => undefined,
+			() => undefined,
+		);
+		return result;
 	}
 
 	/**
@@ -266,9 +296,9 @@ export class RealTimeRuleSync {
 	/**
 	 * Perform emergency sync for critical rules.
 	 */
-	private async performEmergencySync(): Promise<void> {
+	private async performEmergencySync(ruleIds: string[]): Promise<void> {
 		try {
-			for (const ruleId of this.emergencyRules) {
+			for (const ruleId of ruleIds) {
 				const rule = await this.downloadRule(ruleId);
 				if (rule) {
 					this.currentRules.set(rule.id, rule);
@@ -295,6 +325,7 @@ export class RealTimeRuleSync {
 			headers: {
 				Accept: "application/json",
 			},
+			signal: AbortSignal.timeout(this.requestTimeoutMs),
 		});
 
 		if (!response.ok) {
@@ -316,6 +347,7 @@ export class RealTimeRuleSync {
 				headers: {
 					Accept: "application/json",
 				},
+				signal: AbortSignal.timeout(this.requestTimeoutMs),
 			});
 
 			if (response.status === 404) {

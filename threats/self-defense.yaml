@@ -9,7 +9,7 @@
 # rescanned from every occurrence of `rm|del|rd|...` â€” O(n^2) on commands that
 # repeat those verbs (~59ms per 20KB, unbounded beyond that). The gap is now
 # bounded to 300 characters, several times any realistic argument list
-# (`rm -rf /home/user/.singularity-aidr` needs 15).
+# (`rm -rf $HOME/.singularity-aidr` needs 15).
 - id: "CLT-SELF-001"
   category: self_defense
   severity: critical
@@ -77,3 +77,15 @@
   expires_at: null
   revoked: false
 
+# Disable the AIDR agent service on the host.
+- id: "CLT-SELF-006"
+  category: self_defense
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "\\bsystemctl\\b.{0,100}\\b(disable|stop|mask)\\b.{0,100}\\baidr-agent\\.service\\b"
+  case_insensitive: true
+  match_on: command
+  title: "Attempt to disable the AIDR agent service"
+  expires_at: null
+  revoked: false

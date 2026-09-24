@@ -17,7 +17,7 @@ import { VerdictCache } from "./cache.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
-import { loadConfig, resolvePath } from "./config.js";
+import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 import {
 	type DelegatedCredentialClaimsV1,
 	type DelegatedCredentialErrorCode,
@@ -25,9 +25,11 @@ import {
 	verifyDelegatedCredential,
 } from "./delegated-credential.js";
 import { DetectionLegUnavailableError } from "./detection-leg.js";
+import { PiiDetectorImpl } from "./dlp/pii-detector.js";
 import type { DlpPolicy } from "./dlp/policy.js";
 import { scanDlpInput } from "./dlp/scanner.js";
 import { DecisionEngine } from "./engine.js";
+import { MAX_ARTIFACT_SIZE } from "./extractors.js";
 import { HeuristicsEngine } from "./heuristics.js";
 import {
 	correlateIncidents,
@@ -38,6 +40,7 @@ import { getInstallationId } from "./installation-id.js";
 import { getDegradedSafeModeReason, isDegradedSafeMode } from "./integrity/index.js";
 import { loadMergedIntelFromDisk } from "./intel/loader.js";
 import type { IntelMerged } from "./intel/types.js";
+import { emptyIntelMerged } from "./intel/types.js";
 import type { ManagedState, RevocationListV1 } from "./managed.js";
 import {
 	applyIngestResult,
@@ -50,7 +53,6 @@ import {
 	loadRevocationsCache,
 	managedStatePath,
 	parseSignedRevocationsFromControlPlaneBody,
-	redactRemoteEvent,
 	saveEntitlementKeyringFromState,
 	saveManagedState,
 	saveRevocationsCache,
@@ -60,6 +62,10 @@ import { PackageChecker } from "./package-checker.js";
 import {
 	extractPackagesFromCommand,
 	extractPackagesFromManifest,
+	isDependencyManifestPath,
+	hasDuplicateJsonObjectKeys,
+	isPackageJsonPath,
+	isPackageManifestPath,
 	type ParsedPackage,
 } from "./package-extractor.js";
 import { evaluatePolicy } from "./policy.js";
@@ -67,12 +73,6 @@ import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { loadThreatsFromDirs } from "./threat-loader.js";
 import { normalizeToolEvaluationRequest, readFileEditPayload } from "./tool-normalization.js";
-import {
-	initTracing,
-	recordDetectionPhase,
-	setSecurityDecisionAttributes,
-	startActiveSpan,
-} from "./tracing.js";
 import { loadTrustedDomains } from "./trusted-domains.js";
 import type {
 	AgentRuntime,
@@ -86,7 +86,7 @@ import type {
 	UrlCheckResult,
 	Verdict,
 } from "./types.js";
-import { ConfigSchema, nullLogger } from "./types.js";
+import { nullLogger } from "./types.js";
 import { VERSION } from "./version.js";
 
 type CachedIntelMerged = { loadedAt: number; tag: string; merged: IntelMerged };
@@ -102,7 +102,10 @@ function intelCacheTag(
 	const serial =
 		managedState.entitlement?.schema_version === 2 ? managedState.entitlement.serial : "";
 	const revEpoch = revocations ? String(revocations.revocation_epoch ?? 0) : "0";
-	return `${packsDir}|${trustedKeys}|${serial}|${revEpoch}`;
+	const requireRevocations =
+		config.licensing.revocations_enabled && config.licensing.public_keys_pem.length > 0;
+	const revocationIdentity = JSON.stringify(revocations);
+	return `${packsDir}|${trustedKeys}|${serial}|${requireRevocations}|${revEpoch}|${revocationIdentity}`;
 }
 
 async function getPackageIntelMerged(
@@ -136,6 +139,8 @@ async function getPackageIntelMerged(
 			trustedKeysPath: config.intel_packs?.trusted_keys_path,
 			verificationMode: "grace",
 			graceHours: config.intel_packs?.expired_grace_hours ?? 72,
+			requireRevocations:
+				config.licensing.revocations_enabled && config.licensing.public_keys_pem.length > 0,
 			revocations: revocations
 				? {
 						pack_ids: revocations.revocations?.pack_ids,
@@ -146,7 +151,11 @@ async function getPackageIntelMerged(
 		cachedPackageIntel = { loadedAt: now, tag, merged };
 		return merged;
 	} catch {
-		return null;
+		return {
+			...emptyIntelMerged(),
+			availability: "unavailable",
+			detail: "signed intel-pack loading failed",
+		};
 	}
 }
 
@@ -177,6 +186,8 @@ export interface ToolEvaluationContext {
 	threatsDir: string;
 	allowlistsDir: string;
 	configPath?: string;
+	/** Soft-gated hosts block paranoid asks; record their enforced decision before audit/ingest. */
+	promoteParanoidAsk?: boolean;
 	userThreatsDir?: string;
 	agentRuntime?: AgentRuntime;
 	agentRuntimeVersion?: string;
@@ -190,6 +201,8 @@ export interface ToolEvaluationContext {
 			orchestrator: BehavioralDetectionOrchestrator;
 			/** Only an operator-approved baseline workflow should set this to true. */
 			learningAllowed?: boolean;
+			/** Signed tenant choice for cold or unavailable baseline-dependent legs. */
+			unavailableAction?: "ask" | "deny" | "skip";
 		};
 	};
 	/** Verified, local signed feed configuration; absent means no feed claim. */
@@ -202,6 +215,23 @@ export interface ToolEvaluationContext {
 }
 
 const DETECTOR_DECISION_RANK = { allow: 0, ask: 1, deny: 2 } as const;
+
+function hostEffectiveVerdict(
+	verdict: Verdict,
+	config: Config,
+	context: ToolEvaluationContext,
+): Verdict {
+	return context.promoteParanoidAsk &&
+		config.sensitivity === "paranoid" &&
+		verdict.decision === "ask"
+		? { ...verdict, decision: "deny" }
+		: verdict;
+}
+const TOOL_INPUT_PII_DETECTOR = new PiiDetectorImpl({
+	enableIpAddress: false,
+	enableAwsKey: false,
+	enableApiKey: false,
+});
 
 function detectorVerdict(
 	decision: "ask" | "deny",
@@ -222,6 +252,18 @@ function detectorVerdict(
 	};
 }
 
+function behavioralUnavailableVerdict(action: "ask" | "deny" | "skip", reason: string): Verdict {
+	if (action === "skip") {
+		return {
+			...allowVerdict("behavioral"),
+			category: "behavioral_unavailable",
+			severity: "warning",
+			reasons: [reason],
+		};
+	}
+	return detectorVerdict(action, "behavioral_unavailable", "behavioral", reason);
+}
+
 function auditToolInputForVerdict(
 	toolInput: Record<string, unknown>,
 	verdict: Verdict,
@@ -233,6 +275,7 @@ function auditToolInputForVerdict(
 	// outcome (including unavailable inspection).
 	return context.runtimeDetectors?.dlp?.enabled === true ||
 		verdict.source === "dlp" ||
+		verdict.category === "behavioral_unavailable" ||
 		verdict.source === "runtime_detectors"
 		? { content_omitted: "runtime detector decision" }
 		: toolInput;
@@ -268,6 +311,19 @@ function evaluateDlpDetector(
 			content,
 			contentType: detector.contentType ?? "application/json",
 		});
+		const piiMatch =
+			dlp.status === "unavailable" && dlp.unavailable.reason === "oversize"
+				? undefined
+				: TOOL_INPUT_PII_DETECTOR.detect(content)[0];
+		if (piiMatch) {
+			return detectorVerdict(
+				"deny",
+				"dlp",
+				"dlp",
+				`Common PII (${piiMatch.type}) detected; original tool input was blocked.`,
+				`pii-${piiMatch.type}`,
+			);
+		}
 		if (dlp.status === "unavailable") {
 			return detectorVerdict(
 				dlp.action === "block" ? "deny" : "ask",
@@ -311,13 +367,16 @@ async function evaluateBehavioralDetector(
 			tenantId,
 			sessionId: request.sessionId,
 			toolName: request.toolName,
-			riskScore: currentVerdict.decision === "deny" ? 100 : currentVerdict.decision === "ask" ? 75 : 0,
+			riskScore:
+				currentVerdict.decision === "deny" ? 100 : currentVerdict.decision === "ask" ? 75 : 0,
 			timestamp: Date.now(),
 			command: typeof input.command === "string" ? input.command : undefined,
 			path: typeof input.file_path === "string" ? input.file_path : undefined,
 			url: typeof input.url === "string" ? input.url : undefined,
 			classificationText: content,
-			learningAllowed: detector.learningAllowed === true && currentVerdict.decision === "allow",
+			// No authenticated post-execution receipt reaches preflight. Keep learning
+			// off until receipt verification is bound to baseline writes and restore.
+			learningAllowed: false,
 		});
 		if (behavioral.outcome === "anomalous") {
 			return detectorVerdict(
@@ -328,12 +387,12 @@ async function evaluateBehavioralDetector(
 			);
 		}
 		if (behavioral.outcome === "learning" || behavioral.outcome === "unavailable") {
-			return detectorVerdict(
-				"ask",
-				"behavioral_unavailable",
-				"behavioral",
-				`Behavioral detection ${behavioral.outcome}; no clean result available.`,
-			);
+			const action = detector.unavailableAction ?? "ask";
+			const reason =
+				behavioral.outcome === "learning"
+					? "Behavioral baseline-dependent legs are not ready; this call was not evaluated by those legs."
+					: "Behavioral detection is unavailable; no clean result is available from that detector.";
+			return behavioralUnavailableVerdict(action, reason);
 		}
 		return null;
 	} catch {
@@ -384,7 +443,9 @@ function evaluateDelegation(
 		const result = verifyDelegatedCredential({
 			token,
 			publicKeysById,
-			context: verificationContext,
+			// The caller may supply expected metadata, but the tool name must come
+			// from the call being evaluated rather than that parallel metadata.
+			context: { ...verificationContext, tool: { ...verificationContext.tool, name: toolName } },
 		});
 		if (result.ok) return { lineage: lineageFromClaims(result.claims) };
 		code = result.code;
@@ -428,6 +489,28 @@ async function applyRuntimeDetectors(
 		? evaluateDelegation(context.delegation, request.toolName)
 		: null;
 	if (delegationOutcome && "verdict" in delegationOutcome) return delegationOutcome.verdict;
+	const tenantScopedDetectorsEnabled =
+		context.runtimeDetectors?.dlp?.enabled === true ||
+		context.runtimeDetectors?.behavioral?.enabled === true;
+	if (
+		delegationOutcome &&
+		tenantScopedDetectorsEnabled &&
+		context.runtimeDetectors?.tenantId !== delegationOutcome.lineage.tenantId
+	) {
+		// The signed delegation lineage and tenant-scoped detector state must name
+		// the same tenant. Otherwise one tenant's call could be evaluated against
+		// another tenant's DLP policy or behavioral baseline, while its audit entry
+		// attributes the call to the signed tenant.
+		return {
+			...detectorVerdict(
+				"deny",
+				"tenant_isolation",
+				"runtime_detectors",
+				"Delegated identity tenant does not match tenant-scoped detector context.",
+			),
+			delegation: delegationOutcome.lineage,
+		};
+	}
 
 	const verdict = await applyConfiguredDetectors(request, context, baseVerdict, managedState);
 	return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
@@ -446,13 +529,23 @@ async function applyConfiguredDetectors(
 
 	const tenantId = detectors.tenantId;
 	if (typeof tenantId !== "string" || tenantId.trim() === "" || tenantId.length > 128) {
-		return detectorVerdict("deny", "detection_unavailable", "runtime_detectors", "Detector tenant identity is missing or invalid.");
+		return detectorVerdict(
+			"deny",
+			"detection_unavailable",
+			"runtime_detectors",
+			"Detector tenant identity is missing or invalid.",
+		);
 	}
 	if (
 		managedState.entitlement?.schema_version === 2 &&
 		managedState.entitlement.tenant_id !== tenantId
 	) {
-		return detectorVerdict("deny", "tenant_isolation", "runtime_detectors", "Detector tenant does not match the signed managed entitlement.");
+		return detectorVerdict(
+			"deny",
+			"tenant_isolation",
+			"runtime_detectors",
+			"Detector tenant does not match the signed managed entitlement.",
+		);
 	}
 
 	let content: string;
@@ -460,12 +553,21 @@ async function applyConfiguredDetectors(
 		content = JSON.stringify(request.toolInput);
 		if (typeof content !== "string") throw new Error("Tool input cannot be serialized");
 	} catch {
-		return detectorVerdict("deny", "detection_unavailable", "runtime_detectors", "Tool input could not be serialized for configured inspection.");
+		return detectorVerdict(
+			"deny",
+			"detection_unavailable",
+			"runtime_detectors",
+			"Tool input could not be serialized for configured inspection.",
+		);
 	}
 
 	let result = baseVerdict;
 	if (detectors.dlp?.enabled === true) {
-		result = mergeDetectorVerdict(result, evaluateDlpDetector(detectors.dlp, tenantId, content), baseVerdict);
+		result = mergeDetectorVerdict(
+			result,
+			evaluateDlpDetector(detectors.dlp, tenantId, content),
+			baseVerdict,
+		);
 	}
 
 	if (detectors.behavioral?.enabled === true) {
@@ -488,8 +590,10 @@ async function recordEarlyVerdict(
 	config: Config,
 	verdict: Verdict,
 	logger: Logger,
+	startTime: number,
 	allowlisted = false,
 ): Promise<void> {
+	const durationMs = performance.now() - startTime;
 	let incidentEntry: Record<string, unknown> | null = null;
 	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);
 	if (
@@ -512,13 +616,29 @@ async function recordEarlyVerdict(
 		}
 	}
 	try {
-		await logVerdict(config.logging, request.sessionId, request.toolName, auditInput, verdict, allowlisted);
+		await logVerdict(
+			config.logging,
+			request.sessionId,
+			request.toolName,
+			auditInput,
+			verdict,
+			allowlisted,
+			durationMs,
+		);
 	} catch {
 		// An audit failure cannot erase the detector decision.
 	}
 	if (verdict.decision !== "allow") {
 		try {
-			await ingestToControlPlaneIfEnabled(request, context, config, verdict, incidentEntry, logger);
+			await ingestToControlPlaneIfEnabled(
+				request,
+				context,
+				config,
+				verdict,
+				incidentEntry,
+				logger,
+				durationMs,
+			);
 		} catch {
 			// Telemetry failure cannot erase the local decision.
 		}
@@ -543,50 +663,103 @@ export async function evaluateToolCall(
 	context: ToolEvaluationContext,
 ): Promise<Verdict> {
 	const normalizedRequest = normalizeToolEvaluationRequest(request);
-	// Initialize tracing on first call if enabled
-	initTracing();
-
 	const startTime = performance.now();
+	return runEvaluationPipeline(normalizedRequest, context, startTime);
+}
 
-	return startActiveSpan(
-		"security_decision",
-		async (mainSpan) => {
-			mainSpan.setAttribute("aidr.session_id", normalizedRequest.sessionId);
-			mainSpan.setAttribute("aidr.tool_name", normalizedRequest.toolName);
+function invalidConfigVerdict(): Verdict {
+	return {
+		...allowVerdict("config_invalid"),
+		decision: "deny",
+		category: "config_invalid",
+		severity: "critical",
+		reasons: ["Singularity AIDR configuration is invalid; this tool call was blocked."],
+	};
+}
 
-			const verdict = await runEvaluationPipeline(normalizedRequest, context, startTime);
+function uninspectablePatchVerdict(): Verdict {
+	return {
+		decision: "deny",
+		category: "file_write",
+		confidence: 1,
+		severity: "critical",
+		source: "policy",
+		artifacts: ["apply_patch"],
+		matchedThreatId: "POL-FS-003",
+		reasons: [
+			"apply_patch targets or added content could not be fully parsed; execution was denied.",
+		],
+	};
+}
 
-			// Record final decision attributes
-			const durationMs = performance.now() - startTime;
-			setSecurityDecisionAttributes({
-				toolName: normalizedRequest.toolName,
-				sessionId: normalizedRequest.sessionId,
-				decision: verdict.decision,
-				category: verdict.category,
-				confidence: verdict.confidence,
-				severity: verdict.severity,
-				artifactsCount: verdict.artifacts.length,
-				matchedThreatId: verdict.matchedThreatId,
-				reasons: verdict.reasons,
-				durationMs,
-			});
+function ambiguousToolInputVerdict(): Verdict {
+	return {
+		decision: "deny",
+		category: "input_ambiguous",
+		confidence: 1,
+		severity: "critical",
+		source: "policy",
+		artifacts: [],
+		matchedThreatId: "POL-INPUT-001",
+		reasons: [
+			"Conflicting connector input aliases could not be safely normalized; execution was denied.",
+		],
+	};
+}
 
-			mainSpan.setAttribute("aidr.decision", verdict.decision);
-			mainSpan.setAttribute("aidr.duration_ms", durationMs);
-
-			return verdict;
-		},
-		{ kind: 1 }, // SpanKind.INTERNAL
-	) as Promise<Verdict>;
+function truncatedCommandVerdict(): Verdict {
+	return {
+		decision: "deny",
+		category: "input_truncated",
+		confidence: 1,
+		severity: "critical",
+		source: "policy",
+		artifacts: ["Bash"],
+		matchedThreatId: null,
+		reasons: [
+			`Bash command exceeds the ${MAX_ARTIFACT_SIZE}-character inspection limit; execution was denied because trailing input was not inspected.`,
+		],
+	};
 }
 
 async function runEvaluationPipeline(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
-	_startTime: number,
+	startTime: number,
 ): Promise<Verdict> {
 	const logger = context.logger ?? nullLogger;
-	let config = await loadConfig(context.configPath, logger).catch(() => ConfigSchema.parse({}));
+	let config: Config;
+	try {
+		config = await loadConfig(context.configPath, logger);
+	} catch {
+		return invalidConfigVerdict();
+	}
+	if (isInvalidConfig(config)) {
+		const verdict = invalidConfigVerdict();
+		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
+		return verdict;
+	}
+	if (request.toolInput.__aidr_input_normalization_failed === true) {
+		const verdict = ambiguousToolInputVerdict();
+		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
+		return verdict;
+	}
+	if (request.toolInput.__aidr_patch_parse_failed === true) {
+		const verdict = uninspectablePatchVerdict();
+		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
+		return verdict;
+	}
+	const rawBashCommand = request.toolName === "Bash" ? request.toolInput.command : undefined;
+	if (
+		(typeof rawBashCommand === "string" && rawBashCommand.length > MAX_ARTIFACT_SIZE) ||
+		request.artifacts.some(
+			(artifact) => artifact.type === "command" && artifact.value.length > MAX_ARTIFACT_SIZE,
+		)
+	) {
+		const verdict = truncatedCommandVerdict();
+		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
+		return verdict;
+	}
 	const commercial = isCommercialBuild();
 	// Computed once: the same manifest edits decide whether this request has
 	// anything for the package leg to inspect at all (see the empty-artifact
@@ -638,7 +811,6 @@ async function runEvaluationPipeline(
 	// disabled, but local heuristics/policy/allowlist detection MUST still run.
 	// Returning an allow verdict here would silently disable the product's core
 	// protection, which is exactly the failure mode this flag exists to prevent.
-	let managedUnenrolled = false;
 	const unenrolledReason =
 		"AIDR is not enrolled: running local detection only (managed features disabled).";
 
@@ -663,7 +835,6 @@ async function runEvaluationPipeline(
 		if (!apiKey && !enrollToken) {
 			// No credentials yet. Do NOT disable detection: fall through to local
 			// evaluation with managed features switched off, and surface the state.
-			managedUnenrolled = true;
 			logger.warn(unenrolledReason);
 		}
 
@@ -671,7 +842,6 @@ async function runEvaluationPipeline(
 		if (!apiKey && enrollToken && config.control_plane.enabled) {
 			const iid = await getInstallationId(aidrDir).catch(() => undefined);
 			if (!iid) {
-				managedUnenrolled = true;
 				logger.warn(`${unenrolledReason} (missing installation id)`);
 			} else {
 				try {
@@ -717,7 +887,6 @@ async function runEvaluationPipeline(
 		if (!hasCredentials) {
 			// Enrollment did not produce a key (unreachable control plane, rejected
 			// token, or no token). Keep enforcing locally instead of going inert.
-			managedUnenrolled = true;
 			logger.warn(unenrolledReason);
 		}
 
@@ -780,7 +949,6 @@ async function runEvaluationPipeline(
 		// genuinely unavailable, so record that state. It must never be used to grant
 		// managed features - only to describe why they are off.
 		if (hasCredentials && !isEntitlementActive(managedState)) {
-			managedUnenrolled = true;
 			logger.warn(
 				`${unenrolledReason} (credentials present but not validated by the control plane)`,
 			);
@@ -882,7 +1050,17 @@ async function runEvaluationPipeline(
 			}
 		} catch (error) {
 			if (config.control_plane.remote_policy_required) {
-				return { ...allowVerdict("remote_policy_unavailable"), decision: "deny", category: "remote_policy_unavailable", severity: "warning", reasons: [error instanceof Error ? error.message : "Required central policy is unavailable."] };
+				const verdict: Verdict = {
+					...allowVerdict("remote_policy_unavailable"),
+					decision: "deny",
+					category: "remote_policy_unavailable",
+					severity: "warning",
+					reasons: [
+						error instanceof Error ? error.message : "Required central policy is unavailable.",
+					],
+				};
+				await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
+				return verdict;
 			}
 		}
 	}
@@ -893,9 +1071,13 @@ async function runEvaluationPipeline(
 		// A manifest edit is inspectable input even when the connector extracted
 		// no artifacts for the tool name, so it may not take this fast path.
 		if (!isMcpTool && manifestEdits.length === 0) {
-			const verdict = await applyRuntimeDetectors(request, context, allowVerdict("no_artifacts"), managedState);
-			if (verdict.decision !== "allow") {
-				await recordEarlyVerdict(request, context, config, verdict, logger);
+			const verdict = hostEffectiveVerdict(
+				await applyRuntimeDetectors(request, context, allowVerdict("no_artifacts"), managedState),
+				config,
+				context,
+			);
+			if (verdict.decision !== "allow" || verdict.category === "behavioral_unavailable") {
+				await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 			}
 			return verdict;
 		}
@@ -903,42 +1085,47 @@ async function runEvaluationPipeline(
 
 	// An explicit policy denial outranks a local false-positive exception.
 	// Approval-required actions may still use the operator-managed approval path.
-	const policyVerdict = await evaluatePolicy(request.toolName, request.artifacts, config, request.toolInput);
-	// Allowlist check phase
-	const allowlisted = await startActiveSpan("allowlist_check", async (allowlistSpan) => {
-		const allowlistStart = performance.now();
-		let isAllowlistedResult = false;
-		try {
-			const allowlist = await loadAllowlist(config.allowlist, logger);
-			isAllowlistedResult = isAllowlisted(allowlist, request.artifacts);
-			if (isAllowlistedResult && policyVerdict?.decision !== "deny") {
-				const verdict = allowVerdict("allowlisted");
-				allowlistSpan.setAttribute("aidr.allowlisted", true);
-				allowlistSpan.end();
-				return verdict;
-			}
-		} catch {
-			// Fail open if allowlist loading fails.
+	const policyVerdict = await evaluatePolicy(
+		request.toolName,
+		request.artifacts,
+		config,
+		request.toolInput,
+	);
+	let allowlisted: Verdict | null = null;
+	try {
+		const allowlist = await loadAllowlist(config.allowlist, logger);
+		if (isAllowlisted(allowlist, request.artifacts) && policyVerdict?.decision !== "deny") {
+			allowlisted = allowVerdict("allowlisted");
 		}
-		const durationMs = performance.now() - allowlistStart;
-		recordDetectionPhase({
-			phase: "allowlist_check",
-			artifactCount: request.artifacts.length,
-			cacheHit: isAllowlistedResult,
-			durationMs,
-		});
-		allowlistSpan.end();
-		return null;
-	});
+	} catch {
+		// Fail open if allowlist loading fails.
+	}
 
 	if (allowlisted) {
-		const finalVerdict = await applyRuntimeDetectors(request, context, allowlisted, managedState);
-		await recordEarlyVerdict(request, context, config, finalVerdict, logger, finalVerdict.decision === "allow");
+		const finalVerdict = hostEffectiveVerdict(
+			await applyRuntimeDetectors(request, context, allowlisted, managedState),
+			config,
+			context,
+		);
+		await recordEarlyVerdict(
+			request,
+			context,
+			config,
+			finalVerdict,
+			logger,
+			startTime,
+			finalVerdict.decision === "allow",
+		);
 		return finalVerdict;
 	}
 
 	if (policyVerdict) {
-		const finalVerdict = await applyRuntimeDetectors(request, context, policyVerdict, managedState);
+		const finalVerdict = hostEffectiveVerdict(
+			await applyRuntimeDetectors(request, context, policyVerdict, managedState),
+			config,
+			context,
+		);
+		const durationMs = performance.now() - startTime;
 		const auditInput = auditToolInputForVerdict(request.toolInput, finalVerdict, context);
 		let incidentEntry: Record<string, unknown> | null = null;
 		if (
@@ -968,6 +1155,8 @@ async function runEvaluationPipeline(
 				request.toolName,
 				auditInput,
 				finalVerdict,
+				false,
+				durationMs,
 			);
 		} catch {
 			// Fail open.
@@ -980,6 +1169,7 @@ async function runEvaluationPipeline(
 			finalVerdict,
 			incidentEntry,
 			logger,
+			durationMs,
 		);
 		return finalVerdict;
 	}
@@ -1028,29 +1218,38 @@ async function runEvaluationPipeline(
 	let urlLegUnavailable = false;
 	let urlLegUnavailableReason = "the URL reputation leg did not run";
 	const urlsToCheck = cache ? uncachedUrls : urls;
-	if (urlsToCheck.length > 0 && config.url_check.enabled) {
-		try {
-			const client = new UrlCheckClient({ ...config.url_check, reputationFeed: context.reputationFeed }, logger, token);
-			urlCheckResults = await client.checkUrls(urlsToCheck);
-		} catch (error) {
-			if (error instanceof DetectionLegUnavailableError && error.leg === "url_reputation") {
-				urlLegUnavailable = true;
-				urlLegUnavailableReason = error.reason;
-				// Detections from the batches that did run are evidence; the
-				// missing batches are the gap. Keep both.
-				urlCheckResults = error.partialResults.filter(isUrlCheckResult);
-				logger.warn("URL reputation leg did not provide complete inspection", {
-					reason: error.reason,
-					uncheckedCount: error.uncheckedCount,
-				});
-			} else if (context.reputationFeed) {
-				// A configured signed feed must never be silently skipped, so any
-				// other failure while it is configured is still an unavailable leg.
-				urlLegUnavailable = true;
-				urlLegUnavailableReason = error instanceof Error ? error.message : String(error);
-				logger.warn("Configured signed URL feed did not provide complete inspection", {
-					errorType: error instanceof Error ? error.name : typeof error,
-				});
+	if (urlsToCheck.length > 0) {
+		if (!config.url_check.enabled) {
+			urlLegUnavailable = true;
+			urlLegUnavailableReason = "disabled to avoid sending URLs to an external reputation provider";
+		} else {
+			try {
+				const client = new UrlCheckClient(
+					{ ...config.url_check, reputationFeed: context.reputationFeed },
+					logger,
+					token,
+				);
+				urlCheckResults = await client.checkUrls(urlsToCheck);
+			} catch (error) {
+				if (error instanceof DetectionLegUnavailableError && error.leg === "url_reputation") {
+					urlLegUnavailable = true;
+					urlLegUnavailableReason = error.reason;
+					// Detections from the batches that did run are evidence; the
+					// missing batches are the gap. Keep both.
+					urlCheckResults = error.partialResults.filter(isUrlCheckResult);
+					logger.warn("URL reputation leg did not provide complete inspection", {
+						reason: error.reason,
+						uncheckedCount: error.uncheckedCount,
+					});
+				} else if (context.reputationFeed) {
+					// A configured signed feed must never be silently skipped, so any
+					// other failure while it is configured is still an unavailable leg.
+					urlLegUnavailable = true;
+					urlLegUnavailableReason = error instanceof Error ? error.message : String(error);
+					logger.warn("Configured signed URL feed did not provide complete inspection", {
+						errorType: error instanceof Error ? error.name : typeof error,
+					});
+				}
 			}
 		}
 	}
@@ -1092,10 +1291,19 @@ async function runEvaluationPipeline(
 			amsiScans.push({ content, name: `Write:${filePath}` });
 		}
 	} else if (request.toolName === "Edit") {
-		const filePath = (request.toolInput.file_path ?? "") as string;
-		const newString = (request.toolInput.new_string ?? "") as string;
-		if (newString) {
-			amsiScans.push({ content: newString, name: `Edit:${filePath}` });
+		const editContents = request.artifacts.filter(
+			(artifact) => artifact.type === "content" && artifact.context === "edit",
+		);
+		if (editContents.length > 0) {
+			for (const [index, artifact] of editContents.entries()) {
+				amsiScans.push({ content: artifact.value, name: `Edit:section-${index + 1}` });
+			}
+		} else {
+			const filePath = (request.toolInput.file_path ?? "") as string;
+			const newString = (request.toolInput.new_string ?? "") as string;
+			if (newString) {
+				amsiScans.push({ content: newString, name: `Edit:${filePath}` });
+			}
 		}
 	}
 
@@ -1214,12 +1422,9 @@ async function runEvaluationPipeline(
 		});
 	}
 
-	// A URL leg that ran and produced results did not degrade; a leg that did not
-	// run (or covered only part of the requested URLs) did. The guard is
-	// deliberately narrow: it only fires while the leg is enabled, the engine
-	// still says `allow`, and no broader degradation has already been reported.
-	// An operator who disabled `url_check` is making an explicit choice, and that
-	// choice must stay silent rather than degrade every call.
+	// A URL leg that did not run or covered only part of the requested URLs is a
+	// visible coverage gap, including when the operator chose not to share URLs
+	// with a provider. Local heuristics still run on the original artifacts.
 	//
 	// This sits AFTER the degraded-detection guard on purpose: when the local
 	// rule set is missing entirely, "this call was NOT inspected" is the more
@@ -1232,7 +1437,12 @@ async function runEvaluationPipeline(
 			`URL reputation lookup was unavailable (${urlLegUnavailableReason}), so the URLs in this call were NOT verified clean and require review.`,
 		);
 	}
-	verdict = await applyRuntimeDetectors(request, context, verdict, managedState);
+	verdict = hostEffectiveVerdict(
+		await applyRuntimeDetectors(request, context, verdict, managedState),
+		config,
+		context,
+	);
+	const durationMs = performance.now() - startTime;
 	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);
 
 	await cacheUrlResults(urlCheckResults, context.reputationFeed ? null : cache);
@@ -1244,6 +1454,8 @@ async function runEvaluationPipeline(
 			request.toolName,
 			auditInput,
 			verdict,
+			false,
+			durationMs,
 		);
 	} catch {
 		// Fail open.
@@ -1289,7 +1501,15 @@ async function runEvaluationPipeline(
 	}
 
 	// Best-effort control plane telemetry (for dashboard/licensing). Never blocks verdict.
-	await ingestToControlPlaneIfEnabled(request, context, config, verdict, incidentEntry, logger);
+	await ingestToControlPlaneIfEnabled(
+		request,
+		context,
+		config,
+		verdict,
+		incidentEntry,
+		logger,
+		durationMs,
+	);
 
 	return verdict;
 }
@@ -1301,6 +1521,7 @@ async function ingestToControlPlaneIfEnabled(
 	verdict: Verdict,
 	incidentEntry: Record<string, unknown> | null,
 	logger: Logger,
+	durationMs: number,
 ): Promise<void> {
 	if (config.mode !== "managed") return;
 	if (!config.control_plane.enabled) return;
@@ -1340,20 +1561,17 @@ async function ingestToControlPlaneIfEnabled(
 		auditToolInputForVerdict(request.toolInput, verdict, context),
 		verdict,
 		false,
+		durationMs,
 	);
 
 	try {
 		const client = new ControlPlaneClient(config.control_plane, authToken, logger);
-		const remoteEntry = redactRemoteEvent(entry, config.control_plane.redact_mode);
-		const remoteIncident =
-			config.control_plane.sync_incidents && incidentEntry
-				? redactRemoteEvent(incidentEntry, config.control_plane.redact_mode)
-				: null;
 		const result = await client.ingest({
 			iid,
 			agent_runtime: context.agentRuntime,
 			agent_runtime_version: context.agentRuntimeVersion,
-			events: remoteIncident ? [remoteEntry, remoteIncident] : [remoteEntry],
+			events:
+				config.control_plane.sync_incidents && incidentEntry ? [entry, incidentEntry] : [entry],
 		});
 
 		const nextState = applyIngestResult(
@@ -1403,6 +1621,10 @@ async function cacheUrlResults(
 	if (!cache) return;
 	try {
 		for (const result of urlCheckResults) {
+			const isClean = !result.isMalicious && result.flags.length === 0;
+			// A clean result without a source expiry cannot be safely cached: the
+			// source row may already be near its freshness limit when this check runs.
+			if (isClean && result.cacheValidUntil === undefined) continue;
 			let cachedVerdict: CachedVerdict;
 			if (result.isMalicious) {
 				cachedVerdict = {
@@ -1430,7 +1652,7 @@ async function cacheUrlResults(
 					source: "url_check",
 				};
 			}
-			cache.putUrl(result.url, cachedVerdict, result.isMalicious);
+			cache.putUrl(result.url, cachedVerdict, result.isMalicious, result.cacheValidUntil);
 		}
 		await cache.save();
 	} catch {
@@ -1484,6 +1706,11 @@ function manifestEditInputs(request: ToolEvaluationRequest): ManifestEditInput[]
 	// Connectors may extract before field normalization, or use a path field
 	// core does not know; prefer the request's own path, then any extracted one.
 	const payload = readFileEditPayload(request.toolInput);
+	if (payload.patch) {
+		for (const edit of payload.edits ?? []) add(edit.filePath, edit.content);
+		return inputs;
+	}
+
 	const pathFromArtifacts = request.artifacts.find(
 		(artifact) => artifact.type === "file_path" && artifact.value.trim() !== "",
 	)?.value;
@@ -1514,7 +1741,6 @@ async function checkPackages(
 	reputationFeed?: ReputationFeedLoadOptions,
 ): Promise<PackageCheckResult[]> {
 	const results: PackageCheckResult[] = [];
-	if (!config.package_check.enabled) return results;
 
 	let parsedPackages: ParsedPackage[] | undefined;
 	try {
@@ -1526,6 +1752,19 @@ async function checkPackages(
 			// name the connector happens to give its edit tool.
 			parsedPackages = [];
 			for (const input of manifestEdits) {
+				if (isDependencyManifestPath(input.filePath) && !isPackageManifestPath(input.filePath)) {
+					parsedPackages.push(...extractPackagesFromManifest(input.filePath, input.content));
+					continue;
+				}
+				if (isPackageJsonPath(input.filePath) && !isCompletePackageManifest(input.content)) {
+					return [
+						packageCheckUnavailableResult(
+							input.filePath,
+							"npm",
+							"could not be reconstructed as a complete package manifest; no packages were verified",
+						),
+					];
+				}
 				parsedPackages.push(...extractPackagesFromManifest(input.filePath, input.content));
 			}
 		}
@@ -1537,11 +1776,45 @@ async function checkPackages(
 		return [packageCheckUnavailableResult("package operation", "npm")];
 	}
 
-	if (!parsedPackages || parsedPackages.length === 0) return results;
+	if (!parsedPackages) return results;
+	results.push(
+		...parsedPackages
+			.filter((pkg) => pkg.unverifiedReason || pkg.registry === "unknown")
+			.map((pkg) =>
+				packageCheckUnavailableResult(
+					pkg.name,
+					pkg.registry,
+					pkg.unverifiedReason ?? "uses an unsupported package ecosystem",
+				),
+			),
+	);
+	const checkablePackages = parsedPackages.filter(
+		(pkg): pkg is ParsedPackage & { registry: "npm" | "pypi" } =>
+			!pkg.unverifiedReason && pkg.registry !== "unknown",
+	);
+	if (checkablePackages.length === 0) return results;
+	if (!config.package_check.enabled) {
+		return [
+			...results,
+			...checkablePackages.map((pkg) =>
+				packageCheckUnavailableResult(
+					pkg.name,
+					pkg.registry,
+					"is disabled to avoid sharing package names with external providers",
+				),
+			),
+		];
+	}
 
 	const intelMerged = await getPackageIntelMerged(config, managedState, revocations);
-	const uncached: ParsedPackage[] = [];
-	for (const pkg of parsedPackages) {
+	const intelPacksEnabled = config.intel_packs?.enabled === true || config.intel?.enabled === true;
+	const intelPacksEntitled =
+		!(isCommercialBuild() || config.mode === "managed") ||
+		isPremiumModuleEnabled(managedState, "intel_packs");
+	const intelUnavailable =
+		intelPacksEnabled && intelPacksEntitled && intelMerged?.availability !== "available";
+	const uncached: (ParsedPackage & { registry: "npm" | "pypi" })[] = [];
+	for (const pkg of checkablePackages) {
 		const cacheKey = `${pkg.registry}:${pkg.name}${pkg.version ? `@${pkg.version}` : ""}`;
 		let cached: CachedVerdict | null = null;
 		try {
@@ -1562,7 +1835,17 @@ async function checkPackages(
 				confidence: 1.0,
 				details: cached.reasons.join("; "),
 			});
-		} else if (!cached) {
+		} else if (intelUnavailable) {
+			results.push(
+				packageCheckUnavailableResult(
+					pkg.name,
+					pkg.registry,
+					`required signed intel packs are unavailable${intelMerged?.detail ? ` (${intelMerged.detail})` : ""}`,
+				),
+			);
+		} else {
+			// Historical clean cache entries may have come from SEVERITY_UNKNOWN.
+			// Recheck them until the provider has an affirmative benign verdict.
 			uncached.push(pkg);
 		}
 	}
@@ -1576,6 +1859,7 @@ async function checkPackages(
 					fileCheckEndpoint: config.file_check.endpoint,
 					fileCheckTimeoutSeconds: config.file_check.timeout_seconds,
 					fileCheckEnabled: config.file_check.enabled,
+					fileCheckAllowInsecureLoopback: config.file_check.allow_insecure_loopback,
 					apiKey,
 					intelPackageNameDeny: intelMerged?.packageNameDeny,
 					intelPackageHashDeny: intelMerged?.packageHashDeny,
@@ -1584,7 +1868,7 @@ async function checkPackages(
 				logger,
 			);
 			const checkResults = await checker.checkPackages(uncached);
-			if (Array.isArray(checkResults)) checked = checkResults;
+			checked = validatePackageCheckResults(checkResults, uncached);
 		} catch (error) {
 			logger.warn("Package checker unavailable; package operation requires review", {
 				packageCount: uncached.length,
@@ -1633,16 +1917,43 @@ async function checkPackages(
 	return results;
 }
 
+function isCompletePackageManifest(content: string): boolean {
+	try {
+		const value: unknown = JSON.parse(content);
+		if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+		if (hasDuplicateJsonObjectKeys(content)) return false;
+		const manifest = value as Record<string, unknown>;
+		return [
+			"dependencies",
+			"devDependencies",
+			"optionalDependencies",
+			"peerDependencies",
+		].every((key) => {
+			const entries = manifest[key];
+			return (
+				entries === undefined ||
+				(typeof entries === "object" &&
+					entries !== null &&
+					!Array.isArray(entries) &&
+					Object.values(entries).every((version) => typeof version === "string"))
+			);
+		});
+	} catch {
+		return false;
+	}
+}
+
 function packageCheckUnavailableResult(
 	packageName: string,
-	registry: "npm" | "pypi",
+	registry: "npm" | "pypi" | "unknown",
+	reason = "is unavailable",
 ): PackageCheckResult {
 	return {
 		packageName,
 		registry,
 		verdict: "unknown",
 		confidence: 0.6,
-		details: `Package check for '${packageName}' is unavailable; this package was NOT verified clean and requires review`,
+		details: `Package check for '${packageName}' ${reason}; it was NOT verified clean and requires review`,
 	};
 }
 
@@ -1663,4 +1974,65 @@ function findUncheckedPackages(
 		observedCounts.set(key, remaining - 1);
 		return false;
 	});
+}
+
+function validatePackageCheckResults(
+	value: unknown,
+	expected: ParsedPackage[],
+): PackageCheckResult[] {
+	if (!Array.isArray(value)) return [];
+	const expectedCounts = new Map<string, number>();
+	for (const pkg of expected) {
+		const key = `${pkg.registry}:${pkg.name}`;
+		expectedCounts.set(key, (expectedCounts.get(key) ?? 0) + 1);
+	}
+
+	const groupedResults = new Map<string, PackageCheckResult[]>();
+	let malformed = false;
+	for (const entry of value) {
+		if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+			malformed = true;
+			continue;
+		}
+		const row = entry as Record<string, unknown>;
+		if (
+			typeof row.packageName !== "string" ||
+			!row.packageName ||
+			(row.registry !== "npm" && row.registry !== "pypi") ||
+			!(["malicious", "not_found", "suspicious_age", "unknown", "clean"] as unknown[]).includes(
+				row.verdict,
+			) ||
+			typeof row.confidence !== "number" ||
+			!Number.isFinite(row.confidence) ||
+			row.confidence < 0 ||
+			row.confidence > 1 ||
+			typeof row.details !== "string"
+		) {
+			malformed = true;
+			continue;
+		}
+		const result = row as unknown as PackageCheckResult;
+		const key = `${result.registry}:${result.packageName}`;
+		if (!expectedCounts.has(key)) continue;
+		const rows = groupedResults.get(key) ?? [];
+		rows.push(result);
+		groupedResults.set(key, rows);
+	}
+
+	const results: PackageCheckResult[] = [];
+	for (const [key, rows] of groupedResults) {
+		const expectedCount = expectedCounts.get(key) ?? 0;
+		if (malformed || rows.length > expectedCount) {
+			// Ambiguous rows can never vouch for clean coverage. Preserve valid
+			// explicit denials, while uncovered package occurrences become review results.
+			results.push(
+				...rows
+					.filter((result) => result.verdict === "malicious" || result.verdict === "not_found")
+					.slice(0, expectedCount),
+			);
+			continue;
+		}
+		results.push(...rows);
+	}
+	return results;
 }

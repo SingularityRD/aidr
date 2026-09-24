@@ -41,6 +41,8 @@ export interface DelegatedCredentialClaimsV1 {
 	issuedAt: number;
 	notBefore: number;
 	expiresAt: number;
+	/** Issuance time of the authenticated identity session that authorized minting. */
+	authSessionIssuedAt: number;
 	tokenId: string;
 	delegationDepth: number;
 	parentTokenId?: string;
@@ -78,6 +80,7 @@ export type DelegatedCredentialErrorCode =
 	| "tool_mismatch"
 	| "resource_mismatch"
 	| "scope_insufficient"
+	| "delegation_parent_required"
 	| "delegation_escalation";
 
 export type DelegatedCredentialVerificationResult =
@@ -181,6 +184,7 @@ const REQUIRED_CLAIM_KEYS = [
 	"issuedAt",
 	"notBefore",
 	"expiresAt",
+	"authSessionIssuedAt",
 	"tokenId",
 	"delegationDepth",
 ];
@@ -203,19 +207,22 @@ function claimTimes(claims: Record<string, unknown>): {
 	issuedAt: number;
 	notBefore: number;
 	expiresAt: number;
+	authSessionIssuedAt: number;
 	delegationDepth: number;
 } | null {
-	const { issuedAt, notBefore, expiresAt, delegationDepth } = claims;
+	const { issuedAt, notBefore, expiresAt, authSessionIssuedAt, delegationDepth } = claims;
 	if (
 		!validInteger(issuedAt) ||
 		!validInteger(notBefore) ||
 		!validInteger(expiresAt) ||
+		!validInteger(authSessionIssuedAt) ||
 		!validInteger(delegationDepth)
 	)
 		return null;
 	if (delegationDepth < 0 || delegationDepth > MAX_DELEGATION_DEPTH) return null;
+	if (authSessionIssuedAt <= 0 || authSessionIssuedAt > issuedAt) return null;
 	if (issuedAt > notBefore || notBefore >= expiresAt) return null;
-	return { issuedAt, notBefore, expiresAt, delegationDepth };
+	return { issuedAt, notBefore, expiresAt, authSessionIssuedAt, delegationDepth };
 }
 
 function validParentLineage(claims: Record<string, unknown>, depth: number): boolean {
@@ -244,6 +251,7 @@ export function parseDelegatedCredentialClaims(value: unknown): DelegatedCredent
 		issuedAt: times.issuedAt,
 		notBefore: times.notBefore,
 		expiresAt: times.expiresAt,
+		authSessionIssuedAt: times.authSessionIssuedAt,
 		tokenId: claims.tokenId as string,
 		delegationDepth: times.delegationDepth,
 		...(claims.parentTokenId === undefined
@@ -273,6 +281,7 @@ export function delegationDoesNotEscalate(
 		child.subjectUserId === parent.subjectUserId &&
 		child.tenantId === parent.tenantId &&
 		child.agentId === parent.agentId &&
+		child.authSessionIssuedAt === parent.authSessionIssuedAt &&
 		sameTool(child.tool, parent.tool) &&
 		sameResource(child.resource, parent.resource) &&
 		child.audience === parent.audience &&
@@ -461,6 +470,9 @@ function validateClaimsContext(
 	const grantedScopes = new Set(claims.scopes);
 	if (!context.requiredScopes.every((scope) => SCOPE.test(scope) && grantedScopes.has(scope)))
 		return "scope_insufficient";
+	if (claims.delegationDepth > 0 && !context.parentClaims) return "delegation_parent_required";
+	// parentClaims must come from the caller's separately verified trusted lineage,
+	// never from the same untrusted request as the child token.
 	if (context.parentClaims && !delegationDoesNotEscalate(context.parentClaims, claims))
 		return "delegation_escalation";
 	return null;

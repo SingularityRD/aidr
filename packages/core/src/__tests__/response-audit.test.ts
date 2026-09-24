@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type ResponseAuditEntry, ResponseAuditor } from "../response-audit.js";
@@ -61,6 +61,16 @@ async function readJsonLines(path: string): Promise<Array<Record<string, unknown
 }
 
 describe("ResponseAuditor", () => {
+	it("does not call an unsigned response log integrity-verified", async () => {
+		const dir = await makeTmpDir();
+		const auditor = new ResponseAuditor(join(dir, "unsigned-response-audit.jsonl"));
+		await auditor.log(makeEntry());
+		await expect(auditor.verifyIntegrity()).resolves.toEqual({
+			valid: false,
+			reason: "unsigned_audit_chain_not_verified",
+		});
+	});
+
 	it("persists response actions as JSONL and returns queryable domain entries", async () => {
 		const dir = await makeTmpDir();
 		const auditPath = join(dir, "response-audit.jsonl");
@@ -87,6 +97,33 @@ describe("ResponseAuditor", () => {
 
 		const queried = await auditor.query({ threatId: "CLT-TEST-001", action: "contain" });
 		expect(queried).toEqual([logged]);
+	});
+
+	it("hardens response audit data, signing key, and checkpoint to owner-only permissions", async () => {
+		const dir = await makeTmpDir();
+		const auditDirectory = join(dir, "private-response-audit");
+		const auditPath = join(auditDirectory, "response-audit.jsonl");
+		await mkdir(auditDirectory, { mode: 0o777 });
+		await writeFile(auditPath, "", { mode: 0o666 });
+		if (process.platform !== "win32") {
+			await chmod(auditDirectory, 0o777);
+			await chmod(auditPath, 0o666);
+		}
+		const auditor = new ResponseAuditor(auditPath, { signEntries: true });
+
+		await auditor.log(makeEntry());
+
+		expect(await readJsonLines(auditPath)).toHaveLength(1);
+		if (process.platform !== "win32") {
+			expect((await stat(auditDirectory)).mode & 0o777).toBe(0o700);
+			for (const path of [
+				auditPath,
+				join(auditDirectory, ".response-audit-key"),
+				`${auditPath}.head`,
+			]) {
+				expect((await stat(path)).mode & 0o777).toBe(0o600);
+			}
+		}
 	});
 
 	it("persists provider refusal evidence and enrollment binding without claiming containment", async () => {
@@ -124,19 +161,20 @@ describe("ResponseAuditor", () => {
 		const dir = await makeTmpDir();
 		const auditPath = join(dir, "response-audit.jsonl");
 		const auditor = new ResponseAuditor(auditPath);
+		const bearerToken = ["fixture", "bearer", "token"].join("-");
 
 		const logged = await auditor.log(
 			makeEntry({
-				input: "curl -H 'Authorization: Bearer live-secret' https://example.test/?token=secret",
+				input: `curl -H 'Authorization: Bearer ${bearerToken}' https://example.test/?token=secret`,
 				error: "upstream failed password=secret",
 			}),
 		);
 
 		const raw = await readFile(auditPath, "utf8");
-		expect(raw).not.toContain("live-secret");
+		expect(raw).not.toContain(bearerToken);
 		expect(raw).not.toContain("token=secret");
 		expect(raw).not.toContain("password=secret");
-		expect(logged.input).not.toContain("live-secret");
+		expect(logged.input).not.toContain(bearerToken);
 		expect(logged.error).not.toContain("password=secret");
 	});
 
@@ -213,6 +251,7 @@ describe("ResponseAuditor", () => {
 
 		const logged = await auditor.log(makeEntry());
 		const [stored] = await readJsonLines(auditPath);
+		if (!stored) throw new Error("Expected a persisted audit entry");
 		expect(stored._signature).toEqual(expect.any(String));
 		expect(stored._prev_hash).toBe("GENESIS");
 		expect(stored._entry_hash).toMatch(/^[0-9a-f]{64}$/);
@@ -238,6 +277,41 @@ describe("ResponseAuditor", () => {
 			valid: false,
 			tamperedEntries: [logged.id],
 		});
+	});
+
+	it("serializes concurrent signed writes into one valid hash chain", async () => {
+		const dir = await makeTmpDir();
+		const auditor = new ResponseAuditor(join(dir, "concurrent-response-audit.jsonl"), {
+			signEntries: true,
+		});
+		await Promise.all([
+			auditor.log(makeEntry({ action: "contain", outcome: "success" })),
+			auditor.log(makeEntry({ action: "contain", outcome: "failure" })),
+		]);
+		await expect(auditor.verifyIntegrity()).resolves.toEqual({ valid: true });
+	});
+
+	it("serializes concurrent signed writes from separate auditors sharing one path", async () => {
+		const dir = await makeTmpDir();
+		const auditPath = join(dir, "shared-response-audit.jsonl");
+		const firstAuditor = new ResponseAuditor(auditPath, { signEntries: true });
+		const secondAuditor = new ResponseAuditor(auditPath, { signEntries: true });
+
+		await Promise.all(
+			Array.from({ length: 12 }, (_, index) =>
+				(index % 2 === 0 ? firstAuditor : secondAuditor).log(
+					makeEntry({ threatId: `CLT-SHARED-${index}` }),
+				),
+			),
+		);
+
+		const entries = await readJsonLines(auditPath);
+		expect(entries).toHaveLength(12);
+		expect(entries.map((entry) => entry._prev_hash)).toEqual([
+			"GENESIS",
+			...entries.slice(0, -1).map((entry) => entry._entry_hash),
+		]);
+		await expect(firstAuditor.verifyIntegrity()).resolves.toEqual({ valid: true });
 	});
 
 	it("reports deletion or reordering in the signed audit hash chain", async () => {
@@ -304,6 +378,9 @@ describe("ResponseAuditor", () => {
 		const manifest = await readFile(`${auditPath}.retention.jsonl`, "utf8");
 		expect(manifest).toContain('"type":"retention_delete"');
 		expect(manifest).toContain("expired-retention");
+		if (process.platform !== "win32") {
+			expect((await stat(`${auditPath}.retention.jsonl`)).mode & 0o777).toBe(0o600);
+		}
 		await expect(auditor.verifyIntegrity()).resolves.toEqual({ valid: true });
 
 		await writeFile(

@@ -21,7 +21,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import Depends, Header, HTTPException, Request, status
 
@@ -54,11 +54,14 @@ def auth_mode() -> str:
 def auth_is_configured() -> bool:
     """Return whether the selected authentication mode has its key material."""
 
-    if not auth_is_required() or auth_mode() == "disabled":
+    if not auth_is_required():
         return True
-    if auth_mode() == "api_key":
+    mode = auth_mode()
+    if mode == "disabled":
+        return False
+    if mode == "api_key":
         return bool(os.getenv("BRIDGE_API_KEY", "").strip())
-    return bool(os.getenv("BRIDGE_JWT_SECRET", "").strip())
+    return _broker_auth_config() is not None
 
 
 def auth_is_required() -> bool:
@@ -108,6 +111,15 @@ def _parse_scopes(value: Any) -> frozenset[str]:
     return frozenset(scopes)
 
 
+def _broker_auth_config() -> tuple[bytes, str, str] | None:
+    secret = os.getenv("BRIDGE_JWT_SECRET", "").strip().encode("utf-8")
+    issuer = os.getenv("BRIDGE_JWT_ISSUER", "").strip()
+    audience = os.getenv("BRIDGE_JWT_AUDIENCE", "").strip()
+    if len(secret) < 32 or not issuer or not audience:
+        return None
+    return secret, issuer, audience
+
+
 @dataclass(frozen=True)
 class BrokerClaims:
     """Verified, short-lived broker identity used for every scan request."""
@@ -121,19 +133,34 @@ class BrokerClaims:
     claims: dict[str, Any]
 
 
-class ReplayStore:
-    """Small replay cache with an optional same-host SQLite backing store.
+class ReplayStoreUnavailable(RuntimeError):
+    """The configured replay store cannot make a safe atomic decision."""
 
-    A shared Postgres/Redis implementation is required for multi-replica GA;
-    this class deliberately exposes the limitation through ``is_durable`` so
-    readiness can fail closed when ``BRIDGE_HA_REQUIRED=true``.
+
+class ReplayStore:
+    """Replay cache with single-host SQLite or shared PostgreSQL persistence.
+
+    Multi-replica deployments must use the shared PostgreSQL table; a durable
+    local SQLite file is not shared between replicas and cannot prevent replay.
     """
 
-    def __init__(self, path: Optional[str] = None):
+    def __init__(
+        self,
+        path: Optional[str] = None,
+        *,
+        postgres_dsn: Optional[str] = None,
+        postgres_connect: Optional[Callable[[], Any]] = None,
+    ):
         self.path = (path or "").strip()
+        self.postgres_dsn = (postgres_dsn or "").strip()
+        self._postgres_connect_override = postgres_connect
         self._memory: dict[str, int] = {}
         self._lock = Lock()
-        if self.path:
+        if self.postgres_dsn:
+            # Do not silently fall back to a per-replica SQLite store when the
+            # shared database is unavailable.
+            self.path = ""
+        elif self.path:
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
             with sqlite3.connect(self.path) as connection:
                 connection.execute(
@@ -141,13 +168,53 @@ class ReplayStore:
                     "(jti TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)"
                 )
 
-    @property
-    def is_durable(self) -> bool:
-        return bool(self.path)
+    def readiness(self) -> tuple[bool, str]:
+        if not self.postgres_dsn and self._postgres_connect_override is None:
+            return False, "shared postgres JWT replay store is not configured"
+        try:
+            with self._connect_postgres() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT has_table_privilege(current_user, "
+                        "'public.aig_bridge_jwt_replay', 'SELECT,INSERT,DELETE')"
+                    )
+                    row = cursor.fetchone()
+                    if row is None or not bool(row[0]):
+                        return False, "postgres JWT replay role lacks required privileges"
+                    cursor.execute("SELECT 1 FROM public.aig_bridge_jwt_replay LIMIT 1")
+            return True, "shared postgres JWT replay store"
+        except Exception:
+            return False, "postgres JWT replay store is unavailable or not migrated"
+
+    def _connect_postgres(self) -> Any:
+        if self._postgres_connect_override is not None:
+            return self._postgres_connect_override()
+        import psycopg
+
+        return psycopg.connect(self.postgres_dsn, connect_timeout=3)
+
+    def _consume_postgres(self, jti: str, expires_at: int, now: int) -> bool:
+        try:
+            with self._connect_postgres() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM public.aig_bridge_jwt_replay WHERE expires_at <= %s",
+                        (now,),
+                    )
+                    cursor.execute(
+                        "INSERT INTO public.aig_bridge_jwt_replay (jti, expires_at) "
+                        "VALUES (%s, %s) ON CONFLICT (jti) DO NOTHING RETURNING jti",
+                        (jti, expires_at),
+                    )
+                    return cursor.fetchone() is not None
+        except Exception as exc:
+            raise ReplayStoreUnavailable("shared JWT replay store is unavailable") from exc
 
     def consume(self, jti: str, expires_at: int) -> bool:
         now = int(time.time())
         with self._lock:
+            if self.postgres_dsn:
+                return self._consume_postgres(jti, expires_at, now)
             if self.path:
                 try:
                     with sqlite3.connect(self.path, timeout=5) as connection:
@@ -168,21 +235,25 @@ class ReplayStore:
             return True
 
 
-_replay_store = ReplayStore(os.getenv("BRIDGE_JWT_REPLAY_DB", ""))
+_replay_store = ReplayStore(
+    os.getenv("BRIDGE_JWT_REPLAY_DB", ""),
+    postgres_dsn=os.getenv("BRIDGE_TASK_POSTGRES_DSN", ""),
+)
 
 
 def replay_store_ready() -> bool:
-    return not ha_is_required() or _replay_store.is_durable
+    return not ha_is_required() or _replay_store.readiness()[0]
 
 
 def _verify_broker_token(request: Request) -> BrokerClaims:
+    config = _broker_auth_config()
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="broker authentication is not configured")
+    secret, issuer, audience = config
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="broker bearer token required")
-    secret = os.getenv("BRIDGE_JWT_SECRET", "").strip().encode("utf-8")
-    if not secret:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="broker authentication is not configured")
     try:
         header_raw, payload_raw, signature_raw = token.strip().split(".")
         header = json.loads(_b64url_decode(header_raw))
@@ -201,15 +272,12 @@ def _verify_broker_token(request: Request) -> BrokerClaims:
             raise ValueError("invalid JWT expiry")
         if "nbf" in payload and int(payload["nbf"]) > now + skew:
             raise ValueError("token is not active")
-        issuer = os.getenv("BRIDGE_JWT_ISSUER", "").strip()
-        audience = os.getenv("BRIDGE_JWT_AUDIENCE", "").strip()
-        if issuer and payload.get("iss") != issuer:
+        if payload.get("iss") != issuer:
             raise ValueError("invalid JWT issuer")
-        if audience:
-            actual_aud = payload.get("aud")
-            audiences = actual_aud if isinstance(actual_aud, list) else [actual_aud]
-            if audience not in audiences:
-                raise ValueError("invalid JWT audience")
+        actual_aud = payload.get("aud")
+        audiences = actual_aud if isinstance(actual_aud, list) else [actual_aud]
+        if audience not in audiences:
+            raise ValueError("invalid JWT audience")
         subject = str(payload.get("sub") or "").strip()
         tenant_id = str(payload.get("tenant_id") or payload.get("tid") or "").strip()
         jti = str(payload.get("jti") or "").strip()
@@ -219,9 +287,14 @@ def _verify_broker_token(request: Request) -> BrokerClaims:
         job_id = payload.get("job_id") or payload.get("jobId")
         if job_id is not None and not _TENANT_RE.fullmatch(str(job_id)):
             raise ValueError("invalid job_id claim")
-        if not _replay_store.consume(jti, exp):
+        if not _replay_store.consume(jti, exp + max(0, skew)):
             raise ValueError("JWT replay detected")
         return BrokerClaims(subject, tenant_id, scopes, str(job_id) if job_id else None, jti, exp, payload)
+    except ReplayStoreUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="broker replay protection is unavailable",
+        ) from exc
     except (ValueError, TypeError, KeyError, json.JSONDecodeError, UnicodeError, binascii.Error) as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid broker token") from exc
 
@@ -234,9 +307,12 @@ async def require_bridge_api_key(request: Request) -> BrokerClaims | None:
     closed and visible in readiness checks instead of appearing healthy.
     """
 
-    if not auth_is_required() or auth_mode() == "disabled":
+    if not auth_is_required():
         return None
-    if auth_mode() == "broker":
+    mode = auth_mode()
+    if mode == "disabled":
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bridge authentication is not configured")
+    if mode == "broker":
         return _verify_broker_token(request)
     configured = os.getenv("BRIDGE_API_KEY", "").strip()
     if not configured:
@@ -272,6 +348,14 @@ async def get_request_context(
     ``BRIDGE_TENANT_REQUIRED=false``; the fallback tenant is never used when
     the production compose file enables the requirement.
     """
+
+    if _auth is not None:
+        required_scope = "aig:read" if request.method.upper() in {"GET", "HEAD"} else "aig:scan"
+        if required_scope not in _auth.scopes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"{required_scope} scope is required",
+            )
 
     claim_tenant = _auth.tenant_id if _auth is not None else ""
     tenant_id = (tenant_header or "").strip()

@@ -36,12 +36,31 @@ export function getFileContentRaw(path: fs.PathOrFileDescriptor): Promise<Buffer
  * Write JSON data atomically: write to a temp file, then rename.
  * Prevents corrupt reads from concurrent processes.
  */
-export async function atomicWriteJson(path: string, data: unknown): Promise<void> {
+export async function atomicWriteJson(
+	path: string,
+	data: unknown,
+	options: { mode?: number } = {},
+): Promise<void> {
 	await fsPromises.mkdir(dirname(path), { recursive: true });
 	const tmp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
 	try {
-		await fsPromises.writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
+		const handle = await fsPromises.open(tmp, "wx", 0o600);
+		try {
+			await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, "utf8");
+			await handle.sync();
+		} finally {
+			await handle.close();
+		}
+		await fsPromises.chmod(tmp, options.mode ?? 0o600);
 		await fsPromises.rename(tmp, path);
+		if (process.platform !== "win32") {
+			const directory = await fsPromises.open(dirname(path), "r");
+			try {
+				await directory.sync();
+			} finally {
+				await directory.close();
+			}
+		}
 	} catch (err) {
 		try {
 			await fsPromises.unlink(tmp);

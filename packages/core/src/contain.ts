@@ -45,45 +45,11 @@ export class AutoContain {
 		isolated: boolean;
 		containerId?: string;
 	}> {
-		// Check if container runtime is available
-		const runtimeAvailable = await this.isRuntimeAvailable();
-		if (!runtimeAvailable) {
-			this.logger.warn("Container runtime not available, running operation without isolation", {
-				runtime: this.config.runtime,
-				tool: context.tool,
-			});
-			// Log the fallback (non-isolated) execution if auditor is available
-			if (this.auditor && context.verdict && context.threatId) {
-				await this.auditor.log({
-					action: "contain",
-					threatId: context.threatId,
-					tool: context.tool,
-					input: context.input,
-					verdict: context.verdict,
-					responseTaken: "contain",
-					metadata: { containerId: undefined },
-					outcome: "failure",
-					error: "Container runtime not available",
-				});
-			}
-			// REFUSE, do not run unisolated.
-			//
-			// This method exists to contain an operation that has already been
-			// judged dangerous. Executing it here without isolation and returning
-			// `isolated: false` invites a caller to treat "contained" as done while
-			// the operation ran with full privileges - the opposite of the intent.
-			// A containment primitive that cannot contain must fail, loudly.
-			throw new Error(
-				`Container isolation requested but runtime '${this.config.runtime}' is not available; ` +
-					"refusing to run the operation unisolated. Install a container runtime, or handle the " +
-					"verdict by blocking the call instead of containing it.",
-			);
-		}
-
-		const containerId = await this.createContainer();
-		this.logger.debug("Created isolation container", { containerId, tool: context.tool });
-
-		// Log container creation if auditor is available
+		void operation;
+		this.logger.warn("Generic operation isolation is unsupported; refusing to run it", {
+			runtime: this.config.runtime,
+			tool: context.tool,
+		});
 		if (this.auditor && context.verdict && context.threatId) {
 			await this.auditor.log({
 				action: "contain",
@@ -92,20 +58,15 @@ export class AutoContain {
 				input: context.input,
 				verdict: context.verdict,
 				responseTaken: "contain",
-				metadata: { containerId },
-				outcome: "success",
+				metadata: { containerId: undefined },
+				outcome: "failure",
+				error: "Generic operation isolation is unsupported; use isolateCommand()",
 			});
 		}
-
-		try {
-			// Serialize the operation for container execution
-			// Note: In practice, operations need to be serializable or wrapped
-			const result = await this.runInContainer(operation, containerId);
-			return { result, isolated: true, containerId };
-		} finally {
-			await this.destroyContainer(containerId);
-			this.logger.debug("Destroyed isolation container", { containerId });
-		}
+		throw new Error(
+			"Generic operation isolation is not supported; refusing to run the operation unisolated. " +
+			"Use isolateCommand() or block the call instead.",
+		);
 	}
 
 	/**
@@ -163,24 +124,32 @@ export class AutoContain {
 		const containerId = await this.createContainer();
 		this.logger.debug("Created isolation container for command", { containerId, command });
 
-		// Log container creation if auditor is available
-		if (this.auditor && options?.verdict && options?.threatId) {
-			await this.auditor.log({
-				action: "contain",
-				threatId: options.threatId,
-				tool: command,
-				input: args.join(" "),
-				verdict: options.verdict,
-				responseTaken: "contain",
-				metadata: { containerId },
-				outcome: "success",
-			});
-		}
-
 		try {
-			const result = await this.runCommandInContainer(command, args, options, containerId);
+			let result: ContainerResult;
+			try {
+				result = await this.runCommandInContainer(command, args, options, containerId);
+			} catch (error) {
+				await this.logCommandContainment(
+					options,
+					command,
+					args,
+					containerId,
+					"failure",
+					error instanceof Error ? error.message : String(error),
+				);
+				throw error;
+			}
+			const success = result.exitCode === 0;
+			await this.logCommandContainment(
+				options,
+				command,
+				args,
+				containerId,
+				success ? "success" : "failure",
+				success ? undefined : result.stderr || `Command exited with code ${result.exitCode}`,
+			);
 			return {
-				success: result.exitCode === 0,
+				success,
 				exitCode: result.exitCode,
 				stdout: result.stdout,
 				stderr: result.stderr,
@@ -191,6 +160,28 @@ export class AutoContain {
 			await this.destroyContainer(containerId);
 			this.logger.debug("Destroyed isolation container", { containerId });
 		}
+	}
+
+	private async logCommandContainment(
+		options: { verdict?: Verdict; threatId?: string } | undefined,
+		command: string,
+		args: string[],
+		containerId: string,
+		outcome: "success" | "failure",
+		error?: string,
+	): Promise<void> {
+		if (!this.auditor || !options?.verdict || !options.threatId) return;
+		await this.auditor.log({
+			action: "contain",
+			threatId: options.threatId,
+			tool: command,
+			input: args.join(" "),
+			verdict: options.verdict,
+			responseTaken: "contain",
+			metadata: { containerId },
+			outcome,
+			error,
+		});
 	}
 
 	private async isRuntimeAvailable(): Promise<boolean> {
@@ -215,13 +206,16 @@ export class AutoContain {
 
 	private async createContainer(): Promise<string> {
 		const containerId = `aidr-${randomBytes(8).toString("hex")}`;
+		// A bridge network has unrestricted outbound access, so "restricted" fails
+		// closed to no networking until a restricted-network adapter exists.
+		const networkMode = this.config.networkMode === "restricted" ? "none" : this.config.networkMode;
 		const args = [
 			"create",
 			"--name",
 			containerId,
 			"--rm",
 			"--network",
-			this.config.networkMode === "none" ? "none" : "bridge",
+			networkMode,
 			"--read-only",
 			...(this.config.cpuLimit ? ["--cpus", this.config.cpuLimit] : []),
 			...(this.config.memoryLimit ? ["--memory", this.config.memoryLimit] : []),
@@ -249,9 +243,15 @@ export class AutoContain {
 				stderr += data.toString();
 			});
 
-			proc.on("exit", (code) => {
+			proc.on("exit", async (code) => {
 				if (code === 0) {
-					resolve(containerId);
+					try {
+						await this.startContainer(containerId);
+						resolve(containerId);
+					} catch (error) {
+						await this.destroyContainer(containerId);
+						reject(error);
+					}
 				} else {
 					reject(new Error(`Failed to create container: ${stderr || `exit code ${code}`}`));
 				}
@@ -263,15 +263,27 @@ export class AutoContain {
 		});
 	}
 
-	private async runInContainer<TResult>(
-		_operation: () => Promise<TResult>,
-		_containerId: string,
-	): Promise<TResult> {
-		// For general operations, we need to serialize and wrap them
-		// This is a limitation - operations must be designed for containerization
-		throw new Error(
-			"Generic operation isolation requires serializable operations. Use isolateCommand() for command execution instead.",
-		);
+	private async startContainer(containerId: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			const proc = spawn(this.config.runtime, ["start", containerId], {
+				stdio: ["ignore", "ignore", "pipe"],
+				shell: false,
+			});
+
+			let stderr = "";
+			proc.stderr?.on("data", (data) => {
+				stderr += data.toString();
+			});
+
+			proc.on("exit", (code) => {
+				if (code === 0) resolve();
+				else reject(new Error(`Failed to start container: ${stderr || `exit code ${code}`}`));
+			});
+
+			proc.on("error", (err) => {
+				reject(new Error(`Failed to spawn ${this.config.runtime}: ${err.message}`));
+			});
+		});
 	}
 
 	private async runCommandInContainer(

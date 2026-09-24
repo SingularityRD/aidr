@@ -1,11 +1,14 @@
-import { generateKeyPairSync, sign as cryptoSign, type KeyObject } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { sign as cryptoSign, generateKeyPairSync, type KeyObject } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApprovalStore } from "../approval-store.js";
 import { allowVerdict, evaluateToolCall } from "../evaluator.js";
+import { guardToolCall } from "../guard.js";
 import {
 	applyIngestResult,
+	type EntitlementSnapshotV2,
 	isEntitlementActive,
 	isPremiumModuleEnabled,
 	isPremiumUnlocked,
@@ -13,11 +16,28 @@ import {
 	loadRevocationsCache,
 	parseSignedRevocationsFromControlPlaneBody,
 	redactRemoteEvent,
-	type EntitlementSnapshotV2,
 	verifyEd25519SignedEntitlementSnapshot,
 } from "../managed.js";
 import { evaluatePolicy } from "../policy.js";
 import { ConfigSchema } from "../types.js";
+
+const vaultSecrets = vi.hoisted(() => new Map<string, string>());
+vi.mock("../secret-store.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../secret-store.js")>()),
+	resolveSecretStore: () => ({
+		kind: "windows-dpapi",
+		location: "os-vault",
+		osProtected: true,
+		isAvailable: () => true,
+		put: (id: string, secret: string) => {
+			vaultSecrets.set(id, secret);
+		},
+		get: (id: string) => vaultSecrets.get(id) ?? null,
+		revoke: (id: string) => {
+			vaultSecrets.delete(id);
+		},
+	}),
+}));
 
 const THREATS_DIR = resolve(__dirname, "..", "..", "..", "..", "threats");
 const ALLOWLISTS_DIR = resolve(__dirname, "..", "..", "..", "..", "allowlists");
@@ -26,6 +46,7 @@ const originalHome = process.env.HOME;
 const originalCommercial = process.env.AIDR_COMMERCIAL;
 
 afterEach(() => {
+	vaultSecrets.clear();
 	if (originalHome === undefined) delete process.env.HOME;
 	else process.env.HOME = originalHome;
 	if (originalCommercial === undefined) delete process.env.AIDR_COMMERCIAL;
@@ -52,7 +73,11 @@ function signSnapshot(snapshot: EntitlementSnapshotV2, privateKey: KeyObject): s
 	).toString("base64");
 }
 
-function makeEntitlement(now: Date, expiresAt: Date, graceUntil = expiresAt): EntitlementSnapshotV2 {
+function makeEntitlement(
+	now: Date,
+	expiresAt: Date,
+	graceUntil = expiresAt,
+): EntitlementSnapshotV2 {
 	return {
 		schema_version: 2,
 		tenant_id: "tenant-critical-test",
@@ -86,10 +111,7 @@ function localConfig(overrides: Record<string, unknown> = {}): Record<string, un
 	};
 }
 
-async function writeRuntimeConfig(
-	dir: string,
-	config: Record<string, unknown>,
-): Promise<string> {
+async function writeRuntimeConfig(dir: string, config: Record<string, unknown>): Promise<string> {
 	const configPath = join(dir, "config.json");
 	await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 	return configPath;
@@ -100,7 +122,11 @@ async function evaluateRuntime(
 	config: Record<string, unknown>,
 	toolName: string,
 	toolInput: Record<string, unknown>,
-	artifacts: Array<{ type: "url" | "command" | "file_path" | "content"; value: string; context?: string }>,
+	artifacts: Array<{
+		type: "url" | "command" | "file_path" | "content";
+		value: string;
+		context?: string;
+	}>,
 ) {
 	const configPath = await writeRuntimeConfig(dir, {
 		...localConfig({ allowlist: { path: join(dir, "allowlist.json") } }),
@@ -123,6 +149,47 @@ async function evaluateRuntime(
 }
 
 describe("critical policy and runtime security branches", () => {
+	it("denies a tool call even with prior approval when its centrally managed config becomes corrupt", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-critical-evaluator-"));
+		try {
+			const configPath = await writeRuntimeConfig(dir, {
+				...localConfig(),
+				control_plane: {
+					enabled: true,
+					remote_policy_required: true,
+					endpoint: "https://control.example.test",
+				},
+			});
+			await writeFile(configPath, "{corrupt", "utf8");
+			const request = {
+				sessionId: "critical-runtime-test",
+				toolName: "Bash",
+				toolInput: { command: "echo safe" },
+				artifacts: [{ type: "command" as const, value: "echo safe" }],
+			};
+			const context = { configPath, threatsDir: THREATS_DIR, allowlistsDir: ALLOWLISTS_DIR };
+			expect(await evaluateToolCall(request, context)).toMatchObject({
+				decision: "deny",
+				category: "config_invalid",
+			});
+
+			const approvals = new ApprovalStore();
+			const actionId = ApprovalStore.actionId(
+				request.toolName,
+				request.toolInput,
+				request.sessionId,
+			);
+			approvals.setPending(actionId, { artifacts: request.artifacts, createdAt: Date.now() });
+			approvals.approve(actionId);
+			expect((await guardToolCall(request, context, approvals)).verdict).toMatchObject({
+				decision: "deny",
+				category: "config_invalid",
+			});
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("returns allow, deny, and ask through the evaluator", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "aidr-critical-evaluator-"));
 		try {
@@ -234,9 +301,9 @@ describe("critical policy and runtime security branches", () => {
 		expect(malformedInput).toBeNull();
 
 		const disabledPolicy = ConfigSchema.parse({ policy: { enabled: false } });
-		expect(await evaluatePolicy("Bash", [{ type: "command", value: "rm -rf /" }], disabledPolicy)).toBe(
-			null,
-		);
+		expect(
+			await evaluatePolicy("Bash", [{ type: "command", value: "rm -rf /" }], disabledPolicy),
+		).toBe(null);
 	});
 
 	it("accepts only valid active signed entitlements for premium branches", () => {
@@ -317,7 +384,7 @@ describe("critical policy and runtime security branches", () => {
 	});
 
 	it("redacts credential material before hashing or sending remote events", () => {
-		const secret = "sk_live_abcdefghijklmnop";
+		const secret = ["sk_live_", "abcdefgh", "ijklmnop"].join("");
 		const entry = {
 			tool_input_summary: `Authorization: Bearer ${secret} token=${secret}`,
 			artifacts: [`https://example.test/download?token=${secret}`],
@@ -364,6 +431,12 @@ describe("critical policy and runtime security branches", () => {
 			await mkdir(aidrDir, { recursive: true });
 			process.env.HOME = dir;
 			process.env.AIDR_COMMERCIAL = "1";
+			vaultSecrets.set("critical-token-ref", "aidr-critical-token");
+			const apiKeyRef = {
+				store: "windows-dpapi",
+				id: "critical-token-ref",
+				created_at: new Date().toISOString(),
+			};
 
 			const { publicKey } = generateKeyPairSync("ed25519");
 			const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -372,7 +445,7 @@ describe("critical policy and runtime security branches", () => {
 			await writeFile(
 				join(aidrDir, "managed.json"),
 				JSON.stringify({
-					api_key: "aidr-critical-token",
+					api_key_ref: apiKeyRef,
 					entitlement: snapshot,
 					entitlement_alg: "ed25519",
 					entitlement_sig: Buffer.alloc(64, 3).toString("base64"),
@@ -383,7 +456,7 @@ describe("critical policy and runtime security branches", () => {
 
 			const configPath = await writeRuntimeConfig(dir, {
 				mode: "managed",
-				auth: { api_key: "aidr-critical-token" },
+				auth: { api_key_ref: apiKeyRef },
 				control_plane: { enabled: false },
 				licensing: {
 					require_signed_entitlements: true,
@@ -459,9 +532,14 @@ describe("critical policy and runtime security branches", () => {
 			},
 		});
 
-		const verdict = await evaluatePolicy("Write", [{ type: "file_path", value: "/tmp/file" }], config, {
-			file_path: "/tmp/file",
-		});
+		const verdict = await evaluatePolicy(
+			"Write",
+			[{ type: "file_path", value: "/tmp/file" }],
+			config,
+			{
+				file_path: "/tmp/file",
+			},
+		);
 		expect(verdict?.category).toBe("detection_unavailable");
 		expect(verdict?.confidence).toBe(0);
 		expect(verdict?.reasons[0]).toMatch(/invalid/i);

@@ -3,15 +3,54 @@
  * Appends JSON Lines entries to ~/.singularity-aidr/audit.jsonl for forensics and debugging.
  */
 
-import { appendFile, mkdir, rename, stat, unlink } from "node:fs/promises";
-import { dirname } from "node:path";
+import { lstatSync } from "node:fs";
+import { chmod, open, rename, stat, unlink } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
+import { preparePrivateLocalFile } from "./private-local-file.js";
 import type { ResponseActionRecord } from "./response-actions.js";
 import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
 import type { LoggingConfig, Verdict } from "./types.js";
 
 const MAX_SUMMARY_LEN = 200;
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+const preparedAuditPaths = new Set<string>();
+const auditWriteQueues = new Map<string, Promise<void>>();
+
+async function prepareAuditPath(path: string): Promise<void> {
+	const directory = dirname(path);
+	const normalized = resolve(path);
+	const key = process.platform === "win32" ? normalized.toLowerCase() : normalized;
+	if (!preparedAuditPaths.has(key)) {
+		preparePrivateLocalFile(path);
+		preparedAuditPaths.add(key);
+		return;
+	}
+
+	const directoryInfo = lstatSync(directory);
+	if (directoryInfo.isSymbolicLink() || !directoryInfo.isDirectory()) {
+		throw new Error("audit_directory_not_private");
+	}
+	let fileInfo;
+	try {
+		fileInfo = lstatSync(path);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		preparedAuditPaths.delete(key);
+		preparePrivateLocalFile(path);
+		preparedAuditPaths.add(key);
+		return;
+	}
+	if (fileInfo.isSymbolicLink() || !fileInfo.isFile()) {
+		throw new Error("audit_file_not_private");
+	}
+	if (process.platform !== "win32") {
+		await chmod(directory, PRIVATE_DIRECTORY_MODE);
+		await chmod(path, PRIVATE_FILE_MODE);
+	}
+}
 
 /**
  * Bounded, credential-redacted one-line description of a tool call.
@@ -51,6 +90,7 @@ export function buildRuntimeVerdictEntry(
 	toolInput: Record<string, unknown>,
 	verdict: Verdict,
 	userOverride = false,
+	durationMs?: number,
 ): Record<string, unknown> {
 	return {
 		type: "runtime_verdict",
@@ -60,11 +100,15 @@ export function buildRuntimeVerdictEntry(
 		tool_input_summary: toolInputSummary(toolName, toolInput),
 		artifacts: redactTelemetryData(verdict.artifacts),
 		verdict: verdict.decision,
+		...(verdict.category === "behavioral_unavailable" ? { category: verdict.category } : {}),
 		severity: verdict.severity,
 		reasons: redactTelemetryData(verdict.reasons),
 		source: verdict.source,
 		matched_threat_id: verdict.matchedThreatId,
 		user_override: userOverride,
+		...(durationMs !== undefined && Number.isFinite(durationMs) && durationMs >= 0
+			? { duration_ms: durationMs }
+			: {}),
 		// Verified user -> agent -> tool -> resource lineage, present only when the
 		// call carried a delegated credential that verified. Without it an audited
 		// event cannot be traced back to the resource it touched.
@@ -146,10 +190,25 @@ export function buildIncidentEntry(
 	};
 }
 
-/**
- * Classic logrotate: shift numbered backups and rename active file to .1.
- * All renames wrapped in try/catch ignoring ENOENT for race safety.
- */
+async function renameIfPresent(from: string, to: string): Promise<void> {
+	try {
+		await rename(from, to);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+}
+
+async function unlinkIfPresent(path: string): Promise<boolean> {
+	try {
+		await unlink(path);
+		return true;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw error;
+	}
+}
+
+/** Classic logrotate: shift numbered backups and rename active file to .1. */
 async function rotateIfNeeded(filePath: string, maxBytes: number, maxFiles: number): Promise<void> {
 	if (maxBytes <= 0 || maxFiles <= 0) return;
 
@@ -157,8 +216,10 @@ async function rotateIfNeeded(filePath: string, maxBytes: number, maxFiles: numb
 	try {
 		const s = await stat(filePath);
 		size = s.size;
-	} catch {
-		return; // File doesn't exist yet
+	} catch (error) {
+		// The path was hardened immediately before this; any stat failure means
+		// the rotation state is unknown and must not be treated as clean.
+		throw error;
 	}
 
 	if (size < maxBytes) return;
@@ -166,37 +227,46 @@ async function rotateIfNeeded(filePath: string, maxBytes: number, maxFiles: numb
 	// Delete oldest backup. A rotation that drops a file is data loss, so it is
 	// counted rather than performed silently; ENOENT means there was nothing to
 	// drop and is not a loss.
-	let droppedOldest = false;
-	try {
-		await unlink(`${filePath}.${maxFiles}`);
-		droppedOldest = true;
-	} catch {
-		// ENOENT OK
-	}
-	if (droppedOldest) recordAuditRotationDrop();
+	if (await unlinkIfPresent(`${filePath}.${maxFiles}`)) recordAuditRotationDrop();
 
 	// Shift .N-1 → .N down to .1 → .2
 	for (let i = maxFiles - 1; i >= 1; i--) {
-		try {
-			await rename(`${filePath}.${i}`, `${filePath}.${i + 1}`);
-		} catch {
-			// ENOENT OK
-		}
+		await renameIfPresent(`${filePath}.${i}`, `${filePath}.${i + 1}`);
 	}
 
 	// Active → .1
-	try {
-		await rename(filePath, `${filePath}.1`);
-	} catch {
-		// ENOENT OK (race: another process already renamed)
-	}
+	await renameIfPresent(filePath, `${filePath}.1`);
 }
 
 async function appendEntry(config: LoggingConfig, entry: Record<string, unknown>): Promise<void> {
 	const path = resolvePath(config.path);
-	await mkdir(dirname(path), { recursive: true });
-	await rotateIfNeeded(path, config.max_bytes, config.max_files);
-	await appendFile(path, `${JSON.stringify(entry)}\n`);
+	const key = process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
+	const previous = auditWriteQueues.get(key) ?? Promise.resolve();
+	const result = previous.then(async () => {
+		// Audit records are customer data. Use the same no-symlink and private ACL
+		// boundary as the runtime logger, including on Windows where chmod alone does
+		// not remove inherited NTFS read grants.
+		await prepareAuditPath(path);
+		await rotateIfNeeded(path, config.max_bytes, config.max_files);
+		const handle = await open(path, "a", PRIVATE_FILE_MODE);
+		try {
+			await handle.writeFile(`${JSON.stringify(entry)}\n`, "utf8");
+			// logVerdict resolves only after the record reached stable storage; callers
+			// still fail open, but a completed write is not merely in the OS cache.
+			await handle.sync();
+		} finally {
+			await handle.close();
+		}
+	});
+	const queued = result.then(
+		() => undefined,
+		() => undefined,
+	);
+	auditWriteQueues.set(key, queued);
+	void queued.then(() => {
+		if (auditWriteQueues.get(key) === queued) auditWriteQueues.delete(key);
+	});
+	return result;
 }
 
 export async function logVerdict(
@@ -206,13 +276,27 @@ export async function logVerdict(
 	toolInput: Record<string, unknown>,
 	verdict: Verdict,
 	userOverride = false,
+	durationMs?: number,
 ): Promise<void> {
 	if (!config.enabled) return;
 
 	// Skip clean verdicts unless log_clean is on or this is a user override
-	if (verdict.decision === "allow" && !config.log_clean && !userOverride) return;
+	if (
+		verdict.decision === "allow" &&
+		verdict.category !== "behavioral_unavailable" &&
+		!config.log_clean &&
+		!userOverride
+	)
+		return;
 
-	const entry = buildRuntimeVerdictEntry(sessionId, toolName, toolInput, verdict, userOverride);
+	const entry = buildRuntimeVerdictEntry(
+		sessionId,
+		toolName,
+		toolInput,
+		verdict,
+		userOverride,
+		durationMs,
+	);
 
 	try {
 		await appendEntry(config, entry);

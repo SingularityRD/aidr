@@ -21,6 +21,8 @@ import { VERSION } from "../version.js";
 
 const DEFAULT_TIMEOUT = 5.0;
 const MAX_URLS_PER_REQUEST = 50;
+const MAX_CONCURRENT_BATCHES = 4;
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 const SERVICE_NAME = "aidr";
 
 /**
@@ -35,6 +37,72 @@ type ParsedAnswer =
 	| { kind: "covered"; result: UrlCheckResult }
 	| { kind: "uncovered"; url: string }
 	| null;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function canSendToReputation(url: string, includeQueryParameters: boolean): boolean {
+	try {
+		const parsed = new URL(url);
+		return (
+			(parsed.protocol === "http:" || parsed.protocol === "https:") &&
+			!parsed.username &&
+			!parsed.password &&
+			!parsed.hash &&
+			(includeQueryParameters || !parsed.search)
+		);
+	} catch {
+		return false;
+	}
+}
+
+function validatedEndpoint(value: string, allowInsecureLoopback = false): string {
+	const endpoint = new URL(value);
+	const loopback =
+		endpoint.hostname === "localhost" ||
+		endpoint.hostname === "127.0.0.1" ||
+		endpoint.hostname === "[::1]" ||
+		endpoint.hostname === "::1";
+	if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+		throw new Error("URL-check endpoint must not contain credentials, query, or fragment");
+	}
+	if (
+		endpoint.protocol !== "https:" &&
+		!(endpoint.protocol === "http:" && loopback && allowInsecureLoopback)
+	) {
+		throw new Error(
+			"URL-check endpoint must use HTTPS (loopback HTTP requires allow_insecure_loopback)",
+		);
+	}
+	return endpoint.href;
+}
+
+async function readBoundedJson(response: Response): Promise<unknown> {
+	const length = response.headers?.get?.("content-length");
+	if (length && /^\d+$/.test(length) && Number(length) > MAX_RESPONSE_BYTES) {
+		throw new Error("response_too_large");
+	}
+	const reader = response.body?.getReader?.();
+	// Unit-test stubs expose json() without a web stream. Real fetch responses use
+	// the bounded streaming path below.
+	if (!reader) return response.json();
+	const chunks: Uint8Array[] = [];
+	let bytes = 0;
+	try {
+		for (;;) {
+			const item = await reader.read();
+			if (item.done) break;
+			bytes += item.value.byteLength;
+			if (bytes > MAX_RESPONSE_BYTES) throw new Error("response_too_large");
+			chunks.push(item.value);
+		}
+	} catch (error) {
+		await reader.cancel(error).catch(() => undefined);
+		throw error;
+	}
+	return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)));
+}
 
 function isUrlCheckResult(value: unknown): value is UrlCheckResult {
 	if (!value || typeof value !== "object") return false;
@@ -102,21 +170,30 @@ export class UrlCheckClient {
 	private readonly apiKey?: string;
 	private readonly logger: Logger;
 	private readonly reputationFeed?: ReputationFeedLoadOptions;
+	private readonly includeQueryParameters: boolean;
 
 	constructor(
-		config?: Partial<UrlCheckConfig> & { reputationFeed?: ReputationFeedLoadOptions },
+		config?: Partial<UrlCheckConfig> & {
+			reputationFeed?: ReputationFeedLoadOptions;
+			allow_insecure_loopback?: boolean;
+		},
 		logger: Logger = nullLogger,
 		apiKey?: string,
 	) {
-		this.endpoint = config?.endpoint ?? resolveEndpoint("/url-check");
+		this.endpoint = validatedEndpoint(
+			config?.endpoint ?? resolveEndpoint("/url-check"),
+			config?.allow_insecure_loopback,
+		);
 		this.timeoutMs = (config?.timeout_seconds ?? DEFAULT_TIMEOUT) * 1000;
 		this.apiKey = apiKey;
 		this.logger = logger;
 		this.reputationFeed = config?.reputationFeed;
+		this.includeQueryParameters = config?.include_query_parameters ?? false;
 	}
 
 	async checkUrls(urls: string[]): Promise<UrlCheckResult[]> {
 		if (urls.length === 0) return [];
+		const uniqueUrls = [...new Set(urls)];
 		const signedResults = new Map<string, UrlCheckResult>();
 		if (this.reputationFeed) {
 			const feed = await loadReputationFeed(this.reputationFeed);
@@ -134,38 +211,66 @@ export class UrlCheckClient {
 			for (const record of feed.records) {
 				if (record.verdict !== "deny") continue;
 				if (record.kind === "url") exact.set(record.indicator, record);
-				if (record.kind === "domain") domains.set(record.indicator.toLowerCase().replace(/\.$/, ""), record);
+				if (record.kind === "domain")
+					domains.set(record.indicator.toLowerCase().replace(/\.$/, ""), record);
 			}
-			for (const url of urls) {
+			for (const url of uniqueUrls) {
 				const match = matchSignedUrl(url, exact, domains);
 				if (match) {
 					signedResults.set(url, {
 						url,
 						isMalicious: true,
-						findings: [{ severityName: match.severity ?? "high", typeName: `signed-feed:${feed.feedId}:${match.id}` }],
+						findings: [
+							{
+								severityName: match.severity ?? "high",
+								typeName: `signed-feed:${feed.feedId}:${match.id}`,
+							},
+						],
 						flags: ["signed_reputation_feed"],
 					});
 				}
 			}
 		}
-		const uncheckedUrls = urls.filter((url) => !signedResults.has(url));
-		if (uncheckedUrls.length === 0) return [...signedResults.values()];
-
-		const batches: string[][] = [];
-		for (let i = 0; i < uncheckedUrls.length; i += MAX_URLS_PER_REQUEST) {
-			batches.push(uncheckedUrls.slice(i, i + MAX_URLS_PER_REQUEST));
+		const uncheckedUrls = uniqueUrls.filter((url) => !signedResults.has(url));
+		const withheldUrls = uncheckedUrls.filter(
+			(url) => !canSendToReputation(url, this.includeQueryParameters),
+		);
+		const requestableUrls = uncheckedUrls.filter((url) => !withheldUrls.includes(url));
+		if (requestableUrls.length === 0 && withheldUrls.length === 0) {
+			return urls.map((url) => signedResults.get(url)!);
 		}
 
-		// allSettled, not all: see checkHashes. Partial coverage must keep its
-		// detections AND report the gap.
-		const settled = await Promise.allSettled(batches.map((batch) => this.checkBatch(batch)));
+		const batches: string[][] = [];
+		for (let i = 0; i < requestableUrls.length; i += MAX_URLS_PER_REQUEST) {
+			batches.push(requestableUrls.slice(i, i + MAX_URLS_PER_REQUEST));
+		}
 
-		const results: UrlCheckResult[] = [...signedResults.values()];
+		// Keep partial-failure semantics without opening one connection per batch.
+		// Storing by index preserves input order even when batches finish out of order.
+		const settled = new Array<PromiseSettledResult<UrlCheckResult[]>>(batches.length);
+		let nextBatch = 0;
+		const workers = Array.from(
+			{ length: Math.min(MAX_CONCURRENT_BATCHES, batches.length) },
+			async () => {
+				while (nextBatch < batches.length) {
+					const index = nextBatch++;
+					const batch = batches[index];
+					if (!batch) continue;
+					try {
+						settled[index] = { status: "fulfilled", value: await this.checkBatch(batch) };
+					} catch (reason) {
+						settled[index] = { status: "rejected", reason };
+					}
+				}
+			},
+		);
+		await Promise.all(workers);
+
+		const resultsByUrl = new Map(signedResults);
 		const failures: DetectionLegUnavailableError[] = [];
-		let uncheckedCount = 0;
-		settled.forEach((outcome, index) => {
+		settled.forEach((outcome) => {
 			if (outcome.status === "fulfilled") {
-				results.push(...outcome.value);
+				for (const result of outcome.value) resultsByUrl.set(result.url, result);
 				return;
 			}
 			const reason = outcome.reason;
@@ -177,17 +282,32 @@ export class UrlCheckClient {
 			// A batch can cover some of its URLs and not others (a feed with no
 			// row for one of them). The classifications it did produce are
 			// evidence, so they survive alongside the gap.
-			results.push(...failure.partialResults.filter(isUrlCheckResult));
-			uncheckedCount +=
-				failure.uncheckedCount > 0 ? failure.uncheckedCount : (batches[index]?.length ?? 0);
+			for (const result of failure.partialResults.filter(isUrlCheckResult)) {
+				resultsByUrl.set(result.url, result);
+			}
 		});
+		const results = urls.flatMap((url) => {
+			const result = resultsByUrl.get(url);
+			return result ? [result] : [];
+		});
+		const uncheckedCount = urls.length - results.length;
 
-		if (failures.length > 0) {
+		if (failures.length > 0 || withheldUrls.length > 0) {
+			const reasons = [
+				...(withheldUrls.length > 0
+					? [`${withheldUrls.length} URL(s) withheld because query parameters, fragments, credentials, or an unsupported URL were not sent`]
+					: []),
+				...(failures.length > 0
+					? [
+							failures.length === 1
+								? (failures[0]?.reason ?? "check failed")
+								: `${failures.length} of ${batches.length} batches failed: ${failures[0]?.reason ?? "check failed"}`,
+						]
+					: []),
+			];
 			throw new DetectionLegUnavailableError(
 				"url_reputation",
-				failures.length === 1
-					? (failures[0]?.reason ?? "check failed")
-					: `${failures.length} of ${batches.length} batches failed: ${failures[0]?.reason ?? "check failed"}`,
+				reasons.join("; "),
 				failures[0]?.status,
 				results,
 				uncheckedCount,
@@ -220,6 +340,7 @@ export class UrlCheckClient {
 				headers,
 				body: JSON.stringify(payload),
 				signal: AbortSignal.timeout(this.timeoutMs),
+				redirect: "error",
 			});
 
 			if (!response.ok) {
@@ -233,32 +354,59 @@ export class UrlCheckClient {
 				);
 			}
 
-			const data = (await response.json()) as Record<string, unknown>;
-			const answers = (data.answers ?? []) as Record<string, unknown>[];
+			const data = await readBoundedJson(response);
+			if (!isRecord(data) || !Array.isArray(data.answers)) {
+				throw new DetectionLegUnavailableError(
+					"url_reputation",
+					"malformed reputation response",
+					undefined,
+					[],
+					urls.length,
+				);
+			}
+			const answers = data.answers;
 
 			const results: UrlCheckResult[] = [];
-			const uncovered: string[] = [];
+			const requested = new Set(urls);
+			const seen = new Set<string>();
+			const uncovered = new Set<string>();
+			let malformed = false;
 			for (const answer of answers) {
-				const parsed = this.parseAnswer(answer);
-				if (parsed === null) continue;
+				const parsed = isRecord(answer) ? this.parseAnswer(answer) : null;
+				if (
+					parsed === null ||
+					!requested.has(parsed.kind === "covered" ? parsed.result.url : parsed.url) ||
+					seen.has(parsed.kind === "covered" ? parsed.result.url : parsed.url)
+				) {
+					malformed = true;
+					continue;
+				}
+				const url = parsed.kind === "covered" ? parsed.result.url : parsed.url;
+				seen.add(url);
 				if (parsed.kind === "uncovered") {
-					uncovered.push(parsed.url);
+					uncovered.add(parsed.url);
 					continue;
 				}
 				results.push(parsed.result);
 			}
-			if (uncovered.length > 0) {
+			const missing = [...requested].filter((url) => !seen.has(url));
+			if (malformed || uncovered.size > 0 || missing.length > 0) {
 				// The endpoint answered, but its reputation store holds no row for
 				// these URLs. Reporting them as clean is exactly the false-clean
 				// this client exists to prevent, so the gap is raised as an
 				// unavailable leg while any real classification in the same batch
 				// is kept as a partial result.
+				const uncheckedCount = malformed
+					? Math.max(0, requested.size - results.length)
+					: uncovered.size + missing.length;
 				throw new DetectionLegUnavailableError(
 					"url_reputation",
-					`no reputation feed coverage for ${uncovered.length} of ${urls.length} requested URLs`,
+					malformed
+						? "malformed reputation response"
+						: `no reputation feed coverage for ${uncheckedCount} of ${urls.length} requested URLs`,
 					undefined,
 					results,
-					uncovered.length,
+					uncheckedCount,
 				);
 			}
 			return results;
@@ -273,34 +421,61 @@ export class UrlCheckClient {
 
 	private parseAnswer(answer: Record<string, unknown>): ParsedAnswer {
 		try {
-			const url = (answer.key ?? "") as string;
-			const result = (answer.result ?? {}) as Record<string, unknown>;
-			const success = (result.success ?? {}) as Record<string, unknown>;
-			const classification = (success.classification ?? {}) as Record<string, unknown>;
-			const classResult = (classification.result ?? {}) as Record<string, unknown>;
-			const flags = (success.flags ?? []) as string[];
-			const malicious = classResult.malicious as Record<string, unknown> | undefined;
+			const url = answer.key;
+			const result = answer.result;
+			const success = isRecord(result) ? result.success : undefined;
+			const classification = isRecord(success) ? success.classification : undefined;
+			const classResult = isRecord(classification) ? classification.result : undefined;
+			const flags = isRecord(success) ? (success.flags ?? []) : undefined;
+			if (
+				typeof url !== "string" ||
+				!isRecord(success) ||
+				!isRecord(classification) ||
+				!isRecord(classResult) ||
+				!Array.isArray(flags) ||
+				!flags.every((flag) => typeof flag === "string")
+			) {
+				return null;
+			}
+			const maliciousValue = classResult.malicious;
+			if (maliciousValue !== undefined && !isRecord(maliciousValue)) return null;
+			const malicious = maliciousValue as Record<string, unknown> | undefined;
 
-			// "No row in the reputation store" is not "clean". The endpoint marks
-			// it explicitly (`unknown` classification and/or a `no_data` coverage
-			// indicator); a URL that carries neither marker was checked, and its
-			// empty classification is a genuine clean answer - otherwise an older
-			// deployment that never emits coverage would become a permanent
-			// outage.
+			// An empty classification is clean only when the endpoint affirmatively
+			// says this URL was covered. Missing coverage cannot distinguish a clean
+			// verdict from an older endpoint's no-row response.
 			const uncovered =
 				classResult.unknown !== undefined ||
 				answer.coverage === NO_COVERAGE ||
 				success.coverage === NO_COVERAGE;
-			if (uncovered && !malicious) {
+			const covered = answer.coverage === "covered" || success.coverage === "covered";
+			if ((uncovered || !covered) && !malicious) {
 				return { kind: "uncovered", url };
 			}
 
-			const findings: UrlCheckFinding[] = malicious
-				? ((malicious.findings ?? []) as Record<string, unknown>[]).map((f) => ({
-						severityName: (f["severity-name"] ?? "unknown") as string,
-						typeName: (f["type-name"] ?? "unknown") as string,
-					}))
-				: [];
+			const rawFindings = malicious?.findings ?? [];
+			if (!Array.isArray(rawFindings) || rawFindings.some((finding) => !isRecord(finding))) {
+				return null;
+			}
+			const findings: UrlCheckFinding[] = rawFindings.map((finding) => {
+				const severityName = finding["severity-name"] ?? "unknown";
+				const typeName = finding["type-name"] ?? "unknown";
+				if (typeof severityName !== "string" || typeof typeName !== "string") {
+					throw new Error("invalid finding");
+				}
+				return { severityName, typeName };
+			});
+			const cacheValidUntil =
+				typeof answer.cache_valid_until === "string"
+					? Date.parse(answer.cache_valid_until)
+					: Number.NaN;
+			if (
+				!malicious &&
+				flags.length === 0 &&
+				(!Number.isFinite(cacheValidUntil) || cacheValidUntil <= Date.now())
+			) {
+				return { kind: "uncovered", url };
+			}
 
 			return {
 				kind: "covered",
@@ -309,6 +484,7 @@ export class UrlCheckClient {
 					isMalicious: Boolean(malicious),
 					findings,
 					flags,
+					...(Number.isFinite(cacheValidUntil) ? { cacheValidUntil } : {}),
 				},
 			};
 		} catch (e) {

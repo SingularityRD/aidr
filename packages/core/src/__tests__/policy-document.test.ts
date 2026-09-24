@@ -52,6 +52,79 @@ describe("policy document compiler", () => {
 		});
 	});
 
+	it("compiles dotted, case-sensitive MCP identities as collision-free tuples", () => {
+		const result = compilePolicyDocument({
+			...BASE,
+			rules: [
+				{
+					name: "allow dotted server tool",
+					condition: { mcp_tool: { server: "a.b", tool: "c" } },
+					action: "allow",
+					priority: 10,
+				},
+				{
+					name: "deny dotted tool",
+					condition: { mcp_tool: { server: "a", tool: "b.c" } },
+					action: "deny",
+					priority: 10,
+				},
+			],
+		});
+
+		expect(result.runtime_policy.mcp_allow_tools).toEqual(['["a.b","c"]']);
+		expect(result.runtime_policy.mcp_deny_tools).toEqual(['["a","b.c"]']);
+		expect(
+			simulateRuntimePolicy(result.runtime_policy, {
+				kind: "mcp",
+				server: "a.b",
+				tool: "c",
+				inventory: "known",
+			}),
+		).toMatchObject({ action: "allow", source: "mcp_tool" });
+		expect(
+			simulateRuntimePolicy(result.runtime_policy, {
+				kind: "mcp",
+				server: "a",
+				tool: "b.c",
+				inventory: "known",
+			}),
+		).toMatchObject({ action: "deny", source: "mcp_tool" });
+		expect(
+			simulateRuntimePolicy(result.runtime_policy, {
+				kind: "mcp",
+				server: "a.b",
+				tool: "C",
+				inventory: "known",
+			}),
+		).toMatchObject({ action: "ask", source: "mcp_default" });
+	});
+
+	it("detects a simple legacy selector and an equivalent structured selector as the same tool", () => {
+		const result = compilePolicyDocument({
+			...BASE,
+			rules: [
+				{
+					name: "legacy allow",
+					condition: { mcp_tool: "github.read_file" },
+					action: "allow",
+					priority: 10,
+				},
+				{
+					name: "structured deny",
+					condition: { mcp_tool: { server: "github", tool: "read_file" } },
+					action: "deny",
+					priority: 20,
+				},
+			],
+		});
+
+		expect(result.runtime_policy.mcp_allow_tools).toEqual([]);
+		expect(result.runtime_policy.mcp_deny_tools).toEqual(['["github","read_file"]']);
+		expect(result.diagnostics).toMatchObject([
+			expect.objectContaining({ rule: "legacy allow", winner: "structured deny" }),
+		]);
+	});
+
 	it("resolves conflicts by priority, then deny > ask > allow", () => {
 		const result = compilePolicyDocument({
 			...BASE,

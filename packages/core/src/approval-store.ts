@@ -55,6 +55,13 @@ export class ApprovalStore {
 		return entry;
 	}
 
+	consumeApproval(actionId: string): boolean {
+		const entry = this.approved.get(actionId);
+		if (!entry) return false;
+		this.approved.delete(actionId);
+		return Date.now() < entry.expiresAt;
+	}
+
 	isApproved(actionId: string): boolean {
 		const entry = this.approved.get(actionId);
 		if (!entry) return false;

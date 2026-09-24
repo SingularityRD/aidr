@@ -40,7 +40,7 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { copyFile, lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { resolvePath } from "./config.js";
 import type { ResponseAuditor } from "./response-audit.js";
 import { normalizeAuthorizedBy } from "./response-worker-contract.js";
@@ -51,7 +51,7 @@ import { nullLogger } from "./types.js";
 export const DEFAULT_SNAPSHOTS_DIR = "~/.singularity-aidr/snapshots";
 
 /** Content digest recorded for one copied file, so a restore can prove its provenance. */
-export interface SnapshotFileDigest {
+interface SnapshotFileDigest {
 	/** SHA-256 of the bytes stored in the vault for this path. */
 	sha256: string;
 	/** Size in bytes at snapshot time. */
@@ -68,7 +68,7 @@ export interface Snapshot {
 	authorizedBy?: string;
 }
 
-export interface SnapshotMetadata {
+interface SnapshotMetadata {
 	id: string;
 	timestamp: string;
 	files: Record<string, string>;
@@ -161,6 +161,15 @@ export interface SnapshotRollbackResult {
 
 /** Reasons a snapshot may skip a path without leaving the operation unprotected. */
 const BENIGN_SNAPSHOT_SKIP_REASONS = new Set(["not_found"]);
+const SNAPSHOT_ID_PATTERN = /^[A-Za-z0-9._-]+-[a-f\d]{8}$/i;
+
+function isValidSnapshotId(snapshotId: string): boolean {
+	return snapshotId.length <= 240 && SNAPSHOT_ID_PATTERN.test(snapshotId);
+}
+
+function assertValidSnapshotId(snapshotId: string): void {
+	if (!isValidSnapshotId(snapshotId)) throw new Error("Invalid snapshot ID");
+}
 
 /**
  * Thrown when a snapshot could not preserve every path it was asked to protect.
@@ -250,6 +259,7 @@ export class AutoRollback {
 	): Promise<SnapshotResult> {
 		const opts = { ...DEFAULT_SNAPSHOT_OPTIONS, ...options };
 		const snapshotId = `${operationId}-${randomBytes(4).toString("hex")}`;
+		assertValidSnapshotId(snapshotId);
 		const snapshotDir = join(this.snapshotsDir, snapshotId);
 
 		const files = new Map<string, string>();
@@ -525,6 +535,7 @@ export class AutoRollback {
 		snapshotId: string,
 		options: RollbackOptions = {},
 	): Promise<SnapshotRollbackResult> {
+		assertValidSnapshotId(snapshotId);
 		let snapshot = this.snapshots.get(snapshotId);
 		if (!snapshot) {
 			snapshot = (await this.loadSnapshot(snapshotId)) ?? undefined;
@@ -688,6 +699,7 @@ export class AutoRollback {
 	}
 
 	async cleanup(snapshotId: string): Promise<void> {
+		assertValidSnapshotId(snapshotId);
 		const snapshotDir = join(this.snapshotsDir, snapshotId);
 		try {
 			await rm(snapshotDir, { recursive: true, force: true });
@@ -744,15 +756,37 @@ export class AutoRollback {
 	}
 
 	private async loadSnapshot(snapshotId: string): Promise<Snapshot | null> {
+		if (!isValidSnapshotId(snapshotId)) return null;
 		const snapshotDir = join(this.snapshotsDir, snapshotId);
 		const metadataPath = join(snapshotDir, "metadata.json");
 
 		try {
+			const directoryStats = await lstat(snapshotDir);
+			if (!directoryStats.isDirectory() || directoryStats.isSymbolicLink()) return null;
+			const metadataStats = await lstat(metadataPath);
+			if (!metadataStats.isFile() || metadataStats.isSymbolicLink()) return null;
 			const metadataRaw = await readFile(metadataPath, "utf-8");
 			const metadata = JSON.parse(metadataRaw) as SnapshotMetadata;
+			if (
+				!metadata ||
+				typeof metadata !== "object" ||
+				metadata.id !== snapshotId ||
+				!metadata.files ||
+				typeof metadata.files !== "object" ||
+				Array.isArray(metadata.files)
+			) {
+				return null;
+			}
 
 			const files = new Map<string, string>();
 			for (const [original, backup] of Object.entries(metadata.files)) {
+				if (
+					!isAbsolute(original) ||
+					typeof backup !== "string" ||
+					resolve(backup) !== resolve(join(snapshotDir, this.encodePath(original)))
+				) {
+					return null;
+				}
 				files.set(original, backup);
 			}
 

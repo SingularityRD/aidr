@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, open, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { resolvePath } from "../config.js";
-import { getFileContent, getFileContentRaw } from "../file-utils.js";
+import { atomicWriteJson, getFileContent, getFileContentRaw } from "../file-utils.js";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { domainFromUrlOrHost } from "./api.js";
@@ -18,11 +18,13 @@ import { verifyEd25519Signature } from "./verify.js";
 const DEFAULT_INTEL_DIR = "~/.singularity-aidr/intel";
 const DEFAULT_PACKS_DIR = "~/.singularity-aidr/intel/packs";
 const DEFAULT_TRUSTED_KEYS_PATH = "~/.singularity-aidr/intel/trusted-keys.json";
+const INTEL_VERSION_FLOOR_NAME = ".trusted-version-floor.json";
+const VERSION_FLOOR_SCHEMA_VERSION = 1;
 
-export const INTEL_PACK_ACTIVE_POINTER = "active.json";
-export const INTEL_PACK_PREVIOUS_POINTER = "previous.json";
+const INTEL_PACK_ACTIVE_POINTER = "active.json";
+const INTEL_PACK_PREVIOUS_POINTER = "previous.json";
 
-export type IntelVerificationMode = "strict" | "grace";
+type IntelVerificationMode = "strict" | "grace";
 
 export interface LoadIntelOptions {
 	intelDir?: string;
@@ -39,12 +41,118 @@ export interface LoadIntelOptions {
 		pack_ids?: string[];
 		key_ids?: string[];
 	} | null;
+	requireRevocations?: boolean;
 }
 
 type TrustedKeysFile = Record<string, string>;
+type IntelVersionFloor = { version: string; manifest_sha256: string };
+type IntelVersionFloorFile = {
+	schema_version: typeof VERSION_FLOOR_SCHEMA_VERSION;
+	packs: Record<string, IntelVersionFloor>;
+};
 
 function sha256Hex(data: Uint8Array): string {
 	return createHash("sha256").update(data).digest("hex");
+}
+
+function setAvailability(
+	merged: IntelMerged,
+	availability: "available" | "unavailable",
+	detail: string,
+): IntelMerged {
+	Object.defineProperty(merged, "availability", {
+		value: availability,
+		enumerable: false,
+		configurable: true,
+	});
+	Object.defineProperty(merged, "detail", {
+		value: detail,
+		enumerable: false,
+		configurable: true,
+	});
+	return merged;
+}
+
+function versionFloorPath(packsDir: string): string {
+	return join(dirname(packsDir), INTEL_VERSION_FLOOR_NAME);
+}
+
+async function withVersionFloorLock<T>(path: string, work: () => Promise<T>): Promise<T> {
+	const lockPath = `${path}.lock`;
+	const deadline = Date.now() + 5_000;
+	let handle: Awaited<ReturnType<typeof open>>;
+	for (;;) {
+		try {
+			handle = await open(lockPath, "wx", 0o600);
+			break;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST" || Date.now() >= deadline) throw error;
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		}
+	}
+	try {
+		await handle.writeFile(`${process.pid}\n`);
+		await handle.sync();
+		return await work();
+	} finally {
+		await handle.close();
+		await unlink(lockPath).catch(() => undefined);
+	}
+}
+
+async function readVersionFloor(path: string): Promise<IntelVersionFloorFile> {
+	let raw: string;
+	try {
+		raw = await getFileContent(path, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return { schema_version: VERSION_FLOOR_SCHEMA_VERSION, packs: {} };
+		}
+		throw error;
+	}
+	const parsed = JSON.parse(raw) as Partial<IntelVersionFloorFile> | null;
+	if (
+		!parsed ||
+		parsed.schema_version !== VERSION_FLOOR_SCHEMA_VERSION ||
+		!parsed.packs ||
+		typeof parsed.packs !== "object" ||
+		Array.isArray(parsed.packs)
+	) {
+		throw new Error("Intel version floor is invalid");
+	}
+	for (const floor of Object.values(parsed.packs)) {
+		if (
+			!floor ||
+			typeof floor.version !== "string" ||
+			!floor.version ||
+			typeof floor.manifest_sha256 !== "string" ||
+			!/^[0-9a-f]{64}$/i.test(floor.manifest_sha256)
+		) {
+			throw new Error("Intel version floor is invalid");
+		}
+	}
+	return parsed as IntelVersionFloorFile;
+}
+
+async function acceptPackVersion(
+	packsDir: string,
+	packId: string,
+	version: string,
+	manifestSha256: string,
+): Promise<boolean> {
+	const path = versionFloorPath(packsDir);
+	return withVersionFloorLock(path, async () => {
+		const floor = await readVersionFloor(path);
+		const current = floor.packs[packId];
+		if (current) {
+			const order = compareSemver(version, current.version);
+			if (order < 0 || (order === 0 && current.manifest_sha256 !== manifestSha256)) return false;
+			if (order === 0) return true;
+		}
+		floor.packs[packId] = { version, manifest_sha256: manifestSha256 };
+		await atomicWriteJson(path, floor);
+		return true;
+	});
 }
 
 async function loadTrustedKeys(path: string): Promise<Map<string, string>> {
@@ -278,13 +386,14 @@ async function loadPackFile(
 
 async function loadSinglePack(
 	packId: string,
+	selectedVersion: string,
 	packVersionDir: string,
 	trustedKeys: Map<string, string>,
 	keyring: Map<string, Uint8Array>,
 	revokedKeyIds: Set<string>,
 	options: { verificationMode: IntelVerificationMode; graceHours: number },
 	logger: Logger,
-): Promise<IntelMerged | null> {
+): Promise<{ merged: IntelMerged; manifestSha256: string } | null> {
 	const manifestPath = join(packVersionDir, "manifest.json");
 	const sigPath = join(packVersionDir, "manifest.sig");
 
@@ -313,6 +422,10 @@ async function loadSinglePack(
 
 	if (manifest.data.pack_id !== packId) {
 		logger.warn("Intel pack id mismatch", { packId });
+		return null;
+	}
+	if (manifest.data.version !== selectedVersion) {
+		logger.warn("Intel pack version mismatch", { packId, selectedVersion, manifestVersion: manifest.data.version });
 		return null;
 	}
 
@@ -345,7 +458,7 @@ async function loadSinglePack(
 				return null;
 			}
 			const graceMs = Math.max(0, options.graceHours) * 60 * 60 * 1000;
-			if (graceMs > 0 && Date.now() > exp + graceMs) {
+			if (Date.now() > exp + graceMs) {
 				logger.warn("Intel pack expired beyond grace window", { packId });
 				return null;
 			}
@@ -355,7 +468,7 @@ async function loadSinglePack(
 	const merged = emptyIntelMerged();
 	for (const f of manifest.data.files) {
 		const loaded = await loadPackFile(packVersionDir, f, keyring, revokedKeyIds, logger);
-		if (!loaded) continue;
+		if (!loaded) return null;
 
 		if (loaded.kind === "url_denylist") {
 			for (const s of parseTextLines(loaded.raw)) {
@@ -380,7 +493,7 @@ async function loadSinglePack(
 		}
 	}
 
-	return merged;
+	return { merged, manifestSha256: sha256Hex(manifestBytes) };
 }
 
 function mergeInto(into: IntelMerged, from: IntelMerged): void {
@@ -405,6 +518,9 @@ export async function loadMergedIntelFromDisk(
 	const trustedKeys = await loadTrustedKeys(keysPath);
 	const keyring = await loadIntelKeyring().catch(() => new Map<string, Uint8Array>());
 	const merged = emptyIntelMerged();
+	if (params.requireRevocations && !params.revocations) {
+		return setAvailability(merged, "unavailable", "signed intel-pack revocations are unavailable");
+	}
 
 	const revokedPackIds = new Set(
 		(params.revocations?.pack_ids ?? []).filter(
@@ -432,6 +548,7 @@ export async function loadMergedIntelFromDisk(
 		const packVersionDir = join(packRoot, version);
 		const single = await loadSinglePack(
 			packId,
+			version,
 			packVersionDir,
 			trustedKeys,
 			keyring,
@@ -443,25 +560,30 @@ export async function loadMergedIntelFromDisk(
 			failedPackCount += 1;
 			continue;
 		}
+		try {
+			if (!(await acceptPackVersion(packsDir, packId, version, single.manifestSha256))) {
+				logger.warn("Intel pack rollback or version equivocation rejected", { packId, version });
+				failedPackCount += 1;
+				continue;
+			}
+		} catch (error) {
+			logger.warn("Intel pack version floor unavailable", { packId, error: String(error) });
+			failedPackCount += 1;
+			continue;
+		}
 		loadedPackCount += 1;
-		mergeInto(merged, single);
+		mergeInto(merged, single.merged);
 	}
 
 	// Keep the existing merged shape for consumers, while carrying measured
 	// coverage state out-of-band. An empty or rejected corpus is not clean intel.
-	Object.defineProperty(merged, "availability", {
-		value: loadedPackCount > 0 && failedPackCount === 0 ? "available" : "unavailable",
-		enumerable: false,
-		configurable: true,
-	});
-	Object.defineProperty(merged, "detail", {
-		value:
-			loadedPackCount > 0 && failedPackCount === 0
-				? `loaded ${loadedPackCount} signed intel pack(s)`
-				: `no complete signed intel pack was available (${loadedPackCount} loaded, ${failedPackCount} rejected)`,
-		enumerable: false,
-		configurable: true,
-	});
+	setAvailability(
+		merged,
+		loadedPackCount > 0 && failedPackCount === 0 ? "available" : "unavailable",
+		loadedPackCount > 0 && failedPackCount === 0
+			? `loaded ${loadedPackCount} signed intel pack(s)`
+			: `no complete signed intel pack was available (${loadedPackCount} loaded, ${failedPackCount} rejected)`,
+	);
 
 	// Ensure the on-disk intel dir exists path-wise (not created here; read-only).
 	void intelDir;

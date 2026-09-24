@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
@@ -28,6 +27,7 @@ type RuntimePolicyPayload = {
 
 type CachedPolicy = {
 	key: string;
+	policySha256: string;
 	expiresAt: number;
 	cachedAt: number;
 	body: Record<string, unknown>;
@@ -35,34 +35,67 @@ type CachedPolicy = {
 
 let cachedPolicy: CachedPolicy | null = null;
 
-export class RemoteRuntimePolicyUnavailableError extends Error {
+class RemoteRuntimePolicyUnavailableError extends Error {
 	constructor() { super("Required central policy is unavailable or its offline grace has expired. Restore connectivity or contact the policy administrator."); }
+}
+
+const MCP_ID = /^[A-Za-z0-9][A-Za-z0-9._:/_-]{0,255}$/;
+const LEGACY_MCP_TOOL = /^[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}\.[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}$/;
+
+function validMcpToolSelector(value: unknown): boolean {
+	if (typeof value !== "string") return false;
+	if (LEGACY_MCP_TOOL.test(value)) return true;
+	if (value.length > 519 || !value.startsWith("[")) return false;
+	try {
+		const pair: unknown = JSON.parse(value);
+		return Array.isArray(pair) && pair.length === 2 &&
+			pair.every((part) => typeof part === "string" && MCP_ID.test(part)) &&
+			JSON.stringify(pair) === value;
+	} catch {
+		return false;
+	}
 }
 
 function validRequiredPolicy(body: Record<string, unknown>): boolean {
 	const policy = getRuntimePolicy(body);
 	if (!policy || !/^[1-9][0-9]*$/.test(String(body.policy_version))) return false;
-	const modes = ["command_default", "file_default", "url_default", "package_default", "output_default", "mcp_default", "mcp_unknown", "mcp_risky"];
-	const lists = ["mcp_allow_servers", "mcp_require_approval_servers", "mcp_deny_servers", "mcp_allow_tools", "mcp_require_approval_tools", "mcp_deny_tools"];
+	return validRuntimePolicy(body) && verifiedPolicySha256(body) !== null;
+}
+
+/** Keep client parsing aligned with the Edge policy contract in required and optional modes. */
+function validRuntimePolicy(body: Record<string, unknown> | undefined): boolean {
+	const policy = getRuntimePolicy(body);
+	if (!policy) return false;
+	const modes = new Set([
+		"command_default", "file_default", "url_default", "package_default", "output_default",
+		"mcp_default", "mcp_unknown", "mcp_risky",
+	]);
+	const serverLists = new Set(["mcp_allow_servers", "mcp_require_approval_servers", "mcp_deny_servers"]);
+	const toolLists = new Set(["mcp_allow_tools", "mcp_require_approval_tools", "mcp_deny_tools"]);
 	const entries = Object.entries(policy);
 	return entries.length > 0 && entries.every(([key, value]) => {
-		if (modes.includes(key)) return typeof value === "string" && ["allow", "ask", "deny"].includes(value);
-		const pattern = key.endsWith("_servers") ? /^[a-z0-9][a-z0-9._-]{0,79}$/ : /^[a-z0-9][a-z0-9._-]{0,79}\.[a-z0-9][a-z0-9_.-]{0,159}$/;
-		return lists.includes(key) && Array.isArray(value) && value.length <= 200 && value.every((item) => typeof item === "string" && pattern.test(item));
+		if (modes.has(key)) return typeof value === "string" && ["allow", "ask", "deny"].includes(value);
+		if (serverLists.has(key))
+			return Array.isArray(value) && value.length <= 200 &&
+				value.every((item) => typeof item === "string" && MCP_ID.test(item));
+		if (toolLists.has(key))
+			return Array.isArray(value) && value.length <= 200 && value.every(validMcpToolSelector);
+		return false;
 	});
 }
 
 type PersistedRemotePolicyCache = {
-	schema_version: 1;
+	schema_version: 2;
 	key_hash: string;
 	endpoint: string;
 	policy_version: string;
+	policy_sha256: string;
 	cached_at: string;
 	expires_at: string;
 	body: Record<string, unknown>;
 };
 
-export type RemoteRuntimePolicyCacheSource =
+type RemoteRuntimePolicyCacheSource =
 	| "disabled"
 	| "missing"
 	| "valid"
@@ -103,12 +136,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+function canonicalPolicy(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonicalPolicy).join(",")}]`;
+	if (isRecord(value)) {
+		return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+			.map(([key, item]) => `${JSON.stringify(key)}:${canonicalPolicy(item)}`).join(",")}}`;
+	}
+	return JSON.stringify(value) ?? "null";
+}
+
+function verifiedPolicySha256(body: Record<string, unknown> | undefined): string | null {
+	const policy = getRuntimePolicy(body);
+	const digest = body?.policy_sha256;
+	if (!policy || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return null;
+	return createHash("sha256").update(canonicalPolicy(policy)).digest("hex") === digest ? digest : null;
+}
+
 function parsePersistedRemotePolicyCache(raw: string): PersistedRemotePolicyCache | null {
 	const parsed = JSON.parse(raw) as Partial<PersistedRemotePolicyCache>;
-	if (parsed.schema_version !== 1) return null;
+	if (parsed.schema_version !== 2) return null;
 	if (typeof parsed.key_hash !== "string" || !parsed.key_hash) return null;
 	if (typeof parsed.endpoint !== "string" || !parsed.endpoint) return null;
 	if (typeof parsed.policy_version !== "string") return null;
+	if (typeof parsed.policy_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(parsed.policy_sha256)) return null;
 	if (typeof parsed.cached_at !== "string") return null;
 	if (typeof parsed.expires_at !== "string") return null;
 	if (!isRecord(parsed.body)) return null;
@@ -121,6 +171,7 @@ function getPersistablePolicyBody(
 	return {
 		ok: body?.ok === true,
 		policy_version: getPolicyVersion(body),
+		policy_sha256: body?.policy_sha256,
 		...(typeof body?.cache_seconds === "number" && Number.isFinite(body.cache_seconds)
 			? { cache_seconds: body.cache_seconds }
 			: {}),
@@ -139,11 +190,12 @@ async function readPersistentPolicyCache(input: {
 		const raw = await readFile(getRemotePolicyCachePath(input.config), "utf-8");
 		const parsed = parsePersistedRemotePolicyCache(raw);
 		if (!parsed) return null;
-		if (parsed.key_hash !== input.keyHash) return null;
+		if (parsed.key_hash !== input.keyHash || parsed.endpoint !== input.config.control_plane.endpoint) return null;
+		if (parsed.policy_version !== getPolicyVersion(parsed.body) || parsed.policy_sha256 !== parsed.body.policy_sha256 || verifiedPolicySha256(parsed.body) !== parsed.policy_sha256) return null;
 		const expiresAt = Date.parse(parsed.expires_at);
 		const cachedAt = Date.parse(parsed.cached_at);
 		if (!Number.isFinite(expiresAt) || !Number.isFinite(cachedAt) || cachedAt > input.now + 5000 || expiresAt < cachedAt || expiresAt > cachedAt + 300000) return null;
-		if (input.config.control_plane.remote_policy_required && !validRequiredPolicy(parsed.body)) return null;
+		if (!validRuntimePolicy(parsed.body) || (input.config.control_plane.remote_policy_required && !validRequiredPolicy(parsed.body))) return null;
 		return parsed;
 	} catch (error) {
 		input.logger.debug("Remote runtime policy persistent cache miss", { error: String(error) });
@@ -164,10 +216,11 @@ async function writePersistentPolicyCache(input: {
 		const cachePath = getRemotePolicyCachePath(input.config);
 		await mkdir(dirname(cachePath), { recursive: true });
 		const payload: PersistedRemotePolicyCache = {
-			schema_version: 1,
+			schema_version: 2,
 			key_hash: input.keyHash,
 			endpoint: input.config.control_plane.endpoint,
 			policy_version: getPolicyVersion(input.body),
+			policy_sha256: String(input.body.policy_sha256),
 			cached_at: new Date(input.now).toISOString(),
 			expires_at: new Date(input.expiresAt).toISOString(),
 			body: getPersistablePolicyBody(input.body),
@@ -195,7 +248,12 @@ export async function inspectRemoteRuntimePolicyCache(
 	try {
 		const raw = await readFile(path, "utf-8");
 		const parsed = parsePersistedRemotePolicyCache(raw);
-		if (!parsed || (config.control_plane.remote_policy_required && !validRequiredPolicy(parsed.body))) {
+		if (!parsed || parsed.endpoint !== config.control_plane.endpoint ||
+			parsed.policy_version !== getPolicyVersion(parsed.body) ||
+			parsed.policy_sha256 !== parsed.body.policy_sha256 ||
+			verifiedPolicySha256(parsed.body) !== parsed.policy_sha256 ||
+			!validRuntimePolicy(parsed.body) ||
+			(config.control_plane.remote_policy_required && !validRequiredPolicy(parsed.body))) {
 			return { enabled: true, path, source: "invalid", usable: false, present: true };
 		}
 
@@ -270,9 +328,9 @@ function parseServerList(value: unknown): string[] {
 	const out: string[] = [];
 	for (const item of value) {
 		if (typeof item !== "string") continue;
-		const server = item.trim().toLowerCase();
+		const server = item.trim();
 		if (!server || seen.has(server)) continue;
-		if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(server)) continue;
+		if (!MCP_ID.test(server)) continue;
 		seen.add(server);
 		out.push(server);
 	}
@@ -285,7 +343,7 @@ function parsePolicyStringList(value: unknown): string[] {
 	const out: string[] = [];
 	for (const item of value) {
 		if (typeof item !== "string") continue;
-		const entry = item.trim().toLowerCase();
+		const entry = item.trim();
 		if (!entry || seen.has(entry)) continue;
 		seen.add(entry);
 		out.push(entry);
@@ -304,7 +362,7 @@ export function applyRemoteRuntimePolicy(
 	body: Record<string, unknown> | undefined,
 ): Config {
 	const policy = getRuntimePolicy(body);
-	if (!policy) return config;
+	if (!policy || !validRuntimePolicy(body)) return config;
 
 	const unknownAction = modeToMcpAction(policy.mcp_unknown);
 	const riskyAction = modeToMcpAction(policy.mcp_risky);
@@ -364,13 +422,19 @@ export async function syncRemoteRuntimePolicy(
 	const cacheKey = `${config.control_plane.endpoint}|${trimmedToken}`;
 	const keyHash = cacheKeyHash(config.control_plane.endpoint, trimmedToken);
 	if (cachedPolicy && cachedPolicy.key === cacheKey && cachedPolicy.expiresAt > now && cachedPolicy.cachedAt <= now + 5000) {
-		if (!config.control_plane.remote_policy_required || validRequiredPolicy(cachedPolicy.body)) return applyRemoteRuntimePolicy(config, cachedPolicy.body);
+		if (cachedPolicy.policySha256 === cachedPolicy.body.policy_sha256 &&
+			verifiedPolicySha256(cachedPolicy.body) === cachedPolicy.policySha256 &&
+			validRuntimePolicy(cachedPolicy.body) &&
+			(!config.control_plane.remote_policy_required || validRequiredPolicy(cachedPolicy.body))) {
+			return applyRemoteRuntimePolicy(config, cachedPolicy.body);
+		}
 	}
 
 	const persisted = await readPersistentPolicyCache({ config, keyHash, now, logger });
 	if (persisted && Date.parse(persisted.expires_at) > now) {
 		cachedPolicy = {
 			key: cacheKey,
+			policySha256: persisted.policy_sha256,
 			expiresAt: Date.parse(persisted.expires_at),
 			cachedAt: Date.parse(persisted.cached_at),
 			body: persisted.body,
@@ -392,6 +456,15 @@ export async function syncRemoteRuntimePolicy(
 		const result = await client.fetchRuntimePolicy();
 		if (!result.ok) return unavailable(result.status === undefined || result.status === 408 || result.status === 429 || result.status >= 500);
 		const body = result.body ?? {};
+		const policySha256 = verifiedPolicySha256(body);
+		if (!policySha256) {
+			logger.warn("Remote runtime policy digest is missing or does not match its contents");
+			return unavailable(false);
+		}
+		if (!validRuntimePolicy(body)) {
+			logger.warn("Remote runtime policy does not match the supported policy contract");
+			return unavailable(false);
+		}
 		if (config.control_plane.remote_policy_required && !validRequiredPolicy(body)) return unavailable(false);
 		const nextConfig = applyRemoteRuntimePolicy(config, body);
 		const cacheSeconds =
@@ -401,6 +474,7 @@ export async function syncRemoteRuntimePolicy(
 		const expiresAt = now + cacheSeconds * 1000;
 		cachedPolicy = {
 			key: cacheKey,
+			policySha256,
 			expiresAt,
 			cachedAt: now,
 			body,
@@ -413,11 +487,8 @@ export async function syncRemoteRuntimePolicy(
 			now,
 			logger,
 		});
-		if (body.agent_bound === true && typeof body.policy_sha256 === "string" && /^[a-f0-9]{64}$/.test(body.policy_sha256) && Number.isSafeInteger(Number(body.policy_version)) && Number(body.policy_version) > 0) {
-			const policy = getRuntimePolicy(body);
-			const normalized = policy ? Object.fromEntries(Object.entries(policy).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : null;
-			const hash = createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
-			if (hash === body.policy_sha256) await client.acknowledgeRuntimePolicy(Number(body.policy_version), hash);
+		if (body.agent_bound === true && Number.isSafeInteger(Number(body.policy_version)) && Number(body.policy_version) > 0) {
+			await client.acknowledgeRuntimePolicy(Number(body.policy_version), policySha256);
 		}
 		return nextConfig;
 	} catch (error) {
@@ -429,7 +500,7 @@ export async function syncRemoteRuntimePolicy(
 
 export function clearRemoteRuntimePolicyCacheForTests(cachePath?: string): void {
 	cachedPolicy = null;
-	// Best-effort clear the default disk cache for test isolation
-	const defaultCachePath = cachePath ?? join(homedir(), ".singularity-aidr", "remote-policy-cache");
-	rm(defaultCachePath, { force: true }).catch(() => {});
+	// Never touch a user's default runtime state from test cleanup. Tests that
+	// create a disk cache must pass their dedicated temporary path explicitly.
+	if (cachePath) rm(cachePath, { force: true }).catch(() => {});
 }

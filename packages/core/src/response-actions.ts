@@ -41,11 +41,12 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, stat } from "node:fs/promises";
+import { copyFile, lstat, mkdir, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { resolvePath } from "./config.js";
 import type { ResponseAuditor } from "./response-audit.js";
 import { AutoRollback, DEFAULT_SNAPSHOTS_DIR } from "./rollback.js";
+import { readFileEditPayload } from "./tool-normalization.js";
 import type { Artifact, Logger, Verdict, VerdictSeverity } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -203,7 +204,10 @@ async function destructiveTargetFor(
 	const target = targetPathFor(toolName, toolInput);
 	if (!target) return null;
 	const resolved = resolvePath(target);
-	const stats = await stat(resolved).catch(() => null);
+	const stats = await stat(resolved).catch((error) => {
+		if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+		throw error;
+	});
 	return stats?.isFile() ? resolved : null;
 }
 
@@ -299,8 +303,37 @@ export async function runPreAllowedResponseActions(
 	if (verdict.decision !== "allow") return { records, snapshot: null };
 	if (!opts.snapshotBeforeDestructive) return { records, snapshot: null };
 	if (opts.protectPaths.length === 0) return { records, snapshot: null };
+	if (request.toolName.toLowerCase() === "edit") {
+		const patch = readFileEditPayload(request.toolInput);
+		const paths = [...new Set(patch.edits?.map((edit) => edit.filePath) ?? [])];
+		if (patch.patch && paths.length > 1) {
+			const protectedPath = paths.find((path) => isProtectedPath(path, opts.protectPaths));
+			if (!protectedPath) return { records, snapshot: null };
+			records.push({
+				action: "snapshot",
+				outcome: "failure",
+				target: resolvePath(protectedPath),
+				reason: "multi_file_patch_not_snapshot_safe",
+				detail: "No rollback snapshot was taken: a multi-file patch cannot be fully restored by this action.",
+			});
+			return { records, snapshot: null };
+		}
+	}
 
-	const target = await destructiveTargetFor(request.toolName, request.toolInput).catch(() => null);
+	let target: string | null;
+	try {
+		target = await destructiveTargetFor(request.toolName, request.toolInput);
+	} catch (error) {
+		const path = targetPathFor(request.toolName, request.toolInput);
+		records.push({
+			action: "snapshot",
+			outcome: "failure",
+			target: path ? resolvePath(path) : "",
+			reason: "target_inspection_failed",
+			detail: error instanceof Error ? error.message : String(error),
+		});
+		return { records, snapshot: null };
+	}
 	if (!target) return { records, snapshot: null };
 
 	if (!isProtectedPath(target, opts.protectPaths)) {
@@ -500,7 +533,22 @@ async function snapshotTarget(
 
 	// A blocked write to a path that does not exist yet has nothing to preserve.
 	// That is a normal outcome, not a failure.
-	const stats = await stat(resolved).catch(() => null);
+	let stats: Awaited<ReturnType<typeof lstat>> | null;
+	try {
+		// A blocked call must not copy through a symlink into a different file.
+		stats = await lstat(resolved);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+			return {
+				action: "snapshot",
+				outcome: "failure",
+				target: resolved,
+				reason: "target_inspection_failed",
+				detail: error instanceof Error ? error.message : String(error),
+			};
+		}
+		stats = null;
+	}
 	if (!stats) {
 		return {
 			action: "snapshot",

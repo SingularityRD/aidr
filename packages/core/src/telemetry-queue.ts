@@ -12,17 +12,19 @@ import { createHash, randomUUID } from "node:crypto";
 import {
 	appendFile,
 	chmod,
+	lstat,
 	mkdir,
 	open,
 	readdir,
 	readFile,
 	rename,
 	rmdir,
-	stat,
 	unlink,
 	writeFile,
 } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { preparePrivateLocalFile } from "./private-local-file.js";
 import { redactTelemetryData } from "./telemetry-redaction.js";
 
 const WAL_VERSION = 1;
@@ -30,6 +32,9 @@ const EVENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const EVENT_HASH_PATTERN = /^[a-f0-9]{64}$/;
 const RECENT_EVENT_LIMIT = 2_048;
 const DEFAULT_MAX_READY_PENDING_AGE_MS = 5 * 60 * 1_000;
+const LEGACY_LOCK_OWNER_FILE = "owner.json";
+const LOCK_OWNER_PREFIX = "owner-";
+const LOCK_OWNER_SUFFIX = ".json";
 const LOSS_REASONS = new Set<TelemetryLossReason>([
 	"event_id_conflict",
 	"event_too_large",
@@ -49,8 +54,8 @@ export type TelemetryLossReason =
 	| "queue_full"
 	| "storage_unavailable";
 
-export type TelemetryDeliveryState = "available" | "unavailable";
-export type TelemetryQueueState = "delivered" | "idle" | "queued" | "unavailable";
+type TelemetryDeliveryState = "available" | "unavailable";
+type TelemetryQueueState = "delivered" | "idle" | "queued" | "unavailable";
 
 export interface DurableTelemetryEvent extends Record<string, unknown> {
 	event_id: string;
@@ -90,6 +95,8 @@ export interface TelemetryQueueReadinessEvidence {
 export interface TelemetryEnqueueResult extends TelemetryQueueStatus {
 	acceptedEventIds: string[];
 	duplicateEventIds: string[];
+	pendingDuplicateEventIds: string[];
+	deliveredDuplicateEventIds: string[];
 	rejected: Array<{ eventId?: string; reason: TelemetryLossReason }>;
 }
 
@@ -132,6 +139,21 @@ interface QueueEntry {
 	attempts: number;
 	createdAt: number;
 	nextAttemptAt: number;
+}
+
+interface LockOwner {
+	v: 1;
+	token: string;
+	pid: number;
+	host: string;
+	acquiredAt: number;
+	/** Absent on legacy owner markers written before process-generation tracking. */
+	processStartedAtMs?: number;
+}
+
+interface LockOwnerRecord {
+	owner: LockOwner;
+	marker: string;
 }
 
 interface Totals {
@@ -186,6 +208,32 @@ const EMPTY_TOTALS: Totals = {
 	queueFullTotal: 0,
 	storageErrorsTotal: 0,
 };
+
+const PROCESS_STARTED_AT_MS = Math.max(0, Math.trunc(Date.now() - process.uptime() * 1000));
+
+/** Keep queue files private and refuse non-regular replacement paths. */
+async function preparePrivateTelemetryQueue(directory: string, walPath: string): Promise<void> {
+	const directoryInfo = await lstat(directory);
+	if (directoryInfo.isSymbolicLink() || !directoryInfo.isDirectory()) {
+		throw new Error("telemetry_queue_directory_not_private");
+	}
+	if (process.platform === "win32") {
+		// Node's mode bits do not constrain inherited NTFS readers. This also
+		// protects a pre-existing WAL before its first append or replay.
+		preparePrivateLocalFile(walPath);
+		return;
+	}
+	await chmod(directory, 0o700);
+	try {
+		const walInfo = await lstat(walPath);
+		if (walInfo.isSymbolicLink() || !walInfo.isFile()) {
+			throw new Error("telemetry_queue_wal_not_private");
+		}
+		await chmod(walPath, 0o600);
+	} catch (error) {
+		if (errorCode(error) !== "ENOENT") throw error;
+	}
+}
 
 function cloneTotals(value: Totals = EMPTY_TOTALS): Totals {
 	return { ...value };
@@ -312,8 +360,55 @@ function isMissing(error: unknown): boolean {
 	return errorCode(error) === "ENOENT";
 }
 
+function isLockOwner(value: unknown): value is LockOwner {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const owner = value as Partial<LockOwner>;
+	return (
+		owner.v === 1 &&
+		typeof owner.token === "string" &&
+		owner.token.length > 0 &&
+		Number.isSafeInteger(owner.pid) &&
+		(owner.pid ?? 0) > 0 &&
+		typeof owner.host === "string" &&
+		owner.host.length > 0 &&
+		Number.isFinite(owner.acquiredAt) &&
+		(owner.acquiredAt ?? 0) > 0 &&
+		(owner.processStartedAtMs === undefined ||
+			(Number.isSafeInteger(owner.processStartedAtMs) && owner.processStartedAtMs >= 0))
+	);
+}
+
+function processIsAlive(owner: LockOwner): boolean | null {
+	if (owner.pid === process.pid) {
+		if (owner.processStartedAtMs !== undefined) {
+			return owner.processStartedAtMs === PROCESS_STARTED_AT_MS;
+		}
+		// Legacy markers have no generation identifier. Their acquisition time
+		// still distinguishes a prior process that happened to reuse our PID.
+		return owner.acquiredAt >= PROCESS_STARTED_AT_MS;
+	}
+	try {
+		process.kill(owner.pid, 0);
+		return true;
+	} catch (error) {
+		if (errorCode(error) === "ESRCH") return false;
+		if (errorCode(error) === "EPERM") return true;
+		return null;
+	}
+}
+
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function writeSyncedExclusive(path: string, content: string): Promise<void> {
+	const handle = await open(path, "wx", 0o600);
+	try {
+		await handle.writeFile(content, "utf8");
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
 }
 
 export class DurableTelemetryQueue {
@@ -339,6 +434,22 @@ export class DurableTelemetryQueue {
 
 	constructor(options: TelemetryQueueOptions) {
 		if (!options.directory.trim()) throw new Error("telemetry queue directory is required");
+		for (const [name, value] of Object.entries({
+			maxEvents: options.maxEvents,
+			maxBytes: options.maxBytes,
+			maxEventBytes: options.maxEventBytes,
+			batchSize: options.batchSize,
+			maxAttempts: options.maxAttempts,
+			initialRetryMs: options.initialRetryMs,
+			maxRetryMs: options.maxRetryMs,
+			maxReadyPendingAgeMs: options.maxReadyPendingAgeMs,
+			lockTimeoutMs: options.lockTimeoutMs,
+			staleLockMs: options.staleLockMs,
+		})) {
+			if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) {
+				throw new Error(`telemetry queue ${name} must be a positive safe integer`);
+			}
+		}
 		this.directory = options.directory;
 		this.walPath = join(this.directory, "events.wal");
 		this.lockPath = join(this.directory, ".lock");
@@ -363,6 +474,8 @@ export class DurableTelemetryQueue {
 		return this.serialized(async () => {
 			const acceptedEventIds: string[] = [];
 			const duplicateEventIds: string[] = [];
+			const pendingDuplicateEventIds: string[] = [];
+			const deliveredDuplicateEventIds: string[] = [];
 			const rejected: TelemetryEnqueueResult["rejected"] = [];
 			let snapshot: QueueSnapshot = {
 				pending: new Map(),
@@ -399,6 +512,9 @@ export class DurableTelemetryQueue {
 								await this.appendRecord(record);
 								this.applyRecord(snapshot, record);
 								duplicateEventIds.push(entry.event.event_id);
+								(existing ? pendingDuplicateEventIds : deliveredDuplicateEventIds).push(
+									entry.event.event_id,
+								);
 							} else {
 								const record: WalRecord = {
 									v: WAL_VERSION,
@@ -451,6 +567,8 @@ export class DurableTelemetryQueue {
 					),
 					acceptedEventIds,
 					duplicateEventIds,
+					pendingDuplicateEventIds,
+					deliveredDuplicateEventIds,
 					rejected: [
 						...rejected,
 						...Array.from({ length: Math.max(0, unpersisted) }, () => ({
@@ -466,7 +584,14 @@ export class DurableTelemetryQueue {
 				status.deliveryState = "unavailable";
 				status.reason = rejected[0]?.reason;
 			}
-			return { ...status, acceptedEventIds, duplicateEventIds, rejected };
+			return {
+				...status,
+				acceptedEventIds,
+				duplicateEventIds,
+				pendingDuplicateEventIds,
+				deliveredDuplicateEventIds,
+				rejected,
+			};
 		});
 	}
 
@@ -503,28 +628,57 @@ export class DurableTelemetryQueue {
 
 			let delivery: TelemetryDeliveryResult;
 			try {
-				delivery = await deliver(due.map((entry) => entry.event));
-			} catch (error) {
-				delivery = { ok: false, retryable: true, reason: String(error) };
+				const result = await deliver(due.map((entry) => entry.event));
+				delivery =
+					result?.ok === true
+						? result
+						: {
+								ok: false,
+								retryable: result?.retryable !== false,
+								reason: "delivery_failed",
+							};
+			} catch {
+				delivery = { ok: false, retryable: true, reason: "delivery_exception" };
 			}
 
 			let acknowledgedEventIds: string[] = [];
+			let droppedPayload = false;
 			try {
 				// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: ACK, retry and terminal-loss records must be committed under the same lock
 				await this.withLock(async () => {
 					snapshot = await this.loadSnapshot(true);
 					if (delivery.ok) {
 						const requested = delivery.acknowledgedEventIds ?? attemptedEventIds;
-						const acknowledged = new Set(requested);
-						if (requested.some((id) => !attemptedEventIds.includes(id))) {
+						const originalById = new Map(due.map((entry) => [entry.event.event_id, entry]));
+						if (
+							!Array.isArray(requested) ||
+							requested.some((id) => typeof id !== "string" || !originalById.has(id)) ||
+							new Set(requested).size !== requested.length
+						) {
 							delivery = { ok: false, retryable: true, reason: "invalid_acknowledgement" };
+						} else if (
+							requested.some((id) => {
+								const original = originalById.get(id);
+								const current = snapshot.pending.get(id);
+								return current
+									? current.eventHash !== original?.eventHash
+									: snapshot.recent.get(id) !== original?.eventHash;
+							})
+						) {
+							// Another process may have dropped and reused the ID while this
+							// delivery was in flight. Never ACK its unsent replacement.
+							delivery = { ok: false, retryable: true, reason: "stale_delivery" };
 						} else {
+							const acknowledged = new Set(requested);
 							acknowledgedEventIds = attemptedEventIds.filter((id) => acknowledged.has(id));
-							if (acknowledgedEventIds.length > 0) {
+							const newlyAcknowledged = acknowledgedEventIds.filter((id) =>
+								snapshot.pending.has(id),
+							);
+							if (newlyAcknowledged.length > 0) {
 								const record: WalRecord = {
 									v: WAL_VERSION,
 									op: "ack",
-									ids: acknowledgedEventIds,
+									ids: newlyAcknowledged,
 								};
 								await this.appendRecord(record);
 								this.applyRecord(snapshot, record);
@@ -539,7 +693,7 @@ export class DurableTelemetryQueue {
 						for (const original of due) {
 							if (acknowledgedEventIds.includes(original.event.event_id)) continue;
 							const current = snapshot.pending.get(original.event.event_id);
-							if (!current) continue;
+							if (!current || current.eventHash !== original.eventHash) continue;
 							const attempts = current.attempts + 1;
 							if (delivery.retryable === false || attempts >= this.maxAttempts) {
 								const record: WalRecord = {
@@ -550,6 +704,7 @@ export class DurableTelemetryQueue {
 								};
 								await this.appendRecord(record);
 								this.applyRecord(snapshot, record);
+								droppedPayload = true;
 							} else {
 								const delay = Math.min(
 									this.maxRetryMs,
@@ -561,14 +716,15 @@ export class DurableTelemetryQueue {
 									id: current.event.event_id,
 									attempts,
 									nextAttemptAt: this.now() + delay,
-									reason: delivery.reason,
 								};
 								await this.appendRecord(record);
 								this.applyRecord(snapshot, record);
 							}
 						}
 					}
-					await this.compactIfNeeded(snapshot);
+					// Neither delivered nor terminally lost payloads remain in the WAL.
+					if (acknowledgedEventIds.length > 0 || droppedPayload) await this.rewriteWal(snapshot);
+					else await this.compactIfNeeded(snapshot);
 				});
 			} catch (error) {
 				// The server may already hold the events. Keep the unacknowledged WAL
@@ -850,26 +1006,122 @@ export class DurableTelemetryQueue {
 		}
 	}
 
-	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: bounded acquisition includes stale-lock recovery for cross-process crash safety
+	private lockOwnerMarker(token: string): string {
+		return `${LOCK_OWNER_PREFIX}${token}${LOCK_OWNER_SUFFIX}`;
+	}
+
+	private async readLockOwner(): Promise<LockOwnerRecord | null> {
+		try {
+			const markers = (await readdir(this.lockPath)).filter(
+				(name) =>
+					name === LEGACY_LOCK_OWNER_FILE ||
+					(name.startsWith(LOCK_OWNER_PREFIX) && name.endsWith(LOCK_OWNER_SUFFIX)),
+			);
+			if (markers.length !== 1) return null;
+			const marker = markers[0];
+			if (!marker) return null;
+			const parsed: unknown = JSON.parse(await readFile(join(this.lockPath, marker), "utf8"));
+			if (!isLockOwner(parsed)) return null;
+			if (marker !== LEGACY_LOCK_OWNER_FILE && marker !== this.lockOwnerMarker(parsed.token)) {
+				return null;
+			}
+			return { owner: parsed, marker };
+		} catch {
+			return null;
+		}
+	}
+
+	private async removeOwnedLock(
+		token: string,
+		marker = this.lockOwnerMarker(token),
+	): Promise<boolean> {
+		try {
+			// The marker path contains this acquisition's random token. If another
+			// owner replaced the directory, this unlink is ENOENT and we must not
+			// proceed to rmdir its generation.
+			await unlink(join(this.lockPath, marker));
+		} catch (error) {
+			if (isMissing(error)) return false;
+			throw error;
+		}
+		try {
+			await rmdir(this.lockPath);
+			return true;
+		} catch (error) {
+			if (isMissing(error) || errorCode(error) === "ENOTEMPTY" || errorCode(error) === "EEXIST") {
+				return false;
+			}
+			throw error;
+		}
+	}
+
+	private async recoverDeadLock(): Promise<boolean> {
+		let metadata;
+		try {
+			metadata = await lstat(this.lockPath);
+		} catch (error) {
+			if (isMissing(error)) return true;
+			throw error;
+		}
+		if (
+			Date.now() - metadata.mtimeMs <= this.staleLockMs ||
+			!metadata.isDirectory() ||
+			metadata.isSymbolicLink()
+		) {
+			return false;
+		}
+
+		const names = await readdir(this.lockPath);
+		if (names.length === 0) {
+			// Acquisition creates the directory before publishing its owner marker.
+			// A paused live owner can therefore leave an old-looking empty lock.
+			return false;
+		}
+
+		const record = await this.readLockOwner();
+		if (record) {
+			// A PID is only meaningful on its own host. Never reclaim a shared
+			// directory lock from another host or from an ambiguous marker.
+			if (record.owner.host !== hostname() || processIsAlive(record.owner) !== false) {
+				return false;
+			}
+			return this.removeOwnedLock(record.owner.token, record.marker);
+		}
+		// Malformed or multiply-owned markers do not identify a process generation.
+		// An old directory mtime cannot prove their owner died.
+		return false;
+	}
+
 	private async withLock<T>(callback: () => Promise<T>): Promise<T> {
 		await this.faultInjector?.("mkdir");
 		await mkdir(this.directory, { recursive: true, mode: 0o700 });
+		await preparePrivateTelemetryQueue(this.directory, this.walPath);
 		const started = Date.now();
+		const owner: LockOwner = {
+			v: 1,
+			token: randomUUID(),
+			pid: process.pid,
+			host: hostname(),
+			acquiredAt: Date.now(),
+			processStartedAtMs: PROCESS_STARTED_AT_MS,
+		};
 		while (true) {
 			try {
 				await mkdir(this.lockPath, { mode: 0o700 });
+				const marker = this.lockOwnerMarker(owner.token);
+				const temporary = join(this.directory, `.lock-owner-${owner.token}.tmp`);
+				try {
+					await writeSyncedExclusive(temporary, `${JSON.stringify(owner)}\n`);
+					await rename(temporary, join(this.lockPath, marker));
+				} catch (error) {
+					await unlink(temporary).catch(() => undefined);
+					await this.removeOwnedLock(owner.token, marker).catch(() => undefined);
+					throw error;
+				}
 				break;
 			} catch (error) {
 				if (errorCode(error) !== "EEXIST") throw error;
-				try {
-					const lockStat = await stat(this.lockPath);
-					if (Date.now() - lockStat.mtimeMs > this.staleLockMs) {
-						await rmdir(this.lockPath);
-						continue;
-					}
-				} catch (lockError) {
-					if (isMissing(lockError)) continue;
-				}
+				if (await this.recoverDeadLock()) continue;
 				if (Date.now() - started >= this.lockTimeoutMs) throw new Error("telemetry_queue_locked");
 				await sleep(10);
 			}
@@ -878,7 +1130,7 @@ export class DurableTelemetryQueue {
 		try {
 			return await callback();
 		} finally {
-			await rmdir(this.lockPath).catch(() => undefined);
+			await this.removeOwnedLock(owner.token).catch(() => undefined);
 		}
 	}
 
@@ -987,7 +1239,12 @@ export async function readTelemetryLossSummary(
 	let unreadable = false;
 	try {
 		const entries = await readdir(root, { withFileTypes: true });
-		namespaces = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+		unreadable = entries.some(
+			(entry) => !entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name),
+		);
+		namespaces = entries
+			.filter((entry) => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name))
+			.map((entry) => entry.name);
 	} catch (error) {
 		// ENOENT means nothing has ever been queued, which is genuinely idle. Any
 		// other failure means the state is unknown and must not read as clean.
@@ -1013,15 +1270,24 @@ export async function readTelemetryLossSummary(
 				continue;
 			}
 
-			const evidence = await queue.readinessEvidence();
-			pendingEvents += evidence.depth;
-			lostTotal += evidence.failed_jobs;
-			oldestAgeSeconds = Math.max(oldestAgeSeconds, evidence.oldest_age_seconds);
+			const oldestPending = status.metrics.oldestPendingAt
+				? Date.parse(status.metrics.oldestPendingAt)
+				: now();
+			const ageMs = Math.max(0, now() - oldestPending);
+			const age = Math.floor(ageMs / 1_000);
+			pendingEvents += status.metrics.pendingEvents;
+			lostTotal += status.metrics.lostTotal;
+			oldestAgeSeconds = Math.max(oldestAgeSeconds, age);
 			detail.push({
 				namespace,
-				pendingEvents: evidence.depth,
-				lostTotal: evidence.failed_jobs,
-				state: evidence.status,
+				pendingEvents: status.metrics.pendingEvents,
+				lostTotal: status.metrics.lostTotal,
+				state:
+					status.deliveryState === "available" &&
+					status.metrics.lostTotal === 0 &&
+					(status.metrics.pendingEvents === 0 || ageMs <= DEFAULT_MAX_READY_PENDING_AGE_MS)
+						? "ok"
+						: "degraded",
 			});
 		} catch {
 			unreadable = true;

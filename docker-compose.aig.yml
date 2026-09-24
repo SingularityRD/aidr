@@ -17,7 +17,7 @@ services:
       context: ./vendor/ai-infra-guard
       dockerfile: Dockerfile
     container_name: aidr-aig-server
-    # Tencent's v4.5.1 checkout contains a CRLF start.sh and uses a legacy
+    # The pinned checkout contains a CRLF start.sh and uses a legacy
     # /ai-infra-guard volume path. Start the binary directly against AIDR's
     # mounted /app paths so the Windows checkout and Linux image agree.
     command:
@@ -27,31 +27,60 @@ services:
         mkdir -p /app/db /app/uploads /app/logs &&
         touch /app/logs/trpc.log &&
         exec /app/ai-infra-guard webserver --server 0.0.0.0:8088
-    ports:
-      # AIG upstream v4.5.1 has no authentication. Bind the optional demo
-      # UI/API to loopback by default; expose it through an authenticated
-      # private ingress only after an explicit AIG_BIND_ADDRESS override.
-      - "${AIG_BIND_ADDRESS:-127.0.0.1}:${AIG_SERVER_PORT:-8088}:8088"
+    # Never publish the unauthenticated upstream API/worker WebSocket. Only the
+    # authenticated bridge is reachable from the host.
+    expose:
+      - "8088"
     environment:
       - APP_ENV=production
       - UPLOAD_DIR=/app/uploads
       - DB_PATH=/app/db/tasks.db
       - TZ=${AIG_TZ:-Asia/Shanghai}
+      - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:?set AIG_AGENT_SHARED_SECRET}
+      - AIG_DATA_ROOT=/app/data
+      - AIG_DATA_MANIFEST_PATH=/app/aig-manifest/aig-data-manifest.json
+      - AIG_SIGNING_PUBLIC_KEY_PATH=/run/secrets/aig-signing-public.pem
+      - AIG_TRUSTED_SIGNING_KEY_ID=${AIG_TRUSTED_SIGNING_KEY_ID:?set AIG_TRUSTED_SIGNING_KEY_ID}
+      - AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=${AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256:?set AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256}
+      - AIG_EXPECTED_DATA_BUNDLE_ID=${AIG_EXPECTED_DATA_BUNDLE_ID:?set AIG_EXPECTED_DATA_BUNDLE_ID}
+      - AIG_EXPECTED_SOURCE_COMMIT=${AIG_EXPECTED_SOURCE_COMMIT:?set AIG_EXPECTED_SOURCE_COMMIT}
     volumes:
-      - aig-data:/app/data
       - aig-db:/app/db
       - aig-logs:/app/logs
       - aig-uploads:/app/uploads
+      - type: bind
+        source: ./packages/core/src/generated
+        target: /app/aig-manifest
+        read_only: true
+      - type: bind
+        source: ${AIG_SIGNING_PUBLIC_KEY_HOST_PATH:?set AIG_SIGNING_PUBLIC_KEY_HOST_PATH}
+        target: /run/secrets/aig-signing-public.pem
+        read_only: true
     networks:
       - aidr-aig-network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     read_only: true
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0700
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8088/"]
+      # The static UI can be served while the signed runtime dataset is
+      # unusable. Probe the authenticated runtime-evidence endpoint instead.
+      # Worker liveness remains part of the bridge /readyz check so this probe
+      # does not deadlock the worker's service_healthy dependency.
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS -H "X-AIG-Agent-Token: $${AIG_AGENT_SHARED_SECRET}"
+          http://localhost:8088/api/v1/internal/readiness
       interval: 30s
       timeout: 5s
       start_period: 15s
@@ -62,6 +91,7 @@ services:
         limits:
           cpus: "2"
           memory: "2G"
+          pids: 256
         reservations:
           cpus: "0.5"
           memory: "512M"
@@ -74,9 +104,16 @@ services:
     environment:
       - TZ=${AIG_TZ:-Asia/Shanghai}
       - AIG_SERVER=aig-server:8088
-      - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:-}
-      - AIG_AGENT_VERSION=${AIG_SOURCE_VERSION:-v4.5.1}
-      # AIG v4.5.1 imports a pre-rename MCP SDK symbol. The tracked shim is
+      - AIG_AGENT_VERSION=${AIG_SOURCE_VERSION:-v4.6.1}
+      - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:?set AIG_AGENT_SHARED_SECRET}
+      - AIG_UPLOAD_ROOT=/app/uploads
+      - AIG_WORK_DIR=/work
+      # Remote scan traffic must traverse the configured egress gateway. Keep
+      # AIG control-plane traffic on the private compose network.
+      - HTTP_PROXY=${BRIDGE_EGRESS_PROXY_URL:?set BRIDGE_EGRESS_PROXY_URL}
+      - HTTPS_PROXY=${BRIDGE_EGRESS_PROXY_URL:?set BRIDGE_EGRESS_PROXY_URL}
+      - NO_PROXY=${AIG_NO_PROXY:-aig-server,localhost,127.0.0.1}
+      # The pinned AIG worker imports a pre-rename MCP SDK symbol. The tracked shim is
       # loaded via PYTHONPATH until the upstream import is fixed.
       - PYTHONPATH=/app/aig-compat
     volumes:
@@ -84,7 +121,8 @@ services:
       # worker.  Keep the worker read-only so a scan cannot mutate the upload
       # store or escape the configured source root.
       - aig-uploads:/app/uploads:ro
-      # AIG v4.5.1 imports a pre-rename MCP SDK symbol. The tracked shim is
+      - aig-checker-data:/api-checker-data
+      # The pinned AIG worker imports a pre-rename MCP SDK symbol. The tracked shim is
       # loaded via PYTHONPATH until the upstream import is fixed.
       - ./services/aig-bridge/aig_compat:/app/aig-compat:ro
     # The upstream image historically requested SYS_ADMIN/unconfined for its
@@ -99,19 +137,28 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=2g
       - /run:rw,noexec,nosuid,nodev,size=64m
+      - /work:rw,noexec,nosuid,nodev,size=2g,uid=1000,gid=1000,mode=0700
     shm_size: "2gb"
     networks:
       - aidr-aig-network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     depends_on:
       aig-server:
         condition: service_healthy
     deploy:
-      replicas: ${AIG_AGENT_COUNT:-2}
+      # The pinned source does not expose unique live worker identities. Keep one
+      # worker until registration and readiness can prove distinct workers.
+      replicas: ${AIG_AGENT_COUNT:-1}
       resources:
         limits:
           cpus: "4"
           memory: "4G"
+          pids: 1024
         reservations:
           cpus: "1"
           memory: "1G"
@@ -130,27 +177,31 @@ services:
       - BRIDGE_LOG_LEVEL=${BRIDGE_LOG_LEVEL:-INFO}
       - TZ=${AIG_TZ:-Asia/Shanghai}
       - BRIDGE_AIG_URL=http://aig-server:8088
-      - AIG_SOURCE_VERSION=${AIG_SOURCE_VERSION:-v4.5.1}
+      - AIG_SOURCE_VERSION=${AIG_SOURCE_VERSION:-v4.6.1}
+      - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:?set AIG_AGENT_SHARED_SECRET}
+      - AIG_MIN_WORKERS=${AIG_MIN_WORKERS:-1}
+      - AIG_DATA_MANIFEST_PATH=/app/aig-data/aig-data-manifest.json
+      - AIG_SIGNING_PUBLIC_KEY_PATH=/run/secrets/aig-signing-public.pem
+      - AIG_TRUSTED_SIGNING_KEY_ID=${AIG_TRUSTED_SIGNING_KEY_ID:?set AIG_TRUSTED_SIGNING_KEY_ID}
+      - AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=${AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256:?set AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256}
+      - AIG_EXPECTED_DATA_BUNDLE_ID=${AIG_EXPECTED_DATA_BUNDLE_ID:?set AIG_EXPECTED_DATA_BUNDLE_ID}
+      - AIG_EXPECTED_SOURCE_COMMIT=${AIG_EXPECTED_SOURCE_COMMIT:?set AIG_EXPECTED_SOURCE_COMMIT}
       - BRIDGE_API_KEY=${BRIDGE_API_KEY:-}
       - BRIDGE_AUTH_MODE=${BRIDGE_AUTH_MODE:-broker}
       - BRIDGE_AUTH_REQUIRED=${BRIDGE_AUTH_REQUIRED:-true}
+      # Broker mode rejects requests and readiness until all three are set;
+      # leaving interpolation optional keeps the explicit local api_key mode usable.
       - BRIDGE_JWT_SECRET=${BRIDGE_JWT_SECRET:-}
       - BRIDGE_JWT_ISSUER=${BRIDGE_JWT_ISSUER:-}
-      - BRIDGE_JWT_AUDIENCE=${BRIDGE_JWT_AUDIENCE:-aidr-aig-bridge}
+      - BRIDGE_JWT_AUDIENCE=${BRIDGE_JWT_AUDIENCE:-}
       - BRIDGE_JWT_REPLAY_DB=${BRIDGE_JWT_REPLAY_DB:-/app/state/jwt-replay.db}
       - BRIDGE_TENANT_REQUIRED=${BRIDGE_TENANT_REQUIRED:-true}
       - BRIDGE_HA_REQUIRED=${BRIDGE_HA_REQUIRED:-true}
-      - BRIDGE_TASK_BACKEND=${BRIDGE_TASK_BACKEND:-sqlite}
-      - BRIDGE_TASK_BACKEND_READY=${BRIDGE_TASK_BACKEND_READY:-false}
+      - BRIDGE_TASK_BACKEND=${BRIDGE_TASK_BACKEND:-postgres}
+      - BRIDGE_TASK_POSTGRES_DSN=${BRIDGE_TASK_POSTGRES_DSN:-}
       - BRIDGE_REQUIRE_IDEMPOTENCY=${BRIDGE_REQUIRE_IDEMPOTENCY:-true}
-      - BRIDGE_RUNTIME_EGRESS_REQUIRED=${BRIDGE_RUNTIME_EGRESS_REQUIRED:-false}
-      - BRIDGE_EGRESS_PROXY_URL=${BRIDGE_EGRESS_PROXY_URL:-}
-      - BRIDGE_WORKER_HEALTH_REQUIRED=${BRIDGE_WORKER_HEALTH_REQUIRED:-true}
-      - AIG_WORKER_READY=${AIG_WORKER_READY:-false}
-      - AIG_MIN_WORKERS=${AIG_MIN_WORKERS:-2}
-      - AIG_DATASET_READINESS_REQUIRED=${AIG_DATASET_READINESS_REQUIRED:-true}
-      - AIG_DATASET_MANIFEST_SHA256=${AIG_DATASET_MANIFEST_SHA256:-}
-      - AIG_DATASET_LOADED_SHA256=${AIG_DATASET_LOADED_SHA256:-}
+      - BRIDGE_RUNTIME_EGRESS_REQUIRED=${BRIDGE_RUNTIME_EGRESS_REQUIRED:-true}
+      - BRIDGE_EGRESS_PROXY_URL=${BRIDGE_EGRESS_PROXY_URL:?set BRIDGE_EGRESS_PROXY_URL}
       - BRIDGE_UPLOAD_ENABLED=${BRIDGE_UPLOAD_ENABLED:-true}
       - BRIDGE_UPLOAD_ROOT=${BRIDGE_UPLOAD_ROOT:-/app/uploads}
       - BRIDGE_CORS_ORIGINS=${BRIDGE_CORS_ORIGINS:-}
@@ -161,19 +212,36 @@ services:
       - BRIDGE_SOURCE_ROOT=${BRIDGE_SOURCE_ROOT:-/app/uploads}
       - BRIDGE_TASK_DB=${BRIDGE_TASK_DB:-/app/state/tasks.db}
     volumes:
-      # The bridge only validates/forwards source paths, but sharing the same
-      # read-only root makes the source-scan contract explicit and lets it
-      # reject symlink escapes against the actual mounted tree.
-      - aig-uploads:/app/uploads:ro
+      # The authenticated upload endpoint writes content-addressed objects;
+      # workers consume the same volume read-only.
+      - aig-uploads:/app/uploads
       - aig-bridge-state:/app/state
+      - type: bind
+        source: ./packages/core/src/generated
+        target: /app/aig-data
+        read_only: true
+      - type: bind
+        source: ${AIG_SIGNING_PUBLIC_KEY_HOST_PATH:?set AIG_SIGNING_PUBLIC_KEY_HOST_PATH}
+        target: /run/secrets/aig-signing-public.pem
+        read_only: true
     read_only: true
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+    # Starlette spools bounded multipart uploads here before atomically moving
+    # them into the tenant upload volume. Keep that scratch space ephemeral and
+    # inaccessible to other container users.
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0700
     networks:
       - aidr-aig-network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       aig-server:
         condition: service_healthy
@@ -188,20 +256,21 @@ services:
         limits:
           cpus: "1"
           memory: "512M"
+          pids: 256
         reservations:
           cpus: "0.25"
           memory: "128M"
 
 # ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
-  aig-data:
-    name: aidr-aig-data
   aig-db:
     name: aidr-aig-db
   aig-logs:
     name: aidr-aig-logs
   aig-uploads:
     name: aidr-aig-uploads
+  aig-checker-data:
+    name: aidr-aig-checker-data
   aig-bridge-state:
     name: aidr-aig-bridge-state
 
@@ -210,3 +279,6 @@ networks:
   aidr-aig-network:
     name: aidr-aig-network
     driver: bridge
+    # No container has a direct Internet route. Attach a reviewed egress proxy
+    # to this private network and a separate external network.
+    internal: true

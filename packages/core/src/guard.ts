@@ -27,7 +27,7 @@ import {
 	logResponseActions,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
-import { loadConfig } from "./config.js";
+import { isInvalidConfig, loadConfig } from "./config.js";
 import type { ToolEvaluationContext, ToolEvaluationRequest } from "./evaluator.js";
 import { allowVerdict, evaluateToolCall } from "./evaluator.js";
 import {
@@ -47,7 +47,8 @@ import {
 	type ResponseChainWrite,
 	responseAuditorFromConfig,
 } from "./response-audit.js";
-import type { Artifact, Config, Logger, ResponseAuditConfig, Verdict } from "./types.js";
+import { normalizeToolEvaluationRequest } from "./tool-normalization.js";
+import type { Artifact, Config, Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 import { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 
@@ -77,8 +78,8 @@ export interface GuardResult {
 	signedChain?: ResponseChainWrite;
 	/**
 	 * Finish the snapshot lifecycle for this call. Omitted when no snapshot was
-	 * taken. `rolledBack: false` means the target was already restored — it does not
-	 * mean the restore failed (that is reported as a thrown error instead).
+	 * taken. `rolledBack: true` means the restore succeeded. `false` also covers a
+	 * failed restore, which remains retryable and is recorded in the response audit.
 	 */
 	finalizeSnapshot?: (outcome: "success" | "failure") => Promise<{ rolledBack: boolean }>;
 }
@@ -259,25 +260,39 @@ export async function guardToolCall(
 	approvalStore: ApprovalStore,
 ): Promise<GuardResult> {
 	const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
+	// Consume synchronously before awaiting evaluation so concurrent identical
+	// calls cannot both spend the same out-of-band approval.
+	const hasApproval = approvalStore.consumeApproval(actionId);
 
-	if (approvalStore.isApproved(actionId)) {
-		return { verdict: allowVerdict("approved") };
-	}
-
-	const verdict = await evaluateToolCall(request, context);
+	const verdict = await evaluateToolCall(request, { ...context, promoteParanoidAsk: true });
 
 	const logger = context.logger ?? nullLogger;
 	// Needed for paranoid promotion and for the response settings. Read defensively:
 	// a config read that yields nothing must not crash the security path, and must
 	// not accidentally enable a response action.
-	const config = (await loadConfig(context.configPath, logger)) ?? ({} as Config);
+	const loadedConfig = await loadConfig(context.configPath, logger);
+	const config = loadedConfig ?? ({} as Config);
 
 	let effective = verdict;
 	if (verdict.decision === "ask" && config.sensitivity === "paranoid") {
 		effective = { ...verdict, decision: "deny" };
 	}
+	if (
+		hasApproval &&
+		effective.decision === "ask" &&
+		loadedConfig &&
+		!isInvalidConfig(loadedConfig)
+	) {
+		effective = allowVerdict("approved");
+	}
 
 	const responseOptions = resolveResponseActions(config);
+	const normalizedRequest = normalizeToolEvaluationRequest(request);
+	const responseRequest =
+		normalizedRequest.toolInput.__aidr_input_normalization_failed === true ||
+		normalizedRequest.toolInput.__aidr_patch_parse_failed === true
+			? { toolName: "unknown", toolInput: {} }
+			: normalizedRequest;
 	const { auditor, unavailableReason } = responseAuditorFromConfig(
 		config.response?.audit ?? DEFAULT_RESPONSE_AUDIT_CONFIG,
 		logger,
@@ -293,7 +308,7 @@ export async function guardToolCall(
 		// change the verdict itself.
 		responseActions = await runResponseActions(
 			effective,
-			{ toolName: request.toolName, toolInput: request.toolInput },
+			{ toolName: responseRequest.toolName, toolInput: responseRequest.toolInput },
 			responseOptions,
 			logger,
 		);
@@ -348,7 +363,11 @@ export async function guardToolCall(
 	// chain records for one decision.
 	const preAllowed = await runPreAllowedResponseActions(
 		effective,
-		{ toolName: request.toolName, toolInput: request.toolInput, sessionId: request.sessionId },
+		{
+			toolName: responseRequest.toolName,
+			toolInput: responseRequest.toolInput,
+			sessionId: request.sessionId,
+		},
 		responseOptions,
 		logger,
 	);
@@ -391,6 +410,7 @@ export async function guardToolCall(
 
 	const snapshot = preAllowed.snapshot;
 	let finalized = false;
+	let rollbackInFlight: Promise<{ rolledBack: boolean }> | null = null;
 	const result: GuardResult = {
 		verdict: effective,
 		responseActions: preAllowed.records,
@@ -399,21 +419,34 @@ export async function guardToolCall(
 	};
 
 	if (snapshot) {
-		result.finalizeSnapshot = async () => {
+		result.finalizeSnapshot = async (outcome) => {
+			if (rollbackInFlight) return rollbackInFlight;
 			if (finalized) return { rolledBack: false };
-			finalized = true;
-			await rollbackSnapshotFromGuardResult(
-				result,
-				{
-					toolName: request.toolName,
-					toolInput: request.toolInput,
-					sessionId: request.sessionId,
-					configPath: context.configPath,
-				},
-				{ responseOptions, auditor },
-				logger,
-			);
-			return { rolledBack: true };
+			if (outcome === "success") {
+				finalized = true;
+				return { rolledBack: false };
+			}
+			rollbackInFlight = (async () => {
+				const record = await rollbackSnapshotFromGuardResult(
+					result,
+					{
+						toolName: request.toolName,
+						toolInput: request.toolInput,
+						sessionId: request.sessionId,
+						configPath: context.configPath,
+					},
+					{ responseOptions, auditor },
+					logger,
+				);
+				if (record?.outcome !== "success") return { rolledBack: false };
+				finalized = true;
+				return { rolledBack: true };
+			})();
+			try {
+				return await rollbackInFlight;
+			} finally {
+				rollbackInFlight = null;
+			}
 		};
 	}
 

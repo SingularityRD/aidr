@@ -1,12 +1,58 @@
 import { createHash, generateKeyPairSync, randomUUID, sign, verify } from "node:crypto";
-import { appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { appendFile, chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { resolvePath } from "./config.js";
 import type { ResponseActionRecord } from "./response-actions.js";
 import type { ResponseMode } from "./response-config.js";
 import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
 import type { Logger, ResponseAuditConfig, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
+
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+// Guard creates fresh auditors per call, so serialize at module scope by log path.
+const auditWriteQueues = new Map<string, Promise<void>>();
+
+function serializeAuditWrite<T>(path: string, operation: () => Promise<T>): Promise<T> {
+	const resolvedPath = resolve(resolvePath(path));
+	const queueKey = process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+	const previous = auditWriteQueues.get(queueKey) ?? Promise.resolve();
+	const result = previous.then(operation);
+	const queued = result.then(
+		() => undefined,
+		() => undefined,
+	);
+	auditWriteQueues.set(queueKey, queued);
+	void queued.then(() => {
+		if (auditWriteQueues.get(queueKey) === queued) auditWriteQueues.delete(queueKey);
+	});
+	return result;
+}
+
+async function ensurePrivateDirectory(path: string): Promise<void> {
+	await mkdir(path, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+	await chmod(path, PRIVATE_DIRECTORY_MODE);
+}
+
+async function hardenPrivateFileIfPresent(path: string): Promise<void> {
+	try {
+		await chmod(path, PRIVATE_FILE_MODE);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+}
+
+async function writePrivateFile(path: string, content: string): Promise<void> {
+	await ensurePrivateDirectory(dirname(path));
+	await hardenPrivateFileIfPresent(path);
+	await writeFile(path, content, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
+}
+
+async function appendPrivateFile(path: string, content: string): Promise<void> {
+	await ensurePrivateDirectory(dirname(path));
+	await hardenPrivateFileIfPresent(path);
+	await appendFile(path, content, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
+}
 
 export interface ResponseAuditEntry {
 	id: string;
@@ -127,6 +173,8 @@ export class ResponseAuditor {
 	}
 
 	private async initializeSigning(): Promise<void> {
+		await ensurePrivateDirectory(dirname(this.keyPath));
+		await hardenPrivateFileIfPresent(this.keyPath);
 		try {
 			const keyContent = await readFile(this.keyPath, "utf-8");
 			const keys = JSON.parse(keyContent);
@@ -140,10 +188,7 @@ export class ResponseAuditor {
 			});
 			this.privateKey = privateKey;
 			this.publicKey = publicKey;
-			await mkdir(dirname(this.keyPath), { recursive: true });
-			await writeFile(this.keyPath, JSON.stringify({ privateKey, publicKey }, null, 2), {
-				mode: 0o600,
-			});
+			await writePrivateFile(this.keyPath, JSON.stringify({ privateKey, publicKey }, null, 2));
 			this.logger.debug("Generated new signing keys for response audit");
 		}
 	}
@@ -231,19 +276,12 @@ export class ResponseAuditor {
 			updated_at: new Date().toISOString(),
 		};
 		const temporaryPath = `${this.headPath}.${randomUUID()}.tmp`;
-		await mkdir(dirname(this.headPath), { recursive: true });
-		await writeFile(temporaryPath, `${JSON.stringify(checkpoint)}\n`, {
-			encoding: "utf8",
-			mode: 0o600,
-		});
+		await writePrivateFile(temporaryPath, `${JSON.stringify(checkpoint)}\n`);
 		try {
 			await rename(temporaryPath, this.headPath);
 		} catch {
 			// Windows does not replace an existing destination with rename().
-			await writeFile(this.headPath, `${JSON.stringify(checkpoint)}\n`, {
-				encoding: "utf8",
-				mode: 0o600,
-			});
+			await writePrivateFile(this.headPath, `${JSON.stringify(checkpoint)}\n`);
 			await unlink(temporaryPath).catch(() => undefined);
 		}
 	}
@@ -289,8 +327,7 @@ export class ResponseAuditor {
 				this.privateKey,
 			).toString("base64");
 		}
-		await mkdir(dirname(this.retentionManifestPath), { recursive: true });
-		await appendFile(this.retentionManifestPath, `${JSON.stringify(record)}\n`, "utf8");
+		await appendPrivateFile(this.retentionManifestPath, `${JSON.stringify(record)}\n`);
 	}
 
 	private verifyRetentionDeletionRecord(record: RetentionDeletionRecord): boolean {
@@ -391,6 +428,12 @@ export class ResponseAuditor {
 	}
 
 	async log(entry: Omit<ResponseAuditEntry, "id" | "timestamp">): Promise<ResponseAuditEntry> {
+		return serializeAuditWrite(this.auditLogPath, () => this.logSerialized(entry));
+	}
+
+	private async logSerialized(
+		entry: Omit<ResponseAuditEntry, "id" | "timestamp">,
+	): Promise<ResponseAuditEntry> {
 		await this.ensureSigningReady();
 		const id = randomUUID();
 		const timestamp = new Date();
@@ -412,8 +455,7 @@ export class ResponseAuditor {
 		}
 
 		const path = resolvePath(this.auditLogPath);
-		await mkdir(dirname(path), { recursive: true });
-		await appendFile(path, `${JSON.stringify(serialized)}\n`);
+		await appendPrivateFile(path, `${JSON.stringify(serialized)}\n`);
 		if (this.signEntries && serialized._entry_hash) {
 			await this.writeHeadCheckpoint(serialized.id, serialized._entry_hash);
 		}
@@ -527,11 +569,12 @@ export class ResponseAuditor {
 
 	async verifyIntegrity(): Promise<{
 		valid: boolean;
+		reason?: string;
 		tamperedEntries?: string[];
 	}> {
 		await this.ensureSigningReady();
 		if (!this.signEntries) {
-			return { valid: true };
+			return { valid: false, reason: "unsigned_audit_chain_not_verified" };
 		}
 
 		const path = resolvePath(this.auditLogPath);
@@ -648,14 +691,14 @@ export class ResponseAuditor {
 					rechained.push(entry);
 				}
 				const serialized = rechained.map((e) => JSON.stringify(e));
-				await writeFile(path, `${serialized.join("\n")}\n`);
+				await writePrivateFile(path, `${serialized.join("\n")}\n`);
 				const last = rechained[rechained.length - 1];
 				if (last?._entry_hash) {
 					await this.writeHeadCheckpoint(last.id, last._entry_hash);
 				}
 			} else {
 				const serialized = filtered.map((e) => JSON.stringify(e));
-				await writeFile(path, `${serialized.join("\n")}\n`);
+				await writePrivateFile(path, `${serialized.join("\n")}\n`);
 				if (this.signEntries) {
 					await unlink(this.headPath).catch(() => undefined);
 				}

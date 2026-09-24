@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	activatePackVersion,
 	loadMergedIntelFromDisk,
-	rollbackPackVersion,
 } from "../intel/loader.js";
 import { evaluatePolicy } from "../policy.js";
 import { ConfigSchema } from "../types.js";
@@ -49,6 +48,8 @@ describe("intel packs", () => {
 		packId: string;
 		version: string;
 		privateKey: ReturnType<typeof generateKeyPairSync>["privateKey"];
+		keyId?: string;
+		signWith?: ReturnType<typeof generateKeyPairSync>["privateKey"];
 		files: Array<{ kind: string; name: string; content: string }>;
 		expiresAt?: string;
 	}) {
@@ -70,13 +71,13 @@ describe("intel packs", () => {
 			version: params.version,
 			issued_at: new Date().toISOString(),
 			expires_at: params.expiresAt,
-			key_id: "k1",
+			key_id: params.keyId ?? "k1",
 			files: manifestFiles,
 		};
 		const manifestJson = `${JSON.stringify(manifestObj, null, 2)}\n`;
 		await writeFile(join(packsDir, "manifest.json"), manifestJson, "utf8");
 
-		const sig = sign(null, Buffer.from(manifestJson, "utf8"), params.privateKey).toString("base64");
+		const sig = sign(null, Buffer.from(manifestJson, "utf8"), params.signWith ?? params.privateKey).toString("base64");
 		await writeFile(join(packsDir, "manifest.sig"), `${sig}\n`, "utf8");
 	}
 
@@ -197,7 +198,7 @@ describe("intel packs", () => {
 		expect(verdict3?.matchedThreatId).toBe("INTEL-PKG-001");
 	});
 
-	it("respects active pointer and supports rollback", async () => {
+	it("rejects replay of an older signed pack after a newer version was accepted", async () => {
 		const base = join(dir, ".singularity-aidr", "intel");
 		await mkdir(base, { recursive: true });
 
@@ -224,20 +225,68 @@ describe("intel packs", () => {
 			files: [{ kind: "url_denylist", name: "url-deny.txt", content: "v2.bad\n" }],
 		});
 
-		// Force active to v1 even though v2 is newer.
+		const accepted = await loadMergedIntelFromDisk();
+		expect(accepted.urlDenyHosts.has("v2.bad")).toBe(true);
+
 		await activatePackVersion({ packId: "roll-pack", version: "1.0.0" });
-		const merged1 = await loadMergedIntelFromDisk();
-		expect(merged1.urlDenyHosts.has("v1.bad")).toBe(true);
-		expect(merged1.urlDenyHosts.has("v2.bad")).toBe(false);
+		const replayed = await loadMergedIntelFromDisk();
+		expect(replayed.urlDenyHosts.has("v1.bad")).toBe(false);
+		expect(Object.getOwnPropertyDescriptor(replayed, "availability")?.value).toBe("unavailable");
+	});
 
-		// Switch to v2 and rollback back to v1.
-		await activatePackVersion({ packId: "roll-pack", version: "2.0.0" });
-		const merged2 = await loadMergedIntelFromDisk();
-		expect(merged2.urlDenyHosts.has("v2.bad")).toBe(true);
+	it("rejects unknown, mismatched, and revoked signing keys", async () => {
+		const base = join(dir, ".singularity-aidr", "intel");
+		await mkdir(base, { recursive: true });
 
-		await rollbackPackVersion({ packId: "roll-pack" });
-		const merged3 = await loadMergedIntelFromDisk();
-		expect(merged3.urlDenyHosts.has("v1.bad")).toBe(true);
+		const trusted = generateKeyPairSync("ed25519");
+		const wrong = generateKeyPairSync("ed25519");
+		const publicPem = trusted.publicKey.export({ format: "pem", type: "spki" }).toString();
+		await writeFile(
+			join(base, "trusted-keys.json"),
+			`${JSON.stringify({ k1: publicPem, revoked: publicPem }, null, 2)}\n`,
+			"utf8",
+		);
+
+		for (const packId of ["unknown-key", "mismatched-key", "revoked-key"]) {
+			const options =
+				packId === "unknown-key"
+					? { keyId: "unknown" }
+					: packId === "mismatched-key"
+						? { keyId: "k1", signWith: wrong.privateKey }
+						: { keyId: "revoked" };
+			await writeSignedPackVersion({
+				base,
+				packId,
+				version: "1.0.0",
+				privateKey: trusted.privateKey,
+				...options,
+				files: [{ kind: "url_denylist", name: "url-deny.txt", content: `${packId}.bad\n` }],
+			});
+		}
+
+		const merged = await loadMergedIntelFromDisk({ revocations: { key_ids: ["revoked"] } });
+		expect(merged.urlDenyHosts.size).toBe(0);
+		expect(Object.getOwnPropertyDescriptor(merged, "availability")?.value).toBe("unavailable");
+	});
+
+	it("fails closed when configured revocations are unavailable", async () => {
+		const base = join(dir, ".singularity-aidr", "intel");
+		await mkdir(base, { recursive: true });
+
+		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+		const publicPem = publicKey.export({ format: "pem", type: "spki" }).toString();
+		await writeFile(join(base, "trusted-keys.json"), `${JSON.stringify({ k1: publicPem })}\n`, "utf8");
+		await writeSignedPackVersion({
+			base,
+			packId: "revocation-source-required",
+			version: "1.0.0",
+			privateKey,
+			files: [{ kind: "url_denylist", name: "url-deny.txt", content: "must-not-load.bad\n" }],
+		});
+
+		const merged = await loadMergedIntelFromDisk({ requireRevocations: true, revocations: null });
+		expect(merged.urlDenyHosts.has("must-not-load.bad")).toBe(false);
+		expect(Object.getOwnPropertyDescriptor(merged, "availability")?.value).toBe("unavailable");
 	});
 
 	it("supports grace verification for expired packs", async () => {
@@ -264,6 +313,12 @@ describe("intel packs", () => {
 
 		const strictMerged = await loadMergedIntelFromDisk({ verificationMode: "strict" });
 		expect(strictMerged.pluginSignatureDeny.has("deadbeef")).toBe(false);
+		const zeroGraceMerged = await loadMergedIntelFromDisk({
+			verificationMode: "grace",
+			graceHours: 0,
+		});
+		expect(zeroGraceMerged.pluginSignatureDeny.has("deadbeef")).toBe(false);
+		expect(Object.getOwnPropertyDescriptor(zeroGraceMerged, "availability")?.value).toBe("unavailable");
 
 		const graceMerged = await loadMergedIntelFromDisk({
 			verificationMode: "grace",

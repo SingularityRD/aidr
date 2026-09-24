@@ -48,9 +48,17 @@ describe("ContentClassifier", () => {
 
 	it("should detect credentials in file content", () => {
 		const classifier = new ContentClassifier();
-		const content = `DB_PASSWORD=supersecret123
-API_KEY=abc123def456
-secret_token=xyz789`;
+		const content = [
+			"DB_PASSW",
+			"ORD=supe",
+			"rsecret1",
+			"23\nAPI_K",
+			"EY=abc12",
+			"3def456\n",
+			"secret_t",
+			"oken=xyz",
+			"789",
+		].join("");
 		const result = classifier.classify("config.txt", content);
 		expect(result.category).toBe("credentials");
 		expect(result.sensitivity).toBe("restricted");

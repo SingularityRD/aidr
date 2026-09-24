@@ -71,7 +71,9 @@ describe("package provider response contracts", () => {
 		globalThis.fetch = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,
-			json: async () => ({ responses: [{ severity: "SEVERITY_UNKNOWN" }] }),
+			json: async () => ({
+				responses: [{ key: { sha256 }, severity: "SEVERITY_UNKNOWN" }],
+			}),
 		});
 		const client = new FileCheckClient();
 		expect(await client.checkHash(sha256)).toMatchObject({

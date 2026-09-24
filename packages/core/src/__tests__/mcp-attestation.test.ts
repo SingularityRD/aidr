@@ -1,5 +1,5 @@
-import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createHash, sign as cryptoSign, generateKeyPairSync } from "node:crypto";
+import { mkdtemp, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -31,6 +31,15 @@ function keyPair() {
 		privateKey: pair.privateKey,
 		publicKeyPem: pair.publicKey.export({ type: "spki", format: "pem" }).toString(),
 	};
+}
+
+async function reviewedBindingHash(
+	store: MemoryMcpAttestationStore | FileMcpAttestationStore,
+	serverId: string,
+): Promise<string> {
+	const hash = (await store.read(serverId))?.quarantine?.bindingSha256;
+	if (!hash) throw new Error("missing reviewed MCP binding");
+	return hash;
 }
 
 function tool(name = "files.read", description = "Read one workspace file"): McpToolDefinition {
@@ -77,6 +86,25 @@ describe("MCP tool-manifest cryptographic verification", () => {
 		expect(canonicalMcpToolManifest(specialKeyManifest)).toContain('"__proto__"');
 	});
 
+	it("preserves case-sensitive MCP tool names and accepts underscore identifiers", () => {
+		const keys = keyPair();
+		const lower = manifest(1, [tool("read_file")]);
+		const upper = manifest(1, [tool("READ_FILE")]);
+		const both = manifest(1, [tool("read_file"), tool("READ_FILE")]);
+
+		expect(mcpToolsetHash(lower.tools)).not.toBe(mcpToolsetHash(upper.tools));
+		expect(
+			verifySignedMcpToolManifest(
+				signMcpToolManifest({
+					manifest: both,
+					keyId: "customer-key-1",
+					privateKey: keys.privateKey,
+				}),
+				verifier(keys.publicKeyPem),
+			),
+		).toMatchObject({ valid: true });
+	});
+
 	it("accepts an allowlisted Ed25519 signer", () => {
 		const keys = keyPair();
 		const signed = signMcpToolManifest({
@@ -107,9 +135,10 @@ describe("MCP tool-manifest cryptographic verification", () => {
 			valid: false,
 			reason: "revoked_signer",
 		});
-		expect(
-			verifySignedMcpToolManifest({ ...signed, key_id: "customer-key-2" }, config),
-		).toEqual({ valid: false, reason: "invalid_signature" });
+		expect(verifySignedMcpToolManifest({ ...signed, key_id: "customer-key-2" }, config)).toEqual({
+			valid: false,
+			reason: "invalid_signature",
+		});
 	});
 
 	it("rejects legacy V1 signatures; the trusted publisher must re-sign existing manifests", () => {
@@ -149,6 +178,7 @@ describe("MCP tool-manifest cryptographic verification", () => {
 			active_key_expires_at: "2027-09-12T12:00:00.000Z",
 		});
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual(evidence);
+		if (process.platform !== "win32") expect((await stat(path)).mode & 0o777).toBe(0o644);
 		await expect(
 			writeMcpSignerHealthEvidence({
 				path,
@@ -245,6 +275,27 @@ describe("MCP tool-manifest cryptographic verification", () => {
 });
 
 describe("MCP tool drift approval and replay protection", () => {
+	it("does not steal an old lock while its recorded process is still alive", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "aidr-mcp-live-lock-"));
+		tempDirs.push(directory);
+		const serverId = "mcp://customer/filesystem";
+		const lock = join(
+			directory,
+			`${createHash("sha256").update(serverId).digest("hex")}.json.lock`,
+		);
+		await writeFile(lock, JSON.stringify({ pid: process.pid, token: "live-owner" }));
+		const stale = new Date(Date.now() - 60_000);
+		await utimes(lock, stale, stale);
+		const store = new FileMcpAttestationStore(directory, { lockTimeoutMs: 80, staleLockMs: 1 });
+		await expect(
+			store.transact(serverId, () => ({ state: null, result: "should-not-run" })),
+		).rejects.toThrow("timed out acquiring MCP attestation state lock");
+		expect(JSON.parse(await readFile(lock, "utf8"))).toMatchObject({
+			pid: process.pid,
+			token: "live-owner",
+		});
+	});
+
 	it("quarantines first use, activates only after an out-of-band approval", async () => {
 		const keys = keyPair();
 		const store = new MemoryMcpAttestationStore();
@@ -269,6 +320,7 @@ describe("MCP tool drift approval and replay protection", () => {
 			await approveQuarantinedMcpToolset({
 				serverId: signed.manifest.server_id,
 				toolsetHash: first.toolsetHash,
+				bindingSha256: await reviewedBindingHash(store, signed.manifest.server_id),
 				approvedBy: "security@example.com",
 				reason: "Change request CR-412",
 				store,
@@ -283,6 +335,113 @@ describe("MCP tool drift approval and replay protection", () => {
 				store,
 			}),
 		).resolves.toMatchObject({ status: "accepted" });
+	});
+
+	it("requires fresh approval when a different trusted signer presents the same tools", async () => {
+		const firstKeys = keyPair();
+		const secondKeys = keyPair();
+		const store = new MemoryMcpAttestationStore();
+		const trust = {
+			trustedSigners: {
+				"customer-key-1": firstKeys.publicKeyPem,
+				"customer-key-2": secondKeys.publicKeyPem,
+			},
+			expectedServerId: "mcp://customer/filesystem",
+			now: NOW,
+		};
+		const first = await attestMcpToolManifest({
+			candidate: signMcpToolManifest({
+				manifest: manifest(1),
+				keyId: "customer-key-1",
+				privateKey: firstKeys.privateKey,
+			}),
+			verifier: trust,
+			store,
+		});
+		if (first.status !== "quarantined") throw new Error("expected quarantine");
+		await approveQuarantinedMcpToolset({
+			serverId: "mcp://customer/filesystem",
+			toolsetHash: first.toolsetHash,
+			bindingSha256: await reviewedBindingHash(store, "mcp://customer/filesystem"),
+			approvedBy: "operator",
+			reason: "initial signer",
+			store,
+		});
+		const replacement = signMcpToolManifest({
+			manifest: manifest(2),
+			keyId: "customer-key-2",
+			privateKey: secondKeys.privateKey,
+		});
+		await expect(
+			attestMcpToolManifest({ candidate: replacement, verifier: trust, store }),
+		).resolves.toMatchObject({ status: "quarantined" });
+	});
+
+	it("quarantines a changed connection and never accepts an unbound legacy approval", async () => {
+		const keys = keyPair();
+		const store = new MemoryMcpAttestationStore();
+		const signed = signMcpToolManifest({
+			manifest: manifest(1),
+			keyId: "customer-key-1",
+			privateKey: keys.privateKey,
+		});
+		const first = await attestMcpToolManifest({
+			candidate: signed,
+			verifier: verifier(keys.publicKeyPem),
+			store,
+			connection: ["tenant-a", "https://first.example/mcp"],
+		});
+		if (first.status !== "quarantined") throw new Error("expected quarantine");
+		const reviewedA = await reviewedBindingHash(store, signed.manifest.server_id);
+		await approveQuarantinedMcpToolset({
+			serverId: signed.manifest.server_id,
+			toolsetHash: first.toolsetHash,
+			bindingSha256: reviewedA,
+			approvedBy: "operator",
+			reason: "first endpoint",
+			store,
+		});
+		await expect(
+			attestMcpToolManifest({
+				candidate: signed,
+				verifier: verifier(keys.publicKeyPem),
+				store,
+				connection: ["tenant-a", "https://first.example/mcp"],
+			}),
+		).resolves.toMatchObject({ status: "accepted" });
+		await expect(
+			attestMcpToolManifest({
+				candidate: signed,
+				verifier: verifier(keys.publicKeyPem),
+				store,
+				connection: ["tenant-a", "https://other.example/mcp"],
+			}),
+		).resolves.toMatchObject({ status: "quarantined" });
+		await expect(
+			approveQuarantinedMcpToolset({
+				serverId: signed.manifest.server_id,
+				toolsetHash: first.toolsetHash,
+				bindingSha256: reviewedA,
+				approvedBy: "operator",
+				reason: "stale review must fail",
+				store,
+			}),
+		).resolves.toEqual({ approved: false, reason: "binding_mismatch" });
+		await store.transact(signed.manifest.server_id, (state) => {
+			if (!state) throw new Error("missing attestation state");
+			state.approvedToolsets = state.approvedToolsets.map(
+				({ bindingSha256: _legacy, ...entry }) => entry,
+			);
+			return { state, result: undefined };
+		});
+		await expect(
+			attestMcpToolManifest({
+				candidate: signed,
+				verifier: verifier(keys.publicKeyPem),
+				store,
+				connection: ["tenant-a", "https://first.example/mcp"],
+			}),
+		).resolves.toMatchObject({ status: "quarantined" });
 	});
 
 	it("accepts a new sequence with unchanged tools and quarantines schema drift", async () => {
@@ -302,6 +461,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		await approveQuarantinedMcpToolset({
 			serverId: firstSigned.manifest.server_id,
 			toolsetHash: first.toolsetHash,
+			bindingSha256: await reviewedBindingHash(store, firstSigned.manifest.server_id),
 			approvedBy: "operator-1",
 			reason: "Initial server enrollment",
 			store,
@@ -390,6 +550,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		await approveQuarantinedMcpToolset({
 			serverId: signed.manifest.server_id,
 			toolsetHash: first.toolsetHash,
+			bindingSha256: await reviewedBindingHash(firstStore, signed.manifest.server_id),
 			approvedBy: "security-operator",
 			reason: "Reviewed tool schemas",
 			store: firstStore,

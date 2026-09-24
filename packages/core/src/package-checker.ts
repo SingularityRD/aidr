@@ -28,6 +28,7 @@ export interface PackageCheckerConfig {
 	fileCheckEndpoint?: string;
 	fileCheckTimeoutSeconds?: number;
 	fileCheckEnabled?: boolean;
+	fileCheckAllowInsecureLoopback?: boolean;
 	apiKey?: string;
 	/**
 	 * Optional offline intel packs (owned reputation substrate).
@@ -59,6 +60,7 @@ export class PackageChecker {
 						{
 							endpoint: config.fileCheckEndpoint,
 							timeout_seconds: config.fileCheckTimeoutSeconds,
+							allow_insecure_loopback: config.fileCheckAllowInsecureLoopback,
 						},
 						logger,
 						config.apiKey,
@@ -242,13 +244,12 @@ export class PackageChecker {
 
 		// The file-check endpoint accepts SHA-256 only. Supplying a SHA-512 digest
 		// in its sha256 field would produce a meaningless negative verdict.
-		let fileReputationChecked = false;
+		let fileReputationUnclassified = false;
 		let fileReputationUnavailable = false;
 		if (metadata.latestHash && this.fileCheckClient && metadata.hashAlgorithm === "sha256") {
 			try {
 				const fileResult = await this.fileCheckClient.checkHash(metadata.latestHash);
 				if (fileResult) {
-					fileReputationChecked = true;
 					const sev = fileResult.severity.toUpperCase();
 					if (sev === "SEVERITY_MALWARE") {
 						const detections =
@@ -262,6 +263,8 @@ export class PackageChecker {
 							fileCheckSeverity: sev,
 						};
 					}
+					// SEVERITY_UNKNOWN means no malicious match, not a verified benign file.
+					fileReputationUnclassified = true;
 				} else {
 					// The client returns null for HTTP, timeout and malformed-response
 					// failures. None of those is a clean reputation verdict.
@@ -284,7 +287,7 @@ export class PackageChecker {
 				registry: pkg.registry,
 				verdict: "suspicious_age",
 				confidence: 0.75,
-				details: `Package '${pkg.name}' first published ${Math.floor(ageDays)} days ago (suspicious age)${fileReputationUnavailable ? "; file reputation check unavailable" : ""}`,
+				details: `Package '${pkg.name}' first published ${Math.floor(ageDays)} days ago (suspicious age)${fileReputationUnavailable ? "; file reputation check unavailable" : fileReputationUnclassified ? "; file reputation unclassified" : ""}`,
 				ageDays,
 			};
 		}
@@ -298,27 +301,14 @@ export class PackageChecker {
 				ageDays,
 			};
 		}
-		// Registry metadata and age are not a reputation verdict.  A package is
-		// clean only after a reputation leg actually measured it; unsupported
-		// hashes, disabled checks, and missing endpoints are unavailable states.
-		if (!fileReputationChecked) {
-			return {
-				packageName: pkg.name,
-				registry: pkg.registry,
-				verdict: "unknown",
-				confidence: 0,
-				details: `Package '${pkg.name}' was not verified clean: file reputation was unavailable or not applicable${feed ? "; signed feed had no matching deny indicator" : ""}`,
-				ageDays,
-			};
-		}
-
-		// Step 4: Clean
 		return {
 			packageName: pkg.name,
 			registry: pkg.registry,
-			verdict: "clean",
-			confidence: 1.0,
-			details: `Package '${pkg.name}' verified on ${pkg.registry}`,
+			verdict: "unknown",
+			confidence: 0,
+			details: fileReputationUnclassified
+				? `Package '${pkg.name}' has SEVERITY_UNKNOWN file reputation, which is NOT verified clean`
+				: `Package '${pkg.name}' was not verified clean: file reputation was unavailable or not applicable${feed ? "; signed feed had no matching deny indicator" : ""}`,
 			ageDays,
 		};
 	}
@@ -328,28 +318,16 @@ export class PackageChecker {
 		fn: (item: T) => Promise<R>,
 		limit: number,
 	): Promise<R[]> {
-		const results: R[] = [];
-		const executing: Promise<void>[] = [];
-
-		for (const item of items) {
-			const p = fn(item).then((r) => {
-				results.push(r);
-			});
-			executing.push(p);
-
-			if (executing.length >= limit) {
-				await Promise.race(executing);
-				// Remove settled promises
-				for (let i = executing.length - 1; i >= 0; i--) {
-					const settled = await Promise.race([
-						executing[i]?.then(() => true),
-						Promise.resolve(false),
-					]);
-					if (settled) executing.splice(i, 1);
+		const results: R[] = new Array(items.length);
+		let next = 0;
+		await Promise.all(
+			Array.from({ length: Math.min(limit, items.length) }, async () => {
+				while (next < items.length) {
+					const index = next++;
+					results[index] = await fn(items[index] as T);
 				}
-			}
-		}
-		await Promise.allSettled(executing);
+			}),
+		);
 		return results;
 	}
 }

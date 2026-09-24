@@ -189,6 +189,7 @@ export {
 } from "./compliance-report.js";
 // Config
 export { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
+export * from "./secret-store.js";
 export type { ContainConfig } from "./contain.js";
 // Auto-Contain
 export { AutoContain, createDefaultContainConfig } from "./contain.js";
@@ -554,6 +555,7 @@ export {
 export { getInstallationId } from "./installation-id.js";
 // Integrity (signed artifact manifest verification)
 export {
+	ArtifactIntegrityError,
 	type ArtifactManifestV1,
 	ArtifactManifestV1Schema,
 	type IntegrityCheckResult,
@@ -834,7 +836,7 @@ export type {
 	SpanContext,
 	TracingConfig,
 } from "./tracing.js";
-// Tracing
+// Deprecated local tracing compatibility surface (no external exporter).
 export {
 	addSpanEvent,
 	endSpan,

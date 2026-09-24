@@ -1,57 +1,74 @@
+import { lstat, realpath } from "node:fs/promises";
 import { isIP } from "node:net";
+import { dirname, isAbsolute, join, parse, relative, sep } from "node:path";
 import { evaluateInfrastructurePolicy } from "./aig-policy.js";
 
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
 import { matchPackageIntel } from "./intel/api.js";
 import { loadMergedIntelFromDisk } from "./intel/loader.js";
-import { parseJsonc } from "./jsonc.js";
 import { loadRevocationsCache } from "./managed.js";
-import { extractPackagesFromCommand, extractPackagesFromManifest } from "./package-extractor.js";
+import { inspectMcpServerInventory } from "./mcp-inventory.js";
+import {
+	legacyMcpToolSelector,
+	matchesMcpToolSelector,
+	mcpToolSelector,
+} from "./mcp-tool-identity.js";
+import {
+	extractPackagesFromCommand,
+	extractPackagesFromManifest,
+	isPackageManagerCommand,
+} from "./package-extractor.js";
+import { readFileEditPayload } from "./tool-normalization.js";
 import type { Artifact, Config, Verdict } from "./types.js";
 
-/**
- * True only for a JSON/JSONC document whose root can hold server records.
- * Matches the inventory reader's `invalid_inventory_root` rule so both call
- * sites agree on what counts as an unreadable inventory file.
- */
-function asInventoryRoot(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** One configured inventory file, read through the shared JSONC reader. */
-type InventoryFileRead =
-	| { status: "read"; servers: Record<string, { command?: string; args?: string[] }> }
-	| { status: "missing" }
-	| { status: "unreadable" };
-
-async function readInventoryFile(resolvedPath: string): Promise<InventoryFileRead> {
-	let content: string;
+async function resolvePathPart(current: string, part: string): Promise<string | null> {
+	const next = join(current, part);
 	try {
-		content = await getFileContent(resolvedPath, "utf-8");
+		return await realpath(next);
 	} catch (error) {
-		// An absent path is "not configured here"; anything else (permissions,
-		// I/O) is a present inventory we could not read.
-		return {
-			status: (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable",
-		};
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
+		try {
+			if ((await lstat(next)).isSymbolicLink()) return null;
+		} catch (statError) {
+			if ((statError as NodeJS.ErrnoException).code !== "ENOENT") return null;
+		}
+		return next;
 	}
-	const parsed = parseJsonc(content);
-	if (parsed.status !== "ok" || !asInventoryRoot(parsed.value)) return { status: "unreadable" };
-	const root = parsed.value as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
-	return { status: "read", servers: root.mcpServers ?? {} };
 }
 
-function normalizePathForCompare(p: string): string {
-	const normalized = p.replace(/\\/g, "/");
-	return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+async function resolvePolicyPath(path: string): Promise<string | null> {
+	const input = process.platform === "win32" ? path.replace(/\//g, "\\") : path;
+	const absolute = isAbsolute(input) ? input : `${process.cwd()}${sep}${input}`;
+	const root = parse(absolute).root;
+	if (!root) return null;
+
+	let current = root;
+	for (const part of absolute.slice(root.length).split(sep)) {
+		if (!part || part === ".") continue;
+		if (part === "..") {
+			current = dirname(current);
+			continue;
+		}
+
+		const resolved = await resolvePathPart(current, part);
+		if (!resolved) return null;
+		current = resolved;
+	}
+	return current;
 }
 
-function isUnderRoot(candidatePath: string, root: string): boolean {
-	const c = normalizePathForCompare(candidatePath);
-	let r = normalizePathForCompare(root);
-	if (!r.endsWith("/")) r += "/";
-	return c === r.slice(0, -1) || c.startsWith(r);
+async function isUnderRoot(candidatePath: string, root: string): Promise<boolean> {
+	const [candidate, resolvedRoot] = await Promise.all([
+		resolvePolicyPath(candidatePath),
+		resolvePolicyPath(root),
+	]);
+	if (!candidate || !resolvedRoot) return false;
+	const fromRoot = relative(resolvedRoot, candidate);
+	return (
+		fromRoot === "" ||
+		(fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot))
+	);
 }
 
 function parseUrlHost(raw: string): { host: string; isIp: boolean } | null {
@@ -103,6 +120,7 @@ async function loadUrlDenylistHosts(path: string): Promise<Set<string>> {
 
 type CachedIntel = {
 	loadedAt: number;
+	revocationIdentity: string;
 	merged: Awaited<ReturnType<typeof loadMergedIntelFromDisk>>;
 };
 
@@ -111,11 +129,12 @@ let cachedIntel: CachedIntel | null = null;
 async function getMergedIntelCached(config: Config): Promise<CachedIntel["merged"]> {
 	const now = Date.now();
 	const ttlMs = Math.max(0, Number(config.intel_packs?.cache_ttl_seconds ?? 60)) * 1000;
-	if (cachedIntel && now - cachedIntel.loadedAt < ttlMs) return cachedIntel.merged;
 
 	let revocations: { pack_ids?: string[]; key_ids?: string[] } | null = null;
+	const requireRevocations =
+		config.licensing.revocations_enabled && config.licensing.public_keys_pem.length > 0;
 	try {
-		if (config.licensing.revocations_enabled && config.licensing.public_keys_pem.length > 0) {
+		if (requireRevocations) {
 			const signed = await loadRevocationsCache(
 				resolvePath(config.licensing.revocations_cache_path),
 				config.licensing.public_keys_pem,
@@ -130,13 +149,21 @@ async function getMergedIntelCached(config: Config): Promise<CachedIntel["merged
 	} catch {
 		revocations = null;
 	}
+	const revocationIdentity = `${requireRevocations}:${JSON.stringify(revocations)}`;
+	if (
+		cachedIntel &&
+		cachedIntel.revocationIdentity === revocationIdentity &&
+		now - cachedIntel.loadedAt < ttlMs
+	)
+		return cachedIntel.merged;
 
 	const merged = await loadMergedIntelFromDisk({
 		packsDir: config.intel_packs?.packs_dir,
 		trustedKeysPath: config.intel_packs?.trusted_keys_path,
+		requireRevocations,
 		revocations,
 	});
-	cachedIntel = { loadedAt: now, merged };
+	cachedIntel = { loadedAt: now, revocationIdentity, merged };
 	return merged;
 }
 
@@ -176,6 +203,10 @@ function makeVerdict(params: {
 		matchedThreatId: params.threatId,
 		reasons: params.reasons,
 	};
+}
+
+function includesExactId(values: readonly string[], id: string): boolean {
+	return values.some((value) => value.trim() === id);
 }
 
 export async function evaluatePolicy(
@@ -287,9 +318,17 @@ export async function evaluatePolicy(
 		// Manifest edits: package.json / requirements.txt content being written/edited.
 		// (We only use toolInput here to keep file_path <-> content association correct.)
 		if (toolInput && (toolName === "Write" || toolName === "Edit")) {
-			const filePath = getFilePathFromToolInput(toolInput);
-			const content = getContentFromToolInput(toolInput);
-			if (filePath && content) {
+			const payload = toolName === "Edit" ? readFileEditPayload(toolInput) : null;
+			const edits = payload?.patch
+				? (payload.edits ?? [])
+				: [
+						{
+							filePath: getFilePathFromToolInput(toolInput) ?? "",
+							content: getContentFromToolInput(toolInput) ?? "",
+						},
+					];
+			for (const { filePath, content } of edits) {
+				if (!filePath || !content) continue;
 				for (const pkg of extractPackagesFromManifest(filePath, content)) {
 					const hit = matchPackageIntel(merged, { name: pkg.name });
 					if (!hit) continue;
@@ -367,53 +406,70 @@ export async function evaluatePolicy(
 	// --- Filesystem policy (write roots + deny patterns) ---
 	if (config.policy.filesystem.enabled) {
 		const isWriteLike = toolName === "Write" || toolName === "Edit" || toolName === "Delete";
-		const filePath = toolInput ? getFilePathFromToolInput(toolInput) : null;
+		const filePaths = new Set<string>();
+		const primaryPath = toolInput ? getFilePathFromToolInput(toolInput) : null;
+		if (primaryPath) filePaths.add(primaryPath);
+		for (const artifact of artifacts) {
+			if (artifact.type === "file_path" && artifact.context === "edit" && artifact.value.trim()) {
+				filePaths.add(artifact.value.trim());
+			}
+		}
 
-		if (isWriteLike && filePath) {
+		if (isWriteLike && filePaths.size > 0) {
 			const allowedRoots = (config.policy.filesystem.allowed_write_roots ?? []).map((p) =>
 				resolvePath(p),
 			);
 
-			if (allowedRoots.length > 0 && !allowedRoots.some((root) => isUnderRoot(filePath, root))) {
-				const decision = config.policy.filesystem.outside_root_action === "block" ? "deny" : "ask";
-				return makeVerdict({
-					decision,
-					category: "file_write",
-					severity: decision === "deny" ? "critical" : "warning",
-					source: "policy",
-					artifact: filePath,
-					threatId: "POL-FS-001",
-					reasons: ["Write outside allowed roots"],
-					confidence: 0.9,
-				});
-			}
-
-			for (const pattern of config.policy.filesystem.deny_write_patterns ?? []) {
-				try {
-					const re = new RegExp(pattern, "i");
-					if (re.test(filePath)) {
-						return makeVerdict({
-							decision: "deny",
-							category: "file_write",
-							severity: "critical",
-							source: "policy",
-							artifact: filePath,
-							threatId: "POL-FS-002",
-							reasons: ["Write path denied by policy"],
-							confidence: 0.95,
-						});
+			for (const filePath of filePaths) {
+				let withinAllowedRoot = false;
+				for (const root of allowedRoots) {
+					if (await isUnderRoot(filePath, root)) {
+						withinAllowedRoot = true;
+						break;
 					}
-				} catch {
+				}
+				if (allowedRoots.length > 0 && !withinAllowedRoot) {
+					const decision =
+						config.policy.filesystem.outside_root_action === "block" ? "deny" : "ask";
 					return makeVerdict({
-						decision: "ask",
-						category: "detection_unavailable",
-						severity: "warning",
+						decision,
+						category: "file_write",
+						severity: decision === "deny" ? "critical" : "warning",
 						source: "policy",
 						artifact: filePath,
-						threatId: "POL-FS-UNAVAILABLE-001",
-						reasons: ["Filesystem deny pattern is invalid and was skipped"],
-						confidence: 0,
+						threatId: "POL-FS-001",
+						reasons: ["Write outside allowed roots"],
+						confidence: 0.9,
 					});
+				}
+
+				for (const pattern of config.policy.filesystem.deny_write_patterns ?? []) {
+					try {
+						const re = new RegExp(pattern, "i");
+						if (re.test(filePath)) {
+							return makeVerdict({
+								decision: "deny",
+								category: "file_write",
+								severity: "critical",
+								source: "policy",
+								artifact: filePath,
+								threatId: "POL-FS-002",
+								reasons: ["Write path denied by policy"],
+								confidence: 0.95,
+							});
+						}
+					} catch {
+						return makeVerdict({
+							decision: "ask",
+							category: "detection_unavailable",
+							severity: "warning",
+							source: "policy",
+							artifact: filePath,
+							threatId: "POL-FS-UNAVAILABLE-001",
+							reasons: ["Filesystem deny pattern is invalid and was skipped"],
+							confidence: 0,
+						});
+					}
 				}
 			}
 		}
@@ -465,10 +521,7 @@ export async function evaluatePolicy(
 			if (hasCommand) {
 				const cmdArtifact = artifacts.find((a) => a.type === "command");
 				const cmd = cmdArtifact?.value ?? "";
-				const isPkgCmd =
-					/\b(?:npm|yarn|pnpm|pip|pip3|gem|brew|apt|apk|choco|scoop|cargo|go\s+install|nuget)\b/i.test(
-						cmd,
-					);
+				const isPkgCmd = isPackageManagerCommand(cmd);
 				if (isPkgCmd) {
 					const decision = pkgAction === "block" ? "deny" : "ask";
 					const packages = extractPackagesFromCommand(cmd);
@@ -507,7 +560,7 @@ export async function evaluatePolicy(
 		// File action
 		const fileAction = rt.file_action as string | undefined;
 		if (fileAction && (fileAction === "block" || fileAction === "require_approval")) {
-			const isWriteLike = toolName === "Write" || toolName === "Edit";
+			const isWriteLike = toolName === "Write" || toolName === "Edit" || toolName === "Delete";
 			if (isWriteLike && artifacts.some((a) => a.type === "file_path")) {
 				const decision = fileAction === "block" ? "deny" : "ask";
 				const fileArtifact = artifacts.find((a) => a.type === "file_path");
@@ -518,7 +571,7 @@ export async function evaluatePolicy(
 					source: "policy",
 					artifact: fileArtifact?.value ?? "",
 					threatId: "POL-DEFAULT-FILE-001",
-					reasons: ["File write blocked by runtime default"],
+					reasons: ["File operation blocked by runtime default"],
 					confidence: 0.9,
 				});
 			}
@@ -582,11 +635,11 @@ export async function evaluatePolicy(
 		}
 
 		if (mcpServerId && mcpToolName) {
-			mcpServerId = mcpServerId.toLowerCase();
-			mcpToolName = mcpToolName.toLowerCase();
-			const fullToolId = `${mcpServerId}.${mcpToolName}`;
+			const fullToolId =
+				legacyMcpToolSelector(mcpServerId, mcpToolName) ??
+				mcpToolSelector(mcpServerId, mcpToolName);
 
-			if (config.policy.mcp.deny_tools.includes(fullToolId)) {
+			if (matchesMcpToolSelector(config.policy.mcp.deny_tools, mcpServerId, mcpToolName)) {
 				return makeVerdict({
 					decision: "deny",
 					category: "mcp_tool_call",
@@ -599,7 +652,7 @@ export async function evaluatePolicy(
 				});
 			}
 
-			if (config.policy.mcp.deny_servers.includes(mcpServerId)) {
+			if (includesExactId(config.policy.mcp.deny_servers, mcpServerId)) {
 				return makeVerdict({
 					decision: "deny",
 					category: "mcp_tool_call",
@@ -612,7 +665,9 @@ export async function evaluatePolicy(
 				});
 			}
 
-			if (config.policy.mcp.require_approval_tools.includes(fullToolId)) {
+			if (
+				matchesMcpToolSelector(config.policy.mcp.require_approval_tools, mcpServerId, mcpToolName)
+			) {
 				return makeVerdict({
 					decision: "ask",
 					category: "mcp_tool_call",
@@ -625,7 +680,7 @@ export async function evaluatePolicy(
 				});
 			}
 
-			if (config.policy.mcp.require_approval_servers.includes(mcpServerId)) {
+			if (includesExactId(config.policy.mcp.require_approval_servers, mcpServerId)) {
 				return makeVerdict({
 					decision: "ask",
 					category: "mcp_tool_call",
@@ -638,39 +693,67 @@ export async function evaluatePolicy(
 				});
 			}
 
-			if (config.policy.mcp.allow_tools.includes(fullToolId)) {
-				return null;
-			}
-
-			// If server is explicitly allowed, skip remaining risk checks
-			if (config.policy.mcp.allow_servers.includes(mcpServerId)) {
-				return null;
-			}
-
+			const explicitlyAllowed =
+				matchesMcpToolSelector(config.policy.mcp.allow_tools, mcpServerId, mcpToolName) ||
+				includesExactId(config.policy.mcp.allow_servers, mcpServerId);
 			let isInInventory = false;
-			let isRiskyServer = false;
+			const riskHints = new Set<string>();
 			const unreadableInventoryPaths: string[] = [];
+			let conflictingInventory = false;
+			let configurationSha256: string | undefined;
 
 			const inventoryPaths = config.policy.mcp.inventory_paths ?? [];
 			for (const invPath of inventoryPaths) {
 				const resolved = resolvePath(invPath);
-				const read = await readInventoryFile(resolved);
-				if (read.status === "missing") continue;
-				if (read.status === "unreadable") {
+				const report = await inspectMcpServerInventory([resolved]);
+				const sourceStatus = report.sources[0]?.status;
+				if (sourceStatus === "missing") continue;
+				if (sourceStatus !== "read") {
 					unreadableInventoryPaths.push(resolved);
 					continue;
 				}
 
-				const serverCfg = read.servers[mcpServerId];
-				if (!serverCfg) continue;
-				isInInventory = true;
-				const cmd = (serverCfg.command ?? "").toLowerCase();
-				if (cmd === "bash" || cmd === "sh" || cmd === "zsh" || cmd === "npx" || cmd === "npx--yes") {
-					isRiskyServer = true;
+				if (report.coverage.status !== "read") unreadableInventoryPaths.push(resolved);
+				for (const serverCfg of report.items) {
+					if (serverCfg.name !== mcpServerId) continue;
+					isInInventory = true;
+					if (configurationSha256 && configurationSha256 !== serverCfg.configurationSha256) {
+						conflictingInventory = true;
+					}
+					configurationSha256 = serverCfg.configurationSha256;
+					for (const hint of serverCfg.riskHints) riskHints.add(hint);
 				}
 			}
 
-			if (isRiskyServer) {
+			// An allow rule may skip policy risk checks, never missing or contradictory
+			// source evidence. Tool-manifest attestation is outside this policy function.
+			if (
+				unreadableInventoryPaths.length > 0 ||
+				conflictingInventory ||
+				(explicitlyAllowed && !isInInventory)
+			) {
+				const reason =
+					unreadableInventoryPaths.length > 0
+						? `MCP inventory unreadable or incomplete: ${unreadableInventoryPaths.join(", ")}`
+						: conflictingInventory
+							? "MCP inventory has conflicting server declarations"
+							: "MCP allow rule has no inventory evidence";
+				const blocked = config.policy.mcp.unknown_server_action === "block";
+				return makeVerdict({
+					decision: blocked ? "deny" : "ask",
+					category: "mcp_tool_call",
+					severity: blocked ? "critical" : "warning",
+					source: "policy",
+					artifact: fullToolId,
+					threatId: "POL-MCP-008",
+					reasons: [reason],
+					confidence: 0.9,
+				});
+			}
+
+			if (explicitlyAllowed) return null;
+
+			if (riskHints.size > 0) {
 				const riskyAction = config.policy.mcp.risky_server_action ?? "block";
 				if (riskyAction === "block") {
 					return makeVerdict({
@@ -680,7 +763,7 @@ export async function evaluatePolicy(
 						source: "policy",
 						artifact: fullToolId,
 						threatId: "POL-MCP-001",
-						reasons: ["MCP server uses shell_wrapper_command"],
+						reasons: [`MCP server risk indicators: ${[...riskHints].join(", ")}`],
 						confidence: 0.95,
 					});
 				}
@@ -692,42 +775,11 @@ export async function evaluatePolicy(
 						source: "policy",
 						artifact: fullToolId,
 						threatId: "POL-MCP-001",
-						reasons: ["MCP server uses shell_wrapper_command"],
+						reasons: [`MCP server risk indicators: ${[...riskHints].join(", ")}`],
 						confidence: 0.9,
 					});
 				}
 				return null;
-			}
-
-			// A coverage gap is not the same fact as "server not in inventory": the
-			// file exists but could not be parsed, so its servers (and their risk
-			// hints) are unknown. It is never resolved to allow.
-			if (!isInInventory && unreadableInventoryPaths.length > 0) {
-				const reasons = [
-					`MCP inventory unreadable: ${unreadableInventoryPaths.join(", ")}`,
-				];
-				if (config.policy.mcp.unknown_server_action === "block") {
-					return makeVerdict({
-						decision: "deny",
-						category: "mcp_tool_call",
-						severity: "critical",
-						source: "policy",
-						artifact: fullToolId,
-						threatId: "POL-MCP-008",
-						reasons,
-						confidence: 0.9,
-					});
-				}
-				return makeVerdict({
-					decision: "ask",
-					category: "mcp_tool_call",
-					severity: "warning",
-					source: "policy",
-					artifact: fullToolId,
-					threatId: "POL-MCP-008",
-					reasons,
-					confidence: 0.9,
-				});
 			}
 
 			if (!isInInventory) {

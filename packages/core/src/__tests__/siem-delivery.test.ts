@@ -1,7 +1,8 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -16,6 +17,19 @@ import {
 } from "../siem-delivery.js";
 
 const tempDirectories: string[] = [];
+
+const VERIFY_WINDOWS_ACL = `
+$ErrorActionPreference = 'Stop'
+$path = [Environment]::GetEnvironmentVariable('AIDR_TEST_ACL_PATH')
+$item = if ([System.IO.Directory]::Exists($path)) { [System.IO.DirectoryInfo]::new($path) } else { [System.IO.FileInfo]::new($path) }
+$acl = $item.GetAccessControl()
+if (-not $acl.AreAccessRulesProtected) { throw 'Inherited ACL remains' }
+$allowed = @([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544')
+foreach ($entry in $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) {
+  if ($entry.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and
+      $entry.IdentityReference.Value -notin $allowed) { throw "Unexpected ACL grant: $($entry.IdentityReference.Value)" }
+}
+`;
 
 async function statePath(): Promise<string> {
 	const directory = await mkdtemp(join(tmpdir(), "aidr-siem-delivery-"));
@@ -69,6 +83,14 @@ function webhookOptions(
 	};
 }
 
+function acknowledgedWebhookResponse(init: RequestInit | undefined, status = 202): Response {
+	const eventId = new Headers(init?.headers).get("x-aidr-event-id");
+	return new Response(null, {
+		status,
+		headers: eventId ? { "x-aidr-event-id": eventId } : undefined,
+	});
+}
+
 describe("SIEM event schema and redaction", () => {
 	it("publishes a stable open schema and deterministic event id", () => {
 		const first = createSiemEvent(incident, 1_700_000_001_000);
@@ -92,6 +114,60 @@ describe("SIEM event schema and redaction", () => {
 });
 
 describe("durable webhook delivery", () => {
+	// AIDR-SKIP: AIDR-063 qa-owner - POSIX mode-bit permission rejection is not meaningful on NTFS; Windows DACLs are tested below
+	it.skipIf(process.platform === "win32")(
+		"rejects state paths readable by other local users",
+		async () => {
+			const path = await statePath();
+			const directory = dirname(path);
+			await chmod(directory, 0o755);
+			await expect(
+				DurableSiemDelivery.open(webhookOptions(path, vi.fn() as unknown as typeof fetch)),
+			).rejects.toThrow("directory permissions are insecure");
+
+			await chmod(directory, 0o700);
+			await DurableSiemDelivery.open(webhookOptions(path, vi.fn() as unknown as typeof fetch));
+			await chmod(path, 0o644);
+			await expect(
+				DurableSiemDelivery.open(webhookOptions(path, vi.fn() as unknown as typeof fetch)),
+			).rejects.toThrow("file permissions are insecure");
+		},
+	);
+
+	// AIDR-SKIP: AIDR-063 qa-owner - POSIX file symlink creation needs a Unix host; Windows DACLs are tested below
+	it.skipIf(process.platform === "win32")(
+		"rejects a symlinked queue file instead of reading or replacing its target",
+		async () => {
+			const path = await statePath();
+			const target = join(dirname(path), "real-state.json");
+			await DurableSiemDelivery.open(webhookOptions(target, vi.fn() as unknown as typeof fetch));
+			await symlink(target, path, "file");
+
+			await expect(
+				DurableSiemDelivery.open(webhookOptions(path, vi.fn() as unknown as typeof fetch)),
+			).rejects.toThrow("not a regular file");
+		},
+	);
+
+	// AIDR-SKIP: AIDR-063 qa-owner - NTFS DACL inspection requires a Windows host
+	it.skipIf(process.platform !== "win32")(
+		"secures the state directory and replacement file before exposing SIEM receipts",
+		async () => {
+			const path = await statePath();
+			const delivery = await DurableSiemDelivery.open(webhookOptions(path, vi.fn() as unknown as typeof fetch));
+			await delivery.enqueue(incident);
+			for (const target of [dirname(path), path]) {
+				const result = spawnSync(
+					"powershell.exe",
+					["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(VERIFY_WINDOWS_ACL, "utf16le").toString("base64")],
+					{ env: { ...process.env, AIDR_TEST_ACL_PATH: target }, encoding: "utf8", timeout: 30_000, windowsHide: true },
+				);
+				expect(result.error).toBeUndefined();
+				expect(result.status, result.stderr).toBe(0);
+			}
+		},
+	);
+
 	it("persists a redacted receipt and sends stable idempotency headers", async () => {
 		const path = await statePath();
 		let capturedUrl = "";
@@ -99,7 +175,7 @@ describe("durable webhook delivery", () => {
 		const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
 			capturedUrl = String(input);
 			capturedInit = init;
-			return new Response(null, { status: 202 });
+			return acknowledgedWebhookResponse(init);
 		}) as unknown as typeof fetch;
 		const delivery = await DurableSiemDelivery.open(webhookOptions(path, fetcher));
 
@@ -124,6 +200,57 @@ describe("durable webhook delivery", () => {
 		expect(stored).toContain("https://events.example.test");
 	});
 
+	it("keeps a generic 2xx queued until the receiver returns a correlated receipt", async () => {
+		const path = await statePath();
+		let nowMs = 1_000;
+		const requestIds: string[] = [];
+		const fetcher = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+			requestIds.push(new Headers(init?.headers).get("x-aidr-event-id") ?? "");
+			return requestIds.length === 1
+				? new Response(null, { status: 202 })
+				: acknowledgedWebhookResponse(init);
+		}) as unknown as typeof fetch;
+		const delivery = await DurableSiemDelivery.open(
+			webhookOptions(path, fetcher, {
+				now: () => nowMs,
+				random: () => 0,
+				minBackoffMs: 100,
+			}),
+		);
+		const queued = await delivery.enqueue(incident);
+
+		expect(await delivery.flush()).toMatchObject({ delivered: 0, retrying: 1, pending: 1 });
+		expect(await delivery.getReceipt(queued.receipt.receiptId)).toMatchObject({
+			status: "retrying",
+			lastErrorCode: "invalid_webhook_receipt",
+		});
+		nowMs = 1_100;
+		expect(await delivery.flush()).toMatchObject({ delivered: 1, pending: 0 });
+		expect(requestIds).toEqual([queued.receipt.eventId, queued.receipt.eventId]);
+	});
+
+	it("cancels unneeded webhook response bodies before retrying", async () => {
+		const path = await statePath();
+		let cancelled = false;
+		const fetcher = vi.fn(
+			async () =>
+				new Response(
+					new ReadableStream({
+						cancel() {
+							cancelled = true;
+						},
+					}),
+					{ status: 503 },
+				),
+		) as unknown as typeof fetch;
+		const delivery = await DurableSiemDelivery.open(webhookOptions(path, fetcher));
+		await delivery.enqueue(incident);
+
+		await delivery.flush();
+
+		expect(cancelled).toBe(true);
+	});
+
 	it("recovers queued work after restart and deduplicates delivered events", async () => {
 		const path = await statePath();
 		const neverCalled = vi.fn(
@@ -132,8 +259,8 @@ describe("durable webhook delivery", () => {
 		const first = await DurableSiemDelivery.open(webhookOptions(path, neverCalled));
 		const queued = await first.enqueue(incident);
 
-		const successful = vi.fn(
-			async () => new Response(null, { status: 204 }),
+		const successful = vi.fn(async (_input: string | URL | Request, init?: RequestInit) =>
+			acknowledgedWebhookResponse(init, 204),
 		) as unknown as typeof fetch;
 		const restarted = await DurableSiemDelivery.open(webhookOptions(path, successful));
 		expect((await restarted.flush()).delivered).toBe(1);
@@ -146,10 +273,45 @@ describe("durable webhook delivery", () => {
 		expect(successful).toHaveBeenCalledTimes(1);
 	});
 
+	it("rejects completion from an expired claim after a replacement claim is persisted", async () => {
+		const path = await statePath();
+		let now = 1_700_000_000_000;
+		const fetcher = vi.fn() as unknown as typeof fetch;
+		const first = await DurableSiemDelivery.open(
+			webhookOptions(path, fetcher, { now: () => now, requestTimeoutMs: 100 }),
+		);
+		await first.enqueue(incident);
+		const oldClaim = (await first.claimNext()).claim;
+		expect(oldClaim).toBeDefined();
+
+		now += 5_101;
+		const restarted = await DurableSiemDelivery.open(
+			webhookOptions(path, fetcher, { now: () => now, requestTimeoutMs: 100 }),
+		);
+		const replacement = (await restarted.claimNext()).claim;
+		expect(replacement).toBeDefined();
+		expect(replacement?.token).not.toBe(oldClaim?.token);
+		if (!oldClaim || !replacement) throw new Error("expected_claims");
+		expect(
+			await restarted.completeClaim(oldClaim, {
+				outcome: "delivered",
+				code: "accepted",
+				statusCode: 202,
+			}),
+		).toMatchObject({ applied: false, pending: 1 });
+		expect(
+			await restarted.completeClaim(replacement, {
+				outcome: "delivered",
+				code: "accepted",
+				statusCode: 202,
+			}),
+		).toMatchObject({ applied: true, delivered: 1, pending: 0 });
+	});
+
 	it("binds receipts to the SIEM destination while allowing bearer rotation", async () => {
 		const path = await statePath();
-		const fetcher = vi.fn(
-			async () => new Response(null, { status: 202 }),
+		const fetcher = vi.fn(async (_input: string | URL | Request, init?: RequestInit) =>
+			acknowledgedWebhookResponse(init),
 		) as unknown as typeof fetch;
 		const first = await DurableSiemDelivery.open(webhookOptions(path, fetcher));
 		await first.enqueue(incident);
@@ -240,6 +402,28 @@ describe("durable webhook delivery", () => {
 		expect(fetcher).toHaveBeenCalledTimes(1);
 	});
 
+	it("keeps delivery-loss health unhealthy after bounded receipts are trimmed and reopened", async () => {
+		const path = await statePath();
+		let attempts = 0;
+		const fetcher = vi.fn(async (_input: string | URL | Request, init?: RequestInit) =>
+			++attempts === 1 ? new Response(null, { status: 401 }) : acknowledgedWebhookResponse(init),
+		) as unknown as typeof fetch;
+		const options = webhookOptions(path, fetcher, { maxReceipts: 1 });
+		const delivery = await DurableSiemDelivery.open(options);
+		await delivery.enqueue(incident);
+		expect((await delivery.flush()).deadLettered).toBe(1);
+		await delivery.enqueue({ ...incident, incident_id: "inc-delivery-2" });
+		expect((await delivery.flush()).delivered).toBe(1);
+
+		const reopened = await DurableSiemDelivery.open(options);
+		expect(await reopened.health()).toMatchObject({
+			status: "unhealthy",
+			deadLettered: 0,
+			deadLetteredTotal: 1,
+			queueDepth: 0,
+		});
+	});
+
 	it("honors Retry-After on 429 and retries with the same event id", async () => {
 		const path = await statePath();
 		let nowMs = 10_000;
@@ -248,7 +432,7 @@ describe("durable webhook delivery", () => {
 			requestIds.push(new Headers(init?.headers).get("idempotency-key") ?? "");
 			return requestIds.length === 1
 				? new Response(null, { status: 429, headers: { "retry-after": "2" } })
-				: new Response(null, { status: 202 });
+				: acknowledgedWebhookResponse(init);
 		}) as unknown as typeof fetch;
 		const delivery = await DurableSiemDelivery.open(
 			webhookOptions(path, fetcher, {
@@ -322,11 +506,12 @@ describe("provider adapters", () => {
 		const path = await statePath();
 		let body = "";
 		let headers = new Headers();
-		const fetcher = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+		const fetcherMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
 			body = String(init?.body);
 			headers = new Headers(init?.headers);
 			return new Response(JSON.stringify({ text: "Success", code: 0 }), { status: 200 });
-		}) as unknown as typeof fetch;
+		});
+		const fetcher = fetcherMock as unknown as typeof fetch;
 		const delivery = await DurableSiemDelivery.open({
 			stateFile: path,
 			adapter: {
@@ -346,18 +531,21 @@ describe("provider adapters", () => {
 			sourcetype: "aidr:incident",
 			index: "security",
 		});
-		expect(String(fetcher.mock.calls[0]?.[0])).toContain("/services/collector/event");
+		expect(String(fetcherMock.mock.calls[0]?.[0])).toContain("/services/collector/event");
 		expect(await readFile(path, "utf8")).not.toContain("hec-secret");
 	});
 
-	it("formats a Microsoft Sentinel Logs Ingestion request", async () => {
+	it("accepts only Sentinel's explicit 204 response contract", async () => {
 		const path = await statePath();
+		let nowMs = 1_000;
+		let attempts = 0;
 		let body = "";
 		let url = "";
 		const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+			attempts += 1;
 			url = String(input);
 			body = String(init?.body);
-			return new Response(null, { status: 204 });
+			return new Response(null, { status: attempts === 1 ? 200 : 204 });
 		}) as unknown as typeof fetch;
 		const delivery = await DurableSiemDelivery.open({
 			stateFile: path,
@@ -369,9 +557,18 @@ describe("provider adapters", () => {
 				streamName: "Custom-AIDRIncident_CL",
 			},
 			fetch: fetcher,
+			now: () => nowMs,
+			random: () => 0,
+			minBackoffMs: 100,
 		});
-		await delivery.enqueue(incident);
+		const queued = await delivery.enqueue(incident);
 
+		expect(await delivery.flush()).toMatchObject({ delivered: 0, retrying: 1, pending: 1 });
+		expect(await delivery.getReceipt(queued.receipt.receiptId)).toMatchObject({
+			status: "retrying",
+			lastErrorCode: "unexpected_sentinel_response",
+		});
+		nowMs = 1_100;
 		expect((await delivery.flush()).delivered).toBe(1);
 		expect(url).toContain(
 			"/dataCollectionRules/dcr-1234567890abcdef/streams/Custom-AIDRIncident_CL",
@@ -415,21 +612,55 @@ describe("provider adapters", () => {
 		expect(await readFile(path, "utf8")).not.toContain("elastic-secret");
 	});
 
+	it("records Elastic item-level status instead of a misleading HTTP 200", async () => {
+		for (const itemStatus of [401, 429]) {
+			const path = await statePath();
+			const fetcher = vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({ errors: true, items: [{ create: { status: itemStatus } }] }),
+						{
+							status: 200,
+						},
+					),
+			) as unknown as typeof fetch;
+			const delivery = await DurableSiemDelivery.open({
+				stateFile: path,
+				adapter: {
+					provider: "elastic",
+					endpoint: "https://elastic.example.test",
+					index: "aidr-incidents",
+					apiKey: "elastic-secret",
+				},
+				fetch: fetcher,
+			});
+			const queued = await delivery.enqueue(incident);
+
+			await delivery.flush();
+			expect(await delivery.getReceipt(queued.receipt.receiptId)).toMatchObject({
+				lastStatusCode: itemStatus,
+				lastErrorCode: itemStatus === 401 ? "authorization_rejected" : "rate_limited",
+			});
+		}
+	});
+
 	it("rejects insecure, credential-bearing and query-bearing endpoints", async () => {
-		const options = (endpoint: string) => ({
-			stateFile: join(tmpdir(), `unused-${Math.random()}.json`),
+		const options = (endpoint: string, stateFile: string) => ({
+			stateFile,
 			adapter: { provider: "webhook" as const, endpoint },
 			fetch: vi.fn() as unknown as typeof fetch,
 		});
 
-		await expect(DurableSiemDelivery.open(options("http://events.example.test"))).rejects.toThrow(
-			"HTTPS",
-		);
 		await expect(
-			DurableSiemDelivery.open(options("https://user:pass@events.example.test")),
+			DurableSiemDelivery.open(options("http://events.example.test", await statePath())),
+		).rejects.toThrow("HTTPS");
+		await expect(
+			DurableSiemDelivery.open(options("https://user:pass@events.example.test", await statePath())),
 		).rejects.toThrow("credentials");
 		await expect(
-			DurableSiemDelivery.open(options("https://events.example.test/?token=secret")),
+			DurableSiemDelivery.open(
+				options("https://events.example.test/?token=secret", await statePath()),
+			),
 		).rejects.toThrow("query");
 	});
 });

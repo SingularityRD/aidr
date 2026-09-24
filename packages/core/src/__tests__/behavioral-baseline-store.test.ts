@@ -110,6 +110,18 @@ describe("FileBehavioralBaselineStore", () => {
 		expect(await storedRecords(dir)).toHaveLength(0);
 	});
 
+	it("rejects legacy v1 baselines that lack authenticated success receipts", async () => {
+		const dir = await temporaryStoreDir();
+		const store = new FileBehavioralBaselineStore({ storeDir: dir, now: () => NOW });
+		await store.save("tenant-a", "session-a", sessionState([observation(0)]));
+
+		const record = await recordForSession(dir, "session-a");
+		const parsed = JSON.parse(await readFile(record, "utf8")) as Record<string, unknown>;
+		await writeFile(record, JSON.stringify({ ...parsed, schema_version: 1 }));
+
+		expect(await store.load("tenant-a", "session-a")).toBeNull();
+	});
+
 	it("rejects an invalid corpus binding before reading or writing files", () => {
 		expect(() => new FileBehavioralBaselineStore({ corpusDigest: "../arbitrary" })).toThrow(
 			"digest is invalid",
@@ -184,15 +196,15 @@ describe("FileBehavioralBaselineStore", () => {
 		});
 
 		await store.save("tenant-a", "s1", sessionState([observation(0)]));
-		// Backdate before the next write: pruning only runs on save, and an
-		// explicit write time makes the retention decision deterministic.
+		// Backdate the record and confirm a read expires it without waiting for
+		// another write to trigger pruning.
 		await setModifiedAt(await recordForSession(dir, "s1"), NOW - 40 * DAY);
+		expect(await store.load("tenant-a", "s1")).toBeNull();
+		expect(await storedRecords(dir)).toHaveLength(0);
+
 		await store.save("tenant-a", "s2", sessionState([observation(1)]));
 
-		// s1 was outside the event window, so it was dropped rather than trusted.
-		// Only two sessions exist at this point, so retention — not the quota — is
-		// what removed it.
-		expect(await store.load("tenant-a", "s1")).toBeNull();
+		// The expired session was already removed by its read.
 		expect(await store.load("tenant-a", "s2")).not.toBeNull();
 
 		await store.save("tenant-a", "s3", sessionState([observation(2)]));
@@ -206,6 +218,24 @@ describe("FileBehavioralBaselineStore", () => {
 		expect(await store.load("tenant-a", "s3")).not.toBeNull();
 		expect(await store.load("tenant-a", "s4")).not.toBeNull();
 		expect(await storedRecords(dir)).toHaveLength(2);
+	});
+
+	it("rejects stale observations even when a local writer refreshes file mtime", async () => {
+		const dir = await temporaryStoreDir();
+		const store = new FileBehavioralBaselineStore({
+			storeDir: dir,
+			now: () => NOW,
+			retentionMs: 30 * DAY,
+		});
+		await store.save(
+			"tenant-a",
+			"session-a",
+			sessionState([observation(0, { timestamp: NOW - 40 * DAY })]),
+		);
+
+		await setModifiedAt(await recordForSession(dir, "session-a"), NOW);
+
+		expect(await store.load("tenant-a", "session-a")).toBeNull();
 	});
 
 	it("bounds the number of tenants kept on disk", async () => {

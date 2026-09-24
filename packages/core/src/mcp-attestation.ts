@@ -14,8 +14,9 @@ import {
 	sign as cryptoSign,
 	verify as cryptoVerify,
 	KeyObject,
+	randomUUID,
 } from "node:crypto";
-import { mkdir, open, stat, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
@@ -25,11 +26,12 @@ const SIGNING_DOMAIN = "AIDR-MCP-TOOL-MANIFEST-V1\n";
 const DEFAULT_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const DEFAULT_MAX_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
-const DEFAULT_STALE_LOCK_MS = 30_000;
 const MAX_APPROVED_TOOLSETS = 256;
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
-const TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
+// MCP tool names are case-sensitive and commonly include underscores. Preserve
+// the publisher's exact identifier; policy matching must not case-fold it.
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/_-]{0,255}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
 export type McpJsonValue =
@@ -126,6 +128,24 @@ function canonicalize(value: McpJsonValue): McpJsonValue {
 	for (const key of Object.keys(value).sort())
 		output[key] = canonicalize(value[key] as McpJsonValue);
 	return output;
+}
+
+/** Bind an operator approval to the verified signer and the local connection. */
+export function mcpApprovalBindingHash(input: {
+	serverId: string;
+	keyId: string;
+	signerKeySha256: string;
+	connection: McpJsonValue;
+}): string {
+	if (!isJsonValue(input.connection)) throw new Error("invalid MCP approval connection");
+	return createHash("sha256")
+		.update("AIDR-MCP-APPROVAL-BINDING-V1\0")
+		.update(
+			JSON.stringify(
+				canonicalize([input.serverId, input.keyId, input.signerKeySha256, input.connection]),
+			),
+		)
+		.digest("hex");
 }
 
 function normalizedManifest(manifest: McpToolManifestV1): McpToolManifestV1 {
@@ -228,7 +248,9 @@ export async function writeMcpSignerHealthEvidence(params: {
 		last_success_at: params.lastSuccessAt.toISOString(),
 		active_key_expires_at: params.activeKeyExpiresAt.toISOString(),
 	};
-	await atomicWriteJson(params.path, evidence);
+	// This fixed schema contains no secrets or identifiers. Owner-write/other-read
+	// lets the non-root dashboard consume it through its read-only health mount.
+	await atomicWriteJson(params.path, evidence, { mode: 0o644 });
 	return evidence;
 }
 
@@ -262,6 +284,7 @@ export type McpCryptographicVerification =
 			signed: SignedMcpToolManifestV1;
 			manifestHash: string;
 			toolsetHash: string;
+			signerKeySha256: string;
 	  }
 	| { valid: false; reason: McpManifestRejectionReason };
 
@@ -353,6 +376,7 @@ export function verifySignedMcpToolManifest(
 		signed,
 		manifestHash: mcpManifestHash(signed.manifest),
 		toolsetHash: mcpToolsetHash(signed.manifest.tools),
+		signerKeySha256: createHash("sha256").update(publicKeyPem).digest("hex"),
 	};
 }
 
@@ -364,6 +388,9 @@ export interface McpToolDrift {
 
 export interface McpToolsetApproval {
 	toolsetHash: string;
+	keyId?: string;
+	signerKeySha256?: string;
+	bindingSha256?: string;
 	approvedAt: string;
 	approvedBy: string;
 	reason: string;
@@ -373,6 +400,8 @@ export interface McpQuarantinedManifest {
 	manifestHash: string;
 	toolsetHash: string;
 	keyId: string;
+	signerKeySha256?: string;
+	bindingSha256?: string;
 	sequence: number;
 	detectedAt: string;
 	drift: McpToolDrift;
@@ -409,6 +438,9 @@ const McpAttestationStateV1Schema: z.ZodType<McpAttestationStateV1> = z.object({
 		.array(
 			z.object({
 				toolsetHash: z.string().regex(SHA256_PATTERN),
+				keyId: z.string().regex(ID_PATTERN).optional(),
+				signerKeySha256: z.string().regex(SHA256_PATTERN).optional(),
+				bindingSha256: z.string().regex(SHA256_PATTERN).optional(),
 				approvedAt: z.string().datetime({ offset: true }),
 				approvedBy: z.string().min(1).max(256),
 				reason: z.string().min(1).max(2048),
@@ -420,6 +452,8 @@ const McpAttestationStateV1Schema: z.ZodType<McpAttestationStateV1> = z.object({
 			manifestHash: z.string().regex(SHA256_PATTERN),
 			toolsetHash: z.string().regex(SHA256_PATTERN),
 			keyId: z.string().regex(ID_PATTERN),
+			signerKeySha256: z.string().regex(SHA256_PATTERN).optional(),
+			bindingSha256: z.string().regex(SHA256_PATTERN).optional(),
 			sequence: z.number().int().nonnegative().safe(),
 			detectedAt: z.string().datetime({ offset: true }),
 			drift: McpToolDriftSchema,
@@ -494,23 +528,20 @@ function errorCode(error: unknown): string | undefined {
 		: undefined;
 }
 
-async function removeStaleLock(path: string, staleAfter: number): Promise<void> {
-	try {
-		const info = await stat(path);
-		if (Date.now() - info.mtimeMs > staleAfter) await unlink(path);
-	} catch (error) {
-		if (errorCode(error) !== "ENOENT") throw error;
-	}
-}
-
 /**
  * Cross-process persistent store. Files are atomic and mutations are guarded by
  * an exclusive lock file. Corrupt state throws, causing callers to fail closed.
+ * Existing locks are never reclaimed automatically; recovery requires an
+ * operator to verify that no writer remains before removing the lock file.
  */
 export class FileMcpAttestationStore implements McpAttestationStateStore {
 	constructor(
 		private readonly directory: string,
-		private readonly options: { lockTimeoutMs?: number; staleLockMs?: number } = {},
+		private readonly options: {
+			lockTimeoutMs?: number;
+			/** @deprecated Stale locks require operator review; they are never auto-reclaimed. */
+			staleLockMs?: number;
+		} = {},
 	) {}
 
 	private statePath(serverId: string): string {
@@ -521,22 +552,22 @@ export class FileMcpAttestationStore implements McpAttestationStateStore {
 	private async acquireLock(path: string): Promise<() => Promise<void>> {
 		const startedAt = Date.now();
 		const timeout = this.options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
-		const staleAfter = this.options.staleLockMs ?? DEFAULT_STALE_LOCK_MS;
 		for (;;) {
 			try {
+				const token = randomUUID();
 				const handle = await open(path, "wx", 0o600);
-				await handle.writeFile(`${process.pid}\n`, "utf8");
+				await handle.writeFile(JSON.stringify({ pid: process.pid, token }), "utf8");
 				await handle.close();
 				return async () => {
 					try {
-						await unlink(path);
+						const owner = JSON.parse(await readFile(path, "utf8")) as { token?: unknown };
+						if (owner.token === token) await unlink(path);
 					} catch (error) {
 						if (errorCode(error) !== "ENOENT") throw error;
 					}
 				};
 			} catch (error) {
 				if (errorCode(error) !== "EEXIST") throw error;
-				await removeStaleLock(path, staleAfter);
 				if (Date.now() - startedAt >= timeout) {
 					throw new Error("timed out acquiring MCP attestation state lock");
 				}
@@ -631,11 +662,19 @@ export async function attestMcpToolManifest(params: {
 	candidate: unknown;
 	verifier: McpManifestVerifierConfig;
 	store: McpAttestationStateStore;
+	/** Operator-controlled connection identity; omitted only for schema-only callers. */
+	connection?: McpJsonValue;
 }): Promise<McpAttestationDecision> {
 	const verified = verifySignedMcpToolManifest(params.candidate, params.verifier);
 	if (!verified.valid) return { status: "rejected", reason: verified.reason };
-	const { signed, manifestHash, toolsetHash } = verified;
+	const { signed, manifestHash, toolsetHash, signerKeySha256 } = verified;
 	const { manifest } = signed;
+	const bindingSha256 = mcpApprovalBindingHash({
+		serverId: manifest.server_id,
+		keyId: signed.key_id,
+		signerKeySha256,
+		connection: params.connection ?? null,
+	});
 	const detectedAt = (params.verifier.now ?? new Date()).toISOString();
 
 	try {
@@ -658,9 +697,13 @@ export async function attestMcpToolManifest(params: {
 			}
 
 			const drift = diffMcpTools(current?.activeTools ?? [], manifest.tools);
-			const approved = current?.approvedToolsets.some((entry) => entry.toolsetHash === toolsetHash);
-			const alreadyActive = current?.activeToolsetHash === toolsetHash;
-			const shouldAccept = approved || alreadyActive;
+			const approved = current?.approvedToolsets.some(
+				(entry) =>
+					entry.toolsetHash === toolsetHash &&
+					entry.keyId === signed.key_id &&
+					entry.signerKeySha256 === signerKeySha256 &&
+					entry.bindingSha256 === bindingSha256,
+			);
 			const base: McpAttestationStateV1 = current ?? {
 				schemaVersion: 1,
 				serverId: manifest.server_id,
@@ -677,7 +720,7 @@ export async function attestMcpToolManifest(params: {
 				highestManifestHash: manifestHash,
 			};
 
-			if (shouldAccept) {
+			if (approved) {
 				next.activeToolsetHash = toolsetHash;
 				next.activeTools = normalizedManifest(manifest).tools;
 				delete next.quarantine;
@@ -691,6 +734,8 @@ export async function attestMcpToolManifest(params: {
 				manifestHash,
 				toolsetHash,
 				keyId: signed.key_id,
+				signerKeySha256,
+				bindingSha256,
 				sequence: manifest.sequence,
 				detectedAt,
 				drift,
@@ -708,18 +753,24 @@ export async function attestMcpToolManifest(params: {
 
 export type McpApprovalResult =
 	| { approved: true; toolsetHash: string }
-	| { approved: false; reason: "no_quarantine" | "toolset_mismatch" };
+	| {
+			approved: false;
+			reason: "no_quarantine" | "toolset_mismatch" | "binding_mismatch" | "signer_unverified";
+	  };
 
 /** Out-of-band operator action; never expose this operation as an agent-callable MCP tool. */
 export async function approveQuarantinedMcpToolset(params: {
 	serverId: string;
 	toolsetHash: string;
+	bindingSha256: string;
 	approvedBy: string;
 	reason: string;
 	store: McpAttestationStateStore;
 	now?: Date;
 }): Promise<McpApprovalResult> {
 	if (!SHA256_PATTERN.test(params.toolsetHash)) throw new Error("invalid MCP toolset hash");
+	if (!SHA256_PATTERN.test(params.bindingSha256))
+		throw new Error("invalid MCP approval binding hash");
 	const approvedBy = params.approvedBy.trim();
 	const reason = params.reason.trim();
 	if (!approvedBy || approvedBy.length > 256) throw new Error("invalid MCP approval actor");
@@ -735,15 +786,28 @@ export async function approveQuarantinedMcpToolset(params: {
 				result: { approved: false, reason: "toolset_mismatch" } as const,
 			};
 		}
+		if (current.quarantine.bindingSha256 !== params.bindingSha256) {
+			return { state: current, result: { approved: false, reason: "binding_mismatch" } as const };
+		}
+		if (!current.quarantine.signerKeySha256 || !current.quarantine.bindingSha256) {
+			return { state: current, result: { approved: false, reason: "signer_unverified" } as const };
+		}
 
 		const approval: McpToolsetApproval = {
 			toolsetHash: params.toolsetHash,
+			keyId: current.quarantine.keyId,
+			signerKeySha256: current.quarantine.signerKeySha256,
+			bindingSha256: current.quarantine.bindingSha256,
 			approvedAt: (params.now ?? new Date()).toISOString(),
 			approvedBy,
 			reason,
 		};
 		const approvals = current.approvedToolsets.filter(
-			(entry) => entry.toolsetHash !== params.toolsetHash,
+			(entry) =>
+				entry.toolsetHash !== params.toolsetHash ||
+				entry.keyId !== approval.keyId ||
+				entry.signerKeySha256 !== approval.signerKeySha256 ||
+				entry.bindingSha256 !== approval.bindingSha256,
 		);
 		approvals.push(approval);
 		const next: McpAttestationStateV1 = {

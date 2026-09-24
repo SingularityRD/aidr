@@ -367,6 +367,7 @@ class PersistentPowershellAmsiBackend implements AmsiBackend {
 	private process: ChildProcess | null = null;
 	private available = false;
 	private stdoutBuffer = "";
+	private scanQueue: Promise<void> = Promise.resolve();
 	private pendingResponse: {
 		resolve: (line: string) => void;
 		reject: (err: Error) => void;
@@ -384,12 +385,40 @@ class PersistentPowershellAmsiBackend implements AmsiBackend {
 	private waitForLine(timeout: number): Promise<string> {
 		return new Promise<string>((resolve, reject) => {
 			const timer = setTimeout(() => {
+				if (this.pendingResponse?.timer !== timer) return;
 				this.pendingResponse = null;
+				this.terminateProcess();
 				reject(new Error("timeout"));
 			}, timeout);
 
 			this.pendingResponse = { resolve, reject, timer };
 		});
+	}
+
+	private rejectPending(error: Error): void {
+		if (!this.pendingResponse) return;
+		const { reject, timer } = this.pendingResponse;
+		this.pendingResponse = null;
+		clearTimeout(timer);
+		reject(error);
+	}
+
+	private terminateProcess(): void {
+		if (this.process) {
+			try {
+				this.process.stdin?.end();
+			} catch {
+				/* best effort */
+			}
+			try {
+				this.process.kill();
+			} catch {
+				/* best effort */
+			}
+			this.process = null;
+		}
+		this.stdoutBuffer = "";
+		this.available = false;
 	}
 
 	async init(): Promise<void> {
@@ -467,6 +496,18 @@ class PersistentPowershellAmsiBackend implements AmsiBackend {
 	}
 
 	async scanString(content: string, contentName: string): Promise<AmsiCheckResult | null> {
+		const operation = this.scanQueue.then(() => this.scanStringSerialized(content, contentName));
+		this.scanQueue = operation.then(
+			() => undefined,
+			() => undefined,
+		);
+		return operation;
+	}
+
+	private async scanStringSerialized(
+		content: string,
+		contentName: string,
+	): Promise<AmsiCheckResult | null> {
 		if (!this.available || !this.process) return null;
 
 		const truncated =
@@ -474,9 +515,17 @@ class PersistentPowershellAmsiBackend implements AmsiBackend {
 
 		try {
 			const req = JSON.stringify({ content: truncated, contentName });
-			this.process.stdin?.write(`${req}\n`);
+			// Install the response waiter before writing. PowerShell can answer in the
+			// same turn, and registering afterwards can lose that response.
+			const response = this.waitForLine(PS_TIMEOUT);
+			try {
+				this.process.stdin?.write(`${req}\n`);
+			} catch (error) {
+				this.rejectPending(error instanceof Error ? error : new Error(String(error)));
+				this.terminateProcess();
+			}
 
-			const line = await this.waitForLine(PS_TIMEOUT);
+			const line = await response;
 			const amsiResult = parseInt(line, 10);
 
 			if (Number.isNaN(amsiResult) || amsiResult < 0) {
@@ -484,6 +533,9 @@ class PersistentPowershellAmsiBackend implements AmsiBackend {
 					stdout: line.slice(0, 100),
 					contentName,
 				});
+				// A malformed or late line makes the stream framing untrustworthy. Reset
+				// the backend rather than assigning a future line to the wrong scan.
+				this.terminateProcess();
 				return null;
 			}
 
@@ -496,26 +548,13 @@ class PersistentPowershellAmsiBackend implements AmsiBackend {
 	}
 
 	close(): void {
-		if (this.process) {
-			try {
-				this.process.stdin?.end();
-			} catch {
-				/* best effort */
-			}
-			try {
-				this.process.kill();
-			} catch {
-				/* best effort */
-			}
-			this.process = null;
-		}
 		if (this.pendingResponse) {
 			const { reject, timer } = this.pendingResponse;
 			this.pendingResponse = null;
 			clearTimeout(timer);
 			reject(new Error("closed"));
 		}
-		this.available = false;
+		this.terminateProcess();
 	}
 }
 
@@ -616,7 +655,11 @@ class WslPowershellAmsiBackend implements AmsiBackend {
 export class AmsiClient {
 	private readonly logger: Logger;
 	private backend: AmsiBackend | null = null;
-	private selectedBackend: "native-koffi" | "powershell-persistent" | "powershell-oneshot" | "unavailable" = "unavailable";
+	private selectedBackend:
+		| "native-koffi"
+		| "powershell-persistent"
+		| "powershell-oneshot"
+		| "unavailable" = "unavailable";
 	/**
 	 * Operator-readable reason why this host, which supports AMSI, has no usable
 	 * backend. Set only by `init()` after both backends failed; a client that was
@@ -634,7 +677,11 @@ export class AmsiClient {
 	}
 
 	/** Makes native availability and fallback visible to installers and diagnostics. */
-	get backendKind(): "native-koffi" | "powershell-persistent" | "powershell-oneshot" | "unavailable" {
+	get backendKind():
+		| "native-koffi"
+		| "powershell-persistent"
+		| "powershell-oneshot"
+		| "unavailable" {
 		return this.selectedBackend;
 	}
 

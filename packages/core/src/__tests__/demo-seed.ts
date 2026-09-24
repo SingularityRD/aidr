@@ -4,7 +4,7 @@
  * No real secrets or exploit instructions — all data is clearly synthetic.
  */
 
-export interface DemoEvent {
+interface DemoEvent {
 	id: string;
 	type: "runtime_verdict" | "plugin_scan" | "incident";
 	created_at: string;
@@ -12,7 +12,7 @@ export interface DemoEvent {
 	payload: Record<string, unknown>;
 }
 
-export interface DemoAgent {
+interface DemoAgent {
 	id: string;
 	iid: string;
 	display_name: string;
@@ -45,8 +45,10 @@ function randomDateWithin(days: number): string {
 	return new Date(now - offset).toISOString();
 }
 
-function pick<T>(arr: T[]): T {
-	return arr[Math.floor(Math.random() * arr.length)];
+function pick<T>(arr: readonly T[]): T {
+	const value = arr[Math.floor(Math.random() * arr.length)];
+	if (value === undefined) throw new Error("Cannot pick from an empty fixture list");
+	return value;
 }
 
 function randomId(prefix: string): string {
@@ -55,10 +57,12 @@ function randomId(prefix: string): string {
 
 function generateAgent(index: number): DemoAgent {
 	const runtime = pick(FAKE_RUNTIMES);
+	const displayName = FAKE_AGENT_NAMES[index % FAKE_AGENT_NAMES.length];
+	if (!displayName) throw new Error("Expected a seeded agent name");
 	return {
 		id: randomId("agent"),
 		iid: randomId("iid"),
-		display_name: FAKE_AGENT_NAMES[index % FAKE_AGENT_NAMES.length],
+		display_name: displayName,
 		agent_runtime: runtime,
 		status: pick(["connected", "connected", "connected", "disconnected"]),
 		last_seen: randomDateWithin(3),
@@ -225,7 +229,7 @@ export function generateDemoData(agentCount = 3, eventCount = 20): DemoData {
 	return { agents, events };
 }
 
-export function generateDemoDataForConsole(): void {
+function generateDemoDataForConsole(): void {
 	const data = generateDemoData(3, 20);
 	// eslint-disable-next-line no-console
 	console.log(JSON.stringify(data, null, 2));

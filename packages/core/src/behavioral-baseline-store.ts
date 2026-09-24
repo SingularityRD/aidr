@@ -1,11 +1,9 @@
 /**
- * Durable, bounded, tenant-scoped baseline store for behavioural detection.
+ * Bounded, tenant-scoped local storage format for behavioural baselines.
  *
- * The Claude Code (and Codex/OpenClaw/OpenCode) hooks are a fresh process per
- * tool call, so an in-memory baseline can never reach `minBaselineSamples`. This
- * module persists the accepted observations of a (tenant, session) scope under
- * the product's existing state directory so a later process can continue the
- * baseline instead of restarting it.
+ * The runtime does not write or restore these records because neither V1 nor V2
+ * binds observations to authenticated post-execution receipts. Re-enable
+ * persistence only after receipt verification covers both writes and reads.
  *
  * Properties that the store deliberately guarantees:
  *
@@ -24,10 +22,10 @@
  *   limit.
  * - **No raw tool payloads.** Only the orchestrator's hashed novelty tokens
  *   (`command:sha256:…`) are written; commands, paths and URLs never reach disk.
- * - **Best effort, never authoritative.** A read or write failure is logged and
- *   swallowed: the store can only *delay* a baseline, it can never invent one or
- *   turn a missing observation into a clean result. Failed state is discarded
- *   rather than partially trusted.
+ * - **Untrusted persisted state.** V1 and V2 records are unauthenticated and
+ *   editable by the local user. The orchestrator does not restore any records;
+ *   re-enable restoration only after verified success receipts are bound to
+ *   writes and reads.
  */
 
 import { createHash } from "node:crypto";
@@ -89,7 +87,7 @@ export interface BehavioralBaselineStoreOptions extends Partial<BehavioralBaseli
 	logger?: Logger;
 }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const MAX_ID_LENGTH = 256;
 const MAX_TOKEN_LENGTH = 512;
 const MAX_TOOL_LENGTH = 512;
@@ -202,6 +200,10 @@ export class FileBehavioralBaselineStore implements BehavioralBaselineStore {
 		const path = this.sessionPath(tenantId, sessionId);
 		let raw: string;
 		try {
+			if (this.now() - (await stat(path)).mtimeMs > this.bounds.retentionMs) {
+				await this.remove(path);
+				return null;
+			}
 			raw = await getFileContent(path);
 		} catch {
 			// A missing or unreadable scope is an empty scope, never an error.
@@ -363,11 +365,13 @@ export class FileBehavioralBaselineStore implements BehavioralBaselineStore {
 		if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
 		const record = raw as Record<string, unknown>;
 		if (!isBoundedString(record.tool_name, MAX_TOOL_LENGTH)) return null;
+		const now = this.now();
 		if (
 			typeof record.timestamp !== "number" ||
 			!Number.isInteger(record.timestamp) ||
 			record.timestamp <= 0 ||
-			record.timestamp > this.now() + 5 * 60 * 1000
+			record.timestamp < now - this.bounds.retentionMs ||
+			record.timestamp > now + 5 * 60 * 1000
 		) {
 			return null;
 		}

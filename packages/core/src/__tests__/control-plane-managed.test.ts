@@ -2,7 +2,9 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApprovalStore } from "../approval-store.js";
 import { evaluateToolCall } from "../evaluator.js";
+import { guardToolCall } from "../guard.js";
 import type { EntitlementSnapshotV1 } from "../managed.js";
 import { verifyEntitlementSnapshotSignature } from "../managed.js";
 
@@ -118,6 +120,38 @@ describe("managed-mode control plane ingest", () => {
 			throw new Error("missing entitlement snapshot");
 		}
 		expect(verifyEntitlementSnapshotSignature(entitlement, sig, "aidr_live_test")).toBe(true);
+	});
+
+	it("reports the paranoid host-enforced deny once, not the pre-guard ask", async () => {
+		await writeFile(
+			configPath,
+			`${JSON.stringify(buildConfig({ sensitivity: "paranoid" }))}\n`,
+			"utf-8",
+		);
+		const events: Array<Record<string, unknown>> = [];
+		globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init: RequestInit = {}) => {
+			const body = init.body
+				? (JSON.parse(String(init.body)) as { events?: Array<Record<string, unknown>> })
+				: {};
+			events.push(...(body.events ?? []));
+			return { ok: true, status: 200, json: async () => ({}) } as Response;
+		});
+
+		const result = await guardToolCall(
+			{
+				sessionId: "paranoid-host",
+				toolName: "Bash",
+				toolInput: { command: "chmod 777 ./script.sh" },
+				artifacts: [{ type: "command", value: "chmod 777 ./script.sh" }],
+			},
+			{ threatsDir: THREATS_DIR, allowlistsDir: ALLOWLISTS_DIR, configPath },
+			new ApprovalStore(),
+		);
+
+		expect(result.verdict.decision).toBe("deny");
+		expect(
+			events.filter((event) => event.type === "runtime_verdict").map((event) => event.verdict),
+		).toEqual(["deny"]);
 	});
 
 	it("disables remote sync on agent_limit_exceeded (402) but keeps local evaluation running", async () => {

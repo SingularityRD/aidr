@@ -23,7 +23,7 @@ export const nullLogger: Logger = {
 };
 
 /** Get a logger instance (currently returns nullLogger). */
-export function getLogger(): Logger {
+function getLogger(): Logger {
 	return nullLogger;
 }
 
@@ -95,6 +95,8 @@ export interface UrlCheckResult {
 	isMalicious: boolean;
 	findings: UrlCheckFinding[];
 	flags: string[];
+	/** Millisecond timestamp after which the checked source data must not be reused. */
+	cacheValidUntil?: number;
 }
 
 // ── Verdict ─────────────────────────────────────────────────────────
@@ -145,7 +147,7 @@ export interface Verdict {
 
 export interface PackageCheckResult {
 	packageName: string;
-	registry: "npm" | "pypi";
+	registry: "npm" | "pypi" | "unknown";
 	verdict: "clean" | "not_found" | "suspicious_age" | "malicious" | "unknown";
 	confidence: number;
 	details: string;
@@ -193,6 +195,8 @@ export interface CachedVerdict {
 export interface CachedEntry extends CachedVerdict {
 	checkedAt: string;
 	expiresAt: string;
+	/** Required on cached URL allows so they cannot outlive their source reputation row. */
+	sourceFreshUntil?: string;
 	aidrVersion?: string;
 }
 
@@ -206,17 +210,31 @@ export interface CacheStore {
 
 export const SensitivitySchema = z.enum(["paranoid", "balanced", "relaxed"]);
 
-export const OperatingModeSchema = z.enum(["local", "managed"]);
+const OperatingModeSchema = z.enum(["local", "managed"]);
 
 export const AuthConfigSchema = z.object({
 	/**
 	 * API key used to authenticate to Singularity AIDR managed services (control plane, premium packs).
 	 */
 	api_key: z.string().optional(),
+	api_key_ref: z
+		.object({
+			store: z.enum(["windows-dpapi", "macos-keychain", "linux-secret-service"]),
+			id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
+			created_at: z.string().datetime(),
+		})
+		.optional(),
 	/**
 	 * Optional one-time enrollment token used to bootstrap managed mode (exchanged for an API key).
 	 */
 	enrollment_token: z.string().optional(),
+	enrollment_token_ref: z
+		.object({
+			store: z.enum(["windows-dpapi", "macos-keychain", "linux-secret-service"]),
+			id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
+			created_at: z.string().datetime(),
+		})
+		.optional(),
 });
 
 export const ControlPlaneConfigSchema = z.object({
@@ -230,6 +248,8 @@ export const ControlPlaneConfigSchema = z.object({
 	 * Example: "https://aidr.example.com"
 	 */
 	endpoint: z.string().default(""),
+	/** Explicitly allow plaintext HTTP to a loopback endpoint for local development. */
+	allow_insecure_loopback: z.boolean().default(false),
 	/** Request timeout for control-plane calls. */
 	timeout_seconds: z.number().default(0.5),
 	/** Send runtime verdict events to the control plane for the dashboard. */
@@ -258,14 +278,14 @@ export const ControlPlaneConfigSchema = z.object({
 	remote_policy_offline_grace_seconds: z.number().int().min(0).max(604800).default(3600),
 });
 
-export const PolicyFilesystemSchema = z.object({
+const PolicyFilesystemSchema = z.object({
 	enabled: z.boolean().default(false),
 	allowed_write_roots: z.array(z.string()).default([]),
 	deny_write_patterns: z.array(z.string()).default([]),
 	outside_root_action: z.enum(["block", "require_approval"]).default("require_approval"),
 });
 
-export const PolicyNetworkSchema = z.object({
+const PolicyNetworkSchema = z.object({
 	enabled: z.boolean().default(false),
 	allow_domains: z.array(z.string()).default([]),
 	deny_domains: z.array(z.string()).default([]),
@@ -274,13 +294,13 @@ export const PolicyNetworkSchema = z.object({
 	outside_allow_action: z.enum(["block", "require_approval"]).default("require_approval"),
 });
 
-export const PolicyShellSchema = z.object({
+const PolicyShellSchema = z.object({
 	enabled: z.boolean().default(false),
 	deny_patterns: z.array(z.string()).default([]),
 	deny_action: z.enum(["block", "require_approval"]).default("block"),
 });
 
-export const PolicyMcpSchema = z.object({
+const PolicyMcpSchema = z.object({
 	enabled: z.boolean().default(false),
 	default_action: z.enum(["block", "require_approval", "allow"]).default("require_approval"),
 	inventory_paths: z.array(z.string()).default([]),
@@ -294,21 +314,23 @@ export const PolicyMcpSchema = z.object({
 	unknown_server_action: z.enum(["block", "require_approval", "allow"]).default("require_approval"),
 });
 
-export const PolicyConfigSchema = z.object({
+const PolicyConfigSchema = z.object({
 	enabled: z.boolean().default(false),
 	filesystem: PolicyFilesystemSchema.default({}),
 	network: PolicyNetworkSchema.default({}),
 	shell: PolicyShellSchema.default({}),
 	mcp: PolicyMcpSchema.default({}),
 	runtime_defaults: z.record(z.string(), z.unknown()).default({}),
-	ai_infrastructure: z.object({
-		enabled: z.boolean().default(false),
-		targets: z.array(z.string().url()).max(200).default([]),
-		report_path: z.string().default("~/.singularity-aidr/infra-scan.json"),
-		max_age_seconds: z.number().int().min(1).max(604800).default(3600),
-		critical_action: z.enum(["block", "require_approval"]).default("block"),
-		unverified_action: z.enum(["allow", "block", "require_approval"]).default("require_approval"),
-	}).default({}),
+	ai_infrastructure: z
+		.object({
+			enabled: z.boolean().default(false),
+			targets: z.array(z.string().url()).max(200).default([]),
+			report_path: z.string().default("~/.singularity-aidr/infra-scan.json"),
+			max_age_seconds: z.number().int().min(1).max(604800).default(3600),
+			critical_action: z.enum(["block", "require_approval"]).default("block"),
+			unverified_action: z.enum(["allow", "block", "require_approval"]).default("require_approval"),
+		})
+		.default({}),
 });
 
 export const IntelConfigSchema = z.object({
@@ -320,7 +342,7 @@ export const IntegrityConfigSchema = z.object({
 	enabled: z.boolean().default(false),
 	/**
 	 * Optional public keys (PEM) used to verify signed manifests and intel packs.
-	 * If empty, integrity verification is skipped (fail-open).
+	 * If empty, development verification is skipped; commercial startup is rejected.
 	 */
 	public_keys_pem: z.array(z.string()).default([]),
 	/**
@@ -356,7 +378,7 @@ export const IntelPacksConfigSchema = z.object({
 	expired_grace_hours: z.number().default(72),
 });
 
-export const LicensingConfigSchema = z.object({
+const LicensingConfigSchema = z.object({
 	enabled: z.boolean().default(true),
 	/**
 	 * Public keys (PEM or base64 SPKI) used to verify signed entitlement snapshots and revocation feeds.
@@ -392,7 +414,7 @@ export const IncidentConfigSchema = z.object({
 	correlation_enabled: z.boolean().default(true),
 });
 
-export const ResponseConfigSchema = z.object({
+const ResponseConfigSchema = z.object({
 	emit_incidents: z.boolean().default(true),
 	/**
 	 * Response actions taken when the runtime blocks a tool call.
@@ -490,11 +512,16 @@ export const ResponseConfigSchema = z.object({
 
 export const UrlCheckConfigSchema = z.object({
 	endpoint: z.string().optional(),
+	/** Explicitly allow plaintext HTTP to a loopback endpoint for local development. */
+	allow_insecure_loopback: z.boolean().default(false),
+	/** Explicit opt-in to sending URL query parameters to the reputation provider. */
+	include_query_parameters: z.boolean().default(false),
 	timeout_seconds: z.number().default(5.0),
-	enabled: z.boolean().default(true),
+	/** Explicit opt-in; unavailable checks are surfaced for human review. */
+	enabled: z.boolean().default(false),
 });
 
-export const EncryptionConfigSchema = z.object({
+const EncryptionConfigSchema = z.object({
 	/** Enable transparent encryption of cache and audit files. */
 	enabled: z.boolean().default(false),
 });
@@ -525,19 +552,32 @@ export const LoggingConfigSchema = z.object({
 
 export const FileCheckConfigSchema = z.object({
 	endpoint: z.string().optional(),
+	/** Explicitly allow plaintext HTTP to a loopback endpoint for local development. */
+	allow_insecure_loopback: z.boolean().default(false),
 	timeout_seconds: z.number().default(5.0),
-	enabled: z.boolean().default(true),
+	/** Explicit opt-in to sending file SHA-256 hashes to a reputation provider. */
+	enabled: z.boolean().default(false),
+});
+
+const VersionCheckConfigSchema = z.object({
+	/** Version checks transmit runtime metadata and installation ID; require explicit opt-in. */
+	enabled: z.boolean().default(false),
 });
 
 export const PackageCheckConfigSchema = z.object({
-	enabled: z.boolean().default(true),
+	/** Explicit opt-in to sending package names to public registries. */
+	enabled: z.boolean().default(false),
 	timeout_seconds: z.number().default(5.0),
 });
 
-export const AmsiCheckConfigSchema = z.object({
+const AmsiCheckConfigSchema = z.object({
 	enabled: z.boolean().default(true),
 });
 
+/**
+ * @deprecated NVD lookup is no longer wired into the runtime.
+ * @public
+ */
 export const NvdConfigSchema = z.object({
 	api_key: z.string().optional(),
 	timeout_seconds: z.number().default(30),
@@ -583,8 +623,10 @@ export const ConfigSchema = z.object({
 	response: ResponseConfigSchema.default({}),
 	url_check: UrlCheckConfigSchema.default({}),
 	file_check: FileCheckConfigSchema.default({}),
+	version_check: VersionCheckConfigSchema.default({}),
 	package_check: PackageCheckConfigSchema.default({}),
 	amsi_check: AmsiCheckConfigSchema.default({}),
+	/** @deprecated Accepted for configuration compatibility; not used at runtime. */
 	nvd_check: NvdConfigSchema.default({}),
 	heuristics_enabled: z.boolean().default(true),
 	cache: CacheConfigSchema.default({}),
@@ -595,23 +637,41 @@ export const ConfigSchema = z.object({
 });
 
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
-export type ControlPlaneConfig = z.infer<typeof ControlPlaneConfigSchema>;
-export type PolicyConfig = z.infer<typeof PolicyConfigSchema>;
-export type PolicyMcpConfig = z.infer<typeof PolicyMcpSchema>;
+type OptionalInsecureLoopback<T extends { allow_insecure_loopback: boolean }> = Omit<
+	T,
+	"allow_insecure_loopback"
+> & { allow_insecure_loopback?: boolean };
+type OptionalUrlCheckDefaults<
+	T extends {
+		allow_insecure_loopback: boolean;
+		include_query_parameters: boolean;
+	},
+> = Omit<T, "allow_insecure_loopback" | "include_query_parameters"> & {
+	allow_insecure_loopback?: boolean;
+	include_query_parameters?: boolean;
+};
+
+export type ControlPlaneConfig = OptionalInsecureLoopback<z.infer<typeof ControlPlaneConfigSchema>>;
+type PolicyConfig = z.infer<typeof PolicyConfigSchema>;
+type PolicyMcpConfig = z.infer<typeof PolicyMcpSchema>;
 export type IntelConfig = z.infer<typeof IntelConfigSchema>;
 export type IntelPacksConfig = z.infer<typeof IntelPacksConfigSchema>;
 export type IntegrityConfig = z.infer<typeof IntegrityConfigSchema>;
-export type LicensingConfig = z.infer<typeof LicensingConfigSchema>;
+type LicensingConfig = z.infer<typeof LicensingConfigSchema>;
 export type IncidentConfig = z.infer<typeof IncidentConfigSchema>;
-export type ResponseConfig = z.infer<typeof ResponseConfigSchema>;
-export type ResponseActionsConfig = ResponseConfig["actions"];
+type ResponseConfig = z.infer<typeof ResponseConfigSchema>;
+type ResponseActionsConfig = ResponseConfig["actions"];
 export type ResponseAuditConfig = ResponseConfig["audit"];
-export type UrlCheckConfig = z.infer<typeof UrlCheckConfigSchema>;
-export type FileCheckConfig = z.infer<typeof FileCheckConfigSchema>;
+export type UrlCheckConfig = OptionalUrlCheckDefaults<z.infer<typeof UrlCheckConfigSchema>>;
+export type FileCheckConfig = OptionalInsecureLoopback<z.infer<typeof FileCheckConfigSchema>>;
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
-export type NvdConfig = z.infer<typeof NvdConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
-export type EncryptionConfig = z.infer<typeof EncryptionConfigSchema>;
+/**
+ * @deprecated NVD lookup is no longer wired into the runtime.
+ * @public
+ */
+export type NvdConfig = z.infer<typeof NvdConfigSchema>;
+type EncryptionConfig = z.infer<typeof EncryptionConfigSchema>;
 export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type AllowlistConfig = z.infer<typeof AllowlistConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
@@ -661,7 +721,7 @@ export interface PluginScanResult {
 	plugin: PluginInfo;
 	findings: PluginFinding[];
 	/**
-	 * Reputation legs that were requested but could NOT run, with the reason.
+	 * Reputation legs that were unavailable or intentionally withheld, with the reason.
 	 *
 	 * Present so a caller can distinguish "the URL/file reputation checks ran and
 	 * found nothing" from "they never ran". Before this field existed the two
@@ -677,11 +737,11 @@ export interface PluginScanResult {
 }
 
 export interface PluginScanUnavailableCheck {
-	/** Which leg. */
-	check: "url_reputation" | "file_reputation";
+	/** Which verification check is incomplete or unavailable. */
+	check: "url_reputation" | "file_reputation" | "plugin_files";
 	/** Why it could not run, in operator-readable form. */
 	reason: string;
-	/** How many artifacts went unchecked. */
+	/** How many artifacts or paths went unchecked. */
 	uncheckedCount: number;
 }
 

@@ -23,6 +23,12 @@ describe("atomicWriteJson", () => {
 		expect(files.filter((f) => f.endsWith(".tmp"))).toHaveLength(0);
 	});
 
+	it("can publish a non-sensitive document for a read-only service consumer", async () => {
+		const target = join(dir, "health.json");
+		await atomicWriteJson(target, { status: "ok" }, { mode: 0o644 });
+		if (process.platform !== "win32") expect((await stat(target)).mode & 0o777).toBe(0o644);
+	});
+
 	it("cleans temp file on rename failure", async () => {
 		// Write to a path where the final rename will fail (target is a directory)
 		const target = join(dir, "subdir");

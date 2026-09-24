@@ -7,7 +7,11 @@
  * the target so the test exercises the same code path as production.
  */
 
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	compareVersions,
@@ -23,6 +27,58 @@ import {
 	scanTargets,
 } from "../aig-infra-scan.js";
 
+const INDEX_FILES = [
+	"aig-cve-index.json",
+	"aig-fingerprints.json",
+	"aig-mcp-categories.json",
+] as const;
+
+async function writeTestBundle(
+	directory: string,
+	options: {
+		empty?: string;
+		missing?: string;
+		corrupt?: string;
+		fingerprints?: Array<Record<string, unknown>>;
+	} = {},
+): Promise<void> {
+	const indexes: Record<(typeof INDEX_FILES)[number], Record<string, unknown>> = {
+		"aig-cve-index.json": { schema: "aig-cve-index/v2", version: 2, cves: [{}] },
+		"aig-fingerprints.json": {
+			schema: "aig-fingerprint-index/v3",
+			version: 3,
+			fingerprints: options.fingerprints ?? [{}],
+		},
+		"aig-mcp-categories.json": { schema: "aig-mcp-categories/v2", version: 2, categories: [{}] },
+	};
+	if (options.empty === "aig-cve-index.json") indexes[options.empty].cves = [];
+	if (options.empty === "aig-fingerprints.json") indexes[options.empty].fingerprints = [];
+	const artifacts: Record<string, { sha256: string; bytes: number }> = {};
+	await mkdir(directory, { recursive: true });
+	for (const file of INDEX_FILES) {
+		const bytes = Buffer.from(JSON.stringify(indexes[file]));
+		artifacts[file] = {
+			sha256: createHash("sha256").update(bytes).digest("hex"),
+			bytes: bytes.length,
+		};
+		if (options.missing !== file) {
+			await writeFile(join(directory, file), options.corrupt === file ? "not json" : bytes);
+		}
+	}
+	const bundleId = createHash("sha256")
+		.update(JSON.stringify(Object.fromEntries(INDEX_FILES.map((file) => [file, artifacts[file]]))))
+		.digest("hex");
+	await writeFile(
+		join(directory, "aig-data-manifest.json"),
+		JSON.stringify({
+			schema: "aig-data-manifest/v1",
+			generated: new Date().toISOString(),
+			bundle_id: bundleId,
+			artifacts,
+		}),
+	);
+}
+
 describe("native AIG data is present", () => {
 	it("ships fingerprints with executable detection blocks", () => {
 		expect(fingerprintCount()).toBeGreaterThan(100);
@@ -33,7 +89,73 @@ describe("native AIG data is present", () => {
 	});
 });
 
+describe("unavailable scanner indexes fail closed", () => {
+	const failures = [
+		{ name: "missing CVE index", missing: "aig-cve-index.json" },
+		{ name: "empty CVE index", empty: "aig-cve-index.json" },
+		{ name: "corrupt CVE index", corrupt: "aig-cve-index.json" },
+		{ name: "missing fingerprint index", missing: "aig-fingerprints.json" },
+		{ name: "empty fingerprint index", empty: "aig-fingerprints.json" },
+		{ name: "corrupt fingerprint index", corrupt: "aig-fingerprints.json" },
+	] as const;
+
+	it.each(failures)("rejects a $name", async ({ name: _name, ...failure }) => {
+		const previousDirectory = process.env.AIG_GENERATED_DIR;
+		const directory = await mkdtemp(join(tmpdir(), "aidr-aig-index-"));
+		process.env.AIG_GENERATED_DIR = directory;
+		resetAigScanCache();
+		let requests = 0;
+		try {
+			await writeTestBundle(directory, failure);
+			const result = await scanTarget(
+				{ url: "http://127.0.0.1:9001" },
+				{
+					fetchImpl: (async () => {
+						requests++;
+						return new Response("no match");
+					}) as typeof fetch,
+				},
+			);
+			expect(result.error).toBe("dataset_unavailable");
+			expect(result.requestsMade).toBe(0);
+			expect(requests).toBe(0);
+		} finally {
+			if (previousDirectory === undefined) delete process.env.AIG_GENERATED_DIR;
+			else process.env.AIG_GENERATED_DIR = previousDirectory;
+			resetAigScanCache();
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("target safety", () => {
+	it("forwards cancellation to an in-flight request", async () => {
+		const controller = new AbortController();
+		let requestSignal: AbortSignal | undefined;
+		let respond: ((response: Response) => void) | undefined;
+		let started: (() => void) | undefined;
+		const requestStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const fetchImpl = ((_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+			requestSignal = init?.signal ?? undefined;
+			started?.();
+			return new Promise<Response>((resolve) => {
+				respond = resolve;
+			});
+		}) as typeof fetch;
+		const scan = scanTarget(
+			{ url: "http://127.0.0.1:9001" },
+			{ fetchImpl, signal: controller.signal },
+		);
+		await requestStarted;
+		controller.abort();
+		respond?.(new Response("late response"));
+
+		await expect(scan).resolves.toMatchObject({ error: "scan_aborted" });
+		expect(requestSignal?.aborted).toBe(true);
+	});
+
 	it("marks oversized and redirected responses incomplete even when another probe responds", async () => {
 		for (const failure of ["response_too_large", "redirect_not_followed"]) {
 			let calls = 0;
@@ -50,7 +172,10 @@ describe("target safety", () => {
 	});
 
 	it("allows loopback and private addresses", () => {
-		for (const host of ["127.0.0.1", "localhost", "10.0.0.5", "192.168.1.10", "::1"]) {
+		for (const host of [
+			"127.0.0.1", "localhost", "10.0.0.5", "192.168.1.10", "172.16.0.1", "172.31.255.254",
+			"169.254.10.20", "::1", "fc00::1", "fd12:3456::1", "fe80::1", "febf::1",
+		]) {
 			expect(isScannableHost(host)).toBe(true);
 		}
 	});
@@ -61,8 +186,98 @@ describe("target safety", () => {
 		expect(isTargetAllowed("http://127.0.0.1:8080/", false)).toBe(true);
 	});
 
+	it("never treats private-looking DNS names as private IP literals", () => {
+		for (const host of [
+			"127.0.0.1.attacker.example",
+			"127.0.0.1.nip.io",
+			"10.evil.example",
+			"10.0.0.1.nip.io",
+			"192.168.attacker.example",
+			"192.168.1.1.nip.io",
+			"172.16.attacker.example",
+			"172.16.0.1.nip.io",
+			"169.254.attacker.example",
+			"169.254.169.254.nip.io",
+		]) {
+			expect(isScannableHost(host)).toBe(false);
+			expect(isTargetAllowed(`http://${host}/`, false)).toBe(false);
+		}
+		expect(isScannableHost("172.32.0.1")).toBe(false);
+		expect(isScannableHost("fec0::1")).toBe(false);
+	});
+
+	it("rejects private-looking DNS names before any outbound request", async () => {
+		let requests = 0;
+		const fetchImpl = (async () => {
+			requests++;
+			return new Response("unexpected request");
+		}) as typeof fetch;
+
+		for (const host of [
+			"127.0.0.1.nip.io",
+			"10.0.0.1.nip.io",
+			"192.168.1.1.nip.io",
+			"172.16.0.1.nip.io",
+			"169.254.169.254.nip.io",
+		]) {
+			const result = await scanTarget({ url: `http://${host}/` }, { fetchImpl });
+			expect(result.error).toBe("target_not_allowed");
+			expect(result.requestsMade).toBe(0);
+		}
+		expect(requests).toBe(0);
+	});
+
+	it("performs an opted-in hostname scan through the injected transport", async () => {
+		const previousDirectory = process.env.AIG_GENERATED_DIR;
+		const directory = await mkdtemp(join(tmpdir(), "aidr-aig-opt-in-"));
+		process.env.AIG_GENERATED_DIR = directory;
+		resetAigScanCache();
+		let requestedUrl = "";
+		try {
+			await writeTestBundle(directory, {
+				fingerprints: [
+					{
+						n: "Test service",
+						a: "test-vendor",
+						sev: "low",
+						desc: "test fingerprint",
+						p: "test-service",
+						v: "1.0.0",
+						http: [
+							{
+								method: "GET",
+								path: "/",
+								supported: true,
+								matchers: [{ key: "status", contains: "200" }],
+							},
+						],
+					},
+				],
+			});
+			const result = await scanTarget(
+				{ url: "http://scan.example.test:8080/" },
+				{
+					allowPublicTargets: true,
+					fetchImpl: (async (input: Parameters<typeof fetch>[0]) => {
+						requestedUrl = String(input);
+						return new Response("not a match", { status: 404 });
+					}) as typeof fetch,
+				},
+			);
+			expect(requestedUrl).toBe("http://scan.example.test:8080/");
+			expect(result.requestsMade).toBe(1);
+			expect(result.reachable).toBe(true);
+		} finally {
+			if (previousDirectory === undefined) delete process.env.AIG_GENERATED_DIR;
+			else process.env.AIG_GENERATED_DIR = previousDirectory;
+			resetAigScanCache();
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
 	it("allows public targets only with an explicit opt-in", () => {
 		expect(isTargetAllowed("http://evil.example.com/", true)).toBe(true);
+		expect(isTargetAllowed("file:///etc/passwd", true)).toBe(false);
 	});
 
 	it("rejects non-http protocols and malformed targets", () => {
@@ -304,6 +519,19 @@ describe("end-to-end scan against a local server", () => {
 		expect(result.matched).toEqual([]);
 		expect(result.error).not.toBeNull();
 		expect(result.reachable).toBe(false);
+	});
+
+	it("marks a reachable target with no known fingerprint as incomplete", async () => {
+		const result = await scanTarget(
+			{ url: "http://127.0.0.1:9001" },
+			{
+				fetchImpl: (async () =>
+					new Response("not a known product", { status: 404 })) as typeof fetch,
+			},
+		);
+		expect(result.reachable).toBe(true);
+		expect(result.matched).toEqual([]);
+		expect(result.error).toBe("no_fingerprint_matched");
 	});
 
 	it("refuses a public target without the opt-in and makes no requests", async () => {

@@ -3,10 +3,10 @@
  * Lightweight Pino-based logging with JSON output and redaction
  */
 
-import { createWriteStream, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { createWriteStream } from "node:fs";
 import pino from "pino";
-import { AIDR_DIR } from "./config.js";
+import { AIDR_DIR, resolvePath } from "./config.js";
+import { preparePrivateLocalFile } from "./private-local-file.js";
 import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
 
 export type LogLevel = "error" | "warn" | "info" | "debug";
@@ -54,7 +54,7 @@ function shouldLogToFile(): boolean {
 }
 
 function getLogFilePath(): string {
-	return process.env.AIDR_LOG_FILE_PATH || `${AIDR_DIR}/logs/aidr.log`;
+	return resolvePath(process.env.AIDR_LOG_FILE_PATH || `${AIDR_DIR}/logs/aidr.log`);
 }
 
 export function createLogger(options?: { name?: string; level?: LogLevel }): pino.Logger {
@@ -86,12 +86,15 @@ export function createLogger(options?: { name?: string; level?: LogLevel }): pin
 
 	if (shouldLogToFile()) {
 		const logPath = getLogFilePath();
-		mkdirSync(dirname(logPath), { recursive: true });
+		preparePrivateLocalFile(logPath);
 		return pino(
 			config,
 			pino.multistream([
 				{ level, stream: pino.destination(2) },
-				{ level, stream: createWriteStream(logPath, { flags: "a" }) },
+				{
+					level,
+					stream: createWriteStream(logPath, { flags: "a", mode: 0o600 }),
+				},
 			]),
 		);
 	}
@@ -117,6 +120,3 @@ export function createChildLogger(
 ): pino.Logger {
 	return parent.child({ component, ...meta });
 }
-
-export type { Logger } from "pino";
-export { pino };

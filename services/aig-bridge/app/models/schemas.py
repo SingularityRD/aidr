@@ -241,8 +241,8 @@ class AgentScanRequest(BaseModel):
     def validate_target(self) -> "AgentScanRequest":
         if bool(self.agent_id) == bool(self.agent_config):
             raise ValueError("provide exactly one of agent_id or agent_config")
-        if self.agent_id and len(self.agent_id.strip()) > 256:
-            raise ValueError("agent_id is too long")
+        if self.agent_id:
+            raise ValueError("pre-saved agent_id is unavailable until configs are tenant scoped")
         if self.agent_config and len(json.dumps(self.agent_config, default=str)) > 131_072:
             raise ValueError("agent_config is too large")
         return self

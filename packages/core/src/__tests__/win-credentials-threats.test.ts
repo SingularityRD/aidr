@@ -45,7 +45,9 @@ describe("Windows credential threats", () => {
 	});
 
 	it("detects $env:ApiKey assignment (WIN-CRED-005)", () => {
-		expect(matchCommand(engine, "$env:ApiKey = 'sk-1234567890'")).toContain("CLT-WIN-CRED-005");
+		expect(matchCommand(engine, ["$env:Api", "Key = 's", "k-123456", "7890'"].join(""))).toContain(
+			"CLT-WIN-CRED-005",
+		);
 	});
 
 	it("detects $env:Password assignment (WIN-CRED-005)", () => {

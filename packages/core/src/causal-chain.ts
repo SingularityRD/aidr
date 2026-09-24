@@ -53,7 +53,7 @@ export const CAUSAL_CHAIN_ORDER = [
 	"side_effect",
 	"intervention",
 ] as const;
-export type CausalLinkKind = (typeof CAUSAL_CHAIN_ORDER)[number];
+type CausalLinkKind = (typeof CAUSAL_CHAIN_ORDER)[number];
 
 /** Rank of a kind in the canonical order; lower runs earlier. */
 export function causalKindRank(kind: CausalLinkKind): number {
@@ -669,6 +669,49 @@ export function verifyCausalChainEvidence(
 	const intactReceiptIds: string[] = [];
 	const receiptById = new Map<string, unknown>();
 	for (const receipt of chain.receipts) receiptById.set(receipt.receiptId, receipt);
+	const linkIds = new Set(chain.links.map((link) => link.linkId));
+	const positions = new Map<number, string>();
+	const observedKinds = new Set(chain.links.map((link) => link.kind));
+	for (const link of chain.links) {
+		for (const successor of link.nextLinkIds ?? []) {
+			if (!linkIds.has(successor)) {
+				findings.push({
+					code: "chain_gap",
+					linkId: link.linkId,
+					detail: `missing_successor:${successor}`,
+				});
+			}
+		}
+		for (const predecessor of link.previousLinkIds ?? []) {
+			if (!linkIds.has(predecessor)) {
+				findings.push({
+					code: "chain_gap",
+					linkId: link.linkId,
+					detail: `missing_predecessor:${predecessor}`,
+				});
+			}
+		}
+		const positionOwner = positions.get(link.position);
+		if (positionOwner && positionOwner !== link.linkId) {
+			findings.push({
+				code: "position_conflict",
+				linkId: link.linkId,
+				detail: `position_${link.position}_claimed_by:${positionOwner}`,
+			});
+		} else {
+			positions.set(link.position, link.linkId);
+		}
+	}
+	for (const kind of chain.expectedKinds) {
+		if (!observedKinds.has(kind)) {
+			findings.push({ code: "chain_gap", missingKind: kind, detail: `no_link_for_kind:${kind}` });
+		}
+	}
+	const cycle = detectCycle(chain.links);
+	if (cycle) findings.push({ code: "cycle_detected", detail: cycle.join("->") });
+	// Stored findings are evidence too: never upgrade a recorded refusal or gap
+	// to valid merely because its links and receipts still hash correctly.
+	findings.push(...chain.findings);
 
 	for (const link of chain.links) {
 		const intactId = verifyCausalLink(link, receiptById, context, findings);

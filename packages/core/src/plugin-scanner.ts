@@ -3,16 +3,16 @@
  */
 
 import { createHash } from "node:crypto";
-import { readdir, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { extname, join, relative } from "node:path";
-import { FileCheckClient } from "./clients/file-check.js";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { FileCheckBatchResult } from "./clients/file-check.js";
+import { FileCheckClient } from "./clients/file-check.js";
 import { UrlCheckClient } from "./clients/url-check.js";
-import type { UrlCheckResult } from "./types.js";
 import { DetectionLegUnavailableError } from "./detection-leg.js";
 import { extractUrls } from "./extractors.js";
-import { getFileContent, getFileContentRaw } from "./file-utils.js";
+import { getFileContent } from "./file-utils.js";
 import { HeuristicsEngine } from "./heuristics.js";
 import type { IntelMerged } from "./intel/types.js";
 import type {
@@ -23,6 +23,7 @@ import type {
 	PluginScanUnavailableCheck,
 	Threat,
 	TrustedDomain,
+	UrlCheckResult,
 } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -33,10 +34,7 @@ import { nullLogger } from "./types.js";
  * never checked". Detection internals are allowed to degrade, but the
  * degradation has to be legible to whoever reads the scan result.
  */
-function markUnavailable(
-	result: PluginScanResult,
-	entry: PluginScanUnavailableCheck,
-): void {
+function markUnavailable(result: PluginScanResult, entry: PluginScanUnavailableCheck): void {
 	if (!result.unavailableChecks) result.unavailableChecks = [];
 	result.unavailableChecks.push(entry);
 }
@@ -165,24 +163,104 @@ export async function discoverPlugins(
 	return plugins;
 }
 
-async function walkPluginFiles(installPath: string, logger: Logger): Promise<string[]> {
+function isWithinPath(root: string, candidate: string): boolean {
+	const pathFromRoot = relative(root, candidate);
+	return (
+		pathFromRoot === "" ||
+		(!isAbsolute(pathFromRoot) && pathFromRoot !== ".." && !pathFromRoot.startsWith(`..${sep}`))
+	);
+}
+
+async function readPluginFileSafely(filePath: string, realRoot: string): Promise<Buffer> {
+	const before = await lstat(filePath);
+	const beforeRealPath = await realpath(filePath);
+	if (
+		before.isSymbolicLink() ||
+		!before.isFile() ||
+		before.size > MAX_FILE_SIZE ||
+		!isWithinPath(realRoot, beforeRealPath)
+	) {
+		throw new Error("Plugin file changed or resolved outside its install directory.");
+	}
+
+	const handle = await open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+	try {
+		const opened = await handle.stat();
+		const after = await lstat(filePath);
+		const afterRealPath = await realpath(filePath);
+		if (
+			!opened.isFile() ||
+			opened.size > MAX_FILE_SIZE ||
+			after.isSymbolicLink() ||
+			!after.isFile() ||
+			opened.dev !== after.dev ||
+			opened.ino !== after.ino ||
+			!isWithinPath(realRoot, afterRealPath)
+		) {
+			throw new Error("Plugin file changed or resolved outside its install directory.");
+		}
+
+		const chunks: Buffer[] = [];
+		let total = 0;
+		while (total <= MAX_FILE_SIZE) {
+			const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, MAX_FILE_SIZE + 1 - total));
+			const { bytesRead } = await handle.read(chunk, 0, chunk.length, total);
+			if (bytesRead === 0) break;
+			total += bytesRead;
+			if (total > MAX_FILE_SIZE) throw new Error("Plugin file exceeds the scan size limit.");
+			chunks.push(chunk.subarray(0, bytesRead));
+		}
+		return Buffer.concat(chunks, total);
+	} finally {
+		await handle.close();
+	}
+}
+
+async function walkPluginFiles(
+	installPath: string,
+	logger: Logger,
+): Promise<{ files: string[]; incompletePaths: number; realRoot: string | null }> {
 	const files: string[] = [];
+	let incompletePaths = 0;
+	const rootPath = resolve(installPath);
+	let realRoot: string;
+	try {
+		const rootStats = await lstat(rootPath);
+		if (rootStats.isSymbolicLink()) return { files, incompletePaths: 1, realRoot: null };
+		realRoot = await realpath(rootPath);
+	} catch {
+		return { files, incompletePaths: 1, realRoot: null };
+	}
 
 	async function walk(dirOrFile: string): Promise<void> {
-		let stats: Awaited<ReturnType<typeof stat>>;
+		let stats: Awaited<ReturnType<typeof lstat>>;
 		try {
-			stats = await stat(dirOrFile);
+			stats = await lstat(dirOrFile);
 		} catch {
+			incompletePaths += 1;
+			return;
+		}
+		if (stats.isSymbolicLink()) {
+			incompletePaths += 1;
+			return;
+		}
+		let resolvedPath: string;
+		try {
+			resolvedPath = await realpath(dirOrFile);
+		} catch {
+			incompletePaths += 1;
+			return;
+		}
+		if (!isWithinPath(realRoot, resolvedPath)) {
+			incompletePaths += 1;
 			return;
 		}
 		// Handle file: check if scannable and add to results
 		if (stats.isFile()) {
-			if (
-				SCANNABLE_EXTENSIONS.has(extname(dirOrFile).toLowerCase()) &&
-				stats.size <= MAX_FILE_SIZE
-			) {
-				files.push(dirOrFile);
-			}
+			if (SCANNABLE_EXTENSIONS.has(extname(dirOrFile).toLowerCase())) {
+				if (stats.size <= MAX_FILE_SIZE) files.push(dirOrFile);
+				else incompletePaths += 1;
+			} else incompletePaths += 1;
 			return;
 		}
 		// Handle directory: recursively walk entries
@@ -191,6 +269,7 @@ async function walkPluginFiles(installPath: string, logger: Logger): Promise<str
 			try {
 				entries = await readdir(dirOrFile);
 			} catch {
+				incompletePaths += 1;
 				return;
 			}
 			for (const entry of entries) {
@@ -201,11 +280,21 @@ async function walkPluginFiles(installPath: string, logger: Logger): Promise<str
 		}
 	}
 	try {
-		await walk(installPath);
+		await walk(rootPath);
 	} catch (e) {
 		logger.warn(`Error walking plugin path ${installPath}`, { error: String(e) });
+		incompletePaths += 1;
 	}
-	return files;
+	return { files, incompletePaths, realRoot };
+}
+
+/** A cached verdict is safe only while the current plugin tree is fully inspectable. */
+export async function canReusePluginScanCache(
+	plugin: PluginInfo,
+	logger: Logger = nullLogger,
+): Promise<boolean> {
+	const walk = await walkPluginFiles(plugin.installPath, logger);
+	return walk.incompletePaths === 0 && walk.files.length > 0;
 }
 
 /**
@@ -400,6 +489,7 @@ export async function scanPlugin(
 	options: {
 		checkUrls?: boolean;
 		checkFileHashes?: boolean;
+		includeQueryParameters?: boolean;
 		trustedDomains?: TrustedDomain[];
 		intelMerged?: IntelMerged | null;
 		logger?: Logger;
@@ -412,16 +502,26 @@ export async function scanPlugin(
 	} = {},
 ): Promise<PluginScanResult> {
 	const {
-		checkUrls = true,
-		checkFileHashes = true,
+		checkUrls = false,
+		checkFileHashes = false,
+		includeQueryParameters = false,
 		trustedDomains,
 		intelMerged,
 		logger = nullLogger,
 	} = options;
 	const result: PluginScanResult = { plugin, findings: [] };
 
-	const files = await walkPluginFiles(plugin.installPath, logger);
-	if (files.length === 0) return result;
+	const walk = await walkPluginFiles(plugin.installPath, logger);
+	const files = walk.files;
+	let unreadableFiles = 0;
+	if (files.length === 0) {
+		markUnavailable(result, {
+			check: "plugin_files",
+			reason: "No scannable plugin files could be inspected.",
+			uncheckedCount: Math.max(1, walk.incompletePaths),
+		});
+		return result;
+	}
 
 	// Only run command-type heuristics on plugin files
 	const commandThreats = threats.filter((t) => t.matchOn.has("command"));
@@ -429,16 +529,20 @@ export async function scanPlugin(
 
 	const allUrls: string[] = [];
 	const hashToFiles = new Map<string, string[]>();
+	let readableFileCount = 0;
 
 	for (const filePath of files) {
 		let content: string;
 		let rawBytes: Buffer;
 		try {
-			rawBytes = await getFileContentRaw(filePath);
+			if (!walk.realRoot) throw new Error("Plugin root is unavailable.");
+			rawBytes = await readPluginFileSafely(filePath, walk.realRoot);
 			content = rawBytes.toString("utf-8");
 		} catch {
+			unreadableFiles += 1;
 			continue;
 		}
+		readableFileCount++;
 
 		// Heuristic matching
 		const artifacts = extractArtifactsFromFile(filePath, content);
@@ -458,12 +562,10 @@ export async function scanPlugin(
 		}
 
 		// Collect URLs for URL check
-		if (checkUrls) {
-			allUrls.push(...extractUrls(content));
-		}
+		allUrls.push(...extractUrls(content));
 
 		// Compute file hash for reputation check
-		if (checkFileHashes) {
+		if (checkFileHashes || (intelMerged?.pluginSignatureDeny.size ?? 0) > 0) {
 			const sha256 = createHash("sha256").update(rawBytes).digest("hex");
 			const existing = hashToFiles.get(sha256);
 			if (existing) {
@@ -472,6 +574,30 @@ export async function scanPlugin(
 				hashToFiles.set(sha256, [filePath]);
 			}
 		}
+	}
+	const incompletePaths = walk.incompletePaths + unreadableFiles;
+	if (incompletePaths > 0) {
+		markUnavailable(result, {
+			check: "plugin_files",
+			reason:
+				"Some plugin paths could not be inspected safely; local detection coverage is incomplete.",
+			uncheckedCount: incompletePaths,
+		});
+	}
+
+	if (!checkUrls && allUrls.length > 0) {
+		markUnavailable(result, {
+			check: "url_reputation",
+			reason: "disabled to avoid sending plugin URLs to an external reputation provider",
+			uncheckedCount: new Set(allUrls).size,
+		});
+	}
+	if (!checkFileHashes && readableFileCount > 0) {
+		markUnavailable(result, {
+			check: "file_reputation",
+			reason: "disabled to avoid sending plugin file hashes to an external reputation provider",
+			uncheckedCount: readableFileCount,
+		});
 	}
 
 	// Offline intel: plugin signature denylist (sha256 of suspicious files).
@@ -504,7 +630,11 @@ export async function scanPlugin(
 						// a false clean. The key is optional; an unauthenticated
 						// deployment is legal, so a failure is reported rather than
 						// thrown (see the catch below).
-						const client = new UrlCheckClient(undefined, logger, options.apiKey);
+						const client = new UrlCheckClient(
+							{ include_query_parameters: includeQueryParameters },
+							logger,
+							options.apiKey,
+						);
 						const checkResults = await client.checkUrls(uniqueUrls);
 						pushUrlFindings(result, checkResults);
 					} catch (error) {
@@ -542,12 +672,7 @@ export async function scanPlugin(
 					} catch (error) {
 						const partial =
 							error instanceof DetectionLegUnavailableError ? error.partialResults : [];
-						pushFileFindings(
-							result,
-							plugin,
-							partial as FileCheckBatchResult[],
-							hashToFiles,
-						);
+						pushFileFindings(result, plugin, partial as FileCheckBatchResult[], hashToFiles);
 						markUnavailable(result, {
 							check: "file_reputation",
 							reason: describeLegFailure(error),

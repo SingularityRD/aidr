@@ -468,6 +468,7 @@
   confidence: 0.95
   action: block
   pattern: "\\b(Set|Add)-MpPreference\\b.{0,300}(-Disable|-Exclusion)"
+  case_insensitive: true
   match_on: command
   title: "Windows Defender settings modification via Set/Add-MpPreference"
   expires_at: null
@@ -492,6 +493,7 @@
   confidence: 0.90
   action: block
   pattern: "\\bnetsh\\b.{0,300}\\badvfirewall\\b.{0,300}\\bstate\\s+off\\b"
+  case_insensitive: true
   match_on: command
   title: "Windows Firewall disabling via netsh"
   expires_at: null
@@ -540,7 +542,7 @@
 
 # --- Suspicious Script Execution Locations ---
 
-# wscript/cscript executing scripts from C:\Users\Public (world-writable staging)
+# wscript/cscript executing scripts from %PUBLIC% (world-writable staging)
 - id: "CLT-WIN-CMD-043"
   category: tool
   severity: high
@@ -795,4 +797,3 @@
   title: "PowerShell GetTypeFromCLSID usage"
   expires_at: null
   revoked: false
-

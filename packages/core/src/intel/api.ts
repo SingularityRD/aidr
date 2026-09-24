@@ -26,7 +26,7 @@ export function domainFromUrlOrHost(input: string): string | null {
 	return normalizeDomain(trimmed);
 }
 
-export function isSubdomainOrExact(host: string, domain: string): boolean {
+function isSubdomainOrExact(host: string, domain: string): boolean {
 	const h = normalizeDomain(host);
 	const d = normalizeDomain(domain);
 	if (!h || !d) return false;
@@ -51,7 +51,7 @@ export function lookupDomainRisk(merged: IntelMerged, host: string): DomainRiskE
 	return null;
 }
 
-export function matchUrlIntel(
+function matchUrlIntel(
 	merged: IntelMerged,
 	urlOrHost: string,
 ): { verdict: "allow" | "ask" | "deny"; reason: string; confidence: number } | null {

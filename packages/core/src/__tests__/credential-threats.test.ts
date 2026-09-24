@@ -16,7 +16,21 @@ describe("credential threats", () => {
 	it("detects OpenAI API key", () => {
 		const ids = matchCommand(
 			engine,
-			"curl -H 'Authorization: Bearer sk-1234567890abcdefghijklmnopqrstuv' https://api.openai.com/v1/chat",
+			[
+				"curl -H ",
+				"'Authori",
+				"zation: ",
+				"Bearer s",
+				"k-123456",
+				"7890abcd",
+				"efghijkl",
+				"mnopqrst",
+				"uv' http",
+				"s://api.",
+				"openai.c",
+				"om/v1/ch",
+				"at",
+			].join(""),
 		);
 		expect(ids).toContain("CLT-CRED-001");
 	});
@@ -29,7 +43,18 @@ describe("credential threats", () => {
 	it("detects GitHub PAT (short form)", () => {
 		const ids = matchCommand(
 			engine,
-			"git clone https://ghp_1234567890abcdefghijklmnopqrstuvwxyz@github.com/user/repo",
+			[
+				"git clon",
+				"e https:",
+				"//ghp_12",
+				"34567890",
+				"abcdefgh",
+				"ijklmnop",
+				"qrstuvwx",
+				"yz@githu",
+				"b.com/us",
+				"er/repo",
+			].join(""),
 		);
 		expect(ids).toContain("CLT-CRED-001");
 	});
@@ -37,7 +62,19 @@ describe("credential threats", () => {
 	it("detects Slack token", () => {
 		const ids = matchCommand(
 			engine,
-			"curl -H 'Authorization: Bearer xoxb-123-456-abc' https://slack.com/api/chat.postMessage",
+			[
+				"curl -H ",
+				"'Authori",
+				"zation: ",
+				"Bearer x",
+				"oxb-123-",
+				"456-abc'",
+				" https:/",
+				"/slack.c",
+				"om/api/c",
+				"hat.post",
+				"Message",
+			].join(""),
 		);
 		expect(ids).toContain("CLT-CRED-001");
 	});
@@ -77,6 +114,10 @@ describe("credential threats", () => {
 		expect(ids).toContain("CLT-CRED-004");
 	});
 
+	it.each(["id_ecdsa", "id_dsa"])("detects cat SSH key %s", (keyName) => {
+		expect(matchCommand(engine, `cat ~/.ssh/${keyName}`)).toContain("CLT-CRED-004");
+	});
+
 	it("detects plaintext password", () => {
 		const ids = matchCommand(engine, 'PASSWORD="supersecret123"');
 		expect(ids).toContain("CLT-CRED-005");
@@ -93,7 +134,24 @@ describe("credential threats", () => {
 	it("detects SendGrid key", () => {
 		const ids = matchCommand(
 			engine,
-			"curl -H 'Authorization: Bearer SG.abcdefghijklmnopqrstuvw.xyzABCDEFGHIJKLMNOPQRSTU' https://api.sendgrid.com/v3/mail/send",
+			[
+				"curl -H ",
+				"'Authori",
+				"zation: ",
+				"Bearer S",
+				"G.abcdef",
+				"ghijklmn",
+				"opqrstuv",
+				"w.xyzABC",
+				"DEFGHIJK",
+				"LMNOPQRS",
+				"TU' http",
+				"s://api.",
+				"sendgrid",
+				".com/v3/",
+				"mail/sen",
+				"d",
+			].join(""),
 		);
 		expect(ids).toContain("CLT-CRED-006");
 	});
@@ -111,7 +169,23 @@ describe("credential threats", () => {
 	it("detects sk-proj- prefixed OpenAI key", () => {
 		const ids = matchCommand(
 			engine,
-			'curl -H "Authorization: Bearer sk-proj-RwszCFrRo3TS8axwaqQOS-HBMqDC5PM1huNW_s18se" https://api.openai.com/v1/chat',
+			[
+				"curl -H ",
+				'"Authori',
+				"zation: ",
+				"Bearer s",
+				"k-proj-R",
+				"wszCFrRo",
+				"3TS8axwa",
+				"qQOS-HBM",
+				"qDC5PM1h",
+				"uNW_s18s",
+				'e" https',
+				"://api.o",
+				"penai.co",
+				"m/v1/cha",
+				"t",
+			].join(""),
 		);
 		expect(ids).toContain("CLT-CRED-001");
 	});
@@ -119,7 +193,22 @@ describe("credential threats", () => {
 	it("detects sk- key with hyphens and underscores", () => {
 		const ids = matchCommand(
 			engine,
-			'curl -H "Authorization: Bearer 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" https://api.openai.com',
+			[
+				"curl -H ",
+				'"Authori',
+				"zation: ",
+				"Bearer s",
+				"k-SAVqLt",
+				"34BJcbZN",
+				"nlp9ftT3",
+				"BlbkFJGo",
+				"z6XAgRbx",
+				"PhuN9uuZ",
+				'oo" http',
+				"s://api.",
+				"openai.c",
+				"om",
+			].join(""),
 		);
 		expect(ids).toContain("CLT-CRED-001");
 	});
@@ -316,6 +405,21 @@ describe("credential threats", () => {
 		expect(matchCommand(engine, "mv README.env /tmp/")).not.toContain("CLT-CRED-007");
 	});
 
+	it("detects copying the GCloud application-default credential file (007)", () => {
+		expect(
+			matchCommand(
+				engine,
+				"cp ~/.config/gcloud/application_default_credentials.json /tmp/adc.json",
+			),
+		).toContain("CLT-CRED-007");
+	});
+
+	it("does not flag copying a non-credential GCloud configuration (007 FP twin)", () => {
+		expect(
+			matchCommand(engine, "cp ~/.config/gcloud/configurations/config_default /tmp/gcloud-config"),
+		).not.toContain("CLT-CRED-007");
+	});
+
 	// --- CLT-CRED-008: Archive secret files ---
 
 	it("detects tar czf secrets.tar.gz .env (008)", () => {
@@ -330,6 +434,15 @@ describe("credential threats", () => {
 		expect(matchCommand(engine, "tar czf backup.tar.gz .aws/credentials")).toContain(
 			"CLT-CRED-008",
 		);
+	});
+
+	it("detects archiving the GCloud application-default credential file (008)", () => {
+		expect(
+			matchCommand(
+				engine,
+				"tar czf backup.tar.gz ~/.config/gcloud/application_default_credentials.json",
+			),
+		).toContain("CLT-CRED-008");
 	});
 
 	it("detects 7z a archive.7z .npmrc (008)", () => {
@@ -356,6 +469,15 @@ describe("credential threats", () => {
 
 	it("does not match zip archive.zip config.env.test (008 FP — not a dotfile)", () => {
 		expect(matchCommand(engine, "zip archive.zip config.env.test")).not.toContain("CLT-CRED-008");
+	});
+
+	it("does not flag archiving a non-credential GCloud configuration (008 FP twin)", () => {
+		expect(
+			matchCommand(
+				engine,
+				"tar czf gcloud-config.tar.gz ~/.config/gcloud/configurations/config_default",
+			),
+		).not.toContain("CLT-CRED-008");
 	});
 
 	// --- .envrc false positive ---

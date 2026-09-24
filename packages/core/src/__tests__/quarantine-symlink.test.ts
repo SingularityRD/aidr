@@ -9,14 +9,15 @@
  *  2. A failed `unlink` in `delete()` was swallowed and the item was dropped from
  *     tracking anyway, so a hostile file still in the vault was reported as
  *     permanently deleted. A real failure now throws and keeps the item tracked.
- *  3. The date directory was created without a mode, unlike the 0o700 snapshot
- *     root. It is now 0o700 (asserted where the platform reports modes usefully).
+ *  3. Requested directory modes only protect newly created paths. Existing vault
+ *     and date directories are now repaired after ownership validation.
  *
  * ISOLATION: every path is inside a temp directory; nothing touches the real
  * quarantine vault.
  */
 
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -145,18 +146,63 @@ describe("a quarantine refuses a link instead of following it", () => {
 });
 
 describe("a quarantine vault is not world-traversable", () => {
-	it("creates the date directory with owner-only permissions", async () => {
+	it("repairs existing vault and date directories to private permissions", async () => {
+		const now = new Date();
+		const dateDir = join(
+			vaultDir,
+			now.getFullYear().toString(),
+			(now.getMonth() + 1).toString().padStart(2, "0"),
+			now.getDate().toString().padStart(2, "0"),
+		);
+		mkdirSync(dateDir, { recursive: true });
+		if (process.platform !== "win32") {
+			chmodSync(vaultDir, 0o777);
+			chmodSync(dateDir, 0o777);
+		}
+
 		const manager = new AutoQuarantine(configFor(vaultDir));
 		const item = await manager.quarantine(victim, "TEST-QUARANTINE-SYMLINK");
 
-		const dateDir = dirname(item.quarantinePath);
+		expect(dirname(item.quarantinePath)).toBe(dateDir);
 		expect((await stat(dateDir)).isDirectory()).toBe(true);
 
-		// Windows does not implement POSIX directory modes, so the mode is asserted
-		// where the platform actually reports it; the directory itself is asserted
-		// everywhere.
-		if (process.platform !== "win32") {
-			expect((await stat(dateDir)).mode & 0o777).toBe(0o700);
+		if (process.platform === "win32") {
+			for (const path of [vaultDir, dateDir]) {
+				const script = `
+$ErrorActionPreference = 'Stop'
+$path = [Environment]::GetEnvironmentVariable('AIDR_TEST_PRIVATE_DIR')
+$item = [System.IO.DirectoryInfo]::new($path)
+$acl = $item.GetAccessControl()
+$owner = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+if (-not $acl.AreAccessRulesProtected) { throw 'Inherited ACL remains' }
+if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $owner) { throw 'Unexpected owner' }
+$allowed = @($owner, 'S-1-5-18', 'S-1-5-32-544')
+foreach ($entry in $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) {
+  if ($entry.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and
+      $entry.IdentityReference.Value -notin $allowed) { throw 'Unexpected access grant' }
+}
+`;
+				const result = spawnSync(
+					"powershell.exe",
+					[
+						"-NoProfile",
+						"-NonInteractive",
+						"-EncodedCommand",
+						Buffer.from(script, "utf16le").toString("base64"),
+					],
+					{
+						env: { ...process.env, AIDR_TEST_PRIVATE_DIR: path },
+						encoding: "utf8",
+						timeout: 30_000,
+						windowsHide: true,
+					},
+				);
+				expect(result.error).toBeUndefined();
+				expect(result.status, result.stderr).toBe(0);
+			}
+		} else {
+			expect((await stat(vaultDir)).mode & 0o077).toBe(0);
+			expect((await stat(dateDir)).mode & 0o077).toBe(0);
 		}
 	});
 });

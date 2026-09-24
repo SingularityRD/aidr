@@ -86,7 +86,7 @@ export function formatStartupDisabled(version: string, reason: string): string {
  * genuinely stop enforcement (degraded integrity, a commercial build forced to
  * local mode, an unrecognised reason) use formatStartupDisabled instead.
  */
-export function formatStartupLocalOnly(version: string, reason: string): string {
+function formatStartupLocalOnly(version: string, reason: string): string {
 	return `Singularity AIDR v${version} - Local protection ACTIVE (managed features unavailable: ${reason})`;
 }
 
@@ -106,7 +106,7 @@ const LOCAL_ENFORCEMENT_ACTIVE_REASONS = new Set<string>([
 	"activation_required",
 ]);
 
-export function isEnforcementStopped(disabledReason: string | undefined): boolean {
+function isEnforcementStopped(disabledReason: string | undefined): boolean {
 	if (!disabledReason) return true;
 	return !LOCAL_ENFORCEMENT_ACTIVE_REASONS.has(disabledReason);
 }
@@ -117,7 +117,20 @@ export function formatThreatBanner(
 	versionCheck?: VersionCheckResult | null,
 	remotePolicyCache?: RemotePolicyCacheInfo | null,
 ): string {
-	const header = `🛡️ Singularity AIDR v${version} — Threat Detected`;
+	const hasHighOrCriticalFinding = results.some((result) =>
+		result.findings.some(
+			(finding) => finding.severity === "critical" || finding.severity === "high",
+		),
+	);
+	const hasUnavailableChecks = results.some(
+		(result) => (result.unavailableChecks?.length ?? 0) > 0,
+	);
+	const headerLabel = hasHighOrCriticalFinding
+		? "Threat Detected"
+		: hasUnavailableChecks
+			? "Review Required"
+			: "Threat Detected";
+	const header = `🛡️ Singularity AIDR v${version} — ${headerLabel}`;
 	const lines: string[] = [" ", header, separatorLine(SEPARATOR_WIDTH)];
 
 	const MAX_FINDINGS = 5;
@@ -127,8 +140,6 @@ export function formatThreatBanner(
 		const highCrit = result.findings.filter(
 			(f) => f.severity === "critical" || f.severity === "high",
 		);
-		if (highCrit.length === 0) continue;
-
 		for (const f of highCrit.slice(0, MAX_FINDINGS)) {
 			if (!first) lines.push("");
 			first = false;
@@ -152,6 +163,23 @@ export function formatThreatBanner(
 		if (overflow > 0) {
 			lines.push("");
 			lines.push(`   ... and ${overflow} more findings`);
+		}
+
+		for (const check of result.unavailableChecks ?? []) {
+			if (!first) lines.push("");
+			first = false;
+			const label =
+				check.check === "url_reputation"
+					? "URL reputation"
+					: check.check === "file_reputation"
+						? "File reputation"
+						: "Plugin file inspection";
+			lines.push(
+				check.check === "plugin_files"
+					? `⚠️ ${label} was incomplete for ${check.uncheckedCount} path(s).`
+					: `⚠️ ${label} was not verified for ${check.uncheckedCount} item(s).`,
+			);
+			lines.push(kv("Reason", check.reason));
 		}
 	}
 
@@ -190,7 +218,9 @@ function mcpInventorySection(posture: NonNullable<SessionStartResult["posture"]>
 		gapParts.push(`${mcpSourcesNotEnumerated} source(s) could not be read at all`);
 	}
 	const coverageWarning =
-		mcpCoverage && mcpCoverage !== "read" ? ` Inventory coverage is ${mcpCoverage}, not complete.` : "";
+		mcpCoverage && mcpCoverage !== "read"
+			? ` Inventory coverage is ${mcpCoverage}, not complete.`
+			: "";
 	const gapNote = gapParts.length > 0 ? ` ${gapParts.join("; ")}.` : "";
 	return `MCP inventory: ${mcpServers} configured, ${riskyMcpServers} with risk indicators, ${invalidSources} unreadable sources, ${unverifiedMcpServers ?? 0} with unverified tool manifests.${coverageWarning}${gapNote} Configuration discovery does not verify server trust.`;
 }

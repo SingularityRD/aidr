@@ -20,7 +20,7 @@ const HASH_SEED = 0x9e3779b9;
  * Simple 32-bit FNV-1a hash for strings.
  * Fast and deterministic across platforms.
  */
-export function fnv1aHash(str: string, seed: number = HASH_SEED): number {
+function fnv1aHash(str: string, seed: number = HASH_SEED): number {
 	let hash = seed;
 	for (let i = 0; i < str.length; i++) {
 		hash ^= str.charCodeAt(i);
@@ -145,7 +145,7 @@ export function generateEmbedding(text: string, dim: number = EMBEDDING_DIM): Fl
  * Generate embedding for domain names (special handling for URL similarity).
  * Handles subdomain variations and TLD variations.
  */
-export function generateDomainEmbedding(domain: string, dim: number = EMBEDDING_DIM): Float32Array {
+function generateDomainEmbedding(domain: string, dim: number = EMBEDDING_DIM): Float32Array {
 	// Normalize domain: lowercase, remove www, split components
 	const normalized = domain.toLowerCase().trim();
 
@@ -201,7 +201,7 @@ export function generateDomainEmbedding(domain: string, dim: number = EMBEDDING_
  * Batch generate embeddings for multiple texts.
  * More efficient than sequential calls for large batches.
  */
-export function generateEmbeddingsBatch(
+function generateEmbeddingsBatch(
 	texts: string[],
 	dim: number = EMBEDDING_DIM,
 ): Float32Array[] {
@@ -211,14 +211,14 @@ export function generateEmbeddingsBatch(
 /**
  * Get the approximate size of embedding data in bytes.
  */
-export function getEmbeddingSizeBytes(dim: number = EMBEDDING_DIM): number {
+function getEmbeddingSizeBytes(dim: number = EMBEDDING_DIM): number {
 	return dim * 4; // Float32 = 4 bytes
 }
 
 /**
  * Serialize embedding to compact base64 string.
  */
-export function embeddingToBase64(embedding: Float32Array): string {
+function embeddingToBase64(embedding: Float32Array): string {
 	const buffer = Buffer.from(embedding.buffer);
 	return buffer.toString("base64url");
 }
@@ -226,7 +226,7 @@ export function embeddingToBase64(embedding: Float32Array): string {
 /**
  * Deserialize embedding from base64 string.
  */
-export function base64ToEmbedding(base64: string, dim: number = EMBEDDING_DIM): Float32Array {
+function base64ToEmbedding(base64: string, dim: number = EMBEDDING_DIM): Float32Array {
 	const buffer = Buffer.from(base64, "base64url");
 	return new Float32Array(buffer.buffer, buffer.byteOffset, dim);
 }

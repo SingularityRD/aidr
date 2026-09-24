@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pino from "pino";
@@ -58,6 +58,12 @@ async function readLogEntries(path: string): Promise<LogEntry[]> {
 	throw lastError ?? new Error(`Timed out waiting for log file ${path}`);
 }
 
+function firstLogEntry(entries: LogEntry[]): LogEntry {
+	const entry = entries[0];
+	if (!entry) throw new Error("Expected at least one log entry");
+	return entry;
+}
+
 async function createFileLogger(options?: Parameters<typeof createLogger>[0]): Promise<{
 	logger: ReturnType<typeof createLogger>;
 	logFile: string;
@@ -89,7 +95,7 @@ describe("createLogger", () => {
 
 		entries = await readLogEntries(logFile);
 		expect(entries.map((entry) => entry.msg)).toEqual(["visible info"]);
-		expect(entries[0].level).toBe("INFO");
+		expect(firstLogEntry(entries).level).toBe("INFO");
 	});
 
 	it("lets an explicit level option override AIDR_LOG_LEVEL", async () => {
@@ -100,8 +106,8 @@ describe("createLogger", () => {
 
 		const entries = await readLogEntries(logFile);
 		expect(entries).toHaveLength(1);
-		expect(entries[0].level).toBe("DEBUG");
-		expect(entries[0].msg).toBe("visible debug");
+		expect(firstLogEntry(entries).level).toBe("DEBUG");
+		expect(firstLogEntry(entries).msg).toBe("visible debug");
 	});
 
 	it("writes JSON logs to the configured file and creates missing parent directories", async () => {
@@ -110,13 +116,63 @@ describe("createLogger", () => {
 
 		logger.info({ operation: "scan" }, "file log");
 
-		const [entry] = await readLogEntries(logFile);
+		const entry = firstLogEntry(await readLogEntries(logFile));
 		expect(entry.name).toBe("file-logger");
 		expect(entry.env).toBe("test");
 		expect(entry.pid).toBe(process.pid);
 		expect(entry.operation).toBe("scan");
 		expect(entry.msg).toBe("file log");
 		expect(entry.time).toEqual(expect.any(String));
+	});
+
+	it("resolves the default file under HOME without creating a literal tilde directory", async () => {
+		const root = await mkdtemp(join(tmpdir(), "aidr-logger-home-"));
+		const home = join(root, "home");
+		await mkdir(home);
+		const previousCwd = process.cwd();
+		const previousHome = process.env.HOME;
+		try {
+			process.chdir(root);
+			process.env.HOME = home;
+			process.env.AIDR_LOG_TO_FILE = "true";
+			const logger = createLogger({ name: "default-path" });
+			logger.info("home log");
+			const logFile = join(home, ".singularity-aidr", "logs", "aidr.log");
+			expect(firstLogEntry(await readLogEntries(logFile)).msg).toBe("home log");
+			await expect(stat(join(root, "~"))).rejects.toMatchObject({ code: "ENOENT" });
+			if (process.platform !== "win32") {
+				expect((await stat(join(home, ".singularity-aidr", "logs"))).mode & 0o777).toBe(0o700);
+				expect((await stat(logFile)).mode & 0o777).toBe(0o600);
+			}
+		} finally {
+			process.chdir(previousCwd);
+			if (previousHome === undefined) delete process.env.HOME;
+			else process.env.HOME = previousHome;
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	it("hardens an existing log directory and file to owner-only permissions", async () => {
+		const root = await mkdtemp(join(tmpdir(), "aidr-logger-permissions-"));
+		const logDirectory = join(root, "logs");
+		const logFile = join(logDirectory, "aidr.log");
+		await mkdir(logDirectory, { mode: 0o777 });
+		await writeFile(logFile, "", { mode: 0o666 });
+		if (process.platform !== "win32") {
+			await chmod(logDirectory, 0o777);
+			await chmod(logFile, 0o666);
+		}
+		process.env.AIDR_LOG_TO_FILE = "true";
+		process.env.AIDR_LOG_FILE_PATH = logFile;
+
+		const logger = createLogger({ name: "private-file-logger" });
+		logger.info("private log");
+
+		expect(firstLogEntry(await readLogEntries(logFile)).msg).toBe("private log");
+		if (process.platform !== "win32") {
+			expect((await stat(logDirectory)).mode & 0o777).toBe(0o700);
+			expect((await stat(logFile)).mode & 0o777).toBe(0o600);
+		}
 	});
 
 	it("redacts sensitive root, nested, header, and config fields", async () => {
@@ -132,7 +188,7 @@ describe("createLogger", () => {
 			"redacted log",
 		);
 
-		const [entry] = await readLogEntries(logFile);
+		const entry = firstLogEntry(await readLogEntries(logFile));
 		expect(entry.api_key).toBe("[Redacted]");
 		expect(entry.payload).toEqual({ accessToken: "[Redacted]", keep: "visible" });
 		expect(entry.headers).toEqual({ authorization: "[Redacted]", "x-api-key": "[Redacted]" });
@@ -151,7 +207,7 @@ describe("createLogger", () => {
 			"request failed: Authorization: Bearer super-secret",
 		);
 
-		const [entry] = await readLogEntries(logFile);
+		const entry = firstLogEntry(await readLogEntries(logFile));
 		const serialized = JSON.stringify(entry);
 		expect(serialized).not.toContain("super-secret");
 		expect(serialized).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz123456");
@@ -164,7 +220,7 @@ describe("createLogger", () => {
 
 		child.info({ verdict: "allow" }, "child log");
 
-		const [entry] = await readLogEntries(logFile);
+		const entry = firstLogEntry(await readLogEntries(logFile));
 		expect(entry.name).toBe("parent");
 		expect(entry.component).toBe("scanner");
 		expect(entry.requestId).toBe("req-1");

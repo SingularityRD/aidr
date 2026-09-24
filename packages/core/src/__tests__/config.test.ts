@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadConfig, resolvePath } from "../config.js";
+import { isInvalidConfig, loadConfig, resolvePath } from "../config.js";
 import { makeTmpDir } from "./test-utils.js";
 
 describe("resolvePath", () => {
@@ -35,20 +35,51 @@ describe("resolvePath", () => {
 describe("loadConfig", () => {
 	it("returns defaults for missing file", async () => {
 		const config = await loadConfig("/nonexistent/config.json");
+		expect(isInvalidConfig(config)).toBe(false);
 		// Local enforcement is the default so a fresh install protects on the first
 		// tool call. Managed mode is an explicit opt-in that adds the control plane,
 		// signed entitlements and premium intel packs. See AIDR-015.
 		expect(config.mode).toBe("local");
 		expect(config.sensitivity).toBe("balanced");
 		expect(config.heuristics_enabled).toBe(true);
-		expect(config.url_check.enabled).toBe(true);
+		expect(config.url_check.enabled).toBe(false);
+		expect(config.url_check.include_query_parameters).toBe(false);
 		expect(config.url_check.timeout_seconds).toBe(5.0);
+		expect(config.url_check.allow_insecure_loopback).toBe(false);
+		expect(config.file_check.allow_insecure_loopback).toBe(false);
+		expect(config.file_check.enabled).toBe(false);
+		expect(config.package_check.enabled).toBe(false);
 		expect(config.cache.enabled).toBe(true);
 		expect(config.cache.ttl_malicious_seconds).toBe(3600);
 		expect(config.cache.ttl_clean_seconds).toBe(86400);
 		expect(config.control_plane.grace_period_hours).toBe(72);
 		expect(config.control_plane.redact_mode).toBe("hash");
 		expect(config.control_plane.remote_policy_required).toBe(false);
+		expect(config.version_check.enabled).toBe(false);
+	});
+
+	it("preserves explicit version-check opt-in", async () => {
+		const dir = await makeTmpDir();
+		const configPath = join(dir, "config.json");
+		await writeFile(configPath, JSON.stringify({ version_check: { enabled: true } }));
+		expect((await loadConfig(configPath)).version_check.enabled).toBe(true);
+	});
+
+	it("preserves explicit reputation data-sharing opt-ins", async () => {
+		const dir = await makeTmpDir();
+		const configPath = join(dir, "config.json");
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				url_check: { enabled: true, include_query_parameters: true },
+				file_check: { enabled: true },
+				package_check: { enabled: true },
+			}),
+		);
+		const config = await loadConfig(configPath);
+		expect(config.url_check).toMatchObject({ enabled: true, include_query_parameters: true });
+		expect(config.file_check.enabled).toBe(true);
+		expect(config.package_check.enabled).toBe(true);
 	});
 
 	it("loads valid config", async () => {
@@ -67,8 +98,23 @@ describe("loadConfig", () => {
 		expect(config.heuristics_enabled).toBe(false);
 		expect(config.url_check.timeout_seconds).toBe(10);
 		// Defaults preserved for unset fields
-		expect(config.url_check.enabled).toBe(true);
+		expect(config.url_check.enabled).toBe(false);
 		expect(config.cache.enabled).toBe(true);
+	});
+
+	it("preserves explicit loopback HTTP development opt-ins", async () => {
+		const dir = await makeTmpDir();
+		const configPath = join(dir, "config.json");
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				url_check: { allow_insecure_loopback: true },
+				file_check: { allow_insecure_loopback: true },
+			}),
+		);
+		const config = await loadConfig(configPath);
+		expect(config.url_check.allow_insecure_loopback).toBe(true);
+		expect(config.file_check.allow_insecure_loopback).toBe(true);
 	});
 
 	it("requires central policy for malformed JSON", async () => {
@@ -78,6 +124,7 @@ describe("loadConfig", () => {
 		const config = await loadConfig(configPath);
 		expect(config.sensitivity).toBe("balanced");
 		expect(config.control_plane.remote_policy_required).toBe(true);
+		expect(isInvalidConfig(config)).toBe(true);
 	});
 
 	it("returns fail-closed config for non-object JSON", async () => {

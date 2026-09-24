@@ -44,7 +44,12 @@ async function writeTestConfig(dir: string): Promise<string> {
 		`${JSON.stringify({
 			auth: { api_key: "aidr_test_key" },
 			// Dead endpoint: deterministic, fast failure for control-plane calls.
-			control_plane: { enabled: true, endpoint: "http://127.0.0.1:1", timeout_seconds: 0.01 },
+			control_plane: {
+				enabled: true,
+				endpoint: "http://127.0.0.1:1",
+				allow_insecure_loopback: true,
+				timeout_seconds: 0.01,
+			},
 			licensing: { require_signed_entitlements: false },
 			heuristics_enabled: true,
 			url_check: { enabled: false },
@@ -79,13 +84,50 @@ describe("evaluation time is bounded regardless of input size", () => {
 		);
 		const elapsed = elapsedMsSince(started);
 
-		// The malicious prefix must still be caught — the padding must not turn
-		// this into a clean result.
-		expect(verdict.decision).not.toBe("allow");
+		// Oversized input is denied before matching; the rule cannot claim a
+		// complete verdict from only the retained prefix.
 		expect(verdict.decision).toBe("deny");
-		expect(verdict.matchedThreatId).toBe("CLT-CMD-001");
+		expect(verdict.category).toBe("input_truncated");
 		expect(elapsed).toBeLessThan(2000);
 		expect(elapsed).toBeLessThan(HOOK_TIMEOUT_MS);
+	});
+
+	it("denies a Bash command whose malicious tail falls beyond the inspection cap", async () => {
+		const dir = await makeTmpDir();
+		const configPath = join(dir, "config.json");
+		vi.spyOn(console, "warn").mockImplementation(() => {});
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				mode: "local",
+				control_plane: { enabled: false },
+				url_check: { enabled: false },
+				package_check: { enabled: false },
+				logging: { enabled: false },
+				allowlist: { path: join(dir, "allowlist.json") },
+			}),
+		);
+
+		const command = `${" ".repeat(MAX_ARTIFACT_SIZE)}\n${MALICIOUS}`;
+		const artifacts = extractFromToolCall("Bash", { command });
+		const commandArtifact = artifacts.find((artifact) => artifact.type === "command");
+		expect(commandArtifact?.value).toHaveLength(MAX_ARTIFACT_SIZE);
+		expect(commandArtifact?.value.trim()).toBe("");
+
+		const verdict = await evaluateToolCall(
+			{
+				sessionId: "truncated-bash-tail",
+				toolName: "Bash",
+				toolInput: { command },
+				artifacts,
+			},
+			{ threatsDir: THREATS_DIR, allowlistsDir: ALLOWLISTS_DIR, configPath },
+		);
+
+		expect(verdict.decision).not.toBe("allow");
+		expect(verdict.decision).toBe("deny");
+		expect(verdict.category).toBe("input_truncated");
+		expect(verdict.reasons.join(" ")).toMatch(/trailing input was not inspected/i);
 	});
 
 	it("keeps every adversarial padding shape under budget at 1MB input", async () => {

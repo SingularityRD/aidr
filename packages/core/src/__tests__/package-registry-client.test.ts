@@ -1,11 +1,46 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RegistryClient } from "../clients/package-registry.js";
+import {
+	MAX_REGISTRY_RESPONSE_BYTES,
+	RegistryClient,
+} from "../clients/package-registry.js";
 
 describe("RegistryClient", () => {
 	const originalFetch = globalThis.fetch;
 
 	afterEach(() => {
 		globalThis.fetch = originalFetch;
+	});
+
+	it("rejects registry metadata that declares a body above the response limit", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response("{}", {
+				status: 200,
+				headers: { "content-length": String(MAX_REGISTRY_RESPONSE_BYTES + 1) },
+			}),
+		);
+
+		await expect(new RegistryClient().getPackageMetadata("express", "npm")).rejects.toThrow(
+			/response exceeds the size limit/,
+		);
+	});
+
+	it("bounds streamed registry metadata even when the declared length is small", async () => {
+		const oversized = new Uint8Array(MAX_REGISTRY_RESPONSE_BYTES + 1);
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response(
+				new ReadableStream({
+					start(controller) {
+						controller.enqueue(oversized);
+						controller.close();
+					},
+				}),
+				{ status: 200, headers: { "content-length": "1" } },
+			),
+		);
+
+		await expect(new RegistryClient().getPackageMetadata("express", "npm")).rejects.toThrow(
+			/response exceeds the size limit/,
+		);
 	});
 
 	describe("npm", () => {
@@ -184,13 +219,13 @@ describe("RegistryClient", () => {
 					releases: {
 						"2.31.0": [
 							{
-								digests: { sha256: "pypi-sha256-hash" },
+								digests: { sha256: "a".repeat(64) },
 								upload_time_iso_8601: "2023-05-22T00:00:00.000Z",
 							},
 						],
 						"1.0.0": [
 							{
-								digests: { sha256: "old-hash" },
+								digests: { sha256: "b".repeat(64) },
 								upload_time_iso_8601: "2012-01-01T00:00:00.000Z",
 							},
 						],
@@ -203,11 +238,31 @@ describe("RegistryClient", () => {
 			expect(result).not.toBeNull();
 			expect(result?.name).toBe("requests");
 			expect(result?.resolvedVersion).toBe("2.31.0");
-			expect(result?.latestHash).toBe("pypi-sha256-hash");
+			expect(result?.latestHash).toBe("a".repeat(64));
 			expect(result?.hashAlgorithm).toBe("sha256");
 			// First release should be the earliest
 			expect(result?.firstReleaseDate?.getUTCFullYear()).toBe(2012);
 		});
+
+		it.each(["a".repeat(63), "a".repeat(65), "g".repeat(64)])(
+			"rejects malformed SHA-256 digest %s",
+			async (sha256) => {
+				globalThis.fetch = vi.fn().mockResolvedValue({
+					ok: true,
+					status: 200,
+					json: async () => ({
+						info: { version: "2.31.0" },
+						releases: {
+							"2.31.0": [{ digests: { sha256 } }],
+						},
+					}),
+				});
+
+				await expect(new RegistryClient().getPackageMetadata("requests", "pypi")).rejects.toThrow(
+					/Malformed PyPI registry response/,
+				);
+			},
+		);
 
 		it("returns null on 404", async () => {
 			globalThis.fetch = vi.fn().mockResolvedValue({

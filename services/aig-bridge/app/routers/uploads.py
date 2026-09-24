@@ -44,7 +44,7 @@ async def upload_source(
         upload_id=digest,
         sha256=digest,
         bytes=size,
-        source_path=str(path),
+        source_path=(Path(context.tenant_id) / digest).as_posix(),
         archive_kind=str(archive["kind"]),
         archive_entries=int(archive["entries"]),
     )

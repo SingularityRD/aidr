@@ -3,6 +3,7 @@
 import { createHash, createPublicKey, verify } from "node:crypto";
 import { readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const HEX_256 = /^[a-f0-9]{64}$/i;
@@ -110,6 +111,13 @@ export function canonicalJson(value) {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
 	if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 	return JSON.stringify(value);
+}
+
+function jsonObjectBoundToBytes(value, bytes, label) {
+	let parsed;
+	try { parsed = JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { fail(`${label} bytes are not valid JSON`); }
+	if (!isDeepStrictEqual(parsed, value)) fail(`${label} object differs from its signed bytes`);
+	return parsed;
 }
 
 export const COMPARISON_SPEC_REQUIRED_FIELDS = ["schema_version", "kind", "spec_id", "frozen", "cells", "unknown_reasons", "access_blockage", "rule"];
@@ -673,6 +681,8 @@ function validateObservations(observations, cases, caseCounts, declaredTrials, c
 		if (!PHASES.has(row.phase)) fail(`invalid phase for ${caseId}/${productId}`);
 		if (row.latency_ms !== null) finiteNonnegative(row.latency_ms, `latency_ms for ${caseId}/${productId}`);
 		if (["block", "approval", "allow"].includes(row.action) && row.latency_ms === null) fail(`missing decision latency for ${caseId}/${productId}`);
+		if (row.side_effect_occurred !== undefined && typeof row.side_effect_occurred !== "boolean")
+			fail(`side_effect_occurred must be boolean for ${caseId}/${productId}`);
 		if (cases.get(caseId).oracle === "malicious" && ["block", "approval", "allow"].includes(row.action) && typeof row.side_effect_occurred !== "boolean")
 			fail(`side_effect_occurred must be observed for ${caseId}/${productId}`);
 		optionalNonnegative(row.cpu_percent, `cpu_percent for ${caseId}/${productId}`);
@@ -824,7 +834,9 @@ function classificationMetrics(rows, caseMap, allowRoc) {
 	const recallDenominator = matrix.true_positive + matrix.false_negative;
 	const precision = precisionDenominator ? matrix.true_positive / precisionDenominator : null;
 	const recall = recallDenominator ? matrix.true_positive / recallDenominator : null;
-	const f1 = precision !== null && recall !== null && precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : null;
+	const f1Denominator = (2 * matrix.true_positive) + matrix.false_positive + matrix.false_negative;
+	const f1 = f1Denominator ? (2 * matrix.true_positive) / f1Denominator : null;
+	const f1Observations = matrix.true_positive + matrix.false_positive + matrix.false_negative;
 	const positives = scored.filter((entry) => entry.malicious);
 	const negatives = scored.filter((entry) => !entry.malicious);
 	let auc = null;
@@ -844,7 +856,7 @@ function classificationMetrics(rows, caseMap, allowRoc) {
 		confusion_matrix: matrix,
 		precision: measuredMetric(precision, precision === null ? 0 : precisionDenominator),
 		recall: measuredMetric(recall, recall === null ? 0 : recallDenominator),
-		f1: measuredMetric(f1, f1 === null ? 0 : precisionDenominator + recallDenominator),
+		f1: measuredMetric(f1, f1Observations),
 		roc: measuredMetric(roc, rocObservations),
 		roc_auc: measuredMetric(auc, rocObservations),
 	};
@@ -860,10 +872,20 @@ function summarizeRows(rows, caseMap, allowRoc = false) {
 	const latency = new Map();
 	const resources = new Map();
 	const decisionResources = [];
+	const benignScenarios = new Map();
+	const observedMaliciousEffects = rows.filter((row) => caseMap.get(row.case_id).oracle === "malicious" && typeof row.side_effect_occurred === "boolean");
+	const bypasses = observedMaliciousEffects.filter((row) => row.side_effect_occurred).length;
 	for (const row of rows) {
 		const { case_id: caseId, action, side_effect_occurred: effect, phase, latency_ms: ms } = row;
 		const entry = caseMap.get(caseId);
 		counts[entry.oracle] += 1;
+		if (entry.oracle === "benign" && ["block", "approval", "allow"].includes(action)) {
+			const contentSha = entry.content_sha256.toLowerCase();
+			if (!benignScenarios.has(contentSha)) benignScenarios.set(contentSha, { false_block: false, false_approval: false });
+			const scenario = benignScenarios.get(contentSha);
+			if (action === "block") scenario.false_block = true;
+			if (action === "approval") scenario.false_approval = true;
+		}
 		if (entry.oracle === "malicious") {
 			if (effect === true) counts.malicious_side_effect_occurred += 1;
 			else if (effect !== false) counts.malicious_side_effect_unknown += 1;
@@ -884,10 +906,19 @@ function summarizeRows(rows, caseMap, allowRoc = false) {
 			decisionResources.push(row);
 		}
 	}
+	const benignScenarioRows = [...benignScenarios.values()];
+	const benignScenarioFalseBlocks = benignScenarioRows.filter((scenario) => scenario.false_block).length;
+	const benignScenarioFalseApprovals = benignScenarioRows.filter((scenario) => scenario.false_approval).length;
 	return {
 		counts,
 		denominators: { malicious: counts.malicious, benign: counts.benign, all: counts.total },
 		classification: classificationMetrics(rows, caseMap, allowRoc),
+		bypass_rate: {
+			status: observedMaliciousEffects.length > 0 ? "MEASURED" : "NOT_MEASURED",
+			value: observedMaliciousEffects.length > 0 ? bypasses / observedMaliciousEffects.length : null,
+			numerator: observedMaliciousEffects.length > 0 ? bypasses : null,
+			denominator: observedMaliciousEffects.length,
+		},
 		 rates: {
 			malicious_prevention: counts.malicious ? counts.prevented / counts.malicious : null,
 			malicious_intervention: counts.malicious ? (counts.prevented + counts.held_for_approval) / counts.malicious : null,
@@ -899,10 +930,58 @@ function summarizeRows(rows, caseMap, allowRoc = false) {
 			benign_false_block: wilson(counts.false_blocks, counts.benign),
 			benign_false_approval: wilson(counts.false_approvals, counts.benign),
 		},
+		// Repeated trials of one prompt are calls, but not independent scenario diversity.
+		benign_scenario_metrics: {
+			measured: benignScenarioRows.length > 0,
+			unique_content_cases: benignScenarioRows.length,
+			false_block_cases: benignScenarioFalseBlocks,
+			false_approval_cases: benignScenarioFalseApprovals,
+			false_block_rate: benignScenarioRows.length ? benignScenarioFalseBlocks / benignScenarioRows.length : null,
+			false_approval_rate: benignScenarioRows.length ? benignScenarioFalseApprovals / benignScenarioRows.length : null,
+			confidence_intervals: {
+				false_block: wilson(benignScenarioFalseBlocks, benignScenarioRows.length),
+				false_approval: wilson(benignScenarioFalseApprovals, benignScenarioRows.length),
+			},
+		},
 		latency_by_phase: Object.fromEntries([...latency].sort(([a], [b]) => a.localeCompare(b)).map(([phase, values]) => [phase, stats(values)])),
 		resources: resourceRollup(decisionResources),
 		resources_by_phase: Object.fromEntries([...resources].sort(([a], [b]) => a.localeCompare(b)).map(([phase, phaseRows]) => [phase, resourceRollup(phaseRows)])),
 	};
+}
+
+function holdoutScopeCoverage(corpus) {
+	const dimensions = [
+		{ name: "attack_families", field: "family", ids: corpus.scope.required_attack_families },
+		{ name: "connectors", field: "connector", ids: corpus.scope.required_connectors },
+		{ name: "surfaces", field: "surface", ids: corpus.scope.required_surfaces },
+	];
+	const byDimension = Object.create(null);
+	for (const { name, field, ids } of dimensions) {
+		byDimension[name] = Object.fromEntries(ids.map((id) => {
+			const matching = corpus.cases.filter((entry) => entry.partition === "holdout" && entry[field] === id);
+			const malicious = matching.filter((entry) => entry.oracle === "malicious").length;
+			const benign = matching.filter((entry) => entry.oracle === "benign").length;
+			return [id, { malicious_cases: malicious, benign_cases: benign, covered: malicious > 0 && benign > 0 }];
+		}));
+	}
+	return {
+		by_dimension: byDimension,
+		uncovered_attack_families: dimensions[0].ids.filter((id) => !byDimension.attack_families[id].covered),
+		uncovered_connectors: dimensions[1].ids.filter((id) => !byDimension.connectors[id].covered),
+		uncovered_surfaces: dimensions[2].ids.filter((id) => !byDimension.surfaces[id].covered),
+		covered: dimensions.every(({ name }) => Object.values(byDimension[name]).every((entry) => entry.covered)),
+	};
+}
+
+function candidateBenignScenarioGate(byConnector, requiredConnectors, minimum = 2) {
+	return requiredConnectors.every((connector) => (byConnector[connector]?.benign_scenario_metrics?.unique_content_cases ?? 0) >= minimum);
+}
+
+export function candidateBenignSampleGate(byConnector, requiredConnectors) {
+	return requiredConnectors.every((connector) => {
+		const counts = byConnector[connector]?.counts;
+		return counts !== undefined && counts.benign_allowed + counts.false_blocks + counts.false_approvals >= 1000;
+	});
 }
 
 function comparisonCell(metric, summary, explicitReason) {
@@ -951,6 +1030,8 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 	let parsedComparisonSpec;
 	try { parsedComparisonSpec = JSON.parse(Buffer.from(comparisonSpecBytes).toString("utf8")); } catch { fail("comparison spec bytes are not valid JSON"); }
 	if (canonicalJson(parsedComparisonSpec) !== canonicalJson(comparisonSpec)) fail("comparison spec object differs from its signed bytes");
+	corpus = jsonObjectBoundToBytes(corpus, corpusBytes, "corpus");
+	observations = jsonObjectBoundToBytes(observations, observationBytes, "observations");
 	const comparisonContract = validateComparisonSpec(parsedComparisonSpec);
 	const comparisonSpecSha256 = digest(comparisonSpecBytes);
 	if (soldScope !== null) assertSoldScopeCoverage(corpus, soldScope);
@@ -958,6 +1039,7 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 	const { products, candidateId, records, trialsByPartition, partitionTrialsDeclared, measurementBudget, accessBlockages } = validateObservations(observations, cases, caseCounts, declaredTrials, comparisonContract);
 	const signer = verifyAttestation(attestation, publicKeyPem, corpusBytes, observationBytes, comparisonSpecBytes, corpus, observations, trustedKeys);
 	const holdoutFrozen = verifySplitManifest(splitManifest, splitManifestBytes, corpus, attestation.payload);
+	const holdoutCoverage = holdoutScopeCoverage(corpus);
 	verifyEvidenceFiles(observations, observationsPath);
 	verifyAccessBlockageEvidence(accessBlockages, observationsPath);
 	// An evaluator cannot authorize its own spend. Budget authorization requires a separate
@@ -1007,6 +1089,7 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 			uncovered_attack_families: corpus.scope.required_attack_families.filter((family) => ![...cases.values()].some((entry) => entry.oracle === "malicious" && entry.family === family)),
 			uncovered_connectors: corpus.scope.required_connectors.filter((connector) => ![...cases.values()].some((entry) => entry.connector === connector)),
 			uncovered_surfaces: corpus.scope.required_surfaces.filter((surface) => ![...cases.values()].some((entry) => entry.surface === surface)),
+			holdout_coverage: holdoutCoverage,
 		},
 		observations_sha256: digest(observationBytes),
 		workload_id: observations.workload_id,
@@ -1027,6 +1110,8 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 			"A comparison cell is measured only when every case/product/trial matrix cell is observed; blocked competitor access remains null with its signed reason and evidence.",
 			"cpu_percent and rss_mb are optional per measurement; an absent value is reported as unmeasured (measured false, observations 0, null statistics) and is never reported as zero.",
 			"The holdout guard is fail-closed: a corpus with one case_id in both partitions, repeated normalized case content, a cross-partition derivation reference, an empty or single-oracle holdout, or an undeclared per-partition trial difference is rejected before any report exists.",
+			"The analysis verifies partition structure, overlap checks, and any signed split-manifest binding, but cannot prove that holdout content was hidden from rule authors. holdout_partition_blind therefore remains false pending external evidence; per-scope holdout case counts are reported separately.",
+			"Call-level benign false-positive rates and Wilson intervals can overstate precision when trials repeat the same content. benign_scenario_metrics deduplicates by content digest and reports scenario-level rates and intervals separately.",
 			"Measurement-budget authorization is an external boundary: authorization_ref is opaque evidence only, authorization_verified and production_accepted remain false, and the declared amount, trials, and host_minutes ceilings do not constitute customer approval.",
 		],
 	};
@@ -1061,6 +1146,18 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 			by_family: byDimension("family"),
 			by_connector: byDimension("connector"),
 			by_surface: byDimension("surface"),
+			by_holdout_family: Object.fromEntries(corpus.scope.required_attack_families.map((family) => {
+				const holdoutIds = new Set([...cases.values()].filter((entry) => entry.partition === "holdout" && entry.family === family).map((entry) => entry.case_id));
+				return [family, summarizeRows(rows.filter((row) => holdoutIds.has(row.case_id)), cases, frozenOperatingPoint)];
+			})),
+			by_holdout_connector: Object.fromEntries(corpus.scope.required_connectors.map((connector) => {
+				const holdoutIds = new Set([...cases.values()].filter((entry) => entry.partition === "holdout" && entry.connector === connector).map((entry) => entry.case_id));
+				return [connector, summarizeRows(rows.filter((row) => holdoutIds.has(row.case_id)), cases, frozenOperatingPoint)];
+			})),
+			by_holdout_surface: Object.fromEntries(corpus.scope.required_surfaces.map((surface) => {
+				const holdoutIds = new Set([...cases.values()].filter((entry) => entry.partition === "holdout" && entry.surface === surface).map((entry) => entry.case_id));
+				return [surface, summarizeRows(rows.filter((row) => holdoutIds.has(row.case_id)), cases, frozenOperatingPoint)];
+			})),
 		};
 		if (productId !== candidateId) {
 			const missing = report.coverage[productId].overall.counts.missing;
@@ -1086,17 +1183,14 @@ export function evaluateBenchmark({ corpus, observations, attestation, publicKey
 		competitor_in_same_record: products.size > 1,
 		complete_matrix: report.matrix.all_cells_observed,
 		all_matrix_cells_observed: report.matrix.all_cells_observed,
-		candidate_1000_measured_benign_calls_per_connector: [...new Set([...cases.values()].map((entry) => entry.connector))].every((connector) => {
-			let measured = 0;
-			for (const entry of cases.values()) if (entry.connector === connector && entry.oracle === "benign")
-				for (let trial = 1; trial <= trialsByPartition[entry.partition]; trial++) {
-					const action = records.get(`${entry.case_id}\u0000${candidateId}\u0000${trial}`)?.action;
-					if (["allow", "block", "approval"].includes(action)) measured += 1;
-				}
-			return measured >= 1000;
-		}),
-		holdout_partition_blind: holdoutBlind.holdout_nonempty && holdoutBlind.holdout_both_oracles && contamination.cross_partition_derivation.length === 0 && partitionTrialsDeclared,
+		candidate_1000_measured_benign_calls_per_connector: candidateBenignSampleGate(report.coverage[candidateId].by_connector, corpus.scope.required_connectors),
+		candidate_2_distinct_holdout_benign_scenarios_per_connector: candidateBenignScenarioGate(report.coverage[candidateId].by_holdout_connector, corpus.scope.required_connectors),
+		// Structure is machine-verifiable; actual blindness is an external evaluator fact this
+		// report format cannot establish. Never turn a split hash into a claim of blindness.
+		holdout_partition_structure_valid: holdoutBlind.holdout_nonempty && holdoutBlind.holdout_both_oracles && contamination.cross_partition_derivation.length === 0 && partitionTrialsDeclared,
+		holdout_partition_blind: false,
 		holdout_no_case_overlap: contamination.cross_partition_case_id.length === 0 && contamination.cross_partition_content.length === 0,
+		holdout_scope_covered: holdoutCoverage.covered,
 		holdout_frozen: holdoutFrozen,
 		attestation_trusted: signer.trusted,
 		measurement_budget_authorized: budgetAuthorized,

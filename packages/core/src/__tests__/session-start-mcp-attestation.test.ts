@@ -10,6 +10,7 @@ import {
 	type SignedMcpToolManifestV1,
 	signMcpToolManifest,
 } from "../mcp-attestation.js";
+import { discoverMcpServers } from "../mcp-discovery.js";
 import { runSessionStart } from "../session-start.js";
 import { ConfigSchema } from "../types.js";
 
@@ -83,8 +84,18 @@ describe("session start MCP tool-manifest coverage", () => {
 		const signed = signedToolManifest(keys.privateKey);
 		const draftSigned = signedToolManifest(keys.privateKey, "draft");
 		const store = new MemoryMcpAttestationStore();
+		const filesystem = (await discoverMcpServers([inventoryPath])).servers.find(
+			(server) => server.name === "filesystem",
+		);
+		if (!filesystem) throw new Error("missing filesystem inventory");
 		const decision = await attestMcpToolManifest({
 			candidate: signed,
+			connection: [
+				"discovery-v1",
+				"tenant-a",
+				filesystem.inventory_id,
+				filesystem.configuration_sha256,
+			],
 			verifier: {
 				trustedSigners: { "publisher-key-1": publicKeyPem },
 				expectedServerId: "filesystem",
@@ -95,6 +106,7 @@ describe("session start MCP tool-manifest coverage", () => {
 		await approveQuarantinedMcpToolset({
 			serverId: "filesystem",
 			toolsetHash: decision.toolsetHash,
+			bindingSha256: (await store.read("filesystem"))?.quarantine?.bindingSha256 ?? "",
 			approvedBy: "security-operator",
 			reason: "initial server enrollment CR-91",
 			store,
@@ -125,6 +137,7 @@ describe("session start MCP tool-manifest coverage", () => {
 			configPath,
 			aidrDirPath: aidrDir,
 			mcpAttestation: {
+				tenantId: "tenant-a",
 				keyring: { "publisher-key-1": publicKeyPem },
 				manifests: { filesystem: signed, draft: draftSigned },
 				store,

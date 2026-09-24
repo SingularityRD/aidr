@@ -58,4 +58,4 @@ export const BehavioralCorpusSchema = z
 	})
 	.strict();
 
-export type BehavioralCorpus = z.infer<typeof BehavioralCorpusSchema>;
+type BehavioralCorpus = z.infer<typeof BehavioralCorpusSchema>;

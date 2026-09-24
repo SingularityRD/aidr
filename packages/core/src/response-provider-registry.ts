@@ -153,7 +153,9 @@ export class ResponseProviderRegistry {
 		if (outcome.status === "applied" && outcome.rollbackToken !== null && typeof outcome.rollbackToken !== "string") {
 			return failed("provider_result_invalid", "provider returned an invalid rollback token");
 		}
-		const verification = await this.verify(request);
+		// A registry update during an external action must not let a replacement
+		// provider attest to an action it did not perform.
+		const verification = await this.verifyWith(provider, request);
 		if (verification.observed === false)
 			return failed(verification.code, "provider could not independently verify the action");
 		return outcome.status === "noop"
@@ -171,9 +173,20 @@ export class ResponseProviderRegistry {
 	): Promise<{ observed: true; evidence: string } | { observed: false; code: string }> {
 		const provider = this.resolve(request.action, request.providerId);
 		if (!provider) return { observed: false, code: "unsupported_action" };
+		return this.verifyWith(provider, request);
+	}
+
+	private async verifyWith(
+		provider: ResponseProvider,
+		request: ResponseProviderRequest,
+	): Promise<{ observed: true; evidence: string } | { observed: false; code: string }> {
+		if (this.providers.get(provider.providerId) !== provider)
+			return { observed: false, code: "provider_changed_during_action" };
 		if (!provider.verify) return { observed: false, code: "provider_observation_unavailable" };
 		try {
 			const result = await provider.verify({ ...request, providerId: provider.providerId });
+			if (this.providers.get(provider.providerId) !== provider)
+				return { observed: false, code: "provider_changed_during_action" };
 			if (!result || result.observed !== true || !validObservation(result.evidence)) {
 				return { observed: false, code: "provider_verification_failed" };
 			}

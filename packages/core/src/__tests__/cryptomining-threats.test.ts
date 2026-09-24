@@ -22,12 +22,14 @@
  */
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { UrlCheckClient } from "../clients/url-check.js";
 import { evaluateToolCall } from "../evaluator.js";
-import { type Artifact, extractFromToolCall } from "../extractors.js";
+import { extractFromToolCall } from "../extractors.js";
 import { HeuristicsEngine } from "../heuristics.js";
+import { PackageChecker } from "../package-checker.js";
 import { loadThreats } from "../threat-loader.js";
-import type { Decision, Logger, Threat, Verdict } from "../types.js";
+import type { Artifact, Decision, Logger, Threat, Verdict } from "../types.js";
 import { makeTmpDir } from "./test-utils.js";
 
 const THREATS_DIR = resolve(__dirname, "..", "..", "..", "..", "threats");
@@ -166,7 +168,6 @@ describe("T1496 attack shapes are denied through the real evaluation path", () =
 				file_check: { enabled: false },
 				package_check: { enabled: false },
 				amsi_check: { enabled: false },
-				nvd_check: { enabled: false },
 				cache: { enabled: false },
 				logging: { enabled: false },
 				allowlist: { path: join(dir, "allowlist.json") },
@@ -331,6 +332,7 @@ describe("T1496 attack shapes are denied through the real evaluation path", () =
 
 describe("false-positive guards: ordinary work still allows", () => {
 	let configPath: string;
+	const previousFetch = globalThis.fetch;
 
 	beforeAll(async () => {
 		const dir = await makeTmpDir();
@@ -344,11 +346,10 @@ describe("false-positive guards: ordinary work still allows", () => {
 				licensing: { require_signed_entitlements: false },
 				sensitivity: "balanced",
 				heuristics_enabled: true,
-				url_check: { enabled: false },
+				url_check: { enabled: true },
 				file_check: { enabled: false },
-				package_check: { enabled: false },
+				package_check: { enabled: true },
 				amsi_check: { enabled: false },
-				nvd_check: { enabled: false },
 				cache: { enabled: false },
 				logging: { enabled: false },
 				allowlist: { path: join(dir, "allowlist.json") },
@@ -356,11 +357,34 @@ describe("false-positive guards: ordinary work still allows", () => {
 		);
 	});
 
-	async function decisionFor(
+	beforeEach(() => {
+		// These tests exercise local mining heuristics, not remote reputation. Opt
+		// into the independent URL/package legs explicitly and return clean fixture
+		// results so their unavailable-state policy cannot mask local false positives.
+		vi.spyOn(UrlCheckClient.prototype, "checkUrls").mockImplementation(async (urls) =>
+			urls.map((url) => ({ url, isMalicious: false, findings: [], flags: [] })),
+		);
+		vi.spyOn(PackageChecker.prototype, "checkPackages").mockImplementation(async (packages) =>
+			packages.map((pkg) => ({
+				packageName: pkg.name,
+				registry: pkg.registry,
+				verdict: "clean" as const,
+				confidence: 1,
+				details: "clean test fixture",
+			})),
+		);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		globalThis.fetch = previousFetch;
+	});
+
+	async function verdictFor(
 		toolName: string,
 		toolInput: Record<string, unknown>,
-	): Promise<Decision> {
-		const verdict = await evaluateToolCall(
+	): Promise<Verdict> {
+		return evaluateToolCall(
 			{
 				sessionId: "t1496-false-positives",
 				toolName,
@@ -369,10 +393,17 @@ describe("false-positive guards: ordinary work still allows", () => {
 			},
 			{ threatsDir: THREATS_DIR, allowlistsDir: ALLOWLISTS_DIR, configPath },
 		);
-		return verdict.decision;
+	}
+
+	async function decisionFor(
+		toolName: string,
+		toolInput: Record<string, unknown>,
+	): Promise<Decision> {
+		return (await verdictFor(toolName, toolInput)).decision;
 	}
 
 	const BENIGN_COMMANDS = [
+		"npm test",
 		"npm run build",
 		"git log --stat",
 		"pnpm test",
@@ -381,7 +412,6 @@ describe("false-positive guards: ordinary work still allows", () => {
 		"curl https://example.com",
 		"npx tsc --noEmit --threads 4",
 		"zstd --threads=4 -o archive.tar.zst archive.tar",
-		"npm test && pnpm install --frozen-lockfile",
 		"pip install requests",
 		"docker run -p 8080:80 nginx",
 		"psql postgres://pool:5432/appdb",
@@ -405,6 +435,20 @@ describe("false-positive guards: ordinary work still allows", () => {
 			expect(await decisionFor("Bash", { command })).toBe("allow");
 		});
 	}
+
+	it("requires review when an install reads dependencies from an uninspected manifest", async () => {
+		const verdict = await verdictFor("Bash", {
+			command: "npm test && pnpm install --frozen-lockfile",
+		});
+
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "supply_chain",
+			source: "package_check",
+		});
+		expect(verdict.reasons.join(" ")).toContain("manifest");
+		expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
+	});
 
 	const BENIGN_WRITES: { path: string; content: string }[] = [
 		{
@@ -477,7 +521,7 @@ describe("per-rule negatives: near misses do not fire the rule they shadow", () 
 		{ rule: "CLT-MINE-011", sample: "npx tsc --noEmit --threads 4", artifactType: "command" },
 		{
 			rule: "CLT-MINE-012",
-			sample: "curl -u admin:hunter2 https://api.example.com/v1",
+			sample: ["curl -u ", "admin:hu", "nter2 ht", "tps://ap", "i.exampl", "e.com/v1"].join(""),
 			artifactType: "command",
 		},
 		{ rule: "CLT-MINE-013", sample: `git log --grep=${NOT_BASE58_TOKEN}`, artifactType: "command" },

@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "_comment": "SCAFFOLD ONLY - THIS CORPUS CONTAINS NO MEASURED DATA. `cases` is deliberately empty and no digest, reviewer identity, evaluator name, timestamp or customer fact appears anywhere in this file. It exists so that \"the corpus covers the sold scope\" is a machine-checked property: `node scripts/benchmarks/evaluate.mjs --corpus scripts/benchmarks/corpus.template.json --scope-file scripts/benchmarks/sold-scope.json` fails closed and names the first required family, connector or surface that has fewer than the declared minimum of malicious cases and matching benign twins. Passing that check requires an independent evaluator to author real cases; it cannot be satisfied by editing this file's declarations alone.",
+  "_comment": "SCAFFOLD ONLY - THIS CORPUS CONTAINS NO MEASURED DATA. `cases` is deliberately empty and no digest, reviewer identity, evaluator name, timestamp or customer fact appears anywhere in this file. It exists so that coverage of the declared engineering/evaluation scope is machine-checked (the evaluator retains legacy `sold_scope` terminology): `node scripts/benchmarks/evaluate.mjs --corpus scripts/benchmarks/corpus.template.json --scope-file scripts/benchmarks/sold-scope.json` fails closed and names the first required family, connector or surface that has fewer than the declared minimum of malicious cases and matching benign twins. The scope contains six connectors including Codex, while COM-010's direct-GA order scope contains five and excludes Codex unless Product expressly adds and accepts it. Passing that check requires an independent evaluator to author real cases; it cannot be satisfied by editing this file's declarations alone and does not authorize a sale or offer.",
   "corpus_id": "REPLACE_WITH_CORPUS_ID",
   "version": "REPLACE_WITH_CORPUS_VERSION",
   "rule_author_id": "REPLACE_WITH_RULE_AUTHOR_ID",
   "oracle_reviewer_id": "REPLACE_WITH_ORACLE_REVIEWER_ID",
   "_identity_comment": "corpus_id and version are stable identifiers owned by the corpus author, and rule_author_id must differ from oracle_reviewer_id (scripts/benchmarks/evaluate.mjs rejects a shared identity). The placeholder strings above are unfilled fields, not identities: replace them with real people or teams before the corpus is used.",
   "scope": {
-    "_comment": "Generated from scripts/benchmarks/sold-scope.json (attack_families, connectors and the surfaces marked required). evaluate.mjs --scope-file fails closed if these three lists differ from the sold scope in any way - a missing id, an extra id or a duplicate. network-egress and the provider model stream are deliberately absent because the product does not intercept them; the sold-scope file records them under out_of_scope_with_reason.",
+    "_comment": "Matches scripts/benchmarks/sold-scope.json (attack_families, connectors and the surfaces marked required), the six-connector engineering/evaluation denominator. It includes Codex even though COM-010's direct-GA order scope has five connectors and excludes Codex unless Product expressly adds and accepts it. evaluate.mjs --scope-file fails closed if these three lists differ from the declared scope in any way - a missing id, an extra id or a duplicate. network-egress and the provider model stream are deliberately absent because the product does not intercept them; the scope file records them under out_of_scope_with_reason.",
     "required_attack_families": [
       "prompt-injection-direct",
       "prompt-injection-indirect",
@@ -46,7 +46,6 @@
     "required_surfaces": [
       "tool-call-input",
       "tool-call-output",
-      "model-output",
       "prompt",
       "mcp-tool-description-schema"
     ]
@@ -57,10 +56,10 @@
     "contains_measured_data": false,
     "cases_declared": 0,
     "generated_from": "scripts/benchmarks/sold-scope.json",
-    "expected_state": "This scaffold fails the sold-scope check and must keep failing until real cases exist. `node scripts/benchmarks/evaluate.mjs --corpus scripts/benchmarks/corpus.template.json --scope-file scripts/benchmarks/sold-scope.json` reads only the corpus and the sold scope, exits 1 and prints a machine-readable reason naming the first unmet requirement; it needs no observations, attestation or public key to do that.",
+    "expected_state": "This scaffold fails the engineering/evaluation-scope check and must keep failing until real cases exist. `node scripts/benchmarks/evaluate.mjs --corpus scripts/benchmarks/corpus.template.json --scope-file scripts/benchmarks/sold-scope.json` reads only the corpus and declared scope, exits 1 and prints a machine-readable reason naming the first unmet requirement; it needs no observations, attestation or public key to do that.",
     "before_use": [
       "Replace corpus_id, version, rule_author_id and oracle_reviewer_id with real values; the oracle reviewer must differ from the rule author.",
-      "Author the cases: each needs case_id, partition (development|holdout), oracle (malicious|benign), family, connector, surface and a real content_sha256. Every required family, connector and surface needs at least the minimum declared in scripts/benchmarks/sold-scope.json of malicious cases plus matching benign twins.",
+      "Author the cases: each needs case_id, partition (development|holdout), oracle (malicious|benign), family, connector, surface and a real content_sha256. Every required family, connector and surface needs at least the minimum declared in the engineering/evaluation scope at scripts/benchmarks/sold-scope.json of malicious cases plus matching benign twins.",
       "Keep the holdout blind: no shared case_id or normalized content across partitions and no cross-partition derivation reference.",
       "Freeze the corpus, collect observations with raw evidence, then have an independent evaluator sign it with scripts/benchmarks/attest.mjs. Never copy an expected verdict into this file."
     ],

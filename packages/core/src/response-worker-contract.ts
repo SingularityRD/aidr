@@ -91,6 +91,8 @@ export interface ResponseStep {
 	vaultPath: string | null;
 	/** Milliseconds after which this step must not be applied. */
 	ttlMs: number;
+	/** Absolute expiry fixed at planning time; it does not restart at execution. */
+	expiresAtMs: number;
 	/** Stable key; a repeat within the TTL returns the original outcome. */
 	idempotencyKey: string;
 	/** Whether the adapter is expected to be able to reverse this step. */
@@ -121,6 +123,8 @@ export interface PlanResponseRequest {
 	binding: ResponseTargetBinding;
 	vaultPath?: string | null;
 	ttlMs?: number;
+	/** Injected clock for deterministic planning; production uses the system clock. */
+	now?: () => number;
 	idempotencyKey: string;
 	/**
 	 * Live digest of the target, as observed by the caller. `null` means the
@@ -165,6 +169,14 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 	if (!Number.isSafeInteger(ttlMs) || ttlMs < 1000 || ttlMs > MAX_TTL_MS) {
 		return { ok: false, code: "invalid_ttl", detail: "ttl must be between 1s and 24h" };
 	}
+	const expiresAtMs = (request.now ?? Date.now)() + ttlMs;
+	if (!Number.isSafeInteger(expiresAtMs)) {
+		return {
+			ok: false,
+			code: "invalid_ttl",
+			detail: "expiry must be a safe epoch-millisecond value",
+		};
+	}
 	const binding = request.binding;
 	if (!binding || typeof binding.target !== "string" || binding.target.trim() === "") {
 		return { ok: false, code: "missing_target", detail: "target is required" };
@@ -172,10 +184,17 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 	if (typeof binding.incidentId !== "string" || binding.incidentId.trim() === "") {
 		return { ok: false, code: "missing_incident", detail: "incidentId is required" };
 	}
-	const providerAction = request.capability === "revoke_credential" || request.capability === "contain";
-	if (binding.providerId !== undefined &&
-		(!providerAction || !PROVIDER_ID.test(binding.providerId))) {
-		return { ok: false, code: "invalid_provider_id", detail: "providerId is invalid for this capability" };
+	const providerAction =
+		request.capability === "revoke_credential" || request.capability === "contain";
+	if (
+		binding.providerId !== undefined &&
+		(!providerAction || !PROVIDER_ID.test(binding.providerId))
+	) {
+		return {
+			ok: false,
+			code: "invalid_provider_id",
+			detail: "providerId is invalid for this capability",
+		};
 	}
 	if (typeof binding.authorizedBy !== "string" || binding.authorizedBy.trim().length < 3) {
 		return { ok: false, code: "missing_authorization", detail: "authorizedBy is required" };
@@ -260,6 +279,7 @@ export function planResponseStep(request: PlanResponseRequest): ResponsePlanDeci
 			binding,
 			vaultPath: fileAction ? (request.vaultPath as string) : null,
 			ttlMs,
+			expiresAtMs,
 			idempotencyKey: request.idempotencyKey,
 			reversible:
 				request.capability !== "isolate_host" &&
@@ -279,6 +299,8 @@ export interface ResponseReceipt {
 	code: string;
 	target: string;
 	providerId?: string;
+	/** Operator identity from the pre-execution authorization binding. */
+	authorizedBy: string | null;
 	observed: string | null;
 	rollbackToken: string | null;
 	rollbackPossible: boolean;
@@ -328,6 +350,80 @@ export interface ExecuteResponseResult {
 	replayed: boolean;
 }
 
+const inFlightResponseExecutions = new WeakMap<
+	ResponseJournal,
+	Map<string, Promise<ExecuteResponseResult>>
+>();
+
+function invalidResponseStepCode(step: ResponseStep): string | null {
+	if (!step || typeof step !== "object" || !step.binding || typeof step.binding !== "object") {
+		return "invalid_response_step";
+	}
+	if (!CAPABILITY_SET.has(step.capability)) return "unknown_capability";
+	if (!IDEMPOTENCY_KEY.test(step.idempotencyKey)) return "invalid_idempotency_key";
+	if (!Number.isSafeInteger(step.ttlMs) || step.ttlMs < 1000 || step.ttlMs > MAX_TTL_MS) {
+		return "invalid_ttl";
+	}
+	if (!Number.isSafeInteger(step.expiresAtMs) || step.expiresAtMs <= 0) return "invalid_expiry";
+	if (typeof step.binding.target !== "string" || step.binding.target.trim() === "")
+		return "missing_target";
+	if (typeof step.binding.incidentId !== "string" || step.binding.incidentId.trim() === "") {
+		return "missing_incident";
+	}
+	if (
+		typeof step.binding.authorizedBy !== "string" ||
+		step.binding.authorizedBy.trim().length < 3
+	) {
+		return "missing_authorization";
+	}
+	if (step.binding.expectedSha256 !== null && !SHA256.test(step.binding.expectedSha256)) {
+		return "invalid_expected_digest";
+	}
+	if (typeof step.reversible !== "boolean") return "invalid_response_step";
+	if (
+		(step.capability === "quarantine_file" || step.capability === "restore_file") &&
+		(typeof step.vaultPath !== "string" || step.vaultPath.trim() === "")
+	) {
+		return "missing_vault_path";
+	}
+	if (step.binding.providerId !== undefined && !PROVIDER_ID.test(step.binding.providerId)) {
+		return "invalid_provider_id";
+	}
+	return null;
+}
+
+function refusedResponseStep(
+	step: ResponseStep,
+	options: ExecuteResponseOptions,
+	code: string,
+): ExecuteResponseResult {
+	const now = options.now ?? Date.now;
+	const idempotencyKey =
+		typeof step?.idempotencyKey === "string" ? step.idempotencyKey : "invalid_response_step";
+	const capability = CAPABILITY_SET.has(step?.capability) ? step.capability : "contain";
+	return {
+		replayed: false,
+		receipt: {
+			commandId: idempotencyKey,
+			incidentId: step?.binding?.incidentId ?? "unbound",
+			adapterId: options.adapter.adapterId,
+			platform: options.adapter.platform,
+			capability,
+			status: "refused",
+			code,
+			target: step?.binding?.target ?? "unbound",
+			providerId: step?.binding?.providerId,
+			authorizedBy: normalizeAuthorizedBy(step?.binding?.authorizedBy) ?? null,
+			observed: null,
+			rollbackToken: null,
+			rollbackPossible: false,
+			appliedAtUtc: new Date(now()).toISOString(),
+			fullyReversible: false,
+			idempotencyKey,
+		},
+	};
+}
+
 /**
  * Execute one planned response step.
  *
@@ -337,6 +433,31 @@ export interface ExecuteResponseResult {
  * re-authorize, because the world may have moved on.
  */
 export async function executeResponseStep(
+	step: ResponseStep,
+	options: ExecuteResponseOptions,
+): Promise<ExecuteResponseResult> {
+	const invalidCode = invalidResponseStepCode(step);
+	if (invalidCode) return refusedResponseStep(step, options, invalidCode);
+	let inFlight = inFlightResponseExecutions.get(options.journal);
+	if (!inFlight) {
+		inFlight = new Map();
+		inFlightResponseExecutions.set(options.journal, inFlight);
+	}
+	const pending = inFlight.get(step.idempotencyKey);
+	if (pending) {
+		const result = await pending;
+		return { receipt: result.receipt, replayed: true };
+	}
+	const execution = executeResponseStepOnce(step, options);
+	inFlight.set(step.idempotencyKey, execution);
+	try {
+		return await execution;
+	} finally {
+		if (inFlight.get(step.idempotencyKey) === execution) inFlight.delete(step.idempotencyKey);
+	}
+}
+
+async function executeResponseStepOnce(
 	step: ResponseStep,
 	options: ExecuteResponseOptions,
 ): Promise<ExecuteResponseResult> {
@@ -357,6 +478,7 @@ export async function executeResponseStep(
 				code: "stale_command",
 				target: step.binding.target,
 				providerId: step.binding.providerId,
+				authorizedBy: normalizeAuthorizedBy(step.binding.authorizedBy) ?? null,
 				observed: null,
 				rollbackToken: null,
 				rollbackPossible: false,
@@ -365,6 +487,48 @@ export async function executeResponseStep(
 				idempotencyKey: step.idempotencyKey,
 			},
 		};
+	}
+	if (step.expiresAtMs <= startedAt) {
+		return {
+			receipt: refusedResponseStep(step, options, "stale_command").receipt,
+			replayed: false,
+		};
+	}
+
+	// Do not trust that every caller passed a value returned by planResponseStep.
+	// A queued command can outlive an adapter configuration change, and callers
+	// can also construct ResponseStep values directly. Re-check the adapter's
+	// current allowlist immediately before any provider or host side effect.
+	if (!options.adapter.capabilities().includes(step.capability)) {
+		const receipt: ResponseReceipt = {
+			commandId: step.idempotencyKey,
+			incidentId: step.binding.incidentId,
+			adapterId: options.adapter.adapterId,
+			platform: options.adapter.platform,
+			capability: step.capability,
+			status: "refused",
+			code: "unsupported_action",
+			target: step.binding.target,
+			providerId: step.binding.providerId,
+			authorizedBy: normalizeAuthorizedBy(step.binding.authorizedBy) ?? null,
+			observed: null,
+			rollbackToken: null,
+			rollbackPossible: false,
+			appliedAtUtc: new Date(startedAt).toISOString(),
+			fullyReversible: false,
+			idempotencyKey: step.idempotencyKey,
+		};
+		await options.journal.put({
+			idempotencyKey: step.idempotencyKey,
+			expiresAtMs: step.expiresAtMs,
+			outcome: {
+				status: "refused",
+				code: "unsupported_action",
+				detail: `${options.adapter.adapterId} does not declare ${step.capability}`,
+			},
+			receipt,
+		});
+		return { receipt, replayed: false };
 	}
 
 	if (step.capability === "revoke_credential" || step.capability === "contain") {
@@ -380,6 +544,7 @@ export async function executeResponseStep(
 				code: "unsupported_action",
 				target: step.binding.target,
 				providerId: step.binding.providerId,
+				authorizedBy: normalizeAuthorizedBy(step.binding.authorizedBy) ?? null,
 				observed: null,
 				rollbackToken: null,
 				rollbackPossible: false,
@@ -389,8 +554,12 @@ export async function executeResponseStep(
 			};
 			await options.journal.put({
 				idempotencyKey: step.idempotencyKey,
-				expiresAtMs: startedAt + step.ttlMs,
-				outcome: { status: "refused", code: "unsupported_action", detail: "no registered provider" },
+				expiresAtMs: step.expiresAtMs,
+				outcome: {
+					status: "refused",
+					code: "unsupported_action",
+					detail: "no registered provider",
+				},
 				receipt,
 			});
 			return { receipt, replayed: false };
@@ -413,7 +582,12 @@ export async function executeResponseStep(
 			if (providerOutcome.status === "unsupported") {
 				outcome = { status: "refused", code: "unsupported_action", detail: providerOutcome.detail };
 			} else if (providerOutcome.status === "failed") {
-				outcome = { status: "failed", code: providerOutcome.code, detail: providerOutcome.detail, rollbackToken: null };
+				outcome = {
+					status: "failed",
+					code: providerOutcome.code,
+					detail: providerOutcome.detail,
+					rollbackToken: null,
+				};
 			} else if (providerOutcome.status === "noop") {
 				outcome = { status: "noop", observed: providerOutcome.observed, rollbackToken: null };
 			} else {
@@ -467,9 +641,11 @@ export async function executeResponseStep(
 					: outcome.code,
 		target: step.binding.target,
 		providerId: step.binding.providerId,
+		authorizedBy: normalizeAuthorizedBy(step.binding.authorizedBy) ?? null,
 		observed: outcome.status === "applied" || outcome.status === "noop" ? outcome.observed : null,
 		rollbackToken: outcome.status === "refused" ? null : outcome.rollbackToken,
-		rollbackPossible: status === "applied" && outcome.status !== "refused" && outcome.rollbackToken !== null,
+		rollbackPossible:
+			status === "applied" && outcome.status !== "refused" && outcome.rollbackToken !== null,
 		appliedAtUtc: new Date(startedAt).toISOString(),
 		fullyReversible: status === "applied",
 		idempotencyKey: step.idempotencyKey,
@@ -477,7 +653,7 @@ export async function executeResponseStep(
 
 	await options.journal.put({
 		idempotencyKey: step.idempotencyKey,
-		expiresAtMs: startedAt + step.ttlMs,
+		expiresAtMs: step.expiresAtMs,
 		outcome,
 		receipt,
 	});
@@ -526,6 +702,7 @@ export function planResponseRollback(request: ResponseRollbackRequest): Response
 			detail: `${request.adapter.adapterId} does not declare ${capability}`,
 		};
 	}
+	const ttlMs = 5 * 60 * 1000;
 	return {
 		ok: true,
 		step: {
@@ -537,7 +714,8 @@ export function planResponseRollback(request: ResponseRollbackRequest): Response
 				authorizedBy: `rollback:${receipt.commandId}`,
 			},
 			vaultPath: receipt.rollbackToken,
-			ttlMs: 5 * 60 * 1000,
+			ttlMs,
+			expiresAtMs: Date.now() + ttlMs,
 			idempotencyKey: request.idempotencyKey,
 			reversible: false,
 		},

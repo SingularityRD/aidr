@@ -13,6 +13,7 @@ import {
 import { getVersion } from "./version.js";
 
 let initialized = false;
+let active = false;
 let sentryModule: typeof import("@sentry/node") | null = null;
 
 async function loadSentry(): Promise<typeof import("@sentry/node")> {
@@ -47,8 +48,7 @@ function getSentryConfig(): SentryConfig {
 		tracesSampleRate: boundedSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1),
 		debug: process.env.SENTRY_DEBUG === "true" || process.env.SENTRY_DEBUG === "1",
 		enabled:
-			process.env.SENTRY_ENABLED !== "false" &&
-			process.env.SENTRY_ENABLED !== "0" &&
+			(process.env.SENTRY_ENABLED === "true" || process.env.SENTRY_ENABLED === "1") &&
 			!!process.env.SENTRY_DSN,
 	};
 }
@@ -111,6 +111,7 @@ export async function initSentry(config?: Partial<SentryConfig>): Promise<void> 
 			},
 		});
 
+		active = true;
 		initialized = true;
 	} catch {
 		// Fail silently - Sentry is optional
@@ -195,6 +196,7 @@ export async function captureException(
 	context?: Record<string, unknown>,
 ): Promise<string> {
 	if (!initialized) await initSentry();
+	if (!active) return "";
 
 	const Sentry = await loadSentry().catch(() => null);
 	if (!Sentry?.getClient()) {
@@ -213,6 +215,7 @@ export async function captureMessage(
 	context?: Record<string, unknown>,
 ): Promise<string> {
 	if (!initialized) await initSentry();
+	if (!active) return "";
 
 	const Sentry = await loadSentry().catch(() => null);
 	if (!Sentry?.getClient()) {
@@ -230,6 +233,7 @@ export async function captureMessage(
  */
 export async function startSpan<T>(name: string, operation: (span: Span) => T): Promise<T> {
 	if (!initialized) await initSentry();
+	if (!active) return operation({} as Span);
 
 	const Sentry = await loadSentry().catch(() => null);
 	if (!Sentry) {
@@ -268,6 +272,7 @@ export function withSentry<T extends (...args: unknown[]) => unknown>(
  * Set user context
  */
 export async function setUser(user: { id?: string; username?: string }): Promise<void> {
+	if (!active) return;
 	const Sentry = await loadSentry().catch(() => null);
 	if (!Sentry) return;
 	// Usernames are commonly emails/PII.  The anonymous installation ID is
@@ -279,6 +284,7 @@ export async function setUser(user: { id?: string; username?: string }): Promise
  * Set tags for the current scope
  */
 export async function setTags(tags: Record<string, string>): Promise<void> {
+	if (!active) return;
 	const Sentry = await loadSentry().catch(() => null);
 	if (!Sentry) return;
 	const safeTags: Record<string, string> = {};
@@ -292,6 +298,7 @@ export async function setTags(tags: Record<string, string>): Promise<void> {
  * Flush events to Sentry (useful before process exit)
  */
 export async function flush(timeout?: number): Promise<boolean> {
+	if (!active) return false;
 	const Sentry = await loadSentry().catch(() => null);
 	if (!Sentry) return false;
 	return Sentry.flush(timeout);
@@ -301,9 +308,11 @@ export async function flush(timeout?: number): Promise<boolean> {
  * Close Sentry client
  */
 export async function close(timeout?: number): Promise<void> {
+	if (!active) return;
 	const Sentry = await loadSentry().catch(() => null);
 	if (!Sentry) return;
 	await Sentry.close(timeout);
+	active = false;
 }
 
 /**

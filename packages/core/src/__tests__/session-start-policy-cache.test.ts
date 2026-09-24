@@ -1,4 +1,5 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +25,66 @@ describe("session start remote policy cache telemetry", () => {
 		if (prevHome === undefined) delete process.env.HOME;
 		else process.env.HOME = prevHome;
 		await rm(root, { recursive: true, force: true });
+	});
+
+	it("does not contact the version endpoint on a fresh local install", async () => {
+		const aidrDir = join(root, ".singularity-aidr");
+		const threatsDir = join(root, "threats");
+		const allowlistsDir = join(root, "allowlists");
+		await Promise.all([
+			mkdir(aidrDir, { recursive: true }),
+			mkdir(threatsDir, { recursive: true }),
+			mkdir(allowlistsDir, { recursive: true }),
+		]);
+		globalThis.fetch = vi.fn().mockRejectedValue(new Error("unexpected network request"));
+
+		const result = await runSessionStart({
+			plugins: [],
+			threatsDir,
+			allowlistsDir,
+			version: "0.6.0",
+			agentRuntime: "claude-code",
+			aidrDirPath: aidrDir,
+			configPath: join(aidrDir, "config.json"),
+		});
+
+		expect(result.versionCheck).toBeNull();
+		expect(globalThis.fetch).not.toHaveBeenCalled();
+	});
+
+	it("checks the version only after explicit opt-in", async () => {
+		const aidrDir = join(root, ".singularity-aidr");
+		const threatsDir = join(root, "threats");
+		const allowlistsDir = join(root, "allowlists");
+		const configPath = join(aidrDir, "config.json");
+		await Promise.all([
+			mkdir(aidrDir, { recursive: true }),
+			mkdir(threatsDir, { recursive: true }),
+			mkdir(allowlistsDir, { recursive: true }),
+		]);
+		await writeFile(configPath, JSON.stringify({ version_check: { enabled: true } }));
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({ version: "0.7.0" }),
+		} as unknown as Response);
+
+		const result = await runSessionStart({
+			plugins: [],
+			threatsDir,
+			allowlistsDir,
+			version: "0.6.0",
+			agentRuntime: "claude-code",
+			aidrDirPath: aidrDir,
+			configPath,
+		});
+
+		expect(result.versionCheck).toMatchObject({
+			currentVersion: "0.6.0",
+			latestVersion: "0.7.0",
+			updateAvailable: true,
+		});
+		expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[0]).toContain("/v1/version-check");
 	});
 
 	it("sends cached policy freshness in the managed heartbeat event", async () => {
@@ -61,6 +122,7 @@ describe("session start remote policy cache telemetry", () => {
 				policy_version: "pol_session",
 				cache_seconds: 60,
 				runtime_policy: { command_default: "ask" },
+				policy_sha256: createHash("sha256").update('{"command_default":"ask"}').digest("hex"),
 			}),
 		} as unknown as Response);
 		await syncRemoteRuntimePolicy(config, "aidr_agent_token", undefined, Date.now());

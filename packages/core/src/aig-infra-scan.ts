@@ -26,8 +26,10 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateAigDataBundle } from "./aig-sync.js";
 
 /**
  * Directory this module was loaded from.
@@ -60,9 +62,9 @@ function moduleDirectory(): string {
  */
 function resolveGeneratedFile(name: string): string {
 	const configured = process.env.AIG_GENERATED_DIR?.trim();
+	if (configured) return join(configured, name);
 	const dir = moduleDirectory();
 	const candidates = [
-		...(configured ? [join(configured, name)] : []),
 		join(dir, "generated", name),
 		join(dir, "..", "generated", name),
 		// Bundled into a connector: <root>/dist/<bundle> -> <root>/dist/generated
@@ -77,9 +79,10 @@ function resolveGeneratedFile(name: string): string {
 	return candidates[candidates.length - 1] ?? name;
 }
 
-function loadJson<T>(name: string): T | null {
+function loadJson<T>(name: string, directory?: string): T | null {
 	try {
-		return JSON.parse(readFileSync(resolveGeneratedFile(name), "utf8")) as T;
+		const path = directory ? join(directory, name) : resolveGeneratedFile(name);
+		return JSON.parse(readFileSync(path, "utf8")) as T;
 	} catch {
 		return null;
 	}
@@ -133,6 +136,8 @@ export interface AigInfraScanOptions {
 	allowPublicTargets?: boolean;
 	/** Injectable fetch, for tests. */
 	fetchImpl?: typeof fetch;
+	/** Cancel an active scan, including its in-flight request. */
+	signal?: AbortSignal;
 }
 
 interface CompiledMatcher {
@@ -182,21 +187,47 @@ interface CompiledCve {
 
 let _fingerprints: CompiledFingerprint[] | null = null;
 let _cves: CompiledCve[] | null = null;
+let _dataDirectory: string | null = null;
+let _bundleValid: Promise<boolean> | null = null;
+
+function prepareDataDirectory(): string {
+	const directory = dirname(resolveGeneratedFile("aig-cve-index.json"));
+	if (_dataDirectory !== directory) {
+		_fingerprints = null;
+		_cves = null;
+		_cveByAlias = null;
+		_bundleValid = null;
+		_dataDirectory = directory;
+	}
+	return directory;
+}
 
 function fingerprints(): CompiledFingerprint[] {
+	const directory = prepareDataDirectory();
 	if (_fingerprints === null) {
-		const data = loadJson<{ fingerprints?: CompiledFingerprint[] }>("aig-fingerprints.json");
-		_fingerprints = data?.fingerprints ?? [];
+		const data = loadJson<{ fingerprints?: CompiledFingerprint[] }>(
+			"aig-fingerprints.json",
+			directory,
+		);
+		_fingerprints = Array.isArray(data?.fingerprints) ? data.fingerprints : [];
 	}
 	return _fingerprints;
 }
 
 function cves(): CompiledCve[] {
+	const directory = prepareDataDirectory();
 	if (_cves === null) {
-		const data = loadJson<{ cves?: CompiledCve[] }>("aig-cve-index.json");
-		_cves = data?.cves ?? [];
+		const data = loadJson<{ cves?: CompiledCve[] }>("aig-cve-index.json", directory);
+		_cves = Array.isArray(data?.cves) ? data.cves : [];
 	}
 	return _cves;
+}
+
+async function dataAvailable(): Promise<boolean> {
+	const directory = prepareDataDirectory();
+	_bundleValid ??= validateAigDataBundle(directory).then((result) => result.valid, () => false);
+	if (!(await _bundleValid)) return false;
+	return fingerprints().length > 0 && cves().length > 0;
 }
 
 /** Reset memoised indexes (tests and signed bundle promotion). */
@@ -204,6 +235,8 @@ export function resetAigScanCache(): void {
 	_fingerprints = null;
 	_cves = null;
 	_cveByAlias = null;
+	_dataDirectory = null;
+	_bundleValid = null;
 }
 
 /** Cap on how much of a response body we will buffer and match. */
@@ -211,28 +244,31 @@ const MAX_BODY_BYTES = 256 * 1024;
 
 // ── Target validation ───────────────────────────────────────────────
 
-const PRIVATE_HOST_PATTERNS = [
-	/^localhost$/i,
-	/^127\./,
-	/^\[?::1\]?$/,
-	/^10\./,
-	/^192\.168\./,
-	/^172\.(1[6-9]|2\d|3[01])\./,
-	/^169\.254\./,
-	/^\[?f[cd][0-9a-f]{2}:/i, // unique-local IPv6
-	/^\[?fe80:/i, // link-local IPv6
-];
-
 export function isScannableHost(hostname: string): boolean {
 	const host = hostname.replace(/^\[|\]$/g, "");
-	if (PRIVATE_HOST_PATTERNS.some((re) => re.test(host))) return true;
-	// A hostname that is not an IP literal is DNS-resolvable, so we cannot prove
-	// it is private from the string alone; treat it as public.
+	if (host.toLowerCase() === "localhost") return true;
+	const version = isIP(host);
+	if (version === 4) {
+		const octets = host.split(".").map(Number);
+		const [first, second] = octets;
+		return first === 10 || first === 127 ||
+			(first === 192 && second === 168) ||
+			(first === 172 && second !== undefined && second >= 16 && second <= 31) ||
+			(first === 169 && second === 254);
+	}
+	if (version === 6) {
+		const normalized = host.toLowerCase();
+		if (normalized === "::1") return true;
+		const firstHextet = Number.parseInt(normalized.split(":", 1)[0] ?? "", 16);
+		return (firstHextet >= 0xfc00 && firstHextet <= 0xfdff) || // unique-local fc00::/7
+			(firstHextet >= 0xfe80 && firstHextet <= 0xfebf); // link-local fe80::/10
+	}
+	// DNS names are not resolved and reclassified here, so only literal IP
+	// addresses from the private ranges above are allowed by default.
 	return false;
 }
 
 export function isTargetAllowed(target: string, allowPublicTargets: boolean): boolean {
-	if (allowPublicTargets) return true;
 	let parsed: URL;
 	try {
 		parsed = new URL(target);
@@ -240,6 +276,7 @@ export function isTargetAllowed(target: string, allowPublicTargets: boolean): bo
 		return false;
 	}
 	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+	if (allowPublicTargets) return true;
 	return isScannableHost(parsed.hostname);
 }
 
@@ -475,9 +512,13 @@ async function fetchBounded(
 	method: string,
 	timeoutMs: number,
 	fetchImpl: typeof fetch,
+	parentSignal?: AbortSignal,
 ): Promise<{ status: number; body: string; headers: Headers } | { error: string }> {
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	const abort = () => controller.abort(parentSignal?.reason);
+	if (parentSignal?.aborted) abort();
+	else parentSignal?.addEventListener("abort", abort, { once: true });
 	try {
 		const response = await fetchImpl(url, {
 			method,
@@ -485,6 +526,10 @@ async function fetchBounded(
 			signal: controller.signal,
 			headers: { accept: "*/*", "user-agent": "SingularityAIDR/infra-scan" },
 		});
+		if (parentSignal?.aborted) {
+			await response.body?.cancel();
+			return { error: "scan_aborted" };
+		}
 		if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); return { error: "redirect_not_followed" }; }
 		const chunks: Uint8Array[] = [];
 		let size = 0;
@@ -503,9 +548,11 @@ async function fetchBounded(
 		const body = Buffer.concat(chunks).toString("utf8");
 		return { status: response.status, body, headers: response.headers };
 	} catch (error) {
+		if (parentSignal?.aborted) return { error: "scan_aborted" };
 		return { error: error instanceof Error ? error.message : String(error) };
 	} finally {
 		clearTimeout(timer);
+		parentSignal?.removeEventListener("abort", abort);
 	}
 }
 
@@ -523,6 +570,7 @@ export async function scanTarget(
 		deadlineMs = 15000,
 		allowPublicTargets = false,
 		fetchImpl = globalThis.fetch,
+		signal,
 	} = options;
 
 	const result: AigInfraTargetResult = {
@@ -546,11 +594,19 @@ export async function scanTarget(
 		result.error = "invalid_target_url";
 		return result;
 	}
+	if (!(await dataAvailable())) {
+		result.error = "dataset_unavailable";
+		return result;
+	}
 
 	const deadline = Date.now() + deadlineMs;
 	let lastError: string | null = null;
 
-	for (const fingerprint of fingerprints()) {
+	fingerprintLoop: for (const fingerprint of fingerprints()) {
+		if (signal?.aborted) {
+			lastError = "scan_aborted";
+			break;
+		}
 		if (Date.now() > deadline) {
 			lastError = lastError ?? "deadline_exceeded";
 			break;
@@ -560,10 +616,17 @@ export async function scanTarget(
 			if (Date.now() >= deadline) { lastError = lastError ?? "deadline_exceeded"; break; }
 			const probeUrl = new URL(probe.path, base).toString();
 			if (new URL(probeUrl).origin !== base.origin) { lastError = "cross_origin_probe_refused"; continue; }
-			const response = await fetchBounded(probeUrl, probe.method, Math.max(1, Math.min(timeoutMs, deadline - Date.now())), fetchImpl);
+			const response = await fetchBounded(
+				probeUrl,
+				probe.method,
+				Math.max(1, Math.min(timeoutMs, deadline - Date.now())),
+				fetchImpl,
+				signal,
+			);
 			result.requestsMade++;
 			if ("error" in response) {
 				lastError = response.error;
+				if (response.error === "scan_aborted") break fingerprintLoop;
 				continue;
 			}
 			result.reachable = true;
@@ -592,9 +655,7 @@ export async function scanTarget(
 	}
 
 	if (lastError) result.error = lastError;
-	if (!result.reachable && !result.error) {
-		result.error = lastError ?? "no_fingerprint_matched";
-	}
+	if (result.matched.length === 0 && !result.error) result.error = "no_fingerprint_matched";
 	return result;
 }
 
@@ -616,6 +677,7 @@ export async function scanTargets(
 	let index = 0;
 	const workers = Array.from({ length: Math.max(1, Math.min(concurrency, targets.length)) }, async () => {
 		while (index < targets.length) {
+			options.signal?.throwIfAborted();
 			const current = index++;
 			const target = targets[current];
 			if (!target) continue;

@@ -232,6 +232,26 @@ describe("core format helpers", () => {
 		).toBe("Singularity AIDR v1.0.0 - Disabled (disabled)");
 	});
 
+	it("labels withheld reputation as review required, not clean", () => {
+		const result = scanResult([]);
+		result.unavailableChecks = [
+			{
+				check: "url_reputation",
+				reason: "disabled to avoid sending plugin URLs to an external reputation provider",
+				uncheckedCount: 2,
+			},
+		];
+		const message = formatSessionStartMessage("1.0.0", {
+			enabled: true,
+			scanResults: [result],
+			versionCheck: null,
+		});
+
+		expect(message).toContain("Review Required");
+		expect(message).toContain("URL reputation was not verified for 2 item(s)");
+		expect(message).not.toContain("No threats found");
+	});
+
 	it("reports an MCP inventory coverage gap instead of a complete inventory", () => {
 		const gapped = formatSessionStartMessage("1.0.0", {
 			enabled: true,

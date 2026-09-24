@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { DecisionEngine } from "../engine.js";
 import type { HeuristicsEngine } from "../heuristics.js";
 import { createMatcher, loadEngine } from "./test-helper.js";
 
@@ -344,6 +345,16 @@ describe("Windows command threats", () => {
 		);
 	});
 
+	it("denies case-insensitive Set-MpPreference spellings (WIN-CMD-037)", async () => {
+		const matches = engine.match([
+			{ type: "command", value: "set-mppreference -disablerealtimemonitoring $true" },
+		]);
+		expect(matches.map((match) => match.threat.id)).toContain("CLT-WIN-CMD-037");
+		await expect(
+			new DecisionEngine().decide({ heuristicMatches: matches, urlCheckResults: [] }),
+		).resolves.toMatchObject({ decision: "deny", matchedThreatId: "CLT-WIN-CMD-037" });
+	});
+
 	it("detects sc stop WinDefend (WIN-CMD-038)", () => {
 		expect(matchCommand(engine, decodeCommand("c2Mgc3RvcCBXaW5EZWZlbmQ="))).toContain("CLT-WIN-CMD-038");
 	});
@@ -360,6 +371,16 @@ describe("Windows command threats", () => {
 		expect(matchCommand(engine, decodeCommand("bmV0c2ggYWR2ZmlyZXdhbGwgc2V0IGFsbHByb2ZpbGVzIHN0YXRlIG9mZg=="))).toContain(
 			"CLT-WIN-CMD-039",
 		);
+	});
+
+	it("denies uppercase netsh firewall disable (WIN-CMD-039)", async () => {
+		const matches = engine.match([
+			{ type: "command", value: "NETSH ADVFIREWALL SET ALLPROFILES STATE OFF" },
+		]);
+		expect(matches.map((match) => match.threat.id)).toContain("CLT-WIN-CMD-039");
+		await expect(
+			new DecisionEngine().decide({ heuristicMatches: matches, urlCheckResults: [] }),
+		).resolves.toMatchObject({ decision: "deny", matchedThreatId: "CLT-WIN-CMD-039" });
 	});
 
 	// --- Data Exfiltration Indicators (040-041) ---

@@ -815,3 +815,28 @@
   expires_at: null
   revoked: false
 
+# --- T1021.004: SSH used to access remote credential material ---
+- id: "CLT-MITRE-106"
+  category: lateral_movement
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bssh\\b.{0,150}\\b[^\\s@]{1,64}@[^\\s'\"]{1,253}.{0,100}\\b(cat|head|tail|less|grep|sed)\\b.{0,100}(/etc/shadow|/root/\\.ssh/|~/?\\.ssh/(id_rsa|id_ed25519|id_ecdsa|id_dsa)|/home/[^\\s/]{1,64}/\\.ssh/)"
+  case_insensitive: true
+  match_on: command
+  title: "MITRE ATT&CK T1021.004 - SSH command reads remote credential material"
+  expires_at: null
+  revoked: false
+
+# --- T1021.004: rsync transfers sensitive material to a remote host ---
+- id: "CLT-MITRE-107"
+  category: lateral_movement
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\brsync\\b.{0,200}(~/?\\.ssh/id_(rsa|ed25519|ecdsa|dsa)|\\.aws/credentials|\\.config/gcloud/application_default_credentials\\.json|/etc/shadow).{0,200}\\b[^\\s@:]{1,64}@[^\\s:]{1,253}:[^\\s]{1,300}"
+  case_insensitive: true
+  match_on: command
+  title: "MITRE ATT&CK T1021.004 - rsync transfers remote credential material"
+  expires_at: null
+  revoked: false

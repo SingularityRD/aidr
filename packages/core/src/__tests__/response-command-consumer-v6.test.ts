@@ -1,16 +1,16 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { hashDeviceKey } from "../device-attestation.js";
 import {
 	type FleetResponseActionAdapter,
-	type FleetResponseCommand,
 	type FleetResponseAuditEvent,
+	type FleetResponseCommand,
 	FleetResponseCommandConsumer,
 } from "../response-command-consumer-v6.js";
 import { FleetResponseJournal } from "../response-command-journal-v6.js";
 import { FleetResponseCommandWorker } from "../response-command-worker-v6.js";
-import { hashDeviceKey } from "../device-attestation.js";
 
 const tenantId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -44,6 +44,7 @@ function worker(
 	statePath: string,
 	fetchImpl: typeof fetch,
 	localAdapter: FleetResponseActionAdapter = adapter(),
+	actionTimeoutMs?: number,
 ) {
 	return new FleetResponseCommandWorker({
 		endpoint: "http://127.0.0.1:8000/functions",
@@ -55,6 +56,7 @@ function worker(
 		statePath,
 		fetchImpl,
 		now: () => now,
+		actionTimeoutMs,
 	});
 }
 
@@ -62,7 +64,12 @@ async function seedJournal(
 	statePath: string,
 	phase: "polled" | "acknowledged" | "execute_intent" | "result_pending",
 ) {
-	const journal = new FleetResponseJournal(statePath, { tenantId, agentId }, "enrollment-secret", installationId);
+	const journal = new FleetResponseJournal(
+		statePath,
+		{ tenantId, agentId },
+		"enrollment-secret",
+		installationId,
+	);
 	const state = await journal.load();
 	await journal.save({
 		...state,
@@ -177,16 +184,25 @@ describe("fleet response command consumer", () => {
 	});
 
 	it("emits an attestation audit event without allowing audit failure to change the result", async () => {
-		const { fetchImpl } = transport([
-			json({ ok: true, command: null }),
-		]);
+		const { fetchImpl } = transport([json({ ok: true, command: null })]);
 		const audit = vi.fn(async (event: FleetResponseAuditEvent) => {
 			expect(event.attestation.installationId).toBe(installationId);
 			expect(event.attestation.keyHash).toBe(hashDeviceKey("enrollment-secret"));
 			throw new Error("audit sink unavailable");
 		});
-		expect(await consumer(fetchImpl, undefined, () => now, audit).pollOnce()).toEqual({ status: "idle" });
+		expect(await consumer(fetchImpl, undefined, () => now, audit).pollOnce()).toEqual({
+			status: "idle",
+		});
 		expect(audit).toHaveBeenCalledOnce();
+	});
+
+	it("does not reuse a credential after a definitive control-plane rejection", async () => {
+		const { fetchImpl, requests } = transport([json({ error: "invalid_api_key" }, 401)]);
+		const client = consumer(fetchImpl);
+		const rejected = { status: "access_rejected", stage: "poll", code: "http_401" } as const;
+		expect(await client.pollOnce()).toEqual(rejected);
+		expect(await client.pollOnce()).toEqual(rejected);
+		expect(requests).toHaveLength(1);
 	});
 
 	it("executes only after confirmed ACK and records success only after independent verification", async () => {
@@ -332,6 +348,26 @@ describe("fleet response command consumer", () => {
 		});
 	});
 
+	it("keeps the outcome unknown if a revoked key prevents recording the verified action", async () => {
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([
+			json({ ok: true, command: command() }),
+			json({ ok: true, command_id: commandId, state: "acknowledged" }),
+			json({ error: "invalid_api_key" }, 401),
+		]);
+		const client = consumer(fetchImpl, localAdapter);
+		expect(await client.pollOnce()).toEqual({
+			status: "outcome_unknown",
+			commandId,
+			stage: "result",
+			reason: "access_rejected_after_execution",
+		});
+		expect(localAdapter.execute).toHaveBeenCalledOnce();
+		expect(localAdapter.verify).toHaveBeenCalledOnce();
+		expect(await client.pollOnce()).toMatchObject({ status: "access_rejected", stage: "poll" });
+		expect(requests).toHaveLength(3);
+	});
+
 	it("rejects oversized poll data before inspecting a command", async () => {
 		const { fetchImpl, requests } = transport([
 			json({ ok: true, command: command(), padding: "x".repeat(9000) }),
@@ -341,6 +377,15 @@ describe("fleet response command consumer", () => {
 			stage: "poll",
 			reason: "poll_unavailable",
 		});
+		expect(requests).toHaveLength(1);
+	});
+
+	it("stops its service loop after a definitive API-key rejection", async () => {
+		const { fetchImpl, requests } = transport([json({ error: "invalid_api_key" }, 401)]);
+		const instance = worker(await journalPath(), fetchImpl);
+		await expect(instance.run(new AbortController().signal)).rejects.toThrow(
+			"fleet_response_worker_access_rejected",
+		);
 		expect(requests).toHaveLength(1);
 	});
 });
@@ -378,6 +423,50 @@ describe("durable fleet response worker", () => {
 		).load();
 		expect(saved.current).toBeNull();
 		expect(saved.recent_ids).toEqual([commandId]);
+	});
+
+	it("does not execute a freshly polled command after its supervisor aborts during acknowledgement", async () => {
+		const statePath = await journalPath();
+		const abort = new AbortController();
+		const localAdapter = adapter();
+		const responses = [
+			json({ ok: true, command: command() }),
+			json({ ok: true, command_id: commandId, state: "acknowledged" }),
+		];
+		const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+			const body = JSON.parse(String(init?.body)) as { action?: string };
+			const response = responses.shift();
+			if (!response) throw new Error("unexpected_request");
+			if (body.action === "ack") abort.abort();
+			return response;
+		}) as typeof fetch;
+
+		expect(await worker(statePath, fetchImpl, localAdapter).tick(abort.signal)).toEqual({
+			status: "outcome_unknown",
+			commandId,
+			stage: "result",
+			reason: "execution_state_unverified",
+		});
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it("does not execute a persisted polled command after its supervisor aborts during acknowledgement", async () => {
+		const statePath = await journalPath();
+		await seedJournal(statePath, "polled");
+		const abort = new AbortController();
+		const localAdapter = adapter();
+		const fetchImpl = vi.fn(async () => {
+			abort.abort();
+			return json({ ok: true, command_id: commandId, state: "acknowledged" });
+		}) as typeof fetch;
+
+		expect(await worker(statePath, fetchImpl, localAdapter).tick(abort.signal)).toEqual({
+			status: "outcome_unknown",
+			commandId,
+			stage: "result",
+			reason: "execution_state_unverified",
+		});
+		expect(localAdapter.execute).not.toHaveBeenCalled();
 	});
 
 	it("persists the device binding without the bearer and rejects another installation", async () => {
@@ -440,6 +529,66 @@ describe("durable fleet response worker", () => {
 		});
 		expect(localAdapter.execute).toHaveBeenCalledOnce();
 		expect(requests.map((request) => request.body.action)).toEqual(["result"]);
+	});
+
+	it("bounds execute and preserves intent when the side effect outcome is unknown", async () => {
+		const statePath = await journalPath();
+		await seedJournal(statePath, "acknowledged");
+		let actionSignal: AbortSignal | undefined;
+		const localAdapter = adapter({
+			execute: vi.fn(async (_command, signal) => {
+				actionSignal = signal;
+				return new Promise<{ ok: true }>((resolve) => {
+					signal?.addEventListener("abort", () => resolve({ ok: true }), { once: true });
+				});
+			}),
+		});
+		const { fetchImpl, requests } = transport([]);
+		expect(await worker(statePath, fetchImpl, localAdapter, 100).tick()).toEqual({
+			status: "outcome_unknown",
+			commandId,
+			stage: "result",
+			reason: "execution_state_unverified",
+		});
+		expect(actionSignal?.aborted).toBe(true);
+		expect(localAdapter.verify).not.toHaveBeenCalled();
+		expect(requests).toHaveLength(0);
+		const saved = await new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		).load();
+		expect(saved.current?.phase).toBe("execute_intent");
+	});
+
+	it("bounds recovery verification without replaying the host action", async () => {
+		const statePath = await journalPath();
+		await seedJournal(statePath, "execute_intent");
+		let actionSignal: AbortSignal | undefined;
+		const localAdapter = adapter({
+			verify: vi.fn(async (_command, signal) => {
+				actionSignal = signal;
+				return new Promise<never>(() => {});
+			}),
+		});
+		const { fetchImpl, requests } = transport([]);
+		expect(await worker(statePath, fetchImpl, localAdapter, 100).tick()).toEqual({
+			status: "outcome_unknown",
+			commandId,
+			stage: "result",
+			reason: "execution_state_unverified",
+		});
+		expect(actionSignal?.aborted).toBe(true);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+		expect(requests).toHaveLength(0);
+		const saved = await new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		).load();
+		expect(saved.current?.phase).toBe("execute_intent");
 	});
 
 	it("does not execute a persisted acknowledgement after adapter support is removed", async () => {
@@ -535,7 +684,12 @@ describe("durable fleet response worker", () => {
 		await seedJournal(statePath, "polled");
 		const localAdapter = adapter();
 		const { fetchImpl, requests } = transport([]);
-		const journal = new FleetResponseJournal(statePath, { tenantId, agentId }, "enrollment-secret", installationId);
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		);
 		await journal.withLock(async () => {
 			expect(await worker(statePath, fetchImpl, localAdapter).tick()).toMatchObject({
 				status: "outcome_unknown",
@@ -557,11 +711,14 @@ describe("durable fleet response worker", () => {
 	it("recovers a dead process lock but rejects a journal signed for another enrollment key", async () => {
 		const statePath = await journalPath();
 		await seedJournal(statePath, "result_pending");
+		await writeFile(`${statePath}.lock.recovery`, "crashed recovery generation");
 		await writeFile(
 			`${statePath}.lock`,
 			JSON.stringify({
 				pid: 2147483647,
+				host: hostname(),
 				token: "44444444-4444-4444-8444-444444444444",
+				process_started_at_ms: 0,
 			}),
 		);
 		const { fetchImpl, requests } = transport([
@@ -569,8 +726,116 @@ describe("durable fleet response worker", () => {
 		]);
 		expect(await worker(statePath, fetchImpl).tick()).toEqual({ status: "succeeded", commandId });
 		expect(requests).toHaveLength(1);
-		const wrongKeyJournal = new FleetResponseJournal(statePath, { tenantId, agentId }, "other-key", installationId);
+		const wrongKeyJournal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"other-key",
+			installationId,
+		);
 		await expect(wrongKeyJournal.load()).rejects.toThrow("fleet_journal_integrity_failed");
+	});
+
+	it("recovers a reused same PID only when its process-start marker is stale", async () => {
+		const statePath = await journalPath();
+		await seedJournal(statePath, "result_pending");
+		const token = "55555555-5555-4555-8555-555555555555";
+		const lockPath = `${statePath}.lock`;
+		await mkdir(lockPath);
+		await writeFile(
+			join(lockPath, `owner.${token}.json`),
+			JSON.stringify({ pid: process.pid, host: hostname(), token, process_started_at_ms: 0 }),
+		);
+		const { fetchImpl } = transport([
+			json({ ok: true, command_id: commandId, state: "succeeded" }),
+		]);
+		expect(await worker(statePath, fetchImpl).tick()).toEqual({ status: "succeeded", commandId });
+	});
+
+	it("fails closed on an ownerless lock directory left by an acquisition crash", async () => {
+		const statePath = await journalPath();
+		const lockPath = `${statePath}.lock`;
+		await mkdir(lockPath);
+		const stale = new Date(Date.now() - 60_000);
+		await utimes(lockPath, stale, stale);
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		);
+		await expect(journal.withLock(async () => undefined)).rejects.toThrow("fleet_journal_locked");
+		expect(await readdir(lockPath)).toEqual([]);
+	});
+
+	it("fails closed on an aged malformed owner marker", async () => {
+		const statePath = await journalPath();
+		const lockPath = `${statePath}.lock`;
+		const token = "77777777-7777-4777-8777-777777777777";
+		await mkdir(lockPath);
+		await writeFile(join(lockPath, `owner.${token}.json`), "{partial");
+		const stale = new Date(Date.now() - 60_000);
+		await utimes(lockPath, stale, stale);
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		);
+		await expect(journal.withLock(async () => undefined)).rejects.toThrow(
+			"fleet_journal_lock_invalid",
+		);
+		expect(await readFile(join(lockPath, `owner.${token}.json`), "utf8")).toBe("{partial");
+	});
+
+	it("does not reclaim a dead PID lock from another host", async () => {
+		const statePath = await journalPath();
+		const lockPath = `${statePath}.lock`;
+		const token = "88888888-8888-4888-8888-888888888888";
+		await mkdir(lockPath);
+		const ownerPath = join(lockPath, `owner.${token}.json`);
+		await writeFile(
+			ownerPath,
+			JSON.stringify({
+				pid: 2_147_483_647,
+				host: `${hostname()}-other`,
+				token,
+				process_started_at_ms: 0,
+			}),
+		);
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		);
+		await expect(journal.withLock(async () => undefined)).rejects.toThrow("fleet_journal_locked");
+		expect(await readFile(ownerPath, "utf8")).toContain(`${hostname()}-other`);
+	});
+
+	it("does not let an old owner release a replacement lock generation", async () => {
+		const statePath = await journalPath();
+		const lockPath = `${statePath}.lock`;
+		const replacementToken = "66666666-6666-4666-8666-666666666666";
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		);
+		await journal.withLock(async () => {
+			await rm(lockPath, { recursive: true });
+			await mkdir(lockPath);
+			await writeFile(
+				join(lockPath, `owner.${replacementToken}.json`),
+				JSON.stringify({
+					pid: process.pid,
+					host: hostname(),
+					token: replacementToken,
+					process_started_at_ms: 0,
+				}),
+			);
+		});
+		expect(await readdir(lockPath)).toEqual([`owner.${replacementToken}.json`]);
 	});
 
 	it("stops the polling loop when its service supervisor aborts", async () => {
@@ -582,6 +847,53 @@ describe("durable fleet response worker", () => {
 		}) as typeof fetch;
 		await worker(statePath, fetchImpl).run(abort.signal);
 		expect(fetchImpl).toHaveBeenCalledOnce();
+	});
+
+	it("bounds a stuck cycle hook and aborts its cleanup signal", async () => {
+		const statePath = await journalPath();
+		let cycleSignal: AbortSignal | undefined;
+		const onCycle = vi.fn(async (_result, signal?: AbortSignal) => {
+			cycleSignal = signal;
+			return new Promise<void>(() => {});
+		});
+		const subject = new FleetResponseCommandWorker({
+			endpoint: "http://127.0.0.1:8000/functions",
+			developmentLoopback: true,
+			apiKey: "enrollment-secret",
+			identity: { tenantId, agentId },
+			installationId,
+			adapter: adapter(),
+			statePath,
+			fetchImpl: transport([json({ ok: true, command: null })]).fetchImpl,
+			actionTimeoutMs: 100,
+			onCycle,
+		});
+		await expect(subject.run(new AbortController().signal)).rejects.toThrow(
+			"fleet_response_worker_cycle_hook_failed",
+		);
+		expect(cycleSignal?.aborted).toBe(true);
+	});
+
+	it("reports a cycle hook failure to the service supervisor", async () => {
+		const statePath = await journalPath();
+		await seedJournal(statePath, "result_pending");
+		const subject = new FleetResponseCommandWorker({
+			endpoint: "http://127.0.0.1:8000/functions",
+			developmentLoopback: true,
+			apiKey: "enrollment-secret",
+			identity: { tenantId, agentId },
+			installationId,
+			adapter: adapter(),
+			statePath,
+			fetchImpl: transport([json({ ok: true, command_id: commandId, state: "succeeded" })])
+				.fetchImpl,
+			onCycle: async () => {
+				throw new Error("telemetry unavailable");
+			},
+		});
+		await expect(subject.run(new AbortController().signal)).rejects.toThrow(
+			"fleet_response_worker_cycle_hook_failed",
+		);
 	});
 
 	it("halts its service loop and reports journal failure to the supervisor", async () => {
@@ -603,10 +915,13 @@ describe("durable fleet response worker", () => {
 		await expect(subject.run(new AbortController().signal)).rejects.toThrow(
 			"fleet_response_worker_journal_unavailable",
 		);
-		expect(onCycle).toHaveBeenCalledWith({
-			status: "outcome_unknown",
-			stage: "poll",
-			reason: "journal_unavailable",
-		});
+		expect(onCycle).toHaveBeenCalledWith(
+			{
+				status: "outcome_unknown",
+				stage: "poll",
+				reason: "journal_unavailable",
+			},
+			expect.any(AbortSignal),
+		);
 	});
 });

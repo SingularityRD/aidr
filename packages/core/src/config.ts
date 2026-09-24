@@ -6,7 +6,9 @@
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isCommercialBuild } from "./build-flavor.js";
+import { assertSecureControlPlaneEndpoint } from "./clients/control-plane-url.js";
 import { getFileContent } from "./file-utils.js";
+import { resolveSecretStore, type SecretStore } from "./secret-store.js";
 import type { Config, Logger } from "./types.js";
 import { ConfigSchema, nullLogger } from "./types.js";
 
@@ -144,18 +146,73 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 				licensing: { ...next.licensing, require_signed_entitlements: true },
 			};
 		}
+		if (!next.integrity.enabled || !next.integrity.verify_on_start) {
+			next = {
+				...next,
+				integrity: { ...next.integrity, enabled: true, verify_on_start: true },
+			};
+		}
 	}
 
 	return next;
 }
 
+function parseRuntimeConfig(data: unknown): Config {
+	const config = ConfigSchema.parse(data);
+	assertSecureControlPlaneEndpoint(
+		config.control_plane.endpoint,
+		config.control_plane.allow_insecure_loopback,
+	);
+	return config;
+}
+
+function resolveCommercialAuth(
+	data: Record<string, unknown>,
+	injectedStore?: SecretStore,
+): Record<string, unknown> {
+	if (!isCommercialBuild()) return data;
+	const auth = data.auth;
+	if (!auth || typeof auth !== "object" || Array.isArray(auth)) return data;
+	const documentAuth = { ...(auth as Record<string, unknown>) };
+	for (const field of ["api_key", "enrollment_token"] as const) {
+		const ref = documentAuth[`${field}_ref`];
+		if (typeof documentAuth[field] === "string" && documentAuth[field].trim()) {
+			throw new Error(
+				"Managed auth contains a plaintext credential; migrate it with the CLI first.",
+			);
+		}
+		if (!ref) continue;
+		if (typeof ref !== "object" || Array.isArray(ref))
+			throw new Error("Managed auth reference is invalid.");
+		const { store: kind, id } = ref as Record<string, unknown>;
+		if (typeof kind !== "string" || typeof id !== "string")
+			throw new Error("Managed auth reference is invalid.");
+		const store = injectedStore ?? resolveSecretStore({ selection: kind });
+		if (store.location !== "os-vault" || store.kind !== kind)
+			throw new Error("Managed auth requires a matching OS credential vault.");
+		const secret = store.get(id);
+		if (!secret) throw new Error("Managed auth credential is missing from its vault.");
+		documentAuth[field] = secret;
+	}
+	return { ...data, auth: documentAuth };
+}
+
+const invalidRuntimeConfigs = new WeakSet<Config>();
+
+/** A present but unreadable/invalid config is not the same as a fresh install. */
+export function isInvalidConfig(config: Config): boolean {
+	return invalidRuntimeConfigs.has(config);
+}
+
 function safeConfigForInvalidFile(logger: Logger): Config {
 	// A present but malformed/unreadable config must not silently disable a
 	// centrally required policy by falling back to ordinary local defaults.
-	return sanitizeConfigPaths(
-		ConfigSchema.parse({ control_plane: { remote_policy_required: true } }),
+	const config = sanitizeConfigPaths(
+		parseRuntimeConfig({ control_plane: { remote_policy_required: true } }),
 		logger,
 	);
+	invalidRuntimeConfigs.add(config);
+	return config;
 }
 
 function isMissingFileError(error: unknown): boolean {
@@ -165,6 +222,7 @@ function isMissingFileError(error: unknown): boolean {
 export async function loadConfig(
 	configPath?: string,
 	logger: Logger = nullLogger,
+	secretStore?: SecretStore,
 ): Promise<Config> {
 	const path = configPath ?? defaultConfigPath();
 
@@ -174,9 +232,11 @@ export async function loadConfig(
 	} catch (error) {
 		if (isMissingFileError(error)) {
 			// Missing file is a deliberate fresh-install state: use local defaults.
-			return sanitizeConfigPaths(ConfigSchema.parse({}), logger);
+			return sanitizeConfigPaths(parseRuntimeConfig({}), logger);
 		}
-		logger.warn(`Failed to read config from ${path}; requiring central policy`, { error: String(error) });
+		logger.warn(`Failed to read config from ${path}; requiring central policy`, {
+			error: String(error),
+		});
 		return safeConfigForInvalidFile(logger);
 	}
 
@@ -184,7 +244,9 @@ export async function loadConfig(
 	try {
 		data = JSON.parse(raw);
 	} catch (e) {
-		logger.warn(`Failed to parse config from ${path}; requiring central policy`, { error: String(e) });
+		logger.warn(`Failed to parse config from ${path}; requiring central policy`, {
+			error: String(e),
+		});
 		return safeConfigForInvalidFile(logger);
 	}
 
@@ -194,7 +256,10 @@ export async function loadConfig(
 	}
 
 	try {
-		return sanitizeConfigPaths(ConfigSchema.parse(data), logger);
+		return sanitizeConfigPaths(
+			parseRuntimeConfig(resolveCommercialAuth(data as Record<string, unknown>, secretStore)),
+			logger,
+		);
 	} catch (e) {
 		logger.warn(`Config validation failed; requiring central policy`, { error: String(e) });
 		return safeConfigForInvalidFile(logger);

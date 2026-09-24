@@ -7,17 +7,19 @@
  * the boundaries that make it safe to enable.
  */
 
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	anyActionSucceeded,
+	runPreAllowedResponseActions,
 	runResponseActions,
 	summarizeResponseActions,
 	targetPathFor,
 } from "../response-actions.js";
+import { normalizeToolEvaluationRequest } from "../tool-normalization.js";
 import type { Verdict } from "../types.js";
 
 let dir: string;
@@ -136,6 +138,60 @@ describe("snapshot on deny", () => {
 });
 
 describe("snapshot boundaries are reported, never silent", () => {
+	it("does not promise rollback for a protected multi-file apply_patch", async () => {
+		const first = join(dir, "first.txt");
+		const second = join(dir, "second.txt");
+		const snapshotRoot = join(dir, "snapshots");
+		await writeFile(first, "first", "utf8");
+		await writeFile(second, "second", "utf8");
+		const patch = [
+			"*** Begin Patch",
+			`*** Update File: ${first.replaceAll("\\", "/")}`,
+			"@@",
+			"-first",
+			"+changed first",
+			`*** Update File: ${second.replaceAll("\\", "/")}`,
+			"@@",
+			"-second",
+			"+changed second",
+			"*** End Patch",
+		].join("\n");
+		const request = normalizeToolEvaluationRequest({
+			sessionId: "patch-session",
+			toolName: "apply_patch",
+			toolInput: { patch },
+			artifacts: [],
+		});
+		const result = await runPreAllowedResponseActions(
+			verdict({ decision: "allow" }),
+			request,
+			{ snapshotBeforeDestructive: true, protectPaths: [second], snapshotRootDir: snapshotRoot },
+		);
+		expect(result.snapshot).toBeNull();
+		expect(result.records[0]).toMatchObject({
+			outcome: "failure",
+			reason: "multi_file_patch_not_snapshot_safe",
+		});
+		expect(resolve(result.records[0]?.target ?? "")).toBe(resolve(second));
+		expect(existsSync(snapshotRoot)).toBe(false);
+		expect(await readFile(first, "utf8")).toBe("first");
+		expect(await readFile(second, "utf8")).toBe("second");
+	});
+
+	it("reports inspection failure for an opted-in destructive target", async () => {
+		const target = join(dir, "bad\0path");
+		const result = await runPreAllowedResponseActions(
+			verdict({ decision: "allow" }),
+			{ toolName: "Delete", toolInput: { file_path: target } },
+			{ snapshotBeforeDestructive: true, protectPaths: [dir] },
+		);
+		expect(result.snapshot).toBeNull();
+		expect(result.records[0]).toMatchObject({
+			outcome: "failure",
+			reason: "target_inspection_failed",
+		});
+	});
+
 	it("skips a target that does not exist and says why", async () => {
 		const records = await runResponseActions(
 			verdict(),
@@ -154,6 +210,25 @@ describe("snapshot boundaries are reported, never silent", () => {
 		);
 		expect(records[0]?.outcome).toBe("skipped");
 		expect(records[0]?.reason).toBe("not_a_file_target");
+	});
+
+	it("does not copy through a symlink named by a blocked call", async () => {
+		const secret = join(dir, "secret.txt");
+		const link = join(dir, "blocked-target.txt");
+		await writeFile(secret, "private bytes", "utf8");
+		try {
+			await symlink(secret, link, "file");
+		} catch (error) {
+			if (process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM") return;
+			throw error;
+		}
+		const records = await runResponseActions(
+			verdict(),
+			{ toolName: "Write", toolInput: { file_path: link } },
+			{ snapshotOnDeny: true, snapshotDir: vault },
+		);
+		expect(records[0]).toMatchObject({ outcome: "skipped", reason: "target_not_a_file" });
+		expect(existsSync(vault)).toBe(false);
 	});
 
 	it("honours the severity floor", async () => {

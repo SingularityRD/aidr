@@ -9,18 +9,17 @@
  *   2. the hook      — this connector was really invoked for that attempt;
  *   3. the sentinel  — whether the side effect actually happened.
  *
- * The gate signals the three observation paths to the connector through
- * environment variables it injects into the host process. Until now nothing on
- * this repository read those variables: they appeared only in the gate and in
- * its own tests, which drive Node as a stand-in host. A real host run therefore
- * reported ATTEMPT_UNPROVEN or HOOK_UNPROVEN for every case no matter how well
- * the connector behaved, and gate 18 could never progress past
- * SCENARIO_MANIFEST_MISSING.
+ * The gate supplies the receipt path, case nonce and disposable workspace to
+ * instrumented connector entry points through environment variables. This
+ * module records that the connector reached its hook path; it does not prove
+ * that the host attempted the action or that the host prevented its side
+ * effect. Those observations must come from the host run and its sentinel, and
+ * still require real-host execution and independent review.
  *
  * This module is the connector side of that contract. It is deliberately tiny
  * and deliberately inert outside an acceptance run:
  *
- *   * Outside a gate run the three variables are absent, `createHostObservation`
+ *   * Outside a gate run these variables are absent, `createHostObservation`
  *     returns null, and nothing is written anywhere. Production behaviour is
  *     unchanged.
  *   * Inside a gate run the connector appends one nonce-stamped line to the
@@ -33,6 +32,7 @@
  */
 
 import { appendFileSync } from "node:fs";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 /** Environment variables the native-host gate injects into the host process. */
 export const HOST_OBSERVATION_ENV = Object.freeze({
@@ -81,7 +81,12 @@ export function createHostObservation(env: NodeJS.ProcessEnv = process.env): Hos
 	const nonce = env[HOST_OBSERVATION_ENV.nonce]?.trim();
 	const workspace = env[HOST_OBSERVATION_ENV.workspace]?.trim();
 	if (!receiptPath || !nonce || !workspace) return null;
-	return { receiptPath, nonce, workspace };
+	if (!isAbsolute(receiptPath) || !isAbsolute(workspace)) return null;
+	const resolvedWorkspace = resolve(workspace);
+	const resolvedReceipt = resolve(receiptPath);
+	const receiptRelative = relative(resolvedWorkspace, resolvedReceipt);
+	if (!receiptRelative || receiptRelative === ".." || receiptRelative.startsWith(`..${sep}`) || isAbsolute(receiptRelative)) return null;
+	return { receiptPath: resolvedReceipt, nonce, workspace: resolvedWorkspace };
 }
 
 /**

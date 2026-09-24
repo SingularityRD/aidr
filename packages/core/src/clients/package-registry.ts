@@ -12,6 +12,7 @@ import { nullLogger } from "../types.js";
 const NPM_REGISTRY = "https://registry.npmjs.org";
 const PYPI_REGISTRY = "https://pypi.org/pypi";
 const DEFAULT_TIMEOUT = 5.0;
+export const MAX_REGISTRY_RESPONSE_BYTES = 20 * 1024 * 1024;
 
 /** Package name validation — prevents SSRF via crafted names. */
 const NPM_NAME_RE = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
@@ -23,6 +24,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function malformedRegistryResponse(registry: "npm" | "PyPI"): Error {
 	return new Error(`Malformed ${registry} registry response`);
+}
+
+async function readRegistryJson(response: Response): Promise<unknown> {
+	const contentLength = response.headers?.get("content-length");
+	if (contentLength && Number(contentLength) > MAX_REGISTRY_RESPONSE_BYTES) {
+		void response.body?.cancel().catch(() => undefined);
+		throw new Error("Registry response exceeds the size limit");
+	}
+
+	// Native fetch responses expose a stream; the fallback keeps lightweight fetch
+	// mocks usable while production response bodies are always bounded before JSON parsing.
+	if (!response.body) return response.json();
+
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			size += value.byteLength;
+			if (size > MAX_REGISTRY_RESPONSE_BYTES) {
+				await reader.cancel().catch(() => undefined);
+				throw new Error("Registry response exceeds the size limit");
+			}
+			chunks.push(value);
+		}
+	} finally {
+		reader.releaseLock();
+	}
+
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
 }
 
 /**
@@ -111,7 +150,7 @@ export class RegistryClient {
 				throw new Error(`npm registry HTTP ${response.status}`);
 			}
 
-			const data = (await response.json()) as Record<string, unknown>;
+			const data = (await readRegistryJson(response)) as Record<string, unknown>;
 			return this.parseNpmResponse(name, data, version);
 		} catch (e) {
 			this.logger.warn("npm registry request failed", { name, error: String(e) });
@@ -206,7 +245,7 @@ export class RegistryClient {
 				throw new Error(`PyPI registry HTTP ${response.status}`);
 			}
 
-			const data = (await response.json()) as Record<string, unknown>;
+			const data = (await readRegistryJson(response)) as Record<string, unknown>;
 			return this.parsePypiResponse(name, data, version);
 		} catch (e) {
 			this.logger.warn("PyPI registry request failed", { name, error: String(e) });
@@ -250,7 +289,10 @@ export class RegistryClient {
 					throw malformedRegistryResponse("PyPI");
 				}
 				if (digests.sha256) {
-					latestHash = digests.sha256;
+					if (!/^[a-f0-9]{64}$/i.test(digests.sha256)) {
+						throw malformedRegistryResponse("PyPI");
+					}
+					latestHash = digests.sha256.toLowerCase();
 					break;
 				}
 			}

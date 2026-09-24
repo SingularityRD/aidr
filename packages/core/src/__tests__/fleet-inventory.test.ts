@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +7,8 @@ import {
 	collectFleetInventory,
 	fleetInventoryEntryId,
 	loadFleetInventory,
+	MAX_FLEET_INVENTORY_BYTES,
+	MAX_FLEET_TARGETS,
 	normalizeFleetTarget,
 	refreshFleetInventoryFreshness,
 	saveFleetInventory,
@@ -61,11 +63,7 @@ describe("tenant fleet inventory", () => {
 			"collector-a",
 			["http://127.0.0.1:8080"],
 			null,
-			{
-				now: () => 1_000_000,
-				staleAfterMs: 1_000,
-				scanTargetImpl: async ({ url }) => result(url, true),
-			},
+			{ now: () => 1_000_000, staleAfterMs: 1_000, scanTargetImpl: async ({ url }) => result(url, true) },
 		);
 		const lastSeenAt = first.items[0]?.lastSeenAt;
 		const second = await collectFleetInventory(
@@ -98,7 +96,11 @@ describe("tenant fleet inventory", () => {
 			"collector-a",
 			["http://127.0.0.1:8080"],
 			null,
-			{ now: () => 1_000_000, staleAfterMs: 1_000, scanTargetImpl: async ({ url }) => result(url, true) },
+			{
+				now: () => 1_000_000,
+				staleAfterMs: 1_000,
+				scanTargetImpl: async ({ url }) => result(url, true),
+			},
 		);
 		const entry = inventory.items[0];
 		if (!entry) throw new Error("test inventory is missing its entry");
@@ -166,6 +168,120 @@ describe("tenant fleet inventory", () => {
 		);
 		expect(scanTargetImpl).toHaveBeenCalledTimes(5);
 		expect(inventory.items[0]?.attempts).toBe(5);
+	});
+
+	it("rejects target and persisted-entry counts above the production cap", async () => {
+		const scanTargetImpl = vi.fn(async ({ url }: { url: string }) => result(url, true));
+		await expect(
+			collectFleetInventory(
+				"tenant-a",
+				"collector-a",
+				Array.from({ length: MAX_FLEET_TARGETS + 1 }, () => "http://127.0.0.1:8080"),
+				null,
+				{ scanTargetImpl },
+			),
+		).rejects.toThrow("fleet_target_limit_exceeded");
+		expect(scanTargetImpl).not.toHaveBeenCalled();
+
+		const inventory = await collectFleetInventory(
+			"tenant-a",
+			"collector-a",
+			["http://127.0.0.1:8080"],
+			null,
+			{ scanTargetImpl },
+		);
+		const entry = inventory.items[0];
+		if (!entry) throw new Error("test inventory is missing its entry");
+		const oversized = {
+			...inventory,
+			items: Array.from({ length: MAX_FLEET_TARGETS + 1 }, (_, index) => ({
+				...entry,
+				id: String(index),
+			})),
+		};
+		const dir = await mkdtemp(join(tmpdir(), "aidr-fleet-"));
+		try {
+			const path = join(dir, "inventory.json");
+			await expect(saveFleetInventory(path, oversized)).rejects.toThrow(
+				"fleet_inventory_entry_limit_exceeded",
+			);
+			await writeFile(path, JSON.stringify(oversized));
+			await expect(loadFleetInventory(path)).rejects.toThrow(
+				"fleet_inventory_entry_limit_exceeded",
+			);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects persisted inventory above the byte cap before parsing or writing", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-fleet-"));
+		try {
+			const path = join(dir, "inventory.json");
+			await writeFile(path, "x".repeat(MAX_FLEET_INVENTORY_BYTES + 1));
+			await expect(loadFleetInventory(path)).rejects.toThrow("fleet_inventory_size_limit_exceeded");
+
+			const inventory = await collectFleetInventory(
+				"tenant-a",
+				"collector-a",
+				["http://127.0.0.1:8080"],
+				null,
+				{ scanTargetImpl: async ({ url }) => result(url, true) },
+			);
+			const entry = inventory.items[0];
+			if (!entry) throw new Error("test inventory is missing its entry");
+			await expect(
+				saveFleetInventory(path, {
+					...inventory,
+					items: [
+						{
+							...entry,
+							scan: { ...entry.scan, error: "x".repeat(MAX_FLEET_INVENTORY_BYTES) },
+						},
+					],
+				}),
+			).rejects.toThrow("fleet_inventory_size_limit_exceeded");
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("cancels an active cycle without starting more targets or mutating prior state", async () => {
+		const controller = new AbortController();
+		let started: (() => void) | undefined;
+		const scanStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const scanTargetImpl = vi.fn(
+			({ url }: { url: string }, options: { signal?: AbortSignal } = {}) =>
+				new Promise<AigInfraTargetResult>((_resolve, reject) => {
+					started?.();
+					options.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+						once: true,
+					});
+				}),
+		);
+		const previous = await collectFleetInventory(
+			"tenant-a",
+			"collector-a",
+			["http://127.0.0.1:7000"],
+			null,
+			{ scanTargetImpl: async ({ url }) => result(url, true) },
+		);
+		const before = JSON.stringify(previous);
+		const collection = collectFleetInventory(
+			"tenant-a",
+			"collector-a",
+			["http://127.0.0.1:7001", "http://127.0.0.1:7002"],
+			previous,
+			{ concurrency: 1, signal: controller.signal, scanTargetImpl },
+		);
+		await scanStarted;
+		controller.abort();
+
+		await expect(collection).rejects.toMatchObject({ name: "AbortError" });
+		expect(scanTargetImpl).toHaveBeenCalledTimes(1);
+		expect(JSON.stringify(previous)).toBe(before);
 	});
 
 	it("does not retry terminal scope failures", async () => {

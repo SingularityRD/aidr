@@ -25,7 +25,7 @@ export const PiiTypeSchema = z.enum([
 ]);
 
 /** Severity levels for detected PII. */
-export const PiiSeveritySchema = z.enum(["low", "medium", "high", "critical"]);
+const PiiSeveritySchema = z.enum(["low", "medium", "high", "critical"]);
 
 /** Schema for a single PII match result. */
 export const PiiMatchSchema = z.object({
@@ -53,7 +53,7 @@ export const PiiDetectorConfigSchema = z.object({
 // ── Inferred Types ──────────────────────────────────────────────────────
 
 /** Supported PII type discriminator. */
-export type PiiType = z.infer<typeof PiiTypeSchema>;
+type PiiType = z.infer<typeof PiiTypeSchema>;
 
 /**
  * A single PII match found in input text.
@@ -84,7 +84,7 @@ export type PiiDetectorConfig = z.infer<typeof PiiDetectorConfigSchema>;
  * Public interface for PII detection.
  * Implementations must be safe to call concurrently.
  */
-export interface PiiDetector {
+interface PiiDetector {
 	/**
 	 * Scan `input` and return all PII matches that exceed `minConfidence`.
 	 * Results are sorted by start position.

@@ -348,6 +348,14 @@ describe("causal chain tamper-evident binding", () => {
 		expect(verification.findings.every((finding) => finding.detail === "link_has_no_receipt")).toBe(true);
 	});
 
+	it("recomputes missing-link gaps instead of trusting stored findings", () => {
+		const gapped = recordCausalChain(gappedLinks(), { ...hash, expectedKinds: [], binding });
+		const findingsRemoved = { ...gapped, findings: [] };
+		const verification = verifyCausalChainEvidence(findingsRemoved, hash);
+		expect(verification.valid).toBe(false);
+		expect(verification.findings.some((finding) => finding.code === "chain_gap")).toBe(true);
+	});
+
 	it("mints a deterministic receipt id so a replay cannot create a second receipt", () => {
 		expect(causalLinkReceiptId("l1-message")).toBe(causalLinkReceiptId("l1-message"));
 		expect(causalLinkReceiptId("l1-message")).not.toBe(causalLinkReceiptId("l2-retrieval"));

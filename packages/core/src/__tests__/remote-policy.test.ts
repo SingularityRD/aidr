@@ -1,4 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,12 @@ import {
 import { ConfigSchema } from "../types.js";
 
 const originalFetch = globalThis.fetch;
+function policySha256(policy: Record<string, unknown>) {
+	const canonical = Object.fromEntries(
+		Object.entries(policy).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+	);
+	return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
 
 describe("remote runtime policy merge", () => {
 	afterEach(() => {
@@ -35,9 +42,9 @@ describe("remote runtime policy merge", () => {
 			runtime_policy: {
 				mcp_unknown: "ask",
 				mcp_risky: "deny",
-				mcp_allow_servers: ["GitHub", "github"],
+				mcp_allow_servers: ["github", "github"],
 				mcp_require_approval_servers: ["filesystem"],
-				mcp_deny_servers: ["shell wrapper", "shell-wrapper"],
+				mcp_deny_servers: ["shell-wrapper", "shell-wrapper"],
 			},
 		});
 
@@ -87,6 +94,7 @@ describe("remote runtime policy merge", () => {
 			control_plane: {
 				enabled: true,
 				endpoint: "https://control.example.test",
+				remote_policy_cache_enabled: false,
 			},
 			policy: { enabled: false },
 		});
@@ -95,19 +103,21 @@ describe("remote runtime policy merge", () => {
 	});
 
 	it("fetches once and reuses the short-lived policy cache", async () => {
+		const policy = {
+			command_default: "ask",
+			mcp_unknown: "deny",
+			mcp_risky: "ask",
+			mcp_deny_servers: ["unknown-proxy"],
+			mcp_require_approval_tools: ["filesystem.read_file"],
+		};
 		const fetchMock = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,
 			json: async () => ({
 				ok: true,
 				cache_seconds: 60,
-				runtime_policy: {
-					command_default: "ask",
-					mcp_unknown: "deny",
-					mcp_risky: "ask",
-					mcp_deny_servers: ["unknown-proxy"],
-					mcp_require_approval_tools: ["filesystem.read_file"],
-				},
+				runtime_policy: policy,
+				policy_sha256: policySha256(policy),
 			}),
 		} as unknown as Response);
 		globalThis.fetch = fetchMock;
@@ -116,6 +126,7 @@ describe("remote runtime policy merge", () => {
 			control_plane: {
 				enabled: true,
 				endpoint: "https://control.example.test",
+				remote_policy_cache_enabled: false,
 			},
 			policy: { enabled: false },
 		});
@@ -130,16 +141,110 @@ describe("remote runtime policy merge", () => {
 		expect(second.policy.mcp.require_approval_tools).toEqual(["filesystem.read_file"]);
 	});
 
+	it("does not apply or cache a response with a mismatched advertised digest", async () => {
+		const root = await mkdtemp(join(tmpdir(), "aidr-remote-policy-digest-"));
+		const cachePath = join(root, "runtime-policy-cache.json");
+		const rejectedPolicy = { command_default: "deny" };
+		const acceptedPolicy = { command_default: "ask" };
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => ({
+					ok: true,
+					runtime_policy: rejectedPolicy,
+					policy_sha256: "0".repeat(64),
+				}),
+			} as unknown as Response)
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => ({
+					ok: true,
+					runtime_policy: acceptedPolicy,
+					policy_sha256: policySha256(acceptedPolicy),
+				}),
+			} as unknown as Response);
+		globalThis.fetch = fetchMock;
+		const config = ConfigSchema.parse({
+			control_plane: {
+				enabled: true,
+				endpoint: "https://control.example.test",
+				remote_policy_cache_path: cachePath,
+			},
+			policy: { enabled: false },
+		});
+
+		try {
+			expect(await syncRemoteRuntimePolicy(config, "agent-token")).toBe(config);
+			await expect(readFile(cachePath, "utf-8")).rejects.toThrow();
+			const accepted = await syncRemoteRuntimePolicy(config, "agent-token");
+			expect(accepted.policy.runtime_defaults.command_action).toBe("require_approval");
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects malformed policy contracts in optional mode without partially applying or caching them", async () => {
+		const root = await mkdtemp(join(tmpdir(), "aidr-remote-policy-schema-"));
+		const cachePath = join(root, "runtime-policy-cache.json");
+		const rejectedPolicy = { command_default: "deny", typo: "deny" };
+		const acceptedPolicy = { command_default: "ask" };
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => ({
+					policy_version: "1",
+					runtime_policy: rejectedPolicy,
+					policy_sha256: policySha256(rejectedPolicy),
+				}),
+			} as unknown as Response)
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => ({
+					policy_version: "2",
+					runtime_policy: acceptedPolicy,
+					policy_sha256: policySha256(acceptedPolicy),
+				}),
+			} as unknown as Response);
+		globalThis.fetch = fetchMock;
+		const config = ConfigSchema.parse({
+			control_plane: {
+				enabled: true,
+				endpoint: "https://control.example.test",
+				remote_policy_cache_path: cachePath,
+			},
+			policy: { enabled: false },
+		});
+
+		try {
+			expect(applyRemoteRuntimePolicy(config, { runtime_policy: rejectedPolicy })).toBe(config);
+			expect(await syncRemoteRuntimePolicy(config, "agent-token")).toBe(config);
+			await expect(readFile(cachePath, "utf-8")).rejects.toThrow();
+
+			const accepted = await syncRemoteRuntimePolicy(config, "agent-token");
+			expect(accepted.policy.runtime_defaults.command_action).toBe("require_approval");
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
 	it("reuses cached remote policy without replacing caller-local config", async () => {
+		const policy = { command_default: "ask" };
 		const fetchMock = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,
 			json: async () => ({
 				ok: true,
 				cache_seconds: 60,
-				runtime_policy: {
-					command_default: "ask",
-				},
+				runtime_policy: policy,
+				policy_sha256: policySha256(policy),
 			}),
 		} as unknown as Response);
 		globalThis.fetch = fetchMock;
@@ -175,6 +280,7 @@ describe("remote runtime policy merge", () => {
 		const root = join(tmpdir(), `aidr-remote-policy-cache-${Math.random().toString(16).slice(2)}`);
 		await mkdir(root, { recursive: true });
 		const cachePath = join(root, "runtime-policy-cache.json");
+		const policy = { command_default: "deny", mcp_unknown: "ask" };
 		const fetchMock = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,
@@ -182,10 +288,8 @@ describe("remote runtime policy merge", () => {
 				ok: true,
 				policy_version: "pol_123",
 				cache_seconds: 120,
-				runtime_policy: {
-					command_default: "deny",
-					mcp_unknown: "ask",
-				},
+				runtime_policy: policy,
+				policy_sha256: policySha256(policy),
 			}),
 		} as unknown as Response);
 		globalThis.fetch = fetchMock;
@@ -233,6 +337,7 @@ describe("remote runtime policy merge", () => {
 		);
 		await mkdir(root, { recursive: true });
 		const cachePath = join(root, "runtime-policy-cache.json");
+		const policy = { command_default: "ask" };
 		globalThis.fetch = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,
@@ -240,9 +345,8 @@ describe("remote runtime policy merge", () => {
 				ok: true,
 				policy_version: "pol_status",
 				cache_seconds: 60,
-				runtime_policy: {
-					command_default: "ask",
-				},
+				runtime_policy: policy,
+				policy_sha256: policySha256(policy),
 			}),
 		} as unknown as Response);
 
@@ -315,6 +419,7 @@ describe("remote runtime policy merge", () => {
 						enabled: true,
 						endpoint: "https://control.example.test",
 						timeout_seconds: 0.5,
+						remote_policy_cache_enabled: false,
 					},
 					policy: { enabled: false },
 					logging: { enabled: false },
@@ -326,16 +431,14 @@ describe("remote runtime policy merge", () => {
 			"utf-8",
 		);
 
+		const policy = { mcp_unknown: "deny", mcp_risky: "ask", mcp_deny_servers: [] };
 		globalThis.fetch = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,
 			json: async () => ({
 				ok: true,
-				runtime_policy: {
-					mcp_unknown: "deny",
-					mcp_risky: "ask",
-					mcp_deny_servers: [],
-				},
+				runtime_policy: policy,
+				policy_sha256: policySha256(policy),
 			}),
 		} as unknown as Response);
 

@@ -3,12 +3,12 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
-import { Readable, type Transform } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
 import { redactTelemetryString } from "./telemetry-redaction.js";
 
-export const MCP_TRANSPORT_LIMITS = {
+const MCP_TRANSPORT_LIMITS = {
 	maxFrameBytes: 1024 * 1024,
 	maxHeaderBytes: 16 * 1024,
 	maxBufferedBytes: 2 * 1024 * 1024,
@@ -18,14 +18,14 @@ export const MCP_TRANSPORT_LIMITS = {
 	responseHeadersTimeoutMs: 30_000,
 } as const;
 
-export type JsonRpcId = string | number | null;
+type JsonRpcId = string | number | null;
 
 export interface JsonRpcMessage {
 	jsonrpc: "2.0";
 	[key: string]: unknown;
 }
 
-export interface JsonRpcRequest extends JsonRpcMessage {
+interface JsonRpcRequest extends JsonRpcMessage {
 	method: string;
 	params?: unknown;
 	id?: JsonRpcId;
@@ -37,6 +37,7 @@ export interface StdioFramerOptions {
 	maxBufferedBytes?: number;
 }
 
+/** Error contract consumed by the packaged MCP gateway. @public */
 export class McpTransportError extends Error {
 	readonly code: string;
 
@@ -296,6 +297,8 @@ export interface McpHttpValidationOptions {
 	maxBodyBytes?: number;
 	requireHttps?: boolean;
 	allowedOrigins?: readonly string[];
+	/** Permit the MCP Streamable HTTP DELETE used to terminate one bound session. */
+	acceptSessionTerminationResponse?: boolean;
 }
 
 export interface McpValidationResult {
@@ -349,6 +352,12 @@ export function validateMcpHttpRequest(
 	if (bodyLength > maxBodyBytes) return { ok: false, error: "body_too_large" };
 	if (method === "POST") return validatePostRequest(request.headers, bodyLength);
 	if (method === "GET") return validateGetRequest(request.headers, bodyLength);
+	if (method === "DELETE" && options.acceptSessionTerminationResponse) {
+		if (bodyLength > 0) return { ok: false, error: "body_forbidden" };
+		return /^[\x21-\x7e]{8,256}$/.test(headerValue(request.headers, "mcp-session-id"))
+			? { ok: true }
+			: { ok: false, error: "invalid_session" };
+	}
 	return { ok: false, error: "method_not_allowed" };
 }
 
@@ -501,12 +510,15 @@ export function isPrivateIpAddress(value: string): boolean {
 		hasIpv6Prefix(words, [0xfec0], 10) ||
 		hasIpv6Prefix(words, [0xff00], 8) ||
 		hasIpv6Prefix(words, [0x0100, 0, 0, 0], 64) ||
+		hasIpv6Prefix(words, [0x0100, 0, 0, 1], 64) ||
+		hasIpv6Prefix(words, [0x0064, 0xff9b, 0x0001], 48) ||
 		hasIpv6Prefix(words, [0x2001, 0x0000], 32) ||
 		hasIpv6Prefix(words, [0x2001, 0x0002, 0], 48) ||
 		hasIpv6Prefix(words, [0x2001, 0x0010], 28) ||
 		hasIpv6Prefix(words, [0x2001, 0x0020], 28) ||
 		hasIpv6Prefix(words, [0x2001, 0x0db8], 32) ||
-		hasIpv6Prefix(words, [0x3fff, 0], 20)
+		hasIpv6Prefix(words, [0x3fff, 0], 20) ||
+		hasIpv6Prefix(words, [0x5f00], 16)
 	);
 }
 
@@ -515,15 +527,17 @@ export interface SsrfValidationOptions {
 	lookup?: (hostname: string) => Promise<readonly string[]>;
 }
 
-export interface McpPinnedFetchRequest {
+interface McpPinnedFetchRequest {
 	url: URL;
 	init: RequestInit;
 	/** Every address was resolved and classified before this transport is invoked. */
 	addresses: readonly string[];
 	responseHeadersTimeoutMs: number;
+	/** Independent wire-byte ceiling, enforced before any content decoding. */
+	maxEncodedBodyBytes: number;
 }
 
-export type McpPinnedFetch = (request: McpPinnedFetchRequest) => Promise<Response>;
+type McpPinnedFetch = (request: McpPinnedFetchRequest) => Promise<Response>;
 
 const privateHostnames = new Set([
 	"localhost",
@@ -600,6 +614,8 @@ export interface McpFetchOptions extends SsrfValidationOptions {
 	responseHeadersTimeoutMs?: number;
 	/** Permit a bodyless HTTP 202 acknowledgement for a JSON-RPC notification only. */
 	acceptNotificationResponse?: boolean;
+	/** Permit and accept the bounded MCP Streamable HTTP session-termination DELETE. */
+	acceptSessionTerminationResponse?: boolean;
 	/** Trusted transport hook for embedders/tests; it must connect only to one supplied address. */
 	pinnedFetch?: McpPinnedFetch;
 }
@@ -693,18 +709,25 @@ export async function fetchMcpEndpoint(
 			"invalid_notification_request",
 			"MCP HTTP 202 acknowledgement requires a JSON-RPC notification",
 		);
+	if (options.acceptSessionTerminationResponse && request.method !== "DELETE")
+		throw new McpTransportError(
+			"invalid_session_termination_request",
+			"MCP session termination requires DELETE",
+		);
 	const requestInit = { ...init, redirect: "error" as const };
 	const response = await (options.pinnedFetch ?? performPinnedFetch)({
 		url: resolved.url,
 		init: requestInit,
 		addresses: resolved.addresses,
 		responseHeadersTimeoutMs,
+		maxEncodedBodyBytes: maxBodyBytes,
 	});
 	return validateAndBoundMcpResponse(
 		response,
 		options.mode ?? (request.method === "GET" ? "sse" : "json"),
 		maxBodyBytes,
 		options.acceptNotificationResponse === true,
+		options.acceptSessionTerminationResponse === true,
 	);
 }
 
@@ -730,6 +753,7 @@ async function validateAndBoundMcpResponse(
 	mode: "json" | "sse",
 	maxBodyBytes: number,
 	acceptNotificationResponse: boolean,
+	acceptSessionTerminationResponse: boolean,
 ): Promise<Response> {
 	if (response.status >= 300 && response.status < 400) {
 		await cancelResponseBody(response);
@@ -743,6 +767,24 @@ async function validateAndBoundMcpResponse(
 				"notification_response_body",
 				"MCP notification acknowledgement must not contain a body",
 			);
+		return cloneResponseMetadata(response, null);
+	}
+	if (acceptSessionTerminationResponse) {
+		if (response.status < 200 || response.status >= 300) {
+			await cancelResponseBody(response);
+			throw new McpTransportError(
+				"upstream_http_error",
+				"MCP upstream session termination was rejected",
+			);
+		}
+		if (responseBodyExceedsLimit(response, maxBodyBytes)) {
+			await cancelResponseBody(response);
+			throw new McpTransportError(
+				"body_too_large",
+				"MCP upstream response exceeds the configured limit",
+			);
+		}
+		await boundResponseBody(response, maxBodyBytes).arrayBuffer();
 		return cloneResponseMetadata(response, null);
 	}
 	const responseValidation = validateMcpHttpResponse(response, mode);
@@ -841,6 +883,7 @@ async function performPinnedFetch(request: McpPinnedFetchRequest): Promise<Respo
 				headers: headerRecord,
 				lookup: pinnedLookup(address),
 				agent: false,
+				...(request.url.protocol === "https:" ? { rejectUnauthorized: true } : {}),
 				signal: request.init.signal ?? undefined,
 			},
 			(incoming) => {
@@ -849,7 +892,11 @@ async function performPinnedFetch(request: McpPinnedFetchRequest): Promise<Respo
 					return;
 				}
 				try {
-					const response = responseFromIncomingMessage(incoming, request.url);
+					const response = responseFromIncomingMessage(
+						incoming,
+						request.url,
+						request.maxEncodedBodyBytes,
+					);
 					settled = true;
 					if (headersDeadline) clearTimeout(headersDeadline);
 					resolve(response);
@@ -909,11 +956,30 @@ function contentDecoder(encoding: string): Transform | null {
 	);
 }
 
-function decodedIncomingBody(
+/** @internal Exposed for focused transport-boundary tests. */
+export function decodedIncomingBody(
 	incoming: import("node:http").IncomingMessage,
 	encodings: readonly string[],
+	maxEncodedBodyBytes: number,
 ): Readable {
-	let body: Readable = incoming;
+	let encodedBytes = 0;
+	const byteLimit = new Transform({
+		transform(chunk: Buffer, _encoding, callback) {
+			encodedBytes += chunk.byteLength;
+			if (encodedBytes > maxEncodedBodyBytes) {
+				const error = new McpTransportError(
+					"body_too_large",
+					"MCP upstream encoded response exceeds the configured limit",
+				);
+				callback(error);
+				incoming.destroy(error);
+				return;
+			}
+			callback(null, chunk);
+		},
+	});
+	incoming.once("error", (error) => byteLimit.destroy(error));
+	let body: Readable = incoming.pipe(byteLimit);
 	for (const encoding of [...encodings].reverse()) {
 		const decoder = contentDecoder(encoding);
 		if (!decoder) continue;
@@ -928,6 +994,7 @@ function decodedIncomingBody(
 function responseFromIncomingMessage(
 	incoming: import("node:http").IncomingMessage,
 	url: URL,
+	maxEncodedBodyBytes: number,
 ): Response {
 	const headers = headersFromIncomingMessage(incoming);
 	const encodings = (headers.get("content-encoding") ?? "")
@@ -939,7 +1006,7 @@ function responseFromIncomingMessage(
 			"unsupported_content_encoding",
 			"MCP upstream content encoding chain is too deep",
 		);
-	const body = decodedIncomingBody(incoming, encodings);
+	const body = decodedIncomingBody(incoming, encodings, maxEncodedBodyBytes);
 	if (encodings.length > 0) {
 		headers.delete("content-encoding");
 		headers.delete("content-length");
@@ -1037,7 +1104,7 @@ export interface McpToolCall {
 	requestId?: JsonRpcId;
 }
 
-export interface McpPolicyRequest extends McpToolCall {
+interface McpPolicyRequest extends McpToolCall {
 	inputHash: string;
 	schemaHash?: string;
 	signal: AbortSignal;
@@ -1047,7 +1114,7 @@ export interface McpPolicyClient {
 	evaluateToolCall(request: McpPolicyRequest): Promise<unknown>;
 }
 
-export interface McpSecurityEvent {
+interface McpSecurityEvent {
 	type: "mcp_tool_call";
 	timestamp: string;
 	server: string;
@@ -1058,7 +1125,7 @@ export interface McpSecurityEvent {
 	schemaHash?: string;
 }
 
-export type McpEventSink = (event: McpSecurityEvent) => void | Promise<void>;
+type McpEventSink = (event: McpSecurityEvent) => void | Promise<void>;
 
 export interface SchemaObservation {
 	hash: string;
@@ -1264,7 +1331,7 @@ async function evaluateMcpPolicy(
 	}
 }
 
-export class McpTransportProxy {
+class McpTransportProxy {
 	private readonly framer: JsonRpcStdioFramer;
 	private readonly options: McpInterceptionOptions;
 	private readonly policyClient: McpPolicyClient;

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ArtifactManifestFileSchema = z.object({
+const ArtifactManifestFileSchema = z.object({
 	path: z.string().min(1),
 	sha256: z.string().regex(/^[0-9a-f]{64}$/i),
 });
@@ -11,7 +11,7 @@ export const ArtifactManifestFileSchema = z.object({
  *
  * This is signed as part of the manifest bytes, so it is tamper-evident.
  */
-export const ArtifactManifestLineageSchema = z.object({
+const ArtifactManifestLineageSchema = z.object({
 	/**
 	 * Unique watermark identifier (recommended per customer per release).
 	 * Example: "cust_acme_2026q1_r3".

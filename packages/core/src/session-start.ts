@@ -547,21 +547,23 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 
 	const heartbeatPromise = managedHeartbeat();
 
-	const versionCheckPromise = iidPromise
-		.then((iid) =>
-			checkForUpdate(
-				ctx.version,
-				logger,
-				undefined,
-				{
-					agentRuntime: ctx.agentRuntime,
-					agentRuntimeVersion: ctx.agentRuntimeVersion,
-					iid,
-				},
-				token,
-			),
-		)
-		.catch(() => null);
+	const versionCheckPromise = config.version_check.enabled
+		? iidPromise
+				.then((iid) =>
+					checkForUpdate(
+						ctx.version,
+						logger,
+						undefined,
+						{
+							agentRuntime: ctx.agentRuntime,
+							agentRuntimeVersion: ctx.agentRuntimeVersion,
+							iid,
+						},
+						token,
+					),
+				)
+				.catch(() => null)
+		: Promise.resolve(null);
 
 	// Commercial build: enforce strict startup order by waiting for managed heartbeat
 	// (revocations + entitlement refresh) before scanning or loading packs.

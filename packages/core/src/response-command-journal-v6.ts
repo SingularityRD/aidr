@@ -1,13 +1,14 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { link, lstat, mkdir, open, readFile, rename, rm, unlink } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { lstat, mkdir, open, readdir, readFile, rename, rm, rmdir, unlink } from "node:fs/promises";
+import { hostname } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { createDeviceAttestation, type DeviceAttestation } from "./device-attestation.js";
 import type {
 	FleetResponseCommand,
 	FleetResponseIdentity,
 } from "./response-command-consumer-v6.js";
 
-export type FleetJournalPhase =
+type FleetJournalPhase =
 	| "polled"
 	| "reject_intent"
 	| "acknowledged"
@@ -33,6 +34,7 @@ export interface FleetJournalState {
 
 type Slot = "a" | "b";
 type Envelope = { payload: FleetJournalState; mac: string };
+type LockOwner = { pid: number; host: string; token: string; process_started_at_ms: number };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CODE = /^[a-z][a-z0-9_]{0,63}$/;
@@ -45,7 +47,8 @@ const PHASES = new Set([
 	"result_pending",
 ]);
 const MAX_JOURNAL_BYTES = 32_768;
-export const MAX_RECENT_FLEET_COMMANDS = 256;
+const PROCESS_STARTED_AT_MS = Math.max(0, Math.trunc(Date.now() - process.uptime() * 1000));
+const MAX_RECENT_FLEET_COMMANDS = 256;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -153,6 +156,40 @@ function pidAlive(pid: number): boolean {
 	}
 }
 
+function errorCode(error: unknown): string | undefined {
+	return isRecord(error) && typeof error.code === "string" ? error.code : undefined;
+}
+
+function ownerFileName(token: string): string {
+	return `owner.${token}.json`;
+}
+
+function parseOwner(value: unknown, expectedToken?: string): LockOwner | null {
+	if (
+		!isRecord(value) ||
+		!Number.isSafeInteger(value.pid) ||
+		(value.pid as number) < 1 ||
+		typeof value.host !== "string" ||
+		value.host.length === 0 ||
+		typeof value.token !== "string" ||
+		!UUID.test(value.token) ||
+		(expectedToken !== undefined && value.token !== expectedToken) ||
+		!Number.isSafeInteger(value.process_started_at_ms) ||
+		(value.process_started_at_ms as number) < 0
+	) {
+		return null;
+	}
+	return value as LockOwner;
+}
+
+function ownerAlive(owner: LockOwner): boolean {
+	if (owner.host !== hostname()) return true;
+	if (owner.pid === process.pid) return owner.process_started_at_ms === PROCESS_STARTED_AT_MS;
+	// Node has no portable foreign-process start-time API. A live/unknown PID is
+	// kept fail-closed so PID reuse cannot cause an active generation to be stolen.
+	return pidAlive(owner.pid);
+}
+
 export class FleetResponseJournal {
 	private readonly path: string;
 	private readonly identity: FleetResponseIdentity;
@@ -161,7 +198,12 @@ export class FleetResponseJournal {
 	private slot: Slot | null = null;
 	private sequence = 0;
 
-	constructor(path: string, identity: FleetResponseIdentity, apiKey: string, installationId: string) {
+	constructor(
+		path: string,
+		identity: FleetResponseIdentity,
+		apiKey: string,
+		installationId: string,
+	) {
 		if (!isAbsolute(path)) throw new Error("fleet_journal_path_must_be_absolute");
 		if (!apiKey.trim()) throw new Error("invalid_fleet_journal_key");
 		this.path = resolve(path);
@@ -201,7 +243,10 @@ export class FleetResponseJournal {
 			!/^[a-f0-9]{64}$/.test(envelope.mac)
 		)
 			throw new Error("invalid_fleet_journal_envelope");
-		const expected = Buffer.from(macFor(envelope.payload as unknown as FleetJournalState, this.key), "hex");
+		const expected = Buffer.from(
+			macFor(envelope.payload as unknown as FleetJournalState, this.key),
+			"hex",
+		);
 		const actual = Buffer.from(envelope.mac, "hex");
 		if (!timingSafeEqual(expected, actual)) throw new Error("fleet_journal_integrity_failed");
 		assertState(envelope.payload, this.identity, this.attestation);
@@ -253,54 +298,122 @@ export class FleetResponseJournal {
 	private async acquireLock(): Promise<string> {
 		await this.ensureDirectory();
 		const lockPath = `${this.path}.lock`;
-		const token = randomUUID();
-		const temporary = `${lockPath}.${token}.tmp`;
-		await writeSynced(temporary, JSON.stringify({ pid: process.pid, token }));
-		try {
+		for (;;) {
+			const token = randomUUID();
+			const temporary = `${lockPath}.owner.${token}.tmp`;
+			await writeSynced(
+				temporary,
+				JSON.stringify({
+					pid: process.pid,
+					host: hostname(),
+					token,
+					process_started_at_ms: PROCESS_STARTED_AT_MS,
+				}),
+			);
 			try {
-				await link(temporary, lockPath);
-				return token;
-			} catch (error) {
-				if (!isRecord(error) || error.code !== "EEXIST") throw error;
+				try {
+					await mkdir(lockPath, { mode: 0o700 });
+				} catch (error) {
+					if (errorCode(error) !== "EEXIST") throw error;
+					if (await this.recoverDeadLock(lockPath)) continue;
+					throw new Error("fleet_journal_locked");
+				}
+				const ownerPath = join(lockPath, ownerFileName(token));
+				try {
+					await rename(temporary, ownerPath);
+					return token;
+				} catch (error) {
+					let removedOwner = false;
+					try {
+						await unlink(ownerPath);
+						removedOwner = true;
+					} catch (cleanupError) {
+						if (errorCode(cleanupError) !== "ENOENT") throw cleanupError;
+					}
+					if (removedOwner) await rmdir(lockPath).catch(() => undefined);
+					throw error;
+				}
+			} finally {
+				await rm(temporary, { force: true });
 			}
-			await this.recoverDeadLock(lockPath);
-			await link(temporary, lockPath);
-			return token;
-		} finally {
-			await rm(temporary, { force: true });
 		}
 	}
 
-	private async recoverDeadLock(lockPath: string): Promise<void> {
-		const recoveryPath = `${lockPath}.recovery`;
-		const recoveryToken = randomUUID();
-		const temporary = `${recoveryPath}.${recoveryToken}.tmp`;
-		await writeSynced(temporary, JSON.stringify({ pid: process.pid, token: recoveryToken }));
-		try {
-			try {
-				await link(temporary, recoveryPath);
-			} catch {
-				throw new Error("fleet_journal_locked");
-			}
-			try {
-				if (!(await regularFile(lockPath))) return;
-				const owner = JSON.parse(await readFile(lockPath, "utf8")) as unknown;
-				if (
-					!isRecord(owner) ||
-					!Number.isSafeInteger(owner.pid) ||
-					(owner.pid as number) < 1 ||
-					typeof owner.token !== "string" ||
-					!UUID.test(owner.token)
-				) {
-					throw new Error("fleet_journal_lock_invalid");
-				}
-				if (pidAlive(owner.pid as number)) throw new Error("fleet_journal_locked");
+	private async recoverLegacyLock(lockPath: string): Promise<boolean> {
+		const value = JSON.parse(await readFile(lockPath, "utf8")) as unknown;
+		if (
+			!isRecord(value) ||
+			!Number.isSafeInteger(value.pid) ||
+			(value.pid as number) < 1 ||
+			typeof value.token !== "string" ||
+			!UUID.test(value.token)
+		) {
+			throw new Error("fleet_journal_lock_invalid");
+		}
+		if (typeof value.host !== "string" || !value.host || value.host !== hostname()) return false;
+		if (!Number.isSafeInteger(value.process_started_at_ms)) return false;
+		if (pidAlive(value.pid as number)) {
+			if (value.pid === process.pid && value.process_started_at_ms !== PROCESS_STARTED_AT_MS) {
 				await unlink(lockPath);
-			} finally {
-				await rm(recoveryPath, { force: true });
+				return true;
 			}
-		} finally {
-			await rm(temporary, { force: true });
+			return false;
+		}
+		await unlink(lockPath);
+		return true;
+	}
+
+	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one fail-closed lock recovery transition
+	private async recoverDeadLock(lockPath: string): Promise<boolean> {
+		let metadata;
+		try {
+			metadata = await lstat(lockPath);
+		} catch (error) {
+			if (errorCode(error) === "ENOENT") return true;
+			throw error;
+		}
+		if (metadata.isSymbolicLink()) throw new Error("fleet_journal_lock_invalid");
+		if (metadata.isFile()) {
+			if (metadata.size > MAX_JOURNAL_BYTES) throw new Error("fleet_journal_lock_invalid");
+			return this.recoverLegacyLock(lockPath);
+		}
+		if (!metadata.isDirectory()) throw new Error("fleet_journal_lock_invalid");
+
+		const names = await readdir(lockPath);
+		if (names.length === 0) {
+			return false;
+		}
+		if (names.length !== 1) throw new Error("fleet_journal_lock_invalid");
+		const match = /^owner\.([0-9a-f-]{36})\.json$/i.exec(names[0] as string);
+		if (!match || !UUID.test(match[1] as string)) throw new Error("fleet_journal_lock_invalid");
+		const ownerPath = join(lockPath, names[0] as string);
+		if (!(await regularFile(ownerPath))) return false;
+		let owner: LockOwner | null = null;
+		try {
+			owner = parseOwner(JSON.parse(await readFile(ownerPath, "utf8")), match[1]);
+		} catch {
+			// A crash from an older writer may have exposed a partial final marker.
+		}
+		if (!owner) {
+			throw new Error("fleet_journal_lock_invalid");
+		}
+		if (ownerAlive(owner)) return false;
+
+		// Removing the token-specific marker claims this generation. A concurrent
+		// old owner or recovery loser cannot remove a replacement generation.
+		try {
+			await unlink(ownerPath);
+		} catch (error) {
+			if (errorCode(error) === "ENOENT") return false;
+			throw error;
+		}
+		try {
+			await rmdir(lockPath);
+			return true;
+		} catch (error) {
+			if (errorCode(error) === "ENOENT") return true;
+			if (errorCode(error) === "ENOTEMPTY" || errorCode(error) === "EEXIST") return false;
+			throw error;
 		}
 	}
 
@@ -310,10 +423,20 @@ export class FleetResponseJournal {
 			return await work();
 		} finally {
 			const lockPath = `${this.path}.lock`;
-			if (await regularFile(lockPath)) {
-				const owner = JSON.parse(await readFile(lockPath, "utf8")) as unknown;
-				if (!isRecord(owner) || owner.token !== token) throw new Error("fleet_journal_lock_lost");
-				await unlink(lockPath);
+			const ownerPath = join(lockPath, ownerFileName(token));
+			let owned = true;
+			try {
+				await unlink(ownerPath);
+			} catch (error) {
+				if (errorCode(error) === "ENOENT") owned = false;
+				else throw error;
+			}
+			if (owned) {
+				try {
+					await rmdir(lockPath);
+				} catch (error) {
+					if (errorCode(error) !== "ENOENT") throw new Error("fleet_journal_lock_lost");
+				}
 			}
 		}
 	}

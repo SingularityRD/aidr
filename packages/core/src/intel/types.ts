@@ -6,9 +6,9 @@ export type IntelFileKind =
 	| "package_hash_denylist"
 	| "plugin_signature_denylist";
 
-export type DomainRiskAction = "allow" | "ask" | "deny";
+type DomainRiskAction = "allow" | "ask" | "deny";
 
-export type DomainRiskSeverity = "critical" | "high" | "medium" | "low";
+type DomainRiskSeverity = "critical" | "high" | "medium" | "low";
 
 export interface DomainRiskEntry {
 	domain: string;
@@ -19,6 +19,9 @@ export interface DomainRiskEntry {
 }
 
 export interface IntelMerged {
+	/** Coverage state for explicitly enabled signed packs; absence is legacy/unset. */
+	availability?: "available" | "unavailable";
+	detail?: string;
 	urlDenyHosts: Set<string>;
 	urlAllowHosts: Set<string>;
 	domainRisk: Map<string, DomainRiskEntry>;

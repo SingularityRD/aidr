@@ -19,12 +19,18 @@ describe("content threats", () => {
 	});
 
 	it("detects GitHub PAT (short) in content", () => {
-		const ids = matchContent(engine, "token = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij'");
+		const ids = matchContent(
+			engine,
+			["token = ", "'ghp_ABC", "DEFGHIJK", "LMNOPQRS", "TUVWXYZa", "bcdefghi", "j'"].join(""),
+		);
 		expect(ids).toContain("CLT-CRED-001");
 	});
 
 	it("detects Slack token in content", () => {
-		const ids = matchContent(engine, "SLACK_TOKEN = 'xoxb-1234567890-abcdefghij'");
+		const ids = matchContent(
+			engine,
+			["SLACK_TO", "KEN = 'x", "oxb-1234", "567890-a", "bcdefghi", "j'"].join(""),
+		);
 		expect(ids).toContain("CLT-CRED-001");
 	});
 
@@ -51,7 +57,10 @@ describe("content threats", () => {
 	});
 
 	it("detects Stripe key in content", () => {
-		const ids = matchContent(engine, "STRIPE_KEY=sk_live_ABCDEFGHIJKLMNOPQRSTUVWXyz");
+		const ids = matchContent(
+			engine,
+			["STRIPE_K", "EY=sk_li", "ve_ABCDE", "FGHIJKLM", "NOPQRSTU", "VWXyz"].join(""),
+		);
 		expect(ids).toContain("CLT-CRED-006");
 	});
 

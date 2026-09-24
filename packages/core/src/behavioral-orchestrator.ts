@@ -28,7 +28,7 @@ export interface BehavioralDetectionInput {
 	url?: string;
 	durationMs?: number;
 	classificationText?: string;
-	/** A trusted response workflow can disable learning for a particular event. */
+	/** Trusted post-execution callers must opt in; tool-evaluation preflight never does. */
 	learningAllowed?: boolean;
 }
 
@@ -111,9 +111,8 @@ export type BehavioralEmbeddingModel = Pick<
 export interface BehavioralOrchestratorDependencies {
 	mlModel?: BehavioralEmbeddingModel;
 	/**
-	 * Durable per-tenant/per-session baseline. Injecting it lets a short-lived
-	 * process (one hook invocation per tool call) continue a baseline that an
-	 * earlier process started; without it state lives only in this instance.
+	 * Retained to clear existing local records. Reads and writes stay disabled
+	 * until verified execution receipts are bound to persisted observations.
 	 */
 	baselineStore?: BehavioralBaselineStore;
 	/** Trusted provisioning ceiling: events cannot override signed consent or tenant. */
@@ -560,30 +559,6 @@ export class BehavioralDetectionOrchestrator {
 		} else if (session.fingerprintCounts.size < this.config.maxFingerprintsPerSession) {
 			session.fingerprintCounts.set(fingerprint, 1);
 		}
-		await this.persistSession(event.tenantId, event.sessionId, session);
-	}
-
-	/**
-	 * Persist accepted observations so a later process continues this baseline.
-	 * Only an already-scored, accepted event is written, so a candidate can never
-	 * enter its own baseline, and a store failure can only delay a baseline.
-	 */
-	private async persistSession(
-		tenantId: string,
-		sessionId: string,
-		session: SessionState,
-	): Promise<void> {
-		const store = this.baselineStore;
-		if (!store) return;
-		try {
-			await store.save(tenantId, sessionId, {
-				baselineSamples: session.baselineSamples,
-				observations: session.observations,
-				fingerprintCounts: Object.fromEntries(session.fingerprintCounts),
-			});
-		} catch (error) {
-			this.logger.warn("Failed to persist the behavioural baseline", { error: String(error) });
-		}
 	}
 
 	private dropPersisted(clear: () => Promise<void> | undefined): void {
@@ -630,51 +605,23 @@ export class BehavioralDetectionOrchestrator {
 			}
 		}
 
-		session = await this.restoreSession(tenantId, sessionId);
+		session = this.createEmptySession();
 		tenant.sessions.set(sessionId, session);
 		return session;
 	}
 
 	/**
-	 * Rebuild a scope from durable state when this process has not seen it. Both
-	 * the behavioural baseline and the novelty profile are replayed from the same
-	 * accepted observations, so a restarted process scores a candidate against the
-	 * baseline the previous process had built.
+	 * Persisted records have no verified post-execution receipt, so they cannot
+	 * seed detection. Re-enable restore only when receipt verification is bound to
+	 * every stored observation.
 	 */
-	private async restoreSession(tenantId: string, sessionId: string): Promise<SessionState> {
-		const empty = (): SessionState => ({
+	private createEmptySession(): SessionState {
+		return {
 			observations: [],
 			noveltyDetector: this.createNoveltyDetector(),
 			baselineSamples: 0,
 			fingerprintCounts: new Map(),
-		});
-		const store = this.baselineStore;
-		if (!store) return empty();
-
-		try {
-			const stored = await store.load(tenantId, sessionId);
-			if (!stored) return empty();
-			const session = empty();
-			for (const observation of stored.observations) {
-				session.observations.push(observation);
-				await session.noveltyDetector.updateProfile("scope", {
-					command: observation.commandToken,
-					path: observation.pathToken,
-					url: observation.urlToken,
-					tool: stableToken("tool", observation.toolName),
-					duration: observation.durationMs,
-					hour: new Date(observation.timestamp).getUTCHours(),
-				});
-			}
-			for (const [fingerprint, count] of Object.entries(stored.fingerprintCounts)) {
-				session.fingerprintCounts.set(fingerprint, count);
-			}
-			session.baselineSamples = stored.baselineSamples;
-			return session;
-		} catch (error) {
-			this.logger.warn("Failed to restore the behavioural baseline", { error: String(error) });
-			return empty();
-		}
+		};
 	}
 
 	private validateInput(input: BehavioralDetectionInput): ValidatedBehavioralInput {
@@ -882,7 +829,7 @@ function determineLearningReason(input: {
 	detectionUnavailable: boolean;
 	fingerprintLimitReached: boolean;
 }): BehavioralLearningDisposition["reason"] {
-	if (input.learningAllowed === false) return "explicitly_disabled";
+	if (input.learningAllowed !== true) return "explicitly_disabled";
 	if (input.riskScore > input.maxLearningRiskScore) return "high_risk_event";
 	if (input.anomalyDetected) return "anomaly_detected";
 	if (input.detectionUnavailable) return "detection_unavailable";

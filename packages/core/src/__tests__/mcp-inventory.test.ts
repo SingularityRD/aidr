@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadMcpServerInventory } from "../mcp-inventory.js";
+import { inspectMcpServerInventory, loadMcpServerInventory } from "../mcp-inventory.js";
 
 describe("mcp-inventory", () => {
 	it("parses mcpServers entries from config", async () => {
@@ -36,6 +36,34 @@ describe("mcp-inventory", () => {
 		const items = await loadMcpServerInventory([cfg]);
 		expect(items.find((i) => i.name === "remote")?.riskHints).toContain("remote_mcp_url");
 		expect(items.find((i) => i.name === "shell")?.riskHints).toContain("shell_wrapper_command");
+	});
+
+	it("only exempts exact HTTPS loopback MCP hosts from the remote-server hint", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-loopback-"));
+		const cfg = join(dir, "mcp.json");
+		await writeFile(
+			cfg,
+			JSON.stringify({
+				mcpServers: {
+					localhost: { url: "https://localhost:8443/mcp" },
+					ipv4: { url: "https://127.0.0.1/mcp" },
+					ipv6: { url: "https://[::1]/mcp" },
+					localhostLookalike: { url: "https://localhost.attacker.example/mcp" },
+					ipv4Lookalike: { url: "https://127.0.0.1.attacker.example/mcp" },
+				},
+			}),
+		);
+
+		const report = await inspectMcpServerInventory([cfg]);
+		const byName = new Map(report.items.map((item) => [item.name, item]));
+
+		for (const name of ["localhost", "ipv4", "ipv6"]) {
+			expect(byName.get(name)?.riskHints).not.toContain("remote_mcp_url");
+		}
+		for (const name of ["localhostLookalike", "ipv4Lookalike"]) {
+			expect(byName.get(name)?.riskHints).toContain("remote_mcp_url");
+			expect(byName.get(name)?.status).toBe("unknown");
+		}
 	});
 
 	it("parses Cursor/OpenCode/OpenClaw-style nested mcp config shapes", async () => {
@@ -81,5 +109,92 @@ describe("mcp-inventory", () => {
 		expect(items.find((i) => i.name === "openclawShell")?.riskHints).toContain(
 			"shell_wrapper_command",
 		);
+	});
+
+	it("treats an unsupported root shape as an inventory coverage gap", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-"));
+		const cfg = join(dir, "unsupported.json");
+		await writeFile(cfg, JSON.stringify({ unrelated: { server: { command: "bash" } } }));
+
+		const report = await inspectMcpServerInventory([cfg]);
+
+		expect(report.items).toHaveLength(0);
+		expect(report.sources[0]?.status).toBe("invalid");
+		expect(report.coverage.status).toBe("invalid");
+	});
+
+	it("accepts an explicitly empty supported server map", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-"));
+		const cfg = join(dir, "empty.json");
+		await writeFile(cfg, JSON.stringify({ mcpServers: {} }));
+
+		const report = await inspectMcpServerInventory([cfg]);
+
+		expect(report.sources[0]?.status).toBe("read");
+		expect(report.coverage.status).toBe("read");
+		expect(report.items).toHaveLength(0);
+	});
+
+	it("reports a malformed-only server map as partial coverage", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-"));
+		const cfg = join(dir, "malformed.json");
+		await writeFile(cfg, JSON.stringify({ mcpServers: { broken: "not a server record" } }));
+
+		const report = await inspectMcpServerInventory([cfg]);
+
+		expect(report.sources[0]?.status).toBe("read");
+		expect(report.items).toHaveLength(0);
+		expect(report.coverage.status).toBe("partial");
+		expect(report.coverage.serversNotEnumerated).toBe(1);
+	});
+
+	it("does not count unusable MCP endpoints as discovered servers", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-unusable-"));
+		const cfg = join(dir, "mcp.json");
+		await writeFile(
+			cfg,
+			JSON.stringify({
+				mcpServers: {
+					noTransport: { env: { TOKEN: "private" } },
+					badUrl: { url: "https://" },
+					badCommand: { command: ["node", 7] },
+					valid: { command: ["node", "server.js"] },
+				},
+			}),
+		);
+
+		const report = await inspectMcpServerInventory([cfg]);
+		expect(report.items.map((item) => item.name)).toEqual(["valid"]);
+		expect(report.coverage.status).toBe("partial");
+		expect(report.coverage.serversNotEnumerated).toBe(3);
+	});
+
+	it("does not call a server known when another config shape declares it malformed", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-conflict-"));
+		const cfg = join(dir, "mcp.json");
+		await writeFile(
+			cfg,
+			JSON.stringify({
+				mcpServers: { shared: { command: "node", args: ["server.js"] } },
+				servers: { shared: { command: "bash", args: ["--allow-all", 42] } },
+			}),
+		);
+
+		const report = await inspectMcpServerInventory([cfg]);
+		expect(report.items).toHaveLength(0);
+		expect(report.coverage.status).toBe("partial");
+		expect(report.coverage.serversNotEnumerated).toBe(1);
+	});
+
+	it("does not call a source complete when a declared server map is malformed", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-map-"));
+		const cfg = join(dir, "mcp.json");
+		await writeFile(cfg, JSON.stringify({ mcpServers: "not a map", servers: {} }));
+
+		const report = await inspectMcpServerInventory([cfg]);
+		expect(report.items).toHaveLength(0);
+		expect(report.sources[0]?.status).toBe("invalid");
+		expect(report.coverage.status).toBe("invalid");
+		expect(report.coverage.sourcesNotEnumerated).toBe(1);
 	});
 });

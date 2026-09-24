@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VerdictCache } from "../cache.js";
 import type { CacheConfig, CachedVerdict } from "../types.js";
 import { hashCommand, normalizeUrl } from "../url-utils.js";
@@ -54,6 +54,62 @@ describe("VerdictCache", () => {
 		expect(cache.getUrl("http://example.com")).toBeNull();
 	});
 
+	it("treats URL verdicts with invalid expiry as stale", async () => {
+		const cachePath = join(dir, "cache.json");
+		await writeFile(
+			cachePath,
+			JSON.stringify({
+				urls: {
+					[normalizeUrl("https://example.com")]: {
+						...makeVerdict(),
+						checkedAt: new Date().toISOString(),
+						expiresAt: "not-a-date",
+					},
+					[normalizeUrl("https://missing-expiry.example")]: makeVerdict(),
+				},
+				commands: {},
+				packages: {},
+			}),
+			"utf8",
+		);
+
+		const cache = new VerdictCache(makeConfig({ path: cachePath }));
+		await cache.load();
+		expect(cache.getUrl("https://example.com")).toBeNull();
+		expect(cache.getUrl("https://missing-expiry.example")).toBeNull();
+	});
+
+	it("rejects legacy clean URL entries without a source freshness deadline", async () => {
+		const cachePath = join(dir, "cache.json");
+		await writeFile(
+			cachePath,
+			JSON.stringify({
+				urls: {
+					[normalizeUrl("https://legacy-clean.example")]: {
+						...makeVerdict({ verdict: "allow", source: "url_check" }),
+						checkedAt: new Date().toISOString(),
+						expiresAt: "9999-12-31T23:59:59+00:00",
+						aidrVersion: "dev",
+					},
+				},
+				commands: {},
+				packages: {},
+			}),
+			"utf8",
+		);
+
+		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
+		await cache.load();
+		expect(cache.getUrl("https://legacy-clean.example")).toBeNull();
+	});
+
+	it("does not cache clean URL verdicts without a source freshness deadline", async () => {
+		const cache = new VerdictCache(makeConfig({ path: join(dir, "cache.json") }));
+		await cache.load();
+		cache.putUrl("https://unbound-clean.example", makeVerdict(), false);
+		expect(cache.getUrl("https://unbound-clean.example")).toBeNull();
+	});
+
 	it("stores and retrieves URL verdict", async () => {
 		const cache = new VerdictCache(makeConfig({ path: join(dir, "cache.json") }));
 		await cache.load();
@@ -75,6 +131,25 @@ describe("VerdictCache", () => {
 		expect(cache.getUrl("http://evil.com")).toBeNull();
 	});
 
+	it("caps URL cache expiry at the source freshness deadline", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			const now = new Date("2026-09-23T12:00:00.000Z");
+			vi.setSystemTime(now);
+			const cache = new VerdictCache(makeConfig({ path: join(dir, "cache.json") }));
+			await cache.load();
+			const sourceFreshUntil = now.getTime() + 60 * 60 * 1000;
+
+			cache.putUrl("https://near-expiry.example", makeVerdict(), false, sourceFreshUntil);
+			expect(cache.getUrl("https://near-expiry.example")).not.toBeNull();
+
+			vi.setSystemTime(new Date(sourceFreshUntil));
+			expect(cache.getUrl("https://near-expiry.example")).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("stores and retrieves command verdict", async () => {
 		const cache = new VerdictCache(makeConfig({ path: join(dir, "cache.json") }));
 		await cache.load();
@@ -89,7 +164,7 @@ describe("VerdictCache", () => {
 		const cachePath = join(dir, "cache.json");
 		const cache = new VerdictCache(makeConfig({ path: cachePath }));
 		await cache.load();
-		cache.putUrl("http://test.com", makeVerdict(), false);
+		cache.putUrl("http://test.com", makeVerdict(), false, Date.now() + 60_000);
 		await cache.save();
 
 		const raw = await readFile(cachePath, "utf-8");
@@ -239,7 +314,7 @@ describe("VerdictCache", () => {
 		const cachePath = join(dir, "cache.json");
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "0.6.0");
 		await cache.load();
-		cache.putUrl("http://test.com", makeVerdict(), false);
+		cache.putUrl("http://test.com", makeVerdict(), false, Date.now() + 60_000);
 		await cache.save();
 
 		const raw = await readFile(cachePath, "utf-8");
@@ -300,6 +375,39 @@ describe("VerdictCache", () => {
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "0.5.0");
 		await cache.load();
 		expect(cache.getPackage("npm:evil-pkg")).toBeNull();
+	});
+
+	it("ignores malformed package cache rows instead of returning unsafe verdicts", async () => {
+		const cachePath = join(dir, "cache.json");
+		await writeFile(
+			cachePath,
+			JSON.stringify({
+				urls: {},
+				commands: {},
+				packages: {
+					"npm:bad-reasons": {
+						verdict: "deny",
+						severity: "critical",
+						reasons: null,
+						source: "package_check",
+						expiresAt: "9999-12-31T23:59:59+00:00",
+					},
+					"npm:bad-verdict": {
+						verdict: "clean",
+						severity: "critical",
+						reasons: ["stale format"],
+						source: "package_check",
+						expiresAt: "9999-12-31T23:59:59+00:00",
+					},
+				},
+			}),
+			"utf8",
+		);
+
+		const cache = new VerdictCache(makeConfig({ path: cachePath }));
+		await cache.load();
+		expect(cache.getPackage("npm:bad-reasons")).toBeNull();
+		expect(cache.getPackage("npm:bad-verdict")).toBeNull();
 	});
 
 	it("dev version skips version check (wildcard)", async () => {

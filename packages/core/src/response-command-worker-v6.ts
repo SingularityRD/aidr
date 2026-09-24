@@ -17,7 +17,7 @@ export interface FleetResponseWorkerOptions extends FleetResponseConsumerOptions
 	/** Absolute, host-private journal prefix. Two authenticated slots are used. */
 	statePath: string;
 	/** Service telemetry hook for every cycle, including uncertain outcomes. */
-	onCycle?: (result: FleetResponseCycleResult) => void | Promise<void>;
+	onCycle?: (result: FleetResponseCycleResult, signal?: AbortSignal) => void | Promise<void>;
 }
 
 /**
@@ -27,7 +27,10 @@ export interface FleetResponseWorkerOptions extends FleetResponseConsumerOptions
 export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 	private readonly journal: FleetResponseJournal;
 	private readonly actionAdapter: FleetResponseActionAdapter;
-	private readonly onCycle?: (result: FleetResponseCycleResult) => void | Promise<void>;
+	private readonly onCycle?: (
+		result: FleetResponseCycleResult,
+		signal?: AbortSignal,
+	) => void | Promise<void>;
 
 	constructor(options: FleetResponseWorkerOptions) {
 		super(options);
@@ -76,16 +79,20 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 
 	private async recoverExecutionIntent(
 		state: FleetJournalState,
+		signal?: AbortSignal,
 	): Promise<FleetResponseCycleResult> {
 		const current = state.current;
 		if (!current)
 			return { status: "outcome_unknown", stage: "result", reason: "journal_missing_command" };
 		let observed = false;
 		try {
-			const verification = await this.actionAdapter.verify(current.command);
+			const verification = await this.runBoundedAction(
+				(actionSignal) => this.actionAdapter.verify(current.command, actionSignal),
+				signal,
+			);
 			observed = verification.observed;
 		} catch {
-			// An adapter exception cannot justify a repeat of a possibly applied action.
+			// Timeout, cancellation, or an adapter exception cannot justify replaying an action.
 		}
 		if (!observed) {
 			return {
@@ -99,20 +106,38 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 		return this.resumeResult(pending);
 	}
 
-	private async startExecution(state: FleetJournalState): Promise<FleetResponseCycleResult> {
+	private async startExecution(
+		state: FleetJournalState,
+		signal?: AbortSignal,
+	): Promise<FleetResponseCycleResult> {
 		const current = state.current;
 		if (!current)
 			return { status: "outcome_unknown", stage: "result", reason: "journal_missing_command" };
 		const intent = await this.saveCurrent(state, current.command, "execute_intent");
-		const code = await this.executeAndVerify(
-			intent.current?.command ?? current.command,
-			this.actionAdapter,
-		);
+		let code: string | null;
+		try {
+			code = await this.executeAndVerify(
+				intent.current?.command ?? current.command,
+				this.actionAdapter,
+				signal,
+			);
+		} catch (error) {
+			if (!this.isActionInterrupted(error)) throw error;
+			return {
+				status: "outcome_unknown",
+				commandId: current.command.id,
+				stage: "result",
+				reason: "execution_state_unverified",
+			};
+		}
 		const pending = await this.saveCurrent(intent, current.command, "result_pending", code);
 		return this.resumeResult(pending);
 	}
 
-	private async resumeAcknowledged(state: FleetJournalState): Promise<FleetResponseCycleResult> {
+	private async resumeAcknowledged(
+		state: FleetJournalState,
+		signal?: AbortSignal,
+	): Promise<FleetResponseCycleResult> {
 		const current = state.current;
 		if (!current)
 			return { status: "outcome_unknown", stage: "ack", reason: "journal_missing_command" };
@@ -136,10 +161,13 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 			);
 			return this.resumeResult(pending);
 		}
-		return this.startExecution(state);
+		return this.startExecution(state, signal);
 	}
 
-	private async resumePolled(state: FleetJournalState): Promise<FleetResponseCycleResult> {
+	private async resumePolled(
+		state: FleetJournalState,
+		signal?: AbortSignal,
+	): Promise<FleetResponseCycleResult> {
 		const current = state.current;
 		if (!current)
 			return { status: "outcome_unknown", stage: "ack", reason: "journal_missing_command" };
@@ -148,6 +176,13 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 			return this.resumeRejection(rejecting);
 		}
 		if (!(await this.acknowledge(current.command.id))) {
+			if (this.hasAccessRejection()) {
+				return {
+					status: "access_rejected",
+					stage: "ack",
+					code: this.accessRejectionCode(),
+				};
+			}
 			return {
 				status: "outcome_unknown",
 				commandId: current.command.id,
@@ -156,22 +191,25 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 			};
 		}
 		const acknowledged = await this.saveCurrent(state, current.command, "acknowledged");
-		return this.resumeAcknowledged(acknowledged);
+		return this.resumeAcknowledged(acknowledged, signal);
 	}
 
-	private async resume(state: FleetJournalState): Promise<FleetResponseCycleResult> {
+	private async resume(
+		state: FleetJournalState,
+		signal?: AbortSignal,
+	): Promise<FleetResponseCycleResult> {
 		const phase = state.current?.phase;
-		if (phase === "polled") return this.resumePolled(state);
+		if (phase === "polled") return this.resumePolled(state, signal);
 		if (phase === "reject_intent") return this.resumeRejection(state);
-		if (phase === "acknowledged") return this.resumeAcknowledged(state);
-		if (phase === "execute_intent") return this.recoverExecutionIntent(state);
+		if (phase === "acknowledged") return this.resumeAcknowledged(state, signal);
+		if (phase === "execute_intent") return this.recoverExecutionIntent(state, signal);
 		if (phase === "result_pending") return this.resumeResult(state);
 		return { status: "outcome_unknown", stage: "poll", reason: "invalid_journal_phase" };
 	}
 
-	private async tickLocked(): Promise<FleetResponseCycleResult> {
+	private async tickLocked(signal?: AbortSignal): Promise<FleetResponseCycleResult> {
 		let state = await this.journal.load();
-		if (state.current) return this.resume(state);
+		if (state.current) return this.resume(state, signal);
 		const polled = await this.pollCommand();
 		if ("status" in polled) return polled;
 		if (state.recent_ids.includes(polled.id)) {
@@ -183,14 +221,14 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 			};
 		}
 		state = await this.saveCurrent(state, polled, "polled");
-		return this.resume(state);
+		return this.resume(state, signal);
 	}
 
 	/** One bounded cycle. Journal/lock failure leaves actions untouched. */
-	async tick(): Promise<FleetResponseCycleResult> {
+	async tick(signal?: AbortSignal): Promise<FleetResponseCycleResult> {
 		let result: FleetResponseCycleResult;
 		try {
-			result = await this.journal.withLock(() => this.tickLocked());
+			result = await this.journal.withLock(() => this.tickLocked(signal));
 		} catch {
 			result = { status: "outcome_unknown", stage: "poll", reason: "journal_unavailable" };
 		}
@@ -202,8 +240,21 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 	async run(signal: AbortSignal, intervalMs = 5000): Promise<void> {
 		const delay = Math.min(60_000, Math.max(5000, intervalMs));
 		while (!signal.aborted) {
-			const result = await this.tick();
-			await this.onCycle?.(result);
+			const result = await this.tick(signal);
+			if (this.onCycle) {
+				try {
+					await this.runBoundedAction(
+						(cycleSignal) => Promise.resolve(this.onCycle?.(result, cycleSignal)),
+						signal,
+					);
+				} catch {
+					if (signal.aborted) return;
+					throw new Error("fleet_response_worker_cycle_hook_failed");
+				}
+			}
+			if (this.hasAccessRejection()) {
+				throw new Error("fleet_response_worker_access_rejected");
+			}
 			if (result.status === "outcome_unknown" && result.reason === "journal_unavailable") {
 				throw new Error("fleet_response_worker_journal_unavailable");
 			}

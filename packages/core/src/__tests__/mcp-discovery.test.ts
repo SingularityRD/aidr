@@ -76,6 +76,54 @@ describe("MCP discovery evidence", () => {
 		}
 	});
 
+	it("changes the fingerprint when MCP environment or auth headers change", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-discover-auth-"));
+		try {
+			const path = join(dir, "mcp.json");
+			const config = {
+				mcpServers: {
+					local: { command: "node", args: ["server.js"], env: { API_KEY: "first-secret" } },
+					remote: {
+						url: "https://mcp.example.test/mcp",
+						headers: { Authorization: "Bearer first-secret" },
+					},
+				},
+			};
+			await writeFile(path, JSON.stringify(config));
+			const first = await discoverMcpServers([path]);
+			config.mcpServers.local.env.API_KEY = "second-secret";
+			config.mcpServers.remote.headers.Authorization = "Bearer second-secret";
+			await writeFile(path, JSON.stringify(config));
+			const second = await discoverMcpServers([path]);
+			expect(second.servers.map((server) => server.configuration_sha256)).not.toEqual(
+				first.servers.map((server) => server.configuration_sha256),
+			);
+			expect(JSON.stringify(second)).not.toContain("second-secret");
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("reports conflicting same-name server records as incomplete coverage", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-discover-conflict-"));
+		try {
+			const path = join(dir, "mcp.json");
+			await writeFile(
+				path,
+				JSON.stringify({
+					mcpServers: { shared: { command: "node", args: ["approved.js"] } },
+					servers: { shared: { command: "node", args: ["other.js"] } },
+				}),
+			);
+			const report = await discoverMcpServers([path]);
+			expect(report.servers).toHaveLength(0);
+			expect(report.coverage.status).toBe("partial");
+			expect(report.coverage.servers_not_enumerated).toBe(1);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("reads a JSONC configuration with comments and a trailing comma", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "aidr-discover-jsonc-"));
 		try {
@@ -297,7 +345,12 @@ describe("MCP discovery evidence", () => {
 
 			// Discovery reads approval state; it must not create or advance it.
 			const unapproved = await discoverMcpServers([path], {
-				attestation: { keyring, manifests: { filesystem: signed }, store: readOnlyStore },
+				attestation: {
+					tenantId: "tenant-a",
+					keyring,
+					manifests: { filesystem: signed },
+					store: readOnlyStore,
+				},
 			});
 			expect(unapproved.servers[0]?.attestation).toMatchObject({
 				status: "unapproved",
@@ -310,12 +363,18 @@ describe("MCP discovery evidence", () => {
 			const decision = await attestMcpToolManifest({
 				candidate: signed,
 				verifier: { trustedSigners: keyring, expectedServerId: "filesystem" },
+				connection: [
+					"discovery-v1",
+					"tenant-a",
+					unapproved.servers[0]?.inventory_id ?? "",
+					unapproved.servers[0]?.configuration_sha256 ?? "",
+				],
 				store,
 			});
 			if (decision.status !== "quarantined") throw new Error("expected quarantine");
 
 			const quarantined = await discoverMcpServers([path], {
-				attestation: { keyring, manifests: { filesystem: signed }, store },
+				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: signed }, store },
 			});
 			expect(quarantined.servers[0]?.attestation).toMatchObject({
 				status: "quarantined",
@@ -329,12 +388,13 @@ describe("MCP discovery evidence", () => {
 			await approveQuarantinedMcpToolset({
 				serverId: "filesystem",
 				toolsetHash: decision.toolsetHash,
+				bindingSha256: (await store.read("filesystem"))?.quarantine?.bindingSha256 ?? "",
 				approvedBy: "security-operator",
 				reason: "approved change request CR-77",
 				store,
 			});
 			const approved = await discoverMcpServers([path], {
-				attestation: { keyring, manifests: { filesystem: signed }, store },
+				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: signed }, store },
 			});
 			expect(approved.servers[0]?.attestation).toEqual({
 				status: "approved",
@@ -344,6 +404,66 @@ describe("MCP discovery evidence", () => {
 				server_id: "filesystem",
 				toolset_hash: decision.toolsetHash,
 			});
+
+			const changedSigned = signMcpToolManifest({
+				manifest: {
+					...signed.manifest,
+					sequence: signed.manifest.sequence + 1,
+					tools: [
+						...signed.manifest.tools,
+						{ name: "files.write", description: "Write one file", input_schema: { type: "object" } },
+					],
+				},
+				keyId: signed.key_id,
+				privateKey: keys.privateKey,
+			});
+			const unseen = await discoverMcpServers([path], {
+				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: changedSigned }, store },
+			});
+			expect(unseen.servers[0]?.attestation).toMatchObject({
+				status: "unapproved",
+				reason: "manifest_not_observed",
+			});
+			const change = await attestMcpToolManifest({
+				candidate: changedSigned,
+				verifier: { trustedSigners: keyring, expectedServerId: "filesystem" },
+				connection: [
+					"discovery-v1",
+					"tenant-a",
+					unapproved.servers[0]?.inventory_id ?? "",
+					unapproved.servers[0]?.configuration_sha256 ?? "",
+				],
+				store,
+			});
+			expect(change.status).toBe("quarantined");
+			const stale = await discoverMcpServers([path], {
+				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: signed }, store },
+			});
+			expect(stale.servers[0]?.attestation).toMatchObject({
+				status: "rejected",
+				reason: "sequence_replay",
+			});
+			const pending = await discoverMcpServers([path], {
+				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: changedSigned }, store },
+			});
+			expect(pending.servers[0]?.attestation.status).toBe("quarantined");
+			if (change.status !== "quarantined") throw new Error("expected changed quarantine");
+			await approveQuarantinedMcpToolset({
+				serverId: "filesystem",
+				toolsetHash: change.toolsetHash,
+				bindingSha256: (await store.read("filesystem"))?.quarantine?.bindingSha256 ?? "",
+				approvedBy: "security-operator",
+				reason: "approved change request CR-78",
+				store,
+			});
+			const accepted = await discoverMcpServers([path], {
+				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: changedSigned }, store },
+			});
+			expect(accepted.servers[0]?.attestation.status).toBe("approved");
+			const superseded = await discoverMcpServers([path], {
+				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: signed }, store },
+			});
+			expect(superseded.servers[0]?.attestation.status).toBe("rejected");
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}

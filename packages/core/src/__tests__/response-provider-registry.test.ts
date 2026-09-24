@@ -60,4 +60,29 @@ describe("response provider registry", () => {
 		).resolves.toEqual({ status: "applied", observed: "queried", rollbackToken: null });
 		expect(verify).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "cmd-2" }));
 	});
+
+	it("does not accept a replacement provider's evidence for an in-flight revocation", async () => {
+		const replacementVerify = vi.fn(async () => ({ observed: true as const, evidence: "other provider" }));
+		const registry = new ResponseProviderRegistry();
+		registry.register({
+			providerId: "example-idp",
+			actions: ["revoke_credential"],
+			execute: async () => {
+				registry.remove("example-idp");
+				registry.register({
+					providerId: "example-idp",
+					actions: ["revoke_credential"],
+					execute: vi.fn(),
+					verify: replacementVerify,
+				});
+				return { status: "applied", observed: "accepted", rollbackToken: null };
+			},
+			verify: vi.fn(async () => ({ observed: true as const, evidence: "original provider" })),
+		});
+		await expect(registry.execute({ action: "revoke_credential", target: "credential-1" })).resolves.toMatchObject({
+			status: "failed",
+			code: "provider_changed_during_action",
+		});
+		expect(replacementVerify).not.toHaveBeenCalled();
+	});
 });

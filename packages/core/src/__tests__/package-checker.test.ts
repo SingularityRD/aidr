@@ -33,10 +33,15 @@ describe("PackageChecker", () => {
 		};
 	}
 
-	function mockFileCheckResponse(severity: string, malwareName?: string) {
+	function mockFileCheckResponse(
+		severity: string,
+		malwareName?: string,
+		sha256 = "6d616c6963696f75732d686173682d706c616365686f6c6465722d3030303030",
+	) {
 		return {
 			responses: [
 				{
+					key: { sha256 },
 					severity,
 					...(malwareName ? { malware_name: [malwareName] } : {}),
 				},
@@ -203,6 +208,39 @@ describe("PackageChecker", () => {
 		expect(verdicts).toContain("not_found");
 	});
 
+	it("keeps registry lookups within the ten-request concurrency limit", async () => {
+		let active = 0;
+		let maxActive = 0;
+		let started = 0;
+		let hold = true;
+		const release: Array<() => void> = [];
+		globalThis.fetch = vi.fn(async () => {
+			started++;
+			active++;
+			maxActive = Math.max(maxActive, active);
+			if (hold) await new Promise<void>((resolve) => release.push(resolve));
+			active--;
+			return { ok: false, status: 404 } as Response;
+		});
+
+		const checker = new PackageChecker({ fileCheckEnabled: false });
+		const check = checker.checkPackages(
+			Array.from({ length: 12 }, (_, index) => ({ name: `pkg-${index}`, registry: "npm" as const })),
+		);
+		await vi.waitFor(() => expect(started).toBe(10));
+		release.shift()?.();
+		await vi.waitFor(() => expect(started).toBeGreaterThanOrEqual(11));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const peakBeforeRelease = maxActive;
+		hold = false;
+		for (const done of release) done();
+		const results = await check;
+
+		expect(peakBeforeRelease).toBeLessThanOrEqual(10);
+		expect(results).toHaveLength(12);
+		expect(results.every((result) => result.verdict === "not_found")).toBe(true);
+	});
+
 	it("returns not_found for existing package with non-existent version", async () => {
 		const mockFetch = vi.fn();
 		mockFetch.mockResolvedValueOnce({
@@ -249,7 +287,8 @@ describe("PackageChecker", () => {
 		});
 		mockFetch.mockResolvedValueOnce({
 			ok: true,
-			json: async () => mockFileCheckResponse("SEVERITY_MALWARE", "Malware.Generic [InfoStl]"),
+			json: async () =>
+				mockFileCheckResponse("SEVERITY_MALWARE", "Malware.Generic [InfoStl]", _SWIZZLE_HASH),
 		});
 		globalThis.fetch = mockFetch;
 

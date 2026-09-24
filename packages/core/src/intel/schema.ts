@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const IntelFileKindSchema = z.enum([
+const IntelFileKindSchema = z.enum([
 	"url_denylist",
 	"url_allowlist",
 	"domain_risk",
@@ -9,7 +9,7 @@ export const IntelFileKindSchema = z.enum([
 	"plugin_signature_denylist",
 ]);
 
-export const IntelPackFileSchema = z.object({
+const IntelPackFileSchema = z.object({
 	kind: IntelFileKindSchema,
 	path: z.string().min(1),
 	/**
@@ -42,7 +42,7 @@ export const IntelPackManifestSchema = z.object({
 	files: z.array(IntelPackFileSchema).default([]),
 });
 
-export type IntelPackManifest = z.infer<typeof IntelPackManifestSchema>;
+type IntelPackManifest = z.infer<typeof IntelPackManifestSchema>;
 
 export const PackActivePointerSchema = z.object({
 	version: z.string().min(1),

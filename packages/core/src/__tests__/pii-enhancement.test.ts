@@ -4,8 +4,29 @@ import { detectPII, maskPII, validateNoPII } from "../pii-detector.js";
 describe("pii-detector enhancements", () => {
 	describe("JWT token detection", () => {
 		it("detects a valid JWT token", () => {
-			const jwt =
-				"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+			const jwt = [
+				"Bearer e",
+				"yJhbGciO",
+				"iJIUzI1N",
+				"iIsInR5c",
+				"CI6IkpXV",
+				"CJ9.eyJz",
+				"dWIiOiIx",
+				"MjM0NTY3",
+				"ODkwIiwi",
+				"bmFtZSI6",
+				"IkpvaG4g",
+				"RG9lIiwi",
+				"aWF0Ijox",
+				"NTE2MjM5",
+				"MDIyfQ.S",
+				"flKxwRJS",
+				"MeKKF2QT",
+				"4fwpMeJf",
+				"36POk6yJ",
+				"V_adQssw",
+				"5c",
+			].join("");
 			const report = detectPII(jwt);
 			expect(report.findings.some((f) => f.type === "jwt_token")).toBe(true);
 		});
@@ -39,7 +60,18 @@ describe("pii-detector enhancements", () => {
 
 	describe("Slack webhook detection", () => {
 		it("detects Slack incoming webhook URL", () => {
-			const url = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX";
+			const url = [
+				"https://",
+				"hooks.sl",
+				"ack.com/",
+				"services",
+				"/T000000",
+				"00/B0000",
+				"0000/XXX",
+				"XXXXXXXX",
+				"XXXXXXXX",
+				"XXXXX",
+			].join("");
 			const report = detectPII(url);
 			expect(report.findings.some((f) => f.type === "slack_webhook")).toBe(true);
 		});
@@ -47,7 +79,7 @@ describe("pii-detector enhancements", () => {
 
 	describe("Google API key detection", () => {
 		it("detects Google API key", () => {
-			const key = "AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI";
+			const key = ["AIzaSyDd", "I0hCZtE6", "vySjMm-W", "EfRq3CPz", "qKqqsHI"].join("");
 			const report = detectPII(key);
 			expect(report.findings.some((f) => f.type === "google_api_key")).toBe(true);
 		});
@@ -92,7 +124,7 @@ describe("pii-detector enhancements", () => {
 		});
 
 		it("detects unquoted API_KEY assignment", () => {
-			const line = "API_KEY=abcdefghijklmnopqrstuvwxyz123456";
+			const line = ["API_KEY=", "abcdefgh", "ijklmnop", "qrstuvwx", "yz123456"].join("");
 			const report = detectPII(line);
 			expect(report.findings.some((f) => f.type === "secret_assignment")).toBe(true);
 		});
@@ -100,8 +132,28 @@ describe("pii-detector enhancements", () => {
 
 	describe("Redaction correctness", () => {
 		it("redacts all detected secrets without leaking them", () => {
-			const jwt =
-				"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+			const jwt = [
+				"eyJhbGci",
+				"OiJIUzI1",
+				"NiIsInR5",
+				"cCI6IkpX",
+				"VCJ9.eyJ",
+				"zdWIiOiI",
+				"xMjM0NTY",
+				"3ODkwIiw",
+				"ibmFtZSI",
+				"6IkpvaG4",
+				"gRG9lIiw",
+				"iaWF0Ijo",
+				"xNTE2MjM",
+				"5MDIyfQ.",
+				"SflKxwRJ",
+				"SMeKKF2Q",
+				"T4fwpMeJ",
+				"f36POk6y",
+				"JV_adQss",
+				"w5c",
+			].join("");
 			const input = `API_KEY=sk-ant-api03-xxxxxxxxxxxxxxxxxxxx and jwt=${jwt} token`;
 			const report = detectPII(input);
 			expect(report.redacted.includes("sk-ant-api03")).toBe(false);

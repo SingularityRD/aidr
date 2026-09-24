@@ -9,17 +9,19 @@ import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { resolvePath } from "../config.js";
 import { isDegradedSafeMode } from "../integrity/degraded-safe-mode.js";
+import { redactRemoteEvent } from "../managed.js";
 import {
 	DurableTelemetryQueue,
+	type TelemetryEnqueueResult,
 	type TelemetryFlushResult,
 	type TelemetryQueueOptions,
 	type TelemetryQueueStatus,
 } from "../telemetry-queue.js";
 import { redactTelemetryData, redactTelemetryString } from "../telemetry-redaction.js";
 import type { ControlPlaneConfig, Logger } from "../types.js";
-import { nullLogger } from "../types.js";
+import { ControlPlaneConfigSchema, nullLogger } from "../types.js";
 import { VERSION } from "../version.js";
-import { controlPlaneUrl } from "./control-plane-url.js";
+import { assertSecureControlPlaneEndpoint, controlPlaneUrl } from "./control-plane-url.js";
 
 export interface ControlPlaneIngestPayload {
 	iid?: string;
@@ -36,10 +38,66 @@ export interface ControlPlaneIngestResult {
 	body?: Record<string, unknown>;
 }
 
+const PUBLIC_INGEST_ERRORS = new Set([
+	"admission_unavailable",
+	"agent_key_mismatch",
+	"agent_limit_exceeded",
+	"agent_not_authorized",
+	"agent_registration_failed",
+	"agent_registration_unavailable",
+	"authorization_unavailable",
+	"entitlement_not_provisioned",
+	"entitlement_timing_unavailable",
+	"entitlements_changed",
+	"entitlements_unavailable",
+	"events_batch_too_large",
+	"events_insert_failed",
+	"events_limit_exceeded",
+	"invalid_agent_metadata",
+	"invalid_api_key",
+	"invalid_event",
+	"invalid_json",
+	"method_not_allowed",
+	"missing_api_key",
+	"missing_event_id",
+	"missing_iid",
+	"tenant_access_denied",
+	"tenant_not_admitted",
+]);
+
+function safeIngestFailure(
+	status: number,
+	body?: Record<string, unknown>,
+): ControlPlaneIngestResult {
+	const error =
+		typeof body?.error === "string" && PUBLIC_INGEST_ERRORS.has(body.error)
+			? body.error
+			: "http_error";
+	const safeBody: Record<string, unknown> = { error };
+	if (error === "agent_limit_exceeded") {
+		for (const key of ["allowed_agents", "current_agents"] as const) {
+			const value = body?.[key];
+			if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+				safeBody[key] = value;
+			}
+		}
+	}
+	return { ok: false, status, error, body: body ? safeBody : undefined };
+}
+
 export interface ControlPlaneClientOptions {
 	/** Override used by tests and embedded runtimes with a dedicated state root. */
 	telemetryQueueRoot?: string;
 	telemetryQueue?: Omit<TelemetryQueueOptions, "directory">;
+}
+
+function isDeliveredTelemetryReplay(enqueued: TelemetryEnqueueResult, eventCount: number): boolean {
+	return (
+		enqueued.rejected.length === 0 &&
+		enqueued.acceptedEventIds.length === 0 &&
+		enqueued.pendingDuplicateEventIds.length === 0 &&
+		enqueued.deliveredDuplicateEventIds.length === eventCount
+	);
 }
 
 export interface ControlPlaneRevocationsResult {
@@ -75,6 +133,7 @@ export class ControlPlaneClient {
 	private readonly timeoutMs: number;
 	private readonly apiKey: string;
 	private readonly logger: Logger;
+	private readonly redactMode: "none" | "hash" | "full";
 	private readonly options: ControlPlaneClientOptions;
 
 	constructor(
@@ -83,10 +142,16 @@ export class ControlPlaneClient {
 		logger: Logger = nullLogger,
 		options: ControlPlaneClientOptions = {},
 	) {
-		this.baseUrl = (config.endpoint ?? "").replace(/\/+$/, "");
-		this.timeoutMs = (config.timeout_seconds ?? 0.5) * 1000;
+		const validatedConfig = ControlPlaneConfigSchema.parse(config);
+		assertSecureControlPlaneEndpoint(
+			validatedConfig.endpoint,
+			validatedConfig.allow_insecure_loopback,
+		);
+		this.baseUrl = validatedConfig.endpoint.replace(/\/+$/, "");
+		this.timeoutMs = validatedConfig.timeout_seconds * 1000;
 		this.apiKey = apiKey;
 		this.logger = logger;
+		this.redactMode = validatedConfig.redact_mode;
 		this.options = options;
 	}
 
@@ -238,9 +303,10 @@ export class ControlPlaneClient {
 				Boolean(event) && typeof event === "object" && !Array.isArray(event),
 		);
 		if (events.length !== payload.events.length) return { ok: false, error: "invalid_events" };
+		const safeEvents = events.map((event) => redactRemoteEvent(event, this.redactMode));
 
 		const queue = this.telemetryQueue(payload.iid);
-		const enqueued = await queue.enqueue(events);
+		const enqueued = await queue.enqueue(safeEvents);
 		if (enqueued.rejected.length > 0) {
 			this.logger.warn("Telemetry queue rejected events", {
 				reason: enqueued.reason ?? enqueued.rejected[0]?.reason ?? "unknown",
@@ -249,6 +315,18 @@ export class ControlPlaneClient {
 				lost_total: enqueued.metrics.lostTotal,
 				storage_errors_total: enqueued.metrics.storageErrorsTotal,
 			});
+		}
+		if (isDeliveredTelemetryReplay(enqueued, safeEvents.length)) {
+			return {
+				ok: true,
+				body: this.withTelemetryStatus(undefined, {
+					state: enqueued.state,
+					deliveryState: enqueued.deliveryState,
+					...(enqueued.reason ? { reason: enqueued.reason } : {}),
+					metrics: enqueued.metrics,
+					enqueue_rejections: [],
+				}),
+			};
 		}
 		const { flushed, lastResult } = await this.flushTelemetryQueue(queue, payload);
 		const telemetry = {
@@ -265,10 +343,10 @@ export class ControlPlaneClient {
 			};
 		}
 		if (lastResult) {
-			return {
-				...lastResult,
-				body: this.withTelemetryStatus(lastResult.body, telemetry),
-			};
+			return this.withTelemetryDeliveryStatus(lastResult, flushed, telemetry, [
+				...enqueued.acceptedEventIds,
+				...enqueued.pendingDuplicateEventIds,
+			]);
 		}
 		return {
 			ok: false,
@@ -296,13 +374,10 @@ export class ControlPlaneClient {
 			};
 		}
 		if (queued.lastResult) {
-			return {
-				...queued.lastResult,
-				body: this.withTelemetryStatus(queued.lastResult.body, {
-					...queued.flushed,
-					enqueue_rejections: [],
-				}),
-			};
+			return this.withTelemetryDeliveryStatus(queued.lastResult, queued.flushed, {
+				...queued.flushed,
+				enqueue_rejections: [],
+			});
 		}
 		return {
 			ok: false,
@@ -348,12 +423,7 @@ export class ControlPlaneClient {
 
 			if (!response.ok) {
 				this.logger.debug(`Control plane ingest HTTP ${response.status}`);
-				return {
-					ok: false,
-					status: response.status,
-					error: typeof body?.error === "string" ? (body.error as string) : "http_error",
-					body,
-				};
+				return safeIngestFailure(response.status, body);
 			}
 
 			return { ok: true, status: response.status, body };
@@ -372,14 +442,31 @@ export class ControlPlaneClient {
 		let lastResult: ControlPlaneIngestResult | undefined;
 		const flushed = await queue.flush(async (batch) => {
 			lastResult = await this.postIngest({ ...payload, events: batch });
+			if (!lastResult.ok) {
+				return {
+					ok: false,
+					retryable: this.isRetryableIngestFailure(lastResult),
+					reason: lastResult.error,
+				};
+			}
 			const acknowledged = lastResult.body?.acknowledged_event_ids;
+			const attempted = new Set(batch.map((event) => event.event_id));
+			const validAcknowledgement =
+				Array.isArray(acknowledged) &&
+				acknowledged.every((id): id is string => typeof id === "string") &&
+				new Set(acknowledged).size === acknowledged.length &&
+				acknowledged.every((id) => attempted.has(id));
+			if (!validAcknowledgement) {
+				lastResult = { ...lastResult, ok: false, error: "invalid_acknowledgement" };
+				return {
+					ok: false,
+					retryable: true,
+					reason: "invalid_acknowledgement",
+				};
+			}
 			return {
-				ok: lastResult.ok,
-				acknowledgedEventIds: Array.isArray(acknowledged)
-					? acknowledged.filter((id): id is string => typeof id === "string")
-					: undefined,
-				retryable: this.isRetryableIngestFailure(lastResult),
-				reason: lastResult.error,
+				ok: true,
+				acknowledgedEventIds: acknowledged,
 			};
 		});
 		if (flushed.deliveryState === "unavailable") {
@@ -419,6 +506,32 @@ export class ControlPlaneClient {
 		telemetry: TelemetryQueueStatus & Record<string, unknown>,
 	): Record<string, unknown> {
 		return { ...(body ?? {}), telemetry_queue: telemetry };
+	}
+
+	private withTelemetryDeliveryStatus(
+		result: ControlPlaneIngestResult,
+		flushed: TelemetryFlushResult,
+		telemetry: TelemetryQueueStatus & Record<string, unknown>,
+		requiredAcknowledgedEventIds: readonly string[] = flushed.attemptedEventIds,
+	): ControlPlaneIngestResult {
+		const batchDeliveryOk =
+			result.ok &&
+			flushed.deliveryState === "available" &&
+			flushed.acknowledgedEventIds.length === flushed.attemptedEventIds.length;
+		const acknowledged = new Set(flushed.acknowledgedEventIds);
+		const requiredAcknowledged = requiredAcknowledgedEventIds.every((id) => acknowledged.has(id));
+		const deliveryOk = batchDeliveryOk && requiredAcknowledged;
+		return {
+			...result,
+			ok: deliveryOk,
+			error: deliveryOk
+				? result.error
+				: (result.error ??
+					(batchDeliveryOk && !requiredAcknowledged ? "telemetry_queued" : undefined) ??
+					flushed.reason ??
+					"telemetry_delivery_unavailable"),
+			body: this.withTelemetryStatus(result.body, telemetry),
+		};
 	}
 
 	/**

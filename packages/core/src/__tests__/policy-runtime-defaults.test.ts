@@ -46,6 +46,32 @@ describe("runtime default policy enforcement", () => {
 		expect(verdict?.artifacts.join(" ")).toContain("left-pad");
 	});
 
+	it.each([
+		"uv add requests",
+		"uv sync",
+		"poetry add requests",
+		"pipenv install requests",
+		"go get example.com/module",
+		"yarn dlx create-vite app",
+	])("requires approval for recognized package-manager command %s", async (command) => {
+		const config = ConfigSchema.parse({
+			policy: { enabled: true, runtime_defaults: { package_action: "require_approval" } },
+		});
+
+		const verdict = await evaluatePolicy(
+			"Bash",
+			[{ type: "command", value: command }],
+			config,
+			{ command },
+		);
+
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "supply_chain",
+			matchedThreatId: "POL-DEFAULT-PKG-001",
+		});
+	});
+
 	it("uses file, url, and output defaults for matching artifacts", async () => {
 		const config = ConfigSchema.parse({
 			policy: {

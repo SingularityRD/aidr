@@ -30,7 +30,7 @@ export interface AigModelConfig {
 	base_url: string;
 }
 
-export interface AigInfraScanOptions {
+interface AigInfraScanOptions {
 	scan_depth?: "quick" | "standard" | "full";
 	timeout?: number;
 	headers?: Record<string, string>;
@@ -115,13 +115,13 @@ export interface AigScanResult {
 	};
 }
 
-export interface BridgeScanResponse {
+interface BridgeScanResponse {
 	task_id: string;
 	status: AigTaskStatus;
 	estimated_seconds?: number;
 }
 
-export interface BridgeHealthResponse {
+interface BridgeHealthResponse {
 	status: string;
 	version: string;
 	aig_server: string;

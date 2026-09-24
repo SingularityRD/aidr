@@ -97,6 +97,7 @@ export function syntheticBehavioralInput(
 		timestamp: Date.now(),
 		path,
 		classificationText: JSON.stringify({ file_path: path }),
+		// Provisioning/orchestrator tests model trusted post-execution observations.
 		learningAllowed: true,
 		...overrides,
 	};

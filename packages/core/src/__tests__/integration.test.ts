@@ -241,6 +241,7 @@ describe("Core Integration - Full Flow", () => {
 					source: "test",
 				},
 				false,
+				Date.now() + 60 * 60 * 1000,
 			);
 
 			// Retrieve it

@@ -252,6 +252,27 @@ describe("evidence chain verification", () => {
 		expect(detectEvidenceTruncation(null, full)).toEqual({ truncated: false, reason: "no_previous_head" });
 		const broken: EvidenceChainVerification = { ...full, valid: false, head: null };
 		expect(detectEvidenceTruncation(full.head, broken).reason).toBe("chain_not_verifiable");
+
+		const replacement = verifyEvidenceChain(buildChain(4), hashContext);
+		expect(detectEvidenceTruncation(full.head, replacement)).toEqual({
+			truncated: true,
+			reason: "previous_head_missing_or_replaced",
+		});
+	});
+
+	it("rejects timezone-less wall clocks before producing an unverifiable receipt", () => {
+		const result = appendEvidenceReceipt(
+			{
+				receiptId: randomUUID(),
+				binding: binding(),
+				clock: clock(1, "2026-09-13T00:00:00"),
+				dataClass: "decision",
+				payloadSummary: "decision",
+			},
+			null,
+			hashContext,
+		);
+		expect(result).toMatchObject({ ok: false, error: "invalid_wall_clock" });
 	});
 
 	it("surfaces a multi-device chain rather than averaging the devices together", () => {
@@ -305,6 +326,7 @@ describe("external archive custody (fail-closed)", () => {
 				anchoredAtUtc: "2026-09-13T00:00:10.000Z",
 			}),
 			request,
+			hashContext,
 		);
 		expect(outcome).toEqual({
 			status: "anchored",
@@ -315,17 +337,17 @@ describe("external archive custody (fail-closed)", () => {
 	});
 
 	it("stays unanchored when the archive is absent, unavailable, rejects or errors", async () => {
-		expect((await anchorEvidenceHead(null, request)).reason).toBe("no_archive_sink");
-		expect((await anchorEvidenceHead(sink({ status: "unavailable", reason: "s3_down" }), request)).status).toBe(
+		expect((await anchorEvidenceHead(null, request, hashContext)).reason).toBe("no_archive_sink");
+		expect((await anchorEvidenceHead(sink({ status: "unavailable", reason: "s3_down" }), request, hashContext)).status).toBe(
 			"unanchored",
 		);
-		expect((await anchorEvidenceHead(sink({ status: "rejected", reason: "quota" }), request)).reason).toBe(
+		expect((await anchorEvidenceHead(sink({ status: "rejected", reason: "quota" }), request, hashContext)).reason).toBe(
 			"rejected:quota",
 		);
 		const throwing = sink(async () => {
 			throw new Error("network");
 		});
-		const thrown = await anchorEvidenceHead(throwing, request);
+		const thrown = await anchorEvidenceHead(throwing, request, hashContext);
 		expect(thrown.status).toBe("unanchored");
 		expect(thrown.reason).toMatch(/^archive_error:/);
 	});
@@ -339,6 +361,7 @@ describe("external archive custody (fail-closed)", () => {
 				anchoredAtUtc: "2026-09-13T00:00:10.000Z",
 			}),
 			request,
+			hashContext,
 		);
 		expect(wrongDigest.reason).toBe("archive_digest_mismatch");
 
@@ -350,6 +373,7 @@ describe("external archive custody (fail-closed)", () => {
 				anchoredAtUtc: "2026-09-13T00:00:10.000Z",
 			}),
 			request,
+			hashContext,
 		);
 		expect(noReference.reason).toBe("archive_reference_invalid");
 
@@ -361,6 +385,7 @@ describe("external archive custody (fail-closed)", () => {
 				anchoredAtUtc: "not-a-time",
 			}),
 			request,
+			hashContext,
 		);
 		expect(badTime.reason).toBe("archive_timestamp_invalid");
 	});
@@ -373,7 +398,7 @@ describe("external archive custody (fail-closed)", () => {
 			reference: "ref",
 			anchoredAtUtc: "2026-09-13T00:00:10.000Z",
 		}));
-		const outcome = await anchorEvidenceHead(late, request, {
+		const outcome = await anchorEvidenceHead(late, request, hashContext, {
 			timeoutMs: 50,
 			now: () => {
 				const value = nowMs;
@@ -387,7 +412,7 @@ describe("external archive custody (fail-closed)", () => {
 
 	it("times out rather than waiting forever on a hung archive", async () => {
 		const hung = sink(() => new Promise<EvidenceArchiveResult>(() => undefined));
-		const outcome = await anchorEvidenceHead(hung, request, { timeoutMs: 20 });
+		const outcome = await anchorEvidenceHead(hung, request, hashContext, { timeoutMs: 20 });
 		expect(outcome).toEqual({
 			status: "unanchored",
 			reference: null,
@@ -402,8 +427,77 @@ describe("external archive custody (fail-closed)", () => {
 			called = true;
 			return { status: "unavailable", reason: "unused" };
 		});
-		const outcome = await anchorEvidenceHead(spy, { ...request, headReceiptHash: "nope" });
+		const outcome = await anchorEvidenceHead(spy, { ...request, headReceiptHash: "nope" }, hashContext);
 		expect(outcome.reason).toBe("invalid_head_hash");
+		expect(called).toBe(false);
+	});
+
+	it("rejects empty or mismatched archive receipt chains before calling the sink", async () => {
+		let called = false;
+		const spy = sink(async () => {
+			called = true;
+			return {
+				status: "anchored",
+				anchoredReceiptHash: request.headReceiptHash,
+				reference: "ref",
+				anchoredAtUtc: "2026-09-13T00:00:10.000Z",
+			};
+		});
+		const empty = await anchorEvidenceHead(spy, { ...request, receipts: [] }, hashContext);
+		expect(empty.reason).toBe("invalid_receipt_chain");
+		const wrongIncident = await anchorEvidenceHead(spy, { ...request, incidentId: "other-incident" }, hashContext);
+		expect(wrongIncident.reason).toBe("receipt_chain_binding_mismatch");
+		const wrongHead = await anchorEvidenceHead(spy, { ...request, headReceiptId: randomUUID() }, hashContext);
+		expect(wrongHead.reason).toBe("archive_head_mismatch");
+		expect(called).toBe(false);
+	});
+
+	it("does not send a tampered chain to an archive that echoes the claimed head", async () => {
+		let called = false;
+		const spy = sink(async () => {
+			called = true;
+			return {
+				status: "anchored",
+				anchoredReceiptHash: request.headReceiptHash,
+				reference: "ref",
+				anchoredAtUtc: "2026-09-13T00:00:10.000Z",
+			};
+		});
+		const altered = { ...(chain[0] as EvidenceReceiptV1), payloadSummary: "forged" };
+		const outcome = await anchorEvidenceHead(spy, { ...request, receipts: [altered, head] }, hashContext);
+		expect(outcome).toMatchObject({ status: "unanchored", reason: "receipt_integrity_unverified" });
+		expect(called).toBe(false);
+	});
+
+	it("refuses a validly hashed policy switch within one incident", async () => {
+		const changed = appendEvidenceReceipt(
+			{
+				receiptId: randomUUID(),
+				binding: binding({ policyRevision: "rev-43" }),
+				clock: clock(1, "2026-09-13T00:00:01.000Z"),
+				dataClass: "decision",
+				payloadSummary: "changed-policy",
+			},
+			chain[0] as EvidenceReceiptV1,
+			hashContext,
+		);
+		if (!changed.ok) throw new Error(changed.error);
+		let called = false;
+		const spy = sink(async () => {
+			called = true;
+			return { status: "unavailable", reason: "unused" };
+		});
+		const outcome = await anchorEvidenceHead(
+			spy,
+			{
+				...request,
+				headReceiptHash: changed.value.receiptHash,
+				headReceiptId: changed.value.receiptId,
+				receipts: [chain[0] as EvidenceReceiptV1, changed.value],
+			},
+			hashContext,
+		);
+		expect(outcome).toMatchObject({ status: "unanchored", reason: "receipt_chain_binding_mismatch" });
 		expect(called).toBe(false);
 	});
 });

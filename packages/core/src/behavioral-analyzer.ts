@@ -31,7 +31,8 @@ export interface AnomalyDetectionResult {
 }
 
 export class BehavioralAnalyzer {
-	private events: ToolCallEvent[] = [];
+	// ponytail: one analyzer per scope bounds sessions. Add a session cap if they become shared.
+	private events = new Map<string, ToolCallEvent[]>();
 	private readonly logger: Logger;
 	private readonly windowSize: number;
 	private readonly anomalyThreshold: number;
@@ -43,11 +44,13 @@ export class BehavioralAnalyzer {
 	}
 
 	recordEvent(event: ToolCallEvent): void {
-		this.events.push(event);
+		const events = this.events.get(event.sessionId) ?? [];
+		events.push(event);
 
-		if (this.events.length > this.windowSize) {
-			this.events.shift();
+		if (events.length > this.windowSize) {
+			events.shift();
 		}
+		this.events.set(event.sessionId, events);
 
 		this.logger.debug("Recorded tool call event", {
 			tool: event.toolName,
@@ -57,7 +60,7 @@ export class BehavioralAnalyzer {
 	}
 
 	analyzeCurrentSession(sessionId: string): BehavioralProfile {
-		const sessionEvents = this.events.filter((e) => e.sessionId === sessionId);
+		const sessionEvents = this.events.get(sessionId) ?? [];
 
 		const toolFrequency = this.calculateToolFrequency(sessionEvents);
 		const averageRiskScore = this.calculateAverageRisk(sessionEvents);
@@ -75,7 +78,7 @@ export class BehavioralAnalyzer {
 
 	detectAnomaly(sessionId: string): AnomalyDetectionResult {
 		const profile = this.analyzeCurrentSession(sessionId);
-		const sessionEvents = this.events.filter((event) => event.sessionId === sessionId);
+		const sessionEvents = this.events.get(sessionId) ?? [];
 		// The newest observation is the candidate being scored. It must not set its
 		// own baseline, and observations from another session must not affect it.
 		const baselineEvents = sessionEvents.slice(0, -1);
@@ -236,18 +239,18 @@ export class BehavioralAnalyzer {
 	}
 
 	getSessionStats(): { totalEvents: number; uniqueSessions: number; averageSessionLength: number } {
-		const sessionIds = [...new Set(this.events.map((e) => e.sessionId))];
-		const totalEvents = this.events.length;
+		const uniqueSessions = this.events.size;
+		const totalEvents = [...this.events.values()].reduce((total, events) => total + events.length, 0);
 
 		return {
 			totalEvents,
-			uniqueSessions: sessionIds.length,
-			averageSessionLength: sessionIds.length > 0 ? totalEvents / sessionIds.length : 0,
+			uniqueSessions,
+			averageSessionLength: uniqueSessions > 0 ? totalEvents / uniqueSessions : 0,
 		};
 	}
 }
 
-export function createBehavioralAnalyzer(
+function createBehavioralAnalyzer(
 	windowSize?: number,
 	anomalyThreshold?: number,
 	logger?: Logger,

@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import type { Incident } from "./incidents/types.js";
 import { incidentToSiemRecord } from "./siem-export.js";
+import { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 import { redactTelemetryString } from "./telemetry-redaction.js";
 
 export const SIEM_EVENT_SCHEMA_VERSION = "aidr.siem.event/v1" as const;
@@ -98,6 +99,7 @@ interface BaseAdapterConfig {
 	allowInsecureLoopback?: boolean;
 }
 
+/** Generic receivers must echo `x-aidr-event-id` before delivery is acknowledged. */
 export interface WebhookSiemConfig extends BaseAdapterConfig {
 	provider: "webhook";
 	bearerToken?: string;
@@ -133,6 +135,7 @@ export type SiemAdapterConfig =
 	| ElasticSiemConfig;
 
 export type SiemProvider = SiemAdapterConfig["provider"];
+/** `delivered` confirms the adapter's provider receipt contract, not downstream indexing. */
 export type SiemDeliveryStatus = "queued" | "retrying" | "delivered" | "dead_letter";
 
 export interface SiemDeliveryReceipt {
@@ -163,6 +166,33 @@ export interface SiemFlushResult {
 	pending: number;
 }
 
+export interface SiemDeliveryClaim {
+	receiptId: string;
+	token: string;
+	envelope: SiemEventEnvelope;
+}
+
+export interface SiemDeliveryClaimResult {
+	claim?: SiemDeliveryClaim;
+	deadLettered: number;
+	pending: number;
+}
+
+export interface SiemDeliveryAttempt {
+	outcome: "delivered" | "retry" | "permanent";
+	code: string;
+	statusCode: number;
+	retryAfterMs?: number;
+}
+
+export interface SiemDeliveryCompletion {
+	applied: boolean;
+	delivered: number;
+	retrying: number;
+	deadLettered: number;
+	pending: number;
+}
+
 export interface SiemDeliveryHealth {
 	status: "healthy" | "degraded" | "unhealthy";
 	provider: SiemProvider;
@@ -174,6 +204,8 @@ export interface SiemDeliveryHealth {
 	oldestQueuedAgeMs: number;
 	retrying: number;
 	deadLettered: number;
+	/** Cumulative delivery failures; bounded receipt trimming must not erase loss. */
+	deadLetteredTotal: number;
 	delivered: number;
 	lastDeliveredAtMs?: number;
 	lastFailureAtMs?: number;
@@ -217,12 +249,16 @@ interface QueueItem {
 	receiptId: string;
 	envelope: SiemEventEnvelope;
 	byteLength: number;
+	claimToken?: string;
+	claimExpiresAtMs?: number;
 }
 
 interface DeliveryState {
 	version: 1;
 	/** Binds queued events and receipts to their non-credential delivery route. */
 	destinationFingerprint?: string;
+	/** Optional for state files written before the cumulative loss counter existed. */
+	deadLetteredTotal?: number;
 	queue: QueueItem[];
 	receipts: SiemDeliveryReceipt[];
 }
@@ -238,18 +274,21 @@ interface AdapterRequest {
 	init: RequestInit;
 }
 
-interface DeliveryClassification {
-	outcome: "delivered" | "retry" | "permanent";
-	code: string;
-	statusCode: number;
-	retryAfterMs?: number;
-}
+type DeliveryClassification = SiemDeliveryAttempt;
+type HttpClassification =
+	| { outcome: "http_success"; code: "http_success"; statusCode: number }
+	| { outcome: "retry"; code: string; statusCode: number; retryAfterMs?: number }
+	| { outcome: "permanent"; code: string; statusCode: number };
 
 interface SiemAdapter {
 	provider: SiemProvider;
 	endpointOrigin: string;
 	buildRequest(envelope: SiemEventEnvelope): AdapterRequest;
-	classify(response: Response, nowMs: number): Promise<DeliveryClassification>;
+	classify(
+		response: Response,
+		nowMs: number,
+		envelope: SiemEventEnvelope,
+	): Promise<DeliveryClassification>;
 }
 
 const DEFAULT_MAX_QUEUE_ENTRIES = 10_000;
@@ -327,10 +366,10 @@ function parseRetryAfter(response: Response, nowMs: number): number | undefined 
 	return Number.isFinite(at) ? Math.max(0, at - nowMs) : undefined;
 }
 
-function classifyHttp(response: Response, nowMs: number): DeliveryClassification {
+function classifyHttp(response: Response, nowMs: number): HttpClassification {
 	const statusCode = response.status;
 	if (statusCode >= 200 && statusCode < 300)
-		return { outcome: "delivered", code: "accepted", statusCode };
+		return { outcome: "http_success", code: "http_success", statusCode };
 	if (statusCode === 401 || statusCode === 403) {
 		return { outcome: "permanent", code: "authorization_rejected", statusCode };
 	}
@@ -392,7 +431,21 @@ function createWebhookAdapter(config: WebhookSiemConfig, base: URL): SiemAdapter
 				},
 			};
 		},
-		classify: async (response, nowMs) => classifyHttp(response, nowMs),
+		async classify(response, nowMs, envelope) {
+			const basic = classifyHttp(response, nowMs);
+			if (basic.outcome !== "http_success") return basic;
+			return response.headers.get("x-aidr-event-id") === envelope.event_id
+				? {
+						outcome: "delivered",
+						code: "webhook_receipt_verified",
+						statusCode: response.status,
+					}
+				: {
+						outcome: "retry",
+						code: "invalid_webhook_receipt",
+						statusCode: response.status,
+					};
+		},
 	};
 }
 
@@ -424,11 +477,15 @@ function createSplunkAdapter(config: SplunkHecSiemConfig, base: URL): SiemAdapte
 		},
 		async classify(response, nowMs) {
 			const basic = classifyHttp(response, nowMs);
-			if (basic.outcome !== "delivered") return basic;
+			if (basic.outcome !== "http_success") return basic;
 			try {
 				const body = JSON.parse(await readBodyBounded(response)) as { code?: unknown };
 				return body.code === 0
-					? basic
+					? {
+							outcome: "delivered",
+							code: "splunk_hec_accepted",
+							statusCode: response.status,
+						}
 					: { outcome: "permanent", code: "splunk_hec_rejected", statusCode: response.status };
 			} catch {
 				return { outcome: "retry", code: "invalid_splunk_response", statusCode: response.status };
@@ -459,7 +516,21 @@ function createSentinelAdapter(config: SentinelSiemConfig, base: URL): SiemAdapt
 				},
 			};
 		},
-		classify: async (response, nowMs) => classifyHttp(response, nowMs),
+		async classify(response, nowMs) {
+			const basic = classifyHttp(response, nowMs);
+			if (basic.outcome !== "http_success") return basic;
+			return response.status === 204
+				? {
+						outcome: "delivered",
+						code: "sentinel_request_accepted",
+						statusCode: response.status,
+					}
+				: {
+						outcome: "retry",
+						code: "unexpected_sentinel_response",
+						statusCode: response.status,
+					};
+		},
 	};
 }
 
@@ -468,36 +539,41 @@ async function classifyElasticResponse(
 	nowMs: number,
 ): Promise<DeliveryClassification> {
 	const basic = classifyHttp(response, nowMs);
-	if (basic.outcome !== "delivered") return basic;
+	if (basic.outcome !== "http_success") return basic;
 	try {
 		const body = JSON.parse(await readBodyBounded(response)) as {
 			errors?: unknown;
 			items?: Array<{ create?: { status?: unknown } }>;
 		};
 		const itemStatus = body.items?.[0]?.create?.status;
+		const resultStatus = typeof itemStatus === "number" ? itemStatus : response.status;
 		if (
 			body.errors === false &&
 			typeof itemStatus === "number" &&
 			itemStatus >= 200 &&
 			itemStatus < 300
 		)
-			return basic;
+			return {
+				outcome: "delivered",
+				code: "elastic_item_accepted",
+				statusCode: resultStatus,
+			};
 		if (itemStatus === 409)
-			return { outcome: "delivered", code: "duplicate_accepted", statusCode: response.status };
+			return { outcome: "delivered", code: "duplicate_accepted", statusCode: resultStatus };
 		if (itemStatus === 429 || (typeof itemStatus === "number" && itemStatus >= 500)) {
 			return {
 				outcome: "retry",
 				code: itemStatus === 429 ? "rate_limited" : "upstream_unavailable",
-				statusCode: response.status,
+				statusCode: resultStatus,
 			};
 		}
 		if (itemStatus === 401 || itemStatus === 403)
 			return {
 				outcome: "permanent",
 				code: "authorization_rejected",
-				statusCode: response.status,
+				statusCode: resultStatus,
 			};
-		return { outcome: "permanent", code: "elastic_bulk_rejected", statusCode: response.status };
+		return { outcome: "permanent", code: "elastic_bulk_rejected", statusCode: resultStatus };
 	} catch {
 		return { outcome: "retry", code: "invalid_elastic_response", statusCode: response.status };
 	}
@@ -613,7 +689,7 @@ export function createSiemEvent(incident: Incident, observedAtMs = Date.now()): 
 }
 
 function emptyState(): DeliveryState {
-	return { version: 1, queue: [], receipts: [] };
+	return { version: 1, deadLetteredTotal: 0, queue: [], receipts: [] };
 }
 
 function isReceipt(value: unknown): value is SiemDeliveryReceipt {
@@ -643,6 +719,9 @@ function parseStateFile(raw: string): DeliveryState {
 	}
 	if (
 		parsed.payload.version !== 1 ||
+		(parsed.payload.deadLetteredTotal !== undefined &&
+			(!Number.isSafeInteger(parsed.payload.deadLetteredTotal) ||
+				parsed.payload.deadLetteredTotal < 0)) ||
 		(parsed.payload.destinationFingerprint !== undefined &&
 			!/^([a-f0-9]{64})$/.test(parsed.payload.destinationFingerprint)) ||
 		!Array.isArray(parsed.payload.queue) ||
@@ -653,12 +732,18 @@ function parseStateFile(raw: string): DeliveryState {
 	if (!parsed.payload.receipts.every(isReceipt))
 		throw new SiemStateIntegrityError("SIEM delivery receipts are invalid");
 	for (const item of parsed.payload.queue) {
+		const hasClaim = item?.claimToken !== undefined || item?.claimExpiresAtMs !== undefined;
 		if (
 			!item ||
 			typeof item.receiptId !== "string" ||
 			typeof item.byteLength !== "number" ||
 			!item.envelope ||
-			typeof item.envelope.event_id !== "string"
+			typeof item.envelope.event_id !== "string" ||
+			(hasClaim &&
+				(typeof item.claimToken !== "string" ||
+					!/^[-0-9a-f]{36}$/i.test(item.claimToken) ||
+					!Number.isSafeInteger(item.claimExpiresAtMs) ||
+					Number(item.claimExpiresAtMs) < 0))
 		) {
 			throw new SiemStateIntegrityError("SIEM delivery queue contains an invalid entry");
 		}
@@ -675,13 +760,25 @@ async function persistState(stateFile: string, state: DeliveryState): Promise<vo
 	const tempFile = `${stateFile}.${process.pid}.${randomUUID()}.tmp`;
 	const handle = await open(tempFile, "wx", 0o600);
 	try {
-		await handle.writeFile(`${JSON.stringify(wrapper)}\n`, "utf8");
-		await handle.sync();
-	} finally {
-		await handle.close();
-	}
-	try {
+		try {
+			// NTFS ignores mode 0600; secure the new file before writing queue data.
+			if (process.platform === "win32") preparePrivateLocalFile(tempFile);
+			await handle.writeFile(`${JSON.stringify(wrapper)}\n`, "utf8");
+			await handle.sync();
+		} finally {
+			await handle.close();
+		}
 		await rename(tempFile, stateFile);
+		// The file sync makes its contents durable; sync the directory too so the
+		// rename itself survives a host crash on POSIX filesystems.
+		if (process.platform !== "win32") {
+			const directory = await open(dirname(stateFile), "r");
+			try {
+				await directory.sync();
+			} finally {
+				await directory.close();
+			}
+		}
 	} catch (error) {
 		await unlink(tempFile).catch(() => undefined);
 		throw error;
@@ -712,6 +809,9 @@ export class DurableSiemDelivery {
 		this.stateFile = resolve(options.stateFile);
 		this.adapter = createAdapter(options.adapter);
 		bindDestination(state, options.adapter);
+		state.deadLetteredTotal ??= state.receipts.filter(
+			(item) => item.status === "dead_letter",
+		).length;
 		this.maxQueueEntries = options.maxQueueEntries ?? DEFAULT_MAX_QUEUE_ENTRIES;
 		this.maxQueueBytes = options.maxQueueBytes ?? DEFAULT_MAX_QUEUE_BYTES;
 		this.maxReceipts = options.maxReceipts ?? DEFAULT_MAX_RECEIPTS;
@@ -743,13 +843,24 @@ export class DurableSiemDelivery {
 
 	static async open(options: SiemDeliveryOptions): Promise<DurableSiemDelivery> {
 		const stateFile = resolve(options.stateFile);
-		await mkdir(dirname(stateFile), { recursive: true, mode: 0o700 });
+		const stateDirectory = dirname(stateFile);
+		await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
+		if (process.platform === "win32") {
+			preparePrivateLocalDirectory(stateDirectory);
+		} else {
+			const directoryMetadata = await lstat(stateDirectory);
+			if (!directoryMetadata.isDirectory() || (directoryMetadata.mode & 0o077) !== 0)
+				throw new SiemStateIntegrityError("SIEM delivery state directory permissions are insecure");
+		}
 		let state = emptyState();
 		let unboundState = true;
 		try {
-			const fileStat = await stat(stateFile);
+			const fileStat = await lstat(stateFile);
 			if (!fileStat.isFile())
 				throw new SiemStateIntegrityError("SIEM delivery state is not a regular file");
+			if (process.platform !== "win32" && (fileStat.mode & 0o077) !== 0)
+				throw new SiemStateIntegrityError("SIEM delivery state file permissions are insecure");
+			if (process.platform === "win32") preparePrivateLocalFile(stateFile);
 			state = parseStateFile(await readFile(stateFile, "utf8"));
 			unboundState = state.destinationFingerprint === undefined;
 		} catch (error) {
@@ -847,13 +958,14 @@ export class DurableSiemDelivery {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
 		timer.unref?.();
+		let response: Response | undefined;
 		try {
-			const response = await this.fetcher(request.url, {
+			response = await this.fetcher(request.url, {
 				...request.init,
 				signal: controller.signal,
 				redirect: "error",
 			});
-			return await this.adapter.classify(response, this.now());
+			return await this.adapter.classify(response, this.now(), envelope);
 		} catch (error) {
 			return {
 				outcome: "retry",
@@ -864,57 +976,138 @@ export class DurableSiemDelivery {
 				statusCode: 0,
 			};
 		} finally {
+			await response?.body?.cancel().catch(() => undefined);
 			clearTimeout(timer);
 		}
 	}
 
-	async flush(maxItems = 100): Promise<SiemFlushResult> {
-		assertPositiveInteger("maxItems", maxItems);
+	async claimNext(): Promise<SiemDeliveryClaimResult> {
 		return this.exclusive(async () => {
-			const result: SiemFlushResult = {
-				attempted: 0,
+			const nowMs = this.now();
+			const item = this.state.queue.find(
+				(candidate) => (this.findReceipt(candidate.receiptId).nextAttemptAtMs ?? 0) <= nowMs,
+			);
+			if (!item) return { deadLettered: 0, pending: this.state.queue.length };
+			const receipt = this.findReceipt(item.receiptId);
+			if (receipt.attemptCount >= this.maxAttempts) {
+				receipt.status = "dead_letter";
+				this.state.deadLetteredTotal = (this.state.deadLetteredTotal ?? 0) + 1;
+				receipt.updatedAtMs = nowMs;
+				receipt.nextAttemptAtMs = undefined;
+				receipt.lastErrorCode = "delivery_interrupted";
+				this.state.queue = this.state.queue.filter(
+					(candidate) => candidate.receiptId !== receipt.receiptId,
+				);
+				this.trimReceipts();
+				await persistState(this.stateFile, this.state);
+				return { deadLettered: 1, pending: this.state.queue.length };
+			}
+
+			const token = randomUUID();
+			const claimExpiresAtMs = nowMs + this.requestTimeoutMs + 5_000;
+			item.claimToken = token;
+			item.claimExpiresAtMs = claimExpiresAtMs;
+			receipt.attemptCount += 1;
+			receipt.status = "retrying";
+			receipt.updatedAtMs = nowMs;
+			receipt.nextAttemptAtMs = claimExpiresAtMs;
+			await persistState(this.stateFile, this.state);
+			return {
+				claim: { receiptId: item.receiptId, token, envelope: item.envelope },
+				deadLettered: 0,
+				pending: this.state.queue.length,
+			};
+		});
+	}
+
+	async sendClaim(claim: SiemDeliveryClaim): Promise<SiemDeliveryAttempt> {
+		return this.send(claim.envelope);
+	}
+
+	async completeClaim(
+		claim: SiemDeliveryClaim,
+		classified: SiemDeliveryAttempt,
+	): Promise<SiemDeliveryCompletion> {
+		return this.exclusive(async () => {
+			const item = this.state.queue.find((candidate) => candidate.receiptId === claim.receiptId);
+			if (!item || item.claimToken !== claim.token) {
+				return {
+					applied: false,
+					delivered: 0,
+					retrying: 0,
+					deadLettered: 0,
+					pending: this.state.queue.length,
+				};
+			}
+			const receipt = this.findReceipt(item.receiptId);
+			receipt.updatedAtMs = this.now();
+			receipt.lastStatusCode = classified.statusCode || undefined;
+			receipt.lastErrorCode = classified.outcome === "delivered" ? undefined : classified.code;
+			delete item.claimToken;
+			delete item.claimExpiresAtMs;
+			const result: SiemDeliveryCompletion = {
+				applied: true,
 				delivered: 0,
 				retrying: 0,
 				deadLettered: 0,
 				pending: 0,
 			};
-			const eligible = this.state.queue
-				.filter((item) => (this.findReceipt(item.receiptId).nextAttemptAtMs ?? 0) <= this.now())
-				.slice(0, maxItems);
-			for (const item of eligible) {
-				const receipt = this.findReceipt(item.receiptId);
-				receipt.attemptCount += 1;
-				receipt.updatedAtMs = this.now();
-				result.attempted += 1;
-				const classified = await this.send(item.envelope);
-				receipt.lastStatusCode = classified.statusCode || undefined;
-				receipt.lastErrorCode = classified.outcome === "delivered" ? undefined : classified.code;
-				if (classified.outcome === "delivered") {
-					receipt.status = "delivered";
-					receipt.nextAttemptAtMs = undefined;
-					this.state.queue = this.state.queue.filter(
-						(entry) => entry.receiptId !== receipt.receiptId,
-					);
-					result.delivered += 1;
-				} else if (classified.outcome === "permanent" || receipt.attemptCount >= this.maxAttempts) {
-					receipt.status = "dead_letter";
-					receipt.nextAttemptAtMs = undefined;
-					this.state.queue = this.state.queue.filter(
-						(entry) => entry.receiptId !== receipt.receiptId,
-					);
-					result.deadLettered += 1;
-				} else {
-					receipt.status = "retrying";
-					receipt.nextAttemptAtMs =
-						this.now() + this.backoffMs(receipt.attemptCount, classified.retryAfterMs);
-					result.retrying += 1;
-				}
-				this.trimReceipts();
-				await persistState(this.stateFile, this.state);
+			if (classified.outcome === "delivered") {
+				receipt.status = "delivered";
+				receipt.nextAttemptAtMs = undefined;
+				this.state.queue = this.state.queue.filter(
+					(candidate) => candidate.receiptId !== receipt.receiptId,
+				);
+				result.delivered = 1;
+			} else if (classified.outcome === "permanent" || receipt.attemptCount >= this.maxAttempts) {
+				receipt.status = "dead_letter";
+				this.state.deadLetteredTotal = (this.state.deadLetteredTotal ?? 0) + 1;
+				receipt.nextAttemptAtMs = undefined;
+				this.state.queue = this.state.queue.filter(
+					(candidate) => candidate.receiptId !== receipt.receiptId,
+				);
+				result.deadLettered = 1;
+			} else {
+				receipt.status = "retrying";
+				receipt.nextAttemptAtMs =
+					this.now() + this.backoffMs(receipt.attemptCount, classified.retryAfterMs);
+				result.retrying = 1;
 			}
+			this.trimReceipts();
+			await persistState(this.stateFile, this.state);
 			result.pending = this.state.queue.length;
 			return result;
 		});
+	}
+
+	async flush(maxItems = 100): Promise<SiemFlushResult> {
+		assertPositiveInteger("maxItems", maxItems);
+		const result: SiemFlushResult = {
+			attempted: 0,
+			delivered: 0,
+			retrying: 0,
+			deadLettered: 0,
+			pending: this.state.queue.length,
+		};
+		for (let index = 0; index < maxItems; index++) {
+			const claimed = await this.claimNext();
+			result.deadLettered += claimed.deadLettered;
+			result.pending = claimed.pending;
+			if (!claimed.claim) {
+				if (claimed.deadLettered > 0) continue;
+				break;
+			}
+			result.attempted += 1;
+			const completed = await this.completeClaim(
+				claimed.claim,
+				await this.sendClaim(claimed.claim),
+			);
+			result.delivered += completed.delivered;
+			result.retrying += completed.retrying;
+			result.deadLettered += completed.deadLettered;
+			result.pending = completed.pending;
+		}
+		return result;
 	}
 
 	async getReceipt(receiptId: string): Promise<SiemDeliveryReceipt | undefined> {
@@ -947,7 +1140,7 @@ export class DurableSiemDelivery {
 			const authorizationFailure = lastFailure?.lastErrorCode === "authorization_rejected";
 			return {
 				status:
-					authorizationFailure || dead.length > 0
+					authorizationFailure || (this.state.deadLetteredTotal ?? 0) > 0
 						? "unhealthy"
 						: retrying.length > 0 || this.state.queue.length > 0
 							? "degraded"
@@ -961,6 +1154,7 @@ export class DurableSiemDelivery {
 				oldestQueuedAgeMs: Math.max(0, oldest),
 				retrying: retrying.length,
 				deadLettered: dead.length,
+				deadLetteredTotal: this.state.deadLetteredTotal ?? 0,
 				delivered: delivered.length,
 				lastDeliveredAtMs: lastDelivered?.updatedAtMs,
 				lastFailureAtMs: lastFailure?.updatedAtMs,

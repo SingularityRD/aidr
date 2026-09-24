@@ -10,7 +10,8 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "ignore (all |your |previous |above )?(instructions?|system (prompt|message)|guidelines?|rules?|constraints?)"
+  pattern: "(?:ignore (all |your |previous |above )?(instructions?|system (prompt|message)|guidelines?|rules?|constraints?)|(?:^|[.!?]\\s{0,80})(?:please\\s{1,8})?ignore all previous instructions?)"
+  case_insensitive: true
   match_on: content
   title: "Direct prompt injection: instruction override attempt"
   expires_at: null
@@ -119,7 +120,8 @@
   severity: high
   confidence: 0.85
   action: block
-  pattern: "repeat (the |your )?(first |initial |original |starting )(words?|sentence|message|instruction|prompt|text)"
+  pattern: "\\b(repeat|restate|quote|recite|reproduce)\\b.{0,80}\\b(first|initial|original|starting)\\b.{0,80}\\b(words?|sentence|message|instruction|prompt|text)\\b.{0,80}\\b(system|private|role|hidden|initial|original|instructions?|prompt)\\b"
+  case_insensitive: true
   match_on: content
   title: "System prompt extraction via repetition trick"
   expires_at: null
@@ -177,6 +179,7 @@
   confidence: 0.80
   action: require_approval
   pattern: "send (this|the (above|following|result|output|content)) (to|via) (http|curl|wget|webhook|discord|telegram|slack)"
+  case_insensitive: true
   match_on: content
   title: "Data exfiltration attempt via webhook/external service"
   expires_at: null
@@ -214,6 +217,7 @@
   confidence: 0.85
   action: block
   pattern: "(remember|store|save|memorize|persist|keep in (memory|context)) (this|the following|that|for (future|later|next))"
+  case_insensitive: true
   match_on: content
   title: "Memory poisoning: content requesting persistent storage"
   expires_at: null
@@ -225,6 +229,7 @@
   confidence: 0.90
   action: block
   pattern: "(from now on|from this point|going forward|in all future|for all subsequent) (you |always )?(are|must|should|will)"
+  case_insensitive: true
   match_on: content
   title: "Memory poisoning: temporal persistence instruction"
   expires_at: null

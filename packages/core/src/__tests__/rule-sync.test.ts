@@ -67,6 +67,83 @@ describe("RealTimeRuleSync", () => {
 	});
 
 	describe("sync", () => {
+		it("coalesces concurrent manual syncs into one request", async () => {
+			let resolveFetch: ((response: Response) => void) | undefined;
+			const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(
+				() =>
+					new Promise<Response>((resolve) => {
+						resolveFetch = resolve;
+					}),
+			);
+
+			const first = sync.sync();
+			const second = sync.sync();
+			await Promise.resolve();
+
+			expect(second).toBe(first);
+			expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+			resolveFetch?.(new Response(JSON.stringify([]), { status: 200 }));
+			await expect(Promise.all([first, second])).resolves.toEqual([
+				{ updated: 0, added: 0, removed: 0, unchanged: 0 },
+				{ updated: 0, added: 0, removed: 0, unchanged: 0 },
+			]);
+			fetchSpy.mockRestore();
+		});
+
+		it("does not overlap a scheduled sync with a manual sync", async () => {
+			vi.useFakeTimers();
+			const scheduledSync = new RealTimeRuleSync(
+				makeConfig({ pollIntervalMinutes: 1 / 6_000, requestTimeoutMs: 60_000 }),
+				mockLogger,
+			);
+			let resolvePending: ((response: Response) => void) | undefined;
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+				.mockImplementationOnce(
+					() =>
+						new Promise<Response>((resolve) => {
+							resolvePending = resolve;
+						}),
+				);
+
+			try {
+				await scheduledSync.start();
+				const manual = scheduledSync.sync();
+				await Promise.resolve();
+				await vi.advanceTimersByTimeAsync(10);
+
+				expect(fetchSpy).toHaveBeenCalledTimes(2);
+				scheduledSync.stop();
+				resolvePending?.(new Response(JSON.stringify([]), { status: 200 }));
+				await manual;
+			} finally {
+				scheduledSync.stop();
+				fetchSpy.mockRestore();
+				vi.useRealTimers();
+			}
+		});
+
+		it("bounds delta downloads with an abort signal", async () => {
+			const timedSync = new RealTimeRuleSync(makeConfig({ requestTimeoutMs: 5 }), mockLogger);
+			let requestSignal: AbortSignal | undefined;
+			const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((_input, init) => {
+				requestSignal = init?.signal ?? undefined;
+				return new Promise((_resolve, reject) => {
+					requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), {
+						once: true,
+					});
+				});
+			});
+
+			const stats = await timedSync.sync();
+
+			expect(requestSignal?.aborted).toBe(true);
+			expect(stats).toEqual({ updated: 0, added: 0, removed: 0, unchanged: 0 });
+			fetchSpy.mockRestore();
+		});
+
 		it("returns sync stats after successful sync", async () => {
 			const remoteRules = [
 				{
@@ -117,6 +194,23 @@ describe("RealTimeRuleSync", () => {
 	});
 
 	describe("downloadRule", () => {
+		it("bounds single-rule downloads with an abort signal", async () => {
+			const timedSync = new RealTimeRuleSync(makeConfig({ requestTimeoutMs: 5 }), mockLogger);
+			let requestSignal: AbortSignal | undefined;
+			const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((_input, init) => {
+				requestSignal = init?.signal ?? undefined;
+				return new Promise((_resolve, reject) => {
+					requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), {
+						once: true,
+					});
+				});
+			});
+
+			await expect(timedSync.downloadRule("slow-rule")).rejects.toBeDefined();
+			expect(requestSignal?.aborted).toBe(true);
+			fetchSpy.mockRestore();
+		});
+
 		it("fetches single rule by ID successfully", async () => {
 			const rule = {
 				id: "test-rule-123",
@@ -209,6 +303,43 @@ describe("RealTimeRuleSync", () => {
 	});
 
 	describe("emergencyPush", () => {
+		it("waits for an active sync before mutating rules and cache", async () => {
+			let resolveDelta: ((response: Response) => void) | undefined;
+			const emergencyRule = {
+				id: "emergency-serialized",
+				version: "1.0.0",
+				pattern: "urgent",
+				category: "emergency",
+				severity: "critical" as const,
+				action: "block" as const,
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+				hash: "serialized-hash",
+			};
+			const fetchSpy = vi
+				.spyOn(global, "fetch")
+				.mockImplementationOnce(
+					() =>
+						new Promise<Response>((resolve) => {
+							resolveDelta = resolve;
+						}),
+				)
+				.mockResolvedValueOnce(new Response(JSON.stringify(emergencyRule), { status: 200 }));
+
+			const regular = sync.sync();
+			const emergency = sync.emergencyPush([emergencyRule.id]);
+			await Promise.resolve();
+
+			expect(fetchSpy).toHaveBeenCalledTimes(1);
+			resolveDelta?.(new Response(JSON.stringify([]), { status: 200 }));
+			await regular;
+			await emergency;
+
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+			expect((await sync.getCurrentRules()).map((rule) => rule.id)).toContain(emergencyRule.id);
+			fetchSpy.mockRestore();
+		});
+
 		it("downloads emergency rules immediately", async () => {
 			const rule = {
 				id: "emergency-1",

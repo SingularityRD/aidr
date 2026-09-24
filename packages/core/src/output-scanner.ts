@@ -1,6 +1,6 @@
 import { detectPII } from "./pii-detector.js";
 
-export type OutputFindingType =
+type OutputFindingType =
 	| "secret_leak"
 	| "prompt_injection_payload"
 	| "system_prompt_leakage"
@@ -82,7 +82,7 @@ const OUTPUT_RULES: Array<{
 		severity: "critical",
 		reason: "Output appears to disclose system prompt content",
 		pattern:
-			/\b(system prompt|system message|initial instructions?|hidden instructions?)\b[\s\S]{0,80}\b(is|are|:|=|contains)\b/i,
+			/\b(system prompt|system message|initial instructions?|hidden instructions?)\b[\s\S]{0,80}\b(is|are|:|=|contains)\b(?!\s*(?:not|never)\b)/i,
 	},
 	{
 		id: "OUT-TOOL-001",
@@ -171,6 +171,17 @@ function collectSensitiveFindings(
 	return findings;
 }
 
+function isEducationalInjectionMention(view: string, start: number, end: number): boolean {
+	const prefix = view.slice(Math.max(0, start - 120), start);
+	const suffix = view.slice(end, end + 64);
+	// Exempt only a short, explicitly attributed definition of the phrase.
+	return (
+		/\b(?:security\s+)?(?:guide|documentation|article|report|training\s+material)\s+(?:explains?|describes?|says?)\s+that\s*$/i.test(
+			prefix,
+		) && /^\s+is\s+(?:a|an)\s+prompt\s+injection\s+(?:example|pattern)\b/i.test(suffix)
+	);
+}
+
 function findRuleInView(
 	rule: (typeof OUTPUT_RULES)[number],
 	view: string,
@@ -179,16 +190,28 @@ function findRuleInView(
 	for (let start = 0; start < view.length; start += SCAN_STEP_CHARS) {
 		if (expired()) return "timeout";
 		const chunk = view.slice(start, start + SCAN_STEP_CHARS + SCAN_OVERLAP_CHARS);
-		const match = rule.pattern.exec(chunk);
-		if (expired()) return "timeout";
-		if (!match || match.index >= SCAN_STEP_CHARS) continue;
-		return {
-			type: rule.type,
-			severity: rule.severity,
-			reason: rule.reason,
-			redactedExcerpt: "[REDACTED_UNTRUSTED_OUTPUT]",
-			ruleId: rule.id,
-		};
+		const pattern = new RegExp(rule.pattern.source, `${rule.pattern.flags}g`);
+		while (true) {
+			const match = pattern.exec(chunk);
+			if (expired()) return "timeout";
+			if (!match) break;
+			if (match.index >= SCAN_STEP_CHARS) break;
+			const absoluteStart = start + match.index;
+			const absoluteEnd = absoluteStart + match[0].length;
+			if (
+				rule.id === "OUT-INJ-001" &&
+				isEducationalInjectionMention(view, absoluteStart, absoluteEnd)
+			) {
+				continue;
+			}
+			return {
+				type: rule.type,
+				severity: rule.severity,
+				reason: rule.reason,
+				redactedExcerpt: "[REDACTED_UNTRUSTED_OUTPUT]",
+				ruleId: rule.id,
+			};
+		}
 	}
 	return null;
 }

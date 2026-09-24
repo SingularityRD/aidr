@@ -22,10 +22,11 @@ _BLOCKED_HOSTNAMES = {
 }
 
 _MAX_URL_LENGTH = 2_048
-_MAX_SOURCE_LENGTH = 512
 _MAX_FORWARD_HEADERS = 64
 _MAX_FORWARD_HEADER_VALUE = 4_096
 _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+_TENANT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_UPLOAD_ID_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 # These headers either control the hop-to-hop connection or can be used to
 # smuggle a caller-controlled routing identity through a proxy.  The bridge
@@ -77,7 +78,7 @@ def runtime_egress_ready() -> tuple[bool, str]:
     with this requirement disabled explicitly.
     """
 
-    required = os.getenv("BRIDGE_RUNTIME_EGRESS_REQUIRED", "false").strip().lower() in {
+    required = os.getenv("BRIDGE_RUNTIME_EGRESS_REQUIRED", "true").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -89,7 +90,7 @@ def runtime_egress_ready() -> tuple[bool, str]:
     if not proxy:
         return False, "runtime egress proxy is not configured"
     parsed = urlparse(proxy)
-    if parsed.scheme not in {"http", "https", "socks5", "socks5h"} or not parsed.hostname:
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return False, "runtime egress proxy URL is invalid"
     return True, "runtime egress proxy configured"
 
@@ -134,7 +135,13 @@ def _validate_resolved_addresses(host: str, port: int, *, field: str) -> None:
 def _reject_address(address: ipaddress._BaseAddress, *, field: str) -> None:
     """Reject an IP address that must never be used as a scan target."""
 
-    is_metadata = str(address) in {
+    # IPv4-mapped IPv6 addresses inherit the destination's IPv4 routing. Check
+    # the embedded address too; otherwise cloud metadata such as
+    # ::ffff:100.100.100.200 bypasses the literal IPv4 blocklist.
+    effective_address = address
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        effective_address = address.ipv4_mapped
+    is_metadata = str(effective_address) in {
         "169.254.169.254",
         "100.100.100.200",
         "fd00:ec2::254",
@@ -142,14 +149,14 @@ def _reject_address(address: ipaddress._BaseAddress, *, field: str) -> None:
     # Reserved and multicast ranges are not valid customer service targets and
     # can be abused to reach provider/host control planes in unusual networks.
     blocked = (
-        address.is_loopback
-        or address.is_link_local
-        or address.is_unspecified
-        or address.is_reserved
-        or address.is_multicast
+        effective_address.is_loopback
+        or effective_address.is_link_local
+        or effective_address.is_unspecified
+        or effective_address.is_reserved
+        or effective_address.is_multicast
         or is_metadata
     )
-    if blocked or (address.is_private and not _allow_private_targets()):
+    if blocked or (effective_address.is_private and not _allow_private_targets()):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"{field} points to a blocked private or metadata address",
@@ -235,32 +242,27 @@ def target_policy(value: str, *, field: str = "target") -> dict[str, object]:
         "scheme": parsed.scheme,
         "host": (parsed.hostname or "").lower().rstrip("."),
         "port": parsed.port or (443 if parsed.scheme == "https" else 80),
-        "runtime_proxy_required": os.getenv("BRIDGE_RUNTIME_EGRESS_REQUIRED", "false").lower() in {"1", "true", "yes", "on"},
+        "runtime_proxy_required": os.getenv("BRIDGE_RUNTIME_EGRESS_REQUIRED", "true").strip().lower() in {"1", "true", "yes", "on"},
     }
 
 
-def validate_source_path(value: str, *, field: str = "target") -> str:
-    """Constrain source scans to the configured shared upload directory.
+def validate_source_path(value: str, *, tenant_id: str, field: str = "target") -> str:
+    """Validate an opaque upload ID and return its tenant-relative reference.
 
-    Source targets are paths consumed by the AIG worker.  They are not allowed
-    to select arbitrary bridge/AIG filesystem locations.  The returned path is
-    rooted at ``BRIDGE_SOURCE_ROOT`` (``/app/uploads`` in the compose stack),
-    and existing symlinks must remain inside that root.  Existence is not
-    required here because the upload may live in a shared volume visible only
-    to the worker; the worker must perform its own final existence check.
+    Callers never choose a filesystem path. The upload endpoint returns a
+    SHA-256 upload ID, which is resolved beneath
+    ``BRIDGE_SOURCE_ROOT/<tenant_id>``. Existence is checked immediately before
+    dispatch by :func:`assert_source_path_safe`.
     """
 
     candidate_value = value.strip()
-    if (
-        not candidate_value
-        or len(candidate_value) > _MAX_SOURCE_LENGTH
-        or "\x00" in candidate_value
-        or "\\" in candidate_value
-    ):
+    if not _UPLOAD_ID_RE.fullmatch(candidate_value):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"{field} is not a valid source path",
+            detail=f"{field} must be a SHA-256 upload ID",
         )
+    if not _TENANT_RE.fullmatch(tenant_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid tenant identifier")
 
     root = Path(os.getenv("BRIDGE_SOURCE_ROOT", "/app/uploads"))
     if not root.is_absolute():
@@ -270,40 +272,37 @@ def validate_source_path(value: str, *, field: str = "target") -> str:
         )
     try:
         root = root.resolve(strict=False)
-        raw = Path(candidate_value)
-        candidate = raw if raw.is_absolute() else root / raw
+        tenant_path = root / tenant_id
+        if tenant_path.is_symlink():
+            raise ValueError("tenant upload root may not be a symlink")
+        tenant_root = tenant_path.resolve(strict=False)
+        tenant_root.relative_to(root)
+        relative = Path(tenant_id) / candidate_value.lower()
+        candidate = root / relative
         resolved = candidate.resolve(strict=False)
-    except (OSError, RuntimeError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"{field} is not a resolvable source path",
         ) from exc
     try:
-        resolved.relative_to(root)
+        resolved.relative_to(tenant_root)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"{field} must stay within the configured source root",
+            detail=f"{field} must stay within the authenticated tenant upload root",
         ) from exc
-    return str(resolved)
+    # Never put container filesystem paths in task payloads or API responses.
+    # The worker resolves this reference beneath its own AIG_UPLOAD_ROOT.
+    return relative.as_posix()
 
 
-def assert_source_path_safe(value: str, *, field: str = "target") -> str:
-    """Re-check an existing source path immediately before worker dispatch."""
+def assert_source_path_safe(value: str, *, tenant_id: str, field: str = "target") -> str:
+    """Resolve and re-check a tenant upload immediately before dispatch."""
 
     root = Path(os.getenv("BRIDGE_SOURCE_ROOT", "/app/uploads")).resolve(strict=False)
-    raw = Path(value.strip())
-    candidate = raw if raw.is_absolute() else root / raw
-    # Inspect the path as supplied, before resolve() erases the symlink
-    # component. A symlink that happens to point back inside the root is still
-    # rejected because it can be swapped between validation and worker open.
-    try:
-        relative = candidate.relative_to(root)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"{field} must stay within the configured source root",
-        ) from exc
+    relative = Path(validate_source_path(value, tenant_id=tenant_id, field=field))
+    resolved = root / relative
     cursor = root
     for component in relative.parts:
         if cursor.is_symlink():
@@ -314,18 +313,21 @@ def assert_source_path_safe(value: str, *, field: str = "target") -> str:
         cursor = cursor / component
     if cursor.is_symlink():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"{field} may not be a symlink")
-    resolved = Path(validate_source_path(value, field=field))
     try:
         real = resolved.resolve(strict=True)
-        real.relative_to(root)
+        tenant_path = root / tenant_id
+        if tenant_path.is_symlink():
+            raise ValueError("tenant upload root may not be a symlink")
+        tenant_root = tenant_path.resolve(strict=True)
+        real.relative_to(tenant_root)
     except (OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"{field} is missing or escapes the configured source root",
         ) from exc
-    if real.is_symlink():
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"{field} may not be a symlink")
-    return str(real)
+    if real.is_symlink() or not real.is_file():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"{field} must be a regular file")
+    return relative.as_posix()
 
 
 def validate_forward_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -363,17 +365,29 @@ def validate_agent_config_targets(config: dict) -> None:
 
     Agent configs are serialized to YAML and may cause AIG workers to call a
     customer-controlled endpoint.  Validate the conventional URL keys at the
-    bridge boundary so a config cannot hide an obvious SSRF target in a nested
-    mapping.  Unknown keys are left untouched for AIG's own schema validation.
+    bridge boundary so a config cannot hide an SSRF target in a nested mapping.
+    URL values in unknown fields are rejected instead of being forwarded to a
+    flexible upstream schema.
     """
 
-    url_keys = {"url", "base_url", "endpoint", "api_url", "server_url", "webhook_url"}
+    url_keys = {"url", "baseurl", "apibaseurl", "apiurl", "serverurl", "webhookurl"}
 
     def walk(value: object) -> None:
         if isinstance(value, dict):
             for key, nested in value.items():
-                if str(key).lower() in url_keys and isinstance(nested, str) and "://" in nested:
-                    validate_remote_url(nested, field=f"agent_config.{key}")
+                canonical_key = re.sub(r"[^a-z0-9]", "", str(key).lower())
+                if canonical_key in url_keys:
+                    if not isinstance(nested, str):
+                        raise HTTPException(
+                            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            detail=f"agent_config.{key} must be an http(s) URL",
+                        )
+                    target_policy(nested, field=f"agent_config.{key}")
+                elif isinstance(nested, str) and "://" in nested:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail=f"unsupported URL field: agent_config.{key}",
+                    )
                 walk(nested)
         elif isinstance(value, list):
             for nested in value:

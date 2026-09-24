@@ -17,7 +17,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ResponseAuditor } from "../response-audit.js";
@@ -71,6 +71,71 @@ beforeEach(async () => {
 
 afterEach(async () => {
 	await rm(tmpDir, { recursive: true, force: true });
+});
+
+describe("snapshot paths stay inside the configured vault", () => {
+	it("rejects traversal IDs before rollback, creation, or recursive cleanup", async () => {
+		const rollback = new AutoRollback(nullLogger, undefined, snapshotsDir);
+		const outsideDir = join(tmpDir, "outside-snapshot");
+		const marker = join(outsideDir, "keep.txt");
+		await mkdir(outsideDir);
+		await writeFile(marker, "keep this file\n");
+
+		await expect(rollback.rollback("../outside-snapshot")).rejects.toThrow("Invalid snapshot ID");
+		await expect(rollback.cleanup("../outside-snapshot")).rejects.toThrow("Invalid snapshot ID");
+		await expect(rollback.createSnapshot([target], "../outside-snapshot")).rejects.toThrow(
+			"Invalid snapshot ID",
+		);
+
+		expect(await readFile(marker, "utf8")).toBe("keep this file\n");
+		expect((await readdir(tmpDir)).some((name) => name.startsWith("outside-snapshot-"))).toBe(false);
+	});
+
+	it("rejects metadata whose ID does not match the selected snapshot", async () => {
+		const rollback = new AutoRollback(nullLogger, undefined, snapshotsDir);
+		const snapshot = await rollback.createSnapshot([target], "test-op");
+		await writeFile(target, NEWER_CONTENT);
+
+		const metadataPath = join(snapshotsDir, snapshot.id, "metadata.json");
+		const metadata = JSON.parse(await readFile(metadataPath, "utf8")) as {
+			id: string;
+		};
+		metadata.id = "another-snapshot-1234abcd";
+		await writeFile(metadataPath, JSON.stringify(metadata));
+
+		const reopened = new AutoRollback(nullLogger, undefined, snapshotsDir);
+		await expect(reopened.rollback(snapshot.id, { expectTargetChanged: true })).rejects.toThrow(
+			`Snapshot not found: ${snapshot.id}`,
+		);
+		expect(await readFile(target, "utf8")).toBe(NEWER_CONTENT);
+	});
+
+	it("rejects metadata that points a backup outside its snapshot directory", async () => {
+		const rollback = new AutoRollback(nullLogger, undefined, snapshotsDir);
+		const snapshot = await rollback.createSnapshot([target], "test-op");
+		const outsideBackup = join(tmpDir, "outside-backup.bin");
+		const outsideContent = "must not be restored\n";
+		await writeFile(outsideBackup, outsideContent);
+		await writeFile(target, NEWER_CONTENT);
+
+		const metadataPath = join(snapshotsDir, snapshot.id, "metadata.json");
+		const metadata = JSON.parse(await readFile(metadataPath, "utf8")) as {
+			files: Record<string, string>;
+			digests: Record<string, { sha256: string; size: number }>;
+		};
+		metadata.files[target] = outsideBackup;
+		metadata.digests[target] = {
+			sha256: sha256(outsideContent),
+			size: Buffer.byteLength(outsideContent),
+		};
+		await writeFile(metadataPath, JSON.stringify(metadata));
+
+		const reopened = new AutoRollback(nullLogger, undefined, snapshotsDir);
+		await expect(reopened.rollback(snapshot.id, { expectTargetChanged: true })).rejects.toThrow(
+			`Snapshot not found: ${snapshot.id}`,
+		);
+		expect(await readFile(target, "utf8")).toBe(NEWER_CONTENT);
+	});
 });
 
 describe("a restore verifies the target before it overwrites it", () => {

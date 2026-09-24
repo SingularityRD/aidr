@@ -47,6 +47,10 @@ class AIGClientError(Exception):
     """Raised when the upstream AIG server returns an error."""
 
 
+class AIGSubmissionAmbiguous(AIGClientError):
+    """Raised when AIG may have created a task but no task ID was received."""
+
+
 class AIGClient:
     """
     HTTP client for the upstream AIG Go server.
@@ -108,6 +112,47 @@ class AIGClient:
             logger.warning("AIG server health check failed (%s)", type(exc).__name__)
             return False
 
+    async def get_runtime_readiness(self) -> Dict[str, Any]:
+        """Return authenticated live worker evidence from the AIG server."""
+
+        self._ensure_configured()
+        secret = os.getenv("AIG_AGENT_SHARED_SECRET", "").strip()
+        if len(secret) < 32:
+            raise AIGClientError("AIG worker authentication is not configured")
+        response = await self._client.get(
+            "/api/v1/internal/readiness",
+            headers={"X-AIG-Agent-Token": secret},
+            timeout=5.0,
+        )
+        body = self._parse_response(response, "get AIG runtime readiness")
+        active_agents = body.get("active_agents")
+        if isinstance(body.get("data"), dict):
+            active_agents = body["data"].get("active_agents", active_agents)
+        if isinstance(active_agents, bool) or not isinstance(active_agents, int) or active_agents < 0:
+            raise AIGClientError("AIG runtime readiness returned an invalid worker count")
+        capabilities = body.get("capabilities")
+        if isinstance(body.get("data"), dict):
+            capabilities = body["data"].get("capabilities", capabilities)
+        if not isinstance(capabilities, dict) or any(
+            not isinstance(name, str)
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+            for name, count in capabilities.items()
+        ):
+            raise AIGClientError("AIG runtime readiness returned invalid capabilities")
+        result: Dict[str, Any] = {
+            "active_agents": active_agents,
+            "capabilities": capabilities,
+        }
+        container = body.get("data") if isinstance(body.get("data"), dict) else body
+        provenance = container.get("dataset_provenance")
+        if provenance is not None:
+            if not isinstance(provenance, dict):
+                raise AIGClientError("AIG runtime readiness returned invalid dataset provenance")
+            result["dataset_provenance"] = provenance
+        return result
+
     # ── Task Management ─────────────────────────────────────────────────────
 
     async def create_scan_task(
@@ -138,11 +183,37 @@ class AIGClient:
         # AIG v4.5.1 has no idempotency-key contract. Retrying a POST after a
         # response loss can create a second scan, so the bridge performs one
         # submission unless a reviewed upstream version explicitly opts in.
-        response = await self._client.post(
-            "/api/v1/app/taskapi/tasks",
-            json=payload,
-        )
-        data = self._parse_response(response, "create scan task")
+        try:
+            response = await self._client.post(
+                "/api/v1/app/taskapi/tasks",
+                json=payload,
+            )
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+            # The request was not admitted to an upstream connection, so a
+            # caller may safely release its local submission reservation.
+            raise AIGClientError("AIG upstream was unavailable before submission") from exc
+        except httpx.RequestError as exc:
+            # Read/write/protocol failures can happen after AIG persisted the
+            # task. Without an upstream idempotency contract the only safe
+            # behavior is to retain the reservation for reconciliation.
+            raise AIGSubmissionAmbiguous("AIG submission outcome is unknown") from exc
+
+        try:
+            data = self._parse_response(response, "create scan task")
+        except AIGClientError as exc:
+            explicitly_rejected = response.is_error
+            if not explicitly_rejected:
+                try:
+                    rejection_body = response.json()
+                    explicitly_rejected = (
+                        isinstance(rejection_body, dict)
+                        and rejection_body.get("status", 0) != 0
+                    )
+                except (TypeError, ValueError):
+                    explicitly_rejected = False
+            if explicitly_rejected:
+                raise
+            raise AIGSubmissionAmbiguous("AIG submission response was unusable") from exc
 
         session_id = data.get("session_id") or (
             data.get("data", {}).get("session_id")
@@ -150,7 +221,7 @@ class AIGClient:
         if not isinstance(session_id, str) or not _TASK_ID_RE.fullmatch(session_id):
             # Do not include the raw upstream body: an error response can
             # echo eval-model tokens or target Authorization headers.
-            raise AIGClientError("AIG task creation returned an invalid session_id")
+            raise AIGSubmissionAmbiguous("AIG task creation returned an invalid session_id")
 
         logger.info("Task created — type=%s, session_id=%s", task_type, session_id)
         return session_id

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoContain, createDefaultContainConfig } from "../contain.js";
+import type { ResponseAuditor } from "../response-audit.js";
+import type { Verdict } from "../types.js";
 import { makeTmpDir } from "./test-utils.js";
 
 describe("createDefaultContainConfig", () => {
@@ -21,6 +23,35 @@ describe("AutoContain", () => {
 	});
 
 	describe("isolate", () => {
+		it("does not claim a generic operation was contained when that path is unsupported", async () => {
+			const auditLog = vi.fn().mockResolvedValue(undefined);
+			const auditor = { log: auditLog } as unknown as ResponseAuditor;
+			const contain = new AutoContain(
+				{
+					runtime: "docker",
+					baseImage: "alpine:latest",
+					networkMode: "none",
+					readonlyMounts: [],
+					timeoutSeconds: 60,
+				},
+				undefined,
+				auditor,
+			);
+			const operation = vi.fn().mockResolvedValue("dangerous operation ran");
+
+			await expect(
+				contain.isolate(operation, {
+					tool: "test",
+					input: "test",
+					verdict: {} as Verdict,
+					threatId: "TEST-CONTAIN-001",
+				}),
+			).rejects.toThrow(/generic operation isolation is not supported/i);
+			expect(operation).not.toHaveBeenCalled();
+			expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure" }));
+			expect(auditLog).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "success" }));
+		});
+
 		it("refuses to run the operation unisolated when the runtime is unavailable", async () => {
 			const contain = new AutoContain({
 				runtime: "nonexistent-runtime",

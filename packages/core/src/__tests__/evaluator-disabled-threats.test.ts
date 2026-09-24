@@ -20,7 +20,12 @@ describe("evaluator disabled_threats filtering", () => {
 			configPath,
 			JSON.stringify({
 				auth: { api_key: "aidr_test_key" },
-				control_plane: { enabled: true, endpoint: "http://127.0.0.1:1", timeout_seconds: 0.01 },
+				control_plane: {
+					enabled: true,
+					endpoint: "http://127.0.0.1:1",
+					allow_insecure_loopback: true,
+					timeout_seconds: 0.01,
+				},
 				licensing: { require_signed_entitlements: false },
 				disabled_threats: [],
 				url_check: { enabled: false },
@@ -48,7 +53,12 @@ describe("evaluator disabled_threats filtering", () => {
 			configPath,
 			JSON.stringify({
 				auth: { api_key: "aidr_test_key" },
-				control_plane: { enabled: true, endpoint: "http://127.0.0.1:1", timeout_seconds: 0.01 },
+				control_plane: {
+					enabled: true,
+					endpoint: "http://127.0.0.1:1",
+					allow_insecure_loopback: true,
+					timeout_seconds: 0.01,
+				},
 				licensing: { require_signed_entitlements: false },
 				disabled_threats: [THREAT_ID],
 				url_check: { enabled: false },
@@ -82,7 +92,12 @@ describe("evaluator disabled_threats filtering", () => {
 			configPath,
 			JSON.stringify({
 				auth: { api_key: "aidr_test_key" },
-				control_plane: { enabled: true, endpoint: "http://127.0.0.1:1", timeout_seconds: 0.01 },
+				control_plane: {
+					enabled: true,
+					endpoint: "http://127.0.0.1:1",
+					allow_insecure_loopback: true,
+					timeout_seconds: 0.01,
+				},
 				licensing: { require_signed_entitlements: false },
 				disabled_threats: ["CLT-CMD-999"],
 				url_check: { enabled: false },

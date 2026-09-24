@@ -180,7 +180,7 @@ describe("signed entitlement expiry and offline grace", () => {
 		}
 	});
 
-	it("invalidates a signed cache after definitive key rejection but keeps grace on outage", () => {
+	it("invalidates signed grace after definitive access or seat rejection but keeps it on outage", () => {
 		const { state } = signedState(snapshotAt(new Date(), 72));
 		const cached = { ...state, api_key: "invalid-key" };
 		const outage = applyIngestResult(cached, { ok: false, status: 503 }, 72);
@@ -199,6 +199,45 @@ describe("signed entitlement expiry and offline grace", () => {
 		expect(rejected.sync_disabled_reason).toBe("invalid_api_key");
 		expect(isEntitlementActive(rejected)).toBe(false);
 		expect(isPremiumModuleEnabled(rejected, "premium_intel")).toBe(false);
+
+		for (const error of [
+			"tenant_access_denied",
+			"tenant_not_admitted",
+			"entitlement_not_provisioned",
+			"agent_key_mismatch",
+		]) {
+			const denied = applyIngestResult(cached, {
+				ok: false,
+				status: 403,
+				body: { error },
+			}, 72);
+			expect(denied.api_key).toBe("invalid-key");
+			expect(denied.sync_disabled_reason).toBe(error);
+			expect(isEntitlementActive(denied)).toBe(false);
+		}
+
+		const before = Date.now();
+		const overLimit = applyIngestResult(cached, {
+			ok: false,
+			status: 402,
+			body: { error: "agent_limit_exceeded", allowed_agents: 1, current_agents: 2 },
+		}, 72);
+		expect(overLimit.seat_status).toBe("over_limit");
+		expect(isEntitlementActive(overLimit)).toBe(false);
+		const nextAttempt = Date.parse(overLimit.sync_disabled_until ?? "");
+		expect(nextAttempt).toBeGreaterThanOrEqual(before + 300_000);
+		expect(nextAttempt).toBeLessThanOrEqual(Date.now() + 301_000);
+	});
+
+	it("does not reinterpret a delivered telemetry replay as a new entitlement", () => {
+		const { state } = signedState(snapshotAt(new Date(), 72));
+		const replay = applyIngestResult(state, {
+			ok: true,
+			body: { telemetry_queue: { deliveryState: "available" } },
+		}, 72, { authToken: "cached-key" });
+		expect(replay).toBe(state);
+		expect(replay.entitlement_alg).toBe("ed25519");
+		expect(isPremiumModuleEnabled(replay, "premium_intel")).toBe(true);
 	});
 
 	it("loads an issued pack key during grace but neither after grace nor after revocation", async () => {
@@ -232,6 +271,16 @@ describe("signed entitlement expiry and offline grace", () => {
 			await saveManagedState(managedPath, { ...state, entitlement_sig: "invalid-signature" });
 			expect((await loadIntelKeyring({ now: duringGrace })).size).toBe(0);
 			await saveManagedState(managedPath, state);
+			const admissionDenied = applyIngestResult(state, {
+				ok: false,
+				status: 403,
+				body: { error: "tenant_access_denied" },
+			}, 72);
+			await saveManagedState(managedPath, admissionDenied);
+			await saveEntitlementKeyringFromState(admissionDenied);
+			expect((await loadIntelKeyring({ now: duringGrace })).size).toBe(0);
+			await saveManagedState(managedPath, state);
+			await saveEntitlementKeyringFromState(state);
 
 			const revocations: RevocationListV1 = {
 				schema_version: 1,

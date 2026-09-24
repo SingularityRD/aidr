@@ -36,7 +36,7 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 /**
  * Calculate cosine distance (1 - similarity) for clustering.
  */
-export function cosineDistance(a: Float32Array, b: Float32Array): number {
+function cosineDistance(a: Float32Array, b: Float32Array): number {
 	return 1 - cosineSimilarity(a, b);
 }
 
@@ -44,7 +44,7 @@ export function cosineDistance(a: Float32Array, b: Float32Array): number {
  * Calculate Euclidean distance between two vectors.
  * Useful for finding nearest neighbors in embedding space.
  */
-export function euclideanDistance(a: Float32Array, b: Float32Array): number {
+function euclideanDistance(a: Float32Array, b: Float32Array): number {
 	if (a.length !== b.length) {
 		throw new Error(`Vector length mismatch: ${a.length} vs ${b.length}`);
 	}
@@ -67,7 +67,7 @@ export function euclideanDistance(a: Float32Array, b: Float32Array): number {
  * Calculate Manhattan (L1) distance.
  * More robust to outliers than Euclidean.
  */
-export function manhattanDistance(a: Float32Array, b: Float32Array): number {
+function manhattanDistance(a: Float32Array, b: Float32Array): number {
 	if (a.length !== b.length) {
 		throw new Error(`Vector length mismatch: ${a.length} vs ${b.length}`);
 	}
@@ -115,7 +115,7 @@ export function findTopKSimilar(
  * Find all similar vectors above a threshold.
  * Returns indices and scores for all candidates exceeding threshold.
  */
-export function findSimilarAboveThreshold(
+function findSimilarAboveThreshold(
 	query: Float32Array,
 	candidates: Float32Array[],
 	threshold: number,
@@ -141,7 +141,7 @@ export function findSimilarAboveThreshold(
  * Calculate average similarity across multiple vectors.
  * Useful for ensemble scoring.
  */
-export function averageSimilarity(query: Float32Array, references: Float32Array[]): number {
+function averageSimilarity(query: Float32Array, references: Float32Array[]): number {
 	if (references.length === 0) return 0;
 
 	let totalSim = 0;
@@ -156,7 +156,7 @@ export function averageSimilarity(query: Float32Array, references: Float32Array[
  * Calculate maximum similarity to any reference vector.
  * Best match approach for threat detection.
  */
-export function maxSimilarity(query: Float32Array, references: Float32Array[]): number {
+function maxSimilarity(query: Float32Array, references: Float32Array[]): number {
 	let maxSim = -1;
 
 	for (const ref of references) {
@@ -173,7 +173,7 @@ export function maxSimilarity(query: Float32Array, references: Float32Array[]): 
  * Calculate similarity percentile (how unique is this vector).
  * Higher percentile = more unique (less similar to references).
  */
-export function similarityPercentile(query: Float32Array, references: Float32Array[]): number {
+function similarityPercentile(query: Float32Array, references: Float32Array[]): number {
 	if (references.length === 0) return 1;
 
 	const sims = references.map((ref) => cosineSimilarity(query, ref));
@@ -189,7 +189,7 @@ export function similarityPercentile(query: Float32Array, references: Float32Arr
  * Batch cosine similarity calculation for efficiency.
  * Returns matrix of similarities between query set and reference set.
  */
-export function batchCosineSimilarity(
+function batchCosineSimilarity(
 	queries: Float32Array[],
 	references: Float32Array[],
 ): number[][] {
@@ -210,7 +210,7 @@ export function batchCosineSimilarity(
  * Convert similarity score to probability estimate using sigmoid.
  * Maps [-1, 1] similarity to [0, 1] probability.
  */
-export function similarityToProbability(similarity: number, steepness: number = 5): number {
+function similarityToProbability(similarity: number, steepness: number = 5): number {
 	return 1 / (1 + Math.exp(-steepness * similarity));
 }
 
@@ -218,7 +218,7 @@ export function similarityToProbability(similarity: number, steepness: number = 
  * Calculate soft maximum similarity with temperature scaling.
  * Smoother than hard max, useful for gradient-based approaches.
  */
-export function softMaxSimilarity(
+function softMaxSimilarity(
 	query: Float32Array,
 	references: Float32Array[],
 	temperature: number = 0.1,
@@ -251,7 +251,7 @@ export function softMaxSimilarity(
  * Check if two embeddings are approximately equal.
  * Useful for testing and deduplication.
  */
-export function embeddingsEqual(
+function embeddingsEqual(
 	a: Float32Array,
 	b: Float32Array,
 	tolerance: number = 1e-5,
@@ -291,7 +291,7 @@ export const SIMILARITY_THRESHOLDS = {
 /**
  * Convert similarity to risk level string.
  */
-export function similarityToRiskLevel(
+function similarityToRiskLevel(
 	similarity: number,
 ): "critical" | "high" | "medium" | "low" | "none" {
 	if (similarity >= SIMILARITY_THRESHOLDS.CRITICAL) return "critical";

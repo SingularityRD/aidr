@@ -1,14 +1,21 @@
 import { createHash, createHmac, createPublicKey, verify as cryptoVerify } from "node:crypto";
+import { isCommercialBuild } from "./build-flavor.js";
 import type { ControlPlaneIngestResult } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
 import { redactTelemetryData } from "./telemetry-redaction.js";
+import {
+	createSecretReferenceId,
+	resolveSecretStore,
+	type PlatformSecretStoreKind,
+	type SecretStore,
+} from "./secret-store.js";
 import type { AuthConfig } from "./types.js";
 
-export type ManagedSeatStatus = "ok" | "over_limit" | "unknown";
+type ManagedSeatStatus = "ok" | "over_limit" | "unknown";
 
-export const FREE_AGENT_SEATS = 1;
-export const PRICE_PER_EXTRA_AGENT_USD_MONTH = 2;
+const FREE_AGENT_SEATS = 1;
+const PRICE_PER_EXTRA_AGENT_USD_MONTH = 2;
 
 export interface EntitlementSnapshotV1 {
 	schema_version: 1;
@@ -74,6 +81,7 @@ export interface ManagedState {
 	 * This enables offline grace without requiring users to edit config files.
 	 */
 	api_key?: string;
+	api_key_ref?: { store: PlatformSecretStoreKind; id: string; created_at: string };
 
 	/**
 	 * Device-code bootstrap cache (zero-friction onboarding).
@@ -132,15 +140,15 @@ export function managedStatePath(): string {
 	return resolvePath("~/.singularity-aidr/managed.json");
 }
 
-export function revocationsCachePath(): string {
+function revocationsCachePath(): string {
 	return resolvePath("~/.singularity-aidr/revocations.json");
 }
 
-export function entitlementKeyringPath(): string {
+function entitlementKeyringPath(): string {
 	return resolvePath("~/.singularity-aidr/entitlement.json");
 }
 
-export function sha256Hex(input: string): string {
+function sha256Hex(input: string): string {
 	return createHash("sha256").update(input).digest("hex");
 }
 
@@ -159,10 +167,7 @@ function canonicalJson(value: unknown): string {
 	return JSON.stringify(canonicalizeForSigning(value));
 }
 
-export function signEntitlementSnapshot(
-	snapshot: EntitlementSnapshotV1,
-	authToken: string,
-): string {
+function signEntitlementSnapshot(snapshot: EntitlementSnapshotV1, authToken: string): string {
 	// v1: local HMAC signature to make cached entitlements tamper-evident offline.
 	// Future: accept/verify control-plane signatures using embedded/public keys.
 	return createHmac("sha256", authToken).update(canonicalJson(snapshot)).digest("hex");
@@ -240,6 +245,7 @@ export function verifyEd25519SignedRevocationList(params: {
 	return verifyEd25519(msg, sig, params.public_keys_pem);
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: keep every outbound field check in one auditable privacy boundary
 export function redactRemoteEvent(
 	entry: Record<string, unknown>,
 	mode: "none" | "hash" | "full" | undefined,
@@ -252,16 +258,93 @@ export function redactRemoteEvent(
 	// arbitrary prompt or tool content under an innocuous key, so export only
 	// the fields the ingest contract actually understands. The server repeats
 	// this projection for clients that bypass the managed runtime.
-	const allowed = [
-		"event_id", "type", "timestamp", "session_id", "incident_id", "tool_name",
-		"source", "matched_threat_id", "plugin_key", "verdict", "decision",
-		"severity", "status", "findings_count", "user_override",
-		"tool_input_summary", "artifacts", "reasons", "recommended_actions",
-		"runtime_policy_cache",
-	] as const;
 	const safeEntry: Record<string, unknown> = {};
-	for (const key of allowed) {
-		if (Object.hasOwn(scrubbed, key)) safeEntry[key] = scrubbed[key];
+	const identifier = (value: unknown): string | undefined =>
+		typeof value === "string" &&
+		/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value) &&
+		!/(?:^|[._:-])(?:api[_-]?key|access[_-]?token|authorization|bearer|cookie|credential|password|passwd|private[_-]?key|secret|session[_-]?token|client[_-]?secret|refresh[_-]?token|signature)(?:[._:-]|$)|^(?:sk[_-]|ghp_|github_pat_|xox[baprs]-|npm_|pypi-|AKIA)/i.test(
+			value,
+		) &&
+		!/^(?:\d[.:-]?){8,15}$/.test(value)
+			? value
+			: undefined;
+	const copyIdentifier = (key: string) => {
+		const value = identifier(scrubbed[key]);
+		if (value !== undefined) safeEntry[key] = value;
+	};
+	for (const key of [
+		"event_id",
+		"session_id",
+		"incident_id",
+		"tool_name",
+		"source",
+		"matched_threat_id",
+		"plugin_key",
+	])
+		copyIdentifier(key);
+	const copyEnum = (key: string, allowed: readonly string[]) => {
+		if (typeof scrubbed[key] === "string" && allowed.includes(scrubbed[key])) {
+			safeEntry[key] = scrubbed[key];
+		}
+	};
+	copyEnum("type", [
+		"runtime_verdict",
+		"incident",
+		"plugin_scan",
+		"plugin_scan_finding",
+		"runtime_policy_cache",
+	]);
+	for (const key of ["verdict", "decision"]) copyEnum(key, ["allow", "ask", "deny"]);
+	copyEnum("severity", ["info", "warning", "high", "critical"]);
+	copyEnum("status", ["open", "acknowledged", "contained", "resolved", "suppressed"]);
+	if (typeof scrubbed.timestamp === "string" && scrubbed.timestamp.length <= 40) {
+		const timestamp = Date.parse(scrubbed.timestamp);
+		if (Number.isFinite(timestamp)) safeEntry.timestamp = new Date(timestamp).toISOString();
+	}
+	if (
+		typeof scrubbed.findings_count === "number" &&
+		Number.isInteger(scrubbed.findings_count) &&
+		scrubbed.findings_count >= 0 &&
+		scrubbed.findings_count <= 1_000_000
+	) {
+		safeEntry.findings_count = scrubbed.findings_count;
+	}
+	if (typeof scrubbed.user_override === "boolean") safeEntry.user_override = scrubbed.user_override;
+	if (
+		typeof scrubbed.duration_ms === "number" &&
+		Number.isFinite(scrubbed.duration_ms) &&
+		scrubbed.duration_ms >= 0
+	) {
+		safeEntry.duration_ms = scrubbed.duration_ms;
+	}
+	if (typeof scrubbed.tool_input_summary === "string")
+		safeEntry.tool_input_summary = scrubbed.tool_input_summary;
+	if (Array.isArray(scrubbed.artifacts)) safeEntry.artifacts = scrubbed.artifacts;
+	if (Array.isArray(scrubbed.reasons)) safeEntry.reasons = scrubbed.reasons;
+	if (Array.isArray(scrubbed.recommended_actions)) {
+		safeEntry.recommended_actions = scrubbed.recommended_actions
+			.slice(0, 16)
+			.filter(
+				(action): action is string =>
+					typeof action === "string" &&
+					["review", "investigate", "isolate", "revoke", "rotate_credentials", "notify"].includes(
+						action,
+					),
+			);
+	}
+	const cache = scrubbed.runtime_policy_cache;
+	if (cache && typeof cache === "object" && !Array.isArray(cache)) {
+		const source = (cache as Record<string, unknown>).source;
+		const version = identifier((cache as Record<string, unknown>).policy_version);
+		const usable = (cache as Record<string, unknown>).usable;
+		safeEntry.runtime_policy_cache = {
+			...(typeof source === "string" &&
+			["disabled", "missing", "valid", "expired", "mismatched", "invalid"].includes(source)
+				? { source }
+				: {}),
+			...(version !== undefined ? { policy_version: version } : {}),
+			...(typeof usable === "boolean" ? { usable } : {}),
+		};
 	}
 	if (mode === "none") return safeEntry;
 	const effectiveMode = mode ?? "hash";
@@ -311,10 +394,7 @@ function sanitizeSeatCount(input: unknown): number | undefined {
 }
 
 function parseNonNegIntStrict(input: unknown): number | undefined {
-	if (typeof input !== "number") return undefined;
-	if (!Number.isFinite(input)) return undefined;
-	if (!Number.isInteger(input)) return undefined;
-	if (input < 0) return 0;
+	if (typeof input !== "number" || !Number.isSafeInteger(input) || input < 0) return undefined;
 	return input;
 }
 
@@ -339,6 +419,13 @@ function validateEntitlementSnapshotV1Strict(input: unknown): EntitlementSnapsho
 	if (extraAgents === undefined) return null;
 	if (allowedAgents === undefined) return null;
 	if (price === undefined) return null;
+	if (
+		!Number.isSafeInteger(freeAgents + extraAgents) ||
+		allowedAgents !== freeAgents + extraAgents
+	) {
+		return null;
+	}
+	if (Date.parse(issuedAt) > Date.parse(expiresAt)) return null;
 
 	return {
 		schema_version: 1,
@@ -377,10 +464,17 @@ function validateEntitlementSnapshotV2Strict(input: unknown): EntitlementSnapsho
 	const includedAgents = parseNonNegIntStrict(obj.included_agents);
 	const extraAgents = parseNonNegIntStrict(obj.extra_agents);
 	const allowedAgents = parseNonNegIntStrict(obj.allowed_agents);
-	const revEpoch = parseNonNegIntStrict(obj.revocation_epoch) ?? 1;
+	const revEpoch = parseNonNegIntStrict(obj.revocation_epoch);
 	if (includedAgents === undefined) return null;
 	if (extraAgents === undefined) return null;
 	if (allowedAgents === undefined) return null;
+	if (revEpoch === undefined || revEpoch < 1) return null;
+	if (
+		!Number.isSafeInteger(includedAgents + extraAgents) ||
+		allowedAgents !== includedAgents + extraAgents
+	) {
+		return null;
+	}
 
 	const serial = typeof obj.serial === "string" ? obj.serial.trim() : "";
 	if (!serial) return null;
@@ -427,7 +521,7 @@ function validateEntitlementSnapshotV2Strict(input: unknown): EntitlementSnapsho
 		expires_at: expiresAt,
 		grace_until: graceUntil,
 		serial,
-		revocation_epoch: Math.max(1, revEpoch),
+		revocation_epoch: revEpoch,
 	};
 }
 
@@ -544,12 +638,35 @@ export async function loadManagedState(
 		authToken?: string;
 		publicKeysPem?: string[];
 		onSecurityEvent?: (event: ManagedSecurityEvent) => void;
+		secretStore?: SecretStore;
 	},
 ): Promise<ManagedState> {
+	let credentialPresent = false;
 	try {
 		const raw = await getFileContent(path, "utf-8");
 		const parsed = JSON.parse(raw) as ManagedState;
 		if (!parsed || typeof parsed !== "object") return {};
+		if (isCommercialBuild()) {
+			credentialPresent = Boolean(parsed.api_key || parsed.api_key_ref);
+			if (parsed.api_key && parsed.api_key_ref) {
+				throw new Error("Managed credential has conflicting storage locations.");
+			}
+			if (parsed.api_key) {
+				// Migrate legacy plaintext only after the vault and reference are durable.
+				await saveManagedState(path, parsed, opts?.secretStore);
+				return loadManagedState(path, opts);
+			}
+			if (parsed.api_key_ref) {
+				const ref = parsed.api_key_ref;
+				const store = opts?.secretStore ?? resolveSecretStore({ selection: ref.store });
+				if (store.kind !== ref.store || store.location !== "os-vault") {
+					throw new Error("Managed credential vault does not match its reference.");
+				}
+				const key = store.get(ref.id);
+				if (!key) throw new Error("Managed credential is missing from its vault.");
+				parsed.api_key = key;
+			}
+		}
 
 		const dropEntitlement = (event: ManagedSecurityEvent): ManagedState => {
 			emitManagedSecurityEvent(event, opts?.onSecurityEvent);
@@ -592,8 +709,8 @@ export async function loadManagedState(
 					})
 				) {
 					return dropEntitlement({
-							code: keys.length === 0 ? "missing_public_keys" : "invalid_ed25519_signature",
-							message: "Dropping cached entitlement due to failed ed25519 verification.",
+						code: keys.length === 0 ? "missing_public_keys" : "invalid_ed25519_signature",
+						message: "Dropping cached entitlement due to failed ed25519 verification.",
 					});
 				}
 			} else if (parsed.entitlement_alg === "hmac-sha256") {
@@ -601,8 +718,8 @@ export async function loadManagedState(
 				// HMAC entitlements are legacy v1 only.
 				if (!validateEntitlementSnapshotV1Strict(parsed.entitlement)) {
 					return dropEntitlement({
-							code: "invalid_hmac_schema",
-							message: "Dropping cached entitlement due to unexpected HMAC schema version.",
+						code: "invalid_hmac_schema",
+						message: "Dropping cached entitlement due to unexpected HMAC schema version.",
 					});
 				}
 				if (
@@ -614,8 +731,8 @@ export async function loadManagedState(
 					)
 				) {
 					return dropEntitlement({
-							code: "invalid_hmac_signature",
-							message: "Dropping cached entitlement due to failed HMAC verification.",
+						code: "invalid_hmac_signature",
+						message: "Dropping cached entitlement due to failed HMAC verification.",
 					});
 				}
 			} else {
@@ -627,19 +744,79 @@ export async function loadManagedState(
 		}
 
 		return parsed;
-	} catch {
+	} catch (error) {
+		if (isCommercialBuild() && credentialPresent) throw error;
 		return {};
 	}
 }
 
-export async function saveManagedState(path: string, state: ManagedState): Promise<void> {
+export async function saveManagedState(
+	path: string,
+	state: ManagedState,
+	secretStore?: SecretStore,
+): Promise<void> {
+	let created: { store: SecretStore; id: string } | undefined;
+	let committed = false;
 	try {
 		const cleaned: ManagedState = { ...state };
+		let previousRef: ManagedState["api_key_ref"];
+		if (isCommercialBuild()) {
+			try {
+				const previous = JSON.parse(await getFileContent(path, "utf-8")) as ManagedState;
+				previousRef = previous.api_key_ref;
+			} catch {
+				// No prior managed state.
+			}
+		}
+		if (isCommercialBuild() && cleaned.api_key) {
+			const existing = cleaned.api_key_ref;
+			const store = secretStore ?? resolveSecretStore({ selection: existing?.store });
+			if (store.location !== "os-vault" || (existing && existing.store !== store.kind)) {
+				throw new Error("Managed credential requires a matching OS vault.");
+			}
+			const current = existing ? store.get(existing.id) : null;
+			const ref =
+				existing && current === cleaned.api_key
+					? existing
+					: {
+							store: store.kind as PlatformSecretStoreKind,
+							id: createSecretReferenceId(),
+							created_at: new Date().toISOString(),
+						};
+			if (ref !== existing) {
+				store.put(ref.id, cleaned.api_key);
+				created = { store, id: ref.id };
+			}
+			cleaned.api_key_ref = ref;
+			delete cleaned.api_key;
+		}
 		for (const key of Object.keys(cleaned) as (keyof ManagedState)[]) {
 			if (cleaned[key] === undefined) delete cleaned[key];
 		}
 		await atomicWriteJson(path, cleaned);
-	} catch {
+		committed = true;
+		if (previousRef && previousRef.id !== cleaned.api_key_ref?.id) {
+			try {
+				const oldStore =
+					secretStore?.kind === previousRef.store
+						? secretStore
+						: resolveSecretStore({ selection: previousRef.store });
+				oldStore.revoke(previousRef.id);
+			} catch {
+				console.warn(
+					"Managed credential was replaced, but its old vault entry could not be removed.",
+				);
+			}
+		}
+	} catch (error) {
+		if (!committed && created) {
+			try {
+				created.store.revoke(created.id);
+			} catch {
+				/* Unreferenced vault entry only. */
+			}
+		}
+		if (isCommercialBuild()) throw error;
 		// Fail open
 	}
 }
@@ -726,7 +903,7 @@ export function isSyncDisabled(state: ManagedState): boolean {
 	return Date.now() < until;
 }
 
-export function addHoursIso(now: Date, hours: number): string {
+function addHoursIso(now: Date, hours: number): string {
 	const safeHours = Number.isFinite(hours) ? Math.max(0, hours) : 0;
 	return new Date(now.getTime() + safeHours * 60 * 60 * 1000).toISOString();
 }
@@ -738,6 +915,9 @@ export function applyIngestResult(
 	opts?: { authToken?: string; publicKeysPem?: string[] },
 ): ManagedState {
 	const now = new Date();
+	// An idempotent telemetry replay never contacted the control plane. It is
+	// not a fresh entitlement response and must not replace a signed cache.
+	if (result.ok && result.status === undefined && result.body?.telemetry_queue) return state;
 	if (result.ok) {
 		const signed = extractSignedEntitlementFromBody(result.body);
 		const publicKeysPem = opts?.publicKeysPem ?? [];
@@ -815,9 +995,34 @@ export function applyIngestResult(
 		return {
 			...state,
 			api_key: state.api_key === opts?.authToken ? undefined : state.api_key,
+			api_key_ref: state.api_key === opts?.authToken ? undefined : state.api_key_ref,
 			seat_status: "unknown",
 			sync_disabled_until: undefined,
 			sync_disabled_reason: "invalid_api_key",
+			entitlement: undefined,
+			entitlement_alg: undefined,
+			entitlement_key_id: undefined,
+			entitlement_sig: undefined,
+		};
+	}
+
+	const denial = typeof result.body?.error === "string" ? result.body.error : result.error;
+	if (
+		result.status === 403 &&
+		[
+			"tenant_access_denied",
+			"tenant_not_admitted",
+			"entitlement_not_provisioned",
+			"agent_key_mismatch",
+		].includes(denial ?? "")
+	) {
+		// A reachable authority explicitly denied this installation. Offline
+		// grace applies to outages, not to an observed admission revocation.
+		return {
+			...state,
+			seat_status: "unknown",
+			sync_disabled_until: undefined,
+			sync_disabled_reason: denial,
 			entitlement: undefined,
 			entitlement_alg: undefined,
 			entitlement_key_id: undefined,
@@ -844,8 +1049,12 @@ export function applyIngestResult(
 			allowed_agents: allowedAgents,
 			current_agents: currentAgents,
 			sync_disabled_reason: "agent_limit_exceeded",
-			// Back off remote attempts; local protection always continues.
-			sync_disabled_until: addHoursIso(now, 24),
+			entitlement: undefined,
+			entitlement_alg: undefined,
+			entitlement_key_id: undefined,
+			entitlement_sig: undefined,
+			// Retry within five minutes after a seat purchase or reassignment.
+			sync_disabled_until: addHoursIso(now, 5 / 60),
 		};
 	}
 

@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
+import { open } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as sleepWithSignal } from "node:timers/promises";
 import {
 	type AigInfraScanOptions,
 	type AigInfraTargetResult,
 	scanTarget,
 } from "./aig-infra-scan.js";
 import { resolvePath } from "./config.js";
-import { atomicWriteJson, getFileContent } from "./file-utils.js";
+import { atomicWriteJson } from "./file-utils.js";
 
 export type FleetFreshness = "fresh" | "stale" | "never_seen";
 export type FleetReachability = "reachable" | "unreachable" | "not_checked";
@@ -41,16 +43,19 @@ export interface FleetCollectionOptions {
 	baseRetryDelayMs?: number;
 	maxRetryDelayMs?: number;
 	concurrency?: number;
-	scanOptions?: Omit<AigInfraScanOptions, "concurrency">;
+	scanOptions?: Omit<AigInfraScanOptions, "concurrency" | "signal">;
 	now?: () => number;
 	sleep?: (delayMs: number) => Promise<void>;
 	scanTargetImpl?: typeof scanTarget;
+	signal?: AbortSignal;
 }
 
 const DEFAULT_STALE_AFTER_MS = 15 * 60 * 1000;
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_RETRY_DELAY_MS = 250;
 const DEFAULT_MAX_RETRY_DELAY_MS = 5_000;
+export const MAX_FLEET_TARGETS = 1_000;
+export const MAX_FLEET_INVENTORY_BYTES = 8 * 1024 * 1024;
 
 function requireIdentity(label: string, value: string): string {
 	const trimmed = value.trim();
@@ -159,6 +164,16 @@ interface AttemptedResult {
 	attempts: number;
 }
 
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+	if (!signal) return promise;
+	signal.throwIfAborted();
+	return new Promise<T>((resolve, reject) => {
+		const abort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+		signal.addEventListener("abort", abort, { once: true });
+		promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+	});
+}
+
 async function scanWithRetry(
 	target: string,
 	options: Required<
@@ -170,9 +185,14 @@ async function scanWithRetry(
 ): Promise<AttemptedResult> {
 	let latest: AigInfraTargetResult | null = null;
 	for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
+		options.scanOptions.signal?.throwIfAborted();
 		try {
-			latest = await options.scanTargetImpl({ url: target }, options.scanOptions);
+			latest = await abortable(
+				options.scanTargetImpl({ url: target }, options.scanOptions),
+				options.scanOptions.signal,
+			);
 		} catch (error) {
+			options.scanOptions.signal?.throwIfAborted();
 			latest = {
 				url: target,
 				reachable: false,
@@ -189,7 +209,7 @@ async function scanWithRetry(
 			options.maxRetryDelayMs,
 			options.baseRetryDelayMs * 2 ** (attempt - 1),
 		);
-		await options.sleep(delayMs);
+		await abortable(options.sleep(delayMs), options.scanOptions.signal);
 	}
 	throw new Error("fleet_retry_invariant_failed");
 }
@@ -216,6 +236,9 @@ function validatePreviousInventory(
 		!Array.isArray(previous.items)
 	) {
 		throw new Error("fleet_inventory_scope_mismatch");
+	}
+	if (previous.items.length > MAX_FLEET_TARGETS) {
+		throw new Error("fleet_inventory_entry_limit_exceeded");
 	}
 	return previous;
 }
@@ -289,6 +312,10 @@ export async function collectFleetInventory(
 ): Promise<FleetInventory> {
 	const tenantId = requireIdentity("tenant_id", tenantIdInput);
 	const collectorId = requireIdentity("collector_id", collectorIdInput);
+	if (targetInputs.length > MAX_FLEET_TARGETS) {
+		throw new Error("fleet_target_limit_exceeded");
+	}
+	options.signal?.throwIfAborted();
 	const targets = normalizeFleetTargets(targetInputs);
 	const prior = validatePreviousInventory(previous, tenantId);
 	const now = options.now ?? Date.now;
@@ -314,12 +341,13 @@ export async function collectFleetInventory(
 	const concurrency = clampInteger(options.concurrency, 4, 1, 32);
 	const sleep =
 		options.sleep ??
-		((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+		((delayMs: number) => sleepWithSignal(delayMs, undefined, { signal: options.signal }));
 	const scanTargetImpl = options.scanTargetImpl ?? scanTarget;
 	const attempted = new Map<string, AttemptedResult>();
 	let cursor = 0;
 	const workers = Array.from({ length: Math.min(concurrency, targets.length) }, async () => {
 		while (cursor < targets.length) {
+			options.signal?.throwIfAborted();
 			const index = cursor++;
 			const target = targets[index];
 			if (!target) continue;
@@ -331,12 +359,13 @@ export async function collectFleetInventory(
 					maxRetryDelayMs,
 					sleep,
 					scanTargetImpl,
-					scanOptions: options.scanOptions ?? {},
+					scanOptions: { ...options.scanOptions, signal: options.signal },
 				}),
 			);
 		}
 	});
 	await Promise.all(workers);
+	options.signal?.throwIfAborted();
 	const cycleCompletedAt = now();
 
 	const previousById = new Map((prior?.items ?? []).map((item) => [item.id, item]));
@@ -366,7 +395,24 @@ export async function collectFleetInventory(
 
 export async function loadFleetInventory(path: string): Promise<FleetInventory | null> {
 	try {
-		const parsed = JSON.parse(await getFileContent(path)) as FleetInventory;
+		const handle = await open(path, "r");
+		let raw: string;
+		try {
+			const buffer = Buffer.allocUnsafe(MAX_FLEET_INVENTORY_BYTES + 1);
+			let bytesRead = 0;
+			while (bytesRead < buffer.length) {
+				const chunk = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+				if (chunk.bytesRead === 0) break;
+				bytesRead += chunk.bytesRead;
+			}
+			if (bytesRead > MAX_FLEET_INVENTORY_BYTES) {
+				throw new Error("fleet_inventory_size_limit_exceeded");
+			}
+			raw = buffer.toString("utf8", 0, bytesRead);
+		} finally {
+			await handle.close();
+		}
+		const parsed = JSON.parse(raw) as FleetInventory;
 		if (
 			parsed.schemaVersion !== 1 ||
 			typeof parsed.tenantId !== "string" ||
@@ -376,6 +422,9 @@ export async function loadFleetInventory(path: string): Promise<FleetInventory |
 		) {
 			throw new Error("fleet_inventory_invalid");
 		}
+		if (parsed.items.length > MAX_FLEET_TARGETS) {
+			throw new Error("fleet_inventory_entry_limit_exceeded");
+		}
 		return parsed;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -384,5 +433,11 @@ export async function loadFleetInventory(path: string): Promise<FleetInventory |
 }
 
 export async function saveFleetInventory(path: string, inventory: FleetInventory): Promise<void> {
+	if (inventory.items.length > MAX_FLEET_TARGETS) {
+		throw new Error("fleet_inventory_entry_limit_exceeded");
+	}
+	if (Buffer.byteLength(`${JSON.stringify(inventory, null, 2)}\n`) > MAX_FLEET_INVENTORY_BYTES) {
+		throw new Error("fleet_inventory_size_limit_exceeded");
+	}
 	await atomicWriteJson(path, inventory);
 }

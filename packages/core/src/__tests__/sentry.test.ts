@@ -36,6 +36,14 @@ describe("sentry integration", () => {
 		expect(sentry.isSentryInitialized()).toBe(true);
 	});
 
+	it("does not initialize Sentry without a DSN", async () => {
+		const init = vi.fn();
+		vi.doMock("@sentry/node", () => ({ init }));
+		const sentry = await importFreshSentry();
+		await sentry.initSentry();
+		expect(init).not.toHaveBeenCalled();
+	});
+
 	it("redacts sensitive extra and context fields before sending events", async () => {
 		let beforeSend:
 			| ((event: Record<string, unknown>) => Record<string, unknown> | null)

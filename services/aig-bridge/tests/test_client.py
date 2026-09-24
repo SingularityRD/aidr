@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from app.utils.aig_client import AIGClient, _normalize_task_status
+from app.utils.aig_client import AIGClient, AIGSubmissionAmbiguous, _normalize_task_status
 
 
 def mock_client(handler):
@@ -19,6 +19,68 @@ def test_normalize_upstream_states():
     assert _normalize_task_status("doing") == "running"
     assert _normalize_task_status("done") == "completed"
     assert _normalize_task_status("failed") == "failed"
+
+
+@pytest.mark.asyncio
+async def test_create_task_marks_lost_response_as_ambiguous():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("response was lost", request=request)
+
+    client = mock_client(handler)
+    with pytest.raises(AIGSubmissionAmbiguous):
+        await client.create_scan_task("mcp_scan", {"prompt": "https://example.test"})
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_create_task_marks_invalid_success_as_ambiguous():
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": 0, "data": {}})
+
+    client = mock_client(handler)
+    with pytest.raises(AIGSubmissionAmbiguous):
+        await client.create_scan_task("mcp_scan", {"prompt": "https://example.test"})
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_readiness_uses_worker_shared_secret(monkeypatch):
+    secret = "worker-secret-" + "x" * 32
+    monkeypatch.setenv("AIG_AGENT_SHARED_SECRET", secret)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/internal/readiness"
+        assert request.headers["X-AIG-Agent-Token"] == secret
+        return httpx.Response(
+            200,
+            json={
+                "status": 0,
+                "active_agents": 2,
+                "capabilities": {"mcp_scan": 2},
+                "dataset_provenance": {
+                    "verified": True,
+                    "bundle_id": "a" * 64,
+                    "source_commit": "b" * 40,
+                    "release_sequence": 1,
+                },
+            },
+        )
+
+    client = mock_client(handler)
+    try:
+        evidence = await client.get_runtime_readiness()
+    finally:
+        await client.close()
+    assert evidence == {
+        "active_agents": 2,
+        "capabilities": {"mcp_scan": 2},
+        "dataset_provenance": {
+            "verified": True,
+            "bundle_id": "a" * 64,
+            "source_commit": "b" * 40,
+            "release_sequence": 1,
+        },
+    }
 
 
 @pytest.mark.asyncio

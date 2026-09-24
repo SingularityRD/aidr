@@ -31,7 +31,7 @@ describe("telemetry loss summary", () => {
 
 	it("counts queued events across every installation namespace", async () => {
 		// Two namespaces, as two installations or two credentials would produce.
-		for (const namespace of ["a".repeat(8), "b".repeat(8)]) {
+		for (const namespace of ["a".repeat(64), "b".repeat(64)]) {
 			const queue = new DurableTelemetryQueue({ directory: join(root, namespace) });
 			await queue.enqueue([
 				{ event_id: `${namespace}-1`, kind: "verdict" },
@@ -44,8 +44,32 @@ describe("telemetry loss summary", () => {
 		expect(summary.state).toBe("queued");
 	});
 
+	it("marks an over-age crash-left backlog degraded for the installed readiness worker", async () => {
+		const namespace = "c".repeat(64);
+		const freshNamespace = "d".repeat(64);
+		const now = Date.parse("2026-09-23T00:00:00.000Z");
+		const freshQueue = new DurableTelemetryQueue({
+			directory: join(root, freshNamespace),
+			now: () => now - 5 * 60 * 1000,
+		});
+		const staleQueue = new DurableTelemetryQueue({
+			directory: join(root, namespace),
+			now: () => now - 5 * 60 * 1000 - 1,
+		});
+		await staleQueue.enqueue([{ event_id: "old-crash-left-event", kind: "verdict" }]);
+		await freshQueue.enqueue([{ event_id: "fresh-event", kind: "verdict" }]);
+		const summary = await readTelemetryLossSummary(root, { now: () => now });
+		expect(summary.oldestAgeSeconds).toBe(5 * 60);
+		expect(summary.namespaces.find((entry) => entry.namespace === namespace)?.state).toBe(
+			"degraded",
+		);
+		expect(summary.namespaces.find((entry) => entry.namespace === freshNamespace)?.state).toBe(
+			"ok",
+		);
+	});
+
 	it("reports a corrupt namespace as unavailable rather than degraded and idle", async () => {
-		const namespace = "a".repeat(8);
+		const namespace = "a".repeat(64);
 		const directory = join(root, namespace);
 		mkdirSync(directory, { recursive: true });
 		writeFileSync(join(directory, "events.wal"), '{"v":1,"op":"unknown"}\n', "utf8");

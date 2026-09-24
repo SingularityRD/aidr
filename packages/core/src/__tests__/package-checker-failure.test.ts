@@ -89,20 +89,23 @@ describe("package checker file reputation failures", () => {
 		expect(result.details).toContain("file reputation check unavailable");
 	});
 
-	it("keeps a completed benign file reputation check clean", async () => {
+	it("does not mistake SEVERITY_UNKNOWN for a verified benign file", async () => {
 		globalThis.fetch = vi
 			.fn()
 			.mockResolvedValueOnce(registryResponse)
 			.mockResolvedValueOnce({
 				ok: true,
 				status: 200,
-				json: async () => ({ responses: [{ severity: "SEVERITY_UNKNOWN" }] }),
+				json: async () => ({
+					responses: [{ key: { sha256: "11".repeat(32) }, severity: "SEVERITY_UNKNOWN" }],
+				}),
 			});
 
 		const result = await new PackageChecker().checkSinglePackage({
 			name: packageName,
 			registry: "npm",
 		});
-		expect(result.verdict).toBe("clean");
+		expect(result.verdict).toBe("unknown");
+		expect(result.details).toMatch(/not verified clean/i);
 	});
 });

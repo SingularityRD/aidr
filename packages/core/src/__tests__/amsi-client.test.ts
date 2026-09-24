@@ -245,6 +245,76 @@ describe("AmsiClient", () => {
 		client.close();
 	});
 
+	it("serializes concurrent PowerShell scans so responses cannot cross requests", async () => {
+		vi.spyOn(process, "platform", "get").mockReturnValue("win32" as NodeJS.Platform);
+		const proc = createMockProcess();
+		mockSpawn.mockReturnValue(proc as never);
+		emitReady(proc);
+
+		const client = new AmsiClient(mockLogger);
+		await client.init();
+		const first = client.scanString("first", "test:first");
+		const second = client.scanString("second", "test:second");
+		await vi.waitFor(() => expect(proc.stdin.write).toHaveBeenCalledTimes(1));
+
+		proc.stdout.emit("data", Buffer.from("0\n"));
+		await expect(first).resolves.toMatchObject({ contentName: "test:first", amsiResult: 0 });
+		await vi.waitFor(() => expect(proc.stdin.write).toHaveBeenCalledTimes(2));
+
+		proc.stdout.emit("data", Buffer.from("32768\n"));
+		await expect(second).resolves.toMatchObject({
+			contentName: "test:second",
+			amsiResult: 32768,
+			isDetected: true,
+		});
+		client.close();
+	});
+
+	it("resets the persistent backend after a timed-out response", async () => {
+		vi.useFakeTimers();
+		try {
+			vi.spyOn(process, "platform", "get").mockReturnValue("win32" as NodeJS.Platform);
+			const proc = createMockProcess();
+			mockSpawn.mockReturnValue(proc as never);
+			emitReady(proc);
+
+			const client = new AmsiClient(mockLogger);
+			const initialized = client.init();
+			await vi.runAllTicks();
+			await initialized;
+			const scan = client.scanString("first", "test:timeout");
+			await vi.runAllTicks();
+			await vi.advanceTimersByTimeAsync(15_000);
+
+			await expect(scan).resolves.toBeNull();
+			expect(proc.kill).toHaveBeenCalledTimes(1);
+			expect(client.isAvailable).toBe(false);
+			proc.stdout.emit("data", Buffer.from("32768\n"));
+			await expect(client.scanString("second", "test:late")).resolves.toBeNull();
+			expect(proc.stdin.write).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("clears the pending response when the PowerShell pipe write fails", async () => {
+		vi.spyOn(process, "platform", "get").mockReturnValue("win32" as NodeJS.Platform);
+		const proc = createMockProcess();
+		mockSpawn.mockReturnValue(proc as never);
+		emitReady(proc);
+
+		const client = new AmsiClient(mockLogger);
+		await client.init();
+		proc.stdin.write.mockImplementationOnce(() => {
+			throw new Error("pipe closed");
+		});
+
+		await expect(client.scanString("first", "test:write-error")).resolves.toBeNull();
+		expect(proc.kill).toHaveBeenCalledTimes(1);
+		expect(client.isAvailable).toBe(false);
+		client.close();
+	});
+
 	it("scanString returns null when not available", async () => {
 		const client = new AmsiClient(nullLogger);
 		const result = await client.scanString("test content", "test:name");

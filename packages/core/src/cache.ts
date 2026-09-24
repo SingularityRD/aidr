@@ -14,6 +14,19 @@ const ONE_HOUR = 3600;
 const TWENTY_FOUR_HOURS = 86400;
 const FAR_FUTURE = "9999-12-31T23:59:59+00:00";
 
+function isCachedPackageEntry(value: unknown): value is CacheStore["packages"][string] {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const entry = value as Record<string, unknown>;
+	return (
+		(entry.verdict === "allow" || entry.verdict === "deny" || entry.verdict === "ask") &&
+		(entry.severity === "info" || entry.severity === "warning" || entry.severity === "critical") &&
+		Array.isArray(entry.reasons) &&
+		entry.reasons.every((reason) => typeof reason === "string") &&
+		typeof entry.source === "string" &&
+		typeof entry.expiresAt === "string"
+	);
+}
+
 export class VerdictCache {
 	private store: CacheStore = { urls: {}, commands: {}, packages: {} };
 	private readonly path: string;
@@ -58,7 +71,7 @@ export class VerdictCache {
 		if (!this.config.enabled) return null;
 		const key = normalizeUrl(url);
 		const entry = this.store.urls[key];
-		if (!entry || this.isStale(entry)) return null;
+		if (!entry || this.isUrlStale(entry)) return null;
 
 		return {
 			verdict: entry.verdict,
@@ -68,18 +81,30 @@ export class VerdictCache {
 		};
 	}
 
-	putUrl(url: string, verdict: CachedVerdict, isMalicious: boolean): void {
+	putUrl(url: string, verdict: CachedVerdict, isMalicious: boolean, cacheValidUntil?: number): void {
 		if (!this.config.enabled) return;
 
 		const key = normalizeUrl(url);
 		const now = new Date();
+		if (
+			verdict.verdict === "allow" &&
+			(!Number.isFinite(cacheValidUntil) || cacheValidUntil! <= now.getTime())
+		)
+			return;
 		const ttl = isMalicious ? this.config.ttl_malicious_seconds : this.config.ttl_clean_seconds;
-		const expiresAt = new Date(now.getTime() + ttl * 1000);
+		const ttlExpiresAt = now.getTime() + ttl * 1000;
+		const expiresAt = new Date(
+			cacheValidUntil === undefined ? ttlExpiresAt : Math.min(ttlExpiresAt, cacheValidUntil),
+		);
+		if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= now.getTime()) return;
 
 		this.store.urls[key] = {
 			...verdict,
 			checkedAt: now.toISOString(),
 			expiresAt: expiresAt.toISOString(),
+			...(Number.isFinite(cacheValidUntil)
+				? { sourceFreshUntil: new Date(cacheValidUntil!).toISOString() }
+				: {}),
 			aidrVersion: this.version,
 		};
 	}
@@ -112,6 +137,7 @@ export class VerdictCache {
 	getPackage(key: string): CachedVerdict | null {
 		if (!this.config.enabled) return null;
 		const entry = this.store.packages[key];
+		if (!isCachedPackageEntry(entry)) return null;
 		if (!entry || this.isStale(entry)) return null;
 
 		return {
@@ -138,10 +164,18 @@ export class VerdictCache {
 	}
 
 	private isStale(entry: { expiresAt: string; aidrVersion?: string }): boolean {
-		if (new Date(entry.expiresAt).getTime() <= Date.now()) return true;
+		const expiresAt = new Date(entry.expiresAt).getTime();
+		if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return true;
 		// Sharp cutover: anything not stamped with the current AIDR version is stale.
 		if (this.version && this.version !== "dev" && entry.aidrVersion !== this.version) return true;
 		return false;
+	}
+
+	private isUrlStale(entry: CacheStore["urls"][string]): boolean {
+		if (this.isStale(entry)) return true;
+		if (entry.verdict !== "allow") return false;
+		const sourceFreshUntil = new Date(entry.sourceFreshUntil ?? "").getTime();
+		return !Number.isFinite(sourceFreshUntil) || sourceFreshUntil <= Date.now();
 	}
 
 	private computePackageTtl(verdict: string, packageAgeDays: number | null): number {
@@ -173,7 +207,7 @@ export class VerdictCache {
 
 	private pruneStaleEntries(): void {
 		for (const [key, entry] of Object.entries(this.store.urls)) {
-			if (this.isStale(entry)) delete this.store.urls[key];
+			if (this.isUrlStale(entry)) delete this.store.urls[key];
 		}
 		for (const [key, entry] of Object.entries(this.store.commands)) {
 			if (this.isStale(entry)) delete this.store.commands[key];

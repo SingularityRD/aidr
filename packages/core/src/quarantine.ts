@@ -4,12 +4,36 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { copyFile, lstat, mkdir, readFile, unlink } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import {
+	type BigIntStats,
+	constants,
+	linkSync,
+	lstatSync,
+	readFileSync,
+	rmdirSync,
+	type Stats,
+	unlinkSync,
+} from "node:fs";
+import {
+	copyFile,
+	link,
+	lstat,
+	mkdir,
+	readdir,
+	readFile,
+	realpath,
+	rename,
+	rmdir,
+	unlink,
+	writeFile,
+} from "node:fs/promises";
+import { hostname } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { logIncident } from "./audit-log.js";
 import { resolvePath } from "./config.js";
-import { atomicWriteJson, getFileContent, getFileContentSync } from "./file-utils.js";
+import { atomicWriteJson, getFileContentSync } from "./file-utils.js";
+import { preparePrivateLocalDirectory } from "./private-local-file.js";
 import type { ResponseAuditor } from "./response-audit.js";
 import { normalizeAuthorizedBy } from "./response-worker-contract.js";
 import type { Logger, LoggingConfig, Verdict } from "./types.js";
@@ -97,6 +121,13 @@ export interface QuarantinedItem {
 	authorizedBy?: string;
 }
 
+type QuarantineAuditContext = {
+	tool?: string;
+	input?: string;
+	verdict?: Verdict;
+	authorizedBy?: string;
+};
+
 /** Quarantine manifest stored in the quarantine directory */
 interface QuarantineManifest {
 	version: number;
@@ -107,6 +138,146 @@ interface QuarantineManifest {
 const MANIFEST_VERSION = 1;
 const MANIFEST_FILENAME = "manifest.json";
 const _METADATA_FILENAME = "metadata.json";
+const manifestMutationTails = new Map<string, Promise<void>>();
+const MANIFEST_LOCK_WAIT_MS = 60_000;
+const MANIFEST_LOCK_STALE_MS = 30_000;
+const MANIFEST_LOCK_POLL_MS = 25;
+const PROCESS_STARTED_AT_MS = Math.max(0, Math.trunc(Date.now() - process.uptime() * 1_000));
+
+interface ManifestLockOwner {
+	v: 1;
+	token: string;
+	pid: number;
+	host: string;
+	acquiredAt: number;
+	processStartedAtMs: number;
+}
+
+function isManifestLockOwner(value: unknown): value is ManifestLockOwner {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const owner = value as Partial<ManifestLockOwner>;
+	return (
+		owner.v === 1 &&
+		typeof owner.token === "string" &&
+		/^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(owner.token) &&
+		Number.isSafeInteger(owner.pid) &&
+		(owner.pid ?? 0) > 0 &&
+		typeof owner.host === "string" &&
+		typeof owner.acquiredAt === "number" &&
+		Number.isFinite(owner.acquiredAt) &&
+		typeof owner.processStartedAtMs === "number" &&
+		Number.isFinite(owner.processStartedAtMs)
+	);
+}
+
+function manifestLockOwnerAlive(owner: ManifestLockOwner): boolean | null {
+	if (owner.host !== hostname()) return null;
+	if (owner.pid === process.pid) {
+		return owner.processStartedAtMs === PROCESS_STARTED_AT_MS;
+	}
+	try {
+		process.kill(owner.pid, 0);
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException)?.code;
+		if (code === "ESRCH") return false;
+		if (code === "EPERM") return true;
+		return null;
+	}
+	return true;
+}
+
+function isPathWithin(root: string, target: string): boolean {
+	const targetRelative = relative(resolve(root), resolve(target));
+	return (
+		targetRelative !== "" &&
+		targetRelative !== ".." &&
+		!targetRelative.startsWith(`..${sep}`) &&
+		!isAbsolute(targetRelative)
+	);
+}
+
+function isExpectedQuarantinePayloadPath(id: string, root: string, target: string): boolean {
+	const targetRelative = relative(resolve(root), resolve(target));
+	const parts = targetRelative.split(sep);
+	return (
+		parts.length === 4 &&
+		/^\d{4}$/.test(parts[0] ?? "") &&
+		/^(?:0[1-9]|1[0-2])$/.test(parts[1] ?? "") &&
+		/^(?:0[1-9]|[12]\d|3[01])$/.test(parts[2] ?? "") &&
+		parts[3]?.startsWith(`${id}_`) === true &&
+		(parts[3]?.length ?? 0) > id.length + 1 &&
+		!parts[3].endsWith(".metadata.json")
+	);
+}
+
+function isValidManifestItem(item: unknown, quarantineRoot: string): item is QuarantinedItem {
+	if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+	const candidate = item as Partial<QuarantinedItem>;
+	const timestamp =
+		candidate.timestamp instanceof Date
+			? candidate.timestamp.getTime()
+			: typeof candidate.timestamp === "string"
+				? Date.parse(candidate.timestamp)
+				: Number.NaN;
+	return (
+		typeof candidate.id === "string" &&
+		/^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(candidate.id) &&
+		typeof candidate.originalPath === "string" &&
+		isAbsolute(candidate.originalPath) &&
+		typeof candidate.quarantinePath === "string" &&
+		isAbsolute(candidate.quarantinePath) &&
+		isPathWithin(quarantineRoot, candidate.quarantinePath) &&
+		isExpectedQuarantinePayloadPath(candidate.id, quarantineRoot, candidate.quarantinePath) &&
+		Number.isFinite(timestamp) &&
+		typeof candidate.threatId === "string" &&
+		candidate.threatId.length > 0 &&
+		!!candidate.metadata &&
+		typeof candidate.metadata === "object" &&
+		!Array.isArray(candidate.metadata) &&
+		(candidate.fileHash === undefined || /^[\da-f]{64}$/i.test(candidate.fileHash)) &&
+		(candidate.fileSize === undefined ||
+			(Number.isSafeInteger(candidate.fileSize) && candidate.fileSize >= 0)) &&
+		(candidate.authorizedBy === undefined || typeof candidate.authorizedBy === "string")
+	);
+}
+
+function sameFileVersion(expected: BigIntStats, actual: BigIntStats): boolean {
+	return (
+		actual.isFile() &&
+		!actual.isSymbolicLink() &&
+		expected.ino > 0n &&
+		actual.ino > 0n &&
+		expected.dev === actual.dev &&
+		expected.ino === actual.ino &&
+		expected.size === actual.size &&
+		expected.mtimeNs === actual.mtimeNs
+	);
+}
+
+function sameFileIdentity(expected: BigIntStats, actual: BigIntStats): boolean {
+	return (
+		expected.isFile() &&
+		!expected.isSymbolicLink() &&
+		actual.isFile() &&
+		!actual.isSymbolicLink() &&
+		expected.ino > 0n &&
+		actual.ino > 0n &&
+		expected.dev === actual.dev &&
+		expected.ino === actual.ino
+	);
+}
+
+function sameStableFileVersion(expected: BigIntStats, actual: BigIntStats): boolean {
+	return sameFileVersion(expected, actual) && expected.ctimeNs === actual.ctimeNs;
+}
+
+function cloneQuarantinedItem(item: QuarantinedItem): QuarantinedItem {
+	return {
+		...item,
+		timestamp: new Date(item.timestamp),
+		metadata: { ...item.metadata },
+	};
+}
 
 /**
  * Auto-quarantine manager for isolating suspicious files.
@@ -150,74 +321,38 @@ export class AutoQuarantine {
 	 * @param auditContext - Optional audit context for response logging
 	 * @returns The quarantined item metadata
 	 */
-	async quarantine(
+	quarantine(
 		filePath: string,
 		threatId: string,
 		metadata?: Record<string, unknown>,
-		auditContext?: {
-			tool?: string;
-			input?: string;
-			verdict?: Verdict;
-			/** Operator identity that authorized this response, when one is known. */
-			authorizedBy?: string;
-		},
+		auditContext?: QuarantineAuditContext,
+	): Promise<QuarantinedItem> {
+		return this.serializeMutations(() =>
+			this.quarantineExclusive(filePath, threatId, metadata, auditContext),
+		);
+	}
+
+	private async quarantineExclusive(
+		filePath: string,
+		threatId: string,
+		metadata?: Record<string, unknown>,
+		auditContext?: QuarantineAuditContext,
 	): Promise<QuarantinedItem> {
 		const resolvedPath = resolvePath(filePath);
 		const quarantineDir = resolvePath(this.config.quarantineDir);
 		const authorizedBy = normalizeAuthorizedBy(auditContext?.authorizedBy);
-
-		// lstat, not stat: this is the same rule the rollback module applies to a
-		// snapshot target. Following a symlink here would move (and then delete) the
-		// LINK TARGET — a file that was never named, and possibly one outside the
-		// workspace entirely.
-		const fileStats = await lstat(resolvedPath).catch(() => null);
-		if (fileStats?.isSymbolicLink()) {
-			const error = `Refusing to quarantine a symlink: ${resolvedPath}`;
-			// Log the refusal if auditor and context are available. It is reported as
-			// a failure: nothing was isolated.
-			if (this.auditor && auditContext?.verdict) {
-				await this.auditor.log({
-					action: "quarantine",
-					threatId,
-					tool: auditContext.tool ?? "unknown",
-					input: auditContext.input ?? filePath,
-					verdict: auditContext.verdict,
-					responseTaken: "quarantine",
-					metadata: { quarantineId: undefined, reason: "symlink_refused" },
-					outcome: "failure",
-					error,
-					authorizedBy,
-				});
-			}
-
-			throw new QuarantineRefusedError("symlink_refused", error);
-		}
-		if (!fileStats?.isFile()) {
-			const error = `File not found or not accessible: ${resolvedPath}`;
-
-			// Log failure if auditor and context are available
-			if (this.auditor && auditContext?.verdict) {
-				await this.auditor.log({
-					action: "quarantine",
-					threatId,
-					tool: auditContext.tool ?? "unknown",
-					input: auditContext.input ?? filePath,
-					verdict: auditContext.verdict,
-					responseTaken: "quarantine",
-					metadata: { quarantineId: undefined },
-					outcome: "failure",
-					error,
-					authorizedBy,
-				});
-			}
-
-			throw new Error(error);
-		}
+		const fileStats = await this.requireQuarantineSource(
+			resolvedPath,
+			filePath,
+			threatId,
+			auditContext,
+			authorizedBy,
+		);
 
 		// Generate unique ID and compute file hash
 		const id = randomUUID();
 		const fileHash = await this.computeFileHash(resolvedPath);
-		const fileSize = fileStats.size;
+		const fileSize = Number(fileStats.size);
 
 		// Create quarantine subdirectory structure based on date. Mode 0o700, the same
 		// as a snapshot directory: a quarantine vault holds hostile content and must
@@ -229,40 +364,12 @@ export class AutoQuarantine {
 			(now.getMonth() + 1).toString().padStart(2, "0"),
 			now.getDate().toString().padStart(2, "0"),
 		);
-		await mkdir(dateDir, { recursive: true, mode: 0o700 });
+		preparePrivateLocalDirectory(dateDir);
 
 		// Move file to quarantine (using copy + delete for cross-device safety)
 		const quarantineFilename = `${id}_${basename(resolvedPath)}`;
 		const quarantinePath = join(dateDir, quarantineFilename);
-
-		try {
-			await copyFile(resolvedPath, quarantinePath);
-			await unlink(resolvedPath);
-		} catch (error) {
-			// Clean up partial copy on failure
-			await unlink(quarantinePath).catch(() => {});
-			const errorMsg = `Failed to quarantine file: ${error instanceof Error ? error.message : String(error)}`;
-
-			// Log failure if auditor and context are available
-			if (this.auditor && auditContext?.verdict) {
-				await this.auditor.log({
-					action: "quarantine",
-					threatId,
-					tool: auditContext.tool ?? "unknown",
-					input: auditContext.input ?? filePath,
-					verdict: auditContext.verdict,
-					responseTaken: "quarantine",
-					metadata: { quarantineId: undefined },
-					outcome: "failure",
-					error: errorMsg,
-					authorizedBy,
-				});
-			}
-
-			throw new Error(errorMsg);
-		}
-
-		// Write metadata file alongside quarantined file
+		await this.assertQuarantinePath(quarantinePath);
 		const metadataPath = join(dateDir, `${quarantineFilename}.metadata.json`);
 		const item: QuarantinedItem = {
 			id,
@@ -276,14 +383,8 @@ export class AutoQuarantine {
 			...(authorizedBy ? { authorizedBy } : {}),
 		};
 
-		await atomicWriteJson(metadataPath, {
-			...item,
-			timestamp: now.toISOString(),
-		});
-
-		// Track in memory and persist manifest
-		this.items.set(id, item);
-		await this.saveManifest();
+		await this.persistQuarantineRecord(item, metadataPath, auditContext, filePath, authorizedBy);
+		await this.removeOriginalAfterPersist(item, fileStats, filePath, auditContext, authorizedBy);
 
 		// Log to audit and notify security team
 		await this.logQuarantineEvent(item);
@@ -314,46 +415,276 @@ export class AutoQuarantine {
 			fileSize,
 		});
 
-		return item;
+		return cloneQuarantinedItem(item);
+	}
+
+	private async requireQuarantineSource(
+		resolvedPath: string,
+		inputPath: string,
+		threatId: string,
+		auditContext: QuarantineAuditContext | undefined,
+		authorizedBy: string | undefined,
+	): Promise<BigIntStats> {
+		// lstat refuses a link instead of moving its potentially external target.
+		const stats = await lstat(resolvedPath, { bigint: true }).catch(() => null);
+		if (stats?.isSymbolicLink()) {
+			const reason = "symlink_refused";
+			const error = `Refusing to quarantine a symlink: ${resolvedPath}`;
+			await this.logQuarantineFailure({
+				threatId,
+				inputPath,
+				auditContext,
+				authorizedBy,
+				error,
+				metadata: { quarantineId: undefined, reason },
+			});
+			throw new QuarantineRefusedError(reason, error);
+		}
+		if (!stats?.isFile()) {
+			const error = `File not found or not accessible: ${resolvedPath}`;
+			await this.logQuarantineFailure({
+				threatId,
+				inputPath,
+				auditContext,
+				authorizedBy,
+				error,
+				metadata: { quarantineId: undefined },
+			});
+			throw new Error(error);
+		}
+		if (stats.size > BigInt(Number.MAX_SAFE_INTEGER)) {
+			const error = `File is too large to represent safely in quarantine metadata: ${resolvedPath}`;
+			await this.logQuarantineFailure({
+				threatId,
+				inputPath,
+				auditContext,
+				authorizedBy,
+				error,
+				metadata: { quarantineId: undefined },
+			});
+			throw new Error(error);
+		}
+		return stats;
+	}
+
+	private async persistQuarantineRecord(
+		item: QuarantinedItem,
+		metadataPath: string,
+		auditContext: QuarantineAuditContext | undefined,
+		inputPath: string,
+		authorizedBy: string | undefined,
+	): Promise<void> {
+		let copied = false;
+		let metadataWritten = false;
+		try {
+			try {
+				await copyFile(item.originalPath, item.quarantinePath, constants.COPYFILE_EXCL);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") {
+					await unlink(item.quarantinePath).catch(() => {});
+				}
+				throw error;
+			}
+			copied = true;
+			if ((await this.computeFileHash(item.quarantinePath)) !== item.fileHash) {
+				throw new Error("Source file changed while it was being quarantined");
+			}
+			await atomicWriteJson(metadataPath, { ...item, timestamp: item.timestamp.toISOString() });
+			metadataWritten = true;
+
+			// Commit tracking before deleting the source; a failure leaves source intact.
+			this.items.set(item.id, item);
+			await this.saveManifest();
+		} catch (error) {
+			this.items.delete(item.id);
+			if (metadataWritten) await unlink(metadataPath).catch(() => {});
+			if (copied) await unlink(item.quarantinePath).catch(() => {});
+			const errorMsg = `Failed to persist quarantine before removing original: ${error instanceof Error ? error.message : String(error)}`;
+			await this.logQuarantineFailure({
+				threatId: item.threatId,
+				inputPath,
+				auditContext,
+				authorizedBy,
+				error: errorMsg,
+				metadata: { quarantineId: undefined },
+			});
+			throw new Error(errorMsg);
+		}
+	}
+
+	private async removeOriginalAfterPersist(
+		item: QuarantinedItem,
+		expectedSourceStats: BigIntStats,
+		inputPath: string,
+		auditContext: QuarantineAuditContext | undefined,
+		authorizedBy: string | undefined,
+	): Promise<void> {
+		// Rename the current directory entry into a fresh, private sibling directory
+		// before inspecting it. That closes the copy-then-unlink race: if another
+		// process replaced or modified the source after our copy, the staged bytes
+		// fail identity/hash verification and are preserved rather than discarded.
+		const stagingDir = join(
+			dirname(item.originalPath),
+			`.${basename(item.originalPath)}.aidr-${item.id}.staging`,
+		);
+		const stagedPath = join(stagingDir, basename(item.originalPath));
+		let staged = false;
+		try {
+			await mkdir(stagingDir, { mode: 0o700 });
+			await rename(item.originalPath, stagedPath);
+			staged = true;
+			const stagedStats = await lstat(stagedPath, { bigint: true });
+			if (!sameFileVersion(expectedSourceStats, stagedStats)) {
+				throw new Error("Original file identity changed after it was copied");
+			}
+			if ((await this.computeFileHash(stagedPath)) !== item.fileHash) {
+				throw new Error("Original file contents changed after they were copied");
+			}
+			const finalStats = await lstat(stagedPath, { bigint: true });
+			if (
+				!sameStableFileVersion(stagedStats, finalStats) ||
+				(await this.computeFileHash(stagedPath)) !== item.fileHash
+			) {
+				throw new Error("Original file changed during final quarantine verification");
+			}
+			await unlink(stagedPath);
+			staged = false;
+			await rmdir(stagingDir).catch(() => {});
+		} catch (error) {
+			const recovery = staged
+				? await this.recoverStagedOriginal(stagedPath, item.originalPath, stagingDir)
+				: `original remains at ${item.originalPath}`;
+			const errorMsg = `Quarantine ${item.id} is recorded at ${item.quarantinePath}, but ${recovery}: ${error instanceof Error ? error.message : String(error)}`;
+			await this.logQuarantineFailure({
+				threatId: item.threatId,
+				inputPath,
+				auditContext,
+				authorizedBy,
+				error: errorMsg,
+				metadata: { quarantineId: item.id },
+			});
+			throw new Error(errorMsg);
+		}
+	}
+
+	private async recoverStagedOriginal(
+		stagedPath: string,
+		originalPath: string,
+		stagingDir: string,
+	): Promise<string> {
+		const stagedStats = await lstat(stagedPath, { bigint: true }).catch(() => null);
+		if (!stagedStats?.isFile() || stagedStats.isSymbolicLink()) {
+			return `original preserved at ${stagedPath}; recovery requires manual inspection`;
+		}
+		try {
+			await link(stagedPath, originalPath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code === "EEXIST") {
+				const originalStats = await lstat(originalPath, { bigint: true }).catch(() => null);
+				if (originalStats && sameFileIdentity(stagedStats, originalStats)) {
+					await unlink(stagedPath).catch(() => {});
+					await rmdir(stagingDir).catch(() => {});
+					return `original remains at ${originalPath}`;
+				}
+			}
+			return `original preserved at ${stagedPath}; destination was not overwritten at ${originalPath}`;
+		}
+		const originalStats = await lstat(originalPath, { bigint: true }).catch(() => null);
+		const stagedAfterLink = await lstat(stagedPath, { bigint: true }).catch(() => null);
+		if (
+			!originalStats ||
+			!stagedAfterLink ||
+			!sameFileIdentity(stagedStats, originalStats) ||
+			!sameFileIdentity(stagedStats, stagedAfterLink)
+		) {
+			return `recovery copy created at ${originalPath}; staged data preserved at ${stagedPath}`;
+		}
+		await unlink(stagedPath);
+		await rmdir(stagingDir).catch(() => {});
+		return `original remains at ${originalPath}`;
+	}
+
+	private async logQuarantineFailure(params: {
+		threatId: string;
+		inputPath: string;
+		auditContext: QuarantineAuditContext | undefined;
+		authorizedBy: string | undefined;
+		error: string;
+		metadata: { quarantineId?: string; reason?: string };
+	}): Promise<void> {
+		if (!this.auditor || !params.auditContext?.verdict) return;
+		await this.auditor.log({
+			action: "quarantine",
+			threatId: params.threatId,
+			tool: params.auditContext.tool ?? "unknown",
+			input: params.auditContext.input ?? params.inputPath,
+			verdict: params.auditContext.verdict,
+			responseTaken: "quarantine",
+			metadata: params.metadata,
+			outcome: "failure",
+			error: params.error,
+			authorizedBy: params.authorizedBy,
+		});
 	}
 
 	/**
 	 * Restore a quarantined file to its original location.
 	 * @param itemId - ID of the quarantined item to restore
 	 */
-	async restore(itemId: string): Promise<void> {
+	restore(itemId: string): Promise<void> {
+		return this.serializeMutations(() => this.restoreExclusive(itemId));
+	}
+
+	private async restoreExclusive(itemId: string): Promise<void> {
 		const item = this.items.get(itemId);
 		if (!item) {
 			throw new Error(`Quarantined item not found: ${itemId}`);
 		}
 
-		// Ensure original directory exists
-		await mkdir(dirname(item.originalPath), { recursive: true });
+		this.validateItemForUse(item);
+		if (!item.fileHash || !/^[0-9a-f]{64}$/i.test(item.fileHash)) {
+			throw new Error(`Cannot safely restore quarantined item without a valid hash: ${itemId}`);
+		}
 
-		// Verify file integrity before restoring
-		const currentHash = await this.computeFileHash(item.quarantinePath);
+		await this.assertQuarantinePath(item.quarantinePath);
+		const payload = await this.getRestorePayload(item);
+		const currentHash = payload.hash;
 		if (currentHash !== item.fileHash) {
 			throw new Error(
 				`File integrity check failed for quarantined item: ${itemId}. Hash mismatch detected.`,
 			);
 		}
 
-		// Move file back to original location
+		// A prior retry may already have restored identical bytes after a manifest
+		// failure; unrelated files and symlinks are never treated as that retry.
 		try {
-			await copyFile(item.quarantinePath, item.originalPath);
-			await unlink(item.quarantinePath);
+			if (payload.exists) {
+				await mkdir(dirname(item.originalPath), { recursive: true });
+				await this.restoreOriginalCopy(item, currentHash);
+			}
 		} catch (error) {
 			throw new Error(
 				`Failed to restore file: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 
-		// Clean up metadata file and remove from tracking
-		const metadataPath = `${item.quarantinePath}.metadata.json`;
-		await unlink(metadataPath).catch(() => {});
+		// Remove the vault payload while the manifest still tracks the item. If
+		// cleanup fails, the restored original and its tracked vault copy both remain.
+		if (payload.exists) await this.removeVerifiedRestorePayload(item);
 
 		this.items.delete(itemId);
-		await this.saveManifest();
+		try {
+			await this.saveManifest();
+		} catch (error) {
+			this.items.set(itemId, item);
+			throw new Error(
+				`File was restored but quarantine tracking could not be updated; the restored original remains and retry is safe: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+
+		// Metadata is auxiliary; the durable manifest and payload are already handled.
+		const metadataPath = `${item.quarantinePath}.metadata.json`;
+		await unlink(metadataPath).catch(() => {});
 
 		// Log restore event
 		if (this.loggingConfig) {
@@ -367,6 +698,51 @@ export class AutoQuarantine {
 		}
 
 		this.logger.info(`File restored from quarantine: ${item.originalPath}`, { itemId });
+	}
+
+	private async getRestorePayload(
+		item: QuarantinedItem,
+	): Promise<{ exists: boolean; hash: string }> {
+		const payload = await this.lstatRegularFileOrMissing(item.quarantinePath);
+		const original = await this.lstatRegularFileOrMissing(item.originalPath);
+		const hashPath = payload ? item.quarantinePath : original ? item.originalPath : null;
+		if (!hashPath) throw new Error(`No restorable copy exists for quarantined item: ${item.id}`);
+		return { exists: payload !== null, hash: await this.computeFileHash(hashPath) };
+	}
+
+	private async lstatRegularFileOrMissing(filePath: string): Promise<Stats | null> {
+		const stats = await lstat(filePath).catch((error) => {
+			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+			throw error;
+		});
+		if (stats && (!stats.isFile() || stats.isSymbolicLink())) {
+			throw new Error(`Refusing to use non-regular file: ${filePath}`);
+		}
+		return stats;
+	}
+
+	private async removeVerifiedRestorePayload(item: QuarantinedItem): Promise<void> {
+		const stats = await this.lstatRegularFileOrMissing(item.quarantinePath);
+		if (!stats || (await this.computeFileHash(item.quarantinePath)) !== item.fileHash) {
+			throw new Error(`Quarantine payload changed during restore: ${item.quarantinePath}`);
+		}
+		await this.unlinkPayloadFile(item.quarantinePath);
+	}
+
+	private async restoreOriginalCopy(item: QuarantinedItem, expectedHash: string): Promise<void> {
+		try {
+			await copyFile(item.quarantinePath, item.originalPath, constants.COPYFILE_EXCL);
+			return;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
+			const originalStats = await lstat(item.originalPath).catch(() => null);
+			if (!originalStats?.isFile() || originalStats.isSymbolicLink()) throw error;
+			if ((await this.computeFileHash(item.originalPath)) !== expectedHash) throw error;
+		}
+	}
+
+	private async unlinkPayloadFile(filePath: string): Promise<void> {
+		await unlink(filePath);
 	}
 
 	/**
@@ -384,10 +760,31 @@ export class AutoQuarantine {
 	 * @param itemId - ID of the quarantined item to delete
 	 * @throws QuarantineDeleteError when the quarantined file could not be removed
 	 */
-	async delete(itemId: string): Promise<void> {
+	delete(itemId: string): Promise<void> {
+		return this.serializeMutations(() => this.deleteExclusive(itemId));
+	}
+
+	private async deleteExclusive(itemId: string): Promise<void> {
 		const item = this.items.get(itemId);
 		if (!item) {
 			throw new Error(`Quarantined item not found: ${itemId}`);
+		}
+
+		this.validateItemForUse(item);
+		await this.assertQuarantinePath(item.quarantinePath);
+
+		// Refuse symlinks, directories, and other unexpected entries rather than
+		// unlinking a path that may have been redirected after the manifest loaded.
+		const payloadStats = await lstat(item.quarantinePath).catch((error) => {
+			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+			throw error;
+		});
+		if (payloadStats && (!payloadStats.isFile() || payloadStats.isSymbolicLink())) {
+			throw new QuarantineDeleteError(
+				itemId,
+				item.quarantinePath,
+				"refusing to remove a non-regular filesystem entry",
+			);
 		}
 
 		// Delete quarantined file
@@ -411,13 +808,20 @@ export class AutoQuarantine {
 			});
 		}
 
-		// Delete metadata file
+		// Remove from tracking only after deleting the payload, and restore the
+		// in-memory entry if the manifest commit fails so a retry remains possible.
+		this.items.delete(itemId);
+		try {
+			await this.saveManifest();
+		} catch (error) {
+			this.items.set(itemId, item);
+			throw new Error(
+				`Quarantined payload was removed but tracking could not be updated; retry the delete: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+
 		const metadataPath = `${item.quarantinePath}.metadata.json`;
 		await unlink(metadataPath).catch(() => {});
-
-		// Remove from tracking
-		this.items.delete(itemId);
-		await this.saveManifest();
 
 		// Log deletion event
 		if (this.loggingConfig) {
@@ -441,9 +845,9 @@ export class AutoQuarantine {
 	 * @returns Array of quarantined items
 	 */
 	list(): QuarantinedItem[] {
-		return Array.from(this.items.values()).sort(
-			(a, b) => b.timestamp.getTime() - a.timestamp.getTime(),
-		);
+		return Array.from(this.items.values())
+			.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+			.map(cloneQuarantinedItem);
 	}
 
 	/**
@@ -452,7 +856,8 @@ export class AutoQuarantine {
 	 * @returns The quarantined item or undefined if not found
 	 */
 	get(itemId: string): QuarantinedItem | undefined {
-		return this.items.get(itemId);
+		const item = this.items.get(itemId);
+		return item ? cloneQuarantinedItem(item) : undefined;
 	}
 
 	/**
@@ -489,11 +894,8 @@ export class AutoQuarantine {
 	 * constructor returns so the instance is usable immediately).
 	 */
 	private ensureQuarantineDirSync(): void {
-		try {
-			mkdirSync(resolvePath(this.config.quarantineDir), { recursive: true });
-		} catch (error) {
-			this.logger.warn("Failed to create quarantine directory", { error: String(error) });
-		}
+		const quarantineDir = resolvePath(this.config.quarantineDir);
+		preparePrivateLocalDirectory(quarantineDir);
 	}
 
 	/**
@@ -501,27 +903,163 @@ export class AutoQuarantine {
 	 */
 	private loadManifestSync(): void {
 		this.items.clear();
+		let content: string;
 		try {
-			// Throws when the manifest does not exist yet, which is the normal
-			// first-run case handled by the catch below.
-			const content = getFileContentSync(this.manifestPath);
-			const manifest: QuarantineManifest = JSON.parse(content);
+			content = getFileContentSync(this.manifestPath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return;
+			throw new Error(
+				`Cannot read quarantine manifest ${this.manifestPath}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 
-			if (manifest.version !== MANIFEST_VERSION) {
-				this.logger.warn(`Quarantine manifest version mismatch: ${manifest.version}`);
+		let manifest: QuarantineManifest;
+		try {
+			manifest = JSON.parse(content) as QuarantineManifest;
+		} catch (error) {
+			throw new Error(
+				`Quarantine manifest is corrupt at ${this.manifestPath}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		if (
+			!manifest ||
+			typeof manifest !== "object" ||
+			manifest.version !== MANIFEST_VERSION ||
+			!Array.isArray(manifest.items)
+		) {
+			throw new Error(
+				`Quarantine manifest has an unsupported or invalid format: ${this.manifestPath}`,
+			);
+		}
+
+		const quarantineRoot = resolve(resolvePath(this.config.quarantineDir));
+		for (const item of manifest.items) {
+			if (!isValidManifestItem(item, quarantineRoot)) {
+				throw new Error(`Quarantine manifest contains an invalid item: ${this.manifestPath}`);
+			}
+			if (this.items.has(item.id)) {
+				throw new Error(`Quarantine manifest contains a duplicate item: ${this.manifestPath}`);
+			}
+			this.items.set(item.id, {
+				...item,
+				timestamp: new Date(item.timestamp),
+			});
+		}
+	}
+
+	/**
+	 * Quarantine commits its manifest before renaming the source into a private
+	 * sibling staging directory. If the process exits between that rename and
+	 * final removal, the committed item's id makes the staging path deterministic.
+	 * On startup, discard a staged duplicate only when its bytes are already safely
+	 * present in the vault; otherwise put the entry back at the original path.
+	 */
+	private recoverInterruptedSourceMovesSync(): void {
+		for (const item of this.items.values()) this.recoverInterruptedSourceMoveSync(item);
+	}
+
+	private recoverInterruptedSourceMoveSync(item: QuarantinedItem): void {
+		const stagingDir = join(
+			dirname(item.originalPath),
+			`.${basename(item.originalPath)}.aidr-${item.id}.staging`,
+		);
+		const stagedPath = join(stagingDir, basename(item.originalPath));
+		const stagedStats = this.lstatIfPresentSync(stagedPath);
+		if (!stagedStats) return;
+
+		const originalStats = this.lstatIfPresentSync(item.originalPath);
+		if (originalStats) {
+			if (
+				stagedStats.isFile() &&
+				!stagedStats.isSymbolicLink() &&
+				sameFileIdentity(
+					lstatSync(stagedPath, { bigint: true }),
+					lstatSync(item.originalPath, { bigint: true }),
+				)
+			) {
+				unlinkSync(stagedPath);
+				rmdirSync(stagingDir);
 				return;
 			}
-
-			for (const item of manifest.items) {
-				this.items.set(item.id, {
-					...item,
-					timestamp: new Date(item.timestamp),
-				});
-			}
-		} catch {
-			// Manifest doesn't exist yet, or is unreadable/corrupt: start fresh.
-			this.items.clear();
+			throw new Error(
+				`Quarantine recovery found both an original and staged source for ${item.id}; preserve and inspect ${stagedPath}`,
+			);
 		}
+
+		if (this.stagedSourceMatchesVaultSync(item, stagedPath, stagedStats)) {
+			unlinkSync(stagedPath);
+		} else {
+			this.restoreStagedSourceSync(item, stagedPath, stagedStats);
+		}
+		rmdirSync(stagingDir);
+	}
+
+	private lstatIfPresentSync(filePath: string): BigIntStats | null {
+		try {
+			return lstatSync(filePath, { bigint: true });
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+			throw error;
+		}
+	}
+
+	private stagedSourceMatchesVaultSync(
+		item: QuarantinedItem,
+		stagedPath: string,
+		stagedStats: BigIntStats,
+	): boolean {
+		if (!stagedStats.isFile() || stagedStats.isSymbolicLink() || !item.fileHash) return false;
+		try {
+			const vaultStats = lstatSync(item.quarantinePath, { bigint: true });
+			if (!vaultStats.isFile() || vaultStats.isSymbolicLink()) return false;
+			const stagedDigest = createHash("sha256").update(readFileSync(stagedPath)).digest("hex");
+			const vaultDigest = createHash("sha256")
+				.update(readFileSync(item.quarantinePath))
+				.digest("hex");
+			return (
+				stagedDigest === item.fileHash &&
+				vaultDigest === item.fileHash &&
+				sameStableFileVersion(stagedStats, lstatSync(stagedPath, { bigint: true })) &&
+				sameStableFileVersion(vaultStats, lstatSync(item.quarantinePath, { bigint: true }))
+			);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return false;
+			throw new Error(
+				`Cannot verify interrupted quarantine source ${stagedPath}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	private restoreStagedSourceSync(
+		item: QuarantinedItem,
+		stagedPath: string,
+		stagedStats: BigIntStats,
+	): void {
+		if (!stagedStats.isFile() || stagedStats.isSymbolicLink()) {
+			throw new Error(
+				`Quarantine recovery found a non-regular staged source for ${item.id}; preserve and inspect ${stagedPath}`,
+			);
+		}
+		const stagedIdentity = lstatSync(stagedPath, { bigint: true });
+		try {
+			linkSync(stagedPath, item.originalPath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
+			throw new Error(
+				`Quarantine recovery could not restore ${item.id} without overwriting ${item.originalPath}; preserve and inspect ${stagedPath}`,
+			);
+		}
+		const originalStats = lstatSync(item.originalPath, { bigint: true });
+		const stagedAfterLink = lstatSync(stagedPath, { bigint: true });
+		if (
+			!sameFileIdentity(stagedIdentity, originalStats) ||
+			!sameFileIdentity(stagedIdentity, stagedAfterLink)
+		) {
+			throw new Error(
+				`Quarantine recovery changed during restore; preserve both ${item.originalPath} and ${stagedPath}`,
+			);
+		}
+		unlinkSync(stagedPath);
 	}
 
 	/**
@@ -537,10 +1075,177 @@ export class AutoQuarantine {
 			lastUpdated: new Date().toISOString(),
 		};
 
+		await atomicWriteJson(this.manifestPath, manifest);
+	}
+
+	private validateItemForUse(item: QuarantinedItem): void {
+		if (!isValidManifestItem(item, resolve(resolvePath(this.config.quarantineDir)))) {
+			throw new Error("Refusing to use invalid quarantine item");
+		}
+	}
+
+	private async assertQuarantinePath(filePath: string): Promise<void> {
+		const root = await realpath(resolve(resolvePath(this.config.quarantineDir)));
+		const parent = await realpath(dirname(filePath)).catch((error) => {
+			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+			throw error;
+		});
+		if (!parent) return;
+		const parentRelative = relative(root, parent);
+		if (
+			parentRelative === ".." ||
+			parentRelative.startsWith(`..${sep}`) ||
+			isAbsolute(parentRelative)
+		) {
+			throw new Error(`Quarantine payload resolves outside its vault: ${filePath}`);
+		}
+	}
+
+	private async acquireManifestLock(): Promise<{
+		lockPath: string;
+		ownerPath: string;
+		token: string;
+	}> {
+		const lockPath = `${this.manifestPath}.lock`;
+		const token = randomUUID();
+		const ownerPath = join(lockPath, `owner-${token}.json`);
+		const temporary = `${lockPath}.owner-${token}.tmp`;
+		const owner: ManifestLockOwner = {
+			v: 1,
+			token,
+			pid: process.pid,
+			host: hostname(),
+			acquiredAt: Date.now(),
+			processStartedAtMs: PROCESS_STARTED_AT_MS,
+		};
+		const deadline = Date.now() + MANIFEST_LOCK_WAIT_MS;
+
+		for (;;) {
+			let directoryCreated = false;
+			try {
+				await mkdir(lockPath, { mode: 0o700 });
+				directoryCreated = true;
+				await writeFile(temporary, `${JSON.stringify(owner)}\n`, { flag: "wx", mode: 0o600 });
+				await rename(temporary, ownerPath);
+				return { lockPath, ownerPath, token };
+			} catch (error) {
+				await unlink(temporary).catch(() => {});
+				if (directoryCreated) {
+					await unlink(ownerPath).catch(() => {});
+					await rmdir(lockPath).catch(() => {});
+					throw error;
+				}
+				if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
+				if (await this.recoverAbandonedManifestLock(lockPath)) continue;
+				if (Date.now() >= deadline) throw new Error("Quarantine manifest lock is unavailable");
+				await delay(MANIFEST_LOCK_POLL_MS);
+			}
+		}
+	}
+
+	private async recoverAbandonedManifestLock(lockPath: string): Promise<boolean> {
+		const lockStats = await lstat(lockPath).catch((error) => {
+			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+			throw error;
+		});
+		if (
+			!lockStats ||
+			Date.now() - lockStats.mtimeMs <= MANIFEST_LOCK_STALE_MS ||
+			!lockStats.isDirectory() ||
+			lockStats.isSymbolicLink()
+		) {
+			return false;
+		}
+
+		const entries = await readdir(lockPath);
+		if (entries.length === 0) return this.removeManifestLockDirectory(lockPath);
+		const marker = entries.length === 1 ? entries[0] : undefined;
+		if (!marker || !/^owner-[\da-f-]+\.json$/i.test(marker)) return false;
+		const owner = await this.readManifestLockOwner(lockPath, marker);
+		if (
+			!owner ||
+			marker !== `owner-${owner.token}.json` ||
+			manifestLockOwnerAlive(owner) !== false
+		) {
+			return false;
+		}
+		await unlink(join(lockPath, marker));
+		return this.removeManifestLockDirectory(lockPath);
+	}
+
+	private async readManifestLockOwner(
+		lockPath: string,
+		marker: string,
+	): Promise<ManifestLockOwner | null> {
 		try {
-			await atomicWriteJson(this.manifestPath, manifest);
+			const owner: unknown = JSON.parse(await readFile(join(lockPath, marker), "utf8"));
+			return isManifestLockOwner(owner) ? owner : null;
+		} catch {
+			return null;
+		}
+	}
+
+	private async removeManifestLockDirectory(lockPath: string): Promise<boolean> {
+		try {
+			await rmdir(lockPath);
+			return true;
 		} catch (error) {
-			this.logger.warn("Failed to save quarantine manifest", { error: String(error) });
+			const code = (error as NodeJS.ErrnoException)?.code;
+			if (code === "ENOENT") return true;
+			if (code === "ENOTEMPTY" || code === "EEXIST") return false;
+			throw error;
+		}
+	}
+
+	private async releaseManifestLock(lock: {
+		lockPath: string;
+		ownerPath: string;
+		token: string;
+	}): Promise<void> {
+		let owner: unknown;
+		try {
+			owner = JSON.parse(await readFile(lock.ownerPath, "utf8"));
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return;
+			throw error;
+		}
+		if (!isManifestLockOwner(owner) || owner.token !== lock.token) return;
+		await unlink(lock.ownerPath);
+		await rmdir(lock.lockPath).catch((error) => {
+			const code = (error as NodeJS.ErrnoException)?.code;
+			if (code !== "ENOENT" && code !== "ENOTEMPTY" && code !== "EEXIST") throw error;
+		});
+	}
+
+	private async serializeMutations<T>(operation: () => Promise<T>): Promise<T> {
+		// Multiple managers in one process may target the same vault. Serialize by
+		// manifest path rather than instance so a concurrent snapshot cannot drop
+		// another manager's committed item.
+		const queueKey =
+			process.platform === "win32" ? this.manifestPath.toLowerCase() : this.manifestPath;
+		const previous = manifestMutationTails.get(queueKey) ?? Promise.resolve();
+		let release!: () => void;
+		const queued = new Promise<void>((resolveQueue) => {
+			release = resolveQueue;
+		});
+		manifestMutationTails.set(queueKey, queued);
+		await previous;
+		try {
+			const lock = await this.acquireManifestLock();
+			try {
+				// Reload under the cross-process lock so short-lived hook processes
+				// cannot overwrite another process's committed manifest item.
+				this.loadManifestSync();
+				this.recoverInterruptedSourceMovesSync();
+				return await operation();
+			} finally {
+				await this.releaseManifestLock(lock).catch((error) => {
+					this.logger.error("Could not release quarantine manifest lock", { error: String(error) });
+				});
+			}
+		} finally {
+			release();
+			if (manifestMutationTails.get(queueKey) === queued) manifestMutationTails.delete(queueKey);
 		}
 	}
 

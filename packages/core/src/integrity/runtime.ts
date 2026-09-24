@@ -1,10 +1,21 @@
 import { logIncident } from "../audit-log.js";
+import { isCommercialBuild } from "../build-flavor.js";
 import { loadConfig, resolvePath } from "../config.js";
 import { loadRevocationsCache } from "../managed.js";
 import type { Logger } from "../types.js";
-import { ConfigSchema, nullLogger } from "../types.js";
+import { nullLogger } from "../types.js";
 import { enterDegradedSafeMode } from "./degraded-safe-mode.js";
 import { type IntegrityCheckResult, verifyArtifactIntegrity } from "./verify.js";
+
+export class ArtifactIntegrityError extends Error {
+	constructor(
+		readonly artifactId: string,
+		readonly result: IntegrityCheckResult,
+	) {
+		super(`Artifact integrity verification failed for ${artifactId}: ${result.status}`);
+		this.name = "ArtifactIntegrityError";
+	}
+}
 
 export async function verifyArtifactIntegrityAndLog(params: {
 	artifactDir: string;
@@ -13,10 +24,11 @@ export async function verifyArtifactIntegrityAndLog(params: {
 	configPath?: string;
 }): Promise<IntegrityCheckResult> {
 	const logger = params.logger ?? nullLogger;
-	const config = await loadConfig(params.configPath, logger).catch(() => ConfigSchema.parse({}));
+	const config = await loadConfig(params.configPath, logger);
+	const commercial = isCommercialBuild();
 
-	if (!config.integrity.enabled) return { status: "skipped" };
-	if (!config.integrity.verify_on_start) return { status: "skipped" };
+	if (!commercial && !config.integrity.enabled) return { status: "skipped" };
+	if (!commercial && !config.integrity.verify_on_start) return { status: "skipped" };
 
 	// Optional: apply revocations to prevent known-compromised artifacts from running in premium mode.
 	try {
@@ -50,29 +62,29 @@ export async function verifyArtifactIntegrityAndLog(params: {
 					logger.debug("Revocation incident log failed (fail-open)", { error: String(e) });
 				}
 
-				return { status: "revoked", reason: "artifact_id_revoked" };
+				const result = { status: "revoked", reason: "artifact_id_revoked" } as const;
+				if (commercial) throw new ArtifactIntegrityError(params.artifactId, result);
+				return result;
 			}
 		}
-	} catch {
+	} catch (error) {
+		if (error instanceof ArtifactIntegrityError) throw error;
 		// Fail open
 	}
 
+	const publicKeysPem = config.integrity.public_keys_pem ?? [];
 	const result = await verifyArtifactIntegrity({
 		artifactDir: params.artifactDir,
-		publicKeysPem: config.integrity.public_keys_pem ?? [],
-		verifySignatures: (config.integrity.public_keys_pem ?? []).length > 0,
+		publicKeysPem,
+		verifySignatures: commercial || publicKeysPem.length > 0,
 		expectedArtifactId: params.artifactId,
 	});
 
-	if (
-		result.status === "ok" ||
-		result.status === "missing_manifest" ||
-		result.status === "no_public_keys"
-	) {
+	if (result.status === "ok") return result;
+	if (!commercial && (result.status === "missing_manifest" || result.status === "no_public_keys"))
 		return result;
-	}
 
-	// Anything other than ok/skipped/missing-manifest/no-keys is treated as suspicious.
+	// Development tolerates absent release metadata; commercial artifacts tolerate nothing but ok.
 	enterDegradedSafeMode(`${params.artifactId}:${result.status}`);
 
 	try {
@@ -105,5 +117,6 @@ export async function verifyArtifactIntegrityAndLog(params: {
 		logger.debug("Integrity incident log failed (fail-open)", { error: String(e) });
 	}
 
+	if (commercial) throw new ArtifactIntegrityError(params.artifactId, result);
 	return result;
 }

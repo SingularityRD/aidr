@@ -35,6 +35,7 @@ describe("isNewerVersion", () => {
 
 describe("checkForUpdate", () => {
 	const originalFetch = globalThis.fetch;
+	const originalSkip = process.env.AIDR_SKIP_VERSION_CHECK;
 
 	beforeEach(() => {
 		vi.useFakeTimers();
@@ -42,7 +43,16 @@ describe("checkForUpdate", () => {
 
 	afterEach(() => {
 		globalThis.fetch = originalFetch;
+		if (originalSkip === undefined) delete process.env.AIDR_SKIP_VERSION_CHECK;
+		else process.env.AIDR_SKIP_VERSION_CHECK = originalSkip;
 		vi.useRealTimers();
+	});
+
+	it("never fetches when AIDR_SKIP_VERSION_CHECK=1", async () => {
+		process.env.AIDR_SKIP_VERSION_CHECK = "1";
+		globalThis.fetch = vi.fn();
+		expect(await checkForUpdate("0.6.0")).toBeNull();
+		expect(globalThis.fetch).not.toHaveBeenCalled();
 	});
 
 	it("returns update available when remote version is newer", async () => {

@@ -34,8 +34,13 @@ from app.models.schemas import (
     ThreatIntelResponse,
     TaskStatusResponse,
 )
-from app.utils.aig_client import AIGClient, AIGClientError, get_aig_client
-from app.task_registry import QuotaExceeded, task_registry
+from app.utils.aig_client import AIGClient, AIGClientError, AIGSubmissionAmbiguous, get_aig_client
+from app.task_registry import (
+    QuotaExceeded,
+    SubmissionInProgress,
+    TaskRegistryUnavailable,
+    task_registry,
+)
 from app.result_adapter import (
     adapt_agent_result,
     adapt_infra_result,
@@ -43,11 +48,11 @@ from app.result_adapter import (
     adapt_mcp_result,
 )
 from app.validation import (
-	assert_source_path_safe,
-	validate_forward_headers,
+    assert_source_path_safe,
+    runtime_egress_ready,
+    validate_forward_headers,
     validate_agent_config_targets,
     validate_remote_url,
-    validate_source_path,
     target_policy,
 )
 
@@ -65,9 +70,6 @@ async def _submit_task(
 ) -> str:
     """Submit once and associate the upstream task with its tenant."""
 
-    # Keep the check/create/register sequence atomic inside this process.  The
-    # registry is intentionally bounded and in-memory; a multi-replica bridge
-    # still needs a shared idempotency store before claiming HA semantics.
     request_hash = hashlib.sha256(
         json.dumps(
             {"task_type": task_type, "content": content},
@@ -85,53 +87,77 @@ async def _submit_task(
         raise HTTPException(status_code=400, detail="Idempotency-Key is required for broker task submission")
     async with _submit_lock:
         try:
-            task_registry.admit(context.tenant_id)
-        except QuotaExceeded as exc:
-            raise HTTPException(status_code=429, detail="tenant scan quota exceeded") from exc
-        try:
-            existing = task_registry.existing_for_key(
+            reservation = task_registry.reserve_submission(
                 context.tenant_id,
                 context.idempotency_key or context.job_id,
                 request_hash,
+                task_type=task_type,
             )
+        except QuotaExceeded as exc:
+            raise HTTPException(status_code=429, detail="tenant scan quota exceeded") from exc
+        except SubmissionInProgress as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="idempotent task submission is already in progress",
+                headers={"Retry-After": "1"},
+            ) from exc
         except ValueError as exc:
             raise HTTPException(
                 status_code=409,
                 detail="idempotency key was already used for a different request",
             ) from exc
-        if existing:
-            return existing
+        except TaskRegistryUnavailable as exc:
+            raise HTTPException(status_code=503, detail="task registry is unavailable") from exc
+        if not reservation.is_new:
+            if not reservation.task_id:
+                raise HTTPException(status_code=503, detail="task registry returned an invalid reservation")
+            return reservation.task_id
         payload = dict(content)
         payload["tenant_id"] = context.tenant_id
         try:
             session_id = await aig.create_scan_task(task_type=task_type, content=payload)
-        except RetryError as exc:
-            # Tenacity wraps the last upstream error. Never let it become an
-            # opaque ASGI 500 or expose upstream response content to callers.
-            last_error = exc.last_attempt.exception()
-            if isinstance(last_error, AIGClientError):
-                raise HTTPException(
-                    status_code=502,
-                    detail="AIG upstream rejected or could not accept the scan request",
-                ) from exc
+        except AIGSubmissionAmbiguous as exc:
+            # AIG has no idempotency-key contract. Retain the reservation so a
+            # retry cannot create a second task after a lost/invalid response.
             raise HTTPException(
-                status_code=502,
-                detail="AIG upstream is unavailable",
+                status_code=503,
+                detail="AIG submission outcome is unknown; retry is blocked pending reconciliation",
             ) from exc
+        except RetryError as exc:
+            last_error = exc.last_attempt.exception()
+            if isinstance(last_error, AIGSubmissionAmbiguous):
+                raise HTTPException(
+                    status_code=503,
+                    detail="AIG submission outcome is unknown; retry is blocked pending reconciliation",
+                ) from exc
+            try:
+                task_registry.release_submission(reservation)
+            except TaskRegistryUnavailable:
+                logger.error("task submission reservation release failed")
+            raise HTTPException(status_code=502, detail="AIG upstream is unavailable") from exc
         except AIGClientError as exc:
+            try:
+                task_registry.release_submission(reservation)
+            except TaskRegistryUnavailable:
+                logger.error("task submission reservation release failed")
             raise HTTPException(
                 status_code=502,
                 detail="AIG upstream rejected or could not accept the scan request",
             ) from exc
-        registered_id = task_registry.register(
-            session_id,
-            context.tenant_id,
-            context.idempotency_key or context.job_id,
-            request_hash,
-            task_type=task_type,
-            status="queued",
-        )
-        return registered_id
+        except Exception as exc:
+            # Unexpected failures after entering the client are ambiguous too.
+            # Prefer an auditable stuck reservation over a duplicate scan.
+            logger.error("AIG task submission failed with an unknown outcome")
+            raise HTTPException(
+                status_code=503,
+                detail="AIG submission outcome is unknown; retry is blocked pending reconciliation",
+            ) from exc
+        try:
+            return task_registry.finalize_submission(reservation, session_id)
+        except (KeyError, TaskRegistryUnavailable) as exc:
+            # Do not delete the reservation: retaining it prevents a retry
+            # from creating a second upstream task after an ambiguous commit.
+            raise HTTPException(status_code=503, detail="task registry is unavailable") from exc
 
 
 def _assert_task_owner(task_id: str, context: RequestContext) -> None:
@@ -139,6 +165,8 @@ def _assert_task_owner(task_id: str, context: RequestContext) -> None:
         task_registry.assert_owner(task_id, context.tenant_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="task not found") from exc
+    except TaskRegistryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="task registry is unavailable") from exc
 
 
 def _sync_registry_status(task_id: str, context: RequestContext, status_value: Any) -> None:
@@ -146,7 +174,7 @@ def _sync_registry_status(task_id: str, context: RequestContext, status_value: A
     state = "completed" if normalized == "completed" else "failed" if normalized in {"failed", "cancelled", "canceled"} else "running"
     try:
         task_registry.update_status(task_id, context.tenant_id, state)
-    except (KeyError, ValueError):
+    except (KeyError, TaskRegistryUnavailable, ValueError):
         logger.warning("task registry status update failed for owned task")
 
 
@@ -173,14 +201,21 @@ async def cancel_task(
     """
 
     _assert_task_owner(task_id, context)
-    if not task_registry.request_cancel(task_id, context.tenant_id):
+    try:
+        cancel_requested = task_registry.request_cancel(task_id, context.tenant_id)
+    except TaskRegistryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="task registry is unavailable") from exc
+    if not cancel_requested:
         return TaskStatusResponse(task_id=task_id, status="completed", error="task is already terminal")
     try:
         await aig.cancel_task(task_id, username=os.getenv("AIG_UPSTREAM_USERNAME", "api_user"))
     except Exception as exc:
         logger.warning("AIG cancellation request failed: %s", type(exc).__name__)
         return TaskStatusResponse(task_id=task_id, status="cancel_requested", error="upstream cancellation pending")
-    task_registry.update_status(task_id, context.tenant_id, "cancelled")
+    try:
+        task_registry.update_status(task_id, context.tenant_id, "cancelled")
+    except TaskRegistryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="task registry is unavailable") from exc
     return TaskStatusResponse(task_id=task_id, status="cancelled")
 
 
@@ -211,17 +246,14 @@ async def scan_infra(
     """
     logger.info("Infra scan requested — target_count=%s, scan_type=%s", len(request.targets), request.scan_type)
 
-    # Infrastructure targets can be URLs as well as image/package identifiers.
-    # Validate URL-shaped values before handing them to AIG and never put the
-    # caller-controlled target values in logs (they may contain credentials).
+    # The upstream treats every non-URL value as a host or CIDR and may expand
+    # it before scanning. Require an explicit validated URL so bare private
+    # hosts and broad CIDRs can never bypass the egress boundary.
     validated_targets = []
     target_policies = []
     for target in request.targets:
-        if "://" in target:
-            validated_targets.append(validate_remote_url(target, field="targets"))
-            target_policies.append(target_policy(target, field="targets"))
-        else:
-            validated_targets.append(target)
+        validated_targets.append(validate_remote_url(target, field="targets"))
+        target_policies.append(target_policy(target, field="targets"))
 
     options = request.options or {}
     upstream_content: Dict[str, Any] = {"target": validated_targets}
@@ -344,7 +376,7 @@ async def scan_mcp(
     else:
         # Source paths are shared-volume references. Re-resolve and reject
         # symlinks immediately before dispatch to close upload/scan TOCTOU.
-        target = assert_source_path_safe(target)
+        target = assert_source_path_safe(target, tenant_id=context.tenant_id)
         if request.headers:
             raise HTTPException(
                 status_code=422,
@@ -354,7 +386,7 @@ async def scan_mcp(
     # `model`, `thread`, `language` and `headers`; it does not understand the
     # bridge's historical target_type/categories/eval_model shape. URL scans
     # put the remote MCP URL in prompt, while source scans reference the
-    # validated shared upload path as an attachment.
+    # validated tenant-relative upload reference as an attachment.
     prompt = target if request.target_type == "url" else "Audit the uploaded MCP source."
     if request.categories and request.target_type == "url":
         # AIG v4.5.1 derives the remote server URL directly from ``prompt``;
@@ -431,6 +463,9 @@ async def scan_agent(
     context: RequestContext = Depends(get_request_context),
 ):
     """Submit an agent security scan task."""
+    egress_ready, egress_reason = runtime_egress_ready()
+    if not egress_ready:
+        raise HTTPException(status_code=503, detail=egress_reason)
     logger.info(
         "Agent scan requested — provider=%s",
         request.agent_config.get("provider", "unknown") if request.agent_config else "pre-saved",
@@ -443,7 +478,9 @@ async def scan_agent(
         validate_agent_config_targets(request.agent_config)
         content["agent_config_yaml"] = _dict_to_yaml(request.agent_config)
     if request.eval_model:
-        validate_remote_url(request.eval_model.base_url, field="eval_model.base_url")
+        content["eval_model_policy"] = target_policy(
+            request.eval_model.base_url, field="eval_model.base_url"
+        )
         content["eval_model"] = request.eval_model.model_dump()
     if request.agent_config:
         content["agent_config"] = content.pop("agent_config_yaml")

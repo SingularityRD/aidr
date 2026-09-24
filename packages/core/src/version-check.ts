@@ -59,8 +59,8 @@ export async function checkForUpdate(
 	context?: VersionCheckContext,
 	apiKey?: string,
 ): Promise<VersionCheckResult | null> {
-	if (currentVersion === "dev") {
-		logger.debug("Skipping version check for dev build");
+	if (currentVersion === "dev" || process.env.AIDR_SKIP_VERSION_CHECK === "1") {
+		logger.debug("Skipping version check");
 		return null;
 	}
 

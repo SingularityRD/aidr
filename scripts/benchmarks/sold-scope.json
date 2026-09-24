@@ -2,10 +2,10 @@
   "schema_version": 1,
   "kind": "aidr-sold-scope-coverage-denominator",
   "scope_id": "singularity-aidr-sold-scope",
-  "reviewed_at": "2026-09-13",
-  "$comment": "The declared coverage denominator for the sold product. `node scripts/benchmarks/evaluate.mjs --scope-file scripts/benchmarks/sold-scope.json` asserts that a corpus declares exactly these attack families, connectors and surfaces (no extras, no omissions) and carries at least `required_scenarios_per_family` malicious cases plus matching benign twins for every one of them. This file is a scope declaration only: it contains no case, digest, measurement, reviewer name or customer fact, and it is not evidence that any detection works. A corpus that fails this check — including the committed empty scaffold scripts/benchmarks/corpus.template.json — is the correct honest state until an independent evaluator supplies signed data.",
+  "reviewed_at": "2026-09-24",
+  "$comment": "Engineering/evaluation coverage denominator (legacy filename, kind, scope_id and evaluator field names). It follows the six-connector deploy/native/support-matrix.json#soldConnectorScope, including Codex; this is broader than the five-connector direct-GA order scope in COM-010, which excludes Codex unless Product expressly adds and accepts it. `node scripts/benchmarks/evaluate.mjs --scope-file scripts/benchmarks/sold-scope.json` asserts that a corpus declares exactly these attack families, connectors and surfaces (no extras, no omissions) and carries at least `required_scenarios_per_family` malicious cases plus matching benign twins for every one of them. This file is a scope declaration only: it contains no case, digest, measurement, reviewer name or customer fact, is not sale/evaluation-offer authorization, and is not evidence that any detection works. A corpus that fails this check — including the committed empty scaffold scripts/benchmarks/corpus.template.json — is the correct honest state until an independent evaluator supplies signed data.",
   "derivation": {
-    "$comment": "Every id below was read out of the shipped surface, not from a marketing claim. Connectors come from the sold connector scope; interception vocabulary comes from the support matrix and the MCP interception matrix; the edge-function contract manifest is the control-plane counterpart, which is why control-plane-only families are listed under out_of_scope_with_reason instead of here.",
+    "$comment": "Every id below was read out of the shipped surface, not from a marketing claim. The connector denominator follows the six-connector engineering/evaluation support scope, including Codex; COM-010's five-connector direct-GA order scope is narrower and excludes Codex unless Product adds and accepts it. Interception vocabulary comes from the support matrix and the MCP interception matrix; the edge-function contract manifest is the control-plane counterpart, which is why control-plane-only families are listed under out_of_scope_with_reason instead of here.",
     "connector_source": "deploy/native/support-matrix.json#soldConnectorScope",
     "interception_vocabulary_sources": [
       "deploy/native/support-matrix.json#interceptionPointVocabulary",
@@ -67,7 +67,7 @@
       "rule_files": ["threats/llm-threats.yaml"],
       "verdict_actions": ["deny", "ask"],
       "source": "threats/llm-threats.yaml",
-      "evidence": "threats/llm-threats.yaml carries 4 shipped rules in category `tool_misuse` (eval/exec/spawn in tool input, Python execution, shell-tool chaining instruction, webhook exfiltration instruction); packages/core/src/command-chain-analyzer.ts adds multi-step chain analysis to the same verdict path."
+      "evidence": "threats/llm-threats.yaml carries 4 shipped rules in category `tool_misuse` (eval/exec/spawn in tool input, Python execution, shell-tool chaining instruction, webhook exfiltration instruction). These are per-call evaluator rules; stateful multi-step chain analysis is not implemented."
     },
     {
       "id": "content-policy-violation",
@@ -117,7 +117,7 @@
       ],
       "verdict_actions": ["deny", "ask"],
       "source": "threats/obfuscation.yaml",
-      "evidence": "DET-03 in FEATURE_INVENTORY.json cites threats/obfuscation.yaml and packages/core/src/command-chain-analyzer.ts for encoded command patterns and multi-step shell analysis; the obfuscation rule files and threats/mitre.yaml category `defense_evasion` both use block and require_approval."
+      "evidence": "DET-03 in FEATURE_INVENTORY.json cites threats/obfuscation.yaml for encoded and suspicious shell command patterns; the obfuscation rule files and threats/mitre.yaml category `defense_evasion` both use block and require_approval. Stateful multi-step chain analysis is not implemented."
     },
     {
       "id": "credential-and-secret-access",
@@ -210,7 +210,7 @@
       "rule_files": ["threats/mitre.yaml"],
       "verdict_actions": ["ask"],
       "source": "threats/mitre.yaml",
-      "evidence": "threats/mitre.yaml carries 2 shipped rules in category `lateral_movement` with action require_approval."
+      "evidence": "threats/mitre.yaml carries 4 shipped rules in category `lateral_movement` with action require_approval."
     },
     {
       "id": "security-control-tampering",
@@ -220,7 +220,7 @@
       "rule_files": ["threats/self-defense.yaml"],
       "verdict_actions": ["ask"],
       "source": "threats/self-defense.yaml",
-      "evidence": "threats/self-defense.yaml carries 4 shipped rules in category `self_defense` (deleting or disabling the AIDR configuration, disabling host controls) with action require_approval."
+      "evidence": "threats/self-defense.yaml carries 6 shipped rules in category `self_defense` (deleting or disabling the AIDR configuration, disabling host controls, or disabling the AIDR agent service) with action require_approval."
     },
     {
       "id": "package-supply-chain-tampering",
@@ -312,19 +312,19 @@
       "id": "claude-code",
       "host_binary": "claude",
       "source": "deploy/native/support-matrix.json#soldConnectorScope",
-      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint pre-model-output, entry point packages/claude-code/src/pre-tool-use.ts."
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-output, entry point packages/claude-code/src/pre-tool-use.ts."
     },
     {
       "id": "cursor",
       "host_binary": "cursor",
       "source": "deploy/native/support-matrix.json#soldConnectorScope",
-      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint tool-output-inspection, entry point packages/extension/src/aidr-hook.ts (cursor branch)."
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-output, entry point packages/extension/src/aidr-hook.ts (cursor branch)."
     },
     {
       "id": "vscode",
       "host_binary": "code",
       "source": "deploy/native/support-matrix.json#soldConnectorScope",
-      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint tool-output-inspection, entry point packages/extension/src/aidr-hook.ts (VS Code branch)."
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-output, entry point packages/extension/src/aidr-hook.ts (VS Code branch)."
     },
     {
       "id": "openclaw",
@@ -336,7 +336,7 @@
       "id": "opencode",
       "host_binary": "opencode",
       "source": "deploy/native/support-matrix.json#soldConnectorScope",
-      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint pre-model-output, entry point packages/opencode/src/tool-handler.ts."
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-output, entry point packages/opencode/src/tool-handler.ts."
     },
     {
       "id": "codex",
@@ -361,26 +361,26 @@
     },
     {
       "id": "tool-call-output",
-      "label": "Tool-call output: tool result inspected or replaced before the model consumes it",
-      "interception_point": "tool-output-inspection",
-      "posture": "enforce",
+      "label": "Tool-call output: tool result inspected after execution; containment varies by host",
+      "interception_point": "post-tool-output",
+      "posture": "observe",
       "required": true,
       "source": "deploy/native/interception-matrix.json#rows (outputInterceptionPoint)",
-      "evidence": "claude-code, vscode, openclaw and opencode replace or block the tool result before model consumption (packages/claude-code/src/output-inspection.ts, packages/extension/src/output-inspection.ts, packages/openclaw/src/output-inspection.ts, packages/opencode/src/output-handler.ts); the host boundary is post-execution, so the tool has already run.",
+      "evidence": "Connectors inspect tool results after execution; supported paths may attempt replacement, but original output can remain available and real-host containment has not been accepted.",
       "limitations": [
-        "cursor replaces only MCP tool output and is advisory for non-MCP tools; codex declares outputInterceptionPoint `none` and inspects no tool output at all."
+        "Cursor exposes replacement only for MCP output; non-MCP inspection is advisory. Codex declares outputInterceptionPoint `none` and inspects no tool output at all. Claude, VS Code, OpenClaw and OpenCode mutations have no real-host acceptance evidence."
       ]
     },
     {
       "id": "model-output",
-      "label": "Model output: assistant response before delivery",
-      "interception_point": "pre-model-output",
-      "posture": "enforce",
-      "required": true,
-      "source": "deploy/native/interception-matrix.json#rows (pre-model-output)",
-      "evidence": "openclaw rewrites the outbound response at the delivery boundary (packages/openclaw/src/output-protection.ts, `message_sending` / `reply_payload_sending`), and the pre-model-output rows for claude-code, vscode and opencode inspect content before model consumption.",
+      "label": "Assistant response: optional rewrite before channel delivery",
+      "interception_point": "pre-delivery-response",
+      "posture": "observe",
+      "required": false,
+      "source": "deploy/native/interception-matrix.json#rows (pre-delivery-response)",
+      "evidence": "OpenClaw contains a source-level rewrite at message_sending/reply_payload_sending; no real-host acceptance exists. Other sold connectors do not claim this boundary.",
       "limitations": [
-        "cursor `afterAgentResponse` is observation-only and carries no output fields, so model output is not enforced on that connector.",
+        "The OpenClaw source path does not prove host acceptance and does not prevent same-turn model consumption of tool output.",
         "Provider streaming content is never inspected (model-stream is unsupported for every connector)."
       ]
     },
