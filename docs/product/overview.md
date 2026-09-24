@@ -31,7 +31,7 @@ Each connector hands observed tool calls to one shared local decision engine
 | OpenCode | `tool.execute.before` plugin | [opencode.md](../platform-guides/opencode.md) |
 | Codex CLI | Native `PreToolUse` command hook for `Bash` and `apply_patch` | [codex.md](../platform-guides/codex.md) |
 
-**Detection.** 358 YAML threat rules in 23 files under [`threats/`](../../threats/)
+**Detection.** 384 YAML threat rules in 24 files under [`threats/`](../../threats/)
 cover dangerous commands, credential access, persistence, obfuscation, crypto-mining,
 supply-chain and LLM-specific patterns for Linux, macOS and Windows. The rules are data,
 not code, and customers can add their own under `~/.singularity-aidr/threats/`. Package

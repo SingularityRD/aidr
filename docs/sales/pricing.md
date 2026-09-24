@@ -18,7 +18,7 @@ Singularity AIDR has four product lines that share one control plane:
 
 - **AIDR for AI coding agents** — connectors for Claude Code, Cursor, VS Code, OpenClaw,
   OpenCode and Codex CLI, plus the MCP Gateway, SDK and CLI. The local engine evaluates
-  tool calls against 358 YAML threat rules and returns `allow` / `deny` / `ask`.
+  tool calls against 384 YAML threat rules and returns `allow` / `deny` / `ask`.
 - **AIDR Browser Guard** — Chrome/Edge/Firefox extension that masks TR/EN personal data,
   secrets, custom terms and exact-data-match records before prompts reach AI chat
   products, and restores them locally in responses.
@@ -54,7 +54,7 @@ charging twice for a developer who runs Claude Code and Cursor on two machines.
 
 ### Free — local mode
 
-- Agent connectors with the full local engine: 358 threat rules, obfuscation and
+- Agent connectors with the full local engine: 384 threat rules, obfuscation and
   command-chain analysis, package and plugin checks, local allowlist and JSONL audit log.
 - Browser Guard with local settings: masking and local restore on the supported AI
   sites.
@@ -143,7 +143,7 @@ Binding on any quote, deck or email:
 - **No certification or audit claims.** No SOC 2, ISO 27001, penetration test or
   third-party assessment has been completed. Say so plainly and give no date.
 - **No customer names, logos, testimonials or case studies.** There are none.
-- **No efficacy numbers.** "358 rules" is a countable fact; "blocks 99% of attacks" is a
+- **No efficacy numbers.** "384 rules" is a countable fact; "blocks 99% of attacks" is a
   fabrication. Browser Guard masking accuracy has not been measured on customer data.
 - **Failure behaviour is per layer**, not blanket "fail-open" or "fail-closed": connector
   entry points and Browser Guard's content script fail closed, detection internals skip

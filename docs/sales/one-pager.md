@@ -46,7 +46,7 @@ AI agent tool call                     Prompt / paste / file in an AI chat
         │                                           │
         ▼                                           ▼
   connector hook  ─▶ local engine          Browser Guard (in the browser)
-                    ├─ 358 YAML rules        ├─ TR/EN PII + secrets detection
+                    ├─ 384 YAML rules        ├─ TR/EN PII + secrets detection
                     ├─ command-chain and     ├─ custom terms + exact-data match
                     │  obfuscation analysis  └─ reversible placeholders
                     ├─ package/plugin checks          │
@@ -113,7 +113,7 @@ The release decision is **NO-GO**; see
 
 **Working in this repository today**
 
-- Local engine with 358 YAML threat rules in 23 files; `aidr setup` refuses to report
+- Local engine with 384 YAML threat rules in 24 files; `aidr setup` refuses to report
   success if zero rules load or the self-test does not match.
 - Connector code for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI,
   with cross-connector parity tests.
