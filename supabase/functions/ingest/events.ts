@@ -1,3 +1,5 @@
+import { POSTURE_EVENT_TYPES, projectPostureFields } from "./posture.ts";
+
 export const MAX_INGEST_EVENTS = 200;
 const MAX_INGEST_EVENT_BYTES = 256 * 1024;
 const MAX_INGEST_BATCH_BYTES = 4 * 1024 * 1024;
@@ -31,6 +33,8 @@ const RECOMMENDED_ACTIONS = new Set([
 	"notify",
 ]);
 const REDACTED = "[Redacted]";
+// AI security posture findings (aidr scan/discover --upload); fields in ./posture.ts.
+for (const type of POSTURE_EVENT_TYPES) EVENT_TYPES.add(type);
 
 /**
  * Browser Guard privacy telemetry (docs/contracts/privacy-telemetry.md).
@@ -180,6 +184,7 @@ function projectEvent(event: Record<string, unknown> & { event_id: string }, typ
 	};
 	const timestamp = safeTimestamp(event.timestamp);
 	if (timestamp) projected.timestamp = timestamp;
+	Object.assign(projected, projectPostureFields(event));
 
 	for (const key of ["session_id", "incident_id", "tool_name", "source", "matched_threat_id", "plugin_key"] as const) {
 		const safe = safeIdentifier(event[key]);

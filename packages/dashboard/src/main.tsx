@@ -124,6 +124,13 @@ const router = createBrowserRouter([
 		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/DiscoveryPage")).DiscoveryPage }) }],
 	},
 	{
+		path: "/posture",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/PosturePage")).PosturePage }) }],
+	},
+	{
 		path: "/settings",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,

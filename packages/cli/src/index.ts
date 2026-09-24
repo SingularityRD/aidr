@@ -78,11 +78,19 @@ program
 		"Target base URL (repeatable). Loopback/private only unless --allow-public",
 	)
 	.option("-f, --file <path>", "Read targets from a file, one URL per line")
+	.option(
+		"--skill <path...>",
+		"Scan a skill or plugin package directory with the T01-T09 skill rules (repeatable)",
+	)
 	.option("--json", "Emit machine-readable JSON")
 	.option("--allow-public", "Permit non-private targets (off by default)")
 	.option("--timeout <ms>", "Per-request timeout in milliseconds", "3000")
 	.option("--concurrency <n>", "Number of targets to scan in parallel", "4")
 	.option("--save-report <path>", "Persist a scan report for the configured infrastructure policy")
+	.option(
+		"--upload",
+		"Send findings (ids, severities, digests; no hosts, paths or secrets) to the managed control plane",
+	)
 	.action(scanCommand);
 
 program
@@ -118,6 +126,10 @@ program
 	.description("Inventory local MCP servers with risk indicators and configuration fingerprints")
 	.option("--config <paths...>", "Inspect explicit JSON configuration paths")
 	.option("--json", "Emit a redacted machine-readable inventory")
+	.option(
+		"--upload",
+		"Send server names, risk categories and digests (no paths, endpoints or arguments) to the managed control plane",
+	)
 	.action(discoverCommand);
 
 program
