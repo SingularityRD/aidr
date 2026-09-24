@@ -10,6 +10,8 @@
 import { z } from "zod";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
+import type { DlpDetector } from "./policy.js";
+import { scanPrivacyDetectors } from "./privacy-detectors.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────
 
@@ -22,6 +24,18 @@ export const PiiTypeSchema = z.enum([
 	"ip_address",
 	"aws_key",
 	"api_key",
+	// AIDR Privacy TR/EN detectors (vendored rule layer, see ./privacy-detectors.ts).
+	"tc_kimlik",
+	"iban",
+	"address",
+	"person",
+	"date_of_birth",
+	"passport",
+	"national_id",
+	"tax_id",
+	"bank_account",
+	"secret",
+	"private_key",
 ]);
 
 /** Severity levels for detected PII. */
@@ -46,6 +60,27 @@ export const PiiDetectorConfigSchema = z.object({
 	enableIpAddress: z.boolean().optional().default(true),
 	enableAwsKey: z.boolean().optional().default(true),
 	enableApiKey: z.boolean().optional().default(true),
+	/** Turkish national ID: 11-digit checksum, or any value after an explicit TC/TCKN label. */
+	enableTcKimlik: z.boolean().optional().default(true),
+	/** IBAN with ISO 13616 mod-97 across the full SWIFT registry, or after an IBAN label. */
+	enableIban: z.boolean().optional().default(true),
+	/**
+	 * Credential tokens (sk-proj, sk-ant-api, github_pat_, glpat-, JWT, Bearer, URL userinfo)
+	 * and `password=`/`şifre=` values. Opt-in: the key=value half is contextual and fires on
+	 * source code; the token formats overlap the default-on `api_key`/`aws_key` patterns.
+	 */
+	enableSecret: z.boolean().optional().default(false),
+	/** Complete PEM private-key blocks. */
+	enablePrivateKey: z.boolean().optional().default(true),
+	/**
+	 * Contextual types are opt-in: they fire on labels such as `Adres:` or `name:`,
+	 * which also appear in source code and schemas.
+	 */
+	enableAddress: z.boolean().optional().default(false),
+	/** Person names only next to an explicit label or phrase (`Ad Soyad:`, `my name is`). */
+	enablePerson: z.boolean().optional().default(false),
+	/** Labelled TR/EN fields: date of birth, passport, national ID, tax ID, bank account. */
+	enableLabelledFields: z.boolean().optional().default(false),
 	minConfidence: z.number().min(0).max(1).optional().default(0.5),
 	entropyThreshold: z.number().min(0).max(8).optional().default(4.5),
 });
@@ -99,6 +134,65 @@ interface PiiDetector {
 }
 
 // ── Internal Pattern Definitions ────────────────────────────────────────
+
+type PiiSeverity = "low" | "medium" | "high" | "critical";
+
+/** How each privacy detector surfaces as a core PII type, and the flag that enables it. */
+interface PrivacyTypeDef {
+	readonly detector: DlpDetector;
+	readonly type: PiiType;
+	readonly severity: PiiSeverity;
+	readonly flag: keyof PiiDetectorConfig;
+}
+
+const PRIVACY_TYPES: readonly PrivacyTypeDef[] = Object.freeze([
+	{ detector: "tc_kimlik", type: "tc_kimlik", severity: "critical", flag: "enableTcKimlik" },
+	{ detector: "iban", type: "iban", severity: "high", flag: "enableIban" },
+	// TR mobile/landline, international and labelled phone numbers.
+	{ detector: "phone", type: "phone", severity: "high", flag: "enablePhone" },
+	{ detector: "secret", type: "secret", severity: "critical", flag: "enableSecret" },
+	{ detector: "private_key", type: "private_key", severity: "critical", flag: "enablePrivateKey" },
+	{ detector: "address", type: "address", severity: "medium", flag: "enableAddress" },
+	{ detector: "person", type: "person", severity: "medium", flag: "enablePerson" },
+	{
+		detector: "date_of_birth",
+		type: "date_of_birth",
+		severity: "medium",
+		flag: "enableLabelledFields",
+	},
+	{ detector: "passport", type: "passport", severity: "high", flag: "enableLabelledFields" },
+	{ detector: "national_id", type: "national_id", severity: "high", flag: "enableLabelledFields" },
+	{ detector: "tax_id", type: "tax_id", severity: "high", flag: "enableLabelledFields" },
+	{
+		detector: "bank_account",
+		type: "bank_account",
+		severity: "high",
+		flag: "enableLabelledFields",
+	},
+]);
+
+const SEVERITY_RANK: Record<PiiSeverity, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+
+/** A privacy match that overlaps an existing match of an equivalent type is a duplicate. */
+const EQUIVALENT_TYPES: Partial<Record<PiiType, readonly PiiType[]>> = {
+	secret: ["secret", "api_key", "aws_key"],
+};
+
+function overlapsEquivalent(matches: readonly PiiMatch[], candidate: PiiMatch): boolean {
+	const equivalent = EQUIVALENT_TYPES[candidate.type] ?? [candidate.type];
+	return matches.some(
+		(m) => equivalent.includes(m.type) && m.start < candidate.end && candidate.start < m.end,
+	);
+}
+
+/** Result of {@link PiiDetectorImpl.detectWithCoverage}. */
+export interface PiiDetection {
+	readonly matches: PiiMatch[];
+	/** true when the privacy rules could not inspect all input; matches are a lower bound. */
+	readonly incomplete: boolean;
+	/** Static reason codes (never input text). */
+	readonly reasons: readonly string[];
+}
 
 /** Internal descriptor for a single detection pattern. */
 interface PatternDef {
@@ -292,8 +386,11 @@ export function calculateConfidence(
 /**
  * PII detector that scans text for personally identifiable information.
  *
- * Supports seven PII categories:
- *  - SSN, credit-card numbers, email, phone, IP addresses, AWS keys, generic API keys.
+ * Supports the core categories (SSN, credit-card numbers, email, phone, IP
+ * addresses, AWS keys, generic API keys) plus the AIDR Privacy TR/EN detectors:
+ * TC Kimlik, IBAN (mod-97, all registry countries), TR phones, PEM private keys
+ * and — opt-in — credential tokens, addresses, contextual person names and
+ * labelled identity fields.
  *
  * Each detection is scored with a confidence value based on pattern specificity,
  * Shannon entropy, and optional post-match validation (e.g. Luhn for credit cards).
@@ -309,6 +406,7 @@ export class PiiDetectorImpl implements PiiDetector {
 	private readonly config: PiiDetectorConfig;
 	private readonly logger: Logger;
 	private readonly enabledPatterns: readonly PatternDef[];
+	private readonly enabledPrivacyTypes: readonly PrivacyTypeDef[];
 
 	/**
 	 * @param config - Partial configuration (unspecified fields use defaults).
@@ -318,11 +416,13 @@ export class PiiDetectorImpl implements PiiDetector {
 		this.config = PiiDetectorConfigSchema.parse(config);
 		this.logger = logger;
 		this.enabledPatterns = this.buildEnabledPatterns();
+		this.enabledPrivacyTypes = PRIVACY_TYPES.filter((def) => this.config[def.flag] === true);
 	}
 
 	/** Filter PATTERNS down to those the user has enabled. */
 	private buildEnabledPatterns(): PatternDef[] {
-		const flagMap: Record<PiiType, keyof PiiDetectorConfig> = {
+		// Privacy-rule types are enabled separately (PRIVACY_TYPES).
+		const flagMap: Partial<Record<PiiType, keyof PiiDetectorConfig>> = {
 			ssn: "enableSsn",
 			credit_card: "enableCreditCard",
 			email: "enableEmail",
@@ -334,7 +434,7 @@ export class PiiDetectorImpl implements PiiDetector {
 
 		return PATTERNS.filter((p) => {
 			const flag = flagMap[p.type];
-			return this.config[flag] === true;
+			return flag !== undefined && this.config[flag] === true;
 		});
 	}
 
@@ -348,11 +448,25 @@ export class PiiDetectorImpl implements PiiDetector {
 	 * @returns Ordered list of PII matches exceeding `minConfidence`.
 	 */
 	detect(input: string): PiiMatch[] {
+		const detection = this.detectWithCoverage(input);
+		if (detection.incomplete) {
+			this.logger.warn("PiiDetector privacy rules could not inspect all input", {
+				reasons: detection.reasons,
+			});
+		}
+		return detection.matches;
+	}
+
+	/**
+	 * Like {@link detect}, but also reports whether the vendored AIDR Privacy rules
+	 * inspected the whole input. An incomplete result is a lower bound, not a clean one.
+	 */
+	detectWithCoverage(input: string): PiiDetection {
 		if (typeof input !== "string") {
 			this.logger.warn("PiiDetector.detect received non-string input", {
 				type: typeof input,
 			});
-			return [];
+			return { matches: [], incomplete: false, reasons: [] };
 		}
 
 		const matches: PiiMatch[] = [];
@@ -390,8 +504,39 @@ export class PiiDetectorImpl implements PiiDetector {
 			}
 		}
 
-		matches.sort((a, b) => a.start - b.start);
-		return matches;
+		const privacy = this.detectPrivacyTypes(input, matches);
+		// Same start: the more severe (more specific) type first, e.g. a checksum-valid
+		// TC Kimlik ahead of the generic phone pattern matching the same digits.
+		matches.sort(
+			(a, b) => a.start - b.start || SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
+		);
+		return { matches, incomplete: privacy.incomplete, reasons: privacy.reasons };
+	}
+
+	/** Append vendored privacy-rule matches that the core patterns did not already report. */
+	private detectPrivacyTypes(
+		input: string,
+		matches: PiiMatch[],
+	): { incomplete: boolean; reasons: readonly string[] } {
+		if (this.enabledPrivacyTypes.length === 0) return { incomplete: false, reasons: [] };
+		const byDetector = new Map(this.enabledPrivacyTypes.map((def) => [def.detector, def]));
+		const scan = scanPrivacyDetectors(input, [...byDetector.keys()]);
+		const existing = [...matches];
+		for (const found of scan.matches) {
+			const def = byDetector.get(found.detector);
+			if (!def || found.score < this.config.minConfidence) continue;
+			const match: PiiMatch = {
+				type: def.type,
+				value: input.slice(found.start, found.end),
+				start: found.start,
+				end: found.end,
+				confidence: found.score,
+				severity: def.severity,
+			};
+			if (overlapsEquivalent(existing, match)) continue;
+			matches.push(match);
+		}
+		return { incomplete: scan.incomplete, reasons: scan.reasons };
 	}
 
 	/**

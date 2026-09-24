@@ -227,10 +227,14 @@ function hostEffectiveVerdict(
 		? { ...verdict, decision: "deny" }
 		: verdict;
 }
+// Credentials in tool input are the secret detectors' job; this gate is for
+// common personal data (including TC Kimlik and IBAN from the AIDR Privacy rules).
 const TOOL_INPUT_PII_DETECTOR = new PiiDetectorImpl({
 	enableIpAddress: false,
 	enableAwsKey: false,
 	enableApiKey: false,
+	enableSecret: false,
+	enablePrivateKey: false,
 });
 
 function detectorVerdict(
