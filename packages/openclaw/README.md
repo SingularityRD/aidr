@@ -106,28 +106,32 @@ not register an approval tool. An earlier version exposed an agent-callable
 re-issue it (and make the bypass permanent through `aidr_allowlist_add`). That
 tool has been removed.
 
-Approval is therefore an **out-of-band, human-only action**. Today the supported
-paths are:
+Approval is therefore an **out-of-band, human-only action**. The supported paths
+are:
 
-1. **Permanently allowlist the exact artifact.** Add the URL/command/file path to
-   the allowlist file (`~/.singularity-aidr/allowlist.json` by default) — e.g.
-   with the Claude Code connector's allowlist flow, or by editing the file. Any
-   later tool call with that exact artifact evaluates to `allowlisted`.
-2. **Out-of-band `ApprovalStore` approval** for hosts that wire their own human
-   approval channel: the process that owns the `ApprovalStore` can
-   `setPending(actionId, …)` + `approve(actionId)` (see `approveAction` in
-   `@singularityrd/aidr-core`) and the retry is then allowed.
+1. **Operator approval of one retry (`aidr approve`).** Every `ask` is recorded in
+   the operator approval store (`~/.singularity-aidr/approvals.json`). In their own
+   terminal the user runs `aidr pending` to review it and
+   `aidr approve <actionId>` to approve it; the CLI shows the call and requires an
+   interactive confirmation. The approval is HMAC-protected, bound to the exact
+   tool and artifact set, expires after 15 minutes by default and is spent by the
+   first identical retry. `aidr approve <actionId> --permit-allowlist` additionally
+   lets `aidr_allowlist_add` turn that one artifact into a permanent entry once.
+2. **Permanently allowlist the exact artifact** with `aidr allowlist add
+   <url|command|file_path> <value>` (also interactive). Any later tool call with
+   that exact artifact evaluates to `allowlisted`.
 
 ### Honest limitation
 
 OpenClaw's plugin API does not (yet) expose a host-native confirmation dialog the
-plugin can drive, so **this connector has no in-session approval path**. The
-practical consequence: an `ask` verdict cannot be approved while the session is
-running — it stays blocked, and the user must allowlist the artifact or answer
-the model's report with an alternative action. Blocking is the safe failure mode:
-a blocked action is recoverable, a self-approved one is not. When OpenClaw
-exposes a host confirmation primitive, wire it to `ApprovalStore` **without**
-exposing it as a model-callable tool.
+plugin can drive, so approval happens in a separate terminal rather than inside
+the session: the model reports the `actionId`, the user approves it with the CLI,
+and the user then asks the model to retry. The approval channel is not a boundary
+against code running as the same OS user with full shell access (see
+[docs/configuration.md](../../docs/configuration.md#operator-approvals)); the
+self-defense rule `CLT-SELF-007` blocks the agent from running `aidr approve` or
+touching the approval store itself. Blocking is the safe failure mode: a blocked
+action is recoverable, a self-approved one is not.
 
 ## Configuration
 

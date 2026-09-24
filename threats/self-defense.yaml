@@ -22,13 +22,13 @@
   expires_at: null
   revoked: false
 
-# Access Singularity AIDR config files
+# Access Singularity AIDR config files, the operator approval store or its key
 - id: "CLT-SELF-002"
   category: self_defense
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\.singularity-aidr[\\\\/](allowlist|config)\\.json"
+  pattern: "\\.singularity-aidr[\\\\/]((allowlist|config|approvals|operator-approval-key)\\.json|operator-approval\\.key)"
   match_on: file_path
   title: "Access Singularity AIDR configuration files"
   expires_at: null
@@ -87,5 +87,20 @@
   case_insensitive: true
   match_on: command
   title: "Attempt to disable the AIDR agent service"
+  expires_at: null
+  revoked: false
+
+# Self-approval: the agent invoking the operator-only approval CLI, forcing its
+# non-interactive mode, or touching the approval store / key from a shell.
+# `aidr approve` and `aidr allowlist add` are human-only, out-of-band actions.
+- id: "CLT-SELF-007"
+  category: self_defense
+  severity: critical
+  confidence: 0.95
+  action: require_approval
+  pattern: "\\baidr(-setup)?(\\.exe|\\.cmd|\\.js)?[\"']?\\s{1,20}(approve|allowlist\\s{1,20}add)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\.singularity-aidr[\\\\/](approvals\\.json|operator-approval)"
+  case_insensitive: true
+  match_on: command
+  title: "Attempt to self-approve a Singularity AIDR block or forge an operator approval"
   expires_at: null
   revoked: false

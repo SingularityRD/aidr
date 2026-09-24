@@ -9,6 +9,12 @@
  * agent that can approve its own blocked action defeats the gate entirely,
  * because it already receives the actionId in the block message. Approvals must
  * come from an out-of-band, human-only action (see `formatAskMessage`).
+ *
+ * The persistent out-of-band channel is `operator-approvals.ts`: every `ask`
+ * issued here is recorded as a pending ask, the operator approves it with the
+ * `aidr approve <actionId>` CLI (interactive confirmation), and the retry of the
+ * exact same call spends that approval once. Nothing in this module can create
+ * an approval.
  */
 
 import {
@@ -25,11 +31,19 @@ import { ApprovalStore } from "./approval-store.js";
 import {
 	logAllowedResponseActions,
 	logResponseActions,
+	logVerdict,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
 import { isInvalidConfig, loadConfig } from "./config.js";
 import type { ToolEvaluationContext, ToolEvaluationRequest } from "./evaluator.js";
 import { allowVerdict, evaluateToolCall } from "./evaluator.js";
+import {
+	consumeOperatorApproval,
+	findOperatorAllowlistGrant,
+	markOperatorAllowlistGrantUsed,
+	type OperatorApprovalStoreOptions,
+	recordPendingAsk,
+} from "./operator-approvals.js";
 import {
 	DEFAULT_RESPONSE_OPTIONS,
 	type PreOperationSnapshot,
@@ -82,6 +96,23 @@ export interface GuardResult {
 	 * failed restore, which remains retryable and is recorded in the response audit.
 	 */
 	finalizeSnapshot?: (outcome: "success" | "failure") => Promise<{ rolledBack: boolean }>;
+	/**
+	 * For an `ask`: whether the pending ask reached the operator approval store,
+	 * so `aidr pending` / `aidr approve` can see it. False means the block stands
+	 * but the operator cannot approve this call until the store is repaired.
+	 */
+	pendingRecorded?: boolean;
+	/** Set when an `ask` was released by an operator-recorded approval. */
+	approvedBy?: "operator";
+}
+
+/** Guard options that are not detection context. */
+export interface GuardOptions {
+	/**
+	 * Where the file-backed operator approval channel lives. `false` disables it
+	 * (callers that already have a host-native confirmation, and isolated tests).
+	 */
+	operatorApprovals?: OperatorApprovalStoreOptions | false;
 }
 
 /**
@@ -258,6 +289,7 @@ export async function guardToolCall(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
 	approvalStore: ApprovalStore,
+	options: GuardOptions = {},
 ): Promise<GuardResult> {
 	const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
 	// Consume synchronously before awaiting evaluation so concurrent identical
@@ -277,13 +309,44 @@ export async function guardToolCall(
 	if (verdict.decision === "ask" && config.sensitivity === "paranoid") {
 		effective = { ...verdict, decision: "deny" };
 	}
-	if (
-		hasApproval &&
-		effective.decision === "ask" &&
-		loadedConfig &&
-		!isInvalidConfig(loadedConfig)
-	) {
+	const operatorStore =
+		options.operatorApprovals === false ? null : { logger, ...options.operatorApprovals };
+	const approvable = effective.decision === "ask" && loadedConfig && !isInvalidConfig(loadedConfig);
+	let approvedBy: GuardResult["approvedBy"];
+	if (approvable && hasApproval) {
 		effective = allowVerdict("approved");
+	} else if (approvable && operatorStore) {
+		// The persistent operator channel. It only ever releases an `ask` (never a
+		// deny or a paranoid-promoted ask), only for the exact tool and artifact set
+		// the operator saw, and it never throws: any failure keeps the block.
+		const consumed = await consumeOperatorApproval(
+			{ actionId, tool: request.toolName, artifacts: request.artifacts },
+			operatorStore,
+		);
+		if (consumed.approved) {
+			effective = {
+				...allowVerdict("operator_approval"),
+				artifacts: verdict.artifacts,
+				matchedThreatId: verdict.matchedThreatId,
+				reasons: [`Released by operator approval of ${verdict.category}`],
+			};
+			approvedBy = "operator";
+			// The release is an operator override of a flagged call: record it.
+			if (config.logging) {
+				await logVerdict(
+					config.logging,
+					request.sessionId,
+					request.toolName,
+					request.toolInput,
+					effective,
+					true,
+				);
+			}
+		} else if (consumed.reason !== "not_found") {
+			logger.warn("Operator approval was not applied; the ask stays blocked", {
+				reason: consumed.reason,
+			});
+		}
 	}
 
 	const responseOptions = resolveResponseActions(config);
@@ -348,7 +411,32 @@ export async function guardToolCall(
 			createdAt: Date.now(),
 		});
 
-		return { verdict: effective, actionId, responseActions, signedChain };
+		let pendingRecorded: boolean | undefined;
+		if (operatorStore) {
+			try {
+				await recordPendingAsk(
+					{
+						actionId,
+						toolName: request.toolName,
+						toolInput: request.toolInput,
+						artifacts: request.artifacts,
+						sessionId: request.sessionId,
+						verdict: effective,
+						connector: context.agentRuntime,
+					},
+					operatorStore,
+				);
+				pendingRecorded = true;
+			} catch (error) {
+				// The call stays blocked either way; only the approval path is lost.
+				pendingRecorded = false;
+				logger.warn("Pending ask could not be recorded for operator approval", {
+					error: error instanceof Error ? error.name : typeof error,
+				});
+			}
+		}
+
+		return { verdict: effective, actionId, responseActions, signedChain, pendingRecorded };
 	}
 
 	// ── Allowed path ────────────────────────────────────────────────
@@ -373,7 +461,7 @@ export async function guardToolCall(
 	);
 
 	if (preAllowed.records.length === 0) {
-		return { verdict: effective, responseActions: [], signedChain };
+		return { verdict: effective, responseActions: [], signedChain, approvedBy };
 	}
 
 	if (config.logging) {
@@ -416,6 +504,7 @@ export async function guardToolCall(
 		responseActions: preAllowed.records,
 		snapshot: snapshot ?? undefined,
 		signedChain,
+		approvedBy,
 	};
 
 	if (snapshot) {
@@ -593,6 +682,8 @@ export function formatAskMessage(
 		"Approval is an out-of-band, human-only action. Report the reference above to the user and",
 		"stop here: do NOT retry this tool call and do NOT try to work around the block. The action",
 		"stays blocked until the user approves it out of band or permanently allowlists the artifact.",
+		"(For the user: review it with `aidr pending` and approve it with `aidr approve <actionId>`",
+		"in your own terminal; the approval covers one retry of this exact call for 15 minutes.)",
 	);
 
 	return lines.join("\n");
@@ -620,6 +711,15 @@ export async function approveAction(store: ApprovalStore, actionId: string): Pro
 	].join("\n");
 }
 
+/**
+ * Turn an out-of-band approval into a permanent allowlist entry.
+ *
+ * Succeeds only when a human already approved this exact artifact: either an
+ * in-process approval (`ApprovalStore`) or an operator approval recorded with
+ * `aidr approve <actionId> --permit-allowlist`. One operator grant yields one
+ * entry per artifact. The agent can call this, but it cannot create either kind
+ * of approval, so it cannot widen the allowlist on its own.
+ */
 export async function addToAllowlist(
 	store: ApprovalStore,
 	type: "url" | "command" | "file_path",
@@ -627,14 +727,29 @@ export async function addToAllowlist(
 	reason?: string,
 	configPath?: string,
 	logger: Logger = nullLogger,
+	operatorApprovals: OperatorApprovalStoreOptions | false = {},
 ): Promise<string> {
-	if (!store.hasApprovedArtifact(type, value)) {
-		return "Cannot add to allowlist: no recent user approval found for this artifact.";
+	const operatorStore = operatorApprovals === false ? null : { logger, ...operatorApprovals };
+	const inProcess = store.hasApprovedArtifact(type, value);
+	const operatorGrant =
+		!inProcess && operatorStore
+			? await findOperatorAllowlistGrant(type, value, operatorStore)
+			: null;
+	if (!inProcess && !operatorGrant) {
+		return [
+			"Cannot add to allowlist: no recent user approval found for this artifact.",
+			"Only the user can grant one, out of band, with `aidr approve <actionId> --permit-allowlist`",
+			"or `aidr allowlist add` in their own terminal.",
+		].join(" ");
 	}
 
 	const config = await loadConfig(configPath, logger);
 	const allowlist = await loadAllowlist(config.allowlist, logger);
-	const entryReason = reason ?? "Approved by user (out-of-band approval)";
+	const entryReason =
+		reason ??
+		(operatorGrant
+			? `Approved by operator (aidr approve ${operatorGrant.slice(0, 12)})`
+			: "Approved by user (out-of-band approval)");
 
 	if (type === "url") {
 		addUrl(allowlist, value, entryReason, "ask");
@@ -644,11 +759,22 @@ export async function addToAllowlist(
 		addFilePath(allowlist, value, entryReason, "ask");
 	}
 
+	if (operatorGrant && operatorStore) {
+		// Spend the grant before writing, so a concurrent second call cannot also
+		// use it. A failed save then costs the grant, never widens the allowlist.
+		const spent = await markOperatorAllowlistGrantUsed(operatorGrant, type, value, operatorStore);
+		if (!spent) {
+			return "Cannot add to allowlist: the operator approval was already used or has expired.";
+		}
+	}
+
 	const saved = await saveAllowlist(allowlist, config.allowlist, logger);
 	if (!saved) {
-		return "Failed to save allowlist. Approval preserved — retry is safe.";
+		return operatorGrant
+			? "Failed to save allowlist. The operator approval was spent; ask the user to approve again."
+			: "Failed to save allowlist. Approval preserved — retry is safe.";
 	}
-	store.consumeApprovedArtifact(type, value);
+	if (inProcess) store.consumeApprovedArtifact(type, value);
 	return `Added ${type} to Singularity AIDR allowlist.`;
 }
 

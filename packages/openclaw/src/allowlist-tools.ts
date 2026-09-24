@@ -2,9 +2,10 @@
  * aidr_allowlist_add and aidr_allowlist_remove tools for OpenClaw.
  *
  * These tools cannot grant an approval: `aidr_allowlist_add` only succeeds when
- * the shared `ApprovalStore` already holds an approval for the exact artifact,
- * and that approval can only be recorded out of band by a human/operator. The
- * agent has no way to create one.
+ * a human already approved the exact artifact — an in-process `ApprovalStore`
+ * approval, or an operator approval recorded with
+ * `aidr approve <actionId> --permit-allowlist` in the operator approval store.
+ * Both can only be recorded out of band. The agent has no way to create one.
  */
 
 import {

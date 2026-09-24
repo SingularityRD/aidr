@@ -267,7 +267,7 @@ Boolean, default `true`. Set to `false` to disable all local pattern matching.
 |-------|---------|-------------|
 | `path` | `~/.singularity-aidr/allowlist.json` | Allowlist file location (must remain under `~/.singularity-aidr`) |
 
-The allowlist stores user overrides for false positives. When Singularity AIDR returns an `ask` verdict and the user proceeds, the artifact can be allowlisted for future sessions.
+The allowlist stores user overrides for false positives. When Singularity AIDR returns an `ask` verdict and the user proceeds, the artifact can be allowlisted for future sessions. Manage it with `aidr allowlist list`, `aidr allowlist add <url|command|file_path> <value>` (operator-only, interactive confirmation) and `aidr allowlist remove <type> <value>`; commands are stored as a SHA-256 of the command text, so `list` shows the hash and `remove` accepts either the text or a unique hash prefix.
 
 ### `logging`
 
@@ -291,7 +291,7 @@ for checkpoint, deletion-manifest and external-archive requirements.
 
 One of `"paranoid"`, `"balanced"`, or `"relaxed"`. Default: `"balanced"`. See [How It Works](how-it-works.md#sensitivity-presets).
 
-In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw and OpenCode. Those plugins cannot open a host-native approval dialog, so an `ask` verdict stays blocked until a human approves out of band; the agent cannot approve its own action. Claude Code supports a host approval UI. Cursor `preToolUse` does not support an enforceable `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.
+In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw, OpenCode and Codex, and a deny can never be released by an operator approval. Those connectors cannot open a host-native approval dialog, so an `ask` verdict stays blocked until a human approves it out of band with `aidr approve` (see [Operator approvals](#operator-approvals)); the agent cannot approve its own action. Claude Code supports a host approval UI. Cursor `preToolUse` does not support an enforceable `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.
 
 ### `disabled_threats`
 
@@ -305,6 +305,64 @@ Use this to permanently suppress specific rules that don't apply to your workflo
 }
 ```
 
+## Operator approvals
+
+OpenClaw, OpenCode and Codex cannot show a host-native confirmation dialog, so
+their `ask` verdicts go through a file-backed, operator-only approval channel:
+
+1. When a connector blocks an `ask`, it records a **pending ask** in
+   `~/.singularity-aidr/approvals.json`: the `actionId` (a SHA-256 of tool, input
+   and session), a digest of the exact artifact set, the tool, the connector, a
+   redacted summary and a one-hour expiry. Raw artifact values and the session id
+   are not stored — only digests and redacted previews.
+2. The operator reviews open asks with `aidr pending` and approves one with
+   `aidr approve <actionId>`. The CLI prints what will be released and requires
+   the operator to type `approve` in an interactive terminal. For automation it
+   accepts `--yes` only when `AIDR_OPERATOR_NONINTERACTIVE=1` is also set.
+3. The approval records `{actionId, artifactDigest, tool, approvedAt, expiresAt,
+   approver}`. It expires after 15 minutes (`--ttl <minutes>`, 1–1440) and is
+   **single-use**: the first retry of the identical call (same tool, same
+   artifacts, same session) spends it, and later retries are blocked again. A
+   different command, tool or session is never released by it, and a `deny` —
+   including a paranoid-promoted `ask` — is never released at all.
+4. `aidr approve <actionId> --permit-allowlist` additionally lets the agent's
+   `aidr_allowlist_add` tool turn each approved artifact into one permanent
+   allowlist entry. Without that flag the agent cannot allowlist anything.
+
+| CLI | Purpose |
+|-----|---------|
+| `aidr pending [--json]` | List asks waiting for a decision |
+| `aidr approve <actionId> [--ttl <min>] [--permit-allowlist] [--yes]` | Approve one retry (operator only) |
+| `aidr allowlist list\|add\|remove` | Manage permanent exceptions (`add` is operator only) |
+| `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted |
+| `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Export redacted entries, including rotated files; the session id is replaced by a digest and CSV cells are neutralised against spreadsheet formulas |
+| `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, the approval store and the last verdict; exits non-zero on problems |
+
+**Integrity.** Every pending ask and approval carries an HMAC-SHA256 under a
+per-install key. The key lives in the OS credential vault when one is available
+(Windows DPAPI, macOS Keychain, or libsecret `secret-tool`) under the id
+`aidr-operator-approval-key`; otherwise — or when `AIDR_SECRET_STORE=file-acl` —
+in the owner-only file `~/.singularity-aidr/operator-approval.key`.
+`~/.singularity-aidr/operator-approval-key.json` records which of the two is in
+use. A hand-edited record (later expiry, reset use counter, different digest) or
+one signed with another key fails verification and is refused. The store is
+written atomically with mode `0600` under an exclusive lock, bounded to 200
+pending asks and 200 approvals, and a symlinked or oversized store is not used.
+Any store or key failure keeps the call blocked.
+
+**Residual risk.** This channel is designed to stop a prompt-injected agent from
+approving its own block through the tools it is given. It is **not** a boundary
+against code that already runs as the same OS user with unrestricted shell
+access: such code can read the key file (or query the vault as that user), mint
+a valid record, allocate a pseudo-terminal to satisfy the TTY check, or set
+`AIDR_OPERATOR_NONINTERACTIVE`. The mitigations are layered, not absolute: agent
+tool calls normally have no TTY; self-defense rule `CLT-SELF-007` turns an agent
+command that runs `aidr approve` / `aidr allowlist add`, sets
+`AIDR_OPERATOR_NONINTERACTIVE`, or touches the approval store or key into a
+block, and `CLT-SELF-002` does the same for file tools touching those files; and
+every release is written to the audit log as a user override. Rotating the key
+(deleting the key file or vault entry) invalidates every outstanding record.
+
 ## Files on Disk
 
 | Path | Purpose |
@@ -314,6 +372,9 @@ Use this to permanently suppress specific rules that don't apply to your workflo
 | `~/.singularity-aidr/cache.json` | Verdict cache |
 | `~/.singularity-aidr/allowlist.json` | User allowlist |
 | `~/.singularity-aidr/audit.jsonl` | Audit log |
+| `~/.singularity-aidr/approvals.json` | Operator approval store: pending asks and `aidr approve` approvals (HMAC-protected, `0600`) |
+| `~/.singularity-aidr/operator-approval.key` | Approval HMAC key when no OS vault is used (`0600`) |
+| `~/.singularity-aidr/operator-approval-key.json` | Records whether the approval key is in the OS vault or the key file |
 | `~/.singularity-aidr/installation-id` | Random UUID identifying this installation |
 | `~/.singularity-aidr/managed.json` | Managed-mode state (seat status, backoff windows) |
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |

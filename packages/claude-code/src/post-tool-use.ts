@@ -7,8 +7,8 @@
 
 import { type Logger, verifyArtifactIntegrityAndLog } from "@singularityrd/aidr-core";
 import pino from "pino";
-import { consumePendingApproval, type PendingApproval } from "./approval-tracker.js";
-import { artifactTypeLabel } from "./format.js";
+import { consumePendingApproval } from "./approval-tracker.js";
+import { approvedActionContext } from "./format.js";
 import { MAX_POST_TOOL_INPUT_BYTES, readBoundedJson } from "./hook-input.js";
 import { inspectToolResponse, postToolInspectionUnavailable } from "./output-inspection.js";
 import {
@@ -18,21 +18,6 @@ import {
 } from "./tool-output-quarantine.js";
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
-
-function approvedActionContext(entry: PendingApproval): string {
-	const artifactList = entry.artifacts
-		.map((artifact) => `${artifactTypeLabel(artifact.type)} '${artifact.value}'`)
-		.join(", ");
-	const typeSet = [...new Set(entry.artifacts.map((artifact) => artifactTypeLabel(artifact.type)))];
-	const typeStr = typeSet.join("/");
-	const noun =
-		typeStr === "URL"
-			? "these URLs"
-			: typeStr === "command"
-				? "these commands"
-				: `these ${typeStr}s`;
-	return `Singularity AIDR: The user approved a flagged action (threat ${entry.threatId}: ${entry.threatTitle}, artifacts: ${artifactList}). To permanently allow ${noun} in the future, an operator can use the CLI allowlist controls.`;
-}
 
 function reportUnavailableCoverage(reason: string): void {
 	process.stdout.write(`${JSON.stringify(postToolInspectionUnavailable(reason))}\n`);

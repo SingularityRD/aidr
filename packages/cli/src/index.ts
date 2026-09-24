@@ -2,6 +2,13 @@
 
 import { VERSION } from "@singularityrd/aidr-core";
 import { Command } from "commander";
+import {
+	allowlistAddCommand,
+	allowlistListCommand,
+	allowlistRemoveCommand,
+} from "./commands/allowlist.js";
+import { approveCommand, pendingCommand } from "./commands/approvals.js";
+import { auditExportCommand, auditTailCommand } from "./commands/audit.js";
 import collectCommand from "./commands/collect.js";
 import configCommand from "./commands/config.js";
 import {
@@ -10,6 +17,7 @@ import {
 	SECRET_STORE_OPTION_DESCRIPTION,
 } from "./commands/config-secret.js";
 import discoverCommand from "./commands/discover.js";
+import doctorCommand from "./commands/doctor.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import statusCommand from "./commands/status.js";
@@ -123,5 +131,71 @@ program
 	)
 	.option("--json", "Emit a machine-readable report")
 	.action(uninstallCommand);
+
+program
+	.command("doctor")
+	.description(
+		"Check hosts, hook registration, rules, mode, DLP policy, approvals and the last verdict; exits non-zero on problems",
+	)
+	.option("--json", "Emit a machine-readable report")
+	.action((options) => doctorCommand(options));
+
+program
+	.command("pending")
+	.description("List blocked agent actions waiting for an out-of-band operator approval")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => pendingCommand(options));
+
+program
+	.command("approve <actionId>")
+	.description(
+		"Operator only: approve ONE retry of a blocked call (interactive confirmation; 15-minute default)",
+	)
+	.option("--ttl <minutes>", "Minutes the approval stays usable (1-1440)", "15")
+	.option("--permit-allowlist", "Also let the agent add these artifacts to the allowlist once")
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.option("--json", "Emit a machine-readable receipt")
+	.action((actionId, options) => approveCommand(actionId, options));
+
+const allowlistProgram = program
+	.command("allowlist")
+	.description("List, add or remove permanent allowlist entries");
+
+allowlistProgram
+	.command("list")
+	.description("Show allowlist entries (commands are stored as hashes)")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => allowlistListCommand(options));
+
+allowlistProgram
+	.command("add <type> <value>")
+	.description(
+		"Operator only: permanently allow a url, command or file_path (interactive confirmation)",
+	)
+	.option("--reason <text>", "Why this artifact is safe")
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.action((type, value, options) => allowlistAddCommand(type, value, options));
+
+allowlistProgram
+	.command("remove <type> <value>")
+	.description("Remove a url, command (text or hash) or file_path from the allowlist")
+	.action((type, value) => allowlistRemoveCommand(type, value));
+
+const auditProgram = program.command("audit").description("Read the local verdict audit log");
+
+auditProgram
+	.command("tail")
+	.description("Show the most recent audit entries (redacted)")
+	.option("-n, --lines <count>", "Number of entries", "20")
+	.option("--json", "Emit JSON Lines")
+	.action((options) => auditTailCommand(options));
+
+auditProgram
+	.command("export")
+	.description("Export redacted audit entries, including rotated files")
+	.option("--since <when>", "ISO-8601 date/time or a relative age such as 24h, 7d, 30m")
+	.option("--format <format>", "jsonl or csv", "jsonl")
+	.option("-o, --output <file>", "Write to a new file (0600) instead of stdout")
+	.action((options) => auditExportCommand(options));
 
 await program.parseAsync(process.argv);
