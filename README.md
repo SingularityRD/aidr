@@ -1,141 +1,160 @@
 # Singularity AIDR
 
-**AI Agent Detection & Response (AIDR)** - a lightweight detection and response layer for AI agents that guards commands, files, and web requests.
+**AI Agent Detection & Response (AIDR)** — a security layer for AI agents and AI
+chat. AIDR inspects the commands, files and web requests of AI coding agents before
+the host acts on them, and masks personal data and secrets before prompts reach AI
+chat products.
 
 <p align="center">
   <img src="images/aidr-logo-shaded.png" alt="Singularity AIDR" width="50%">
 </p>
 
-Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [Cursor / VS Code](docs/platform-guides/cursor.md), [OpenClaw](docs/platform-guides/openclaw.md), [OpenCode](docs/platform-guides/opencode.md) and [Codex](packages/codex/README.md), and checks them against:
+Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [Cursor / VS Code](docs/platform-guides/cursor.md), [OpenClaw](docs/platform-guides/openclaw.md), [OpenCode](docs/platform-guides/opencode.md) and [Codex](docs/platform-guides/codex.md), and checks them against:
 
-- **Reputation checks** - first-party URL/domain and package hash lookups (optional, privacy-preserving)
-- **Local heuristics** - YAML-based threat definitions for dangerous patterns
-- **Package supply-chain checks** - registry existence, file reputation, and age analysis for npm/PyPI packages
-- **Plugin scanning** - scans other installed plugins for threats at session start
+- **Local heuristics** — 357 YAML threat rules in 23 files ([`threats/`](threats/)) for
+  dangerous commands, credential access, persistence, obfuscation, supply-chain and
+  LLM-specific patterns on Linux, macOS and Windows
+- **Package supply-chain checks** — registry existence, file reputation and age analysis
+  for npm/PyPI packages
+- **Plugin scanning** — scans other installed plugins for threats at session start
+- **Reputation checks** — first-party URL/domain and package hash lookups (optional; they
+  need a configured endpoint and are never reported as "clean" when unavailable)
 
-## Quick Start
+## Product lines
 
-The current decision is **NO-GO for a customer or production release**. Start with
-the [current first-customer readiness profile](docs/production-readiness/first-customer-ready.md)
-and [first customer installation guide](deploy/FIRST_CUSTOMER.md); local test
-passes do not replace signed-candidate or live-host acceptance.
-For approved package installation, see [Package Installation](docs/package-installation.md).
-Deployment details cover both [self-hosted and cloud preparation](deploy/README.md).
-The current capability inventory is [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md),
-with the machine-readable record in [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json).
-The [detailed production and sales gap audit](PRODUCTION_SALES_GAPS.md) maps every
-capability to remaining implementation, acceptance tests, owners and dependencies.
-Production acceptance and commercial release evidence remain separately gated.
+| Product line | What it does | Start here |
+| --- | --- | --- |
+| **AIDR for AI coding agents** | Connectors for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI share one local decision engine that returns `allow`, `deny` or `ask`. The [MCP Gateway](packages/mcp-gateway/README.md) inspects MCP tool results before they reach a model, the [SDK](packages/sdk/README.md) adds the same checks to your own applications, and the [CLI](packages/cli/) handles setup, status and AI-infrastructure scans. | [Product overview](docs/product/overview.md) |
+| **AIDR Browser Guard** | Chrome, Edge and Firefox extension. Masks Turkish and English personal data (T.C. kimlik numbers, IBANs, phone numbers, email addresses, card numbers), secrets and API keys, custom terms and exact-data-match fingerprints before prompts, pastes and files reach ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral or Grok. Placeholders such as `[EMAIL_1]` are restored locally in the response. Supports administrator-managed policy and counts-only telemetry. | [Browser Guard](packages/browser-guard/README.md) |
+| **AIDR Privacy engine** | TR/EN detection and masking with checksum validation, used by Browser Guard. Optional endpoint native host for NER/OCR and an optional enterprise gateway. | [AIDR Privacy](packages/privacy/README.md) |
+| **AI Security Posture** | Built on AI Infra Guard (AIG): 2,000+ CVE rules covering 146 AI components, MCP risk categories and skill/plugin scanning. | [AIG integration](docs/architecture/aig-integration.md) |
 
-Singularity AIDR evaluates the supported tool calls exposed by each installed
-host hook against shipped local threat rules, with no account or network access
-required. Coverage when a hook is disabled, unavailable or bypassed depends on
-the host and must be checked on the customer's selected runtime and OS.
+## Deployment options
 
-1. Install the connector for your runtime.
-2. Local detection is active immediately.
-3. Managed features (dashboard telemetry, signed intel packs, remote policy) are
-   available only after the control plane, an authentication method, and the
-   tenant's signed runtime configuration have passed live acceptance.
+| Option | Summary | Guide |
+| --- | --- | --- |
+| **Local mode (free)** | Agent connectors evaluate every tool call on the device with no account. Browser Guard masks prompts in the browser. | [Configuration](docs/configuration.md) |
+| **Cloud (SaaS)** | Hosted control plane: dashboard, device enrollment, central policy, audit export, SSO/SCIM. Local enforcement keeps working if the service is unreachable. | [SaaS deployment](docs/deployment/saas.md) |
+| **On-premises** | Customer-operated control plane on Docker Compose or Kubernetes (Helm), including an air-gapped path with a signed offline license and signed rule/intel packs. | [On-prem deployment](docs/deployment/onprem.md) |
 
-> **Managed enrollment requires a deployed and live-accepted control plane.** If
-> your deployment does not have one, or its authentication method has not passed
-> an end-to-end check, the product runs in local mode and managed features are
-> unavailable — local detection is unaffected. See
-> [Configuration](docs/configuration.md) for the `mode` setting
-> (`local` default, `managed` opt-in).
+## Plans
 
-### Claude Code
+Free (local mode), **Team** ($20 per developer per month billed annually, $24 monthly,
+minimum 3), **Business** ($45 per developer per month, minimum 25) and **Enterprise**
+(custom). These are list prices, subject to COM-001 approval. Orders currently go
+through an approved written quote; self-service checkout is not enabled. See
+[Pricing](docs/sales/pricing.md).
 
-Requires [Node.js >= 22.12.0](https://nodejs.org/).
+## Quick start
 
-Download and extract the signed `aidr-claude-plugin-<version>.tar.gz` artifact
-from the approved release, then add that extracted directory:
+Install only a signed, approved release (see [Release status](#release-status)). Source
+builds are for development. Local detection is active as soon as a connector is
+installed; managed features need a control plane and a signed tenant configuration.
 
-```
-/plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin
-/plugin install aidr@aidr
-```
+| Runtime | Install |
+| --- | --- |
+| **Claude Code** | Extract the signed `aidr-claude-plugin-<version>.tar.gz`, then run `/plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin` and `/plugin install aidr@aidr`. Requires Node.js >= 22.12.0. [Guide](docs/platform-guides/claude-code.md) |
+| **Cursor / VS Code** | Install the signed `aidr-cursor.vsix` via `Extensions > Install from VSIX`, then run `Singularity AIDR: Enable protection`. [Guide](docs/platform-guides/cursor.md) |
+| **OpenClaw** | Install the approved `@singularityrd/aidr-openclaw` version from the private registry. [Guide](docs/platform-guides/openclaw.md) |
+| **OpenCode** | Install the approved `@singularityrd/aidr-opencode` version from the private registry. [Guide](docs/platform-guides/opencode.md) |
+| **Codex CLI** | Install `@singularityrd/aidr-codex`, register `aidr-codex-hook` as a `PreToolUse` hook and trust it with `/hooks`. [Guide](docs/platform-guides/codex.md) |
+| **MCP Gateway** | Run the loopback gateway with a signed configuration and point MCP clients at it. [Gateway README](packages/mcp-gateway/README.md) |
+| **Browser Guard** | Deploy the extension to Chrome, Edge or Firefox, or push it with enterprise browser policy using [`managed_schema.json`](packages/browser-guard/static/managed_schema.json). [Browser Guard](packages/browser-guard/README.md) |
+| **CLI** | `aidr setup`, `aidr status`, `aidr scan --target <url>`. [Package Installation](docs/package-installation.md) |
 
-### Cursor
+Private registry credentials and versioned setup are in
+[Package Installation](docs/package-installation.md); the full flow is in
+[Getting Started](docs/getting-started.md).
 
-Download the signed `aidr-cursor.vsix` from an approved release, install it
-through `Extensions > Install from VSIX`, then run `Singularity AIDR: Enable
-protection` from the command palette. Source builds are not release artifacts;
-the protected release-candidate pipeline produces and verifies the signed VSIX.
+> **Managed enrollment requires a deployed and live-accepted control plane.** Without
+> one the product runs in local mode and managed features are unavailable; local
+> detection is unaffected. See [Configuration](docs/configuration.md) for the `mode`
+> setting (`local` default, `managed` opt-in).
 
-### OpenClaw
+## How failures are handled
 
-Install the exact version from the private registry only after the signed
-release is approved; see [Package Installation](docs/package-installation.md).
-Source checkout/builds are for development, not customer installation.
+- **Connector entry points fail closed.** Claude Code, Cursor/VS Code, OpenClaw,
+  OpenCode and Codex return a deny on an internal error. A host that never invokes the
+  hook, or drops a crashed hook, can still proceed; Codex in particular fails open on an
+  untrusted or killed hook process.
+- **Detection internals** skip a failing signal, log it and continue. A skipped signal
+  is never reported as a clean result.
+- **Security controls** (authentication, tenant isolation, approvals, webhook signatures)
+  fail closed. `ask` blocks pending an out-of-band human approval; no connector gives the
+  agent an approval tool.
 
-### OpenCode
+## Release status
 
-Install from the private registry after the signed release is approved. The
-versioned setup and configuration are in [Package Installation](docs/package-installation.md).
-
-See [Getting Started](docs/getting-started.md) for detailed instructions.
+The current decision is **NO-GO for a customer or production release**. Connectors,
+Browser Guard and the control plane are implemented and tested in this repository, but
+signed-candidate evidence, real-host acceptance, an independent security review and
+commercial approvals are still open. Read the
+[first-customer readiness profile](docs/production-readiness/first-customer-ready.md)
+before offering an installation. Capability status is in
+[FEATURE_INVENTORY.md](FEATURE_INVENTORY.md) and the remaining work in the
+[production and sales gap audit](PRODUCTION_SALES_GAPS.md). Local test passes do not
+replace signed-candidate or live-host acceptance.
 
 ## Documentation
 
-| Document                                         | Description                                    |
-| ------------------------------------------------ | ---------------------------------------------- |
-| [Getting Started](docs/getting-started.md)       | Installation for supported runtimes            |
+| Document | Description |
+| --- | --- |
+| [Product overview](docs/product/overview.md) | Product lines, architecture and boundaries |
+| [Getting Started](docs/getting-started.md) | Installation for supported runtimes |
 | [Package Installation](docs/package-installation.md) | Private registry installs and prerequisites |
-| [Device Auth](docs/device-auth.md)               | Browser-based device authorization (v1)        |
-| [Pilot Program](docs/pilot-program.md)           | Current pilot status and application prerequisites |
-| [How It Works](docs/how-it-works.md)             | Detection layers, data flow, verdicts          |
-| [Configuration](docs/configuration.md)           | All config options and file paths              |
-| [Threat Rules](docs/threat-rules.md)             | YAML rule format and what gets checked         |
-| [Package Protection](docs/package-protection.md) | npm/PyPI supply-chain checks                   |
-| [Plugin Scanning](docs/plugin-scanning.md)       | Session-start plugin scanning                  |
-| [AMSI Scanning](docs/amsi-scanning.md)           | Windows antimalware scanning via AMSI          |
-| [Architecture](docs/architecture.md)             | Monorepo structure, packages, design decisions |
-| [Development](docs/development.md)               | Building, testing, tooling, conventions        |
-| [Control Plane](docs/control-plane.md)           | Auth, dashboard, and licensing                 |
-| [Billing](docs/billing.md)                       | Agent-seat enforcement + billing notes         |
-| [Pricing](docs/pricing.md)                       | Historical proposal; no approved price or offer |
-| [FAQ](docs/faq.md)                               | Common questions                               |
-| [Privacy](docs/privacy.md)                       | What data is sent, what stays local            |
-| [Privacy RC source](packages/privacy/README.md)  | Imported candidate; not wired into agent enforcement |
+| [How It Works](docs/how-it-works.md) | Detection layers, data flow, verdicts |
+| [Configuration](docs/configuration.md) | All config options and file paths |
+| [Threat Rules](docs/threat-rules.md) | YAML rule format and what gets checked |
+| [Package Protection](docs/package-protection.md) | npm/PyPI supply-chain checks |
+| [Plugin Scanning](docs/plugin-scanning.md) | Session-start plugin scanning |
+| [AMSI Scanning](docs/amsi-scanning.md) | Windows antimalware scanning via AMSI |
+| [Privacy](docs/privacy.md) | What data is sent, what stays local |
+| [Architecture](docs/architecture.md) | Monorepo structure, packages, design decisions |
+| [Control Plane](docs/control-plane.md) | Auth, dashboard and licensing |
+| [Device Auth](docs/device-auth.md) | Browser-based device authorization |
+| [SaaS deployment](docs/deployment/saas.md) · [On-prem deployment](docs/deployment/onprem.md) | Deployment options |
+| [Security FAQ](docs/sales/security-faq.md) | Data flows, tenancy, identity, audit, retention |
+| [One-pager](docs/sales/one-pager.md) · [Competitive notes](docs/sales/competitive.md) · [Demo script](docs/sales/demo-script.md) | Sales collateral |
+| [Pilot Program](docs/pilot-program.md) | Current pilot status and application prerequisites |
+| [Development](docs/development.md) | Building, testing, tooling, conventions |
+| [FAQ](docs/faq.md) | Common questions |
 
-**Platform guides:** [Claude Code](docs/platform-guides/claude-code.md) · [Cursor / VS Code](docs/platform-guides/cursor.md) · [OpenClaw](docs/platform-guides/openclaw.md) · [OpenCode](docs/platform-guides/opencode.md) · [Codex](packages/codex/README.md)
+**Platform guides:** [Claude Code](docs/platform-guides/claude-code.md) · [Cursor / VS Code](docs/platform-guides/cursor.md) · [OpenClaw](docs/platform-guides/openclaw.md) · [OpenCode](docs/platform-guides/opencode.md) · [Codex](docs/platform-guides/codex.md)
 
-## Current Limitations
+## Current limitations
 
-- MCP tool call interception (`mcp__*`) is best-effort via generic input scanning (tool-specific semantics are not modeled yet)
-- Custom user threat definitions are supported via `~/.singularity-aidr/threats/*.yaml` (override by `id`)
-- **Remote URL and file reputation checks require configured services and feeds.**
-  The installation candidate includes backend functions; production feed freshness
-  and latency require deployment acceptance. Unavailable checks are not reported
-  as "clean"; see `READINESS_BACKLOG.json` (AIDR-020).
-- **Managed mode (device enrollment, dashboard telemetry, signed intel packs,
-  remote policy) requires a deployed control plane.** It is not reachable in a
-  default install. Local enforcement does not depend on it.
-- The [Codex connector](packages/codex/README.md) is included in package, release
-  and hook verification. Native host acceptance is still required: Codex can fail
-  open when a hook process is unavailable. This is not endpoint isolation.
-- The [Privacy 0.5.0 release candidate](packages/privacy/README.md) is a private
-  workspace package, not an active AIDR hook, cloud gateway or customer release.
-  Provider upload paths and enterprise identity still require integration tests.
+- MCP tool call interception (`mcp__*`) in the agent connectors is best-effort via
+  generic input scanning; the [MCP Gateway](packages/mcp-gateway/README.md) covers only
+  clients routed through it.
+- Remote URL and file reputation checks require configured services and feeds.
+  Unavailable checks are not reported as "clean".
+- The [Codex connector](docs/platform-guides/codex.md) covers `Bash` and `apply_patch`
+  calls; Codex can fail open when a hook process is unavailable. This is not endpoint
+  isolation.
+- Browser Guard works on the listed AI sites through per-site adapters; a site redesign
+  can require an adapter update. Names and addresses without a cue word need the
+  optional native NER host, which ships without model weights.
+- Custom user threat definitions are supported via `~/.singularity-aidr/threats/*.yaml`
+  (override by `id`).
 
 ## Privacy
 
-Local heuristics do not upload source code or file contents. If enabled, URL
-reputation sends each URL, including its host and path, to the configured
-endpoint; query parameters are sent only when explicitly enabled. Package
-checks may send package names, versions, and registry metadata, while file
-checks send SHA-256 hashes. These values are not all anonymous. See
-[Privacy](docs/privacy.md) for the other configured outbound data flows.
+Local heuristics do not upload source code or file contents. If enabled, URL reputation
+sends each URL, including its host and path, to the configured endpoint; package checks
+may send package names, versions and registry metadata, and file checks send SHA-256
+hashes. Browser Guard detection runs in the browser; its optional telemetry sends
+per-type counts, never text or values. See [Privacy](docs/privacy.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and the threat rule contribution process.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and the
+threat rule contribution process.
 
 ## Closed-Source / Commercial Builds
 
-For commercial/closed-source distribution, use `pnpm build:release`. Release builds intentionally **omit sourcemaps** (`.map`) and `sourceMappingURL` references to reduce source leakage.
+For commercial/closed-source distribution, use `pnpm build:release`. Release builds
+intentionally **omit sourcemaps** (`.map`) and `sourceMappingURL` references to reduce
+source leakage.
 
 ## License
 

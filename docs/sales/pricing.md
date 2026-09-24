@@ -1,331 +1,170 @@
-# Singularity AIDR — Pricing Model (Proposal)
+# Singularity AIDR — Plans and list prices
 
-**Status:** Superseded internal pricing hypothesis for founder review. The proposed developer-seat unit and dollar amounts below conflict with the current connected-agent metering decision; neither proposal is an offer, approved licence, published tier, quote, or entitlement schedule. The [Commercial Release Manifest](../production-readiness/commercial-release-manifest-template.md) is the approval template, and COM-001 remains open.
-**Last updated:** 2026-09-13
-**Owner:** Founder (single-person company)
-
-> **Read this first.** Every dollar figure below is a *proposal* based on public
-> competitor list pricing, not on measured willingness-to-pay, because no
-> customer has paid for this product yet. The "How I chose these numbers"
-> section is the actual reasoning and is the part most likely to need revision
-> after the first three real sales conversations. Sections marked **TODO** are
-> deliberate placeholders — fill them in with real data, not estimates.
+**Status:** list prices, subject to COM-001 approval. This page is the sales reference
+for plan names, list prices and proposed packaging. It is not a quote, licence or
+entitlement schedule. Orders go through an approved written quote and invoice;
+self-service checkout stays disabled until the payment provider, entitlement
+reconciliation and Finance approval are accepted (COM-001, COM-004). The
+[Commercial Release Manifest](../production-readiness/commercial-release-manifest-template.md)
+is the approval template.
+**Last updated:** 2026-09-24
+**Owner:** Founder
 
 ---
 
 ## 1. What we are pricing
 
-Singularity AIDR is an **AI Agent Detection & Response (AIDR) layer**. It
-intercepts what an AI coding agent is about to do — shell commands, file
-writes, web fetches — and blocks dangerous actions *before* they execute. It
-runs as a hook/plugin inside the agent (Claude Code, Cursor, VS Code, OpenClaw,
-OpenCode, Codex CLI), built on a shared detection core: 351 YAML threat rules,
-URL reputation checks, and a local decision engine returning `allow` / `deny` /
-`ask`.
+Singularity AIDR has four product lines that share one control plane:
 
-The structural fact that drives the entire pricing model:
+- **AIDR for AI coding agents** — connectors for Claude Code, Cursor, VS Code, OpenClaw,
+  OpenCode and Codex CLI, plus the MCP Gateway, SDK and CLI. The local engine evaluates
+  tool calls against 357 YAML threat rules and returns `allow` / `deny` / `ask`.
+- **AIDR Browser Guard** — Chrome/Edge/Firefox extension that masks TR/EN personal data,
+  secrets, custom terms and exact-data-match records before prompts reach AI chat
+  products, and restores them locally in responses.
+- **AIDR Privacy engine** — the TR/EN detection engine behind Browser Guard, with an
+  optional native host and enterprise gateway.
+- **AI Security Posture** — AIG-based CVE scanning of AI components, MCP risk
+  categories and skill/plugin scanning.
 
-**Local evaluation can run without an account or control-plane dependency;
-"free forever" is a proposed commercial decision, not an approved licence.**
-`ConfigSchema.mode` defaults to `"local"`, but enabled URL/file reputation
-checks can make outbound requests. An offline pilot must disable optional
-egress and verify traffic. "Managed" mode is a separately configured layer
-that adds a control plane, team dashboard, entitlement/licensing, audit logs,
-DLP, legal hold, and billing.
+The structural fact behind the model: **local enforcement needs no server.** The
+default mode is `local`; a fresh install evaluates every tool call on the device. We do
+not meter the detection engine. We charge for what needs a server and a relationship:
+**visibility, central policy, evidence, deployment options and support.**
 
-This is not a pricing gimmick — it is the product's actual architecture, and it
-means we cannot (and should not) try to meter the detection engine. Anyone can
-copy the artifacts. We therefore sell the things that genuinely require a
-server and a relationship: **visibility, policy control, evidence, and
-support.**
-
----
-
-## 2. Units of measure
-
-Getting the unit right matters more than the number, because the unit decides
-what a customer expects to grow and what they think they're buying.
+## 2. Unit of measure
 
 | Unit | Definition | Used for |
-|---|---|---|
-| **Protected developer (seat)** | One human developer whose agent hosts run AIDR and who is covered by team policy. | Primary paid unit. |
-| **Agent instance** | One enrolled AIDR installation id (`iid`) connecting to the control plane. | Internal metering / abuse ceiling, *not* the headline price. |
-| **Organization** | One tenant in the control plane. | Minimum commitment, feature gating. |
+| --- | --- | --- |
+| **Protected developer / user (seat)** | One person whose agent hosts or browser run AIDR under team policy | Primary paid unit |
+| **Agent instance** | One enrolled installation id (`iid`) | Fair-use ceiling and the cloud trial limit, not the headline price |
+| **Organization** | One tenant in the control plane | Minimums and feature gating |
 
-**Recommendation: price on protected developers, and use agent instances only
-as a fair-use ceiling.** Rationale: our beachhead buyer thinks in headcount
-("we have 12 engineers"), not in agent count. One developer may run Claude Code
-*and* Cursor on two machines; billing them twice for the same human produces a
-support argument on every invoice, and that argument is fatal for a founder
-with no support team. Seat-based pricing is also the norm our comparables use
-(see §5), so it needs no explanation.
+One seat covers the same person's agent hosts and browser. Pricing per person avoids
+charging twice for a developer who runs Claude Code and Cursor on two machines.
 
----
+## 3. Plans
 
-## 3. The three tiers
+| | **Free** | **Team** | **Business** | **Enterprise** |
+| --- | --- | --- | --- | --- |
+| List price | $0 | **$20** per developer / month billed annually; **$24** monthly | **$45** per developer / month, billed annually | Custom |
+| Minimum | — | 3 developers | 25 developers | By agreement |
+| Deployment | Local mode | Cloud | Cloud or on-prem (Docker Compose) | Cloud, on-prem (Docker Compose or Helm), air-gapped |
+| Motion | Download | Quote now; self-serve once checkout is accepted | Founder-led | Founder-led |
 
-### Tier 1 — Local (Free, forever)
+### Free — local mode
 
-**Proposed $0.** No account, signup, or email for local evaluation; licence and
-distribution terms still require approval.
+- Agent connectors with the full local engine: 357 threat rules, obfuscation and
+  command-chain analysis, package and plugin checks, local allowlist and JSONL audit log.
+- Browser Guard with local settings: masking and local restore on the supported AI
+  sites.
+- No account, no dashboard, no central policy, no support commitment.
 
-- Full local detection: all 351 shipped YAML threat rules, obfuscation and
-  command-chain analysis, credential/supply-chain/persistence patterns.
-- Full local decision engine: `allow` / `deny` / `ask` with confidence scoring.
-- Write interception (file writes/edits) and URL analysis of tool calls.
-- Local allowlist management and local JSONL audit log.
-- One connector from an explicitly accepted host/OS/version scope.
+### Team
 
-**Why propose free, and why uncrippled:** the free tier would be the distribution strategy.
-A local-first security tool is adopted bottom-up by an individual developer who
-is curious and skeptical; a paywall before they see a block destroys that. It
-is also honest — the engine genuinely runs offline, so any attempt to
-license-check it locally would be both circumventable and a lie about how the
-product works. We give away the enforcement engine to create the population
-that later needs the dashboard.
+Everything in Free, plus:
 
-**What the proposed free tier excludes:** anything requiring a server — team
-dashboard, cross-fleet visibility, remote policy distribution, audit export,
-DLP label management, SSO, legal hold, support SLA.
+- Cloud control plane tenant with row-level security, dashboard and device enrollment.
+- Fleet visibility: which people and agents are covered, what fired, and which
+  installed agents are **not** covered.
+- Central policy for agent connectors and Browser Guard managed policy (custom terms,
+  modes, sites).
+- Counts-only Browser Guard telemetry and redacted agent verdict events.
+- Audit export (JSONL/CSV), SSO (OIDC/SAML), MFA, roles, offboarding.
+- Email support in business hours, no SLA.
 
-### Tier 2 — Team (self-serve)
-
-**Proposal only; not purchasable or deployable today.** The managed control
-plane, payment provider, distribution, support and commercial approvals remain
-open.
-
-**$20 per protected developer / month, billed annually ($240/developer/year).
-Monthly billing at $24/developer/month.**
-
-Minimum: **3 developers** (~$60/month, ~$720/year entry point).
-
-Includes everything in Local, plus:
-
-- Control-plane tenant: multi-tenant isolated team dashboard.
-- Fleet visibility — which developers/agents are covered, what fired, on which
-  hosts, and critically *which installed agents are not covered*.
-- Central policy management with versioning, targeted rollout, and rollback.
-- Audit log retention and export (JSONL/CSV).
-- SSO (OIDC/SAML), MFA, RBAC.
-- Offboarding workflow: revoke a departing employee's agent access.
-- DLP and legal hold (subject to the caveats in §7).
-- Email support, best-effort, no SLA.
-
-**Why consider self-serve:** the founder cannot run a sales team. This tier would need to be
-buyable with a credit card, priced below the threshold where a VP needs to
-attend a procurement meeting, and installable without a call. $20/developer/
-month sits under the "expense it on a personal card" line for most engineering
-managers while still being real money at fleet scale.
-
-### Tier 3 — Business (sales-assisted, founder-led)
-
-**$45 per protected developer / month, billed annually ($540/developer/year).**
-Minimum: **25 developers** (~$13,500/year).
+### Business
 
 Everything in Team, plus:
 
-- Self-hosted / private-cloud deployment option.
-- Signed policy and intel pack distribution for the customer's tenant.
-- Durable SIEM export to Splunk / Sentinel / Elastic plus native RED and duration telemetry.
-- Named support contact and a response-time commitment.
-- Security questionnaire support and architecture review calls.
-- Deployment assistance for rollout.
+- On-prem control plane on Docker Compose.
+- Exact-data-match datasets for Browser Guard, tenant DLP detector policy.
+- Signed policy and intel packs, SIEM delivery (Splunk / Sentinel / Elastic formats).
+- AI Security Posture scans (AIG CVE rules, MCP risk categories).
+- MCP Gateway deployment assistance.
+- Named support contact with published response targets; security questionnaire and
+  architecture review support.
 
-**Why a minimum and a higher price:** this tier is where the founder's own
-calendar is the scarce resource. Onboarding, security review, and deployment
-help are unbounded time sinks, so the minimum exists to ensure the deal is
-worth the hours. Do not discount below the minimum — shrink the seat count
-instead, or move the customer to Team.
+### Enterprise
 
-> **Do not sell any proposed paid tier yet.** See §7 — both deployment paths,
-> signed customer distribution, live billing and supported operations remain
-> unaccepted. Tier names and prices here are hypotheses only.
+Everything in Business, plus:
 
----
+- Kubernetes (Helm) and air-gapped installation with a signed offline license and
+  signed offline rule/intel packs.
+- SCIM provisioning and IdP group mapping.
+- Optional AIDR Privacy native host (NER/OCR) and enterprise gateway integration.
+- Custom terms, data-processing agreement and support schedule.
 
-## 4. Self-serve vs. sales-assisted
+**Cloud trial:** 14 days, one agent. Paid cloud plans have no trial cap.
 
-| | Local | Team | Business |
-|---|---|---|---|
-| Proposed motion | None (approved download) | Self-serve target | Founder-led target |
-| Proposed purchase | — | Card only after live provider acceptance | Invoice / PO only after Finance approval |
-| Typical buyer | Individual dev | Eng manager / Head of Eng | CISO / VP Eng |
-| Sales cost we can afford | $0 | **$0** | A few hours |
+**Lapsed subscription:** local enforcement keeps working; cloud features stop. Turning
+off detection because an invoice is late would be a safety regression.
 
-**The single-founder constraint:** a deal that requires a demo, a security
-review, a legal redline, and a procurement cycle costs more calendar time than
-one person can sustain across many deals. So the model is deliberately shaped
-so that **revenue can exist without any sales motion at all**: free tier →
-individual developer adopts → their manager buys Team on a card. Only
-exceptional deals escalate to Tier 3, and only once the founder has spare
-capacity.
+## 4. How the numbers were chosen
 
-**The proposed annual-first Team term is a hypothesis.** Monthly self-serve billing creates
-churn-handling and dunning work that a solo founder cannot absorb. Annual
-upfront also generates the cash that funds the next year of building.
-
-**Concession policy (founder's own guardrails):**
-- One discount lever only: annual commitment. No "startup discount," no
-  "first customer discount" — a discounted first price anchors every renewal.
-- Never discount below $15/developer/month. Below that, support costs more than
-  the seat earns.
-- Nonprofits/OSS maintainers: free Team, capped at 10 seats, in exchange for a
-  public reference **only if they choose to give one** (see §6 — never imply a
-  customer relationship that doesn't exist).
-
----
-
-## 5. How I chose these numbers
-
-I anchored on **public list pricing for adjacent developer-security products**,
-then adjusted for our specific situation. Verified figures (fetched
+Anchored on public list pricing for adjacent developer-security products (fetched
 2026-09-13):
 
 | Product | Free tier | Entry paid | Scale tier | Source |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **Snyk** | $0, 5 projects | **$25/dev/mo** (Team) | **$1,260/dev/yr** (Ignite) | [snyk.io/plans](https://snyk.io/plans/) |
-| **Semgrep** | $0 up to 10 contributors | **$30/contributor/mo** (Teams, Code or Supply Chain); Secrets $15 | Custom (Enterprise) | [semgrep.dev/pricing](https://semgrep.dev/pricing/) |
-| **Endor Labs** | Free developer tools tier | Custom ("Book a Demo") | Custom | [endorlabs.com/pricing](https://www.endorlabs.com/pricing) |
-| **Socket.dev** | Free for OSS | Not verifiable — pricing page is JS-rendered, no public figure obtainable | Custom | [socket.dev/pricing](https://socket.dev/pricing) — **could not verify** |
-| **Pillar Security** | — | No public pricing (`/pricing` returns 404) | Custom, demo-gated | [pillar.security](https://www.pillar.security/) — **could not verify** |
+| **Semgrep** | $0 up to 10 contributors | **$30/contributor/mo** (Teams) | Custom | [semgrep.dev/pricing](https://semgrep.dev/pricing/) |
+| **Endor Labs** | Free developer tools | Custom | Custom | [endorlabs.com/pricing](https://www.endorlabs.com/pricing) |
+| **Socket.dev** | Free for OSS | Not verifiable | Custom | [socket.dev/pricing](https://socket.dev/pricing) |
 
-**Verified against the live pages:** Snyk's $25/dev/mo Team and $1,260/dev/yr
-Ignite, and Semgrep's $0/10-contributor free tier and $30/contributor/mo
-Teams tier. **I could not verify public pricing for Socket.dev, Pillar
-Security, Invariant Labs, or Endor Labs** — those pages are demo-gated or
-JavaScript-rendered and expose no dollar figure to a plain fetch. I have
-listed them as unverified rather than guessing. **TODO:** confirm Socket.dev,
-Invariant Labs, and Pillar Security pricing from a sales conversation or a
-rendered page before using them in any external comparison.
+1. **$20 sits below Snyk's $25 and Semgrep's $30.** We have no certifications and no
+   reference customers; buyers will not pay parity with a funded vendor.
+2. **$20 is under the informal approval threshold** in most companies below ~50
+   engineers, so an engineering manager can approve it without procurement.
+3. **The 3-seat Team minimum** keeps the tier coherent: a one-person "team" has no
+   cross-developer visibility to buy.
+4. **$45 for Business** pays for self-hosting, SIEM, security-review and response-time
+   work. The 25-seat minimum makes those hours affordable.
+5. **Free local mode** mirrors the category (Snyk and Semgrep both have free tiers) and
+   matches the architecture: local enforcement costs us nothing to run.
+6. **Browser Guard is priced on the same seat.** It serves the same buyer (security or
+   engineering leadership) and the same control plane. A separate browser-only SKU is an
+   open question (§7).
 
-Reasoning from those anchors:
+No efficacy statistics, conversion rates, churn or LTV/CAC are assumed.
 
-1. **$20 sits deliberately below Snyk's $25 and Semgrep's $30.** We are a
-   single-founder product with no certifications, no auditors, and no
-   reference customers. A buyer comparing us to a funded vendor with SOC 2 and
-   a support org will not pay parity — and asking for it invites a comparison
-   we lose. Pricing ~20–35% under the incumbents converts that gap into our
-   actual advantage: it makes "just try it" easy.
+## 5. Concession policy
 
-2. **$20 is also under the informal approval threshold.** In most companies
-   below ~50 engineers, a per-seat software cost around $20/month can be
-   approved by an engineering manager without finance or procurement. That is
-   the difference between a self-serve sale and a stalled deal.
-
-3. **The $60/month Team floor is the honest minimum.** A 1-seat "team" has no
-   team to give visibility into — the entire value of the paid tier is
-   cross-developer. A floor of 3 seats keeps the tier coherent and avoids
-   supporting single-seat tenants that generate cost without insight.
-
-4. **$45 for Business reflects real marginal cost.** Self-hosted deployment,
-   SIEM integration, security-review support, and a response-time commitment
-   each consume founder hours on an ongoing basis. The 2.25× multiple over
-   Team is the price of that time, and the 25-seat minimum is what makes those
-   hours affordable.
-
-5. **Free-forever local tier mirrors the comparables, not a marketing choice.**
-   Snyk gives 5 projects free; Semgrep gives 10 contributors free. Free
-   individual tiers are the established on-ramp in this category. Ours is
-   uncrippled because the architecture makes local enforcement free to
-   operate — near-zero marginal cost to us, and real adoption value.
-
-6. **I did not price on agent instances, despite the existing
-   `docs/pricing.md`.** That earlier draft proposed $2/additional agent/month
-   metered by `iid`. I recommend superseding it: per-agent metering produces
-   invoice disputes (one dev, two hosts), penalizes the exact multi-tool
-   behavior we want to encourage, and yields ~$24/dev/year — an order of
-   magnitude below what the comparables sustain, on a unit the buyer does not
-   think in.
-
-**Explicitly not assumed:** no efficacy statistics, no conversion-rate or
-churn assumptions, no LTV/CAC model. Those require real customer data.
-**TODO:** revisit all three prices after 10 paid Team tenants or the first
-Business deal, whichever comes first.
-
----
+- One discount lever: annual commitment. No "first customer" discount; it anchors every
+  renewal.
+- Never below $15 per developer per month.
+- Nonprofits and OSS maintainers: free Team up to 10 seats. A public reference only if
+  they choose to give one.
 
 ## 6. Honesty constraints on what sales may claim
 
-These are binding on any quote, deck, or email:
+Binding on any quote, deck or email:
 
-- **Do not claim any certification or audit.** No SOC 2, no ISO 27001, no
-  penetration test, no third-party assessment has been performed. The repo's
-  own `commercial-gate-receipts.json` records "No official code-signing
-  certificate, notarization or publisher identity is held" and lists
-  real-host acceptance as open. If a prospect requires SOC 2, the honest answer
-  is that we do not have it and cannot provide a date.
-- **Do not cite customer names, logos, testimonials, or case studies.** There
-  are none. Every customer-reference field in our materials must stay empty
-  until a real customer consents in writing.
-- **Do not state efficacy numbers.** We have not measured detection rate,
-  false-positive rate, or evasion resistance. "351 rules" is a countable fact
-  about shipped content; "blocks 99% of attacks" is a fabrication. Never
-  convert the former into the latter.
-- **Do not describe the product as blanket "fail-open" or "fail-closed."**
-  The real behavior is per-layer: detection internals skip a failing signal and
-  log it; connector entry points fail closed; security controls fail closed.
-- **Do not present reputation checks as verified protection.** Enabled
-  URL/file/package lookups can make outbound requests by default; unavailable
-  endpoints or stale evidence must not be described as "clean." Disclose the
-  configured destinations and verify them for each candidate.
+- **No certification or audit claims.** No SOC 2, ISO 27001, penetration test or
+  third-party assessment has been completed. Say so plainly and give no date.
+- **No customer names, logos, testimonials or case studies.** There are none.
+- **No efficacy numbers.** "357 rules" is a countable fact; "blocks 99% of attacks" is a
+  fabrication. Browser Guard masking accuracy has not been measured on customer data.
+- **Failure behaviour is per layer**, not blanket "fail-open" or "fail-closed": connector
+  entry points and Browser Guard's content script fail closed, detection internals skip
+  a failing signal visibly, security controls fail closed, and the host decides what
+  happens when a hook is disabled or killed.
+- **Reputation checks are optional** and need a configured endpoint; an unavailable
+  check is never "clean".
+- **Compliance wording:** "designed to support KVKK/GDPR obligations", never
+  "certified" or "compliant".
 
----
+## 7. What blocks paid selling today
 
-## 7. Current status and what blocks paid selling
+The release decision is **NO-GO** ([first-customer-ready.md](../production-readiness/first-customer-ready.md)).
+Before any plan is sold: a signed customer candidate, real-host acceptance for each
+offered connector and browser, an accepted cloud and on-prem deployment, legal terms
+and DPA (COM-002/003), Finance approval of these prices (COM-001), live billing and
+entitlement (COM-004), and an independent security review (SEC-EXT-001).
 
-Honest readiness, from the repo's own audit records
-(`PRODUCTION_SALES_GAPS.json`, `FEATURE_INVENTORY.json`,
-`commercial-gate-receipts.json`):
+Open questions for the founder:
 
-**Working today (verified locally on 2026-09-13 by running the built
-artifacts):**
-
-- `node scripts/verify-enforcement.mjs` passes the full matrix: destructive
-  commands blocked and benign commands allowed, including under un-enrolled
-  managed-mode and commercial-build configurations.
-- The built Claude Code hook demonstrably blocks `curl … | bash` and `rm -rf /`
-  (`deny`, with the real matched rule title), allows `ls -la` (empty output),
-  and returns `ask` for credential-file reads.
-- `aidr status` reports the real bundled rule count (351) and a passing
-  detection self-test, and correctly refuses to claim host enforcement.
-
-**Not ready — do not sell against these:**
-
-| Gap | Impact on pricing |
-|---|---|
-| **No approved publisher signature** for a customer release | Do not offer the unsigned engineering bundle as a supported Windows or Team installation. Device warnings or blocks vary by policy. |
-| **No accepted cloud production deployment.** A Free pilot exists, but it is not a signed, supported GA candidate. | **Blocks selling Team and Business today.** A live pilot does not establish paid-service acceptance. |
-| **Signed release artifacts / trusted delivery not performed** | Blocks a supported customer installation in either deployment path. Private-registry acceptance remains open for a paid production offer. |
-| **Real-host E2E acceptance open** for each connector; Codex can fail open if the hook process is unavailable | Limits what we can promise about coverage; disclose per-connector. |
-| **No real-host side-effect acceptance** for advertised connectors | Cannot claim verified enforcement on a customer's specific OS/host combination. |
-| **Reputation intel feed freshness/latency unvalidated** | Do not sell reputation as a working feature yet. |
-
-**Net position: none of these tiers is approved for a supported customer
-release.** Local component evaluation and design-partner conversations can be
-discussed with explicit limitations, but customer installation requires the
-[first-customer-ready gate](../production-readiness/first-customer-ready.md).
-Team and Business additionally need a deployed, accepted control plane and
-the applicable commercial gates; this draft cannot authorize invoicing.
-
-**TODO (founder):**
-1. Confirm Socket.dev / Invariant Labs / Pillar Security pricing from rendered
-   pages or sales calls.
-2. Decide the Windows code-signing budget and vendor.
-3. Stand up the control plane, then re-price with real data.
-4. Replace every figure in §3 once 10 paid tenants exist.
-
----
-
-## 8. Open questions for the founder
-
-1. **Should Team include a small free agent-instance allowance** to defuse the
-   two-hosts-one-developer argument, or is "per developer, unlimited hosts"
-   cleaner? (Recommendation: unlimited hosts per developer.)
-2. **Is annual-only too aggressive** for the first 10 customers, given it
-   front-loads trust we haven't earned? (Recommendation: hold annual-only, but
-   allow the first three design partners a 90-day paid pilot credited to
-   annual.)
-3. **Does the free tier need a seat cap** (e.g. free below 5 developers, paid
-   above)? A cap is enforceable only via the control plane, which local mode
-   does not use — so a cap would be unenforceable and is probably not worth
-   pretending otherwise.
+1. Separate Browser Guard-only seat for non-developer users (support, finance, HR)?
+2. Annual-only Team for the first ten customers, or a 90-day paid pilot credited to
+   annual?
+3. Currency: USD only at launch, or TRY for Turkish customers?

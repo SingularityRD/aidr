@@ -403,7 +403,13 @@ describe("Dashboard integration", () => {
 		mockedSupabase.from.mockImplementation((table: string) =>
 			createQueryBuilder(
 				table === "team_members"
-					? [{ team_id: bootstrapTeamId, role: "admin", teams: { id: bootstrapTeamId, name: "Runtime team" } }]
+					? [
+							{
+								team_id: bootstrapTeamId,
+								role: "admin",
+								teams: { id: bootstrapTeamId, name: "Runtime team" },
+							},
+						]
 					: [],
 			),
 		);
@@ -412,11 +418,13 @@ describe("Dashboard integration", () => {
 				name === "identity-security"
 					? identityFixture(request)
 					: {
-						data: null,
-						error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
-							context: new Response(JSON.stringify({ error: "integration_not_configured" }), { status: 503 }),
-						}),
-					},
+							data: null,
+							error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+								context: new Response(JSON.stringify({ error: "integration_not_configured" }), {
+									status: 503,
+								}),
+							}),
+						},
 		);
 
 		render(
@@ -428,7 +436,9 @@ describe("Dashboard integration", () => {
 		);
 
 		await waitFor(() =>
-			expect(screen.getByRole("alert")).toHaveTextContent("AutoSecOps is not configured for this deployment."),
+			expect(screen.getByRole("alert")).toHaveTextContent(
+				"AutoSecOps is not configured for this deployment.",
+			),
 		);
 		expect(screen.getByRole("alert")).not.toHaveTextContent("Edge Function returned");
 		expect(screen.getByText("Fleet data is unavailable.")).toBeInTheDocument();
@@ -465,10 +475,13 @@ describe("Dashboard integration", () => {
 		);
 
 		expect(screen.getByRole("heading", { name: "Pricing" })).toBeInTheDocument();
-		expect(screen.getByText("Enterprise")).toBeInTheDocument();
-		expect(
-			screen.getByText(/no public price or self-service checkout is offered/),
-		).toBeInTheDocument();
+		for (const plan of ["Free", "Team", "Business", "Enterprise"]) {
+			expect(screen.getByRole("heading", { name: plan })).toBeInTheDocument();
+		}
+		expect(screen.getByText("$20 / developer / month")).toBeInTheDocument();
+		expect(screen.getByText("$45 / developer / month")).toBeInTheDocument();
+		expect(screen.getByText(/List prices, subject to COM-001 approval\./)).toBeInTheDocument();
+		expect(screen.getByText(/self-service checkout is not offered/)).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Request pilot review" })).toHaveAttribute(
 			"href",
 			"/pilot",
@@ -487,8 +500,27 @@ describe("Dashboard integration", () => {
 		);
 
 		expect(
-			screen.getByText(/browser enrollment require a configured control plane/),
+			screen.getByText(/device enrollment require a configured control plane/),
 		).toBeInTheDocument();
+		for (const line of [
+			"AIDR for AI coding agents",
+			"AIDR Browser Guard",
+			"AIDR Privacy engine",
+			"AI Security Posture",
+		]) {
+			expect(screen.getByText(line)).toBeInTheDocument();
+		}
+		expect(
+			screen.getByRole("heading", { name: "Mask sensitive data before it reaches AI chat." }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral, Grok/),
+		).toBeInTheDocument();
+		expect(screen.getAllByText(/Codex CLI/).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(/357/).length).toBeGreaterThan(0);
+		for (const option of ["Local mode (free)", "Cloud", "On-premises"]) {
+			expect(screen.getByText(option)).toBeInTheDocument();
+		}
 		expect(screen.getAllByRole("link", { name: "Request a pilot" })).toHaveLength(2);
 		for (const link of screen.getAllByRole("link", { name: "Get started" })) {
 			expect(link).toHaveAttribute("href", "/login?returnTo=%2Fonboarding");

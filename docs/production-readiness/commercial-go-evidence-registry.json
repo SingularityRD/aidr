@@ -70,7 +70,7 @@
     "services/aig-bridge/app/routers/scan.py"
   ],
   "historicalScanExclusions": [
-    "docs/sales/demo-script.md",
+    "docs/sales/demo-script-historical-2026-09-13.md",
     "docs/sales/readiness-status-20260918.md"
   ],
   "artifactRoots": [
