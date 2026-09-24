@@ -92,19 +92,33 @@ function compareSeverity(a: PostureFindingRow, b: PostureFindingRow): number {
 	return (SEVERITY_RANK.get(a.severity) ?? 9) - (SEVERITY_RANK.get(b.severity) ?? 9);
 }
 
+function bySeverityThenServer(a: PostureFindingRow, b: PostureFindingRow): number {
+	return compareSeverity(a, b) || (a.mcp_server_name ?? "").localeCompare(b.mcp_server_name ?? "");
+}
+
+function bySeverityThenPlugin(a: PostureFindingRow, b: PostureFindingRow): number {
+	return compareSeverity(a, b) || (a.plugin_key ?? "").localeCompare(b.plugin_key ?? "");
+}
+
 /**
  * The latest observation of each distinct finding. Every upload is a separate
  * observation (it feeds the trend); the tables show current exposure.
  */
+/** Identity of a finding across uploads (per source). */
+function findingKey(row: PostureFindingRow): string {
+	if (row.source === "infra_scan") {
+		return `infra|${row.target_digest ?? ""}|${row.vuln_id ?? ""}|${row.component ?? ""}|${row.finding_kind}`;
+	}
+	if (row.source === "mcp_inventory") {
+		return `mcp|${row.subject_digest ?? row.mcp_server_name ?? row.id}`;
+	}
+	return `skill|${row.plugin_key ?? ""}|${row.rule_id ?? ""}|${row.subject_digest ?? row.id}`;
+}
+
 export function latestFindings(rows: PostureFindingRow[]): PostureFindingRow[] {
 	const latest = new Map<string, PostureFindingRow>();
 	for (const row of rows) {
-		const key =
-			row.source === "infra_scan"
-				? `infra|${row.target_digest ?? ""}|${row.vuln_id ?? ""}|${row.component ?? ""}|${row.finding_kind}`
-				: row.source === "mcp_inventory"
-					? `mcp|${row.subject_digest ?? row.mcp_server_name ?? row.id}`
-					: `skill|${row.plugin_key ?? ""}|${row.rule_id ?? ""}|${row.subject_digest ?? row.id}`;
+		const key = findingKey(row);
 		const existing = latest.get(key);
 		if (!existing || Date.parse(row.observed_at) > Date.parse(existing.observed_at)) {
 			latest.set(key, row);
@@ -187,6 +201,189 @@ function countBySeverity(rows: PostureFindingRow[]): Record<PostureSeverity, num
 	return counts;
 }
 
+/** Skill findings per T01-T09 risk type, ordered by type. */
+function countSkillTypes(skills: PostureFindingRow[]): [string, number][] {
+	const counts = new Map<string, number>();
+	for (const row of skills) {
+		if (row.skill_risk_type)
+			counts.set(row.skill_risk_type, (counts.get(row.skill_risk_type) ?? 0) + 1);
+	}
+	return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+/** The tenant's findings in the posture window; `rows` is null when they could not be read. */
+async function fetchPostureFindings(
+	tenantId: string,
+): Promise<{ rows: PostureFindingRow[] | null; error: string | null }> {
+	const since = new Date(Date.now() - POSTURE_WINDOW_DAYS * DAY_MS).toISOString();
+	try {
+		const result = await supabase
+			.from("posture_findings")
+			.select(COLUMNS)
+			.eq("tenant_id", tenantId)
+			.gte("observed_at", since)
+			.order("observed_at", { ascending: false })
+			.limit(MAX_ROWS);
+		if (result.error || !Array.isArray(result.data)) {
+			return {
+				rows: null,
+				error: readErrorMessage(result.error, "Failed to load posture findings"),
+			};
+		}
+		return { rows: result.data as unknown as PostureFindingRow[], error: null };
+	} catch {
+		return { rows: null, error: "Failed to load posture findings" };
+	}
+}
+
+/** Bar colour for a trend day: its most severe finding. */
+function trendColor(day: TrendDay): string {
+	if (day.critical > 0) return "var(--sev-critical)";
+	return day.high > 0 ? "var(--sev-high)" : "var(--sev-medium)";
+}
+
+function riskCategoriesText(row: PostureFindingRow): string {
+	const categories = row.risk_categories ?? [];
+	if (categories.length === 0) return "No configured risk indicator";
+	return categories.map((category) => MCP_CATEGORY_LABELS[category] ?? category).join(", ");
+}
+
+function skillCategoryText(row: PostureFindingRow): string {
+	if (!row.skill_risk_type) return "Command rule";
+	return `${row.skill_risk_type} ${SKILL_RISK_TYPES[row.skill_risk_type] ?? ""}`;
+}
+
+function NoPostureData() {
+	return (
+		<section className="card" aria-label="No posture data">
+			<h2>No posture findings reported yet</h2>
+			<p className="muted">
+				Nothing has been uploaded for this team. That means no scan has reported here — not that the
+				environment is clean. Run a scan from an enrolled machine (the CLI uses that installation's
+				enrolled API key):
+			</p>
+			<pre className="mono">
+				{[
+					"aidr scan --target http://10.0.0.5:11434 --upload   # AI infrastructure CVEs",
+					"aidr discover --upload                              # MCP server inventory",
+					"aidr scan --skill ~/.claude/skills/<name> --upload  # skill/plugin T01-T09",
+				].join("\n")}
+			</pre>
+		</section>
+	);
+}
+
+function SkillSection({
+	skills,
+	skillTypes,
+}: {
+	skills: PostureFindingRow[];
+	skillTypes: [string, number][];
+}) {
+	return (
+		<section className="card" aria-label="Skill and plugin findings">
+			<h2>Skill and plugin findings</h2>
+			{skillTypes.length > 0 ? (
+				<div className="row" style={{ marginTop: 8 }}>
+					{skillTypes.map(([type, count]) => (
+						<span key={type} className="badge badge-neutral">
+							{type} {SKILL_RISK_TYPES[type] ?? ""}: {count}
+						</span>
+					))}
+				</div>
+			) : null}
+			<div className="table-wrap" style={{ marginTop: 12 }}>
+				<table className="table">
+					<thead>
+						<tr>
+							<th>Package</th>
+							<th>Rule</th>
+							<th>Category</th>
+							<th>Severity</th>
+							<th>Last seen</th>
+						</tr>
+					</thead>
+					<tbody>
+						{skills.map((row) => (
+							<tr key={row.id}>
+								<td className="mono">{row.plugin_key ?? "(name withheld)"}</td>
+								<td className="mono">{row.rule_id ?? "—"}</td>
+								<td>{skillCategoryText(row)}</td>
+								<td>
+									<span className={severityBadge(row.severity)}>{row.severity}</span>
+								</td>
+								<td className="mono">{new Date(row.observed_at).toLocaleString()}</td>
+							</tr>
+						))}
+						{skills.length === 0 ? (
+							<tr>
+								<td colSpan={5} className="muted">
+									No skill or plugin findings uploaded. Run{" "}
+									<span className="mono">aidr scan --skill &lt;dir&gt; --upload</span>.
+								</td>
+							</tr>
+						) : null}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	);
+}
+
+function TrendSection({ trend, trendMax }: { trend: TrendDay[]; trendMax: number }) {
+	return (
+		<section className="card" aria-label="Posture trend">
+			<h2>Trend (last {TREND_DAYS} days)</h2>
+			<p className="muted small">
+				Findings reported per day (every upload is counted as an observation).
+			</p>
+			<div className="table-wrap" style={{ marginTop: 12 }}>
+				<table className="table">
+					<thead>
+						<tr>
+							<th>Day (UTC)</th>
+							<th>Critical</th>
+							<th>High</th>
+							<th>Medium / low / unknown</th>
+							<th aria-hidden="true" />
+						</tr>
+					</thead>
+					<tbody>
+						{trend
+							.filter((day) => day.critical + day.high + day.other > 0)
+							.reverse()
+							.map((day) => (
+								<tr key={day.day} data-testid="trend-day">
+									<td className="mono">{day.day}</td>
+									<td className="mono">{day.critical}</td>
+									<td className="mono">{day.high}</td>
+									<td className="mono">{day.other}</td>
+									<td aria-hidden="true" style={{ width: "40%" }}>
+										<div
+											style={{
+												height: 8,
+												borderRadius: 4,
+												background: trendColor(day),
+												width: `${((day.critical + day.high + day.other) / trendMax) * 100}%`,
+											}}
+										/>
+									</td>
+								</tr>
+							))}
+						{trend.every((day) => day.critical + day.high + day.other === 0) ? (
+							<tr>
+								<td colSpan={5} className="muted">
+									No non-informational findings reported in the last {TREND_DAYS} days.
+								</td>
+							</tr>
+						) : null}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	);
+}
+
 export function PosturePage() {
 	const { currentTeam, isLoading } = useTeam();
 	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
@@ -204,33 +401,12 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 	useEffect(() => {
 		let cancelled = false;
 		async function load() {
-			const since = new Date(Date.now() - POSTURE_WINDOW_DAYS * DAY_MS).toISOString();
-			try {
-				const result = await supabase
-					.from("posture_findings")
-					.select(COLUMNS)
-					.eq("tenant_id", tenantId)
-					.gte("observed_at", since)
-					.order("observed_at", { ascending: false })
-					.limit(MAX_ROWS);
-				if (cancelled) return;
-				if (result.error || !Array.isArray(result.data)) {
-					setRows(null);
-					setError(readErrorMessage(result.error, "Failed to load posture findings"));
-				} else {
-					setRows(result.data as unknown as PostureFindingRow[]);
-					setError(null);
-				}
-			} catch {
-				if (cancelled) return;
-				setRows(null);
-				setError("Failed to load posture findings");
-			} finally {
-				if (!cancelled) {
-					setLoaded(true);
-					setNowMs(Date.now());
-				}
-			}
+			const next = await fetchPostureFindings(tenantId);
+			if (cancelled) return;
+			setRows(next.rows);
+			setError(next.error);
+			setLoaded(true);
+			setNowMs(Date.now());
 		}
 		void load();
 		const timer = setInterval(load, 30_000);
@@ -251,23 +427,11 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 		[infra],
 	);
 	const mcp = useMemo(
-		() =>
-			current
-				.filter((row) => row.source === "mcp_inventory")
-				.sort(
-					(a, b) =>
-						compareSeverity(a, b) ||
-						(a.mcp_server_name ?? "").localeCompare(b.mcp_server_name ?? ""),
-				),
+		() => current.filter((row) => row.source === "mcp_inventory").sort(bySeverityThenServer),
 		[current],
 	);
 	const skills = useMemo(
-		() =>
-			current
-				.filter((row) => row.source === "skill_scan")
-				.sort(
-					(a, b) => compareSeverity(a, b) || (a.plugin_key ?? "").localeCompare(b.plugin_key ?? ""),
-				),
+		() => current.filter((row) => row.source === "skill_scan").sort(bySeverityThenPlugin),
 		[current],
 	);
 	const trend = useMemo(() => postureTrend(rows ?? [], nowMs), [rows, nowMs]);
@@ -275,14 +439,7 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 		() => countBySeverity(vulnerabilities.map((group) => group.row)),
 		[vulnerabilities],
 	);
-	const skillTypes = useMemo(() => {
-		const counts = new Map<string, number>();
-		for (const row of skills) {
-			if (row.skill_risk_type)
-				counts.set(row.skill_risk_type, (counts.get(row.skill_risk_type) ?? 0) + 1);
-		}
-		return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
-	}, [skills]);
+	const skillTypes = useMemo(() => countSkillTypes(skills), [skills]);
 	const trendMax = Math.max(1, ...trend.map((day) => day.critical + day.high + day.other));
 
 	return (
@@ -304,23 +461,7 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 				{!loaded && rows === null ? <div role="status">Loading posture findings…</div> : null}
 			</section>
 
-			{rows !== null && rows.length === 0 ? (
-				<section className="card" aria-label="No posture data">
-					<h2>No posture findings reported yet</h2>
-					<p className="muted">
-						Nothing has been uploaded for this team. That means no scan has reported here — not that
-						the environment is clean. Run a scan from an enrolled machine (the CLI uses that
-						installation's enrolled API key):
-					</p>
-					<pre className="mono">
-						{[
-							"aidr scan --target http://10.0.0.5:11434 --upload   # AI infrastructure CVEs",
-							"aidr discover --upload                              # MCP server inventory",
-							"aidr scan --skill ~/.claude/skills/<name> --upload  # skill/plugin T01-T09",
-						].join("\n")}
-					</pre>
-				</section>
-			) : null}
+			{rows !== null && rows.length === 0 ? <NoPostureData /> : null}
 
 			{rows !== null && rows.length > 0 ? (
 				<>
@@ -422,13 +563,7 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 											<td>
 												<span className={severityBadge(row.severity)}>{row.severity}</span>
 											</td>
-											<td>
-												{(row.risk_categories ?? []).length === 0
-													? "No configured risk indicator"
-													: (row.risk_categories ?? [])
-															.map((category) => MCP_CATEGORY_LABELS[category] ?? category)
-															.join(", ")}
-											</td>
+											<td>{riskCategoriesText(row)}</td>
 											<td>{row.attestation_status ?? "not reported"}</td>
 											<td className="mono">{new Date(row.observed_at).toLocaleString()}</td>
 										</tr>
@@ -446,111 +581,9 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 						</div>
 					</section>
 
-					<section className="card" aria-label="Skill and plugin findings">
-						<h2>Skill and plugin findings</h2>
-						{skillTypes.length > 0 ? (
-							<div className="row" style={{ marginTop: 8 }}>
-								{skillTypes.map(([type, count]) => (
-									<span key={type} className="badge badge-neutral">
-										{type} {SKILL_RISK_TYPES[type] ?? ""}: {count}
-									</span>
-								))}
-							</div>
-						) : null}
-						<div className="table-wrap" style={{ marginTop: 12 }}>
-							<table className="table">
-								<thead>
-									<tr>
-										<th>Package</th>
-										<th>Rule</th>
-										<th>Category</th>
-										<th>Severity</th>
-										<th>Last seen</th>
-									</tr>
-								</thead>
-								<tbody>
-									{skills.map((row) => (
-										<tr key={row.id}>
-											<td className="mono">{row.plugin_key ?? "(name withheld)"}</td>
-											<td className="mono">{row.rule_id ?? "—"}</td>
-											<td>
-												{row.skill_risk_type
-													? `${row.skill_risk_type} ${SKILL_RISK_TYPES[row.skill_risk_type] ?? ""}`
-													: "Command rule"}
-											</td>
-											<td>
-												<span className={severityBadge(row.severity)}>{row.severity}</span>
-											</td>
-											<td className="mono">{new Date(row.observed_at).toLocaleString()}</td>
-										</tr>
-									))}
-									{skills.length === 0 ? (
-										<tr>
-											<td colSpan={5} className="muted">
-												No skill or plugin findings uploaded. Run{" "}
-												<span className="mono">aidr scan --skill &lt;dir&gt; --upload</span>.
-											</td>
-										</tr>
-									) : null}
-								</tbody>
-							</table>
-						</div>
-					</section>
+					<SkillSection skills={skills} skillTypes={skillTypes} />
 
-					<section className="card" aria-label="Posture trend">
-						<h2>Trend (last {TREND_DAYS} days)</h2>
-						<p className="muted small">
-							Findings reported per day (every upload is counted as an observation).
-						</p>
-						<div className="table-wrap" style={{ marginTop: 12 }}>
-							<table className="table">
-								<thead>
-									<tr>
-										<th>Day (UTC)</th>
-										<th>Critical</th>
-										<th>High</th>
-										<th>Medium / low / unknown</th>
-										<th aria-hidden="true" />
-									</tr>
-								</thead>
-								<tbody>
-									{trend
-										.filter((day) => day.critical + day.high + day.other > 0)
-										.reverse()
-										.map((day) => (
-											<tr key={day.day} data-testid="trend-day">
-												<td className="mono">{day.day}</td>
-												<td className="mono">{day.critical}</td>
-												<td className="mono">{day.high}</td>
-												<td className="mono">{day.other}</td>
-												<td aria-hidden="true" style={{ width: "40%" }}>
-													<div
-														style={{
-															height: 8,
-															borderRadius: 4,
-															background:
-																day.critical > 0
-																	? "var(--sev-critical)"
-																	: day.high > 0
-																		? "var(--sev-high)"
-																		: "var(--sev-medium)",
-															width: `${((day.critical + day.high + day.other) / trendMax) * 100}%`,
-														}}
-													/>
-												</td>
-											</tr>
-										))}
-									{trend.every((day) => day.critical + day.high + day.other === 0) ? (
-										<tr>
-											<td colSpan={5} className="muted">
-												No non-informational findings reported in the last {TREND_DAYS} days.
-											</td>
-										</tr>
-									) : null}
-								</tbody>
-							</table>
-						</div>
-					</section>
+					<TrendSection trend={trend} trendMax={trendMax} />
 				</>
 			) : null}
 		</div>

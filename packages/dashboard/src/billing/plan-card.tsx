@@ -52,6 +52,202 @@ function formatDate(value: string | null): string | null {
 	return Number.isFinite(parsed) ? new Date(parsed).toLocaleDateString() : null;
 }
 
+/** What the picker offers for the chosen plan, interval and seat count. */
+function pickerState(
+	selectedId: PlanId,
+	interval: Interval,
+	seats: number,
+	tenantPlan: TenantPlan | null,
+) {
+	const selected = planById(selectedId) ?? PICKABLE_PLANS[0];
+	const intervals = selected ? intervalsFor(selected) : [];
+	const effectiveInterval: Interval | null = intervals.includes(interval)
+		? interval
+		: (intervals[0] ?? null);
+	const minSeats = selected?.minSeats ?? 1;
+	return {
+		selected,
+		intervals,
+		effectiveInterval,
+		minSeats,
+		seatsValid: Number.isSafeInteger(seats) && seats >= minSeats && seats <= 10000,
+		checkoutPath: selected ? selfServeCheckoutAvailable(selected, tenantPlan) : false,
+	};
+}
+
+function submitLabel(busy: boolean, checkoutPath: boolean): string {
+	if (busy) return "Working…";
+	return checkoutPath ? "Continue to checkout" : "Request upgrade";
+}
+
+function PlanStatus({
+	loadState,
+	tenantPlan,
+}: {
+	loadState: "loading" | "ready" | "unavailable";
+	tenantPlan: TenantPlan | null;
+}) {
+	if (loadState === "loading") return <div className="muted small">Loading plan…</div>;
+	if (loadState === "unavailable" || !tenantPlan) {
+		return (
+			<div className="notice notice-danger" role="status">
+				Plan information could not be loaded for this tenant. No plan or usage figure is shown until
+				it can be read.
+			</div>
+		);
+	}
+	return <CurrentPlanSummary tenantPlan={tenantPlan} />;
+}
+
+function IntervalSelect({
+	intervals,
+	value,
+	onChange,
+}: {
+	intervals: Interval[];
+	value: Interval | null;
+	onChange: (value: Interval) => void;
+}) {
+	if (intervals.length === 0) return null;
+	return (
+		<label>
+			Billing
+			<select
+				className="input"
+				value={value ?? ""}
+				onChange={(event) => onChange(event.target.value as Interval)}
+			>
+				{intervals.map((option) => (
+					<option key={option} value={option}>
+						{option === "monthly" ? "Monthly" : "Annual"}
+					</option>
+				))}
+			</select>
+		</label>
+	);
+}
+
+function CurrentPlanSummary({ tenantPlan }: { tenantPlan: TenantPlan }) {
+	const usagePercent =
+		tenantPlan.allowedAgents > 0
+			? Math.min(100, Math.round((tenantPlan.currentAgents / tenantPlan.allowedAgents) * 100))
+			: 0;
+	const expires = formatDate(tenantPlan.admission.expiresAt ?? null);
+	return (
+		<>
+			<div className="grid" style={{ marginTop: 10 }}>
+				<div className="stat-card">
+					<div className="stat-label">Current plan</div>
+					<div className="stat-value">{tenantPlan.displayName}</div>
+					<div className="muted small">{SOURCE_LABELS[tenantPlan.planSource]}</div>
+				</div>
+				<div className="stat-card">
+					<div className="stat-label">Protected agents in use</div>
+					<div className="stat-value">
+						{tenantPlan.currentAgents} / {tenantPlan.allowedAgents}
+					</div>
+					<div className="muted small">
+						{tenantPlan.includedAgentsPerSeat} agent per seat on this plan
+					</div>
+				</div>
+				<div className="stat-card">
+					<div className="stat-label">Admission</div>
+					<div>
+						<span
+							className={
+								tenantPlan.admission.status === "active"
+									? "badge badge-success"
+									: "badge badge-warning"
+							}
+						>
+							{tenantPlan.admission.kind
+								? `${tenantPlan.admission.kind} · ${tenantPlan.admission.status}`
+								: tenantPlan.admission.status}
+						</span>
+					</div>
+					{expires ? <div className="muted small">Term ends {expires}</div> : null}
+				</div>
+			</div>
+			<div
+				className="usage-bar"
+				role="progressbar"
+				aria-label="Protected agent usage"
+				aria-valuemin={0}
+				aria-valuemax={tenantPlan.allowedAgents}
+				aria-valuenow={tenantPlan.currentAgents}
+				style={{ marginTop: 12 }}
+			>
+				<div className="usage-fill" style={{ width: `${usagePercent}%` }} />
+			</div>
+			<CapacityNotice tenantPlan={tenantPlan} />
+			<SubscriptionLine subscription={tenantPlan.subscription} />
+		</>
+	);
+}
+
+function CapacityNotice({ tenantPlan }: { tenantPlan: TenantPlan }) {
+	if (tenantPlan.allowedAgents === 0) {
+		return (
+			<div className="notice notice-danger" style={{ marginTop: 10 }}>
+				This tenant has no admitted protected-agent capacity. New agents are rejected by the control
+				plane until a trial, licence or paid plan is active.
+			</div>
+		);
+	}
+	if (tenantPlan.currentAgents > tenantPlan.allowedAgents) {
+		return (
+			<div className="notice notice-danger" style={{ marginTop: 10 }}>
+				More agents are connected than the plan admits; additional agents may be rejected.
+			</div>
+		);
+	}
+	return null;
+}
+
+function SubscriptionLine({ subscription }: { subscription: TenantPlan["subscription"] }) {
+	if (!subscription) return null;
+	const periodEnd = formatDate(subscription.currentPeriodEnd ?? null);
+	return (
+		<div className="muted small" style={{ marginTop: 10 }}>
+			Card subscription: {planById(subscription.planId)?.displayName ?? "Plan"} ·{" "}
+			{subscription.seats} seats · {subscription.billingInterval} · {subscription.status}
+			{periodEnd ? ` · paid through ${periodEnd}` : ""}
+		</div>
+	);
+}
+
+function RequestStatus({
+	outcome,
+	safeCheckoutUrl,
+	failure,
+}: {
+	outcome: string | null;
+	safeCheckoutUrl: string | null;
+	failure: string | null;
+}) {
+	return (
+		<>
+			{outcome ? (
+				<div className="notice" role="status">
+					{outcome}
+				</div>
+			) : null}
+			{safeCheckoutUrl ? (
+				<div className="row">
+					<a className="button" href={safeCheckoutUrl} target="_blank" rel="noreferrer">
+						Open secure checkout
+					</a>
+				</div>
+			) : null}
+			{failure ? (
+				<div className="notice notice-danger" role="status">
+					{failure}
+				</div>
+			) : null}
+		</>
+	);
+}
+
 /**
  * Current catalog plan, protected-agent usage against the admitted capacity,
  * and the plan picker. Choosing a plan either opens a server-created checkout
@@ -112,14 +308,8 @@ export function PlanCard({
 		};
 	}, [tenantId]);
 
-	const selected = planById(selectedId) ?? PICKABLE_PLANS[0];
-	const intervals = selected ? intervalsFor(selected) : [];
-	const effectiveInterval: Interval | null = intervals.includes(interval)
-		? interval
-		: (intervals[0] ?? null);
-	const minSeats = selected?.minSeats ?? 1;
-	const seatsValid = Number.isSafeInteger(seats) && seats >= minSeats && seats <= 10000;
-	const checkoutPath = selected ? selfServeCheckoutAvailable(selected, tenantPlan) : false;
+	const { selected, intervals, effectiveInterval, minSeats, seatsValid, checkoutPath } =
+		pickerState(selectedId, interval, seats, tenantPlan);
 	const safeCheckoutUrl = checkoutUrl ? safeCommercialLink(checkoutUrl) : null;
 	const canAct = Boolean(
 		tenantId &&
@@ -138,6 +328,35 @@ export function PlanCard({
 		setCheckoutUrl(null);
 	}
 
+	/** Opens a server-created card checkout (self-service builds only). */
+	async function startCheckout(
+		active: string,
+		plan: "team" | "business",
+		billing: Interval,
+		reqId: string,
+	) {
+		const result = await createCheckout("", "", seats, billing, undefined, active, reqId, plan);
+		if (activeTenantRef.current !== active) return;
+		setCheckoutUrl(result.checkoutUrl);
+		setOutcome(
+			"Checkout is ready. The plan changes only after the payment provider confirms an active subscription.",
+		);
+	}
+
+	/** Files an upgrade request into the Finance invoice flow. */
+	async function requestUpgrade(active: string, plan: PlanDefinition, reqId: string) {
+		const order = await requestEnterpriseOrder(active, {
+			request_id: reqId,
+			requested_agents: seats * plan.includedAgents,
+			quote_reference: `plan-request:${plan.id}${effectiveInterval ? `:${effectiveInterval}` : ""}`,
+		});
+		if (activeTenantRef.current !== active) return;
+		setOutcome(
+			`Upgrade request for ${plan.displayName} (${seats} developer seats) was sent to Finance review as ${order.status.replaceAll("_", " ")}. Your plan is unchanged until an approved order is applied.`,
+		);
+		setRequestId(newBillingRequestId());
+	}
+
 	async function submit() {
 		if (!canAct || !tenantId || !selected || !requestId) return;
 		const active = tenantId;
@@ -150,32 +369,9 @@ export function PlanCard({
 				effectiveInterval &&
 				(selected.id === "team" || selected.id === "business")
 			) {
-				const result = await createCheckout(
-					"",
-					"",
-					seats,
-					effectiveInterval,
-					undefined,
-					active,
-					requestId,
-					selected.id,
-				);
-				if (activeTenantRef.current !== active) return;
-				setCheckoutUrl(result.checkoutUrl);
-				setOutcome(
-					"Checkout is ready. The plan changes only after the payment provider confirms an active subscription.",
-				);
+				await startCheckout(active, selected.id, effectiveInterval, requestId);
 			} else {
-				const order = await requestEnterpriseOrder(active, {
-					request_id: requestId,
-					requested_agents: seats * selected.includedAgents,
-					quote_reference: `plan-request:${selected.id}${effectiveInterval ? `:${effectiveInterval}` : ""}`,
-				});
-				if (activeTenantRef.current !== active) return;
-				setOutcome(
-					`Upgrade request for ${selected.displayName} (${seats} developer seats) was sent to Finance review as ${order.status.replaceAll("_", " ")}. Your plan is unchanged until an approved order is applied.`,
-				);
-				setRequestId(newBillingRequestId());
+				await requestUpgrade(active, selected, requestId);
 			}
 		} catch {
 			if (activeTenantRef.current !== active) return;
@@ -190,89 +386,10 @@ export function PlanCard({
 		}
 	}
 
-	const usagePercent =
-		tenantPlan && tenantPlan.allowedAgents > 0
-			? Math.min(100, Math.round((tenantPlan.currentAgents / tenantPlan.allowedAgents) * 100))
-			: 0;
-	const expires = formatDate(tenantPlan?.admission.expiresAt ?? null);
-	const periodEnd = formatDate(tenantPlan?.subscription?.currentPeriodEnd ?? null);
-
 	return (
 		<div className="card" aria-label="Current plan">
 			<h2>Plan</h2>
-			{loadState === "loading" ? (
-				<div className="muted small">Loading plan…</div>
-			) : loadState === "unavailable" || !tenantPlan ? (
-				<div className="notice notice-danger" role="status">
-					Plan information could not be loaded for this tenant. No plan or usage figure is shown
-					until it can be read.
-				</div>
-			) : (
-				<>
-					<div className="grid" style={{ marginTop: 10 }}>
-						<div className="stat-card">
-							<div className="stat-label">Current plan</div>
-							<div className="stat-value">{tenantPlan.displayName}</div>
-							<div className="muted small">{SOURCE_LABELS[tenantPlan.planSource]}</div>
-						</div>
-						<div className="stat-card">
-							<div className="stat-label">Protected agents in use</div>
-							<div className="stat-value">
-								{tenantPlan.currentAgents} / {tenantPlan.allowedAgents}
-							</div>
-							<div className="muted small">
-								{tenantPlan.includedAgentsPerSeat} agent per seat on this plan
-							</div>
-						</div>
-						<div className="stat-card">
-							<div className="stat-label">Admission</div>
-							<div>
-								<span
-									className={
-										tenantPlan.admission.status === "active"
-											? "badge badge-success"
-											: "badge badge-warning"
-									}
-								>
-									{tenantPlan.admission.kind
-										? `${tenantPlan.admission.kind} · ${tenantPlan.admission.status}`
-										: tenantPlan.admission.status}
-								</span>
-							</div>
-							{expires ? <div className="muted small">Term ends {expires}</div> : null}
-						</div>
-					</div>
-					<div
-						className="usage-bar"
-						role="progressbar"
-						aria-label="Protected agent usage"
-						aria-valuemin={0}
-						aria-valuemax={tenantPlan.allowedAgents}
-						aria-valuenow={tenantPlan.currentAgents}
-						style={{ marginTop: 12 }}
-					>
-						<div className="usage-fill" style={{ width: `${usagePercent}%` }} />
-					</div>
-					{tenantPlan.allowedAgents === 0 ? (
-						<div className="notice notice-danger" style={{ marginTop: 10 }}>
-							This tenant has no admitted protected-agent capacity. New agents are rejected by the
-							control plane until a trial, licence or paid plan is active.
-						</div>
-					) : tenantPlan.currentAgents > tenantPlan.allowedAgents ? (
-						<div className="notice notice-danger" style={{ marginTop: 10 }}>
-							More agents are connected than the plan admits; additional agents may be rejected.
-						</div>
-					) : null}
-					{tenantPlan.subscription ? (
-						<div className="muted small" style={{ marginTop: 10 }}>
-							Card subscription: {planById(tenantPlan.subscription.planId)?.displayName ?? "Plan"} ·{" "}
-							{tenantPlan.subscription.seats} seats · {tenantPlan.subscription.billingInterval} ·{" "}
-							{tenantPlan.subscription.status}
-							{periodEnd ? ` · paid through ${periodEnd}` : ""}
-						</div>
-					) : null}
-				</>
-			)}
+			<PlanStatus loadState={loadState} tenantPlan={tenantPlan} />
 
 			<h3 style={{ marginTop: 20 }}>Change plan</h3>
 			<p className="muted small">{LIST_PRICE_NOTICE}</p>
@@ -317,32 +434,21 @@ export function PlanCard({
 								}}
 							/>
 						</label>
-						{intervals.length > 0 ? (
-							<label>
-								Billing
-								<select
-									className="input"
-									value={effectiveInterval ?? ""}
-									onChange={(event) => {
-										setBillingInterval(event.target.value as Interval);
-										resetRequest();
-									}}
-								>
-									{intervals.map((value) => (
-										<option key={value} value={value}>
-											{value === "monthly" ? "Monthly" : "Annual"}
-										</option>
-									))}
-								</select>
-							</label>
-						) : null}
+						<IntervalSelect
+							intervals={intervals}
+							value={effectiveInterval}
+							onChange={(value) => {
+								setBillingInterval(value);
+								resetRequest();
+							}}
+						/>
 						<button
 							className="button"
 							type="button"
 							disabled={!canAct}
 							onClick={() => void submit()}
 						>
-							{busy ? "Working…" : checkoutPath ? "Continue to checkout" : "Request upgrade"}
+							{submitLabel(busy, checkoutPath)}
 						</button>
 					</div>
 					{!seatsValid ? (
@@ -356,23 +462,7 @@ export function PlanCard({
 							approved order is applied.
 						</div>
 					) : null}
-					{outcome ? (
-						<div className="notice" role="status">
-							{outcome}
-						</div>
-					) : null}
-					{safeCheckoutUrl ? (
-						<div className="row">
-							<a className="button" href={safeCheckoutUrl} target="_blank" rel="noreferrer">
-								Open secure checkout
-							</a>
-						</div>
-					) : null}
-					{failure ? (
-						<div className="notice notice-danger" role="status">
-							{failure}
-						</div>
-					) : null}
+					<RequestStatus outcome={outcome} safeCheckoutUrl={safeCheckoutUrl} failure={failure} />
 				</fieldset>
 			)}
 		</div>
