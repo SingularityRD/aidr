@@ -1,6 +1,6 @@
 # AIDR alt özellik envanteri
 
-Otomatik üretim tarihi: **2026-09-24**. 71 alt özellik ve teslimat gereksinimi eşlendi: 41 çalışan kod akışına bağlı, 28 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
+Otomatik üretim tarihi: **2026-09-25**. 88 alt özellik ve teslimat gereksinimi eşlendi: 50 çalışan kod akışına bağlı, 36 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
 
 Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tüketen bileşenler ve her satırın kalan işi bu dosyada bulunur. Önceki PRODUCT_SCOPE_AND_FEATURES.md dosyasındaki modül erişilebilirlik sayıları tarihsel bir ara denetime aittir.
 
@@ -20,13 +20,15 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | DET-03 | [Obfuscation and suspicious shell patterns](threats/obfuscation.yaml) | wired | Stateful multi-step command-chain analysis is not implemented |
 | DET-04 | [Credential access and exfiltration](threats/credentials.yaml) | wired | Customer secret types and benign workflow corpus need calibration |
 | DET-05 | [Cross-platform rules and mining](threats/mining.yaml) | wired | Native host matrix and mining workload acceptance remain external |
-| DET-06 | [Prompt injection inspection](packages/core/src/output-scanner.ts) | partial | Claude PostToolUse and OpenClaw after_tool_call cannot prove same-turn model blocking; provider streams and native host bypass need acceptance |
-| DET-07 | [Structured DLP and PII](packages/core/src/dlp/scanner.ts) | partial | Other connectors, trusted provisioning operations and customer label acceptance remain open |
+| DET-06 | [Prompt injection inspection](packages/core/src/output-scanner.ts) | partial | Claude PostToolUse and OpenClaw after_tool_call cannot prove same-turn model blocking; provider streams and native host bypass need acceptance; the precision filter trades recall on unlabelled formats and needs customer benign/attack corpus calibration |
+| DET-07 | [Structured DLP and PII](packages/core/src/dlp/scanner.ts) | partial | Bundles are operator-placed files: no control-plane push/rotation operation is accepted in the field. The local-mode policy file is unsigned and user-editable, so it is a convenience, not a managed control. The parity suite's redact row still expects a block and failed on 2026-09-24 (25 of 26 cases passed) because Claude Code now rewrites redacted input (DET-14); that expectation is unreconciled. Customer label/false-positive acceptance remains open |
 | DET-08 | [Behavioral and novelty analysis](packages/core/src/behavioral-orchestrator.ts) | partial | No host supplies a trusted, call-ID/input-digest-bound successful-execution receipt. DET-08 is not production ready; callback wiring and independent efficacy acceptance remain required |
 | DET-09 | [ML classification and similarity](packages/core/src/behavioral-orchestrator.ts) | partial | No independently validated production model efficacy or broad runtime adoption |
 | DET-10 | [URL reputation](packages/core/src/clients/url-check.ts) | partial | Provider feed, operational freshness and customer latency proof still required |
 | DET-11 | [File reputation and AMSI](packages/core/src/clients/file-check.ts) | partial | AMSI requires native Windows host acceptance; no clean verdict on unavailable leg |
 | DET-12 | [Package and plugin supply chain](packages/core/src/package-checker.ts) | partial | Registry/provider provenance and customer dependency corpus still need acceptance |
+| DET-13 | [TR/EN privacy detectors in core DLP](packages/core/src/dlp/privacy-detectors.ts) | wired | Address/person detectors are heuristic and opt-in; Turkish/English customer corpus calibration and false-positive acceptance remain open |
+| DET-14 | [Prompt protection and DLP input redaction](packages/core/src/prompt-protection.ts) | partial | Prompt protection exists only for Claude Code; Codex, Cursor, VS Code and OpenClaw keep redact as deny; the rewrite contract is verified locally against one Claude Code version and still needs native host-version acceptance |
 
 ## MCP
 
@@ -38,7 +40,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | MCP-04 | [Empty-argument tool enforcement](packages/claude-code/src/pre-tool-use.ts) | wired | Live host event delivery still requires acceptance |
 | MCP-05 | [Tool description attestation and drift](packages/core/src/mcp-attestation.ts) | partial | Direct host paths outside the gateway and trusted publisher provisioning remain open |
 | MCP-06 | [Identity graph and delegated privileges](packages/core/src/delegated-credential.ts) | partial | Real identity-provider and tool-provider integration remains external |
-| MCP-07 | [MCP gateway response blocking](packages/mcp-gateway/src/gateway.mjs) | partial | Binary output, server-initiated requests, forced routing of direct upstream access and customer native acceptance remain open |
+| MCP-07 | [MCP gateway response blocking](packages/mcp-gateway/src/gateway.mjs) | partial | Forced routing of direct upstream access (a host can still reach the MCP server without the gateway), media formats outside the byte-verifiable allowlist and customer native acceptance remain open |
 
 ## AI infrastructure
 
@@ -47,6 +49,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | INF-01 | [Native fingerprint and CVE scanning](packages/core/src/aig-infra-scan.ts) | wired | Compiled dataset freshness and unsupported fingerprint rules constrain coverage |
 | INF-02 | [Scan report to runtime policy](packages/core/src/aig-policy.ts) | wired | Opt-in, scoped origins; report file is a trusted local administrative input |
 | INF-03 | [Continuous fleet discovery](packages/cli/src/commands/collect.ts) | partial | Cloud/MDM provider adapters, customer-approved scopes/credentials, customer-activated production scheduling and alert/paging delivery, and customer field acceptance remain open |
+| INF-04 | [AI security posture findings](threats/skill-scan.yaml) | wired | A deterministic pattern port of the AIG taxonomy, not AIG's model-driven scanner; coverage is limited to what an enrolled collector uploads, and detection efficacy on real customer skills/plugins is unmeasured |
 
 ## Response
 
@@ -59,6 +62,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | RSP-05 | [Signed response audit chain](packages/core/src/response-audit.ts) | wired | Disabled by default; independent key custody and storage/retention evidence remain external |
 | RSP-06 | [Fleet kill switch and credential revoke](supabase/functions/revocations/index.ts) | partial | No installed endpoint service, verified OS isolation adapter, device attestation or cross-provider credential revocation |
 | RSP-07 | [SOAR playbook orchestration](supabase/functions/response-playbooks/index.ts) | partial | Not production accepted or connected to an alert/AutoSecOps trigger. A separately installed endpoint worker and verified host adapter are not provisioned or customer-validated; host permissions and native acceptance, external SOAR/provider connectors, credential revocation and rollback remain unsupported or open |
+| RSP-08 | [Out-of-band operator approvals and operator CLI](packages/core/src/operator-approvals.ts) | wired | Approval is local to one host and OS user: there is no central/multi-approver workflow, and an agent running as the same OS user is only deterred by the CLT-SELF-007/CLT-SELF-002 self-defense rules, not isolated from the store. Operator usability and native host acceptance remain open |
 
 ## Policy
 
@@ -89,6 +93,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | CON-04 | [OpenCode](packages/opencode/src/tool-handler.ts) | wired | Native plugin loading and host cancellation acceptance required |
 | CON-05 | [Codex](packages/codex/src/enforcement.ts) | partial | Host can fail open when hook execution is unavailable; not tamper-resistant isolation |
 | CON-06 | [SDK client and generic middleware](packages/sdk/src/client.ts) | wired | Application must wrap every consequential tool path; host integration still needs an acceptance matrix |
+| CON-07 | [Cross-connector parity and fail-closed initialisation](packages/core/src/tool-normalization.ts) | wired | Parity is proven against built bundles in-process and over stdin, not against installed native hosts; documented host-verb differences (ask becomes block in Codex/OpenCode/OpenClaw, deny in Cursor) remain. On 2026-09-24 the OpenClaw integrity-failure test still blocked every call but reported init_error instead of integrity_bad_signature (1 of 2 cases failed), and the DLP redact parity row is stale (DET-07) |
 
 ## Management
 
@@ -96,11 +101,13 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 |---|---|---|---|
 | TEN-01 | [Tenant isolation and RBAC](supabase/migrations/20260805000000_hybrid_tenancy.sql) | wired | Independent penetration test and full endpoint negative matrix remain required |
 | TEN-02 | [Team creation and member lifecycle](supabase/migrations/20260805000001_team_creation_rpc.sql) | wired | Field identity-provider lifecycle acceptance remains required |
-| TEN-03 | [Invitation issue and acceptance](supabase/functions/team-invite/index.ts) | wired | No SMTP invitation delivery; operator explicitly shares link |
+| TEN-03 | [Invitation issue and acceptance](supabase/functions/team-invite/index.ts) | wired | Live mail-provider account, sender-domain SPF/DKIM/DMARC, deliverability and customer mail-flow acceptance remain open; with AIDR_MAIL_PROVIDER=none the operator still shares the link manually |
 | TEN-04 | [SSO and directory group sync](supabase/functions/scim/index.ts) | partial | Real Entra/Okta provisioning acceptance and the separately audited SAML enforcement/rollback operation remain open |
 | TEN-05 | [Device pairing and enrollment](supabase/functions/device-poll/index.ts) | partial | Customer TLS proxy routing and browser-to-host pairing acceptance remain pending; direct unsigned device-start is rejected |
 | TEN-06 | [API keys and revocation](supabase/functions/api-keys/index.ts) | wired | Per-tool short-lived delegation is tracked separately in MCP-06; live provider acceptance and endpoint secret-vault integration remain open |
 | TEN-07 | [First customer provisioning and login](scripts/deployment-bootstrap.mjs) | wired | SMTP/IdP delivery and full service-role Edge MFA barriers require customer integration |
+| TEN-08 | [Platform operator administration](supabase/functions/operator-admin/index.ts) | wired | Named operator provisioning, operator credential custody and a live deployment run remain open; the surface is not independently penetration-tested (SEC-EXT-001) |
+| TEN-09 | [Workspace settings and closure request](supabase/functions/tenant-settings/index.ts) | wired | Closure only requests offboarding; completion still depends on the operator-run offboarding and the external backup/retention acceptance tracked in OBS-06 |
 
 ## Operations
 
@@ -120,6 +127,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | BIL-01 | [Invoice-based sales model](packages/dashboard/src/ui/pages/BillingPage.tsx) | partial | Approved quote, provider receipt, reconciliation and audited paid-to-entitlement lifecycle remain open |
 | BIL-02 | [Stripe checkout and event processing](supabase/functions/billing-checkout/index.ts) | partial | Live keys/prices/webhook registration, refund/cancel/reconcile and tax acceptance remain open |
 | BIL-03 | [Subscription self-service portal](packages/dashboard/src/billing/billing-portal.ts) | partial | Live provider keys, approved price/SKU catalogue, finance reconciliation and accounting approval remain external |
+| BIL-04 | [Plan catalog, pricing and Stripe plan admission](supabase/migrations/20260925000010_plan_catalog.sql) | partial | List prices are not an approved SKU/price manifest (COM-001); self-service remains env-gated and off by default; live Stripe keys/prices, tax, reconciliation and finance approval remain external |
 
 ## Deployment
 
@@ -133,6 +141,9 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | DEP-06 | [Backup, restore and disaster recovery](scripts/deployment-backup.mjs) | partial | Real offsite provider, independent-host recovery and agreed RPO/RTO evidence remain open |
 | DEP-07 | [Availability and scale](deploy/dashboard/monitoring.mjs) | partial | Authenticated workload, HA, capacity, noisy-neighbor and monthly SLI remain unproved |
 | DEP-08 | [Portable installation candidate and doctor](scripts/customer-kit.mjs) | wired | Node 24/Docker/tar required; container images need network or a separate air-gap image delivery; publisher signatures remain external |
+| DEP-09 | [On-prem bundle, resource profiles, AIG sidecar and egress proxy](deploy/onprem/README.md) | partial | No Kubernetes/Helm chart exists in this source tree; customer-host install, air-gap media transfer drill, sizing validation and customer TLS acceptance remain open |
+| DEP-10 | [Vendor-signed offline licence and offline pack import](scripts/license-issue.mjs) | partial | The shipped public-key registry is intentionally empty and fails closed until a vendor signing key is generated and custodied; vendor key custody, licence issuance operations and a customer air-gap update drill remain external |
+| DEP-11 | [Download center and release manifest](packages/dashboard/src/ui/pages/DownloadsPage.tsx) | partial | No published release host or signed manifest exists yet; signatures depend on publisher key custody (DEP-05) and private registry delivery (COM-012) |
 
 ## Assurance
 
@@ -141,3 +152,14 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | EVAL-01 | [Independent attack and benign benchmarks](scripts/verify-enforcement.mjs) | partial | Blind holdout corpus, customer benign tasks, latency and evasion evaluation remain open |
 | EVAL-02 | [Legal, privacy, residency and support](docs/production-readiness/commercial-go-evidence-registry.json) | external | Named external approvals and candidate-bound proof cannot be generated from source code |
 | EVAL-03 | [Customer proof of value](docs/production-readiness/commercial-go-evidence-registry.json) | external | Customer-run host matrix, observations and signed acceptance outstanding |
+
+## Browser privacy
+
+| Kimlik | Alt özellik | Durum | Kalan sınır / kabul işi |
+|---|---|---|---|
+| PRV-01 | [Browser Guard prompt masking on AI chat sites](packages/browser-guard/src/content/guard.ts) | partial | Fixture pages are not the live sites: real-site DOM drift, store publication/review and customer browser acceptance remain open; text typed outside a recognised editor or sent by site-internal paths is not visible |
+| PRV-02 | [Paste and file-upload sanitisation](packages/browser-guard/src/content/file-guard.ts) | wired | Binary and office/PDF/image formats are not inspected (blocked only in block mode, otherwise allowed with a marker); large-file and real-site upload acceptance remain open |
+| PRV-03 | [Exact-data match on customer datasets](packages/browser-guard/src/engine/exact-data.ts) | wired | Customer dataset onboarding, HMAC key custody/rotation and false-positive calibration remain open |
+| PRV-04 | [Managed browser policy and fleet deployment](packages/browser-guard/src/background/policy.ts) | partial | Real GPO/Intune/Jamf rollout, store or self-hosted signed distribution and a customer fleet run remain external |
+| PRV-05 | [Counts-only privacy telemetry and Privacy Guard dashboard](packages/browser-guard/src/background/telemetry.ts) | wired | No live browser fleet has reported into a deployed control plane; the data-flow/DPA approval for this telemetry (COM-003) remains open |
+| PRV-06 | [AIDR Privacy engine and optional native NER host](packages/privacy/src/rules.ts) | partial | Native host installation, NER/OCR accuracy and platform acceptance are unmeasured; privacy suites run separately via test:privacy with named optional-dependency skips |

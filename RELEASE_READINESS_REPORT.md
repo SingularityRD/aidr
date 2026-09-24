@@ -1,5 +1,87 @@
 # Singularity AIDR — Release Readiness Report
 
+> **SUPERSEDED (reviewed 2026-09-24).** This report is a historical narrative of the
+> 2026-09-10 assessment and the v4 candidate recorded on 2026-09-11/12. Its counts,
+> test results and blocker list are **not** the current state. The current records are:
+>
+> - [`FEATURE_INVENTORY.json`](FEATURE_INVENTORY.json) / [`.md`](FEATURE_INVENTORY.md): generated capability inventory (`pnpm features:inventory`)
+> - [`FEATURE_ACCEPTANCE.json`](FEATURE_ACCEPTANCE.json): per-capability local test pointers; every capability is `NOT_RUN` for candidate, live-host and customer acceptance (`node scripts/verify-feature-acceptance.mjs`)
+> - [`PRODUCTION_SALES_GAPS.json`](PRODUCTION_SALES_GAPS.json) / [`.md`](PRODUCTION_SALES_GAPS.md): generated gap audit (`node scripts/generate-production-sales-gap-audit.mjs`)
+> - [`READINESS_BACKLOG.json`](READINESS_BACKLOG.json): defect ledger (`node scripts/validate-backlog.mjs`)
+> - [`docs/production-readiness/commercial-go-evidence-registry.json`](docs/production-readiness/commercial-go-evidence-registry.json) and [`docs/production-readiness/first-customer-ready.md`](docs/production-readiness/first-customer-ready.md): commercial gates and the pre-customer gate
+>
+> **Decision: NO-GO.** Nothing in this report, or in the branch delta below, is a
+> production, sales or GA approval. The decision stays NO-GO until the 13 external hard
+> gates (COM-001..COM-005, COM-010..COM-013, SEC-EXT-001, POV-001, INV-001, CLM-001) are
+> closed with named, candidate-bound evidence.
+
+## Branch delta recorded on 2026-09-24 (`claude/cool-dirac-e44iku`)
+
+This section summarises what the branch added and how the records changed. It lists
+local implementation and local test evidence only; no candidate was built, signed or
+installed on a customer host for this review.
+
+**Records after this review.** 88 inventoried capabilities (50 wired, 36 partial,
+0 missing, 2 external), up from 71; every one is `production_accepted: false`. The gap
+audit has 60 work packages: 47 technical (45 with local implementation and field
+acceptance still open, 2 still open: T05 behavioural learning and T18 SAML policy
+administration) and 13 commercial/external gates, all open. The backlog has 70 findings:
+62 verified closed locally, 7 blocked on external systems or approvers, 1 in progress
+(AIDR-019 live acceptance). The shipped rule set is 384 rules in 24 files.
+
+**Added on this branch (local implementation; field acceptance open).**
+
+- **Browser Guard** (PRV-01..PRV-06, T47): Chrome/Edge/Firefox MV3 extension with
+  reversible masking on 8 AI chat sites plus a generic adapter, paste and file-upload
+  sanitisation, exact-data matching, managed policy with deployment examples, counts-only
+  privacy telemetry and a `/privacy-guard` dashboard page. The recorded hermetic Chromium
+  E2E run against simulated site fixtures passed 18 of 19 scenarios. That run used fixtures,
+  so it says nothing about the live sites. Store publication and real MDM rollout have not
+  happened.
+- **AIDR Privacy** `@singularityrd/aidr-privacy` 0.6.0 is shipped as a signed release
+  artifact root (`pnpm test:privacy`), and its TR/EN detectors (TC Kimlik, IBAN, TR phone,
+  keys; address/person opt-in) are synced into core DLP with a drift check (DET-13).
+- **DLP and prompt protection** (DET-06, DET-07, DET-14): the output scanner now
+  quarantines only on high-precision findings, there is a local-mode DLP policy file,
+  Claude Code has `UserPromptSubmit` prompt protection, and DLP redaction goes through
+  `updatedInput` (Claude Code) or args rewrite (OpenCode). Other connectors still deny
+  instead of redacting.
+- **Operator approvals** (RSP-08): an out-of-band, HMAC-signed, single-use approval store
+  and `aidr pending/approve/allowlist/audit/doctor`. No agent-callable approval tool
+  exists. Approval is local to one host and OS user.
+- **Connector parity and hardening** (CON-07, T02): a built-entry-point parity suite
+  across six connectors, new rules CLT-CMD-031, CLT-SELF-007 and 26 skill-scan rules,
+  fail-closed plugin initialisation and argv normalisation. On 2026-09-24 two expectations
+  were not reconciled. The parity DLP redact row still expects a block (25 of 26 cases
+  passed). The OpenClaw integrity-failure test blocks but reports `init_error` (1 of 2
+  cases passed).
+- **MCP gateway** (MCP-07, T10): tool-call argument evaluation, bounded binary inspection
+  and a deny-by-default policy for server-initiated requests. Forced routing of direct
+  upstream access is still open.
+- **SaaS control plane**: privacy telemetry ingest, plan catalog, pricing and audited
+  Stripe plan admission (BIL-04; list prices are not an approved SKU manifest, COM-001),
+  an operator-admin function (TEN-08), invitation email via an injectable mailer (TEN-03,
+  T20), workspace settings and a closure request (TEN-09), device-poll, waitlist and pack
+  rate limits, a download center and release manifest (DEP-11), and AI security posture
+  with a `/posture` page (INF-04). There are now 129 canonical migrations.
+- **On-prem** (DEP-09, DEP-10, T28/T29): an on-prem bundle with resource profiles, an AIG
+  sidecar behind an egress proxy, air-gap base-image planning, a configuration reference,
+  nginx BYO-certificate TLS with static renewal, vendor-signed offline licences (the public
+  key registry ships empty and fails closed) and offline pack import. **No Helm chart
+  exists in this source tree.** The CI `helm` job calls `pnpm verify:helm`, which is not
+  defined yet.
+- **CI**: new workflow-lint, Node 22/24 core matrix, onprem-deploy, privacy,
+  privacy-rules-drift and browser-guard jobs, plus a `release-browser-guard` workflow.
+  `pnpm lint` exits 0 with 593 warnings (T35).
+
+**Still external (unchanged by this branch).** Real host/OS matrix, IdP/SMTP/MDM, cloud
+and self-hosted production installs, publisher key custody and private registry, SLA
+measurement, independent penetration test (SEC-EXT-001), legal/privacy/pricing approvals
+(COM-001..COM-003), regions (COM-011), private registry (COM-012), named customer PoV
+(POV-001) and claim approval (CLM-001).
+
+---
+
 > **Güncel v4 kayıt:** [ilk müşteri v4 mühendislik adayı](docs/production-readiness/2026-09-12-customer-candidate-v4.md). 202 dosyada 3.010 test geçti, 1 canlı provider testi atlandı; 24 migration ve 11 servislik taze yerel prova yapıldı. 63 bulgudan 50'si yerel olarak kapalı, 13'ü açık/kısmi/dış bağımlı. Genel production/satış kararı **NO-GO**. Aşağıdaki önceki tur sayıları tarihsel kayıttır.
 
 > **Latest verification: 2026-09-11.** See
