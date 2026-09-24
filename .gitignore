@@ -1,16 +1,6 @@
 # Node.js
 node_modules/
 dist/
-!packages/claude-code/dist/
-packages/claude-code/dist/*
-!packages/claude-code/dist/pre-tool-use.cjs
-!packages/claude-code/dist/post-tool-use.cjs
-!packages/claude-code/dist/session-start.cjs
-!packages/claude-code/dist/mcp-server.cjs
-# health.cjs is the package's declared `bin` entry, so it is a shipped artifact.
-# Without this negation the build creates an untracked file and the CI
-# "enforce clean diff after verification/build" step fails.
-!packages/claude-code/dist/health.cjs
 packages/extension/resources/
 packages/claude-code/resources/
 packages/extension/.vsce/
@@ -36,6 +26,7 @@ session_start_backup.ts
 
 # Environments
 .env
+.env.aig
 .envrc
 
 # Logs
@@ -57,7 +48,6 @@ session_start_backup.ts
 .DS_Store
 
 # Gitleaks config (contains internal infrastructure names)
-.gitleaks.toml
 
 .pnpm-store
 
@@ -66,6 +56,10 @@ threats/dummy.yaml
 
 # Coverage reports
 coverage/
+coverage-*/
+
+# Windows null-device typo from ad hoc TypeScript builds
+/NUL
 
 # Local release/Supabase CLI evidence and generated secrets
 .release-evidence/

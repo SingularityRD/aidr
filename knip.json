@@ -1,65 +1,120 @@
 {
-	"$schema": "https://unpkg.com/knip@5/schema.json",
+	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"workspaces": {
+		".": {
+			"entry": [
+				".github/scripts/*.mjs",
+				"deploy/backup/deployment-backup-health-failed.mjs",
+				"deploy/dashboard/server.mjs",
+				"deploy/fleet/unix/aidr-remediate.mjs",
+				"deploy/fleet/unix/fleet-health.mjs",
+				"deploy/fleet/unix/remove-managed-hooks.mjs",
+				"docs/scripts/claim-check.mjs",
+				"scripts/benchmarks/generate-corpus.mjs",
+				"scripts/benchmarks/split-corpus.mjs",
+				"scripts/apply-dependency-bump.mjs",
+				"scripts/build-airgap-images.mjs",
+				"scripts/build-release-candidate.mjs",
+				"scripts/check-generator-determinism.mjs",
+				"scripts/check-no-leaky-paths.mjs",
+				"scripts/check-package-contracts.mjs",
+				"scripts/customer-kit-verify.mjs",
+				"scripts/deployment-maintenance.mjs",
+				"scripts/encrypt-intel-pack-file.mjs",
+				"scripts/endpoint-install.mjs",
+				"scripts/generate-provenance.mjs",
+				"scripts/generate-production-sales-gap-audit.mjs",
+				"scripts/generate-sbom.mjs",
+				"scripts/list-open-findings.mjs",
+				"scripts/privacy-canary.config.mjs",
+				"scripts/privacy-verify.mjs",
+				"scripts/refresh-claim-evidence.mjs",
+				"scripts/release-artifact-manifests.mjs",
+				"scripts/release-evidence-regression.mjs",
+				"scripts/resource-profile-preload.cjs",
+				"scripts/resource-profile.mjs",
+				"scripts/run-evidence-gates.mjs",
+				"scripts/run-ide-host-e2e.mjs",
+				"scripts/sign-artifact-manifest.mjs",
+				"scripts/verify-customer-kit.mjs",
+				"scripts/verify-deployment-recovery.mjs",
+				"scripts/verify-enterprise-operations.mjs",
+				"scripts/verify-installation-tools.mjs",
+				"scripts/verify-model-interception-live.mjs",
+				"scripts/verify-noisy-neighbor-live.mjs",
+				"scripts/verify-policy-fleet-pagination.mjs",
+				"scripts/verify-policy-rollout.mjs",
+				"scripts/verify-release-evidence.mjs",
+				"scripts/verify-url-check-live.mjs",
+				"supabase/functions/__tests__/policy-rings.vitest.config.ts",
+				"supabase/functions/*/index.ts",
+				"supabase/tests/policy-draft-validate.mjs",
+				"vitest.control-plane.config.ts",
+				"vitest.dlp-storage.config.ts",
+				"vitest.e2e.config.ts"
+			],
+			"project": [
+				".github/scripts/**/*.{js,cjs,mjs,ts}",
+				"deploy/**/*.{js,cjs,mjs,ts}",
+				"docs/scripts/**/*.{js,cjs,mjs,ts}",
+				"scripts/**/*.{js,cjs,mjs,ts}",
+				"supabase/functions/**/*.{js,mjs,ts}",
+				"supabase/tests/**/*.{js,mjs,ts}",
+				"*.{js,cjs,mjs,ts}"
+			],
+			"ignore": ["deploy/upstream/**", "vendor/**"],
+			"ignoreDependencies": ["npm"],
+			"ignoreBinaries": ["bash", "docker", "gh", "gitleaks", "go", "icacls.exe", "where.exe", "wrangler"]
+		},
 		"packages/core": {
 			"entry": ["src/index.ts"],
-			"project": ["src/**/*.ts"],
-			"ignore": ["src/__tests__/**"]
-		},		"packages/claude-code": {
-			"entry": ["src/*.ts"],
-			"project": ["src/**/*.ts"],
-			"ignore": ["src/__tests__/**", "dist/**"]
+			"project": ["src/**/*.ts", "*.{js,mjs,ts}"]
 		},
-		"packages/openclaw": {
+		"packages/claude-code": {
+			"entry": [
+				"src/pre-tool-use.ts",
+				"src/post-tool-use.ts",
+				"src/mcp-server.ts",
+				"src/session-start.ts",
+				"src/health.ts"
+			],
+			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
+		},
+		"packages/cli": {
 			"entry": ["src/index.ts"],
-			"project": ["src/**/*.ts"],
-			"ignore": ["src/__tests__/**", "dist/**", "resources/**"]
+			"project": ["src/**/*.ts", "*.{js,mjs,ts}"]
 		},
-		"packages/opencode": {
-			"entry": ["src/index.ts"],
-			"project": ["src/**/*.ts"],
-			"ignore": ["src/__tests__/**", "dist/**", "resources/**"]
-		},
-		"packages/extension": {
-			"entry": ["src/cursor_extension.ts", "src/aidr-hook.ts"],
-			"project": ["src/**/*.ts"],
-			"ignore": ["src/__tests__/**", "dist/**", "resources/**"]
+		"packages/codex": {
+			"entry": ["src/index.ts", "src/cli.ts"],
+			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
 		},
 		"packages/dashboard": {
 			"entry": ["src/main.tsx"],
-			"project": ["src/**/*.{ts,tsx}"],
-			"ignore": ["dist/**", ".vite/**"]
+			"project": ["src/**/*.{ts,tsx}", "*.{js,mjs,ts}"]
 		},
-		"landing": {
-			"entry": ["app/layout.tsx", "app/page.tsx"],
-			"project": ["app/**/*.{ts,tsx}"],
-			"ignore": [".next/**", "out/**"]
+		"packages/extension": {
+			"entry": ["src/cursor_extension.ts", "src/vscode_extension.ts", "src/aidr-hook.ts"],
+			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,cjs,mjs,ts}"]
+		},
+		"packages/mcp-gateway": {
+			"entry": ["src/cli.mjs", "src/approve.mjs", "src/stdio-cli.mjs"],
+			"project": ["src/**/*.mjs", "scripts/**/*.mjs"]
+		},
+		"packages/openclaw": {
+			"entry": ["src/index.ts"],
+			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
+		},
+		"packages/opencode": {
+			"entry": ["src/index.ts"],
+			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
+		},
+		"packages/sdk": {
+			"entry": ["src/index.ts"],
+			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
 		}
 	},
-	"ignoreDependencies": [
-		"@changesets/cli",
-		"@vitest/coverage-v8",
-		"vitest-teamcity-reporter",
-		"typescript",
-		"esbuild",
-		"@biomejs/biome"
-	],
-	"ignore": [
-		"deploy/upstream/**"
-	],
-	"ignoreBinaries": [
-		"bash",
-		"gh",
-		"go",
-		"docker",
-		"wrangler",
-		"pnpm",
-		"pnpm.cmd",
-		"icacls",
-		"icacls.exe"
-	],
-	"rules": {
-		"types": "off",
-		"enumMembers": "off"
+	"ignoreIssues": {
+		"packages/opencode/src/index.ts": ["duplicates"],
+		"scripts/sync-dlp-edge-schema.mjs": ["unlisted"]
 	}
 }
