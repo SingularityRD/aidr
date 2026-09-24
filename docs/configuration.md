@@ -276,6 +276,14 @@ Inspects the user's prompt before Claude Code sends it to the model.
   `"off"` the prompt is sent with a visible "not inspected" notice. A provisioned tenant
   policy that cannot be verified always blocks. A hook process that is killed before it
   writes a response cannot block; that is a Claude Code host limitation.
+- Deadline: Claude Code kills the hook after 10 s (`hooks/hooks.json`), so the hook answers
+  itself after 7 s. A prompt it could not finish inspecting by then is blocked when
+  `secrets` is `"block"` or a tenant DLP policy is provisioned; otherwise it is sent with a
+  visible "not fully inspected" notice. Override with `AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS`
+  (an integer from 100 to 9000; anything else uses the default). Inspection cost is linear
+  in the prompt size (a 1.5 MB prompt takes well under a second), and once a secret is found
+  in `"block"` mode the scan stops there, so the block reports the first secret found rather
+  than a full count.
 
 #### DLP redaction of tool input
 

@@ -5,7 +5,10 @@
 
 const PII_PATTERNS = {
 	email: {
-		pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+		// RFC 5321 length limits (64-char local part, 253-char domain, 63-char
+		// label) keep every attempt bounded: with unbounded runs a long `a.a.a…`
+		// or `%41%41…` text is rescanned from every word boundary (quadratic).
+		pattern: /\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b/g,
 		type: "email",
 		severity: "high",
 	},
@@ -46,7 +49,10 @@ const PII_PATTERNS = {
 		severity: "critical",
 	},
 	jwt: {
-		pattern: /\beyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g,
+		// Starts only where a run of token characters starts. A `\b` start also
+		// fired after `-`, so `eyJ-eyJ-…` rescanned the rest of the run from every
+		// `eyJ` (quadratic).
+		pattern: /(?<![A-Za-z0-9_-])eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g,
 		type: "jwt_token",
 		severity: "critical",
 	},
@@ -101,21 +107,27 @@ export interface PIIReport {
 	redacted: string;
 }
 
-export function detectPII(text: string): PIIReport {
-	const findings: PIIFinding[] = [];
-	for (const [_name, config] of Object.entries(PII_PATTERNS)) {
-		const matches = text.matchAll(config.pattern);
-		for (const match of matches) {
-			if (match.index !== undefined) {
-				findings.push({
-					type: config.type,
-					value: match[0],
-					index: match.index,
-					severity: config.severity as PIIFinding["severity"],
-				});
-			}
+/**
+ * Lazily yield findings pattern by pattern (unsorted). `types` restricts the
+ * scan to those finding types, so a caller that only needs credentials does not
+ * run the email, phone and card patterns at all.
+ */
+export function* matchPII(text: string, types?: ReadonlySet<string>): Generator<PIIFinding> {
+	for (const config of Object.values(PII_PATTERNS)) {
+		if (types && !types.has(config.type)) continue;
+		for (const match of text.matchAll(config.pattern)) {
+			yield {
+				type: config.type,
+				value: match[0],
+				index: match.index,
+				severity: config.severity as PIIFinding["severity"],
+			};
 		}
 	}
+}
+
+export function detectPII(text: string): PIIReport {
+	const findings = [...matchPII(text)];
 	findings.sort((a, b) => a.index - b.index);
 	return {
 		findings,

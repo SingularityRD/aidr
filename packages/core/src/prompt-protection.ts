@@ -11,13 +11,18 @@
  *
  * Results never contain a matched value — only category names and counts — so
  * the caller can show, log and audit them without re-disclosing the secret.
+ *
+ * Cost: a prompt can be megabytes of adversarial text, and the host kills a
+ * slow hook and then sends the prompt. Every detector pass is linear in the
+ * prompt, overlap resolution is a sort plus a sweep, a scan stops as soon as
+ * its decision is `block`, and an optional deadline is checked between passes.
  */
 
 import { PiiDetectorImpl } from "./dlp/pii-detector.js";
 import type { DlpPolicy } from "./dlp/policy.js";
 import { scanDlpInput } from "./dlp/scanner.js";
-import { SecretDetector } from "./dlp/secret-detector.js";
-import { detectPII } from "./pii-detector.js";
+import { SecretDetector, type SecretType } from "./dlp/secret-detector.js";
+import { matchPII } from "./pii-detector.js";
 import type { PromptProtectionConfig } from "./types.js";
 
 export type PromptProtectionDecision = "allow" | "warn" | "block";
@@ -38,6 +43,28 @@ export interface PromptProtectionResult {
 	userMessage?: string;
 	/** Notice for the model. Present only for `warn`. */
 	modelContext?: string;
+	/**
+	 * true when scanning stopped at the first blocking finding: the decision is
+	 * final, but counts are lower bounds and later categories were not scanned.
+	 */
+	partial?: true;
+}
+
+export interface PromptScanOptions {
+	/**
+	 * Wall-clock deadline (`Date.now()` milliseconds). Checked between detector
+	 * passes; once it has passed the scan throws {@link PromptScanDeadlineError}
+	 * instead of returning a result it did not finish.
+	 */
+	deadlineAt?: number;
+}
+
+/** The scan ran out of time; the prompt was not fully inspected. */
+export class PromptScanDeadlineError extends Error {
+	constructor() {
+		super("prompt scan exceeded its deadline");
+		this.name = "PromptScanDeadlineError";
+	}
 }
 
 export interface PromptTenantDlp {
@@ -158,33 +185,150 @@ function countKinds(
 	return counts;
 }
 
-/** Secret kinds found in `prompt`; overlapping matches of different detectors count once. */
-function detectSecretKinds(prompt: string): string[] {
-	const spans: Array<{ start: number; end: number }> = [];
-	const kinds: string[] = [];
-	const add = (kind: string, start: number, length: number): void => {
-		const end = start + length;
-		if (spans.some((span) => start < span.end && span.start < end)) return;
-		spans.push({ start, end });
-		kinds.push(kind);
+/**
+ * SecretDetector types used here. Its AWS-secret pattern has no left boundary
+ * and matches paths, so AWS secrets come from AWS_SECRET_CANDIDATE instead.
+ */
+const SECRET_DETECTOR_TYPES: ReadonlySet<SecretType> = new Set<SecretType>([
+	"aws_access_key",
+	"github_token",
+	"gitlab_token",
+	"slack_token",
+	"npm_token",
+	"private_key",
+	"generic_api_key",
+	"env_secret",
+]);
+
+interface Finding {
+	kind: string;
+	start: number;
+	end: number;
+}
+
+/** Throws {@link PromptScanDeadlineError} once the scan deadline has passed. */
+type Checkpoint = () => void;
+
+/** Candidates collected between two deadline checks inside one pass. */
+const CHECKPOINT_INTERVAL = 4096;
+
+function deadlineCheckpoint(deadlineAt: number | undefined): Checkpoint {
+	if (deadlineAt === undefined) return () => {};
+	return () => {
+		if (Date.now() > deadlineAt) throw new PromptScanDeadlineError();
 	};
-	for (const match of prompt.matchAll(PRIVATE_KEY_HEADER)) {
-		add("private_key", match.index, match[0].length);
-	}
-	for (const match of prompt.matchAll(AWS_SECRET_CANDIDATE)) {
-		if (plausibleAwsSecret(prompt, match.index, match[0])) {
-			add("aws_secret_key", match.index, match[0].length);
+}
+
+function mergeByStart(left: readonly Finding[], right: readonly Finding[]): Finding[] {
+	const merged: Finding[] = [];
+	let i = 0;
+	let j = 0;
+	while (i < left.length || j < right.length) {
+		const a = left[i];
+		const b = right[j];
+		if (a !== undefined && (b === undefined || a.start <= b.start)) {
+			merged.push(a);
+			i++;
+		} else if (b !== undefined) {
+			merged.push(b);
+			j++;
 		}
 	}
-	for (const match of SECRET_DETECTOR.detect(prompt)) {
-		// Its AWS-secret pattern has no left boundary and matches paths; handled above.
-		if (match.type === "aws_secret_key") continue;
-		add(match.type, prompt.indexOf(match.value, match.index), match.value.length);
+	return merged;
+}
+
+/**
+ * Non-overlapping findings, sorted by start. A pass keeps each candidate that
+ * overlaps neither a finding kept by an earlier pass nor an earlier-starting
+ * candidate kept from the same pass: earlier passes win, then earlier starts.
+ * A pass costs one sort plus one sweep; comparing every candidate with every
+ * kept finding was quadratic (88k emails took ~30 s).
+ */
+class DisjointFindings {
+	private kept: Finding[] = [];
+
+	get all(): readonly Finding[] {
+		return this.kept;
 	}
-	for (const finding of detectPII(prompt).findings) {
-		if (LEGACY_SECRET_KINDS.has(finding.type)) {
-			add(finding.type, finding.index, finding.value.length);
+
+	/** Adds one pass and returns the candidates it kept, in start order. */
+	addPass(candidates: Finding[]): Finding[] {
+		candidates.sort((left, right) => left.start - right.start);
+		const accepted: Finding[] = [];
+		let cursor = 0;
+		for (const candidate of candidates) {
+			// Kept findings are disjoint and sorted, so their ends are sorted too.
+			while ((this.kept[cursor]?.end ?? Number.POSITIVE_INFINITY) <= candidate.start) cursor++;
+			const next = this.kept[cursor];
+			if (next !== undefined && next.start < candidate.end) continue;
+			const previous = accepted[accepted.length - 1];
+			if (previous !== undefined && previous.end > candidate.start) continue;
+			accepted.push(candidate);
 		}
+		this.kept = mergeByStart(this.kept, accepted);
+		return accepted;
+	}
+}
+
+/** Collects a pass's candidates, checking the deadline as it goes. */
+function collect(pass: Iterable<Finding>, checkpoint: Checkpoint): Finding[] {
+	const candidates: Finding[] = [];
+	for (const finding of pass) {
+		candidates.push(finding);
+		if (candidates.length % CHECKPOINT_INTERVAL === 0) checkpoint();
+	}
+	return candidates;
+}
+
+/** Secret candidate passes in precedence order. Each is lazy, so a scan can stop at its first hit. */
+function secretPasses(prompt: string): Array<() => Generator<Finding>> {
+	return [
+		function* privateKeyHeaders() {
+			for (const match of prompt.matchAll(PRIVATE_KEY_HEADER)) {
+				yield { kind: "private_key", start: match.index, end: match.index + match[0].length };
+			}
+		},
+		function* awsSecrets() {
+			for (const match of prompt.matchAll(AWS_SECRET_CANDIDATE)) {
+				if (plausibleAwsSecret(prompt, match.index, match[0])) {
+					yield { kind: "aws_secret_key", start: match.index, end: match.index + match[0].length };
+				}
+			}
+		},
+		function* secretDetector() {
+			for (const match of SECRET_DETECTOR.scan(prompt, SECRET_DETECTOR_TYPES)) {
+				const start = prompt.indexOf(match.value, match.index);
+				yield { kind: match.type, start, end: start + match.value.length };
+			}
+		},
+		function* legacyCredentials() {
+			for (const finding of matchPII(prompt, LEGACY_SECRET_KINDS)) {
+				yield {
+					kind: finding.type,
+					start: finding.index,
+					end: finding.index + finding.value.length,
+				};
+			}
+		},
+	];
+}
+
+/**
+ * Secret kinds found in `prompt`; overlapping matches of different detectors
+ * count once. With `stopAtFirst` the scan returns at the first confirmed
+ * secret without running the remaining passes.
+ */
+function detectSecretKinds(prompt: string, stopAtFirst: boolean, checkpoint: Checkpoint): string[] {
+	const kept = new DisjointFindings();
+	const kinds: string[] = [];
+	for (const pass of secretPasses(prompt)) {
+		checkpoint();
+		if (stopAtFirst) {
+			const first = pass().next();
+			if (!first.done) return [first.value.kind];
+			continue;
+		}
+		for (const finding of kept.addPass(collect(pass(), checkpoint))) kinds.push(finding.kind);
 	}
 	return kinds;
 }
@@ -205,17 +349,24 @@ const PII_PRECEDENCE: Readonly<Record<string, number>> = {
 	phone: 3,
 };
 
-function detectPiiKinds(prompt: string): string[] {
-	const kept: Array<{ type: string; start: number; end: number }> = [];
-	const candidates = PII_DETECTOR.detect(prompt)
-		.filter((match) => plausiblePii(match.type, match.value))
-		.sort((left, right) => (PII_PRECEDENCE[left.type] ?? 9) - (PII_PRECEDENCE[right.type] ?? 9));
-	for (const match of candidates) {
-		if (kept.some((span) => match.start < span.end && span.start < match.end)) continue;
+/** PII kinds found in `prompt`, in position order; one pass per precedence level. */
+function detectPiiKinds(prompt: string, checkpoint: Checkpoint): string[] {
+	const passes = new Map<number, Finding[]>();
+	const matches = PII_DETECTOR.detect(prompt);
+	checkpoint();
+	for (const match of matches) {
+		if (!plausiblePii(match.type, match.value)) continue;
 		if (match.type === "phone" && isInsideLongerNumber(prompt, match.start, match.end)) continue;
-		kept.push({ type: match.type, start: match.start, end: match.end });
+		const precedence = PII_PRECEDENCE[match.type] ?? 9;
+		const pass = passes.get(precedence) ?? [];
+		if (pass.length === 0) passes.set(precedence, pass);
+		pass.push({ kind: match.type, start: match.start, end: match.end });
 	}
-	return kept.sort((left, right) => left.start - right.start).map((match) => match.type);
+	const kept = new DisjointFindings();
+	for (const precedence of [...passes.keys()].sort((left, right) => left - right)) {
+		kept.addPass(passes.get(precedence) ?? []);
+	}
+	return kept.all.map((finding) => finding.kind);
 }
 
 function summaries(
@@ -249,15 +400,36 @@ function tenantDlpBlock(prompt: string, tenant: PromptTenantDlp): PromptFindingS
 	};
 }
 
+function blockResult(
+	blocking: PromptFindingSummary[],
+	warning: PromptFindingSummary[],
+	partial: boolean,
+): PromptProtectionResult {
+	return {
+		decision: "block",
+		findings: [...blocking, ...warning],
+		userMessage: `🛡️ Singularity AIDR blocked this prompt before it reached the model: it appears to contain sensitive data (${kindList(blocking)}). Remove the sensitive value and resubmit. If it was a live credential that has been shared anywhere else, rotate it.`,
+		...(partial ? { partial: true as const } : {}),
+	};
+}
+
 /**
- * Inspect one prompt. Throws only on programming or policy errors; the caller
- * owns the failure policy (see the Claude Code `UserPromptSubmit` hook).
+ * Inspect one prompt. Throws {@link PromptScanDeadlineError} when
+ * `options.deadlineAt` passes mid-scan, and otherwise only on programming or
+ * policy errors; the caller owns the failure policy (see the Claude Code
+ * `UserPromptSubmit` hook).
+ *
+ * A `block` is final, so the scan stops at the first blocking finding: with
+ * secrets in `block` mode the first confirmed secret ends it, and later
+ * categories are skipped (`partial: true`).
  */
 export function scanPrompt(
 	prompt: string,
 	config: PromptProtectionConfig = DEFAULT_PROMPT_PROTECTION,
 	tenantDlp?: PromptTenantDlp,
+	options: PromptScanOptions = {},
 ): PromptProtectionResult {
+	const checkpoint = deadlineCheckpoint(options.deadlineAt);
 	const blocking: PromptFindingSummary[] = [];
 	const warning: PromptFindingSummary[] = [];
 	const route = (mode: PromptProtectionConfig["secrets"], found: PromptFindingSummary[]): void => {
@@ -265,28 +437,28 @@ export function scanPrompt(
 		else if (mode === "warn") warning.push(...found);
 	};
 
+	checkpoint();
 	if (config.secrets !== "off") {
-		route(
-			config.secrets,
-			summaries("secret", countKinds(detectSecretKinds(prompt), SECRET_KIND_LABELS)),
-		);
+		const kinds = detectSecretKinds(prompt, config.secrets === "block", checkpoint);
+		route(config.secrets, summaries("secret", countKinds(kinds, SECRET_KIND_LABELS)));
+		// Stopped at the first secret: the count is a lower bound.
+		if (blocking.length > 0) return blockResult(blocking, warning, true);
 	}
 	if (config.pii !== "off") {
-		route(config.pii, summaries("pii", countKinds(detectPiiKinds(prompt), PII_KIND_LABELS)));
+		checkpoint();
+		route(
+			config.pii,
+			summaries("pii", countKinds(detectPiiKinds(prompt, checkpoint), PII_KIND_LABELS)),
+		);
 	}
 	if (tenantDlp) {
+		if (blocking.length > 0) return blockResult(blocking, warning, true);
+		checkpoint();
 		const tenantFinding = tenantDlpBlock(prompt, tenantDlp);
 		if (tenantFinding) blocking.push(tenantFinding);
 	}
 
-	if (blocking.length > 0) {
-		const findings = [...blocking, ...warning];
-		return {
-			decision: "block",
-			findings,
-			userMessage: `🛡️ Singularity AIDR blocked this prompt before it reached the model: it appears to contain sensitive data (${kindList(blocking)}). Remove the sensitive value and resubmit. If it was a live credential that has been shared anywhere else, rotate it.`,
-		};
-	}
+	if (blocking.length > 0) return blockResult(blocking, warning, false);
 	if (warning.length > 0) {
 		const kinds = kindList(warning);
 		return {

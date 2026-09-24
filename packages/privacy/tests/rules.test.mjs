@@ -130,3 +130,16 @@ test('50 KB mixed text scans in bounded time',()=>{
   const times=[];for(let i=0;i<3;i++){const t=performance.now();scanText(text);times.push(performance.now()-t);}
   assert.ok(Math.min(...times)<250,`best of 3 took ${Math.min(...times)}ms`);
 });
+
+test('dash-joined JWT prefixes scan in linear time and real JWTs still match',()=>{
+  // A start after `-` used to rescan the rest of the run from every `eyJ`: ~15 s for these
+  // 240 KB, ~290 s for 1 MiB.
+  const text='eyJ-'.repeat(60000);
+  const times=[];for(let i=0;i<3;i++){const t=performance.now();scanText(text);times.push(performance.now()-t);}
+  assert.ok(Math.min(...times)<1000,`best of 3 took ${Math.min(...times)}ms`);
+  const jwt='eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.abcdEFGHijkl';
+  for(const text of [`token=${jwt}`,`Authorization: ${jwt}`,`"${jwt}"`]){
+    const hit=scanText(text).findings.find(f=>f.type==='SECRET');
+    assert.ok(hit,text);assert.equal(text.slice(hit.start,hit.end),jwt);
+  }
+});

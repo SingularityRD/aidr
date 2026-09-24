@@ -119,7 +119,9 @@ export function detectRules(text:string,emit:Emit):void {
   run(text,/(?<![A-Za-z0-9_])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9_])/g,'SECRET',emit,.99);
   run(text,/(?<![A-Za-z0-9_])(?:gh[pousr]_|github_pat_|glpat-|sk-(?:proj-|ant-api[0-9]{2}-)?)[A-Za-z0-9_-]{16,}(?![A-Za-z0-9_-])/g,'SECRET',emit,.98);
   run(text,/\b(?:Bearer|Basic)[ \t]+([A-Za-z0-9_+/.=~-]{8,})/gi,'SECRET',emit,.98,'context',1);
-  run(text,/(?<![A-Za-z0-9_])eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}(?![A-Za-z0-9_-])/g,'SECRET',emit,.97);
+  // Same boundary class on both sides: starting after `-` too let `eyJ-eyJ-…` rescan the rest of
+  // the run from every `eyJ`, which is quadratic in the input length.
+  run(text,/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}(?![A-Za-z0-9_-])/g,'SECRET',emit,.97);
   for(const m of text.replace(/[İı]/g,'i').matchAll(/(?:api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password|passwd|pwd|secret|şifre|sifre)["']?[ \t]*[:=][ \t]*/giu)) {
     let start=m.index+m[0].length, end=start;
     const quote=text[start];

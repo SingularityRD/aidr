@@ -240,12 +240,7 @@ export class SecretDetector {
 	 * @returns Array of detected {@link SecretMatch} instances
 	 */
 	detect(content: string): SecretMatch[] {
-		const matches: SecretMatch[] = [];
-
-		for (const secretPattern of SECRET_PATTERNS) {
-			const patternMatches = this.matchPattern(content, secretPattern);
-			matches.push(...patternMatches);
-		}
+		const matches = [...this.scan(content)];
 
 		// Sort matches by position in source content
 		matches.sort((a, b) => a.index - b.index);
@@ -255,6 +250,19 @@ export class SecretDetector {
 
 		this.logger.debug(`SecretDetector: found ${deduplicated.length} unique match(es)`);
 		return deduplicated;
+	}
+
+	/**
+	 * Lazily yield matches pattern by pattern, in pattern order and neither
+	 * sorted nor deduplicated. A caller that only needs to know whether a secret
+	 * exists can stop after the first match without running the remaining
+	 * patterns. `types` restricts the scan to those secret types.
+	 */
+	*scan(content: string, types?: ReadonlySet<SecretType>): Generator<SecretMatch> {
+		for (const secretPattern of SECRET_PATTERNS) {
+			if (types && !types.has(secretPattern.type)) continue;
+			yield* this.matchPattern(content, secretPattern);
+		}
 	}
 
 	/**
@@ -283,9 +291,7 @@ export class SecretDetector {
 	/**
 	 * Run a single pattern against content and produce SecretMatch entries.
 	 */
-	private matchPattern(content: string, secretPattern: SecretPattern): SecretMatch[] {
-		const results: SecretMatch[] = [];
-
+	private *matchPattern(content: string, secretPattern: SecretPattern): Generator<SecretMatch> {
 		// Clone regex to reset lastIndex
 		const regex = new RegExp(secretPattern.pattern.source, secretPattern.pattern.flags);
 		let match: RegExpExecArray | null;
@@ -313,7 +319,7 @@ export class SecretDetector {
 			const context = this.extractContext(content, match.index, value.length);
 			const riskScore = this.calculateRiskScore(secretPattern.severity, entropy, confidence);
 
-			results.push({
+			yield {
 				type: secretPattern.type,
 				value,
 				context,
@@ -321,10 +327,8 @@ export class SecretDetector {
 				entropy,
 				riskScore,
 				confidence,
-			});
+			};
 		}
-
-		return results;
 	}
 
 	/**
