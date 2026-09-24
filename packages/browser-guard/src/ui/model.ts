@@ -26,6 +26,7 @@ export type ManagedKey =
 	| "disabledSites"
 	| "maskPaste"
 	| "restoreResponses"
+	| "useNativeHost"
 	| "language"
 	| "telemetry";
 

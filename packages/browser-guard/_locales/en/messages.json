@@ -66,7 +66,7 @@
 		"description": "Site disabled by managed policy."
 	},
 	"status_disabled_policy_detail": {
-		"message": "Your organization turned off Browser Guard on $SITE$.",
+		"message": "Your organization turned off masking on $SITE$. Nothing is masked there; only counts of sensitive items are recorded.",
 		"description": "Disabled by policy detail.",
 		"placeholders": {
 			"site": {
@@ -80,7 +80,7 @@
 		"description": "Site disabled by the user."
 	},
 	"status_disabled_user_detail": {
-		"message": "You turned off protection on $SITE$. Turn it back on in Settings › Sites.",
+		"message": "You turned off masking on $SITE$: nothing is masked there, only counts of sensitive items are recorded. Turn it back on in Settings › Sites.",
 		"description": "Disabled by user detail.",
 		"placeholders": {
 			"site": {
@@ -512,7 +512,7 @@
 		"description": "Validation."
 	},
 	"sites_intro": {
-		"message": "Choose where Browser Guard checks your messages.",
+		"message": "Choose where Browser Guard masks your messages. On sites you turn off nothing is masked or blocked; Browser Guard only counts how often sensitive data is sent.",
 		"description": "Sites intro."
 	},
 	"site_blocked_tag": {
@@ -774,5 +774,49 @@
 	"entity_LICENSE_PLATE": {
 		"message": "Vehicle license plate",
 		"description": "Entity type LICENSE_PLATE."
+	},
+	"native_title": {
+		"message": "Advanced name and address detection",
+		"description": "Options: native host subsection title."
+	},
+	"native_intro": {
+		"message": "Optional. The AIDR Privacy helper app, installed on this computer by your IT team, recognises names, addresses and places in free text that the built-in rules cannot. Text is checked locally over the browser's native messaging channel and never leaves this computer. Without the helper, the built-in rules keep working.",
+		"description": "Options: native host explanation."
+	},
+	"native_toggle_label": {
+		"message": "Use the AIDR Privacy helper app",
+		"description": "Options: native host switch label."
+	},
+	"native_toggle_help": {
+		"message": "Needs the permission to communicate with cooperating native applications; you are asked for it when you turn this on.",
+		"description": "Options: native host switch help."
+	},
+	"native_permission_granted": {
+		"message": "Permission to talk to the helper app is granted.",
+		"description": "Options: nativeMessaging permission granted."
+	},
+	"native_permission_missing": {
+		"message": "Permission to talk to the helper app has not been granted yet.",
+		"description": "Options: nativeMessaging permission missing."
+	},
+	"native_permission_unsupported": {
+		"message": "This browser cannot grant the permission from this page.",
+		"description": "Options: permissions API unavailable."
+	},
+	"native_permission_button": {
+		"message": "Grant permission",
+		"description": "Options: button requesting the nativeMessaging permission."
+	},
+	"native_permission_denied": {
+		"message": "Permission was not granted. The built-in rules stay active.",
+		"description": "Notice: nativeMessaging permission request declined."
+	},
+	"notice_native_permission_granted": {
+		"message": "Permission granted.",
+		"description": "Notice: nativeMessaging permission granted."
+	},
+	"native_status_disabled": {
+		"message": "Advanced detection is off; built-in rules are active",
+		"description": "Options: native host not in use."
 	}
 }

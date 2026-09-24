@@ -288,9 +288,21 @@ describe("validateUserSettings", () => {
 			"disabledSites",
 			"maskPaste",
 			"restoreResponses",
+			"useNativeHost",
 			"language",
 			"telemetry",
 		]);
+	});
+
+	it("lets a user opt in to the native host unless the administrator set it", () => {
+		expect(evaluatePolicy(undefined, { useNativeHost: true }).policy.useNativeHost).toBe(true);
+		// Opting in only adds detection, so a managed policy without overrides does not lock it.
+		const managed = evaluatePolicy({ mode: "auto" }, { useNativeHost: true }).policy;
+		expect(managed.useNativeHost).toBe(true);
+		expect(managed.managedKeys).not.toContain("useNativeHost");
+		const locked = evaluatePolicy({ useNativeHost: false }, { useNativeHost: true }).policy;
+		expect(locked.useNativeHost).toBe(false);
+		expect(locked.managedKeys).toContain("useNativeHost");
 	});
 });
 

@@ -9,12 +9,14 @@ import modes from "./modes.mjs";
 import paste from "./paste.mjs";
 import popup from "./popup.mjs";
 import preflight from "./preflight.mjs";
+import reloadRestore from "./reload-restore.mjs";
 import restoreSideChannels from "./restore-side-channels.mjs";
 
 export const SCENARIOS = [
 	...preflight,
 	...autoMask,
 	...restoreSideChannels,
+	...reloadRestore,
 	...paste,
 	...modes,
 	...fileUpload,

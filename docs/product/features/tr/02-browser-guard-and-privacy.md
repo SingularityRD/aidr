@@ -200,8 +200,9 @@ bütçesi dolduğunda ya da kodlanmış içerik çözücünün açabildiğinden 
 yerleştirildiğinde. O ana kadarki bulgular korunur, ancak sonuç hiçbir zaman "temiz"
 olarak raporlanmaz.
 
-**Nasıl kullanılır** — Her zaman açıktır. Denetlenmemiş metnin geçtiği tek durumlar hiç
-engellemeyen `monitor` modu ve `disabledSites` listesindeki sitelerdir.
+**Nasıl kullanılır** — Her zaman açıktır. Metnin maskelenmeden geçtiği tek durumlar hiç
+engellemeyen `monitor` modu ve aynı biçimde izlenen `disabledSites` listesindeki sitelerdir
+(metin yine taranır ve sayılır).
 
 **Örnek** — `auto` modunda kullanıcı 300.000 karakterlik bir log yapıştırıp Enter'a basar.
 Siteye hiçbir şey gitmez. **Gönderim engellendi** başlıklı kırmızı balonda "AIDR bu istemi
@@ -296,8 +297,10 @@ Girdi: `sunucu 10.20.30.40 mac 00:1A:2B:3C:4D:5E anahtar AKIAIOSFODNN7EXAMPLE`
 
 **Sınırlamalar**
 - Akan metindeki ad ve adresleri kurallar bulamaz. İsteğe bağlı native host (özellik 16)
-  NER eklemek için tasarlanmıştır, ancak bu sürümde istem taraması onu henüz kullanmıyor.
-  Önemli adlar için özel terim ya da tam veri eşleştirme kullanın.
+  açık ve erişilebilir olduğunda NER bulguları (`PERSON`, `ADDRESS`, `LOCATION`) istem ve
+  yapıştırma taramasına eklenir. Host yoksa tarama yalnızca kurallarla yapılır ve sayfa
+  içi mesaj bunu belirtir. Her zaman yakalanması gereken adlar için özel terim ya da tam
+  veri eşleştirme kullanın.
 - Pasaport, vergi, kimlik, banka hesap numarası ve doğum tarihi değerleri yalnızca bir
   etiketin yanında tanınır. Bu türler için sağlama toplamı yoktur.
 - Uluslararası telefon kuralı, ülke numaralandırma planlarını değil makullüğü denetler.
@@ -325,10 +328,18 @@ değeri hiçbir zaman almaz.
   IBAN ise boşluksuz büyük harfli biçimiyle karşılaştırılır. Numaralar sayfa açık olduğu
   sürece yeniden kullanılmaz. Böylece eski bir yanıt başka bir kişinin değerine "geri
   yüklenemez".
-- **Yalnızca bellek.** Yer tutucu-değer eşlemesi ("kasa") ilgili sayfanın içerik betiği
-  belleğinde tutulur. `chrome.storage.local`'a ya da diske yazılmaz, ağa gönderilmez.
-  4 saat kullanılmayan kayıtlar unutulur. En fazla 10.000 kayıt tutulur; sınır aşılınca en
-  uzun süre kullanılmayan kayıt silinir.
+- **Yalnızca oturum belleği, sekme başına.** Yer tutucu-değer eşlemesi ("kasa") içerik
+  betiğinin belleğinde tutulur. Her maskeleme ve gönderimden sonra içerik betiği bir
+  kopyasını arka plan çalışanına verir; çalışan bunu sekme kimliği ve sitenin kaynağı
+  (origin) altında `chrome.storage.session` içinde (bellekte tutulur, tarayıcı kapanınca
+  silinir) saklar. Bu alan yalnızca eklentinin güvenilir bağlamlarına açıktır; ne yapay zekâ
+  sitesi ne de içerik betiği onu doğrudan okuyabilir, başka bir sekme ya da site hiçbir şey
+  alamaz. Sayfa yeniden yüklendiğinde kasası, o sekmeden daha önce gönderilmiş yer
+  tutucuların listesiyle birlikte geri gelir; böylece yanıtlar (ve sitenin yeniden çizdiği
+  geçmiş) yine geri yüklenir. `neverRestore` türleri hiç kopyalanmaz. Sekme kapanınca ya da
+  4 saat boyunca kaydedilmezse kopya silinir. Kasa `chrome.storage.local`'a ya da diske
+  yazılmaz, ağa gönderilmez. 4 saat kullanılmayan kayıtlar unutulur. En fazla 10.000 kayıt
+  tutulur; sınır aşılınca en uzun süre kullanılmayan kayıt silinir.
 - **Değeri sayfaya açmadan geri yükleme.** Geri yükleyici yalnızca yanıtlardaki ve
   kullanıcının gönderdiği mesajlardaki metin düğümlerine dokunur, istem düzenleyicisine asla
   dokunmaz. Orijinal değer kapalı bir shadow root içinde çizilir; sayfanın kendi DOM'u yer
@@ -364,8 +375,15 @@ yüklendi" ipucuyla gösterilir.
 | Platformlar | Chrome, Edge, Firefox (masaüstü) |
 
 **Sınırlamalar**
-- Sekme yeniden yüklendiğinde ya da kapatıldığında eşleme unutulur. Konuşmada zaten
-  bulunan yer tutucular o andan sonra yer tutucu olarak kalır.
+- Eşleme aynı sekmede aynı sitenin yeniden yüklenmesinden sonra korunur (gerçek tarayıcı
+  senaryosu `reload-restore` bunu doğrular). Sekme kapatıldığında, tarayıcı yeniden
+  başlatıldığında, 4 saat boyunca kaydedilmediğinde ya da konuşma başka bir sekmede
+  açıldığında korunmaz. Sayfa yüklenirken arka plan çalışanı 1,5 saniye içinde yanıt
+  vermezse de kaybolur. Konuşmada zaten bulunan yer tutucular o durumda yer tutucu olarak
+  kalır.
+- Yeniden yüklemeden sonra, o sekmeden daha önce gönderilmiş bir yer tutucu konuşmanın her
+  yerinde geri yüklenir; sitenin önceden çizdiği geçmiş de buna dahildir. Yeniden yüklemeden
+  önce yalnızca gönderimden sonra görünen içerikte geri yüklenir.
 - Yalnızca sitenin sayfada gösterdiği metin geri yüklenir. Sitenin dışa aktardığı, kendi
   panoya kopyaladığı ya da bağlantıyla paylaştığı içerikte yer tutucular bulunur.
 - Model bir yer tutucuyu tanınan biçimlerin ötesinde değiştirirse (örneğin çevirirse) geri
@@ -568,8 +586,13 @@ yüklemede orijinal e-posta bulunmadığını ve başlık satırının korunduğ
 - PDF'ler, Office belgeleri ve görseller tarayıcıda **incelenmez** (OCR ya da belge
   ayrıştırma yok). `block` modu dışında uyarıyla geçerler. Bu tür yüklemelerin hiç
   ulaşmaması gerekiyorsa `fileHandling: "block"` kullanın.
-- Eski kodlamalardaki metin dosyaları (örneğin Türkçe karakter içeren Windows-1254 bir CSV)
-  katı UTF-8 denetimini geçemez ve ikili dosya sayılır.
+- UTF-8 olmayan metin dosyaları Windows-1254 (Türkçe) olarak, daha uygun düştüğünde
+  Windows-1252 olarak çözülür, taranır ve maskelenmiş kopya UTF-8 olarak yüklenir (CSV/TSV
+  için BOM ile). Başka tek baytlık kodlamalardaki dosyalar (örneğin Kiril Windows-1251) bu
+  iki kod sayfasından biriyle çözüldüğü için Latin dışı karakterleri bozuk çıkar ve bu
+  karakterlerle yazılmış değerler kaçabilir. NUL baytı içeren metin adlı bir dosya (örneğin
+  BOM'suz UTF-16) güvenle çözülemez ve `monitor` modu dışında engellenir
+  (`TEXT_FILE_NOT_DECODABLE`).
 - Metin dosyalarında `confirm` ve `block` modları bir onay penceresi göstermez; temizlenmiş
   kopya yüklenir. Tüm yüklemeleri yalnızca `fileHandling: "block"` reddeder.
 - `maxFileBytes` sınırını aşan dosya kısmen taranmaz, engellenir.
@@ -767,7 +790,9 @@ Yöneticiler ise kilitli ayarların kilitli olarak görünmesini ister; böylece
   ya da "Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin" satırı görünür. Araç
   çubuğu simgesindeki rozet, sekmede maskelenen öğe sayısını gösterir.
 - **Ayarlar sayfası** bölümleri: **Koruma** (mod, neler algılansın, yapıştırılan metni
-  maskele, yanıtlarda geri getir), **Özel terimler**, **Siteler** (site bazında aç/kapat;
+  maskele, yanıtlarda geri getir, **Gelişmiş ad ve adres algılama**: native host anahtarı,
+  **İzin ver** düğmesiyle birlikte `nativeMessaging` izninin durumu ve host durumu),
+  **Özel terimler**, **Siteler** (site bazında aç/kapat;
   engelli siteler **Engelli** etiketiyle), **Kuruluş bağlantısı** (kontrol düzlemi adresi ve
   API anahtarı, "Neler paylaşılır" / "Asla paylaşılmaz" açıklamasıyla), **Dil**,
   **Hakkında** (sürüm, politika kimliği, gizlilik açıklaması).
@@ -814,8 +839,12 @@ geçirir. Hiçbir şey maskelenmez, gönderimler yine sayılır. Açılır pence
 kadar duraklatıldı** ve "O saate kadar ChatGPT hizmetine giden mesajlar yalnızca izlenir,
 hiçbir veri maskelenmez." yazar. Arka plan 1–60 dakikalık duraklatmaları kabul eder; açılır
 pencere 15 dakika sunar. Duraklatma, süre dolunca ya da **Korumayı sürdür** ile biter.
-**Site bazında kapatma** (Ayarlar → **Siteler**) denetimi o sitede kapatır. Açılır pencere
-bu durumda **Bu site için kapalı** gösterir.
+**Site bazında kapatma** (Ayarlar → **Siteler**) o siteyi kalıcı olarak aynı izleme
+davranışına alır: istemler, yapıştırmalar ve dosyalar değiştirilmeden gider, ancak yine
+taranır ve sayılarıyla birlikte "allowed" olarak kaydedilir; böylece açılır penceredeki
+istatistikler ve panel kullanımı görmeye devam eder. Açılır pencere bu durumda **Bu site
+için kapalı** gösterir ("ChatGPT için maskelemeyi kapattınız: orada hiçbir şey maskelenmez,
+yalnızca hassas öğe sayıları kaydedilir.").
 
 **Nasıl kullanılır** — Yönetilen anahtarlar `allowUserPause` (varsayılan `true`) ve
 `disabledSites` (site kimlikleri). Duraklatmaya izin verilmediğinde açılır pencere duraklatma
@@ -836,10 +865,11 @@ kaydedilir.
 | Platformlar | Chrome, Edge, Firefox (masaüstü) |
 
 **Sınırlamalar**
-- `disabledSites` listesindeki bir sitede denetim hiçbir şey yapmaz: maskeleme, engelleme ya
-  da sayım olmaz. Yönetilen şemadaki açıklama ("yalnızca izler") mevcut davranıştan daha
-  geniştir.
-- `blockedSites` ve `fileHandling: "block"` duraklatma süresince de geçerlidir.
+- `disabledSites` listesindeki bir sitede hiçbir şey maskelenmez; orijinal değerler o yapay
+  zekâ hizmetine ulaşır. Yalnızca sayılar tutulur (açılır pencere istatistikleri ve
+  yapılandırılmışsa telemetri).
+- `blockedSites` ve `fileHandling: "block"` duraklatma süresince ve `disabledSites`
+  listesindeki sitelerde de geçerlidir.
 
 ### 13. Yapay zekâ sitelerini engelleme
 
@@ -912,14 +942,14 @@ Tüm yönetilen anahtarlar (`static/managed_schema.json` ve `src/background/poli
 | `detectSignals` | boolean | `true` | Prompt injection ve kaynak kodu sinyallerini algıla |
 | `signalAction` | `off` \| `warn` \| `block` | `warn` | Sinyale verilecek tepki (özellik 10) |
 | `blockedSites` | site kimliği dizisi | yok | Sayfaları açılmayan siteler (özellik 13) |
-| `disabledSites` | site kimliği dizisi | yok | Denetimin kapalı olduğu siteler (özellik 12) |
+| `disabledSites` | site kimliği dizisi | yok | Yalnızca izlenen siteler: denetim hiçbir şeyi maskelemez ya da engellemez, gönderimler sayılır (özellik 12) |
 | `allowUserPause` | boolean | `true` | Kullanıcı en fazla 60 dakika duraklatabilir |
 | `allowSendAnyway` | boolean | `true` | Kullanıcı uyarıdan sonra maskesiz gönderebilir |
 | `maskPaste` | boolean | `true` | Yapıştırılan metni maskele (özellik 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Yükleme davranışı (özellik 7) |
 | `maxFileBytes` | tamsayı, 1 ile 52.428.800 arası | 5.242.880 (5 MiB) | Taranan en büyük dosya; daha büyükler engellenir |
 | `restoreResponses` | boolean | `true` | Orijinalleri yanıtlarda yerel olarak geri yükle |
-| `useNativeHost` | boolean | `false` | AIDR Privacy native host'unu kullan (özellik 16) |
+| `useNativeHost` | boolean | `false` | NER için AIDR Privacy native host'unu kullan (özellik 16). Yönetilmiyorsa kullanıcı ayarlar sayfasından da açabilir |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | yok (telemetri yok) | Yalnızca sayım raporlama. `https://` zorunlu (düz `http://` yalnızca `localhost`/`127.0.0.1` için); kimlik bilgisi, sorgu ya da parça (fragment) içeremez; API anahtarı 8–512 yazdırılabilir karakter |
 | `language` | `auto` \| `en` \| `tr` | `auto` | Arayüz dili |
 | `policyId` | metin, `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | `aidr-browser-guard-default` | Telemetriyle raporlanan kimlik |
@@ -1030,8 +1060,10 @@ satırı bir tarama ve iki öğe artar.
 **Sınırlamalar**
 - Tasarım gereği yalnızca sayım vardır. Panel hangi değerin, istemin ya da dosyanın söz konusu
   olduğunu gösteremez.
-- Panelin ürettiği politika parçası, eklentinin varsayılanında kapalı olan `USERNAME` ve
-  `LOCATION` dahil 23 türün tamamını açar. Dağıtmadan önce gözden geçirin.
+- Panelin ürettiği politika parçası eklentinin varsayılan türlerini listeler (`USERNAME` ve
+  `LOCATION` dışında hepsi; bir test iki listenin aynı kalmasını denetler). Bu iki türü
+  istiyorsanız kendiniz ekleyin; yönetilen `enabledEntities` listesinin kullanıcılar için
+  kilitlendiğini unutmayın.
 - Kullanıcının girdiği API anahtarı o tarayıcı profilinin `chrome.storage.local` alanında
   saklanır.
 - Plan kataloğu ticari onay (COM-001) bekleyen bir liste fiyatı yansısıdır. Kod, olay alımında
@@ -1046,26 +1078,36 @@ bilgileri için öğrenilmiş varlık adı tanıma (NER) eklemektir.
 **Neden önemli** — Kurallar bir cümlenin içindeki "Ahmet Kaya" adını tanıyamaz. Yerel bir NER
 modeli, metni makineden çıkarmadan bunu yapabilir.
 
-**Nasıl çalışır** — Arka plandaki köprü, privacy host'unun native messaging protokolünü
-tarayıcının stdio kanalı üzerinden konuşur. Soket ya da localhost HTTP uç noktası kullanılmaz.
-Her tarama yeni bir host süreci ve 2 saniyelik bir bütçe kullanır. 1 MiB'tan büyük metin
-gönderilmez. Art arda üç hatadan sonra host 60 saniye boyunca kullanılamaz sayılır. Host'tan
-gelen her aralık `source: "native-ner"` ve sabit 0,9 skoruyla işaretlenir. Hiçbir şey kalıcı
-olarak saklanmaz. Yalnızca metnin kendisi gönderilir; adres, site, sekme ya da kullanıcı bilgisi
-gönderilmez.
+**Nasıl çalışır** — `useNativeHost` açıkken her istem ve yapıştırma taraması, yerleşik
+kurallarla paralel olarak arka plan çalışanından NER ister (`NATIVE_SCAN`). Çalışanın köprüsü
+privacy host'unun native messaging protokolünü tarayıcının stdio kanalı üzerinden konuşur.
+Soket ya da localhost HTTP uç noktası kullanılmaz. Her tarama yeni bir host süreci ve
+2 saniyelik bir bütçe kullanır (sayfa en fazla 2,5 saniye bekler). 200.000 karakterden uzun
+metin gönderilmez. Art arda üç hatadan sonra host 60 saniye boyunca kullanılamaz sayılır.
+Host'un `PERSON`, `ADDRESS` ve `LOCATION` aralıkları (yalnızca `enabledEntities` içinde açık
+olan türler) `source: "native-ner"` ve sabit 0,9 skoruyla işaretlenip maskelemeden önce kural
+bulgularıyla birleştirilir. Host kullanılabilir bir yanıt vermezse istem yalnızca kurallarla
+denetlenir ve sayfa içi bildirim ya da balon "Gelişmiş ad ve adres algılama (yerel yardımcı
+uygulama) kullanılamıyor: yalnızca yerleşik kurallarla kontrol edildi." der (temiz çıkan
+istemler için sayfa başına bir kez). Hiçbir şey kalıcı olarak saklanmaz. Yalnızca metnin
+kendisi gönderilir; adres, site, sekme ya da kullanıcı bilgisi gönderilmez.
 
-**Nasıl kullanılır** (yöneticiler için; ayrıntılar
+**Nasıl kullanılır** (ayrıntılar
 [native-host.md](../../../../packages/browser-guard/docs/native-host.md) belgesinde):
 1. Host'u `packages/privacy` içinden (`docs/BROWSER.md` §4, `deployment/README.md`) onaylı bir
    NER model bloğuyla kurup kaydedin. Model bloğu yoksa host `coverage: "rules-only"` bildirir.
 2. Browser Guard'ın eklenti kimliğini tanımlayın:
    `node native/prepare-host.mjs --config <mutlak-yol> --out <mutlak-yol> --extension-id <browser-guard-kimliği>`.
-3. İsteğe bağlı `nativeMessaging` iznini verin.
-4. Yönetilen anahtarı `useNativeHost: true` yapın.
+3. Açın: yönetilen anahtar `useNativeHost: true` ya da Ayarlar → **Koruma** → **AIDR Privacy
+   yardımcı uygulamasını kullan** (anahtar yöneticinin denetimindeyse kullanılamaz).
+4. İsteğe bağlı `nativeMessaging` iznini verin: anahtarı açmak izni ister; host'u yönetici
+   açtıysa ayarlar sayfası **İzin ver** düğmesini gösterir. Tarayıcılar bu isteğe bağlı izni
+   politikayla verdirmez; her kullanıcı bir kez onaylar.
 
-**Örnek** — Host kurulu ve etkinken açılır pencere "Gelişmiş algılama bağlı" gösterir. Değilse
-"Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin" yazar ve koruma yerleşik
-kurallarla devam eder.
+**Örnek** — Host kurulu ve etkinken açılır pencere ve ayarlar sayfası "Gelişmiş algılama
+bağlı" gösterir ve "Ahmet Kaya'ya yaz" metni "`[PERSON_1]`'ya yaz" olarak gider. Değilse
+"Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin" yazar, koruma yerleşik kurallarla
+devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını belirtir.
 
 **Kapsam**
 
@@ -1076,10 +1118,12 @@ kurallarla devam eder.
 | Platformlar | Yalnızca Chrome ve Edge (host yalnızca `chrome-extension://` çağıranları kabul eder; Firefox "kullanılamıyor" bildirir) |
 
 **Sınırlamalar — güvenmeden önce okuyun**
-- **Bu sürümde köprü, istem taramasında henüz kullanılmıyor.** Arka plan isteği karşılayabilir
-  ve açılır pencere host durumunu gösterir, ancak içerik betiği istemleri host'a göndermez. Bu
-  nedenle NER bulguları maskelemeye katılmaz. Bu entegrasyonu önizleme olarak değerlendirin.
-- Eklentide `nativeMessaging` iznini isteyen bir arayüz yoktur.
+- NER yalnızca istemlere ve yapıştırılan metne uygulanır. Yüklenen dosyalar kurallarla
+  taranır.
+- Host aralık değil, temizlenmiş bir kopya döndürür. Köprü bunu girdiyle hizalar ve belirsiz
+  aralıkları genişletir (sızdırmak yerine fazla maskeler); hizalanamayan çıktı o istem için
+  "NER sonucu yok" sayılır.
+- Host'un hâlâ taradığı bir istemin gönderilmesi en fazla 2,5 saniye gecikebilir.
 - `packages/privacy` host protokolünü içerir, ancak **NER model ağırlıklarını ve doğruluk
   kanıtını içermez**. Kesinlik ve duyarlılığı kendi verinizle ölçün.
 - OCR, privacy paketinin görsel katmanının parçasıdır (özellik 20). Browser Guard görsellere ve
@@ -1101,7 +1145,7 @@ minimizasyonu yükümlülüklerini desteklemek üzere tasarlanmıştır.
 | Veri | Nereye gider |
 |---|---|
 | İstem metni, yapıştırılan metin, dosya içeriği | Sayfada taranır. Yapay zekâ sitesi maskelenmiş sürümü alır (`monitor` modunda, **Orijinali gönder**/**Yine de gönder** sonrasında, duraklatma süresince ya da kapatılmış bir sitede orijinali alır) |
-| Yer tutucuların arkasındaki orijinal değerler | Yalnızca o sayfanın içerik betiği belleği; diske ya da depolamaya yazılmaz, gönderilmez |
+| Yer tutucuların arkasındaki orijinal değerler | Sayfanın içerik betiği belleği ve sekme başına `chrome.storage.session` içindeki bir kopya (bellekte tutulur, yalnızca eklentinin güvenilir bağlamlarına açıktır; sekme kapanınca, 4 saat kaydedilmeyince ya da tarayıcı kapanınca silinir); `neverRestore` türleri kopyalanmaz. Diske ya da `chrome.storage.local`'a yazılmaz, gönderilmez |
 | Ayarlar, özel terimler, telemetri API anahtarı | Tarayıcı profilinin `chrome.storage.local` alanı (yönetilen değerler tarayıcı politikasından gelir) |
 | Oturum istatistikleri | `chrome.storage.session` (tarayıcı kapanınca silinir) |
 | Telemetri, yalnızca `telemetry` ayarlıysa | Türe göre sayılar, site kimliği, eylem, kanal, politika kimliği, kuruluma özgü rastgele kimlik, tarayıcı ailesi ve ana sürümü, eklenti sürümü. Yapılandırılan kontrol düzlemine gider |

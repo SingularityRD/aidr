@@ -260,7 +260,19 @@ export type GuardMessage =
 	/** minutes 1..60 pauses (only when policy.allowUserPause); 0 resumes. */
 	| { readonly type: "PAUSE"; readonly minutes: number }
 	| { readonly type: "NATIVE_SCAN"; readonly text: string }
-	| { readonly type: "SET_RESTORE_VISIBLE"; readonly visible: boolean };
+	| { readonly type: "SET_RESTORE_VISIBLE"; readonly visible: boolean }
+	/**
+	 * Content script -> worker: persist this tab's vault (restorable entries only) and the
+	 * placeholders already sent from it in chrome.storage.session, keyed by the sender's
+	 * tab id + origin (never storage.local, never readable by page scripts).
+	 */
+	| {
+			readonly type: "VAULT_SAVE";
+			readonly snapshot: VaultSnapshot;
+			readonly sent: readonly string[];
+	  }
+	/** Content script -> worker: the vault saved for the sender's tab id + origin, if any. */
+	| { readonly type: "VAULT_LOAD" };
 
 /**
  * Background worker replies to GuardMessage (src/background/index.ts). Every reply is
@@ -269,7 +281,7 @@ export type GuardMessage =
  */
 export interface GuardError {
 	readonly ok: false;
-	/** Stable code: SENDER_DENIED, BAD_MESSAGE, NOT_ALLOWED, LOCKED_KEYS, INVALID_SETTINGS, PAUSE_DISABLED, INTERNAL. */
+	/** Stable code: SENDER_DENIED, BAD_MESSAGE, NOT_ALLOWED, LOCKED_KEYS, INVALID_SETTINGS, PAUSE_DISABLED, TOO_LARGE, INTERNAL. */
 	readonly error: string;
 	/** Offending setting keys for LOCKED_KEYS / INVALID_SETTINGS. */
 	readonly keys?: readonly string[];
@@ -280,8 +292,23 @@ export interface GuardResponses {
 	readonly GET_STATS: { readonly ok: true; readonly stats: GuardStats };
 	readonly SET_USER_SETTINGS: { readonly ok: true; readonly policy: GuardPolicy };
 	readonly PAUSE: { readonly ok: true; readonly pausedUntil: number | null };
-	readonly NATIVE_SCAN: { readonly ok: true; readonly findings: readonly Finding[] | null };
+	/**
+	 * `findings` is null when the host produced nothing usable (unavailable, timed out,
+	 * output not mappable); `status` is the bridge state after the call, so callers can
+	 * say "rules only" instead of implying NER ran.
+	 */
+	readonly NATIVE_SCAN: {
+		readonly ok: true;
+		readonly findings: readonly Finding[] | null;
+		readonly status?: NativeHostStatus;
+	};
 	readonly SET_RESTORE_VISIBLE: { readonly ok: true };
+	readonly VAULT_SAVE: { readonly ok: true };
+	readonly VAULT_LOAD: {
+		readonly ok: true;
+		readonly snapshot: VaultSnapshot | null;
+		readonly sent: readonly string[];
+	};
 }
 export type GuardResponse<T extends keyof GuardResponses = keyof GuardResponses> =
 	| GuardResponses[T]
@@ -295,6 +322,8 @@ export interface UserSettings {
 	readonly disabledSites: readonly SiteId[];
 	readonly maskPaste: boolean;
 	readonly restoreResponses: boolean;
+	/** Opt in to the local native host (NER); also needs the optional nativeMessaging permission. */
+	readonly useNativeHost: boolean;
 	readonly language: "auto" | "en" | "tr";
 	readonly telemetry: TelemetryConfig | null;
 }
@@ -306,8 +335,10 @@ export interface GuardStats {
 	readonly blockedSends: number;
 	readonly byType: Readonly<Partial<Record<EntityType, number>>>;
 	readonly pausedUntil: number | null;
-	readonly nativeHost: "connected" | "unavailable" | "disabled";
+	readonly nativeHost: NativeHostStatus;
 }
+
+export type NativeHostStatus = "connected" | "unavailable" | "disabled";
 
 /** Result of scanning an uploaded/dropped file (src/engine/files.ts `sanitizeFile`). */
 export interface FileDecision {
@@ -321,7 +352,7 @@ export interface FileDecision {
 
 /** Optional native messaging bridge to the AIDR Privacy native host (NER + OCR). */
 export interface NativeBridge {
-	status(): "connected" | "unavailable" | "disabled";
+	status(): NativeHostStatus;
 	/** NER findings for PERSON/ADDRESS etc.; null when the host is unavailable. */
 	scanText(text: string): Promise<readonly Finding[] | null>;
 }

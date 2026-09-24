@@ -9,7 +9,9 @@
 //   `input` events (so a rewrite that skips input events leaves it disabled);
 // - paste is handled by the page (insert clipboard text) unless already handled;
 // - the assistant reply streams in over several DOM updates, as SSE renderers do;
-// - file inputs upload the selected file's bytes as soon as `change` fires.
+// - file inputs upload the selected file's bytes as soon as `change` fires;
+// - the conversation survives a reload: it is kept in the tab's sessionStorage and
+//   re-rendered shortly after load, like an SPA fetching the conversation history.
 //
 // The page never sees the harness: it only talks to its own origin, which the
 // Playwright route layer serves and records.
@@ -103,6 +105,25 @@
 		setTimeout(tick, 40);
 	}
 
+	const HISTORY_KEY = "__fixture_history";
+
+	function loadHistory() {
+		try {
+			const parsed = JSON.parse(sessionStorage.getItem(HISTORY_KEY) ?? "[]");
+			return Array.isArray(parsed) ? parsed : [];
+		} catch {
+			return [];
+		}
+	}
+
+	function saveTurn(user, reply) {
+		try {
+			sessionStorage.setItem(HISTORY_KEY, JSON.stringify([...loadHistory(), { user, reply }]));
+		} catch {
+			// storage unavailable: the conversation simply does not survive a reload
+		}
+	}
+
 	async function upload(file) {
 		const content = await file.text();
 		state.uploads.push({ name: file.name, size: file.size });
@@ -144,8 +165,27 @@
 			thread.appendChild(root);
 			streamInto(body, reply, () => {
 				state.replies.push(reply);
+				saveTurn(text, reply);
 				root.setAttribute("data-fixture-complete", "true");
 			});
+		}
+
+		/** Re-renders the stored conversation after a reload (asynchronously, like an SPA). */
+		function renderHistory() {
+			const history = loadHistory();
+			if (history.length === 0) return;
+			setTimeout(() => {
+				for (const turn of history) {
+					thread.appendChild(cfg.renderUser(String(turn.user)));
+					const { root, body } = cfg.renderAssistant();
+					const p = document.createElement("p");
+					p.textContent = String(turn.reply);
+					body.appendChild(p);
+					thread.appendChild(root);
+					root.setAttribute("data-fixture-complete", "true");
+				}
+				document.documentElement.setAttribute("data-fixture-history", String(history.length));
+			}, 100);
 		}
 
 		editor.addEventListener("keydown", (event) => {
@@ -191,6 +231,7 @@
 		}
 
 		syncButton();
+		renderHistory();
 		document.documentElement.setAttribute("data-fixture-ready", cfg.site);
 	}
 

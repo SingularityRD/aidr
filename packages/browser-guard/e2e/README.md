@@ -101,6 +101,7 @@ placeholders it received (`I will follow up with [EMAIL_1] and [IBAN_1] ...`).
 | `auto-<site>` | auto mode masks email, TCKN `10000000146`, TR IBAN and an `sk-proj-` key on every site; the recorded body has placeholders only; the reply shows the original email to the user while the page's own `innerText` still reads the placeholder; nothing leaks |
 | `paste-chatgpt`, `paste-copilot` | pasted text lands in the editor as placeholders |
 | `mode-monitor` | monitor mode sends the original prompt |
+| `mode-disabled-site` | with `disabledSites: ["chatgpt"]` the original prompt is sent, and the send is still counted (the worker's per-type stats grow); the setting is reset afterwards |
 | `mode-block` | block mode: no request, the page's send never runs, a bubble is shown |
 | `mode-confirm` | confirm mode: bubble first, "Send masked" sends placeholders |
 | `file-upload-csv` | a CSV with emails reaches the page's upload handler masked |
@@ -108,6 +109,7 @@ placeholders it received (`I will follow up with [EMAIL_1] and [IBAN_1] ...`).
 | `clean-*` | text without findings is sent byte-for-byte |
 | `shift-enter-*` | Shift+Enter inserts a newline and does not send |
 | `restore-side-channels` | a hostile page cannot read restored values back: per-character `@font-face` fonts (page family and shadowed system font names, forced with `!important`) are never fetched for restored values while page text in the same fonts is (control); every restored value has the same box while the same values as page text differ in width (control); `window.find()` and select-all do not see them while page text is found (control); a sent placeholder written into a container created before the send, and a placeholder of a deleted masked paste in a new container, are not restored. With the previous inherited-font text-node rendering the font, width and find checks fail |
+| `reload-restore` | after a masked send the tab's vault is in `chrome.storage.session` under `vault:<tab>:<origin>` (never in `storage.local`) and the content script's own world cannot read that area; after `page.reload()` the fixture re-renders the conversation (kept in the page's `sessionStorage`, like an SPA refetching history) and the reply shows the original email again while page `innerText` still reads the placeholder; another tab with the same placeholder does not restore it; closing the tab removes its vault |
 | `blocked-site` | a navigation to a site with the navigation block rule `src/background/dnr.ts` installs for `blockedSites: ["gemini"]` is refused (`ERR_BLOCKED_BY_CLIENT`, nothing reaches the site) and the worker opens `blocked.html` in the tab, which loads its `ui.css` and `popup.js` and names the site. `blocked.html` is not web accessible: a web page cannot load it by the extension id while the extension's own page can (control). The rule is installed from the worker (managed storage cannot be written from a test) after the worker's start-up policy load; the policy-to-rule mapping is unit-tested |
 
 Test data (`lib/data.mjs`) is synthetic and checksum-valid; TCKN and IBAN are

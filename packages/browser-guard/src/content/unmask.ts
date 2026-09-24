@@ -37,7 +37,9 @@
  *   document AFTER the send that carried it (the element holding the text, or one of its
  *   ancestors, was inserted after the send). Pre-existing containers, placeholders a page
  *   script invents, and placeholders issued for pastes/files that were never sent stay
- *   as placeholders.
+ *   as placeholders. The sent set is persisted with the tab's vault (chrome.storage.session
+ *   via the worker), so after a reload exactly the placeholders sent from this tab
+ *   become restorable again (`rehydrateSent`); nothing else does.
  * - Framework-owned text nodes are never removed. The node keeps the text before the
  *   first placeholder and our nodes are inserted after it; when the framework later
  *   rewrites that node (streaming), our nodes are dropped and the node is re-processed.
@@ -74,6 +76,15 @@ export interface Unmasker {
 	 * this call. Call it BEFORE the send is dispatched to the page.
 	 */
 	noteSent(placeholders: Iterable<string>): void;
+	/**
+	 * Placeholders sent from this tab in an EARLIER life of the page (persisted with the
+	 * vault, see ./boot.ts). Every node of this page life appeared after those sends, so
+	 * they are restorable in any response/user-message content, including content that
+	 * was already rendered; placeholders never sent from this tab still are not.
+	 */
+	rehydrateSent(placeholders: Iterable<string>): void;
+	/** Every placeholder sent from this tab so far (for persistence with the vault). */
+	sentPlaceholders(): string[];
 }
 
 interface RestoredSpan {
@@ -124,6 +135,9 @@ export function visibleText(node: Node): string {
 	for (const child of node.childNodes) out += visibleText(child);
 	return out;
 }
+
+/** Send epoch of placeholders rehydrated from a previous life of the page (see rehydrateSent). */
+const PREVIOUS_PAGE_LIFE = -1;
 
 /** Attribute (inside the closed root) whose value the generated content renders. */
 const VALUE_ATTRIBUTE = "data-v";
@@ -423,6 +437,14 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 			for (const placeholder of placeholders) {
 				if (!sentAt.has(placeholder)) sentAt.set(placeholder, epoch);
 			}
+		},
+		rehydrateSent(placeholders: Iterable<string>) {
+			// -1: before this page life, i.e. before every node (even pre-existing ones).
+			for (const placeholder of placeholders) sentAt.set(placeholder, PREVIOUS_PAGE_LIFE);
+			if (visible && doc.body) enqueue(doc.body);
+		},
+		sentPlaceholders() {
+			return [...sentAt.keys()];
 		},
 	};
 }

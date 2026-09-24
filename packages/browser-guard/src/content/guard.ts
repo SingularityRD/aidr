@@ -11,6 +11,16 @@
  * only those are ever restored in the page, and only in content that appears after
  * the send (see ./unmask.ts).
  *
+ * With `policy.useNativeHost`, every prompt/paste scan also asks the worker for native
+ * NER (NATIVE_SCAN, bounded to NATIVE_MAX_CHARS and NATIVE_REPLY_TIMEOUT_MS) in parallel
+ * with the rule engine and merges its PERSON/ADDRESS/LOCATION findings before masking.
+ * When the host gives no usable answer the scan proceeds rules-only and the user is told
+ * so (never a silent "NER checked" claim).
+ *
+ * Sites in `policy.disabledSites` get monitor semantics: nothing is masked or blocked by
+ * the guard, but prompts/pastes/files are still scanned and counted (RECORD "allowed").
+ * Organisation blocks (`blockedSites`, `fileHandling: "block"`) still apply there.
+ *
  * Failure policy (CLAUDE.md): this is a connector entry point, so it fails CLOSED.
  * A missing policy, a scan error or an incomplete scan blocks the send (except in
  * `monitor` mode, which never blocks). Telemetry (`RECORD`) is best-effort and
@@ -75,6 +85,10 @@ export interface ContentGuardDeps {
 	schedule?(callback: () => void): void;
 	/** Debounce for the background pre-scan of the editor text (ms). */
 	readonly prescanDelayMs?: number;
+	/** Called after a send left the page (the set of sent placeholders may have grown). */
+	onSent?(): void;
+	/** Upper bound for waiting on NATIVE_SCAN (ms); defaults to NATIVE_REPLY_TIMEOUT_MS. */
+	readonly nativeTimeoutMs?: number;
 }
 
 export interface ContentGuard {
@@ -105,6 +119,64 @@ const CACHE_TTL_MS = 60_000;
 const BUTTON_RETRY_MS = 50;
 const BUTTON_RETRIES = 6;
 
+/** Entity types the native host's NER contributes on top of the rule layer. */
+export const NATIVE_NER_TYPES: readonly EntityType[] = Object.freeze([
+	"PERSON",
+	"ADDRESS",
+	"LOCATION",
+]);
+/**
+ * How long a scan waits for NATIVE_SCAN: the worker's bridge gives up after 2 s
+ * (background/native.ts NATIVE_TIMEOUT_MS); the rest is messaging slack.
+ */
+export const NATIVE_REPLY_TIMEOUT_MS = 2_500;
+/** Longest text sent to the native host (the rule engine's own input limit). */
+export const NATIVE_MAX_CHARS = 200_000;
+
+/**
+ * Whether native NER took part in a scan: "used" (its findings are merged), "unavailable"
+ * (enabled by policy but no usable answer: rules only, and the user is told so) or "off".
+ */
+export type NativeUse = "used" | "unavailable" | "off";
+
+/** A rule scan with the native host's findings merged in. */
+export interface GuardScan extends ScanResult {
+	readonly native: NativeUse;
+}
+
+function isNativeFinding(raw: unknown, text: string, types: readonly EntityType[]): boolean {
+	if (!raw || typeof raw !== "object") return false;
+	const f = raw as Partial<Finding>;
+	return (
+		types.includes(f.type as EntityType) &&
+		Number.isSafeInteger(f.start) &&
+		Number.isSafeInteger(f.end) &&
+		(f.start as number) >= 0 &&
+		(f.start as number) < (f.end as number) &&
+		(f.end as number) <= text.length
+	);
+}
+
+/**
+ * Adds the native host's findings to a rule scan. A native span already covered by a
+ * finding is dropped (no double count); overlapping spans are kept, and the vault
+ * merges them into one masked span so no detected character stays in clear text.
+ */
+export function mergeNativeFindings(
+	result: ScanResult,
+	native: readonly Finding[],
+	use: NativeUse,
+): GuardScan {
+	const findings = [...result.findings];
+	for (const f of native) {
+		if (findings.some((g) => g.start <= f.start && g.end >= f.end)) continue;
+		const score = Number.isFinite(f.score) ? f.score : 0;
+		findings.push({ type: f.type, start: f.start, end: f.end, score, source: "native-ner" });
+	}
+	findings.sort((a, b) => a.start - b.start || b.end - a.end);
+	return { ...result, findings, counts: countFindings(findings), native: use };
+}
+
 /** Normalises editor text for equality checks (line endings, nbsp, outer whitespace). */
 export function normalizeText(text: string): string {
 	return text.replace(/\r\n?/g, "\n").replace(/ /g, " ").trim();
@@ -134,8 +206,12 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const lang = (): Lang => resolveLanguage(deps.getPolicy()?.language, win.navigator?.language);
 	const strings = (): Strings => STRINGS[lang()];
 
+	const nativeTimeout = deps.nativeTimeoutMs ?? NATIVE_REPLY_TIMEOUT_MS;
+
 	const ui = createGuardUi({ document: doc, window: win, strings });
-	const cache = new Map<string, { policy: GuardPolicy; result: ScanResult; at: number }>();
+	const cache = new Map<string, { policy: GuardPolicy; result: GuardScan; at: number }>();
+	/** Set once the user was told that native NER is unavailable; cleared when it works again. */
+	let nativeNoticeShown = false;
 	let lastFocused: Element | null = null;
 	/** Re-entrancy token: set only while our own replayed send is being dispatched. */
 	let replayText: string | null = null;
@@ -146,8 +222,13 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	/** Placeholders of masked files attached since the last send (they leave with it). */
 	const pendingAttachments = new Set<string>();
 
-	const siteDisabled = (p: GuardPolicy): boolean => p.disabledSites.includes(adapter.id);
 	const siteBlocked = (p: GuardPolicy): boolean => p.blockedSites.includes(adapter.id);
+	/**
+	 * Monitor semantics: nothing is masked or held back, usage is only counted. A site in
+	 * `disabledSites` is monitored whatever the mode (organisation site blocks still apply).
+	 */
+	const monitoring = (p: GuardPolicy): boolean =>
+		p.mode === "monitor" || p.disabledSites.includes(adapter.id);
 
 	const record = (
 		action: PrivacyScanEvent["action"],
@@ -181,7 +262,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		});
 	};
 
-	const remember = (text: string, policy: GuardPolicy, result: ScanResult): void => {
+	const remember = (text: string, policy: GuardPolicy, result: GuardScan): void => {
 		cache.delete(text);
 		cache.set(text, { policy, result, at: now() });
 		while (cache.size > CACHE_LIMIT) {
@@ -191,22 +272,70 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		}
 	};
 
-	const cached = (text: string, policy: GuardPolicy): ScanResult | undefined => {
+	const cached = (text: string, policy: GuardPolicy): GuardScan | undefined => {
 		const entry = cache.get(text);
 		if (!entry || entry.policy !== policy || now() - entry.at > CACHE_TTL_MS) return undefined;
 		return entry.result;
 	};
 
-	/** Scans text; null when the scan failed or was incomplete (callers fail closed). */
-	const scan = async (text: string, policy: GuardPolicy | null): Promise<ScanResult | null> => {
+	/**
+	 * Native NER for `text` through the worker's bridge (NATIVE_SCAN), bounded in size and
+	 * time. Never rejects: any failure is "unavailable" and the scan continues rules-only.
+	 */
+	const nativeScan = async (
+		text: string,
+		policy: GuardPolicy | null,
+	): Promise<{ findings: readonly Finding[]; use: NativeUse }> => {
+		const types = NATIVE_NER_TYPES.filter((t) => policy?.enabledEntities.includes(t));
+		if (!policy?.useNativeHost || types.length === 0) return { findings: [], use: "off" };
+		const unavailable = { findings: [], use: "unavailable" as const };
+		if (text.length > NATIVE_MAX_CHARS) return unavailable;
+		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
-			const result = await engine.scan(text);
+			const reply = await Promise.race([
+				Promise.resolve(deps.send({ type: "NATIVE_SCAN", text })),
+				new Promise<undefined>((resolve) => {
+					timer = win.setTimeout(() => resolve(undefined), nativeTimeout);
+				}),
+			]);
+			const found = (reply as { ok?: unknown; findings?: unknown } | undefined)?.findings;
+			if ((reply as { ok?: unknown } | undefined)?.ok !== true || !Array.isArray(found))
+				return unavailable;
+			return { findings: found.filter((f) => isNativeFinding(f, text, types)), use: "used" };
+		} catch {
+			return unavailable;
+		} finally {
+			if (timer !== undefined) win.clearTimeout(timer);
+		}
+	};
+
+	/**
+	 * Scans text with the rule engine and, when the policy enables it, native NER in
+	 * parallel. Null when the rule scan failed or was incomplete (callers fail closed);
+	 * an unavailable native host only degrades the result to rules-only (`native`).
+	 */
+	const scan = async (text: string, policy: GuardPolicy | null): Promise<GuardScan | null> => {
+		try {
+			const [result, native] = await Promise.all([engine.scan(text), nativeScan(text, policy)]);
 			if (!result || result.incomplete) return null;
-			if (policy) remember(text, policy, result);
-			return result;
+			const merged = mergeNativeFindings(result, native.findings, native.use);
+			if (native.use === "used") nativeNoticeShown = false;
+			if (policy) remember(text, policy, merged);
+			return merged;
 		} catch {
 			return null;
 		}
+	};
+
+	/** The "rules only" note for messages about a scan native NER should have been part of. */
+	const nativeLines = (result: GuardScan | null): string[] =>
+		result?.native === "unavailable" ? [strings().nativeUnavailable] : [];
+
+	/** Tells the user once (until NER works again) that a clean prompt was checked rules-only. */
+	const noticeNativeOnce = (result: GuardScan): void => {
+		if (result.native !== "unavailable" || nativeNoticeShown) return;
+		nativeNoticeShown = true;
+		ui.toast(strings().nativeUnavailable, "warn");
 	};
 
 	/** Findings that are not already inside one of our own placeholders. */
@@ -322,6 +451,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		editor: EditorAccess,
 		text: string,
 		findings: readonly Finding[],
+		scanned: GuardScan,
 	): Promise<void> => {
 		const s = strings();
 		busy = true;
@@ -344,7 +474,10 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			record("blocked", "prompt", counts);
 			return;
 		}
-		ui.toast(s.maskedToast(totalCount(counts), formatCounts(counts)), "info");
+		ui.toast(
+			[s.maskedToast(totalCount(counts), formatCounts(counts)), ...nativeLines(scanned)].join(" "),
+			"info",
+		);
 		record("masked", "prompt", counts);
 		await replay(origin, editor, masked);
 	};
@@ -354,7 +487,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		origin: SendOrigin,
 		editor: EditorAccess,
 		text: string,
-		result: ScanResult | null,
+		result: GuardScan | null,
 	): Promise<void> => {
 		const s = strings();
 		if (!result) {
@@ -371,12 +504,16 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		const signals = activeSignals(policy, result);
 		if (findings.length === 0 && signals.length === 0) {
 			record("allowed", "prompt", {});
+			noticeNativeOnce(result);
 			await replay(origin, editor, text);
 			return;
 		}
 		const total = totalCount(counts);
 		const summary = formatCounts(counts);
-		const coaching = signals.map((code) => deps.coachingFor(code, lang()));
+		const coaching = [
+			...signals.map((code) => deps.coachingFor(code, lang())),
+			...nativeLines(result),
+		];
 		if (signals.length > 0 && policy.signalAction === "block") {
 			showBlocked([...(total > 0 ? [s.blockedBody(total, summary)] : []), ...coaching]);
 			record("blocked", "prompt", counts);
@@ -388,7 +525,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			return;
 		}
 		if (policy.mode === "auto" && signals.length === 0) {
-			await maskAndSend(origin, editor, text, findings);
+			await maskAndSend(origin, editor, text, findings, result);
 			return;
 		}
 		// confirm mode, or a warn-level signal: ask the user.
@@ -411,7 +548,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			tone: "warn",
 		});
 		if (choice === "send-masked") {
-			await maskAndSend(origin, editor, text, findings);
+			await maskAndSend(origin, editor, text, findings, result);
 			return;
 		}
 		if (choice === "send-original" || choice === "send-anyway") {
@@ -463,10 +600,6 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			record("blocked", "prompt", {});
 			return;
 		}
-		if (siteDisabled(policy)) {
-			noteSent(text);
-			return;
-		}
 		if (siteBlocked(policy)) {
 			stopEvent(event);
 			showBlocked([s.siteBlocked]);
@@ -474,14 +607,14 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			return;
 		}
 		if (!editor || text === null) {
-			if (policy.mode === "monitor") return;
+			if (monitoring(policy)) return;
 			stopEvent(event);
 			showBlocked([s.editorMissing]);
 			record("blocked", "prompt", {});
 			return;
 		}
 		if (normalizeText(text) === "") return;
-		if (policy.mode === "monitor") {
+		if (monitoring(policy)) {
 			noteSent(text);
 			void monitorScan(text, "prompt", policy);
 			return;
@@ -499,6 +632,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			activeSignals(policy, hit).length === 0
 		) {
 			record("allowed", "prompt", {});
+			noticeNativeOnce(hit);
 			noteSent(text);
 			return; // pre-scanned clean: the original, trusted event goes through untouched
 		}
@@ -506,7 +640,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		busy = true;
 		const scanned = text;
 		void (async () => {
-			let result: ScanResult | null;
+			let result: GuardScan | null;
 			try {
 				result = hit ?? (await scan(scanned, policy));
 			} finally {
@@ -582,7 +716,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 
 	const schedulePrescan = (): void => {
 		const policy = deps.getPolicy();
-		if (!policy || policy.mode === "monitor" || siteDisabled(policy) || siteBlocked(policy)) return;
+		if (!policy || monitoring(policy) || siteBlocked(policy)) return;
 		if (prescanTimer !== undefined) win.clearTimeout(prescanTimer);
 		prescanTimer = win.setTimeout(() => {
 			prescanTimer = undefined;
@@ -660,7 +794,6 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			ui.toast(s.policyMissing, "error");
 			return;
 		}
-		if (siteDisabled(policy)) return;
 		if (siteBlocked(policy)) {
 			stopEvent(event);
 			showBlocked([s.siteBlocked]);
@@ -668,7 +801,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			return;
 		}
 		if (!policy.maskPaste) return;
-		if (policy.mode === "monitor") {
+		if (monitoring(policy)) {
 			void monitorScan(text, "paste", policy);
 			return;
 		}
@@ -682,18 +815,25 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			}
 			const findings = relevantFindings(text, result);
 			if (findings.length === 0) {
+				noticeNativeOnce(result);
 				await insertText(editor, text);
 				return;
 			}
 			const counts = countFindings(findings);
 			if (policy.mode === "block") {
-				showBlocked([s.pasteBlocked, s.blockedCoaching]);
+				showBlocked([s.pasteBlocked, s.blockedCoaching, ...nativeLines(result)]);
 				record("blocked", "paste", counts);
 				return;
 			}
 			const masked = vault.mask(text, findings);
 			await insertText(editor, masked.masked);
-			ui.toast(s.pasteMaskedToast(totalCount(masked.counts), formatCounts(masked.counts)), "info");
+			ui.toast(
+				[
+					s.pasteMaskedToast(totalCount(masked.counts), formatCounts(masked.counts)),
+					...nativeLines(result),
+				].join(" "),
+				"info",
+			);
 			record("masked", "paste", masked.counts);
 		})().catch(() => {
 			showBlocked([strings().rewriteFailed]);
@@ -748,6 +888,11 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			if (vault.lookup(match[0]) !== undefined) sent.add(match[0]);
 		}
 		unmasker.noteSent(sent);
+		try {
+			deps.onSent?.();
+		} catch {
+			// Persistence is best-effort; the send itself is unaffected.
+		}
 	}
 
 	const applyRestore = (): void => {

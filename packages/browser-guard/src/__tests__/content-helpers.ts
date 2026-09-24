@@ -119,6 +119,9 @@ export interface HarnessOptions {
 	) => Promise<FileDecision>;
 	readonly prescanDelayMs?: number;
 	readonly navigatorLanguage?: string;
+	/** Worker reply for a message (e.g. a fake native bridge answering NATIVE_SCAN). */
+	readonly respond?: (message: GuardMessage) => unknown;
+	readonly nativeTimeoutMs?: number;
 }
 
 export function setupGuard(options: HarnessOptions = {}): Harness {
@@ -184,10 +187,11 @@ export function setupGuard(options: HarnessOptions = {}): Harness {
 		coachingFor: (code, lang) => `coach:${code}:${lang}`,
 		send: async (message) => {
 			messages.push(message);
-			return undefined;
+			return options.respond?.(message);
 		},
 		schedule: (callback) => queueMicrotask(callback),
 		prescanDelayMs: options.prescanDelayMs ?? 60_000,
+		nativeTimeoutMs: options.nativeTimeoutMs,
 	});
 	guard.start();
 

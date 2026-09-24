@@ -241,12 +241,31 @@ describe("content guard: block and monitor modes", () => {
 		expect(g.bubble()).toBeNull();
 	});
 
-	it("disabled sites pass without scanning", () => {
+	it("disabled sites are monitored: the original is sent and counted, never masked", async () => {
 		const g = start({ policy: { disabledSites: ["chatgpt"] } });
 		g.editor.value = `to ${EMAIL}`;
 		g.enter();
-		expect(g.sent).toEqual([`to ${EMAIL}`]);
-		expect(g.engine.scan).not.toHaveBeenCalled();
+		expect(g.sent).toEqual([`to ${EMAIL}`]); // synchronously: the guard did not hold it back
+		await expect
+			.poll(() => g.records())
+			.toEqual([
+				{
+					type: "RECORD",
+					site: "chatgpt",
+					action: "allowed",
+					channel: "prompt",
+					counts: { EMAIL: 1 },
+				},
+			]);
+		expect(g.bubble()).toBeNull();
+		expect(g.vault.size()).toBe(0);
+	});
+
+	it("an organisation site block wins over a user-disabled site", () => {
+		const g = start({ policy: { disabledSites: ["chatgpt"], blockedSites: ["chatgpt"] } });
+		g.editor.value = "hello";
+		expect(g.enter().defaultPrevented).toBe(true);
+		expect(g.sent).toEqual([]);
 	});
 
 	it("blocked sites stop every send", async () => {

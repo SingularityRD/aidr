@@ -49,6 +49,25 @@ const maskedFile = (name: string, content: string): FileDecision => ({
 });
 
 describe("content guard: paste", () => {
+	it("on a disabled site records pastes with findings but lets the site insert them unchanged", async () => {
+		const g = start({ policy: { disabledSites: ["chatgpt"], mode: "block" } });
+		const event = pasteEvent(`mail ${EMAIL}`);
+		g.editor.dispatchEvent(event);
+		expect(event.defaultPrevented).toBe(false); // the site handles the paste itself
+		await expect
+			.poll(() => g.records())
+			.toEqual([
+				{
+					type: "RECORD",
+					site: "chatgpt",
+					action: "allowed",
+					channel: "paste",
+					counts: { EMAIL: 1 },
+				},
+			]);
+		expect(g.vault.size()).toBe(0);
+	});
+
 	it("masks pasted text and inserts the masked version at the caret", async () => {
 		const g = start();
 		g.editor.value = "Hi ";
@@ -256,6 +275,31 @@ describe("content guard: file uploads", () => {
 		input.dispatchEvent(change);
 		expect(g.bubble()?.textContent).toContain("does not allow file uploads");
 		expect(g.sanitizeFile).not.toHaveBeenCalled();
+	});
+
+	it("on a disabled site counts file uploads without replacing them", async () => {
+		const g = start({
+			policy: { disabledSites: ["chatgpt"] },
+			sanitizeFile: async () => maskedFile("a.txt", "[EMAIL_1]"),
+		});
+		const input = document.getElementById("file") as HTMLInputElement;
+		const original = new File([`mail ${EMAIL}`], "a.txt");
+		makeFilesWritable(input, [original]);
+		const change = new Event("change", { bubbles: true, cancelable: true });
+		input.dispatchEvent(change);
+		expect(change.defaultPrevented).toBe(false);
+		await expect
+			.poll(() => g.records())
+			.toEqual([
+				{
+					type: "RECORD",
+					site: "chatgpt",
+					action: "allowed",
+					channel: "file",
+					counts: { EMAIL: 1 },
+				},
+			]);
+		expect(input.files?.[0]).toBe(original);
 	});
 
 	it("blocks uploads when the browser cannot replace files", async () => {

@@ -39,6 +39,16 @@ export const PRIVACY_ENTITY_LABELS: Readonly<Record<string, string>> = {
 /** Entity types in the privacy engine's order (packages/privacy ENTITY_TYPES). */
 export const PRIVACY_ENTITY_TYPES = Object.keys(PRIVACY_ENTITY_LABELS);
 
+/**
+ * Entity types Browser Guard masks by default: every type except the noisy USERNAME
+ * and LOCATION. Must equal `DEFAULT_POLICY.enabledEntities` in
+ * packages/browser-guard/src/background/policy.ts (asserted by a dashboard test), so a
+ * managed policy copied from the dashboard does not silently widen the defaults.
+ */
+export const BROWSER_GUARD_DEFAULT_ENTITIES: readonly string[] = PRIVACY_ENTITY_TYPES.filter(
+	(type) => type !== "USERNAME" && type !== "LOCATION",
+);
+
 export const PRIVACY_SITE_LABELS: Readonly<Record<string, string>> = {
 	chatgpt: "ChatGPT",
 	gemini: "Gemini",
@@ -252,7 +262,7 @@ export function managedPolicySnippet(options: {
 	return JSON.stringify(
 		{
 			mode: options.mode,
-			enabledEntities: PRIVACY_ENTITY_TYPES,
+			enabledEntities: BROWSER_GUARD_DEFAULT_ENTITIES,
 			literals: [],
 			telemetry: {
 				controlPlaneUrl: options.controlPlaneUrl ?? "https://<your-project>.supabase.co",

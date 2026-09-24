@@ -190,8 +190,9 @@ A scan is marked incomplete when the prompt exceeds 200,000 characters, when the
 time budget runs out, or when encoded content is nested deeper than the decoder unwraps.
 Findings gathered so far are kept, but the result is never reported as clean.
 
-**How to use** — Always on. The only way to let unchecked text through is `monitor` mode,
-which never blocks, or a site in `disabledSites`.
+**How to use** — Always on. The only ways to let text through unmasked are `monitor` mode,
+which never blocks, and a site in `disabledSites`, which is monitored the same way (the
+text is still scanned and counted).
 
 **Example** — A user pastes a 300,000-character log and presses Enter in `auto` mode. The site
 receives nothing. A red bubble titled **Sending blocked** says "AIDR could not finish
@@ -282,9 +283,11 @@ Input: `server 10.20.30.40 mac 00:1A:2B:3C:4D:5E key AKIAIOSFODNN7EXAMPLE`
 | Platforms | Chrome, Edge, Firefox (desktop) |
 
 **Limitations**
-- Names and addresses in running text are not found by the rules. The optional native host
-  (feature 16) is meant to add NER, but in this build the prompt scan does not yet use it.
-  Use custom terms or exact data for names that matter.
+- Names and addresses in running text are not found by the rules. With the optional native
+  host (feature 16) enabled and reachable, its NER findings (`PERSON`, `ADDRESS`, `LOCATION`)
+  are merged into the prompt and paste scan. Without it the scan is rules-only, and the
+  in-page message says so. Use custom terms or exact data for names that must always be
+  caught.
 - Passport, tax, national-ID, bank-account and date-of-birth values are recognised only
   next to a label. There is no checksum for them.
 - The international phone rule checks plausibility, not national numbering plans.
@@ -309,8 +312,16 @@ useful answers. Reversible placeholders keep answers usable ("Draft an email to
   compared case-insensitively; phone, TC Kimlik, card and SSN compared by digits only;
   IBAN by its compact upper-case form). Numbers are never reused while the page is open,
   so an old answer cannot be "restored" to a different person's value.
-- **Memory only.** The placeholder-to-value map (the "vault") lives in the content script's
-  memory for that page. It is never written to `chrome.storage.local` or disk and never
+- **Session memory only, per tab.** The placeholder-to-value map (the "vault") lives in the
+  content script's memory. After every mask and every send the content script hands a copy
+  to the background worker, which keeps it in `chrome.storage.session` (memory-backed,
+  cleared when the browser closes) under the tab id and the site's origin. That area is
+  restricted to the extension's trusted contexts, so neither the AI site nor the content
+  script can read it directly; another tab or another site gets nothing. After a reload the
+  page gets its vault back, together with the list of placeholders already sent from that
+  tab, so answers (and history the site re-renders) are restored again. Types in
+  `neverRestore` are never copied. Closing the tab deletes the copy, and so does 4 hours
+  without a save. The vault is never written to `chrome.storage.local` or disk and never
   sent over the network. Entries unused for 4 hours are forgotten, and at most 10,000
   entries are kept (least recently used first out).
 - **Restore without exposing values to the page.** The restorer touches only text nodes in
@@ -346,8 +357,14 @@ ayse.yilmaz@example.com; rotate `[SECRET_1]`", with the tooltip "Restored locall
 | Platforms | Chrome, Edge, Firefox (desktop) |
 
 **Limitations**
-- Reloading or closing the tab forgets the mapping. Placeholders already in the
-  conversation then stay as placeholders.
+- The mapping survives a reload of the same tab on the same site (covered by the
+  real-browser `reload-restore` scenario). It does not survive closing the tab, a browser
+  restart, 4 hours without a save, or opening the conversation in another tab. It is also
+  lost when the background worker does not answer within 1.5 seconds while the page loads.
+  Placeholders already in the conversation then stay as placeholders.
+- After a reload, a placeholder sent from that tab earlier is restored anywhere in the
+  conversation, including history the site had already rendered. Before the reload it is
+  restored only in content that appeared after the send.
 - Only text the site renders in the page is restored. Content the site exports, copies to
   the clipboard itself or shares by link contains the placeholders.
 - If the model rewrites a placeholder beyond the tolerated forms (for example translates
@@ -542,8 +559,13 @@ that it contains no original email and that the header row is preserved.
 - PDFs, Office documents and images are **not** inspected in the browser (no OCR, no
   document parsing). Outside `block` mode they pass with a warning. Set
   `fileHandling: "block"` if such uploads must never reach AI sites.
-- Text files in legacy encodings (for example a Windows-1254 CSV with Turkish characters)
-  fail the strict UTF-8 check and are treated as binary.
+- Text files that are not UTF-8 are decoded as Windows-1254 (Turkish), or Windows-1252 when
+  that fits better, then scanned, and a masked copy is uploaded as UTF-8 (CSV/TSV with a
+  BOM). Files in other single-byte encodings (for example Cyrillic Windows-1251) are decoded
+  with one of those two code pages, so their non-Latin characters come out wrong and values
+  written in them can be missed. A text-named file containing NUL bytes (for example UTF-16
+  without a BOM) cannot be decoded safely and is blocked (`TEXT_FILE_NOT_DECODABLE`), except
+  in `monitor` mode.
 - For text files, `confirm` and `block` modes do not show a dialog. The sanitised copy is
   uploaded. Only `fileHandling: "block"` refuses all uploads.
 - A file larger than `maxFileBytes` is blocked, not scanned partially.
@@ -733,7 +755,9 @@ need locked settings to be visible as locked, so users do not file tickets about
   detection is connected" or "Advanced detection is unavailable; built-in rules are active".
   The toolbar badge shows the number of masked items on the tab.
 - **Options page** sections: **Protection** (mode, what to detect, mask pasted text, restore
-  responses), **Custom terms**, **Sites** (on/off per site; blocked sites tagged
+  responses, **Advanced name and address detection**: the native-host switch, the
+  `nativeMessaging` permission state with a **Grant permission** button, and the host
+  status), **Custom terms**, **Sites** (on/off per site; blocked sites tagged
   **Blocked**), **Organization connection** (control-plane URL and API key, with a "What is
   shared" / "Never shared" explanation), **Language**, **About** (version, policy id,
   privacy statement).
@@ -776,8 +800,12 @@ honest, and easier to audit, than users uninstalling the extension.
 Nothing is masked, sends are still counted, and the popup shows **Paused until hh:mm**
 ("Messages to ChatGPT are only monitored until then. Nothing is masked."). The background
 accepts pauses of 1–60 minutes; the popup offers 15. The pause ends on a timer or with
-**Resume protection**. **Per-site switch** (Options → **Sites**) turns the guard off on that
-site. The popup then shows **Turned off for this site**.
+**Resume protection**. **Per-site switch** (Options → **Sites**) puts that site in the same
+monitor behaviour permanently: prompts, pastes and files are sent unchanged, but they are
+still scanned and recorded as "allowed" with their counts, so the popup statistics and the
+dashboard keep seeing usage. The popup then shows **Turned off for this site** ("You
+turned off masking on ChatGPT: nothing is masked there, only counts of sensitive items are
+recorded.").
 
 **How to use** — Managed keys `allowUserPause` (default `true`) and `disabledSites` (site ids).
 When pausing is disallowed, the popup hides the pause button, and a pause request is
@@ -796,9 +824,10 @@ unmasked, and each is recorded as "allowed" with its counts.
 | Platforms | Chrome, Edge, Firefox (desktop) |
 
 **Limitations**
-- On a site in `disabledSites` the guard does nothing: no masking, blocking or counting.
-  The managed-schema description ("only monitors") is broader than the current behaviour.
-- `blockedSites` and `fileHandling: "block"` still apply during a pause.
+- On a site in `disabledSites` nothing is masked, so the original values reach that AI
+  service. Only the counts are kept (popup statistics, and telemetry when configured).
+- `blockedSites` and `fileHandling: "block"` still apply during a pause and on a site in
+  `disabledSites`.
 
 ### 13. Blocking AI sites
 
@@ -868,14 +897,14 @@ All managed keys (from `static/managed_schema.json` and `src/background/policy.t
 | `detectSignals` | boolean | `true` | Detect prompt-injection and source-code signals |
 | `signalAction` | `off` \| `warn` \| `block` | `warn` | What a signal does (feature 10) |
 | `blockedSites` | array of site ids | none | Sites whose pages are blocked from loading (feature 13) |
-| `disabledSites` | array of site ids | none | Sites where the guard is switched off (feature 12) |
+| `disabledSites` | array of site ids | none | Sites that are only monitored: nothing is masked or blocked by the guard, sends are counted (feature 12) |
 | `allowUserPause` | boolean | `true` | Users may pause for up to 60 minutes |
 | `allowSendAnyway` | boolean | `true` | Users may send unmasked after a warning |
 | `maskPaste` | boolean | `true` | Mask pasted text (feature 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Upload handling (feature 7) |
 | `maxFileBytes` | integer, 1 to 52,428,800 | 5,242,880 (5 MiB) | Largest file scanned; larger files are blocked |
 | `restoreResponses` | boolean | `true` | Restore originals in answers locally |
-| `useNativeHost` | boolean | `false` | Use the AIDR Privacy native host (feature 16) |
+| `useNativeHost` | boolean | `false` | Use the AIDR Privacy native host for NER (feature 16). Users can also turn it on in the options page unless it is managed |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) | Counts-only reporting. `https://` required; plain `http://` only for `localhost`/`127.0.0.1`; no credentials, query or fragment; API key 8–512 printable characters |
 | `language` | `auto` \| `en` \| `tr` | `auto` | Interface language |
 | `policyId` | string, `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | `aidr-browser-guard-default` | Identifier reported with telemetry |
@@ -981,8 +1010,9 @@ two items.
 **Limitations**
 - Counts only: the dashboard cannot show which value, prompt or file was involved, by
   design.
-- The dashboard's policy snippet enables all 23 entity types, including `USERNAME` and
-  `LOCATION`, which are off in the extension's default. Review it before deploying.
+- The dashboard's policy snippet lists the extension's default entity types (all except
+  `USERNAME` and `LOCATION`; a test keeps the two lists equal). Add those two types yourself
+  if you want them, and remember that a managed `enabledEntities` locks the list for users.
 - A user-entered API key is stored in that browser profile's `chrome.storage.local`.
 - The plan catalog is a list-price mirror pending commercial approval (COM-001). The code
   does not enforce plan features for ingest.
@@ -996,26 +1026,37 @@ named-entity recognition (NER) for names, addresses and locations that have no f
 **Why it matters** — Rules cannot recognise "Ahmet Kaya" in a sentence. A local NER model can,
 without sending text off the machine.
 
-**How it works** — The background bridge speaks the privacy host's native-messaging protocol
-over the browser's stdio pipe. There is no socket and no localhost HTTP endpoint. Each scan
-uses a fresh host process and a 2-second budget. Text over 1 MiB is not sent. After three
-consecutive failures the host is considered unavailable for 60 seconds. Every host span is
-tagged `source: "native-ner"` with a fixed score of 0.9. Nothing is persisted, and only the
-text itself is sent (no URL, site, tab or user data).
+**How it works** — When `useNativeHost` is on, every prompt and paste scan asks the
+background worker for NER (`NATIVE_SCAN`) in parallel with the built-in rules. The worker's
+bridge speaks the privacy host's native-messaging protocol over the browser's stdio pipe.
+There is no socket and no localhost HTTP endpoint. Each scan uses a fresh host process and
+a 2-second budget (the page waits at most 2.5 seconds). Text over 200,000 characters is not
+sent. After three consecutive failures the host is considered unavailable for 60 seconds.
+The host's `PERSON`, `ADDRESS` and `LOCATION` spans (only types enabled in
+`enabledEntities`) are tagged `source: "native-ner"` with a fixed score of 0.9 and merged
+with the rule findings before masking. When the host gives no usable answer the prompt is
+checked with the rules only, and the in-page toast or bubble says "Advanced name and
+address detection (native host) is unavailable: checked with built-in rules only." (once
+per page for prompts that turn out clean). Nothing is persisted, and only the text itself
+is sent (no URL, site, tab or user data).
 
-**How to use** (administrators; see
-[native-host.md](../../../../packages/browser-guard/docs/native-host.md)):
+**How to use** (see [native-host.md](../../../../packages/browser-guard/docs/native-host.md)):
 1. Install and register the host from `packages/privacy` (`docs/BROWSER.md` §4,
    `deployment/README.md`), with an approved NER model block. Without one the host reports
    `coverage: "rules-only"`.
 2. Admit Browser Guard's extension ID:
    `node native/prepare-host.mjs --config <abs> --out <abs> --extension-id <browser-guard-id>`.
-3. Grant the optional `nativeMessaging` permission.
-4. Set managed key `useNativeHost: true`.
+3. Turn it on: managed key `useNativeHost: true`, or Options → **Protection** → **Use the
+   AIDR Privacy helper app** (not available when the administrator manages the key).
+4. Grant the optional `nativeMessaging` permission: turning the switch on asks for it, and
+   when the administrator enabled the host the options page shows **Grant permission**.
+   Browsers do not let policy grant this optional permission, so each user confirms it once.
 
-**Example** — With the host installed and enabled, the popup shows "Advanced detection is
-connected". Otherwise it shows "Advanced detection is unavailable; built-in rules are
-active", and protection continues with the built-in rules.
+**Example** — With the host installed and enabled, the popup and the options page show
+"Advanced detection is connected", and "Write to Ahmet Kaya" is sent as "Write to
+`[PERSON_1]`". Otherwise they show "Advanced detection is unavailable; built-in rules are
+active", protection continues with the built-in rules, and the in-page message says the
+check was rules-only.
 
 **Availability**
 
@@ -1026,11 +1067,11 @@ active", and protection continues with the built-in rules.
 | Platforms | Chrome and Edge only (the host accepts only `chrome-extension://` callers; Firefox reports unavailable) |
 
 **Limitations — read before relying on it**
-- **In this build the bridge is not yet used by prompt scanning.** The background handles
-  the request and the popup shows host status, but the content script does not send
-  prompts to the host, so NER findings are not merged into masking. Treat this as a
-  preview integration.
-- The extension has no UI to request the `nativeMessaging` permission.
+- NER is applied to prompts and pasted text only. Uploaded files are scanned with the rules.
+- The host returns a sanitised copy rather than spans. The bridge maps it back to the
+  input and widens ambiguous spans (over-masking rather than leaking); output it cannot map
+  counts as "no NER result" for that prompt.
+- A prompt that is still being scanned by the host takes up to 2.5 seconds longer to send.
 - `packages/privacy` ships the host protocol but **no NER model weights and no accuracy
   evidence**. Measure precision and recall on your own data.
 - OCR is part of the privacy package's visual layer (feature 20). Browser Guard does not OCR
@@ -1052,7 +1093,7 @@ obligations by keeping content on the endpoint.
 | Data | Where it goes |
 |---|---|
 | Prompt text, pasted text, file contents | Scanned in the page. What the AI site receives is the masked version (or the original in `monitor`, after **Send original**/**Send anyway**, while paused or on a disabled site) |
-| Original values behind placeholders | Content-script memory of that page only; never written to disk or storage, never sent |
+| Original values behind placeholders | Content-script memory of the page, plus a per-tab copy in `chrome.storage.session` (memory-backed, trusted extension contexts only, deleted when the tab closes, after 4 hours without a save or when the browser closes); `neverRestore` types are not copied. Never written to disk or `chrome.storage.local`, never sent |
 | Settings, custom terms, telemetry API key | `chrome.storage.local` of the browser profile (managed values come from browser policy) |
 | Session statistics | `chrome.storage.session` (cleared when the browser closes) |
 | Telemetry, only when `telemetry` is configured | Counts per entity type, site id, action, channel, policy id, per-install random ID, browser family and major version, extension version, sent to the configured control plane |

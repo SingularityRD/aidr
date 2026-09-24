@@ -10,6 +10,28 @@ The host is optional. Without it, every prompt is still scanned, masked and
 restored locally. The bridge (`src/background/native.ts`) returns `null` and callers
 keep their local findings.
 
+## How prompts and pastes use it
+
+When the effective policy has `useNativeHost: true`, the content guard
+(`src/content/guard.ts`) sends every prompt and paste it scans to the worker as a
+`NATIVE_SCAN` message, in parallel with the in-page rule engine:
+
+- Only text up to 200,000 characters (the rule engine's own limit) is sent, and the
+  page waits at most 2.5 s for the answer (the bridge's 2 s budget plus messaging).
+- Only `PERSON`, `ADDRESS` and `LOCATION` spans of types enabled in `enabledEntities`
+  are taken, and only when their offsets lie inside the text. A span a rule finding
+  already covers is dropped; overlapping spans are merged by the vault into one
+  masked span. The merged findings are then masked, confirmed or blocked by mode
+  exactly like rule findings, and counted by type.
+- When the worker answers `findings: null` (host unavailable, timed out, blocked by
+  its own policy, or output that cannot be mapped) or does not answer in time, the
+  scan continues **rules-only**. The user is told: the masked/pasted toast and the
+  confirm or block bubble add "Advanced name and address detection (native host) is
+  unavailable: checked with built-in rules only.", and a clean prompt shows that
+  notice once per page until the host works again. The `NATIVE_SCAN` reply also
+  carries the bridge `status`.
+- Uploaded files are not sent to the host; they are scanned by the rules only.
+
 ## What it adds
 
 The in-browser rule layer is good at identifiers with a fixed shape or checksum: email,
@@ -52,14 +74,22 @@ Browser Guard needs three extra steps:
    AIDR Privacy extension must use the same host too, add its
    `chrome-extension://<id>/` origin to the generated
    `com.singularity.aidr_privacy.json` by hand, during review.
-2. **Grant `nativeMessaging`.** The extension manifest must declare `nativeMessaging` as
-   an *optional* permission. The bridge checks it with `chrome.permissions.contains` and
-   never launches the host until it has been granted. A user can grant it by accepting
-   the prompt from a user gesture on the options page. On managed fleets, list it in
-   the extension's allowed permissions policy.
-3. **Turn it on in policy.** The bridge is created with `enabled` set from the
-   effective `GuardPolicy.useNativeHost`. When that is `false` it reports `disabled`
-   and never touches the native-messaging API.
+2. **Grant `nativeMessaging`.** The extension manifest declares `nativeMessaging` as an
+   *optional* permission. The bridge checks it with `chrome.permissions.contains` and
+   never launches the host until it has been granted. Browsers only grant an optional
+   permission after the user accepts a prompt raised from a user gesture, and policy
+   cannot grant it for them, so each user confirms it once on the options page
+   (Options → **Protection** → **Advanced name and address detection**): turning on
+   **Use the AIDR Privacy helper app** asks for it first, and when the administrator
+   enabled the host a **Grant permission** button is shown while it is missing. The
+   worker recreates the bridge when the permission is added or removed
+   (`permissions.onAdded` / `onRemoved`), so a grant takes effect immediately instead
+   of after the 60 s back-off.
+3. **Turn it on.** Set managed `useNativeHost: true`, or let users opt in on the
+   options page (the key is a user setting unless the administrator manages it; it only
+   adds detection, so it is not one of the keys a managed policy locks by default). The
+   bridge is created with `enabled` set from the effective `GuardPolicy.useNativeHost`.
+   When that is `false` it reports `disabled` and never touches the native-messaging API.
 
 Supported browsers: Chromium-based (Chrome, Edge). The host accepts only
 `chrome-extension://` callers, so Firefox is not supported and reports `unavailable`.
@@ -106,9 +136,11 @@ contact it for 60 s. A success resets the count. `scanText` never throws.
 
 **Latency caveat.** The host starts a new process for each scan and loads the NER
 model at startup, so a heavy model plus a large prompt can go over the 2 s budget.
-When that keeps happening the bridge backs off, and the prompt stays protected by
-the local rules only. Check host start-up time on your target hardware before you
-depend on NER.
+A send waits for the answer (at most 2.5 s in the page); text typed and paused on is
+pre-scanned, so the wait usually happens before Enter. When timeouts keep happening
+the bridge backs off, and the prompt stays protected by the local rules only (and the
+user is told so). Check host start-up time on your target hardware before you depend
+on NER.
 
 ## Privacy notes
 
@@ -121,6 +153,9 @@ depend on NER.
   and keeps no cache. It zeroes the input and output byte buffers after every
   scan. (JavaScript strings cannot be zeroed. That is a platform limit.)
 - Host error text and `chrome.runtime.lastError` are never logged or shown. Callers
-  see only `null`.
+  see only `null` (plus the bridge status).
+- Each pre-scan and send starts a host process for the current editor text, so the
+  host sees drafts as the user types (debounced to pauses of 250 ms), not only what is
+  finally sent. It is a local process under the same user; nothing leaves the machine.
 - The SHA-256 values in the protocol are used only for transfer integrity. They are
   not stored or sent anywhere else.

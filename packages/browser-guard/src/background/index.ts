@@ -9,11 +9,14 @@
  * (sender.id === runtime.id). Extension pages (popup/options) may change settings;
  * content scripts are accepted only from the exact HTTPS hosts of supported sites and
  * are limited to their own tab. Content scripts never receive the telemetry API key.
+ * The per-tab placeholder vault (VAULT_SAVE / VAULT_LOAD, ./vault-store.ts) is keyed by
+ * the sender's tab id and page origin, so one tab or site can never read another's.
  */
 import type {
 	GuardError,
 	GuardPolicy,
 	GuardResponse,
+	GuardResponses,
 	GuardStats,
 	NativeBridge,
 	PrivacyScanEvent,
@@ -38,6 +41,7 @@ import {
 	TELEMETRY_LIMITS,
 	TelemetryClient,
 } from "./telemetry.js";
+import { VaultStore } from "./vault-store.js";
 
 export const PAUSE_ALARM = "aidr-pause-end";
 export const PAUSE_MAX_MINUTES = 60;
@@ -70,7 +74,14 @@ export interface BackgroundController {
 
 type Sender =
 	| { readonly kind: "extension"; readonly tabId: number | undefined }
-	| { readonly kind: "content"; readonly tabId: number; readonly site: SiteId };
+	| {
+			readonly kind: "content";
+			readonly tabId: number;
+			readonly site: SiteId;
+			/** Page origin from the sender URL (vault persistence is keyed by tab + origin). */
+			readonly origin: string;
+			readonly topFrame: boolean;
+	  };
 
 const fail = (error: string, keys?: readonly string[]): GuardError =>
 	keys ? { ok: false, error, keys } : { ok: false, error };
@@ -81,6 +92,9 @@ function isRecord(raw: unknown): raw is Record<string, unknown> {
 
 const isTabId = (raw: unknown): raw is number => Number.isSafeInteger(raw) && (raw as number) >= 0;
 
+/** Content scripts run in the top frame only (`all_frames: false`). */
+const isTopFrame = (sender: MessageSender): boolean => (sender.frameId ?? 0) === 0;
+
 export function startBackground(options: BackgroundOptions): BackgroundController {
 	const { chrome } = options;
 	const now = options.now ?? Date.now;
@@ -88,6 +102,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	const bridgeFactory = options.createNativeBridge ?? createNativeBridge;
 	const storage = new GuardStorage(chrome, log);
 	const stats = new StatsStore(storage);
+	const vaults = new VaultStore(storage, now);
 	const telemetry = new TelemetryClient({
 		storage,
 		fetch: options.fetch ?? ((...args) => globalThis.fetch(...args)),
@@ -114,7 +129,9 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		const tabId = sender.tab?.id;
 		const site = siteForUrl(sender.url);
 		if (!isTabId(tabId) || !site) return null;
-		return { kind: "content", tabId, site };
+		// siteForUrl accepted the URL, so it parses.
+		const origin = new URL(sender.url as string).origin;
+		return { kind: "content", tabId, site, origin, topFrame: isTopFrame(sender) };
 	}
 
 	async function pausedUntil(): Promise<number | null> {
@@ -158,6 +175,17 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		);
 	}
 
+	/** (Re)creates the native bridge: on a policy change, or after the permission changed. */
+	function resetBridge(): void {
+		bridgeEnabled = current.useNativeHost;
+		try {
+			bridge = bridgeFactory(current.useNativeHost);
+		} catch {
+			bridge = null;
+			log("native: bridge unavailable");
+		}
+	}
+
 	async function loadPolicy(broadcast: boolean): Promise<GuardPolicy> {
 		const managed = await storage.readManaged();
 		// If managed policy state is unknown, user settings must not weaken the defaults.
@@ -170,15 +198,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 				: evaluation.warnings;
 		for (const warning of currentWarnings) log(`policy: ${warning}`);
 
-		if (bridgeEnabled !== current.useNativeHost) {
-			bridgeEnabled = current.useNativeHost;
-			try {
-				bridge = bridgeFactory(current.useNativeHost);
-			} catch {
-				bridge = null;
-				log("native: bridge unavailable");
-			}
-		}
+		if (bridgeEnabled !== current.useNativeHost) resetBridge();
 		if (!(await applyBlockedSites(chrome, current.blockedSites)))
 			log("dnr: failed to update blocked-site rules");
 		await telemetry.configure(current.telemetry);
@@ -262,12 +282,29 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	async function nativeScan(text: unknown): Promise<GuardResponse> {
 		if (typeof text !== "string" || text.length > NATIVE_SCAN_MAX_CHARS) return fail("BAD_MESSAGE");
-		if (!current.useNativeHost || !bridge) return { ok: true, findings: null };
+		if (!current.useNativeHost || !bridge) return { ok: true, findings: null, status: "disabled" };
+		const used = bridge;
+		let findings: GuardResponses["NATIVE_SCAN"]["findings"] = null;
 		try {
-			return { ok: true, findings: await bridge.scanText(text) };
+			findings = await used.scanText(text);
 		} catch {
-			return { ok: true, findings: null };
+			findings = null;
 		}
+		return { ok: true, findings, status: used.status() };
+	}
+
+	async function vaultSave(message: Record<string, unknown>, who: Sender): Promise<GuardResponse> {
+		if (who.kind !== "content" || !who.topFrame) return fail("NOT_ALLOWED");
+		const result = await vaults.save(who.tabId, who.origin, message.snapshot, message.sent);
+		if (result === "invalid") return fail("BAD_MESSAGE");
+		if (result === "too-large") return fail("TOO_LARGE");
+		return { ok: true };
+	}
+
+	async function vaultLoad(who: Sender): Promise<GuardResponse> {
+		if (who.kind !== "content" || !who.topFrame) return fail("NOT_ALLOWED");
+		const stored = await vaults.load(who.tabId, who.origin);
+		return { ok: true, snapshot: stored?.snapshot ?? null, sent: stored?.sent ?? [] };
 	}
 
 	async function setRestoreVisible(visible: unknown, who: Sender): Promise<GuardResponse> {
@@ -340,6 +377,10 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 				return nativeScan(message.text);
 			case "SET_RESTORE_VISIBLE":
 				return setRestoreVisible(message.visible, who);
+			case "VAULT_SAVE":
+				return vaultSave(message, who);
+			case "VAULT_LOAD":
+				return vaultLoad(who);
 			default:
 				return fail("BAD_MESSAGE");
 		}
@@ -371,12 +412,25 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			void reload(true);
 	});
 	chrome.alarms.onAlarm.addListener((alarm) => {
-		if (alarm.name === TELEMETRY_ALARM) void telemetry.flush();
-		else if (alarm.name === PAUSE_ALARM) void broadcastPolicy();
+		if (alarm.name === TELEMETRY_ALARM) {
+			void telemetry.flush();
+			void vaults.sweep();
+		} else if (alarm.name === PAUSE_ALARM) void broadcastPolicy();
 	});
 	chrome.tabs.onRemoved.addListener((tabId) => {
 		void stats.removeTab(tabId);
+		void vaults.removeTab(tabId);
 	});
+	// A newly granted (or revoked) nativeMessaging permission takes effect at once instead
+	// of after the bridge's back-off from the earlier "not permitted" probe.
+	const onPermissionsChanged = (change: { permissions?: string[] }) => {
+		if (!change?.permissions?.includes("nativeMessaging")) return;
+		void ready.then(() => {
+			if (current.useNativeHost) resetBridge();
+		});
+	};
+	chrome.permissions?.onAdded?.addListener(onPermissionsChanged);
+	chrome.permissions?.onRemoved?.addListener(onPermissionsChanged);
 	chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => {
 		const url = updatedTabUrl(changeInfo, tab);
 		if (!isTabId(tabId) || url === undefined) return;
@@ -390,6 +444,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		await storage.restrictSessionAccess();
 		await reload(false).catch(() => log("policy: initial load failed; defaults in force"));
 		await ensureTelemetryAlarm();
+		await vaults.sweep();
 	})();
 
 	return {
