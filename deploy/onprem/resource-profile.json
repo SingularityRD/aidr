@@ -1,0 +1,73 @@
+{
+	"schema_version": 1,
+	"default_profile": "small",
+	"note": "Starting container budgets, not a capacity or SLA claim. Size hosts from deploy/RESOURCE_REQUIREMENTS.md and replace these budgets with measurements from the customer's own load and soak runs. Limits cap a runaway service; reservations are what the scheduler keeps free.",
+	"profiles": {
+		"small": {
+			"description": "Pilot and up to roughly 100 endpoints on one host",
+			"host": { "vcpu": 4, "memory_gib": 8, "disk_gib": 100 },
+			"aig_host_addition": { "vcpu": 4, "memory_gib": 6, "disk_gib": 40 },
+			"services": {
+				"db": { "cpus": "2", "memory": "2g", "reservation_cpus": "0.5", "reservation_memory": "1g", "pids": 1024 },
+				"studio": { "cpus": "0.5", "memory": "768m", "reservation_memory": "256m", "pids": 256 },
+				"api-gw": { "cpus": "1", "memory": "256m", "reservation_memory": "64m", "pids": 256 },
+				"auth": { "cpus": "0.5", "memory": "256m", "reservation_memory": "64m", "pids": 256 },
+				"rest": { "cpus": "1", "memory": "512m", "reservation_memory": "128m", "pids": 256 },
+				"realtime": { "cpus": "0.5", "memory": "512m", "reservation_memory": "128m", "pids": 512 },
+				"storage": { "cpus": "0.5", "memory": "512m", "reservation_memory": "128m", "pids": 256 },
+				"imgproxy": { "cpus": "0.5", "memory": "256m", "reservation_memory": "64m", "pids": 256 },
+				"meta": { "cpus": "0.5", "memory": "256m", "reservation_memory": "64m", "pids": 256 },
+				"functions": { "cpus": "1", "memory": "1g", "reservation_memory": "256m", "pids": 512 },
+				"dashboard": { "cpus": "0.5", "memory": "256m", "reservation_memory": "64m", "pids": 128 },
+				"aig-server": { "cpus": "1", "memory": "1g", "reservation_cpus": "0.25", "reservation_memory": "256m", "pids": 256 },
+				"aig-agent": { "cpus": "2", "memory": "3g", "reservation_cpus": "0.5", "reservation_memory": "1g", "pids": 1024 },
+				"aig-bridge": { "cpus": "0.5", "memory": "512m", "reservation_memory": "128m", "pids": 256 },
+				"aig-egress": { "cpus": "0.5", "memory": "256m", "reservation_memory": "64m", "pids": 256 }
+			}
+		},
+		"medium": {
+			"description": "Load-test starting point for roughly 1,000 endpoints on one host",
+			"host": { "vcpu": 8, "memory_gib": 16, "disk_gib": 250 },
+			"aig_host_addition": { "vcpu": 6, "memory_gib": 8, "disk_gib": 60 },
+			"services": {
+				"db": { "cpus": "4", "memory": "6g", "reservation_cpus": "1", "reservation_memory": "3g", "pids": 2048 },
+				"studio": { "cpus": "0.5", "memory": "1g", "reservation_memory": "256m", "pids": 256 },
+				"api-gw": { "cpus": "2", "memory": "512m", "reservation_memory": "128m", "pids": 512 },
+				"auth": { "cpus": "1", "memory": "512m", "reservation_memory": "128m", "pids": 256 },
+				"rest": { "cpus": "2", "memory": "1g", "reservation_memory": "256m", "pids": 512 },
+				"realtime": { "cpus": "1", "memory": "1g", "reservation_memory": "256m", "pids": 1024 },
+				"storage": { "cpus": "1", "memory": "1g", "reservation_memory": "256m", "pids": 512 },
+				"imgproxy": { "cpus": "0.5", "memory": "512m", "reservation_memory": "64m", "pids": 256 },
+				"meta": { "cpus": "0.5", "memory": "256m", "reservation_memory": "64m", "pids": 256 },
+				"functions": { "cpus": "2", "memory": "2g", "reservation_memory": "512m", "pids": 1024 },
+				"dashboard": { "cpus": "1", "memory": "512m", "reservation_memory": "128m", "pids": 256 },
+				"aig-server": { "cpus": "2", "memory": "2g", "reservation_cpus": "0.5", "reservation_memory": "512m", "pids": 512 },
+				"aig-agent": { "cpus": "4", "memory": "4g", "reservation_cpus": "1", "reservation_memory": "1g", "pids": 1024 },
+				"aig-bridge": { "cpus": "1", "memory": "512m", "reservation_memory": "128m", "pids": 256 },
+				"aig-egress": { "cpus": "0.5", "memory": "512m", "reservation_memory": "64m", "pids": 512 }
+			}
+		},
+		"large": {
+			"description": "Dedicated control-plane host for multi-thousand endpoint load tests",
+			"host": { "vcpu": 16, "memory_gib": 32, "disk_gib": 500 },
+			"aig_host_addition": { "vcpu": 8, "memory_gib": 12, "disk_gib": 100 },
+			"services": {
+				"db": { "cpus": "8", "memory": "14g", "reservation_cpus": "2", "reservation_memory": "8g", "pids": 4096 },
+				"studio": { "cpus": "1", "memory": "1g", "reservation_memory": "256m", "pids": 256 },
+				"api-gw": { "cpus": "4", "memory": "1g", "reservation_memory": "256m", "pids": 1024 },
+				"auth": { "cpus": "2", "memory": "1g", "reservation_memory": "256m", "pids": 512 },
+				"rest": { "cpus": "4", "memory": "2g", "reservation_memory": "512m", "pids": 1024 },
+				"realtime": { "cpus": "2", "memory": "2g", "reservation_memory": "512m", "pids": 2048 },
+				"storage": { "cpus": "2", "memory": "2g", "reservation_memory": "512m", "pids": 1024 },
+				"imgproxy": { "cpus": "1", "memory": "1g", "reservation_memory": "128m", "pids": 512 },
+				"meta": { "cpus": "1", "memory": "512m", "reservation_memory": "64m", "pids": 256 },
+				"functions": { "cpus": "4", "memory": "4g", "reservation_memory": "1g", "pids": 2048 },
+				"dashboard": { "cpus": "2", "memory": "1g", "reservation_memory": "256m", "pids": 512 },
+				"aig-server": { "cpus": "2", "memory": "4g", "reservation_cpus": "1", "reservation_memory": "1g", "pids": 1024 },
+				"aig-agent": { "cpus": "6", "memory": "6g", "reservation_cpus": "2", "reservation_memory": "2g", "pids": 2048 },
+				"aig-bridge": { "cpus": "2", "memory": "1g", "reservation_memory": "256m", "pids": 512 },
+				"aig-egress": { "cpus": "1", "memory": "512m", "reservation_memory": "128m", "pids": 1024 }
+			}
+		}
+	}
+}

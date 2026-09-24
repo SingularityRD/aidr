@@ -94,7 +94,8 @@ spec:
         spec:
           containers:
           - name: sync
-            image: node:22.12.0
+            # Node 24 matches the deployment runtime (deployment-doctor requires >= 24).
+            image: node:24.12.0-alpine3.23
             workingDir: /app
             command: ["node", "scripts/sync-aig-threats.mjs", "--quiet"]
 ```

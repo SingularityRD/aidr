@@ -392,6 +392,144 @@ test("deployment doctor rejects missing or changed deployed maintenance units", 
 	assert.match(doctor(changed).stdout, new RegExp(`^FAIL ${shippedUnitsLabel}$`, "m"));
 });
 
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const AIG_LABELS = {
+	workerSecret: "AIG worker shared secret configured (at least 32 characters)",
+	bridgeAuth: "AIG bridge authentication configured (isolated API key independent from the worker secret)",
+	signingKey: "AIG data signing public key matches the pinned SPKI fingerprint",
+	pins: "AIG bundle and source commit pins match the staged data manifest",
+	signature: "AIG data manifest carries a release signature (an unsigned manifest keeps bridge readiness closed)",
+	sqlite: "AIG bridge task registry is single-host SQLite with HA not required",
+	postgres: "AIG bridge PostgreSQL task registry DSN configured for HA",
+	egress: "AIG remote scans leave only through the deny-by-default egress gateway with a valid allowlist",
+	topology: "AIG control network is internal and only the authenticated bridge publishes a loopback port",
+	profile: "AIG Compose profile is active for this installation",
+};
+const AIG_WORKER_SECRET = "w".repeat(64);
+const AIG_BRIDGE_KEY = "k".repeat(64);
+
+function aigCompose({ serverPorts = false } = {}) {
+	return [
+		"services:",
+		"  aig-server:",
+		"    networks: [aidr-aig-network]",
+		...(serverPorts ? ["    ports: ['0.0.0.0:8088:8088']"] : []),
+		"  aig-agent:",
+		"    networks: [aidr-aig-network]",
+		"  aig-bridge:",
+		"    networks: [aidr-aig-network, aidr-aig-edge]",
+		"    ports: ['${AIG_BIND_ADDRESS:-127.0.0.1}:${AIG_BRIDGE_PORT:-8099}:8099']",
+		"  aig-egress:",
+		"    networks: [aidr-aig-network, aidr-aig-egress]",
+		"networks:",
+		"  aidr-aig-network:",
+		"    internal: true",
+		"  aidr-aig-edge:",
+		"    driver_opts:",
+		"      com.docker.network.bridge.enable_ip_masquerade: 'false'",
+		"  aidr-aig-egress: {}",
+		"",
+	].join("\n");
+}
+
+function aigDeploymentDirectory(t, { env = {}, signed = false } = {}) {
+	const aigKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey;
+	const fingerprint = createHash("sha256").update(aigKey.export({ type: "spki", format: "der" })).digest("hex");
+	const directory = deploymentDirectory(t, { mode: "self-hosted", aig: { enabled: true, signing_public_key_sha256: fingerprint } });
+	mkdirSync(join(directory, "aig", "generated"), { recursive: true });
+	mkdirSync(join(directory, "aig", "egress"), { recursive: true });
+	writeFileSync(join(directory, "aig", "aig-signing-public.pem"), aigKey.export({ type: "spki", format: "pem" }));
+	const dataManifest = JSON.parse(readFileSync(join(repositoryRoot, "packages/core/src/generated/aig-data-manifest.json"), "utf8"));
+	if (signed) dataManifest.signature = { algorithm: "RSA-SHA256", key_id: "aig-release-2026", value: "fixture" };
+	writeFileSync(join(directory, "aig", "generated", "aig-data-manifest.json"), JSON.stringify(dataManifest));
+	for (const name of ["squid.conf", "allowlist.txt"]) copyFileSync(join(repositoryRoot, "deploy/onprem/egress", name), join(directory, "aig", "egress", name));
+	writeFileSync(join(directory, "compose.yml"), aigCompose());
+	const values = {
+		ANON_KEY: "fixture", SERVICE_ROLE_KEY: "fixture",
+		COMPOSE_PROFILES: "aig",
+		AIG_AGENT_SHARED_SECRET: AIG_WORKER_SECRET,
+		AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256: fingerprint,
+		AIG_EXPECTED_DATA_BUNDLE_ID: dataManifest.bundle_id,
+		AIG_EXPECTED_SOURCE_COMMIT: dataManifest.source.commit,
+		BRIDGE_AUTH_MODE: "api_key", BRIDGE_API_KEY: AIG_BRIDGE_KEY,
+		BRIDGE_TASK_BACKEND: "sqlite", BRIDGE_HA_REQUIRED: "false",
+		BRIDGE_EGRESS_PROXY_URL: "http://aig-egress:3128",
+		...env,
+	};
+	writeFileSync(join(directory, ".env"), `${Object.entries(values).filter(([, value]) => value !== undefined).map(([name, value]) => `${name}=${value}`).join("\n")}\n`);
+	return directory;
+}
+
+const line = (state, label) => new RegExp(`^${state} ${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m");
+
+test("doctor verifies a prepared AIG sidecar without printing its secrets", (t) => {
+	const directory = aigDeploymentDirectory(t);
+	const result = doctor(directory);
+	for (const key of ["workerSecret", "bridgeAuth", "signingKey", "pins", "sqlite", "egress", "topology", "profile"]) {
+		assert.match(result.stdout, line("PASS", AIG_LABELS[key]), key);
+	}
+	// The committed data manifest is unsigned, so the doctor must fail closed.
+	assert.match(result.stdout, line("FAIL", AIG_LABELS.signature));
+	assert.equal(result.status, 1);
+	assert.match(result.stdout, /^INFO AIG egress allowlist names 0 destination domain\(s\); every remote scan is refused until one is added$/m);
+	for (const secret of [AIG_WORKER_SECRET, AIG_BRIDGE_KEY]) {
+		assert.equal(result.stdout.includes(secret), false);
+		assert.equal(readFileSync(join(directory, "doctor-evidence.json"), "utf8").includes(secret), false);
+	}
+
+	const signed = aigDeploymentDirectory(t, { signed: true });
+	assert.match(doctor(signed).stdout, line("PASS", AIG_LABELS.signature));
+});
+
+test("doctor fails misconfigured AIG trust, registry, egress and topology settings", (t) => {
+	const cases = [
+		[{ env: { AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256: "0".repeat(64) } }, "signingKey"],
+		[{ env: { AIG_EXPECTED_DATA_BUNDLE_ID: "1".repeat(64) } }, "pins"],
+		[{ env: { AIG_AGENT_SHARED_SECRET: "short" } }, "workerSecret"],
+		[{ env: { BRIDGE_API_KEY: AIG_WORKER_SECRET } }, "bridgeAuth"],
+		[{ env: { BRIDGE_HA_REQUIRED: "true" } }, "sqlite"],
+		[{ env: { BRIDGE_TASK_BACKEND: "postgres" } }, "postgres"],
+		[{ env: { BRIDGE_EGRESS_PROXY_URL: "http://egress.customer.example:8080" } }, "egress"],
+		[{ env: { COMPOSE_PROFILES: "" } }, "profile"],
+	];
+	for (const [options, key] of cases) {
+		const result = doctor(aigDeploymentDirectory(t, options));
+		assert.equal(result.status, 1);
+		assert.match(result.stdout, line("FAIL", AIG_LABELS[key]), key);
+	}
+
+	const postgres = aigDeploymentDirectory(t, { env: { BRIDGE_TASK_BACKEND: "postgres", BRIDGE_HA_REQUIRED: "true", BRIDGE_TASK_POSTGRES_DSN: "postgresql://bridge:secret@postgres.internal/aidr?sslmode=verify-full" } });
+	assert.match(doctor(postgres).stdout, line("PASS", AIG_LABELS.postgres));
+
+	const openProxy = aigDeploymentDirectory(t);
+	writeFileSync(join(openProxy, "aig", "egress", "squid.conf"), `${readFileSync(join(openProxy, "aig", "egress", "squid.conf"), "utf8")}http_access allow all\n`);
+	assert.match(doctor(openProxy).stdout, line("FAIL", AIG_LABELS.egress));
+
+	const badAllowlist = aigDeploymentDirectory(t);
+	writeFileSync(join(badAllowlist, "aig", "egress", "allowlist.txt"), "models.customer.example\n10.0.0.0/8\n");
+	assert.match(doctor(badAllowlist).stdout, line("FAIL", AIG_LABELS.egress));
+
+	const allowlisted = aigDeploymentDirectory(t);
+	writeFileSync(join(allowlisted, "aig", "egress", "allowlist.txt"), "# reviewed\nmodels.customer.example\n.mcp.customer.example\n");
+	const allowlistedResult = doctor(allowlisted).stdout;
+	assert.match(allowlistedResult, line("PASS", AIG_LABELS.egress));
+	assert.match(allowlistedResult, /^INFO AIG egress allowlist names 2 destination domain\(s\)$/m);
+
+	const published = aigDeploymentDirectory(t);
+	writeFileSync(join(published, "compose.yml"), aigCompose({ serverPorts: true }));
+	assert.match(doctor(published).stdout, line("FAIL", AIG_LABELS.topology));
+});
+
+test("online doctor requires the AIG services to be running and healthy when AIG is enabled", (t) => {
+	const directory = aigDeploymentDirectory(t);
+	const base = requiredComposeServices.map((Service) => ({ Service, State: "running", Health: "healthy" }));
+	const aig = ["aig-server", "aig-agent", "aig-bridge", "aig-egress"].map((Service) => ({ Service, State: "running", Health: "healthy" }));
+	assert.match(stubbedComposeDoctor(directory, base).stdout, /^FAIL all required deployment services running and healthy$/m);
+	assert.match(stubbedComposeDoctor(directory, [...base, ...aig]).stdout, /^PASS all required deployment services running and healthy$/m);
+	const unhealthyBridge = aig.map((row) => row.Service === "aig-bridge" ? { ...row, Health: "unhealthy" } : row);
+	assert.match(stubbedComposeDoctor(directory, [...base, ...unhealthyBridge]).stdout, /^FAIL all required deployment services running and healthy$/m);
+});
+
 test("deployment doctor fails a deployment that contains no SIEM delivery timer", (t) => {
 	const directory = deploymentDirectory(t);
 	const kit = join(directory, "kit");

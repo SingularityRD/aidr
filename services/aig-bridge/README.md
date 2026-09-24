@@ -7,12 +7,16 @@ Python/FastAPI sidecar that bridges **Singularity AIDR** with **Tencent AI-Infra
 The bridge translates AIDR's synchronous-style scan requests into AIG's internal async task workflow.
 It provides a clean REST API for AIDR's core to consume, while AIG handles the actual scanning.
 
-The source gitlink and generated data are pinned to Tencent AI-Infra-Guard
-`v4.6.1` (`e68bc5d09a222a3d16b873ded93eb6d726028975`). The submodule
-currently has uncommitted AIDR hardening changes: a reproducible customer
-candidate must commit them in the submodule and update the parent gitlink, or
-exclude AIG from the supported scope. Run `pnpm aig:verify` from the repository
-root before a demo or release. The bridge maps AIDR's `targets`
+The AIG source is tracked directly in this repository under
+`vendor/ai-infra-guard/` (it is not a Git submodule). It was imported from the
+SingularityRD fork (`https://github.com/SingularityRD/ai-infra-guard`) at tag
+`v4.6.1-aidr.1`, commit `809e23df94ff9a9dfe336e3d120abe9a20ea66bf` (Git tree
+`2a024a74a5d3255cab7890e6673d8954980c6038`). That fork is based on Tencent
+AI-Infra-Guard `v4.6.1` and carries the AIDR hardening changes as committed
+source. The pin is recorded in `config/aig-release-sequence.json` and in the
+generated `packages/core/src/generated/aig-data-manifest.json`;
+`pnpm aig:verify` fails when the vendored tree no longer matches it. Run
+`pnpm aig:verify` from the repository root before a demo or release. The bridge maps AIDR's `targets`
 list to AIG's singular `target` field, forwards only `timeout`, `headers` and
 the optional `model` object, and maps AIG's `doing`/`done` states to
 `running`/`completed`. The pinned AIG server requires a model when no upstream default is
@@ -95,19 +99,21 @@ pip-audit -r requirements.txt
 ### Source verification and release-signing reference
 
 This is an operator checklist, not a runnable first-customer demo as checked
-in: the manifest is unsigned, the source patch is uncommitted, and the example
-paths/secrets below are placeholders. Compose additionally requires a migrated
-PostgreSQL registry and a reachable, policy-enforcing egress proxy before
-`/readyz` can return 200. Never use a placeholder signing key or public-key
-fingerprint to force readiness.
+in: the manifest is unsigned and the example paths/secrets below are
+placeholders. The Compose defaults are single-host: a durable SQLite task
+registry with `BRIDGE_HA_REQUIRED=false`, and the shipped deny-by-default
+`aig-egress` gateway (`deploy/onprem/egress/`). Multi-replica HA switches to the
+migrated PostgreSQL registry (see `.env.aig.example`). Never use a placeholder
+signing key or public-key fingerprint to force readiness. For a prepared
+on-prem installation use `scripts/deployment-prepare.mjs --with-aig`
+([on-prem guide](../../deploy/onprem/README.md)) instead of this file.
 
 Create a local `.env.aig` from `.env.aig.example` if one does not already
 exist, and fill its required values. Keep the local file and credentials out
 of version control.
 
 ```powershell
-# On a clean checkout, initialize the submodule before editing it.
-# Do not run submodule update over an existing dirty checkout.
+# The AIG source is part of the AIDR checkout; no submodule step is needed.
 pnpm compile:aig
 pnpm aig:verify
 
@@ -133,7 +139,7 @@ Remove-Item Env:AIG_SIGNING_PRIVATE_KEY_PATH
 $env:BRIDGE_AUTH_MODE='api_key'
 $env:BRIDGE_API_KEY='replace-with-a-long-random-secret'
 $env:AIG_AGENT_SHARED_SECRET='replace-with-at-least-32-random-characters'
-$env:BRIDGE_EGRESS_PROXY_URL='http://egress-proxy.internal:8080'
+# Remote scans reach only domains listed in deploy/onprem/egress/allowlist.txt.
 docker compose --env-file .env.aig -f docker-compose.aig.yml up -d --build
 
 # Synthetic benign scan (do not use a customer target without written scope)
@@ -142,7 +148,9 @@ $body=@{targets=@('https://example.com');scan_type='quick';options=@{timeout=10;
 Invoke-RestMethod http://127.0.0.1:8099/api/v1/scan/infra -Method Post -Headers $headers -ContentType 'application/json' -Body $body
 ```
 
-All three images run as UID/GID 1000 with every Linux capability dropped. Before
+The server, worker and bridge images run as UID/GID 1000 with every Linux
+capability dropped. The egress gateway drops every capability except
+`SETUID`/`SETGID`, which Squid needs to switch to its unprivileged `proxy` user. Before
 upgrading an existing installation, snapshot the named volumes and verify that
 `aidr-aig-db`, `aidr-aig-logs`, `aidr-aig-uploads`, `aidr-aig-checker-data`, and
 `aidr-aig-bridge-state` remain writable by UID/GID 1000. Correct ownership in a
@@ -201,8 +209,13 @@ reserved and (unless explicitly opted in) private addresses. The AIG worker
 receives the configured proxy through `HTTP_PROXY`/`HTTPS_PROXY`; readiness and
 remote submissions fail closed when the proxy is missing. The egress gateway
 must repeat address checks on every DNS resolution and redirect. The Compose
-control network is `internal`; attach the reviewed proxy to that network and a
-separate external network. Workers refuse to register until they can reach the
+control network is `internal`; the shipped `aig-egress` gateway (pinned Ubuntu
+Squid, `deploy/onprem/egress/squid.conf`) is the only AIG service also attached
+to an external network. It refuses every destination that is not in the
+operator allowlist or that resolves to a loopback, link-local, private, CGNAT,
+multicast or reserved address, on every request and redirect hop. The bridge
+additionally joins a non-masquerading edge network only so Docker can publish
+its loopback port. Workers refuse to register until they can reach the
 configured proxy, so readiness cannot pass on a syntax-only proxy value. Set
 `BRIDGE_VALIDATE_DNS=false` only for a controlled offline test environment,
 never for a customer deployment.
@@ -248,11 +261,11 @@ data tree also contains paths that collide on case-insensitive hosts. The data
 compiler reads pinned Git blobs directly; build and smoke-test the Linux image
 separately before release.
 
-### Tracked vendor hardening patch
+### Vendored AIDR hardening
 
-AIDR currently carries an uncommitted hardening patch over Tencent v4.6.1: authenticated
-worker registration/readiness, redaction of persisted task secrets, and a
-dedicated worker scratch directory. Source uploads remain read-only in the
+The vendored `v4.6.1-aidr.1` source carries committed AIDR hardening over Tencent
+v4.6.1: authenticated worker registration/readiness, redaction of persisted
+task secrets, and a dedicated worker scratch directory. Source uploads remain read-only in the
 worker and are extracted only below `/work`. Re-run the Go worker/WebSocket
 tests whenever the vendored source is updated.
 

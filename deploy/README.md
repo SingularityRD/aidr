@@ -22,6 +22,10 @@ alongside the generated, pinned configuration.
 
 ## Self-hosted installation
 
+The [on-prem guide](onprem/README.md) is the short entry point for a customer
+host: sizing profiles (`--profile small|medium|large`), the optional AIG
+scanning sidecar (`--with-aig`), upgrade, backup, uninstall and troubleshooting.
+
 Build from the repository root on the release machine (skip this step when
 using an already built, independently verified customer kit):
 
@@ -269,10 +273,18 @@ On the connected staging host (network plus a running Docker daemon):
 ```powershell
 pnpm build
 node scripts/deployment-prepare.mjs --mode self-hosted --output .aidr-deploy --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file C:\secure-delivery\aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml build
 node scripts/build-airgap-images.mjs --compose .aidr-deploy/compose.yml --output .aidr-airgap --platform linux/amd64
 ```
 
-`--compose` reads every `image:` reference from the prepared stack; `--plan
+`--compose` reads every `image:` reference from the prepared stack and, for
+each `build:` service, the `FROM` base images of its Dockerfile (stage aliases
+and `scratch` excluded, `ARG` defaults and build args substituted), so the
+disconnected host can rebuild offline. A service with both `build:` and
+`image:` (the `aidr-dashboard:<version>` image, and `aidr-aig-*` with
+`--with-aig`) is a local build: it is never pulled, must already exist from the
+`docker compose build` step, and is saved into the bundle. See the
+[on-prem sizing and AIG guide](onprem/README.md). `--plan
 <json>` (a `{ "images": [{ "ref": "...", "digest": "sha256:..." }] }` document) or
 repeated `--images <ref>` are the alternatives when no compose file is available.
 Pinned digests are enforced when supplied. Every `docker save` output is hashed,

@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, online: { type: "boolean", default: false } } });
 const dir = resolve(values.deployment);
 const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
@@ -158,6 +161,71 @@ if (process.platform === "linux" && existsSync("/run/systemd/system")) {
 } else {
   unverified.push({ check: `retention reaper timer not verified: ${retentionReaperTimer}`, reason: `must be installed as a systemd timer or host scheduled task, which a ${process.platform} run cannot inspect` });
   console.log(`UNVERIFIED retention reaper timer not verified: ${retentionReaperTimer}`);
+}
+// Optional AIG scanning sidecar (prepared with --with-aig). Every check reads the
+// prepared files only; secrets are compared, never printed.
+const aigEnabled = manifest.aig?.enabled === true;
+const aigServices = ["aig-server", "aig-agent", "aig-bridge", "aig-egress"];
+if (aigEnabled) {
+  const privateSecret = (value) => typeof value === "string" && value.length >= 32 && !/^(REPLACE|replace-with)/.test(value);
+  check(privateSecret(env.AIG_AGENT_SHARED_SECRET), "AIG worker shared secret configured (at least 32 characters)");
+  const bridgeAuthMode = env.BRIDGE_AUTH_MODE || "broker";
+  check(
+    bridgeAuthMode === "api_key"
+      ? privateSecret(env.BRIDGE_API_KEY) && env.BRIDGE_API_KEY !== env.AIG_AGENT_SHARED_SECRET
+      : bridgeAuthMode === "broker" && Buffer.byteLength(env.BRIDGE_JWT_SECRET ?? "", "utf8") >= 32 && !!env.BRIDGE_JWT_ISSUER && !!env.BRIDGE_JWT_AUDIENCE,
+    `AIG bridge authentication configured (${bridgeAuthMode === "api_key" ? "isolated API key independent from the worker secret" : "broker JWT secret, issuer and audience"})`,
+  );
+  let aigKeyFingerprint = null;
+  try {
+    const key = createPublicKey(readFileSync(join(dir, "aig", "aig-signing-public.pem"), "utf8"));
+    if (key.asymmetricKeyType === "rsa" && (key.asymmetricKeyDetails?.modulusLength ?? 0) >= 2048) {
+      aigKeyFingerprint = createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest("hex");
+    }
+  } catch { /* recorded below */ }
+  check(!!aigKeyFingerprint && aigKeyFingerprint === env.AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256 && aigKeyFingerprint === manifest.aig.signing_public_key_sha256, "AIG data signing public key matches the pinned SPKI fingerprint");
+  let aigData = null;
+  try { aigData = JSON.parse(readFileSync(join(dir, "aig", "generated", "aig-data-manifest.json"), "utf8")); } catch { /* recorded below */ }
+  check(!!aigData && aigData.bundle_id === env.AIG_EXPECTED_DATA_BUNDLE_ID && aigData.source?.commit === env.AIG_EXPECTED_SOURCE_COMMIT, "AIG bundle and source commit pins match the staged data manifest");
+  check(!!aigData?.signature, "AIG data manifest carries a release signature (an unsigned manifest keeps bridge readiness closed)");
+  const taskBackend = env.BRIDGE_TASK_BACKEND || "sqlite";
+  const haRequired = /^(1|true|yes|on)$/i.test(env.BRIDGE_HA_REQUIRED ?? "false");
+  if (taskBackend === "postgres") {
+    let dsnValid = false;
+    try { dsnValid = ["postgres:", "postgresql:"].includes(new URL(env.BRIDGE_TASK_POSTGRES_DSN).protocol); } catch { /* recorded below */ }
+    check(dsnValid, "AIG bridge PostgreSQL task registry DSN configured for HA");
+  } else {
+    check(taskBackend === "sqlite" && !haRequired, "AIG bridge task registry is single-host SQLite with HA not required");
+  }
+  const egressDir = join(dir, "aig", "egress");
+  const allowlistLines = existsSync(join(egressDir, "allowlist.txt"))
+    ? readFileSync(join(egressDir, "allowlist.txt"), "utf8").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
+    : null;
+  const allowlistValid = Array.isArray(allowlistLines) && allowlistLines.every((line) => /^\.?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(line));
+  const accessRules = existsSync(join(egressDir, "squid.conf"))
+    ? readFileSync(join(egressDir, "squid.conf"), "utf8").split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith("http_access"))
+    : [];
+  const denyByDefault = accessRules.includes("http_access deny non_public_dst") && accessRules.at(-1) === "http_access deny all";
+  check(env.BRIDGE_EGRESS_PROXY_URL === "http://aig-egress:3128" && denyByDefault && allowlistValid, "AIG remote scans leave only through the deny-by-default egress gateway with a valid allowlist");
+  if (allowlistValid) console.log(`INFO AIG egress allowlist names ${allowlistLines.length} destination domain(s)${allowlistLines.length === 0 ? "; every remote scan is refused until one is added" : ""}`);
+  let topologyIsolated = false;
+  try {
+    const requireCore = createRequire(join(root, "packages/core/package.json"));
+    const { parse } = existsSync(join(root, "deploy/vendor/yaml.cjs")) ? requireCore(join(root, "deploy/vendor/yaml.cjs")) : requireCore("yaml");
+    const compose = parse(readFileSync(join(dir, "compose.yml"), "utf8"));
+    const networks = compose.networks ?? {};
+    const serviceNetworks = (name) => { const value = compose.services?.[name]?.networks; return Array.isArray(value) ? value : Object.keys(value ?? {}); };
+    const internal = (name) => networks[name]?.internal === true;
+    const noMasquerade = (name) => String(networks[name]?.driver_opts?.["com.docker.network.bridge.enable_ip_masquerade"]) === "false";
+    topologyIsolated = aigServices.every((name) => compose.services?.[name])
+      && ["aig-server", "aig-agent"].every((name) => serviceNetworks(name).length > 0 && serviceNetworks(name).every(internal) && !compose.services[name].ports)
+      && !compose.services["aig-egress"].ports
+      && serviceNetworks("aig-bridge").some(internal) && serviceNetworks("aig-bridge").every((name) => internal(name) || noMasquerade(name))
+      && (compose.services["aig-bridge"].ports ?? []).every((port) => /^\$\{AIG_BIND_ADDRESS:-127\.0\.0\.1\}:|^127\.0\.0\.1:/.test(String(port)));
+  } catch { /* recorded below */ }
+  check(topologyIsolated, "AIG control network is internal and only the authenticated bridge publishes a loopback port");
+  check((env.COMPOSE_PROFILES ?? "").split(",").map((value) => value.trim()).includes("aig"), "AIG Compose profile is active for this installation");
+  requiredComposeServices.push(...aigServices);
 }
 if (manifest.mode === "self-hosted") {
   const config = spawnSync("docker", ["compose", "--project-directory", dir, "-f", join(dir, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 15000 });

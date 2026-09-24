@@ -1,0 +1,10 @@
+# AIDR AIG egress allowlist: one destination domain per line.
+#
+# The gateway refuses every remote scan until an operator adds the exact
+# domains that the customer has authorized AIDR to scan. A leading dot also
+# matches subdomains (".models.customer.example"). Addresses that resolve to
+# private, loopback, link-local or reserved ranges are refused regardless of
+# this list.
+#
+# Restart the gateway after editing:
+#   docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml restart aig-egress

@@ -44,7 +44,7 @@ function copy(source, target) {
 function files(path, prefix = "") {
   return readdirSync(path).sort().flatMap((name) => { const relative = prefix ? `${prefix}/${name}` : name; return statSync(join(path, name)).isDirectory() ? files(join(path, name), relative) : [{ path: relative, sha256: createHash("sha256").update(readFileSync(join(path, name))).digest("hex") }]; });
 }
-for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy/ha", "deploy/ingress", "deploy/maintenance", "deploy/monitoring", "deploy/regions.manifest.json", "packages/dashboard/dist", "supabase/config.toml", "supabase/functions", "supabase/migrations"]) copy(join(root, path), join(output, path));
+for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy/ha", "deploy/ingress", "deploy/maintenance", "deploy/monitoring", "deploy/onprem", "deploy/regions.manifest.json", "packages/dashboard/dist", "packages/dashboard/package.json", "supabase/config.toml", "supabase/functions", "supabase/migrations"]) copy(join(root, path), join(output, path));
 copy(join(root, "scripts/benchmarks"), join(output, "scripts/benchmarks"));
 for (const file of [
   "deployment-prepare.mjs",
