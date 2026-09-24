@@ -314,6 +314,22 @@
   expires_at: null
   revoked: false
 
+# --- Recursive deletion of the user's home directory ---
+# `rm -rf ~`, `rm -r "$HOME"`, `rm -rf ${HOME}/*`. The target must be the home
+# directory itself (optionally its glob), so `rm -rf ~/project/build` is not matched.
+# Flags are bounded (at most 20, each at most 41 characters) and the recursive
+# flag is asserted by a lookahead, which keeps the rule linear on long flag runs.
+- id: "CLT-CMD-031"
+  category: tool
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "\\brm(?=(?:\\s+--?[a-zA-Z][\\w-]{0,40}){0,19}\\s+(?:-[a-zA-Z]{0,40}[rR]|--recursive\\b))(?:\\s+--?[a-zA-Z][\\w-]{0,40}){1,20}\\s+['\"]?(?:~|\\$HOME|\\$\\{HOME\\})['\"]?/?\\*?['\"]?(?:\\s|$|[;&|])"
+  match_on: command
+  title: "Recursive deletion of the user's home directory"
+  expires_at: null
+  revoked: false
+
 # --- Deletion of .env files ---
 - id: "CLT-CMD-027"
   category: tool
