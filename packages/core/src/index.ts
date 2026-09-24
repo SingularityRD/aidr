@@ -752,6 +752,8 @@ export {
 	resolveOperatorKeyStorage,
 } from "./operator-approvals.js";
 export { scanModelOutput } from "./output-scanner.js";
+// High-precision credential / payment-card detection shared by output scanning and the CLI
+export { detectOutputSensitiveData, type OutputSensitiveMatch } from "./output-sensitive-data.js";
 export type { PackageCheckerConfig, PackageCheckInput } from "./package-checker.js";
 // Package checker
 export { PackageChecker } from "./package-checker.js";

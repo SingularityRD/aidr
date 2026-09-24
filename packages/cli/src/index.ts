@@ -18,6 +18,7 @@ import {
 } from "./commands/config-secret.js";
 import discoverCommand from "./commands/discover.js";
 import doctorCommand from "./commands/doctor.js";
+import privacyScanCommand from "./commands/privacy.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import statusCommand from "./commands/status.js";
@@ -92,6 +93,25 @@ program
 		"Send findings (ids, severities, digests; no hosts, paths or secrets) to the managed control plane",
 	)
 	.action(scanCommand);
+
+const privacyProgram = program
+	.command("privacy")
+	.description("Local TR/EN personal-data and secret checks (nothing is uploaded)");
+
+privacyProgram
+	.command("scan [file]")
+	.description(
+		"Scan a file or stdin for TCKN, IBAN, phone, e-mail, card, secret and other personal data; values are never printed",
+	)
+	.option("--json", "Emit findings as JSON (type, offsets, line; never the matched value)")
+	.option("--mask", "Print the text with each finding replaced by its [TYPE] placeholder")
+	.option("--types <list>", "Comma-separated detector names to report (default: all)")
+	.option(
+		"--fail-on <mode>",
+		"Findings that exit 2: none, any (default) or secret; otherwise an incomplete inspection exits 3",
+		"any",
+	)
+	.action(privacyScanCommand);
 
 program
 	.command("collect")

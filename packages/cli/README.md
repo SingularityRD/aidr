@@ -36,6 +36,7 @@ procedure.
 | `aidr allowlist remove <type> <value>` | Remove an entry (command text or hash prefix) |
 | `aidr audit tail [-n N] [--json]` | Most recent audit entries, re-redacted |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Redacted export across rotated log files |
+| `aidr privacy scan [file] [--json] [--mask] [--types <list>] [--fail-on none\|any\|secret]` | Local TR/EN personal-data and secret scan of a file or stdin; see [Privacy scan](#privacy-scan) |
 | `aidr config`, `aidr scan`, `aidr collect`, `aidr discover`, `aidr uninstall` | See `aidr <command> --help` |
 
 ### Operator-only commands
@@ -55,3 +56,40 @@ full shell access. The self-defense rules `CLT-SELF-007`..`009` deny an agent
 that tries to run these commands or touch the AIDR state directory.
 See [Operator approvals](../../docs/configuration.md#operator-approvals) for the
 flow, the on-disk format and the residual risk.
+
+### Privacy scan
+
+`aidr privacy scan` checks one UTF-8 text file, or standard input when no file (or `-`)
+is given, for Turkish and English personal data and secrets: checksum-validated T.C.
+kimlik (TCKN), IBAN (mod-97), Luhn payment cards, phones, e-mail, labelled fields such as
+passport or tax numbers, addresses, private keys and provider tokens. It uses the core DLP
+detectors (the drift-checked copy of the AIDR Privacy rules) plus the credential detector
+that quarantines tool output. The scan runs entirely on the local machine; nothing is
+uploaded.
+
+```sh
+aidr privacy scan customers.csv                 # table: type, count, line numbers
+aidr privacy scan notes.txt --json              # {findings:[{type,start,end,line}], counts, incomplete, reasons}
+aidr privacy scan notes.txt --mask > clean.txt  # text with [TC_KIMLIK], [IBAN], [SECRET] ... placeholders
+cat export.log | aidr privacy scan --fail-on secret   # gate: fail only on secrets and private keys
+aidr privacy scan data.txt --types tckn,iban,email
+```
+
+- Matched values are never printed. The table and JSON carry the type, offsets (UTF-16
+  code units in the decoded text) and 1-based line only. With `--mask`, the redacted text
+  goes to stdout and the summary to stderr.
+- `--types` takes detector names (`tc_kimlik`, `iban`, `phone`, `email`, `credit_card`,
+  `us_ssn`, `address`, `person`, `date_of_birth`, `passport`, `national_id`, `tax_id`,
+  `bank_account`, `ip_address`, `mac_address`, `secret`, `private_key`, `classified`) or
+  the aliases `tckn`, `tc`, `card`, `ssn`, `ip`, `mac`. Default: all.
+- Input is capped at 4 MiB. Larger input, binary content (NUL bytes) and non-UTF-8 text
+  are refused with an error rather than partly scanned. The TR/EN rules inspect at most
+  1 MiB of text, so a longer input is reported as incomplete.
+- Exit codes: `0` no finding that `--fail-on` counts; `2` findings that `--fail-on` counts
+  (`any` by default, `secret` = secrets and private keys only, `none` = never); `3` the
+  input was not fully inspected (for example over the 1 MiB rule limit or a truncated
+  private key) and no counted finding was found. An incomplete scan is never reported as
+  clean, and `--mask` refuses to print a partly masked copy. `1` usage or input error.
+- The detectors are rule-based (no learned NER), so names and addresses are found only
+  next to a label or phrase. A result with no findings is not proof that a file holds no
+  personal data.
