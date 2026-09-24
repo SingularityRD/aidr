@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -56,8 +56,18 @@ check(true, "fleet JavaScript helpers pass Node syntax validation");
 
 const manager = readFileSync(join(root, "deploy/fleet/unix/aidr-fleet.sh"), "utf8");
 check(manager.includes("openssl dgst -sha256 -verify") && manager.includes("artifact SHA-256 mismatch"), "lifecycle manager fails closed on SHA-256 and detached publisher signature");
-check(manager.includes("unsafe archive path") && manager.includes("regular files or directories"), "lifecycle manager rejects traversal, links and special archive entries before extraction");
-check(manager.includes("release public key must be owned by root") && manager.includes("group/world writable"), "production key pin must be root-owned and non-writable by group or world");
+check(manager.includes("unsafe archive path") && manager.includes("regular files/directories") && manager.includes("536870912"), "lifecycle manager rejects traversal, links, special entries and oversized expansions before extraction");
+const rootGuard = manager.slice(manager.indexOf("require_root_for_changes()"), manager.indexOf("LOCK_HELD="));
+const runnerStart = manager.indexOf("run_for_user()");
+const userRunner = manager.slice(runnerStart, manager.indexOf("\n}", runnerStart));
+check(
+	rootGuard.includes("test-root mode is unavailable to privileged installations") &&
+	rootGuard.indexOf("[ \"$(id -u)\" -ne 0 ]") < rootGuard.indexOf("return") &&
+		userRunner.includes("AIDR_FLEET_TEST_ROOT") && userRunner.includes("[ \"$(id -u)\" -ne 0 ]"),
+	"root execution cannot use the test-root privilege bypass or run a target-user installer as the caller",
+);
+check(manager.includes("trap 'release_lock; exit 1' HUP INT TERM"), "lifecycle signal handling exits before releasing its mutual-exclusion lock");
+check(manager.includes("release public key and directory must be owned by root") && manager.includes("group/world writable") && manager.includes("release public key must not be a symlink"), "production key pin and directory must be real, root-owned and non-writable by group or world");
 check(manager.includes("write_pending_state") && readFileSync(join(root, "deploy/fleet/unix/fleet-health.mjs"), "utf8").includes("lifecycle_pending"), "interrupted lifecycle work is persisted and forces unhealthy fleet evidence");
 check(manager.includes("Existing agent configuration") || readFileSync(join(root, "scripts/endpoint-install.mjs"), "utf8").includes("Existing agent configuration preserved"), "existing agent configuration has an explicit preservation guard");
 const remover = readFileSync(join(root, "deploy/fleet/unix/remove-managed-hooks.mjs"), "utf8");
@@ -90,7 +100,7 @@ try {
 	writeFileSync(join(packageRoot, "package.json"), '{"name":"fleet-fixture","version":"1.0.0"}\n');
 	writeFileSync(join(packageRoot, "resources", "threats", "fixture.yaml"), "patterns: []\n");
 	writeFileSync(join(packageRoot, "resources", "allowlists", "fixture.yaml"), "domains: []\n");
-	writeFileSync(join(packageRoot, "dist", "pre-tool-use.cjs"), `let x="";process.stdin.on("data",d=>x+=d);process.stdin.on("end",()=>console.log(JSON.stringify({hookSpecificOutput:{permissionDecision:"deny"}})));\n`);
+	writeFileSync(join(packageRoot, "dist", "pre-tool-use.cjs"), `let x="";process.stdin.on("data",d=>x+=d);process.stdin.on("end",()=>console.log(JSON.stringify({hookSpecificOutput:{permissionDecision:"deny",permissionDecisionReason:"🛡️ Singularity AIDR: Threat Blocked"},systemMessage:"Remote code execution via curl pipe to shell"})));\n`);
 	for (const name of ["post-tool-use.cjs", "session-start.cjs"]) writeFileSync(join(packageRoot, "dist", name), "process.exit(0);\n");
 	// `endpoint-install.mjs` runs under the host Node even when the fleet script
 	// is executed through Git bash on Windows, so it applies the Windows rule and
@@ -125,10 +135,27 @@ try {
 	run(bash, ["-lc", 'openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$1" >/dev/null 2>&1 && openssl pkey -in "$1" -pubout -out "$2" >/dev/null 2>&1 && openssl dgst -sha256 -sign "$1" -out "$3" "$4"', "bash", toBash(privateKey), toBash(publicKey), toBash(signature), toBash(artifact)]);
 	const digest = createHash("sha256").update(readFileSync(artifact)).digest("hex");
 	const engine = toBash(join(root, "deploy/fleet/unix/aidr-fleet.sh"));
-	const baseEnv = { ...process.env, AIDR_FLEET_PLATFORM: "linux", AIDR_FLEET_TEST_ROOT: toBash(work), AIDR_NODE_BIN: toBash(process.execPath) };
+	const baseEnv = { ...process.env, AIDR_DEVELOPMENT_MODE: "true", AIDR_FLEET_PLATFORM: "linux", AIDR_FLEET_TEST_ROOT: toBash(work), AIDR_NODE_BIN: toBash(process.execPath) };
 	const common = ["--artifact", toBash(artifact), "--sha256", digest, "--signature", toBash(signature), "--public-key", toBash(publicKey)];
 	run(bash, [engine, "verify", ...common], { env: baseEnv });
 	check(true, "offline cryptographic fixture passes SHA-256, signature and archive checks");
+	const oversizedSource = join(work, "expanded-over-limit.bin");
+	const oversizedArchive = join(work, "expanded-over-limit.tgz");
+	const oversizedFile = openSync(oversizedSource, "w");
+	try { ftruncateSync(oversizedFile, 536870913); } finally { closeSync(oversizedFile); }
+	run(bash, ["-lc", 'tar -czf "$1" -C "$2" expanded-over-limit.bin && openssl dgst -sha256 -sign "$3" -out "$4" "$1"', "bash", toBash(oversizedArchive), toBash(work), toBash(privateKey), toBash(`${oversizedArchive}.sig`)]);
+	assert.ok(readFileSync(oversizedArchive).length < 268435456, "fixture must fit the compressed transport limit");
+	const oversizedDigest = createHash("sha256").update(readFileSync(oversizedArchive)).digest("hex");
+	const oversizedResult = spawnSync(bash, [engine, "verify", "--artifact", toBash(oversizedArchive), "--sha256", oversizedDigest, "--signature", toBash(`${oversizedArchive}.sig`), "--public-key", toBash(publicKey)], { encoding: "utf8", env: baseEnv, timeout: 30_000 });
+	check(oversizedResult.status !== 0 && oversizedResult.stderr.includes("512 MiB expanded limit"), "compressed archive bomb is rejected by its advertised expanded size before extraction");
+	try {
+		const linkedKey = join(work, "linked-public.pem");
+		symlinkSync(publicKey, linkedKey, "file");
+		const linkedResult = spawnSync(bash, [engine, "verify", ...common.map((value) => value === toBash(publicKey) ? toBash(linkedKey) : value)], { encoding: "utf8", env: baseEnv });
+		check(linkedResult.status !== 0 && linkedResult.stderr.includes("release public key must not be a symlink"), "publisher key symlink fails closed before signature verification");
+	} catch (error) {
+		if (process.platform !== "win32" || !["EPERM", "EACCES"].includes(error.code)) throw error;
+	}
 	process.stderr.write("fleet verifier: signed fixture checked\n");
 	const bad = spawnSync(bash, [engine, "verify", ...common.map((value) => value === digest ? "0".repeat(64) : value)], { encoding: "utf8", env: baseEnv });
 	check(bad.status !== 0 && bad.stderr.includes("SHA-256 mismatch"), "offline negative fixture rejects a mismatched digest before installation");
@@ -162,6 +189,18 @@ try {
 	run(bash, ["-lc", 'tar -C "$1" -czf "$2" package && openssl dgst -sha256 -sign "$3" -out "$4" "$2"', "bash", toBash(dirname(packageRoot)), toBash(artifact2), toBash(privateKey), toBash(signature2)]);
 	const digest2 = createHash("sha256").update(readFileSync(artifact2)).digest("hex");
 	const common2 = ["--artifact", toBash(artifact2), "--sha256", digest2, "--signature", toBash(signature2), "--public-key", toBash(publicKey)];
+	const release2 = join(installRoot, "releases", digest2);
+	mkdirSync(release2, { recursive: true });
+	writeFileSync(join(release2, "interrupted-publish.marker"), "preserve for inspection\n");
+	const interruptedPublish = spawnSync(bash, [engine, "upgrade", ...lifecycleBase, ...common2], { encoding: "utf8", env: baseEnv });
+	const priorState = readFileSync(join(stateRoot, "users", Buffer.from("fixture-user").toString("hex"), "release-state"), "utf8");
+	check(
+		interruptedPublish.status !== 0 && interruptedPublish.stderr.includes("existing release directory is incomplete") &&
+			priorState === `current=${digest}\nprevious=\n` && !existsSync(join(stateRoot, "users", Buffer.from("fixture-user").toString("hex"), "pending")) &&
+			existsSync(join(release2, "interrupted-publish.marker")) && !readdirSync(join(installRoot, "releases")).some((name) => name.startsWith(`.staging-${digest2}-`)),
+		"an interrupted same-digest publish fails closed without changing active state or nesting/overwriting its evidence",
+	);
+	rmSync(release2, { recursive: true, force: true });
 	run(bash, [engine, "upgrade", ...lifecycleBase, ...common2], { env: baseEnv });
 	const stateKey = Buffer.from("fixture-user").toString("hex");
 	let releaseState = readFileSync(join(stateRoot, "users", stateKey, "release-state"), "utf8");

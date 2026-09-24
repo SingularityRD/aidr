@@ -28,8 +28,8 @@
 import {
 	existsSync,
 	mkdtempSync,
-	readFileSync,
 	readdirSync,
+	readFileSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -46,6 +46,8 @@ import type {
 } from "../utils/secret-store.js";
 
 const testHome = mkdtempSync(join(tmpdir(), "aidr-secret-store-"));
+const originalHome = process.env.HOME;
+process.env.HOME = testHome;
 vi.mock("node:os", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:os")>();
 	return { ...actual, homedir: () => testHome };
@@ -62,7 +64,7 @@ const {
 	createWindowsDpapiStore,
 	resolveSecretStore,
 } = await import("../utils/secret-store.js");
-const { createConfig, getConfig, revokeSecret, rotateSecret } = await import(
+const { createConfig, getConfig, replaceConfig, revokeSecret, rotateSecret } = await import(
 	"../utils/config-manager.js"
 );
 
@@ -76,9 +78,14 @@ const env = {
 };
 
 afterEach(() => {
+	delete process.env.AIDR_COMMERCIAL;
 	rmSync(configDir, { recursive: true, force: true });
 });
-afterAll(() => rmSync(testHome, { recursive: true, force: true }));
+afterAll(() => {
+	if (originalHome === undefined) delete process.env.HOME;
+	else process.env.HOME = originalHome;
+	rmSync(testHome, { recursive: true, force: true });
+});
 
 function storedDocument(): Record<string, unknown> {
 	return JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
@@ -290,13 +297,48 @@ describe("platform secret-store backends (injected command runner)", () => {
 		for (const call of calls) expect(call.args.join(" ")).not.toContain(secret);
 	});
 
+	it("does not clear the config reference when Linux revoke fails", async () => {
+		const { runner: baseRunner } = secretToolRunner();
+		const store = createLinuxSecretServiceStore({
+			runner: (command, args, request) =>
+				args[0] === "clear"
+					? { status: 1, stderr: "Cannot autolaunch D-Bus without X11 $DISPLAY" }
+					: baseRunner(command, args, request),
+		});
+		await createConfig(env, false, { secretStore: store });
+		const before = readFileSync(configFile, "utf8");
+
+		expect(() => revokeSecret({ secretStore: store })).toThrow(/refused to delete/i);
+		expect(readFileSync(configFile, "utf8")).toBe(before);
+		expect(storedDocument().secret_ref).toBeDefined();
+	});
+
+	it("clears the config only when Linux revoke confirms the item is absent", async () => {
+		const { runner: baseRunner } = secretToolRunner();
+		const store = createLinuxSecretServiceStore({
+			runner: (command, args, request) =>
+				args[0] === "clear"
+					? { status: 1, stderr: "No such secret item at path" }
+					: baseRunner(command, args, request),
+		});
+		await createConfig(env, false, { secretStore: store });
+
+		const result = revokeSecret({ secretStore: store });
+
+		expect(result.revokedRef).toBeTruthy();
+		expect(storedDocument().secret_ref).toBeUndefined();
+		expect(storedDocument().apiKey).toBeUndefined();
+	});
+
 	it("reports a backend as unavailable when its tool cannot run", () => {
 		const missing: CommandRunner = () => ({ status: null, error: new Error("spawn ENOENT") });
 		expect(createLinuxSecretServiceStore({ runner: missing }).isAvailable()).toBe(false);
 		expect(createMacosKeychainStore({ runner: missing }).isAvailable()).toBe(false);
 		expect(
-			createWindowsDpapiStore({ runner: missing, directory: join(testHome, "missing") })
-				.isAvailable(),
+			createWindowsDpapiStore({
+				runner: missing,
+				directory: join(testHome, "missing"),
+			}).isAvailable(),
 		).toBe(false);
 	});
 });
@@ -419,10 +461,7 @@ describe("config manager with a secret store", () => {
 					// Another writer replaces config.json between the store write and
 					// the config commit.
 					const temporary = `${configFile}.concurrent`;
-					writeFileSync(
-						temporary,
-						JSON.stringify({ ...storedDocument(), concurrent_edit: true }),
-					);
+					writeFileSync(temporary, JSON.stringify({ ...storedDocument(), concurrent_edit: true }));
 					renameSync(temporary, configFile);
 					return;
 				}
@@ -486,6 +525,22 @@ describe("config manager with a secret store", () => {
 		expect((await createConfig(env, false, { secretStore: store })).outcome).toBe("created");
 	});
 
+	it("does not misidentify the separate managed API key as the CLI setup key", async () => {
+		const secrets = new Map<string, string>();
+		const store = fakeVault("windows-dpapi", secrets);
+		await createConfig(env, false, { secretStore: store });
+		const managedKey = "synthetic-managed-key";
+		writeFileSync(
+			configFile,
+			JSON.stringify({ ...storedDocument(), auth: { api_key: managedKey } }),
+		);
+
+		rotateSecret({ secretStore: store });
+		expect((storedDocument().auth as { api_key: string }).api_key).toBe(managedKey);
+		revokeSecret({ secretStore: store });
+		expect((storedDocument().auth as { api_key: string }).api_key).toBe(managedKey);
+	});
+
 	it("keeps --force working on the explicitly selected file fallback", async () => {
 		const fallback = createFileAclStore();
 
@@ -502,5 +557,44 @@ describe("config manager with a secret store", () => {
 		const reusedKey = getConfig({ secretStore: fallback })?.apiKey;
 		expect((await createConfig(env, false, { secretStore: fallback })).outcome).toBe("reused");
 		expect(getConfig({ secretStore: fallback })?.apiKey).toBe(reusedKey);
+	});
+
+	it("migrates managed auth through a private CLI rewrite and rotates its vault reference", async () => {
+		process.env.AIDR_COMMERCIAL = "1";
+		const secrets = new Map<string, string>();
+		const store = fakeVault("windows-dpapi", secrets);
+		await createConfig(env, false, { secretStore: store });
+		writeFileSync(
+			configFile,
+			JSON.stringify({
+				...storedDocument(),
+				auth: { api_key: "synthetic-managed-key", enrollment_token: "synthetic-enroll-token" },
+			}),
+		);
+		expect((await createConfig(env, false, { secretStore: store })).outcome).toBe("reused");
+		let stored = JSON.stringify(storedDocument());
+		expect(stored).not.toContain("synthetic-managed-key");
+		expect(stored).not.toContain("synthetic-enroll-token");
+		const originalRef = (storedDocument().auth as { api_key_ref: { id: string } }).api_key_ref.id;
+		expect(getConfig({ secretStore: store })?.auth?.api_key).toBe("synthetic-managed-key");
+		expect(getConfig({ secretStore: store })?.auth?.enrollment_token).toBe(
+			"synthetic-enroll-token",
+		);
+		const current = getConfig({ secretStore: store });
+		if (!current) throw new Error("Expected a stored test config.");
+		replaceConfig(
+			{
+				...current,
+				auth: { ...current.auth, api_key: "synthetic-rotated-key" },
+			},
+			{ secretStore: store },
+		);
+		stored = JSON.stringify(storedDocument());
+		expect(stored).not.toContain("synthetic-rotated-key");
+		expect((storedDocument().auth as { api_key_ref: { id: string } }).api_key_ref.id).not.toBe(
+			originalRef,
+		);
+		expect(secrets.has(originalRef)).toBe(false);
+		expect(getConfig({ secretStore: store })?.auth?.api_key).toBe("synthetic-rotated-key");
 	});
 });

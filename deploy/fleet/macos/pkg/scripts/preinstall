@@ -1,7 +1,48 @@
 #!/bin/sh
 set -eu
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 ROOT="/Library/Application Support/Singularity AIDR"
-[ ! -L "$ROOT" ] || { echo "Refusing to install through a symlinked AIDR root" >&2; exit 1; }
-# Payload verification happens before pkg creation and again in postinstall. A
-# clean endpoint has no payload at preinstall time.
+PIN_DIR=/etc/singularity-aidr
+PIN_FILE="$PIN_DIR/release-public.sha256"
+KEY_FILE="$ROOT/config/release-public.pem"
+EXPECTED_SHA256=@RELEASE_KEY_SHA256@
+ROOT_UID=0
+
+fail() { echo "AIDR PKG: $*" >&2; exit 1; }
+valid_fingerprint() { printf '%s' "$1" | grep -Eq '^[a-f0-9]{64}$'; }
+protected_path() {
+	[ ! -L "$1" ] || fail "symlinked trust path: $1"
+	if [ "$(uname -s)" = Darwin ]; then
+		owner=$(stat -f '%u' "$1"); mode=$(stat -f '%Lp' "$1")
+		acl_listing=$(LC_ALL=C ls -lde "$1") || fail "cannot inspect trust path ACL: $1"
+		printf '%s\n' "$acl_listing" | awk 'END { exit (NR == 1 ? 0 : 1) }' || fail "trust path must not carry ACLs: $1"
+	else owner=$(stat -c '%u' "$1"); mode=$(stat -c '%a' "$1"); fi
+	[ "$owner" = "$ROOT_UID" ] || fail "trust path must be root-owned: $1"
+	last_two=$(printf '%s' "$mode" | sed 's/.*\(..\)$/\1/')
+	case "$last_two" in *[2367]*) fail "trust path must not be group/world writable: $1" ;; esac
+}
+key_fingerprint() {
+	der=$(mktemp)
+	trap 'rm -f "$der"' EXIT HUP INT TERM
+	openssl pkey -pubin -in "$1" -outform DER > "$der" 2>/dev/null || fail "invalid installed release public key"
+	openssl dgst -sha256 -r "$der" | awk '{print $1}'
+}
+
+[ "${3:-}" = / ] || fail "installation target must be the startup volume"
+valid_fingerprint "$EXPECTED_SHA256" || fail "package release-key fingerprint is invalid"
+[ ! -L "$ROOT" ] || fail "symlinked AIDR root"
+[ -d "$PIN_DIR" ] && [ -f "$PIN_FILE" ] || fail "independently provisioned release-key fingerprint is missing"
+protected_path "$PIN_DIR"
+protected_path "$PIN_FILE"
+printf '%s\n' "$EXPECTED_SHA256" | cmp -s - "$PIN_FILE" || fail "trusted release-key fingerprint is invalid or package key is unapproved"
+
+if [ -e "$ROOT" ] || pkgutil --pkg-info com.singularity.aidr.fleet >/dev/null 2>&1; then
+	[ -d "$ROOT" ] && [ -d "$ROOT/config" ] && [ -f "$KEY_FILE" ] || fail "existing AIDR installation has no release public key"
+	protected_path "$ROOT"
+	protected_path "$ROOT/config"
+	protected_path "$KEY_FILE"
+	[ "$(key_fingerprint "$KEY_FILE")" = "$EXPECTED_SHA256" ] || fail "installed release key differs from approved key"
+fi
 exit 0

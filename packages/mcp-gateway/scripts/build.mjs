@@ -4,6 +4,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { copyPackageLicense } from "../../../scripts/copy-package-license.mjs";
 
 const packageRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const packageManifest = JSON.parse(await readFile(resolve(packageRoot, "package.json"), "utf8"));
@@ -25,7 +26,7 @@ await Promise.all([
     outfile: resolve(distDir, output),
     bundle: true,
     platform: "node",
-    target: "node20",
+    target: "node22.12",
     format: "esm",
     packages: "bundle",
     minify: false,
@@ -34,9 +35,10 @@ await Promise.all([
     logLevel: "warning",
   });
 }));
+await copyPackageLicense({ packageRoot });
 execFileSync(process.execPath, [
   resolve(packageRoot, "../../scripts/generate-artifact-manifest.mjs"),
   "--dir", distDir,
-  "--artifact-id", "@singularityrd/aidr-mcp-gateway",
+  "--artifact-id", "mcp-gateway/dist",
   "--version", packageManifest.version,
 ], { stdio: "inherit" });

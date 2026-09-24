@@ -10,15 +10,10 @@
  * report that outcome — they never touch the credential themselves.
  */
 
-import chalk from "chalk";
-import {
-	type ConfigManagerOptions,
-	revokeSecret,
-	rotateSecret,
-} from "../utils/config-manager.js";
-import { SECRET_STORE_KINDS, SECRET_STORE_ENV } from "../utils/secret-store.js";
+import { type ConfigManagerOptions, revokeSecret, rotateSecret } from "../utils/config-manager.js";
+import { SECRET_STORE_ENV, SECRET_STORE_KINDS } from "../utils/secret-store.js";
 
-export interface SecretCommandOptions {
+interface SecretCommandOptions {
 	secretStore?: string;
 	json?: boolean;
 }
@@ -28,7 +23,11 @@ export const SECRET_STORE_OPTION_DESCRIPTION =
 	`Credential store: ${SECRET_STORE_KINDS.join(", ")} (default: detect the OS vault; ` +
 	`${SECRET_STORE_ENV}=file-acl accepts the reduced-protection file fallback)`;
 
-function report(command: string, payload: Record<string, unknown>, options: SecretCommandOptions): void {
+function report(
+	command: string,
+	payload: Record<string, unknown>,
+	options: SecretCommandOptions,
+): void {
 	if (options.json) {
 		console.log(JSON.stringify({ command, ...payload }, null, 2));
 	}
@@ -39,30 +38,29 @@ async function rotateKeyCommand(options: SecretCommandOptions = {}): Promise<voi
 	try {
 		const result = rotateSecret(manager);
 		if (options.json) {
-			report("config rotate-key", { ...result }, options);
+			report("config rotate-key", { ...result, scope: "cli-setup-only" }, options);
 			return;
 		}
+		console.log(`✅ Rotated the CLI setup credential in the ${result.store} store.`);
 		console.log(
-			chalk.green(`✅ Rotated the local AIDR credential in the ${result.store} store.`),
+			"  Managed endpoint API keys are unchanged; renew or revoke them in the control plane.",
 		);
-		console.log(chalk.gray(`  Config: ${result.path}`));
+		console.log(`  Config: ${result.path}`);
 		console.log(
-			chalk.gray(
-				`  Previous credential: ${
-					result.previousRef
-						? `${result.previousRef.store}:${result.previousRef.id} (revoked after the new credential committed)`
-						: "file fallback — replaced atomically at commit"
-				}`,
-			),
+			`  Previous credential: ${
+				result.previousRef
+					? `${result.previousRef.store}:${result.previousRef.id} (revoked after the new credential committed)`
+					: "file fallback — replaced atomically at commit"
+			}`,
 		);
-		console.log(chalk.gray(`  Recorded at: ${result.rotatedAt}`));
-		if (result.warning) console.log(chalk.yellow(`  ⚠️  ${result.warning}`));
+		console.log(`  Recorded at: ${result.rotatedAt}`);
+		if (result.warning) console.log(`  ⚠️  ${result.warning}`);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (options.json) {
 			report("config rotate-key", { error: message }, options);
 		} else {
-			console.error(chalk.red(`❌ Could not rotate the local credential: ${message}`));
+			console.error(`❌ Could not rotate the local credential: ${message}`);
 		}
 		process.exitCode = 1;
 	}
@@ -73,30 +71,29 @@ async function revokeKeyCommand(options: SecretCommandOptions = {}): Promise<voi
 	try {
 		const result = revokeSecret(manager);
 		if (options.json) {
-			report("config revoke-key", { ...result }, options);
+			report("config revoke-key", { ...result, scope: "cli-setup-only" }, options);
 			return;
 		}
-		console.log(chalk.green(`✅ Revoked the local AIDR credential in the ${result.store} store.`));
-		console.log(chalk.gray(`  Config: ${result.path}`));
+		console.log(`✅ Revoked the CLI setup credential in the ${result.store} store.`);
+		console.log("  Managed endpoint API keys remain active; revoke them in the control plane.");
+		console.log(`  Config: ${result.path}`);
 		console.log(
-			chalk.gray(
-				`  Revoked credential: ${
-					result.revokedRef
-						? `${result.revokedRef.store}:${result.revokedRef.id}`
-						: "file fallback — removed from the config document"
-				}`,
-			),
+			`  Revoked credential: ${
+				result.revokedRef
+					? `${result.revokedRef.store}:${result.revokedRef.id}`
+					: "file fallback — removed from the config document"
+			}`,
 		);
-		console.log(chalk.gray(`  Recorded at: ${result.revokedAt}`));
+		console.log(`  Recorded at: ${result.revokedAt}`);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (options.json) {
 			report("config revoke-key", { error: message }, options);
 		} else {
-			console.error(chalk.red(`❌ Could not revoke the local credential: ${message}`));
+			console.error(`❌ Could not revoke the local credential: ${message}`);
 		}
 		process.exitCode = 1;
 	}
 }
 
-export { rotateKeyCommand, revokeKeyCommand };
+export { revokeKeyCommand, rotateKeyCommand };

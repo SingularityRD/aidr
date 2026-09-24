@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+[ "${3:-}" = / ] || { echo "AIDR PKG: installation target must be the startup volume" >&2; exit 1; }
 ROOT="/Library/Application Support/Singularity AIDR"
 DIGEST=$(tr -d ' \r\n' < "$ROOT/payload/connector.tgz.sha256")
 export AIDR_FLEET_PLATFORM=macos

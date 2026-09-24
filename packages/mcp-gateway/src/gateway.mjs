@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
 	approveQuarantinedMcpToolset,
 	attestMcpToolManifest,
@@ -22,14 +23,24 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const SESSION = /^[\x21-\x7e]{8,256}$/;
 const MAX_ACTIVE_PER_TENANT = 16;
 const MAX_SESSIONS = 10_000;
+const MAX_SESSIONS_PER_TENANT = 256;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
-function upstreamHeaders(server, sessionId) {
-	const auth = server.upstreamAuthEnv ? process.env[server.upstreamAuthEnv] : undefined;
+function resolvedUpstreamAuth(server) {
+	const auth = Object.hasOwn(server, "resolvedUpstreamAuth")
+		? server.resolvedUpstreamAuth
+		: server.upstreamAuthEnv
+			? process.env[server.upstreamAuthEnv]
+			: undefined;
 	if (server.upstreamAuthEnv && (!auth || /[\r\n]/.test(auth)))
 		throw new Error("upstream_auth_unavailable");
+	return auth;
+}
+
+function upstreamHeaders(server, sessionId) {
+	const auth = resolvedUpstreamAuth(server);
 	return {
 		"content-type": "application/json",
 		accept: server.transport === "sse" ? "text/event-stream" : "application/json",
@@ -52,6 +63,425 @@ function rpcResponse(id, result) {
 
 function jsonObject(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+const JSON_SCHEMA_KEYWORDS = new Set([
+	"$anchor",
+	"$comment",
+	"$defs",
+	"$id",
+	"$ref",
+	"$schema",
+	"additionalProperties",
+	"allOf",
+	"anyOf",
+	"const",
+	"contains",
+	"default",
+	"definitions",
+	"dependentRequired",
+	"deprecated",
+	"description",
+	"else",
+	"enum",
+	"examples",
+	"exclusiveMaximum",
+	"exclusiveMinimum",
+	"if",
+	"items",
+	"maxContains",
+	"maximum",
+	"maxItems",
+	"maxLength",
+	"maxProperties",
+	"minContains",
+	"minimum",
+	"minItems",
+	"minLength",
+	"minProperties",
+	"multipleOf",
+	"not",
+	"oneOf",
+	"pattern",
+	"patternProperties",
+	"prefixItems",
+	"properties",
+	"propertyNames",
+	"readOnly",
+	"required",
+	"then",
+	"title",
+	"type",
+	"uniqueItems",
+	"writeOnly",
+]);
+
+const MAX_SCHEMA_REGEX_LENGTH = 256;
+const MAX_SCHEMA_REGEX_INPUT_LENGTH = 4096;
+const MAX_SCHEMA_REGEX_WORK = 1_000_000;
+
+function compileSafeSchemaRegex(pattern) {
+	if (typeof pattern !== "string" || pattern.length > MAX_SCHEMA_REGEX_LENGTH) return null;
+	let inCharacterClass = false;
+	let hasQuantifier = false;
+	for (let index = 0; index < pattern.length; index += 1) {
+		const character = pattern[index];
+		if (character === "\\") {
+			const escaped = pattern[index + 1];
+			if (escaped === undefined || /[1-9k]/i.test(escaped)) return null;
+			if (!inCharacterClass && ["p", "P", "u"].includes(escaped) && pattern[index + 2] === "{") {
+				const close = pattern.indexOf("}", index + 3);
+				if (close < 0) return null;
+				index = close;
+			} else {
+				index += 1;
+			}
+			continue;
+		}
+		if (inCharacterClass) {
+			if (character === "]") inCharacterClass = false;
+			continue;
+		}
+		if (character === "[") {
+			inCharacterClass = true;
+			continue;
+		}
+		if (character === "(" || character === ")" || character === "|") return null;
+		if (character === "*" || character === "+" || character === "?" || character === "{") {
+			if (hasQuantifier) return null;
+			hasQuantifier = true;
+		}
+	}
+	if (inCharacterClass) return null;
+	try {
+		return new RegExp(pattern, "u");
+	} catch {
+		return null;
+	}
+}
+
+function testSchemaRegex(pattern, value, context) {
+	context.regexWork += pattern.source.length * Math.max(1, value.length);
+	if (context.regexWork > MAX_SCHEMA_REGEX_WORK) {
+		throw new Error("schema_validation_budget_exhausted");
+	}
+	return pattern.test(value);
+}
+
+function jsonTypeMatches(value, type) {
+	if (type === "null") return value === null;
+	if (type === "array") return Array.isArray(value);
+	if (type === "object") return jsonObject(value);
+	if (type === "integer") return Number.isSafeInteger(value);
+	if (type === "number") return typeof value === "number" && Number.isFinite(value);
+	return typeof value === type && ["boolean", "string"].includes(type);
+}
+
+function resolveLocalSchemaRef(root, reference) {
+	if (reference === "#") return root;
+	if (typeof reference !== "string" || !reference.startsWith("#/")) return null;
+	let current = root;
+	for (const raw of reference.slice(2).split("/")) {
+		const key = raw.replace(/~1/g, "/").replace(/~0/g, "~");
+		if (!jsonObject(current) && !Array.isArray(current)) return null;
+		if (!Object.hasOwn(current, key)) return null;
+		current = current[key];
+	}
+	return current;
+}
+
+function supportedJsonSchema(
+	schema,
+	root = schema,
+	context = { nodes: 0, seen: new Set() },
+	depth = 0,
+) {
+	context.nodes += 1;
+	if (context.nodes > 10_000 || depth > 64) return false;
+	if (typeof schema === "boolean") return true;
+	if (!jsonObject(schema) || Object.keys(schema).some((key) => !JSON_SCHEMA_KEYWORDS.has(key))) {
+		return false;
+	}
+	if (context.seen.has(schema)) return true;
+	context.seen.add(schema);
+	const nested = (child) => supportedJsonSchema(child, root, context, depth + 1);
+	if (schema.$ref !== undefined) {
+		const target = resolveLocalSchemaRef(root, schema.$ref);
+		if (target === null || !nested(target)) return false;
+	}
+	const types =
+		schema.type === undefined ? [] : Array.isArray(schema.type) ? schema.type : [schema.type];
+	if (
+		types.some(
+			(type) =>
+				type !== "null" &&
+				type !== "array" &&
+				type !== "object" &&
+				type !== "integer" &&
+				type !== "number" &&
+				type !== "boolean" &&
+				type !== "string",
+		) ||
+		(schema.type !== undefined && types.length === 0)
+	)
+		return false;
+	for (const keyword of [
+		"minLength",
+		"maxLength",
+		"minItems",
+		"maxItems",
+		"minContains",
+		"maxContains",
+		"minProperties",
+		"maxProperties",
+	]) {
+		if (!validNonnegativeInteger(schema[keyword])) return false;
+	}
+	for (const keyword of ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"]) {
+		if (schema[keyword] !== undefined && !Number.isFinite(schema[keyword])) return false;
+	}
+	if (
+		schema.multipleOf !== undefined &&
+		(!Number.isFinite(schema.multipleOf) || schema.multipleOf <= 0)
+	) {
+		return false;
+	}
+	if (schema.pattern !== undefined && !compileSafeSchemaRegex(schema.pattern)) {
+		return false;
+	}
+	if (schema.uniqueItems !== undefined && typeof schema.uniqueItems !== "boolean") return false;
+	if (
+		schema.required !== undefined &&
+		(!Array.isArray(schema.required) || schema.required.some((key) => typeof key !== "string"))
+	) {
+		return false;
+	}
+	if (schema.enum !== undefined && (!Array.isArray(schema.enum) || schema.enum.length === 0))
+		return false;
+	for (const keyword of ["allOf", "anyOf", "oneOf", "prefixItems"]) {
+		if (
+			schema[keyword] !== undefined &&
+			(!Array.isArray(schema[keyword]) || !schema[keyword].every(nested))
+		) {
+			return false;
+		}
+	}
+	for (const keyword of [
+		"not",
+		"if",
+		"then",
+		"else",
+		"contains",
+		"propertyNames",
+		"additionalProperties",
+	]) {
+		if (schema[keyword] !== undefined && !nested(schema[keyword])) return false;
+	}
+	if (schema.items !== undefined) {
+		const items = Array.isArray(schema.items) ? schema.items : [schema.items];
+		if (!items.every(nested)) return false;
+	}
+	for (const keyword of ["$defs", "definitions", "properties", "patternProperties"]) {
+		if (schema[keyword] === undefined) continue;
+		if (!jsonObject(schema[keyword]) || !Object.values(schema[keyword]).every(nested)) return false;
+	}
+	if (schema.patternProperties !== undefined) {
+		for (const pattern of Object.keys(schema.patternProperties)) {
+			if (!compileSafeSchemaRegex(pattern)) return false;
+		}
+	}
+	if (schema.dependentRequired !== undefined) {
+		if (!jsonObject(schema.dependentRequired)) return false;
+		if (
+			Object.values(schema.dependentRequired).some(
+				(required) => !Array.isArray(required) || required.some((item) => typeof item !== "string"),
+			)
+		)
+			return false;
+	}
+	return true;
+}
+
+function matchesJsonSchema(
+	value,
+	schema,
+	root = schema,
+	context = { nodes: 0, regexWork: 0 },
+	depth = 0,
+) {
+	context.nodes += 1;
+	if (context.nodes > 10_000 || depth > 64) throw new Error("schema_validation_budget_exhausted");
+	if (typeof schema === "boolean") return schema;
+	if (!jsonObject(schema) || Object.keys(schema).some((key) => !JSON_SCHEMA_KEYWORDS.has(key))) {
+		return false;
+	}
+	const nested = (candidate, childSchema) =>
+		matchesJsonSchema(candidate, childSchema, root, context, depth + 1);
+	if (schema.$ref !== undefined) {
+		const target = resolveLocalSchemaRef(root, schema.$ref);
+		if (target === null || !nested(value, target)) return false;
+	}
+	if (schema.type !== undefined) {
+		const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+		if (types.length === 0 || types.some((type) => typeof type !== "string")) return false;
+		if (!types.some((type) => jsonTypeMatches(value, type))) return false;
+	}
+	if (schema.const !== undefined && !isDeepStrictEqual(value, schema.const)) return false;
+	if (schema.enum !== undefined) {
+		if (
+			!Array.isArray(schema.enum) ||
+			!schema.enum.some((entry) => isDeepStrictEqual(value, entry))
+		) {
+			return false;
+		}
+	}
+	for (const [keyword, mode] of [
+		["allOf", "all"],
+		["anyOf", "any"],
+		["oneOf", "one"],
+	]) {
+		if (schema[keyword] === undefined) continue;
+		if (!Array.isArray(schema[keyword]) || schema[keyword].length === 0) return false;
+		const count = schema[keyword].filter((candidate) => nested(value, candidate)).length;
+		if ((mode === "all" && count !== schema[keyword].length) || (mode === "any" && count === 0)) {
+			return false;
+		}
+		if (mode === "one" && count !== 1) return false;
+	}
+	if (schema.not !== undefined && nested(value, schema.not)) return false;
+	if (schema.if !== undefined) {
+		const branch = nested(value, schema.if) ? schema.then : schema.else;
+		if (branch !== undefined && !nested(value, branch)) return false;
+	}
+
+	if (typeof value === "string") {
+		if (schema.pattern !== undefined && value.length > MAX_SCHEMA_REGEX_INPUT_LENGTH) return false;
+		if (!validNonnegativeInteger(schema.minLength) || !validNonnegativeInteger(schema.maxLength)) {
+			return false;
+		}
+		if (schema.minLength !== undefined && [...value].length < schema.minLength) return false;
+		if (schema.maxLength !== undefined && [...value].length > schema.maxLength) return false;
+		if (schema.pattern !== undefined) {
+			const pattern = compileSafeSchemaRegex(schema.pattern);
+			if (!pattern || !testSchemaRegex(pattern, value, context)) return false;
+		}
+	}
+	if (typeof value === "number") {
+		if (!Number.isFinite(value)) return false;
+		for (const keyword of ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"]) {
+			if (schema[keyword] !== undefined && !Number.isFinite(schema[keyword])) return false;
+		}
+		if (schema.minimum !== undefined && value < schema.minimum) return false;
+		if (schema.maximum !== undefined && value > schema.maximum) return false;
+		if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) return false;
+		if (schema.exclusiveMaximum !== undefined && value >= schema.exclusiveMaximum) return false;
+		if (schema.multipleOf !== undefined) {
+			if (!Number.isFinite(schema.multipleOf) || schema.multipleOf <= 0) return false;
+			const quotient = value / schema.multipleOf;
+			if (Math.abs(quotient - Math.round(quotient)) > Number.EPSILON * 10) return false;
+		}
+	}
+	if (Array.isArray(value) && !matchesArraySchema(value, schema, nested)) return false;
+	if (jsonObject(value) && !matchesObjectSchema(value, schema, nested, context)) return false;
+	return true;
+}
+
+function validNonnegativeInteger(value) {
+	return value === undefined || (Number.isSafeInteger(value) && value >= 0);
+}
+
+function matchesArraySchema(value, schema, nested) {
+	if (
+		!validNonnegativeInteger(schema.minItems) ||
+		!validNonnegativeInteger(schema.maxItems) ||
+		!validNonnegativeInteger(schema.minContains) ||
+		!validNonnegativeInteger(schema.maxContains)
+	) {
+		return false;
+	}
+	if (schema.minItems !== undefined && value.length < schema.minItems) return false;
+	if (schema.maxItems !== undefined && value.length > schema.maxItems) return false;
+	if (schema.uniqueItems !== undefined && typeof schema.uniqueItems !== "boolean") return false;
+	if (schema.uniqueItems && value.length > 1024) return false;
+	if (
+		schema.uniqueItems &&
+		value.some((item, index) =>
+			value.slice(0, index).some((prior) => isDeepStrictEqual(prior, item)),
+		)
+	)
+		return false;
+	const prefix = schema.prefixItems ?? (Array.isArray(schema.items) ? schema.items : []);
+	if (
+		!Array.isArray(prefix) ||
+		prefix.slice(0, value.length).some((item, index) => !nested(value[index], item))
+	)
+		return false;
+	const itemSchema = Array.isArray(schema.items) ? true : (schema.items ?? true);
+	for (let index = prefix.length; index < value.length; index += 1) {
+		if (!nested(value[index], itemSchema)) return false;
+	}
+	if (schema.contains !== undefined) {
+		const count = value.filter((item) => nested(item, schema.contains)).length;
+		if (
+			count < (schema.minContains ?? 1) ||
+			count > (schema.maxContains ?? Number.POSITIVE_INFINITY)
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function matchesObjectSchema(value, schema, nested, context) {
+	if (
+		!validNonnegativeInteger(schema.minProperties) ||
+		!validNonnegativeInteger(schema.maxProperties)
+	) {
+		return false;
+	}
+	const keys = Object.keys(value);
+	if (schema.minProperties !== undefined && keys.length < schema.minProperties) return false;
+	if (schema.maxProperties !== undefined && keys.length > schema.maxProperties) return false;
+	if (schema.required !== undefined) {
+		if (!Array.isArray(schema.required) || schema.required.some((key) => typeof key !== "string")) {
+			return false;
+		}
+		if (schema.required.some((key) => !Object.hasOwn(value, key))) return false;
+	}
+	const properties = schema.properties ?? {};
+	const patterns = schema.patternProperties ?? {};
+	if (!jsonObject(properties) || !jsonObject(patterns)) return false;
+	let compiledPatterns;
+	compiledPatterns = Object.entries(patterns).map(([source, child]) => [
+		compileSafeSchemaRegex(source),
+		child,
+	]);
+	if (compiledPatterns.some(([pattern]) => !pattern)) return false;
+	for (const key of keys) {
+		if (compiledPatterns.length > 0 && key.length > MAX_SCHEMA_REGEX_INPUT_LENGTH) return false;
+		if (schema.propertyNames !== undefined && !nested(key, schema.propertyNames)) return false;
+		let matched = false;
+		if (Object.hasOwn(properties, key)) {
+			matched = true;
+			if (!nested(value[key], properties[key])) return false;
+		}
+		for (const [pattern, child] of compiledPatterns) {
+			if (!testSchemaRegex(pattern, key, context)) continue;
+			matched = true;
+			if (!nested(value[key], child)) return false;
+		}
+		if (!matched && !nested(value[key], schema.additionalProperties ?? true)) return false;
+	}
+	if (schema.dependentRequired !== undefined) {
+		if (!jsonObject(schema.dependentRequired)) return false;
+		for (const [key, required] of Object.entries(schema.dependentRequired)) {
+			if (!Array.isArray(required) || required.some((item) => typeof item !== "string"))
+				return false;
+			if (Object.hasOwn(value, key) && required.some((item) => !Object.hasOwn(value, item)))
+				return false;
+		}
+	}
+	return true;
 }
 
 function safeJson(value) {
@@ -216,6 +646,9 @@ const BLOCK_REASONS = new Set([
 	"unexpected_upstream_session",
 	"session_changed",
 	"tool_not_allowed",
+	"arguments_schema_mismatch",
+	"output_schema_mismatch",
+	"schema_validation_budget_exhausted",
 	"toolset_drift",
 	"output_blocked",
 	"output_oversize",
@@ -492,6 +925,16 @@ export function createMcpGateway(input, dependencies = {}) {
 	async function attest(server) {
 		const result = await attestMcpToolManifest({
 			candidate: server.signedManifest,
+			connection: [
+				"gateway-v1",
+				server.tenantId,
+				server.id,
+				server.url,
+				server.transport,
+				server.sessionMode,
+				server.upstreamAuthEnv ?? null,
+				resolvedUpstreamAuth(server) ?? null,
+			],
 			verifier: {
 				trustedSigners: server.trustedSigners,
 				revokedKeyIds: new Set(server.revokedKeyIds ?? []),
@@ -575,29 +1018,75 @@ export function createMcpGateway(input, dependencies = {}) {
 		}
 	}
 
+	function sessionCapacityAvailable(tenantId) {
+		let tenantSessions = 0;
+		for (const session of sessions.values()) {
+			if (session.tenantId === tenantId) tenantSessions += 1;
+		}
+		return tenantSessions < MAX_SESSIONS_PER_TENANT && sessions.size < MAX_SESSIONS;
+	}
+
+	async function terminateUpstreamSession(server, sessionId) {
+		try {
+			await fetchMcpEndpoint(
+				server.url,
+				{
+					method: "DELETE",
+					headers: upstreamHeaders(server, sessionId),
+					// Cleanup must still get one bounded attempt after the client has
+					// disconnected or the original request timed out.
+					signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+				},
+				{
+					mode: server.transport,
+					maxBodyBytes: config.maxBodyBytes,
+					lookup,
+					pinnedFetch,
+					acceptSessionTerminationResponse: true,
+				},
+			);
+		} catch {
+			/* The original refusal remains authoritative when upstream cleanup is unavailable. */
+		}
+	}
+
 	async function initializeRpc(rpc, client, server, request, signal) {
 		if (server.sessionMode === "stateless" && request.headers["mcp-session-id"] !== undefined)
 			throw new Error("unexpected_session");
-		const { result, sessionHeader } = await forward(server, rpc, undefined, signal);
-		inspect(result, scanner, config.maxBodyBytes);
-		const clientResult = clientInitializeResult(result);
 		if (server.sessionMode === "required") {
 			pruneExpiredSessions();
-			if (
-				!sessionHeader ||
-				!SESSION.test(sessionHeader) ||
-				sessions.has(sessionHeader) ||
-				sessions.size >= MAX_SESSIONS
-			)
-				throw new Error("invalid_upstream_session");
-			sessions.set(sessionHeader, {
-				clientId: client.id,
-				tenantId: client.tenantId,
-				serverId: server.id,
-				expiresAt: now().getTime() + SESSION_TTL_MS,
-			});
-		} else if (sessionHeader) throw new Error("unexpected_upstream_session");
-		return { body: rpcResponse(rpc.id, clientResult), sessionHeader };
+			if (!sessionCapacityAvailable(client.tenantId)) throw new Error("invalid_upstream_session");
+		}
+		const { result, sessionHeader } = await forward(server, rpc, undefined, signal);
+		const newSession =
+			typeof sessionHeader === "string" &&
+			SESSION.test(sessionHeader) &&
+			!sessions.has(sessionHeader);
+		try {
+			signal.throwIfAborted();
+			inspect(result, scanner, config.maxBodyBytes);
+			const clientResult = clientInitializeResult(result);
+			if (server.sessionMode === "required") {
+				pruneExpiredSessions();
+				if (
+					!sessionHeader ||
+					!SESSION.test(sessionHeader) ||
+					sessions.has(sessionHeader) ||
+					!sessionCapacityAvailable(client.tenantId)
+				)
+					throw new Error("invalid_upstream_session");
+				sessions.set(sessionHeader, {
+					clientId: client.id,
+					tenantId: client.tenantId,
+					serverId: server.id,
+					expiresAt: now().getTime() + SESSION_TTL_MS,
+				});
+			} else if (sessionHeader) throw new Error("unexpected_upstream_session");
+			return { body: rpcResponse(rpc.id, clientResult), sessionHeader };
+		} catch (cause) {
+			if (newSession) await terminateUpstreamSession(server, sessionHeader);
+			throw cause;
+		}
 	}
 
 	function listTools(rpc, observed, allowed) {
@@ -614,14 +1103,24 @@ export function createMcpGateway(input, dependencies = {}) {
 	}
 
 	async function callTool(rpc, server, observed, allowed, sessionId, signal) {
+		const tool = observed.find((candidate) => candidate.name === rpc.params?.name);
 		if (
 			!jsonObject(rpc.params) ||
 			typeof rpc.params.name !== "string" ||
 			!allowed.has(rpc.params.name) ||
-			!observed.some((tool) => tool.name === rpc.params.name) ||
+			!tool ||
 			(rpc.params.arguments !== undefined && !jsonObject(rpc.params.arguments))
 		) {
 			throw new Error("tool_not_allowed");
+		}
+		if (
+			!supportedJsonSchema(tool.input_schema) ||
+			!matchesJsonSchema(rpc.params.arguments ?? {}, tool.input_schema)
+		) {
+			throw new Error("arguments_schema_mismatch");
+		}
+		if (tool.output_schema !== undefined && !supportedJsonSchema(tool.output_schema)) {
+			throw new Error("output_schema_mismatch");
 		}
 		const upstream = await forward(
 			server,
@@ -635,6 +1134,15 @@ export function createMcpGateway(input, dependencies = {}) {
 			signal,
 		);
 		validateToolResult(upstream.result);
+		if (tool.output_schema !== undefined) {
+			const structured = upstream.result.structuredContent;
+			if (
+				(structured === undefined && upstream.result.isError !== true) ||
+				(structured !== undefined && !matchesJsonSchema(structured, tool.output_schema))
+			) {
+				throw new Error("output_schema_mismatch");
+			}
+		}
 		inspect(upstream.result, scanner, config.maxBodyBytes);
 		return { body: rpcResponse(rpc.id, upstream.result) };
 	}
@@ -669,8 +1177,15 @@ export function createMcpGateway(input, dependencies = {}) {
 			const rpc = parseRequest(await readBody(request, config.maxBodyBytes));
 			rpcId = rpc.id ?? null;
 			rpcMethod = rpc.method;
-			await attest(upstream);
-			const result = await processRpc(rpc, client, upstream, request, controller.signal);
+			// Bind the credential snapshot used for attestation to the credential sent
+			// upstream. Reading process.env again after an async attestation creates a
+			// rotation race that could execute against an unapproved identity.
+			const requestUpstream = {
+				...upstream,
+				resolvedUpstreamAuth: resolvedUpstreamAuth(upstream),
+			};
+			await attest(requestUpstream);
+			const result = await processRpc(rpc, client, requestUpstream, request, controller.signal);
 			await audit(client.tenantId, serverId, client.id, "allow", rpc.method);
 			sendRpcResult(response, result);
 		} catch (cause) {
@@ -765,7 +1280,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		close() {
 			return new Promise((resolve) => server.close(resolve));
 		},
-		async approve({ tenantId, serverId, toolsetHash, approvedBy, reason }) {
+		async approve({ tenantId, serverId, toolsetHash, bindingSha256, approvedBy, reason }) {
 			const target = config.servers.find(
 				(item) => item.tenantId === tenantId && item.id === serverId,
 			);
@@ -773,6 +1288,7 @@ export function createMcpGateway(input, dependencies = {}) {
 			return approveQuarantinedMcpToolset({
 				serverId,
 				toolsetHash,
+				bindingSha256,
 				approvedBy,
 				reason,
 				store: storeFor(tenantId),

@@ -10,7 +10,7 @@
  * blocking. See README.md ("Approving a flagged action").
  */
 
-import { ApprovalStore, initSentry } from "@singularityrd/aidr-core";
+import { ApprovalStore, initSentry, verifyArtifactIntegrityAndLog } from "@singularityrd/aidr-core";
 import { createAllowlistAddTool, createAllowlistRemoveTool } from "./allowlist-tools.js";
 import { getBundledDataDirs } from "./bundled-dirs.js";
 import { createLogger, type PluginLogger } from "./logger-adapter.js";
@@ -31,20 +31,29 @@ interface PluginApi {
 
 declare const __dirname: string;
 
-async function maybeVerifyIntegrity(): Promise<void> {
-	try {
-		// Dynamic import to avoid hard-coupling to core's public exports during transition.
-		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
-		const core = (await import("@singularityrd/aidr-core")) as any;
-		const fn = core?.verifyArtifactIntegrityAndLog as
-			| ((args: { artifactDir: string; artifactId: string }) => Promise<unknown>)
-			| undefined;
-		if (typeof fn === "function") {
-			await fn({ artifactDir: __dirname, artifactId: "openclaw/dist" });
-		}
-	} catch {
-		// Fail open
-	}
+function afterIntegrity<TArgs extends unknown[], TResult>(
+	requireIntegrity: () => Promise<void>,
+	handler: (...args: TArgs) => TResult,
+) {
+	return async (...args: TArgs) => {
+		await requireIntegrity();
+		return await handler(...args);
+	};
+}
+
+function integrityGatedTool(
+	requireIntegrity: () => Promise<void>,
+	tool: Record<string, unknown>,
+): Record<string, unknown> {
+	const execute = tool.execute;
+	if (typeof execute !== "function") return tool;
+	return {
+		...tool,
+		execute: async (...args: unknown[]) => {
+			await requireIntegrity();
+			return Reflect.apply(execute, tool, args);
+		},
+	};
 }
 
 export default {
@@ -60,7 +69,16 @@ export default {
 		initSentry({ name: "aidr-openclaw" });
 
 		const logger = createLogger(api.logger);
-		void maybeVerifyIntegrity();
+		const integrityReady = verifyArtifactIntegrityAndLog({
+			artifactDir: __dirname,
+			artifactId: "openclaw/dist",
+			logger,
+		});
+		const requireIntegrity = async () => {
+			// Do not convert a rejected commercial verification into a fulfilled
+			// readiness promise; every guarded surface must observe the failure.
+			await integrityReady;
+		};
 		const approvalStore = new ApprovalStore();
 		const outputProtection = new OpenClawOutputProtection(logger);
 		const { threatsDir, allowlistsDir } = getBundledDataDirs();
@@ -77,10 +95,16 @@ export default {
 
 		api.on(
 			"before_tool_call",
-			createToolCallHandler(approvalStore, logger, threatsDir, allowlistsDir),
+			afterIntegrity(
+				requireIntegrity,
+				createToolCallHandler(approvalStore, logger, threatsDir, allowlistsDir),
+			),
 			{ priority: 100 },
 		);
-		api.on("after_tool_call", outputProtection.afterToolCall.bind(outputProtection));
+		api.on(
+			"after_tool_call",
+			afterIntegrity(requireIntegrity, outputProtection.afterToolCall.bind(outputProtection)),
+		);
 		// OpenClaw requires this persistence hook to be synchronous. It can keep
 		// future transcript reads safe, but it runs after the tool already executed.
 		try {
@@ -97,29 +121,50 @@ export default {
 		}
 		// This is the enforceable output boundary: replace risky model text before
 		// it is delivered, including turns influenced by a flagged tool result.
-		api.on("message_sending", outputProtection.messageSending.bind(outputProtection), {
-			priority: 100,
-		});
-		api.on("reply_payload_sending", outputProtection.replyPayloadSending.bind(outputProtection), {
-			priority: 100,
-		});
+		api.on(
+			"message_sending",
+			afterIntegrity(requireIntegrity, outputProtection.messageSending.bind(outputProtection)),
+			{ priority: 100 },
+		);
+		api.on(
+			"reply_payload_sending",
+			afterIntegrity(requireIntegrity, outputProtection.replyPayloadSending.bind(outputProtection)),
+			{ priority: 100 },
+		);
 		// No approval tool is registered: the agent must not be able to approve
 		// its own blocked actions. `ask` verdicts stay blocking until a human
 		// approves out of band (see README.md).
 		api.registerTool(
-			createAllowlistAddTool(approvalStore, logger) as unknown as Record<string, unknown>,
+			integrityGatedTool(
+				requireIntegrity,
+				createAllowlistAddTool(approvalStore, logger) as unknown as Record<string, unknown>,
+			),
 		);
-		api.registerTool(createAllowlistRemoveTool(logger) as unknown as Record<string, unknown>);
-		api.on("gateway_start", createStartupScanHandler(logger, onFindings));
-		api.on("session_start", createSessionScanHandler(logger, onFindings));
+		api.registerTool(
+			integrityGatedTool(
+				requireIntegrity,
+				createAllowlistRemoveTool(logger) as unknown as Record<string, unknown>,
+			),
+		);
+		api.on(
+			"gateway_start",
+			afterIntegrity(requireIntegrity, createStartupScanHandler(logger, onFindings)),
+		);
+		api.on(
+			"session_start",
+			afterIntegrity(requireIntegrity, createSessionScanHandler(logger, onFindings)),
+		);
 		api.on(
 			"before_prompt_build",
-			createBeforePromptBuildHandler(
-				() => pendingFindings,
-				() => {
-					pendingFindings = null;
-				},
-				logger,
+			afterIntegrity(
+				requireIntegrity,
+				createBeforePromptBuildHandler(
+					() => pendingFindings,
+					() => {
+						pendingFindings = null;
+					},
+					logger,
+				),
 			),
 		);
 	},

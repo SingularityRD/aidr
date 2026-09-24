@@ -13,23 +13,36 @@
  *
  * or equivalently via `~/.codex/hooks.json`.
  *
- * Codex fails OPEN in every failure mode except a well-formed explicit deny, so
- * this entry point is written to always produce a decision. Even an unexpected
- * throw is converted into a deny on stdout, with a secondary stderr write so
- * that a partially-broken stdout still blocks (Codex treats `exit 2` with a
- * non-empty stderr as a block).
+ * Codex fails OPEN on malformed or missing hook output. This entry point uses
+ * empty stdout for an evaluated allow (the 0.141.0 no-op shape) and emits a
+ * well-formed explicit deny for every blocked or failed evaluation. Even an
+ * unexpected throw is converted into a deny on stdout, with a secondary stderr
+ * write so that a partially-broken stdout still blocks (Codex treats `exit 2`
+ * with a non-empty stderr as a block).
  */
 
 import { readFileSync } from "node:fs";
-import { createLogger, type Logger } from "@singularityrd/aidr-core";
+import {
+	ArtifactIntegrityError,
+	createHostObservation,
+	createLogger,
+	type Logger,
+	recordHostObservation,
+	verifyArtifactIntegrityAndLog,
+} from "@singularityrd/aidr-core";
 import { getCodexConnectorCoverageEvidence } from "./coverage.js";
 import { type CodexWireResult, DENY_HEADLINE, enforceCodexPreToolUse } from "./enforcement.js";
 
 // Codex surfaces stderr on a non-zero exit as the block reason, so diagnostics
 // must never share the channel that carries a decision.
 const logger: Logger = createLogger({ name: "aidr-codex", level: "warn" });
+const hostObservation = createHostObservation();
 
 function write(wire: CodexWireResult): void {
+	// Codex 0.141.0 treats a bare `permissionDecision: "allow"` as an
+	// unsupported output and fails open. Empty stdout is its documented no-op
+	// allow shape, so only deny decisions are written.
+	if (!wire.hookSpecificOutput) return;
 	process.stdout.write(`${JSON.stringify(wire)}\n`);
 }
 
@@ -56,6 +69,8 @@ function blockUnconditionally(reason: string): void {
 }
 
 async function main(): Promise<void> {
+	await verifyArtifactIntegrityAndLog({ artifactDir: __dirname, artifactId: "codex/dist", logger });
+
 	if (process.argv.includes("--health") || process.argv.includes("--coverage")) {
 		process.stdout.write(`${JSON.stringify(getCodexConnectorCoverageEvidence(), null, 2)}\n`);
 		return;
@@ -80,9 +95,9 @@ async function main(): Promise<void> {
 			throw new Error("hook input is not a JSON object");
 		}
 		input = parsed as Record<string, unknown>;
-	} catch (error) {
+	} catch {
 		blockUnconditionally(
-			`${DENY_HEADLINE}\nSingularity AIDR could not parse the tool call, so it was blocked. (${String(error)})`,
+			`${DENY_HEADLINE}\nSingularity AIDR could not parse the tool call, so it was blocked.`,
 		);
 		return;
 	}
@@ -107,8 +122,9 @@ async function main(): Promise<void> {
 	if (
 		typeof input.tool_name !== "string" ||
 		input.tool_name.trim() === "" ||
-		(input.tool_input != null &&
-			(typeof input.tool_input !== "object" || Array.isArray(input.tool_input)))
+		input.tool_input === null ||
+		typeof input.tool_input !== "object" ||
+		Array.isArray(input.tool_input)
 	) {
 		blockUnconditionally(
 			`${DENY_HEADLINE}\nSingularity AIDR could not identify the tool call, so it was blocked.`,
@@ -119,17 +135,27 @@ async function main(): Promise<void> {
 	try {
 		const outcome = await enforceCodexPreToolUse(input, { logger });
 		write(outcome.wire);
-	} catch (error) {
+		recordHostObservation(hostObservation, {
+			connector: "codex",
+			event: "PreToolUse",
+			toolName: input.tool_name as string,
+			decision: outcome.decision,
+		});
+	} catch {
 		// enforceCodexPreToolUse already fails closed internally; reaching here
 		// means something outside it broke, which must still block.
 		blockUnconditionally(
-			`${DENY_HEADLINE}\nSingularity AIDR failed while evaluating this tool call, so it was blocked. (${String(error)})`,
+			`${DENY_HEADLINE}\nSingularity AIDR failed while evaluating this tool call, so it was blocked.`,
 		);
 	}
 }
 
-main().catch((error) => {
-	blockUnconditionally(
-		`${DENY_HEADLINE}\nSingularity AIDR failed to start, so the tool call was blocked. (${String(error)})`,
-	);
+main().catch((error: unknown) => {
+	const integrityFailure =
+		error instanceof Error &&
+		(error instanceof ArtifactIntegrityError || error.name === "ArtifactIntegrityError");
+	const reason = integrityFailure
+		? `${DENY_HEADLINE}\n${(error as Error).message}; this tool call was blocked.`
+		: `${DENY_HEADLINE}\nSingularity AIDR failed to start, so the tool call was blocked.`;
+	blockUnconditionally(reason);
 });

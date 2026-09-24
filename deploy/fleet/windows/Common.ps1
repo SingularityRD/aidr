@@ -1,6 +1,49 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Assert-AidrFleetScriptAuthenticodeSignatures {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ScriptRoot,
+        [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{40}$')][string]$ExpectedThumbprint
+    )
+    if ($env:OS -ne 'Windows_NT') { throw "Fleet Authenticode verification must run on Windows" }
+    $root = (Resolve-Path -LiteralPath $ScriptRoot -ErrorAction Stop).Path
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) { throw "Fleet script root must be a directory" }
+    $required = @(
+        'Common.ps1',
+        'Install-Aidr.ps1',
+        'Invoke-AidrRemediation.ps1',
+        'New-AidrFleetManifest.ps1',
+        'Rollback-Aidr.ps1',
+        'Test-AidrDetection.ps1',
+        'Test-AidrFleetScriptSignatures.ps1',
+        'Uninstall-Aidr.ps1',
+        'Update-Aidr.ps1'
+    )
+    $scripts = @(Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File -ErrorAction Stop | Sort-Object Name)
+    $names = @($scripts | ForEach-Object { $_.Name })
+    foreach ($name in $required) {
+        if ($name -notin $names) { throw "Required Windows fleet script '$name' is missing from the signing set" }
+    }
+    if ($scripts.Count -ne $required.Count) {
+        $unexpected = @($names | Where-Object { $_ -notin $required })
+        if ($unexpected.Count -gt 0) { throw "Review and add unexpected PowerShell scripts to the Windows fleet signing set: $($unexpected -join ', ')" }
+    }
+    $expected = $ExpectedThumbprint.Replace(' ', '').ToUpperInvariant()
+    foreach ($script in $scripts) {
+        try { $signature = Get-AuthenticodeSignature -FilePath $script.FullName -ErrorAction Stop }
+        catch { throw "Could not inspect Authenticode signature for '$($script.Name)': $($_.Exception.Message)" }
+        if ([string]$signature.Status -ne 'Valid') {
+            throw "Windows fleet script '$($script.Name)' Authenticode status is '$($signature.Status)'; a valid release signature is required before packaging"
+        }
+        if ($null -eq $signature.SignerCertificate) { throw "Windows fleet script '$($script.Name)' has no identifiable Authenticode signer" }
+        $actual = ([string]$signature.SignerCertificate.Thumbprint).Replace(' ', '').ToUpperInvariant()
+        if ($actual -ne $expected) { throw "Windows fleet script '$($script.Name)' is not signed by the pinned management-script certificate" }
+    }
+    return $scripts.Count
+}
+
 function Test-AidrSha256 {
     param([AllowNull()][string]$Value)
     return $null -ne $Value -and $Value -match '^[a-fA-F0-9]{64}$'
@@ -63,10 +106,42 @@ function Get-AidrValidatedTargetHome {
     $forbidden = @($env:windir, $env:ProgramData, $env:ProgramFiles, ${env:ProgramFiles(x86)}) |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\', '/') }
-    if ($forbidden | Where-Object { $resolved.Equals($_, [StringComparison]::OrdinalIgnoreCase) }) {
+    if ($forbidden | Where-Object {
+        $resolved.Equals($_, [StringComparison]::OrdinalIgnoreCase) -or
+        $resolved.StartsWith("$_$([IO.Path]::DirectorySeparatorChar)", [StringComparison]::OrdinalIgnoreCase)
+    }) {
         throw "TargetHome cannot be a shared operating-system directory"
     }
     return $resolved
+}
+
+function Assert-AidrFileUnchanged {
+    param([Parameter(Mandatory)][string]$Path, [AllowNull()][byte[]]$OriginalBytes)
+    if ($null -eq $OriginalBytes) {
+        if ([IO.File]::Exists($Path)) { throw "Claude settings changed during operation; no configuration was overwritten" }
+        return
+    }
+    if (-not [IO.File]::Exists($Path) -or
+        -not [Collections.StructuralComparisons]::StructuralEqualityComparer.Equals([IO.File]::ReadAllBytes($Path), $OriginalBytes)) {
+        throw "Claude settings changed during operation; no configuration was overwritten"
+    }
+}
+
+function Assert-AidrJsonDepth {
+    param([Parameter(Mandatory)]$Value)
+    # ConvertTo-Json in Windows PowerShell 5.1 silently truncates beyond depth 100.
+    $queue = [Collections.Queue]::new()
+    $queue.Enqueue([pscustomobject]@{ Node = $Value; Depth = 0 })
+    while ($queue.Count -gt 0) {
+        $item = $queue.Dequeue()
+        $node = $item.Node
+        if ($null -eq $node -or $node -is [string] -or $node -is [ValueType]) { continue }
+        if ($item.Depth -ge 90) { throw "Claude settings exceed the supported JSON nesting depth; no configuration was changed" }
+        if ($node -is [Collections.IDictionary]) { $children = $node.Values }
+        elseif ($node -is [array]) { $children = $node }
+        else { $children = @($node.PSObject.Properties | ForEach-Object { $_.Value }) }
+        foreach ($child in $children) { $queue.Enqueue([pscustomobject]@{ Node = $child; Depth = $item.Depth + 1 }) }
+    }
 }
 
 function Write-AidrFleetLog {
@@ -249,9 +324,30 @@ function Expand-AidrVerifiedArchive {
             throw "Artifact archive contains an unsafe path"
         }
     }
-    $detailedEntries = @(& $tar -tvf $Archive 2>$null)
+    $previousLocale = $env:LC_ALL
+    try {
+        $env:LC_ALL = 'C'
+        $detailedEntries = @(& $tar -tvf $Archive 2>$null)
+    } finally { $env:LC_ALL = $previousLocale }
     if ($LASTEXITCODE -ne 0 -or $detailedEntries.Count -eq 0) { throw "Artifact archive metadata cannot be listed" }
-    if ($detailedEntries | Where-Object { [string]$_ -match '^[lh]' }) { throw "Artifact archive contains a symbolic or hard link" }
+    [long]$expandedBytes = 0
+    foreach ($entry in $detailedEntries) {
+        $line = [string]$entry
+        $type = if ($line.Length -gt 0) { $line.Substring(0, 1) } else { '' }
+        if ($type -notin @('-', 'd')) { throw "Artifact archive contains an unsupported entry type" }
+        if ($type -eq 'd') { continue }
+        $fields = @($line -split '\s+')
+        $timeIndex = -1
+        for ($index = 0; $index -lt $fields.Count; $index++) {
+            if ($fields[$index] -match '^\d{2}:\d{2}(?::\d{2})?$') { $timeIndex = $index; break }
+        }
+        if ($timeIndex -ge 3 -and $fields[$timeIndex - 1] -match '^\d{4}-\d{2}-\d{2}$') { $sizeIndex = $timeIndex - 2 }
+        elseif ($timeIndex -ge 3 -and $fields[$timeIndex - 1] -match '^\d{1,2}$') { $sizeIndex = $timeIndex - 3 }
+        else { throw "Artifact archive entry size cannot be determined" }
+        if ($fields[$sizeIndex] -notmatch '^[0-9]+$') { throw "Artifact archive entry size cannot be determined" }
+        $expandedBytes += [long]::Parse($fields[$sizeIndex], [Globalization.CultureInfo]::InvariantCulture)
+        if ($expandedBytes -gt 536870912) { throw "Artifact archive exceeds the 512 MiB expanded fleet limit" }
+    }
     [IO.Directory]::CreateDirectory($Destination) | Out-Null
     & $tar -xf $Archive -C $Destination 2>$null
     if ($LASTEXITCODE -ne 0) { throw "Artifact archive extraction failed" }

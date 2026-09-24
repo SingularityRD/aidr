@@ -10,7 +10,9 @@ const sourceThreats = join(repoRoot, "threats");
 const sourceAllowlists = join(repoRoot, "allowlists");
 const sourceSkills = join(repoRoot, "skills");
 
-const resourcesDir = join(extensionRoot, "resources");
+// Keep every runtime-loaded policy asset below dist so the release artifact
+// manifest covers the code and the data with one integrity boundary.
+const resourcesDir = join(extensionRoot, "dist", "resources");
 const targetThreats = join(resourcesDir, "threats");
 const targetAllowlists = join(resourcesDir, "allowlists");
 const targetSkills = join(resourcesDir, "skills");

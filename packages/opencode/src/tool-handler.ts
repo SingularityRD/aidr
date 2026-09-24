@@ -1,10 +1,12 @@
 import {
 	type ApprovalStore,
+	createHostObservation,
 	formatAskMessage,
 	formatDenyMessage,
 	guardToolCall,
 	type Logger,
 	loadProvisionedDetectorContext,
+	recordHostObservation,
 } from "@singularityrd/aidr-core";
 import { AidrVerdictBlockError, AidrVerdictError } from "./error.js";
 import { extractFromOpenCodeTool } from "./extractors.js";
@@ -15,6 +17,7 @@ export function createToolHandlers(
 	threatsDir: string,
 	allowlistsDir: string,
 ) {
+	const hostObservation = createHostObservation();
 	const beforeToolUse = async (
 		input: { tool: string; sessionID: string; callID: string },
 		output: { args: Record<string, unknown> },
@@ -48,6 +51,12 @@ export function createToolHandlers(
 				},
 				approvalStore,
 			);
+			recordHostObservation(hostObservation, {
+				connector: "opencode",
+				event: "tool.execute.before",
+				toolName: input.tool,
+				decision: verdict.decision,
+			});
 
 			if (verdict.decision === "allow") {
 				return;
@@ -59,8 +68,8 @@ export function createToolHandlers(
 
 			// ask — actionId is always set for ask verdicts
 			throw new AidrVerdictBlockError(
-			formatAskMessage(actionId as string, verdict, artifacts, responseActions),
-		);
+				formatAskMessage(actionId as string, verdict, artifacts, responseActions),
+			);
 		} catch (error) {
 			// Verdict errors are expected (blocks and asks); internal errors deny execution.
 			if (error instanceof AidrVerdictError) throw error;

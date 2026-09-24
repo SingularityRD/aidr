@@ -36,6 +36,7 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -163,9 +164,7 @@ async function runCommand(options: { home: string; json?: boolean }): Promise<st
 		log.mockRestore();
 		process.exitCode = previousExitCode;
 	}
-	// chalk may or may not colorize depending on the host; the assertions are
-	// about the message, not the escapes.
-	return lines.join("\n").replace(/\u001b\[[0-9;]*m/g, "");
+	return lines.join("\n");
 }
 
 describe("aidr uninstall", () => {
@@ -308,6 +307,49 @@ describe("aidr uninstall", () => {
 		]);
 	});
 
+	it("refuses a concurrent settings edit without overwriting it", async () => {
+		const fixture = createFixture();
+		const fs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
+		const originalWrite = fs.writeFileSync;
+		const customerEdit = '{"customerChangedDuringUninstall":true}\n';
+		fs.writeFileSync = ((file, data, options) => {
+			const result = originalWrite(file, data, options);
+			if (String(file).endsWith(`.aidr-${process.pid}.tmp`)) originalWrite(fixture.settingsPath, customerEdit);
+			return result;
+		}) as typeof fs.writeFileSync;
+		syncBuiltinESMExports();
+		let report;
+		try {
+			report = await uninstallAidr({ home: fixture.home });
+		} finally {
+			fs.writeFileSync = originalWrite;
+			syncBuiltinESMExports();
+		}
+		expect(report?.outcome).toBe("refused");
+		expect(report?.reason?.code).toBe("settings_write_failed");
+		expect(report?.removed).toEqual([]);
+		expect(readFileSync(fixture.settingsPath, "utf8")).toBe(customerEdit);
+		expect(backupNames(fixture.home)).toEqual([]);
+		expect(existsSync(`${fixture.settingsPath}.aidr-${process.pid}.tmp`)).toBe(false);
+	});
+
+	// AIDR-SKIP: AIDR-050 qa-owner - protected Windows directory semantics require a Windows runner.
+	it.skipIf(process.platform !== "win32")("rejects a home nested inside a protected Windows directory", async () => {
+		const protectedRoot = createHome();
+		const home = join(protectedRoot, "nested", "user");
+		mkdirSync(home, { recursive: true });
+		const previous = process.env.ProgramData;
+		process.env.ProgramData = protectedRoot;
+		try {
+			const report = await uninstallAidr({ home });
+			expect(report.outcome).toBe("refused");
+			expect(report.reason?.code).toBe("home_invalid");
+		} finally {
+			if (previous === undefined) delete process.env.ProgramData;
+			else process.env.ProgramData = previous;
+		}
+	});
+
 	it("exits non-zero with a machine-readable refusal and changes nothing", async () => {
 		const fixture = createFixture();
 		unlinkSync(fixture.receiptPath);
@@ -341,6 +383,8 @@ describe("aidr uninstall", () => {
 		expect(backups).toHaveLength(1);
 		expect(output).toContain("Backup of the previous settings:");
 		expect(output).toContain(join(fixture.home, ".claude", backups[0] as string));
+		expect(output).toContain("The local CLI credential and its vault item are also preserved");
+		expect(output).toContain("use 'aidr config revoke-key' to remove that credential");
 		expect(output).toContain("Protection is NOT active for this agent now");
 	});
 

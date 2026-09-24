@@ -8,10 +8,19 @@ import { scanModelOutput } from "@singularityrd/aidr-core";
 export const OUTPUT_INSPECTION_MAX_CHARS = 256 * 1024;
 const OUTPUT_INSPECTION_MAX_NODES = 8_192;
 const OUTPUT_INSPECTION_MAX_DEPTH = 20;
+const OPAQUE_CONTENT_TYPES = new Set([
+	"image",
+	"audio",
+	"video",
+	"file",
+	"binary",
+	"resource",
+	"resource_link",
+]);
 
 export type OutputInspectionSurface = "tool_output" | "model_response";
 
-export interface SafeOutputFinding {
+interface SafeOutputFinding {
 	ruleId: string;
 	reason: string;
 	severity: "high" | "critical";
@@ -21,6 +30,7 @@ export interface OutputInspection {
 	surface: OutputInspectionSurface;
 	findings: SafeOutputFinding[];
 	incomplete: boolean;
+	unsupportedContent: boolean;
 	inspectedChars: number;
 	limitChars: number;
 }
@@ -28,21 +38,31 @@ export interface OutputInspection {
 interface TextCollection {
 	text: string;
 	incomplete: boolean;
+	unsupportedContent: boolean;
+	mcpText: string;
 }
 
 class BoundedTextCollector {
 	private readonly chunks: string[] = [];
+	private readonly mcpTextRuns: string[] = [];
 	private readonly seen = new WeakSet<object>();
 	private length = 0;
+	private mcpTextLength = 0;
 	private nodes = 0;
 	private incomplete = false;
+	private unsupportedContent = false;
 
 	collect(value: unknown): TextCollection {
 		this.visit(value, 0);
-		return { text: this.chunks.join(""), incomplete: this.incomplete };
+		return {
+			text: this.chunks.join(""),
+			incomplete: this.incomplete,
+			unsupportedContent: this.unsupportedContent,
+			mcpText: this.mcpTextRuns.join("\n"),
+		};
 	}
 
-	private append(text: string): void {
+	private append(text: string, separate = true): void {
 		if (!text) return;
 		const remaining = OUTPUT_INSPECTION_MAX_CHARS - this.length;
 		if (remaining <= 0) {
@@ -50,7 +70,7 @@ class BoundedTextCollector {
 			return;
 		}
 
-		const separator = this.length > 0 ? "\n" : "";
+		const separator = separate && this.length > 0 ? "\n" : "";
 		if (separator) {
 			this.chunks.push(separator);
 			this.length += separator.length;
@@ -67,7 +87,7 @@ class BoundedTextCollector {
 		this.length += text.length;
 	}
 
-	private visit(current: unknown, depth: number): void {
+	private visit(current: unknown, depth: number, separate = true): void {
 		if (this.length >= OUTPUT_INSPECTION_MAX_CHARS) {
 			this.incomplete = true;
 			return;
@@ -78,14 +98,14 @@ class BoundedTextCollector {
 		}
 		this.nodes += 1;
 
-		if (this.visitPrimitive(current)) return;
+		if (this.visitPrimitive(current, separate)) return;
 		if (current === null || typeof current !== "object") return;
 		this.visitObject(current, depth);
 	}
 
-	private visitPrimitive(current: unknown): boolean {
+	private visitPrimitive(current: unknown, separate: boolean): boolean {
 		if (typeof current === "string") {
-			this.append(current);
+			this.append(current, separate);
 			return true;
 		}
 		if (
@@ -107,8 +127,18 @@ class BoundedTextCollector {
 		if (this.seen.has(current)) return;
 		this.seen.add(current);
 
-		if (current instanceof Uint8Array || current instanceof ArrayBuffer) {
-			// Binary payloads are not model-visible text. Do not expand every byte.
+		const type = Object.getOwnPropertyDescriptor(current, "type");
+		if (
+			ArrayBuffer.isView(current) ||
+			current instanceof ArrayBuffer ||
+			(typeof Blob !== "undefined" && current instanceof Blob) ||
+			(type &&
+				"value" in type &&
+				typeof type.value === "string" &&
+				OPAQUE_CONTENT_TYPES.has(type.value.toLowerCase())) ||
+			Object.hasOwn(current, "blob")
+		) {
+			this.markUnsupportedBinary();
 			return;
 		}
 
@@ -119,18 +149,51 @@ class BoundedTextCollector {
 		this.visitRecord(current, depth);
 	}
 
+	private markUnsupportedBinary(): void {
+		// Do not claim opaque bytes are clean; the text scanner cannot inspect
+		// them, so callers take the existing fail-closed path.
+		this.incomplete = true;
+		this.unsupportedContent = true;
+	}
+
 	private exhausted(): boolean {
 		return this.nodes >= OUTPUT_INSPECTION_MAX_NODES || this.length >= OUTPUT_INSPECTION_MAX_CHARS;
 	}
 
 	private visitArray(current: unknown[], depth: number): void {
+		let mcpTextRun: string[] = [];
+		const flushMcpTextRun = () => {
+			if (mcpTextRun.length === 0) return;
+			const text = mcpTextRun.join("");
+			if (this.mcpTextLength + text.length > OUTPUT_INSPECTION_MAX_CHARS) {
+				this.incomplete = true;
+				mcpTextRun = [];
+				return;
+			}
+			this.mcpTextRuns.push(text);
+			this.mcpTextLength += text.length;
+			mcpTextRun = [];
+		};
+		let previousWasString = false;
 		for (let index = 0; index < current.length; index += 1) {
 			if (this.exhausted()) {
 				this.incomplete = true;
 				break;
 			}
-			this.visit(current[index], depth + 1);
+			const descriptor = Object.getOwnPropertyDescriptor(current, String(index));
+			if (!descriptor || !("value" in descriptor)) {
+				this.incomplete = true;
+				return;
+			}
+			const value = descriptor.value;
+			const blockText = mcpTextBlockText(value);
+			if (blockText === undefined) flushMcpTextRun();
+			else mcpTextRun.push(blockText);
+			const isString = typeof value === "string";
+			this.visit(value, depth + 1, !(previousWasString && isString));
+			previousWasString = isString;
 		}
+		flushMcpTextRun();
 	}
 
 	private visitRecord(current: object, depth: number): void {
@@ -153,6 +216,20 @@ class BoundedTextCollector {
 	}
 }
 
+function mcpTextBlockText(value: unknown): string | undefined {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const type = Object.getOwnPropertyDescriptor(value, "type");
+	const text = Object.getOwnPropertyDescriptor(value, "text");
+	return type &&
+		"value" in type &&
+		type.value === "text" &&
+		text &&
+		"value" in text &&
+		typeof text.value === "string"
+		? text.value
+		: undefined;
+}
+
 /**
  * Collect only primitive text from an unknown hook payload. This deliberately
  * avoids JSON.stringify/toJSON and property getters: hook results are untrusted
@@ -167,16 +244,25 @@ export function inspectBoundedOutput(
 	surface: OutputInspectionSurface,
 ): OutputInspection {
 	const collection = collectBoundedText(value);
-	const findings = scanModelOutput(collection.text).map((finding) => ({
-		ruleId: finding.ruleId,
-		reason: finding.reason,
-		severity: finding.severity,
-	}));
+	const findingsByRule = new Map<string, SafeOutputFinding>();
+	for (const view of [collection.text, collection.mcpText]) {
+		for (const finding of scanModelOutput(view)) {
+			if (!findingsByRule.has(finding.ruleId)) {
+				findingsByRule.set(finding.ruleId, {
+					ruleId: finding.ruleId,
+					reason: finding.reason,
+					severity: finding.severity,
+				});
+			}
+		}
+	}
+	const findings = [...findingsByRule.values()];
 
 	return {
 		surface,
 		findings,
 		incomplete: collection.incomplete,
+		unsupportedContent: collection.unsupportedContent,
 		inspectedChars: collection.text.length,
 		limitChars: OUTPUT_INSPECTION_MAX_CHARS,
 	};
@@ -191,7 +277,10 @@ export function outputInspectionSummary(inspection: OutputInspection): string {
 	const rules = inspection.findings.map((finding) => finding.ruleId).join(", ");
 	const parts = [
 		inspection.findings.length > 0 ? `rules ${rules}` : null,
-		inspection.incomplete ? `inspection limit ${inspection.limitChars} characters reached` : null,
+		inspection.unsupportedContent ? "unsupported non-text content was not inspected" : null,
+		inspection.incomplete && !inspection.unsupportedContent
+			? `inspection limit ${inspection.limitChars} characters reached`
+			: null,
 	].filter((part): part is string => part !== null);
 	return parts.join("; ");
 }

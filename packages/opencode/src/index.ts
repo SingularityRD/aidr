@@ -7,7 +7,8 @@
  * blocking (see README.md).
  */
 
-import { join } from "node:path";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 import {
@@ -17,6 +18,7 @@ import {
 	getLogger,
 	initSentry,
 	removeFromAllowlist,
+	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { getBundledDataDirs } from "./bundled-dirs.js";
 import { createOutputHandlers, reportOpenCodeOutputCoverage } from "./output-handler.js";
@@ -25,36 +27,21 @@ import { createToolHandlers } from "./tool-handler.js";
 
 const APPROVAL_STORE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
-async function maybeVerifyIntegrity(directory: string): Promise<void> {
-	try {
-		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
-		const core = (await import("@singularityrd/aidr-core")) as any;
-		const fn = core?.verifyArtifactIntegrityAndLog as
-			| ((args: { artifactDir: string; artifactId: string }) => Promise<unknown>)
-			| undefined;
-		if (typeof fn !== "function") return;
-
-		// Prefer dist/ for packaged installs, fall back to plugin root.
-		const candidates = [join(directory, "dist"), directory];
-		for (const artifactDir of candidates) {
-			try {
-				await fn({ artifactDir, artifactId: "opencode/dist" });
-				break;
-			} catch {
-				// ignore and try next
-			}
-		}
-	} catch {
-		// Fail open
-	}
-}
-
 export const AidrPlugin: Plugin = async ({ client, directory }) => {
 	// Initialize Sentry
 	initSentry({ name: "aidr-opencode" });
 
 	const logger = createChildLogger(getLogger(), "opencode");
-	void maybeVerifyIntegrity(directory);
+	await verifyArtifactIntegrityAndLog({
+		artifactDir: dirname(fileURLToPath(import.meta.url)),
+		artifactId: "opencode/dist",
+		logger,
+	});
+	await verifyArtifactIntegrityAndLog({
+		artifactDir: dirname(fileURLToPath(import.meta.resolve("@singularityrd/aidr-core"))),
+		artifactId: "core/dist",
+		logger,
+	});
 	const { threatsDir, allowlistsDir } = getBundledDataDirs();
 	const approvalStore = new ApprovalStore();
 
@@ -119,8 +106,7 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 		// Event hook for session.created
 		event: async ({ event }) => {
 			if (event.type === "session.created") {
-				// biome-ignore lint/suspicious/noExplicitAny: Event types from SDK not fully typed
-				const sessionID = (event as any).sessionID ?? (event as any).id ?? "unknown";
+				const sessionID = event.properties.info.id;
 
 				try {
 					logger.debug({ sessionID }, "Singularity AIDR: starting session scan");

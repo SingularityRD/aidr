@@ -110,6 +110,10 @@ export function extractFromOpenCodeTool(
 				},
 			];
 		}
+		case "apply_patch":
+			// Keep the bounded generic view for content heuristics. The shared core
+			// normalizer also parses patchText into canonical Edit path/content fields.
+			return extractFromUnknownTool("opencode:apply_patch", args);
 		default:
 			return extractFromUnknownTool(`opencode:${toolName || "unknown"}`, args);
 	}

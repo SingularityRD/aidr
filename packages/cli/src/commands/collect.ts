@@ -11,7 +11,6 @@ import {
 	resolvePath,
 	saveFleetInventory,
 } from "@singularityrd/aidr-core";
-import chalk from "chalk";
 
 export interface CollectOptions {
 	tenant: string;
@@ -41,6 +40,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const COLLECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const HEADER_TOKEN = /^[A-Za-z0-9._-]+$/;
 const DISCOVERY_ERROR = /^[a-z][a-z0-9_]{0,63}$/;
+const MAX_DISCOVERY_UPLOAD_TARGETS = 100;
 
 /** Upload is opt-in; an incomplete configuration cannot silently fall back to local-only mode. */
 export function discoveryUploadConfig(env: NodeJS.ProcessEnv = process.env): DiscoveryUploadConfig | null {
@@ -91,7 +91,7 @@ export function discoveryIngestPayload(inventory: FleetInventory, sequence: numb
 	if (!Number.isSafeInteger(inventory.staleAfterMs) || inventory.staleAfterMs < 60_000 || inventory.staleAfterMs > 2_592_000_000) {
 		throw new Error("discovery_upload_freshness_invalid");
 	}
-	if (inventory.items.length < 1 || inventory.items.length > 100) throw new Error("discovery_upload_target_count_invalid");
+	if (inventory.items.length < 1 || inventory.items.length > MAX_DISCOVERY_UPLOAD_TARGETS) throw new Error("discovery_upload_target_count_invalid");
 	const origins = new Set<string>();
 	const items = inventory.items.map((item) => {
 		let parsed: URL;
@@ -110,7 +110,8 @@ export function discoveryIngestPayload(inventory: FleetInventory, sequence: numb
 		if (item.reachability === "not_checked" || !Number.isInteger(item.attempts) || item.attempts < 1 || item.attempts > 5) {
 			throw new Error("discovery_upload_observation_invalid");
 		}
-		const reachable = item.reachability === "reachable" && item.scan.reachable;
+		// A partial scan is not healthy coverage even if one HTTP probe responded.
+		const reachable = item.reachability === "reachable" && item.scan.reachable && item.scan.error === null;
 		const rawError = item.scan.error?.split(":", 1)[0];
 		const error_code = reachable ? null
 			: rawError === "timeout" || rawError === "unreachable" || rawError === "target_not_allowed" || rawError === "invalid_target_url" || rawError === "collector_exception"
@@ -214,9 +215,9 @@ export async function publishDiscoveryCycle(
 		return true;
 	} catch (error) {
 		if (!continuous) throw error;
-		console.error(chalk.red(
+		console.error(
 			`AIDR discovery upload failed: ${error instanceof Error ? error.message : String(error)}`,
-		));
+		);
 		return false;
 	}
 }
@@ -292,7 +293,7 @@ function printInventory(
 	const neverSeen = inventory.items.filter((item) => item.freshness === "never_seen").length;
 	const unreachable = inventory.items.filter((item) => item.reachability === "unreachable").length;
 	const scanErrors = inventory.items.filter((item) => item.scan.error !== null).length;
-	console.log(chalk.blue("\nAIDR tenant infrastructure collection\n"));
+	console.log("\nAIDR tenant infrastructure collection\n");
 	console.log(`Provider: ${result.provider}   Status: ${result.status}   Freshness: ${result.freshness}`);
 	console.log(`Tenant: ${inventory.tenantId}   Collector: ${inventory.collectorId}`);
 	console.log(`Inventory: ${path}`);
@@ -300,20 +301,13 @@ function printInventory(
 		`Targets: ${inventory.items.length}   Fresh: ${fresh}   Stale: ${stale}   Never seen: ${neverSeen}   Unreachable now: ${unreachable}   Scan errors: ${scanErrors}`,
 	);
 	for (const item of inventory.items) {
-		const color =
-			item.freshness === "fresh" && item.reachability === "reachable" && item.scan.error === null
-				? chalk.green : chalk.yellow;
 		console.log(
-			color(
-				`  ${item.target}  ${item.freshness}/${item.reachability}  attempts=${item.attempts}  last_seen=${item.lastSeenAt ?? "never"}`,
-			),
+			`  ${item.target}  ${item.freshness}/${item.reachability}  attempts=${item.attempts}  last_seen=${item.lastSeenAt ?? "never"}`,
 		);
 	}
 	if (stale > 0 || neverSeen > 0 || unreachable > 0 || scanErrors > 0) {
 		console.error(
-			chalk.yellow(
-				"Discovery coverage alert: at least one target lacks current evidence or has an incomplete scan.",
-			),
+			"Discovery coverage alert: at least one target lacks current evidence or has an incomplete scan.",
 		);
 	}
 }
@@ -348,6 +342,9 @@ export default async function collectCommand(options: CollectOptions): Promise<v
 		const targets = collectTargetInputs(options);
 		if (targets.length === 0) throw new Error("collector_targets_required");
 		const upload = discoveryUploadConfig();
+		if (upload && targets.length > MAX_DISCOVERY_UPLOAD_TARGETS) {
+			throw new Error("managed_discovery_upload_supports_at_most_100_targets");
+		}
 		if (upload && !UUID.test(options.tenant)) throw new Error("discovery_upload_tenant_uuid_required");
 
 		const intervalSeconds =
@@ -411,9 +408,7 @@ export default async function collectCommand(options: CollectOptions): Promise<v
 		}
 	} catch (error) {
 		console.error(
-			chalk.red(
-				`AIDR collection failed: ${error instanceof Error ? error.message : String(error)}`,
-			),
+			`AIDR collection failed: ${error instanceof Error ? error.message : String(error)}`,
 		);
 		process.exitCode = 1;
 	}

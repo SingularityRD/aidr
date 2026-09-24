@@ -156,7 +156,7 @@ describe("OpenClaw integration: Singularity AIDR plugin pipeline", { timeout: 30
 		});
 	});
 
-	it("allows benign web_fetch when the optional reputation leg is explicitly disabled", async () => {
+	it("blocks web_fetch when reputation is disabled because the URL is unverified", async () => {
 		const prevHome = process.env.HOME;
 		const tmpHome = await mkdtemp(resolve(tmpdir(), "aidr-openclaw-no-url-reputation-"));
 		const aidrDir = resolve(tmpHome, ".singularity-aidr");
@@ -169,10 +169,13 @@ describe("OpenClaw integration: Singularity AIDR plugin pipeline", { timeout: 30
 		process.env.HOME = tmpHome;
 
 		try {
-			await expectAllowed(handler, {
+			const result = await handler({
 				toolName: "web_fetch",
 				params: { url: "https://example.com" },
 			});
+			expect(result?.block).toBe(true);
+			expect(result?.blockReason).toContain("URL reputation lookup was unavailable");
+			expect(result?.blockReason).toContain("NOT verified clean");
 		} finally {
 			if (prevHome === undefined) delete process.env.HOME;
 			else process.env.HOME = prevHome;
@@ -263,8 +266,9 @@ describe("OpenClaw integration: Singularity AIDR plugin pipeline", { timeout: 30
 			);
 
 			await scanHandler();
-			expect(findingsBanner).toContain("No threats found");
-			expect(findingsBanner).not.toContain("@singularityrd/aidr-openclaw");
+			// A self-only installation is excluded before scanning, so there is no
+			// finding banner to surface into the next prompt.
+			expect(findingsBanner).toBeNull();
 		} finally {
 			if (prevHome === undefined) {
 				delete process.env.HOME;

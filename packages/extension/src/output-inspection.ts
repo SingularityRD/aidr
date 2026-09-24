@@ -6,8 +6,19 @@ import { loadConfig, logVerdict, scanModelOutput, type Verdict } from "@singular
  * or explicitly report its coverage limitation.
  */
 export const MAX_INSPECTED_OUTPUT_BYTES = 256 * 1024;
+const BINARY_CONTENT_TYPES = new Set([
+	"image",
+	"audio",
+	"video",
+	"file",
+	"binary",
+	"resource",
+	"resource_link",
+]);
+const MAX_SUPPLEMENTAL_NODES = 8_192;
+const MAX_SUPPLEMENTAL_DEPTH = 20;
 
-export type OutputInspectionStatus = "clean" | "blocked" | "coverage_limited";
+type OutputInspectionStatus = "clean" | "blocked" | "coverage_limited";
 
 export interface OutputInspectionResult {
 	status: OutputInspectionStatus;
@@ -22,7 +33,13 @@ export interface OutputInspectionAuditContext {
 	surface: "tool_output" | "assistant_response";
 	sessionId: string;
 	toolName?: string;
-	preConsumptionEnforcement: "block" | "mcp_quarantine" | "advisory_only" | "observe_only";
+	preConsumptionEnforcement:
+		| "block"
+		| "stop_further_processing"
+		| "mcp_quarantine"
+		| "advisory_only"
+		| "observe_only"
+		| "unavailable";
 }
 
 function toText(value: unknown): { text?: string; byteLength: number | null; error?: string } {
@@ -33,7 +50,12 @@ function toText(value: unknown): { text?: string; byteLength: number | null; err
 		return { byteLength: null, error: "output field is missing" };
 	}
 	try {
-		const text = JSON.stringify(value);
+		const text = JSON.stringify(value, function (key, item) {
+			const property = Object.getOwnPropertyDescriptor(this, key);
+			if (!property || !("value" in property)) throw new TypeError("Uninspectable output");
+			if (isOpaqueBinaryContent(property.value)) throw new TypeError("Opaque binary output");
+			return item;
+		});
 		if (typeof text !== "string") {
 			return { byteLength: null, error: "output could not be serialized" };
 		}
@@ -41,6 +63,111 @@ function toText(value: unknown): { text?: string; byteLength: number | null; err
 	} catch {
 		return { byteLength: null, error: "output could not be serialized" };
 	}
+}
+
+function isOpaqueBinaryContent(value: unknown): boolean {
+	if (value === null || typeof value !== "object") return false;
+	if (
+		ArrayBuffer.isView(value) ||
+		value instanceof ArrayBuffer ||
+		(typeof Blob !== "undefined" && value instanceof Blob)
+	) {
+		return true;
+	}
+	const type = Object.getOwnPropertyDescriptor(value, "type");
+	return Boolean(
+		(type &&
+			"value" in type &&
+			typeof type.value === "string" &&
+			BINARY_CONTENT_TYPES.has(type.value.toLowerCase())) ||
+			Object.prototype.hasOwnProperty.call(value, "blob"),
+	);
+}
+
+interface SupplementalText {
+	text: string;
+	incomplete: boolean;
+}
+
+function mcpTextBlockText(value: unknown): string | undefined {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const type = Object.getOwnPropertyDescriptor(value, "type");
+	const text = Object.getOwnPropertyDescriptor(value, "text");
+	return type &&
+		"value" in type &&
+		type.value === "text" &&
+		text &&
+		"value" in text &&
+		typeof text.value === "string"
+		? text.value
+		: undefined;
+}
+
+/** Build a bounded contiguous view of adjacent MCP text blocks. */
+function collectMcpText(serialized: string): SupplementalText {
+	let root: unknown;
+	try {
+		root = JSON.parse(serialized);
+	} catch {
+		return { text: "", incomplete: false };
+	}
+	const runs: string[] = [];
+	let length = 0;
+	let nodes = 0;
+	let incomplete = false;
+	const visit = (current: unknown, depth: number): void => {
+		if (incomplete) return;
+		if (nodes >= MAX_SUPPLEMENTAL_NODES || depth > MAX_SUPPLEMENTAL_DEPTH) {
+			incomplete = true;
+			return;
+		}
+		nodes += 1;
+		if (current === null || typeof current !== "object") return;
+		if (isOpaqueBinaryContent(current)) {
+			incomplete = true;
+			return;
+		}
+		if (Array.isArray(current)) {
+			let run: string[] = [];
+			const flush = () => {
+				if (run.length === 0) return;
+				const text = run.join("");
+				if (length + text.length > MAX_INSPECTED_OUTPUT_BYTES) {
+					incomplete = true;
+				} else {
+					runs.push(text);
+					length += text.length;
+				}
+				run = [];
+			};
+			for (let index = 0; index < current.length; index += 1) {
+				const descriptor = Object.getOwnPropertyDescriptor(current, String(index));
+				if (!descriptor || !("value" in descriptor)) {
+					incomplete = true;
+					return;
+				}
+				const text = mcpTextBlockText(descriptor.value);
+				if (text === undefined) flush();
+				else run.push(text);
+				visit(descriptor.value, depth + 1);
+				if (incomplete) return;
+			}
+			flush();
+			return;
+		}
+		for (const key in current) {
+			if (!Object.prototype.hasOwnProperty.call(current, key)) continue;
+			const descriptor = Object.getOwnPropertyDescriptor(current, key);
+			if (!descriptor || !("value" in descriptor)) {
+				incomplete = true;
+				return;
+			}
+			visit(descriptor.value, depth + 1);
+			if (incomplete) return;
+		}
+	};
+	visit(root, 0);
+	return { text: runs.join("\n"), incomplete };
 }
 
 export function inspectOutput(value: unknown): OutputInspectionResult {
@@ -65,9 +192,27 @@ export function inspectOutput(value: unknown): OutputInspectionResult {
 		};
 	}
 
+	const supplemental = collectMcpText(converted.text);
+	if (supplemental.incomplete) {
+		return {
+			status: "coverage_limited",
+			byteLength: converted.byteLength,
+			inspectedBytes: converted.byteLength,
+			findings: [],
+			reason:
+				"Singularity AIDR output inspection coverage is incomplete: non-text or supplemental content could not be fully inspected. The output was not classified as clean.",
+		};
+	}
+
 	let findings: ReturnType<typeof scanModelOutput>;
 	try {
-		findings = scanModelOutput(converted.text);
+		const byRule = new Map<string, ReturnType<typeof scanModelOutput>[number]>();
+		for (const view of [converted.text, supplemental.text]) {
+			for (const finding of scanModelOutput(view)) {
+				if (!byRule.has(finding.ruleId)) byRule.set(finding.ruleId, finding);
+			}
+		}
+		findings = [...byRule.values()];
 	} catch {
 		return {
 			status: "coverage_limited",

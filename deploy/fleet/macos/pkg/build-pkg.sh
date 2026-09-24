@@ -21,12 +21,16 @@ cp "$FLEET_DIR/../../../scripts/endpoint-install.mjs" "$PAYLOAD/fleet/libexec/en
 cp "$ARTIFACT" "$PAYLOAD/payload/connector.tgz"
 cp "$SIGNATURE" "$PAYLOAD/payload/connector.tgz.sig"
 cp "$PUBLIC_KEY" "$PAYLOAD/config/release-public.pem"
+openssl pkey -pubin -in "$PAYLOAD/config/release-public.pem" -outform DER > "$STAGING/release-public.der" 2>/dev/null || { echo "invalid release public key" >&2; exit 1; }
+KEY_SHA256=$(openssl dgst -sha256 -r "$STAGING/release-public.der" | awk '{print $1}')
+printf '%s' "$KEY_SHA256" | grep -Eq '^[a-f0-9]{64}$' || { echo "invalid release public key fingerprint" >&2; exit 1; }
 printf '%s\n' "$SHA256" > "$PAYLOAD/payload/connector.tgz.sha256"
 find "$STAGING/payload" -type d -exec chmod 755 {} \;
 find "$STAGING/payload" -type f -exec chmod 644 {} \;
 find "$PAYLOAD/fleet" -name '*.sh' -exec chmod 755 {} \;
 mkdir "$STAGING/scripts"
-cp "$SCRIPT_DIR/scripts/preinstall" "$SCRIPT_DIR/scripts/postinstall" "$STAGING/scripts/"
+sed "s/@RELEASE_KEY_SHA256@/$KEY_SHA256/" "$SCRIPT_DIR/scripts/preinstall" > "$STAGING/scripts/preinstall"
+cp "$SCRIPT_DIR/scripts/postinstall" "$STAGING/scripts/"
 chmod 755 "$STAGING/scripts/preinstall" "$STAGING/scripts/postinstall"
 pkgbuild --root "$STAGING/payload" --scripts "$STAGING/scripts" --identifier com.singularity.aidr.fleet --version "$VERSION" --install-location / "$STAGING/unsigned.pkg"
 productsign --sign "$SIGNING_IDENTITY" "$STAGING/unsigned.pkg" "$OUTPUT"

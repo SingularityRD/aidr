@@ -6,14 +6,44 @@ rollback to the prior verified release and hook-only uninstall. Policy,
 allowlists, unrelated Claude hooks and `~/.singularity-aidr/config.json` survive
 upgrade, rollback and uninstall.
 
-Provision `release-public.pem` through a trusted configuration-management path
-at `/etc/singularity-aidr/release-public.pem`, owned by root and not writable by
-group/other. Confirm its fingerprint out of band. Supplying an artifact, digest,
-signature and key through the same unauthenticated channel does not establish
-publisher identity. The scripts require a detached OpenSSL SHA-256 signature:
+The release public key is an immutable trust input for both bundle builders and
+endpoints. Obtain it through reviewed configuration management or another
+authenticated channel; do not accept or rotate it alongside an artifact and its
+signature. Provision the same root-owned, non-group/world-writable regular key
+and parent directory on each Linux build host and endpoint (no symlinks), then
+compare its canonical DER fingerprint with
+the value recorded through an independent trusted channel:
 
 ```sh
-openssl dgst -sha256 -sign release-private.pem -out connector.tgz.sig connector.tgz
+sudo install -d -o root -g root -m 0755 /etc/singularity-aidr
+sudo install -o root -g root -m 0644 release-public.pem /etc/singularity-aidr/release-public.pem
+openssl pkey -pubin -in /etc/singularity-aidr/release-public.pem -outform DER | sha256sum
+```
+
+The fingerprint check is an operator/release gate; the builder enforces the
+root-ownership and write-permission checks and verifies the artifact using the
+provided key. If the key is rotated, update the trusted fingerprint through the
+approved change process before building or deploying packages. Supplying an
+artifact, digest, signature and replacement key through one unauthenticated
+channel does not establish publisher identity.
+
+Build an offline bundle only with that pinned path; the build verifies the
+artifact before copying the key into the bundle:
+
+```sh
+./deploy/fleet/linux/build-offline-bundle.sh connector.tgz DIGEST connector.tgz.sig \
+  /etc/singularity-aidr/release-public.pem aidr-fleet-linux.tar.gz
+```
+
+The scripts require a detached OpenSSL SHA-256 signature. Keep the private
+signing key confined to the approved offline/release signing system:
+
+The installer rejects archives above 256 MiB compressed, over 5,000 entries,
+or over 512 MiB total regular-file size before extraction. It rejects links,
+special entries, and unsafe paths as well. Do not raise those limits without a
+customer-host disk-capacity and archive-format acceptance test.
+
+```sh
 sudo ./install.sh --artifact connector.tgz --sha256 DIGEST --signature connector.tgz.sig \
   --public-key /etc/singularity-aidr/release-public.pem --user alice \
   --config /etc/singularity-aidr/agent-config.json

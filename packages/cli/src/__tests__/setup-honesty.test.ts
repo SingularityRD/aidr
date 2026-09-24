@@ -34,6 +34,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
  * before importing it is the only way to test this safely.
  */
 const testHome = mkdtempSync(join(tmpdir(), "aidr-setup-honesty-"));
+const originalHome = process.env.HOME;
+process.env.HOME = testHome;
 
 vi.mock("node:os", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:os")>();
@@ -49,7 +51,7 @@ vi.mock("node:os", async (importOriginal) => {
  */
 process.env.AIDR_SECRET_STORE = "file-acl";
 
-const { createConfig, getConfig } = await import("../utils/config-manager.js");
+const { createConfig, getConfig, updateConfig } = await import("../utils/config-manager.js");
 type Environment = import("../utils/config-manager.js").Environment;
 
 const cliSrc = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -62,6 +64,8 @@ const env: Environment = {
 };
 
 afterAll(() => {
+	if (originalHome === undefined) delete process.env.HOME;
+	else process.env.HOME = originalHome;
 	rmSync(testHome, { recursive: true, force: true });
 });
 
@@ -109,6 +113,23 @@ describe("setup reports what it actually did", () => {
 		const forced = await createConfig(env, true);
 		expect(forced.outcome).toBe("created");
 		expect(getConfig()?.apiKey).not.toBe(originalKey);
+	});
+
+	it("preserves runtime policy and auth fields when setup force-replaces its credential", async () => {
+		await createConfig(env, false);
+		updateConfig({
+			mode: "managed",
+			auth: { api_key: "runtime-auth-key" },
+			policy: { shell: { enabled: true, deny_patterns: ["dangerous-command"] } },
+		} as unknown as Partial<import("../utils/config-manager.js").Config>);
+
+		await createConfig(env, true);
+
+		expect(getConfig()).toMatchObject({
+			mode: "managed",
+			auth: { api_key: "runtime-auth-key" },
+			policy: { shell: { enabled: true, deny_patterns: ["dangerous-command"] } },
+		});
 	});
 });
 
@@ -162,5 +183,14 @@ describe("no module rewrites the user's editor settings", () => {
 		// reads, then reported success.
 		expect(code).not.toMatch(/claude-hooks/);
 		expect(code).not.toMatch(/hooksPath/);
+	});
+
+	it("uses approved release artifacts and exact package-version guidance", () => {
+		const code = codeOnly(readFileSync(join(cliSrc, "utils", "install-hooks.ts"), "utf-8"));
+		expect(code).toMatch(/verified release bundle/i);
+		expect(code).toMatch(/openclaw plugins install npm:@singularityrd\/aidr-openclaw@VERSION/);
+		expect(code).toMatch(/exact version in the approved release record/i);
+		expect(code).not.toMatch(/build and install the VSIX/i);
+		expect(code).not.toMatch(/plugins install @singularityrd\/aidr-openclaw(?:["'\s]|$)/);
 	});
 });

@@ -2,7 +2,7 @@
  * Bridges OpenClaw's PluginLogger to the core Logger interface.
  */
 
-import type { Logger } from "@singularityrd/aidr-core";
+import { type Logger, redactTelemetryData, redactTelemetryString } from "@singularityrd/aidr-core";
 
 /** Mirrors OpenClaw's PluginLogger type without importing it. */
 export interface PluginLogger {
@@ -14,7 +14,8 @@ export interface PluginLogger {
 
 export function createLogger(pluginLogger: PluginLogger): Logger {
 	function formatMessage(msg: string, data?: unknown): string {
-		return data ? `${msg} ${JSON.stringify(data)}` : msg;
+		const safeMessage = redactTelemetryString(msg);
+		return data ? `${safeMessage} ${JSON.stringify(redactTelemetryData(data))}` : safeMessage;
 	}
 
 	return {

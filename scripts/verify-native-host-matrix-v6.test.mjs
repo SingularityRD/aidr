@@ -51,12 +51,31 @@ test("Windows resolver preserves Unicode paths and prefers real editor executabl
 	assert.deepEqual(pathCandidates("code", { platform: "win32", pathValue: env.PATH, exists: (candidate) => present.has(candidate) }), [shim]);
 });
 
+test("Windows Cursor resolver chooses the CLI launcher that reports a version", () => {
+	const root = "C:\\unicode-test\\测试用户\\AppData\\Local";
+	const install = `${root}\\Programs\\Cursor`;
+	const cli = `${install}\\resources\\app\\bin\\cursor.cmd`;
+	const gui = `${install}\\Cursor.exe`;
+	const present = new Set([cli, gui]);
+	assert.equal(binaryFor({ id: "cursor", command: "cursor", env: "AIDR_CURSOR_PATH" }, undefined, {
+		platform: "win32", env: { LOCALAPPDATA: root, PATH: "" }, exists: (candidate) => present.has(candidate),
+	}), cli);
+});
+
 test("Windows command shims reject metacharacters in binary paths and arguments", () => {
 	assert.throws(() => runBinary("C:\\Program Files\\bad&host.cmd", [], { platform: "win32", env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" } }), /Unsafe argument/u);
 	assert.throws(() => runBinary("C:\\Program Files\\host.cmd", ["safe", "bad|argument"], { platform: "win32", env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" } }), /Unsafe argument/u);
 	assert.throws(() => runBinary("C:\\Program Files\\host.cmd", [], { platform: "win32", env: { ComSpec: "C:\\Windows\\System32\\cmd.exe&bad" } }), /Unsafe ComSpec/u);
 	assert.throws(() => runBinary("C:\\Program Files\\host.cmd", [42], { platform: "win32", env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" } }), /Unsafe argument/u);
 });
+
+test("Windows command shim executes a quoted path and argument", { skip: process.platform !== "win32" }, () => withFixture((dir) => {
+	const shim = join(dir, "native cli.cmd");
+	writeFileSync(shim, "@echo off\r\necho:%~1\r\n");
+	const result = runBinary(shim, ["safe arg"], { platform: "win32" });
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.stdout.trim(), "safe arg");
+}));
 
 test("Windows explicit binary paths resolve with Windows semantics", () => {
 	const explicit = "C:\\unicode-test\\测试用户\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe";

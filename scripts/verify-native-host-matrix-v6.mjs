@@ -118,16 +118,19 @@ function runBinary(binary, args, options = {}) {
 		const unsafe = /[\0\r\n&|<>^%!"]/u;
 		if (![binary, ...args].every((value) => typeof value === "string") || [binary, ...args].some((value) => unsafe.test(value))) throw new Error("Unsafe argument for Windows command shim");
 		const quote = (value) => `"${value}"`;
-		const command = [quote(binary), ...args.map(quote)].join(" ");
+		const command = `"${[quote(binary), ...args.map(quote)].join(" ")}"`;
 		const configuredComSpec = options.env?.ComSpec ?? process.env.ComSpec;
 		const comSpec = configuredComSpec || "cmd.exe";
 		if (typeof comSpec !== "string" || comSpec.length === 0 || unsafe.test(comSpec)) throw new Error("Unsafe ComSpec for Windows command shim");
-		return spawnSync(comSpec, ["/d", "/s", "/c", command], defaults);
+		return spawnSync(comSpec, ["/d", "/s", "/c", command], { ...defaults, windowsVerbatimArguments: true });
 	}
 	return spawnSync(binary, args, defaults);
 }
 const WINDOWS_DEFAULT_BINARIES = {
-	cursor: (env) => [env.LOCALAPPDATA && windowsPath.join(env.LOCALAPPDATA, "Programs", "Cursor", "Cursor.exe"), env.ProgramFiles && windowsPath.join(env.ProgramFiles, "Cursor", "Cursor.exe"), env["ProgramFiles(x86)"] && windowsPath.join(env["ProgramFiles(x86)"], "Cursor", "Cursor.exe")],
+	cursor: (env) => [env.LOCALAPPDATA, env.ProgramFiles, env["ProgramFiles(x86)"]].flatMap((root) => root ? [
+		windowsPath.join(root, root === env.LOCALAPPDATA ? "Programs" : "", "Cursor", "resources", "app", "bin", "cursor.cmd"),
+		windowsPath.join(root, root === env.LOCALAPPDATA ? "Programs" : "", "Cursor", "Cursor.exe"),
+	] : []),
 	vscode: (env) => [env.LOCALAPPDATA && windowsPath.join(env.LOCALAPPDATA, "Programs", "Microsoft VS Code", "Code.exe"), env.LOCALAPPDATA && windowsPath.join(env.LOCALAPPDATA, "Programs", "Microsoft VS Code Insiders", "Code - Insiders.exe"), env.ProgramFiles && windowsPath.join(env.ProgramFiles, "Microsoft VS Code", "Code.exe"), env["ProgramFiles(x86)"] && windowsPath.join(env["ProgramFiles(x86)"], "Microsoft VS Code", "Code.exe")],
 };
 export function pathCandidates(command, options = {}) {

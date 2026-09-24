@@ -1,7 +1,6 @@
-import { existsSync, lstatSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, parse, resolve, sep } from "node:path";
-import chalk from "chalk";
 import { recordHooksInstalled, ManagedHookError, removeManagedHooks } from "../utils/install-hooks.js";
 
 /**
@@ -132,9 +131,15 @@ function validateHome(home: string): string | null {
 	if (!stats.isDirectory()) return "Home is not a directory.";
 	if (target === parse(target).root) return "Home cannot be a filesystem root.";
 	if (process.platform === "win32") {
-		const forbidden = [process.env.windir, process.env.ProgramData, process.env.ProgramFiles, process.env["ProgramFiles(x86)"]];
+		const forbidden = [process.env.windir, process.env.SystemRoot, process.env.ProgramData, process.env.ProgramFiles, process.env["ProgramFiles(x86)"]];
+		const actual = realpathSync(target);
 		for (const entry of forbidden) {
-			if (entry && samePath(entry, target)) return "Home cannot be a shared operating-system directory.";
+			if (entry && existsSync(entry)) {
+				const protectedPath = realpathSync(entry);
+				if (samePath(protectedPath, actual) || isStrictlyInside(actual, protectedPath)) {
+					return "Home cannot be within a shared operating-system directory.";
+				}
+			}
 		}
 	}
 	return null;
@@ -381,6 +386,10 @@ export async function uninstallAidr(options: UninstallAidrOptions = {}): Promise
 		writeFileSync(backupPath, original, { flag: "wx", mode: 0o600 });
 		backupWritten = true;
 		writeFileSync(temporary, `${JSON.stringify(removal.settings, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+		// ponytail: Claude has no atomic compare-and-swap; check again immediately before replacement.
+		if (!readFileSync(settingsPath).equals(original)) {
+			throw new Error("Agent settings changed during uninstall; retry after closing other settings editors.");
+		}
 		renameSync(temporary, settingsPath);
 	} catch (error) {
 		// Leave no half-written state behind, and do not claim a removal that did
@@ -421,7 +430,7 @@ function refusalRemedy(code: UninstallRefusalCode): string {
 }
 
 export function printUninstallReport(report: UninstallReport): void {
-	console.log(chalk.blue("Singularity AIDR — uninstall (managed hooks only)"));
+	console.log("Singularity AIDR — uninstall (managed hooks only)");
 	console.log(`Target home: ${report.home}`);
 	if (report.receipt) {
 		console.log(
@@ -430,10 +439,10 @@ export function printUninstallReport(report: UninstallReport): void {
 	}
 
 	if (report.outcome === "refused") {
-		console.log(chalk.red(`Refused: ${report.reason?.detail ?? "the installation could not be verified."}`));
-		console.log(chalk.red(`Reason code: ${report.reason?.code ?? "unknown"}`));
+		console.log(`Refused: ${report.reason?.detail ?? "the installation could not be verified."}`);
+		console.log(`Reason code: ${report.reason?.code ?? "unknown"}`);
 		console.log("No configuration was changed.");
-		if (report.reason) console.log(chalk.gray(refusalRemedy(report.reason.code)));
+		if (report.reason) console.log(refusalRemedy(report.reason.code));
 		return;
 	}
 
@@ -445,7 +454,7 @@ export function printUninstallReport(report: UninstallReport): void {
 		return;
 	}
 
-	console.log(chalk.green(`Removed ${report.removed.length} AIDR-managed hook registration(s):`));
+	console.log(`Removed ${report.removed.length} AIDR-managed hook registration(s):`);
 	for (const record of report.removed) {
 		console.log(`  ${record.event.padEnd(12)} ${record.command ?? "(no command recorded)"}`);
 	}
@@ -459,8 +468,11 @@ export function printUninstallReport(report: UninstallReport): void {
 	console.log(
 		"Preserved: AIDR policy/allowlist configuration, connector files, the installation receipt and every non-AIDR hook.",
 	);
-	console.log(chalk.yellow("Protection is NOT active for this agent now: AIDR no longer inspects its tool calls."));
-	console.log(chalk.gray("Re-enable it with 'aidr setup' and the connector install for your agent (docs/getting-started.md)."));
+	console.log(
+		"The local CLI credential and its vault item are also preserved; use 'aidr config revoke-key' to remove that credential. Managed endpoint API keys are unchanged.",
+	);
+	console.log("Protection is NOT active for this agent now: AIDR no longer inspects its tool calls.");
+	console.log("Re-enable it with 'aidr setup' and the connector install for your agent (docs/getting-started.md).");
 }
 
 async function uninstallCommand(options: { home?: string; json?: boolean } = {}): Promise<void> {

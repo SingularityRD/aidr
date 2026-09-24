@@ -14,7 +14,9 @@ try {
     if ([string]::IsNullOrWhiteSpace($LogPath)) { $LogPath = $paths.DefaultLog }
     $settingsPath = Join-Path $target '.claude/settings.json'
     if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
-        try { $settings = Get-Content -LiteralPath $settingsPath -Raw -Encoding utf8 | ConvertFrom-Json } catch { throw "Claude settings are invalid; no configuration was changed" }
+        $settingsBytes = [IO.File]::ReadAllBytes($settingsPath)
+        try { $settings = [Text.UTF8Encoding]::new($false, $true).GetString($settingsBytes) | ConvertFrom-Json } catch { throw "Claude settings are invalid; no configuration was changed" }
+        $removed = 0
         if ($null -ne $settings.hooks) {
             foreach ($event in @('PreToolUse', 'PostToolUse', 'SessionStart')) {
                 $eventProperty = $settings.hooks.PSObject.Properties[$event]
@@ -28,6 +30,7 @@ try {
                         $null -eq $status -or [string]$status.Value -ne 'Singularity AIDR managed installation'
                     })
                     if ($remaining.Count -eq $hooks.Count) { $kept += $entry; continue }
+                    $removed += $hooks.Count - $remaining.Count
                     if ($remaining.Count -gt 0) {
                         $entry.hooks = $remaining
                         $kept += $entry
@@ -36,14 +39,23 @@ try {
                 $eventProperty.Value = @($kept)
             }
         }
-        $parent = Split-Path -Parent $settingsPath
-        $backup = Join-Path $parent ("settings.json.aidr-uninstall-backup-{0}" -f [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
-        Copy-Item -LiteralPath $settingsPath -Destination $backup
-        $temporary = Join-Path $parent ("settings.{0}.tmp" -f [Guid]::NewGuid().ToString('N'))
-        [IO.File]::WriteAllText($temporary, (($settings | ConvertTo-Json -Depth 30) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
-        $replaceBackup = Join-Path $parent ("settings.{0}.replace-backup" -f [Guid]::NewGuid().ToString('N'))
-        [IO.File]::Replace($temporary, $settingsPath, $replaceBackup)
-        [IO.File]::Delete($replaceBackup)
+        if ($removed -gt 0) {
+            Assert-AidrJsonDepth $settings
+            $parent = Split-Path -Parent $settingsPath
+            Assert-AidrFileUnchanged -Path $settingsPath -OriginalBytes $settingsBytes
+            $backup = Join-Path $parent ("settings.json.aidr-uninstall-backup-{0}" -f [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+            Copy-Item -LiteralPath $settingsPath -Destination $backup
+            $temporary = Join-Path $parent ("settings.{0}.tmp" -f [Guid]::NewGuid().ToString('N'))
+            try {
+                [IO.File]::WriteAllText($temporary, (($settings | ConvertTo-Json -Depth 100) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
+                Assert-AidrFileUnchanged -Path $settingsPath -OriginalBytes $settingsBytes
+                $replaceBackup = Join-Path $parent ("settings.{0}.replace-backup" -f [Guid]::NewGuid().ToString('N'))
+                [IO.File]::Replace($temporary, $settingsPath, $replaceBackup)
+                [IO.File]::Delete($replaceBackup)
+            } finally {
+                if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+            }
+        }
     }
     if ($RemoveAgentConfig) {
         $configPath = Join-Path $target '.singularity-aidr/config.json'

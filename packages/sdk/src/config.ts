@@ -1,3 +1,4 @@
+import { ArtifactSchema } from "@singularityrd/aidr-core";
 import { z } from "zod";
 
 /**
@@ -12,6 +13,10 @@ export const SDKConfigSchema = z.object({
 	cache: z.boolean().default(true),
 	cacheTtl: z.number().min(60000).max(86400000).default(300000), // 5 minutes
 	environment: z.enum(["production", "staging", "development"]).default("production"),
+	/** Share fetch URLs with the configured reputation provider. Off unless explicitly enabled. */
+	urlReputationEnabled: z.boolean().default(false),
+	/** Include query parameters in reputation requests; credentials/fragments are always withheld. */
+	includeUrlQueryParameters: z.boolean().default(false),
 	logger: z.any().optional(), // pino.Logger compatible
 });
 
@@ -23,6 +28,8 @@ export type SDKConfig = z.infer<typeof SDKConfigSchema>;
 export const CheckRequestSchema = z.object({
 	action: z.string().min(1),
 	resource: z.string().min(1),
+	/** Additional typed artifacts extracted from a structured tool call. */
+	artifacts: z.array(ArtifactSchema).optional(),
 	context: z.record(z.unknown()).optional(),
 	sessionId: z.string().optional(),
 	metadata: z.record(z.unknown()).optional(),

@@ -6,9 +6,10 @@
  * with before/after hooks for customization.
  */
 
+import { extractFromUnknownTool } from "@singularityrd/aidr-core";
 import type { AIDRClient } from "../client.js";
 import type { CheckRequest, CheckResult } from "../config.js";
-import { enforceCheckResult } from "../enforcement.js";
+import { enforceCheckResult, isInconsistent } from "../enforcement.js";
 import {
 	formatToolOutputBlockReason,
 	guardToolOutput,
@@ -23,6 +24,8 @@ export interface MiddlewareContext {
 	tool: string;
 	/** Tool input as a string */
 	input: string;
+	/** Typed artifacts extracted from a structured tool input. */
+	artifacts?: CheckRequest["artifacts"];
 	/** Optional metadata for the request */
 	metadata?: Record<string, unknown>;
 	/** Session ID for tracking */
@@ -101,6 +104,29 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 	);
 }
 
+const COMMAND_TOOL_SUFFIX =
+	/(?:^|_)(?:bash|batch(?:_file)?|cmd(?:_exe)?|command(?:_execution)?|execute_command|fish|powershell|pwsh|run_command|run_shell(?:_command)?|sh|shell(?:_command|_exec)?|terminal|zsh)$/;
+
+function requestAction(tool: string): string {
+	const normalized = tool
+		.trim()
+		.toLowerCase()
+		.replace(/[.\s-]+/g, "_")
+		.replace(/_+/g, "_")
+		.replace(/^_|_$/g, "");
+	return COMMAND_TOOL_SUFFIX.test(normalized) ? "execute" : tool;
+}
+
+function toCheckRequest(context: MiddlewareContext): CheckRequest {
+	return {
+		action: requestAction(context.tool),
+		resource: context.input,
+		artifacts: context.artifacts,
+		sessionId: context.sessionId,
+		metadata: context.metadata,
+	};
+}
+
 function outputBlockedResult(reason: string): CheckResult {
 	return {
 		allowed: false,
@@ -156,6 +182,14 @@ async function enforceVerdict(
 	throw new AIDRMiddlewareError(message, verdict, context);
 }
 
+async function enforceConsistency(
+	context: MiddlewareContext,
+	verdict: CheckResult,
+	options: MiddlewareOptions,
+): Promise<void> {
+	if (isInconsistent(verdict)) await enforceVerdict(context, verdict, options);
+}
+
 /**
  * Creates a generic AIDR middleware function.
  *
@@ -195,15 +229,11 @@ export function createMiddleware(
 		}
 
 		// Build check request from context
-		const checkRequest: CheckRequest = {
-			action: context.tool,
-			resource: context.input,
-			sessionId: context.sessionId,
-			metadata: context.metadata,
-		};
+		const checkRequest = toCheckRequest(context);
 
 		// Perform security check
 		const verdict = await aidrClient.check(checkRequest);
+		await enforceConsistency(context, verdict, options);
 
 		// Handle deny verdict
 		if (verdict.decision === "deny") {
@@ -296,15 +326,11 @@ export function createSyncCompatibleMiddleware(
 			}
 
 			// Build check request
-			const checkRequest: CheckRequest = {
-				action: context.tool,
-				resource: context.input,
-				sessionId: context.sessionId,
-				metadata: context.metadata,
-			};
+			const checkRequest = toCheckRequest(context);
 
 			// Perform security check
 			const verdict = await aidrClient.check(checkRequest);
+			await enforceConsistency(context, verdict, options);
 
 			// Handle deny
 			if (verdict.decision === "deny") {
@@ -419,9 +445,20 @@ export function wrapToolWithMiddleware(
 	return {
 		name: tool.name,
 		run: async (...args: unknown[]): Promise<unknown> => {
+			const input = JSON.stringify(args);
+			if (typeof input !== "string") {
+				throw new TypeError("Tool input could not be serialized for security inspection");
+			}
+			const parsedArgs = JSON.parse(input) as unknown[];
+			const firstArg = parsedArgs.length === 1 ? parsedArgs[0] : undefined;
+			const toolInput =
+				typeof firstArg === "object" && firstArg !== null && !Array.isArray(firstArg)
+					? (firstArg as Record<string, unknown>)
+					: { args: parsedArgs };
 			const context: MiddlewareContext = {
 				tool: tool.name,
-				input: JSON.stringify(args),
+				input,
+				artifacts: extractFromUnknownTool(tool.name, toolInput),
 				sessionId:
 					typeof options.metadata?.sessionId === "string" ? options.metadata.sessionId : undefined,
 				metadata: options.metadata,

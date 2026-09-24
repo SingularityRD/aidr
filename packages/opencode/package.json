@@ -24,7 +24,7 @@
   ],
   "scripts": {
     "build": "node ../../scripts/ensure-core-build.mjs && pnpm run clean && pnpm run sync:assets && tsc",
-    "build:release": "pnpm run clean && pnpm run sync:assets && tsc -p tsconfig.release.json && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-opencode && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "build:release": "pnpm run clean && pnpm run sync:assets && tsc -p tsconfig.release.json && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id opencode/dist && node ../../scripts/check-no-sourcemaps.mjs dist",
     "clean": "node ../../scripts/rmrf.mjs dist resources tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo",
     "prepack": "node ../../scripts/check-workspace-refs.mjs",
     "sync:assets": "node scripts/sync-assets.mjs",
@@ -38,10 +38,10 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.11"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.12.0"
   },
   "keywords": [
     "opencode",

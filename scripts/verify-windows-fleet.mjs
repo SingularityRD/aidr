@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,13 +12,17 @@ const sourceRoot = repo;
 const fleet = join(repo, "deploy", "fleet", "windows");
 const powershell = process.platform === "win32" ? "powershell.exe" : "pwsh";
 const tar = process.platform === "win32" ? "tar.exe" : "tar";
+const parentDevelopmentMode = process.env.AIDR_DEVELOPMENT_MODE;
+const fleetFixtureEnv = Object.freeze({ AIDR_DEVELOPMENT_MODE: "true" });
 const required = [
 	"Common.ps1",
 	"Install-Aidr.ps1",
 	"Update-Aidr.ps1",
 	"Rollback-Aidr.ps1",
 	"Uninstall-Aidr.ps1",
+	"Invoke-AidrRemediation.ps1",
 	"Test-AidrDetection.ps1",
+	"Test-AidrFleetScriptSignatures.ps1",
 	"New-AidrFleetManifest.ps1",
 	"aidr-fleet-manifest.schema.json",
 	"README.md",
@@ -38,6 +42,45 @@ try {
 	);
 	runPs(syntaxScript, [fleet]);
 	checks.push("all PowerShell entrypoints parse without errors");
+
+	if (process.platform === "win32") {
+		const oversizedSource = join(work, "expanded-over-limit.bin");
+		const oversizedArchive = join(work, "expanded-over-limit.tgz");
+		const file = openSync(oversizedSource, "w");
+		try { ftruncateSync(file, 536870913); } finally { closeSync(file); }
+		execFileSync(tar, ["-czf", oversizedArchive, "-C", work, "expanded-over-limit.bin"], { stdio: "pipe" });
+		assert.ok(statSync(oversizedArchive).size < 536870912, "fixture must be a compressed archive bomb, not an oversized transport");
+		const expandScript = join(work, "expand-archive.ps1");
+		writeFileSync(expandScript, [
+			"param([string]$Archive,[string]$Destination)",
+			"$ErrorActionPreference='Stop'",
+			". '" + join(fleet, "Common.ps1").replaceAll("'", "''") + "'",
+			"try { Expand-AidrVerifiedArchive -Archive $Archive -Destination $Destination } catch { Write-Error $_; exit 1 }",
+		].join("\n") + "\n");
+		const expandedDestination = join(work, "expanded-output");
+		const expansion = runPs(expandScript, [oversizedArchive, expandedDestination], false);
+		assert.notEqual(expansion.status, 0);
+		assert.match(`${expansion.stdout}\n${expansion.stderr}`, /512 MiB/);
+		assert.equal(existsSync(expandedDestination), false, "oversized content must be rejected before extraction creates a destination");
+		checks.push("compressed archive bomb is rejected by its advertised expanded size before extraction");
+	}
+
+	const developmentModeProbe = join(work, "development-mode.ps1");
+	writeFileSync(developmentModeProbe, `Write-Output $env:AIDR_DEVELOPMENT_MODE\n`);
+	assert.equal(runPs(developmentModeProbe, [], true, fleetFixtureEnv).trim(), "true");
+	assert.equal(process.env.AIDR_DEVELOPMENT_MODE, parentDevelopmentMode);
+	checks.push("development mode was passed only to a spawned test child, not set process-wide");
+
+	const rejectedPreflight = runPs(join(fleet, "Test-AidrFleetScriptSignatures.ps1"), [
+		"-ExpectedThumbprint",
+		"0".repeat(40),
+	], false);
+	assert.notEqual(rejectedPreflight.status, 0);
+	assert.match(
+		`${rejectedPreflight.stdout}\n${rejectedPreflight.stderr}`,
+		process.platform === "win32" ? /NotSigned|pinned management-script certificate|Could not inspect Authenticode/ : /must run on Windows/,
+	);
+	checks.push("Authenticode preflight failed closed for unsigned, unpinned, or unavailable signatures");
 
 	const package1 = makePackage("1.0.0", "v1");
 	const package2 = makePackage("1.0.1", "v2");
@@ -144,10 +187,79 @@ $cert.Thumbprint
 	assert.notEqual(unsafeTarget.status, 0);
 	checks.push("filesystem-root TargetHome was rejected");
 
+	const protectedPathsScript = join(work, "protected-paths.ps1");
+	writeFileSync(protectedPathsScript, String.raw`param([string]$Common,[string]$Fixture)
+. $Common
+foreach ($root in @($env:windir, $env:ProgramData, $env:ProgramFiles, [Environment]::GetEnvironmentVariable('ProgramFiles(x86)'))) {
+  if (-not $root) { continue }
+  $child = Get-ChildItem -LiteralPath $root -Directory | Select-Object -First 1
+  if ($null -eq $child) { throw "No test child under $root" }
+  try { $null = Get-AidrValidatedTargetHome $child.FullName; throw "Accepted protected child $($child.FullName)" }
+  catch { if ($_.Exception.Message -like 'Accepted protected child*') { throw } }
+}
+$file = Join-Path $Fixture 'concurrent-settings.json'
+[IO.File]::WriteAllText($file, '{"customer":1}')
+$original = [IO.File]::ReadAllBytes($file)
+[IO.File]::WriteAllText($file, '{"customer":2}')
+try { Assert-AidrFileUnchanged -Path $file -OriginalBytes $original; throw 'Accepted a concurrent customer edit' }
+catch { if ($_.Exception.Message -eq 'Accepted a concurrent customer edit') { throw } }
+`);
+	runPs(protectedPathsScript, [join(fleet, "Common.ps1"), work]);
+	checks.push("protected system descendants and concurrent customer-byte changes were rejected");
+
 	const logs = readFileSync(join(stateRoot, "logs", `${targetId(target)}.jsonl`), "utf8");
 	assert.ok(!logs.includes(secretMarker));
 	assert.ok(!/(api[_-]?key|bearer|password|secret)/i.test(logs));
 	checks.push("structured fleet logs excluded configuration and credential material");
+
+	const settingsPath = join(target, ".claude", "settings.json");
+	const deepValue = (depth) => {
+		let value = { leaf: "customer-value" };
+		for (let i = 0; i < depth; i++) value = { nested: value };
+		return value;
+	};
+	const assertDeepLeaf = (value, depth) => {
+		for (let i = 0; i < depth; i++) value = value.nested;
+		assert.equal(value.leaf, "customer-value");
+	};
+	const removeManagedEvent = (value) => { delete value.hooks.PostToolUse; return value; };
+	let customerSettings = JSON.parse(readFileSync(settingsPath, "utf8"));
+	customerSettings.customerDeep = deepValue(35);
+	writeFileSync(settingsPath, `${JSON.stringify(removeManagedEvent(customerSettings), null, 2)}\n`);
+	const repaired = JSON.parse(runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-Json"]));
+	assert.equal(repaired.outcome, "repaired");
+	const repairedSettings = JSON.parse(readFileSync(settingsPath, "utf8"));
+	assertDeepLeaf(repairedSettings.customerDeep, 35);
+	checks.push("remediation preserved customer JSON deeper than PowerShell's former 30-level limit");
+
+	customerSettings = removeManagedEvent(JSON.parse(readFileSync(settingsPath, "utf8")));
+	writeFileSync(settingsPath, `${JSON.stringify(customerSettings, null, 2)}\n`);
+	const concurrentContent = '{"customerConcurrentChange":true}\n';
+	const conflict = runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-Json"], false, {
+		AIDR_TEST_EDIT_SETTINGS: settingsPath,
+	});
+	assert.notEqual(conflict.status, 0);
+	assert.equal(JSON.parse(conflict.stdout).reason.code, "settings_changed_during_operation");
+	assert.equal(readFileSync(settingsPath, "utf8"), concurrentContent);
+	checks.push("remediation refused a customer edit made during the deny canary");
+
+	customerSettings = removeManagedEvent(structuredClone(repairedSettings));
+	customerSettings.customerDeep = deepValue(101);
+	const overlyDeepRepair = `${JSON.stringify(customerSettings)}\n`;
+	writeFileSync(settingsPath, overlyDeepRepair);
+	assert.notEqual(runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-Json"], false).status, 0);
+	assert.equal(readFileSync(settingsPath, "utf8"), overlyDeepRepair);
+	checks.push("remediation failed closed beyond safe JSON nesting depth");
+
+	customerSettings = structuredClone(repairedSettings);
+	customerSettings.customerDeep = deepValue(101);
+	const overlyDeepUninstall = `${JSON.stringify(customerSettings)}\n`;
+	writeFileSync(settingsPath, overlyDeepUninstall);
+	assert.notEqual(runFleet("Uninstall-Aidr.ps1", ["-TargetHome", target, "-StateRoot", stateRoot], false).status, 0);
+	assert.equal(readFileSync(settingsPath, "utf8"), overlyDeepUninstall);
+	checks.push("uninstall failed closed beyond safe JSON nesting depth");
+
+	writeFileSync(settingsPath, `${JSON.stringify(repairedSettings)}\n`);
 
 	runFleet("Uninstall-Aidr.ps1", ["-TargetHome", target, "-StateRoot", stateRoot]);
 	const afterUninstall = runFleet("Test-AidrDetection.ps1", ["-TargetHome", target, "-StateRoot", stateRoot, "-Json"], false);
@@ -155,8 +267,9 @@ $cert.Thumbprint
 	const settingsAfter = JSON.parse(readFileSync(join(target, ".claude", "settings.json"), "utf8"));
 	assert.ok(settingsAfter.hooks.PreToolUse.some((entry) => entry.hooks.some((hook) => hook.statusMessage === unrelatedStatus)));
 	assert.ok(!JSON.stringify(settingsAfter).includes("Singularity AIDR managed installation"));
+	assertDeepLeaf(settingsAfter.customerDeep, 35);
 	assert.equal(readFileSync(join(target, ".singularity-aidr", "config.json"), "utf8"), preservedConfig);
-	checks.push("uninstall removed only managed hooks and preserved configuration");
+	checks.push("uninstall removed only managed hooks and preserved deep customer configuration");
 
 	assert.match(readFileSync(join(fleet, "README.md"), "utf8"), /not an Intune\/SCCM certification claim/i);
 	checks.push("documentation keeps real MDM and native-host acceptance external");
@@ -173,7 +286,7 @@ function makePackage(version, marker) {
 	mkdirSync(join(root, "resources", "threats"), { recursive: true });
 	mkdirSync(join(root, "resources", "allowlists"), { recursive: true });
 	writeFileSync(join(root, "package.json"), `${JSON.stringify({ name: "@singularityrd/aidr-claude-code", version, type: "commonjs" }, null, 2)}\n`);
-	writeFileSync(join(root, "dist", "pre-tool-use.cjs"), `process.stdout.write(JSON.stringify({hookSpecificOutput:{permissionDecision:"deny",reason:"${marker}"}}));\n`);
+	writeFileSync(join(root, "dist", "pre-tool-use.cjs"), `if(process.env.AIDR_TEST_EDIT_SETTINGS)require("node:fs").writeFileSync(process.env.AIDR_TEST_EDIT_SETTINGS,'{"customerConcurrentChange":true}\\n');process.stdout.write(JSON.stringify({hookSpecificOutput:{permissionDecision:"deny",permissionDecisionReason:"🛡️ Singularity AIDR: Threat Blocked"},systemMessage:"Remote code execution via curl pipe to shell (${marker})"}));\n`);
 	writeFileSync(join(root, "dist", "post-tool-use.cjs"), `process.stdout.write("${marker}");\n`);
 	writeFileSync(join(root, "dist", "session-start.cjs"), `process.stdout.write("${marker}");\n`);
 	// endpoint-install.mjs refuses to register hooks on Windows when the
@@ -223,9 +336,10 @@ function generateManifest(artifact, version, thumbprint, config) {
 	return { directory, manifest: join(directory, "aidr-fleet-manifest.json"), sha };
 }
 
-function runPs(script, args, success = true) {
+function runPs(script, args, success = true, extraEnv = {}) {
 	const result = spawnSync(powershell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, ...args], {
 		cwd: repo,
+		env: { ...process.env, ...extraEnv },
 		encoding: "utf8",
 		windowsHide: true,
 		timeout: 60_000,
@@ -234,8 +348,12 @@ function runPs(script, args, success = true) {
 	return success ? result.stdout : result;
 }
 
-function runFleet(script, args, success = true) {
-	return runPs(join(fleet, script), args, success);
+function runFleet(script, args, success = true, extraEnv = {}) {
+	// The generated endpoint archive is intentionally unsigned test data. Keep
+	// its local-rehearsal flag confined to each spawned fixture process.
+	const result = runPs(join(fleet, script), args, success, { ...extraEnv, ...fleetFixtureEnv });
+	assert.equal(process.env.AIDR_DEVELOPMENT_MODE, parentDevelopmentMode);
+	return result;
 }
 
 function sha256(path) {

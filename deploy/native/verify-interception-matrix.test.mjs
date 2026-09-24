@@ -71,11 +71,28 @@ test("the committed matrix is structurally valid, source-grounded and honestly o
 	// real-host acceptance record, so the matrix stays NO-GO.
 	assert.equal(report.decision, "NO-GO");
 	assert.equal(report.counts.connectors, 6);
-	assert.equal(report.counts.rows, 30);
+	assert.equal(report.counts.rows, 36);
 	assert.equal(report.counts.byStatus.enforced, 0);
 	assert.equal(report.connectorsWithoutNamedAcceptance, 6);
-	assert.equal(report.openPointCount, 30);
+	assert.equal(report.openPointCount, 36);
 	assert.equal(report.matrixSha256.length, 64);
+});
+
+test("OpenClaw opaque binary remains uninspected and post-execution containment is unaccepted", () => {
+	const matrix = committedMatrix();
+	const binary = matrix.failureConditions.find(
+		(entry) => entry.connector === "openclaw" && entry.condition === "large-binary-response",
+	);
+	assert.ok(binary, "missing OpenClaw large-binary-response condition");
+	assert.equal(binary.outcome, "explicitly-unsupported");
+	assert.match(binary.reason, /Opaque binary output is marked incomplete/iu);
+	assert.match(binary.reason, /cannot prove the same-turn model did not receive the original result/iu);
+	const report = verifyInterceptionMatrix({
+		matrixPath: MATRIX_PATH,
+		supportMatrixPath: SUPPORT_MATRIX_PATH,
+		repoRoot: REPO_ROOT,
+	});
+	assert.equal(report.ok, true, report.failureReasons.join("; "));
 });
 
 test("an unknown status fails the gate", () => {
@@ -121,7 +138,7 @@ test("a sold connector with no rows fails the gate", () => {
 	const missing = report.failures.filter(
 		(failure) => failure.code === "MISSING_POINT_ROW" && failure.connector === "codex",
 	);
-	assert.equal(missing.length, 5);
+	assert.equal(missing.length, 6);
 	assert.ok(codes(report).includes("MISSING_TAMPER_POSTURE"), report.failureReasons.join("; "));
 	assert.ok(codes(report).includes("MISSING_FAILURE_CONDITION"), report.failureReasons.join("; "));
 });
@@ -161,7 +178,7 @@ test("a row cannot borrow another connector's module as its guard", () => {
 test("a row claiming an unsupported point as available fails the gate", () => {
 	const report = verify(
 		mutate((matrix) => {
-			const target = row(matrix, "codex", "pre-model-output");
+			const target = row(matrix, "codex", "post-tool-output");
 			target.status = "declared-not-proven";
 			target.hostBoundary = "PostToolUse";
 			target.reason = null;
@@ -215,14 +232,14 @@ test("a point declared unsupported while the support matrix sells it fails the g
 	const report = verify(committedMatrix(), {
 		mutateSupport: (support) => {
 			const codex = support.rows.find((entry) => entry.connector === "codex");
-			codex.outputInterceptionPoint = "pre-model-output";
+			codex.outputInterceptionPoint = "post-tool-output";
 		},
 	});
 	assert.equal(report.ok, false);
 	const failing = report.failures.filter((failure) => failure.code === "SUPPORT_MATRIX_REQUIRES_POINT");
 	assert.deepEqual(
 		failing.map((failure) => `${failure.connector}/${failure.point}`),
-		["codex/pre-model-output"],
+		["codex/post-tool-output"],
 	);
 });
 

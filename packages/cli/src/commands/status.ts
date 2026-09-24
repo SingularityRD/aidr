@@ -1,4 +1,3 @@
-import chalk from "chalk";
 import { existsSync, readFileSync } from "node:fs";
 import {
 	ConfigSchema,
@@ -48,6 +47,7 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 	}
 	const configurationReady = configState !== "invalid" && detectionOk && registered.length > 0
 		&& !connectors.some((c) => c.state === "installed_but_degraded")
+		&& !connectors.some((c) => c.state === "unavailable")
 		&& (config.mode !== "managed" || (config.control_plane.enabled && !!config.control_plane.endpoint));
 	const report = {
 		schema_version: 1, checked_at: new Date().toISOString(),
@@ -64,7 +64,7 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 	};
 	if (options.json) console.log(JSON.stringify(report, null, 2));
 	else {
-		console.log(chalk.blue("Singularity AIDR — installation diagnostics"));
+		console.log("Singularity AIDR — installation diagnostics");
 		console.log(`Detection self-test: ${detectionOk ? "passed" : "FAILED"}; ${ruleCount} rules. ${detail}`);
 		console.log(`Configuration: ${configState}; mode: ${config.mode}`);
 		for (const connector of connectors) console.log(`  ${connector.label}: ${connector.state === "installed" ? "registration/package detected" : connector.state} — ${connector.detail}`);
@@ -80,8 +80,7 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 		const auditSummary =
 			`Audit log: ${auditLoss.writeFailures} append(s) could not be written, ${auditLoss.rotationDrops} rotation(s) dropped the oldest file.` +
 			(auditLoss.lastError ? ` Last error: ${auditLoss.lastError}.` : "");
-		const hasAuditLoss = auditLoss.writeFailures > 0 || auditLoss.rotationDrops > 0;
-		console.log(hasAuditLoss ? chalk.yellow(auditSummary) : auditSummary);
+		console.log(auditSummary);
 		console.log(configurationReady ? "Local installation checks passed. Run an agent-host canary to confirm actual enforcement." : "Installation requires attention. Check configuration and connector registration above.");
 		console.log("A package or hook registration does not prove that the host executes it.");
 	}

@@ -6,9 +6,15 @@ Singularity AIDR intercepts tool calls (shell commands, URL fetches, file writes
 
 ## Installation
 
+For customer installs, configure the private registry as described in
+[Package Installation](../../docs/package-installation.md) and install the
+exact approved release version:
+
 ```bash
-openclaw plugins install @singularityrd/aidr-openclaw
+openclaw plugins install npm:@singularityrd/aidr-openclaw@VERSION
 ```
+
+Replace `VERSION` with the version in the approved release record.
 
 ## What It Does
 
@@ -79,6 +85,18 @@ missing — blocks the tool call rather than being treated as an empty policy.
 The policy's labels and rules are whatever the tenant's signed bundle defines;
 this connector ships no customer label taxonomy and assumes none.
 
+## Behavioral baseline status
+
+A signed policy can provision behavioral and novelty detectors, but this
+connector does not provide a trusted, input-bound post-execution success receipt
+to promote baseline samples. Product preflight therefore starts cold and does
+not persist or restore learned baselines. Baseline-dependent detection is
+unavailable and asks by default; a signed policy may explicitly select
+`behavioral.unavailable_action: "skip"`, which remains a visible
+`behavioral_unavailable` warning rather than a clean result. Do not treat
+behavioral baseline detection as production-ready until a verified feedback
+path and independent efficacy evaluation are available.
+
 ## Approving a flagged action
 
 **The agent cannot approve its own actions.** Singularity AIDR deliberately does
@@ -113,11 +131,14 @@ exposing it as a model-callable tool.
 
 ## Configuration
 
-Singularity AIDR works out of the box with no configuration. Optional config file at `~/.singularity-aidr/config.json`:
+Commercial releases verify their signed package before registering any hook. An
+operator must provision the independently distributed artifact signing public
+key in `~/.singularity-aidr/config.json`:
 
 ```json
 {
   "sensitivity": "balanced",
+  "integrity": { "public_keys_pem": ["-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"] },
   "url_check": { "enabled": true },
   "file_check": { "enabled": true }
 }
@@ -133,7 +154,7 @@ Singularity AIDR works out of the box with no configuration. Optional config fil
 
 The first-party OpenClaw integration is proprietary and distributed under the
 commercial terms in the repository [LICENSE](../../LICENSE) and the applicable
-Order Form. Threat resources retain the [Detection Rule License 1.1](resources/threats/LICENSE).
+Order Form. Threat resources retain the [Detection Rule License 1.1](dist/resources/threats/LICENSE).
 Third-party components retain their original terms listed in
 [THIRD_PARTY_NOTICES](../../THIRD_PARTY_NOTICES). Legal approval of the
 current Release Candidate remains open.

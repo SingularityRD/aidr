@@ -54,7 +54,9 @@ const shared = {
 	sourcesContent: false,
 	sourceRoot: "",
 	legalComments: isRelease ? "none" : "eof",
-	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
+	// This output is CJS, where __dirname is always available. Keep the
+	// source's ESM fallback for the separately emitted package entrypoint.
+	define: { __AIDR_VERSION__: JSON.stringify(pkg.version), "import.meta.url": "undefined" },
 };
 
 const outputs = ["dist/pre-tool-use.cjs"];

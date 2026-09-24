@@ -9,6 +9,8 @@ const aclProcess = vi.hoisted(() => vi.fn((
 	_options: { env?: Record<string, string | undefined> },
 ) => ({ status: 0 })));
 const testHome = mkdtempSync(join(tmpdir(), "aidr-acl-mock-"));
+const originalHome = process.env.HOME;
+process.env.HOME = testHome;
 vi.mock("node:child_process", () => ({ spawnSync: aclProcess }));
 vi.mock("node:os", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:os")>();
@@ -34,7 +36,11 @@ afterEach(() => {
 	aclProcess.mockReturnValue({ status: 0 });
 	rmSync(configDir, { recursive: true, force: true });
 });
-afterAll(() => rmSync(testHome, { recursive: true, force: true }));
+afterAll(() => {
+	if (originalHome === undefined) delete process.env.HOME;
+	else process.env.HOME = originalHome;
+	rmSync(testHome, { recursive: true, force: true });
+});
 
 // AIDR-SKIP: AIDR-063 qa-owner - Windows ACL boundary tests require Windows security semantics
 describe.skipIf(process.platform !== "win32")("Windows private config ACL boundary", () => {

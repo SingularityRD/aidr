@@ -29,9 +29,9 @@ export async function installManagedHooks(
 
 	const runnerPath = await resolveRunnerPath(options.context);
 	const nodePath = resolveNodeRuntimePath();
+	const hooksFile = await readHooksFile(configPath);
 	const command = await buildHookCommand(configPath, nodePath, runnerPath);
 
-	const hooksFile = await readHooksFile(configPath);
 	const updated = upsertManagedHooks(hooksFile, command);
 	await writeHooksFile(configPath, updated);
 
@@ -174,30 +174,37 @@ function upsertManagedHooks(existing: CursorHooksFile, command: string): CursorH
 	hooks.beforeShellExecution = appendManaged(hooks.beforeShellExecution, {
 		command,
 		timeout: 30,
+		failClosed: true,
 	});
 	hooks.preToolUse = appendManaged(hooks.preToolUse, {
 		matcher: "Write|Delete|Edit|WebFetch",
 		command,
 		timeout: 30,
+		failClosed: true,
 	});
 	hooks.postToolUse = appendManaged(hooks.postToolUse, {
 		command,
 		timeout: 30,
+		failClosed: true,
 	});
 	hooks.afterAgentResponse = appendManaged(hooks.afterAgentResponse, {
 		command,
 		timeout: 30,
+		failClosed: true,
 	});
 	hooks.beforeMCPExecution = appendManaged(hooks.beforeMCPExecution, {
 		command,
 		timeout: 30,
+		failClosed: true,
 	});
 	hooks.beforeReadFile = appendManaged(hooks.beforeReadFile, {
 		command,
 		timeout: 30,
+		failClosed: true,
 	});
 
 	return {
+		...existing,
 		version: 1,
 		hooks,
 	};
@@ -212,6 +219,7 @@ function removeManagedEntries(existing: CursorHooksFile): CursorHooksFile {
 		}
 	}
 	return {
+		...existing,
 		version: existing.version || 1,
 		hooks,
 	};
@@ -240,18 +248,30 @@ function isManagedEntry(entry: HookEntry): boolean {
 }
 
 async function readHooksFile(filePath: string): Promise<CursorHooksFile> {
+	let contents: string;
 	try {
-		const parsed = JSON.parse(await readFile(filePath, "utf8")) as Partial<CursorHooksFile>;
-		return {
-			version: parsed.version ?? 1,
-			hooks: parsed.hooks ?? {},
-		};
-	} catch {
-		return {
-			version: 1,
-			hooks: {},
-		};
+		contents = await readFile(filePath, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return { version: 1, hooks: {} };
+		}
+		throw error;
 	}
+	const parsed = JSON.parse(contents) as Partial<CursorHooksFile>;
+	if (
+		!parsed ||
+		typeof parsed !== "object" ||
+		Array.isArray(parsed) ||
+		(parsed.version !== undefined && parsed.version !== 1) ||
+		(parsed.hooks !== undefined &&
+			(!parsed.hooks ||
+				typeof parsed.hooks !== "object" ||
+				Array.isArray(parsed.hooks) ||
+				Object.values(parsed.hooks).some((entries) => !Array.isArray(entries))))
+	) {
+		throw new Error("Invalid Cursor hooks configuration.");
+	}
+	return { ...parsed, version: parsed.version ?? 1, hooks: parsed.hooks ?? {} };
 }
 
 async function writeHooksFile(filePath: string, data: CursorHooksFile): Promise<void> {

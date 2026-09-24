@@ -1,7 +1,7 @@
 /**
  * Resolves bundled resource directories and package metadata.
  * When bundled by esbuild, __dirname points to packages/openclaw/dist/,
- * and resources are at packages/openclaw/resources/ (one level up).
+ * and integrity-covered resources are below packages/openclaw/dist/.
  */
 
 import { join, resolve } from "node:path";
@@ -11,8 +11,8 @@ const packageRoot = resolve(__dirname, "..");
 
 export function getBundledDataDirs(): { threatsDir: string; allowlistsDir: string } {
 	return {
-		threatsDir: join(packageRoot, "resources", "threats"),
-		allowlistsDir: join(packageRoot, "resources", "allowlists"),
+		threatsDir: join(__dirname, "resources", "threats"),
+		allowlistsDir: join(__dirname, "resources", "allowlists"),
 	};
 }
 

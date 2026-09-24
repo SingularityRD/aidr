@@ -76,9 +76,14 @@ export class AIDRClient {
 
 		// Initialize core components
 		this.engine = new DecisionEngine("balanced");
-		this.urlClient = new UrlCheckClient({
-			enabled: true,
+		this.urlClient = this.createUrlClient();
+	}
+
+	private createUrlClient(): UrlCheckClient {
+		return new UrlCheckClient({
+			enabled: this.config.urlReputationEnabled,
 			timeout_seconds: this.config.timeout / 1000,
+			include_query_parameters: this.config.includeUrlQueryParameters,
 		});
 	}
 
@@ -261,19 +266,20 @@ export class AIDRClient {
 			isMalicious: boolean;
 			findings: Array<{ severityName: string; typeName: string }>;
 			flags: string[];
+			cacheValidUntil?: number;
 		}> = [];
 		if (request.action === "fetch") {
-			try {
-				const results = await this.urlClient.checkUrls([request.resource]);
-				urlCheckResults.push(...results);
-			} catch (e) {
-				// A failed reputation lookup is an unavailable leg, not a clean URL.
-				// Swallowing it made an outage indistinguishable from "checked and
-				// found nothing", so the verdict was reported as an approval for a
-				// resource nothing had actually inspected. Record it and let the
-				// indeterminate path below decide.
-				urlLegUnavailableReason = e instanceof Error ? e.message : String(e);
-				this.logger.warn(`URL check failed for ${request.resource}: ${urlLegUnavailableReason}`);
+			if (!this.config.urlReputationEnabled) {
+				urlLegUnavailableReason = "disabled to avoid sending URLs to an external reputation provider";
+			} else {
+				try {
+					const results = await this.urlClient.checkUrls([request.resource]);
+					urlCheckResults.push(...results);
+				} catch (e) {
+					// A failed reputation lookup is an unavailable leg, not a clean URL.
+					urlLegUnavailableReason = e instanceof Error ? e.message : String(e);
+					this.logger.warn(`URL reputation lookup unavailable: ${urlLegUnavailableReason}`);
+				}
 			}
 		}
 
@@ -302,8 +308,9 @@ export class AIDRClient {
 			return indeterminate;
 		}
 
-		// Cache the result
-		if (this.cache) {
+		// An incomplete reputation result must not be cached as clean (or as if
+		// all enabled checks had completed).
+		if (this.cache && !urlLegUnavailableReason) {
 			const isMalicious = verdict.decision === "deny";
 			const verdictStr = isMalicious ? "deny" : verdict.decision === "allow" ? "clean" : "ask";
 			this.cache.putUrl(
@@ -315,6 +322,7 @@ export class AIDRClient {
 					source: verdict.source,
 				},
 				isMalicious,
+				urlCheckResults.find((result) => result.url === request.resource)?.cacheValidUntil,
 			);
 			this.cacheEntryCount++;
 		}
@@ -350,7 +358,7 @@ export class AIDRClient {
 				artifacts.push({ type: "content", value: request.resource });
 		}
 
-		return artifacts;
+		return request.artifacts ? [...artifacts, ...request.artifacts] : artifacts;
 	}
 
 	/**
@@ -394,7 +402,13 @@ export class AIDRClient {
 	 * Generate cache key for a request
 	 */
 	private _getCacheKey(request: CheckRequest): string {
-		return `${request.action}:${request.resource}`;
+		return [
+			request.action,
+			request.resource,
+			JSON.stringify(request.artifacts ?? []),
+			String(this.config.urlReputationEnabled),
+			String(this.config.includeUrlQueryParameters),
+		].join(":");
 	}
 
 	/**
@@ -502,6 +516,7 @@ export class AIDRClient {
 	 */
 	updateConfig(updates: Partial<SDKConfig>): void {
 		this.config = SDKConfigSchema.parse({ ...this.config, ...updates });
+		this.urlClient = this.createUrlClient();
 		this.logger.info(`Configuration updated: ${Object.keys(updates).join(", ")}`);
 	}
 

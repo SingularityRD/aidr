@@ -3,12 +3,14 @@ import { AidrVerdictBlockError } from "../error.js";
 import { createToolHandlers } from "../tool-handler.js";
 
 vi.mock("@singularityrd/aidr-core", () => ({
+	createHostObservation: vi.fn(() => null),
 	guardToolCall: vi.fn().mockRejectedValue(new Error("policy unavailable")),
 	formatAskMessage: vi.fn(),
 	formatDenyMessage: vi.fn(),
 	// Provisioning is not what this test is about; an unprovisioned install
 	// returns an empty context so the guard call itself is the failing step.
 	loadProvisionedDetectorContext: vi.fn().mockResolvedValue({}),
+	recordHostObservation: vi.fn(),
 }));
 
 describe("OpenCode tool handler failure policy", () => {

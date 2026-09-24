@@ -21,7 +21,7 @@ export function detectorPolicyPath(): string {
 	return coreDetectorPolicyPath("claude-code");
 }
 
-export { behavioralBaselineDir, canonicalDetectorPolicyPayload };
+;
 export type { DetectorProvisionedContext };
 
 export async function loadProvisionedDetectorContext(): Promise<DetectorProvisionedContext> {

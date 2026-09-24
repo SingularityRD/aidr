@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -49,5 +49,12 @@ mkdirSync(dirname(settingsPath), { recursive: true, mode: 0o700 });
 writeFileSync(`${settingsPath}.aidr-backup-${Date.now()}`, original, { flag: "wx", mode: 0o600 });
 const temporary = `${settingsPath}.aidr-${process.pid}.tmp`;
 writeFileSync(temporary, `${JSON.stringify(settings, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-renameSync(temporary, settingsPath);
+try {
+	// ponytail: Claude exposes no atomic compare-and-swap; this catches ordinary edits before replacement.
+	if (!readFileSync(settingsPath).equals(original)) throw new Error("Claude settings changed during uninstall; retry after closing other settings editors");
+	renameSync(temporary, settingsPath);
+} catch (error) {
+	unlinkSync(temporary);
+	throw error;
+}
 console.log(`Removed ${removed} managed AIDR hook registration(s). Policy, allowlists and agent configuration were preserved.`);

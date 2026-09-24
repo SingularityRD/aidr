@@ -19,6 +19,7 @@ import {
 	removeFilePath,
 	removeUrl,
 	saveAllowlist,
+	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { z } from "zod";
@@ -30,23 +31,6 @@ const logger: Logger = pino({ level: "warn" }, pino.destination(2));
 initSentry({ name: "aidr-claude-code-mcp" });
 
 declare const __AIDR_VERSION__: string;
-
-async function maybeVerifyIntegrity(): Promise<void> {
-	try {
-		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
-		const core = (await import("@singularityrd/aidr-core")) as any;
-		const fn = core?.verifyArtifactIntegrityAndLog as
-			| ((args: { artifactDir: string; artifactId: string; logger?: unknown }) => Promise<unknown>)
-			| undefined;
-		if (typeof fn === "function") {
-			await fn({ artifactDir: __dirname, artifactId: "claude-code/dist", logger });
-		}
-	} catch {
-		// Fail open
-	}
-}
-
-void maybeVerifyIntegrity();
 
 const server = new McpServer({
 	name: "aidr",
@@ -137,6 +121,11 @@ server.registerTool(
 );
 
 async function main(): Promise<void> {
+	await verifyArtifactIntegrityAndLog({
+		artifactDir: __dirname,
+		artifactId: "claude-code/dist",
+		logger,
+	});
 	const transport = new StdioServerTransport();
 	await server.connect(transport);
 }

@@ -19,10 +19,15 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { anyConnectorInstalled, detectConnectorStatuses } from "../utils/connector-status.js";
 
 let homes: string[] = [];
+let originalXdgConfigHome: string | undefined;
+
+beforeEach(() => {
+	originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+});
 
 function makeHome(): string {
 	const home = mkdtempSync(join(tmpdir(), "aidr-connector-status-"));
@@ -39,6 +44,8 @@ function write(home: string, relPath: string, content: string): void {
 afterEach(() => {
 	for (const h of homes) rmSync(h, { recursive: true, force: true });
 	homes = [];
+	if (originalXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+	else process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
 });
 
 describe("connector detection reports measured state", () => {
@@ -85,14 +92,33 @@ describe("connector detection reports measured state", () => {
 
 	it("detects installed Cursor and VS Code extensions", () => {
 		const home = makeHome();
-		mkdirSync(join(home, ".cursor", "extensions", "singularityrd.aidr-cursor-0.6.0"), {
-			recursive: true,
-		});
-		mkdirSync(join(home, ".vscode", "extensions", "singularityrd.aidr-0.6.0"), { recursive: true });
+		write(
+			home,
+			join(".cursor", "extensions", "singularityrd.aidr-cursor-0.6.0", "package.json"),
+			JSON.stringify({ publisher: "SingularityRD", name: "aidr-cursor", version: "0.6.0" }),
+		);
+		write(
+			home,
+			join(".vscode", "extensions", "singularityrd.aidr-vscode-0.6.0", "package.json"),
+			JSON.stringify({ publisher: "SingularityRD", name: "aidr-vscode", version: "0.6.0" }),
+		);
 
 		const statuses = detectConnectorStatuses(home);
 		expect(statuses.find((s) => s.id === "cursor")?.state).toBe("installed");
 		expect(statuses.find((s) => s.id === "vscode")?.state).toBe("installed");
+	});
+
+	it("does not treat package-name directories as installed without the AIDR manifest", () => {
+		const home = makeHome();
+		write(
+			home,
+			join(".cursor", "extensions", "someone.aidr-cursor-1.0.0", "package.json"),
+			JSON.stringify({ publisher: "SomeoneElse", name: "aidr-cursor", version: "1.0.0" }),
+		);
+
+		const cursor = detectConnectorStatuses(home).find((s) => s.id === "cursor");
+		expect(cursor?.state).toBe("runtime_present_not_installed");
+		expect(anyConnectorInstalled([cursor!])).toBe(false);
 	});
 
 	it("detects an OpenClaw plugin listed in its config", () => {
@@ -104,9 +130,45 @@ describe("connector detection reports measured state", () => {
 
 	it("detects an OpenCode plugin", () => {
 		const home = makeHome();
-		mkdirSync(join(home, ".config", "opencode", "plugins", "aidr-plugin.js"), { recursive: true });
+		write(
+			home,
+			join(".config", "opencode", "package.json"),
+			JSON.stringify({ dependencies: { "@singularityrd/aidr-opencode": "0.6.0" } }),
+		);
+		write(
+			home,
+			join(".config", "opencode", "opencode.json"),
+			JSON.stringify({ plugin: ["@singularityrd/aidr-opencode"] }),
+		);
 
 		expect(detectConnectorStatuses(home).find((s) => s.id === "opencode")?.state).toBe("installed");
+	});
+
+	it("uses XDG_CONFIG_HOME when probing OpenCode", () => {
+		const home = makeHome();
+		process.env.XDG_CONFIG_HOME = join(home, "xdg");
+		write(
+			home,
+			join("xdg", "opencode", "package.json"),
+			JSON.stringify({ dependencies: { "@singularityrd/aidr-opencode": "0.6.0" } }),
+		);
+		write(
+			home,
+			join("xdg", "opencode", "opencode.json"),
+			JSON.stringify({ plugin: ["@singularityrd/aidr-opencode"] }),
+		);
+
+		expect(detectConnectorStatuses(home).find((s) => s.id === "opencode")?.state).toBe("installed");
+	});
+
+	it("reports unreadable host config as unavailable instead of throwing", () => {
+		const home = makeHome();
+		mkdirSync(join(home, ".claude", "settings.json"), { recursive: true });
+		mkdirSync(join(home, ".codex", "config.toml"), { recursive: true });
+
+		const statuses = detectConnectorStatuses(home);
+		expect(statuses.find((s) => s.id === "claude-code")?.state).toBe("unavailable");
+		expect(statuses.find((s) => s.id === "codex")?.state).toBe("unavailable");
 	});
 });
 
@@ -152,6 +214,31 @@ describe("Codex detection catches the configuration that silently does nothing",
 		);
 
 		expect(detectConnectorStatuses(home).find((s) => s.id === "codex")?.state).toBe("installed");
+	});
+
+	it("does not count unrelated AIDR text as a Codex PreToolUse handler", () => {
+		const tomlHome = makeHome();
+		write(
+			tomlHome,
+			join(".codex", "config.toml"),
+			'[[hooks.PreToolUse]]\nmatcher = "^Bash$"\n[[hooks.PreToolUse.hooks]]\ntype = "command"\ncommand = "other-hook"\n# aidr-codex-hook was removed\n',
+		);
+		expect(detectConnectorStatuses(tomlHome).find((s) => s.id === "codex")?.state).toBe(
+			"runtime_present_not_installed",
+		);
+
+		const jsonHome = makeHome();
+		write(
+			jsonHome,
+			join(".codex", "hooks.json"),
+			JSON.stringify({
+				description: "aidr-codex-hook was removed",
+				hooks: { PostToolUse: [{ hooks: [{ type: "command", command: "aidr-codex-hook" }] }] },
+			}),
+		);
+		expect(detectConnectorStatuses(jsonHome).find((s) => s.id === "codex")?.state).toBe(
+			"runtime_present_not_installed",
+		);
 	});
 });
 

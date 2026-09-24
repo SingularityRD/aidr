@@ -15,6 +15,7 @@ import {
 	type Logger,
 	recordHostObservation,
 	type Verdict,
+	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { addPendingApproval } from "./approval-tracker.js";
@@ -29,21 +30,6 @@ const logger: Logger = pino({ level: "warn" }, pino.destination(2));
 
 /** Gate observation contract, or null during an ordinary user session. */
 const hostObservation = createHostObservation();
-
-async function maybeVerifyIntegrity(): Promise<void> {
-	try {
-		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
-		const core = (await import("@singularityrd/aidr-core")) as any;
-		const fn = core?.verifyArtifactIntegrityAndLog as
-			| ((args: { artifactDir: string; artifactId: string; logger?: unknown }) => Promise<unknown>)
-			| undefined;
-		if (typeof fn === "function") {
-			await fn({ artifactDir: __dirname, artifactId: "claude-code/dist", logger });
-		}
-	} catch {
-		// Fail open
-	}
-}
 
 function makeResponse(verdict: Verdict): Record<string, unknown> {
 	if (verdict.decision === "allow") return {};
@@ -107,7 +93,11 @@ function parseToolCall(rawInput: string): Record<string, unknown> | null {
 }
 
 async function main(): Promise<void> {
-	await maybeVerifyIntegrity();
+	await verifyArtifactIntegrityAndLog({
+		artifactDir: __dirname,
+		artifactId: "claude-code/dist",
+		logger,
+	});
 
 	let rawInput: string;
 	try {

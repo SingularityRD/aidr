@@ -3,6 +3,7 @@
 import { join, resolve } from "node:path";
 import {
 	type Artifact,
+	createHostObservation,
 	evaluateToolCall,
 	extractFromBash,
 	extractFromDelete,
@@ -12,7 +13,9 @@ import {
 	extractFromWebFetch,
 	extractFromWrite,
 	loadProvisionedDetectorContext,
+	recordHostObservation,
 	type Verdict,
+	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import {
 	auditOutputInspection,
@@ -24,6 +27,27 @@ declare const __dirname: string;
 
 const MAX_HOOK_INPUT_BYTES = 1024 * 1024;
 const HOOK_INPUT_LIMIT_EXCEEDED = Symbol("HOOK_INPUT_LIMIT_EXCEEDED");
+const hostObservation = createHostObservation();
+const EDIT_FILE_PATH_FIELDS = [
+	"file_path",
+	"filePath",
+	"path",
+	"target_file",
+	"targetFile",
+	"filename",
+	"fileName",
+] as const;
+const EDIT_FILE_CONTENT_FIELDS = [
+	"new_string",
+	"content",
+	"newString",
+	"newText",
+	"streamContent",
+	"stream_content",
+	"replacement",
+	"text",
+	"data",
+] as const;
 
 type CursorEventName =
 	| "preToolUse"
@@ -47,15 +71,7 @@ async function maybeVerifyIntegrity(artifactId: string): Promise<void> {
 	integrityChecked = true;
 
 	try {
-		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
-		const core = (await import("@singularityrd/aidr-core")) as any;
-		const fn = core?.verifyArtifactIntegrityAndLog as
-			| ((args: { artifactDir: string; artifactId: string }) => Promise<unknown>)
-			| undefined;
-		if (typeof fn !== "function") {
-			throw new Error("artifact integrity verifier is unavailable");
-		}
-		await fn({ artifactDir: __dirname, artifactId });
+		await verifyArtifactIntegrityAndLog({ artifactDir: __dirname, artifactId });
 	} catch (error) {
 		integrityChecked = false;
 		throw new Error(`artifact integrity verification failed: ${String(error)}`);
@@ -64,6 +80,10 @@ async function maybeVerifyIntegrity(artifactId: string): Promise<void> {
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
 	const mode = argv[0] as HookMode | undefined;
+	recordHostObservation(hostObservation, {
+		connector: mode === "cursor" || mode === "vscode" ? mode : "extension",
+		event: "invocation",
+	});
 	await maybeVerifyIntegrity("extension/dist");
 	const payload = await readStdinJson();
 	if (payload === HOOK_INPUT_LIMIT_EXCEEDED) {
@@ -112,7 +132,13 @@ async function handleCursor(payload: unknown): Promise<void> {
 
 	try {
 		const verdict = await evaluateNormalizedCall(normalized, "cursor");
-		writeJson(toCursorResponse(verdict));
+		writeJson(toCursorResponse(verdict, eventName));
+		recordHostObservation(hostObservation, {
+			connector: "cursor",
+			event: eventName,
+			toolName: normalized.toolName,
+			decision: verdict.decision,
+		});
 	} catch {
 		writeJson(
 			internalCursorResponse("deny", "Singularity AIDR internal error; execution was denied."),
@@ -126,7 +152,11 @@ async function handleVsCode(payload: unknown): Promise<void> {
 			await handleVsCodeToolOutput(payload);
 			return;
 		}
-		writeJson(internalVsCodeResponse("Singularity AIDR received an unsupported hook event; execution was denied."));
+		writeJson(
+			internalVsCodeResponse(
+				"Singularity AIDR received an unsupported hook event; execution was denied.",
+			),
+		);
 		return;
 	}
 	if (isVsCodePostToolUse(payload)) {
@@ -142,6 +172,12 @@ async function handleVsCode(payload: unknown): Promise<void> {
 	try {
 		const verdict = await evaluateNormalizedCall(normalized, "vscode");
 		writeJson(toVsCodeResponse(verdict));
+		recordHostObservation(hostObservation, {
+			connector: "vscode",
+			event: "PreToolUse",
+			toolName: normalized.toolName,
+			decision: verdict.decision,
+		});
 	} catch {
 		writeJson(internalVsCodeResponse("Singularity AIDR internal error; execution was denied."));
 	}
@@ -154,7 +190,21 @@ async function handleCursorToolOutput(payload: unknown): Promise<void> {
 		Array.isArray(payload) ||
 		!("tool_output" in payload)
 	) {
-		writeJson(internalCursorResponse("deny", "Singularity AIDR could not normalize tool output; execution was denied."));
+		const input =
+			payload && typeof payload === "object" && !Array.isArray(payload)
+				? (payload as Record<string, unknown>)
+				: {};
+		const inspection = inspectOutput(undefined);
+		await auditOutputInspection(inspection, {
+			host: "cursor",
+			surface: "tool_output",
+			sessionId: cursorSessionId(input),
+			toolName: asString(input.tool_name) ?? "Unknown",
+			preConsumptionEnforcement: "unavailable",
+		});
+		const reason =
+			"Singularity AIDR could not inspect Cursor PostToolUse output because the payload shape was unavailable. The tool may already have completed, no replacement was attempted, and the original output may remain available; inspection coverage is unavailable, not clean.";
+		writeJson({ additional_context: reason });
 		return;
 	}
 	const input = payload as Record<string, unknown>;
@@ -228,7 +278,25 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 		Array.isArray(payload) ||
 		!("tool_response" in payload)
 	) {
-		writeJson(internalVsCodeResponse("Singularity AIDR could not normalize tool output; execution was denied."));
+		const input =
+			payload && typeof payload === "object" && !Array.isArray(payload)
+				? (payload as Record<string, unknown>)
+				: {};
+		const inspection = inspectOutput(undefined);
+		await auditOutputInspection(inspection, {
+			host: "vscode",
+			surface: "tool_output",
+			sessionId: vsCodeSessionId(input),
+			toolName: asString(input.tool_name) ?? "Unknown",
+			preConsumptionEnforcement: "stop_further_processing",
+		});
+		const reason =
+			"Singularity AIDR could not inspect VS Code PostToolUse output because the payload shape was unavailable. The tool already completed; the hook blocks further processing, but it did not replace the original bytes and the result may already be in the transcript. Inspection coverage is unavailable, not clean.";
+		writeJson({
+			decision: "block",
+			reason,
+			hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: reason },
+		});
 		return;
 	}
 	const input = payload as Record<string, unknown>;
@@ -243,16 +311,20 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 		surface: "tool_output",
 		sessionId: vsCodeSessionId(input),
 		toolName,
-		preConsumptionEnforcement: "block",
+		preConsumptionEnforcement: "stop_further_processing",
 	});
+	const findingSummary = result.findings.map((finding) => finding.ruleId).join(", ");
+	const reason =
+		result.status === "blocked"
+			? `Singularity AIDR detected untrusted VS Code tool output (${findingSummary}).`
+			: result.reason ?? "Singularity AIDR could not fully inspect VS Code tool output; coverage is incomplete and it was not classified as clean.";
+	const coverageNotice = `${reason} The tool already completed. VS Code PostToolUse blocks further processing, but this hook does not replace output bytes; the original result may already be in the transcript.`;
 	writeJson({
 		decision: "block",
-		reason: result.reason ?? "Singularity AIDR blocked untrusted tool output.",
+		reason: coverageNotice,
 		hookSpecificOutput: {
 			hookEventName: "PostToolUse",
-			additionalContext:
-				result.reason ??
-				"Singularity AIDR blocked untrusted tool output before further processing.",
+			additionalContext: coverageNotice,
 		},
 	});
 }
@@ -260,9 +332,9 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 function hasExplicitVsCodeEvent(payload: unknown): payload is Record<string, unknown> {
 	return Boolean(
 		payload &&
-		typeof payload === "object" &&
-		!Array.isArray(payload) &&
-		("hook_event_name" in payload || "hookEventName" in payload),
+			typeof payload === "object" &&
+			!Array.isArray(payload) &&
+			("hook_event_name" in payload || "hookEventName" in payload),
 	);
 }
 
@@ -273,7 +345,11 @@ function isVsCodePreToolUse(payload: Record<string, unknown>): boolean {
 function isVsCodePostToolUse(payload: unknown): payload is Record<string, unknown> {
 	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
 	const input = payload as Record<string, unknown>;
-	return input.hook_event_name === "PostToolUse" || input.hookEventName === "PostToolUse" || "tool_response" in input;
+	return (
+		input.hook_event_name === "PostToolUse" ||
+		input.hookEventName === "PostToolUse" ||
+		"tool_response" in input
+	);
 }
 
 function cursorSessionId(input: Record<string, unknown>): string {
@@ -299,7 +375,7 @@ function vsCodeSessionId(input: Record<string, unknown>): string {
 function cursorOutputReason(result: OutputInspectionResult, isMcp: boolean): string {
 	const base = result.reason ?? "Singularity AIDR detected untrusted tool output.";
 	return isMcp
-		? `${base} The MCP result was replaced before model consumption.`
+		? `${base} AIDR returned a replacement in Cursor's MCP output field; host acceptance before model consumption has not been verified.`
 		: `${base} Cursor does not expose output replacement for this non-MCP tool; the original result could not be quarantined and this warning is advisory.`;
 }
 
@@ -310,37 +386,16 @@ function quarantinedMcpOutput(reason: string): Record<string, unknown> {
 	};
 }
 
-function cursorOutputCoverageResponse(reason: string): Record<string, unknown> {
-	return {
-		updated_mcp_tool_output: quarantinedMcpOutput(reason),
-		additional_context: `${reason} The output was not classified as clean.`,
-	};
-}
-
 function writeHookInputLimitResponse(mode: HookMode | undefined): void {
-	const reason = `Singularity AIDR hook input exceeds the ${MAX_HOOK_INPUT_BYTES}-byte processing limit. Output inspection coverage is incomplete and the payload was not classified as clean.`;
+	const reason = `Singularity AIDR hook input exceeds the ${MAX_HOOK_INPUT_BYTES}-byte processing limit. The event could not be identified, so no event-specific enforcement result was produced. If this was PostToolUse, the tool may already have completed; AIDR cannot verify or guarantee that its output was replaced, and the original may remain available. Treat it as untrusted; it was not classified as clean.`;
 	if (mode === "vscode") {
-		writeJson({
-			decision: "block",
-			reason,
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason: reason,
-				additionalContext: reason,
-			},
-		});
+		// The oversized payload is intentionally discarded, so its hook event
+		// cannot be identified safely. Do not forge a PreToolUse denial for a
+		// possible PostToolUse callback whose tool has already completed.
+		writeJson({ decision: "block", reason });
 		return;
 	}
-	writeJson({
-		decision: "deny",
-		permission: "deny",
-		reason,
-		user_message: reason,
-		agent_message: reason,
-		updated_mcp_tool_output: quarantinedMcpOutput(reason),
-		additional_context: reason,
-	});
+	writeJson({ additional_context: reason });
 }
 
 async function evaluateNormalizedCall(call: NormalizedHookCall, mode: HookMode): Promise<Verdict> {
@@ -420,6 +475,7 @@ function normalizeCursorCall(
 		const filePath = readFilePath(input);
 		const content = asString(input.content);
 		const toolInput: Record<string, unknown> = {
+			...input,
 			file_path: filePath ?? "",
 			content: content ?? "",
 			attachments: Array.isArray(input.attachments) ? input.attachments : [],
@@ -433,20 +489,7 @@ function normalizeCursorCall(
 	}
 
 	if (eventName === "beforeMCPExecution") {
-		const parsedToolInput = parseUnknownObject(input.tool_input);
-		const toolInput: Record<string, unknown> = {
-			tool_name: asString(input.tool_name),
-			tool_input: parsedToolInput,
-			command: asString(input.command),
-			url: asString(input.url),
-			server: asString(input.server),
-		};
-		return {
-			sessionId,
-			toolName: "MCP",
-			toolInput,
-			artifacts: extractFromToolCall("MCP", toolInput),
-		};
+		return normalizeCursorMcpCall(input, sessionId);
 	}
 
 	const toolName = asString(input.tool_name) ?? "";
@@ -460,19 +503,50 @@ function normalizeCursorCall(
 	};
 }
 
+function normalizeCursorMcpCall(
+	input: Record<string, unknown>,
+	sessionId: string,
+): NormalizedHookCall {
+	const parsedToolInput = parseUnknownObject(input.tool_input);
+	const serverName = asString(input.mcp_server_name) ?? asString(input.server);
+	const mcpToolName = asString(input.tool_name);
+	const toolInput: Record<string, unknown> = {
+		tool_name: mcpToolName,
+		tool_input: {
+			...parsedToolInput,
+			...(serverName ? { server: serverName } : {}),
+			...(mcpToolName ? { name: mcpToolName } : {}),
+			arguments: parsedToolInput,
+		},
+		command: asString(input.command),
+		url: asString(input.url),
+		server: serverName,
+		server_url: asString(input.mcp_server_url),
+	};
+	return {
+		sessionId,
+		toolName: "MCP",
+		toolInput,
+		artifacts: extractFromToolCall("MCP", toolInput),
+	};
+}
+
 function normalizeVsCodeCall(payload: unknown): NormalizedHookCall | undefined {
 	if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
 		return undefined;
 	}
 
 	const input = payload as Record<string, unknown>;
-	const toolName = asString(input.tool_name);
-	if (!toolName) {
+	const hostToolName = asString(input.tool_name);
+	if (!hostToolName) {
 		return undefined;
 	}
 
 	const rawToolInput = parseUnknownObject(input.tool_input);
-	const toolInput = normalizeFileToolInput(toolName, rawToolInput);
+	const toolName = hostToolName === "editFiles" ? "Edit" : hostToolName;
+	const editFiles =
+		hostToolName === "editFiles" ? normalizeVsCodeEditFiles(rawToolInput) : undefined;
+	const toolInput = editFiles?.toolInput ?? normalizeFileToolInput(toolName, rawToolInput);
 	const sessionId =
 		asString(input.session_id) ??
 		asString(input.sessionId) ??
@@ -484,8 +558,84 @@ function normalizeVsCodeCall(payload: unknown): NormalizedHookCall | undefined {
 		sessionId,
 		toolName,
 		toolInput,
-		artifacts: extractFromVsCodeTool(toolName, toolInput),
+		artifacts: editFiles?.artifacts ?? extractFromVsCodeTool(toolName, toolInput),
 	};
+}
+
+function normalizeVsCodeEditFiles(toolInput: Record<string, unknown>): {
+	toolInput: Record<string, unknown>;
+	artifacts: Artifact[];
+} {
+	const fallbackContent =
+		firstPopulatedString(...EDIT_FILE_CONTENT_FIELDS.map((field) => toolInput[field])) ?? "";
+	const files = Array.isArray(toolInput.files) ? toolInput.files : [];
+	let hasUnsupportedFile = false;
+	let hasAmbiguousFile = false;
+	if (
+		files.some((file) => typeof file === "string") &&
+		hasConflictingPopulatedStrings(toolInput, EDIT_FILE_CONTENT_FIELDS)
+	) {
+		hasAmbiguousFile = true;
+	}
+	const edits = files.flatMap((file): Record<string, unknown>[] => {
+		if (typeof file === "string") {
+			if (!file.trim()) {
+				hasUnsupportedFile = true;
+				return [];
+			}
+			return [{ file_path: file, new_string: fallbackContent }];
+		}
+		if (!file || typeof file !== "object" || Array.isArray(file)) {
+			hasUnsupportedFile = true;
+			return [];
+		}
+		const rawEdit = file as Record<string, unknown>;
+		if (
+			hasConflictingPopulatedStrings(rawEdit, EDIT_FILE_PATH_FIELDS) ||
+			hasConflictingPopulatedStrings(rawEdit, EDIT_FILE_CONTENT_FIELDS)
+		) {
+			hasAmbiguousFile = true;
+		}
+		const edit = normalizeEditLikeInput(rawEdit);
+		if (readFilePath(edit)) return [edit];
+		hasUnsupportedFile = true;
+		return [];
+	});
+	const primaryEdit = edits[0] ?? normalizeEditLikeInput(toolInput);
+	const artifacts =
+		edits.length > 0 ? edits.flatMap(extractFromEdit) : extractFromEdit(primaryEdit);
+	const normalizedToolInput: Record<string, unknown> = {
+		...toolInput,
+		...primaryEdit,
+		file_path: readFilePath(primaryEdit) ?? "",
+		new_string: asString(primaryEdit.new_string) ?? fallbackContent,
+	};
+	if (hasUnsupportedFile || hasAmbiguousFile) {
+		normalizedToolInput.__aidr_input_normalization_failed = true;
+	}
+	if (edits.length > 1) {
+		const patch = vsCodeEditFilesPatch(edits);
+		if (patch) normalizedToolInput.patch = patch;
+		else normalizedToolInput.__aidr_input_normalization_failed = true;
+	}
+
+	return {
+		toolInput: normalizedToolInput,
+		artifacts,
+	};
+}
+
+function vsCodeEditFilesPatch(edits: readonly Record<string, unknown>[]): string | undefined {
+	const patch = ["*** Begin Patch"];
+	for (const edit of edits) {
+		const filePath = readFilePath(edit);
+		if (!filePath || /[\r\n]/.test(filePath)) return undefined;
+		const content = asString(edit.new_string) ?? "";
+		patch.push(`*** Update File: ${filePath}`);
+		patch.push(...content.split(/\r?\n/).map((line) => `+${line}`));
+	}
+	patch.push("*** End Patch");
+	return patch.join("\n");
 }
 
 function extractFromVsCodeTool(toolName: string, toolInput: Record<string, unknown>): Artifact[] {
@@ -548,12 +698,7 @@ function normalizeWriteLikeInput(toolInput: Record<string, unknown>): Record<str
 function normalizeEditLikeInput(toolInput: Record<string, unknown>): Record<string, unknown> {
 	const filePath = readFilePath(toolInput);
 	const newString =
-		asString(toolInput.new_string) ??
-		asString(toolInput.newString) ??
-		asString(toolInput.streamContent) ??
-		asString(toolInput.stream_content) ??
-		asString(toolInput.content) ??
-		"";
+		firstPopulatedString(...EDIT_FILE_CONTENT_FIELDS.map((field) => toolInput[field])) ?? "";
 	return {
 		...toolInput,
 		file_path: filePath ?? "",
@@ -572,26 +717,25 @@ function normalizeFileToolInput(
 }
 
 function readFilePath(toolInput: Record<string, unknown>): string | undefined {
-	return (
-		asString(toolInput.file_path) ??
-		asString(toolInput.path) ??
-		asString(toolInput.filePath) ??
-		asString(toolInput.target_file) ??
-		asString(toolInput.filename)
-	);
+	return firstPopulatedString(...EDIT_FILE_PATH_FIELDS.map((field) => toolInput[field]));
 }
 
-function toCursorResponse(verdict: Verdict): Record<string, unknown> {
+function toCursorResponse(verdict: Verdict, eventName: CursorEventName): Record<string, unknown> {
 	if (verdict.decision === "allow") {
 		return { decision: "allow", permission: "allow" };
 	}
 
+	const decision =
+		verdict.decision === "ask" && eventName === "preToolUse" ? "deny" : verdict.decision;
 	const reason = truncateReason(verdict);
-	const agentMessage = `Singularity AIDR ${verdict.decision === "deny" ? "blocked" : "flagged"} this action (${verdict.severity}).`;
+	const agentMessage = `Singularity AIDR ${decision === "deny" ? "blocked" : "flagged"} this action (${verdict.severity}).`;
 
 	return {
-		decision: verdict.decision === "ask" ? "ask" : "deny",
-		permission: verdict.decision === "ask" ? "ask" : "deny",
+		// Cursor preToolUse does not support the Claude-style "ask" approval
+		// response. Explicitly deny review-required actions instead of returning a
+		// permission value the host cannot enforce.
+		decision,
+		permission: decision,
 		reason,
 		user_message: reason,
 		agent_message: agentMessage,
@@ -665,6 +809,29 @@ function isCursorEvent(value: string): value is CursorEventName {
 
 function asString(value: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
+}
+
+function firstPopulatedString(...values: unknown[]): string | undefined {
+	let empty: string | undefined;
+	for (const value of values) {
+		if (typeof value !== "string") continue;
+		if (value.trim() !== "") return value;
+		empty ??= value;
+	}
+	return empty;
+}
+
+function hasConflictingPopulatedStrings(
+	input: Record<string, unknown>,
+	fields: readonly string[],
+): boolean {
+	return (
+		new Set(
+			fields
+				.map((field) => input[field])
+				.filter((value): value is string => typeof value === "string" && value.trim() !== ""),
+		).size > 1
+	);
 }
 
 function parseUnknownObject(value: unknown): Record<string, unknown> {

@@ -30,14 +30,16 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { release as osRelease, version as osVersion } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
 	SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE,
+	binaryFor,
 	carriesTemplatePlaceholders,
+	runBinary,
 	validateScenarioManifest,
 } from "../../scripts/verify-native-host-matrix-v6.mjs";
 
@@ -104,9 +106,9 @@ export const EVIDENCE_SHA256_PATTERN = "^[0-9a-f]{64}$";
 /** Fields every residual entry must declare. */
 export const RESIDUAL_REQUIRED_FIELDS = ["id", "description", "ownerRole", "requiredInput", "acceptanceCommand", "acceptanceEvidence"];
 /** Residual fields the validator requires to be non-empty strings. */
-export const RESIDUAL_STRING_FIELDS = ["id", "description", "ownerRole", "requiredInput", "acceptanceCommand"];
+const RESIDUAL_STRING_FIELDS = ["id", "description", "ownerRole", "requiredInput", "acceptanceCommand"];
 /** Optional fields accepted by the published schema and validator. */
-export const MATRIX_OPTIONAL_FIELDS = ["$schema"];
+const MATRIX_OPTIONAL_FIELDS = ["$schema"];
 export const ROW_OPTIONAL_FIELDS = ["versionArgs"];
 /** Exact property sets paired with each `additionalProperties: false` schema. */
 export const MATRIX_ALLOWED_FIELDS = [...MATRIX_OPTIONAL_FIELDS, ...MATRIX_REQUIRED_FIELDS];
@@ -127,15 +129,17 @@ export const CONNECTOR_HOST_IDS = {
 };
 
 /** Scenario-manifest outcomes a host row may carry. */
-export const SCENARIO_MANIFEST_MISSING = "SCENARIO_MANIFEST_MISSING";
-export const SCENARIO_MANIFEST_UNREADABLE = "SCENARIO_MANIFEST_UNREADABLE";
-export const SCENARIO_MANIFEST_NO_MATCH = "SCENARIO_MANIFEST_NO_MATCH";
-export const SCENARIOS_PASSED = "SCENARIOS_PASSED";
+const SCENARIO_MANIFEST_MISSING = "SCENARIO_MANIFEST_MISSING";
+const SCENARIO_MANIFEST_UNREADABLE = "SCENARIO_MANIFEST_UNREADABLE";
+const SCENARIO_MANIFEST_NO_MATCH = "SCENARIO_MANIFEST_NO_MATCH";
+const SCENARIO_HOST_BINARY_MISMATCH = "SCENARIO_HOST_BINARY_MISMATCH";
+const SCENARIOS_PASSED = "SCENARIOS_PASSED";
 export const SCENARIOS_OPEN = "SCENARIOS_OPEN";
+const LOCAL_SCENARIOS_COMPLETE = "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN";
 /** Refusals: a manifest that cannot be evidence, or cannot be read, is never launched. */
-export const SCENARIO_REFUSAL_STATUSES = [SCENARIO_MANIFEST_UNREADABLE, SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE];
+const SCENARIO_REFUSAL_STATUSES = [SCENARIO_MANIFEST_UNREADABLE, SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE, SCENARIO_HOST_BINARY_MISMATCH];
 /** Explicit scenario-file issues are surfaced as stable blockers even without a matching host binary. */
-export const SCENARIO_FILE_ISSUE_STATUSES = [SCENARIO_MANIFEST_MISSING, SCENARIO_MANIFEST_UNREADABLE, SCENARIO_MANIFEST_NO_MATCH];
+const SCENARIO_FILE_ISSUE_STATUSES = [SCENARIO_MANIFEST_MISSING, SCENARIO_MANIFEST_UNREADABLE, SCENARIO_MANIFEST_NO_MATCH];
 /** The template refusal code is defined by the native-host gate, which owns the vocabulary. */
 export { SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE };
 
@@ -146,7 +150,7 @@ const SHA256 = new RegExp(EVIDENCE_SHA256_PATTERN, "u");
 const REVIEWED_AT = new RegExp(MATRIX_REVIEWED_AT_PATTERN, "u");
 const HOST_BINARY_ENV = new RegExp(HOST_BINARY_ENV_PATTERN, "u");
 
-export function currentPlatform() {
+function currentPlatform() {
 	if (process.platform === "win32") return "windows";
 	if (process.platform === "darwin") return "macos";
 	if (process.platform === "linux") return "linux";
@@ -311,20 +315,7 @@ export function validateMatrix(matrix) {
 
 /** Locate the host binary the same way the native scenario runner does. */
 function findBinary(row) {
-	const explicit = row.hostBinaryEnvOverride ? process.env[row.hostBinaryEnvOverride] : undefined;
-	if (explicit) {
-		const file = resolve(explicit);
-		return existsSync(file) ? file : null;
-	}
-	if (!row.hostBinary) return null;
-	const suffixes = process.platform === "win32" ? [".exe", ".cmd", ".ps1", ""] : [""];
-	for (const folder of (process.env.PATH ?? "").split(delimiter)) {
-		for (const suffix of suffixes) {
-			const candidate = join(folder.replace(/^"|"$/gu, ""), `${row.hostBinary}${suffix}`);
-			if (existsSync(candidate)) return candidate;
-		}
-	}
-	return null;
+	return binaryFor({ id: CONNECTOR_HOST_IDS[row.connector], command: row.hostBinary, env: row.hostBinaryEnvOverride });
 }
 
 function scenarioPathFor(row) {
@@ -428,15 +419,48 @@ function runScenarioManifest(row, binary, outputDir, options = {}) {
 	const validation = validateScenarioManifest(spec);
 	const refusal = refuseScenarioManifest(spec, validation);
 	if (refusal) return { ...refusal, scenarioPath, binary };
+	const hostId = CONNECTOR_HOST_IDS[row.connector];
+	const declaredHost = spec.hosts?.[hostId];
+	if (declaredHost) {
+		const scenarioBinary = binaryFor({ id: hostId, command: row.hostBinary, env: row.hostBinaryEnvOverride }, declaredHost);
+		if (!scenarioBinary || realpathSync(scenarioBinary) !== realpathSync(binary)) {
+			return {
+				status: SCENARIO_HOST_BINARY_MISMATCH,
+				scenarioPath,
+				binary,
+				reason: "scenario host binary differs from the installed binary probed by the support matrix",
+			};
+		}
+	}
 	mkdirSync(outputDir, { recursive: true });
 	const output = join(outputDir, `${row.connector}-scenarios.json`);
+	if (existsSync(output)) {
+		return {
+			status: SCENARIOS_OPEN,
+			scenarioPath,
+			outputPath: output,
+			reason: "scenario evidence output already exists; use a fresh output directory",
+			binary,
+		};
+	}
 	const result = spawnSync(
 		process.execPath,
 		[MATRIX_VERIFIER, "--scenario-file", scenarioPath, "--output", output],
 		{ encoding: "utf8", timeout: 30 * 60 * 1000, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
 	);
+	let verifierReport = null;
+	try {
+		if (existsSync(output)) verifierReport = JSON.parse(readFileSync(output, "utf8"));
+	} catch {
+		// The process output remains a failure unless a complete structured report proves local completion.
+	}
+	const localScenariosComplete = verifierReportShowsLocalCompletion(
+		verifierReport,
+		CONNECTOR_HOST_IDS[row.connector],
+		digest(readFileSync(scenarioPath, "utf8")),
+	);
 	return {
-		status: result.status === 0 ? SCENARIOS_PASSED : SCENARIOS_OPEN,
+		status: localScenariosComplete ? SCENARIOS_PASSED : SCENARIOS_OPEN,
 		scenarioPath,
 		outputPath: existsSync(output) ? output : null,
 		exitCode: result.status,
@@ -445,6 +469,61 @@ function runScenarioManifest(row, binary, outputDir, options = {}) {
 		validation: refusalValidation(validation),
 		binary,
 	};
+}
+
+/** The upstream verifier keeps its external acceptance gate NO-GO after local cases pass. */
+export function verifierReportShowsLocalCompletion(report, hostId, expectedScenarioSha256) {
+	if (
+		report?.kind !== "aidr_native_host_matrix_v6" ||
+		report?.gate !== "NO_GO" ||
+		report?.scenario_manifest_present !== true ||
+		report?.scenario_manifest_sha256 !== expectedScenarioSha256 ||
+		report?.manifest_validation?.ok !== true ||
+		report?.manifest_validation?.template !== false ||
+		report?.manifest_validation?.error_count !== 0 ||
+		report?.manifest_validation?.placeholder_count !== 0
+	) return false;
+
+	const host = report.hosts?.find((entry) => entry.id === hostId);
+	if (
+		host?.status !== LOCAL_SCENARIOS_COMPLETE ||
+		typeof host.binary !== "string" ||
+		typeof host.version !== "string" ||
+		!/^[a-f0-9]{64}$/u.test(host.launcher_sha256 ?? "") ||
+		!Array.isArray(host.acceptance_blockers) ||
+		host.acceptance_blockers.length !== 0 ||
+		!Array.isArray(host.cases)
+	) return false;
+
+	const expectedCases = new Map([
+		["denied_side_effect", "PASS"],
+		["benign_allow", "PASS"],
+		["disabled_hook", "BOUNDARY_CLAIM_RECORDED"],
+		["crash", "BOUNDARY_CLAIM_RECORDED"],
+		["timeout", "BOUNDARY_CLAIM_RECORDED"],
+		["offline", "PASS"],
+		["restart", "PASS"],
+	]);
+	if (host.cases.length !== expectedCases.size) return false;
+	const seenCases = new Set();
+	for (const scenario of host.cases) {
+		if (
+			!expectedCases.has(scenario.id) ||
+			seenCases.has(scenario.id) ||
+			scenario.status !== expectedCases.get(scenario.id) ||
+			scenario.attempt_observed !== true ||
+			scenario.correlated_file_observations !== true
+		) return false;
+		seenCases.add(scenario.id);
+		if (["denied_side_effect", "offline", "restart"].includes(scenario.id)) {
+			if (scenario.hook_observed !== true || scenario.side_effect_observed !== false) return false;
+		}
+		if (scenario.id === "benign_allow" && (scenario.hook_observed !== true || scenario.side_effect_observed !== true)) return false;
+		if (["disabled_hook", "crash", "timeout"].includes(scenario.id) &&
+			(scenario.condition_observed !== true || scenario.independent_boundary_observed !== true || scenario.side_effect_observed !== false)) return false;
+		if (["offline", "restart"].includes(scenario.id) && scenario.condition_observed !== true) return false;
+	}
+	return seenCases.size === expectedCases.size;
 }
 
 export async function buildRecord(options = {}) {
@@ -500,26 +579,12 @@ export async function buildRecord(options = {}) {
 			host.reason = "host binary is not installed on this machine";
 		} else {
 			const versionArgs = Array.isArray(row.versionArgs) ? row.versionArgs : ["--version"];
-			// npm-installed CLIs on Windows resolve to a `.ps1` or `.cmd` shim, which
-			// `spawnSync` cannot execute directly. Launch them through PowerShell or
-			// cmd.exe the same way the native scenario runner does.
-			const viaPowerShell = process.platform === "win32" && /\.ps1$/i.test(binary);
-			const viaCmd = process.platform === "win32" && /\.cmd$/i.test(binary);
-			const version = viaPowerShell
-				? spawnSync(
-						"powershell.exe",
-						["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", binary, ...versionArgs],
-						{ encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024, windowsHide: true },
-					)
-				: spawnSync(viaCmd ? "cmd.exe" : binary, viaCmd ? ["/d", "/s", "/c", binary, ...versionArgs] : versionArgs, {
-						encoding: "utf8",
-						timeout: 30_000,
-						maxBuffer: 1024 * 1024,
-						windowsHide: true,
-					});
+			let version;
+			try { version = runBinary(binary, versionArgs, { timeout: 30_000 }); }
+			catch (error) { version = { status: null, stdout: "", stderr: "", error }; }
 			host.version = String(version.stdout || version.stderr || "").trim().slice(0, 200) || null;
-			host.status = version.status === 0 && host.version ? "VERSION_PROBED" : "VERSION_PROBE_FAILED";
-			if (host.status === "VERSION_PROBE_FAILED") host.reason = "version probe did not succeed";
+			host.status = version.status === 0 && !version.error && host.version ? "VERSION_PROBED" : "VERSION_PROBE_FAILED";
+			if (host.status === "VERSION_PROBE_FAILED") host.reason = version.error?.message ?? "version probe did not succeed";
 			if (!host.platformSupportedHere || !host.architectureSupportedHere) {
 				host.status = "UNSUPPORTED_ON_THIS_MACHINE";
 				host.reason = `advertised for ${row.supportedPlatforms.join("/")} ${row.supportedArchitectures.join("/")}`;
@@ -590,7 +655,7 @@ export async function buildRecord(options = {}) {
 		limitations: [
 			"A version probe is not host enforcement evidence",
 			"One machine cannot cover the sold OS, architecture or host-version matrix",
-			"Named customer acceptance cannot be produced from this repository",
+			"Named independent release acceptance requires real host observations outside this repository",
 		],
 	};
 }

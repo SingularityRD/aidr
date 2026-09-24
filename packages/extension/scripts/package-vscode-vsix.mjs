@@ -2,49 +2,72 @@ import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	assertVsixIntegrityEvidence,
+	VSIX_PACKAGE_FILES,
+} from "../../../scripts/lib/vsix-package-files.mjs";
 
-const scriptDir = dirname(fileURLToPath(import.meta.url));
+const scriptPath = fileURLToPath(import.meta.url);
+const scriptDir = dirname(scriptPath);
 const extensionRoot = resolve(scriptDir, "..");
 const repoRoot = resolve(extensionRoot, "..", "..");
 
-const stageDir = join(extensionRoot, ".vsce", "vscode_extension");
-const outputVsix = join(repoRoot, "aidr-vscode.vsix");
+if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
+	await main();
+}
 
-const baseManifest = JSON.parse(await readFile(join(extensionRoot, "package.json"), "utf8"));
-const vscodeManifest = buildVsCodeManifest(baseManifest);
+async function main() {
+	await packageVsixVariant("vscode");
+}
 
-await rm(stageDir, { recursive: true, force: true });
-await mkdir(stageDir, { recursive: true });
-await cp(join(extensionRoot, "dist"), join(stageDir, "dist"), { recursive: true, force: true });
-await cp(join(extensionRoot, "resources"), join(stageDir, "resources"), {
-	recursive: true,
-	force: true,
-});
-await cp(join(extensionRoot, "README.md"), join(stageDir, "README.md"), { force: true });
-await cp(join(extensionRoot, "LICENSE"), join(stageDir, "LICENSE"), { force: true });
-await cp(join(extensionRoot, "aidr-icon.png"), join(stageDir, "aidr-icon.png"), { force: true });
-await writeFile(join(stageDir, "package.json"), `${JSON.stringify(vscodeManifest, null, 2)}\n`, "utf8");
+export async function packageVsixVariant(variant) {
+	if (variant !== "cursor" && variant !== "vscode") {
+		throw new Error(`Unsupported VSIX variant: ${variant}`);
+	}
+	const stageDir = join(extensionRoot, ".vsce", `${variant}_extension`);
+	const outputVsix = join(repoRoot, `aidr-${variant}.vsix`);
 
-await assertNoSourceMaps(join(stageDir, "dist"));
+	const baseManifest = JSON.parse(await readFile(join(extensionRoot, "package.json"), "utf8"));
+	const stagedManifest = variant === "vscode" ? buildVsCodeManifest(baseManifest) : buildCursorManifest(baseManifest);
 
-await runVscePackage(stageDir, outputVsix);
+	await rm(stageDir, { recursive: true, force: true });
+	await mkdir(stageDir, { recursive: true });
+	await cp(join(extensionRoot, "dist"), join(stageDir, "dist"), {
+		recursive: true,
+		force: true,
+	});
+	await cp(join(extensionRoot, "resources"), join(stageDir, "resources"), {
+		recursive: true,
+		force: true,
+	});
+	await cp(join(extensionRoot, "README.md"), join(stageDir, "README.md"), { force: true });
+	await cp(join(extensionRoot, "LICENSE"), join(stageDir, "LICENSE"), { force: true });
+	await cp(join(extensionRoot, "aidr-icon.png"), join(stageDir, "aidr-icon.png"), {
+		force: true,
+	});
+	await writeFile(
+		join(stageDir, "package.json"),
+		`${JSON.stringify(stagedManifest, null, 2)}\n`,
+		"utf8",
+	);
 
-function buildVsCodeManifest(base) {
+	await assertNoSourceMaps(join(stageDir, "dist"));
+	await assertVsixIntegrityEvidence(stageDir);
+	await runVscePackage(stageDir, outputVsix);
+}
+
+export function buildCursorManifest(base) {
+	return { ...base, files: [...VSIX_PACKAGE_FILES] };
+}
+
+export function buildVsCodeManifest(base) {
 	const manifest = { ...base };
 	manifest.name = "aidr-vscode";
 	manifest.displayName = "Singularity AIDR";
 	manifest.description =
 		"Singularity AIDR — protects AI agent tool calls against dangerous commands, malicious URLs, and harmful file writes.";
 	manifest.main = "./dist/vscode_extension.js";
-	manifest.files = [
-		"dist/vscode_extension.js",
-		"dist/aidr-hook.cjs",
-		"resources/**",
-		"aidr-icon.png",
-		"package.json",
-		"README.md",
-		"LICENSE",
-	];
+	manifest.files = [...VSIX_PACKAGE_FILES];
 	manifest.contributes = {
 		...base.contributes,
 		configuration: {
@@ -73,8 +96,8 @@ function runVscePackage(workingDirectory, outputPath) {
 		const child = spawn(
 			"pnpm",
 			[
-				"dlx",
-				"@vscode/vsce",
+				"exec",
+				"vsce",
 				"package",
 				"-o",
 				outputPath,

@@ -1,64 +1,60 @@
-import chalk from "chalk";
-import ora from "ora";
 import { createConfig } from "../utils/config-manager.js";
 import { detectEnvironment } from "../utils/detect-env.js";
 import { installHooks } from "../utils/install-hooks.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 
 async function setupCommand(options: { force?: boolean; secretStore?: string }): Promise<void> {
-	console.log(chalk.blue("\n🛡️  AIDR Setup\n"));
-
-	const spinner = ora();
+	console.log("\n🛡️  AIDR Setup\n");
 
 	try {
-		spinner.start("Detecting environment...");
+		console.error("Detecting environment...");
 		const env = await detectEnvironment();
-		spinner.succeed(`${env.agent} detected`);
+		console.error(`✓ ${env.agent} detected`);
 
-		spinner.start("Creating config...");
+		console.error("Creating config...");
 		// The credential store is resolved before anything is written: with no
 		// vault available and no explicit fallback this throws, and setup fails
 		// closed instead of leaving a plaintext credential behind.
 		const config = await createConfig(env, options.force || false, {
 			secretStoreSelection: options.secretStore,
 		});
-		spinner.succeed(
+		console.error(
 			config.outcome === "reused"
-				? `Config already present: ${config.path}`
-				: `Config: ${config.path}`,
+				? `✓ Config already present: ${config.path}`
+				: `✓ Config: ${config.path}`,
 		);
-		if (config.warning) spinner.warn(config.warning);
+		if (config.warning) console.warn(`⚠ ${config.warning}`);
 
-		spinner.start("Installing hooks...");
+		console.error("Preparing connector setup guidance...");
 		const hookResult = await installHooks(env);
-		spinner.succeed(hookResult.summary);
+		console.error(`✓ ${hookResult.summary}`);
 
-		spinner.start("Loading threat database...");
+		console.error("Loading threat database...");
 		const ruleCount = await loadBundledThreatCount();
 		if (ruleCount <= 0) {
-			spinner.fail(
+			console.error(
 				"No threat rules could be loaded. Detection would not be active - refusing to report success.",
 			);
 			process.exit(1);
 		}
-		spinner.succeed(`${ruleCount} rules active`);
+		console.error(`✓ ${ruleCount} rules active`);
 
-		spinner.start("Testing protection...");
+		console.error("Testing protection...");
 		const detection = await verifyDetection();
 		if (!detection.ok) {
-			spinner.fail(`Detection self-test failed: ${detection.reason}`);
+			console.error(`Detection self-test failed: ${detection.reason}`);
 			process.exit(1);
 		}
-		spinner.succeed(`Detection verified (${detection.detail})`);
+		console.error(`✓ Detection verified (${detection.detail})`);
 
 		// Report what actually happened this run. A rerun that reused the existing
 		// config previously printed the same "Setup complete!" as a first install,
 		// so the user could not tell a no-op from a real setup (AIDR-007).
 		if (config.outcome === "reused") {
-			console.log(chalk.green("\n✅ Setup verified — no changes were needed.\n"));
-			console.log(chalk.gray(`  Existing config reused: ${config.path}`));
+			console.log("\n✅ Setup verified — no changes were needed.\n");
+			console.log(`  Existing config reused: ${config.path}`);
 		} else {
-			console.log(chalk.green("\n✅ Setup complete!\n"));
+			console.log("\n✅ Setup complete!\n");
 		}
 
 		// The next steps must not contradict the warning that follows them. The
@@ -72,12 +68,12 @@ async function setupCommand(options: { force?: boolean; secretStore?: string }):
 		console.log("");
 
 		for (const line of hookResult.followUp) {
-			console.log(chalk.gray(line));
+			console.log(line);
 		}
 		console.log("");
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		spinner.fail(`Setup failed: ${message}`);
+		console.error(`Setup failed: ${message}`);
 		process.exit(1);
 	}
 }

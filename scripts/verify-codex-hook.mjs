@@ -8,16 +8,53 @@
  * an artifact rather than as source.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const BUNDLE = join(root, "packages", "codex", "dist", "pre-tool-use.cjs");
+const SOURCE_DIST = join(root, "packages", "codex", "dist");
+const SOURCE_BUNDLE = join(SOURCE_DIST, "pre-tool-use.cjs");
+let BUNDLE;
+let testHome;
+let testRoot;
 
-if (!existsSync(BUNDLE)) {
-	console.error(`Bundle missing: ${BUNDLE}`);
+process.on("exit", () => {
+	if (testRoot) rmSync(testRoot, { recursive: true, force: true });
+});
+
+if (!existsSync(SOURCE_BUNDLE)) {
+	console.error(`Bundle missing: ${SOURCE_BUNDLE}. Run \`pnpm build:release\` first.`);
 	process.exit(1);
+}
+
+const manifestPath = join(SOURCE_DIST, "aidr-artifact.manifest.json");
+if (!existsSync(manifestPath)) {
+	console.error(`Release artifact manifest missing: ${manifestPath}. Run \`pnpm build:release\` first.`);
+	process.exit(1);
+}
+
+testRoot = mkdtempSync(join(tmpdir(), "aidr-codex-hook-"));
+const testDist = join(testRoot, "dist");
+cpSync(SOURCE_DIST, testDist, { recursive: true });
+const manifest = readFileSync(join(testDist, "aidr-artifact.manifest.json"));
+const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+writeFileSync(join(testDist, "aidr-artifact.manifest.sig"), `${sign(null, manifest, privateKey).toString("base64")}\n`, "utf8");
+BUNDLE = join(testDist, "pre-tool-use.cjs");
+testHome = join(testRoot, "home");
+mkdirSync(join(testHome, ".singularity-aidr"), { recursive: true });
+writeFileSync(
+	join(testHome, ".singularity-aidr", "config.json"),
+	JSON.stringify({ integrity: { enabled: true, verify_on_start: true, public_keys_pem: [publicKey.export({ type: "spki", format: "pem" }).toString()] } }, null, 2),
+	{ encoding: "utf8", mode: 0o600 },
+);
+
+function testEnvironment() {
+	const env = { ...process.env, HOME: testHome, USERPROFILE: testHome, AIDR_SKIP_VERSION_CHECK: "1" };
+	for (const key of ["AIDR_COMMERCIAL", "AIDR_BUILD", "AIDR_BUILD_FLAVOR"]) delete env[key];
+	return env;
 }
 
 // Captured verbatim from codex-cli 0.141.0 PreToolUse stdin.
@@ -45,6 +82,7 @@ function run(toolName, toolInput) {
 	const res = spawnSync(process.execPath, [BUNDLE], {
 		input: payload(toolName, toolInput),
 		encoding: "utf8",
+		env: testEnvironment(),
 		timeout: CASE_TIMEOUT_MS,
 		killSignal: "SIGKILL",
 	});
@@ -57,6 +95,7 @@ function run(toolName, toolInput) {
 	}
 	return {
 		decision: timedOut ? "__timeout" : parsed?.hookSpecificOutput?.permissionDecision ?? "__missing",
+		allowNoop: res.status === 0 && res.signal === null && !res.error && res.stdout === "",
 		reason: String(parsed?.hookSpecificOutput?.permissionDecisionReason ?? ""),
 		exit: res.status,
 		signal: res.signal,
@@ -104,7 +143,9 @@ for (const [label, tool, input] of SHOULD_BLOCK) {
 for (const [label, tool, input] of SHOULD_ALLOW) {
 	const r = run(tool, input);
 	checks++;
-	const ok = r.decision === "allow";
+	// Codex accepts empty stdout as an evaluated no-op allow. An explicit bare
+	// "allow" decision, whitespace, or malformed output is not valid proof.
+	const ok = r.allowNoop;
 	if (!ok) failures++;
 	const detail = r.timedOut
 		? ` timeout=${CASE_TIMEOUT_MS}ms`
@@ -113,7 +154,7 @@ for (const [label, tool, input] of SHOULD_ALLOW) {
 			: r.decision === "__missing"
 				? ` no-decision status=${r.exit} signal=${r.signal ?? "none"}`
 				: "";
-	console.log(`${ok ? "PASS" : "FAIL"}  must-ALLOW  ${label.padEnd(28)} decision=${r.decision}${detail}`);
+	console.log(`${ok ? "PASS" : "FAIL"}  must-ALLOW  ${label.padEnd(28)} decision=${ok ? "allow(no-op)" : r.decision}${detail}`);
 }
 
 // Malformed input must also block: a hook that cannot decide must not pass.
@@ -125,6 +166,7 @@ for (const [label, raw] of [
 	const res = spawnSync(process.execPath, [BUNDLE], {
 		input: raw,
 		encoding: "utf8",
+		env: testEnvironment(),
 		timeout: CASE_TIMEOUT_MS,
 		killSignal: "SIGKILL",
 	});

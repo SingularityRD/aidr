@@ -1,15 +1,19 @@
 # @singularityrd/aidr-codex
 
-Singularity AIDR enforcement for the **OpenAI Codex CLI** (`codex`), implemented
-as a native `PreToolUse` hook.
+Singularity AIDR's `PreToolUse` connector for the **OpenAI Codex CLI** (`codex`)
+evaluates named `Bash` and `apply_patch` calls only when an enabled, trusted hook
+forwards them and returns a verdict. Codex enforces that verdict; disabled,
+untrusted, crashed, timed-out, or out-of-matcher paths can proceed. Real-host
+side-effect prevention for a customer release has not been accepted.
 
 Verified against `codex-cli 0.141.0`.
 
 ## What it does
 
-Every shell command and every patch Codex is about to apply is inspected by the
-shared AIDR detection core before it runs. A call that matches a threat rule is
-blocked with an explanation; a benign call proceeds untouched.
+For calls reaching the registered matcher, the shared AIDR detection core
+evaluates the request before the host action. It returns an explicit deny with
+an explanation for a matched threat, or no output for an allowed call. A returned
+deny does not itself prove host-side blocking on the target Codex build.
 
 ```
 codex (PreToolUse) ──stdin JSON──▶ aidr-codex-hook ──▶ AIDR core
@@ -19,6 +23,27 @@ codex (PreToolUse) ──stdin JSON──▶ aidr-codex-hook ──▶ AIDR core
 ```
 
 ## Install
+
+Install the exact approved version from the private registry:
+
+```bash
+npm install --global @singularityrd/aidr-codex@VERSION
+```
+
+Registry credentials and release prerequisites are in
+[Package Installation](../../docs/package-installation.md). Do not install a
+locally built or unsigned package on a customer endpoint.
+
+Commercial packages require the AIDR runtime configuration before the hook is
+registered. Generate `agent-config.json` with `scripts/deployment-prepare.mjs`
+and an independently delivered Ed25519 artifact-verification public key, then
+deploy that file as `~/.singularity-aidr/config.json` on the endpoint. The
+artifact key is separate from the licensing/entitlement key. Never distribute
+the artifact-signing private key in the package or endpoint configuration.
+
+The hook deliberately refuses to start when its signed manifest, verification
+key, or any signed runtime resource is missing or changed. After the managed
+configuration and package are installed, register the hook with Codex:
 
 ```toml
 # ~/.codex/config.toml
@@ -46,14 +71,14 @@ Or equivalently, in `~/.codex/hooks.json`:
 }
 ```
 
-Two configuration details that are easy to get wrong and fail **silently** if
-you do — both were established by running the real binary:
+The event name is **PascalCase** (`hooks.PreToolUse`). A lower-case
+`hooks.pre_tool_use` table was accepted by the TOML parser but ignored by the
+tested Codex 0.141.0 host. Review and trust the registered hook with `/hooks`
+before relying on it. Repeat host acceptance for the Codex version being sold.
 
-- The event name is **PascalCase** (`hooks.PreToolUse`). A lower-case
-  `hooks.pre_tool_use` table is accepted by the TOML parser and then ignored, so
-  the hook never runs and nothing warns you.
-- Do **not** add a top-level `"description"` key to `hooks.json`. The file schema
-  rejects unknown keys, so the whole file fails to parse and no hooks load.
+Codex does not provide a `codex hooks install` or `codex hooks uninstall`
+subcommand in the locally inspected 0.153.2 CLI. Deploy or remove the AIDR
+handler in the configuration file directly, preserving other handlers.
 
 ## Trust — read this before relying on it
 
@@ -137,6 +162,18 @@ else.
 The policy's labels and rules are whatever the tenant's signed bundle defines;
 this connector ships no customer label taxonomy and assumes none.
 
+## Behavioral baseline status
+
+A signed policy can provision behavioral and novelty detectors, but this
+connector does not provide a trusted, input-bound post-execution success receipt
+to promote baseline samples. Product preflight therefore starts cold and does
+not persist or restore learned baselines. Baseline-dependent detection is
+unavailable and asks by default; a signed policy may explicitly select
+`behavioral.unavailable_action: "skip"`, which remains a visible
+`behavioral_unavailable` warning rather than a clean result. Do not treat
+behavioral baseline detection as production-ready until a verified feedback
+path and independent efficacy evaluation are available.
+
 ## Configuration
 
 | Variable | Purpose |
@@ -145,7 +182,7 @@ this connector ships no customer label taxonomy and assumes none.
 | `AIDR_ALLOWLISTS_DIR` | Override the allowlist directory |
 
 Without an override the connector resolves rules next to its own installed
-location (`resources/threats`), then falls back through the repository and user
+location (`dist/resources/threats`), then falls back through the repository and user
 directories. If no rule directory can be found, the connector **blocks** rather
 than reporting a clean result it cannot support.
 
@@ -172,8 +209,9 @@ verified on the endpoint.
 
 ## Scope
 
-The hook covers `Bash` and `apply_patch` tool calls before execution. It does
-not inspect or quarantine their output before the model consumes it. Codex's hosted tools (for
-example `WebSearch`) do not pass through the tool-hook path, so treat this — as
-OpenAI's own documentation does — as a strong guardrail rather than a complete
-enforcement boundary.
+The packaged matcher covers `Bash` and `apply_patch` tool calls before
+execution. It does not inspect or quarantine their output before the model
+consumes it. MCP and other local function tools are outside this matcher;
+hosted tools such as `WebSearch` do not pass through the tool-hook path, and
+some specialized paths may opt out. Only the named, tested tool and host
+versions belong in an enforcement claim.

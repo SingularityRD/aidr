@@ -44,15 +44,16 @@ export function activateManagedHooksExtension(
 	if (version) {
 		const agentRuntime: AgentRuntime = target.hostName === "Cursor" ? "cursor" : "vscode";
 		const aidrDirPath = resolvePath("~/.singularity-aidr");
-		getInstallationId(aidrDirPath)
-			.catch(() => undefined)
-			.then((iid) =>
-				checkForUpdate(version, undefined, undefined, {
+		loadConfig()
+			.then(async (config) => {
+				if (!config.version_check.enabled) return null;
+				const iid = await getInstallationId(aidrDirPath).catch(() => undefined);
+				return checkForUpdate(version, undefined, undefined, {
 					agentRuntime,
 					agentRuntimeVersion: vscode.version,
 					iid,
-				}),
-			)
+				});
+			})
 			.then((result) => {
 				if (result?.updateAvailable) {
 					void vscode.window.showInformationMessage(
@@ -68,6 +69,7 @@ export function activateManagedHooksExtension(
 	context.subscriptions.push(
 		vscode.commands.registerCommand("aidr.enableProtection", async () => {
 			await withErrorBoundary(async () => {
+				if (warnIfVsCodeLocalHooksDisabled(target.hostName)) return;
 				const scope = getScope(target.scopeSettingKey);
 				const health = await target.installer.installManagedHooks({ context, scope });
 
@@ -169,6 +171,7 @@ export function activateManagedHooksExtension(
 
 				const message = [
 					`target: ${target.hostName}`,
+					...describeVsCodeLocalHooksSetting(target.hostName),
 					`hooks config: ${health.configPath}`,
 					`hook command: ${
 						health.managedCommands.length > 0 ? health.managedCommands.join(" | ") : "none"
@@ -185,6 +188,30 @@ export function activateManagedHooksExtension(
 			});
 		}),
 	);
+}
+
+function isVsCodeLocalHooksEnabled(): boolean {
+	try {
+		return vscode.workspace.getConfiguration("chat").get<boolean>("useClaudeHooks", false);
+	} catch {
+		return false;
+	}
+}
+
+function warnIfVsCodeLocalHooksDisabled(hostName: string): boolean {
+	if (hostName !== "VS Code" || isVsCodeLocalHooksEnabled()) return false;
+	void vscode.window.showWarningMessage(
+		"VS Code Local hooks require chat.useClaudeHooks to be enabled in User Settings. Enable that setting, then run Enable protection again. Singularity AIDR does not change editor settings.",
+	);
+	return true;
+}
+
+function describeVsCodeLocalHooksSetting(hostName: string): string[] {
+	if (hostName !== "VS Code") return [];
+	const state = isVsCodeLocalHooksEnabled() ? "enabled" : "disabled";
+	return [
+		`VS Code Local hook setting chat.useClaudeHooks: ${state} (required; Singularity AIDR does not change editor settings)`,
+	];
 }
 
 function describeOutputInspection(hostName: string): string[] {

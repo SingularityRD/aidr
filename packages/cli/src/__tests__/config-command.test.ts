@@ -1,0 +1,103 @@
+import { ConfigSchema } from "@singularityrd/aidr-core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+	getConfig: vi.fn(),
+	replaceConfig: vi.fn(),
+	readHiddenInput: vi.fn(),
+}));
+
+vi.mock("../utils/config-manager.js", () => ({
+	getConfig: mocks.getConfig,
+	replaceConfig: mocks.replaceConfig,
+}));
+vi.mock("../utils/secret-prompt.js", () => ({ readHiddenInput: mocks.readHiddenInput }));
+
+import configCommand from "../commands/config.js";
+import type { Config } from "../utils/config-manager.js";
+
+function makeConfig(): Config {
+	const config = {
+		...ConfigSchema.parse({}),
+		apiKey: "local-credential",
+		environment: {
+			agent: "claude",
+			hasNode: true,
+			nodeVersion: "v24.0.0",
+			projectRoot: "/workspace",
+		},
+		version: "0.6.0",
+		createdAt: "2026-09-23T00:00:00.000Z",
+		hooksInstalled: false,
+		agentConfigured: false,
+	} as unknown as Config & Record<string, unknown>;
+	(config.auth as unknown as Record<string, unknown>).unrecognized = "discard-me";
+	config.unrecognized = true;
+	return config;
+}
+
+const stdout: string[] = [];
+const stderr: string[] = [];
+let originalExitCode: string | number | undefined;
+
+beforeEach(() => {
+	stdout.length = 0;
+	stderr.length = 0;
+	originalExitCode = process.exitCode;
+	vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+		stdout.push(args.map(String).join(" "));
+	});
+	vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+		stderr.push(args.map(String).join(" "));
+	});
+	mocks.getConfig.mockReturnValue(makeConfig());
+	mocks.replaceConfig.mockReset();
+	mocks.readHiddenInput.mockReset();
+});
+
+afterEach(() => {
+	process.exitCode = originalExitCode;
+	vi.restoreAllMocks();
+});
+
+describe("aidr config -s", () => {
+	it("persists validated typed data and strips unknown schema fields", async () => {
+		await configCommand({ set: ["heuristics_enabled", "false"] });
+
+		const saved = mocks.replaceConfig.mock.calls[0]?.[0] as Record<string, unknown>;
+		expect(saved.heuristics_enabled).toBe(false);
+		expect(saved.unrecognized).toBeUndefined();
+		expect(saved.auth).not.toHaveProperty("unrecognized");
+		expect(stdout.join("\n")).toContain("heuristics_enabled = false");
+	});
+
+	it("rejects a path whose nested field is stripped by the schema", async () => {
+		await configCommand({ set: ["auth.unrecognized", "value"] });
+
+		expect(mocks.replaceConfig).not.toHaveBeenCalled();
+		expect(stderr.join("\n")).toContain("Unknown configuration field");
+	});
+
+	it("prompts invisibly for a secret and redacts it from output", async () => {
+		mocks.readHiddenInput.mockResolvedValue("sensitive-auth-value");
+
+		await configCommand({ set: ["auth.api_key"] });
+
+		expect(mocks.readHiddenInput).toHaveBeenCalledOnce();
+		expect(
+			(mocks.replaceConfig.mock.calls[0]?.[0] as unknown as { auth: { api_key?: string } }).auth
+				.api_key,
+		).toBe("sensitive-auth-value");
+		expect(stdout.join("\n")).toContain("auth.api_key = [redacted]");
+		expect(stdout.join("\n")).not.toContain("sensitive-auth-value");
+	});
+
+	it("does not accept a secret value supplied as an argument", async () => {
+		await configCommand({ set: ["auth.api_key", "shell-history-secret"] });
+
+		expect(mocks.replaceConfig).not.toHaveBeenCalled();
+		expect(mocks.readHiddenInput).not.toHaveBeenCalled();
+		expect(stderr.join("\n")).not.toContain("shell-history-secret");
+		expect(stderr.join("\n")).toContain("cannot be passed as command-line arguments");
+	});
+});

@@ -15,7 +15,7 @@ afterEach(async () => {
 
 function fixture(overrides = {}) {
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-	const tools = [
+	const tools = overrides.tools ?? [
 		{ name: "search", description: "Search trusted corpus", input_schema: { type: "object" } },
 	];
 	const manifest = {
@@ -26,7 +26,9 @@ function fixture(overrides = {}) {
 		expires_at: new Date(Date.now() + 60 * 60_000).toISOString(),
 		tools,
 	};
-	const signedManifest = signMcpToolManifest({ manifest, keyId: "publisher", privateKey });
+	const signedManifest =
+		overrides.signedManifest ?? signMcpToolManifest({ manifest, keyId: "publisher", privateKey });
+	if (overrides.invalidSignature) signedManifest.signature_b64 = "A".repeat(88);
 	const tokenA = "a".repeat(48);
 	const tokenB = "b".repeat(48);
 	const clients = [
@@ -48,18 +50,23 @@ function fixture(overrides = {}) {
 		return {
 			tenantId,
 			id: "server-a",
-			url: "https://mcp.example.test/mcp",
+			url: overrides.url ?? "https://mcp.example.test/mcp",
 			transport: overrides.transport ?? "json",
 			sessionMode: overrides.sessionMode ?? "stateless",
+			...(overrides.upstreamAuthEnv ? { upstreamAuthEnv: overrides.upstreamAuthEnv } : {}),
+			...(overrides.revokedKeyIds ? { revokedKeyIds: overrides.revokedKeyIds } : {}),
 			signedManifest: tenantOverrides.signedManifest ?? signedManifest,
-			trustedSigners: tenantOverrides.trustedSigners ?? {
-				publisher: publicKey.export({ type: "spki", format: "pem" }),
-			},
+			trustedSigners: tenantOverrides.trustedSigners ??
+				overrides.trustedSigners ?? {
+					publisher: publicKey.export({ type: "spki", format: "pem" }),
+				},
 		};
 	});
-	const stores = new Map();
+	const stores = overrides.stores ?? new Map();
 	const events = [];
+	const terminatedSessions = [];
 	let upstreamCalls = 0;
+	let upstreamSessions = 0;
 	const dependencies = {
 		lookup: async () => overrides.addresses ?? ["8.8.8.8"],
 		storeFactory: (tenantId) => {
@@ -72,7 +79,12 @@ function fixture(overrides = {}) {
 		pinnedFetch: async (request) => {
 			upstreamCalls += 1;
 			if (overrides.pinnedFetch) return overrides.pinnedFetch(request);
+			if (request.init.method === "DELETE") {
+				terminatedSessions.push(new Headers(request.init.headers).get("mcp-session-id"));
+				return new Response(null, { status: 204 });
+			}
 			const rpc = JSON.parse(request.init.body);
+			await overrides.beforeUpstream?.(request, rpc);
 			if (rpc.method === "notifications/initialized") return new Response(null, { status: 202 });
 			let result;
 			if (rpc.method === "tools/list") {
@@ -81,6 +93,7 @@ function fixture(overrides = {}) {
 						name: tool.name,
 						description: tool.description,
 						inputSchema: tool.input_schema,
+						...(tool.output_schema !== undefined ? { outputSchema: tool.output_schema } : {}),
 					})),
 				};
 			} else if (rpc.method === "initialize")
@@ -96,6 +109,9 @@ function fixture(overrides = {}) {
 					content: [{ type: "text", text: overrides.output ?? "Normal result" }],
 				};
 			const responseBody = JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result });
+			const hasSessionHeader =
+				(overrides.sessionMode === "required" || overrides.unexpectedSession) &&
+				rpc.method === "initialize";
 			return new Response(
 				overrides.transport === "sse" ? `event: message\ndata: ${responseBody}\n\n` : responseBody,
 				{
@@ -103,8 +119,12 @@ function fixture(overrides = {}) {
 					headers: {
 						"content-type":
 							overrides.transport === "sse" ? "text/event-stream" : "application/json",
-						...(overrides.sessionMode === "required" && rpc.method === "initialize"
-							? { "mcp-session-id": "session-12345678" }
+						...(hasSessionHeader
+							? {
+									"mcp-session-id": overrides.uniqueSessions
+										? `session-${String(++upstreamSessions).padStart(8, "0")}`
+										: "session-12345678",
+								}
 							: {}),
 					},
 				},
@@ -112,7 +132,13 @@ function fixture(overrides = {}) {
 		},
 	};
 	const gateway = createMcpGateway(
-		{ stateDir: ".test-mcp-gateway", port: 0, clients, servers, maxBodyBytes: 4096 },
+		{
+			stateDir: ".test-mcp-gateway",
+			port: 0,
+			clients,
+			servers,
+			maxBodyBytes: overrides.maxBodyBytes ?? 4096,
+		},
 		dependencies,
 	);
 	return {
@@ -129,16 +155,24 @@ function fixture(overrides = {}) {
 		get events() {
 			return events;
 		},
+		get terminatedSessions() {
+			return terminatedSessions;
+		},
 		async start() {
 			const address = await gateway.listen(0);
 			running.push(gateway);
 			return `http://127.0.0.1:${address.port}`;
 		},
-		async approve(tenantId = "tenant-a") {
+		async approve(tenantId = "tenant-a", bindingSha256) {
+			const reviewed =
+				bindingSha256 ??
+				(await gateway.storeFor(tenantId).read("server-a"))?.quarantine?.bindingSha256;
+			if (!reviewed) throw new Error("missing reviewed MCP binding");
 			return gateway.approve({
 				tenantId,
 				serverId: "server-a",
 				toolsetHash: mcpToolsetHash(tools),
+				bindingSha256: reviewed,
 				approvedBy: "security-operator",
 				reason: "approved manifest test",
 			});
@@ -214,6 +248,76 @@ describe("inline MCP gateway", () => {
 		const result = await rpc(base, f.tokenA);
 		assert.equal(result.body.result.content[0].text, "Normal result");
 		assert.equal(f.upstreamCalls, 2);
+	});
+
+	it("requires a new operator approval when the configured upstream URL changes", async () => {
+		const stores = new Map();
+		const original = fixture({ stores });
+		const firstBase = await original.start();
+		assert.match(
+			(await rpc(firstBase, original.tokenA)).body.error.message,
+			/manifest_quarantined/,
+		);
+		const reviewedA = (await original.gateway.storeFor("tenant-a").read("server-a"))?.quarantine
+			?.bindingSha256;
+		assert.ok(reviewedA);
+		await original.approve();
+		assert.equal(
+			(await rpc(firstBase, original.tokenA)).body.result.content[0].text,
+			"Normal result",
+		);
+		const changed = fixture({
+			stores,
+			url: "https://other.example.test/mcp",
+			signedManifest: original.signedManifest,
+			trustedSigners: original.servers[0].trustedSigners,
+		});
+		const changedBase = await changed.start();
+		assert.match(
+			(await rpc(changedBase, changed.tokenA)).body.error.message,
+			/manifest_quarantined/,
+		);
+		assert.equal(changed.upstreamCalls, 0);
+		assert.deepEqual(await changed.approve("tenant-a", reviewedA), {
+			approved: false,
+			reason: "binding_mismatch",
+		});
+		await changed.approve();
+		assert.equal(
+			(await rpc(changedBase, changed.tokenA)).body.result.content[0].text,
+			"Normal result",
+		);
+	});
+
+	it("uses the exact upstream credential snapshot that was operator-approved", async () => {
+		const envName = `AIDR_MCP_TEST_UPSTREAM_${process.pid}`;
+		const previous = process.env[envName];
+		process.env[envName] = "approved-upstream-secret";
+		const seenAuthorization = [];
+		try {
+			const f = fixture({
+				upstreamAuthEnv: envName,
+				beforeUpstream: async (request) => {
+					seenAuthorization.push(new Headers(request.init.headers).get("authorization"));
+					process.env[envName] = "rotated-upstream-secret";
+				},
+			});
+			const base = await f.start();
+			assert.match((await rpc(base, f.tokenA)).body.error.message, /manifest_quarantined/);
+			await f.approve();
+
+			const accepted = await rpc(base, f.tokenA);
+			assert.equal(accepted.body.result.content[0].text, "Normal result");
+			assert.deepEqual(seenAuthorization, [
+				"Bearer approved-upstream-secret",
+				"Bearer approved-upstream-secret",
+			]);
+			const rotated = await rpc(base, f.tokenA);
+			assert.match(rotated.body.error.message, /manifest_quarantined/);
+		} finally {
+			if (previous === undefined) delete process.env[envName];
+			else process.env[envName] = previous;
+		}
 	});
 
 	it("advertises only gateway-supported tool methods during initialization", async () => {
@@ -347,14 +451,12 @@ describe("inline MCP gateway", () => {
 	});
 
 	it("rejects an invalid signature and a revoked signer before any upstream call", async () => {
-		const forged = fixture();
-		forged.signedManifest.signature_b64 = "A".repeat(88);
+		const forged = fixture({ invalidSignature: true });
 		const forgedBase = await forged.start();
 		assert.match((await rpc(forgedBase, forged.tokenA)).body.error.message, /manifest_rejected/);
 		assert.equal(forged.upstreamCalls, 0);
 
-		const revoked = fixture();
-		revoked.servers[0].revokedKeyIds = ["publisher"];
+		const revoked = fixture({ revokedKeyIds: ["publisher"] });
 		const revokedBase = await revoked.start();
 		assert.match((await rpc(revokedBase, revoked.tokenA)).body.error.message, /manifest_rejected/);
 		assert.equal(revoked.upstreamCalls, 0);
@@ -585,6 +687,431 @@ describe("inline MCP gateway", () => {
 			).body.error.message,
 			/invalid_session/,
 		);
+	});
+
+	it("terminates an unexpected upstream session returned by a stateless server", async () => {
+		const f = fixture({ unexpectedSession: true });
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve();
+
+		const initialized = await rpc(base, f.tokenA, "initialize", 2, {
+			protocolVersion: "2025-03-26",
+			capabilities: {},
+			clientInfo: { name: "test", version: "1" },
+		});
+		assert.match(initialized.body.error.message, /unexpected_upstream_session/);
+		assert.deepEqual(f.terminatedSessions, ["session-12345678"]);
+	});
+
+	it("aborts the upstream operation when the authenticated client disconnects", async () => {
+		let markToolCallStarted;
+		let markUpstreamAborted;
+		const toolCallStarted = new Promise((resolve) => {
+			markToolCallStarted = resolve;
+		});
+		const upstreamAborted = new Promise((resolve) => {
+			markUpstreamAborted = resolve;
+		});
+		const f = fixture({
+			pinnedFetch: async ({ init }) => {
+				const rpc = JSON.parse(init.body);
+				if (rpc.method === "tools/list") {
+					return new Response(
+						JSON.stringify({
+							jsonrpc: "2.0",
+							id: rpc.id,
+							result: {
+								tools: f.tools.map((tool) => ({
+									name: tool.name,
+									description: tool.description,
+									inputSchema: tool.input_schema,
+								})),
+							},
+						}),
+						{ headers: { "content-type": "application/json" } },
+					);
+				}
+				if (rpc.method !== "tools/call") throw new Error("unexpected method");
+				markToolCallStarted();
+				return new Promise((_resolve, reject) => {
+					init.signal.addEventListener(
+						"abort",
+						() => {
+							markUpstreamAborted();
+							reject(init.signal.reason);
+						},
+						{ once: true },
+					);
+				});
+			},
+		});
+		const base = await f.start();
+		assert.match((await rpc(base, f.tokenA)).body.error.message, /manifest_quarantined/);
+		await f.approve();
+
+		const controller = new AbortController();
+		const request = fetch(`${base}/mcp/server-a`, {
+			method: "POST",
+			headers: {
+				authorization: `Bearer ${f.tokenA}`,
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({
+				jsonrpc: "2.0",
+				id: 3,
+				method: "tools/call",
+				params: { name: "search", arguments: {} },
+			}),
+			signal: controller.signal,
+		});
+		await toolCallStarted;
+		controller.abort();
+		await assert.rejects(request);
+		await upstreamAborted;
+	});
+
+	it("limits concurrent sessions per tenant and terminates an upstream session that loses capacity", async () => {
+		let concurrentInitializers = 0;
+		let releaseInitializers;
+		const initializationBarrier = new Promise((resolve) => {
+			releaseInitializers = resolve;
+		});
+		const f = fixture({
+			sessionMode: "required",
+			uniqueSessions: true,
+			beforeUpstream: async (_request, rpc) => {
+				if (rpc.method !== "initialize" || rpc.id < 9000) return;
+				concurrentInitializers += 1;
+				if (concurrentInitializers === 2) releaseInitializers();
+				await initializationBarrier;
+			},
+		});
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve("tenant-a");
+		await rpc(base, f.tokenB);
+		await f.approve("tenant-b");
+
+		for (let index = 0; index < 255; index += 1) {
+			const initialized = await rpc(base, f.tokenA, "initialize", index + 10, {
+				protocolVersion: "2025-03-26",
+				capabilities: {},
+				clientInfo: { name: "test", version: "1" },
+			});
+			assert.ok(initialized.headers.get("mcp-session-id"));
+		}
+		const raced = await Promise.all([
+			rpc(base, f.tokenA, "initialize", 9001, {
+				protocolVersion: "2025-03-26",
+				capabilities: {},
+				clientInfo: { name: "test", version: "1" },
+			}),
+			rpc(base, f.tokenA, "initialize", 9002, {
+				protocolVersion: "2025-03-26",
+				capabilities: {},
+				clientInfo: { name: "test", version: "1" },
+			}),
+		]);
+		const accepted = raced.filter((result) => result.headers.get("mcp-session-id"));
+		const refused = raced.filter((result) => result.body.error);
+		assert.equal(accepted.length, 1);
+		assert.equal(refused.length, 1);
+		assert.match(refused[0].body.error.message, /invalid_upstream_session/);
+		assert.equal(f.terminatedSessions.length, 1);
+		assert.notEqual(f.terminatedSessions[0], accepted[0].headers.get("mcp-session-id"));
+
+		const callsAtCapacity = f.upstreamCalls;
+		const saturated = await rpc(base, f.tokenA, "initialize", 9999, {
+			protocolVersion: "2025-03-26",
+			capabilities: {},
+			clientInfo: { name: "test", version: "1" },
+		});
+		assert.match(saturated.body.error.message, /invalid_upstream_session/);
+		assert.equal(f.upstreamCalls, callsAtCapacity);
+
+		const otherTenant = await rpc(base, f.tokenB, "initialize", 10000, {
+			protocolVersion: "2025-03-26",
+			capabilities: {},
+			clientInfo: { name: "test", version: "1" },
+		});
+		assert.ok(otherTenant.headers.get("mcp-session-id"));
+	});
+
+	it("validates tool arguments against the signed live schema before execution", async () => {
+		const f = fixture({
+			tools: [
+				{
+					name: "search",
+					description: "Search trusted corpus",
+					input_schema: {
+						type: "object",
+						properties: { query: { type: "string", minLength: 1 } },
+						required: ["query"],
+						additionalProperties: false,
+					},
+				},
+			],
+		});
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve();
+
+		const before = f.upstreamCalls;
+		const rejected = await rpc(base, f.tokenA, "tools/call", 2, {
+			name: "search",
+			arguments: { query: 42 },
+		});
+		assert.match(rejected.body.error.message, /arguments_schema_mismatch/);
+		// tools/list is allowed to prove live schema agreement; the tool execution is not.
+		assert.equal(f.upstreamCalls, before + 1);
+
+		const accepted = await rpc(base, f.tokenA, "tools/call", 3, {
+			name: "search",
+			arguments: { query: "safe" },
+		});
+		assert.equal(accepted.body.result.content[0].text, "Normal result");
+	});
+
+	it("validates successful structured output against the signed live output schema", async () => {
+		const tools = [
+			{
+				name: "search",
+				description: "Search trusted corpus",
+				input_schema: { type: "object" },
+				output_schema: {
+					type: "object",
+					properties: { count: { type: "integer", minimum: 0 } },
+					required: ["count"],
+					additionalProperties: false,
+				},
+			},
+		];
+		for (const [toolResult, accepted] of [
+			[{ content: [{ type: "text", text: "ok" }], structuredContent: { count: "1" } }, false],
+			[{ content: [{ type: "text", text: "ok" }] }, false],
+			[{ content: [{ type: "text", text: "ok" }], structuredContent: { count: 1 } }, true],
+			[{ content: [{ type: "text", text: "tool failed" }], isError: true }, true],
+			[
+				{
+					content: [{ type: "text", text: "tool failed" }],
+					isError: true,
+					structuredContent: { count: "1" },
+				},
+				false,
+			],
+		]) {
+			const f = fixture({ tools, toolResult });
+			const base = await f.start();
+			await rpc(base, f.tokenA);
+			await f.approve();
+			const response = await rpc(base, f.tokenA);
+			if (accepted) assert.deepEqual(response.body.result, toolResult);
+			else {
+				assert.match(response.body.error.message, /output_schema_mismatch/);
+				assert.equal(response.body.result, undefined);
+			}
+		}
+	});
+
+	it("refuses unsupported signed output schemas before executing the tool", async () => {
+		const f = fixture({
+			tools: [
+				{
+					name: "search",
+					description: "Search trusted corpus",
+					input_schema: { type: "object" },
+					output_schema: {
+						type: "object",
+						properties: { uri: { type: "string", format: "uri" } },
+					},
+				},
+			],
+		});
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve();
+		const before = f.upstreamCalls;
+		const response = await rpc(base, f.tokenA);
+		assert.match(response.body.error.message, /output_schema_mismatch/);
+		assert.equal(f.upstreamCalls, before + 1);
+	});
+
+	it("fails closed when a signed schema uses an unsupported nested keyword", async () => {
+		const f = fixture({
+			tools: [
+				{
+					name: "search",
+					description: "Search trusted corpus",
+					input_schema: {
+						type: "object",
+						properties: { destination: { type: "string", format: "uri" } },
+					},
+				},
+			],
+		});
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve();
+
+		const before = f.upstreamCalls;
+		const rejected = await rpc(base, f.tokenA, "tools/call", 2, {
+			name: "search",
+			arguments: {},
+		});
+		assert.match(rejected.body.error.message, /arguments_schema_mismatch/);
+		assert.equal(f.upstreamCalls, before + 1);
+	});
+
+	it("rejects backtracking-prone regexes in signed JSON Schemas", async () => {
+		for (const input_schema of [
+			{
+				type: "object",
+				properties: { query: { type: "string", pattern: "^(a+)+$" } },
+			},
+			{
+				type: "object",
+				patternProperties: { "^(a+)+$": { type: "string" } },
+			},
+			{
+				type: "object",
+				properties: { query: { type: "string", pattern: "^a*a*b$" } },
+			},
+			{
+				type: "object",
+				patternProperties: { "^a*a*b$": { type: "string" } },
+			},
+			{
+				type: "object",
+				properties: { query: { type: "string", pattern: "^(a|aa)+$" } },
+			},
+			{
+				type: "object",
+				properties: { query: { type: "string", pattern: "x".repeat(257) } },
+			},
+		]) {
+			const f = fixture({
+				tools: [{ name: "search", description: "Search trusted corpus", input_schema }],
+			});
+			const base = await f.start();
+			await rpc(base, f.tokenA);
+			await f.approve();
+
+			const rejected = await rpc(base, f.tokenA, "tools/call", 2, {
+				name: "search",
+				arguments: { query: "a".repeat(32) },
+			});
+			assert.match(rejected.body.error.message, /arguments_schema_mismatch/);
+		}
+	});
+
+	it("keeps bounded simple regexes working and caps their input lengths", async () => {
+		const f = fixture({
+			maxBodyBytes: 8192,
+			tools: [
+				{
+					name: "search",
+					description: "Search trusted corpus",
+					input_schema: {
+						type: "object",
+						properties: { query: { type: "string", pattern: "^[a-z]+$" } },
+						patternProperties: { "^x-[a-z]+$": { type: "string" } },
+						additionalProperties: false,
+					},
+				},
+			],
+		});
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve();
+
+		const accepted = await rpc(base, f.tokenA, "tools/call", 2, {
+			name: "search",
+			arguments: { query: "safe", "x-value": "also-safe" },
+		});
+		assert.equal(accepted.body.result.content[0].text, "Normal result");
+
+		const longValue = await rpc(base, f.tokenA, "tools/call", 3, {
+			name: "search",
+			arguments: { query: "a".repeat(4097) },
+		});
+		assert.match(longValue.body.error.message, /arguments_schema_mismatch/);
+
+		const longKey = await rpc(base, f.tokenA, "tools/call", 4, {
+			name: "search",
+			arguments: { ["x".repeat(4097)]: "safe", query: "safe" },
+		});
+		assert.match(longKey.body.error.message, /arguments_schema_mismatch/);
+	});
+
+	it("bounds aggregate regex work across many patterns and property names", async () => {
+		const patternProperties = Object.fromEntries(
+			Array.from({ length: 40 }, (_, index) => [
+				`^pattern-${String(index).padStart(2, "0")}-[a-z]+$`,
+				{ type: "string" },
+			]),
+		);
+		const arguments_ = Object.fromEntries(
+			Array.from({ length: 40 }, (_, index) => [
+				`field-${String(index).padStart(2, "0")}-${"x".repeat(64)}`,
+				"safe",
+			]),
+		);
+		const f = fixture({
+			tools: [
+				{
+					name: "search",
+					description: "Search trusted corpus",
+					input_schema: { type: "object", patternProperties, additionalProperties: true },
+				},
+			],
+		});
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve();
+
+		const before = f.upstreamCalls;
+		const rejected = await rpc(base, f.tokenA, "tools/call", 2, {
+			name: "search",
+			arguments: arguments_,
+		});
+		assert.match(rejected.body.error.message, /schema_validation_budget_exhausted/);
+		assert.equal(f.upstreamCalls, before + 1);
+	});
+
+	it("never lets validation budget exhaustion be inverted by schema combinators", async () => {
+		const cases = {
+			not: { not: { type: "array", items: { type: "string" } } },
+			anyOf: { anyOf: [{ type: "array", items: { type: "string" } }, true] },
+			allOf: { allOf: [{ type: "array", items: { type: "string" } }, true] },
+			oneOf: { oneOf: [{ type: "array", items: { type: "string" } }, false] },
+		};
+		for (const [keyword, valueSchema] of Object.entries(cases)) {
+			const f = fixture({
+				maxBodyBytes: 256 * 1024,
+				tools: [
+					{
+						name: "search",
+						description: "Search trusted corpus",
+						input_schema: {
+							type: "object",
+							properties: { values: valueSchema },
+							required: ["values"],
+						},
+					},
+				],
+			});
+			const base = await f.start();
+			await rpc(base, f.tokenA);
+			await f.approve();
+			const before = f.upstreamCalls;
+			const rejected = await rpc(base, f.tokenA, "tools/call", 2, {
+				name: "search",
+				arguments: { values: Array(10_001).fill("safe") },
+			});
+			assert.match(rejected.body.error.message, /schema_validation_budget_exhausted/, keyword);
+			assert.equal(f.upstreamCalls, before + 1, keyword);
+		}
 	});
 
 	it("forwards initialized notification and accepts only a bodyless 202", async () => {

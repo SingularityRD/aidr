@@ -67,7 +67,7 @@ export const ASK_DENIED_MESSAGE =
 	'Singularity AIDR: human approval for this action (verdict "ask") was not granted; it was NOT executed.';
 export const INDETERMINATE_MESSAGE =
 	"Singularity AIDR: the security check could not be completed, so this action is indeterminate and was NOT executed.";
-export const INCONSISTENT_MESSAGE =
+const INCONSISTENT_MESSAGE =
 	"Singularity AIDR: the security check returned an inconsistent result and was NOT executed.";
 
 function withReason(message: string, result: CheckResult): string {

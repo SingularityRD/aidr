@@ -2,9 +2,9 @@
   "$schema": "./support-matrix.schema.json",
   "schemaVersion": 1,
   "kind": "aidr-native-support-matrix",
-  "reviewedAt": "2026-09-13",
+  "reviewedAt": "2026-09-24",
   "decision": "NO-GO",
-  "decisionMeaning": "This manifest records what the product is *permitted* to advertise and what has actually been accepted on a real host. It is not a claim that any row has passed. Every row carries `acceptanceEvidence`; a row whose evidence is empty is an open sales gate, and deploy/native/run-support-matrix.mjs fails closed on it.",
+  "decisionMeaning": "This manifest records intended connector/platform scope separately from what has actually been accepted on a real host. Platform and architecture arrays are target scope, not tested support. It is not a claim that any row has passed. Every row carries `acceptanceEvidence`; a row whose evidence is empty is an open sales gate, and deploy/native/run-support-matrix.mjs fails closed on it.",
   "soldConnectorScope": ["claude-code", "cursor", "vscode", "openclaw", "opencode", "codex"],
   "soldPlatformScope": ["windows", "linux", "macos"],
   "soldArchitectureScope": ["x64", "arm64"],
@@ -15,7 +15,8 @@
   "interceptionPointVocabulary": [
     "pre-tool-call",
     "pre-prompt",
-    "pre-model-output",
+    "post-tool-output",
+    "pre-delivery-response",
     "tool-output-inspection",
     "network-egress",
     "post-tool-call",
@@ -27,8 +28,8 @@
       "hostBinary": "claude",
       "hostBinaryEnvOverride": null,
       "interceptionPoint": "pre-tool-call",
-      "outputInterceptionPoint": "pre-model-output",
-      "tamperResistance": "host-mediated-hook; a disabled or crashed hook is fail-closed by the connector, not by the host",
+      "outputInterceptionPoint": "post-tool-output",
+      "tamperResistance": "host-mediated hook; in-process errors emit an explicit deny, but a disabled hook is fail-open and host behavior when the hook process crashes before a verdict is unverified",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user", "service"],
@@ -50,8 +51,8 @@
       "hostBinary": "cursor",
       "hostBinaryEnvOverride": "AIDR_CURSOR_PATH",
       "interceptionPoint": "pre-tool-call",
-      "outputInterceptionPoint": "tool-output-inspection",
-      "tamperResistance": "extension-host API boundary; the extension hook always exits 0 with a deny verdict so a killed hook cannot pass a call through",
+      "outputInterceptionPoint": "post-tool-output",
+      "tamperResistance": "handled hook failures return deny and managed entries request failClosed: true; real-host enforcement of timeout or process termination remains unverified",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
@@ -64,7 +65,8 @@
       ],
       "unobservedActions": [
         "Headless agent enforcement coverage on a real Cursor host",
-        "A new Cursor version that changes the tool API"
+        "A new Cursor version that changes the tool API",
+        "Real-host confirmation that failClosed and explicit-deny responses are enforced for preToolUse/MCP events"
       ],
       "acceptanceEvidence": []
     },
@@ -73,8 +75,8 @@
       "hostBinary": "code",
       "hostBinaryEnvOverride": "AIDR_VSCODE_PATH",
       "interceptionPoint": "pre-tool-call",
-      "outputInterceptionPoint": "tool-output-inspection",
-      "tamperResistance": "extension-host API boundary; the extension hook always exits 0 with a deny verdict",
+      "outputInterceptionPoint": "post-tool-output",
+      "tamperResistance": "handled hook failures return deny; real-host enforcement of timeout or process termination remains unverified",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
@@ -86,7 +88,8 @@
         "Tools executed outside the extension host (an external terminal)"
       ],
       "unobservedActions": [
-        "Enforcement coverage across the currently shipped VS Code minor versions"
+        "Enforcement coverage across the currently shipped VS Code minor versions",
+        "VS Code Local activation with chat.useClaudeHooks enabled and native editFiles interception"
       ],
       "acceptanceEvidence": []
     },
@@ -95,7 +98,7 @@
       "hostBinary": "openclaw",
       "hostBinaryEnvOverride": null,
       "interceptionPoint": "pre-tool-call",
-      "outputInterceptionPoint": "post-tool-call",
+      "outputInterceptionPoint": "pre-delivery-response",
       "tamperResistance": "in-process plugin callback; a removed plugin means no interception at all",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64"],
@@ -118,7 +121,7 @@
       "hostBinary": "opencode",
       "hostBinaryEnvOverride": "OPENCODE_E2E_BIN",
       "interceptionPoint": "pre-tool-call",
-      "outputInterceptionPoint": "pre-model-output",
+      "outputInterceptionPoint": "post-tool-output",
       "tamperResistance": "in-process plugin; a removed plugin means no interception at all",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
@@ -146,12 +149,14 @@
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
-      "installPath": ["codex hooks install"],
-      "uninstallPath": ["codex hooks uninstall"],
+      "installPath": ["install the approved @singularityrd/aidr-codex package", "register its PreToolUse command handler in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks"],
+      "uninstallPath": ["remove only the AIDR PreToolUse handler from ~/.codex/config.toml or ~/.codex/hooks.json", "uninstall the @singularityrd/aidr-codex package"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Host fails open when hook execution is unavailable",
-        "No output-side (pre-model) interception exists for this host"
+        "No output-side (pre-model) interception exists for this host",
+        "The packaged matcher covers Bash and apply_patch only; MCP and other local function tools do not invoke the AIDR hook",
+        "Hosted and specialized tool paths may bypass the host tool-hook path"
       ],
       "unobservedActions": [
         "Verification against a Codex release newer than 0.141.0",
@@ -173,7 +178,7 @@
       "id": "T01-OS-VERSION-MATRIX",
       "description": "Pinned operating-system build numbers for each sold platform row.",
       "ownerRole": "Endpoint Engineering",
-      "requiredInput": "Customer-supported OS build list",
+      "requiredInput": "First-release supported OS build list approved by Endpoint Engineering",
       "acceptanceCommand": "node deploy/native/run-support-matrix.mjs",
       "acceptanceEvidence": []
     }

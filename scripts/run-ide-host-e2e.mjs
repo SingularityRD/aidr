@@ -21,10 +21,12 @@
  * The gate's expected count is enforced against what the host actually ran.
  *
  * Usage:
- *   node scripts/run-ide-host-e2e.mjs --host <cursor|vscode> --junit <file> [--exe <path>] [--json <file>]
+ *   AIDR_E2E_VSIX_PATH=<candidate.vsix> AIDR_E2E_VSIX_SHA256=<sha256> \
+ *     node scripts/run-ide-host-e2e.mjs --host <cursor|vscode> --junit <file> [--exe <path>] [--json <file>]
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,53 +35,40 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const EXTENSION_ROOT = path.join(ROOT, "packages", "extension");
 const SUITE_ENTRY = path.join(EXTENSION_ROOT, "src", "__tests__", "e2e-suite", "index.js");
 const WORKSPACE_FOLDER = path.join(EXTENSION_ROOT, "test-workspace");
-const HOOK_RUNNER_PATH = path.join(EXTENSION_ROOT, "dist", "aidr-hook.cjs");
 
 /**
  * Mirrors `HOST_METADATA` in the Vitest suite. Passing a different value makes
  * the suite fail for the wrong reason: a wrong scope key, marker or hooks path
  * is indistinguishable from a broken extension.
  *
- * `installedExtension` points at a directory the host has already installed (an
- * unpacked VSIX with a `.vsixmanifest`). Handing the host a bare `dist` tree
- * instead makes it treat the path as a loose extension without an install
- * record: the extension never activates, so every case that depends on an
- * activation event fails while the host still exits 0.
+ * Each run installs the inventory-bound VSIX into a new profile. Reusing a
+ * developer checkout or a preinstalled extension could let stale bytes pass
+ * acceptance while the release candidate itself was never exercised.
  */
 const HOSTS = {
 	cursor: {
 		label: "Cursor",
 		extensionId: "SingularityRD.aidr-cursor",
+		packageName: "aidr-cursor",
+		main: "./dist/cursor_extension.js",
 		scopeSettingKey: "aidr.cursor.scope",
 		managedMarker: "--managed-by aidr-cursor",
 		hookMode: "cursor",
 		hooksRelativePath: ".cursor/hooks.json",
 		envVar: "AIDR_CURSOR_PATH",
 		fallback: () => path.join(process.env.LOCALAPPDATA ?? "", "Programs", "cursor", "Cursor.exe"),
-		installedExtension: () =>
-			path.join(ROOT, ".release-evidence", "native-host-tools-20260916", "ide-acceptance", "sandboxes", "cursor", "extensions", "singularityrd.aidr-cursor-0.6.0"),
-		developmentPath: () => path.join(EXTENSION_ROOT, "dist"),
 	},
 	vscode: {
 		label: "VS Code",
 		extensionId: "SingularityRD.aidr-vscode",
+		packageName: "aidr-vscode",
+		main: "./dist/vscode_extension.js",
 		scopeSettingKey: "aidr.vscode.scope",
 		managedMarker: "--managed-by aidr-vscode",
 		hookMode: "vscode",
 		hooksRelativePath: ".claude/settings.json",
 		envVar: "AIDR_VSCODE_PATH",
 		fallback: () => path.join(process.env.LOCALAPPDATA ?? "", "Programs", "Microsoft VS Code", "Code.exe"),
-		installedExtension: () =>
-			path.join(ROOT, ".release-evidence", "native-host-tools-20260916", "ide-acceptance", "sandboxes", "vscode", "extensions", "singularityrd.aidr-vscode-0.6.0"),
-		// VS Code loads `.claude/settings.json` hooks, so the extension it is given
-		// must present the VS Code identity, not the Cursor one.
-		developmentPath: null,
-		// VS Code on this machine terminates the whole process group when it is
-		// started with a profile directory it has not seen before; running it
-		// against the profile its sandbox was installed with is stable. Cursor
-		// does not need this.
-		profileRoot: () =>
-			path.join(ROOT, ".release-evidence", "native-host-tools-20260916", "ide-acceptance", "sandboxes", "vscode"),
 	},
 };
 
@@ -116,7 +105,7 @@ function parseArgs(argv) {
 
 const options = parseArgs(process.argv.slice(2));
 if (options.help) {
-	console.log("Usage: node scripts/run-ide-host-e2e.mjs --host <cursor|vscode> --junit <file> [--exe <path>] [--json <file>]");
+	console.log("Usage: AIDR_E2E_VSIX_PATH=<candidate.vsix> AIDR_E2E_VSIX_SHA256=<sha256> node scripts/run-ide-host-e2e.mjs --host <cursor|vscode> --junit <file> [--exe <path>] [--json <file>]");
 	process.exit(0);
 }
 
@@ -125,30 +114,157 @@ const config = HOSTS[host];
 if (!config) fail(`--host must be one of: ${Object.keys(HOSTS).join(", ")}`);
 if (!options.junit) fail("--junit is required");
 
+const hostCandidatePrefix = `AIDR_E2E_${host.toUpperCase()}_VSIX`;
+const candidateInput = process.env[`${hostCandidatePrefix}_PATH`] ?? process.env.AIDR_E2E_VSIX_PATH;
+const expectedCandidateSha256 = (
+	process.env[`${hostCandidatePrefix}_SHA256`] ?? process.env.AIDR_E2E_VSIX_SHA256
+)?.toLowerCase();
+if (!candidateInput) fail(`${hostCandidatePrefix}_PATH or AIDR_E2E_VSIX_PATH is required`);
+if (!/^[0-9a-f]{64}$/.test(expectedCandidateSha256 ?? "")) {
+	fail(`${hostCandidatePrefix}_SHA256 or AIDR_E2E_VSIX_SHA256 must be 64 hexadecimal characters`);
+}
+const candidatePath = path.resolve(candidateInput);
+if (!existsSync(candidatePath) || !statSync(candidatePath).isFile()) {
+	fail(`candidate VSIX is missing: ${candidatePath}`);
+}
+const candidateSha256 = sha256File(candidatePath);
+if (candidateSha256 !== expectedCandidateSha256) {
+	fail(`candidate VSIX SHA-256 mismatch: expected ${expectedCandidateSha256}, got ${candidateSha256}`);
+}
+
 const executable = options.exe ?? process.env[config.envVar] ?? config.fallback();
 if (!executable || !existsSync(executable)) {
 	fail(`no ${config.label} executable: set ${config.envVar} or pass --exe (looked at ${executable || "nothing"})`, 2);
 }
-for (const required of [SUITE_ENTRY, WORKSPACE_FOLDER, HOOK_RUNNER_PATH]) {
+for (const required of [SUITE_ENTRY, WORKSPACE_FOLDER]) {
 	if (!existsSync(required)) fail(`required artifact is missing: ${path.relative(ROOT, required)}`);
 }
 
-/** Build the disposable VS Code identity the suite expects, when this host needs one. */
-function stageVsCodeExtension() {
-	const stageDir = mkdtempSync(path.join(tmpdir(), "aidr-vscode-e2e-"));
-	const manifest = JSON.parse(readFileSync(path.join(EXTENSION_ROOT, "package.json"), "utf8"));
-	cpSync(path.join(EXTENSION_ROOT, "dist"), path.join(stageDir, "dist"), { recursive: true, force: true });
-	cpSync(path.join(EXTENSION_ROOT, "resources"), path.join(stageDir, "resources"), { recursive: true, force: true });
-	for (const file of ["README.md", "LICENSE"]) {
-		const source = path.join(EXTENSION_ROOT, file);
-		if (existsSync(source)) cpSync(source, path.join(stageDir, file), { force: true });
+function sha256File(file) {
+	return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
+function listFiles(root) {
+	const files = [];
+	const stack = [root];
+	while (stack.length > 0) {
+		const current = stack.pop();
+		for (const entry of readdirSync(current, { withFileTypes: true })) {
+			const full = path.join(current, entry.name);
+			if (entry.isDirectory()) stack.push(full);
+			else if (entry.isFile()) files.push(path.relative(root, full).replace(/\\/g, "/"));
+		}
 	}
-	writeFileSync(
-		path.join(stageDir, "package.json"),
-		`${JSON.stringify({ ...manifest, name: "aidr-vscode", displayName: "Singularity AIDR for VS Code", main: "./dist/vscode_extension.js" }, null, 2)}\n`,
-		"utf8",
+	return files.sort();
+}
+
+function verifyInstalledCandidate(extensionDir) {
+	const packageJson = JSON.parse(readFileSync(path.join(extensionDir, "package.json"), "utf8"));
+	if (packageJson.publisher !== "SingularityRD" || packageJson.name !== config.packageName || packageJson.main !== config.main) {
+		throw new Error(`installed extension identity does not match ${config.extensionId}`);
+	}
+
+	const distDir = path.join(extensionDir, "dist");
+	const manifestPath = path.join(distDir, "aidr-artifact.manifest.json");
+	const signaturePath = path.join(distDir, "aidr-artifact.manifest.sig");
+	if (!existsSync(manifestPath) || !existsSync(signaturePath)) {
+		throw new Error("installed candidate is missing its signed artifact manifest");
+	}
+	const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+	if (manifest.schema_version !== 1 || manifest.artifact_id !== "extension/dist" || !Array.isArray(manifest.files) || manifest.files.length === 0) {
+		throw new Error("installed candidate artifact manifest is invalid");
+	}
+
+	const expectedFiles = new Set();
+	for (const entry of manifest.files) {
+		const relative = entry?.path;
+		if (
+			typeof relative !== "string" ||
+			relative.length === 0 ||
+			relative.includes("\\") ||
+			relative.includes("\0") ||
+			/^[A-Za-z]:/.test(relative) ||
+			path.posix.isAbsolute(relative) ||
+			path.posix.normalize(relative) !== relative ||
+			relative === ".." ||
+			relative.startsWith("../")
+		) {
+			throw new Error(`installed candidate artifact manifest has unsafe path: ${relative}`);
+		}
+		if (!/^[0-9a-f]{64}$/.test(entry.sha256 ?? "") || expectedFiles.has(relative)) {
+			throw new Error(`installed candidate artifact manifest has invalid entry: ${relative}`);
+		}
+		expectedFiles.add(relative);
+		const artifactFile = path.join(distDir, ...relative.split("/"));
+		if (!existsSync(artifactFile) || !statSync(artifactFile).isFile()) {
+			throw new Error(`installed candidate artifact is missing: ${relative}`);
+		}
+		const actual = sha256File(artifactFile);
+		if (actual !== entry.sha256) throw new Error(`installed candidate artifact digest mismatch: ${relative}`);
+	}
+	for (const required of [
+		"aidr-hook.cjs",
+		"cursor_extension.js",
+		"vscode_extension.js",
+		"aidr-sbom.cdx.json",
+		"aidr-sbom.cdx.json.sha256",
+	]) {
+		if (!expectedFiles.has(required)) throw new Error(`installed candidate artifact manifest is missing: ${required}`);
+	}
+
+	const actualFiles = listFiles(distDir).filter(
+		(relative) => relative !== "aidr-artifact.manifest.json" && relative !== "aidr-artifact.manifest.sig",
 	);
-	return stageDir;
+	if (actualFiles.length !== expectedFiles.size || actualFiles.some((relative) => !expectedFiles.has(relative))) {
+		throw new Error("installed candidate dist does not match its artifact manifest file set");
+	}
+	return createHash("sha256").update(readFileSync(manifestPath)).digest("hex");
+}
+
+function spawnHost(executablePath, args, env) {
+	const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(executablePath);
+	return spawnSync(executablePath, args, {
+		env,
+		encoding: "utf8",
+		timeout: 600_000,
+		maxBuffer: 32 * 1024 * 1024,
+		shell: needsShell,
+	});
+}
+
+function installCandidate(executablePath, userDataDir, extensionsDir, env) {
+	const install = spawnHost(
+		executablePath,
+		[
+			"--install-extension",
+			candidatePath,
+			`--user-data-dir=${userDataDir}`,
+			`--extensions-dir=${extensionsDir}`,
+			"--force",
+		],
+		env,
+	);
+	if (install.stdout) process.stdout.write(install.stdout);
+	if (install.stderr) process.stderr.write(install.stderr);
+	if (install.error || install.status !== 0) {
+		throw new Error(`candidate VSIX installation failed: ${install.error?.message ?? `host exited ${install.status}`}`);
+	}
+
+	const installed = readdirSync(extensionsDir, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => path.join(extensionsDir, entry.name))
+		.filter((directory) => {
+			try {
+				const manifest = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8"));
+				return manifest.publisher === "SingularityRD" && manifest.name === config.packageName;
+			} catch {
+				return false;
+			}
+		});
+	if (installed.length !== 1) {
+		throw new Error(`fresh sandbox contains ${installed.length} matching installed extensions; expected exactly one`);
+	}
+	return installed[0];
 }
 
 function escapeXml(value) {
@@ -190,34 +306,25 @@ function writeJunit(file, outcomes, runError) {
 }
 
 const tempHome = mkdtempSync(path.join(tmpdir(), `aidr-${host}-runner-home-`));
-// A host may need to run against the profile its sandbox was installed with;
-// using a brand-new one can make it terminate before the suite reports anything.
-const profileRoot = config.profileRoot?.();
-const homeDir = profileRoot && existsSync(profileRoot) ? path.join(profileRoot, "runner-home") : tempHome;
-if (homeDir !== tempHome) mkdirSync(homeDir, { recursive: true });
+const homeDir = tempHome;
 const resultsFile = path.join(homeDir, "aidr-e2e-results.json");
-const userDataDir = profileRoot && existsSync(profileRoot) ? path.join(profileRoot, "user-data") : path.join(tempHome, "user-data");
-const extensionsDir = profileRoot && existsSync(profileRoot) ? path.join(profileRoot, "extensions") : path.join(tempHome, "extensions");
-let stagedExtension;
+const userDataDir = path.join(tempHome, "user-data");
+const extensionsDir = path.join(tempHome, "extensions");
 let runError;
+let fatalError;
 
 try {
-	// Prefer a directory the host has already installed. A bare `dist` tree has no
-	// install record, so the extension never activates and cases fail for a reason
-	// that has nothing to do with the product.
-	const installed = config.installedExtension?.();
-	let developmentPath;
-	if (installed && existsSync(path.join(installed, "package.json"))) {
-		developmentPath = installed;
-		console.log(`[ide-e2e] ${config.label}: using installed extension at ${path.relative(ROOT, installed)}`);
-	} else if (config.developmentPath) {
-		developmentPath = config.developmentPath();
-		console.log(`[ide-e2e] ${config.label}: using development path ${path.relative(ROOT, developmentPath)}`);
-	} else {
-		stagedExtension = stageVsCodeExtension();
-		developmentPath = stagedExtension;
-		console.log(`[ide-e2e] ${config.label}: using freshly staged extension`);
-	}
+	const sandboxEnv = {
+		...process.env,
+		HOME: homeDir,
+		USERPROFILE: homeDir,
+		XDG_CONFIG_HOME: path.join(homeDir, ".config"),
+	};
+	const developmentPath = installCandidate(executable, userDataDir, extensionsDir, sandboxEnv);
+	const artifactManifestSha256 = verifyInstalledCandidate(developmentPath);
+	const hookRunnerPath = path.join(developmentPath, "dist", "aidr-hook.cjs");
+	console.log(`[ide-e2e] ${config.label}: installed candidate VSIX SHA-256 ${candidateSha256}`);
+	console.log(`[ide-e2e] ${config.label}: verified artifact manifest SHA-256 ${artifactManifestSha256}`);
 
 	const args = [
 		`--extensionDevelopmentPath=${developmentPath}`,
@@ -238,25 +345,19 @@ try {
 	// The suite reads its contract from the environment; these are the same values
 	// HOST_METADATA supplies to the Vitest path.
 	const env = {
-		...process.env,
+		...sandboxEnv,
 		AIDR_E2E_HOST: host,
 		AIDR_E2E_EXTENSION_ID: config.extensionId,
 		AIDR_E2E_SCOPE_SETTING_KEY: config.scopeSettingKey,
 		AIDR_E2E_MANAGED_MARKER: config.managedMarker,
 		AIDR_E2E_HOOK_MODE: config.hookMode,
 		AIDR_E2E_HOOKS_RELATIVE_PATH: config.hooksRelativePath,
-		AIDR_E2E_HOOK_RUNNER_PATH: HOOK_RUNNER_PATH,
+		AIDR_E2E_HOOK_RUNNER_PATH: hookRunnerPath,
 		AIDR_E2E_RESULTS_FILE: resultsFile,
-		HOME: homeDir,
-		USERPROFILE: homeDir,
-		XDG_CONFIG_HOME: path.join(homeDir, ".config"),
 	};
 
 	console.log(`[ide-e2e] ${config.label}: launching ${executable}`);
-	// Windows command shims need a shell; a real .exe must not be given one, since
-	// the launch arguments contain absolute paths with spaces.
-	const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(executable);
-	const run = spawnSync(executable, args, { env, encoding: "utf8", timeout: 600_000, maxBuffer: 32 * 1024 * 1024, shell: needsShell });
+	const run = spawnHost(executable, args, env);
 	if (run.stdout) process.stdout.write(run.stdout);
 	if (run.stderr) process.stderr.write(run.stderr);
 	if (run.error) runError = run.error.message;
@@ -284,6 +385,9 @@ try {
 			`${JSON.stringify({
 				host,
 				executable,
+				candidateVsix: candidatePath,
+				candidateSha256,
+				artifactManifestSha256,
 				expected: EXPECTED_CASES.length,
 				passed,
 				failures,
@@ -298,7 +402,9 @@ try {
 	// case is missing or failing, regardless of what the host itself returned:
 	// a host that exits 0 without running the cases has proven nothing.
 	process.exitCode = failures === 0 ? 0 : 1;
+} catch (error) {
+	fatalError = error instanceof Error ? error.message : String(error);
 } finally {
 	rmSync(tempHome, { recursive: true, force: true });
-	if (stagedExtension) rmSync(stagedExtension, { recursive: true, force: true });
 }
+if (fatalError) fail(fatalError);

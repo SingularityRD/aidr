@@ -1,48 +1,45 @@
 # Singularity AIDR for OpenCode
 
-Singularity AIDR integrates with OpenCode as a plugin and evaluates tool calls before they run.
+Singularity AIDR evaluates named tool calls forwarded by an enabled OpenCode `tool.execute.before` plugin hook and returns a verdict. Host enforcement and disabled, crashed, unmapped, or directly bypassed paths require real-host acceptance; a returned verdict alone does not prove side-effect prevention.
 
-## What it protects
+## Inspected tool calls
 
 - `bash` commands
 - `webfetch` URLs
-- File operations (`read`, `write`, `edit`, `ls`, `glob`, `grep`)
+- File operations (`read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep`)
+
+OpenCode's `apply_patch` `patchText` is normalized to a file edit. AIDR checks
+every parsed target path and added-text section through the same core policy
+path as `edit`; if AIDR cannot parse the complete patch, it blocks the call.
 
 Unmapped tools pass through unchanged.
 
 ## Install
 
-Clone the repo, build the OpenCode package, then point OpenCode to this package path:
-
-```bash
-git clone https://github.com/singularityrd/aidr
-cd aidr
-pnpm install
-pnpm --filter @singularityrd/aidr-opencode run build
-```
-
-Global config (`~/.config/opencode/opencode.json`):
-
-```json
-{
-  "plugin": ["/absolute/path/to/aidr/packages/opencode"]
-}
-```
+For a signed customer install, use the private-registry steps in
+[Package Installation](../../docs/package-installation.md). Source checkouts
+and local plugin paths are for development only.
 
 ## Behavior
 
-- **deny** verdicts: blocked immediately
-- **ask** verdicts: **blocked**, with an approval reference (`actionId`) the model
+- **deny** verdicts: AIDR returns a deny response to the host; real-host
+  confirmation that the side effect is prevented is still required
+- **ask** verdicts: AIDR returns a **blocked** response, with an approval reference (`actionId`) the model
   must hand to the user; nothing the model can call can approve it
-- **allow** verdicts: pass through
+- **allow** verdicts: pass through to the host
 
-Tool results are inspected in OpenCode's `tool.execute.after` hook before they
-are returned to the model. A result containing a detected secret or prompt
-injection is replaced with a short quarantine notice. Results over 256 KiB and
-runtime values that cannot be inspected are also quarantined; they are never
-reported as clean after a partial inspection. The plugin emits structured
-`aidr.output_inspection.health` and `aidr.output_inspection.coverage` log events
-without including the original result.
+Tool results are inspected in OpenCode's `tool.execute.after` hook, after the
+tool has executed. When a finding or incomplete inspection is detected, the
+plugin attempts to replace supported output shapes with a quarantine notice.
+For raw MCP results, replacement is limited to mutable plain-data objects. If
+the shape is unsupported or immutable, AIDR reports `replacement_unavailable`;
+the original result may remain visible to OpenCode and the model. Even when a
+mutation succeeds locally, real-host acceptance that OpenCode honors it before
+same-turn model consumption has not been established. Oversized, malformed, or
+opaque results are never reported as clean, but output quarantine is not
+guaranteed for them. The plugin's structured
+`aidr.output_inspection.health` and `aidr.output_inspection.coverage` events do
+not include the original result; this does not control copies held by the host.
 
 OpenCode does not currently provide a pre-consumption hook for arbitrary
 provider streams or non-tool content. The health event reports that channel as
@@ -68,6 +65,16 @@ missing — blocks the tool call rather than being treated as an empty policy.
 
 The policy's labels and rules are whatever the tenant's signed bundle defines;
 this connector ships no customer label taxonomy and assumes none.
+
+Behavioral and novelty baselines are not production-ready in this connector:
+`tool.execute.after` exposes the call identity and arguments, but no trusted
+success status. A cold or unavailable baseline is fail-closed (`ask`) by
+default. A signed tenant policy may explicitly set
+`behavioral.unavailable_action: "skip"`; this reports a visible
+`behavioral_unavailable` warning verdict rather than a clean result, while the
+independent known-threat model and other configured detectors still run.
+Baseline promotion requires a host success receipt bound to the preflight call
+and independent efficacy evaluation.
 
 ## Approval Flow
 
@@ -137,7 +144,9 @@ Singularity AIDR automatically scans all installed OpenCode plugins when a new s
 ### Self-Protection
 
 - Singularity AIDR excludes itself from scanning (`@singularityrd/aidr-opencode`)
-- Fail-open philosophy: Errors don't block OpenCode
+- Startup plugin-scan errors are logged without disabling OpenCode. Tool-call
+  evaluation errors use a separate deny path; neither behavior establishes
+  what OpenCode does if the plugin process crashes before returning a result.
 
 ### Cache Location
 
@@ -156,5 +165,3 @@ This copies `threats/` and `allowlists/` into `packages/opencode/resources/`.
 ```bash
 pnpm test -- packages/opencode/src/__tests__/integration.test.ts
 ```
-
-

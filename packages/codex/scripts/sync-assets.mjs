@@ -6,7 +6,11 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(scriptDir, "..");
 const repositoryRoot = resolve(packageRoot, "..", "..");
 
-const resourcesRoot = join(packageRoot, "resources");
+// Runtime assets live under dist so the signed artifact manifest and the hook
+// verify one closed tree. Keeping executable code in dist while loading policy
+// from an unsigned sibling directory would let an installed rule set change
+// without failing commercial startup.
+const resourcesRoot = join(packageRoot, "dist", "resources");
 const requiredAssets = ["threats", "allowlists"];
 
 for (const asset of requiredAssets) {

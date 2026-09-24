@@ -53,13 +53,13 @@ export interface CodexEnforcementOptions {
 	approvalStore?: ApprovalStore;
 }
 
-/** The wire shape Codex accepts for a PreToolUse decision. */
+/** The wire shape Codex accepts for a PreToolUse block. */
 export interface CodexHookWireOutput {
-	hookSpecificOutput: {
+	/** Absent for allow: Codex 0.141.0 accepts empty stdout as a no-op allow. */
+	hookSpecificOutput?: {
 		hookEventName: "PreToolUse";
-		permissionDecision: "allow" | "deny";
-		/** Required for deny; omitted for allow. */
-		permissionDecisionReason?: string;
+		permissionDecision: "deny";
+		permissionDecisionReason: string;
 	};
 }
 
@@ -69,7 +69,7 @@ export interface CodexEnforcementResult {
 	/** What AIDR decided, before translation to Codex's dialect. */
 	decision: "allow" | "deny" | "ask";
 	reasonCode: string;
-	/** Exact object to print on stdout. */
+	/** Host wire result; an empty object means the CLI emits no stdout on allow. */
 	wire: CodexWireResult;
 }
 
@@ -78,17 +78,14 @@ export const DENY_HEADLINE = "🛡️ Singularity AIDR: Threat Blocked";
 /**
  * Convert a verdict into Codex's wire format.
  *
- * Always returns an explicit permission decision. Codex otherwise treats an
- * empty or missing hook response as a silent pass-through.
+ * Codex 0.141.0 has no supported bare allow response: it treats
+ * `permissionDecision: "allow"` without `updatedInput` as an error and passes
+ * the call through. For an allowed call, return an empty object so the CLI
+ * emits the host's documented empty-stdout no-op; blocks use explicit deny.
  */
 export function toWireOutput(decision: "allow" | "deny" | "ask", message: string): CodexWireResult {
 	if (decision === "allow") {
-		return {
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "allow",
-			},
-		};
+		return {};
 	}
 
 	// Both deny and ask become an explicit deny. Codex has no working `ask`
@@ -104,10 +101,6 @@ export function toWireOutput(decision: "allow" | "deny" | "ask", message: string
 			permissionDecisionReason: reason,
 		},
 	};
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -175,17 +168,23 @@ export async function enforceCodexPreToolUse(
 		};
 	} catch (error) {
 		// Fail closed. An explicit deny is the only reliable block Codex offers,
-		// so an internal error must produce one rather than an empty response.
-		logger.error("Singularity AIDR codex hook failed closed", {
-			error: errorMessage(error),
-			tool: toolName,
-		});
+		// so an internal error must produce one even if diagnostic logging fails.
+		// Exception messages can contain tool input or secrets; never return them
+		// to the model in the hook decision.
+		try {
+			logger.error("Singularity AIDR codex hook failed closed", {
+				errorType: error instanceof Error ? error.name : typeof error,
+				tool: toolName,
+			});
+		} catch {
+			// A broken logger must not turn a deny into a crashed, fail-open hook.
+		}
 		return {
 			decision: "deny",
 			reasonCode: "aidr_internal_error",
 			wire: toWireOutput(
 				"deny",
-				`${DENY_HEADLINE}\nSingularity AIDR could not evaluate this tool call, so it was blocked. (${errorMessage(error)})`,
+				`${DENY_HEADLINE}\nSingularity AIDR could not evaluate this tool call, so it was blocked.`,
 			),
 		};
 	}

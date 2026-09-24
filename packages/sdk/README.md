@@ -1,16 +1,21 @@
 # `@singularityrd/aidr-sdk`
 
-Universal SDK for integrating Singularity AIDR security checks into AI agent
-frameworks (LangChain, LlamaIndex, AutoGen, CrewAI, Express, Next.js, or any
-custom runtime).
+Small SDK for integrating Singularity AIDR security checks into Express,
+Next.js, or any runtime through the generic middleware adapter.
+
+This is an application-owned check boundary, not an AI-host connector. It only
+checks requests the application passes to it; wrapping a tool does not provide
+the native connectors' tool normalization or package/manifest inspection.
 
 ## Verdict enforcement is fail-closed
 
-Every adapter and middleware in this package shares **one** enforcement rule,
+Both middleware surfaces in this package share **one** enforcement rule,
 implemented in [`src/enforcement.ts`](./src/enforcement.ts):
 
-> A wrapped function, tool, agent message, or HTTP request proceeds to execution
-> **only** when the security check returns `decision: "allow"`.
+> A wrapped function, tool invocation, or HTTP request proceeds only for
+> `decision: "allow"`, or when a caller-supplied `onAsk` explicitly approves an
+> `ask` result (including a separate opt-in for indeterminate results). `deny`
+> never proceeds.
 
 | Check result                                                      | What the SDK does                                                                                             |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -81,33 +86,59 @@ const safeRun = middleware.wrap(runShellCommand, (cmd) => ({
 app.use(middleware.express());
 ```
 
-Framework adapters accept the same `onAsk` / `allowApprovalOfIndeterminateResults`
-options:
+### Input coverage is chosen by the caller
+
+`createMiddleware(client).wrap(fn, requestFactory)` runs one SDK
+`AIDRClient.check()` on the `CheckRequest` returned by `requestFactory`. The
+caller must set its `action` and `resource` to the specific command, URL, or
+file path being checked; the SDK does not infer all security-relevant artifacts
+from arbitrary function arguments. The Express/Next.js helpers check the request
+URL/path. Express passes body and headers as context; Next.js passes headers but
+does not read the body. Neither extracts them as separate artifacts.
+
+`wrapToolWithMiddleware()` retains the serialized arguments and, for structured
+inputs, also adds typed artifacts extracted from common field names such as
+`command`, `path`, `url`, and `content`. Positional arguments have no universal
+meaning, so their fields are not inferred; the SDK wrapper also does not call
+the native connectors' shared evaluator or package checker. For those guarantees,
+map arguments explicitly with `createMiddleware(client).wrap(fn, requestFactory)`
+or use and verify a supported native connector. Do not treat a generic wrapper
+as equivalent to native connector coverage.
+
+### URL reputation and data sharing
+
+The SDK keeps URL reputation requests **off by default**. Fetch URLs are still
+checked by local heuristics; because remote reputation was not consulted, a
+fetch that would otherwise be allowed returns `ask` and requires review. To
+share eligible URLs with the configured reputation provider, explicitly enable
+it:
+
+```ts
+const client = new AIDRClient({
+  apiKey: process.env.AIDR_API_KEY!,
+  urlReputationEnabled: true,
+});
+```
+
+URL user-info and fragments are never sent. Query parameters are withheld by
+default; enabling `includeUrlQueryParameters: true` separately opts in to
+sending them. URLs withheld for these reasons are reported as unavailable,
+not clean. Avoid putting secrets in a URL even when reputation lookups are
+enabled.
+
+Both middleware surfaces accept the same `onAsk` /
+`allowApprovalOfIndeterminateResults` options:
 
 | Adapter              | Entry point                                    | Blocking behaviour for `ask` / indeterminate                                             |
 | -------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Core middleware      | `createMiddleware(client, options)`            | `wrap()` throws; `express()`/`nextjs()` return 403 with the enforcement message.          |
 | Generic middleware   | `createGenericMiddleware(client, options)`     | Throws `AIDRMiddlewareError` (also used by the sync-compatible variant).                  |
-| LangChain            | `withAIDR(tool, client, options)`              | Returns `allowed: false` + `[DENIED] …`, or throws when `throwOnAsk` is set.              |
-| LlamaIndex           | `withAIDRLlamaIndex(engine, client, options)`  | Throws `AIDRLlamaIndexError` unless `throwOnDeny: false` (then a `[BLOCKED]` result).     |
-| AutoGen              | `createAIDRSpeaker(client, options)`           | Returns `{ allowed: false, verdict }` (never a synthesized allow), or throws.             |
-| CrewAI               | `withCrewAIDR(tool, client, options)`          | Throws `AIDRCrewSecurityError` unless `throwOnDeny: false` (then `{ blocked: true }`).    |
-| CrewAI delegation    | `wrapCrewAgentWithAIDR(agent, client, options)`| Throws `AIDRCrewSecurityError`.                                                           |
-
-## SDK command
-
-The SDK's optional command-line helper is installed as `aidr-sdk` (the documented
-`aidr` command belongs exclusively to `@singularityrd/aidr-cli`):
-
-```bash
-npx aidr-sdk --help
-```
 
 ## Tool output inspection before model consumption
 
-The Generic, LangChain, LlamaIndex, AutoGen, and CrewAI adapters inspect returned
-text and structured results with the core output scanner before returning them to
-the framework. The default limit is 256 KiB of UTF-8 data. A finding, an oversized
+The generic adapter inspects returned text and structured results with the core
+output scanner before returning them to the caller. The default limit is 256 KiB
+of UTF-8 data. A finding, an oversized
 result, a circular value, binary data, or another unsupported value blocks delivery
 by default; none of those states is reported as clean.
 
@@ -131,21 +162,6 @@ return guarded.output;
 Redaction replaces the complete result with a fixed marker so matched secrets or
 instructions cannot survive in an uninspected field. Hosts that return binary or
 streaming values must decode them to bounded text before calling the guard.
-
-### AutoGen note
-
-`AIDRSpeaker.onMessage()` used to fall through to a synthesized
-`{ allowed: true, decision: "allow" }` ("All checks passed") even when a
-sub-check returned `ask`. That synthesis only happens now when every check
-either returned an explicit `allow` or was approved through `onAsk`; the
-combined verdict records `ask verdict approved by onAsk` in its reason when that
-happened.
-
-### LlamaIndex note
-
-`throwOnDeny: false` on the *source-URL validation leg* annotates the result
-(`metadata.aidrUrlWarnings`) instead of throwing, matching the pre-existing
-opt-out for `deny`. The primary query verdict is always blocking.
 
 ## Agent self-approval is not a thing in this SDK
 
@@ -208,9 +224,9 @@ instead of silently disabling behaviour. `updateConfig()` re-validates too.
 ## Tests
 
 `packages/sdk/src/__tests__/fail-closed-enforcement.test.ts` locks in the table
-above with one test per adapter, including "the wrapped function is not called
-for `ask`", "a failed check never executes", and "an `onAsk` approval still
-works".
+above for both retained middleware surfaces, including "the wrapped function is
+not called for `ask`", "a failed check never executes", and "an `onAsk`
+approval still works".
 
 `packages/sdk/src/__tests__/data-dir-resolution.test.ts` covers rule-data
 resolution from the monorepo source tree, the documented fallback order, the

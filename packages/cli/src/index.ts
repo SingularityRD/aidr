@@ -5,9 +5,9 @@ import { Command } from "commander";
 import collectCommand from "./commands/collect.js";
 import configCommand from "./commands/config.js";
 import {
-	SECRET_STORE_OPTION_DESCRIPTION,
 	revokeKeyCommand,
 	rotateKeyCommand,
+	SECRET_STORE_OPTION_DESCRIPTION,
 } from "./commands/config-secret.js";
 import discoverCommand from "./commands/discover.js";
 import scanCommand from "./commands/scan.js";
@@ -24,7 +24,7 @@ program
 
 program
 	.command("setup")
-	.description("Configure AIDR and install the detected agent hooks")
+	.description("Configure AIDR and show connector setup guidance")
 	.option("-f, --force", "Replace an existing local configuration")
 	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
 	.action(setupCommand);
@@ -33,20 +33,23 @@ const configProgram = program
 	.command("config")
 	.description("Read or update the local AIDR configuration")
 	.option("-g, --get <key>", "Read a dotted configuration key")
-	.option("-s, --set <values...>", "Set a dotted configuration key and value")
+	.option(
+		"-s, --set <values...>",
+		"Set a dotted key/value; enter secrets at the hidden prompt, never as arguments",
+	)
 	.option("-l, --list", "Print all configuration values")
 	.action(configCommand);
 
 configProgram
 	.command("rotate-key")
-	.description("Mint a new local credential through the selected secret store")
+	.description("Rotate the CLI setup credential (not a managed endpoint API key)")
 	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
 	.option("--json", "Emit a machine-readable rotation receipt")
 	.action(rotateKeyCommand);
 
 configProgram
 	.command("revoke-key")
-	.description("Revoke the local credential in the selected secret store")
+	.description("Revoke the CLI setup credential (not a managed endpoint API key)")
 	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
 	.option("--json", "Emit a machine-readable revocation receipt")
 	.action(revokeKeyCommand);
@@ -78,7 +81,11 @@ program
 	.command("collect")
 	.description("Continuously collect tenant-scoped AI infrastructure inventory")
 	.requiredOption("--tenant <id>", "Tenant identifier recorded in the inventory")
-	.option("--provider <id>", "Discovery provider (local is implemented; cloud/MDM require an adapter)", "local")
+	.option(
+		"--provider <id>",
+		"Discovery provider (local is implemented; cloud/MDM require an adapter)",
+		"local",
+	)
 	.option("-t, --target <url...>", "Target base URL (repeatable)")
 	.option("-f, --file <path>", "Read targets from a file, one URL per line")
 	.option(
@@ -107,7 +114,9 @@ program
 
 program
 	.command("uninstall")
-	.description("Remove only the AIDR-managed agent hooks, preserving your own hooks and configuration")
+	.description(
+		"Remove only the AIDR-managed agent hooks, preserving your own hooks and configuration",
+	)
 	.option(
 		"--home <path>",
 		"Target an explicit home directory (managed fleets and verification); defaults to the current user",

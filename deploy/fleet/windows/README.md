@@ -8,6 +8,42 @@ They do not prove that a specific MDM tenant delivered the package or that the
 native AI host invoked the registered hook. Record those as separate customer
 acceptance evidence.
 
+## Authenticode release gate
+
+The Windows management scripts are launched with `-ExecutionPolicy AllSigned`.
+This repository has no Authenticode signing automation or release signing key,
+and the checked-in PowerShell scripts are currently unsigned. That is a release
+blocker: do not package or deploy them until the release owner signs every
+PowerShell script in `deploy/fleet/windows` with the approved code-signing
+identity. The verifier includes itself and the manifest-generation utility, as
+well as `Common.ps1` and all six endpoint entrypoints. Sign the verifier before
+running it under `AllSigned`; it checks every required script and fails closed
+on unsigned, invalid, untrusted, missing, unexpected, or differently signed
+files.
+
+Keep the management-script Authenticode thumbprint in protected, immutable
+release configuration and provide it explicitly. Do not derive the expected
+thumbprint from the files being checked. This identity is separate from the CMS
+certificate that signs the npm tarball; reusing one certificate requires an
+explicit release-security approval. No certificate or signature is fabricated
+by the local verification workflow.
+
+Run this after the release signing step and before creating the Win32/SCCM
+package. The verifier itself and all checked scripts must already be signed so
+the command can run under the required policy:
+
+```powershell
+$managementScriptThumbprint = 'APPROVED_AUTHENTICODE_THUMBPRINT'
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy AllSigned `
+  -File .\deploy\fleet\windows\Test-AidrFleetScriptSignatures.ps1 `
+  -ExpectedThumbprint $managementScriptThumbprint
+if ($LASTEXITCODE -ne 0) { throw 'Windows fleet signing preflight failed; packaging is blocked.' }
+```
+
+The preflight checks the actual `.ps1` files in the source folder. Do not edit,
+replace, or add PowerShell scripts after it passes; any content change requires
+the release signer to sign again and the preflight to be rerun.
+
 ## Build the deployment directory
 
 Sign the exact `@singularityrd/aidr-claude-code` npm tarball with the approved
@@ -28,12 +64,15 @@ $manifestSha = & .\deploy\fleet\windows\New-AidrFleetManifest.ps1 `
   -RequireTrustedChain
 ```
 
-`New-AidrFleetManifest.ps1` verifies the signature and writes both the manifest
-and its SHA-256 sidecar. Put the five management scripts, `Common.ps1`, and the
-generated directory into the Win32/SCCM package. Store the manifest SHA-256 in
-the MDM command line. The command-line value is the trust anchor that prevents
-an attacker from replacing the manifest, payload hash, and signer allowlist
-together.
+`New-AidrFleetManifest.ps1` verifies the CMS artifact signature and writes both
+the manifest and its SHA-256 sidecar. After the Authenticode preflight passes,
+put `Common.ps1`, `Install-Aidr.ps1`, `Update-Aidr.ps1`, `Rollback-Aidr.ps1`,
+`Uninstall-Aidr.ps1`, `Test-AidrDetection.ps1`, `Invoke-AidrRemediation.ps1`, and
+the generated directory into the Win32/SCCM package. Store the manifest
+SHA-256 in the MDM command line. The command-line value is the trust anchor that
+prevents an attacker from replacing the manifest, payload hash, and signer
+allowlist together; it does not replace Authenticode signing of PowerShell
+scripts.
 
 Do not omit `-RequireTrustedChain` for a production package. Offline or isolated
 test packages may pin a self-signed certificate without that switch; this is
@@ -101,8 +140,9 @@ machine-readable result). Neither mode proves host execution or MDM delivery.
 
 - Every install and detection resolves manifest paths beneath the package root,
   rejects traversal/link entries, verifies exact SHA-256 values, checks one CMS
-  signer against pinned certificate thumbprints, and optionally requires an
-  offline-trusted certificate chain.
+  signer against pinned certificate thumbprints, limits compressed archives to
+  512 MiB and total expanded regular-file bytes to 512 MiB before extraction,
+  and optionally requires an offline-trusted certificate chain.
 - Existing `.singularity-aidr/config.json` is preserved. A packaged config is
   installed only when no config exists. Existing unrelated Claude hooks remain.
 - Settings changes are backed up and written atomically by the endpoint

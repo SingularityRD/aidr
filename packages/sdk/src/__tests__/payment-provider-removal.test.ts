@@ -12,10 +12,9 @@
  * These tests fail if that path is reintroduced.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FreemiumManager, InMemoryLicenseManager } from "../freemium.js";
 
 const SDK_SRC = resolve(__dirname, "..");
 
@@ -72,35 +71,18 @@ describe("SDK payment-provider removal", () => {
 	});
 });
 
-describe("FreemiumManager no longer depends on a payment provider", () => {
-	it("can be constructed with only a licence manager", () => {
-		const manager = new FreemiumManager(new InMemoryLicenseManager());
-		expect(manager).toBeInstanceOf(FreemiumManager);
-	});
+describe("SDK product-surface removal", () => {
+	it.each(["cli.ts", "freemium.ts", "referral.ts", "team-dashboard.ts"])(
+		"does not ship the unused %s subsystem",
+		(file) => {
+			expect(() => statSync(join(SDK_SRC, file))).toThrow();
+		},
+	);
 
-	it("refuses to fabricate a checkout URL instead of returning a dead link", async () => {
-		const manager = new FreemiumManager(new InMemoryLicenseManager());
-		await expect(manager.createUpgradeCheckout("user-1")).rejects.toThrow(/server-side/i);
-	});
-
-	it("does not activate a licence without a server-issued entitlement", async () => {
-		const manager = new FreemiumManager(new InMemoryLicenseManager());
-		// The issuer is caller-supplied precisely so the SDK cannot invent one.
-		const result = await manager.activateLicense("user-1", "any-key", async () => ({
-			valid: false,
-			seats: 0,
-		}));
-		expect(result.success).toBe(false);
-		expect(result.error).toMatch(/Invalid or expired/i);
-	});
-
-	it("records a licence only when the issuer reports it valid", async () => {
-		const manager = new FreemiumManager(new InMemoryLicenseManager());
-		const result = await manager.activateLicense("user-2", "issued-key", async () => ({
-			valid: true,
-			seats: 2,
-		}));
-		expect(result.success).toBe(true);
-		expect(result.license?.seats).toBe(2);
+	it("keeps product and framework-specific surfaces out of the public entry point", () => {
+		const entry = readFileSync(join(SDK_SRC, "index.ts"), "utf8");
+		expect(entry).not.toMatch(
+			/\b(?:FreemiumManager|ReferralSystem|TeamDashboard|AIDRSpeaker|AIDRCrewTool|AIDRTool|AIDRQueryEngine)\b/,
+		);
 	});
 });

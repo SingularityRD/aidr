@@ -270,7 +270,7 @@ describe("Claude Code detector provisioning", () => {
 		await expect(loadProvisionedDetectorContext("claude-code")).resolves.toEqual({});
 	});
 
-	it("provisions a behavioral baseline that persists between hook processes", async () => {
+	it("keeps behavioral baselines in memory but does not persist without verified receipts", async () => {
 		const corpus = syntheticThreatCorpus(tenantId);
 		await installPolicy(behavioralPolicyPayload(tenantId, { threat_corpus: corpus }));
 		mocked.loadManagedState.mockResolvedValue({
@@ -282,7 +282,7 @@ describe("Claude Code detector provisioning", () => {
 			}),
 		});
 		// Keep the real provisioning dependencies, including the signed corpus's
-		// LocalEmbeddingModel and durable store, rather than replacing the model.
+		// LocalEmbeddingModel and baseline-store boundary, rather than replacing the model.
 		mocked.createBehavioralDetectionOrchestrator.mockImplementation(
 			(config: ConstructorParameters<typeof BehavioralDetectionOrchestrator>[0], deps) =>
 				new BehavioralDetectionOrchestrator(config, deps),
@@ -309,15 +309,9 @@ describe("Claude Code detector provisioning", () => {
 		}
 		expect(firstProcess.getStats().totalBaselineSamples).toBe(10);
 		const sessionId = syntheticBehavioralInput().sessionId;
-		expect((await dependencies.baselineStore?.load(tenantId, sessionId))?.baselineSamples).toBe(10);
+		expect(await dependencies.baselineStore?.load(tenantId, sessionId)).toBeNull();
 
-		// Corpus-bound records remain under the fixed tenant/session storage root.
-		const records = await readdir(join(stateDir, "behavioral-baseline"), {
-			recursive: true,
-		});
-		expect(records.filter((entry) => entry.endsWith(".json"))).toHaveLength(1);
-
-		// A fresh hook context imports the same signed corpus and restores learning.
+		// A fresh hook context imports the same signed corpus but starts cold.
 		const second = await loadProvisionedDetectorContext("claude-code");
 		expect(second.runtimeDetectors?.behavioral?.learningAllowed).toBe(true);
 		const secondProcess = second.runtimeDetectors?.behavioral?.orchestrator;
@@ -329,11 +323,14 @@ describe("Claude Code detector provisioning", () => {
 			}),
 		);
 
-		expect(result.learning.baselineSamplesBefore).toBe(10);
-		expect(result.outcome).toBe("normal");
-		for (const leg of ["behavioral", "novelty", "ml"]) {
-			expect(result.explanations).toContainEqual(expect.objectContaining({ leg, status: "ready" }));
-		}
+		expect(result).toMatchObject({
+			outcome: "learning",
+			learning: { accepted: true, baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
+		});
+		await expect(readdir(join(stateDir, "behavioral-baseline"))).rejects.toHaveProperty(
+			"code",
+			"ENOENT",
+		);
 		await expect(
 			secondProcess.evaluate(
 				syntheticBehavioralInput(0, {
@@ -406,7 +403,7 @@ describe("Claude Code consumes the shared helper", () => {
 		expect(context.runtimeDetectors?.dlp?.policy.rules[0]?.id).toBe("tenant-restricted-rule");
 	});
 
-	it("restores a signed v2 baseline and matches its real corpus through the Claude facade", async () => {
+	it("keeps Claude preflight from promoting samples and does not persist without receipts", async () => {
 		realHome = await mkdtemp(join(tmpdir(), "aidr-claude-code-behavioral-"));
 		vi.stubEnv("HOME", realHome);
 		const corpus = syntheticThreatCorpus();
@@ -442,13 +439,22 @@ describe("Claude Code consumes the shared helper", () => {
 					allowlistsDir: join(realHome, "empty-allowlists"),
 				},
 			);
-			expect(verdict).toMatchObject({ decision: "ask", source: "behavioral" });
-			expect(orchestrator.getStats().totalBaselineSamples).toBe(index + 1);
+			expect(verdict).toMatchObject({ decision: "ask", category: "behavioral_unavailable" });
+			expect(orchestrator.getStats().totalBaselineSamples).toBe(0);
 		}
 
 		const restored = await loadClaudeCodeProvisionedDetectorContext();
 		const orchestrator = restored.runtimeDetectors?.behavioral?.orchestrator;
 		if (!orchestrator) throw new Error("Claude facade did not construct an orchestrator");
+		// These synthetic direct calls exercise only in-memory learning; there is
+		// no verified receipt path to authorize writing their observations to disk.
+		for (let index = 0; index < 10; index++) {
+			const result = await orchestrator.evaluate(syntheticBehavioralInput(index));
+			expect(result.learning).toMatchObject({
+				accepted: true,
+				baselineSamplesAfter: index + 1,
+			});
+		}
 		const normal = await orchestrator.evaluate(
 			syntheticBehavioralInput(10, { learningAllowed: false }),
 		);
@@ -494,10 +500,9 @@ describe("Claude Code consumes the shared helper", () => {
 		expect(verdict).toMatchObject({ decision: "ask", source: "behavioral" });
 		expect(verdict.reasons).toContainEqual(expect.stringContaining("Behavioral anomaly detected"));
 		expect(orchestrator.getStats().totalBaselineSamples).toBe(10);
-		const records = await readdir(join(realHome, ".singularity-aidr", "behavioral-baseline"), {
-			recursive: true,
-		});
-		expect(records.filter((entry) => entry.endsWith(".json"))).toHaveLength(1);
+		await expect(
+			readdir(join(realHome, ".singularity-aidr", "behavioral-baseline")),
+		).rejects.toHaveProperty("code", "ENOENT");
 		expect(mocked.createBehavioralDetectionOrchestrator).not.toHaveBeenCalled();
 	});
 });

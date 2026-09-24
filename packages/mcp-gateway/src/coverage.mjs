@@ -1,6 +1,6 @@
-export const MCP_GATEWAY_COVERAGE_SCHEMA_VERSION = "aidr-mcp-gateway-coverage/v1";
-export const MCP_GATEWAY_COVERAGE_EVENT = "aidr.mcp_gateway.coverage";
-export const MCP_GATEWAY_REFUSAL_TYPE = "mcp_gateway_refusal";
+const MCP_GATEWAY_COVERAGE_SCHEMA_VERSION = "aidr-mcp-gateway-coverage/v1";
+const MCP_GATEWAY_COVERAGE_EVENT = "aidr.mcp_gateway.coverage";
+const MCP_GATEWAY_REFUSAL_TYPE = "mcp_gateway_refusal";
 
 const REFUSALS = {
 	server_initiated_method: {
@@ -52,7 +52,7 @@ const REFUSALS = {
 	},
 };
 
-export const MCP_GATEWAY_COVERAGE_REFUSALS = Object.freeze(
+const MCP_GATEWAY_COVERAGE_REFUSALS = Object.freeze(
 	Object.fromEntries(
 		Object.entries(REFUSALS).map(([code, descriptor]) => [code, Object.freeze({ ...descriptor })]),
 	),

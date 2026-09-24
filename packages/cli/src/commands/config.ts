@@ -1,7 +1,12 @@
-import chalk from "chalk";
 import { ConfigSchema } from "@singularityrd/aidr-core";
-import { type Config, getConfig, updateConfig } from "../utils/config-manager.js";
-import { configPathParts, displayConfigValue, parseConfigValue } from "../utils/config-values.js";
+import { type Config, getConfig, replaceConfig } from "../utils/config-manager.js";
+import {
+	configPathParts,
+	displayConfigValue,
+	isSecretConfigPath,
+	parseConfigValue,
+} from "../utils/config-values.js";
+import { readHiddenInput } from "../utils/secret-prompt.js";
 
 interface ConfigOptions {
 	get?: string;
@@ -13,56 +18,107 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 	const config = getConfig();
 
 	if (!config) {
-		console.log(chalk.yellow("⚠️  AIDR not configured. Run 'aidr setup' first."));
+		console.log("⚠️  AIDR not configured. Run 'aidr setup' first.");
 		return;
 	}
 
 	if (options.get) {
 		const value = getNestedValue(config, options.get);
-		console.log(value !== undefined ? displayConfigValue(options.get, value) : chalk.gray("(not set)"));
+		console.log(value !== undefined ? displayConfigValue(options.get, value) : "(not set)");
 		return;
 	}
 
-	if (options.set && options.set.length >= 2) {
+	if (options.set && options.set.length > 0) {
 		const [key, ...valueParts] = options.set;
-		const value = valueParts.join(" ");
-		setNestedValue(config, key, value);
-		const checked = ConfigSchema.safeParse(config);
-		if (!checked.success) { console.error("Invalid runtime configuration; no changes saved."); process.exitCode = 1; return; }
-		updateConfig(config);
-		console.log(chalk.green(`✅ Set ${key} = ${displayConfigValue(key, parseConfigValue(value))}`));
-		return;
-	}
+		const secret = isSecretConfigPath(key);
+		if (secret && valueParts.length > 0) {
+			console.error(
+				"Secret values cannot be passed as command-line arguments. Rerun without the value argument to enter it at the hidden prompt.",
+			);
+			process.exitCode = 1;
+			return;
+		}
+		if (!secret && valueParts.length === 0) {
+			console.log("⚠️  Usage: aidr config -s <key> <value> (secret values are prompted securely)");
+			return;
+		}
 
-	if (options.set && options.set.length === 1) {
-		console.log(chalk.yellow("⚠️  Usage: aidr config -s <key> <value>"));
+		let value: unknown;
+		if (secret) {
+			try {
+				value = await readHiddenInput("Secret value: ");
+			} catch (error: unknown) {
+				console.error(error instanceof Error ? error.message : "Could not read secret input.");
+				process.exitCode = 1;
+				return;
+			}
+		} else {
+			value = parseConfigValue(valueParts.join(" "));
+		}
+		try {
+			setNestedValue(config, key, value);
+		} catch {
+			console.error("Invalid or unknown configuration field; no changes saved.");
+			process.exitCode = 1;
+			return;
+		}
+		const checked = ConfigSchema.safeParse(config);
+		if (!checked.success) {
+			console.error("Invalid runtime configuration; no changes saved.");
+			process.exitCode = 1;
+			return;
+		}
+		if (getNestedValue(checked.data as unknown as Config, key) === undefined) {
+			console.error("Unknown configuration field; no changes saved.");
+			process.exitCode = 1;
+			return;
+		}
+		// Persist only the schema-parsed runtime fields and the CLI's explicit
+		// metadata. Spreading the full input here would retain unknown root keys,
+		// even though Zod intentionally stripped them from `checked.data`.
+		const normalized = {
+			...checked.data,
+			apiKey: config.apiKey,
+			environment: config.environment,
+			version: config.version,
+			createdAt: config.createdAt,
+			hooksInstalled: config.hooksInstalled,
+			agentConfigured: config.agentConfigured,
+			secretStore: config.secretStore,
+			secretRef: config.secretRef,
+			secretRotatedAt: config.secretRotatedAt,
+			secretRevokedAt: config.secretRevokedAt,
+		} as unknown as Config;
+		replaceConfig(normalized);
+		console.log(`✅ Set ${key} = ${displayConfigValue(key, value)}`);
 		return;
 	}
 
 	if (options.list) {
-		console.log(chalk.blue("\n🛡️  AIDR Configuration\n"));
+		console.log("\n🛡️  AIDR Configuration\n");
 		printConfig(config);
 		return;
 	}
 
-	console.log(chalk.gray("Usage:"));
+	console.log("Usage:");
 	console.log("  aidr config -g <key>       Get value");
-	console.log("  aidr config -s <key> <val> Set value");
+	console.log("  aidr config -s <key> <val> Set non-secret value");
+	console.log("  aidr config -s <secret-key> Enter secret at hidden prompt");
 	console.log("  aidr config -l             List all\n");
 }
 
 function getNestedValue(obj: Config, path: string): unknown {
 	return configPathParts(path).reduce<unknown>((current, key) => {
-		if (current && typeof current === "object" && key in current) {
+		if (current && typeof current === "object" && Object.hasOwn(current, key)) {
 			return (current as Record<string, unknown>)[key];
 		}
 		return undefined;
 	}, obj);
 }
 
-function setNestedValue(obj: Config, path: string, value: string): void {
+function setNestedValue(obj: Config, path: string, value: unknown): void {
 	const keys = configPathParts(path);
-	if (!(keys[0] in ConfigSchema.shape)) throw new Error("Unknown or read-only configuration field");
+	if (!Object.hasOwn(ConfigSchema.shape, keys[0])) throw new Error("Unknown or read-only configuration field");
 	const last = keys.pop();
 	if (last === undefined) return;
 	let current: Record<string, unknown> = obj as unknown as Record<string, unknown>;
@@ -74,7 +130,7 @@ function setNestedValue(obj: Config, path: string, value: string): void {
 		current = current[key] as Record<string, unknown>;
 	}
 
-	current[last] = parseConfigValue(value);
+	current[last] = value;
 }
 
 function printConfig(config: Config, prefix = ""): void {
@@ -83,7 +139,7 @@ function printConfig(config: Config, prefix = ""): void {
 		if (typeof value === "object" && value !== null) {
 			printConfig(value as Config, fullKey);
 		} else {
-			console.log(`  ${fullKey}: ${chalk.gray(displayConfigValue(fullKey, value))}`);
+			console.log(`  ${fullKey}: ${displayConfigValue(fullKey, value)}`);
 		}
 	}
 }

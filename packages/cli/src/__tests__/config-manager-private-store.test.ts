@@ -19,6 +19,8 @@ import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 const testHome = mkdtempSync(join(tmpdir(), "aidr-private-config-"));
+const originalHome = process.env.HOME;
+process.env.HOME = testHome;
 vi.mock("node:os", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:os")>();
 	return { ...actual, homedir: () => testHome };
@@ -32,7 +34,7 @@ vi.mock("node:os", async (importOriginal) => {
  */
 process.env.AIDR_SECRET_STORE = "file-acl";
 
-const { createConfig, getConfig, updateConfig } = await import("../utils/config-manager.js");
+const { createConfig, getConfig, replaceConfig, updateConfig } = await import("../utils/config-manager.js");
 type Environment = import("../utils/config-manager.js").Environment;
 const configDir = join(testHome, ".singularity-aidr");
 const configFile = join(configDir, "config.json");
@@ -58,7 +60,11 @@ afterEach(() => {
 		rmSync(configDir, { recursive: true, force: true });
 	}
 });
-afterAll(() => rmSync(testHome, { recursive: true, force: true }));
+afterAll(() => {
+	if (originalHome === undefined) delete process.env.HOME;
+	else process.env.HOME = originalHome;
+	rmSync(testHome, { recursive: true, force: true });
+});
 
 describe("private local config store", () => {
 	// AIDR-SKIP: AIDR-063 qa-owner - requires the Windows ACL utility and Windows security semantics
@@ -87,6 +93,22 @@ describe("private local config store", () => {
 		}
 		expect((await createConfig(env, false)).outcome).toBe("reused");
 		expect(getConfig()?.apiKey).toBe(oldKey);
+	});
+
+	it("replaces stripped fields instead of re-merging them from the old document", async () => {
+		await createConfig(env, false);
+		const document = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+		document.unknown_root_field = "remove-me";
+		writeFileSync(configFile, JSON.stringify(document));
+
+		const normalized = getConfig() as unknown as Record<string, unknown>;
+		delete normalized.unknown_root_field;
+		normalized.heuristics_enabled = false;
+		replaceConfig(normalized as unknown as import("../utils/config-manager.js").Config);
+
+		const stored = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+		expect(stored.unknown_root_field).toBeUndefined();
+		expect(stored.heuristics_enabled).toBe(false);
 	});
 
 	it("rotates the credential only for a forced setup", async () => {

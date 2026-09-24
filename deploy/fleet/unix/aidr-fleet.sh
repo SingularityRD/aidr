@@ -67,6 +67,7 @@ require_root_for_changes() {
 	safe_system_root "$INSTALL_ROOT"; safe_system_root "$STATE_ROOT"
 	[ "$INSTALL_ROOT" != "$STATE_ROOT" ] || fail "install and state roots must be different"
 	if [ "${AIDR_FLEET_TEST_ROOT:-}" ]; then
+		[ "$(id -u)" -ne 0 ] || fail "test-root mode is unavailable to privileged installations"
 		case "$INSTALL_ROOT/" in "${AIDR_FLEET_TEST_ROOT%/}"/*) ;; *) fail "test install root escaped AIDR_FLEET_TEST_ROOT" ;; esac
 		case "$STATE_ROOT/" in "${AIDR_FLEET_TEST_ROOT%/}"/*) ;; *) fail "test state root escaped AIDR_FLEET_TEST_ROOT" ;; esac
 		return
@@ -83,16 +84,21 @@ acquire_lock() {
 	mkdir -p "$INSTALL_ROOT"; chmod 755 "$INSTALL_ROOT"
 	mkdir -m 700 "$INSTALL_ROOT/.fleet-operation.lock" 2>/dev/null || fail "another AIDR fleet lifecycle operation is active; retry after it completes"
 	LOCK_HELD=1
-	trap release_lock EXIT HUP INT TERM
+	trap release_lock EXIT
+	trap 'release_lock; exit 1' HUP INT TERM
 }
 
 check_public_key_permissions() {
+	[ ! -L "$PUBLIC_KEY" ] || fail "release public key must not be a symlink"
+	[ ! -L "$(dirname "$PUBLIC_KEY")" ] || fail "release public key directory must not be a symlink"
 	[ "${AIDR_FLEET_TEST_ROOT:-}" ] && return
-	if [ "$PLATFORM" = macos ]; then owner=$(stat -f '%u' "$PUBLIC_KEY"); mode=$(stat -f '%Lp' "$PUBLIC_KEY")
-	else owner=$(stat -c '%u' "$PUBLIC_KEY"); mode=$(stat -c '%a' "$PUBLIC_KEY"); fi
-	[ "$owner" = 0 ] || fail "release public key must be owned by root"
-	last_two=$(printf '%s' "$mode" | sed 's/.*\(..\)$/\1/')
-	case "$last_two" in *[2367]*) fail "release public key must not be group/world writable" ;; esac
+	for trust_path in "$PUBLIC_KEY" "$(dirname "$PUBLIC_KEY")"; do
+		if [ "$PLATFORM" = macos ]; then owner=$(stat -f '%u' "$trust_path"); mode=$(stat -f '%Lp' "$trust_path")
+		else owner=$(stat -c '%u' "$trust_path"); mode=$(stat -c '%a' "$trust_path"); fi
+		[ "$owner" = 0 ] || fail "release public key and directory must be owned by root"
+		last_two=$(printf '%s' "$mode" | sed 's/.*\(..\)$/\1/')
+		case "$last_two" in *[2367]*) fail "release public key and directory must not be group/world writable" ;; esac
+	done
 }
 
 verify_artifact() {
@@ -108,7 +114,7 @@ verify_artifact() {
 	entries=$(tar -tzf "$ARTIFACT" | wc -l | tr -d ' '); [ "$entries" -le 5000 ] || fail "artifact exceeds the 5000-entry limit"
 	# Reject absolute/traversing names and links before extracting the archive.
 	tar -tzf "$ARTIFACT" | awk 'BEGIN{bad=0} /\\/{bad=1} /^\//{bad=1} {n=split($0,a,"/"); for(i=1;i<=n;i++) if(a[i]=="..") bad=1} END{exit bad}' || fail "unsafe archive path"
-	tar -tvzf "$ARTIFACT" | awk 'substr($1,1,1)!="-" && substr($1,1,1)!="d" {exit 1}' || fail "archive entries must be regular files or directories"
+	LC_ALL=C tar -tvzf "$ARTIFACT" | awk 'BEGIN{total=0;bad=0} {type=substr($1,1,1); if(type!="-" && type!="d"){bad=1;exit 1} if(type=="d") next; size=$3; if(size!~/^[0-9]+$/){bad=1;exit 1} total+=size; if(total>536870912){bad=1;exit 1}} END{if(bad || NR==0 || total>536870912) exit 1}' || fail "archive entries must be regular files/directories and fit within the 512 MiB expanded limit"
 	printf '%s\n' "$actual"
 }
 
@@ -124,7 +130,9 @@ resolve_identity() {
 }
 
 run_for_user() {
-	if [ "${AIDR_FLEET_TEST_ROOT:-}" ] || [ "$(id -un)" = "$TARGET_USER" ]; then
+	if [ "${AIDR_FLEET_TEST_ROOT:-}" ] && [ "$(id -u)" -ne 0 ]; then
+		env HOME="$TARGET_HOME" USERPROFILE="$TARGET_HOME" "$@"
+	elif [ "$(id -un)" = "$TARGET_USER" ]; then
 		env HOME="$TARGET_HOME" USERPROFILE="$TARGET_HOME" "$@"
 	elif [ "$PLATFORM" = macos ]; then
 		uid=$(id -u "$TARGET_USER")
@@ -148,7 +156,19 @@ stage_release() {
 	printf '%s' "$SHA256" | grep -Eq '^[a-f0-9]{64}$' || fail "--sha256 must be one lowercase SHA-256 digest"
 	digest=$SHA256
 	release="$INSTALL_ROOT/releases/$digest"
-	if [ ! -d "$release/package" ]; then
+	if [ -L "$release" ]; then fail "release path must not be a symlink"; fi
+	if [ -d "$release/package" ]; then
+		[ ! -L "$release/package" ] || fail "retained package path must not be a symlink"
+		# Verify both the supplied candidate and the retained bytes before reuse.
+		verify_artifact >/dev/null
+		ARTIFACT="$release/artifact.tgz"; SIGNATURE="$release/artifact.sig"
+		verify_artifact >/dev/null
+	elif [ -e "$release" ]; then
+		# A previous interrupted publish can leave the digest directory behind.
+		# Never move a new staging tree into that directory: it would nest the
+		# package and make every retry fail at activation.
+		fail "existing release directory is incomplete; preserve it for investigation and remove it only after review"
+	else
 		mkdir -p "$INSTALL_ROOT/releases"
 		chmod 755 "$INSTALL_ROOT" "$INSTALL_ROOT/releases"
 		temporary="$INSTALL_ROOT/releases/.staging-$digest-$$"
@@ -174,11 +194,6 @@ stage_release() {
 		if [ -z "${AIDR_FLEET_TEST_ROOT:-}" ]; then chown -R 0 "$temporary"; fi
 		mv "$temporary" "$release"
 		STAGING_PATH=
-	else
-		# Verify both the supplied candidate and the retained bytes before reuse.
-		verify_artifact >/dev/null
-		ARTIFACT="$release/artifact.tgz"; SIGNATURE="$release/artifact.sig"
-		verify_artifact >/dev/null
 	fi
 	STAGED_RELEASE=$digest
 }

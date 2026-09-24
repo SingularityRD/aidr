@@ -10,6 +10,13 @@ function record(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function freezeTree(value, seen = new WeakSet()) {
+	if (value === null || typeof value !== "object" || seen.has(value)) return value;
+	seen.add(value);
+	for (const child of Object.values(value)) freezeTree(child, seen);
+	return Object.freeze(value);
+}
+
 function validId(value) {
 	return typeof value === "string" && ID.test(value);
 }
@@ -106,6 +113,10 @@ function validateScopes(clients, servers) {
 }
 
 export function validateGatewayConfig(input) {
+	// The caller may retain or expose its input object. Validate and retain a
+	// detached immutable snapshot so later mutations cannot widen tenant scope,
+	// replace an upstream, or alter a trusted manifest after startup.
+	input = structuredClone(input);
 	requireKeys(input, ["stateDir", "port", "maxBodyBytes", "clients", "servers"], "gateway config");
 	if (typeof input.stateDir !== "string" || !input.stateDir.trim())
 		throw new Error("invalid stateDir");
@@ -124,7 +135,7 @@ export function validateGatewayConfig(input) {
 	const clients = input.clients.map((client) => validateClient(client, clientKeys, tokenHashes));
 	const servers = input.servers.map((server) => validateServer(server, serverKeys));
 	validateScopes(clients, servers);
-	return { stateDir: resolve(input.stateDir), port, maxBodyBytes, clients, servers };
+	return freezeTree({ stateDir: resolve(input.stateDir), port, maxBodyBytes, clients, servers });
 }
 
 export function authenticateBearer(header, clients) {

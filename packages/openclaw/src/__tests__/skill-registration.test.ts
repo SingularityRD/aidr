@@ -4,13 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const PKG_ROOT = resolve(import.meta.dirname, "..", "..");
 const MANIFEST_PATH = resolve(PKG_ROOT, "openclaw.plugin.json");
-const SYNCED_SKILL_PATH = resolve(
-	PKG_ROOT,
-	"resources",
-	"skills",
-	"security-awareness",
-	"SKILL.md",
-);
+const SOURCE_SKILL_PATH = resolve(PKG_ROOT, "..", "..", "skills", "security-awareness", "SKILL.md");
 
 /** Parse simple YAML frontmatter key-value pairs without requiring the yaml package. */
 function parseFrontmatter(raw: string): Record<string, string> {
@@ -25,15 +19,15 @@ function parseFrontmatter(raw: string): Record<string, string> {
 describe("openclaw skill registration", () => {
 	it("declares security-awareness skill in plugin manifest", async () => {
 		const manifest = await import(MANIFEST_PATH, { with: { type: "json" } });
-		expect(manifest.default.skills).toContain("resources/skills/security-awareness");
+		expect(manifest.default.skills).toContain("dist/resources/skills/security-awareness");
 	});
 
-	it("synced SKILL.md exists on disk", async () => {
-		await expect(access(SYNCED_SKILL_PATH)).resolves.toBeUndefined();
+	it("source SKILL.md exists on disk", async () => {
+		await expect(access(SOURCE_SKILL_PATH)).resolves.toBeUndefined();
 	});
 
-	it("synced SKILL.md has valid frontmatter matching source", async () => {
-		const content = await readFile(SYNCED_SKILL_PATH, "utf-8");
+	it("source SKILL.md has valid frontmatter", async () => {
+		const content = await readFile(SOURCE_SKILL_PATH, "utf-8");
 		const parts = content.split("---");
 		expect(parts.length).toBeGreaterThanOrEqual(3);
 

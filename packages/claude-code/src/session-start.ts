@@ -2,7 +2,7 @@
 /**
  * Singularity AIDR SessionStart hook entry point.
  * Scans installed Claude Code plugins for threats at session startup.
- * Always exits 0 — outputs status JSON with systemMessage.
+ * Outputs status JSON and exits non-zero when protection cannot start.
  */
 
 import { readFileSync } from "node:fs";
@@ -13,6 +13,7 @@ import {
 	initSentry,
 	type Logger,
 	runPluginScan,
+	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { pruneStaleSessionFiles } from "./approval-tracker.js";
 import { resolveAssetDir, resolvePluginRoot } from "./assets.js";
@@ -36,23 +37,12 @@ function getPluginManifest(pluginRoot: string): { name: string | null; version: 
 }
 
 async function main(): Promise<void> {
+	await verifyArtifactIntegrityAndLog({
+		artifactDir: __dirname,
+		artifactId: "claude-code/dist",
+		logger,
+	});
 	await pruneStaleSessionFiles(logger);
-	try {
-		// biome-ignore lint/suspicious/noExplicitAny: Transitional wiring
-		const core = (await import("@singularityrd/aidr-core")) as any;
-		const fn = core?.verifyArtifactIntegrityAndLog as
-			| ((args: { artifactDir: string; artifactId: string; logger?: unknown }) => Promise<unknown>)
-			| undefined;
-		if (typeof fn === "function") {
-			await fn({
-				artifactDir: __dirname,
-				artifactId: "claude-code/dist",
-				logger,
-			});
-		}
-	} catch {
-		// Fail open
-	}
 
 	const pluginRoot = resolvePluginRoot();
 	const threatsDir = resolveAssetDir("threats");
@@ -79,5 +69,8 @@ async function main(): Promise<void> {
 }
 
 main().catch(() => {
-	process.stdout.write("{}\n");
+	process.stdout.write(
+		`${JSON.stringify({ systemMessage: "Singularity AIDR protection failed to start; the session is not protected." })}\n`,
+	);
+	process.exitCode = 1;
 });

@@ -6,6 +6,7 @@
 import {
 	type ApprovalStore,
 	type Artifact,
+	createHostObservation,
 	extractFromBash,
 	extractFromEdit,
 	extractFromUnknownTool,
@@ -16,6 +17,7 @@ import {
 	guardToolCall,
 	type Logger,
 	loadProvisionedDetectorContext,
+	recordHostObservation,
 } from "@singularityrd/aidr-core";
 
 export interface ToolCallEvent {
@@ -75,12 +77,21 @@ export function createToolCallHandler(
 	threatsDir: string,
 	allowlistsDir: string,
 ): (event: ToolCallEvent, ctx?: ToolCallContext) => Promise<BlockResult | undefined> {
+	const hostObservation = createHostObservation();
 	async function handleToolCall(
 		event: ToolCallEvent,
 		ctx?: ToolCallContext,
 	): Promise<BlockResult | undefined> {
+		const toolName = typeof event?.toolName === "string" ? event.toolName : "unknown";
+		// Record delivery to the enforcement boundary before any parsing, policy
+		// loading or evaluation can fail. The outcome is a separate, optional row.
+		recordHostObservation(hostObservation, {
+			connector: "openclaw",
+			event: "before_tool_call",
+			toolName,
+		});
 		try {
-			const { toolName, params } = event;
+			const params = event.params;
 
 			// Core may find artifacts after normalizing connector-specific fields.
 			const artifacts = mapToolToArtifacts(toolName, params) ?? [];
@@ -97,6 +108,12 @@ export function createToolCallHandler(
 				{ threatsDir, allowlistsDir, logger, agentRuntime: "openclaw", ...provisioned },
 				approvalStore,
 			);
+			recordHostObservation(hostObservation, {
+				connector: "openclaw",
+				event: "before_tool_call_outcome",
+				toolName,
+				decision: verdict.decision,
+			});
 
 			if (verdict.decision === "allow") return undefined;
 

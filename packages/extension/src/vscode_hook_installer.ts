@@ -26,9 +26,9 @@ export async function installManagedHooks(
 
 	const runnerPath = await resolveRunnerPath(options.context);
 	const nodePath = resolveNodeRuntimePath();
+	const settings = await readSettingsFile(configPath);
 	const command = await buildHookCommand(configPath, nodePath, runnerPath);
 
-	const settings = await readSettingsFile(configPath);
 	const updated = upsertManagedHooks(settings, command);
 	await writeSettingsFile(configPath, updated);
 
@@ -164,7 +164,7 @@ function assertSafePathForShim(pathValue: string, label: string): void {
 function upsertManagedHooks(existing: SettingsObject, command: string): SettingsObject {
 	const hooks = cloneHookSettings(existing.hooks);
 	hooks.PreToolUse = appendManaged(asMatcherEntries(hooks.PreToolUse), {
-		matcher: "Bash|WebFetch|Write|Edit|Read|Delete",
+		matcher: "Bash|WebFetch|Write|Edit|Read|Delete|editFiles",
 		hooks: [
 			{
 				type: "command",
@@ -270,15 +270,28 @@ function isManagedCommandHook(entry: HookCommandEntry): boolean {
 }
 
 async function readSettingsFile(filePath: string): Promise<SettingsObject> {
+	let contents: string;
 	try {
-		const parsed = JSON.parse(await readFile(filePath, "utf8"));
-		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-			return parsed as SettingsObject;
-		}
-		return {};
-	} catch {
-		return {};
+		contents = await readFile(filePath, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+		throw error;
 	}
+	const parsed: unknown = JSON.parse(contents);
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new Error("Invalid VS Code hook settings.");
+	}
+	const settings = parsed as SettingsObject;
+	if (
+		settings.hooks !== undefined &&
+		(!settings.hooks ||
+			typeof settings.hooks !== "object" ||
+			Array.isArray(settings.hooks) ||
+			Object.values(settings.hooks).some((entries) => !Array.isArray(entries)))
+	) {
+		throw new Error("Invalid VS Code hook settings.");
+	}
+	return settings;
 }
 
 async function writeSettingsFile(filePath: string, data: SettingsObject): Promise<void> {

@@ -8,10 +8,10 @@
   "main": "./dist/index.js",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "bin": { "aidr-codex-hook": "./dist/pre-tool-use.cjs" },
-  "files": ["dist/**", "resources/**", "package.json", "README.md", "LICENSE"],
+  "files": ["dist/**", "package.json", "README.md", "LICENSE"],
   "scripts": {
-    "build": "node ../../scripts/ensure-core-build.mjs && pnpm run sync:assets && node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && node esbuild.config.js && tsc",
-    "build:release": "pnpm run sync:assets && node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && node esbuild.config.js --release && tsc && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "build": "node ../../scripts/ensure-core-build.mjs && node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && node esbuild.config.js && tsc && pnpm run sync:assets",
+    "build:release": "node ../../scripts/ensure-core-build.mjs --release && node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && node esbuild.config.js --release && tsc && pnpm run sync:assets && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id codex/dist && node ../../scripts/check-no-sourcemaps.mjs dist",
     "clean": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo",
     "sync:assets": "node scripts/sync-assets.mjs",
     "typecheck": "tsc --noEmit",
@@ -28,7 +28,7 @@
     "@types/node": "^22.0.0",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.11"
   },
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=22.12.0" }
 }

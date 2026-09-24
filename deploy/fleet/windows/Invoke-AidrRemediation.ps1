@@ -187,6 +187,7 @@ $receiptPath = $null
 $connectorRoot = $null
 $connectorPath = $null
 $digest = $null
+$settingsBytes = $null
 try {
     $target = Get-AidrValidatedTargetHome $TargetHome
     $settingsPath = Join-Path $target '.claude/settings.json'
@@ -234,7 +235,8 @@ try {
     $settingsExisted = Test-Path -LiteralPath $settingsPath -PathType Leaf
     $settingsRaw = $null
     if ($settingsExisted) {
-        $settingsRaw = [IO.File]::ReadAllText($settingsPath)
+        $settingsBytes = [IO.File]::ReadAllBytes($settingsPath)
+        $settingsRaw = [Text.UTF8Encoding]::new($false, $true).GetString($settingsBytes)
         try { $settings = $settingsRaw | ConvertFrom-Json } catch { throw "$settingsPath is not valid JSON; it was not rewritten" }
         if ($null -eq $settings -or $settings -is [array]) { $reasonCode = 'settings_not_an_object'; throw "$settingsPath is not a JSON object" }
     }
@@ -319,21 +321,29 @@ try {
         $settings.hooks | Add-Member -NotePropertyName $event -NotePropertyValue @($kept) -Force
     }
 
+    Assert-AidrJsonDepth $settings
     $parent = Split-Path -Parent $settingsPath
     [IO.Directory]::CreateDirectory($parent) | Out-Null
     $backupPath = $null
+    $reasonCode = 'settings_changed_during_operation'
+    Assert-AidrFileUnchanged -Path $settingsPath -OriginalBytes $settingsBytes
     if ($settingsExisted) {
         $backupPath = Join-Path $parent ("settings.json.aidr-remediate-backup-{0}" -f [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
         Copy-Item -LiteralPath $settingsPath -Destination $backupPath
     }
     $temporary = Join-Path $parent ("settings.{0}.tmp" -f [Guid]::NewGuid().ToString('N'))
-    [IO.File]::WriteAllText($temporary, (($settings | ConvertTo-Json -Depth 30) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
-    if ($settingsExisted) {
-        $replaceBackup = Join-Path $parent ("settings.{0}.replace-backup" -f [Guid]::NewGuid().ToString('N'))
-        [IO.File]::Replace($temporary, $settingsPath, $replaceBackup)
-        [IO.File]::Delete($replaceBackup)
-    } else {
-        [IO.File]::Move($temporary, $settingsPath)
+    try {
+        [IO.File]::WriteAllText($temporary, (($settings | ConvertTo-Json -Depth 100) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
+        Assert-AidrFileUnchanged -Path $settingsPath -OriginalBytes $settingsBytes
+        if ($settingsExisted) {
+            $replaceBackup = Join-Path $parent ("settings.{0}.replace-backup" -f [Guid]::NewGuid().ToString('N'))
+            [IO.File]::Replace($temporary, $settingsPath, $replaceBackup)
+            [IO.File]::Delete($replaceBackup)
+        } else {
+            [IO.File]::Move($temporary, $settingsPath)
+        }
+    } finally {
+        if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
     }
 
     $stage = 'verify'

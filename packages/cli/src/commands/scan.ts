@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import chalk from "chalk";
 import { atomicWriteJson, resolvePath, cveCount, fingerprintCount, type AigInfraTargetResult, scanTargets } from "@singularityrd/aidr-core";
 
 interface ScanOptions {
@@ -26,8 +25,8 @@ async function scanCommand(options: ScanOptions): Promise<void> {
 	const targets = collectTargets(options);
 
 	if (targets.length === 0) {
-		console.log(chalk.blue("\n🛡️  AIDR infrastructure scan\n"));
-		console.log(chalk.yellow("No targets given."));
+		console.log("\n🛡️  AIDR infrastructure scan\n");
+		console.log("No targets given.");
 		console.log("\nUsage:");
 		console.log("  aidr scan --target http://127.0.0.1:8080");
 		console.log("  aidr scan --target http://127.0.0.1:8080 --target http://10.0.0.4:3000");
@@ -38,9 +37,7 @@ async function scanCommand(options: ScanOptions): Promise<void> {
 		console.log("  --timeout <ms>     per-request timeout (default 3000)");
 		console.log("  --concurrency <n>  parallel targets (default 4)");
 		console.log(
-			chalk.gray(
-				`\nDataset: ${fingerprintCount()} fingerprints, ${cveCount()} CVEs (compiled from AI-Infra-Guard).\n`,
-			),
+			`\nDataset: ${fingerprintCount()} fingerprints, ${cveCount()} CVEs (compiled from AI-Infra-Guard).\n`,
 		);
 		return;
 	}
@@ -51,9 +48,7 @@ async function scanCommand(options: ScanOptions): Promise<void> {
 
 	if (allowPublic) {
 		console.error(
-			chalk.yellow(
-				"⚠️  --allow-public is set: targets outside loopback/private ranges will be contacted.\n",
-			),
+			"⚠️  --allow-public is set: targets outside loopback/private ranges will be contacted.\n",
 		);
 	}
 
@@ -82,9 +77,7 @@ function collectTargets(options: ScanOptions): string[] {
 			}
 		} catch (error) {
 			console.error(
-				chalk.red(
-					`Could not read target file ${options.file}: ${error instanceof Error ? error.message : String(error)}`,
-				),
+				`Could not read target file ${options.file}: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			process.exit(1);
 		}
@@ -101,10 +94,10 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 function describe(result: AigInfraTargetResult): string {
 	if (result.matched.length === 0) {
 		if (result.error === "target_not_allowed") {
-			return chalk.yellow("skipped - not a loopback/private target (use --allow-public)");
+			return "skipped - not a loopback/private target (use --allow-public)";
 		}
-		if (result.reachable) return chalk.gray("reachable, no known product identified");
-		return chalk.gray(`not scanned (${result.error ?? "unreachable"})`);
+		if (result.reachable) return "reachable, no known product identified";
+		return `not scanned (${result.error ?? "unreachable"})`;
 	}
 	return result.matched
 		.map((m) => `${m.name}${m.version ? ` ${m.version}` : " (version unknown)"}`)
@@ -115,35 +108,34 @@ function printHumanSummary(
 	summary: Awaited<ReturnType<typeof scanTargets>>,
 	targetCount: number,
 ): void {
-	console.log(chalk.blue("\n🛡️  AIDR infrastructure scan\n"));
-	console.log(chalk.gray(`Targets: ${targetCount}   Dataset: ${fingerprintCount()} fingerprints / ${cveCount()} CVEs\n`));
+	console.log("\n🛡️  AIDR infrastructure scan\n");
+	console.log(`Targets: ${targetCount}   Dataset: ${fingerprintCount()} fingerprints / ${cveCount()} CVEs\n`);
 
 	for (const result of summary.targets) {
 		const findings = result.cves.length;
-		const marker =
-			findings > 0 ? chalk.red("●") : result.matched.length > 0 ? chalk.green("●") : chalk.gray("○");
+		const marker = findings > 0 ? "!" : result.matched.length > 0 ? "✓" : "○";
 		console.log(`${marker} ${result.url}`);
 		console.log(`    ${describe(result)}`);
 		if (findings > 0) {
 			const shown = result.cves.slice(0, 10);
 			for (const cve of shown) {
-				const conf = cve.evaluated ? "" : chalk.yellow(" (applicability unconfirmed)");
-				const score = cve.cvss !== null ? chalk.gray(` cvss ${cve.cvss}`) : "";
-				console.log(`      ${chalk.red(cve.cveId)}  ${cve.severity}${score}${conf}`);
+				const conf = cve.evaluated ? "" : " (applicability unconfirmed)";
+				const score = cve.cvss !== null ? ` cvss ${cve.cvss}` : "";
+				console.log(`      ${cve.cveId}  ${cve.severity}${score}${conf}`);
 			}
 			if (result.cves.length > shown.length) {
-				console.log(chalk.gray(`      ... and ${result.cves.length - shown.length} more`));
+				console.log(`      ... and ${result.cves.length - shown.length} more`);
 			}
 		}
 		// An unreachable/unevaluated result must never be presented as clean.
 		if (result.error && result.error !== "target_not_allowed" && result.reachable) {
-			console.log(chalk.yellow(`    note: ${result.error} - result is not a clean verdict`));
+			console.log(`    note: ${result.error} - result is not a clean verdict`);
 		}
 	}
 
 	console.log("");
 	console.log(
-		`Findings: ${chalk.red(String(summary.critical))} critical, ${chalk.yellow(String(summary.high))} high (${summary.cvesFound} total)`,
+		`Findings: ${summary.critical} critical, ${summary.high} high (${summary.cvesFound} total)`,
 	);
 
 	// Distinguish "inspected and found nothing" from "never inspected". Reporting
@@ -156,20 +148,16 @@ function printHumanSummary(
 
 	if (scanned === 0) {
 		console.log(
-			chalk.yellow(
-				`\nNo target was scanned (${skipped} skipped, ${unreachable} unreachable). This is NOT a clean result.\n`,
-			),
+			`\nNo target was scanned (${skipped} skipped, ${unreachable} unreachable). This is NOT a clean result.\n`,
 		);
 		return;
 	}
 
 	if (summary.cvesFound === 0) {
 		console.log(
-			chalk.gray(
-				`\nNo vulnerabilities matched across ${scanned} scanned target(s). This is not proof of safety:\n` +
-					"it reflects only the compiled fingerprint and CVE dataset, for the targets that were\n" +
-					"reachable and identified.\n",
-			),
+			`\nNo vulnerabilities matched across ${scanned} scanned target(s). This is not proof of safety:\n` +
+				"it reflects only the compiled fingerprint and CVE dataset, for the targets that were\n" +
+				"reachable and identified.\n",
 		);
 	}
 }
@@ -180,7 +168,7 @@ function setExitCode(summary: Awaited<ReturnType<typeof scanTargets>>): void {
 		process.exitCode = 2;
 		return;
 	}
-	process.exitCode = 0;
+	process.exitCode = summary.targets.some((target) => target.error !== null) ? 1 : 0;
 }
 
 export default scanCommand;

@@ -1,10 +1,10 @@
 # Singularity AIDR
 
-Singularity AIDR is a lightweight AI Agent Detection & Response layer that protects AI agents from executing dangerous actions on your machine.
+Singularity AIDR evaluates supported, named tool calls that an enabled Cursor or VS Code hook forwards to it and returns a verdict. Whether the host enforces that verdict depends on the host, version, and event path; no real-host acceptance is recorded. Disabled, crashed, timed-out, unmapped, and directly bypassed paths are not covered uniformly.
 
 ## What it does
 
-When an AI agent makes a tool call — running a shell command, writing a file, or fetching a URL — Singularity AIDR intercepts it and checks for threats before it executes.
+For a forwarded shell command, file operation, or URL fetch, Singularity AIDR checks the request before the host action. A returned `deny` alone does not prove that the host prevented the side effect.
 
 ### Detection layers
 
@@ -17,16 +17,24 @@ When an AI agent makes a tool call — running a shell command, writing a file, 
 | Decision | Meaning |
 |----------|---------|
 | **Allow** | No threats detected — tool call proceeds |
-| **Ask** | Suspicious activity — you are prompted for approval |
-| **Deny** | Threat detected — tool call is blocked |
+| **Ask** | Suspicious activity — approval depends on the host; unsupported approval responses are denied |
+| **Deny** | Threat detected — AIDR returns a deny response; host-side blocking is not yet accepted on a real host |
+
+Cursor's `preToolUse` response does not provide an enforceable approval prompt,
+so an `ask` verdict is returned as an explicit deny.
 
 ## Getting started
+
+For VS Code Local agent hooks, enable `chat.useClaudeHooks` in VS Code User
+Settings before running Enable protection. The extension checks and reports
+this prerequisite but does not change editor settings. Cursor users do not need
+this VS Code setting.
 
 1. Install the extension
 2. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
 3. Run **Singularity AIDR: Enable protection**
 
-That's it. Singularity AIDR now monitors all agent tool calls.
+Protection applies to supported tool calls intercepted by the installed host hooks.
 
 ## Commands
 
@@ -55,20 +63,49 @@ bound to the same tenant as the verified managed entitlement. Provisioning is
 opt-in: with no bundle and no `runtime_detectors` module on the signed
 entitlement, the hooks evaluate exactly as they do without a tenant policy. A
 bundle that is present but invalid — or required by the signed entitlement and
-missing — produces a deny verdict; the hook still exits with code `0` so a
-killed or failed hook can never pass the call through uninspected.
+missing — produces a deny verdict when the hook runs. Cursor managed hooks also
+request `failClosed: true`. These source-level responses do not prove how a real
+host handles a process killed or timed out before it can return JSON; that
+failure path remains a native-host acceptance requirement.
 
 The policy's labels and rules are whatever the tenant's signed bundle defines;
 this extension ships no customer label taxonomy and assumes none.
 
-**Limitation.** This is the extension's pre-tool-call path only. The output
-inspection paths (`postToolUse`, `afterAgentResponse`) audit and, where the host
-allows it, quarantine results; they do not take a detector policy, so a
-provisioned tenant DLP policy does not apply to tool **output**.
+**Output limitations.** Cursor can return an MCP-output replacement, but this
+has not been verified against a real host; non-MCP tool output is advisory and
+the original can reach the model. VS Code `PostToolUse` runs after the action
+and returns context/block information without replacing bytes already returned,
+so the original may already be in the model transcript. Cursor
+`afterAgentResponse` is observation-only. These output hooks do not take a
+provisioned tenant detector policy, so that policy does not apply to tool
+**output**. None of these paths is a pre-execution or accepted containment
+guarantee.
+
+## Release packaging
+
+Distributable VSIX files come from the protected release-candidate pipeline.
+It prepares and signs `dist`, generates the SBOM/checksum, and runs the
+canonical packager. The explicitly named
+`package:vsix:from-signed-dist` command is only for a restored, already signed
+RC `dist`; it performs no build or signing and fails closed if any evidence is
+missing. The host-specific variants follow the same `:from-signed-dist`
+contract.
 
 ## Privacy
 
-Singularity AIDR sends URL hashes and package hashes to SingularityRD reputation APIs. File content, commands, and source code stay local. Both services can be disabled for fully offline operation.
+When enabled, URL reputation sends the extracted **full URL** (not just a hash)
+to the configured reputation endpoint. Package checks can send package names,
+versions, registry metadata and file hashes to registries and the configured
+reputation service. This leg does not upload file contents; managed telemetry,
+deep scans and diagnostics have separate documented data flows. Disable URL,
+file and package checks and verify egress for an offline source/development
+pilot. See [privacy](../../docs/privacy.md).
+
+The Cursor and VS Code extensions do not initialize Sentry or send extension
+crash telemetry. Command errors are shown locally, and hook verdicts are written
+to the configured local JSONL audit log. Native-host acceptance receipts are
+also local and are emitted only when the acceptance runner supplies the complete
+`AIDR_NATIVE_TEST_*` environment contract.
 
 ## Links
 
@@ -76,5 +113,3 @@ Singularity AIDR sends URL hashes and package hashes to SingularityRD reputation
 - [Configuration docs](https://github.com/singularityrd/aidr/blob/main/docs/configuration.md)
 - [Threat rules](https://github.com/singularityrd/aidr/blob/main/docs/threat-rules.md)
 - [Privacy](https://github.com/singularityrd/aidr/blob/main/docs/privacy.md)
-
-

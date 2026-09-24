@@ -4,7 +4,7 @@
   "version": "0.6.0",
   "private": true,
   "type": "module",
-  "files": ["dist", "README.md"],
+  "files": ["dist", "dist/LICENSE", "README.md"],
   "bin": {
     "aidr-mcp-gateway": "dist/aidr-mcp-gateway.mjs",
     "aidr-mcp-approve": "dist/aidr-mcp-approve.mjs",
@@ -19,6 +19,6 @@
     "esbuild": "^0.28.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   }
 }

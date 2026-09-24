@@ -17,7 +17,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,6 +55,12 @@ describe("live model-interception runner", () => {
 		assert.match(result.output, /unknown argument/);
 	});
 
+	it("rejects an unknown diagnostic case before using credentials", () => {
+		const result = run(["--host", "codex", "--case", "not-a-case"]);
+		assert.equal(result.status, 1);
+		assert.match(result.output, /unknown case/);
+	});
+
 	it("requires a value for every declared option", () => {
 		const result = run(["--host"]);
 		assert.equal(result.status, 1);
@@ -73,28 +79,28 @@ describe("live model-interception runner", () => {
 		}
 	});
 
-	it("refuses when the host has no session, instead of reporting an unauthenticated run", () => {
-		// Point USERPROFILE at an empty directory so no auth.json exists. The runner
-		// must exit blocked and must not attempt to run the host unauthenticated.
+	it("never copies a profile session without an explicit credential path", () => {
+		// A session exists in this disposable profile. The runner must still refuse
+		// before starting the host unless the operator supplied its path.
 		const dir = mkdtempSync(join(tmpdir(), "aidr-live-model-test-"));
 		try {
-			const result = execFileSync(process.execPath, ["--version"], { encoding: "utf8" });
-			assert.ok(result);
+			mkdirSync(join(dir, ".codex"));
+			writeFileSync(join(dir, ".codex", "auth.json"), "synthetic-test-only");
 			let captured;
 			try {
-				execFileSync(process.execPath, [SCRIPT, "--host", "codex"], {
+				execFileSync(process.execPath, [SCRIPT, "--host", "codex", "--exe", process.execPath], {
 					cwd: ROOT,
 					encoding: "utf8",
 					stdio: ["ignore", "pipe", "pipe"],
 					timeout: 60_000,
-					env: { ...process.env, USERPROFILE: dir, HOME: dir },
+					env: { ...process.env, AIDR_CODEX_CREDENTIALS: "", USERPROFILE: dir, HOME: dir },
 				});
 				captured = { status: 0, output: "" };
 			} catch (error) {
 				captured = { status: error.status ?? 1, output: `${error.stdout ?? ""}${error.stderr ?? ""}` };
 			}
-			assert.equal(captured.status, 3, "no session must exit blocked");
-			assert.match(captured.output, /no Codex session|codex login/);
+			assert.equal(captured.status, 3, "implicit profile session must exit blocked");
+			assert.match(captured.output, /explicit Codex session is required/);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -118,5 +124,16 @@ describe("live model-interception runner", () => {
 		assert.ok(dangerous.length >= 3, "expected at least three declared cases");
 		assert.equal(benign.length, dangerous.length, "every dangerous case needs a control");
 		for (const control of benign) assert.match(control, /^echo /, `control must be a harmless command: ${control}`);
+	});
+
+	it("requires an AIDR receipt and writable isolated workspace, not a host sandbox denial", () => {
+		const source = execFileSync(process.execPath, ["-e", "process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))", SCRIPT], { encoding: "utf8" });
+		assert.match(source, /--sandbox", "workspace-write"/);
+		assert.match(source, /AIDR_NATIVE_TEST_RECEIPT: receiptPath/);
+		assert.match(source, /dangerous\.aidrDecision/);
+		assert.match(source, /benign\.aidrDecision === "allow"/);
+		assert.match(source, /!dangerous\.hostSandboxReadOnly/);
+		assert.match(source, /host-sandbox-blocked/);
+		assert.doesNotMatch(source, /dangerous: "rm -rf \/tmp\//);
 	});
 });

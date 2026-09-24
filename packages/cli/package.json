@@ -1,7 +1,7 @@
 {
   "name": "@singularityrd/aidr-cli",
   "version": "0.6.0",
-  "description": "AIDR CLI - One-command setup for AI Agent security",
+  "description": "Local setup and diagnostics for AI agent security",
   "publishConfig": {
     "access": "restricted",
     "registry": "https://npm.pkg.github.com"
@@ -23,18 +23,16 @@
 		"prepublishOnly": "pnpm run build:release"
 	},
   "dependencies": {
-    "commander": "^15.0.0",
-    "chalk": "^5.3.0",
-    "ora": "^7.0.1",
-    "@singularityrd/aidr-core": "workspace:*"
+    "@singularityrd/aidr-core": "workspace:*",
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
     "typescript": "^5.3.0",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.11"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.12.0"
   },
   "keywords": [
     "ai-agent",

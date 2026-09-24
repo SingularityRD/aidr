@@ -56,7 +56,7 @@ host. `status_vocabulary` in the JSON report always lists all six values.
 | `VERSION_PROBED` | `--probe-only` inventory: the version string was read. Nothing was exercised. | Yes, for `HOST_ACCEPTANCE_OPEN` and above; the probe alone needs only the installed binary |
 | `HOST_ACCEPTANCE_OPEN` | Scenarios ran (or failed) and/or the named `acceptance` record is still incomplete. | **Yes** |
 | `LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN` | Every GA host passed every local case on this one OS/architecture, and the named acceptance record is complete. | **Yes** — plus independent trace collection and named review |
-| `NO_GO` | The gate decision. It is emitted while any accepted-host record is missing, and is never `GO` on repository state alone. | **Yes** — `GO` requires a real host run per sold OS/architecture plus named external acceptance |
+| `NO_GO` | The gate decision. It is emitted while any accepted-host record is missing, and is never `GO` on repository state alone. | **Yes** — `GO` requires a real host run per sold OS/architecture plus named independent release acceptance; an existing customer is not required |
 
 The gate never prints `PASS` for a host row and never exits `0` when no accepted
 host exists. A case-level `PASS` means only that the declared attempt, hook and
@@ -74,6 +74,7 @@ records the refusal as both the row's `scenarios.status` and a
 | `SCENARIO_MANIFEST_UNREADABLE` | The manifest exists but is not valid JSON, so nothing could be validated. |
 | `SCENARIO_MANIFEST_NO_MATCH` | An explicit `--scenario-file` is readable but declares no host advertised by the support matrix. |
 | `SCENARIO_TEMPLATE_IS_NOT_ACCEPTANCE_EVIDENCE` | The manifest is `TEMPLATE.json`, a copy of it, or any manifest still carrying its `REPLACE_WITH_*` placeholders — with or without the `kind`/`template` markers that make it a declared template. |
+| `SCENARIO_HOST_BINARY_MISMATCH` | The manifest would exercise a different executable from the installed host binary probed by the support matrix; no scenario is launched. |
 
 A refused row stays `HOST_ACCEPTANCE_OPEN` and its `scenarios.exitCode` is
 absent: it never becomes `SCENARIOS_PASSED_REVIEW_OPEN`, and the runner's
@@ -227,5 +228,5 @@ of the offending value, and — for manifests that are not templates — an
 4. Run the gate against the filled manifest and record the report. Expect
    `NO_GO`: local scenarios can raise a host row to
    `LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN` at most. Independent trace collection,
-   the sold OS/architecture matrix and named external acceptance remain outside
+   the sold OS/architecture matrix and named independent release acceptance remain outside
    what this repository can produce.

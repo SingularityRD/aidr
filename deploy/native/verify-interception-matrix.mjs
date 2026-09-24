@@ -41,7 +41,8 @@ const DEFAULT_SUPPORT_MATRIX_PATH = join(HERE, "support-matrix.json");
 export const INTERCEPTION_POINTS = [
 	"pre-prompt",
 	"pre-tool",
-	"pre-model-output",
+	"post-tool-output",
+	"pre-delivery-response",
 	"model-stream",
 	"network",
 ];
@@ -63,13 +64,14 @@ export const CONDITION_OUTCOMES = [
 	"fail-open",
 	"unobserved",
 ];
-export const OUTPUT_SIDE_POINTS = ["pre-model-output", "model-stream"];
+export const OUTPUT_SIDE_POINTS = ["post-tool-output", "pre-delivery-response", "model-stream"];
 
 /** The guard a row must be able to point at for each interception point. */
 export const POINT_EVIDENCE_KIND = {
 	"pre-prompt": "prompt-boundary",
 	"pre-tool": "hook-registration",
-	"pre-model-output": "output-inspection",
+	"post-tool-output": "output-inspection",
+	"pre-delivery-response": "output-inspection",
 	"model-stream": "stream-interception",
 	network: "network-boundary",
 };
@@ -111,9 +113,10 @@ export const SUPPORT_MATRIX_MAPPING = {
 		none: [],
 	},
 	outputInterceptionPoint: {
-		"pre-model-output": ["pre-model-output"],
-		"tool-output-inspection": ["pre-model-output"],
-		"post-tool-call": ["pre-model-output"],
+		"post-tool-output": ["post-tool-output"],
+		"pre-delivery-response": ["pre-delivery-response"],
+		"tool-output-inspection": ["post-tool-output"],
+		"post-tool-call": ["post-tool-output"],
 		none: [],
 	},
 };

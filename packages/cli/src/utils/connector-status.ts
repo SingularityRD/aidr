@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { resolvePath } from "@singularityrd/aidr-core";
 
 /**
  * Detect whether a connector is actually installed for each supported runtime.
@@ -22,6 +22,8 @@ import { join } from "node:path";
 export type ConnectorState =
 	/** Registration or package found; host execution has not been attested. */
 	| "installed"
+	/** Evidence could not be read, so installation state is unknown. */
+	| "unavailable"
 	/** The runtime is present but AIDR is not registered with it. */
 	| "runtime_present_not_installed"
 	/** Neither the runtime nor AIDR was found. */
@@ -41,29 +43,62 @@ export interface ConnectorStatus {
 	remedy?: string;
 }
 
-function readJson(path: string): unknown {
+interface FileRead<T> {
+	value: T | null;
+	unavailable: boolean;
+}
+
+function isMissing(error: unknown): boolean {
+	const code = (error as NodeJS.ErrnoException | undefined)?.code;
+	return code === "ENOENT" || code === "ENOTDIR";
+}
+
+function readJson(path: string): FileRead<unknown> {
 	try {
-		return JSON.parse(readFileSync(path, "utf-8"));
-	} catch {
-		return null;
+		return { value: JSON.parse(readFileSync(path, "utf-8")), unavailable: false };
+	} catch (error) {
+		return { value: null, unavailable: !isMissing(error) };
 	}
 }
 
-function fileMentions(path: string, needles: string[]): boolean {
+function readText(path: string): FileRead<string> {
 	try {
-		const raw = readFileSync(path, "utf-8").toLowerCase();
-		return needles.some((n) => raw.includes(n.toLowerCase()));
-	} catch {
-		return false;
+		return { value: readFileSync(path, "utf-8"), unavailable: false };
+	} catch (error) {
+		return { value: null, unavailable: !isMissing(error) };
 	}
 }
 
-function listDirSafe(dir: string): string[] {
+function fileMentions(path: string, needles: string[]): boolean | null {
+	const read = readText(path);
+	if (read.unavailable) return null;
+	if (read.value === null) return false;
+	const raw = read.value.toLowerCase();
+	return needles.some((n) => raw.includes(n.toLowerCase()));
+}
+
+function listDirSafe(dir: string): FileRead<string[]> {
 	try {
-		return readdirSync(dir) as string[];
-	} catch {
-		return [];
+		return { value: readdirSync(dir) as string[], unavailable: false };
+	} catch (error) {
+		return { value: [], unavailable: !isMissing(error) };
 	}
+}
+
+function unavailableStatus(
+	id: ConnectorStatus["id"],
+	label: string,
+	evidence: string[],
+	detail = "AIDR could not read the host registration; installation state is unknown",
+): ConnectorStatus {
+	return {
+		id,
+		label,
+		state: "unavailable",
+		detail,
+		evidence,
+		remedy: "Check the file permissions and rerun 'aidr status' as the host user",
+	};
 }
 
 /**
@@ -76,7 +111,9 @@ function detectClaudeCode(home: string): ConnectorStatus {
 	const pluginsDir = join(home, ".claude", "plugins");
 	const evidence = [settings, pluginsDir];
 
-	const parsed = readJson(settings) as { disableAllHooks?: boolean; enabledPlugins?: Record<string, unknown>; hooks?: { PreToolUse?: Array<{ hooks?: Array<{ type?: string; command?: string }> }> } } | null;
+	const settingsRead = readJson(settings);
+	if (settingsRead.unavailable) return unavailableStatus("claude-code", "Claude Code", evidence);
+	const parsed = settingsRead.value as { disableAllHooks?: boolean; enabledPlugins?: Record<string, unknown>; hooks?: { PreToolUse?: Array<{ hooks?: Array<{ type?: string; command?: string }> }> } } | null;
 	const enabled = Object.entries(parsed?.enabledPlugins ?? {}).some(([name, value]) => /aidr|singularity/i.test(name) && value === true);
 	const hooked = Array.isArray(parsed?.hooks?.PreToolUse) && parsed.hooks.PreToolUse.some((entry) => Array.isArray(entry.hooks) && entry.hooks.some((hook) => hook.type === "command" && typeof hook.command === "string" && /aidr|singularity/i.test(hook.command)));
 	if (parsed?.disableAllHooks !== true && (enabled || hooked)) {
@@ -96,7 +133,7 @@ function detectClaudeCode(home: string): ConnectorStatus {
 			state: "runtime_present_not_installed",
 			detail: "~/.claude/settings.json exists but does not reference AIDR",
 			evidence,
-			remedy: "Add the AIDR marketplace plugin: /plugin marketplace add <repo>, then /plugin install aidr@aidr",
+			remedy: "Verify the publisher-signed release bundle before extracting the Claude plugin, add the extracted directory as a marketplace, then install aidr@aidr",
 		};
 	}
 
@@ -118,7 +155,25 @@ function detectEditor(
 	home: string,
 ): ConnectorStatus {
 	const evidence = [extDir];
-	const hits = listDirSafe(extDir).filter((n) => /aidr|singularity/i.test(n));
+	const listing = listDirSafe(extDir);
+	if (listing.unavailable) return unavailableStatus(id, label, evidence);
+	const expectedName = id === "cursor" ? "aidr-cursor" : "aidr-vscode";
+	const hits: string[] = [];
+	for (const name of listing.value ?? []) {
+		if (!/aidr|singularity/i.test(name)) continue;
+		const manifest = readJson(join(extDir, name, "package.json"));
+		if (manifest.unavailable) return unavailableStatus(id, label, evidence);
+		if (!manifest.value || typeof manifest.value !== "object" || Array.isArray(manifest.value)) continue;
+		const value = manifest.value as Record<string, unknown>;
+		if (
+			typeof value.publisher === "string" &&
+			value.publisher.toLowerCase() === "singularityrd" &&
+			value.name === expectedName &&
+			typeof value.version === "string"
+		) {
+			hits.push(name);
+		}
+	}
 	if (hits.length > 0) {
 		return {
 			id,
@@ -151,7 +206,9 @@ function detectEditor(
 function detectOpenClaw(home: string): ConnectorStatus {
 	const cfg = join(home, ".openclaw", "openclaw.json");
 	const evidence = [cfg];
-	if (existsSync(cfg) && fileMentions(cfg, ["aidr", "singularity"])) {
+	const mentionsAidr = fileMentions(cfg, ["aidr", "singularity"]);
+	if (mentionsAidr === null) return unavailableStatus("openclaw", "OpenClaw", evidence);
+	if (mentionsAidr) {
 		return {
 			id: "openclaw",
 			label: "OpenClaw",
@@ -167,7 +224,7 @@ function detectOpenClaw(home: string): ConnectorStatus {
 			state: "runtime_present_not_installed",
 			detail: "~/.openclaw/openclaw.json exists but does not list AIDR",
 			evidence,
-			remedy: "openclaw plugins install @singularityrd/aidr-openclaw",
+			remedy: "Install the approved version: openclaw plugins install npm:@singularityrd/aidr-openclaw@VERSION (replace VERSION with the exact approved release version)",
 		};
 	}
 	return {
@@ -181,27 +238,72 @@ function detectOpenClaw(home: string): ConnectorStatus {
 
 /** OpenCode discovers plugins from a plugins directory. */
 function detectOpenCode(home: string): ConnectorStatus {
-	const dir = join(home, ".config", "opencode", "plugins");
-	const evidence = [dir];
-	const hits = listDirSafe(dir).filter((n) => /aidr|singularity/i.test(n));
-	if (hits.length > 0) {
+	const configHome = process.env.XDG_CONFIG_HOME?.trim() || join(home, ".config");
+	const configDir = join(configHome, "opencode");
+	const dir = join(configDir, "plugins");
+	const globalConfig = join(configDir, "opencode.json");
+	const packageManifest = join(configDir, "package.json");
+	const evidence = [globalConfig, packageManifest, dir];
+	const configRead = readJson(globalConfig);
+	const packageRead = readJson(packageManifest);
+	if (configRead.unavailable || packageRead.unavailable) {
+		return unavailableStatus("opencode", "OpenCode", evidence);
+	}
+	const config = configRead.value && typeof configRead.value === "object" && !Array.isArray(configRead.value)
+		? (configRead.value as Record<string, unknown>)
+		: {};
+	const manifest = packageRead.value && typeof packageRead.value === "object" && !Array.isArray(packageRead.value)
+		? (packageRead.value as Record<string, unknown>)
+		: {};
+	const dependencies = manifest.dependencies && typeof manifest.dependencies === "object" && !Array.isArray(manifest.dependencies)
+		? (manifest.dependencies as Record<string, unknown>)
+		: {};
+	const configuredNpmPackage = Array.isArray(config.plugin) && config.plugin.includes("@singularityrd/aidr-opencode");
+	const installedNpmPackage = typeof dependencies["@singularityrd/aidr-opencode"] === "string";
+	if (configuredNpmPackage && installedNpmPackage) {
 		return {
 			id: "opencode",
 			label: "OpenCode",
 			state: "installed",
-			detail: `plugin present: ${hits.join(", ")}`,
+			detail: "AIDR npm plugin is listed in OpenCode config; host execution unverified",
+			evidence,
+		};
+	}
+	const listing = listDirSafe(dir);
+	if (listing.unavailable) return unavailableStatus("opencode", "OpenCode", evidence);
+	const localHits: string[] = [];
+	for (const name of listing.value ?? []) {
+		if (!/aidr|singularity/i.test(name)) continue;
+		const path = join(dir, name);
+		let isFile = false;
+		try {
+			isFile = lstatSync(path).isFile();
+		} catch (error) {
+			if (!isMissing(error)) return unavailableStatus("opencode", "OpenCode", evidence);
+		}
+		if (!isFile) continue;
+		const source = readText(path);
+		if (source.unavailable) return unavailableStatus("opencode", "OpenCode", evidence);
+		if (source.value?.includes("Singularity AIDR OpenCode plugin")) localHits.push(name);
+	}
+	if (localHits.length > 0) {
+		return {
+			id: "opencode",
+			label: "OpenCode",
+			state: "installed",
+			detail: `AIDR local plugin file found: ${localHits.join(", ")}; host execution unverified`,
 			evidence,
 		};
 	}
 	return {
 		id: "opencode",
 		label: "OpenCode",
-		state: existsSync(dir) ? "runtime_present_not_installed" : "not_detected",
-		detail: existsSync(dir)
-			? "the OpenCode plugins directory exists but contains no AIDR plugin"
-			: "no ~/.config/opencode/plugins directory found",
+		state: existsSync(configDir) ? "runtime_present_not_installed" : "not_detected",
+		detail: existsSync(configDir)
+			? "OpenCode config contains no registered AIDR plugin"
+			: "no OpenCode config directory found",
 		evidence,
-		remedy: "Install @singularityrd/aidr-opencode into the OpenCode plugins directory",
+		remedy: "Add the approved @singularityrd/aidr-opencode version to package.json and register it in opencode.json",
 	};
 }
 
@@ -215,15 +317,24 @@ function detectCodex(home: string): ConnectorStatus {
 	// TOML and is then silently ignored, so checking for the substring "hooks" is
 	// not enough to claim the connector will run.
 	if (existsSync(cfg)) {
-		const raw = readFileSync(cfg, "utf-8");
-		const hasPascalPreToolUse = /\[\[?\s*hooks\.PreToolUse/.test(raw);
-		const mentionsAidr = /aidr/i.test(raw);
-		if (hasPascalPreToolUse && mentionsAidr) {
+		const configRead = readText(cfg);
+		if (configRead.unavailable) return unavailableStatus("codex", "Codex", evidence);
+		const raw = configRead.value ?? "";
+		const registered = raw.split(/(?=^[ \t]*\[)/m).some((section) => {
+			if (!/^[ \t]*\[\[hooks\.PreToolUse\.hooks\]\][ \t]*(?:#.*)?$/m.test(section)) return false;
+			if (!/^[ \t]*type[ \t]*=[ \t]*["']command["'][ \t]*(?:#.*)?$/m.test(section)) return false;
+			const command = section.match(
+				/^[ \t]*command[ \t]*=[ \t]*(?:"([^"\r\n]*)"|'([^'\r\n]*)')[ \t]*(?:#.*)?$/m,
+			);
+			return /\baidr-codex-hook\b/i.test(command?.[1] ?? command?.[2] ?? "");
+		});
+		if (registered) {
 			return {
 				id: "codex",
 				label: "Codex",
 				state: "installed",
-				detail: "hooks.PreToolUse registered in ~/.codex/config.toml",
+				detail:
+					"AIDR PreToolUse handler registered in ~/.codex/config.toml; host trust and execution unverified",
 				evidence,
 			};
 		}
@@ -239,21 +350,39 @@ function detectCodex(home: string): ConnectorStatus {
 			};
 		}
 	}
-	if (existsSync(hooksJson) && fileMentions(hooksJson, ["aidr", "singularity"])) {
+	const hooksRead = readJson(hooksJson);
+	if (hooksRead.unavailable) return unavailableStatus("codex", "Codex", evidence);
+	const parsed = hooksRead.value as {
+		hooks?: { PreToolUse?: Array<{ hooks?: Array<{ type?: string; command?: string }> }> };
+	} | null;
+	const registered =
+		Array.isArray(parsed?.hooks?.PreToolUse) &&
+		parsed.hooks.PreToolUse.some(
+			(entry) =>
+				Array.isArray(entry?.hooks) &&
+				entry.hooks.some(
+					(hook) =>
+						hook?.type === "command" &&
+						typeof hook.command === "string" &&
+						/\baidr-codex-hook\b/i.test(hook.command),
+				),
+		);
+	if (registered) {
 		return {
 			id: "codex",
 			label: "Codex",
 			state: "installed",
-			detail: "AIDR hook registered in ~/.codex/hooks.json",
+			detail:
+				"AIDR PreToolUse handler registered in ~/.codex/hooks.json; host trust and execution unverified",
 			evidence,
 		};
 	}
-	if (existsSync(cfg) || existsSync(hooksJson)) {
+	if (existsSync(join(home, ".codex"))) {
 		return {
 			id: "codex",
 			label: "Codex",
 			state: "runtime_present_not_installed",
-			detail: "Codex configuration exists but registers no AIDR hook",
+			detail: "Codex directory exists but registers no AIDR hook",
 			evidence,
 			remedy: "Add [[hooks.PreToolUse]] with a command handler pointing at aidr-codex-hook",
 		};
@@ -271,7 +400,7 @@ function detectCodex(home: string): ConnectorStatus {
  * Inspect every supported runtime. A caller must present the result as measured
  * state, including the evidence paths, rather than as a configuration claim.
  */
-export function detectConnectorStatuses(home: string = homedir()): ConnectorStatus[] {
+export function detectConnectorStatuses(home: string = resolvePath("~")): ConnectorStatus[] {
 	return [
 		detectClaudeCode(home),
 		detectEditor("cursor", "Cursor", join(home, ".cursor", "extensions"), home),

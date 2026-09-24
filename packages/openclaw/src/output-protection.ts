@@ -195,13 +195,18 @@ function withheldResponseWarning(
 	if (pending.length > 0) {
 		const rules = new Set<string>();
 		let incomplete = false;
+		let unsupportedContent = false;
 		for (const finding of pending) {
 			for (const rule of finding.inspection.findings) rules.add(rule.ruleId);
 			incomplete ||= finding.inspection.incomplete;
+			unsupportedContent ||= finding.inspection.unsupportedContent;
 		}
 		const pendingParts = [
 			rules.size > 0 ? `rules ${[...rules].join(", ")}` : null,
-			incomplete ? "one or more tool outputs exceeded the inspection limit" : null,
+			unsupportedContent ? "unsupported non-text content was not inspected" : null,
+			incomplete && !unsupportedContent
+				? "one or more tool outputs exceeded the inspection limit"
+				: null,
 		].filter((part): part is string => part !== null);
 		reasons.push(`post-execution tool output: ${pendingParts.join("; ")}`);
 	}
@@ -479,10 +484,7 @@ export class OpenClawOutputProtection {
 		return this.correlatedFindings(context, false);
 	}
 
-	private correlatedFindings(
-		context: OutputHookContext,
-		markDelivered: boolean,
-	): PendingFinding[] {
+	private correlatedFindings(context: OutputHookContext, markDelivered: boolean): PendingFinding[] {
 		const now = this.now();
 		const unique = new Map<string, PendingFinding>();
 		// Prefer the per-turn run id. Session correlation is a compatibility

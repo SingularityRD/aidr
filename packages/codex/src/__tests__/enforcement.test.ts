@@ -20,6 +20,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Logger } from "@singularityrd/aidr-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	generateProvisioningKeys,
@@ -82,13 +83,8 @@ afterEach(async () => {
 });
 
 describe("Codex wire output translation", () => {
-	it("emits an explicit allow decision", () => {
-		expect(toWireOutput("allow", "")).toEqual({
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "allow",
-			},
-		});
+	it("uses empty output for allow because Codex rejects a bare allow decision", () => {
+		expect(toWireOutput("allow", "")).toEqual({});
 	});
 
 	it("emits an explicit deny for deny", () => {
@@ -221,12 +217,7 @@ describe("Codex local enforcement blocks real threats", () => {
 		it(`allows: ${label}`, async () => {
 			const outcome = await enforceCodexPreToolUse(preToolUse(toolName, toolInput), options());
 			expect(outcome.decision).toBe("allow");
-			expect(outcome.wire).toEqual({
-				hookSpecificOutput: {
-					hookEventName: "PreToolUse",
-					permissionDecision: "allow",
-				},
-			});
+			expect(outcome.wire).toEqual({});
 		});
 	}
 
@@ -238,6 +229,23 @@ describe("Codex local enforcement blocks real threats", () => {
 });
 
 describe("Codex enforcement fails CLOSED when it cannot evaluate", () => {
+	it("still denies without exposing an exception when diagnostic logging throws", async () => {
+		const secret = "sk_live_codex_failure_secret";
+		const outcome = await enforceCodexPreToolUse(preToolUse("Bash", { command: "ls -la" }), {
+			threatsDir: "\u0000invalid",
+			allowlistsDir,
+			logger: {
+				error: () => {
+					throw new Error(secret);
+				},
+			} as unknown as Logger,
+		});
+		expect(outcome.decision).toBe("deny");
+		expect(outcome.reasonCode).toBe("aidr_internal_error");
+		expect(outcome.wire.hookSpecificOutput?.permissionDecision).toBe("deny");
+		expect(JSON.stringify(outcome.wire)).not.toContain(secret);
+	});
+
 	it("denies rather than allowing when the rule directory is missing", async () => {
 		// Codex fails open on a silent hook, so an unusable rule set must produce
 		// an explicit deny - the same class of defect as the silent zero-rule
@@ -302,12 +310,7 @@ describe("Codex provisioned tenant detector policy", () => {
 		);
 
 		expect(outcome.decision).toBe("allow");
-		expect(outcome.wire).toEqual({
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "allow",
-			},
-		});
+		expect(outcome.wire).toEqual({});
 	});
 
 	it("fails closed when the entitlement requires a bundle that is not installed", async () => {
@@ -315,7 +318,10 @@ describe("Codex provisioned tenant detector policy", () => {
 		// not delivered the policy: the connector must not evaluate without it.
 		await provisionTenantDetectorPolicy({ homeDir: home, agentRuntime: "codex", skipPolicy: true });
 
-		const outcome = await enforceCodexPreToolUse(preToolUse("Bash", { command: "ls -la" }), options());
+		const outcome = await enforceCodexPreToolUse(
+			preToolUse("Bash", { command: "ls -la" }),
+			options(),
+		);
 
 		expect(outcome.decision).toBe("deny");
 		expect(outcome.reasonCode).toBe("aidr_internal_error");

@@ -26,7 +26,9 @@
   ],
   "files": [
     "dist/cursor_extension.js",
+    "dist/vscode_extension.js",
     "dist/aidr-hook.cjs",
+    "dist/aidr-artifact.manifest.json",
     "resources/**",
     "aidr-icon.png",
     "package.json",
@@ -89,24 +91,23 @@
   },
   "scripts": {
     "build": "node ../../scripts/ensure-core-build.mjs && npm run clean && npm run sync:assets && node esbuild.config.cjs",
-    "build:release": "npm run clean && npm run sync:assets && node esbuild.config.cjs --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id aidr-cursor && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "build:release": "npm run clean && npm run sync:assets && node esbuild.config.cjs --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id extension/dist && node ../../scripts/check-no-sourcemaps.mjs dist",
     "clean": "node ../../scripts/rmrf.mjs dist resources .vsce",
     "sync:assets": "node scripts/sync-assets.mjs",
     "pretest": "node ../../scripts/ensure-core-build.mjs && npm run sync:assets && node esbuild.config.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "package:cursor:vsix": "npm run build:release && pnpm dlx @vscode/vsce package -o ../../aidr-cursor.vsix --no-dependencies --allow-package-secrets github --allow-package-secrets slack",
-    "package:vscode:vsix": "npm run build:release && node scripts/package-vscode-vsix.mjs",
-    "package:vsix": "npm run package:cursor:vsix && npm run package:vscode:vsix"
+    "package:cursor:vsix:from-signed-dist": "node scripts/package-cursor-vsix.mjs",
+    "package:vscode:vsix:from-signed-dist": "node scripts/package-vscode-vsix.mjs",
+    "package:vsix:from-signed-dist": "npm run package:cursor:vsix:from-signed-dist && npm run package:vscode:vsix:from-signed-dist"
   },
   "devDependencies": {
-    "@sentry/browser": "^10.69.0",
     "@singularityrd/aidr-core": "workspace:*",
     "@types/node": "^22.0.0",
-    "@types/vscode": "^1.138.0",
+    "@types/vscode": "1.97.0",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.11"
   }
 }

@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolvePath } from "@singularityrd/aidr-core";
 import type { Environment } from "./config-manager.js";
 import { updateConfig } from "./config-manager.js";
 
-const AIDR_DIR = join(homedir(), ".singularity-aidr");
+const AIDR_DIR = resolvePath("~/.singularity-aidr");
 
 export interface HookInstallResult {
 	/** Single line describing precisely what was and was not done. */
@@ -39,29 +39,58 @@ export async function installHooks(env: Environment): Promise<HookInstallResult>
 	switch (env.agent) {
 		case "claude":
 			followUp.push(
-				"  Claude Code:  /plugin marketplace add https://github.com/singularityrd/aidr.git",
+				"  Claude Code:  verify the publisher-signed release bundle and extract the plugin, then",
+				"                /plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin",
 				"                /plugin install aidr@aidr",
 			);
 			break;
 		case "cursor":
 			followUp.push(
-				"  Cursor:       build and install the VSIX, then run",
+				"  Cursor:       install the approved aidr-cursor.vsix from the verified release bundle, then run",
+				"                cursor --install-extension ./aidr-cursor.vsix",
 				"                'Singularity AIDR: Enable protection' from the command palette.",
 			);
 			break;
 		case "vscode":
 			followUp.push(
-				"  VS Code:      build and install the VSIX, then enable protection",
+				"  VS Code:      install the approved aidr-vscode.vsix from the verified release bundle, then run",
+				"                code --install-extension ./aidr-vscode.vsix and enable protection",
 				"                from the command palette.",
 			);
 			break;
 		case "openclaw":
-			followUp.push("  OpenClaw:     openclaw plugins install @singularityrd/aidr-openclaw");
+			followUp.push(
+				"  OpenClaw:     install the approved package version with",
+				"                openclaw plugins install npm:@singularityrd/aidr-openclaw@VERSION",
+				"                (replace VERSION with the exact version in the approved release record).",
+			);
+			break;
+		case "opencode":
+			followUp.push(
+				"  OpenCode:     install the approved version from private GitHub Packages.",
+				'                ~/.config/opencode/package.json: {"dependencies":{"@singularityrd/aidr-opencode":"VERSION"}}',
+				'                ~/.config/opencode/opencode.json: {"plugin":["@singularityrd/aidr-opencode"]}',
+				"                Replace VERSION with the exact approved release version; run a host-side deny canary.",
+			);
+			break;
+		case "codex":
+			followUp.push(
+				"  Codex:        install @singularityrd/aidr-codex@VERSION from private GitHub Packages.",
+				"                Add to ~/.codex/config.toml:",
+				"                [[hooks.PreToolUse]]",
+				'                matcher = "^(Bash|apply_patch)$"',
+				"                [[hooks.PreToolUse.hooks]]",
+				'                type = "command"',
+				'                command = "aidr-codex-hook"',
+				"                timeout = 10",
+				"                Replace VERSION with the exact approved release version, trust the hook,",
+				"                then run a host-side deny canary.",
+			);
 			break;
 		default:
 			followUp.push(
 				"  See docs/getting-started.md for the supported runtimes",
-				"  (Claude Code, Cursor, VS Code, OpenClaw, OpenCode).",
+				"  (Claude Code, Cursor, VS Code, OpenClaw, OpenCode, Codex).",
 			);
 			break;
 	}

@@ -18,6 +18,8 @@ const config: SDKConfig = {
 	cache: false,
 	cacheTtl: 300000,
 	environment: "production",
+	urlReputationEnabled: true,
+	includeUrlQueryParameters: false,
 };
 
 interface InternalClient {
@@ -36,6 +38,25 @@ function readyClient(checkUrls: InternalClient["urlClient"]["checkUrls"]): AIDRC
 }
 
 describe("SDK reputation availability", () => {
+	it("does not send a fetch URL by default and marks provider coverage unavailable", async () => {
+		const client = new AIDRClient({ ...config, urlReputationEnabled: false });
+		const internal = client as unknown as InternalClient;
+		internal.initialized = true;
+		internal.init = async () => {};
+		const checkUrls = vi.fn(async () => []);
+		internal.urlClient = { checkUrls };
+
+		const result = await client.check({
+			action: "fetch",
+			resource: "https://example.com/private?token=secret",
+		});
+
+		expect(checkUrls).not.toHaveBeenCalled();
+		expect(result.decision).toBe("ask");
+		expect(result.metadata?.leg).toBe("url_reputation");
+		expect(result.reason).toContain("disabled to avoid sending URLs");
+	});
+
 	it("surfaces a url_reputation outage instead of reporting an empty clean result", async () => {
 		const client = readyClient(async () => {
 			throw new Error("url_reputation leg unavailable");
@@ -74,5 +95,18 @@ describe("SDK reputation availability", () => {
 
 		expect(checkUrls).not.toHaveBeenCalled();
 		expect(result.metadata?.indeterminate).toBeUndefined();
+	});
+
+	it("opts into provider checks explicitly", async () => {
+		const client = new AIDRClient({ ...config, urlReputationEnabled: true });
+		const internal = client as unknown as InternalClient;
+		internal.initialized = true;
+		internal.init = async () => {};
+		const checkUrls = vi.fn(async () => []);
+		internal.urlClient = { checkUrls };
+
+		await client.check({ action: "fetch", resource: "https://example.com/path" });
+
+		expect(checkUrls).toHaveBeenCalledWith(["https://example.com/path"]);
 	});
 });

@@ -31,6 +31,7 @@ import {
 	SUPPORTED_CONTEXTS,
 	SUPPORTED_PLATFORMS,
 	buildRecord,
+	verifierReportShowsLocalCompletion,
 	validateMatrix,
 } from "./run-support-matrix.mjs";
 
@@ -42,6 +43,21 @@ const SCHEMA_PATH = join(HERE, "support-matrix.schema.json");
 const TEMPLATE_PATH = join(HERE, "scenarios", "TEMPLATE.json");
 /** The row override the fixtures point at a binary that exists on every machine. */
 const PRESENT_HOST_ENV = "AIDR_NATIVE_TEST_PRESENT_HOST";
+const ISOLATED_HOST_ENV_KEYS = ["PATH", "LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)", "AIDR_CURSOR_PATH", "AIDR_VSCODE_PATH", "OPENCODE_E2E_BIN", PRESENT_HOST_ENV];
+
+function isolatedHostEnv(dir, extra = {}) {
+	return {
+		...process.env,
+		PATH: dirname(process.execPath),
+		LOCALAPPDATA: dir,
+		ProgramFiles: dir,
+		"ProgramFiles(x86)": dir,
+		AIDR_CURSOR_PATH: "",
+		AIDR_VSCODE_PATH: "",
+		OPENCODE_E2E_BIN: "",
+		...extra,
+	};
+}
 
 async function withTempDir(fn) {
 	const dir = mkdtempSync(join(tmpdir(), "aidr-support-matrix-test-"));
@@ -54,6 +70,17 @@ async function withTempDir(fn) {
 
 const committedMatrix = () => JSON.parse(readFileSync(SUPPORT_MATRIX_PATH, "utf8"));
 const sorted = (values) => [...values].sort();
+
+test("Claude support claim matches the disabled-hook host boundary", () => {
+	const claude = committedMatrix().rows.find((row) => row.connector === "claude-code");
+	const interception = JSON.parse(readFileSync(join(HERE, "interception-matrix.json"), "utf8"));
+	const disabled = interception.failureConditions.find(
+		(row) => row.connector === "claude-code" && row.condition === "disabled-hook",
+	);
+	assert.equal(disabled?.outcome, "fail-open");
+	assert.match(claude?.tamperResistance ?? "", /disabled hook is fail-open/u);
+	assert.match(claude?.tamperResistance ?? "", /crashes before a verdict is unverified/u);
+});
 
 /**
  * A minimal structurally valid support matrix: one codex row, no acceptance
@@ -133,14 +160,16 @@ function writeFixture(dir, { matrix = fixtureMatrix(), scenario = null } = {}) {
  * under test can change the outcome.
  */
 async function presentHostRecord(dir, options) {
-	const previousPath = process.env.PATH;
-	process.env.PATH = dirname(process.execPath);
-	process.env[PRESENT_HOST_ENV] = process.execPath;
+	const previous = new Map(ISOLATED_HOST_ENV_KEYS.map((key) => [key, process.env[key]]));
+	const isolated = isolatedHostEnv(dir, { [PRESENT_HOST_ENV]: process.execPath });
+	for (const key of ISOLATED_HOST_ENV_KEYS) process.env[key] = isolated[key];
 	try {
 		return await buildRecord({ outputDir: join(dir, "evidence"), ...options });
 	} finally {
-		process.env.PATH = previousPath;
-		delete process.env[PRESENT_HOST_ENV];
+		for (const [key, value] of previous) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
 	}
 }
 
@@ -374,6 +403,31 @@ test("a well-formed manifest without an acceptance record stays HOST_ACCEPTANCE_
 	});
 });
 
+test("synthetic and missing-host reports cannot masquerade as completed host scenarios", () => {
+	const syntheticFixture = {
+		kind: "aidr_native_host_matrix_v6",
+		gate: "NO_GO",
+		scenario_manifest_present: true,
+		scenario_manifest_sha256: "a".repeat(64),
+		manifest_validation: { ok: true, template: false, error_count: 0, placeholder_count: 0 },
+		hosts: [{ id: "codex", status: "LOCAL_SCENARIOS_COMPLETE_REVIEW_OPEN" }],
+	};
+	assert.equal(
+		verifierReportShowsLocalCompletion(syntheticFixture, "codex", "a".repeat(64)),
+		false,
+		"a short fixture report cannot masquerade as completed host scenarios",
+	);
+	assert.equal(
+		verifierReportShowsLocalCompletion(
+			{ ...syntheticFixture, hosts: [{ id: "codex", status: "HOST_UNAVAILABLE" }] },
+			"codex",
+			"a".repeat(64),
+		),
+		false,
+		"a missing host cannot be counted as completed",
+	);
+});
+
 test("an absent host binary is still HOST_UNAVAILABLE", async () => {
 	await withTempDir(async (dir) => {
 		const { matrixPath } = writeFixture(dir, { matrix: fixtureMatrix({ binary: "aidr-native-host-absent-0000" }) });
@@ -398,6 +452,23 @@ test("a missing default scenario is a machine-readable row blocker", async () =>
 		assert.equal(host.scenarios.status, "SCENARIO_MANIFEST_MISSING");
 		assert.ok(record.blockers.includes("codex:SCENARIO_MANIFEST_MISSING"), record.blockers.join("; "));
 		assert.equal(record.decision, "NO-GO");
+	});
+});
+
+test("a scenario cannot exercise a different binary from the probed host", async () => {
+	await withTempDir(async (dir) => {
+		const scenario = fixtureScenarioManifest();
+		scenario.hosts.codex.binary = join(dir, "not-the-installed-host.exe");
+		const { matrixPath, scenarioPath } = writeFixture(dir, {
+			matrix: fixtureMatrix({ envOverride: PRESENT_HOST_ENV }),
+			scenario,
+		});
+		const record = await presentHostRecord(dir, { matrixPath, scenarioFile: scenarioPath });
+		const host = record.hosts.find((entry) => entry.connector === "codex");
+		assert.equal(host.status, "HOST_ACCEPTANCE_OPEN");
+		assert.equal(host.scenarios.status, "SCENARIO_HOST_BINARY_MISMATCH");
+		assert.equal(host.scenarios.outputPath, undefined, "the mismatched host must never launch");
+		assert.ok(record.blockers.includes("codex:SCENARIO_HOST_BINARY_MISMATCH"));
 	});
 });
 
@@ -460,7 +531,7 @@ test("the CLI refuses a template copy with the documented reason code", async ()
 		const result = spawnSync(
 			process.execPath,
 			[RUNNER, "--matrix", matrixPath, "--scenario-file", scenarioPath, "--output", outputPath],
-			{ encoding: "utf8", timeout: 120_000, env: { ...process.env, PATH: dirname(process.execPath), [PRESENT_HOST_ENV]: process.execPath } },
+			{ encoding: "utf8", timeout: 120_000, env: isolatedHostEnv(dir, { [PRESENT_HOST_ENV]: process.execPath }) },
 		);
 		assert.equal(result.status, 1, result.stderr);
 		assert.ok(existsSync(outputPath), "the runner must still write its record");
@@ -498,7 +569,7 @@ test("the native-host gate refuses a placeholder manifest without template marke
 		const result = spawnSync(process.execPath, [GATE, "--scenario-file", scenarioPath, "--output", outputPath], {
 			encoding: "utf8",
 			timeout: 120_000,
-			env: { ...process.env, PATH: dirname(process.execPath) },
+			env: isolatedHostEnv(dir),
 		});
 		assert.equal(result.status, 1, result.stderr);
 		const report = JSON.parse(readFileSync(outputPath, "utf8"));

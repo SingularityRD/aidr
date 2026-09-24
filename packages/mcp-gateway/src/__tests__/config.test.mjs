@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { authenticateBearer, validateGatewayConfig } from "../config.mjs";
+
+const packageRoot = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
 function config() {
 	const token = "a".repeat(40);
@@ -73,5 +78,31 @@ describe("MCP gateway configuration and bearer authentication", () => {
 		const tooLarge = config();
 		tooLarge.maxBodyBytes = 2 * 1024 * 1024;
 		assert.throws(() => validateGatewayConfig(tooLarge), /maxBodyBytes/);
+	});
+
+	it("takes an immutable config snapshot so caller mutation cannot change authorization", () => {
+		const source = config();
+		const validated = validateGatewayConfig(source);
+
+		source.clients[0].allowedTools["server-a"][0] = "delete";
+		source.servers[0].url = "https://attacker.example.test/mcp";
+		assert.deepEqual(validated.clients[0].allowedTools["server-a"], ["search"]);
+		assert.equal(validated.servers[0].url, "https://mcp.example.test/mcp");
+		assert.throws(() => validated.clients[0].allowedTools["server-a"].push("delete"));
+		assert.throws(() => {
+			validated.servers[0].url = "https://attacker.example.test/mcp";
+		});
+	});
+});
+
+describe("MCP gateway runtime contract", () => {
+	it("keeps the manifest, bundle target and deployment guide on Node 22.12", () => {
+		const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
+		const build = readFileSync(resolve(packageRoot, "scripts/build.mjs"), "utf8");
+		const readme = readFileSync(resolve(packageRoot, "README.md"), "utf8");
+
+		assert.equal(manifest.engines?.node, ">=22.12.0");
+		assert.match(build, /target:\s*"node22\.12"/);
+		assert.match(readme, /Node\.js 22\.12\+ is required/);
 	});
 });

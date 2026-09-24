@@ -23,7 +23,7 @@ const PENDING_STALE_MS = 60 * 60 * 1000; // 1 hour
 const CONSUMED_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const STALE_FILE_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-export interface PendingArtifact {
+interface PendingArtifact {
 	value: string;
 	type: string;
 }

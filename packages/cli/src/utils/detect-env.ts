@@ -1,21 +1,27 @@
 import { execSync } from "node:child_process";
 import { accessSync, constants } from "node:fs";
+import { join } from "node:path";
 import { cwd } from "node:process";
+import { resolvePath } from "@singularityrd/aidr-core";
 import type { Environment } from "./config-manager.js";
+import { detectConnectorStatuses } from "./connector-status.js";
 
-export async function detectEnvironment(): Promise<Environment> {
+export async function detectEnvironment(
+	home: string = resolvePath("~"),
+	projectRoot: string = cwd(),
+): Promise<Environment> {
 	const hasNode = checkNode();
 	const nodeVersion = hasNode ? getNodeVersion() : "unknown";
 
 	return {
-		agent: detectAgent(),
+		agent: detectAgent(home, projectRoot),
 		hasNode,
 		nodeVersion,
-		projectRoot: cwd(),
+		projectRoot,
 	};
 }
 
-function detectAgent(): Environment["agent"] {
+function detectAgent(home: string, projectRoot: string): Environment["agent"] {
 	// Check environment variables that indicate which agent is running
 	if (process.env.CLAUDE_CODE_ROOT) {
 		return "claude";
@@ -30,16 +36,22 @@ function detectAgent(): Environment["agent"] {
 		return "openclaw";
 	}
 
+	const statuses = detectConnectorStatuses(home);
+	if (statuses.some((status) => status.id === "opencode" && status.state !== "not_detected"))
+		return "opencode";
+	if (statuses.some((status) => status.id === "codex" && status.state !== "not_detected"))
+		return "codex";
+
 	// Check for agent-specific files
 	try {
-		accessSync(".claude-plugin/plugin.json", constants.F_OK);
+		accessSync(join(projectRoot, ".claude-plugin", "plugin.json"), constants.F_OK);
 		return "claude";
 	} catch {
 		// Not Claude
 	}
 
 	try {
-		accessSync(".cursor/extensions", constants.F_OK);
+		accessSync(join(projectRoot, ".cursor", "extensions"), constants.F_OK);
 		return "cursor";
 	} catch {
 		// Not Cursor

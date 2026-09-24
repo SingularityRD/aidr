@@ -181,6 +181,25 @@ describe("provider collection command", () => {
 		expect(console.log).not.toHaveBeenCalled();
 		expect(vi.mocked(console.error).mock.calls.flat().join(" ")).toContain("collector_targets_required");
 	});
+
+	it("rejects managed uploads over 100 targets before scanning", async () => {
+		vi.stubEnv("AIDR_DISCOVERY_URL", DISCOVERY_URL);
+		vi.stubEnv("AIDR_DISCOVERY_COLLECTOR_CREDENTIAL", COLLECTOR_CREDENTIAL);
+		vi.stubEnv("AIDR_DISCOVERY_ANON_KEY", "anon.key");
+		const collect = vi.spyOn(core.LocalDiscoveryProvider.prototype, "collect");
+
+		await collectCommand({
+			tenant: TENANT,
+			target: Array.from({ length: 101 }, (_, index) => `https://agent-${index}.example.test/`),
+		});
+
+		expect(process.exitCode).toBe(1);
+		expect(collect).not.toHaveBeenCalled();
+		expect(core.saveFleetInventory).not.toHaveBeenCalled();
+		expect(vi.mocked(console.error).mock.calls.flat().join(" ")).toContain(
+			"managed_discovery_upload_supports_at_most_100_targets",
+		);
+	});
 });
 
 describe("managed discovery upload", () => {
@@ -227,6 +246,22 @@ describe("managed discovery upload", () => {
 			...local,
 			items: [local.items[0]!, { ...local.items[0]!, target: "https://agent.example.test/another" }],
 		}, 2)).toThrow("discovery_upload_duplicate_origin");
+	});
+
+	it("does not publish a partially scanned reachable endpoint as healthy", () => {
+		const local = remoteInventory({
+			scan: {
+				...remoteInventory().items[0]!.scan,
+				reachable: true,
+				error: "deadline_exceeded",
+			},
+		});
+		expect(discoveryIngestPayload(local, 1).items).toEqual([{
+			target: "https://agent.example.test/",
+			reachable: false,
+			attempts: 1,
+			error_code: "other",
+		}]);
 	});
 
 	it("reads the operator cursor and validates the ingest receipt", async () => {

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import {
 	provisionTenantDetectorPolicy,
 	TEST_DLP_MARKER,
 } from "../../../core/src/__tests__/detector-provisioning-fixtures.js";
+import { VERSION } from "../../../core/src/version.js";
 
 const DIST_DIR = resolve(__dirname, "..", "..", "dist");
 const AIDR_HOOK = resolve(DIST_DIR, "aidr-hook.cjs");
@@ -20,10 +21,20 @@ function runHook(
 	env?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
 	return new Promise((resolveRun) => {
+		const childEnv = { ...process.env };
+		for (const key of [
+			"AIDR_NATIVE_TEST_WORKSPACE",
+			"AIDR_NATIVE_TEST_RECEIPT",
+			"AIDR_NATIVE_TEST_CASE_NONCE",
+			"AIDR_NATIVE_TEST_SENTINEL",
+		]) {
+			delete childEnv[key];
+		}
+		Object.assign(childEnv, env);
 		const child = execFile(
 			"node",
 			[AIDR_HOOK, mode],
-			{ env: env ? { ...process.env, ...env } : process.env },
+			{ env: childEnv },
 			(error, stdout, stderr) => {
 				resolveRun({ stdout, stderr, code: error?.code ? Number(error.code) : child.exitCode });
 			},
@@ -54,6 +65,141 @@ function permissionDecision(stdout: string): string | undefined {
 }
 
 describe("Cursor hook integration", () => {
+	it("records real Cursor and VS Code pre-tool invocations with distinct connector labels", async () => {
+		const cases = [
+			{
+				mode: "cursor" as const,
+				connector: "cursor",
+				event: "preToolUse",
+				payload: {
+					hook_event_name: "preToolUse",
+					tool_name: "Write",
+					tool_input: {
+						file_path: "/home/user/.ssh/authorized_keys",
+						content: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQ...",
+					},
+				},
+			},
+			{
+				mode: "vscode" as const,
+				connector: "vscode",
+				event: "PreToolUse",
+				payload: {
+					hook_event_name: "PreToolUse",
+					tool_name: "Write",
+					tool_input: {
+						file_path: "/home/user/.ssh/authorized_keys",
+						content: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQ...",
+					},
+				},
+			},
+		];
+
+		for (const item of cases) {
+			const workspace = await makeHome();
+			const receipt = join(workspace, "hook.receipt");
+			const sentinel = join(workspace, "side-effect.marker");
+			const nonce = `${item.connector}-nonce`;
+			const run = await runHook(item.mode, item.payload, {
+				AIDR_NATIVE_TEST_WORKSPACE: workspace,
+				AIDR_NATIVE_TEST_RECEIPT: receipt,
+				AIDR_NATIVE_TEST_CASE_NONCE: nonce,
+				AIDR_NATIVE_TEST_SENTINEL: sentinel,
+			});
+			expect(run.code).toBe(0);
+			const records = (await readFile(receipt, "utf8"))
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line));
+			expect(records).toEqual([
+				expect.objectContaining({
+					marker: "AIDR_HOOK_OBSERVED",
+					nonce,
+					connector: item.connector,
+					event: "invocation",
+				}),
+				expect.objectContaining({
+					marker: "AIDR_HOOK_OBSERVED",
+					nonce,
+					connector: item.connector,
+					event: item.event,
+					toolName: "Write",
+					decision: "deny",
+				}),
+			]);
+			await expect(readFile(sentinel, "utf8")).rejects.toThrow();
+		}
+	});
+
+	it("records invocation before commercial integrity failure closes the hook", async () => {
+		const workspace = await makeHome();
+		const receipt = join(workspace, "hook.receipt");
+		const nonce = "integrity-failure-nonce";
+		const run = await runHook(
+			"cursor",
+			{
+				hook_event_name: "preToolUse",
+				tool_name: "Write",
+				tool_input: { file_path: "notes.txt", content: "hello" },
+			},
+			{
+				HOME: workspace,
+				USERPROFILE: workspace,
+				AIDR_COMMERCIAL: "1",
+				AIDR_NATIVE_TEST_WORKSPACE: workspace,
+				AIDR_NATIVE_TEST_RECEIPT: receipt,
+				AIDR_NATIVE_TEST_CASE_NONCE: nonce,
+			},
+		);
+
+		expect(run.code).toBe(0);
+		expect(parseResponse(run.stdout).permission).toBe("deny");
+		const records = (await readFile(receipt, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(records).toEqual([
+			expect.objectContaining({
+				marker: "AIDR_HOOK_OBSERVED",
+				nonce,
+				connector: "cursor",
+				event: "invocation",
+			}),
+		]);
+	});
+
+	it("records invocation before payload normalization fails closed", async () => {
+		const workspace = await makeHome();
+		const receipt = join(workspace, "hook.receipt");
+		const nonce = "normalization-failure-nonce";
+		const run = await runHook(
+			"vscode",
+			{ hook_event_name: "UnsupportedEvent" },
+			{
+				HOME: workspace,
+				USERPROFILE: workspace,
+				AIDR_NATIVE_TEST_WORKSPACE: workspace,
+				AIDR_NATIVE_TEST_RECEIPT: receipt,
+				AIDR_NATIVE_TEST_CASE_NONCE: nonce,
+			},
+		);
+
+		expect(run.code).toBe(0);
+		expect(permissionDecision(run.stdout)).toBe("deny");
+		const records = (await readFile(receipt, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(records).toEqual([
+			expect.objectContaining({
+				marker: "AIDR_HOOK_OBSERVED",
+				nonce,
+				connector: "vscode",
+				event: "invocation",
+			}),
+		]);
+	});
+
 	it("denies unknown extension mode", async () => {
 		const { stdout, code } = await runHook("unknown" as HookMode, {});
 		expect(code).toBe(0);
@@ -70,13 +216,19 @@ describe("Cursor hook integration", () => {
 		expect(parseResponse(stdout).decision).toBe("deny");
 	});
 
-	it("denies malformed postToolUse output", async () => {
+	it("reports malformed postToolUse output as unavailable after execution", async () => {
 		const { stdout, code } = await runHook("cursor", {
 			hook_event_name: "postToolUse",
 			tool_name: "Shell",
 		});
 		expect(code).toBe(0);
-		expect(parseResponse(stdout).decision).toBe("deny");
+		const response = parseResponse(stdout);
+		expect(response.decision).toBeUndefined();
+		expect(response.permission).toBeUndefined();
+		expect(response.additional_context).toContain("tool may already have completed");
+		expect(response.additional_context).toContain("no replacement was attempted");
+		expect(response.additional_context).toContain("original output may remain available");
+		expect(response.additional_context).toContain("coverage is unavailable, not clean");
 	});
 
 	it("allows clean preToolUse write", async () => {
@@ -147,6 +299,21 @@ describe("Cursor hook integration", () => {
 		expect(response.decision).toBe("deny");
 	});
 
+	it("denies Cursor Edit when an empty canonical field coexists with streamContent", async () => {
+		const { stdout, code } = await runHook("cursor", {
+			hook_event_name: "preToolUse",
+			tool_name: "Edit",
+			tool_input: {
+				path: "/tmp/edit-streamcontent-conflict.txt",
+				new_string: "",
+				streamContent: "eval $(base64 --decode <<< YWJj)",
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(parseResponse(stdout).decision).toBe("deny");
+	});
+
 	it("denies suspicious shell command", async () => {
 		const { stdout, code } = await runHook("cursor", {
 			hook_event_name: "beforeShellExecution",
@@ -174,6 +341,30 @@ describe("Cursor hook integration", () => {
 		expect(response.permission).toBe("deny");
 	});
 
+	it("denies sensitive Cursor read when empty file_path hides populated path", async () => {
+		const { stdout, code } = await runHook("cursor", {
+			hook_event_name: "beforeReadFile",
+			file_path: "",
+			path: "/home/user/.ssh/authorized_keys",
+			attachments: [],
+		});
+
+		expect(code).toBe(0);
+		expect(parseResponse(stdout).permission).toBe("deny");
+	});
+
+	it("denies Cursor read when populated file path aliases disagree", async () => {
+		const { stdout, code } = await runHook("cursor", {
+			hook_event_name: "beforeReadFile",
+			file_path: "/tmp/notes.txt",
+			path: "/home/user/.ssh/authorized_keys",
+			attachments: [],
+		});
+
+		expect(code).toBe(0);
+		expect(parseResponse(stdout).permission).toBe("deny");
+	});
+
 	it("allows benign mcp call", async () => {
 		const { stdout, code } = await runHook("cursor", {
 			hook_event_name: "beforeMCPExecution",
@@ -186,6 +377,62 @@ describe("Cursor hook integration", () => {
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
 		expect(response.permission).toBe("allow");
+	});
+
+	it("normalizes documented Cursor MCP identity for per-tool policy", async () => {
+		const home = await makeHome();
+		await writeRuntimeConfig(home, {
+			policy: {
+				enabled: true,
+				mcp: {
+					enabled: true,
+					unknown_server_action: "allow",
+					deny_tools: ["cursor-files.read_secret"],
+				},
+			},
+		});
+		const { stdout, code } = await runHook(
+			"cursor",
+			{
+				hook_event_name: "beforeMCPExecution",
+				mcp_server_name: "cursor-files",
+				mcp_server_url: "http://127.0.0.1:4545/mcp",
+				tool_name: "read_secret",
+				tool_input: JSON.stringify({ path: "/tmp/secret.txt" }),
+			},
+			{ HOME: home, USERPROFILE: home },
+		);
+
+		expect(code).toBe(0);
+		expect(parseResponse(stdout)).toMatchObject({ decision: "deny", permission: "deny" });
+		expect(stdout).toContain("MCP tool denied by policy");
+	});
+
+	it("maps preToolUse ask verdicts to an explicit deny", async () => {
+		const home = await makeHome();
+		await writeRuntimeConfig(home, {
+			policy: {
+				enabled: true,
+				filesystem: {
+					enabled: true,
+					allowed_write_roots: ["/approved"],
+					outside_root_action: "require_approval",
+				},
+			},
+		});
+		const { stdout, code } = await runHook(
+			"cursor",
+			{
+				hook_event_name: "preToolUse",
+				tool_name: "Write",
+				tool_input: { file_path: "/tmp/unapproved.txt", content: "notes" },
+			},
+			{ HOME: home, USERPROFILE: home },
+		);
+
+		expect(code).toBe(0);
+		expect(parseResponse(stdout)).toMatchObject({ decision: "deny", permission: "deny" });
+		expect(stdout).toContain("Write outside allowed roots");
 	});
 
 	it("fails closed on invalid json", async () => {
@@ -203,6 +450,171 @@ describe("Cursor hook integration", () => {
 });
 
 describe("VS Code hook integration", () => {
+	it("normalizes Local editFiles paths for canonical Edit policy", async () => {
+		const home = await makeHome();
+		await writeRuntimeConfig(home, {
+			policy: {
+				enabled: true,
+				filesystem: {
+					enabled: true,
+					deny_write_patterns: ["blocked-edit"],
+				},
+			},
+		});
+		const { stdout, code } = await runHook(
+			"vscode",
+			{
+				hook_event_name: "PreToolUse",
+				tool_name: "editFiles",
+				tool_input: { files: ["/tmp/allowed-edit.ts", "/tmp/blocked-edit.ts"] },
+			},
+			{ HOME: home, USERPROFILE: home },
+		);
+
+		expect(code).toBe(0);
+		expect(parseResponse(stdout)).toMatchObject({
+			hookSpecificOutput: { permissionDecision: "deny" },
+		});
+		expect(stdout).toContain("Write path denied by policy");
+	});
+
+	it("inspects content from Local editFiles entries as canonical Edit content", async () => {
+		const { stdout, code } = await runHook("vscode", {
+			hook_event_name: "PreToolUse",
+			tool_name: "editFiles",
+			tool_input: {
+				files: [
+					{
+						path: "/tmp/edit.ts",
+						streamContent: "eval $(base64 --decode <<< YWJj)",
+					},
+				],
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(permissionDecision(stdout)).toBe("deny");
+	});
+
+	it.each([
+		"new_string",
+		"content",
+		"newString",
+		"newText",
+		"streamContent",
+		"stream_content",
+		"replacement",
+		"text",
+		"data",
+	])("checks a later Local editFiles package.json using %s content", async (contentAlias) => {
+		const home = await makeHome();
+		const packageManifest = '{"dependencies":{"synthetic-aidr-package":"1.0.0"}}';
+		const cachePath = join(home, ".singularity-aidr", "cache.json");
+		await mkdir(join(home, ".singularity-aidr"), { recursive: true });
+		await writeFile(
+			cachePath,
+			JSON.stringify({
+				urls: {},
+				commands: {},
+				packages: {
+					"npm:synthetic-aidr-package@1.0.0": {
+						verdict: "deny",
+						severity: "critical",
+						reasons: ["Synthetic package intelligence deny"],
+						source: "package_check",
+						checkedAt: new Date().toISOString(),
+						expiresAt: "9999-12-31T23:59:59.000Z",
+						aidrVersion: VERSION,
+					},
+				},
+			}),
+			"utf8",
+		);
+		await writeRuntimeConfig(home, {
+			mode: "local",
+			control_plane: { enabled: false },
+			heuristics_enabled: false,
+			url_check: { enabled: false },
+			file_check: { enabled: false },
+			package_check: { enabled: true },
+			cache: { enabled: true, path: cachePath },
+			logging: { enabled: false },
+		});
+
+		const { stdout, code } = await runHook(
+			"vscode",
+			{
+				hook_event_name: "PreToolUse",
+				tool_name: "editFiles",
+				tool_input: {
+					files: [
+						{ path: "/tmp/notes.ts", streamContent: "const safe = true;" },
+						{
+							file_path: "",
+							path: "/tmp/package.json",
+							new_string: "",
+							[contentAlias]: packageManifest,
+						},
+					],
+				},
+			},
+			{ HOME: home, USERPROFILE: home },
+		);
+
+		expect(code).toBe(0);
+		expect(permissionDecision(stdout)).toBe("deny");
+		expect(stdout).toContain("Synthetic package intelligence deny");
+	});
+
+	it.each([
+		[
+			"path",
+			{
+				file_path: "/tmp/notes.txt",
+				path: "/home/user/.ssh/authorized_keys",
+				content: "benign content",
+			},
+		],
+		[
+			"content",
+			{
+				path: "/tmp/notes.ts",
+				new_string: "const safe = true;",
+				streamContent: "eval $(base64 --decode <<< YWJj)",
+			},
+		],
+	])("denies per-file %s alias conflicts in later Local editFiles entries", async (_kind, secondEdit) => {
+		const { stdout, code } = await runHook("vscode", {
+			hook_event_name: "PreToolUse",
+			tool_name: "editFiles",
+			tool_input: {
+				files: [
+					{ path: "/tmp/notes-first.ts", streamContent: "const first = true;" },
+					secondEdit,
+				],
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(permissionDecision(stdout)).toBe("deny");
+	});
+
+	it("denies Local editFiles when a file entry cannot be paired with a path", async () => {
+		const { stdout, code } = await runHook("vscode", {
+			hook_event_name: "PreToolUse",
+			tool_name: "editFiles",
+			tool_input: {
+				files: [
+					{ path: "/tmp/notes.ts", streamContent: "const safe = true;" },
+					{ streamContent: "unpaired content" },
+				],
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(permissionDecision(stdout)).toBe("deny");
+	});
+
 	it("allows clean PreToolUse write", async () => {
 		const { stdout, code } = await runHook("vscode", {
 			tool_name: "Write",
@@ -309,6 +721,12 @@ async function makeHome(): Promise<string> {
 	const dir = await mkdtemp(join(tmpdir(), "aidr-extension-home-"));
 	tempHomes.push(dir);
 	return dir;
+}
+
+async function writeRuntimeConfig(home: string, config: Record<string, unknown>): Promise<void> {
+	const configDir = join(home, ".singularity-aidr");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(join(configDir, "config.json"), `${JSON.stringify(config)}\n`, "utf8");
 }
 
 afterAll(async () => {

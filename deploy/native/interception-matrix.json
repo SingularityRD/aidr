@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "kind": "aidr-interception-matrix",
-  "reviewedAt": "2026-09-13",
+  "reviewedAt": "2026-09-24",
   "decision": "NO-GO",
-  "decisionMeaning": "MKT-03. This manifest declares, for every sold connector, the pre-prompt / pre-tool / pre-model-output / model-stream / network interception points, the tamper posture and the outcome of the plugin-disabled, crashed, offline and large-binary-response conditions. A status of `enforced` requires a named real-host acceptance record in the row evidence. No connector has one (deploy/native/support-matrix.json carries an empty `acceptanceEvidence` array for every row), so no row is `enforced` and this file is not evidence that any interception point was accepted on a real host.",
+  "decisionMeaning": "MKT-03. This manifest declares, for every sold connector, the pre-prompt / pre-tool / post-tool-output / pre-delivery-response / model-stream / network interception points, the tamper posture and the outcome of the plugin-disabled, crashed, offline and large-binary-response conditions. A status of `enforced` requires a named real-host acceptance record in the row evidence. No connector has one (deploy/native/support-matrix.json carries an empty `acceptanceEvidence` array for every row), so no row is `enforced` and this file is not evidence that any interception point was accepted on a real host.",
   "soldConnectorSource": "./support-matrix.json",
   "supportMatrixMapping": {
     "interceptionPoint": {
@@ -13,14 +13,15 @@
       "none": []
     },
     "outputInterceptionPoint": {
-      "pre-model-output": ["pre-model-output"],
-      "tool-output-inspection": ["pre-model-output"],
-      "post-tool-call": ["pre-model-output"],
+      "post-tool-output": ["post-tool-output"],
+      "pre-delivery-response": ["pre-delivery-response"],
+      "tool-output-inspection": ["post-tool-output"],
+      "post-tool-call": ["post-tool-output"],
       "none": []
     }
   },
-  "outputSidePoints": ["pre-model-output", "model-stream"],
-  "pointVocabulary": ["pre-prompt", "pre-tool", "pre-model-output", "model-stream", "network"],
+  "outputSidePoints": ["post-tool-output", "pre-delivery-response", "model-stream"],
+  "pointVocabulary": ["pre-prompt", "pre-tool", "post-tool-output", "pre-delivery-response", "model-stream", "network"],
   "statusVocabulary": ["enforced", "declared-not-proven", "tamper-evident-only", "unsupported"],
   "tamperPostureVocabulary": ["tamper-evident-only", "fail-closed-on-tamper", "no-artifact-integrity-check"],
   "conditionVocabulary": ["disabled-hook", "crashed-hook", "offline", "large-binary-response"],
@@ -68,7 +69,7 @@
     },
     {
       "connector": "claude-code",
-      "point": "pre-model-output",
+      "point": "post-tool-output",
       "status": "declared-not-proven",
       "hostBoundary": "PostToolUse",
       "reason": null,
@@ -134,7 +135,7 @@
         {
           "kind": "hook-registration",
           "path": "packages/extension/src/cursor_hook_installer.ts",
-          "contains": ["hooks.preToolUse", "hooks.beforeShellExecution", "hooks.beforeMCPExecution", "hooks.beforeReadFile"]
+          "contains": ["hooks.preToolUse", "hooks.beforeShellExecution", "hooks.beforeMCPExecution", "hooks.beforeReadFile", "failClosed: true"]
         },
         {
           "kind": "hook-registration",
@@ -144,13 +145,15 @@
       ],
       "limitations": [
         "preToolUse is registered with the matcher Write|Delete|Edit|WebFetch; other tools reach the hook through beforeShellExecution, beforeMCPExecution or beforeReadFile only.",
+        "Cursor preToolUse cannot enforce an ask response; the adapter maps ask to an explicit deny. Managed hooks request failClosed behavior, but host enforcement remains unverified.",
+        "A hook process killed or timed out before returning a verdict requires real-host confirmation that failClosed is honored.",
         "No named real-host acceptance record exists, and headless agent enforcement coverage on a real Cursor host is an open unobserved action.",
         "A tool executed outside the extension host (an external terminal) is a documented bypass."
       ]
     },
     {
       "connector": "cursor",
-      "point": "pre-model-output",
+      "point": "post-tool-output",
       "status": "declared-not-proven",
       "hostBoundary": "postToolUse",
       "reason": null,
@@ -215,7 +218,7 @@
         {
           "kind": "hook-registration",
           "path": "packages/extension/src/vscode_hook_installer.ts",
-          "contains": ["hooks.PreToolUse", "hooks.PostToolUse"]
+          "contains": ["hooks.PreToolUse", "hooks.PostToolUse", "editFiles"]
         },
         {
           "kind": "hook-registration",
@@ -224,14 +227,15 @@
         }
       ],
       "limitations": [
-        "PreToolUse is registered with the matcher Bash|WebFetch|Write|Edit|Read|Delete; unmatched tools do not reach the hook.",
+        "PreToolUse is registered with the matcher Bash|WebFetch|Write|Edit|Read|Delete|editFiles; unmatched tools do not reach the hook.",
+        "VS Code Local requires chat.useClaudeHooks to be enabled in User Settings; AIDR checks the setting but does not change it. Native activation and editFiles enforcement still require host acceptance.",
         "No named real-host acceptance record exists, and enforcement coverage across the currently shipped VS Code minor versions is an open unobserved action.",
         "A tool executed outside the extension host is a documented bypass."
       ]
     },
     {
       "connector": "vscode",
-      "point": "pre-model-output",
+      "point": "post-tool-output",
       "status": "declared-not-proven",
       "hostBoundary": "PostToolUse",
       "reason": null,
@@ -327,7 +331,7 @@
     },
     {
       "connector": "openclaw",
-      "point": "pre-model-output",
+      "point": "post-tool-output",
       "status": "declared-not-proven",
       "hostBoundary": "message_sending|reply_payload_sending",
       "reason": null,
@@ -413,7 +417,7 @@
     },
     {
       "connector": "opencode",
-      "point": "pre-model-output",
+      "point": "post-tool-output",
       "status": "declared-not-proven",
       "hostBoundary": "tool.execute.after",
       "reason": null,
@@ -499,7 +503,7 @@
     },
     {
       "connector": "codex",
-      "point": "pre-model-output",
+      "point": "post-tool-output",
       "status": "unsupported",
       "hostBoundary": null,
       "reason": "The declared connector contract records output-before-model-consumption enforcement as unavailable and canBlockOutputBeforeModelConsumption as false; Codex exposes no output-side hook for this connector.",
@@ -535,22 +539,82 @@
       "limitations": [
         "The host fails open when hook execution is unavailable, and direct network access that never constructs a tool call is not intercepted."
       ]
+    },
+    {
+      "connector": "claude-code",
+      "point": "pre-delivery-response",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The connector has no assistant-response hook before display or delivery; its output hook inspects tool results after execution.",
+      "evidence": [],
+      "limitations": ["Assistant response text outside supported tool-result shapes is not inspected or rewritten."]
+    },
+    {
+      "connector": "cursor",
+      "point": "pre-delivery-response",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "Cursor afterAgentResponse is observation-only and exposes no output replacement field.",
+      "evidence": [],
+      "limitations": ["Generated assistant responses cannot be blocked or rewritten before display by this connector."]
+    },
+    {
+      "connector": "vscode",
+      "point": "pre-delivery-response",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The connector registers PreToolUse and PostToolUse only; no assistant-response delivery hook is implemented.",
+      "evidence": [],
+      "limitations": ["PostToolUse does not inspect or rewrite the completed assistant response."]
+    },
+    {
+      "connector": "openclaw",
+      "point": "pre-delivery-response",
+      "status": "declared-not-proven",
+      "hostBoundary": "message_sending|reply_payload_sending",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "output-inspection",
+          "path": "packages/openclaw/src/output-protection.ts",
+          "contains": ["messageSending", "replyPayloadSending", "pre_delivery_response_rewrite"]
+        }
+      ],
+      "limitations": ["The code attempts response rewriting before channel delivery, but no real-host acceptance exists; this does not block the same-turn model from consuming tool output."]
+    },
+    {
+      "connector": "opencode",
+      "point": "pre-delivery-response",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "OpenCode's connector inspects tool results after execution and has no accepted assistant-response-before-delivery hook.",
+      "evidence": [],
+      "limitations": ["Provider-generated responses are not inspected before display or delivery."]
+    },
+    {
+      "connector": "codex",
+      "point": "pre-delivery-response",
+      "status": "unsupported",
+      "hostBoundary": null,
+      "reason": "The Codex connector is a PreToolUse hook only and has no assistant-response output hook.",
+      "evidence": [],
+      "limitations": ["Assistant responses are not inspected or rewritten by this connector."]
     }
   ],
   "tamperPosture": [
     {
       "connector": "claude-code",
-      "status": "tamper-evident-only",
-      "reason": "The hook verifies its own artifact integrity through verifyArtifactIntegrityAndLog and logs the verdict, but the surrounding catch fails open.",
+      "status": "fail-closed-on-tamper",
+      "reason": "The hook awaits artifact verification before reading the tool call; a commercial verification rejection reaches the top-level catch, which emits a deny response.",
       "evidence": [
         {
           "kind": "tamper-evidence",
           "path": "packages/claude-code/src/pre-tool-use.ts",
-          "contains": ["verifyArtifactIntegrityAndLog", "Fail open"]
+          "contains": ["await verifyArtifactIntegrityAndLog", "writeInspectionFailure();"]
         }
       ],
       "limitations": [
-        "A tampered artifact produces an audit verdict, not a block."
+        "This is a connector response, not proof that a real Claude host prevents the side effect when its hook fails or is disabled."
       ]
     },
     {
@@ -585,32 +649,32 @@
     },
     {
       "connector": "openclaw",
-      "status": "tamper-evident-only",
-      "reason": "The plugin calls verifyArtifactIntegrityAndLog at registration and swallows a verification failure with an explicit fail-open catch.",
+      "status": "fail-closed-on-tamper",
+      "reason": "The plugin keeps the commercial integrity verification promise and awaits it before guarded hooks and tool execution; a rejected verification prevents those handlers from proceeding.",
       "evidence": [
         {
           "kind": "tamper-evidence",
           "path": "packages/openclaw/src/index.ts",
-          "contains": ["verifyArtifactIntegrityAndLog", "Fail open"]
+          "contains": ["verifyArtifactIntegrityAndLog", "await requireIntegrity();"]
         }
       ],
       "limitations": [
-        "A tampered artifact produces an audit verdict, not a block."
+        "The host must independently prove that rejected async hooks stop the tool side effect; a removed plugin is outside this boundary."
       ]
     },
     {
       "connector": "opencode",
-      "status": "tamper-evident-only",
-      "reason": "The plugin calls verifyArtifactIntegrityAndLog at registration and swallows a verification failure with an explicit fail-open catch.",
+      "status": "fail-closed-on-tamper",
+      "reason": "The plugin awaits commercial artifact verification before returning any handlers to OpenCode; a rejection prevents registration.",
       "evidence": [
         {
           "kind": "tamper-evidence",
           "path": "packages/opencode/src/index.ts",
-          "contains": ["verifyArtifactIntegrityAndLog", "Fail open"]
+          "contains": ["await verifyArtifactIntegrityAndLog", "artifactId: \"opencode/dist\""]
         }
       ],
       "limitations": [
-        "A tampered artifact produces an audit verdict, not a block."
+        "The host must independently prove what happens when plugin registration rejects; a removed plugin is outside this boundary."
       ]
     },
     {
@@ -668,17 +732,22 @@
     {
       "connector": "claude-code",
       "condition": "large-binary-response",
-      "outcome": "fail-closed",
-      "reason": "Output above the 262144-character inspection ceiling sets the truncation flag, which forces the block decision even with no rule finding.",
+      "outcome": "explicitly-unsupported",
+      "reason": "Large output is marked incomplete, but Claude PostToolUse runs after the tool and only supported response shapes can be replaced. Unsupported, malformed, oversized, or immutable results may remain visible to the host/model; no real-host same-turn acceptance exists.",
       "evidence": [
         {
           "kind": "failure-policy",
           "path": "packages/claude-code/src/output-inspection.ts",
-          "contains": ["text.length > 262144", "decision: \"block\""]
+          "contains": ["value.length > MAX_TOOL_RESPONSE_INSPECTION_CHARS", "decision: \"block\""]
+        },
+        {
+          "kind": "failure-policy",
+          "path": "packages/claude-code/src/tool-output-quarantine.ts",
+          "contains": ["Replacement unavailable", "original output may remain available"]
         }
       ],
       "limitations": [
-        "The tool has already executed; the ceiling prevents a clean result, not the action."
+        "A PostToolUse block verdict alone does not prove the original result was withheld from the model."
       ]
     },
     {
@@ -777,17 +846,17 @@
     {
       "connector": "vscode",
       "condition": "large-binary-response",
-      "outcome": "fail-closed",
-      "reason": "Output above the 256 KiB ceiling is returned as coverage_limited and the VS Code output handler answers with an explicit block decision.",
+      "outcome": "explicitly-unsupported",
+      "reason": "Output above the ceiling is marked coverage_limited, but VS Code PostToolUse is after execution and its response cannot replace bytes already returned to the model. The current block response does not establish output containment.",
       "evidence": [
         {
           "kind": "failure-policy",
           "path": "packages/extension/src/aidr-hook.ts",
-          "contains": ["handleVsCodeToolOutput", "decision: \"block\""]
+          "contains": ["handleVsCodeToolOutput", "does not replace output bytes"]
         }
       ],
       "limitations": [
-        "The tool has already executed; the block applies to the tool response."
+        "The tool has already executed and the original output may already be available to the model."
       ]
     },
     {
@@ -829,17 +898,27 @@
     {
       "connector": "openclaw",
       "condition": "large-binary-response",
-      "outcome": "fail-open",
-      "reason": "The bounded collector returns early for Uint8Array and ArrayBuffer payloads without marking the inspection incomplete, so a large binary payload is neither reported as a coverage limitation nor blocked.",
+      "outcome": "explicitly-unsupported",
+      "reason": "Opaque binary output is marked incomplete; post-execution protection can replace persisted output and withhold a correlated outbound response, but cannot prove the same-turn model did not receive the original result.",
       "evidence": [
         {
           "kind": "failure-policy",
           "path": "packages/openclaw/src/output-inspection.ts",
-          "contains": ["Binary payloads are not model-visible text", "Do not expand every byte"]
+          "contains": ["this.incomplete = true", "this.unsupportedContent = true", "return inspection.incomplete || inspection.findings.length > 0"]
+        },
+        {
+          "kind": "failure-policy",
+          "path": "packages/openclaw/src/output-protection.ts",
+          "contains": ["withheld the generated response", "pre_delivery_response_rewrite"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/openclaw/src/__tests__/output-protection.test.ts",
+          "contains": ["fails closed for opaque binary output", "redacts binary output blocks and withholds the correlated response as uninspected"]
         }
       ],
       "limitations": [
-        "Binary bytes leave the inspection path silently; only text beyond the character ceiling raises the incomplete flag."
+        "Opaque binary bytes are not decoded or inspected. Persisted output replacement and outbound-response withholding run after tool execution; carrying a finding into a later response depends on OpenClaw providing matching tool-call, run, or session correlation."
       ]
     },
     {
@@ -881,17 +960,17 @@
     {
       "connector": "opencode",
       "condition": "large-binary-response",
-      "outcome": "fail-closed",
-      "reason": "A non-string output is serialized, and a serialized payload above the 256 KiB ceiling is quarantined with the size-limit status before model consumption.",
+      "outcome": "explicitly-unsupported",
+      "reason": "Oversized or opaque output is not classified clean and replacement is attempted, but unsupported or immutable result shapes can leave the original visible. OpenCode's acceptance of the mutation before same-turn model consumption is unverified.",
       "evidence": [
         {
           "kind": "failure-policy",
           "path": "packages/opencode/src/output-handler.ts",
-          "contains": ["quarantined_size_limit", "not classified as clean"]
+          "contains": ["replacement_unavailable", "replacementApplied: false"]
         }
       ],
       "limitations": [
-        "The tool has already executed; the quarantine replaces the result."
+        "The tool has already executed; local mutation does not prove the host withheld the original from the model."
       ]
     },
     {

@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 mkdirSync(".release-evidence", { recursive: true });
 const root = mkdtempSync(resolve(".release-evidence/install-tools-"));
+const artifactPublicKey = join(root, "artifact-verification-public.pem");
+writeFileSync(artifactPublicKey, generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }));
 const checks = [];
 function run(script, args, success = true) {
 	const result = spawnSync(process.execPath, [script, ...args], { encoding: "utf8", timeout: 60000 });
@@ -13,7 +16,7 @@ function run(script, args, success = true) {
 }
 function read(path) { return JSON.parse(readFileSync(path, "utf8")); }
 const cloud = join(root, "cloud");
-run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", cloud, "--dashboard-url", "https://aidr.example.test", "--supabase-url", "https://project.supabase.co"]);
+run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", cloud, "--dashboard-url", "https://aidr.example.test", "--supabase-url", "https://project.supabase.co", "--artifact-verification-public-key-file", artifactPublicKey, "--telemetry-queue-root", "/var/lib/aidr-telemetry"]);
 const deployment = read(join(cloud, "deployment.json"));
 assert.equal(deployment.mode, "cloud");
 assert.ok(deployment.artifacts.length > 20);
@@ -25,7 +28,7 @@ const before = readFileSync(join(cloud, ".env.functions"));
 run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", cloud, "--development"], false);
 assert.ok(readFileSync(join(cloud, ".env.functions")).equals(before));
 checks.push("existing installation secrets cannot be overwritten by preparation");
-run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", join(root, "invalid"), "--dashboard-url", "http://public.example.test", "--supabase-url", "https://project.supabase.co"], false);
+run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", join(root, "invalid"), "--dashboard-url", "http://public.example.test", "--supabase-url", "https://project.supabase.co", "--artifact-verification-public-key-file", artifactPublicKey, "--telemetry-queue-root", "/var/lib/aidr-telemetry"], false);
 checks.push("production plaintext origin rejected");
 const second = join(root, "second");
 run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", second, "--development"]);

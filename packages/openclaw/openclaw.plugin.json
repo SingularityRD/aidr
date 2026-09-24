@@ -4,7 +4,7 @@
   "version": "0.6.0",
   "description": "Singularity AIDR — Agent Detection & Response layer that guards commands, files, and web requests",
   "skills": [
-    "resources/skills/security-awareness"
+    "dist/resources/skills/security-awareness"
   ],
   "contracts": {
     "tools": [

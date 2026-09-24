@@ -15,9 +15,8 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { VERSION } from "@singularityrd/aidr-core";
+import { isCommercialBuild, resolvePath, VERSION } from "@singularityrd/aidr-core";
 import { generateApiKey } from "./crypto.js";
 import {
 	type CommandRunner,
@@ -29,7 +28,7 @@ import {
 	resolveSecretStore,
 } from "./secret-store.js";
 
-const CONFIG_DIR = join(homedir(), ".singularity-aidr");
+const CONFIG_DIR = resolvePath("~/.singularity-aidr");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 const IS_POSIX = process.platform !== "win32";
 const NO_FOLLOW = IS_POSIX ? constants.O_NOFOLLOW : 0;
@@ -73,7 +72,7 @@ foreach ($entry in $updated.GetAccessRules($true, $true, [System.Security.Princi
 `;
 
 export interface Environment {
-	agent: "claude" | "cursor" | "vscode" | "openclaw" | "unknown";
+	agent: "claude" | "cursor" | "vscode" | "openclaw" | "opencode" | "codex" | "unknown";
 	hasNode: boolean;
 	nodeVersion: string;
 	projectRoot: string;
@@ -98,6 +97,12 @@ export interface Config {
 	secretRotatedAt?: string;
 	/** ISO timestamp of the last revocation. */
 	secretRevokedAt?: string;
+	auth?: {
+		api_key?: string;
+		enrollment_token?: string;
+		api_key_ref?: SecretReference;
+		enrollment_token_ref?: SecretReference;
+	};
 }
 
 /**
@@ -174,7 +179,12 @@ function assertOwner(stats: Stats): void {
 function hardenWindowsAcl(path: string, before: Stats, directory: boolean): Stats {
 	const result = spawnSync(
 		"powershell.exe",
-		["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(WINDOWS_PRIVATE_ACL, "utf16le").toString("base64")],
+		[
+			"-NoProfile",
+			"-NonInteractive",
+			"-EncodedCommand",
+			Buffer.from(WINDOWS_PRIVATE_ACL, "utf16le").toString("base64"),
+		],
 		{
 			env: {
 				...process.env,
@@ -190,7 +200,12 @@ function hardenWindowsAcl(path: string, before: Stats, directory: boolean): Stat
 		throw new Error("Local config Windows ACL could not be made private.");
 	}
 	const after = lstatIfPresent(path);
-	if (!after || after.isSymbolicLink() || !sameFile(before, after) || directory !== after.isDirectory()) {
+	if (
+		!after ||
+		after.isSymbolicLink() ||
+		!sameFile(before, after) ||
+		directory !== after.isDirectory()
+	) {
 		throw new Error("Local config changed during Windows ACL update.");
 	}
 	return after;
@@ -298,7 +313,11 @@ function parseSecretReference(document: Record<string, unknown>): SecretReferenc
 	return { store, id, created_at };
 }
 
-function toConfig(document: Record<string, unknown>, apiKey: string, reference: SecretReference | null): Config {
+function toConfig(
+	document: Record<string, unknown>,
+	apiKey: string,
+	reference: SecretReference | null,
+): Config {
 	const rest: Record<string, unknown> = { ...document };
 	const rotatedAt = rest.secret_rotated_at;
 	const revokedAt = rest.secret_revoked_at;
@@ -440,7 +459,14 @@ function parseConfigDocument(
 	} else if (typeof document.apiKey === "string") {
 		apiKey = document.apiKey;
 	}
-	return { config: toConfig(document, apiKey, reference), stats };
+	const config = toConfig(document, apiKey, reference);
+	if (resolve && config.auth && typeof config.auth === "object") {
+		for (const field of ["api_key", "enrollment_token"] as const) {
+			const ref = parseSecretReference({ secret_ref: config.auth[`${field}_ref`] });
+			if (ref) config.auth[field] = readVaultSecret(ref, options);
+		}
+	}
+	return { config, stats };
 }
 
 function readConfig(options: ConfigManagerOptions = {}): { config: Config; stats: Stats } | null {
@@ -468,13 +494,75 @@ function readConfigForMutation(
 	}
 }
 
-function writeConfigAtomically(config: Config, expected: Stats | null, securedDirectory?: Stats): boolean {
+function prepareCommercialAuth(
+	config: Config,
+	options: ConfigManagerOptions,
+): {
+	config: Config;
+	created: Array<{ store: SecretStore; ref: SecretReference }>;
+	replaced: SecretReference[];
+} {
+	if (!isCommercialBuild() || !config.auth) return { config, created: [], replaced: [] };
+	const auth = { ...config.auth };
+	const created: Array<{ store: SecretStore; ref: SecretReference }> = [];
+	const replaced: SecretReference[] = [];
+	try {
+		for (const field of ["api_key", "enrollment_token"] as const) {
+			const refField = `${field}_ref` as const;
+			const old = parseSecretReference({ secret_ref: auth[refField] });
+			const value = auth[field];
+			if (typeof value !== "string") continue;
+			if (value === "") {
+				if (old) replaced.push(old);
+				delete auth[refField];
+				delete auth[field];
+				continue;
+			}
+			if (old && readVaultSecret(old, options) === value) {
+				delete auth[field];
+				continue;
+			}
+			const store = selectStore(options);
+			if (store.location !== "os-vault")
+				throw new Error("Managed auth requires an OS credential vault.");
+			const ref: SecretReference = {
+				store: store.kind,
+				id: createSecretReferenceId(),
+				created_at: new Date().toISOString(),
+			};
+			store.put(ref.id, value);
+			created.push({ store, ref });
+			if (old) replaced.push(old);
+			auth[refField] = ref;
+			delete auth[field];
+		}
+	} catch (error) {
+		for (const { store, ref } of created) {
+			try {
+				store.revoke(ref.id);
+			} catch {
+				/* Unreferenced vault entry only. */
+			}
+		}
+		throw error;
+	}
+	return { config: { ...config, auth }, created, replaced };
+}
+
+function writeConfigAtomically(
+	config: Config,
+	expected: Stats | null,
+	securedDirectory?: Stats,
+	options: ConfigManagerOptions = {},
+): boolean {
 	const directory = securedDirectory ?? ensureConfigDirectory(true);
 	if (!directory) throw new Error("Local config directory is unavailable.");
-	const serialized = serializeConfig(config);
+	const prepared = prepareCommercialAuth(config, options);
 	const temporary = join(CONFIG_DIR, `.config-${randomBytes(16).toString("hex")}.tmp`);
 	let fd: number | null = null;
+	let committed = false;
 	try {
+		const serialized = serializeConfig(prepared.config);
 		fd = openSync(
 			temporary,
 			constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
@@ -492,10 +580,27 @@ function writeConfigAtomically(config: Config, expected: Stats | null, securedDi
 
 		if (!mayReplaceConfig(directory, expected)) return false;
 		renameSync(temporary, CONFIG_FILE);
+		committed = true;
+		for (const old of prepared.replaced) {
+			try {
+				storeForReference(old, options).revoke(old.id);
+			} catch {
+				/* Old reference is no longer reachable from config. */
+			}
+		}
 		return true;
 	} finally {
 		if (fd !== null) closeSync(fd);
 		discardTemporary(temporary);
+		if (!committed) {
+			for (const { store, ref } of prepared.created) {
+				try {
+					store.revoke(ref.id);
+				} catch {
+					/* Unreferenced vault entry only. */
+				}
+			}
+		}
 	}
 }
 
@@ -545,7 +650,8 @@ function revokePreviousSecret(
 	if (!previous || previous.store === "file-acl") return null;
 	if (current && previous.store === current.store && previous.id === current.id) return null;
 	try {
-		const previousStore = previous.store === store.kind ? store : storeForReference(previous, options);
+		const previousStore =
+			previous.store === store.kind ? store : storeForReference(previous, options);
 		previousStore.revoke(previous.id);
 		return null;
 	} catch {
@@ -604,6 +710,9 @@ export async function createConfig(
 
 	if (previous && !force && hasCredential(previous.config)) {
 		if (!IS_POSIX) hardenWindowsAcl(CONFIG_FILE, previous.stats, false);
+		if (isCommercialBuild() && previous.config.auth) {
+			writeConfigAtomically(previous.config, previous.stats, directory ?? undefined, options);
+		}
 		return { path: CONFIG_FILE, outcome: "reused" };
 	}
 
@@ -611,6 +720,9 @@ export async function createConfig(
 	const createdAt = new Date().toISOString();
 	const { apiKey, reference } = mintCredential(store, createdAt);
 	const config: Config = {
+		// The CLI and runtime share config.json. Replacing setup metadata must not
+		// discard policy, mode, auth, or other runtime settings already present.
+		...(previous?.config ?? {}),
 		apiKey,
 		environment: env,
 		version: VERSION,
@@ -619,11 +731,13 @@ export async function createConfig(
 		agentConfigured: false,
 		secretStore: store.kind,
 	};
+	delete config.secretRef;
+	delete config.secretRevokedAt;
 	if (reference) config.secretRef = reference;
 
 	let written: boolean;
 	try {
-		written = writeConfigAtomically(config, expected, directory ?? undefined);
+		written = writeConfigAtomically(config, expected, directory ?? undefined, options);
 	} catch (error) {
 		discardUncommittedSecret(store, reference);
 		throw error;
@@ -634,7 +748,12 @@ export async function createConfig(
 		return { path: CONFIG_FILE, outcome: "reused" };
 	}
 
-	const warning = revokePreviousSecret(previous?.config.secretRef ?? null, reference, store, options);
+	const warning = revokePreviousSecret(
+		previous?.config.secretRef ?? null,
+		reference,
+		store,
+		options,
+	);
 	return { path: CONFIG_FILE, outcome: "created", ...(warning ? { warning } : {}) };
 }
 
@@ -645,7 +764,16 @@ export function getConfig(options: ConfigManagerOptions = {}): Config | null {
 export function updateConfig(updates: Partial<Config>, options: ConfigManagerOptions = {}): void {
 	const existing = readConfig(options);
 	if (!existing) throw new Error("Config not found. Run 'aidr setup' first.");
-	writeConfigAtomically({ ...existing.config, ...updates }, existing.stats);
+	writeConfigAtomically({ ...existing.config, ...updates }, existing.stats, undefined, options);
+}
+
+/** Replace the config document with a fully validated, normalized config. */
+export function replaceConfig(config: Config, options: ConfigManagerOptions = {}): void {
+	const existing = readConfig(options);
+	if (!existing) throw new Error("Config not found. Run 'aidr setup' first.");
+	if (!writeConfigAtomically(config, existing.stats, undefined, options)) {
+		throw new Error("Local config changed during update; no changes were saved.");
+	}
 }
 
 /**
@@ -677,7 +805,7 @@ export function rotateSecret(options: ConfigManagerOptions = {}): SecretRotation
 
 	let written: boolean;
 	try {
-		written = writeConfigAtomically(next, stats);
+		written = writeConfigAtomically(next, stats, undefined, options);
 	} catch (error) {
 		discardUncommittedSecret(store, reference);
 		throw error;
@@ -727,7 +855,12 @@ export function revokeSecret(options: ConfigManagerOptions = {}): SecretRevocati
 	}
 
 	const revokedAt = new Date().toISOString();
-	const next: Config = { ...config, apiKey: "", secretStore: store.kind, secretRevokedAt: revokedAt };
+	const next: Config = {
+		...config,
+		apiKey: "",
+		secretStore: store.kind,
+		secretRevokedAt: revokedAt,
+	};
 	delete next.secretRef;
 	delete next.secretRotatedAt;
 

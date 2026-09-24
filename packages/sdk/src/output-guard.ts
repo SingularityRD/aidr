@@ -50,6 +50,7 @@ export class AIDRToolOutputError extends Error {
 interface SerializationSuccess {
 	ok: true;
 	text: string;
+	mcpText: string;
 	bytes: number;
 }
 
@@ -63,6 +64,47 @@ interface SerializationFailure {
 type SerializationResult = SerializationSuccess | SerializationFailure;
 
 const MAX_NESTING_DEPTH = 32;
+const BINARY_CONTENT_TYPES = new Set([
+	"image",
+	"audio",
+	"video",
+	"file",
+	"binary",
+	"resource",
+	"resource_link",
+]);
+
+function isOpaqueBinaryContent(value: object): boolean {
+	if (
+		ArrayBuffer.isView(value) ||
+		value instanceof ArrayBuffer ||
+		(typeof Blob !== "undefined" && value instanceof Blob)
+	) {
+		return true;
+	}
+	const type = Object.getOwnPropertyDescriptor(value, "type");
+	return Boolean(
+		(type &&
+			"value" in type &&
+			typeof type.value === "string" &&
+			BINARY_CONTENT_TYPES.has(type.value.toLowerCase())) ||
+			Object.prototype.hasOwnProperty.call(value, "blob"),
+	);
+}
+
+function mcpTextBlockText(value: unknown): string | undefined {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const type = Object.getOwnPropertyDescriptor(value, "type");
+	const text = Object.getOwnPropertyDescriptor(value, "text");
+	return type &&
+		"value" in type &&
+		type.value === "text" &&
+		text &&
+		"value" in text &&
+		typeof text.value === "string"
+		? text.value
+		: undefined;
+}
 
 function validateMaxBytes(value: number | undefined): number {
 	const maxBytes = value ?? DEFAULT_TOOL_OUTPUT_MAX_BYTES;
@@ -101,20 +143,39 @@ function boundedUtf8Length(value: string, limit: number): number {
 
 /**
  * Convert common framework outputs to scanner text without constructing an
- * unbounded JSON string. String leaves are separated by whitespace so payloads
- * split across adjacent chunks remain detectable by whitespace-tolerant rules.
+ * unbounded JSON string. Adjacent array string chunks stay contiguous so split
+ * tokens remain detectable.
  */
 class BoundedOutputSerializer {
 	private readonly chunks: string[] = [];
+	private readonly mcpTextRuns: string[] = [];
 	private readonly seen = new Set<object>();
 	private bytes = 0;
+	private mcpTextLength = 0;
 
 	constructor(private readonly maxBytes: number) {}
 
 	serialize(value: unknown): SerializationResult {
 		const failure = this.visit(value, 0);
 		if (failure) return failure;
-		return { ok: true, text: this.chunks.join(""), bytes: this.bytes };
+		return {
+			ok: true,
+			text: this.chunks.join(""),
+			mcpText: this.mcpTextRuns.join("\n"),
+			bytes: this.bytes,
+		};
+	}
+
+	private appendMcpTextRun(run: string[]): SerializationFailure | undefined {
+		if (run.length === 0) return undefined;
+		const text = run.join("");
+		const separatorLength = this.mcpTextRuns.length > 0 ? 1 : 0;
+		if (this.mcpTextLength + separatorLength + text.length > this.maxBytes) {
+			return this.failure("unavailable", "MCP text blocks exceed the inspection limit");
+		}
+		this.mcpTextRuns.push(text);
+		this.mcpTextLength += separatorLength + text.length;
+		return undefined;
 	}
 
 	private failure(status: SerializationFailure["status"], reason: string): SerializationFailure {
@@ -162,10 +223,10 @@ class BoundedOutputSerializer {
 
 	private visitObject(current: object, depth: number): SerializationFailure | undefined {
 		if (current instanceof Date) return this.append(current.toISOString());
-		if (current instanceof ArrayBuffer || ArrayBuffer.isView(current)) {
+		if (isOpaqueBinaryContent(current)) {
 			return this.failure(
 				"unavailable",
-				"Binary tool output requires a host-specific decoder before inspection",
+				"Opaque binary tool output requires a host-specific decoder before inspection",
 			);
 		}
 		if (this.seen.has(current)) {
@@ -174,9 +235,55 @@ class BoundedOutputSerializer {
 
 		this.seen.add(current);
 		try {
-			const entries = this.readEntries(current);
-			if (entries instanceof Error) return this.failure("unavailable", entries.message);
-			return this.visitEntries(entries, depth);
+			if (Array.isArray(current)) {
+				let mcpTextRun: string[] = [];
+				const flushMcpTextRun = () => {
+					const failure = this.appendMcpTextRun(mcpTextRun);
+					mcpTextRun = [];
+					return failure;
+				};
+				for (let index = 0; index < current.length; index += 1) {
+					const descriptor = Object.getOwnPropertyDescriptor(current, String(index));
+					if (!descriptor || !("value" in descriptor)) {
+						return this.failure("unavailable", "Tool output array contains unreadable data");
+					}
+					const mcpText = mcpTextBlockText(descriptor.value);
+					if (mcpText === undefined) {
+						const failure = flushMcpTextRun();
+						if (failure) return failure;
+					} else {
+						mcpTextRun.push(mcpText);
+					}
+					const next = Object.getOwnPropertyDescriptor(current, String(index + 1));
+					const joinsNextString =
+						typeof descriptor.value === "string" && typeof next?.value === "string";
+					const entryFailure = this.visitEntry("", descriptor.value, depth, !joinsNextString);
+					if (entryFailure) return entryFailure;
+				}
+				const failure = flushMcpTextRun();
+				if (failure) return failure;
+				return undefined;
+			}
+
+			const prototype = Object.getPrototypeOf(current);
+			let hasEntries = false;
+			for (const key in current) {
+				if (!Object.prototype.hasOwnProperty.call(current, key)) continue;
+				hasEntries = true;
+				const descriptor = Object.getOwnPropertyDescriptor(current, key);
+				if (!descriptor || !("value" in descriptor)) {
+					return this.failure("unavailable", "Tool output contains unreadable data");
+				}
+				const entryFailure = this.visitEntry(key, descriptor.value, depth);
+				if (entryFailure) return entryFailure;
+			}
+			if (!hasEntries && prototype !== Object.prototype && prototype !== null) {
+				return this.failure(
+					"unavailable",
+					"Tool output type requires a host-specific text decoder before inspection",
+				);
+			}
+			return undefined;
 		} catch (error) {
 			return this.failure(
 				"unavailable",
@@ -187,34 +294,19 @@ class BoundedOutputSerializer {
 		}
 	}
 
-	private readEntries(current: object): ReadonlyArray<readonly [string, unknown]> | Error {
-		if (Array.isArray(current)) {
-			return current.map((entry) => ["", entry] as const);
-		}
-		const record = current as Record<string, unknown>;
-		const entries = Object.keys(record).map((key) => [key, record[key]] as const);
-		const prototype = Object.getPrototypeOf(current);
-		if (entries.length === 0 && prototype !== Object.prototype && prototype !== null) {
-			return new Error("Tool output type requires a host-specific text decoder before inspection");
-		}
-		return entries;
-	}
-
-	private visitEntries(
-		entries: ReadonlyArray<readonly [string, unknown]>,
+	private visitEntry(
+		key: string,
+		entry: unknown,
 		depth: number,
+		appendSeparator = true,
 	): SerializationFailure | undefined {
-		for (const [key, entry] of entries) {
-			if (key) {
-				const keyFailure = this.append(`${key}=`);
-				if (keyFailure) return keyFailure;
-			}
-			const valueFailure = this.visit(entry, depth + 1);
-			if (valueFailure) return valueFailure;
-			const separatorFailure = this.append("\n");
-			if (separatorFailure) return separatorFailure;
+		if (key) {
+			const keyFailure = this.append(`${key}=`);
+			if (keyFailure) return keyFailure;
 		}
-		return undefined;
+		const valueFailure = this.visit(entry, depth + 1);
+		if (valueFailure) return valueFailure;
+		return appendSeparator ? this.append("\n") : undefined;
 	}
 }
 
@@ -251,7 +343,13 @@ export function scanToolOutput(
 	}
 
 	try {
-		const findings = scanModelOutput(serialized.text);
+		const byRule = new Map<string, ToolOutputFinding>();
+		for (const view of [serialized.text, serialized.mcpText]) {
+			for (const finding of scanModelOutput(view)) {
+				if (!byRule.has(finding.ruleId)) byRule.set(finding.ruleId, finding);
+			}
+		}
+		const findings = [...byRule.values()];
 		return {
 			status: findings.length > 0 ? "findings" : "clean",
 			findings,

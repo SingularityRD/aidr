@@ -52,6 +52,7 @@ async function runHook(
 		evaluateToolCall: evaluate,
 		extractFromToolCall: extract,
 		initSentry: vi.fn(),
+		verifyArtifactIntegrityAndLog: vi.fn().mockResolvedValue({ status: "skipped" }),
 	};
 	const pino = Object.assign(() => ({}), { destination: () => ({}) });
 	const modules: Record<string, unknown> = {
