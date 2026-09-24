@@ -1,0 +1,40 @@
+Singularity AIDR {{ .Chart.AppVersion }} is installing as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Dashboard:  {{ include "aidr.dashboardUrl" . }}
+API:        {{ include "aidr.apiUrl" . }}
+
+1. Watch the rollout and the schema migration hook:
+     kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }} -w
+     kubectl -n {{ .Release.Namespace }} logs job/{{ include "aidr.component" (dict "root" . "component" "migrations") }}
+{{- if not .Values.migrations.enabled }}
+   WARNING: migrations.enabled=false. Apply supabase/migrations yourself before using the dashboard.
+{{- end }}
+
+2. Check the aggregate readiness report (seven operator checks):
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "aidr.component" (dict "root" . "component" "dashboard") }} 8080:8080
+     curl -s http://127.0.0.1:8080/readyz
+   Kubernetes routes traffic on {{ .Values.dashboard.readinessProbePath }}; /readyz stays 503 until the
+   signing, backup and queue evidence files exist (see docs/operations/kubernetes.md).
+
+3. Bootstrap the first tenant owner from a workstation with this repository, using
+   the credential directory written by deploy/helm/generate-secrets.mjs:
+     node scripts/deployment-bootstrap.mjs --deployment <credential-dir> --email <owner> \
+       --name <organization> --seats <n> --license-expires-at <ISO date> --license-reference <contract ref>
+{{- if .Values.postgresql.enabled }}
+
+NOTE: postgresql.enabled=true runs ONE in-cluster Postgres instance with no failover.
+      Use externalDatabase for production (docs/operations/kubernetes.md).
+{{- end }}
+{{- if not .Values.backup.enabled }}
+
+NOTE: backup.enabled=false. Configure database backups before storing production data.
+{{- end }}
+{{- if not .Values.networkPolicy.enabled }}
+
+WARNING: networkPolicy.enabled=false. Pods are reachable from every namespace.
+{{- end }}
+{{- if .Values.aig.enabled }}
+
+AIG bridge (in-cluster only): http://{{ include "aidr.component" (dict "root" . "component" "aig-bridge") }}:8099
+Clients need the pod label(s): {{ toJson .Values.aig.bridge.clientPodLabel }}
+{{- end }}

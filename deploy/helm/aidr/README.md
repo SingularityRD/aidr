@@ -1,0 +1,167 @@
+# Singularity AIDR Helm chart
+
+Self-hosted AIDR control plane for Kubernetes 1.25+. It runs the same stack as the
+Compose installation prepared by `scripts/deployment-prepare.mjs`, reduced to the
+services AIDR uses:
+
+| Component | Image | Notes |
+|---|---|---|
+| `dashboard` | `aidr/dashboard` (built here) | Web console, `/livez`, `/readyz`, `/metrics` |
+| `api-gw` | `envoyproxy/envoy:v1.39.1` | Routes `/auth/v1`, `/rest/v1`, `/storage/v1`, `/functions/v1`; everything else is 404 |
+| `auth` | `supabase/gotrue:v2.196.0` | Invite-only (sign-up disabled) |
+| `rest` | `postgrest/postgrest:v14.17` | |
+| `storage` | `supabase/storage-api:v1.74.0` | PVC (`file`) or S3-compatible backend |
+| `functions` | `aidr/edge-functions` (built here) | `supabase/edge-runtime:v1.76.2` + AIDR functions |
+| `db` | `supabase/postgres:17.6.1.136` | Optional single instance; use `externalDatabase` in production |
+| `migrations` | `aidr/migrations` (built here) | Helm hook Job |
+| `backup` | `aidr/migrations` | Optional `pg_dump` CronJob |
+| `aig-*` | `aidr/aig-server`, `aidr/aig-agent`, `aidr/aig-bridge` (built here) | Optional AI-Infra-Guard stack (`aig.enabled`) |
+
+Supabase Studio, pg-meta, Realtime, imgproxy, analytics and the pooler are **not**
+deployed. The gateway answers 404 for their routes.
+
+Full operating guide: [`docs/operations/kubernetes.md`](../../../docs/operations/kubernetes.md).
+
+## Install
+
+```bash
+# 1. Build and push the AIDR images (dashboard dist must be built first).
+pnpm -C packages/dashboard build
+git submodule update --init deploy/upstream        # reviewed Supabase release, for the functions router
+node deploy/helm/build-images.mjs --output .aidr-images \
+  --registry registry.example.internal --build --push
+
+# 2. Generate the installation's credentials ONCE and keep the directory in your vault.
+node deploy/helm/generate-secrets.mjs --output ~/aidr-credentials --namespace aidr \
+  --dashboard-url https://aidr.example.com --api-url https://api.aidr.example.com \
+  --artifact-verification-public-key-file release-signing.pub.pem
+kubectl create namespace aidr
+kubectl apply -f ~/aidr-credentials/platform-secret.yaml -f ~/aidr-credentials/functions-secret.yaml
+
+# 3. Install.
+helm install aidr deploy/helm/aidr --namespace aidr -f my-values.yaml
+
+# 4. Create the first tenant owner through the public API.
+node scripts/deployment-bootstrap.mjs --deployment ~/aidr-credentials --email owner@example.com \
+  --name "Example Corp" --seats 250 --license-expires-at 2027-09-30T00:00:00Z --license-reference "PO-1234"
+```
+
+Minimal `my-values.yaml` (see `ci/default-values.yaml`; `ci/prod-values.yaml` shows a
+production shape):
+
+```yaml
+global:
+  imageRegistry: registry.example.internal
+publicUrls:
+  dashboard: https://aidr.example.com
+  api: https://api.aidr.example.com
+secrets:
+  existingSecret: aidr-platform
+  functionsExistingSecret: aidr-functions
+ingress:
+  className: nginx
+  tlsSecretName: aidr-tls        # or certManager.enabled + clusterIssuer
+```
+
+## What the chart refuses to do
+
+Rendering fails, rather than producing a weaker install, when:
+
+- `secrets.existingSecret` / `secrets.functionsExistingSecret` are unset. The chart never
+  generates a password, JWT secret or signing key and never renders a `Secret`.
+- `publicUrls.*` are not `https://` origins, or `ingress.tlsSecretName` is unset (TLS is
+  mandatory; cert-manager can fill the Secret).
+- An image tag is `latest`, or an AIDR-built image has no registry.
+- `postgresql.enabled=false` with `networkPolicy.enabled` and no
+  `externalDatabase.networkPolicyCIDRs`.
+- `storage.replicaCount > 1` on a `ReadWriteOnce` file volume.
+- `aig.enabled` without its Secret, signing key, data ConfigMap, trust anchors or egress proxy.
+
+## Secrets
+
+`secrets.existingSecret` keys: `postgres-password` (URL-safe; it is embedded in the
+Postgres connection URLs), `jwt-secret`, `anon-key`, `service-role-key` (HS256 JWTs signed
+with `jwt-secret`), `metrics-token`. Optional: the key named by `auth.smtp.passwordKey`.
+
+`secrets.functionsExistingSecret` is exported verbatim into the functions runtime:
+`AIDR_ENTITLEMENT_SIGNING_KEY_ID`, `AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64`,
+`AIDR_REVOCATION_SIGNING_KEY_ID`, `AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64`,
+`AIDR_DELEGATION_SIGNING_KEY_ID`, `AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64`,
+`AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64`, `AIDR_PACK_MASTER_KEY_B64`,
+`AIDR_PACK_DOWNLOAD_GRANT_SECRET`, `AIDR_DEVICE_START_INGRESS_SECRET`.
+
+`deploy/helm/generate-secrets.mjs` writes both Secrets plus the operator record used by
+`scripts/deployment-bootstrap.mjs` and the `agent-config.json` enrolled agents need. You
+may instead source the same keys from an external secret manager (External Secrets,
+Vault, sealed-secrets) as long as the Secret names match.
+
+## Key values
+
+| Value | Default | Purpose |
+|---|---|---|
+| `global.imageRegistry` | `""` | Prefix for **every** image (air-gapped mirror) |
+| `resourcesPreset` | `small` | `small` / `medium` (x2) / `large` (x4) requests and limits for every component without explicit `resources` |
+| `<component>.resources` | `{}` | Explicit override for one component |
+| `<component>.replicaCount`, `.pdb`, `.autoscaling` | | Replicas, PodDisruptionBudget, HPA (dashboard, apiGateway, functions) |
+| `postgresql.enabled` | `true` | In-cluster single Postgres; set `false` + `externalDatabase.*` in production |
+| `externalDatabase.sslMode` | `require` | `require`, `verify-ca` or `verify-full` |
+| `storage.backend` | `file` | `file` (PVC, one replica) or `s3` |
+| `migrations.enabled` | `true` | Schema hook Job |
+| `backup.enabled` | `false` | Nightly `pg_dump` CronJob to a PVC |
+| `ingress.certManager.*` | disabled | Adds the cert-manager issuer annotation |
+| `networkPolicy.enabled` | `true` | Default-deny plus per-component allows |
+| `networkPolicy.*EgressCIDRs` | `[]` | Opt-in egress: functions (npm mirror/IdP/billing), SMTP, dashboard certificate probe, S3 |
+| `functions.npmRegistry` | `""` | npm mirror for the functions' `npm:` imports |
+| `aig.enabled` | `false` | AI-Infra-Guard scanning stack |
+
+`values.schema.json` validates types, enums and patterns at install time.
+
+## Security posture
+
+Every pod runs with `runAsNonRoot`, a numeric non-root UID, `seccompProfile:
+RuntimeDefault`, no service-account token, and every container drops all capabilities
+with `allowPrivilegeEscalation: false` and a read-only root filesystem (writable
+`emptyDir` mounts only where a process needs scratch space). The in-cluster Postgres
+container is the single exception to the read-only root filesystem.
+
+The API gateway keeps the upstream Supabase key checks: protected `/auth/v1` and
+`/rest/v1` routes need the anon or service-role key, the PostgREST OpenAPI document
+needs the service-role key, CORS is pinned to `publicUrls.dashboard`, and API keys are
+substituted from the Secret at container start into an in-memory volume, never into the
+ConfigMap.
+
+## Upgrade
+
+```bash
+node deploy/helm/build-images.mjs --output .aidr-images-0.6.1 --registry registry.example.internal --build --push
+helm upgrade aidr deploy/helm/aidr --namespace aidr -f my-values.yaml
+```
+
+The migrations Job runs as a `pre-upgrade` hook: the schema moves (atomically, with
+checksum verification) before any new pod rolls out, and a failed migration aborts the
+upgrade with the old pods still serving. Take a backup first.
+
+## Air-gapped installs
+
+1. On a connected host: build the AIDR images, then bundle them with every upstream
+   image the chart renders for your values:
+   ```bash
+   helm template aidr deploy/helm/aidr -f my-values.yaml --set global.imageRegistry=docker.io \
+     | awk '$1=="image:"{print $2}' | grep -v '/aidr/' | sort -u > upstream-images.txt
+   args=$( (cat upstream-images.txt; jq -r '.images[].ref' .aidr-images/images.json) | sed 's/^/--images /')
+   node scripts/build-airgap-images.mjs --output aidr-images-bundle $args
+   ```
+   The bundle manifest records every reference with its size and SHA-256.
+2. Transfer the bundle, verify it (`node scripts/build-airgap-images.mjs --verify --output aidr-images-bundle`),
+   `docker load` the tarballs, retag `docker.io/<repo>:<tag>` as
+   `<internal-registry>/<repo>:<tag>` and push everything to the internal registry.
+3. Install with `global.imageRegistry: <internal-registry>` and, for the functions' npm
+   imports, `functions.npmRegistry: <internal npm mirror>`.
+
+## Backups
+
+`backup.enabled=true` adds a CronJob that writes `aidr-<UTC stamp>.dump` (custom format)
+and a `.sha256` file to a PVC and prunes dumps older than `backup.retentionDays`. It is a
+logical backup on the same cluster: replicate the volume off-site and rehearse restores
+(`pg_restore --clean --if-exists`). With `externalDatabase`, prefer the provider's PITR
+and keep the CronJob as a second, logical copy.

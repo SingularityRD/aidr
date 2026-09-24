@@ -78,6 +78,14 @@ onboarding before inviting customers. Signup is disabled in the generated
 self-hosted baseline. Team invitations create manually shared, expiring links;
 the application does not claim to send invitation emails.
 
+### Kubernetes
+
+The Helm chart in `deploy/helm/aidr` installs the same control plane on Kubernetes
+(external HA Postgres recommended, secure defaults, NetworkPolicy, optional AIG stack).
+Images are built with `deploy/helm/build-images.mjs` and credentials generated once with
+`deploy/helm/generate-secrets.mjs`. See `docs/operations/kubernetes.md`; validate the
+chart with `pnpm verify:helm`.
+
 ## Isolated installation rehearsal
 
 Use an empty destination and keep the stack isolated from customer data:

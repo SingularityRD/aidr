@@ -1,0 +1,92 @@
+{{- $component := "api-gw" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.apiGateway -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  {{- if not $values.autoscaling.enabled }}
+  replicas: {{ $values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/api-gateway-config.yaml") . | sha256sum | trunc 16 }}
+        {{- with $values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" $values) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser) | nindent 6 }}
+      containers:
+        - name: envoy
+          image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "apiGateway.image") }}
+          imagePullPolicy: {{ $values.image.pullPolicy }}
+          command: ["/bin/sh", "/etc/envoy-template/entrypoint.sh"]
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            {{- include "aidr.secretEnv" (dict "root" . "env" "ANON_KEY" "key" "anon-key") | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "SERVICE_ROLE_KEY" "key" "service-role-key") | nindent 12 }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          {{- include "aidr.resources" (dict "root" . "component" "apiGateway" "override" $values.resources) | nindent 10 }}
+          volumeMounts:
+            - name: template
+              mountPath: /etc/envoy-template
+              readOnly: true
+            - name: runtime
+              mountPath: /etc/envoy-runtime
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: template
+          configMap:
+            name: {{ $name }}
+        - name: runtime
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+{{- include "aidr.pdbAndHpa" (dict "root" . "component" $component "values" $values) }}

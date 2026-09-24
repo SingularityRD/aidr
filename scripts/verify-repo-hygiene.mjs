@@ -79,6 +79,12 @@ export const ALLOWLIST = [
 			"Product documentation examples use the anonymous placeholder identities `/home/u/`, `/Users/User/` and `/home/user/` to illustrate behaviour. They identify no real machine or contributor, and rewriting them would make the documented examples less readable.",
 	},
 	{
+		path: "deploy/helm/images/edge-functions.Dockerfile",
+		owner: "AIDR-012",
+		reason:
+			"`/home/deno/functions` is the in-container path the pinned supabase/edge-runtime image and its upstream router hard-code for function sources; it is an image filesystem path, not a host or contributor path.",
+	},
+	{
 		path: "deploy/fleet/windows/README.md",
 		owner: "AIDR-012",
 		reason:

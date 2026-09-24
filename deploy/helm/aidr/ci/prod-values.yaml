@@ -1,0 +1,75 @@
+# Production shape: external HA Postgres, S3 object storage, cert-manager TLS,
+# nightly logical backups, autoscaling and zone spreading.
+global:
+  imageRegistry: registry.example.internal
+resourcesPreset: medium
+publicUrls:
+  dashboard: https://aidr.example.com
+  api: https://api.aidr.example.com
+secrets:
+  existingSecret: aidr-platform
+  functionsExistingSecret: aidr-functions
+dashboard:
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 9
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: dashboard
+apiGateway:
+  replicaCount: 3
+  pdb:
+    enabled: true
+    minAvailable: 2
+functions:
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 12
+auth:
+  replicaCount: 3
+  smtp:
+    host: smtp.example.com
+    port: 587
+    user: aidr
+    passwordKey: smtp-password
+    adminEmail: security@example.com
+rest:
+  replicaCount: 3
+storage:
+  backend: s3
+  replicaCount: 2
+  s3:
+    bucket: aidr-objects
+    endpoint: https://s3.eu-central-1.amazonaws.com
+    region: eu-central-1
+    forcePathStyle: false
+    existingSecret: aidr-s3
+postgresql:
+  enabled: false
+externalDatabase:
+  host: aidr-db.internal.example.com
+  port: 5432
+  database: postgres
+  sslMode: verify-full
+  networkPolicyCIDRs: ["10.20.0.0/24"]
+backup:
+  enabled: true
+  retentionDays: 30
+ingress:
+  className: nginx
+  tlsSecretName: aidr-tls
+  certManager:
+    enabled: true
+    clusterIssuer: letsencrypt-prod
+networkPolicy:
+  smtpEgressCIDRs: ["10.30.0.10/32"]
+  storageEgressCIDRs: ["10.40.0.0/16"]
+  dashboardEgressCIDRs: ["10.50.0.0/24"]

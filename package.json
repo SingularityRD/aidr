@@ -133,6 +133,7 @@
 		"verify:release-signing": "node --test scripts/release-signing.test.mjs scripts/release-evidence-digests.test.mjs scripts/release-key-isolation.test.mjs scripts/verify-release-run.test.mjs",
 		"verify:provenance": "node --test scripts/provenance.test.mjs",
 		"verify:airgap-images": "node --test scripts/airgap-images.test.mjs",
+		"verify:helm": "node --test deploy/helm/chart.test.mjs deploy/helm/tools.test.mjs",
 		"verify:customer-kit": "node --test scripts/customer-kit-verify.test.mjs",
 		"verify:dlp-delivery": "node --test scripts/provision-dlp-detector.test.mjs",
 		"verify:repo-hygiene": "node scripts/verify-repo-hygiene.mjs",
