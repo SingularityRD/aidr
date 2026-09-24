@@ -38,7 +38,7 @@ async function main(): Promise<void> {
 		console.log(`Usage: aidr-claude-code health [options]
 
 Options:
-  -c, --check [name]  Run specific check only (core, cache, threat_rules, api)
+  -c, --check [name]  Run specific check only (core, cache, threat_rules, api, local_dlp_policy)
   -j, --json          Output health status as JSON
   -h, --help          Show this help message
 
@@ -84,17 +84,18 @@ Examples:
 			const check = allChecks.find((c) => c.name === specificCheck);
 
 			if (!check) {
-				// Try extended checks for api
-				if (specificCheck === "api") {
-					const { runExtendedHealthChecks } = await import("@singularityrd/aidr-core");
-					const extended = await runExtendedHealthChecks();
-					const apiCheck = extended.find((c) => c.name === "url_endpoint" || c.name === "api");
-					if (apiCheck) {
-						checks = [{ ...apiCheck, name: "api" }];
-						status = apiCheck.status;
-					} else {
-						throw new Error("API check not available");
-					}
+				// Fall back to the extended checks (`api` is an alias of url_endpoint).
+				const { runExtendedHealthChecks } = await import("@singularityrd/aidr-core");
+				const extended = await runExtendedHealthChecks();
+				const extendedCheck =
+					specificCheck === "api"
+						? extended.find((c) => c.name === "url_endpoint" || c.name === "api")
+						: extended.find((c) => c.name === specificCheck);
+				if (extendedCheck) {
+					checks = [specificCheck === "api" ? { ...extendedCheck, name: "api" } : extendedCheck];
+					status = extendedCheck.status;
+				} else if (specificCheck === "api") {
+					throw new Error("API check not available");
 				} else {
 					throw new Error(`Check "${specificCheck}" not found`);
 				}

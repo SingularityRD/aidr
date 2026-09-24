@@ -1,4 +1,4 @@
-import { detectPII } from "./pii-detector.js";
+import { detectOutputSensitiveData } from "./output-sensitive-data.js";
 
 type OutputFindingType =
 	| "secret_leak"
@@ -132,10 +132,8 @@ function appendSensitiveChunk(
 	findings: OutputFinding[],
 	seenSensitiveValues: Set<string>,
 ): boolean {
-	const pii = detectPII(chunk);
-	for (const finding of pii.findings) {
+	for (const finding of detectOutputSensitiveData(chunk)) {
 		if (finding.index >= SCAN_STEP_CHARS) continue;
-		if (finding.severity !== "critical" && finding.severity !== "high") continue;
 		const key = `${finding.type}:${finding.value}`;
 		if (viewIndex > 0 && seenSensitiveValues.has(key)) continue;
 		seenSensitiveValues.add(key);
@@ -161,8 +159,8 @@ function collectSensitiveFindings(
 		for (let start = 0; start < view.length; start += SCAN_STEP_CHARS) {
 			if (expired()) return "timeout";
 			const chunk = view.slice(start, start + SCAN_STEP_CHARS + SCAN_OVERLAP_CHARS);
-			// Every PII pattern requires one of these characters or the bearer prefix.
-			if (!/[@0-9A-Z:_=-]|bearer/.test(chunk)) continue;
+			// Every sensitive-data pattern requires a digit, an uppercase letter, `_`, `=` or `-`.
+			if (!/[0-9A-Z_=-]/.test(chunk)) continue;
 			const withinLimit = appendSensitiveChunk(chunk, viewIndex, findings, seenSensitiveValues);
 			if (expired()) return "timeout";
 			if (!withinLimit) return "finding_limit";

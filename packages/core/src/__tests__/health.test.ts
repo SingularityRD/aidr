@@ -218,6 +218,7 @@ describe("health status reporting", () => {
 			"remote_policy",
 			"url_endpoint",
 			"disk_space",
+			"local_dlp_policy",
 		]);
 		expect(byName.remote_policy).toMatchObject({
 			status: "healthy",

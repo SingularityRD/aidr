@@ -305,6 +305,106 @@ Use this to permanently suppress specific rules that don't apply to your workflo
 }
 ```
 
+## DLP policy
+
+DLP (data loss prevention) evaluates the serialized tool input against a
+`DlpPolicySchema` document (labels, keyword/regex rules with `block`, `ask` or
+`redact` actions, and time-bounded exceptions). Where the policy comes from
+depends on [`mode`](#mode):
+
+| Mode | Source | Signature |
+|------|--------|-----------|
+| `managed` | `~/.singularity-aidr/detectors/<runtime>.json`, issued by the control plane | Ed25519-signed and bound to the verified managed entitlement; an unsigned or tampered bundle blocks tool calls |
+| `local` | `~/.singularity-aidr/dlp-policy.json` (override with `AIDR_DLP_POLICY_PATH`) | Unsigned; written by the machine's own operator |
+
+Local mode behaviour:
+
+- **Missing file** — local DLP is off. Nothing else changes.
+- **Valid file** — the policy is enforced on every connector exactly like a
+  managed policy (`tenantId` in the file is only a label for rule and exception
+  ownership). Because a hook returns a verdict rather than a rewritten payload,
+  `redact` is enforced as a deny.
+- **Invalid file** (unreadable, not JSON, or failing schema validation) — the
+  policy is skipped, a single warning is written to stderr, and the extended
+  health check `local_dlp_policy` (for example
+  `aidr-claude-code health --check local_dlp_policy --json`) reports `degraded`
+  with `enforced: false`. It is never reported as an enforced, clean policy. Error
+  messages list only the failing field paths, never policy values.
+- The unsigned file is ignored in `managed` mode; managed installs accept DLP
+  policy only from signed bundles. If a signed bundle is installed in local
+  mode, it is still validated and refused (tool calls are blocked) rather than
+  silently replaced by the local file.
+
+Minimal example:
+
+```json
+{
+  "version": 1,
+  "tenantId": "local",
+  "labels": [
+    { "id": "internal", "tenantId": "local", "name": "Internal", "sensitivity": "restricted" }
+  ],
+  "rules": [
+    {
+      "id": "project-codename",
+      "tenantId": "local",
+      "labelId": "internal",
+      "name": "Unreleased project codename",
+      "action": "block",
+      "directions": ["input"],
+      "matchers": [{ "type": "keyword", "values": ["PROJECT-ORION"] }]
+    }
+  ]
+}
+```
+
+### Built-in common-PII baseline
+
+While any DLP policy is active (managed or local), tool input is also checked
+for SSNs (dashed `123-45-6789` form), Luhn-valid payment cards from a known
+network, email addresses, and phone numbers (`+` international prefix or
+separated NANP `555-123-4567` layout). Bare digit runs such as epoch
+timestamps, order ids, IP addresses and hashes are not treated as PII.
+
+Each type is governed by a reserved rule id — `pii-ssn`, `pii-credit_card`,
+`pii-email`, `pii-phone` — so the policy stays in control:
+
+- No rule with that id: the baseline blocks the call.
+- A rule with that id and `"enabled": false`, or whose `directions` omit
+  `"input"`: the baseline is off for that type.
+- A rule with that id: its `action` applies (`ask` asks for out-of-band
+  approval; `block` and `redact` deny). Its matchers also run as an ordinary
+  rule, extending the baseline.
+- An active exception whose `ruleId` is the reserved id suppresses matches:
+  `scope: "rule"` for every match, `scope: "match"` for one value (fingerprint
+  `sha256(tenantId + "\0" + ruleId + "\0" + value)`), `scope: "content"` for one
+  exact serialized payload (`sha256(tenantId + "\0" + content)`).
+
+For example, to allow email addresses while keeping every other baseline type
+blocking, add this rule:
+
+```json
+{
+  "id": "pii-email",
+  "tenantId": "local",
+  "labelId": "internal",
+  "name": "Email addresses (allowed)",
+  "enabled": false,
+  "action": "block",
+  "matchers": [{ "type": "keyword", "values": ["unused"] }]
+}
+```
+
+### Tool-output quarantine
+
+Independently of DLP policy, connectors that inspect tool output quarantine a
+result only for high-precision findings: credentials (AWS keys, PEM private
+keys with key material, GitHub/GitLab/Slack/npm/Hugging Face tokens, OpenAI and
+Anthropic keys, verified JWTs, bearer tokens and generated-looking values
+assigned to secret-named keys), Luhn-valid payment cards, and SSNs that are
+explicitly labelled. Contact data such as `git log` author emails is not a
+quarantine reason.
+
 ## Files on Disk
 
 | Path | Purpose |
@@ -319,3 +419,5 @@ Use this to permanently suppress specific rules that don't apply to your workflo
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |
 | `~/.singularity-aidr/consumed-approvals.json` | Consumed approvals for MCP allowlist flow (10-min TTL entries) |
 | `~/.singularity-aidr/intel/` | Optional offline intel packs |
+| `~/.singularity-aidr/dlp-policy.json` | Optional unsigned DLP policy (local mode only; override with `AIDR_DLP_POLICY_PATH`) |
+| `~/.singularity-aidr/detectors/<runtime>.json` | Signed tenant detector bundle (managed mode) |
