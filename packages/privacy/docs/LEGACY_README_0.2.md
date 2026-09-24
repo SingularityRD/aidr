@@ -4,7 +4,7 @@ Türkçe/İngilizce metin DLP çekirdeğine **ekran görüntüsü / görsel ek k
 
 **[Görsel modülünü kurma ve API](VISUAL.md)** · **[Gerçek test raporu](../reports/visual/TEST_REPORT.md)** · **[Güven modeli](VISUAL_THREAT_MODEL.md)** · **[Üretime alma kapıları](VISUAL_DEPLOYMENT.md)**
 
-Yeni subpath: `@singularity/aidr-privacy/visual`. Yeni CLI: `aidr-visual`. Yerel Tesseract eng+tur, PNG/JPEG/WebP, siyah piksel maskelemesi, bağımsız PNG doğrulaması ve atomic multimodal gönderim. Yerel Python/native bağımlılıkları ayrıca kurulur; OCR ağırlıkları/fontlar pakete dahil değildir.
+Yeni subpath: `@singularityrd/aidr-privacy/visual`. Yeni CLI: `aidr-visual`. Yerel Tesseract eng+tur, PNG/JPEG/WebP, siyah piksel maskelemesi, bağımsız PNG doğrulaması ve atomic multimodal gönderim. Yerel Python/native bağımlılıkları ayrıca kurulur; OCR ağırlıkları/fontlar pakete dahil değildir.
 
 **628 birim/entegrasyon testi + ayrı 8 gerçek OCR pipeline testi geçti.** Beş sentetik PII görselindeki 29 hassas satırın glif sınırları piksel düzeyinde kontrol edildi. Bu sayılar genel OCR/NER başarım yüzdesi değildir. `release:'manual'` varsayılanı hiçbir görsel yayımlamaz; otomatik modu açıkça seçmek gerekir. Gerçek NER değerlendirmesi, kurumsal egress entegrasyonu ve üretim kabulü tamamlanmış değildir.
 
@@ -77,7 +77,7 @@ console.log(result.output);
 privacy.dispose();
 ```
 
-Dağıtım `.tgz` paketinden monorepoya yerel bağımlılık olarak eklenebilir. Ardından import yolu `@singularity/aidr-privacy` olur. `examples/aidr-tool-guard.mjs` örneği JSON tool çağrılarının gönderim öncesi denetimini gösterir; mevcut AIDR interceptörlerine kendiliğinden bağlanmaz.
+Dağıtım `.tgz` paketinden monorepoya yerel bağımlılık olarak eklenebilir. Ardından import yolu `@singularityrd/aidr-privacy` olur. `examples/aidr-tool-guard.mjs` örneği JSON tool çağrılarının gönderim öncesi denetimini gösterir; mevcut AIDR interceptörlerine kendiliğinden bağlanmaz.
 
 ## Gerçekte neler var?
 

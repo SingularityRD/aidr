@@ -14,3 +14,26 @@ export function authFixture(f,clock=()=>NOW,identityOverrides={}){const keys={us
  return {keys,resolver,token,credentials,user:()=>resolver.authenticate(token('user')),reviewer:()=>resolver.authenticate(token('user',{},'bob','s2')),context:()=>resolver.resolve(credentials(),'https://api.example.com')};}
 
 export function pythonExecutable(){return process.env.AIDR_PYTHON??execFileSync('python3',['-c','import os,sys; print(os.path.realpath(sys.executable))'],{encoding:'utf8'}).trim();}
+
+/**
+ * The sandboxed document parser (parsers/worker.py) needs Linux, a Python 3
+ * interpreter with the pinned parser packages from parsers/requirements.txt and
+ * libseccomp. Returns a skip reason naming the missing prerequisite, or false
+ * when every prerequisite is present, so a missing prerequisite is reported as
+ * an explicit node:test skip and never as a pass.
+ */
+let parserSkipReason;
+export function parserPrerequisiteSkip(){
+ parserSkipReason??=probeParserPrerequisites();
+ return parserSkipReason;
+}
+function probeParserPrerequisites(){
+ if(process.platform!=='linux')return `CDR parser sandbox requires Linux seccomp (platform is ${process.platform})`;
+ let python;
+ try{python=pythonExecutable();}catch{return 'CDR parser requires a python3 interpreter (python3 not found; set AIDR_PYTHON)';}
+ try{execFileSync(python,['-c','import pypdf, defusedxml'],{stdio:'ignore'});}
+ catch{return `CDR parser requires the Python packages in parsers/requirements.txt (pypdf, defusedxml) for ${python}; install with: ${python} -m pip install -r parsers/requirements.txt`;}
+ try{execFileSync(python,['-c','import ctypes.util,sys; sys.exit(0 if ctypes.util.find_library("seccomp") else 1)'],{stdio:'ignore'});}
+ catch{return 'CDR parser sandbox requires libseccomp (libseccomp.so.2 not found)';}
+ return false;
+}

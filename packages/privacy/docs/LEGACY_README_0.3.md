@@ -31,8 +31,8 @@ Node.js 22.16.0, TypeScript 5.8.3 ile bu ortamda doğrulandı. Tam kaynak ZIP'in
 ## Programatik kullanım
 
 ```ts
-import { BrowserPrivacyEngine } from '@singularity/aidr-privacy/browser';
-import { protectDocument } from '@singularity/aidr-privacy/documents';
+import { BrowserPrivacyEngine } from '@singularityrd/aidr-privacy/browser';
+import { protectDocument } from '@singularityrd/aidr-privacy/documents';
 
 const scanner = new BrowserPrivacyEngine();
 const result = scanner.protect('E-posta: synthetic@example.com');
@@ -47,7 +47,7 @@ const csv = await protectDocument(
 if (csv.output === null) throw new Error('AIDR_DOCUMENT_DENIED');
 ```
 
-BrowserPrivacyEngine kurallı çekirdektir, gerçek NER modeli değildir. Tam Node motoru (`@singularity/aidr-privacy`) önceki NER/HMAC/JSON/atomic text özelliklerini korur. Görsel modülü `@singularity/aidr-privacy/visual` altında kalır. Ayrıntılı Node/metin kullanımı [0.2 tarihsel README](docs/LEGACY_README_0.2.md) ve mevcut docs altında yer alır.
+BrowserPrivacyEngine kurallı çekirdektir, gerçek NER modeli değildir. Tam Node motoru (`@singularityrd/aidr-privacy`) önceki NER/HMAC/JSON/atomic text özelliklerini korur. Görsel modülü `@singularityrd/aidr-privacy/visual` altında kalır. Ayrıntılı Node/metin kullanımı [0.2 tarihsel README](docs/LEGACY_README_0.2.md) ve mevcut docs altında yer alır.
 
 ## Kod haritası
 
