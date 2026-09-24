@@ -676,6 +676,15 @@ export { PackageChecker } from "./package-checker.js";
 export type { ParsedPackage } from "./package-extractor.js";
 // Package extractor
 export { extractPackagesFromCommand, extractPackagesFromManifest } from "./package-extractor.js";
+// Built-in common-PII baseline governed by tenant DLP policy
+export {
+	COMMON_PII_TYPES,
+	type CommonPiiBaselineFinding,
+	type CommonPiiBaselineResult,
+	type CommonPiiType,
+	commonPiiRuleId,
+	evaluateCommonPiiBaseline,
+} from "./pii-baseline.js";
 // PII Detector (privacy protection)
 export {
 	detectPII,
@@ -964,6 +973,14 @@ export {
 	detectorPolicyPath,
 	loadProvisionedDetectorContext,
 } from "./detector-provisioning.js";
+// Local-mode (unsigned, operator-written) DLP policy file.
+export {
+	DEFAULT_LOCAL_DLP_POLICY_PATH,
+	inspectLocalDlpPolicy,
+	LOCAL_DLP_POLICY_ENV,
+	type LocalDlpPolicyState,
+	localDlpPolicyPath,
+} from "./local-dlp-policy.js";
 // Device enrollment binding used by the fleet response transport. This is not
 // hardware or OS attestation; it is a server-verified installation/key pairing.
 export {

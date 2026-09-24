@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { VerdictCache } from "./cache.js";
 import { resolveEndpoint } from "./clients/url-check.js";
 import { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
+import { inspectLocalDlpPolicy } from "./local-dlp-policy.js";
 import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import { loadThreats } from "./threat-loader.js";
 import { nullLogger } from "./types.js";
@@ -310,6 +311,67 @@ async function checkRemotePolicyHealth(): Promise<HealthCheck> {
 }
 
 /**
+ * Check the optional local-mode DLP policy. An invalid file is skipped at
+ * enforcement time, so it must surface here as degraded, never as healthy.
+ */
+async function checkLocalDlpPolicyHealth(): Promise<HealthCheck> {
+	const start = Date.now();
+	try {
+		const config = await loadConfig();
+		if (config.mode === "managed") {
+			return {
+				name: "local_dlp_policy",
+				status: "healthy",
+				latencyMs: Date.now() - start,
+				message: "Managed mode: DLP policy is accepted only from signed detector bundles.",
+				details: { mode: "managed", applies: false },
+			};
+		}
+		const state = await inspectLocalDlpPolicy();
+		const latencyMs = Date.now() - start;
+		if (state.status === "absent") {
+			return {
+				name: "local_dlp_policy",
+				status: "healthy",
+				latencyMs,
+				message: "No local DLP policy configured; local DLP is off.",
+				details: { mode: "local", configured: false, path: state.path },
+			};
+		}
+		if (state.status === "invalid") {
+			return {
+				name: "local_dlp_policy",
+				status: "degraded",
+				latencyMs,
+				message: `Local DLP policy is invalid and NOT enforced: ${state.reason}`,
+				details: { mode: "local", configured: true, enforced: false, path: state.path },
+			};
+		}
+		return {
+			name: "local_dlp_policy",
+			status: "healthy",
+			latencyMs,
+			message: "Local DLP policy loaded and enforced.",
+			details: {
+				mode: "local",
+				configured: true,
+				enforced: true,
+				path: state.path,
+				rules: state.policy.rules.length,
+				exceptions: state.policy.exceptions.length,
+			},
+		};
+	} catch (error) {
+		return {
+			name: "local_dlp_policy",
+			status: "degraded",
+			latencyMs: Date.now() - start,
+			message: `Local DLP policy status unavailable: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	}
+}
+
+/**
  * Run all required health checks (core, cache, threat_rules)
  */
 export async function runHealthChecks(): Promise<HealthCheck[]> {
@@ -333,6 +395,7 @@ export async function runExtendedHealthChecks(): Promise<HealthCheck[]> {
 		checkRemotePolicyHealth(),
 		checkEndpointHealth(),
 		checkDiskHealth(),
+		checkLocalDlpPolicyHealth(),
 	]);
 
 	return checks;

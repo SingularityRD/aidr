@@ -25,9 +25,8 @@ import {
 	verifyDelegatedCredential,
 } from "./delegated-credential.js";
 import { DetectionLegUnavailableError } from "./detection-leg.js";
-import { PiiDetectorImpl } from "./dlp/pii-detector.js";
 import type { DlpPolicy } from "./dlp/policy.js";
-import { scanDlpInput } from "./dlp/scanner.js";
+import { type DlpScanResult, scanDlpInput } from "./dlp/scanner.js";
 import { DecisionEngine } from "./engine.js";
 import { MAX_ARTIFACT_SIZE } from "./extractors.js";
 import { HeuristicsEngine } from "./heuristics.js";
@@ -68,6 +67,7 @@ import {
 	isPackageManifestPath,
 	type ParsedPackage,
 } from "./package-extractor.js";
+import { evaluateCommonPiiBaseline } from "./pii-baseline.js";
 import { evaluatePolicy } from "./policy.js";
 import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
@@ -227,11 +227,6 @@ function hostEffectiveVerdict(
 		? { ...verdict, decision: "deny" }
 		: verdict;
 }
-const TOOL_INPUT_PII_DETECTOR = new PiiDetectorImpl({
-	enableIpAddress: false,
-	enableAwsKey: false,
-	enableApiKey: false,
-});
 
 function detectorVerdict(
 	decision: "ask" | "deny",
@@ -300,6 +295,30 @@ function isUrlCheckResult(value: unknown): value is UrlCheckResult {
 	);
 }
 
+/** The tenant rules' own outcome; null when the policy allows the content. */
+function tenantDlpVerdict(dlp: DlpScanResult): Verdict | null {
+	if (dlp.status === "unavailable") {
+		return detectorVerdict(
+			dlp.action === "block" ? "deny" : "ask",
+			"dlp_unavailable",
+			"dlp",
+			`DLP inspection unavailable: ${dlp.unavailable.reason}.`,
+		);
+	}
+	if (dlp.action === "allow") return null;
+	// A hook returns a verdict, not a rewritten tool payload. Passing a
+	// redact result through would disclose the original value.
+	return detectorVerdict(
+		dlp.action === "ask" ? "ask" : "deny",
+		"dlp",
+		"dlp",
+		dlp.action === "redact"
+			? "DLP redaction required; this connector cannot rewrite tool input."
+			: `DLP policy requires ${dlp.action}.`,
+		dlp.findings[0]?.ruleId ?? null,
+	);
+}
+
 function evaluateDlpDetector(
 	detector: NonNullable<NonNullable<ToolEvaluationContext["runtimeDetectors"]>["dlp"]>,
 	tenantId: string,
@@ -311,39 +330,27 @@ function evaluateDlpDetector(
 			content,
 			contentType: detector.contentType ?? "application/json",
 		});
-		const piiMatch =
+		// Built-in common-PII baseline, governed by the tenant policy's reserved
+		// `pii-<type>` rules and exceptions (see pii-baseline.ts). Oversized input
+		// is reported as unavailable rather than partially scanned.
+		const baseline =
 			dlp.status === "unavailable" && dlp.unavailable.reason === "oversize"
-				? undefined
-				: TOOL_INPUT_PII_DETECTOR.detect(content)[0];
-		if (piiMatch) {
-			return detectorVerdict(
-				"deny",
-				"dlp",
-				"dlp",
-				`Common PII (${piiMatch.type}) detected; original tool input was blocked.`,
-				`pii-${piiMatch.type}`,
-			);
-		}
-		if (dlp.status === "unavailable") {
-			return detectorVerdict(
-				dlp.action === "block" ? "deny" : "ask",
-				"dlp_unavailable",
-				"dlp",
-				`DLP inspection unavailable: ${dlp.unavailable.reason}.`,
-			);
-		}
-		if (dlp.action === "allow") return null;
-		// A hook returns a verdict, not a rewritten tool payload. Passing a
-		// redact result through would disclose the original value.
-		return detectorVerdict(
-			dlp.action === "ask" ? "ask" : "deny",
-			"dlp",
-			"dlp",
-			dlp.action === "redact"
-				? "DLP redaction required; this connector cannot rewrite tool input."
-				: `DLP policy requires ${dlp.action}.`,
-			dlp.findings[0]?.ruleId ?? null,
-		);
+				? null
+				: evaluateCommonPiiBaseline(detector.policy, content).finding;
+		const baselineVerdict = baseline
+			? detectorVerdict(
+					baseline.decision,
+					"dlp",
+					"dlp",
+					baseline.decision === "ask"
+						? `Common PII (${baseline.type}) detected; tenant DLP policy requires approval.`
+						: `Common PII (${baseline.type}) detected; original tool input was blocked.`,
+					baseline.ruleId,
+				)
+			: null;
+		if (baselineVerdict?.decision === "deny") return baselineVerdict;
+		const tenantVerdict = tenantDlpVerdict(dlp);
+		return tenantVerdict?.decision === "deny" ? tenantVerdict : (baselineVerdict ?? tenantVerdict);
 	} catch {
 		return detectorVerdict(
 			"deny",

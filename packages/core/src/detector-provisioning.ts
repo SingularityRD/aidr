@@ -23,6 +23,7 @@ import { createBehavioralDetectionOrchestrator } from "./behavioral-orchestrator
 import { loadConfig, resolvePath } from "./config.js";
 import { DlpPolicySchema } from "./dlp/index.js";
 import type { ToolEvaluationContext } from "./evaluator.js";
+import { inspectLocalDlpPolicy } from "./local-dlp-policy.js";
 import {
 	isEntitlementActive,
 	loadManagedState,
@@ -30,7 +31,7 @@ import {
 	managedStatePath,
 } from "./managed.js";
 import { LocalEmbeddingModel } from "./ml-model.js";
-import type { AgentRuntime, Config } from "./types.js";
+import type { AgentRuntime, Config, Logger } from "./types.js";
 
 const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -363,14 +364,64 @@ async function detectorContext(
 	return context;
 }
 
+/** Warn once per process and reason: hooks and plugins evaluate many calls. */
+const reportedLocalPolicyWarnings = new Set<string>();
+
+const stderrLogger: Logger = {
+	debug() {},
+	info() {},
+	warn(message, data) {
+		process.stderr.write(
+			`[singularity-aidr] ${message}${data ? ` ${JSON.stringify(data)}` : ""}\n`,
+		);
+	},
+	error(message, data) {
+		process.stderr.write(
+			`[singularity-aidr] ${message}${data ? ` ${JSON.stringify(data)}` : ""}\n`,
+		);
+	},
+};
+
 /**
- * Load the signed tenant detector policy for one agent runtime.
+ * Local-mode DLP: an optional, unsigned operator policy file. Missing means
+ * off; invalid is skipped and logged (and reported by the health check), never
+ * treated as an enforced policy.
+ */
+async function localDlpContext(logger: Logger): Promise<DetectorProvisionedContext> {
+	const state = await inspectLocalDlpPolicy();
+	if (state.status === "absent") return {};
+	if (state.status === "invalid") {
+		const key = `${state.path}\0${state.reason}`;
+		if (!reportedLocalPolicyWarnings.has(key)) {
+			reportedLocalPolicyWarnings.add(key);
+			logger.warn("Local DLP policy is invalid and was skipped; local DLP is NOT enforced.", {
+				path: state.path,
+				reason: state.reason,
+			});
+		}
+		return {};
+	}
+	return {
+		runtimeDetectors: {
+			tenantId: state.policy.tenantId,
+			dlp: { enabled: true, policy: state.policy },
+		},
+	};
+}
+
+/**
+ * Load the detector policy for one agent runtime.
  *
  * `agentRuntime` selects a fixed file for that runtime only. It must come from
  * the runtime the connector is actually serving — never from a tool payload.
+ *
+ * Managed mode accepts only the signed, entitlement-bound bundle. Local mode
+ * additionally reads the optional unsigned `dlp-policy.json` when no signed
+ * bundle is installed (see `local-dlp-policy.ts`).
  */
 export async function loadProvisionedDetectorContext(
 	agentRuntime: AgentRuntime,
+	options: { logger?: Logger } = {},
 ): Promise<DetectorProvisionedContext> {
 	const config = await loadConfig();
 	const state = await loadManagedState(managedStatePath(), {
@@ -382,7 +433,9 @@ export async function loadProvisionedDetectorContext(
 		isEntitlementActive(state) &&
 		state.entitlement.premium_modules.includes("runtime_detectors");
 	const installed = await readInstalledPolicy(agentRuntime, required);
-	if (!installed) return {};
+	if (!installed) {
+		return config.mode === "local" ? localDlpContext(options.logger ?? stderrLogger) : {};
+	}
 	validatePolicyTrust(config, state, installed.signed, installed.rawPayload);
 	validateFeedKeyring(installed.signed.payload.reputation_feed);
 	return detectorContext(installed.signed.payload);
