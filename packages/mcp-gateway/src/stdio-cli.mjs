@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { readGatewayConfig, reportFailure, stage } from "./diagnostics.mjs";
 import { createMcpGateway } from "./gateway.mjs";
 import { requireGatewayIntegrity } from "./integrity.mjs";
 import { runStdioBridge } from "./stdio.mjs";
@@ -12,21 +12,21 @@ if (!configPath || !tenantId || !clientId || !serverId || !tokenEnv || process.a
 	process.exitCode = 2;
 } else {
 	try {
-		await requireGatewayIntegrity();
-		const config = JSON.parse(await readFile(configPath, "utf8"));
-		await runStdioBridge({
-			gateway: createMcpGateway(config),
-			tenantId,
-			clientId,
-			serverId,
-			tokenEnv,
-			input: process.stdin,
-			output: process.stdout,
-		});
-	} catch {
-		process.stderr.write(
-			"AIDR MCP stdio bridge stopped after a configuration, transport, or protocol failure\n",
+		await stage("integrity_verification_failed", () => requireGatewayIntegrity());
+		const config = await readGatewayConfig(configPath);
+		const gateway = await stage("config_invalid", () => createMcpGateway(config));
+		await stage("bridge_stopped", () =>
+			runStdioBridge({
+				gateway,
+				tenantId,
+				clientId,
+				serverId,
+				tokenEnv,
+				input: process.stdin,
+				output: process.stdout,
+			}),
 		);
-		process.exitCode = 1;
+	} catch (error) {
+		process.exitCode = reportFailure("AIDR MCP stdio bridge", error);
 	}
 }

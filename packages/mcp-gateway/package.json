@@ -16,6 +16,7 @@
     "test": "node --test src/__tests__/*.test.mjs"
   },
   "devDependencies": {
+    "@singularityrd/aidr-core": "workspace:*",
     "esbuild": "^0.28.2"
   },
   "engines": {

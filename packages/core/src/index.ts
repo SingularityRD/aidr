@@ -1055,3 +1055,6 @@ export type {
 	McpToolsetApproval,
 	SignedMcpToolManifestV1,
 } from "./mcp-attestation.js";
+// Pinned-DNS MCP upstream transport used by the inline MCP gateway.
+export { fetchMcpEndpoint, McpTransportError } from "./mcp-transport.js";
+export type { McpFetchOptions } from "./mcp-transport.js";

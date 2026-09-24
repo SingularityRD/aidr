@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { readGatewayConfig, reportFailure, stage } from "./diagnostics.mjs";
 import { createMcpGateway } from "./gateway.mjs";
 import { requireGatewayIntegrity } from "./integrity.mjs";
 
@@ -9,13 +9,12 @@ if (!configPath || process.argv.length !== 3) {
 	process.exitCode = 2;
 } else {
 	try {
-		await requireGatewayIntegrity();
-		const config = JSON.parse(await readFile(configPath, "utf8"));
-		const gateway = createMcpGateway(config);
-		const address = await gateway.listen();
+		await stage("integrity_verification_failed", () => requireGatewayIntegrity());
+		const config = await readGatewayConfig(configPath);
+		const gateway = await stage("config_invalid", () => createMcpGateway(config));
+		const address = await stage("startup_failed", () => gateway.listen());
 		process.stdout.write(`AIDR MCP gateway listening on 127.0.0.1:${address.port}\n`);
-	} catch {
-		process.stderr.write("AIDR MCP gateway configuration or startup failed\n");
-		process.exitCode = 1;
+	} catch (error) {
+		process.exitCode = reportFailure("AIDR MCP gateway", error);
 	}
 }
