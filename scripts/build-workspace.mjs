@@ -136,6 +136,7 @@ const RELEASE_DIST_PACKAGES = [
 	"dashboard",
 	"codex",
 	"mcp-gateway",
+	"privacy",
 ];
 
 /** Source-map files under one package's `dist/`, relative to that `dist/`. */
@@ -179,10 +180,10 @@ export function assertNoReleaseSourceMaps(repoRoot) {
 
 const releaseFinalization = [
 	["scripts/release-artifact-manifests.mjs"],
-	["scripts/check-package-contracts.mjs", "packages/core", "packages/claude-code", "packages/extension", "packages/openclaw", "packages/opencode", "packages/cli", "packages/sdk", "packages/dashboard", "packages/codex", "packages/mcp-gateway"],
+	["scripts/check-package-contracts.mjs", "packages/core", "packages/claude-code", "packages/extension", "packages/openclaw", "packages/opencode", "packages/cli", "packages/sdk", "packages/dashboard", "packages/codex", "packages/mcp-gateway", "packages/privacy"],
 	["scripts/check-package-consumers.mjs"],
 	["scripts/check-no-sourcemaps.mjs", "packages"],
-	["scripts/check-no-leaky-paths.mjs", "packages/core/dist", "packages/claude-code/dist", "packages/extension/dist", "packages/openclaw/dist", "packages/opencode/dist", "packages/cli/dist", "packages/sdk/dist", "packages/dashboard/dist", "packages/codex/dist", "packages/mcp-gateway/dist"],
+	["scripts/check-no-leaky-paths.mjs", "packages/core/dist", "packages/claude-code/dist", "packages/extension/dist", "packages/openclaw/dist", "packages/opencode/dist", "packages/cli/dist", "packages/sdk/dist", "packages/dashboard/dist", "packages/codex/dist", "packages/mcp-gateway/dist", "packages/privacy/dist"],
 ];
 
 export function runWorkspaceBuild({

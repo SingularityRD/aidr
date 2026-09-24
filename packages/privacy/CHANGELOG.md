@@ -1,3 +1,27 @@
+# 0.6.0 — 2026-09-24
+
+Integrated into the Singularity AIDR repository as `@singularityrd/aidr-privacy`.
+
+- Renamed from `@singularity/aidr-privacy` to `@singularityrd/aidr-privacy` to match the other
+  AIDR packages; license metadata is now `Proprietary` and the package ships a `LICENSE` file.
+- Integrated: Browser Guard reuses the browser-safe rule layer (detectors, validators,
+  normalization, spans, literal dictionary) for prompt/paste/upload inspection.
+- Integrated: core DLP (`@singularityrd/aidr-core`) adopts the TR/EN detectors (TCKN, IBAN,
+  Turkish phones/addresses, labelled fields, provider tokens, private keys) through a
+  generated, drift-checked copy of the rule files.
+- Integrated: the AIDR CLI gains a local privacy scan built on the same detectors.
+- Repository tooling: root `pnpm test:privacy` builds the package and runs every Node suite
+  (text, visual, browser, native, enterprise, platform). Tests whose Python parser packages,
+  libseccomp, Python interpreter or `openssl` CLI are missing report a named `node:test`
+  skip instead of passing. `pnpm check` type-checks the package and its extension
+  `tsconfig`; `build` starts from a clean `dist/`.
+- Release: new `build:release` (no source maps, artifact manifest, source-map check);
+  `packages/privacy/dist` joins the release artifact set.
+- Docs: rewritten README head with an honest status table; English summary of the platform
+  feature status (`docs/PLATFORM_FEATURE_STATUS.en.md`) next to the Turkish original.
+- No change to detection behaviour, the platform layer or the legacy Chrome/native workflow
+  in this package; the legacy Chrome bundle still carries its 0.5.0-rc.1 build label.
+
 # 0.5.0-rc.1 — 2026-09-24
 
 Added server-side platform modules, durable SQLite adapters, pinned JWT/OIDC and mTLS context, guarded egress, encrypted review workflow/portal, authorized local MCP watcher, local DSPM snapshot/ACL, strict Linux document text reconstruction, true synthetic-trained linear risk baseline, evaluation/qualification harness, safetensors/release inspection and PCM audio helpers. Prior browser/native and text/visual APIs retained. Twelve-row acceptance status and negative results are explicit in docs. No live corporate deployment or full multimodal completeness claim.

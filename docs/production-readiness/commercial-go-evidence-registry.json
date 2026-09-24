@@ -83,7 +83,8 @@
     "packages/sdk/dist",
     "packages/dashboard/dist",
     "packages/codex/dist",
-    "packages/mcp-gateway/dist"
+    "packages/mcp-gateway/dist",
+    "packages/privacy/dist"
   ],
   "licenseCheck": {
     "licensePath": "LICENSE",

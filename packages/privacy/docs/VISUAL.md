@@ -1,6 +1,6 @@
 # AIDR Visual Privacy 0.2.0-rc.1
 
-Ekran görüntüsü ve görsel eklerini metin PII motoruna bağlayan, yerel OCR kullanan kontrol katmanı. Bu sürüm çalışan bir üretim adayıdır; bağımsız denetlenmiş veya savunma müşterisi tarafından kabul edilmiş nihai ürün değildir. Önceki metin motoru korunmuştur. Yeni API `@singularity/aidr-privacy/visual` altındadır.
+Ekran görüntüsü ve görsel eklerini metin PII motoruna bağlayan, yerel OCR kullanan kontrol katmanı. Bu sürüm çalışan bir üretim adayıdır; bağımsız denetlenmiş veya savunma müşterisi tarafından kabul edilmiş nihai ürün değildir. Önceki metin motoru korunmuştur. Yeni API `@singularityrd/aidr-privacy/visual` altındadır.
 
 ## Güven sınırı
 
@@ -33,9 +33,9 @@ Node 22.16+; Python ortamında test edilen sürümler `Pillow==12.3.0`, `pyzbar=
 npm install ./singularity-aidr-privacy-0.2.0-rc.1.tgz
 # Python wheel'larını kurumun onaylı çevrimdışı wheel deposundan kurun:
 /opt/aidr/venv/bin/python3 -m pip install --no-index --find-links /opt/approved-wheels \
-  -r node_modules/@singularity/aidr-privacy/vision/requirements.txt
+  -r node_modules/@singularityrd/aidr-privacy/vision/requirements.txt
 # Onaylı native program/model kurulumu tamamlandıktan sonra envanter oluşturun:
-/opt/aidr/venv/bin/python3 node_modules/@singularity/aidr-privacy/vision/build_manifest.py \
+/opt/aidr/venv/bin/python3 node_modules/@singularityrd/aidr-privacy/vision/build_manifest.py \
   --tesseract /usr/bin/tesseract \
   --tessdata /usr/share/tesseract-ocr/5/tessdata \
   --output /etc/aidr/ocr-manifest.json
@@ -62,8 +62,8 @@ CLI başarıda exit 0; engelleme/inceleme/I/O hatasında 2; kullanım hatasında
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import { PrivacyEngine } from '@singularity/aidr-privacy';
-import { LocalImageProcess, VisualPrivacyEngine } from '@singularity/aidr-privacy/visual';
+import { PrivacyEngine } from '@singularityrd/aidr-privacy';
+import { LocalImageProcess, VisualPrivacyEngine } from '@singularityrd/aidr-privacy/visual';
 
 const textEngine = new PrivacyEngine({profile:'strict', maxInputBytes:262144});
 const visual = new VisualPrivacyEngine({

@@ -56,7 +56,7 @@ The TypeScript scan deadline is cooperative. Run the library outside a shared hi
 Adapt `ner/local-provider.example.json` with absolute paths and the reviewed 64-hex manifest digest. It is a placeholder template, not a deployable default configuration.
 
 ```ts
-import { PrivacyEngine, LocalNerProcess } from '@singularity/aidr-privacy';
+import { PrivacyEngine, LocalNerProcess } from '@singularityrd/aidr-privacy';
 
 const ner = await LocalNerProcess.open({
   command: '/opt/aidr-ner/bin/python3',

@@ -52,6 +52,7 @@ const DEFAULT_ARTIFACT_DIRS = [
 	"packages/dashboard/dist",
 	"packages/codex/dist",
 	"packages/mcp-gateway/dist",
+	"packages/privacy/dist",
 ];
 
 const repoRoot = path.resolve(process.cwd());

@@ -155,6 +155,36 @@ webhooks. Commercial builds force managed mode and cannot use this as an
 offline bypass. Verify the effective configuration and outbound network policy
 in the customer environment; this document does not replace that evidence.
 
+## Content privacy engine (AIDR Privacy)
+
+The telemetry boundary above is separate from *content* privacy: detecting and
+masking personal data and secrets inside prompts, tool inputs and outputs. That
+engine is the workspace package `@singularityrd/aidr-privacy`
+([`packages/privacy`](../packages/privacy/README.md)), which provides Turkish and
+English detection with checksum validation (T.C. kimlik, IBAN mod-97, Luhn),
+Turkish phone/address/labelled-field rules and provider-token/private-key
+patterns.
+
+- **Browser Guard** imports its browser-safe rule layer directly; detection runs
+  in the browser and nothing is uploaded for inspection.
+- **Core DLP** uses a generated, drift-checked copy of the same rule files, so
+  every agent connector applies the same TR/EN detectors locally.
+- **CLI privacy scan** (`packages/cli`) applies the same detectors to local
+  content on the operator's machine; it is not an upload path.
+- The **enterprise gateway / control plane** (`/platform`), enterprise policy
+  (`/enterprise`) and the Chrome native-messaging host are optional building
+  blocks. They are not enabled by installing AIDR and need customer IdP/MDM and
+  provider brokers before they can be accepted. See the
+  [feature status](../packages/privacy/docs/PLATFORM_FEATURE_STATUS.en.md)
+  (English summary of the Turkish original).
+
+Masking is lossy (`[EMAIL]`-style labels or `[REDACTED]`); the optional token
+mode is a one-way HMAC and cannot be reversed. Learned PERSON/ADDRESS NER is
+not bundled, so contextual rules are the only name/address signal unless a
+customer supplies an approved model. Run `pnpm test:privacy` to build the
+package and execute its Node suites; tests needing an unavailable Python,
+libseccomp or OpenSSL prerequisite are reported as named skips.
+
 ## Pilot evidence still required
 
 Before a customer or investor demo, attach the destination inventory,

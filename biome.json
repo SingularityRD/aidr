@@ -44,5 +44,12 @@
 			"quoteStyle": "double",
 			"semicolons": "always"
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["packages/privacy/src/**"],
+			"formatter": { "enabled": false },
+			"assist": { "enabled": false }
+		}
+	]
 }
