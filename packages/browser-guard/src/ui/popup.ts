@@ -1,8 +1,9 @@
 /**
  * Popup entry point (bundled to popup.js, loaded by static/popup.html).
  *
- * The same bundle also drives static/blocked.html, the page a blocked site's
- * navigation is redirected to: the build ships a fixed set of entry points, and
+ * The same bundle also drives static/blocked.html, the page the background opens
+ * in a tab whose navigation to a blocked site was refused: the build ships a fixed
+ * set of entry points, and
  * the blocked page needs only the localizer plus a few lines of rendering.
  */
 import { chromeEnv, getChrome } from "./env.js";

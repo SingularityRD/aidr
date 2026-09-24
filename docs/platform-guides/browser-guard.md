@@ -104,7 +104,7 @@ then asks for the `nativeMessaging` permission. See
 | Symptom | Check |
 |---|---|
 | Extension not installed | The ID/update URL in the forcelist; Firefox: the XPI must be Mozilla-signed |
-| Settings not locked | The policy is under the right extension ID; values have the right type (`REG_DWORD` for booleans/integers, JSON text for arrays/objects on Windows) |
+| Settings not locked | The policy is under the right extension ID; values have the right type (`REG_DWORD` for booleans/integers, JSON text for arrays/objects on Windows). Any managed policy also locks `mode`, `enabledEntities`, `literals`, `maskPaste`, `restoreResponses` and `disabledSites` unless it sets `allowUserOverrides: true` |
 | Nothing masked on a site | The site is in the supported list and not in `disabledSites`; `mode` is not `monitor`; the entity type is in `enabledEntities` |
 | No telemetry | `controlPlaneUrl` is `https://`; the API key is valid; the machine can reach the control plane |
 | Works in a normal window only | Expected: the extension is not allowed in private/incognito windows |

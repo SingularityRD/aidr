@@ -325,7 +325,7 @@ describe("development build", () => {
 });
 
 describe("blocked-site page", () => {
-	it("is shipped and made web accessible only when static/blocked.html exists", async () => {
+	it("is shipped but never web accessible (no extension fingerprinting surface)", async () => {
 		const assets = track(makeAssetRoot());
 		writeTree(assets, { "static/blocked.html": page("popup.js") });
 		const outDir = track(mkdtempSync(join(tmpdir(), "aidr-bg-out-")));
@@ -337,9 +337,9 @@ describe("blocked-site page", () => {
 		});
 		for (const target of ["chrome", "firefox"]) {
 			expect(readFileSync(join(outDir, target, "blocked.html"), "utf8")).toContain("popup.js");
-			expect(readJson(join(outDir, target, "manifest.json")).web_accessible_resources).toEqual([
-				{ resources: ["blocked.html"], matches: ["https://*/*", "http://*/*"] },
-			]);
+			expect(readJson(join(outDir, target, "manifest.json"))).not.toHaveProperty(
+				"web_accessible_resources",
+			);
 		}
 	});
 });

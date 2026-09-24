@@ -260,10 +260,30 @@ const USER_VALIDATORS: Readonly<Record<keyof UserSettings, Validator>> = {
 	telemetry: telemetryValidator(true),
 };
 
+/**
+ * Managed-only switch (not part of GuardPolicy): `true` lets users keep changing the
+ * protection settings the administrator did not set. Absent or `false` locks them.
+ */
+export const ALLOW_USER_OVERRIDES_KEY = "allowUserOverrides";
+
 /** Keys an administrator may set in chrome.storage.managed (static/managed_schema.json). */
-export const MANAGED_POLICY_KEYS: readonly ManagedKey[] = Object.freeze(
-	Object.keys(MANAGED_VALIDATORS) as ManagedKey[],
-);
+export const MANAGED_POLICY_KEYS: readonly (ManagedKey | typeof ALLOW_USER_OVERRIDES_KEY)[] =
+	Object.freeze([...(Object.keys(MANAGED_VALIDATORS) as ManagedKey[]), ALLOW_USER_OVERRIDES_KEY]);
+
+/**
+ * User settings that can weaken protection (fewer entity types, fewer literals, paste
+ * unmasked, originals restored into the page, sites switched off, a weaker mode). While any
+ * managed policy is present they are locked to the managed or built-in value unless the
+ * administrator sets `allowUserOverrides: true`.
+ */
+export const PROTECTION_SETTING_KEYS: readonly (keyof UserSettings)[] = Object.freeze([
+	"mode",
+	"enabledEntities",
+	"literals",
+	"maskPaste",
+	"restoreResponses",
+	"disabledSites",
+]);
 
 /** Keys a user may change (options page / popup). */
 export const USER_SETTING_KEYS: readonly (keyof UserSettings)[] = Object.freeze(
@@ -306,8 +326,15 @@ export interface PolicyEvaluation {
 
 /**
  * Merges managed over user over default and reports everything that was ignored.
- * Never throws. A managed `mode` also locks `disabledSites` (a user must not be able
- * to switch off an administrator-mandated mode per site).
+ * Never throws.
+ *
+ * Locking: every key the administrator sets is locked. When ANY managed policy is present
+ * (a non-empty managed object, even one whose keys are all invalid: admin intent that failed
+ * validation must not unlock the user), the protection-reducing user settings
+ * (`PROTECTION_SETTING_KEYS`) are locked too, at the managed or built-in value, unless the
+ * managed policy sets `allowUserOverrides: true`. With overrides allowed, a managed `mode`
+ * still locks `disabledSites` (a user must not be able to switch off an
+ * administrator-mandated mode per site).
  */
 export function evaluatePolicy(managed: unknown, user: unknown): PolicyEvaluation {
 	const warnings: string[] = [];
@@ -320,28 +347,7 @@ export function evaluatePolicy(managed: unknown, user: unknown): PolicyEvaluatio
 		warnings.push(`user: invalid value for "${key}" ignored`);
 	Object.assign(merged, userResult.settings);
 
-	if (managed !== undefined && managed !== null) {
-		if (!isPlainObject(managed)) {
-			warnings.push("managed: policy is not an object; ignored");
-		} else {
-			for (const [key, value] of Object.entries(managed)) {
-				const validator = Object.hasOwn(MANAGED_VALIDATORS, key)
-					? MANAGED_VALIDATORS[key as ManagedKey]
-					: undefined;
-				if (!validator) {
-					warnings.push(`managed: unknown key "${key}" ignored`);
-					continue;
-				}
-				const result = validator(value);
-				if (!result.ok) {
-					warnings.push(`managed: invalid value for "${key}" ignored`);
-					continue;
-				}
-				merged[key] = result.value;
-				managedKeys.push(key);
-			}
-		}
-	}
+	const admin = mergeManaged(managed, merged, managedKeys, warnings);
 
 	if (managedKeys.includes("mode") && !managedKeys.includes("disabledSites")) {
 		if ((merged.disabledSites as readonly SiteId[]).length > 0)
@@ -350,9 +356,71 @@ export function evaluatePolicy(managed: unknown, user: unknown): PolicyEvaluatio
 		managedKeys.push("disabledSites");
 	}
 
+	if (admin.present && !admin.allowUserOverrides)
+		lockProtectionKeys(merged, managedKeys, userResult.settings, warnings);
+
 	merged.version = 1;
 	merged.managedKeys = managedKeys;
 	return { policy: deepFreeze(merged as unknown as GuardPolicy), warnings };
+}
+
+/**
+ * Validates managed keys into `merged` / `managedKeys`. Reports whether a managed policy
+ * is present (fail closed: a value that is not an object, or an object whose keys are all
+ * invalid, is still administrator intent) and the `allowUserOverrides` switch.
+ */
+function mergeManaged(
+	managed: unknown,
+	merged: Record<string, unknown>,
+	managedKeys: string[],
+	warnings: string[],
+): { readonly present: boolean; readonly allowUserOverrides: boolean } {
+	if (managed === undefined || managed === null)
+		return { present: false, allowUserOverrides: false };
+	if (!isPlainObject(managed)) {
+		warnings.push("managed: policy is not an object; ignored");
+		return { present: true, allowUserOverrides: false };
+	}
+	let allowUserOverrides = false;
+	for (const [key, value] of Object.entries(managed)) {
+		if (key === ALLOW_USER_OVERRIDES_KEY) {
+			// Managed-only switch; never merged into the policy.
+			if (typeof value === "boolean") allowUserOverrides = value;
+			else warnings.push(`managed: invalid value for "${key}" ignored`);
+			continue;
+		}
+		const validator = Object.hasOwn(MANAGED_VALIDATORS, key)
+			? MANAGED_VALIDATORS[key as ManagedKey]
+			: undefined;
+		if (!validator) {
+			warnings.push(`managed: unknown key "${key}" ignored`);
+			continue;
+		}
+		const result = validator(value);
+		if (!result.ok) {
+			warnings.push(`managed: invalid value for "${key}" ignored`);
+			continue;
+		}
+		merged[key] = result.value;
+		managedKeys.push(key);
+	}
+	return { present: Object.keys(managed).length > 0, allowUserOverrides };
+}
+
+/** Locks every protection key the managed policy did not set at its built-in default. */
+function lockProtectionKeys(
+	merged: Record<string, unknown>,
+	managedKeys: string[],
+	user: Partial<UserSettings>,
+	warnings: string[],
+): void {
+	for (const key of PROTECTION_SETTING_KEYS) {
+		if (managedKeys.includes(key)) continue;
+		if (Object.hasOwn(user, key))
+			warnings.push(`user: "${key}" ignored because a managed policy locks user overrides`);
+		merged[key] = DEFAULT_POLICY[key];
+		managedKeys.push(key);
+	}
 }
 
 /** Contract entry point (see src/types.ts): managed keys override user settings. */

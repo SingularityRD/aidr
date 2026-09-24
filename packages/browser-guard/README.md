@@ -44,11 +44,25 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    are replaced with the originals in the page. Types listed in `neverRestore`
    (by default `SECRET` and `PRIVATE_KEY`) stay masked. The mapping lives in
    memory (`chrome.storage.session`) and is never written to disk or sent over
-   the network.
+   the network. The AI site must not be able to read a restored value back, so:
+   - the value is shown from a closed shadow root as CSS generated content (not a
+     text node, so `window.find()`, selection and `innerText` never see it), with
+     every inherited style reset, generic system fonts only (page `@font-face`
+     rules cannot load per-character fonts for it) and a fixed-width box ending in
+     an ellipsis (its size does not reveal the value's length);
+   - only placeholders that were in a prompt you actually sent from this tab (or in
+     a masked file attached to it) are restored, and only in messages that appeared
+     after that send; a page script that plants a placeholder elsewhere gets the
+     placeholder back, not the value.
+   The `restore-side-channels` E2E scenario attacks all of this from the page.
 5. **Pastes and files.** Pasted text is masked as it is pasted (`maskPaste`).
    Uploaded text files (CSV, TXT, JSON and similar) are scanned and replaced with
    a sanitised copy, blocked, or allowed according to `fileHandling` and
-   `maxFileBytes`.
+   `maxFileBytes`. Text files that are not UTF-8 (Excel's default ANSI CSV) are
+   decoded as windows-1254, or windows-1252 when that fits better, scanned, and a
+   masked copy is written as UTF-8 (CSV/TSV with a BOM). A text-named file that
+   contains NUL bytes cannot be decoded safely and is blocked
+   (`TEXT_FILE_NOT_DECODABLE`) in every mode except `monitor`.
 
 If a scan cannot finish (input over the size limit, or the time budget runs out)
 the result is marked incomplete and the guard does not report it as clean: the
@@ -132,7 +146,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 | `optional_permissions` | `nativeMessaging` | requested only when the optional native NER host is turned on |
 | `optional_host_permissions` | `https://*/*` | never requested at install; available for an admin-approved generic site |
 | `content_scripts` | `run_at: document_start`, `all_frames: false` | intercept before the page's own handlers; top frame only |
-| `web_accessible_resources` | `blocked.html` for `http(s)://*/*` | the page a site listed in `blockedSites` is redirected to; a redirect from a web page to an extension page only loads if the page is web accessible. It is static and cannot be framed. Its `ui.css` and `popup.js` are requested by the extension page itself and are deliberately not exposed to web origins (verified by the `blocked-site` E2E scenario) |
+| `web_accessible_resources` | none | nothing is exposed to web pages, so a page cannot fingerprint the extension by probing its resources. A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
 | `incognito` | `not_allowed` | the extension does not run in private windows |
 | CSP (`extension_pages`) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` | no remote code; `connect-src 'self'` so the options page can load the packaged `_locales` for the language override; `https:` because the control-plane URL is configurable per tenant; loopback HTTP for local development |
 
@@ -148,7 +162,11 @@ pre-release suffix (`1.2.0-rc.1`) goes to Chrome's `version_name`.
 
 User settings (options page) are stored in `chrome.storage.local`. Managed
 policy (`chrome.storage.managed`) always wins, and managed keys are shown
-read-only with "Managed by your organization".
+read-only with "Managed by your organization". When any managed policy is
+present, the settings a user could weaken protection with (`mode`,
+`enabledEntities`, `literals`, `maskPaste`, `restoreResponses`,
+`disabledSites`) are locked as well, at the managed or built-in value, unless
+the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`).
 
 | Managed key | Type | Default |
 |---|---|---|
@@ -167,6 +185,7 @@ read-only with "Managed by your organization".
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
 | `policyId` | string reported with telemetry | `aidr-browser-guard-default` |
+| `allowUserOverrides` | boolean (managed only) | `false`: a managed policy locks the protection settings above |
 
 The authoritative schema is [`static/managed_schema.json`](static/managed_schema.json);
 managed values are validated strictly in `src/background/policy.ts` before use.

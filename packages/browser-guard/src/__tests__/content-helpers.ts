@@ -109,11 +109,14 @@ export interface Harness {
 export interface HarnessOptions {
 	readonly policy?: Partial<GuardPolicy> | null;
 	readonly engine?: ReturnType<typeof fakeEngine>;
-	readonly sanitizeFile?: (file: {
-		name: string;
-		type: string;
-		bytes: Uint8Array;
-	}) => Promise<FileDecision>;
+	readonly sanitizeFile?: (
+		file: {
+			name: string;
+			type: string;
+			bytes: Uint8Array;
+		},
+		deps: { vault: PlaceholderVault },
+	) => Promise<FileDecision>;
 	readonly prescanDelayMs?: number;
 	readonly navigatorLanguage?: string;
 }
@@ -177,7 +180,7 @@ export function setupGuard(options: HarnessOptions = {}): Harness {
 		findSendButton: (_adapter, root) => root.getElementById("send"),
 		insertAtSelection,
 		isSyntheticEvent: isSyntheticEditorEvent,
-		sanitizeFile: (file) => sanitizeFile(file),
+		sanitizeFile: (file, deps) => sanitizeFile(file, deps),
 		coachingFor: (code, lang) => `coach:${code}:${lang}`,
 		send: async (message) => {
 			messages.push(message);

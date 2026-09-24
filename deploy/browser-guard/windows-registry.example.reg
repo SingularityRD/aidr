@@ -29,6 +29,7 @@ Windows Registry Editor Version 5.00
 "useNativeHost"=dword:00000000
 "telemetry"="{\"controlPlaneUrl\":\"https://aidr.example.com\",\"apiKey\":\"REPLACE_WITH_TENANT_API_KEY\"}"
 "language"="auto"
+"allowUserOverrides"=dword:00000000
 
 ; ---- Microsoft Edge ----
 [HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist]
@@ -54,3 +55,4 @@ Windows Registry Editor Version 5.00
 "useNativeHost"=dword:00000000
 "telemetry"="{\"controlPlaneUrl\":\"https://aidr.example.com\",\"apiKey\":\"REPLACE_WITH_TENANT_API_KEY\"}"
 "language"="auto"
+"allowUserOverrides"=dword:00000000

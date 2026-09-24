@@ -77,7 +77,8 @@
             "controlPlaneUrl": "https://aidr.example.com",
             "apiKey": "REPLACE_WITH_TENANT_API_KEY"
           },
-          "language": "auto"
+          "language": "auto",
+          "allowUserOverrides": false
         }
       }
     }

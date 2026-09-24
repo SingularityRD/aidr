@@ -312,6 +312,11 @@
 			"description": "Identifier reported with telemetry events.",
 			"type": "string",
 			"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+		},
+		"allowUserOverrides": {
+			"title": "Allow user overrides of protection settings",
+			"description": "When any managed policy is present, the user can no longer change mode, enabled entity types, custom literals, paste masking, response restore or per-site disabling (they stay at the managed or built-in value). Set to true to let users keep changing the ones this policy does not set.",
+			"type": "boolean"
 		}
 	}
 }

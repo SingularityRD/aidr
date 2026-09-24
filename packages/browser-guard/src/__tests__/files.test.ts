@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_POLICY } from "../background/policy.js";
+import { createDetectionEngine } from "../engine/detect.js";
 import {
+	decodeLegacyTextFile,
 	decodeTextFile,
 	envValueSpans,
 	isFormulaCell,
@@ -304,15 +307,8 @@ describe("sanitizeFile binary handling", () => {
 		expect(d.reasons).toEqual(["BINARY_FILE_UNSCANNABLE"]);
 	});
 
-	it("treats NUL bytes in a .txt as binary", async () => {
-		const d = await run("x.txt", new Uint8Array([...enc("a@b.com"), 0, ...enc("tail")]), {
-			policy: { mode: "block" },
-		});
-		expect(d.reasons).toEqual(["BINARY_FILE_UNSCANNABLE"]);
-	});
-
-	it("treats invalid UTF-8 in a .csv as binary", async () => {
-		const d = await run("x.csv", new Uint8Array([0x61, 0xff, 0xfe, 0x62]), {
+	it("still treats undeclared, non-UTF-8 content as binary", async () => {
+		const d = await run("blob", new Uint8Array([0x61, 0xff, 0xfe, 0x62]), {
 			policy: { mode: "confirm" },
 		});
 		expect(d.reasons).toEqual(["BINARY_FILE_UNSCANNED"]);
@@ -321,6 +317,141 @@ describe("sanitizeFile binary handling", () => {
 	it("respects image MIME types for unknown extensions", async () => {
 		const d = await run("blob", "GIF89a", { type: "image/gif", policy: { mode: "block" } });
 		expect(d.reasons).toEqual(["BINARY_FILE_UNSCANNABLE"]);
+	});
+});
+
+// --- legacy code pages (Excel ANSI CSV) and undecodable text files ----------------------------
+
+/** Encodes `text` in a single-byte code page (reverse of the WHATWG TextDecoder table). */
+function encodeSingleByte(text: string, encoding: "windows-1254" | "windows-1252"): Uint8Array {
+	const decoder = new TextDecoder(encoding);
+	const table = new Map<string, number>();
+	for (let b = 0; b < 256; b++) table.set(decoder.decode(Uint8Array.of(b)), b);
+	return Uint8Array.from([...text], (ch) => {
+		const byte = table.get(ch);
+		if (byte === undefined) throw new Error(`${ch} is not in ${encoding}`);
+		return byte;
+	});
+}
+
+const UTF8_BOM_BYTES = [0xef, 0xbb, 0xbf];
+const TR_CSV =
+	"bölüm,e-posta,tckn,açıklama\r\n" +
+	"Satış,sukru.gunes@example.com,10000000146,Şükrü Güneş - öncelikli\r\n" +
+	"Doğu İhracat,ilkay.dogan@example.com.tr,10000000146,İlkay: ığüşöç ĞÜŞİÖÇ\r\n";
+
+describe("sanitizeFile legacy code pages", () => {
+	const cp1254 = encodeSingleByte(TR_CSV, "windows-1254");
+
+	it("the fixture is really not UTF-8 (would have been treated as binary)", () => {
+		expect(decodeTextFile(cp1254)).toBeNull();
+		expect(decodeLegacyTextFile(cp1254)?.legacy).toBe("windows-1254");
+	});
+
+	it.each(["auto", "confirm", "block"] as const)(
+		"decodes a windows-1254 CSV and masks its PII in %s mode",
+		async (mode) => {
+			const d = await run("müşteriler.csv", cp1254, {
+				type: "text/csv; charset=windows-1254",
+				policy: { mode },
+			});
+			expect(d.action).toBe("mask");
+			expect(d.reasons).toEqual(["SENSITIVE_DATA"]);
+			expect(d.counts).toEqual({ EMAIL: 2, TC_KIMLIK: 2 });
+			if (!d.masked) throw new Error("no masked file");
+			// Re-encoded as UTF-8 with a BOM, charset parameter updated.
+			expect([...d.masked.bytes.slice(0, 3)]).toEqual(UTF8_BOM_BYTES);
+			expect(d.masked.type).toBe("text/csv; charset=utf-8");
+			expect(d.masked.name).toBe("müşteriler.csv");
+			const out = new TextDecoder("utf-8", { fatal: true }).decode(d.masked.bytes);
+			expect(out).toBe(
+				"bölüm,e-posta,tckn,açıklama\r\n" +
+					"Satış,[EMAIL_1],[TCKN_1],Şükrü Güneş - öncelikli\r\n" +
+					"Doğu İhracat,[EMAIL_2],[TCKN_1],İlkay: ığüşöç ĞÜŞİÖÇ\r\n",
+			);
+			for (const secret of ["sukru.gunes@example.com", "10000000146", "ilkay.dogan@example.com.tr"])
+				expect(out).not.toContain(secret);
+		},
+	);
+
+	it("picks windows-1252 when windows-1254 would leave undefined bytes (Ž, ž)", async () => {
+		const csv =
+			"comment,email\nJosé Müller wrote,jose.muller@example.com\nŽofie Žák wrote,zofie@example.cz\n";
+		const bytes = encodeSingleByte(csv, "windows-1252");
+		expect(decodeTextFile(bytes)).toBeNull();
+		expect(decodeLegacyTextFile(bytes)?.legacy).toBe("windows-1252");
+		const d = await run("customers.csv", bytes, { type: "text/csv" });
+		expect(d.action).toBe("mask");
+		const out = output(d);
+		expect(out).toBe("comment,email\nJosé Müller wrote,[EMAIL_1]\nŽofie Žák wrote,[EMAIL_2]\n");
+		expect(d.masked?.type).toBe("text/csv");
+	});
+
+	it("scans a text-MIME file without a known extension", async () => {
+		const bytes = encodeSingleByte("Müşteri (Ayşe): ayse@example.com", "windows-1254");
+		const d = await run("export", bytes, { type: "text/plain;charset=windows-1254" });
+		expect(output(d)).toBe("Müşteri (Ayşe): [EMAIL_1]");
+		// Plain text is re-encoded as UTF-8 without a BOM.
+		expect(d.masked?.bytes[0]).toBe("M".charCodeAt(0));
+		expect(d.masked?.type).toBe("text/plain;charset=utf-8");
+	});
+
+	it("keeps the original bytes of a legacy file without findings", async () => {
+		const bytes = encodeSingleByte("şehir,ülke\nİzmir,Türkiye\n", "windows-1254");
+		const d = await run("iller.csv", bytes, { type: "text/csv" });
+		expect(d).toEqual({ action: "allow", counts: {}, reasons: [] });
+	});
+
+	it("masks a windows-1252 CSV with the real detection engine and DEFAULT_POLICY", async () => {
+		const engine = createDetectionEngine({
+			enabledEntities: DEFAULT_POLICY.enabledEntities,
+			literals: [],
+			exactData: [],
+			detectSignals: true,
+			maxInputChars: 200_000,
+			maxScanMs: 5_000,
+		});
+		const csv = "name,email,iban\nJosé Müller,jose.muller@example.com,TR330006100519786457841326\n";
+		const vault = createVault({ neverRestore: DEFAULT_POLICY.neverRestore });
+		const d = await sanitizeFile(
+			{ name: "customers.csv", type: "text/csv", bytes: encodeSingleByte(csv, "windows-1252") },
+			{ engine, vault, policy: { ...DEFAULT_POLICY, mode: "auto" } },
+		);
+		expect(d.action).toBe("mask");
+		expect(d.reasons).not.toContain("BINARY_FILE_UNSCANNED");
+		const out = output(d);
+		expect(out).not.toContain("jose.muller@example.com");
+		expect(out).not.toContain("TR330006100519786457841326");
+		expect(out).not.toContain("José Müller"); // name column: masked wholesale as PERSON
+		expect(d.counts.EMAIL).toBe(1);
+		expect(d.counts.IBAN).toBe(1);
+	});
+
+	it.each(["auto", "confirm", "block"] as const)(
+		"blocks a text-named file holding a NUL byte in %s mode",
+		async (mode) => {
+			const d = await run("x.txt", new Uint8Array([...enc("a@b.com"), 0, ...enc("tail")]), {
+				policy: { mode },
+			});
+			expect(d).toEqual({ action: "block", counts: {}, reasons: ["TEXT_FILE_NOT_DECODABLE"] });
+		},
+	);
+
+	it("blocks UTF-16 without a BOM behind a text name (NUL bytes)", async () => {
+		const utf16 = new Uint8Array([...enc("a@b.com")].flatMap((b) => [b, 0]));
+		const d = await run("notes.csv", utf16, { type: "text/csv" });
+		expect(d).toEqual({ action: "block", counts: {}, reasons: ["TEXT_FILE_NOT_DECODABLE"] });
+	});
+
+	it("blocks a text-MIME upload with NUL bytes even without a text extension", async () => {
+		const d = await run("upload", new Uint8Array([0x61, 0, 0x62]), { type: "text/plain" });
+		expect(d.reasons).toEqual(["TEXT_FILE_NOT_DECODABLE"]);
+		expect(d.action).toBe("block");
+	});
+
+	it("records but never blocks an undecodable text file in monitor mode", async () => {
+		const d = await run("x.txt", new Uint8Array([0x61, 0]), { policy: { mode: "monitor" } });
+		expect(d).toEqual({ action: "allow", counts: {}, reasons: ["TEXT_FILE_NOT_DECODABLE"] });
 	});
 });
 

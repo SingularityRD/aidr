@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	applyBlockedSites,
-	BLOCKED_PAGE_PATH,
 	buildBlockRules,
 	DNR_RULE_IDS,
+	navigationBlocked,
+	redirectBlockedTab,
 	SITE_HOSTS,
+	siteForNavigation,
 	siteForUrl,
+	updatedTabUrl,
 } from "../background/dnr.js";
 import { startBackground } from "../background/index.js";
 import { badgeText } from "../background/stats.js";
@@ -207,6 +210,48 @@ describe("background: SET_USER_SETTINGS", () => {
 		expect(reply).toEqual({ ok: false, error: "LOCKED_KEYS", keys: ["mode", "maskPaste"] });
 		expect(t.fake.local.data.has(STORAGE_KEYS.userSettings)).toBe(false);
 		expect(t.bg.policy().mode).toBe("block");
+	});
+
+	it("any managed policy rejects protection-reducing user settings (L2)", async () => {
+		const t = await setup({ managed: { policyId: "acme-2026" } });
+		const attempts: Record<string, unknown>[] = [
+			{ enabledEntities: ["EMAIL"] },
+			{ enabledEntities: [] },
+			{ literals: [] },
+			{ maskPaste: false },
+			{ restoreResponses: false },
+			{ disabledSites: ["chatgpt"] },
+			{ mode: "monitor" },
+		];
+		for (const settings of attempts) {
+			const reply = await t.send({ type: "SET_USER_SETTINGS", settings });
+			expect(reply).toEqual({ ok: false, error: "LOCKED_KEYS", keys: Object.keys(settings) });
+		}
+		expect(t.fake.local.data.has(STORAGE_KEYS.userSettings)).toBe(false);
+		// Settings that cannot weaken protection stay editable.
+		expect((await t.send({ type: "SET_USER_SETTINGS", settings: { language: "tr" } })).ok).toBe(
+			true,
+		);
+		expect(t.bg.policy()).toMatchObject({ mode: "auto", maskPaste: true, language: "tr" });
+	});
+
+	it("user settings stored before the managed policy arrived are not applied", async () => {
+		const t = await setup({
+			managed: { policyId: "acme-2026" },
+			user: { mode: "monitor", enabledEntities: [], maskPaste: false },
+		});
+		expect(t.bg.policy()).toMatchObject({ mode: "auto", maskPaste: true });
+		expect(t.bg.policy().enabledEntities.length).toBeGreaterThan(0);
+	});
+
+	it("allowUserOverrides: true accepts user changes to keys the policy does not set", async () => {
+		const t = await setup({ managed: { policyId: "acme-2026", allowUserOverrides: true } });
+		const reply = await t.send({
+			type: "SET_USER_SETTINGS",
+			settings: { enabledEntities: ["EMAIL"], maskPaste: false },
+		});
+		expect(reply.ok).toBe(true);
+		expect(t.bg.policy()).toMatchObject({ enabledEntities: ["EMAIL"], maskPaste: false });
 	});
 
 	it("a managed mode also locks disabledSites", async () => {
@@ -507,15 +552,12 @@ describe("background: NATIVE_SCAN and SET_RESTORE_VISIBLE", () => {
 });
 
 describe("background: blocked sites (declarativeNetRequest)", () => {
-	it("redirects top-level navigation to blocked.html and blocks frames", () => {
+	it("blocks top-level navigations and frames (no web-accessible redirect target)", () => {
 		const rules = buildBlockRules(["chatgpt", "other"]);
 		expect(rules).toHaveLength(2);
-		const [redirect, frame] = rules;
-		expect(redirect).toMatchObject({
-			action: {
-				type: "redirect",
-				redirect: { extensionPath: `${BLOCKED_PAGE_PATH}?site=chatgpt` },
-			},
+		const [navigation, frame] = rules;
+		expect(navigation).toMatchObject({
+			action: { type: "block" },
 			condition: {
 				requestDomains: ["chatgpt.com", "chat.openai.com"],
 				resourceTypes: ["main_frame"],
@@ -563,6 +605,53 @@ describe("background: blocked sites (declarativeNetRequest)", () => {
 			["chatgpt"],
 		);
 		expect(ok).toBe(false);
+	});
+
+	it("shows blocked.html in a tab whose navigation the installed rule refused", async () => {
+		const t = await setup({ managed: { blockedSites: ["gemini"] } });
+		t.fake.events.onUpdated.dispatch(2, { status: "loading", url: GEMINI }, { id: 2, url: GEMINI });
+		await vi.waitFor(() =>
+			expect(t.fake.tabUpdates).toEqual([
+				{ tabId: 2, url: `${EXTENSION_BASE}blocked.html?site=gemini` },
+			]),
+		);
+		// A site that is not blocked, a non-web URL and our own page are left alone.
+		t.fake.events.onUpdated.dispatch(1, { url: CHATGPT }, { id: 1, url: CHATGPT });
+		t.fake.events.onUpdated.dispatch(3, { url: "chrome://newtab/" }, { id: 3 });
+		t.fake.events.onUpdated.dispatch(
+			2,
+			{ url: `${EXTENSION_BASE}blocked.html?site=gemini` },
+			{ id: 2 },
+		);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(t.fake.tabUpdates).toHaveLength(1);
+	});
+
+	it("keys the redirect off the installed rules, subdomains included", async () => {
+		const t = await setup();
+		const tabs = { update: vi.fn(async () => undefined) };
+		const chrome = {
+			...t.fake.chrome,
+			tabs: { ...t.fake.chrome.tabs, update: tabs.update },
+		};
+		expect(await redirectBlockedTab(chrome, 5, "https://gemini.google.com/app")).toBeNull();
+		await applyBlockedSites(t.fake.chrome, ["gemini"]);
+		expect(await redirectBlockedTab(chrome, 5, "https://sub.gemini.google.com/x")).toBe("gemini");
+		expect(await redirectBlockedTab(chrome, 5, "https://gemini.google.com.evil.test/")).toBeNull();
+		expect(tabs.update).toHaveBeenCalledTimes(1);
+		expect(tabs.update).toHaveBeenCalledWith(5, {
+			url: `${EXTENSION_BASE}blocked.html?site=gemini`,
+		});
+		const rules = [...t.fake.dnrRules.values()];
+		expect(navigationBlocked(rules, "gemini")).toBe(true);
+		expect(navigationBlocked(rules, "chatgpt")).toBe(false);
+		expect(siteForNavigation("http://chat.openai.com/")).toBe("chatgpt");
+		expect(siteForNavigation("file:///etc/passwd")).toBeNull();
+		expect(updatedTabUrl({ url: "https://a.test/" }, undefined)).toBe("https://a.test/");
+		expect(updatedTabUrl({ status: "loading" }, { url: "https://b.test/" })).toBe(
+			"https://b.test/",
+		);
+		expect(updatedTabUrl({ status: "complete" }, { url: "https://b.test/" })).toBeUndefined();
 	});
 
 	it("maps only exact HTTPS hosts of supported sites", () => {

@@ -124,6 +124,8 @@ export interface ChromeFake {
 	readonly session: FakeStorageArea;
 	readonly tabs: TabInfo[];
 	readonly tabMessages: SentTabMessage[];
+	/** Every tabs.update call (tab navigations the worker requested). */
+	readonly tabUpdates: { readonly tabId: number; readonly url: string }[];
 	readonly badges: Map<number | "global", string>;
 	readonly alarms: Map<string, { periodInMinutes?: number; when?: number }>;
 	readonly dnrRules: Map<number, DnrRule>;
@@ -134,6 +136,9 @@ export interface ChromeFake {
 		readonly onChanged: FakeEvent<(changes: Record<string, StorageChange>, area: string) => void>;
 		readonly onAlarm: FakeEvent<(alarm: { name: string }) => void>;
 		readonly onRemoved: FakeEvent<(tabId: number) => void>;
+		readonly onUpdated: FakeEvent<
+			(tabId: number, changeInfo: { url?: string; status?: string }, tab: TabInfo) => void
+		>;
 	};
 	/** Delivers a runtime message as the browser would and resolves with the response. */
 	sendRuntimeMessage(message: unknown, sender: MessageSender): Promise<unknown>;
@@ -152,12 +157,16 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 		onChanged,
 		onAlarm: new FakeEvent<(alarm: { name: string }) => void>(),
 		onRemoved: new FakeEvent<(tabId: number) => void>(),
+		onUpdated: new FakeEvent<
+			(tabId: number, changeInfo: { url?: string; status?: string }, tab: TabInfo) => void
+		>(),
 	};
 	const managed = new FakeStorageArea("managed", onChanged);
 	const local = new FakeStorageArea("local", onChanged);
 	const session = new FakeStorageArea("session", onChanged);
 	const tabs: TabInfo[] = [];
 	const tabMessages: SentTabMessage[] = [];
+	const tabUpdates: { tabId: number; url: string }[] = [];
 	const badges = new Map<number | "global", string>();
 	const alarms = new Map<string, { periodInMinutes?: number; when?: number }>();
 	const dnrRules = new Map<number, DnrRule>();
@@ -184,7 +193,14 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 				tabMessages.push({ tabId, message: clone(message) });
 				return undefined;
 			},
+			async update(tabId: number, properties: { url: string }) {
+				tabUpdates.push({ tabId, url: properties.url });
+				const tab = tabs.find((t) => t.id === tabId);
+				if (tab) tab.url = properties.url;
+				return tab ? { ...tab } : undefined;
+			},
 			onRemoved: events.onRemoved,
+			onUpdated: events.onUpdated,
 		},
 		action: {
 			async setBadgeText(details) {
@@ -225,6 +241,7 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 		session,
 		tabs,
 		tabMessages,
+		tabUpdates,
 		badges,
 		alarms,
 		dnrRules,
