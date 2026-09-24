@@ -28,6 +28,12 @@ const REFUSALS = {
 		coverageStatus: "limited",
 		enforcement: "inline_refusal",
 	},
+	binary_inflation_limit: {
+		surface: "tool_output",
+		outputType: "binary",
+		coverageStatus: "limited",
+		enforcement: "inline_refusal",
+	},
 	invalid_binary_encoding: {
 		surface: "tool_output",
 		outputType: "binary",

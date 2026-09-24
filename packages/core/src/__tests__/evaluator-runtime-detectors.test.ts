@@ -176,7 +176,7 @@ describe("optional runtime detector wiring", () => {
 				category: "dlp_redacted",
 				source: "dlp",
 				matchedThreatId: "private-rule",
-				transformedInput: { body: "send [REDACTED] to the build" },
+				transformedInput: { body: "send REDACTED to the build" },
 			});
 			expect(verdict.reasons[0]).toContain("DLP redaction applied");
 			expect(verdict.reasons[0]).toContain("private-rule");
@@ -212,7 +212,7 @@ describe("optional runtime detector wiring", () => {
 				redactContext(),
 			);
 			expect(verdict.decision).toBe("allow");
-			expect(verdict.transformedInput).toEqual({ cmd: "echo [REDACTED]" });
+			expect(verdict.transformedInput).toEqual({ cmd: "echo REDACTED" });
 		});
 
 		it("keeps non-string parameters intact", async () => {
@@ -226,7 +226,7 @@ describe("optional runtime detector wiring", () => {
 				redactContext(),
 			);
 			expect(verdict.transformedInput).toEqual({
-				body: "[REDACTED]",
+				body: "REDACTED",
 				retries: 3,
 				nested: { keep: true },
 			});
@@ -249,9 +249,21 @@ describe("optional runtime detector wiring", () => {
 
 		it("denies when the replacement itself still matches the policy", async () => {
 			const base = policy("redact");
+			// The inert token for replacement "AGAIN" is `REDACTED_AGAIN`, which the
+			// rule also matches, so the rescan of the rewritten input is not clean.
 			const selfMatching = DlpPolicySchema.parse({
 				...base,
-				rules: base.rules.map((rule) => ({ ...rule, replacement: "COMPANY-SECRET-123!" })),
+				rules: base.rules.map((rule) => ({
+					...rule,
+					replacement: "AGAIN",
+					matchers: [
+						{
+							type: "keyword",
+							values: ["COMPANY-SECRET-123", "REDACTED_AGAIN"],
+							wholeWord: false,
+						},
+					],
+				})),
 			});
 			const verdict = await evaluateToolCall(
 				request("COMPANY-SECRET-123"),
@@ -259,6 +271,104 @@ describe("optional runtime detector wiring", () => {
 			);
 			expect(verdict).toMatchObject({ decision: "deny", category: "dlp" });
 			expect(verdict.transformedInput).toBeUndefined();
+		});
+
+		it("rewrites with a shell-inert token, never a glob such as [REDACTED]", async () => {
+			const verdict = await evaluateToolCall(
+				{
+					sessionId: "session-a",
+					toolName: "Bash",
+					toolInput: { command: "rm ./tmp/COMPANY-SECRET-123" },
+					artifacts: [],
+				},
+				redactContext(),
+			);
+			expect(verdict.decision).toBe("allow");
+			expect(verdict.transformedInput).toEqual({ command: "rm ./tmp/REDACTED" });
+			expect(String(verdict.transformedInput?.command)).not.toMatch(/[[\]*?{}]/);
+		});
+
+		it("turns detector placeholders and operator tokens into REDACTED_<TYPE> words", async () => {
+			const base = policy("redact");
+			const withDetector = DlpPolicySchema.parse({
+				...base,
+				labels: [{ ...base.labels[0], redactionToken: "[EMPLOYEE ID]" }],
+				rules: [
+					...base.rules,
+					{
+						...base.rules[0],
+						id: "ip-rule",
+						matchers: [{ type: "detector", detectors: ["ip_address"] }],
+					},
+				],
+			});
+			const verdict = await evaluateToolCall(
+				{
+					sessionId: "session-a",
+					toolName: "Bash",
+					toolInput: { command: "ping -c1 203.0.113.7 > ./COMPANY-SECRET-123" },
+					artifacts: [],
+				},
+				redactContext(withDetector),
+			);
+			expect(verdict.decision).toBe("allow");
+			expect(verdict.transformedInput).toEqual({
+				command: "ping -c1 REDACTED_IP_ADDRESS > ./REDACTED_EMPLOYEE_ID",
+			});
+		});
+
+		it("denies when the rewritten input newly matches a threat rule", async () => {
+			const userThreatsDir = join(homeDir, "user-threats");
+			await mkdir(userThreatsDir, { recursive: true });
+			await writeFile(
+				join(userThreatsDir, "redaction.yaml"),
+				[
+					'- id: "TEST-REDACT-001"',
+					"  category: tool",
+					"  severity: critical",
+					"  confidence: 0.99",
+					"  action: block",
+					'  pattern: "rm\\\\s+\\\\S*REDACTED"',
+					"  match_on: command",
+					'  title: "Deleting a path rewritten by redaction"',
+					"  expires_at: null",
+					"  revoked: false",
+					"",
+				].join("\n"),
+			);
+			const config = JSON.parse(await readFile(configPath, "utf8"));
+			await writeFile(configPath, JSON.stringify({ ...config, heuristics_enabled: true }));
+
+			const rewrite = { ...redactContext(), userThreatsDir };
+			const verdict = await evaluateToolCall(
+				{
+					sessionId: "session-a",
+					toolName: "Bash",
+					toolInput: { command: "rm ./tmp/COMPANY-SECRET-123" },
+					artifacts: [],
+				},
+				rewrite,
+			);
+			expect(verdict).toMatchObject({
+				decision: "deny",
+				category: "dlp_redaction_unsafe",
+				source: "dlp",
+				matchedThreatId: "TEST-REDACT-001",
+			});
+			expect(verdict.transformedInput).toBeUndefined();
+			expect(JSON.stringify(verdict)).not.toContain("COMPANY-SECRET-123");
+
+			// The same policy still redacts a call whose rewrite matches nothing new.
+			const unchanged = await evaluateToolCall(
+				{
+					sessionId: "session-a",
+					toolName: "Bash",
+					toolInput: { command: "echo COMPANY-SECRET-123" },
+					artifacts: [],
+				},
+				rewrite,
+			);
+			expect(unchanged).toMatchObject({ decision: "allow", category: "dlp_redacted" });
 		});
 
 		it("lets a stronger rule outrank redaction", async () => {
@@ -615,7 +725,7 @@ describe("provisioned tenant detector policy at the connector entry points", () 
 				{ args },
 			),
 		).resolves.toBeUndefined();
-		expect(args).toEqual({ command: "echo [REDACTED]" });
+		expect(args).toEqual({ command: "echo REDACTED" });
 
 		// Codex fails open on a rejected or superseded rewrite, so it denies.
 		const outcome = await codexEntryPoint(`echo ${TEST_DLP_MARKER}`);

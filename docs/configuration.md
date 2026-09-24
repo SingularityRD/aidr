@@ -301,6 +301,15 @@ A redaction is only applied when the redacted input keeps every parameter name a
 rescan under the same policy finds nothing left to act on; otherwise the call is denied.
 The audit log records the rule and label (`category: "dlp_redacted"`), not the values.
 
+Because the rewritten input is executed, its replacement tokens are shell-inert words:
+`REDACTED` for the default label token and `REDACTED_<TYPE>` otherwise (for example
+`REDACTED_IP_ADDRESS` for a detector match, or `REDACTED_EMPLOYEE_ID` for an operator token
+`[EMPLOYEE ID]`). Display placeholders such as `[REDACTED]` are shell globs
+(`rm ./tmp/[REDACTED]` matches single-character file names), so they are used only where
+the text is shown, never in a rewritten tool input. The rewritten input is also re-run
+through the local threat rules; if it matches a rule the original did not (and that match
+would not be allowed on its own), the call is denied as `dlp_redaction_unsafe`.
+
 ### `heuristics_enabled`
 
 Boolean, default `true`. Set to `false` to disable all local pattern matching.

@@ -62,6 +62,7 @@ arguments, the upstream output or the verdict's free-text reasons.
 | Reason | Meaning |
 |---|---|
 | `arguments_blocked` | The evaluator returned `deny`. `error.data` has `category` and, for built-in rules, `threatId`. |
+| `input_not_fully_inspected` | The arguments exceed an inspection limit (nesting deeper than 16 levels, more than 1024 strings, a command/URL/path field over 64 KiB, or more than 4 MiB of text in total). The core denies the call instead of judging only the inspected part (`threatId: POL-INPUT-003`). Free text over 64 KiB is scanned in overlapping windows and is not itself a reason to block. |
 | `approval_required` | The evaluator returned `ask`. The gateway blocks the call and sets `operatorActionRequired: true`. |
 | `detection_unavailable` | The rules could not be loaded, or the evaluator failed or returned an invalid verdict. The call is blocked. |
 
@@ -116,7 +117,16 @@ when all of these hold:
   otherwise).
 
 Printable text runs found inside binary payloads, such as image metadata
-chunks, are scanned like any other output. Text-like resource blobs
+chunks, are scanned like any other output, and so are runs of UTF-16 (LE or
+BE) text. Compressed text is inflated before it is scanned: PNG `zTXt`,
+compressed `iTXt` and `iCCP` chunks and PDF streams whose first filter is
+`FlateDecode`. Inflation is bounded (each stream may grow to 200 times its
+compressed size or 64 KiB, whichever is larger; all streams of one item
+together to 4 × `maxDecodedBytes`; at most 256 streams). Exceeding a bound
+refuses the output as `binary_inflation_limit`, and a compressed stream that
+cannot be decoded is refused as `binary_content_mismatch`. Other PDF filters
+(ASCIIHex, ASCII85, LZW, RunLength, or FlateDecode behind another filter) are
+not decoded. Text-like resource blobs
 (`text/*`, JSON, XML, YAML, SVG and similar) are decoded as strict UTF-8 and
 scanned as text. Any other type is refused as `unsupported_binary_output`.
 Each accepted binary result emits a coverage event with

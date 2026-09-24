@@ -330,6 +330,7 @@ export {
 	scanDlpInput,
 	scanDlpOutput,
 	scanPrivacyDetectors,
+	shellInertRedactionToken,
 } from "./dlp/index.js";
 // Encryption
 export {
@@ -423,6 +424,7 @@ export {
 // Extractors
 export {
 	boundArtifact,
+	contentWindows,
 	extractFromBash,
 	extractFromDelete,
 	extractFromEdit,
@@ -432,6 +434,10 @@ export {
 	extractFromWebFetch,
 	extractFromWrite,
 	extractUrls,
+	INPUT_NOT_FULLY_INSPECTED,
+	type InspectionLimit,
+	inspectionLimitsHit,
+	MAX_INSPECTED_CHARS,
 } from "./extractors.js";
 // Versioned, append-only operator false-positive feedback bound to the policy
 // revision and incident it judges: an identical resubmission is idempotent and a

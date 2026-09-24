@@ -28,7 +28,14 @@ import { DetectionLegUnavailableError } from "./detection-leg.js";
 import type { DlpPolicy } from "./dlp/policy.js";
 import { type DlpFinding, type DlpScanResult, scanDlpInput } from "./dlp/scanner.js";
 import { DecisionEngine } from "./engine.js";
-import { MAX_ARTIFACT_SIZE } from "./extractors.js";
+import {
+	extractFromToolCall,
+	extractFromUnknownTool,
+	INPUT_NOT_FULLY_INSPECTED,
+	type InspectionLimit,
+	inspectionLimitsHit,
+	MAX_ARTIFACT_SIZE,
+} from "./extractors.js";
 import { HeuristicsEngine } from "./heuristics.js";
 import {
 	correlateIncidents,
@@ -61,8 +68,8 @@ import { PackageChecker } from "./package-checker.js";
 import {
 	extractPackagesFromCommand,
 	extractPackagesFromManifest,
-	isDependencyManifestPath,
 	hasDuplicateJsonObjectKeys,
+	isDependencyManifestPath,
 	isPackageJsonPath,
 	isPackageManifestPath,
 	type ParsedPackage,
@@ -333,10 +340,13 @@ function redactToolInput(
 	original: Record<string, unknown>,
 ): Record<string, unknown> | null {
 	const contentType = detector.contentType ?? "application/json";
+	// The rewritten input is executed, so replacements must be inert words
+	// (`REDACTED_EMAIL`), never display placeholders that a shell globs.
 	const scan = scanDlpInput(detector.policy, {
 		tenantId,
 		content: JSON.stringify(original),
 		contentType,
+		replacementStyle: "shell_inert",
 	});
 	if (
 		scan.status !== "inspected" ||
@@ -592,6 +602,7 @@ function evaluateDelegation(
 async function applyRuntimeDetectors(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
+	config: Config,
 	baseVerdict: Verdict,
 	managedState: ManagedState,
 	rewriteSource: Record<string, unknown> | null,
@@ -623,12 +634,11 @@ async function applyRuntimeDetectors(
 		};
 	}
 
-	const verdict = await applyConfiguredDetectors(
+	const verdict = await recheckRedactedInput(
+		await applyConfiguredDetectors(request, context, baseVerdict, managedState, rewriteSource),
 		request,
 		context,
-		baseVerdict,
-		managedState,
-		rewriteSource,
+		config,
 	);
 	return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
 }
@@ -858,6 +868,132 @@ function truncatedCommandVerdict(): Verdict {
 	};
 }
 
+/** The local threat rules this call is matched against, honouring `disabled_threats`. */
+async function loadHeuristics(
+	context: ToolEvaluationContext,
+	config: Config,
+	logger: Logger,
+): Promise<{ engine: HeuristicsEngine; threatsLoaded: number }> {
+	const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
+	let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
+	if (config.disabled_threats.length > 0) {
+		const disabledSet = new Set(config.disabled_threats);
+		threats = threats.filter((t) => !disabledSet.has(t.id));
+	}
+	const trustedDomains = await loadTrustedDomains(context.allowlistsDir, logger);
+	return {
+		engine: new HeuristicsEngine(threats, trustedDomains),
+		threatsLoaded: threats.length,
+	};
+}
+
+/** Normalization flags that mean the tool input could not be read unambiguously. */
+const UNINSPECTABLE_INPUT_FLAGS = [
+	"__aidr_input_normalization_failed",
+	"__aidr_malformed_command",
+	"__aidr_patch_parse_failed",
+] as const;
+
+/**
+ * DLP redaction changes what the tool executes, so the rewritten input is a new
+ * tool call and must pass the threat rules itself: replacing a value can turn
+ * a harmless argument into a dangerous one (a glob, a path traversal, a flag).
+ * The rewritten input is denied when it cannot be fully inspected or when it
+ * matches a threat rule the original input did not match and that match alone
+ * would not be allowed. Any failure here denies, because the connector would
+ * otherwise execute an input nothing inspected.
+ */
+async function recheckRedactedInput(
+	verdict: Verdict,
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+): Promise<Verdict> {
+	const transformed = verdict.transformedInput;
+	if (verdict.decision !== "allow" || !transformed) return verdict;
+	const unsafe = (reason: string, matchedThreatId: string | null = null): Verdict =>
+		detectorVerdict(
+			"deny",
+			"dlp_redaction_unsafe",
+			"dlp",
+			`DLP redaction produced a tool input that ${reason}; the call was blocked.`,
+			matchedThreatId,
+		);
+	try {
+		const rewritten = normalizeToolEvaluationRequest({
+			...request,
+			toolInput: transformed,
+			artifacts: extractFromToolCall(request.toolName, transformed),
+		});
+		if (
+			UNINSPECTABLE_INPUT_FLAGS.some((flag) => rewritten.toolInput[flag] === true) ||
+			inspectionLimitsHit(rewritten.artifacts).length > 0 ||
+			rewritten.artifacts.some(
+				(artifact) => artifact.type === "command" && artifact.value.length > MAX_ARTIFACT_SIZE,
+			)
+		) {
+			return unsafe("could not be fully inspected");
+		}
+		if (!config.heuristics_enabled || rewritten.artifacts.length === 0) return verdict;
+		const { engine, threatsLoaded } = await loadHeuristics(
+			context,
+			config,
+			context.logger ?? nullLogger,
+		);
+		if (threatsLoaded === 0) return unsafe("could not be checked against any threat rule");
+		const before = new Set(engine.match(request.artifacts).map((match) => match.threat.id));
+		const introduced = engine
+			.match(rewritten.artifacts)
+			.filter((match) => !before.has(match.threat.id));
+		if (introduced.length === 0) return verdict;
+		const decided = await new DecisionEngine(config.sensitivity).decide({
+			heuristicMatches: introduced,
+			urlCheckResults: [],
+		});
+		if (decided.decision === "allow") return verdict;
+		return unsafe(
+			"matches a threat rule the original input did not",
+			decided.matchedThreatId ?? introduced[0]?.threat.id ?? null,
+		);
+	} catch {
+		return unsafe("could not be re-inspected");
+	}
+}
+
+/** MCP calls reach the evaluator as `mcp__<server>__<tool>` or the host's generic `MCP` tool. */
+function isMcpToolName(toolName: string): boolean {
+	return toolName === "MCP" || toolName.startsWith("mcp__");
+}
+
+/**
+ * Inspection limits the tool input exceeded. The extractor reports them as
+ * marker artifacts; for MCP tools the input is additionally re-walked here, so
+ * a connector that builds its own artifact list cannot drop the signal.
+ */
+function uninspectedInputLimits(request: ToolEvaluationRequest): InspectionLimit[] {
+	const limits = new Set(inspectionLimitsHit(request.artifacts));
+	if (isMcpToolName(request.toolName)) {
+		const walked = extractFromUnknownTool(request.toolName, request.toolInput);
+		for (const limit of inspectionLimitsHit(walked)) limits.add(limit);
+	}
+	return [...limits];
+}
+
+function inputNotFullyInspectedVerdict(limits: InspectionLimit[]): Verdict {
+	return {
+		decision: "deny",
+		category: INPUT_NOT_FULLY_INSPECTED,
+		confidence: 1,
+		severity: "critical",
+		source: "policy",
+		artifacts: [],
+		matchedThreatId: "POL-INPUT-003",
+		reasons: [
+			`${INPUT_NOT_FULLY_INSPECTED}: tool input exceeds the inspection limits (${limits.join(", ")}); execution was denied because part of the input was not inspected.`,
+		],
+	};
+}
+
 async function runEvaluationPipeline(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
@@ -899,6 +1035,12 @@ async function runEvaluationPipeline(
 		)
 	) {
 		const verdict = truncatedCommandVerdict();
+		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
+		return verdict;
+	}
+	const uninspected = uninspectedInputLimits(request);
+	if (uninspected.length > 0) {
+		const verdict = inputNotFullyInspectedVerdict(uninspected);
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 		return verdict;
 	}
@@ -1217,6 +1359,7 @@ async function runEvaluationPipeline(
 				await applyRuntimeDetectors(
 					request,
 					context,
+					config,
 					allowVerdict("no_artifacts"),
 					managedState,
 					rewriteSource,
@@ -1255,7 +1398,14 @@ async function runEvaluationPipeline(
 
 	if (allowlisted) {
 		const finalVerdict = hostEffectiveVerdict(
-			await applyRuntimeDetectors(request, context, allowlisted, managedState, rewriteSource),
+			await applyRuntimeDetectors(
+				request,
+				context,
+				config,
+				allowlisted,
+				managedState,
+				rewriteSource,
+			),
 			config,
 			context,
 		);
@@ -1273,7 +1423,14 @@ async function runEvaluationPipeline(
 
 	if (policyVerdict) {
 		const finalVerdict = hostEffectiveVerdict(
-			await applyRuntimeDetectors(request, context, policyVerdict, managedState, rewriteSource),
+			await applyRuntimeDetectors(
+				request,
+				context,
+				config,
+				policyVerdict,
+				managedState,
+				rewriteSource,
+			),
 			config,
 			context,
 		);
@@ -1348,16 +1505,9 @@ async function runEvaluationPipeline(
 	// apart from "no rules were loaded at all".
 	let threatsLoaded = 0;
 	if (config.heuristics_enabled) {
-		const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
-		let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
-		if (config.disabled_threats.length > 0) {
-			const disabledSet = new Set(config.disabled_threats);
-			threats = threats.filter((t) => !disabledSet.has(t.id));
-		}
-		threatsLoaded = threats.length;
-		const trustedDomains = await loadTrustedDomains(context.allowlistsDir, logger);
-		const heuristics = new HeuristicsEngine(threats, trustedDomains);
-		heuristicMatches = heuristics.match(request.artifacts);
+		const loaded = await loadHeuristics(context, config, logger);
+		threatsLoaded = loaded.threatsLoaded;
+		heuristicMatches = loaded.engine.match(request.artifacts);
 	}
 
 	let urlCheckResults: Awaited<ReturnType<UrlCheckClient["checkUrls"]>> = [];
@@ -1590,7 +1740,7 @@ async function runEvaluationPipeline(
 		);
 	}
 	verdict = hostEffectiveVerdict(
-		await applyRuntimeDetectors(request, context, verdict, managedState, rewriteSource),
+		await applyRuntimeDetectors(request, context, config, verdict, managedState, rewriteSource),
 		config,
 		context,
 	);
