@@ -41,7 +41,7 @@ export const SITE_ID_LIST: readonly SiteId[] = Object.freeze([
 	"other",
 ]);
 
-export const POLICY_LIMITS = Object.freeze({
+const POLICY_LIMITS = Object.freeze({
 	maxLiterals: 1024,
 	literalMinChars: 2,
 	literalMaxChars: 256,
@@ -124,24 +124,52 @@ function enumList<T extends string>(values: readonly T[], maxItems: number): Val
 const entityList = enumList(ENTITY_TYPES, ENTITY_TYPES.length * 4);
 const siteList = enumList(SITE_ID_LIST, SITE_ID_LIST.length * 4);
 
+/** One `{ value, type }` literal rule, or null when it is malformed or out of bounds. */
+function literalRule(item: unknown): LiteralRule | null {
+	if (!isPlainObject(item) || !hasExactKeys(item, ["value", "type"])) return null;
+	const { value, type } = item;
+	if (typeof value !== "string" || !isEntityType(type)) return null;
+	if (value.length < POLICY_LIMITS.literalMinChars) return null;
+	if (value.length > POLICY_LIMITS.literalMaxChars) return null;
+	if (value.trim().length < POLICY_LIMITS.literalMinChars) return null;
+	return { value, type };
+}
+
 const literals: Validator = (raw) => {
 	if (!Array.isArray(raw) || raw.length > POLICY_LIMITS.maxLiterals) return invalid;
 	const out: LiteralRule[] = [];
 	const seen = new Set<string>();
 	for (const item of raw) {
-		if (!isPlainObject(item) || !hasExactKeys(item, ["value", "type"])) return invalid;
-		const { value, type } = item;
-		if (typeof value !== "string" || !isEntityType(type)) return invalid;
-		if (value.length < POLICY_LIMITS.literalMinChars) return invalid;
-		if (value.length > POLICY_LIMITS.literalMaxChars) return invalid;
-		if (value.trim().length < POLICY_LIMITS.literalMinChars) return invalid;
-		const key = `${type}\u0000${value}`;
+		const rule = literalRule(item);
+		if (!rule) return invalid;
+		const key = `${rule.type}\u0000${rule.value}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
-		out.push({ value, type });
+		out.push(rule);
 	}
 	return valid(out);
 };
+
+const isDatasetKey = (raw: unknown): raw is string =>
+	typeof raw === "string" &&
+	raw.length >= 16 &&
+	raw.length <= 1024 &&
+	raw.length % 4 === 0 &&
+	BASE64_PATTERN.test(raw);
+
+const isFingerprint = (raw: unknown): boolean => typeof raw === "string" && HEX64_PATTERN.test(raw);
+
+/** A dataset's fields once its shape is valid; fingerprints are checked by the caller. */
+function datasetFields(
+	item: unknown,
+): (Omit<ExactDataSet, "fingerprints"> & { fingerprints: unknown[] }) | null {
+	if (!isPlainObject(item) || !hasExactKeys(item, ["datasetId", "keyB64", "fingerprints", "type"]))
+		return null;
+	const { datasetId, keyB64, fingerprints, type } = item;
+	if (typeof datasetId !== "string" || !DATASET_ID_PATTERN.test(datasetId)) return null;
+	if (!isDatasetKey(keyB64) || !isEntityType(type) || !Array.isArray(fingerprints)) return null;
+	return { datasetId, keyB64, fingerprints, type };
+}
 
 const exactData: Validator = (raw) => {
 	if (!Array.isArray(raw) || raw.length > POLICY_LIMITS.maxExactDataSets) return invalid;
@@ -149,33 +177,15 @@ const exactData: Validator = (raw) => {
 	const ids = new Set<string>();
 	let total = 0;
 	for (const item of raw) {
-		if (
-			!isPlainObject(item) ||
-			!hasExactKeys(item, ["datasetId", "keyB64", "fingerprints", "type"])
-		)
-			return invalid;
-		const { datasetId, keyB64, fingerprints, type } = item;
-		if (typeof datasetId !== "string" || !DATASET_ID_PATTERN.test(datasetId)) return invalid;
-		if (ids.has(datasetId)) return invalid;
-		if (
-			typeof keyB64 !== "string" ||
-			keyB64.length < 16 ||
-			keyB64.length > 1024 ||
-			keyB64.length % 4 !== 0 ||
-			!BASE64_PATTERN.test(keyB64)
-		)
-			return invalid;
-		if (!isEntityType(type) || !Array.isArray(fingerprints)) return invalid;
-		total += fingerprints.length;
+		const fields = datasetFields(item);
+		if (!fields || ids.has(fields.datasetId)) return invalid;
+		// Bound the total before checking every fingerprint.
+		total += fields.fingerprints.length;
 		if (total > POLICY_LIMITS.maxFingerprintsTotal) return invalid;
-		if (!fingerprints.every((f) => typeof f === "string" && HEX64_PATTERN.test(f))) return invalid;
-		ids.add(datasetId);
-		out.push({
-			datasetId,
-			keyB64,
-			fingerprints: [...new Set((fingerprints as string[]).map((f) => f.toLowerCase()))],
-			type,
-		});
+		if (!fields.fingerprints.every(isFingerprint)) return invalid;
+		ids.add(fields.datasetId);
+		const fingerprints = (fields.fingerprints as string[]).map((f) => f.toLowerCase());
+		out.push({ ...fields, fingerprints: [...new Set(fingerprints)] });
 	}
 	return valid(out);
 };
@@ -208,19 +218,19 @@ export function normalizeControlPlaneUrl(raw: unknown): string | null {
 	return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
+const isApiKey = (raw: unknown): raw is string =>
+	typeof raw === "string" &&
+	raw.length >= POLICY_LIMITS.apiKeyMinChars &&
+	raw.length <= POLICY_LIMITS.apiKeyMaxChars &&
+	API_KEY_PATTERN.test(raw);
+
 function telemetryValidator(allowNull: boolean): Validator {
 	return (raw) => {
 		if (raw === null) return allowNull ? valid(null) : invalid;
 		if (!isPlainObject(raw) || !hasExactKeys(raw, ["controlPlaneUrl", "apiKey"])) return invalid;
 		const controlPlaneUrl = normalizeControlPlaneUrl(raw.controlPlaneUrl);
 		const { apiKey } = raw;
-		if (!controlPlaneUrl || typeof apiKey !== "string") return invalid;
-		if (
-			apiKey.length < POLICY_LIMITS.apiKeyMinChars ||
-			apiKey.length > POLICY_LIMITS.apiKeyMaxChars
-		)
-			return invalid;
-		if (!API_KEY_PATTERN.test(apiKey)) return invalid;
+		if (!controlPlaneUrl || !isApiKey(apiKey)) return invalid;
 		return valid({ controlPlaneUrl, apiKey } satisfies TelemetryConfig);
 	};
 }

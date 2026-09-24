@@ -50,7 +50,7 @@ import {
 import { createExactDataMatcher, type ExactDataMatcher } from "./exact-data.js";
 
 /** Largest supported `maxInputChars` (the privacy normaliser's own view limit). */
-export const MAX_INPUT_CHARS_LIMIT = 1_048_576;
+const MAX_INPUT_CHARS_LIMIT = 1_048_576;
 /** Raw (pre-merge) findings per scan; more marks the scan incomplete. */
 const MAX_RAW_FINDINGS = 10_000;
 

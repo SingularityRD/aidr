@@ -25,7 +25,7 @@ export interface EditorLookupOptions {
 }
 
 /** Fallback editor selectors used after the adapter's own selectors. */
-export const GENERIC_EDITOR_SELECTORS: readonly string[] = [
+const GENERIC_EDITOR_SELECTORS: readonly string[] = [
 	"textarea",
 	'[contenteditable="true"]',
 	'[contenteditable=""]',
@@ -37,7 +37,7 @@ export const GENERIC_EDITOR_SELECTORS: readonly string[] = [
 ];
 
 /** Fallback send-button selectors used when the adapter's selectors match nothing usable. */
-export const GENERIC_SEND_SELECTORS: readonly string[] = [
+const GENERIC_SEND_SELECTORS: readonly string[] = [
 	'button[type="submit"]',
 	'button[aria-label*="send" i]',
 	'button[data-testid*="send" i]',

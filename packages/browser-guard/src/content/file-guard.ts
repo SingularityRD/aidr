@@ -7,9 +7,10 @@
  * event is replayed once so the site's own upload handler receives only sanitized
  * content. Anything that cannot be checked or replaced is blocked (fail closed).
  */
+
+import { type Counts, mergeCounts } from "../engine/counts.js";
 import type {
 	DetectionEngine,
-	EntityType,
 	FileDecision,
 	GuardPolicy,
 	PlaceholderVault,
@@ -18,8 +19,6 @@ import type {
 } from "../types.js";
 import { formatCounts, type Strings } from "./strings.js";
 import type { GuardUi } from "./ui.js";
-
-export type Counts = Partial<Record<EntityType, number>>;
 
 export type SanitizeFileFn = (
 	file: { name: string; type: string; bytes: Uint8Array },
@@ -57,14 +56,17 @@ export interface FileGuard {
 
 type Win = Window & typeof globalThis;
 
+/** An upload that may proceed; `sanitizeAll` builds it up file by file. */
+interface OkOutcome {
+	readonly kind: "ok";
+	readonly files: File[];
+	masked: number;
+	readonly unscanned: string[];
+	readonly counts: Counts;
+}
+
 type Outcome =
-	| {
-			readonly kind: "ok";
-			readonly files: File[];
-			readonly masked: number;
-			readonly unscanned: string[];
-			readonly counts: Counts;
-	  }
+	| OkOutcome
 	| {
 			readonly kind: "blocked";
 			readonly name: string;
@@ -73,14 +75,7 @@ type Outcome =
 	  }
 	| { readonly kind: "error" };
 
-export function mergeCounts(into: Counts, add: Readonly<Counts>): Counts {
-	for (const [type, n] of Object.entries(add) as [EntityType, number | undefined][]) {
-		if (n) into[type] = (into[type] ?? 0) + n;
-	}
-	return into;
-}
-
-export async function readFileBytes(file: Blob, win: Window): Promise<Uint8Array> {
+async function readFileBytes(file: Blob, win: Window): Promise<Uint8Array> {
 	if (typeof file.arrayBuffer === "function") return new Uint8Array(await file.arrayBuffer());
 	const Reader = (win as Win).FileReader;
 	return new Promise((resolve, reject) => {
@@ -169,40 +164,50 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		});
 	};
 
+	/** Sanitises one file into `batch`; returns an outcome only when the whole upload must stop. */
+	const sanitizeInto = async (
+		batch: OkOutcome,
+		file: File,
+		policy: GuardPolicy,
+	): Promise<Outcome | null> => {
+		const { counts } = batch;
+		if (file.size > policy.maxFileBytes) {
+			return { kind: "blocked", name: file.name, reasons: ["FILE_TOO_LARGE"], counts };
+		}
+		const bytes = await readFileBytes(file, win);
+		const decision = await deps.sanitizeFile(
+			{ name: file.name, type: file.type, bytes },
+			{ engine: deps.engine, vault: deps.vault, policy },
+		);
+		mergeCounts(counts, decision.counts);
+		if (decision.action === "block") {
+			return { kind: "blocked", name: file.name, reasons: decision.reasons, counts };
+		}
+		if (decision.action === "mask") {
+			if (!decision.masked) return { kind: "error" };
+			const { name, type, bytes: cleaned } = decision.masked;
+			batch.files.push(
+				new win.File([new Uint8Array(cleaned)], name, { type, lastModified: Date.now() }),
+			);
+			batch.masked++;
+			return null;
+		}
+		if (decision.reasons.some((r) => r.startsWith("BINARY_FILE"))) batch.unscanned.push(file.name);
+		batch.files.push(file);
+		return null;
+	};
+
 	const sanitizeAll = async (files: readonly File[], policy: GuardPolicy): Promise<Outcome> => {
-		const Ctor = win.File;
-		const counts: Counts = {};
-		const out: File[] = [];
-		const unscanned: string[] = [];
-		let masked = 0;
+		const batch: OkOutcome = { kind: "ok", files: [], masked: 0, unscanned: [], counts: {} };
 		try {
 			for (const file of files) {
-				if (file.size > policy.maxFileBytes) {
-					return { kind: "blocked", name: file.name, reasons: ["FILE_TOO_LARGE"], counts };
-				}
-				const bytes = await readFileBytes(file, win);
-				const decision = await deps.sanitizeFile(
-					{ name: file.name, type: file.type, bytes },
-					{ engine: deps.engine, vault: deps.vault, policy },
-				);
-				mergeCounts(counts, decision.counts);
-				if (decision.action === "block") {
-					return { kind: "blocked", name: file.name, reasons: decision.reasons, counts };
-				}
-				if (decision.action === "mask") {
-					if (!decision.masked) return { kind: "error" };
-					const { name, type, bytes: cleaned } = decision.masked;
-					out.push(new Ctor([new Uint8Array(cleaned)], name, { type, lastModified: Date.now() }));
-					masked++;
-					continue;
-				}
-				if (decision.reasons.some((r) => r.startsWith("BINARY_FILE"))) unscanned.push(file.name);
-				out.push(file);
+				const stopped = await sanitizeInto(batch, file, policy);
+				if (stopped) return stopped;
 			}
 		} catch {
 			return { kind: "error" };
 		}
-		return { kind: "ok", files: out, masked, unscanned, counts };
+		return batch;
 	};
 
 	/** Reports a finished outcome; returns the replacement files when the upload may proceed. */
@@ -250,38 +255,41 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		}
 	};
 
+	const refuse = (message: string): "blocked" => {
+		showBlocked(message);
+		deps.record("blocked", "file", {});
+		return "blocked";
+	};
+
+	/** Why an organisation rule blocks every upload here (in every mode), or null. */
+	const blockedBy = (policy: GuardPolicy): string | null => {
+		if (siteBlocked(policy)) return deps.strings().siteBlocked;
+		return policy.fileHandling === "block" ? deps.strings().fileBlockedByPolicy : null;
+	};
+
+	/** Uploads left to the page: file handling "allow", or monitor mode (recorded only). */
+	const passesThrough = (event: Event, files: readonly File[], policy: GuardPolicy): boolean => {
+		if (policy.fileHandling === "allow") return true;
+		if (policy.mode !== "monitor") return false;
+		// input and change both fire for one selection: record it once.
+		if (event.type !== "input") monitor(files, policy);
+		return true;
+	};
+
 	/** Common gate. Returns the policy when the event must be taken over, or null to let it pass. */
 	const gate = (event: Event, files: readonly File[]): GuardPolicy | "blocked" | null => {
 		const policy = deps.getPolicy();
 		if (!policy) {
 			stop(event);
-			showBlocked(deps.strings().policyMissing);
-			deps.record("blocked", "file", {});
-			return "blocked";
+			return refuse(deps.strings().policyMissing);
 		}
 		if (siteDisabled(policy)) return null;
-		// Site blocks and file blocks are organisation rules: enforced in every mode.
-		const blocked = siteBlocked(policy) || policy.fileHandling === "block";
-		if (!blocked) {
-			if (policy.fileHandling === "allow") return null;
-			if (policy.mode === "monitor") {
-				// input and change both fire for one selection: record it once.
-				if (event.type !== "input") monitor(files, policy);
-				return null;
-			}
-		}
+		const blockMessage = blockedBy(policy);
+		if (blockMessage === null && passesThrough(event, files, policy)) return null;
 		stop(event);
-		if (blocked) {
-			showBlocked(
-				siteBlocked(policy) ? deps.strings().siteBlocked : deps.strings().fileBlockedByPolicy,
-			);
-			deps.record("blocked", "file", {});
-			return "blocked";
-		}
+		if (blockMessage !== null) return refuse(blockMessage);
 		if (typeof win.DataTransfer !== "function") {
-			showBlocked(deps.strings().fileReplaceUnsupported);
-			deps.record("blocked", "file", {});
-			return "blocked";
+			return refuse(deps.strings().fileReplaceUnsupported);
 		}
 		return policy;
 	};
@@ -328,6 +336,23 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		});
 	};
 
+	/**
+	 * Sanitises the files and masks any text pasted with them. A failed text scan fails
+	 * the whole transfer; `text` is the (masked) text to put back, "" when there is none.
+	 */
+	const sanitizeTransfer = async (
+		files: readonly File[],
+		policy: GuardPolicy,
+		text: string,
+	): Promise<{ outcome: Outcome; text: string }> => {
+		const outcome = await sanitizeAll(files, policy);
+		if (outcome.kind !== "ok" || !text) return { outcome, text: "" };
+		const maskedText = await deps.maskText(text);
+		if (!maskedText) return { outcome: { kind: "error" }, text: "" };
+		const counts = mergeCounts({ ...outcome.counts }, maskedText.counts);
+		return { outcome: { ...outcome, counts }, text: maskedText.text };
+	};
+
 	const takeOverTransfer = (
 		event: Event,
 		type: "drop" | "paste",
@@ -339,21 +364,11 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		if (verdict === "blocked") return true;
 		const target = (event.composedPath()[0] ?? event.target) as Node | null;
 		void (async () => {
-			const outcome = await sanitizeAll(files, verdict);
-			let maskedText: { text: string; counts: Counts } | null = { text: "", counts: {} };
-			if (outcome.kind === "ok" && text) maskedText = await deps.maskText(text);
-			if (outcome.kind === "ok" && !maskedText) {
-				settle({ kind: "error" });
-				return;
-			}
-			const merged: Outcome =
-				outcome.kind === "ok" && maskedText
-					? { ...outcome, counts: mergeCounts({ ...outcome.counts }, maskedText.counts) }
-					: outcome;
-			const replacement = settle(merged);
+			const sanitized = await sanitizeTransfer(files, verdict, text);
+			const replacement = settle(sanitized.outcome);
 			if (!replacement) return;
 			const data = buildTransfer(replacement);
-			if (maskedText?.text) data.setData("text/plain", maskedText.text);
+			if (sanitized.text) data.setData("text/plain", sanitized.text);
 			const dispatchTarget = target?.isConnected
 				? target
 				: (deps.window.document.body as Node | null);

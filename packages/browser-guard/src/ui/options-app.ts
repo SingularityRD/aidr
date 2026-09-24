@@ -5,7 +5,7 @@
  */
 import { ENTITY_TYPES, type EntityType, type GuardPolicy, type UserSettings } from "../types.js";
 import type { UiEnv } from "./env.js";
-import { applyI18n, browserLocalizer, createLocalizer, type Localizer, msg } from "./i18n.js";
+import { browserLocalizer, type Localizer, msg, relocalizeDocument } from "./i18n.js";
 import {
 	errorKeyFor,
 	GUARD_MODES,
@@ -19,7 +19,7 @@ import {
 	validateLiteral,
 	validateTelemetry,
 } from "./model.js";
-import { renderNotice } from "./render-common.js";
+import { renderNotice, replaceKeepingFocus } from "./render-common.js";
 import {
 	emptyDraft,
 	type OptionsDraft,
@@ -47,7 +47,7 @@ function isEntityType(value: unknown): value is EntityType {
  * Maps a changed control to the settings patch it requests, or null when the
  * change is a no-op or names an unknown value. Locked keys are filtered later.
  */
-export function settingsForChange(
+function settingsForChange(
 	policy: GuardPolicy,
 	control: HTMLInputElement | HTMLSelectElement,
 ): Partial<UserSettings> | null {
@@ -91,13 +91,12 @@ export function startOptions(
 	let busy = false;
 
 	const render = (focusId?: string) => {
-		const active =
-			focusId ?? (doc.activeElement instanceof HTMLElement ? doc.activeElement.id : "");
-		elements.app.replaceChildren(renderOptions(doc, state, localizer.t, localizer.locale));
-		if (active) {
-			const again = doc.getElementById(active);
-			if (again instanceof HTMLElement && !again.hasAttribute("disabled")) again.focus();
-		}
+		replaceKeepingFocus(
+			doc,
+			elements.app,
+			renderOptions(doc, state, localizer.t, localizer.locale),
+			focusId,
+		);
 	};
 
 	const notify = (key: string | null, kind: "ok" | "error" = "ok") => {
@@ -105,9 +104,7 @@ export function startOptions(
 	};
 
 	const relocalize = async (language: GuardPolicy["language"]) => {
-		localizer = await createLocalizer(env, language);
-		doc.documentElement.lang = localizer.locale;
-		applyI18n(doc, localizer.t);
+		localizer = await relocalizeDocument(doc, env, language);
 	};
 
 	const fetchPolicy = async (): Promise<GuardPolicy> => {

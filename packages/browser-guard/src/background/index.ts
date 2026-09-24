@@ -39,10 +39,10 @@ import {
 	TelemetryClient,
 } from "./telemetry.js";
 
-export const PAUSE_ALARM = "aidr-pause-end";
-export const PAUSE_MAX_MINUTES = 60;
+const PAUSE_ALARM = "aidr-pause-end";
+const PAUSE_MAX_MINUTES = 60;
 /** Upper bound for text proxied to the native host in one NATIVE_SCAN. */
-export const NATIVE_SCAN_MAX_CHARS = 1_000_000;
+const NATIVE_SCAN_MAX_CHARS = 1_000_000;
 
 const ACTIONS: readonly PrivacyScanEvent["action"][] = ["masked", "blocked", "warned", "allowed"];
 const CHANNELS: readonly PrivacyScanEvent["channel"][] = ["prompt", "paste", "file"];
@@ -105,11 +105,16 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	let reloadChain: Promise<unknown> = Promise.resolve();
 	const extensionBase = chrome.runtime.getURL("");
 
+	/** An extension page (popup, options) of this extension, unless its origin disagrees. */
+	function extensionSender(sender: MessageSender): Sender | null {
+		if (sender.origin !== undefined && `${sender.origin}/` !== extensionBase) return null;
+		return { kind: "extension", tabId: isTabId(sender.tab?.id) ? sender.tab.id : undefined };
+	}
+
 	function classifySender(sender: MessageSender | undefined): Sender | null {
 		if (!sender || sender.id !== chrome.runtime.id) return null;
 		if (typeof sender.url === "string" && sender.url.startsWith(extensionBase)) {
-			if (sender.origin !== undefined && `${sender.origin}/` !== extensionBase) return null;
-			return { kind: "extension", tabId: isTabId(sender.tab?.id) ? sender.tab.id : undefined };
+			return extensionSender(sender);
 		}
 		const tabId = sender.tab?.id;
 		const site = siteForUrl(sender.url);
@@ -158,6 +163,18 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		);
 	}
 
+	/** Recreates the native host bridge when the policy's useNativeHost setting changed. */
+	function syncNativeBridge(): void {
+		if (bridgeEnabled === current.useNativeHost) return;
+		bridgeEnabled = current.useNativeHost;
+		try {
+			bridge = bridgeFactory(current.useNativeHost);
+		} catch {
+			bridge = null;
+			log("native: bridge unavailable");
+		}
+	}
+
 	async function loadPolicy(broadcast: boolean): Promise<GuardPolicy> {
 		const managed = await storage.readManaged();
 		// If managed policy state is unknown, user settings must not weaken the defaults.
@@ -170,15 +187,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 				: evaluation.warnings;
 		for (const warning of currentWarnings) log(`policy: ${warning}`);
 
-		if (bridgeEnabled !== current.useNativeHost) {
-			bridgeEnabled = current.useNativeHost;
-			try {
-				bridge = bridgeFactory(current.useNativeHost);
-			} catch {
-				bridge = null;
-				log("native: bridge unavailable");
-			}
-		}
+		syncNativeBridge();
 		if (!(await applyBlockedSites(chrome, current.blockedSites)))
 			log("dnr: failed to update blocked-site rules");
 		await telemetry.configure(current.telemetry);
@@ -309,6 +318,21 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		return { ok: true };
 	}
 
+	async function policyFor(who: Sender): Promise<GuardResponse> {
+		const content = who.kind === "content";
+		return {
+			ok: true,
+			policy: effectivePolicy(content ? who.site : null, content, await pausedUntil()),
+		};
+	}
+
+	/** Content scripts only ever see their own tab's stats; extension pages may name a tab. */
+	async function statsFor(requested: unknown, who: Sender): Promise<GuardResponse> {
+		if (requested !== undefined && !isTabId(requested)) return fail("BAD_MESSAGE");
+		const tabId = who.kind === "content" ? who.tabId : (requested as number | undefined);
+		return { ok: true, stats: await getStats(tabId) };
+	}
+
 	async function dispatch(message: unknown, sender: MessageSender): Promise<GuardResponse> {
 		const who = classifySender(sender);
 		if (!who) return fail("SENDER_DENIED");
@@ -317,21 +341,11 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		const extensionOnly = () => who.kind !== "extension";
 		switch (message.type) {
 			case "GET_POLICY":
-				return {
-					ok: true,
-					policy: effectivePolicy(
-						who.kind === "content" ? who.site : null,
-						who.kind === "content",
-						await pausedUntil(),
-					),
-				};
+				return policyFor(who);
 			case "RECORD":
 				return record(message, who);
-			case "GET_STATS": {
-				if (message.tabId !== undefined && !isTabId(message.tabId)) return fail("BAD_MESSAGE");
-				const tabId = who.kind === "content" ? who.tabId : (message.tabId as number | undefined);
-				return { ok: true, stats: await getStats(tabId) };
-			}
+			case "GET_STATS":
+				return statsFor(message.tabId, who);
 			case "SET_USER_SETTINGS":
 				return extensionOnly() ? fail("NOT_ALLOWED") : setUserSettings(message.settings);
 			case "PAUSE":

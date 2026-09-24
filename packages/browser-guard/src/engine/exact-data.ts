@@ -37,14 +37,14 @@ export interface ExactDataToken {
 	readonly end: number;
 }
 
-export interface ExactDataHit {
+interface ExactDataHit {
 	readonly type: EntityType;
 	/** Half-open UTF-16 offsets in the ORIGINAL scanned text. */
 	readonly start: number;
 	readonly end: number;
 }
 
-export interface ExactDataScan {
+interface ExactDataScan {
 	readonly hits: readonly ExactDataHit[];
 	/** True when the HMAC budget, the deadline or key import prevented a full scan. */
 	readonly incomplete: boolean;

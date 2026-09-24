@@ -71,6 +71,28 @@ function sumCounts(counts: Partial<Record<EntityType, number>>): number {
 	return Math.min(total, TELEMETRY_LIMITS.findingsMax);
 }
 
+/** Identity and classification fields: id, type, timestamp, site, action, channel. */
+function hasValidHeader(e: Record<string, unknown>): boolean {
+	return (
+		typeof e.event_id === "string" &&
+		EVENT_ID_PATTERN.test(e.event_id) &&
+		e.event_type === "privacy_scan" &&
+		typeof e.timestamp === "string" &&
+		!Number.isNaN(Date.parse(e.timestamp)) &&
+		SITE_ID_LIST.includes(e.site as SiteId) &&
+		ACTIONS.includes(e.action as PrivacyScanEvent["action"]) &&
+		CHANNELS.includes(e.channel as PrivacyScanEvent["channel"])
+	);
+}
+
+const isFindingsCount = (raw: unknown): raw is number =>
+	Number.isSafeInteger(raw) &&
+	(raw as number) >= 0 &&
+	(raw as number) <= TELEMETRY_LIMITS.findingsMax;
+
+const isOptionalPolicyId = (raw: unknown): boolean =>
+	raw === undefined || (typeof raw === "string" && POLICY_ID_PATTERN.test(raw));
+
 /**
  * Re-validates an event against the contract (queued events come back from storage).
  * Returns a fresh object holding only contract fields, or null.
@@ -79,29 +101,18 @@ export function sanitizeEvent(raw: unknown): PrivacyScanEvent | null {
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
 	const e = raw as Record<string, unknown>;
 	if (Object.keys(e).some((k) => !EVENT_KEYS.has(k))) return null;
-	if (typeof e.event_id !== "string" || !EVENT_ID_PATTERN.test(e.event_id)) return null;
-	if (e.event_type !== "privacy_scan") return null;
-	if (typeof e.timestamp !== "string" || Number.isNaN(Date.parse(e.timestamp))) return null;
-	if (!SITE_ID_LIST.includes(e.site as SiteId)) return null;
-	if (!ACTIONS.includes(e.action as PrivacyScanEvent["action"])) return null;
-	if (!CHANNELS.includes(e.channel as PrivacyScanEvent["channel"])) return null;
+	if (!hasValidHeader(e)) return null;
 	const findings = e.findings_count;
-	if (!Number.isSafeInteger(findings) || (findings as number) < 0) return null;
-	if ((findings as number) > TELEMETRY_LIMITS.findingsMax) return null;
-	if (
-		e.policy_id !== undefined &&
-		(typeof e.policy_id !== "string" || !POLICY_ID_PATTERN.test(e.policy_id))
-	)
-		return null;
+	if (!isFindingsCount(findings) || !isOptionalPolicyId(e.policy_id)) return null;
 	const event: PrivacyScanEvent = {
-		event_id: e.event_id,
+		event_id: e.event_id as string,
 		event_type: "privacy_scan",
-		timestamp: new Date(Date.parse(e.timestamp)).toISOString(),
+		timestamp: new Date(Date.parse(e.timestamp as string)).toISOString(),
 		site: e.site as SiteId,
 		action: e.action as PrivacyScanEvent["action"],
 		channel: e.channel as PrivacyScanEvent["channel"],
 		entity_counts: sanitizeCounts(e.entity_counts),
-		findings_count: findings as number,
+		findings_count: findings,
 		...(typeof e.policy_id === "string" ? { policy_id: e.policy_id } : {}),
 	};
 	return event;

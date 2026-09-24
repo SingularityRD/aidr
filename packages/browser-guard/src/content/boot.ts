@@ -25,8 +25,8 @@ import type {
 import { type ContentGuard, type ContentGuardDeps, createContentGuard } from "./guard.js";
 
 /** Engine limits: prompts larger than this are reported incomplete and fail closed. */
-export const MAX_INPUT_CHARS = 200_000;
-export const MAX_SCAN_MS = 1_000;
+const MAX_INPUT_CHARS = 200_000;
+const MAX_SCAN_MS = 1_000;
 
 const GUARD_MODES = new Set(["auto", "confirm", "block", "monitor"]);
 const SIGNAL_ACTIONS = new Set(["off", "warn", "block"]);

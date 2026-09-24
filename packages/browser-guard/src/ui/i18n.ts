@@ -50,10 +50,7 @@ export function browserLocalizer(env: UiEnv): Localizer {
 }
 
 /** Builds a translator for the requested language setting. */
-export async function createLocalizer(
-	env: UiEnv,
-	language: "auto" | "en" | "tr",
-): Promise<Localizer> {
+async function createLocalizer(env: UiEnv, language: "auto" | "en" | "tr"): Promise<Localizer> {
 	if (language !== "auto") {
 		const messages = await env.loadLocaleMessages(language);
 		if (messages) {
@@ -65,6 +62,18 @@ export async function createLocalizer(
 		}
 	}
 	return browserLocalizer(env);
+}
+
+/** Switches the page to the requested language setting and returns the new localizer. */
+export async function relocalizeDocument(
+	doc: Document,
+	env: UiEnv,
+	language: "auto" | "en" | "tr",
+): Promise<Localizer> {
+	const localizer = await createLocalizer(env, language);
+	doc.documentElement.lang = localizer.locale;
+	applyI18n(doc, localizer.t);
+	return localizer;
 }
 
 /**

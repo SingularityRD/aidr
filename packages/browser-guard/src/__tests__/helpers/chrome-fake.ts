@@ -14,7 +14,7 @@ import type {
 	TabInfo,
 } from "../../background/storage.js";
 
-export const EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop";
+const EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop";
 export const EXTENSION_BASE = `chrome-extension://${EXTENSION_ID}/`;
 
 // biome-ignore lint/suspicious/noExplicitAny: listener lists hold heterogeneous callbacks
@@ -37,7 +37,7 @@ class FakeEvent<F extends (...args: any[]) => unknown> {
 
 const clone = <T>(value: T): T => (value === undefined ? value : structuredClone(value));
 
-export class FakeStorageArea implements StorageAreaApi {
+class FakeStorageArea implements StorageAreaApi {
 	readonly data = new Map<string, unknown>();
 	/** When set, every call rejects with this error. */
 	failWith: Error | null = null;
@@ -54,15 +54,21 @@ export class FakeStorageArea implements StorageAreaApi {
 		keys?: string | string[] | Record<string, unknown> | null,
 	): Promise<Record<string, unknown>> {
 		if (this.failWith) throw this.failWith;
+		if (keys === undefined || keys === null) return this.pick([...this.data.keys()]);
+		if (typeof keys === "string") return this.pick([keys]);
+		if (Array.isArray(keys)) return this.pick(keys);
 		const out: Record<string, unknown> = {};
-		if (keys === undefined || keys === null) {
-			for (const [k, v] of this.data) out[k] = clone(v);
-		} else if (typeof keys === "string" || Array.isArray(keys)) {
-			for (const k of typeof keys === "string" ? [keys] : keys)
-				if (this.data.has(k)) out[k] = clone(this.data.get(k));
-		} else {
-			for (const [k, def] of Object.entries(keys))
-				out[k] = this.data.has(k) ? clone(this.data.get(k)) : def;
+		for (const [k, def] of Object.entries(keys)) {
+			out[k] = this.data.has(k) ? clone(this.data.get(k)) : def;
+		}
+		return out;
+	}
+
+	/** Clones of the stored values for `keys`; keys without a stored value are omitted. */
+	private pick(keys: readonly string[]): Record<string, unknown> {
+		const out: Record<string, unknown> = {};
+		for (const k of keys) {
+			if (this.data.has(k)) out[k] = clone(this.data.get(k));
 		}
 		return out;
 	}
@@ -112,7 +118,7 @@ export class FakeStorageArea implements StorageAreaApi {
 	}
 }
 
-export interface SentTabMessage {
+interface SentTabMessage {
 	readonly tabId: number;
 	readonly message: unknown;
 }

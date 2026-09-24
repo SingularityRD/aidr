@@ -37,10 +37,10 @@ export const SITE_HOSTS: Readonly<Record<SupportedSite, readonly string[]>> = Ob
 const SUPPORTED_SITES = Object.keys(SITE_HOSTS) as SupportedSite[];
 
 /** Page a blocked top-level navigation lands on. */
-export const BLOCKED_PAGE_PATH = "/blocked.html";
+const BLOCKED_PAGE_PATH = "/blocked.html";
 
 /** Dynamic rule ids owned by this module: two per supported site (navigation + frame block). */
-export const DNR_RULE_ID_BASE = 7300;
+const DNR_RULE_ID_BASE = 7300;
 const navigationRuleId = (i: number) => DNR_RULE_ID_BASE + i * 2 + 1;
 const frameRuleId = (i: number) => DNR_RULE_ID_BASE + i * 2 + 2;
 export const DNR_RULE_IDS: readonly number[] = Object.freeze(

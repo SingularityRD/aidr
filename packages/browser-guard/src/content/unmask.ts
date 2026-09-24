@@ -355,24 +355,28 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 		enqueue(node);
 	};
 
+	const onTextChanged = (text: Text): void => {
+		if (ours.has(text)) return;
+		const entry = entries.get(text);
+		if (entry) {
+			if (text.data === entry.head) return; // our own write
+			revert(text, entry, false); // the page rewrote the node (streaming)
+		}
+		enqueue(text);
+	};
+
+	const onChildList = (record: MutationRecord): void => {
+		for (const removed of record.removedNodes) {
+			const entry = removed.nodeType === 3 ? entries.get(removed as Text) : undefined;
+			if (entry) revert(removed as Text, entry, false);
+		}
+		for (const added of record.addedNodes) noteAdded(added);
+	};
+
 	const onMutations = (records: MutationRecord[]): void => {
 		for (const record of records) {
-			if (record.type === "characterData") {
-				const text = record.target as Text;
-				if (ours.has(text)) continue;
-				const entry = entries.get(text);
-				if (entry) {
-					if (text.data === entry.head) continue; // our own write
-					revert(text, entry, false); // the page rewrote the node (streaming)
-				}
-				enqueue(text);
-				continue;
-			}
-			for (const removed of record.removedNodes) {
-				const entry = removed.nodeType === 3 ? entries.get(removed as Text) : undefined;
-				if (entry) revert(removed as Text, entry, false);
-			}
-			for (const added of record.addedNodes) noteAdded(added);
+			if (record.type === "characterData") onTextChanged(record.target as Text);
+			else onChildList(record);
 		}
 	};
 
