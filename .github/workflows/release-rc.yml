@@ -315,7 +315,7 @@ jobs:
             packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
 
       - name: Upload unsigned release inputs (pinned)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: aidr-prepared-${{ steps.rc_meta.outputs.tag }}
           path: ${{ runner.temp }}/prepared-release.tgz
@@ -523,7 +523,7 @@ jobs:
             packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
 
       - name: Upload signed package inputs (pinned)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: aidr-signed-packages-${{ needs.build-rc.outputs.tag }}
           path: ${{ runner.temp }}/signed-package-inputs.tgz
@@ -697,7 +697,7 @@ jobs:
         run: tar -czf "${RUNNER_TEMP}/exact-release-candidate.tgz" release-output
 
       - name: Upload exact unsigned outer bundle (pinned)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: aidr-exact-candidate-${{ needs.build-rc.outputs.tag }}
           path: ${{ runner.temp }}/exact-release-candidate.tgz
@@ -754,7 +754,7 @@ jobs:
           }
 
       - name: Upload Windows native package receipt (pinned)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: aidr-claude-native-${{ needs.build-rc.outputs.tag }}
           path: ${{ runner.temp }}/claude-native-candidate.json
@@ -990,7 +990,7 @@ jobs:
           node scripts/deployment-smoke.mjs "${AIDR_ACCEPTANCE_DEPLOYMENT_DIR}" --candidate-inventory release-output/release-inventory.json
 
       - name: Upload candidate-bound control-plane receipt (pinned)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: aidr-control-plane-${{ needs.build-rc.outputs.tag }}
           path: ${{ vars.AIDR_ACCEPTANCE_DEPLOYMENT_DIR }}/smoke-evidence-${{ needs.assemble-e2e.outputs.candidate_digest }}.json
@@ -1181,12 +1181,12 @@ jobs:
           trap - EXIT
 
       - name: Attest the exact release bundle (pinned)
-        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release-output/*
 
       - name: Upload immutable RC evidence (pinned)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: aidr-release-${{ needs.build-rc.outputs.tag }}
           path: release-output/
@@ -1194,7 +1194,7 @@ jobs:
           retention-days: 90
 
       - name: Publish draft prerelease evidence (pinned)
-        uses: softprops/action-gh-release@a6c7483a42ee9d5daced968f6c217562cd680f7f # v2.0.0
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.build-rc.outputs.tag }}
           name: AIDR ${{ needs.build-rc.outputs.tag }}
