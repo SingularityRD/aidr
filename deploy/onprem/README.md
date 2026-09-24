@@ -1,0 +1,167 @@
+# AIDR on-prem installation
+
+This is the entry point for running the AIDR control plane on a customer-owned
+Linux host with Docker Compose. It covers one host. It does not provide
+Kubernetes manifests, multi-host high availability or an availability SLA.
+The detailed contracts it builds on are in [the installation guide](../README.md),
+[the first-customer guide](../FIRST_CUSTOMER.md), [the upgrade runbook](../UPGRADE.md)
+and [the backup runbook](../backup/README.md).
+
+Endpoint protection works without this stack: connectors enforce locally by
+default. The control plane adds identities, signed enrollment, remote policy,
+telemetry and the dashboard.
+
+## Requirements
+
+- A 64-bit Linux host (x86_64 or arm64) with systemd.
+- Docker Engine with the Compose plugin. Preparation output is validated with
+  `docker compose config`; the reference check used Docker 29 with Compose v5.
+- Node 24 on the host (the doctor, migration, backup and TLS tools run there).
+- A verified customer kit or a built repository checkout (`pnpm build`).
+- The artifact-verification public key from the independent release-signer channel.
+- HTTPS origins for the dashboard and API, a TLS reverse proxy, SMTP settings
+  and a backup target, as described in [the installation guide](../README.md).
+- Optional AIG scanning sidecar: the AIG release data-signing RSA public key and
+  its key id, plus the AIG sources in the release checkout.
+
+## Sizing
+
+Pick a resource profile with `--profile`. Each profile sets per-service CPU,
+memory and PID limits and reservations from
+[`resource-profile.json`](resource-profile.json). The figures are starting
+budgets, not a capacity promise; size and validate the host with
+[`RESOURCE_REQUIREMENTS.md`](../RESOURCE_REQUIREMENTS.md) and your own load
+and soak runs.
+
+| Profile | Intended use | Host starting point | Add for `--with-aig` |
+| --- | --- | --- | --- |
+| `small` (default) | Pilot, up to roughly 100 endpoints | 4 vCPU, 8 GiB RAM, 100 GiB SSD | 4 vCPU, 6 GiB, 40 GiB |
+| `medium` | Load-test start for roughly 1,000 endpoints | 8 vCPU, 16 GiB RAM, 250 GiB SSD | 6 vCPU, 8 GiB, 60 GiB |
+| `large` | Dedicated host for multi-thousand endpoint tests | 16 vCPU, 32 GiB RAM, 500 GiB SSD | 8 vCPU, 12 GiB, 100 GiB |
+
+The profile is fixed when the installation is prepared. To change it later,
+edit the `deploy.resources` blocks in `compose.yml` during a maintenance
+window, or prepare the target in a new directory during an upgrade.
+
+## Install
+
+Run from the verified kit or built repository root on the deployment host:
+
+```sh
+node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr --profile small --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml config --quiet
+docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d --build
+node scripts/deployment-migrate.mjs /srv/aidr
+node scripts/deployment-doctor.mjs --deployment /srv/aidr --online
+```
+
+The doctor fails until the TLS ingress, the device-start signer, the evidence
+and backup timers and the first account are in place. Complete those steps from
+[the installation guide](../README.md) and [the first-customer guide](../FIRST_CUSTOMER.md),
+then rerun the doctor. A running container is not acceptance.
+
+Preparation writes, into a private `0700` directory:
+
+- `compose.yml`: the pinned Supabase baseline plus the dashboard
+  (`image: aidr-dashboard:<version>`, built from `dashboard/`), merged with
+  [`compose.onprem.overlay.yml`](compose.onprem.overlay.yml) (restart policy,
+  compressed log rotation, extra health checks and stop grace periods) and the
+  selected resource profile.
+- `.env`, `.env.functions`, `.env.readiness`, `.env.ingress` (mode `0600`):
+  every variable is described in the
+  [configuration reference](../../docs/operations/onprem-config-reference.md);
+  [`.env.onprem.example`](.env.onprem.example) is the secret-free annotated
+  version. Regenerate both with `pnpm onprem:config-reference`; CI-style drift
+  checking is `pnpm verify:onprem-config-reference`.
+- `deployment.json`: the prepared manifest, including `resource_profile`,
+  `dashboard_image` and the `aig` block.
+
+### Optional AIG scanning sidecar
+
+Add these options to the preparation command:
+
+```sh
+--with-aig --aig-signing-public-key-file /secure-delivery/aig-release-public.pem --aig-signing-key-id <release-key-id>
+```
+
+This merges `docker-compose.aig.yml` into `compose.yml` under the `aig` Compose
+profile (enabled by `COMPOSE_PROFILES=aig` in `.env`), stages the build
+contexts under `aig/`, generates the worker secret and bridge API key, and pins
+the data-signing key fingerprint, bundle id and source commit. Single-host
+defaults apply: a durable SQLite task registry with HA not required, and the
+bridge published on `127.0.0.1:8099` only.
+
+Remote scan traffic leaves only through `aig-egress`, a pinned Ubuntu Squid
+gateway that denies everything by default. Add the domains the customer has
+authorized for scanning to `/srv/aidr/aig/egress/allowlist.txt`, then run
+`docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml restart aig-egress`.
+Destinations that resolve to loopback, link-local, private, CGNAT, multicast
+or reserved addresses are refused even when listed. The AIG server and worker
+sit on an internal network with no route out.
+
+We ship the gateway rather than asking the operator to supply one because an
+unconfigured proxy setting either blocks every scan or tempts a direct route
+out. The shipped gateway keeps the default closed (empty allowlist) while
+giving operators a reviewed, single-file way to open specific destinations.
+
+The committed AIG data manifest is unsigned. The bridge therefore reports
+not-ready, and the doctor fails its signature check, until a release-signed
+manifest and matching public key are deployed. For multi-replica HA, switch to
+the PostgreSQL registry as described in `.env.aig.example`.
+
+## Upgrade
+
+Never rerun preparation over `/srv/aidr`. Prepare the target release in a new
+directory, take and verify an encrypted backup, run the preflight and apply
+steps in [the upgrade runbook](../UPGRADE.md), then rerun the doctor.
+
+## Backup
+
+Use `scripts/deployment-backup.mjs` and the offsite timer from
+[the backup runbook](../backup/README.md). It covers the database and storage
+volumes, and a restore drill must pass before customer data is accepted. AIG
+scan state (`<project>_aig-db`, `<project>_aig-bridge-state`,
+`<project>_aig-uploads`) is not part of that backup. Snapshot those volumes
+separately while AIG is stopped if scan history must survive a host loss.
+
+## Air-gapped hosts
+
+On a connected staging host with the same release, prepare the installation,
+build the local images, then bundle every image the stack needs:
+
+```sh
+docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml build
+node scripts/build-airgap-images.mjs --compose .aidr-deploy/compose.yml --output .aidr-airgap --platform linux/amd64
+```
+
+The bundle contains the registry images, the locally built
+`aidr-dashboard` (and, with AIG, `aidr-aig-*`) images, and the Dockerfile
+`FROM` base images of every `build:` service, so the disconnected host can
+run or rebuild offline. Verify, load and start it as described in the
+[air-gap section](../README.md#disconnected-air-gapped-installation). Use the
+containerd image store on the disconnected host so digest-pinned base images
+keep their digests after `docker load`.
+
+## Uninstall
+
+1. Take and verify a final encrypted backup, and complete tenant offboarding if
+   data must be deleted (`scripts/deployment-offboarding.mjs`).
+2. Disable the host units: `systemctl disable --now aidr-siem-delivery.timer aidr-backup-offsite.timer aidr-restore-drill.timer aidr-export-retention.timer aidr-tls-renew.timer`,
+   and the device-start signer service if you installed it from `ingress/aidr-device-start.service.reference`.
+3. Stop the stack: `docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml down`.
+4. Delete data only after the retention decision is recorded:
+   `docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml down --volumes`,
+   then securely remove `/srv/aidr`, which holds the private key material.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| `docker compose config` fails with `required variable ... is missing` | Run commands with `--project-directory /srv/aidr` so Compose reads `/srv/aidr/.env`. |
+| A container restarts with exit code 137 | It hit its memory limit. Move to a larger `--profile` or raise that service's `deploy.resources.limits.memory`. |
+| Dashboard stays `unhealthy` | Production health is `/readyz`. It stays unhealthy until the signing, queue, backup and TLS evidence exists (`/srv/aidr/health`). |
+| `meta` is `unhealthy` | The overlay probes TCP 8080 inside the container; check `docker compose logs meta` and the database health. |
+| `aig-bridge` is `unhealthy` | `curl -s http://127.0.0.1:8099/api/v1/readyz` names the failing gate: dataset signature, worker, registry or egress. |
+| Remote AIG scans fail | The destination is missing from `aig/egress/allowlist.txt` or resolves to a non-public address; check `docker compose logs aig-egress`. |
+| Doctor reports `UNVERIFIED` | The host scheduler or Docker could not be inspected from that shell; UNVERIFIED is never a pass. |
+| Logs fill the disk | Each container keeps at most 5 compressed 20 MiB files; check other writers under `/var/lib/docker`. |

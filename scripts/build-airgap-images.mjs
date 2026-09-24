@@ -8,6 +8,13 @@
  *   after every image was saved and hashed, so a failed run cannot leave a
  *   manifest claiming a bundle that does not exist.
  *
+ * Compose plans include, for every service with a `build:` section, the base
+ * images named by the FROM lines of its Dockerfile (stage aliases and
+ * `scratch` excluded, ARG defaults and build args substituted), so the
+ * disconnected host can rebuild. A service that both builds and declares an
+ * `image:` tag is a local build: it is never pulled and must already exist on
+ * the staging host (`docker compose build`), and its saved image is bundled.
+ *
  * Verify path (`--verify`, no network and no Docker daemon required):
  *   the transferred bundle is re-checked against the manifest and, when a plan
  *   is supplied, against the exact image set the stack needs. A missing
@@ -30,8 +37,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const MANIFEST_NAME = "aidr-airgap-images.manifest.json";
 const TARBALL_DIR = "tarballs";
@@ -39,6 +48,7 @@ const BUNDLE_KIND = "aidr-airgap-image-bundle";
 const IMAGE_REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/;
 
 const repoRoot = path.resolve(process.cwd());
+const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let options;
 let outputDir;
 let manifestPath;
@@ -73,10 +83,16 @@ async function buildBundle() {
 		const usedSlugs = new Set();
 		for (const planned of plan.images) {
 			const ref = planned.ref;
-			if (!options.skipPull) {
+			if (!options.skipPull && !planned.localBuild) {
 				runDocker(["pull", ...(plan.platform ? ["--platform", plan.platform] : []), ref], `unable to pull ${ref}`);
 			}
-			const inspect = inspectImage(ref);
+			let inspect;
+			try {
+				inspect = inspectImage(ref);
+			} catch (error) {
+				if (!planned.localBuild) throw error;
+				throw new Error(`${ref} is built locally and was not found; run \`docker compose build\` for the prepared stack on this staging host first (${formatError(error)})`);
+			}
 			if (planned.digest && inspect.imageId !== planned.digest && !inspect.repoDigests.some((digest) => digest.endsWith(planned.digest))) {
 				throw new Error(
 					`image ${ref} does not match the digest pinned in the plan: expected ${planned.digest}, observed ${inspect.imageId}`,
@@ -94,6 +110,8 @@ async function buildBundle() {
 				image_id: inspect.imageId,
 				repo_digest: inspect.repoDigests[0] ?? null,
 				observed_platform: inspect.platform,
+				source: planned.localBuild ? "local-build" : "registry",
+				role: planned.role,
 			});
 			console.log(`Saved ${ref} -> ${TARBALL_DIR}/${slug}.tar (${bytes.byteLength} bytes)`);
 		}
@@ -220,7 +238,7 @@ function resolvePlannedImages() {
 		if (!Array.isArray(plan) && typeof plan.platform === "string" && !platform) platform = plan.platform;
 		for (const entry of entries) {
 			if (typeof entry === "string") addPlannedImage(images, { ref: entry });
-			else if (entry && typeof entry === "object") addPlannedImage(images, { ref: entry.ref, digest: entry.digest });
+			else if (entry && typeof entry === "object") addPlannedImage(images, { ref: entry.ref, digest: entry.digest, localBuild: entry.local_build === true });
 			else throw new Error("image plan entry must be a ref string or an object with a ref");
 		}
 	}
@@ -228,7 +246,7 @@ function resolvePlannedImages() {
 	if (options.compose) {
 		const composePath = path.resolve(repoRoot, options.compose);
 		if (!existsSync(composePath)) throw new Error(`compose file is missing: ${composePath}`);
-		for (const ref of parseComposeImages(readFileSync(composePath, "utf8"))) addPlannedImage(images, { ref });
+		for (const planned of parseComposeImages(composePath)) addPlannedImage(images, planned);
 	}
 
 	for (const ref of options.images) addPlannedImage(images, { ref });
@@ -243,26 +261,160 @@ function hasPlanSource() {
 	return Boolean(options.plan || options.compose || options.images.length > 0);
 }
 
-function addPlannedImage(images, { ref, digest }) {
+function addPlannedImage(images, { ref, digest, localBuild = false, role = "service" }) {
 	assertImageRef(ref);
-	if (digest !== undefined && digest !== null) assertDigest(digest, ref);
-	if (!images.has(ref)) images.set(ref, { ref, digest: digest ?? null });
+	const pinned = digest ?? pinnedDigest(ref);
+	if (pinned !== undefined && pinned !== null) assertDigest(pinned, ref);
+	const existing = images.get(ref);
+	if (existing) {
+		existing.localBuild ||= localBuild;
+		return;
+	}
+	images.set(ref, { ref, digest: pinned ?? null, localBuild, role });
 }
 
-function parseComposeImages(content) {
-	const refs = [];
-	for (const line of String(content).split(/\r?\n/)) {
-		const match = line.match(/^\s*image:\s*(?:"([^"]+)"|'([^']+)'|([^\s#]+))\s*(?:#.*)?$/);
-		if (!match) continue;
-		const ref = match[1] ?? match[2] ?? match[3];
-		if (!ref) continue;
-		if (ref.includes("${")) {
-			throw new Error(`compose image reference is not resolved: ${ref}; prepare the stack before building an air-gap bundle`);
-		}
-		refs.push(ref);
+function pinnedDigest(ref) {
+	const at = ref.indexOf("@");
+	return at === -1 ? null : ref.slice(at + 1);
+}
+
+function loadYamlParser() {
+	const requireCore = createRequire(path.join(scriptRoot, "packages/core/package.json"));
+	const vendored = path.join(scriptRoot, "deploy/vendor/yaml.cjs");
+	return (existsSync(vendored) ? requireCore(vendored) : requireCore("yaml")).parse;
+}
+
+function parseComposeImages(composePath) {
+	let document;
+	try {
+		document = loadYamlParser()(readFileSync(composePath, "utf8"));
+	} catch (error) {
+		throw new Error(`compose file is not valid YAML: ${formatError(error)}`);
 	}
-	if (refs.length === 0) throw new Error("compose file declares no image references");
-	return refs;
+	const services = document?.services;
+	if (!services || typeof services !== "object" || Array.isArray(services)) throw new Error("compose file declares no services");
+	const planned = [];
+	for (const [name, service] of Object.entries(services)) {
+		if (!service || typeof service !== "object") continue;
+		const builds = service.build !== undefined && service.build !== null;
+		if (service.image !== undefined) {
+			const ref = service.image;
+			if (typeof ref !== "string" || ref.includes("${")) {
+				throw new Error(`compose image reference is not resolved: ${String(ref)}; prepare the stack before building an air-gap bundle`);
+			}
+			planned.push({ ref, localBuild: builds, role: builds ? "local-build" : "service" });
+		}
+		if (builds) {
+			for (const base of dockerfileBaseImages(path.dirname(composePath), name, service.build)) {
+				planned.push({ ref: base, role: "build-base" });
+			}
+		}
+	}
+	if (planned.length === 0) throw new Error("compose file declares no image references");
+	return planned;
+}
+
+function dockerfileBaseImages(composeDir, serviceName, build) {
+	const spec = typeof build === "string" ? { context: build } : build;
+	if (!spec || typeof spec !== "object") throw new Error(`service ${serviceName} has an invalid build section`);
+	const context = spec.context ?? ".";
+	if (typeof context !== "string" || context.includes("${") || /^[a-z][a-z0-9+.-]*:\/\//i.test(context) || context.startsWith("git@")) {
+		throw new Error(`service ${serviceName} builds from a remote or unresolved context (${String(context)}); an air-gap bundle needs a local build context`);
+	}
+	const contextDir = path.resolve(composeDir, context);
+	const args = buildArguments(serviceName, spec.args);
+	let content;
+	let label;
+	if (typeof spec.dockerfile_inline === "string") {
+		content = spec.dockerfile_inline;
+		label = `service ${serviceName} inline Dockerfile`;
+	} else {
+		const dockerfile = spec.dockerfile ?? "Dockerfile";
+		if (typeof dockerfile !== "string" || dockerfile.includes("${")) throw new Error(`service ${serviceName} has an unresolved dockerfile`);
+		const dockerfilePath = path.resolve(contextDir, dockerfile);
+		if (!existsSync(dockerfilePath)) {
+			throw new Error(`service ${serviceName} builds from ${relativeDisplay(dockerfilePath)}, which is missing; its base images cannot be planned`);
+		}
+		content = readFileSync(dockerfilePath, "utf8");
+		label = relativeDisplay(dockerfilePath);
+	}
+	return parseDockerfileBases(content, args, label);
+}
+
+function buildArguments(serviceName, args) {
+	const values = new Map();
+	if (args === undefined || args === null) return values;
+	const entries = Array.isArray(args)
+		? args.map((entry) => {
+				const text = String(entry);
+				const index = text.indexOf("=");
+				return index === -1 ? [text, undefined] : [text.slice(0, index), text.slice(index + 1)];
+			})
+		: Object.entries(args);
+	for (const [name, value] of entries) {
+		if (value === undefined || value === null) continue;
+		if (String(value).includes("${")) throw new Error(`service ${serviceName} build arg ${name} is not resolved`);
+		values.set(name, String(value));
+	}
+	return values;
+}
+
+function parseDockerfileBases(content, buildArgs, label) {
+	const lines = [];
+	let pending = "";
+	for (const raw of String(content).split(/\r?\n/)) {
+		if (!pending && /^\s*#/.test(raw)) continue;
+		if (/\\\s*$/.test(raw)) {
+			pending += `${raw.replace(/\\\s*$/, "")} `;
+			continue;
+		}
+		lines.push(pending + raw);
+		pending = "";
+	}
+	if (pending) lines.push(pending);
+
+	const globalArgs = new Map();
+	const stages = new Set();
+	const bases = [];
+	let seenFrom = false;
+	for (const line of lines) {
+		const instruction = line.trim().match(/^([A-Za-z]+)\s+(.*)$/);
+		if (!instruction) continue;
+		const keyword = instruction[1].toUpperCase();
+		const rest = instruction[2].trim();
+		if (keyword === "ARG" && !seenFrom) {
+			for (const token of rest.split(/\s+/)) {
+				const index = token.indexOf("=");
+				const name = index === -1 ? token : token.slice(0, index);
+				const value = index === -1 ? undefined : token.slice(index + 1).replace(/^(["'])(.*)\1$/, "$2");
+				globalArgs.set(name, buildArgs.has(name) ? buildArgs.get(name) : value);
+			}
+			continue;
+		}
+		if (keyword !== "FROM") continue;
+		seenFrom = true;
+		const tokens = rest.split(/\s+/).filter((token) => !token.startsWith("--"));
+		if (tokens.length === 0) throw new Error(`${label} has a FROM line without an image`);
+		const image = substituteArguments(tokens[0], globalArgs, label);
+		const previousStage = stages.has(image.toLowerCase());
+		if (tokens.length >= 3 && tokens[1].toUpperCase() === "AS") stages.add(tokens[2].toLowerCase());
+		if (image.toLowerCase() === "scratch" || previousStage) continue;
+		if (!bases.includes(image)) bases.push(image);
+	}
+	if (!seenFrom) throw new Error(`${label} declares no FROM instruction`);
+	return bases;
+}
+
+function substituteArguments(value, args, label) {
+	const substituted = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::?-([^}]*))?\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, braced, fallback, bare) => {
+		const name = braced ?? bare;
+		const resolved = args.get(name);
+		if (resolved !== undefined && resolved !== "") return resolved;
+		if (fallback !== undefined) return fallback;
+		throw new Error(`${label} FROM references build argument ${name} without a value`);
+	});
+	if (substituted.includes("$")) throw new Error(`${label} FROM image is not resolved: ${value}`);
+	return substituted;
 }
 
 function assertImageRef(ref) {

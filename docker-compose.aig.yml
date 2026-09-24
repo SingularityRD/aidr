@@ -1,10 +1,16 @@
 # =============================================================================
 # AIG (AI-Infra-Guard) Sidecar Stack
 # =============================================================================
-# Runs AIG's scanning platform alongside AIDR. Three services:
+# Runs AIG's scanning platform alongside AIDR. Four services:
 #   aig-server  — Go backend (CVE scans, MCP scans, task management)
 #   aig-agent   — Go agent (WebSocket worker for scan execution)
 #   aig-bridge  — Python/FastAPI (clean REST API consumed by AIDR core)
+#   aig-egress  — pinned deny-by-default forward proxy for remote scan traffic
+#
+# Single-host defaults: SQLite task registry, HA not required, and the shipped
+# egress gateway (deploy/onprem/egress). See .env.aig.example for the
+# PostgreSQL HA switch. `scripts/deployment-prepare.mjs --with-aig` merges this
+# stack into a prepared on-prem installation.
 #
 # Attribution: AI-Infra-Guard by Tencent Zhuque Lab (Apache 2.0).
 # See vendor/ai-infra-guard/NOTICE for requirements.
@@ -13,6 +19,7 @@
 services:
   # ── AIG Go Backend Server ────────────────────────────────────────────────
   aig-server:
+    image: aidr-aig-server:${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}
     build:
       context: ./vendor/ai-infra-guard
       dockerfile: Dockerfile
@@ -98,6 +105,7 @@ services:
 
   # ── AIG Agent Worker ─────────────────────────────────────────────────────
   aig-agent:
+    image: aidr-aig-agent:${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}
     build:
       context: ./vendor/ai-infra-guard
       dockerfile: Dockerfile_Agent
@@ -108,10 +116,11 @@ services:
       - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:?set AIG_AGENT_SHARED_SECRET}
       - AIG_UPLOAD_ROOT=/app/uploads
       - AIG_WORK_DIR=/work
-      # Remote scan traffic must traverse the configured egress gateway. Keep
-      # AIG control-plane traffic on the private compose network.
-      - HTTP_PROXY=${BRIDGE_EGRESS_PROXY_URL:?set BRIDGE_EGRESS_PROXY_URL}
-      - HTTPS_PROXY=${BRIDGE_EGRESS_PROXY_URL:?set BRIDGE_EGRESS_PROXY_URL}
+      # Remote scan traffic must traverse the egress gateway (the shipped
+      # aig-egress proxy by default). Keep AIG control-plane traffic on the
+      # private compose network.
+      - HTTP_PROXY=${BRIDGE_EGRESS_PROXY_URL:-http://aig-egress:3128}
+      - HTTPS_PROXY=${BRIDGE_EGRESS_PROXY_URL:-http://aig-egress:3128}
       - NO_PROXY=${AIG_NO_PROXY:-aig-server,localhost,127.0.0.1}
       # The pinned AIG worker imports a pre-rename MCP SDK symbol. The tracked shim is
       # loaded via PYTHONPATH until the upstream import is fixed.
@@ -150,6 +159,8 @@ services:
     depends_on:
       aig-server:
         condition: service_healthy
+      aig-egress:
+        condition: service_healthy
     deploy:
       # The pinned source does not expose unique live worker identities. Keep one
       # worker until registration and readiness can prove distinct workers.
@@ -165,6 +176,7 @@ services:
 
   # ── AIG Bridge (Python/FastAPI) ──────────────────────────────────────────
   aig-bridge:
+    image: aidr-aig-bridge:${AIG_BRIDGE_IMAGE_TAG:-local}
     build:
       context: ./services/aig-bridge
       dockerfile: Dockerfile
@@ -196,12 +208,16 @@ services:
       - BRIDGE_JWT_AUDIENCE=${BRIDGE_JWT_AUDIENCE:-}
       - BRIDGE_JWT_REPLAY_DB=${BRIDGE_JWT_REPLAY_DB:-/app/state/jwt-replay.db}
       - BRIDGE_TENANT_REQUIRED=${BRIDGE_TENANT_REQUIRED:-true}
-      - BRIDGE_HA_REQUIRED=${BRIDGE_HA_REQUIRED:-true}
-      - BRIDGE_TASK_BACKEND=${BRIDGE_TASK_BACKEND:-postgres}
+      # Single-host default: the durable SQLite registry on the bridge state
+      # volume. Multi-replica HA sets BRIDGE_HA_REQUIRED=true,
+      # BRIDGE_TASK_BACKEND=postgres and BRIDGE_TASK_POSTGRES_DSN; readiness then
+      # refuses SQLite and probes the migrated PostgreSQL registry instead.
+      - BRIDGE_HA_REQUIRED=${BRIDGE_HA_REQUIRED:-false}
+      - BRIDGE_TASK_BACKEND=${BRIDGE_TASK_BACKEND:-sqlite}
       - BRIDGE_TASK_POSTGRES_DSN=${BRIDGE_TASK_POSTGRES_DSN:-}
       - BRIDGE_REQUIRE_IDEMPOTENCY=${BRIDGE_REQUIRE_IDEMPOTENCY:-true}
       - BRIDGE_RUNTIME_EGRESS_REQUIRED=${BRIDGE_RUNTIME_EGRESS_REQUIRED:-true}
-      - BRIDGE_EGRESS_PROXY_URL=${BRIDGE_EGRESS_PROXY_URL:?set BRIDGE_EGRESS_PROXY_URL}
+      - BRIDGE_EGRESS_PROXY_URL=${BRIDGE_EGRESS_PROXY_URL:-http://aig-egress:3128}
       - BRIDGE_UPLOAD_ENABLED=${BRIDGE_UPLOAD_ENABLED:-true}
       - BRIDGE_UPLOAD_ROOT=${BRIDGE_UPLOAD_ROOT:-/app/uploads}
       - BRIDGE_CORS_ORIGINS=${BRIDGE_CORS_ORIGINS:-}
@@ -236,6 +252,10 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0700
     networks:
       - aidr-aig-network
+      # Docker does not publish ports of a container attached only to an
+      # internal network. The edge network carries the published bridge port
+      # but has IP masquerading disabled, so it is not an Internet route.
+      - aidr-aig-edge
     restart: unless-stopped
     logging:
       driver: json-file
@@ -261,6 +281,62 @@ services:
           cpus: "0.25"
           memory: "128M"
 
+  # ── AIG Egress Gateway ───────────────────────────────────────────────────
+  # Pinned Ubuntu-maintained Squid, deny by default: only operator-listed
+  # domains that resolve to public addresses are reachable
+  # (deploy/onprem/egress). It is the only AIG service with an Internet route.
+  aig-egress:
+    image: ubuntu/squid:6.6-24.04_edge@sha256:8a3baed477e2c282ab8aa5edad442f69873246964f225c5c2ae8364b6610963c
+    entrypoint: ["/usr/sbin/squid"]
+    command: ["-f", "/etc/squid/squid.conf", "-NYC"]
+    expose:
+      - "3128"
+    volumes:
+      - type: bind
+        source: ./deploy/onprem/egress/squid.conf
+        target: /etc/squid/squid.conf
+        read_only: true
+      - type: bind
+        source: ${AIG_EGRESS_ALLOWLIST_PATH:-./deploy/onprem/egress/allowlist.txt}
+        target: /etc/squid/aidr-allowlist.txt
+        read_only: true
+    read_only: true
+    cap_drop:
+      - ALL
+    # Squid starts as root only to drop to its unprivileged `proxy` user.
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run:rw,noexec,nosuid,nodev,size=8m
+      - /var/spool/squid:rw,noexec,nosuid,nodev,size=64m
+      - /var/log/squid:rw,noexec,nosuid,nodev,size=8m
+    networks:
+      - aidr-aig-network
+      - aidr-aig-egress
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/3128"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "256M"
+          pids: 256
+        reservations:
+          memory: "64M"
+
 # ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
   aig-db:
@@ -279,6 +355,16 @@ networks:
   aidr-aig-network:
     name: aidr-aig-network
     driver: bridge
-    # No container has a direct Internet route. Attach a reviewed egress proxy
-    # to this private network and a separate external network.
+    # No container has a direct Internet route on the control network. Only
+    # aig-egress is also attached to the external egress network.
     internal: true
+  aidr-aig-edge:
+    name: aidr-aig-edge
+    driver: bridge
+    # Carries only the bridge's published port. Without masquerading, a
+    # container on this network cannot originate Internet connections.
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+  aidr-aig-egress:
+    name: aidr-aig-egress
+    driver: bridge

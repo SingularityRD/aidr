@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { inspectReviewedRuntime } from "./archive-boundary.mjs";
+import { CATALOG } from "./generate-onprem-config-reference.mjs";
 
 const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(scriptsDirectory, "..");
@@ -401,5 +402,176 @@ test("the declared region and its residency are recorded in the prepared manifes
 		assert.equal(deployment.regions["self-hosted"].supabase_url, null);
 		assert.equal(deployment.regions["self-hosted"].residency.declared, true);
 		assert.match(deployment.regions["self-hosted"].residency.location, /\S/);
+	});
+});
+
+const resourceProfiles = JSON.parse(readFileSync(join(root, "deploy/onprem/resource-profile.json"), "utf8"));
+const dashboardVersion = JSON.parse(readFileSync(join(root, "packages/dashboard/package.json"), "utf8")).version;
+const dockerCompose = spawnSync("docker", ["compose", "version"], { encoding: "utf8", timeout: 30_000 });
+const dockerComposeAvailable = !dockerCompose.error && dockerCompose.status === 0;
+
+function assertComposeConfigResolves(output) {
+	const config = spawnSync("docker", ["compose", "--project-directory", output, "-f", join(output, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 60_000 });
+	assert.equal(config.status, 0, `docker compose config rejected the prepared stack: ${config.stderr}`);
+}
+
+function assertBudget(service, budget, label) {
+	assert.deepEqual(service.deploy.resources.limits, { cpus: budget.cpus, memory: budget.memory, ...(budget.pids ? { pids: budget.pids } : {}) }, `${label} limits`);
+	const reservations = { ...(budget.reservation_cpus ? { cpus: budget.reservation_cpus } : {}), ...(budget.reservation_memory ? { memory: budget.reservation_memory } : {}) };
+	assert.deepEqual(service.deploy.resources.reservations ?? {}, reservations, `${label} reservations`);
+}
+
+test("on-prem profile applies resource budgets, runtime policy and a versioned dashboard image", (t) => {
+	if (!dockerComposeAvailable) t.diagnostic("docker compose is not installed; the compose config check is skipped");
+	inTemporaryDirectory((directory) => {
+		const output = join(directory, "onprem-medium");
+		const result = prepare(output, "--mode", "self-hosted", "--profile", "medium");
+		assert.equal(result.status, 0, result.stderr);
+		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
+		const budgets = resourceProfiles.profiles.medium.services;
+		assert.deepEqual(Object.keys(compose.services).sort(), ["api-gw", "auth", "dashboard", "db", "functions", "imgproxy", "meta", "realtime", "rest", "storage", "studio"]);
+		for (const [name, service] of Object.entries(compose.services)) {
+			assertBudget(service, budgets[name], name);
+			assert.equal(service.restart, "unless-stopped", `${name} restart policy`);
+			assert.deepEqual(service.logging, { driver: "json-file", options: { "max-size": "20m", "max-file": "5", compress: "true" } }, `${name} log rotation`);
+			assert.ok(service.healthcheck?.test, `${name} has no health check`);
+			assert.equal(Object.hasOwn(service, "profiles"), false);
+		}
+		assert.equal(compose.services.db.stop_grace_period, "120s");
+		assert.match(compose.services.meta.healthcheck.test.at(-1), /connect\(8080/);
+		assert.equal(compose.services.dashboard.image, `aidr-dashboard:${dashboardVersion}`);
+		assert.equal(compose.services.dashboard.build, "./dashboard");
+		assert.equal(compose.services.dashboard.healthcheck.retries, 3);
+		assert.match(compose.services.dashboard.healthcheck.test.at(-1), /\/readyz/, "the overlay must not replace the production readiness probe");
+		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
+		assert.equal(deployment.resource_profile, "medium");
+		assert.equal(deployment.dashboard_image, `aidr-dashboard:${dashboardVersion}`);
+		assert.deepEqual(deployment.aig, { enabled: false });
+		assert.doesNotMatch(readFileSync(join(output, ".env"), "utf8"), /^(COMPOSE_PROFILES|AIG_|BRIDGE_)/m);
+		assert.equal(existsSync(join(output, "aig")), false);
+		// Every variable the configuration reference promises for a self-hosted install is written.
+		for (const entry of CATALOG.filter((item) => ["always", "self-hosted"].includes(item.written))) {
+			assert.match(readFileSync(join(output, entry.file), "utf8"), new RegExp(`^${entry.name}=`, "m"), `${entry.file} lacks documented ${entry.name}`);
+		}
+		if (dockerComposeAvailable) assertComposeConfigResolves(output);
+	});
+});
+
+test("an unknown resource profile is refused before anything is written", () => {
+	inTemporaryDirectory((directory) => {
+		const output = join(directory, "unknown-profile");
+		const result = prepare(output, "--mode", "cloud", "--profile", "huge");
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /Unknown resource profile "huge"; choose one of: small, medium, large/);
+		assert.equal(existsSync(output), false);
+	});
+});
+
+test("--with-aig merges the single-host AIG stack with an isolated deny-by-default egress gateway", (t) => {
+	if (!dockerComposeAvailable) t.diagnostic("docker compose is not installed; the compose config check is skipped");
+	inTemporaryDirectory((directory) => {
+		const output = join(directory, "onprem-aig");
+		const aigKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey;
+		const aigKeyFile = join(directory, "aig-release-public.pem");
+		writeFileSync(aigKeyFile, aigKey.export({ type: "spki", format: "pem" }));
+		const result = prepare(output, "--mode", "self-hosted", "--profile", "large", "--with-aig", "--aig-signing-public-key-file", aigKeyFile, "--aig-signing-key-id", "aig-release-2026");
+		assert.equal(result.status, 0, result.stderr);
+		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
+		const aigServices = ["aig-agent", "aig-bridge", "aig-egress", "aig-server"];
+		for (const name of aigServices) {
+			const service = compose.services[name];
+			assert.deepEqual(service.profiles, ["aig"], `${name} profile`);
+			assert.equal(Object.hasOwn(service, "container_name"), false, `${name} must be project-scoped`);
+			assertBudget(service, resourceProfiles.profiles.large.services[name], name);
+			assert.equal(service.restart, "unless-stopped");
+			assert.equal(service.read_only, true);
+			assert.deepEqual(service.cap_drop, ["ALL"]);
+		}
+		assert.equal(compose.services["aig-agent"].deploy.replicas, "${AIG_AGENT_COUNT:-1}", "the single-worker replica pin must survive the resource merge");
+		const aigManifest = JSON.parse(readFileSync(join(root, "packages/core/src/generated/aig-data-manifest.json"), "utf8"));
+		assert.equal(compose.services["aig-server"].image, "aidr-aig-server:v4.6.1-aidr.1");
+		assert.equal(compose.services["aig-agent"].image, "aidr-aig-agent:v4.6.1-aidr.1");
+		assert.equal(compose.services["aig-bridge"].image, `aidr-aig-bridge:${dashboardVersion}`);
+		assert.match(compose.services["aig-egress"].image, /^ubuntu\/squid:[^@]+@sha256:[a-f0-9]{64}$/);
+		assert.equal(compose.services["aig-server"].build.context, "./aig/vendor/ai-infra-guard");
+		assert.equal(compose.services["aig-bridge"].build.context, "./aig/bridge");
+
+		// Only the egress gateway has an Internet route; the bridge publishes on
+		// loopback through a non-masquerading edge network.
+		assert.equal(compose.networks["aidr-aig-network"].internal, true);
+		assert.equal(compose.networks["aidr-aig-edge"].driver_opts["com.docker.network.bridge.enable_ip_masquerade"], "false");
+		for (const network of Object.values(compose.networks)) assert.equal(Object.hasOwn(network ?? {}, "name"), false, "AIG networks must be project-scoped");
+		for (const volume of ["aig-db", "aig-logs", "aig-uploads", "aig-checker-data", "aig-bridge-state"]) assert.equal(Object.hasOwn(compose.volumes[volume] ?? {}, "name"), false);
+		assert.deepEqual(compose.services["aig-egress"].networks, ["aidr-aig-network", "aidr-aig-egress"]);
+		assert.deepEqual(compose.services["aig-agent"].networks, ["aidr-aig-network"]);
+		assert.deepEqual(compose.services["aig-server"].networks, ["aidr-aig-network"]);
+		assert.deepEqual(compose.services["aig-bridge"].networks, ["aidr-aig-network", "aidr-aig-edge"]);
+		assert.deepEqual(compose.services["aig-bridge"].ports, ["${AIG_BIND_ADDRESS:-127.0.0.1}:${AIG_BRIDGE_PORT:-8099}:8099"]);
+		for (const name of ["aig-server", "aig-agent", "aig-egress"]) assert.equal(Object.hasOwn(compose.services[name], "ports"), false, `${name} must not publish a port`);
+
+		const bindSources = aigServices
+			.flatMap((name) => compose.services[name].volumes.map((volume) => typeof volume === "string" ? volume.split(":")[0] : volume.type === "bind" ? volume.source : null))
+			.filter((source) => source?.startsWith("."));
+		assert.ok(bindSources.length >= 5);
+		for (const source of bindSources) assert.ok(existsSync(join(output, source)), `bind mount source ${source} was not staged`);
+		assert.ok(existsSync(join(output, "aig/vendor/ai-infra-guard/Dockerfile_Agent")));
+		assert.ok(existsSync(join(output, "aig/bridge/Dockerfile")));
+		assert.equal(existsSync(join(output, "aig/bridge/tests")), false, "bridge tests are not part of the build context");
+		assert.equal(existsSync(join(output, "aig/vendor/ai-infra-guard/.github")), false);
+		assert.equal(readFileSync(join(output, "aig/egress/squid.conf"), "utf8"), readFileSync(join(root, "deploy/onprem/egress/squid.conf"), "utf8"));
+		assert.match(readFileSync(join(output, "aig/egress/squid.conf"), "utf8"), /^http_access deny all$/m);
+
+		const envText = readFileSync(join(output, ".env"), "utf8");
+		const envValue = (name) => envText.match(new RegExp(`^${name}=(.*)$`, "m"))?.[1];
+		assert.equal(envValue("COMPOSE_PROFILES"), "aig");
+		assert.match(envValue("AIG_AGENT_SHARED_SECRET"), /^[a-f0-9]{64}$/);
+		assert.match(envValue("BRIDGE_API_KEY"), /^[a-f0-9]{64}$/);
+		assert.notEqual(envValue("AIG_AGENT_SHARED_SECRET"), envValue("BRIDGE_API_KEY"));
+		assert.equal(envValue("BRIDGE_AUTH_MODE"), "api_key");
+		assert.equal(envValue("BRIDGE_TASK_BACKEND"), "sqlite");
+		assert.equal(envValue("BRIDGE_HA_REQUIRED"), "false");
+		assert.equal(envValue("BRIDGE_EGRESS_PROXY_URL"), "http://aig-egress:3128");
+		assert.equal(envValue("AIG_TRUSTED_SIGNING_KEY_ID"), "aig-release-2026");
+		const fingerprint = createHash("sha256").update(aigKey.export({ type: "spki", format: "der" })).digest("hex");
+		assert.equal(envValue("AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256"), fingerprint);
+		assert.equal(envValue("AIG_EXPECTED_DATA_BUNDLE_ID"), aigManifest.bundle_id);
+		assert.equal(envValue("AIG_EXPECTED_SOURCE_COMMIT"), aigManifest.source.commit);
+		const aigKeys = envText.split(/\r?\n/).map((line) => line.split("=")[0]).filter((name) => /^(AIG_|BRIDGE_|COMPOSE_PROFILES$)/.test(name)).sort();
+		assert.deepEqual(aigKeys, CATALOG.filter((entry) => entry.written === "with-aig").map((entry) => entry.name).sort(), "the configuration reference must list exactly the AIG variables preparation writes");
+		const composeText = readFileSync(join(output, "compose.yml"), "utf8");
+		for (const name of ["AIG_AGENT_SHARED_SECRET", "BRIDGE_API_KEY"]) assert.equal(composeText.includes(envValue(name)), false, `${name} was embedded in Compose`);
+
+		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
+		assert.equal(deployment.aig.enabled, true);
+		assert.equal(deployment.aig.signing_public_key_sha256, fingerprint);
+		assert.equal(deployment.aig.data_manifest_signed, aigManifest.signature !== null);
+		assert.ok(deployment.artifacts.some((entry) => entry.path === "aig/egress/allowlist.txt"));
+		assert.ok(deployment.artifacts.some((entry) => entry.path === "aig/generated/aig-data-manifest.json"));
+		if (dockerComposeAvailable) assertComposeConfigResolves(output);
+	});
+});
+
+test("--with-aig refuses missing, private or non-RSA release keys and cloud mode", () => {
+	inTemporaryDirectory((directory) => {
+		const ed25519 = join(directory, "ed25519.pem");
+		writeFileSync(ed25519, artifactVerificationPublicKeyPem);
+		const privateKey = join(directory, "private.pem");
+		writeFileSync(privateKey, generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }));
+		const rsa = join(directory, "rsa.pem");
+		writeFileSync(rsa, generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey.export({ type: "spki", format: "pem" }));
+		const cases = [
+			[["--mode", "self-hosted", "--with-aig", "--aig-signing-key-id", "k1"], /requires --aig-signing-public-key-file and --aig-signing-key-id/],
+			[["--mode", "self-hosted", "--with-aig", "--aig-signing-public-key-file", ed25519, "--aig-signing-key-id", "k1"], /must be a readable RSA/],
+			[["--mode", "self-hosted", "--with-aig", "--aig-signing-public-key-file", privateKey, "--aig-signing-key-id", "k1"], /must be a readable RSA/],
+			[["--mode", "self-hosted", "--with-aig", "--aig-signing-public-key-file", rsa, "--aig-signing-key-id", "../k1"], /must be a short identifier/],
+			[["--mode", "cloud", "--with-aig", "--aig-signing-public-key-file", rsa, "--aig-signing-key-id", "k1"], /only supported for self-hosted/],
+		];
+		for (const [index, [options, expected]] of cases.entries()) {
+			const output = join(directory, `aig-case-${index}`);
+			const result = prepare(output, ...options);
+			assert.notEqual(result.status, 0, `AIG case ${index} unexpectedly succeeded`);
+			assert.match(result.stderr, expected);
+			assert.equal(existsSync(output), false, `AIG case ${index} left a partial installation`);
+		}
 	});
 });
