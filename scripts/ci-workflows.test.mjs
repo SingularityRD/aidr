@@ -154,6 +154,9 @@ test("on-prem, Helm, privacy and Browser Guard gates run what they claim", () =>
 		assert.ok(onprem.includes(file), `onprem-deploy must run ${file}`);
 		assert.ok(existsSync(path.join(root, file)), `${file} must exist`);
 	}
+	for (const gate of ["pnpm verify:bootstrap", "pnpm verify:upgrade", "pnpm verify:backup-offsite", "pnpm verify:onprem-config-reference"]) {
+		assert.ok(onprem.includes(gate), `onprem-deploy must run ${gate}`);
+	}
 	assert.match(onprem, /docker compose -f docker-compose\.aig\.yml --env-file \.env\.aig\.example config --quiet/u);
 	assert.match(onprem, /docker build --pull --tag aidr-dashboard:ci "\$\{output\}\/dashboard"/u);
 	assert.match(onprem, /docker build --pull --tag aidr-aig-bridge:ci services\/aig-bridge/u);

@@ -17,7 +17,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
@@ -98,11 +98,42 @@ const safeRelative = (path) =>
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 let writeSequence = 0;
 let pendingSignal = null;
+const signalExitCodes = { SIGINT: 130, SIGTERM: 143 };
+const maxChildOutputBytes = 16 * 1024 * 1024;
+// Children run in their own process group so a terminal Ctrl+C reaches only this
+// orchestrator. It decides which step may be cut short: read-only or
+// rollback-only children are stopped, while state-changing children (writer
+// stop/start, the atomic migration, recovery) finish so their outcome is known.
+const isolateChildren = process.platform !== "win32";
+const interruptibleChildren = new Set();
+
+function killChild(child) {
+	try {
+		if (isolateChildren) process.kill(-child.pid, "SIGTERM");
+		else child.kill("SIGTERM");
+	} catch {
+		// The child already exited.
+	}
+}
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
 	process.on(signal, () => {
-		pendingSignal ??= signal;
+		if (pendingSignal) return;
+		pendingSignal = signal;
+		process.exitCode = signalExitCodes[signal];
+		process.stderr.write(`Received ${signal}; stopping at the next safe point and restoring the recorded service state.\n`);
+		for (const child of interruptibleChildren) killChild(child);
 	});
+}
+
+function interruptedError() {
+	const error = new Error(`Upgrade interrupted by ${pendingSignal}`);
+	error.signal = pendingSignal;
+	return error;
+}
+
+function throwIfInterrupted() {
+	if (pendingSignal) throw interruptedError();
 }
 
 function writeJson(path, value) {
@@ -147,17 +178,51 @@ function inventoryFiles(directory, prefix) {
 	return files;
 }
 
+// Runs a child asynchronously so SIGINT/SIGTERM handlers run while it is in
+// flight. `interruptible` children are stopped on a signal and reject with an
+// interruption error; all others run to completion and the caller checks for a
+// pending signal at the next phase boundary.
 function command(executable, args, options = {}) {
-	const result = spawnSync(executable, args, {
-		encoding: "utf8",
-		timeout: options.timeout ?? 180_000,
-		maxBuffer: 16 * 1024 * 1024,
-		input: options.input,
+	const label = options.label ?? `${executable} ${args[0]}`;
+	if (options.interruptible && pendingSignal) return Promise.reject(interruptedError());
+	return new Promise((resolveCommand, rejectCommand) => {
+		const child = spawn(executable, args, { stdio: ["pipe", "pipe", "ignore"], detached: isolateChildren });
+		let stdout = "";
+		let stdoutBytes = 0;
+		let failure = null;
+		let settled = false;
+		const timer = setTimeout(() => {
+			failure ??= "timed out";
+			killChild(child);
+		}, options.timeout ?? 180_000);
+		const settle = (outcome) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			interruptibleChildren.delete(child);
+			outcome();
+		};
+		if (options.interruptible) interruptibleChildren.add(child);
+		child.stdout.setEncoding("utf8");
+		child.stdout.on("data", (chunk) => {
+			stdoutBytes += Buffer.byteLength(chunk);
+			if (stdoutBytes > maxChildOutputBytes) {
+				failure ??= "exceeded the output limit";
+				killChild(child);
+			} else {
+				stdout += chunk;
+			}
+		});
+		// The child may exit before consuming its input; its exit status decides.
+		child.stdin.on("error", () => {});
+		child.stdin.end(options.input ?? "");
+		child.on("error", () => settle(() => rejectCommand(new Error(`${label} could not be started; credentials and child output were withheld`))));
+		child.on("close", (code, signal) => settle(() => {
+			if (options.interruptible && pendingSignal) rejectCommand(interruptedError());
+			else if (code !== 0 || failure) rejectCommand(new Error(`${label} failed (${failure ?? `exit ${code ?? signal}`}); credentials and child output were withheld`));
+			else resolveCommand(stdout.trim());
+		}));
 	});
-	if (result.status !== 0) {
-		throw new Error(`${options.label ?? `${executable} ${args[0]}`} failed (exit ${result.status}); credentials and child output were withheld`);
-	}
-	return result.stdout.trim();
 }
 
 function docker(args, options = {}) {
@@ -368,11 +433,11 @@ function validateUpgradePath(currentInfo, targetInfo) {
 	}
 }
 
-function verifyBackup(currentInfo) {
-	command(
+async function verifyBackup(currentInfo) {
+	await command(
 		process.execPath,
 		[join(scriptDir, "deployment-backup.mjs"), "verify", "--backup", backup, "--key-file", keyFile],
-		{ label: "encrypted backup verification", timeout: 300_000 },
+		{ label: "encrypted backup verification", timeout: 300_000, interruptible: true },
 	);
 	const envelope = json(join(backup, "backup.json"));
 	const payload = JSON.parse(envelope.payload);
@@ -419,10 +484,11 @@ function migrationSql(currentInfo, targetInfo) {
 	return sql;
 }
 
-function dryRunMigrations(currentInfo, targetInfo) {
-	docker(
+async function dryRunMigrations(currentInfo, targetInfo) {
+	// The dry-run always ends in ROLLBACK, so stopping it on a signal is safe.
+	await docker(
 		composeArgs("exec", "-T", "db", "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1"),
-		{ input: migrationSql(currentInfo, targetInfo), label: "locked migration dry-run" },
+		{ input: migrationSql(currentInfo, targetInfo), label: "locked migration dry-run", interruptible: true },
 	);
 }
 
@@ -478,7 +544,7 @@ function prepareComponents(currentInfo, targetInfo, binding) {
 	}));
 }
 
-function preflight() {
+async function preflight() {
 	const currentInfo = validateManifest(current, "Current installation");
 	const targetInfo = validateManifest(target, "Target candidate");
 	validateUpgradePath(currentInfo, targetInfo);
@@ -486,7 +552,7 @@ function preflight() {
 	validateContract(contract, currentInfo, targetInfo);
 	validateSigningContinuity(join(current, "agent-config.json"));
 	validateSigningContinuity(join(target, "agent-config.json"));
-	const backupInfo = verifyBackup(currentInfo);
+	const backupInfo = await verifyBackup(currentInfo);
 	mkdirSync(stateDir, { recursive: true, mode: 0o700 });
 	const binding = {
 		current_manifest_sha256: currentInfo.sha256,
@@ -549,6 +615,7 @@ function saveState(state, phase, status = "running") {
 	state.status = status;
 	state.updated_at = new Date().toISOString();
 	delete state.last_error;
+	delete state.interrupted_by;
 	writeJson(statePath, state);
 }
 
@@ -579,7 +646,7 @@ function releaseLock() {
 	}
 }
 
-function stageForMigration(state) {
+async function stageForMigration() {
 	const stage = join(stateDir, "migration-stage");
 	if (existsSync(stage)) rmSync(stage, { recursive: true, force: true });
 	mkdirSync(stage, { recursive: true, mode: 0o700 });
@@ -591,39 +658,31 @@ function stageForMigration(state) {
 	copyPath(join(target, "migrations"), join(stage, "migrations"));
 	copyPath(join(target, "deployment.json"), join(stage, "deployment.json"));
 	try {
-		command(process.execPath, [join(scriptDir, "deployment-migrate.mjs"), stage], { label: "atomic migration runner", timeout: 300_000 });
+		// Never interrupted: the migration commits atomically and its outcome must be known.
+		await command(process.execPath, [join(scriptDir, "deployment-migrate.mjs"), stage], { label: "atomic migration runner", timeout: 300_000 });
 	} finally {
 		rmSync(stage, { recursive: true, force: true });
 	}
 }
 
-function currentRunningServices() {
-	return docker(composeArgs("ps", "--services", "--status", "running"), { label: "running service inventory" })
+async function currentRunningServices(options = {}) {
+	return (await docker(composeArgs("ps", "--services", "--status", "running"), { label: "running service inventory", ...options }))
 		.split(/\r?\n/)
 		.filter(Boolean);
 }
 
 const restartableWriterPhases = new Set(["writers_stopping", "writers_stopped", "migration_dry_run"]);
+const postCommitPhases = new Set(["database_migrated", "artifacts_installed", "services_started"]);
 
-function restartOriginalWriters(state, label) {
+async function restartOriginalWriters(state, label) {
 	if (!restartableWriterPhases.has(state.last_completed_phase)) return false;
 	const services = (state.running_services ?? []).filter((name) => name !== "db");
-	if (services.length) docker(composeArgs("start", ...services), { label });
+	if (services.length) await docker(composeArgs("start", ...services), { label });
 	state.last_completed_phase = "preflight";
 	state.writers_restarted_at = new Date().toISOString();
 	state.updated_at = state.writers_restarted_at;
 	writeJson(statePath, state);
 	return true;
-}
-
-function throwIfInterrupted(state) {
-	if (!pendingSignal) return;
-	if (restartableWriterPhases.has(state.last_completed_phase)) {
-		restartOriginalWriters(state, `source service restart after ${pendingSignal}`);
-	}
-	const error = new Error(`Upgrade interrupted by ${pendingSignal}`);
-	error.signal = pendingSignal;
-	throw error;
 }
 
 function boundMigrationInputs(state) {
@@ -636,26 +695,26 @@ function boundMigrationInputs(state) {
 	return { currentInfo, targetInfo };
 }
 
-function recheckBeforeWriterDrain(state) {
+async function recheckBeforeWriterDrain(state) {
 	const { currentInfo, targetInfo } = boundMigrationInputs(state);
 	validateContract(json(contractPath), currentInfo, targetInfo);
 	validateSigningContinuity(join(current, "agent-config.json"));
 	validateSigningContinuity(join(stateDir, "payload", "agent-config.json"));
-	const verified = verifyBackup(currentInfo);
+	const verified = await verifyBackup(currentInfo);
 	if (verified.sha256 !== state.backup.sha256) throw new Error("Authenticated backup changed after preflight");
 }
 
-function stopWriters(state) {
-	const running = currentRunningServices();
+async function stopWriters(state) {
+	const running = await currentRunningServices({ interruptible: true });
 	if (!running.includes("db")) throw new Error("Current database must be running before upgrade");
 	state.running_services = running;
 	saveState(state, "writers_stopping");
 	const writers = running.filter((name) => name !== "db");
 	if (writers.length) {
 		try {
-			docker(composeArgs("stop", "--timeout", "60", ...writers), { label: "maintenance service stop" });
+			await docker(composeArgs("stop", "--timeout", "60", ...writers), { label: "maintenance service stop" });
 		} catch (error) {
-			try { restartOriginalWriters(state, "source service restart after incomplete stop"); } catch { /* original stop error remains */ }
+			try { await restartOriginalWriters(state, "source service restart after incomplete stop"); } catch { /* original stop error remains */ }
 			throw error;
 		}
 	}
@@ -726,46 +785,58 @@ function failState(state, error) {
 	state.status = "failed";
 	state.updated_at = new Date().toISOString();
 	state.last_error = error.message;
-	state.requires_restore = ["migration_running", "database_migrated", "artifacts_installed", "services_started"].includes(state.last_completed_phase);
+	if (error.signal) state.interrupted_by = error.signal;
+	else delete state.interrupted_by;
+	// An interruption at a phase boundary after the schema commit leaves a known,
+	// resumable state; only a failed step or an unknown migration outcome needs restore.
+	state.requires_restore = state.last_completed_phase === "migration_running" || (!error.signal && postCommitPhases.has(state.last_completed_phase));
 	writeJson(statePath, state);
 	writeRollbackPlan(state, error.message);
 }
 
-function runUpgrade(state) {
+async function runUpgrade(state) {
 	if (state.status === "complete") return state;
 	if (state.last_completed_phase === "migration_running") {
 		throw new Error("Previous migration outcome is unknown; recover the verified backup into an isolated project before cutover");
 	}
 	const phases = ["preflight", "writers_stopping", "writers_stopped", "migration_dry_run", "migration_running", "database_migrated", "artifacts_installed", "services_started", "doctor_passed"];
 	const atLeast = (phase) => phases.indexOf(state.last_completed_phase) >= phases.indexOf(phase);
-	if (state.last_completed_phase === "writers_stopping") restartOriginalWriters(state, "source service restart after interrupted stop");
-	throwIfInterrupted(state);
+	// A pending SIGINT/SIGTERM is checked at every phase boundary. The caller's
+	// failure path then restarts the recorded writers (before the schema commit)
+	// or keeps target services drained (after it) and records resumable state.
+	if (state.last_completed_phase === "writers_stopping") await restartOriginalWriters(state, "source service restart after interrupted stop");
+	throwIfInterrupted();
 	if (!atLeast("writers_stopped")) {
-		recheckBeforeWriterDrain(state);
-		stopWriters(state);
+		await recheckBeforeWriterDrain(state);
+		throwIfInterrupted();
+		await stopWriters(state);
 	}
-	throwIfInterrupted(state);
+	throwIfInterrupted();
 	if (!atLeast("migration_dry_run")) {
 		const { currentInfo, targetInfo } = boundMigrationInputs(state);
-		dryRunMigrations(currentInfo, targetInfo);
-		throwIfInterrupted(state);
+		await dryRunMigrations(currentInfo, targetInfo);
+		throwIfInterrupted();
 		saveState(state, "migration_dry_run");
 	}
-	throwIfInterrupted(state);
+	throwIfInterrupted();
 	if (!atLeast("database_migrated")) {
 		saveState(state, "migration_running");
 		// A failed child can still have committed before it timed out or exited.
 		// Keep writers drained until isolated recovery proves the database state.
-		stageForMigration(state);
+		await stageForMigration();
 		saveState(state, "database_migrated");
 	}
+	throwIfInterrupted();
 	if (!atLeast("artifacts_installed")) installComponents(state);
+	throwIfInterrupted();
 	if (!atLeast("services_started")) {
-		docker(composeArgs("up", "-d", "--build", "--wait", "--wait-timeout", "180"), { label: "target service start", timeout: 300_000 });
+		await docker(composeArgs("up", "-d", "--build", "--wait", "--wait-timeout", "180"), { label: "target service start", timeout: 300_000 });
 		saveState(state, "services_started");
 	}
+	throwIfInterrupted();
 	if (!atLeast("doctor_passed")) {
-		command(process.execPath, [join(scriptDir, "deployment-doctor.mjs"), "--deployment", current, "--online"], { label: "online deployment doctor", timeout: 180_000 });
+		// The doctor is read-only, so a signal stops it; resume restarts services and rechecks.
+		await command(process.execPath, [join(scriptDir, "deployment-doctor.mjs"), "--deployment", current, "--online"], { label: "online deployment doctor", timeout: 180_000, interruptible: true });
 		saveState(state, "doctor_passed");
 	}
 	state.completed_at = new Date().toISOString();
@@ -784,32 +855,30 @@ function runUpgrade(state) {
 	return state;
 }
 
-acquireLock();
-try {
+async function main() {
 	if (action === "preflight") {
 		if (existsSync(statePath)) throw new Error("An upgrade state already exists; use resume, or archive the reviewed state before a different upgrade");
-		const state = preflight();
+		const state = await preflight();
 		console.log(`Upgrade preflight passed. Exact target ${state.target_manifest_sha256}; no application or schema change was committed.`);
 	} else if (action === "apply" || action === "resume") {
 		let state;
-		if (action === "apply" && !existsSync(statePath)) state = preflight();
+		if (action === "apply" && !existsSync(statePath)) state = await preflight();
 		else state = loadState();
 		// A stopped-writer resume may be much later than preflight. Refuse stale
 		// recovery material or a changed signer before touching the schema, while
 		// leaving the recorded phase untouched for operator review.
 		if (["writers_stopped", "migration_dry_run"].includes(state.last_completed_phase)) {
-			recheckBeforeWriterDrain(state);
+			await recheckBeforeWriterDrain(state);
 		}
 		try {
-			runUpgrade(state);
+			await runUpgrade(state);
 			console.log(`Upgrade completed and online doctor passed. Receipt: ${join(stateDir, "upgrade-receipt.json")}`);
-			if (pendingSignal) process.exitCode = pendingSignal === "SIGINT" ? 130 : 143;
 		} catch (error) {
 			failState(state, error);
-			if (state.requires_restore) {
+			if (state.last_completed_phase === "migration_running" || postCommitPhases.has(state.last_completed_phase)) {
 				try {
-					const activeWriters = currentRunningServices().filter((name) => name !== "db");
-					if (activeWriters.length) docker(composeArgs("stop", "--timeout", "60", ...activeWriters), { label: "failed target service stop" });
+					const activeWriters = (await currentRunningServices()).filter((name) => name !== "db");
+					if (activeWriters.length) await docker(composeArgs("stop", "--timeout", "60", ...activeWriters), { label: "failed target service stop" });
 					if (["artifacts_installed", "services_started"].includes(state.last_completed_phase)) {
 						state.last_completed_phase = "artifacts_installed";
 						state.updated_at = new Date().toISOString();
@@ -817,7 +886,7 @@ try {
 					}
 				} catch { /* traffic must remain drained; rollback plan remains authoritative */ }
 			}
-			try { restartOriginalWriters(state, "source service restart after upgrade failure"); } catch { /* rollback plan remains authoritative */ }
+			try { await restartOriginalWriters(state, "source service restart after upgrade failure"); } catch { /* rollback plan remains authoritative */ }
 			throw error;
 		}
 	} else if (action === "rollback-plan") {
@@ -828,7 +897,8 @@ try {
 		if (existsSync(recoveryOutput)) throw new Error("Recovery output already exists; encrypted recovery never overwrites a directory");
 		state.status = "recovery-started";
 		writeJson(statePath, state);
-		command(
+		// Never interrupted: a partially written recovery project is worse than a late exit.
+		await command(
 			process.execPath,
 			[join(scriptDir, "deployment-backup.mjs"), "recover", "--backup", backup, "--output", recoveryOutput, "--key-file", keyFile, "--runtime", recoveryRuntime],
 			{ label: "isolated encrypted recovery", timeout: 600_000 },
@@ -839,6 +909,14 @@ try {
 		writeJson(statePath, state);
 		console.log(`Backup recovered into ${recoveryOutput}. Services remain stopped pending acceptance and traffic cutover.`);
 	}
+}
+
+acquireLock();
+try {
+	await main();
+} catch (error) {
+	console.error(error);
+	process.exitCode = signalExitCodes[pendingSignal] ?? 1;
 } finally {
 	releaseLock();
 }
