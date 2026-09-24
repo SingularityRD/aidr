@@ -10,3 +10,6 @@ packages/privacy/deployment/*.reg -text -eol whitespace=-blank-at-eol
 # Generated connector bundles can contain intentional whitespace inside
 # embedded third-party documentation strings; source files remain strict.
 packages/claude-code/dist/*.cjs whitespace=-space-before-tab
+# Rendered sales brochure outputs (regenerate with pnpm brochure:render).
+docs/sales/brochure/*.pdf binary
+docs/sales/brochure/preview/*.png binary
