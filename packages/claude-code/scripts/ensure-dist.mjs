@@ -15,6 +15,7 @@ export const REQUIRED_RUNTIME_FILES = Object.freeze([
 	"post-tool-use.cjs",
 	"pre-tool-use.cjs",
 	"session-start.cjs",
+	"user-prompt-submit.cjs",
 ]);
 
 export const SIGNED_EVIDENCE_FILES = Object.freeze([
