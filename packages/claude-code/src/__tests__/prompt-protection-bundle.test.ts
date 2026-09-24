@@ -29,6 +29,11 @@ const USER_PROMPT_SUBMIT = resolve(DIST_DIR, "user-prompt-submit.cjs");
 
 // Synthetic token built at runtime so no literal credential sits in the source.
 const GITHUB_TOKEN = `ghp_${"a1B2c3D4e5".repeat(4)}`;
+// Checksum-valid synthetic identifiers (TC Kimlik check digits, IBAN mod-97).
+const TC_KIMLIK = "10000000146";
+const IBAN = "TR33 0006 1005 1978 6457 8413 26";
+/** An invalid percent-escape the privacy rules cannot decode, so they skip the text. */
+const UNDECODABLE_PROMPT = "discount 100%ff on everything";
 
 let home: string;
 
@@ -166,6 +171,43 @@ describe("UserPromptSubmit bundle", () => {
 		expect(audit).toContain('"category":"prompt_protection_warning"');
 		expect(audit).not.toContain("jane.doe@example.com");
 	}, 30_000);
+
+	it("warns on Turkish PII in the tail of a prompt over 1 MiB", async () => {
+		await writeLocalConfig();
+		const prompt = `${"lorem ipsum 7 ".repeat(80_000)} TC ${TC_KIMLIK} IBAN ${IBAN}`;
+		expect(prompt.length).toBeGreaterThan(1024 * 1024);
+		const { response, stdout } = await submitPrompt(prompt);
+		expect(response.decision).toBeUndefined();
+		expect(response.systemMessage).toContain("Turkish ID number (TC Kimlik)");
+		expect(response.systemMessage).toContain("IBAN");
+		expect(response.systemMessage).not.toContain("could not inspect");
+		expect(stdout).not.toContain(TC_KIMLIK);
+		expect(stdout).not.toContain("TR33");
+		const audit = await auditLog();
+		expect(audit).toContain("TC Kimlik");
+		expect(audit).not.toContain(TC_KIMLIK);
+	}, 30_000);
+
+	it("never reports an incompletely inspected prompt as clean", async () => {
+		await writeLocalConfig();
+		const warned = await submitPrompt(UNDECODABLE_PROMPT);
+		expect(warned.response.decision).toBeUndefined();
+		expect(warned.response.systemMessage).toContain("could not inspect the whole prompt");
+		expect(warned.response.hookSpecificOutput).toMatchObject({
+			hookEventName: "UserPromptSubmit",
+			additionalContext: expect.stringContaining("Do not repeat personal data"),
+		});
+		const audit = await auditLog();
+		expect(audit).toContain('"category":"prompt_protection_warning"');
+		expect(audit).toContain("personal-data inspection incomplete (INVALID_ENCODING)");
+		expect(audit).not.toContain("discount");
+
+		await writeLocalConfig({ prompt_protection: { secrets: "block", pii: "block" } });
+		const blocked = await submitPrompt(UNDECODABLE_PROMPT);
+		expect(blocked.response).toMatchObject({ decision: "block" });
+		expect(blocked.response.reason).toContain("could not fully inspect it for personal data");
+		expect(blocked.stdout).not.toContain("discount");
+	}, 60_000);
 
 	it("honours prompt_protection modes", async () => {
 		await writeLocalConfig({ prompt_protection: { secrets: "warn", pii: "block" } });

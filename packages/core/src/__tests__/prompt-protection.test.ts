@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DlpPolicySchema } from "../dlp/policy.js";
+import { PRIVACY_DETECTOR_MAX_CHARS, scanPrivacyDetectors } from "../dlp/privacy-detectors.js";
 import {
 	DEFAULT_PROMPT_PROTECTION,
 	PromptScanDeadlineError,
@@ -10,6 +11,9 @@ import { ConfigSchema } from "../types.js";
 // Synthetic values built at runtime so no literal credential sits in the source.
 const GITHUB_TOKEN = `ghp_${"a1B2c3D4e5".repeat(4)}`;
 const AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLE12";
+// Checksum-valid synthetic identifiers (TC Kimlik check digits, IBAN mod-97).
+const TC_KIMLIK = "10000000146";
+const IBAN = "TR33 0006 1005 1978 6457 8413 26";
 const PRIVATE_KEY_HEADERS = [
 	"-----BEGIN PRIVATE KEY-----",
 	"-----BEGIN RSA PRIVATE KEY-----",
@@ -185,6 +189,23 @@ describe("scanPrompt", () => {
 		).toBe("allow");
 	});
 
+	it("warns on Turkish ID numbers, IBANs and TR phone numbers without echoing them", () => {
+		const result = scanPrompt(
+			`TC kimlik ${TC_KIMLIK}, IBAN ${IBAN}, cep 0532 123 45 67 adresine yaz`,
+		);
+		expect(result.decision).toBe("warn");
+		expect(result.findings).toEqual([
+			{ category: "pii", kind: "Turkish ID number (TC Kimlik)", count: 1 },
+			{ category: "pii", kind: "IBAN", count: 1 },
+			{ category: "pii", kind: "phone number", count: 1 },
+		]);
+		expect(result.incomplete).toBeUndefined();
+		const serialized = JSON.stringify(result);
+		for (const value of [TC_KIMLIK, IBAN, "0532 123 45 67", "TR33"]) {
+			expect(serialized).not.toContain(value);
+		}
+	});
+
 	it("blocks when the tenant policy cannot inspect the prompt", () => {
 		const policy = DlpPolicySchema.parse({ ...tenantPolicy("block"), maxContentBytes: 16 });
 		const result = scanPrompt("a prompt longer than sixteen bytes", DEFAULT_PROMPT_PROTECTION, {
@@ -193,6 +214,169 @@ describe("scanPrompt", () => {
 		});
 		expect(result.decision).toBe("block");
 		expect(result.findings[0]?.category).toBe("tenant_dlp");
+	});
+});
+
+/**
+ * The AIDR Privacy rules (TC Kimlik, IBAN, TR phones) report `incomplete` for
+ * input over 1 MiB and for an unterminated quoted label value, with no findings
+ * at all. The prompt scan must neither lose those detections nor treat an
+ * incomplete inspection as clean.
+ */
+describe("scanPrompt personal-data inspection coverage", () => {
+	/** An invalid percent-escape: the rules cannot decode it, so they skip the text. */
+	const UNDECODABLE = "discount 100%ff on everything";
+	/** Plain text with digits, so every window goes through the privacy rules. */
+	const filler = (chars: number): string =>
+		"lorem ipsum 7 ".repeat(Math.ceil(chars / 14)).slice(0, chars);
+
+	it("finds a TC Kimlik in the tail of a prompt over 1 MiB", () => {
+		const prompt = `${filler(1_200_000)} kimlik ${TC_KIMLIK} son`;
+		expect(prompt.length).toBeGreaterThan(PRIVACY_DETECTOR_MAX_CHARS);
+		// The rules alone give up on the whole prompt.
+		expect(scanPrivacyDetectors(prompt, ["tc_kimlik"])).toMatchObject({
+			matches: [],
+			incomplete: true,
+			reasons: ["INPUT_LIMIT"],
+		});
+		const result = scanPrompt(prompt);
+		expect(result.decision).toBe("warn");
+		expect(result.findings).toEqual([
+			{ category: "pii", kind: "Turkish ID number (TC Kimlik)", count: 1 },
+		]);
+		expect(result.incomplete).toBeUndefined();
+		expect(scanPrompt(prompt, { secrets: "block", pii: "block" }).decision).toBe("block");
+	});
+
+	it("checks the scan deadline before every privacy window", () => {
+		const prompt = `${filler(1_200_000)} ${TC_KIMLIK}`;
+		const windows = Math.ceil(prompt.length / (60 * 1024));
+		let now = 0;
+		const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+		try {
+			scanPrompt(prompt, DEFAULT_PROMPT_PROTECTION, undefined, { deadlineAt: 1 });
+			expect(clock.mock.calls.length).toBeGreaterThanOrEqual(windows);
+			// Time runs out part-way through the windows: the scan throws, never returns.
+			clock.mockClear();
+			clock.mockImplementation(() => (clock.mock.calls.length > windows / 2 ? 2 : 0));
+			expect(() =>
+				scanPrompt(prompt, DEFAULT_PROMPT_PROTECTION, undefined, { deadlineAt: 1 }),
+			).toThrow(PromptScanDeadlineError);
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
+	it("counts every value once across window boundaries, including one straddling a boundary", () => {
+		const repeated = `${TC_KIMLIK} `.repeat(20_000);
+		expect(scanPrompt(repeated).findings).toEqual([
+			{ category: "pii", kind: "Turkish ID number (TC Kimlik)", count: 20_000 },
+		]);
+		for (const offset of [2, 5, 2_048, 4_094]) {
+			const prompt = `${filler(64 * 1024 - offset)} ${IBAN} ${filler(10_000)}`;
+			expect(scanPrompt(prompt).findings, String(offset)).toEqual([
+				{ category: "pii", kind: "IBAN", count: 1 },
+			]);
+		}
+	});
+
+	it("finds an IBAN after an unterminated quoted label value", () => {
+		const prompt = `name: "Ayşe Yılmaz, IBAN ${IBAN} hesabına gönder`;
+		// The rules alone stop at the unterminated field.
+		expect(scanPrivacyDetectors(prompt, ["iban"])).toMatchObject({
+			matches: [],
+			incomplete: true,
+			reasons: ["INCOMPLETE_FIELD"],
+		});
+		const result = scanPrompt(prompt, { secrets: "block", pii: "block" });
+		expect(result).toMatchObject({
+			decision: "block",
+			findings: [{ category: "pii", kind: "IBAN", count: 1 }],
+		});
+		expect(result.incomplete).toBeUndefined();
+		expect(result.userMessage).toContain("IBAN");
+		expect(JSON.stringify(result)).not.toContain("TR33");
+	});
+
+	it("finds Turkish PII after an unterminated quoted credential or key block", () => {
+		for (const prefix of ['password: "abc', "-----BEGIN PRIVATE KEY-----\nabc"]) {
+			const result = scanPrompt(`${prefix} ${TC_KIMLIK} ve 0532 123 45 67`, {
+				secrets: "off",
+				pii: "warn",
+			});
+			expect(result.findings, prefix).toEqual([
+				{ category: "pii", kind: "Turkish ID number (TC Kimlik)", count: 1 },
+				{ category: "pii", kind: "phone number", count: 1 },
+			]);
+			expect(result.incomplete, prefix).toBeUndefined();
+		}
+	});
+
+	it("sends an incompletely inspected prompt under warn with a notice for the user and the model", () => {
+		const result = scanPrompt(UNDECODABLE);
+		expect(result).toMatchObject({
+			decision: "warn",
+			findings: [],
+			incomplete: { category: "pii", reasons: ["INVALID_ENCODING"] },
+		});
+		expect(result.userMessage).toContain("could not inspect the whole prompt");
+		expect(result.userMessage).toContain("It was sent to the model");
+		expect(result.modelContext).toContain("could not fully inspect");
+		expect(result.modelContext).toContain("Do not repeat personal data");
+
+		const withFinding = scanPrompt(`mail jane.doe@example.com ${UNDECODABLE}`);
+		expect(withFinding).toMatchObject({
+			decision: "warn",
+			findings: [{ category: "pii", kind: "email address", count: 1 }],
+			incomplete: { category: "pii" },
+		});
+		expect(withFinding.modelContext).toContain("email address");
+		expect(withFinding.modelContext).toContain("could not fully inspect");
+		expect(JSON.stringify(withFinding)).not.toContain("jane.doe@example.com");
+	});
+
+	it("blocks an incompletely inspected prompt under a block PII policy", () => {
+		const result = scanPrompt(UNDECODABLE, { secrets: "block", pii: "block" });
+		expect(result).toMatchObject({
+			decision: "block",
+			findings: [],
+			incomplete: { category: "pii", reasons: ["INVALID_ENCODING"] },
+		});
+		expect(result.userMessage).toContain("could not fully inspect it for personal data");
+		expect(result.modelContext).toBeUndefined();
+
+		// Secret warnings are kept alongside the incomplete-inspection block.
+		const withSecret = scanPrompt(`${GITHUB_TOKEN} ${UNDECODABLE}`, {
+			secrets: "warn",
+			pii: "block",
+		});
+		expect(withSecret).toMatchObject({
+			decision: "block",
+			findings: [{ category: "secret", kind: "GitHub token", count: 1 }],
+			incomplete: { category: "pii" },
+		});
+
+		// A tenant policy is not consulted once the prompt is blocked.
+		expect(
+			scanPrompt(
+				`BLUEFALCON ${UNDECODABLE}`,
+				{ secrets: "off", pii: "block" },
+				{ tenantId: "tenant-a", policy: tenantPolicy("block") },
+			),
+		).toMatchObject({ decision: "block", partial: true, findings: [] });
+	});
+
+	it("leaves secret detection and an off PII policy unaffected", () => {
+		const blocked = scanPrompt(`${GITHUB_TOKEN} ${UNDECODABLE}`);
+		expect(blocked).toMatchObject({
+			decision: "block",
+			findings: [{ category: "secret", kind: "GitHub token", count: 1 }],
+		});
+		expect(blocked.incomplete).toBeUndefined();
+		expect(scanPrompt(UNDECODABLE, { secrets: "block", pii: "off" })).toEqual({
+			decision: "allow",
+			findings: [],
+		});
 	});
 });
 
@@ -220,6 +404,10 @@ describe("scanPrompt cost on large adversarial prompts", () => {
 		"dash-separated digits": () => fill("123-"),
 		"spaced digits": () => fill("1 "),
 		"base64 run": () => fill("QUJD"),
+		// Digits keep the privacy rules from skipping the text.
+		"Turkish text": () => fill("Çağrı İşığı 42 öğüş "),
+		"labelled Turkish IDs": () => fill(`tc: ${TC_KIMLIK} tel: 0532 123 45 67 `),
+		"unterminated quoted labels": () => fill('ad: "Ayşe 7 '),
 	};
 
 	function bestOfThree(run: () => void): number {

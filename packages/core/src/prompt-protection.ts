@@ -12,6 +12,16 @@
  * Results never contain a matched value — only category names and counts — so
  * the caller can show, log and audit them without re-disclosing the secret.
  *
+ * Personal data is matched by the core patterns (email, phone, card, SSN) plus
+ * the vendored AIDR Privacy rules for Turkish ID numbers (TC Kimlik), IBANs and
+ * TR/international phone numbers. The privacy rules report when they could not
+ * inspect part of the prompt; that is surfaced as `incomplete`, never as a clean
+ * result: a `block` PII policy blocks the prompt and `warn` sends it with a
+ * visible notice. Two avoidable causes are handled up front: the rules' 1 MiB
+ * input limit (the prompt is scanned in overlapping windows) and an unterminated
+ * quoted label value such as `name: "…` (the window is scanned again with that
+ * quote neutralized).
+ *
  * Cost: a prompt can be megabytes of adversarial text, and the host kills a
  * slow hook and then sends the prompt. Every detector pass is linear in the
  * prompt, overlap resolution is a sort plus a sweep, a scan stops as soon as
@@ -19,7 +29,8 @@
  */
 
 import { PiiDetectorImpl } from "./dlp/pii-detector.js";
-import type { DlpPolicy } from "./dlp/policy.js";
+import type { DlpDetector, DlpPolicy } from "./dlp/policy.js";
+import { type PrivacyDetectorScan, scanPrivacyDetectors } from "./dlp/privacy-detectors.js";
 import { scanDlpInput } from "./dlp/scanner.js";
 import { SecretDetector, type SecretType } from "./dlp/secret-detector.js";
 import { matchPII } from "./pii-detector.js";
@@ -48,6 +59,19 @@ export interface PromptProtectionResult {
 	 * final, but counts are lower bounds and later categories were not scanned.
 	 */
 	partial?: true;
+	/**
+	 * Present when a detector could not inspect the whole prompt, so its findings
+	 * are lower bounds. The decision already accounts for it: a `block` policy for
+	 * the category blocks, `warn` sends the prompt with a notice.
+	 */
+	incomplete?: PromptIncompleteInspection;
+}
+
+export interface PromptIncompleteInspection {
+	/** Only the personal-data check can be incomplete; the secret passes always cover the prompt. */
+	category: "pii";
+	/** Static reason codes from the privacy rules (e.g. `INVALID_ENCODING`); never input text. */
+	reasons: string[];
 }
 
 export interface PromptScanOptions {
@@ -101,6 +125,8 @@ const PII_KIND_LABELS: Readonly<Record<string, string>> = {
 	phone: "phone number",
 	ssn: "social security number",
 	credit_card: "payment card number",
+	tc_kimlik: "Turkish ID number (TC Kimlik)",
+	iban: "IBAN",
 };
 
 /** Credential kinds from the general-purpose detector; its PII kinds are not used here. */
@@ -123,10 +149,54 @@ const LEGACY_SECRET_KINDS: ReadonlySet<string> = new Set([
 const PRIVATE_KEY_HEADER = /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/g;
 
 const SECRET_DETECTOR = new SecretDetector();
+/** Core PII patterns only; the privacy rules run separately, in windows (see scanPrivacyWindows). */
 const PII_DETECTOR = new PiiDetectorImpl({
 	enableIpAddress: false,
 	enableAwsKey: false,
 	enableApiKey: false,
+	enablePrivacyRules: false,
+});
+
+/** AIDR Privacy detectors added to the core patterns; their names double as PII kinds. */
+const PROMPT_PRIVACY_DETECTORS: readonly DlpDetector[] = ["tc_kimlik", "iban", "phone"];
+
+/**
+ * Privacy-rule window size: well below the rules' 1 MiB input and normalization
+ * limits (NFKC can expand text), and small enough that the deadline is checked
+ * every few tens of milliseconds.
+ */
+const PRIVACY_WINDOW_CHARS = 64 * 1024;
+
+/**
+ * Overlap between consecutive windows. Every TC Kimlik, IBAN and phone pattern
+ * is far shorter than half of it, so a match lies wholly inside the window that
+ * owns its start (see privacyWindows). A labelled value (`tc: …`) can run longer
+ * and be cut at a window end, but is still counted once, by that window.
+ */
+const PRIVACY_WINDOW_OVERLAP = 4 * 1024;
+
+/**
+ * Incomplete-scan reasons that cannot hide a TC Kimlik, IBAN or phone number: an
+ * unterminated quoted credential (`password: "…`) and a PEM block without its END
+ * line. The rules detect both after every rule this scan enables, so a failure
+ * there stops none of them; the secret passes cover credentials and key headers.
+ */
+const REASONS_OUTSIDE_PROMPT_PII: ReadonlySet<string> = new Set([
+	"INCOMPLETE_SECRET",
+	"INCOMPLETE_PRIVATE_KEY",
+]);
+
+/** A quoted label value with no closing quote (`name: "…` to the end of the window). */
+const UNTERMINATED_FIELD = "INCOMPLETE_FIELD";
+
+/** Quotes (and blanks) right after a label separator: where a quoted label value opens. */
+const LABEL_VALUE_OPENING = /([:=#][ \t]*)(["'][ \t"']*)/g;
+
+const ANY_NUMBER = /\p{N}/u;
+const NOTHING_FOUND: PrivacyDetectorScan = Object.freeze({
+	matches: [],
+	incomplete: false,
+	reasons: [],
 });
 
 function shannonEntropy(value: string): number {
@@ -341,32 +411,138 @@ function isInsideLongerNumber(prompt: string, start: number, end: number): boole
 	);
 }
 
-/** Phone numbers are matched last: their pattern also fits inside card numbers. */
+/**
+ * Checksum-validated identifiers first (an IBAN's digits can pass Luhn), phone
+ * numbers last: their pattern also fits inside card and ID numbers.
+ */
 const PII_PRECEDENCE: Readonly<Record<string, number>> = {
-	credit_card: 0,
-	ssn: 1,
-	email: 2,
-	phone: 3,
+	iban: 0,
+	credit_card: 1,
+	tc_kimlik: 2,
+	ssn: 2,
+	email: 3,
+	phone: 4,
 };
 
-/** PII kinds found in `prompt`, in position order; one pass per precedence level. */
-function detectPiiKinds(prompt: string, checkpoint: Checkpoint): string[] {
+/** true when `index` falls between the two halves of a surrogate pair. */
+function splitsSurrogatePair(text: string, index: number): boolean {
+	const before = text.charCodeAt(index - 1);
+	const after = text.charCodeAt(index);
+	return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+}
+
+/**
+ * One window through the privacy rules. When a quoted label value has no closing
+ * quote (`name: "…`, or a window boundary inside a quoted value) the rules stop at
+ * that field; the window is then scanned again with every quote that opens a label
+ * value blanked out, same length, so the value is delimited like an unquoted one.
+ */
+function scanPrivacyWindow(text: string): PrivacyDetectorScan {
+	// Every TC Kimlik, IBAN and phone number has digits, and so does every encoding
+	// the rules decode (`%3X`, `&#NN;`, `\u003X`); NFKC digit sources are all \p{N}.
+	if (!ANY_NUMBER.test(text)) return NOTHING_FOUND;
+	const scan = scanPrivacyDetectors(text, PROMPT_PRIVACY_DETECTORS);
+	if (!scan.reasons.includes(UNTERMINATED_FIELD)) return scan;
+	const unquoted = text.replace(
+		LABEL_VALUE_OPENING,
+		(_match, separator: string, opening: string) => separator + opening.replace(/["']/g, " "),
+	);
+	return scanPrivacyDetectors(unquoted, PROMPT_PRIVACY_DETECTORS);
+}
+
+interface PrivacyWindowScan {
+	findings: Finding[];
+	/** Reasons some text was not inspected for these detectors; empty when complete. */
+	incompleteReasons: string[];
+}
+
+interface PrivacyWindow {
+	start: number;
+	end: number;
+	/** Match starts this window reports: [ownedFrom, ownedTo). */
+	ownedFrom: number;
+	ownedTo: number;
+}
+
+/**
+ * Overlapping windows covering `prompt`, never splitting a surrogate pair. Window
+ * `i` owns the match starts from the middle of its leading overlap to the middle
+ * of its trailing one, so every match is reported exactly once and by a window
+ * that holds it whole with context on both sides.
+ */
+function* privacyWindows(prompt: string): Generator<PrivacyWindow> {
+	let start = 0;
+	let ownedFrom = 0;
+	for (;;) {
+		let end = Math.min(start + PRIVACY_WINDOW_CHARS, prompt.length);
+		if (splitsSurrogatePair(prompt, end)) end--;
+		if (end === prompt.length) {
+			yield { start, end, ownedFrom, ownedTo: end };
+			return;
+		}
+		const ownedTo = end - PRIVACY_WINDOW_OVERLAP / 2;
+		yield { start, end, ownedFrom, ownedTo };
+		ownedFrom = ownedTo;
+		start = end - PRIVACY_WINDOW_OVERLAP;
+		if (splitsSurrogatePair(prompt, start)) start--;
+	}
+}
+
+/**
+ * The privacy rules over the whole prompt, in overlapping windows (the rules alone
+ * give up on anything over 1 MiB). The deadline is checked before each window.
+ */
+function scanPrivacyWindows(prompt: string, checkpoint: Checkpoint): PrivacyWindowScan {
+	const findings: Finding[] = [];
+	const reasons = new Set<string>();
+	for (const { start, end, ownedFrom, ownedTo } of privacyWindows(prompt)) {
+		checkpoint();
+		const scan = scanPrivacyWindow(prompt.slice(start, end));
+		for (const reason of scan.reasons) {
+			if (!REASONS_OUTSIDE_PROMPT_PII.has(reason)) reasons.add(reason);
+		}
+		for (const match of scan.matches) {
+			const at = start + match.start;
+			if (at >= ownedFrom && at < ownedTo) {
+				findings.push({ kind: match.detector, start: at, end: start + match.end });
+			}
+		}
+	}
+	return { findings, incompleteReasons: [...reasons].sort() };
+}
+
+interface PiiScan {
+	/** PII kinds found, in position order. */
+	kinds: string[];
+	/** Present when part of the prompt was not inspected; `kinds` is then a lower bound. */
+	incomplete?: PromptIncompleteInspection;
+}
+
+/** PII in `prompt`: core patterns plus windowed privacy rules, one pass per precedence level. */
+function detectPii(prompt: string, checkpoint: Checkpoint): PiiScan {
 	const passes = new Map<number, Finding[]>();
-	const matches = PII_DETECTOR.detect(prompt);
-	checkpoint();
-	for (const match of matches) {
-		if (!plausiblePii(match.type, match.value)) continue;
-		if (match.type === "phone" && isInsideLongerNumber(prompt, match.start, match.end)) continue;
-		const precedence = PII_PRECEDENCE[match.type] ?? 9;
+	const add = (kind: string, start: number, end: number): void => {
+		if (!plausiblePii(kind, prompt.slice(start, end))) return;
+		if (kind === "phone" && isInsideLongerNumber(prompt, start, end)) return;
+		const precedence = PII_PRECEDENCE[kind] ?? 9;
 		const pass = passes.get(precedence) ?? [];
 		if (pass.length === 0) passes.set(precedence, pass);
-		pass.push({ kind: match.type, start: match.start, end: match.end });
-	}
+		pass.push({ kind, start, end });
+	};
+	const matches = PII_DETECTOR.detect(prompt);
+	checkpoint();
+	for (const match of matches) add(match.type, match.start, match.end);
+	const privacy = scanPrivacyWindows(prompt, checkpoint);
+	for (const finding of privacy.findings) add(finding.kind, finding.start, finding.end);
 	const kept = new DisjointFindings();
 	for (const precedence of [...passes.keys()].sort((left, right) => left - right)) {
 		kept.addPass(passes.get(precedence) ?? []);
 	}
-	return kept.all.map((finding) => finding.kind);
+	const reasons = privacy.incompleteReasons;
+	return {
+		kinds: kept.all.map((finding) => finding.kind),
+		...(reasons.length > 0 ? { incomplete: { category: "pii", reasons } } : {}),
+	};
 }
 
 function summaries(
@@ -400,16 +576,53 @@ function tenantDlpBlock(prompt: string, tenant: PromptTenantDlp): PromptFindingS
 	};
 }
 
+const PII_INCOMPLETE_NOTICE =
+	"could not fully inspect it for personal data (such as ID numbers, IBANs or phone numbers)";
+
 function blockResult(
 	blocking: PromptFindingSummary[],
 	warning: PromptFindingSummary[],
 	partial: boolean,
+	incomplete?: PromptIncompleteInspection,
 ): PromptProtectionResult {
+	const userMessage =
+		blocking.length > 0
+			? `🛡️ Singularity AIDR blocked this prompt before it reached the model: it appears to contain sensitive data (${kindList(blocking)}). Remove the sensitive value and resubmit. If it was a live credential that has been shared anywhere else, rotate it.${
+					incomplete ? ` Singularity AIDR also ${PII_INCOMPLETE_NOTICE}.` : ""
+				}`
+			: `🛡️ Singularity AIDR blocked this prompt before it reached the model: it ${PII_INCOMPLETE_NOTICE}, and your prompt protection policy blocks personal data. Shorten or split the prompt, remove unusual encoded text, and resubmit.`;
 	return {
 		decision: "block",
 		findings: [...blocking, ...warning],
-		userMessage: `🛡️ Singularity AIDR blocked this prompt before it reached the model: it appears to contain sensitive data (${kindList(blocking)}). Remove the sensitive value and resubmit. If it was a live credential that has been shared anywhere else, rotate it.`,
+		userMessage,
 		...(partial ? { partial: true as const } : {}),
+		...(incomplete ? { incomplete } : {}),
+	};
+}
+
+function warnResult(
+	warning: PromptFindingSummary[],
+	incomplete?: PromptIncompleteInspection,
+): PromptProtectionResult {
+	const found =
+		warning.length > 0 ? `appears to contain sensitive data (${kindList(warning)})` : "";
+	if (!incomplete) {
+		return {
+			decision: "warn",
+			findings: warning,
+			userMessage: `🛡️ Singularity AIDR: this prompt ${found}. It was sent to the model.`,
+			modelContext: `Singularity AIDR prompt protection notice: the user's prompt ${found}. Do not repeat it, and do not copy it into files, commands, commit messages, web requests or other tools unless the user explicitly asks for that.`,
+		};
+	}
+	const foundSentence = found ? `this prompt ${found}, and ` : "";
+	return {
+		decision: "warn",
+		findings: warning,
+		userMessage: `🛡️ Singularity AIDR: ${foundSentence}the personal-data check (ID numbers, IBANs, phone numbers and similar) could not inspect the whole prompt, so it may contain personal data that was not detected. It was sent to the model.`,
+		modelContext: `Singularity AIDR prompt protection notice: ${
+			found ? `the user's prompt ${found}. The` : "the"
+		} personal-data check could not fully inspect the user's prompt, so it may contain personal data (for example ID numbers, IBANs, phone numbers, email or postal addresses) that was not detected. Do not repeat personal data from the prompt, and do not copy it into files, commands, commit messages, web requests or other tools unless the user explicitly asks for that.`,
+		incomplete,
 	};
 }
 
@@ -422,6 +635,10 @@ function blockResult(
  * A `block` is final, so the scan stops at the first blocking finding: with
  * secrets in `block` mode the first confirmed secret ends it, and later
  * categories are skipped (`partial: true`).
+ *
+ * A personal-data scan that could not inspect the whole prompt sets
+ * `incomplete`: with PII in `block` mode the prompt is blocked, in `warn` mode
+ * it is sent with a user notice and model context saying the check was partial.
  */
 export function scanPrompt(
 	prompt: string,
@@ -444,29 +661,26 @@ export function scanPrompt(
 		// Stopped at the first secret: the count is a lower bound.
 		if (blocking.length > 0) return blockResult(blocking, warning, true);
 	}
+	let incomplete: PromptIncompleteInspection | undefined;
 	if (config.pii !== "off") {
 		checkpoint();
-		route(
-			config.pii,
-			summaries("pii", countKinds(detectPiiKinds(prompt, checkpoint), PII_KIND_LABELS)),
-		);
+		const pii = detectPii(prompt, checkpoint);
+		route(config.pii, summaries("pii", countKinds(pii.kinds, PII_KIND_LABELS)));
+		incomplete = pii.incomplete;
 	}
-	if (tenantDlp) {
-		if (blocking.length > 0) return blockResult(blocking, warning, true);
+	// An incomplete PII scan is never a clean one: it blocks under a `block`
+	// policy and is sent with a notice under `warn`.
+	const localBlock = blocking.length > 0 || (incomplete !== undefined && config.pii === "block");
+	if (tenantDlp && !localBlock) {
 		checkpoint();
 		const tenantFinding = tenantDlpBlock(prompt, tenantDlp);
 		if (tenantFinding) blocking.push(tenantFinding);
 	}
 
-	if (blocking.length > 0) return blockResult(blocking, warning, false);
-	if (warning.length > 0) {
-		const kinds = kindList(warning);
-		return {
-			decision: "warn",
-			findings: warning,
-			userMessage: `🛡️ Singularity AIDR: this prompt appears to contain sensitive data (${kinds}). It was sent to the model.`,
-			modelContext: `Singularity AIDR prompt protection notice: the user's prompt appears to contain sensitive data (${kinds}). Do not repeat it, and do not copy it into files, commands, commit messages, web requests or other tools unless the user explicitly asks for that.`,
-		};
+	if (localBlock || blocking.length > 0) {
+		// A local block skips the tenant policy: later categories were not scanned.
+		return blockResult(blocking, warning, localBlock && tenantDlp !== undefined, incomplete);
 	}
+	if (warning.length > 0 || incomplete) return warnResult(warning, incomplete);
 	return { decision: "allow", findings: [] };
 }
