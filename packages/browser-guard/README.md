@@ -12,7 +12,7 @@ network access.
 
 | | |
 |---|---|
-| Browsers | Chrome 120+, Edge 120+ (Chromium), Firefox 128+ |
+| Browsers | Chrome 120+, Edge 120+ (Chromium), Firefox 140+ (ESR) |
 | Sites | ChatGPT (`chatgpt.com`, `chat.openai.com`), Gemini (`gemini.google.com`), Claude (`claude.ai`), Microsoft Copilot (`copilot.microsoft.com`), Perplexity (`www.perplexity.ai`, `perplexity.ai`), DeepSeek (`chat.deepseek.com`), Mistral Le Chat (`chat.mistral.ai`), Grok (`grok.com`) |
 | Languages | English, Turkish |
 | Data sent anywhere | Nothing by default. When an administrator connects a control plane, only counts per entity type are sent (see [Privacy](#privacy)). |
@@ -81,7 +81,7 @@ dist/SHA256SUMS                            sha256sum -c compatible
 
 `scripts/build.mjs` bundles four entry points with esbuild into classic IIFE
 scripts (`background.js`, `content.js`, `popup.js`, `options.js`) targeting
-`chrome120` and `firefox128`, copies `static/*.html`, `static/*.css`,
+`chrome120` and `firefox140`, copies `static/*.html`, `static/*.css`,
 `static/managed_schema.json` (Chrome only), `static/icons/` and `_locales/`, and
 writes a manifest per target. `--release` minifies and drops source maps. The
 zips are deterministic: sorted entries, fixed timestamps and permissions, so the
@@ -132,7 +132,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 | `optional_permissions` | `nativeMessaging` | requested only when the optional native NER host is turned on |
 | `optional_host_permissions` | `https://*/*` | never requested at install; available for an admin-approved generic site |
 | `content_scripts` | `run_at: document_start`, `all_frames: false` | intercept before the page's own handlers; top frame only |
-| `web_accessible_resources` | `blocked.html` for `http(s)://*/*` | the page a site listed in `blockedSites` is redirected to; a redirect from a web page to an extension page only loads if the page is web accessible. It is static and cannot be framed |
+| `web_accessible_resources` | `blocked.html` for `http(s)://*/*` | the page a site listed in `blockedSites` is redirected to; a redirect from a web page to an extension page only loads if the page is web accessible. It is static and cannot be framed. Its `ui.css` and `popup.js` are requested by the extension page itself and are deliberately not exposed to web origins (verified by the `blocked-site` E2E scenario) |
 | `incognito` | `not_allowed` | the extension does not run in private windows |
 | CSP (`extension_pages`) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` | no remote code; `connect-src 'self'` so the options page can load the packaged `_locales` for the language override; `https:` because the control-plane URL is configurable per tenant; loopback HTTP for local development |
 
@@ -140,7 +140,8 @@ Chrome/Edge use a service worker (`background.service_worker`),
 `options_page` and `storage.managed_schema`. Firefox uses an event page
 (`background.scripts`), `options_ui`, and
 `browser_specific_settings.gecko.id = browser-guard@singularityrd.com` with
-`strict_min_version: 128.0`. The version comes from `package.json`; a
+`strict_min_version: 140.0` (Firefox for Android 142.0, the first releases
+with `data_collection_permissions`). The version comes from `package.json`; a
 pre-release suffix (`1.2.0-rc.1`) goes to Chrome's `version_name`.
 
 ## Configuration
@@ -169,6 +170,10 @@ read-only with "Managed by your organization".
 
 The authoritative schema is [`static/managed_schema.json`](static/managed_schema.json);
 managed values are validated strictly in `src/background/policy.ts` before use.
+Chrome compiles the schema's `pattern`s with RE2 when the extension loads and
+refuses to load the whole extension if one does not compile (repetition counts,
+nested ones multiplied, are capped at 1000; no lookaround or backreferences), so
+the build rejects such a schema (`managedSchemaProblems` in `scripts/build.mjs`).
 
 ### Exact data match
 

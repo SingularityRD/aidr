@@ -4,6 +4,7 @@
 import { waitFor } from "../lib/expect.mjs";
 import {
 	assertNoLeaks,
+	lastResponsePageText,
 	lastResponseText,
 	readEditor,
 	typePrompt,
@@ -69,7 +70,12 @@ function autoMask(siteKey) {
 				shown,
 				email.placeholder,
 			);
-			checks.equal("editor is empty after the send", (await readEditor(page, siteKey)).trim(), "");
+			// The original is shown to the user only: the page's own scripts (innerText,
+			// used by copy/edit actions and analytics) still read the placeholder.
+			const pageText = await lastResponsePageText(page, siteKey);
+			checks.contains("page scripts still read the email placeholder", pageText, email.placeholder);
+			checks.excludes("page scripts cannot read the restored email", pageText, email.value);
+			checks.equal("editor is empty after the send",(await readEditor(page, siteKey)).trim(), "");
 			// The restore happened in the page only: nothing after the reply carried the value either.
 			assertNoLeaks(
 				checks,

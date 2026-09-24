@@ -2,6 +2,7 @@
 // serves the fixture sites through context.route, records every request the
 // pages make, and talks to the extension through its own pages.
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -125,13 +126,29 @@ export function fakeModelReply(prompt) {
  * event and also polls `context.serviceWorkers()`, so a worker that registered
  * between launch and the listener (seen on a loaded machine) is still found.
  */
-async function findWorker(context, timeout) {
+async function findWorker(context, timeout, { wakeUrl = null, wakeAfterMs = 5000 } = {}) {
 	const isExt = (w) => w.url().startsWith("chrome-extension://");
 	let seen = null;
 	const onWorker = (w) => {
 		if (isExt(w)) seen = w;
 	};
 	context.on("serviceworker", onWorker);
+	// On a heavily loaded machine the worker's first start is occasionally not
+	// observed (or it already went idle); loading one of the extension's own pages
+	// (which messages the worker) starts it again.
+	let wakePage = null;
+	const wakeTimer = wakeUrl
+		? setTimeout(() => {
+				if (seen || context.serviceWorkers().some(isExt)) return;
+				context
+					.newPage()
+					.then((page) => {
+						wakePage = page;
+						return page.goto(wakeUrl);
+					})
+					.catch(() => {});
+			}, wakeAfterMs)
+		: null;
 	try {
 		return await waitFor(() => seen ?? context.serviceWorkers().find(isExt), {
 			timeout,
@@ -139,8 +156,23 @@ async function findWorker(context, timeout) {
 			message: "the extension service worker to start",
 		});
 	} finally {
+		if (wakeTimer) clearTimeout(wakeTimer);
+		await wakePage?.close().catch(() => {});
 		context.off("serviceworker", onWorker);
 	}
+}
+
+/**
+ * Id Chromium assigns to an unpacked extension: the first 128 bits of
+ * SHA-256(absolute path), hex digits mapped to the letters a-p.
+ */
+export function unpackedExtensionId(extDir) {
+	const hex = crypto
+		.createHash("sha256")
+		.update(fs.realpathSync(extDir))
+		.digest("hex")
+		.slice(0, 32);
+	return [...hex].map((d) => String.fromCharCode(97 + Number.parseInt(d, 16))).join("");
 }
 
 /**
@@ -198,7 +230,9 @@ export async function launch({ extDir, headed = false, log = () => {} }) {
 				locale: "en-US",
 				viewport: { width: 1280, height: 800 },
 			});
-			worker = await findWorker(context, WORKER_START_TIMEOUT_MS);
+			worker = await findWorker(context, WORKER_START_TIMEOUT_MS, {
+				wakeUrl: `chrome-extension://${unpackedExtensionId(extDir)}/${manifest.action?.default_popup ?? "popup.html"}`,
+			});
 			used = strategy.name;
 			break;
 		} catch (error) {
@@ -459,53 +493,96 @@ export class Harness {
 		return "message";
 	}
 
-	/** Snapshot of visible extension-owned overlays (bubble/toast), piercing open shadow roots. */
+	/**
+	 * Snapshot of visible extension-owned overlays (bubble/toast) as `tag:text`.
+	 *
+	 * The product renders its UI in a CLOSED shadow root (the host page must not
+	 * read it), which page scripts and Playwright locators cannot enter, so this
+	 * reads the DOM over CDP with `pierce: true` (open and closed shadow roots).
+	 * An overlay is an element whose tag/id/class/data-* mentions
+	 * aidr|browser-guard|privacy-guard, that is not the editor or one of its
+	 * ancestors, is not inside a `hidden` subtree and has a non-empty layout box.
+	 */
 	async overlays(page, siteKey) {
 		const editorSelector = SITES[siteKey].editor;
-		return page.evaluate((editorSel) => {
+		return withCdp(page, async (cdp) => {
 			const RX = /aidr|browser-guard|privacy-guard/i;
-			const editor = document.querySelector(editorSel);
-			const out = [];
-			const signature = (el) =>
-				[
-					el.tagName,
-					el.id,
-					typeof el.className === "string" ? el.className : "",
-					...[...el.attributes]
-						.filter((a) => a.name.startsWith("data-"))
-						.map((a) => `${a.name}=${a.value}`),
-				].join(" ");
-			const visible = (el) => {
-				const r = el.getBoundingClientRect();
-				const cs = getComputedStyle(el);
-				return (
-					r.width > 0 &&
-					r.height > 0 &&
-					cs.visibility !== "hidden" &&
-					cs.display !== "none" &&
-					cs.opacity !== "0"
-				);
+			const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+			const editor = await cdp
+				.send("DOM.querySelector", { nodeId: root.nodeId, selector: editorSelector })
+				.then((r) => r.nodeId)
+				.catch(() => 0);
+			const attrs = (node) => {
+				const out = {};
+				const list = node.attributes ?? [];
+				for (let i = 0; i + 1 < list.length; i += 2) out[list[i]] = list[i + 1];
+				return out;
 			};
-			const visit = (root) => {
-				for (const el of root.querySelectorAll("*")) {
-					if (
-						el !== document.documentElement &&
-						el !== document.body &&
-						!(editor && (el === editor || el.contains(editor))) &&
-						RX.test(signature(el)) &&
-						visible(el)
-					) {
-						const text = (el.shadowRoot ? el.shadowRoot.textContent : el.textContent) ?? "";
-						out.push(
-							`${el.tagName.toLowerCase()}:${text.replace(/\s+/g, " ").trim().slice(0, 160)}`,
-						);
-					}
-					if (el.shadowRoot) visit(el.shadowRoot);
+			const kids = (node) => [...(node.shadowRoots ?? []), ...(node.children ?? [])];
+			const textOf = (node) => {
+				if (node.nodeType === 3) return node.nodeValue ?? "";
+				if (node.nodeType === 1) {
+					if (["STYLE", "SCRIPT", "TEMPLATE"].includes(node.nodeName)) return "";
+					if ("hidden" in attrs(node)) return "";
 				}
+				return kids(node).map(textOf).join(" ");
 			};
-			visit(document);
+			const containsEditor = (node) =>
+				node.nodeId === editor || kids(node).some((child) => containsEditor(child));
+			const candidates = [];
+			const visit = (node, hiddenAbove) => {
+				const a = node.nodeType === 1 ? attrs(node) : {};
+				const hidden = hiddenAbove || "hidden" in a;
+				if (node.nodeType === 1 && !hidden && !["HTML", "BODY"].includes(node.nodeName)) {
+					const signature = [
+						node.localName,
+						a.id ?? "",
+						a.class ?? "",
+						...Object.entries(a)
+							.filter(([k]) => k.startsWith("data-"))
+							.map(([k, v]) => `${k}=${v}`),
+					].join(" ");
+					if (RX.test(signature) && !(editor && containsEditor(node))) candidates.push(node);
+				}
+				for (const child of kids(node)) visit(child, hidden);
+			};
+			visit(root, false);
+			const out = [];
+			for (const node of candidates) {
+				const box = await cdp
+					.send("DOM.getBoxModel", { backendNodeId: node.backendNodeId })
+					.catch(() => null);
+				if (!box || box.model.width <= 0 || box.model.height <= 0) continue;
+				out.push(`${node.localName}:${textOf(node).replace(/\s+/g, " ").trim().slice(0, 160)}`);
+			}
 			return out;
-		}, editorSelector);
+		});
+	}
+
+	/**
+	 * Clicks a button of an extension overlay like a user would (a real mouse click
+	 * at its centre). Buttons are found in Chromium's accessibility tree by role and
+	 * accessible name; the tree includes closed shadow roots.
+	 * @returns {Promise<boolean>} whether a matching visible button was clicked
+	 */
+	async clickOverlayButton(page, name) {
+		const point = await withCdp(page, async (cdp) => {
+			const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+			for (const node of nodes) {
+				if (node.ignored || node.role?.value !== "button" || !node.backendDOMNodeId) continue;
+				if (!name.test(String(node.name?.value ?? ""))) continue;
+				const box = await cdp
+					.send("DOM.getBoxModel", { backendNodeId: node.backendDOMNodeId })
+					.catch(() => null);
+				if (!box || box.model.width <= 0) continue;
+				const q = box.model.content;
+				return { x: (q[0] + q[4]) / 2, y: (q[1] + q[5]) / 2 };
+			}
+			return null;
+		});
+		if (!point) return false;
+		await page.mouse.click(point.x, point.y);
+		return true;
 	}
 
 	async close() {
@@ -568,14 +645,75 @@ export async function waitForPrompt(h, siteKey, mark, timeout = 8000) {
 	});
 }
 
-/** Text of the most recent assistant response once the fixture finished streaming it. */
+/**
+ * Text of the most recent assistant response as the USER perceives it.
+ *
+ * The product renders restored values from a closed shadow root that page
+ * scripts (and Playwright locators) cannot see, so this reads Chromium's own
+ * accessibility tree over CDP: it is built from the rendered (flat) tree,
+ * includes closed shadow content and leaves out aria-hidden/invisible nodes.
+ */
 export async function lastResponseText(page, siteKey) {
 	const site = SITES[siteKey];
+	return withCdp(page, async (cdp) => {
+		const { root } = await cdp.send("DOM.getDocument", { depth: 0 });
+		const { nodeIds } = await cdp.send("DOM.querySelectorAll", {
+			nodeId: root.nodeId,
+			selector: site.response,
+		});
+		const target = nodeIds.at(-1);
+		if (!target) return null;
+		const { node } = await cdp.send("DOM.describeNode", {
+			nodeId: target,
+			depth: -1,
+			pierce: true,
+		});
+		const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+		const byId = new Map(nodes.map((n) => [n.nodeId, n]));
+		const byDom = new Map(
+			nodes.filter((n) => n.backendDOMNodeId).map((n) => [n.backendDOMNodeId, n]),
+		);
+		let text = "";
+		const visitAx = (ax) => {
+			if (ax.role?.value === "StaticText") {
+				if (!ax.ignored) text += ax.name?.value ?? "";
+				return;
+			}
+			for (const id of ax.childIds ?? []) {
+				const child = byId.get(id);
+				if (child) visitAx(child);
+			}
+		};
+		// Elements without an accessibility node of their own (e.g. unknown custom
+		// elements such as Gemini's <message-content>) contribute their descendants'.
+		const visitDom = (dom) => {
+			const ax = byDom.get(dom.backendNodeId);
+			if (ax && !ax.ignored) return visitAx(ax);
+			if (dom.nodeType === 3) return;
+			for (const child of [...(dom.shadowRoots ?? []), ...(dom.children ?? [])]) visitDom(child);
+		};
+		visitDom(node);
+		return text;
+	});
+}
+
+/** Runs `fn` with a short-lived CDP session attached to `page`. */
+async function withCdp(page, fn) {
+	const cdp = await page.context().newCDPSession(page);
+	try {
+		return await fn(cdp);
+	} finally {
+		await cdp.detach().catch(() => {});
+	}
+}
+
+/** Text of the most recent assistant response as the PAGE's own scripts read it (innerText). */
+export async function lastResponsePageText(page, siteKey) {
 	return page.evaluate((sel) => {
 		const nodes = document.querySelectorAll(sel);
 		const last = nodes[nodes.length - 1];
 		return last ? last.innerText : null;
-	}, site.response);
+	}, SITES[siteKey].response);
 }
 
 export async function waitForResponseComplete(page) {

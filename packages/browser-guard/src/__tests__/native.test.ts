@@ -299,6 +299,8 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 
 	it("chunks large inputs and outputs within the host frame limits", async () => {
 		const chrome = fakeChrome();
+		// Generous deadline (production default NATIVE_TIMEOUT_MS stays 2 s): the ~650 KB
+		// round trip through the in-process fake host is slow on a heavily loaded CI machine.
 		const bridge = createNativeBridge(true, { chrome, timeoutMs: 30_000 });
 		const filler = "lorem ipsum dolor sit amet ".repeat(12_000);
 		const text = `${filler}Ayşe Yılmaz ${filler}Jane Doe`;
@@ -352,6 +354,14 @@ describe("createNativeBridge: timeout and backoff", () => {
 		const pending = bridge.scanText("Jane Doe").then((r) => {
 			settled = r;
 		});
+		// The fake host answers through real async work (the privacy engine), while
+		// advancing fake timers takes no real time. Let the exchange reach the hanging
+		// commit with the fake clock held at 0, so a loaded machine cannot let the 2 s
+		// bound fire before the host was ever asked to commit.
+		for (let i = 0; i < 5_000 && !chrome.sent.some((m) => m.op === "commit"); i++) {
+			await vi.advanceTimersByTimeAsync(0);
+			await new Promise((resolve) => setImmediate(resolve));
+		}
 		await vi.advanceTimersByTimeAsync(NATIVE_TIMEOUT_MS - 1);
 		expect(settled).toBe("pending");
 		expect(chrome.sent.map((m) => m.op)).toContain("commit");

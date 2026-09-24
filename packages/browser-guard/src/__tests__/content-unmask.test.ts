@@ -48,6 +48,40 @@ describe("content guard: local unmasking", () => {
 		expect(span?.parentElement?.tagName).toBe("B");
 	});
 
+	it("slots the placeholder into a hidden, aria-hidden wrapper so page innerText keeps reading it", async () => {
+		// Without a <slot>, Chromium's innerText skips the unrendered light DOM and a
+		// page's copy/edit action would read "" where the placeholder was.
+		const shadows: ShadowRoot[] = [];
+		const attach = Element.prototype.attachShadow;
+		Element.prototype.attachShadow = function (this: Element, init: ShadowRootInit) {
+			const root = attach.call(this, init);
+			shadows.push(root);
+			return root;
+		};
+		try {
+			const g = start();
+			const placeholder = remember(g, EMAIL);
+			answer().textContent = `Reply to ${placeholder}.`;
+			await settle();
+			g.guard.unmasker.flush();
+			const span = answer().querySelector("span.aidr-restored");
+			const root = shadows.find((s) => s.host === span);
+			expect(root?.mode).toBe("closed");
+			const wrapper = root?.querySelector(".ph");
+			expect(wrapper?.getAttribute("aria-hidden")).toBe("true");
+			expect(wrapper?.querySelector("slot")).not.toBeNull();
+			expect(root?.querySelector("style")?.textContent).toMatch(
+				/\.ph\{[^}]*clip-path:inset\(50%\)/,
+			);
+			// The only text the shadow tree renders itself is the restored value.
+			const own = [...(root?.childNodes ?? [])].filter((n) => n.nodeType === 3);
+			expect(own.map((n) => n.textContent)).toEqual([EMAIL]);
+			expect(span?.textContent).toBe(placeholder);
+		} finally {
+			Element.prototype.attachShadow = attach;
+		}
+	});
+
 	it("handles several placeholders in one text node and ignores unknown ones", async () => {
 		const g = start();
 		const a = remember(g, "a@example.com");

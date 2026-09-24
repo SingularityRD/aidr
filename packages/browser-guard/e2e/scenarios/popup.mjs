@@ -48,9 +48,13 @@ export default [
 
 			for (const mode of ["confirm", "auto"]) {
 				await h.setUserSettings({ mode });
+				// The toolbar popup reports on the ACTIVE tab (chrome.tabs.query). Opened as a
+				// tab it would be the active tab itself, so load it in a background tab while
+				// the ChatGPT tab is in front, as when the user clicks the toolbar icon there.
 				const popup = await h.context.newPage();
 				const errors = [];
 				popup.on("pageerror", (e) => errors.push(String(e.message ?? e)));
+				await site.bringToFront();
 				await popup.goto(`${h.extensionOrigin}/${h.popupPath}`, { waitUntil: "load" });
 				const text = await waitFor(
 					async () => {
@@ -61,6 +65,11 @@ export default [
 				).catch(() => popup.evaluate(() => document.body?.innerText ?? ""));
 				checks.check(`popup renders (mode ${mode})`, text.trim().length > 0, text);
 				checks.contains(`popup shows the current mode (${mode})`, text, MODE_LABELS[mode]);
+				checks.contains(
+					`popup reports the active ChatGPT tab as protected (mode ${mode})`,
+					text,
+					/data you send to ChatGPT/i,
+				);
 				checks.contains(
 					`popup shows non-zero protection stats (mode ${mode})`,
 					text,

@@ -122,18 +122,39 @@ document.addEventListener("change", async (e) => {
 	ours.add(again);
 	input.dispatchEvent(again);
 }, true);
+// Restores like the product: the placeholder stays in the light DOM (what page
+// scripts read), the original is shown from a closed shadow root.
+function restore(n) {
+	const at = n.data.indexOf(PH);
+	const ph = n.splitText(at);
+	ph.splitText(PH.length);
+	const span = document.createElement("span");
+	span.dataset.stRestored = "";
+	ph.replaceWith(span);
+	span.append(ph);
+	const shadow = span.attachShadow({ mode: "closed" });
+	const hidden = document.createElement("span");
+	hidden.style.cssText = "position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)";
+	hidden.setAttribute("aria-hidden", "true");
+	hidden.append(document.createElement("slot"));
+	shadow.append(hidden, document.createTextNode(SECRET));
+}
 new MutationObserver(() => {
 	for (const n of textNodes(document.body)) {
-		if (n.data.includes(PH) && !editorOf(n.parentElement)) n.data = n.data.split(PH).join(SECRET);
+		const parent = n.parentElement;
+		if (n.data.includes(PH) && !editorOf(parent) && !parent?.closest("[data-st-restored]")) restore(n);
 	}
 }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
 `;
 
 const POPUP_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Self-test popup</title></head>
-<body><h1>Self-test guard</h1><p>Mode: <span id="mode">...</span></p><p>Protected prompts: <span id="count">0</span></p>
+<body><h1>Self-test guard</h1><p id="site"></p><p>Mode: <span id="mode">...</span></p><p>Protected prompts: <span id="count">0</span></p>
 <script src="popup.js"></script></body></html>`;
 
 const POPUP_JS = `(async () => {
+	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+	const host = tab && tab.url ? new URL(tab.url).hostname : "";
+	if (host === "chatgpt.com") document.getElementById("site").textContent = "Sensitive data you send to ChatGPT is checked.";
 	const p = await chrome.runtime.sendMessage({ type: "GET_POLICY" });
 	const s = await chrome.runtime.sendMessage({ type: "GET_STATS" });
 	document.getElementById("mode").textContent = p.mode;
@@ -149,7 +170,7 @@ export function createSelfTestExtension() {
 		version: "0.0.1",
 		background: { service_worker: "background.js" },
 		action: { default_popup: "popup.html" },
-		permissions: ["storage"],
+		permissions: ["storage", "tabs"],
 		content_scripts: [{ matches, js: ["content.js"], run_at: "document_idle" }],
 	};
 	fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
