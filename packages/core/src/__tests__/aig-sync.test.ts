@@ -636,6 +636,11 @@ describe("AIG HTTP sync trust boundary", () => {
 
 	it("serializes promotion so a late lower sequence cannot replace a newer active release", async () => {
 		const trust = signManifest();
+		const currentSequence = (
+			JSON.parse(readFileSync(join(tempDir, "aig-data-manifest.json"), "utf8")) as {
+				release_sequence: number;
+			}
+		).release_sequence;
 		const config = {
 			mode: "http" as const,
 			remote_url: "https://updates.example.test/aig",
@@ -645,9 +650,9 @@ describe("AIG HTTP sync trust boundary", () => {
 			trusted_public_key_sha256: trust.fingerprint,
 		};
 
-		stageSignedRelease(2, "\n ", trust.privateKey);
+		stageSignedRelease(currentSequence + 1, "\n ", trust.privateKey);
 		const lowerPromotion = applyUpdate(config);
-		const higher = stageSignedRelease(3, "\n  ", trust.privateKey);
+		const higher = stageSignedRelease(currentSequence + 2, "\n  ", trust.privateKey);
 		const higherPromotion = applyUpdate(config);
 
 		const [lowerResult, higherResult] = await Promise.all([lowerPromotion, higherPromotion]);
