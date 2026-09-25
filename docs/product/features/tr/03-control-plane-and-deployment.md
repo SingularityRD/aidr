@@ -51,6 +51,10 @@ Compose veya Kubernetes kurulumu ve air-gapped (internetten yalıtılmış) kuru
    - [Operatör yönetimi (operator-admin)](#operatör-yönetimi-operator-admin)
 7. [Telemetri ve telemetrinin gizliliği](#7-telemetri-ve-telemetrinin-gizliliği)
 8. [Denetim dışa aktarımı ve SIEM teslimatı](#8-denetim-dışa-aktarımı-ve-siem-teslimatı)
+   - [Denetim dışa aktarımı (CSV ve JSON)](#denetim-dışa-aktarımı-csv-ve-json)
+   - [SIEM teslimatı](#siem-teslimatı)
+   - [Uyum kanıt raporu](#uyum-kanıt-raporu)
+   - [Alarm entegrasyonları: Slack, Teams, imzalı webhook ve e-posta](#alarm-entegrasyonları-slack-teams-imzalı-webhook-ve-e-posta)
 9. [Saklama, yasal saklama ve offboarding](#9-saklama-yasal-saklama-ve-offboarding)
 10. [Yedekleme ve geri yükleme tatbikatları](#10-yedekleme-ve-geri-yükleme-tatbikatları)
 11. [Sistem gözlemi ve alarmlar](#11-sistem-gözlemi-ve-alarmlar)
@@ -130,10 +134,11 @@ belirli bir hareketsizlik süresinden sonra tarayıcıda sonlanır. Rotalar
 | `/incidents` | Incidents | Engellenen ve onay bekleyen kararlar, kanıt zinciri | [Olası olaylar](#olası-olaylar-ve-kanıt-zinciri) |
 | `/privacy-guard` | Browser Privacy | Browser Guard sayımları ve tarayıcı kaydı | [Tarayıcı gizliliği](#tarayıcı-gizliliği-browser-privacy) |
 | `/autosecops` | AutoSecOps | AutoSecOps entegrasyonundan çalışma zamanı filo görünümü | [AutoSecOps](#autosecops-görünümü-ve-müdahale-playbookları) |
-| `/settings` | Settings | Çalışma alanı adı, saklama süresi, kapatma, MFA durumu, tema | [Ayarlar](#çalışma-alanı-ayarları-ad-saklama-süresi-kapatma) |
+| `/settings` | Settings | Çalışma alanı adı, saklama süresi, kapatma, alarm bildirimleri, MFA durumu, tema | [Ayarlar](#çalışma-alanı-ayarları-ad-saklama-süresi-kapatma), [Alarm entegrasyonları](#alarm-entegrasyonları-slack-teams-imzalı-webhook-ve-e-posta) |
 | `/team` | Team | Üyeler, roller, davetler, ekip denetimi ve dışa aktarım | [Ekip](#ekip-roller-ve-davetler) |
 | `/scim` | Directory provisioning (yalnızca sahipler) | SCIM kimlik bilgileri ve grup-rol eşlemeleri | [SCIM](#scim-dizin-senkronizasyonu) |
 | `/policies` | Policies (politika düzenleyebilen roller) | Ekip politikası, çalışma zamanı politikası, dağıtım, DLP düzenleyicisi | [Politikalar](#ekip-politikası-ve-çalışma-zamanı-politikası) |
+| `/compliance` | Compliance (sahipler ve yöneticiler) | Uyum kanıt raporu (özetle mühürlü, isteğe bağlı imzalı): JSON, CSV paketi, yazdırılabilir TR/EN | [Uyum kanıt raporu](#uyum-kanıt-raporu) |
 | `/enterprise` | yok (davet bağlantısında) | Davet kabulü | [Ekip](#ekip-roller-ve-davetler) |
 | `/auth/dlp-step-up` | yok | DLP ve çalışma alanı değişikliklerinden önce MFA doğrulaması | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
 | `/auth/recover` | yok | Parola kurtarma ve acil durum (break-glass) kurtarma kodları | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
@@ -1283,6 +1288,121 @@ doğrulamayı zorunlu tutmaz; kimlik doğrulamasız bir webhook'u internetten er
 alıcıya yönlendirmeyin. mTLS veya istek imzalama yoktur. "Delivered" durumu, alıcı tarafta
 indekslendiğini veya alarm üretildiğini kanıtlamaz.
 
+### Uyum kanıt raporu
+
+**Ne yapar.** Sahipler (owner) ve yöneticiler (admin), seçtikleri bir dönem (en fazla 366
+gün) için tenant kapsamlı bir JSON raporunu **Compliance** (`/compliance`) sayfasından
+veya `compliance-report` API'sinden üretir. Rapor, güvenlik ve KVKK/DPO ekiplerinden
+genellikle istenen kanıtları bir araya getirir: tenant profili ve saklama ayarları,
+çalışma ortamına göre koruma kapsamı, Browser Guard'ın veri türü, AI sitesi ve güne göre
+maskelediği/uyardığı/engellediği sayılar, ajan DLP kararları, politika sürümleri ve
+özetleri, sahip/yönetici listesiyle birlikte MFA/SSO/SCIM durumu, olaylar, AI güvenlik
+duruşu (CVE önem dereceleri, MCP riskleri), veri akışı ve alt işleyen envanteri ile
+saklama, yasal saklama, offboarding ve dışa aktarım temizliği kanıtları.
+
+**Neden önemli.** KVKK ve GDPR kapsamındaki hesap verebilirlik çalışmaları her dönem aynı
+olguları ister. Rapor bu çalışmayı doğrulanabilir tek bir belgeyle desteklemek üzere
+tasarlanmıştır. Bir sertifika değildir ve kimsenin mevzuata uyumlu olduğunu beyan etmez.
+
+**Nasıl çalışır.** Yalnızca service role'ün çalıştırabildiği bir SQL fonksiyonu sayıları,
+sabit değer kümelerini, tanımlayıcıları, zaman damgalarını ve SHA-256 özetlerini toplar;
+Edge Function sonucu bildirimsel bir şemadan geçirir, şemada olmayan her alanı atar ve
+bozuk kanıtı reddeder. Rapor kanonik JSON'unun SHA-256 değerini ve kurulumda bir uyum
+imzalama anahtarı varsa Ed25519 imzasını taşır. Üretilen her rapor, döndürülmeden önce
+yönetici denetim günlüğüne (`compliance_report.generated`) yazılır. Üretim AAL2 oturumu
+gerektirir, kimlik bariyerinden geçer, hız sınırına tabidir (kullanıcı başına dakikada 3)
+ve her adımda hata durumunda reddeder (fail-closed).
+
+**Nasıl kullanılır.** **Compliance** sayfasını açın, bir dönem seçin ve **Generate report**
+düğmesine basın. Ardından JSON'u (yetkili belge), her bölüm tablosu için bir CSV içeren
+ZIP paketini veya Türkçe ya da İngilizce yazdırılabilir raporu (**Print / save as PDF**)
+indirin. Denetçiler JSON'u çevrimdışı doğrular:
+
+```bash
+aidr compliance verify rapor.json --public-key yayinci.pem --require-signature
+```
+
+**Örnek.** Bir veri koruma sorumlusu son 90 günün raporunu üretir, PDF'i üç aylık erişim
+gözden geçirmesine ekler ve denetçiye JSON'u ve işletmecinin açık anahtarını verir.
+Denetçinin `aidr compliance verify` komutu `VERIFIED` yazar; tek bir sayının
+değiştirilmesi komutun 2 koduyla çıkmasına yol açar.
+
+**Kapsam.**
+
+| Plan | Dağıtım | Platform / işletim sistemi |
+| --- | --- | --- |
+| Tüm planlar (konsol) | Bulut, On-prem, Air-gapped (on-prem'de imzalama anahtarı elle ayarlanır) | Web konsolu; doğrulama için Linux, macOS ve Windows'ta `aidr` CLI |
+
+**Sınırlamalar.** Sayılar yalnızca kontrol düzlemine ulaşmış ve hâlâ saklama süresi içinde
+olan telemetriyi kapsar. Politika gövdeleri, istem metinleri ve yasal saklama gerekçeleri
+bilinçli olarak dışarıda bırakılır. Veri akışı matrisi, açık `unknown` değerleri olan
+ürün mühendislik envanteridir. CSV ve yazdırılabilir sürümler türetilmiştir ve imzasızdır.
+İmzalama anahtarı yoksa rapor yalnızca özetle mühürlenir. Her bölümün neyi kanıtlayıp neyi
+kanıtlamadığı için [docs/compliance-report.md](../../../compliance-report.md) belgesine
+bakın.
+
+### Alarm entegrasyonları: Slack, Teams, imzalı webhook ve e-posta
+
+**Ne yapar.** **Ayarlar → Bildirimler** (Settings → Notifications) altında çalışma alanı
+sahipleri ve yöneticileri gerçek zamanlı alarmları **Slack**'e (incoming webhook, Block Kit
+mesajı), **Microsoft Teams**'e (workflow webhook, Adaptive Card), **imzalı bir HTTPS
+webhook**'a (JSON şeması `aidr.notification.v1`) veya **e-posta** ile (1–10 alıcı)
+gönderir. Her kanal kendi olaylarını seçer: en az belirli bir önem derecesindeki yeni
+olaylar (incident), kritik çalışma zamanı engellemeleri (deny), bant dışı onay bekleyen
+eylemler ve Browser Guard'ın engellediği istemlerdeki ani artışlar (örneğin 15 dakikada
+10 engellenen gönderim).
+
+**Neden önemli.** Engellenen bir veri sızdırma girişimi veya bir onay talebi ancak zamanında
+görülürse işe yarar. SIEM'i olmayan ya da gece kimsenin izlemediği bir SIEM kullanan ekipler
+de alarmı zaten çalıştıkları yerde alır.
+
+**Nasıl çalışır.** Olay ve alarmı **aynı veritabanı işleminde** (transaction) yazılır:
+telemetri tablosundaki bir `AFTER INSERT` tetikleyicisi, eşleşen her kanal için bir teslimat
+kaydını kuyruğa alır (transactional outbox); böylece alarm yalnızca olay saklandıysa oluşur.
+Her dakika çalışan bir dağıtıcı (dispatcher) zamanı gelen teslimatları kiralar ve 10 sn
+zaman aşımı, **üstel geri çekilme** (30 sn'den 1 saate kadar 8 deneme) ve sabit bir
+**idempotency anahtarı** (teslimat kimliği) ile gönderir. Genel webhook'lar
+`X-AIDR-Signature: t=<ts>,v1=<HMAC-SHA256>` başlığıyla imzalanır; Node.js ve Python doğrulama
+örnekleri [bildirim sözleşmesinde](../../../contracts/notifications.md) yer alır. Alarmlar
+yalnızca **kimlikler, önem derecesi, kategori ve sayılar** ile konsola bir derin bağlantı
+taşır; istem, komut, dosya yolu veya eşleşen değer asla içermez. Hedefler **yalnızca
+yazılabilir**dir: bekleyen veride şifrelenir (AES-256-GCM, tenant ve kanala bağlı) ve bir
+daha gösterilmez; konsol yalnızca ana makine adını ve kısa bir özeti gösterir. Her
+gönderimden önce webhook ana makinesi çözümlenir; özel, link-local veya bulut metadata
+adresleri reddedilir (**SSRF koruması**). Slack ve Teams URL'leri sağlayıcının webhook
+ana makinelerinde olmalıdır ve yönlendirmeler asla izlenmez. Her değişiklik ve test
+gönderimi MFA (AAL2) gerektirir, hız sınırına tabidir ve denetim kaydına yazılır.
+
+**Nasıl kullanılır.** Ayarlar → Bildirimler → **Add a channel**: türü seçin, webhook
+URL'sini yapıştırın (imzalı webhook için **Generate** ile gizli anahtar üretip alıcınıza
+kopyalayın), olayları seçin ve kaydedin. **Send test** alıcının gerçek yanıtını gösterir;
+daha sonra **Disable**, **Edit events** veya **Delete** kullanılabilir. **Recent
+deliveries** her denemeyi durum ve hata koduyla listeler. Operatör dağıtıcıyı bir kez
+zamanlar: Supabase Cloud'da pg_cron, Compose'da `install-systemd.sh --with-notifications`,
+Helm'de `notifications.dispatcher.enabled=true` (bkz.
+[kontrol düzlemi](../../../control-plane.md#alert-integrations-slack-teams-webhooks-e-mail)).
+
+**Örnek.** Bir Claude Code ajanı `~/.aws/credentials` dosyasını yüklemeye çalışır; bağlayıcı
+kritik bir kuralla engeller. Bir dakika içinde SOC Slack kanalında kural kimliği, ajan
+kimliği ve **Open in AIDR** düğmesiyle "Critical agent action blocked" görünür; nöbetçi
+webhook aynı alarmı alır, imzayı doğrular ve teslimat kimliğine göre bir kayıt açar.
+
+**Kapsam.**
+
+| Plan | Dağıtım | Platform / işletim sistemi |
+| --- | --- | --- |
+| Tüm planlar (panel) | Bulut (pg_cron + pg_net), On-prem Compose (systemd zamanlayıcı), Kubernetes (CronJob), Air-gapped (yalnızca iç webhook veya posta aktarıcısı) | Web konsolu; alıcılar functions çalışma ortamından erişilebilir olmalıdır |
+
+**Sınırlamalar.** Teslimat tam olarak bir kez değil, en az bir kezdir; alıcılar teslimat
+kimliğine göre yinelenenleri ayıklamalıdır. Gecikme dağıtıcı zamanlamasına bağlı olarak en
+fazla yaklaşık bir dakikadır; konsoldaki test gönderimi anında yapılır. Her kanal dakikada
+en fazla 30 kuyruğa alınmış alarmla sınırlıdır. `agent.offline` alarmı, özet/toplu
+gönderim, kullanıcı bazlı tercih ve webhook alıcılarına mTLS yoktur. E-posta için bir posta
+sağlayıcısı yapılandırılmış olmalıdır. DNS denetimi ile bağlantı ayrı ayrı çözümlenir;
+on-prem'de bir çıkış (egress) izin listesi veya proxy ile birlikte kullanın. Hedefler
+yalnızca yazılabilir olduğundan şifreleme anahtarını döndürmek hedeflerin yeniden
+girilmesini gerektirir.
+
 ---
 
 ## 9. Saklama, yasal saklama ve offboarding
@@ -1498,11 +1618,11 @@ kurallarınız ve değişiklik yönetiminiz altında kalır.
 `agent-config.json` ve `deployment.json`. Portlar loopback'e bağlanır; önlerinde sizin TLS
 proxy'niz durur. Üç **kaynak profili** servis başına CPU, bellek ve PID sınırlarını belirler
 (bkz. [boyutlandırma](#kaynak-boyutlandırma)). İsteğe bağlı **derin tarama yan konteyneri**
-(`--with-aig`), `aig` Compose profili altında derin tarama sunucusunu, ajanını ve köprüsünü ekler.
-Köprü yalnızca `127.0.0.1:8099` adresinde yayımlanır. Uzak taramalar yalnızca
-**`aig-egress`** üzerinden dışarı çıkar; bu, varsayılan olarak her şeyi reddeden,
-sürümü sabitlenmiş bir Squid geçididir. İzin verilen alan adlarını
-`/srv/aidr/aig/egress/allowlist.txt` dosyasına eklersiniz. Loopback, özel, CGNAT ve ayrılmış
+(`--with-posture-scanner`), `posture-scanner` Compose profili altında derin tarama
+sunucusunu, ajanını ve köprüsünü ekler. Köprü yalnızca `127.0.0.1:8099` adresinde
+yayımlanır. Uzak taramalar yalnızca varsayılan olarak her şeyi reddeden, sürümü
+sabitlenmiş bir **Squid çıkış geçidi** üzerinden dışarı çıkar. İzin verilen alan adlarını
+`/srv/aidr/posture-scanner/egress/allowlist.txt` dosyasına eklersiniz. Loopback, özel, CGNAT ve ayrılmış
 adreslere çözümlenen hedefler listede olsalar bile reddedilir.
 
 **Nasıl kullanılır.**
@@ -1516,8 +1636,8 @@ docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d --bu
 node scripts/deployment-migrate.mjs /srv/aidr
 node scripts/deployment-doctor.mjs --deployment /srv/aidr --online
 ```
-Tarama yan konteyneri için `--with-aig --aig-signing-public-key-file <pem> --aig-signing-key-id <kimlik>`
-ekleyin. Tüm ayarlar [on-prem yapılandırma başvurusunda](../../../operations/onprem-config-reference.md)
+Tarama yan konteyneri için `--with-posture-scanner --posture-scanner-signing-public-key-file <pem>
+--posture-scanner-signing-key-id <kimlik>` ekleyin. Tüm ayarlar [on-prem yapılandırma başvurusunda](../../../operations/onprem-config-reference.md)
 listelenir (`pnpm onprem:config-reference`).
 
 **Örnek.** Bir konteyner 137 çıkış koduyla sürekli yeniden başlar. Bellek sınırına
@@ -1540,7 +1660,7 @@ raporlar.
 **Ne yapar.** `deploy/helm/aidr` chart'ı aynı kontrol düzlemini Kubernetes 1.25+ üzerine
 kurar. Konsol, Envoy API geçidi, auth, REST, storage, functions, isteğe bağlı küme içi
 Postgres, bir migration hook Job'u, isteğe bağlı yedek CronJob'u ve isteğe bağlı derin tarama
-yığınını (`aig.enabled`) çalıştırır.
+yığınını (`postureScanner.enabled`) çalıştırır.
 
 **Neden önemli.** Kubernetes kullanan ekipler chart ile yönetilen yükseltmeler, replikalar,
 PodDisruptionBudget'lar ve otomatik ölçeklendirme elde eder; kendi yüksek erişilebilir
@@ -1785,7 +1905,7 @@ Kapasite taahhüdü değildir; kendi yük ve dayanıklılık (soak) testlerinizl
 | Compose ana makinesi | `small` (varsayılan): pilot, yaklaşık 100 uç noktaya kadar | 4 vCPU, 8 GiB RAM, 100 GiB SSD | +4 vCPU, 6 GiB, 40 GiB |
 | Compose ana makinesi | `medium`: yaklaşık 1.000 uç nokta için yük testi başlangıcı | 8 vCPU, 16 GiB RAM, 250 GiB SSD | +6 vCPU, 8 GiB, 60 GiB |
 | Compose ana makinesi | `large`: binlerce uç noktalı testler için ayrılmış ana makine | 16 vCPU, 32 GiB RAM, 500 GiB SSD | +8 vCPU, 12 GiB, 100 GiB |
-| Kubernetes | `resourcesPreset: small` (değerlendirme, 250 koltuk altı), `medium` (x2, 2.500 koltuk altı), `large` (x4) | Bileşen başına istek ve sınırlar | `aig.*` bileşenleri |
+| Kubernetes | `resourcesPreset: small` (değerlendirme, 250 koltuk altı), `medium` (x2, 2.500 koltuk altı), `large` (x4) | Bileşen başına istek ve sınırlar | `postureScanner.*` bileşenleri |
 | Uç nokta | korunan cihaz başına | 512 MiB disk ayırın (paketler, varsayılan 64 MiB olay kuyruğu, besleme, günlükler) | - |
 
 2 KiB'lık olaylar, 90 günlük saklama ve günlük ortalamanın 10 katı zirve varsayımıyla
@@ -1811,7 +1931,7 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 | Çalışma zamanı politikası, kademeli dağıtım, DLP düzenleyicisi | Yalnızca yerel politika dosyası | Evet | Evet | Evet | Evet |
 | Browser Privacy raporlaması | Eklenti yerelde maskeler, rapor yok | Evet | Evet | Evet | Evet |
 | Yapay Zekâ Güvenlik Duruşu sayfası | Tarayıcılar yerelde çalışır, sayfa yok | Evet | Evet | Evet | Evet (iç hedefler) |
-| Derin tarama yan konteyneri | İsteğe bağlı loopback köprü | Barındırılan hizmette listelenmemiş | İsteğe bağlı `--with-aig` | İsteğe bağlı `aig.enabled` | İsteğe bağlı; uzak taramalar yalnızca çıkış izin listesiyle |
+| Derin tarama yan konteyneri | İsteğe bağlı loopback köprü | Barındırılan hizmette listelenmemiş | İsteğe bağlı `--with-posture-scanner` | İsteğe bağlı `postureScanner.enabled` | İsteğe bağlı; uzak taramalar yalnızca çıkış izin listesiyle |
 | Entra ID SSO | - | Evet | Evet | Evet | Yalnızca IdP iç ağdan erişilebilirse |
 | SAML 2.0 | - | Evet | Evet (Auth SAML için yapılandırılmış) | Evet (`dashboard.saml.*`) | İç IdP ile |
 | SCIM | - | Evet | Evet | Evet | Evet (IdP API'ye ulaşabilmeli) |
@@ -1819,6 +1939,7 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 | Davet e-postası | - | E-posta sağlayıcısı yapılandırılmışsa | Sağlayıcıya çıkış gerekir; yoksa manuel bağlantı | Compose ile aynı | Manuel bağlantı |
 | Denetim dışa aktarımı (CSV/JSON) | Yerel JSONL denetim günlüğü | Evet | Evet | Evet | Evet |
 | SIEM teslimatı | - | Barındırılan hizmette listelenmiş | Evet (systemd zamanlayıcı) | Henüz CronJob yok | Evet (iç SIEM) |
+| Alarm entegrasyonları (Slack, Teams, webhook, e-posta) | - | Evet (pg_cron dağıtıcı) | Evet (systemd zamanlayıcı) | Evet (CronJob, isteğe bağlı) | Yalnızca iç webhook veya posta aktarıcısı |
 | Kartla ödeme (Stripe) | - | Yalnızca self-service açıksa | - | - | - |
 | Fatura ve operatör lisansı | - | Evet | Evet | Evet | Evet |
 | İmzalı çevrimdışı lisans | - | - | Evet | Evet | Evet |
@@ -1840,6 +1961,6 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 - [Lisanslama](../../../operations/licensing.md), [operatör yönetimi](../../../operations/operator-admin.md), [kabul operatörleri](../../../operations/admission-operators.md)
 - [Yükseltme runbook'u](../../../../deploy/UPGRADE.md), [yedekleme runbook'u](../../../../deploy/backup/README.md), [izleme](../../../../deploy/monitoring/README.md), [zamanlanmış bakım](../../../../deploy/maintenance/README.md), [giriş ve TLS](../../../../deploy/ingress/README.md)
 - [Yapay Zekâ Güvenlik Duruşu](../../../ai-security-posture.md), [tehdit istihbaratı senkronizasyonu ve air-gapped güncellemeler](../../../operations/threat-sync.md)
-- [Gizlilik ve telemetri veri akışı](../../../privacy.md), [gizlilik telemetrisi sözleşmesi](../../../contracts/privacy-telemetry.md), [cihaz yetkilendirmesi](../../../device-auth.md)
+- [Gizlilik ve telemetri veri akışı](../../../privacy.md), [gizlilik telemetrisi sözleşmesi](../../../contracts/privacy-telemetry.md), [alarm bildirimi sözleşmesi](../../../contracts/notifications.md), [cihaz yetkilendirmesi](../../../device-auth.md)
 - [Müdahale playbook'ları](../../../operations/response-playbooks.md), [kurtarma kodları](../../../security/recovery-codes.md)
 - [Ürün genel bakışı](../../overview.md)

@@ -164,6 +164,18 @@ function assertSafePathForShim(pathValue: string, label: string): void {
 
 function upsertManagedHooks(existing: SettingsObject, command: string): SettingsObject {
 	const hooks = cloneHookSettings(existing.hooks);
+	// Prompt protection. UserPromptSubmit takes no matcher (VS Code Local ignores
+	// matchers and Claude Code does not apply one to this event).
+	hooks.UserPromptSubmit = appendManaged(asMatcherEntries(hooks.UserPromptSubmit), {
+		hooks: [
+			{
+				type: "command",
+				command,
+				timeout: 30,
+				statusMessage: "Singularity AIDR: Checking prompt for secrets...",
+			},
+		],
+	});
 	hooks.PreToolUse = appendManaged(asMatcherEntries(hooks.PreToolUse), {
 		matcher: "Bash|WebFetch|Write|Edit|Read|Delete|editFiles",
 		hooks: [
@@ -239,7 +251,7 @@ function filterManagedMatcherEntries(entries: HookMatcherEntry[]): HookMatcherEn
 }
 
 /** Managed events in registration order; `installedEvents` is reported in this order. */
-const MANAGED_HOOK_EVENTS = ["PreToolUse", "PostToolUse"];
+const MANAGED_HOOK_EVENTS = ["UserPromptSubmit", "PreToolUse", "PostToolUse"];
 
 function collectInstalledEvents(hooks: HookMap): string[] {
 	const managedEvents = Object.keys(hooks).filter((eventName) =>

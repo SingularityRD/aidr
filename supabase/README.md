@@ -85,6 +85,11 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
   - Base64 of the Ed25519 private key (PKCS8 PEM bytes).
 - `AIDR_PACK_MASTER_KEY_B64`
   - Base64 of a 32-byte master key used to derive per-tenant AES-256-GCM pack keys (HKDF-SHA256).
+- `AIDR_COMPLIANCE_SIGNING_KEY_ID` and `AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64` (optional pair)
+  - Ed25519 key that signs compliance evidence reports (`compliance-report`), same format as the
+    entitlement key. Use a dedicated key. Unset: reports carry a SHA-256 only. Setting only one of
+    the two is refused as a misconfiguration. Publish the public key to auditors so
+    `aidr compliance verify --public-key` can pin the issuer (see `docs/compliance-report.md`).
 - `AIDR_REVOCATION_SIGNING_KEY_ID`
 - `AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64`
 - `AIDR_REVOCATION_EPOCH` (default `1`)
@@ -93,6 +98,7 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
 - `AIDR_ENTITLEMENT_GRACE_HOURS` (default `72`)
 - `AIDR_PACK_URL_TTL_SECONDS` (default `600`; clamped to `60..3600`)
 - `AIDR_PACK_DOWNLOAD_GRANT_SECRET` (required by `packs-manifest` and `packs-download`; use an independently generated random secret of at least 32 bytes and set the same value on both functions)
+- `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` (required by `approval-requests`; 32 random bytes, standard base64. Derives the per-tenant key that seals each tenant's Ed25519 dashboard-approval signing key; without it the function answers `server_misconfigured` and asks stay blocked. Changing it makes existing sealed keys unusable until owners rotate them from the Approvals page)
 - `AIDR_PUBLIC_API_ORIGIN` (the customer/agent-reachable API origin for pack grant links; required when `SUPABASE_URL` is an internal HTTP service name; HTTPS except for explicit loopback development)
 
 The canonical migrations create a private `aidr-packs` Storage bucket; publish pack bytes through a service-role-only process. Pack manifests return at most 50 pack versions per request. Each `download_url` is a short-lived scoped AIDR URL, not a Storage URL; the Edge Function rechecks key, membership, entitlement and pack expiry on each GET/HEAD, then streams the object with range support. Treat the URL as a temporary bearer capability and redact its `grant` query parameter from any application/proxy logs. It contains neither the API key nor a Storage signed URL.

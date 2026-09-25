@@ -30,7 +30,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** The service's machine-readable error code, if the failed response carried one. */
-async function errorCode(error: unknown): Promise<string | null> {
+export async function errorCode(error: unknown): Promise<string | null> {
 	const context = (error as { context?: unknown } | null | undefined)?.context;
 	if (!(context instanceof Response)) return null;
 	try {

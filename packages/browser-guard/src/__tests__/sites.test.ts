@@ -10,7 +10,7 @@ import {
 } from "../sites/index";
 import type { SiteAdapter, SiteId } from "../types";
 
-const EXPECTED_HOSTS: Readonly<Record<Exclude<SiteId, "other">, readonly string[]>> = {
+const EXPECTED_HOSTS: Readonly<Record<Exclude<SiteId, "other" | "custom">, readonly string[]>> = {
 	chatgpt: ["chatgpt.com", "chat.openai.com"],
 	gemini: ["gemini.google.com"],
 	claude: ["claude.ai"],
@@ -264,8 +264,8 @@ describe("selectors against representative markup", () => {
 });
 
 describe("SITE_IDS / MATCH_PATTERNS / adapterById", () => {
-	it("SITE_IDS lists every adapter id plus 'other' last", () => {
-		expect(SITE_IDS).toEqual([...ADAPTERS.map((a) => a.id), "other"]);
+	it("SITE_IDS lists every adapter id, then 'custom', then 'other' last", () => {
+		expect(SITE_IDS).toEqual([...ADAPTERS.map((a) => a.id), "custom", "other"]);
 		expect(new Set(SITE_IDS).size).toBe(SITE_IDS.length);
 	});
 

@@ -33,10 +33,20 @@ matcher = "^(Bash|apply_patch)$"
 type = "command"
 command = "aidr-codex-hook"
 timeout = 10
+
+# Prompt protection: secrets block, personal data warns (prompt_protection).
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "aidr-codex-hook"
+timeout = 10
 ```
 
-or the equivalent `~/.codex/hooks.json` shown in the package README. The event name must
-be PascalCase (`PreToolUse`); a lower-case `pre_tool_use` table is ignored by the host.
+or the equivalent `~/.codex/hooks.json` shown in the package README. Event names must
+be PascalCase (`PreToolUse`, `UserPromptSubmit`); a lower-case `pre_tool_use` table is
+ignored by the host. See [configuration](../configuration.md#prompt_protection) for the
+prompt protection behaviour.
 
 **Trust the hook.** Codex drops an untrusted hook without an error, which means no
 enforcement. Review and trust it with `/hooks` after installing. Automation that already

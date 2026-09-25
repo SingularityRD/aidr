@@ -78,6 +78,39 @@ export const SITES = {
 	},
 };
 
+/**
+ * Company-internal AI portal configured through the managed `customSites` policy
+ * (scenarios/managed-ai-sites.mjs); not a built-in site, so the manifest's static
+ * content scripts never run there.
+ */
+SITES.internal = {
+	siteId: "custom",
+	origin: "https://ai.internal.example",
+	path: "/chat",
+	fixture: "internal.html",
+	kind: "textarea",
+	editor: "#corp-composer",
+	send: ".corp-send",
+	response: ".corp-answer",
+	endpoint: "/api/v1/generate",
+};
+
+/**
+ * A catalogued Shadow AI service outside the protected sites. Served by the generic
+ * fixture so that, if the product's block rule did not act, the page would load.
+ */
+SITES.poe = {
+	siteId: "other",
+	origin: "https://poe.com",
+	path: "/",
+	fixture: "generic.html",
+	kind: "textarea",
+	editor: "#ask textarea",
+	send: '#ask button[type="submit"]',
+	response: "#log article",
+	endpoint: "/api/chat",
+};
+
 export const UPLOAD_PATH = "/__fixture__/upload";
 export const KIT_PATH = "/__fixture__/kit.js";
 

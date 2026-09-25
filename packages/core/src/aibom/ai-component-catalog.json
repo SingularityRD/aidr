@@ -1,0 +1,1009 @@
+{
+	"schema": "aidr-ai-component-catalog/v1",
+	"version": 1,
+	"description": "AI SDKs, frameworks, runtimes and models recognised in project manifests for the AI-BOM. `match` is `exact` (normalised package name) or `prefix`. `type` is the CycloneDX component type. `cve_product` names the AI Security Posture CVE-index product whose version numbering is the package's own release numbering; entries without it are never matched against the index.",
+	"packages": [
+		{
+			"ecosystem": "npm",
+			"name": "@anthropic-ai/sdk",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Anthropic"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@anthropic-ai/claude-agent-sdk",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "Anthropic"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@anthropic-ai/claude-code",
+			"match": "exact",
+			"type": "application",
+			"category": "coding-agent",
+			"supplier": "Anthropic"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@anthropic-ai/bedrock-sdk",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Anthropic"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@anthropic-ai/vertex-sdk",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Anthropic"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "openai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "OpenAI"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@openai/agents",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "OpenAI"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@openai/codex",
+			"match": "exact",
+			"type": "application",
+			"category": "coding-agent",
+			"supplier": "OpenAI"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@azure/openai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Microsoft"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@google/generative-ai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@google/genai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@google-cloud/vertexai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@aws-sdk/client-bedrock-runtime",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Amazon Web Services"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@aws-sdk/client-bedrock-agent-runtime",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Amazon Web Services"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@mistralai/mistralai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Mistral AI"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "cohere-ai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Cohere"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "groq-sdk",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Groq"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "replicate",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Replicate"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "ollama",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Ollama"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "ai",
+			"match": "exact",
+			"type": "framework",
+			"category": "llm-orchestration",
+			"supplier": "Vercel"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@ai-sdk/",
+			"match": "prefix",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Vercel"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "langchain",
+			"match": "exact",
+			"type": "framework",
+			"category": "llm-orchestration",
+			"supplier": "LangChain"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@langchain/",
+			"match": "prefix",
+			"type": "framework",
+			"category": "llm-orchestration",
+			"supplier": "LangChain"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "langsmith",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-observability",
+			"supplier": "LangChain"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "llamaindex",
+			"match": "exact",
+			"type": "framework",
+			"category": "llm-orchestration",
+			"supplier": "LlamaIndex"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@mastra/core",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "Mastra"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "genkit",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@modelcontextprotocol/sdk",
+			"match": "exact",
+			"type": "library",
+			"category": "mcp-sdk"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@modelcontextprotocol/server-",
+			"match": "prefix",
+			"type": "application",
+			"category": "mcp-server"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@huggingface/inference",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@huggingface/transformers",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@xenova/transformers",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@tensorflow/tfjs",
+			"match": "exact",
+			"type": "framework",
+			"category": "ml-framework",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@tensorflow/tfjs-node",
+			"match": "exact",
+			"type": "framework",
+			"category": "ml-framework",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "onnxruntime-node",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime",
+			"supplier": "Microsoft"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "onnxruntime-web",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime",
+			"supplier": "Microsoft"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "node-llama-cpp",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@pinecone-database/pinecone",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Pinecone"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "chromadb",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Chroma"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "weaviate-client",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Weaviate"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@qdrant/js-client-rest",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Qdrant"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "@zilliz/milvus2-sdk-node",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Zilliz"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "langfuse",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-observability",
+			"supplier": "Langfuse"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "flowise",
+			"match": "exact",
+			"type": "application",
+			"category": "agent-builder",
+			"cve_product": "flowise"
+		},
+		{
+			"ecosystem": "npm",
+			"name": "n8n",
+			"match": "exact",
+			"type": "application",
+			"category": "agent-builder",
+			"cve_product": "n8n"
+		},
+
+		{
+			"ecosystem": "pypi",
+			"name": "anthropic",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Anthropic"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "claude-agent-sdk",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "Anthropic"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "openai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "OpenAI"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "openai-agents",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "OpenAI"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "google-generativeai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "google-genai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "google-cloud-aiplatform",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "mistralai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Mistral AI"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "cohere",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Cohere"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "groq",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Groq"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "together",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Together AI"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "replicate",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Replicate"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "ollama",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk",
+			"supplier": "Ollama"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "huggingface-hub",
+			"match": "exact",
+			"type": "library",
+			"category": "model-hub",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "litellm",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-gateway",
+			"cve_product": "litellm"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "instructor",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-sdk"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "tiktoken",
+			"match": "exact",
+			"type": "library",
+			"category": "tokenizer",
+			"supplier": "OpenAI"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "tokenizers",
+			"match": "exact",
+			"type": "library",
+			"category": "tokenizer",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "langchain",
+			"match": "exact",
+			"type": "framework",
+			"category": "llm-orchestration",
+			"supplier": "LangChain",
+			"cve_product": "langchain"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "langchain-",
+			"match": "prefix",
+			"type": "framework",
+			"category": "llm-orchestration",
+			"supplier": "LangChain"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "langgraph",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "LangChain"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "langsmith",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-observability",
+			"supplier": "LangChain"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "llama-index",
+			"match": "exact",
+			"type": "framework",
+			"category": "llm-orchestration",
+			"supplier": "LlamaIndex"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "llama-index-",
+			"match": "prefix",
+			"type": "framework",
+			"category": "llm-orchestration",
+			"supplier": "LlamaIndex"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "crewai",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"cve_product": "crewai"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "autogen-agentchat",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "Microsoft"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "pyautogen",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "semantic-kernel",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "Microsoft"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "haystack-ai",
+			"match": "exact",
+			"type": "framework",
+			"category": "llm-orchestration",
+			"supplier": "deepset"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "dspy",
+			"match": "exact",
+			"type": "framework",
+			"category": "llm-orchestration"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "dspy-ai",
+			"match": "exact",
+			"type": "framework",
+			"category": "llm-orchestration"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "pydantic-ai",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "Pydantic"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "smolagents",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "agno",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "praisonai",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"cve_product": "praisonai"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "langroid",
+			"match": "exact",
+			"type": "framework",
+			"category": "agent-framework",
+			"cve_product": "langroid"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "mem0ai",
+			"match": "exact",
+			"type": "library",
+			"category": "agent-memory",
+			"cve_product": "mem0"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "guardrails-ai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-guardrails",
+			"cve_product": "guardrails-ai"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "mcp",
+			"match": "exact",
+			"type": "library",
+			"category": "mcp-sdk"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "fastmcp",
+			"match": "exact",
+			"type": "library",
+			"category": "mcp-sdk"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "torch",
+			"match": "exact",
+			"type": "framework",
+			"category": "ml-framework",
+			"supplier": "PyTorch Foundation"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "tensorflow",
+			"match": "exact",
+			"type": "framework",
+			"category": "ml-framework",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "jax",
+			"match": "exact",
+			"type": "framework",
+			"category": "ml-framework",
+			"supplier": "Google"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "keras",
+			"match": "exact",
+			"type": "framework",
+			"category": "ml-framework"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "transformers",
+			"match": "exact",
+			"type": "framework",
+			"category": "ml-framework",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "sentence-transformers",
+			"match": "exact",
+			"type": "framework",
+			"category": "ml-framework"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "diffusers",
+			"match": "exact",
+			"type": "framework",
+			"category": "ml-framework",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "accelerate",
+			"match": "exact",
+			"type": "library",
+			"category": "ml-framework",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "peft",
+			"match": "exact",
+			"type": "library",
+			"category": "ml-framework",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "trl",
+			"match": "exact",
+			"type": "library",
+			"category": "ml-framework",
+			"supplier": "Hugging Face"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "onnxruntime",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime",
+			"supplier": "Microsoft"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "vllm",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime",
+			"cve_product": "vllm"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "sglang",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime",
+			"cve_product": "sglang"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "lmdeploy",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime",
+			"cve_product": "lmdeploy"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "xinference",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime",
+			"cve_product": "xinference"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "tensorrt-llm",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime",
+			"supplier": "NVIDIA",
+			"cve_product": "tensorrt-llm"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "llama-cpp-python",
+			"match": "exact",
+			"type": "framework",
+			"category": "inference-runtime"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "bentoml",
+			"match": "exact",
+			"type": "framework",
+			"category": "model-serving",
+			"cve_product": "bentoml"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "ray",
+			"match": "exact",
+			"type": "framework",
+			"category": "model-serving",
+			"cve_product": "ray"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "mlflow",
+			"match": "exact",
+			"type": "framework",
+			"category": "mlops",
+			"cve_product": "mlflow"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "gradio",
+			"match": "exact",
+			"type": "framework",
+			"category": "ai-app-ui",
+			"cve_product": "gradio"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "langflow",
+			"match": "exact",
+			"type": "application",
+			"category": "agent-builder",
+			"cve_product": "langflow"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "crawl4ai",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-data-ingestion",
+			"cve_product": "crawl4ai"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "feast",
+			"match": "exact",
+			"type": "framework",
+			"category": "mlops",
+			"cve_product": "feast"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "chromadb",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Chroma"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "pinecone",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Pinecone"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "pinecone-client",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Pinecone"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "qdrant-client",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Qdrant"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "weaviate-client",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Weaviate"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "pymilvus",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Zilliz"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "faiss-cpu",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Meta"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "faiss-gpu",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "Meta"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "lancedb",
+			"match": "exact",
+			"type": "library",
+			"category": "vector-store",
+			"supplier": "LanceDB"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "langfuse",
+			"match": "exact",
+			"type": "library",
+			"category": "llm-observability",
+			"supplier": "Langfuse"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "arize-phoenix",
+			"match": "exact",
+			"type": "application",
+			"category": "llm-observability",
+			"supplier": "Arize"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "wandb",
+			"match": "exact",
+			"type": "library",
+			"category": "mlops",
+			"supplier": "Weights & Biases"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "en-core-web-sm",
+			"match": "exact",
+			"type": "machine-learning-model",
+			"category": "nlp-model",
+			"supplier": "Explosion"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "en-core-web-md",
+			"match": "exact",
+			"type": "machine-learning-model",
+			"category": "nlp-model",
+			"supplier": "Explosion"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "en-core-web-lg",
+			"match": "exact",
+			"type": "machine-learning-model",
+			"category": "nlp-model",
+			"supplier": "Explosion"
+		},
+		{
+			"ecosystem": "pypi",
+			"name": "en-core-web-trf",
+			"match": "exact",
+			"type": "machine-learning-model",
+			"category": "nlp-model",
+			"supplier": "Explosion"
+		}
+	],
+	"model_file_extensions": [
+		".gguf",
+		".ggml",
+		".safetensors",
+		".onnx",
+		".pt",
+		".pth",
+		".ckpt",
+		".tflite",
+		".mlmodel",
+		".keras",
+		".llamafile"
+	]
+}

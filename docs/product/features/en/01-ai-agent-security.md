@@ -2,7 +2,7 @@
 
 Singularity AIDR (AI Agent Detection & Response) places a policy check between an AI
 coding agent and the things it touches: shell commands, files, web requests, packages,
-MCP tools and, on Claude Code, the prompt itself. Each supported agent host has a
+MCP tools and the user's prompt itself. Each supported agent host has a
 **connector** that hands the tool call to one shared, local decision engine
 (`@singularityrd/aidr-core`). The engine returns `allow`, `ask` or `deny`, and the
 connector turns that verdict into whatever the host understands.
@@ -42,7 +42,7 @@ command, configuration key and file path below was taken from the repository.
    - [Plugin and skill scanning at session start](#plugin-and-skill-scanning-at-session-start)
    - [Tool-output scanning and quarantine](#tool-output-scanning-and-quarantine)
    - [Data loss prevention (DLP)](#data-loss-prevention-dlp)
-   - [Prompt protection (Claude Code)](#prompt-protection-claude-code)
+   - [Prompt protection](#prompt-protection)
 4. [Operations and governance](#4-operations-and-governance)
    - [Operator approvals](#operator-approvals)
    - [Fail-closed behaviour per connector](#fail-closed-behaviour-per-connector)
@@ -63,11 +63,14 @@ command, configuration key and file path below was taken from the repository.
 | Connector | Package | Where it hooks in | Tool calls inspected before they run | Tool output | Host approval UI for `ask` |
 | --- | --- | --- | --- | --- | --- |
 | Claude Code | `@singularityrd/aidr-claude-code` (plugin) | `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart` hooks | Every tool (`matcher: "*"`) | `PostToolUse` replacement (after execution) | Yes (native dialog) |
-| Cursor | `aidr-cursor` extension | `beforeShellExecution`, `preToolUse`, `beforeMCPExecution`, `beforeReadFile` | Shell, `Write`/`Delete`/`Edit`/`WebFetch`, MCP calls, file reads | `postToolUse`, `afterAgentResponse` (advisory/observation) | `preToolUse`: no, `ask` becomes `deny` |
-| VS Code | same extension package | `PreToolUse`, `PostToolUse` (Claude-style hooks) | `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete`, `editFiles` | `PostToolUse` (after execution, no byte replacement) | Host-dependent |
-| OpenClaw | `@singularityrd/aidr-openclaw` | In-process `before_tool_call` plugin | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` | Transcript and outbound-message replacement | No, operator approval via `aidr approve` |
-| OpenCode | `@singularityrd/aidr-opencode` | `tool.execute.before` plugin | `bash`, `webfetch`, `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `tool.execute.after` replacement | No, operator approval via `aidr approve` |
-| Codex CLI | `@singularityrd/aidr-codex` | Native `PreToolUse` command hook | `Bash`, `apply_patch` (matcher `^(Bash|apply_patch)$`) | Not inspected | No, `ask` becomes `deny`, operator approval via `aidr approve` |
+| Cursor | `aidr-cursor` extension | `beforeSubmitPrompt`, `beforeShellExecution`, `preToolUse`, `beforeMCPExecution`, `beforeReadFile` | Shell, `Write`/`Delete`/`Edit`/`WebFetch`, MCP calls, file reads | `postToolUse`, `afterAgentResponse` (advisory/observation) | `preToolUse`: no, `ask` becomes `deny` |
+| VS Code | same extension package | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` (Claude-style hooks) | `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete`, `editFiles` | `PostToolUse` (after execution, no byte replacement) | Host-dependent |
+| OpenClaw | `@singularityrd/aidr-openclaw` | In-process `before_tool_call` and `before_agent_run` plugin hooks | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` | Transcript and outbound-message replacement | No, operator approval via `aidr approve` |
+| OpenCode | `@singularityrd/aidr-opencode` | `tool.execute.before` and `chat.message` plugin hooks | `bash`, `webfetch`, `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `tool.execute.after` replacement | No, operator approval via `aidr approve` |
+| Codex CLI | `@singularityrd/aidr-codex` | Native `PreToolUse` and `UserPromptSubmit` command hooks | `Bash`, `apply_patch` (matcher `^(Bash|apply_patch)$`) | Not inspected | No, `ask` becomes `deny`, operator approval via `aidr approve` |
+
+Every connector also inspects the user's prompt before it reaches the model; see
+[Prompt protection](#prompt-protection).
 
 Tool calls outside the known shapes (including `mcp__*` tools on Claude Code) fall back
 to a generic string-scan extractor, so heuristics still run on them
@@ -241,7 +244,9 @@ message; this connector watches both boundaries.
 - `after_tool_call` observes output; `tool_result_persist` replaces risky text before
   it is persisted; `message_sending` and `reply_payload_sending` replace a risky outbound
   reply with a non-echoing notice. Text scanning is bounded to 256 KiB.
-- `before_prompt_build` adds plugin-scan findings as advisory context.
+- `before_agent_run` gates the user's prompt before the model reads it (prompt
+  protection; embedded and CLI runners); `before_prompt_build` adds plugin-scan findings
+  and prompt-protection warnings as context for the model.
 - Every `ask` is recorded in the operator approval store; there is **no** agent-callable
   approval tool. `aidr_allowlist_add` / `aidr_allowlist_remove` are registered, and
   `aidr_allowlist_add` refuses unless an operator granted `--permit-allowlist`.
@@ -965,7 +970,8 @@ original text, with context that the tool call already completed.
 ### Data loss prevention (DLP)
 
 **What it does**
-DLP evaluates the serialized tool input (and on Claude Code, the prompt) against a policy
+DLP evaluates the serialized tool input (and the user's prompt, on every connector with
+prompt protection) against a policy
 of labels and rules. Rules use keywords, regular expressions or built-in Turkish/English
 detectors, and act with `block`, `ask` or `redact`.
 
@@ -1075,12 +1081,14 @@ never the value.
 - Designed to support KVKK and GDPR obligations; it is not by itself a compliance
   attestation or certification.
 
-### Prompt protection (Claude Code)
+### Prompt protection
 
 **What it does**
-The `UserPromptSubmit` hook inspects the user's prompt before Claude Code sends it to
-the model, for secrets and for personal data, and applies any provisioned tenant DLP
-policy.
+Inspects the user's prompt before the agent sends it to the model, for secrets and for
+personal data (TR and EN), and applies any provisioned tenant DLP policy. It runs on every
+connector whose host has a pre-model prompt hook: Claude Code and Codex
+(`UserPromptSubmit`), Cursor (`beforeSubmitPrompt`), VS Code Local agent hooks
+(`UserPromptSubmit`), OpenCode (`chat.message`) and OpenClaw (`before_agent_run`).
 
 **Why it matters**
 Developers paste logs, configuration files and stack traces into prompts. Those often
@@ -1091,21 +1099,32 @@ contain live tokens or customer data that should not leave the endpoint.
 | Setting | Default | Detects | Modes |
 | --- | --- | --- | --- |
 | `prompt_protection.secrets` | `block` | Tokens, API keys, AWS keys, private keys, password assignments | `block`, `warn`, `off` |
-| `prompt_protection.pii` | `warn` | Email addresses, formatted phone numbers and SSNs, Luhn-valid card numbers | `block`, `warn`, `off` |
+| `prompt_protection.pii` | `warn` | Email addresses, formatted phone numbers and SSNs, Luhn-valid card numbers, Turkish ID numbers (TC Kimlik), IBANs, TR/international phone numbers | `block`, `warn`, `off` |
+
+| Connector | Hook | Block | Warn |
+| --- | --- | --- | --- |
+| Claude Code | `UserPromptSubmit` | `decision: "block"`, reason shown to the user | User notice + model context |
+| Cursor | `beforeSubmitPrompt` | `continue: false` + `user_message` | Prompt sent; notice in `user_message` and the audit log (no model-context field) |
+| VS Code (Local agent hooks) | `UserPromptSubmit` | `continue: false` + `stopReason` | `systemMessage` to the user (no model-context field) |
+| Codex CLI | `UserPromptSubmit` | `decision: "block"` + reason | `systemMessage` + `additionalContext` |
+| OpenCode | `chat.message` | Text replaced with the notice and the hook throws; nothing is stored or sent | TUI toast + notice for the model on that message |
+| OpenClaw | `before_agent_run` (embedded/CLI runners) | `outcome: "block"`; only the replacement text is kept | Model notice through `before_prompt_build` |
 
 - `block` stops the prompt and tells the user which **kind** of data was found (never the
   value). `warn` sends the prompt, shows a notice and tells the model not to repeat or
-  copy the data.
+  copy the data, where the host can deliver each (see the table).
 - A tenant DLP policy always applies; since a prompt cannot be rewritten, any tenant
   action other than `allow` blocks.
-- **Deadline.** Claude Code kills the hook after 10 s, so the hook answers itself after
-  7 s (`AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS`, 100–9000). A prompt not fully inspected by
+- **Deadline.** Each connector answers before its host's hook timeout: Claude Code 7 s
+  (`AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS`), Codex 7 s, Cursor and VS Code 20 s, OpenClaw and
+  OpenCode 10 s (`AIDR_PROMPT_INSPECTION_DEADLINE_MS`). A prompt not fully inspected by
   then is blocked when `secrets` is `block` or a tenant policy is provisioned; otherwise it
   is sent with a visible "not fully inspected" notice.
-- Input above 2 MiB or an internal error: blocks when `secrets` is `block`; otherwise sent
-  with a "not inspected" notice.
-- Audit entries (`tool_name: "UserPromptSubmit"`) record kinds and counts, never the
+- Unreadable or oversized input, or an internal error: blocks when `secrets` is `block`;
+  otherwise sent with a "not inspected" notice.
+- Audit entries (`tool_name` = the host hook name) record kinds and counts, never the
   prompt.
+- Full per-connector detail: [configuration.md](../../../configuration.md#prompt_protection).
 
 **How to use**
 
@@ -1114,7 +1133,8 @@ contain live tokens or customer data that should not leave the endpoint.
 ```
 
 **Example**
-A developer pastes a GitHub token into the prompt. Claude Code shows:
+A developer pastes a GitHub token into the prompt. Claude Code, Cursor, VS Code, Codex,
+OpenCode and OpenClaw all show the same reason:
 "🛡️ Singularity AIDR blocked this prompt before it reached the model: it appears to
 contain sensitive data (GitHub token). Remove the sensitive value and resubmit. If it was
 a live credential that has been shared anywhere else, rotate it."
@@ -1123,11 +1143,22 @@ a live credential that has been shared anywhere else, rotate it."
 
 | Plan | Deployment | Platforms / OS |
 | --- | --- | --- |
-| Free, Team, Business, Enterprise | Local; Cloud, On-prem, Air-gapped | Claude Code only; Windows, Linux, macOS |
+| Free, Team, Business, Enterprise | Local; Cloud, On-prem, Air-gapped | Claude Code, Cursor, VS Code (Local agent hooks), Codex CLI, OpenCode, OpenClaw (embedded/CLI runners); Windows, Linux, macOS |
 
 **Limitations**
-- Claude Code only; other connectors have no prompt hook in AIDR.
-- A hook process killed before it answers cannot block (host limitation).
+- Only the prompt text is inspected: Cursor attachments and OpenCode `synthetic` parts
+  (for example attached file contents) are not.
+- Cursor and VS Code have no model-context field on their prompt events, so a `warn`
+  reaches the user (VS Code) or the audit log (Cursor) but not the model.
+- OpenClaw's `before_agent_run` is not an input gate for its Codex or Copilot harnesses;
+  a non-bundled install needs `hooks.allowConversationAccess: true`.
+- Codex needs the `UserPromptSubmit` handler registered and trusted; an untrusted, crashed
+  or timed-out hook lets the prompt through (host behaviour).
+- A hook process killed before it answers cannot block on Claude Code, VS Code or Codex
+  (host limitation).
+- No named real-host acceptance record exists yet for the Cursor, VS Code, Codex, OpenCode
+  or OpenClaw prompt paths; they are verified against the hosts' published hook contracts
+  and by tests that drive the built connector bundles.
 - In `block` mode the scan stops at the first secret, so the message reports the first
   one found rather than a full count.
 

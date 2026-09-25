@@ -3,15 +3,19 @@
 // counts, enums and the optional policy identifier only.
 import { webcrypto } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AI_SERVICES as BROWSER_GUARD_AI_SERVICES } from "../../../packages/browser-guard/src/sites/catalog.ts";
 import { ENTITY_TYPES as BROWSER_GUARD_ENTITY_TYPES } from "../../../packages/browser-guard/src/types.ts";
 import { ENTITY_TYPES as PRIVACY_ENTITY_TYPES_SOURCE } from "../../../packages/privacy/src/types.ts";
 import {
 	MAX_INGEST_EVENTS,
 	MAX_PRIVACY_ENTITY_KEYS,
+	MAX_SHADOW_AI_COUNT,
 	normalizeIngestEvents,
 	PRIVACY_ACTION_DECISIONS,
 	PRIVACY_ENTITY_TYPES,
 	PRIVACY_SITES,
+	SHADOW_AI_ACTION_DECISIONS,
+	SHADOW_AI_SERVICE_CATEGORIES,
 } from "../ingest/events.ts";
 
 const sdk = vi.hoisted(() => ({ createClient: vi.fn() }));
@@ -201,6 +205,86 @@ describe("privacy_scan ingest projection", () => {
 		expect([...PRIVACY_ENTITY_TYPES]).toEqual([...PRIVACY_ENTITY_TYPES_SOURCE]);
 		expect([...PRIVACY_ENTITY_TYPES]).toEqual([...BROWSER_GUARD_ENTITY_TYPES]);
 		expect(PRIVACY_ENTITY_TYPES.length).toBeLessThanOrEqual(MAX_PRIVACY_ENTITY_KEYS);
+	});
+});
+
+function usage(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		event_id: "bg:6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b",
+		event_type: "shadow_ai_usage",
+		timestamp: "2026-09-24T10:16:00Z",
+		service_id: "midjourney",
+		action: "visited",
+		count: 4,
+		sanctioned: false,
+		policy_id: "managed.default:v4",
+		...overrides,
+	};
+}
+
+describe("shadow_ai_usage ingest projection", () => {
+	it("stores the contract example as a catalog id, category, counts and flags only", () => {
+		expect(projectOne(usage())).toEqual({
+			event_id: "bg:6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b",
+			type: "shadow_ai_usage",
+			timestamp: "2026-09-24T10:16:00.000Z",
+			service_id: "midjourney",
+			category: "image",
+			action: "visited",
+			decision: "allow",
+			count: 4,
+			sanctioned: false,
+			policy_id: "managed.default:v4",
+		});
+		expect(projectOne(usage({ action: "blocked", sanctioned: true }))).toMatchObject({
+			action: "blocked",
+			decision: "deny",
+			sanctioned: true,
+		});
+	});
+
+	it("never stores URLs, hosts, paths or titles", () => {
+		const stored = projectOne(
+			usage({
+				url: "https://www.midjourney.com/imagine?prompt=ayse@example.test",
+				host: "www.midjourney.com",
+				title: "Imagine - Midjourney",
+				path: "/imagine",
+			}),
+		);
+		expect(JSON.stringify(stored)).not.toMatch(/midjourney\.com|imagine|ayse/);
+	});
+
+	it("requires a known action, a well-formed id and a bounded count", () => {
+		for (const [override, detail] of [
+			[{ action: "used" }, "action"],
+			[{ service_id: "https://poe.com/" }, "service_id"],
+			[{ service_id: undefined }, "service_id"],
+			[{ count: 0 }, "count"],
+			[{ count: MAX_SHADOW_AI_COUNT + 1 }, "count"],
+			[{ count: 1.5 }, "count"],
+			[{ sanctioned: "yes" }, "sanctioned"],
+		] as const) {
+			expect(normalizeIngestEvents([usage(override)])).toEqual({
+				ok: false,
+				status: 400,
+				error: "invalid_event",
+				detail: `events[0].${detail}`,
+			});
+		}
+		// A newer client's service id is kept as a real visit, filed under "other".
+		expect(projectOne(usage({ service_id: "future-ai" }))).toMatchObject({
+			service_id: "other",
+			category: "other",
+		});
+		expect(projectOne(usage({ sanctioned: undefined })).sanctioned).toBe(false);
+	});
+
+	it("pins the service vocabulary and categories to the Browser Guard catalog", () => {
+		expect(SHADOW_AI_SERVICE_CATEGORIES).toEqual(
+			Object.fromEntries(BROWSER_GUARD_AI_SERVICES.map((s) => [s.id, s.category])),
+		);
+		expect(SHADOW_AI_ACTION_DECISIONS).toEqual({ visited: "allow", blocked: "deny" });
 	});
 });
 

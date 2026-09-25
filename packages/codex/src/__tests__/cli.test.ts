@@ -393,24 +393,34 @@ describe("Codex hook entry point (built bundle)", () => {
 				schemaVersion: string;
 				connector: string;
 				configuredEvents: string[];
-				eventCoverage: { preToolUse: boolean; postToolUse: boolean };
+				eventCoverage: { preToolUse: boolean; postToolUse: boolean; userPromptSubmit: boolean };
 				capabilities: Record<string, unknown>;
-				claims: { inlineToolCallBlocking: boolean; inlineOutputBlocking: boolean };
+				claims: {
+					inlineToolCallBlocking: boolean;
+					inlinePromptBlocking: boolean;
+					inlineOutputBlocking: false;
+				};
 				hostFailureBoundary: { mode: string; connectorCanOverride: boolean };
 				health: { status: string; reasonCodes: string[]; runtimeRegistrationVerified: boolean };
 			};
 
 			expect(evidence.schemaVersion).toBe("aidr-connector-coverage/v1");
 			expect(evidence.connector).toBe("codex");
-			expect(evidence.configuredEvents).toEqual(["PreToolUse"]);
-			expect(evidence.eventCoverage).toEqual({ preToolUse: true, postToolUse: false });
+			expect(evidence.configuredEvents).toEqual(["PreToolUse", "UserPromptSubmit"]);
+			expect(evidence.eventCoverage).toEqual({
+				preToolUse: true,
+				postToolUse: false,
+				userPromptSubmit: true,
+			});
 			expect(evidence.capabilities).toMatchObject({
 				toolInputInspection: "inline_blocking",
 				toolOutputInspection: "unavailable",
+				promptInspection: "inline_blocking",
 				canBlockOutputBeforeModelConsumption: false,
 			});
 			expect(evidence.claims).toEqual({
 				inlineToolCallBlocking: true,
+				inlinePromptBlocking: true,
 				inlineOutputBlocking: false,
 			});
 			expect(evidence.hostFailureBoundary).toMatchObject({

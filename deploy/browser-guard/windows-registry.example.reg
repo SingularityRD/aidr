@@ -20,6 +20,8 @@ Windows Registry Editor Version 5.00
 "signalAction"="warn"
 "blockedSites"="[\"deepseek\"]"
 "disabledSites"="[]"
+"customSites"="[{\"id\":\"acme-gpt\",\"label\":\"ACME GPT\",\"hosts\":[\"gpt.acme.example\"],\"editorSelectors\":[\"textarea#prompt\"],\"sendButtonSelectors\":[\"button.send\"],\"responseSelectors\":[\".answer\"]}]"
+"shadowAi"="{\"mode\":\"block-unsanctioned\",\"sanctioned\":[\"chatgpt\",\"copilot\",\"gemini\"],\"blocked\":[\"deepseek\"]}"
 "allowUserPause"=dword:00000000
 "allowSendAnyway"=dword:00000000
 "maskPaste"=dword:00000001
@@ -46,6 +48,8 @@ Windows Registry Editor Version 5.00
 "signalAction"="warn"
 "blockedSites"="[\"deepseek\"]"
 "disabledSites"="[]"
+"customSites"="[{\"id\":\"acme-gpt\",\"label\":\"ACME GPT\",\"hosts\":[\"gpt.acme.example\"],\"editorSelectors\":[\"textarea#prompt\"],\"sendButtonSelectors\":[\"button.send\"],\"responseSelectors\":[\".answer\"]}]"
+"shadowAi"="{\"mode\":\"block-unsanctioned\",\"sanctioned\":[\"chatgpt\",\"copilot\",\"gemini\"],\"blocked\":[\"deepseek\"]}"
 "allowUserPause"=dword:00000000
 "allowSendAnyway"=dword:00000000
 "maskPaste"=dword:00000001

@@ -9,6 +9,7 @@
  */
 
 import { type Counts, mergeCounts } from "../engine/counts.js";
+import { isDocumentFile } from "../engine/files.js";
 import type {
 	DetectionEngine,
 	FileDecision,
@@ -74,6 +75,17 @@ type Outcome =
 			readonly counts: Counts;
 	  }
 	| { readonly kind: "error" };
+
+/** Bubble text for a blocked upload: reason codes, counts, and a hint for PDFs. */
+function blockedMessage(
+	s: Strings,
+	outcome: { readonly name: string; readonly reasons: readonly string[]; readonly counts: Counts },
+): string {
+	const summary = formatCounts(outcome.counts);
+	const reasons = [...outcome.reasons, ...(summary ? [summary] : [])].join(", ");
+	const hint = outcome.reasons.includes("SENSITIVE_DATA_IN_PDF") ? ` ${s.pdfPasteHint}` : "";
+	return s.fileBlockedBody(outcome.name, reasons) + hint;
+}
 
 async function readFileBytes(file: Blob, win: Window): Promise<Uint8Array> {
 	if (typeof file.arrayBuffer === "function") return new Uint8Array(await file.arrayBuffer());
@@ -219,9 +231,7 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 			return null;
 		}
 		if (outcome.kind === "blocked") {
-			const summary = formatCounts(outcome.counts);
-			const reasons = [...outcome.reasons, ...(summary ? [summary] : [])].join(", ");
-			showBlocked(s.fileBlockedBody(outcome.name, reasons));
+			showBlocked(blockedMessage(s, outcome));
 			deps.record("blocked", "file", outcome.counts);
 			return null;
 		}
@@ -261,10 +271,17 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		return "blocked";
 	};
 
-	/** Why an organisation rule blocks every upload here (in every mode), or null. */
-	const blockedBy = (policy: GuardPolicy): string | null => {
+	/** Why an organisation rule blocks these uploads here (in every mode), or null. */
+	const blockedBy = (policy: GuardPolicy, files: readonly File[]): string | null => {
 		if (siteBlocked(policy)) return deps.strings().siteBlocked;
-		return policy.fileHandling === "block" ? deps.strings().fileBlockedByPolicy : null;
+		if (policy.fileHandling === "block") return deps.strings().fileBlockedByPolicy;
+		if (
+			policy.fileHandling === "scan" &&
+			policy.documentHandling === "block" &&
+			files.some(isDocumentFile)
+		)
+			return deps.strings().documentBlockedByPolicy;
+		return null;
 	};
 
 	/**
@@ -288,7 +305,7 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		}
 		// Site blocks and file blocks are organisation rules: enforced in every mode, and
 		// on sites the user disabled (which are monitored, see ./guard.ts).
-		const blockMessage = blockedBy(policy);
+		const blockMessage = blockedBy(policy, files);
 		if (blockMessage === null && passesThrough(event, files, policy)) return null;
 		stop(event);
 		if (blockMessage !== null) return refuse(blockMessage);

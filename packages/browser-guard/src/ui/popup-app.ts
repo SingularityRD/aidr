@@ -70,7 +70,7 @@ export function startPopup(doc: Document, env: UiEnv, elements: PopupElements): 
 				phase: "ready",
 				policy,
 				stats,
-				urlSite: siteForUrl(tab?.url),
+				urlSite: siteForUrl(tab?.url, policy.customSites ?? []),
 				restoreVisible: typeof stored === "boolean" ? stored : policy.restoreResponses,
 				now: env.now(),
 				busy: false,
