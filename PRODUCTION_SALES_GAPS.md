@@ -2,7 +2,7 @@
 
 Otomatik rapor üretim tarihi: **2026-09-25** (Europe/Istanbul). Rapor bu çalışma ağacının kaynaklarından üretildi; source_commit yalnızca taban commit'i gösterir, çalışma ağacının değişmiş olduğu ayrıca işaretlenir. Bu rapor candidate-bound release evidence değildir. READINESS_BACKLOG.json issue-ledger kaydının tarihsel baseline ve doğrulama tarihleri aşağıdaki makine kaydında yer alır; açık finding ID'leri güncel checkout doğrulaması sayılmaz. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
 
-88 alt özellik: **50 bağlı/çalışan, 36 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **47 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
+90 alt özellik: **51 bağlı/çalışan, 37 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **47 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
 
 45 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 2 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
 
@@ -42,7 +42,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T02 — Bağlayıcılar arasında araç adı ve girdi normalizasyonu (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ortak araç/girdi normalizasyonu evaluator öncesinde; Codex ve OpenClaw boş-artifact erken izin yolu kaldırıldı, named MCP çağrıları politikaya ulaşıyor. packages/core/src/__tests__/connector-parity.test.ts altı bağlayıcının derlenmiş giriş noktalarını (Claude Code, Codex, OpenCode, OpenClaw, Cursor, VS Code) tek payload matrisiyle sürüyor ve aynı engelleme sınıfını ve threat id'yi audit logdan doğruluyor; argv dizisi shell komutları normalize ediliyor, bozuk komut deny oluyor; matrisin bulduğu ev dizini silme boşluğu CLT-CMD-031 ile kapatıldı. OpenClaw/OpenCode başlatma hatasında kanca bırakmak yerine tüm çağrıları engelliyor. 2026-09-24 koşusunda parity paketinde 26 durumdan 25'i geçti: DLP redact satırı, Claude Code'un yeni input rewrite davranışından önceki block beklentisini taşıdığı için başarısız; OpenClaw bütünlük hatası testi yine engelliyor ancak integrity_bad_signature yerine init_error kodu raporluyor. Bu iki beklenti uzlaştırılmadı; kurulu native hostlarda parity kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ortak araç/girdi normalizasyonu evaluator öncesinde; Codex ve OpenClaw boş-artifact erken izin yolu kaldırıldı, named MCP çağrıları politikaya ulaşıyor. packages/core/src/__tests__/connector-parity.test.ts altı bağlayıcının derlenmiş giriş noktalarını (Claude Code, Codex, OpenCode, OpenClaw, Cursor, VS Code) tek payload matrisiyle sürüyor ve aynı engelleme sınıfını ve threat id'yi audit logdan doğruluyor; argv dizisi shell komutları normalize ediliyor, bozuk komut deny oluyor; matrisin bulduğu ev dizini silme boşluğu CLT-CMD-031 ile kapatıldı. OpenClaw/OpenCode başlatma hatasında kanca bırakmak yerine tüm çağrıları engelliyor. Extractor sınırlarını aşan araç girdisi artık sessizce kesilmiyor: kalan sınır input_not_fully_inspected işareti koyuyor ve evaluator çağrıyı deny ediyor. 2026-09-24 kaydındaki iki uzlaşmamış beklenti giderildi: DLP redact satırı input rewrite yapan bağlayıcılarda (Claude Code, OpenCode) redakte girdinin çalışmasını, diğerlerinde blok bekliyor; OpenClaw bütünlük hatası testi uyumlu. 2026-09-25'te yeniden derlenmiş bundle'larla parity paketi 27/27, OpenClaw init fail-closed 2/2 ve OpenCode 3/3 geçti. Kurulu native hostlarda parity kabulü açık.
 
 **Başlangıç durumu:** OpenCode ham bash/write/edit adlarını iletiyor; bazı çekirdek denetimleri yalnızca Bash/Write/Edit dallarında çalışıyor. Mevcut sözleşme testi bu paket boşluğunu allow olarak kaydediyor.
 
@@ -74,7 +74,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T04 — Model tüketiminden önce çıktı denetimi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Çıktı tarayıcı 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sınırında inspection_incomplete/critical fail-closed üretiyor; JSON/Unicode ve sınır payloadları test edildi. Hassas çıktı karantinası artık yalnız yüksek kesinlikli bulgularda (doğrulanmış anahtar/token biçimleri, PEM anahtar materyali, Luhn kartları, etiketli SSN) tetikleniyor. Claude Code UserPromptSubmit prompt koruması sırları engelliyor, PII'de uyarıyor; DLP redact yalnız rewrite destekleyen hostta (Claude Code updatedInput, OpenCode args) temiz yeniden taramadan sonra uygulanıyor. Her hostta aynı-tur blok kanıtı yok.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Çıktı tarayıcı 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sınırında inspection_incomplete/critical fail-closed üretiyor; JSON/Unicode ve sınır payloadları test edildi. Hassas çıktı karantinası artık yalnız yüksek kesinlikli bulgularda (doğrulanmış anahtar/token biçimleri, PEM anahtar materyali, Luhn kartları, etiketli SSN) tetikleniyor. Claude Code UserPromptSubmit prompt koruması sırları engelliyor, PII'de (TC Kimlik, IBAN, TR/uluslararası telefon dahil) uyarıyor; çakışma çözümü doğrusal, engelleyici tarama ilk doğrulanmış sırda duruyor ve 7 sn iç süre sınırı (host 10 sn'de kancayı öldürüyor) secrets=block veya tenant DLP varken bitmemiş taramayı engelliyor, aksi halde görünür 'tam incelenmedi' uyarısıyla gönderiyor; eksik kişisel veri taraması temiz sayılmıyor. DLP redact yalnız rewrite destekleyen hostta (Claude Code updatedInput, OpenCode args), shell açısından etkisiz REDACTED tokenlarıyla ve yeniden yazılan girdi DLP ve tehdit sezgilerinden temiz geçerse uygulanıyor. Her hostta aynı-tur blok kanıtı yok.
 
 **Başlangıç durumu:** Claude çıktısında sınırlı tarama var; PostToolUse çalışmış eylemi geri alamaz. Diğer tüketim yollarının tamamı bağlı değil.
 
@@ -170,7 +170,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T10 — MCP gateway ve taşıma güvenliği (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Loopback/stdio JSON-RPC geçidi DNS pinleme, gerçek stream sınırı, tekil framing ve bozuk yanıt reddi uyguluyor. tools/call argümanları upstream çağrısından önce core evaluator'dan geçiyor (deny, ask=operatör onayı bekleyen blok, evaluator hatası=detection_unavailable). Image/audio/resource blob'ları MIME allowlist, kanonik base64, çözülmüş boyut sınırı, magic-byte ve yazdırılabilir dizi taramasıyla sınırlı biçimde inceleniyor; server-initiated sampling/elicitation/roots/notification'lar varsayılan deny politikasına bağlı ve bu istemci yetenekleri iletilen initialize'dan çıkarılıyor. Gateway'i atlayan doğrudan upstream erişiminin zorunlu yönlendirilmesi, allowlist dışı medya biçimleri ve müşteri native kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Loopback/stdio JSON-RPC geçidi DNS pinleme, gerçek stream sınırı, tekil framing ve bozuk yanıt reddi uyguluyor. tools/call argümanları upstream çağrısından önce core evaluator'dan geçiyor (deny, ask=operatör onayı bekleyen blok, evaluator hatası=detection_unavailable); extractor sınırlarını aşan argümanlar iletilmek yerine input_not_fully_inspected ile reddediliyor. Image/audio/resource blob'ları MIME allowlist, kanonik base64, çözülmüş boyut sınırı, magic-byte ve yazdırılabilir dizi taramasıyla sınırlı biçimde inceleniyor; PNG zTXt/iTXt/iCCP ve PDF FlateDecode akışları oran, öğe ve akış sayısı sınırlarıyla açılıyor, UTF-16 dizileri çözülüyor, sınır aşımında çıktı reddediliyor (binary_inflation_limit). Server-initiated sampling/elicitation/roots/notification'lar varsayılan deny politikasına bağlı ve bu istemci yetenekleri iletilen initialize'dan çıkarılıyor. Gateway'i atlayan doğrudan upstream erişiminin zorunlu yönlendirilmesi, allowlist dışı medya/sıkıştırma biçimleri ve müşteri native kabulü açık.
 
 **Başlangıç durumu:** Framing ve policy interception yardımcıları var; çalışan tam gateway tüketicisi yok. URL DNS kontrolünden sonra fetch yeniden çözümleme yapıyor; cevap sınırı Content-Length başlığına bakıyor.
 
@@ -218,7 +218,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T13 — Response eylemlerinin güvenli uçtan uca işletimi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Response-worker capability/önkoşul/TTL/idempotency/rollback makbuzu sözleşmesini uyguluyor; desteklenmeyen eylem reddediliyor ve geri alınamayan adım partial raporlanıyor. RSP-07 için owner/admin + AAL2 yetkili API ve dayanıklı, sabit iki adımlı pause-agent → isolate-network playbook'u eklendi; çalışan adapter/worker ayrıca kurulup doğrulanmadıkça yürütme başlamaz. RSP-08 ile ask kararları HMAC imzalı bekleyen kayıt olarak saklanıyor; yalnız bant dışı `aidr approve` onayı aynı araç/artifact tekrarını bir kez serbest bırakıyor (15 dk, tek kullanımlık), bozuk/süresi dolmuş kayıt bloğu koruyor, ajan-çağrılabilir onay aracı yok. Onay tek host/OS kullanıcısına yerel; merkezi çoklu onay akışı, native OS/provider adapter, alarm tetikleyicisi, harici SOAR bağlayıcısı ve kurulu servis saha kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Response-worker capability/önkoşul/TTL/idempotency/rollback makbuzu sözleşmesini uyguluyor; desteklenmeyen eylem reddediliyor ve geri alınamayan adım partial raporlanıyor. RSP-07 için owner/admin + AAL2 yetkili API ve dayanıklı, sabit iki adımlı pause-agent → isolate-network playbook'u eklendi; çalışan adapter/worker ayrıca kurulup doğrulanmadıkça yürütme başlamaz. RSP-08 ile ask kararları HMAC imzalı bekleyen kayıt olarak saklanıyor; yalnız bant dışı `aidr approve` onayı aynı araç/artifact tekrarını bir kez serbest bırakıyor (15 dk, tek kullanımlık), bozuk/süresi dolmuş kayıt bloğu koruyor, ajan-çağrılabilir onay aracı yok. Güvenlik incelemesi sonrası HMAC anahtarı varsayılan olarak yalnız OS kasasında (kasa yoksa onay kapalı, ask blokta kalıyor; düz anahtar dosyası açık opt-in ister ve doctor uyarır), tek kullanım kasadaki tüketim defterine bağlı (eski approvals.json geri yüklenirse already_used), CLT-SELF-007/008/009 kuralları shell-normalize görünüm üzerinden durum dizinine, kasa girdilerine ve aidr approve/pending/allowlist add çağrılarına her ajan erişimini deny ediyor, kayıtlar kontrol/bidi karakterleri kaçışlanarak saklanıp gösteriliyor. Ajan aynı OS kullanıcısıyla çalıştığından ayrım süreç izolasyonu değil, kasa erişim politikası ve desen tabanlı kurallardır. Onay tek host/OS kullanıcısına yerel; merkezi çoklu onay akışı, native OS/provider adapter, alarm tetikleyicisi, harici SOAR bağlayıcısı ve kurulu servis saha kabulü açık.
 
 **Başlangıç durumu:** Quarantine/restore, dosya snapshot/rollback, imzalı olay zinciri ve sabit SOAR playbook yerel testli.
 
@@ -362,7 +362,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T22 — Tenant izolasyonu ve kaynak tüketim sınırları (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Edge byte/rate sınırı bozuk RPC'de 503 ve stalled stream'de 413 fail-closed üretiyor. packs-manifest/packs-download API anahtarı ve tenant başına bütçe uyguluyor; waitlist Turnstile ve imzalı ingress IP bütçesi kullanıyor; operator-admin allowlist'li, süreli platform operatörü + AAL2 ve işlem içi yeniden denetim gerektiriyor. Tüm endpoint/rol/tenant negatif matrisi, müşteri yük/izolasyon kabulü ve bağımsız pentest açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Edge byte/rate sınırı bozuk RPC'de 503 ve stalled stream'de 413 fail-closed üretiyor. packs-manifest/packs-download API anahtarı ve tenant başına bütçe uyguluyor; waitlist Turnstile ve imzalı ingress IP bütçesi kullanıyor; operator-admin allowlist'li, süreli platform operatörü + AAL2 ve işlem içi yeniden denetim gerektiriyor. tenant_id taşıyan her RLS tablosunda kısıtlayıcı tenant identity barrier politikası var (posture_findings ve sonradan eklenen tablolar 20260925000060 ile kapsandı); scripts/lib/tenant-identity-barrier.mjs tüm migrationları statik yeniden oynatıp eksik barrier'ı supabase:check (CI) içinde reddediyor. Browser Guard için yalnız /v1/ingest'in kabul ettiği, anahtar başına hız ve kurulum sınırlı ingest:browser_guard anahtarları eklendi; diğer uçlar bu anahtarı api_key_scope_denied ile reddediyor. Tüm endpoint/rol/tenant negatif matrisi, müşteri yük/izolasyon kabulü ve bağımsız pentest açık.
 
 **Başlangıç durumu:** RLS, rol ve bazı negatif uçtan uca testler var.
 
@@ -458,7 +458,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T28 — Gerçek cloud ve self-hosted üretim kurulumu (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 129 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. Live provider/TLS acceptance remains open.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 131 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.
 
 **Başlangıç durumu:** İki model için kurulum hazırlama ve yerel Docker prova var.
 
@@ -470,11 +470,11 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 **Sorumlu:** SRE + Customer IT. **Bağımlılık:** Alan adı, cloud hesabı/bölge ve ağ bilgisi.
 
-**İlişkili özellikler:** DEP-01, DEP-02, DEP-09. **Kaynak:** [scripts/deployment-prepare.mjs](scripts/deployment-prepare.mjs), [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md).
+**İlişkili özellikler:** DEP-01, DEP-02, DEP-09, DEP-12. **Kaynak:** [scripts/deployment-prepare.mjs](scripts/deployment-prepare.mjs), [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md).
 
 ### T29 — Kimliği doğrulanan dağıtım ve release provenance (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Release verifier receipt hedefini mutation öncesi doğruluyor ve bundle/state/policy çakışmasını reddediyor. packages/privacy/dist diğer dist'lerle birlikte imzalanıp provenance'a bağlanıyor; release-browser-guard iş akışı tekrarlanabilir zip + SHA256SUMS ve provenance attestation üretiyor. Vendor-imzalı aidr-license-v1 lisansları ve imzalı offline pack importu var, ancak dağıtılan açık anahtar kaydı boş ve fail-closed; indirme merkezi yalnız doğrulanmış https manifesti gösteriyor ve yayınlanmış manifest yok. Resmi key custody, private registry, air-gap medya transfer tatbikatı ve Kubernetes/Helm dağıtımı (bu ağaçta yok) açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Release verifier receipt hedefini mutation öncesi doğruluyor ve bundle/state/policy çakışmasını reddediyor. packages/privacy/dist diğer dist'lerle birlikte imzalanıp provenance'a bağlanıyor; release-browser-guard iş akışı tekrarlanabilir zip + SHA256SUMS ve provenance attestation üretiyor. Vendor-imzalı aidr-license-v1 lisansları ve imzalı offline pack importu var, ancak dağıtılan açık anahtar kaydı boş ve fail-closed; deployment-bootstrap özel anahtar kaydını yalnız --allow-custom-license-keys ile kabul edip kayıt yolunu/SHA-256'sını makbuza yazıyor, emekli anahtarlar retired_at ve süre sınırlarına bağlı; lisans denetimi operatör tarafında, veritabanı imzayı yeniden doğrulamıyor. deploy/helm/aidr Helm chart'ı ve build-images.mjs air-gap için images.json çekme listesi üretiyor. İndirme merkezi yalnız doğrulanmış https manifesti gösteriyor ve yayınlanmış manifest yok. Resmi key custody, private registry, air-gap medya transfer tatbikatı ve canlı Kubernetes kurulumu açık.
 
 **Başlangıç durumu:** Taşınabilir aday, SBOM, paket tüketici ve SHA denetimleri var; yayıncı imzası yok.
 
@@ -486,7 +486,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 **Sorumlu:** Release Engineering + Security. **Bağımlılık:** Signer ve registry yetkisi; lisans onayı.
 
-**İlişkili özellikler:** DEP-05, DEP-08, OBS-05, DEP-09, DEP-10, DEP-11. **Kaynak:** [scripts/customer-kit.mjs](scripts/customer-kit.mjs), [.github/scripts/build-release-bundle.mjs](.github/scripts/build-release-bundle.mjs), [scripts/release-artifact-manifests.mjs](scripts/release-artifact-manifests.mjs).
+**İlişkili özellikler:** DEP-05, DEP-08, OBS-05, DEP-09, DEP-10, DEP-11, DEP-12. **Kaynak:** [scripts/customer-kit.mjs](scripts/customer-kit.mjs), [.github/scripts/build-release-bundle.mjs](.github/scripts/build-release-bundle.mjs), [scripts/release-artifact-manifests.mjs](scripts/release-artifact-manifests.mjs).
 
 ### T30 — HA, failover, kapasite ve SLA ölçümü (P0)
 
@@ -506,7 +506,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T31 — Migration, upgrade ve geri dönüş tatbikatı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Kesilen rename resume yalnız kaynak/staged içerik preflight hash'leriyle eşleşirse devam ediyor; gerçek trafik cutover/rollback kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Kesilen rename resume yalnız kaynak/staged içerik preflight hash'leriyle eşleşirse devam ediyor. Upgrade adımları kendi süreç grubunda çalışıyor; SIGINT/SIGTERM'de salt-okur adımlar duruyor, durum değiştiren adımlar tamamlanıyor, şema commit'inden önce kayıtlı yazarlar yeniden başlatılıyor, interrupted_by ve devam edilebilir faz kaydediliyor, çıkış 130/143; pnpm verify:upgrade (43 kontrol, sinyal senaryoları dahil) onprem-deploy CI işinde çalışıyor. Gerçek önceki müşteri sürümünden upgrade, trafik cutover/rollback kabulü açık.
 
 **Başlangıç durumu:** 18 migration checksum/transaction ile uygulanıyor; temiz kurulum smoke var.
 
@@ -554,7 +554,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T34 — Readiness kayıtlarının ve ürün iddialarının tutarlılığı (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 88 özellik, 60 iş paketi, 11 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 90 özellik, 60 iş paketi, 11 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.
 
 **Başlangıç durumu:** Envanter güncel; eski denetim alanları tarihsel metinler içeriyor.
 
@@ -570,7 +570,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T35 — Test kapılarının kapsamı ve başarısızlığın saklanmaması (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Bu çalışma ağacında yerel test paketi geçti; ancak güncel ilk müşteri gate'i candidate digesti bulunmadığını ve release evidence indexindeki 30 kapının NOT_RUN olduğunu kaydediyor. Yerel test geçişi v8 adayını güncel/accepted yapmaz; native kör corpus açık. CI'a workflow-lint, core Node 22/24 matrisi, onprem-deploy, privacy, privacy-rules-drift ve browser-guard işleri eklendi; helm işi deploy/helm ve verify:helm bu kaynak ağacında bulunmadığı için henüz geçemez. 2026-09-24 ölçümünde `pnpm lint` 0 hata ile çıkıyor fakat 593 Biome uyarısı (çoğunlukla karmaşıklık) var; uyarı borcu 132'den büyüdü ve sınıflandırılmadı.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Bu çalışma ağacında hedefli yerel testler geçti; ancak güncel ilk müşteri gate'i candidate digesti bulunmadığını ve release evidence indexindeki 30 kapının NOT_RUN olduğunu kaydediyor. Yerel test geçişi v8 adayını güncel/accepted yapmaz; native kör corpus açık. CI'da workflow-lint, core Node 22/24 matrisi, onprem-deploy (verify:upgrade dahil), privacy, privacy-rules-drift, browser-guard ve helm işleri var; helm işi imza doğrulamalı Helm 3.19.0 kurup pnpm verify:helm çalıştırıyor, kubeconform kurmadığı için şema doğrulaması CI'da atlanıyor. 2026-09-24'te başarısız olan parity DLP redact ve OpenClaw init beklentileri uzlaştırıldı (2026-09-25: 27/27, 2/2). Kod sadeleştirme turundan sonra 2026-09-25 ölçümünde `pnpm lint` 0 hata ile çıkıyor ve 547 Biome uyarısı (593'ten düştü, çoğunlukla karmaşıklık) var; uyarı borcu sınıflandırılmadı.
 
 **Başlangıç durumu:** Binlerce yerel test ve derlenmiş kanca kontrolleri var; 1 canlı sağlayıcı senaryosu atlanıyor. Son koşu hatası ve düzeltme kaydı tutuluyor.
 
@@ -602,7 +602,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T37 — Gerçek veri akışı, redaksiyon ve gizlilik kanıtı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti. Ingest now omits JWT/credential-shaped projected identifiers and rejects credential-shaped event IDs (10 focused regressions). Browser Guard privacy_scan events carry only enums, entity-type counts, findings count and policy id; the strict server projection drops unknown fields and the events reuse tenant RLS, retention and offboarding. Legal retention, data-flow/DPA approval (COM-003), region, and live acceptance remain open.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti. Ingest now omits JWT/credential-shaped projected identifiers and rejects credential-shaped event IDs (10 focused regressions). Browser Guard privacy_scan events carry only enums, entity-type counts, findings count and policy id; the strict server projection drops unknown fields and the events reuse tenant RLS, retention and offboarding. Browser Guard can send with an ingest-only browser_guard key that no other endpoint accepts and that never receives the signed entitlement; the key is still visible to the local user through browser policy. Prompt protection and aidr privacy scan report kinds, counts and offsets only, never matched values. Legal retention, data-flow/DPA approval (COM-003), region, and live acceptance remain open.
 
 **Başlangıç durumu:** Redaksiyon ve tenant ayrımı bileşenleri var.
 
@@ -618,7 +618,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T38 — Kuruma özel DLP ve veri etiketleri (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Versioned CAS storage/history/audit/offboarding ve owner/admin+MFA publish sınırı uygulandı. İmzalı tenant DLP bundle'ı altı bağlayıcının hepsinde yükleniyor: block/ask kuralları aynı sonucu veriyor; güvenilmeyen anahtar, imza sonrası düzenleme veya zorunluyken eksik bundle her giriş noktasında değerlendirmeden önce engelliyor (connector-parity.test.ts). Redact satırının beklentisi input rewrite değişikliğinden önceki block davranışını taşıyor ve 2026-09-24 koşusunda başarısız (25/26). Core DLP AIDR Privacy TR/EN dedektörlerini (TCKN, IBAN mod-97, TR telefon, özel anahtar; adres/kişi/etiketli alan opt-in) ve eksik taramada fail-closed davranışı kullanıyor; local modda imzasız dlp-policy.json destekleniyor. Bundle'lar operatörün yerleştirdiği dosyalar: kontrol düzleminden güvenilir teslim/rotasyon işlemi ve müşteri label/false-positive kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Versioned CAS storage/history/audit/offboarding ve owner/admin+MFA publish sınırı uygulandı. İmzalı tenant DLP bundle'ı altı bağlayıcının hepsinde yükleniyor: block/ask kuralları aynı sonucu veriyor; güvenilmeyen anahtar, imza sonrası düzenleme veya zorunluyken eksik bundle her giriş noktasında değerlendirmeden önce engelliyor. Redact satırı artık rewrite yapan bağlayıcılarda (Claude Code, OpenCode) redakte girdinin çalışmasını, diğerlerinde blok bekliyor; 2026-09-25'te parity paketi 27/27 geçti. Redakte girdi shell açısından etkisiz REDACTED tokenları kullanıyor ve tehdit sezgilerinden yeniden geçiriliyor (yeni eşleşme dlp_redaction_unsafe ile deny). Core DLP AIDR Privacy TR/EN dedektörlerini (TCKN, IBAN mod-97, TR telefon, özel anahtar; adres/kişi/etiketli alan opt-in) ve eksik taramada fail-closed davranışı kullanıyor; local modda imzasız dlp-policy.json destekleniyor; `aidr privacy scan` aynı dedektörlerle dosya/stdin için yalnız tür/konum raporluyor. Bundle'lar operatörün yerleştirdiği dosyalar: kontrol düzleminden güvenilir teslim/rotasyon işlemi ve müşteri label/false-positive kabulü açık.
 
 **Başlangıç durumu:** PII/DLP detektörleri ve bazı çıktı kontrolleri var.
 
@@ -630,7 +630,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 **Sorumlu:** Detection + Customer Security. **Bağımlılık:** Etiket/kural sözlüğü ve maskelenmiş test verisi.
 
-**İlişkili özellikler:** DET-07, DET-13, DET-14. **Kaynak:** [packages/core/src/dlp/index.ts](packages/core/src/dlp/index.ts), [packages/core/src/pii-detector.ts](packages/core/src/pii-detector.ts).
+**İlişkili özellikler:** DET-07, DET-13, DET-14, CLI-05. **Kaynak:** [packages/core/src/dlp/index.ts](packages/core/src/dlp/index.ts), [packages/core/src/pii-detector.ts](packages/core/src/pii-detector.ts).
 
 ### T39 — Bağımsız etkinlik, performans ve rakip kıyaslaması (P1)
 
@@ -666,7 +666,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T41 — İlk müşteri satış ve satın alma değerlendirme paketi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İlk müşteri readiness gate'i NO-GO; v8 satış paketi tarihsel iç buyer-review taslağıdır ve kabul/teklif yetkisi vermez. Portable kit üreticisi mevcut olsa da temiz imzalı candidate, onaylı teklif ve satın alma kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İlk müşteri readiness gate'i NO-GO; v8 satış paketi tarihsel iç buyer-review taslağıdır ve kabul/teklif yetkisi vermez. TR/EN ürün özellik kılavuzu (docs/product/features, HTML/PDF render ve link/taşma kontrollü renderer) ile TR/EN broşür (docs/sales/brochure, sayısal iddiaları kaynaktan yeniden hesaplayan brochure-facts testi) eklendi; bunlar onaylı satış materyali değildir, iddia onayı CLM-001 ve fiyat onayı COM-001 açık. Portable kit üreticisi mevcut olsa da temiz imzalı candidate, onaylı teklif ve satın alma kabulü açık.
 
 **Başlangıç durumu:** Kontrollü demo, değerlendirme planı, ilk kurulum ve sipariş şablonları mevcut.
 
@@ -762,7 +762,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T47 — Tarayıcı gizlilik koruması (Browser Guard) ve AIDR Privacy saha kabulü (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yerel uygulama: content script gönderim yakalama, geri alınabilir placeholder vault, yanıt unmask, auto/confirm/block/monitor modları, CSV/TSV/JSON/.env dosya temizleme, exact-data HMAC eşleşmesi, yönetilen politika (RE2 uyumlu şema build sırasında denetleniyor), yalnız-sayım privacy_scan telemetrisi, /privacy-guard paneli ve release-browser-guard iş akışı (tekrarlanabilir zip + SHA256SUMS) mevcut. Birim testleri var; kayıtlı hermetik Chromium E2E koşusunda 19 senaryonun 18'i geçti, bu fixture kanıtıdır. Canlı site, mağaza/imzalı dağıtım, MDM rollout, native NER/OCR doğruluğu ve müşteri kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yerel uygulama: content script gönderim yakalama, geri alınabilir placeholder vault, yanıt unmask, auto/confirm/block/monitor modları, CSV/TSV/JSON/.env dosya temizleme, exact-data HMAC eşleşmesi, yönetilen politika (RE2 uyumlu şema build sırasında denetleniyor), yalnız-sayım privacy_scan telemetrisi, /privacy-guard paneli ve release-browser-guard iş akışı (tekrarlanabilir zip + SHA256SUMS) mevcut. Güvenlik incelemesi düzeltmeleri: geri açılan değerler kapalı shadow root içinde CSS generated content olarak, miras sıfırlanmış, generic font ve sabit genişlikle çiziliyor (sayfa fontu/CSS/window.find/seçim göremiyor) ve bir placeholder yalnız bu sekmeden onu taşıyan gönderimden sonra eklenen içerikte açılıyor; UTF-8 olmayan metin dosyaları windows-1254/1252 olarak çözülüp taranıyor, NUL baytı blokluyor; her yönetilen politika koruma azaltan kullanıcı ayarlarını (allowUserOverrides yoksa) kilitliyor; blocked.html web-accessible değil; telemetri ingest-only browser_guard anahtarıyla gönderilebiliyor. Native host NER taramaya bağlandı (nativeMessaging izni kullanıcı jestiyle isteniyor, host yoksa görünür şekilde yalnız kurallara düşüyor), vault sekme/origin başına storage.session'da yeniden yüklemeden sonra korunuyor, disabledSites izleme (monitor) semantiğinde. Kayıtlı hermetik Chromium E2E koşusunda 22 senaryonun 21'i geçti, 1'i kasıtlı olarak atlandı; bu fixture kanıtıdır. Canlı site, mağaza/imzalı dağıtım, MDM rollout, native NER/OCR doğruluğu ve müşteri kabulü açık.
 
 **Başlangıç durumu:** Browser Guard uzantısı, sekiz AI sitesi adaptörü, geri alınabilir maskeleme, dosya/yapıştırma koruması, exact-data eşleşmesi, yönetilen politika ve yalnız-sayım telemetrisiyle eklendi; doğrulama hermetik Chromium fixture'larıyla yapılıyor.
 
@@ -936,7 +936,7 @@ Aşağıdakiler mevcut ticari registry'nin açık kayıtlarıdır. Doküman şab
 
 **Sorumlu:** Product/Marketing + Commercial + Legal. **Kontrol:** node docs/scripts/claim-check.mjs --mode=gate.
 
-## 88 alt özelliğin eksik/kabul işleriyle eşlemesi
+## 90 alt özelliğin eksik/kabul işleriyle eşlemesi
 
 Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir. Her özellik en az bir açık kabul işine bağlandı. Ayrıntılı kaynak ve mevcut davranış [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json) içindedir.
 
@@ -984,6 +984,7 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | CLI-02 | Typed and redacted configuration | wired | T16 |
 | CLI-03 | Claude local installer | wired | T17 |
 | CLI-04 | Enterprise fleet rollout | partial | T17 |
+| CLI-05 | Local TR/EN privacy scan | wired | T38 |
 | CON-01 | Claude Code | wired | T01, T04 |
 | CON-02 | Cursor and VS Code | wired | T01, T04 |
 | CON-03 | OpenClaw | wired | T01, T04 |
@@ -1012,7 +1013,7 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | BIL-04 | Plan catalog, pricing and Stripe plan admission | partial | T33 |
 | DEP-01 | Self-hosted preparation | wired | T28, T32, T45 |
 | DEP-02 | Cloud preparation | partial | T28, T32, T45 |
-| DEP-03 | Atomic migration runner | wired | T31 |
+| DEP-03 | Atomic migration runner and signal-safe upgrade | wired | T31 |
 | DEP-04 | Installation smoke evidence | wired | T31 |
 | DEP-05 | Authenticated signed release delivery | partial | T29, T34, T40 |
 | DEP-06 | Backup, restore and disaster recovery | partial | T27 |
@@ -1021,6 +1022,7 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | DEP-09 | On-prem bundle, resource profiles, AIG sidecar and egress proxy | partial | T28, T29 |
 | DEP-10 | Vendor-signed offline licence and offline pack import | partial | T29 |
 | DEP-11 | Download center and release manifest | partial | T29 |
+| DEP-12 | Kubernetes Helm chart for the self-hosted control plane | partial | T28, T29 |
 | EVAL-01 | Independent attack and benign benchmarks | partial | T35, T39 |
 | EVAL-02 | Legal, privacy, residency and support | external | T34, T39, T41 |
 | EVAL-03 | Customer proof of value | external | T34, T39, T41 |
