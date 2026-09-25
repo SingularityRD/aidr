@@ -138,6 +138,10 @@ verify_jwt = true
 # Workspace rename, retention and closure. The handler repeats session, identity
 # barrier, membership/role and AAL2 checks, and the RPCs re-check under locks.
 verify_jwt = true
+[functions.compliance-report]
+# Compliance evidence report. The handler repeats session, identity barrier,
+# owner/admin role, AAL2 and a tenant rate limit; the SQL re-checks under locks.
+verify_jwt = true
 [functions.oauth-callback]
 verify_jwt = true
 [functions.audit-export]

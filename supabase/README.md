@@ -85,6 +85,11 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
   - Base64 of the Ed25519 private key (PKCS8 PEM bytes).
 - `AIDR_PACK_MASTER_KEY_B64`
   - Base64 of a 32-byte master key used to derive per-tenant AES-256-GCM pack keys (HKDF-SHA256).
+- `AIDR_COMPLIANCE_SIGNING_KEY_ID` and `AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64` (optional pair)
+  - Ed25519 key that signs compliance evidence reports (`compliance-report`), same format as the
+    entitlement key. Use a dedicated key. Unset: reports carry a SHA-256 only. Setting only one of
+    the two is refused as a misconfiguration. Publish the public key to auditors so
+    `aidr compliance verify --public-key` can pin the issuer (see `docs/compliance-report.md`).
 - `AIDR_REVOCATION_SIGNING_KEY_ID`
 - `AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64`
 - `AIDR_REVOCATION_EPOCH` (default `1`)

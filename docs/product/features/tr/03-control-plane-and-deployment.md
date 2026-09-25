@@ -51,6 +51,7 @@ Compose veya Kubernetes kurulumu ve air-gapped (internetten yalıtılmış) kuru
    - [Operatör yönetimi (operator-admin)](#operatör-yönetimi-operator-admin)
 7. [Telemetri ve telemetrinin gizliliği](#7-telemetri-ve-telemetrinin-gizliliği)
 8. [Denetim dışa aktarımı ve SIEM teslimatı](#8-denetim-dışa-aktarımı-ve-siem-teslimatı)
+   - [Uyum kanıt raporu](#uyum-kanıt-raporu)
 9. [Saklama, yasal saklama ve offboarding](#9-saklama-yasal-saklama-ve-offboarding)
 10. [Yedekleme ve geri yükleme tatbikatları](#10-yedekleme-ve-geri-yükleme-tatbikatları)
 11. [Sistem gözlemi ve alarmlar](#11-sistem-gözlemi-ve-alarmlar)
@@ -134,6 +135,7 @@ belirli bir hareketsizlik süresinden sonra tarayıcıda sonlanır. Rotalar
 | `/team` | Team | Üyeler, roller, davetler, ekip denetimi ve dışa aktarım | [Ekip](#ekip-roller-ve-davetler) |
 | `/scim` | Directory provisioning (yalnızca sahipler) | SCIM kimlik bilgileri ve grup-rol eşlemeleri | [SCIM](#scim-dizin-senkronizasyonu) |
 | `/policies` | Policies (politika düzenleyebilen roller) | Ekip politikası, çalışma zamanı politikası, dağıtım, DLP düzenleyicisi | [Politikalar](#ekip-politikası-ve-çalışma-zamanı-politikası) |
+| `/compliance` | Compliance (sahipler ve yöneticiler) | Uyum kanıt raporu (özetle mühürlü, isteğe bağlı imzalı): JSON, CSV paketi, yazdırılabilir TR/EN | [Uyum kanıt raporu](#uyum-kanıt-raporu) |
 | `/enterprise` | yok (davet bağlantısında) | Davet kabulü | [Ekip](#ekip-roller-ve-davetler) |
 | `/auth/dlp-step-up` | yok | DLP ve çalışma alanı değişikliklerinden önce MFA doğrulaması | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
 | `/auth/recover` | yok | Parola kurtarma ve acil durum (break-glass) kurtarma kodları | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
@@ -1282,6 +1284,59 @@ dönüşür. Bir çökmeden sonraki yeniden deneme yinelenen bir kayıt üretir;
 doğrulamayı zorunlu tutmaz; kimlik doğrulamasız bir webhook'u internetten erişilebilen bir
 alıcıya yönlendirmeyin. mTLS veya istek imzalama yoktur. "Delivered" durumu, alıcı tarafta
 indekslendiğini veya alarm üretildiğini kanıtlamaz.
+
+### Uyum kanıt raporu
+
+**Ne yapar.** Sahipler (owner) ve yöneticiler (admin), seçtikleri bir dönem (en fazla 366
+gün) için tenant kapsamlı bir JSON raporunu **Compliance** (`/compliance`) sayfasından
+veya `compliance-report` API'sinden üretir. Rapor, güvenlik ve KVKK/DPO ekiplerinden
+genellikle istenen kanıtları bir araya getirir: tenant profili ve saklama ayarları,
+çalışma ortamına göre koruma kapsamı, Browser Guard'ın veri türü, AI sitesi ve güne göre
+maskelediği/uyardığı/engellediği sayılar, ajan DLP kararları, politika sürümleri ve
+özetleri, sahip/yönetici listesiyle birlikte MFA/SSO/SCIM durumu, olaylar, AI güvenlik
+duruşu (CVE önem dereceleri, MCP riskleri), veri akışı ve alt işleyen envanteri ile
+saklama, yasal saklama, offboarding ve dışa aktarım temizliği kanıtları.
+
+**Neden önemli.** KVKK ve GDPR kapsamındaki hesap verebilirlik çalışmaları her dönem aynı
+olguları ister. Rapor bu çalışmayı doğrulanabilir tek bir belgeyle desteklemek üzere
+tasarlanmıştır. Bir sertifika değildir ve kimsenin mevzuata uyumlu olduğunu beyan etmez.
+
+**Nasıl çalışır.** Yalnızca service role'ün çalıştırabildiği bir SQL fonksiyonu sayıları,
+sabit değer kümelerini, tanımlayıcıları, zaman damgalarını ve SHA-256 özetlerini toplar;
+Edge Function sonucu bildirimsel bir şemadan geçirir, şemada olmayan her alanı atar ve
+bozuk kanıtı reddeder. Rapor kanonik JSON'unun SHA-256 değerini ve kurulumda bir uyum
+imzalama anahtarı varsa Ed25519 imzasını taşır. Üretilen her rapor, döndürülmeden önce
+yönetici denetim günlüğüne (`compliance_report.generated`) yazılır. Üretim AAL2 oturumu
+gerektirir, kimlik bariyerinden geçer, hız sınırına tabidir (kullanıcı başına dakikada 3)
+ve her adımda hata durumunda reddeder (fail-closed).
+
+**Nasıl kullanılır.** **Compliance** sayfasını açın, bir dönem seçin ve **Generate report**
+düğmesine basın. Ardından JSON'u (yetkili belge), her bölüm tablosu için bir CSV içeren
+ZIP paketini veya Türkçe ya da İngilizce yazdırılabilir raporu (**Print / save as PDF**)
+indirin. Denetçiler JSON'u çevrimdışı doğrular:
+
+```bash
+aidr compliance verify rapor.json --public-key yayinci.pem --require-signature
+```
+
+**Örnek.** Bir veri koruma sorumlusu son 90 günün raporunu üretir, PDF'i üç aylık erişim
+gözden geçirmesine ekler ve denetçiye JSON'u ve işletmecinin açık anahtarını verir.
+Denetçinin `aidr compliance verify` komutu `VERIFIED` yazar; tek bir sayının
+değiştirilmesi komutun 2 koduyla çıkmasına yol açar.
+
+**Kapsam.**
+
+| Plan | Dağıtım | Platform / işletim sistemi |
+| --- | --- | --- |
+| Tüm planlar (konsol) | Bulut, On-prem, Air-gapped (on-prem'de imzalama anahtarı elle ayarlanır) | Web konsolu; doğrulama için Linux, macOS ve Windows'ta `aidr` CLI |
+
+**Sınırlamalar.** Sayılar yalnızca kontrol düzlemine ulaşmış ve hâlâ saklama süresi içinde
+olan telemetriyi kapsar. Politika gövdeleri, istem metinleri ve yasal saklama gerekçeleri
+bilinçli olarak dışarıda bırakılır. Veri akışı matrisi, açık `unknown` değerleri olan
+ürün mühendislik envanteridir. CSV ve yazdırılabilir sürümler türetilmiştir ve imzasızdır.
+İmzalama anahtarı yoksa rapor yalnızca özetle mühürlenir. Her bölümün neyi kanıtlayıp neyi
+kanıtlamadığı için [docs/compliance-report.md](../../../compliance-report.md) belgesine
+bakın.
 
 ---
 

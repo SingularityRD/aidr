@@ -149,6 +149,14 @@ offboarding, and an on-prem option for data residency. Using AIDR does not by it
 an organisation compliant. A DPA, subprocessor list and regional hosting terms are part
 of the open commercial gates (COM-002, COM-003, COM-011).
 
+Owners and admins can generate a **compliance evidence report** for up to 366 days from
+the dashboard (**Compliance**): coverage, counts-only data-protection activity, policy
+versions and digests, access and identity, incidents, AI security posture, the data-flow
+inventory and retention/deletion evidence, sealed with a SHA-256 and optionally an
+Ed25519 signature that `aidr compliance verify` checks offline. It is evidence for your
+DPO and auditors, not a certification. See [compliance-report.md](../compliance-report.md)
+for what each section proves and what it does not.
+
 ## Certifications and assessments
 
 **None.** AIDR has no SOC 2 report, no ISO 27001 certification and no completed
@@ -165,5 +173,6 @@ prerequisite (FCR-06/08) and is not yet in place.
 ## Related
 
 - [Privacy and telemetry data flow](../privacy.md)
+- [Compliance evidence report](../compliance-report.md)
 - [Product overview](../product/overview.md)
 - [SaaS deployment](../deployment/saas.md) · [On-prem deployment](../deployment/onprem.md)

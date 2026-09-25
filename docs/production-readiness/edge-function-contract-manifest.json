@@ -32,6 +32,10 @@
       "owner": "Billing Engineering",
       "tests": ["supabase/functions/__tests__/billing-portal.test.ts"]
     },
+    "compliance-report": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/compliance-report-contract.test.ts"]
+    },
     "device-poll": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/device-poll-retry.test.ts", "supabase/functions/__tests__/security-flow.test.ts"]

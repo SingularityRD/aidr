@@ -68,6 +68,7 @@ const protectedRoutes = [
 	"/scim",
 	"/policies",
 	"/privacy-guard",
+	"/compliance",
 ];
 const routes = [...publicRoutes, ...protectedRoutes, ...legacyRoutes];
 

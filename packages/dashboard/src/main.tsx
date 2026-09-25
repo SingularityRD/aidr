@@ -201,6 +201,13 @@ const router = createBrowserRouter([
 		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/PrivacyGuardPage")).PrivacyGuardPage }) }],
 	},
 	{
+		path: "/compliance",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/CompliancePage")).CompliancePage }) }],
+	},
+	{
 		path: "/policies",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
