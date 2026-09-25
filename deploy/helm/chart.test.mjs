@@ -199,6 +199,36 @@ test("rendered production values use the external database and backups", { skip:
 	assert.equal(ingress.metadata.annotations["cert-manager.io/cluster-issuer"], "letsencrypt-prod");
 });
 
+test("the notification dispatcher CronJob is opt-in, token-authenticated and never sees the service-role key", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.equal(values.notifications.dispatcher.enabled, false, "upgrades with an older functions Secret must not start failing jobs");
+	assert.equal(values.notifications.dispatcher.schedule, "* * * * *");
+	const template = readFileSync(join(chartDir, "templates", "notification-dispatch-cronjob.yaml"), "utf8");
+	assert.match(template, /^\{\{- if \.Values\.notifications\.dispatcher\.enabled \}\}/);
+	assert.match(template, /concurrencyPolicy: Forbid/);
+	assert.match(template, /secretKeyRef:\s+name: \{\{ include "aidr\.functionsSecretName" \. \}\}\s+key: AIDR_NOTIFICATION_DISPATCH_TOKEN/);
+	assert.match(template, /http:\/\/%s:9000\/notification-dispatch/);
+	assert.doesNotMatch(template, /service-role-key|SERVICE_ROLE/);
+	assert.doesNotMatch(template, /\$\{?AIDR_NOTIFICATION_DISPATCH_TOKEN/, "the token is read from the environment, never interpolated into argv");
+	const policies = readFileSync(join(chartDir, "templates", "networkpolicy.yaml"), "utf8");
+	assert.match(policies, /component" "notification-dispatch"\) \| nindent 8 \}\}[\s\S]*?port: 9000/);
+});
+
+test("rendered prod values add the notification dispatcher with its own network allow-list", { skip: helmSkip }, () => {
+	const docs = renderDocs("prod");
+	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-notification-dispatch"));
+	assert.ok(cron, "notification-dispatch CronJob");
+	const container = cron.spec.jobTemplate.spec.template.spec.containers[0];
+	const token = container.env.find((entry) => entry.name === "AIDR_NOTIFICATION_DISPATCH_TOKEN");
+	assert.deepEqual(token.valueFrom.secretKeyRef, { name: "aidr-functions", key: "AIDR_NOTIFICATION_DISPATCH_TOKEN" });
+	assert.ok(!JSON.stringify(container.command).includes(token.valueFrom.secretKeyRef.key.toLowerCase()));
+	const policy = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name.endsWith("-notification-dispatch"));
+	assert.equal(policy.spec.egress[0].ports[0].port, 9000);
+	const functions = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name.endsWith("-functions"));
+	assert.ok(JSON.stringify(functions.spec.ingress).includes("notification-dispatch"));
+	assert.ok(!renderDocs("default").some((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-notification-dispatch")));
+});
+
 test("rendered aig values add the scanning stack with an egress-proxied agent", { skip: helmSkip }, () => {
 	const docs = renderDocs("aig");
 	for (const component of ["aig-server", "aig-agent", "aig-bridge"]) {

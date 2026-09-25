@@ -1,0 +1,78 @@
+{{- if .Values.notifications.dispatcher.enabled }}
+{{- $component := "notification-dispatch" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.notifications.dispatcher -}}
+{{- $functions := include "aidr.component" (dict "root" . "component" "functions") -}}
+# Drains the alert notification outbox: once per schedule tick it calls the
+# in-cluster functions Service with the dedicated dispatcher token (never the
+# service-role key). The token is read from the environment, so it never
+# appears in the process arguments. Delivery itself (Slack, Teams, signed
+# webhooks, e-mail) leaves from the functions pods: allow those receivers, or
+# an egress proxy, in networkPolicy.functionsEgressCIDRs.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  schedule: {{ $values.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 110
+      template:
+        metadata:
+          labels:
+            {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          {{- include "aidr.podCommon" (dict "root" . "values" (dict)) | nindent 10 }}
+          {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser "fsGroup" $values.runAsUser) | nindent 10 }}
+          containers:
+            - name: dispatch
+              image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "notifications.dispatcher.image" "defaultTag" true) }}
+              imagePullPolicy: {{ $values.image.pullPolicy }}
+              command:
+                - node
+                - -e
+                - |
+                  const token = process.env.AIDR_NOTIFICATION_DISPATCH_TOKEN ?? "";
+                  if (token.length < 32) {
+                    console.error("AIDR_NOTIFICATION_DISPATCH_TOKEN is missing or shorter than 32 characters");
+                    process.exit(1);
+                  }
+                  fetch(process.env.AIDR_DISPATCH_URL, {
+                    method: "POST",
+                    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+                    body: "{}",
+                    redirect: "error",
+                    signal: AbortSignal.timeout(90000),
+                  }).then(async (response) => {
+                    const body = await response.json().catch(() => null);
+                    if (!response.ok || !body || body.ok !== true) {
+                      const code = body && typeof body.error === "string" ? ", " + body.error : "";
+                      console.error("notification dispatch failed (HTTP " + response.status + code + ")");
+                      process.exit(1);
+                    }
+                    const { claimed, delivered, retrying, dead, lease_lost, pruned } = body;
+                    console.log(JSON.stringify({ claimed, delivered, retrying, dead, lease_lost, pruned }));
+                  }).catch(() => {
+                    console.error("notification dispatch unreachable");
+                    process.exit(1);
+                  });
+              {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 14 }}
+              env:
+                - name: AIDR_DISPATCH_URL
+                  value: {{ printf "http://%s:9000/notification-dispatch" $functions | quote }}
+                - name: AIDR_NOTIFICATION_DISPATCH_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "aidr.functionsSecretName" . }}
+                      key: AIDR_NOTIFICATION_DISPATCH_TOKEN
+              {{- include "aidr.resources" (dict "root" . "component" "notificationDispatch" "override" $values.resources) | nindent 14 }}
+{{- end }}

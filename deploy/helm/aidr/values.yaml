@@ -35,7 +35,8 @@ secrets:
   # REQUIRED. Name of a Secret whose keys are exported verbatim into the edge
   # functions runtime (AIDR_ENTITLEMENT_SIGNING_*, AIDR_REVOCATION_SIGNING_*,
   # AIDR_DELEGATION_SIGNING_*, AIDR_PACK_MASTER_KEY_B64,
-  # AIDR_PACK_DOWNLOAD_GRANT_SECRET, AIDR_DEVICE_START_INGRESS_SECRET).
+  # AIDR_PACK_DOWNLOAD_GRANT_SECRET, AIDR_DEVICE_START_INGRESS_SECRET,
+  # AIDR_NOTIFICATION_ENCRYPTION_KEYS, AIDR_NOTIFICATION_DISPATCH_TOKEN).
   functionsExistingSecret: ""
 
 serviceAccount:
@@ -326,6 +327,30 @@ backup:
     size: 50Gi
     accessModes: ["ReadWriteOnce"]
     existingClaim: ""
+
+# ---------------------------------------------------------------------------
+# Alert notifications (Settings -> Notifications; docs/control-plane.md)
+# ---------------------------------------------------------------------------
+# Channels are encrypted with AIDR_NOTIFICATION_ENCRYPTION_KEYS and the
+# dispatcher authenticates with AIDR_NOTIFICATION_DISPATCH_TOKEN; both keys
+# must exist in secrets.functionsExistingSecret (generate-secrets.mjs writes
+# them). Deliveries leave from the functions pods: allow Slack, Teams, your
+# webhook receivers and mail provider (or an egress proxy) in
+# networkPolicy.functionsEgressCIDRs.
+notifications:
+  dispatcher:
+    # Off by default so an upgrade whose functions Secret predates alert
+    # integrations does not start failing jobs. Enable after adding the keys.
+    enabled: false
+    schedule: "* * * * *"
+    image:
+      registry: ""
+      repository: aidr/dashboard   # ships Node.js; runs a one-shot fetch
+      tag: ""
+      digest: ""
+      pullPolicy: IfNotPresent
+    resources: {}
+    runAsUser: 1000
 
 # ---------------------------------------------------------------------------
 # Ingress

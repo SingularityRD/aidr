@@ -138,6 +138,14 @@ verify_jwt = true
 # Workspace rename, retention and closure. The handler repeats session, identity
 # barrier, membership/role and AAL2 checks, and the RPCs re-check under locks.
 verify_jwt = true
+[functions.notification-channels]
+# Tenant alert channels (Settings -> Notifications). The handler repeats session,
+# identity barrier, owner/admin and AAL2 checks; destinations are write-only.
+verify_jwt = true
+[functions.notification-dispatch]
+# Outbox dispatcher, invoked by the deployment scheduler with the dedicated
+# AIDR_NOTIFICATION_DISPATCH_TOKEN bearer (not a JWT); never browser-facing.
+verify_jwt = false
 [functions.oauth-callback]
 verify_jwt = true
 [functions.audit-export]
