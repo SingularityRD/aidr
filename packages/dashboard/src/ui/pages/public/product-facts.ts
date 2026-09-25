@@ -5,7 +5,7 @@
  * leaving stale marketing copy.
  */
 
-import { LIST_PRICE_NOTICE, PLAN_CATALOG, type PlanDefinition } from "../../../billing/plans";
+import { PLAN_CATALOG, type PlanDefinition, QUOTE_NOTICE } from "../../../billing/plans";
 
 /** `- id:` entries across `threats/*.yaml`. */
 export const SHIPPED_THREAT_RULES = 494;
@@ -54,11 +54,12 @@ export const BROWSER_GUARD_SITES = [
 export const BROWSER_GUARD_BROWSERS = ["Chrome", "Edge", "Firefox"] as const;
 
 /**
- * Plans and list prices are not restated here: the single source is the
+ * Editions are not restated here: the single source is the price-free
  * `public.plans` mirror in `src/billing/plans.ts`, which
- * `plan-catalog-drift.test.ts` binds to the migration seed.
+ * `plan-catalog-drift.test.ts` binds to the migration seed. Prices are never
+ * published; every paid edition is quoted.
  */
-export const LIST_PRICE_NOTE = LIST_PRICE_NOTICE;
+export const QUOTE_NOTE = QUOTE_NOTICE;
 
 /** Active catalog plans in display order. */
 export const PUBLIC_PLANS: readonly PlanDefinition[] = PLAN_CATALOG.filter(

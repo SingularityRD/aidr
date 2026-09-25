@@ -36,3 +36,17 @@ export function getSalesContactHref(): string | null {
 	const salesEmail = import.meta.env.VITE_SALES_EMAIL?.trim();
 	return salesEmail ? safeCommercialLink(`mailto:${salesEmail}`, true) : null;
 }
+
+/**
+ * Product-owner decision: prices are not published anywhere customer-facing.
+ * Every paid edition is quoted; this address is the fixed quote channel.
+ */
+export const QUOTE_CONTACT_EMAIL = "anil@singularityrd.com";
+
+/** mailto: link for a quote request, optionally naming the edition. */
+export function quoteRequestHref(edition?: string): string {
+	const subject = edition
+		? `Singularity AIDR ${edition} quote request`
+		: "Singularity AIDR quote request";
+	return `mailto:${QUOTE_CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}`;
+}

@@ -227,5 +227,6 @@ Read from the appendix of the [one-pager](one-pager.md):
 > machines and a test browser profile: we agree the connectors, sites, data types and
 > success criteria in writing first."
 
-Do not quote prices beyond the [list prices](pricing.md) (subject to COM-001 approval).
+Do not quote a price in the demo. Prices are not published; offer a written quote through
+anil@singularityrd.com (see [pricing.md](pricing.md), internal).
 Do not promise dates.

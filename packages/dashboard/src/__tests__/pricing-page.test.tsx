@@ -15,16 +15,19 @@ vi.mock("../billing/commercial", async (importOriginal) => {
 	};
 });
 
-import { headlinePrice, PLAN_CATALOG, priceTerms } from "../billing/plans";
+import { PLAN_CATALOG } from "../billing/plans";
 import { PricingPage } from "../ui/pages/public/PricingPage";
+import { CURRENCY_OR_PRICE } from "./helpers/public-price-patterns";
+
+const QUOTE_EMAIL = "anil@singularityrd.com";
 
 afterEach(() => {
 	cleanup();
 	commercial.selfService = false;
 });
 
-function renderPricing() {
-	render(
+function renderEditions() {
+	return render(
 		<MemoryRouter>
 			<PricingPage />
 		</MemoryRouter>,
@@ -37,42 +40,63 @@ function planSection(name: string): HTMLElement {
 	return section;
 }
 
-describe("public pricing page", () => {
-	it("renders every active catalog plan with its list price and terms", () => {
-		renderPricing();
+describe("public editions page (/pricing)", () => {
+	it("is titled Editions and compares every catalog edition without a price", () => {
+		const { container } = renderEditions();
+		expect(screen.getByRole("heading", { level: 1, name: "Editions" })).toBeInTheDocument();
+		expect(screen.getByText("Paketler")).toBeInTheDocument();
 		for (const plan of PLAN_CATALOG) {
-			const section = within(planSection(plan.displayName));
-			expect(section.getByText(headlinePrice(plan))).toBeInTheDocument();
-			expect(section.getByText(priceTerms(plan))).toBeInTheDocument();
+			expect(planSection(plan.displayName)).toBeInTheDocument();
 		}
 		const team = within(planSection("Team"));
-		expect(team.getByText("$24")).toBeInTheDocument();
-		expect(team.getByText(/\$20 per developer \/ month billed annually/)).toBeInTheDocument();
+		expect(team.getByText("Quote-based")).toBeInTheDocument();
 		expect(team.getByText("Minimum 3 developers")).toBeInTheDocument();
 		expect(team.getByText("Browser Privacy Guard")).toBeInTheDocument();
 		expect(team.getByText("90-day event retention")).toBeInTheDocument();
 		const business = within(planSection("Business"));
-		expect(business.getByText("$45")).toBeInTheDocument();
 		expect(business.getByText("Minimum 25 developers")).toBeInTheDocument();
 		expect(business.getByText("Cloud or On-premises deployment")).toBeInTheDocument();
 		expect(business.getByText("SIEM export")).toBeInTheDocument();
 		const enterprise = within(planSection("Enterprise"));
-		expect(enterprise.getByText("Custom")).toBeInTheDocument();
 		expect(enterprise.getByText("On-premises or Air-gapped deployment")).toBeInTheDocument();
 		expect(enterprise.getByText("Dedicated support")).toBeInTheDocument();
 		const free = within(planSection("Free"));
-		expect(free.getByText("$0")).toBeInTheDocument();
 		expect(free.getByText("1 protected agent")).toBeInTheDocument();
 		expect(free.getByText("7-day event retention")).toBeInTheDocument();
+		expect(container.textContent ?? "").not.toMatch(CURRENCY_OR_PRICE);
+		expect(container.querySelector(".price")).toBeNull();
 	});
 
-	it("labels the prices as list prices pending COM-001", () => {
-		renderPricing();
-		expect(screen.getByRole("note")).toHaveTextContent("List prices, subject to COM-001 approval.");
+	it("states that prices are not published and offers the quote contact", () => {
+		renderEditions();
+		const note = screen.getByRole("note");
+		expect(note).toHaveTextContent("Prices are not published.");
+		expect(note).not.toHaveTextContent(/list price|COM-001/i);
+		expect(within(note).getByRole("link", { name: QUOTE_EMAIL })).toHaveAttribute(
+			"href",
+			expect.stringMatching(new RegExp(`^mailto:${QUOTE_EMAIL}\\?`)),
+		);
+		expect(screen.getByText("Teklif alın")).toBeInTheDocument();
 	});
 
-	it("routes every paid plan to scope review while online checkout is off (invoice mode)", () => {
-		renderPricing();
+	it("gives every paid edition a Contact sales CTA to anil@singularityrd.com", () => {
+		renderEditions();
+		for (const name of ["Team", "Business", "Enterprise"]) {
+			const cta = within(planSection(name)).getByRole("link", {
+				name: `Contact sales about ${name}`,
+			});
+			expect(cta).toHaveTextContent("Contact sales");
+			expect(cta.getAttribute("href")).toBe(
+				`mailto:${QUOTE_EMAIL}?subject=${encodeURIComponent(`Singularity AIDR ${name} quote request`)}`,
+			);
+		}
+		expect(
+			within(planSection("Free")).queryByRole("link", { name: /Contact sales/ }),
+		).not.toBeInTheDocument();
+	});
+
+	it("routes every paid edition to scope review while online checkout is off (invoice mode)", () => {
+		renderEditions();
 		expect(screen.getByText(/self-service checkout is not offered/)).toBeInTheDocument();
 		expect(
 			within(planSection("Free")).getByRole("link", { name: "Start with Free" }),
@@ -88,21 +112,24 @@ describe("public pricing page", () => {
 		expect(screen.queryByRole("link", { name: "Choose Team" })).not.toBeInTheDocument();
 	});
 
-	it("routes self-serve plans to sign-in and sales-assisted plans to scope review", () => {
+	it("routes self-serve editions to sign-in and keeps the quote CTA, still without prices", () => {
 		commercial.selfService = true;
-		renderPricing();
+		const { container } = renderEditions();
 		expect(
 			within(planSection("Free")).getByRole("link", { name: "Start with Free" }),
 		).toHaveAttribute("href", "/login?returnTo=%2Fonboarding");
-		expect(within(planSection("Team")).getByRole("link", { name: "Choose Team" })).toHaveAttribute(
+		const team = within(planSection("Team"));
+		expect(team.getByRole("link", { name: "Choose Team" })).toHaveAttribute(
 			"href",
 			"/login?returnTo=%2Fbilling",
 		);
-		expect(within(planSection("Team")).getByText("Self-serve")).toBeInTheDocument();
+		expect(team.getByRole("link", { name: "Contact sales about Team" })).toBeInTheDocument();
+		expect(team.getByText("Self-serve")).toBeInTheDocument();
 		for (const name of ["Business", "Enterprise"]) {
 			expect(
 				within(planSection(name)).getByRole("link", { name: "Request scope review" }),
 			).toHaveAttribute("href", "/pilot");
 		}
+		expect(container.textContent ?? "").not.toMatch(CURRENCY_OR_PRICE);
 	});
 });
