@@ -8,11 +8,17 @@ The control plane is the managed layer for:
 - Incidents view derived from telemetry events (see `docs/incidents.md`)
 - Agent-seat licensing (1 free agent, paid per additional agent)
 
-For commercial builds, Singularity AIDR is **managed-first**: enrollment is required before protection is activated.
+Enforcement is **local by default**. `ConfigSchema.mode` defaults to `"local"`, so a fresh
+install evaluates every tool call on the device with no account or network access. The
+control plane is an opt-in `managed` layer: enrollment adds central policy, inventory,
+telemetry and licensing, but it is never a precondition for detection. An un-enrolled or
+unreachable managed install disables only the managed features and keeps enforcing locally.
 
-## Enrollment (recommended)
+## Enrollment (managed mode)
 
-The primary onboarding flow is **device authorization**:
+To join an installation to the control plane, the primary flow is **device authorization**.
+Local enforcement is already active before these steps and stays active if they are never
+completed:
 
 1. Install the connector (Claude Code / Cursor / VS Code / OpenClaw / OpenCode).
 2. Start the agent once.
@@ -38,7 +44,22 @@ For advanced or support scenarios, you can still use API keys:
 Enforcement is intended to be **server-side**:
 
 - If the control plane sees a new `iid` over the entitlement limit, it should reject ingest (`402`/`403`) and optionally return a machine-readable error.
-- The client should keep running local protections and simply disable cloud-only features (fail-open).
+- The client keeps enforcing locally and disables only the managed features (telemetry upload,
+  central policy, dashboard visibility) for that installation. Losing the control plane is
+  never a reason to allow a tool call.
+
+Failure handling is per layer, not a blanket "fail-open":
+
+- **Managed features** degrade when the control plane is unavailable, over the seat limit or not
+  enrolled; local detection and enforcement continue unchanged. A signed managed policy
+  bundle that is installed but cannot be verified blocks tool calls rather than being
+  silently dropped.
+- **Connector entry points** (Claude Code, Cursor / VS Code, OpenClaw, OpenCode, Codex) fail
+  **closed**: an internal error produces a deny or block, not a silent allow.
+- **Detection internals** (an erroring rule, an optional reputation lookup, a cache or policy
+  load) skip that signal and log it; a skipped signal is never reported as a clean result.
+- **Security controls** on the control plane (authentication, tenant isolation, rate limits,
+  webhook signatures, approvals) fail closed.
 
 ## Browser Privacy Guard (browser installs)
 
