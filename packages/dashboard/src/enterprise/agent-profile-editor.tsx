@@ -21,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export interface StagedProfiles {
+interface StagedProfiles {
 	version: number;
 	policy: Record<string, unknown> | null;
 	sha256: string | null;

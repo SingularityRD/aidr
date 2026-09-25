@@ -136,9 +136,9 @@ const NATIVE_NER_TYPES: readonly EntityType[] = Object.freeze(["PERSON", "ADDRES
  */
 export const NATIVE_REPLY_TIMEOUT_MS = 2_500;
 /** How long an image OCR waits: the worker's bridge gives up after 60 s, plus messaging slack. */
-export const NATIVE_IMAGE_REPLY_TIMEOUT_MS = 65_000;
+const NATIVE_IMAGE_REPLY_TIMEOUT_MS = 65_000;
 /** Largest image sent for OCR (the host's `image-scan` limit). */
-export const NATIVE_IMAGE_MAX_BYTES = 8_388_608;
+const NATIVE_IMAGE_MAX_BYTES = 8_388_608;
 const INSPECTION_RESULTS: readonly ImageInspection["result"][] = [
 	"clean",
 	"sensitive",

@@ -5,6 +5,7 @@
  * Each block reproduces a confirmed bypass and pins the fixed outcome.
  */
 
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -416,11 +417,14 @@ describe("trusted model sources", () => {
 });
 
 describe("AI-BOM launch redaction", () => {
+	// Opaque per-run value: the test only needs it to be absent after redaction, and a
+	// committed credential-shaped literal would trip the secret scan.
+	const opaque = randomBytes(8).toString("hex");
 	it.each([
 		[["--pass", "hunter2hunter2"], "hunter2hunter2"],
 		[["--db-pass", "S3cr3tPassw0rd!"], "S3cr3tPassw0rd!"],
-		[['{"apiKey":"abcd1234efgh5678"}'], "abcd1234efgh5678"],
-		[["--config", "{'token': 'abcd1234efgh5678'}"], "abcd1234efgh5678"],
+		[[`{"apiKey":"${opaque}"}`], opaque],
+		[["--config", `{'token': '${opaque}'}`], opaque],
 		[["--api-key", "-leading-dash-secret-1234"], "-leading-dash-secret-1234"],
 	])("redacts %j", (args, secret) => {
 		const redacted = redactMcpLaunch("npx", args).args;

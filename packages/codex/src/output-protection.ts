@@ -52,7 +52,7 @@ const MAX_DEPTH = 32;
 const BINARY_BLOCK_TYPES = new Set(["image", "audio", "blob"]);
 
 /** PostToolUse output (`post-tool-use.command.output.schema.json`). */
-export interface CodexPostToolWireOutput {
+interface CodexPostToolWireOutput {
 	decision: "block";
 	reason: string;
 }

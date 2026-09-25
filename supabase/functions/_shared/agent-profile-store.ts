@@ -17,7 +17,7 @@ import { validateAgentProfileDocument } from "./agent-profile-schema.ts";
 import { corsJson } from "./cors.ts";
 import { isFourEyesRefusal, readPolicyFourEyes, submitPolicyChange } from "./policy-change-control.ts";
 
-export const AGENT_PROFILE_ACTIONS = [
+const AGENT_PROFILE_ACTIONS = [
 	"validate_agent_profiles",
 	"read_agent_profiles",
 	"agent_profile_history",
@@ -32,11 +32,11 @@ export function isAgentProfileAction(action: string): action is AgentProfileActi
 }
 
 /** Staged documents are bounded well below the policy-management body limit. */
-export const MAX_PROFILE_SOURCE_BYTES = 60 * 1024;
-export const AGENT_PROFILE_HISTORY_PAGE = 50;
+const MAX_PROFILE_SOURCE_BYTES = 60 * 1024;
+const AGENT_PROFILE_HISTORY_PAGE = 50;
 
 /** What the dashboard is told about delivery: staged is not enforced. */
-export const PROFILE_DELIVERY = {
+const PROFILE_DELIVERY = {
 	delivered: false,
 	delivery_status: "staged_not_signed",
 	delivery_detail:
@@ -58,7 +58,7 @@ function versionPrecondition(value: unknown): value is number {
 	return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) < Number.MAX_SAFE_INTEGER;
 }
 
-export type ProfileSourceResult =
+type ProfileSourceResult =
 	| { ok: true; document: Row; diagnostics: unknown[]; profiles: string[] }
 	| { ok: false; errors: string[] };
 
@@ -67,7 +67,7 @@ export type ProfileSourceResult =
  * (parseAgentProfileSource: no aliases, no duplicate keys, bounded size) and
  * validate it with the engine schema. Errors name locations, never values.
  */
-export function validateProfileSource(source: unknown): ProfileSourceResult {
+function validateProfileSource(source: unknown): ProfileSourceResult {
 	if (typeof source !== "string" || source.trim() === "") return { ok: false, errors: ["document is empty"] };
 	if (new TextEncoder().encode(source).byteLength > MAX_PROFILE_SOURCE_BYTES) {
 		return { ok: false, errors: ["document exceeds the 60 KiB staging limit"] };
@@ -87,7 +87,7 @@ export function validateProfileSource(source: unknown): ProfileSourceResult {
 	return validateProfileDocument(value);
 }
 
-export function validateProfileDocument(value: unknown): ProfileSourceResult {
+function validateProfileDocument(value: unknown): ProfileSourceResult {
 	const result = validateAgentProfileDocument(value);
 	if (!result.ok) return { ok: false, errors: result.errors };
 	return {

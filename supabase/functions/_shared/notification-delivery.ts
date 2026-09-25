@@ -51,7 +51,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 /** Counts a governance digest may carry (migration 20260928000001); anything else is dropped. */
-export const DIGEST_COUNT_KEYS = [
+const DIGEST_COUNT_KEYS = [
 	"agents_enrolled",
 	"agents_active",
 	"decisions_allow",
@@ -69,7 +69,7 @@ export const DIGEST_COUNT_KEYS = [
 	"intake_pending",
 	"policy_changes_pending",
 ] as const;
-export type DigestCountKey = (typeof DIGEST_COUNT_KEYS)[number];
+type DigestCountKey = (typeof DIGEST_COUNT_KEYS)[number];
 
 const DIGEST_LABELS: Record<DigestCountKey, string> = {
 	agents_enrolled: "Agents enrolled",
@@ -132,7 +132,7 @@ export interface NotificationMessage {
 }
 
 /** Event types that carry the extended subject/counts/period/digest fields. */
-export function isExtendedEvent(event: NotificationEventType): boolean {
+function isExtendedEvent(event: NotificationEventType): boolean {
 	return event.startsWith("agent.") || event.startsWith("governance.");
 }
 

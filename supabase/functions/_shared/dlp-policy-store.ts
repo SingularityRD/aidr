@@ -12,7 +12,7 @@ const DELIVERY = {
 } as const;
 
 /** policy-management actions served by this module. */
-export const DLP_POLICY_ACTIONS = [
+const DLP_POLICY_ACTIONS = [
 	"read_dlp_policy",
 	"publish_dlp_policy",
 	"dlp_policy_history",
@@ -26,7 +26,7 @@ export function isDlpPolicyAction(action: string): action is DlpPolicyAction {
 }
 
 /** Revisions per history page; the dashboard pages with `before_version`. */
-export const DLP_HISTORY_PAGE = 50;
+const DLP_HISTORY_PAGE = 50;
 
 type Context = { tenant: string; userId: string; role: string; token: string };
 type Row = Record<string, unknown>;

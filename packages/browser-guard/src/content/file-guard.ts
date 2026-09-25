@@ -22,7 +22,7 @@ import type {
 import { formatCounts, type Strings } from "./strings.js";
 import type { GuardUi } from "./ui.js";
 
-export type InspectImageFn = (bytes: Uint8Array) => Promise<ImageInspection | null>;
+type InspectImageFn = (bytes: Uint8Array) => Promise<ImageInspection | null>;
 
 export type SanitizeFileFn = (
 	file: { name: string; type: string; bytes: Uint8Array },

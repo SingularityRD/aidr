@@ -49,7 +49,7 @@ export const NATIVE_MAX_FAILURES = 3;
 /** Host `begin` limit for kind "image-scan" (NativeSession). */
 export const NATIVE_MAX_IMAGE_BYTES = 8_388_608;
 /** Upper bound for one OCR exchange (upload, OCR - the host's own OCR timeout is 45 s - commit). */
-export const NATIVE_IMAGE_TIMEOUT_MS = 60_000;
+const NATIVE_IMAGE_TIMEOUT_MS = 60_000;
 /** Host `begin` limit for kind "text" (NativeSession). */
 const NATIVE_MAX_TEXT_BYTES = 1_048_576;
 /** protectDocument refuses to emit more than twice its input limit. */

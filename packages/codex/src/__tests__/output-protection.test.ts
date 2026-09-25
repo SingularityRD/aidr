@@ -94,6 +94,7 @@ afterEach(() => {
 	rmSync(home, { recursive: true, force: true });
 });
 
+// AIDR-SKIP: AIDR-063 qa-owner - a release bundle without trusted public keys refuses to start and blocks every hook event before inspection, so these development-bundle assertions cannot hold; prompt-protection.test.ts covers the release-bundle fail-closed start
 describe.skipIf(releaseBundle)("Codex PostToolUse output inspection (shipped hook)", () => {
 	it("lets clean output through with Codex's empty-stdout no-op", () => {
 		const run = postToolUse("thr_clean", "All 42 tests passed.");
@@ -179,6 +180,7 @@ describe.skipIf(releaseBundle)("Codex PostToolUse output inspection (shipped hoo
 	});
 });
 
+// AIDR-SKIP: AIDR-063 qa-owner - a release bundle without trusted public keys refuses to start and blocks every hook event before inspection, so these development-bundle assertions cannot hold; prompt-protection.test.ts covers the release-bundle fail-closed start
 describe.skipIf(releaseBundle)("Codex UserPromptSubmit canary blocking (shipped hook)", () => {
 	it("blocks a prompt carrying a decoy value and records it", () => {
 		const secret = token("aws");

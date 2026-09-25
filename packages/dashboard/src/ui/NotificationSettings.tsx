@@ -133,7 +133,7 @@ function within(value: number, bounds: { min: number; max: number }): boolean {
 	return Number.isInteger(value) && value >= bounds.min && value <= bounds.max;
 }
 
-export function filtersValid(filters: NotificationFilters): boolean {
+function filtersValid(filters: NotificationFilters): boolean {
 	const { threshold, windowMinutes } = SPIKE_BOUNDS;
 	return (
 		anyEventSelected(filters) &&

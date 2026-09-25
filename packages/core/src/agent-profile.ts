@@ -52,7 +52,6 @@ export {
 	AgentProfileDocumentSchema,
 	type AgentProfileToolClass,
 	type AgentProfileValidation,
-	describeAgentProfileIssues,
 	validateAgentProfileDocument,
 	WORKSPACE_PLACEHOLDER,
 } from "./agent-profile-schema.js";
@@ -299,14 +298,7 @@ export interface AgentProfileCall {
 	artifacts: Artifact[];
 }
 
-type AgentProfileCheck =
-	| "tool"
-	| "command"
-	| "file"
-	| "network"
-	| "mcp"
-	| "selection"
-	| "invalid";
+type AgentProfileCheck = "tool" | "command" | "file" | "network" | "mcp" | "selection" | "invalid";
 
 export interface AgentProfileOutcome {
 	action: AgentProfileAction;

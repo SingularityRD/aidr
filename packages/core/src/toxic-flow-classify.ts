@@ -105,14 +105,6 @@ const MAX_SUMMARY_CHARS = 96;
 const MAX_OBSERVATIONS = 24;
 const MAX_DOWNLOADS_PER_CALL = 8;
 
-/**
- * Package registries, language docs and source hosts (`trusted_domains` in
- * `threats/flow/capabilities.yaml`). A plain request to one of them is not
- * external communication; a request that carries a payload still is.
- */
-export const DEFAULT_TOXIC_FLOW_TRUSTED_DOMAINS: readonly string[] =
-	DEFAULT_FLOW_CAPABILITIES.trustedDomains;
-
 /** Options with the capability patterns resolved (the file's, or the embedded defaults). */
 type ResolvedOptions = FlowClassifierOptions & { patterns: FlowCapabilityPatterns };
 
