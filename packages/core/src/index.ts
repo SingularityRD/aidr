@@ -121,6 +121,8 @@ export {
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
 export { VerdictCache } from "./cache.js";
+// Canary credentials (honeytokens): deploy decoys, detect any agent touching them
+export * from "./canary/index.js";
 // Causal agent chain (message -> retrieval -> tool -> authorization -> action ->
 // side effect -> intervention), ordered by position and logical clock, with a
 // missing link reported as `chain_gap` and tamper-evident binding through the
@@ -347,6 +349,7 @@ export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
 export {
 	allowVerdict,
 	evaluateToolCall,
+	recordCanaryTrigger,
 	type ToolDelegationContext,
 	type ToolEvaluationContext,
 	type ToolEvaluationRequest,

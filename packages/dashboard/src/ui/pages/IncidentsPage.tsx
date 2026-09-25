@@ -46,6 +46,17 @@ function isIncidentLikeEvent(e: EventRow): boolean {
 	return false;
 }
 
+const CANARY_RULE_ID = /^(?:AIDR|OUT)-CANARY-\d{3}$/;
+
+/**
+ * Canary credential triggers arrive as ordinary verdict/incident events; the
+ * ingest projection keeps `source` and `matched_threat_id`, which name them.
+ */
+export function isCanaryTrigger(e: Pick<EventRow, "payload">): boolean {
+	const rule = e.payload?.matched_threat_id;
+	return e.payload?.source === "canary" || (typeof rule === "string" && CANARY_RULE_ID.test(rule));
+}
+
 function summarize(e: EventRow): string {
 	if (e.type === "plugin_scan") {
 		const key = typeof e.payload?.plugin_key === "string" ? String(e.payload.plugin_key) : "plugin";
@@ -271,6 +282,11 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 										</td>
 										<td>
 											<span className="badge badge-neutral badge-plain mono">{e.type}</span>
+											{isCanaryTrigger(e) ? (
+												<div>
+													<span className="badge badge-deny">Canary triggered</span>
+												</div>
+											) : null}
 										</td>
 										<td className="mono">{summarize(e)}</td>
 									</tr>

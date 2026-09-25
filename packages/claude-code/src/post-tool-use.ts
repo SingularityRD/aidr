@@ -5,7 +5,12 @@
  * Always exits 0 and returns valid JSON.
  */
 
-import { type Logger, verifyArtifactIntegrityAndLog } from "@singularityrd/aidr-core";
+import {
+	inspectValueForCanaryTokens,
+	type Logger,
+	recordCanaryTrigger,
+	verifyArtifactIntegrityAndLog,
+} from "@singularityrd/aidr-core";
 import pino from "pino";
 import { consumePendingApproval } from "./approval-tracker.js";
 import { approvedActionContext } from "./format.js";
@@ -18,6 +23,36 @@ import {
 } from "./tool-output-quarantine.js";
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
+
+/**
+ * The output scanner already blocks canary content; this adds the audit entry
+ * and, in managed mode, the incident. Failures never change the response.
+ */
+async function recordOutputCanaries(
+	sessionId: string,
+	toolName: string,
+	toolResponse: unknown,
+): Promise<void> {
+	try {
+		const inspection = inspectValueForCanaryTokens(toolResponse);
+		if (inspection.status === "triggered") {
+			await recordCanaryTrigger({
+				sessionId,
+				toolName,
+				hits: inspection.hits,
+				stage: "tool_output",
+				logger,
+				agentRuntime: "claude-code",
+			});
+		} else if (inspection.status === "unavailable") {
+			logger.warn("Canary check of tool output unavailable; signal skipped", {
+				reason: inspection.reason,
+			});
+		}
+	} catch {
+		// Recording is best effort; the scanner's block stands.
+	}
+}
 
 function reportUnavailableCoverage(reason: string): void {
 	process.stdout.write(`${JSON.stringify(postToolInspectionUnavailable(reason))}\n`);
@@ -82,6 +117,11 @@ async function main(): Promise<void> {
 	} catch {
 		inspection = quarantineFailedToolInspection(hookInput.tool_response);
 	}
+	await recordOutputCanaries(
+		sessionId,
+		typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+		hookInput.tool_response,
+	);
 	let response: Record<string, unknown> = inspection ?? {};
 	if (toolUseId) {
 		try {

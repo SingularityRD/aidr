@@ -9,6 +9,12 @@ import {
 } from "./commands/allowlist.js";
 import { approveCommand, pendingCommand } from "./commands/approvals.js";
 import { auditExportCommand, auditTailCommand } from "./commands/audit.js";
+import {
+	canaryDeployCommand,
+	canaryListCommand,
+	canaryRemoveCommand,
+	canaryStatusCommand,
+} from "./commands/canary.js";
 import collectCommand from "./commands/collect.js";
 import configCommand from "./commands/config.js";
 import {
@@ -229,5 +235,40 @@ auditProgram
 	.option("--format <format>", "jsonl or csv", "jsonl")
 	.option("-o, --output <file>", "Write to a new file (0600) instead of stdout")
 	.action((options) => auditExportCommand(options));
+
+const canaryProgram = program
+	.command("canary")
+	.description(
+		"Operator only: plant and manage decoy credentials that expose an agent hunting for secrets",
+	);
+
+canaryProgram
+	.command("deploy")
+	.description(
+		"Create new decoy credential files (never overwrites a file); the registry stores only digests",
+	)
+	.option("--path <dir>", "Directory for project decoys (env, db-url); defaults to the current one")
+	.option("--kinds <list>", "Comma-separated kinds: aws, github, openai, env, ssh-config, db-url")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => canaryDeployCommand(options));
+
+canaryProgram
+	.command("list")
+	.description("List deployed canary credentials and whether each decoy file is intact")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => canaryListCommand(options));
+
+canaryProgram
+	.command("remove [id]")
+	.description("Delete one decoy (by id) or all of them, and drop them from the registry")
+	.option("--all", "Remove every deployed canary credential")
+	.option("--json", "Emit machine-readable JSON")
+	.action((id, options) => canaryRemoveCommand(id, options));
+
+canaryProgram
+	.command("status")
+	.description("Check the registry, the decoy files and triggers recorded in the audit log")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => canaryStatusCommand(options));
 
 await program.parseAsync(process.argv);
