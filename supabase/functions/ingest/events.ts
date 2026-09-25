@@ -50,7 +50,7 @@ export const PRIVACY_ENTITY_TYPES = [
 export const PRIVACY_SITES = [
 	"chatgpt", "gemini", "claude", "copilot", "perplexity", "deepseek", "mistral", "grok", "other",
 ] as const;
-export const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
+const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
 /** Generic decision for each guard action: a masked send left redacted, so it was allowed. */
 export const PRIVACY_ACTION_DECISIONS = {
 	masked: "allow",
@@ -59,7 +59,7 @@ export const PRIVACY_ACTION_DECISIONS = {
 	allowed: "allow",
 } as const;
 export const MAX_PRIVACY_ENTITY_KEYS = 32;
-export const MAX_PRIVACY_ENTITY_COUNT = 100_000;
+const MAX_PRIVACY_ENTITY_COUNT = 100_000;
 const PRIVACY_ENTITY_TYPE_SET = new Set<string>(PRIVACY_ENTITY_TYPES);
 const PRIVACY_SITE_SET = new Set<string>(PRIVACY_SITES);
 const PRIVACY_CHANNEL_SET = new Set<string>(PRIVACY_CHANNELS);

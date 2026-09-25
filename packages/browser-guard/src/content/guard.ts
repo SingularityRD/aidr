@@ -122,7 +122,7 @@ const BUTTON_RETRY_MS = 50;
 const BUTTON_RETRIES = 6;
 
 /** Entity types the native host's NER contributes on top of the rule layer. */
-export const NATIVE_NER_TYPES: readonly EntityType[] = Object.freeze([
+const NATIVE_NER_TYPES: readonly EntityType[] = Object.freeze([
 	"PERSON",
 	"ADDRESS",
 	"LOCATION",

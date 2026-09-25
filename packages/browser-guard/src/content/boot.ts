@@ -55,7 +55,7 @@ const ARRAY_KEYS = [
 const POLICY_RETRY_BASE_MS = 200;
 const POLICY_RETRY_MAX_MS = 10_000;
 /** How long boot waits for the persisted vault before starting with an empty one. */
-export const VAULT_LOAD_TIMEOUT_MS = 1_500;
+const VAULT_LOAD_TIMEOUT_MS = 1_500;
 
 /** The persisted vault from a VAULT_LOAD reply, or null (nothing saved / malformed). */
 export function extractVault(

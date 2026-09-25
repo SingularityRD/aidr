@@ -57,7 +57,7 @@ export interface UiEnv {
 }
 
 /** Optional permissions the pages may request (manifest `optional_permissions`). */
-export type OptionalPermission = "nativeMessaging";
+type OptionalPermission = "nativeMessaging";
 
 export type StorageAreaName = "local" | "managed" | "session" | "sync";
 

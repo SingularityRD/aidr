@@ -26,7 +26,7 @@ export const PRIVACY_EXIT = Object.freeze({ clean: 0, error: 1, findings: 2, inc
 /** Read bound. Larger input is refused outright rather than partially scanned. */
 export const PRIVACY_SCAN_MAX_BYTES = 4 * 1024 * 1024;
 
-export type PrivacyFailOn = "none" | "any" | "secret";
+type PrivacyFailOn = "none" | "any" | "secret";
 
 export interface PrivacyScanOptions {
 	json?: boolean;
@@ -35,7 +35,7 @@ export interface PrivacyScanOptions {
 	failOn?: string;
 }
 
-export interface PrivacyFinding {
+interface PrivacyFinding {
 	/** Entity type, the same name used by the `[TYPE]` mask placeholder. */
 	type: string;
 	/** Half-open UTF-16 offsets into the decoded (UTF-8, BOM-stripped) text. */
@@ -45,7 +45,7 @@ export interface PrivacyFinding {
 	line: number;
 }
 
-export interface PrivacyScanReport {
+interface PrivacyScanReport {
 	findings: PrivacyFinding[];
 	counts: Record<string, number>;
 	/** true when part of the input was not inspected; findings are then a lower bound. */
@@ -81,7 +81,7 @@ const TYPE_ALIASES: Readonly<Record<string, DlpDetector>> = {
 class PrivacyInputError extends Error {}
 
 /** Parse `--types` into core detector names; an empty result means every detector. */
-export function parsePrivacyTypes(list: string | undefined): DlpDetector[] {
+function parsePrivacyTypes(list: string | undefined): DlpDetector[] {
 	if (list === undefined) return [...DETECTORS];
 	const selected = new Set<DlpDetector>();
 	for (const raw of list.split(",")) {
@@ -190,7 +190,7 @@ function lineOf(starts: readonly number[], offset: number): number {
 }
 
 /** Replace each finding with its constant `[TYPE]` placeholder. */
-export function maskPrivacyFindings(text: string, findings: readonly PrivacyFinding[]): string {
+function maskPrivacyFindings(text: string, findings: readonly PrivacyFinding[]): string {
 	let output = "";
 	let cursor = 0;
 	for (const finding of findings) {
@@ -205,7 +205,7 @@ export function maskPrivacyFindings(text: string, findings: readonly PrivacyFind
  * Scan decoded text with the selected detectors. Pure: no I/O, and the returned report
  * never contains a matched value (except inside `masked`, where every match is replaced).
  */
-export function scanPrivacyText(
+function scanPrivacyText(
 	text: string,
 	detectors: readonly DlpDetector[],
 	options: { mask?: boolean; maxScanChars?: number } = {},
@@ -316,7 +316,7 @@ async function readBoundedStream(stream: NodeJS.ReadableStream, maxBytes: number
 }
 
 /** Decode UTF-8 text, refusing binary content instead of scanning mojibake. */
-export function decodePrivacyInput(buffer: Buffer): string {
+function decodePrivacyInput(buffer: Buffer): string {
 	if (buffer.includes(0)) {
 		throw new PrivacyInputError(
 			"Input looks binary (contains NUL bytes); the privacy scan inspects UTF-8 text only.",

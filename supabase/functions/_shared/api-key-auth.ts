@@ -24,11 +24,11 @@ type DatabaseClient = {
  * is only honoured by /v1/ingest, for `privacy_scan` events from the
  * `browser_guard` runtime, up to its installation limit.
  */
-export const API_KEY_SCOPES = ["tenant", "ingest:browser_guard"] as const;
+const API_KEY_SCOPES = ["tenant", "ingest:browser_guard"] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 export const BROWSER_GUARD_INGEST_SCOPE: ApiKeyScope = "ingest:browser_guard";
 
-export function isApiKeyScope(value: unknown): value is ApiKeyScope {
+function isApiKeyScope(value: unknown): value is ApiKeyScope {
 	return typeof value === "string" && (API_KEY_SCOPES as readonly string[]).includes(value);
 }
 
