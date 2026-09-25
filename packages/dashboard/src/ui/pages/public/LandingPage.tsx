@@ -14,7 +14,7 @@ import {
 const launchLinks = [
 	{ name: "Get started", href: "/login?returnTo=%2Fonboarding", desc: "Enroll a supported agent." },
 	{ name: "Sign in", href: "/login?returnTo=%2Fdashboard", desc: "Open your workspace." },
-	{ name: "View Pricing", href: "/pricing", desc: "Plans and list prices." },
+	{ name: "View Editions", href: "/pricing", desc: "Compare editions and request a quote." },
 	{ name: "Request Pilot", href: "/pilot", desc: "Start with an approval-gated pilot." },
 ];
 

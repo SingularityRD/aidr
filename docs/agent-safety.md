@@ -68,9 +68,21 @@ Once a budget is exceeded, every further call in that session asks until the ses
 you raise the budget). See the [configuration reference](configuration.md#agent_safety) for all
 fields.
 
-**Failure outcomes.** Repeated-failure detection uses the outcome the host reports: Claude Code
-(the `PostToolUse` result's exit code) and OpenClaw (`after_tool_call` errors). On connectors
-that do not report outcomes, the loop, rate and budget signals still apply.
+**Failure outcomes.** Repeated-failure detection uses the outcome the host reports, and only
+explicit failure markers count (an unknown result shape is never a failure):
+
+| Connector | Failure signal |
+|-----------|----------------|
+| Claude Code | `PostToolUse` result with `is_error: true` or a non-zero `exit_code` |
+| OpenClaw | `after_tool_call` with an `error` |
+| OpenCode | `tool.execute.after` with bash `metadata.exit` other than 0, or a raw MCP result with `isError: true` (a tool that throws never reaches this hook) |
+| Cursor | `postToolUse` whose `tool_output` (JSON) carries a non-zero `exitCode`/`exit_code` or `is_error`/`isError: true` |
+| VS Code | `PostToolUse` whose `tool_response` carries the same markers |
+| Codex | not available: codex-cli 0.141.0 runs `PostToolUse` only for calls that succeeded, and `Bash` results carry no exit code |
+
+The post-tool call is normalized the way the connector's pre-tool hook normalized it (Cursor
+shell commands as evaluated at `beforeShellExecution`), so the retry is recognised as the same
+call. Where no outcome is reported, the loop, rate and budget signals still apply.
 
 **State and privacy.** Each session's record lives in `~/.singularity-aidr/agent-safety/`
 (next to the active `config.json`): counters, short fingerprints of recent calls, digests of
@@ -204,4 +216,6 @@ already covered by AIDR's destructive-command rules and are not duplicated here.
 - Diff-aware checks read the previous version of a written file from disk (regular files up to
   1 MiB); a file that cannot be read is treated as new.
 - A force-push without an explicit branch name cannot be tied to a protected branch.
-- Repeated-failure detection depends on the host reporting failures (see above).
+- Repeated-failure detection depends on the host reporting failures (see above); it is not
+  available on Codex. Cursor and VS Code markers are read from the result the hook receives;
+  a host build that reports failures differently is under-counted, never over-counted.

@@ -13,7 +13,9 @@
  *
  * or equivalently via `~/.codex/hooks.json`. The same command registered for
  * `[[hooks.UserPromptSubmit]]` (no matcher) inspects the user's prompt before
- * it starts a turn (prompt protection, see prompt-protection.ts).
+ * it starts a turn (prompt protection, see prompt-protection.ts), and registered
+ * for `[[hooks.PostToolUse]]` it inspects tool output before the model reads it
+ * (see output-protection.ts).
  *
  * Codex fails OPEN on malformed or missing hook output. This entry point uses
  * empty stdout for an evaluated allow (the 0.141.0 no-op shape) and emits a
@@ -34,6 +36,7 @@ import {
 } from "@singularityrd/aidr-core";
 import { getCodexConnectorCoverageEvidence } from "./coverage.js";
 import { type CodexWireResult, DENY_HEADLINE, enforceCodexPreToolUse } from "./enforcement.js";
+import { CODEX_POST_TOOL_USE, enforceCodexPostToolUse } from "./output-protection.js";
 import { CODEX_USER_PROMPT_SUBMIT, enforceCodexUserPromptSubmit } from "./prompt-protection.js";
 
 /** Measured from process start: Codex's hook timeout runs from launch. */
@@ -105,6 +108,38 @@ async function handleUserPromptSubmit(input: Record<string, unknown>): Promise<v
 	}
 }
 
+/**
+ * PostToolUse output inspection (see output-protection.ts). The inspector never
+ * throws; if anything around it does, the output is withheld with the block
+ * shape plus exit 2 and a stderr reason, never passed through as clean.
+ */
+async function handlePostToolUse(input: Record<string, unknown>): Promise<void> {
+	try {
+		const result = await enforceCodexPostToolUse(input, { logger });
+		if (result.wire) process.stdout.write(`${JSON.stringify(result.wire)}\n`);
+		recordHostObservation(hostObservation, {
+			connector: "codex",
+			event: CODEX_POST_TOOL_USE,
+			toolName: typeof input.tool_name === "string" ? input.tool_name : undefined,
+			decision: result.status === "clean" ? "allow" : "deny",
+		});
+	} catch {
+		const reason =
+			"Singularity AIDR failed while inspecting this tool output, so it was withheld from the model and not classified as clean.";
+		try {
+			process.stdout.write(`${JSON.stringify({ decision: "block", reason })}\n`);
+		} catch {
+			// Fall through to the stderr/exit-2 channel.
+		}
+		try {
+			process.stderr.write(`${reason}\n`);
+		} catch {
+			// Nothing further we can do.
+		}
+		process.exitCode = 2;
+	}
+}
+
 async function main(): Promise<void> {
 	await verifyArtifactIntegrityAndLog({ artifactDir: __dirname, artifactId: "codex/dist", logger });
 
@@ -139,12 +174,16 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	// Registered events: PreToolUse (tool calls) and UserPromptSubmit (prompt
-	// protection). Any other event means our configuration is wrong; blocking is
-	// the safe reading.
+	// Registered events: PreToolUse (tool calls), UserPromptSubmit (prompt
+	// protection) and PostToolUse (tool output). Any other event means our
+	// configuration is wrong; blocking is the safe reading.
 	const event = typeof input.hook_event_name === "string" ? input.hook_event_name : "PreToolUse";
 	if (event === CODEX_USER_PROMPT_SUBMIT) {
 		await handleUserPromptSubmit(input);
+		return;
+	}
+	if (event === CODEX_POST_TOOL_USE) {
+		await handlePostToolUse(input);
 		return;
 	}
 	if (event !== "PreToolUse") {

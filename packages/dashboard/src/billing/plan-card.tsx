@@ -1,20 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { safeCommercialLink, selfServiceCheckoutEnabled } from "./commercial";
+import {
+	QUOTE_CONTACT_EMAIL,
+	quoteRequestHref,
+	safeCommercialLink,
+	selfServiceCheckoutEnabled,
+} from "./commercial";
 import { newBillingRequestId, requestEnterpriseOrder } from "./enterprise-orders";
 import {
-	headlinePrice,
-	LIST_PRICE_NOTICE,
+	type BillingInterval,
 	loadTenantPlan,
 	PLAN_CATALOG,
 	type PlanDefinition,
 	type PlanId,
 	planById,
-	priceTerms,
+	QUOTE_NOTICE,
+	retentionTerms,
+	seatTerms,
 	type TenantPlan,
 } from "./plans";
 import { createCheckout } from "./stripe-client";
-
-type Interval = "monthly" | "yearly";
 
 const SOURCE_LABELS: Record<TenantPlan["planSource"], string> = {
 	stripe_subscription: "Verified card subscription",
@@ -23,13 +27,6 @@ const SOURCE_LABELS: Record<TenantPlan["planSource"], string> = {
 };
 
 const PICKABLE_PLANS = PLAN_CATALOG.filter((plan) => plan.active && plan.id !== "free");
-
-function intervalsFor(plan: PlanDefinition): Interval[] {
-	const intervals: Interval[] = [];
-	if (plan.priceMonthlyCents !== null) intervals.push("monthly");
-	if (plan.priceYearlyCents !== null) intervals.push("yearly");
-	return intervals;
-}
 
 /**
  * Whether a plan may be bought by card here. All three must hold: the build
@@ -55,13 +52,13 @@ function formatDate(value: string | null): string | null {
 /** What the picker offers for the chosen plan, interval and seat count. */
 function pickerState(
 	selectedId: PlanId,
-	interval: Interval,
+	interval: BillingInterval,
 	seats: number,
 	tenantPlan: TenantPlan | null,
 ) {
 	const selected = planById(selectedId) ?? PICKABLE_PLANS[0];
-	const intervals = selected ? intervalsFor(selected) : [];
-	const effectiveInterval: Interval | null = intervals.includes(interval)
+	const intervals: readonly BillingInterval[] = selected?.billingIntervals ?? [];
+	const effectiveInterval: BillingInterval | null = intervals.includes(interval)
 		? interval
 		: (intervals[0] ?? null);
 	const minSeats = selected?.minSeats ?? 1;
@@ -104,9 +101,9 @@ function IntervalSelect({
 	value,
 	onChange,
 }: {
-	intervals: Interval[];
-	value: Interval | null;
-	onChange: (value: Interval) => void;
+	intervals: readonly BillingInterval[];
+	value: BillingInterval | null;
+	onChange: (value: BillingInterval) => void;
 }) {
 	if (intervals.length === 0) return null;
 	return (
@@ -115,7 +112,7 @@ function IntervalSelect({
 			<select
 				className="input"
 				value={value ?? ""}
-				onChange={(event) => onChange(event.target.value as Interval)}
+				onChange={(event) => onChange(event.target.value as BillingInterval)}
 			>
 				{intervals.map((option) => (
 					<option key={option} value={option}>
@@ -265,7 +262,7 @@ export function PlanCard({
 	const [tenantPlan, setTenantPlan] = useState<TenantPlan | null>(null);
 	const [loadState, setLoadState] = useState<"loading" | "ready" | "unavailable">("loading");
 	const [selectedId, setSelectedId] = useState<PlanId>("team");
-	const [interval, setBillingInterval] = useState<Interval>("yearly");
+	const [interval, setBillingInterval] = useState<BillingInterval>("yearly");
 	const [seats, setSeats] = useState(3);
 	const [requestId, setRequestId] = useState(newBillingRequestId);
 	const [busy, setBusy] = useState(false);
@@ -332,7 +329,7 @@ export function PlanCard({
 	async function startCheckout(
 		active: string,
 		plan: "team" | "business",
-		billing: Interval,
+		billing: BillingInterval,
 		reqId: string,
 	) {
 		const result = await createCheckout("", "", seats, billing, undefined, active, reqId, plan);
@@ -392,7 +389,12 @@ export function PlanCard({
 			<PlanStatus loadState={loadState} tenantPlan={tenantPlan} />
 
 			<h3 style={{ marginTop: 20 }}>Change plan</h3>
-			<p className="muted small">{LIST_PRICE_NOTICE}</p>
+			<p className="muted small">
+				{QUOTE_NOTICE} For a quote, contact <a href={quoteRequestHref()}>{QUOTE_CONTACT_EMAIL}</a>
+				{checkoutPath
+					? "; a card checkout shows the amount on the payment provider's page before you pay."
+					: "."}
+			</p>
 			{!canManageBilling ? (
 				<div className="notice">Plan changes are limited to tenant owners and admins.</div>
 			) : (
@@ -412,8 +414,11 @@ export function PlanCard({
 									}}
 								/>
 								<span>
-									{plan.displayName} — {headlinePrice(plan)}
-									<span className="muted small"> ({priceTerms(plan)})</span>
+									{plan.displayName}
+									<span className="muted small">
+										{" "}
+										({seatTerms(plan)} · {retentionTerms(plan)})
+									</span>
 								</span>
 							</label>
 						))}

@@ -98,11 +98,19 @@ audit entry so the decoy value never lands in a log.
 **After a tool runs**, the shared output scanner reports finding
 `OUT-CANARY-001` (critical) when tool output contains a decoy value, for example
 after a recursive `grep` that swept over a decoy. Every connector that uses the
-output scanner quarantines that output. The Claude Code PostToolUse hook also
-writes the audit entry and incident.
+output scanner quarantines that output. Every connector's post-tool path also
+writes the audit entry and incident through the shared recorder
+(`recordToolOutputCanaries`): Claude Code `PostToolUse`, Cursor `postToolUse`,
+VS Code `PostToolUse`, OpenClaw `after_tool_call`, OpenCode `tool.execute.after`
+and Codex `PostToolUse`.
 
-**Prompts.** The Claude Code UserPromptSubmit hook blocks a prompt that carries a
-decoy value and records the trigger.
+**Prompts.** The shared prompt path (`inspectUserPrompt`, and the Claude Code
+`UserPromptSubmit` hook through the same `checkPromptForCanaries` check) blocks a
+prompt that carries a decoy value and records the trigger, before any other
+prompt check and regardless of the `prompt_protection` settings. This covers
+Claude Code and VS Code `UserPromptSubmit`, Cursor `beforeSubmitPrompt`, Codex
+`UserPromptSubmit`, OpenCode `chat.message` and OpenClaw `before_agent_run`. The
+audit entry names the host event as its tool name and carries canary ids only.
 
 **Incidents.** Every trigger writes a `runtime_verdict` audit entry with
 `category: "canary_triggered"`. In managed mode it also opens an incident and

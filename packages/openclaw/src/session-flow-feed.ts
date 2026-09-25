@@ -1,4 +1,9 @@
-import { type Logger, recordToolOutcome, recordToolOutputFlow } from "@singularityrd/aidr-core";
+import {
+	type Logger,
+	recordToolOutcome,
+	recordToolOutputCanaries,
+	recordToolOutputFlow,
+} from "@singularityrd/aidr-core";
 import type { OutputInspection } from "./output-inspection.js";
 import type { AfterToolCallEvent, OutputHookContext } from "./output-protection.js";
 
@@ -33,6 +38,30 @@ export async function feedToolOutputFlow(
 		);
 	} catch {
 		// recordToolOutputFlow never throws; a hostile event shape must not either.
+	}
+}
+
+/**
+ * Record a canary credential value in a completed tool's output (docs/canary-tokens.md):
+ * audit entry and, in managed mode, an incident. Output protection already
+ * quarantines such output (finding `OUT-CANARY-001`). Observation only; never throws.
+ */
+export async function feedToolOutputCanaries(
+	event: AfterToolCallEvent,
+	context: OutputHookContext | undefined,
+	logger: Logger,
+): Promise<void> {
+	if (event?.result === undefined) return;
+	try {
+		await recordToolOutputCanaries({
+			sessionId: context?.sessionKey ?? "unknown",
+			toolName: typeof event.toolName === "string" ? event.toolName : "unknown",
+			toolOutput: event.result,
+			agentRuntime: "openclaw",
+			logger,
+		});
+	} catch {
+		// recordToolOutputCanaries never throws; a hostile event shape must not either.
 	}
 }
 

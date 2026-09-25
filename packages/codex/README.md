@@ -65,6 +65,15 @@ timeout = 10
 type = "command"
 command = "aidr-codex-hook"
 timeout = 10
+
+# Tool-output inspection (see "Tool-output inspection" below).
+[[hooks.PostToolUse]]
+matcher = "^(Bash|mcp__.+)$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "aidr-codex-hook"
+timeout = 10
 ```
 
 Or equivalently, in `~/.codex/hooks.json`:
@@ -82,12 +91,18 @@ Or equivalently, in `~/.codex/hooks.json`:
       {
         "hooks": [{ "type": "command", "command": "aidr-codex-hook", "timeout": 10 }]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(Bash|mcp__.+)$",
+        "hooks": [{ "type": "command", "command": "aidr-codex-hook", "timeout": 10 }]
+      }
     ]
   }
 }
 ```
 
-Each handler is trusted separately: review and trust both with `/hooks`.
+Each handler is trusted separately: review and trust all three with `/hooks`.
 
 The event name is **PascalCase** (`hooks.PreToolUse`). A lower-case
 `hooks.pre_tool_use` table was accepted by the TOML parser but ignored by the
@@ -163,6 +178,37 @@ Codex's fail-open behaviour applies here too: an untrusted, crashed or timed-out
 `UserPromptSubmit` hook lets the prompt through. `aidr-codex-hook --health` reports
 `promptInspection` and `inlinePromptBlocking` for the declared configuration; it does
 not prove the handler is registered or trusted on the endpoint.
+
+A prompt that carries a canary credential value (`aidr canary deploy`) is always
+blocked and recorded as a canary incident (`tool_name: "UserPromptSubmit"`, canary
+ids only), whatever the `prompt_protection` settings.
+
+## Tool-output inspection (`PostToolUse`)
+
+Registered for `PostToolUse`, the same command inspects a tool's result
+(`tool_response`: the command output for `Bash`, the `CallToolResult` for an MCP
+tool) with the shared output scanner: hidden Unicode payloads, poisoned or
+injected instructions, leaked secrets and canary values.
+
+| Outcome | Output |
+|---|---|
+| Clean | empty stdout |
+| Finding | `{"decision":"block","reason":"…"}`; the reason names rule ids only, never content |
+| Missing or uninspectable result, internal error | block with a "could not inspect" reason; a failure outside the inspection exits 2 with a stderr reason |
+
+In codex-cli 0.141.0's source (`codex-rs/core/src/tools/registry.rs` at
+`rust-v0.141.0`) a `PostToolUse` block makes Codex hand the model the reason in
+place of the tool result; the tool itself already ran. That replacement has not
+been observed in a live Codex session, so `--health` keeps reporting output
+inspection as `post_execution_observation` and `inlineOutputBlocking: false`.
+
+Findings also feed session-level detection: secrets become private data and
+injection payloads untrusted content for toxic-flow chains
+(`docs/toxic-flow.md`), a canary value is recorded as a canary incident, and the
+block is written to the audit log (`source: "codex-output-inspection"`, rule ids
+and sizes only). Codex runs `PostToolUse` only for calls that succeeded and
+`Bash` results carry no exit code, so this hook cannot report failed calls to the
+runaway guard's repeated-failure signal.
 
 ## `apply_patch` is inspected too
 
@@ -258,12 +304,11 @@ The connector also emits machine-readable capability evidence:
 aidr-codex-hook --health
 ```
 
-The shipped configuration registers `PreToolUse` and `UserPromptSubmit`. Its
-health output therefore reports tool input and prompt inspection as inline
-blocking, output inspection as unavailable, and `inlineOutputBlocking: false`.
-Adding `PostToolUse` would make
-tool output observable only after execution; it still would not prove that the
-output was blocked before model consumption. The evidence also records Codex's
+The shipped configuration registers `PreToolUse`, `UserPromptSubmit` and
+`PostToolUse`. Its health output therefore reports tool input and prompt
+inspection as inline blocking, output inspection as post-execution observation,
+and `inlineOutputBlocking: false`: the output replacement described above is
+taken from the host source, not proven by a live run. The evidence also records Codex's
 host-owned fail-open boundary and does not claim that registration or trust was
 verified on the endpoint.
 

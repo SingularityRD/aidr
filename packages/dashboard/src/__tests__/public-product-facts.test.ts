@@ -1,21 +1,22 @@
-// The public landing and pricing pages quote countable facts (rule counts, AI Security
-// Posture dataset size, supported sites, list prices). These tests bind each number to
-// the repository so stale marketing copy fails the build.
+// The public landing and editions pages quote countable facts (rule counts, AI Security
+// Posture dataset size, supported sites, edition terms). These tests bind each number to
+// the repository so stale marketing copy fails the build. Prices are never published.
 
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { headlinePrice, priceTerms } from "../billing/plans";
+import { QUOTE_CONTACT_EMAIL } from "../billing/commercial";
+import { retentionTerms, seatTerms } from "../billing/plans";
 import {
 	AGENT_CONNECTORS,
 	AIG_AI_COMPONENTS,
 	AIG_CVE_RULES_FLOOR,
 	BROWSER_GUARD_SITES,
-	LIST_PRICE_NOTE,
 	POSTURE_MCP_RISK_CATEGORIES,
 	POSTURE_SKILL_RISK_CODES,
 	PUBLIC_PLANS,
+	QUOTE_NOTE,
 	SHIPPED_THREAT_RULES,
 	THREAT_RULE_FILES,
 } from "../ui/pages/public/product-facts";
@@ -81,7 +82,7 @@ describe("public product facts", () => {
 		expect(shown.sort()).toEqual([...matrix.soldConnectorScope].sort());
 	});
 
-	it("publishes the plan ladder from the catalog mirror with the approval caveat", () => {
+	it("publishes the edition ladder from the catalog mirror with quote-only pricing", () => {
 		expect(PUBLIC_PLANS.map((plan) => plan.displayName)).toEqual([
 			"Free",
 			"Team",
@@ -93,19 +94,16 @@ describe("public product facts", () => {
 			if (!found) throw new Error(`missing plan ${name}`);
 			return found;
 		};
-		const free = plan("Free");
-		const team = plan("Team");
-		const business = plan("Business");
-		const enterprise = plan("Enterprise");
-		expect(headlinePrice(free)).toBe("$0");
-		expect(free.includedAgents).toBe(1);
-		expect(headlinePrice(team)).toBe("$24");
-		expect(priceTerms(team)).toMatch(/\$20 per developer \/ month billed annually/);
-		expect(team.minSeats).toBe(3);
-		expect(headlinePrice(business)).toBe("$45");
-		expect(priceTerms(business)).toMatch(/billed annually/);
-		expect(business.minSeats).toBe(25);
-		expect(headlinePrice(enterprise)).toBe("Custom");
-		expect(LIST_PRICE_NOTE).toMatch(/subject to COM-001 approval/);
+		expect(plan("Free").includedAgents).toBe(1);
+		expect(seatTerms(plan("Free"))).toBe("1 protected agent");
+		expect(seatTerms(plan("Team"))).toBe("Minimum 3 developers");
+		expect(seatTerms(plan("Business"))).toBe("Minimum 25 developers");
+		expect(retentionTerms(plan("Enterprise"))).toBe("Contractual retention");
+		for (const edition of PUBLIC_PLANS) {
+			expect(Object.keys(edition).some((key) => /price|currency/i.test(key))).toBe(false);
+		}
+		expect(QUOTE_NOTE).toMatch(/^Prices are not published\./);
+		expect(QUOTE_NOTE).not.toMatch(/list price|COM-001|\$|USD/i);
+		expect(QUOTE_CONTACT_EMAIL).toBe("anil@singularityrd.com");
 	});
 });

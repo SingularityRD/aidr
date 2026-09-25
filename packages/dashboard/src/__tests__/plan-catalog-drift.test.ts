@@ -1,10 +1,11 @@
-// The dashboard ships a static mirror of the public.plans seed so the public
-// pricing page needs no database access. This test parses the seed block in the
-// migration and fails on any difference, so a price or term can never change
-// on one side only.
+// The dashboard ships a price-free static mirror of the public.plans seed so the
+// public Editions page needs no database access. This test parses the seed block
+// in the migration and fails on any difference, so a term can never change on one
+// side only. The seed's price columns stay server-side: the mirror carries only
+// which billing intervals are offered (a non-null price column), never an amount.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { PLAN_CATALOG, type PlanDefinition } from "../billing/plans";
+import { type BillingInterval, PLAN_CATALOG, type PlanDefinition } from "../billing/plans";
 
 const MIGRATION = new URL(
 	"../../../../supabase/migrations/20260925000010_plan_catalog.sql",
@@ -145,14 +146,16 @@ function seedRows(): PlanDefinition[] {
 			active,
 			sortOrder,
 		] = parseTuple(tuple);
+		expect(currency).toBe("USD");
+		const billingIntervals: BillingInterval[] = [];
+		if (priceMonthlyCents !== null) billingIntervals.push("monthly");
+		if (priceYearlyCents !== null) billingIntervals.push("yearly");
 		return {
 			id,
 			displayName,
 			includedAgents,
 			minSeats,
-			priceMonthlyCents,
-			priceYearlyCents,
-			currency,
+			billingIntervals,
 			features: JSON.parse(features as string),
 			selfServe,
 			deployment,
@@ -168,26 +171,30 @@ describe("plan catalog mirror", () => {
 		expect(seedRows()).toEqual([...PLAN_CATALOG]);
 	});
 
-	it("keeps the approved list-price shape", () => {
+	it("keeps the catalog terms and offered billing intervals", () => {
 		const byId = Object.fromEntries(PLAN_CATALOG.map((plan) => [plan.id, plan]));
-		expect(byId.free).toMatchObject({ includedAgents: 1, priceMonthlyCents: 0, retentionDays: 7 });
+		expect(byId.free).toMatchObject({ includedAgents: 1, retentionDays: 7 });
 		expect(byId.team).toMatchObject({
-			priceMonthlyCents: 2400,
-			priceYearlyCents: 24000,
+			billingIntervals: ["monthly", "yearly"],
 			minSeats: 3,
 			retentionDays: 90,
 		});
 		expect(byId.business).toMatchObject({
-			priceMonthlyCents: null,
-			priceYearlyCents: 54000,
+			billingIntervals: ["yearly"],
 			minSeats: 25,
 			retentionDays: 365,
 		});
-		expect(byId.enterprise).toMatchObject({
-			priceMonthlyCents: null,
-			priceYearlyCents: null,
-			selfServe: false,
-		});
+		expect(byId.enterprise).toMatchObject({ billingIntervals: [], selfServe: false });
 		expect(byId.enterprise?.deployment).toEqual(["onprem", "air-gapped"]);
+	});
+
+	it("never ships a price, amount or currency in the browser mirror", () => {
+		for (const plan of PLAN_CATALOG) {
+			expect(Object.keys(plan).filter((key) => /price|cents|amount|currency/i.test(key))).toEqual(
+				[],
+			);
+		}
+		const source = readFileSync(new URL("../billing/plans.ts", import.meta.url), "utf8");
+		expect(source).not.toMatch(/priceMonthlyCents|priceYearlyCents|currency:|\$\d|\bUSD\b/);
 	});
 });

@@ -96,9 +96,12 @@ also recognises:
 returns a PostToolUse block with the reason (the tool already ran and cannot be
 undone), OpenClaw and OpenCode quarantine or replace the output, the MCP gateway
 refuses the response, and the SDK output guard reports it. Findings never echo
-the hidden text back to the model. Codex does not let a hook inspect tool output
-before the model reads it, so on Codex this layer is not available; write-time
-protection (section 1) still applies there.
+the hidden text back to the model. On Codex the `PostToolUse` hook (registered by
+the shipped configuration for `Bash` and MCP tools) inspects the output and answers
+`{"decision":"block"}` with a reason that names rule ids only; in codex-cli 0.141.0's
+source that makes Codex hand the model the reason instead of the tool result. That
+replacement has not been observed in a live Codex session, so the connector's health
+evidence still reports output inspection as post-execution observation.
 
 ## 3. MCP tool poisoning and rug pulls
 
@@ -203,9 +206,10 @@ cannot be loaded, requests are refused with `detection_unavailable`.
 - Tool descriptions are only visible where tool lists pass through AIDR: the MCP
   gateway and supplied signed manifests. A host that talks to an MCP server
   directly shows AIDR only the tool calls, not the tool list.
-- Read-time findings on Claude Code cannot undo a tool call that already ran;
-  they stop the output from being trusted by the model. Codex has no read-time
-  layer (host limitation).
+- Read-time findings on Claude Code and Codex cannot undo a tool call that
+  already ran; they stop the output from being trusted by the model. Codex runs
+  `PostToolUse` only for calls that succeeded and only for the registered
+  matcher (`Bash` and MCP tools); hosted tools such as `WebSearch` are not hooked.
 - On Codex, `ask` is enforced as `deny` (Codex has no working ask), so a benign
   instruction-file edit is blocked until the operator approves it with
   `aidr approve`.

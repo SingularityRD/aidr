@@ -3595,8 +3595,9 @@ belirli bir hareketsizlik süresinden sonra tarayıcıda sonlanır. Rotalar
 <tr><td><code>/enterprise</code></td><td>yok (davet bağlantısında)</td><td>Davet kabulü</td><td><a href="#p3-ekip-roller-ve-davetler">Ekip</a></td></tr>
 <tr><td><code>/auth/dlp-step-up</code></td><td>yok</td><td>DLP ve çalışma alanı değişikliklerinden önce MFA doğrulaması</td><td><a href="#p3-çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali">MFA</a></td></tr>
 <tr><td><code>/auth/recover</code></td><td>yok</td><td>Parola kurtarma ve acil durum (break-glass) kurtarma kodları</td><td><a href="#p3-çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali">MFA</a></td></tr></tbody></table></div>
-<p>Oturum gerektirmeyen herkese açık sayfalar: <code>/</code> (tanıtım), <code>/pricing</code> (statik katalog
-aynasından), <code>/pilot</code> (pilot başvurusu), <code>/verify</code> (cihaz kodu onayı), <code>/support</code>,
+<p>Oturum gerektirmeyen herkese açık sayfalar: <code>/</code> (tanıtım), <code>/pricing</code> (fiyat içermeyen
+katalog aynasından üretilen <strong>Paketler / Editions</strong> sayfası; fiyat yerine
+anil@singularityrd.com üzerinden teklif talebi), <code>/pilot</code> (pilot başvurusu), <code>/verify</code> (cihaz kodu onayı), <code>/support</code>,
 <code>/status</code>, <code>/privacy</code>, <code>/security</code>, <code>/terms</code> ve <code>/login</code>.</p>
 <hr>
 <h2 id="p3-3-yönetim-konsolu-özellikleri">3. Yönetim konsolu özellikleri</h2>
@@ -4150,9 +4151,9 @@ applied.&quot; der. O zamana kadar kabul edilen ajan sayısı değişmez.</p>
 <p class="label"><strong>Kapsam.</strong></p>
 <div class="table"><table><thead><tr><th>Plan</th><th>Dağıtım</th><th>Platform / işletim sistemi</th></tr></thead><tbody><tr><td>Tüm planlar</td><td>Bulut; on-prem'de bunun yerine <a href="#p3-çevrimdışı-imzalı-lisans">imzalı lisans</a> kullanılır</td><td>Web konsolu</td></tr></tbody></table></div>
 <p><strong>Sınırlamalar.</strong> Self-service kart ödemesi varsayılan olarak kapalıdır ve canlı bir
-sağlayıcı hesabıyla kabul edilmemiştir. Katalog fiyatları liste fiyatıdır; teklif veya
-sipariş geçerlidir. Plan verisi okunamazsa sayfa tahmin yürütmek yerine hiç rakam
-göstermez.</p>
+sağlayıcı hesabıyla kabul edilmemiştir. Fiyatlar yayımlanmaz ve sayfa fiyat göstermez:
+her ücretli plan anil@singularityrd.com üzerinden teklifle satılır; teklif veya sipariş
+geçerlidir. Plan verisi okunamazsa sayfa tahmin yürütmek yerine hiç rakam göstermez.</p>
 <hr>
 <h2 id="p3-4-kimlik-ve-erişim">4. Kimlik ve erişim</h2>
 <h3 id="p3-tek-oturum-açma-microsoft-entra-id-ve-saml-20">Tek oturum açma: Microsoft Entra ID ve SAML 2.0</h3>

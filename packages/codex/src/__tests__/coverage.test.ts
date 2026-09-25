@@ -38,18 +38,18 @@ describe("Codex event inspection coverage", () => {
 });
 
 describe("Codex connector coverage evidence", () => {
-	it("reports the shipped PreToolUse + UserPromptSubmit boundary without an inline output claim", () => {
+	it("reports the shipped PreToolUse + UserPromptSubmit + PostToolUse boundary without an inline output claim", () => {
 		const evidence = getCodexConnectorCoverageEvidence();
 
-		expect(evidence.configuredEvents).toEqual(["PreToolUse", "UserPromptSubmit"]);
+		expect(evidence.configuredEvents).toEqual(["PreToolUse", "UserPromptSubmit", "PostToolUse"]);
 		expect(evidence.eventCoverage).toEqual({
 			preToolUse: true,
-			postToolUse: false,
+			postToolUse: true,
 			userPromptSubmit: true,
 		});
 		expect(evidence.capabilities).toEqual({
 			toolInputInspection: "inline_blocking",
-			toolOutputInspection: "unavailable",
+			toolOutputInspection: "post_execution_observation",
 			promptInspection: "inline_blocking",
 			canBlockOutputBeforeModelConsumption: false,
 		});
@@ -66,6 +66,14 @@ describe("Codex connector coverage evidence", () => {
 			status: "degraded",
 			runtimeRegistrationVerified: false,
 		});
+		expect(evidence.health.reasonCodes).toContain("tool_output_is_observation_only");
+		expect(evidence.health.reasonCodes).toContain("pre_model_output_blocking_unavailable");
+	});
+
+	it("reports a registration without PostToolUse as lacking output inspection", () => {
+		const evidence = getCodexConnectorCoverageEvidence(["PreToolUse", "UserPromptSubmit"]);
+
+		expect(evidence.capabilities.toolOutputInspection).toBe("unavailable");
 		expect(evidence.health.reasonCodes).toContain("tool_output_inspection_unavailable");
 	});
 

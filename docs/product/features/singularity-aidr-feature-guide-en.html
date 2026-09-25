@@ -3450,8 +3450,10 @@ locally after an inactivity timeout. The routes are declared in
 <tr><td><code>/enterprise</code></td><td>none (link in the invitation)</td><td>Invitation acceptance</td><td><a href="#p3-team-roles-and-invitations">Team</a></td></tr>
 <tr><td><code>/auth/dlp-step-up</code></td><td>none</td><td>MFA step-up before DLP and workspace changes</td><td><a href="#p3-multi-factor-authentication-recovery-and-session-revocation">MFA</a></td></tr>
 <tr><td><code>/auth/recover</code></td><td>none</td><td>Password recovery and break-glass recovery codes</td><td><a href="#p3-multi-factor-authentication-recovery-and-session-revocation">MFA</a></td></tr></tbody></table></div>
-<p>Public pages that need no sign-in: <code>/</code> (landing), <code>/pricing</code> (rendered from the static
-catalog mirror), <code>/pilot</code> (pilot application), <code>/verify</code> (device-code approval),
+<p>Public pages that need no sign-in: <code>/</code> (landing), <code>/pricing</code> (the <strong>Editions</strong> page,
+rendered from the price-free catalog mirror, with a quote request to
+anil@singularityrd.com instead of prices), <code>/pilot</code> (pilot application), <code>/verify</code>
+(device-code approval),
 <code>/support</code>, <code>/status</code>, <code>/privacy</code>, <code>/security</code>, <code>/terms</code>, and <code>/login</code>.</p>
 <hr>
 <h2 id="p3-3-dashboard-features">3. Dashboard features</h2>
@@ -3978,9 +3980,9 @@ applied.&quot; Admitted agents stay unchanged until then.</p>
 <p class="label"><strong>Availability.</strong></p>
 <div class="table"><table><thead><tr><th>Plan</th><th>Deployment</th><th>Platforms / OS</th></tr></thead><tbody><tr><td>All plans</td><td>Cloud; On-prem uses the <a href="#p3-signed-offline-licence">signed licence</a> instead</td><td>Web console</td></tr></tbody></table></div>
 <p><strong>Limitations.</strong> Self-service card payment is disabled by default and has not been
-accepted against a live provider account. Catalog prices are list prices, and a quote or
-order governs. If plan data cannot be read, the page shows no figures rather than
-guessing.</p>
+accepted against a live provider account. Prices are not published and the page shows
+none: every paid plan is quoted through anil@singularityrd.com, and a quote or order
+governs. If plan data cannot be read, the page shows no figures rather than guessing.</p>
 <hr>
 <h2 id="p3-4-identity-and-access">4. Identity and access</h2>
 <h3 id="p3-single-sign-on-microsoft-entra-id-and-saml-20">Single sign-on: Microsoft Entra ID and SAML 2.0</h3>

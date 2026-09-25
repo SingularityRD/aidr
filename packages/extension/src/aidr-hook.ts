@@ -18,8 +18,11 @@ import {
 	loadProvisionedDetectorContext,
 	type PromptInspectionOutcome,
 	recordHostObservation,
+	recordToolOutcome,
+	recordToolOutputCanaries,
 	resolveAskWithDashboardApproval,
 	resolvePromptInspectionDeadlineMs,
+	toolResultReportsFailure,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
@@ -353,6 +356,7 @@ async function handleCursorToolOutput(payload: unknown): Promise<void> {
 		return;
 	}
 	const input = payload as Record<string, unknown>;
+	await observeCompletedTool("cursor", input, input.tool_output);
 	const result = inspectOutput(input.tool_output);
 	if (result.status === "clean") {
 		writeJson({});
@@ -445,6 +449,7 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 		return;
 	}
 	const input = payload as Record<string, unknown>;
+	await observeCompletedTool("vscode", input, input.tool_response);
 	const result = inspectOutput(input.tool_response);
 	if (result.status === "clean") {
 		writeJson({});
@@ -473,6 +478,66 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 			additionalContext: coverageNotice,
 		},
 	});
+}
+
+/**
+ * Session-level observations of a completed tool call, shared by both hosts. They
+ * never change the hook response and never throw:
+ *   - a canary credential value in the output is recorded (audit entry and, in
+ *     managed mode, an incident); output inspection already flags the output;
+ *   - a failure the host reports (`is_error`, or a non-zero exit code in the
+ *     result, including Cursor's JSON-encoded `tool_output`) counts towards the
+ *     runaway guard's repeated-failure signal. The call is normalized the way the
+ *     pre-execution hook normalized it, so the retry is recognised as the same call;
+ *     a result without such a marker is not counted.
+ */
+async function observeCompletedTool(
+	mode: HookMode,
+	input: Record<string, unknown>,
+	toolOutput: unknown,
+): Promise<void> {
+	try {
+		const call =
+			mode === "cursor" ? normalizeCursorPostToolCall(input) : normalizeVsCodeCall(input);
+		const sessionId =
+			call?.sessionId ?? (mode === "cursor" ? cursorSessionId(input) : vsCodeSessionId(input));
+		await recordToolOutputCanaries({
+			sessionId,
+			toolName: call?.toolName ?? asString(input.tool_name) ?? "Unknown",
+			toolOutput,
+			agentRuntime: mode,
+		});
+		if (call && toolResultReportsFailure(toolOutput)) {
+			await recordToolOutcome(
+				{ sessionId, toolName: call.toolName, toolInput: call.toolInput, failed: true },
+				{ agentRuntime: mode },
+			);
+		}
+	} catch {
+		// Observation only: the output-inspection response is written regardless.
+	}
+}
+
+/**
+ * A Cursor `postToolUse` call in the shape its pre-execution hook evaluated:
+ * shell commands are evaluated at `beforeShellExecution` (`{ command, cwd }`),
+ * every other tool at `preToolUse`.
+ */
+function normalizeCursorPostToolCall(
+	input: Record<string, unknown>,
+): NormalizedHookCall | undefined {
+	if (asString(input.tool_name) === "Shell") {
+		const toolInput = parseUnknownObject(input.tool_input);
+		return normalizeCursorCall(
+			{
+				...input,
+				command: asString(toolInput.command) ?? "",
+				cwd: asString(input.cwd) ?? asString(toolInput.cwd),
+			},
+			"beforeShellExecution",
+		);
+	}
+	return normalizeCursorCall(input, "postToolUse");
 }
 
 function hasExplicitVsCodeEvent(payload: unknown): payload is Record<string, unknown> {

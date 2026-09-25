@@ -41,10 +41,19 @@ timeout = 10
 type = "command"
 command = "aidr-codex-hook"
 timeout = 10
+
+# Tool-output inspection (poisoned or injected output, leaked secrets, canary values).
+[[hooks.PostToolUse]]
+matcher = "^(Bash|mcp__.+)$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "aidr-codex-hook"
+timeout = 10
 ```
 
 or the equivalent `~/.codex/hooks.json` shown in the package README. Event names must
-be PascalCase (`PreToolUse`, `UserPromptSubmit`); a lower-case `pre_tool_use` table is
+be PascalCase (`PreToolUse`, `UserPromptSubmit`, `PostToolUse`); a lower-case `pre_tool_use` table is
 ignored by the host. See [configuration](../configuration.md#prompt_protection) for the
 prompt protection behaviour.
 
