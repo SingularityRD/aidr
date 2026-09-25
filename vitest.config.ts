@@ -3,6 +3,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
 	test: {
 		globalSetup: ["./scripts/vitest-global-setup.mjs"],
+		// Every test file gets a fresh, empty HOME so no suite reads or writes the
+		// developer's real ~/.singularity-aidr (audit log, cache, session state).
+		setupFiles: ["./scripts/vitest-isolated-home.mjs"],
 		// This repo is a pnpm monorepo, but we run unit tests as a single Vitest project
 		// to keep `pnpm test` simple and deterministic across environments.
 		include: [

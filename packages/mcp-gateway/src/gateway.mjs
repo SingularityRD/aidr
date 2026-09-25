@@ -1294,6 +1294,9 @@ export function createMcpGateway(input, dependencies = {}) {
 			toolName: rpc.params.name,
 			args: structuredClone(rpc.params.arguments ?? {}),
 			description: tool.description,
+			// The bound session (validated against this tenant, client and server)
+			// scopes the session-level detection layers to one MCP conversation.
+			mcpSessionId: sessionId,
 		});
 		signal.throwIfAborted();
 		const upstream = await forward(

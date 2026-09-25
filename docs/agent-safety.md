@@ -81,6 +81,15 @@ HMAC keyed by a random per-install key; a record that has been edited, replayed 
 session, or replaced by a symlink is not trusted. Sessions are keyed the same way as toxic-flow
 detection, so a host that sends no real session id does not merge unrelated agents.
 
+**MCP gateway sessions.** The gateway serves many clients, so it never keys a session by the
+client credential alone. A server that issues an `Mcp-Session-Id` gets one record per MCP
+session (keyed by a digest of the id, bound to the tenant, client and server). A stateless
+server has no conversation id, so its record covers one client's calls to that server through
+one gateway process: one MCP connection for a stdio bridge (each bridge runs its own gateway),
+and every stateless call from that client to that server until restart for a shared HTTP
+gateway. Issue one client credential per agent to keep agents apart there. Records never carry
+over into a later gateway run or another bridge process.
+
 The agent cannot reach this state: the self-defense rules deny it any access to
 `~/.singularity-aidr` (reading, listing, deleting or rewriting), so it cannot reset its own
 counters.

@@ -94,7 +94,10 @@ payload still is.
   output. The MCP gateway blocks flagged results before they reach the model.
 - **Session identity.** Each connector passes its host's session or conversation id. If a
   host sends none, a stable key is built from the connector, the parent process and the
-  working directory.
+  working directory. The MCP gateway uses one session per MCP session (`Mcp-Session-Id`), or
+  for a stateless server one per client, server and gateway process, never one per client
+  credential across sessions (see `docs/agent-safety.md`); chains that span two MCP servers
+  are therefore not correlated by the gateway.
 
 ## State, tamper resistance and failure policy
 
