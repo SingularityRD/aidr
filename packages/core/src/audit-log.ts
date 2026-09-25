@@ -85,11 +85,21 @@ export function toolInputSummaryText(toolName: string, toolInput: Record<string,
  */
 const AUDITED_ALLOW_CATEGORIES: ReadonlySet<string> = new Set([
 	"behavioral_unavailable",
+	"canary_unavailable",
 	"dlp_redacted",
 	"prompt_protection",
 	"prompt_protection_warning",
 	"toxic_flow_monitor",
 	"toxic_flow_unavailable",
+]);
+
+/**
+ * Categories every audit record names, whatever the decision: a canary trigger
+ * must stay recognisable in the log and in `aidr canary status`.
+ */
+const NAMED_CATEGORIES: ReadonlySet<string> = new Set([
+	...AUDITED_ALLOW_CATEGORIES,
+	"canary_triggered",
 ]);
 
 function toolInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
@@ -112,7 +122,7 @@ export function buildRuntimeVerdictEntry(
 		tool_input_summary: toolInputSummary(toolName, toolInput),
 		artifacts: redactTelemetryData(verdict.artifacts),
 		verdict: verdict.decision,
-		...(AUDITED_ALLOW_CATEGORIES.has(verdict.category) ? { category: verdict.category } : {}),
+		...(NAMED_CATEGORIES.has(verdict.category) ? { category: verdict.category } : {}),
 		severity: verdict.severity,
 		reasons: redactTelemetryData(verdict.reasons),
 		source: verdict.source,
@@ -191,6 +201,7 @@ export function buildIncidentEntry(
 		tool_input_summary: toolInputSummary(params.toolName, params.toolInput),
 		artifacts: redactTelemetryData(params.verdict.artifacts),
 		decision: params.verdict.decision,
+		...(NAMED_CATEGORIES.has(params.verdict.category) ? { category: params.verdict.category } : {}),
 		severity: params.verdict.severity,
 		reasons: redactTelemetryData(params.verdict.reasons),
 		source: params.verdict.source,

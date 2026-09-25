@@ -22,6 +22,15 @@ import {
 import { BehavioralDetectionOrchestrator } from "./behavioral-orchestrator.js";
 import { isCommercialBuild } from "./build-flavor.js";
 import { VerdictCache } from "./cache.js";
+import {
+	CANARY_TRIGGERED_CATEGORY,
+	CANARY_UNAVAILABLE_CATEGORY,
+	type CanaryHit,
+	type CanaryStage,
+	canaryTriggeredVerdict,
+	canaryUnavailableVerdict,
+	inspectToolInputForCanaries,
+} from "./canary/detect.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
@@ -303,6 +312,9 @@ function auditToolInputForVerdict(
 	// credential redactor does not know. Never copy their raw payload into an
 	// audit summary or remote event when the configured detector determined the
 	// outcome (including unavailable inspection).
+	// A canary trigger may carry the decoy token value itself; it never enters a
+	// log or remote event (the verdict names the canary id instead).
+	if (verdict.category === CANARY_TRIGGERED_CATEGORY) return { content_omitted: "canary trigger" };
 	return context.runtimeDetectors?.dlp?.enabled === true ||
 		verdict.source === "dlp" ||
 		verdict.category === "behavioral_unavailable" ||
@@ -655,13 +667,87 @@ async function applyRuntimeDetectors(
 		};
 	}
 
-	const verdict = await recheckRedactedInput(
+	const checked = await recheckRedactedInput(
 		await applyConfiguredDetectors(request, context, baseVerdict, managedState, rewriteSource),
 		request,
 		context,
 		config,
 	);
+	const canaryGap = canaryUnavailableByRequest.get(request);
+	const verdict = canaryGap ? canaryUnavailableVerdict(checked, canaryGap) : checked;
 	return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
+}
+
+/**
+ * Requests whose canary check could not run, with the reason. Set by the early
+ * canary check and read where every pipeline path settles its verdict
+ * (`applyRuntimeDetectors`), so a skipped check is never reported as clean.
+ */
+const canaryUnavailableByRequest = new WeakMap<ToolEvaluationRequest, string>();
+
+/**
+ * Canary check, run before any other leg: a call that touches a decoy is
+ * denied outright (no allowlist, approval or cached verdict applies), and no
+ * reputation lookup ever receives the decoy value. Detection-internal failures
+ * are skipped, logged and remembered for the final verdict.
+ */
+function checkToolCallCanaries(request: ToolEvaluationRequest, logger: Logger): Verdict | null {
+	const inspection = inspectToolInputForCanaries(request.toolInput);
+	if (inspection.status === "triggered") return canaryTriggeredVerdict(inspection.hits);
+	if (inspection.status === "unavailable") {
+		canaryUnavailableByRequest.set(request, inspection.reason);
+		logger.warn("Canary credential check unavailable; signal skipped", {
+			reason: inspection.reason,
+		});
+	}
+	return null;
+}
+
+/**
+ * Record a canary trigger seen outside the pre-execution tool check (tool
+ * output after execution, a user prompt): audit entry, and in managed mode an
+ * incident through the same path as a blocked tool call. Never throws; the
+ * returned deny verdict is what the caller enforces.
+ */
+export async function recordCanaryTrigger(params: {
+	sessionId: string;
+	toolName: string;
+	hits: readonly CanaryHit[];
+	stage: Exclude<CanaryStage, "tool_input">;
+	configPath?: string;
+	logger?: Logger;
+	agentRuntime?: AgentRuntime;
+	agentRuntimeVersion?: string;
+}): Promise<Verdict> {
+	const verdict = canaryTriggeredVerdict(params.hits, params.stage);
+	const logger = params.logger ?? nullLogger;
+	try {
+		const config = await loadConfig(params.configPath, logger);
+		if (isInvalidConfig(config)) return verdict;
+		await recordEarlyVerdict(
+			{
+				sessionId: params.sessionId,
+				toolName: params.toolName,
+				toolInput: { content_omitted: params.stage },
+				artifacts: [],
+			},
+			{
+				threatsDir: "",
+				allowlistsDir: "",
+				configPath: params.configPath,
+				agentRuntime: params.agentRuntime,
+				agentRuntimeVersion: params.agentRuntimeVersion,
+				logger,
+			},
+			config,
+			verdict,
+			logger,
+			performance.now(),
+		);
+	} catch {
+		// Recording cannot change the enforced decision.
+	}
+	return verdict;
 }
 
 async function applyConfiguredDetectors(
@@ -1079,6 +1165,11 @@ async function runEvaluationPipeline(
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 		return verdict;
 	}
+	const canaryVerdict = checkToolCallCanaries(request, logger);
+	if (canaryVerdict) {
+		await recordEarlyVerdict(request, context, config, canaryVerdict, logger, startTime);
+		return canaryVerdict;
+	}
 	if (request.toolInput.__aidr_input_normalization_failed === true) {
 		const verdict = ambiguousToolInputVerdict();
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
@@ -1460,6 +1551,7 @@ async function runEvaluationPipeline(
 			if (
 				verdict.decision !== "allow" ||
 				verdict.category === "behavioral_unavailable" ||
+				verdict.category === CANARY_UNAVAILABLE_CATEGORY ||
 				verdict.category.startsWith("toxic_flow") ||
 				verdict.transformedInput
 			) {

@@ -1,6 +1,8 @@
+import { CANARY_OUTPUT_RULE_ID, findCanaryTokens } from "./canary/detect.js";
 import { detectOutputSensitiveData } from "./output-sensitive-data.js";
 
 type OutputFindingType =
+	| "canary_triggered"
 	| "secret_leak"
 	| "prompt_injection_payload"
 	| "system_prompt_leakage"
@@ -228,6 +230,30 @@ function collectRuleFindings(views: string[], expired: () => boolean): OutputFin
 	return findings;
 }
 
+/**
+ * A registered canary token in tool output means the agent obtained decoy
+ * credential content (a recursive grep, a copied file). Detection-internal
+ * failures skip this signal; the pre-execution check logs registry problems.
+ */
+function canaryFindings(views: string[]): OutputFinding[] {
+	try {
+		const hits = views.flatMap((view) => findCanaryTokens(view));
+		if (hits.length === 0) return [];
+		const kinds = [...new Set(hits.map((hit) => hit.kind))].join(", ");
+		return [
+			{
+				type: "canary_triggered",
+				severity: "critical",
+				reason: `Output contains a canary credential planted by Singularity AIDR (${kinds}); the agent may be following injected instructions`,
+				redactedExcerpt: "[REDACTED_CANARY]",
+				ruleId: CANARY_OUTPUT_RULE_ID,
+			},
+		];
+	} catch {
+		return [];
+	}
+}
+
 export function scanModelOutput(output: string): OutputFinding[] {
 	if (!output) return [];
 	const deadline = performance.now() + OUTPUT_SCAN_TIME_BUDGET_MS;
@@ -240,5 +266,5 @@ export function scanModelOutput(output: string): OutputFinding[] {
 	if (typeof sensitive === "string") return coverageFinding(sensitive);
 	const rules = collectRuleFindings(views, expired);
 	if (typeof rules === "string") return coverageFinding(rules);
-	return [...sensitive, ...rules];
+	return [...canaryFindings(views), ...sensitive, ...rules];
 }

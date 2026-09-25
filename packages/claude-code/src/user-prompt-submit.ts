@@ -10,6 +10,8 @@
  *     prompt, `warn` sends it with a notice to the user and the model.
  *   - an operator-provisioned tenant DLP policy, when present: any non-allow
  *     outcome blocks (a prompt cannot be rewritten by this hook).
+ *   - canary credentials (`aidr canary deploy`): a prompt carrying a decoy
+ *     token value is blocked and recorded as a canary incident.
  *
  * Output (Claude Code UserPromptSubmit protocol):
  *   - block: `{"decision":"block","reason":…}` — the prompt is not sent and the
@@ -35,6 +37,7 @@
 
 import {
 	DEFAULT_PROMPT_PROTECTION,
+	findCanaryTokens,
 	initSentry,
 	type Logger,
 	loadConfig,
@@ -43,6 +46,7 @@ import {
 	type PromptProtectionResult,
 	PromptScanDeadlineError,
 	type PromptTenantDlp,
+	recordCanaryTrigger,
 	scanPrompt,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
@@ -183,6 +187,34 @@ function readPrompt(): { sessionId: string; prompt: string } | null {
 	};
 }
 
+const CANARY_PROMPT_BLOCK =
+	"🛡️ Singularity AIDR blocked this prompt before it reached the model: it contains a canary credential planted by Singularity AIDR. Decoy credentials are never needed for real work; if this text came from a file, page or tool output, treat that source as untrusted.";
+
+/**
+ * Block a prompt carrying a canary token value. A canary check that cannot run
+ * is skipped (detection internal) and the regular scan still decides.
+ */
+async function blockedForCanary(sessionId: string, prompt: string): Promise<boolean> {
+	let hits: ReturnType<typeof findCanaryTokens>;
+	try {
+		hits = findCanaryTokens(prompt);
+	} catch {
+		logger.warn("Canary check of the prompt unavailable; signal skipped");
+		return false;
+	}
+	if (hits.length === 0) return false;
+	await recordCanaryTrigger({
+		sessionId,
+		toolName: HOOK_EVENT,
+		hits,
+		stage: "user_prompt",
+		logger,
+		agentRuntime: "claude-code",
+	});
+	write({ decision: "block", reason: CANARY_PROMPT_BLOCK });
+	return true;
+}
+
 async function tenantDlp(): Promise<PromptTenantDlp | undefined> {
 	const provisioned = await loadProvisionedDetectorContext();
 	const detectors = provisioned.runtimeDetectors;
@@ -207,6 +239,7 @@ async function main(): Promise<void> {
 			writeInspectionFailure();
 			return;
 		}
+		if (await blockedForCanary(input.sessionId, input.prompt)) return;
 
 		let tenant: PromptTenantDlp | undefined;
 		try {
