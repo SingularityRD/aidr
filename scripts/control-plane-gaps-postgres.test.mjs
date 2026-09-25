@@ -137,9 +137,9 @@ test("agent offline, governance alerts and agent profile staging on real Postgre
 		const asset = sql(`insert into public.ai_assets(tenant_id, asset_type, identifier, name, business_purpose, status, review_due_at)
 			values ('${tenant}', 'mcp_server', 'github', 'GitHub MCP', 'secret purpose text', 'approved', current_date - 3) returning id;`);
 		sql(`insert into public.ai_governance_exceptions(tenant_id, asset_id, scope_kind, justification, status, requested_by,
-			created_at, expires_at, starts_at, decided_by, decided_at, decision_reason)
+			created_at, expires_at, starts_at, decided_by, decided_at, decision_reason, waived_status)
 			values ('${tenant}', '${asset}', 'tenant', 'private justification', 'approved', '${member}', now() - interval '1 day',
-			now() + interval '5 days', now() - interval '1 day', '${adminUser}', now(), 'ok');`);
+			now() + interval '5 days', now() - interval '1 day', '${adminUser}', now(), 'ok', 'restricted');`);
 
 		const first = scan();
 		assert.deepEqual(first, { skipped: false, agent_offline: 1, agent_recovered: 0, governance_review_overdue: 1,
