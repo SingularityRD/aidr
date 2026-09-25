@@ -235,7 +235,10 @@ write under the runner's real home (`~/.claude/settings.json`, `~/.cursor/hooks.
 ## Conventions
 
 - **Naming split:** YAML/JSON data uses `snake_case` (`threat_id`, `source_file`). TypeScript uses `camelCase` (`threatId`, `sourceFile`). Conversion functions handle the boundary.
-- **Fail-open:** Every internal error path must return an `allow` verdict. Extension hooks always exit with code `0`.
+- **Failure policy is per layer, not blanket fail-open:**
+  - *Connector entry points* fail **closed**: an internal error in a hook or plugin returns a `deny` (or block), never a silent `allow`. Extension hooks always exit with code `0` and emit the deny verdict.
+  - *Detection internals* (an erroring rule, an optional reputation lookup, a cache, intel or policy load) skip that signal, log it and continue; a skipped signal must never be reported as a clean result.
+  - *Security controls* (auth, tenant isolation, rate limits, webhook signatures, approval) fail **closed**.
 - **Detection patterns are data.** No hardcoded patterns - all rules live in `threats/*.yaml`.
 - **Versioning:** See [Versioning](#versioning) below.
 

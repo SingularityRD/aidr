@@ -392,8 +392,11 @@ Local mode behaviour:
 - **Missing file** — local DLP is off. Nothing else changes.
 - **Valid file** — the policy is enforced on every connector exactly like a
   managed policy (`tenantId` in the file is only a label for rule and exception
-  ownership). Because a hook returns a verdict rather than a rewritten payload,
-  `redact` is enforced as a deny.
+  ownership). A `redact` rule behaves exactly as it does under a managed policy
+  (see [DLP redaction of tool input](#dlp-redaction-of-tool-input)): Claude Code and
+  OpenCode run the redacted input, while connectors without a supported
+  input-rewrite path (Codex, OpenClaw, Cursor / VS Code, CLI, SDK) enforce it as a
+  deny. The mode does not change this; only the connector's rewrite support does.
 - **Invalid file** (unreadable, not JSON, or failing schema validation) — the
   policy is skipped, a single warning is written to stderr, and the extended
   health check `local_dlp_policy` (for example
@@ -431,19 +434,29 @@ Minimal example:
 ### Built-in common-PII baseline
 
 While any DLP policy is active (managed or local), tool input is also checked
-for SSNs (dashed `123-45-6789` form), Luhn-valid payment cards from a known
-network, email addresses, and phone numbers (`+` international prefix or
-separated NANP `555-123-4567` layout). Bare digit runs such as epoch
-timestamps, order ids, IP addresses and hashes are not treated as PII.
+for six built-in PII types (`COMMON_PII_TYPES` in `packages/core/src/pii-baseline.ts`):
 
-Each type is governed by a reserved rule id — `pii-ssn`, `pii-credit_card`,
-`pii-email`, `pii-phone` — so the policy stays in control:
+| Type | Reserved rule id | What is matched |
+|------|------------------|-----------------|
+| SSN | `pii-ssn` | Dashed `123-45-6789` form |
+| Payment card | `pii-credit_card` | Luhn-valid numbers from a known card network |
+| Email | `pii-email` | Email addresses |
+| Phone | `pii-phone` | `+` international prefix or separated NANP `555-123-4567` layout |
+| TC Kimlik | `pii-tc_kimlik` | Turkish national ID numbers from the AIDR Privacy rules (checksum-validated) |
+| IBAN | `pii-iban` | IBANs from the AIDR Privacy rules (mod-97 checksum-validated) |
+
+Bare digit runs such as epoch timestamps, order ids, IP addresses and hashes are
+not treated as PII.
+
+Each type is governed by its reserved rule id, so the policy stays in control:
 
 - No rule with that id: the baseline blocks the call.
 - A rule with that id and `"enabled": false`, or whose `directions` omit
   `"input"`: the baseline is off for that type.
-- A rule with that id: its `action` applies (`ask` asks for out-of-band
-  approval; `block` and `redact` deny). Its matchers also run as an ordinary
+- A rule with that id: its `action` applies to the baseline finding (`ask`
+  asks for out-of-band approval; `block` and `redact` deny, because the baseline
+  itself never rewrites input; a baseline deny also takes precedence over a
+  tenant-rule redaction of the same call). Its matchers also run as an ordinary
   rule, extending the baseline.
 - An active exception whose `ruleId` is the reserved id suppresses matches:
   `scope: "rule"` for every match, `scope: "match"` for one value (fingerprint

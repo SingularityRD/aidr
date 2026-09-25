@@ -37,7 +37,7 @@ The AMSI client uses two backends with automatic fallback:
 1. **Koffi FFI (primary)** - Calls `amsi.dll` directly via the `koffi` native FFI package. Fast, but requires the optional `koffi` dependency.
 2. **PowerShell P/Invoke (fallback)** - Spawns PowerShell with embedded C# P/Invoke bindings to the same AMSI API. No extra dependencies required (PowerShell is built into Windows).
 
-On native Windows, the client probes the koffi backend first. If it is unavailable (e.g. `koffi` not installed), it falls back to PowerShell. Under WSL, the koffi backend is skipped (it cannot load Windows DLLs from Linux userspace) and only the PowerShell backend is tried. If no backend succeeds, AMSI scanning is gracefully disabled and all tool calls proceed without it (fail-open).
+On native Windows, the client probes the koffi backend first. If it is unavailable (e.g. `koffi` not installed), it falls back to PowerShell. Under WSL, the koffi backend is skipped (it cannot load Windows DLLs from Linux userspace) and only the PowerShell backend is tried. If no backend succeeds on a host that supports AMSI while `amsi_check` is enabled, the AMSI leg is logged as unavailable and is **not** treated as a clean scan: a call that would otherwise be allowed is returned as `ask` with reason `amsi_unavailable` (source `amsi`), so it is held for review instead of passing as if it had been scanned. Hosts without AMSI (macOS, Linux outside WSL) skip the leg entirely, and setting `amsi_check.enabled` to `false` turns it off explicitly.
 
 > **Note:** WSL-to-Windows process spawning adds overhead compared to native Windows. The PowerShell backend already spawns a new process per scan, so under WSL each scan has additional cross-boundary latency.
 
