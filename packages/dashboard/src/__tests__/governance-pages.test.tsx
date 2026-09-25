@@ -334,7 +334,9 @@ describe("GovernanceRegisterPage", () => {
 		expect(within(table).getByText("DeepSeek")).toBeInTheDocument();
 		expect(screen.getByTestId("overdue-count")).toHaveTextContent("1");
 		expect(screen.getByTestId("overdue-reviews")).toHaveTextContent("Shell runner");
-		expect(await screen.findByText("shell-runner")).toBeInTheDocument();
+		// The register row also shows the identifier, so read the enforcement preview's own entry.
+		const blocked = await screen.findByText("MCP servers blocked (tenant-wide)");
+		expect(blocked.nextElementSibling).toHaveTextContent("shell-runner");
 		expect(screen.getByText(/No runtime policy is published/)).toBeInTheDocument();
 		expect(screen.getByTestId("browser-guard-managed-policy")).toHaveTextContent(
 			'"blockedSites": []',
