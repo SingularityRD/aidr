@@ -80,6 +80,12 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 		justification:
 			"Stripe webhook: the `Stripe-Signature` header is verified over the raw body before any billing state is read or written.",
 	},
+	{
+		route: "supabase/functions/notification-dispatch/index.ts",
+		mechanism: "dedicated dispatcher bearer token",
+		justification:
+			"Scheduler-only outbox dispatcher: POST with `Authorization: Bearer <AIDR_NOTIFICATION_DISPATCH_TOKEN>` (at least 32 chars, compared in constant time) before any row is read; it has no user or tenant caller, fails closed when the token or keyring is unset, and never accepts the service-role key.",
+	},
 ]);
 
 /** Which shared guards the route source presents (an empty list is a failure). */
